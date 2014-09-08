@@ -44,7 +44,7 @@ fn main() {
     }
 
     let root = TempDir::new("glob-tests");
-    let root = root.expect("Should have created a temp directory");
+    let root = root.ok().expect("Should have created a temp directory");
     assert!(os::change_dir(root.path()));
 
     mk_file("aaa", true);
