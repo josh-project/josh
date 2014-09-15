@@ -30,7 +30,7 @@
 
 use std::cell::Cell;
 use std::{cmp, os, path};
-use std::io::fs;
+use std::io::fs::{mod, PathExtensions};
 use std::path::is_sep;
 use std::string::String;
 
