@@ -18,8 +18,6 @@ git = "https://github.com/rust-lang/glob.git"
 And add this to your crate root:
 
 ```rust
-#![feature(macro_rules)]
 extern crate glob;
-use glob::glob;
 ```
 
