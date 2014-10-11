@@ -176,7 +176,7 @@ fn list_dir_sorted(path: &Path) -> Option<Vec<Path>> {
     match fs::readdir(path) {
         Ok(mut children) => {
             children.sort_by(|p1, p2| p2.filename().cmp(&p1.filename()));
-            Some(children.move_iter().collect())
+            Some(children.into_iter().collect())
         }
         Err(..) => None
     }
@@ -297,12 +297,12 @@ impl Pattern {
             match c {
                 // note that ! does not need escaping because it is only special inside brackets
                 '?' | '*' | '[' | ']' => {
-                    escaped.push_char('[');
-                    escaped.push_char(c);
-                    escaped.push_char(']');
+                    escaped.push('[');
+                    escaped.push(c);
+                    escaped.push(']');
                 }
                 c => {
-                    escaped.push_char(c);
+                    escaped.push(c);
                 }
             }
         }
@@ -441,7 +441,7 @@ fn fill_todo(todo: &mut Vec<(Path, uint)>, patterns: &[Pattern], idx: uint, path
         let mut s = String::new();
         for token in pattern.tokens.iter() {
             match *token {
-                Char(c) => s.push_char(c),
+                Char(c) => s.push(c),
                 _ => return None
             }
         }
@@ -477,7 +477,7 @@ fn fill_todo(todo: &mut Vec<(Path, uint)>, patterns: &[Pattern], idx: uint, path
         None => {
             match list_dir_sorted(path) {
                 Some(entries) => {
-                    todo.extend(entries.move_iter().map(|x|(x, idx)));
+                    todo.extend(entries.into_iter().map(|x|(x, idx)));
 
                     // Matching the special directory entries . and .. that refer to
                     // the current and parent directory respectively requires that

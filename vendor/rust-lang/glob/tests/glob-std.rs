@@ -29,7 +29,7 @@ macro_rules! assert_eq ( ($e1:expr, $e2:expr) => (
 fn main() {
     fn mk_file(path: &str, directory: bool) {
         if directory {
-            io::fs::mkdir(&Path::new(path), io::UserRWX).unwrap();
+            io::fs::mkdir(&Path::new(path), io::USER_RWX).unwrap();
         } else {
             io::File::create(&Path::new(path)).unwrap();
         }
