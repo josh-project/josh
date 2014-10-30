@@ -21,7 +21,7 @@ use std::io::TempDir;
 
 macro_rules! assert_eq ( ($e1:expr, $e2:expr) => (
     if $e1 != $e2 {
-        fail!("{} != {}", stringify!($e1), stringify!($e2))
+        panic!("{} != {}", stringify!($e1), stringify!($e2))
     }
 ) )
 
