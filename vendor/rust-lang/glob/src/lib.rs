@@ -34,6 +34,10 @@ use std::io::fs::{mod, PathExtensions};
 use std::path::is_sep;
 use std::string::String;
 
+use PatternToken::{Char, AnyChar, AnySequence, AnyWithin, AnyExcept};
+use CharSpecifier::{SingleChar, CharRange};
+use MatchResult::{Match, SubPatternDoesntMatch, EntirePatternDoesntMatch};
+
 /// An iterator that yields Paths from the filesystem that match a particular
 /// pattern - see the `glob` function for more details.
 pub struct Paths {
