@@ -36,7 +36,7 @@ fn main() {
     }
 
     fn abs_path(path: &str) -> Path {
-        os::getcwd().join(&Path::new(path))
+        os::getcwd().unwrap().join(&Path::new(path))
     }
 
     fn glob_vec(pattern: &str) -> Vec<Path> {
@@ -45,7 +45,7 @@ fn main() {
 
     let root = TempDir::new("glob-tests");
     let root = root.ok().expect("Should have created a temp directory");
-    assert!(os::change_dir(root.path()));
+    assert!(os::change_dir(root.path()).is_ok());
 
     mk_file("aaa", true);
     mk_file("aaa/apple", true);
@@ -72,8 +72,8 @@ fn main() {
     mk_file("xyz/z", false);
 
     assert_eq!(glob_vec(""), Vec::new());
-    assert_eq!(glob_vec("."), vec!(os::getcwd()));
-    assert_eq!(glob_vec(".."), vec!(os::getcwd().join("..")));
+    assert_eq!(glob_vec("."), vec!(os::getcwd().unwrap()));
+    assert_eq!(glob_vec(".."), vec!(os::getcwd().unwrap().join("..")));
 
     assert_eq!(glob_vec("aaa"), vec!(abs_path("aaa")));
     assert_eq!(glob_vec("aaa/"), vec!(abs_path("aaa")));

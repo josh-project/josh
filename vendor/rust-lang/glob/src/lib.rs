@@ -94,7 +94,7 @@ pub fn glob_with(pattern: &str, options: MatchOptions) -> Paths {
     fn check_windows_verbatim(_: &Path) -> bool { false }
 
     // calculate root this way to handle volume-relative Windows paths correctly
-    let mut root = os::getcwd();
+    let mut root = os::getcwd().unwrap();
     let pat_root = Path::new(pattern).root_path();
     if pat_root.is_some() {
         if check_windows_verbatim(pat_root.as_ref().unwrap()) {
@@ -375,25 +375,24 @@ impl Pattern {
                             m => return m,
                         }
 
-                        if file.is_empty() {
-                            return EntirePatternDoesntMatch;
-                        }
+                        let (c, next) = match file.slice_shift_char() {
+                            None => return EntirePatternDoesntMatch,
+                            Some(pair) => pair
+                        };
 
-                        let (some_c, next) = file.slice_shift_char();
-                        if require_literal(some_c.unwrap()) {
+                        if require_literal(c) {
                             return SubPatternDoesntMatch;
                         }
-                        prev_char.set(some_c);
+                        prev_char.set(Some(c));
                         file = next;
                     }
                 }
                 _ => {
-                    if file.is_empty() {
-                        return EntirePatternDoesntMatch;
-                    }
+                    let (c, next) = match file.slice_shift_char() {
+                        None => return EntirePatternDoesntMatch,
+                        Some(pair) => pair
+                    };
 
-                    let (some_c, next) = file.slice_shift_char();
-                    let c = some_c.unwrap();
                     let matches = match *token {
                         AnyChar => {
                             !require_literal(c)
@@ -420,7 +419,7 @@ impl Pattern {
                     if !matches {
                         return SubPatternDoesntMatch;
                     }
-                    prev_char.set(some_c);
+                    prev_char.set(Some(c));
                     file = next;
                 }
             }
@@ -626,7 +625,7 @@ mod test {
         assert!(glob("//").next().is_some());
 
         // check windows absolute paths with host/device components
-        let root_with_device = os::getcwd().root_path().unwrap().join("*");
+        let root_with_device = os::getcwd().unwrap().root_path().unwrap().join("*");
         // FIXME (#9639): This needs to handle non-utf8 paths
         assert!(glob(root_with_device.as_str().unwrap()).next().is_some());
     }
