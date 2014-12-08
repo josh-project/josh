@@ -538,9 +538,9 @@ fn in_char_specifiers(specifiers: &[CharSpecifier], c: char, options: MatchOptio
                     // only allow case insensitive matching when
                     // both start and end are within a-z or A-Z
                     if start != start_up && end != end_up {
-                        let start = start.to_char();
-                        let end = end.to_char();
-                        let c = c.to_ascii().to_lowercase().to_char();
+                        let start = start.as_char();
+                        let end = end.as_char();
+                        let c = c.to_ascii().to_lowercase().as_char();
                         if c >= start && c <= end {
                             return true;
                         }
@@ -562,8 +562,8 @@ fn chars_eq(a: char, b: char, case_sensitive: bool) -> bool {
     if cfg!(windows) && path::windows::is_sep(a) && path::windows::is_sep(b) {
         true
     } else if !case_sensitive && a.is_ascii() && b.is_ascii() {
-        // FIXME: work with non-ascii chars properly (issue #1347)
-        a.to_ascii().eq_ignore_case(b.to_ascii())
+        // FIXME: work with non-ascii chars properly (issue #9084)
+        a.to_ascii().to_lowercase() == b.to_ascii().to_lowercase()
     } else {
         a == b
     }
