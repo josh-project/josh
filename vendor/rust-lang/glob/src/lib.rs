@@ -200,13 +200,13 @@ enum PatternToken {
     AnyExcept(Vec<CharSpecifier> )
 }
 
-#[deriving(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[deriving(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 enum CharSpecifier {
     SingleChar(char),
     CharRange(char, char)
 }
 
-#[deriving(PartialEq)]
+#[deriving(Copy, PartialEq)]
 enum MatchResult {
     Match,
     SubPatternDoesntMatch,
@@ -570,7 +570,7 @@ fn chars_eq(a: char, b: char, case_sensitive: bool) -> bool {
 
 
 /// Configuration options to modify the behaviour of `Pattern::matches_with(..)`
-#[deriving(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+#[deriving(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct MatchOptions {
     /// Whether or not patterns should be matched in a case-sensitive manner. This
     /// currently only considers upper/lower case relationships between ASCII characters,
