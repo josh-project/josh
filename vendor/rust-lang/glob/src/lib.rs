@@ -192,7 +192,7 @@ pub struct Pattern {
 enum PatternToken {
     Char(char),
     AnyChar,
-    AnySequence,
+    AnySequence(bool),
     AnyWithin(Vec<CharSpecifier> ),
     AnyExcept(Vec<CharSpecifier> )
 }
@@ -220,6 +220,12 @@ impl Pattern {
      /// of characters, as ordered by Unicode, so e.g. `[0-9]` specifies any
      /// character between 0 and 9 inclusive.
      ///
+     /// A sequence of two `*` characters, `**`, acts like a single `*` except
+     /// that it also matches path separators, making it useful for matching
+     /// on arbitrary subdirectories.
+     ///
+     /// A sequence of more than two consecutive `*` characters is treated literally.
+     ///
      /// The metacharacters `?`, `*`, `[`, `]` can be matched by using brackets
      /// (e.g. `[?]`).  When a `]` occurs immediately following `[` or `[!` then
      /// it is interpreted as being part of, rather then ending, the character
@@ -242,11 +248,23 @@ impl Pattern {
                     i += 1;
                 }
                 '*' => {
-                    // *, **, ***, ****, ... are all equivalent
-                    while i < chars.len() && chars[i] == '*' {
-                        i += 1;
+                  let old = i;
+
+                  while i < chars.len() && chars[i] == '*' {
+                    i += 1;
+                  }
+
+                  let count = i - old;
+
+                  if count > 2 {
+                    for _ in range(0u, count) {
+                      tokens.push(Char('*'));
                     }
-                    tokens.push(AnySequence);
+                  } else if count == 2 {
+                    tokens.push(AnySequence(true));
+                  } else {
+                    tokens.push(AnySequence(false));
+                  }
                 }
                 '[' => {
 
@@ -364,7 +382,7 @@ impl Pattern {
 
         for (ti, token) in self.tokens.slice_from(i).iter().enumerate() {
             match *token {
-                AnySequence => {
+                AnySequence(recursive) => {
                     loop {
                         match self.matches_from(prev_char.get(), file, i + ti + 1, options) {
                             SubPatternDoesntMatch => (), // keep trying
@@ -376,7 +394,7 @@ impl Pattern {
                             Some(pair) => pair
                         };
 
-                        if require_literal(c) {
+                        if !recursive && require_literal(c) {
                             return SubPatternDoesntMatch;
                         }
                         prev_char.set(Some(c));
@@ -408,7 +426,7 @@ impl Pattern {
                         Char(c2) => {
                             chars_eq(c, c2, options.case_sensitive)
                         }
-                        AnySequence => {
+                        AnySequence(_) => {
                             unreachable!()
                         }
                     };
@@ -628,10 +646,9 @@ mod test {
     }
 
     #[test]
-    fn test_wildcard_optimizations() {
-        assert!(Pattern::new("a*b").matches("a___b"));
+    fn test_wildcards() {
+        assert!(Pattern::new("a*b").matches("a_b"));
         assert!(Pattern::new("a**b").matches("a___b"));
-        assert!(Pattern::new("a***b").matches("a___b"));
         assert!(Pattern::new("a*b*c").matches("abc"));
         assert!(!Pattern::new("a*b*c").matches("abcd"));
         assert!(Pattern::new("a*b*c").matches("a_b_c"));
@@ -640,6 +657,16 @@ mod test {
         assert!(!Pattern::new("abc*abc*abc").matches("abcabcabcabcabcabcabca"));
         assert!(Pattern::new("a*a*a*a*a*a*a*a*a").matches("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
         assert!(Pattern::new("a*b[xyz]c*d").matches("abxcdbxcddd"));
+    }
+
+    #[test]
+    fn test_recursive_wildstars() {
+        let pat = Pattern::new("some/**/needle.txt");
+        assert!(pat.matches("some/one/needle.txt"));
+        assert!(pat.matches("some/one/two/needle.txt"));
+        assert!(pat.matches("some/other/needle.txt"));
+        // more than 2 consecutive wildcards and they're all treated literally
+        assert!(Pattern::new("a***b").matches("a***b"));
     }
 
     #[test]
