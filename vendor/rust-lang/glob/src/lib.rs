@@ -30,7 +30,7 @@ use std::io::fs::{mod, PathExtensions};
 use std::path::is_sep;
 use std::string::String;
 
-use PatternToken::{Char, AnyChar, AnySequence, AnyWithin, AnyExcept};
+use PatternToken::{Char, AnyChar, AnySequence, AnyRecursiveSequence, AnyWithin, AnyExcept};
 use CharSpecifier::{SingleChar, CharRange};
 use MatchResult::{Match, SubPatternDoesntMatch, EntirePatternDoesntMatch};
 
@@ -192,7 +192,8 @@ pub struct Pattern {
 enum PatternToken {
     Char(char),
     AnyChar,
-    AnySequence(bool),
+    AnySequence,
+    AnyRecursiveSequence,
     AnyWithin(Vec<CharSpecifier> ),
     AnyExcept(Vec<CharSpecifier> )
 }
@@ -248,23 +249,23 @@ impl Pattern {
                     i += 1;
                 }
                 '*' => {
-                  let old = i;
+                    let old = i;
 
-                  while i < chars.len() && chars[i] == '*' {
-                    i += 1;
-                  }
-
-                  let count = i - old;
-
-                  if count > 2 {
-                    for _ in range(0u, count) {
-                      tokens.push(Char('*'));
+                    while i < chars.len() && chars[i] == '*' {
+                        i += 1;
                     }
-                  } else if count == 2 {
-                    tokens.push(AnySequence(true));
-                  } else {
-                    tokens.push(AnySequence(false));
-                  }
+
+                    let count = i - old;
+
+                    if count > 2 {
+                        for _ in range(0u, count) {
+                            tokens.push(Char('*'));
+                        }
+                    } else if count == 2 {
+                        tokens.push(AnyRecursiveSequence);
+                    } else {
+                        tokens.push(AnySequence);
+                    }
                 }
                 '[' => {
 
@@ -382,7 +383,7 @@ impl Pattern {
 
         for (ti, token) in self.tokens.slice_from(i).iter().enumerate() {
             match *token {
-                AnySequence(recursive) => {
+                AnySequence | AnyRecursiveSequence => {
                     loop {
                         match self.matches_from(prev_char.get(), file, i + ti + 1, options) {
                             SubPatternDoesntMatch => (), // keep trying
@@ -394,9 +395,12 @@ impl Pattern {
                             Some(pair) => pair
                         };
 
-                        if !recursive && require_literal(c) {
-                            return SubPatternDoesntMatch;
+                        if let AnySequence = *token {
+                            if require_literal(c) {
+                                return SubPatternDoesntMatch;
+                            }
                         }
+
                         prev_char.set(Some(c));
                         file = next;
                     }
@@ -426,7 +430,7 @@ impl Pattern {
                         Char(c2) => {
                             chars_eq(c, c2, options.case_sensitive)
                         }
-                        AnySequence(_) => {
+                        AnySequence | AnyRecursiveSequence => {
                             unreachable!()
                         }
                     };
