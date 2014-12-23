@@ -147,7 +147,7 @@ impl Iterator<Path> for Paths {
             }
 
             let ref pattern = self.dir_patterns[idx];
-            let is_recursive = pattern.is_recursive();
+            let is_recursive = pattern.is_recursive;
             let is_last = idx == self.dir_patterns.len() - 1;
 
             // special casing for recursive patterns when globbing
@@ -161,7 +161,7 @@ impl Iterator<Path> for Paths {
                 let mut next = idx + 1;
 
                 // collapse consecutive recursive patterns
-                while next < self.dir_patterns.len() && self.dir_patterns[next].is_recursive() {
+                while next < self.dir_patterns.len() && self.dir_patterns[next].is_recursive {
                     next += 1;
                 }
 
@@ -412,10 +412,6 @@ impl Pattern {
         }
 
         Pattern { tokens: tokens, is_recursive: is_recursive }
-    }
-
-    fn is_recursive(&self) -> bool {
-      self.is_recursive
     }
 
     /// Escape metacharacters within the given string by surrounding them in
@@ -784,7 +780,7 @@ mod test {
         assert!(!pat.matches("some/other/notthis.txt"));
 
         // a single ** should be valid, for globs
-        assert!(Pattern::new("**").is_recursive());
+        assert!(Pattern::new("**").is_recursive);
 
         // collapse consecutive wildcards
         let pat = Pattern::new("some/**/**/needle.txt");
