@@ -24,6 +24,7 @@
        html_favicon_url = "http://www.rust-lang.org/favicon.ico",
        html_root_url = "http://doc.rust-lang.org/glob/")]
 
+use std::ascii::AsciiExt;
 use std::cell::Cell;
 use std::{cmp, os, path};
 use std::io::fs::{mod, PathExtensions};
@@ -547,8 +548,8 @@ fn in_char_specifiers(specifiers: &[CharSpecifier], c: char, options: &MatchOpti
                 // FIXME: work with non-ascii chars properly (issue #1347)
                 if !options.case_sensitive && c.is_ascii() && start.is_ascii() && end.is_ascii() {
 
-                    let start = start.to_ascii().to_lowercase();
-                    let end = end.to_ascii().to_lowercase();
+                    let start = start.to_ascii_lowercase();
+                    let end = end.to_ascii_lowercase();
 
                     let start_up = start.to_uppercase();
                     let end_up = end.to_uppercase();
@@ -556,9 +557,7 @@ fn in_char_specifiers(specifiers: &[CharSpecifier], c: char, options: &MatchOpti
                     // only allow case insensitive matching when
                     // both start and end are within a-z or A-Z
                     if start != start_up && end != end_up {
-                        let start = start.as_char();
-                        let end = end.as_char();
-                        let c = c.to_ascii().to_lowercase().as_char();
+                        let c = c.to_ascii_lowercase();
                         if c >= start && c <= end {
                             return true;
                         }
@@ -581,7 +580,7 @@ fn chars_eq(a: char, b: char, case_sensitive: bool) -> bool {
         true
     } else if !case_sensitive && a.is_ascii() && b.is_ascii() {
         // FIXME: work with non-ascii chars properly (issue #9084)
-        a.to_ascii().to_lowercase() == b.to_ascii().to_lowercase()
+        a.to_ascii_lowercase() == b.to_ascii_lowercase()
     } else {
         a == b
     }
