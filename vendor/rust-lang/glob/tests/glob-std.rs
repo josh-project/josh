@@ -72,17 +72,70 @@ fn main() {
     mk_file("xyz/z", false);
 
     mk_file("r", true);
+    mk_file("r/current_dir.md", false);
     mk_file("r/one", true);
     mk_file("r/one/a.md", false);
+    mk_file("r/one/another", true);
+    mk_file("r/one/another/a.md", false);
+    mk_file("r/another", true);
+    mk_file("r/another/a.md", false);
     mk_file("r/two", true);
     mk_file("r/two/b.md", false);
     mk_file("r/three", true);
     mk_file("r/three/c.md", false);
 
-    assert_eq!(glob_vec("r/**/*.md"), vec!(
+    // all recursive entities
+    assert_eq!(glob_vec("r/**"), vec!(
+        abs_path("r/another"),
+        abs_path("r/another/a.md"),
+        abs_path("r/current_dir.md"),
+        abs_path("r/one"),
         abs_path("r/one/a.md"),
+        abs_path("r/one/another"),
+        abs_path("r/one/another/a.md"),
+        abs_path("r/three"),
+        abs_path("r/three/c.md"),
+        abs_path("r/two"),
+        abs_path("r/two/b.md")));
+
+    // collapse consecutive recursive patterns
+    assert_eq!(glob_vec("r/**/**"), vec!(
+        abs_path("r/another"),
+        abs_path("r/another/a.md"),
+        abs_path("r/current_dir.md"),
+        abs_path("r/one"),
+        abs_path("r/one/a.md"),
+        abs_path("r/one/another"),
+        abs_path("r/one/another/a.md"),
+        abs_path("r/three"),
+        abs_path("r/three/c.md"),
+        abs_path("r/two"),
+        abs_path("r/two/b.md")));
+
+    // followed by a wildcard
+    assert_eq!(glob_vec("r/**/*.md"), vec!(
+        abs_path("r/another/a.md"),
+        abs_path("r/current_dir.md"),
+        abs_path("r/one/a.md"),
+        abs_path("r/one/another/a.md"),
         abs_path("r/three/c.md"),
         abs_path("r/two/b.md")));
+
+    // followed by a precise pattern
+    assert_eq!(glob_vec("r/one/**/a.md"), vec!(
+        abs_path("r/one/a.md"),
+        abs_path("r/one/another/a.md")));
+
+    // followed by another recursive pattern
+    // collapses consecutive recursives into one
+    assert_eq!(glob_vec("r/one/**/**/a.md"), vec!(
+        abs_path("r/one/a.md"),
+        abs_path("r/one/another/a.md")));
+
+    // followed by two precise patterns
+    assert_eq!(glob_vec("r/**/another/a.md"), vec!(
+        abs_path("r/another/a.md"),
+        abs_path("r/one/another/a.md")));
 
     assert_eq!(glob_vec(""), Vec::new());
     assert_eq!(glob_vec("."), vec!(os::getcwd().unwrap()));

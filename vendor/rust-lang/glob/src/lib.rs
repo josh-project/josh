@@ -139,15 +139,86 @@ impl Iterator<Path> for Paths {
             }
 
             let (path,idx) = self.todo.pop().unwrap();
+
             // idx -1: was already checked by fill_todo, maybe path was '.' or
             // '..' that we can't match here because of normalization.
             if idx == -1 as uint {
                 if self.require_dir && !path.is_dir() { continue; }
                 return Some(path);
             }
-            let ref pattern = self.dir_patterns[idx];
 
-            if pattern.matches_with(match path.filename_str() {
+            let ref pattern = self.dir_patterns[idx];
+            let is_recursive = pattern.is_recursive;
+            let is_last = idx == self.dir_patterns.len() - 1;
+
+            // special casing for recursive patterns when globbing
+            //   if it's a recursive pattern and it's not the last dir_patterns,
+            //   test if it matches the next non-recursive pattern,
+            //   if it does, then move to the pattern after the next pattern
+            //   otherwise accept the path based on the recursive pattern
+            //   and remain on the recursive pattern
+            if is_recursive && !is_last {
+                // the next non-recursive pattern
+                let mut next = idx + 1;
+
+                // collapse consecutive recursive patterns
+                while next < self.dir_patterns.len() && self.dir_patterns[next].is_recursive {
+                    next += 1;
+                }
+
+                // no non-recursive patterns follow the current one
+                // so auto-accept all remaining recursive paths
+                if next == self.dir_patterns.len() {
+                    fill_todo(&mut self.todo, self.dir_patterns.as_slice(),
+                              next - 1, &path, &self.options);
+                    return Some(path);
+                }
+
+                let ref next_pattern = self.dir_patterns[next];
+                let is_match = next_pattern.matches_with(match path.filename_str() {
+                    // this ugly match needs to go here to avoid a borrowck error
+                    None => {
+                        // FIXME (#9639): How do we handle non-utf8 filenames? Ignore them for now
+                        // Ideally we'd still match them against a *
+                        continue;
+                    }
+                    Some(x) => x
+                }, &self.options);
+
+                // determine how to advance
+                let (current_idx, next_idx) =
+                    if is_match {
+                        // accept the pattern after the next non-recursive pattern
+                        (next, next + 1)
+                    } else {
+                        // next pattern still hasn't matched
+                        // so stay on this recursive pattern
+                        (next - 1, next - 1)
+                    };
+
+                if current_idx == self.dir_patterns.len() - 1 {
+                    // it is not possible for a pattern to match a directory *AND* its children
+                    // so we don't need to check the children
+
+                    if !self.require_dir || path.is_dir() {
+                        return Some(path);
+                    }
+                } else {
+                    fill_todo(&mut self.todo, self.dir_patterns.as_slice(),
+                              next_idx, &path, &self.options);
+                }
+            }
+
+            // it's recursive and it's the last pattern
+            // automatically match everything else recursively
+            else if is_recursive && is_last {
+              fill_todo(&mut self.todo, self.dir_patterns.as_slice(),
+                        idx, &path, &self.options);
+              return Some(path);
+            }
+
+            // not recursive, so match normally
+            else if pattern.matches_with(match path.filename_str() {
                 // this ugly match needs to go here to avoid a borrowck error
                 None => {
                     // FIXME (#9639): How do we handle non-utf8 filenames? Ignore them for now
@@ -187,6 +258,7 @@ fn list_dir_sorted(path: &Path) -> Option<Vec<Path>> {
 #[deriving(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Pattern {
     tokens: Vec<PatternToken>,
+    is_recursive: bool,
 }
 
 #[deriving(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -224,9 +296,10 @@ impl Pattern {
      ///
      /// A sequence of two `*` characters, `**`, acts like a single `*` except
      /// that it also matches path separators, making it useful for matching
-     /// on arbitrary subdirectories.
-     ///
-     /// A sequence of more than two consecutive `*` characters is treated literally.
+     /// on arbitrary subdirectories. This sequence **must** form a single path
+     /// component, so neither `**a` nor `b**` is valid and will instead be treated
+     /// literally. A sequence of more than two consecutive `*` characters is
+     /// treated literally.
      ///
      /// The metacharacters `?`, `*`, `[`, `]` can be matched by using brackets
      /// (e.g. `[?]`).  When a `]` occurs immediately following `[` or `[!` then
@@ -241,6 +314,7 @@ impl Pattern {
 
         let chars = pattern.chars().collect::<Vec<_>>();
         let mut tokens = Vec::new();
+        let mut is_recursive = false;
         let mut i = 0;
 
         while i < chars.len() {
@@ -263,7 +337,40 @@ impl Pattern {
                             tokens.push(Char('*'));
                         }
                     } else if count == 2 {
-                        tokens.push(AnyRecursiveSequence);
+                        // ** can only be an entire path component
+                        // i.e. a/**/b is valid, but a**/b or a/**b is not
+                        // invalid matches are treated literally
+                        let is_valid =
+                            // begins with '/' or is the beginning of the pattern
+                            if i == 2 || chars[i - count - 1] == '/' {
+                                // it ends in a '/'
+                                if i < chars.len() && chars[i] == '/' {
+                                    i += 1;
+                                    true
+                                // or the pattern ends here
+                                // this enables the existing globbing mechanism
+                                } else if i == chars.len() {
+                                    true
+                                } else {
+                                    false
+                                }
+                            } else {
+                                false
+                            };
+
+                        let tokens_len = tokens.len();
+
+                        if is_valid {
+                            // collapse consecutive AnyRecursiveSequence to a single one
+                            if !(tokens_len > 1 && tokens[tokens_len - 1] == AnyRecursiveSequence) {
+                                is_recursive = true;
+                                tokens.push(AnyRecursiveSequence);
+                            }
+                        } else {
+                            // treat invalid sequences literally
+                            tokens.push(Char('*'));
+                            tokens.push(Char('*'));
+                        }
                     } else {
                         tokens.push(AnySequence);
                     }
@@ -305,7 +412,7 @@ impl Pattern {
             }
         }
 
-        Pattern { tokens: tokens }
+        Pattern { tokens: tokens, is_recursive: is_recursive }
     }
 
     /// Escape metacharacters within the given string by surrounding them in
@@ -651,7 +758,7 @@ mod test {
     #[test]
     fn test_wildcards() {
         assert!(Pattern::new("a*b").matches("a_b"));
-        assert!(Pattern::new("a**b").matches("a___b"));
+        assert!(Pattern::new("a**b").matches("a**b"));
         assert!(Pattern::new("a*b*c").matches("abc"));
         assert!(!Pattern::new("a*b*c").matches("abcd"));
         assert!(Pattern::new("a*b*c").matches("a_b_c"));
@@ -663,11 +770,51 @@ mod test {
     }
 
     #[test]
-    fn test_recursive_wildstars() {
+    fn test_recursive_wildcards() {
         let pat = Pattern::new("some/**/needle.txt");
+        assert!(pat.matches("some/needle.txt"));
         assert!(pat.matches("some/one/needle.txt"));
         assert!(pat.matches("some/one/two/needle.txt"));
         assert!(pat.matches("some/other/needle.txt"));
+        assert!(!pat.matches("some/other/notthis.txt"));
+
+        // a single ** should be valid, for globs
+        assert!(Pattern::new("**").is_recursive);
+
+        // collapse consecutive wildcards
+        let pat = Pattern::new("some/**/**/needle.txt");
+        assert!(pat.matches("some/needle.txt"));
+        assert!(pat.matches("some/one/needle.txt"));
+        assert!(pat.matches("some/one/two/needle.txt"));
+        assert!(pat.matches("some/other/needle.txt"));
+        assert!(!pat.matches("some/other/notthis.txt"));
+
+        // recursive patterns should form a single
+        // path component with nothing else in them
+        // otherwise they're treated literally
+        let pat = Pattern::new("some/**b");
+        assert!(pat.matches("some/**b"));
+        assert!(!pat.matches("some/lolb"));
+
+        let pat = Pattern::new("some/b**");
+        assert!(pat.matches("some/b**"));
+        assert!(!pat.matches("some/bob"));
+        assert!(!pat.matches("some/bob/lol"));
+
+        // ** can begin the pattern
+        let pat = Pattern::new("**/test");
+        assert!(pat.matches("one/two/test"));
+        assert!(pat.matches("one/test"));
+        assert!(pat.matches("test"));
+
+        // /** can begin the pattern
+        let pat = Pattern::new("/**/test");
+        assert!(pat.matches("/one/two/test"));
+        assert!(pat.matches("/one/test"));
+        assert!(pat.matches("/test"));
+        assert!(!pat.matches("/one/notthis"));
+        assert!(!pat.matches("/notthis"));
+
         // more than 2 consecutive wildcards and they're all treated literally
         assert!(Pattern::new("a***b").matches("a***b"));
     }
