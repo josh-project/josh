@@ -27,7 +27,7 @@
 use std::ascii::AsciiExt;
 use std::cell::Cell;
 use std::{cmp, os, path};
-use std::io::fs::{mod, PathExtensions};
+use std::io::fs::{self, PathExtensions};
 use std::path::is_sep;
 use std::string::String;
 
@@ -255,13 +255,13 @@ fn list_dir_sorted(path: &Path) -> Option<Vec<Path>> {
 }
 
 /// A compiled Unix shell style pattern.
-#[deriving(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Pattern {
     tokens: Vec<PatternToken>,
     is_recursive: bool,
 }
 
-#[deriving(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 enum PatternToken {
     Char(char),
     AnyChar,
@@ -271,13 +271,13 @@ enum PatternToken {
     AnyExcept(Vec<CharSpecifier> )
 }
 
-#[deriving(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 enum CharSpecifier {
     SingleChar(char),
     CharRange(char, char)
 }
 
-#[deriving(Copy, PartialEq)]
+#[derive(Copy, PartialEq)]
 enum MatchResult {
     Match,
     SubPatternDoesntMatch,
@@ -696,7 +696,7 @@ fn chars_eq(a: char, b: char, case_sensitive: bool) -> bool {
 
 /// Configuration options to modify the behaviour of `Pattern::matches_with(..)`
 #[allow(missing_copy_implementations)]
-#[deriving(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct MatchOptions {
     /// Whether or not patterns should be matched in a case-sensitive manner. This
     /// currently only considers upper/lower case relationships between ASCII characters,
