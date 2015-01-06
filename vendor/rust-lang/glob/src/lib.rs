@@ -485,7 +485,7 @@ impl Pattern {
 
         let prev_char = Cell::new(prev_char);
 
-        let require_literal = |c| {
+        let require_literal = |&: c| {
             (options.require_literal_separator && is_sep(c)) ||
             (options.require_literal_leading_dot && c == '.'
              && is_sep(prev_char.get().unwrap_or('/')))
@@ -579,7 +579,7 @@ fn fill_todo(todo: &mut Vec<(Path, uint)>, patterns: &[Pattern], idx: uint, path
         return Some(s);
     }
 
-    let add = |todo: &mut Vec<_>, next_path: Path| {
+    let add = |&: todo: &mut Vec<_>, next_path: Path| {
         if idx + 1 == patterns.len() {
             // We know it's good, so don't make the iterator match this path
             // against the pattern again. In particular, it can't match
@@ -994,31 +994,31 @@ mod test {
             require_literal_leading_dot: false
         };
 
-        let f = |options| Pattern::new("*.txt").matches_with(".hello.txt", options);
+        let f = |&: options| Pattern::new("*.txt").matches_with(".hello.txt", options);
         assert!(f(&options_not_require_literal_leading_dot));
         assert!(!f(&options_require_literal_leading_dot));
 
-        let f = |options| Pattern::new(".*.*").matches_with(".hello.txt", options);
+        let f = |&: options| Pattern::new(".*.*").matches_with(".hello.txt", options);
         assert!(f(&options_not_require_literal_leading_dot));
         assert!(f(&options_require_literal_leading_dot));
 
-        let f = |options| Pattern::new("aaa/bbb/*").matches_with("aaa/bbb/.ccc", options);
+        let f = |&: options| Pattern::new("aaa/bbb/*").matches_with("aaa/bbb/.ccc", options);
         assert!(f(&options_not_require_literal_leading_dot));
         assert!(!f(&options_require_literal_leading_dot));
 
-        let f = |options| Pattern::new("aaa/bbb/*").matches_with("aaa/bbb/c.c.c.", options);
+        let f = |&: options| Pattern::new("aaa/bbb/*").matches_with("aaa/bbb/c.c.c.", options);
         assert!(f(&options_not_require_literal_leading_dot));
         assert!(f(&options_require_literal_leading_dot));
 
-        let f = |options| Pattern::new("aaa/bbb/.*").matches_with("aaa/bbb/.ccc", options);
+        let f = |&: options| Pattern::new("aaa/bbb/.*").matches_with("aaa/bbb/.ccc", options);
         assert!(f(&options_not_require_literal_leading_dot));
         assert!(f(&options_require_literal_leading_dot));
 
-        let f = |options| Pattern::new("aaa/?bbb").matches_with("aaa/.bbb", options);
+        let f = |&: options| Pattern::new("aaa/?bbb").matches_with("aaa/.bbb", options);
         assert!(f(&options_not_require_literal_leading_dot));
         assert!(!f(&options_require_literal_leading_dot));
 
-        let f = |options| Pattern::new("aaa/[.]bbb").matches_with("aaa/.bbb", options);
+        let f = |&: options| Pattern::new("aaa/[.]bbb").matches_with("aaa/.bbb", options);
         assert!(f(&options_not_require_literal_leading_dot));
         assert!(!f(&options_require_literal_leading_dot));
     }
