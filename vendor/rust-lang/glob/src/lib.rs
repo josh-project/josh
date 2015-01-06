@@ -994,31 +994,31 @@ mod test {
             require_literal_leading_dot: false
         };
 
-        let f = |options| Pattern::new("*.txt").matches_with(".hello.txt", options);
+        let f = |&: options| Pattern::new("*.txt").matches_with(".hello.txt", options);
         assert!(f(&options_not_require_literal_leading_dot));
         assert!(!f(&options_require_literal_leading_dot));
 
-        let f = |options| Pattern::new(".*.*").matches_with(".hello.txt", options);
+        let f = |&: options| Pattern::new(".*.*").matches_with(".hello.txt", options);
         assert!(f(&options_not_require_literal_leading_dot));
         assert!(f(&options_require_literal_leading_dot));
 
-        let f = |options| Pattern::new("aaa/bbb/*").matches_with("aaa/bbb/.ccc", options);
+        let f = |&: options| Pattern::new("aaa/bbb/*").matches_with("aaa/bbb/.ccc", options);
         assert!(f(&options_not_require_literal_leading_dot));
         assert!(!f(&options_require_literal_leading_dot));
 
-        let f = |options| Pattern::new("aaa/bbb/*").matches_with("aaa/bbb/c.c.c.", options);
+        let f = |&: options| Pattern::new("aaa/bbb/*").matches_with("aaa/bbb/c.c.c.", options);
         assert!(f(&options_not_require_literal_leading_dot));
         assert!(f(&options_require_literal_leading_dot));
 
-        let f = |options| Pattern::new("aaa/bbb/.*").matches_with("aaa/bbb/.ccc", options);
+        let f = |&: options| Pattern::new("aaa/bbb/.*").matches_with("aaa/bbb/.ccc", options);
         assert!(f(&options_not_require_literal_leading_dot));
         assert!(f(&options_require_literal_leading_dot));
 
-        let f = |options| Pattern::new("aaa/?bbb").matches_with("aaa/.bbb", options);
+        let f = |&: options| Pattern::new("aaa/?bbb").matches_with("aaa/.bbb", options);
         assert!(f(&options_not_require_literal_leading_dot));
         assert!(!f(&options_require_literal_leading_dot));
 
-        let f = |options| Pattern::new("aaa/[.]bbb").matches_with("aaa/.bbb", options);
+        let f = |&: options| Pattern::new("aaa/[.]bbb").matches_with("aaa/.bbb", options);
         assert!(f(&options_not_require_literal_leading_dot));
         assert!(!f(&options_require_literal_leading_dot));
     }
