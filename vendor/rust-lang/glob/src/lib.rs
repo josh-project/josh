@@ -20,10 +20,10 @@
 //! is implemented entirely in Rust rather than deferring to the libc
 //! `glob`/`fnmatch` functions.
 
-#![feature(associated_types)]
 #![doc(html_logo_url = "http://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png",
        html_favicon_url = "http://www.rust-lang.org/favicon.ico",
        html_root_url = "http://doc.rust-lang.org/glob/")]
+#![allow(unstable)]
 
 use std::ascii::AsciiExt;
 use std::cell::Cell;
@@ -42,7 +42,7 @@ pub struct Paths {
     dir_patterns: Vec<Pattern>,
     require_dir: bool,
     options: MatchOptions,
-    todo: Vec<(Path,uint)>,
+    todo: Vec<(Path,usize)>,
 }
 
 /// Return an iterator that produces all the Paths that match the given pattern,
@@ -108,7 +108,7 @@ pub fn glob_with(pattern: &str, options: &MatchOptions) -> Paths {
         root.push(pat_root.as_ref().unwrap());
     }
 
-    let root_len = pat_root.map_or(0u, |p| p.as_vec().len());
+    let root_len = pat_root.map_or(0us, |p| p.as_vec().len());
     let dir_patterns = pattern.slice_from(cmp::min(root_len, pattern.len()))
                        .split_terminator(is_sep)
                        .map(|s| Pattern::new(s))
@@ -118,7 +118,7 @@ pub fn glob_with(pattern: &str, options: &MatchOptions) -> Paths {
     let mut todo = Vec::new();
     if dir_patterns.len() > 0 {
         // Shouldn't happen, but we're using -1 as a special index.
-        assert!(dir_patterns.len() < -1 as uint);
+        assert!(dir_patterns.len() < -1 as usize);
 
         fill_todo(&mut todo, dir_patterns.as_slice(), 0, &root, options);
     }
@@ -144,7 +144,7 @@ impl Iterator for Paths {
 
             // idx -1: was already checked by fill_todo, maybe path was '.' or
             // '..' that we can't match here because of normalization.
-            if idx == -1 as uint {
+            if idx == -1 as usize {
                 if self.require_dir && !path.is_dir() { continue; }
                 return Some(path);
             }
@@ -335,7 +335,7 @@ impl Pattern {
                     let count = i - old;
 
                     if count > 2 {
-                        for _ in range(0u, count) {
+                        for _ in range(0, count) {
                             tokens.push(Char('*'));
                         }
                     } else if count == 2 {
@@ -480,7 +480,7 @@ impl Pattern {
     fn matches_from(&self,
                     prev_char: Option<char>,
                     mut file: &str,
-                    i: uint,
+                    i: usize,
                     options: &MatchOptions) -> MatchResult {
 
         let prev_char = Cell::new(prev_char);
@@ -565,7 +565,7 @@ impl Pattern {
 // Fills `todo` with paths under `path` to be matched by `patterns[idx]`,
 // special-casing patterns to match `.` and `..`, and avoiding `readdir()`
 // calls when there are no metacharacters in the pattern.
-fn fill_todo(todo: &mut Vec<(Path, uint)>, patterns: &[Pattern], idx: uint, path: &Path,
+fn fill_todo(todo: &mut Vec<(Path, usize)>, patterns: &[Pattern], idx: usize, path: &Path,
              options: &MatchOptions) {
     // convert a pattern that's just many Char(_) to a string
     fn pattern_as_str(pattern: &Pattern) -> Option<String> {
@@ -584,7 +584,7 @@ fn fill_todo(todo: &mut Vec<(Path, uint)>, patterns: &[Pattern], idx: uint, path
             // We know it's good, so don't make the iterator match this path
             // against the pattern again. In particular, it can't match
             // . or .. globs since these never show up as path components.
-            todo.push((next_path, -1 as uint));
+            todo.push((next_path, -1 as usize));
         } else {
             fill_todo(todo, patterns, idx + 1, &next_path, options);
         }
