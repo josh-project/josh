@@ -31,6 +31,7 @@ use std::{cmp, path};
 use std::io::fs::{self, PathExtensions};
 use std::path::is_sep;
 use std::string::String;
+use std::fmt;
 
 use PatternToken::{Char, AnyChar, AnySequence, AnyRecursiveSequence, AnyWithin, AnyExcept};
 use CharSpecifier::{SingleChar, CharRange};
@@ -48,6 +49,8 @@ pub struct Paths {
 /// Return an iterator that produces all the Paths that match the given pattern,
 /// which may be absolute or relative to the current working directory.
 ///
+/// This may return an error if the pattern is invalid.
+///
 /// This method uses the default match options and is equivalent to calling
 /// `glob_with(pattern, MatchOptions::new())`. Use `glob_with` directly if you
 /// want to use non-default match options.
@@ -60,7 +63,7 @@ pub struct Paths {
 /// ```rust
 /// use glob::glob;
 ///
-/// for path in glob("/media/pictures/*.jpg") {
+/// for path in glob("/media/pictures/*.jpg").unwrap() {
 ///     println!("{}", path.display());
 /// }
 /// ```
@@ -72,20 +75,25 @@ pub struct Paths {
 /// /media/pictures/puppies.jpg
 /// ```
 ///
-pub fn glob(pattern: &str) -> Paths {
+pub fn glob(pattern: &str) -> Result<Paths, Error> {
     glob_with(pattern, &MatchOptions::new())
 }
 
 /// Return an iterator that produces all the Paths that match the given pattern,
 /// which may be absolute or relative to the current working directory.
 ///
+/// This may return an error if the pattern is invalid.
+///
 /// This function accepts Unix shell style patterns as described by `Pattern::new(..)`.
 /// The options given are passed through unchanged to `Pattern::matches_with(..)` with
 /// the exception that `require_literal_separator` is always set to `true` regardless of the
 /// value passed to this function.
 ///
-/// Paths are yielded in alphabetical order, as absolute paths.
-pub fn glob_with(pattern: &str, options: &MatchOptions) -> Paths {
+/// Paths are yielded in alphabetical order.
+pub fn glob_with(pattern: &str, options: &MatchOptions) -> Result<Paths, Error> {
+    // make sure that the pattern is valid first, else early return with error
+    let _compiled = try!(Pattern::new(pattern));
+
     #[cfg(windows)]
     fn check_windows_verbatim(p: &Path) -> bool { path::windows::is_verbatim(p) }
     #[cfg(not(windows))]
@@ -112,19 +120,19 @@ pub fn glob_with(pattern: &str, options: &MatchOptions) -> Paths {
     if root.is_some() && check_windows_verbatim(root.as_ref().unwrap()) {
         // FIXME: How do we want to handle verbatim paths? I'm inclined to return nothing,
         // since we can't very well find all UNC shares with a 1-letter server name.
-        return Paths {
+        return Ok(Paths {
             dir_patterns: Vec::new(),
             require_dir: false,
             options: options.clone(),
             todo: Vec::new(),
-        };
+        });
     }
 
     let scope = root.map(to_scope).unwrap_or_else(|| Path::new("."));
 
     let dir_patterns = pattern.slice_from(cmp::min(root_len, pattern.len()))
                        .split_terminator(is_sep)
-                       .map(|s| Pattern::new(s))
+                       .map(|s| Pattern::new(s).unwrap())
                        .collect::<Vec<Pattern>>();
 
     let require_dir = pattern.chars().next_back().map(is_sep) == Some(true);
@@ -137,12 +145,12 @@ pub fn glob_with(pattern: &str, options: &MatchOptions) -> Paths {
         fill_todo(&mut todo, dir_patterns.as_slice(), 0, &scope, options);
     }
 
-    Paths {
+    Ok(Paths {
         dir_patterns: dir_patterns,
         require_dir: require_dir,
         options: options.clone(),
         todo: todo,
-    }
+    })
 }
 
 impl Iterator for Paths {
@@ -270,11 +278,71 @@ fn list_dir_sorted(path: &Path) -> Option<Vec<Path>> {
     }
 }
 
+/// A pattern parsing error.
+pub struct Error {
+  /// The approximate character index of where the error occurred.
+  pub pos: usize,
+
+  /// A message describing the error.
+  pub msg: &'static str,
+}
+
+impl fmt::String for Error {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    write!(f, "Pattern syntax error near position {}: {}",
+           self.pos, self.msg)
+  }
+}
+
+impl fmt::Show for Error {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fmt::String::fmt(self, f)
+  }
+}
+
 /// A compiled Unix shell style pattern.
+///
+/// `?` matches any single character
+///
+/// `*` matches any (possibly empty) sequence of characters
+///
+/// `**` matches the current directory and arbitrary subdirectories. This sequence **must** form a single path
+/// component, so both `**a` and `b**` are invalid and will result in an error.
+/// A sequence of more than two consecutive `*` characters is also invalid.
+///
+/// `[...]` matches any character inside the brackets.
+/// Character sequences can also specify ranges
+/// of characters, as ordered by Unicode, so e.g. `[0-9]` specifies any
+/// character between 0 and 9 inclusive. An unclosed bracket is invalid.
+///
+/// `[!...]` is the negation of `[...]`, i.e. it matches any characters **not**
+/// in the brackets.
+///
+/// The metacharacters `?`, `*`, `[`, `]` can be matched by using brackets
+/// (e.g. `[?]`).  When a `]` occurs immediately following `[` or `[!` then
+/// it is interpreted as being part of, rather then ending, the character
+/// set, so `]` and NOT `]` can be matched by `[]]` and `[!]]` respectively.
+/// The `-` character can be specified inside a character sequence pattern by
+/// placing it at the start or the end, e.g. `[abc-]`.
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Pattern {
+    original: String,
     tokens: Vec<PatternToken>,
     is_recursive: bool,
+}
+
+/// Show the original glob pattern.
+impl fmt::String for Pattern {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    self.original.fmt(f)
+  }
+}
+
+/// Show the original glob pattern.
+impl fmt::Show for Pattern {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fmt::String::fmt(self, f)
+  }
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -300,33 +368,18 @@ enum MatchResult {
     EntirePatternDoesntMatch
 }
 
-impl Pattern {
+const ERROR_WILDCARDS: &'static str =
+  "wildcards are either regular `*` or recursive `**`";
+const ERROR_RECURSIVE_WILDCARDS: &'static str =
+  "recursive wildcards must form a single path component";
+const ERROR_INVALID_RANGE: &'static str =
+  "invalid range pattern";
 
-     /// This function compiles Unix shell style patterns: `?` matches any single
-     /// character, `*` matches any (possibly empty) sequence of characters and
-     /// `[...]` matches any character inside the brackets, unless the first
-     /// character is `!` in which case it matches any character except those
-     /// between the `!` and the `]`. Character sequences can also specify ranges
-     /// of characters, as ordered by Unicode, so e.g. `[0-9]` specifies any
-     /// character between 0 and 9 inclusive.
-     ///
-     /// A sequence of two `*` characters, `**`, acts like a single `*` except
-     /// that it also matches path separators, making it useful for matching
-     /// on arbitrary subdirectories. This sequence **must** form a single path
-     /// component, so neither `**a` nor `b**` is valid and will instead be treated
-     /// literally. A sequence of more than two consecutive `*` characters is
-     /// treated literally.
-     ///
-     /// The metacharacters `?`, `*`, `[`, `]` can be matched by using brackets
-     /// (e.g. `[?]`).  When a `]` occurs immediately following `[` or `[!` then
-     /// it is interpreted as being part of, rather then ending, the character
-     /// set, so `]` and NOT `]` can be matched by `[]]` and `[!]]` respectively.
-     /// The `-` character can be specified inside a character sequence pattern by
-     /// placing it at the start or the end, e.g. `[abc-]`.
-     ///
-     /// When a `[` does not have a closing `]` before the end of the string then
-     /// the `[` will be treated literally.
-    pub fn new(pattern: &str) -> Pattern {
+impl Pattern {
+    /// This function compiles Unix shell style patterns.
+    ///
+    /// An invalid glob pattern will yield an error.
+    pub fn new(pattern: &str) -> Result<Pattern, Error> {
 
         let chars = pattern.chars().collect::<Vec<_>>();
         let mut tokens = Vec::new();
@@ -349,15 +402,17 @@ impl Pattern {
                     let count = i - old;
 
                     if count > 2 {
-                        for _ in range(0, count) {
-                            tokens.push(Char('*'));
-                        }
+                        return Err(
+                          Error {
+                            pos: old + 2,
+                            msg: ERROR_WILDCARDS,
+                          });
                     } else if count == 2 {
                         // ** can only be an entire path component
                         // i.e. a/**/b is valid, but a**/b or a/**b is not
                         // invalid matches are treated literally
                         let is_valid =
-                            // begins with '/' or is the beginning of the pattern
+                            // is the beginning of the pattern or begins with '/'
                             if i == 2 || chars[i - count - 1] == '/' {
                                 // it ends in a '/'
                                 if i < chars.len() && chars[i] == '/' {
@@ -367,11 +422,21 @@ impl Pattern {
                                 // this enables the existing globbing mechanism
                                 } else if i == chars.len() {
                                     true
+                                // `**` ends in non-separator
                                 } else {
-                                    false
+                                    return Err(
+                                      Error  {
+                                        pos: i,
+                                        msg: ERROR_RECURSIVE_WILDCARDS,
+                                        });
                                 }
+                            // `**` begins with non-separator
                             } else {
-                                false
+                                return Err(
+                                  Error  {
+                                    pos: old - 1,
+                                    msg: ERROR_RECURSIVE_WILDCARDS,
+                                    });
                             };
 
                         let tokens_len = tokens.len();
@@ -382,10 +447,6 @@ impl Pattern {
                                 is_recursive = true;
                                 tokens.push(AnyRecursiveSequence);
                             }
-                        } else {
-                            // treat invalid sequences literally
-                            tokens.push(Char('*'));
-                            tokens.push(Char('*'));
                         }
                     } else {
                         tokens.push(AnySequence);
@@ -418,8 +479,11 @@ impl Pattern {
                     }
 
                     // if we get here then this is not a valid range pattern
-                    tokens.push(Char('['));
-                    i += 1;
+                    return Err(
+                      Error  {
+                        pos: i,
+                        msg: ERROR_INVALID_RANGE,
+                    });
                 }
                 c => {
                     tokens.push(Char(c));
@@ -428,7 +492,11 @@ impl Pattern {
             }
         }
 
-        Pattern { tokens: tokens, is_recursive: is_recursive }
+        Ok(Pattern {
+            tokens: tokens,
+            original: pattern.to_string(),
+            is_recursive: is_recursive,
+        })
     }
 
     /// Escape metacharacters within the given string by surrounding them in
@@ -460,9 +528,9 @@ impl Pattern {
     /// ```rust
     /// use glob::Pattern;
     ///
-    /// assert!(Pattern::new("c?t").matches("cat"));
-    /// assert!(Pattern::new("k[!e]tteh").matches("kitteh"));
-    /// assert!(Pattern::new("d*g").matches("doog"));
+    /// assert!(Pattern::new("c?t").unwrap().matches("cat"));
+    /// assert!(Pattern::new("k[!e]tteh").unwrap().matches("kitteh"));
+    /// assert!(Pattern::new("d*g").unwrap().matches("doog"));
     /// ```
     pub fn matches(&self, str: &str) -> bool {
         self.matches_with(str, &MatchOptions::new())
@@ -489,6 +557,11 @@ impl Pattern {
         path.as_str().map_or(false, |s| {
             self.matches_with(s, options)
         })
+    }
+
+    /// Access the original glob pattern.
+    pub fn as_str<'a>(&'a self) -> &'a str {
+      self.original.as_slice()
     }
 
     fn matches_from(&self,
@@ -760,34 +833,60 @@ mod test {
     use super::{glob, Pattern, MatchOptions};
 
     #[test]
+    fn test_wildcard_errors() {
+        assert!(Pattern::new("a/**b").unwrap_err().pos == 4);
+        assert!(Pattern::new("a/bc**").unwrap_err().pos == 3);
+        assert!(Pattern::new("a/*****").unwrap_err().pos == 4);
+        assert!(Pattern::new("a/b**c**d").unwrap_err().pos == 2);
+        assert!(Pattern::new("a**b").unwrap_err().pos == 0);
+    }
+
+    #[test]
+    fn test_unclosed_bracket_errors() {
+        assert!(Pattern::new("abc[def").unwrap_err().pos == 3);
+        assert!(Pattern::new("abc[!def").unwrap_err().pos == 3 );
+        assert!(Pattern::new("abc[").unwrap_err().pos == 3);
+        assert!(Pattern::new("abc[!").unwrap_err().pos == 3);
+        assert!(Pattern::new("abc[d").unwrap_err().pos == 3);
+        assert!(Pattern::new("abc[!d").unwrap_err().pos == 3);
+        assert!(Pattern::new("abc[]").unwrap_err().pos == 3);
+        assert!(Pattern::new("abc[!]").unwrap_err().pos == 3);
+    }
+
+    #[test]
+    fn test_glob_errors() {
+        assert!(glob("a/**b").err().unwrap().pos == 4);
+        assert!(glob("abc[def").err().unwrap().pos == 3);
+    }
+
+    #[test]
     fn test_absolute_pattern() {
         // assume that the filesystem is not empty!
-        assert!(glob("/*").next().is_some());
-        assert!(glob("//").next().is_some());
+        assert!(glob("/*").unwrap().next().is_some());
+        assert!(glob("//").unwrap().next().is_some());
 
         // check windows absolute paths with host/device components
         let root_with_device = os::getcwd().unwrap().root_path().unwrap().join("*");
         // FIXME (#9639): This needs to handle non-utf8 paths
-        assert!(glob(root_with_device.as_str().unwrap()).next().is_some());
+        assert!(glob(root_with_device.as_str().unwrap()).unwrap().next().is_some());
     }
 
     #[test]
     fn test_wildcards() {
-        assert!(Pattern::new("a*b").matches("a_b"));
-        assert!(Pattern::new("a**b").matches("a**b"));
-        assert!(Pattern::new("a*b*c").matches("abc"));
-        assert!(!Pattern::new("a*b*c").matches("abcd"));
-        assert!(Pattern::new("a*b*c").matches("a_b_c"));
-        assert!(Pattern::new("a*b*c").matches("a___b___c"));
-        assert!(Pattern::new("abc*abc*abc").matches("abcabcabcabcabcabcabc"));
-        assert!(!Pattern::new("abc*abc*abc").matches("abcabcabcabcabcabcabca"));
-        assert!(Pattern::new("a*a*a*a*a*a*a*a*a").matches("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
-        assert!(Pattern::new("a*b[xyz]c*d").matches("abxcdbxcddd"));
+        assert!(Pattern::new("a*b").unwrap().matches("a_b"));
+        assert!(Pattern::new("a*b*c").unwrap().matches("abc"));
+        assert!(!Pattern::new("a*b*c").unwrap().matches("abcd"));
+        assert!(Pattern::new("a*b*c").unwrap().matches("a_b_c"));
+        assert!(Pattern::new("a*b*c").unwrap().matches("a___b___c"));
+        assert!(Pattern::new("abc*abc*abc").unwrap().matches("abcabcabcabcabcabcabc"));
+        assert!(!Pattern::new("abc*abc*abc").unwrap().matches("abcabcabcabcabcabcabca"));
+        assert!(Pattern::new("a*a*a*a*a*a*a*a*a").unwrap().matches("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
+        assert!(Pattern::new("a*b[xyz]c*d").unwrap().matches("abxcdbxcddd"));
     }
 
     #[test]
     fn test_recursive_wildcards() {
-        let pat = Pattern::new("some/**/needle.txt");
+        let pat = Pattern::new("some/**/needle.txt").unwrap();
         assert!(pat.matches("some/needle.txt"));
         assert!(pat.matches("some/one/needle.txt"));
         assert!(pat.matches("some/one/two/needle.txt"));
@@ -795,62 +894,47 @@ mod test {
         assert!(!pat.matches("some/other/notthis.txt"));
 
         // a single ** should be valid, for globs
-        assert!(Pattern::new("**").is_recursive);
+        assert!(Pattern::new("**").unwrap().is_recursive);
 
         // collapse consecutive wildcards
-        let pat = Pattern::new("some/**/**/needle.txt");
+        let pat = Pattern::new("some/**/**/needle.txt").unwrap();
         assert!(pat.matches("some/needle.txt"));
         assert!(pat.matches("some/one/needle.txt"));
         assert!(pat.matches("some/one/two/needle.txt"));
         assert!(pat.matches("some/other/needle.txt"));
         assert!(!pat.matches("some/other/notthis.txt"));
 
-        // recursive patterns should form a single
-        // path component with nothing else in them
-        // otherwise they're treated literally
-        let pat = Pattern::new("some/**b");
-        assert!(pat.matches("some/**b"));
-        assert!(!pat.matches("some/lolb"));
-
-        let pat = Pattern::new("some/b**");
-        assert!(pat.matches("some/b**"));
-        assert!(!pat.matches("some/bob"));
-        assert!(!pat.matches("some/bob/lol"));
-
         // ** can begin the pattern
-        let pat = Pattern::new("**/test");
+        let pat = Pattern::new("**/test").unwrap();
         assert!(pat.matches("one/two/test"));
         assert!(pat.matches("one/test"));
         assert!(pat.matches("test"));
 
         // /** can begin the pattern
-        let pat = Pattern::new("/**/test");
+        let pat = Pattern::new("/**/test").unwrap();
         assert!(pat.matches("/one/two/test"));
         assert!(pat.matches("/one/test"));
         assert!(pat.matches("/test"));
         assert!(!pat.matches("/one/notthis"));
         assert!(!pat.matches("/notthis"));
-
-        // more than 2 consecutive wildcards and they're all treated literally
-        assert!(Pattern::new("a***b").matches("a***b"));
     }
 
     #[test]
     fn test_lots_of_files() {
         // this is a good test because it touches lots of differently named files
-        glob("/*/*/*/*").skip(10000).next();
+        glob("/*/*/*/*").unwrap().skip(10000).next();
     }
 
     #[test]
     fn test_range_pattern() {
 
-        let pat = Pattern::new("a[0-9]b");
+        let pat = Pattern::new("a[0-9]b").unwrap();
         for i in range(0u, 10) {
             assert!(pat.matches(format!("a{}b", i).as_slice()));
         }
         assert!(!pat.matches("a_b"));
 
-        let pat = Pattern::new("a[!0-9]b");
+        let pat = Pattern::new("a[!0-9]b").unwrap();
         for i in range(0u, 10) {
             assert!(!pat.matches(format!("a{}b", i).as_slice()));
         }
@@ -858,7 +942,7 @@ mod test {
 
         let pats = ["[a-z123]", "[1a-z23]", "[123a-z]"];
         for &p in pats.iter() {
-            let pat = Pattern::new(p);
+            let pat = Pattern::new(p).unwrap();
             for c in "abcdefghijklmnopqrstuvwxyz".chars() {
                 assert!(pat.matches(c.to_string().as_slice()));
             }
@@ -873,7 +957,7 @@ mod test {
 
         let pats = ["[abc-]", "[-abc]", "[a-c-]"];
         for &p in pats.iter() {
-            let pat = Pattern::new(p);
+            let pat = Pattern::new(p).unwrap();
             assert!(pat.matches("a"));
             assert!(pat.matches("b"));
             assert!(pat.matches("c"));
@@ -881,30 +965,17 @@ mod test {
             assert!(!pat.matches("d"));
         }
 
-        let pat = Pattern::new("[2-1]");
+        let pat = Pattern::new("[2-1]").unwrap();
         assert!(!pat.matches("1"));
         assert!(!pat.matches("2"));
 
-        assert!(Pattern::new("[-]").matches("-"));
-        assert!(!Pattern::new("[!-]").matches("-"));
-    }
-
-    #[test]
-    fn test_unclosed_bracket() {
-        // unclosed `[` should be treated literally
-        assert!(Pattern::new("abc[def").matches("abc[def"));
-        assert!(Pattern::new("abc[!def").matches("abc[!def"));
-        assert!(Pattern::new("abc[").matches("abc["));
-        assert!(Pattern::new("abc[!").matches("abc[!"));
-        assert!(Pattern::new("abc[d").matches("abc[d"));
-        assert!(Pattern::new("abc[!d").matches("abc[!d"));
-        assert!(Pattern::new("abc[]").matches("abc[]"));
-        assert!(Pattern::new("abc[!]").matches("abc[!]"));
+        assert!(Pattern::new("[-]").unwrap().matches("-"));
+        assert!(!Pattern::new("[!-]").unwrap().matches("-"));
     }
 
     #[test]
     fn test_pattern_matches() {
-        let txt_pat = Pattern::new("*hello.txt");
+        let txt_pat = Pattern::new("*hello.txt").unwrap();
         assert!(txt_pat.matches("hello.txt"));
         assert!(txt_pat.matches("gareth_says_hello.txt"));
         assert!(txt_pat.matches("some/path/to/hello.txt"));
@@ -913,7 +984,7 @@ mod test {
         assert!(!txt_pat.matches("hello.txt-and-then-some"));
         assert!(!txt_pat.matches("goodbye.txt"));
 
-        let dir_pat = Pattern::new("*some/path/to/hello.txt");
+        let dir_pat = Pattern::new("*some/path/to/hello.txt").unwrap();
         assert!(dir_pat.matches("some/path/to/hello.txt"));
         assert!(dir_pat.matches("a/bigger/some/path/to/hello.txt"));
         assert!(!dir_pat.matches("some/path/to/hello.txt-and-then-some"));
@@ -924,13 +995,13 @@ mod test {
     fn test_pattern_escape() {
         let s = "_[_]_?_*_!_";
         assert_eq!(Pattern::escape(s), "_[[]_[]]_[?]_[*]_!_".to_string());
-        assert!(Pattern::new(Pattern::escape(s).as_slice()).matches(s));
+        assert!(Pattern::new(Pattern::escape(s).as_slice()).unwrap().matches(s));
     }
 
     #[test]
     fn test_pattern_matches_case_insensitive() {
 
-        let pat = Pattern::new("aBcDeFg");
+        let pat = Pattern::new("aBcDeFg").unwrap();
         let options = MatchOptions {
             case_sensitive: false,
             require_literal_separator: false,
@@ -946,8 +1017,8 @@ mod test {
     #[test]
     fn test_pattern_matches_case_insensitive_range() {
 
-        let pat_within = Pattern::new("[a]");
-        let pat_except = Pattern::new("[!a]");
+        let pat_within = Pattern::new("[a]").unwrap();
+        let pat_except = Pattern::new("[!a]").unwrap();
 
         let options_case_insensitive = MatchOptions {
             case_sensitive: false,
@@ -983,15 +1054,15 @@ mod test {
             require_literal_leading_dot: false
         };
 
-        assert!(Pattern::new("abc/def").matches_with("abc/def", &options_require_literal));
-        assert!(!Pattern::new("abc?def").matches_with("abc/def", &options_require_literal));
-        assert!(!Pattern::new("abc*def").matches_with("abc/def", &options_require_literal));
-        assert!(!Pattern::new("abc[/]def").matches_with("abc/def", &options_require_literal));
+        assert!(Pattern::new("abc/def").unwrap().matches_with("abc/def", &options_require_literal));
+        assert!(!Pattern::new("abc?def").unwrap().matches_with("abc/def", &options_require_literal));
+        assert!(!Pattern::new("abc*def").unwrap().matches_with("abc/def", &options_require_literal));
+        assert!(!Pattern::new("abc[/]def").unwrap().matches_with("abc/def", &options_require_literal));
 
-        assert!(Pattern::new("abc/def").matches_with("abc/def", &options_not_require_literal));
-        assert!(Pattern::new("abc?def").matches_with("abc/def", &options_not_require_literal));
-        assert!(Pattern::new("abc*def").matches_with("abc/def", &options_not_require_literal));
-        assert!(Pattern::new("abc[/]def").matches_with("abc/def", &options_not_require_literal));
+        assert!(Pattern::new("abc/def").unwrap().matches_with("abc/def", &options_not_require_literal));
+        assert!(Pattern::new("abc?def").unwrap().matches_with("abc/def", &options_not_require_literal));
+        assert!(Pattern::new("abc*def").unwrap().matches_with("abc/def", &options_not_require_literal));
+        assert!(Pattern::new("abc[/]def").unwrap().matches_with("abc/def", &options_not_require_literal));
     }
 
     #[test]
@@ -1008,31 +1079,31 @@ mod test {
             require_literal_leading_dot: false
         };
 
-        let f = |&: options| Pattern::new("*.txt").matches_with(".hello.txt", options);
+        let f = |&: options| Pattern::new("*.txt").unwrap().matches_with(".hello.txt", options);
         assert!(f(&options_not_require_literal_leading_dot));
         assert!(!f(&options_require_literal_leading_dot));
 
-        let f = |&: options| Pattern::new(".*.*").matches_with(".hello.txt", options);
+        let f = |&: options| Pattern::new(".*.*").unwrap().matches_with(".hello.txt", options);
         assert!(f(&options_not_require_literal_leading_dot));
         assert!(f(&options_require_literal_leading_dot));
 
-        let f = |&: options| Pattern::new("aaa/bbb/*").matches_with("aaa/bbb/.ccc", options);
+        let f = |&: options| Pattern::new("aaa/bbb/*").unwrap().matches_with("aaa/bbb/.ccc", options);
         assert!(f(&options_not_require_literal_leading_dot));
         assert!(!f(&options_require_literal_leading_dot));
 
-        let f = |&: options| Pattern::new("aaa/bbb/*").matches_with("aaa/bbb/c.c.c.", options);
+        let f = |&: options| Pattern::new("aaa/bbb/*").unwrap().matches_with("aaa/bbb/c.c.c.", options);
         assert!(f(&options_not_require_literal_leading_dot));
         assert!(f(&options_require_literal_leading_dot));
 
-        let f = |&: options| Pattern::new("aaa/bbb/.*").matches_with("aaa/bbb/.ccc", options);
+        let f = |&: options| Pattern::new("aaa/bbb/.*").unwrap().matches_with("aaa/bbb/.ccc", options);
         assert!(f(&options_not_require_literal_leading_dot));
         assert!(f(&options_require_literal_leading_dot));
 
-        let f = |&: options| Pattern::new("aaa/?bbb").matches_with("aaa/.bbb", options);
+        let f = |&: options| Pattern::new("aaa/?bbb").unwrap().matches_with("aaa/.bbb", options);
         assert!(f(&options_not_require_literal_leading_dot));
         assert!(!f(&options_require_literal_leading_dot));
 
-        let f = |&: options| Pattern::new("aaa/[.]bbb").matches_with("aaa/.bbb", options);
+        let f = |&: options| Pattern::new("aaa/[.]bbb").unwrap().matches_with("aaa/.bbb", options);
         assert!(f(&options_not_require_literal_leading_dot));
         assert!(!f(&options_require_literal_leading_dot));
     }
@@ -1041,6 +1112,6 @@ mod test {
     fn test_matches_path() {
         // on windows, (Path::new("a/b").as_str().unwrap() == "a\\b"), so this
         // tests that / and \ are considered equivalent on windows
-        assert!(Pattern::new("a/b").matches_path(&Path::new("a/b")));
+        assert!(Pattern::new("a/b").unwrap().matches_path(&Path::new("a/b")));
     }
 }
