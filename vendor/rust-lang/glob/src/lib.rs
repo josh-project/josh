@@ -27,7 +27,7 @@
 
 use std::ascii::AsciiExt;
 use std::cell::Cell;
-use std::{cmp, os, path};
+use std::{cmp, path};
 use std::io::fs::{self, PathExtensions};
 use std::path::is_sep;
 use std::string::String;
@@ -91,28 +91,42 @@ pub fn glob_with(pattern: &str, options: &MatchOptions) -> Paths {
     #[cfg(not(windows))]
     fn check_windows_verbatim(_: &Path) -> bool { false }
 
-    // calculate root this way to handle volume-relative Windows paths correctly
-    let mut root = os::getcwd().unwrap();
-    let pat_root = Path::new(pattern).root_path();
-    if pat_root.is_some() {
-        if check_windows_verbatim(pat_root.as_ref().unwrap()) {
-            // FIXME: How do we want to handle verbatim paths? I'm inclined to return nothing,
-            // since we can't very well find all UNC shares with a 1-letter server name.
-            return Paths {
-                dir_patterns: Vec::new(),
-                require_dir: false,
-                options: options.clone(),
-                todo: Vec::new(),
-            };
+    #[cfg(windows)]
+    fn to_scope(p: Path) -> Path {
+        use std::os::getcwd;
+
+        if path::windows::is_vol_relative(&p) {
+            let mut cwd = getcwd().unwrap();
+            cwd.push(p);
+            cwd
+        } else {
+            p
         }
-        root.push(pat_root.as_ref().unwrap());
+    }
+    #[cfg(not(windows))]
+    fn to_scope(p: Path) -> Path { p }
+
+    let root = Path::new(pattern).root_path();
+    let root_len = root.as_ref().map_or(0us, |p| p.as_vec().len());
+
+    if root.is_some() && check_windows_verbatim(root.as_ref().unwrap()) {
+        // FIXME: How do we want to handle verbatim paths? I'm inclined to return nothing,
+        // since we can't very well find all UNC shares with a 1-letter server name.
+        return Paths {
+            dir_patterns: Vec::new(),
+            require_dir: false,
+            options: options.clone(),
+            todo: Vec::new(),
+        };
     }
 
-    let root_len = pat_root.map_or(0us, |p| p.as_vec().len());
+    let scope = root.map(to_scope).unwrap_or_else(|| Path::new("."));
+
     let dir_patterns = pattern.slice_from(cmp::min(root_len, pattern.len()))
                        .split_terminator(is_sep)
                        .map(|s| Pattern::new(s))
                        .collect::<Vec<Pattern>>();
+
     let require_dir = pattern.chars().next_back().map(is_sep) == Some(true);
 
     let mut todo = Vec::new();
@@ -120,7 +134,7 @@ pub fn glob_with(pattern: &str, options: &MatchOptions) -> Paths {
         // Shouldn't happen, but we're using -1 as a special index.
         assert!(dir_patterns.len() < -1 as usize);
 
-        fill_todo(&mut todo, dir_patterns.as_slice(), 0, &root, options);
+        fill_todo(&mut todo, dir_patterns.as_slice(), 0, &scope, options);
     }
 
     Paths {
