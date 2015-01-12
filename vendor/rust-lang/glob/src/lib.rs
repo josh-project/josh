@@ -162,7 +162,7 @@ impl Iterator for Paths {
                 return None;
             }
 
-            let (path,idx) = self.todo.pop().unwrap();
+            let (path, mut idx) = self.todo.pop().unwrap();
 
             // idx -1: was already checked by fill_todo, maybe path was '.' or
             // '..' that we can't match here because of normalization.
@@ -171,78 +171,45 @@ impl Iterator for Paths {
                 return Some(path);
             }
 
-            let ref pattern = self.dir_patterns[idx];
-            let is_recursive = pattern.is_recursive;
-            let is_last = idx == self.dir_patterns.len() - 1;
-
-            // special casing for recursive patterns when globbing
-            //   if it's a recursive pattern and it's not the last dir_patterns,
-            //   test if it matches the next non-recursive pattern,
-            //   if it does, then move to the pattern after the next pattern
-            //   otherwise accept the path based on the recursive pattern
-            //   and remain on the recursive pattern
-            if is_recursive && !is_last {
-                // the next non-recursive pattern
-                let mut next = idx + 1;
+            if self.dir_patterns[idx].is_recursive {
+                let mut next = idx;
 
                 // collapse consecutive recursive patterns
-                while next < self.dir_patterns.len() && self.dir_patterns[next].is_recursive {
+                while (next + 1) < self.dir_patterns.len() &&
+                      self.dir_patterns[next + 1].is_recursive {
                     next += 1;
                 }
 
-                // no non-recursive patterns follow the current one
-                // so auto-accept all remaining recursive paths
-                if next == self.dir_patterns.len() {
+                // the path is a directory, so it's a match
+                if path.is_dir() {
+                    // push this directory's contents
                     fill_todo(&mut self.todo, self.dir_patterns.as_slice(),
-                              next - 1, &path, &self.options);
-                    return Some(path);
+                              next, &path, &self.options);
+
+                    // pattern ends in recursive pattern, so return this directory as a result
+                    if next == self.dir_patterns.len() - 1 {
+                      return Some(path);
+                    }
+
+                    // advanced to the next pattern for this path
+                    else {
+                      idx = next + 1;
+                    }
                 }
 
-                let ref next_pattern = self.dir_patterns[next];
-                let is_match = next_pattern.matches_with(match path.filename_str() {
-                    // this ugly match needs to go here to avoid a borrowck error
-                    None => {
-                        // FIXME (#9639): How do we handle non-utf8 filenames? Ignore them for now
-                        // Ideally we'd still match them against a *
-                        continue;
-                    }
-                    Some(x) => x
-                }, &self.options);
-
-                // determine how to advance
-                let (current_idx, next_idx) =
-                    if is_match {
-                        // accept the pattern after the next non-recursive pattern
-                        (next, next + 1)
-                    } else {
-                        // next pattern still hasn't matched
-                        // so stay on this recursive pattern
-                        (next - 1, next - 1)
-                    };
-
-                if current_idx == self.dir_patterns.len() - 1 {
-                    // it is not possible for a pattern to match a directory *AND* its children
-                    // so we don't need to check the children
-
-                    if !self.require_dir || path.is_dir() {
-                        return Some(path);
-                    }
-                } else {
-                    fill_todo(&mut self.todo, self.dir_patterns.as_slice(),
-                              next_idx, &path, &self.options);
+                // advanced to the next pattern for this path
+                else if next != self.dir_patterns.len() - 1 {
+                    idx = next + 1;
                 }
-            }
 
-            // it's recursive and it's the last pattern
-            // automatically match everything else recursively
-            else if is_recursive && is_last {
-              fill_todo(&mut self.todo, self.dir_patterns.as_slice(),
-                        idx, &path, &self.options);
-              return Some(path);
+                // not a directory and it's the last pattern, meaning no match
+                else {
+                    continue;
+                }
             }
 
             // not recursive, so match normally
-            else if pattern.matches_with(match path.filename_str() {
+            if self.dir_patterns[idx].matches_with(match path.filename_str() {
                 // this ugly match needs to go here to avoid a borrowck error
                 None => {
                     // FIXME (#9639): How do we handle non-utf8 filenames? Ignore them for now
@@ -279,6 +246,7 @@ fn list_dir_sorted(path: &Path) -> Option<Vec<Path>> {
 }
 
 /// A pattern parsing error.
+#[define(Copy)]
 pub struct Error {
   /// The approximate character index of where the error occurred.
   pub pos: usize,
@@ -929,13 +897,13 @@ mod test {
     fn test_range_pattern() {
 
         let pat = Pattern::new("a[0-9]b").unwrap();
-        for i in range(0u, 10) {
+        for i in range(0us, 10) {
             assert!(pat.matches(format!("a{}b", i).as_slice()));
         }
         assert!(!pat.matches("a_b"));
 
         let pat = Pattern::new("a[!0-9]b").unwrap();
-        for i in range(0u, 10) {
+        for i in range(0us, 10) {
             assert!(!pat.matches(format!("a{}b", i).as_slice()));
         }
         assert!(pat.matches("a_b"));
