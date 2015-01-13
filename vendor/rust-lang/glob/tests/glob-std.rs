@@ -40,7 +40,7 @@ fn main() {
     }
 
     fn glob_vec(pattern: &str) -> Vec<Path> {
-        glob(pattern).unwrap().collect()
+        glob(pattern).unwrap().filter_map(|r| r.ok()).collect()
     }
 
     let root = TempDir::new("glob-tests");

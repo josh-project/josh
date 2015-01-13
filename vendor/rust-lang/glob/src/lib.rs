@@ -32,18 +32,28 @@ use std::io::fs::{self, PathExtensions};
 use std::path::is_sep;
 use std::string::String;
 use std::fmt;
+use std::io::IoError;
+use std::error::FromError;
 
 use PatternToken::{Char, AnyChar, AnySequence, AnyRecursiveSequence, AnyWithin, AnyExcept};
 use CharSpecifier::{SingleChar, CharRange};
 use MatchResult::{Match, SubPatternDoesntMatch, EntirePatternDoesntMatch};
 
-/// An iterator that yields Paths from the filesystem that match a particular
-/// pattern - see the `glob` function for more details.
+/// An iterator that yields `Path`s from the filesystem that match a particular
+/// pattern.
+///
+/// Note that it yields `GlobResult` in order to report any `IoErrors` that may
+/// arise during iteration. If a directory matches but is unreadable,
+/// thereby preventing its contents from being checked for matches, a `GlobError`
+/// is returned to express this.
+///
+/// See the `glob` function for more details.
 pub struct Paths {
     dir_patterns: Vec<Pattern>,
     require_dir: bool,
     options: MatchOptions,
-    todo: Vec<(Path,usize)>,
+    todo: Vec<Result<(Path,usize), GlobError>>,
+    scope: Option<Path>,
 }
 
 /// Return an iterator that produces all the Paths that match the given pattern,
@@ -55,6 +65,14 @@ pub struct Paths {
 /// `glob_with(pattern, MatchOptions::new())`. Use `glob_with` directly if you
 /// want to use non-default match options.
 ///
+/// When iterating, each result is a `GlobResult` which expresses the possibility
+/// that there was an `IoError` when attempting to read the contents of the matched path.
+/// In other words, each item returned by the iterator will either be an `Ok(Path)` if
+/// the path matched, or an `Err(GlobError)` if the path (partially) matched _but_
+/// its contents could not be read in order to determine if its contents matched.
+///
+/// See the `Paths` documentation for more information.
+///
 /// # Example
 ///
 /// Consider a directory `/media/pictures` containing only the files `kittens.jpg`,
@@ -63,8 +81,14 @@ pub struct Paths {
 /// ```rust
 /// use glob::glob;
 ///
-/// for path in glob("/media/pictures/*.jpg").unwrap() {
-///     println!("{}", path.display());
+/// for entry in glob("/media/pictures/*.jpg").unwrap() {
+///     match entry {
+///         Ok(path) => println!("{:?}", path.display()),
+///
+///         // if the path matched but was unreadable,
+///         // thereby preventing its contents from matching
+///         Err(e) => println!("{:?}", e),
+///     }
 /// }
 /// ```
 ///
@@ -75,7 +99,18 @@ pub struct Paths {
 /// /media/pictures/puppies.jpg
 /// ```
 ///
-pub fn glob(pattern: &str) -> Result<Paths, Error> {
+/// If you want to ignore unreadable paths, you can use something like `filter_map`:
+///
+/// ```rust
+/// use glob::glob;
+/// use std::result::Result;
+///
+/// for path in glob("/media/pictures/*.jpg").unwrap().filter_map(Result::ok) {
+///     println!("{}", path.display());
+/// }
+/// ```
+///
+pub fn glob(pattern: &str) -> Result<Paths, PatternError> {
     glob_with(pattern, &MatchOptions::new())
 }
 
@@ -90,7 +125,7 @@ pub fn glob(pattern: &str) -> Result<Paths, Error> {
 /// value passed to this function.
 ///
 /// Paths are yielded in alphabetical order.
-pub fn glob_with(pattern: &str, options: &MatchOptions) -> Result<Paths, Error> {
+pub fn glob_with(pattern: &str, options: &MatchOptions) -> Result<Paths, PatternError> {
     // make sure that the pattern is valid first, else early return with error
     let _compiled = try!(Pattern::new(pattern));
 
@@ -125,6 +160,7 @@ pub fn glob_with(pattern: &str, options: &MatchOptions) -> Result<Paths, Error> 
             require_dir: false,
             options: options.clone(),
             todo: Vec::new(),
+            scope: None,
         });
     }
 
@@ -136,47 +172,93 @@ pub fn glob_with(pattern: &str, options: &MatchOptions) -> Result<Paths, Error> 
                        .collect::<Vec<Pattern>>();
 
     let require_dir = pattern.chars().next_back().map(is_sep) == Some(true);
-
     let mut todo = Vec::new();
-    if dir_patterns.len() > 0 {
-        // Shouldn't happen, but we're using -1 as a special index.
-        assert!(dir_patterns.len() < -1 as usize);
-
-        fill_todo(&mut todo, dir_patterns.as_slice(), 0, &scope, options);
-    }
 
     Ok(Paths {
         dir_patterns: dir_patterns,
         require_dir: require_dir,
         options: options.clone(),
         todo: todo,
+        scope: Some(scope),
+    })
+}
+
+/// A glob iteration error.
+///
+/// This is typically returned when a particular path cannot be read
+/// to determine if its contents match the glob pattern. This is possible
+/// if the program lacks the permissions, for example.
+pub struct GlobError {
+  /// The Path that the error corresponds to.
+  pub path: Path,
+
+  /// The error in question.
+  pub error: IoError,
+}
+
+impl fmt::Show for GlobError {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    write!(f, "attempting to read `{:?}` resulted in an error: {:?}", self.path, self.error)
+  }
+}
+
+/// An alias for a glob iteration result.
+///
+/// This represents either a matched path or a glob iteration error,
+/// such as failing to read a particular directory's contents.
+pub type GlobResult = Result<Path, GlobError>;
+
+macro_rules! try_todo {
+    ($expr:expr) => (match $expr {
+        Ok(val) => Some(val),
+        Err(err) => {
+            return Some(Err(FromError::from_error(err)))
+        }
     })
 }
 
 impl Iterator for Paths {
-    type Item = Path;
+    type Item = GlobResult;
 
-    fn next(&mut self) -> Option<Path> {
+    fn next(&mut self) -> Option<GlobResult> {
+        // the todo buffer hasn't been initialized yet, so it's done at this point
+        // rather than in glob() so that the errors are unified
+        // that is, failing to fill the buffer is an iteration error
+        // construction of the iterator (i.e. glob()) only fails if it fails
+        // to compile the Pattern
+        if let Some(scope) = self.scope.take() {
+            if self.dir_patterns.len() > 0 {
+                // Shouldn't happen, but we're using -1 as a special index.
+                assert!(self.dir_patterns.len() < -1 as usize);
+
+                fill_todo(&mut self.todo, self.dir_patterns.as_slice(),
+                          0, &scope, &self.options);
+            }
+        }
+
         loop {
             if self.dir_patterns.is_empty() || self.todo.is_empty() {
                 return None;
             }
 
-            let (path, mut idx) = self.todo.pop().unwrap();
+            let (path, mut idx) =
+              match self.todo.pop().unwrap() {
+                Ok(pair) => pair,
+                Err(e) => return Some(Err(e)),
+              };
 
             // idx -1: was already checked by fill_todo, maybe path was '.' or
             // '..' that we can't match here because of normalization.
             if idx == -1 as usize {
                 if self.require_dir && !path.is_dir() { continue; }
-                return Some(path);
+                return Some(Ok(path));
             }
 
             if self.dir_patterns[idx].is_recursive {
                 let mut next = idx;
 
                 // collapse consecutive recursive patterns
-                while (next + 1) < self.dir_patterns.len() &&
-                      self.dir_patterns[next + 1].is_recursive {
+                while (next + 1) < self.dir_patterns.len() && self.dir_patterns[next + 1].is_recursive {
                     next += 1;
                 }
 
@@ -188,12 +270,12 @@ impl Iterator for Paths {
 
                     // pattern ends in recursive pattern, so return this directory as a result
                     if next == self.dir_patterns.len() - 1 {
-                      return Some(path);
+                        return Some(Ok(path));
                     }
 
                     // advanced to the next pattern for this path
                     else {
-                      idx = next + 1;
+                        idx = next + 1;
                     }
                 }
 
@@ -223,7 +305,7 @@ impl Iterator for Paths {
                     // so we don't need to check the children
 
                     if !self.require_dir || path.is_dir() {
-                        return Some(path);
+                        return Some(Ok(path));
                     }
                 } else {
                     fill_todo(&mut self.todo, self.dir_patterns.as_slice(),
@@ -235,19 +317,9 @@ impl Iterator for Paths {
 
 }
 
-fn list_dir_sorted(path: &Path) -> Option<Vec<Path>> {
-    match fs::readdir(path) {
-        Ok(mut children) => {
-            children.sort_by(|p1, p2| p2.filename().cmp(&p1.filename()));
-            Some(children.into_iter().collect())
-        }
-        Err(..) => None
-    }
-}
-
 /// A pattern parsing error.
 #[define(Copy)]
-pub struct Error {
+pub struct PatternError {
   /// The approximate character index of where the error occurred.
   pub pos: usize,
 
@@ -255,14 +327,14 @@ pub struct Error {
   pub msg: &'static str,
 }
 
-impl fmt::String for Error {
+impl fmt::String for PatternError {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
     write!(f, "Pattern syntax error near position {}: {}",
            self.pos, self.msg)
   }
 }
 
-impl fmt::Show for Error {
+impl fmt::Show for PatternError {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
     fmt::String::fmt(self, f)
   }
@@ -347,7 +419,7 @@ impl Pattern {
     /// This function compiles Unix shell style patterns.
     ///
     /// An invalid glob pattern will yield an error.
-    pub fn new(pattern: &str) -> Result<Pattern, Error> {
+    pub fn new(pattern: &str) -> Result<Pattern, PatternError> {
 
         let chars = pattern.chars().collect::<Vec<_>>();
         let mut tokens = Vec::new();
@@ -371,7 +443,7 @@ impl Pattern {
 
                     if count > 2 {
                         return Err(
-                          Error {
+                          PatternError {
                             pos: old + 2,
                             msg: ERROR_WILDCARDS,
                           });
@@ -393,7 +465,7 @@ impl Pattern {
                                 // `**` ends in non-separator
                                 } else {
                                     return Err(
-                                      Error  {
+                                      PatternError  {
                                         pos: i,
                                         msg: ERROR_RECURSIVE_WILDCARDS,
                                         });
@@ -401,7 +473,7 @@ impl Pattern {
                             // `**` begins with non-separator
                             } else {
                                 return Err(
-                                  Error  {
+                                  PatternError  {
                                     pos: old - 1,
                                     msg: ERROR_RECURSIVE_WILDCARDS,
                                     });
@@ -448,7 +520,7 @@ impl Pattern {
 
                     // if we get here then this is not a valid range pattern
                     return Err(
-                      Error  {
+                      PatternError  {
                         pos: i,
                         msg: ERROR_INVALID_RANGE,
                     });
@@ -620,7 +692,7 @@ impl Pattern {
 // Fills `todo` with paths under `path` to be matched by `patterns[idx]`,
 // special-casing patterns to match `.` and `..`, and avoiding `readdir()`
 // calls when there are no metacharacters in the pattern.
-fn fill_todo(todo: &mut Vec<(Path, usize)>, patterns: &[Pattern], idx: usize, path: &Path,
+fn fill_todo(todo: &mut Vec<Result<(Path, usize), GlobError>>, patterns: &[Pattern], idx: usize, path: &Path,
              options: &MatchOptions) {
     // convert a pattern that's just many Char(_) to a string
     fn pattern_as_str(pattern: &Pattern) -> Option<String> {
@@ -639,7 +711,7 @@ fn fill_todo(todo: &mut Vec<(Path, usize)>, patterns: &[Pattern], idx: usize, pa
             // We know it's good, so don't make the iterator match this path
             // against the pattern again. In particular, it can't match
             // . or .. globs since these never show up as path components.
-            todo.push((next_path, -1 as usize));
+            todo.push(Ok((next_path, -1 as usize)));
         } else {
             fill_todo(todo, patterns, idx + 1, &next_path, options);
         }
@@ -661,23 +733,26 @@ fn fill_todo(todo: &mut Vec<(Path, usize)>, patterns: &[Pattern], idx: usize, pa
             }
         },
         None => {
-            match list_dir_sorted(path) {
-                Some(entries) => {
-                    todo.extend(entries.into_iter().map(|x|(x, idx)));
+            match fs::readdir(path) {
+              Ok(mut children) => {
+                  children.sort_by(|p1, p2| p2.filename().cmp(&p1.filename()));
+                  todo.extend(children.into_iter().map(|x| Ok((x, idx))));
 
-                    // Matching the special directory entries . and .. that refer to
-                    // the current and parent directory respectively requires that
-                    // the pattern has a leading dot, even if the `MatchOptions` field
-                    // `require_literal_leading_dot` is not set.
-                    if pattern.tokens.len() > 0 && pattern.tokens[0] == Char('.') {
-                        for &special in [".", ".."].iter() {
-                            if pattern.matches_with(special, options) {
-                                add(todo, path.join(special));
-                            }
-                        }
-                    }
-                }
-                None => {}
+                  // Matching the special directory entries . and .. that refer to
+                  // the current and parent directory respectively requires that
+                  // the pattern has a leading dot, even if the `MatchOptions` field
+                  // `require_literal_leading_dot` is not set.
+                  if pattern.tokens.len() > 0 && pattern.tokens[0] == Char('.') {
+                      for &special in [".", ".."].iter() {
+                          if pattern.matches_with(special, options) {
+                              add(todo, path.join(special));
+                          }
+                      }
+                  }
+              },
+              Err(e) => {
+                todo.push(Err(GlobError { path: path.clone(), error: e, }));
+              },
             }
         }
     }
@@ -825,6 +900,15 @@ mod test {
     fn test_glob_errors() {
         assert!(glob("a/**b").err().unwrap().pos == 4);
         assert!(glob("abc[def").err().unwrap().pos == 3);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_iteration_errors() {
+        let mut iter = glob("/root/*").unwrap();
+        let next = iter.next();
+        assert!(next.is_some());
+        assert!(next.unwrap().is_err());
     }
 
     #[test]
