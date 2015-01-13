@@ -165,10 +165,14 @@ pub fn glob_with(pattern: &str, options: &MatchOptions) -> Result<Paths, Pattern
 
     let scope = root.map(to_scope).unwrap_or_else(|| Path::new("."));
 
-    let dir_patterns = pattern.slice_from(cmp::min(root_len, pattern.len()))
-                       .split_terminator(is_sep)
-                       .map(|s| Pattern::new(s).unwrap())
-                       .collect::<Vec<Pattern>>();
+    let mut dir_patterns = Vec::new();
+    let mut components = pattern.slice_from(cmp::min(root_len, pattern.len()))
+                         .split_terminator(is_sep);
+
+    for component in components {
+        let compiled = try!(Pattern::new(component));
+        dir_patterns.push(compiled);
+    }
 
     let require_dir = pattern.chars().next_back().map(is_sep) == Some(true);
     let todo = Vec::new();
