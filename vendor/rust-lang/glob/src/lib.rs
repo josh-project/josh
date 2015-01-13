@@ -33,7 +33,6 @@ use std::path::is_sep;
 use std::string::String;
 use std::fmt;
 use std::io::IoError;
-use std::error::FromError;
 
 use PatternToken::{Char, AnyChar, AnySequence, AnyRecursiveSequence, AnyWithin, AnyExcept};
 use CharSpecifier::{SingleChar, CharRange};
@@ -172,7 +171,7 @@ pub fn glob_with(pattern: &str, options: &MatchOptions) -> Result<Paths, Pattern
                        .collect::<Vec<Pattern>>();
 
     let require_dir = pattern.chars().next_back().map(is_sep) == Some(true);
-    let mut todo = Vec::new();
+    let todo = Vec::new();
 
     Ok(Paths {
         dir_patterns: dir_patterns,
@@ -189,17 +188,32 @@ pub fn glob_with(pattern: &str, options: &MatchOptions) -> Result<Paths, Pattern
 /// to determine if its contents match the glob pattern. This is possible
 /// if the program lacks the permissions, for example.
 pub struct GlobError {
-  /// The Path that the error corresponds to.
-  pub path: Path,
+    path: Path,
+    error: IoError,
+}
 
-  /// The error in question.
-  pub error: IoError,
+impl GlobError {
+    /// The Path that the error corresponds to.
+    pub fn path<'a>(&'a self) -> &'a Path {
+      &self.path
+    }
+
+    /// The error in question.
+    pub fn error<'a>(&'a self) -> &'a IoError {
+      &self.error
+    }
+}
+
+impl fmt::String for GlobError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "attempting to read `{:?}` resulted in an error: {}", self.path, self.error)
+    }
 }
 
 impl fmt::Show for GlobError {
-  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-    write!(f, "attempting to read `{:?}` resulted in an error: {:?}", self.path, self.error)
-  }
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fmt::String::fmt(self, f)
+    }
 }
 
 /// An alias for a glob iteration result.
@@ -262,21 +276,15 @@ impl Iterator for Paths {
                     // pattern ends in recursive pattern, so return this directory as a result
                     if next == self.dir_patterns.len() - 1 {
                         return Some(Ok(path));
-                    }
-
                     // advanced to the next pattern for this path
-                    else {
+                    } else {
                         idx = next + 1;
                     }
-                }
-
                 // advanced to the next pattern for this path
-                else if next != self.dir_patterns.len() - 1 {
+                } else if next != self.dir_patterns.len() - 1 {
                     idx = next + 1;
-                }
-
                 // not a directory and it's the last pattern, meaning no match
-                else {
+                } else {
                     continue;
                 }
             }
@@ -309,26 +317,25 @@ impl Iterator for Paths {
 }
 
 /// A pattern parsing error.
-#[define(Copy)]
 pub struct PatternError {
-  /// The approximate character index of where the error occurred.
-  pub pos: usize,
+    /// The approximate character index of where the error occurred.
+    pub pos: usize,
 
-  /// A message describing the error.
-  pub msg: &'static str,
+    /// A message describing the error.
+    pub msg: &'static str,
 }
 
 impl fmt::String for PatternError {
-  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-    write!(f, "Pattern syntax error near position {}: {}",
-           self.pos, self.msg)
-  }
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Pattern syntax error near position {}: {}",
+               self.pos, self.msg)
+    }
 }
 
 impl fmt::Show for PatternError {
-  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-    fmt::String::fmt(self, f)
-  }
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fmt::String::fmt(self, f)
+    }
 }
 
 /// A compiled Unix shell style pattern.
@@ -364,16 +371,16 @@ pub struct Pattern {
 
 /// Show the original glob pattern.
 impl fmt::String for Pattern {
-  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-    self.original.fmt(f)
-  }
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.original.fmt(f)
+    }
 }
 
 /// Show the original glob pattern.
 impl fmt::Show for Pattern {
-  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-    fmt::String::fmt(self, f)
-  }
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fmt::String::fmt(self, f)
+    }
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -400,11 +407,11 @@ enum MatchResult {
 }
 
 const ERROR_WILDCARDS: &'static str =
-  "wildcards are either regular `*` or recursive `**`";
+    "wildcards are either regular `*` or recursive `**`";
 const ERROR_RECURSIVE_WILDCARDS: &'static str =
-  "recursive wildcards must form a single path component";
+    "recursive wildcards must form a single path component";
 const ERROR_INVALID_RANGE: &'static str =
-  "invalid range pattern";
+    "invalid range pattern";
 
 impl Pattern {
     /// This function compiles Unix shell style patterns.
@@ -496,8 +503,7 @@ impl Pattern {
                                 continue;
                             }
                         }
-                    }
-                    else if i <= chars.len() - 3 && chars[i + 1] != '!' {
+                    } else if i <= chars.len() - 3 && chars[i + 1] != '!' {
                         match chars.slice_from(i + 2).position_elem(&']') {
                             None => (),
                             Some(j) => {
