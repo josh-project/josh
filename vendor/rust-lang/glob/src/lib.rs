@@ -208,15 +208,6 @@ impl fmt::Show for GlobError {
 /// such as failing to read a particular directory's contents.
 pub type GlobResult = Result<Path, GlobError>;
 
-macro_rules! try_todo {
-    ($expr:expr) => (match $expr {
-        Ok(val) => Some(val),
-        Err(err) => {
-            return Some(Err(FromError::from_error(err)))
-        }
-    })
-}
-
 impl Iterator for Paths {
     type Item = GlobResult;
 
