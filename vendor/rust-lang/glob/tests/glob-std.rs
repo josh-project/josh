@@ -40,7 +40,7 @@ fn main() {
     }
 
     fn glob_vec(pattern: &str) -> Vec<Path> {
-        glob(pattern).collect()
+        glob(pattern).unwrap().filter_map(|r| r.ok()).collect()
     }
 
     let root = TempDir::new("glob-tests");
@@ -77,6 +77,8 @@ fn main() {
     mk_file("r/one/a.md", false);
     mk_file("r/one/another", true);
     mk_file("r/one/another/a.md", false);
+    mk_file("r/one/another/deep", true);
+    mk_file("r/one/another/deep/spelunking.md", false);
     mk_file("r/another", true);
     mk_file("r/another/a.md", false);
     mk_file("r/two", true);
@@ -87,19 +89,22 @@ fn main() {
     // all recursive entities
     assert_eq!(glob_vec("r/**"), vec!(
         Path::new("r/another"),
-        Path::new("r/another/a.md"),
-        Path::new("r/current_dir.md"),
         Path::new("r/one"),
-        Path::new("r/one/a.md"),
         Path::new("r/one/another"),
-        Path::new("r/one/another/a.md"),
+        Path::new("r/one/another/deep"),
         Path::new("r/three"),
-        Path::new("r/three/c.md"),
-        Path::new("r/two"),
-        Path::new("r/two/b.md")));
+        Path::new("r/two")));
 
     // collapse consecutive recursive patterns
     assert_eq!(glob_vec("r/**/**"), vec!(
+        Path::new("r/another"),
+        Path::new("r/one"),
+        Path::new("r/one/another"),
+        Path::new("r/one/another/deep"),
+        Path::new("r/three"),
+        Path::new("r/two")));
+
+    assert_eq!(glob_vec("r/**/*"), vec!(
         Path::new("r/another"),
         Path::new("r/another/a.md"),
         Path::new("r/current_dir.md"),
@@ -107,6 +112,8 @@ fn main() {
         Path::new("r/one/a.md"),
         Path::new("r/one/another"),
         Path::new("r/one/another/a.md"),
+        Path::new("r/one/another/deep"),
+        Path::new("r/one/another/deep/spelunking.md"),
         Path::new("r/three"),
         Path::new("r/three/c.md"),
         Path::new("r/two"),
@@ -118,6 +125,7 @@ fn main() {
         Path::new("r/current_dir.md"),
         Path::new("r/one/a.md"),
         Path::new("r/one/another/a.md"),
+        Path::new("r/one/another/deep/spelunking.md"),
         Path::new("r/three/c.md"),
         Path::new("r/two/b.md")));
 
