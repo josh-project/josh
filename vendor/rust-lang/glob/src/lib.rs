@@ -24,6 +24,7 @@
        html_favicon_url = "http://www.rust-lang.org/favicon.ico",
        html_root_url = "http://doc.rust-lang.org/glob/")]
 #![allow(unstable)]
+#![cfg_attr(test, deny(warnings))]
 
 use std::ascii::AsciiExt;
 use std::cell::Cell;
@@ -166,8 +167,8 @@ pub fn glob_with(pattern: &str, options: &MatchOptions) -> Result<Paths, Pattern
     let scope = root.map(to_scope).unwrap_or_else(|| Path::new("."));
 
     let mut dir_patterns = Vec::new();
-    let mut components = pattern.slice_from(cmp::min(root_len, pattern.len()))
-                         .split_terminator(is_sep);
+    let mut components = pattern[cmp::min(root_len, pattern.len())..]
+                                .split_terminator(is_sep);
 
     for component in components {
         let compiled = try!(Pattern::new(component));
@@ -191,6 +192,7 @@ pub fn glob_with(pattern: &str, options: &MatchOptions) -> Result<Paths, Pattern
 /// This is typically returned when a particular path cannot be read
 /// to determine if its contents match the glob pattern. This is possible
 /// if the program lacks the permissions, for example.
+#[derive(Debug)]
 pub struct GlobError {
     path: Path,
     error: IoError,
@@ -208,15 +210,10 @@ impl GlobError {
     }
 }
 
-impl fmt::String for GlobError {
+impl fmt::Display for GlobError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "attempting to read `{:?}` resulted in an error: {}", self.path, self.error)
-    }
-}
-
-impl fmt::Show for GlobError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        fmt::String::fmt(self, f)
+        write!(f, "attempting to read `{}` resulted in an error: {}",
+               self.path.display(), self.error)
     }
 }
 
@@ -321,6 +318,8 @@ impl Iterator for Paths {
 }
 
 /// A pattern parsing error.
+#[derive(Debug)]
+#[allow(missing_copy_implementations)]
 pub struct PatternError {
     /// The approximate character index of where the error occurred.
     pub pos: usize,
@@ -329,16 +328,10 @@ pub struct PatternError {
     pub msg: &'static str,
 }
 
-impl fmt::String for PatternError {
+impl fmt::Display for PatternError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "Pattern syntax error near position {}: {}",
                self.pos, self.msg)
-    }
-}
-
-impl fmt::Show for PatternError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        fmt::String::fmt(self, f)
     }
 }
 
@@ -366,7 +359,7 @@ impl fmt::Show for PatternError {
 /// set, so `]` and NOT `]` can be matched by `[]]` and `[!]]` respectively.
 /// The `-` character can be specified inside a character sequence pattern by
 /// placing it at the start or the end, e.g. `[abc-]`.
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Debug)]
 pub struct Pattern {
     original: String,
     tokens: Vec<PatternToken>,
@@ -374,20 +367,13 @@ pub struct Pattern {
 }
 
 /// Show the original glob pattern.
-impl fmt::String for Pattern {
+impl fmt::Display for Pattern {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         self.original.fmt(f)
     }
 }
 
-/// Show the original glob pattern.
-impl fmt::Show for Pattern {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        fmt::String::fmt(self, f)
-    }
-}
-
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 enum PatternToken {
     Char(char),
     AnyChar,
@@ -397,7 +383,7 @@ enum PatternToken {
     AnyExcept(Vec<CharSpecifier> )
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 enum CharSpecifier {
     SingleChar(char),
     CharRange(char, char)
@@ -497,10 +483,10 @@ impl Pattern {
                 '[' => {
 
                     if i <= chars.len() - 4 && chars[i + 1] == '!' {
-                        match chars.slice_from(i + 3).position_elem(&']') {
+                        match chars[i + 3..].position_elem(&']') {
                             None => (),
                             Some(j) => {
-                                let chars = chars.slice(i + 2, i + 3 + j);
+                                let chars = &chars[i + 2 .. i + 3 + j];
                                 let cs = parse_char_specifiers(chars);
                                 tokens.push(AnyExcept(cs));
                                 i += j + 4;
@@ -508,10 +494,10 @@ impl Pattern {
                             }
                         }
                     } else if i <= chars.len() - 3 && chars[i + 1] != '!' {
-                        match chars.slice_from(i + 2).position_elem(&']') {
+                        match chars[i + 2..].position_elem(&']') {
                             None => (),
                             Some(j) => {
-                                let cs = parse_char_specifiers(chars.slice(i + 1, i + 2 + j));
+                                let cs = parse_char_specifiers(&chars[i + 1 .. i + 2 + j]);
                                 tokens.push(AnyWithin(cs));
                                 i += j + 3;
                                 continue;
@@ -619,7 +605,7 @@ impl Pattern {
              && is_sep(prev_char.get().unwrap_or('/')))
         };
 
-        for (ti, token) in self.tokens.slice_from(i).iter().enumerate() {
+        for (ti, token) in self.tokens[i..].iter().enumerate() {
             match *token {
                 AnySequence | AnyRecursiveSequence => {
                     loop {
@@ -918,7 +904,7 @@ mod test {
         let err = next.unwrap();
         assert!(err.is_err());
 
-        let err = err.unwrap_err();
+        let err = err.err().unwrap();
         assert!(*err.path() == Path::new("/root"));
         assert!(err.error().kind == ::std::io::IoErrorKind::PermissionDenied);
     }
