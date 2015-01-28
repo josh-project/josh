@@ -29,11 +29,11 @@
 use std::ascii::AsciiExt;
 use std::cell::Cell;
 use std::{cmp, path};
-use std::io::fs::{self, PathExtensions};
+use std::old_io::fs::{self, PathExtensions};
 use std::path::is_sep;
 use std::string::String;
 use std::fmt;
-use std::io::IoError;
+use std::old_io::IoError;
 
 use PatternToken::{Char, AnyChar, AnySequence, AnyRecursiveSequence, AnyWithin, AnyExcept};
 use CharSpecifier::{SingleChar, CharRange};
@@ -906,7 +906,7 @@ mod test {
 
         let err = err.err().unwrap();
         assert!(*err.path() == Path::new("/root"));
-        assert!(err.error().kind == ::std::io::IoErrorKind::PermissionDenied);
+        assert!(err.error().kind == ::std::old_io::IoErrorKind::PermissionDenied);
     }
 
     #[test]

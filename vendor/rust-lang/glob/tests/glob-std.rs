@@ -10,14 +10,12 @@
 
 // ignore-windows TempDir may cause IoError on windows: #10462
 
-#![feature(macro_rules)]
-
 extern crate glob;
 
 use glob::glob;
 use std::os;
-use std::io;
-use std::io::TempDir;
+use std::old_io;
+use std::old_io::TempDir;
 
 macro_rules! assert_eq { ($e1:expr, $e2:expr) => (
     if $e1 != $e2 {
@@ -29,9 +27,9 @@ macro_rules! assert_eq { ($e1:expr, $e2:expr) => (
 fn main() {
     fn mk_file(path: &str, directory: bool) {
         if directory {
-            io::fs::mkdir(&Path::new(path), io::USER_RWX).unwrap();
+            old_io::fs::mkdir(&Path::new(path), old_io::USER_RWX).unwrap();
         } else {
-            io::File::create(&Path::new(path)).unwrap();
+            old_io::File::create(&Path::new(path)).unwrap();
         }
     }
 
