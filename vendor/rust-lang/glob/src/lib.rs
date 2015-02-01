@@ -23,8 +23,9 @@
 #![doc(html_logo_url = "http://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png",
        html_favicon_url = "http://www.rust-lang.org/favicon.ico",
        html_root_url = "http://doc.rust-lang.org/glob/")]
-#![allow(unstable)]
 #![cfg_attr(test, deny(warnings))]
+#![cfg_attr(test, feature(os))]
+#![feature(path, io, core, collections, hash, std_misc, unicode)]
 
 use std::ascii::AsciiExt;
 use std::cell::Cell;
