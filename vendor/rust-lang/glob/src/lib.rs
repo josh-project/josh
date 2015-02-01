@@ -23,8 +23,9 @@
 #![doc(html_logo_url = "http://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png",
        html_favicon_url = "http://www.rust-lang.org/favicon.ico",
        html_root_url = "http://doc.rust-lang.org/glob/")]
-#![allow(unstable)]
 #![cfg_attr(test, deny(warnings))]
+#![cfg_attr(test, feature(os))]
+#![feature(path, io, core, collections, hash, std_misc, unicode)]
 
 use std::ascii::AsciiExt;
 use std::cell::Cell;
@@ -705,7 +706,7 @@ fn fill_todo(todo: &mut Vec<Result<(Path, usize), GlobError>>, patterns: &[Patte
     };
 
     let pattern = &patterns[idx];
-
+    let is_dir = path.is_dir();
     match pattern_as_str(pattern) {
         Some(s) => {
             // This pattern component doesn't have any metacharacters, so we
@@ -715,11 +716,11 @@ fn fill_todo(todo: &mut Vec<Result<(Path, usize), GlobError>>, patterns: &[Patte
             // right away.
             let special = "." == s.as_slice() || ".." == s.as_slice();
             let next_path = path.join(s.as_slice());
-            if (special && path.is_dir()) || (!special && next_path.exists()) {
+            if (special && is_dir) || (!special && next_path.exists()) {
                 add(todo, next_path);
             }
         },
-        None => {
+        None if is_dir => {
             match fs::readdir(path) {
               Ok(mut children) => {
                   children.sort_by(|p1, p2| p2.filename().cmp(&p1.filename()));
@@ -742,6 +743,7 @@ fn fill_todo(todo: &mut Vec<Result<(Path, usize), GlobError>>, patterns: &[Patte
               },
             }
         }
+        None => {/* not a directory, nothing more to find */}
     }
 }
 
