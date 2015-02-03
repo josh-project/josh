@@ -11,6 +11,8 @@
 // ignore-windows TempDir may cause IoError on windows: #10462
 #![feature(path, os, io)]
 
+#![feature(path, os, io)]
+
 extern crate glob;
 
 use glob::glob;
@@ -32,10 +34,6 @@ fn main() {
         } else {
             old_io::File::create(&Path::new(path)).unwrap();
         }
-    }
-
-    fn abs_path(path: &str) -> Path {
-        os::getcwd().unwrap().join(&Path::new(path))
     }
 
     fn glob_vec(pattern: &str) -> Vec<Path> {

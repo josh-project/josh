@@ -168,8 +168,8 @@ pub fn glob_with(pattern: &str, options: &MatchOptions) -> Result<Paths, Pattern
     let scope = root.map(to_scope).unwrap_or_else(|| Path::new("."));
 
     let mut dir_patterns = Vec::new();
-    let mut components = pattern[cmp::min(root_len, pattern.len())..]
-                                .split_terminator(is_sep);
+    let components = pattern[cmp::min(root_len, pattern.len())..]
+                            .split_terminator(is_sep);
 
     for component in components {
         let compiled = try!(Pattern::new(component));
