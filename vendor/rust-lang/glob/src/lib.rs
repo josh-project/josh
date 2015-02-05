@@ -24,14 +24,14 @@
        html_favicon_url = "http://www.rust-lang.org/favicon.ico",
        html_root_url = "http://doc.rust-lang.org/glob/")]
 #![cfg_attr(test, deny(warnings))]
-#![cfg_attr(test, feature(os))]
-#![feature(path, io, core, collections, hash, std_misc, unicode)]
+#![feature(path, io, core, collections, hash, std_misc, unicode, env)]
 
 use std::ascii::AsciiExt;
 use std::cell::Cell;
-use std::{cmp, path};
+use std::cmp;
 use std::old_io::fs::{self, PathExtensions};
-use std::path::is_sep;
+use std::old_path as path;
+use std::old_path::is_sep;
 use std::string::String;
 use std::fmt;
 use std::old_io::IoError;
@@ -137,10 +137,10 @@ pub fn glob_with(pattern: &str, options: &MatchOptions) -> Result<Paths, Pattern
 
     #[cfg(windows)]
     fn to_scope(p: Path) -> Path {
-        use std::os::getcwd;
+        use std::env::current_dir;
 
         if path::windows::is_vol_relative(&p) {
-            let mut cwd = getcwd().unwrap();
+            let mut cwd = current_dir().unwrap();
             cwd.push(p);
             cwd
         } else {
@@ -861,7 +861,7 @@ impl MatchOptions {
 
 #[cfg(test)]
 mod test {
-    use std::os;
+    use std::env;
     use super::{glob, Pattern, MatchOptions};
 
     #[test]
@@ -918,7 +918,7 @@ mod test {
         assert!(glob("//").unwrap().next().is_some());
 
         // check windows absolute paths with host/device components
-        let root_with_device = os::getcwd().unwrap().root_path().unwrap().join("*");
+        let root_with_device = env::current_dir().unwrap().root_path().unwrap().join("*");
         // FIXME (#9639): This needs to handle non-utf8 paths
         assert!(glob(root_with_device.as_str().unwrap()).unwrap().next().is_some());
     }

@@ -9,14 +9,12 @@
 // except according to those terms.
 
 // ignore-windows TempDir may cause IoError on windows: #10462
-#![feature(path, os, io)]
-
-#![feature(path, os, io)]
+#![feature(path, env, io)]
 
 extern crate glob;
 
 use glob::glob;
-use std::os;
+use std::env;
 use std::old_io;
 use std::old_io::TempDir;
 
@@ -42,7 +40,7 @@ fn main() {
 
     let root = TempDir::new("glob-tests");
     let root = root.ok().expect("Should have created a temp directory");
-    assert!(os::change_dir(root.path()).is_ok());
+    assert!(env::set_current_dir(root.path()).is_ok());
 
     mk_file("aaa", true);
     mk_file("aaa/apple", true);
@@ -55,7 +53,7 @@ fn main() {
     mk_file("bbb/specials/!", false);
 
     // windows does not allow `*` or `?` characters to exist in filenames
-    if os::consts::FAMILY != "windows" {
+    if env::consts::FAMILY != "windows" {
         mk_file("bbb/specials/*", false);
         mk_file("bbb/specials/?", false);
     }
@@ -156,7 +154,7 @@ fn main() {
     assert_eq!(glob_vec("aaa/apple/nope"), Vec::new());
 
     // windows should support both / and \ as directory separators
-    if os::consts::FAMILY == "windows" {
+    if env::consts::FAMILY == "windows" {
         assert_eq!(glob_vec("aaa\\apple"), vec!(Path::new("aaa/apple")));
     }
 
@@ -228,12 +226,12 @@ fn main() {
     assert_eq!(glob_vec("bbb/specials/!"), vec!(Path::new("bbb/specials/!")));
     assert_eq!(glob_vec("bbb/specials/[]]"), vec!(Path::new("bbb/specials/]")));
 
-    if os::consts::FAMILY != "windows" {
+    if env::consts::FAMILY != "windows" {
         assert_eq!(glob_vec("bbb/specials/[*]"), vec!(Path::new("bbb/specials/*")));
         assert_eq!(glob_vec("bbb/specials/[?]"), vec!(Path::new("bbb/specials/?")));
     }
 
-    if os::consts::FAMILY == "windows" {
+    if env::consts::FAMILY == "windows" {
 
         assert_eq!(glob_vec("bbb/specials/[![]"), vec!(
             Path::new("bbb/specials/!"),
