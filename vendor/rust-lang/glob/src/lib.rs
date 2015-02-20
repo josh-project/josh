@@ -25,7 +25,7 @@
        html_root_url = "http://doc.rust-lang.org/glob/")]
 #![cfg_attr(test, deny(warnings))]
 #![cfg_attr(test, feature(env))]
-#![feature(old_path, old_io, core, collections, hash, unicode)]
+#![feature(old_path, old_io, core, collections, unicode)]
 
 use std::ascii::AsciiExt;
 use std::cell::Cell;
@@ -152,7 +152,7 @@ pub fn glob_with(pattern: &str, options: &MatchOptions) -> Result<Paths, Pattern
     fn to_scope(p: Path) -> Path { p }
 
     let root = Path::new(pattern).root_path();
-    let root_len = root.as_ref().map_or(0us, |p| p.as_vec().len());
+    let root_len = root.as_ref().map_or(0, |p| p.as_vec().len());
 
     if root.is_some() && check_windows_verbatim(root.as_ref().unwrap()) {
         // FIXME: How do we want to handle verbatim paths? I'm inclined to return nothing,
@@ -982,13 +982,13 @@ mod test {
     fn test_range_pattern() {
 
         let pat = Pattern::new("a[0-9]b").unwrap();
-        for i in range(0us, 10) {
+        for i in 0..10 {
             assert!(pat.matches(format!("a{}b", i).as_slice()));
         }
         assert!(!pat.matches("a_b"));
 
         let pat = Pattern::new("a[!0-9]b").unwrap();
-        for i in range(0us, 10) {
+        for i in 0..10 {
             assert!(!pat.matches(format!("a{}b", i).as_slice()));
         }
         assert!(pat.matches("a_b"));
