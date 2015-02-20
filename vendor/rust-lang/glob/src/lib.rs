@@ -25,7 +25,7 @@
        html_root_url = "http://doc.rust-lang.org/glob/")]
 #![cfg_attr(test, deny(warnings))]
 #![cfg_attr(test, feature(env))]
-#![feature(path, io, core, collections, hash, std_misc, unicode)]
+#![feature(old_path, old_io, core, collections, hash, unicode)]
 
 use std::ascii::AsciiExt;
 use std::cell::Cell;

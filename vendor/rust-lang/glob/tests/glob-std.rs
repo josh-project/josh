@@ -9,7 +9,7 @@
 // except according to those terms.
 
 // ignore-windows TempDir may cause IoError on windows: #10462
-#![feature(path, env, io)]
+#![feature(old_path, env, old_io)]
 
 extern crate glob;
 
