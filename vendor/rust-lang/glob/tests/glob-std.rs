@@ -9,38 +9,37 @@
 // except according to those terms.
 
 // ignore-windows TempDir may cause IoError on windows: #10462
-#![feature(old_path, env, old_io)]
+
+#![feature(old_path, env, old_io, path, fs, io)]
 
 extern crate glob;
 
 use glob::glob;
 use std::env;
-use std::old_io;
-use std::old_io::TempDir;
+use std::path::PathBuf;
+use std::fs;
+use tempdir::TempDir;
 
-macro_rules! assert_eq { ($e1:expr, $e2:expr) => (
-    if $e1 != $e2 {
-        panic!("{} != {}", stringify!($e1), stringify!($e2))
-    }
-) }
+mod tempdir;
 
 #[test]
 fn main() {
     fn mk_file(path: &str, directory: bool) {
         if directory {
-            old_io::fs::mkdir(&Path::new(path), old_io::USER_RWX).unwrap();
+            fs::create_dir(path).unwrap();
         } else {
-            old_io::File::create(&Path::new(path)).unwrap();
+            fs::File::create(path).unwrap();
         }
     }
 
-    fn glob_vec(pattern: &str) -> Vec<Path> {
+    fn glob_vec(pattern: &str) -> Vec<PathBuf> {
         glob(pattern).unwrap().map(|r| r.unwrap()).collect()
     }
 
     let root = TempDir::new("glob-tests");
     let root = root.ok().expect("Should have created a temp directory");
-    assert!(env::set_current_dir(root.path()).is_ok());
+    let old_root = std::old_path::Path::new(root.path().to_str().unwrap());
+    assert!(env::set_current_dir(&old_root).is_ok());
 
     mk_file("aaa", true);
     mk_file("aaa/apple", true);
@@ -83,199 +82,199 @@ fn main() {
 
     // all recursive entities
     assert_eq!(glob_vec("r/**"), vec!(
-        Path::new("r/another"),
-        Path::new("r/one"),
-        Path::new("r/one/another"),
-        Path::new("r/one/another/deep"),
-        Path::new("r/three"),
-        Path::new("r/two")));
+        PathBuf::new("r/another"),
+        PathBuf::new("r/one"),
+        PathBuf::new("r/one/another"),
+        PathBuf::new("r/one/another/deep"),
+        PathBuf::new("r/three"),
+        PathBuf::new("r/two")));
 
     // collapse consecutive recursive patterns
     assert_eq!(glob_vec("r/**/**"), vec!(
-        Path::new("r/another"),
-        Path::new("r/one"),
-        Path::new("r/one/another"),
-        Path::new("r/one/another/deep"),
-        Path::new("r/three"),
-        Path::new("r/two")));
+        PathBuf::new("r/another"),
+        PathBuf::new("r/one"),
+        PathBuf::new("r/one/another"),
+        PathBuf::new("r/one/another/deep"),
+        PathBuf::new("r/three"),
+        PathBuf::new("r/two")));
 
     assert_eq!(glob_vec("r/**/*"), vec!(
-        Path::new("r/another"),
-        Path::new("r/another/a.md"),
-        Path::new("r/current_dir.md"),
-        Path::new("r/one"),
-        Path::new("r/one/a.md"),
-        Path::new("r/one/another"),
-        Path::new("r/one/another/a.md"),
-        Path::new("r/one/another/deep"),
-        Path::new("r/one/another/deep/spelunking.md"),
-        Path::new("r/three"),
-        Path::new("r/three/c.md"),
-        Path::new("r/two"),
-        Path::new("r/two/b.md")));
+        PathBuf::new("r/another"),
+        PathBuf::new("r/another/a.md"),
+        PathBuf::new("r/current_dir.md"),
+        PathBuf::new("r/one"),
+        PathBuf::new("r/one/a.md"),
+        PathBuf::new("r/one/another"),
+        PathBuf::new("r/one/another/a.md"),
+        PathBuf::new("r/one/another/deep"),
+        PathBuf::new("r/one/another/deep/spelunking.md"),
+        PathBuf::new("r/three"),
+        PathBuf::new("r/three/c.md"),
+        PathBuf::new("r/two"),
+        PathBuf::new("r/two/b.md")));
 
     // followed by a wildcard
     assert_eq!(glob_vec("r/**/*.md"), vec!(
-        Path::new("r/another/a.md"),
-        Path::new("r/current_dir.md"),
-        Path::new("r/one/a.md"),
-        Path::new("r/one/another/a.md"),
-        Path::new("r/one/another/deep/spelunking.md"),
-        Path::new("r/three/c.md"),
-        Path::new("r/two/b.md")));
+        PathBuf::new("r/another/a.md"),
+        PathBuf::new("r/current_dir.md"),
+        PathBuf::new("r/one/a.md"),
+        PathBuf::new("r/one/another/a.md"),
+        PathBuf::new("r/one/another/deep/spelunking.md"),
+        PathBuf::new("r/three/c.md"),
+        PathBuf::new("r/two/b.md")));
 
     // followed by a precise pattern
     assert_eq!(glob_vec("r/one/**/a.md"), vec!(
-        Path::new("r/one/a.md"),
-        Path::new("r/one/another/a.md")));
+        PathBuf::new("r/one/a.md"),
+        PathBuf::new("r/one/another/a.md")));
 
     // followed by another recursive pattern
     // collapses consecutive recursives into one
     assert_eq!(glob_vec("r/one/**/**/a.md"), vec!(
-        Path::new("r/one/a.md"),
-        Path::new("r/one/another/a.md")));
+        PathBuf::new("r/one/a.md"),
+        PathBuf::new("r/one/another/a.md")));
 
     // followed by two precise patterns
     assert_eq!(glob_vec("r/**/another/a.md"), vec!(
-        Path::new("r/another/a.md"),
-        Path::new("r/one/another/a.md")));
+        PathBuf::new("r/another/a.md"),
+        PathBuf::new("r/one/another/a.md")));
 
     assert_eq!(glob_vec(""), Vec::new());
-    assert_eq!(glob_vec("."), vec!(Path::new(".")));
-    assert_eq!(glob_vec(".."), vec!(Path::new("..")));
+    assert_eq!(glob_vec("."), vec!(PathBuf::new(".")));
+    assert_eq!(glob_vec(".."), vec!(PathBuf::new("..")));
 
-    assert_eq!(glob_vec("aaa"), vec!(Path::new("aaa")));
-    assert_eq!(glob_vec("aaa/"), vec!(Path::new("aaa")));
+    assert_eq!(glob_vec("aaa"), vec!(PathBuf::new("aaa")));
+    assert_eq!(glob_vec("aaa/"), vec!(PathBuf::new("aaa")));
     assert_eq!(glob_vec("a"), Vec::new());
     assert_eq!(glob_vec("aa"), Vec::new());
     assert_eq!(glob_vec("aaaa"), Vec::new());
 
-    assert_eq!(glob_vec("aaa/apple"), vec!(Path::new("aaa/apple")));
+    assert_eq!(glob_vec("aaa/apple"), vec!(PathBuf::new("aaa/apple")));
     assert_eq!(glob_vec("aaa/apple/nope"), Vec::new());
 
     // windows should support both / and \ as directory separators
     if env::consts::FAMILY == "windows" {
-        assert_eq!(glob_vec("aaa\\apple"), vec!(Path::new("aaa/apple")));
+        assert_eq!(glob_vec("aaa\\apple"), vec!(PathBuf::new("aaa/apple")));
     }
 
     assert_eq!(glob_vec("???/"), vec!(
-        Path::new("aaa"),
-        Path::new("bbb"),
-        Path::new("ccc"),
-        Path::new("xyz")));
+        PathBuf::new("aaa"),
+        PathBuf::new("bbb"),
+        PathBuf::new("ccc"),
+        PathBuf::new("xyz")));
 
     assert_eq!(glob_vec("aaa/tomato/tom?to.txt"), vec!(
-        Path::new("aaa/tomato/tomato.txt"),
-        Path::new("aaa/tomato/tomoto.txt")));
+        PathBuf::new("aaa/tomato/tomato.txt"),
+        PathBuf::new("aaa/tomato/tomoto.txt")));
 
     assert_eq!(glob_vec("xyz/?"), vec!(
-        Path::new("xyz/x"),
-        Path::new("xyz/y"),
-        Path::new("xyz/z")));
+        PathBuf::new("xyz/x"),
+        PathBuf::new("xyz/y"),
+        PathBuf::new("xyz/z")));
 
-    assert_eq!(glob_vec("a*"), vec!(Path::new("aaa")));
-    assert_eq!(glob_vec("*a*"), vec!(Path::new("aaa")));
-    assert_eq!(glob_vec("a*a"), vec!(Path::new("aaa")));
-    assert_eq!(glob_vec("aaa*"), vec!(Path::new("aaa")));
-    assert_eq!(glob_vec("*aaa"), vec!(Path::new("aaa")));
-    assert_eq!(glob_vec("*aaa*"), vec!(Path::new("aaa")));
-    assert_eq!(glob_vec("*a*a*a*"), vec!(Path::new("aaa")));
-    assert_eq!(glob_vec("aaa*/"), vec!(Path::new("aaa")));
+    assert_eq!(glob_vec("a*"), vec!(PathBuf::new("aaa")));
+    assert_eq!(glob_vec("*a*"), vec!(PathBuf::new("aaa")));
+    assert_eq!(glob_vec("a*a"), vec!(PathBuf::new("aaa")));
+    assert_eq!(glob_vec("aaa*"), vec!(PathBuf::new("aaa")));
+    assert_eq!(glob_vec("*aaa"), vec!(PathBuf::new("aaa")));
+    assert_eq!(glob_vec("*aaa*"), vec!(PathBuf::new("aaa")));
+    assert_eq!(glob_vec("*a*a*a*"), vec!(PathBuf::new("aaa")));
+    assert_eq!(glob_vec("aaa*/"), vec!(PathBuf::new("aaa")));
 
     assert_eq!(glob_vec("aaa/*"), vec!(
-        Path::new("aaa/apple"),
-        Path::new("aaa/orange"),
-        Path::new("aaa/tomato")));
+        PathBuf::new("aaa/apple"),
+        PathBuf::new("aaa/orange"),
+        PathBuf::new("aaa/tomato")));
 
     assert_eq!(glob_vec("aaa/*a*"), vec!(
-        Path::new("aaa/apple"),
-        Path::new("aaa/orange"),
-        Path::new("aaa/tomato")));
+        PathBuf::new("aaa/apple"),
+        PathBuf::new("aaa/orange"),
+        PathBuf::new("aaa/tomato")));
 
     assert_eq!(glob_vec("*/*/*.txt"), vec!(
-        Path::new("aaa/tomato/tomato.txt"),
-        Path::new("aaa/tomato/tomoto.txt")));
+        PathBuf::new("aaa/tomato/tomato.txt"),
+        PathBuf::new("aaa/tomato/tomoto.txt")));
 
     assert_eq!(glob_vec("*/*/t[aob]m?to[.]t[!y]t"), vec!(
-        Path::new("aaa/tomato/tomato.txt"),
-        Path::new("aaa/tomato/tomoto.txt")));
+        PathBuf::new("aaa/tomato/tomato.txt"),
+        PathBuf::new("aaa/tomato/tomoto.txt")));
 
-    assert_eq!(glob_vec("./aaa"), vec!(Path::new("aaa")));
+    assert_eq!(glob_vec("./aaa"), vec!(PathBuf::new("aaa")));
     assert_eq!(glob_vec("./*"), glob_vec("*"));
-    assert_eq!(glob_vec("*/..").pop().unwrap(), Path::new("."));
-    assert_eq!(glob_vec("aaa/../bbb"), vec!(Path::new("bbb")));
+    assert_eq!(glob_vec("*/..").pop().unwrap(), PathBuf::new("xyz/.."));
+    assert_eq!(glob_vec("aaa/../bbb"), vec!(PathBuf::new("aaa/../bbb")));
     assert_eq!(glob_vec("nonexistent/../bbb"), Vec::new());
     assert_eq!(glob_vec("aaa/tomato/tomato.txt/.."), Vec::new());
 
     assert_eq!(glob_vec("aaa/tomato/tomato.txt/"), Vec::new());
 
-    assert_eq!(glob_vec("aa[a]"), vec!(Path::new("aaa")));
-    assert_eq!(glob_vec("aa[abc]"), vec!(Path::new("aaa")));
-    assert_eq!(glob_vec("a[bca]a"), vec!(Path::new("aaa")));
+    assert_eq!(glob_vec("aa[a]"), vec!(PathBuf::new("aaa")));
+    assert_eq!(glob_vec("aa[abc]"), vec!(PathBuf::new("aaa")));
+    assert_eq!(glob_vec("a[bca]a"), vec!(PathBuf::new("aaa")));
     assert_eq!(glob_vec("aa[b]"), Vec::new());
     assert_eq!(glob_vec("aa[xyz]"), Vec::new());
     assert_eq!(glob_vec("aa[]]"), Vec::new());
 
-    assert_eq!(glob_vec("aa[!b]"), vec!(Path::new("aaa")));
-    assert_eq!(glob_vec("aa[!bcd]"), vec!(Path::new("aaa")));
-    assert_eq!(glob_vec("a[!bcd]a"), vec!(Path::new("aaa")));
+    assert_eq!(glob_vec("aa[!b]"), vec!(PathBuf::new("aaa")));
+    assert_eq!(glob_vec("aa[!bcd]"), vec!(PathBuf::new("aaa")));
+    assert_eq!(glob_vec("a[!bcd]a"), vec!(PathBuf::new("aaa")));
     assert_eq!(glob_vec("aa[!a]"), Vec::new());
     assert_eq!(glob_vec("aa[!abc]"), Vec::new());
 
-    assert_eq!(glob_vec("bbb/specials/[[]"), vec!(Path::new("bbb/specials/[")));
-    assert_eq!(glob_vec("bbb/specials/!"), vec!(Path::new("bbb/specials/!")));
-    assert_eq!(glob_vec("bbb/specials/[]]"), vec!(Path::new("bbb/specials/]")));
+    assert_eq!(glob_vec("bbb/specials/[[]"), vec!(PathBuf::new("bbb/specials/[")));
+    assert_eq!(glob_vec("bbb/specials/!"), vec!(PathBuf::new("bbb/specials/!")));
+    assert_eq!(glob_vec("bbb/specials/[]]"), vec!(PathBuf::new("bbb/specials/]")));
 
     if env::consts::FAMILY != "windows" {
-        assert_eq!(glob_vec("bbb/specials/[*]"), vec!(Path::new("bbb/specials/*")));
-        assert_eq!(glob_vec("bbb/specials/[?]"), vec!(Path::new("bbb/specials/?")));
+        assert_eq!(glob_vec("bbb/specials/[*]"), vec!(PathBuf::new("bbb/specials/*")));
+        assert_eq!(glob_vec("bbb/specials/[?]"), vec!(PathBuf::new("bbb/specials/?")));
     }
 
     if env::consts::FAMILY == "windows" {
 
         assert_eq!(glob_vec("bbb/specials/[![]"), vec!(
-            Path::new("bbb/specials/!"),
-            Path::new("bbb/specials/]")));
+            PathBuf::new("bbb/specials/!"),
+            PathBuf::new("bbb/specials/]")));
 
         assert_eq!(glob_vec("bbb/specials/[!]]"), vec!(
-            Path::new("bbb/specials/!"),
-            Path::new("bbb/specials/[")));
+            PathBuf::new("bbb/specials/!"),
+            PathBuf::new("bbb/specials/[")));
 
         assert_eq!(glob_vec("bbb/specials/[!!]"), vec!(
-            Path::new("bbb/specials/["),
-            Path::new("bbb/specials/]")));
+            PathBuf::new("bbb/specials/["),
+            PathBuf::new("bbb/specials/]")));
 
     } else {
 
         assert_eq!(glob_vec("bbb/specials/[![]"), vec!(
-            Path::new("bbb/specials/!"),
-            Path::new("bbb/specials/*"),
-            Path::new("bbb/specials/?"),
-            Path::new("bbb/specials/]")));
+            PathBuf::new("bbb/specials/!"),
+            PathBuf::new("bbb/specials/*"),
+            PathBuf::new("bbb/specials/?"),
+            PathBuf::new("bbb/specials/]")));
 
         assert_eq!(glob_vec("bbb/specials/[!]]"), vec!(
-            Path::new("bbb/specials/!"),
-            Path::new("bbb/specials/*"),
-            Path::new("bbb/specials/?"),
-            Path::new("bbb/specials/[")));
+            PathBuf::new("bbb/specials/!"),
+            PathBuf::new("bbb/specials/*"),
+            PathBuf::new("bbb/specials/?"),
+            PathBuf::new("bbb/specials/[")));
 
         assert_eq!(glob_vec("bbb/specials/[!!]"), vec!(
-            Path::new("bbb/specials/*"),
-            Path::new("bbb/specials/?"),
-            Path::new("bbb/specials/["),
-            Path::new("bbb/specials/]")));
+            PathBuf::new("bbb/specials/*"),
+            PathBuf::new("bbb/specials/?"),
+            PathBuf::new("bbb/specials/["),
+            PathBuf::new("bbb/specials/]")));
 
         assert_eq!(glob_vec("bbb/specials/[!*]"), vec!(
-            Path::new("bbb/specials/!"),
-            Path::new("bbb/specials/?"),
-            Path::new("bbb/specials/["),
-            Path::new("bbb/specials/]")));
+            PathBuf::new("bbb/specials/!"),
+            PathBuf::new("bbb/specials/?"),
+            PathBuf::new("bbb/specials/["),
+            PathBuf::new("bbb/specials/]")));
 
         assert_eq!(glob_vec("bbb/specials/[!?]"), vec!(
-            Path::new("bbb/specials/!"),
-            Path::new("bbb/specials/*"),
-            Path::new("bbb/specials/["),
-            Path::new("bbb/specials/]")));
+            PathBuf::new("bbb/specials/!"),
+            PathBuf::new("bbb/specials/*"),
+            PathBuf::new("bbb/specials/["),
+            PathBuf::new("bbb/specials/]")));
 
     }
 }
