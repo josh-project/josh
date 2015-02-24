@@ -24,8 +24,7 @@
        html_favicon_url = "http://www.rust-lang.org/favicon.ico",
        html_root_url = "http://doc.rust-lang.org/glob/")]
 #![cfg_attr(test, deny(warnings))]
-#![cfg_attr(test, feature(env))]
-#![cfg_attr(all(test, windows), feature(old_path))]
+#![cfg_attr(test, feature(env, old_path))]
 #![feature(path, io, core, collections, unicode, fs, path, os)]
 
 use std::ascii::AsciiExt;
