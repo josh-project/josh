@@ -25,19 +25,20 @@
        html_root_url = "http://doc.rust-lang.org/glob/")]
 #![cfg_attr(test, deny(warnings))]
 #![cfg_attr(test, feature(env))]
-#![feature(old_path, old_io, core, collections, unicode)]
+#![cfg_attr(all(test, windows), feature(old_path))]
+#![feature(path, io, core, collections, unicode, fs, path, os)]
 
 use std::ascii::AsciiExt;
 use std::cell::Cell;
 use std::cmp;
-use std::old_io::fs::{self, PathExtensions};
-use std::old_path as path;
-use std::old_path::is_sep;
-use std::string::String;
 use std::fmt;
-use std::old_io::IoError;
+use std::fs;
+use std::io::prelude::*;
+use std::io;
+use std::path::{self, Path, PathBuf, Component};
 
-use PatternToken::{Char, AnyChar, AnySequence, AnyRecursiveSequence, AnyWithin, AnyExcept};
+use PatternToken::{Char, AnyChar, AnySequence, AnyRecursiveSequence, AnyWithin};
+use PatternToken::AnyExcept;
 use CharSpecifier::{SingleChar, CharRange};
 use MatchResult::{Match, SubPatternDoesntMatch, EntirePatternDoesntMatch};
 
@@ -46,16 +47,16 @@ use MatchResult::{Match, SubPatternDoesntMatch, EntirePatternDoesntMatch};
 ///
 /// Note that it yields `GlobResult` in order to report any `IoErrors` that may
 /// arise during iteration. If a directory matches but is unreadable,
-/// thereby preventing its contents from being checked for matches, a `GlobError`
-/// is returned to express this.
+/// thereby preventing its contents from being checked for matches, a
+/// `GlobError` is returned to express this.
 ///
 /// See the `glob` function for more details.
 pub struct Paths {
     dir_patterns: Vec<Pattern>,
     require_dir: bool,
     options: MatchOptions,
-    todo: Vec<Result<(Path,usize), GlobError>>,
-    scope: Option<Path>,
+    todo: Vec<Result<(PathBuf, usize), GlobError>>,
+    scope: Option<PathBuf>,
 }
 
 /// Return an iterator that produces all the Paths that match the given pattern,
@@ -67,18 +68,19 @@ pub struct Paths {
 /// `glob_with(pattern, MatchOptions::new())`. Use `glob_with` directly if you
 /// want to use non-default match options.
 ///
-/// When iterating, each result is a `GlobResult` which expresses the possibility
-/// that there was an `IoError` when attempting to read the contents of the matched path.
-/// In other words, each item returned by the iterator will either be an `Ok(Path)` if
-/// the path matched, or an `Err(GlobError)` if the path (partially) matched _but_
-/// its contents could not be read in order to determine if its contents matched.
+/// When iterating, each result is a `GlobResult` which expresses the
+/// possibility that there was an `IoError` when attempting to read the contents
+/// of the matched path.  In other words, each item returned by the iterator
+/// will either be an `Ok(Path)` if the path matched, or an `Err(GlobError)` if
+/// the path (partially) matched _but_ its contents could not be read in order
+/// to determine if its contents matched.
 ///
 /// See the `Paths` documentation for more information.
 ///
 /// # Example
 ///
-/// Consider a directory `/media/pictures` containing only the files `kittens.jpg`,
-/// `puppies.jpg` and `hamsters.gif`:
+/// Consider a directory `/media/pictures` containing only the files
+/// `kittens.jpg`, `puppies.jpg` and `hamsters.gif`:
 ///
 /// ```rust
 /// use glob::glob;
@@ -101,7 +103,8 @@ pub struct Paths {
 /// /media/pictures/puppies.jpg
 /// ```
 ///
-/// If you want to ignore unreadable paths, you can use something like `filter_map`:
+/// If you want to ignore unreadable paths, you can use something like
+/// `filter_map`:
 ///
 /// ```rust
 /// use glob::glob;
@@ -121,42 +124,53 @@ pub fn glob(pattern: &str) -> Result<Paths, PatternError> {
 ///
 /// This may return an error if the pattern is invalid.
 ///
-/// This function accepts Unix shell style patterns as described by `Pattern::new(..)`.
-/// The options given are passed through unchanged to `Pattern::matches_with(..)` with
-/// the exception that `require_literal_separator` is always set to `true` regardless of the
-/// value passed to this function.
+/// This function accepts Unix shell style patterns as described by
+/// `Pattern::new(..)`.  The options given are passed through unchanged to
+/// `Pattern::matches_with(..)` with the exception that
+/// `require_literal_separator` is always set to `true` regardless of the value
+/// passed to this function.
 ///
 /// Paths are yielded in alphabetical order.
-pub fn glob_with(pattern: &str, options: &MatchOptions) -> Result<Paths, PatternError> {
+pub fn glob_with(pattern: &str, options: &MatchOptions)
+                 -> Result<Paths, PatternError> {
     // make sure that the pattern is valid first, else early return with error
     let _compiled = try!(Pattern::new(pattern));
 
     #[cfg(windows)]
-    fn check_windows_verbatim(p: &Path) -> bool { path::windows::is_verbatim(p) }
+    fn check_windows_verbatim(p: &Path) -> bool {
+        use std::path::Prefix;
+        match p.components().next() {
+            Some(Component::Prefix { parsed: ref p, .. }) => p.is_verbatim(),
+            _ => false
+        }
+    }
     #[cfg(not(windows))]
     fn check_windows_verbatim(_: &Path) -> bool { false }
 
     #[cfg(windows)]
-    fn to_scope(p: Path) -> Path {
-        use std::env::current_dir;
-
-        if path::windows::is_vol_relative(&p) {
-            let mut cwd = current_dir().unwrap();
-            cwd.push(p);
-            cwd
-        } else {
-            p
-        }
+    fn to_scope(p: &Path) -> PathBuf {
+        // FIXME handle volume relative paths here
+        p.to_path_buf()
     }
     #[cfg(not(windows))]
-    fn to_scope(p: Path) -> Path { p }
+    fn to_scope(p: &Path) -> PathBuf { p.to_path_buf() }
 
-    let root = Path::new(pattern).root_path();
-    let root_len = root.as_ref().map_or(0, |p| p.as_vec().len());
+    let mut components = Path::new(pattern).components();
+    loop {
+        match components.peek() {
+            Some(Component::Prefix { .. }) |
+            Some(Component::RootDir) => { components.next(); }
+            _ => break,
+        }
+    }
+    let root_len = pattern.len() - components.as_path().to_str().unwrap().len();
+    let root = if root_len > 0 {Some(Path::new(&pattern[..root_len]))}
+               else {None};
 
-    if root.is_some() && check_windows_verbatim(root.as_ref().unwrap()) {
-        // FIXME: How do we want to handle verbatim paths? I'm inclined to return nothing,
-        // since we can't very well find all UNC shares with a 1-letter server name.
+    if root_len > 0 && check_windows_verbatim(root.unwrap()) {
+        // FIXME: How do we want to handle verbatim paths? I'm inclined to
+        // return nothing, since we can't very well find all UNC shares with a
+        // 1-letter server name.
         return Ok(Paths {
             dir_patterns: Vec::new(),
             require_dir: false,
@@ -166,18 +180,18 @@ pub fn glob_with(pattern: &str, options: &MatchOptions) -> Result<Paths, Pattern
         });
     }
 
-    let scope = root.map(to_scope).unwrap_or_else(|| Path::new("."));
+    let scope = root.map(to_scope).unwrap_or_else(|| PathBuf::new("."));
 
     let mut dir_patterns = Vec::new();
     let components = pattern[cmp::min(root_len, pattern.len())..]
-                            .split_terminator(is_sep);
+                            .split_terminator(path::is_separator);
 
     for component in components {
         let compiled = try!(Pattern::new(component));
         dir_patterns.push(compiled);
     }
 
-    let require_dir = pattern.chars().next_back().map(is_sep) == Some(true);
+    let require_dir = pattern.chars().next_back().map(path::is_separator) == Some(true);
     let todo = Vec::new();
 
     Ok(Paths {
@@ -196,20 +210,16 @@ pub fn glob_with(pattern: &str, options: &MatchOptions) -> Result<Paths, Pattern
 /// if the program lacks the permissions, for example.
 #[derive(Debug)]
 pub struct GlobError {
-    path: Path,
-    error: IoError,
+    path: PathBuf,
+    error: io::Error,
 }
 
 impl GlobError {
     /// The Path that the error corresponds to.
-    pub fn path<'a>(&'a self) -> &'a Path {
-      &self.path
-    }
+    pub fn path(&self) -> &Path { &self.path }
 
     /// The error in question.
-    pub fn error<'a>(&'a self) -> &'a IoError {
-      &self.error
-    }
+    pub fn error(&self) -> &io::Error { &self.error }
 }
 
 impl fmt::Display for GlobError {
@@ -223,17 +233,16 @@ impl fmt::Display for GlobError {
 ///
 /// This represents either a matched path or a glob iteration error,
 /// such as failing to read a particular directory's contents.
-pub type GlobResult = Result<Path, GlobError>;
+pub type GlobResult = Result<PathBuf, GlobError>;
 
 impl Iterator for Paths {
     type Item = GlobResult;
 
     fn next(&mut self) -> Option<GlobResult> {
-        // the todo buffer hasn't been initialized yet, so it's done at this point
-        // rather than in glob() so that the errors are unified
-        // that is, failing to fill the buffer is an iteration error
-        // construction of the iterator (i.e. glob()) only fails if it fails
-        // to compile the Pattern
+        // the todo buffer hasn't been initialized yet, so it's done at this
+        // point rather than in glob() so that the errors are unified that is,
+        // failing to fill the buffer is an iteration error construction of the
+        // iterator (i.e. glob()) only fails if it fails to compile the Pattern
         if let Some(scope) = self.scope.take() {
             if self.dir_patterns.len() > 0 {
                 // Shouldn't happen, but we're using -1 as a special index.
@@ -249,11 +258,10 @@ impl Iterator for Paths {
                 return None;
             }
 
-            let (path, mut idx) =
-              match self.todo.pop().unwrap() {
+            let (path, mut idx) = match self.todo.pop().unwrap() {
                 Ok(pair) => pair,
                 Err(e) => return Some(Err(e)),
-              };
+            };
 
             // idx -1: was already checked by fill_todo, maybe path was '.' or
             // '..' that we can't match here because of normalization.
@@ -266,7 +274,8 @@ impl Iterator for Paths {
                 let mut next = idx;
 
                 // collapse consecutive recursive patterns
-                while (next + 1) < self.dir_patterns.len() && self.dir_patterns[next + 1].is_recursive {
+                while (next + 1) < self.dir_patterns.len() &&
+                      self.dir_patterns[next + 1].is_recursive {
                     next += 1;
                 }
 
@@ -276,7 +285,8 @@ impl Iterator for Paths {
                     fill_todo(&mut self.todo, self.dir_patterns.as_slice(),
                               next, &path, &self.options);
 
-                    // pattern ends in recursive pattern, so return this directory as a result
+                    // pattern ends in recursive pattern, so return this
+                    // directory as a result
                     if next == self.dir_patterns.len() - 1 {
                         return Some(Ok(path));
                     // advanced to the next pattern for this path
@@ -293,18 +303,19 @@ impl Iterator for Paths {
             }
 
             // not recursive, so match normally
-            if self.dir_patterns[idx].matches_with(match path.filename_str() {
-                // this ugly match needs to go here to avoid a borrowck error
-                None => {
-                    // FIXME (#9639): How do we handle non-utf8 filenames? Ignore them for now
-                    // Ideally we'd still match them against a *
-                    continue;
+            if self.dir_patterns[idx].matches_with({
+                match path.file_name().and_then(|s| s.to_str()) {
+                    // FIXME (#9639): How do we handle non-utf8 filenames?
+                    // Ignore them for now Ideally we'd still match them
+                    // against a *
+                    None => continue,
+                    Some(x) => x
                 }
-                Some(x) => x
             }, &self.options) {
                 if idx == self.dir_patterns.len() - 1 {
-                    // it is not possible for a pattern to match a directory *AND* its children
-                    // so we don't need to check the children
+                    // it is not possible for a pattern to match a directory
+                    // *AND* its children so we don't need to check the
+                    // children
 
                     if !self.require_dir || path.is_dir() {
                         return Some(Ok(path));
@@ -343,9 +354,10 @@ impl fmt::Display for PatternError {
 ///
 /// `*` matches any (possibly empty) sequence of characters
 ///
-/// `**` matches the current directory and arbitrary subdirectories. This sequence **must** form a single path
-/// component, so both `**a` and `b**` are invalid and will result in an error.
-/// A sequence of more than two consecutive `*` characters is also invalid.
+/// `**` matches the current directory and arbitrary subdirectories. This
+/// sequence **must** form a single path component, so both `**a` and `b**` are
+/// invalid and will result in an error.  A sequence of more than two
+/// consecutive `*` characters is also invalid.
 ///
 /// `[...]` matches any character inside the brackets.
 /// Character sequences can also specify ranges
@@ -472,8 +484,10 @@ impl Pattern {
                         let tokens_len = tokens.len();
 
                         if is_valid {
-                            // collapse consecutive AnyRecursiveSequence to a single one
-                            if !(tokens_len > 1 && tokens[tokens_len - 1] == AnyRecursiveSequence) {
+                            // collapse consecutive AnyRecursiveSequence to a
+                            // single one
+                            if !(tokens_len > 1 &&
+                                 tokens[tokens_len - 1] == AnyRecursiveSequence) {
                                 is_recursive = true;
                                 tokens.push(AnyRecursiveSequence);
                             }
@@ -499,7 +513,8 @@ impl Pattern {
                         match chars[i + 2..].position_elem(&']') {
                             None => (),
                             Some(j) => {
-                                let cs = parse_char_specifiers(&chars[i + 1 .. i + 2 + j]);
+                                let cs = parse_char_specifiers(&chars[i + 1 ..
+                                                                      i + 2 + j]);
                                 tokens.push(AnyWithin(cs));
                                 i += j + 3;
                                 continue;
@@ -535,7 +550,8 @@ impl Pattern {
         let mut escaped = String::new();
         for c in s.chars() {
             match c {
-                // note that ! does not need escaping because it is only special inside brackets
+                // note that ! does not need escaping because it is only special
+                // inside brackets
                 '?' | '*' | '[' | ']' => {
                     escaped.push('[');
                     escaped.push(c);
@@ -565,25 +581,26 @@ impl Pattern {
         self.matches_with(str, &MatchOptions::new())
     }
 
-    /// Return if the given `Path`, when converted to a `str`, matches this `Pattern`
-    /// using the default match options (i.e. `MatchOptions::new()`).
+    /// Return if the given `Path`, when converted to a `str`, matches this
+    /// `Pattern` using the default match options (i.e. `MatchOptions::new()`).
     pub fn matches_path(&self, path: &Path) -> bool {
         // FIXME (#9639): This needs to handle non-utf8 paths
-        path.as_str().map_or(false, |s| {
+        path.to_str().map_or(false, |s| {
             self.matches(s)
         })
     }
 
-    /// Return if the given `str` matches this `Pattern` using the specified match options.
+    /// Return if the given `str` matches this `Pattern` using the specified
+    /// match options.
     pub fn matches_with(&self, str: &str, options: &MatchOptions) -> bool {
         self.matches_from(None, str, 0, options) == Match
     }
 
-    /// Return if the given `Path`, when converted to a `str`, matches this `Pattern`
-    /// using the specified match options.
+    /// Return if the given `Path`, when converted to a `str`, matches this
+    /// `Pattern` using the specified match options.
     pub fn matches_path_with(&self, path: &Path, options: &MatchOptions) -> bool {
         // FIXME (#9639): This needs to handle non-utf8 paths
-        path.as_str().map_or(false, |s| {
+        path.to_str().map_or(false, |s| {
             self.matches_with(s, options)
         })
     }
@@ -602,16 +619,17 @@ impl Pattern {
         let prev_char = Cell::new(prev_char);
 
         let require_literal = |&: c| {
-            (options.require_literal_separator && is_sep(c)) ||
+            (options.require_literal_separator && path::is_separator(c)) ||
             (options.require_literal_leading_dot && c == '.'
-             && is_sep(prev_char.get().unwrap_or('/')))
+             && path::is_separator(prev_char.get().unwrap_or('/')))
         };
 
         for (ti, token) in self.tokens[i..].iter().enumerate() {
             match *token {
                 AnySequence | AnyRecursiveSequence => {
                     loop {
-                        match self.matches_from(prev_char.get(), file, i + ti + 1, options) {
+                        match self.matches_from(prev_char.get(), file,
+                                                i + ti + 1, options) {
                             SubPatternDoesntMatch => (), // keep trying
                             m => return m,
                         }
@@ -681,7 +699,10 @@ impl Pattern {
 // Fills `todo` with paths under `path` to be matched by `patterns[idx]`,
 // special-casing patterns to match `.` and `..`, and avoiding `readdir()`
 // calls when there are no metacharacters in the pattern.
-fn fill_todo(todo: &mut Vec<Result<(Path, usize), GlobError>>, patterns: &[Pattern], idx: usize, path: &Path,
+fn fill_todo(todo: &mut Vec<Result<(PathBuf, usize), GlobError>>,
+             patterns: &[Pattern],
+             idx: usize,
+             path: &Path,
              options: &MatchOptions) {
     // convert a pattern that's just many Char(_) to a string
     fn pattern_as_str(pattern: &Pattern) -> Option<String> {
@@ -695,7 +716,7 @@ fn fill_todo(todo: &mut Vec<Result<(Path, usize), GlobError>>, patterns: &[Patte
         return Some(s);
     }
 
-    let add = |&: todo: &mut Vec<_>, next_path: Path| {
+    let add = |&: todo: &mut Vec<_>, next_path: PathBuf| {
         if idx + 1 == patterns.len() {
             // We know it's good, so don't make the iterator match this path
             // against the pattern again. In particular, it can't match
@@ -708,6 +729,7 @@ fn fill_todo(todo: &mut Vec<Result<(Path, usize), GlobError>>, patterns: &[Patte
 
     let pattern = &patterns[idx];
     let is_dir = path.is_dir();
+    let curdir = path == Path::new(".");
     match pattern_as_str(pattern) {
         Some(s) => {
             // This pattern component doesn't have any metacharacters, so we
@@ -716,32 +738,45 @@ fn fill_todo(todo: &mut Vec<Result<(Path, usize), GlobError>>, patterns: &[Patte
             // we can just check for that one entry and potentially recurse
             // right away.
             let special = "." == s.as_slice() || ".." == s.as_slice();
-            let next_path = path.join(s.as_slice());
+            let next_path = if curdir {PathBuf::new(&s)} else {path.join(&s)};
             if (special && is_dir) || (!special && next_path.exists()) {
                 add(todo, next_path);
             }
         },
         None if is_dir => {
-            match fs::readdir(path) {
-              Ok(mut children) => {
-                  children.sort_by(|p1, p2| p2.filename().cmp(&p1.filename()));
-                  todo.extend(children.into_iter().map(|x| Ok((x, idx))));
+            let dirs = fs::read_dir(path).and_then(|d| {
+                d.map(|e| e.map(|e| {
+                    if curdir {
+                        PathBuf::new(e.path().file_name().unwrap())
+                    } else {
+                        e.path()
+                    }
+                })).collect::<Result<Vec<_>, _>>()
+            });
+            match dirs {
+                Ok(mut children) => {
+                    children.sort_by(|p1, p2| p2.file_name().cmp(&p1.file_name()));
+                    todo.extend(children.into_iter().map(|x| Ok((x, idx))));
 
-                  // Matching the special directory entries . and .. that refer to
-                  // the current and parent directory respectively requires that
-                  // the pattern has a leading dot, even if the `MatchOptions` field
-                  // `require_literal_leading_dot` is not set.
-                  if pattern.tokens.len() > 0 && pattern.tokens[0] == Char('.') {
-                      for &special in [".", ".."].iter() {
-                          if pattern.matches_with(special, options) {
-                              add(todo, path.join(special));
-                          }
-                      }
-                  }
-              },
-              Err(e) => {
-                todo.push(Err(GlobError { path: path.clone(), error: e, }));
-              },
+                    // Matching the special directory entries . and .. that
+                    // refer to the current and parent directory respectively
+                    // requires that the pattern has a leading dot, even if the
+                    // `MatchOptions` field `require_literal_leading_dot` is not
+                    // set.
+                    if pattern.tokens.len() > 0 && pattern.tokens[0] == Char('.') {
+                        for &special in [".", ".."].iter() {
+                            if pattern.matches_with(special, options) {
+                                add(todo, path.join(special));
+                            }
+                        }
+                    }
+                },
+                Err(e) => {
+                    todo.push(Err(GlobError {
+                        path: path.to_path_buf(),
+                        error: e,
+                    }));
+                }
             }
         }
         None => {/* not a directory, nothing more to find */}
@@ -775,7 +810,8 @@ fn in_char_specifiers(specifiers: &[CharSpecifier], c: char, options: &MatchOpti
             CharRange(start, end) => {
 
                 // FIXME: work with non-ascii chars properly (issue #1347)
-                if !options.case_sensitive && c.is_ascii() && start.is_ascii() && end.is_ascii() {
+                if !options.case_sensitive && c.is_ascii() &&
+                   start.is_ascii() && end.is_ascii() {
 
                     let start = start.to_ascii_lowercase();
                     let end = end.to_ascii_lowercase();
@@ -805,7 +841,7 @@ fn in_char_specifiers(specifiers: &[CharSpecifier], c: char, options: &MatchOpti
 
 /// A helper function to determine if two chars are (possibly case-insensitively) equal.
 fn chars_eq(a: char, b: char, case_sensitive: bool) -> bool {
-    if cfg!(windows) && path::windows::is_sep(a) && path::windows::is_sep(b) {
+    if cfg!(windows) && path::is_separator(a) && path::is_separator(b) {
         true
     } else if !case_sensitive && a.is_ascii() && b.is_ascii() {
         // FIXME: work with non-ascii chars properly (issue #9084)
@@ -820,26 +856,30 @@ fn chars_eq(a: char, b: char, case_sensitive: bool) -> bool {
 #[allow(missing_copy_implementations)]
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct MatchOptions {
-    /// Whether or not patterns should be matched in a case-sensitive manner. This
-    /// currently only considers upper/lower case relationships between ASCII characters,
-    /// but in future this might be extended to work with Unicode.
+    /// Whether or not patterns should be matched in a case-sensitive manner.
+    /// This currently only considers upper/lower case relationships between
+    /// ASCII characters, but in future this might be extended to work with
+    /// Unicode.
     pub case_sensitive: bool,
 
-    /// If this is true then path-component separator characters (e.g. `/` on Posix)
-    /// must be matched by a literal `/`, rather than by `*` or `?` or `[...]`
+    /// If this is true then path-component separator characters (e.g. `/` on
+    /// Posix) must be matched by a literal `/`, rather than by `*` or `?` or
+    /// `[...]`
     pub require_literal_separator: bool,
 
-    /// If this is true then paths that contain components that start with a `.` will
-    /// not match unless the `.` appears literally in the pattern: `*`, `?` or `[...]`
-    /// will not match. This is useful because such files are conventionally considered
-    /// hidden on Unix systems and it might be desirable to skip them when listing files.
+    /// If this is true then paths that contain components that start with a `.`
+    /// will not match unless the `.` appears literally in the pattern: `*`, `?`
+    /// or `[...]` will not match. This is useful because such files are
+    /// conventionally considered hidden on Unix systems and it might be
+    /// desirable to skip them when listing files.
     pub require_literal_leading_dot: bool
 }
 
 impl MatchOptions {
 
      /// Constructs a new `MatchOptions` with default field values. This is used
-     /// when calling functions that do not take an explicit `MatchOptions` parameter.
+     /// when calling functions that do not take an explicit `MatchOptions`
+     /// parameter.
      ///
      /// This function always returns this value:
      ///
@@ -863,6 +903,7 @@ impl MatchOptions {
 #[cfg(test)]
 mod test {
     use std::env;
+    use std::path::Path;
     use super::{glob, Pattern, MatchOptions};
 
     #[test]
@@ -898,6 +939,7 @@ mod test {
     #[cfg(unix)]
     #[test]
     fn test_iteration_errors() {
+        use std::io;
         let mut iter = glob("/root/*").unwrap();
 
         // GlobErrors shouldn't halt iteration
@@ -908,8 +950,8 @@ mod test {
         assert!(err.is_err());
 
         let err = err.err().unwrap();
-        assert!(*err.path() == Path::new("/root"));
-        assert!(err.error().kind == ::std::old_io::IoErrorKind::PermissionDenied);
+        assert!(err.path() == Path::new("/root"));
+        assert!(err.error().kind() == io::ErrorKind::PermissionDenied);
     }
 
     #[test]
