@@ -24,8 +24,8 @@
        html_favicon_url = "http://www.rust-lang.org/favicon.ico",
        html_root_url = "http://doc.rust-lang.org/glob/")]
 #![cfg_attr(test, deny(warnings))]
-#![cfg_attr(test, feature(env, old_path))]
-#![feature(path, io, core, collections, unicode, fs, path, os)]
+#![cfg_attr(all(test, windows), feature(std_misc))]
+#![feature(path, io, core, collections, unicode, fs, os)]
 
 use std::ascii::AsciiExt;
 use std::cell::Cell;
@@ -617,7 +617,7 @@ impl Pattern {
 
         let prev_char = Cell::new(prev_char);
 
-        let require_literal = |&: c| {
+        let require_literal = |c| {
             (options.require_literal_separator && path::is_separator(c)) ||
             (options.require_literal_leading_dot && c == '.'
              && path::is_separator(prev_char.get().unwrap_or('/')))
@@ -715,7 +715,7 @@ fn fill_todo(todo: &mut Vec<Result<(PathBuf, usize), GlobError>>,
         return Some(s);
     }
 
-    let add = |&: todo: &mut Vec<_>, next_path: PathBuf| {
+    let add = |todo: &mut Vec<_>, next_path: PathBuf| {
         if idx + 1 == patterns.len() {
             // We know it's good, so don't make the iterator match this path
             // against the pattern again. In particular, it can't match
@@ -901,7 +901,6 @@ impl MatchOptions {
 
 #[cfg(test)]
 mod test {
-    use std::env;
     use std::path::Path;
     use super::{glob, Pattern, MatchOptions};
 
@@ -959,10 +958,19 @@ mod test {
         assert!(glob("/*").unwrap().next().is_some());
         assert!(glob("//").unwrap().next().is_some());
 
-        // check windows absolute paths with host/device components
-        let root_with_device = env::current_dir().unwrap().root_path().unwrap().join("*");
-        // FIXME (#9639): This needs to handle non-utf8 paths
-        assert!(glob(root_with_device.as_str().unwrap()).unwrap().next().is_some());
+        #[cfg(not(windows))] fn win() {}
+
+        #[cfg(windows)] fn win() {
+            use std::env::current_dir;
+            use std::ffi::AsOsStr;
+
+            // check windows absolute paths with host/device components
+            let root_with_device =
+                current_dir().ok().and_then(|p| p.prefix().map(|p| p.join("*"))).unwrap();
+            // FIXME (#9639): This needs to handle non-utf8 paths
+            assert!(glob(root_with_device.as_os_str().to_str().unwrap()).unwrap().next().is_some());
+        }
+        win()
     }
 
     #[test]
@@ -1173,31 +1181,31 @@ mod test {
             require_literal_leading_dot: false
         };
 
-        let f = |&: options| Pattern::new("*.txt").unwrap().matches_with(".hello.txt", options);
+        let f = |options| Pattern::new("*.txt").unwrap().matches_with(".hello.txt", options);
         assert!(f(&options_not_require_literal_leading_dot));
         assert!(!f(&options_require_literal_leading_dot));
 
-        let f = |&: options| Pattern::new(".*.*").unwrap().matches_with(".hello.txt", options);
+        let f = |options| Pattern::new(".*.*").unwrap().matches_with(".hello.txt", options);
         assert!(f(&options_not_require_literal_leading_dot));
         assert!(f(&options_require_literal_leading_dot));
 
-        let f = |&: options| Pattern::new("aaa/bbb/*").unwrap().matches_with("aaa/bbb/.ccc", options);
+        let f = |options| Pattern::new("aaa/bbb/*").unwrap().matches_with("aaa/bbb/.ccc", options);
         assert!(f(&options_not_require_literal_leading_dot));
         assert!(!f(&options_require_literal_leading_dot));
 
-        let f = |&: options| Pattern::new("aaa/bbb/*").unwrap().matches_with("aaa/bbb/c.c.c.", options);
+        let f = |options| Pattern::new("aaa/bbb/*").unwrap().matches_with("aaa/bbb/c.c.c.", options);
         assert!(f(&options_not_require_literal_leading_dot));
         assert!(f(&options_require_literal_leading_dot));
 
-        let f = |&: options| Pattern::new("aaa/bbb/.*").unwrap().matches_with("aaa/bbb/.ccc", options);
+        let f = |options| Pattern::new("aaa/bbb/.*").unwrap().matches_with("aaa/bbb/.ccc", options);
         assert!(f(&options_not_require_literal_leading_dot));
         assert!(f(&options_require_literal_leading_dot));
 
-        let f = |&: options| Pattern::new("aaa/?bbb").unwrap().matches_with("aaa/.bbb", options);
+        let f = |options| Pattern::new("aaa/?bbb").unwrap().matches_with("aaa/.bbb", options);
         assert!(f(&options_not_require_literal_leading_dot));
         assert!(!f(&options_require_literal_leading_dot));
 
-        let f = |&: options| Pattern::new("aaa/[.]bbb").unwrap().matches_with("aaa/.bbb", options);
+        let f = |options| Pattern::new("aaa/[.]bbb").unwrap().matches_with("aaa/.bbb", options);
         assert!(f(&options_not_require_literal_leading_dot));
         assert!(!f(&options_require_literal_leading_dot));
     }

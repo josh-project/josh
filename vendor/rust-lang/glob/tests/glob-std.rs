@@ -10,7 +10,7 @@
 
 // ignore-windows TempDir may cause IoError on windows: #10462
 
-#![feature(old_path, env, old_io, path, fs, io)]
+#![feature(old_path, old_io, path, fs, io)]
 
 extern crate glob;
 
