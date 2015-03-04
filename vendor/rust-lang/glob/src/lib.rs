@@ -497,7 +497,7 @@ impl Pattern {
                 }
                 '[' => {
 
-                    if i <= chars.len() - 4 && chars[i + 1] == '!' {
+                    if i + 4 <= chars.len() && chars[i + 1] == '!' {
                         match chars[i + 3..].position_elem(&']') {
                             None => (),
                             Some(j) => {
@@ -508,7 +508,7 @@ impl Pattern {
                                 continue;
                             }
                         }
-                    } else if i <= chars.len() - 3 && chars[i + 1] != '!' {
+                    } else if i + 3 <= chars.len() && chars[i + 1] != '!' {
                         match chars[i + 2..].position_elem(&']') {
                             None => (),
                             Some(j) => {
