@@ -10,17 +10,16 @@
 
 // ignore-windows TempDir may cause IoError on windows: #10462
 
-#![feature(old_path, old_io, path, fs, io)]
+#![feature(path, fs)]
 
 extern crate glob;
+extern crate tempdir;
 
 use glob::glob;
 use std::env;
 use std::path::PathBuf;
 use std::fs;
 use tempdir::TempDir;
-
-mod tempdir;
 
 #[test]
 fn main() {
@@ -38,8 +37,7 @@ fn main() {
 
     let root = TempDir::new("glob-tests");
     let root = root.ok().expect("Should have created a temp directory");
-    let old_root = std::old_path::Path::new(root.path().to_str().unwrap());
-    assert!(env::set_current_dir(&old_root).is_ok());
+    assert!(env::set_current_dir(root.path()).is_ok());
 
     mk_file("aaa", true);
     mk_file("aaa/apple", true);
