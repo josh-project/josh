@@ -25,7 +25,7 @@
        html_root_url = "http://doc.rust-lang.org/glob/")]
 #![cfg_attr(test, deny(warnings))]
 #![cfg_attr(all(test, windows), feature(std_misc))]
-#![feature(path, io, core, collections, unicode, fs, os)]
+#![feature(path, io, core, collections, unicode)]
 
 use std::ascii::AsciiExt;
 use std::cell::Cell;
@@ -228,6 +228,10 @@ impl fmt::Display for GlobError {
     }
 }
 
+fn is_dir(p: &Path) -> bool {
+    fs::metadata(p).map(|m| m.is_dir()) == Ok(true)
+}
+
 /// An alias for a glob iteration result.
 ///
 /// This represents either a matched path or a glob iteration error,
@@ -265,7 +269,7 @@ impl Iterator for Paths {
             // idx -1: was already checked by fill_todo, maybe path was '.' or
             // '..' that we can't match here because of normalization.
             if idx == -1 as usize {
-                if self.require_dir && !path.is_dir() { continue; }
+                if self.require_dir && !is_dir(&path) { continue; }
                 return Some(Ok(path));
             }
 
@@ -279,7 +283,7 @@ impl Iterator for Paths {
                 }
 
                 // the path is a directory, so it's a match
-                if path.is_dir() {
+                if is_dir(&path) {
                     // push this directory's contents
                     fill_todo(&mut self.todo, self.dir_patterns.as_slice(),
                               next, &path, &self.options);
@@ -316,7 +320,7 @@ impl Iterator for Paths {
                     // *AND* its children so we don't need to check the
                     // children
 
-                    if !self.require_dir || path.is_dir() {
+                    if !self.require_dir || is_dir(&path) {
                         return Some(Ok(path));
                     }
                 } else {
@@ -727,7 +731,7 @@ fn fill_todo(todo: &mut Vec<Result<(PathBuf, usize), GlobError>>,
     };
 
     let pattern = &patterns[idx];
-    let is_dir = path.is_dir();
+    let is_dir = is_dir(path);
     let curdir = path == Path::new(".");
     match pattern_as_str(pattern) {
         Some(s) => {
@@ -738,7 +742,7 @@ fn fill_todo(todo: &mut Vec<Result<(PathBuf, usize), GlobError>>,
             // right away.
             let special = "." == s.as_slice() || ".." == s.as_slice();
             let next_path = if curdir {PathBuf::new(&s)} else {path.join(&s)};
-            if (special && is_dir) || (!special && next_path.exists()) {
+            if (special && is_dir) || (!special && fs::metadata(&next_path).is_ok()) {
                 add(todo, next_path);
             }
         },
