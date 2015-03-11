@@ -25,7 +25,7 @@
        html_root_url = "http://doc.rust-lang.org/glob/")]
 #![cfg_attr(test, deny(warnings))]
 #![cfg_attr(all(test, windows), feature(std_misc))]
-#![feature(path, io, core, collections, unicode)]
+#![feature(path, io)]
 
 use std::ascii::AsciiExt;
 use std::cell::Cell;
@@ -251,7 +251,7 @@ impl Iterator for Paths {
                 // Shouldn't happen, but we're using -1 as a special index.
                 assert!(self.dir_patterns.len() < -1 as usize);
 
-                fill_todo(&mut self.todo, self.dir_patterns.as_slice(),
+                fill_todo(&mut self.todo, &self.dir_patterns,
                           0, &scope, &self.options);
             }
         }
@@ -285,7 +285,7 @@ impl Iterator for Paths {
                 // the path is a directory, so it's a match
                 if is_dir(&path) {
                     // push this directory's contents
-                    fill_todo(&mut self.todo, self.dir_patterns.as_slice(),
+                    fill_todo(&mut self.todo, &self.dir_patterns,
                               next, &path, &self.options);
 
                     // pattern ends in recursive pattern, so return this
@@ -324,7 +324,7 @@ impl Iterator for Paths {
                         return Some(Ok(path));
                     }
                 } else {
-                    fill_todo(&mut self.todo, self.dir_patterns.as_slice(),
+                    fill_todo(&mut self.todo, &self.dir_patterns,
                               idx + 1, &path, &self.options);
                 }
             }
@@ -502,7 +502,7 @@ impl Pattern {
                 '[' => {
 
                     if i + 4 <= chars.len() && chars[i + 1] == '!' {
-                        match chars[i + 3..].position_elem(&']') {
+                        match chars[i + 3..].iter().position(|x| *x == ']') {
                             None => (),
                             Some(j) => {
                                 let chars = &chars[i + 2 .. i + 3 + j];
@@ -513,7 +513,7 @@ impl Pattern {
                             }
                         }
                     } else if i + 3 <= chars.len() && chars[i + 1] != '!' {
-                        match chars[i + 2..].position_elem(&']') {
+                        match chars[i + 2..].iter().position(|x| *x == ']') {
                             None => (),
                             Some(j) => {
                                 let cs = parse_char_specifiers(&chars[i + 1 ..
@@ -609,9 +609,7 @@ impl Pattern {
     }
 
     /// Access the original glob pattern.
-    pub fn as_str<'a>(&'a self) -> &'a str {
-      self.original.as_slice()
-    }
+    pub fn as_str<'a>(&'a self) -> &'a str { &self.original }
 
     fn matches_from(&self,
                     prev_char: Option<char>,
@@ -637,10 +635,9 @@ impl Pattern {
                             m => return m,
                         }
 
-                        let (c, next) = match file.slice_shift_char() {
-                            None => return EntirePatternDoesntMatch,
-                            Some(pair) => pair
-                        };
+                        if file.len() == 0 { return EntirePatternDoesntMatch }
+                        let c = file.chars().next().unwrap();
+                        let next = &file[c.len_utf8()..];
 
                         if let AnySequence = *token {
                             if require_literal(c) {
@@ -653,10 +650,9 @@ impl Pattern {
                     }
                 }
                 _ => {
-                    let (c, next) = match file.slice_shift_char() {
-                        None => return EntirePatternDoesntMatch,
-                        Some(pair) => pair
-                    };
+                    if file.len() == 0 { return EntirePatternDoesntMatch }
+                    let c = file.chars().next().unwrap();
+                    let next = &file[c.len_utf8()..];
 
                     let matches = match *token {
                         AnyChar => {
@@ -664,13 +660,13 @@ impl Pattern {
                         }
                         AnyWithin(ref specifiers) => {
                             !require_literal(c) &&
-                                in_char_specifiers(specifiers.as_slice(),
+                                in_char_specifiers(&specifiers,
                                                    c,
                                                    options)
                         }
                         AnyExcept(ref specifiers) => {
                             !require_literal(c) &&
-                                !in_char_specifiers(specifiers.as_slice(),
+                                !in_char_specifiers(&specifiers,
                                                     c,
                                                     options)
                         }
@@ -740,7 +736,7 @@ fn fill_todo(todo: &mut Vec<Result<(PathBuf, usize), GlobError>>,
             // continue. So instead of passing control back to the iterator,
             // we can just check for that one entry and potentially recurse
             // right away.
-            let special = "." == s.as_slice() || ".." == s.as_slice();
+            let special = "." == s || ".." == s;
             let next_path = if curdir {PathBuf::new(&s)} else {path.join(&s)};
             if (special && is_dir) || (!special && fs::metadata(&next_path).is_ok()) {
                 add(todo, next_path);
@@ -819,8 +815,8 @@ fn in_char_specifiers(specifiers: &[CharSpecifier], c: char, options: &MatchOpti
                     let start = start.to_ascii_lowercase();
                     let end = end.to_ascii_lowercase();
 
-                    let start_up = start.to_uppercase();
-                    let end_up = end.to_uppercase();
+                    let start_up = start.to_uppercase().next().unwrap();
+                    let end_up = end.to_uppercase().next().unwrap();
 
                     // only allow case insensitive matching when
                     // both start and end are within a-z or A-Z
@@ -1036,13 +1032,13 @@ mod test {
 
         let pat = Pattern::new("a[0-9]b").unwrap();
         for i in 0..10 {
-            assert!(pat.matches(format!("a{}b", i).as_slice()));
+            assert!(pat.matches(&format!("a{}b", i)));
         }
         assert!(!pat.matches("a_b"));
 
         let pat = Pattern::new("a[!0-9]b").unwrap();
         for i in 0..10 {
-            assert!(!pat.matches(format!("a{}b", i).as_slice()));
+            assert!(!pat.matches(&format!("a{}b", i)));
         }
         assert!(pat.matches("a_b"));
 
@@ -1050,11 +1046,11 @@ mod test {
         for &p in pats.iter() {
             let pat = Pattern::new(p).unwrap();
             for c in "abcdefghijklmnopqrstuvwxyz".chars() {
-                assert!(pat.matches(c.to_string().as_slice()));
+                assert!(pat.matches(&c.to_string()));
             }
             for c in "ABCDEFGHIJKLMNOPQRSTUVWXYZ".chars() {
                 let options = MatchOptions {case_sensitive: false, .. MatchOptions::new()};
-                assert!(pat.matches_with(c.to_string().as_slice(), &options));
+                assert!(pat.matches_with(&c.to_string(), &options));
             }
             assert!(pat.matches("1"));
             assert!(pat.matches("2"));
@@ -1101,7 +1097,7 @@ mod test {
     fn test_pattern_escape() {
         let s = "_[_]_?_*_!_";
         assert_eq!(Pattern::escape(s), "_[[]_[]]_[?]_[*]_!_".to_string());
-        assert!(Pattern::new(Pattern::escape(s).as_slice()).unwrap().matches(s));
+        assert!(Pattern::new(&Pattern::escape(s)).unwrap().matches(s));
     }
 
     #[test]
