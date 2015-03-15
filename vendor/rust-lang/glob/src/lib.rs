@@ -954,9 +954,11 @@ mod test {
 
     #[test]
     fn test_absolute_pattern() {
+        assert!(glob("/").unwrap().next().is_some());
+        assert!(glob("//").unwrap().next().is_some());
+
         // assume that the filesystem is not empty!
         assert!(glob("/*").unwrap().next().is_some());
-        assert!(glob("//").unwrap().next().is_some());
 
         #[cfg(not(windows))] fn win() {}
 
