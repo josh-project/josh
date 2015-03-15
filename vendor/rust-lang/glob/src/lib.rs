@@ -23,9 +23,9 @@
 #![doc(html_logo_url = "http://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png",
        html_favicon_url = "http://www.rust-lang.org/favicon.ico",
        html_root_url = "http://doc.rust-lang.org/glob/")]
-#![cfg_attr(test, deny(warnings))]
+#![cfg_attr(test, feature(io))]
 #![cfg_attr(all(test, windows), feature(std_misc))]
-#![feature(path, io)]
+#![feature(path_components_peek, unmarked_api)]
 
 use std::ascii::AsciiExt;
 use std::cell::Cell;
@@ -157,7 +157,7 @@ pub fn glob_with(pattern: &str, options: &MatchOptions)
     let mut components = Path::new(pattern).components();
     loop {
         match components.peek() {
-            Some(Component::Prefix { .. }) |
+            Some(Component::Prefix(..)) |
             Some(Component::RootDir) => { components.next(); }
             _ => break,
         }
