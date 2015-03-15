@@ -25,7 +25,6 @@
        html_root_url = "http://doc.rust-lang.org/glob/")]
 #![cfg_attr(test, feature(io))]
 #![cfg_attr(all(test, windows), feature(std_misc))]
-#![feature(path_components_peek, unmarked_api)]
 
 use std::ascii::AsciiExt;
 use std::cell::Cell;
@@ -154,15 +153,18 @@ pub fn glob_with(pattern: &str, options: &MatchOptions)
     #[cfg(not(windows))]
     fn to_scope(p: &Path) -> PathBuf { p.to_path_buf() }
 
-    let mut components = Path::new(pattern).components();
+    let mut components = Path::new(pattern).components().peekable();
     loop {
         match components.peek() {
-            Some(Component::Prefix(..)) |
-            Some(Component::RootDir) => { components.next(); }
+            Some(&Component::Prefix(..)) |
+            Some(&Component::RootDir) => { components.next(); }
             _ => break,
         }
     }
-    let root_len = pattern.len() - components.as_path().to_str().unwrap().len();
+    let rest = components.map(|s| s.as_os_str()).collect::<PathBuf>();
+    let normalized_pattern = Path::new(pattern).iter().collect::<PathBuf>();
+    let root_len = normalized_pattern.to_str().unwrap().len() -
+                   rest.to_str().unwrap().len();
     let root = if root_len > 0 {Some(Path::new(&pattern[..root_len]))}
                else {None};
 
@@ -188,6 +190,14 @@ pub fn glob_with(pattern: &str, options: &MatchOptions)
     for component in components {
         let compiled = try!(Pattern::new(component));
         dir_patterns.push(compiled);
+    }
+
+    if root_len == pattern.len() {
+        dir_patterns.push(Pattern {
+            original: "".to_string(),
+            tokens: Vec::new(),
+            is_recursive: false,
+        });
     }
 
     let require_dir = pattern.chars().next_back().map(path::is_separator) == Some(true);
