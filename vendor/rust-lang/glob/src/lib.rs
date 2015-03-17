@@ -138,7 +138,7 @@ pub fn glob_with(pattern: &str, options: &MatchOptions)
     fn check_windows_verbatim(p: &Path) -> bool {
         use std::path::Prefix;
         match p.components().next() {
-            Some(Component::Prefix { parsed: ref p, .. }) => p.is_verbatim(),
+            Some(Component::Prefix(ref p)) => p.is_verbatim(),
             _ => false
         }
     }
