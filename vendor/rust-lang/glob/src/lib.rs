@@ -23,6 +23,7 @@
 #![doc(html_logo_url = "http://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png",
        html_favicon_url = "http://www.rust-lang.org/favicon.ico",
        html_root_url = "http://doc.rust-lang.org/glob/")]
+#![feature(convert)]
 #![cfg_attr(all(test, windows), feature(std_misc))]
 
 use std::ascii::AsciiExt;
@@ -180,7 +181,7 @@ pub fn glob_with(pattern: &str, options: &MatchOptions)
         });
     }
 
-    let scope = root.map(to_scope).unwrap_or_else(|| PathBuf::new("."));
+    let scope = root.map(to_scope).unwrap_or_else(|| PathBuf::from("."));
 
     let mut dir_patterns = Vec::new();
     let components = pattern[cmp::min(root_len, pattern.len())..]
@@ -746,7 +747,7 @@ fn fill_todo(todo: &mut Vec<Result<(PathBuf, usize), GlobError>>,
             // we can just check for that one entry and potentially recurse
             // right away.
             let special = "." == s || ".." == s;
-            let next_path = if curdir {PathBuf::new(&s)} else {path.join(&s)};
+            let next_path = if curdir {PathBuf::from(s)} else {path.join(&s)};
             if (special && is_dir) || (!special && fs::metadata(&next_path).is_ok()) {
                 add(todo, next_path);
             }
@@ -755,7 +756,7 @@ fn fill_todo(todo: &mut Vec<Result<(PathBuf, usize), GlobError>>,
             let dirs = fs::read_dir(path).and_then(|d| {
                 d.map(|e| e.map(|e| {
                     if curdir {
-                        PathBuf::new(e.path().file_name().unwrap())
+                        PathBuf::from(e.path().file_name().unwrap())
                     } else {
                         e.path()
                     }
