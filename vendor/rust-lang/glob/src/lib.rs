@@ -239,7 +239,7 @@ impl fmt::Display for GlobError {
 }
 
 fn is_dir(p: &Path) -> bool {
-    fs::metadata(p).map(|m| m.is_dir()) == Ok(true)
+    fs::metadata(p).map(|m| m.is_dir()).unwrap_or(false)
 }
 
 /// An alias for a glob iteration result.
