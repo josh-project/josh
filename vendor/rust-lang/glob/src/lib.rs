@@ -33,6 +33,7 @@ use std::fs;
 use std::io::prelude::*;
 use std::io;
 use std::path::{self, Path, PathBuf, Component};
+use std::str::FromStr;
 
 use PatternToken::{Char, AnyChar, AnySequence, AnyRecursiveSequence, AnyWithin};
 use PatternToken::AnyExcept;
@@ -396,6 +397,14 @@ pub struct Pattern {
 impl fmt::Display for Pattern {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         self.original.fmt(f)
+    }
+}
+
+impl FromStr for Pattern {
+    type Err = PatternError;
+
+    fn from_str(s: &str) -> Result<Pattern, PatternError> {
+        Pattern::new(s)
     }
 }
 
@@ -912,6 +921,12 @@ impl MatchOptions {
 mod test {
     use std::path::Path;
     use super::{glob, Pattern, MatchOptions};
+
+    #[test]
+    fn test_pattern_from_str() {
+        assert!("a*b".parse::<Pattern>().unwrap().matches("a_b"));
+        assert!("a/**b".parse::<Pattern>().unwrap_err().pos == 4);
+    }
 
     #[test]
     fn test_wildcard_errors() {
