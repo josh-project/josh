@@ -476,9 +476,9 @@ impl Pattern {
                         // invalid matches are treated literally
                         let is_valid =
                             // is the beginning of the pattern or begins with '/'
-                            if i == 2 || chars[i - count - 1] == '/' {
+                            if i == 2 || path::is_separator(chars[i - count - 1]) {
                                 // it ends in a '/'
-                                if i < chars.len() && chars[i] == '/' {
+                                if i < chars.len() && path::is_separator(chars[i]) {
                                     i += 1;
                                     true
                                 // or the pattern ends here
@@ -1241,5 +1241,11 @@ mod test {
         // on windows, (Path::new("a/b").as_str().unwrap() == "a\\b"), so this
         // tests that / and \ are considered equivalent on windows
         assert!(Pattern::new("a/b").unwrap().matches_path(&Path::new("a/b")));
+    }
+
+    #[test]
+    fn test_path_join() {
+        let pattern = Path::new("one").join(&Path::new("**/*.rs"));
+        assert!(Pattern::new(pattern.to_str().unwrap()).is_ok());
     }
 }
