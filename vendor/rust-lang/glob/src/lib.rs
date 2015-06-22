@@ -26,7 +26,6 @@
 #![cfg_attr(all(test, windows), feature(std_misc))]
 
 use std::ascii::AsciiExt;
-use std::cell::Cell;
 use std::cmp;
 use std::fmt;
 use std::fs;
@@ -614,7 +613,7 @@ impl Pattern {
     /// Return if the given `str` matches this `Pattern` using the specified
     /// match options.
     pub fn matches_with(&self, str: &str, options: &MatchOptions) -> bool {
-        self.matches_from(None, str, 0, options) == Match
+        self.matches_from(true, str.chars(), 0, options) == Match
     }
 
     /// Return if the given `Path`, when converted to a `str`, matches this
@@ -630,81 +629,67 @@ impl Pattern {
     pub fn as_str<'a>(&'a self) -> &'a str { &self.original }
 
     fn matches_from(&self,
-                    prev_char: Option<char>,
-                    mut file: &str,
+                    mut follows_separator: bool,
+                    mut file: std::str::Chars,
                     i: usize,
                     options: &MatchOptions) -> MatchResult {
 
-        let prev_char = Cell::new(prev_char);
-
-        let require_literal = |c| {
-            (options.require_literal_separator && path::is_separator(c)) ||
-            (options.require_literal_leading_dot && c == '.'
-             && path::is_separator(prev_char.get().unwrap_or('/')))
-        };
-
         for (ti, token) in self.tokens[i..].iter().enumerate() {
             match *token {
-                AnySequence | AnyRecursiveSequence => {
-                    loop {
-                        match self.matches_from(prev_char.get(), file,
-                                                i + ti + 1, options) {
+                AnySequence|AnyRecursiveSequence => {
+                    // ** must be at the start.
+                    debug_assert!(match *token { AnyRecursiveSequence => follows_separator, _ => true });
+
+                    // Empty match
+                    match self.matches_from(follows_separator, file.clone(), i + ti + 1, options) {
+                        SubPatternDoesntMatch => (), // keep trying
+                        m => return m,
+                    };
+
+                    while let Some(c) = file.next() {
+                        if follows_separator && options.require_literal_leading_dot && c == '.' {
+                            return SubPatternDoesntMatch;
+                        }
+                        follows_separator = path::is_separator(c);
+                        match *token {
+                            AnyRecursiveSequence if !follows_separator => continue,
+                            AnySequence if options.require_literal_separator && follows_separator => return SubPatternDoesntMatch,
+                            _ => (),
+                        }
+                        match self.matches_from(follows_separator, file.clone(), i + ti + 1, options) {
                             SubPatternDoesntMatch => (), // keep trying
                             m => return m,
                         }
-
-                        if file.len() == 0 { return EntirePatternDoesntMatch }
-                        let c = file.chars().next().unwrap();
-                        let next = &file[c.len_utf8()..];
-
-                        if let AnySequence = *token {
-                            if require_literal(c) {
-                                return SubPatternDoesntMatch;
-                            }
-                        }
-
-                        prev_char.set(Some(c));
-                        file = next;
                     }
-                }
+                },
                 _ => {
-                    if file.len() == 0 { return EntirePatternDoesntMatch }
-                    let c = file.chars().next().unwrap();
-                    let next = &file[c.len_utf8()..];
-
-                    let matches = match *token {
-                        AnyChar => {
-                            !require_literal(c)
-                        }
-                        AnyWithin(ref specifiers) => {
-                            !require_literal(c) &&
-                                in_char_specifiers(&specifiers,
-                                                   c,
-                                                   options)
-                        }
-                        AnyExcept(ref specifiers) => {
-                            !require_literal(c) &&
-                                !in_char_specifiers(&specifiers,
-                                                    c,
-                                                    options)
-                        }
-                        Char(c2) => {
-                            chars_eq(c, c2, options.case_sensitive)
-                        }
-                        AnySequence | AnyRecursiveSequence => {
-                            unreachable!()
-                        }
+                    let c = match file.next() {
+                        Some(c) => c,
+                        None => return EntirePatternDoesntMatch,
                     };
-                    if !matches {
+
+                    let is_sep = path::is_separator(c);
+
+                    if !match *token {
+                        AnyChar|AnyWithin(..)|AnyExcept(..)
+                            if (options.require_literal_separator && is_sep)
+                            || (follows_separator && options.require_literal_leading_dot && c == '.')
+                                => false,
+                        AnyChar => true,
+                        AnyWithin(ref specifiers) => in_char_specifiers(&specifiers, c, options),
+                        AnyExcept(ref specifiers) => !in_char_specifiers(&specifiers, c, options),
+                        Char(c2) => chars_eq(c, c2, options.case_sensitive),
+                        AnySequence | AnyRecursiveSequence => unreachable!(),
+                    } {
                         return SubPatternDoesntMatch;
                     }
-                    prev_char.set(Some(c));
-                    file = next;
+                    follows_separator = is_sep;
                 }
             }
         }
 
-        if file.is_empty() {
+        // Iter is fused.
+        if file.next().is_none() {
             Match
         } else {
             SubPatternDoesntMatch
@@ -885,7 +870,7 @@ pub struct MatchOptions {
     pub require_literal_separator: bool,
 
     /// If this is true then paths that contain components that start with a `.`
-    /// will not match unless the `.` appears literally in the pattern: `*`, `?`
+    /// will not match unless the `.` appears literally in the pattern: `*`, `?`, `**`,
     /// or `[...]` will not match. This is useful because such files are
     /// conventionally considered hidden on Unix systems and it might be
     /// desirable to skip them when listing files.
@@ -1022,7 +1007,14 @@ mod test {
         assert!(!pat.matches("some/other/notthis.txt"));
 
         // a single ** should be valid, for globs
-        assert!(Pattern::new("**").unwrap().is_recursive);
+        // Should accept anything
+        let pat = Pattern::new("**").unwrap();
+        assert!(pat.is_recursive);
+        assert!(pat.matches("abcde"));
+        assert!(pat.matches(""));
+        assert!(pat.matches(".asdf"));
+        assert!(pat.matches("/x/.asdf"));
+
 
         // collapse consecutive wildcards
         let pat = Pattern::new("some/**/**/needle.txt").unwrap();
@@ -1045,6 +1037,13 @@ mod test {
         assert!(pat.matches("/test"));
         assert!(!pat.matches("/one/notthis"));
         assert!(!pat.matches("/notthis"));
+
+        // Only start sub-patterns on start of path segment.
+        let pat = Pattern::new("**/.*").unwrap();
+        assert!(pat.matches(".abc"));
+        assert!(pat.matches("abc/.abc"));
+        assert!(!pat.matches("ab.c"));
+        assert!(!pat.matches("abc/ab.c"));
     }
 
     #[test]
@@ -1232,6 +1231,10 @@ mod test {
         assert!(!f(&options_require_literal_leading_dot));
 
         let f = |options| Pattern::new("aaa/[.]bbb").unwrap().matches_with("aaa/.bbb", options);
+        assert!(f(&options_not_require_literal_leading_dot));
+        assert!(!f(&options_require_literal_leading_dot));
+
+        let f = |options| Pattern::new("**/*").unwrap().matches_with(".bbb", options);
         assert!(f(&options_not_require_literal_leading_dot));
         assert!(!f(&options_require_literal_leading_dot));
     }
