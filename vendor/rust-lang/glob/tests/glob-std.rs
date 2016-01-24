@@ -137,18 +137,18 @@ fn main() {
         PathBuf::from("r/another/a.md"),
         PathBuf::from("r/one/another/a.md")));
 
-    assert_eq!(glob_vec(""), Vec::new());
+    assert_eq!(glob_vec(""), Vec::<PathBuf>::new());
     assert_eq!(glob_vec("."), vec!(PathBuf::from(".")));
     assert_eq!(glob_vec(".."), vec!(PathBuf::from("..")));
 
     assert_eq!(glob_vec("aaa"), vec!(PathBuf::from("aaa")));
     assert_eq!(glob_vec("aaa/"), vec!(PathBuf::from("aaa")));
-    assert_eq!(glob_vec("a"), Vec::new());
-    assert_eq!(glob_vec("aa"), Vec::new());
-    assert_eq!(glob_vec("aaaa"), Vec::new());
+    assert_eq!(glob_vec("a"), Vec::<PathBuf>::new());
+    assert_eq!(glob_vec("aa"), Vec::<PathBuf>::new());
+    assert_eq!(glob_vec("aaaa"), Vec::<PathBuf>::new());
 
     assert_eq!(glob_vec("aaa/apple"), vec!(PathBuf::from("aaa/apple")));
-    assert_eq!(glob_vec("aaa/apple/nope"), Vec::new());
+    assert_eq!(glob_vec("aaa/apple/nope"), Vec::<PathBuf>::new());
 
     // windows should support both / and \ as directory separators
     if env::consts::FAMILY == "windows" {
@@ -201,23 +201,23 @@ fn main() {
     assert_eq!(glob_vec("./*"), glob_vec("*"));
     assert_eq!(glob_vec("*/..").pop().unwrap(), PathBuf::from("xyz/.."));
     assert_eq!(glob_vec("aaa/../bbb"), vec!(PathBuf::from("aaa/../bbb")));
-    assert_eq!(glob_vec("nonexistent/../bbb"), Vec::new());
-    assert_eq!(glob_vec("aaa/tomato/tomato.txt/.."), Vec::new());
+    assert_eq!(glob_vec("nonexistent/../bbb"), Vec::<PathBuf>::new());
+    assert_eq!(glob_vec("aaa/tomato/tomato.txt/.."), Vec::<PathBuf>::new());
 
-    assert_eq!(glob_vec("aaa/tomato/tomato.txt/"), Vec::new());
+    assert_eq!(glob_vec("aaa/tomato/tomato.txt/"), Vec::<PathBuf>::new());
 
     assert_eq!(glob_vec("aa[a]"), vec!(PathBuf::from("aaa")));
     assert_eq!(glob_vec("aa[abc]"), vec!(PathBuf::from("aaa")));
     assert_eq!(glob_vec("a[bca]a"), vec!(PathBuf::from("aaa")));
-    assert_eq!(glob_vec("aa[b]"), Vec::new());
-    assert_eq!(glob_vec("aa[xyz]"), Vec::new());
-    assert_eq!(glob_vec("aa[]]"), Vec::new());
+    assert_eq!(glob_vec("aa[b]"), Vec::<PathBuf>::new());
+    assert_eq!(glob_vec("aa[xyz]"), Vec::<PathBuf>::new());
+    assert_eq!(glob_vec("aa[]]"), Vec::<PathBuf>::new());
 
     assert_eq!(glob_vec("aa[!b]"), vec!(PathBuf::from("aaa")));
     assert_eq!(glob_vec("aa[!bcd]"), vec!(PathBuf::from("aaa")));
     assert_eq!(glob_vec("a[!bcd]a"), vec!(PathBuf::from("aaa")));
-    assert_eq!(glob_vec("aa[!a]"), Vec::new());
-    assert_eq!(glob_vec("aa[!abc]"), Vec::new());
+    assert_eq!(glob_vec("aa[!a]"), Vec::<PathBuf>::new());
+    assert_eq!(glob_vec("aa[!abc]"), Vec::<PathBuf>::new());
 
     assert_eq!(glob_vec("bbb/specials/[[]"), vec!(PathBuf::from("bbb/specials/[")));
     assert_eq!(glob_vec("bbb/specials/!"), vec!(PathBuf::from("bbb/specials/!")));
