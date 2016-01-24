@@ -33,6 +33,7 @@ use std::io::prelude::*;
 use std::io;
 use std::path::{self, Path, PathBuf, Component};
 use std::str::FromStr;
+use std::error::Error;
 
 use PatternToken::{Char, AnyChar, AnySequence, AnyRecursiveSequence, AnyWithin};
 use PatternToken::AnyExcept;
@@ -230,6 +231,15 @@ impl GlobError {
     pub fn error(&self) -> &io::Error { &self.error }
 }
 
+impl Error for GlobError {
+    fn description(&self) -> &str {
+        self.error.description()
+    }
+    fn cause(&self) -> Option<&Error> {
+        Some(&self.error)
+    }
+}
+
 impl fmt::Display for GlobError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "attempting to read `{}` resulted in an error: {}",
@@ -351,6 +361,12 @@ pub struct PatternError {
 
     /// A message describing the error.
     pub msg: &'static str,
+}
+
+impl Error for PatternError {
+    fn description(&self) -> &str {
+        self.msg
+    }
 }
 
 impl fmt::Display for PatternError {
