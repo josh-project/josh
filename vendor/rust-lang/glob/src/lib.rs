@@ -129,8 +129,7 @@ pub fn glob(pattern: &str) -> Result<Paths, PatternError> {
 /// passed to this function.
 ///
 /// Paths are yielded in alphabetical order.
-pub fn glob_with(pattern: &str, options: &MatchOptions)
-                 -> Result<Paths, PatternError> {
+pub fn glob_with(pattern: &str, options: &MatchOptions) -> Result<Paths, PatternError> {
     // make sure that the pattern is valid first, else early return with error
     let _compiled = try!(Pattern::new(pattern));
 
@@ -139,11 +138,13 @@ pub fn glob_with(pattern: &str, options: &MatchOptions)
         use std::path::Prefix;
         match p.components().next() {
             Some(Component::Prefix(ref p)) => p.kind().is_verbatim(),
-            _ => false
+            _ => false,
         }
     }
     #[cfg(not(windows))]
-    fn check_windows_verbatim(_: &Path) -> bool { false }
+    fn check_windows_verbatim(_: &Path) -> bool {
+        false
+    }
 
     #[cfg(windows)]
     fn to_scope(p: &Path) -> PathBuf {
@@ -151,22 +152,28 @@ pub fn glob_with(pattern: &str, options: &MatchOptions)
         p.to_path_buf()
     }
     #[cfg(not(windows))]
-    fn to_scope(p: &Path) -> PathBuf { p.to_path_buf() }
+    fn to_scope(p: &Path) -> PathBuf {
+        p.to_path_buf()
+    }
 
     let mut components = Path::new(pattern).components().peekable();
     loop {
         match components.peek() {
             Some(&Component::Prefix(..)) |
-            Some(&Component::RootDir) => { components.next(); }
+            Some(&Component::RootDir) => {
+                components.next();
+            }
             _ => break,
         }
     }
     let rest = components.map(|s| s.as_os_str()).collect::<PathBuf>();
     let normalized_pattern = Path::new(pattern).iter().collect::<PathBuf>();
-    let root_len = normalized_pattern.to_str().unwrap().len() -
-                   rest.to_str().unwrap().len();
-    let root = if root_len > 0 {Some(Path::new(&pattern[..root_len]))}
-               else {None};
+    let root_len = normalized_pattern.to_str().unwrap().len() - rest.to_str().unwrap().len();
+    let root = if root_len > 0 {
+        Some(Path::new(&pattern[..root_len]))
+    } else {
+        None
+    };
 
     if root_len > 0 && check_windows_verbatim(root.unwrap()) {
         // FIXME: How do we want to handle verbatim paths? I'm inclined to
@@ -185,7 +192,7 @@ pub fn glob_with(pattern: &str, options: &MatchOptions)
 
     let mut dir_patterns = Vec::new();
     let components = pattern[cmp::min(root_len, pattern.len())..]
-                            .split_terminator(path::is_separator);
+                         .split_terminator(path::is_separator);
 
     for component in components {
         let compiled = try!(Pattern::new(component));
@@ -225,10 +232,14 @@ pub struct GlobError {
 
 impl GlobError {
     /// The Path that the error corresponds to.
-    pub fn path(&self) -> &Path { &self.path }
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
 
     /// The error in question.
-    pub fn error(&self) -> &io::Error { &self.error }
+    pub fn error(&self) -> &io::Error {
+        &self.error
+    }
 }
 
 impl Error for GlobError {
@@ -242,8 +253,10 @@ impl Error for GlobError {
 
 impl fmt::Display for GlobError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "attempting to read `{}` resulted in an error: {}",
-               self.path.display(), self.error)
+        write!(f,
+               "attempting to read `{}` resulted in an error: {}",
+               self.path.display(),
+               self.error)
     }
 }
 
@@ -270,8 +283,7 @@ impl Iterator for Paths {
                 // Shouldn't happen, but we're using -1 as a special index.
                 assert!(self.dir_patterns.len() < !0 as usize);
 
-                fill_todo(&mut self.todo, &self.dir_patterns,
-                          0, &scope, &self.options);
+                fill_todo(&mut self.todo, &self.dir_patterns, 0, &scope, &self.options);
             }
         }
 
@@ -288,7 +300,9 @@ impl Iterator for Paths {
             // idx -1: was already checked by fill_todo, maybe path was '.' or
             // '..' that we can't match here because of normalization.
             if idx == !0 as usize {
-                if self.require_dir && !is_dir(&path) { continue; }
+                if self.require_dir && !is_dir(&path) {
+                    continue;
+                }
                 return Some(Ok(path));
             }
 
@@ -301,25 +315,29 @@ impl Iterator for Paths {
                     next += 1;
                 }
 
-                // the path is a directory, so it's a match
                 if is_dir(&path) {
-                    // push this directory's contents
-                    fill_todo(&mut self.todo, &self.dir_patterns,
-                              next, &path, &self.options);
+                    // the path is a directory, so it's a match
 
-                    // pattern ends in recursive pattern, so return this
-                    // directory as a result
+                    // push this directory's contents
+                    fill_todo(&mut self.todo,
+                              &self.dir_patterns,
+                              next,
+                              &path,
+                              &self.options);
+
                     if next == self.dir_patterns.len() - 1 {
+                        // pattern ends in recursive pattern, so return this
+                        // directory as a result
                         return Some(Ok(path));
-                    // advanced to the next pattern for this path
                     } else {
+                        // advanced to the next pattern for this path
                         idx = next + 1;
                     }
-                // advanced to the next pattern for this path
                 } else if next != self.dir_patterns.len() - 1 {
+                    // advanced to the next pattern for this path
                     idx = next + 1;
-                // not a directory and it's the last pattern, meaning no match
                 } else {
+                    // not a directory and it's the last pattern, meaning no match
                     continue;
                 }
             }
@@ -349,7 +367,6 @@ impl Iterator for Paths {
             }
         }
     }
-
 }
 
 /// A pattern parsing error.
@@ -371,8 +388,10 @@ impl Error for PatternError {
 
 impl fmt::Display for PatternError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Pattern syntax error near position {}: {}",
-               self.pos, self.msg)
+        write!(f,
+               "Pattern syntax error near position {}: {}",
+               self.pos,
+               self.msg)
     }
 }
 
@@ -429,29 +448,27 @@ enum PatternToken {
     AnyChar,
     AnySequence,
     AnyRecursiveSequence,
-    AnyWithin(Vec<CharSpecifier> ),
-    AnyExcept(Vec<CharSpecifier> )
+    AnyWithin(Vec<CharSpecifier>),
+    AnyExcept(Vec<CharSpecifier>),
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 enum CharSpecifier {
     SingleChar(char),
-    CharRange(char, char)
+    CharRange(char, char),
 }
 
 #[derive(Copy, Clone, PartialEq)]
 enum MatchResult {
     Match,
     SubPatternDoesntMatch,
-    EntirePatternDoesntMatch
+    EntirePatternDoesntMatch,
 }
 
-const ERROR_WILDCARDS: &'static str =
-    "wildcards are either regular `*` or recursive `**`";
-const ERROR_RECURSIVE_WILDCARDS: &'static str =
-    "recursive wildcards must form a single path component";
-const ERROR_INVALID_RANGE: &'static str =
-    "invalid range pattern";
+const ERROR_WILDCARDS: &'static str = "wildcards are either regular `*` or recursive `**`";
+const ERROR_RECURSIVE_WILDCARDS: &'static str = "recursive wildcards must form a single path \
+                                                 component";
+const ERROR_INVALID_RANGE: &'static str = "invalid range pattern";
 
 impl Pattern {
     /// This function compiles Unix shell style patterns.
@@ -480,50 +497,44 @@ impl Pattern {
                     let count = i - old;
 
                     if count > 2 {
-                        return Err(
-                          PatternError {
+                        return Err(PatternError {
                             pos: old + 2,
                             msg: ERROR_WILDCARDS,
-                          });
+                        });
                     } else if count == 2 {
                         // ** can only be an entire path component
                         // i.e. a/**/b is valid, but a**/b or a/**b is not
                         // invalid matches are treated literally
-                        let is_valid =
-                            // is the beginning of the pattern or begins with '/'
-                            if i == 2 || path::is_separator(chars[i - count - 1]) {
-                                // it ends in a '/'
-                                if i < chars.len() && path::is_separator(chars[i]) {
-                                    i += 1;
-                                    true
+                        let is_valid = if i == 2 || path::is_separator(chars[i - count - 1]) {
+                            // it ends in a '/'
+                            if i < chars.len() && path::is_separator(chars[i]) {
+                                i += 1;
+                                true
                                 // or the pattern ends here
                                 // this enables the existing globbing mechanism
-                                } else if i == chars.len() {
-                                    true
+                            } else if i == chars.len() {
+                                true
                                 // `**` ends in non-separator
-                                } else {
-                                    return Err(
-                                      PatternError  {
-                                        pos: i,
-                                        msg: ERROR_RECURSIVE_WILDCARDS,
-                                        });
-                                }
-                            // `**` begins with non-separator
                             } else {
-                                return Err(
-                                  PatternError  {
-                                    pos: old - 1,
+                                return Err(PatternError {
+                                    pos: i,
                                     msg: ERROR_RECURSIVE_WILDCARDS,
-                                    });
-                            };
+                                });
+                            }
+                            // `**` begins with non-separator
+                        } else {
+                            return Err(PatternError {
+                                pos: old - 1,
+                                msg: ERROR_RECURSIVE_WILDCARDS,
+                            });
+                        };
 
                         let tokens_len = tokens.len();
 
                         if is_valid {
                             // collapse consecutive AnyRecursiveSequence to a
                             // single one
-                            if !(tokens_len > 1 &&
-                                 tokens[tokens_len - 1] == AnyRecursiveSequence) {
+                            if !(tokens_len > 1 && tokens[tokens_len - 1] == AnyRecursiveSequence) {
                                 is_recursive = true;
                                 tokens.push(AnyRecursiveSequence);
                             }
@@ -538,7 +549,7 @@ impl Pattern {
                         match chars[i + 3..].iter().position(|x| *x == ']') {
                             None => (),
                             Some(j) => {
-                                let chars = &chars[i + 2 .. i + 3 + j];
+                                let chars = &chars[i + 2..i + 3 + j];
                                 let cs = parse_char_specifiers(chars);
                                 tokens.push(AnyExcept(cs));
                                 i += j + 4;
@@ -549,8 +560,7 @@ impl Pattern {
                         match chars[i + 2..].iter().position(|x| *x == ']') {
                             None => (),
                             Some(j) => {
-                                let cs = parse_char_specifiers(&chars[i + 1 ..
-                                                                      i + 2 + j]);
+                                let cs = parse_char_specifiers(&chars[i + 1..i + 2 + j]);
                                 tokens.push(AnyWithin(cs));
                                 i += j + 3;
                                 continue;
@@ -559,8 +569,7 @@ impl Pattern {
                     }
 
                     // if we get here then this is not a valid range pattern
-                    return Err(
-                      PatternError  {
+                    return Err(PatternError {
                         pos: i,
                         msg: ERROR_INVALID_RANGE,
                     });
@@ -621,9 +630,7 @@ impl Pattern {
     /// `Pattern` using the default match options (i.e. `MatchOptions::new()`).
     pub fn matches_path(&self, path: &Path) -> bool {
         // FIXME (#9639): This needs to handle non-utf8 paths
-        path.to_str().map_or(false, |s| {
-            self.matches(s)
-        })
+        path.to_str().map_or(false, |s| self.matches(s))
     }
 
     /// Return if the given `str` matches this `Pattern` using the specified
@@ -636,25 +643,29 @@ impl Pattern {
     /// `Pattern` using the specified match options.
     pub fn matches_path_with(&self, path: &Path, options: &MatchOptions) -> bool {
         // FIXME (#9639): This needs to handle non-utf8 paths
-        path.to_str().map_or(false, |s| {
-            self.matches_with(s, options)
-        })
+        path.to_str().map_or(false, |s| self.matches_with(s, options))
     }
 
     /// Access the original glob pattern.
-    pub fn as_str<'a>(&'a self) -> &'a str { &self.original }
+    pub fn as_str<'a>(&'a self) -> &'a str {
+        &self.original
+    }
 
     fn matches_from(&self,
                     mut follows_separator: bool,
                     mut file: std::str::Chars,
                     i: usize,
-                    options: &MatchOptions) -> MatchResult {
+                    options: &MatchOptions)
+                    -> MatchResult {
 
         for (ti, token) in self.tokens[i..].iter().enumerate() {
             match *token {
-                AnySequence|AnyRecursiveSequence => {
+                AnySequence | AnyRecursiveSequence => {
                     // ** must be at the start.
-                    debug_assert!(match *token { AnyRecursiveSequence => follows_separator, _ => true });
+                    debug_assert!(match *token {
+                        AnyRecursiveSequence => follows_separator,
+                        _ => true,
+                    });
 
                     // Empty match
                     match self.matches_from(follows_separator, file.clone(), i + ti + 1, options) {
@@ -669,15 +680,19 @@ impl Pattern {
                         follows_separator = path::is_separator(c);
                         match *token {
                             AnyRecursiveSequence if !follows_separator => continue,
-                            AnySequence if options.require_literal_separator && follows_separator => return SubPatternDoesntMatch,
+                            AnySequence if options.require_literal_separator &&
+                                           follows_separator => return SubPatternDoesntMatch,
                             _ => (),
                         }
-                        match self.matches_from(follows_separator, file.clone(), i + ti + 1, options) {
+                        match self.matches_from(follows_separator,
+                                                file.clone(),
+                                                i + ti + 1,
+                                                options) {
                             SubPatternDoesntMatch => (), // keep trying
                             m => return m,
                         }
                     }
-                },
+                }
                 _ => {
                     let c = match file.next() {
                         Some(c) => c,
@@ -687,10 +702,10 @@ impl Pattern {
                     let is_sep = path::is_separator(c);
 
                     if !match *token {
-                        AnyChar|AnyWithin(..)|AnyExcept(..)
-                            if (options.require_literal_separator && is_sep)
-                            || (follows_separator && options.require_literal_leading_dot && c == '.')
-                                => false,
+                        AnyChar | AnyWithin(..) | AnyExcept(..)
+                            if (options.require_literal_separator && is_sep) ||
+                            (follows_separator && options.require_literal_leading_dot &&
+                             c == '.') => false,
                         AnyChar => true,
                         AnyWithin(ref specifiers) => in_char_specifiers(&specifiers, c, options),
                         AnyExcept(ref specifiers) => !in_char_specifiers(&specifiers, c, options),
@@ -711,7 +726,6 @@ impl Pattern {
             SubPatternDoesntMatch
         }
     }
-
 }
 
 // Fills `todo` with paths under `path` to be matched by `patterns[idx]`,
@@ -728,7 +742,7 @@ fn fill_todo(todo: &mut Vec<Result<(PathBuf, usize), GlobError>>,
         for token in pattern.tokens.iter() {
             match *token {
                 Char(c) => s.push(c),
-                _ => return None
+                _ => return None,
             }
         }
         return Some(s);
@@ -756,20 +770,27 @@ fn fill_todo(todo: &mut Vec<Result<(PathBuf, usize), GlobError>>,
             // we can just check for that one entry and potentially recurse
             // right away.
             let special = "." == s || ".." == s;
-            let next_path = if curdir {PathBuf::from(s)} else {path.join(&s)};
+            let next_path = if curdir {
+                PathBuf::from(s)
+            } else {
+                path.join(&s)
+            };
             if (special && is_dir) || (!special && fs::metadata(&next_path).is_ok()) {
                 add(todo, next_path);
             }
-        },
+        }
         None if is_dir => {
             let dirs = fs::read_dir(path).and_then(|d| {
-                d.map(|e| e.map(|e| {
-                    if curdir {
-                        PathBuf::from(e.path().file_name().unwrap())
-                    } else {
-                        e.path()
-                    }
-                })).collect::<Result<Vec<_>, _>>()
+                d.map(|e| {
+                     e.map(|e| {
+                         if curdir {
+                             PathBuf::from(e.path().file_name().unwrap())
+                         } else {
+                             e.path()
+                         }
+                     })
+                 })
+                 .collect::<Result<Vec<_>, _>>()
             });
             match dirs {
                 Ok(mut children) => {
@@ -788,7 +809,7 @@ fn fill_todo(todo: &mut Vec<Result<(PathBuf, usize), GlobError>>,
                             }
                         }
                     }
-                },
+                }
                 Err(e) => {
                     todo.push(Err(GlobError {
                         path: path.to_path_buf(),
@@ -797,7 +818,9 @@ fn fill_todo(todo: &mut Vec<Result<(PathBuf, usize), GlobError>>,
                 }
             }
         }
-        None => {/* not a directory, nothing more to find */}
+        None => {
+            // not a directory, nothing more to find
+        }
     }
 }
 
@@ -828,8 +851,7 @@ fn in_char_specifiers(specifiers: &[CharSpecifier], c: char, options: &MatchOpti
             CharRange(start, end) => {
 
                 // FIXME: work with non-ascii chars properly (issue #1347)
-                if !options.case_sensitive && c.is_ascii() &&
-                   start.is_ascii() && end.is_ascii() {
+                if !options.case_sensitive && c.is_ascii() && start.is_ascii() && end.is_ascii() {
 
                     let start = start.to_ascii_lowercase();
                     let end = end.to_ascii_lowercase();
@@ -890,32 +912,30 @@ pub struct MatchOptions {
     /// or `[...]` will not match. This is useful because such files are
     /// conventionally considered hidden on Unix systems and it might be
     /// desirable to skip them when listing files.
-    pub require_literal_leading_dot: bool
+    pub require_literal_leading_dot: bool,
 }
 
 impl MatchOptions {
-
-     /// Constructs a new `MatchOptions` with default field values. This is used
-     /// when calling functions that do not take an explicit `MatchOptions`
-     /// parameter.
-     ///
-     /// This function always returns this value:
-     ///
-     /// ```rust,ignore
-     /// MatchOptions {
-     ///     case_sensitive: true,
-     ///     require_literal_separator: false.
-     ///     require_literal_leading_dot: false
-     /// }
-     /// ```
+    /// Constructs a new `MatchOptions` with default field values. This is used
+    /// when calling functions that do not take an explicit `MatchOptions`
+    /// parameter.
+    ///
+    /// This function always returns this value:
+    ///
+    /// ```rust,ignore
+    /// MatchOptions {
+    ///     case_sensitive: true,
+    ///     require_literal_separator: false.
+    ///     require_literal_leading_dot: false
+    /// }
+    /// ```
     pub fn new() -> MatchOptions {
         MatchOptions {
             case_sensitive: true,
             require_literal_separator: false,
-            require_literal_leading_dot: false
+            require_literal_leading_dot: false,
         }
     }
-
 }
 
 #[cfg(test)]
@@ -941,7 +961,7 @@ mod test {
     #[test]
     fn test_unclosed_bracket_errors() {
         assert!(Pattern::new("abc[def").unwrap_err().pos == 3);
-        assert!(Pattern::new("abc[!def").unwrap_err().pos == 3 );
+        assert!(Pattern::new("abc[!def").unwrap_err().pos == 3);
         assert!(Pattern::new("abc[").unwrap_err().pos == 3);
         assert!(Pattern::new("abc[!").unwrap_err().pos == 3);
         assert!(Pattern::new("abc[d").unwrap_err().pos == 3);
@@ -985,15 +1005,19 @@ mod test {
         // assume that the filesystem is not empty!
         assert!(glob("/*").unwrap().next().is_some());
 
-        #[cfg(not(windows))] fn win() {}
+        #[cfg(not(windows))]
+        fn win() {}
 
-        #[cfg(windows)] fn win() {
+        #[cfg(windows)]
+        fn win() {
             use std::env::current_dir;
             use std::ffi::AsOsStr;
 
             // check windows absolute paths with host/device components
-            let root_with_device =
-                current_dir().ok().and_then(|p| p.prefix().map(|p| p.join("*"))).unwrap();
+            let root_with_device = current_dir()
+                                       .ok()
+                                       .and_then(|p| p.prefix().map(|p| p.join("*")))
+                                       .unwrap();
             // FIXME (#9639): This needs to handle non-utf8 paths
             assert!(glob(root_with_device.as_os_str().to_str().unwrap()).unwrap().next().is_some());
         }
@@ -1009,7 +1033,9 @@ mod test {
         assert!(Pattern::new("a*b*c").unwrap().matches("a___b___c"));
         assert!(Pattern::new("abc*abc*abc").unwrap().matches("abcabcabcabcabcabcabc"));
         assert!(!Pattern::new("abc*abc*abc").unwrap().matches("abcabcabcabcabcabcabca"));
-        assert!(Pattern::new("a*a*a*a*a*a*a*a*a").unwrap().matches("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
+        assert!(Pattern::new("a*a*a*a*a*a*a*a*a")
+                    .unwrap()
+                    .matches("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
         assert!(Pattern::new("a*b[xyz]c*d").unwrap().matches("abxcdbxcddd"));
     }
 
@@ -1090,7 +1116,7 @@ mod test {
                 assert!(pat.matches(&c.to_string()));
             }
             for c in "ABCDEFGHIJKLMNOPQRSTUVWXYZ".chars() {
-                let options = MatchOptions {case_sensitive: false, .. MatchOptions::new()};
+                let options = MatchOptions { case_sensitive: false, ..MatchOptions::new() };
                 assert!(pat.matches_with(&c.to_string(), &options));
             }
             assert!(pat.matches("1"));
@@ -1148,7 +1174,7 @@ mod test {
         let options = MatchOptions {
             case_sensitive: false,
             require_literal_separator: false,
-            require_literal_leading_dot: false
+            require_literal_leading_dot: false,
         };
 
         assert!(pat.matches_with("aBcDeFg", &options));
@@ -1166,12 +1192,12 @@ mod test {
         let options_case_insensitive = MatchOptions {
             case_sensitive: false,
             require_literal_separator: false,
-            require_literal_leading_dot: false
+            require_literal_leading_dot: false,
         };
         let options_case_sensitive = MatchOptions {
             case_sensitive: true,
             require_literal_separator: false,
-            require_literal_leading_dot: false
+            require_literal_leading_dot: false,
         };
 
         assert!(pat_within.matches_with("a", &options_case_insensitive));
@@ -1189,23 +1215,37 @@ mod test {
         let options_require_literal = MatchOptions {
             case_sensitive: true,
             require_literal_separator: true,
-            require_literal_leading_dot: false
+            require_literal_leading_dot: false,
         };
         let options_not_require_literal = MatchOptions {
             case_sensitive: true,
             require_literal_separator: false,
-            require_literal_leading_dot: false
+            require_literal_leading_dot: false,
         };
 
         assert!(Pattern::new("abc/def").unwrap().matches_with("abc/def", &options_require_literal));
-        assert!(!Pattern::new("abc?def").unwrap().matches_with("abc/def", &options_require_literal));
-        assert!(!Pattern::new("abc*def").unwrap().matches_with("abc/def", &options_require_literal));
-        assert!(!Pattern::new("abc[/]def").unwrap().matches_with("abc/def", &options_require_literal));
+        assert!(!Pattern::new("abc?def")
+                     .unwrap()
+                     .matches_with("abc/def", &options_require_literal));
+        assert!(!Pattern::new("abc*def")
+                     .unwrap()
+                     .matches_with("abc/def", &options_require_literal));
+        assert!(!Pattern::new("abc[/]def")
+                     .unwrap()
+                     .matches_with("abc/def", &options_require_literal));
 
-        assert!(Pattern::new("abc/def").unwrap().matches_with("abc/def", &options_not_require_literal));
-        assert!(Pattern::new("abc?def").unwrap().matches_with("abc/def", &options_not_require_literal));
-        assert!(Pattern::new("abc*def").unwrap().matches_with("abc/def", &options_not_require_literal));
-        assert!(Pattern::new("abc[/]def").unwrap().matches_with("abc/def", &options_not_require_literal));
+        assert!(Pattern::new("abc/def")
+                    .unwrap()
+                    .matches_with("abc/def", &options_not_require_literal));
+        assert!(Pattern::new("abc?def")
+                    .unwrap()
+                    .matches_with("abc/def", &options_not_require_literal));
+        assert!(Pattern::new("abc*def")
+                    .unwrap()
+                    .matches_with("abc/def", &options_not_require_literal));
+        assert!(Pattern::new("abc[/]def")
+                    .unwrap()
+                    .matches_with("abc/def", &options_not_require_literal));
     }
 
     #[test]
@@ -1214,12 +1254,12 @@ mod test {
         let options_require_literal_leading_dot = MatchOptions {
             case_sensitive: true,
             require_literal_separator: false,
-            require_literal_leading_dot: true
+            require_literal_leading_dot: true,
         };
         let options_not_require_literal_leading_dot = MatchOptions {
             case_sensitive: true,
             require_literal_separator: false,
-            require_literal_leading_dot: false
+            require_literal_leading_dot: false,
         };
 
         let f = |options| Pattern::new("*.txt").unwrap().matches_with(".hello.txt", options);
@@ -1234,7 +1274,9 @@ mod test {
         assert!(f(&options_not_require_literal_leading_dot));
         assert!(!f(&options_require_literal_leading_dot));
 
-        let f = |options| Pattern::new("aaa/bbb/*").unwrap().matches_with("aaa/bbb/c.c.c.", options);
+        let f = |options| {
+            Pattern::new("aaa/bbb/*").unwrap().matches_with("aaa/bbb/c.c.c.", options)
+        };
         assert!(f(&options_not_require_literal_leading_dot));
         assert!(f(&options_require_literal_leading_dot));
 
