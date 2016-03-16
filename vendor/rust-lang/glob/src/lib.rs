@@ -14,8 +14,9 @@
 //! type, allow querying the filesystem for all files that match a particular
 //! pattern - just like the libc `glob` function (for an example see the `glob`
 //! documentation). The methods on the `Pattern` type provide functionality
-//! for checking if individual paths match a particular pattern - in a similar
-//! manner to the libc `fnmatch` function
+//! for checking if individual paths match a particular pattern, in a similar
+//! manner to the libc `fnmatch` function.
+//!
 //! For consistency across platforms, and for Windows support, this module
 //! is implemented entirely in Rust rather than deferring to the libc
 //! `glob`/`fnmatch` functions.
