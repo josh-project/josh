@@ -926,7 +926,7 @@ impl MatchOptions {
     /// ```rust,ignore
     /// MatchOptions {
     ///     case_sensitive: true,
-    ///     require_literal_separator: false.
+    ///     require_literal_separator: false,
     ///     require_literal_leading_dot: false
     /// }
     /// ```
