@@ -5,3 +5,4 @@ authors = ["Christian Schilling <christian.schilling@esrlabs.com>"]
 
 [dependencies]
 git2 = "0.2"
+clap = "2"
