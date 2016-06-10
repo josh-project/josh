@@ -5,6 +5,7 @@ use std::process::Command;
 use std::process::exit;
 use std::env;
 use std::path::Path;
+use std::path::PathBuf;
 
 const CENTRAL_NAME:    &'static str = "bsw/central";
 const AUTOMATION_USER: &'static str = "automation";
@@ -14,7 +15,69 @@ fn module_review_upload() { }
 
 fn central_review_upload() { }
 fn central_submit() { }
-fn central_direct_push() { }
+
+fn central_direct_push(newrev: &str) {
+  println!("central_direct_push");
+  let mpath = Path::new("modules");
+
+  let module_names = get_module_names(newrev);
+  let tmp_repo = setup_tmp_repo(&module_names);
+  transfer_to_tmp(newrev);
+
+  let central_commit_obj = tmp_repo.revparse_single(newrev).unwrap();
+  let central_commit = central_commit_obj.as_commit().unwrap();
+  let central_tree = central_commit.tree().unwrap();
+  let modules = tmp_repo.find_tree(central_tree.get_path(mpath).unwrap().id());
+  tmp_repo.branch(CENTRAL_NAME,central_commit,true);
+
+  for module_name in module_names {
+    let module_master_commit_obj =
+      tmp_repo.revparse_single(&format!("remotes/modules/{}/master",module_name)).unwrap();
+    let module_master_commit = 
+      module_master_commit_obj.as_commit().unwrap();
+    tmp_repo.branch(&format!("modules/{}",module_name),module_master_commit,true);
+
+    let parents = vec!(module_master_commit);
+    let old_tree_oid = module_master_commit.tree().unwrap().id();
+
+    let module_path = { let mut p = PathBuf::new(); p.push("modules"); p.push(&module_name); p };
+
+    let new_tree_oid = central_tree.get_path(&module_path).unwrap().id();
+
+    if new_tree_oid != old_tree_oid {
+      
+      let new_tree = tmp_repo.find_tree(new_tree_oid).unwrap();
+
+      let module_commit = make_commit(&tmp_repo, &new_tree, central_commit, &parents);
+      let x = push_from_tmp(
+        &tmp_repo,
+        &tmp_repo.find_commit(module_commit.unwrap()).unwrap(),
+        &format!("bsw/modules/{}",module_name),
+        "master"
+      );
+      println!("{}", x);
+    //         print("{0}: pushed commit {1}".format(module_name, module_commit))
+    }
+    else{
+
+    //         print("{0}: no changes".format(module_name))
+    }
+  }
+}
+
+fn transfer_to_tmp(rev: &str) {
+  Command::new("git")
+    .arg("branch").arg("-f").arg("tmp").arg(rev)
+  .output().expect("failed to call git");
+
+  Command::new("git")
+    .arg("push").arg("--force").arg(TMP_REPO_DIR).arg("tmp")
+  .output().expect("failed to call git");
+
+  Command::new("git")
+    .arg("branch").arg("-D").arg("tmp")
+  .output().expect("failed to call git");
+}
 
 fn in_tmp_repo(cmd: &str) -> String {
   let args: Vec<&str> = cmd.split(" ").collect();
@@ -24,8 +87,8 @@ fn in_tmp_repo(cmd: &str) -> String {
   return format!("{}", String::from_utf8_lossy(&output.stdout));
 }
 
-fn setup_tmp_repo(name: &str, modules: &Vec<String>) -> Repository {
-  let repo = Repository::init_bare(name).unwrap();
+fn setup_tmp_repo(modules: &Vec<String>) -> Repository {
+  let repo = Repository::init_bare(TMP_REPO_DIR).unwrap();
 
   if !repo.find_remote("central_repo").is_ok() {
     repo.remote("central_repo", 
@@ -62,13 +125,19 @@ fn setup_tmp_repo(name: &str, modules: &Vec<String>) -> Repository {
   return repo;
 }
 
-fn module_to_subfolder(module: Tree, master: Tree) {
-  let modules_oid = master.get_path(&Path::new("modules")).unwrap().id();
+fn module_to_subfolder(path: &Path, module_tree: &Tree, master_tree: &Tree) -> Oid {
+  let mpath = Path::new("modules");
+  let modules_oid = master_tree.get_path(mpath).unwrap().id();
   let tmp_repo = Repository::init_bare(TMP_REPO_DIR).unwrap();
 
   let modules_tree = tmp_repo.find_tree(modules_oid).unwrap();
-  // let mbuilder = TreeBuilder::new(modules_tree);
-  // let mbuilder = tmp_repo.treebuilder(modules_tree);
+  let mut mbuilder = tmp_repo.treebuilder(Some(&modules_tree)).unwrap();
+  mbuilder.insert(path, module_tree.id(), 0040000); // GIT_FILEMODE_TREE
+  let mtree = mbuilder.write().unwrap();
+
+  let mut builder = tmp_repo.treebuilder(Some(master_tree)).unwrap();
+  builder.insert(mpath, mtree, 0040000); // GIT_FILEMODE_TREE
+  return builder.write().unwrap();
 }
 
 fn get_module_names(rev: &str) -> Vec<String> {
@@ -89,9 +158,35 @@ fn get_module_names(rev: &str) -> Vec<String> {
   return names;
 }
 
-fn main() {
+fn push_from_tmp(tmp_repo: &Repository, commit: &Commit,repo: &str ,to: &str) -> String {
+  tmp_repo.set_head_detached(commit.id());
+  return in_tmp_repo(
+    &format!("push ssh://{}@gerrit-test-git:29418/{}.git HEAD:{}",
+      AUTOMATION_USER,
+      repo,
+      to
+    )
+  )
+}
+
+fn make_commit(repo: &Repository, tree: &Tree, base: &Commit, parents: &[&Commit]) -> Option<Oid> {
+  if parents.len() != 0 {
+    repo.set_head_detached(parents[0].id());
+  }
+  return repo.commit(
+    Some("HEAD"),
+    &base.author(),
+    &base.committer(),
+    &base.message().unwrap_or("no message"),
+    tree,
+    parents
+  ).ok();
+}
+
+fn main() { exit(main_ret()); } fn main_ret() -> i32 {
 
   let args = clap::App::new("centralgithook")
+      .arg(clap::Arg::with_name("oldrev").long("oldrev").takes_value(true))
       .arg(clap::Arg::with_name("newrev").long("newrev").takes_value(true))
       .arg(clap::Arg::with_name("project").long("project").takes_value(true))
       .arg(clap::Arg::with_name("refname").long("refname").takes_value(true))
@@ -113,14 +208,14 @@ fn main() {
     let is_update = hook.ends_with("ref-update");
     let is_submit = hook.ends_with("change-merged");
 
-    if !is_review && !is_automation {
-      println!("only push to refs/for/master");
-      exit(1);
-    }
+    // if !is_review && !is_automation {
+    //   println!("only push to refs/for/master");
+    //   return 1;
+    // }
 
     if is_module && is_update && is_review { module_review_upload(); }
     if !is_module && is_update && is_review { central_review_upload(); }
-    if !is_module && is_update && !is_review { central_direct_push(); }
+    if !is_module && is_update && !is_review { central_direct_push(newrev); }
     if !is_module && is_submit { central_submit(); }
   }
 
@@ -129,5 +224,7 @@ fn main() {
       Err(e) => panic!("failed to init: {}", e),
   };
   println!("Hello, world!");
-  exit(0);
+  return 0;
 }
+
+
