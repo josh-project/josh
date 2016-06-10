@@ -23,26 +23,45 @@ fn module_review_upload(project: &str, newrev: &str) {
   let tmp_repo = Repository::init_bare(TMP_REPO_DIR).unwrap();
 
   transfer_to_tmp(newrev);
+  let parent_commit_obj = tmp_repo.revparse_single(CENTRAL_NAME).unwrap();
+  let mut parent_commit_oid = parent_commit_obj.as_commit().unwrap().id();
 
-  let module_commit_obj = tmp_repo.revparse_single(newrev).unwrap();
-  let module_commit = module_commit_obj.as_commit().unwrap();
-  let module_tree = module_commit.tree().unwrap();
+  let walk = {
+    let mut walk = tmp_repo.revwalk().unwrap();
+    walk.set_sorting( Sort::from_bits(5).unwrap());
+    walk.push_range(
+      &format!("remotes/modules/{}/master..{}",
+        module_name.as_os_str().to_str().unwrap(),
+        newrev,
+      )
+    );
+    walk
+  };
 
-  let master_commit_obj = tmp_repo.revparse_single(CENTRAL_NAME).unwrap();
-  let master_commit = master_commit_obj.as_commit().unwrap();
-  let master_tree = master_commit_obj.as_commit().unwrap().tree().unwrap();
+  for rev in walk.skip(1) {
+    let newrev = format!("{}",rev.unwrap());
 
-  let new_tree_oid = module_to_subfolder(Path::new(module_name.as_ref()), &module_tree, &master_tree);
-  let new_tree = tmp_repo.find_tree(new_tree_oid).unwrap();
+    let module_commit_obj = tmp_repo.revparse_single(&newrev).unwrap();
+    let module_commit = module_commit_obj.as_commit().unwrap();
+    let module_tree = module_commit.tree().unwrap();
 
+    let parent_commit = tmp_repo.find_commit(parent_commit_oid).unwrap();
 
-  let parents = vec!(master_commit);
-  let central_commit = make_commit(&tmp_repo, &new_tree, module_commit, &parents);
+    let new_tree = {
+      let master_tree = parent_commit.tree().unwrap();
+      let new_tree_oid = module_to_subfolder(Path::new(module_name.as_ref()), &module_tree, &master_tree);
+      tmp_repo.find_tree(new_tree_oid).unwrap()
+    };
+
+    parent_commit_oid = make_commit(&tmp_repo, &new_tree, module_commit, &vec!(&parent_commit)).unwrap();
+
+  }
+
   println!(""); println!("");
   println!("===================== Doing actual upload in central git ========================");
   let x = push_from_tmp(
     &tmp_repo,
-    &tmp_repo.find_commit(central_commit.unwrap()).unwrap(),
+    &tmp_repo.find_commit(parent_commit_oid).unwrap(),
     CENTRAL_NAME,
     "refs/for/master"
   );
