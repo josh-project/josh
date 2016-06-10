@@ -38,6 +38,8 @@ fn module_review_upload(project: &str, newrev: &str) {
 
   let parents = vec!(master_commit);
   let central_commit = make_commit(&tmp_repo, &new_tree, module_commit, &parents);
+  println!(""); println!("");
+  println!("===================== Doing actual upload in central git ========================");
   let x = push_from_tmp(
     &tmp_repo,
     &tmp_repo.find_commit(central_commit.unwrap()).unwrap(),
@@ -45,7 +47,7 @@ fn module_review_upload(project: &str, newrev: &str) {
     "refs/for/master"
   );
   println!("{}", x);
-  println!("==== The review upload may have worked, even if it says error below! ====");
+  println!("==== The review upload may have worked, even if it says error below. Look UP! ====");
 }
 
 fn central_submit(newrev: &str) {
@@ -111,7 +113,7 @@ fn in_tmp_repo(cmd: &str) -> String {
   let output = Command::new("git")
     .env("GIT_DIR",TMP_REPO_DIR)
     .args(&args).output().unwrap();
-  return format!("{}", String::from_utf8_lossy(&output.stdout));
+  return format!("{}", String::from_utf8_lossy(&output.stderr));
 }
 
 fn setup_tmp_repo(modules: &Vec<String>) -> Repository {
@@ -134,7 +136,7 @@ fn setup_tmp_repo(modules: &Vec<String>) -> Repository {
       .output()
       .expect("failed to create project");
 
-    println!("create-project: {}", String::from_utf8_lossy(&output.stdout));
+    println!("create-project: {}", String::from_utf8_lossy(&output.stderr));
 
     let remote_url = format!("ssh://{}@gerrit-test-git:29418/bsw/modules/{}.git",
       AUTOMATION_USER,
@@ -213,8 +215,6 @@ fn make_commit(repo: &Repository, tree: &Tree, base: &Commit, parents: &[&Commit
 }
 
 fn main() { exit(main_ret()); } fn main_ret() -> i32 {
-  println!("print some stuff to stdout");
-  writeln!(&mut std::io::stderr(), "print some stuff to stderr");
 
   let args = clap::App::new("centralgithook")
       .arg(clap::Arg::with_name("oldrev").long("oldrev").takes_value(true))
