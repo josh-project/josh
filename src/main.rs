@@ -21,25 +21,46 @@ fn module_review_upload(project: &str, newrev: &str) {
   let module_name = project_path.components().last().unwrap();
 
   let tmp_repo = Repository::init_bare(TMP_REPO_DIR).unwrap();
+  in_tmp_repo("fetch --all");
 
   transfer_to_tmp(newrev);
   let parent_commit_obj = tmp_repo.revparse_single(CENTRAL_NAME).unwrap();
   let mut parent_commit_oid = parent_commit_obj.as_commit().unwrap().id();
 
+  let s = module_name.as_ref().to_str().unwrap();
+  let oldrev = format!(
+    "{}",tmp_repo.revparse_single(&format!("remotes/modules/{}/master",s)).unwrap().id()
+  );
+
+  {
+    let old = tmp_repo.revparse_single(&oldrev).unwrap().id();
+    let new = tmp_repo.revparse_single(&newrev).unwrap().id();
+
+    let module_commit_obj = tmp_repo.revparse_single(&newrev).unwrap();
+    if !tmp_repo.graph_descendant_of(new,old).unwrap() {
+      println!(".");
+      println!("===========================================================");
+      println!("======== Commit not based on master, rebase first! ========");
+      println!("===========================================================");
+      return;
+    }
+  }
+
   let walk = {
     let mut walk = tmp_repo.revwalk().unwrap();
     walk.set_sorting( Sort::from_bits(5).unwrap());
-    walk.push_range(
-      &format!("remotes/modules/{}/master..{}",
-        module_name.as_os_str().to_str().unwrap(),
-        newrev,
-      )
-    );
+    walk.push_range(&format!("{}..{}", oldrev, newrev));
     walk
   };
 
-  for rev in walk.skip(1) {
+
+    println!("===== project path: {}", project);
+    println!("===== Apply commits from {} to {}", oldrev, newrev);
+
+  for rev in walk {
     let newrev = format!("{}",rev.unwrap());
+    if oldrev == newrev { continue; }
+    println!("===== Apply commit {}", newrev);
 
     let module_commit_obj = tmp_repo.revparse_single(&newrev).unwrap();
     let module_commit = module_commit_obj.as_commit().unwrap();
