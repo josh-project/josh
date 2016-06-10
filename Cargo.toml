@@ -4,5 +4,5 @@ version = "0.1.0"
 authors = ["Christian Schilling <christian.schilling@esrlabs.com>"]
 
 [dependencies]
-git2 = "0.2"
+git2 = "0.4.3"
 clap = "2"

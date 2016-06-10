@@ -1,23 +1,55 @@
 extern crate git2;
 extern crate clap;
+
 use git2::*;
-use std::process::Command;
-use std::process::exit;
 use std::env;
+use std::io::Write;
 use std::path::Path;
 use std::path::PathBuf;
+use std::process::Command;
+use std::process::exit;
 
 const CENTRAL_NAME:    &'static str = "bsw/central";
 const AUTOMATION_USER: &'static str = "automation";
+
+// FIXME: hardcoded path
 const TMP_REPO_DIR:    &'static str = "/home/christian/gerrit_testsite/tmp_automation_repo";
 
-fn module_review_upload() { }
+fn module_review_upload(project: &str, newrev: &str) {
+  let project_path = Path::new(project);
+  let subdir = project_path.components().nth(0).unwrap();
+  let module_name = project_path.components().last().unwrap();
 
-fn central_review_upload() { }
-fn central_submit() { }
+  let tmp_repo = Repository::init_bare(TMP_REPO_DIR).unwrap();
 
-fn central_direct_push(newrev: &str) {
-  println!("central_direct_push");
+  transfer_to_tmp(newrev);
+
+  let module_commit_obj = tmp_repo.revparse_single(newrev).unwrap();
+  let module_commit = module_commit_obj.as_commit().unwrap();
+  let module_tree = module_commit.tree().unwrap();
+
+  let master_commit_obj = tmp_repo.revparse_single(CENTRAL_NAME).unwrap();
+  let master_commit = master_commit_obj.as_commit().unwrap();
+  let master_tree = master_commit_obj.as_commit().unwrap().tree().unwrap();
+
+  let new_tree_oid = module_to_subfolder(Path::new(module_name.as_ref()), &module_tree, &master_tree);
+  let new_tree = tmp_repo.find_tree(new_tree_oid).unwrap();
+
+
+  let parents = vec!(master_commit);
+  let central_commit = make_commit(&tmp_repo, &new_tree, module_commit, &parents);
+  let x = push_from_tmp(
+    &tmp_repo,
+    &tmp_repo.find_commit(central_commit.unwrap()).unwrap(),
+    CENTRAL_NAME,
+    "refs/for/master"
+  );
+  println!("{}", x);
+  println!("==== The review upload may have worked, even if it says error below! ====");
+}
+
+fn central_submit(newrev: &str) {
+  println!("central_submit");
   let mpath = Path::new("modules");
 
   let module_names = get_module_names(newrev);
@@ -56,11 +88,6 @@ fn central_direct_push(newrev: &str) {
         "master"
       );
       println!("{}", x);
-    //         print("{0}: pushed commit {1}".format(module_name, module_commit))
-    }
-    else{
-
-    //         print("{0}: no changes".format(module_name))
     }
   }
 }
@@ -132,12 +159,14 @@ fn module_to_subfolder(path: &Path, module_tree: &Tree, master_tree: &Tree) -> O
 
   let modules_tree = tmp_repo.find_tree(modules_oid).unwrap();
   let mut mbuilder = tmp_repo.treebuilder(Some(&modules_tree)).unwrap();
-  mbuilder.insert(path, module_tree.id(), 0040000); // GIT_FILEMODE_TREE
+  mbuilder.insert(path, module_tree.id(), 0o0040000).expect("mbuilder insert failed"); // GIT_FILEMODE_TREE
   let mtree = mbuilder.write().unwrap();
 
   let mut builder = tmp_repo.treebuilder(Some(master_tree)).unwrap();
-  builder.insert(mpath, mtree, 0040000); // GIT_FILEMODE_TREE
-  return builder.write().unwrap();
+  builder.insert(mpath, mtree, 0o0040000).expect("builder insert failed"); // GIT_FILEMODE_TREE
+  let r = builder.write().unwrap();
+  println!("module_to_subfolder {}", r);
+  return r;
 }
 
 fn get_module_names(rev: &str) -> Vec<String> {
@@ -184,6 +213,8 @@ fn make_commit(repo: &Repository, tree: &Tree, base: &Commit, parents: &[&Commit
 }
 
 fn main() { exit(main_ret()); } fn main_ret() -> i32 {
+  println!("print some stuff to stdout");
+  writeln!(&mut std::io::stderr(), "print some stuff to stderr");
 
   let args = clap::App::new("centralgithook")
       .arg(clap::Arg::with_name("oldrev").long("oldrev").takes_value(true))
@@ -192,6 +223,12 @@ fn main() { exit(main_ret()); } fn main_ret() -> i32 {
       .arg(clap::Arg::with_name("refname").long("refname").takes_value(true))
       .arg(clap::Arg::with_name("uploader").long("uploader").takes_value(true))
       .arg(clap::Arg::with_name("commit").long("commit").takes_value(true))
+      .arg(clap::Arg::with_name("change").long("change").takes_value(true))
+      .arg(clap::Arg::with_name("change-url").long("change-url").takes_value(true))
+      .arg(clap::Arg::with_name("change-owner").long("change-owner").takes_value(true))
+      .arg(clap::Arg::with_name("branch").long("branch").takes_value(true))
+      .arg(clap::Arg::with_name("submitter").long("submitter").takes_value(true))
+      .arg(clap::Arg::with_name("topic").long("topic").takes_value(true))
       .get_matches();
 
   let newrev = args.value_of("newrev").unwrap_or(""); 
@@ -208,22 +245,17 @@ fn main() { exit(main_ret()); } fn main_ret() -> i32 {
     let is_update = hook.ends_with("ref-update");
     let is_submit = hook.ends_with("change-merged");
 
+    // // TODO
     // if !is_review && !is_automation {
     //   println!("only push to refs/for/master");
     //   return 1;
     // }
 
-    if is_module && is_update && is_review { module_review_upload(); }
-    if !is_module && is_update && is_review { central_review_upload(); }
-    if !is_module && is_update && !is_review { central_direct_push(newrev); }
-    if !is_module && is_submit { central_submit(); }
+    if is_submit { central_submit(commit); }
+    else if !is_module && is_update && !is_review { central_submit(newrev); }
+    else if is_module && is_update && is_review { module_review_upload(project,newrev); return 1; }
   }
 
-  let repo = match Repository::open(".") {
-      Ok(repo) => repo,
-      Err(e) => panic!("failed to init: {}", e),
-  };
-  println!("Hello, world!");
   return 0;
 }
 
