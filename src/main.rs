@@ -15,16 +15,15 @@ const AUTOMATION_USER: &'static str = "automation";
 const TMP_REPO_DIR:    &'static str = "/home/christian/gerrit_testsite/tmp_automation_repo";
 
 fn module_review_upload(project: &str, newrev: &str) {
-  let project_path = Path::new(project);
-  let module_name = project_path.components().last().unwrap();
 
   let tmp_repo = Repository::init_bare(TMP_REPO_DIR).unwrap();
-  in_tmp_repo("fetch --all");
+  let _ = in_tmp_repo("fetch --all");
 
   transfer_to_tmp(newrev);
   let parent_commit_obj = tmp_repo.revparse_single(CENTRAL_NAME).unwrap();
   let mut parent_commit_oid = parent_commit_obj.as_commit().unwrap().id();
 
+  let module_name = Path::new(project).components().last().unwrap();
   let s = module_name.as_ref().to_str().unwrap();
   let oldrev = format!(
     "{}",tmp_repo.revparse_single(&format!("remotes/modules/{}/master",s)).unwrap().id()
@@ -82,7 +81,7 @@ fn module_review_upload(project: &str, newrev: &str) {
     &tmp_repo.find_commit(parent_commit_oid).unwrap(),
     CENTRAL_NAME,
     "refs/for/master"
-    );
+    ).unwrap();
   println!("{}", x);
   println!("==== The review upload may have worked, even if it says error below. Look UP! ====");
 }
@@ -123,7 +122,7 @@ fn central_submit(newrev: &str) {
         &tmp_repo.find_commit(module_commit.unwrap()).unwrap(),
         &format!("bsw/modules/{}",module_name),
         "master"
-        );
+        ).unwrap();
       println!("{}", x);
     }
   }
@@ -143,12 +142,12 @@ fn transfer_to_tmp(rev: &str) {
     .output().expect("failed to call git");
 }
 
-fn in_tmp_repo(cmd: &str) -> String {
+fn in_tmp_repo(cmd: &str) -> Result<String, std::io::Error> {
   let args: Vec<&str> = cmd.split(" ").collect();
-  let output = Command::new("git")
+  Command::new("git")
     .env("GIT_DIR",TMP_REPO_DIR)
-    .args(&args).output().unwrap();
-  return format!("{}", String::from_utf8_lossy(&output.stderr));
+    .args(&args).output().map(|output|
+                              format!("{}", String::from_utf8_lossy(&output.stderr)))
 }
 
 fn setup_tmp_repo(modules: &Vec<String>) -> Repository {
@@ -184,7 +183,7 @@ fn setup_tmp_repo(modules: &Vec<String>) -> Repository {
     }
   }
 
-  in_tmp_repo("fetch --all");
+  let _ = in_tmp_repo("fetch --all");
 
   return repo;
 }
@@ -224,29 +223,32 @@ fn get_module_names(rev: &str) -> Vec<String> {
   return names;
 }
 
-fn push_from_tmp(tmp_repo: &Repository, commit: &Commit,repo: &str ,to: &str) -> String {
-  let _ = tmp_repo.set_head_detached(commit.id());
-  in_tmp_repo(
-    &format!("push ssh://{}@gerrit-test-git:29418/{}.git HEAD:{}",
-             AUTOMATION_USER,
-             repo,
-             to
-            )
-    )
-}
+fn push_from_tmp(tmp_repo: &Repository,
+                 commit: &Commit,
+                 repo: &str ,to: &str)
+  -> Result<String, std::io::Error> {
+    let _ = tmp_repo.set_head_detached(commit.id());
+    in_tmp_repo(
+      &format!("push ssh://{}@gerrit-test-git:29418/{}.git HEAD:{}",
+               AUTOMATION_USER,
+               repo,
+               to
+              )
+      )
+  }
 
 fn make_commit(repo: &Repository, tree: &Tree, base: &Commit, parents: &[&Commit]) -> Option<Oid> {
   if parents.len() != 0 {
     let _ = repo.set_head_detached(parents[0].id());
   }
-  return repo.commit(
+  repo.commit(
     Some("HEAD"),
     &base.author(),
     &base.committer(),
     &base.message().unwrap_or("no message"),
     tree,
     parents
-    ).ok();
+    ).ok()
 }
 
 fn main() { exit(main_ret()); } fn main_ret() -> i32 {
