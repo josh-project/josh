@@ -14,36 +14,42 @@ const AUTOMATION_USER: &'static str = "automation";
 // FIXME: hardcoded path
 const TMP_REPO_DIR:    &'static str = "/home/christian/gerrit_testsite/tmp_automation_repo";
 
-fn module_review_upload(project: &str, newrev: &str) {
+fn module_review_upload(project: &str, newrev: &str) -> Result<(),git2::Error> {
 
-  let tmp_repo = Repository::init_bare(TMP_REPO_DIR).unwrap();
+  let tmp_repo = try!(Repository::init_bare(TMP_REPO_DIR));
   let _ = in_tmp_repo("fetch --all");
 
   transfer_to_tmp(newrev);
-  let parent_commit_obj = tmp_repo.revparse_single(CENTRAL_NAME).unwrap();
-  let mut parent_commit_oid = parent_commit_obj.as_commit().unwrap().id();
+  let parent_commit_obj = try!(tmp_repo.revparse_single(CENTRAL_NAME));
+  let mut parent_commit_oid: git2::Oid = try!(parent_commit_obj
+                                              .as_commit()
+                                              .map(|x| x.id())
+                                              .ok_or(git2::Error::from_str("could not get commit from obj")));
 
-  let module_name = Path::new(project).components().last().unwrap();
-  let s = module_name.as_ref().to_str().unwrap();
-  let oldrev = format!(
-    "{}",tmp_repo.revparse_single(&format!("remotes/modules/{}/master",s)).unwrap().id()
-    );
+  let module_name: &str = try!(Path::new(project)
+                               .components()
+                               .last()
+                               .map(|x| x.as_os_str().to_str().expect("not a valid unicode string"))
+                               .ok_or(git2::Error::from_str("needs to be valid name")));
+  let module_path = format!("remotes/modules/{}/master", module_name);
+  let object = try!(tmp_repo.revparse_single(&module_path).map(|x| x.id()));
+  let oldrev = format!("{}", object);
 
   {
-    let old = tmp_repo.revparse_single(&oldrev).unwrap().id();
-    let new = tmp_repo.revparse_single(&newrev).unwrap().id();
+    let old = try!(tmp_repo.revparse_single(&oldrev).map(|x| x.id()));
+    let new = try!(tmp_repo.revparse_single(&newrev).map(|x| x.id()));
 
-    if !tmp_repo.graph_descendant_of(new,old).unwrap() {
+    if !try!(tmp_repo.graph_descendant_of(new,old)) {
       println!(".");
       println!("===========================================================");
       println!("======== Commit not based on master, rebase first! ========");
       println!("===========================================================");
-      return;
+      return Ok(());
     }
   }
 
   let walk = {
-    let mut walk = tmp_repo.revwalk().unwrap();
+    let mut walk = try!(tmp_repo.revwalk());
     walk.set_sorting( Sort::from_bits(5).unwrap());
     let _ = walk.push_range(&format!("{}..{}", oldrev, newrev));
     walk
@@ -54,20 +60,24 @@ fn module_review_upload(project: &str, newrev: &str) {
   println!("===== Apply commits from {} to {}", oldrev, newrev);
 
   for rev in walk {
-    let newrev = format!("{}",rev.unwrap());
+    let newrev = format!("{}", try!(rev));
     if oldrev == newrev { continue; }
     println!("===== Apply commit {}", newrev);
 
-    let module_commit_obj = tmp_repo.revparse_single(&newrev).unwrap();
-    let module_commit = module_commit_obj.as_commit().unwrap();
-    let module_tree = module_commit.tree().unwrap();
+    let module_commit_obj = try!(tmp_repo.revparse_single(&newrev));
+    let module_commit = try!(module_commit_obj.as_commit()
+                             .ok_or(git2::Error::from_str("object is not actually a commit")));
+    let module_tree = try!(module_commit.tree());
 
-    let parent_commit = tmp_repo.find_commit(parent_commit_oid).unwrap();
+    let parent_commit = try!(tmp_repo.find_commit(parent_commit_oid));
 
     let new_tree = {
-      let master_tree = parent_commit.tree().unwrap();
-      let new_tree_oid = module_to_subfolder(Path::new(module_name.as_ref()), &module_tree, &master_tree);
-      tmp_repo.find_tree(new_tree_oid).unwrap()
+      let master_tree: Tree = try!(parent_commit.tree());
+      let new_tree_oid = module_to_subfolder(
+        Path::new(module_name),
+        &module_tree,
+        &master_tree);
+      try!(tmp_repo.find_tree(new_tree_oid))
     };
 
     parent_commit_oid = make_commit(&tmp_repo, &new_tree, module_commit, &vec!(&parent_commit)).unwrap();
@@ -84,6 +94,7 @@ fn module_review_upload(project: &str, newrev: &str) {
     ).unwrap();
   println!("{}", x);
   println!("==== The review upload may have worked, even if it says error below. Look UP! ====");
+  Ok(())
 }
 
 fn central_submit(newrev: &str) {
@@ -289,7 +300,7 @@ fn main() { exit(main_ret()); } fn main_ret() -> i32 {
 
     if is_submit { central_submit(commit); }
     else if !is_module && is_update && !is_review { central_submit(newrev); }
-    else if is_module && is_update && is_review { module_review_upload(project,newrev); return 1; }
+    else if is_module && is_update && is_review { let _ = module_review_upload(project,newrev); return 1; }
   }
 
   return 0;
