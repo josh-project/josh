@@ -50,8 +50,8 @@ fn module_review_upload(project: &str, newrev: &str) -> Result<(),git2::Error> {
 
   let walk = {
     let mut walk = try!(tmp_repo.revwalk());
-    walk.set_sorting( Sort::from_bits(5).unwrap());
-    let _ = walk.push_range(&format!("{}..{}", oldrev, newrev));
+    walk.set_sorting(git2::SORT_REVERSE | git2::SORT_TIME);
+    try!(walk.push_range(&format!("{}..{}", oldrev, newrev)));
     walk
   };
 
@@ -73,25 +73,26 @@ fn module_review_upload(project: &str, newrev: &str) -> Result<(),git2::Error> {
 
     let new_tree = {
       let master_tree: Tree = try!(parent_commit.tree());
-      let new_tree_oid = module_to_subfolder(
-        Path::new(module_name),
-        &module_tree,
-        &master_tree);
+      let new_tree_oid = try!(module_to_subfolder(
+          Path::new(module_name),
+          &module_tree,
+          &master_tree));
       try!(tmp_repo.find_tree(new_tree_oid))
     };
 
-    parent_commit_oid = make_commit(&tmp_repo, &new_tree, module_commit, &vec!(&parent_commit)).unwrap();
+    parent_commit_oid = try!(make_commit(&tmp_repo, &new_tree, module_commit, &vec!(&parent_commit)));
 
   }
 
   println!(""); println!("");
   println!("===================== Doing actual upload in central git ========================");
-  let x = push_from_tmp(
-    &tmp_repo,
-    &tmp_repo.find_commit(parent_commit_oid).unwrap(),
-    CENTRAL_NAME,
-    "refs/for/master"
-    ).unwrap();
+  let parent_commit = try!(tmp_repo.find_commit(parent_commit_oid));
+  let x = try!(push_from_tmp(
+      &tmp_repo,
+      &parent_commit,
+      CENTRAL_NAME,
+      "refs/for/master"
+      ));
   println!("{}", x);
   println!("==== The review upload may have worked, even if it says error below. Look UP! ====");
   Ok(())
@@ -100,7 +101,7 @@ fn module_review_upload(project: &str, newrev: &str) -> Result<(),git2::Error> {
 fn central_submit(newrev: &str) {
   println!("central_submit");
 
-  let module_names = get_module_names(newrev);
+  let module_names = get_module_names(newrev).unwrap();
   let tmp_repo = setup_tmp_repo(&module_names);
   transfer_to_tmp(newrev);
 
@@ -153,12 +154,15 @@ fn transfer_to_tmp(rev: &str) {
     .output().expect("failed to call git");
 }
 
-fn in_tmp_repo(cmd: &str) -> Result<String, std::io::Error> {
+fn in_tmp_repo(cmd: &str) -> Result<String, git2::Error> {
   let args: Vec<&str> = cmd.split(" ").collect();
-  Command::new("git")
+  match Command::new("git")
     .env("GIT_DIR",TMP_REPO_DIR)
     .args(&args).output().map(|output|
-                              format!("{}", String::from_utf8_lossy(&output.stderr)))
+                              format!("{}", String::from_utf8_lossy(&output.stderr))) {
+      Ok(value) => Ok(value),
+      Err(_) => Err(git2::Error::from_str("could not fire git command")),
+    }
 }
 
 fn setup_tmp_repo(modules: &Vec<String>) -> Repository {
@@ -199,45 +203,48 @@ fn setup_tmp_repo(modules: &Vec<String>) -> Repository {
   return repo;
 }
 
-fn module_to_subfolder(path: &Path, module_tree: &Tree, master_tree: &Tree) -> Oid {
+fn module_to_subfolder(path: &Path, module_tree: &Tree, master_tree: &Tree) -> Result<Oid, git2::Error> {
   let mpath = Path::new("modules");
-  let modules_oid = master_tree.get_path(mpath).unwrap().id();
-  let tmp_repo = Repository::init_bare(TMP_REPO_DIR).unwrap();
+  let modules_oid = try!(master_tree.get_path(mpath).map(|x| x.id()));
+  let tmp_repo = try!(Repository::init_bare(TMP_REPO_DIR));
 
-  let modules_tree = tmp_repo.find_tree(modules_oid).unwrap();
-  let mut mbuilder = tmp_repo.treebuilder(Some(&modules_tree)).unwrap();
+  let modules_tree = try!(tmp_repo.find_tree(modules_oid));
+  let mut mbuilder = try!(tmp_repo.treebuilder(Some(&modules_tree)));
   mbuilder.insert(path, module_tree.id(), 0o0040000).expect("mbuilder insert failed"); // GIT_FILEMODE_TREE
-  let mtree = mbuilder.write().unwrap();
+  let mtree = try!(mbuilder.write());
 
-  let mut builder = tmp_repo.treebuilder(Some(master_tree)).unwrap();
+  let mut builder = try!(tmp_repo.treebuilder(Some(master_tree)));
   builder.insert(mpath, mtree, 0o0040000).expect("builder insert failed"); // GIT_FILEMODE_TREE
-  let r = builder.write().unwrap();
+  let r = try!(builder.write());
   println!("module_to_subfolder {}", r);
-  return r;
+  Ok(r)
 }
 
-fn get_module_names(rev: &str) -> Vec<String> {
-  let central_repo = Repository::open(".").unwrap();
+fn get_module_names(rev: &str) -> Result<Vec<String>, git2::Error> {
+  let central_repo = try!(Repository::open("."));
 
-  let object = central_repo.revparse_single(rev).unwrap();
-  let commit = object.as_commit().unwrap();
-  let tree = commit.tree().unwrap();
+  let object = try!(central_repo.revparse_single(rev));
+  let commit = try!(object
+                    .as_commit()
+                    .ok_or(git2::Error::from_str("could not get commit from obj")));
+  let tree: git2::Tree = try!(commit.tree());
 
-  let modules_o = tree.get_path(&Path::new("modules")).unwrap()
-    .to_object(&central_repo).unwrap();
-  let modules = modules_o.as_tree().unwrap();
+  let modules_o = try!(tree.get_path(&Path::new("modules")).unwrap()
+                   .to_object(&central_repo));
+  let modules = try!(modules_o.as_tree()
+                    .ok_or(git2::Error::from_str("could not get tree from path")));
 
   let mut names = Vec::<String>::new();
   for module in modules.iter() {
     names.push(module.name().unwrap().to_string());
   }
-  return names;
+  Ok(names)
 }
 
 fn push_from_tmp(tmp_repo: &Repository,
                  commit: &Commit,
                  repo: &str ,to: &str)
-  -> Result<String, std::io::Error> {
+  -> Result<String, git2::Error> {
     let _ = tmp_repo.set_head_detached(commit.id());
     in_tmp_repo(
       &format!("push ssh://{}@gerrit-test-git:29418/{}.git HEAD:{}",
@@ -248,7 +255,7 @@ fn push_from_tmp(tmp_repo: &Repository,
       )
   }
 
-fn make_commit(repo: &Repository, tree: &Tree, base: &Commit, parents: &[&Commit]) -> Option<Oid> {
+fn make_commit(repo: &Repository, tree: &Tree, base: &Commit, parents: &[&Commit]) -> Result<Oid, git2::Error> {
   if parents.len() != 0 {
     let _ = repo.set_head_detached(parents[0].id());
   }
@@ -259,7 +266,7 @@ fn make_commit(repo: &Repository, tree: &Tree, base: &Commit, parents: &[&Commit
     &base.message().unwrap_or("no message"),
     tree,
     parents
-    ).ok()
+    )
 }
 
 fn main() { exit(main_ret()); } fn main_ret() -> i32 {
