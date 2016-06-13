@@ -17,14 +17,14 @@ const TMP_REPO_DIR:    &'static str = "/home/christian/gerrit_testsite/tmp_autom
 fn module_review_upload(project: &str, newrev: &str) -> Result<(),git2::Error> {
 
   let tmp_repo = try!(Repository::init_bare(TMP_REPO_DIR));
-  let _ = in_tmp_repo("fetch --all");
+  try!(in_tmp_repo("fetch --all"));
 
   transfer_to_tmp(newrev);
-  let parent_commit_obj = try!(tmp_repo.revparse_single(CENTRAL_NAME));
-  let mut parent_commit_oid: git2::Oid = try!(parent_commit_obj
-                                              .as_commit()
-                                              .map(|x| x.id())
-                                              .ok_or(git2::Error::from_str("could not get commit from obj")));
+  let mut parent_commit_oid: git2::Oid =
+    try!(try!(tmp_repo.revparse_single(CENTRAL_NAME))
+         .as_commit()
+         .map(|x| x.id())
+         .ok_or(git2::Error::from_str("could not get commit from obj")));
 
   let module_name: &str = try!(Path::new(project)
                                .components()
@@ -55,7 +55,6 @@ fn module_review_upload(project: &str, newrev: &str) -> Result<(),git2::Error> {
     walk
   };
 
-
   println!("===== project path: {}", project);
   println!("===== Apply commits from {} to {}", oldrev, newrev);
 
@@ -81,15 +80,13 @@ fn module_review_upload(project: &str, newrev: &str) -> Result<(),git2::Error> {
     };
 
     parent_commit_oid = try!(make_commit(&tmp_repo, &new_tree, module_commit, &vec!(&parent_commit)));
-
   }
 
   println!(""); println!("");
   println!("===================== Doing actual upload in central git ========================");
-  let parent_commit = try!(tmp_repo.find_commit(parent_commit_oid));
   let x = try!(push_from_tmp(
       &tmp_repo,
-      &parent_commit,
+      &try!(tmp_repo.find_commit(parent_commit_oid)),
       CENTRAL_NAME,
       "refs/for/master"
       ));
@@ -98,46 +95,49 @@ fn module_review_upload(project: &str, newrev: &str) -> Result<(),git2::Error> {
   Ok(())
 }
 
-fn central_submit(newrev: &str) {
+fn central_submit(newrev: &str) -> Result<(), git2::Error> {
   println!("central_submit");
 
-  let module_names = get_module_names(newrev).unwrap();
-  let tmp_repo = setup_tmp_repo(&module_names);
+  let module_names = try!(get_module_names(newrev));
+  let tmp_repo = try!(setup_tmp_repo(&module_names));
   transfer_to_tmp(newrev);
 
-  let central_commit_obj = tmp_repo.revparse_single(newrev).unwrap();
-  let central_commit = central_commit_obj.as_commit().unwrap();
-  let central_tree = central_commit.tree().unwrap();
-  let _ = tmp_repo.branch(CENTRAL_NAME,central_commit,true);
+  let central_commit_obj = try!(tmp_repo.revparse_single(newrev));
+  let central_commit = try!(central_commit_obj.as_commit()
+                            .ok_or(git2::Error::from_str("could not get commit from obj")));
+  let central_tree = try!(central_commit.tree());
+  try!(tmp_repo.branch(CENTRAL_NAME,central_commit,true));
 
   for module_name in module_names {
     let module_master_commit_obj =
-      tmp_repo.revparse_single(&format!("remotes/modules/{}/master",module_name)).unwrap();
+      try!(tmp_repo.revparse_single(&format!("remotes/modules/{}/master",module_name)));
     let module_master_commit =
-      module_master_commit_obj.as_commit().unwrap();
-    let _ = tmp_repo.branch(&format!("modules/{}",module_name),module_master_commit,true);
+      try!(module_master_commit_obj.as_commit()
+           .ok_or(git2::Error::from_str("could not get commit from obj")));
+    try!(tmp_repo.branch(&format!("modules/{}",module_name),module_master_commit,true));
 
     let parents = vec!(module_master_commit);
-    let old_tree_oid = module_master_commit.tree().unwrap().id();
+    let old_tree_oid = try!(module_master_commit.tree()).id();
 
     let module_path = { let mut p = PathBuf::new(); p.push("modules"); p.push(&module_name); p };
 
-    let new_tree_oid = central_tree.get_path(&module_path).unwrap().id();
+    let new_tree_oid = try!(central_tree.get_path(&module_path)).id();
 
     if new_tree_oid != old_tree_oid {
 
-      let new_tree = tmp_repo.find_tree(new_tree_oid).unwrap();
+      let new_tree = try!(tmp_repo.find_tree(new_tree_oid));
 
-      let module_commit = make_commit(&tmp_repo, &new_tree, central_commit, &parents);
-      let x = push_from_tmp(
-        &tmp_repo,
-        &tmp_repo.find_commit(module_commit.unwrap()).unwrap(),
-        &format!("bsw/modules/{}",module_name),
-        "master"
-        ).unwrap();
+      let module_commit = try!(make_commit(&tmp_repo, &new_tree, central_commit, &parents));
+      let x = try!(push_from_tmp(
+          &tmp_repo,
+          &try!(tmp_repo.find_commit(module_commit)),
+          &format!("bsw/modules/{}",module_name),
+          "master"
+          ));
       println!("{}", x);
     }
   }
+  Ok(())
 }
 
 fn transfer_to_tmp(rev: &str) {
@@ -165,13 +165,13 @@ fn in_tmp_repo(cmd: &str) -> Result<String, git2::Error> {
     }
 }
 
-fn setup_tmp_repo(modules: &Vec<String>) -> Repository {
-  let repo = Repository::init_bare(TMP_REPO_DIR).unwrap();
+fn setup_tmp_repo(modules: &Vec<String>) -> Result<Repository, git2::Error> {
+  let repo = try!(Repository::init_bare(TMP_REPO_DIR));
 
   if !repo.find_remote("central_repo").is_ok() {
-    let _ = repo.remote("central_repo",
-                        &format!("ssh://{}@gerrit-test-git/{}.git",AUTOMATION_USER,CENTRAL_NAME)
-                       );
+    try!(repo.remote("central_repo",
+                     &format!("ssh://{}@gerrit-test-git/{}.git",AUTOMATION_USER,CENTRAL_NAME)
+                    ));
   }
 
   for module in modules.iter() {
@@ -194,13 +194,13 @@ fn setup_tmp_repo(modules: &Vec<String>) -> Repository {
 
     let remote_name = format!("modules/{}",module);
     if !repo.find_remote(&remote_name).is_ok() {
-      let _ = repo.remote(&remote_name, &remote_url);
+      try!(repo.remote(&remote_name, &remote_url));
     }
   }
 
-  let _ = in_tmp_repo("fetch --all");
+  try!(in_tmp_repo("fetch --all"));
 
-  return repo;
+  Ok(repo)
 }
 
 fn module_to_subfolder(path: &Path, module_tree: &Tree, master_tree: &Tree) -> Result<Oid, git2::Error> {
@@ -229,14 +229,17 @@ fn get_module_names(rev: &str) -> Result<Vec<String>, git2::Error> {
                     .ok_or(git2::Error::from_str("could not get commit from obj")));
   let tree: git2::Tree = try!(commit.tree());
 
-  let modules_o = try!(tree.get_path(&Path::new("modules")).unwrap()
-                   .to_object(&central_repo));
+  let tree_object = try!(tree.get_path(&Path::new("modules")));
+  let modules_o = try!(tree_object.to_object(&central_repo));
   let modules = try!(modules_o.as_tree()
-                    .ok_or(git2::Error::from_str("could not get tree from path")));
+                     .ok_or(git2::Error::from_str("could not get tree from path")));
 
   let mut names = Vec::<String>::new();
   for module in modules.iter() {
-    names.push(module.name().unwrap().to_string());
+    names.push(try!(module
+                    .name()
+                    .ok_or(git2::Error::from_str("could not get name for module")))
+               .to_string());
   }
   Ok(names)
 }
@@ -245,7 +248,7 @@ fn push_from_tmp(tmp_repo: &Repository,
                  commit: &Commit,
                  repo: &str ,to: &str)
   -> Result<String, git2::Error> {
-    let _ = tmp_repo.set_head_detached(commit.id());
+    try!(tmp_repo.set_head_detached(commit.id()));
     in_tmp_repo(
       &format!("push ssh://{}@gerrit-test-git:29418/{}.git HEAD:{}",
                AUTOMATION_USER,
@@ -257,7 +260,7 @@ fn push_from_tmp(tmp_repo: &Repository,
 
 fn make_commit(repo: &Repository, tree: &Tree, base: &Commit, parents: &[&Commit]) -> Result<Oid, git2::Error> {
   if parents.len() != 0 {
-    let _ = repo.set_head_detached(parents[0].id());
+    try!(repo.set_head_detached(parents[0].id()));
   }
   repo.commit(
     Some("HEAD"),
@@ -305,9 +308,9 @@ fn main() { exit(main_ret()); } fn main_ret() -> i32 {
     //   return 1;
     // }
 
-    if is_submit { central_submit(commit); }
-    else if !is_module && is_update && !is_review { central_submit(newrev); }
-    else if is_module && is_update && is_review { let _ = module_review_upload(project,newrev); return 1; }
+    if is_submit { central_submit(commit).unwrap(); }
+    else if !is_module && is_update && !is_review { central_submit(newrev).unwrap(); }
+    else if is_module && is_update && is_review { module_review_upload(project,newrev).unwrap(); return 1; }
   }
 
   return 0;
