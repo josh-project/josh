@@ -1,0 +1,23 @@
+
+## central repository
+
+central
+  +- .git
+  +- modules
+      +- projectA
+      +- projectB
+      +- projectC
+
+
+## modules
+
+procectA
+  +- .git
+procectB
+  +- .git
+procectC
+  +- .git
+
+
+
+

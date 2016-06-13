@@ -99,35 +99,45 @@ fn central_submit(newrev: &str) -> Result<(), git2::Error> {
   println!("central_submit");
 
   let module_names = try!(get_module_names(newrev));
-  let tmp_repo = try!(setup_tmp_repo(&module_names));
+  let tmp_repo = try!(setup_tmp_repo(&module_names, &check_module_git));
   transfer_to_tmp(newrev);
 
   let central_commit_obj = try!(tmp_repo.revparse_single(newrev));
   let central_commit = try!(central_commit_obj.as_commit()
                             .ok_or(git2::Error::from_str("could not get commit from obj")));
   let central_tree = try!(central_commit.tree());
+  // create CENTRAL_NAME branch in tmp_repo and point to the central_commit
+  // is identical to master in central
+  // marker for other hooks
   try!(tmp_repo.branch(CENTRAL_NAME,central_commit,true));
 
   for module_name in module_names {
+    // get master branches from module
     let module_master_commit_obj =
       try!(tmp_repo.revparse_single(&format!("remotes/modules/{}/master",module_name)));
     let module_master_commit =
       try!(module_master_commit_obj.as_commit()
            .ok_or(git2::Error::from_str("could not get commit from obj")));
+    // maybe not needed: branch
     try!(tmp_repo.branch(&format!("modules/{}",module_name),module_master_commit,true));
 
     let parents = vec!(module_master_commit);
-    let old_tree_oid = try!(module_master_commit.tree()).id();
 
+    // get path for module in central repository
     let module_path = { let mut p = PathBuf::new(); p.push("modules"); p.push(&module_name); p };
 
+    // new tree is sub-tree of complete central tree
     let new_tree_oid = try!(central_tree.get_path(&module_path)).id();
+    let old_tree_oid = try!(module_master_commit.tree()).id();
 
+    // if sha1's are equal the content is equal
     if new_tree_oid != old_tree_oid {
+      // need to update module git
 
       let new_tree = try!(tmp_repo.find_tree(new_tree_oid));
 
       let module_commit = try!(make_commit(&tmp_repo, &new_tree, central_commit, &parents));
+      // do the push to the module git
       let x = try!(push_from_tmp(
           &tmp_repo,
           &try!(tmp_repo.find_commit(module_commit)),
@@ -140,15 +150,19 @@ fn central_submit(newrev: &str) -> Result<(), git2::Error> {
   Ok(())
 }
 
+// force push of the new revision-object to temp repo
 fn transfer_to_tmp(rev: &str) {
+  // create tmp branch
   Command::new("git")
     .arg("branch").arg("-f").arg("tmp").arg(rev)
     .output().expect("failed to call git");
 
+  // force push
   Command::new("git")
     .arg("push").arg("--force").arg(TMP_REPO_DIR).arg("tmp")
     .output().expect("failed to call git");
 
+  // delete tmp branch
   Command::new("git")
     .arg("branch").arg("-D").arg("tmp")
     .output().expect("failed to call git");
@@ -165,28 +179,39 @@ fn in_tmp_repo(cmd: &str) -> Result<String, git2::Error> {
     }
 }
 
-fn setup_tmp_repo(modules: &Vec<String>) -> Result<Repository, git2::Error> {
+// create module project on gerrit (if not existing)
+fn check_module_git(module: &str) -> Result<(), git2::Error> {
+  match Command::new("git")
+    .arg("-p").arg("29418")
+    .arg("gerrit-test-git")
+    .arg("gerrit")
+    .arg("create-project")
+    .arg(format!("bsw/modules/{}",module))
+    .arg("--empty-commit")
+    .output() {
+      Ok(output) => {
+        println!("create-project: {}", String::from_utf8_lossy(&output.stderr));
+        Ok(())
+      },
+      Err(_) => Err(git2::Error::from_str("failed to create project")),
+    }
+}
+
+fn setup_tmp_repo(modules: &Vec<String>, check: &Fn(&str) -> Result<(), git2::Error>) -> Result<Repository, git2::Error> {
   let repo = try!(Repository::init_bare(TMP_REPO_DIR));
 
+  // create remote for central
   if !repo.find_remote("central_repo").is_ok() {
     try!(repo.remote("central_repo",
                      &format!("ssh://{}@gerrit-test-git/{}.git",AUTOMATION_USER,CENTRAL_NAME)
                     ));
   }
 
+  // create remote for each module
   for module in modules.iter() {
-    let output = Command::new("ssh")
-      .arg("-p").arg("29418")
-      .arg("gerrit-test-git")
-      .arg("gerrit")
-      .arg("create-project")
-      .arg(format!("bsw/modules/{}",module))
-      .arg("--empty-commit")
-      .output()
-      .expect("failed to create project");
+    try!(check(module));
 
-    println!("create-project: {}", String::from_utf8_lossy(&output.stderr));
-
+    // create remote for each module
     let remote_url = format!("ssh://{}@gerrit-test-git:29418/bsw/modules/{}.git",
                              AUTOMATION_USER,
                              module
@@ -198,6 +223,7 @@ fn setup_tmp_repo(modules: &Vec<String>) -> Result<Repository, git2::Error> {
     }
   }
 
+  // fetch all branches from remotes
   try!(in_tmp_repo("fetch --all"));
 
   Ok(repo)
@@ -251,13 +277,14 @@ fn push_from_tmp(tmp_repo: &Repository,
     try!(tmp_repo.set_head_detached(commit.id()));
     in_tmp_repo(
       &format!("push ssh://{}@gerrit-test-git:29418/{}.git HEAD:{}",
-               AUTOMATION_USER,
+               AUTOMATION_USER,// must have push-rights to the repo
                repo,
                to
               )
       )
   }
 
+// takes everything from base except it's tree and replaces it with the tree given
 fn make_commit(repo: &Repository, tree: &Tree, base: &Commit, parents: &[&Commit]) -> Result<Oid, git2::Error> {
   if parents.len() != 0 {
     try!(repo.set_head_detached(parents[0].id()));
@@ -295,6 +322,8 @@ fn main() { exit(main_ret()); } fn main_ret() -> i32 {
   let commit = args.value_of("commit").unwrap_or("");
 
 
+  // ref-update: fired after push
+  // change-merged: fired after gerrit-submit
   if let Some(hook) = env::args().nth(0) {
     let is_review = refname == "refs/for/master";
     let is_module = project != CENTRAL_NAME;
@@ -308,9 +337,20 @@ fn main() { exit(main_ret()); } fn main_ret() -> i32 {
     //   return 1;
     // }
 
-    if is_submit { central_submit(commit).unwrap(); }
-    else if !is_module && is_update && !is_review { central_submit(newrev).unwrap(); }
-    else if is_module && is_update && is_review { module_review_upload(project,newrev).unwrap(); return 1; }
+    if is_submit {
+      // submit to central
+      central_submit(commit).unwrap();
+    }
+    else if is_module && is_update && is_review {
+      // module was pushed, get changes to central
+      module_review_upload(project,newrev).unwrap();
+      // stop gerrit from allowing push to module directly
+      return 1;
+    }
+    else if !is_module && is_update && !is_review {
+      // direct push to master-branch of central
+      central_submit(newrev).unwrap();
+    }
   }
 
   return 0;
