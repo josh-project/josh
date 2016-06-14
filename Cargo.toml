@@ -6,3 +6,4 @@ authors = ["Christian Schilling <christian.schilling@esrlabs.com>"]
 [dependencies]
 git2 = "0.4.3"
 clap = "2"
+tempdir = "0.3.*"
