@@ -322,30 +322,30 @@ mod tests {
     use self::tempdir::TempDir;
     use std::path::{Path, PathBuf};
     use std::fs::File;
+    use std::fs;
     use std::io::Write;
+    use std::process::Command;
 
     #[test]
     fn test_commit_to_central() {
         let td = TempDir::new("play").expect("folder play should be created");
-        let repo = git2::Repository::init(td.path()).expect("init should succeed");
 
-        let pb = Path::new(td.path());
-        // Print a message to stdout like "git init" does
-        let path = repo.workdir().unwrap().to_path_buf();
-        println!("Initialized empty Git repository in {}", path.display());
-
-
-        let file_name = "foo.txt";
-        let foo_file = pb.join(file_name);
-        create_dummy_file(&foo_file);
-        let oid = commit_file(&repo, &Path::new(file_name), &[]);
-
-        let parent_commit = repo.find_commit(oid).expect("find parent_commit");
-
-        let file_name = "bar.txt";
-        let bar_file = pb.join(file_name);
-        create_dummy_file(&bar_file);
-        commit_file(&repo, &Path::new(file_name), &vec![&parent_commit]);
+        let _module_repos: Vec<git2::Repository> = vec!["moduleA", "moduleB", "moduleC"]
+            .iter()
+            .map(|m| {
+                let x = td.path().join(&m);
+                let repo = create_repository(&x);
+                // commit_files(&repo, &Path::new(&x), &vec!["test/a.txt", "b.txt", "c.txt"]);
+                // show_status(&repo.workdir().unwrap().to_path_buf());
+                repo
+            })
+            .collect();
+        let central_repo_dir = td.path().join("central");
+        let central_repo = create_repository(&central_repo_dir);
+        commit_files(&central_repo,
+                     &Path::new(&central_repo_dir),
+                     &vec!["moduleA/a.txt", "moduleB/b.txt", "moduleC/c.txt"]);
+        call_command(&td.path().to_path_buf(), "tree", &["-L", "3"]);
         assert!(true);
     }
 
@@ -356,11 +356,62 @@ mod tests {
         let tree_id = index.write_tree().expect("got tree_id");
         let tree = repo.find_tree(tree_id).expect("got tree");
         let sig = git2::Signature::now("foo", "bar").expect("created signature");
-        repo.commit(Some("HEAD"), &sig, &sig, "commit A", &tree, &parents)
+        repo.commit(Some("HEAD"),
+                    &sig,
+                    &sig,
+                    &format!("commit for {:?}", &file.as_os_str()),
+                    &tree,
+                    &parents)
             .expect("commit to repo")
     }
 
+    fn commit_files(repo: &git2::Repository, pb: &Path, content: &Vec<&str>) {
+        let mut parent_commit = None;
+        for file_name in content {
+            let foo_file = pb.join(file_name);
+            create_dummy_file(&foo_file);
+            let oid = match parent_commit {
+                Some(parent) => commit_file(&repo, &Path::new(file_name), &[&parent]),
+                None => commit_file(&repo, &Path::new(file_name), &[]),
+            };
+            parent_commit = repo.find_commit(oid).ok();
+        }
+    }
+
+    fn create_repository(temp: &Path) -> git2::Repository {
+        let repo = git2::Repository::init(temp).expect("init should succeed");
+        let path = repo.workdir().unwrap().to_path_buf();
+        println!("Initialized empty Git repository in {}", path.display());
+        repo
+    }
+
+    fn show_status(path: &PathBuf) {
+        call_command(&path, "git", &["status"]);
+        call_command(&path,
+                     "git",
+                     &["log",
+                       "--graph",
+                       "--pretty=format:'%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) \
+                        %C(bold blue)<%an>%Creset'",
+                       "--abbrev-commit",
+                       "--date=relative"]);
+
+    }
+    fn call_command(path: &PathBuf, command: &str, args: &[&str]) {
+        let output = Command::new(&command)
+            .args(args)
+            .current_dir(&path)
+            .output()
+            .unwrap_or_else(|e| panic!("failed to execute process: {}", e));
+        println!("{}{}",
+                 String::from_utf8_lossy(&output.stdout),
+                 String::from_utf8_lossy(&output.stderr));
+    }
     fn create_dummy_file(f: &PathBuf) {
+        println!("trying to create {}", f.display());
+        let parent_dir = f.as_path().parent().expect("need to get parent");
+        fs::create_dir_all(parent_dir).unwrap();
+
         let mut file = File::create(&f.as_path()).expect("create file");
         file.write_all("test content".as_bytes()).expect("write to file");
     }
