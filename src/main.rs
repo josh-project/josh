@@ -4,6 +4,7 @@ extern crate clap;
 
 use std::env;
 use std::process::exit;
+use std::path::Path;
 use std::process::Command;
 use centralgithook::migrate;
 
@@ -84,16 +85,18 @@ fn main() { exit(main_ret()); } fn main_ret() -> i32 {
       migrate::central_submit(remote_addr,
                               commit,
                               &remote_module_url,
+                              // &local_module_path,
                               &check_module_git,
-                              MODULE_PATH_PREFIX,
-                              CENTRAL_NAME).unwrap();
+                              CENTRAL_NAME,
+                              &Path::new(".")).unwrap();
     }
     else if is_module && is_update && is_review {
       // module was pushed, get changes to central
       migrate::module_review_upload(project,
+                                    Path::new(project),//TODO: not correct, find out when testing on gerrit
                                     newrev,
-                                    &remote_module_url,
-                                    CENTRAL_NAME).unwrap();
+                                    CENTRAL_NAME,
+                                    &format!("{}.git", &CENTRAL_NAME)).unwrap();
       // stop gerrit from allowing push to module directly
       return 1;
     }
@@ -102,9 +105,10 @@ fn main() { exit(main_ret()); } fn main_ret() -> i32 {
       migrate::central_submit(remote_addr,
                               newrev,
                               &remote_module_url,
+                              // &local_module_path,
                               &check_module_git,
-                              MODULE_PATH_PREFIX,
-                              CENTRAL_NAME).unwrap();
+                              CENTRAL_NAME,
+                              &Path::new(".")).unwrap();
     }
   }
   return 0;
