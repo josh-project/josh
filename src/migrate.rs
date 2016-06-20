@@ -110,7 +110,7 @@ pub fn central_submit(remote_addr: &str,
     let module_names = try!(get_module_names(&central_repo, newrev));
 
     println!("    ########### SCRATCH: create scratch repo ########### ");
-    let central_remote_url = remote_url("bsw/central");
+    let central_remote_url = remote_url("central");
     let scratch_repo = try!(setup_scratch_repo(&scratch_dir,
                                                &central_remote_url,
                                                &module_names,
@@ -119,8 +119,8 @@ pub fn central_submit(remote_addr: &str,
 
     let scratch_repo_path = get_repo_path(&scratch_repo);
     transfer_to_scratch(newrev,
-                    &get_repo_path(&central_repo).to_path_buf(),
-                    &scratch_repo_path.to_path_buf());
+                        &get_repo_path(&central_repo).to_path_buf(),
+                        &scratch_repo_path.to_path_buf());
 
     let central_commit_obj = try!(scratch_repo.revparse_single(newrev));
     let central_commit = try!(central_commit_obj.as_commit()
@@ -169,7 +169,7 @@ pub fn central_submit(remote_addr: &str,
             let commit = &try!(scratch_repo.find_commit(module_commit));
             try!(scratch_repo.set_head_detached(commit.id()));
 
-            let remote_url = &remote_url(&format!("bsw/modules/{}",module_name));
+            let remote_url = &remote_url(&module_name);
             try!(in_tmp_repo(&scratch_repo, &format!("push {} HEAD:{}", remote_url, "master")));
         }
     }
@@ -189,7 +189,6 @@ fn call_command(command: &str, args: &[&str], mpath: Option<&PathBuf>, menv: Opt
     println!("call {:?} (in {:?})", c, mpath);
     if let Some(path) = mpath {
         c.current_dir(path);
-        c.env("GIT_DIR", path.as_os_str());
     }
     if let Some((k, v)) = menv {
         c.env(k, v);
@@ -271,7 +270,7 @@ fn setup_scratch_repo(scratch_dir: &Path,
 
         // create remote for each module
         let remote_name = format!("modules/{}", module);
-        let module_remote_url = remote_url(&format!("bsw/modules/{}",module));
+        let module_remote_url = remote_url(&module);
         println!("  create remote (remote_name:{}, remote_url:{})", &remote_name, &module_remote_url);
         if !scratch_repo.find_remote(&remote_name).is_ok() {
             try!(scratch_repo.remote(&remote_name, &module_remote_url));
@@ -364,23 +363,18 @@ mod tests {
     use super::call_command;
     use super::_oid_to_sha1;
     use super::get_repo_path;
-    // use self::tempdir::TempDir;
+    use self::tempdir::TempDir;
     use std::path::{Path, PathBuf};
     use std::fs::File;
     use std::fs;
-    use std::env;
     use std::str;
     use std::io::Write;
     use std::io::Read;
 
     #[test]
     fn test_commit_to_central() {
-        // TODO use temdir again
-        // let td = TempDir::new("play").expect("folder play should be created");
-        // let temp_path = td.path();
-        let temp_dir = env::current_dir().expect("get current directory").join("play");
-        let temp_path = temp_dir.as_path();
-        // let temp_path = Path::new("play");
+        let td = TempDir::new("play").expect("folder play should be created");
+        let temp_path = td.path();
         let central_repo_dir = temp_path.join("central");
         let central_repo_path = &Path::new(&central_repo_dir);
         println!("    ");
@@ -388,11 +382,14 @@ mod tests {
         let central_repo = create_repository(&central_repo_dir);
         commit_files(&central_repo,
                      &central_repo_path,
-                     &vec!["modules/moduleA/a.txt", "modules/moduleB/b.txt", "modules/moduleC/c.txt"]);
+                     &vec!["modules/moduleA/added_in_central.txt",
+                     "modules/moduleB/added_in_central.txt",
+                     "modules/moduleC/added_in_central.txt"]);
 
         println!("    ########### SETUP: create module repositories ########### ");
 
-        let _module_repos: Vec<git2::Repository> = vec!["moduleA", "moduleB", "moduleC"]
+        let module_names = vec!["moduleA", "moduleB", "moduleC"];
+        let _module_repos: Vec<git2::Repository> = module_names
             .iter()
             .map(|m| {
                 let x = temp_path.join(&m);
@@ -431,11 +428,12 @@ mod tests {
         let central_head_sha1 = _oid_to_sha1(&central_repo_head_oid);
 
         println!("    ########### START: calling central_submit ########### ");
-        // TODO use temdir again
-        // let td = try!(TempDir::new("scratch")
-        //               .or(Err(git2::Error::from_str("could not create temp directory"))));
-        // let scratch_dir = td.path();
-        let scratch_dir = Path::new("scratchme");
+        let td = TempDir::new("scratch").expect("folder scratch should be created");
+        let scratch_dir = td.path();
+
+        let _t = temp_path.join("moduleA").join("added_in_central.txt");
+        println!("file in question:{:?}", _t);
+        assert!(!temp_path.join("moduleA").join("added_in_central.txt").exists());
         central_submit("central",
                        &central_head_sha1[..],
                        &remote_url,
@@ -443,7 +441,11 @@ mod tests {
                        "central",
                        &central_repo_path,
                        &scratch_dir).expect("call central_submit");
-        assert!(false);
+        for m in module_names {
+            let x = temp_path.join(&m);
+            call_command("git", &["checkout", "master"], Some(&x), None);
+            assert!(temp_path.join(m).join("added_in_central.txt").exists());
+        }
     }
 
     fn commit_file(repo: &git2::Repository, file: &Path, parents: &[&git2::Commit]) -> git2::Oid {

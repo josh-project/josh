@@ -31,7 +31,7 @@ fn check_module_git(module: &str) -> Result<(), git2::Error> {
         }
 }
 fn remote_url(module_path: &str) -> String {
-    format!("ssh://{}@gerrit-test-git:{}/{}",
+    format!("ssh://{}@gerrit-test-git:{}/bsw/modules/{}",
             AUTOMATION_USER,
             GERRIT_PORT,
             module_path)
