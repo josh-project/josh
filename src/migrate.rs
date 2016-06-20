@@ -132,18 +132,17 @@ pub fn central_submit(remote_addr: &str,
     let central_commit = try!(central_commit_obj.as_commit()
                               .ok_or(git2::Error::from_str("could not get commit from obj")));
     let central_tree = try!(central_commit.tree());
-    println!("    ########### create central_name branch in scratch_repo and point to the central_commit ########### ");
+    println!("    ########### create {} branch in scratch_repo and point to the central_commit ########### ", &central_name);
     // create central_name branch in scratch_repo and point to the central_commit
     // is identical to master in central
     // marker for other hooks
     try!(scratch_repo.branch(central_name, central_commit, true));
-    println!("create branch {}", central_name);
     let mut _p = scratch_repo_path.to_path_buf();
     call_command("cat", &["config"], Some(&_p));
     call_command("git", &["branch","--all"], Some(&_p));
 
     for module_name in module_names {
-        println!("+++ get master branches from module {}", &module_name);
+        println!(" ####### prepare commit from scratch_repo to module {}", &module_name);
         let module_master_commit_obj =
             try!(scratch_repo.revparse_single(&remote_ref_name(&module_name)));
         let module_master_commit = try!(module_master_commit_obj.as_commit()
@@ -153,14 +152,13 @@ pub fn central_submit(remote_addr: &str,
 
         let parents = vec![module_master_commit];
 
-        print!("get path for module in central repository...");
         let module_path = {
             let mut p = PathBuf::new();
             p.push("modules");
             p.push(&module_name);
             p
         };
-        println!("{:?}", module_path);
+        println!("\tpath for module in central repository... => {:?}", module_path);
 
         // new tree is sub-tree of complete central tree
         let new_tree_oid = try!(central_tree.get_path(&module_path)).id();
@@ -168,7 +166,7 @@ pub fn central_submit(remote_addr: &str,
 
         // if sha1's are equal the content is equal
         if new_tree_oid != old_tree_oid {
-            println!("need to update module git for {}", &module_name);
+            println!("\tmodule repository for {} is behind, => updating", &module_name);
 
             let new_tree = try!(scratch_repo.find_tree(new_tree_oid));
 
@@ -259,7 +257,7 @@ fn setup_scratch_repo(scratch_dir: &Path,
                       check: &Fn(&str) -> Result<(), git2::Error>,
                       remote_module_url: &Fn(&str) -> String) -> Result<Repository, git2::Error> {
 
-    println!("try to setup tmp repo for remote: {}\n\tmodules:{:?}\n\tlocation: {:?}", &central_remote_url, modules, &scratch_dir);
+    println!(" ####### setup scratch repo for remote: {}\n #######\tlocation: {:?}", &central_remote_url, &scratch_dir);
     let scratch_repo = try!(Repository::init_bare(scratch_dir));
 
     // point remote to central
@@ -285,7 +283,6 @@ fn setup_scratch_repo(scratch_dir: &Path,
     try!(in_tmp_repo(&scratch_repo, "fetch --all"));
     println!("  fetched all branches from remotes...");
     call_command("git", &["branch","--all"], Some(&scratch_dir.to_path_buf()));
-    call_command("git", &["remote","-v"], Some(&scratch_dir.to_path_buf()));
 
     Ok(scratch_repo)
 }
