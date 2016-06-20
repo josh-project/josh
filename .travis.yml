@@ -1,1 +1,25 @@
 language: rust
+rust:
+  - stable
+  - beta
+sudo: false
+before_script:
+  - pip install 'travis-cargo<0.2' --user && export PATH=$HOME/.local/bin:$PATH
+script:
+  - export CARGO_TARGET_DIR=`pwd`/target
+  - cargo test
+  - cargo run --release
+notifications:
+  email:
+    on_success: never
+os:
+  - linux
+addons:
+  apt:
+    sources:
+      - kalakris-cmake
+    packages:
+      - cmake
+      - libcurl4-openssl-dev
+      - libelf-dev
+      - libdw-dev
