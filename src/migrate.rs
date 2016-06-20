@@ -18,8 +18,8 @@ pub fn module_review_upload(project: &str,
     let scratch_repo_path = get_repo_path(&scratch_repo);
 
     transfer_to_scratch(newrev,
-                    &project_path.to_path_buf(),
-                    &scratch_repo_path.to_path_buf());
+                        &project_path.to_path_buf(),
+                        &scratch_repo_path.to_path_buf());
     let mut parent_commit_oid: git2::Oid = try!(try!(scratch_repo.revparse_single(central_name))
                                                 .as_commit()
                                                 .map(|x| x.id())
@@ -120,7 +120,6 @@ pub fn central_submit(remote_addr: &str,
     let scratch_repo_path = get_repo_path(&scratch_repo);
     transfer_to_scratch(newrev,
                     &get_repo_path(&central_repo).to_path_buf(),
-                    // &central_repo.workdir().expect("central repo needs workdir").to_path_buf(),
                     &scratch_repo_path.to_path_buf());
 
     let central_commit_obj = try!(scratch_repo.revparse_single(newrev));
@@ -133,8 +132,8 @@ pub fn central_submit(remote_addr: &str,
     // marker for other hooks
     try!(scratch_repo.branch(central_name, central_commit, true));
     let mut _p = scratch_repo_path.to_path_buf();
-    call_command("cat", &["config"], Some(&_p));
-    call_command("git", &["branch","--all"], Some(&_p));
+    call_command("cat", &["config"], Some(&_p), None);
+    call_command("git", &["branch","--all"], Some(&_p), None);
 
     for module_name in module_names {
         println!(" ####### prepare commit from scratch_repo to module {}", &module_name);
@@ -183,13 +182,17 @@ fn _oid_to_sha1(oid: &[u8]) -> String {
     }).concat()
 }
 
-fn call_command(command: &str, args: &[&str], mpath: Option<&PathBuf>) {
+fn call_command(command: &str, args: &[&str], mpath: Option<&PathBuf>, menv: Option<(&str, &str)>)
+{
     let mut c = Command::new(&command);
     c.args(args);
     println!("call {:?} (in {:?})", c, mpath);
     if let Some(path) = mpath {
         c.current_dir(path);
         c.env("GIT_DIR", path.as_os_str());
+    }
+    if let Some((k, v)) = menv {
+        c.env(k, v);
     }
     let output = c
         .output()
@@ -200,7 +203,7 @@ fn call_command(command: &str, args: &[&str], mpath: Option<&PathBuf>) {
 }
 
 fn show_status(path: &PathBuf) {
-    call_command("git", &["status"], Some(&path));
+    call_command("git", &["status"], Some(&path), None);
     call_command("git",
                  &["log",
                  "--graph",
@@ -208,7 +211,7 @@ fn show_status(path: &PathBuf) {
                  %C(bold blue)<%an>%Creset'",
                  "--abbrev-commit",
                  "--date=relative"],
-                 Some(&path));
+                 Some(&path), None);
 
 }
 
@@ -220,16 +223,17 @@ fn remote_ref_name(module_name: &str) -> String {
 fn transfer_to_scratch(rev: &str, source_path: &PathBuf, target_path: &PathBuf) {
     println!("---> transfer_to_scratch in {}", source_path.display());
     //" create tmp branch
-    call_command("git", &["branch", "-f", "tmp", rev], Some(source_path));
+    call_command("git", &["branch", "-f", "tmp", rev], Some(source_path), None);
     // force push
-    call_command("git", &["push", "--force", &target_path.to_string_lossy(), "tmp"], Some(source_path));
+    call_command("git", &["push", "--force", &target_path.to_string_lossy(), "tmp"], Some(source_path), None);
     // delete tmp branch
-    call_command("git", &["branch", "-D", "tmp"], Some(source_path));
+    call_command("git", &["branch", "-D", "tmp"], Some(source_path), None);
     println!("<--- transfer_to_scratch done...");
 }
 
 fn in_tmp_repo(repo: &Repository, cmd: &str) -> Result<(), git2::Error> {
     println!("in_tmp_repo ({:?}): git {}", &repo.path(), &cmd);
+    // call_command("git", &["branch", "-D", "tmp"], None, Some("GIT_DIR", repo_path.as_os_str()));
     let args: Vec<&str> = cmd.split(" ").collect();
     let repo_path = get_repo_path(&repo);
     let mut c = Command::new("git");
@@ -276,9 +280,11 @@ fn setup_scratch_repo(scratch_dir: &Path,
 
     // fetch all branches from remotes
     // FIXME remote branches missing
-    try!(in_tmp_repo(&scratch_repo, "fetch --all"));
+    // try!(in_tmp_repo(&scratch_repo, "fetch --all"));
+    call_command("git", &["fetch", "--all"], None,
+                 Some(("GIT_DIR", &scratch_dir.to_path_buf().to_str().expect("path as string"))));
     println!("  fetched all branches from remotes...");
-    call_command("git", &["branch","--all"], Some(&scratch_dir.to_path_buf()));
+    call_command("git", &["branch","--all"], Some(&scratch_dir.to_path_buf()), None);
 
     Ok(scratch_repo)
 }
@@ -395,7 +401,7 @@ mod tests {
                 let ref_name = "modules/".to_string() + &m;
                 central_repo.remote(&ref_name, &m).expect("remote as to be added");
                 commit_files(&repo, &Path::new(&x), &vec!["test/a.txt", "b.txt", "c.txt"]);
-                call_command("git", &["checkout","-b", "not_needed"], Some(&x));
+                call_command("git", &["checkout","-b", "not_needed"], Some(&x), None);
                 repo
             })
         .collect();
