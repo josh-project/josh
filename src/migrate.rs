@@ -4,17 +4,15 @@ use git2::*;
 use std::process::Command;
 use std::path::Path;
 use std::path::PathBuf;
-use tempdir::TempDir;
 
 pub fn module_review_upload(project: &str,
                             project_path: &Path,
+                            scratch_repo_path: &Path,
                             newrev: &str,
                             central_name: &str,
-                            central_git_path: &str) -> Result<(), git2::Error> {
+                            central_git_remote: &str) -> Result<(), git2::Error> {
     println!("in module_review_upload for project {}", &project);
-    let td = try!(TempDir::new("module_upload")
-                  .or(Err(git2::Error::from_str("could not create temp directory for module_upload"))));
-    let scratch_repo = try!(Repository::init_bare(td.path()));
+    let scratch_repo = try!(Repository::init_bare(&scratch_repo_path));
     try!(in_tmp_repo(&scratch_repo, "fetch --all"));
 
     let scratch_repo_path = get_repo_path(&scratch_repo);
@@ -93,14 +91,14 @@ pub fn module_review_upload(project: &str,
 
     let commit = &try!(scratch_repo.find_commit(parent_commit_oid));
     try!(scratch_repo.set_head_detached(commit.id()));
-    try!(in_tmp_repo(&scratch_repo, &format!("push {} HEAD:{}", &central_git_path, "refs/for/master")));
+    try!(in_tmp_repo(&scratch_repo, &format!("push {} HEAD:{}", &central_git_remote, "refs/for/master")));
     println!("==== The review upload may have worked, even if it says error below. Look UP! ====");
     Ok(())
 }
 
 pub fn central_submit(remote_addr: &str,
                       newrev: &str,//sha1 of refered commit
-                      remote_module_url: &Fn(&str) -> String,
+                      remote_url: &Fn(&str) -> String,
                       check: &Fn(&str) -> Result<(), git2::Error>, // create git repo (if not existing)
                       central_name: &str,
                       central_repo_path: &Path,
@@ -112,16 +110,17 @@ pub fn central_submit(remote_addr: &str,
     let module_names = try!(get_module_names(&central_repo, newrev));
 
     println!("    ########### SCRATCH: create scratch repo ########### ");
-    let central_remote_url = remote_module_url("central");
+    let central_remote_url = remote_url("bsw/central");
     let scratch_repo = try!(setup_scratch_repo(&scratch_dir,
                                                &central_remote_url,
                                                &module_names,
                                                &check,
-                                               &remote_module_url));
+                                               &remote_url));
 
     let scratch_repo_path = get_repo_path(&scratch_repo);
     transfer_to_scratch(newrev,
-                    &central_repo.workdir().expect("central repo needs workdir").to_path_buf(),
+                    &get_repo_path(&central_repo).to_path_buf(),
+                    // &central_repo.workdir().expect("central repo needs workdir").to_path_buf(),
                     &scratch_repo_path.to_path_buf());
 
     let central_commit_obj = try!(scratch_repo.revparse_single(newrev));
@@ -171,7 +170,7 @@ pub fn central_submit(remote_addr: &str,
             let commit = &try!(scratch_repo.find_commit(module_commit));
             try!(scratch_repo.set_head_detached(commit.id()));
 
-            let remote_url = &remote_module_url(&module_name);
+            let remote_url = &remote_url(&format!("bsw/modules/{}",module_name));
             try!(in_tmp_repo(&scratch_repo, &format!("push {} HEAD:{}", remote_url, "master")));
         }
     }
@@ -190,6 +189,7 @@ fn call_command(command: &str, args: &[&str], mpath: Option<&PathBuf>) {
     println!("call {:?} (in {:?})", c, mpath);
     if let Some(path) = mpath {
         c.current_dir(path);
+        c.env("GIT_DIR", path.as_os_str());
     }
     let output = c
         .output()
@@ -251,7 +251,7 @@ fn setup_scratch_repo(scratch_dir: &Path,
                       central_remote_url: &str,
                       modules: &Vec<String>,
                       check: &Fn(&str) -> Result<(), git2::Error>,
-                      remote_module_url: &Fn(&str) -> String) -> Result<Repository, git2::Error> {
+                      remote_url: &Fn(&str) -> String) -> Result<Repository, git2::Error> {
 
     println!(" ####### setup scratch repo for remote: {}\n #######\tlocation: {:?}", &central_remote_url, &scratch_dir);
     let scratch_repo = try!(Repository::init_bare(scratch_dir));
@@ -267,10 +267,10 @@ fn setup_scratch_repo(scratch_dir: &Path,
 
         // create remote for each module
         let remote_name = format!("modules/{}", module);
-        let remote_url = remote_module_url(module);
-        println!("  create remote (remote_name:{}, remote_url:{})", &remote_name, &remote_url);
+        let module_remote_url = remote_url(&format!("bsw/modules/{}",module));
+        println!("  create remote (remote_name:{}, remote_url:{})", &remote_name, &module_remote_url);
         if !scratch_repo.find_remote(&remote_name).is_ok() {
-            try!(scratch_repo.remote(&remote_name, &remote_url));
+            try!(scratch_repo.remote(&remote_name, &module_remote_url));
         }
     }
 
@@ -400,7 +400,7 @@ mod tests {
             })
         .collect();
 
-        let remote_module_url = move |module_path: &str| -> String {
+        let remote_url = move |module_path: &str| -> String {
             temp_path.join(&module_path).to_string_lossy().to_string()
         };
         let make_sure_module_exists = move |module_name: &str| -> Result<(), git2::Error> {
@@ -432,7 +432,7 @@ mod tests {
         let scratch_dir = Path::new("scratchme");
         central_submit("central",
                        &central_head_sha1[..],
-                       &remote_module_url,
+                       &remote_url,
                        &make_sure_module_exists,
                        "central",
                        &central_repo_path,

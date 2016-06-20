@@ -30,7 +30,7 @@ fn check_module_git(module: &str) -> Result<(), git2::Error> {
             Err(_) => Err(git2::Error::from_str("failed to create project")),
         }
 }
-fn remote_module_url(module_path: &str) -> String {
+fn remote_url(module_path: &str) -> String {
     format!("ssh://{}@gerrit-test-git:{}/{}",
             AUTOMATION_USER,
             GERRIT_PORT,
@@ -80,12 +80,12 @@ fn main() { exit(main_ret()); } fn main_ret() -> i32 {
     let remote_addr = &format!("ssh://{}@gerrit-test-git/{}.git",
                                AUTOMATION_USER,
                                CENTRAL_NAME);
-    let scratch_dir = Path::new("scratchme");
+    let scratch_dir = Path::new("/tmp/scratchme");
     if is_submit {
       // submit to central
       migrate::central_submit(remote_addr,
                               commit,
-                              &remote_module_url,
+                              &remote_url,
                               // &local_module_path,
                               &check_module_git,
                               CENTRAL_NAME,
@@ -95,10 +95,13 @@ fn main() { exit(main_ret()); } fn main_ret() -> i32 {
     else if is_module && is_update && is_review {
       // module was pushed, get changes to central
       migrate::module_review_upload(project,
-                                    Path::new(project),//TODO: not correct, find out when testing on gerrit
+                                    Path::new(&env::var("GIT_DIR").expect("GIT_DIR needs to be set")),
+                                    &scratch_dir,
                                     newrev,
                                     CENTRAL_NAME,
-                                    &format!("{}.git", &CENTRAL_NAME)).unwrap();
+                                    &remote_url(CENTRAL_NAME)
+                                    // &format!("{}.git", &CENTRAL_NAME)
+                                    ).unwrap();
       // stop gerrit from allowing push to module directly
       return 1;
     }
@@ -106,7 +109,7 @@ fn main() { exit(main_ret()); } fn main_ret() -> i32 {
       // direct push to master-branch of central
       migrate::central_submit(remote_addr,
                               newrev,
-                              &remote_module_url,
+                              &remote_url,
                               // &local_module_path,
                               &check_module_git,
                               CENTRAL_NAME,
