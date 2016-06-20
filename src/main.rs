@@ -15,7 +15,7 @@ const CENTRAL_NAME: &'static str = "bsw/central";
 
 // create module project on gerrit (if not existing)
 fn check_module_git(module: &str) -> Result<(), git2::Error> {
-    match Command::new("git")
+    match Command::new("ssh")
         .arg("-p").arg(GERRIT_PORT)
         .arg("gerrit-test-git")
         .arg("gerrit")
@@ -32,8 +32,8 @@ fn check_module_git(module: &str) -> Result<(), git2::Error> {
 }
 fn remote_module_url(module_path: &str) -> String {
     format!("ssh://{}@gerrit-test-git:{}/{}",
-            GERRIT_PORT,
             AUTOMATION_USER,
+            GERRIT_PORT,
             module_path)
 }
 
