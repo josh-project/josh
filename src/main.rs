@@ -80,6 +80,7 @@ fn main() { exit(main_ret()); } fn main_ret() -> i32 {
     let remote_addr = &format!("ssh://{}@gerrit-test-git/{}.git",
                                AUTOMATION_USER,
                                CENTRAL_NAME);
+    let scratch_dir = Path::new("scratchme");
     if is_submit {
       // submit to central
       migrate::central_submit(remote_addr,
@@ -88,7 +89,8 @@ fn main() { exit(main_ret()); } fn main_ret() -> i32 {
                               // &local_module_path,
                               &check_module_git,
                               CENTRAL_NAME,
-                              &Path::new(".")).unwrap();
+                              &Path::new("."),
+                              &scratch_dir).unwrap();
     }
     else if is_module && is_update && is_review {
       // module was pushed, get changes to central
@@ -108,7 +110,8 @@ fn main() { exit(main_ret()); } fn main_ret() -> i32 {
                               // &local_module_path,
                               &check_module_git,
                               CENTRAL_NAME,
-                              &Path::new(".")).unwrap();
+                              &Path::new("."),
+                              &scratch_dir).unwrap();
     }
   }
   return 0;

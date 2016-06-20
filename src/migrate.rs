@@ -103,19 +103,15 @@ pub fn central_submit(remote_addr: &str,
                       remote_module_url: &Fn(&str) -> String,
                       check: &Fn(&str) -> Result<(), git2::Error>, // create git repo (if not existing)
                       central_name: &str,
-                      central_repo_path: &Path) -> Result<(), git2::Error> {
+                      central_repo_path: &Path,
+                      scratch_dir: &Path) -> Result<(), git2::Error> {
     println!(" ---> central_submit (remote addr:{}, sha1 of commit: {})", &remote_addr, &newrev);
 
     let central_repo = git2::Repository::open(&central_repo_path)
         .expect(&format!("central repo should exist at {:?}", &central_repo_path));
     let module_names = try!(get_module_names(&central_repo, newrev));
 
-    // TODO use temdir again
-    // let td = try!(TempDir::new("scratch")
-    //               .or(Err(git2::Error::from_str("could not create temp directory"))));
-    // let scratch_dir = td.path();
     println!("    ########### SCRATCH: create scratch repo ########### ");
-    let scratch_dir = Path::new("scratchme");
     let central_remote_url = remote_module_url("central");
     let scratch_repo = try!(setup_scratch_repo(&scratch_dir,
                                                &central_remote_url,
@@ -429,12 +425,18 @@ mod tests {
         let central_head_sha1 = _oid_to_sha1(&central_repo_head_oid);
 
         println!("    ########### START: calling central_submit ########### ");
+        // TODO use temdir again
+        // let td = try!(TempDir::new("scratch")
+        //               .or(Err(git2::Error::from_str("could not create temp directory"))));
+        // let scratch_dir = td.path();
+        let scratch_dir = Path::new("scratchme");
         central_submit("central",
                        &central_head_sha1[..],
                        &remote_module_url,
                        &make_sure_module_exists,
                        "central",
-                       &central_repo_path).expect("call central_submit");
+                       &central_repo_path,
+                       &scratch_dir).expect("call central_submit");
         assert!(false);
     }
 
