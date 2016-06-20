@@ -1,4 +1,4 @@
-[![Build Status](https://travis-ci.org/marcmo/centralgithook.svg?branch=master)](http://travis-ci.org/marcmo/centralgithook)
+[![Build Status](https://travis-ci.org/esrlabs/centralgithook.svg?branch=master)](http://travis-ci.org/esrlabs/centralgithook)
 
 this tool exists to support the following usecases:
 
