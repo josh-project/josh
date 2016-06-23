@@ -10,7 +10,7 @@ pub trait RepoHost  {
 
 }
 
-struct Scratch<'a> {
+pub struct Scratch<'a> {
     repo: Repository,
     host: &'a RepoHost,
 }
@@ -107,10 +107,12 @@ impl<'a> Scratch<'a> {
         )
     }
 
-    fn push(&self, oid: Oid, remote: &str) {
+    fn push(&self, oid: Oid, module: &str, target: &str) {
         let commit = &self.repo.find_commit(oid).expect("can't find commit");
         self.repo.set_head_detached(commit.id()).expect("can't detach HEAD");
-        self.call_git(&format!("push {} HEAD:{}", remote, "master")).expect("can't push");
+        self.call_git(
+            &format!("push {} HEAD:{}", self.host.remote_url(module), target)
+        ).expect("can't push");
     }
 
     fn subtree(&self, tree: &Tree, path: &Path) -> Tree {
@@ -168,12 +170,10 @@ impl<'a> Scratch<'a> {
 }
 
 pub fn module_review_upload(module: &str,
-                            scratch_path: &Path,
+                            scratch: &Scratch,
                             newrev: &str,
-                            central: &str,
-                            host: &RepoHost) -> Result<(), Error> {
+                            central: &str) -> Result<(), Error> {
     println!("in module_review_upload for module {}", &module);
-    let scratch = Scratch::new(&scratch_path, host);
     scratch.transfer(newrev,Path::new("."));
 
     let mut parent_commit_oid: Oid = scratch.tracking(central, "master").id();
@@ -234,11 +234,13 @@ pub fn module_review_upload(module: &str,
     println!("");
     println!("===================== Doing actual upload in central git ========================");
 
-    let commit = &try!(scratch.repo.find_commit(parent_commit_oid));
-    try!(scratch.repo.set_head_detached(commit.id()));
-    try!(scratch.call_git(
-        &format!("push {} HEAD:{}", &host.remote_url(central), "refs/for/master")
-    ));
+    scratch.push(parent_commit_oid, central, "refs/for/master");
+
+    // let commit = &try!(scratch.repo.find_commit(parent_commit_oid));
+    // try!(scratch.repo.set_head_detached(commit.id()));
+    // try!(scratch.call_git(
+    //     &format!("push {} HEAD:{}", &host.remote_url(central), "refs/for/master")
+    // ));
     println!("==== The review upload may have worked, even if it says error below. Look UP! ====");
     Ok(())
 }
@@ -247,14 +249,13 @@ pub fn central_submit(newrev: &str,//sha1 of refered commit
                       host: &RepoHost,
                       central: &str,
                       repo_path: &Path,
-                      scratch_dir: &Path) -> Result<(), Error> {
+                      scratch: &Scratch) -> Result<(), Error> {
     println!(" ---> central_submit (remote addr:{}, sha1 of commit: {})",
         &host.remote_url(central),
         &newrev
     );
 
     println!("    ########### SCRATCH: create scratch repo ########### ");
-    let scratch = Scratch::new(&scratch_dir,host);
     scratch.transfer(newrev, &repo_path);
     try!(scratch.create_projects(
         &central,
@@ -297,7 +298,7 @@ pub fn central_submit(newrev: &str,//sha1 of refered commit
                 try!(scratch.rewrite(central_commit, &parents, &new_tree));
             // do the push to the module git
 
-            scratch.push(module_commit, &host.remote_url(&module_path));
+            scratch.push(module_commit, &module_path, "master");
         }
     }
     Ok(())

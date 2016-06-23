@@ -84,25 +84,24 @@ fn main() { exit(main_ret()); } fn main_ret() -> i32 {
     //   return 1;
     // }
 
-    // FIXME why not use the port here?
     let scratch_dir = Path::new("/tmp/scratchme");
+    let scratch = migrate::Scratch::new(&scratch_dir,&gerrit);
     if is_submit {
       // submit to central
       migrate::central_submit(commit,
                               &gerrit,
                               CENTRAL_NAME,
                               &Path::new("."),
-                              &scratch_dir).unwrap();
+                              &scratch).unwrap();
     }
     else if is_module && is_update && is_review {
       // module was pushed, get changes to central
       migrate::module_review_upload(
         project,
         // Path::new(&env::var("GIT_DIR").expect("GIT_DIR needs to be set")),
-        &scratch_dir,
+        &scratch,
         newrev,
         CENTRAL_NAME,
-        &gerrit,
         ).unwrap();
       // stop gerrit from allowing push to module directly
       return 1;
@@ -113,7 +112,7 @@ fn main() { exit(main_ret()); } fn main_ret() -> i32 {
                               &gerrit,
                               CENTRAL_NAME,
                               &Path::new("."),
-                              &scratch_dir).unwrap();
+                              &scratch).unwrap();
     }
   }
   return 0;

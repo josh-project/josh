@@ -68,13 +68,14 @@ fn test_commit_to_central() {
 
     println!("    ########### START: calling central_submit ########### ");
     let td_scratch = TempDir::new("scratch").expect("folder scratch should be created");
+    let scratch = migrate::Scratch::new(&td_scratch.path(),&host);
 
     migrate::central_submit(
         &_oid_to_sha1(&central_head.as_bytes()),
         &host,
         "central",
         &central_repo_path,
-        &td_scratch.path()
+        &scratch
         // &Path::new("/tmp/testscratch")
     ).expect("call central_submit");
 
