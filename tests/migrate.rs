@@ -114,11 +114,13 @@ fn test_commit_to_central() {
         &td_scratch.path()
         // &Path::new("/tmp/testscratch")
     ).expect("call central_submit");
-    // for m in module_names {
-    //     let x = td_scratch.path().join(&m);
-    //     migrate::call_command("git", &["checkout", "master"], Some(&x));
-    //     assert!(td_scratch.path().join(m).join("added_in_central.txt").exists());
-    // }
+
+    for m in module_names {
+        migrate::call_command(
+            "git", &["clone", &host.remote_url(&format!("modules/{}",m))], Some(&td_play.path())
+        );
+        assert!(td_play.path().join(m).join("added_in_central.txt").exists());
+    }
     // std::thread::sleep_ms(1111111);
 }
 
