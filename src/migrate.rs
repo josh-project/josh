@@ -25,6 +25,18 @@ impl<'a> Scratch<'a> {
 
     fn tracking(&self, module: &str, branch: &str) -> Object {
         println!("tracking_branch remotes/{}/{}",module,branch);
+
+        let remote_name = format!("{}", module);
+        let remote_url = self.host.remote_url(&module);
+        println!("  create remote (remote_name:{}, remote_url:{})",
+            &remote_name,
+            &remote_url
+        );
+        if !self.repo.find_remote(&remote_name).is_ok() {
+            self.repo.remote(&remote_name, &remote_url).expect("can't create remote");
+        }
+
+        self.call_git("fetch --all").expect("could not fetch");
         self.repo.revparse_single(&format!("remotes/{}/{}",module,branch))
             .expect("no tracking branch")
     }
@@ -49,7 +61,7 @@ impl<'a> Scratch<'a> {
 
     fn setup(&self,
              central: &str,
-             modules: &Vec<String>)
+             rev: &str)
         -> Result<(), Error> {
 
         println!(" ####### setup scratch repo for remote: {}\n #######\tlocation: {:?}",
@@ -57,32 +69,12 @@ impl<'a> Scratch<'a> {
             &self.repo.path()
         );
 
-        // point remote to central
-        if !self.repo.find_remote("central").is_ok() {
-            try!(self.repo.remote("central", &self.host.remote_url(central)));
-        }
-
         // create remote for each module
-        for module in modules.iter() {
+        for module in self.module_paths(rev).unwrap().iter() {
             try!(self.host.create_project(module));
 
-            // create remote for each module
-            let remote_name = format!("{}", module);
-            let module_remote_url = self.host.remote_url(&module);
-            println!("  create remote (remote_name:{}, remote_url:{})",
-                &remote_name,
-                &module_remote_url
-            );
-            if !self.repo.find_remote(&remote_name).is_ok() {
-                try!(self.repo.remote(&remote_name, &module_remote_url));
-            }
         }
 
-        // fetch all branches from remotes
-        // FIXME remote branches missing
-        // try!(in_tmp_repo(&self.repo, "fetch --all"));
-        try!(self.call_git("fetch --all"));
-        println!("  fetched all branches from remotes...");
         Ok(())
     }
 
@@ -150,6 +142,28 @@ impl<'a> Scratch<'a> {
         println!("module_to_subfolder {}", full_tree);
         Ok(full_tree)
     }
+
+    fn module_paths(&self, rev: &str) -> Result<Vec<String>, Error> {
+        println!("---> get_module_paths");
+        let object = try!(self.repo.revparse_single(rev));
+        let commit = try!(object.as_commit()
+                          .ok_or(Error::from_str("could not get commit from obj")));
+        let tree: Tree = try!(commit.tree());
+
+        let tree_object = try!(tree.get_path(&Path::new("modules")));
+        let modules_o = try!(tree_object.to_object(&self.repo));
+        let modules = try!(modules_o.as_tree()
+                           .ok_or(Error::from_str("could not get tree from path")));
+
+        let mut names = Vec::<String>::new();
+        for module in modules.iter() {
+            names.push(format!("modules/{}",try!(module.name()
+                            .ok_or(Error::from_str("could not get name for module")))
+                       .to_string()));
+        }
+        println!("<--- get_module_paths returns: {:?}", names);
+        Ok(names)
+    }
 }
 
 pub fn module_review_upload(module: &str,
@@ -159,10 +173,9 @@ pub fn module_review_upload(module: &str,
                             host: &RepoHost) -> Result<(), Error> {
     println!("in module_review_upload for module {}", &module);
     let scratch = Scratch::new(&scratch_path, host);
-    try!(scratch.setup(central,&vec!(module.to_string())));
-    try!(scratch.call_git("fetch --all"));
-
     scratch.transfer(newrev,Path::new("."));
+    try!(scratch.setup(central,&format!("{}",scratch.tracking(central,"master").id())));
+
     let mut parent_commit_oid: Oid = scratch.tracking(central, "master").id();
 
     let object = scratch.tracking(&module, "master").id();
@@ -240,20 +253,16 @@ pub fn central_submit(newrev: &str,//sha1 of refered commit
         &newrev
     );
 
-    let central_repo = Repository::open(&repo_path)
-        .expect(&format!("central repo should exist at {:?}", &repo_path));
-    let module_paths = try!(get_module_paths(&central_repo, newrev));
-
     println!("    ########### SCRATCH: create scratch repo ########### ");
     let scratch = Scratch::new(&scratch_dir,host);
+    scratch.transfer(newrev, &repo_path);
     try!(scratch.setup(
         &central,
-        &module_paths,
+        newrev,
     ));
 
 
 
-    scratch.transfer(newrev, &get_repo_path(&central_repo));
     let central_commit_obj = try!(scratch.repo.revparse_single(newrev));
     let central_commit = try!(central_commit_obj.as_commit()
                               .ok_or(Error::from_str("could not get commit from obj")));
@@ -264,7 +273,7 @@ pub fn central_submit(newrev: &str,//sha1 of refered commit
     // marker for other hooks
     try!(scratch.repo.branch(central, central_commit, true));
 
-    for module_path in module_paths {
+    for module_path in scratch.module_paths(newrev).unwrap() {
         println!(" ####### prepare commit from scratch.repo to module {}", &module_path);
         let module_master_commit_obj = scratch.tracking(&module_path, "master");
         let module_master_commit = try!(module_master_commit_obj.as_commit()
@@ -309,28 +318,6 @@ pub fn call_command(command: &str, args: &[&str], cwd: Option<&Path>)
     println!("{}{}",
              String::from_utf8_lossy(&output.stdout),
              String::from_utf8_lossy(&output.stderr));
-}
-
-fn get_module_paths(central: &Repository, rev: &str) -> Result<Vec<String>, Error> {
-
-    let object = try!(central.revparse_single(rev));
-    let commit = try!(object.as_commit()
-                      .ok_or(Error::from_str("could not get commit from obj")));
-    let tree: Tree = try!(commit.tree());
-
-    let tree_object = try!(tree.get_path(&Path::new("modules")));
-    let modules_o = try!(tree_object.to_object(&central));
-    let modules = try!(modules_o.as_tree()
-                       .ok_or(Error::from_str("could not get tree from path")));
-
-    let mut names = Vec::<String>::new();
-    for module in modules.iter() {
-        names.push(format!("modules/{}",try!(module.name()
-                        .ok_or(Error::from_str("could not get name for module")))
-                   .to_string()));
-    }
-    println!("<--- get_module_paths returns: {:?}", names);
-    Ok(names)
 }
 
 pub fn get_repo_path(repo: &Repository) -> &Path {
