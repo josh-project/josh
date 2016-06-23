@@ -10,33 +10,39 @@ use centralgithook::migrate;
 
 const GERRIT_PORT: &'static str = "29418";
 const AUTOMATION_USER: &'static str = "automation";
-const MODULE_PATH_PREFIX: &'static str = "bsw/modules";
-const CENTRAL_NAME: &'static str = "bsw/central";
+// const MODULE_PATH_PREFIX: &'static str = "bsw";
+const CENTRAL_NAME: &'static str = "central";
 
-// create module project on gerrit (if not existing)
-fn check_module_git(module: &str) -> Result<(), git2::Error> {
-    match Command::new("ssh")
-        .arg("-p").arg(GERRIT_PORT)
-        .arg("gerrit-test-git")
-        .arg("gerrit")
-        .arg("create-project")
-        .arg(format!("{}/{}", MODULE_PATH_PREFIX, module))
-        .arg("--empty-commit")
-        .output() {
-            Ok(output) => {
-                println!("create-project: {}", String::from_utf8_lossy(&output.stderr));
-                Ok(())
-            },
-            Err(_) => Err(git2::Error::from_str("failed to create project")),
-        }
-}
-fn remote_url(module_path: &str) -> String {
-    format!("ssh://{}@gerrit-test-git:{}/bsw/modules/{}",
-            AUTOMATION_USER,
-            GERRIT_PORT,
-            module_path)
-}
+struct Gerrit { }
 
+impl migrate::RepoHost for Gerrit {
+    // create module project on gerrit (if not existing)
+    fn create_project(&self, module: &str) -> Result<(), git2::Error> {
+        match Command::new("ssh")
+            .arg("-p").arg(GERRIT_PORT)
+            .arg("gerrit-test-git")
+            .arg("gerrit")
+            .arg("create-project")
+            .arg(module)
+            // .arg(format!("{}/{}", MODULE_PATH_PREFIX, module))
+            .arg("--empty-commit")
+            .output() {
+                Ok(output) => {
+                    println!("create-project: {}", String::from_utf8_lossy(&output.stderr));
+                    Ok(())
+                },
+                Err(_) => Err(git2::Error::from_str("failed to create project")),
+            }
+    }
+
+    fn remote_url(&self, module_path: &str) -> String {
+        format!("ssh://{}@gerrit-test-git:{}/{}",
+                AUTOMATION_USER,
+                GERRIT_PORT,
+                module_path)
+    }
+
+}
 
 fn main() { exit(main_ret()); } fn main_ret() -> i32 {
 
@@ -60,6 +66,8 @@ fn main() { exit(main_ret()); } fn main_ret() -> i32 {
   let refname = args.value_of("refname").unwrap_or("");
   let commit = args.value_of("commit").unwrap_or("");
 
+  let gerrit = Gerrit{};
+
 
   // ref-update: fired after push
   // change-merged: fired after gerrit-submit
@@ -77,41 +85,32 @@ fn main() { exit(main_ret()); } fn main_ret() -> i32 {
     // }
 
     // FIXME why not use the port here?
-    let remote_addr = &format!("ssh://{}@gerrit-test-git/{}.git",
-                               AUTOMATION_USER,
-                               CENTRAL_NAME);
     let scratch_dir = Path::new("/tmp/scratchme");
     if is_submit {
       // submit to central
-      migrate::central_submit(remote_addr,
-                              commit,
-                              &remote_url,
-                              // &local_module_path,
-                              &check_module_git,
+      migrate::central_submit(commit,
+                              &gerrit,
                               CENTRAL_NAME,
                               &Path::new("."),
                               &scratch_dir).unwrap();
     }
     else if is_module && is_update && is_review {
       // module was pushed, get changes to central
-      migrate::module_review_upload(project,
-                                    Path::new(&env::var("GIT_DIR").expect("GIT_DIR needs to be set")),
-                                    &scratch_dir,
-                                    newrev,
-                                    CENTRAL_NAME,
-                                    &remote_url(CENTRAL_NAME)
-                                    // &format!("{}.git", &CENTRAL_NAME)
-                                    ).unwrap();
+      migrate::module_review_upload(
+        project,
+        // Path::new(&env::var("GIT_DIR").expect("GIT_DIR needs to be set")),
+        &scratch_dir,
+        newrev,
+        CENTRAL_NAME,
+        &gerrit,
+        ).unwrap();
       // stop gerrit from allowing push to module directly
       return 1;
     }
     else if !is_module && is_update && !is_review {
       // direct push to master-branch of central
-      migrate::central_submit(remote_addr,
-                              newrev,
-                              &remote_url,
-                              // &local_module_path,
-                              &check_module_git,
+      migrate::central_submit(newrev,
+                              &gerrit,
                               CENTRAL_NAME,
                               &Path::new("."),
                               &scratch_dir).unwrap();
