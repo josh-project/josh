@@ -238,12 +238,10 @@ pub fn module_review_upload(module: &str,
 }
 
 pub fn central_submit(newrev: &str,//sha1 of refered commit
-                      host: &RepoHost,
                       central: &str,
                       repo_path: &Path,
                       scratch: &Scratch) -> Result<(), Error> {
-    println!(" ---> central_submit (remote addr:{}, sha1 of commit: {})",
-        &host.remote_url(central),
+    println!(" ---> central_submit (sha1 of commit: {})",
         &newrev
     );
 

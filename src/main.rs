@@ -89,7 +89,6 @@ fn main() { exit(main_ret()); } fn main_ret() -> i32 {
     if is_submit {
       // submit to central
       migrate::central_submit(commit,
-                              &gerrit,
                               CENTRAL_NAME,
                               &Path::new("."),
                               &scratch).unwrap();
@@ -109,7 +108,6 @@ fn main() { exit(main_ret()); } fn main_ret() -> i32 {
     else if !is_module && is_update && !is_review {
       // direct push to master-branch of central
       migrate::central_submit(newrev,
-                              &gerrit,
                               CENTRAL_NAME,
                               &Path::new("."),
                               &scratch).unwrap();

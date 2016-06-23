@@ -72,7 +72,6 @@ fn test_commit_to_central() {
 
     migrate::central_submit(
         &_oid_to_sha1(&central_head.as_bytes()),
-        &host,
         "central",
         &central_repo_path,
         &scratch
