@@ -47,18 +47,20 @@ impl migrate::RepoHost for TestHost {
 #[test]
 fn test_commit_to_central() {
     let host = TestHost::new();
-    let td_play = TempDir::new("play").expect("folder play should be created");
-    let central_repo_path = td_play.path().join("central");
+    let workspace = TempDir::new("workspace").expect("folder workspace should be created");
+    let central_repo_path = workspace.path().join("central");
     println!("    ");
     println!("    ########### SETUP: create central repository ########### ");
     host.create_project("central").expect("error: create_project");
     let central_repo = create_repository(&central_repo_path);
-    migrate::call_command("git", &["status"], Some(&central_repo_path));
-    let central_head = commit_files(&central_repo,
-            &central_repo_path,
-            &vec!["modules/moduleA/added_in_central.txt",
-            "modules/moduleB/added_in_central.txt",
-            "modules/moduleC/added_in_central.txt"]);
+
+    let central_head = commit_files(
+        &central_repo,
+        &central_repo_path,
+        &vec!["modules/moduleA/added_in_central.txt",
+              "modules/moduleB/added_in_central.txt",
+              "modules/moduleC/added_in_central.txt"]
+    );
 
     println!("    ########### SETUP: create module repositories ########### ");
 
@@ -78,9 +80,9 @@ fn test_commit_to_central() {
 
     for m in module_names {
         migrate::call_command(
-            "git", &["clone", &host.remote_url(&format!("modules/{}",m))], Some(&td_play.path())
+            "git", &["clone", &host.remote_url(&format!("modules/{}",m))], Some(&workspace.path())
         );
-        assert!(td_play.path().join(m).join("added_in_central.txt").exists());
+        assert!(workspace.path().join(m).join("added_in_central.txt").exists());
     }
     // std::thread::sleep_ms(1111111);
 }
@@ -120,7 +122,6 @@ fn create_repository(temp: &Path) -> git2::Repository {
 
     let path = migrate::get_repo_path(&repo).to_path_buf();
     println!("Initialized empty Git repository in {}", path.display());
-    migrate::call_command("git", &["status"], Some(&path));
     repo
 }
 

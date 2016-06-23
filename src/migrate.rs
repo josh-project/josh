@@ -59,12 +59,12 @@ impl<'a> Scratch<'a> {
         Ok(())
     }
 
-    fn setup(&self,
+    fn create_projects(&self,
              central: &str,
              rev: &str)
         -> Result<(), Error> {
 
-        println!(" ####### setup scratch repo for remote: {}\n #######\tlocation: {:?}",
+        println!(" ####### create_projects scratch repo for remote: {}\n #######\tlocation: {:?}",
             &self.host.remote_url(central),
             &self.repo.path()
         );
@@ -72,7 +72,6 @@ impl<'a> Scratch<'a> {
         // create remote for each module
         for module in self.module_paths(rev).unwrap().iter() {
             try!(self.host.create_project(module));
-
         }
 
         Ok(())
@@ -98,12 +97,14 @@ impl<'a> Scratch<'a> {
         if parents.len() != 0 {
             try!(self.repo.set_head_detached(parents[0].id()));
         }
-        self.repo.commit(Some("HEAD"),
-        &base.author(),
-        &base.committer(),
-        &base.message().unwrap_or("no message"),
-        tree,
-        parents)
+        self.repo.commit(
+            Some("HEAD"),
+            &base.author(),
+            &base.committer(),
+            &base.message().unwrap_or("no message"),
+            tree,
+            parents
+        )
     }
 
     fn push(&self, oid: Oid, remote: &str) {
@@ -174,7 +175,6 @@ pub fn module_review_upload(module: &str,
     println!("in module_review_upload for module {}", &module);
     let scratch = Scratch::new(&scratch_path, host);
     scratch.transfer(newrev,Path::new("."));
-    try!(scratch.setup(central,&format!("{}",scratch.tracking(central,"master").id())));
 
     let mut parent_commit_oid: Oid = scratch.tracking(central, "master").id();
 
@@ -256,7 +256,7 @@ pub fn central_submit(newrev: &str,//sha1 of refered commit
     println!("    ########### SCRATCH: create scratch repo ########### ");
     let scratch = Scratch::new(&scratch_dir,host);
     scratch.transfer(newrev, &repo_path);
-    try!(scratch.setup(
+    try!(scratch.create_projects(
         &central,
         newrev,
     ));
