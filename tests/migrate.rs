@@ -9,7 +9,6 @@ use std::fs::File;
 use std::fs;
 use std::str;
 use std::io::Write;
-use std::io::Read;
 use centralgithook::migrate::RepoHost;
 
 fn _oid_to_sha1(oid: &[u8]) -> String {
@@ -29,20 +28,6 @@ impl TestHost {
             td: TempDir::new("test_host").expect("folder test_host should be created")
         }
     }
-}
-
-fn empty_commit(repo: &git2::Repository) {
-    let sig = git2::Signature::now("foo", "bar").expect("created signature");
-    let commit = repo.commit(
-        Some("HEAD"),
-        &sig,
-        &sig,
-        "initial",
-        &repo.find_tree(repo.treebuilder(None).expect("cannot create empty tree")
-             .write().expect("cannot write empty tree")).expect("cannot find empty tree"),
-        &[]
-
-    ).expect("cannot commit empty");
 }
 
 impl migrate::RepoHost for TestHost {
@@ -69,7 +54,7 @@ fn test_commit_to_central() {
     host.create_project("central").expect("error: create_project");
     let central_repo = create_repository(&central_repo_path);
     migrate::call_command("git", &["status"], Some(&central_repo_path));
-    commit_files(&central_repo,
+    let central_head = commit_files(&central_repo,
             &central_repo_path,
             &vec!["modules/moduleA/added_in_central.txt",
             "modules/moduleB/added_in_central.txt",
@@ -78,36 +63,12 @@ fn test_commit_to_central() {
     println!("    ########### SETUP: create module repositories ########### ");
 
     let module_names = vec!["moduleA", "moduleB", "moduleC"];
-    // let _module_repos: Vec<git2::Repository> = module_names
-    //     .iter()
-    //     .map(|m| {
-    //             let x = td.path().join(&m);
-    //             let repo = create_repository(&x);
-    //             // point remote to central
-    //             let ref_name = "modules/".to_string() + &m;
-    //             central_repo.remote(&ref_name, &m).expect("remote as to be added");
-    //             commit_files(&repo, &Path::new(&x), &vec!["test/a.txt", "b.txt", "c.txt"]);
-    //             migrate::call_command("git", &["checkout","-b", "not_needed"], Some(&x));
-    //             repo
-    //             })
-    // .collect();
-
-    let fp = central_repo_path.clone().join(".git").join("refs").join("heads").join("master");
-    let mut f = File::open(&fp).expect("open file master");
-    let mut s = String::new();
-    f.read_to_string(&mut s).expect("read file shoud work");
-    println!("master file in {:?}: {}", central_repo_path, s);
-
-    let h = central_repo.head().expect("get head of central repo");
-    let t = h.target().expect("get oid of head reference");
-    let central_repo_head_oid = t.as_bytes();
-
 
     println!("    ########### START: calling central_submit ########### ");
     let td_scratch = TempDir::new("scratch").expect("folder scratch should be created");
 
     migrate::central_submit(
-        &_oid_to_sha1(&central_repo_head_oid),
+        &_oid_to_sha1(&central_head.as_bytes()),
         &host,
         "central",
         &central_repo_path,
@@ -140,7 +101,7 @@ fn commit_file(repo: &git2::Repository, file: &Path, parents: &[&git2::Commit]) 
         .expect("commit to repo")
 }
 
-fn commit_files(repo: &git2::Repository, pb: &Path, content: &Vec<&str>) {
+fn commit_files(repo: &git2::Repository, pb: &Path, content: &Vec<&str>) -> git2::Oid {
     let mut parent_commit = None;
     for file_name in content {
         let foo_file = pb.join(file_name);
@@ -151,6 +112,7 @@ fn commit_files(repo: &git2::Repository, pb: &Path, content: &Vec<&str>) {
         };
         parent_commit = repo.find_commit(oid).ok();
     }
+    return parent_commit.expect("nothing committed").id();
 }
 
 fn create_repository(temp: &Path) -> git2::Repository {
@@ -169,3 +131,17 @@ fn create_dummy_file(f: &PathBuf) {
     let mut file = File::create(&f.as_path()).expect("create file");
     file.write_all("test content".as_bytes()).expect("write to file");
 }
+
+fn empty_commit(repo: &git2::Repository) {
+    let sig = git2::Signature::now("foo", "bar").expect("created signature");
+    repo.commit(
+        Some("HEAD"),
+        &sig,
+        &sig,
+        "initial",
+        &repo.find_tree(repo.treebuilder(None).expect("cannot create empty tree")
+             .write().expect("cannot write empty tree")).expect("cannot find empty tree"),
+        &[]
+    ).expect("cannot commit empty");
+}
+
