@@ -101,6 +101,25 @@ impl<'a> Scratch<'a> {
         println!("<--- transfer_to_scratch done...");
     }
 
+    // takes everything from base except it's tree and replaces it with the tree given
+    fn rewrite(&self, base: &Commit, parents: &[&Commit], tree: &Tree) -> Result<Oid, Error> {
+        if parents.len() != 0 {
+            try!(self.repo.set_head_detached(parents[0].id()));
+        }
+        self.repo.commit(Some("HEAD"),
+        &base.author(),
+        &base.committer(),
+        &base.message().unwrap_or("no message"),
+        tree,
+        parents)
+    }
+
+    fn push(&self, oid: Oid, remote: &str) {
+        let commit = &self.repo.find_commit(oid).expect("can't find commit");
+        self.repo.set_head_detached(commit.id()).expect("can't detach HEAD");
+        self.call_git(&format!("push {} HEAD:{}", remote, "master")).expect("can't push");
+    }
+
     fn subtree(&self, tree: &Tree, path: &Path) -> Tree {
         let oid = tree.get_path(path).map(|x| x.id()).expect("can't find subtree");
         return self.repo.find_tree(oid).expect("can't find oid");
@@ -195,7 +214,7 @@ pub fn module_review_upload(module: &str,
         };
 
         parent_commit_oid =
-            try!(make_commit(&scratch.repo, &new_tree, module_commit, &vec![&parent_commit]));
+            try!(scratch.rewrite(module_commit, &vec![&parent_commit], &new_tree));
     }
 
     println!("");
@@ -265,13 +284,11 @@ pub fn central_submit(newrev: &str,//sha1 of refered commit
 
             let new_tree = try!(scratch.repo.find_tree(new_tree_oid));
 
-            let module_commit = try!(make_commit(&scratch.repo, &new_tree, central_commit, &parents));
+            let module_commit =
+                try!(scratch.rewrite(central_commit, &parents, &new_tree));
             // do the push to the module git
-            let commit = &try!(scratch.repo.find_commit(module_commit));
-            try!(scratch.repo.set_head_detached(commit.id()));
 
-            let remote = &host.remote_url(&module_path);
-            try!(scratch.call_git(&format!("push {} HEAD:{}", remote, "master")));
+            scratch.push(module_commit, &host.remote_url(&module_path));
         }
     }
     Ok(())
@@ -314,22 +331,6 @@ fn get_module_paths(central: &Repository, rev: &str) -> Result<Vec<String>, Erro
     }
     println!("<--- get_module_paths returns: {:?}", names);
     Ok(names)
-}
-
-// takes everything from base except it's tree and replaces it with the tree given
-fn make_commit(repo: &Repository,
-               tree: &Tree,
-               base: &Commit,
-               parents: &[&Commit]) -> Result<Oid, Error> {
-    if parents.len() != 0 {
-        try!(repo.set_head_detached(parents[0].id()));
-    }
-    repo.commit(Some("HEAD"),
-    &base.author(),
-    &base.committer(),
-    &base.message().unwrap_or("no message"),
-    tree,
-    parents)
 }
 
 pub fn get_repo_path(repo: &Repository) -> &Path {

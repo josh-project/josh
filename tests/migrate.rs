@@ -43,7 +43,6 @@ fn empty_commit(repo: &git2::Repository) {
         &[]
 
     ).expect("cannot commit empty");
-    repo.branch("master",&repo.find_commit(commit).expect("cannot find empty commit"),true);
 }
 
 impl migrate::RepoHost for TestHost {
