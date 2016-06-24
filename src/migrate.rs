@@ -3,6 +3,7 @@ extern crate git2;
 use git2::*;
 use std::process::Command;
 use std::path::Path;
+use std::path::PathBuf;
 
 pub trait RepoHost  {
     fn remote_url(&self, &str) -> String;
@@ -79,16 +80,16 @@ impl<'a> Scratch<'a> {
     // force push of the new revision-object to temp repo
     fn transfer(&self, rev: &str, source: &Path) -> Object {
         let target = get_repo_path(&self.repo);
+        let shell = Shell { cwd: source.to_path_buf() };
         println!("---> transfer_to_scratch in {}", source.display());
         //" create tmp branch
-        call_command(&format!("git branch -f tmp {}", rev), Some(source));
+        shell.command(&format!("git branch -f tmp {}", rev));
         // force push
-        call_command(
-            &format!("git push --force {} tmp", &target.to_string_lossy()),
-            Some(source)
+        shell.command(
+            &format!("git push --force {} tmp", &target.to_string_lossy())
         );
         // delete tmp branch
-        call_command("git branch -D tmp", Some(source));
+        shell.command("git branch -D tmp");
         println!("<--- transfer_to_scratch done...");
 
         let obj = self.repo.revparse_single(rev).expect("can't find transfered ref");
@@ -261,7 +262,8 @@ pub fn initial_import(newrev: &str,//sha1 of refered commit
     ));
 
     for module in scratch.module_paths(&format!("{}",newrev)) {
-        call_command("rm -Rf refs/original", Some(scratch.repo.path()));
+        let shell = Shell { cwd: scratch.repo.path().to_path_buf() };
+        shell.command("rm -Rf refs/original");
         scratch.call_git(&format!("branch -f initial_{} {}", module,  newrev))
             .expect("create branch");
         scratch.call_git(&format!("filter-branch -f --subdirectory-filter {}/ -- initial_{}", module, module))
@@ -323,23 +325,32 @@ pub fn central_submit(newrev: &str,//sha1 of refered commit
     Ok(())
 }
 
-pub fn call_command(cmd: &str, cwd: Option<&Path>)
-{
-    let args: Vec<&str> = cmd.split(" ").collect();
-    let mut c = Command::new(&args[0]);
-    c.args(&args[1..]);
+pub struct Shell {
+    pub cwd: PathBuf,
+}
 
-    println!("call_command {:?} (in {:?})", c, cwd);
-    if let Some(path) = cwd {
-        // c.env("GIT_DIR", format!("{}.git",path.to_str().unwrap()));
-        c.current_dir(path);
+
+impl Shell {
+    pub fn command(&self, cmd: &str
+    //, cwd: Option<&Path>
+    )
+    {
+        let args: Vec<&str> = cmd.split(" ").collect();
+        let mut c = Command::new(&args[0]);
+        c.args(&args[1..]);
+
+        println!("Shell command{:?} (in {:?})", c, self.cwd);
+        // if let Some(path) = cwd {
+            // c.env("GIT_DIR", format!("{}.git",path.to_str().unwrap()));
+            c.current_dir(&self.cwd);
+        // }
+        let output = c.output().unwrap_or_else(|e| panic!("failed to execute process: {}", e));
+
+        println!("{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
-    let output = c.output().unwrap_or_else(|e| panic!("failed to execute process: {}", e));
-
-    println!("{}{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
 }
 
 pub fn get_repo_path(repo: &Repository) -> &Path {

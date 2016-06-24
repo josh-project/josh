@@ -80,10 +80,11 @@ fn test_initial_import() {
         // &Path::new("/tmp/testscratch")
     ).expect("call central_submit");
 
+    let shell = migrate::Shell { cwd: workspace.path().to_path_buf() };
+
     for m in module_names {
-        migrate::call_command(
+        shell.command(
             &format!("git clone {}", &host.remote_url(&format!("modules/{}",m))),
-            Some(&workspace.path())
         );
         assert!(workspace.path().join(m).join("added_in_central.txt").exists());
     }
