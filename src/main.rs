@@ -112,6 +112,7 @@ fn main() { exit(main_ret()); } fn main_ret() -> i32 {
           println!("##### INITIAL IMPORT {} {} ######",oldrev,newrev);
           migrate::initial_import(newrev,
                                   CENTRAL_NAME,
+                                  &Path::new("."),
                                   &scratch).unwrap();
           return 1;
       }

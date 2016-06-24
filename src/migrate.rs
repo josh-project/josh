@@ -81,13 +81,14 @@ impl<'a> Scratch<'a> {
         let target = get_repo_path(&self.repo);
         println!("---> transfer_to_scratch in {}", source.display());
         //" create tmp branch
-        call_command("git", &["branch", "-f", "tmp", rev], Some(source));
+        call_command(&format!("git branch -f tmp {}", rev), Some(source));
         // force push
         call_command(
-            "git", &["push", "--force", &target.to_string_lossy(), "tmp"], Some(source)
+            &format!("git push --force {} tmp", &target.to_string_lossy()),
+            Some(source)
         );
         // delete tmp branch
-        call_command("git", &["branch", "-D", "tmp"], Some(source));
+        call_command("git branch -D tmp", Some(source));
         println!("<--- transfer_to_scratch done...");
 
         let obj = self.repo.revparse_single(rev).expect("can't find transfered ref");
@@ -248,16 +249,19 @@ pub fn module_review_upload(module: &str,
 
 pub fn initial_import(newrev: &str,//sha1 of refered commit
                       central: &str,
+                      repo_path: &Path,
                       scratch: &Scratch)
     -> Result<(), Error>
 {
+    scratch.transfer(newrev, &repo_path);
+
     try!(scratch.create_projects(
         &central,
         newrev,
     ));
 
     for module in scratch.module_paths(&format!("{}",newrev)) {
-        call_command("rm", &["-Rf", "refs/original"], Some(scratch.repo.path()));
+        call_command("rm -Rf refs/original", Some(scratch.repo.path()));
         scratch.call_git(&format!("branch -f initial_{} {}", module,  newrev))
             .expect("create branch");
         scratch.call_git(&format!("filter-branch -f --subdirectory-filter {}/ -- initial_{}", module, module))
@@ -319,10 +323,12 @@ pub fn central_submit(newrev: &str,//sha1 of refered commit
     Ok(())
 }
 
-pub fn call_command(command: &str, args: &[&str], cwd: Option<&Path>)
+pub fn call_command(cmd: &str, cwd: Option<&Path>)
 {
-    let mut c = Command::new(&command);
-    c.args(args);
+    let args: Vec<&str> = cmd.split(" ").collect();
+    let mut c = Command::new(&args[0]);
+    c.args(&args[1..]);
+
     println!("call_command {:?} (in {:?})", c, cwd);
     if let Some(path) = cwd {
         // c.env("GIT_DIR", format!("{}.git",path.to_str().unwrap()));

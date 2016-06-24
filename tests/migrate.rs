@@ -34,8 +34,8 @@ impl migrate::RepoHost for TestHost {
     fn create_project(&self, module: &str) -> Result<(), git2::Error> {
         let repo_dir = self.td.path().join(&Path::new(module));
         println!("TestHost: create_project {} in {:?}", module, repo_dir);
-        let repo = git2::Repository::init_bare(&repo_dir).expect("TestHost: init_bare failed");
-        empty_commit(&repo);
+        git2::Repository::init_bare(&repo_dir).expect("TestHost: init_bare failed");
+        // empty_commit(&repo);
         Ok(())
     }
 
@@ -45,7 +45,7 @@ impl migrate::RepoHost for TestHost {
 }
 
 #[test]
-fn test_commit_to_central() {
+fn test_initial_import() {
     let host = TestHost::new();
     let workspace = TempDir::new("workspace").expect("folder workspace should be created");
     let central_repo_path = workspace.path().join("central");
@@ -66,11 +66,13 @@ fn test_commit_to_central() {
 
     let module_names = vec!["moduleA", "moduleB", "moduleC"];
 
-    println!("    ########### START: calling central_submit ########### ");
+    println!("    ########### START: calling initial_import ########### ");
     let td_scratch = TempDir::new("scratch").expect("folder scratch should be created");
     let scratch = migrate::Scratch::new(&td_scratch.path(),&host);
 
-    migrate::central_submit(
+    println!("central_head: {}",central_head);
+
+    migrate::initial_import(
         &_oid_to_sha1(&central_head.as_bytes()),
         "central",
         &central_repo_path,
@@ -80,7 +82,8 @@ fn test_commit_to_central() {
 
     for m in module_names {
         migrate::call_command(
-            "git", &["clone", &host.remote_url(&format!("modules/{}",m))], Some(&workspace.path())
+            &format!("git clone {}", &host.remote_url(&format!("modules/{}",m))),
+            Some(&workspace.path())
         );
         assert!(workspace.path().join(m).join("added_in_central.txt").exists());
     }
@@ -133,16 +136,16 @@ fn create_dummy_file(f: &PathBuf) {
     file.write_all("test content".as_bytes()).expect("write to file");
 }
 
-fn empty_commit(repo: &git2::Repository) {
-    let sig = git2::Signature::now("foo", "bar").expect("created signature");
-    repo.commit(
-        Some("HEAD"),
-        &sig,
-        &sig,
-        "initial",
-        &repo.find_tree(repo.treebuilder(None).expect("cannot create empty tree")
-             .write().expect("cannot write empty tree")).expect("cannot find empty tree"),
-        &[]
-    ).expect("cannot commit empty");
-}
+// fn empty_commit(repo: &git2::Repository) {
+//     let sig = git2::Signature::now("foo", "bar").expect("created signature");
+//     repo.commit(
+//         Some("HEAD"),
+//         &sig,
+//         &sig,
+//         "initial",
+//         &repo.find_tree(repo.treebuilder(None).expect("cannot create empty tree")
+//              .write().expect("cannot write empty tree")).expect("cannot find empty tree"),
+//         &[]
+//     ).expect("cannot commit empty");
+// }
 
