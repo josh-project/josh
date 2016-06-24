@@ -25,7 +25,6 @@ impl migrate::RepoHost for Gerrit {
             .arg("create-project")
             .arg(module)
             // .arg(format!("{}/{}", MODULE_PATH_PREFIX, module))
-            .arg("--empty-commit")
             .output() {
                 Ok(output) => {
                     println!("create-project: {}", String::from_utf8_lossy(&output.stderr));
@@ -62,6 +61,7 @@ fn main() { exit(main_ret()); } fn main_ret() -> i32 {
     .get_matches();
 
   let newrev = args.value_of("newrev").unwrap_or("");
+  let oldrev = args.value_of("oldrev").unwrap_or("");
   let project = args.value_of("project").unwrap_or("");
   let refname = args.value_of("refname").unwrap_or("");
   let commit = args.value_of("commit").unwrap_or("");
@@ -76,6 +76,7 @@ fn main() { exit(main_ret()); } fn main_ret() -> i32 {
     let is_module = project != CENTRAL_NAME;
     let is_update = hook.ends_with("ref-update");
     let is_submit = hook.ends_with("change-merged");
+    let is_initial = oldrev == "0000000000000000000000000000000000000000";
 
     // // TODO
     // let uploader = args.value_of("uploader").unwrap_or("");
@@ -107,10 +108,19 @@ fn main() { exit(main_ret()); } fn main_ret() -> i32 {
     }
     else if !is_module && is_update && !is_review {
       // direct push to master-branch of central
-      migrate::central_submit(newrev,
-                              CENTRAL_NAME,
-                              &Path::new("."),
-                              &scratch).unwrap();
+      if is_initial {
+          println!("##### INITIAL IMPORT {} {} ######",oldrev,newrev);
+          migrate::initial_import(newrev,
+                                  CENTRAL_NAME,
+                                  &scratch).unwrap();
+          return 1;
+      }
+      else {
+          println!(".\n\n###########################################");
+          println!("##### INITIAL IMPORT already happened #####");
+          println!("###########################################");
+          return 1;
+      }
     }
   }
   return 0;
