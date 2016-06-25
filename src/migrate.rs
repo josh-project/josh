@@ -5,6 +5,8 @@ use std::process::Command;
 use std::path::Path;
 use std::path::PathBuf;
 
+const TMP_NAME: &'static str = "tmp_fd2db5f8_bac2_4a1e_9487_4ac3414788aa";
+
 pub trait RepoHost
 {
     fn remote_url(&self, &str) -> String;
@@ -66,7 +68,7 @@ impl<'a> Scratch<'a>
         Ok(())
     }
 
-    fn create_projects(&self, central: &str, rev: &str) -> Result<(), Error>
+    fn create_projects(&self, central: &str, rev: &Object) -> Result<(), Error>
     {
 
         println!(" ####### create_projects scratch repo for remote: {}\n #######\tlocation: {:?}",
@@ -81,18 +83,19 @@ impl<'a> Scratch<'a>
     }
 
     // force push of the new revision-object to temp repo
-    fn transfer(&self, rev: &str, source: &Path) -> Object
+    pub fn transfer(&self, rev: &str, source: &Path) -> Object
     {
         let target = get_repo_path(&self.repo);
         let shell = Shell { cwd: source.to_path_buf() };
         println!("---> transfer_to_scratch in {}", source.display());
         // " create tmp branch
-        shell.command(&format!("git branch -f tmp {}", rev));
+        shell.command(&format!("git branch -f {} {}", TMP_NAME, rev));
         // force push
-        shell.command(&format!("git push --force {} tmp",
-                               &target.to_string_lossy()));
+        shell.command(&format!("git push --force {} {}",
+                               &target.to_string_lossy(),
+                               TMP_NAME));
         // delete tmp branch
-        shell.command("git branch -D tmp");
+        shell.command(&format!("git branch -D {}", TMP_NAME));
         println!("<--- transfer_to_scratch done...");
 
         let obj = self.repo.revparse_single(rev).expect("can't find transfered ref");
@@ -161,13 +164,12 @@ impl<'a> Scratch<'a>
         Ok(full_tree)
     }
 
-    fn module_paths(&self, rev: &str) -> Vec<String>
+    fn module_paths(&self, object: &Object) -> Vec<String>
     {
         let mut names = Vec::<String>::new();
         // println!("---> get_module_paths");
-        let object = self.repo.revparse_single(rev).expect("module_paths: invalid rev");
-        let commit = object.as_commit().expect("could not get commit from obj");
-        let tree: Tree = commit.tree().expect("module_paths: can't get tree");
+        let commit = object.as_commit().expect("module_paths: object is not a commit");
+        let tree: Tree = commit.tree().expect("module_paths: commit has no tree");
 
         if let Ok(tree_object) = tree.get_path(&Path::new("modules")) {
             let modules_o = tree_object.to_object(&self.repo).expect("module_paths: to_object");
@@ -175,7 +177,7 @@ impl<'a> Scratch<'a>
 
                 for module in modules.iter() {
                     names.push(format!("modules/{}",
-                                       module.name().expect("could not get name for module"))
+                                       module.name().expect("module_paths: TreeItem has no name"))
                         .to_string());
                 }
             }
@@ -186,14 +188,14 @@ impl<'a> Scratch<'a>
 }
 
 pub fn module_review_upload(scratch: &Scratch,
-                            newrev: &str,
+                            newrev: Object,
                             module: &str,
                             central: &str)
     -> Result<(), Error>
 {
     println!("in module_review_upload for module {}", &module);
 
-    let new = scratch.transfer(newrev, Path::new(".")).id();
+    let new = newrev.id();
     let old = scratch.tracking(&module, "master").id();
 
     if !try!(scratch.repo.graph_descendant_of(new, old)) {
@@ -214,7 +216,7 @@ pub fn module_review_upload(scratch: &Scratch,
     println!("===== module path: {}", module);
     println!("===== Rewrite commits from {} to {}", old, new);
 
-    let mut parent_commit_oid: Oid = scratch.tracking(central, "master").id();
+    let mut current_oid = scratch.tracking(central, "master").id();
     for rev in walk {
         let currev = format!("{}", try!(rev));
         let oldrev = format!("{}", old);
@@ -228,7 +230,7 @@ pub fn module_review_upload(scratch: &Scratch,
             .ok_or(Error::from_str("object is not actually a commit")));
         let module_tree = try!(module_commit.tree());
 
-        let parent_commit = try!(scratch.repo.find_commit(parent_commit_oid));
+        let parent_commit = try!(scratch.repo.find_commit(current_oid));
 
         let new_tree = {
             let master_tree: Tree = try!(parent_commit.tree());
@@ -237,14 +239,14 @@ pub fn module_review_upload(scratch: &Scratch,
             try!(scratch.repo.find_tree(new_tree_oid))
         };
 
-        parent_commit_oid = try!(scratch.rewrite(module_commit, &vec![&parent_commit], &new_tree));
+        current_oid = try!(scratch.rewrite(module_commit, &vec![&parent_commit], &new_tree));
     }
 
     println!("");
     println!("");
     println!("===================== Doing actual upload in central git ========================");
 
-    scratch.push(parent_commit_oid, central, "refs/for/master");
+    scratch.push(current_oid, central, "refs/for/master");
 
     println!("==== The review upload may have worked, even if it says error below. Look UP! ====");
     Ok(())
@@ -252,21 +254,15 @@ pub fn module_review_upload(scratch: &Scratch,
 
 
 
-pub fn initial_import(scratch: &Scratch,
-                      newrev: &str,
-                      central: &str,
-                      repo_path: &Path)
-    -> Result<(), Error>
+pub fn initial_import(scratch: &Scratch, newrev: Object, central: &str) -> Result<(), Error>
 {
-    scratch.transfer(newrev, &repo_path);
+    try!(scratch.create_projects(&central, &newrev));
 
-    try!(scratch.create_projects(&central, newrev));
-
-    for module in scratch.module_paths(&format!("{}", newrev)) {
+    for module in scratch.module_paths(&newrev) {
         let shell = Shell { cwd: scratch.repo.path().to_path_buf() };
         shell.command("rm -Rf refs/original");
 
-        scratch.call_git(&format!("branch -f initial_{} {}", module, newrev))
+        scratch.call_git(&format!("branch -f initial_{} {}", module, newrev.id()))
             .expect("create branch");
 
         scratch.call_git(&format!("filter-branch -f --subdirectory-filter {}/ -- initial_{}",
@@ -281,25 +277,24 @@ pub fn initial_import(scratch: &Scratch,
     }
     Ok(())
 }
-pub fn central_submit(newrev: &str, // sha1 of refered commit
+
+pub fn central_submit(newrev: Object, // sha1 of refered commit
                       central: &str,
-                      repo_path: &Path,
                       scratch: &Scratch)
     -> Result<(), Error>
 {
     println!(" ---> central_submit (sha1 of commit: {})",
-             &newrev);
+             &newrev.id());
 
     println!("    ########### SCRATCH: create scratch repo ########### ");
-    let central_commit_obj = scratch.transfer(newrev, &repo_path);
 
-    try!(scratch.create_projects(&central, newrev));
+    try!(scratch.create_projects(&central, &newrev));
 
-    let central_commit = try!(central_commit_obj.as_commit()
+    let central_commit = try!(newrev.as_commit()
         .ok_or(Error::from_str("could not get commit from obj")));
     let central_tree = try!(central_commit.tree());
 
-    for module in scratch.module_paths(newrev) {
+    for module in scratch.module_paths(&newrev) {
         println!(" ####### prepare commit from scratch.repo to module {}",
                  &module);
         let module_master_commit_obj = scratch.tracking(&module, "master");

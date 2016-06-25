@@ -98,11 +98,18 @@ fn main_ret() -> i32
         let scratch = migrate::Scratch::new(&scratch_dir, &gerrit);
         if is_submit {
             // submit to central
-            migrate::central_submit(commit, CENTRAL_NAME, &Path::new("."), &scratch).unwrap();
+            migrate::central_submit(scratch.transfer(commit, &Path::new(".")),
+                                    CENTRAL_NAME,
+                                    &scratch)
+                .unwrap();
         }
         else if is_module && is_update && is_review {
             // module was pushed, get changes to central
-            migrate::module_review_upload(&scratch, newrev, project, CENTRAL_NAME).unwrap();
+            migrate::module_review_upload(&scratch,
+                                          scratch.transfer(newrev, Path::new(".")),
+                                          project,
+                                          CENTRAL_NAME)
+                .unwrap();
             // stop gerrit from allowing push to module directly
             return 1;
         }
@@ -112,7 +119,10 @@ fn main_ret() -> i32
                 println!("##### INITIAL IMPORT {} {} ######",
                          oldrev,
                          newrev);
-                migrate::initial_import(&scratch, newrev, CENTRAL_NAME, &Path::new(".")).unwrap();
+                migrate::initial_import(&scratch,
+                                        scratch.transfer(newrev, &Path::new(".")),
+                                        CENTRAL_NAME)
+                    .unwrap();
                 return 0;
             }
             else {
