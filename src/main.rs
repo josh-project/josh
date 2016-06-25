@@ -98,9 +98,8 @@ fn main_ret() -> i32
         let scratch = migrate::Scratch::new(&scratch_dir, &gerrit);
         if is_submit {
             // submit to central
-            migrate::central_submit(scratch.transfer(commit, &Path::new(".")),
-                                    CENTRAL_NAME,
-                                    &scratch)
+            migrate::central_submit(&scratch,
+                                    scratch.transfer(commit, &Path::new(".")))
                 .unwrap();
         }
         else if is_module && is_update && is_review {
@@ -119,9 +118,8 @@ fn main_ret() -> i32
                 println!("##### INITIAL IMPORT {} {} ######",
                          oldrev,
                          newrev);
-                migrate::initial_import(&scratch,
-                                        scratch.transfer(newrev, &Path::new(".")),
-                                        CENTRAL_NAME)
+                migrate::central_submit(&scratch,
+                                        scratch.transfer(newrev, &Path::new(".")))
                     .unwrap();
                 return 0;
             }

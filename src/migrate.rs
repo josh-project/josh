@@ -29,8 +29,9 @@ impl<'a> Scratch<'a>
         }
     }
 
-    fn tracking(&self, module: &str, branch: &str) -> Object
+    fn tracking(&self, module: &str, branch: &str) -> Option<Object>
     {
+        self.host.create_project(&module).expect("tracking: can't create project");
         println!("tracking_branch remotes/{}/{}", module, branch);
 
         let remote_name = format!("{}", module);
@@ -43,9 +44,8 @@ impl<'a> Scratch<'a>
         }
 
         self.call_git("fetch --all").expect("could not fetch");
-        self.repo
-            .revparse_single(&format!("remotes/{}/{}", module, branch))
-            .expect("no tracking branch")
+        return self.repo
+            .revparse_single(&format!("remotes/{}/{}", module, branch)).ok();
     }
 
     fn call_git(self: &Scratch<'a>, cmd: &str) -> Result<(), Error>
@@ -65,20 +65,6 @@ impl<'a> Scratch<'a>
         println!("{}{}",
                  String::from_utf8_lossy(&output.stdout),
                  String::from_utf8_lossy(&output.stderr));
-        Ok(())
-    }
-
-    fn create_projects(&self, central: &str, rev: &Object) -> Result<(), Error>
-    {
-
-        println!(" ####### create_projects scratch repo for remote: {}\n #######\tlocation: {:?}",
-                 &self.host.remote_url(central),
-                 &self.repo.path());
-
-        for module in self.module_paths(rev) {
-            try!(self.host.create_project(&module));
-        }
-
         Ok(())
     }
 
@@ -185,6 +171,25 @@ impl<'a> Scratch<'a>
         return names;
         // println!("<--- get_module_paths returns: {:?}", names);
     }
+
+    fn split_subdir(&self, module: &str, newrev: &Oid) -> Object
+    {
+
+        let shell = Shell { cwd: self.repo.path().to_path_buf() };
+        shell.command("rm -Rf refs/original");
+
+        self.call_git(&format!("branch -f initial_{} {}", module, newrev))
+            .expect("create branch");
+
+        self.call_git(&format!("filter-branch -f --subdirectory-filter {}/ -- initial_{}",
+                               module,
+                               module))
+            .expect("error in filter-branch");
+
+        return self.repo
+            .revparse_single(&format!("initial_{}", module))
+            .expect("can't find rewritten branch");
+    }
 }
 
 pub fn module_review_upload(scratch: &Scratch,
@@ -196,7 +201,7 @@ pub fn module_review_upload(scratch: &Scratch,
     println!("in module_review_upload for module {}", &module);
 
     let new = newrev.id();
-    let old = scratch.tracking(&module, "master").id();
+    let old = scratch.tracking(&module, "master").expect("no tracking branch").id();
 
     if !try!(scratch.repo.graph_descendant_of(new, old)) {
         println!(".");
@@ -216,7 +221,7 @@ pub fn module_review_upload(scratch: &Scratch,
     println!("===== module path: {}", module);
     println!("===== Rewrite commits from {} to {}", old, new);
 
-    let mut current_oid = scratch.tracking(central, "master").id();
+    let mut current_oid = scratch.tracking(central, "master").expect("no central tracking").id();
     for rev in walk {
         let currev = format!("{}", try!(rev));
         let oldrev = format!("{}", old);
@@ -252,43 +257,12 @@ pub fn module_review_upload(scratch: &Scratch,
     Ok(())
 }
 
-
-
-pub fn initial_import(scratch: &Scratch, newrev: Object, central: &str) -> Result<(), Error>
-{
-    try!(scratch.create_projects(&central, &newrev));
-
-    for module in scratch.module_paths(&newrev) {
-        let shell = Shell { cwd: scratch.repo.path().to_path_buf() };
-        shell.command("rm -Rf refs/original");
-
-        scratch.call_git(&format!("branch -f initial_{} {}", module, newrev.id()))
-            .expect("create branch");
-
-        scratch.call_git(&format!("filter-branch -f --subdirectory-filter {}/ -- initial_{}",
-                               module,
-                               module))
-            .expect("error in filter-branch");
-
-        let commit = scratch.repo
-            .revparse_single(&format!("initial_{}", module))
-            .expect("can't find rewritten branch");
-        scratch.push(commit.id(), &module, "refs/heads/master");
-    }
-    Ok(())
-}
-
-pub fn central_submit(newrev: Object, // sha1 of refered commit
-                      central: &str,
-                      scratch: &Scratch)
-    -> Result<(), Error>
+pub fn central_submit(scratch: &Scratch, newrev: Object) -> Result<(), Error>
 {
     println!(" ---> central_submit (sha1 of commit: {})",
              &newrev.id());
 
     println!("    ########### SCRATCH: create scratch repo ########### ");
-
-    try!(scratch.create_projects(&central, &newrev));
 
     let central_commit = try!(newrev.as_commit()
         .ok_or(Error::from_str("could not get commit from obj")));
@@ -297,7 +271,16 @@ pub fn central_submit(newrev: Object, // sha1 of refered commit
     for module in scratch.module_paths(&newrev) {
         println!(" ####### prepare commit from scratch.repo to module {}",
                  &module);
-        let module_master_commit_obj = scratch.tracking(&module, "master");
+        let module_master_commit_obj = match scratch.tracking(&module, "master") {
+            Some(obj) => obj,
+            None => {
+                let commit = scratch.split_subdir(&module, &newrev.id());
+                try!(scratch.host.create_project(&module));
+                scratch.push(commit.id(), &module, "refs/heads/master");
+                scratch.tracking(&module, "master").expect("no tracking branch")
+            }
+        };
+
         let parents = vec![module_master_commit_obj.as_commit()
                                .expect("could not get commit from obj")];
 
