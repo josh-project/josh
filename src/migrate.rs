@@ -333,7 +333,7 @@ pub struct Shell
 
 impl Shell
 {
-    pub fn command(&self, cmd: &str)
+    pub fn command(&self, cmd: &str) -> String
     {
         let args: Vec<&str> = cmd.split(" ").collect();
         let mut c = Command::new(&args[0]);
@@ -346,9 +346,9 @@ impl Shell
         // }
         let output = c.output().unwrap_or_else(|e| panic!("failed to execute process: {}", e));
 
-        println!("{}{}",
-                 String::from_utf8_lossy(&output.stdout),
-                 String::from_utf8_lossy(&output.stderr));
+        println!("{}", String::from_utf8_lossy(&output.stderr));
+
+        return String::from_utf8(output.stdout).expect("failed to decode utf8");
     }
 }
 
