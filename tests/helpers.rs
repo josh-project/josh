@@ -32,15 +32,18 @@ impl TestHost
     }
 }
 
+impl TestHost {
+    pub fn repo_dir(&self, module: &str) -> PathBuf { self.td.path().join(&Path::new(module)) }
+}
+
 impl migrate::RepoHost for TestHost
 {
     fn create_project(&self, module: &str) -> Result<(), git2::Error>
     {
-        let repo_dir = self.td.path().join(&Path::new(module));
         println!("TestHost: create_project {} in {:?}",
                  module,
-                 repo_dir);
-        git2::Repository::init_bare(&repo_dir).expect("TestHost: init_bare failed");
+                 self.repo_dir(module));
+        git2::Repository::init_bare(&self.repo_dir(module)).expect("TestHost: init_bare failed");
         // empty_commit(&repo);
         Ok(())
     }
@@ -53,7 +56,7 @@ impl migrate::RepoHost for TestHost
 
 pub struct TestRepo
 {
-    repo: git2::Repository,
+    pub repo: git2::Repository,
     pub path: PathBuf,
     pub shell: migrate::Shell,
 }
