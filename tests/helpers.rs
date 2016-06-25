@@ -65,11 +65,14 @@ impl TestRepo
 {
     pub fn new(path: &Path) -> Self
     {
-        TestRepo {
+        let tr = TestRepo {
             repo: git2::Repository::init(path).expect("init should succeed"),
             path: path.to_path_buf(),
             shell: migrate::Shell { cwd: path.to_path_buf() },
-        }
+        };
+        tr.shell.command("git config user.name test");
+        tr.shell.command("git config user.email test@test.com");
+        return tr;
     }
 
     pub fn commit(&self, message: &str) -> String
