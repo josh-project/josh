@@ -78,12 +78,11 @@ fn main() { exit(main_ret()); } fn main_ret() -> i32 {
     let is_submit = hook.ends_with("change-merged");
     let is_initial = oldrev == "0000000000000000000000000000000000000000";
 
-    // // TODO
-    // let uploader = args.value_of("uploader").unwrap_or("");
-    // if !is_review && !uploader.contains("Automation") {
-    //   println!("only push to refs/for/master");
-    //   return 1;
-    // }
+    let uploader = args.value_of("uploader").unwrap_or("");
+    if !is_review && !uploader.contains("Automation") {
+      println!("only push to refs/for/master");
+      return 1;
+    }
 
     let scratch_dir = Path::new("/tmp/scratchme");
     let scratch = migrate::Scratch::new(&scratch_dir,&gerrit);
@@ -114,7 +113,7 @@ fn main() { exit(main_ret()); } fn main_ret() -> i32 {
                                   CENTRAL_NAME,
                                   &Path::new("."),
                                   &scratch).unwrap();
-          return 1;
+          return 0;
       }
       else {
           println!(".\n\n###########################################");
