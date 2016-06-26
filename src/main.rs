@@ -5,6 +5,7 @@ extern crate clap;
 use std::env;
 use std::process::exit;
 use std::path::Path;
+use std::path::PathBuf;
 use centralgithook::migrate;
 
 const GERRIT_PORT: &'static str = "29418";
@@ -12,7 +13,25 @@ const AUTOMATION_USER: &'static str = "automation";
 // const MODULE_PATH_PREFIX: &'static str = "bsw";
 const CENTRAL_NAME: &'static str = "central";
 
-struct Gerrit;
+struct Gerrit
+{
+    path: PathBuf,
+}
+
+impl Gerrit
+{
+    pub fn new() -> Self {
+        let git_dir = env::var("GIT_DIR").expect("GIT_DIR not set");
+        let mut p = Path::new(&git_dir);
+        while !p.join("bin").join("gerrit.sh").exists() {
+            p = p.parent().expect("can't find gerrit root");
+        }
+
+        Gerrit {
+            path: p.to_path_buf(),
+        }
+    }
+}
 
 impl migrate::RepoHost for Gerrit
 {
@@ -24,6 +43,16 @@ impl migrate::RepoHost for Gerrit
                                GERRIT_PORT,
                                "gerrit-test-git",
                                module))
+    }
+
+    fn fetch_url(&self, module_path: &str) -> String
+    {
+        if let Some(root) = self.path.as_os_str().to_str() {
+            format!("{}/git/{}.git", root, module_path)
+        }
+        else {
+            self.remote_url(module_path)
+        }
     }
 
     fn remote_url(&self, module_path: &str) -> String
@@ -64,7 +93,7 @@ fn main_ret() -> i32
     let refname = args.value_of("refname").unwrap_or("");
     let commit = args.value_of("commit").unwrap_or("");
 
-    let gerrit = Gerrit;
+    let gerrit = Gerrit::new();
 
     if let Some(hook) = env::args().nth(0) {
 
@@ -107,7 +136,7 @@ fn main_ret() -> i32
             if is_initial {
                 println!(".\n\n##### INITIAL IMPORT ######");
                 migrate::central_submit(&scratch, scratch.transfer(newrev, &Path::new(".")))
-                    .unwrap();
+                    .expect("initial import failed");
                 return 0;
             }
             else {

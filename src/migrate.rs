@@ -11,6 +11,7 @@ pub trait RepoHost
 {
     fn remote_url(&self, &str) -> String;
     fn create_project(&self, &str) -> String;
+    fn fetch_url(&self, module: &str) -> String { self.remote_url(module) }
 }
 
 pub struct Scratch<'a>
@@ -34,15 +35,19 @@ impl<'a> Scratch<'a>
         self.host.create_project(&module);
 
         let remote_name = format!("{}", module);
-        let remote_url = self.host.remote_url(&module);
-        if !self.repo.find_remote(&remote_name).is_ok() {
+        let fetch_url = self.host.fetch_url(&module);
+        let mut remote = if let Ok(remote) = self.repo.find_remote(&remote_name) {
+            remote
+        }
+        else {
             println!("==== create remote (remote_name:{}, remote_url:{})",
                      &remote_name,
-                     &remote_url);
-            self.repo.remote(&remote_name, &remote_url).expect("can't create remote");
-        }
+                     &fetch_url);
+            self.repo.remote(&remote_name, &fetch_url).expect("can't create remote")
+        };
 
-        self.call_git("fetch --all").expect("could not fetch");
+        let rs = remote.get_refspec(0).unwrap().str().unwrap().to_string();
+        remote.fetch(&[&rs],None,None).expect("fetch failed");
         return self.repo
             .revparse_single(&format!("remotes/{}/{}", module, branch)).ok();
     }
