@@ -67,7 +67,11 @@ fn test_initial_import()
     migrate::central_submit(&scratch, scratch.transfer(&for_master, &host.repo_dir("central")))
         .expect("call central_submit");
 
+    central.shell.command("git rebase for/master");
+    assert_eq!(central.rev("master"), central.rev("for/master"));
+    assert_eq!(central.rev("master"), central.rev("HEAD"));
+    assert!(central.has_file("modules/module_a/added/in_mod_a"));
+
     module_a.shell.command("git pull");
     assert_eq!(module_a.rev("origin/master"), head);
-
 }
