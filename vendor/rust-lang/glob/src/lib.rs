@@ -10,27 +10,59 @@
 
 //! Support for matching file paths against Unix shell style patterns.
 //!
-//! The `glob` and `glob_with` functions, in concert with the `Paths`
-//! type, allow querying the filesystem for all files that match a particular
-//! pattern - just like the libc `glob` function (for an example see the `glob`
-//! documentation). The methods on the `Pattern` type provide functionality
-//! for checking if individual paths match a particular pattern, in a similar
-//! manner to the libc `fnmatch` function.
+//! The `glob` and `glob_with` functions allow querying the filesystem for all files
+//! that match a particular pattern (similar to the libc `glob` function). The methods on the
+//! `Pattern` type provide functionality for checking if individual paths match a
+//! particular pattern (similar to the libc `fnmatch` function).
 //!
 //! For consistency across platforms, and for Windows support, this module
 //! is implemented entirely in Rust rather than deferring to the libc
 //! `glob`/`fnmatch` functions.
+//!
+//! # Examples
+//!
+//! To print all jpg files in `/media/` and all of its subdirectories.
+//!
+//! ```rust,no_run
+//! use glob::glob;
+//!
+//! for entry in glob("/media/**/*.jpg").expect("Failed to read glob pattern") {
+//!     match entry {
+//!         Ok(path) => println!("{:?}", path.display()),
+//!         Err(e) => println!("{:?}", e),
+//!     }
+//! }
+//! ```
+//!
+//! To print all files containing the letter "a", case insensitive, in a `local` directory
+//! relative to the current working directory. This ignores errors instead of printing them.
+//!
+//! ```rust,no_run
+//! use glob::glob_with;
+//! use glob::MatchOptions;
+//!
+//! let options = MatchOptions {
+//!     case_sensitive: false,
+//!     require_literal_separator: false,
+//!     require_literal_leading_dot: false,
+//! };
+//! for entry in glob_with("local/*a*", &options).expect("Failed to read glob pattern") {
+//!     if let Ok(path) = entry {
+//!         println!("{:?}", path.display())
+//!     }
+//! }
+//! ```
 
 #![doc(html_logo_url = "https://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png",
        html_favicon_url = "https://www.rust-lang.org/favicon.ico",
        html_root_url = "https://doc.rust-lang.org/glob/")]
+#![deny(missing_docs)]
 #![cfg_attr(all(test, windows), feature(std_misc))]
 
 use std::ascii::AsciiExt;
 use std::cmp;
 use std::fmt;
 use std::fs;
-use std::io::prelude::*;
 use std::io;
 use std::path::{self, Path, PathBuf, Component};
 use std::str::FromStr;
@@ -58,8 +90,8 @@ pub struct Paths {
     scope: Option<PathBuf>,
 }
 
-/// Return an iterator that produces all the Paths that match the given pattern,
-/// which may be absolute or relative to the current working directory.
+/// Return an iterator that produces all the `Path`s that match the given pattern using default
+/// match options, which may be absolute or relative to the current working directory.
 ///
 /// This may return an error if the pattern is invalid.
 ///
@@ -76,12 +108,12 @@ pub struct Paths {
 ///
 /// See the `Paths` documentation for more information.
 ///
-/// # Example
+/// # Examples
 ///
 /// Consider a directory `/media/pictures` containing only the files
 /// `kittens.jpg`, `puppies.jpg` and `hamsters.gif`:
 ///
-/// ```rust
+/// ```rust,no_run
 /// use glob::glob;
 ///
 /// for entry in glob("/media/pictures/*.jpg").unwrap() {
@@ -113,13 +145,13 @@ pub struct Paths {
 ///     println!("{}", path.display());
 /// }
 /// ```
-///
+/// Paths are yielded in alphabetical order.
 pub fn glob(pattern: &str) -> Result<Paths, PatternError> {
     glob_with(pattern, &MatchOptions::new())
 }
 
-/// Return an iterator that produces all the Paths that match the given pattern,
-/// which may be absolute or relative to the current working directory.
+/// Return an iterator that produces all the `Path`s that match the given pattern using the
+/// specified match options, which may be absolute or relative to the current working directory.
 ///
 /// This may return an error if the pattern is invalid.
 ///
@@ -224,7 +256,7 @@ pub fn glob_with(pattern: &str, options: &MatchOptions) -> Result<Paths, Pattern
 ///
 /// This is typically returned when a particular path cannot be read
 /// to determine if its contents match the glob pattern. This is possible
-/// if the program lacks the permissions, for example.
+/// if the program lacks the appropriate permissions, for example.
 #[derive(Debug)]
 pub struct GlobError {
     path: PathBuf,
@@ -347,7 +379,7 @@ impl Iterator for Paths {
             if self.dir_patterns[idx].matches_with({
                 match path.file_name().and_then(|s| s.to_str()) {
                     // FIXME (#9639): How do we handle non-utf8 filenames?
-                    // Ignore them for now Ideally we'd still match them
+                    // Ignore them for now; ideally we'd still match them
                     // against a *
                     None => continue,
                     Some(x) => x
@@ -398,24 +430,24 @@ impl fmt::Display for PatternError {
 
 /// A compiled Unix shell style pattern.
 ///
-/// `?` matches any single character
+/// - `?` matches any single character.
 ///
-/// `*` matches any (possibly empty) sequence of characters
+/// - `*` matches any (possibly empty) sequence of characters.
 ///
-/// `**` matches the current directory and arbitrary subdirectories. This
+/// - `**` matches the current directory and arbitrary subdirectories. This
 /// sequence **must** form a single path component, so both `**a` and `b**` are
 /// invalid and will result in an error.  A sequence of more than two
 /// consecutive `*` characters is also invalid.
 ///
-/// `[...]` matches any character inside the brackets.
+/// - `[...]` matches any character inside the brackets.
 /// Character sequences can also specify ranges
 /// of characters, as ordered by Unicode, so e.g. `[0-9]` specifies any
 /// character between 0 and 9 inclusive. An unclosed bracket is invalid.
 ///
-/// `[!...]` is the negation of `[...]`, i.e. it matches any characters **not**
+/// - `[!...]` is the negation of `[...]`, i.e. it matches any characters **not**
 /// in the brackets.
 ///
-/// The metacharacters `?`, `*`, `[`, `]` can be matched by using brackets
+/// - The metacharacters `?`, `*`, `[`, `]` can be matched by using brackets
 /// (e.g. `[?]`).  When a `]` occurs immediately following `[` or `[!` then
 /// it is interpreted as being part of, rather then ending, the character
 /// set, so `]` and NOT `]` can be matched by `[]]` and `[!]]` respectively.
@@ -474,7 +506,7 @@ const ERROR_INVALID_RANGE: &'static str = "invalid range pattern";
 impl Pattern {
     /// This function compiles Unix shell style patterns.
     ///
-    /// An invalid glob pattern will yield an error.
+    /// An invalid glob pattern will yield a `PatternError`.
     pub fn new(pattern: &str) -> Result<Pattern, PatternError> {
 
         let chars = pattern.chars().collect::<Vec<_>>();
@@ -614,7 +646,7 @@ impl Pattern {
     /// Return if the given `str` matches this `Pattern` using the default
     /// match options (i.e. `MatchOptions::new()`).
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```rust
     /// use glob::Pattern;
@@ -893,7 +925,7 @@ fn chars_eq(a: char, b: char, case_sensitive: bool) -> bool {
 }
 
 
-/// Configuration options to modify the behaviour of `Pattern::matches_with(..)`
+/// Configuration options to modify the behaviour of `Pattern::matches_with(..)`.
 #[allow(missing_copy_implementations)]
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct MatchOptions {
@@ -903,13 +935,13 @@ pub struct MatchOptions {
     /// Unicode.
     pub case_sensitive: bool,
 
-    /// If this is true then path-component separator characters (e.g. `/` on
+    /// Whether or not path-component separator characters (e.g. `/` on
     /// Posix) must be matched by a literal `/`, rather than by `*` or `?` or
-    /// `[...]`
+    /// `[...]`.
     pub require_literal_separator: bool,
 
-    /// If this is true then paths that contain components that start with a `.`
-    /// will not match unless the `.` appears literally in the pattern: `*`, `?`, `**`,
+    /// Whether or not paths that contain components that start with a `.`
+    /// will require that `.` appears literally in the pattern; `*`, `?`, `**`,
     /// or `[...]` will not match. This is useful because such files are
     /// conventionally considered hidden on Unix systems and it might be
     /// desirable to skip them when listing files.
