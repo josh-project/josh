@@ -29,8 +29,6 @@ impl migrate::RepoHost for Gerrit
             .arg(module)
             .output() {
             Ok(output) => {
-                println!("create-project: {}",
-                         String::from_utf8_lossy(&output.stderr));
                 Ok(())
             }
             Err(_) => Err(git2::Error::from_str("failed to create project")),
@@ -89,8 +87,9 @@ fn main_ret() -> i32
         let is_initial = oldrev == "0000000000000000000000000000000000000000";
 
         let uploader = args.value_of("uploader").unwrap_or("");
-        if !is_review && !uploader.contains("Automation") {
-            println!("only push to refs/for/master");
+        if is_update && !is_review && !uploader.contains("Automation") {
+            println!("==== uploader: {}", uploader);
+            println!("==== only push to refs/for/master");
             return 1;
         }
 
@@ -115,11 +114,8 @@ fn main_ret() -> i32
         else if !is_module && is_update && !is_review {
             // direct push to master-branch of central
             if is_initial {
-                println!("##### INITIAL IMPORT {} {} ######",
-                         oldrev,
-                         newrev);
-                migrate::central_submit(&scratch,
-                                        scratch.transfer(newrev, &Path::new(".")))
+                println!(".\n\n##### INITIAL IMPORT ######");
+                migrate::central_submit(&scratch, scratch.transfer(newrev, &Path::new(".")))
                     .unwrap();
                 return 0;
             }

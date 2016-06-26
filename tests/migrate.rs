@@ -45,11 +45,10 @@ fn test_initial_import()
         .expect("call central_submit");
 
     module_a.shell.command("git pull");
-    assert!(module_a.has_file("added_a"));
-
     shell.command(&format!("git clone {}", &host.remote_url("modules/module_c")));
     let module_c = helpers::TestRepo::new(&td.path().join("module_c"));
 
+    assert!(module_a.has_file("added_a"));
     assert!(module_c.has_file("added_c"));
 
     module_a.add_file("added/in_mod_a");
