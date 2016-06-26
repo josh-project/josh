@@ -3,21 +3,8 @@ extern crate git2;
 extern crate tempdir;
 
 use centralgithook::migrate;
-use std::fs::File;
-use std::fs;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use tempdir::TempDir;
-
-pub fn _oid_to_sha1(oid: &[u8]) -> String
-{
-    oid.iter()
-        .fold(Vec::new(), |mut acc, x| {
-            acc.push(format!("{0:>02x}", x));
-            acc
-        })
-        .concat()
-}
 
 pub struct TestHost
 {
@@ -44,7 +31,6 @@ impl migrate::RepoHost for TestHost
                  module,
                  self.repo_dir(module));
         git2::Repository::init_bare(&self.repo_dir(module)).expect("TestHost: init_bare failed");
-        // empty_commit(&repo);
         Ok(())
     }
 
@@ -78,33 +64,23 @@ impl TestRepo
     pub fn commit(&self, message: &str) -> String
     {
         self.shell.command(&format!("git commit -m \"{}\"", message));
-        return _oid_to_sha1(self.repo.revparse_single("HEAD").expect("no HEAD").id().as_bytes());
+        self.shell.command("git rev-parse HEAD")
     }
 
-    pub fn add(&self, filename: &str)
+    pub fn add_file(&self, filename: &str)
     {
-        let f = self.path.join(filename);
-        let parent_dir = f.parent().expect("need to get parent");
-        fs::create_dir_all(parent_dir).expect("create directories");
-
-        let mut file = File::create(&f).expect("create file");
-        file.write_all("test content".as_bytes()).expect("write to file");
+        self.shell.command(&format!("mkdir -p $(dirname {})", filename));
+        self.shell.command(&format!("echo test_content > {}", filename));
         self.shell.command(&format!("git add {}", filename));
     }
+
+    pub fn has_file(&self, filename: &str) -> bool
+    {
+        self.path.join(Path::new(filename)).exists()
+    }
+
+    pub fn rev(&self, r: &str) -> String
+    {
+        self.shell.command(&format!("git rev-parse {}", r))
+    }
 }
-
-
-
-// fn empty_commit(repo: &git2::Repository) {
-//     let sig = git2::Signature::now("foo", "bar").expect("created signature");
-//     repo.commit(
-//         Some("HEAD"),
-//         &sig,
-//         &sig,
-//         "initial",
-//         &repo.find_tree(repo.treebuilder(None).expect("cannot create empty tree")
-// .write().expect("cannot write empty tree")).expect("cannot find empty
-// tree"),
-//         &[]
-//     ).expect("cannot commit empty");
-// }

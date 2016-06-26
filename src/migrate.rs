@@ -54,7 +54,7 @@ impl<'a> Scratch<'a>
                  &self.repo.path(),
                  &cmd);
         let args: Vec<&str> = cmd.split(" ").collect();
-        let repo_path = get_repo_path(&self.repo);
+        let repo_path = &self.repo.path();
         let mut c = Command::new("git");
         c.env("GIT_DIR", repo_path.as_os_str());
         c.args(&args);
@@ -71,7 +71,8 @@ impl<'a> Scratch<'a>
     // force push of the new revision-object to temp repo
     pub fn transfer(&self, rev: &str, source: &Path) -> Object
     {
-        let target = get_repo_path(&self.repo);
+        // TODO: implement using libgit
+        let target = &self.repo.path();
         let shell = Shell { cwd: source.to_path_buf() };
         println!("---> transfer_to_scratch in {}", source.display());
         // " create tmp branch
@@ -174,7 +175,7 @@ impl<'a> Scratch<'a>
 
     fn split_subdir(&self, module: &str, newrev: &Oid) -> Object
     {
-
+        // TODO: implement using libgit
         let shell = Shell { cwd: self.repo.path().to_path_buf() };
         shell.command("rm -Rf refs/original");
 
@@ -313,27 +314,15 @@ impl Shell
 {
     pub fn command(&self, cmd: &str) -> String
     {
-        let args: Vec<&str> = cmd.split(" ").collect();
-        let mut c = Command::new(&args[0]);
-        c.args(&args[1..]);
-
-        println!("Shell command{:?} (in {:?})", c, self.cwd);
-        // if let Some(path) = cwd {
-        // c.env("GIT_DIR", format!("{}.git",path.to_str().unwrap()));
-        c.current_dir(&self.cwd);
-        // }
-        let output = c.output().unwrap_or_else(|e| panic!("failed to execute process: {}", e));
+        println!("Shell command {:?} (in {:?})", cmd, self.cwd);
+        let output = Command::new("sh")
+            .current_dir(&self.cwd)
+            .arg("-c")
+            .arg(&cmd)
+            .output().unwrap_or_else(|e| panic!("failed to execute process: {}", e));
 
         println!("{}", String::from_utf8_lossy(&output.stderr));
 
-        return String::from_utf8(output.stdout).expect("failed to decode utf8");
+        return String::from_utf8(output.stdout).expect("failed to decode utf8").trim().to_string();
     }
-}
-
-pub fn get_repo_path(repo: &Repository) -> &Path
-{
-    if repo.is_bare() {
-        return repo.path();
-    }
-    return repo.workdir().expect("get workdir from repo");
 }
