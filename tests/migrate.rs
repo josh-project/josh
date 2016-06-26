@@ -16,7 +16,7 @@ fn test_initial_import()
     let scratch = migrate::Scratch::new(&td.path().join("scratch"), &host);
     let shell = migrate::Shell { cwd: td.path().to_path_buf() };
 
-    host.create_project("central").expect("create central failed");
+    host.create_project("central");
     central.shell.command(&format!("git remote add origin {}", &host.remote_url("central")));
 
     central.add_file("modules/module_a/initial_a");

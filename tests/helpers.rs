@@ -25,13 +25,13 @@ impl TestHost {
 
 impl migrate::RepoHost for TestHost
 {
-    fn create_project(&self, module: &str) -> Result<(), git2::Error>
+    fn create_project(&self, module: &str) -> String
     {
         println!("TestHost: create_project {} in {:?}",
                  module,
                  self.repo_dir(module));
         git2::Repository::init_bare(&self.repo_dir(module)).expect("TestHost: init_bare failed");
-        Ok(())
+        return String::new();
     }
 
     fn remote_url(&self, module_path: &str) -> String

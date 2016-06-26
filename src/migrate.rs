@@ -10,7 +10,7 @@ const TMP_NAME: &'static str = "tmp_fd2db5f8_bac2_4a1e_9487_4ac3414788aa";
 pub trait RepoHost
 {
     fn remote_url(&self, &str) -> String;
-    fn create_project(&self, &str) -> Result<(), Error>;
+    fn create_project(&self, &str) -> String;
 }
 
 pub struct Scratch<'a>
@@ -31,7 +31,7 @@ impl<'a> Scratch<'a>
 
     fn tracking(&self, module: &str, branch: &str) -> Option<Object>
     {
-        self.host.create_project(&module).expect("tracking: can't create project");
+        self.host.create_project(&module);
 
         let remote_name = format!("{}", module);
         let remote_url = self.host.remote_url(&module);
@@ -262,7 +262,7 @@ pub fn central_submit(scratch: &Scratch, newrev: Object) -> Result<(), Error>
                 println!("====    no tracking branch => project does not exist or is empty");
                 println!("====    initializing with subdir history");
                 let commit = scratch.split_subdir(&module, &newrev.id());
-                try!(scratch.host.create_project(&module));
+                scratch.host.create_project(&module);
                 scratch.push(commit.id(), &module, "refs/heads/master");
                 scratch.tracking(&module, "master").expect("no tracking branch")
             }

@@ -5,7 +5,6 @@ extern crate clap;
 use std::env;
 use std::process::exit;
 use std::path::Path;
-use std::process::Command;
 use centralgithook::migrate;
 
 const GERRIT_PORT: &'static str = "29418";
@@ -18,21 +17,13 @@ struct Gerrit;
 impl migrate::RepoHost for Gerrit
 {
     // create module project on gerrit (if not existing)
-    fn create_project(&self, module: &str) -> Result<(), git2::Error>
+    fn create_project(&self, module: &str) -> String
     {
-        match Command::new("ssh")
-            .arg("-p")
-            .arg(GERRIT_PORT)
-            .arg("gerrit-test-git")
-            .arg("gerrit")
-            .arg("create-project")
-            .arg(module)
-            .output() {
-            Ok(output) => {
-                Ok(())
-            }
-            Err(_) => Err(git2::Error::from_str("failed to create project")),
-        }
+        let shell = migrate::Shell { cwd: Path::new("/").to_path_buf() };
+        shell.command(&format!("ssh -p {} {} gerrit create-project {}",
+                               GERRIT_PORT,
+                               "gerrit-test-git",
+                               module))
     }
 
     fn remote_url(&self, module_path: &str) -> String
