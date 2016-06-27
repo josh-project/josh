@@ -4,8 +4,6 @@ use git2::*;
 use std::process::Command;
 use std::path::Path;
 use std::path::PathBuf;
-use std::time::Duration;
-use std::thread;
 
 const TMP_NAME: &'static str = "tmp_fd2db5f8_bac2_4a1e_9487_4ac3414788aa";
 
