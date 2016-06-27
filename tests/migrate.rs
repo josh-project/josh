@@ -1,6 +1,7 @@
 extern crate centralgithook;
 extern crate tempdir;
-#[macro_use] extern crate log;
+#[macro_use]
+extern crate log;
 extern crate env_logger;
 
 mod helpers;
@@ -20,7 +21,8 @@ fn test_initial_import()
     let shell = migrate::Shell { cwd: td.path().to_path_buf() };
 
     host.create_project("central");
-    central.shell.command(&format!("git remote add origin {}", &host.remote_url("central")));
+    central.shell.command(&format!("git remote add origin {}",
+                                   &host.remote_url("central")));
 
     central.add_file("modules/module_a/initial_a");
     central.add_file("modules/module_b/initial_b");
@@ -31,8 +33,10 @@ fn test_initial_import()
                             scratch.transfer(&head, &host.repo_dir("central")))
         .expect("call central_submit");
 
-    shell.command(&format!("git clone {}", &host.remote_url("modules/module_a")));
-    shell.command(&format!("git clone {}", &host.remote_url("modules/module_b")));
+    shell.command(&format!("git clone {}",
+                           &host.remote_url("modules/module_a")));
+    shell.command(&format!("git clone {}",
+                           &host.remote_url("modules/module_b")));
     let module_a = helpers::TestRepo::new(&td.path().join("module_a"));
     let module_b = helpers::TestRepo::new(&td.path().join("module_b"));
 
@@ -44,11 +48,13 @@ fn test_initial_import()
     let head = central.commit("add");
 
     central.shell.command("git push origin master");
-    migrate::central_submit(&scratch, scratch.transfer(&head, &host.repo_dir("central")))
+    migrate::central_submit(&scratch,
+                            scratch.transfer(&head, &host.repo_dir("central")))
         .expect("call central_submit");
 
     module_a.shell.command("git pull");
-    shell.command(&format!("git clone {}", &host.remote_url("modules/module_c")));
+    shell.command(&format!("git clone {}",
+                           &host.remote_url("modules/module_c")));
     let module_c = helpers::TestRepo::new(&td.path().join("module_c"));
 
     assert!(module_a.has_file("added_a"));
@@ -66,7 +72,8 @@ fn test_initial_import()
     central.shell.command("git fetch origin for/master:for/master");
     let for_master = central.rev("for/master");
 
-    migrate::central_submit(&scratch, scratch.transfer(&for_master, &host.repo_dir("central")))
+    migrate::central_submit(&scratch,
+                            scratch.transfer(&for_master, &host.repo_dir("central")))
         .expect("call central_submit");
 
     central.shell.command("git rebase for/master");
