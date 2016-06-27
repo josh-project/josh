@@ -10,10 +10,11 @@
 
 //! Support for matching file paths against Unix shell style patterns.
 //!
-//! The `glob` and `glob_with` functions allow querying the filesystem for all files
-//! that match a particular pattern (similar to the libc `glob` function). The methods on the
-//! `Pattern` type provide functionality for checking if individual paths match a
-//! particular pattern (similar to the libc `fnmatch` function).
+//! The `glob` and `glob_with` functions allow querying the filesystem for all
+//! files that match a particular pattern (similar to the libc `glob` function).
+//! The methods on the `Pattern` type provide functionality for checking if
+//! individual paths match a particular pattern (similar to the libc `fnmatch`
+//! function).
 //!
 //! For consistency across platforms, and for Windows support, this module
 //! is implemented entirely in Rust rather than deferring to the libc
@@ -34,8 +35,9 @@
 //! }
 //! ```
 //!
-//! To print all files containing the letter "a", case insensitive, in a `local` directory
-//! relative to the current working directory. This ignores errors instead of printing them.
+//! To print all files containing the letter "a", case insensitive, in a `local`
+//! directory relative to the current working directory. This ignores errors
+//! instead of printing them.
 //!
 //! ```rust,no_run
 //! use glob::glob_with;
@@ -46,7 +48,7 @@
 //!     require_literal_separator: false,
 //!     require_literal_leading_dot: false,
 //! };
-//! for entry in glob_with("local/*a*", &options).expect("Failed to read glob pattern") {
+//! for entry in glob_with("local/*a*", &options).unwrap() {
 //!     if let Ok(path) = entry {
 //!         println!("{:?}", path.display())
 //!     }
@@ -90,8 +92,9 @@ pub struct Paths {
     scope: Option<PathBuf>,
 }
 
-/// Return an iterator that produces all the `Path`s that match the given pattern using default
-/// match options, which may be absolute or relative to the current working directory.
+/// Return an iterator that produces all the `Path`s that match the given
+/// pattern using default match options, which may be absolute or relative to
+/// the current working directory.
 ///
 /// This may return an error if the pattern is invalid.
 ///
@@ -150,8 +153,9 @@ pub fn glob(pattern: &str) -> Result<Paths, PatternError> {
     glob_with(pattern, &MatchOptions::new())
 }
 
-/// Return an iterator that produces all the `Path`s that match the given pattern using the
-/// specified match options, which may be absolute or relative to the current working directory.
+/// Return an iterator that produces all the `Path`s that match the given
+/// pattern using the specified match options, which may be absolute or relative
+/// to the current working directory.
 ///
 /// This may return an error if the pattern is invalid.
 ///
@@ -162,7 +166,8 @@ pub fn glob(pattern: &str) -> Result<Paths, PatternError> {
 /// passed to this function.
 ///
 /// Paths are yielded in alphabetical order.
-pub fn glob_with(pattern: &str, options: &MatchOptions) -> Result<Paths, PatternError> {
+pub fn glob_with(pattern: &str, options: &MatchOptions)
+                 -> Result<Paths, PatternError> {
     // make sure that the pattern is valid first, else early return with error
     let _compiled = try!(Pattern::new(pattern));
 
@@ -240,7 +245,8 @@ pub fn glob_with(pattern: &str, options: &MatchOptions) -> Result<Paths, Pattern
         });
     }
 
-    let require_dir = pattern.chars().next_back().map(path::is_separator) == Some(true);
+    let last_is_separator = pattern.chars().next_back().map(path::is_separator);
+    let require_dir = last_is_separator == Some(true);
     let todo = Vec::new();
 
     Ok(Paths {
@@ -316,7 +322,11 @@ impl Iterator for Paths {
                 // Shouldn't happen, but we're using -1 as a special index.
                 assert!(self.dir_patterns.len() < !0 as usize);
 
-                fill_todo(&mut self.todo, &self.dir_patterns, 0, &scope, &self.options);
+                fill_todo(&mut self.todo,
+                          &self.dir_patterns,
+                          0,
+                          &scope,
+                          &self.options);
             }
         }
 
@@ -370,7 +380,8 @@ impl Iterator for Paths {
                     // advanced to the next pattern for this path
                     idx = next + 1;
                 } else {
-                    // not a directory and it's the last pattern, meaning no match
+                    // not a directory and it's the last pattern, meaning no
+                    // match
                     continue;
                 }
             }
@@ -435,24 +446,24 @@ impl fmt::Display for PatternError {
 /// - `*` matches any (possibly empty) sequence of characters.
 ///
 /// - `**` matches the current directory and arbitrary subdirectories. This
-/// sequence **must** form a single path component, so both `**a` and `b**` are
-/// invalid and will result in an error.  A sequence of more than two
-/// consecutive `*` characters is also invalid.
+///   sequence **must** form a single path component, so both `**a` and `b**`
+///   are invalid and will result in an error.  A sequence of more than two
+///   consecutive `*` characters is also invalid.
 ///
-/// - `[...]` matches any character inside the brackets.
-/// Character sequences can also specify ranges
-/// of characters, as ordered by Unicode, so e.g. `[0-9]` specifies any
-/// character between 0 and 9 inclusive. An unclosed bracket is invalid.
+/// - `[...]` matches any character inside the brackets.  Character sequences
+///   can also specify ranges of characters, as ordered by Unicode, so e.g.
+///   `[0-9]` specifies any character between 0 and 9 inclusive. An unclosed
+///   bracket is invalid.
 ///
-/// - `[!...]` is the negation of `[...]`, i.e. it matches any characters **not**
-/// in the brackets.
+/// - `[!...]` is the negation of `[...]`, i.e. it matches any characters
+///   **not** in the brackets.
 ///
 /// - The metacharacters `?`, `*`, `[`, `]` can be matched by using brackets
-/// (e.g. `[?]`).  When a `]` occurs immediately following `[` or `[!` then
-/// it is interpreted as being part of, rather then ending, the character
-/// set, so `]` and NOT `]` can be matched by `[]]` and `[!]]` respectively.
-/// The `-` character can be specified inside a character sequence pattern by
-/// placing it at the start or the end, e.g. `[abc-]`.
+///   (e.g. `[?]`).  When a `]` occurs immediately following `[` or `[!` then it
+///   is interpreted as being part of, rather then ending, the character set, so
+///   `]` and NOT `]` can be matched by `[]]` and `[!]]` respectively.  The `-`
+///   character can be specified inside a character sequence pattern by placing
+///   it at the start or the end, e.g. `[abc-]`.
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Debug)]
 pub struct Pattern {
     original: String,
