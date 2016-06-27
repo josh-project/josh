@@ -11,7 +11,10 @@ pub trait RepoHost
 {
     fn remote_url(&self, &str) -> String;
     fn create_project(&self, &str) -> String;
-    fn fetch_url(&self, module: &str) -> String { self.remote_url(module) }
+    fn fetch_url(&self, module: &str) -> String
+    {
+        self.remote_url(module)
+    }
 }
 
 pub struct Scratch<'a>
@@ -41,15 +44,16 @@ impl<'a> Scratch<'a>
         }
         else {
             debug!("==== create remote (remote_name:{}, remote_url:{})",
-            &remote_name,
-            &fetch_url);
+                   &remote_name,
+                   &fetch_url);
             self.repo.remote(&remote_name, &fetch_url).expect("can't create remote")
         };
 
         let rs = remote.get_refspec(0).unwrap().str().unwrap().to_string();
-        remote.fetch(&[&rs],None,None).expect("fetch failed");
+        remote.fetch(&[&rs], None, None).expect("fetch failed");
         return self.repo
-            .revparse_single(&format!("remotes/{}/{}", module, branch)).ok();
+            .revparse_single(&format!("remotes/{}/{}", module, branch))
+            .ok();
     }
 
     fn call_git(self: &Scratch<'a>, cmd: &str) -> Result<String, Error>
@@ -92,11 +96,11 @@ impl<'a> Scratch<'a>
             try!(self.repo.set_head_detached(parents[0].id()));
         }
         self.repo.commit(Some("HEAD"),
-        &base.author(),
-        &base.committer(),
-        &base.message().unwrap_or("no message"),
-        tree,
-        parents)
+                         &base.author(),
+                         &base.committer(),
+                         &base.message().unwrap_or("no message"),
+                         tree,
+                         parents)
     }
 
     fn push(&self, oid: Oid, module: &str, target: &str)
@@ -104,8 +108,9 @@ impl<'a> Scratch<'a>
         let commit = &self.repo.find_commit(oid).expect("can't find commit");
         self.repo.set_head_detached(commit.id()).expect("can't detach HEAD");
         let output = self.call_git(&format!("push {} HEAD:{}",
-                                      self.host.remote_url(module),
-                                      target)).expect("can't push");
+                               self.host.remote_url(module),
+                               target))
+            .expect("can't push");
         debug!("{}", output);
     }
 
@@ -124,26 +129,26 @@ impl<'a> Scratch<'a>
                            module_tree: &Tree,
                            master_tree: &Tree)
         -> Result<Oid, Error>
-        {
-            assert!(module_path.components().count() == 2); // FIXME: drop this requirement
-            let parent_path = module_path.parent().expect("module not in subdir");
-            let module_name = module_path.file_name().expect("no module name");
+    {
+        assert!(module_path.components().count() == 2); // FIXME: drop this requirement
+        let parent_path = module_path.parent().expect("module not in subdir");
+        let module_name = module_path.file_name().expect("no module name");
 
-            let modules_tree = {
-                let mut builder = try!(self.repo
-                                       .treebuilder(Some(&self.subtree(master_tree, parent_path)
-                                                         .unwrap())));
-                try!(builder.insert(module_name, module_tree.id(), 0o0040000)); // GIT_FILEMODE_TREE
-                try!(builder.write())
-            };
+        let modules_tree = {
+            let mut builder = try!(self.repo
+                .treebuilder(Some(&self.subtree(master_tree, parent_path)
+                    .unwrap())));
+            try!(builder.insert(module_name, module_tree.id(), 0o0040000)); // GIT_FILEMODE_TREE
+            try!(builder.write())
+        };
 
-            let full_tree = {
-                let mut builder = try!(self.repo.treebuilder(Some(master_tree)));
-                try!(builder.insert(parent_path, modules_tree, 0o0040000)); // GIT_FILEMODE_TREE
-                try!(builder.write())
-            };
-            Ok(full_tree)
-        }
+        let full_tree = {
+            let mut builder = try!(self.repo.treebuilder(Some(master_tree)));
+            try!(builder.insert(parent_path, modules_tree, 0o0040000)); // GIT_FILEMODE_TREE
+            try!(builder.write())
+        };
+        Ok(full_tree)
+    }
 
     fn module_paths(&self, object: &Object) -> Vec<String>
     {
@@ -158,7 +163,7 @@ impl<'a> Scratch<'a>
                 for module in modules.iter() {
                     names.push(format!("modules/{}",
                                        module.name().expect("module_paths: TreeItem has no name"))
-                               .to_string());
+                        .to_string());
                 }
             }
         }
@@ -191,7 +196,8 @@ pub fn module_review_upload(scratch: &Scratch,
                             central: &str)
     -> Result<(), Error>
 {
-    debug!(".\n\n==== Doing review upload for module {}", &module);
+    debug!(".\n\n==== Doing review upload for module {}",
+           &module);
 
     let new = newrev.id();
     let old = scratch.tracking(&module, "master").expect("no tracking branch 1").id();
@@ -224,7 +230,7 @@ pub fn module_review_upload(scratch: &Scratch,
 
         let module_commit_obj = try!(scratch.repo.revparse_single(&currev));
         let module_commit = try!(module_commit_obj.as_commit()
-                                 .ok_or(Error::from_str("object is not actually a commit")));
+            .ok_or(Error::from_str("object is not actually a commit")));
         let module_tree = try!(module_commit.tree());
 
         let parent_commit = try!(scratch.repo.find_commit(current_oid));
@@ -251,19 +257,23 @@ pub fn module_review_upload(scratch: &Scratch,
 
 pub fn central_submit(scratch: &Scratch, newrev: Object) -> Result<(), Error>
 {
-    debug!(" ---> central_submit (sha1 of commit: {})", &newrev.id());
+    debug!(" ---> central_submit (sha1 of commit: {})",
+           &newrev.id());
 
     let central_commit = try!(newrev.as_commit()
-                              .ok_or(Error::from_str("could not get commit from obj")));
+        .ok_or(Error::from_str("could not get commit from obj")));
     let central_tree = try!(central_commit.tree());
 
     for module in scratch.module_paths(&newrev) {
         debug!("");
-        debug!("==== fetching tracking branch for module: {}", &module);
+        debug!("==== fetching tracking branch for module: {}",
+               &module);
         let module_master_commit_obj = match scratch.tracking(&module, "master") {
             Some(obj) => obj,
             None => {
-                error!("====    no tracking branch for module {} => project does not exist or is empty", &module);
+                error!("====    no tracking branch for module {} => project does not exist or is \
+                        empty",
+                       &module);
                 error!("====    initializing with subdir history");
                 let commit = scratch.split_subdir(&module, &newrev.id());
                 scratch.host.create_project(&module);
@@ -273,14 +283,15 @@ pub fn central_submit(scratch: &Scratch, newrev: Object) -> Result<(), Error>
         };
 
         let parents = vec![module_master_commit_obj.as_commit()
-            .expect("could not get commit from obj")];
+                               .expect("could not get commit from obj")];
 
-        debug!("==== checking for changes in module: {:?}", module);
+        debug!("==== checking for changes in module: {:?}",
+               module);
 
         // new tree is sub-tree of complete central tree
         let old_tree = try!(parents[0].tree());
         let new_tree = try!(scratch.repo
-                            .find_tree(try!(central_tree.get_path(&Path::new(&module))).id()));
+            .find_tree(try!(central_tree.get_path(&Path::new(&module))).id()));
 
         // if sha1's are equal the content is equal
         if new_tree.id() != old_tree.id() {
@@ -300,7 +311,6 @@ pub struct Shell
     pub cwd: PathBuf,
 }
 
-
 impl Shell
 {
     pub fn command(&self, cmd: &str) -> String
@@ -309,7 +319,8 @@ impl Shell
             .current_dir(&self.cwd)
             .arg("-c")
             .arg(&cmd)
-            .output().unwrap_or_else(|e| panic!("failed to execute process: {}", e));
+            .output()
+            .unwrap_or_else(|e| panic!("failed to execute process: {}", e));
 
         return String::from_utf8(output.stdout).expect("failed to decode utf8").trim().to_string();
     }
