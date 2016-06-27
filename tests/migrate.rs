@@ -1,5 +1,7 @@
 extern crate centralgithook;
 extern crate tempdir;
+#[macro_use] extern crate log;
+extern crate env_logger;
 
 mod helpers;
 
@@ -10,6 +12,7 @@ use tempdir::TempDir;
 #[test]
 fn test_initial_import()
 {
+    env_logger::init().unwrap();
     let td = TempDir::new("cgh_test").expect("folder cgh_test should be created");
     let central = helpers::TestRepo::new(&td.path().join("central"));
     let host = helpers::TestHost::new();

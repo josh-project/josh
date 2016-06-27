@@ -7,3 +7,6 @@ authors = ["Christian Schilling <christian.schilling@esrlabs.com>"]
 git2 = "0.4.3"
 clap = "2"
 tempdir = "0.3.*"
+log = "0.3"
+env_logger = "0.3"
+
