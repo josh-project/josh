@@ -20,16 +20,15 @@ struct Gerrit
 
 impl Gerrit
 {
-    pub fn new() -> Self {
+    pub fn new() -> Self
+    {
         let git_dir = env::var("GIT_DIR").expect("GIT_DIR not set");
         let mut p = Path::new(&git_dir);
         while !p.join("bin").join("gerrit.sh").exists() {
             p = p.parent().expect("can't find gerrit root");
         }
 
-        Gerrit {
-            path: p.to_path_buf(),
-        }
+        Gerrit { path: p.to_path_buf() }
     }
 }
 
@@ -117,9 +116,7 @@ fn main_ret() -> i32
         let scratch = migrate::Scratch::new(&scratch_dir, &gerrit);
         if is_submit {
             // submit to central
-            migrate::central_submit(&scratch,
-                                    scratch.transfer(commit, &Path::new(".")))
-                .unwrap();
+            migrate::central_submit(&scratch, scratch.transfer(commit, &Path::new("."))).unwrap();
         }
         else if is_module && is_update && is_review {
             // module was pushed, get changes to central

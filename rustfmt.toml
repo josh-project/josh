@@ -1,6 +1,6 @@
 else_if_brace_style = "ClosingNextLine"
 fn_brace_style = "AlwaysNextLine"
-fn_call_width = 50
+fn_call_width = 60
 fn_return_indent = "WithWhereClause"
 fn_single_line = true
 ideal_width = 90

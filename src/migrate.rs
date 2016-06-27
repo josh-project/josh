@@ -107,10 +107,9 @@ impl<'a> Scratch<'a>
     {
         let commit = &self.repo.find_commit(oid).expect("can't find commit");
         self.repo.set_head_detached(commit.id()).expect("can't detach HEAD");
-        let output = self.call_git(&format!("push {} HEAD:{}",
-                               self.host.remote_url(module),
-                               target))
-            .expect("can't push");
+        let output =
+            self.call_git(&format!("push {} HEAD:{}", self.host.remote_url(module), target))
+                .expect("can't push");
         format!("{}", output)
     }
 
@@ -196,8 +195,7 @@ pub fn module_review_upload(scratch: &Scratch,
                             central: &str)
     -> Result<(), Error>
 {
-    debug!(".\n\n==== Doing review upload for module {}",
-           &module);
+    debug!(".\n\n==== Doing review upload for module {}", &module);
 
     let new = newrev.id();
     let old = scratch.tracking(&module, "master").expect("no tracking branch 1").id();
@@ -249,8 +247,7 @@ pub fn module_review_upload(scratch: &Scratch,
     println!("");
     println!("====================== Doing actual upload in central git ========================");
 
-    println!("{}",
-             scratch.push(current_oid, central, "refs/for/master"));
+    println!("{}", scratch.push(current_oid, central, "refs/for/master"));
 
     println!("==== The review upload may have worked, even if it says error below. Look UP! ====");
     Ok(())
@@ -258,8 +255,7 @@ pub fn module_review_upload(scratch: &Scratch,
 
 pub fn central_submit(scratch: &Scratch, newrev: Object) -> Result<(), Error>
 {
-    debug!(" ---> central_submit (sha1 of commit: {})",
-           &newrev.id());
+    debug!(" ---> central_submit (sha1 of commit: {})", &newrev.id());
 
     let central_commit = try!(newrev.as_commit()
         .ok_or(Error::from_str("could not get commit from obj")));
@@ -267,8 +263,7 @@ pub fn central_submit(scratch: &Scratch, newrev: Object) -> Result<(), Error>
 
     for module in scratch.module_paths(&newrev) {
         debug!("");
-        debug!("==== fetching tracking branch for module: {}",
-               &module);
+        debug!("==== fetching tracking branch for module: {}", &module);
         let module_master_commit_obj = match scratch.tracking(&module, "master") {
             Some(obj) => obj,
             None => {
@@ -286,8 +281,7 @@ pub fn central_submit(scratch: &Scratch, newrev: Object) -> Result<(), Error>
         let parents = vec![module_master_commit_obj.as_commit()
                                .expect("could not get commit from obj")];
 
-        debug!("==== checking for changes in module: {:?}",
-               module);
+        debug!("==== checking for changes in module: {:?}", module);
 
         // new tree is sub-tree of complete central tree
         let old_tree = try!(parents[0].tree());
@@ -298,8 +292,7 @@ pub fn central_submit(scratch: &Scratch, newrev: Object) -> Result<(), Error>
         if new_tree.id() != old_tree.id() {
             debug!("====    commit changes module => make commit on module");
             let module_commit = try!(scratch.rewrite(central_commit, &parents, &new_tree));
-            println!("{}",
-                     scratch.push(module_commit, &module, "master"));
+            println!("{}", scratch.push(module_commit, &module, "master"));
         }
         else {
             debug!("====    commit does not change module => skipping");
