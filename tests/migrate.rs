@@ -10,23 +10,48 @@ use centralgithook::migrate::RepoHost;
 use centralgithook::migrate;
 use tempdir::TempDir;
 
+struct TestSetup<'a>
+{
+    td: TempDir,
+    central: helpers::TestRepo,
+    scratch: migrate::Scratch<'a>,
+    shell: migrate::Shell,
+    head: String,
+}
+
+impl<'a> TestSetup<'a>
+{
+    fn new(host: &'a RepoHost) -> Self
+    {
+        env_logger::init().unwrap();
+        let td = TempDir::new("cgh_test").expect("folder cgh_test should be created");
+        let central = helpers::TestRepo::new(&td.path().join("central"));
+        let scratch = migrate::Scratch::new(&td.path().join("scratch"), host);
+        let shell = migrate::Shell { cwd: td.path().to_path_buf() };
+
+        host.create_project("central");
+        central.shell.command(&format!("git remote add origin {}",
+                                       &host.remote_url("central")));
+
+        central.add_file("modules/module_a/initial_a");
+        central.add_file("modules/module_b/initial_b");
+        let head = central.commit("initial");
+
+        return TestSetup {
+            td: td,
+            central: central,
+            scratch: scratch,
+            shell: shell,
+            head: head,
+        };
+    }
+}
+
 #[test]
 fn test_initial_import()
 {
-    env_logger::init().unwrap();
-    let td = TempDir::new("cgh_test").expect("folder cgh_test should be created");
-    let central = helpers::TestRepo::new(&td.path().join("central"));
     let host = helpers::TestHost::new();
-    let scratch = migrate::Scratch::new(&td.path().join("scratch"), &host);
-    let shell = migrate::Shell { cwd: td.path().to_path_buf() };
-
-    host.create_project("central");
-    central.shell.command(&format!("git remote add origin {}",
-                                   &host.remote_url("central")));
-
-    central.add_file("modules/module_a/initial_a");
-    central.add_file("modules/module_b/initial_b");
-    let head = central.commit("initial");
+    let TestSetup { td, central, scratch, shell, head } = TestSetup::new(&host);
 
     central.shell.command("git push origin master");
     migrate::central_submit(&scratch,
