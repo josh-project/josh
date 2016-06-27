@@ -4,6 +4,8 @@ use git2::*;
 use std::process::Command;
 use std::path::Path;
 use std::path::PathBuf;
+use std::time::Duration;
+use std::thread;
 
 const TMP_NAME: &'static str = "tmp_fd2db5f8_bac2_4a1e_9487_4ac3414788aa";
 
@@ -41,8 +43,8 @@ impl<'a> Scratch<'a>
         }
         else {
             debug!("==== create remote (remote_name:{}, remote_url:{})",
-                     &remote_name,
-                     &fetch_url);
+            &remote_name,
+            &fetch_url);
             self.repo.remote(&remote_name, &fetch_url).expect("can't create remote")
         };
 
@@ -92,22 +94,21 @@ impl<'a> Scratch<'a>
             try!(self.repo.set_head_detached(parents[0].id()));
         }
         self.repo.commit(Some("HEAD"),
-                         &base.author(),
-                         &base.committer(),
-                         &base.message().unwrap_or("no message"),
-                         tree,
-                         parents)
+        &base.author(),
+        &base.committer(),
+        &base.message().unwrap_or("no message"),
+        tree,
+        parents)
     }
 
     fn push(&self, oid: Oid, module: &str, target: &str)
     {
         let commit = &self.repo.find_commit(oid).expect("can't find commit");
         self.repo.set_head_detached(commit.id()).expect("can't detach HEAD");
-        debug!("{}",
-            self.call_git(&format!("push {} HEAD:{}",
-                          self.host.remote_url(module),
-                          target)).expect("can't push")
-        );
+        let output = self.call_git(&format!("push {} HEAD:{}",
+                                      self.host.remote_url(module),
+                                      target)).expect("can't push");
+        debug!("{}", output);
     }
 
     fn subtree(&self, tree: &Tree, path: &Path) -> Option<Tree>
@@ -125,26 +126,26 @@ impl<'a> Scratch<'a>
                            module_tree: &Tree,
                            master_tree: &Tree)
         -> Result<Oid, Error>
-    {
-        assert!(module_path.components().count() == 2); // FIXME: drop this requirement
-        let parent_path = module_path.parent().expect("module not in subdir");
-        let module_name = module_path.file_name().expect("no module name");
+        {
+            assert!(module_path.components().count() == 2); // FIXME: drop this requirement
+            let parent_path = module_path.parent().expect("module not in subdir");
+            let module_name = module_path.file_name().expect("no module name");
 
-        let modules_tree = {
-            let mut builder = try!(self.repo
-                .treebuilder(Some(&self.subtree(master_tree, parent_path)
-                    .unwrap())));
-            try!(builder.insert(module_name, module_tree.id(), 0o0040000)); // GIT_FILEMODE_TREE
-            try!(builder.write())
-        };
+            let modules_tree = {
+                let mut builder = try!(self.repo
+                                       .treebuilder(Some(&self.subtree(master_tree, parent_path)
+                                                         .unwrap())));
+                try!(builder.insert(module_name, module_tree.id(), 0o0040000)); // GIT_FILEMODE_TREE
+                try!(builder.write())
+            };
 
-        let full_tree = {
-            let mut builder = try!(self.repo.treebuilder(Some(master_tree)));
-            try!(builder.insert(parent_path, modules_tree, 0o0040000)); // GIT_FILEMODE_TREE
-            try!(builder.write())
-        };
-        Ok(full_tree)
-    }
+            let full_tree = {
+                let mut builder = try!(self.repo.treebuilder(Some(master_tree)));
+                try!(builder.insert(parent_path, modules_tree, 0o0040000)); // GIT_FILEMODE_TREE
+                try!(builder.write())
+            };
+            Ok(full_tree)
+        }
 
     fn module_paths(&self, object: &Object) -> Vec<String>
     {
@@ -159,7 +160,7 @@ impl<'a> Scratch<'a>
                 for module in modules.iter() {
                     names.push(format!("modules/{}",
                                        module.name().expect("module_paths: TreeItem has no name"))
-                        .to_string());
+                               .to_string());
                 }
             }
         }
@@ -225,7 +226,7 @@ pub fn module_review_upload(scratch: &Scratch,
 
         let module_commit_obj = try!(scratch.repo.revparse_single(&currev));
         let module_commit = try!(module_commit_obj.as_commit()
-            .ok_or(Error::from_str("object is not actually a commit")));
+                                 .ok_or(Error::from_str("object is not actually a commit")));
         let module_tree = try!(module_commit.tree());
 
         let parent_commit = try!(scratch.repo.find_commit(current_oid));
@@ -255,7 +256,7 @@ pub fn central_submit(scratch: &Scratch, newrev: Object) -> Result<(), Error>
     debug!(" ---> central_submit (sha1 of commit: {})", &newrev.id());
 
     let central_commit = try!(newrev.as_commit()
-        .ok_or(Error::from_str("could not get commit from obj")));
+                              .ok_or(Error::from_str("could not get commit from obj")));
     let central_tree = try!(central_commit.tree());
 
     for module in scratch.module_paths(&newrev) {
@@ -281,7 +282,7 @@ pub fn central_submit(scratch: &Scratch, newrev: Object) -> Result<(), Error>
         // new tree is sub-tree of complete central tree
         let old_tree = try!(parents[0].tree());
         let new_tree = try!(scratch.repo
-            .find_tree(try!(central_tree.get_path(&Path::new(&module))).id()));
+                            .find_tree(try!(central_tree.get_path(&Path::new(&module))).id()));
 
         // if sha1's are equal the content is equal
         if new_tree.id() != old_tree.id() {
