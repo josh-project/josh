@@ -103,7 +103,7 @@ impl<'a> Scratch<'a>
                          parents)
     }
 
-    fn push(&self, oid: Oid, module: &str, target: &str)
+    fn push(&self, oid: Oid, module: &str, target: &str) -> String
     {
         let commit = &self.repo.find_commit(oid).expect("can't find commit");
         self.repo.set_head_detached(commit.id()).expect("can't detach HEAD");
@@ -111,7 +111,7 @@ impl<'a> Scratch<'a>
                                self.host.remote_url(module),
                                target))
             .expect("can't push");
-        debug!("{}", output);
+        format!("{}", output)
     }
 
     fn subtree(&self, tree: &Tree, path: &Path) -> Option<Tree>
@@ -203,10 +203,10 @@ pub fn module_review_upload(scratch: &Scratch,
     let old = scratch.tracking(&module, "master").expect("no tracking branch 1").id();
 
     if !try!(scratch.repo.graph_descendant_of(new, old)) {
-        debug!(".");
-        debug!("==============================================================================");
-        debug!("================ Commit not based on master, rebase first! ===================");
-        debug!("==============================================================================");
+        println!(".");
+        println!("==============================================================================");
+        println!("================ Commit not based on master, rebase first! ===================");
+        println!("==============================================================================");
         return Ok(());
     }
 
@@ -245,13 +245,14 @@ pub fn module_review_upload(scratch: &Scratch,
         current_oid = try!(scratch.rewrite(module_commit, &vec![&parent_commit], &new_tree));
     }
 
-    debug!("");
-    debug!("");
-    debug!("====================== Doing actual upload in central git ========================");
+    println!("");
+    println!("");
+    println!("====================== Doing actual upload in central git ========================");
 
-    scratch.push(current_oid, central, "refs/for/master");
+    println!("{}",
+             scratch.push(current_oid, central, "refs/for/master"));
 
-    debug!("==== The review upload may have worked, even if it says error below. Look UP! ====");
+    println!("==== The review upload may have worked, even if it says error below. Look UP! ====");
     Ok(())
 }
 
@@ -297,7 +298,8 @@ pub fn central_submit(scratch: &Scratch, newrev: Object) -> Result<(), Error>
         if new_tree.id() != old_tree.id() {
             debug!("====    commit changes module => make commit on module");
             let module_commit = try!(scratch.rewrite(central_commit, &parents, &new_tree));
-            scratch.push(module_commit, &module, "master");
+            println!("{}",
+                     scratch.push(module_commit, &module, "master"));
         }
         else {
             debug!("====    commit does not change module => skipping");
