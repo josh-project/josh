@@ -17,9 +17,7 @@ impl TestHost
     {
         TestHost { td: TempDir::new("test_host").expect("folder test_host should be created") }
     }
-}
 
-impl TestHost {
     pub fn repo_dir(&self, module: &str) -> PathBuf { self.td.path().join(&Path::new(module)) }
 }
 
