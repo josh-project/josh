@@ -69,6 +69,31 @@ fn test_initial_import()
 }
 
 #[test]
+fn test_create_project()
+{
+    let host = helpers::TestHost::new();
+    let TestSetup { td, central, scratch, shell }  = TestSetup::new(&host);
+
+    central.add_file("modules/module_a/initial_a");
+    let head = central.commit("initial");
+
+    central.shell.command("git push origin master");
+    migrate::central_submit(&scratch, scratch.transfer(&head, &host.repo_dir("central")))
+        .expect("call central_submit");
+
+    shell.command(&format!("git clone {}", &host.remote_url("modules/module_a")));
+    let module_a = helpers::TestRepo::new(&td.path().join("module_a"));
+    assert!(module_a.has_file("initial_a"));
+
+    host.create_project("modules");
+    migrate::project_created(&scratch);
+
+    shell.command(&format!("git clone {}", &host.remote_url("modules")));
+    let modules = helpers::TestRepo::new(&td.path().join("modules"));
+    assert!(modules.has_file("module_a/initial_a"));
+}
+
+#[test]
 fn test_change_and_add_modules()
 {
     let host = helpers::TestHost::new();

@@ -75,6 +75,7 @@ fn main_ret() -> i32
         .arg(clap::Arg::with_name("change-owner").long("change-owner").takes_value(true))
         .arg(clap::Arg::with_name("change-url").long("change-url").takes_value(true))
         .arg(clap::Arg::with_name("commit").long("commit").takes_value(true))
+        .arg(clap::Arg::with_name("head").long("head").takes_value(true))
         .arg(clap::Arg::with_name("newrev").long("newrev").takes_value(true))
         .arg(clap::Arg::with_name("oldrev").long("oldrev").takes_value(true))
         .arg(clap::Arg::with_name("project").long("project").takes_value(true))
@@ -98,6 +99,7 @@ fn main_ret() -> i32
         // change-merged: fired after gerrit-submit
         let is_update = hook.ends_with("ref-update");
         let is_submit = hook.ends_with("change-merged");
+        let is_project_created = hook.ends_with("project-created");
 
         let is_review = refname == "refs/for/master";
         let is_module = project != CENTRAL_NAME;
@@ -115,6 +117,9 @@ fn main_ret() -> i32
         if is_submit {
             // submit to central
             migrate::central_submit(&scratch, scratch.transfer(commit, &Path::new("."))).unwrap();
+        }
+        else if is_project_created {
+            migrate::project_created(&scratch);
         }
         else if is_module && is_update && is_review {
             // module was pushed, get changes to central

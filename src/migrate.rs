@@ -61,6 +61,7 @@ impl<'a> Scratch<'a>
         let args: Vec<&str> = cmd.split(" ").collect();
         let repo_path = &self.repo.path();
         let mut c = Command::new("git");
+        c.current_dir(&repo_path);
         c.env("GIT_DIR", repo_path.as_os_str());
         c.args(&args);
 
@@ -150,30 +151,26 @@ impl<'a> Scratch<'a>
         }
     }
 
-    fn split_subdir(&self, module: &str, newrev: &Oid) -> Object
+    fn split_subdir(&self, module: &str, newrev: Oid) -> Object
     {
         // TODO: implement using libgit
         let shell = Shell { cwd: self.repo.path().to_path_buf() };
         shell.command("rm -Rf refs/original");
+        shell.command("rm -Rf .git-rewrite");
 
-        self.call_git(&format!("branch -f initial_{} {}", module, newrev))
-            .expect("create branch");
+        self.repo.set_head_detached(newrev).expect("can't detatch head");;
 
-        self.call_git(&format!("filter-branch -f --subdirectory-filter {}/ -- initial_{}",
-                               module,
-                               module))
+        let o = self.call_git(&format!("filter-branch --subdirectory-filter {}/ -- HEAD", module))
             .expect("error in filter-branch");
+        println!("filter-branch: {}",o);
 
         return self.repo
-            .revparse_single(&format!("initial_{}", module))
+            .revparse_single("HEAD")
             .expect("can't find rewritten branch");
     }
 }
 
-pub fn module_review_upload(scratch: &Scratch,
-                            newrev: Object,
-                            module: &str)
-    -> Result<(), Error>
+pub fn module_review_upload(scratch: &Scratch, newrev: Object, module: &str) -> Result<(), Error>
 {
     debug!(".\n\n==== Doing review upload for module {}", &module);
 
@@ -197,7 +194,9 @@ pub fn module_review_upload(scratch: &Scratch,
 
     debug!("==== Rewriting commits from {} to {}", old, new);
 
-    let mut current_oid = scratch.tracking(scratch.host.central(), "master").expect("no central tracking").id();
+    let mut current_oid =
+        scratch.tracking(scratch.host.central(), "master").expect("no central tracking").id();
+
     for rev in walk {
         let currev = format!("{}", try!(rev));
         let oldrev = format!("{}", old);
@@ -224,10 +223,18 @@ pub fn module_review_upload(scratch: &Scratch,
     println!("");
     println!("====================== Doing actual upload in central git ========================");
 
-    println!("{}", scratch.push(current_oid, scratch.host.central(), "refs/for/master"));
+    println!("{}",
+             scratch.push(current_oid, scratch.host.central(), "refs/for/master"));
 
     println!("==== The review upload may have worked, even if it says error below. Look UP! ====");
     Ok(())
+}
+
+pub fn project_created(scratch: &Scratch)
+{
+    if let Some(rev) = scratch.tracking(scratch.host.central(), "master") {
+        central_submit(scratch, rev).expect("error calling central_submit");
+    }
 }
 
 pub fn central_submit(scratch: &Scratch, newrev: Object) -> Result<(), Error>
@@ -239,7 +246,9 @@ pub fn central_submit(scratch: &Scratch, newrev: Object) -> Result<(), Error>
     let central_tree = try!(central_commit.tree());
 
     for module in scratch.host.projects() {
-        if module == scratch.host.central() { continue; }
+        if module == scratch.host.central() {
+            continue;
+        }
         debug!("");
         debug!("==== fetching tracking branch for module: {}", &module);
         let module_master_commit_obj = match scratch.tracking(&module, "master") {
@@ -249,7 +258,7 @@ pub fn central_submit(scratch: &Scratch, newrev: Object) -> Result<(), Error>
                         empty",
                        &module);
                 debug!("====    initializing with subdir history");
-                let commit = scratch.split_subdir(&module, &newrev.id());
+                let commit = scratch.split_subdir(&module, newrev.id());
                 scratch.push(commit.id(), &module, "refs/heads/master");
                 scratch.tracking(&module, "master").expect("no tracking branch 3")
             }
