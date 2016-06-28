@@ -267,10 +267,10 @@ pub fn central_submit(scratch: &Scratch, newrev: Object) -> Result<(), Error>
         let module_master_commit_obj = match scratch.tracking(&module, "master") {
             Some(obj) => obj,
             None => {
-                error!("====    no tracking branch for module {} => project does not exist or is \
+                debug!("====    no tracking branch for module {} => project does not exist or is \
                         empty",
                        &module);
-                error!("====    initializing with subdir history");
+                debug!("====    initializing with subdir history");
                 let commit = scratch.split_subdir(&module, &newrev.id());
                 scratch.host.create_project(&module);
                 scratch.push(commit.id(), &module, "refs/heads/master");
