@@ -9,14 +9,14 @@ const TMP_NAME: &'static str = "tmp_fd2db5f8_bac2_4a1e_9487_4ac3414788aa";
 
 pub trait RepoHost
 {
+    fn central(&self) -> &str;
+    fn projects(&self) -> Vec<String>;
+
     fn remote_url(&self, &str) -> String;
-    fn create_project(&self, &str) -> String;
     fn fetch_url(&self, module: &str) -> String
     {
         self.remote_url(module)
     }
-
-    fn projects(&self) -> Vec<String>;
 }
 
 pub struct Scratch<'a>
@@ -37,8 +37,6 @@ impl<'a> Scratch<'a>
 
     fn tracking(&self, module: &str, branch: &str) -> Option<Object>
     {
-        self.host.create_project(&module);
-
         let remote_name = format!("{}", module);
         let fetch_url = self.host.fetch_url(&module);
         let mut remote = if let Ok(remote) = self.repo.find_remote(&remote_name) {
@@ -174,8 +172,7 @@ impl<'a> Scratch<'a>
 
 pub fn module_review_upload(scratch: &Scratch,
                             newrev: Object,
-                            module: &str,
-                            central: &str)
+                            module: &str)
     -> Result<(), Error>
 {
     debug!(".\n\n==== Doing review upload for module {}", &module);
@@ -200,7 +197,7 @@ pub fn module_review_upload(scratch: &Scratch,
 
     debug!("==== Rewriting commits from {} to {}", old, new);
 
-    let mut current_oid = scratch.tracking(central, "master").expect("no central tracking").id();
+    let mut current_oid = scratch.tracking(scratch.host.central(), "master").expect("no central tracking").id();
     for rev in walk {
         let currev = format!("{}", try!(rev));
         let oldrev = format!("{}", old);
@@ -227,7 +224,7 @@ pub fn module_review_upload(scratch: &Scratch,
     println!("");
     println!("====================== Doing actual upload in central git ========================");
 
-    println!("{}", scratch.push(current_oid, central, "refs/for/master"));
+    println!("{}", scratch.push(current_oid, scratch.host.central(), "refs/for/master"));
 
     println!("==== The review upload may have worked, even if it says error below. Look UP! ====");
     Ok(())
@@ -242,6 +239,7 @@ pub fn central_submit(scratch: &Scratch, newrev: Object) -> Result<(), Error>
     let central_tree = try!(central_commit.tree());
 
     for module in scratch.host.projects() {
+        if module == scratch.host.central() { continue; }
         debug!("");
         debug!("==== fetching tracking branch for module: {}", &module);
         let module_master_commit_obj = match scratch.tracking(&module, "master") {
@@ -252,7 +250,6 @@ pub fn central_submit(scratch: &Scratch, newrev: Object) -> Result<(), Error>
                        &module);
                 debug!("====    initializing with subdir history");
                 let commit = scratch.split_subdir(&module, &newrev.id());
-                scratch.host.create_project(&module);
                 scratch.push(commit.id(), &module, "refs/heads/master");
                 scratch.tracking(&module, "master").expect("no tracking branch 3")
             }

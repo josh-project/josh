@@ -20,7 +20,7 @@ struct TestSetup<'a>
 
 impl<'a> TestSetup<'a>
 {
-    fn new(host: &'a RepoHost) -> Self
+    fn new(host: &'a helpers::TestHost) -> Self
     {
         host.create_project("modules/module_a");
         host.create_project("modules/module_b");
@@ -204,8 +204,7 @@ fn test_module_review_upload()
 
     migrate::module_review_upload(&scratch,
                                   scratch.transfer(&head, &module_a.path),
-                                  "modules/module_a",
-                                  "central")
+                                  "modules/module_a")
         .expect("module_review_upload failed");
 
     central.shell.command("git fetch origin for/master:for/master");
@@ -249,8 +248,7 @@ fn test_module_review_upload_1_level()
 
     migrate::module_review_upload(&scratch,
                                   scratch.transfer(&head, &foo_module_a.path),
-                                  "foo_module_a",
-                                  "central")
+                                  "foo_module_a")
         .expect("module_review_upload failed");
 
     central.shell.command("git fetch origin for/master:for/master");
@@ -294,8 +292,7 @@ fn test_module_review_upload_4_levels()
 
     migrate::module_review_upload(&scratch,
                                   scratch.transfer(&head, &foo_module_a.path),
-                                  "foo/modules/bla/module_a",
-                                  "central")
+                                  "foo/modules/bla/module_a")
         .expect("module_review_upload failed");
 
     central.shell.command("git fetch origin for/master:for/master");

@@ -23,6 +23,15 @@ impl TestHost
     {
         self.td.path().join(module).with_extension("git")
     }
+
+    pub fn create_project(&self, module: &str) -> String
+    {
+        println!("TestHost: create_project {} in {:?}",
+                 module,
+                 self.repo_dir(module));
+        git2::Repository::init_bare(&self.repo_dir(module)).expect("TestHost: init_bare failed");
+        return String::new();
+    }
 }
 
 #[test]
@@ -46,14 +55,6 @@ fn test_test_host()
 
 impl migrate::RepoHost for TestHost
 {
-    fn create_project(&self, module: &str) -> String
-    {
-        println!("TestHost: create_project {} in {:?}",
-                 module,
-                 self.repo_dir(module));
-        git2::Repository::init_bare(&self.repo_dir(module)).expect("TestHost: init_bare failed");
-        return String::new();
-    }
 
     fn remote_url(&self, module_path: &str) -> String
     {
@@ -64,6 +65,8 @@ impl migrate::RepoHost for TestHost
     {
         migrate::find_repos(self.td.path(), self.td.path(), vec![])
     }
+
+    fn central(&self) -> &str { "central" }
 }
 
 pub struct TestRepo

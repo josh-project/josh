@@ -34,16 +34,6 @@ impl Gerrit
 
 impl migrate::RepoHost for Gerrit
 {
-    // create module project on gerrit (if not existing)
-    fn create_project(&self, module: &str) -> String
-    {
-        let shell = migrate::Shell { cwd: Path::new("/").to_path_buf() };
-        shell.command(&format!("ssh -p {} {} gerrit create-project {}",
-                               GERRIT_PORT,
-                               "gerrit-test-git",
-                               module))
-    }
-
     fn fetch_url(&self, module_path: &str) -> String
     {
         if let Some(root) = self.path.as_os_str().to_str() {
@@ -67,6 +57,8 @@ impl migrate::RepoHost for Gerrit
         let path = self.path.join("git");
         migrate::find_repos(&path, &path, vec![])
     }
+
+    fn central(&self) -> &str { "central" }
 }
 
 fn main()
@@ -118,7 +110,7 @@ fn main_ret() -> i32
             return 1;
         }
 
-        let scratch_dir = Path::new("/tmp/scratchme");
+        let scratch_dir = gerrit.path.join("centralgithook_scratch");
         let scratch = migrate::Scratch::new(&scratch_dir, &gerrit);
         if is_submit {
             // submit to central
@@ -128,8 +120,7 @@ fn main_ret() -> i32
             // module was pushed, get changes to central
             migrate::module_review_upload(&scratch,
                                           scratch.transfer(newrev, Path::new(".")),
-                                          project,
-                                          CENTRAL_NAME)
+                                          project)
                 .unwrap();
             // stop gerrit from allowing push to module directly
             return 1;
