@@ -70,25 +70,25 @@ fn main_ret() -> i32
 {
 
     let args = clap::App::new("centralgithook")
-        .arg(clap::Arg::with_name("oldrev").long("oldrev").takes_value(true))
+        .arg(clap::Arg::with_name("branch").long("branch").takes_value(true))
+        .arg(clap::Arg::with_name("change").long("change").takes_value(true))
+        .arg(clap::Arg::with_name("change-owner").long("change-owner").takes_value(true))
+        .arg(clap::Arg::with_name("change-url").long("change-url").takes_value(true))
+        .arg(clap::Arg::with_name("commit").long("commit").takes_value(true))
         .arg(clap::Arg::with_name("newrev").long("newrev").takes_value(true))
+        .arg(clap::Arg::with_name("oldrev").long("oldrev").takes_value(true))
         .arg(clap::Arg::with_name("project").long("project").takes_value(true))
         .arg(clap::Arg::with_name("refname").long("refname").takes_value(true))
-        .arg(clap::Arg::with_name("uploader").long("uploader").takes_value(true))
-        .arg(clap::Arg::with_name("commit").long("commit").takes_value(true))
-        .arg(clap::Arg::with_name("change").long("change").takes_value(true))
-        .arg(clap::Arg::with_name("change-url").long("change-url").takes_value(true))
-        .arg(clap::Arg::with_name("change-owner").long("change-owner").takes_value(true))
-        .arg(clap::Arg::with_name("branch").long("branch").takes_value(true))
         .arg(clap::Arg::with_name("submitter").long("submitter").takes_value(true))
         .arg(clap::Arg::with_name("topic").long("topic").takes_value(true))
+        .arg(clap::Arg::with_name("uploader").long("uploader").takes_value(true))
         .get_matches();
 
+    let commit = args.value_of("commit").unwrap_or("");
     let newrev = args.value_of("newrev").unwrap_or("");
     let oldrev = args.value_of("oldrev").unwrap_or("");
     let project = args.value_of("project").unwrap_or("");
     let refname = args.value_of("refname").unwrap_or("");
-    let commit = args.value_of("commit").unwrap_or("");
 
     let gerrit = Gerrit::new();
 
