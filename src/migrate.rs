@@ -125,27 +125,31 @@ impl<'a> Scratch<'a>
         }
     }
 
-    fn replace_subtree(&self, path: &Path, subtree: &Tree, full_tree: Tree) -> Result<Tree, Error>
+    fn replace_child(&self, child: &Path, subtree: Oid, full_tree: Tree) -> Result<Tree, Error>
     {
-        assert!(path.components().count() == 2); // FIXME: drop this requirement
-        let parent_path = path.parent().expect("module not in subdir");
-        let module_name = path.file_name().expect("no module name");
-
-        let modules_tree = {
-            let mut builder = try!(self.repo
-                .treebuilder(Some(&self.subtree(&full_tree, parent_path)
-                    .unwrap())));
-            try!(builder.insert(module_name, subtree.id(), 0o0040000)); // GIT_FILEMODE_TREE
-            try!(builder.write())
-        };
-
         let full_tree_id = {
             let mut builder = try!(self.repo.treebuilder(Some(&full_tree)));
-            try!(builder.insert(parent_path, modules_tree, 0o0040000)); // GIT_FILEMODE_TREE
+            try!(builder.insert(child, subtree, 0o0040000)); // GIT_FILEMODE_TREE
             try!(builder.write())
         };
         let full_tree = try!(self.repo.find_tree(full_tree_id));
         Ok(full_tree)
+    }
+
+    fn replace_subtree(&self, path: &Path, subtree: Oid, full_tree: Tree) -> Result<Tree, Error>
+    {
+        if path.components().count() == 1 {
+            Ok(try!(self.replace_child(path, subtree, full_tree)))
+        }
+        else {
+            let name = Path::new(path.file_name().expect("no module name"));
+            let path = path.parent().expect("module not in subdir");
+
+            let st = self.subtree(&full_tree, path).unwrap();
+            let tree = try!(self.replace_child(name, subtree, st));
+
+            Ok(try!(self.replace_subtree(path, tree.id(), full_tree)))
+        }
     }
 
     fn split_subdir(&self, module: &str, newrev: &Oid) -> Object
@@ -213,7 +217,7 @@ pub fn module_review_upload(scratch: &Scratch,
         let parent_commit = try!(scratch.repo.find_commit(current_oid));
 
         let new_tree = try!(scratch.replace_subtree(Path::new(module),
-                                                    &module_tree,
+                                                    module_tree.id(),
                                                     try!(parent_commit.tree())));
 
         current_oid = try!(scratch.rewrite(module_commit, &vec![&parent_commit], &new_tree));
@@ -237,7 +241,7 @@ pub fn central_submit(scratch: &Scratch, newrev: Object) -> Result<(), Error>
         .ok_or(Error::from_str("could not get commit from obj")));
     let central_tree = try!(central_commit.tree());
 
-    for module in scratch.module_paths(&newrev) {
+    for module in scratch.host.projects() {
         debug!("");
         debug!("==== fetching tracking branch for module: {}", &module);
         let module_master_commit_obj = match scratch.tracking(&module, "master") {

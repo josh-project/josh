@@ -223,3 +223,93 @@ fn test_module_review_upload()
     module_a.shell.command("git pull");
     assert_eq!(module_a.rev("origin/master"), head);
 }
+
+#[test]
+fn test_module_review_upload_1_level()
+{
+    let host = helpers::TestHost::new();
+    host.create_project("foo_module_a");
+    let TestSetup { td, central, scratch, shell }  = TestSetup::new(&host);
+
+    central.add_file("modules/module_a/initial_a");
+    central.add_file("modules/module_a/initial_b");
+    central.add_file("foo_module_a/initial_a");
+    let head = central.commit("initial");
+
+    central.shell.command("git push origin master");
+    migrate::central_submit(&scratch, scratch.transfer(&head, &host.repo_dir("central")))
+        .expect("call central_submit");
+
+    shell.command(&format!("git clone {}", &host.remote_url("foo_module_a")));
+    let foo_module_a = helpers::TestRepo::new(&td.path().join("foo_module_a"));
+    foo_module_a.shell.command("git pull");
+
+    foo_module_a.add_file("added/in_mod_a");
+    let head = foo_module_a.commit("module_a_commit");
+
+    migrate::module_review_upload(&scratch,
+                                  scratch.transfer(&head, &foo_module_a.path),
+                                  "foo_module_a",
+                                  "central")
+        .expect("module_review_upload failed");
+
+    central.shell.command("git fetch origin for/master:for/master");
+    let for_master = central.rev("for/master");
+
+    migrate::central_submit(&scratch,
+                            scratch.transfer(&for_master, &host.repo_dir("central")))
+        .expect("call central_submit");
+
+    central.shell.command("git rebase for/master");
+    assert_eq!(central.rev("master"), central.rev("for/master"));
+    assert_eq!(central.rev("master"), central.rev("HEAD"));
+    assert!(central.has_file("foo_module_a/added/in_mod_a"));
+
+    foo_module_a.shell.command("git pull");
+    assert_eq!(foo_module_a.rev("origin/master"), head);
+}
+
+#[test]
+fn test_module_review_upload_4_levels()
+{
+    let host = helpers::TestHost::new();
+    host.create_project("foo/modules/bla/module_a");
+    let TestSetup { td, central, scratch, shell }  = TestSetup::new(&host);
+
+    central.add_file("modules/module_a/initial_a");
+    central.add_file("modules/module_a/initial_b");
+    central.add_file("foo/modules/bla/module_a/initial_a");
+    let head = central.commit("initial");
+
+    central.shell.command("git push origin master");
+    migrate::central_submit(&scratch, scratch.transfer(&head, &host.repo_dir("central")))
+        .expect("call central_submit");
+
+    shell.command(&format!("git clone {}", &host.remote_url("foo/modules/bla/module_a")));
+    let foo_module_a = helpers::TestRepo::new(&td.path().join("module_a"));
+    foo_module_a.shell.command("git pull");
+
+    foo_module_a.add_file("added/in_mod_a");
+    let head = foo_module_a.commit("module_a_commit");
+
+    migrate::module_review_upload(&scratch,
+                                  scratch.transfer(&head, &foo_module_a.path),
+                                  "foo/modules/bla/module_a",
+                                  "central")
+        .expect("module_review_upload failed");
+
+    central.shell.command("git fetch origin for/master:for/master");
+    let for_master = central.rev("for/master");
+
+    migrate::central_submit(&scratch,
+                            scratch.transfer(&for_master, &host.repo_dir("central")))
+        .expect("call central_submit");
+
+    central.shell.command("git rebase for/master");
+    assert_eq!(central.rev("master"), central.rev("for/master"));
+    assert_eq!(central.rev("master"), central.rev("HEAD"));
+    assert!(central.has_file("foo/modules/bla/module_a/added/in_mod_a"));
+
+    foo_module_a.shell.command("git pull");
+    assert_eq!(foo_module_a.rev("origin/master"), head);
+}
