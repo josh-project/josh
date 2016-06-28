@@ -8,6 +8,8 @@ before_script:
 script:
   - export CARGO_TARGET_DIR=`pwd`/target
   - cargo test
+after_success:
+  - travis-cargo coveralls --no-sudo
 notifications:
   email:
     on_success: never
