@@ -15,6 +15,8 @@ pub trait RepoHost
     {
         self.remote_url(module)
     }
+
+    fn projects(&self) -> Vec<String>;
 }
 
 pub struct Scratch<'a>
@@ -123,50 +125,27 @@ impl<'a> Scratch<'a>
         }
     }
 
-    fn module_to_subfolder(&self,
-                           module_path: &Path,
-                           module_tree: &Tree,
-                           master_tree: &Tree)
-        -> Result<Oid, Error>
+    fn replace_subtree(&self, path: &Path, subtree: &Tree, full_tree: Tree) -> Result<Tree, Error>
     {
-        assert!(module_path.components().count() == 2); // FIXME: drop this requirement
-        let parent_path = module_path.parent().expect("module not in subdir");
-        let module_name = module_path.file_name().expect("no module name");
+        assert!(path.components().count() == 2); // FIXME: drop this requirement
+        let parent_path = path.parent().expect("module not in subdir");
+        let module_name = path.file_name().expect("no module name");
 
         let modules_tree = {
             let mut builder = try!(self.repo
-                .treebuilder(Some(&self.subtree(master_tree, parent_path)
+                .treebuilder(Some(&self.subtree(&full_tree, parent_path)
                     .unwrap())));
-            try!(builder.insert(module_name, module_tree.id(), 0o0040000)); // GIT_FILEMODE_TREE
+            try!(builder.insert(module_name, subtree.id(), 0o0040000)); // GIT_FILEMODE_TREE
             try!(builder.write())
         };
 
-        let full_tree = {
-            let mut builder = try!(self.repo.treebuilder(Some(master_tree)));
+        let full_tree_id = {
+            let mut builder = try!(self.repo.treebuilder(Some(&full_tree)));
             try!(builder.insert(parent_path, modules_tree, 0o0040000)); // GIT_FILEMODE_TREE
             try!(builder.write())
         };
+        let full_tree = try!(self.repo.find_tree(full_tree_id));
         Ok(full_tree)
-    }
-
-    fn module_paths(&self, object: &Object) -> Vec<String>
-    {
-        let mut names = Vec::<String>::new();
-        let commit = object.as_commit().expect("module_paths: object is not a commit");
-        let tree: Tree = commit.tree().expect("module_paths: commit has no tree");
-
-        if let Ok(tree_object) = tree.get_path(&Path::new("modules")) {
-            let modules_o = tree_object.to_object(&self.repo).expect("module_paths: to_object");
-            if let Some(modules) = modules_o.as_tree() {
-
-                for module in modules.iter() {
-                    names.push(format!("modules/{}",
-                                       module.name().expect("module_paths: TreeItem has no name"))
-                        .to_string());
-                }
-            }
-        }
-        return names;
     }
 
     fn split_subdir(&self, module: &str, newrev: &Oid) -> Object
@@ -233,12 +212,9 @@ pub fn module_review_upload(scratch: &Scratch,
 
         let parent_commit = try!(scratch.repo.find_commit(current_oid));
 
-        let new_tree = {
-            let master_tree: Tree = try!(parent_commit.tree());
-            let new_tree_oid =
-                try!(scratch.module_to_subfolder(Path::new(module), &module_tree, &master_tree));
-            try!(scratch.repo.find_tree(new_tree_oid))
-        };
+        let new_tree = try!(scratch.replace_subtree(Path::new(module),
+                                                    &module_tree,
+                                                    try!(parent_commit.tree())));
 
         current_oid = try!(scratch.rewrite(module_commit, &vec![&parent_commit], &new_tree));
     }
@@ -284,12 +260,24 @@ pub fn central_submit(scratch: &Scratch, newrev: Object) -> Result<(), Error>
         debug!("==== checking for changes in module: {:?}", module);
 
         // new tree is sub-tree of complete central tree
-        let old_tree = try!(parents[0].tree());
-        let new_tree = try!(scratch.repo
-            .find_tree(try!(central_tree.get_path(&Path::new(&module))).id()));
+        let old_tree_id = if let Ok(tree) = parents[0].tree() {
+            tree.id()
+        }
+        else {
+            Oid::from_str("0000000000000000000000000000000000000000").unwrap()
+        };
+
+        let new_tree_id = if let Ok(tree_entry) = central_tree.get_path(&Path::new(&module)) {
+            tree_entry.id()
+        }
+        else {
+            Oid::from_str("0000000000000000000000000000000000000000").unwrap()
+        };
+
 
         // if sha1's are equal the content is equal
-        if new_tree.id() != old_tree.id() {
+        if new_tree_id != old_tree_id && !new_tree_id.is_zero() {
+            let new_tree = try!(scratch.repo.find_tree(new_tree_id));
             debug!("====    commit changes module => make commit on module");
             let module_commit = try!(scratch.rewrite(central_commit, &parents, &new_tree));
             println!("{}", scratch.push(module_commit, &module, "master"));
@@ -299,6 +287,28 @@ pub fn central_submit(scratch: &Scratch, newrev: Object) -> Result<(), Error>
         }
     }
     Ok(())
+}
+
+pub fn find_repos(root: &Path, path: &Path, mut repos: Vec<String>) -> Vec<String>
+{
+    if let Ok(children) = path.read_dir() {
+        for child in children {
+            let path = child.unwrap().path();
+
+            let name = format!("{}", &path.to_str().unwrap());
+            if let Some(last) = path.extension() {
+                if last == "git" {
+                    repos.push(name.trim_right_matches(".git")
+                        .trim_left_matches(root.to_str().unwrap())
+                        .trim_left_matches("/")
+                        .to_string());
+                    continue;
+                }
+            }
+            repos = find_repos(root, &path, repos);
+        }
+    }
+    return repos;
 }
 
 pub struct Shell

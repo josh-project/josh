@@ -22,6 +22,10 @@ impl<'a> TestSetup<'a>
 {
     fn new(host: &'a RepoHost) -> Self
     {
+        host.create_project("modules/module_a");
+        host.create_project("modules/module_b");
+        host.create_project("modules/module_c");
+
         env_logger::init().ok();
         let td = TempDir::new("cgh_test").expect("folder cgh_test should be created");
         let central = helpers::TestRepo::new(&td.path().join("central"));
@@ -93,6 +97,89 @@ fn test_change_and_add_modules()
 
     assert!(module_a.has_file("added_a"));
     assert!(module_c.has_file("added_c"));
+}
+
+#[test]
+fn test_add_module_not_on_host()
+{
+    let host = helpers::TestHost::new();
+    let TestSetup { td, central, scratch, shell }  = TestSetup::new(&host);
+
+    central.add_file("modules/module_new/initial_a");
+    let head = central.commit("initial");
+
+    central.shell.command("git push origin master");
+    migrate::central_submit(&scratch, scratch.transfer(&head, &host.repo_dir("central")))
+        .expect("call central_submit");
+
+    central.add_file("modules/module_new/added_new");
+    let head = central.commit("add_new");
+
+    central.shell.command("git push origin master");
+    migrate::central_submit(&scratch, scratch.transfer(&head, &host.repo_dir("central")))
+        .expect("call central_submit");
+
+    shell.command(&format!("git clone {}", &host.remote_url("modules/module_new")));
+
+    let module_new = helpers::TestRepo::new(&td.path().join("module_new"));
+
+    assert!(!module_new.has_file("added_new"));
+}
+
+#[test]
+fn test_remove_module_dir()
+{
+    let host = helpers::TestHost::new();
+    let TestSetup { td, central, scratch, shell }  = TestSetup::new(&host);
+
+    central.add_file("modules/module_a/initial_a");
+    let head = central.commit("initial");
+
+    central.shell.command("git push origin master");
+    migrate::central_submit(&scratch, scratch.transfer(&head, &host.repo_dir("central")))
+        .expect("call central_submit");
+
+    shell.command(&format!("git clone {}", &host.remote_url("modules/module_a")));
+    let module_a = helpers::TestRepo::new(&td.path().join("module_a"));
+
+    assert!(module_a.has_file("initial_a"));
+
+    central.shell.command("rm -Rf modules/module_a");
+    central.shell.command("git add .");
+    println!("{}", central.shell.command("git status"));
+    let head = central.commit("remove a");
+
+    central.shell.command("git push origin master");
+    migrate::central_submit(&scratch, scratch.transfer(&head, &host.repo_dir("central")))
+        .expect("call central_submit");
+}
+
+#[test]
+fn test_add_module_empty_on_host()
+{
+    let host = helpers::TestHost::new();
+    let TestSetup { td, central, scratch, shell }  = TestSetup::new(&host);
+
+    central.add_file("modules/module_new/initial_a");
+    let head = central.commit("initial");
+
+    central.shell.command("git push origin master");
+    migrate::central_submit(&scratch, scratch.transfer(&head, &host.repo_dir("central")))
+        .expect("call central_submit");
+
+    central.add_file("modules/module_new/added_new");
+    let head = central.commit("add_new");
+
+    central.shell.command("git push origin master");
+    host.create_project("modules/module_new");
+    migrate::central_submit(&scratch, scratch.transfer(&head, &host.repo_dir("central")))
+        .expect("call central_submit");
+
+    shell.command(&format!("git clone {}", &host.remote_url("modules/module_new")));
+
+    let module_new = helpers::TestRepo::new(&td.path().join("module_new"));
+
+    assert!(module_new.has_file("added_new"));
 }
 
 #[test]

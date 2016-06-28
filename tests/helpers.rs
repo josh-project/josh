@@ -5,6 +5,7 @@ extern crate tempdir;
 use centralgithook::migrate;
 use std::path::{Path, PathBuf};
 use tempdir::TempDir;
+use centralgithook::migrate::RepoHost;
 
 pub struct TestHost
 {
@@ -20,9 +21,28 @@ impl TestHost
 
     pub fn repo_dir(&self, module: &str) -> PathBuf
     {
-        self.td.path().join(&Path::new(module))
+        self.td.path().join(module).with_extension("git")
     }
 }
+
+#[test]
+fn test_test_host()
+{
+    let host = TestHost::new();
+    assert_eq!(0, host.projects().len());
+
+    host.create_project("module_a");
+    let mut projects = host.projects();
+    projects.sort();
+    assert_eq!(vec!["module_a"], projects);
+
+    host.create_project("modules/module_b");
+    let mut projects = host.projects();
+    projects.sort();
+    assert_eq!(2, projects.len());
+    assert_eq!(vec!["module_a", "modules/module_b"], projects);
+}
+
 
 impl migrate::RepoHost for TestHost
 {
@@ -37,7 +57,12 @@ impl migrate::RepoHost for TestHost
 
     fn remote_url(&self, module_path: &str) -> String
     {
-        self.td.path().join(&module_path).to_string_lossy().to_string()
+        self.td.path().join(&module_path).with_extension("git").to_string_lossy().to_string()
+    }
+
+    fn projects(&self) -> Vec<String>
+    {
+        migrate::find_repos(self.td.path(), self.td.path(), vec![])
     }
 }
 

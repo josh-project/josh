@@ -61,6 +61,12 @@ impl migrate::RepoHost for Gerrit
                 GERRIT_PORT,
                 module_path)
     }
+
+    fn projects(&self) -> Vec<String>
+    {
+        let path = self.path.join("git");
+        migrate::find_repos(&path, &path, vec![])
+    }
 }
 
 fn main()
