@@ -55,7 +55,6 @@ fn test_test_host()
 
 impl migrate::RepoHost for TestHost
 {
-
     fn remote_url(&self, module_path: &str) -> String
     {
         self.td.path().join(&module_path).with_extension("git").to_string_lossy().to_string()

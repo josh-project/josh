@@ -91,20 +91,22 @@ impl<'a> Scratch<'a>
 
     // takes everything from base except it's tree and replaces it with the tree
     // given
-    fn rewrite(&self, base: &Commit, parents: &[&Commit], tree: &Tree) -> Result<Oid, Error>
+    fn rewrite(&self, base: &Commit, parents: &[&Commit], tree: &Tree) -> Oid
     {
         if parents.len() != 0 {
-            try!(self.repo.set_head_detached(parents[0].id()));
+            self.repo.set_head_detached(parents[0].id()).expect("rewrite: can't detach head");
         }
-        self.repo.commit(Some("HEAD"),
-                         &base.author(),
-                         &base.committer(),
-                         &base.message().unwrap_or("no message"),
-                         tree,
-                         parents)
+        self.repo
+            .commit(Some("HEAD"),
+                    &base.author(),
+                    &base.committer(),
+                    &base.message().unwrap_or("no message"),
+                    tree,
+                    parents)
+            .expect("rewrite: can't commit")
     }
 
-    fn push(&self, oid: Oid, module: &str, target: &str) -> String
+    pub fn push(&self, oid: Oid, module: &str, target: &str) -> String
     {
         let commit = &self.repo.find_commit(oid).expect("can't find commit");
         self.repo.set_head_detached(commit.id()).expect("can't detach HEAD");
@@ -124,30 +126,32 @@ impl<'a> Scratch<'a>
         }
     }
 
-    fn replace_child(&self, child: &Path, subtree: Oid, full_tree: Tree) -> Result<Tree, Error>
+    fn replace_child(&self, child: &Path, subtree: Oid, full_tree: Tree) -> Tree
     {
         let full_tree_id = {
-            let mut builder = try!(self.repo.treebuilder(Some(&full_tree)));
-            try!(builder.insert(child, subtree, 0o0040000)); // GIT_FILEMODE_TREE
-            try!(builder.write())
+            let mut builder = self.repo
+                .treebuilder(Some(&full_tree))
+                .expect("replace_child: can't create treebuilder");
+            builder.insert(child, subtree, 0o0040000) // GIT_FILEMODE_TREE
+                .expect("replace_child: can't insert tree");
+            builder.write().expect("replace_child: can't write tree")
         };
-        let full_tree = try!(self.repo.find_tree(full_tree_id));
-        Ok(full_tree)
+        return self.repo.find_tree(full_tree_id).expect("replace_child: can't find new tree");
     }
 
-    fn replace_subtree(&self, path: &Path, subtree: Oid, full_tree: Tree) -> Result<Tree, Error>
+    fn replace_subtree(&self, path: &Path, subtree: Oid, full_tree: Tree) -> Tree
     {
         if path.components().count() == 1 {
-            Ok(try!(self.replace_child(path, subtree, full_tree)))
+            return self.replace_child(path, subtree, full_tree);
         }
         else {
             let name = Path::new(path.file_name().expect("no module name"));
             let path = path.parent().expect("module not in subdir");
 
             let st = self.subtree(&full_tree, path).unwrap();
-            let tree = try!(self.replace_child(name, subtree, st));
+            let tree = self.replace_child(name, subtree, st);
 
-            Ok(try!(self.replace_subtree(path, tree.id(), full_tree)))
+            return self.replace_subtree(path, tree.id(), full_tree);
         }
     }
 
@@ -160,9 +164,8 @@ impl<'a> Scratch<'a>
 
         self.repo.set_head_detached(newrev).expect("can't detatch head");;
 
-        let o = self.call_git(&format!("filter-branch --subdirectory-filter {}/ -- HEAD", module))
+        self.call_git(&format!("filter-branch --subdirectory-filter {}/ -- HEAD", module))
             .expect("error in filter-branch");
-        println!("filter-branch: {}",o);
 
         return self.repo
             .revparse_single("HEAD")
@@ -170,80 +173,101 @@ impl<'a> Scratch<'a>
     }
 }
 
-pub fn module_review_upload(scratch: &Scratch, newrev: Object, module: &str) -> Result<(), Error>
+pub enum ReviewUploadResult
+{
+    Uploaded(Oid),
+    RejectNoFF,
+    RejectMerge,
+    NoChanges,
+    Central,
+}
+
+pub fn review_upload(scratch: &Scratch, newrev: Object, module: &str) -> ReviewUploadResult
 {
     debug!(".\n\n==== Doing review upload for module {}", &module);
 
     let new = newrev.id();
     let old = scratch.tracking(&module, "master").expect("no tracking branch 1").id();
 
-    if !try!(scratch.repo.graph_descendant_of(new, old)) {
-        println!(".");
-        println!("==============================================================================");
-        println!("================ Commit not based on master, rebase first! ===================");
-        println!("==============================================================================");
-        return Ok(());
+    if old == new {
+        return ReviewUploadResult::NoChanges;
     }
 
+    match scratch.repo.graph_descendant_of(new, old) {
+        Err(_) => return ReviewUploadResult::RejectNoFF,
+        Ok(false) => return ReviewUploadResult::RejectNoFF,
+        Ok(true) => (),
+    }
+
+    debug!("==== walking commits from {} to {}", old, new);
+
     let walk = {
-        let mut walk = try!(scratch.repo.revwalk());
+        let mut walk = scratch.repo.revwalk().expect("walk: can't create revwalk");
         walk.set_sorting(SORT_REVERSE | SORT_TIME);
-        try!(walk.push_range(&format!("{}..{}", old, new)));
+        let range = format!("{}..{}", old, new);
+        walk.push_range(&range).expect(&format!("walk: invalid range: {}", range));;
         walk
     };
 
-    debug!("==== Rewriting commits from {} to {}", old, new);
-
-    let mut current_oid =
+    let mut current =
         scratch.tracking(scratch.host.central(), "master").expect("no central tracking").id();
 
     for rev in walk {
-        let currev = format!("{}", try!(rev));
-        let oldrev = format!("{}", old);
-        if oldrev == currev {
+        let rev = rev.expect("walk: invalid rev");
+        if old == rev {
             continue;
         }
-        debug!("==== Rewriting commit {}", currev);
 
-        let module_commit_obj = try!(scratch.repo.revparse_single(&currev));
-        let module_commit = try!(module_commit_obj.as_commit()
-            .ok_or(Error::from_str("object is not actually a commit")));
-        let module_tree = try!(module_commit.tree());
+        debug!("==== walking commit {}", rev);
 
-        let parent_commit = try!(scratch.repo.find_commit(current_oid));
+        let module_commit = scratch.repo
+            .find_commit(rev)
+            .expect("walk: object is not actually a commit");
 
-        let new_tree = try!(scratch.replace_subtree(Path::new(module),
-                                                    module_tree.id(),
-                                                    try!(parent_commit.tree())));
+        if module_commit.parents().count() > 1 {
+            // TODO: also do this check on pushes to cenral refs/for/master
+            // TODO: invectigate the possibility of allowing merge commits
+            return ReviewUploadResult::RejectMerge;
+        }
 
-        current_oid = try!(scratch.rewrite(module_commit, &vec![&parent_commit], &new_tree));
+        if module != scratch.host.central() {
+            debug!("==== Rewriting commit {}", rev);
+
+            let tree = module_commit.tree().expect("walk: commit has no tree");
+            let parent =
+                scratch.repo.find_commit(current).expect("walk: current object is no commit");
+
+            let new_tree = scratch.replace_subtree(Path::new(module),
+                                                   tree.id(),
+                                                   parent.tree()
+                                                       .expect("walk: parent has no tree"));
+
+            current = scratch.rewrite(&module_commit, &vec![&parent], &new_tree);
+        }
     }
 
-    println!("");
-    println!("");
-    println!("====================== Doing actual upload in central git ========================");
 
-    println!("{}",
-             scratch.push(current_oid, scratch.host.central(), "refs/for/master"));
-
-    println!("==== The review upload may have worked, even if it says error below. Look UP! ====");
-    Ok(())
+    if module != scratch.host.central() {
+        return ReviewUploadResult::Uploaded(current);
+    }
+    else {
+        return ReviewUploadResult::Central;
+    }
 }
 
 pub fn project_created(scratch: &Scratch)
 {
     if let Some(rev) = scratch.tracking(scratch.host.central(), "master") {
-        central_submit(scratch, rev).expect("error calling central_submit");
+        central_submit(scratch, rev);
     }
 }
 
-pub fn central_submit(scratch: &Scratch, newrev: Object) -> Result<(), Error>
+pub fn central_submit(scratch: &Scratch, newrev: Object)
 {
     debug!(" ---> central_submit (sha1 of commit: {})", &newrev.id());
 
-    let central_commit = try!(newrev.as_commit()
-        .ok_or(Error::from_str("could not get commit from obj")));
-    let central_tree = try!(central_commit.tree());
+    let central_commit = newrev.as_commit().expect("could not get commit from obj");
+    let central_tree = central_commit.tree().expect("commit has no tree");
 
     for module in scratch.host.projects() {
         if module == scratch.host.central() {
@@ -287,16 +311,16 @@ pub fn central_submit(scratch: &Scratch, newrev: Object) -> Result<(), Error>
 
         // if sha1's are equal the content is equal
         if new_tree_id != old_tree_id && !new_tree_id.is_zero() {
-            let new_tree = try!(scratch.repo.find_tree(new_tree_id));
+            let new_tree = scratch.repo.find_tree(new_tree_id).expect("central_submit: can't find tree");
             debug!("====    commit changes module => make commit on module");
-            let module_commit = try!(scratch.rewrite(central_commit, &parents, &new_tree));
-            println!("{}", scratch.push(module_commit, &module, "master"));
+            let module_commit = scratch.rewrite(central_commit, &parents, &new_tree);
+            let output = scratch.push(module_commit, &module, "master");
+            debug!("{}",output);
         }
         else {
             debug!("====    commit does not change module => skipping");
         }
     }
-    Ok(())
 }
 
 pub fn find_repos(root: &Path, path: &Path, mut repos: Vec<String>) -> Vec<String>
@@ -330,6 +354,7 @@ impl Shell
 {
     pub fn command(&self, cmd: &str) -> String
     {
+        debug!("Shell::command: {}", cmd);
         let output = Command::new("sh")
             .current_dir(&self.cwd)
             .arg("-c")
