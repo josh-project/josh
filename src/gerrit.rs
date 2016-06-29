@@ -31,9 +31,8 @@ impl Gerrit
         }
 
         let path = p.to_path_buf();
-        let p = p.join("git");
 
-        let prefix = root.strip_prefix(&p).unwrap().to_path_buf();
+        let prefix = root.strip_prefix(&path.join("git")).unwrap().to_path_buf();
 
         println!("Gerrit prefix: {:?}", prefix);
 
@@ -51,12 +50,8 @@ impl RepoHost for Gerrit
 {
     fn fetch_url(&self, module_path: &str) -> String
     {
-        if let Some(root) = self.path.as_os_str().to_str() {
-            format!("{}/git/{}{}.git", root, self.prefix, module_path)
-        }
-        else {
-            self.remote_url(module_path)
-        }
+        let root = self.path.as_os_str().to_str().expect("fetch_url: to_str failed");
+        format!("{}/git/{}{}.git", root, self.prefix, module_path)
     }
 
     fn remote_url(&self, module_path: &str) -> String

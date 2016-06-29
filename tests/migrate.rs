@@ -267,6 +267,45 @@ fn test_module_review_upload_rejects_merges()
 }
 
 #[test]
+fn test_module_review_upload_rejects_non_fast_forward()
+{
+    let host = helpers::TestHost::new();
+    let TestSetup { td, central, scratch, shell } = TestSetup::new(&host);
+
+    central.add_file("modules/module_a/initial_a");
+    let head = central.commit("initial");
+
+    central.shell.command("git push origin master:master");
+    migrate::central_submit(&scratch, scratch.transfer(&head, &host.repo_dir("central")));
+
+    shell.command(&format!("git clone {}", &host.remote_url("modules/module_a")));
+    let module_a = helpers::TestRepo::new(&td.path().join("module_a"));
+
+    module_a.shell.command("git checkout -b tmp");
+    module_a.add_file("added_tmp");
+    module_a.commit("on_branch_tmp");
+
+    module_a.shell.command("git checkout master");
+    module_a.add_file("added_master");
+
+    module_a.commit("on_branch_master");
+
+    module_a.shell.command("git push origin master:master");
+    module_a.shell.command("git push origin tmp:refs/for/tmp");
+
+    let head = module_a.rev("tmp");
+
+    if let ReviewUploadResult::RejectNoFF =
+           migrate::review_upload(&scratch,
+                                  scratch.transfer(&head, &host.repo_dir("modules/module_a")),
+                                  "modules/module_a") {
+    }
+    else { assert!(false); }
+
+    module_a.rev("for/master");
+}
+
+#[test]
 fn test_central_review_upload_rejects_merges()
 {
     let host = helpers::TestHost::new();
