@@ -2,10 +2,11 @@ extern crate centralgithook;
 extern crate git2;
 extern crate tempdir;
 
-use centralgithook::migrate;
+use centralgithook::gerrit;
 use std::path::{Path, PathBuf};
 use tempdir::TempDir;
-use centralgithook::migrate::RepoHost;
+use centralgithook::scratch::RepoHost;
+use centralgithook::shell::Shell;
 
 pub struct TestHost
 {
@@ -53,7 +54,7 @@ fn test_test_host()
 }
 
 
-impl migrate::RepoHost for TestHost
+impl RepoHost for TestHost
 {
     fn remote_url(&self, module_path: &str) -> String
     {
@@ -62,7 +63,7 @@ impl migrate::RepoHost for TestHost
 
     fn projects(&self) -> Vec<String>
     {
-        migrate::find_repos(self.td.path(), self.td.path(), vec![])
+        gerrit::find_repos(self.td.path(), self.td.path(), vec![])
     }
 
     fn central(&self) -> &str { "central" }
@@ -72,7 +73,7 @@ pub struct TestRepo
 {
     pub repo: git2::Repository,
     pub path: PathBuf,
-    pub shell: migrate::Shell,
+    pub shell: Shell,
 }
 
 impl TestRepo
@@ -82,7 +83,7 @@ impl TestRepo
         let tr = TestRepo {
             repo: git2::Repository::init(path).expect("init should succeed"),
             path: path.to_path_buf(),
-            shell: migrate::Shell { cwd: path.to_path_buf() },
+            shell: Shell { cwd: path.to_path_buf() },
         };
         tr.shell.command("git config user.name test");
         tr.shell.command("git config user.email test@test.com");

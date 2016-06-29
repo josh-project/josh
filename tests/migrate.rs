@@ -6,17 +6,20 @@ extern crate env_logger;
 
 mod helpers;
 
-use centralgithook::migrate::RepoHost;
+use centralgithook::scratch::RepoHost;
+use centralgithook::scratch::Scratch;
+use centralgithook::shell::Shell;
 use centralgithook::migrate;
 use centralgithook::migrate::ReviewUploadResult;
 use tempdir::TempDir;
+
 
 struct TestSetup<'a>
 {
     td: TempDir,
     central: helpers::TestRepo,
-    scratch: migrate::Scratch<'a>,
-    shell: migrate::Shell,
+    scratch: Scratch<'a>,
+    shell: Shell,
 }
 
 impl<'a> TestSetup<'a>
@@ -30,8 +33,8 @@ impl<'a> TestSetup<'a>
         env_logger::init().ok();
         let td = TempDir::new("cgh_test").expect("folder cgh_test should be created");
         let central = helpers::TestRepo::new(&td.path().join("central"));
-        let scratch = migrate::Scratch::new(&td.path().join("scratch"), host);
-        let shell = migrate::Shell { cwd: td.path().to_path_buf() };
+        let scratch = Scratch::new(&td.path().join("scratch"), host);
+        let shell = Shell { cwd: td.path().to_path_buf() };
 
         host.create_project("central");
         central.shell.command(&format!("git remote add origin {}", &host.remote_url("central")));
