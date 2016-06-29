@@ -17,9 +17,9 @@ pub struct Gerrit
 
 impl Gerrit
 {
-    pub fn new(git_dir: &str, central_name: &str, automation_user: &str, port: &str) -> Self
+    pub fn new(git_dir: &Path, central_name: &str, automation_user: &str, port: &str) -> Self
     {
-        let mut p = Path::new(&git_dir);
+        let mut p = git_dir;
         while !p.join(&format!("{}.git", central_name)).exists() {
             p = p.parent().expect("can't find gerrit git root");
         }
@@ -32,10 +32,6 @@ impl Gerrit
 
         let path = p.to_path_buf();
         let p = p.join("git");
-
-        println!("Gerrit path: {:?}", path);
-        println!("Gerrit root: {:?}", root);
-        println!("Gerrit p: {:?}", p);
 
         let prefix = root.strip_prefix(&p).unwrap().to_path_buf();
 
@@ -93,10 +89,9 @@ pub fn find_repos(root: &Path, path: &Path, mut repos: Vec<String>) -> Vec<Strin
             let name = format!("{}", &path.to_str().unwrap());
             if let Some(last) = path.extension() {
                 if last == "git" {
-                    repos.push(name.trim_right_matches(".git")
-                        .trim_left_matches(root.to_str().unwrap())
-                        .trim_left_matches("/")
-                        .to_string());
+                    let from = root.to_str().unwrap().len();
+                    let name = &name.as_str()[from..name.len()-4].trim_left_matches("/");
+                    repos.push(name.to_string());
                     continue;
                 }
             }
