@@ -1,6 +1,7 @@
 extern crate centralgithook;
 extern crate git2;
 extern crate clap;
+extern crate env_logger;
 
 use std::env;
 use std::process::exit;
@@ -12,12 +13,12 @@ use centralgithook::migrate::ReviewUploadResult;
 
 const GERRIT_PORT: &'static str = "29418";
 const AUTOMATION_USER: &'static str = "automation";
-// const MODULE_PATH_PREFIX: &'static str = "bsw";
 const CENTRAL_NAME: &'static str = "central";
 
 struct Gerrit
 {
     path: PathBuf,
+    prefix: String,
 }
 
 impl Gerrit
@@ -26,12 +27,30 @@ impl Gerrit
     {
         let git_dir = env::var("GIT_DIR").expect("GIT_DIR not set");
         let mut p = Path::new(&git_dir);
+        while !p.join(&format!("{}.git",CENTRAL_NAME)).exists() {
+            p = p.parent().expect("can't find gerrit git root");
+        }
+
+        let root = p.to_path_buf();
+
         while !p.join("bin").join("gerrit.sh").exists() {
             p = p.parent().expect("can't find gerrit root");
         }
 
-        Gerrit { path: p.to_path_buf() }
+        let path = p.to_path_buf();
+        let p = p.join("git");
+
+        println!("Gerrit path: {:?}", path);
+        println!("Gerrit root: {:?}", root);
+        println!("Gerrit p: {:?}", p);
+
+        let prefix = root.strip_prefix(&p).unwrap().to_path_buf();
+
+        println!("Gerrit prefix: {:?}", prefix);
+
+        Gerrit { path: path, prefix: format!("{}/",prefix.as_os_str().to_str().unwrap()) }
     }
+
 }
 
 impl migrate::RepoHost for Gerrit
@@ -39,7 +58,7 @@ impl migrate::RepoHost for Gerrit
     fn fetch_url(&self, module_path: &str) -> String
     {
         if let Some(root) = self.path.as_os_str().to_str() {
-            format!("{}/git/{}.git", root, module_path)
+            format!("{}/git/{}{}.git", root, self.prefix, module_path)
         }
         else {
             self.remote_url(module_path)
@@ -48,26 +67,29 @@ impl migrate::RepoHost for Gerrit
 
     fn remote_url(&self, module_path: &str) -> String
     {
-        format!("ssh://{}@gerrit-test-git:{}/{}",
+        format!("ssh://{}@gerrit-test-git:{}/{}{}.git",
                 AUTOMATION_USER,
                 GERRIT_PORT,
+                self.prefix,
                 module_path)
     }
 
     fn projects(&self) -> Vec<String>
     {
-        let path = self.path.join("git");
+        let path = self.path.join("git").join(&self.prefix);
         migrate::find_repos(&path, &path, vec![])
     }
 
     fn central(&self) -> &str
     {
-        "central"
+        CENTRAL_NAME
     }
 }
 
 fn main()
 {
+    ::std::env::set_var("RUST_LOG","centralgithook=debug");
+    env_logger::init().expect("can't init logger");
     exit(main_ret());
 }
 
@@ -96,7 +118,11 @@ fn main_ret() -> i32
     let project = args.value_of("project").unwrap_or("");
     let refname = args.value_of("refname").unwrap_or("");
 
+
     let gerrit = Gerrit::new();
+
+    let (_, project) = project.split_at(gerrit.prefix.len());
+    println!("PJECT: {}", project);
 
     if let Some(hook) = env::args().nth(0) {
 
@@ -107,13 +133,16 @@ fn main_ret() -> i32
         let is_project_created = hook.ends_with("project-created");
 
         let is_review = is_update && refname == "refs/for/master";
-        let is_module = project != CENTRAL_NAME;
-        let is_initial = oldrev == "0000000000000000000000000000000000000000";
+        let is_module = project != format!("{}{}", gerrit.prefix, gerrit.central());
+        let is_initial = !is_module && oldrev == "0000000000000000000000000000000000000000";
 
         let uploader = args.value_of("uploader").unwrap_or("");
-        if !is_initial && is_update && !is_review && !uploader.contains("Automation") {
-            println!("==== uploader: {}", uploader);
-            println!("==== only push to refs/for/master");
+        if is_update && !is_review && !uploader.contains("Automation") {
+            println!(".");
+            // debug!("==== uploader: {}", uploader);
+            println!("===================================================================");
+            println!("================= Do not push directly to master! =================");
+            println!("===================================================================");
             return 1;
         }
 
