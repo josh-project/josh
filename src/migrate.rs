@@ -110,9 +110,10 @@ impl<'a> Scratch<'a>
     {
         let commit = &self.repo.find_commit(oid).expect("can't find commit");
         self.repo.set_head_detached(commit.id()).expect("can't detach HEAD");
+        let cmd = format!("push {} HEAD:{}", self.host.remote_url(module), target);
         let output =
-            self.call_git(&format!("push {} HEAD:{}", self.host.remote_url(module), target))
-                .expect("can't push");
+            self.call_git(&cmd) .expect("can't push");
+        debug!("push: {}\n{}", cmd, output);
         format!("{}", output)
     }
 
@@ -284,7 +285,8 @@ pub fn central_submit(scratch: &Scratch, newrev: Object)
                 debug!("====    initializing with subdir history");
                 let commit = scratch.split_subdir(&module, newrev.id());
                 scratch.push(commit.id(), &module, "refs/heads/master");
-                scratch.tracking(&module, "master").expect("no tracking branch 3")
+                scratch.tracking(&module, "master")
+                    .expect(&format!("no tracking branch for module: {}",module))
             }
         };
 
