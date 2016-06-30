@@ -6,18 +6,7 @@ use git2::*;
 use std::process::Command;
 use std::path::Path;
 use shell::Shell;
-
-pub trait RepoHost
-{
-    fn central(&self) -> &str;
-    fn projects(&self) -> Vec<String>;
-
-    fn remote_url(&self, &str) -> String;
-    fn fetch_url(&self, module: &str) -> String
-    {
-        self.remote_url(module)
-    }
-}
+use super::RepoHost;
 
 
 pub struct Scratch<'a>

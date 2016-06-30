@@ -4,7 +4,7 @@ extern crate env_logger;
 
 use std::path::Path;
 use std::path::PathBuf;
-use scratch::RepoHost;
+use super::RepoHost;
 
 pub struct Gerrit
 {

@@ -6,12 +6,12 @@ extern crate env_logger;
 
 mod helpers;
 
-use centralgithook::scratch::RepoHost;
-use centralgithook::scratch::Scratch;
-use centralgithook::shell::Shell;
-use centralgithook::hooks;
-use centralgithook::hooks::GerritHooks;
-use centralgithook::hooks::ReviewUploadResult;
+use centralgithook::RepoHost;
+use centralgithook::Scratch;
+use centralgithook::Shell;
+use centralgithook::Hooks;
+use centralgithook::GerritHooks;
+use centralgithook::ReviewUploadResult;
 use tempdir::TempDir;
 
 
@@ -21,7 +21,7 @@ struct TestSetup<'a>
     central: helpers::TestRepo,
     scratch: Scratch<'a>,
     shell: Shell,
-    hooks: hooks::Hooks,
+    hooks: Hooks,
 }
 
 impl<'a> TestSetup<'a>
@@ -41,7 +41,7 @@ impl<'a> TestSetup<'a>
         host.create_project("central");
         central.shell.command(&format!("git remote add origin {}", &host.remote_url("central")));
 
-        let hooks = hooks::Hooks;
+        let hooks = Hooks;
 
         return TestSetup {
             td: td,

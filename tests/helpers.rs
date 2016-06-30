@@ -2,11 +2,11 @@ extern crate centralgithook;
 extern crate git2;
 extern crate tempdir;
 
-use centralgithook::gerrit;
+use centralgithook::find_repos;
 use std::path::{Path, PathBuf};
 use tempdir::TempDir;
-use centralgithook::scratch::RepoHost;
-use centralgithook::shell::Shell;
+use centralgithook::RepoHost;
+use centralgithook::Shell;
 
 pub struct TestHost
 {
@@ -63,7 +63,7 @@ impl RepoHost for TestHost
 
     fn projects(&self) -> Vec<String>
     {
-        gerrit::find_repos(self.td.path(), self.td.path(), vec![])
+        find_repos(self.td.path(), self.td.path(), vec![])
     }
 
     fn central(&self) -> &str

@@ -3,22 +3,9 @@ extern crate git2;
 use git2::*;
 use std::path::Path;
 use scratch::Scratch;
+use super::GerritHooks;
+use super::ReviewUploadResult;
 
-pub enum ReviewUploadResult
-{
-    Uploaded(Oid),
-    RejectNoFF,
-    RejectMerge,
-    NoChanges,
-    Central,
-}
-
-pub trait GerritHooks
-{
-    fn review_upload(&self, scratch: &Scratch, newrev: Object, module: &str) -> ReviewUploadResult;
-    fn project_created(&self, scratch: &Scratch);
-    fn central_submit(&self, scratch: &Scratch, newrev: Object);
-}
 
 pub struct Hooks;
 

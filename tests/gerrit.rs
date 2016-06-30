@@ -6,9 +6,9 @@ extern crate env_logger;
 
 // mod helpers;
 
-use centralgithook::scratch::RepoHost;
-use centralgithook::gerrit::Gerrit;
-use centralgithook::shell::Shell;
+use centralgithook::RepoHost;
+use centralgithook::Gerrit;
+use centralgithook::Shell;
 use tempdir::TempDir;
 
 fn sorted(mut v: Vec<String>) -> Vec<String>
