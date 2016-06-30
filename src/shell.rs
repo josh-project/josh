@@ -18,7 +18,7 @@ impl Shell
             .arg("-c")
             .arg(&cmd)
             .output()
-            .unwrap_or_else(|e| panic!("failed to execute process: {}", e));
+            .unwrap_or_else(|e| panic!("failed to execute process: {}\n{}",cmd, e));
 
         return String::from_utf8(output.stdout).expect("failed to decode utf8").trim().to_string();
     }

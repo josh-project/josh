@@ -28,7 +28,7 @@ impl<'a> Scratch<'a>
     pub fn tracking(&self, module: &str, branch: &str) -> Option<Object>
     {
         let remote_name = format!("{}", module);
-        let fetch_url = self.host.fetch_url(&module);
+        let fetch_url = self.host.local_path(&module);
         let mut remote = if let Ok(remote) = self.repo.find_remote(&remote_name) {
             remote
         }

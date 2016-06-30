@@ -8,8 +8,8 @@ use super::RepoHost;
 
 pub struct Gerrit
 {
-    pub path: PathBuf,
-    pub prefix: String,
+    path: PathBuf,
+    prefix: String,
     central_name: String,
     automation_user: String,
     port: String,
@@ -17,7 +17,11 @@ pub struct Gerrit
 
 impl Gerrit
 {
-    pub fn new(git_dir: &Path, central_name: &str, automation_user: &str, port: &str) -> Self
+    pub fn new(git_dir: &Path,
+               central_name: &str,
+               automation_user: &str,
+               port: &str)
+        -> (PathBuf, Self)
     {
         let mut root = PathBuf::new();
 
@@ -35,21 +39,22 @@ impl Gerrit
 
         println!("Gerrit prefix: {:?}", prefix);
 
-        Gerrit {
+        (path.clone(),
+         Gerrit {
             path: path,
             prefix: format!("{}/", prefix.as_os_str().to_str().unwrap()),
             central_name: central_name.to_string(),
             automation_user: automation_user.to_string(),
             port: port.to_string(),
-        }
+        })
     }
 }
 
 impl RepoHost for Gerrit
 {
-    fn fetch_url(&self, module_path: &str) -> String
+    fn local_path(&self, module_path: &str) -> String
     {
-        let root = self.path.as_os_str().to_str().expect("fetch_url: to_str failed");
+        let root = self.path.as_os_str().to_str().expect("local_path: to_str failed");
         format!("{}/git/{}{}.git", root, self.prefix, module_path)
     }
 
@@ -72,6 +77,12 @@ impl RepoHost for Gerrit
     {
         &self.central_name
     }
+
+    fn prefix(&self) -> &str
+    {
+        &self.prefix
+    }
+
 }
 
 pub fn find_repos(root: &Path, path: &Path, mut repos: Vec<String>) -> Vec<String>
