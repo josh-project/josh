@@ -32,6 +32,22 @@ fn test_gerrit()
 }
 
 #[test]
+fn test_gerrit_takes_topmost_central()
+{
+    let td = TempDir::new("gerrit_test").expect("folder gerrit_test should be created");
+    let shell = Shell { cwd: td.path().to_path_buf() };
+    shell.command("mkdir -p bin/gerrit.sh");
+
+    shell.command("mkdir -p git/bsw/central.git");
+    shell.command("mkdir -p git/bsw/bla/central.git");
+    let gerrit = Gerrit::new(&td.path().join("git/bsw/bla/central.git"),
+                             "central",
+                             "auto",
+                             "123");
+    assert_eq!(vec!["bla/central", "central"], gerrit.projects());
+}
+
+#[test]
 fn test_gerrit_sufix_stripping()
 {
     let td = TempDir::new("gerrit_test").expect("folder gerrit_test should be created");

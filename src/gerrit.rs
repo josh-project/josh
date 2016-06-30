@@ -19,14 +19,13 @@ impl Gerrit
 {
     pub fn new(git_dir: &Path, central_name: &str, automation_user: &str, port: &str) -> Self
     {
+        let mut root = PathBuf::new();
+
         let mut p = git_dir;
-        while !p.join(&format!("{}.git", central_name)).exists() {
-            p = p.parent().expect("can't find gerrit git root");
-        }
-
-        let root = p.to_path_buf();
-
         while !p.join("bin").join("gerrit.sh").exists() {
+            if p.join(&format!("{}.git", central_name)).exists() {
+                root = p.to_path_buf();
+            }
             p = p.parent().expect("can't find gerrit root");
         }
 
