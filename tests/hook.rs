@@ -101,4 +101,13 @@ fn test_hook()
     ], &hooks, &host, &scratch));
 
     assert_eq!(hooks.called(), format!("review_upload(_,{},module)", head));
+
+    assert_eq!(0,dispatch(vec![
+        format!("change-merged"),
+        format!("--refname"), format!("refs/for/master"),
+        format!("--commit"), format!("{}",head),
+        format!("--project"), format!("central"),
+    ], &hooks, &host, &scratch));
+
+    assert_eq!(hooks.called(), format!("central_submit(_,{})", head));
 }
