@@ -6,10 +6,11 @@ extern crate env_logger;
 use std::env;
 use std::process::exit;
 use std::path::Path;
-use centralgithook::migrate;
+use centralgithook::hooks;
 use centralgithook::scratch::RepoHost;
 use centralgithook::scratch::Scratch;
-use centralgithook::migrate::ReviewUploadResult;
+use centralgithook::hooks::ReviewUploadResult;
+use centralgithook::hooks::GerritHooks;
 use centralgithook::gerrit::Gerrit;
 
 const GERRIT_PORT: &'static str = "29418";
@@ -40,7 +41,7 @@ fn main_ret() -> i32
         .arg(clap::Arg::with_name("submitter").long("submitter").takes_value(true))
         .arg(clap::Arg::with_name("topic").long("topic").takes_value(true))
         .arg(clap::Arg::with_name("uploader").long("uploader").takes_value(true))
-        .get_matches();
+        .get_matches_from(env::args());
 
     let commit = args.value_of("commit").unwrap_or("");
     let newrev = args.value_of("newrev").unwrap_or("");
@@ -82,19 +83,18 @@ fn main_ret() -> i32
 
         let scratch_dir = gerrit.path.join("centralgithook_scratch");
         let scratch = Scratch::new(&scratch_dir, &gerrit);
+        let hooks = hooks::Hooks;
         if is_submit {
             // submit to central
-            migrate::central_submit(&scratch, scratch.transfer(commit, &Path::new(".")));
+            hooks.central_submit(&scratch, scratch.transfer(commit, &Path::new(".")));
         }
         else if is_project_created {
-            migrate::project_created(&scratch);
+            hooks.project_created(&scratch);
             println!("==== project_created");
         }
         else if is_review {
             // module was pushed, get changes to central
-            match migrate::review_upload(&scratch,
-                                         scratch.transfer(newrev, Path::new(".")),
-                                         project) {
+            match hooks.review_upload(&scratch, scratch.transfer(newrev, Path::new(".")), project) {
                 ReviewUploadResult::RejectNoFF => {
                     println!(".");
                     println!("===================================================================");
@@ -125,7 +125,7 @@ fn main_ret() -> i32
             // direct push to master-branch of central
             if is_initial {
                 println!(".\n\n##### INITIAL IMPORT ######");
-                migrate::central_submit(&scratch, scratch.transfer(newrev, &Path::new(".")));
+                hooks.central_submit(&scratch, scratch.transfer(newrev, &Path::new(".")));
                 return 0;
             }
             else {
