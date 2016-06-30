@@ -54,7 +54,7 @@ pub fn dispatch(pargs: Vec<String>, hooks: &Hooks, host: &RepoHost, scratch: &Sc
     let is_initial = !is_module && oldrev == "0000000000000000000000000000000000000000";
 
     let uploader = args.value_of("uploader").unwrap_or("");
-    if is_update && !is_review && !uploader.contains("Automation") {
+    if is_update && !is_review && !uploader.contains("Automation") { // FIXME: hardcoded
         println!(".");
         // debug!("==== uploader: {}", uploader);
         println!("{} {} {}", is_update, is_review, uploader.contains("Automation"));
@@ -100,14 +100,6 @@ pub fn dispatch(pargs: Vec<String>, hooks: &Hooks, host: &RepoHost, scratch: &Sc
 
         // stop host from allowing push to module directly
         return 1;
-    }
-    else if !is_module && is_update && !is_review {
-        // direct push to master-branch of central
-        if is_initial {
-            println!(".\n\n##### INITIAL IMPORT ######");
-            hooks.central_submit(&scratch, scratch.transfer(newrev, &this_project));
-            return 0;
-        }
     }
     return 0;
 }
