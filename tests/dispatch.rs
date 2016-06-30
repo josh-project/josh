@@ -27,10 +27,12 @@ impl MockHooks
         }
     }
 
-    fn called(&self) -> &str
+    fn called(&self) -> String
     {
         unsafe {
-            &*self.called.get()
+            let s = format!("{}",&*self.called.get());
+            (*self.called.get()).clear();
+            s
         }
     }
 }
@@ -59,7 +61,7 @@ impl Hooks for MockHooks
 }
 
 #[test]
-fn test_hook()
+fn test_dispatch()
 {
     let host = helpers::TestHost::new();
     let td = TempDir::new("cgh_test").expect("folder cgh_test should be created");
@@ -101,6 +103,44 @@ fn test_hook()
     ], &hooks, &host, &scratch));
 
     assert_eq!(hooks.called(), format!("review_upload(_,{},module)", head));
+
+    assert_eq!(1,dispatch(vec![
+        format!("ref-update"),
+        format!("--refname"), format!("master"),
+        format!("--uploader"), format!("someone"),
+        format!("--newrev"), format!("{}",head),
+        format!("--project"), format!("module"),
+    ], &hooks, &host, &scratch));
+
+    assert_eq!(hooks.called(), format!(""));
+
+    assert_eq!(0,dispatch(vec![
+        format!("ref-update"),
+        format!("--refname"), format!("master"),
+        format!("--uploader"), format!("Automation"),
+        format!("--newrev"), format!("{}",head),
+        format!("--project"), format!("module"),
+    ], &hooks, &host, &scratch));
+
+    assert_eq!(1,dispatch(vec![
+        format!("ref-update"),
+        format!("--refname"), format!("master"),
+        format!("--uploader"), format!("someone"),
+        format!("--newrev"), format!("{}",head),
+        format!("--project"), format!("central"),
+    ], &hooks, &host, &scratch));
+
+    assert_eq!(hooks.called(), format!(""));
+
+    assert_eq!(0,dispatch(vec![
+        format!("ref-update"),
+        format!("--refname"), format!("master"),
+        format!("--uploader"), format!("Automation"),
+        format!("--newrev"), format!("{}",head),
+        format!("--project"), format!("central"),
+    ], &hooks, &host, &scratch));
+
+    assert_eq!(hooks.called(), format!(""));
 
     assert_eq!(0,dispatch(vec![
         format!("change-merged"),

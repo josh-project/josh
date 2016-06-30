@@ -108,12 +108,6 @@ pub fn dispatch(pargs: Vec<String>, hooks: &Hooks, host: &RepoHost, scratch: &Sc
             hooks.central_submit(&scratch, scratch.transfer(newrev, &this_project));
             return 0;
         }
-        else {
-            println!(".\n\n###########################################");
-            println!("##### INITIAL IMPORT already happened #####");
-            println!("###########################################");
-            return 1;
-        }
     }
     return 0;
 }
