@@ -16,6 +16,7 @@ pub use shell::Shell;
 pub use centralgit::CentralGit;
 pub use dispatch::dispatch;
 
+#[derive(Clone)]
 pub enum ReviewUploadResult
 {
     Uploaded(git2::Oid),

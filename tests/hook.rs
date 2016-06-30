@@ -11,12 +11,13 @@ use tempdir::TempDir;
 struct MockHooks
 {
     called: UnsafeCell<String>,
+    review_upload_return: ReviewUploadResult,
 }
 
 
 impl MockHooks
 {
-    fn new() -> Self { MockHooks { called: UnsafeCell::new(String::new()) }}
+    fn new() -> Self { MockHooks { called: UnsafeCell::new(String::new()) , review_upload_return: ReviewUploadResult::Central}}
 
     fn set_called(&self, s: &str)
     {
@@ -43,7 +44,7 @@ impl Hooks for MockHooks
         -> ReviewUploadResult
     {
         self.set_called(&format!("review_upload(_,{},{})", newrev.id(), module));
-        ReviewUploadResult::Central
+        self.review_upload_return.clone()
     }
 
     fn project_created(&self, _scratch: &Scratch)
@@ -63,21 +64,41 @@ fn test_hook()
     let host = helpers::TestHost::new();
     let td = TempDir::new("cgh_test").expect("folder cgh_test should be created");
     let scratch = Scratch::new(&td.path().join("scratch"), &host);
-    let hooks = MockHooks::new();
+    let mut hooks = MockHooks::new();
+
     host.create_project("central");
     let central = helpers::TestRepo::new(&td.path().join("central"));
     central.add_file("foo_module_a/initial_a");
     let head = central.commit("on_branch_tmp");
-
     central.shell.command(&format!("git remote add origin {}", &host.remote_url("central")));
     central.shell.command("git push origin master");
 
-    dispatch(vec![
+    hooks.review_upload_return = ReviewUploadResult::Central;
+
+    assert_eq!(0,dispatch(vec![
         format!("ref-update"),
         format!("--refname"), format!("refs/for/master"),
         format!("--newrev"), format!("{}",head),
         format!("--project"), format!("central"),
-    ], &hooks, &host, &scratch);
+    ], &hooks, &host, &scratch));
 
     assert_eq!(hooks.called(), format!("review_upload(_,{},central)", head));
+
+    host.create_project("module");
+    let module = helpers::TestRepo::new(&td.path().join("module"));
+    module.add_file("foo_module_a/initial_a");
+    let head = module.commit("on_branch_tmp");
+    module.shell.command(&format!("git remote add origin {}", &host.remote_url("module")));
+    module.shell.command("git push origin master");
+
+    hooks.review_upload_return = ReviewUploadResult::Uploaded(git2::Oid::from_str(&head).unwrap());
+
+    assert_eq!(1,dispatch(vec![
+        format!("ref-update"),
+        format!("--refname"), format!("refs/for/master"),
+        format!("--newrev"), format!("{}",head),
+        format!("--project"), format!("module"),
+    ], &hooks, &host, &scratch));
+
+    assert_eq!(hooks.called(), format!("review_upload(_,{},module)", head));
 }
