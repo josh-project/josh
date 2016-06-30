@@ -50,7 +50,10 @@ fn main_ret() -> i32
 
 
     let git_dir = env::var("GIT_DIR").expect("GIT_DIR not set");
-    let gerrit = Gerrit::new(&Path::new(&git_dir), CENTRAL_NAME, AUTOMATION_USER, GERRIT_PORT);
+    let gerrit = Gerrit::new(&Path::new(&git_dir),
+                             CENTRAL_NAME,
+                             AUTOMATION_USER,
+                             GERRIT_PORT);
 
     let (_, project) = project.split_at(gerrit.prefix.len());
     println!("PJECT: {}", project);

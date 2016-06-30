@@ -11,7 +11,11 @@ use centralgithook::gerrit::Gerrit;
 use centralgithook::shell::Shell;
 use tempdir::TempDir;
 
-fn sorted(mut v: Vec<String>) -> Vec<String> { v.sort(); v }
+fn sorted(mut v: Vec<String>) -> Vec<String>
+{
+    v.sort();
+    v
+}
 
 #[test]
 fn test_gerrit()
@@ -27,8 +31,10 @@ fn test_gerrit()
                              "123");
     assert_eq!("central", gerrit.central());
     assert_eq!(vec!["central"], gerrit.projects());
-    assert_eq!(td.path().join("git/bsw/central.git").to_str().unwrap(), gerrit.fetch_url("central"));
-    assert_eq!("ssh://auto@gerrit-test-git:123/bsw/central.git", gerrit.remote_url("central"));
+    assert_eq!(td.path().join("git/bsw/central.git").to_str().unwrap(),
+               gerrit.fetch_url("central"));
+    assert_eq!("ssh://auto@gerrit-test-git:123/bsw/central.git",
+               gerrit.remote_url("central"));
 }
 
 #[test]

@@ -66,7 +66,10 @@ impl RepoHost for TestHost
         gerrit::find_repos(self.td.path(), self.td.path(), vec![])
     }
 
-    fn central(&self) -> &str { "central" }
+    fn central(&self) -> &str
+    {
+        "central"
+    }
 }
 
 pub struct TestRepo

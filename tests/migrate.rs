@@ -205,7 +205,7 @@ fn test_add_module_empty_on_host()
 fn test_central_review_upload()
 {
     let host = helpers::TestHost::new();
-    let TestSetup { td: _td , central, scratch, shell: _ } = TestSetup::new(&host);
+    let TestSetup { td: _td, central, scratch, shell: _ } = TestSetup::new(&host);
 
     central.add_file("modules/module_a/initial_a");
     let head = central.commit("initial");
@@ -217,12 +217,14 @@ fn test_central_review_upload()
     let head = central.commit("add_addmit");
     central.shell.command("git push origin master:refs/for/master");
 
-    if let ReviewUploadResult::Central =
-           migrate::review_upload(&scratch,
-                                  scratch.transfer(&head, &central.path),
-                                  "central") {
+    if let ReviewUploadResult::Central = migrate::review_upload(&scratch,
+                                                                scratch.transfer(&head,
+                                                                                 &central.path),
+                                                                "central") {
     }
-    else { assert!(false); }
+    else {
+        assert!(false);
+    }
 
     central.rev("for/master");
 }
@@ -261,7 +263,9 @@ fn test_module_review_upload_rejects_merges()
                                   scratch.transfer(&head, &host.repo_dir("modules/module_a")),
                                   "modules/module_a") {
     }
-    else { assert!(false); }
+    else {
+        assert!(false);
+    }
 
     module_a.rev("for/master");
 }
@@ -300,7 +304,9 @@ fn test_module_review_upload_rejects_non_fast_forward()
                                   scratch.transfer(&head, &host.repo_dir("modules/module_a")),
                                   "modules/module_a") {
     }
-    else { assert!(false); }
+    else {
+        assert!(false);
+    }
 
     module_a.rev("for/master");
 }
@@ -309,7 +315,7 @@ fn test_module_review_upload_rejects_non_fast_forward()
 fn test_central_review_upload_rejects_merges()
 {
     let host = helpers::TestHost::new();
-    let TestSetup { td:_td , central, scratch, shell: _ } = TestSetup::new(&host);
+    let TestSetup { td: _td, central, scratch, shell: _ } = TestSetup::new(&host);
 
     central.add_file("modules/module_a/initial_a");
     let head = central.commit("initial");
@@ -336,7 +342,9 @@ fn test_central_review_upload_rejects_merges()
                                   scratch.transfer(&head, &host.repo_dir("central")),
                                   "central") {
     }
-    else { assert!(false); }
+    else {
+        assert!(false);
+    }
 
     central.rev("for/master");
 }
@@ -366,7 +374,9 @@ fn test_module_review_upload()
                                   "modules/module_a") {
         scratch.push(oid, host.central(), "refs/for/master");
     }
-    else { assert!(false); }
+    else {
+        assert!(false);
+    }
 
     central.shell.command("git fetch origin for/master:for/master");
     let for_master = central.rev("for/master");
@@ -411,7 +421,9 @@ fn test_module_review_upload_1_level()
                                   "foo_module_a") {
         scratch.push(oid, host.central(), "refs/for/master");
     }
-    else { assert!(false); }
+    else {
+        assert!(false);
+    }
 
     central.shell.command("git fetch origin for/master:for/master");
     let for_master = central.rev("for/master");
@@ -456,7 +468,9 @@ fn test_module_review_upload_4_levels()
                                   "foo/modules/bla/module_a") {
         scratch.push(oid, host.central(), "refs/for/master");
     }
-    else { assert!(false); }
+    else {
+        assert!(false);
+    }
 
     central.shell.command("git fetch origin for/master:for/master");
     let for_master = central.rev("for/master");

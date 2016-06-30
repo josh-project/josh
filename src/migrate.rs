@@ -156,4 +156,3 @@ pub fn central_submit(scratch: &Scratch, newrev: Object)
         }
     }
 }
-

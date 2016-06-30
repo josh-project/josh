@@ -84,7 +84,7 @@ pub fn find_repos(root: &Path, path: &Path, mut repos: Vec<String>) -> Vec<Strin
             if let Some(last) = path.extension() {
                 if last == "git" {
                     let from = root.to_str().unwrap().len();
-                    let name = &name.as_str()[from..name.len()-4].trim_left_matches("/");
+                    let name = &name.as_str()[from..name.len() - 4].trim_left_matches("/");
                     repos.push(name.to_string());
                     continue;
                 }
