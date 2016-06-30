@@ -6,11 +6,11 @@ extern crate env_logger;
 use std::env;
 use std::process::exit;
 use std::path::Path;
-use centralgithook::Hooks;
+use centralgithook::CentralGit;
 use centralgithook::RepoHost;
 use centralgithook::Scratch;
 use centralgithook::ReviewUploadResult;
-use centralgithook::GerritHooks;
+use centralgithook::Hooks;
 use centralgithook::Gerrit;
 
 const GERRIT_PORT: &'static str = "29418";
@@ -83,7 +83,7 @@ fn main_ret() -> i32
 
         let scratch_dir = gerrit.path.join("centralgithook_scratch");
         let scratch = Scratch::new(&scratch_dir, &gerrit);
-        let hooks = Hooks;
+        let hooks = CentralGit;
         if is_submit {
             // submit to central
             hooks.central_submit(&scratch, scratch.transfer(commit, &Path::new(".")));

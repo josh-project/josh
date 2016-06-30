@@ -9,8 +9,8 @@ mod helpers;
 use centralgithook::RepoHost;
 use centralgithook::Scratch;
 use centralgithook::Shell;
+use centralgithook::CentralGit;
 use centralgithook::Hooks;
-use centralgithook::GerritHooks;
 use centralgithook::ReviewUploadResult;
 use tempdir::TempDir;
 
@@ -21,7 +21,7 @@ struct TestSetup<'a>
     central: helpers::TestRepo,
     scratch: Scratch<'a>,
     shell: Shell,
-    hooks: Hooks,
+    hooks: CentralGit,
 }
 
 impl<'a> TestSetup<'a>
@@ -41,7 +41,7 @@ impl<'a> TestSetup<'a>
         host.create_project("central");
         central.shell.command(&format!("git remote add origin {}", &host.remote_url("central")));
 
-        let hooks = Hooks;
+        let hooks = CentralGit;
 
         return TestSetup {
             td: td,

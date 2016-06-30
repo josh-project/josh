@@ -3,7 +3,7 @@ extern crate tempdir;
 #[macro_use]
 extern crate log;
 
-mod hooks;
+mod centralgit;
 mod scratch;
 mod shell;
 mod gerrit;
@@ -12,7 +12,7 @@ pub use scratch::Scratch;
 pub use gerrit::Gerrit;
 pub use gerrit::find_repos;
 pub use shell::Shell;
-pub use hooks::Hooks;
+pub use centralgit::CentralGit;
 
 pub enum ReviewUploadResult
 {
@@ -23,7 +23,7 @@ pub enum ReviewUploadResult
     Central,
 }
 
-pub trait GerritHooks
+pub trait Hooks
 {
     fn review_upload(&self, scratch: &Scratch, newrev: git2::Object, module: &str) -> ReviewUploadResult;
     fn project_created(&self, scratch: &Scratch);

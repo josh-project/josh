@@ -3,13 +3,12 @@ extern crate git2;
 use git2::*;
 use std::path::Path;
 use scratch::Scratch;
-use super::GerritHooks;
+use super::Hooks;
 use super::ReviewUploadResult;
 
+pub struct CentralGit;
 
-pub struct Hooks;
-
-impl GerritHooks for Hooks
+impl Hooks for CentralGit
 {
     fn review_upload(&self, scratch: &Scratch, newrev: Object, module: &str) -> ReviewUploadResult
     {
