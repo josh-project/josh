@@ -50,7 +50,7 @@ fn test_gerrit_takes_topmost_central()
                              "central",
                              "auto",
                              "123");
-    assert_eq!(vec!["bla/central", "central"], gerrit.projects());
+    assert_eq!(vec!["bla/central", "central"], sorted(gerrit.projects()));
 }
 
 #[test]
