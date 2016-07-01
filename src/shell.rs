@@ -20,6 +20,10 @@ impl Shell
             .output()
             .unwrap_or_else(|e| panic!("failed to execute process: {}\n{}",cmd, e));
 
-        return String::from_utf8(output.stdout).expect("failed to decode utf8").trim().to_string();
+        let stdout = String::from_utf8(output.stdout).expect("failed to decode utf8").trim().to_string();
+        let stderr = String::from_utf8(output.stderr).expect("failed to decode utf8").trim().to_string();
+        debug!("stdout: {}", &stdout);
+        debug!("stderr: {}", &stderr);
+        return stdout;
     }
 }
