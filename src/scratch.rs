@@ -161,4 +161,19 @@ impl<'a> Scratch<'a>
             .revparse_single("HEAD")
             .expect("can't find rewritten branch");
     }
+
+    pub fn find_all_subdirs(&self, tree: &Tree) -> Vec<String>
+    {
+        let mut sd = vec![];
+        for item in tree {
+            if let Ok(st) = self.repo.find_tree(item.id()) {
+                let name = item.name().unwrap();
+                sd.push(name.to_string());
+                for r in self.find_all_subdirs(&st) {
+                    sd.push(format!("{}/{}",name,r));
+                }
+            }
+        }
+        return sd;
+    }
 }
