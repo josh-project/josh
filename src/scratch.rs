@@ -168,9 +168,11 @@ impl<'a> Scratch<'a>
         for item in tree {
             if let Ok(st) = self.repo.find_tree(item.id()) {
                 let name = item.name().unwrap();
-                sd.push(name.to_string());
-                for r in self.find_all_subdirs(&st) {
-                    sd.push(format!("{}/{}",name,r));
+                if !name.starts_with("."){
+                    sd.push(name.to_string());
+                    for r in self.find_all_subdirs(&st) {
+                        sd.push(format!("{}/{}",name,r));
+                    }
                 }
             }
         }

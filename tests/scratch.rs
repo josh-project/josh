@@ -43,4 +43,15 @@ fn test_find_all_subtrees()
         format!("a/b/c/d"),
         format!("bla"),
     ], sorted(subdirs));
+
+    repo.add_file("a/b/c/.bla/foo");
+    let head = scratch.transfer(&repo.commit("2"), &repo.path);
+    let subdirs = scratch.find_all_subdirs(&head.as_commit().unwrap().tree().unwrap());
+    assert_eq!(vec![
+        format!("a"),
+        format!("a/b"),
+        format!("a/b/c"),
+        format!("a/b/c/d"),
+        format!("bla"),
+    ], sorted(subdirs));
 }
