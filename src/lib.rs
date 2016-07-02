@@ -29,7 +29,8 @@ pub enum ReviewUploadResult
 pub trait Hooks
 {
     fn review_upload(&self, scratch: &Scratch, newrev: git2::Object, module: &str) -> ReviewUploadResult;
-    fn project_created(&self, scratch: &Scratch);
+    fn project_created(&self, scratch: &Scratch, project: &str);
+    fn pre_create_project(&self, scratch: &Scratch, rev: git2::Oid, project: &str);
     fn central_submit(&self, scratch: &Scratch, newrev: git2::Object);
 }
 

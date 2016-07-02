@@ -28,6 +28,8 @@ impl<'a> TestSetup<'a>
 {
     fn new(host: &'a helpers::TestHost) -> Self
     {
+        let hooks = CentralGit;
+
         host.create_project("modules/module_a");
         host.create_project("modules/module_b");
         host.create_project("modules/module_c");
@@ -36,12 +38,12 @@ impl<'a> TestSetup<'a>
         let td = TempDir::new("cgh_test").expect("folder cgh_test should be created");
         let central = helpers::TestRepo::new(&td.path().join("central"));
         let scratch = Scratch::new(&td.path().join("scratch"), host);
+
+
         let shell = Shell { cwd: td.path().to_path_buf() };
 
         host.create_project("central");
         central.shell.command(&format!("git remote add origin {}", &host.remote_url("central")));
-
-        let hooks = CentralGit;
 
         return TestSetup {
             td: td,
@@ -93,7 +95,7 @@ fn test_create_project()
     assert!(module_a.has_file("initial_a"));
 
     host.create_project("modules");
-    hooks.project_created(&scratch);
+    hooks.project_created(&scratch,"modules");
 
     shell.command(&format!("git clone {}", &host.remote_url("modules")));
     let modules = helpers::TestRepo::new(&td.path().join("modules"));
@@ -173,7 +175,6 @@ fn test_remove_module_dir()
 
     central.shell.command("rm -Rf modules/module_a");
     central.shell.command("git add .");
-    println!("{}", central.shell.command("git status"));
     let head = central.commit("remove a");
 
     central.shell.command("git push origin master");
@@ -189,9 +190,6 @@ fn test_add_module_empty_on_host()
     central.add_file("modules/module_new/initial_a");
     let head = central.commit("initial");
 
-    central.shell.command("git push origin master");
-    hooks.central_submit(&scratch, scratch.transfer(&head, &host.repo_dir("central")));
-
     central.add_file("modules/module_new/added_new");
     let head = central.commit("add_new");
 
@@ -203,7 +201,12 @@ fn test_add_module_empty_on_host()
 
     let module_new = helpers::TestRepo::new(&td.path().join("module_new"));
 
+    assert!(module_new.has_file("initial_a"));
     assert!(module_new.has_file("added_new"));
+
+    module_new.shell.command("git checkout master~1");
+    assert!(!module_new.has_file("added_new"));
+    assert!(module_new.has_file("initial_a"));
 }
 
 #[test]

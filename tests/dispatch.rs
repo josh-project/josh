@@ -49,9 +49,14 @@ impl Hooks for MockHooks
         self.review_upload_return.clone()
     }
 
-    fn project_created(&self, _scratch: &Scratch)
+    fn pre_create_project(&self, _scratch: &Scratch, rev: git2::Oid, project: &str)
     {
-        self.set_called(&format!("project_created(_)"));
+        self.set_called(&format!("pre_create_project(_,{})",project));
+    }
+
+    fn project_created(&self, _scratch: &Scratch, project: &str)
+    {
+        self.set_called(&format!("project_created(_,{})",project));
     }
 
     fn central_submit(&self, _scratch: &Scratch, newrev: git2::Object)
@@ -132,7 +137,7 @@ fn test_dispatch()
 
     assert_eq!(hooks.called(), format!(""));
 
-    assert_eq!(0,dispatch(vec![
+    assert_eq!(1,dispatch(vec![
         format!("ref-update"),
         format!("--refname"), format!("master"),
         format!("--uploader"), format!("Automation"),
@@ -143,6 +148,17 @@ fn test_dispatch()
     assert_eq!(hooks.called(), format!(""));
 
     assert_eq!(0,dispatch(vec![
+        format!("ref-update"),
+        format!("--refname"), format!("master"),
+        format!("--uploader"), format!("Automation"),
+        format!("--newrev"), format!("{}",head),
+        format!("--oldrev"), format!("0000000000000000000000000000000000000000"),
+        format!("--project"), format!("central"),
+    ], &hooks, &host, &scratch));
+
+    assert_eq!(hooks.called(), format!("central_submit(_,{})", head));
+
+    assert_eq!(0,dispatch(vec![
         format!("change-merged"),
         format!("--refname"), format!("refs/for/master"),
         format!("--commit"), format!("{}",head),
@@ -150,4 +166,11 @@ fn test_dispatch()
     ], &hooks, &host, &scratch));
 
     assert_eq!(hooks.called(), format!("central_submit(_,{})", head));
+
+    assert_eq!(0,dispatch(vec![
+        format!("project-created"),
+        format!("--project"), format!("central"),
+    ], &hooks, &host, &scratch));
+
+    assert_eq!(hooks.called(), format!("project_created(_,central)"));
 }

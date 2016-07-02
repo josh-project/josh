@@ -5,8 +5,10 @@ use std::path::Path;
 use scratch::Scratch;
 use super::Hooks;
 use super::ReviewUploadResult;
+use scratch::module_ref;
 
 pub struct CentralGit;
+
 
 impl Hooks for CentralGit
 {
@@ -83,7 +85,21 @@ impl Hooks for CentralGit
         }
     }
 
-    fn project_created(&self, scratch: &Scratch)
+    fn pre_create_project(&self, scratch: &Scratch, rev: Oid, project: &str)
+    {
+        if let Ok(_) = scratch.repo.revparse_single(&module_ref(project)) {}
+        else {
+                let commit = scratch.split_subdir(&project, rev);
+                scratch.repo
+                    .reference(&module_ref(project),
+                               commit.id(),
+                               true,
+                               "subtree_split")
+                    .expect("can't create reference");
+            }
+    }
+
+    fn project_created(&self, scratch: &Scratch, _project: &str)
     {
         if let Some(rev) = scratch.tracking(scratch.host.central(), "master") {
             self.central_submit(scratch, rev);
@@ -103,19 +119,21 @@ impl Hooks for CentralGit
             }
             debug!("");
             debug!("==== fetching tracking branch for module: {}", &module);
-            let module_master_commit_obj = match scratch.tracking(&module, "master") {
-                Some(obj) => obj,
+            match scratch.tracking(&module, "master") {
+                Some(_) => (),
                 None => {
                     debug!("====    no tracking branch for module {} => project does not exist \
                             or is empty",
                            &module);
                     debug!("====    initializing with subdir history");
-                    let commit = scratch.split_subdir(&module, newrev.id());
-                    scratch.push(commit.id(), &module, "refs/heads/master");
-                    scratch.tracking(&module, "master")
-                        .expect(&format!("no tracking branch for module: {}", module))
+
+                    self.pre_create_project(scratch, newrev.id(), &module);
                 }
             };
+
+            let module_master_commit_obj = scratch.repo
+                .revparse_single(&module_ref(&module))
+                .expect("can't get module_ref");
 
             let parents = vec![module_master_commit_obj.as_commit()
                                    .expect("could not get commit from obj")];
@@ -144,11 +162,22 @@ impl Hooks for CentralGit
                     scratch.repo.find_tree(new_tree_id).expect("central_submit: can't find tree");
                 debug!("====    commit changes module => make commit on module");
                 let module_commit = scratch.rewrite(central_commit, &parents, &new_tree);
-                let output = scratch.push(module_commit, &module, "master");
-                debug!("{}", output);
+                scratch.repo
+                    .reference(&module_ref(&module),
+                               module_commit,
+                               true,
+                               "rewrite")
+                    .expect("can't create reference");
             }
             else {
                 debug!("====    commit does not change module => skipping");
+            }
+        }
+
+        for module in scratch.host.projects() {
+            if let Ok(module_commit) = scratch.repo.revparse_single(&module_ref(&module)) {
+                let output = scratch.push(module_commit.id(), &module, "refs/heads/master");
+                debug!("{}", output);
             }
         }
     }

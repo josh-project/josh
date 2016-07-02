@@ -28,8 +28,6 @@ pub fn dispatch(pargs: Vec<String>, hooks: &Hooks, host: &RepoHost, scratch: &Sc
         .arg(clap::Arg::with_name("uploader").long("uploader").takes_value(true))
         .get_matches_from(&pargs);
 
-    let commit = args.value_of("commit").unwrap_or("");
-    let newrev = args.value_of("newrev").unwrap_or("");
     let oldrev = args.value_of("oldrev").unwrap_or("");
     let project = args.value_of("project").unwrap_or("");
     let refname = args.value_of("refname").unwrap_or("");
@@ -37,6 +35,7 @@ pub fn dispatch(pargs: Vec<String>, hooks: &Hooks, host: &RepoHost, scratch: &Sc
 
 
     println!("PP {:?} {:?} {:?}",pargs, project, host.prefix());
+    let is_module = project != format!("{}{}", host.prefix(), host.central());
     let (_, project) = project.split_at(host.prefix().len());
     println!("PJECT: {}", project);
 
@@ -50,7 +49,6 @@ pub fn dispatch(pargs: Vec<String>, hooks: &Hooks, host: &RepoHost, scratch: &Sc
     let is_project_created = hook.ends_with("project-created");
 
     let is_review = is_update && refname == "refs/for/master";
-    let is_module = project != format!("{}{}", host.prefix(), host.central());
     let is_initial = !is_module && oldrev == "0000000000000000000000000000000000000000";
 
     let uploader = args.value_of("uploader").unwrap_or("");
@@ -66,14 +64,16 @@ pub fn dispatch(pargs: Vec<String>, hooks: &Hooks, host: &RepoHost, scratch: &Sc
 
     if is_submit {
         // submit to central
+        let commit = args.value_of("commit").unwrap_or("");
         hooks.central_submit(&scratch, scratch.transfer(commit, &this_project));
     }
     else if is_project_created {
-        hooks.project_created(&scratch);
+        hooks.project_created(&scratch, &project);
         println!("==== project_created");
     }
     else if is_review {
         // module was pushed, get changes to central
+        let newrev = args.value_of("newrev").unwrap_or("");
         match hooks.review_upload(&scratch, scratch.transfer(newrev, &this_project), project) {
             ReviewUploadResult::RejectNoFF => {
                 println!(".");
@@ -100,6 +100,22 @@ pub fn dispatch(pargs: Vec<String>, hooks: &Hooks, host: &RepoHost, scratch: &Sc
 
         // stop host from allowing push to module directly
         return 1;
+    }
+    else if !is_module && is_update && !is_review {
+        if is_initial {
+            println!(".\n\n##### INITIAL IMPORT ######");
+            let newrev = args.value_of("newrev").unwrap_or("");
+            // hooks.central_submit(&scratch, scratch.transfer(newrev, &this_project));
+            scratch.transfer(newrev, &this_project);
+            for module in scratch.find_all_subdirs(&scratch.repo.revparse_single(newrev).unwrap().as_commit().unwrap().tree().unwrap()) {
+                hooks.pre_create_project(&scratch,git2::Oid::from_str(newrev).unwrap(),&module);
+            }
+            return 0;
+        }
+        else {
+            println!(".\n\n##### INITIAL IMPORT ALREADY HAPPEND ######");
+            return 1;
+        }
     }
     return 0;
 }

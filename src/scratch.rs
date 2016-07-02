@@ -8,6 +8,7 @@ use std::path::Path;
 use shell::Shell;
 use super::RepoHost;
 
+pub fn module_ref(module: &str) -> String { format!("refs/centralgit/splited/{}/split",module) }
 
 pub struct Scratch<'a>
 {
@@ -40,10 +41,14 @@ impl<'a> Scratch<'a>
         };
 
         let rs = remote.get_refspec(0).unwrap().str().unwrap().to_string();
-        remote.fetch(&[&rs], None, None).expect("fetch failed");
-        return self.repo
-            .revparse_single(&format!("remotes/{}/{}", module, branch))
-            .ok();
+        if let Ok(_) = remote.fetch(&[&rs], None, None){
+            return self.repo
+                .revparse_single(&format!("remotes/{}/{}", module, branch))
+                .ok();
+        }
+        else {
+            return None;
+        }
     }
 
     fn call_git(self: &Scratch<'a>, cmd: &str) -> Result<String, Error>
