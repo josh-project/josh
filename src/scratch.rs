@@ -150,7 +150,7 @@ impl<'a> Scratch<'a>
         }
     }
 
-    pub fn split_subdir(&self, module: &str, newrev: Oid) -> Object
+    pub fn split_subdir(&self, module: &str, newrev: Oid) -> Oid
     {
         // TODO: implement using libgit
         let shell = Shell { cwd: self.repo.path().to_path_buf() };
@@ -164,7 +164,41 @@ impl<'a> Scratch<'a>
 
         return self.repo
             .revparse_single("HEAD")
-            .expect("can't find rewritten branch");
+            .expect("can't find rewritten branch").id();
+    }
+
+    pub fn split_subdir_new(&self, module: &str, newrev: Oid) -> Oid
+    {
+        let walk = {
+            let mut walk = self.repo.revwalk().expect("walk: can't create revwalk");
+            walk.set_sorting(SORT_REVERSE | SORT_TOPOLOGICAL);
+            walk.push(newrev).expect("walk.push");
+            walk
+        };
+
+        let mut prev = Oid::from_str("0000000000000000000000000000000000000000").unwrap();
+
+        for commit in walk {
+
+            let commit = self.repo.find_commit(commit.unwrap()).unwrap();
+            let tree = commit.tree().expect("commit has no tree");
+
+            let new_tree = if let Ok(tree_entry) = tree.get_path(&Path::new(&module)) {
+                self.repo.find_tree(tree_entry.id()).expect("central_submit: can't find tree")
+            }
+            else {
+                continue;
+            };
+
+            prev = if let Ok(prev_commit) = self.repo.find_commit(prev) {
+                self.rewrite(&commit, &vec![&prev_commit], &new_tree)
+            }
+            else {
+                self.rewrite(&commit, &vec![], &new_tree)
+            };
+        }
+
+        return prev;
     }
 
     pub fn find_all_subdirs(&self, tree: &Tree) -> Vec<String>

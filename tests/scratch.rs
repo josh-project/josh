@@ -55,3 +55,48 @@ fn test_find_all_subtrees()
         format!("bla"),
     ], sorted(subdirs));
 }
+
+fn split_subdir_ref(repo: &helpers::TestRepo, module: &str, newrev: git2::Oid) -> git2::Oid
+{
+    repo.shell.command("rm -Rf refs/original");
+    repo.shell.command("rm -Rf .git-rewrite");
+
+    repo.repo.set_head_detached(newrev).expect("can't detatch head");;
+
+    repo.shell.command(&format!("git filter-branch --subdirectory-filter {}/ -- HEAD", module));
+
+    return repo.repo
+        .revparse_single("HEAD")
+        .expect("can't find rewritten branch").id();
+}
+
+
+#[test]
+fn test_split_subdir_one_commit()
+{
+    let td = TempDir::new("cgh_test").expect("folder cgh_test should be created");
+    let host = helpers::TestHost::new();
+    let scratch = Scratch::new(&td.path().join("scratch"), &host);
+    let repo = helpers::TestRepo::new(&td.path().join("repo"));
+
+    repo.add_file("foo/bla");
+    let head = scratch.transfer(&repo.commit("1"), &repo.path);
+
+    assert_eq!(split_subdir_ref(&repo, "foo", head.id()), scratch.split_subdir_new("foo", head.id()));
+}
+
+#[test]
+fn test_split_subdir_two_commits()
+{
+    let td = TempDir::new("cgh_test").expect("folder cgh_test should be created");
+    let host = helpers::TestHost::new();
+    let scratch = Scratch::new(&td.path().join("scratch"), &host);
+    let repo = helpers::TestRepo::new(&td.path().join("repo"));
+
+    repo.add_file("foo/bla");
+    let head = scratch.transfer(&repo.commit("1"), &repo.path);
+    repo.add_file("foo/bla_bla");
+    let head = scratch.transfer(&repo.commit("1"), &repo.path);
+
+    assert_eq!(split_subdir_ref(&repo, "foo", head.id()), scratch.split_subdir_new("foo", head.id()));
+}

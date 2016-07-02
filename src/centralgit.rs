@@ -89,14 +89,11 @@ impl Hooks for CentralGit
     {
         if let Ok(_) = scratch.repo.revparse_single(&module_ref(project)) {}
         else {
-                let commit = scratch.split_subdir(&project, rev);
-                scratch.repo
-                    .reference(&module_ref(project),
-                               commit.id(),
-                               true,
-                               "subtree_split")
-                    .expect("can't create reference");
-            }
+            let commit = scratch.split_subdir(&project, rev);
+            scratch.repo
+                .reference(&module_ref(project), commit, true, "subtree_split")
+                .expect("can't create reference");
+        }
     }
 
     fn project_created(&self, scratch: &Scratch, _project: &str)
@@ -163,10 +160,7 @@ impl Hooks for CentralGit
                 debug!("====    commit changes module => make commit on module");
                 let module_commit = scratch.rewrite(central_commit, &parents, &new_tree);
                 scratch.repo
-                    .reference(&module_ref(&module),
-                               module_commit,
-                               true,
-                               "rewrite")
+                    .reference(&module_ref(&module), module_commit, true, "rewrite")
                     .expect("can't create reference");
             }
             else {
