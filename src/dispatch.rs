@@ -106,10 +106,7 @@ pub fn dispatch(pargs: Vec<String>, hooks: &Hooks, host: &RepoHost, scratch: &Sc
             println!(".\n\n##### INITIAL IMPORT ######");
             let newrev = args.value_of("newrev").unwrap_or("");
             // hooks.central_submit(&scratch, scratch.transfer(newrev, &this_project));
-            scratch.transfer(newrev, &this_project);
-            for module in scratch.find_all_subdirs(&scratch.repo.revparse_single(newrev).unwrap().as_commit().unwrap().tree().unwrap()) {
-                hooks.pre_create_project(&scratch,git2::Oid::from_str(newrev).unwrap(),&module);
-            }
+            hooks.central_submit(&scratch, scratch.transfer(newrev, &this_project));
             return 0;
         }
         else {
