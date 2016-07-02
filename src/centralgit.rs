@@ -33,7 +33,7 @@ impl Hooks for CentralGit
 
         let walk = {
             let mut walk = scratch.repo.revwalk().expect("walk: can't create revwalk");
-            walk.set_sorting(SORT_REVERSE | SORT_TIME);
+            walk.set_sorting(SORT_REVERSE | SORT_TOPOLOGICAL);
             let range = format!("{}..{}", old, new);
             walk.push_range(&range).expect(&format!("walk: invalid range: {}", range));;
             walk
