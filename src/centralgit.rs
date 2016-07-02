@@ -87,12 +87,13 @@ impl Hooks for CentralGit
 
     fn pre_create_project(&self, scratch: &Scratch, rev: Oid, project: &str)
     {
-        if let Ok(_) = scratch.repo.revparse_single(&module_ref(project)) {}
+        if let Ok(_) = scratch.repo.refname_to_id(&module_ref(project)) {}
         else {
-            let commit = scratch.split_subdir(&project, rev);
-            scratch.repo
-                .reference(&module_ref(project), commit, true, "subtree_split")
-                .expect("can't create reference");
+            if let Some(commit) = scratch.split_subdir(&project, rev) {
+                scratch.repo
+                    .reference(&module_ref(project), commit, true, "subtree_split")
+                    .expect("can't create reference");
+            }
         }
     }
 
@@ -128,9 +129,13 @@ impl Hooks for CentralGit
                 }
             };
 
-            let module_master_commit_obj = scratch.repo
-                .revparse_single(&module_ref(&module))
-                .expect("can't get module_ref");
+            let module_master_commit_obj = if let Ok(rev) = scratch.repo
+                .revparse_single(&module_ref(&module)){
+                rev
+            }
+            else {
+                continue;
+            };
 
             let parents = vec![module_master_commit_obj.as_commit()
                                    .expect("could not get commit from obj")];
@@ -169,8 +174,8 @@ impl Hooks for CentralGit
         }
 
         for module in scratch.host.projects() {
-            if let Ok(module_commit) = scratch.repo.revparse_single(&module_ref(&module)) {
-                let output = scratch.push(module_commit.id(), &module, "refs/heads/master");
+            if let Ok(module_commit) = scratch.repo.refname_to_id(&module_ref(&module)) {
+                let output = scratch.push(module_commit, &module, "refs/heads/master");
                 debug!("{}", output);
             }
         }

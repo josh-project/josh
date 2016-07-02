@@ -7,8 +7,12 @@ use std::process::Command;
 use std::path::Path;
 use shell::Shell;
 use super::RepoHost;
+use std::collections::HashMap;
 
-pub fn module_ref(module: &str) -> String { format!("refs/centralgit/splited/{}/split",module) }
+pub fn module_ref(module: &str) -> String
+{
+    format!("refs/centralgit/splited/{}/split", module)
+}
 
 pub struct Scratch<'a>
 {
@@ -41,7 +45,7 @@ impl<'a> Scratch<'a>
         };
 
         let rs = remote.get_refspec(0).unwrap().str().unwrap().to_string();
-        if let Ok(_) = remote.fetch(&[&rs], None, None){
+        if let Ok(_) = remote.fetch(&[&rs], None, None) {
             return self.repo
                 .revparse_single(&format!("remotes/{}/{}", module, branch))
                 .ok();
@@ -88,7 +92,10 @@ impl<'a> Scratch<'a>
     // given
     pub fn rewrite(&self, base: &Commit, parents: &[&Commit], tree: &Tree) -> Oid
     {
-        if parents.len() != 0 {
+        if parents.len() == 0 {
+            ::std::fs::remove_file(self.repo.path().join("HEAD")).expect("can't remove HEAD");
+        }
+        else {
             self.repo.set_head_detached(parents[0].id()).expect("rewrite: can't detach head");
         }
         self.repo
@@ -150,24 +157,7 @@ impl<'a> Scratch<'a>
         }
     }
 
-    pub fn split_subdir(&self, module: &str, newrev: Oid) -> Oid
-    {
-        // TODO: implement using libgit
-        let shell = Shell { cwd: self.repo.path().to_path_buf() };
-        shell.command("rm -Rf refs/original");
-        shell.command("rm -Rf .git-rewrite");
-
-        self.repo.set_head_detached(newrev).expect("can't detatch head");;
-
-        self.call_git(&format!("filter-branch --subdirectory-filter {}/ -- HEAD", module))
-            .expect("error in filter-branch");
-
-        return self.repo
-            .revparse_single("HEAD")
-            .expect("can't find rewritten branch").id();
-    }
-
-    pub fn split_subdir_new(&self, module: &str, newrev: Oid) -> Oid
+    pub fn split_subdir(&self, module: &str, newrev: Oid) -> Option<Oid>
     {
         let walk = {
             let mut walk = self.repo.revwalk().expect("walk: can't create revwalk");
@@ -176,10 +166,9 @@ impl<'a> Scratch<'a>
             walk
         };
 
-        let mut prev = Oid::from_str("0000000000000000000000000000000000000000").unwrap();
+        let mut map = HashMap::<Oid, Oid>::new();
 
-        for commit in walk {
-
+        'walk: for commit in walk {
             let commit = self.repo.find_commit(commit.unwrap()).unwrap();
             let tree = commit.tree().expect("commit has no tree");
 
@@ -190,15 +179,27 @@ impl<'a> Scratch<'a>
                 continue;
             };
 
-            prev = if let Ok(prev_commit) = self.repo.find_commit(prev) {
-                self.rewrite(&commit, &vec![&prev_commit], &new_tree)
+            let mut parents = vec![];
+            for parent in commit.parents() {
+                let parent = parent.id();
+                if let Some(&parent) = map.get(&parent) {
+
+                    let parent = self.repo.find_commit(parent).unwrap();
+                    if new_tree.id() == parent.tree().unwrap().id() {
+                        map.insert(commit.id(), parent.id());
+                        continue 'walk;
+                    }
+                    parents.push(parent);
+                }
             }
-            else {
-                self.rewrite(&commit, &vec![], &new_tree)
-            };
+
+            let mut p = vec![];
+            for parent in &parents { p.push(parent); }
+
+            map.insert(commit.id(), self.rewrite(&commit, &p, &new_tree));
         }
 
-        return prev;
+        return map.get(&newrev).map(|&id|{id});
     }
 
     pub fn find_all_subdirs(&self, tree: &Tree) -> Vec<String>
@@ -207,10 +208,10 @@ impl<'a> Scratch<'a>
         for item in tree {
             if let Ok(st) = self.repo.find_tree(item.id()) {
                 let name = item.name().unwrap();
-                if !name.starts_with("."){
+                if !name.starts_with(".") {
                     sd.push(name.to_string());
                     for r in self.find_all_subdirs(&st) {
-                        sd.push(format!("{}/{}",name,r));
+                        sd.push(format!("{}/{}", name, r));
                     }
                 }
             }
