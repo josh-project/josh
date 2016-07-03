@@ -187,17 +187,46 @@ impl<'a> Scratch<'a>
                                                                map.get(&parent2)) {
                         let parent1 = self.repo.find_commit(parent1).unwrap();
                         let parent2 = self.repo.find_commit(parent2).unwrap();
-                        if new_tree.id() == parent1.tree().unwrap().id() {
-                            map.insert(commit.id(), parent1.id());
+
+                        let new = new_tree.id();
+                        let p1 = parent1.tree().unwrap().id();
+                        let p2 = parent2.tree().unwrap().id();
+
+                        // if new != p1 && new != p2 {
+                        //     map.insert(commit.id(),
+                        //                self.rewrite(&commit, &[&parent1, &parent2], &new_tree));
+                        //     continue 'walk;
+                        // }
+
+                        // if new == p1 && new != p2 {
+                        //     map.insert(commit.id(),
+                        //                self.rewrite(&commit, &[&parent1, &parent2], &new_tree));
+                        //     continue 'walk;
+                        // }
+
+                        // if new != p1 && new == p2 {
+                            map.insert(commit.id(),
+                                       self.rewrite(&commit, &[&parent1, &parent2], &new_tree));
                             continue 'walk;
-                        }
-                        if new_tree.id() == parent2.tree().unwrap().id() {
-                            map.insert(commit.id(), parent2.id());
-                            continue 'walk;
-                        }
-                        map.insert(commit.id(),
-                                   self.rewrite(&commit, &[&parent1, &parent2], &new_tree));
-                        continue 'walk;
+                        // }
+
+                        // if new == p1 && new == p2 {
+                        //     map.insert(commit.id(),
+                        //                self.rewrite(&commit, &[&parent1, &parent2], &new_tree));
+                        //     continue 'walk;
+                        // }
+
+                        // if new_tree.id() == parent1.tree().unwrap().id() {
+                        //     map.insert(commit.id(), parent1.id());
+                        //     continue 'walk;
+                        // }
+                        // if new_tree.id() == parent2.tree().unwrap().id() {
+                        //     map.insert(commit.id(), parent2.id());
+                        //     continue 'walk;
+                        // }
+                        // map.insert(commit.id(),
+                        //            self.rewrite(&commit, &[&parent1, &parent2], &new_tree));
+                        // continue 'walk;
                     }
                 }
                 1 => {

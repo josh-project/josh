@@ -155,15 +155,148 @@ fn test_split_subdir_branch()
     let repo = helpers::TestRepo::new(&td.path().join("repo"));
 
     repo.add_file("foo/bla");
-    let _ = scratch.transfer(&repo.commit("1"), &repo.path);
+    let _ = scratch.transfer(&repo.commit("foo_on_master"), &repo.path);
     repo.shell.command("git checkout -b tmp");
     repo.add_file("foo/bla_bla");
-    let _ = scratch.transfer(&repo.commit("1"), &repo.path);
+    let _ = scratch.transfer(&repo.commit("foo_on_tmp"), &repo.path);
     repo.shell.command("git checkout master");
-    repo.shell.command("git merge tmp --no-ff");
-    println!("{}",repo.shell.command("git log"));
+    repo.shell.command("git merge tmp --no-ff -m foo_merge");
+
     let head = scratch.transfer(&repo.rev("HEAD"), &repo.path);
 
+    let actual = scratch.split_subdir("foo", head.id());
 
-    assert_eq!(split_subdir_ref(&repo, "foo", head.id()), scratch.split_subdir("foo", head.id()));
+    scratch.repo.reference("refs/heads/actual", actual.unwrap(), true, "x").expect("err 3");
+
+    let shell = Shell { cwd: scratch.repo.path().to_path_buf() };
+
+    // shell.command("gitk --all");
+    assert_eq!(fparents(&shell.command("git log --pretty=format:%s-@%p --topo-order")),
+               fparents(&repo.shell
+                   .command("git log --pretty=format:%s-@%p --topo-order --grep=foo_ ")));
+}
+
+#[test]
+fn test_split_subdir_branch_unrelated()
+{
+    let td = TempDir::new("cgh_test").expect("folder cgh_test should be created");
+    let host = helpers::TestHost::new();
+    let scratch = Scratch::new(&td.path().join("scratch"), &host);
+    let repo = helpers::TestRepo::new(&td.path().join("repo"));
+
+    repo.add_file("foo/bla");
+    let _ = scratch.transfer(&repo.commit("foo_on_master"), &repo.path);
+    repo.shell.command("git checkout -b tmp");
+    repo.add_file("foo/bla_bla");
+    let _ = scratch.transfer(&repo.commit("foo_on_tmp"), &repo.path);
+    repo.add_file("x/bla_bla");
+    let _ = scratch.transfer(&repo.commit("x_on_tmp"), &repo.path);
+    repo.shell.command("git checkout master");
+    repo.shell.command("git merge tmp --no-ff -m foo_merge");
+
+    let head = scratch.transfer(&repo.rev("HEAD"), &repo.path);
+
+    let actual = scratch.split_subdir("foo", head.id());
+
+    scratch.repo.reference("refs/heads/actual", actual.unwrap(), true, "x").expect("err 3");
+
+    let shell = Shell { cwd: scratch.repo.path().to_path_buf() };
+
+    // shell.command("gitk --all");
+    assert_eq!(fparents(&shell.command("git log --pretty=format:%s-@%p --topo-order")),
+               fparents(&repo.shell
+                   .command("git log --pretty=format:%s-@%p --topo-order --grep=foo_ ")));
+}
+
+#[test]
+fn test_split_merge_identical_to_first()
+{
+    let td = TempDir::new("cgh_test").expect("folder cgh_test should be created");
+    let host = helpers::TestHost::new();
+    let scratch = Scratch::new(&td.path().join("scratch"), &host);
+    let repo = helpers::TestRepo::new(&td.path().join("repo"));
+
+    repo.add_file("foo/initial");
+    let _ = scratch.transfer(&repo.commit("foo_initial_on_master"), &repo.path);
+
+    repo.shell.command("git branch tmp");
+
+    repo.shell.command("git checkout master");
+    repo.add_file("foo/bla");
+    let _ = scratch.transfer(&repo.commit("foo_second_on_master"), &repo.path);
+
+    repo.shell.command("git checkout tmp");
+    repo.add_file("foo/bla");
+    repo.add_file("foo/bla_bla");
+    let _ = scratch.transfer(&repo.commit("foo_second_on_tmp"), &repo.path);
+
+    repo.shell.command("git checkout master");
+    repo.shell.command("git merge tmp --no-ff -m foo_merge");
+
+    println!("{}", repo.shell.command("git log"));
+    let head = scratch.transfer(&repo.rev("HEAD"), &repo.path);
+
+    let actual = scratch.split_subdir("foo", head.id());
+
+    let shell = Shell { cwd: scratch.repo.path().to_path_buf() };
+    scratch.repo.reference("refs/heads/actual", actual.unwrap(), true, "x").expect("err 2");
+
+    // shell.command("gitk --all");
+    assert_eq!(fparents(&shell.command("git log --pretty=format:%s-@%p --topo-order")),
+               fparents(&repo.shell
+                   .command("git log --pretty=format:%s-@%p --topo-order --grep=foo_ ")));
+}
+
+fn fparents(s: &str) -> String
+{
+    let mut o = String::new();
+    for l in s.lines() {
+        let spl = l.split("@");
+        let m = spl.clone().nth(0).unwrap();
+        let p = spl.clone().nth(1).unwrap();
+        o.push_str(&format!("{}@{}\n",
+                            m,
+                            match p.len()/6 {
+                                2 => "merge",
+                                1 => "normal",
+                                _ => "orphan",
+                            }));
+    }
+
+    // println!("fparents:\n{}",o); assert!(false);
+
+    return o;
+}
+
+#[test]
+fn test_split_merge_identical_to_second()
+{
+    let td = TempDir::new("cgh_test").expect("folder cgh_test should be created");
+    let host = helpers::TestHost::new();
+    let scratch = Scratch::new(&td.path().join("scratch"), &host);
+    let repo = helpers::TestRepo::new(&td.path().join("repo"));
+
+    repo.add_file("foo/bla");
+    let _ = scratch.transfer(&repo.commit("foo_on_master"), &repo.path);
+
+    repo.shell.command("git checkout -b tmp");
+    repo.add_file("foo/bla_bla");
+    let _ = scratch.transfer(&repo.commit("foo_on_tmp"), &repo.path);
+
+    repo.shell.command("git checkout master");
+    repo.add_file("foo/bla_bla");
+    let _ = scratch.transfer(&repo.commit("foo_on_master_2"), &repo.path);
+    repo.shell.command("git merge tmp --no-ff -m foo_merge");
+    println!("{}", repo.shell.command("git log"));
+    let head = scratch.transfer(&repo.rev("HEAD"), &repo.path);
+
+    let actual = scratch.split_subdir("foo", head.id());
+
+    let shell = Shell { cwd: scratch.repo.path().to_path_buf() };
+    scratch.repo.reference("refs/heads/actual", actual.unwrap(), true, "x").expect("err 2");
+
+    // shell.command("gitk --all");
+    assert_eq!(fparents(&shell.command("git log --pretty=format:%s-@%p --topo-order")),
+               fparents(&repo.shell
+                   .command("git log --pretty=format:%s-@%p --topo-order --grep=foo_ ")));
 }
