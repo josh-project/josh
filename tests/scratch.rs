@@ -94,7 +94,7 @@ fn test_split_subdir_two_commits()
     let repo = helpers::TestRepo::new(&td.path().join("repo"));
 
     repo.add_file("foo/bla");
-    let head = scratch.transfer(&repo.commit("1"), &repo.path);
+    let _ = scratch.transfer(&repo.commit("1"), &repo.path);
     repo.add_file("foo/bla_bla");
     let head = scratch.transfer(&repo.commit("1"), &repo.path);
 
@@ -110,9 +110,9 @@ fn test_split_subdir_three_commits_middle_unrelated()
     let repo = helpers::TestRepo::new(&td.path().join("repo"));
 
     repo.add_file("foo/bla");
-    let head = scratch.transfer(&repo.commit("1"), &repo.path);
+    let _ = scratch.transfer(&repo.commit("1"), &repo.path);
     repo.add_file("x");
-    let head = scratch.transfer(&repo.commit("1"), &repo.path);
+    let _ = scratch.transfer(&repo.commit("1"), &repo.path);
     repo.add_file("foo/bla_bla");
     let head = scratch.transfer(&repo.commit("1"), &repo.path);
 
@@ -128,9 +128,9 @@ fn test_split_subdir_three_commits_first_unrelated()
     let repo = helpers::TestRepo::new(&td.path().join("repo"));
 
     repo.add_file("x");
-    let head = scratch.transfer(&repo.commit("1"), &repo.path);
+    let _ = scratch.transfer(&repo.commit("1"), &repo.path);
     repo.add_file("foo/bla");
-    let head = scratch.transfer(&repo.commit("1"), &repo.path);
+    let _ = scratch.transfer(&repo.commit("1"), &repo.path);
     repo.add_file("foo/bla_bla");
     let head = scratch.transfer(&repo.commit("1"), &repo.path);
 
@@ -146,10 +146,10 @@ fn test_split_subdir_branch()
     let repo = helpers::TestRepo::new(&td.path().join("repo"));
 
     repo.add_file("foo/bla");
-    let head = scratch.transfer(&repo.commit("1"), &repo.path);
+    let _ = scratch.transfer(&repo.commit("1"), &repo.path);
     repo.shell.command("git checkout -b tmp");
     repo.add_file("foo/bla_bla");
-    let head = scratch.transfer(&repo.commit("1"), &repo.path);
+    let _ = scratch.transfer(&repo.commit("1"), &repo.path);
     repo.shell.command("git checkout master");
     repo.shell.command("git merge tmp --no-ff");
     println!("{}",repo.shell.command("git log"));
