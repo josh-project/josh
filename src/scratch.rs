@@ -176,30 +176,49 @@ impl<'a> Scratch<'a>
                 self.repo.find_tree(tree_entry.id()).expect("central_submit: can't find tree")
             }
             else {
-                continue;
+                continue 'walk;
             };
 
-            let mut parents = vec![];
-            for parent in commit.parents() {
-                let parent = parent.id();
-                if let Some(&parent) = map.get(&parent) {
-
-                    let parent = self.repo.find_commit(parent).unwrap();
-                    if new_tree.id() == parent.tree().unwrap().id() {
-                        map.insert(commit.id(), parent.id());
+            match commit.parents().count() {
+                2 => {
+                    let parent1 = commit.parents().nth(0).unwrap().id();
+                    let parent2 = commit.parents().nth(1).unwrap().id();
+                    if let (Some(&parent1), Some(&parent2)) = (map.get(&parent1),
+                                                               map.get(&parent2)) {
+                        let parent1 = self.repo.find_commit(parent1).unwrap();
+                        let parent2 = self.repo.find_commit(parent2).unwrap();
+                        if new_tree.id() == parent1.tree().unwrap().id() {
+                            map.insert(commit.id(), parent1.id());
+                            continue 'walk;
+                        }
+                        if new_tree.id() == parent2.tree().unwrap().id() {
+                            map.insert(commit.id(), parent2.id());
+                            continue 'walk;
+                        }
+                        map.insert(commit.id(),
+                                   self.rewrite(&commit, &[&parent1, &parent2], &new_tree));
                         continue 'walk;
                     }
-                    parents.push(parent);
                 }
+                1 => {
+                    let parent = commit.parents().nth(0).unwrap().id();
+                    if let Some(&parent) = map.get(&parent) {
+                        let parent = self.repo.find_commit(parent).unwrap();
+                        if new_tree.id() == parent.tree().unwrap().id() {
+                            map.insert(commit.id(), parent.id());
+                            continue 'walk;
+                        }
+                        map.insert(commit.id(), self.rewrite(&commit, &[&parent], &new_tree));
+                        continue 'walk;
+                    }
+                }
+                _ => {}
             }
 
-            let mut p = vec![];
-            for parent in &parents { p.push(parent); }
-
-            map.insert(commit.id(), self.rewrite(&commit, &p, &new_tree));
+            map.insert(commit.id(), self.rewrite(&commit, &[], &new_tree));
         }
 
-        return map.get(&newrev).map(|&id|{id});
+        return map.get(&newrev).map(|&id| id);
     }
 
     pub fn find_all_subdirs(&self, tree: &Tree) -> Vec<String>
