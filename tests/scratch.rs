@@ -31,7 +31,8 @@ fn test_find_all_subtrees()
     let subdirs = scratch.find_all_subdirs(&head.as_commit().unwrap().tree().unwrap());
     assert_eq!(vec![
         format!("bla"),
-    ], sorted(subdirs));
+    ],
+               sorted(subdirs));
 
     repo.add_file("a/b/c/d/foo");
     let head = scratch.transfer(&repo.commit("2"), &repo.path);
@@ -42,7 +43,8 @@ fn test_find_all_subtrees()
         format!("a/b/c"),
         format!("a/b/c/d"),
         format!("bla"),
-    ], sorted(subdirs));
+    ],
+               sorted(subdirs));
 
     repo.add_file("a/b/c/.bla/foo");
     let head = scratch.transfer(&repo.commit("2"), &repo.path);
@@ -53,7 +55,8 @@ fn test_find_all_subtrees()
         format!("a/b/c"),
         format!("a/b/c/d"),
         format!("bla"),
-    ], sorted(subdirs));
+    ],
+               sorted(subdirs));
 }
 
 fn split_subdir_ref(repo: &helpers::TestRepo, module: &str, newrev: git2::Oid) -> Option<git2::Oid>
@@ -63,11 +66,13 @@ fn split_subdir_ref(repo: &helpers::TestRepo, module: &str, newrev: git2::Oid) -
 
     repo.repo.set_head_detached(newrev).expect("can't detatch head");;
 
-    repo.shell.command(&format!("git filter-branch --subdirectory-filter {}/ -- HEAD", module));
+    repo.shell.command(&format!("git filter-branch --subdirectory-filter {}/ -- HEAD",
+                                module));
 
     return Some(repo.repo
         .revparse_single("HEAD")
-        .expect("can't find rewritten branch").id());
+        .expect("can't find rewritten branch")
+        .id());
 }
 
 
@@ -82,7 +87,8 @@ fn test_split_subdir_one_commit()
     repo.add_file("foo/bla");
     let head = scratch.transfer(&repo.commit("1"), &repo.path);
 
-    assert_eq!(split_subdir_ref(&repo, "foo", head.id()), scratch.split_subdir("foo", head.id()));
+    assert_eq!(split_subdir_ref(&repo, "foo", head.id()),
+               scratch.split_subdir("foo", head.id()));
 }
 
 #[test]
@@ -98,7 +104,8 @@ fn test_split_subdir_two_commits()
     repo.add_file("foo/bla_bla");
     let head = scratch.transfer(&repo.commit("1"), &repo.path);
 
-    assert_eq!(split_subdir_ref(&repo, "foo", head.id()), scratch.split_subdir("foo", head.id()));
+    assert_eq!(split_subdir_ref(&repo, "foo", head.id()),
+               scratch.split_subdir("foo", head.id()));
 }
 
 #[test]
@@ -116,7 +123,8 @@ fn test_split_subdir_three_commits_middle_unrelated()
     repo.add_file("foo/bla_bla");
     let head = scratch.transfer(&repo.commit("1"), &repo.path);
 
-    assert_eq!(split_subdir_ref(&repo, "foo", head.id()), scratch.split_subdir("foo", head.id()));
+    assert_eq!(split_subdir_ref(&repo, "foo", head.id()),
+               scratch.split_subdir("foo", head.id()));
 }
 
 #[test]
@@ -134,7 +142,8 @@ fn test_split_subdir_three_commits_first_unrelated()
     repo.add_file("foo/bla_bla");
     let head = scratch.transfer(&repo.commit("1"), &repo.path);
 
-    assert_eq!(split_subdir_ref(&repo, "foo", head.id()), scratch.split_subdir("foo", head.id()));
+    assert_eq!(split_subdir_ref(&repo, "foo", head.id()),
+               scratch.split_subdir("foo", head.id()));
 }
 
 #[test]
