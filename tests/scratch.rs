@@ -109,6 +109,23 @@ fn test_split_subdir_two_commits()
 }
 
 #[test]
+fn test_split_subdir_two_commits_first_empty()
+{
+    let td = TempDir::new("cgh_test").expect("folder cgh_test should be created");
+    let host = helpers::TestHost::new();
+    let scratch = Scratch::new(&td.path().join("scratch"), &host);
+    let repo = helpers::TestRepo::new(&td.path().join("repo"));
+
+    repo.shell.command("git commit --allow-empty -m empty");
+    repo.add_file("foo/bla_bla");
+    let head = scratch.transfer(&repo.commit("1"), &repo.path);
+    repo.shell.command("git log");
+
+    assert_eq!(split_subdir_ref(&repo, "foo", head.id()), scratch.split_subdir("foo", head.id()));
+    // assert!(false);
+}
+
+#[test]
 fn test_split_subdir_three_commits_middle_unrelated()
 {
     let td = TempDir::new("cgh_test").expect("folder cgh_test should be created");
