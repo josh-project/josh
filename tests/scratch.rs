@@ -382,6 +382,15 @@ repo_join-@merge
 module_more-@normal
 module_initial-@orphan
 central_initial-@orphan\n");
+
+    central.shell.command(&format!("git fetch {:?} result:result", scratch.repo.path()));
+    central.shell.command("git checkout result");
+
+    assert!(central.has_file("foo/initial_in_module"));
+    let splitted = scratch.split_subdir("foo", result).unwrap();
+    scratch.repo.reference("refs/heads/splitted", splitted, true, "x").expect("err 2");
+    // shell.command("gitk --all");
+    assert_eq!(module_head.id(), splitted);
 }
 
 #[test]
@@ -422,15 +431,8 @@ fn test_join_with_merge()
     scratch.repo.reference("HEAD", result, true, "x").expect("err 2");
 
     let shell = Shell { cwd: scratch.repo.path().to_path_buf() };
+    let splitted = scratch.split_subdir("foo", result).unwrap();
+    scratch.repo.reference("refs/heads/splitted", splitted, true, "x").expect("err 2");
     // shell.command("gitk --all");
-    assert_eq!(fparents(&shell.command("git log --pretty=format:%s-@%p --topo-order")),
-               "\
-repo_join-@merge
-module_after_merge-@normal
-foo_merge-@merge
-module_more_on_tmp-@normal
-module_more_on_master-@normal
-module_initial-@orphan
-central_initial-@orphan\n"
-    );
+    assert_eq!(module_head.id(), splitted);
 }

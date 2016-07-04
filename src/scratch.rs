@@ -182,9 +182,9 @@ impl<'a> Scratch<'a>
                         // }
 
                         // if new != p1 && new == p2 {
-                            map.insert(commit.id(),
-                                       self.rewrite(&commit, &[&parent1, &parent2], &new_tree));
-                            continue 'walk;
+                        map.insert(commit.id(),
+                                   self.rewrite(&commit, &[&parent1, &parent2], &new_tree));
+                        continue 'walk;
                         // }
 
                         // if new == p1 && new == p2 {
@@ -204,6 +204,40 @@ impl<'a> Scratch<'a>
                         // map.insert(commit.id(),
                         //            self.rewrite(&commit, &[&parent1, &parent2], &new_tree));
                         // continue 'walk;
+                    }
+                    if let (Some(&parent1), None) = (map.get(&parent1),
+                                                               map.get(&parent2)) {
+                        let parent1 = self.repo.find_commit(parent1).unwrap();
+
+                        let new = new_tree.id();
+                        let p1 = parent1.tree().unwrap().id();
+
+                        if new != p1 {
+                            map.insert(commit.id(),
+                                       self.rewrite(&commit, &[&parent1], &new_tree));
+                            continue 'walk;
+                        }
+                        else {
+                            map.insert(commit.id(), parent1.id());
+                            continue 'walk;
+                        }
+                    }
+                    if let (None, Some(&parent2)) = (map.get(&parent1),
+                                                     map.get(&parent2)) {
+                        let parent2 = self.repo.find_commit(parent2).unwrap();
+
+                        let new = new_tree.id();
+                        let p2 = parent2.tree().unwrap().id();
+
+                        if new != p2 {
+                            map.insert(commit.id(),
+                                       self.rewrite(&commit, &[&parent2], &new_tree));
+                            continue 'walk;
+                        }
+                        else {
+                            map.insert(commit.id(), parent2.id());
+                            continue 'walk;
+                        }
                     }
                 }
                 1 => {
@@ -250,7 +284,7 @@ impl<'a> Scratch<'a>
         let src = self.repo.find_commit(src).unwrap();
 
 
-        let signature = Signature::new("CentralGit","cg@cg.com",&dst.committer().when()).unwrap();
+        let signature = Signature::new("CentralGit", "cg@cg.com", &dst.committer().when()).unwrap();
 
         let walk = {
             let mut walk = self.repo.revwalk().expect("walk: can't create revwalk");
@@ -259,7 +293,8 @@ impl<'a> Scratch<'a>
             walk
         };
 
-        let empty = self.repo.find_tree(self.repo.treebuilder(None).unwrap().write().unwrap()).unwrap();
+        let empty =
+            self.repo.find_tree(self.repo.treebuilder(None).unwrap().write().unwrap()).unwrap();
         let mut map = HashMap::<Oid, Oid>::new();
 
         'walk: for commit in walk {
@@ -298,14 +333,21 @@ impl<'a> Scratch<'a>
             map.insert(commit.id(), self.rewrite(&commit, &[], &new_tree));
         }
 
+        let final_tree =
+            self.replace_subtree(path,
+                                 src.tree().unwrap().id(),
+                                 &dst.tree().unwrap());
+
         let parents = [&dst, &self.repo.find_commit(map[&src.id()]).unwrap()];
         self.repo.set_head_detached(parents[0].id()).expect("join: can't detach head");
-        let join_commit = self.repo.commit(Some("HEAD"),
+        let join_commit = self.repo
+            .commit(Some("HEAD"),
                     &signature,
                     &signature,
                     "repo_join",
-                    &dst.tree().unwrap(),
-                    &parents).unwrap();
+                    &final_tree,
+                    &parents)
+            .unwrap();
         return join_commit;
 
     }
