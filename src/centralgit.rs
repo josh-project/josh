@@ -24,8 +24,7 @@ impl Hooks for CentralGit
         }
 
         match scratch.repo.graph_descendant_of(new, old) {
-            Err(_) => return ReviewUploadResult::RejectNoFF,
-            Ok(false) => return ReviewUploadResult::RejectNoFF,
+            Err(_) | Ok(false) => return ReviewUploadResult::RejectNoFF,
             Ok(true) => (),
         }
 
