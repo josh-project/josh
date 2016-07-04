@@ -55,20 +55,6 @@ impl<'a> Scratch<'a>
         }
     }
 
-    fn call_git(self: &Scratch<'a>, cmd: &str) -> Result<String, Error>
-    {
-        let args: Vec<&str> = cmd.split(" ").collect();
-        let repo_path = &self.repo.path();
-        let mut c = Command::new("git");
-        c.current_dir(&repo_path);
-        c.env("GIT_DIR", repo_path.as_os_str());
-        c.args(&args);
-
-        let output = c.output()
-            .unwrap_or_else(|e| panic!("failed to execute process: {}", e));
-        Ok(String::from_utf8(output.stderr).expect("cannot decode utf8"))
-    }
-
     // force push of the new revision-object to temp repo
     pub fn transfer(&self, rev: &str, source: &Path) -> Object
     {
@@ -112,8 +98,9 @@ impl<'a> Scratch<'a>
     {
         let commit = &self.repo.find_commit(oid).expect("can't find commit");
         self.repo.set_head_detached(commit.id()).expect("can't detach HEAD");
-        let cmd = format!("push {} HEAD:{}", self.host.remote_url(module), target);
-        let output = self.call_git(&cmd).expect("can't push");
+        let cmd = format!("git push {} HEAD:{}", self.host.remote_url(module), target);
+        let shell = Shell { cwd: self.repo.path().to_path_buf() };
+        let output = shell.command(&cmd);
         debug!("push: {}\n{}", cmd, output);
         format!("{}", output)
     }
