@@ -14,6 +14,13 @@ pub struct Scratch<'a>
     pub host: &'a RepoHost,
 }
 
+enum CommitKind
+{
+    Normal(Oid),
+    Merge(Oid, Oid),
+    Orphan,
+}
+
 impl<'a> Scratch<'a>
 {
     pub fn new(path: &Path, host: &'a RepoHost) -> Scratch<'a>
@@ -156,53 +163,46 @@ impl<'a> Scratch<'a>
                 continue 'walk;
             };
 
-            match commit.parents().count() {
+            match match commit.parents().count() {
                 2 => {
                     let parent1 = commit.parents().nth(0).unwrap().id();
                     let parent2 = commit.parents().nth(1).unwrap().id();
-                    if let (Some(&parent1), Some(&parent2)) = (map.get(&parent1),
-                                                               map.get(&parent2)) {
-                        let parent1 = self.repo.find_commit(parent1).unwrap();
-                        let parent2 = self.repo.find_commit(parent2).unwrap();
-                        map.insert(commit.id(),
-                                   self.rewrite(&commit, &[&parent1, &parent2], &new_tree));
-                        continue 'walk;
-                    }
-                    if let (Some(&parent), None) = (map.get(&parent1), map.get(&parent2)) {
-                        let parent = self.repo.find_commit(parent).unwrap();
-                        if new_tree.id() == parent.tree().unwrap().id() {
-                            map.insert(commit.id(), parent.id());
-                            continue 'walk;
-                        }
-                        map.insert(commit.id(), self.rewrite(&commit, &[&parent], &new_tree));
-                        continue 'walk;
-                    }
-                    if let (None, Some(&parent)) = (map.get(&parent1), map.get(&parent2)) {
-                        let parent = self.repo.find_commit(parent).unwrap();
-                        if new_tree.id() == parent.tree().unwrap().id() {
-                            map.insert(commit.id(), parent.id());
-                            continue 'walk;
-                        }
-                        map.insert(commit.id(), self.rewrite(&commit, &[&parent], &new_tree));
-                        continue 'walk;
+                    match (map.get(&parent1), map.get(&parent2)) {
+                        (Some(&parent1), Some(&parent2)) => CommitKind::Merge(parent1, parent2),
+                        (Some(&parent), None) => CommitKind::Normal(parent),
+                        (None, Some(&parent)) => CommitKind::Normal(parent),
+                        _ => CommitKind::Orphan,
                     }
                 }
                 1 => {
                     let parent = commit.parents().nth(0).unwrap().id();
-                    if let Some(&parent) = map.get(&parent) {
-                        let parent = self.repo.find_commit(parent).unwrap();
-                        if new_tree.id() == parent.tree().unwrap().id() {
-                            map.insert(commit.id(), parent.id());
-                            continue 'walk;
-                        }
-                        map.insert(commit.id(), self.rewrite(&commit, &[&parent], &new_tree));
-                        continue 'walk;
+                    match map.get(&parent) {
+                        Some(&parent) => CommitKind::Normal(parent),
+                        _ => CommitKind::Orphan,
                     }
                 }
-                _ => {}
+                _ => CommitKind::Orphan,
+            } {
+                CommitKind::Merge(parent1, parent2) => {
+                    let parent1 = self.repo.find_commit(parent1).unwrap();
+                    let parent2 = self.repo.find_commit(parent2).unwrap();
+                    map.insert(commit.id(),
+                               self.rewrite(&commit, &[&parent1, &parent2], &new_tree));
+                    continue 'walk;
+                }
+                CommitKind::Normal(parent) => {
+                    let parent = self.repo.find_commit(parent).unwrap();
+                    if new_tree.id() == parent.tree().unwrap().id() {
+                        map.insert(commit.id(), parent.id());
+                        continue 'walk;
+                    }
+                    map.insert(commit.id(), self.rewrite(&commit, &[&parent], &new_tree));
+                    continue 'walk;
+                }
+                CommitKind::Orphan => {
+                    map.insert(commit.id(), self.rewrite(&commit, &[], &new_tree));
+                }
             }
-
-            map.insert(commit.id(), self.rewrite(&commit, &[], &new_tree));
         }
 
         return map.get(&newrev).map(|&id| id);
