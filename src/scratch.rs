@@ -2,7 +2,6 @@ extern crate git2;
 const TMP_NAME: &'static str = "refs/centralgit/tmp_fd2db5f8_bac2_4a1e_9487_4ac3414788aa";
 
 use git2::*;
-use std::process::Command;
 use std::path::Path;
 use shell::Shell;
 use super::RepoHost;
@@ -188,16 +187,15 @@ impl<'a> Scratch<'a>
                     let parent2 = self.repo.find_commit(parent2).unwrap();
                     map.insert(commit.id(),
                                self.rewrite(&commit, &[&parent1, &parent2], &new_tree));
-                    continue 'walk;
                 }
                 CommitKind::Normal(parent) => {
                     let parent = self.repo.find_commit(parent).unwrap();
                     if new_tree.id() == parent.tree().unwrap().id() {
                         map.insert(commit.id(), parent.id());
-                        continue 'walk;
                     }
-                    map.insert(commit.id(), self.rewrite(&commit, &[&parent], &new_tree));
-                    continue 'walk;
+                    else {
+                        map.insert(commit.id(), self.rewrite(&commit, &[&parent], &new_tree));
+                    }
                 }
                 CommitKind::Orphan => {
                     map.insert(commit.id(), self.rewrite(&commit, &[], &new_tree));
@@ -257,10 +255,6 @@ impl<'a> Scratch<'a>
                                                                map.get(&parent2)) {
                         let parent1 = self.repo.find_commit(parent1).unwrap();
                         let parent2 = self.repo.find_commit(parent2).unwrap();
-
-                        let new = new_tree.id();
-                        let p1 = parent1.tree().unwrap().id();
-                        let p2 = parent2.tree().unwrap().id();
 
                         map.insert(commit.id(),
                                    self.rewrite(&commit, &[&parent1, &parent2], &new_tree));
