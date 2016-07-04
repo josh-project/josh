@@ -5,9 +5,14 @@ use std::path::Path;
 use scratch::Scratch;
 use super::Hooks;
 use super::ReviewUploadResult;
-use scratch::module_ref;
 
 pub struct CentralGit;
+
+pub fn module_ref(module: &str) -> String
+{
+    format!("refs/centralgit/{}/##master##", module)
+}
+
 
 
 impl Hooks for CentralGit

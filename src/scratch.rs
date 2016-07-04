@@ -1,6 +1,5 @@
 extern crate git2;
-const TMP_NAME: &'static str = "tmp_fd2db5f8_bac2_4a1e_9487_4ac3414788aa";
-
+const TMP_NAME: &'static str = "refs/centralgit/tmp_fd2db5f8_bac2_4a1e_9487_4ac3414788aa";
 
 use git2::*;
 use std::process::Command;
@@ -8,11 +7,6 @@ use std::path::Path;
 use shell::Shell;
 use super::RepoHost;
 use std::collections::HashMap;
-
-pub fn module_ref(module: &str) -> String
-{
-    format!("refs/centralgit/splited/{}/split", module)
-}
 
 pub struct Scratch<'a>
 {
@@ -61,14 +55,11 @@ impl<'a> Scratch<'a>
         // TODO: implement using libgit
         let target = &self.repo.path();
         let shell = Shell { cwd: source.to_path_buf() };
-        // create tmp branch
-        shell.command(&format!("git branch -f {} {}", TMP_NAME, rev));
-        // force push
+        shell.command(&format!("git update-ref {} {}", TMP_NAME, rev));
         shell.command(&format!("git push --force {} {}",
                                &target.to_string_lossy(),
                                TMP_NAME));
-        // delete tmp branch
-        shell.command(&format!("git branch -D {}", TMP_NAME));
+        shell.command("gitk --all");
 
         let obj = self.repo.revparse_single(rev).expect("can't find transfered ref");
         return obj;
