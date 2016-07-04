@@ -59,7 +59,6 @@ impl<'a> Scratch<'a>
         shell.command(&format!("git push --force {} {}",
                                &target.to_string_lossy(),
                                TMP_NAME));
-        shell.command("gitk --all");
 
         let obj = self.repo.revparse_single(rev).expect("can't find transfered ref");
         return obj;
