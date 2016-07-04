@@ -26,13 +26,12 @@ fn main()
                                             GERRIT_PORT);
 
     let scratch_dir = gerrit_path.join("centralgithook_scratch");
-    let scratch = Scratch::new(&scratch_dir, &gerrit);
+    let scratch = Scratch::new(&scratch_dir);
 
-    let mut args = vec!();
+    let mut args = vec![];
     for arg in env::args() {
         args.push(arg);
     }
     let hooks = CentralGit;
     exit(centralgithook::dispatch(args, &hooks, &gerrit, &scratch));
 }
-

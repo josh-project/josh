@@ -34,7 +34,7 @@ pub fn dispatch(pargs: Vec<String>, hooks: &Hooks, host: &RepoHost, scratch: &Sc
 
 
 
-    println!("PP {:?} {:?} {:?}",pargs, project, host.prefix());
+    println!("PP {:?} {:?} {:?}", pargs, project, host.prefix());
     let is_module = project != format!("{}{}", host.prefix(), host.central());
     let (_, project) = project.split_at(host.prefix().len());
     println!("PJECT: {}", project);
@@ -52,10 +52,14 @@ pub fn dispatch(pargs: Vec<String>, hooks: &Hooks, host: &RepoHost, scratch: &Sc
     let is_initial = !is_module && oldrev == "0000000000000000000000000000000000000000";
 
     let uploader = args.value_of("uploader").unwrap_or("");
-    if is_update && !is_review && !uploader.contains("Automation") { // FIXME: hardcoded
+    if is_update && !is_review && !uploader.contains("Automation") {
+        // FIXME: hardcoded
         println!(".");
         // debug!("==== uploader: {}", uploader);
-        println!("{} {} {}", is_update, is_review, uploader.contains("Automation"));
+        println!("{} {} {}",
+                 is_update,
+                 is_review,
+                 uploader.contains("Automation"));
         println!("===================================================================");
         println!("================= Do not push directly to master! =================");
         println!("===================================================================");
@@ -65,16 +69,19 @@ pub fn dispatch(pargs: Vec<String>, hooks: &Hooks, host: &RepoHost, scratch: &Sc
     if is_submit {
         // submit to central
         let commit = args.value_of("commit").unwrap_or("");
-        hooks.central_submit(&scratch, scratch.transfer(commit, &this_project));
+        hooks.central_submit(&scratch, host, scratch.transfer(commit, &this_project));
     }
     else if is_project_created {
-        hooks.project_created(&scratch, &project);
+        hooks.project_created(&scratch, host, &project);
         println!("==== project_created");
     }
     else if is_review {
         // module was pushed, get changes to central
         let newrev = args.value_of("newrev").unwrap_or("");
-        match hooks.review_upload(&scratch, scratch.transfer(newrev, &this_project), project) {
+        match hooks.review_upload(&scratch,
+                                  host,
+                                  scratch.transfer(newrev, &this_project),
+                                  project) {
             ReviewUploadResult::RejectNoFF => {
                 println!(".");
                 println!("===================================================================");
@@ -91,7 +98,8 @@ pub fn dispatch(pargs: Vec<String>, hooks: &Hooks, host: &RepoHost, scratch: &Sc
             ReviewUploadResult::Uploaded(oid) => {
                 println!("================ Doing actual upload in central git ===============");
 
-                println!("{}", scratch.push(oid, host.central(), "refs/for/master"));
+                println!("{}",
+                         scratch.push(host, oid, host.central(), "refs/for/master"));
                 println!("==== The review upload may have worked, even if it says error below. \
                           Look UP! ====")
             }
@@ -106,7 +114,7 @@ pub fn dispatch(pargs: Vec<String>, hooks: &Hooks, host: &RepoHost, scratch: &Sc
             println!(".\n\n##### INITIAL IMPORT ######");
             let newrev = args.value_of("newrev").unwrap_or("");
             // hooks.central_submit(&scratch, scratch.transfer(newrev, &this_project));
-            hooks.central_submit(&scratch, scratch.transfer(newrev, &this_project));
+            hooks.central_submit(&scratch, host, scratch.transfer(newrev, &this_project));
             return 0;
         }
         else {

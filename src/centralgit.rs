@@ -4,6 +4,7 @@ use git2::*;
 use std::path::Path;
 use scratch::Scratch;
 use super::Hooks;
+use super::RepoHost;
 use super::ReviewUploadResult;
 
 pub struct CentralGit;
@@ -17,12 +18,17 @@ pub fn module_ref(module: &str) -> String
 
 impl Hooks for CentralGit
 {
-    fn review_upload(&self, scratch: &Scratch, newrev: Object, module: &str) -> ReviewUploadResult
+    fn review_upload(&self,
+                     scratch: &Scratch,
+                     host: &RepoHost,
+                     newrev: Object,
+                     module: &str)
+        -> ReviewUploadResult
     {
         debug!(".\n\n==== Doing review upload for module {}", &module);
 
         let new = newrev.id();
-        let old = scratch.tracking(&module, "master").expect("no tracking branch 1").id();
+        let old = scratch.tracking(host, &module, "master").expect("no tracking branch 1").id();
 
         if old == new {
             return ReviewUploadResult::NoChanges;
@@ -44,7 +50,7 @@ impl Hooks for CentralGit
         };
 
         let mut current =
-            scratch.tracking(scratch.host.central(), "master").expect("no central tracking").id();
+            scratch.tracking(host, host.central(), "master").expect("no central tracking").id();
 
         for rev in walk {
             let rev = rev.expect("walk: invalid rev");
@@ -64,7 +70,7 @@ impl Hooks for CentralGit
                 return ReviewUploadResult::RejectMerge;
             }
 
-            if module != scratch.host.central() {
+            if module != host.central() {
                 debug!("==== Rewriting commit {}", rev);
 
                 let tree = module_commit.tree().expect("walk: commit has no tree");
@@ -81,7 +87,7 @@ impl Hooks for CentralGit
         }
 
 
-        if module != scratch.host.central() {
+        if module != host.central() {
             return ReviewUploadResult::Uploaded(current);
         }
         else {
@@ -101,27 +107,27 @@ impl Hooks for CentralGit
         }
     }
 
-    fn project_created(&self, scratch: &Scratch, _project: &str)
+    fn project_created(&self, scratch: &Scratch, host: &RepoHost, _project: &str)
     {
-        if let Some(rev) = scratch.tracking(scratch.host.central(), "master") {
-            self.central_submit(scratch, rev);
+        if let Some(rev) = scratch.tracking(host, host.central(), "master") {
+            self.central_submit(scratch, host, rev);
         }
     }
 
-    fn central_submit(&self, scratch: &Scratch, newrev: Object)
+    fn central_submit(&self, scratch: &Scratch, host: &RepoHost, newrev: Object)
     {
         debug!(" ---> central_submit (sha1 of commit: {})", &newrev.id());
 
         let central_commit = newrev.as_commit().expect("could not get commit from obj");
         let central_tree = central_commit.tree().expect("commit has no tree");
 
-        for module in scratch.host.projects() {
-            if module == scratch.host.central() {
+        for module in host.projects() {
+            if module == host.central() {
                 continue;
             }
             debug!("");
             debug!("==== fetching tracking branch for module: {}", &module);
-            match scratch.tracking(&module, "master") {
+            match scratch.tracking(host, &module, "master") {
                 Some(_) => (),
                 None => {
                     debug!("====    no tracking branch for module {} => project does not exist \
@@ -134,7 +140,7 @@ impl Hooks for CentralGit
             };
 
             let module_master_commit_obj = if let Ok(rev) = scratch.repo
-                .revparse_single(&module_ref(&module)){
+                .revparse_single(&module_ref(&module)) {
                 rev
             }
             else {
@@ -177,9 +183,9 @@ impl Hooks for CentralGit
             }
         }
 
-        for module in scratch.host.projects() {
+        for module in host.projects() {
             if let Ok(module_commit) = scratch.repo.refname_to_id(&module_ref(&module)) {
-                let output = scratch.push(module_commit, &module, "refs/heads/master");
+                let output = scratch.push(host, module_commit, &module, "refs/heads/master");
                 debug!("{}", output);
             }
         }

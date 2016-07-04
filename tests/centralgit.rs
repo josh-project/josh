@@ -15,18 +15,18 @@ use centralgithook::ReviewUploadResult;
 use tempdir::TempDir;
 
 
-struct TestSetup<'a>
+struct TestSetup
 {
     td: TempDir,
     central: helpers::TestRepo,
-    scratch: Scratch<'a>,
+    scratch: Scratch,
     shell: Shell,
     hooks: CentralGit,
 }
 
-impl<'a> TestSetup<'a>
+impl TestSetup
 {
-    fn new(host: &'a helpers::TestHost) -> Self
+    fn new(host: &helpers::TestHost) -> Self
     {
         let hooks = CentralGit;
 
@@ -37,7 +37,7 @@ impl<'a> TestSetup<'a>
         env_logger::init().ok();
         let td = TempDir::new("cgh_test").expect("folder cgh_test should be created");
         let central = helpers::TestRepo::new(&td.path().join("central"));
-        let scratch = Scratch::new(&td.path().join("scratch"), host);
+        let scratch = Scratch::new(&td.path().join("scratch"));
 
 
         let shell = Shell { cwd: td.path().to_path_buf() };
@@ -66,7 +66,9 @@ fn test_initial_import()
     let head = central.commit("initial");
 
     central.shell.command("git push origin master");
-    hooks.central_submit(&scratch, scratch.transfer(&head, &host.repo_dir("central")));
+    hooks.central_submit(&scratch,
+                         &host,
+                         scratch.transfer(&head, &host.repo_dir("central")));
 
     shell.command(&format!("git clone {}", &host.remote_url("modules/module_a")));
     shell.command(&format!("git clone {}", &host.remote_url("modules/module_b")));
@@ -88,14 +90,16 @@ fn test_create_project()
     let head = central.commit("initial");
 
     central.shell.command("git push origin master");
-    hooks.central_submit(&scratch, scratch.transfer(&head, &host.repo_dir("central")));
+    hooks.central_submit(&scratch,
+                         &host,
+                         scratch.transfer(&head, &host.repo_dir("central")));
 
     shell.command(&format!("git clone {}", &host.remote_url("modules/module_a")));
     let module_a = helpers::TestRepo::new(&td.path().join("module_a"));
     assert!(module_a.has_file("initial_a"));
 
     host.create_project("modules");
-    hooks.project_created(&scratch,"modules");
+    hooks.project_created(&scratch, &host, "modules");
 
     shell.command(&format!("git clone {}", &host.remote_url("modules")));
     let modules = helpers::TestRepo::new(&td.path().join("modules"));
@@ -112,14 +116,18 @@ fn test_change_and_add_modules()
     let head = central.commit("initial");
 
     central.shell.command("git push origin master");
-    hooks.central_submit(&scratch, scratch.transfer(&head, &host.repo_dir("central")));
+    hooks.central_submit(&scratch,
+                         &host,
+                         scratch.transfer(&head, &host.repo_dir("central")));
 
     central.add_file("modules/module_a/added_a");
     central.add_file("modules/module_c/added_c");
     let head = central.commit("add_a_and_c");
 
     central.shell.command("git push origin master");
-    hooks.central_submit(&scratch, scratch.transfer(&head, &host.repo_dir("central")));
+    hooks.central_submit(&scratch,
+                         &host,
+                         scratch.transfer(&head, &host.repo_dir("central")));
 
     shell.command(&format!("git clone {}", &host.remote_url("modules/module_a")));
     shell.command(&format!("git clone {}", &host.remote_url("modules/module_c")));
@@ -141,13 +149,17 @@ fn test_add_module_not_on_host()
     let head = central.commit("initial");
 
     central.shell.command("git push origin master");
-    hooks.central_submit(&scratch, scratch.transfer(&head, &host.repo_dir("central")));
+    hooks.central_submit(&scratch,
+                         &host,
+                         scratch.transfer(&head, &host.repo_dir("central")));
 
     central.add_file("modules/module_new/added_new");
     let head = central.commit("add_new");
 
     central.shell.command("git push origin master");
-    hooks.central_submit(&scratch, scratch.transfer(&head, &host.repo_dir("central")));
+    hooks.central_submit(&scratch,
+                         &host,
+                         scratch.transfer(&head, &host.repo_dir("central")));
 
     shell.command(&format!("git clone {}", &host.remote_url("modules/module_new")));
 
@@ -166,7 +178,9 @@ fn test_remove_module_dir()
     let head = central.commit("initial");
 
     central.shell.command("git push origin master");
-    hooks.central_submit(&scratch, scratch.transfer(&head, &host.repo_dir("central")));
+    hooks.central_submit(&scratch,
+                         &host,
+                         scratch.transfer(&head, &host.repo_dir("central")));
 
     shell.command(&format!("git clone {}", &host.remote_url("modules/module_a")));
     let module_a = helpers::TestRepo::new(&td.path().join("module_a"));
@@ -178,7 +192,9 @@ fn test_remove_module_dir()
     let head = central.commit("remove a");
 
     central.shell.command("git push origin master");
-    hooks.central_submit(&scratch, scratch.transfer(&head, &host.repo_dir("central")));
+    hooks.central_submit(&scratch,
+                         &host,
+                         scratch.transfer(&head, &host.repo_dir("central")));
 }
 
 #[test]
@@ -188,14 +204,16 @@ fn test_add_module_empty_on_host()
     let TestSetup { td, central, scratch, shell, hooks } = TestSetup::new(&host);
 
     central.add_file("modules/module_new/initial_a");
-    let head = central.commit("initial");
+    let _ = central.commit("initial");
 
     central.add_file("modules/module_new/added_new");
     let head = central.commit("add_new");
 
     central.shell.command("git push origin master");
     host.create_project("modules/module_new");
-    hooks.central_submit(&scratch, scratch.transfer(&head, &host.repo_dir("central")));
+    hooks.central_submit(&scratch,
+                         &host,
+                         scratch.transfer(&head, &host.repo_dir("central")));
 
     shell.command(&format!("git clone {}", &host.remote_url("modules/module_new")));
 
@@ -219,14 +237,18 @@ fn test_central_review_upload()
     let head = central.commit("initial");
 
     central.shell.command("git push origin master:master");
-    hooks.central_submit(&scratch, scratch.transfer(&head, &host.repo_dir("central")));
+    hooks.central_submit(&scratch,
+                         &host,
+                         scratch.transfer(&head, &host.repo_dir("central")));
 
     central.add_file("modules/module_a/added");
     let head = central.commit("add_addmit");
     central.shell.command("git push origin master:refs/for/master");
 
-    if let ReviewUploadResult::Central =
-           hooks.review_upload(&scratch, scratch.transfer(&head, &central.path), "central") {
+    if let ReviewUploadResult::Central = hooks.review_upload(&scratch,
+                       &host,
+                       scratch.transfer(&head, &central.path),
+                       "central") {
     }
     else {
         assert!(false);
@@ -245,7 +267,9 @@ fn test_module_review_upload_rejects_merges()
     let head = central.commit("initial");
 
     central.shell.command("git push origin master:master");
-    hooks.central_submit(&scratch, scratch.transfer(&head, &host.repo_dir("central")));
+    hooks.central_submit(&scratch,
+                         &host,
+                         scratch.transfer(&head, &host.repo_dir("central")));
 
     shell.command(&format!("git clone {}", &host.remote_url("modules/module_a")));
     let module_a = helpers::TestRepo::new(&td.path().join("module_a"));
@@ -265,6 +289,7 @@ fn test_module_review_upload_rejects_merges()
     let head = module_a.rev("master");
 
     if let ReviewUploadResult::RejectMerge = hooks.review_upload(&scratch,
+                       &host,
                        scratch.transfer(&head, &host.repo_dir("modules/module_a")),
                        "modules/module_a") {
     }
@@ -285,7 +310,9 @@ fn test_module_review_upload_rejects_non_fast_forward()
     let head = central.commit("initial");
 
     central.shell.command("git push origin master:master");
-    hooks.central_submit(&scratch, scratch.transfer(&head, &host.repo_dir("central")));
+    hooks.central_submit(&scratch,
+                         &host,
+                         scratch.transfer(&head, &host.repo_dir("central")));
 
     shell.command(&format!("git clone {}", &host.remote_url("modules/module_a")));
     let module_a = helpers::TestRepo::new(&td.path().join("module_a"));
@@ -305,6 +332,7 @@ fn test_module_review_upload_rejects_non_fast_forward()
     let head = module_a.rev("tmp");
 
     if let ReviewUploadResult::RejectNoFF = hooks.review_upload(&scratch,
+                       &host,
                        scratch.transfer(&head, &host.repo_dir("modules/module_a")),
                        "modules/module_a") {
     }
@@ -325,7 +353,9 @@ fn test_central_review_upload_rejects_merges()
     let head = central.commit("initial");
 
     central.shell.command("git push origin master:master");
-    hooks.central_submit(&scratch, scratch.transfer(&head, &host.repo_dir("central")));
+    hooks.central_submit(&scratch,
+                         &host,
+                         scratch.transfer(&head, &host.repo_dir("central")));
 
     central.shell.command("git checkout -b tmp");
     central.add_file("modules/module_a/added_tmp");
@@ -342,6 +372,7 @@ fn test_central_review_upload_rejects_merges()
     let head = central.rev("master");
 
     if let ReviewUploadResult::RejectMerge = hooks.review_upload(&scratch,
+                       &host,
                        scratch.transfer(&head, &host.repo_dir("central")),
                        "central") {
     }
@@ -362,7 +393,9 @@ fn test_module_review_upload()
     let head = central.commit("initial");
 
     central.shell.command("git push origin master");
-    hooks.central_submit(&scratch, scratch.transfer(&head, &host.repo_dir("central")));
+    hooks.central_submit(&scratch,
+                         &host,
+                         scratch.transfer(&head, &host.repo_dir("central")));
 
     shell.command(&format!("git clone {}", &host.remote_url("modules/module_a")));
     let module_a = helpers::TestRepo::new(&td.path().join("module_a"));
@@ -372,10 +405,11 @@ fn test_module_review_upload()
     let head = module_a.commit("module_a_commit");
 
     if let ReviewUploadResult::Uploaded(oid) = hooks.review_upload(&scratch,
+                                                                   &host,
                                                                    scratch.transfer(&head,
                                                                                  &module_a.path),
                                                                    "modules/module_a") {
-        scratch.push(oid, host.central(), "refs/for/master");
+        scratch.push(&host, oid, host.central(), "refs/for/master");
     }
     else {
         assert!(false);
@@ -385,6 +419,7 @@ fn test_module_review_upload()
     let for_master = central.rev("for/master");
 
     hooks.central_submit(&scratch,
+                         &host,
                          scratch.transfer(&for_master, &host.repo_dir("central")));
 
     central.shell.command("git rebase for/master");
@@ -409,7 +444,9 @@ fn test_module_review_upload_1_level()
     let head = central.commit("initial");
 
     central.shell.command("git push origin master");
-    hooks.central_submit(&scratch, scratch.transfer(&head, &host.repo_dir("central")));
+    hooks.central_submit(&scratch,
+                         &host,
+                         scratch.transfer(&head, &host.repo_dir("central")));
 
     shell.command(&format!("git clone {}", &host.remote_url("foo_module_a")));
     let foo_module_a = helpers::TestRepo::new(&td.path().join("foo_module_a"));
@@ -419,9 +456,10 @@ fn test_module_review_upload_1_level()
     let head = foo_module_a.commit("module_a_commit");
 
     if let ReviewUploadResult::Uploaded(oid) = hooks.review_upload(&scratch,
+                       &host,
                        scratch.transfer(&head, &foo_module_a.path),
                        "foo_module_a") {
-        scratch.push(oid, host.central(), "refs/for/master");
+        scratch.push(&host, oid, host.central(), "refs/for/master");
     }
     else {
         assert!(false);
@@ -431,6 +469,7 @@ fn test_module_review_upload_1_level()
     let for_master = central.rev("for/master");
 
     hooks.central_submit(&scratch,
+                         &host,
                          scratch.transfer(&for_master, &host.repo_dir("central")));
 
     central.shell.command("git rebase for/master");
@@ -455,7 +494,9 @@ fn test_module_review_upload_4_levels()
     let head = central.commit("initial");
 
     central.shell.command("git push origin master");
-    hooks.central_submit(&scratch, scratch.transfer(&head, &host.repo_dir("central")));
+    hooks.central_submit(&scratch,
+                         &host,
+                         scratch.transfer(&head, &host.repo_dir("central")));
 
     shell.command(&format!("git clone {}", &host.remote_url("foo/modules/bla/module_a")));
     let foo_module_a = helpers::TestRepo::new(&td.path().join("module_a"));
@@ -465,9 +506,10 @@ fn test_module_review_upload_4_levels()
     let head = foo_module_a.commit("module_a_commit");
 
     if let ReviewUploadResult::Uploaded(oid) = hooks.review_upload(&scratch,
+                       &host,
                        scratch.transfer(&head, &foo_module_a.path),
                        "foo/modules/bla/module_a") {
-        scratch.push(oid, host.central(), "refs/for/master");
+        scratch.push(&host, oid, host.central(), "refs/for/master");
     }
     else {
         assert!(false);
@@ -477,6 +519,7 @@ fn test_module_review_upload_4_levels()
     let for_master = central.rev("for/master");
 
     hooks.central_submit(&scratch,
+                         &host,
                          scratch.transfer(&for_master, &host.repo_dir("central")));
 
     central.shell.command("git rebase for/master");

@@ -7,10 +7,9 @@ use shell::Shell;
 use super::RepoHost;
 use std::collections::HashMap;
 
-pub struct Scratch<'a>
+pub struct Scratch
 {
     pub repo: Repository,
-    pub host: &'a RepoHost,
 }
 
 enum CommitKind
@@ -20,20 +19,17 @@ enum CommitKind
     Orphan,
 }
 
-impl<'a> Scratch<'a>
+impl Scratch
 {
-    pub fn new(path: &Path, host: &'a RepoHost) -> Scratch<'a>
+    pub fn new(path: &Path) -> Scratch
     {
-        Scratch {
-            repo: Repository::init_bare(&path).expect("could not init scratch"),
-            host: host,
-        }
+        Scratch { repo: Repository::init_bare(&path).expect("could not init scratch") }
     }
 
-    pub fn tracking(&self, module: &str, branch: &str) -> Option<Object>
+    pub fn tracking(&self, host: &RepoHost, module: &str, branch: &str) -> Option<Object>
     {
         let remote_name = format!("{}", module);
-        let fetch_url = self.host.local_path(&module);
+        let fetch_url = host.local_path(&module);
         let mut remote = if let Ok(remote) = self.repo.find_remote(&remote_name) {
             remote
         }
@@ -90,11 +86,11 @@ impl<'a> Scratch<'a>
             .expect("rewrite: can't commit")
     }
 
-    pub fn push(&self, oid: Oid, module: &str, target: &str) -> String
+    pub fn push(&self, host: &RepoHost, oid: Oid, module: &str, target: &str) -> String
     {
         let commit = &self.repo.find_commit(oid).expect("can't find commit");
         self.repo.set_head_detached(commit.id()).expect("can't detach HEAD");
-        let cmd = format!("git push {} HEAD:{}", self.host.remote_url(module), target);
+        let cmd = format!("git push {} HEAD:{}", host.remote_url(module), target);
         let shell = Shell { cwd: self.repo.path().to_path_buf() };
         let output = shell.command(&cmd);
         debug!("push: {}\n{}", cmd, output);

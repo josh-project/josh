@@ -82,7 +82,6 @@ impl RepoHost for Gerrit
     {
         &self.prefix
     }
-
 }
 
 pub fn find_repos(root: &Path, path: &Path, mut repos: Vec<String>) -> Vec<String>

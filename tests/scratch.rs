@@ -18,8 +18,7 @@ fn sorted(mut v: Vec<String>) -> Vec<String>
 fn test_find_all_subtrees()
 {
     let td = TempDir::new("cgh_test").expect("folder cgh_test should be created");
-    let host = helpers::TestHost::new();
-    let scratch = Scratch::new(&td.path().join("scratch"), &host);
+    let scratch = Scratch::new(&td.path().join("scratch"));
     let repo = helpers::TestRepo::new(&td.path().join("repo"));
 
     repo.add_file("foo");
@@ -81,8 +80,7 @@ fn split_subdir_ref(repo: &helpers::TestRepo, module: &str, newrev: git2::Oid) -
 fn test_split_subdir_one_commit()
 {
     let td = TempDir::new("cgh_test").expect("folder cgh_test should be created");
-    let host = helpers::TestHost::new();
-    let scratch = Scratch::new(&td.path().join("scratch"), &host);
+    let scratch = Scratch::new(&td.path().join("scratch"));
     let repo = helpers::TestRepo::new(&td.path().join("repo"));
 
     repo.add_file("foo/bla");
@@ -96,8 +94,7 @@ fn test_split_subdir_one_commit()
 fn test_split_subdir_two_commits()
 {
     let td = TempDir::new("cgh_test").expect("folder cgh_test should be created");
-    let host = helpers::TestHost::new();
-    let scratch = Scratch::new(&td.path().join("scratch"), &host);
+    let scratch = Scratch::new(&td.path().join("scratch"));
     let repo = helpers::TestRepo::new(&td.path().join("repo"));
 
     repo.add_file("foo/bla");
@@ -113,8 +110,7 @@ fn test_split_subdir_two_commits()
 fn test_split_subdir_two_commits_first_empty()
 {
     let td = TempDir::new("cgh_test").expect("folder cgh_test should be created");
-    let host = helpers::TestHost::new();
-    let scratch = Scratch::new(&td.path().join("scratch"), &host);
+    let scratch = Scratch::new(&td.path().join("scratch"));
     let repo = helpers::TestRepo::new(&td.path().join("repo"));
 
     repo.shell.command("git commit --allow-empty -m empty");
@@ -131,8 +127,7 @@ fn test_split_subdir_two_commits_first_empty()
 fn test_split_subdir_three_commits_middle_unrelated()
 {
     let td = TempDir::new("cgh_test").expect("folder cgh_test should be created");
-    let host = helpers::TestHost::new();
-    let scratch = Scratch::new(&td.path().join("scratch"), &host);
+    let scratch = Scratch::new(&td.path().join("scratch"));
     let repo = helpers::TestRepo::new(&td.path().join("repo"));
 
     repo.add_file("foo/bla");
@@ -150,8 +145,7 @@ fn test_split_subdir_three_commits_middle_unrelated()
 fn test_split_subdir_three_commits_first_unrelated()
 {
     let td = TempDir::new("cgh_test").expect("folder cgh_test should be created");
-    let host = helpers::TestHost::new();
-    let scratch = Scratch::new(&td.path().join("scratch"), &host);
+    let scratch = Scratch::new(&td.path().join("scratch"));
     let repo = helpers::TestRepo::new(&td.path().join("repo"));
 
     repo.add_file("x");
@@ -169,8 +163,7 @@ fn test_split_subdir_three_commits_first_unrelated()
 fn test_split_subdir_branch()
 {
     let td = TempDir::new("cgh_test").expect("folder cgh_test should be created");
-    let host = helpers::TestHost::new();
-    let scratch = Scratch::new(&td.path().join("scratch"), &host);
+    let scratch = Scratch::new(&td.path().join("scratch"));
     let repo = helpers::TestRepo::new(&td.path().join("repo"));
 
     repo.add_file("foo/bla");
@@ -199,8 +192,7 @@ fn test_split_subdir_branch()
 fn test_split_subdir_branch_unrelated()
 {
     let td = TempDir::new("cgh_test").expect("folder cgh_test should be created");
-    let host = helpers::TestHost::new();
-    let scratch = Scratch::new(&td.path().join("scratch"), &host);
+    let scratch = Scratch::new(&td.path().join("scratch"));
     let repo = helpers::TestRepo::new(&td.path().join("repo"));
 
     repo.add_file("foo/bla");
@@ -231,8 +223,7 @@ fn test_split_subdir_branch_unrelated()
 fn test_split_merge_identical_to_first()
 {
     let td = TempDir::new("cgh_test").expect("folder cgh_test should be created");
-    let host = helpers::TestHost::new();
-    let scratch = Scratch::new(&td.path().join("scratch"), &host);
+    let scratch = Scratch::new(&td.path().join("scratch"));
     let repo = helpers::TestRepo::new(&td.path().join("repo"));
 
     repo.add_file("foo/initial");
@@ -291,8 +282,7 @@ fn fparents(s: &str) -> String
 fn test_split_merge_identical_to_second()
 {
     let td = TempDir::new("cgh_test").expect("folder cgh_test should be created");
-    let host = helpers::TestHost::new();
-    let scratch = Scratch::new(&td.path().join("scratch"), &host);
+    let scratch = Scratch::new(&td.path().join("scratch"));
     let repo = helpers::TestRepo::new(&td.path().join("repo"));
 
     repo.add_file("foo/bla");
@@ -324,8 +314,7 @@ fn test_split_merge_identical_to_second()
 fn test_join()
 {
     let td = TempDir::new("cgh_test").expect("folder cgh_test should be created");
-    let host = helpers::TestHost::new();
-    let scratch = Scratch::new(&td.path().join("scratch"), &host);
+    let scratch = Scratch::new(&td.path().join("scratch"));
     let central = helpers::TestRepo::new(&td.path().join("central"));
     let module = helpers::TestRepo::new(&td.path().join("module"));
 
@@ -355,8 +344,7 @@ central_initial-@orphan\n");
 fn test_join_more()
 {
     let td = TempDir::new("cgh_test").expect("folder cgh_test should be created");
-    let host = helpers::TestHost::new();
-    let scratch = Scratch::new(&td.path().join("scratch"), &host);
+    let scratch = Scratch::new(&td.path().join("scratch"));
     let central = helpers::TestRepo::new(&td.path().join("central"));
     let module = helpers::TestRepo::new(&td.path().join("module"));
 
@@ -364,7 +352,7 @@ fn test_join_more()
     let central_head = scratch.transfer(&central.commit("central_initial"), &central.path);
 
     module.add_file("initial_in_module");
-    let module_head = scratch.transfer(&module.commit("module_initial"), &module.path);
+    let _ = scratch.transfer(&module.commit("module_initial"), &module.path);
     module.add_file("some/more/in/module");
     let module_head = scratch.transfer(&module.commit("module_more"), &module.path);
 
@@ -397,8 +385,7 @@ central_initial-@orphan\n");
 fn test_join_with_merge()
 {
     let td = TempDir::new("cgh_test").expect("folder cgh_test should be created");
-    let host = helpers::TestHost::new();
-    let scratch = Scratch::new(&td.path().join("scratch"), &host);
+    let scratch = Scratch::new(&td.path().join("scratch"));
     let central = helpers::TestRepo::new(&td.path().join("central"));
     let module = helpers::TestRepo::new(&td.path().join("module"));
 
@@ -406,17 +393,17 @@ fn test_join_with_merge()
     let central_head = scratch.transfer(&central.commit("central_initial"), &central.path);
 
     module.add_file("initial_in_module");
-    let module_head = scratch.transfer(&module.commit("module_initial"), &module.path);
+    let _ = scratch.transfer(&module.commit("module_initial"), &module.path);
 
     module.shell.command("git branch tmp");
 
     module.shell.command("git checkout master");
     module.add_file("some/more/in/module_master");
-    let module_head = scratch.transfer(&module.commit("module_more_on_master"), &module.path);
+    let _ = scratch.transfer(&module.commit("module_more_on_master"), &module.path);
 
     module.shell.command("git checkout tmp");
     module.add_file("some/stuff/in/module_tmp");
-    let module_head = scratch.transfer(&module.commit("module_more_on_tmp"), &module.path);
+    let _ = scratch.transfer(&module.commit("module_more_on_tmp"), &module.path);
 
     module.shell.command("git checkout master");
     module.shell.command("git merge tmp --no-ff -m foo_merge");
@@ -430,7 +417,7 @@ fn test_join_with_merge()
     scratch.repo.reference("refs/heads/result", result, true, "x").expect("err 2");
     scratch.repo.reference("HEAD", result, true, "x").expect("err 2");
 
-    let shell = Shell { cwd: scratch.repo.path().to_path_buf() };
+    // let shell = Shell { cwd: scratch.repo.path().to_path_buf() };
     let splitted = scratch.split_subdir("foo", result).unwrap();
     scratch.repo.reference("refs/heads/splitted", splitted, true, "x").expect("err 2");
     // shell.command("gitk --all");
