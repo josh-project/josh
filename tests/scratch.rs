@@ -6,6 +6,7 @@ mod helpers;
 extern crate git2;
 extern crate tempdir;
 use tempdir::TempDir;
+use std::path::Path;
 
 fn sorted(mut v: Vec<String>) -> Vec<String>
 {
@@ -121,7 +122,8 @@ fn test_split_subdir_two_commits_first_empty()
     let head = scratch.transfer(&repo.commit("1"), &repo.path);
     repo.shell.command("git log");
 
-    assert_eq!(split_subdir_ref(&repo, "foo", head.id()), scratch.split_subdir("foo", head.id()));
+    assert_eq!(split_subdir_ref(&repo, "foo", head.id()),
+               scratch.split_subdir("foo", head.id()));
     // assert!(false);
 }
 
@@ -273,7 +275,7 @@ fn fparents(s: &str) -> String
         let p = spl.clone().nth(1).unwrap();
         o.push_str(&format!("{}@{}\n",
                             m,
-                            match p.len()/6 {
+                            match p.len() / 6 {
                                 2 => "merge",
                                 1 => "normal",
                                 _ => "orphan",
@@ -316,4 +318,119 @@ fn test_split_merge_identical_to_second()
     assert_eq!(fparents(&shell.command("git log --pretty=format:%s-@%p --topo-order")),
                fparents(&repo.shell
                    .command("git log --pretty=format:%s-@%p --topo-order --grep=foo_ ")));
+}
+
+#[test]
+fn test_join()
+{
+    let td = TempDir::new("cgh_test").expect("folder cgh_test should be created");
+    let host = helpers::TestHost::new();
+    let scratch = Scratch::new(&td.path().join("scratch"), &host);
+    let central = helpers::TestRepo::new(&td.path().join("central"));
+    let module = helpers::TestRepo::new(&td.path().join("module"));
+
+    central.add_file("initial_in_central");
+    let central_head = scratch.transfer(&central.commit("central_initial"), &central.path);
+
+    module.add_file("initial_in_module");
+    let module_head = scratch.transfer(&module.commit("module_initial"), &module.path);
+
+    let result = scratch.join(central_head.id(), &Path::new("foo"), module_head.id());
+    scratch.repo.reference("refs/heads/module", module_head.id(), true, "x").expect("err 2");
+    scratch.repo.reference("refs/heads/central", central_head.id(), true, "x").expect("err 2");
+    scratch.repo.reference("refs/heads/result", result, true, "x").expect("err 2");
+    scratch.repo.reference("HEAD", result, true, "x").expect("err 2");
+
+    let shell = Shell { cwd: scratch.repo.path().to_path_buf() };
+
+    assert_eq!(fparents(&shell.command("git log --pretty=format:%s-@%p --topo-order")),
+               "\
+repo_join-@merge
+module_initial-@orphan
+central_initial-@orphan\n");
+    // shell.command("xterm");
+}
+
+#[test]
+fn test_join_more()
+{
+    let td = TempDir::new("cgh_test").expect("folder cgh_test should be created");
+    let host = helpers::TestHost::new();
+    let scratch = Scratch::new(&td.path().join("scratch"), &host);
+    let central = helpers::TestRepo::new(&td.path().join("central"));
+    let module = helpers::TestRepo::new(&td.path().join("module"));
+
+    central.add_file("initial_in_central");
+    let central_head = scratch.transfer(&central.commit("central_initial"), &central.path);
+
+    module.add_file("initial_in_module");
+    let module_head = scratch.transfer(&module.commit("module_initial"), &module.path);
+    module.add_file("some/more/in/module");
+    let module_head = scratch.transfer(&module.commit("module_more"), &module.path);
+
+    let result = scratch.join(central_head.id(), &Path::new("foo"), module_head.id());
+    scratch.repo.reference("refs/heads/module", module_head.id(), true, "x").expect("err 2");
+    scratch.repo.reference("refs/heads/central", central_head.id(), true, "x").expect("err 2");
+    scratch.repo.reference("refs/heads/result", result, true, "x").expect("err 2");
+    scratch.repo.reference("HEAD", result, true, "x").expect("err 2");
+
+    let shell = Shell { cwd: scratch.repo.path().to_path_buf() };
+    // shell.command("gitk --all");
+    assert_eq!(fparents(&shell.command("git log --pretty=format:%s-@%p --topo-order")),
+               "\
+repo_join-@merge
+module_more-@normal
+module_initial-@orphan
+central_initial-@orphan\n");
+}
+
+#[test]
+fn test_join_with_merge()
+{
+    let td = TempDir::new("cgh_test").expect("folder cgh_test should be created");
+    let host = helpers::TestHost::new();
+    let scratch = Scratch::new(&td.path().join("scratch"), &host);
+    let central = helpers::TestRepo::new(&td.path().join("central"));
+    let module = helpers::TestRepo::new(&td.path().join("module"));
+
+    central.add_file("initial_in_central");
+    let central_head = scratch.transfer(&central.commit("central_initial"), &central.path);
+
+    module.add_file("initial_in_module");
+    let module_head = scratch.transfer(&module.commit("module_initial"), &module.path);
+
+    module.shell.command("git branch tmp");
+
+    module.shell.command("git checkout master");
+    module.add_file("some/more/in/module_master");
+    let module_head = scratch.transfer(&module.commit("module_more_on_master"), &module.path);
+
+    module.shell.command("git checkout tmp");
+    module.add_file("some/stuff/in/module_tmp");
+    let module_head = scratch.transfer(&module.commit("module_more_on_tmp"), &module.path);
+
+    module.shell.command("git checkout master");
+    module.shell.command("git merge tmp --no-ff -m foo_merge");
+
+    module.add_file("extra_file");
+    let module_head = scratch.transfer(&module.commit("module_after_merge"), &module.path);
+
+    let result = scratch.join(central_head.id(), &Path::new("foo"), module_head.id());
+    scratch.repo.reference("refs/heads/module", module_head.id(), true, "x").expect("err 2");
+    scratch.repo.reference("refs/heads/central", central_head.id(), true, "x").expect("err 2");
+    scratch.repo.reference("refs/heads/result", result, true, "x").expect("err 2");
+    scratch.repo.reference("HEAD", result, true, "x").expect("err 2");
+
+    let shell = Shell { cwd: scratch.repo.path().to_path_buf() };
+    // shell.command("gitk --all");
+    assert_eq!(fparents(&shell.command("git log --pretty=format:%s-@%p --topo-order")),
+               "\
+repo_join-@merge
+module_after_merge-@normal
+foo_merge-@merge
+module_more_on_tmp-@normal
+module_more_on_master-@normal
+module_initial-@orphan
+central_initial-@orphan\n"
+    );
 }

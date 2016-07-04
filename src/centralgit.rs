@@ -68,7 +68,7 @@ impl Hooks for CentralGit
 
                 let new_tree = scratch.replace_subtree(Path::new(module),
                                                        tree.id(),
-                                                       parent.tree()
+                                                       &parent.tree()
                                                            .expect("walk: parent has no tree"));
 
                 current = scratch.rewrite(&module_commit, &vec![&parent], &new_tree);

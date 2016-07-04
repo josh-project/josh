@@ -115,7 +115,7 @@ impl<'a> Scratch<'a>
         }
     }
 
-    fn replace_child(&self, child: &Path, subtree: Oid, full_tree: Tree) -> Tree
+    fn replace_child(&self, child: &Path, subtree: Oid, full_tree: &Tree) -> Tree
     {
         let full_tree_id = {
             let mut builder = self.repo
@@ -128,7 +128,7 @@ impl<'a> Scratch<'a>
         return self.repo.find_tree(full_tree_id).expect("replace_child: can't find new tree");
     }
 
-    pub fn replace_subtree(&self, path: &Path, subtree: Oid, full_tree: Tree) -> Tree
+    pub fn replace_subtree(&self, path: &Path, subtree: Oid, full_tree: &Tree) -> Tree
     {
         if path.components().count() == 1 {
             return self.replace_child(path, subtree, full_tree);
@@ -138,7 +138,7 @@ impl<'a> Scratch<'a>
             let path = path.parent().expect("module not in subdir");
 
             let st = self.subtree(&full_tree, path).unwrap();
-            let tree = self.replace_child(name, subtree, st);
+            let tree = self.replace_child(name, subtree, &st);
 
             return self.replace_subtree(path, tree.id(), full_tree);
         }
@@ -252,5 +252,71 @@ impl<'a> Scratch<'a>
             }
         }
         return sd;
+    }
+
+    pub fn join(&self, dst: Oid, path: &Path, src: Oid) -> Oid
+    {
+        let dst = self.repo.find_commit(dst).unwrap();
+        let src = self.repo.find_commit(src).unwrap();
+
+
+        let signature = Signature::new("CentralGit","cg@cg.com",&dst.committer().when()).unwrap();
+
+        let walk = {
+            let mut walk = self.repo.revwalk().expect("walk: can't create revwalk");
+            walk.set_sorting(SORT_REVERSE | SORT_TOPOLOGICAL);
+            walk.push(src.id()).expect("walk.push");
+            walk
+        };
+
+        let empty = self.repo.find_tree(self.repo.treebuilder(None).unwrap().write().unwrap()).unwrap();
+        let mut map = HashMap::<Oid, Oid>::new();
+
+        'walk: for commit in walk {
+            let commit = self.repo.find_commit(commit.unwrap()).unwrap();
+            let tree = commit.tree().expect("commit has no tree");
+            let new_tree = self.replace_subtree(path, tree.id(), &empty);
+
+            match commit.parents().count() {
+                2 => {
+                    let parent1 = commit.parents().nth(0).unwrap().id();
+                    let parent2 = commit.parents().nth(1).unwrap().id();
+                    if let (Some(&parent1), Some(&parent2)) = (map.get(&parent1),
+                                                               map.get(&parent2)) {
+                        let parent1 = self.repo.find_commit(parent1).unwrap();
+                        let parent2 = self.repo.find_commit(parent2).unwrap();
+
+                        let new = new_tree.id();
+                        let p1 = parent1.tree().unwrap().id();
+                        let p2 = parent2.tree().unwrap().id();
+
+                        map.insert(commit.id(),
+                                   self.rewrite(&commit, &[&parent1, &parent2], &new_tree));
+                        continue 'walk;
+                    }
+                }
+                1 => {
+                    let parent = commit.parents().nth(0).unwrap().id();
+                    let parent = *map.get(&parent).unwrap();
+                    let parent = self.repo.find_commit(parent).unwrap();
+                    map.insert(commit.id(), self.rewrite(&commit, &[&parent], &new_tree));
+                    continue 'walk;
+                }
+                _ => {}
+            }
+
+            map.insert(commit.id(), self.rewrite(&commit, &[], &new_tree));
+        }
+
+        let parents = [&dst, &self.repo.find_commit(map[&src.id()]).unwrap()];
+        self.repo.set_head_detached(parents[0].id()).expect("join: can't detach head");
+        let join_commit = self.repo.commit(Some("HEAD"),
+                    &signature,
+                    &signature,
+                    "repo_join",
+                    &dst.tree().unwrap(),
+                    &parents).unwrap();
+        return join_commit;
+
     }
 }
