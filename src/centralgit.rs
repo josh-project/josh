@@ -46,6 +46,7 @@ impl Hooks for CentralGit
             walk.set_sorting(SORT_REVERSE | SORT_TOPOLOGICAL);
             let range = format!("{}..{}", old, new);
             walk.push_range(&range).expect(&format!("walk: invalid range: {}", range));;
+            walk.hide(old);
             walk
         };
 
@@ -54,9 +55,6 @@ impl Hooks for CentralGit
 
         for rev in walk {
             let rev = rev.expect("walk: invalid rev");
-            if old == rev {
-                continue;
-            }
 
             debug!("==== walking commit {}", rev);
 
