@@ -129,7 +129,14 @@ impl Scratch
             let name = Path::new(path.file_name().expect("no module name"));
             let path = path.parent().expect("module not in subdir");
 
-            let st = self.subtree(&full_tree, path).unwrap();
+            let st = if let Some(st) = self.subtree(&full_tree, path) {
+                st
+            }
+            else {
+                let empty = self.repo.treebuilder(None).unwrap().write().unwrap();
+                self.repo.find_tree(empty).unwrap()
+            };
+
             let tree = self.replace_child(name, subtree, &st);
 
             return self.replace_subtree(path, tree.id(), full_tree);
@@ -225,7 +232,6 @@ impl Scratch
         let src = self.repo.find_commit(src).unwrap();
 
 
-        let signature = Signature::new("CentralGit", "cg@cg.com", &dst.committer().when()).unwrap();
 
         let walk = {
             let mut walk = self.repo.revwalk().expect("walk: can't create revwalk");
@@ -274,11 +280,13 @@ impl Scratch
 
         let parents = [&dst, &self.repo.find_commit(map[&src.id()]).unwrap()];
         self.repo.set_head_detached(parents[0].id()).expect("join: can't detach head");
+
+        let signature = self.repo.signature().unwrap();
         let join_commit = self.repo
             .commit(Some("HEAD"),
                     &signature,
                     &signature,
-                    "repo_join",
+                    &format!("join repo into {:?}", path),
                     &final_tree,
                     &parents)
             .unwrap();
