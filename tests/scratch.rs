@@ -325,9 +325,11 @@ fn test_join()
     let module_head = scratch.transfer(&module.commit("module_initial"), &module.path);
 
     let shell = Shell { cwd: scratch.repo.path().to_path_buf() };
-    shell.command("git config user.name=test");
-    shell.command("git config user.email=test@test.com");
-    let result = scratch.join_to_subdir(central_head.id(), &Path::new("foo"), module_head.id());
+    let signature = git2::Signature::now("test", "test@test.com").unwrap();
+    let result = scratch.join_to_subdir(central_head.id(),
+                                        &Path::new("foo"),
+                                        module_head.id(),
+                                        &signature);
     scratch.repo.reference("refs/heads/module", module_head.id(), true, "x").expect("err 2");
     scratch.repo.reference("refs/heads/central", central_head.id(), true, "x").expect("err 2");
     scratch.repo.reference("refs/heads/result", result, true, "x").expect("err 2");
@@ -359,9 +361,11 @@ fn test_join_more()
     let module_head = scratch.transfer(&module.commit("module_more"), &module.path);
 
     let shell = Shell { cwd: scratch.repo.path().to_path_buf() };
-    shell.command("git config user.name=test");
-    shell.command("git config user.email=test@test.com");
-    let result = scratch.join_to_subdir(central_head.id(), &Path::new("foo/bar"), module_head.id());
+    let signature = git2::Signature::now("test", "test@test.com").unwrap();
+    let result = scratch.join_to_subdir(central_head.id(),
+                                        &Path::new("foo/bar"),
+                                        module_head.id(),
+                                        &signature);
     scratch.repo.reference("refs/heads/module", module_head.id(), true, "x").expect("err 2");
     scratch.repo.reference("refs/heads/central", central_head.id(), true, "x").expect("err 2");
     scratch.repo.reference("refs/heads/result", result, true, "x").expect("err 2");
@@ -416,9 +420,11 @@ fn test_join_with_merge()
     let module_head = scratch.transfer(&module.commit("module_after_merge"), &module.path);
 
     let shell = Shell { cwd: scratch.repo.path().to_path_buf() };
-    shell.command("git config user.name=test");
-    shell.command("git config user.email=test@test.com");
-    let result = scratch.join_to_subdir(central_head.id(), &Path::new("foo"), module_head.id());
+    let signature = git2::Signature::now("test", "test@test.com").unwrap();
+    let result = scratch.join_to_subdir(central_head.id(),
+                                        &Path::new("foo"),
+                                        module_head.id(),
+                                        &signature);
     scratch.repo.reference("refs/heads/module", module_head.id(), true, "x").expect("err 2");
     scratch.repo.reference("refs/heads/central", central_head.id(), true, "x").expect("err 2");
     scratch.repo.reference("refs/heads/result", result, true, "x").expect("err 2");

@@ -226,7 +226,7 @@ impl Scratch
         return sd;
     }
 
-    pub fn join_to_subdir(&self, dst: Oid, path: &Path, src: Oid) -> Oid
+    pub fn join_to_subdir(&self, dst: Oid, path: &Path, src: Oid, signature: &Signature) -> Oid
     {
         let dst = self.repo.find_commit(dst).unwrap();
         let src = self.repo.find_commit(src).unwrap();
@@ -281,11 +281,10 @@ impl Scratch
         let parents = [&dst, &self.repo.find_commit(map[&src.id()]).unwrap()];
         self.repo.set_head_detached(parents[0].id()).expect("join: can't detach head");
 
-        let signature = self.repo.signature().unwrap();
         let join_commit = self.repo
             .commit(Some("HEAD"),
-                    &signature,
-                    &signature,
+                    signature,
+                    signature,
                     &format!("join repo into {:?}", path),
                     &final_tree,
                     &parents)
