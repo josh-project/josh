@@ -95,8 +95,11 @@ pub fn dispatch(pargs: Vec<String>, hooks: &Hooks, host: &RepoHost, scratch: &Sc
                 println!("=================== Do not submit merge commits! ==================");
                 println!("===================================================================");
             }
-            ReviewUploadResult::Uploaded(oid) => {
+            ReviewUploadResult::Uploaded(oid, initial) => {
                 println!("================ Doing actual upload in central git ===============");
+                if initial {
+                    println!("======================= This is a NEW Module ======================");
+                }
 
                 println!("{}",
                          scratch.push(host, oid, host.central(), "refs/for/master"));

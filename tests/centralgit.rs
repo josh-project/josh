@@ -406,11 +406,11 @@ fn test_module_review_upload()
     module_a.add_file("added/in_mod_a");
     let head = module_a.commit("module_a_commit");
 
-    if let ReviewUploadResult::Uploaded(oid) = hooks.review_upload(&scratch,
-                                                                   &host,
-                                                                   scratch.transfer(&head,
-                                                                                 &module_a.path),
-                                                                   "modules/module_a") {
+    if let ReviewUploadResult::Uploaded(oid, initial) = hooks.review_upload(&scratch,
+                       &host,
+                       scratch.transfer(&head, &module_a.path),
+                       "modules/module_a") {
+        assert!(!initial);
         scratch.push(&host, oid, host.central(), "refs/for/master");
     }
     else {
@@ -431,6 +431,54 @@ fn test_module_review_upload()
 
     module_a.shell.command("git pull");
     assert_eq!(module_a.rev("origin/master"), head);
+}
+
+#[test]
+fn test_module_review_upload_new_module()
+{
+    let host = helpers::TestHost::new();
+    let TestSetup { td, central, scratch, shell, hooks } = TestSetup::new(&host);
+
+    central.add_file("modules/module_a/initial_a");
+    let head = central.commit("initial");
+
+    central.shell.command("git push origin master");
+    hooks.central_submit(&scratch,
+                         &host,
+                         scratch.transfer(&head, &host.repo_dir("central")));
+
+    host.create_project("modules/module_new");
+    shell.command(&format!("git clone {}", &host.remote_url("modules/module_new")));
+    let module_new = helpers::TestRepo::new(&td.path().join("module_new"));
+
+    module_new.add_file("added/in_mod_new");
+    let head = module_new.commit("module_new_commit");
+
+    if let ReviewUploadResult::Uploaded(oid, initial) = hooks.review_upload(&scratch,
+                       &host,
+                       scratch.transfer(&head, &module_new.path),
+                       "modules/module_new") {
+        assert!(initial);
+        scratch.push(&host, oid, host.central(), "refs/for/master");
+    }
+    else {
+        assert!(false);
+    }
+
+    central.shell.command("git fetch origin for/master:for/master");
+    let for_master = central.rev("for/master");
+
+    hooks.central_submit(&scratch,
+                         &host,
+                         scratch.transfer(&for_master, &host.repo_dir("central")));
+
+    central.shell.command("git rebase for/master");
+    assert_eq!(central.rev("master"), central.rev("for/master"));
+    assert_eq!(central.rev("master"), central.rev("HEAD"));
+    assert!(central.has_file("modules/module_new/added/in_mod_new"));
+
+    module_new.shell.command("git pull");
+    assert_eq!(module_new.rev("origin/master"), head);
 }
 
 #[test]
@@ -457,10 +505,11 @@ fn test_module_review_upload_1_level()
     foo_module_a.add_file("added/in_mod_a");
     let head = foo_module_a.commit("module_a_commit");
 
-    if let ReviewUploadResult::Uploaded(oid) = hooks.review_upload(&scratch,
+    if let ReviewUploadResult::Uploaded(oid, initial) = hooks.review_upload(&scratch,
                        &host,
                        scratch.transfer(&head, &foo_module_a.path),
                        "foo_module_a") {
+        assert!(!initial);
         scratch.push(&host, oid, host.central(), "refs/for/master");
     }
     else {
@@ -507,10 +556,11 @@ fn test_module_review_upload_4_levels()
     foo_module_a.add_file("added/in_mod_a");
     let head = foo_module_a.commit("module_a_commit");
 
-    if let ReviewUploadResult::Uploaded(oid) = hooks.review_upload(&scratch,
+    if let ReviewUploadResult::Uploaded(oid, initial) = hooks.review_upload(&scratch,
                        &host,
                        scratch.transfer(&head, &foo_module_a.path),
                        "foo/modules/bla/module_a") {
+        assert!(!initial);
         scratch.push(&host, oid, host.central(), "refs/for/master");
     }
     else {

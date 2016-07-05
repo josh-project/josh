@@ -109,7 +109,8 @@ fn test_dispatch()
     module.shell.command(&format!("git remote add origin {}", &host.remote_url("module")));
     module.shell.command("git push origin master");
 
-    hooks.review_upload_return = ReviewUploadResult::Uploaded(git2::Oid::from_str(&head).unwrap());
+    hooks.review_upload_return = ReviewUploadResult::Uploaded(git2::Oid::from_str(&head).unwrap(),
+                                                              false);
 
     assert_eq!(1,
                dispatch(vec![

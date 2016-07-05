@@ -19,7 +19,7 @@ pub use dispatch::dispatch;
 #[derive(Clone)]
 pub enum ReviewUploadResult
 {
-    Uploaded(git2::Oid),
+    Uploaded(git2::Oid, bool),
     RejectNoFF,
     RejectMerge,
     NoChanges,

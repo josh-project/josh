@@ -28,26 +28,34 @@ impl Hooks for CentralGit
         debug!(".\n\n==== Doing review upload for module {}", &module);
 
         let new = newrev.id();
-        let old = scratch.tracking(host, &module, "master").expect("no tracking branch 1").id();
 
-        if old == new {
-            return ReviewUploadResult::NoChanges;
-        }
+        let (walk, initial) = if let Some(old) = scratch.tracking(host, &module, "master") {
 
-        match scratch.repo.graph_descendant_of(new, old) {
-            Err(_) | Ok(false) => return ReviewUploadResult::RejectNoFF,
-            Ok(true) => (),
-        }
+            let old = old.id();
 
-        debug!("==== walking commits from {} to {}", old, new);
+            if old == new {
+                return ReviewUploadResult::NoChanges;
+            }
 
-        let walk = {
+            match scratch.repo.graph_descendant_of(new, old) {
+                Err(_) | Ok(false) => return ReviewUploadResult::RejectNoFF,
+                Ok(true) => (),
+            }
+
+            debug!("==== walking commits from {} to {}", old, new);
+
             let mut walk = scratch.repo.revwalk().expect("walk: can't create revwalk");
             walk.set_sorting(SORT_REVERSE | SORT_TOPOLOGICAL);
             let range = format!("{}..{}", old, new);
             walk.push_range(&range).expect(&format!("walk: invalid range: {}", range));;
-            walk.hide(old);
-            walk
+            walk.hide(old).expect("walk: can't hide");
+            (walk, false)
+        }
+        else {
+            let mut walk = scratch.repo.revwalk().expect("walk: can't create revwalk");
+            walk.set_sorting(SORT_REVERSE | SORT_TOPOLOGICAL);
+            walk.push(new).expect("walk: can't push");
+            (walk, true)
         };
 
         let mut current =
@@ -86,7 +94,7 @@ impl Hooks for CentralGit
 
 
         if module != host.central() {
-            return ReviewUploadResult::Uploaded(current);
+            return ReviewUploadResult::Uploaded(current, initial);
         }
         else {
             return ReviewUploadResult::Central;
