@@ -230,6 +230,8 @@ fn test_add_module_empty_on_host()
 #[test]
 fn test_central_review_upload()
 {
+    ::std::env::set_var("GIT_DIR", "/"); // ensure that we don't care about GIT_DIR
+
     let host = helpers::TestHost::new();
     let TestSetup { td: _td, central, scratch, shell: _, hooks } = TestSetup::new(&host);
 
