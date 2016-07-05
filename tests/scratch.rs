@@ -324,13 +324,15 @@ fn test_join()
     module.add_file("initial_in_module");
     let module_head = scratch.transfer(&module.commit("module_initial"), &module.path);
 
-    let result = scratch.join(central_head.id(), &Path::new("foo"), module_head.id());
+    let shell = Shell { cwd: scratch.repo.path().to_path_buf() };
+    shell.command("git config user.name=test");
+    shell.command("git config user.email=test@test.com");
+    let result = scratch.join_to_subdir(central_head.id(), &Path::new("foo"), module_head.id());
     scratch.repo.reference("refs/heads/module", module_head.id(), true, "x").expect("err 2");
     scratch.repo.reference("refs/heads/central", central_head.id(), true, "x").expect("err 2");
     scratch.repo.reference("refs/heads/result", result, true, "x").expect("err 2");
     scratch.repo.reference("HEAD", result, true, "x").expect("err 2");
 
-    let shell = Shell { cwd: scratch.repo.path().to_path_buf() };
 
     assert_eq!(fparents(&shell.command("git log --pretty=format:%s-@%p --topo-order")),
                "\
@@ -356,13 +358,15 @@ fn test_join_more()
     module.add_file("some/more/in/module");
     let module_head = scratch.transfer(&module.commit("module_more"), &module.path);
 
-    let result = scratch.join(central_head.id(), &Path::new("foo/bar"), module_head.id());
+    let shell = Shell { cwd: scratch.repo.path().to_path_buf() };
+    shell.command("git config user.name=test");
+    shell.command("git config user.email=test@test.com");
+    let result = scratch.join_to_subdir(central_head.id(), &Path::new("foo/bar"), module_head.id());
     scratch.repo.reference("refs/heads/module", module_head.id(), true, "x").expect("err 2");
     scratch.repo.reference("refs/heads/central", central_head.id(), true, "x").expect("err 2");
     scratch.repo.reference("refs/heads/result", result, true, "x").expect("err 2");
     scratch.repo.reference("HEAD", result, true, "x").expect("err 2");
 
-    let shell = Shell { cwd: scratch.repo.path().to_path_buf() };
     // shell.command("gitk --all");
     assert_eq!(fparents(&shell.command("git log --pretty=format:%s-@%p --topo-order")),
                "\
@@ -411,7 +415,10 @@ fn test_join_with_merge()
     module.add_file("extra_file");
     let module_head = scratch.transfer(&module.commit("module_after_merge"), &module.path);
 
-    let result = scratch.join(central_head.id(), &Path::new("foo"), module_head.id());
+    let shell = Shell { cwd: scratch.repo.path().to_path_buf() };
+    shell.command("git config user.name=test");
+    shell.command("git config user.email=test@test.com");
+    let result = scratch.join_to_subdir(central_head.id(), &Path::new("foo"), module_head.id());
     scratch.repo.reference("refs/heads/module", module_head.id(), true, "x").expect("err 2");
     scratch.repo.reference("refs/heads/central", central_head.id(), true, "x").expect("err 2");
     scratch.repo.reference("refs/heads/result", result, true, "x").expect("err 2");
@@ -433,7 +440,7 @@ fn test_replace_subtree()
     let repo = helpers::TestRepo::new(&td.path().join("repo"));
 
     repo.add_file("a");
-    let master = scratch.transfer(&repo.commit("initial"), &repo.path);
+    let _ = scratch.transfer(&repo.commit("initial"), &repo.path);
     repo.shell.command("git branch tmp");
     repo.shell.command("git checkout master");
 

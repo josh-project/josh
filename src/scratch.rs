@@ -226,7 +226,7 @@ impl Scratch
         return sd;
     }
 
-    pub fn join(&self, dst: Oid, path: &Path, src: Oid) -> Oid
+    pub fn join_to_subdir(&self, dst: Oid, path: &Path, src: Oid) -> Oid
     {
         let dst = self.repo.find_commit(dst).unwrap();
         let src = self.repo.find_commit(src).unwrap();

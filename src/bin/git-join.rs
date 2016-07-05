@@ -25,7 +25,7 @@ fn main()
     shell.command(&format!("git fetch {} master:join_source", source));
     scratch.transfer(&format!("{}",central_head.id()), &Path::new("."));
     let module_head = scratch.repo.revparse_single("join_source").expect("can'f find join_source");
-    let result = scratch.join(central_head.id(), &Path::new(subdir), module_head.id());
+    let result = scratch.join_to_subdir(central_head.id(), &Path::new(subdir), module_head.id());
 
     scratch.repo.find_reference("refs/heads/result").map(|mut r| { r.delete().ok(); }).ok();
     scratch.repo.reference("refs/heads/join_result", result, true, "join").ok();
