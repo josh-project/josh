@@ -37,7 +37,7 @@ impl Gerrit
 
         let prefix = root.strip_prefix(&path.join("git")).unwrap().to_path_buf();
 
-        println!("Gerrit prefix: {:?}", prefix);
+        debug!("Gerrit prefix: {:?}", prefix);
 
         (path.clone(),
          Gerrit {

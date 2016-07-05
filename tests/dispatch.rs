@@ -45,6 +45,11 @@ impl MockHooks
 
 impl Hooks for MockHooks
 {
+    fn branch(&self) -> &str
+    {
+        "master"
+    }
+
     fn review_upload(&self,
                      _scratch: &Scratch,
                      _host: &RepoHost,

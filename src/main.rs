@@ -13,10 +13,11 @@ use centralgithook::Gerrit;
 const GERRIT_PORT: &'static str = "29418";
 const AUTOMATION_USER: &'static str = "automation";
 const CENTRAL_NAME: &'static str = "central";
+const BRANCH: &'static str = "master";
 
 fn main()
 {
-    ::std::env::set_var("RUST_LOG", "centralgithook=debug");
+    // ::std::env::set_var("RUST_LOG", "centralgithook=debug");
     env_logger::init().expect("can't init logger");
 
     let git_dir = env::var("GIT_DIR").expect("GIT_DIR not set");
@@ -32,6 +33,6 @@ fn main()
     for arg in env::args() {
         args.push(arg);
     }
-    let hooks = CentralGit;
+    let hooks = CentralGit::new(BRANCH);
     exit(centralgithook::dispatch(args, &hooks, &gerrit, &scratch));
 }

@@ -28,7 +28,7 @@ impl TestSetup
 {
     fn new(host: &helpers::TestHost) -> Self
     {
-        let hooks = CentralGit;
+        let hooks = CentralGit::new("master");
 
         host.create_project("modules/module_a");
         host.create_project("modules/module_b");

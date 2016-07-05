@@ -9,8 +9,10 @@ use super::Scratch;
 use super::ReviewUploadResult;
 use super::Hooks;
 
+
 pub fn dispatch(pargs: Vec<String>, hooks: &Hooks, host: &RepoHost, scratch: &Scratch) -> i32
 {
+    println!(".\n");
     let hook = &pargs[0];
     let args = clap::App::new("centralgithook")
         .arg(clap::Arg::with_name("branch").long("branch").takes_value(true))
@@ -32,15 +34,10 @@ pub fn dispatch(pargs: Vec<String>, hooks: &Hooks, host: &RepoHost, scratch: &Sc
     let project = args.value_of("project").unwrap_or("");
     let refname = args.value_of("refname").unwrap_or("");
 
-
-
-    println!("PP {:?} {:?} {:?}", pargs, project, host.prefix());
     let is_module = project != format!("{}{}", host.prefix(), host.central());
     let (_, project) = project.split_at(host.prefix().len());
-    println!("PJECT: {}", project);
 
     let this_project = Path::new(&host.local_path(project)).to_path_buf();
-
 
     // ref-update: fired after push
     // change-merged: fired after gerrit-submit
@@ -48,20 +45,20 @@ pub fn dispatch(pargs: Vec<String>, hooks: &Hooks, host: &RepoHost, scratch: &Sc
     let is_submit = hook.ends_with("change-merged");
     let is_project_created = hook.ends_with("project-created");
 
-    let is_review = is_update && refname == "refs/for/master";
+    let is_review = is_update && refname == format!("refs/for/{}", hooks.branch());;
     let is_initial = !is_module && oldrev == "0000000000000000000000000000000000000000";
 
     let uploader = args.value_of("uploader").unwrap_or("");
     if is_update && !is_review && !uploader.contains("Automation") {
         // FIXME: hardcoded
-        println!(".");
-        // debug!("==== uploader: {}", uploader);
-        println!("{} {} {}",
-                 is_update,
-                 is_review,
-                 uploader.contains("Automation"));
+        debug!("==== uploader: {}", uploader);
+        debug!("{} {} {}",
+               is_update,
+               is_review,
+               uploader.contains("Automation"));
         println!("===================================================================");
-        println!("================= Do not push directly to master! =================");
+        println!("================= Do not push directly to {}! =================",
+                 hooks.branch());
         println!("===================================================================");
         return 1;
     }
@@ -83,14 +80,13 @@ pub fn dispatch(pargs: Vec<String>, hooks: &Hooks, host: &RepoHost, scratch: &Sc
                                   scratch.transfer(newrev, &this_project),
                                   project) {
             ReviewUploadResult::RejectNoFF => {
-                println!(".");
                 println!("===================================================================");
-                println!("=========== Commit not based on master, rebase first! =============");
+                println!("=========== Commit not based on {}, rebase first! =============",
+                         hooks.branch());
                 println!("===================================================================");
             }
             ReviewUploadResult::NoChanges => {}
             ReviewUploadResult::RejectMerge => {
-                println!(".");
                 println!("===================================================================");
                 println!("=================== Do not submit merge commits! ==================");
                 println!("===================================================================");
@@ -98,11 +94,14 @@ pub fn dispatch(pargs: Vec<String>, hooks: &Hooks, host: &RepoHost, scratch: &Sc
             ReviewUploadResult::Uploaded(oid, initial) => {
                 println!("================ Doing actual upload in central git ===============");
                 if initial {
-                    println!("======================= This is a NEW Module ======================");
+                    println!("======================= This is a NEW module ======================");
                 }
 
                 println!("{}",
-                         scratch.push(host, oid, host.central(), "refs/for/master"));
+                         scratch.push(host,
+                                      oid,
+                                      host.central(),
+                                      &format!("refs/for/{}", hooks.branch())));
                 println!("==== The review upload may have worked, even if it says error below. \
                           Look UP! ====")
             }

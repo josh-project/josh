@@ -107,6 +107,22 @@ fn test_split_subdir_two_commits()
 }
 
 #[test]
+fn test_split_subdir_does_not_exist()
+{
+    let td = TempDir::new("cgh_test").expect("folder cgh_test should be created");
+    let scratch = Scratch::new(&td.path().join("scratch"));
+    let repo = helpers::TestRepo::new(&td.path().join("repo"));
+
+    repo.add_file("foo/bla");
+    let _ = scratch.transfer(&repo.commit("1"), &repo.path);
+    repo.add_file("foo/bla_bla");
+    // let head = scratch.transfer(&repo.commit("1"), &repo.path);
+
+    // assert_eq!(split_subdir_ref(&repo, "bar", head.id()),
+    //            scratch.split_subdir("bar", head.id()));
+}
+
+#[test]
 fn test_split_subdir_two_commits_first_empty()
 {
     let td = TempDir::new("cgh_test").expect("folder cgh_test should be created");
@@ -419,7 +435,6 @@ fn test_join_with_merge()
     module.add_file("extra_file");
     let module_head = scratch.transfer(&module.commit("module_after_merge"), &module.path);
 
-    let shell = Shell { cwd: scratch.repo.path().to_path_buf() };
     let signature = git2::Signature::now("test", "test@test.com").unwrap();
     let result = scratch.join_to_subdir(central_head.id(),
                                         &Path::new("foo"),
@@ -430,10 +445,8 @@ fn test_join_with_merge()
     scratch.repo.reference("refs/heads/result", result, true, "x").expect("err 2");
     scratch.repo.reference("HEAD", result, true, "x").expect("err 2");
 
-    // let shell = Shell { cwd: scratch.repo.path().to_path_buf() };
     let splitted = scratch.split_subdir("foo", result).unwrap();
     scratch.repo.reference("refs/heads/splitted", splitted, true, "x").expect("err 2");
-    // shell.command("gitk --all");
     assert_eq!(module_head.id(), splitted);
 }
 
