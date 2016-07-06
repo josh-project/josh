@@ -155,6 +155,8 @@ impl Hooks for CentralGit
         let central_commit = newrev.as_commit().expect("could not get commit from obj");
         let central_tree = central_commit.tree().expect("commit has no tree");
 
+        let mut changed = vec![];
+
         for module in host.projects() {
             if module == host.central() {
                 continue;
@@ -170,6 +172,7 @@ impl Hooks for CentralGit
                     debug!("====    initializing with subdir history");
 
                     self.pre_create_project(scratch, newrev.id(), &module);
+                    changed.push(module.to_string());
                 }
             };
             self.pre_create_project(scratch, newrev.id(), &module);
@@ -207,6 +210,7 @@ impl Hooks for CentralGit
 
             // if sha1's are equal the content is equal
             if new_tree_id != old_tree_id && !new_tree_id.is_zero() {
+                changed.push(module.to_string());
                 let new_tree =
                     scratch.repo.find_tree(new_tree_id).expect("central_submit: can't find tree");
                 debug!("====    commit changes module => make commit on module");
@@ -223,7 +227,7 @@ impl Hooks for CentralGit
             }
         }
 
-        for module in host.projects() {
+        for module in changed {
             if let Ok(module_commit) = scratch.repo
                 .refname_to_id(&module_ref(&module, &self.branch())) {
                 let output = scratch.push(host,
