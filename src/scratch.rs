@@ -92,9 +92,9 @@ impl Scratch
         self.repo.set_head_detached(commit.id()).expect("can't detach HEAD");
         let cmd = format!("git push {} HEAD:{}", host.remote_url(module), target);
         let shell = Shell { cwd: self.repo.path().to_path_buf() };
-        let output = shell.command(&cmd);
-        debug!("push: {}\n{}", cmd, output);
-        format!("{}", output)
+        let (stdout, stderr) = shell.command(&cmd);
+        debug!("push: {}\n{}\n{}", cmd, stdout, stderr);
+        format!("{}{}", stdout, stderr)
     }
 
     fn subtree(&self, tree: &Tree, path: &Path) -> Option<Tree>

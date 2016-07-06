@@ -80,5 +80,5 @@ fn test_gerrit_sufix_stripping()
         .unwrap();
     assert_eq!(vec!["central", "module.git"], sorted(gerrit.projects()));
 
-    println!("{}", shell.command("tree"));
+    println!("{:?}", shell.command("tree"));
 }

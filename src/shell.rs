@@ -10,7 +10,7 @@ pub struct Shell
 
 impl Shell
 {
-    pub fn command(&self, cmd: &str) -> String
+    pub fn command(&self, cmd: &str) -> (String, String)
     {
         debug!("Shell::command: {}", cmd);
         let git_dir = if self.cwd.join(".git").exists() {
@@ -34,6 +34,6 @@ impl Shell
             String::from_utf8(output.stderr).expect("failed to decode utf8").trim().to_string();
         debug!("stdout: {}", &stdout);
         debug!("stderr: {}", &stderr);
-        return stdout;
+        return (stdout, stderr);
     }
 }

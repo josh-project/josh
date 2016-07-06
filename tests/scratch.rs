@@ -259,7 +259,7 @@ fn test_split_merge_identical_to_first()
     repo.shell.command("git checkout master");
     repo.shell.command("git merge tmp --no-ff -m foo_merge");
 
-    println!("{}", repo.shell.command("git log"));
+    println!("{:?}", repo.shell.command("git log"));
     let head = scratch.transfer(&repo.rev("HEAD"), &repo.path);
 
     let actual = scratch.split_subdir("foo", head.id());
@@ -273,8 +273,9 @@ fn test_split_merge_identical_to_first()
                    .command("git log --pretty=format:%s-@%p --topo-order --grep=foo_ ")));
 }
 
-fn fparents(s: &str) -> String
+fn fparents(ss: &(String, String)) -> String
 {
+    let (s, _) = ss.clone();
     let mut o = String::new();
     for l in s.lines() {
         let spl = l.split("@");
@@ -312,7 +313,7 @@ fn test_split_merge_identical_to_second()
     repo.add_file("foo/bla_bla");
     let _ = scratch.transfer(&repo.commit("foo_on_master_2"), &repo.path);
     repo.shell.command("git merge tmp --no-ff -m foo_merge");
-    println!("{}", repo.shell.command("git log"));
+    println!("{:?}", repo.shell.command("git log"));
     let head = scratch.transfer(&repo.rev("HEAD"), &repo.path);
 
     let actual = scratch.split_subdir("foo", head.id());

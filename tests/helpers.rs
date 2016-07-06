@@ -101,7 +101,8 @@ impl TestRepo
     pub fn commit(&self, message: &str) -> String
     {
         self.shell.command(&format!("git commit -m \"{}\"", message));
-        self.shell.command("git rev-parse HEAD")
+        let (stdout, _) = self.shell.command("git rev-parse HEAD");
+        stdout
     }
 
     pub fn add_file(&self, filename: &str)
@@ -118,6 +119,7 @@ impl TestRepo
 
     pub fn rev(&self, r: &str) -> String
     {
-        self.shell.command(&format!("git rev-parse {}", r))
+        let (stdout, _) = self.shell.command(&format!("git rev-parse {}", r));
+        stdout
     }
 }
