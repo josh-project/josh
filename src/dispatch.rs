@@ -164,10 +164,10 @@ pub fn dispatch(pargs: Vec<String>, hooks: &Hooks, host: &RepoHost, scratch: &Sc
                 }
 
                 println!("{}",
-                         scratch.push(host,
-                                      oid,
-                                      host.central(),
-                                      &format!("refs/for/{}", hooks.branch())));
+                         scratch.push_ssh(host,
+                                          oid,
+                                          host.central(),
+                                          &format!("refs/for/{}", hooks.branch())));
                 println!("==== The review upload may have worked, even if it says error below. \
                           Look UP! ====")
             }

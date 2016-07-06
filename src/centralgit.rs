@@ -230,11 +230,10 @@ impl Hooks for CentralGit
         for module in changed {
             if let Ok(module_commit) = scratch.repo
                 .refname_to_id(&module_ref(&module, &self.branch())) {
-                let output = scratch.push(host,
-                                          module_commit,
-                                          &module,
-                                          &format!("refs/heads/{}", self.branch()));
-                debug!("{}", output);
+                scratch.push_local(host,
+                                   module_commit,
+                                   &module,
+                                   &format!("refs/heads/{}", self.branch()));
             }
         }
     }

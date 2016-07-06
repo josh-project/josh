@@ -28,26 +28,28 @@ impl Scratch
 
     pub fn tracking(&self, host: &RepoHost, module: &str, branch: &str) -> Option<Object>
     {
-        let remote_name = format!("{}", module);
-        let fetch_url = host.local_path(&module);
-        let mut remote = if let Ok(remote) = self.repo.find_remote(&remote_name) {
-            remote
-        }
-        else {
-            debug!("==== create remote (remote_name:{}, remote_url:{})",
-                   &remote_name,
-                   &fetch_url);
-            self.repo.remote(&remote_name, &fetch_url).expect("can't create remote")
-        };
+        let mut remote =
+            self.repo.remote_anonymous(&host.local_path(module)).expect("remote_anonymous");
 
-        let rs = remote.get_refspec(0).unwrap().str().unwrap().to_string();
-        if let Ok(_) = remote.fetch(&[&rs], None, None) {
-            return self.repo
-                .revparse_single(&format!("remotes/{}/{}", module, branch))
+        self.repo
+            .find_reference("refs/fetch_tmp")
+            .map(|mut r| {
+                r.delete().ok();
+            })
+            .ok();
+
+        let rs = format!("refs/heads/{}:refs/fetch_tmp", branch);
+        match remote.fetch(&[&rs], None, None) {
+            Ok(_) => {
+                debug!("tracking OK ");
+                return self.repo
+                .revparse_single("refs/fetch_tmp")
                 .ok();
-        }
-        else {
-            return None;
+            }
+            Err(e) => {
+                debug!("tracking Err {:?}", e);
+                return None;
+            }
         }
     }
 
@@ -86,11 +88,23 @@ impl Scratch
             .expect("rewrite: can't commit")
     }
 
-    pub fn push(&self, host: &RepoHost, oid: Oid, module: &str, target: &str) -> String
+    pub fn push_local(&self, host: &RepoHost, oid: Oid, module: &str, target: &str)
     {
-        let commit = &self.repo.find_commit(oid).expect("can't find commit");
-        self.repo.set_head_detached(commit.id()).expect("can't detach HEAD");
-        let cmd = format!("git push {} HEAD:{}", host.remote_url(module), target);
+        self.repo.set_head_detached(oid).expect("can't detach HEAD");
+        let rs = format!("HEAD:{}", target);
+        self.repo
+            .remote_anonymous(&host.local_path(module))
+            .expect("can't create remote_anonymous")
+            .push(&[&rs], None).expect("can't push local");
+        let shell = Shell { cwd: Path::new(&host.local_path(module)).to_path_buf() };
+        shell.command("git gc"); // Workarround a bug in gerrits JGit
+        // see: https://groups.google.com/forum/#!topic/repo-discuss/nKv5eFfJrBQ
+    }
+
+    pub fn push_ssh(&self, host: &RepoHost, oid: Oid, module: &str, target: &str) -> String
+    {
+        self.repo.set_head_detached(oid).expect("can't detach HEAD");
+        let cmd = format!("git push {} HEAD:{}", &host.remote_url(module), target);
         let shell = Shell { cwd: self.repo.path().to_path_buf() };
         let (stdout, stderr) = shell.command(&cmd);
         debug!("push: {}\n{}\n{}", cmd, stdout, stderr);
