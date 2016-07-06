@@ -15,6 +15,8 @@ pub fn dispatch(pargs: Vec<String>, hooks: &Hooks, host: &RepoHost, scratch: &Sc
     println!(".\n");
     let hook = &pargs[0];
 
+    debug!("ARGS: {:?}", pargs);
+
     // ref-update: fired after push
     // change-merged: fired after gerrit-submit
     let is_update = hook.ends_with("ref-update");
