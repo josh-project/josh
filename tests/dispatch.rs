@@ -94,12 +94,15 @@ fn test_dispatch()
 
     hooks.review_upload_return = ReviewUploadResult::Central;
 
+    // allow review upload to master
     assert_eq!(0,
                dispatch(vec![
         format!("ref-update"),
-        format!("--refname"), format!("refs/for/master"),
-        format!("--newrev"), format!("{}",head),
         format!("--project"), format!("central"),
+        format!("--refname"), format!("refs/for/master"),
+        format!("--uploader"), format!("foo"),
+        format!("--oldrev"), format!("{}","3424"),
+        format!("--newrev"), format!("{}",head),
     ],
                         &hooks,
                         &host,
@@ -116,110 +119,156 @@ fn test_dispatch()
 
     hooks.review_upload_return = ReviewUploadResult::Uploaded(git2::Oid::from_str(&head).unwrap(),
                                                               false);
-
+    // reject review upload to module.
+    // note that this means in fact that the review will be created on central
     assert_eq!(1,
                dispatch(vec![
         format!("ref-update"),
-        format!("--refname"), format!("refs/for/master"),
-        format!("--newrev"), format!("{}",head),
         format!("--project"), format!("module"),
+        format!("--refname"), format!("refs/for/master"),
+        format!("--uploader"), format!("foo"),
+        format!("--oldrev"), format!("{}","3424"),
+        format!("--newrev"), format!("{}",head),
     ],
                         &hooks,
                         &host,
                         &scratch));
-
     assert_eq!(hooks.called(), format!("review_upload(_,{},module)", head));
 
+    // reject direct push to master on module
     assert_eq!(1,
                dispatch(vec![
         format!("ref-update"),
+        format!("--project"), format!("module"),
         format!("--refname"), format!("master"),
         format!("--uploader"), format!("someone"),
+        format!("--oldrev"), format!("{}","3424"),
         format!("--newrev"), format!("{}",head),
-        format!("--project"), format!("module"),
     ],
                         &hooks,
                         &host,
                         &scratch));
-
     assert_eq!(hooks.called(), format!(""));
 
+    // allow push to module by automation user
     assert_eq!(0,
                dispatch(vec![
         format!("ref-update"),
+        format!("--project"), format!("module"),
         format!("--refname"), format!("master"),
         format!("--uploader"), format!("Automation"),
+        format!("--oldrev"), format!("{}","3424"),
         format!("--newrev"), format!("{}",head),
-        format!("--project"), format!("module"),
     ],
                         &hooks,
                         &host,
                         &scratch));
+    assert_eq!(hooks.called(), format!(""));
 
+    // reject push to master if not automation user even if initial upload
     assert_eq!(1,
                dispatch(vec![
         format!("ref-update"),
+        format!("--project"), format!("central"),
         format!("--refname"), format!("master"),
         format!("--uploader"), format!("someone"),
+        format!("--oldrev"), format!("{}","0000000000000000000000000000000000000000"),
         format!("--newrev"), format!("{}",head),
-        format!("--project"), format!("central"),
     ],
                         &hooks,
                         &host,
                         &scratch));
-
     assert_eq!(hooks.called(), format!(""));
 
+    // reject push to master if not initial upload
     assert_eq!(1,
                dispatch(vec![
         format!("ref-update"),
+        format!("--project"), format!("central"),
         format!("--refname"), format!("master"),
         format!("--uploader"), format!("Automation"),
+        format!("--oldrev"), format!("{}","3424"),
         format!("--newrev"), format!("{}",head),
-        format!("--project"), format!("central"),
     ],
                         &hooks,
                         &host,
                         &scratch));
-
     assert_eq!(hooks.called(), format!(""));
 
+    // allow direct push no branch that is not master on central, and do nothing
     assert_eq!(0,
                dispatch(vec![
         format!("ref-update"),
+        format!("--project"), format!("central"),
+        format!("--refname"), format!("notmaster"),
+        format!("--uploader"), format!("don_t_care"),
+        format!("--oldrev"), format!("{}","3424"),
+        format!("--newrev"), format!("{}",head),
+    ],
+                        &hooks,
+                        &host,
+                        &scratch));
+    assert_eq!(hooks.called(), format!(""));
+
+    // allow direct push no branch that is not master on module, and do nothing
+    assert_eq!(0,
+               dispatch(vec![
+        format!("ref-update"),
+        format!("--project"), format!("module"),
+        format!("--refname"), format!("notmaster"),
+        format!("--uploader"), format!("don_t_care"),
+        format!("--oldrev"), format!("{}","3424"),
+        format!("--newrev"), format!("{}",head),
+    ],
+                        &hooks,
+                        &host,
+                        &scratch));
+    assert_eq!(hooks.called(), format!(""));
+
+    // allow direct push to central master by automation user for initial upload
+    assert_eq!(0,
+               dispatch(vec![
+        format!("ref-update"),
+        format!("--project"), format!("central"),
         format!("--refname"), format!("master"),
         format!("--uploader"), format!("Automation"),
-        format!("--newrev"), format!("{}",head),
         format!("--oldrev"), format!("0000000000000000000000000000000000000000"),
-        format!("--project"), format!("central"),
+        format!("--newrev"), format!("{}",head),
     ],
                         &hooks,
                         &host,
                         &scratch));
-
     assert_eq!(hooks.called(), format!("central_submit(_,{})", head));
 
+    // submit only happens on central
     assert_eq!(0,
                dispatch(vec![
         format!("change-merged"),
-        format!("--refname"), format!("refs/for/master"),
-        format!("--commit"), format!("{}",head),
+        format!("--change"), format!("1234"),
+        format!("--change-url"), format!("does://not/matter"),
+        format!("--change-owner"), format!("ignored"),
         format!("--project"), format!("central"),
+        format!("--branch"), format!("{}","master"),
+        format!("--topic"), format!("don_not_care"),
+        format!("--submitter"), format!("don_not_care"),
+        format!("--commit"), format!("{}",head),
+        format!("--newrev"), format!("{}",head),
     ],
                         &hooks,
                         &host,
                         &scratch));
-
     assert_eq!(hooks.called(), format!("central_submit(_,{})", head));
 
+    // project created calls a hook
     assert_eq!(0,
                dispatch(vec![
         format!("project-created"),
-        format!("--project"), format!("central"),
+        format!("--project"), format!("module"),
+        format!("--head"), format!("{}","master"),
     ],
                         &hooks,
                         &host,
                         &scratch));
 
-    assert_eq!(hooks.called(), format!("project_created(_,central)"));
+    assert_eq!(hooks.called(), format!("project_created(_,module)"));
 }

@@ -14,39 +14,103 @@ pub fn dispatch(pargs: Vec<String>, hooks: &Hooks, host: &RepoHost, scratch: &Sc
 {
     println!(".\n");
     let hook = &pargs[0];
-    let args = clap::App::new("centralgithook")
-        .arg(clap::Arg::with_name("branch").long("branch").takes_value(true))
-        .arg(clap::Arg::with_name("change").long("change").takes_value(true))
-        .arg(clap::Arg::with_name("change-owner").long("change-owner").takes_value(true))
-        .arg(clap::Arg::with_name("change-url").long("change-url").takes_value(true))
-        .arg(clap::Arg::with_name("commit").long("commit").takes_value(true))
-        .arg(clap::Arg::with_name("head").long("head").takes_value(true))
-        .arg(clap::Arg::with_name("newrev").long("newrev").takes_value(true))
-        .arg(clap::Arg::with_name("oldrev").long("oldrev").takes_value(true))
-        .arg(clap::Arg::with_name("project").long("project").takes_value(true))
-        .arg(clap::Arg::with_name("refname").long("refname").takes_value(true))
-        .arg(clap::Arg::with_name("submitter").long("submitter").takes_value(true))
-        .arg(clap::Arg::with_name("topic").long("topic").takes_value(true))
-        .arg(clap::Arg::with_name("uploader").long("uploader").takes_value(true))
-        .get_matches_from(&pargs);
-
-    let oldrev = args.value_of("oldrev").unwrap_or("");
-    let project = args.value_of("project").unwrap_or("");
-    let refname = args.value_of("refname").unwrap_or("");
-
-    let is_module = project != format!("{}{}", host.prefix(), host.central());
-    let (_, project) = project.split_at(host.prefix().len());
-
-    let this_project = Path::new(&host.local_path(project)).to_path_buf();
 
     // ref-update: fired after push
     // change-merged: fired after gerrit-submit
     let is_update = hook.ends_with("ref-update");
     let is_submit = hook.ends_with("change-merged");
     let is_project_created = hook.ends_with("project-created");
+    let is_create_project = hook.ends_with("validate-project");
 
-    let is_review = is_update && refname == format!("refs/for/{}", hooks.branch());;
-    let is_initial = !is_module && oldrev == "0000000000000000000000000000000000000000";
+    let args = if is_update {
+        clap::App::new("centralgithook")
+            .arg(clap::Arg::with_name("project").long("project").takes_value(true).required(true))
+            .arg(clap::Arg::with_name("refname").long("refname").takes_value(true).required(true))
+            .arg(clap::Arg::with_name("uploader")
+                .long("uploader")
+                .takes_value(true)
+                .required(true))
+            .arg(clap::Arg::with_name("oldrev").long("oldrev").takes_value(true).required(true))
+            .arg(clap::Arg::with_name("newrev").long("newrev").takes_value(true).required(true))
+            .get_matches_from(&pargs)
+    }
+    else if is_submit {
+        clap::App::new("centralgithook")
+            .arg(clap::Arg::with_name("change").long("change").takes_value(true))
+            .arg(clap::Arg::with_name("change-url")
+                .long("change-url")
+                .takes_value(true))
+            .arg(clap::Arg::with_name("change-owner")
+                .long("change-owner")
+                .takes_value(true))
+            .arg(clap::Arg::with_name("project").long("project").takes_value(true).required(true))
+            .arg(clap::Arg::with_name("branch").long("branch").takes_value(true).required(true))
+            .arg(clap::Arg::with_name("topic").long("topic").takes_value(true))
+            .arg(clap::Arg::with_name("submitter")
+                .long("submitter")
+                .takes_value(true))
+            .arg(clap::Arg::with_name("commit").long("commit").takes_value(true).required(true))
+            .arg(clap::Arg::with_name("newrev").long("newrev").takes_value(true).required(true))
+            .get_matches_from(&pargs)
+    }
+    else if is_project_created {
+        clap::App::new("centralgithook")
+            .arg(clap::Arg::with_name("head").long("head").takes_value(true).required(true))
+            .arg(clap::Arg::with_name("project").long("project").takes_value(true).required(true))
+            .get_matches_from(&pargs)
+    }
+    else if is_create_project {
+        clap::App::new("centralgithook")
+            .arg(clap::Arg::with_name("project").long("project").takes_value(true).required(true))
+            .get_matches_from(&pargs)
+    }
+    else {
+        return 0;
+    };
+
+    let (branch, refname) = if is_update {
+        let refname = args.value_of("refname").expect("no refname");
+        let branch = if refname.starts_with("refs/for/") {
+            refname.rsplitn(2, "refs/for/").next().expect("no branchname")
+        }
+        else {
+            refname.rsplitn(2, "refs/heads/").next().expect("no branchname")
+        };
+        (branch, refname)
+    }
+    else if is_submit {
+        (args.value_of("branch").expect("no branch"), args.value_of("branch").expect("no branch"))
+    }
+    else if is_project_created {
+        let head = args.value_of("head").expect("no head");
+        let branch = head.rsplitn(2, "refs/heads/").next().expect("no branchname");
+        (branch, head)
+    }
+    else {
+        ("", "")
+    };
+
+    if branch != "" && branch != hooks.branch() {
+        debug!("branch not controled by centralgit: {} ({})",
+               branch,
+               hooks.branch());
+        return 0;
+    }
+
+    let (_, project) = args.value_of("project").expect("no project").split_at(host.prefix().len());
+
+    if is_create_project {
+        let rev = scratch.tracking(host, host.central(), hooks.branch())
+            .expect("create_project: no central tracking")
+            .id();
+        hooks.pre_create_project(&scratch, rev, &project);
+        return 0;
+    }
+
+    let this_project = Path::new(&host.local_path(project)).to_path_buf();
+
+    let is_review = is_update && refname.starts_with("refs/for/");
+    let is_module = project != format!("{}{}", host.prefix(), host.central());
 
     let uploader = args.value_of("uploader").unwrap_or("");
     if is_update && !is_review && !uploader.contains("Automation") {
@@ -112,6 +176,8 @@ pub fn dispatch(pargs: Vec<String>, hooks: &Hooks, host: &RepoHost, scratch: &Sc
         return 1;
     }
     else if !is_module && is_update && !is_review {
+        let oldrev = args.value_of("oldrev").unwrap_or("");
+        let is_initial = !is_module && oldrev == "0000000000000000000000000000000000000000";
         if is_initial {
             println!(".\n\n##### INITIAL IMPORT ######");
             let newrev = args.value_of("newrev").unwrap_or("");

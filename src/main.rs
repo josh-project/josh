@@ -21,18 +21,19 @@ fn main()
     env_logger::init().expect("can't init logger");
 
     let git_dir = env::var("GIT_DIR").expect("GIT_DIR not set");
-    let (gerrit_path, gerrit) = Gerrit::new(&Path::new(&git_dir),
-                                            CENTRAL_NAME,
-                                            AUTOMATION_USER,
-                                            GERRIT_PORT);
+    if let Some((gerrit_path, gerrit)) = Gerrit::new(&Path::new(&git_dir),
+                                                     CENTRAL_NAME,
+                                                     AUTOMATION_USER,
+                                                     GERRIT_PORT) {
 
-    let scratch_dir = gerrit_path.join("centralgithook_scratch");
-    let scratch = Scratch::new(&scratch_dir);
+        let scratch_dir = gerrit_path.join("centralgithook_scratch");
+        let scratch = Scratch::new(&scratch_dir);
 
-    let mut args = vec![];
-    for arg in env::args() {
-        args.push(arg);
+        let mut args = vec![];
+        for arg in env::args() {
+            args.push(arg);
+        }
+        let hooks = CentralGit::new(BRANCH);
+        exit(centralgithook::dispatch(args, &hooks, &gerrit, &scratch));
     }
-    let hooks = CentralGit::new(BRANCH);
-    exit(centralgithook::dispatch(args, &hooks, &gerrit, &scratch));
 }

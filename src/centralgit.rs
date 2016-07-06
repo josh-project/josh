@@ -119,7 +119,9 @@ impl Hooks for CentralGit
 
     fn pre_create_project(&self, scratch: &Scratch, rev: Oid, project: &str)
     {
-        if let Ok(_) = scratch.repo.refname_to_id(&module_ref(project, &self.branch)) {}
+        if let Ok(_) = scratch.repo.refname_to_id(&module_ref(project, &self.branch)) {
+            debug!("=== module ref for {} already exists", project);
+        }
         else {
             if let Some(commit) = scratch.split_subdir(&project, rev) {
                 scratch.repo
@@ -169,6 +171,7 @@ impl Hooks for CentralGit
 
             let module_commit_obj = if let Ok(rev) = scratch.repo
                 .revparse_single(&module_ref(&module, &self.branch)) {
+                debug!("=== OK module ref : {}", module);
                 rev
             }
             else {

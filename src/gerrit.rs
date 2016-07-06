@@ -21,16 +21,22 @@ impl Gerrit
                central_name: &str,
                automation_user: &str,
                port: &str)
-        -> (PathBuf, Self)
+        -> Option<(PathBuf, Self)>
     {
         let mut root = PathBuf::new();
+        let mut found_central = false;
 
         let mut p = git_dir;
         while !p.join("bin").join("gerrit.sh").exists() {
             if p.join(&format!("{}.git", central_name)).exists() {
                 root = p.to_path_buf();
+                found_central = true;
             }
             p = p.parent().expect("can't find gerrit root");
+        }
+
+        if !found_central {
+            return None;
         }
 
         let path = p.to_path_buf();
@@ -39,14 +45,14 @@ impl Gerrit
 
         debug!("Gerrit prefix: {:?}", prefix);
 
-        (path.clone(),
-         Gerrit {
+        Some((path.clone(),
+              Gerrit {
             path: path,
             prefix: format!("{}/", prefix.as_os_str().to_str().unwrap()),
             central_name: central_name.to_string(),
             automation_user: automation_user.to_string(),
             port: port.to_string(),
-        })
+        }))
     }
 }
 

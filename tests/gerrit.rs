@@ -26,7 +26,8 @@ fn test_gerrit()
     let (_, gerrit) = Gerrit::new(&td.path().join("git/bsw/central.git"),
                                   "central",
                                   "auto",
-                                  "123");
+                                  "123")
+        .unwrap();
     assert_eq!("central", gerrit.central());
     assert_eq!(vec!["central"], gerrit.projects());
     assert_eq!(td.path().join("git/bsw/central.git").to_str().unwrap(),
@@ -47,7 +48,8 @@ fn test_gerrit_takes_topmost_central()
     let (_, gerrit) = Gerrit::new(&td.path().join("git/bsw/bla/central.git"),
                                   "central",
                                   "auto",
-                                  "123");
+                                  "123")
+        .unwrap();
     assert_eq!(vec!["bla/central", "central"], sorted(gerrit.projects()));
 }
 
@@ -63,7 +65,8 @@ fn test_gerrit_sufix_stripping()
     let (_, gerrit) = Gerrit::new(&td.path().join("git/bsw/module.git.git"),
                                   "central",
                                   "auto",
-                                  "123");
+                                  "123")
+        .unwrap();
     assert_eq!(vec!["central", "module.git"], sorted(gerrit.projects()));
 
     println!("{}", shell.command("tree"));
