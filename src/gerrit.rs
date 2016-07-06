@@ -61,6 +61,11 @@ impl Gerrit
 
 impl RepoHost for Gerrit
 {
+    fn automation_user(&self) -> &str
+    {
+        &self.automation_user
+    }
+
     fn local_path(&self, module_path: &str) -> String
     {
         let root = self.path.as_os_str().to_str().expect("local_path: to_str failed");

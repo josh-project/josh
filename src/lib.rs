@@ -56,4 +56,6 @@ pub trait RepoHost
     {
         ""
     }
+
+    fn automation_user(&self) -> &str;
 }

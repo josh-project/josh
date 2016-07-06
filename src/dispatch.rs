@@ -113,13 +113,13 @@ pub fn dispatch(pargs: Vec<String>, hooks: &Hooks, host: &RepoHost, scratch: &Sc
     let is_module = project != format!("{}{}", host.prefix(), host.central());
 
     let uploader = args.value_of("uploader").unwrap_or("");
-    if is_update && !is_review && !uploader.contains("Automation") {
+    if is_update && !is_review && !uploader.contains(host.automation_user()) {
         // FIXME: hardcoded
         debug!("==== uploader: {}", uploader);
         debug!("{} {} {}",
                is_update,
                is_review,
-               uploader.contains("Automation"));
+               uploader.contains(host.automation_user()));
         println!("===================================================================");
         println!("================= Do not push directly to {}! =================",
                  hooks.branch());

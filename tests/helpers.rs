@@ -56,6 +56,11 @@ fn test_test_host()
 
 impl RepoHost for TestHost
 {
+    fn automation_user(&self) -> &str
+    {
+        "centralgit"
+    }
+
     fn remote_url(&self, module_path: &str) -> String
     {
         self.td.path().join(&module_path).with_extension("git").to_string_lossy().to_string()

@@ -11,7 +11,7 @@ use centralgithook::Scratch;
 use centralgithook::Gerrit;
 
 const GERRIT_PORT: &'static str = "29418";
-const AUTOMATION_USER: &'static str = "automation";
+const AUTOMATION_USER: &'static str = "centralgit";
 const GERRIT_HOST: &'static str = "localhost";
 const CENTRAL_NAME: &'static str = "central";
 const BRANCH: &'static str = "master";
