@@ -9,6 +9,7 @@ use std::path::Path;
 use centralgithook::CentralGit;
 use centralgithook::Scratch;
 use centralgithook::Gerrit;
+use centralgithook::RepoHost;
 
 const GERRIT_PORT: &'static str = "29418";
 const AUTOMATION_USER: &'static str = "centralgit";
@@ -28,7 +29,7 @@ fn main()
                                                      GERRIT_HOST,
                                                      GERRIT_PORT) {
 
-        let scratch_dir = gerrit_path.join("centralgithook_scratch");
+        let scratch_dir = gerrit_path.join("centralgithook_scratch").join(gerrit.prefix());
         let scratch = Scratch::new(&scratch_dir);
 
         let mut args = vec![];
