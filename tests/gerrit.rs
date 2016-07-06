@@ -25,6 +25,7 @@ fn test_gerrit()
     if let Some(_) = Gerrit::new(&td.path().join("git/bsw/central.git"),
                                  "central",
                                  "auto",
+                                 "localhost",
                                  "123") {
         assert!(false);
     }
@@ -33,13 +34,14 @@ fn test_gerrit()
     let (_, gerrit) = Gerrit::new(&td.path().join("git/bsw/central.git"),
                                   "central",
                                   "auto",
+                                  "localhost",
                                   "123")
         .unwrap();
     assert_eq!("central", gerrit.central());
     assert_eq!(vec!["central"], gerrit.projects());
     assert_eq!(td.path().join("git/bsw/central.git").to_str().unwrap(),
                gerrit.local_path("central"));
-    assert_eq!("ssh://auto@gerrit-test-git:123/bsw/central.git",
+    assert_eq!("ssh://auto@localhost:123/bsw/central.git",
                gerrit.remote_url("central"));
 }
 
@@ -55,6 +57,7 @@ fn test_gerrit_takes_topmost_central()
     let (_, gerrit) = Gerrit::new(&td.path().join("git/bsw/bla/central.git"),
                                   "central",
                                   "auto",
+                                  "localhost",
                                   "123")
         .unwrap();
     assert_eq!(vec!["bla/central", "central"], sorted(gerrit.projects()));
@@ -72,6 +75,7 @@ fn test_gerrit_sufix_stripping()
     let (_, gerrit) = Gerrit::new(&td.path().join("git/bsw/module.git.git"),
                                   "central",
                                   "auto",
+                                  "localhost",
                                   "123")
         .unwrap();
     assert_eq!(vec!["central", "module.git"], sorted(gerrit.projects()));

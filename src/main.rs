@@ -12,6 +12,7 @@ use centralgithook::Gerrit;
 
 const GERRIT_PORT: &'static str = "29418";
 const AUTOMATION_USER: &'static str = "automation";
+const GERRIT_HOST: &'static str = "localhost";
 const CENTRAL_NAME: &'static str = "central";
 const BRANCH: &'static str = "master";
 
@@ -24,6 +25,7 @@ fn main()
     if let Some((gerrit_path, gerrit)) = Gerrit::new(&Path::new(&git_dir),
                                                      CENTRAL_NAME,
                                                      AUTOMATION_USER,
+                                                     GERRIT_HOST,
                                                      GERRIT_PORT) {
 
         let scratch_dir = gerrit_path.join("centralgithook_scratch");

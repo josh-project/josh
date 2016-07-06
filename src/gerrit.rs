@@ -12,6 +12,7 @@ pub struct Gerrit
     prefix: String,
     central_name: String,
     automation_user: String,
+    gerrit_host: String,
     port: String,
 }
 
@@ -20,6 +21,7 @@ impl Gerrit
     pub fn new(git_dir: &Path,
                central_name: &str,
                automation_user: &str,
+               gerrit_host: &str,
                port: &str)
         -> Option<(PathBuf, Self)>
     {
@@ -51,6 +53,7 @@ impl Gerrit
             prefix: format!("{}/", prefix.as_os_str().to_str().unwrap()),
             central_name: central_name.to_string(),
             automation_user: automation_user.to_string(),
+            gerrit_host: gerrit_host.to_string(),
             port: port.to_string(),
         }))
     }
@@ -66,8 +69,9 @@ impl RepoHost for Gerrit
 
     fn remote_url(&self, module_path: &str) -> String
     {
-        format!("ssh://{}@gerrit-test-git:{}/{}{}.git",
+        format!("ssh://{}@{}:{}/{}{}.git",
                 self.automation_user,
+                self.gerrit_host,
                 self.port,
                 self.prefix,
                 module_path)
