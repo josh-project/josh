@@ -22,10 +22,11 @@ impl CentralGit
 
 pub fn module_ref(module: &str, branch: &str) -> String
 {
-    format!("refs/centralgit/{}/##{}##", module, branch)
+    format!("refs/{}/{}/refs/heads/{}",
+            "centralgit_0ee845b3_9c3f_41ee_9149_9e98a65ecf35",
+            module,
+            branch)
 }
-
-
 
 impl Hooks for CentralGit
 {
