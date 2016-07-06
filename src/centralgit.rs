@@ -45,7 +45,7 @@ impl Hooks for CentralGit
 
         let new = newrev.id();
 
-        let (walk, initial) = if let Some(old) = scratch.tracking(host, &module, &self.branch) {
+        let (walk, initial) = if let Some(old) = scratch.tracking(host, &module, &self.branch()) {
 
             let old = old.id();
 
@@ -119,13 +119,13 @@ impl Hooks for CentralGit
 
     fn pre_create_project(&self, scratch: &Scratch, rev: Oid, project: &str)
     {
-        if let Ok(_) = scratch.repo.refname_to_id(&module_ref(project, &self.branch)) {
+        if let Ok(_) = scratch.repo.refname_to_id(&module_ref(project, &self.branch())) {
             debug!("=== module ref for {} already exists", project);
         }
         else {
             if let Some(commit) = scratch.split_subdir(&project, rev) {
                 scratch.repo
-                    .reference(&module_ref(project, &self.branch),
+                    .reference(&module_ref(project, &self.branch()),
                                commit,
                                true,
                                "subtree_split")
@@ -139,7 +139,7 @@ impl Hooks for CentralGit
 
     fn project_created(&self, scratch: &Scratch, host: &RepoHost, _project: &str)
     {
-        if let Some(rev) = scratch.tracking(host, host.central(), &self.branch) {
+        if let Some(rev) = scratch.tracking(host, host.central(), &self.branch()) {
             self.central_submit(scratch, host, rev);
         }
     }
@@ -157,7 +157,7 @@ impl Hooks for CentralGit
             }
             debug!("");
             debug!("==== fetching tracking branch for module: {}", &module);
-            match scratch.tracking(host, &module, &self.branch) {
+            match scratch.tracking(host, &module, &self.branch()) {
                 Some(_) => (),
                 None => {
                     debug!("====    no tracking branch for module {} => project does not exist \
@@ -170,7 +170,7 @@ impl Hooks for CentralGit
             };
 
             let module_commit_obj = if let Ok(rev) = scratch.repo
-                .revparse_single(&module_ref(&module, &self.branch)) {
+                .revparse_single(&module_ref(&module, &self.branch())) {
                 debug!("=== OK module ref : {}", module);
                 rev
             }
@@ -207,7 +207,7 @@ impl Hooks for CentralGit
                 debug!("====    commit changes module => make commit on module");
                 let module_commit = scratch.rewrite(central_commit, &parents, &new_tree);
                 scratch.repo
-                    .reference(&module_ref(&module, &self.branch),
+                    .reference(&module_ref(&module, &self.branch()),
                                module_commit,
                                true,
                                "rewrite")
@@ -220,11 +220,11 @@ impl Hooks for CentralGit
 
         for module in host.projects() {
             if let Ok(module_commit) = scratch.repo
-                .refname_to_id(&module_ref(&module, &self.branch)) {
+                .refname_to_id(&module_ref(&module, &self.branch())) {
                 let output = scratch.push(host,
                                           module_commit,
                                           &module,
-                                          &format!("refs/heads/{}", self.branch));
+                                          &format!("refs/heads/{}", self.branch()));
                 debug!("{}", output);
             }
         }
