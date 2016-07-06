@@ -172,6 +172,7 @@ impl Hooks for CentralGit
                     self.pre_create_project(scratch, newrev.id(), &module);
                 }
             };
+            self.pre_create_project(scratch, newrev.id(), &module);
 
             let module_commit_obj = if let Ok(rev) = scratch.repo
                 .revparse_single(&module_ref(&module, &self.branch())) {

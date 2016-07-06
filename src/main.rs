@@ -29,7 +29,7 @@ fn main()
                                                      GERRIT_HOST,
                                                      GERRIT_PORT) {
 
-        let scratch_dir = gerrit_path.join("centralgithook_scratch").join(gerrit.prefix());
+        let scratch_dir = gerrit_path.join(format!("centralgithook_scratch_{}", gerrit.prefix()));
         let scratch = Scratch::new(&scratch_dir);
 
         let mut args = vec![];
