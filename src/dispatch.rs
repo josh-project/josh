@@ -101,7 +101,7 @@ pub fn dispatch(pargs: Vec<String>, hooks: &Hooks, host: &RepoHost, scratch: &Sc
 
     if is_create_project {
         let rev = scratch.tracking(host, host.central(), hooks.branch())
-            .expect("create_project: no central tracking")
+            .expect("pre_create_project: no central tracking")
             .id();
         hooks.pre_create_project(&scratch, rev, &project);
         return 0;

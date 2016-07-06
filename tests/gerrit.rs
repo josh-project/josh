@@ -22,6 +22,13 @@ fn test_gerrit()
     let shell = Shell { cwd: td.path().to_path_buf() };
     shell.command("mkdir -p bin/gerrit.sh");
 
+    if let Some(_) = Gerrit::new(&td.path().join("git/bsw/central.git"),
+                                 "central",
+                                 "auto",
+                                 "123") {
+        assert!(false);
+    }
+
     shell.command("mkdir -p git/bsw/central.git");
     let (_, gerrit) = Gerrit::new(&td.path().join("git/bsw/central.git"),
                                   "central",

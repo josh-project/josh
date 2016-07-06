@@ -63,7 +63,7 @@ impl Hooks for MockHooks
 
     fn pre_create_project(&self, _scratch: &Scratch, _rev: git2::Oid, project: &str)
     {
-        self.set_called(&format!("pre_create_project(_,{})", project));
+        self.set_called(&format!("pre_create_project(_,_,{})", project));
     }
 
     fn project_created(&self, _scratch: &Scratch, _host: &RepoHost, project: &str)
@@ -269,6 +269,16 @@ fn test_dispatch()
                         &hooks,
                         &host,
                         &scratch));
-
     assert_eq!(hooks.called(), format!("project_created(_,module)"));
+
+    // project created calls a hook
+    assert_eq!(0,
+               dispatch(vec![
+        format!("validate-project"),
+        format!("--project"), format!("module"),
+    ],
+                        &hooks,
+                        &host,
+                        &scratch));
+    assert_eq!(hooks.called(), format!("pre_create_project(_,_,module)"));
 }
