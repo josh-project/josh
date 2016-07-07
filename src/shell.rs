@@ -13,12 +13,14 @@ impl Shell
     pub fn command(&self, cmd: &str) -> (String, String)
     {
         debug!("Shell::command: {}", cmd);
+        debug!("cwd: {:?}", self.cwd);
         let git_dir = if self.cwd.join(".git").exists() {
             self.cwd.join(".git")
         }
         else {
             self.cwd.to_path_buf()
         };
+        debug!("GIT_DIR: {:?}", git_dir);
 
         let output = Command::new("sh")
             .current_dir(&self.cwd)
