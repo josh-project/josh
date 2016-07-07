@@ -1,7 +1,9 @@
 extern crate centralgithook;
 extern crate git2;
 extern crate clap;
-extern crate env_logger;
+extern crate fern;
+#[macro_use]
+extern crate log;
 
 use std::env;
 use std::process::exit;
@@ -19,15 +21,29 @@ const BRANCH: &'static str = "master";
 
 fn main()
 {
-    // ::std::env::set_var("RUST_LOG", "centralgithook=debug");
-    env_logger::init().expect("can't init logger");
-
     let git_dir = env::var("GIT_DIR").expect("GIT_DIR not set");
     if let Some((gerrit_path, gerrit)) = Gerrit::new(&Path::new(&git_dir),
                                                      CENTRAL_NAME,
                                                      AUTOMATION_USER,
                                                      GERRIT_HOST,
                                                      GERRIT_PORT) {
+        let logfilename = &gerrit.root()
+            .join("logs")
+            .join("centralgit.log");
+
+        let logger_config = fern::DispatchConfig {
+            format: Box::new(|msg: &str, level: &log::LogLevel, _location: &log::LogLocation| {
+                format!("[{}] {}", level, msg)
+            }),
+            output: vec![fern::OutputConfig::file(logfilename)],
+            level: log::LogLevelFilter::Trace,
+        };
+
+        fern::init_global_logger(logger_config, log::LogLevelFilter::Trace)
+            .expect("can't init logger");
+
+        debug!("Gerrit prefix: {:?}", gerrit.prefix());
+
 
         let scratch_dir = gerrit_path.join(format!("centralgithook_scratch_{}", gerrit.prefix()));
         let scratch = Scratch::new(&scratch_dir);

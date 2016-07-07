@@ -1,7 +1,6 @@
 // extern crate centralgithook;
 extern crate git2;
 extern crate clap;
-extern crate env_logger;
 
 use std::path::Path;
 use super::RepoHost;

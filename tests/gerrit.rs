@@ -2,7 +2,7 @@ extern crate centralgithook;
 extern crate tempdir;
 #[macro_use]
 extern crate log;
-extern crate env_logger;
+extern crate fern;
 
 use centralgithook::RepoHost;
 use centralgithook::Gerrit;

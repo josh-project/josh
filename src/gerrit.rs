@@ -1,6 +1,5 @@
 extern crate git2;
 extern crate clap;
-extern crate env_logger;
 
 use std::path::Path;
 use std::path::PathBuf;
@@ -45,8 +44,6 @@ impl Gerrit
 
         let prefix = root.strip_prefix(&path.join("git")).unwrap().to_path_buf();
 
-        debug!("Gerrit prefix: {:?}", prefix);
-
         Some((path.clone(),
               Gerrit {
             path: path,
@@ -56,6 +53,11 @@ impl Gerrit
             gerrit_host: gerrit_host.to_string(),
             port: port.to_string(),
         }))
+    }
+
+    pub fn root(&self) -> &Path
+    {
+        &self.path
     }
 }
 
