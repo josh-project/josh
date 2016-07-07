@@ -91,7 +91,6 @@ impl Hooks for CentralGit
                 .expect("walk: object is not actually a commit");
 
             if module_commit.parents().count() > 1 {
-                // TODO: also do this check on pushes to cenral refs/for/branch
                 // TODO: invectigate the possibility of allowing merge commits
                 return ReviewUploadResult::RejectMerge;
             }
