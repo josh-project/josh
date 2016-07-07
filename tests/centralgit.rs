@@ -411,7 +411,7 @@ fn test_module_review_upload()
                        scratch.transfer(&head, &module_a.path),
                        "modules/module_a") {
         assert!(!initial);
-        scratch.push_local(&host, oid, host.central(), "refs/for/master");
+        scratch.push(&host, oid, host.central(), "refs/for/master");
     }
     else {
         assert!(false);
@@ -459,7 +459,7 @@ fn test_module_review_upload_new_module()
                        scratch.transfer(&head, &module_new.path),
                        "modules/module_new") {
         assert!(initial);
-        scratch.push_local(&host, oid, host.central(), "refs/for/master");
+        scratch.push(&host, oid, host.central(), "refs/for/master");
     }
     else {
         assert!(false);
@@ -510,7 +510,7 @@ fn test_module_review_upload_1_level()
                        scratch.transfer(&head, &foo_module_a.path),
                        "foo_module_a") {
         assert!(!initial);
-        scratch.push_local(&host, oid, host.central(), "refs/for/master");
+        scratch.push(&host, oid, host.central(), "refs/for/master");
     }
     else {
         assert!(false);
@@ -561,7 +561,7 @@ fn test_module_review_upload_4_levels()
                        scratch.transfer(&head, &foo_module_a.path),
                        "foo/modules/bla/module_a") {
         assert!(!initial);
-        scratch.push_local(&host, oid, host.central(), "refs/for/master");
+        scratch.push(&host, oid, host.central(), "refs/for/master");
     }
     else {
         assert!(false);
