@@ -90,11 +90,16 @@ impl Scratch
     {
         let commit = &self.repo.find_commit(oid).expect("can't find commit");
         self.repo.set_head_detached(commit.id()).expect("can't detach HEAD");
-        let cmd = format!("git push {} HEAD:{}", host.remote_url(module), target);
+        let cmd =
+            format!("if git push {} HEAD:{};\
+                    then echo \"====\n==== SUCCESS!\n==== Ignore the error message below.\n====\";\
+                    else echo \"####\n#### FAILED\n####\n\";fi",
+                    host.remote_url(module),
+                    target);
         let shell = Shell { cwd: self.repo.path().to_path_buf() };
         let (stdout, stderr) = shell.command(&cmd);
         debug!("push: {}\n{}\n{}", cmd, stdout, stderr);
-        format!("{}{}", stdout, stderr)
+        format!("{}\n\n{}", stderr, stdout)
     }
 
     fn subtree(&self, tree: &Tree, path: &Path) -> Option<Tree>

@@ -121,10 +121,10 @@ pub fn dispatch(pargs: Vec<String>, hooks: &Hooks, host: &RepoHost, scratch: &Sc
                is_update,
                is_review,
                uploader.contains(host.automation_user()));
-        println!("===================================================================");
-        println!("================= Do not push directly to {}! =================",
+        println!("####");
+        println!("#### Do not push directly to {}!",
                  hooks.branch());
-        println!("===================================================================");
+        println!("####");
         return 1;
     }
 
@@ -145,21 +145,21 @@ pub fn dispatch(pargs: Vec<String>, hooks: &Hooks, host: &RepoHost, scratch: &Sc
                                   scratch.transfer(newrev, &this_project),
                                   project) {
             ReviewUploadResult::RejectNoFF => {
-                println!("===================================================================");
-                println!("=========== Commit not based on {}, rebase first! =============",
+                println!("####");
+                println!("#### Commit not based on {}, rebase first!",
                          hooks.branch());
-                println!("===================================================================");
+                println!("####");
             }
             ReviewUploadResult::NoChanges => {}
             ReviewUploadResult::RejectMerge => {
-                println!("===================================================================");
-                println!("=================== Do not submit merge commits! ==================");
-                println!("===================================================================");
+                println!("####");
+                println!("#### Do not submit merge commits!");
+                println!("####");
             }
             ReviewUploadResult::Uploaded(oid, initial) => {
-                println!("================ Doing actual upload in central git ===============");
+                println!("==== Doing actual upload in central git");
                 if initial {
-                    println!("======================= This is a NEW module ======================");
+                    println!("==== This is a NEW module");
                 }
 
                 println!("{}",
@@ -167,8 +167,8 @@ pub fn dispatch(pargs: Vec<String>, hooks: &Hooks, host: &RepoHost, scratch: &Sc
                                       oid,
                                       host.central(),
                                       &format!("refs/for/{}", hooks.branch())));
-                println!("==== The review upload may have worked, even if it says error below. \
-                          Look UP! ====")
+                // println!("==== The review upload may have worked, even if it says error below. \
+                          // Look UP! ====")
             }
             ReviewUploadResult::Central => return 0,
         }
