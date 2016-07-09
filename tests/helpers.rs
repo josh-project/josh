@@ -6,6 +6,7 @@ use centralgithook::find_repos;
 use std::path::{Path, PathBuf};
 use tempdir::TempDir;
 use centralgithook::RepoHost;
+use centralgithook::ProjectList;
 use centralgithook::Shell;
 
 pub struct TestHost
@@ -65,7 +66,10 @@ impl RepoHost for TestHost
     {
         self.td.path().join(&module_path).with_extension("git").to_string_lossy().to_string()
     }
+}
 
+impl ProjectList for TestHost
+{
     fn projects(&self) -> Vec<String>
     {
         find_repos(self.td.path(), self.td.path(), vec![])

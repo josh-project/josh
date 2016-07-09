@@ -11,7 +11,7 @@ use tempdir::TempDir;
 struct MockHooks
 {
     called: UnsafeCell<String>,
-    review_upload_return: ReviewUploadResult,
+    review_upload_return: ModuleToSubdir,
 }
 
 
@@ -21,7 +21,7 @@ impl MockHooks
     {
         MockHooks {
             called: UnsafeCell::new(String::new()),
-            review_upload_return: ReviewUploadResult::Central,
+            review_upload_return: ModuleToSubdir::RejectNoFF,
         }
     }
 
@@ -53,9 +53,10 @@ impl Hooks for MockHooks
     fn review_upload(&self,
                      _scratch: &Scratch,
                      _host: &RepoHost,
+                     _project_list: &ProjectList,
                      newrev: git2::Object,
                      module: &str)
-        -> ReviewUploadResult
+        -> ModuleToSubdir
     {
         self.set_called(&format!("review_upload(_,{},{})", newrev.id(), module));
         self.review_upload_return.clone()
@@ -66,12 +67,20 @@ impl Hooks for MockHooks
         self.set_called(&format!("pre_create_project(_,_,{})", project));
     }
 
-    fn project_created(&self, _scratch: &Scratch, _host: &RepoHost, project: &str)
+    fn project_created(&self,
+                       _scratch: &Scratch,
+                       _host: &RepoHost,
+                       _project_list: &ProjectList,
+                       project: &str)
     {
         self.set_called(&format!("project_created(_,{})", project));
     }
 
-    fn central_submit(&self, _scratch: &Scratch, _host: &RepoHost, newrev: git2::Object)
+    fn central_submit(&self,
+                      _scratch: &Scratch,
+                      _host: &RepoHost,
+                      _project_list: &ProjectList,
+                      newrev: git2::Object)
     {
         self.set_called(&format!("central_submit(_,{})", newrev.id()));
     }
@@ -92,7 +101,7 @@ fn test_dispatch()
     central.shell.command(&format!("git remote add origin {}", &host.remote_url("central")));
     central.shell.command("git push origin master");
 
-    hooks.review_upload_return = ReviewUploadResult::Central;
+    hooks.review_upload_return = ModuleToSubdir::Done(git2::Oid::from_str(&head).unwrap(), false);
 
     // allow review upload to master
     assert_eq!(0,
@@ -106,6 +115,7 @@ fn test_dispatch()
     ],
                         &hooks,
                         &host,
+                        &host,
                         &scratch));
 
     assert_eq!(hooks.called(), format!("review_upload(_,{},central)", head));
@@ -117,8 +127,7 @@ fn test_dispatch()
     module.shell.command(&format!("git remote add origin {}", &host.remote_url("module")));
     module.shell.command("git push origin master");
 
-    hooks.review_upload_return = ReviewUploadResult::Uploaded(git2::Oid::from_str(&head).unwrap(),
-                                                              false);
+    hooks.review_upload_return = ModuleToSubdir::Done(git2::Oid::from_str(&head).unwrap(), false);
     // reject review upload to module.
     // note that this means in fact that the review will be created on central
     assert_eq!(1,
@@ -131,6 +140,7 @@ fn test_dispatch()
         format!("--newrev"), format!("{}",head),
     ],
                         &hooks,
+                        &host,
                         &host,
                         &scratch));
     assert_eq!(hooks.called(), format!("review_upload(_,{},module)", head));
@@ -147,6 +157,7 @@ fn test_dispatch()
     ],
                         &hooks,
                         &host,
+                        &host,
                         &scratch));
     assert_eq!(hooks.called(), format!(""));
 
@@ -161,6 +172,7 @@ fn test_dispatch()
         format!("--newrev"), format!("{}",head),
     ],
                         &hooks,
+                        &host,
                         &host,
                         &scratch));
     assert_eq!(hooks.called(), format!(""));
@@ -177,6 +189,7 @@ fn test_dispatch()
     ],
                         &hooks,
                         &host,
+                        &host,
                         &scratch));
     assert_eq!(hooks.called(), format!(""));
 
@@ -191,6 +204,7 @@ fn test_dispatch()
         format!("--newrev"), format!("{}",head),
     ],
                         &hooks,
+                        &host,
                         &host,
                         &scratch));
     assert_eq!(hooks.called(), format!(""));
@@ -207,6 +221,7 @@ fn test_dispatch()
     ],
                         &hooks,
                         &host,
+                        &host,
                         &scratch));
     assert_eq!(hooks.called(), format!(""));
 
@@ -222,6 +237,7 @@ fn test_dispatch()
     ],
                         &hooks,
                         &host,
+                        &host,
                         &scratch));
     assert_eq!(hooks.called(), format!(""));
 
@@ -236,6 +252,7 @@ fn test_dispatch()
         format!("--newrev"), format!("{}",head),
     ],
                         &hooks,
+                        &host,
                         &host,
                         &scratch));
     assert_eq!(hooks.called(), format!("central_submit(_,{})", head));
@@ -256,6 +273,7 @@ fn test_dispatch()
     ],
                         &hooks,
                         &host,
+                        &host,
                         &scratch));
     assert_eq!(hooks.called(), format!("central_submit(_,{})", head));
 
@@ -268,6 +286,7 @@ fn test_dispatch()
     ],
                         &hooks,
                         &host,
+                        &host,
                         &scratch));
     assert_eq!(hooks.called(), format!("project_created(_,module)"));
 
@@ -278,6 +297,7 @@ fn test_dispatch()
         format!("--project"), format!("module"),
     ],
                         &hooks,
+                        &host,
                         &host,
                         &scratch));
     assert_eq!(hooks.called(), format!("pre_create_project(_,_,module)"));

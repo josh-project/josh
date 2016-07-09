@@ -4,6 +4,7 @@ extern crate clap;
 use std::path::Path;
 use std::path::PathBuf;
 use super::RepoHost;
+use super::ProjectList;
 
 pub struct Gerrit
 {
@@ -84,6 +85,14 @@ impl RepoHost for Gerrit
                 module_path)
     }
 
+    fn prefix(&self) -> &str
+    {
+        &self.prefix
+    }
+}
+
+impl ProjectList for Gerrit
+{
     fn projects(&self) -> Vec<String>
     {
         let path = self.path.join("git").join(&self.prefix);
@@ -93,11 +102,6 @@ impl RepoHost for Gerrit
     fn central(&self) -> &str
     {
         &self.central_name
-    }
-
-    fn prefix(&self) -> &str
-    {
-        &self.prefix
     }
 }
 

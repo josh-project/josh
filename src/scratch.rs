@@ -6,6 +6,7 @@ use std::path::Path;
 use shell::Shell;
 use super::RepoHost;
 use std::collections::HashMap;
+use super::ModuleToSubdir;
 
 pub struct Scratch
 {
@@ -25,6 +26,77 @@ impl Scratch
     {
         Scratch { repo: Repository::init_bare(&path).expect("could not init scratch") }
     }
+
+    pub fn module_to_subdir(&self,
+                            current: Oid,
+                            path: Option<&Path>,
+                            module_current: Option<Oid>,
+                            new: Oid)
+        -> ModuleToSubdir
+    {
+        let mut current = current;
+        let (walk, initial) = if let Some(old) = module_current {
+
+            if old == new {
+                return ModuleToSubdir::NoChanges;
+            }
+
+            match self.repo.graph_descendant_of(new, old) {
+                Err(_) | Ok(false) => {
+                    debug!("graph_descendant_of({},{})", new, old);
+                    return ModuleToSubdir::RejectNoFF;
+                }
+                Ok(true) => (),
+            }
+
+            debug!("==== walking commits from {} to {}", old, new);
+
+            let mut walk = self.repo.revwalk().expect("walk: can't create revwalk");
+            walk.set_sorting(SORT_REVERSE | SORT_TOPOLOGICAL);
+            let range = format!("{}..{}", old, new);
+            walk.push_range(&range).expect(&format!("walk: invalid range: {}", range));;
+            walk.hide(old).expect("walk: can't hide");
+            (walk, false)
+        }
+        else {
+            let mut walk = self.repo.revwalk().expect("walk: can't create revwalk");
+            walk.set_sorting(SORT_REVERSE | SORT_TOPOLOGICAL);
+            walk.push(new).expect("walk: can't push");
+            (walk, true)
+        };
+
+        for rev in walk {
+            let rev = rev.expect("walk: invalid rev");
+
+            debug!("==== walking commit {}", rev);
+
+            let module_commit = self.repo
+                .find_commit(rev)
+                .expect("walk: object is not actually a commit");
+
+            if module_commit.parents().count() > 1 {
+                // TODO: invectigate the possibility of allowing merge commits
+                return ModuleToSubdir::RejectMerge;
+            }
+
+            if let Some(path) = path {
+                debug!("==== Rewriting commit {}", rev);
+
+                let tree = module_commit.tree().expect("walk: commit has no tree");
+                let parent =
+                    self.repo.find_commit(current).expect("walk: current object is no commit");
+
+                let new_tree = self.replace_subtree(path,
+                                                    tree.id(),
+                                                    &parent.tree()
+                                                        .expect("walk: parent has no tree"));
+
+                current = self.rewrite(&module_commit, &vec![&parent], &new_tree);
+            }
+        }
+        return ModuleToSubdir::Done(current, initial);
+    }
+
 
     pub fn tracking(&self, host: &RepoHost, module: &str, branch: &str) -> Option<Object>
     {
@@ -88,14 +160,12 @@ impl Scratch
 
     pub fn push(&self, host: &RepoHost, oid: Oid, module: &str, target: &str) -> String
     {
-        let commit = &self.repo.find_commit(oid).expect("can't find commit");
-        self.repo.set_head_detached(commit.id()).expect("can't detach HEAD");
-        let cmd =
-            format!("if git push {} HEAD:{};\
-                    then echo \"====\n==== SUCCESS!\n==== Ignore the error message below.\n====\";\
-                    else echo \"####\n#### FAILED\n####\n\";fi",
-                    host.remote_url(module),
-                    target);
+        self.repo.set_head_detached(oid).expect("can't detach HEAD");
+        let cmd = format!("if git push {} HEAD:{};then echo \"====\n==== SUCCESS!\n==== Ignore \
+                           the error message below.\n====\";else echo \"####\n#### \
+                           FAILED\n####\n\";fi",
+                          host.remote_url(module),
+                          target);
         let shell = Shell { cwd: self.repo.path().to_path_buf() };
         let (stdout, stderr) = shell.command(&cmd);
         debug!("push: {}\n{}\n{}", cmd, stdout, stderr);

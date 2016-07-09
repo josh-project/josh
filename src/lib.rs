@@ -17,13 +17,12 @@ pub use centralgit::CentralGit;
 pub use dispatch::dispatch;
 
 #[derive(Clone)]
-pub enum ReviewUploadResult
+pub enum ModuleToSubdir
 {
-    Uploaded(git2::Oid, bool),
+    Done(git2::Oid, bool),
     RejectNoFF,
     RejectMerge,
     NoChanges,
-    Central,
 }
 
 pub trait Hooks
@@ -31,21 +30,27 @@ pub trait Hooks
     fn review_upload(&self,
                      scratch: &Scratch,
                      host: &RepoHost,
+                     project_list: &ProjectList,
                      newrev: git2::Object,
                      module: &str)
-        -> ReviewUploadResult;
-    fn project_created(&self, scratch: &Scratch, host: &RepoHost, project: &str);
+        -> ModuleToSubdir;
+    fn project_created(&self,
+                       scratch: &Scratch,
+                       host: &RepoHost,
+                       project_list: &ProjectList,
+                       project: &str);
     fn pre_create_project(&self, scratch: &Scratch, rev: git2::Oid, project: &str);
-    fn central_submit(&self, scratch: &Scratch, host: &RepoHost, newrev: git2::Object);
+    fn central_submit(&self,
+                      scratch: &Scratch,
+                      host: &RepoHost,
+                      project_list: &ProjectList,
+                      newrev: git2::Object);
 
     fn branch(&self) -> &str;
 }
 
 pub trait RepoHost
 {
-    fn central(&self) -> &str;
-    fn projects(&self) -> Vec<String>;
-
     fn remote_url(&self, &str) -> String;
     fn local_path(&self, module: &str) -> String
     {
@@ -58,4 +63,10 @@ pub trait RepoHost
     }
 
     fn automation_user(&self) -> &str;
+}
+
+pub trait ProjectList
+{
+    fn central(&self) -> &str;
+    fn projects(&self) -> Vec<String>;
 }

@@ -53,6 +53,6 @@ fn main()
             args.push(arg);
         }
         let hooks = CentralGit::new(BRANCH);
-        exit(centralgithook::dispatch(args, &hooks, &gerrit, &scratch));
+        exit(centralgithook::dispatch(args, &hooks, &gerrit, &gerrit, &scratch));
     }
 }

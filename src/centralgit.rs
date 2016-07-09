@@ -5,7 +5,8 @@ use std::path::Path;
 use scratch::Scratch;
 use super::Hooks;
 use super::RepoHost;
-use super::ReviewUploadResult;
+use super::ProjectList;
+use super::ModuleToSubdir;
 
 pub struct CentralGit
 {
@@ -38,86 +39,23 @@ impl Hooks for CentralGit
     fn review_upload(&self,
                      scratch: &Scratch,
                      host: &RepoHost,
+                     project_list: &ProjectList,
                      newrev: Object,
                      module: &str)
-        -> ReviewUploadResult
+        -> ModuleToSubdir
     {
         debug!(".\n\n==== Doing review upload for module {}", &module);
 
         let new = newrev.id();
+        let current = scratch.tracking(host, project_list.central(), &self.branch)
+            .expect("no central tracking")
+            .id();
+        let module_current = scratch.tracking(host, &module, &self.branch());
 
-        let (walk, initial) = if let Some(old) = scratch.tracking(host, &module, &self.branch()) {
-
-            let old = old.id();
-
-            if old == new {
-                return ReviewUploadResult::NoChanges;
-            }
-
-            match scratch.repo.graph_descendant_of(new, old) {
-                Err(_) | Ok(false) => {
-                    debug!("graph_descendant_of({},{})", new, old);
-                    return ReviewUploadResult::RejectNoFF;
-                }
-                Ok(true) => (),
-            }
-
-            debug!("==== walking commits from {} to {}", old, new);
-
-            let mut walk = scratch.repo.revwalk().expect("walk: can't create revwalk");
-            walk.set_sorting(SORT_REVERSE | SORT_TOPOLOGICAL);
-            let range = format!("{}..{}", old, new);
-            walk.push_range(&range).expect(&format!("walk: invalid range: {}", range));;
-            walk.hide(old).expect("walk: can't hide");
-            (walk, false)
-        }
-        else {
-            let mut walk = scratch.repo.revwalk().expect("walk: can't create revwalk");
-            walk.set_sorting(SORT_REVERSE | SORT_TOPOLOGICAL);
-            walk.push(new).expect("walk: can't push");
-            (walk, true)
-        };
-
-        let mut current =
-            scratch.tracking(host, host.central(), &self.branch).expect("no central tracking").id();
-
-        for rev in walk {
-            let rev = rev.expect("walk: invalid rev");
-
-            debug!("==== walking commit {}", rev);
-
-            let module_commit = scratch.repo
-                .find_commit(rev)
-                .expect("walk: object is not actually a commit");
-
-            if module_commit.parents().count() > 1 {
-                // TODO: invectigate the possibility of allowing merge commits
-                return ReviewUploadResult::RejectMerge;
-            }
-
-            if module != host.central() {
-                debug!("==== Rewriting commit {}", rev);
-
-                let tree = module_commit.tree().expect("walk: commit has no tree");
-                let parent =
-                    scratch.repo.find_commit(current).expect("walk: current object is no commit");
-
-                let new_tree = scratch.replace_subtree(Path::new(module),
-                                                       tree.id(),
-                                                       &parent.tree()
-                                                           .expect("walk: parent has no tree"));
-
-                current = scratch.rewrite(&module_commit, &vec![&parent], &new_tree);
-            }
-        }
-
-
-        if module != host.central() {
-            return ReviewUploadResult::Uploaded(current, initial);
-        }
-        else {
-            return ReviewUploadResult::Central;
-        }
+        return scratch.module_to_subdir(current,
+                                        Some(Path::new(module)),
+                                        module_current.map(|x| x.id()),
+                                        new);
     }
 
     fn pre_create_project(&self, scratch: &Scratch, rev: Oid, project: &str)
@@ -140,14 +78,22 @@ impl Hooks for CentralGit
         }
     }
 
-    fn project_created(&self, scratch: &Scratch, host: &RepoHost, _project: &str)
+    fn project_created(&self,
+                       scratch: &Scratch,
+                       host: &RepoHost,
+                       project_list: &ProjectList,
+                       _project: &str)
     {
-        if let Some(rev) = scratch.tracking(host, host.central(), &self.branch()) {
-            self.central_submit(scratch, host, rev);
+        if let Some(rev) = scratch.tracking(host, project_list.central(), &self.branch()) {
+            self.central_submit(scratch, host, project_list, rev);
         }
     }
 
-    fn central_submit(&self, scratch: &Scratch, host: &RepoHost, newrev: Object)
+    fn central_submit(&self,
+                      scratch: &Scratch,
+                      host: &RepoHost,
+                      project_list: &ProjectList,
+                      newrev: Object)
     {
         debug!(" ---> central_submit (sha1 of commit: {})", &newrev.id());
 
@@ -156,8 +102,8 @@ impl Hooks for CentralGit
 
         let mut changed = vec![];
 
-        for module in host.projects() {
-            if module == host.central() {
+        for module in project_list.projects() {
+            if module == project_list.central() {
                 continue;
             }
             debug!("");
@@ -170,7 +116,6 @@ impl Hooks for CentralGit
                            &module);
                     debug!("====    initializing with subdir history");
 
-                    self.pre_create_project(scratch, newrev.id(), &module);
                     changed.push(module.to_string());
                 }
             };

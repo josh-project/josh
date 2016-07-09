@@ -5,6 +5,7 @@ extern crate log;
 extern crate fern;
 
 use centralgithook::RepoHost;
+use centralgithook::ProjectList;
 use centralgithook::Gerrit;
 use centralgithook::Shell;
 use tempdir::TempDir;
