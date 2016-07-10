@@ -376,7 +376,7 @@ impl Scratch
 
     }
 
-    pub fn tracked_modules<'a>(&'a self, branch: &str) -> TrackedModulesIter<'a>
+    fn tracked_modules<'a>(&'a self, branch: &str) -> TrackedModulesIter<'a>
     {
         TrackedModulesIter {
             iter: self.repo
@@ -384,6 +384,66 @@ impl Scratch
                 .expect("references_glob failed")
                 .names(),
         }
+    }
+
+    pub fn subdirs_to_modules(&self, central_commit: &Commit, branch: &str) -> Vec<String>
+    {
+        let central_tree = central_commit.tree().expect("commit has no tree");
+        let mut changed = vec![];
+
+        for module in self.tracked_modules(&branch){
+
+            let module_commit_obj = if let Ok(rev) = self.repo
+                .revparse_single(&module_ref(&module, &branch)) {
+                debug!("=== OK module ref : {}", module);
+                rev
+            }
+            else {
+                debug!("=== NO module ref : {}", module);
+                continue;
+            };
+
+            let parents = vec![module_commit_obj.as_commit()
+                                   .expect("could not get commit from obj")];
+
+            debug!("==== checking for changes in module: {:?}", module);
+
+            // new tree is sub-tree of complete central tree
+            let old_tree_id = if let Ok(tree) = parents[0].tree() {
+                tree.id()
+            }
+            else {
+                Oid::from_str("0000000000000000000000000000000000000000").unwrap()
+            };
+
+            let new_tree_id = if let Ok(tree_entry) = central_tree.get_path(&Path::new(&module)) {
+                tree_entry.id()
+            }
+            else {
+                Oid::from_str("0000000000000000000000000000000000000000").unwrap()
+            };
+
+
+            // if sha1's are equal the content is equal
+            if new_tree_id != old_tree_id && !new_tree_id.is_zero() {
+                changed.push(module.to_string());
+                let new_tree =
+                    self.repo.find_tree(new_tree_id).expect("central_submit: can't find tree");
+                debug!("====    commit changes module => make commit on module");
+                let module_commit = self.rewrite(central_commit, &parents, &new_tree);
+                self.repo
+                    .reference(&module_ref(&module, &branch),
+                               module_commit,
+                               true,
+                               "rewrite")
+                    .expect("can't create reference");
+            }
+            else {
+                debug!("====    commit does not change module => skipping");
+            }
+        }
+
+        return changed;
     }
 }
 
