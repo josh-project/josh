@@ -3,6 +3,7 @@ extern crate git2;
 use git2::*;
 use std::path::Path;
 use scratch::Scratch;
+use scratch::module_ref;
 use super::Hooks;
 use super::RepoHost;
 use super::ProjectList;
@@ -21,13 +22,6 @@ impl CentralGit
     }
 }
 
-pub fn module_ref(module: &str, branch: &str) -> String
-{
-    format!("refs/{}/{}/refs/heads/{}",
-            "centralgit_0ee845b3_9c3f_41ee_9149_9e98a65ecf35",
-            module,
-            branch)
-}
 
 impl Hooks for CentralGit
 {
@@ -103,6 +97,7 @@ impl Hooks for CentralGit
         let mut changed = vec![];
 
         for module in project_list.projects() {
+
             if module == project_list.central() {
                 continue;
             }
@@ -120,6 +115,9 @@ impl Hooks for CentralGit
                 }
             };
             self.pre_create_project(scratch, newrev.id(), &module);
+        }
+
+        for module in scratch.tracked_modules(&self.branch){
 
             let module_commit_obj = if let Ok(rev) = scratch.repo
                 .revparse_single(&module_ref(&module, &self.branch())) {

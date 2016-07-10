@@ -375,4 +375,42 @@ impl Scratch
         return join_commit;
 
     }
+
+    pub fn tracked_modules<'a>(&'a self, branch: &str) -> TrackedModulesIter<'a>
+    {
+        TrackedModulesIter {
+            iter: self.repo
+                .references_glob(&module_ref("*", branch))
+                .expect("references_glob failed")
+                .names(),
+        }
+    }
+}
+
+pub fn module_ref(module: &str, branch: &str) -> String
+{
+    format!("refs/{}/#{}#/refs/heads/{}",
+            "centralgit_0ee845b3_9c3f_41ee_9149_9e98a65ecf35",
+            module,
+            branch)
+}
+
+pub struct TrackedModulesIter<'a>
+{
+    iter: git2::ReferenceNames<'a>,
+}
+
+impl<'a> Iterator for TrackedModulesIter<'a>
+{
+    type Item = &'a str;
+
+    fn next(&mut self) -> Option<&'a str>
+    {
+        if let Some(Ok(module)) = self.iter.next() {
+            module.split("#").nth(1)
+        }
+        else {
+            None
+        }
+    }
 }
