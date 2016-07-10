@@ -258,7 +258,12 @@ impl Scratch
                         _ => CommitKind::Orphan,
                     }
                 }
-                _ => CommitKind::Orphan,
+                0 => CommitKind::Orphan,
+                _ => {
+                    panic!("commit with {} parents: {}",
+                           commit.parents().count(),
+                           commit.id())
+                }
             } {
                 CommitKind::Merge(parent1, parent2) => {
                     let parent1 = self.repo.find_commit(parent1).unwrap();
@@ -306,8 +311,6 @@ impl Scratch
         let dst = self.repo.find_commit(dst).unwrap();
         let src = self.repo.find_commit(src).unwrap();
 
-
-
         let walk = {
             let mut walk = self.repo.revwalk().expect("walk: can't create revwalk");
             walk.set_sorting(SORT_REVERSE | SORT_TOPOLOGICAL);
@@ -345,7 +348,12 @@ impl Scratch
                     map.insert(commit.id(), self.rewrite(&commit, &[&parent], &new_tree));
                     continue 'walk;
                 }
-                _ => {}
+                0 => {}
+                _ => {
+                    panic!("commit with {} parents: {}",
+                           commit.parents().count(),
+                           commit.id())
+                }
             }
 
             map.insert(commit.id(), self.rewrite(&commit, &[], &new_tree));
