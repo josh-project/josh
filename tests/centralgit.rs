@@ -29,8 +29,6 @@ impl TestSetup
 {
     fn new(host: &helpers::TestHost) -> Self
     {
-        let hooks = CentralGit::new("master");
-
         host.create_project("modules/module_a");
         host.create_project("modules/module_b");
         host.create_project("modules/module_c");
@@ -45,6 +43,10 @@ impl TestSetup
 
         host.create_project("central");
         central.shell.command(&format!("git remote add origin {}", &host.remote_url("central")));
+        central.shell.command("git commit -m empty --allow-empty");
+        central.shell.command("git push origin master");
+
+        let hooks = CentralGit::new(&scratch, "master", host, host);
 
         return TestSetup {
             td: td,
@@ -338,15 +340,21 @@ fn test_module_review_upload_rejects_non_fast_forward()
     module_a.add_file("added_tmp");
     module_a.commit("on_branch_tmp");
 
-    module_a.shell.command("git checkout master");
-    module_a.add_file("added_master");
-
-    module_a.commit("on_branch_master");
-
-    module_a.shell.command("git push origin master:master");
     module_a.shell.command("git push origin tmp:refs/for/tmp");
 
     let head = module_a.rev("tmp");
+
+    {
+        central.add_file("modules/module_a/some_more");
+        let head = central.commit("some_more");
+
+        central.shell.command("git push origin master:master");
+        hooks.central_submit(&scratch,
+                             &host,
+                             &host,
+                             scratch.transfer(&head, &host.repo_dir("central")));
+    }
+
 
     if let ModuleToSubdir::RejectNoFF = hooks.review_upload(&scratch,
                        &host,

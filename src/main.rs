@@ -52,7 +52,7 @@ fn main()
         for arg in env::args() {
             args.push(arg);
         }
-        let hooks = CentralGit::new(BRANCH);
+        let hooks = CentralGit::new(&scratch, BRANCH, &gerrit, &gerrit);
         exit(centralgithook::dispatch(args, &hooks, &gerrit, &gerrit, &scratch));
     }
 }
