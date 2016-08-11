@@ -126,7 +126,7 @@ impl Hooks for CentralGit
         return &self.branch;
     }
 
-    fn pre_create_project(&self, scratch: &Scratch, rev: git2::Oid, project: &str)
+    fn pre_create_project(&self, _scratch: &Scratch, _rev: git2::Oid, _project: &str)
     {
 
     }

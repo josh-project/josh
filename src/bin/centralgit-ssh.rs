@@ -21,45 +21,56 @@ fn main()
     exit(main_ret())
 }
 
-fn ssh_wrap(command: &str) -> i32
+fn setup_tmp_repo(td: &Path, scratch_dir: &Path)
+{
+
+    let shell = Shell { cwd: td.to_path_buf() };
+
+    let ce = current_exe().expect("can't find path to exe");
+    shell.command("mkdir hooks");
+    symlink(ce, td.join("hooks").join("update")).expect("can't symlink update hook");
+
+    shell.command(&format!("cp {:?} {:?}", scratch_dir.join("HEAD"), td));
+    symlink(scratch_dir.join("refs"), td.join("refs")).expect("can't symlink refs");
+    symlink(scratch_dir.join("objects"), td.join("objects")).expect("can't symlink objects");
+    // debug!("{:?}", &shell.command("xterm"));
+
+}
+
+fn cg_command(s: &Vec<String>) -> i32
+{
+    let subcommand = format!("{}", s[0]);
+    debug!("Command cg {:?}", &subcommand);
+    return 0;
+}
+
+fn git_command(command: &str, argvec: &Vec<String>) -> i32
 {
     let scratch_dir = Path::new("/tmp").join("centralgit_central");
     let scratch = Scratch::new(&scratch_dir);
 
     let td = TempDir::new("centralgit").expect("failed to create tempdir");
-    let shell = Shell { cwd: td.path().to_path_buf() };
 
-    let ce = current_exe().expect("can't find path to exe");
-    shell.command("mkdir hooks");
-    symlink(ce, td.path().join("hooks").join("update")).expect("can't symlink update hook");
+    setup_tmp_repo(&td.path(), &scratch_dir);
 
-    shell.command(&format!("cp {:?} {:?}", scratch_dir.join("HEAD"), td.path()));
-    symlink(scratch_dir.join("refs"), td.path().join("refs")).expect("can't symlink refs");
-    symlink(scratch_dir.join("objects"), td.path().join("objects")).expect("can't symlink objects");
-    // debug!("{:?}", &shell.command("xterm"));
+    let mut gargs = vec![];
 
-    debug!("orig: {:?}", command);
-
-    let mut s = command.split_whitespace();
-    let command = format!("{}", s.next().unwrap());
-    let mut cargs = vec![];
-
-    for c in s {
+    for c in argvec {
         if c.starts_with("--") {
-            cargs.push(format!("{}", c));
+            gargs.push(format!("{}",c));
         }
         else {
-            cargs.push(format!("{:?}", td.path()).trim_matches('"').to_string());
+            gargs.push(format!("{:?}", td.path()).trim_matches('"').to_string());
         }
     }
 
-    debug!("cargs: {:?}", cargs);
+    debug!("gargs: {:?}", gargs);
 
     let _ = if let Ok(status) = Command::new(command)
         .stdin(Stdio::inherit())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
-        .args(&cargs)
+        .args(&gargs)
         .status() {
         debug!("call ok");
         return status.code().unwrap();
@@ -68,6 +79,27 @@ fn ssh_wrap(command: &str) -> i32
         debug!("failed to call");
         return 1;
     };
+}
+
+fn ssh_wrap(command: &str) -> i32
+{
+    debug!("orig: {:?}", command);
+
+    let mut s = command.split_whitespace();
+    let mut argvec = vec![];
+
+    let command = format!("{}", s.next().unwrap());
+    for c in s {
+        argvec.push(format!("{}", c));
+    }
+
+    debug!("command {:?}", &command);
+    if command == "cg" {
+        return cg_command(&argvec);
+    }
+    else {
+        return git_command(&command, &argvec);
+    }
 }
 
 fn update_hook() -> i32

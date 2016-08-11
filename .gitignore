@@ -1,1 +1,3 @@
 target
+id_rsa.pub
+e2e-tests/_data*
