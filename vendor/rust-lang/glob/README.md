@@ -13,7 +13,7 @@ To use `glob`, add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-glob = "*"
+glob = "0.2"
 ```
 
 And add this to your crate root:
