@@ -1,20 +1,23 @@
-extern crate tempdir;
-extern crate fern;
 extern crate centralgithook;
+extern crate fern;
 extern crate git2;
+extern crate regex;
+extern crate tempdir;
 
 #[macro_use]
 extern crate log;
-use std::env;
-use std::path::Path;
-use tempdir::TempDir;
+
+use centralgithook::Scratch;
 use centralgithook::Shell;
+use regex::Regex;
+use std::env::current_exe;
+use std::env;
+use std::os::unix::fs::symlink;
+use std::path::Path;
 use std::process::Command;
 use std::process::Stdio;
 use std::process::exit;
-use std::os::unix::fs::symlink;
-use std::env::current_exe;
-use centralgithook::Scratch;
+use tempdir::TempDir;
 
 fn main()
 {
@@ -23,7 +26,6 @@ fn main()
 
 fn setup_tmp_repo(td: &Path, scratch_dir: &Path)
 {
-
     let shell = Shell { cwd: td.to_path_buf() };
 
     let ce = current_exe().expect("can't find path to exe");
@@ -37,69 +39,103 @@ fn setup_tmp_repo(td: &Path, scratch_dir: &Path)
 
 }
 
-fn cg_command(s: &Vec<String>) -> i32
+fn cg_command(subcommand: &str) -> i32
 {
-    let subcommand = format!("{}", s[0]);
+    // let subcommand = format!("{}", subcommand[0]);
     debug!("Command cg {:?}", &subcommand);
+    if subcommand == "log" {
+
+        let _ = if let Ok(status) = Command::new("cat")
+            .stdin(Stdio::inherit())
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
+            .arg("/tmp/centralgit.log")
+            .status() {
+            debug!("call ok");
+            return status.code().unwrap();
+        }
+        else {
+            debug!("failed to call cat /tmp/centralgit.log");
+            return 1;
+        };
+    }
     return 0;
 }
 
-fn git_command(command: &str, argvec: &Vec<String>) -> i32
+fn make_argvec(args: &str) -> Vec<String>
 {
-    let scratch_dir = Path::new("/tmp").join("centralgit_central");
-    let scratch = Scratch::new(&scratch_dir);
-
-    let td = TempDir::new("centralgit").expect("failed to create tempdir");
-
-    setup_tmp_repo(&td.path(), &scratch_dir);
-
-    let mut gargs = vec![];
-
-    for c in argvec {
-        if c.starts_with("--") {
-            gargs.push(format!("{}",c));
-        }
-        else {
-            gargs.push(format!("{:?}", td.path()).trim_matches('"').to_string());
-        }
+    let mut argvec = vec![];
+    for c in args.split_whitespace() {
+        argvec.push(format!("{}", c).trim_matches('\'').to_string());
     }
+    return argvec;
+}
 
-    debug!("gargs: {:?}", gargs);
-
-    let _ = if let Ok(status) = Command::new(command)
+fn call_git(command: &str, args: &str) -> i32
+{
+    return if let Ok(status) = Command::new(command)
         .stdin(Stdio::inherit())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
-        .args(&gargs)
+        .args(&make_argvec(&args))
         .status() {
         debug!("call ok");
-        return status.code().unwrap();
+        status.code().unwrap()
     }
     else {
-        debug!("failed to call");
-        return 1;
+        debug!("failed to call git");
+        1
     };
+}
+
+fn git_command(command: &str, args: &str) -> i32
+{
+    debug!("git_command: {}", command);
+    debug!("git_subcommand: {}", args);
+
+    let re_view = Regex::new(r".*'.*[.]git/(?P<view>\S+)'").expect("can't compile regex");
+    if let Some(caps) = re_view.captures(&args) {
+        let view = caps.name("view").unwrap();
+        debug!("view: {}", view);
+    }
+    else {
+        debug!("no view, full repo");
+    }
+
+    let td = TempDir::new("centralgit").expect("failed to create tempdir");
+
+    let re_repo = Regex::new(r"(?P<repo>/.*[.]git\S*)").expect("can't compile regex");
+    let args = re_repo.replace_all(args, format!("{:?}", td.path()).trim_matches('"'));
+    debug!("git_subcommand rewritten: {}", args);
+
+    let scratch_dir = Path::new("/tmp").join("centralgit_central");
+    let scratch = Scratch::new(&scratch_dir);
+
+    setup_tmp_repo(&td.path(), &scratch_dir);
+
+    return call_git(command, &args);
+
 }
 
 fn ssh_wrap(command: &str) -> i32
 {
-    debug!("orig: {:?}", command);
+    debug!("ssh orig command {:?}", &command);
+    debug!("ssh orig command {:?}", &command);
 
-    let mut s = command.split_whitespace();
-    let mut argvec = vec![];
+    let re_cg = Regex::new(r"cg (?P<subcommand>.*)").expect("can't compile regex");
+    let re_git = Regex::new(r"(?P<gitcommand>git-\S*) (?P<args>.*)").expect("can't compile regex");
 
-    let command = format!("{}", s.next().unwrap());
-    for c in s {
-        argvec.push(format!("{}", c));
+    if let Some(caps) = re_cg.captures(command) {
+        let subcommand = caps.name("subcommand").unwrap();
+        debug!("cg subcommand: {}", subcommand);
+        return cg_command(subcommand);
     }
-
-    debug!("command {:?}", &command);
-    if command == "cg" {
-        return cg_command(&argvec);
+    if let Some(caps) = re_git.captures(command) {
+        let gitcommand = caps.name("gitcommand").unwrap();
+        let args = caps.name("args").unwrap();
+        return git_command(gitcommand, args);
     }
-    else {
-        return git_command(&command, &argvec);
-    }
+    return 1;
 }
 
 fn update_hook() -> i32

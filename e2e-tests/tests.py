@@ -15,19 +15,22 @@ class CentralGitTests(unittest.TestCase):
         print "setUp"
         getoutput("docker stop centralgit")
         getoutput("docker wait centralgit")
-        getoutput("docker rm {}".format(getoutput("docker ps --no-trunc -aq")))
+        for n in getoutput("docker ps --no-trunc -aq").split("\n"):
+            getoutput("docker rm {}".format(n))
         getoutput("docker run --name centralgit -p 2222:22 -d centralgit/centralgit")
 
-        getoutput("ssh ssh://git@localhost:2222 cg delete test.git")
-        getoutput("ssh ssh://git@localhost:2222 cg create test.git")
+        # getoutput("ssh ssh://git@localhost:2222 cg delete test.git")
+        # getoutput("ssh ssh://git@localhost:2222 cg create test.git")
         getoutput("rm -Rf _data*")
         getoutput("mkdir _data0")
         getoutput("mkdir _data1")
 
     def tearDown(self):
+        getoutput("ssh -p 2222 git@localhost cg log")
         getoutput("docker stop centralgit")
         getoutput("docker wait centralgit")
-        getoutput("docker rm {}".format(getoutput("docker ps --no-trunc -aq")))
+        for n in getoutput("docker ps --no-trunc -aq").split("\n"):
+            getoutput("docker rm {}".format(n))
 
     def test_clone_all(self):
         getoutput("cd _data0 && git clone ssh://git@localhost:2222/test.git")

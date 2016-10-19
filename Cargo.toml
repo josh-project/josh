@@ -10,4 +10,4 @@ tempdir = "0.3.*"
 log = "*"
 fern = "*"
 env_logger = "*"
-
+regex = "*"

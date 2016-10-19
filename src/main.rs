@@ -14,8 +14,8 @@ use centralgithook::Gerrit;
 use centralgithook::RepoHost;
 
 const GERRIT_PORT: &'static str = "29418";
-const AUTOMATION_USER: &'static str = "centralgit";
-const GERRIT_HOST: &'static str = "localhost";
+const AUTOMATION_USER: &'static str = "automation";
+const GERRIT_HOST: &'static str = "gerrit-test-git";
 const CENTRAL_NAME: &'static str = "central";
 const BRANCH: &'static str = "master";
 

@@ -103,20 +103,21 @@ impl CentralGit
     }
 }
 
+pub fn module_ref_root(module: &str) -> String
+{
+    format!("refs/{}/{}/refs",
+            "centralgit_0ee845b3_9c3f_41ee_9149_9e98a65ecf35",
+            module)
+}
+
 pub fn module_ref(module: &str, branch: &str) -> String
 {
-    format!("refs/{}/{}/refs/heads/{}",
-            "centralgit_0ee845b3_9c3f_41ee_9149_9e98a65ecf35",
-            module,
-            branch)
+    format!("{}/heads/{}", module_ref_root(module), branch)
 }
 
 pub fn module_central_base_ref(module: &str, branch: &str) -> String
 {
-    format!("refs/{}/{}/refs/central_base/{}",
-            "centralgit_0ee845b3_9c3f_41ee_9149_9e98a65ecf35",
-            module,
-            branch)
+    format!("{}/central_base/{}", module_ref_root(module), branch)
 }
 
 impl Hooks for CentralGit
