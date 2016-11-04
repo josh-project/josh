@@ -25,6 +25,12 @@ class CentralGitTests(unittest.TestCase):
         getoutput("mkdir _data0")
         getoutput("mkdir _data1")
 
+    def in_data0(self,subdir, cmd):
+        return getoutput("cd _data0/{} && {}".format(subdir,cmd))
+
+    def in_data1(self,subdir, cmd):
+        return getoutput("cd _data0/{} && {}".format(subdir,cmd))
+
     def tearDown(self):
         getoutput("ssh -p 2222 git@localhost cg log")
         getoutput("docker stop centralgit")
@@ -33,29 +39,29 @@ class CentralGitTests(unittest.TestCase):
             getoutput("docker rm {}".format(n))
 
     def test_clone_all(self):
-        getoutput("cd _data0 && git clone ssh://git@localhost:2222/test.git")
-        getoutput("cd _data0/test && echo bla > foo")
-        getoutput("cd _data0/test && git add foo")
-        getoutput("cd _data0/test && git commit -m add_foo")
-        getoutput("cd _data0/test && git push")
+        self.in_data0(".", "git clone ssh://git@localhost:2222/test.git")
+        self.in_data0("test", "echo bla > foo")
+        self.in_data0("test", "git add foo")
+        self.in_data0("test", "git commit -m add_foo")
+        self.in_data0("test", "git push")
 
-        getoutput("cd _data1 && git clone ssh://git@localhost:2222/test.git")
-        self.assertEquals("bla", getoutput("cd _data1/test && cat foo"))
+        self.in_data1(".", "git clone ssh://git@localhost:2222/test.git")
+        self.assertEquals("bla", self.in_data1("test", "cat foo"))
         getoutput("tree")
 
 
     def test_clone_sub(self):
-        getoutput("cd _data0 && git clone ssh://git@localhost:2222/test.git")
-        getoutput("cd _data0/test && mkdir sub && echo sub_bla > sub/foo")
-        getoutput("cd _data0/test && git add sub")
-        getoutput("cd _data0/test && git commit -m add_sub_foo")
-        getoutput("cd _data0/test && git push")
+        self.in_data0(".", "git clone ssh://git@localhost:2222/test.git")
+        self.in_data0("test", "mkdir sub && echo sub_bla > sub/foo")
+        self.in_data0("test", "git add sub")
+        self.in_data0("test", "git commit -m add_sub_foo")
+        self.in_data0("test", "git push")
 
-        getoutput("cd _data1 && git clone ssh://git@localhost:2222/test.git")
-        self.assertEquals("sub_bla", getoutput("cd _data1/test && cat sub/foo"))
+        self.in_data1(".", "git clone ssh://git@localhost:2222/test.git")
+        self.assertEquals("sub_bla", self.in_data1("test", "cat sub/foo"))
 
-        getoutput("cd _data1 && git clone ssh://git@localhost:2222/test.git/sub")
-        self.assertEquals("sub_bla", getoutput("cd _data1/sub && cat foo"))
+        self.in_data1(".", "git clone ssh://git@localhost:2222/test.git/sub")
+        self.assertEquals("sub_bla", self.in_data1("sub", "cat foo"))
         getoutput("tree")
 
 

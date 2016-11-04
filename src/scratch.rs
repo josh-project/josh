@@ -4,9 +4,27 @@ const TMP_NAME: &'static str = "refs/centralgit/tmp_fd2db5f8_bac2_4a1e_9487_4ac3
 use git2::*;
 use std::path::Path;
 use shell::Shell;
-use super::RepoHost;
 use std::collections::HashMap;
 use super::ModuleToSubdir;
+
+
+pub fn module_ref_root(module: &str) -> String
+{
+    format!("refs/{}/#{}#/refs",
+            "centralgit_0ee845b3_9c3f_41ee_9149_9e98a65ecf35",
+            module)
+}
+
+pub fn module_ref(module: &str, branch: &str) -> String
+{
+    format!("{}/heads/{}", module_ref_root(module), branch)
+}
+
+pub fn module_central_base_ref(module: &str, branch: &str) -> String
+{
+    format!("{}/central_base/{}", module_ref_root(module), branch)
+}
+
 
 pub struct Scratch
 {
@@ -98,30 +116,30 @@ impl Scratch
     }
 
 
-    pub fn tracking(&self, host: &RepoHost, module: &str, branch: &str) -> Option<Object>
-    {
-        let remote_name = format!("{}", module);
-        let fetch_url = host.local_path(&module);
-        let mut remote = if let Ok(remote) = self.repo.find_remote(&remote_name) {
-            remote
-        }
-        else {
-            debug!("==== create remote (remote_name:{}, remote_url:{})",
-                   &remote_name,
-                   &fetch_url);
-            self.repo.remote(&remote_name, &fetch_url).expect("can't create remote")
-        };
+    // pub fn tracking(&self, host: &RepoHost, module: &str, branch: &str) -> Option<Object>
+    // {
+    //     let remote_name = format!("{}", module);
+    //     let fetch_url = host.local_path(&module);
+    //     let mut remote = if let Ok(remote) = self.repo.find_remote(&remote_name) {
+    //         remote
+    //     }
+    //     else {
+    //         debug!("==== create remote (remote_name:{}, remote_url:{})",
+    //                &remote_name,
+    //                &fetch_url);
+    //         self.repo.remote(&remote_name, &fetch_url).expect("can't create remote")
+    //     };
 
-        let rs = remote.get_refspec(0).unwrap().str().unwrap().to_string();
-        if let Ok(_) = remote.fetch(&[&rs], None, None) {
-            return self.repo
-                .revparse_single(&format!("remotes/{}/{}", module, branch))
-                .ok();
-        }
-        else {
-            return None;
-        }
-    }
+    //     let rs = remote.get_refspec(0).unwrap().str().unwrap().to_string();
+    //     if let Ok(_) = remote.fetch(&[&rs], None, None) {
+    //         return self.repo
+    //             .revparse_single(&format!("remotes/{}/{}", module, branch))
+    //             .ok();
+    //     }
+    //     else {
+    //         return None;
+    //     }
+    // }
 
     // force push of the new revision-object to temp repo
     pub fn transfer(&self, rev: &str, source: &Path) -> Object
@@ -158,19 +176,19 @@ impl Scratch
             .expect("rewrite: can't commit")
     }
 
-    pub fn push(&self, host: &RepoHost, oid: Oid, module: &str, target: &str) -> String
-    {
-        self.repo.set_head_detached(oid).expect("can't detach HEAD");
-        let cmd = format!("if git push {} HEAD:{};then echo \"====\n==== SUCCESS!\n==== Ignore \
-                           the error message below.\n====\";else echo \"####\n#### \
-                           FAILED\n####\n\";fi",
-                          host.remote_url(module),
-                          target);
-        let shell = Shell { cwd: self.repo.path().to_path_buf() };
-        let (stdout, stderr) = shell.command(&cmd);
-        debug!("push: {}\n{}\n{}", cmd, stdout, stderr);
-        format!("{}\n\n{}", stderr, stdout)
-    }
+    // pub fn push(&self, host: &RepoHost, oid: Oid, module: &str, target: &str) -> String
+    // {
+    //     self.repo.set_head_detached(oid).expect("can't detach HEAD");
+    //     let cmd = format!("if git push {} HEAD:{};then echo \"====\n==== SUCCESS!\n==== Ignore \
+    //                        the error message below.\n====\";else echo \"####\n#### \
+    //                        FAILED\n####\n\";fi",
+    //                       host.remote_url(module),
+    //                       target);
+    //     let shell = Shell { cwd: self.repo.path().to_path_buf() };
+    //     let (stdout, stderr) = shell.command(&cmd);
+    //     debug!("push: {}\n{}\n{}", cmd, stdout, stderr);
+    //     format!("{}\n\n{}", stderr, stdout)
+    // }
 
     fn subtree(&self, tree: &Tree, path: &Path) -> Option<Tree>
     {
@@ -447,14 +465,13 @@ impl Scratch
     }
 }
 
-pub fn module_ref(module: &str, branch: &str) -> String
-{
-    format!("refs/{}/#{}#/refs/heads/{}",
-            "centralgit_0ee845b3_9c3f_41ee_9149_9e98a65ecf35",
-            module,
-            branch)
-}
-
+// pub fn module_ref(module: &str, branch: &str) -> String
+// {
+//     format!("refs/{}/#{}#/refs/heads/{}",
+//             "centralgit_0ee845b3_9c3f_41ee_9149_9e98a65ecf35",
+//             module,
+//             branch)
+// }
 pub struct TrackedModulesIter<'a>
 {
     iter: git2::ReferenceNames<'a>,

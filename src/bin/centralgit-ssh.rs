@@ -13,6 +13,8 @@ use regex::Regex;
 use std::env::current_exe;
 use std::env;
 use std::os::unix::fs::symlink;
+use centralgithook::module_ref;
+use centralgithook::module_ref_root;
 use std::path::Path;
 use std::process::Command;
 use std::process::Stdio;
@@ -24,8 +26,9 @@ fn main()
     exit(main_ret())
 }
 
-fn setup_tmp_repo(td: &Path, scratch_dir: &Path)
+fn setup_tmp_repo(td: &Path, scratch_dir: &Path, root: &str)
 {
+    debug!("setup_tmp_repo, root: {:?}", &root);
     let shell = Shell { cwd: td.to_path_buf() };
 
     let ce = current_exe().expect("can't find path to exe");
@@ -33,7 +36,7 @@ fn setup_tmp_repo(td: &Path, scratch_dir: &Path)
     symlink(ce, td.join("hooks").join("update")).expect("can't symlink update hook");
 
     shell.command(&format!("cp {:?} {:?}", scratch_dir.join("HEAD"), td));
-    symlink(scratch_dir.join("refs"), td.join("refs")).expect("can't symlink refs");
+    symlink(scratch_dir.join(root), td.join("refs")).expect("can't symlink refs");
     symlink(scratch_dir.join("objects"), td.join("objects")).expect("can't symlink objects");
     // debug!("{:?}", &shell.command("xterm"));
 
@@ -94,13 +97,15 @@ fn git_command(command: &str, args: &str) -> i32
     debug!("git_subcommand: {}", args);
 
     let re_view = Regex::new(r".*'.*[.]git/(?P<view>\S+)'").expect("can't compile regex");
-    if let Some(caps) = re_view.captures(&args) {
+    let view = if let Some(caps) = re_view.captures(&args) {
         let view = caps.name("view").unwrap();
         debug!("view: {}", view);
+        Some(view)
     }
     else {
         debug!("no view, full repo");
-    }
+        None
+    };
 
     let td = TempDir::new("centralgit").expect("failed to create tempdir");
 
@@ -111,7 +116,27 @@ fn git_command(command: &str, args: &str) -> i32
     let scratch_dir = Path::new("/tmp").join("centralgit_central");
     let scratch = Scratch::new(&scratch_dir);
 
-    setup_tmp_repo(&td.path(), &scratch_dir);
+    let shell = Shell { cwd: scratch_dir.to_path_buf() };
+
+
+    let root = if let Some(view) = view {
+        debug!("{:?}", &shell.command("du -a refs"));
+        let master = scratch.repo.refname_to_id("refs/heads/master").expect("no ref: master");
+        let commit = scratch.split_subdir(&view, master).expect("can't split subdir");
+        let rev = module_ref(&view, "master");
+        scratch.repo.reference(
+            &rev,
+            commit,
+            true,
+            "subtree_split").expect("can't create reference");
+        module_ref_root(&view)
+    }
+    else {
+        format!("{}","refs")
+    };
+
+    debug!("{:?}", &shell.command("du -a refs"));
+    setup_tmp_repo(&td.path(), &scratch_dir, &root);
 
     return call_git(command, &args);
 
@@ -119,8 +144,7 @@ fn git_command(command: &str, args: &str) -> i32
 
 fn ssh_wrap(command: &str) -> i32
 {
-    debug!("ssh orig command {:?}", &command);
-    debug!("ssh orig command {:?}", &command);
+    debug!("\n\n############\nssh orig command {:?}", &command);
 
     let re_cg = Regex::new(r"cg (?P<subcommand>.*)").expect("can't compile regex");
     let re_git = Regex::new(r"(?P<gitcommand>git-\S*) (?P<args>.*)").expect("can't compile regex");

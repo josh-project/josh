@@ -2,84 +2,8 @@ extern crate centralgithook;
 extern crate git2;
 extern crate tempdir;
 
-use centralgithook::find_repos;
 use std::path::{Path, PathBuf};
-use tempdir::TempDir;
-use centralgithook::RepoHost;
-use centralgithook::ProjectList;
 use centralgithook::Shell;
-
-pub struct TestHost
-{
-    td: TempDir,
-}
-
-impl TestHost
-{
-    pub fn new() -> Self
-    {
-        TestHost { td: TempDir::new("test_host").expect("folder test_host should be created") }
-    }
-
-    pub fn repo_dir(&self, module: &str) -> PathBuf
-    {
-        self.td.path().join(module).with_extension("git")
-    }
-
-    pub fn create_project(&self, module: &str) -> String
-    {
-        println!("TestHost: create_project {} in {:?}",
-                 module,
-                 self.repo_dir(module));
-        git2::Repository::init_bare(&self.repo_dir(module)).expect("TestHost: init_bare failed");
-        return String::new();
-    }
-}
-
-#[test]
-fn test_test_host()
-{
-    let host = TestHost::new();
-    assert_eq!(0, host.projects().len());
-
-    host.create_project("module_a");
-    let mut projects = host.projects();
-    projects.sort();
-    assert_eq!(vec!["module_a"], projects);
-
-    host.create_project("modules/module_b");
-    let mut projects = host.projects();
-    projects.sort();
-    assert_eq!(2, projects.len());
-    assert_eq!(vec!["module_a", "modules/module_b"], projects);
-}
-
-
-impl RepoHost for TestHost
-{
-    fn automation_user(&self) -> &str
-    {
-        "centralgit"
-    }
-
-    fn remote_url(&self, module_path: &str) -> String
-    {
-        self.td.path().join(&module_path).with_extension("git").to_string_lossy().to_string()
-    }
-}
-
-impl ProjectList for TestHost
-{
-    fn projects(&self) -> Vec<String>
-    {
-        find_repos(self.td.path(), self.td.path(), vec![])
-    }
-
-    fn central(&self) -> &str
-    {
-        "central"
-    }
-}
 
 pub struct TestRepo
 {
