@@ -4,6 +4,7 @@ extern crate git2;
 extern crate regex;
 extern crate tempdir;
 
+
 #[macro_use]
 extern crate log;
 
@@ -30,8 +31,13 @@ fn main()
     exit(main_ret())
 }
 
-fn setup_tmp_repo(td: &Path, scratch_dir: &Path, root: &str)
+fn setup_tmp_repo(td: &Path, scratch_dir: &Path, view: Option<&str>)
 {
+    let root = match view {
+        Some(view) => module_ref_root(&view),
+        None => "refs".to_string(),
+    };
+
     debug!("setup_tmp_repo, root: {:?}", &root);
     let shell = Shell { cwd: td.to_path_buf() };
 
@@ -42,8 +48,12 @@ fn setup_tmp_repo(td: &Path, scratch_dir: &Path, root: &str)
     shell.command(&format!("cp {:?} {:?}", scratch_dir.join("HEAD"), td));
     symlink(scratch_dir.join(root), td.join("refs")).expect("can't symlink refs");
     symlink(scratch_dir.join("objects"), td.join("objects")).expect("can't symlink objects");
-    // debug!("{:?}", &shell.command("xterm"));
 
+    shell.command(&format!("printf {} > view",
+                           match view {
+                               Some(view) => view,
+                               None => ".",
+                           }));
 }
 
 fn cg_command(subcommand: &str) -> i32
@@ -82,13 +92,16 @@ fn make_argvec(args: &str) -> Vec<String>
     return argvec;
 }
 
-fn call_git(command: &str, args: &str) -> i32
+fn call_git(command: &str, td: &Path, args: &str) -> i32
 {
+    let re_repo = Regex::new(r"(?P<repo>/.*[.]git\S*)").expect("can't compile regex");
+    let rewritten_args = re_repo.replace_all(args, format!("{:?}", td).trim_matches('"'));
+
     return if let Ok(status) = Command::new(command)
         .stdin(Stdio::inherit())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
-        .args(&make_argvec(&args))
+        .args(&make_argvec(&rewritten_args))
         .status() {
         debug!("call ok");
         status.code().unwrap()
@@ -101,76 +114,30 @@ fn call_git(command: &str, args: &str) -> i32
 
 fn git_command(command: &str, args: &str) -> i32
 {
-    debug!("git_command: {}", command);
-    debug!("git_subcommand: {}", args);
-
-    let re_view = Regex::new(r".*'.*[.]git/(?P<view>\S+)'").expect("can't compile regex");
-    let view = if let Some(caps) = re_view.captures(&args) {
-        let view = caps.name("view").unwrap();
-        debug!("view: {}", view);
-        Some(view)
-    }
-    else {
-        debug!("no view, full repo");
-        None
-    };
-
     let td = TempDir::new("centralgit").expect("failed to create tempdir");
-
-    let re_repo = Regex::new(r"(?P<repo>/.*[.]git\S*)").expect("can't compile regex");
-    let args = re_repo.replace_all(args, format!("{:?}", td.path()).trim_matches('"'));
-    debug!("git_subcommand rewritten: {}", args);
 
     let scratch_dir = Path::new("/tmp").join("centralgit_central");
     let scratch = Scratch::new(&scratch_dir);
 
-    if let Some(master) = scratch.repo.refname_to_id("refs/heads/master").ok() {
-        debug!("SCRATCH master is at {:?}", master);
-    }
-    else {
-        debug!("SCRATCH master is at ????");
-    }
-
-    if let Some(head) = scratch.repo.refname_to_id("HEAD").ok() {
-        debug!("SCRATCH HEAD is at {:?}", head);
-    }
-    else {
-        debug!("SCRATCH HEAD is at ????");
-    }
-
-    let shell = Shell { cwd: scratch_dir.to_path_buf() };
-
-
-    let root = if let Some(view) = view {
-        debug!("{:?}", &shell.command("du -a refs"));
+    let re_view = Regex::new(r".*'.*[.]git/(?P<view>\S+)'").expect("can't compile regex");
+    if let Some(caps) = re_view.captures(&args) {
+        let view = caps.name("view").unwrap();
         let master = scratch.repo.refname_to_id("refs/heads/master").expect("no ref: master");
-        let commit = scratch.split_subdir(&view, master).expect("can't split subdir");
-        let rev = module_ref(&view, "master");
-        scratch.repo.reference(
-            &rev,
-            commit,
-            true,
-            "subtree_split").expect("can't create reference");
-        module_ref_root(&view)
+        let subdir_commit = scratch.split_subdir(&view, master).expect("can't split subdir");
+        scratch.repo
+            .reference(&module_ref(&view, "master"),
+                       subdir_commit,
+                       true,
+                       "subtree_split")
+            .expect("can't create reference");
+
+        setup_tmp_repo(&td.path(), &scratch_dir, Some(view));
     }
     else {
-        format!("{}","refs")
+        setup_tmp_repo(&td.path(), &scratch_dir, None);
     };
 
-    debug!("{:?}", &shell.command("du -a refs"));
-    setup_tmp_repo(&td.path(), &scratch_dir, &root);
-
-    if let Some(view) = view {
-        let shell = Shell { cwd: td.path().to_path_buf() };
-        shell.command(&format!("printf {} > view", &view));
-    }
-    else {
-        let shell = Shell { cwd: td.path().to_path_buf() };
-        shell.command(&format!("printf {} > view", "."));
-    }
-
-    return call_git(command, &args);
-
+    return call_git(command, td.path(), &args);
 }
 
 fn ssh_wrap(command: &str) -> i32
@@ -197,38 +164,30 @@ fn update_hook(old: &str, new: &str) -> i32
 {
     let scratch_dir = Path::new("/tmp").join("centralgit_central");
     let scratch = Scratch::new(&scratch_dir);
-    debug!("IN HOOK {} {}", &old, &new);
-    println!("hello from hook");
 
     let mut s = String::new();
-    File::open(&Path::new("view")).unwrap().read_to_string(&mut s);
-        debug!("HOOK");
-        debug!("HOOK");
-        debug!("HOOK");
-    debug!("HOOK view {:?}", &s);
+    File::open(&Path::new("view"))
+        .unwrap()
+        .read_to_string(&mut s)
+        .expect("could not read view name");
 
     if s.starts_with(".") {
-        debug!("HOOK no view, return 0");
-        debug!("HOOK");
-        debug!("HOOK");
         return 0;
     }
 
     let central_head = scratch.repo.refname_to_id("refs/heads/master").expect("no ref: master");
 
-    if let ModuleToSubdir::Done(rewritten, initial) =
-        scratch.module_to_subdir(
-            central_head,
-            Some(Path::new(&s)),
-            Oid::from_str(old).ok(),
-            Oid::from_str(new).expect("can't parse new OID")) {
+    match scratch.module_to_subdir(central_head,
+                                   Some(Path::new(&s)),
+                                   Oid::from_str(old).ok(),
+                                   Oid::from_str(new).expect("can't parse new OID")) {
 
-        debug!("HOOK setting master to {:?}", rewritten);
-        scratch.repo.reference(
-            "refs/heads/master",
-            rewritten,
-            true,
-            "module_to_subdir").expect("can't create master reference");
+        ModuleToSubdir::Done(rewritten, _) => {
+            scratch.repo
+                .reference("refs/heads/master", rewritten, true, "module_to_subdir")
+                .expect("can't create master reference");
+        }
+        _ => {}
     };
 
     return 0;
