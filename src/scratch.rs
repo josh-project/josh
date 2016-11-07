@@ -3,6 +3,7 @@ const TMP_NAME: &'static str = "refs/centralgit/tmp_fd2db5f8_bac2_4a1e_9487_4ac3
 
 use git2::*;
 use std::path::Path;
+use std::path::PathBuf;
 use shell::Shell;
 use std::collections::HashMap;
 use super::ModuleToSubdir;
@@ -38,6 +39,45 @@ enum CommitKind
     Orphan,
 }
 
+pub trait View
+{
+    fn apply(&self, tree: &Tree) -> Option<Oid>;
+    fn unapply(&self, scratch: &Scratch, tree: &Tree, parent_tree: &Tree) -> Oid;
+}
+
+pub struct SubdirView
+{
+    subdir: PathBuf,
+}
+
+impl SubdirView
+{
+    pub fn new(subdir: &Path) -> SubdirView
+    {
+        SubdirView { subdir: subdir.to_path_buf() }
+    }
+}
+
+impl View for SubdirView
+{
+    fn apply(&self, tree: &Tree) -> Option<Oid>
+    {
+        return if let Ok(new_tree) = tree.get_path(&self.subdir) {
+            Some(new_tree.id())
+        }
+        else {
+            None
+        };
+    }
+
+    fn unapply(&self, scratch: &Scratch, tree: &Tree, parent_tree: &Tree) -> Oid
+    {
+        scratch.replace_subtree(&self.subdir, &tree, &parent_tree).id()
+    }
+}
+
+
+
 impl Scratch
 {
     pub fn new(path: &Path) -> Scratch
@@ -45,11 +85,11 @@ impl Scratch
         Scratch { repo: Repository::init_bare(&path).expect("could not init scratch") }
     }
 
-    pub fn module_to_subdir(&self,
-                            current: Oid,
-                            path: Option<&Path>,
-                            module_current: Option<Oid>,
-                            new: Oid)
+    pub fn unapply_view(&self,
+                        current: Oid,
+                        view: &View,
+                        module_current: Option<Oid>,
+                        new: Oid)
         -> ModuleToSubdir
     {
         let mut current = current;
@@ -97,20 +137,21 @@ impl Scratch
                 return ModuleToSubdir::RejectMerge;
             }
 
-            if let Some(path) = path {
-                debug!("==== Rewriting commit {}", rev);
+            debug!("==== Rewriting commit {}", rev);
 
-                let tree = module_commit.tree().expect("walk: commit has no tree");
-                let parent =
-                    self.repo.find_commit(current).expect("walk: current object is no commit");
+            let tree = module_commit.tree().expect("walk: commit has no tree");
+            let parent =
+                self.repo.find_commit(current).expect("walk: current object is no commit");
 
-                let new_tree = self.replace_subtree(path,
-                                                    tree.id(),
-                                                    &parent.tree()
-                                                        .expect("walk: parent has no tree"));
+            let new_tree = view.unapply(&self,
+                    &tree,
+                    &parent.tree().expect("walk: parent has no tree"));
 
-                current = self.rewrite(&module_commit, &vec![&parent], &new_tree);
-            }
+            current = self.rewrite(&module_commit,
+                    &vec![&parent],
+                    &self.repo
+                    .find_tree(new_tree)
+                    .expect("can't find rewritten tree"));
         }
         return ModuleToSubdir::Done(current, initial);
     }
@@ -154,7 +195,8 @@ impl Scratch
     // pub fn push(&self, host: &RepoHost, oid: Oid, module: &str, target: &str) -> String
     // {
     //     self.repo.set_head_detached(oid).expect("can't detach HEAD");
-    //     let cmd = format!("if git push {} HEAD:{};then echo \"====\n==== SUCCESS!\n==== Ignore \
+    // let cmd = format!("if git push {} HEAD:{};then echo \"====\n==== SUCCESS!\n====
+    // Ignore \
     //                        the error message below.\n====\";else echo \"####\n#### \
     //                        FAILED\n####\n\";fi",
     //                       host.remote_url(module),
@@ -188,10 +230,10 @@ impl Scratch
         return self.repo.find_tree(full_tree_id).expect("replace_child: can't find new tree");
     }
 
-    pub fn replace_subtree(&self, path: &Path, subtree: Oid, full_tree: &Tree) -> Tree
+    pub fn replace_subtree(&self, path: &Path, subtree: &Tree, full_tree: &Tree) -> Tree
     {
         if path.components().count() == 1 {
-            return self.replace_child(path, subtree, full_tree);
+            return self.replace_child(path, subtree.id(), full_tree);
         }
         else {
             let name = Path::new(path.file_name().expect("no module name"));
@@ -205,13 +247,13 @@ impl Scratch
                 self.repo.find_tree(empty).unwrap()
             };
 
-            let tree = self.replace_child(name, subtree, &st);
+            let tree = self.replace_child(name, subtree.id(), &st);
 
-            return self.replace_subtree(path, tree.id(), full_tree);
+            return self.replace_subtree(path, &tree, full_tree);
         }
     }
 
-    pub fn split_subdir(&self, module: &str, newrev: Oid) -> Option<Oid>
+    pub fn apply_view(&self, view: &View, newrev: Oid) -> Option<Oid>
     {
         let walk = {
             let mut walk = self.repo.revwalk().expect("walk: can't create revwalk");
@@ -222,12 +264,13 @@ impl Scratch
 
         let mut map = HashMap::<Oid, Oid>::new();
 
+
         'walk: for commit in walk {
             let commit = self.repo.find_commit(commit.unwrap()).unwrap();
             let tree = commit.tree().expect("commit has no tree");
 
-            let new_tree = if let Ok(tree_entry) = tree.get_path(&Path::new(&module)) {
-                self.repo.find_tree(tree_entry.id()).expect("central_submit: can't find tree")
+            let new_tree = if let Some(tree_id) = view.apply(&tree) {
+                self.repo.find_tree(tree_id).expect("central_submit: can't find tree")
             }
             else {
                 continue 'walk;
@@ -318,7 +361,7 @@ impl Scratch
         'walk: for commit in walk {
             let commit = self.repo.find_commit(commit.unwrap()).unwrap();
             let tree = commit.tree().expect("commit has no tree");
-            let new_tree = self.replace_subtree(path, tree.id(), &empty);
+            let new_tree = self.replace_subtree(path, &tree, &empty);
 
             match commit.parents().count() {
                 2 => {
@@ -352,7 +395,7 @@ impl Scratch
             map.insert(commit.id(), self.rewrite(&commit, &[], &new_tree));
         }
 
-        let final_tree = self.replace_subtree(path, src.tree().unwrap().id(), &dst.tree().unwrap());
+        let final_tree = self.replace_subtree(path, &src.tree().unwrap(), &dst.tree().unwrap());
 
         let parents = [&dst, &self.repo.find_commit(map[&src.id()]).unwrap()];
         self.repo.set_head_detached(parents[0].id()).expect("join: can't detach head");

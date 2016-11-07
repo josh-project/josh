@@ -114,6 +114,59 @@ class CentralGitTests(unittest.TestCase):
         self.in_data0("test", "git pull --rebase")
         self.assertEquals("sub_bla2", self.in_data0("test", "cat sub/foo2"))
 
+    def test_fetch_sub_not_master(self):
+        self.in_data0(".", "git clone ssh://git@localhost:2222/test.git")
+        self.in_data0("test", "mkdir sub && echo sub_bla > sub/foo")
+        self.in_data0("test", "git add sub")
+        self.in_data0("test", "git commit -m add_sub_foo")
+        self.in_data0("test", "git checkout -b testbranch")
+        self.in_data0("test", "git push origin testbranch:testbranch")
+
+        self.in_data1(".", "git clone ssh://git@localhost:2222/test.git")
+        self.in_data1("test", "git checkout testbranch")
+        self.assertEquals("sub_bla", self.in_data1("test", "cat sub/foo"))
+
+        self.in_data1(".", "git clone ssh://git@localhost:2222/test.git/sub")
+        self.in_data1("sub", "git checkout testbranch")
+        self.assertEquals("sub_bla", self.in_data1("sub", "cat foo"))
+        getoutput("tree")
+
+        self.in_data0("test", "echo sub_bla2 > sub/foo2")
+        self.in_data0("test", "git add sub")
+        self.in_data0("test", "git commit -m add_sub_foo2")
+        self.in_data0("test", "git push origin testbranch:testbranch")
+
+        self.in_data0("test", "git branch -u origin/testbranch testbranch")
+        self.in_data1("sub", "git pull --rebase")
+        self.assertEquals("sub_bla2", self.in_data1("sub", "cat foo2"))
+
+    def test_commit_sub_not_master(self):
+        self.in_data0(".", "git clone ssh://git@localhost:2222/test.git")
+        self.in_data0("test", "mkdir sub && echo sub_bla > sub/foo")
+        self.in_data0("test", "git add sub")
+        self.in_data0("test", "git commit -m add_sub_foo")
+        self.in_data0("test", "git checkout -b testbranch")
+        self.in_data0("test", "git push origin testbranch:testbranch")
+
+        self.in_data1(".", "git clone ssh://git@localhost:2222/test.git")
+        self.in_data1("test", "git checkout testbranch")
+        self.assertEquals("sub_bla", self.in_data1("test", "cat sub/foo"))
+
+        self.in_data1(".", "git clone ssh://git@localhost:2222/test.git/sub")
+        self.in_data1("sub", "git checkout testbranch")
+        self.assertEquals("sub_bla", self.in_data1("sub", "cat foo"))
+        getoutput("tree")
+
+        self.in_data1("sub", "echo sub_bla2 > foo2")
+        self.in_data1("sub", "git add foo2")
+        self.in_data1("sub", "git commit -m add_foo2")
+        self.in_data1("sub", "git push origin testbranch:testbranch")
+
+
+        self.in_data0("test", "git branch -u origin/testbranch testbranch")
+        self.in_data0("test", "git pull --rebase")
+        self.assertEquals("sub_bla2", self.in_data0("test", "cat sub/foo2"))
+
 
 
 

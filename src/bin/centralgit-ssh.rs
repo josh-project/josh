@@ -10,6 +10,7 @@ extern crate log;
 
 use centralgithook::ModuleToSubdir;
 use centralgithook::Scratch;
+use centralgithook::SubdirView;
 use centralgithook::Shell;
 use centralgithook::module_ref;
 use centralgithook::module_ref_root;
@@ -73,7 +74,7 @@ fn cg_command(subcommand: &str) -> i32
             .arg("/tmp/centralgit.log")
             .status() {
             debug!("call ok");
-            return status.code().unwrap();
+            return status.code().unwrap_or(1);
         }
         else {
             debug!("failed to call cat /tmp/centralgit.log");
@@ -104,7 +105,7 @@ fn call_git(command: &str, td: &Path, args: &str) -> i32
         .args(&make_argvec(&rewritten_args))
         .status() {
         debug!("call ok");
-        status.code().unwrap()
+        status.code().unwrap_or(1)
     }
     else {
         debug!("failed to call git");
@@ -121,23 +122,23 @@ fn git_command(command: &str, args: &str) -> i32
 
     let re_view = Regex::new(r".*'.*[.]git/(?P<view>\S+)'").expect("can't compile regex");
     if let Some(caps) = re_view.captures(&args) {
-        for branch in scratch.repo.branches(None).unwrap() {
+        let view = caps.name("view").unwrap();
+
+        for branch in scratch.repo.branches(None).expect("could not get branches") {
             if let Ok((branch, _)) = branch {
                 let branchname = branch.name().unwrap().unwrap().to_string();
-                let branchrefname = branch.into_reference().name().unwrap().to_string();
-                let view = caps.name("view").unwrap();
-                let r = scratch.repo.refname_to_id(&branchrefname).expect("no ref");
-                let subdir_commit = scratch.split_subdir(&view, r).expect("can't split subdir");
+                let r = branch.into_reference().target().expect("no ref");
+                let viewobj = SubdirView::new(&Path::new(&view));
+                let subdir_commit = scratch.apply_view(&viewobj, r).expect("can't split subdir");
                 scratch.repo
                     .reference(&module_ref(&view, &branchname),
                                subdir_commit,
                                true,
                                "subtree_split")
                     .expect("can't create reference");
-
-                setup_tmp_repo(&td.path(), &scratch_dir, Some(view));
             };
         }
+        setup_tmp_repo(&td.path(), &scratch_dir, Some(view));
     }
     else {
         setup_tmp_repo(&td.path(), &scratch_dir, None);
@@ -151,13 +152,13 @@ fn ssh_wrap(command: &str) -> i32
     debug!("\n\n############\nssh orig command {:?}", &command);
 
     let re_cg = Regex::new(r"cg (?P<subcommand>.*)").expect("can't compile regex");
-    let re_git = Regex::new(r"(?P<gitcommand>git-\S*) (?P<args>.*)").expect("can't compile regex");
-
     if let Some(caps) = re_cg.captures(command) {
         let subcommand = caps.name("subcommand").unwrap();
         debug!("cg subcommand: {}", subcommand);
         return cg_command(subcommand);
     }
+
+    let re_git = Regex::new(r"(?P<gitcommand>git-\S*) (?P<args>.*)").expect("can't compile regex");
     if let Some(caps) = re_git.captures(command) {
         let gitcommand = caps.name("gitcommand").unwrap();
         let args = caps.name("args").unwrap();
@@ -173,7 +174,7 @@ fn update_hook(refname: &str, old: &str, new: &str) -> i32
 
     let mut s = String::new();
     File::open(&Path::new("view"))
-        .unwrap()
+        .expect("could not open view name file")
         .read_to_string(&mut s)
         .expect("could not read view name");
 
@@ -183,14 +184,16 @@ fn update_hook(refname: &str, old: &str, new: &str) -> i32
 
     let central_head = scratch.repo.refname_to_id(&refname).expect("no ref: master");
 
-    match scratch.module_to_subdir(central_head,
-                                   Some(Path::new(&s)),
-                                   Oid::from_str(old).ok(),
-                                   Oid::from_str(new).expect("can't parse new OID")) {
+    let view = SubdirView::new(&Path::new(&s));
+
+    match scratch.unapply_view(central_head,
+                               &view,
+                               Oid::from_str(old).ok(),
+                               Oid::from_str(new).expect("can't parse new OID")) {
 
         ModuleToSubdir::Done(rewritten, _) => {
             scratch.repo
-                .reference(&refname, rewritten, true, "module_to_subdir")
+                .reference(&refname, rewritten, true, "unapply_view")
                 .expect("can't create master reference");
         }
         _ => {}

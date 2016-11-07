@@ -87,7 +87,7 @@ fn test_split_subdir_one_commit()
     let head = scratch.transfer(&repo.commit("1"), &repo.path);
 
     assert_eq!(split_subdir_ref(&repo, "foo", head.id()),
-               scratch.split_subdir("foo", head.id()));
+               scratch.apply_view(&SubdirView::new(&Path::new("foo")), head.id()));
 }
 
 #[test]
@@ -103,7 +103,7 @@ fn test_split_subdir_two_commits()
     let head = scratch.transfer(&repo.commit("1"), &repo.path);
 
     assert_eq!(split_subdir_ref(&repo, "foo", head.id()),
-               scratch.split_subdir("foo", head.id()));
+               scratch.apply_view(&SubdirView::new(Path::new("foo")), head.id()));
 }
 
 #[test]
@@ -119,7 +119,7 @@ fn test_split_subdir_does_not_exist()
     // let head = scratch.transfer(&repo.commit("1"), &repo.path);
 
     // assert_eq!(split_subdir_ref(&repo, "bar", head.id()),
-    //            scratch.split_subdir("bar", head.id()));
+    //            scratch.apply_view("bar", head.id()));
 }
 
 #[test]
@@ -135,7 +135,7 @@ fn test_split_subdir_two_commits_first_empty()
     repo.shell.command("git log");
 
     assert_eq!(split_subdir_ref(&repo, "foo", head.id()),
-               scratch.split_subdir("foo", head.id()));
+               scratch.apply_view(&SubdirView::new(Path::new("foo")), head.id()));
     // assert!(false);
 }
 
@@ -154,7 +154,7 @@ fn test_split_subdir_three_commits_middle_unrelated()
     let head = scratch.transfer(&repo.commit("1"), &repo.path);
 
     assert_eq!(split_subdir_ref(&repo, "foo", head.id()),
-               scratch.split_subdir("foo", head.id()));
+               scratch.apply_view(&SubdirView::new(Path::new("foo")), head.id()));
 }
 
 #[test]
@@ -172,7 +172,7 @@ fn test_split_subdir_three_commits_first_unrelated()
     let head = scratch.transfer(&repo.commit("1"), &repo.path);
 
     assert_eq!(split_subdir_ref(&repo, "foo", head.id()),
-               scratch.split_subdir("foo", head.id()));
+               scratch.apply_view(&SubdirView::new(Path::new("foo")), head.id()));
 }
 
 #[test]
@@ -192,7 +192,7 @@ fn test_split_subdir_branch()
 
     let head = scratch.transfer(&repo.rev("HEAD"), &repo.path);
 
-    let actual = scratch.split_subdir("foo", head.id());
+    let actual = scratch.apply_view(&SubdirView::new(Path::new("foo")), head.id());
 
     scratch.repo.reference("refs/heads/actual", actual.unwrap(), true, "x").expect("err 3");
 
@@ -223,7 +223,7 @@ fn test_split_subdir_branch_unrelated()
 
     let head = scratch.transfer(&repo.rev("HEAD"), &repo.path);
 
-    let actual = scratch.split_subdir("foo", head.id());
+    let actual = scratch.apply_view(&SubdirView::new(Path::new("foo")), head.id());
 
     scratch.repo.reference("refs/heads/actual", actual.unwrap(), true, "x").expect("err 3");
 
@@ -262,7 +262,7 @@ fn test_split_merge_identical_to_first()
     println!("{:?}", repo.shell.command("git log"));
     let head = scratch.transfer(&repo.rev("HEAD"), &repo.path);
 
-    let actual = scratch.split_subdir("foo", head.id());
+    let actual = scratch.apply_view(&SubdirView::new(Path::new("foo")), head.id());
 
     let shell = Shell { cwd: scratch.repo.path().to_path_buf() };
     scratch.repo.reference("refs/heads/actual", actual.unwrap(), true, "x").expect("err 2");
@@ -316,7 +316,7 @@ fn test_split_merge_identical_to_second()
     println!("{:?}", repo.shell.command("git log"));
     let head = scratch.transfer(&repo.rev("HEAD"), &repo.path);
 
-    let actual = scratch.split_subdir("foo", head.id());
+    let actual = scratch.apply_view(&SubdirView::new(Path::new("foo")), head.id());
 
     let shell = Shell { cwd: scratch.repo.path().to_path_buf() };
     scratch.repo.reference("refs/heads/actual", actual.unwrap(), true, "x").expect("err 2");
@@ -400,7 +400,7 @@ central_initial-@orphan\n");
     central.shell.command("git checkout result");
 
     assert!(central.has_file("foo/bar/initial_in_module"));
-    let splitted = scratch.split_subdir("foo/bar", result).unwrap();
+    let splitted = scratch.apply_view(&SubdirView::new(Path::new("foo/bar")), result).unwrap();
     scratch.repo.reference("refs/heads/splitted", splitted, true, "x").expect("err 2");
     // shell.command("gitk --all");
     assert_eq!(module_head.id(), splitted);
@@ -446,7 +446,7 @@ fn test_join_with_merge()
     scratch.repo.reference("refs/heads/result", result, true, "x").expect("err 2");
     scratch.repo.reference("HEAD", result, true, "x").expect("err 2");
 
-    let splitted = scratch.split_subdir("foo", result).unwrap();
+    let splitted = scratch.apply_view(&SubdirView::new(Path::new("foo")), result).unwrap();
     scratch.repo.reference("refs/heads/splitted", splitted, true, "x").expect("err 2");
     assert_eq!(module_head.id(), splitted);
 }
@@ -473,7 +473,7 @@ fn test_replace_subtree()
     let tmp = scratch.transfer(&repo.commit("tmp"), &repo.path);
     let st = scratch.repo.find_commit(tmp.id()).unwrap().tree().unwrap();
 
-    let result = scratch.replace_subtree(Path::new("foo"), st.id(), &mt);
+    let result = scratch.replace_subtree(Path::new("foo"), &st, &mt);
 
     let subdirs = scratch.find_all_subdirs(&result);
     assert_eq!(vec![
@@ -482,7 +482,7 @@ fn test_replace_subtree()
     ],
                sorted(subdirs));
 
-    let result = scratch.replace_subtree(Path::new("foo/bla"), st.id(), &mt);
+    let result = scratch.replace_subtree(Path::new("foo/bla"), &st, &mt);
 
     let subdirs = scratch.find_all_subdirs(&result);
     assert_eq!(vec![
