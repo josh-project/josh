@@ -25,6 +25,12 @@ class CentralGitTests(unittest.TestCase):
         getoutput("mkdir _data0")
         getoutput("mkdir _data1")
 
+        # make sure the container is actually running
+        while True:
+            ok = getoutput("ssh -p 2222 git@localhost cg status")
+            if "centralgit OK" in ok:
+                break
+
     def in_data0(self,subdir, cmd):
         return getoutput("cd _data0/{} && {}".format(subdir,cmd))
 
