@@ -121,17 +121,23 @@ fn git_command(command: &str, args: &str) -> i32
 
     let re_view = Regex::new(r".*'.*[.]git/(?P<view>\S+)'").expect("can't compile regex");
     if let Some(caps) = re_view.captures(&args) {
-        let view = caps.name("view").unwrap();
-        let master = scratch.repo.refname_to_id("refs/heads/master").expect("no ref: master");
-        let subdir_commit = scratch.split_subdir(&view, master).expect("can't split subdir");
-        scratch.repo
-            .reference(&module_ref(&view, "master"),
-                       subdir_commit,
-                       true,
-                       "subtree_split")
-            .expect("can't create reference");
+        for branch in scratch.repo.branches(None).unwrap() {
+            if let Ok((branch, _)) = branch {
+                let branchname = branch.name().unwrap().unwrap().to_string();
+                let branchrefname = branch.into_reference().name().unwrap().to_string();
+                let view = caps.name("view").unwrap();
+                let r = scratch.repo.refname_to_id(&branchrefname).expect("no ref");
+                let subdir_commit = scratch.split_subdir(&view, r).expect("can't split subdir");
+                scratch.repo
+                    .reference(&module_ref(&view, &branchname),
+                               subdir_commit,
+                               true,
+                               "subtree_split")
+                    .expect("can't create reference");
 
-        setup_tmp_repo(&td.path(), &scratch_dir, Some(view));
+                setup_tmp_repo(&td.path(), &scratch_dir, Some(view));
+            };
+        }
     }
     else {
         setup_tmp_repo(&td.path(), &scratch_dir, None);
@@ -160,7 +166,7 @@ fn ssh_wrap(command: &str) -> i32
     return 1;
 }
 
-fn update_hook(old: &str, new: &str) -> i32
+fn update_hook(refname: &str, old: &str, new: &str) -> i32
 {
     let scratch_dir = Path::new("/tmp").join("centralgit_central");
     let scratch = Scratch::new(&scratch_dir);
@@ -175,7 +181,7 @@ fn update_hook(old: &str, new: &str) -> i32
         return 0;
     }
 
-    let central_head = scratch.repo.refname_to_id("refs/heads/master").expect("no ref: master");
+    let central_head = scratch.repo.refname_to_id(&refname).expect("no ref: master");
 
     match scratch.module_to_subdir(central_head,
                                    Some(Path::new(&s)),
@@ -184,7 +190,7 @@ fn update_hook(old: &str, new: &str) -> i32
 
         ModuleToSubdir::Done(rewritten, _) => {
             scratch.repo
-                .reference("refs/heads/master", rewritten, true, "module_to_subdir")
+                .reference(&refname, rewritten, true, "module_to_subdir")
                 .expect("can't create master reference");
         }
         _ => {}
@@ -213,7 +219,7 @@ fn main_ret() -> i32
 
     if args[0].ends_with("/update") {
         debug!("================= HOOK {:?}", args);
-        return update_hook(&args[2], &args[3]);
+        return update_hook(&args[1], &args[2], &args[3]);
     }
 
     if let Ok(command) = env::var("SSH_ORIGINAL_COMMAND") {
