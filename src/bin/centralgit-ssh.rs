@@ -7,14 +7,18 @@ extern crate tempdir;
 #[macro_use]
 extern crate log;
 
+use centralgithook::ModuleToSubdir;
 use centralgithook::Scratch;
 use centralgithook::Shell;
+use centralgithook::module_ref;
+use centralgithook::module_ref_root;
+use git2::Oid;
 use regex::Regex;
 use std::env::current_exe;
 use std::env;
+use std::fs::File;
+use std::io::Read;
 use std::os::unix::fs::symlink;
-use centralgithook::module_ref;
-use centralgithook::module_ref_root;
 use std::path::Path;
 use std::process::Command;
 use std::process::Stdio;
@@ -46,6 +50,10 @@ fn cg_command(subcommand: &str) -> i32
 {
     // let subcommand = format!("{}", subcommand[0]);
     debug!("Command cg {:?}", &subcommand);
+    if subcommand == "status" {
+        println!("centralgit OK");
+        return 0;
+    }
     if subcommand == "log" {
 
         let _ = if let Ok(status) = Command::new("cat")
@@ -116,6 +124,20 @@ fn git_command(command: &str, args: &str) -> i32
     let scratch_dir = Path::new("/tmp").join("centralgit_central");
     let scratch = Scratch::new(&scratch_dir);
 
+    if let Some(master) = scratch.repo.refname_to_id("refs/heads/master").ok() {
+        debug!("SCRATCH master is at {:?}", master);
+    }
+    else {
+        debug!("SCRATCH master is at ????");
+    }
+
+    if let Some(head) = scratch.repo.refname_to_id("HEAD").ok() {
+        debug!("SCRATCH HEAD is at {:?}", head);
+    }
+    else {
+        debug!("SCRATCH HEAD is at ????");
+    }
+
     let shell = Shell { cwd: scratch_dir.to_path_buf() };
 
 
@@ -137,6 +159,15 @@ fn git_command(command: &str, args: &str) -> i32
 
     debug!("{:?}", &shell.command("du -a refs"));
     setup_tmp_repo(&td.path(), &scratch_dir, &root);
+
+    if let Some(view) = view {
+        let shell = Shell { cwd: td.path().to_path_buf() };
+        shell.command(&format!("printf {} > view", &view));
+    }
+    else {
+        let shell = Shell { cwd: td.path().to_path_buf() };
+        shell.command(&format!("printf {} > view", "."));
+    }
 
     return call_git(command, &args);
 
@@ -162,10 +193,44 @@ fn ssh_wrap(command: &str) -> i32
     return 1;
 }
 
-fn update_hook() -> i32
+fn update_hook(old: &str, new: &str) -> i32
 {
-    debug!("IN HOOK");
+    let scratch_dir = Path::new("/tmp").join("centralgit_central");
+    let scratch = Scratch::new(&scratch_dir);
+    debug!("IN HOOK {} {}", &old, &new);
     println!("hello from hook");
+
+    let mut s = String::new();
+    File::open(&Path::new("view")).unwrap().read_to_string(&mut s);
+        debug!("HOOK");
+        debug!("HOOK");
+        debug!("HOOK");
+    debug!("HOOK view {:?}", &s);
+
+    if s.starts_with(".") {
+        debug!("HOOK no view, return 0");
+        debug!("HOOK");
+        debug!("HOOK");
+        return 0;
+    }
+
+    let central_head = scratch.repo.refname_to_id("refs/heads/master").expect("no ref: master");
+
+    if let ModuleToSubdir::Done(rewritten, initial) =
+        scratch.module_to_subdir(
+            central_head,
+            Some(Path::new(&s)),
+            Oid::from_str(old).ok(),
+            Oid::from_str(new).expect("can't parse new OID")) {
+
+        debug!("HOOK setting master to {:?}", rewritten);
+        scratch.repo.reference(
+            "refs/heads/master",
+            rewritten,
+            true,
+            "module_to_subdir").expect("can't create master reference");
+    };
+
     return 0;
 }
 
@@ -188,7 +253,8 @@ fn main_ret() -> i32
     debug!("args: {:?}", args);
 
     if args[0].ends_with("/update") {
-        return update_hook();
+        debug!("================= HOOK {:?}", args);
+        return update_hook(&args[2], &args[3]);
     }
 
     if let Ok(command) = env::var("SSH_ORIGINAL_COMMAND") {
