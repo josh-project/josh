@@ -23,12 +23,12 @@ fn test_find_all_subtrees()
 
     repo.add_file("foo");
     let head = scratch.transfer(&repo.commit("1"), &repo.path);
-    let subdirs = scratch.find_all_subdirs(&head.as_commit().unwrap().tree().unwrap());
+    let subdirs = find_all_subdirs(&scratch.repo, &head.as_commit().unwrap().tree().unwrap());
     assert_eq!(0, subdirs.len());
 
     repo.add_file("bla/foo");
     let head = scratch.transfer(&repo.commit("2"), &repo.path);
-    let subdirs = scratch.find_all_subdirs(&head.as_commit().unwrap().tree().unwrap());
+    let subdirs = find_all_subdirs(&scratch.repo, &head.as_commit().unwrap().tree().unwrap());
     assert_eq!(vec![
         format!("bla"),
     ],
@@ -36,7 +36,7 @@ fn test_find_all_subtrees()
 
     repo.add_file("a/b/c/d/foo");
     let head = scratch.transfer(&repo.commit("2"), &repo.path);
-    let subdirs = scratch.find_all_subdirs(&head.as_commit().unwrap().tree().unwrap());
+    let subdirs = find_all_subdirs(&scratch.repo, &head.as_commit().unwrap().tree().unwrap());
     assert_eq!(vec![
         format!("a"),
         format!("a/b"),
@@ -48,7 +48,7 @@ fn test_find_all_subtrees()
 
     repo.add_file("a/b/c/.bla/foo");
     let head = scratch.transfer(&repo.commit("2"), &repo.path);
-    let subdirs = scratch.find_all_subdirs(&head.as_commit().unwrap().tree().unwrap());
+    let subdirs = find_all_subdirs(&scratch.repo, &head.as_commit().unwrap().tree().unwrap());
     assert_eq!(vec![
         format!("a"),
         format!("a/b"),
@@ -473,18 +473,21 @@ fn test_replace_subtree()
     let tmp = scratch.transfer(&repo.commit("tmp"), &repo.path);
     let st = scratch.repo.find_commit(tmp.id()).unwrap().tree().unwrap();
 
-    let result = scratch.replace_subtree(Path::new("foo"), &st, &mt);
+    let result =
+        scratch.repo.find_tree(replace_subtree(&scratch.repo, Path::new("foo"), &st, &mt)).unwrap();
 
-    let subdirs = scratch.find_all_subdirs(&result);
+    let subdirs = find_all_subdirs(&scratch.repo, &result);
     assert_eq!(vec![
         format!("foo"),
         format!("x"),
     ],
                sorted(subdirs));
 
-    let result = scratch.replace_subtree(Path::new("foo/bla"), &st, &mt);
+    let result = scratch.repo
+        .find_tree(replace_subtree(&scratch.repo, Path::new("foo/bla"), &st, &mt))
+        .unwrap();
 
-    let subdirs = scratch.find_all_subdirs(&result);
+    let subdirs = find_all_subdirs(&scratch.repo, &result);
     assert_eq!(vec![
         format!("foo"),
         format!("foo/bla"),

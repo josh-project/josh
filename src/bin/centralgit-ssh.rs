@@ -4,16 +4,10 @@ extern crate git2;
 extern crate regex;
 extern crate tempdir;
 
-
 #[macro_use]
 extern crate log;
 
-use centralgithook::ModuleToSubdir;
-use centralgithook::Scratch;
-use centralgithook::SubdirView;
-use centralgithook::Shell;
-use centralgithook::module_ref;
-use centralgithook::module_ref_root;
+use centralgithook::*;
 use git2::Oid;
 use regex::Regex;
 use std::env::current_exe;
@@ -29,13 +23,23 @@ use tempdir::TempDir;
 
 fn main()
 {
-    exit(main_ret())
+    let logfilename = Path::new("/tmp/centralgit.log");
+    let logger_config = fern::DispatchConfig {
+        format: Box::new(|msg: &str, level: &log::LogLevel, _location: &log::LogLocation| {
+            format!("[{}] {}", level, msg)
+        }),
+        output: vec![fern::OutputConfig::file(logfilename)],
+        level: log::LogLevelFilter::Trace,
+    };
+    fern::init_global_logger(logger_config, log::LogLevelFilter::Trace).expect("can't init logger");
+
+    exit(main_ret());
 }
 
 fn setup_tmp_repo(td: &Path, scratch_dir: &Path, view: Option<&str>)
 {
     let root = match view {
-        Some(view) => module_ref_root(&view),
+        Some(view) => view_ref_root(&view),
         None => "refs".to_string(),
     };
 
@@ -129,12 +133,12 @@ fn git_command(command: &str, args: &str) -> i32
                 let branchname = branch.name().unwrap().unwrap().to_string();
                 let r = branch.into_reference().target().expect("no ref");
                 let viewobj = SubdirView::new(&Path::new(&view));
-                let subdir_commit = scratch.apply_view(&viewobj, r).expect("can't split subdir");
+                let view_commit = scratch.apply_view(&viewobj, r).expect("can't apply view");
                 scratch.repo
-                    .reference(&module_ref(&view, &branchname),
-                               subdir_commit,
+                    .reference(&view_ref(&view, &branchname),
+                               view_commit,
                                true,
-                               "subtree_split")
+                               "apply_view")
                     .expect("can't create reference");
             };
         }
@@ -188,15 +192,15 @@ fn update_hook(refname: &str, old: &str, new: &str) -> i32
 
     match scratch.unapply_view(central_head,
                                &view,
-                               Oid::from_str(old).ok(),
+                               Oid::from_str(old).expect("can't parse old OID"),
                                Oid::from_str(new).expect("can't parse new OID")) {
 
-        ModuleToSubdir::Done(rewritten, _) => {
+        UnapplyView::Done(rewritten) => {
             scratch.repo
                 .reference(&refname, rewritten, true, "unapply_view")
-                .expect("can't create master reference");
+                .expect("can't create new reference");
         }
-        _ => {}
+        _ => return 1,
     };
 
     return 0;
@@ -204,16 +208,6 @@ fn update_hook(refname: &str, old: &str, new: &str) -> i32
 
 fn main_ret() -> i32
 {
-    let logfilename = Path::new("/tmp/centralgit.log");
-    let logger_config = fern::DispatchConfig {
-        format: Box::new(|msg: &str, level: &log::LogLevel, _location: &log::LogLocation| {
-            format!("[{}] {}", level, msg)
-        }),
-        output: vec![fern::OutputConfig::file(logfilename)],
-        level: log::LogLevelFilter::Trace,
-    };
-    fern::init_global_logger(logger_config, log::LogLevelFilter::Trace).expect("can't init logger");
-
     let mut args = vec![];
     for arg in env::args() {
         args.push(arg);
@@ -226,6 +220,7 @@ fn main_ret() -> i32
     }
 
     if let Ok(command) = env::var("SSH_ORIGINAL_COMMAND") {
+        let _lock = FileLock::new("centralgit.lock");
         return ssh_wrap(&command);
     }
 

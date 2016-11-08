@@ -3,29 +3,30 @@ const TMP_NAME: &'static str = "refs/centralgit/tmp_fd2db5f8_bac2_4a1e_9487_4ac3
 
 use git2::*;
 use std::path::Path;
-use std::path::PathBuf;
 use shell::Shell;
 use std::collections::HashMap;
-use super::ModuleToSubdir;
+use super::UnapplyView;
+use super::View;
+use super::replace_subtree;
 
 
-pub fn module_ref_root(module: &str) -> String
+pub fn view_ref_root(module: &str) -> String
 {
     format!("refs/{}/#{}#/refs",
             "centralgit_0ee845b3_9c3f_41ee_9149_9e98a65ecf35",
             module)
 }
 
-pub fn module_ref(module: &str, branch: &str) -> String
+pub fn view_ref(module: &str, branch: &str) -> String
 {
-    format!("{}/heads/{}", module_ref_root(module), branch)
+    format!("{}/heads/{}", view_ref_root(module), branch)
 }
 
-// pub fn module_central_base_ref(module: &str, branch: &str) -> String
+// pub fn view_base_ref(module: &str, branch: &str) -> String
 // {
-//     format!("{}/central_base/{}", module_ref_root(module), branch)
+//     format!("{}/central_base/{}", view_ref_root(module), branch)
 // }
-
+//
 
 pub struct Scratch
 {
@@ -39,44 +40,6 @@ enum CommitKind
     Orphan,
 }
 
-pub trait View
-{
-    fn apply(&self, tree: &Tree) -> Option<Oid>;
-    fn unapply(&self, scratch: &Scratch, tree: &Tree, parent_tree: &Tree) -> Oid;
-}
-
-pub struct SubdirView
-{
-    subdir: PathBuf,
-}
-
-impl SubdirView
-{
-    pub fn new(subdir: &Path) -> SubdirView
-    {
-        SubdirView { subdir: subdir.to_path_buf() }
-    }
-}
-
-impl View for SubdirView
-{
-    fn apply(&self, tree: &Tree) -> Option<Oid>
-    {
-        return if let Ok(new_tree) = tree.get_path(&self.subdir) {
-            Some(new_tree.id())
-        }
-        else {
-            None
-        };
-    }
-
-    fn unapply(&self, scratch: &Scratch, tree: &Tree, parent_tree: &Tree) -> Oid
-    {
-        scratch.replace_subtree(&self.subdir, &tree, &parent_tree).id()
-    }
-}
-
-
 
 impl Scratch
 {
@@ -88,41 +51,35 @@ impl Scratch
     pub fn unapply_view(&self,
                         current: Oid,
                         view: &View,
-                        module_current: Option<Oid>,
+                        old: Oid,
                         new: Oid)
-        -> ModuleToSubdir
+        -> UnapplyView
     {
-        let mut current = current;
-        let (walk, initial) = if let Some(old) = module_current {
 
-            if old == new {
-                return ModuleToSubdir::NoChanges;
+        if old == new {
+            return UnapplyView::NoChanges;
+        }
+
+        match self.repo.graph_descendant_of(new, old) {
+            Err(_) | Ok(false) => {
+                debug!("graph_descendant_of({},{})", new, old);
+                return UnapplyView::RejectNoFF;
             }
+            Ok(true) => (),
+        }
 
-            match self.repo.graph_descendant_of(new, old) {
-                Err(_) | Ok(false) => {
-                    debug!("graph_descendant_of({},{})", new, old);
-                    return ModuleToSubdir::RejectNoFF;
-                }
-                Ok(true) => (),
-            }
+        debug!("==== walking commits from {} to {}", old, new);
 
-            debug!("==== walking commits from {} to {}", old, new);
-
+        let walk = {
             let mut walk = self.repo.revwalk().expect("walk: can't create revwalk");
             walk.set_sorting(SORT_REVERSE | SORT_TOPOLOGICAL);
             let range = format!("{}..{}", old, new);
             walk.push_range(&range).expect(&format!("walk: invalid range: {}", range));;
             walk.hide(old).expect("walk: can't hide");
-            (walk, false)
-        }
-        else {
-            let mut walk = self.repo.revwalk().expect("walk: can't create revwalk");
-            walk.set_sorting(SORT_REVERSE | SORT_TOPOLOGICAL);
-            walk.push(new).expect("walk: can't push");
-            (walk, true)
+            walk
         };
 
+        let mut current = current;
         for rev in walk {
             let rev = rev.expect("walk: invalid rev");
 
@@ -134,26 +91,25 @@ impl Scratch
 
             if module_commit.parents().count() > 1 {
                 // TODO: invectigate the possibility of allowing merge commits
-                return ModuleToSubdir::RejectMerge;
+                return UnapplyView::RejectMerge;
             }
 
             debug!("==== Rewriting commit {}", rev);
 
             let tree = module_commit.tree().expect("walk: commit has no tree");
-            let parent =
-                self.repo.find_commit(current).expect("walk: current object is no commit");
+            let parent = self.repo.find_commit(current).expect("walk: current object is no commit");
 
-            let new_tree = view.unapply(&self,
-                    &tree,
-                    &parent.tree().expect("walk: parent has no tree"));
+            let new_tree = view.unapply(&self.repo,
+                                        &tree,
+                                        &parent.tree().expect("walk: parent has no tree"));
 
             current = self.rewrite(&module_commit,
-                    &vec![&parent],
-                    &self.repo
-                    .find_tree(new_tree)
-                    .expect("can't find rewritten tree"));
+                                   &vec![&parent],
+                                   &self.repo
+                                       .find_tree(new_tree)
+                                       .expect("can't find rewritten tree"));
         }
-        return ModuleToSubdir::Done(current, initial);
+        return UnapplyView::Done(current);
     }
 
 
@@ -207,51 +163,7 @@ impl Scratch
     //     format!("{}\n\n{}", stderr, stdout)
     // }
 
-    fn subtree(&self, tree: &Tree, path: &Path) -> Option<Tree>
-    {
-        if let Some(oid) = tree.get_path(path).map(|x| x.id()).ok() {
-            return self.repo.find_tree(oid).ok();
-        }
-        else {
-            return None;
-        }
-    }
 
-    fn replace_child(&self, child: &Path, subtree: Oid, full_tree: &Tree) -> Tree
-    {
-        let full_tree_id = {
-            let mut builder = self.repo
-                .treebuilder(Some(&full_tree))
-                .expect("replace_child: can't create treebuilder");
-            builder.insert(child, subtree, 0o0040000) // GIT_FILEMODE_TREE
-                .expect("replace_child: can't insert tree");
-            builder.write().expect("replace_child: can't write tree")
-        };
-        return self.repo.find_tree(full_tree_id).expect("replace_child: can't find new tree");
-    }
-
-    pub fn replace_subtree(&self, path: &Path, subtree: &Tree, full_tree: &Tree) -> Tree
-    {
-        if path.components().count() == 1 {
-            return self.replace_child(path, subtree.id(), full_tree);
-        }
-        else {
-            let name = Path::new(path.file_name().expect("no module name"));
-            let path = path.parent().expect("module not in subdir");
-
-            let st = if let Some(st) = self.subtree(&full_tree, path) {
-                st
-            }
-            else {
-                let empty = self.repo.treebuilder(None).unwrap().write().unwrap();
-                self.repo.find_tree(empty).unwrap()
-            };
-
-            let tree = self.replace_child(name, subtree.id(), &st);
-
-            return self.replace_subtree(path, &tree, full_tree);
-        }
-    }
 
     pub fn apply_view(&self, view: &View, newrev: Oid) -> Option<Oid>
     {
@@ -325,23 +237,6 @@ impl Scratch
         return map.get(&newrev).map(|&id| id);
     }
 
-    pub fn find_all_subdirs(&self, tree: &Tree) -> Vec<String>
-    {
-        let mut sd = vec![];
-        for item in tree {
-            if let Ok(st) = self.repo.find_tree(item.id()) {
-                let name = item.name().unwrap();
-                if !name.starts_with(".") {
-                    sd.push(name.to_string());
-                    for r in self.find_all_subdirs(&st) {
-                        sd.push(format!("{}/{}", name, r));
-                    }
-                }
-            }
-        }
-        return sd;
-    }
-
     pub fn join_to_subdir(&self, dst: Oid, path: &Path, src: Oid, signature: &Signature) -> Oid
     {
         let dst = self.repo.find_commit(dst).unwrap();
@@ -361,7 +256,9 @@ impl Scratch
         'walk: for commit in walk {
             let commit = self.repo.find_commit(commit.unwrap()).unwrap();
             let tree = commit.tree().expect("commit has no tree");
-            let new_tree = self.replace_subtree(path, &tree, &empty);
+            let new_tree = self.repo
+                .find_tree(replace_subtree(&self.repo, path, &tree, &empty))
+                .expect("can't find tree");
 
             match commit.parents().count() {
                 2 => {
@@ -395,7 +292,12 @@ impl Scratch
             map.insert(commit.id(), self.rewrite(&commit, &[], &new_tree));
         }
 
-        let final_tree = self.replace_subtree(path, &src.tree().unwrap(), &dst.tree().unwrap());
+        let final_tree = self.repo
+            .find_tree(replace_subtree(&self.repo,
+                                       path,
+                                       &src.tree().unwrap(),
+                                       &dst.tree().unwrap()))
+            .expect("can't find tree");
 
         let parents = [&dst, &self.repo.find_commit(map[&src.id()]).unwrap()];
         self.repo.set_head_detached(parents[0].id()).expect("join: can't detach head");
