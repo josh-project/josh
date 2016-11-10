@@ -59,11 +59,12 @@ fn setup_tmp_repo(td: &Path, scratch_dir: &Path, view: Option<&str>)
                                Some(view) => view,
                                None => ".",
                            }));
+
+    shell.command(&format!("printf {} > orig", scratch_dir.to_string_lossy()));
 }
 
 fn cg_command(subcommand: &str) -> i32
 {
-    // let subcommand = format!("{}", subcommand[0]);
     debug!("Command cg {:?}", &subcommand);
     if subcommand == "status" {
         println!("centralgit OK");
@@ -121,11 +122,17 @@ fn git_command(command: &str, args: &str) -> i32
 {
     let td = TempDir::new("centralgit").expect("failed to create tempdir");
 
-    let scratch_dir = Path::new("/tmp").join("centralgit_central");
+    let repo_name = {
+        let re = Regex::new(r".*'/(?P<repo>.*[.]git).*'").expect("can't compile regex");
+        let caps = re.captures(&args).expect("can't find repo name");
+        caps.name("repo").unwrap()
+    };
+
+    let scratch_dir = Path::new("/tmp").join("centralgit_central").join(repo_name);
     let scratch = Scratch::new(&scratch_dir);
 
-    let re_view = Regex::new(r".*'.*[.]git/(?P<view>\S+)'").expect("can't compile regex");
-    if let Some(caps) = re_view.captures(&args) {
+    let re = Regex::new(r".*'.*[.]git/(?P<view>\S+)'").expect("can't compile regex");
+    if let Some(caps) = re.captures(&args) {
         let view = caps.name("view").unwrap();
 
         for branch in scratch.repo.branches(None).expect("could not get branches") {
@@ -173,22 +180,36 @@ fn ssh_wrap(command: &str) -> i32
 
 fn update_hook(refname: &str, old: &str, new: &str) -> i32
 {
-    let scratch_dir = Path::new("/tmp").join("centralgit_central");
-    let scratch = Scratch::new(&scratch_dir);
+    let scratch = {
+        let mut s = String::new();
+        File::open(&Path::new("orig"))
+            .expect("could not open orig name file")
+            .read_to_string(&mut s)
+            .expect("could not read orig name");
 
-    let mut s = String::new();
-    File::open(&Path::new("view"))
-        .expect("could not open view name file")
-        .read_to_string(&mut s)
-        .expect("could not read view name");
 
-    if s.starts_with(".") {
-        return 0;
-    }
+        let scratch_dir = Path::new(&s);
+        let scratch = Scratch::new(&scratch_dir);
+        scratch
+    };
+
+
+    let view = {
+        let mut s = String::new();
+        File::open(&Path::new("view"))
+            .expect("could not open view name file")
+            .read_to_string(&mut s)
+            .expect("could not read view name");
+
+        if s.starts_with(".") {
+            return 0;
+        }
+        let view = SubdirView::new(&Path::new(&s));
+        view
+    };
 
     let central_head = scratch.repo.refname_to_id(&refname).expect("no ref: master");
 
-    let view = SubdirView::new(&Path::new(&s));
 
     match scratch.unapply_view(central_head,
                                &view,

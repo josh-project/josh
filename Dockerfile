@@ -10,14 +10,15 @@ RUN ssh-keygen -t rsa -f /etc/ssh/ssh_host_rsa_key
 
 RUN adduser git
 
-COPY id_rsa.pub /root/.ssh/authorized_keys
+# COPY id_rsa.pub /root/.ssh/authorized_keys
 RUN mkdir /home/git/.ssh
-RUN echo -n "command=\"/bin/centralgit-ssh --user testuser\" " >  /home/git/.ssh/authorized_keys
-RUN cat /root/.ssh/authorized_keys >> /home/git/.ssh/authorized_keys
+# RUN echo -n "command=\"/bin/centralgit-ssh --user testuser\" " >  /home/git/.ssh/authorized_keys
+# RUN cat /root/.ssh/authorized_keys >> /home/git/.ssh/authorized_keys
+COPY e2e-tests/keys/authorized_keys /home/git/.ssh/authorized_keys
 
-RUN chown -R root /root/.ssh
-RUN chmod 700 /root/.ssh
-RUN chmod 600 /root/.ssh/authorized_keys
+# RUN chown -R root /root/.ssh
+# RUN chmod 700 /root/.ssh
+# RUN chmod 600 /root/.ssh/authorized_keys
 
 RUN chown -R git /home/git/.ssh
 RUN chmod 700 /home/git/.ssh
