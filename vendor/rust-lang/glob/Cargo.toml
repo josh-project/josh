@@ -10,6 +10,7 @@ documentation = "https://doc.rust-lang.org/glob"
 description = """
 Support for matching file paths against Unix shell style patterns.
 """
+categories = ["filesystem"]
 
 [dev-dependencies]
 tempdir = "0.3"
