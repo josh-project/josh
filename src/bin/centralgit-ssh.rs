@@ -24,14 +24,19 @@ use tempdir::TempDir;
 fn main()
 {
     let logfilename = Path::new("/tmp/centralgit.log");
-    let logger_config = fern::DispatchConfig {
-        format: Box::new(|msg: &str, level: &log::LogLevel, _location: &log::LogLocation| {
-            format!("[{}] {}", level, msg)
-        }),
-        output: vec![fern::OutputConfig::file(logfilename)],
-        level: log::LogLevelFilter::Trace,
-    };
-    fern::init_global_logger(logger_config, log::LogLevelFilter::Trace).expect("can't init logger");
+    fern::Dispatch::new()
+    .format(|out, message, record| {
+        out.finish(format_args!(
+            "{}[{}] {}",
+            record.target(),
+            record.level(),
+            message
+        ))
+    })
+    .level(log::LevelFilter::Debug)
+    .chain(std::io::stdout())
+    .chain(fern::log_file(logfilename).unwrap())
+    .apply().unwrap();
 
     exit(main_ret());
 }
@@ -128,7 +133,7 @@ fn git_command(command: &str, args: &str) -> i32
         caps.name("repo").unwrap()
     };
 
-    let scratch_dir = Path::new("/tmp").join("centralgit_central").join(repo_name);
+    let scratch_dir = Path::new("/tmp").join("centralgit_central").join(repo_name.as_str());
     let scratch = Scratch::new(&scratch_dir);
 
     let re = Regex::new(r".*'.*[.]git/(?P<view>\S+)'").expect("can't compile regex");
@@ -139,17 +144,17 @@ fn git_command(command: &str, args: &str) -> i32
             if let Ok((branch, _)) = branch {
                 let branchname = branch.name().unwrap().unwrap().to_string();
                 let r = branch.into_reference().target().expect("no ref");
-                let viewobj = SubdirView::new(&Path::new(&view));
+                let viewobj = SubdirView::new(&Path::new(&view.as_str()));
                 let view_commit = scratch.apply_view(&viewobj, r).expect("can't apply view");
                 scratch.repo
-                    .reference(&view_ref(&view, &branchname),
+                    .reference(&view_ref(&view.as_str(), &branchname),
                                view_commit,
                                true,
                                "apply_view")
                     .expect("can't create reference");
             };
         }
-        setup_tmp_repo(&td.path(), &scratch_dir, Some(view));
+        setup_tmp_repo(&td.path(), &scratch_dir, Some(view.as_str()));
     }
     else {
         setup_tmp_repo(&td.path(), &scratch_dir, None);
@@ -165,15 +170,15 @@ fn ssh_wrap(command: &str) -> i32
     let re_cg = Regex::new(r"cg (?P<subcommand>.*)").expect("can't compile regex");
     if let Some(caps) = re_cg.captures(command) {
         let subcommand = caps.name("subcommand").unwrap();
-        debug!("cg subcommand: {}", subcommand);
-        return cg_command(subcommand);
+        debug!("cg subcommand: {}", subcommand.as_str());
+        return cg_command(subcommand.as_str());
     }
 
     let re_git = Regex::new(r"(?P<gitcommand>git-\S*) (?P<args>.*)").expect("can't compile regex");
     if let Some(caps) = re_git.captures(command) {
         let gitcommand = caps.name("gitcommand").unwrap();
         let args = caps.name("args").unwrap();
-        return git_command(gitcommand, args);
+        return git_command(gitcommand.as_str(), args.as_str());
     }
     return 1;
 }
