@@ -11,3 +11,4 @@ log = "*"
 fern = "*"
 env_logger = "*"
 regex = "*"
+rouille = { git = "git://github.com/tomaka/rouille.git" }

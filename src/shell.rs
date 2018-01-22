@@ -36,6 +36,8 @@ impl Shell
             String::from_utf8(output.stderr).expect("failed to decode utf8").trim().to_string();
         debug!("stdout:\n{}", &stdout);
         debug!("stderr:\n{}", &stderr);
+        debug!("");
+        debug!("");
         return (stdout, stderr);
     }
 }
