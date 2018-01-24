@@ -10,67 +10,25 @@ extern crate log;
 use centralgithook::*;
 use git2::Oid;
 use regex::Regex;
+use rouille::cgi::CgiRun;
 use std::env::current_exe;
 use std::env;
 use std::fs::File;
 use std::io::Read;
+use std::io;
 use std::os::unix::fs::symlink;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
-//use std::process::Stdio;
 use std::process::exit;
-use tempdir::TempDir;
-
-use std::cell::RefCell;
-use std::thread;
-
-struct TLocals
-{
-    td: TempDir,
-}
-
-impl Drop for TLocals
-{
-    fn drop(&mut self)
-    {
-        println!("DROPPING {:?}", self.td.path());
-        let shell = Shell { cwd: self.td.path().to_path_buf() };
-        shell.command("git log HEAD");
-        shell.command("ls -l");
-        println!("done DROPPING {:?}", self.td.path());
-    }
-}
-
-thread_local!(
-    static TMP: RefCell<TLocals> = RefCell::new(
-        TLocals {
-            td: TempDir::new("centralgit").expect("failed to create tempdir")
-        }
-    )
-);
-
 
 
 // #[macro_use]
 extern crate rouille;
 
-use std::io;
-use rouille::cgi::CgiRun;
-
 fn setup_tmp_repo(scratch_dir: &Path, view: Option<&str>) -> PathBuf
 {
-    let path = {
-        let mut t = PathBuf::new();
-        TMP.with(|tmp| {
-            println!("old TMP {:?}", tmp.borrow().td.path());
-            let x = TLocals { td: TempDir::new("centralgit").expect("failed to create tempdir") };
-            t = x.td.path().to_path_buf();
-            println!("creted TMP {:?}", t);
-            *tmp.borrow_mut() = x;
-        });
-        t
-    };
+    let path = thread_local_temp_dir();
 
     let root = match view {
         Some(view) => view_ref_root(&view),
@@ -130,11 +88,22 @@ fn main_ret() -> i32 {
         return update_hook(&args[1], &args[2], &args[3]);
     }
 
+
+    let base_repo = do_clone_base();
     println!("Now listening on localhost:8000");
 
 
     rouille::start_server("localhost:8000", move |request| {
         rouille::log(&request, io::stdout(), || {
+
+            let auth = match rouille::input::basic_http_auth(request) {
+                Some(a) => a,
+                _ => return rouille::Response::basic_http_auth_login_required("realm")
+            };
+
+            if !(auth.login == "me" && auth.password == "secret") {
+                return rouille::Response::text("bad credentials").with_status_code(403);
+            }
 
 
             println!("X\nX\nX\nURL: {}", request.url());
@@ -148,7 +117,7 @@ fn main_ret() -> i32 {
             };
 
 
-            let scratch = Scratch::new(&env::current_dir().unwrap());
+            let scratch = Scratch::new(&base_repo.path());
 
             let re = Regex::new(r"/(?P<view>.*)[.]git/.*").expect("can't compile regex");
 
@@ -172,12 +141,12 @@ fn main_ret() -> i32 {
                             .expect("can't create reference");
                     };
                 }
-                setup_tmp_repo(&env::current_dir().unwrap(), Some(view.as_str()))
+                setup_tmp_repo(&base_repo.path(), Some(view.as_str()))
 
             }
             else {
                 println!("no view");
-                setup_tmp_repo(&env::current_dir().unwrap(), None)
+                setup_tmp_repo(&base_repo.path(), None)
             };
 
             let mut cmd = Command::new("git");

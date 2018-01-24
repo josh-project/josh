@@ -1,7 +1,9 @@
 extern crate git2;
 
-use std::process::Command;
+use std::cell::RefCell;
 use std::path::PathBuf;
+use std::process::Command;
+use tempdir::TempDir;
 
 pub struct Shell
 {
@@ -36,8 +38,44 @@ impl Shell
             String::from_utf8(output.stderr).expect("failed to decode utf8").trim().to_string();
         debug!("stdout:\n{}", &stdout);
         debug!("stderr:\n{}", &stderr);
-        debug!("");
-        debug!("");
+        debug!("\n");
+        debug!("\n");
         return (stdout, stderr);
     }
 }
+
+struct TLocals { td: TempDir }
+
+// This is just for debugging, to know when the TempDir actually gets removed
+impl Drop for TLocals
+{
+    fn drop(&mut self)
+    {
+        println!("DROPPING {:?}", self.td.path());
+        let shell = Shell { cwd: self.td.path().to_path_buf() };
+        shell.command("git log HEAD");
+        shell.command("ls -l");
+        println!("done DROPPING {:?}", self.td.path());
+    }
+}
+
+thread_local!(
+    static TMP: RefCell<TLocals> = RefCell::new(
+        TLocals { td: TempDir::new("centralgit").expect("failed to create tempdir") }
+    )
+);
+
+pub fn thread_local_temp_dir() -> PathBuf
+{
+    let mut t = PathBuf::new();
+    TMP.with(|tmp| {
+        println!("old TMP {:?}", tmp.borrow().td.path());
+        let x = TLocals { td: TempDir::new("centralgit").expect("failed to create tempdir") };
+        t = x.td.path().to_path_buf();
+        println!("creted TMP {:?}", t);
+        *tmp.borrow_mut() = x;
+    });
+    t
+}
+
+
