@@ -6,9 +6,10 @@ extern crate log;
 mod filelock;
 mod scratch;
 mod shell;
-mod clone_base;
+mod base_repo;
 mod treeops;
 mod view_subdir;
+pub mod virtual_repo;
 
 pub use filelock::FileLock;
 pub use scratch::Scratch;
@@ -18,7 +19,7 @@ pub use shell::Shell;
 pub use shell::thread_local_temp_dir;
 pub use treeops::*;
 pub use view_subdir::SubdirView;
-pub use clone_base::do_clone_base;
+pub use base_repo::BaseRepo;
 
 #[derive(Clone)]
 pub enum UnapplyView
