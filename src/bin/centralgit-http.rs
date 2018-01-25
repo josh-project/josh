@@ -58,6 +58,11 @@ fn setup_tmp_repo(scratch_dir: &Path, view: Option<&str>) -> PathBuf
     return path;
 }
 
+fn fetch_origin_master(repo: git2::Repository) -> Result<(), git2::Error> {
+    repo.find_remote("origin")?.fetch(&["master"], None, None)
+}
+
+
 fn main() { exit(main_ret()); }
 
 fn main_ret() -> i32 {
@@ -89,21 +94,28 @@ fn main_ret() -> i32 {
     }
 
 
-    let base_repo = do_clone_base();
+    let base_repo = do_clone_base(
+        &args[1],
+        &args[2],
+        &args[3],
+        &PathBuf::from(&args[4]));
+        /* "gerrit:29418", */
+        /* "bsw/central.git", */
+        /* "christian.schilling", */
+        /* &PathBuf::from("/Users/christian/.ssh/id_rsa")); */
     println!("Now listening on localhost:8000");
-
 
     rouille::start_server("localhost:8000", move |request| {
         rouille::log(&request, io::stdout(), || {
 
-            let auth = match rouille::input::basic_http_auth(request) {
-                Some(a) => a,
-                _ => return rouille::Response::basic_http_auth_login_required("realm")
-            };
+            /* let auth = match rouille::input::basic_http_auth(request) { */
+            /*     Some(a) => a, */
+            /*     _ => return rouille::Response::basic_http_auth_login_required("realm") */
+            /* }; */
 
-            if !(auth.login == "me" && auth.password == "secret") {
-                return rouille::Response::text("bad credentials").with_status_code(403);
-            }
+            /* if !(auth.login == "me" && auth.password == "secret") { */
+            /*     return rouille::Response::text("bad credentials").with_status_code(403); */
+            /* } */
 
 
             println!("X\nX\nX\nURL: {}", request.url());
@@ -117,6 +129,7 @@ fn main_ret() -> i32 {
             };
 
 
+            /* fetch_origin_master(git2::Repository::open(base_repo.path()).unwrap()); */
             let scratch = Scratch::new(&base_repo.path());
 
             let re = Regex::new(r"/(?P<view>.*)[.]git/.*").expect("can't compile regex");

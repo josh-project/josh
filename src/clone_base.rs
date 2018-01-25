@@ -2,11 +2,16 @@ extern crate git2;
 
 extern crate tempdir;
 
+use std::path::Path;
 use std::path::PathBuf;
 
 
 
-pub fn do_clone_base() -> tempdir::TempDir {
+pub fn do_clone_base(
+    host: &str,
+    repo: &str,
+    user: &str,
+    private_key: &Path) -> tempdir::TempDir {
     let td = tempdir::TempDir::new("centralgit").expect("failed to create tempdir");
 
     println!("clone base repo: {:?}", td.path());
@@ -18,17 +23,10 @@ pub fn do_clone_base() -> tempdir::TempDir {
 
     let mut rcb = git2::RemoteCallbacks::new();
     rcb.credentials(|_,_,_| {
-        /* let cred = git2::Cred::userpass_plaintext( */
-        /*     "christian.schilling", */
-        /*     "7b5KX2ivtyvxPOcG5lnM2DGvMUKWtOlcOx26DEqqDA"); */
-        /* let cred = git2::Cred::ssh_key_from_agent( */
-        /*     "christian" */
-
-        /* ); */
         let cred = git2::Cred::ssh_key(
-            "christian.schilling",
-            Some(&PathBuf::from("/Users/christian/.ssh/id_rsa.pub")),
-            &PathBuf::from("/Users/christian/.ssh/id_rsa"),
+            user,
+            None,
+            private_key,
             None
         );
         return cred;
@@ -37,10 +35,10 @@ pub fn do_clone_base() -> tempdir::TempDir {
     builder.fetch_options(fetchoptions);
 
 
-    let r = builder.clone("ssh://christian.schilling@gerrit:29418/bsw/central.git", &td.path()).expect("can't clone");
+    let r = builder.clone(
+        &format!("ssh://{}@{}/{}", user, host, repo), &td.path()).expect("can't clone");
     for remote in r.remotes().unwrap().iter()
     {
-
         println!("remote: {:?}", remote);
     }
     return td;

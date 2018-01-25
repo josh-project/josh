@@ -53,8 +53,9 @@ impl Drop for TLocals
     {
         println!("DROPPING {:?}", self.td.path());
         let shell = Shell { cwd: self.td.path().to_path_buf() };
-        shell.command("git log HEAD");
+        /* shell.command("git log HEAD"); */
         shell.command("ls -l");
+        shell.command("ps -a");
         println!("done DROPPING {:?}", self.td.path());
     }
 }
