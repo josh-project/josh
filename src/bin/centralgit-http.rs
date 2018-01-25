@@ -54,7 +54,6 @@ fn setup_tmp_repo(scratch_dir: &Path, view: Option<&str>) -> PathBuf
                            }));
 
     shell.command(&format!("printf {} > orig", scratch_dir.to_string_lossy()));
-    /* shell.command("ls"); */
     return path;
 }
 
@@ -99,24 +98,19 @@ fn main_ret() -> i32 {
         &args[2],
         &args[3],
         &PathBuf::from(&args[4]));
-        /* "gerrit:29418", */
-        /* "bsw/central.git", */
-        /* "christian.schilling", */
-        /* &PathBuf::from("/Users/christian/.ssh/id_rsa")); */
     println!("Now listening on localhost:8000");
 
     rouille::start_server("localhost:8000", move |request| {
         rouille::log(&request, io::stdout(), || {
 
-            /* let auth = match rouille::input::basic_http_auth(request) { */
-            /*     Some(a) => a, */
-            /*     _ => return rouille::Response::basic_http_auth_login_required("realm") */
-            /* }; */
+            let auth = match rouille::input::basic_http_auth(request) {
+                Some(a) => a,
+                _ => return rouille::Response::basic_http_auth_login_required("realm")
+            };
 
-            /* if !(auth.login == "me" && auth.password == "secret") { */
-            /*     return rouille::Response::text("bad credentials").with_status_code(403); */
-            /* } */
-
+            if !(auth.login == "me" && auth.password == "secret") {
+                return rouille::Response::text("bad credentials").with_status_code(403);
+            }
 
             println!("X\nX\nX\nURL: {}", request.url());
             let re = Regex::new(r"(?P<prefix>/.*[.]git)/.*").expect("can't compile regex");
@@ -129,7 +123,7 @@ fn main_ret() -> i32 {
             };
 
 
-            /* fetch_origin_master(git2::Repository::open(base_repo.path()).unwrap()); */
+            fetch_origin_master(git2::Repository::open(base_repo.path()).unwrap());
             let scratch = Scratch::new(&base_repo.path());
 
             let re = Regex::new(r"/(?P<view>.*)[.]git/.*").expect("can't compile regex");
@@ -140,20 +134,26 @@ fn main_ret() -> i32 {
 
                 let view = caps.name("view").unwrap();
 
-                for branch in scratch.repo.branches(None).expect("could not get branches") {
-                    if let Ok((branch, _)) = branch {
-                        let branchname = branch.name().unwrap().unwrap().to_string();
-                        let r = branch.into_reference().target().expect("no ref");
-                        let viewobj = SubdirView::new(&Path::new(&view.as_str()));
-                        let view_commit = scratch.apply_view(&viewobj, r).expect("can't apply view");
+
+                if let Ok(branch) = scratch.repo.find_branch("master", git2::BranchType::Local) {
+                    let branchname = branch.name().unwrap().unwrap().to_string();
+                    let r = branch.into_reference().target().expect("no ref");
+                    let viewobj = SubdirView::new(&Path::new(&view.as_str()));
+
+                    if let Some(view_commit) = scratch.apply_view(&viewobj, r) {
+                        println!("applied view to branch {}", branchname);
                         scratch.repo
                             .reference(&view_ref(&view.as_str(), &branchname),
                                        view_commit,
                                        true,
                                        "apply_view")
                             .expect("can't create reference");
+                    }
+                    else {
+                        println!("can't apply view to branch {}", branchname);
                     };
-                }
+                };
+
                 setup_tmp_repo(&base_repo.path(), Some(view.as_str()))
 
             }
