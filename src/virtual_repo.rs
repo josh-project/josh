@@ -35,6 +35,8 @@ pub fn setup_tmp_repo(scratch_dir: &Path, view: Option<&str>) -> PathBuf
                            }));
 
     shell.command(&format!("printf {} > orig", scratch_dir.to_string_lossy()));
+    shell.command("git config http.receivepack true");
+    shell.command("rm -Rf refs/for");
     return path;
 }
 
@@ -68,18 +70,27 @@ pub fn update_hook(refname: &str, old: &str, new: &str) -> i32
         view
     };
 
-    let central_head = scratch.repo.refname_to_id(&refname).expect("no ref: master");
+    let without_refs_for = "refs/heads/".to_owned() + refname.trim_left_matches("refs/for/");
+    let central_head = scratch.repo.refname_to_id(&without_refs_for).expect(&format!("no ref: {}", &refname));
 
+    let r = git2::Repository::open_from_env().unwrap();
+    let old = r.refname_to_id(&without_refs_for).unwrap();
+
+    debug!("=== processed_old {}", old);
 
     match scratch.unapply_view(central_head,
                                &view,
-                               Oid::from_str(old).expect("can't parse old OID"),
+                               old,
+                               /* Oid::from_str(old).expect("can't parse old OID"), */
                                Oid::from_str(new).expect("can't parse new OID")) {
 
         UnapplyView::Done(rewritten) => {
-            scratch.repo
-                .reference(&refname, rewritten, true, "unapply_view")
-                .expect("can't create new reference");
+            r.set_head_detached(rewritten).expect("rewrite: can't detach head");
+            /* scratch.repo */
+            /*     .reference(&without_refs_for, rewritten, true, "unapply_view") */
+            /*     .expect("can't create new reference"); */
+            debug!("=== pushing {}:{}", "HEAD", refname);
+        //repo.find_remote("origin").unwrap().push(&[&format!("{}:{}", refname:refname)], None, None);
         }
         _ => return 1,
     };

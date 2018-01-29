@@ -54,8 +54,9 @@ fn main_ret() -> i32 {
         return virtual_repo::update_hook(&args[1], &args[2], &args[3]);
     }
 
+    let base_repo = BaseRepo::create(&PathBuf::from(&args[4]));
 
-    let base_repo = BaseRepo::clone(
+    base_repo.clone(
         &args[1],
         &args[2],
         &PathBuf::from(&args[3]));
@@ -85,7 +86,7 @@ fn main_ret() -> i32 {
 
 
             base_repo.fetch_origin_master();
-            let scratch = Scratch::new(&base_repo.td.path());
+            let scratch = Scratch::new(&base_repo.path);
 
             let re = Regex::new(r"/(?P<view>.*)[.]git/.*").expect("can't compile regex");
 
@@ -115,12 +116,12 @@ fn main_ret() -> i32 {
                     };
                 };
 
-                virtual_repo::setup_tmp_repo(&base_repo.td.path(), Some(view.as_str()))
+                virtual_repo::setup_tmp_repo(&base_repo.path, Some(view.as_str()))
 
             }
             else {
                 println!("no view");
-                virtual_repo::setup_tmp_repo(&base_repo.td.path(), None)
+                virtual_repo::setup_tmp_repo(&base_repo.path, None)
             };
 
             let mut cmd = Command::new("git");

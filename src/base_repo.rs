@@ -7,18 +7,23 @@ use std::path::PathBuf;
 
 pub struct BaseRepo
 {
-    pub td: tempdir::TempDir,
+    pub path: PathBuf,
 }
 
 
 impl BaseRepo {
+    pub fn create(path: &Path) -> BaseRepo 
+    {
+        return BaseRepo{path: PathBuf::from(&path)};
+    }
+
     pub fn clone(
+        &self,
         url: &str,
         user: &str,
-        private_key: &Path) -> BaseRepo {
-        let td = tempdir::TempDir::new("centralgit").expect("failed to create tempdir");
+        private_key: &Path){
 
-        println!("clone base repo: {:?}", td.path());
+        println!("clone base repo: {:?}", &self.path);
 
         let mut builder = git2::build::RepoBuilder::new();
         builder.bare(true);
@@ -39,17 +44,19 @@ impl BaseRepo {
         builder.fetch_options(fetchoptions);
 
 
-        let r = builder.clone(url, &td.path()).expect("can't clone");
-        for remote in r.remotes().unwrap().iter()
-        {
-            println!("remote: {:?}", remote);
-        }
-        return BaseRepo{ td: td };
+        if let Ok(r) = builder.clone(url, &self.path) { println!("cloned"); }
+        else { println!("exists"); }
     }
 
     pub fn fetch_origin_master(&self) {
-        let repo = git2::Repository::open(self.td.path()).unwrap();
+        let repo = git2::Repository::open(&self.path).unwrap();
         repo.find_remote("origin").unwrap().fetch(&["master"], None, None);
+    }
+
+    pub fn push_origin(&self, refname: &str) {
+        let repo = git2::Repository::open(&self.path).unwrap();
+        println!("push_origin {}", refname);
+        //repo.find_remote("origin").unwrap().push(&[&format!("{}:{}", refname:refname)], None, None);
     }
 
 }
