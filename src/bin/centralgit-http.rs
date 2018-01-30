@@ -1,4 +1,5 @@
 extern crate centralgithook;
+extern crate clap;
 extern crate fern;
 extern crate git2;
 extern crate regex;
@@ -25,6 +26,28 @@ extern crate rouille;
 
 
 fn main() { exit(main_ret()); }
+
+fn apply_view_to_branch(scratch: &Scratch, branchname: &str, view: &str) {
+    debug!("apply_view_to_branch {}", branchname);
+    if let Ok(branch) = scratch.repo.find_branch(branchname, git2::BranchType::Local) {
+        let r = branch.into_reference().target().expect("no ref");
+
+        let viewobj = SubdirView::new(&Path::new(&view));
+        if let Some(view_commit) = scratch.apply_view(&viewobj, r) {
+            println!("applied view to branch {}", branchname);
+            scratch.repo
+                .reference(&view_ref(&view, &branchname),
+                           view_commit,
+                           true,
+                           "apply_view")
+                .expect("can't create reference");
+        }
+        else {
+            println!("can't apply view to branch {}", branchname);
+        };
+    };
+}
+
 
 fn main_ret() -> i32 {
 
@@ -54,12 +77,24 @@ fn main_ret() -> i32 {
         return virtual_repo::update_hook(&args[1], &args[2], &args[3]);
     }
 
-    let base_repo = BaseRepo::create(&PathBuf::from(&args[4]));
+    let args = clap::App::new("centralgit-http")
+        .arg(clap::Arg::with_name("remote").long("remote").takes_value(true))
+        .arg(clap::Arg::with_name("local").long("local").takes_value(true))
+        .arg(clap::Arg::with_name("user").long("user").takes_value(true))
+        .arg(clap::Arg::with_name("ssh-key").long("ssh-key").takes_value(true))
+        .get_matches();
 
-    base_repo.clone(
-        &args[1],
-        &args[2],
-        &PathBuf::from(&args[3]));
+    let user = args.value_of("user").expect("missing user name").to_string();
+    let private_key =
+        PathBuf::from(args.value_of("ssh-key").expect("missing pirvate ssh key"));
+
+    let base_repo = BaseRepo::create(
+        &PathBuf::from(args.value_of("local").expect("missing local directory")),
+        &args.value_of("remote").expect("missing remote repo url"),
+        &user,
+        &private_key);
+
+    base_repo.clone();
     println!("Now listening on localhost:8000");
 
     rouille::start_server("localhost:8000", move |request| {
@@ -90,38 +125,34 @@ fn main_ret() -> i32 {
 
             let re = Regex::new(r"/(?P<view>.*)[.]git/.*").expect("can't compile regex");
 
+
             let view_repo = if let Some(caps) = re.captures(&request.url()) {
                 let view = caps.name("view").unwrap();
                 println!("VIEW {}", view.as_str());
 
                 let view = caps.name("view").unwrap();
-                let viewobj = SubdirView::new(&Path::new(&view.as_str()));
 
+                for branch in scratch.repo.branches(None).unwrap() {
+                    apply_view_to_branch(
+                        &scratch,
+                        &branch.unwrap().0.name().unwrap().unwrap(),
+                        &view.as_str());
+                }
 
-                let branchname = "master";
-                if let Ok(branch) = scratch.repo.find_branch(branchname, git2::BranchType::Local) {
-                    let r = branch.into_reference().target().expect("no ref");
-
-                    if let Some(view_commit) = scratch.apply_view(&viewobj, r) {
-                        println!("applied view to branch {}", branchname);
-                        scratch.repo
-                            .reference(&view_ref(&view.as_str(), &branchname),
-                                       view_commit,
-                                       true,
-                                       "apply_view")
-                            .expect("can't create reference");
-                    }
-                    else {
-                        println!("can't apply view to branch {}", branchname);
-                    };
-                };
-
-                virtual_repo::setup_tmp_repo(&base_repo.path, Some(view.as_str()))
+                virtual_repo::setup_tmp_repo(
+                    &base_repo.path,
+                    Some(view.as_str()),
+                    &user,
+                    &private_key)
 
             }
             else {
                 println!("no view");
-                virtual_repo::setup_tmp_repo(&base_repo.path, None)
+                virtual_repo::setup_tmp_repo(
+                    &base_repo.path,
+                    None,
+                    &user,
+                    &private_key)
             };
 
             let mut cmd = Command::new("git");

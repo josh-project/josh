@@ -14,15 +14,15 @@ impl Shell
 {
     pub fn command(&self, cmd: &str) -> (String, String)
     {
-        debug!("Shell::command: {}", cmd);
-        debug!("cwd: {:?}", self.cwd);
+        /* debug!("Shell::command: {}", cmd); */
+        /* debug!("cwd: {:?}", self.cwd); */
         let git_dir = if self.cwd.join(".git").exists() {
             self.cwd.join(".git")
         }
         else {
             self.cwd.to_path_buf()
         };
-        debug!("GIT_DIR: {:?}", git_dir);
+        /* debug!("GIT_DIR: {:?}", git_dir); */
 
         let output = Command::new("sh")
             .current_dir(&self.cwd)
@@ -36,10 +36,10 @@ impl Shell
             String::from_utf8(output.stdout).expect("failed to decode utf8").trim().to_string();
         let stderr =
             String::from_utf8(output.stderr).expect("failed to decode utf8").trim().to_string();
-        debug!("stdout:\n{}", &stdout);
-        debug!("stderr:\n{}", &stderr);
-        debug!("\n");
-        debug!("\n");
+        /* debug!("stdout:\n{}", &stdout); */
+        /* debug!("stderr:\n{}", &stderr); */
+        /* debug!("\n"); */
+        /* debug!("\n"); */
         return (stdout, stderr);
     }
 }
@@ -51,12 +51,12 @@ impl Drop for TLocals
 {
     fn drop(&mut self)
     {
-        println!("DROPPING {:?}", self.td.path());
+        /* println!("DROPPING {:?}", self.td.path()); */
         let shell = Shell { cwd: self.td.path().to_path_buf() };
         /* shell.command("git log HEAD"); */
-        shell.command("ls -l");
-        shell.command("ps -a");
-        println!("done DROPPING {:?}", self.td.path());
+        /* shell.command("ls -l"); */
+        /* shell.command("ps -a"); */
+        /* println!("done DROPPING {:?}", self.td.path()); */
     }
 }
 

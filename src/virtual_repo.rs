@@ -7,7 +7,11 @@ use std::path::Path;
 use std::path::PathBuf;
 use super::*;
 
-pub fn setup_tmp_repo(scratch_dir: &Path, view: Option<&str>) -> PathBuf
+pub fn setup_tmp_repo(
+    scratch_dir: &Path,
+    view: Option<&str>,
+    user: &str,
+    private_key: &Path) -> PathBuf
 {
     let path = thread_local_temp_dir();
 
@@ -26,6 +30,9 @@ pub fn setup_tmp_repo(scratch_dir: &Path, view: Option<&str>) -> PathBuf
     shell.command(&format!("cp {:?} {:?}", scratch_dir.join("HEAD"), path));
     shell.command(&format!("cp {:?} {:?}", scratch_dir.join("config"), path));
     symlink(scratch_dir.join(root), path.join("refs")).expect("can't symlink refs");
+    shell.command(&format!("cp {:?} {:?}",
+        path.join("refs").join("heads").join("master"),
+        path.join("HEAD")));
     symlink(scratch_dir.join("objects"), path.join("objects")).expect("can't symlink objects");
 
     shell.command(&format!("printf {} > view",
@@ -35,6 +42,8 @@ pub fn setup_tmp_repo(scratch_dir: &Path, view: Option<&str>) -> PathBuf
                            }));
 
     shell.command(&format!("printf {} > orig", scratch_dir.to_string_lossy()));
+    shell.command(&format!("printf {} > username", user));
+    shell.command(&format!("printf {} > private_key", private_key.to_string_lossy()));
     shell.command("git config http.receivepack true");
     shell.command("rm -Rf refs/for");
     return path;
@@ -43,34 +52,67 @@ pub fn setup_tmp_repo(scratch_dir: &Path, view: Option<&str>) -> PathBuf
 pub fn update_hook(refname: &str, old: &str, new: &str) -> i32
 {
     let scratch = {
-        let mut s = String::new();
+        let mut orig = String::new();
         File::open(&Path::new("orig"))
             .expect("could not open orig name file")
-            .read_to_string(&mut s)
+            .read_to_string(&mut orig)
             .expect("could not read orig name");
 
 
-        let scratch_dir = Path::new(&s);
+        let scratch_dir = Path::new(&orig);
         let scratch = Scratch::new(&scratch_dir);
         scratch
     };
 
+    let r = git2::Repository::open_from_env().unwrap();
+
+        let mut username = String::new();
+        File::open(&Path::new("username"))
+            .expect("could not open username file")
+            .read_to_string(&mut username)
+            .expect("could not read username");
+
+        let mut private_key = String::new();
+        File::open(&Path::new("private_key"))
+            .expect("could not open private_key file")
+            .read_to_string(&mut private_key)
+            .expect("could not read private_key");
+
+        let private_key = PathBuf::from(&private_key);
+    let br = BaseRepo::make_remote_callbacks(
+        &username,
+        &private_key);
 
     let view = {
-        let mut s = String::new();
+        let mut viewname = String::new();
         File::open(&Path::new("view"))
             .expect("could not open view name file")
-            .read_to_string(&mut s)
+            .read_to_string(&mut viewname)
             .expect("could not read view name");
 
-        if s.starts_with(".") {
+
+        if viewname.starts_with(".") {
+            /* r.find_remote("origin").unwrap().push(&[&format!("{}:{}", refname,refname)], None); */
+            let mut po = git2::PushOptions::new();
+            po.remote_callbacks(br);
+            debug!("=== pushing {}:{}", "HEAD", refname);
+            debug!("=== return direct");
+            r.set_head_detached(git2::Oid::from_str(new)
+                .expect("can't parse new Oid"))
+                .expect("can't set head");
+            r.find_remote("origin")
+                .unwrap().push(&[&format!("HEAD:{}", refname)],
+                    Some(&mut po)).expect("push error");
             return 0;
         }
-        let view = SubdirView::new(&Path::new(&s));
+        let view = SubdirView::new(&Path::new(&viewname));
         view
     };
 
-    let without_refs_for = "refs/heads/".to_owned() + refname.trim_left_matches("refs/for/");
+    debug!("=== MORE");
+
+    /* let without_refs_for = "refs/heads/".to_owned() + refname.trim_left_matches("refs/for/"); */
+    let without_refs_for = refname.to_owned();
     let central_head = scratch.repo.refname_to_id(&without_refs_for).expect(&format!("no ref: {}", &refname));
 
     let r = git2::Repository::open_from_env().unwrap();
@@ -90,7 +132,9 @@ pub fn update_hook(refname: &str, old: &str, new: &str) -> i32
             /*     .reference(&without_refs_for, rewritten, true, "unapply_view") */
             /*     .expect("can't create new reference"); */
             debug!("=== pushing {}:{}", "HEAD", refname);
-        //repo.find_remote("origin").unwrap().push(&[&format!("{}:{}", refname:refname)], None, None);
+            let mut po = git2::PushOptions::new();
+            po.remote_callbacks(br);
+            r.find_remote("origin").unwrap().push(&[&format!("HEAD:{}", refname)], Some(&mut po));
         }
         _ => return 1,
     };

@@ -23,11 +23,9 @@ def in_data1(subdir, cmd):
 class CentralGitTests(unittest.TestCase):
     def setUp(self):
         print "setUp"
+        getoutput("ssh -p 29418 admin@localhost delete-project delete --yes-really-delete test");
+        getoutput("ssh -p 29418 admin@localhost gerrit create-project --empty-commit test");
         getoutput("rm -Rf _data*")
-        getoutput("mkdir _remote")
-        getoutput("rm -Rf _remote/*")
-        getoutput("cd _remote && git init --bare")
-        getoutput("cd _remote && git config http.receivepack true")
         getoutput("mkdir _data0")
         getoutput("mkdir _data1")
 
