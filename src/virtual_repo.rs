@@ -9,15 +9,15 @@ use super::*;
 
 pub fn setup_tmp_repo(
     scratch_dir: &Path,
-    view: Option<&str>,
+    view: &str,
     user: &str,
     private_key: &Path) -> PathBuf
 {
     let path = thread_local_temp_dir();
 
     let root = match view {
-        Some(view) => view_ref_root(&view),
-        None => "refs".to_string(),
+        "." => "refs".to_string(),
+        view => view_ref_root(&view),
     };
 
     debug!("setup_tmp_repo, root: {:?}", &root);
@@ -35,11 +35,7 @@ pub fn setup_tmp_repo(
         path.join("HEAD")));
     symlink(scratch_dir.join("objects"), path.join("objects")).expect("can't symlink objects");
 
-    shell.command(&format!("printf {} > view",
-                           match view {
-                               Some(view) => view,
-                               None => ".",
-                           }));
+    shell.command(&format!("printf {} > view", view));
 
     shell.command(&format!("printf {} > orig", scratch_dir.to_string_lossy()));
     shell.command(&format!("printf {} > username", user));
@@ -49,50 +45,34 @@ pub fn setup_tmp_repo(
     return path;
 }
 
-pub fn update_hook(refname: &str, old: &str, new: &str) -> i32
+fn read_repo_info_file(name: &str) -> String
 {
-    let scratch = {
-        let mut orig = String::new();
-        File::open(&Path::new("orig"))
-            .expect("could not open orig name file")
-            .read_to_string(&mut orig)
-            .expect("could not read orig name");
+    let mut s = String::new();
+    File::open(&Path::new(&name))
+        .expect(&format!("could not open {} name file", name))
+        .read_to_string(&mut s)
+        .expect(&format!("could not read {} name", name));
+    return s;
+}
 
-
-        let scratch_dir = Path::new(&orig);
-        let scratch = Scratch::new(&scratch_dir);
-        scratch
-    };
+pub fn update_hook(refname: &str, _old: &str, new: &str) -> i32
+{
+    let scratch = Scratch::new(&Path::new(&read_repo_info_file("orig")));
 
     let r = git2::Repository::open_from_env().unwrap();
 
-        let mut username = String::new();
-        File::open(&Path::new("username"))
-            .expect("could not open username file")
-            .read_to_string(&mut username)
-            .expect("could not read username");
+    let username = read_repo_info_file("username");
+    let private_key = PathBuf::from(&read_repo_info_file("private_key"));
 
-        let mut private_key = String::new();
-        File::open(&Path::new("private_key"))
-            .expect("could not open private_key file")
-            .read_to_string(&mut private_key)
-            .expect("could not read private_key");
-
-        let private_key = PathBuf::from(&private_key);
     let br = BaseRepo::make_remote_callbacks(
         &username,
         &private_key);
 
     let view = {
-        let mut viewname = String::new();
-        File::open(&Path::new("view"))
-            .expect("could not open view name file")
-            .read_to_string(&mut viewname)
-            .expect("could not read view name");
+        let viewname = read_repo_info_file("view");
 
 
         if viewname.starts_with(".") {
-            /* r.find_remote("origin").unwrap().push(&[&format!("{}:{}", refname,refname)], None); */
             let mut po = git2::PushOptions::new();
             po.remote_callbacks(br);
             debug!("=== pushing {}:{}", "HEAD", refname);
@@ -115,7 +95,6 @@ pub fn update_hook(refname: &str, old: &str, new: &str) -> i32
     let without_refs_for = refname.to_owned();
     let central_head = scratch.repo.refname_to_id(&without_refs_for).expect(&format!("no ref: {}", &refname));
 
-    let r = git2::Repository::open_from_env().unwrap();
     let old = r.refname_to_id(&without_refs_for).unwrap();
 
     debug!("=== processed_old {}", old);
@@ -123,18 +102,15 @@ pub fn update_hook(refname: &str, old: &str, new: &str) -> i32
     match scratch.unapply_view(central_head,
                                &view,
                                old,
-                               /* Oid::from_str(old).expect("can't parse old OID"), */
                                Oid::from_str(new).expect("can't parse new OID")) {
 
         UnapplyView::Done(rewritten) => {
             r.set_head_detached(rewritten).expect("rewrite: can't detach head");
-            /* scratch.repo */
-            /*     .reference(&without_refs_for, rewritten, true, "unapply_view") */
-            /*     .expect("can't create new reference"); */
             debug!("=== pushing {}:{}", "HEAD", refname);
             let mut po = git2::PushOptions::new();
             po.remote_callbacks(br);
-            r.find_remote("origin").unwrap().push(&[&format!("HEAD:{}", refname)], Some(&mut po));
+            r.find_remote("origin").unwrap().push(&[&format!("HEAD:{}", refname)], Some(&mut po))
+                .expect("can't find remote");
         }
         _ => return 1,
     };

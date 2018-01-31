@@ -7,6 +7,7 @@ use shell::Shell;
 use std::collections::HashMap;
 use super::UnapplyView;
 use super::View;
+use super::SubdirView;
 use super::replace_subtree;
 
 
@@ -163,6 +164,29 @@ impl Scratch
     //     format!("{}\n\n{}", stderr, stdout)
     // }
 
+    pub fn apply_view_to_branch(&self, branchname: &str, view: &str)
+    {
+        if view == "." { return; }
+
+        debug!("apply_view_to_branch {}", branchname);
+        if let Ok(branch) = self.repo.find_branch(branchname, git2::BranchType::Local) {
+            let r = branch.into_reference().target().expect("no ref");
+
+            let viewobj = SubdirView::new(&Path::new(&view));
+            if let Some(view_commit) = self.apply_view(&viewobj, r) {
+                println!("applied view to branch {}", branchname);
+                self.repo
+                    .reference(&view_ref(&view, &branchname),
+                               view_commit,
+                               true,
+                               "apply_view")
+                    .expect("can't create reference");
+            }
+            else {
+                println!("can't apply view to branch {}", branchname);
+            };
+        };
+    }
 
 
     pub fn apply_view(&self, view: &View, newrev: Oid) -> Option<Oid>

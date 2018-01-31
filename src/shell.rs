@@ -47,18 +47,18 @@ impl Shell
 struct TLocals { td: TempDir }
 
 // This is just for debugging, to know when the TempDir actually gets removed
-impl Drop for TLocals
-{
-    fn drop(&mut self)
-    {
-        /* println!("DROPPING {:?}", self.td.path()); */
-        let shell = Shell { cwd: self.td.path().to_path_buf() };
-        /* shell.command("git log HEAD"); */
-        /* shell.command("ls -l"); */
-        /* shell.command("ps -a"); */
-        /* println!("done DROPPING {:?}", self.td.path()); */
-    }
-}
+/* impl Drop for TLocals */
+/* { */
+/*     fn drop(&mut self) */
+/*     { */
+/*         /1* println!("DROPPING {:?}", self.td.path()); *1/ */
+/*         /1* let shell = Shell { cwd: self.td.path().to_path_buf() }; *1/ */
+/*         /1* shell.command("git log HEAD"); *1/ */
+/*         /1* shell.command("ls -l"); *1/ */
+/*         /1* shell.command("ps -a"); *1/ */
+/*         /1* println!("done DROPPING {:?}", self.td.path()); *1/ */
+/*     } */
+/* } */
 
 thread_local!(
     static TMP: RefCell<TLocals> = RefCell::new(

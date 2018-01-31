@@ -41,11 +41,11 @@ fn main()
     exit(main_ret());
 }
 
-fn setup_tmp_repo(td: &Path, scratch_dir: &Path, view: Option<&str>)
+fn setup_tmp_repo(td: &Path, scratch_dir: &Path, view: &str)
 {
     let root = match view {
-        Some(view) => view_ref_root(&view),
-        None => "refs".to_string(),
+        "." => "refs".to_string(),
+        view => view_ref_root(&view),
     };
 
     debug!("setup_tmp_repo, root: {:?}", &root);
@@ -59,11 +59,7 @@ fn setup_tmp_repo(td: &Path, scratch_dir: &Path, view: Option<&str>)
     symlink(scratch_dir.join(root), td.join("refs")).expect("can't symlink refs");
     symlink(scratch_dir.join("objects"), td.join("objects")).expect("can't symlink objects");
 
-    shell.command(&format!("printf {} > view",
-                           match view {
-                               Some(view) => view,
-                               None => ".",
-                           }));
+    shell.command(&format!("printf {} > view", view));
 
     shell.command(&format!("printf {} > orig", scratch_dir.to_string_lossy()));
 }

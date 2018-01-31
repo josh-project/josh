@@ -63,7 +63,7 @@ impl BaseRepo {
         builder.fetch_options(fetchoptions);
 
 
-        if let Ok(r) = builder.clone(&self.url, &self.path) { println!("cloned"); }
+        if let Ok(_) = builder.clone(&self.url, &self.path) { println!("cloned"); }
         else { println!("exists"); }
     }
 
@@ -72,13 +72,17 @@ impl BaseRepo {
         let rcb = BaseRepo::make_remote_callbacks(&self.user, &self.private_key);
         fetchoptions.remote_callbacks(rcb);
         let repo = git2::Repository::open(&self.path).unwrap();
-        repo.find_remote("origin").unwrap().fetch(&["+refs/heads/*:refs/heads/*"], Some(&mut fetchoptions), None);
+        repo.find_remote("origin")
+                .unwrap()
+            .fetch(&["+refs/heads/*:refs/heads/*"], Some(&mut fetchoptions), None)
+                .expect("can't fetch base repo")
+;
     }
 
-    pub fn push_origin(&self, refname: &str) {
-        let repo = git2::Repository::open(&self.path).unwrap();
-        println!("push_origin {}", refname);
-        //repo.find_remote("origin").unwrap().push(&[&format!("{}:{}", refname:refname)], None, None);
-    }
+    /* pub fn push_origin(&self, refname: &str) { */
+    /*     let repo = git2::Repository::open(&self.path).unwrap(); */
+    /*     println!("push_origin {}", refname); */
+    /*     //repo.find_remote("origin").unwrap().push(&[&format!("{}:{}", refname:refname)], None, None); */
+    /* } */
 
 }

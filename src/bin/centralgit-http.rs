@@ -1,9 +1,13 @@
+#![deny(warnings)]
 extern crate centralgithook;
 extern crate clap;
 extern crate fern;
 extern crate git2;
 extern crate regex;
 extern crate tempdir;
+
+#[macro_use]
+extern crate lazy_static;
 
 #[macro_use]
 extern crate log;
@@ -24,30 +28,14 @@ use centralgithook::virtual_repo;
 // #[macro_use]
 extern crate rouille;
 
-
-fn main() { exit(main_ret()); }
-
-fn apply_view_to_branch(scratch: &Scratch, branchname: &str, view: &str) {
-    debug!("apply_view_to_branch {}", branchname);
-    if let Ok(branch) = scratch.repo.find_branch(branchname, git2::BranchType::Local) {
-        let r = branch.into_reference().target().expect("no ref");
-
-        let viewobj = SubdirView::new(&Path::new(&view));
-        if let Some(view_commit) = scratch.apply_view(&viewobj, r) {
-            println!("applied view to branch {}", branchname);
-            scratch.repo
-                .reference(&view_ref(&view, &branchname),
-                           view_commit,
-                           true,
-                           "apply_view")
-                .expect("can't create reference");
-        }
-        else {
-            println!("can't apply view to branch {}", branchname);
-        };
-    };
+lazy_static! {
+    static ref PREFIX_RE: Regex =
+        Regex::new(r"(?P<prefix>/.*[.]git)/.*").expect("can't compile regex");
+    static ref VIEW_RE: Regex =
+        Regex::new(r"/(?P<view>.*)[.]git/.*").expect("can't compile regex");
 }
 
+fn main() { exit(main_ret()); }
 
 fn main_ret() -> i32 {
 
@@ -95,80 +83,64 @@ fn main_ret() -> i32 {
         &private_key);
 
     base_repo.clone();
+
     println!("Now listening on localhost:8000");
 
     rouille::start_server("localhost:8000", move |request| {
         rouille::log(&request, io::stdout(), || {
 
-            let auth = match rouille::input::basic_http_auth(request) {
-                Some(a) => a,
+            match rouille::input::basic_http_auth(request) {
+                Some(auth) => if !(auth.login == "me" && auth.password == "secret") {
+                    return rouille::Response::text("bad credentials").with_status_code(403);
+                },
                 _ => return rouille::Response::basic_http_auth_login_required("realm")
             };
 
-            if !(auth.login == "me" && auth.password == "secret") {
-                return rouille::Response::text("bad credentials").with_status_code(403);
-            }
+            base_repo.fetch_origin_master();
+            let view_repo = make_view_repo(&request.url(), &base_repo.path,  &user, &private_key);
 
-            println!("X\nX\nX\nURL: {}", request.url());
-            let re = Regex::new(r"(?P<prefix>/.*[.]git)/.*").expect("can't compile regex");
-
-            let prefix = if let Some(caps) = re.captures(&request.url()) {
+            let prefix = if let Some(caps) = PREFIX_RE.captures(&request.url()) {
                 caps.name("prefix").expect("can't find name prefix").as_str().to_string()
             }
-            else {
-                String::new()
-            };
-
-
-            base_repo.fetch_origin_master();
-            let scratch = Scratch::new(&base_repo.path);
-
-            let re = Regex::new(r"/(?P<view>.*)[.]git/.*").expect("can't compile regex");
-
-
-            let view_repo = if let Some(caps) = re.captures(&request.url()) {
-                let view = caps.name("view").unwrap();
-                println!("VIEW {}", view.as_str());
-
-                let view = caps.name("view").unwrap();
-
-                for branch in scratch.repo.branches(None).unwrap() {
-                    apply_view_to_branch(
-                        &scratch,
-                        &branch.unwrap().0.name().unwrap().unwrap(),
-                        &view.as_str());
-                }
-
-                virtual_repo::setup_tmp_repo(
-                    &base_repo.path,
-                    Some(view.as_str()),
-                    &user,
-                    &private_key)
-
-            }
-            else {
-                println!("no view");
-                virtual_repo::setup_tmp_repo(
-                    &base_repo.path,
-                    None,
-                    &user,
-                    &private_key)
-            };
-
-            let mut cmd = Command::new("git");
-            cmd.arg("http-backend");
-            cmd.current_dir(&view_repo);
-            cmd.env("GIT_PROJECT_ROOT", view_repo.to_str().unwrap());
-            cmd.env("GIT_DIR", view_repo.to_str().unwrap());
-            cmd.env("GIT_HTTP_EXPORT_ALL", "");
-
-            println!("prefix {:?}", prefix);
+            else { String::new() };
             let request = request.remove_prefix(&prefix).expect("can't remove prefix");
-            println!("URL stripped: {}", request.url());
-
-            println!("done");
-            cmd.start_cgi(&request).unwrap()
+            run_git_http_backend(request, view_repo)
         })
     });
+}
+
+fn make_view_repo(url: &str, base: &Path, user: &str, private_key: &Path) -> PathBuf
+{
+    let view_string = if let Some(caps) = VIEW_RE.captures(&url) {
+        caps.name("view").unwrap().as_str().to_owned()
+    }
+    else { ".".to_owned() };
+
+    println!("VIEW {}", &view_string);
+
+    let scratch = Scratch::new(&base);
+    for branch in scratch.repo.branches(None).unwrap() {
+        scratch.apply_view_to_branch(
+            &branch.unwrap().0.name().unwrap().unwrap(),
+            &view_string);
+    }
+
+    virtual_repo::setup_tmp_repo(
+        &base,
+        &view_string,
+        &user,
+        &private_key)
+}
+
+
+fn run_git_http_backend(request: rouille::Request, view_repo: PathBuf) -> rouille::Response
+{
+    let mut cmd = Command::new("git");
+    cmd.arg("http-backend");
+    cmd.current_dir(&view_repo);
+    cmd.env("GIT_PROJECT_ROOT", view_repo.to_str().unwrap());
+    cmd.env("GIT_DIR", view_repo.to_str().unwrap());
+    cmd.env("GIT_HTTP_EXPORT_ALL", "");
+    cmd.start_cgi(&request).unwrap()
 }
 
