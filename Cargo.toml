@@ -1,5 +1,5 @@
 [package]
-name = "centralgithook"
+name = "bobble"
 version = "0.1.0"
 authors = ["Christian Schilling <christian.schilling@esrlabs.com>"]
 
@@ -11,10 +11,9 @@ log = "*"
 fern = "*"
 env_logger = "*"
 regex = "*"
-rouille = { git = "git://github.com/tomaka/rouille.git" }
-thrussh = "*"
-thrussh-keys = "*"
 futures = "*"
 tokio-core = "*"
+tokio-process = "*"
 ring = "*"
 lazy_static = "*"
+hyper = "*"

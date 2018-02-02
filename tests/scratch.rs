@@ -1,6 +1,6 @@
 
-extern crate centralgithook;
-use centralgithook::*;
+extern crate bobble;
+use bobble::*;
 #[allow(dead_code)]
 mod helpers;
 extern crate git2;

@@ -9,20 +9,16 @@ pub struct BaseRepo
 {
     pub path: PathBuf,
     url: String,
-    user: String,
-    private_key: PathBuf,
+    pub user: String,
+    pub private_key: PathBuf,
 }
 
 
-impl BaseRepo {
-    pub fn create(
-        path: &Path,
-        url: &str,
-        user: &str,
-        private_key: &Path
-        ) -> BaseRepo
+impl BaseRepo
+{
+    pub fn create(path: &Path, url: &str, user: &str, private_key: &Path) -> BaseRepo
     {
-        return BaseRepo{
+        return BaseRepo {
             path: PathBuf::from(&path),
             url: String::from(url),
             user: String::from(user),
@@ -32,17 +28,12 @@ impl BaseRepo {
 
     pub fn make_remote_callbacks<'a>(
         user: &'a str,
-        private_key: &'a Path
+        private_key: &'a Path,
     ) -> git2::RemoteCallbacks<'a>
     {
         let mut rcb = git2::RemoteCallbacks::new();
-        rcb.credentials(move |_,_,_| {
-            let cred = git2::Cred::ssh_key(
-                user,
-                None,
-                private_key,
-                None
-            );
+        rcb.credentials(move |_, _, _| {
+            let cred = git2::Cred::ssh_key(user, None, private_key, None);
             return cred;
         });
         return rcb;
@@ -50,7 +41,6 @@ impl BaseRepo {
 
     pub fn clone(&self)
     {
-
         println!("clone base repo: {:?}", &self.path);
 
         let mut builder = git2::build::RepoBuilder::new();
@@ -63,26 +53,33 @@ impl BaseRepo {
         builder.fetch_options(fetchoptions);
 
 
-        if let Ok(_) = builder.clone(&self.url, &self.path) { println!("cloned"); }
-        else { println!("exists"); }
+        if let Ok(_) = builder.clone(&self.url, &self.path) {
+            println!("cloned");
+        } else {
+            println!("exists");
+        }
     }
 
-    pub fn fetch_origin_master(&self) {
+    pub fn fetch_origin_master(&self)
+    {
         let mut fetchoptions = git2::FetchOptions::new();
         let rcb = BaseRepo::make_remote_callbacks(&self.user, &self.private_key);
         fetchoptions.remote_callbacks(rcb);
-        let repo = git2::Repository::open(&self.path).unwrap();
+        let repo = git2::Repository::open(&self.path).expect("can't open base repo for fetching");
         repo.find_remote("origin")
-                .unwrap()
-            .fetch(&["+refs/heads/*:refs/heads/*"], Some(&mut fetchoptions), None)
-                .expect("can't fetch base repo")
-;
+            .expect("can't find remote: origin")
+            .fetch(
+                &["+refs/heads/*:refs/heads/*"],
+                Some(&mut fetchoptions),
+                None,
+            )
+            .expect("can't fetch base repo");
     }
 
     /* pub fn push_origin(&self, refname: &str) { */
-    /*     let repo = git2::Repository::open(&self.path).unwrap(); */
-    /*     println!("push_origin {}", refname); */
-    /*     //repo.find_remote("origin").unwrap().push(&[&format!("{}:{}", refname:refname)], None, None); */
+    /* let repo = git2::Repository::open(&self.path).unwrap(); */
+    /* println!("push_origin {}", refname); */
+    /* //repo.find_remote("origin").unwrap().push(&[&format!("{}:{}",
+     * refname:refname)], None, None); */
     /* } */
-
 }

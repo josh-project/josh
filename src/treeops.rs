@@ -42,15 +42,13 @@ pub fn replace_subtree(repo: &Repository, path: &Path, subtree: &Tree, full_tree
         return repo.find_tree(replace_child(&repo, path, subtree.id(), full_tree))
             .expect("replace_child: can't find new tree")
             .id();
-    }
-    else {
+    } else {
         let name = Path::new(path.file_name().expect("no module name"));
         let path = path.parent().expect("module not in subdir");
 
         let st = if let Some(st) = get_subtree(&full_tree, path) {
             repo.find_tree(st).unwrap()
-        }
-        else {
+        } else {
             let empty = repo.treebuilder(None).unwrap().write().unwrap();
             repo.find_tree(empty).unwrap()
         };

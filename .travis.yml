@@ -5,7 +5,7 @@ rust:
 sudo: false
 before_script:
   - pip install 'travis-cargo<0.2' --user && export PATH=$HOME/.local/bin:$PATH
-  - export RUST_LOG=centralgithook=debug
+  - export RUST_LOG=bobble=debug
 script:
   - export CARGO_TARGET_DIR=`pwd`/target
   - cargo test

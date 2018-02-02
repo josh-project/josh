@@ -1,7 +1,7 @@
 extern crate git2;
-extern crate tempdir;
 #[macro_use]
 extern crate log;
+extern crate tempdir;
 
 mod filelock;
 mod scratch;
@@ -10,7 +10,9 @@ mod base_repo;
 mod treeops;
 mod view_subdir;
 pub mod virtual_repo;
+pub mod cgi;
 
+pub use base_repo::BaseRepo;
 pub use filelock::FileLock;
 pub use scratch::Scratch;
 pub use scratch::view_ref;
@@ -19,7 +21,6 @@ pub use shell::Shell;
 pub use shell::thread_local_temp_dir;
 pub use treeops::*;
 pub use view_subdir::SubdirView;
-pub use base_repo::BaseRepo;
 
 #[derive(Clone)]
 pub enum UnapplyView
@@ -33,9 +34,10 @@ pub enum UnapplyView
 pub trait View
 {
     fn apply(&self, tree: &git2::Tree) -> Option<git2::Oid>;
-    fn unapply(&self,
-               repo: &git2::Repository,
-               tree: &git2::Tree,
-               parent_tree: &git2::Tree)
-        -> git2::Oid;
+    fn unapply(
+        &self,
+        repo: &git2::Repository,
+        tree: &git2::Tree,
+        parent_tree: &git2::Tree,
+    ) -> git2::Oid;
 }

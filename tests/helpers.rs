@@ -1,9 +1,9 @@
-extern crate centralgithook;
+extern crate bobble;
 extern crate git2;
 extern crate tempdir;
 
 use std::path::{Path, PathBuf};
-use centralgithook::Shell;
+use bobble::Shell;
 
 pub struct TestRepo
 {
