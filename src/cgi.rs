@@ -14,14 +14,19 @@ use std::io::BufRead;
 use std::io::Read;
 use std::io::Write;
 use std::process::Command;
+use std::process::Stdio;
 use std::str::FromStr;
 
 pub fn do_cgi(
     req: Request,
-    cmd: &mut Command,
-    handle: &tokio_core::reactor::Handle,
+    cmd: Command,
+    handle: tokio_core::reactor::Handle,
 ) -> Box<Future<Item = Response, Error = hyper::Error>>
 {
+    let mut cmd = cmd;
+    cmd.stdout(Stdio::piped());
+    cmd.stderr(Stdio::inherit());
+    cmd.stdin(Stdio::piped());
     cmd.env("SERVER_SOFTWARE", "hyper")
        .env("SERVER_NAME", "localhost")            // TODO
        .env("GATEWAY_INTERFACE", "CGI/1.1")
@@ -38,7 +43,7 @@ pub fn do_cgi(
        .env("CONTENT_LENGTH",
            &format!("{}", req.headers().get().unwrap_or(&ContentLength(0))));
 
-    let mut child = cmd.spawn_async(&handle).unwrap();
+    let mut child = cmd.spawn_async(&handle).expect("can't spawn CGI command");
 
     Box::new(req.body().concat2().and_then(move |body| {
         child

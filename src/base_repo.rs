@@ -5,6 +5,7 @@ extern crate tempdir;
 use std::path::Path;
 use std::path::PathBuf;
 
+#[derive(Clone)]
 pub struct BaseRepo
 {
     pub path: PathBuf,
@@ -39,7 +40,7 @@ impl BaseRepo
         return rcb;
     }
 
-    pub fn clone(&self)
+    pub fn git_clone(&self)
     {
         println!("clone base repo: {:?}", &self.path);
 

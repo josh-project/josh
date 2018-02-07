@@ -8,6 +8,7 @@ extern crate hyper;
 extern crate regex;
 extern crate tempdir;
 extern crate tokio_core;
+extern crate futures_cpupool;
 
 #[macro_use]
 extern crate lazy_static;
@@ -25,8 +26,11 @@ use std::env;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
-use std::process::Stdio;
 use std::process::exit;
+use futures::sync::oneshot;
+use std::thread;
+use std::io;
+use futures_cpupool::CpuPool;
 
 
 lazy_static! {
@@ -44,7 +48,28 @@ fn main()
 struct BobbleHttp
 {
     handle: tokio_core::reactor::Handle,
+    pool: CpuPool,
     base_repo: BaseRepo,
+}
+
+impl BobbleHttp
+{
+    fn async_fetch(&self, path: String) -> Box<Future<Item = PathBuf, Error = hyper::Error>> {
+        let base_repo = self.base_repo.clone();
+
+        Box::new(
+            self.pool.spawn(futures::future::ok(path).map(move |path|{
+                base_repo.fetch_origin_master();
+
+                make_view_repo(
+                    &path,
+                    &base_repo.path,
+                    &base_repo.user,
+                    &base_repo.private_key,
+                )
+            }))
+        )
+    }
 }
 
 
@@ -59,13 +84,6 @@ impl Service for BobbleHttp
 
     fn call(&self, req: Request) -> Self::Future
     {
-        self.base_repo.fetch_origin_master();
-        let view_repo = make_view_repo(
-            &req.uri().path(),
-            &self.base_repo.path,
-            &self.base_repo.user,
-            &self.base_repo.private_key,
-        );
 
         let prefix = if let Some(caps) = PREFIX_RE.captures(&req.uri().path()) {
             caps.name("prefix")
@@ -82,26 +100,30 @@ impl Service for BobbleHttp
             req.uri().path().to_owned()
         };
 
-        println!("PREFIX: {}", prefix);
-        println!("without: {}", path_without_prefix);
+        let handle = self.handle.clone();
 
-        let mut cmd = Command::new("git");
-        cmd.arg("http-backend");
-        cmd.stdout(Stdio::piped());
-        cmd.stderr(Stdio::inherit());
-        cmd.stdin(Stdio::piped());
-        cmd.current_dir(&view_repo);
-        cmd.env("GIT_PROJECT_ROOT", view_repo.to_str().unwrap());
-        cmd.env("GIT_DIR", view_repo.to_str().unwrap());
-        cmd.env("GIT_HTTP_EXPORT_ALL", "");
-        cmd.env("PATH_INFO", &path_without_prefix);
+        Box::new({
+            self.async_fetch(req.uri().path().to_owned()).and_then(move |view_repo|{
 
-        cgi::do_cgi(req, &mut cmd, &self.handle)
+                let mut cmd = Command::new("git");
+                cmd.arg("http-backend");
+                cmd.current_dir(&view_repo);
+                cmd.env("GIT_PROJECT_ROOT", view_repo.to_str().unwrap());
+                cmd.env("GIT_DIR", view_repo.to_str().unwrap());
+                cmd.env("GIT_HTTP_EXPORT_ALL", "");
+                cmd.env("PATH_INFO", path_without_prefix);
+
+                cgi::do_cgi(req, cmd, handle.clone())
+            })
+        })
+
     }
 }
 
 fn main_ret() -> i32
 {
+    let pool = CpuPool::new(1);
+
     let mut args = vec![];
     for arg in env::args() {
         args.push(arg);
@@ -167,12 +189,13 @@ fn main_ret() -> i32
         &user,
         &private_key,
     );
-    base_repo.clone();
+    base_repo.git_clone();
 
     let serve = Http::new()
         .serve_addr_handle(&addr, &server_handle, move || {
             let cghttp = BobbleHttp {
                 handle: h2.clone(),
+                pool: pool.clone(),
                 base_repo: BaseRepo::create(
                     &PathBuf::from(args.value_of("local").expect("missing local directory")),
                     &args.value_of("remote").expect("missing remote repo url"),
