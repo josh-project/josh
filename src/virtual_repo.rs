@@ -7,7 +7,8 @@ use std::os::unix::fs::symlink;
 use std::path::Path;
 use std::path::PathBuf;
 
-pub fn setup_tmp_repo(scratch_dir: &Path, view: &str, user: &str, private_key: &Path) -> PathBuf
+pub fn setup_tmp_repo(
+    scratch_dir: &Path, view: &str, user: &str, password: &str, remote_url: &str) -> PathBuf
 {
     let path = thread_local_temp_dir();
 
@@ -39,10 +40,8 @@ pub fn setup_tmp_repo(scratch_dir: &Path, view: &str, user: &str, private_key: &
 
     shell.command(&format!("printf {} > orig", scratch_dir.to_string_lossy()));
     shell.command(&format!("printf {} > username", user));
-    shell.command(&format!(
-        "printf {} > private_key",
-        private_key.to_string_lossy()
-    ));
+    shell.command(&format!("printf {} > password", password));
+    shell.command(&format!("printf {} > remote_url", remote_url));
     shell.command("git config http.receivepack true");
     shell.command("rm -Rf refs/for");
     return path;
@@ -65,9 +64,10 @@ pub fn update_hook(refname: &str, _old: &str, new: &str) -> i32
     let r = git2::Repository::open_from_env().unwrap();
 
     let username = read_repo_info_file("username");
-    let private_key = PathBuf::from(&read_repo_info_file("private_key"));
+    let password = read_repo_info_file("password");
+    let remote_url = read_repo_info_file("remote_url");
 
-    let br = BaseRepo::make_remote_callbacks(&username, &private_key);
+    let br = BaseRepo::make_remote_callbacks_http(&username, &password);
 
     let view = {
         let viewname = read_repo_info_file("view");
@@ -80,7 +80,7 @@ pub fn update_hook(refname: &str, _old: &str, new: &str) -> i32
             debug!("=== return direct");
             r.set_head_detached(git2::Oid::from_str(new).expect("can't parse new Oid"))
                 .expect("can't set head");
-            r.find_remote("origin")
+            r.remote_anonymous(&remote_url)
                 .unwrap()
                 .push(&[&format!("HEAD:{}", refname)], Some(&mut po))
                 .expect("push error");
@@ -116,7 +116,7 @@ pub fn update_hook(refname: &str, _old: &str, new: &str) -> i32
             debug!("=== pushing {}:{}", "HEAD", refname);
             let mut po = git2::PushOptions::new();
             po.remote_callbacks(br);
-            r.find_remote("origin")
+            r.remote_anonymous(&remote_url)
                 .unwrap()
                 .push(&[&format!("HEAD:{}", refname)], Some(&mut po))
                 .expect("can't find remote");

@@ -27,11 +27,7 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
 use std::process::exit;
-use futures::sync::oneshot;
-use std::thread;
-use std::io;
 use futures_cpupool::CpuPool;
-
 
 lazy_static! {
     static ref PREFIX_RE: Regex =
@@ -54,22 +50,30 @@ struct BobbleHttp
 
 impl BobbleHttp
 {
-    fn async_fetch(&self, path: String) -> Box<Future<Item = PathBuf, Error = hyper::Error>> {
+    fn async_fetch(&self, path: &str)
+    -> Box<Future<Item = PathBuf, Error = hyper::Error>> {
         let base_repo = self.base_repo.clone();
 
         Box::new(
-            self.pool.spawn(futures::future::ok(path).map(move |path|{
+            self.pool.spawn(futures::future::ok(path.to_owned()).map(move |path|{
                 base_repo.fetch_origin_master();
 
                 make_view_repo(
                     &path,
                     &base_repo.path,
                     &base_repo.user,
-                    &base_repo.private_key,
+                    &base_repo.password,
+                    &base_repo.url,
                 )
             }))
         )
     }
+
+    /* fn delegate_auth(&self, user: &str, password: &str) */
+    /* -> Box<Future<Item = Response, Error = hyper::Error>> */
+    /* { */
+    /*     Box::new(hyper::client::Client::new(&self.handle).get("http://gerrit/".parse().unwrap())) */
+    /* } */
 }
 
 
@@ -103,7 +107,7 @@ impl Service for BobbleHttp
         let handle = self.handle.clone();
 
         Box::new({
-            self.async_fetch(req.uri().path().to_owned()).and_then(move |view_repo|{
+            self.async_fetch(&req.uri().path()).and_then(move |view_repo|{
 
                 let mut cmd = Command::new("git");
                 cmd.arg("http-backend");
@@ -152,28 +156,16 @@ fn main_ret() -> i32
     }
 
     let args = clap::App::new("centralgit-http")
-        .arg(
-            clap::Arg::with_name("remote")
-                .long("remote")
-                .takes_value(true),
-        )
-        .arg(
-            clap::Arg::with_name("local")
-                .long("local")
-                .takes_value(true),
-        )
+        .arg(clap::Arg::with_name("remote").long("remote").takes_value(true))
+        .arg(clap::Arg::with_name("local").long("local").takes_value(true))
         .arg(clap::Arg::with_name("user").long("user").takes_value(true))
-        .arg(
-            clap::Arg::with_name("ssh-key")
-                .long("ssh-key")
-                .takes_value(true),
-        )
+        .arg(clap::Arg::with_name("password").long("password").takes_value(true))
         .get_matches();
 
     let user = args.value_of("user")
         .expect("missing user name")
         .to_string();
-    let private_key = PathBuf::from(args.value_of("ssh-key").expect("missing pirvate ssh key"));
+    let password = args.value_of("password").expect("missing http password").to_string();
 
 
     println!("Now listening on localhost:8000");
@@ -187,7 +179,7 @@ fn main_ret() -> i32
         &PathBuf::from(args.value_of("local").expect("missing local directory")),
         &args.value_of("remote").expect("missing remote repo url"),
         &user,
-        &private_key,
+        &password,
     );
     base_repo.git_clone();
 
@@ -200,7 +192,7 @@ fn main_ret() -> i32
                     &PathBuf::from(args.value_of("local").expect("missing local directory")),
                     &args.value_of("remote").expect("missing remote repo url"),
                     &user,
-                    &private_key,
+                    &password,
                 ),
             };
             Ok(cghttp)
@@ -225,7 +217,7 @@ fn main_ret() -> i32
     return 0;
 }
 
-fn make_view_repo(url: &str, base: &Path, user: &str, private_key: &Path) -> PathBuf
+fn make_view_repo(url: &str, base: &Path, user: &str, password: &str, remote_url: &str) -> PathBuf
 {
     let view_string = if let Some(caps) = VIEW_RE.captures(&url) {
         caps.name("view").unwrap().as_str().to_owned()
@@ -240,5 +232,5 @@ fn make_view_repo(url: &str, base: &Path, user: &str, private_key: &Path) -> Pat
         scratch.apply_view_to_branch(&branch.unwrap().0.name().unwrap().unwrap(), &view_string);
     }
 
-    virtual_repo::setup_tmp_repo(&base, &view_string, &user, &private_key)
+    virtual_repo::setup_tmp_repo(&base, &view_string, &user, &password, &remote_url)
 }
