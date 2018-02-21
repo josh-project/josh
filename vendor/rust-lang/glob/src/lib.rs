@@ -61,6 +61,7 @@
 #![deny(missing_docs)]
 #![cfg_attr(all(test, windows), feature(std_misc))]
 
+#[allow(unused_imports)]
 use std::ascii::AsciiExt;
 use std::cmp;
 use std::fmt;
@@ -279,12 +280,18 @@ impl GlobError {
     pub fn error(&self) -> &io::Error {
         &self.error
     }
+
+    /// Consumes self, returning the _raw_ underlying `io::Error`
+    pub fn into_error(self) -> io::Error {
+        self.error
+    }
 }
 
 impl Error for GlobError {
     fn description(&self) -> &str {
         self.error.description()
     }
+
     fn cause(&self) -> Option<&Error> {
         Some(&self.error)
     }
