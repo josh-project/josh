@@ -3,12 +3,12 @@ extern crate bobble;
 extern crate clap;
 extern crate fern;
 extern crate futures;
+extern crate futures_cpupool;
 extern crate git2;
 extern crate hyper;
 extern crate regex;
 extern crate tempdir;
 extern crate tokio_core;
-extern crate futures_cpupool;
 
 #[macro_use]
 extern crate lazy_static;
@@ -20,6 +20,8 @@ use bobble::*;
 use bobble::virtual_repo;
 use futures::Stream;
 use futures::future::Future;
+use futures_cpupool::CpuPool;
+use hyper::header::{Authorization, Basic};
 use hyper::server::{Http, Request, Response, Service};
 use regex::Regex;
 use std::env;
@@ -27,18 +29,12 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
 use std::process::exit;
-use futures_cpupool::CpuPool;
 
 lazy_static! {
     static ref PREFIX_RE: Regex =
         Regex::new(r"(?P<prefix>/.*[.]git)/.*").expect("can't compile regex");
     static ref VIEW_RE: Regex =
         Regex::new(r"/(?P<view>.*)[.]git/.*").expect("can't compile regex");
-}
-
-fn main()
-{
-    exit(main_ret());
 }
 
 struct BobbleHttp
@@ -50,30 +46,27 @@ struct BobbleHttp
 
 impl BobbleHttp
 {
-    fn async_fetch(&self, path: &str)
-    -> Box<Future<Item = PathBuf, Error = hyper::Error>> {
+    fn async_fetch(
+        &self,
+        path: &str,
+        username: &str,
+        password: &str,
+    ) -> Box<Future<Item = Result<PathBuf, git2::Error>, Error = hyper::Error>>
+    {
         let base_repo = self.base_repo.clone();
 
-        Box::new(
-            self.pool.spawn(futures::future::ok(path.to_owned()).map(move |path|{
-                base_repo.fetch_origin_master();
+        let username = username.to_owned();
+        let password = password.to_owned();
 
-                make_view_repo(
-                    &path,
-                    &base_repo.path,
-                    &base_repo.user,
-                    &base_repo.password,
-                    &base_repo.url,
-                )
-            }))
-        )
+        Box::new(self.pool.spawn(futures::future::ok(path.to_owned()).map(
+            move |path| match base_repo.fetch_origin_master(&username, &password) {
+                Ok(_) => Ok(
+                    make_view_repo(&path, &base_repo.path, &username, &password, &base_repo.url),
+                ),
+                Err(e) => Err(e),
+            },
+        )))
     }
-
-    /* fn delegate_auth(&self, user: &str, password: &str) */
-    /* -> Box<Future<Item = Response, Error = hyper::Error>> */
-    /* { */
-    /*     Box::new(hyper::client::Client::new(&self.handle).get("http://gerrit/".parse().unwrap())) */
-    /* } */
 }
 
 
@@ -88,7 +81,6 @@ impl Service for BobbleHttp
 
     fn call(&self, req: Request) -> Self::Future
     {
-
         let prefix = if let Some(caps) = PREFIX_RE.captures(&req.uri().path()) {
             caps.name("prefix")
                 .expect("can't find name prefix")
@@ -104,45 +96,68 @@ impl Service for BobbleHttp
             req.uri().path().to_owned()
         };
 
+        let (username, password) = match req.headers().get() {
+            Some(&Authorization(Basic {
+                ref username,
+                ref password,
+            })) => {
+                println!("CREDENTIALS {:?} {:?}", &username, &password);
+                (username.to_owned(), password.to_owned().unwrap_or("".to_owned()).to_owned())
+            }
+            _ => {
+                println!("no credentials in request");
+                let mut response = Response::new().with_status(hyper::StatusCode::Unauthorized);
+                response
+                    .headers_mut()
+                    .set_raw("WWW-Authenticate", "Basic realm=\"User Visible Realm\"");
+                return Box::new(futures::future::ok(response));
+            }
+        };
+
         let handle = self.handle.clone();
 
         Box::new({
-            self.async_fetch(&req.uri().path()).and_then(move |view_repo|{
+            self.async_fetch(&req.uri().path(), &username, &password)
+                .and_then(move |view_repo| match view_repo {
+                    Err(e) => {
+                        println!("async_fetch error {:?}", e);
+                        let mut response =
+                            Response::new().with_status(hyper::StatusCode::Unauthorized);
+                        response
+                            .headers_mut()
+                            .set_raw("WWW-Authenticate", "Basic realm=\"User Visible Realm\"");
+                        Box::new(futures::future::ok(response))
+                    }
+                    Ok(path) => {
+                        let mut cmd = Command::new("git");
+                        cmd.arg("http-backend");
+                        cmd.current_dir(&path);
+                        cmd.env("GIT_PROJECT_ROOT", path.to_str().unwrap());
+                        cmd.env("GIT_DIR", path.to_str().unwrap());
+                        cmd.env("GIT_HTTP_EXPORT_ALL", "");
+                        cmd.env("PATH_INFO", path_without_prefix);
 
-                let mut cmd = Command::new("git");
-                cmd.arg("http-backend");
-                cmd.current_dir(&view_repo);
-                cmd.env("GIT_PROJECT_ROOT", view_repo.to_str().unwrap());
-                cmd.env("GIT_DIR", view_repo.to_str().unwrap());
-                cmd.env("GIT_HTTP_EXPORT_ALL", "");
-                cmd.env("PATH_INFO", path_without_prefix);
-
-                cgi::do_cgi(req, cmd, handle.clone())
-            })
+                        cgi::do_cgi(req, cmd, handle.clone())
+                    }
+                })
         })
-
     }
+}
+
+fn main()
+{
+    exit(main_ret());
 }
 
 fn main_ret() -> i32
 {
     let pool = CpuPool::new(1);
 
-    let mut args = vec![];
-    for arg in env::args() {
-        args.push(arg);
-    }
-    debug!("args: {:?}", args);
 
     let logfilename = Path::new("/tmp/centralgit.log");
     fern::Dispatch::new()
         .format(|out, message, record| {
-            out.finish(format_args!(
-                "{}[{}] {}",
-                record.target(),
-                record.level(),
-                message
-            ))
+            out.finish(format_args!("{}[{}] {}", record.target(), record.level(), message))
         })
         .level(log::LevelFilter::Debug)
         .chain(std::io::stdout())
@@ -150,23 +165,33 @@ fn main_ret() -> i32
         .apply()
         .unwrap();
 
+    let args = {
+        let mut args = vec![];
+        for arg in env::args() {
+            args.push(arg);
+        }
+        args
+    };
+
+    debug!("args: {:?}", args);
+
     if args[0].ends_with("/update") {
         debug!("================= HOOK {:?}", args);
         return virtual_repo::update_hook(&args[1], &args[2], &args[3]);
     }
 
-    let args = clap::App::new("centralgit-http")
-        .arg(clap::Arg::with_name("remote").long("remote").takes_value(true))
-        .arg(clap::Arg::with_name("local").long("local").takes_value(true))
-        .arg(clap::Arg::with_name("user").long("user").takes_value(true))
-        .arg(clap::Arg::with_name("password").long("password").takes_value(true))
+    let args = clap::App::new("bobble")
+        .arg(
+            clap::Arg::with_name("remote")
+                .long("remote")
+                .takes_value(true),
+        )
+        .arg(
+            clap::Arg::with_name("local")
+                .long("local")
+                .takes_value(true),
+        )
         .get_matches();
-
-    let user = args.value_of("user")
-        .expect("missing user name")
-        .to_string();
-    let password = args.value_of("password").expect("missing http password").to_string();
-
 
     println!("Now listening on localhost:8000");
 
@@ -178,8 +203,6 @@ fn main_ret() -> i32
     let base_repo = BaseRepo::create(
         &PathBuf::from(args.value_of("local").expect("missing local directory")),
         &args.value_of("remote").expect("missing remote repo url"),
-        &user,
-        &password,
     );
     base_repo.git_clone();
 
@@ -191,8 +214,6 @@ fn main_ret() -> i32
                 base_repo: BaseRepo::create(
                     &PathBuf::from(args.value_of("local").expect("missing local directory")),
                     &args.value_of("remote").expect("missing remote repo url"),
-                    &user,
-                    &password,
                 ),
             };
             Ok(cghttp)

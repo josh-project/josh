@@ -8,7 +8,12 @@ use std::path::Path;
 use std::path::PathBuf;
 
 pub fn setup_tmp_repo(
-    scratch_dir: &Path, view: &str, user: &str, password: &str, remote_url: &str) -> PathBuf
+    scratch_dir: &Path,
+    view: &str,
+    user: &str,
+    password: &str,
+    remote_url: &str,
+) -> PathBuf
 {
     let path = thread_local_temp_dir();
 
@@ -59,70 +64,60 @@ fn read_repo_info_file(name: &str) -> String
 
 pub fn update_hook(refname: &str, _old: &str, new: &str) -> i32
 {
+    let mut called = false;
     let scratch = Scratch::new(&Path::new(&read_repo_info_file("orig")));
 
-    let r = git2::Repository::open_from_env().unwrap();
 
     let username = read_repo_info_file("username");
     let password = read_repo_info_file("password");
     let remote_url = read_repo_info_file("remote_url");
+    let viewname = read_repo_info_file("view");
 
-    let br = BaseRepo::make_remote_callbacks_http(&username, &password);
+    let mut po = git2::PushOptions::new();
+    let br = BaseRepo::make_remote_callbacks_http(username, password, &mut called);
+    po.remote_callbacks(br);
 
-    let view = {
-        let viewname = read_repo_info_file("view");
+    let r = git2::Repository::open_from_env().unwrap();
+    let mut remote = r.remote_anonymous(&remote_url).unwrap();
 
-
-        if viewname.starts_with(".") {
-            let mut po = git2::PushOptions::new();
-            po.remote_callbacks(br);
-            debug!("=== pushing {}:{}", "HEAD", refname);
-            debug!("=== return direct");
-            r.set_head_detached(git2::Oid::from_str(new).expect("can't parse new Oid"))
-                .expect("can't set head");
-            r.remote_anonymous(&remote_url)
-                .unwrap()
-                .push(&[&format!("HEAD:{}", refname)], Some(&mut po))
-                .expect("push error");
-            return 0;
-        }
+    if viewname.starts_with(".") {
+        debug!("=== pushing {}:{}", "HEAD", refname);
+        debug!("=== return direct");
+        r.set_head_detached(git2::Oid::from_str(new).expect("can't parse new Oid"))
+            .expect("can't set head");
+    } else {
         let view = SubdirView::new(&Path::new(&viewname));
-        view
-    };
 
-    debug!("=== MORE");
+        debug!("=== MORE");
 
-    /* let without_refs_for = "refs/heads/".to_owned() +
-     * refname.trim_left_matches("refs/for/"); */
-    let without_refs_for = refname.to_owned();
-    let central_head = scratch
-        .repo
-        .refname_to_id(&without_refs_for)
-        .expect(&format!("no ref: {}", &refname));
+        let without_refs_for = refname.to_owned();
+        let central_head = scratch
+            .repo
+            .refname_to_id(&without_refs_for)
+            .expect(&format!("no ref: {}", &refname));
 
-    let old = r.refname_to_id(&without_refs_for).unwrap();
+        let old = r.refname_to_id(&without_refs_for).unwrap();
 
-    debug!("=== processed_old {}", old);
+        debug!("=== processed_old {}", old);
 
-    match scratch.unapply_view(
-        central_head,
-        &view,
-        old,
-        Oid::from_str(new).expect("can't parse new OID"),
-    ) {
-        UnapplyView::Done(rewritten) => {
-            r.set_head_detached(rewritten)
-                .expect("rewrite: can't detach head");
-            debug!("=== pushing {}:{}", "HEAD", refname);
-            let mut po = git2::PushOptions::new();
-            po.remote_callbacks(br);
-            r.remote_anonymous(&remote_url)
-                .unwrap()
-                .push(&[&format!("HEAD:{}", refname)], Some(&mut po))
-                .expect("can't find remote");
-        }
-        _ => return 1,
-    };
+        match scratch.unapply_view(
+            central_head,
+            &view,
+            old,
+            Oid::from_str(new).expect("can't parse new OID"),
+        ) {
+            UnapplyView::Done(rewritten) => {
+                r.set_head_detached(rewritten)
+                    .expect("rewrite: can't detach head");
+            }
+            _ => return 1,
+        };
+    }
+
+    debug!("=== pushing {}:{}", "HEAD", refname);
+    remote
+        .push(&[&format!("HEAD:{}", refname)], Some(&mut po))
+        .expect("can't find remote");
 
     return 0;
 }

@@ -71,7 +71,7 @@ impl Scratch
 
         let walk = {
             let mut walk = self.repo.revwalk().expect("walk: can't create revwalk");
-            walk.set_sorting(SORT_REVERSE | SORT_TOPOLOGICAL);
+            walk.set_sorting(Sort::REVERSE | Sort::TOPOLOGICAL);
             let range = format!("{}..{}", old, new);
             walk.push_range(&range)
                 .expect(&format!("walk: invalid range: {}", range));;
@@ -210,7 +210,7 @@ impl Scratch
     {
         let walk = {
             let mut walk = self.repo.revwalk().expect("walk: can't create revwalk");
-            walk.set_sorting(SORT_REVERSE | SORT_TOPOLOGICAL);
+            walk.set_sorting(Sort::REVERSE | Sort::TOPOLOGICAL);
             walk.push(newrev).expect("walk.push");
             walk
         };
@@ -287,7 +287,7 @@ impl Scratch
 
         let walk = {
             let mut walk = self.repo.revwalk().expect("walk: can't create revwalk");
-            walk.set_sorting(SORT_REVERSE | SORT_TOPOLOGICAL);
+            walk.set_sorting(Sort::REVERSE | Sort::TOPOLOGICAL);
             walk.push(src.id()).expect("walk.push");
             walk
         };

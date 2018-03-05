@@ -10,20 +10,16 @@ pub struct BaseRepo
 {
     pub path: PathBuf,
     pub url: String,
-    pub user: String,
-    pub password: String,
 }
 
 
 impl BaseRepo
 {
-    pub fn create(path: &Path, url: &str, user: &str, password: &str) -> BaseRepo
+    pub fn create(path: &Path, url: &str) -> BaseRepo
     {
         return BaseRepo {
             path: PathBuf::from(&path),
             url: String::from(url),
-            user: String::from(user),
-            password: String::from(password),
         };
     }
 
@@ -41,13 +37,22 @@ impl BaseRepo
     }
 
     pub fn make_remote_callbacks_http<'a>(
-        user: &'a str,
-        pass: &'a str
+        user: String,
+        pass: String,
+        called: &'a mut bool,
     ) -> git2::RemoteCallbacks<'a>
     {
+        println!("make_remote_callbacks_http {:?} {:?}", &user, &pass);
         let mut rcb = git2::RemoteCallbacks::new();
-        rcb.credentials(move |_, _, _| {
-            let cred = git2::Cred::userpass_plaintext(user, pass);
+        rcb.credentials(move |a, b, c| {
+            /* println!("rcb.credentials {:?} {:?} {:?} {:?} {:?}", */
+            /* &a, &b, &c, &user, &pass); */
+            if *called {
+                println!("XXXX");
+                return Err(git2::Error::from_str("wrong credentials"));
+            }
+            *called = true;
+            let cred = git2::Cred::userpass_plaintext(&user, &pass);
             return cred;
         });
         return rcb;
@@ -55,32 +60,39 @@ impl BaseRepo
 
     pub fn git_clone(&self)
     {
-        println!("clone base repo: {:?}", &self.path);
+        println!("init base repo: {:?}", &self.path);
 
         match git2::Repository::open(&self.path) {
-            Ok(_) => { println!("repo exists"); return; },
-            Err(_) => {},
+            Ok(_) => {
+                println!("repo exists");
+                return;
+            }
+            Err(_) => {}
         };
 
         match git2::Repository::init_bare(&self.path) {
-            Ok(_) => { println!("repo initialized"); return; },
-            Err(_) => {},
+            Ok(_) => {
+                println!("repo initialized");
+                return;
+            }
+            Err(_) => {}
         }
     }
 
-    pub fn fetch_origin_master(&self)
+    pub fn fetch_origin_master(&self, username: &str, password: &str) -> Result<(), git2::Error>
     {
+        let mut called = false;
         let mut fetchoptions = git2::FetchOptions::new();
-        let rcb = BaseRepo::make_remote_callbacks_http(&self.user, &self.password);
+        let rcb = BaseRepo::make_remote_callbacks_http(
+            username.to_owned(),
+            password.to_owned(),
+            &mut called,
+        );
         fetchoptions.remote_callbacks(rcb);
         let repo = git2::Repository::open(&self.path).expect("can't open base repo for fetching");
-        repo.remote_anonymous(&self.url)
+        let res = repo.remote_anonymous(&self.url)
             .expect("can't create anonymous remote")
-            .fetch(
-                &["+refs/heads/*:refs/heads/*"],
-                Some(&mut fetchoptions),
-                None,
-            )
-            .expect("can't fetch base repo");
+            .fetch(&["+refs/heads/*:refs/heads/*"], Some(&mut fetchoptions), None);
+        return res;
     }
 }
