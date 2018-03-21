@@ -27,6 +27,7 @@ pub fn do_cgi(
     cmd.stdout(Stdio::piped());
     cmd.stderr(Stdio::inherit());
     cmd.stdin(Stdio::piped());
+    println!("REQUEST_METHOD {:?}", req.method());
     cmd.env("SERVER_SOFTWARE", "hyper")
        .env("SERVER_NAME", "localhost")            // TODO
        .env("GATEWAY_INTERFACE", "CGI/1.1")
@@ -46,6 +47,7 @@ pub fn do_cgi(
     let mut child = cmd.spawn_async(&handle).expect("can't spawn CGI command");
 
     Box::new(req.body().concat2().and_then(move |body| {
+        println!("REQUEST body {:?}", &body.as_str());
         child
             .stdin()
             .take()
@@ -57,12 +59,19 @@ pub fn do_cgi(
             child
                 .wait_with_output()
                 .map(|command_result| {
+                    /* let mut stderr = io::BufReader::new(command_result.stderr.as_slice()); */
+                    /* println!("STDERR of git-http-backend:"); */
+                    /* for line in stderr.by_ref().lines() { */
+                    /*     println!("{:?}", line); */
+                    /* } */
+                    /* println!("end STDERR"); */
                     let mut stdout = io::BufReader::new(command_result.stdout.as_slice());
 
                     let mut data = vec![];
                     let mut response = Response::new();
 
                     for line in stdout.by_ref().lines() {
+                        println!("STDOUT line: {:?}", line);
                         if line.as_ref().unwrap().is_empty() {
                             break;
                         }
@@ -81,6 +90,7 @@ pub fn do_cgi(
                     stdout
                         .read_to_end(&mut data)
                         .expect("can't read command output");
+                    println!("BODY: {:?}", &data);
                     response.set_body(hyper::Chunk::from(data));
                     response
                 })

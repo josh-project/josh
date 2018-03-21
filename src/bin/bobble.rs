@@ -53,19 +53,20 @@ impl BobbleHttp
         password: &str,
     ) -> Box<Future<Item = Result<PathBuf, git2::Error>, Error = hyper::Error>>
     {
-        let base_repo = self.base_repo.clone();
-
+        let br_path = self.base_repo.path.clone();
+        let br_url = self.base_repo.url.clone();
         let username = username.to_owned();
         let password = password.to_owned();
 
-        Box::new(self.pool.spawn(futures::future::ok(path.to_owned()).map(
-            move |path| match base_repo.fetch_origin_master(&username, &password) {
-                Ok(_) => Ok(
-                    make_view_repo(&path, &base_repo.path, &username, &password, &base_repo.url),
-                ),
-                Err(e) => Err(e),
-            },
-        )))
+        Box::new(
+            self.pool
+                .spawn(futures::future::ok(path.to_owned()).map(move |path| {
+                    match base_repo::fetch_origin_master(&br_path, &br_url, &username, &password) {
+                        Ok(_) => Ok(make_view_repo(&path, &br_path, &username, &password, &br_url)),
+                        Err(e) => Err(e),
+                    }
+                })),
+        )
     }
 }
 
@@ -129,8 +130,10 @@ impl Service for BobbleHttp
                         Box::new(futures::future::ok(response))
                     }
                     Ok(path) => {
+                        println!("CALLING git-http backend");
                         let mut cmd = Command::new("git");
                         cmd.arg("http-backend");
+                        /* let mut cmd = Command::new("cat"); */
                         cmd.current_dir(&path);
                         cmd.env("GIT_PROJECT_ROOT", path.to_str().unwrap());
                         cmd.env("GIT_DIR", path.to_str().unwrap());
@@ -204,7 +207,7 @@ fn main_ret() -> i32
         &PathBuf::from(args.value_of("local").expect("missing local directory")),
         &args.value_of("remote").expect("missing remote repo url"),
     );
-    base_repo.git_clone();
+    base_repo::git_clone(&base_repo.path);
 
     let serve = Http::new()
         .serve_addr_handle(&addr, &server_handle, move || {

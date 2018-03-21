@@ -64,7 +64,6 @@ fn read_repo_info_file(name: &str) -> String
 
 pub fn update_hook(refname: &str, _old: &str, new: &str) -> i32
 {
-    let mut called = false;
     let scratch = Scratch::new(&Path::new(&read_repo_info_file("orig")));
 
 
@@ -73,9 +72,6 @@ pub fn update_hook(refname: &str, _old: &str, new: &str) -> i32
     let remote_url = read_repo_info_file("remote_url");
     let viewname = read_repo_info_file("view");
 
-    let mut po = git2::PushOptions::new();
-    let br = BaseRepo::make_remote_callbacks_http(username, password, &mut called);
-    po.remote_callbacks(br);
 
     let r = git2::Repository::open_from_env().unwrap();
     let mut remote = r.remote_anonymous(&remote_url).unwrap();
@@ -114,10 +110,7 @@ pub fn update_hook(refname: &str, _old: &str, new: &str) -> i32
         };
     }
 
-    debug!("=== pushing {}:{}", "HEAD", refname);
-    remote
-        .push(&[&format!("HEAD:{}", refname)], Some(&mut po))
-        .expect("can't find remote");
+    base_repo::push_head(&refname, remote, &username, &password);
 
     return 0;
 }

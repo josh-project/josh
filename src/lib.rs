@@ -6,7 +6,7 @@ extern crate tempdir;
 mod filelock;
 mod scratch;
 mod shell;
-mod base_repo;
+pub mod base_repo;
 mod treeops;
 mod view_subdir;
 pub mod virtual_repo;
