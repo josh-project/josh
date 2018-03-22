@@ -309,8 +309,8 @@ fn main() {
     assert_eq!(glob_with_vec("i/**/*c*", &options), Vec::<PathBuf>::new());
     assert_eq!(glob_with_vec("i/**/*d*", &options), Vec::<PathBuf>::new());
     assert_eq!(glob_with_vec("i/**/*e*", &options), vec!(
-        PathBuf::from("i/qwe/eee")
-    ));
+        PathBuf::from("i/qwe"),
+        PathBuf::from("i/qwe/eee")));
 
     if env::consts::FAMILY != "windows" {
         assert_eq!(
