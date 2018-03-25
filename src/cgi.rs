@@ -7,6 +7,8 @@ use self::futures::Stream;
 use self::futures::future::Future;
 use self::hyper::header::ContentLength;
 use self::hyper::header::ContentType;
+use self::hyper::header::ContentEncoding;
+use self::hyper::header::Encoding;
 use self::hyper::server::{Request, Response};
 use cgi::tokio_process::CommandExt;
 use std::io;
@@ -41,13 +43,14 @@ pub fn do_cgi(
        .env("REMOTE_USER", "")                     // TODO
        .env("CONTENT_TYPE",
            &format!("{}", req.headers().get().unwrap_or(&ContentType::plaintext())))
+       .env("HTTP_CONTENT_ENCODING",
+           &format!("{}", req.headers().get().unwrap_or(&ContentEncoding(vec![]))))
        .env("CONTENT_LENGTH",
            &format!("{}", req.headers().get().unwrap_or(&ContentLength(0))));
 
     let mut child = cmd.spawn_async(&handle).expect("can't spawn CGI command");
 
     Box::new(req.body().concat2().and_then(move |body| {
-        println!("REQUEST body {:?}", &body.as_str());
         child
             .stdin()
             .take()
