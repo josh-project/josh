@@ -33,7 +33,6 @@ pub fn fetch_origin_master(
     password: &str,
 ) -> Result<(), git2::Error>
 {
-    return Ok(());
     let spec = "+refs/heads/*:refs/heads/*";
     /* let mut called = false; */
     /* let mut fetchoptions = git2::FetchOptions::new(); */
@@ -50,7 +49,7 @@ pub fn fetch_origin_master(
     let splitted: Vec<&str> = url.splitn(2, "://").collect();
     let proto = splitted[0];
     let rest = splitted[1];
-    let cmd  = format!("git fetch {}://{}:{}@{} \"{}\"", &proto, &username, &password, &rest, &spec);
+    let cmd  = format!("git fetch {}://{}:{}@{} '{}'", &proto, &username, &password, &rest, &spec);
     println!("GIT fetch command: {:?}", cmd);
     shell.command(&cmd);
     return Ok(());

@@ -93,7 +93,6 @@ pub fn do_cgi(
                     stdout
                         .read_to_end(&mut data)
                         .expect("can't read command output");
-                    println!("BODY: {:?}", &data);
                     response.set_body(hyper::Chunk::from(data));
                     response
                 })
