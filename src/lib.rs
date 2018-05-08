@@ -4,7 +4,7 @@ extern crate log;
 extern crate tempdir;
 
 mod filelock;
-mod scratch;
+pub mod scratch;
 mod shell;
 pub mod base_repo;
 mod treeops;
@@ -14,9 +14,7 @@ pub mod cgi;
 
 pub use base_repo::BaseRepo;
 pub use filelock::FileLock;
-pub use scratch::Scratch;
-pub use scratch::view_ref;
-pub use scratch::view_ref_root;
+pub use scratch::*;
 pub use shell::Shell;
 pub use shell::thread_local_temp_dir;
 pub use treeops::*;

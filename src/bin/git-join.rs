@@ -1,7 +1,7 @@
 extern crate bobble;
 extern crate clap;
 extern crate git2;
-use bobble::Scratch;
+use bobble::scratch;
 use bobble::Shell;
 use std::path::Path;
 
@@ -17,28 +17,27 @@ fn main()
     let subdir = args.value_of("subdir").expect("missing subdir");
 
     let td = Path::new("/tmp/git-join2/");
-    let scratch = Scratch::new(&td.join("scratch"));
+    let scratch = scratch::new(&td.join("scratch"));
     let repo = git2::Repository::open(".").expect("can't open repo");
     let central_head = repo.revparse_single("master").expect("can't find master");
     let shell = Shell {
-        cwd: scratch.repo.path().to_path_buf(),
+        cwd: scratch.path().to_path_buf(),
     };
     scratch
-        .repo
         .find_reference("refs/heads/join_source")
         .map(|mut r| {
             r.delete().ok();
         })
         .ok();
     shell.command(&format!("git fetch {} master:join_source", source));
-    scratch.transfer(&format!("{}", central_head.id()), &Path::new("."));
+    scratch::transfer(&scratch, &format!("{}", central_head.id()), &Path::new("."));
     let module_head = scratch
-        .repo
         .revparse_single("join_source")
         .expect("can'f find join_source");
 
-    let signature = scratch.repo.signature().unwrap();
-    let result = scratch.join_to_subdir(
+    let signature = scratch.signature().unwrap();
+    let result = scratch::join_to_subdir(
+        &scratch,
         central_head.id(),
         &Path::new(subdir),
         module_head.id(),
@@ -46,14 +45,12 @@ fn main()
     );
 
     scratch
-        .repo
         .find_reference("refs/heads/result")
         .map(|mut r| {
             r.delete().ok();
         })
         .ok();
     scratch
-        .repo
         .reference("refs/heads/join_result", result, true, "join")
         .ok();
     let shell = Shell {
@@ -66,6 +63,6 @@ fn main()
         .ok();
     shell.command(&format!(
         "git fetch {:?} join_result:join",
-        scratch.repo.path()
+        scratch.path()
     ));
 }

@@ -241,7 +241,7 @@ fn main_ret() -> i32
     return 0;
 }
 
-fn make_view_repo(url: &str, base: &Path, user: &str, password: &str, remote_url: &str) -> PathBuf
+fn make_view_repo(url: &str, br_path: &Path, user: &str, password: &str, remote_url: &str) -> PathBuf
 {
     let view_string = if let Some(caps) = VIEW_RE.captures(&url) {
         caps.name("view").unwrap().as_str().to_owned()
@@ -251,10 +251,15 @@ fn make_view_repo(url: &str, base: &Path, user: &str, password: &str, remote_url
 
     println!("VIEW {}", &view_string);
 
-    let scratch = Scratch::new(&base);
-    for branch in scratch.repo.branches(None).unwrap() {
-        scratch.apply_view_to_branch(&branch.unwrap().0.name().unwrap().unwrap(), &view_string);
+    let scratch = scratch::new(&br_path);
+
+    for branch in scratch.branches(None).unwrap() {
+        apply_view_to_branch(
+            &scratch,
+            &branch.unwrap().0.name().unwrap().unwrap(),
+            &view_string,
+            &mut ViewCache::new());
     }
 
-    virtual_repo::setup_tmp_repo(&base, &view_string, &user, &password, &remote_url)
+    virtual_repo::setup_tmp_repo(&scratch.path(), &view_string, &user, &password, &remote_url)
 }

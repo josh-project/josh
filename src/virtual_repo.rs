@@ -64,7 +64,7 @@ fn read_repo_info_file(name: &str) -> String
 
 pub fn update_hook(refname: &str, _old: &str, new: &str) -> i32
 {
-    let scratch = Scratch::new(&Path::new(&read_repo_info_file("orig")));
+    let scratch = scratch::new(&Path::new(&read_repo_info_file("orig")));
 
 
     let username = read_repo_info_file("username");
@@ -88,7 +88,6 @@ pub fn update_hook(refname: &str, _old: &str, new: &str) -> i32
 
         let without_refs_for = refname.to_owned();
         let central_head = scratch
-            .repo
             .refname_to_id(&without_refs_for)
             .expect(&format!("no ref: {}", &refname));
 
@@ -96,7 +95,8 @@ pub fn update_hook(refname: &str, _old: &str, new: &str) -> i32
 
         debug!("=== processed_old {}", old);
 
-        match scratch.unapply_view(
+        match scratch::unapply_view(
+            &scratch,
             central_head,
             &view,
             old,
