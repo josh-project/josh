@@ -155,7 +155,7 @@ pub fn new(path: &Path) -> Repository
     Repository::init_bare(&path).expect("could not init scratch")
 }
 
-pub fn apply_view_to_branch(repo: &Repository, branchname: &str, view: &str, cache: &mut ViewCache)
+pub fn apply_view_to_branch(repo: &Repository, branchname: &str, view: &str, caches: &mut ViewCaches)
 {
     if view == "." {
         return;
@@ -163,12 +163,16 @@ pub fn apply_view_to_branch(repo: &Repository, branchname: &str, view: &str, cac
 
     let repo = Repository::init_bare(&repo.path()).expect("could not init scratch");
 
+    let mut view_cache = caches.entry(
+    format!("{}--{}", &branchname, &view)).or_insert(ViewCache::new());
+    /* let mut view_cache = ViewCache::new(); */
+
     debug!("apply_view_to_branch {}", branchname);
     if let Ok(branch) = repo.find_branch(branchname, git2::BranchType::Local) {
         let r = branch.into_reference().target().expect("no ref");
 
         let viewobj = SubdirView::new(&Path::new(&view));
-        if let Some(view_commit) = apply_view_cached(&repo, &viewobj, r, cache) {
+        if let Some(view_commit) = apply_view_cached(&repo, &viewobj, r, view_cache) {
             println!("applied view to branch {}", branchname);
             repo
                 .reference(
@@ -192,7 +196,7 @@ pub fn apply_view(repo: &Repository, view: &View, newrev: Oid) -> Option<Oid>
     return apply_view_cached(&repo, view, newrev, &mut ViewCache::new())
 }
 
-pub fn apply_view_cached(repo: &Repository, view: &View, newrev: Oid, cache: &mut ViewCache) -> Option<Oid>
+pub fn apply_view_cached(repo: &Repository, view: &View, newrev: Oid, view_cache: &mut ViewCache) -> Option<Oid>
 {
     let walk = {
         let mut walk = repo.revwalk().expect("walk: can't create revwalk");
@@ -201,8 +205,6 @@ pub fn apply_view_cached(repo: &Repository, view: &View, newrev: Oid, cache: &mu
         walk
     };
 
-    /* let mut view_cache = self.caches.entry("X".to_owned()).or_insert(ViewCache::new()); */
-    let mut view_cache = ViewCache::new();
 
     if let Some(id) = view_cache.get(&newrev){
         return Some(id.clone());

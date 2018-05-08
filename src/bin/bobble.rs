@@ -29,6 +29,8 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
 use std::process::exit;
+use std::sync::{Arc, Mutex};
+use std::collections::HashMap;
 
 lazy_static! {
     static ref PREFIX_RE: Regex =
@@ -42,6 +44,7 @@ struct BobbleHttp
     handle: tokio_core::reactor::Handle,
     pool: CpuPool,
     base_repo: BaseRepo,
+    cache: Arc<Mutex<ViewCaches>>,
 }
 
 impl BobbleHttp
@@ -57,12 +60,19 @@ impl BobbleHttp
         let br_url = self.base_repo.url.clone();
         let username = username.to_owned();
         let password = password.to_owned();
+        let cache = self.cache.clone();
 
         Box::new(
             self.pool
                 .spawn(futures::future::ok(path.to_owned()).map(move |path| {
                     match base_repo::fetch_origin_master(&br_path, &br_url, &username, &password) {
-                        Ok(_) => Ok(make_view_repo(&path, &br_path, &username, &password, &br_url)),
+                        Ok(_) => Ok(make_view_repo(
+                            &path,
+                            &br_path,
+                            &username,
+                            &password,
+                            &br_url,
+                            cache)),
                         Err(e) => Err(e),
                     }
                 })),
@@ -102,7 +112,6 @@ impl Service for BobbleHttp
                 ref username,
                 ref password,
             })) => {
-                println!("CREDENTIALS {:?} {:?}", &username, &password);
                 (username.to_owned(), password.to_owned().unwrap_or("".to_owned()).to_owned())
             }
             _ => {
@@ -194,12 +203,19 @@ fn main_ret() -> i32
                 .long("local")
                 .takes_value(true),
         )
+        .arg(
+            clap::Arg::with_name("port")
+                .long("port")
+                .takes_value(true),
+        )
         .get_matches();
 
-    println!("Now listening on localhost:8000");
+
+    let port = args.value_of("port").unwrap_or("8000").to_owned();
+    println!("Now listening on localhost:{}", port);
 
     let mut core = tokio_core::reactor::Core::new().unwrap();
-    let addr = "127.0.0.1:8000".parse().unwrap();
+    let addr = format!("127.0.0.1:{}",port).parse().unwrap();
     let server_handle = core.handle();
     let h2 = core.handle();
 
@@ -208,6 +224,8 @@ fn main_ret() -> i32
         &args.value_of("remote").expect("missing remote repo url"),
     );
     base_repo::git_clone(&base_repo.path);
+
+    let cache = Arc::new(Mutex::new(HashMap::new()));
 
     let serve = Http::new()
         .serve_addr_handle(&addr, &server_handle, move || {
@@ -218,6 +236,7 @@ fn main_ret() -> i32
                     &PathBuf::from(args.value_of("local").expect("missing local directory")),
                     &args.value_of("remote").expect("missing remote repo url"),
                 ),
+                cache: cache.clone(),
             };
             Ok(cghttp)
         })
@@ -241,7 +260,13 @@ fn main_ret() -> i32
     return 0;
 }
 
-fn make_view_repo(url: &str, br_path: &Path, user: &str, password: &str, remote_url: &str) -> PathBuf
+fn make_view_repo(
+    url: &str,
+    br_path: &Path,
+    user: &str,
+    password: &str,
+    remote_url: &str,
+    cache: Arc<Mutex<ViewCaches>>) -> PathBuf
 {
     let view_string = if let Some(caps) = VIEW_RE.captures(&url) {
         caps.name("view").unwrap().as_str().to_owned()
@@ -258,7 +283,7 @@ fn make_view_repo(url: &str, br_path: &Path, user: &str, password: &str, remote_
             &scratch,
             &branch.unwrap().0.name().unwrap().unwrap(),
             &view_string,
-            &mut ViewCache::new());
+            &mut cache.lock().unwrap());
     }
 
     virtual_repo::setup_tmp_repo(&scratch.path(), &view_string, &user, &password, &remote_url)

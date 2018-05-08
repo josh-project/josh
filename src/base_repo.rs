@@ -50,7 +50,6 @@ pub fn fetch_origin_master(
     let proto = splitted[0];
     let rest = splitted[1];
     let cmd  = format!("git fetch {}://{}:{}@{} '{}'", &proto, &username, &password, &rest, &spec);
-    println!("GIT fetch command: {:?}", cmd);
     shell.command(&cmd);
     return Ok(());
 }
