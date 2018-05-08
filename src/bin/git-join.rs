@@ -1,8 +1,8 @@
-extern crate bobble;
+extern crate grib;
 extern crate clap;
 extern crate git2;
-use bobble::Shell;
-use bobble::scratch;
+use grib::Shell;
+use grib::scratch;
 use std::path::Path;
 
 fn main()

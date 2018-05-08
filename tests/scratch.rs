@@ -1,5 +1,5 @@
-extern crate bobble;
-use bobble::*;
+extern crate grib;
+use grib::*;
 #[allow(dead_code)]
 mod helpers;
 extern crate git2;

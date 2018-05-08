@@ -1,5 +1,5 @@
 /* #![deny(warnings)] */
-extern crate bobble;
+extern crate grib;
 extern crate clap;
 extern crate fern;
 extern crate futures;
@@ -16,8 +16,8 @@ extern crate lazy_static;
 #[macro_use]
 extern crate log;
 
-use bobble::*;
-use bobble::virtual_repo;
+use grib::*;
+use grib::virtual_repo;
 use futures::Stream;
 use futures::future::Future;
 use futures_cpupool::CpuPool;
@@ -186,7 +186,7 @@ fn main_ret() -> i32
         return virtual_repo::update_hook(&args[1], &args[2], &args[3]);
     }
 
-    let args = clap::App::new("bobble")
+    let args = clap::App::new("grib")
         .arg(
             clap::Arg::with_name("remote")
                 .long("remote")

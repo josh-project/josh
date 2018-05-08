@@ -1,8 +1,8 @@
-extern crate bobble;
+extern crate grib;
 extern crate git2;
 extern crate tempdir;
 
-use bobble::Shell;
+use grib::Shell;
 use std::path::{Path, PathBuf};
 
 pub struct TestRepo

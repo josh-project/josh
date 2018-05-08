@@ -2,7 +2,7 @@ extern crate git2;
 
 extern crate tempdir;
 
-/* use bobble::Shell; */
+/* use grib::Shell; */
 use super::*;
 use std::path::Path;
 use std::path::PathBuf;
@@ -38,56 +38,39 @@ pub fn fetch_origin_master(
     let shell = Shell {
         cwd: path.to_owned(),
     };
-    let splitted: Vec<&str> = url.splitn(2, "://").collect();
-    let proto = splitted[0];
-    let rest = splitted[1];
-    let cmd = format!("git fetch {}://{}:{}@{} '{}'", &proto, &username, &password, &rest, &spec);
+    let nurl = {
+        let splitted: Vec<&str> = url.splitn(2, "://").collect();
+        let proto = splitted[0];
+        let rest = splitted[1];
+        format!("{}://{}:{}@{}", &proto, &username, &password, &rest)
+    };
+    let cmd = format!("git fetch {} '{}'", &nurl, &spec);
     shell.command(&cmd);
     return Ok(());
 }
 
-pub fn push_head(refname: &str, remote: git2::Remote, username: &str, password: &str)
+pub fn push_head_url(
+    path: &Path,
+    refname: &str,
+    url: &str,
+    username: &str,
+    password: &str)
 {
-    let mut remote = remote;
-    let mut called = false;
-    debug!("=== pushing {}:{}", "HEAD", refname);
-    let mut po = git2::PushOptions::new();
-    let br = make_remote_callbacks_http(username.to_owned(), password.to_owned(), &mut called);
-    po.remote_callbacks(br);
-    remote
-        .push(&[&format!("HEAD:{}", refname)], Some(&mut po))
-        .expect("can't find remote");
-}
+    let spec = format!("HEAD:{}", &refname);
 
-pub fn make_remote_callbacks_ssh<'a>(
-    user: &'a str,
-    private_key: &'a Path,
-) -> git2::RemoteCallbacks<'a>
-{
-    let mut rcb = git2::RemoteCallbacks::new();
-    rcb.credentials(move |_, _, _| {
-        let cred = git2::Cred::ssh_key(user, None, private_key, None);
-        return cred;
-    });
-    return rcb;
-}
-
-fn make_remote_callbacks_http<'a>(
-    user: String,
-    pass: String,
-    called: &'a mut bool,
-) -> git2::RemoteCallbacks<'a>
-{
-    let mut rcb = git2::RemoteCallbacks::new();
-    rcb.credentials(move |_,_,_| {
-        if *called {
-            return Err(git2::Error::from_str("wrong credentials"));
-        }
-        *called = true;
-        let cred = git2::Cred::userpass_plaintext(&user, &pass);
-        return cred;
-    });
-    return rcb;
+    let shell = Shell {
+        cwd: path.to_owned(),
+    };
+    let nurl = {
+        let splitted: Vec<&str> = url.splitn(2, "://").collect();
+        let proto = splitted[0];
+        let rest = splitted[1];
+        format!("{}://{}:{}@{}", &proto, &username, &password, &rest)
+    };
+    let cmd = format!("git push {} '{}'", &nurl, &spec);
+    let (stdout, stderr) = shell.command(&cmd);
+    println!("{}", &stderr);
+    println!("{}", &stdout);
 }
 
 pub fn git_clone(path: &Path)

@@ -49,6 +49,7 @@ pub fn setup_tmp_repo(
     shell.command(&format!("printf {} > remote_url", remote_url));
     shell.command("git config http.receivepack true");
     shell.command("rm -Rf refs/for");
+    shell.command("rm -Rf refs/drafts");
     return path;
 }
 
@@ -66,15 +67,14 @@ pub fn update_hook(refname: &str, _old: &str, new: &str) -> i32
 {
     let scratch = scratch::new(&Path::new(&read_repo_info_file("orig")));
 
-
     let username = read_repo_info_file("username");
     let password = read_repo_info_file("password");
     let remote_url = read_repo_info_file("remote_url");
     let viewname = read_repo_info_file("view");
 
+    println!("REMOTE URL {:?}", &remote_url);
 
     let r = git2::Repository::open_from_env().unwrap();
-    let remote = r.remote_anonymous(&remote_url).unwrap();
 
     if viewname.starts_with(".") {
         debug!("=== pushing {}:{}", "HEAD", refname);
@@ -87,9 +87,15 @@ pub fn update_hook(refname: &str, _old: &str, new: &str) -> i32
         debug!("=== MORE");
 
         let without_refs_for = refname.to_owned();
+        let without_refs_for = without_refs_for.trim_left_matches("refs/for/");
+        let without_refs_for = without_refs_for.trim_left_matches("refs/drafts/");
+        let without_refs_for = without_refs_for.trim_left_matches("refs/heads/");
+
+        let without_refs_for = format!("refs/heads/{}",&without_refs_for);
+
         let central_head = scratch
             .refname_to_id(&without_refs_for)
-            .expect(&format!("no ref: {}", &refname));
+            .expect(&format!("no ref: {} ({}) in {:?}", &refname, &without_refs_for, scratch.path()));
 
         let old = r.refname_to_id(&without_refs_for).unwrap();
 
@@ -110,7 +116,7 @@ pub fn update_hook(refname: &str, _old: &str, new: &str) -> i32
         };
     }
 
-    base_repo::push_head(&refname, remote, &username, &password);
+    base_repo::push_head_url(scratch.path(), &refname, &remote_url, &username, &password);
 
     return 0;
 }
