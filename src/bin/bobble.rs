@@ -24,13 +24,13 @@ use futures_cpupool::CpuPool;
 use hyper::header::{Authorization, Basic};
 use hyper::server::{Http, Request, Response, Service};
 use regex::Regex;
+use std::collections::HashMap;
 use std::env;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
 use std::process::exit;
 use std::sync::{Arc, Mutex};
-use std::collections::HashMap;
 
 lazy_static! {
     static ref PREFIX_RE: Regex =
@@ -66,13 +66,9 @@ impl BobbleHttp
             self.pool
                 .spawn(futures::future::ok(path.to_owned()).map(move |path| {
                     match base_repo::fetch_origin_master(&br_path, &br_url, &username, &password) {
-                        Ok(_) => Ok(make_view_repo(
-                            &path,
-                            &br_path,
-                            &username,
-                            &password,
-                            &br_url,
-                            cache)),
+                        Ok(_) => Ok(
+                            make_view_repo(&path, &br_path, &username, &password, &br_url, cache),
+                        ),
                         Err(e) => Err(e),
                     }
                 })),
@@ -111,9 +107,7 @@ impl Service for BobbleHttp
             Some(&Authorization(Basic {
                 ref username,
                 ref password,
-            })) => {
-                (username.to_owned(), password.to_owned().unwrap_or("".to_owned()).to_owned())
-            }
+            })) => (username.to_owned(), password.to_owned().unwrap_or("".to_owned()).to_owned()),
             _ => {
                 println!("no credentials in request");
                 let mut response = Response::new().with_status(hyper::StatusCode::Unauthorized);
@@ -203,11 +197,7 @@ fn main_ret() -> i32
                 .long("local")
                 .takes_value(true),
         )
-        .arg(
-            clap::Arg::with_name("port")
-                .long("port")
-                .takes_value(true),
-        )
+        .arg(clap::Arg::with_name("port").long("port").takes_value(true))
         .get_matches();
 
 
@@ -215,7 +205,7 @@ fn main_ret() -> i32
     println!("Now listening on localhost:{}", port);
 
     let mut core = tokio_core::reactor::Core::new().unwrap();
-    let addr = format!("127.0.0.1:{}",port).parse().unwrap();
+    let addr = format!("127.0.0.1:{}", port).parse().unwrap();
     let server_handle = core.handle();
     let h2 = core.handle();
 
@@ -266,7 +256,8 @@ fn make_view_repo(
     user: &str,
     password: &str,
     remote_url: &str,
-    cache: Arc<Mutex<ViewCaches>>) -> PathBuf
+    cache: Arc<Mutex<ViewCaches>>,
+) -> PathBuf
 {
     let view_string = if let Some(caps) = VIEW_RE.captures(&url) {
         caps.name("view").unwrap().as_str().to_owned()
@@ -283,7 +274,8 @@ fn make_view_repo(
             &scratch,
             &branch.unwrap().0.name().unwrap().unwrap(),
             &view_string,
-            &mut cache.lock().unwrap());
+            &mut cache.lock().unwrap(),
+        );
     }
 
     virtual_repo::setup_tmp_repo(&scratch.path(), &view_string, &user, &password, &remote_url)

@@ -74,7 +74,7 @@ pub fn update_hook(refname: &str, _old: &str, new: &str) -> i32
 
 
     let r = git2::Repository::open_from_env().unwrap();
-    let mut remote = r.remote_anonymous(&remote_url).unwrap();
+    let remote = r.remote_anonymous(&remote_url).unwrap();
 
     if viewname.starts_with(".") {
         debug!("=== pushing {}:{}", "HEAD", refname);

@@ -2,8 +2,8 @@ extern crate bobble;
 extern crate git2;
 extern crate tempdir;
 
-use std::path::{Path, PathBuf};
 use bobble::Shell;
+use std::path::{Path, PathBuf};
 
 pub struct TestRepo
 {
@@ -19,7 +19,9 @@ impl TestRepo
         let tr = TestRepo {
             repo: git2::Repository::init(path).expect("init should succeed"),
             path: path.to_path_buf(),
-            shell: Shell { cwd: path.to_path_buf() },
+            shell: Shell {
+                cwd: path.to_path_buf(),
+            },
         };
         tr.shell.command("git config user.name test");
         tr.shell.command("git config user.email test@test.com");
@@ -28,15 +30,18 @@ impl TestRepo
 
     pub fn commit(&self, message: &str) -> String
     {
-        self.shell.command(&format!("git commit -m \"{}\"", message));
+        self.shell
+            .command(&format!("git commit -m \"{}\"", message));
         let (stdout, _) = self.shell.command("git rev-parse HEAD");
         stdout
     }
 
     pub fn add_file(&self, filename: &str)
     {
-        self.shell.command(&format!("mkdir -p $(dirname {})", filename));
-        self.shell.command(&format!("echo test_content > {}", filename));
+        self.shell
+            .command(&format!("mkdir -p $(dirname {})", filename));
+        self.shell
+            .command(&format!("echo test_content > {}", filename));
         self.shell.command(&format!("git add {}", filename));
     }
 

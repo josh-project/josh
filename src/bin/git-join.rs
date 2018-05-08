@@ -1,8 +1,8 @@
 extern crate bobble;
 extern crate clap;
 extern crate git2;
-use bobble::scratch;
 use bobble::Shell;
+use bobble::scratch;
 use std::path::Path;
 
 fn main()
@@ -61,8 +61,5 @@ fn main()
             r.delete().ok();
         })
         .ok();
-    shell.command(&format!(
-        "git fetch {:?} join_result:join",
-        scratch.path()
-    ));
+    shell.command(&format!("git fetch {:?} join_result:join", scratch.path()));
 }

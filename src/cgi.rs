@@ -5,10 +5,9 @@ extern crate tokio_process;
 
 use self::futures::Stream;
 use self::futures::future::Future;
+use self::hyper::header::ContentEncoding;
 use self::hyper::header::ContentLength;
 use self::hyper::header::ContentType;
-use self::hyper::header::ContentEncoding;
-use self::hyper::header::Encoding;
 use self::hyper::server::{Request, Response};
 use cgi::tokio_process::CommandExt;
 use std::io;
@@ -62,12 +61,6 @@ pub fn do_cgi(
             child
                 .wait_with_output()
                 .map(|command_result| {
-                    /* let mut stderr = io::BufReader::new(command_result.stderr.as_slice()); */
-                    /* println!("STDERR of git-http-backend:"); */
-                    /* for line in stderr.by_ref().lines() { */
-                    /*     println!("{:?}", line); */
-                    /* } */
-                    /* println!("end STDERR"); */
                     let mut stdout = io::BufReader::new(command_result.stdout.as_slice());
 
                     let mut data = vec![];

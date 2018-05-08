@@ -1,8 +1,8 @@
+use super::View;
+use super::replace_subtree;
 use git2::*;
 use std::path::Path;
 use std::path::PathBuf;
-use super::View;
-use super::replace_subtree;
 
 pub struct SubdirView
 {
@@ -13,7 +13,9 @@ impl SubdirView
 {
     pub fn new(subdir: &Path) -> SubdirView
     {
-        SubdirView { subdir: subdir.to_path_buf() }
+        SubdirView {
+            subdir: subdir.to_path_buf(),
+        }
     }
 }
 
@@ -29,5 +31,3 @@ impl View for SubdirView
         replace_subtree(&repo, &self.subdir, &tree, &parent_tree)
     }
 }
-
-

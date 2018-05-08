@@ -2,10 +2,10 @@ extern crate git2;
 
 extern crate tempdir;
 
-use std::path::Path;
-use std::path::PathBuf;
 /* use bobble::Shell; */
 use super::*;
+use std::path::Path;
+use std::path::PathBuf;
 
 #[derive(Clone)]
 pub struct BaseRepo
@@ -34,22 +34,14 @@ pub fn fetch_origin_master(
 ) -> Result<(), git2::Error>
 {
     let spec = "+refs/heads/*:refs/heads/*";
-    /* let mut called = false; */
-    /* let mut fetchoptions = git2::FetchOptions::new(); */
-    /* let rcb = make_remote_callbacks_http(username.to_owned(), password.to_owned(), &mut called); */
-    /* fetchoptions.remote_callbacks(rcb); */
-    /* let repo = git2::Repository::open(&path).expect("can't open base repo for fetching"); */
-    /* let res = repo.remote_anonymous(&url) */
-    /*     .expect("can't create anonymous remote") */
-    /*     .fetch(&[spec], Some(&mut fetchoptions), None); */
-    /* return res; */
 
-
-    let shell = Shell { cwd: path.to_owned() };
+    let shell = Shell {
+        cwd: path.to_owned(),
+    };
     let splitted: Vec<&str> = url.splitn(2, "://").collect();
     let proto = splitted[0];
     let rest = splitted[1];
-    let cmd  = format!("git fetch {}://{}:{}@{} '{}'", &proto, &username, &password, &rest, &spec);
+    let cmd = format!("git fetch {}://{}:{}@{} '{}'", &proto, &username, &password, &rest, &spec);
     shell.command(&cmd);
     return Ok(());
 }
@@ -86,13 +78,9 @@ fn make_remote_callbacks_http<'a>(
     called: &'a mut bool,
 ) -> git2::RemoteCallbacks<'a>
 {
-    /* println!("make_remote_callbacks_http {:?} {:?}", &user, &pass); */
     let mut rcb = git2::RemoteCallbacks::new();
-    rcb.credentials(move |a, b, c| {
-        /* println!("rcb.credentials {:?} {:?} {:?} {:?} {:?}", */
-        /* &a, &b, &c, &user, &pass); */
+    rcb.credentials(move |_,_,_| {
         if *called {
-            /* println!("XXXX"); */
             return Err(git2::Error::from_str("wrong credentials"));
         }
         *called = true;
