@@ -147,6 +147,7 @@ impl Service for GribHttp
 
 pub fn run_proxy(args: Vec<String>) -> i32
 {
+    println!("RUN PROXY {:?}", &args);
     let logfilename = Path::new("/tmp/centralgit.log");
     fern::Dispatch::new()
         .format(|out, message, record| {
@@ -178,7 +179,7 @@ pub fn run_proxy(args: Vec<String>) -> i32
                 .takes_value(true),
         )
         .arg(clap::Arg::with_name("port").long("port").takes_value(true))
-        .get_matches();
+        .get_matches_from(args);
 
 
     let port = args.value_of("port").unwrap_or("8000").to_owned();
@@ -213,7 +214,7 @@ fn run_http_server(
     remote: &str,
 )
 {
-    let core = tokio_core::reactor::Core::new().unwrap();
+    let mut core = tokio_core::reactor::Core::new().unwrap();
     let h2 = core.handle();
     let cache = Arc::new(Mutex::new(HashMap::new()));
     let server_handle = core.handle();
@@ -244,6 +245,7 @@ fn run_http_server(
             })
             .map_err(|_| ()),
     );
+    core.run(futures::future::empty::<(), ()>()).unwrap();
 }
 
 fn make_view_repo(

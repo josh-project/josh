@@ -581,7 +581,12 @@ fn test_integration()
 {
     let repo = helpers::TestRepo::new();
     let serve_path = repo.repo.path().to_owned();
+    let td = TempDir::new("cgh_test").expect("folder cgh_test should be created");
     thread::spawn(move || helpers::run_test_server(&serve_path, 8123));
-    grib::run_proxy::run_proxy(vec![]);
+    grib::run_proxy::run_proxy(vec![
+        "grib".to_owned(),
+        "--local".to_owned(), format!("{:?}", td.path()).trim_matches('"').to_owned(),
+        "--remote".to_owned(), "http://localhost:8123".to_owned(),
+    ]);
 
 }
