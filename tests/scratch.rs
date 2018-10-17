@@ -5,6 +5,7 @@ extern crate tempdir;
 mod helpers;
 use grib::*;
 use std::path::Path;
+use std::path::PathBuf;
 use std::thread;
 use tempdir::TempDir;
 
@@ -576,17 +577,123 @@ fn test_replace_subtree()
     assert_eq!(vec![format!("foo"), format!("foo/bla"), format!("x")], sorted(subdirs));
 }
 
+extern crate rouille;
+
+use std::io;
+use std::env;
+use std::process::Command;
+use rouille::cgi::CgiRun;
+
+fn test_server_main(serve_path: PathBuf) {
+    // This example demonstrates how to serve a git repository with rouille.
+    // After starting this example, you should be able to run `git clone http://localhost:8000/`
+    // in order to clone the repository of the current working directory.
+
+    println!("Now listening on localhost:8123");
+
+    rouille::start_server("localhost:8123", move |request| {
+        rouille::log(&request, io::stdout(), || {
+            // When a request is received, we invoke the `git http-backend` command through CGI.
+            let mut cmd = Command::new("git");
+            cmd.arg("http-backend");
+
+            // We need to set some git-specific environment variables.
+            cmd.env("GIT_PROJECT_ROOT", serve_path.to_str().unwrap());
+            cmd.env("GIT_HTTP_EXPORT_ALL", "");   // This one is required to avoid security errors.
+
+            // Our `cmd` is now ready. We can run it with the `start_cgi` method of the `CgiRun`
+            // trait.
+            // The `start_cgi` will add other CGI-specific environment variables, then feed stdin
+            // and analyze stdout to build a rouille response.
+            //
+            // Note that an error is returned only if `git http-backend` fails to execute, and not
+            // if the client sends bad data for example. In other words, an error can only occur
+            // if the server was misconfigured. Therefore it's okay-ish to call `unwrap()` here.
+            cmd.start_cgi(&request).unwrap()
+        })
+    });
+}
+
 #[test]
-fn test_integration()
+fn test_test_http_server()
 {
-    let repo = helpers::TestRepo::new();
-    let serve_path = repo.repo.path().to_owned();
+    let hosted = helpers::TestRepo::new();
+    hosted.shell.command("git config http.receivepack true");
+	hosted.shell.command("git checkout -b foo");
+    let serve_path = hosted.repo.path().to_owned();
+    /* thread::spawn(move || helpers::run_test_server(&serve_path, 8123)); */
+
+	thread::spawn(move || test_server_main(serve_path));
+
+
+    let local1 = helpers::TestRepo::new();
+    local1.shell.command("git checkout master");
+    local1.add_file("x/some_file");
+    local1.commit("add some file");
+    local1.shell.command("git push http://testuser:supersafe@localhost:8123 HEAD:master");
+
+
+    let local2 = helpers::TestRepo::new();
+    local2.shell.command("git fetch http://testuser:supersafe@localhost:8123 master:r");
+    local2.shell.command("git checkout r");
+	/* loop {}; */
+    assert!(local1.has_file("x/some_file"));
+    assert!(local2.has_file("x/some_file"));
+
+
+}
+
+#[test]
+fn test_test_http_server_proxy()
+{
+    let hosted = helpers::TestRepo::new();
+    hosted.shell.command("git config http.receivepack true");
+	hosted.shell.command("git checkout -b foo");
+    let serve_path = hosted.repo.path().to_owned();
+    /* thread::spawn(move || helpers::run_test_server(&serve_path, 8123)); */
     let td = TempDir::new("cgh_test").expect("folder cgh_test should be created");
-    thread::spawn(move || helpers::run_test_server(&serve_path, 8123));
-    grib::run_proxy::run_proxy(vec![
+
+	thread::spawn(move || test_server_main(serve_path));
+
+    thread::spawn(move || grib::run_proxy::run_proxy(vec![
         "grib".to_owned(),
         "--local".to_owned(), format!("{:?}", td.path()).trim_matches('"').to_owned(),
         "--remote".to_owned(), "http://localhost:8123".to_owned(),
-    ]);
+		"--port=8222".to_owned(),
+    ]));
+
+    let local1 = helpers::TestRepo::new();
+    local1.shell.command("git checkout master");
+    local1.add_file("x/some_file");
+    local1.commit("add some file");
+    local1.shell.command("git push http://testuser:supersafe@localhost:8123 HEAD:master");
+
+
+    let local2 = helpers::TestRepo::new();
+    local2.shell.command("git fetch http://testuser:supersafe@localhost:8222 master:r");
+    local2.shell.command("git checkout r");
+	/* loop {}; */
+    assert!(local1.has_file("x/some_file"));
+    assert!(local2.has_file("x/some_file"));
+
 
 }
+
+/* #[test] */
+/* fn test_integration() */
+/* { */
+/*     let hosted = helpers::TestRepo::new(); */
+/*     let serve_path = hosted.repo.path().to_owned(); */
+/*     let td = TempDir::new("cgh_test").expect("folder cgh_test should be created"); */
+/*     thread::spawn(move || helpers::run_test_server(&serve_path, 8123)); */
+/*     thread::spawn(move || grib::run_proxy::run_proxy(vec![ */
+/*         "grib".to_owned(), */
+/*         "--local".to_owned(), format!("{:?}", td.path()).trim_matches('"').to_owned(), */
+/*         "--remote".to_owned(), "http://localhost:8123".to_owned(), */
+/*     ])); */
+
+/*     let real = helpers::TestRepo::new(); */
+/*     real.shell.command("git fetch http://testuser:supersafe@localhost:8123"); */
+
+
+/* } */

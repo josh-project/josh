@@ -123,6 +123,8 @@ impl Service for ServeTestGit
 
         if username != self.username || password != self.password {
             println!("ServeTestGit: wrong user/pass");
+            println!("user: {:?} - {:?}", username, self.username);
+            println!("pass: {:?} - {:?}", password, self.password);
             let mut response = Response::new().with_status(hyper::StatusCode::Unauthorized);
             response
                 .headers_mut()
@@ -162,8 +164,8 @@ pub fn run_test_server(repo_path: &Path, port: u32)
             let cghttp = ServeTestGit {
                 handle: h2.clone(),
                 repo_path: repo_path.to_owned(),
-                password: "".to_owned(),
-                username: "".to_owned(),
+                username: "testuser".to_owned(),
+                password: "supersafe".to_owned(),
             };
             Ok(cghttp)
         };

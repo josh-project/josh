@@ -17,7 +17,6 @@ pub mod virtual_repo;
 pub mod cgi;
 pub mod run_proxy;
 
-pub use base_repo::BaseRepo;
 pub use filelock::FileLock;
 pub use scratch::*;
 pub use shell::Shell;

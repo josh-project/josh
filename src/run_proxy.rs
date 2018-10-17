@@ -29,16 +29,19 @@ use std::net;
 
 lazy_static! {
     static ref PREFIX_RE: Regex =
-        Regex::new(r"(?P<prefix>/.*[.]git)/.*").expect("can't compile regex");
+        Regex::new(r"(?P<prefix>/.*[.]git)/.*.git").expect("can't compile regex");
     static ref VIEW_RE: Regex =
-        Regex::new(r"/(?P<view>.*)[.]git/.*").expect("can't compile regex");
+        Regex::new(r".git/(?P<view>.*)[.]git/.*").expect("can't compile regex");
+    static ref PATHINFO_RE: Regex =
+        Regex::new(r"/.*[.]git/.*.git(?P<pathinfo>.*)").expect("can't compile regex");
 }
 
 struct GribHttp
 {
     handle: tokio_core::reactor::Handle,
     pool: CpuPool,
-    base_repo: BaseRepo,
+    base_path: PathBuf,
+    base_url: String,
     cache: Arc<Mutex<scratch::ViewCaches>>,
 }
 
@@ -46,13 +49,21 @@ impl GribHttp
 {
     fn async_fetch(
         &self,
+        prefix: &str,
         path: &str,
         username: &str,
         password: &str,
     ) -> Box<Future<Item = Result<PathBuf, git2::Error>, Error = hyper::Error>>
     {
-        let br_path = self.base_repo.path.clone();
-        let br_url = self.base_repo.url.clone();
+        let br_path = self.base_path.join(prefix.trim_left_matches("/"));
+        base_repo::create_local(&br_path);
+
+        let br_url = {
+            println!("XXXXXX {:?} {:?} {} {}",self.base_path, br_path, self.base_url, prefix);
+            let mut br_url = self.base_url.clone();
+            br_url.push_str(prefix);
+            br_url
+        };
         let username = username.to_owned();
         let password = password.to_owned();
         let cache = self.cache.clone();
@@ -92,6 +103,15 @@ impl Service for GribHttp
             String::new()
         };
 
+        let pathinfo = if let Some(caps) = PATHINFO_RE.captures(&req.uri().path()) {
+            caps.name("pathinfo")
+                .expect("can't find pathinfo")
+                .as_str()
+                .to_string()
+        } else {
+            String::new()
+        };
+
         let path_without_prefix = if prefix != "" {
             req.uri().path().replacen(&prefix, "", 1)
         } else {
@@ -116,7 +136,7 @@ impl Service for GribHttp
         let handle = self.handle.clone();
 
         Box::new({
-            self.async_fetch(&req.uri().path(), &username, &password)
+            self.async_fetch(&prefix, &req.uri().path(), &username, &password)
                 .and_then(move |view_repo| match view_repo {
                     Err(e) => {
                         println!("async_fetch error {:?}", e);
@@ -128,7 +148,7 @@ impl Service for GribHttp
                         Box::new(futures::future::ok(response))
                     }
                     Ok(path) => {
-                        println!("CALLING git-http backend");
+                        println!("CALLING git-http backend {:?} {:?}", path, pathinfo);
                         let mut cmd = Command::new("git");
                         cmd.arg("http-backend");
                         /* let mut cmd = Command::new("cat"); */
@@ -136,7 +156,7 @@ impl Service for GribHttp
                         cmd.env("GIT_PROJECT_ROOT", path.to_str().unwrap());
                         cmd.env("GIT_DIR", path.to_str().unwrap());
                         cmd.env("GIT_HTTP_EXPORT_ALL", "");
-                        cmd.env("PATH_INFO", path_without_prefix);
+                        cmd.env("PATH_INFO", pathinfo);
 
                         cgi::do_cgi(req, cmd, handle.clone())
                     }
@@ -185,13 +205,6 @@ pub fn run_proxy(args: Vec<String>) -> i32
     let port = args.value_of("port").unwrap_or("8000").to_owned();
     println!("Now listening on localhost:{}", port);
 
-
-    let base_repo = BaseRepo::create(
-        &PathBuf::from(args.value_of("local").expect("missing local directory")),
-        &args.value_of("remote").expect("missing remote repo url"),
-    );
-    base_repo::git_clone(&base_repo.path);
-
     let pool = CpuPool::new(1);
 
     let addr = format!("127.0.0.1:{}", port).parse().unwrap();
@@ -226,7 +239,8 @@ fn run_http_server(
             let cghttp = GribHttp {
                 handle: h2.clone(),
                 pool: pool.clone(),
-                base_repo: BaseRepo::create(&local, &remote),
+                base_path: local.clone(),
+                base_url: remote.clone(),
                 cache: cache.clone(),
             };
             Ok(cghttp)
@@ -276,5 +290,5 @@ fn make_view_repo(
         );
     }
 
-    virtual_repo::setup_tmp_repo(&scratch.path(), &view_string, &user, &password, &remote_url)
+    virtual_repo::setup_tmp_repo(&br_path, &view_string, &user, &password, &remote_url)
 }

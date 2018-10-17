@@ -1,30 +1,11 @@
 extern crate git2;
 
 extern crate tempdir;
+use std::fs;
 
 /* use grib::Shell; */
 use super::*;
 use std::path::Path;
-use std::path::PathBuf;
-
-#[derive(Clone)]
-pub struct BaseRepo
-{
-    pub path: PathBuf,
-    pub url: String,
-}
-
-
-impl BaseRepo
-{
-    pub fn create(path: &Path, url: &str) -> BaseRepo
-    {
-        return BaseRepo {
-            path: PathBuf::from(&path),
-            url: String::from(url),
-        };
-    }
-}
 
 pub fn fetch_origin_master(
     path: &Path,
@@ -74,9 +55,10 @@ pub fn push_head_url(
 }
 
 
-pub fn git_clone(path: &Path)
+pub fn create_local(path: &Path)
 {
     println!("init base repo: {:?}", path);
+    fs::create_dir_all(path);
 
     match git2::Repository::open(path) {
         Ok(_) => {

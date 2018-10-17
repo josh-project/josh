@@ -9,17 +9,18 @@ fn main()
 {
     let args = clap::App::new("git-join")
         .arg(clap::Arg::with_name("source").long("source").takes_value(true))
-        // .arg(clap::Arg::with_name("branch").long("source branch").takes_value(true))
+        .arg(clap::Arg::with_name("branch").long("branch").takes_value(true))
         .arg(clap::Arg::with_name("subdir").long("subdir").takes_value(true))
         .get_matches();
 
+    let branch = args.value_of("branch").expect("missing branch");
     let source = args.value_of("source").expect("missing source");
     let subdir = args.value_of("subdir").expect("missing subdir");
 
     let td = Path::new("/tmp/git-join2/");
     let scratch = scratch::new(&td.join("scratch"));
     let repo = git2::Repository::open(".").expect("can't open repo");
-    let central_head = repo.revparse_single("master").expect("can't find master");
+    let central_head = repo.revparse_single(branch).expect("can't find branch");
     let shell = Shell {
         cwd: scratch.path().to_path_buf(),
     };
@@ -29,7 +30,7 @@ fn main()
             r.delete().ok();
         })
         .ok();
-    shell.command(&format!("git fetch {} master:join_source", source));
+    shell.command(&format!("git fetch {} {}:join_source", source, branch));
     scratch::transfer(&scratch, &format!("{}", central_head.id()), &Path::new("."));
     let module_head = scratch
         .revparse_single("join_source")

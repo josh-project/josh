@@ -50,12 +50,13 @@ pub fn do_cgi(
     let mut child = cmd.spawn_async(&handle).expect("can't spawn CGI command");
 
     Box::new(req.body().concat2().and_then(move |body| {
+
         child
             .stdin()
             .take()
             .unwrap()
             .write_all(&body)
-            .expect("can't write command output");
+            .expect("can't write command output (body)");
 
         Box::new(
             child
