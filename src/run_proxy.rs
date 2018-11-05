@@ -207,7 +207,7 @@ pub fn run_proxy(args: Vec<String>) -> i32
 
     let pool = CpuPool::new(1);
 
-    let addr = format!("127.0.0.1:{}", port).parse().unwrap();
+    let addr = format!("0.0.0.0:{}", port).parse().unwrap();
     run_http_server(
         addr,
         &pool,
