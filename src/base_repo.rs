@@ -23,8 +23,13 @@ pub fn fetch_origin_master(
         let splitted: Vec<&str> = url.splitn(2, "://").collect();
         let proto = splitted[0];
         let rest = splitted[1];
-        format!("{}://{}:{}@{}", &proto, &username, &password, &rest)
+        format!("{}://{}@{}", &proto, &username, &rest)
     };
+    let cmd = format!("git config --global credential.helper '!f() {{ echo \"password={}\"; }}; f'", &password);
+    shell.command(&cmd);
+    let cmd = format!("git config --local credential.helper '!f() {{ echo \"password={}\"; }}; f'", &password);
+    shell.command(&cmd);
+
     let cmd = format!("git fetch {} '{}'", &nurl, &spec);
     shell.command(&cmd);
     return Ok(());
@@ -46,8 +51,12 @@ pub fn push_head_url(
         let splitted: Vec<&str> = url.splitn(2, "://").collect();
         let proto = splitted[0];
         let rest = splitted[1];
-        format!("{}://{}:{}@{}", &proto, &username, &password, &rest)
+        format!("{}://{}@{}", &proto, &username, &rest)
     };
+    let cmd = format!("git config --global credential.helper '!f() {{ echo \"password={}\"; }}; f'", &password);
+    shell.command(&cmd);
+    let cmd = format!("git config --local credential.helper '!f() {{ echo \"password={}\"; }}; f'", &password);
+    shell.command(&cmd);
     let cmd = format!("git push {} '{}'", &nurl, &spec);
     let (stdout, stderr) = shell.command(&cmd);
     println!("{}", &stderr);
