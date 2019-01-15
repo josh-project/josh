@@ -21,13 +21,6 @@ def in_data1(subdir, cmd):
 
 
 class CentralGitTests(unittest.TestCase):
-    def setUp(self):
-        print "setUp"
-        getoutput("ssh -p 29418 admin@localhost delete-project delete --yes-really-delete test");
-        getoutput("ssh -p 29418 admin@localhost gerrit create-project --empty-commit test");
-        getoutput("rm -Rf _data*")
-        getoutput("mkdir _data0")
-        getoutput("mkdir _data1")
 
     def test_clone_all(self):
         in_data0(".", "git clone http://localhost:8000/ test")

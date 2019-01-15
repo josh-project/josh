@@ -643,41 +643,41 @@ fn test_test_http_server()
 
 }
 
-#[test]
-fn test_test_http_server_proxy()
-{
-    let hosted = helpers::TestRepo::new();
-    hosted.shell.command("git config http.receivepack true");
-	hosted.shell.command("git checkout -b foo");
-    let serve_path = hosted.repo.path().to_owned();
-    /* thread::spawn(move || helpers::run_test_server(&serve_path, 8123)); */
-    let td = TempDir::new("cgh_test").expect("folder cgh_test should be created");
+/* #[test] */
+/* fn test_test_http_server_proxy() */
+/* { */
+/*     let hosted = helpers::TestRepo::new(); */
+/*     hosted.shell.command("git config http.receivepack true"); */
+/* 	hosted.shell.command("git checkout -b foo"); */
+/*     let serve_path = hosted.repo.path().to_owned(); */
+/*     /1* thread::spawn(move || helpers::run_test_server(&serve_path, 8123)); *1/ */
+/*     let td = TempDir::new("cgh_test").expect("folder cgh_test should be created"); */
 
-	thread::spawn(move || test_server_main(serve_path));
+/* 	thread::spawn(move || test_server_main(serve_path)); */
 
-    thread::spawn(move || grib::run_proxy::run_proxy(vec![
-        "grib".to_owned(),
-        "--local".to_owned(), format!("{:?}", td.path()).trim_matches('"').to_owned(),
-        "--remote".to_owned(), "http://localhost:8123".to_owned(),
-		"--port=8222".to_owned(),
-    ]));
+/*     thread::spawn(move || grib::run_proxy::run_proxy(vec![ */
+/*         "grib".to_owned(), */
+/*         "--local".to_owned(), format!("{:?}", td.path()).trim_matches('"').to_owned(), */
+/*         "--remote".to_owned(), "http://localhost:8123".to_owned(), */
+/* 		"--port=8222".to_owned(), */
+/*     ])); */
 
-    let local1 = helpers::TestRepo::new();
-    local1.shell.command("git checkout master");
-    local1.add_file("x/some_file");
-    local1.commit("add some file");
-    local1.shell.command("git push http://testuser:supersafe@localhost:8123 HEAD:master");
-
-
-    let local2 = helpers::TestRepo::new();
-    local2.shell.command("git fetch http://testuser:supersafe@localhost:8222 master:r");
-    local2.shell.command("git checkout r");
-	/* loop {}; */
-    assert!(local1.has_file("x/some_file"));
-    assert!(local2.has_file("x/some_file"));
+/*     let local1 = helpers::TestRepo::new(); */
+/*     local1.shell.command("git checkout master"); */
+/*     local1.add_file("x/some_file"); */
+/*     local1.commit("add some file"); */
+/*     local1.shell.command("git push http://testuser:supersafe@localhost:8123 HEAD:master"); */
 
 
-}
+/*     let local2 = helpers::TestRepo::new(); */
+/*     local2.shell.command("git fetch http://testuser:supersafe@localhost:8222 master:r"); */
+/*     local2.shell.command("git checkout r"); */
+/* 	/1* loop {}; *1/ */
+/*     assert!(local1.has_file("x/some_file")); */
+/*     assert!(local2.has_file("x/some_file")); */
+
+
+/* } */
 
 /* #[test] */
 /* fn test_integration() */

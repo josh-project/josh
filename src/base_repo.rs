@@ -25,13 +25,15 @@ pub fn fetch_origin_master(
         let rest = splitted[1];
         format!("{}://{}@{}", &proto, &username, &rest)
     };
-    let cmd = format!("git config --global credential.helper '!f() {{ echo \"password={}\"; }}; f'", &password);
-    shell.command(&cmd);
     let cmd = format!("git config --local credential.helper '!f() {{ echo \"password={}\"; }}; f'", &password);
     shell.command(&cmd);
 
     let cmd = format!("git fetch {} '{}'", &nurl, &spec);
-    shell.command(&cmd);
+    println!("fetch_origin_master {:?} {:?} {:?}", cmd, path, "");
+    let (stdout, stderr) = shell.command(&cmd);
+    if stderr.contains("fatal: Authentication failed") {
+        return Err(git2::Error::from_str("auth"));
+    }
     return Ok(());
 }
 
