@@ -8,9 +8,9 @@
 
   $ git status
   On branch master
-
+  
   No commits yet
-
+  
   nothing to commit (create/copy files and use "git add" to track)
 
   $ mkdir sub1
@@ -25,7 +25,7 @@
   .
   `-- sub1
       `-- file1
-
+  
   1 directory, 1 file
 
   $ git push
@@ -41,7 +41,11 @@
   $ tree
   .
   `-- file1
-
+  
   0 directories, 1 file
+
+  $ cat file1
+  contents1
+
   $ bash ${TESTDIR}/destroy_test_env.sh
 
