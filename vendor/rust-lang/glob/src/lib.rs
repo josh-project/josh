@@ -325,7 +325,7 @@ impl Iterator for Paths {
         // failing to fill the buffer is an iteration error construction of the
         // iterator (i.e. glob()) only fails if it fails to compile the Pattern
         if let Some(scope) = self.scope.take() {
-            if self.dir_patterns.len() > 0 {
+            if !self.dir_patterns.is_empty() {
                 // Shouldn't happen, but we're using -1 as a special index.
                 assert!(self.dir_patterns.len() < !0 as usize);
 
@@ -790,7 +790,7 @@ fn fill_todo(todo: &mut Vec<Result<(PathBuf, usize), GlobError>>,
     // convert a pattern that's just many Char(_) to a string
     fn pattern_as_str(pattern: &Pattern) -> Option<String> {
         let mut s = String::new();
-        for token in pattern.tokens.iter() {
+        for token in &pattern.tokens {
             match *token {
                 Char(c) => s.push(c),
                 _ => return None,
@@ -854,8 +854,8 @@ fn fill_todo(todo: &mut Vec<Result<(PathBuf, usize), GlobError>>,
                     // requires that the pattern has a leading dot, even if the
                     // `MatchOptions` field `require_literal_leading_dot` is not
                     // set.
-                    if pattern.tokens.len() > 0 && pattern.tokens[0] == Char('.') {
-                        for &special in [".", ".."].iter() {
+                    if !pattern.tokens.is_empty() && pattern.tokens[0] == Char('.') {
+                        for &special in &[".", ".."] {
                             if pattern.matches_with(special, options) {
                                 add(todo, path.join(special));
                             }
