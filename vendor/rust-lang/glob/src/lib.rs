@@ -149,7 +149,7 @@ pub struct Paths {
 /// ```
 /// Paths are yielded in alphabetical order.
 pub fn glob(pattern: &str) -> Result<Paths, PatternError> {
-    glob_with(pattern, &MatchOptions::new())
+    glob_with(pattern, MatchOptions::new())
 }
 
 /// Return an iterator that produces all the `Path`s that match the given
@@ -165,7 +165,7 @@ pub fn glob(pattern: &str) -> Result<Paths, PatternError> {
 /// passed to this function.
 ///
 /// Paths are yielded in alphabetical order.
-pub fn glob_with(pattern: &str, options: &MatchOptions)
+pub fn glob_with(pattern: &str, options: MatchOptions)
                  -> Result<Paths, PatternError> {
     #[cfg(windows)]
     fn check_windows_verbatim(p: &Path) -> bool {
@@ -222,13 +222,13 @@ pub fn glob_with(pattern: &str, options: &MatchOptions)
         return Ok(Paths {
             dir_patterns: Vec::new(),
             require_dir: false,
-            options: options.clone(),
+            options,
             todo: Vec::new(),
             scope: None,
         });
     }
 
-    let scope = root.map(to_scope).unwrap_or_else(|| PathBuf::from("."));
+    let scope = root.map_or_else(|| PathBuf::from("."), to_scope);
 
     let mut dir_patterns = Vec::new();
     let components = pattern[cmp::min(root_len, pattern.len())..]
@@ -253,7 +253,7 @@ pub fn glob_with(pattern: &str, options: &MatchOptions)
     Ok(Paths {
         dir_patterns,
         require_dir,
-        options: options.clone(),
+        options,
         todo,
         scope: Some(scope),
     })
@@ -333,7 +333,7 @@ impl Iterator for Paths {
                           &self.dir_patterns,
                           0,
                           &scope,
-                          &self.options);
+                          self.options);
             }
         }
 
@@ -373,7 +373,7 @@ impl Iterator for Paths {
                               &self.dir_patterns,
                               next,
                               &path,
-                              &self.options);
+                              self.options);
 
                     if next == self.dir_patterns.len() - 1 {
                         // pattern ends in recursive pattern, so return this
@@ -402,7 +402,7 @@ impl Iterator for Paths {
                     None => continue,
                     Some(x) => x
                 }
-            }, &self.options) {
+            }, self.options) {
                 if idx == self.dir_patterns.len() - 1 {
                     // it is not possible for a pattern to match a directory
                     // *AND* its children so we don't need to check the
@@ -413,7 +413,7 @@ impl Iterator for Paths {
                     }
                 } else {
                     fill_todo(&mut self.todo, &self.dir_patterns,
-                              idx + 1, &path, &self.options);
+                              idx + 1, &path, self.options);
                 }
             }
         }
@@ -674,7 +674,7 @@ impl Pattern {
     /// assert!(Pattern::new("d*g").unwrap().matches("doog"));
     /// ```
     pub fn matches(&self, str: &str) -> bool {
-        self.matches_with(str, &MatchOptions::new())
+        self.matches_with(str, MatchOptions::new())
     }
 
     /// Return if the given `Path`, when converted to a `str`, matches this
@@ -686,13 +686,13 @@ impl Pattern {
 
     /// Return if the given `str` matches this `Pattern` using the specified
     /// match options.
-    pub fn matches_with(&self, str: &str, options: &MatchOptions) -> bool {
+    pub fn matches_with(&self, str: &str, options: MatchOptions) -> bool {
         self.matches_from(true, str.chars(), 0, options) == Match
     }
 
     /// Return if the given `Path`, when converted to a `str`, matches this
     /// `Pattern` using the specified match options.
-    pub fn matches_path_with(&self, path: &Path, options: &MatchOptions) -> bool {
+    pub fn matches_path_with(&self, path: &Path, options: MatchOptions) -> bool {
         // FIXME (#9639): This needs to handle non-utf8 paths
         path.to_str().map_or(false, |s| self.matches_with(s, options))
     }
@@ -706,7 +706,7 @@ impl Pattern {
                     mut follows_separator: bool,
                     mut file: std::str::Chars,
                     i: usize,
-                    options: &MatchOptions)
+                    options: MatchOptions)
                     -> MatchResult {
 
         for (ti, token) in self.tokens[i..].iter().enumerate() {
@@ -786,7 +786,7 @@ fn fill_todo(todo: &mut Vec<Result<(PathBuf, usize), GlobError>>,
              patterns: &[Pattern],
              idx: usize,
              path: &Path,
-             options: &MatchOptions) {
+             options: MatchOptions) {
     // convert a pattern that's just many Char(_) to a string
     fn pattern_as_str(pattern: &Pattern) -> Option<String> {
         let mut s = String::new();
@@ -891,7 +891,7 @@ fn parse_char_specifiers(s: &[char]) -> Vec<CharSpecifier> {
     cs
 }
 
-fn in_char_specifiers(specifiers: &[CharSpecifier], c: char, options: &MatchOptions) -> bool {
+fn in_char_specifiers(specifiers: &[CharSpecifier], c: char, options: MatchOptions) -> bool {
 
     for &specifier in specifiers.iter() {
         match specifier {
