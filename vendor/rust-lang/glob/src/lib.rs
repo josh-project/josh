@@ -383,13 +383,13 @@ impl Iterator for Paths {
                         // advanced to the next pattern for this path
                         idx = next + 1;
                     }
-                } else if next != self.dir_patterns.len() - 1 {
-                    // advanced to the next pattern for this path
-                    idx = next + 1;
-                } else {
+                } else if next == self.dir_patterns.len() - 1 {
                     // not a directory and it's the last pattern, meaning no
                     // match
                     continue;
+                } else {
+                    // advanced to the next pattern for this path
+                    idx = next + 1;
                 }
             }
 
