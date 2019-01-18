@@ -251,10 +251,10 @@ pub fn glob_with(pattern: &str, options: &MatchOptions)
     let todo = Vec::new();
 
     Ok(Paths {
-        dir_patterns: dir_patterns,
-        require_dir: require_dir,
+        dir_patterns,
+        require_dir,
         options: options.clone(),
-        todo: todo,
+        todo,
         scope: Some(scope),
     })
 }
@@ -633,9 +633,9 @@ impl Pattern {
         }
 
         Ok(Pattern {
-            tokens: tokens,
+            tokens,
             original: pattern.to_string(),
-            is_recursive: is_recursive,
+            is_recursive,
         })
     }
 
