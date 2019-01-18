@@ -516,10 +516,10 @@ enum MatchResult {
     EntirePatternDoesntMatch,
 }
 
-const ERROR_WILDCARDS: &'static str = "wildcards are either regular `*` or recursive `**`";
-const ERROR_RECURSIVE_WILDCARDS: &'static str = "recursive wildcards must form a single path \
+const ERROR_WILDCARDS: &str = "wildcards are either regular `*` or recursive `**`";
+const ERROR_RECURSIVE_WILDCARDS: &str = "recursive wildcards must form a single path \
                                                  component";
-const ERROR_INVALID_RANGE: &'static str = "invalid range pattern";
+const ERROR_INVALID_RANGE: &str = "invalid range pattern";
 
 impl Pattern {
     /// This function compiles Unix shell style patterns.
