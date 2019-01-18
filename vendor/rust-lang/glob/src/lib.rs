@@ -698,7 +698,7 @@ impl Pattern {
     }
 
     /// Access the original glob pattern.
-    pub fn as_str<'a>(&'a self) -> &'a str {
+    pub fn as_str(&self) -> &str {
         &self.original
     }
 
