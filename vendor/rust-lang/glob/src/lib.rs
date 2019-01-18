@@ -796,7 +796,8 @@ fn fill_todo(todo: &mut Vec<Result<(PathBuf, usize), GlobError>>,
                 _ => return None,
             }
         }
-        return Some(s);
+
+        Some(s)
     }
 
     let add = |todo: &mut Vec<_>, next_path: PathBuf| {
