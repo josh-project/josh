@@ -61,8 +61,6 @@
 #![deny(missing_docs)]
 #![cfg_attr(all(test, windows), feature(std_misc))]
 
-#[allow(unused_imports)]
-use std::ascii::AsciiExt;
 use std::cmp;
 use std::fmt;
 use std::fs;
