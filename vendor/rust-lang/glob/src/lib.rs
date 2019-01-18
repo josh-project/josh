@@ -488,8 +488,8 @@ impl fmt::Display for Pattern {
 impl FromStr for Pattern {
     type Err = PatternError;
 
-    fn from_str(s: &str) -> Result<Pattern, PatternError> {
-        Pattern::new(s)
+    fn from_str(s: &str) -> Result<Self, PatternError> {
+        Self::new(s)
     }
 }
 
@@ -525,7 +525,7 @@ impl Pattern {
     /// This function compiles Unix shell style patterns.
     ///
     /// An invalid glob pattern will yield a `PatternError`.
-    pub fn new(pattern: &str) -> Result<Pattern, PatternError> {
+    pub fn new(pattern: &str) -> Result<Self, PatternError> {
 
         let chars = pattern.chars().collect::<Vec<_>>();
         let mut tokens = Vec::new();
@@ -632,7 +632,7 @@ impl Pattern {
             }
         }
 
-        Ok(Pattern {
+        Ok(Self {
             tokens,
             original: pattern.to_string(),
             is_recursive,
@@ -981,8 +981,8 @@ impl MatchOptions {
     ///     require_literal_leading_dot: false
     /// }
     /// ```
-    pub fn new() -> MatchOptions {
-        MatchOptions {
+    pub fn new() -> Self {
+        Self {
             case_sensitive: true,
             require_literal_separator: false,
             require_literal_leading_dot: false,
