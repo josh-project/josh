@@ -1031,7 +1031,7 @@ mod test {
     // this test assumes that there is a /root directory and that
     // the user running this test is not root or otherwise doesn't
     // have permission to read its contents
-    #[cfg(unix)]
+    #[cfg(all(unix, not(target_os="macos")))]
     #[test]
     fn test_iteration_errors() {
         use std::io;
