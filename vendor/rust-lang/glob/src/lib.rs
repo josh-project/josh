@@ -1169,7 +1169,7 @@ mod test {
             }
             for c in "ABCDEFGHIJKLMNOPQRSTUVWXYZ".chars() {
                 let options = MatchOptions { case_sensitive: false, ..MatchOptions::new() };
-                assert!(pat.matches_with(&c.to_string(), &options));
+                assert!(pat.matches_with(&c.to_string(), options));
             }
             assert!(pat.matches("1"));
             assert!(pat.matches("2"));
@@ -1229,10 +1229,10 @@ mod test {
             require_literal_leading_dot: false,
         };
 
-        assert!(pat.matches_with("aBcDeFg", &options));
-        assert!(pat.matches_with("abcdefg", &options));
-        assert!(pat.matches_with("ABCDEFG", &options));
-        assert!(pat.matches_with("AbCdEfG", &options));
+        assert!(pat.matches_with("aBcDeFg", options));
+        assert!(pat.matches_with("abcdefg", options));
+        assert!(pat.matches_with("ABCDEFG", options));
+        assert!(pat.matches_with("AbCdEfG", options));
     }
 
     #[test]
@@ -1252,13 +1252,13 @@ mod test {
             require_literal_leading_dot: false,
         };
 
-        assert!(pat_within.matches_with("a", &options_case_insensitive));
-        assert!(pat_within.matches_with("A", &options_case_insensitive));
-        assert!(!pat_within.matches_with("A", &options_case_sensitive));
+        assert!(pat_within.matches_with("a", options_case_insensitive));
+        assert!(pat_within.matches_with("A", options_case_insensitive));
+        assert!(!pat_within.matches_with("A", options_case_sensitive));
 
-        assert!(!pat_except.matches_with("a", &options_case_insensitive));
-        assert!(!pat_except.matches_with("A", &options_case_insensitive));
-        assert!(pat_except.matches_with("A", &options_case_sensitive));
+        assert!(!pat_except.matches_with("a", options_case_insensitive));
+        assert!(!pat_except.matches_with("A", options_case_insensitive));
+        assert!(pat_except.matches_with("A", options_case_sensitive));
     }
 
     #[test]
@@ -1275,29 +1275,29 @@ mod test {
             require_literal_leading_dot: false,
         };
 
-        assert!(Pattern::new("abc/def").unwrap().matches_with("abc/def", &options_require_literal));
+        assert!(Pattern::new("abc/def").unwrap().matches_with("abc/def", options_require_literal));
         assert!(!Pattern::new("abc?def")
                      .unwrap()
-                     .matches_with("abc/def", &options_require_literal));
+                     .matches_with("abc/def", options_require_literal));
         assert!(!Pattern::new("abc*def")
                      .unwrap()
-                     .matches_with("abc/def", &options_require_literal));
+                     .matches_with("abc/def", options_require_literal));
         assert!(!Pattern::new("abc[/]def")
                      .unwrap()
-                     .matches_with("abc/def", &options_require_literal));
+                     .matches_with("abc/def", options_require_literal));
 
         assert!(Pattern::new("abc/def")
                     .unwrap()
-                    .matches_with("abc/def", &options_not_require_literal));
+                    .matches_with("abc/def", options_not_require_literal));
         assert!(Pattern::new("abc?def")
                     .unwrap()
-                    .matches_with("abc/def", &options_not_require_literal));
+                    .matches_with("abc/def", options_not_require_literal));
         assert!(Pattern::new("abc*def")
                     .unwrap()
-                    .matches_with("abc/def", &options_not_require_literal));
+                    .matches_with("abc/def", options_not_require_literal));
         assert!(Pattern::new("abc[/]def")
                     .unwrap()
-                    .matches_with("abc/def", &options_not_require_literal));
+                    .matches_with("abc/def", options_not_require_literal));
     }
 
     #[test]
@@ -1315,38 +1315,38 @@ mod test {
         };
 
         let f = |options| Pattern::new("*.txt").unwrap().matches_with(".hello.txt", options);
-        assert!(f(&options_not_require_literal_leading_dot));
-        assert!(!f(&options_require_literal_leading_dot));
+        assert!(f(options_not_require_literal_leading_dot));
+        assert!(!f(options_require_literal_leading_dot));
 
         let f = |options| Pattern::new(".*.*").unwrap().matches_with(".hello.txt", options);
-        assert!(f(&options_not_require_literal_leading_dot));
-        assert!(f(&options_require_literal_leading_dot));
+        assert!(f(options_not_require_literal_leading_dot));
+        assert!(f(options_require_literal_leading_dot));
 
         let f = |options| Pattern::new("aaa/bbb/*").unwrap().matches_with("aaa/bbb/.ccc", options);
-        assert!(f(&options_not_require_literal_leading_dot));
-        assert!(!f(&options_require_literal_leading_dot));
+        assert!(f(options_not_require_literal_leading_dot));
+        assert!(!f(options_require_literal_leading_dot));
 
         let f = |options| {
             Pattern::new("aaa/bbb/*").unwrap().matches_with("aaa/bbb/c.c.c.", options)
         };
-        assert!(f(&options_not_require_literal_leading_dot));
-        assert!(f(&options_require_literal_leading_dot));
+        assert!(f(options_not_require_literal_leading_dot));
+        assert!(f(options_require_literal_leading_dot));
 
         let f = |options| Pattern::new("aaa/bbb/.*").unwrap().matches_with("aaa/bbb/.ccc", options);
-        assert!(f(&options_not_require_literal_leading_dot));
-        assert!(f(&options_require_literal_leading_dot));
+        assert!(f(options_not_require_literal_leading_dot));
+        assert!(f(options_require_literal_leading_dot));
 
         let f = |options| Pattern::new("aaa/?bbb").unwrap().matches_with("aaa/.bbb", options);
-        assert!(f(&options_not_require_literal_leading_dot));
-        assert!(!f(&options_require_literal_leading_dot));
+        assert!(f(options_not_require_literal_leading_dot));
+        assert!(!f(options_require_literal_leading_dot));
 
         let f = |options| Pattern::new("aaa/[.]bbb").unwrap().matches_with("aaa/.bbb", options);
-        assert!(f(&options_not_require_literal_leading_dot));
-        assert!(!f(&options_require_literal_leading_dot));
+        assert!(f(options_not_require_literal_leading_dot));
+        assert!(!f(options_require_literal_leading_dot));
 
         let f = |options| Pattern::new("**/*").unwrap().matches_with(".bbb", options);
-        assert!(f(&options_not_require_literal_leading_dot));
-        assert!(!f(&options_require_literal_leading_dot));
+        assert!(f(options_not_require_literal_leading_dot));
+        assert!(!f(options_require_literal_leading_dot));
     }
 
     #[test]
