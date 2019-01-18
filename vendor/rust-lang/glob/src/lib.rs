@@ -48,7 +48,7 @@
 //!     require_literal_separator: false,
 //!     require_literal_leading_dot: false,
 //! };
-//! for entry in glob_with("local/*a*", &options).unwrap() {
+//! for entry in glob_with("local/*a*", options).unwrap() {
 //!     if let Ok(path) = entry {
 //!         println!("{:?}", path.display())
 //!     }
