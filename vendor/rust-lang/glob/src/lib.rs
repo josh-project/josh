@@ -167,9 +167,6 @@ pub fn glob(pattern: &str) -> Result<Paths, PatternError> {
 /// Paths are yielded in alphabetical order.
 pub fn glob_with(pattern: &str, options: &MatchOptions)
                  -> Result<Paths, PatternError> {
-    // make sure that the pattern is valid first, else early return with error
-    let _compiled = try!(Pattern::new(pattern));
-
     #[cfg(windows)]
     fn check_windows_verbatim(p: &Path) -> bool {
         use std::path::Prefix;
@@ -192,6 +189,12 @@ pub fn glob_with(pattern: &str, options: &MatchOptions)
     fn to_scope(p: &Path) -> PathBuf {
         p.to_path_buf()
     }
+
+    // make sure that the pattern is valid first, else early return with error
+    if let Err(err) = Pattern::new(pattern) {
+        return Err(err);
+    }
+
 
     let mut components = Path::new(pattern).components().peekable();
     loop {
@@ -232,8 +235,7 @@ pub fn glob_with(pattern: &str, options: &MatchOptions)
                          .split_terminator(path::is_separator);
 
     for component in components {
-        let compiled = try!(Pattern::new(component));
-        dir_patterns.push(compiled);
+        dir_patterns.push(Pattern::new(component)?);
     }
 
     if root_len == pattern.len() {
