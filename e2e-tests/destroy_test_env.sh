@@ -1,3 +1,3 @@
 #!/bin/bash
-kill $(cat ${CRAMTMP}/server_pid)
-kill $(cat ${CRAMTMP}/proxy_pid)
+#kill $(cat ${TESTTMP}/server_pid) &> /dev/null
+#kill $(cat ${TESTTMP}/proxy_pid) &> /dev/null

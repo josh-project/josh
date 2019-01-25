@@ -1,5 +1,5 @@
-  $ bash ${TESTDIR}/setup_test_env.sh
-  $ cd ${CRAMTMP}
+  $ source ${TESTDIR}/setup_test_env.sh
+  $ cd ${TESTTMP}
 
   $ git clone -q http://testuser:supersafe@localhost:8001/real_repo.git
   warning: You appear to have cloned an empty repository.
@@ -32,7 +32,7 @@
   To http://localhost:8001/real_repo.git
    * [new branch]      master -> master
 
-  $ cd ${CRAMTMP}
+  $ cd ${TESTTMP}
 
   $ git clone -q http://testuser:supersafe@localhost:8002/real_repo.git/sub1.git
 
