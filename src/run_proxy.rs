@@ -28,8 +28,10 @@ use std::sync::{Arc, Mutex};
 use std::net;
 
 lazy_static! {
-    static ref URL_REGEX: Regex =
-        Regex::new(r"(?P<prefix>/.*[.]git)/(?P<view>.*)[.]git(?P<pathinfo>.*)").expect("can't compile regex");
+    static ref VIEW_REGEX: Regex =
+        Regex::new(r"(?P<prefix>/.*[.]git)/(?P<view>.*)[.]git(?P<pathinfo>/.*)").expect("can't compile regex");
+    static ref FULL_REGEX: Regex =
+        Regex::new(r"(?P<prefix>/.*[.]git)(?P<pathinfo>/.*)").expect("can't compile regex");
 }
 
 struct GribHttp
@@ -90,23 +92,21 @@ impl Service for GribHttp
 
     fn call(&self, req: Request) -> Self::Future
     {
-        let (prefix,view_string, pathinfo) = if let Some(caps) = URL_REGEX.captures(&req.uri().path()) {
+        let (prefix, view_string, pathinfo) = if let Some(caps) = VIEW_REGEX.captures(&req.uri().path()) {
             (
-                caps.name("prefix")
-                    .expect("can't find name prefix")
-                    .as_str()
-                    .to_string(),
-                caps.name("view")
-                    .expect("can't find pathinfo")
-                    .as_str()
-                    .to_string(),
-                caps.name("pathinfo")
-                    .expect("can't find pathinfo")
-                    .as_str()
-                    .to_string(),
+                caps.name("prefix").unwrap().as_str().to_string(),
+                caps.name("view").unwrap().as_str().to_string(),
+                caps.name("pathinfo").unwrap().as_str().to_string(),
+            )
+        } else if let Some(caps) = FULL_REGEX.captures(&req.uri().path()) {
+            (
+                caps.name("prefix").unwrap().as_str().to_string(),
+                ".".to_string(),
+                caps.name("pathinfo").unwrap().as_str().to_string(),
             )
         } else {
-            (String::new(), String::new(), String::new())
+            let response = Response::new().with_status(hyper::StatusCode::NotFound);
+            return Box::new(futures::future::ok(response));
         };
 
         println!("PREFIX: {}", &prefix);
