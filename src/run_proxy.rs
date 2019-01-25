@@ -28,12 +28,8 @@ use std::sync::{Arc, Mutex};
 use std::net;
 
 lazy_static! {
-    static ref PREFIX_RE: Regex =
-        Regex::new(r"(?P<prefix>/.*[.]git)/.*.git").expect("can't compile regex");
-    static ref VIEW_RE: Regex =
-        Regex::new(r".git/(?P<view>.*)[.]git/.*").expect("can't compile regex");
-    static ref PATHINFO_RE: Regex =
-        Regex::new(r"/.*[.]git/.*[.]git(?P<pathinfo>.*)").expect("can't compile regex");
+    static ref URL_REGEX: Regex =
+        Regex::new(r"(?P<prefix>/.*[.]git)/(?P<view>.*)[.]git(?P<pathinfo>.*)").expect("can't compile regex");
 }
 
 struct GribHttp
@@ -50,7 +46,7 @@ impl GribHttp
     fn async_fetch(
         &self,
         prefix: &str,
-        path: &str,
+        view_string: &str,
         username: &str,
         password: &str,
     ) -> Box<Future<Item = Result<PathBuf, git2::Error>, Error = hyper::Error>>
@@ -70,10 +66,10 @@ impl GribHttp
 
         Box::new(
             self.pool
-                .spawn(futures::future::ok(path.to_owned()).map(move |path| {
+                .spawn(futures::future::ok(view_string.to_owned()).map(move |view_string| {
                     match base_repo::fetch_origin_master(&br_path, &br_url, &username, &password) {
-                        Ok(_) => Ok(
-                            make_view_repo(&path, &br_path, &username, &password, &br_url, cache),
+                        Ok(_) => Ok({
+                            make_view_repo(&view_string, &br_path, &username, &password, &br_url, cache)},
                         ),
                         Err(e) => Err(e),
                     }
@@ -94,29 +90,28 @@ impl Service for GribHttp
 
     fn call(&self, req: Request) -> Self::Future
     {
-        let prefix = if let Some(caps) = PREFIX_RE.captures(&req.uri().path()) {
-            caps.name("prefix")
-                .expect("can't find name prefix")
-                .as_str()
-                .to_string()
+        let (prefix,view_string, pathinfo) = if let Some(caps) = URL_REGEX.captures(&req.uri().path()) {
+            (
+                caps.name("prefix")
+                    .expect("can't find name prefix")
+                    .as_str()
+                    .to_string(),
+                caps.name("view")
+                    .expect("can't find pathinfo")
+                    .as_str()
+                    .to_string(),
+                caps.name("pathinfo")
+                    .expect("can't find pathinfo")
+                    .as_str()
+                    .to_string(),
+            )
         } else {
-            String::new()
+            (String::new(), String::new(), String::new())
         };
 
-        let pathinfo = if let Some(caps) = PATHINFO_RE.captures(&req.uri().path()) {
-            caps.name("pathinfo")
-                .expect("can't find pathinfo")
-                .as_str()
-                .to_string()
-        } else {
-            String::new()
-        };
-
-        let path_without_prefix = if prefix != "" {
-            req.uri().path().replacen(&prefix, "", 1)
-        } else {
-            req.uri().path().to_owned()
-        };
+        println!("PREFIX: {}", &prefix);
+        println!("VIEW: {}", &view_string);
+        println!("PATH_INFO: {:?}", &pathinfo);
 
         let (username, password) = match req.headers().get() {
             Some(&Authorization(Basic {
@@ -136,7 +131,7 @@ impl Service for GribHttp
         let handle = self.handle.clone();
 
         Box::new({
-            self.async_fetch(&prefix, &req.uri().path(), &username, &password)
+            self.async_fetch(&prefix, &view_string, &username, &password)
                 .and_then(move |view_repo| match view_repo {
                     Err(e) => {
                         println!("async_fetch error {:?}", e);
@@ -151,7 +146,6 @@ impl Service for GribHttp
                         println!("CALLING git-http backend {:?} {:?}", path, pathinfo);
                         let mut cmd = Command::new("git");
                         cmd.arg("http-backend");
-                        /* let mut cmd = Command::new("cat"); */
                         cmd.current_dir(&path);
                         cmd.env("GIT_PROJECT_ROOT", path.to_str().unwrap());
                         cmd.env("GIT_DIR", path.to_str().unwrap());
@@ -263,7 +257,7 @@ fn run_http_server(
 }
 
 fn make_view_repo(
-    url: &str,
+    view_string: &str,
     br_path: &Path,
     user: &str,
     password: &str,
@@ -271,14 +265,6 @@ fn make_view_repo(
     cache: Arc<Mutex<scratch::ViewCaches>>,
 ) -> PathBuf
 {
-    let view_string = if let Some(caps) = VIEW_RE.captures(&url) {
-        caps.name("view").unwrap().as_str().to_owned()
-    } else {
-        ".".to_owned()
-    };
-
-    println!("VIEW {}", &view_string);
-
     let scratch = scratch::new(&br_path);
 
     for branch in scratch.branches(None).unwrap() {
