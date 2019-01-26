@@ -51,26 +51,21 @@ fn async_fetch(
     view_string: &str,
     username: &str,
     password: &str,
+    remote_url: String,
 ) -> Box<Future<Item = Result<PathBuf, git2::Error>, Error = hyper::Error>>
 {
     let br_path = http.base_path.join(prefix.trim_left_matches("/"));
     base_repo::create_local(&br_path);
 
-    let br_url = {
-        println!("XXXXXX {:?} {:?} {} {}", http.base_path, br_path, http.base_url, prefix);
-        let mut br_url = http.base_url.clone();
-        br_url.push_str(prefix);
-        br_url
-    };
     let username = username.to_owned();
     let password = password.to_owned();
     let cache = http.cache.clone();
 
     Box::new(http.pool.spawn(
         futures::future::ok(view_string.to_owned()).map(move |view_string| {
-            match base_repo::fetch_origin_master(&br_path, &br_url, &username, &password) {
+            match base_repo::fetch_origin_master(&br_path, &remote_url, &username, &password) {
                 Ok(_) => Ok(
-                    make_view_repo(&view_string, &br_path, &username, &password, &br_url, cache),
+                    make_view_repo(&view_string, &br_path, cache),
                 ),
                 Err(e) => Err(e),
             }
@@ -99,22 +94,17 @@ impl Service for GribHttp
 
     fn call(&self, req: Request) -> Self::Future
     {
-        let call_git_http_backend =
-            |request: Request,
-             path: PathBuf,
-             pathinfo: &str,
-             handle: &tokio_core::reactor::Handle| {
-                println!("CALLING git-http backend {:?} {:?}", path, pathinfo);
-                let mut cmd = Command::new("git");
-                cmd.arg("http-backend");
-                cmd.current_dir(&path);
-                cmd.env("GIT_PROJECT_ROOT", path.to_str().unwrap());
-                cmd.env("GIT_DIR", path.to_str().unwrap());
-                cmd.env("GIT_HTTP_EXPORT_ALL", "");
-                cmd.env("PATH_INFO", pathinfo);
+        let (username, password) = match req.headers().get() {
+            Some(&Authorization(Basic {
+                ref username,
+                ref password,
+            })) => (username.to_owned(), password.to_owned().unwrap_or("".to_owned()).to_owned()),
+            _ => {
+                println!("no credentials in request");
+                return Box::new(futures::future::ok(respond_unauthorized()));
+            }
+        };
 
-                cgi::do_cgi(request, cmd, handle.clone())
-            };
 
         let (prefix, view_string, pathinfo) =
             if let Some(caps) = VIEW_REGEX.captures(&req.uri().path()) {
@@ -134,27 +124,52 @@ impl Service for GribHttp
                 return Box::new(futures::future::ok(response));
             };
 
+        let passwd = password.clone();
+        let usernm = username.clone();
+        let viewstr = view_string.clone();
+        let br_path = self.base_path.join(prefix.trim_left_matches("/"));
+
+        let remote_url = {
+            let mut remote_url = self.base_url.clone();
+            remote_url.push_str(&prefix);
+            remote_url
+        };
+
+        let br_url = remote_url.clone();
+
+        let call_git_http_backend =
+            |request: Request,
+             path: PathBuf,
+             pathinfo: &str,
+             handle: &tokio_core::reactor::Handle| {
+                println!("CALLING git-http backend {:?} {:?}", path, pathinfo);
+                let mut cmd = Command::new("git");
+                cmd.arg("http-backend");
+                cmd.current_dir(&path);
+                cmd.env("GIT_PROJECT_ROOT", path.to_str().unwrap());
+                cmd.env("GIT_DIR", path.to_str().unwrap());
+                cmd.env("GIT_HTTP_EXPORT_ALL", "");
+                cmd.env("PATH_INFO", pathinfo);
+                cmd.env("GRIB_PASSWORD", passwd);
+                cmd.env("GRIB_USERNAME", usernm);
+                cmd.env("GRIB_VIEW", viewstr);
+                cmd.env("GRIB_BR_PATH", br_path);
+                cmd.env("GRIB_REMOTE", remote_url);
+
+                cgi::do_cgi(request, cmd, handle.clone())
+            };
+
         println!("PREFIX: {}", &prefix);
         println!("VIEW: {}", &view_string);
         println!("PATH_INFO: {:?}", &pathinfo);
 
-        let (username, password) = match req.headers().get() {
-            Some(&Authorization(Basic {
-                ref username,
-                ref password,
-            })) => (username.to_owned(), password.to_owned().unwrap_or("".to_owned()).to_owned()),
-            _ => {
-                println!("no credentials in request");
-                return Box::new(futures::future::ok(respond_unauthorized()));
-            }
-        };
 
 
         let handle = self.handle.clone();
 
 
         Box::new({
-            async_fetch(&self, &prefix, &view_string, &username, &password).and_then(
+            async_fetch(&self, &prefix, &view_string, &username, &password, br_url).and_then(
                 move |view_repo| match view_repo {
                     Err(e) =>
                     {
@@ -264,9 +279,6 @@ fn run_http_server(addr: net::SocketAddr, pool: &CpuPool, local: &Path, remote: 
 fn make_view_repo(
     view_string: &str,
     br_path: &Path,
-    user: &str,
-    password: &str,
-    remote_url: &str,
     cache: Arc<Mutex<scratch::ViewCaches>>,
 ) -> PathBuf
 {
@@ -281,5 +293,5 @@ fn make_view_repo(
         );
     }
 
-    virtual_repo::setup_tmp_repo(&br_path, &view_string, &user, &password, &remote_url)
+    virtual_repo::setup_tmp_repo(&br_path, &view_string)
 }

@@ -1,5 +1,6 @@
 use super::*;
 use git2::Oid;
+use std::env;
 use std::env::current_exe;
 use std::fs::File;
 use std::io::Read;
@@ -7,14 +8,7 @@ use std::os::unix::fs::symlink;
 use std::path::Path;
 use std::path::PathBuf;
 
-pub fn setup_tmp_repo(
-    scratch_dir: &Path,
-    view: &str,
-    user: &str,
-    password: &str,
-    remote_url: &str,
-) -> PathBuf
-{
+pub fn setup_tmp_repo(scratch_dir: &Path, view: &str) -> PathBuf {
     let path = thread_local_temp_dir();
 
     let root = match view {
@@ -41,38 +35,21 @@ pub fn setup_tmp_repo(
     ));
     symlink(scratch_dir.join("objects"), path.join("objects")).expect("can't symlink objects");
 
-    shell.command(&format!("printf {} > view", view));
-
-    shell.command(&format!("printf {} > orig", scratch_dir.to_string_lossy()));
-    shell.command(&format!("printf {} > username", user));
-    shell.command(&format!("printf {} > password", password));
-    shell.command(&format!("printf {} > remote_url", remote_url));
     shell.command("git config http.receivepack true");
     shell.command("rm -Rf refs/for");
     shell.command("rm -Rf refs/drafts");
     return path;
 }
 
-fn read_repo_info_file(name: &str) -> String
-{
-    let mut s = String::new();
-    File::open(&Path::new(&name))
-        .expect(&format!("could not open {} name file", name))
-        .read_to_string(&mut s)
-        .expect(&format!("could not read {} name", name));
-    return s;
-}
+pub fn update_hook(refname: &str, _old: &str, new: &str) -> i32 {
+    let scratch = scratch::new(&Path::new(
+        &env::var("GRIB_BR_PATH").expect("GRIB_BR_PATH not set"),
+    ));
 
-pub fn update_hook(refname: &str, _old: &str, new: &str) -> i32
-{
-    let scratch = scratch::new(&Path::new(&read_repo_info_file("orig")));
-
-    let username = read_repo_info_file("username");
-    let password = read_repo_info_file("password");
-    let remote_url = read_repo_info_file("remote_url");
-    let viewname = read_repo_info_file("view");
-
-    println!("REMOTE URL {:?}", &remote_url);
+    let username = env::var("GRIB_USERNAME").expect("GRIB_USERNAME not set");
+    let password = env::var("GRIB_PASSWORD").expect("GRIB_PASSWORD not set");
+    let remote_url = env::var("GRIB_REMOTE").expect("GRIB_REMOTE not set");
+    let viewname = env::var("GRIB_VIEW").expect("GRIB_VIEW not set");
 
     let r = git2::Repository::open_from_env().unwrap();
 
@@ -91,11 +68,14 @@ pub fn update_hook(refname: &str, _old: &str, new: &str) -> i32
         let without_refs_for = without_refs_for.trim_left_matches("refs/drafts/");
         let without_refs_for = without_refs_for.trim_left_matches("refs/heads/");
 
-        let without_refs_for = format!("refs/heads/{}",&without_refs_for);
+        let without_refs_for = format!("refs/heads/{}", &without_refs_for);
 
-        let central_head = scratch
-            .refname_to_id(&without_refs_for)
-            .expect(&format!("no ref: {} ({}) in {:?}", &refname, &without_refs_for, scratch.path()));
+        let central_head = scratch.refname_to_id(&without_refs_for).expect(&format!(
+            "no ref: {} ({}) in {:?}",
+            &refname,
+            &without_refs_for,
+            scratch.path()
+        ));
 
         let old = r.refname_to_id(&without_refs_for).unwrap();
 
