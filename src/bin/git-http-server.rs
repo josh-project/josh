@@ -97,23 +97,26 @@ impl Service for ServeTestGit
 
 fn run_test_server(
     addr: net::SocketAddr,
-    repo_path: &Path)
+    repo_path: &Path,
+    username: &str,
+    password: &str)
 {
     let mut core = tokio_core::reactor::Core::new().unwrap();
     let server_handle = core.handle();
-
 
 
     let serve = loop
     {
         let repo_path = repo_path.to_owned();
         let h2 = core.handle();
+        let username = username.to_owned();
+        let password = password.to_owned();
         let make_service = move || {
             let cghttp = ServeTestGit {
                 handle: h2.clone(),
                 repo_path: repo_path.to_owned(),
-                username: "testuser".to_owned(),
-                password: "supersafe".to_owned(),
+                username: username.to_owned(),
+                password: password.to_owned(),
             };
             Ok(cghttp)
         };
@@ -165,6 +168,8 @@ fn run_server(args: Vec<String>) -> i32
                 .takes_value(true),
         )
         .arg(clap::Arg::with_name("port").long("port").takes_value(true))
+        .arg(clap::Arg::with_name("password").long("password").takes_value(true))
+        .arg(clap::Arg::with_name("username").long("username").takes_value(true))
         .get_matches_from(args);
 
 
@@ -174,7 +179,9 @@ fn run_server(args: Vec<String>) -> i32
     let addr = format!("0.0.0.0:{}", port).parse().unwrap();
     run_test_server(
         addr,
-        &PathBuf::from(args.value_of("local").expect("missing local directory"))
+        &PathBuf::from(args.value_of("local").expect("missing local directory")),
+        args.value_of("username").expect("missing username"),
+        args.value_of("password").expect("missing password"),
     );
 
     return 0;

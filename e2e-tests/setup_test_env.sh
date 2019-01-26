@@ -5,9 +5,14 @@ git init --bare ${TESTTMP}/remote/real_repo.git/ &> /dev/null
 git config -f ${TESTTMP}/remote/real_repo.git/config http.receivepack true
 export RUST_LOG=debug
 
+export TESTPASS=$(openssl rand -hex 5)
+export TESTUSER=$(openssl rand -hex 5)
+
 ${TESTDIR}/../target/debug/git-http-server\
     --port=8001\
     --local=${TESTTMP}/remote/\
+    --username=${TESTUSER}\
+    --password=${TESTPASS}\
     &> ${TESTTMP}/git-http-server.out&
 echo $! > ${TESTTMP}/server_pid
 

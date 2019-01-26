@@ -3,7 +3,6 @@ extern crate git2;
 extern crate tempdir;
 use std::fs;
 
-/* use grib::Shell; */
 use super::*;
 use std::path::Path;
 
@@ -30,6 +29,7 @@ pub fn fetch_origin_master(
 
     let cmd = format!("git fetch {} '{}'", &nurl, &spec);
     println!("fetch_origin_master {:?} {:?} {:?}", cmd, path, "");
+
     let (stdout, stderr) = shell.command(&cmd);
     if stderr.contains("fatal: Authentication failed") {
         return Err(git2::Error::from_str("auth"));
@@ -55,8 +55,6 @@ pub fn push_head_url(
         let rest = splitted[1];
         format!("{}://{}@{}", &proto, &username, &rest)
     };
-    let cmd = format!("git config --global credential.helper '!f() {{ echo \"password={}\"; }}; f'", &password);
-    shell.command(&cmd);
     let cmd = format!("git config --local credential.helper '!f() {{ echo \"password={}\"; }}; f'", &password);
     shell.command(&cmd);
     let cmd = format!("git push {} '{}'", &nurl, &spec);

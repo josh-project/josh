@@ -13,25 +13,27 @@ extern crate tokio_core;
 use self::futures::Stream;
 use self::futures::future::Future;
 use self::futures_cpupool::CpuPool;
-use super::*;
-use super::virtual_repo;
-use super::scratch;
-use super::cgi;
 use self::hyper::header::{Authorization, Basic};
 use self::hyper::server::{Http, Request, Response, Service};
 use self::regex::Regex;
+use super::*;
+use super::cgi;
+use super::scratch;
+use super::virtual_repo;
 use std::collections::HashMap;
+use std::net;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::{Arc, Mutex};
-use std::net;
 
 lazy_static! {
     static ref VIEW_REGEX: Regex =
-        Regex::new(r"(?P<prefix>/.*[.]git)/(?P<view>.*)[.]git(?P<pathinfo>/.*)").expect("can't compile regex");
+        Regex::new(r"(?P<prefix>/.*[.]git)/(?P<view>.*)[.]git(?P<pathinfo>/.*)")
+            .expect("can't compile regex");
     static ref FULL_REGEX: Regex =
-        Regex::new(r"(?P<prefix>/.*[.]git)(?P<pathinfo>/.*)").expect("can't compile regex");
+        Regex::new(r"(?P<prefix>/.*[.]git)(?P<pathinfo>/.*)")
+            .expect("can't compile regex");
 }
 
 struct GribHttp
@@ -43,41 +45,46 @@ struct GribHttp
     cache: Arc<Mutex<scratch::ViewCaches>>,
 }
 
-impl GribHttp
+fn async_fetch(
+    http: &GribHttp,
+    prefix: &str,
+    view_string: &str,
+    username: &str,
+    password: &str,
+) -> Box<Future<Item = Result<PathBuf, git2::Error>, Error = hyper::Error>>
 {
-    fn async_fetch(
-        &self,
-        prefix: &str,
-        view_string: &str,
-        username: &str,
-        password: &str,
-    ) -> Box<Future<Item = Result<PathBuf, git2::Error>, Error = hyper::Error>>
-    {
-        let br_path = self.base_path.join(prefix.trim_left_matches("/"));
-        base_repo::create_local(&br_path);
+    let br_path = http.base_path.join(prefix.trim_left_matches("/"));
+    base_repo::create_local(&br_path);
 
-        let br_url = {
-            println!("XXXXXX {:?} {:?} {} {}",self.base_path, br_path, self.base_url, prefix);
-            let mut br_url = self.base_url.clone();
-            br_url.push_str(prefix);
-            br_url
-        };
-        let username = username.to_owned();
-        let password = password.to_owned();
-        let cache = self.cache.clone();
+    let br_url = {
+        println!("XXXXXX {:?} {:?} {} {}", http.base_path, br_path, http.base_url, prefix);
+        let mut br_url = http.base_url.clone();
+        br_url.push_str(prefix);
+        br_url
+    };
+    let username = username.to_owned();
+    let password = password.to_owned();
+    let cache = http.cache.clone();
 
-        Box::new(
-            self.pool
-                .spawn(futures::future::ok(view_string.to_owned()).map(move |view_string| {
-                    match base_repo::fetch_origin_master(&br_path, &br_url, &username, &password) {
-                        Ok(_) => Ok({
-                            make_view_repo(&view_string, &br_path, &username, &password, &br_url, cache)},
-                        ),
-                        Err(e) => Err(e),
-                    }
-                })),
-        )
-    }
+    Box::new(http.pool.spawn(
+        futures::future::ok(view_string.to_owned()).map(move |view_string| {
+            match base_repo::fetch_origin_master(&br_path, &br_url, &username, &password) {
+                Ok(_) => Ok(
+                    make_view_repo(&view_string, &br_path, &username, &password, &br_url, cache),
+                ),
+                Err(e) => Err(e),
+            }
+        }),
+    ))
+}
+
+fn respond_unauthorized() -> Response
+{
+    let mut response: Response = Response::new().with_status(hyper::StatusCode::Unauthorized);
+    response
+        .headers_mut()
+        .set_raw("WWW-Authenticate", "Basic realm=\"User Visible Realm\"");
+    response
 }
 
 
@@ -92,22 +99,40 @@ impl Service for GribHttp
 
     fn call(&self, req: Request) -> Self::Future
     {
-        let (prefix, view_string, pathinfo) = if let Some(caps) = VIEW_REGEX.captures(&req.uri().path()) {
-            (
-                caps.name("prefix").unwrap().as_str().to_string(),
-                caps.name("view").unwrap().as_str().to_string(),
-                caps.name("pathinfo").unwrap().as_str().to_string(),
-            )
-        } else if let Some(caps) = FULL_REGEX.captures(&req.uri().path()) {
-            (
-                caps.name("prefix").unwrap().as_str().to_string(),
-                ".".to_string(),
-                caps.name("pathinfo").unwrap().as_str().to_string(),
-            )
-        } else {
-            let response = Response::new().with_status(hyper::StatusCode::NotFound);
-            return Box::new(futures::future::ok(response));
-        };
+        let call_git_http_backend =
+            |request: Request,
+             path: PathBuf,
+             pathinfo: &str,
+             handle: &tokio_core::reactor::Handle| {
+                println!("CALLING git-http backend {:?} {:?}", path, pathinfo);
+                let mut cmd = Command::new("git");
+                cmd.arg("http-backend");
+                cmd.current_dir(&path);
+                cmd.env("GIT_PROJECT_ROOT", path.to_str().unwrap());
+                cmd.env("GIT_DIR", path.to_str().unwrap());
+                cmd.env("GIT_HTTP_EXPORT_ALL", "");
+                cmd.env("PATH_INFO", pathinfo);
+
+                cgi::do_cgi(request, cmd, handle.clone())
+            };
+
+        let (prefix, view_string, pathinfo) =
+            if let Some(caps) = VIEW_REGEX.captures(&req.uri().path()) {
+                (
+                    caps.name("prefix").unwrap().as_str().to_string(),
+                    caps.name("view").unwrap().as_str().to_string(),
+                    caps.name("pathinfo").unwrap().as_str().to_string(),
+                )
+            } else if let Some(caps) = FULL_REGEX.captures(&req.uri().path()) {
+                (
+                    caps.name("prefix").unwrap().as_str().to_string(),
+                    ".".to_string(),
+                    caps.name("pathinfo").unwrap().as_str().to_string(),
+                )
+            } else {
+                let response = Response::new().with_status(hyper::StatusCode::NotFound);
+                return Box::new(futures::future::ok(response));
+            };
 
         println!("PREFIX: {}", &prefix);
         println!("VIEW: {}", &view_string);
@@ -120,41 +145,26 @@ impl Service for GribHttp
             })) => (username.to_owned(), password.to_owned().unwrap_or("".to_owned()).to_owned()),
             _ => {
                 println!("no credentials in request");
-                let mut response = Response::new().with_status(hyper::StatusCode::Unauthorized);
-                response
-                    .headers_mut()
-                    .set_raw("WWW-Authenticate", "Basic realm=\"User Visible Realm\"");
-                return Box::new(futures::future::ok(response));
+                return Box::new(futures::future::ok(respond_unauthorized()));
             }
         };
 
+
         let handle = self.handle.clone();
 
-        Box::new({
-            self.async_fetch(&prefix, &view_string, &username, &password)
-                .and_then(move |view_repo| match view_repo {
-                    Err(e) => {
-                        println!("async_fetch error {:?}", e);
-                        let mut response =
-                            Response::new().with_status(hyper::StatusCode::Unauthorized);
-                        response
-                            .headers_mut()
-                            .set_raw("WWW-Authenticate", "Basic realm=\"User Visible Realm\"");
-                        Box::new(futures::future::ok(response))
-                    }
-                    Ok(path) => {
-                        println!("CALLING git-http backend {:?} {:?}", path, pathinfo);
-                        let mut cmd = Command::new("git");
-                        cmd.arg("http-backend");
-                        cmd.current_dir(&path);
-                        cmd.env("GIT_PROJECT_ROOT", path.to_str().unwrap());
-                        cmd.env("GIT_DIR", path.to_str().unwrap());
-                        cmd.env("GIT_HTTP_EXPORT_ALL", "");
-                        cmd.env("PATH_INFO", pathinfo);
 
-                        cgi::do_cgi(req, cmd, handle.clone())
-                    }
-                })
+        Box::new({
+            async_fetch(&self, &prefix, &view_string, &username, &password).and_then(
+                move |view_repo| match view_repo {
+                    Err(e) =>
+                    {
+                        println!("wrong credentials");
+                        Box::new(futures::future::ok(respond_unauthorized()))
+                    },
+
+                    Ok(path) => call_git_http_backend(req, path, &pathinfo, &handle),
+                },
+            )
         })
     }
 }
@@ -214,12 +224,7 @@ pub fn run_proxy(args: Vec<String>) -> i32
 }
 
 
-fn run_http_server(
-    addr: net::SocketAddr,
-    pool: &CpuPool,
-    local: &Path,
-    remote: &str,
-)
+fn run_http_server(addr: net::SocketAddr, pool: &CpuPool, local: &Path, remote: &str)
 {
     let mut core = tokio_core::reactor::Core::new().unwrap();
     let h2 = core.handle();

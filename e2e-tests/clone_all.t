@@ -1,7 +1,7 @@
   $ source ${TESTDIR}/setup_test_env.sh
   $ cd ${TESTTMP}
 
-  $ git clone -q http://testuser:supersafe@localhost:8001/real_repo.git
+  $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8001/real_repo.git
   warning: You appear to have cloned an empty repository.
 
   $ cd real_repo
@@ -34,7 +34,7 @@
 
   $ cd ${TESTTMP}
 
-  $ git clone -q http://testuser:supersafe@localhost:8002/real_repo.git full_repo
+  $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8002/real_repo.git full_repo
 
   $ cd full_repo
 
@@ -49,4 +49,3 @@
   contents1
 
   $ bash ${TESTDIR}/destroy_test_env.sh &> /dev/null
-

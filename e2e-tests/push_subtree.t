@@ -1,7 +1,7 @@
   $ source ${TESTDIR}/setup_test_env.sh
   $ cd ${TESTTMP}
 
-  $ git clone -q http://testuser:supersafe@localhost:8001/real_repo.git &> /dev/null
+  $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8001/real_repo.git &> /dev/null
   $ cd real_repo
 
   $ mkdir sub1
@@ -12,7 +12,7 @@
 
   $ cd ${TESTTMP}
 
-  $ git clone -q http://testuser:supersafe@localhost:8002/real_repo.git/sub1.git
+  $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8002/real_repo.git/sub1.git
   $ cd sub1
 
   $ echo contents2 > file2
