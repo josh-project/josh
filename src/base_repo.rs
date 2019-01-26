@@ -6,7 +6,7 @@ use std::fs;
 use super::*;
 use std::path::Path;
 
-pub fn fetch_origin_master(
+pub fn fetch_refs_from_url(
     path: &Path,
     url: &str,
     username: &str,
@@ -28,7 +28,7 @@ pub fn fetch_origin_master(
     shell.command(&cmd);
 
     let cmd = format!("git fetch {} '{}'", &nurl, &spec);
-    println!("fetch_origin_master {:?} {:?} {:?}", cmd, path, "");
+    println!("fetch_refs_from_url {:?} {:?} {:?}", cmd, path, "");
 
     let (stdout, stderr) = shell.command(&cmd);
     if stderr.contains("fatal: Authentication failed") {

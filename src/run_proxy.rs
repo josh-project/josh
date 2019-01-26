@@ -63,7 +63,7 @@ fn async_fetch(
 
     Box::new(http.pool.spawn(
         futures::future::ok(view_string.to_owned()).map(move |view_string| {
-            match base_repo::fetch_origin_master(&br_path, &remote_url, &username, &password) {
+            match base_repo::fetch_refs_from_url(&br_path, &remote_url, &username, &password) {
                 Ok(_) => Ok(
                     make_view_repo(&view_string, &br_path, cache),
                 ),
