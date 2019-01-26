@@ -21,12 +21,26 @@
    1 file changed, 1 insertion(+)
    create mode 100644 sub1/file1
 
+  $ mkdir sub2
+  $ echo contents1 > sub2/file2
+  $ git add sub2
+  $ git commit -m "add file2"
+  [master *] add file2 (glob)
+   1 file changed, 1 insertion(+)
+   create mode 100644 sub2/file2
+
   $ tree
   .
-  `-- sub1
-      `-- file1
+  |-- sub1
+  |   `-- file1
+  `-- sub2
+      `-- file2
   
-  1 directory, 1 file
+  2 directories, 2 files
+
+  $ git log --graph --pretty=%s
+  * add file2
+  * add file1
 
   $ git push
   To http://localhost:8001/real_repo.git
@@ -43,6 +57,9 @@
   `-- file1
   
   0 directories, 1 file
+
+  $ git log --graph --pretty=%s
+  * add file1
 
   $ cat file1
   contents1
