@@ -3,6 +3,7 @@ extern crate git2;
 extern crate grib;
 extern crate tempdir;
 mod helpers;
+use git2::*;
 use grib::*;
 use std::path::Path;
 use std::path::PathBuf;
@@ -15,6 +16,24 @@ fn sorted(mut v: Vec<String>) -> Vec<String>
     v
 }
 
+const TMP_NAME: &'static str = "refs/centralgit/tmp_fd2db5f8_bac2_4a1e_9487_4ac3414788aa";
+
+// force push of the new revision-object to temp repo
+fn transfer<'a>(repo: &'a Repository, rev: &str, source: &Path) -> Object<'a>
+{
+    // TODO: implement using libgit
+    let target = &repo.path();
+    let shell = Shell {
+        cwd: source.to_path_buf(),
+    };
+    shell.command(&format!("git update-ref {} {}", TMP_NAME, rev));
+    shell.command(&format!("git push --force {} {}", &target.to_string_lossy(), TMP_NAME));
+
+    let obj = repo.revparse_single(rev)
+        .expect("can't find transfered ref");
+    return obj;
+}
+
 #[test]
 fn test_find_all_subtrees()
 {
@@ -23,17 +42,17 @@ fn test_find_all_subtrees()
     let repo = helpers::TestRepo::new();
 
     repo.add_file("foo");
-    let head = scratch::transfer(&scratch, &repo.commit("1"), &repo.repo.path());
+    let head = transfer(&scratch, &repo.commit("1"), &repo.repo.path());
     let subdirs = find_all_subdirs(&scratch, &head.as_commit().unwrap().tree().unwrap());
     assert_eq!(0, subdirs.len());
 
     repo.add_file("bla/foo");
-    let head = scratch::transfer(&scratch, &repo.commit("2"), &repo.repo.path());
+    let head = transfer(&scratch, &repo.commit("2"), &repo.repo.path());
     let subdirs = find_all_subdirs(&scratch, &head.as_commit().unwrap().tree().unwrap());
     assert_eq!(vec![format!("bla")], sorted(subdirs));
 
     repo.add_file("a/b/c/d/foo");
-    let head = scratch::transfer(&scratch, &repo.commit("2"), &repo.repo.path());
+    let head = transfer(&scratch, &repo.commit("2"), &repo.repo.path());
     let subdirs = find_all_subdirs(&scratch, &head.as_commit().unwrap().tree().unwrap());
     assert_eq!(
         vec![
@@ -47,7 +66,7 @@ fn test_find_all_subtrees()
     );
 
     repo.add_file("a/b/c/.bla/foo");
-    let head = scratch::transfer(&scratch, &repo.commit("2"), &repo.repo.path());
+    let head = transfer(&scratch, &repo.commit("2"), &repo.repo.path());
     let subdirs = find_all_subdirs(&scratch, &head.as_commit().unwrap().tree().unwrap());
     assert_eq!(
         vec![
@@ -91,7 +110,7 @@ fn test_split_subdir_one_commit()
     let repo = helpers::TestRepo::new();
 
     repo.add_file("foo/bla");
-    let head = scratch::transfer(&scratch, &repo.commit("1"), &repo.repo.path());
+    let head = transfer(&scratch, &repo.commit("1"), &repo.repo.path());
 
     assert_eq!(
         split_subdir_ref(&repo, "foo", head.id()),
@@ -107,9 +126,9 @@ fn test_split_subdir_two_commits()
     let repo = helpers::TestRepo::new();
 
     repo.add_file("foo/bla");
-    let _ = scratch::transfer(&scratch, &repo.commit("1"), &repo.repo.path());
+    let _ = transfer(&scratch, &repo.commit("1"), &repo.repo.path());
     repo.add_file("foo/bla_bla");
-    let head = scratch::transfer(&scratch, &repo.commit("1"), &repo.repo.path());
+    let head = transfer(&scratch, &repo.commit("1"), &repo.repo.path());
 
     assert_eq!(
         split_subdir_ref(&repo, "foo", head.id()),
@@ -125,9 +144,9 @@ fn test_split_subdir_does_not_exist()
     let repo = helpers::TestRepo::new();
 
     repo.add_file("foo/bla");
-    let _ = scratch::transfer(&scratch, &repo.commit("1"), &repo.repo.path());
+    let _ = transfer(&scratch, &repo.commit("1"), &repo.repo.path());
     repo.add_file("foo/bla_bla");
-    // let head = scratch::transfer(&scratch, &repo.commit("1"), &repo.repo.path());
+    // let head = transfer(&scratch, &repo.commit("1"), &repo.repo.path());
 
     // assert_eq!(split_subdir_ref(&repo, "bar", head.id()),
     //            scratch::apply_view(&scratch, "bar", head.id()));
@@ -142,7 +161,7 @@ fn test_split_subdir_two_commits_first_empty()
 
     repo.shell.command("git commit --allow-empty -m empty");
     repo.add_file("foo/bla_bla");
-    let head = scratch::transfer(&scratch, &repo.commit("1"), &repo.repo.path());
+    let head = transfer(&scratch, &repo.commit("1"), &repo.repo.path());
     repo.shell.command("git log");
 
     assert_eq!(
@@ -160,11 +179,11 @@ fn test_split_subdir_three_commits_middle_unrelated()
     let repo = helpers::TestRepo::new();
 
     repo.add_file("foo/bla");
-    let _ = scratch::transfer(&scratch, &repo.commit("1"), &repo.repo.path());
+    let _ = transfer(&scratch, &repo.commit("1"), &repo.repo.path());
     repo.add_file("x");
-    let _ = scratch::transfer(&scratch, &repo.commit("1"), &repo.repo.path());
+    let _ = transfer(&scratch, &repo.commit("1"), &repo.repo.path());
     repo.add_file("foo/bla_bla");
-    let head = scratch::transfer(&scratch, &repo.commit("1"), &repo.repo.path());
+    let head = transfer(&scratch, &repo.commit("1"), &repo.repo.path());
 
     assert_eq!(
         split_subdir_ref(&repo, "foo", head.id()),
@@ -180,11 +199,11 @@ fn test_split_subdir_three_commits_first_unrelated()
     let repo = helpers::TestRepo::new();
 
     repo.add_file("x");
-    let _ = scratch::transfer(&scratch, &repo.commit("1"), &repo.repo.path());
+    let _ = transfer(&scratch, &repo.commit("1"), &repo.repo.path());
     repo.add_file("foo/bla");
-    let _ = scratch::transfer(&scratch, &repo.commit("1"), &repo.repo.path());
+    let _ = transfer(&scratch, &repo.commit("1"), &repo.repo.path());
     repo.add_file("foo/bla_bla");
-    let head = scratch::transfer(&scratch, &repo.commit("1"), &repo.repo.path());
+    let head = transfer(&scratch, &repo.commit("1"), &repo.repo.path());
 
     assert_eq!(
         split_subdir_ref(&repo, "foo", head.id()),
@@ -200,14 +219,14 @@ fn test_split_subdir_branch()
     let repo = helpers::TestRepo::new();
 
     repo.add_file("foo/bla");
-    let _ = scratch::transfer(&scratch, &repo.commit("foo_on_master"), &repo.repo.path());
+    let _ = transfer(&scratch, &repo.commit("foo_on_master"), &repo.repo.path());
     repo.shell.command("git checkout -b tmp");
     repo.add_file("foo/bla_bla");
-    let _ = scratch::transfer(&scratch, &repo.commit("foo_on_tmp"), &repo.repo.path());
+    let _ = transfer(&scratch, &repo.commit("foo_on_tmp"), &repo.repo.path());
     repo.shell.command("git checkout master");
     repo.shell.command("git merge tmp --no-ff -m foo_merge");
 
-    let head = scratch::transfer(&scratch, &repo.rev("HEAD"), &repo.repo.path());
+    let head = transfer(&scratch, &repo.rev("HEAD"), &repo.repo.path());
 
     let actual = scratch::apply_view(&scratch, &SubdirView::new(Path::new("foo")), head.id());
 
@@ -235,16 +254,16 @@ fn test_split_subdir_branch_unrelated()
     let repo = helpers::TestRepo::new();
 
     repo.add_file("foo/bla");
-    let _ = scratch::transfer(&scratch, &repo.commit("foo_on_master"), &repo.repo.path());
+    let _ = transfer(&scratch, &repo.commit("foo_on_master"), &repo.repo.path());
     repo.shell.command("git checkout -b tmp");
     repo.add_file("foo/bla_bla");
-    let _ = scratch::transfer(&scratch, &repo.commit("foo_on_tmp"), &repo.repo.path());
+    let _ = transfer(&scratch, &repo.commit("foo_on_tmp"), &repo.repo.path());
     repo.add_file("x/bla_bla");
-    let _ = scratch::transfer(&scratch, &repo.commit("x_on_tmp"), &repo.repo.path());
+    let _ = transfer(&scratch, &repo.commit("x_on_tmp"), &repo.repo.path());
     repo.shell.command("git checkout master");
     repo.shell.command("git merge tmp --no-ff -m foo_merge");
 
-    let head = scratch::transfer(&scratch, &repo.rev("HEAD"), &repo.repo.path());
+    let head = transfer(&scratch, &repo.rev("HEAD"), &repo.repo.path());
 
     let actual = scratch::apply_view(&scratch, &SubdirView::new(Path::new("foo")), head.id());
 
@@ -272,24 +291,24 @@ fn test_split_merge_identical_to_first()
     let repo = helpers::TestRepo::new();
 
     repo.add_file("foo/initial");
-    let _ = scratch::transfer(&scratch, &repo.commit("foo_initial_on_master"), &repo.repo.path());
+    let _ = transfer(&scratch, &repo.commit("foo_initial_on_master"), &repo.repo.path());
 
     repo.shell.command("git branch tmp");
 
     repo.shell.command("git checkout master");
     repo.add_file("foo/bla");
-    let _ = scratch::transfer(&scratch, &repo.commit("foo_second_on_master"), &repo.repo.path());
+    let _ = transfer(&scratch, &repo.commit("foo_second_on_master"), &repo.repo.path());
 
     repo.shell.command("git checkout tmp");
     repo.add_file("foo/bla");
     repo.add_file("foo/bla_bla");
-    let _ = scratch::transfer(&scratch, &repo.commit("foo_second_on_tmp"), &repo.repo.path());
+    let _ = transfer(&scratch, &repo.commit("foo_second_on_tmp"), &repo.repo.path());
 
     repo.shell.command("git checkout master");
     repo.shell.command("git merge tmp --no-ff -m foo_merge");
 
     println!("{:?}", repo.shell.command("git log"));
-    let head = scratch::transfer(&scratch, &repo.rev("HEAD"), &repo.repo.path());
+    let head = transfer(&scratch, &repo.rev("HEAD"), &repo.repo.path());
 
     let actual = scratch::apply_view(&scratch, &SubdirView::new(Path::new("foo")), head.id());
 
@@ -340,18 +359,18 @@ fn test_split_merge_identical_to_second()
     let repo = helpers::TestRepo::new();
 
     repo.add_file("foo/bla");
-    let _ = scratch::transfer(&scratch, &repo.commit("foo_on_master"), &repo.repo.path());
+    let _ = transfer(&scratch, &repo.commit("foo_on_master"), &repo.repo.path());
 
     repo.shell.command("git checkout -b tmp");
     repo.add_file("foo/bla_bla");
-    let _ = scratch::transfer(&scratch, &repo.commit("foo_on_tmp"), &repo.repo.path());
+    let _ = transfer(&scratch, &repo.commit("foo_on_tmp"), &repo.repo.path());
 
     repo.shell.command("git checkout master");
     repo.add_file("foo/bla_bla");
-    let _ = scratch::transfer(&scratch, &repo.commit("foo_on_master_2"), &repo.repo.path());
+    let _ = transfer(&scratch, &repo.commit("foo_on_master_2"), &repo.repo.path());
     repo.shell.command("git merge tmp --no-ff -m foo_merge");
     println!("{:?}", repo.shell.command("git log"));
-    let head = scratch::transfer(&scratch, &repo.rev("HEAD"), &repo.repo.path());
+    let head = transfer(&scratch, &repo.rev("HEAD"), &repo.repo.path());
 
     let actual = scratch::apply_view(&scratch, &SubdirView::new(Path::new("foo")), head.id());
 
@@ -380,10 +399,10 @@ fn test_join()
 
     central.add_file("initial_in_central");
     let central_head =
-        scratch::transfer(&scratch, &central.commit("central_initial"), &central.repo.path());
+        transfer(&scratch, &central.commit("central_initial"), &central.repo.path());
 
     module.add_file("initial_in_module");
-    let module_head = scratch::transfer(&scratch, &module.commit("module_initial"), &module.repo.path());
+    let module_head = transfer(&scratch, &module.commit("module_initial"), &module.repo.path());
 
     let shell = Shell {
         cwd: scratch.path().to_path_buf(),
@@ -428,12 +447,12 @@ fn test_join_more()
 
     central.add_file("initial_in_central");
     let central_head =
-        scratch::transfer(&scratch, &central.commit("central_initial"), &central.repo.path());
+        transfer(&scratch, &central.commit("central_initial"), &central.repo.path());
 
     module.add_file("initial_in_module");
-    let _ = scratch::transfer(&scratch, &module.commit("module_initial"), &module.repo.path());
+    let _ = transfer(&scratch, &module.commit("module_initial"), &module.repo.path());
     module.add_file("some/more/in/module");
-    let module_head = scratch::transfer(&scratch, &module.commit("module_more"), &module.repo.path());
+    let module_head = transfer(&scratch, &module.commit("module_more"), &module.repo.path());
 
     let shell = Shell {
         cwd: scratch.path().to_path_buf(),
@@ -492,27 +511,27 @@ fn test_join_with_merge()
 
     central.add_file("initial_in_central");
     let central_head =
-        scratch::transfer(&scratch, &central.commit("central_initial"), &central.repo.path());
+        transfer(&scratch, &central.commit("central_initial"), &central.repo.path());
 
     module.add_file("initial_in_module");
-    let _ = scratch::transfer(&scratch, &module.commit("module_initial"), &module.repo.path());
+    let _ = transfer(&scratch, &module.commit("module_initial"), &module.repo.path());
 
     module.shell.command("git branch tmp");
 
     module.shell.command("git checkout master");
     module.add_file("some/more/in/module_master");
-    let _ = scratch::transfer(&scratch, &module.commit("module_more_on_master"), &module.repo.path());
+    let _ = transfer(&scratch, &module.commit("module_more_on_master"), &module.repo.path());
 
     module.shell.command("git checkout tmp");
     module.add_file("some/stuff/in/module_tmp");
-    let _ = scratch::transfer(&scratch, &module.commit("module_more_on_tmp"), &module.repo.path());
+    let _ = transfer(&scratch, &module.commit("module_more_on_tmp"), &module.repo.path());
 
     module.shell.command("git checkout master");
     module.shell.command("git merge tmp --no-ff -m foo_merge");
 
     module.add_file("extra_file");
     let module_head =
-        scratch::transfer(&scratch, &module.commit("module_after_merge"), &module.repo.path());
+        transfer(&scratch, &module.commit("module_after_merge"), &module.repo.path());
 
     let signature = git2::Signature::now("test", "test@test.com").unwrap();
     let result = scratch::join_to_subdir(
@@ -549,17 +568,17 @@ fn test_replace_subtree()
     let repo = helpers::TestRepo::new();
 
     repo.add_file("a");
-    let _ = scratch::transfer(&scratch, &repo.commit("initial"), &repo.repo.path());
+    let _ = transfer(&scratch, &repo.commit("initial"), &repo.repo.path());
     repo.shell.command("git branch tmp");
     repo.shell.command("git checkout master");
 
     repo.add_file("x/x");
-    let master = scratch::transfer(&scratch, &repo.commit("initial"), &repo.repo.path());
+    let master = transfer(&scratch, &repo.commit("initial"), &repo.repo.path());
     let mt = scratch.find_commit(master.id()).unwrap().tree().unwrap();
 
     repo.shell.command("git checkout tmp");
     repo.add_file("in_subtree");
-    let tmp = scratch::transfer(&scratch, &repo.commit("tmp"), &repo.repo.path());
+    let tmp = transfer(&scratch, &repo.commit("tmp"), &repo.repo.path());
     let st = scratch.find_commit(tmp.id()).unwrap().tree().unwrap();
 
     let result = scratch
