@@ -6,23 +6,6 @@ fn get_subtree(tree: &Tree, path: &Path) -> Option<Oid>
     tree.get_path(path).map(|x| x.id()).ok()
 }
 
-pub fn find_all_subdirs(repo: &Repository, tree: &Tree) -> Vec<String>
-{
-    let mut sd = vec![];
-    for item in tree {
-        if let Ok(st) = repo.find_tree(item.id()) {
-            let name = item.name().unwrap();
-            if !name.starts_with(".") {
-                sd.push(name.to_string());
-                for r in find_all_subdirs(&repo, &st) {
-                    sd.push(format!("{}/{}", name, r));
-                }
-            }
-        }
-    }
-    return sd;
-}
-
 
 fn replace_child(repo: &Repository, child: &Path, subtree: Oid, full_tree: &Tree) -> Oid
 {

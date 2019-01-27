@@ -26,81 +26,6 @@ fn transfer<'a>(repo: &'a Repository, rev: &str, source: &Path) -> Object<'a>
     return obj;
 }
 
-pub fn join_to_subdir(
-    repo: &Repository,
-    dst: Oid,
-    path: &Path,
-    src: Oid,
-    signature: &Signature,
-) -> Oid
-{
-    let dst = repo.find_commit(dst).unwrap();
-    let src = repo.find_commit(src).unwrap();
-
-    let walk = {
-        let mut walk = repo.revwalk().expect("walk: can't create revwalk");
-        walk.set_sorting(Sort::REVERSE | Sort::TOPOLOGICAL);
-        walk.push(src.id()).expect("walk.push");
-        walk
-    };
-
-    let empty = repo.find_tree(repo.treebuilder(None).unwrap().write().unwrap())
-        .unwrap();
-    let mut map = HashMap::<Oid, Oid>::new();
-
-    'walk: for commit in walk {
-        let commit = repo.find_commit(commit.unwrap()).unwrap();
-        let tree = commit.tree().expect("commit has no tree");
-        let new_tree = repo.find_tree(replace_subtree(&repo, path, &tree, &empty))
-            .expect("can't find tree");
-
-        match commit.parents().count() {
-            2 => {
-                let parent1 = commit.parents().nth(0).unwrap().id();
-                let parent2 = commit.parents().nth(1).unwrap().id();
-                if let (Some(&parent1), Some(&parent2)) = (map.get(&parent1), map.get(&parent2)) {
-                    let parent1 = repo.find_commit(parent1).unwrap();
-                    let parent2 = repo.find_commit(parent2).unwrap();
-
-                    map.insert(
-                        commit.id(),
-                        scratch::rewrite(&repo, &commit, &[&parent1, &parent2], &new_tree),
-                    );
-                    continue 'walk;
-                }
-            }
-            1 => {
-                let parent = commit.parents().nth(0).unwrap().id();
-                let parent = *map.get(&parent).unwrap();
-                let parent = repo.find_commit(parent).unwrap();
-                map.insert(commit.id(), scratch::rewrite(&repo, &commit, &[&parent], &new_tree));
-                continue 'walk;
-            }
-            0 => {}
-            _ => panic!("commit with {} parents: {}", commit.parents().count(), commit.id()),
-        }
-
-        map.insert(commit.id(), scratch::rewrite(&repo, &commit, &[], &new_tree));
-    }
-
-    let final_tree = repo.find_tree(
-        replace_subtree(&repo, path, &src.tree().unwrap(), &dst.tree().unwrap()),
-    ).expect("can't find tree");
-
-    let parents = [&dst, &repo.find_commit(map[&src.id()]).unwrap()];
-    repo.set_head_detached(parents[0].id())
-        .expect("join: can't detach head");
-
-    let join_commit = repo.commit(
-        Some("HEAD"),
-        signature,
-        signature,
-        &format!("join repo into {:?}", path),
-        &final_tree,
-        &parents,
-    ).unwrap();
-    return join_commit;
-}
 
 fn main()
 {
@@ -134,7 +59,7 @@ fn main()
         .expect("can'f find join_source");
 
     let signature = scratch.signature().unwrap();
-    let result = join_to_subdir(
+    let result = scratch::join_to_subdir(
         &scratch,
         central_head.id(),
         &Path::new(subdir),

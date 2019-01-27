@@ -34,6 +34,24 @@ fn transfer<'a>(repo: &'a Repository, rev: &str, source: &Path) -> Object<'a>
     return obj;
 }
 
+fn find_all_subdirs(repo: &Repository, tree: &Tree) -> Vec<String>
+{
+    let mut sd = vec![];
+    for item in tree {
+        if let Ok(st) = repo.find_tree(item.id()) {
+            let name = item.name().unwrap();
+            if !name.starts_with(".") {
+                sd.push(name.to_string());
+                for r in find_all_subdirs(&repo, &st) {
+                    sd.push(format!("{}/{}", name, r));
+                }
+            }
+        }
+    }
+    return sd;
+}
+
+
 #[test]
 fn test_find_all_subtrees()
 {
