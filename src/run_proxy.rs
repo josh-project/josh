@@ -116,7 +116,7 @@ impl Service for GribHttp
             } else if let Some(caps) = FULL_REGEX.captures(&req.uri().path()) {
                 (
                     caps.name("prefix").unwrap().as_str().to_string(),
-                    ".".to_string(),
+                    String::new(),
                     caps.name("pathinfo").unwrap().as_str().to_string(),
                 )
             } else {
@@ -152,8 +152,7 @@ impl Service for GribHttp
                 cmd.env("PATH_INFO", pathinfo);
                 cmd.env("GRIB_PASSWORD", passwd);
                 cmd.env("GRIB_USERNAME", usernm);
-                cmd.env("GRIB_VIEW", viewstr);
-                cmd.env("GRIB_BR_PATH", br_path);
+                if viewstr != "" { cmd.env("GIT_NAMESPACE", viewstr); }
                 cmd.env("GRIB_REMOTE", remote_url);
 
                 cgi::do_cgi(request, cmd, handle.clone())
@@ -293,5 +292,6 @@ fn make_view_repo(
         );
     }
 
-    virtual_repo::setup_tmp_repo(&br_path, &view_string)
+    virtual_repo::setup_tmp_repo(&br_path);
+    br_path.to_owned()
 }

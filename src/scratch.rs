@@ -14,7 +14,7 @@ pub type ViewCaches = HashMap<String, ViewCache>;
 
 pub fn view_ref_root(module: &str) -> String
 {
-    format!("refs/{}/#{}#/refs", "centralgit_0ee845b3_9c3f_41ee_9149_9e98a65ecf35", module)
+    format!("refs/namespaces/{}/refs", module)
 }
 
 pub fn view_ref(module: &str, branch: &str) -> String
@@ -141,6 +141,12 @@ pub fn apply_view_to_branch(
             println!("applied view to branch {}", branchname);
             repo.reference(&view_ref(&view, &branchname), view_commit, true, "apply_view")
                 .expect("can't create reference");
+
+            if branchname == "master" {
+
+            repo.reference(&format!("refs/namespaces/{}/HEAD", &view), view_commit, true, "apply_view")
+                .expect("can't create reference");
+            }
         } else {
             println!("can't apply view to branch {}", branchname);
         };
