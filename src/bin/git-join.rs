@@ -31,12 +31,14 @@ fn main()
 {
     let args = clap::App::new("git-join")
         .arg(clap::Arg::with_name("source").long("source").takes_value(true))
+        .arg(clap::Arg::with_name("output").long("output").takes_value(true))
         .arg(clap::Arg::with_name("branch").long("branch").takes_value(true))
         .arg(clap::Arg::with_name("subdir").long("subdir").takes_value(true))
         .get_matches();
 
     let branch = args.value_of("branch").expect("missing branch");
     let source = args.value_of("source").expect("missing source");
+    let output = args.value_of("output").expect("missing source");
     let subdir = args.value_of("subdir").expect("missing subdir");
 
     let td = Path::new("/tmp/git-join2/");
@@ -74,7 +76,10 @@ fn main()
         })
         .ok();
     scratch
-        .reference("refs/heads/join_result", result, true, "join")
+        .reference("refs/heads/join_result", result.0, true, "join")
+        .ok();
+    scratch
+        .reference("refs/heads/join_tmp", result.1, true, "join")
         .ok();
     let shell = Shell {
         cwd: Path::new(".").to_path_buf(),
@@ -84,5 +89,7 @@ fn main()
             r.delete().ok();
         })
         .ok();
-    shell.command(&format!("git fetch {:?} join_result:join", scratch.path()));
+
+    shell.command(&format!("git branch -D {}", output));
+    shell.command(&format!("git fetch {:?} join_tmp:{}", scratch.path(), output));
 }

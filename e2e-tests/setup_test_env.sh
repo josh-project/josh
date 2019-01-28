@@ -10,6 +10,8 @@ export RUST_LOG=debug
 export TESTPASS=$(openssl rand -hex 5)
 export TESTUSER=$(openssl rand -hex 5)
 
+PATH=${TESTDIR}/../target/debug/:${PATH}
+
 ${TESTDIR}/../target/debug/git-http-server\
     --port=8001\
     --local=${TESTTMP}/remote/\

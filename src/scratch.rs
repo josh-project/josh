@@ -245,7 +245,7 @@ pub fn join_to_subdir(
     path: &Path,
     src: Oid,
     signature: &Signature,
-) -> Oid
+) -> (Oid, Oid)
 {
     let dst = repo.find_commit(dst).unwrap();
     let src = repo.find_commit(src).unwrap();
@@ -300,7 +300,8 @@ pub fn join_to_subdir(
         replace_subtree(&repo, path, &src.tree().unwrap(), &dst.tree().unwrap()),
     ).expect("can't find tree");
 
-    let parents = [&dst, &repo.find_commit(map[&src.id()]).unwrap()];
+    let in_subdir = repo.find_commit(map[&src.id()]).unwrap();
+    let parents = [&dst, &in_subdir];
     repo.set_head_detached(parents[0].id())
         .expect("join: can't detach head");
 
@@ -312,5 +313,5 @@ pub fn join_to_subdir(
         &final_tree,
         &parents,
     ).unwrap();
-    return join_commit;
+    return (join_commit, in_subdir.id());
 }
