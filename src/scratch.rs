@@ -33,20 +33,16 @@ enum CommitKind
 // given
 pub fn rewrite(repo: &Repository, base: &Commit, parents: &[&Commit], tree: &Tree) -> Oid
 {
-    if parents.len() == 0 {
-        ::std::fs::remove_file(repo.path().join("HEAD")).expect("can't remove HEAD");
-    } else {
-        repo.set_head_detached(parents[0].id())
-            .expect("rewrite: can't detach head");
-    }
-    repo.commit(
-        Some("HEAD"),
+    let result = repo.commit(
+        None,
         &base.author(),
         &base.committer(),
         &base.message().unwrap_or("no message"),
         tree,
         parents,
-    ).expect("rewrite: can't commit")
+    ).expect("rewrite: can't commit {:?}");
+
+    result
 }
 
 pub fn unapply_view(repo: &Repository, current: Oid, view: &View, old: Oid, new: Oid)
@@ -241,13 +237,10 @@ pub fn apply_view_cached(
 
 pub fn join_to_subdir(
     repo: &Repository,
-    dst: Oid,
     path: &Path,
     src: Oid,
-    signature: &Signature,
 ) -> (Oid, Oid)
 {
-    let dst = repo.find_commit(dst).unwrap();
     let src = repo.find_commit(src).unwrap();
 
     let walk = {
@@ -296,22 +289,6 @@ pub fn join_to_subdir(
         map.insert(commit.id(), rewrite(&repo, &commit, &[], &new_tree));
     }
 
-    let final_tree = repo.find_tree(
-        replace_subtree(&repo, path, &src.tree().unwrap(), &dst.tree().unwrap()),
-    ).expect("can't find tree");
-
     let in_subdir = repo.find_commit(map[&src.id()]).unwrap();
-    let parents = [&dst, &in_subdir];
-    repo.set_head_detached(parents[0].id())
-        .expect("join: can't detach head");
-
-    let join_commit = repo.commit(
-        Some("HEAD"),
-        signature,
-        signature,
-        &format!("join repo into {:?}", path),
-        &final_tree,
-        &parents,
-    ).unwrap();
-    return (join_commit, in_subdir.id());
+    return (in_subdir.id(), in_subdir.id());
 }

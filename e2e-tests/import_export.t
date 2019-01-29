@@ -33,7 +33,8 @@
   $ git commit --allow-empty -m "initial" &> /dev/null
   $ git push &> /dev/null
 
-  $ git-join --branch master --source ${TESTTMP}/repo1 --subdir repo1 --output repo1_in_subdir
+  $ git fetch --force ${TESTTMP}/repo1 master:repo1 &> /dev/null
+  $ git-join --branch repo1 --subdir repo1 --output repo1_in_subdir
   $ git checkout repo1_in_subdir
   Switched to branch 'repo1_in_subdir'
   $ git log --graph --pretty=%s
@@ -45,7 +46,8 @@
   
   1 directory, 1 file
 
-  $ git-join --branch master --source ${TESTTMP}/repo2 --subdir repo2 --output repo2_in_subdir
+  $ git fetch --force ${TESTTMP}/repo2 master:repo2 &> /dev/null
+  $ git-join --branch repo2 --subdir repo2 --output repo2_in_subdir
   $ git merge -m "Combine" repo2_in_subdir --allow-unrelated-histories &> /dev/null
 
   $ git log --graph --pretty=%s
@@ -115,7 +117,8 @@
 
   $ cd ${TESTTMP}/real_repo
   $ git checkout master &> /dev/null
-  $ git-join --branch master --source ${TESTTMP}/repo1 --subdir repo1 --output repo1_in_subdir
+  $ git fetch --force ${TESTTMP}/repo1 master:repo1 &> /dev/null
+  $ git-join --branch repo1 --subdir repo1 --output repo1_in_subdir
   $ git log --graph --pretty=%s repo1_in_subdir
   * add new_file2
   * initial1
@@ -171,7 +174,8 @@
 
   $ cd ${TESTTMP}/real_repo
   $ git checkout master &> /dev/null
-  $ git-join --branch master --source ${TESTTMP}/repo1 --subdir repo1 --output repo1_in_subdir
+  $ git fetch --force ${TESTTMP}/repo1 master:repo1 &> /dev/null
+  $ git-join --branch repo1 --subdir repo1 --output repo1_in_subdir
   $ git log --graph --pretty=%s repo1_in_subdir
   * add great new_file2
   * initial1
