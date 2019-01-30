@@ -94,18 +94,6 @@ impl Service for GribHttp
 
     fn call(&self, req: Request) -> Self::Future
     {
-        let (username, password) = match req.headers().get() {
-            Some(&Authorization(Basic {
-                ref username,
-                ref password,
-            })) => (username.to_owned(), password.to_owned().unwrap_or("".to_owned()).to_owned()),
-            _ => {
-                println!("no credentials in request");
-                return Box::new(futures::future::ok(respond_unauthorized()));
-            }
-        };
-
-
         let (prefix, view_string, pathinfo) =
             if let Some(caps) = VIEW_REGEX.captures(&req.uri().path()) {
                 (
@@ -119,10 +107,30 @@ impl Service for GribHttp
                     String::new(),
                     caps.name("pathinfo").unwrap().as_str().to_string(),
                 )
+            } else if req.uri().path() == "/version" {
+                let response =
+                    Response::new()
+                    .with_body(format!("Version: {}\n", env!("VERSION")))
+                    .with_status(hyper::StatusCode::Ok);
+                return Box::new(futures::future::ok(response));
             } else {
-                let response = Response::new().with_status(hyper::StatusCode::NotFound);
+                let response = Response::new()
+                .with_status(hyper::StatusCode::NotFound);
                 return Box::new(futures::future::ok(response));
             };
+
+        let (username, password) = match req.headers().get() {
+            Some(&Authorization(Basic {
+                ref username,
+                ref password,
+            })) => (username.to_owned(), password.to_owned().unwrap_or("".to_owned()).to_owned()),
+            _ => {
+                println!("no credentials in request");
+                return Box::new(futures::future::ok(respond_unauthorized()));
+            }
+        };
+
+
 
         let passwd = password.clone();
         let usernm = username.clone();
@@ -191,7 +199,6 @@ pub fn run_proxy(args: Vec<String>) -> i32
         .format(|out, message, record| {
             out.finish(format_args!("{}[{}] {}", record.target(), record.level(), message))
         })
-        .level(log::LevelFilter::Debug)
         .chain(std::io::stdout())
         .chain(fern::log_file(logfilename).unwrap())
         .apply()

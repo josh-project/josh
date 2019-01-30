@@ -2,6 +2,10 @@
 name = "grib"
 version = "0.1.0"
 authors = ["Christian Schilling <christian.schilling@esrlabs.com>"]
+build = "build.rs"
+
+[build-dependencies]
+git-version = "*"
 
 [dependencies]
 git2 = "*"
@@ -19,5 +23,3 @@ lazy_static = "*"
 hyper = "0.11"
 futures-cpupool = "*"
 
-[dev-dependencies]
-rouille = "*"
