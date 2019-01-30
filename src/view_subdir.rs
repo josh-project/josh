@@ -21,13 +21,13 @@ impl SubdirView
 
 impl View for SubdirView
 {
-    fn apply(&self, tree: &Tree) -> Option<Oid>
+    fn apply(&self, repo: &Repository, tree: &Tree) -> Option<Oid>
     {
         tree.get_path(&self.subdir).map(|x| x.id()).ok()
     }
 
-    fn unapply(&self, repo: &Repository, tree: &Tree, parent_tree: &Tree) -> Oid
+    fn unapply(&self, repo: &Repository, tree: &Tree, parent_tree: &Tree) -> Option<Oid>
     {
-        replace_subtree(&repo, &self.subdir, &tree, &parent_tree)
+        Some(replace_subtree(&repo, &self.subdir, &tree, &parent_tree))
     }
 }

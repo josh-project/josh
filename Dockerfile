@@ -1,4 +1,4 @@
-FROM rust:1.23.0 as builder
+FROM rust:1.32.0 as builder
 
 RUN apt-get update \
  && apt-get install -y cmake \

@@ -1,6 +1,7 @@
 extern crate git2;
 
 use super::SubdirView;
+use super::PrefixView;
 use super::UnapplyView;
 use super::View;
 use super::replace_subtree;
@@ -28,7 +29,7 @@ pub fn rewrite(repo: &Repository, base: &Commit, parents: &[&Commit], tree: &Tre
     result
 }
 
-pub fn unapply_view(repo: &Repository, current: Oid, view: &View, old: Oid, new: Oid)
+pub fn unapply_view(repo: &Repository, current: Oid, viewobj: &View, old: Oid, new: Oid)
     -> UnapplyView
 {
     if old == new {
@@ -75,15 +76,17 @@ pub fn unapply_view(repo: &Repository, current: Oid, view: &View, old: Oid, new:
         let parent = repo.find_commit(current)
             .expect("walk: current object is no commit");
 
-        let new_tree =
-            view.unapply(&repo, &tree, &parent.tree().expect("walk: parent has no tree"));
+        if let Some(new_tree) =
+            viewobj.unapply(&repo, &tree, &parent.tree().expect("walk: parent has no tree"))
+        {
 
-        current = rewrite(
-            &repo,
-            &module_commit,
-            &vec![&parent],
-            &repo.find_tree(new_tree).expect("can't find rewritten tree"),
-        );
+            current = rewrite(
+                &repo,
+                &module_commit,
+                &vec![&parent],
+                &repo.find_tree(new_tree).expect("can't find rewritten tree"),
+            );
+        };
     }
     return UnapplyView::Done(current);
 }
@@ -94,44 +97,51 @@ pub fn new(path: &Path) -> Repository
     Repository::init_bare(&path).expect("could not init scratch")
 }
 
+fn transform_commit(repo: &Repository, view: &str, from_refsname: &str, to_refname: &str, view_cache: &mut ViewCache)
+{
+    let viewobj: Box<dyn View> = if view.starts_with("+") {
+        Box::new(PrefixView::new(&Path::new(&view[1..].trim_left_matches("/"))))
+    } else {
+        Box::new(SubdirView::new(&Path::new(&view)))
+    };
+
+    if let Ok(reference) = repo.find_reference(&from_refsname) {
+        let r = reference.target().expect("no ref");
+
+        if let Some(view_commit) = apply_view_cached(&repo, &*viewobj, r, view_cache) {
+            repo.reference(&to_refname, view_commit, true, "apply_view")
+                .expect("can't create reference");
+        }
+    };
+}
+
 pub fn apply_view_to_branch(
     repo: &Repository,
     branchname: &str,
-    view: &str,
+    viewstr: &str,
     caches: &mut ViewCaches,
 )
 {
-    if view == "." {
+    if viewstr == "." {
         return;
     }
 
-    let view_cache = caches
-        .entry(format!("{}--{}", &branchname, &view))
+    let mut view_cache = caches
+        .entry(format!("{}--{}", &branchname, &viewstr))
         .or_insert(ViewCache::new());
 
-    let viewobj = SubdirView::new(&Path::new(&view));
+
+    let ns = viewstr.replace("/","/refs/namespaces/");
+    let to_refname = format!("refs/namespaces/{}/refs/heads/{}", &ns, &branchname);
+    let to_head = format!("refs/namespaces/{}/HEAD", &ns);
+    let from_refsname = format!("refs/heads/{}", branchname);
 
     debug!("apply_view_to_branch {}", branchname);
-    if let Ok(branch) = repo.find_branch(branchname, git2::BranchType::Local) {
-        let r = branch.into_reference().target().expect("no ref");
+    transform_commit(&repo, &viewstr, &from_refsname, &to_refname, &mut view_cache);
 
-        if let Some(view_commit) = apply_view_cached(&repo, &viewobj, r, view_cache) {
-            println!("applied view to branch {}", branchname);
-
-            let ns = view.replace("/","/refs/namespaces/");
-            let refname = format!("refs/namespaces/{}/refs/heads/{}", &ns, &branchname);
-            repo.reference(&refname, view_commit, true, "apply_view")
-                .expect("can't create reference");
-
-            if branchname == "master" {
-
-            repo.reference(&format!("refs/namespaces/{}/HEAD", &ns), view_commit, true, "apply_view")
-                .expect("can't create reference");
-            }
-        } else {
-            println!("can't apply view to branch {}", branchname);
-        };
-    };
+    if branchname == "master" {
+        transform_commit(&repo, &viewstr, "refs/heads/master", &to_head, &mut view_cache);
+    }
 }
 
 
@@ -170,7 +180,7 @@ pub fn apply_view_cached(
 
         let tree = commit.tree().expect("commit has no tree");
 
-        let new_tree = if let Some(tree_id) = view.apply(&tree) {
+        let new_tree = if let Some(tree_id) = view.apply(&repo, &tree) {
             repo.find_tree(tree_id)
                 .expect("central_submit: can't find tree")
         } else {
@@ -203,7 +213,7 @@ pub fn join_to_subdir(
     repo: &Repository,
     path: &Path,
     src: Oid,
-) -> (Oid, Oid)
+) -> Oid
 {
     let src = repo.find_commit(src).unwrap();
 
@@ -236,5 +246,5 @@ pub fn join_to_subdir(
     }
 
     let in_subdir = repo.find_commit(map[&src.id()]).unwrap();
-    return (in_subdir.id(), in_subdir.id());
+    return in_subdir.id();
 }

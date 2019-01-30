@@ -34,8 +34,13 @@ pub fn update_hook(refname: &str, _old: &str, new: &str) -> i32 {
     let password = env::var("GRIB_PASSWORD").expect("GRIB_PASSWORD not set");
     let remote_url = env::var("GRIB_REMOTE").expect("GRIB_REMOTE not set");
 
-    let new_oid = if let Ok(viewname) = env::var("GIT_NAMESPACE") {
-        let view = SubdirView::new(&Path::new(&viewname));
+    let new_oid = if let Ok(viewstr) = env::var("GIT_NAMESPACE") {
+
+        let viewobj: Box<dyn View> = if viewstr.starts_with("+") {
+            Box::new(PrefixView::new(&Path::new(&viewstr[1..].trim_left_matches("/"))))
+        } else {
+            Box::new(SubdirView::new(&Path::new(&viewstr)))
+        };
 
         debug!("=== MORE");
 
@@ -58,10 +63,11 @@ pub fn update_hook(refname: &str, _old: &str, new: &str) -> i32 {
 
         debug!("=== processed_old {}", old);
 
+
         match scratch::unapply_view(
             &scratch,
             central_head,
-            &view,
+            &*viewobj,
             old,
             Oid::from_str(new).expect("can't parse new OID"),
         ) {

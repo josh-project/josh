@@ -13,6 +13,7 @@ mod shell;
 pub mod base_repo;
 mod treeops;
 mod view_subdir;
+mod view_prefix;
 pub mod virtual_repo;
 pub mod cgi;
 pub mod run_proxy;
@@ -23,6 +24,7 @@ pub use shell::Shell;
 pub use shell::thread_local_temp_dir;
 pub use treeops::*;
 pub use view_subdir::SubdirView;
+pub use view_prefix::PrefixView;
 pub use run_proxy::*;
 
 #[derive(Clone)]
@@ -36,11 +38,11 @@ pub enum UnapplyView
 
 pub trait View
 {
-    fn apply(&self, tree: &git2::Tree) -> Option<git2::Oid>;
+    fn apply(&self, repo: &git2::Repository, tree: &git2::Tree) -> Option<git2::Oid>;
     fn unapply(
         &self,
         repo: &git2::Repository,
         tree: &git2::Tree,
         parent_tree: &git2::Tree,
-    ) -> git2::Oid;
+    ) -> Option<git2::Oid>;
 }

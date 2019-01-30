@@ -27,6 +27,6 @@ fn main()
     );
 
     repo
-        .reference(&format!("refs/heads/{}", output), result.1, true, "join")
+        .reference(&format!("refs/heads/{}", output), result, true, "join")
         .ok();
 }

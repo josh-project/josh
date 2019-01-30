@@ -33,8 +33,7 @@
   $ git commit --allow-empty -m "initial" &> /dev/null
   $ git push &> /dev/null
 
-  $ git fetch --force ${TESTTMP}/repo1 master:repo1 &> /dev/null
-  $ git-join --branch repo1 --subdir repo1 --output repo1_in_subdir
+  $ git fetch --force http://${TESTUSER}:${TESTPASS}@localhost:8002/repo1.git/+repo1.git master:repo1_in_subdir &> /dev/null
   $ git checkout repo1_in_subdir
   Switched to branch 'repo1_in_subdir'
   $ git log --graph --pretty=%s
@@ -46,8 +45,7 @@
   
   1 directory, 1 file
 
-  $ git fetch --force ${TESTTMP}/repo2 master:repo2 &> /dev/null
-  $ git-join --branch repo2 --subdir repo2 --output repo2_in_subdir
+  $ git fetch --force http://${TESTUSER}:${TESTPASS}@localhost:8002/repo2.git/+repo2.git master:repo2_in_subdir &> /dev/null
   $ git merge -m "Combine" repo2_in_subdir --allow-unrelated-histories &> /dev/null
 
   $ git log --graph --pretty=%s
@@ -114,11 +112,13 @@
   $ echo new_content2 > new_file2 &> /dev/null
   $ git add new_file2 &> /dev/null
   $ git commit -m "add new_file2" &> /dev/null
+  $ git push
+  To http://localhost:8001/repo1.git
+     *..*  master -> master (glob)
 
   $ cd ${TESTTMP}/real_repo
   $ git checkout master &> /dev/null
-  $ git fetch --force ${TESTTMP}/repo1 master:repo1 &> /dev/null
-  $ git-join --branch repo1 --subdir repo1 --output repo1_in_subdir
+  $ git fetch --force http://${TESTUSER}:${TESTPASS}@localhost:8002/repo1.git/+repo1.git master:repo1_in_subdir &> /dev/null
   $ git log --graph --pretty=%s repo1_in_subdir
   * add new_file2
   * initial1
@@ -171,11 +171,13 @@
 
   $ cd ${TESTTMP}/repo1
   $ git commit --amend -m "add great new_file2" &> /dev/null
+  $ git push --force
+  To http://localhost:8001/repo1.git
+   + *...* master -> master (forced update) (glob)
 
   $ cd ${TESTTMP}/real_repo
   $ git checkout master &> /dev/null
-  $ git fetch --force ${TESTTMP}/repo1 master:repo1 &> /dev/null
-  $ git-join --branch repo1 --subdir repo1 --output repo1_in_subdir
+  $ git fetch --force http://${TESTUSER}:${TESTPASS}@localhost:8002/repo1.git/+repo1.git master:repo1_in_subdir &> /dev/null
   $ git log --graph --pretty=%s repo1_in_subdir
   * add great new_file2
   * initial1
