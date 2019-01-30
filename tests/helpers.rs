@@ -11,16 +11,7 @@ extern crate log;
 extern crate regex;
 extern crate tempdir;
 extern crate tokio_core;
-use self::futures::Stream;
-use self::futures::future::Future;
-use self::hyper::header::{Authorization, Basic};
-use self::hyper::server::Http;
-use self::hyper::server::{Request, Response, Service};
-use grib::*;
 use grib::Shell;
-use std::path::Path;
-use std::path::PathBuf;
-use std::process::Command;
 use tempdir::TempDir;
 
 pub struct TestRepo
@@ -48,11 +39,6 @@ impl TestRepo
         return tr;
     }
 
-    pub fn worktree(&self) -> &Path
-    {
-        self.td.path()
-    }
-
     pub fn commit(&self, message: &str) -> String
     {
         self.shell
@@ -68,11 +54,6 @@ impl TestRepo
         self.shell
             .command(&format!("echo test_content > {}", filename));
         self.shell.command(&format!("git add {}", filename));
-    }
-
-    pub fn has_file(&self, filename: &str) -> bool
-    {
-        self.worktree().join(Path::new(filename)).exists()
     }
 
     pub fn rev(&self, r: &str) -> String

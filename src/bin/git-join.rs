@@ -1,12 +1,8 @@
 extern crate grib;
 extern crate clap;
 extern crate git2;
-use grib::Shell;
 use grib::scratch;
-use git2::*;
 use std::path::Path;
-use grib::replace_subtree;
-use std::collections::HashMap;
 
 
 fn main()
@@ -24,7 +20,6 @@ fn main()
     let repo = git2::Repository::open_from_env().expect("can't open repo");
     let source = repo.revparse_single(branch).expect("can't find branch");
 
-    let signature = repo.signature().unwrap();
     let result = scratch::join_to_subdir(
         &repo,
         &Path::new(subdir),

@@ -12,23 +12,6 @@ use std::path::Path;
 pub type ViewCache = HashMap<Oid, Oid>;
 pub type ViewCaches = HashMap<String, ViewCache>;
 
-pub fn view_ref_root(module: &str) -> String
-{
-    format!("refs/namespaces/{}/refs", module)
-}
-
-pub fn view_ref(module: &str, branch: &str) -> String
-{
-    format!("{}/heads/{}", view_ref_root(module), branch)
-}
-
-enum CommitKind
-{
-    Normal(Oid),
-    Merge(Oid, Oid),
-    Orphan,
-}
-
 // takes everything from base except it's tree and replaces it with the tree
 // given
 pub fn rewrite(repo: &Repository, base: &Commit, parents: &[&Commit], tree: &Tree) -> Oid
@@ -134,7 +117,9 @@ pub fn apply_view_to_branch(
 
         if let Some(view_commit) = apply_view_cached(&repo, &viewobj, r, view_cache) {
             println!("applied view to branch {}", branchname);
-            repo.reference(&view_ref(&view, &branchname), view_commit, true, "apply_view")
+
+            let refname = format!("refs/namespaces/{}/refs/{}", &view, &branchname);
+            repo.reference(&refname, view_commit, true, "apply_view")
                 .expect("can't create reference");
 
             if branchname == "master" {
@@ -191,45 +176,23 @@ pub fn apply_view_cached(
             continue 'walk;
         };
 
-        match match commit.parents().count() {
-            2 => {
-                let parent1 = commit.parents().nth(0).unwrap().id();
-                let parent2 = commit.parents().nth(1).unwrap().id();
-                match (view_cache.get(&parent1), view_cache.get(&parent2)) {
-                    (Some(&parent1), Some(&parent2)) => CommitKind::Merge(parent1, parent2),
-                    (Some(&parent), None) => CommitKind::Normal(parent),
-                    (None, Some(&parent)) => CommitKind::Normal(parent),
-                    _ => CommitKind::Orphan,
-                }
-            }
-            1 => {
-                let parent = commit.parents().nth(0).unwrap().id();
-                match view_cache.get(&parent) {
-                    Some(&parent) => CommitKind::Normal(parent),
-                    _ => CommitKind::Orphan,
-                }
-            }
-            0 => CommitKind::Orphan,
-            _ => panic!("commit with {} parents: {}", commit.parents().count(), commit.id()),
-        } {
-            CommitKind::Merge(parent1, parent2) => {
-                let parent1 = repo.find_commit(parent1).unwrap();
-                let parent2 = repo.find_commit(parent2).unwrap();
-                view_cache
-                    .insert(commit.id(), rewrite(&repo, &commit, &[&parent1, &parent2], &new_tree));
-            }
-            CommitKind::Normal(parent) => {
-                let parent = repo.find_commit(parent).unwrap();
-                if new_tree.id() == parent.tree().unwrap().id() {
-                    view_cache.insert(commit.id(), parent.id());
-                } else {
-                    view_cache.insert(commit.id(), rewrite(&repo, &commit, &[&parent], &new_tree));
-                }
-            }
-            CommitKind::Orphan => {
-                view_cache.insert(commit.id(), rewrite(&repo, &commit, &[], &new_tree));
+        let mut parents = vec![];
+        for parent in commit.parents() {
+            if let Some(parent) = view_cache.get(&parent.id()){
+                let parent = repo.find_commit(*parent).unwrap();
+                parents.push(parent);
+            };
+        }
+
+        let parent_refs: Vec<&_> = parents.iter().collect();
+
+        if let [only_parent] = parent_refs.as_slice() {
+            if new_tree.id() == only_parent.tree().unwrap().id() {
+                view_cache.insert(commit.id(), only_parent.id());
+                continue 'walk;
             }
         }
+        view_cache.insert(commit.id(), rewrite(&repo, &commit, &parent_refs, &new_tree));
     }
 
     return view_cache.get(&newrev).map(|&id| id);
@@ -260,33 +223,15 @@ pub fn join_to_subdir(
         let new_tree = repo.find_tree(replace_subtree(&repo, path, &tree, &empty))
             .expect("can't find tree");
 
-        match commit.parents().count() {
-            2 => {
-                let parent1 = commit.parents().nth(0).unwrap().id();
-                let parent2 = commit.parents().nth(1).unwrap().id();
-                if let (Some(&parent1), Some(&parent2)) = (map.get(&parent1), map.get(&parent2)) {
-                    let parent1 = repo.find_commit(parent1).unwrap();
-                    let parent2 = repo.find_commit(parent2).unwrap();
-
-                    map.insert(
-                        commit.id(),
-                        rewrite(&repo, &commit, &[&parent1, &parent2], &new_tree),
-                    );
-                    continue 'walk;
-                }
-            }
-            1 => {
-                let parent = commit.parents().nth(0).unwrap().id();
-                let parent = *map.get(&parent).unwrap();
-                let parent = repo.find_commit(parent).unwrap();
-                map.insert(commit.id(), rewrite(&repo, &commit, &[&parent], &new_tree));
-                continue 'walk;
-            }
-            0 => {}
-            _ => panic!("commit with {} parents: {}", commit.parents().count(), commit.id()),
+        let mut parents = vec![];
+        for parent in commit.parents() {
+            let parent = map.get(&parent.id()).unwrap();
+            let parent = repo.find_commit(*parent).unwrap();
+            parents.push(parent);
         }
 
-        map.insert(commit.id(), rewrite(&repo, &commit, &[], &new_tree));
+        let parent_refs: Vec<&_> = parents.iter().collect();
+        map.insert(commit.id(), rewrite(&repo, &commit, &parent_refs, &new_tree));
     }
 
     let in_subdir = repo.find_commit(map[&src.id()]).unwrap();

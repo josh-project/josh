@@ -6,8 +6,6 @@ mod helpers;
 use git2::*;
 use grib::*;
 use std::path::Path;
-use std::path::PathBuf;
-use std::thread;
 use tempdir::TempDir;
 
 fn sorted(mut v: Vec<String>) -> Vec<String>
