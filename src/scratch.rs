@@ -118,13 +118,14 @@ pub fn apply_view_to_branch(
         if let Some(view_commit) = apply_view_cached(&repo, &viewobj, r, view_cache) {
             println!("applied view to branch {}", branchname);
 
-            let refname = format!("refs/namespaces/{}/refs/heads/{}", &view, &branchname);
+            let ns = view.replace("/","/refs/namespaces/");
+            let refname = format!("refs/namespaces/{}/refs/heads/{}", &ns, &branchname);
             repo.reference(&refname, view_commit, true, "apply_view")
                 .expect("can't create reference");
 
             if branchname == "master" {
 
-            repo.reference(&format!("refs/namespaces/{}/HEAD", &view), view_commit, true, "apply_view")
+            repo.reference(&format!("refs/namespaces/{}/HEAD", &ns), view_commit, true, "apply_view")
                 .expect("can't create reference");
             }
         } else {
