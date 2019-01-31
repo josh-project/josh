@@ -11,10 +11,12 @@ pub struct ChainView {
 
 impl View for ChainView {
     fn apply(&self, repo: &Repository, tree: &Tree) -> Option<Oid> {
-        let r = self.first.apply(&repo, &tree).expect("no tree");
-        return self
-            .second
-            .apply(&repo, &repo.find_tree(r).expect("no tree"));
+        if let Some(r) = self.first.apply(&repo, &tree) {
+            if let Ok(t) = repo.find_tree(r) {
+                return self.second.apply(&repo, &t);
+            }
+        }
+        return None
     }
 
     fn unapply(&self, repo: &Repository, tree: &Tree, parent_tree: &Tree) -> Option<Oid> {
