@@ -1,7 +1,6 @@
 extern crate git2;
 
-use super::SubdirView;
-use super::PrefixView;
+use super::build_view;
 use super::UnapplyView;
 use super::View;
 use super::replace_subtree;
@@ -97,13 +96,9 @@ pub fn new(path: &Path) -> Repository
     Repository::init_bare(&path).expect("could not init scratch")
 }
 
-fn transform_commit(repo: &Repository, view: &str, from_refsname: &str, to_refname: &str, view_cache: &mut ViewCache)
+fn transform_commit(repo: &Repository, viewstr: &str, from_refsname: &str, to_refname: &str, view_cache: &mut ViewCache)
 {
-    let viewobj: Box<dyn View> = if view.starts_with("+") {
-        Box::new(PrefixView::new(&Path::new(&view[1..].trim_left_matches("/"))))
-    } else {
-        Box::new(SubdirView::new(&Path::new(&view)))
-    };
+    let viewobj = build_view(&viewstr);
 
     if let Ok(reference) = repo.find_reference(&from_refsname) {
         let r = reference.target().expect("no ref");

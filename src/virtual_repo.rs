@@ -24,6 +24,7 @@ pub fn setup_tmp_repo(scratch_dir: &Path) {
     shell.command("rm -Rf refs/drafts");
 }
 
+
 pub fn update_hook(refname: &str, _old: &str, new: &str) -> i32 {
     let scratch = scratch::new(&Path::new(
         &env::var("GIT_DIR").expect("GIT_DIR not set"),
@@ -36,12 +37,7 @@ pub fn update_hook(refname: &str, _old: &str, new: &str) -> i32 {
 
     let new_oid = if let Ok(viewstr) = env::var("GIT_NAMESPACE") {
 
-        let viewobj: Box<dyn View> = if viewstr.starts_with("+") {
-            Box::new(PrefixView::new(&Path::new(&viewstr[1..].trim_left_matches("/"))))
-        } else {
-            Box::new(SubdirView::new(&Path::new(&viewstr)))
-        };
-
+        let viewobj = build_view(&viewstr);
         debug!("=== MORE");
 
         let without_refs_for = refname.to_owned();
