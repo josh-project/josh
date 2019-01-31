@@ -31,7 +31,7 @@ lazy_static! {
         Regex::new(r"(?P<prefix>/.*[.]git)/(?P<view>.*)[.]git(?P<pathinfo>/.*)")
             .expect("can't compile regex");
     static ref FULL_REGEX: Regex =
-        Regex::new(r"(?P<prefix>/\w*[.]git)(?P<pathinfo>/.*)").expect("can't compile regex");
+        Regex::new(r"(?P<prefix>/.*[.]git)(?P<pathinfo>/.*)").expect("can't compile regex");
 }
 
 struct GribHttp {
