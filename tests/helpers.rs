@@ -14,17 +14,14 @@ extern crate tokio_core;
 use grib::Shell;
 use tempdir::TempDir;
 
-pub struct TestRepo
-{
+pub struct TestRepo {
     pub repo: git2::Repository,
     pub shell: Shell,
     td: TempDir,
 }
 
-impl TestRepo
-{
-    pub fn new() -> Self
-    {
+impl TestRepo {
+    pub fn new() -> Self {
         let td = TempDir::new("cgh_test").expect("folder cgh_test should be created");
         let repo = git2::Repository::init(td.path()).expect("init should succeed");
         let tr = TestRepo {
@@ -39,16 +36,14 @@ impl TestRepo
         return tr;
     }
 
-    pub fn commit(&self, message: &str) -> String
-    {
+    pub fn commit(&self, message: &str) -> String {
         self.shell
             .command(&format!("git commit -m \"{}\"", message));
         let (stdout, _) = self.shell.command("git rev-parse HEAD");
         stdout
     }
 
-    pub fn add_file(&self, filename: &str)
-    {
+    pub fn add_file(&self, filename: &str) {
         self.shell
             .command(&format!("mkdir -p $(dirname {})", filename));
         self.shell
@@ -56,8 +51,7 @@ impl TestRepo
         self.shell.command(&format!("git add {}", filename));
     }
 
-    pub fn rev(&self, r: &str) -> String
-    {
+    pub fn rev(&self, r: &str) -> String {
         let (stdout, _) = self.shell.command(&format!("git rev-parse {}", r));
         stdout
     }

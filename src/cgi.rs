@@ -3,8 +3,8 @@ extern crate hyper;
 extern crate tokio_core;
 extern crate tokio_process;
 
-use self::futures::Stream;
 use self::futures::future::Future;
+use self::futures::Stream;
 use self::hyper::header::ContentEncoding;
 use self::hyper::header::ContentLength;
 use self::hyper::header::ContentType;
@@ -22,35 +22,45 @@ pub fn do_cgi(
     req: Request,
     cmd: Command,
     handle: tokio_core::reactor::Handle,
-) -> Box<Future<Item = Response, Error = hyper::Error>>
-{
+) -> Box<Future<Item = Response, Error = hyper::Error>> {
     let mut cmd = cmd;
     cmd.stdout(Stdio::piped());
     cmd.stderr(Stdio::inherit());
     cmd.stdin(Stdio::piped());
     println!("REQUEST_METHOD {:?}", req.method());
     cmd.env("SERVER_SOFTWARE", "hyper")
-       .env("SERVER_NAME", "localhost")            // TODO
-       .env("GATEWAY_INTERFACE", "CGI/1.1")
-       .env("SERVER_PROTOCOL", "HTTP/1.1")         // TODO
-       .env("SERVER_PORT", "80")                   // TODO
-       .env("REQUEST_METHOD", format!("{}",req.method()))
-       .env("SCRIPT_NAME", "")                     // TODO
-       .env("QUERY_STRING", req.query().unwrap_or(""))
-       .env("REMOTE_ADDR", "")                     // TODO
-       .env("AUTH_TYPE", "")                       // TODO
-       .env("REMOTE_USER", "")                     // TODO
-       .env("CONTENT_TYPE",
-           &format!("{}", req.headers().get().unwrap_or(&ContentType::plaintext())))
-       .env("HTTP_CONTENT_ENCODING",
-           &format!("{}", req.headers().get().unwrap_or(&ContentEncoding(vec![]))))
-       .env("CONTENT_LENGTH",
-           &format!("{}", req.headers().get().unwrap_or(&ContentLength(0))));
+        .env("SERVER_NAME", "localhost") // TODO
+        .env("GATEWAY_INTERFACE", "CGI/1.1")
+        .env("SERVER_PROTOCOL", "HTTP/1.1") // TODO
+        .env("SERVER_PORT", "80") // TODO
+        .env("REQUEST_METHOD", format!("{}", req.method()))
+        .env("SCRIPT_NAME", "") // TODO
+        .env("QUERY_STRING", req.query().unwrap_or(""))
+        .env("REMOTE_ADDR", "") // TODO
+        .env("AUTH_TYPE", "") // TODO
+        .env("REMOTE_USER", "") // TODO
+        .env(
+            "CONTENT_TYPE",
+            &format!(
+                "{}",
+                req.headers().get().unwrap_or(&ContentType::plaintext())
+            ),
+        )
+        .env(
+            "HTTP_CONTENT_ENCODING",
+            &format!(
+                "{}",
+                req.headers().get().unwrap_or(&ContentEncoding(vec![]))
+            ),
+        )
+        .env(
+            "CONTENT_LENGTH",
+            &format!("{}", req.headers().get().unwrap_or(&ContentLength(0))),
+        );
 
     let mut child = cmd.spawn_async(&handle).expect("can't spawn CGI command");
 
     Box::new(req.body().concat2().and_then(move |body| {
-
         child
             .stdin()
             .take()

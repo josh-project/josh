@@ -11,8 +11,7 @@ pub fn fetch_refs_from_url(
     url: &str,
     username: &str,
     password: &str,
-) -> Result<(), git2::Error>
-{
+) -> Result<(), git2::Error> {
     let spec = "+refs/heads/*:refs/heads/*";
 
     let shell = Shell {
@@ -24,7 +23,10 @@ pub fn fetch_refs_from_url(
         let rest = splitted[1];
         format!("{}://{}@{}", &proto, &username, &rest)
     };
-    let cmd = format!("git config --local credential.helper '!f() {{ echo \"password={}\"; }}; f'", &password);
+    let cmd = format!(
+        "git config --local credential.helper '!f() {{ echo \"password={}\"; }}; f'",
+        &password
+    );
     shell.command(&cmd);
 
     let cmd = format!("git fetch {} '{}'", &nurl, &spec);
@@ -37,13 +39,7 @@ pub fn fetch_refs_from_url(
     return Ok(());
 }
 
-pub fn push_head_url(
-    path: &Path,
-    refname: &str,
-    url: &str,
-    username: &str,
-    password: &str)
-{
+pub fn push_head_url(path: &Path, refname: &str, url: &str, username: &str, password: &str) {
     let spec = format!("HEAD:{}", &refname);
 
     let shell = Shell {
@@ -55,7 +51,10 @@ pub fn push_head_url(
         let rest = splitted[1];
         format!("{}://{}@{}", &proto, &username, &rest)
     };
-    let cmd = format!("git config --local credential.helper '!f() {{ echo \"password={}\"; }}; f'", &password);
+    let cmd = format!(
+        "git config --local credential.helper '!f() {{ echo \"password={}\"; }}; f'",
+        &password
+    );
     shell.command(&cmd);
     let cmd = format!("git push {} '{}'", &nurl, &spec);
     let (stdout, stderr) = shell.command(&cmd);
@@ -63,9 +62,7 @@ pub fn push_head_url(
     println!("{}", &stdout);
 }
 
-
-pub fn create_local(path: &Path)
-{
+pub fn create_local(path: &Path) {
     println!("init base repo: {:?}", path);
     fs::create_dir_all(path);
 

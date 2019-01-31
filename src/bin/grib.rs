@@ -1,9 +1,8 @@
 extern crate grib;
-use std::process::exit;
 use std::env;
+use std::process::exit;
 
-fn main()
-{
+fn main() {
     let args = {
         let mut args = vec![];
         for arg in env::args() {

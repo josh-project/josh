@@ -1,15 +1,12 @@
 use shell::Shell;
 use std::path::Path;
 
-pub struct FileLock
-{
+pub struct FileLock {
     name: String,
 }
 
-impl FileLock
-{
-    pub fn new(name: &str) -> FileLock
-    {
+impl FileLock {
+    pub fn new(name: &str) -> FileLock {
         let shell = Shell {
             cwd: Path::new("/tmp/").to_path_buf(),
         };
@@ -27,10 +24,8 @@ impl FileLock
     }
 }
 
-impl Drop for FileLock
-{
-    fn drop(&mut self)
-    {
+impl Drop for FileLock {
+    fn drop(&mut self) {
         let shell = Shell {
             cwd: Path::new("/tmp/").to_path_buf(),
         };

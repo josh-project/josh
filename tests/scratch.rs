@@ -8,8 +8,7 @@ use grib::*;
 use std::path::Path;
 use tempdir::TempDir;
 
-fn sorted(mut v: Vec<String>) -> Vec<String>
-{
+fn sorted(mut v: Vec<String>) -> Vec<String> {
     v.sort();
     v
 }
@@ -17,23 +16,26 @@ fn sorted(mut v: Vec<String>) -> Vec<String>
 const TMP_NAME: &'static str = "refs/centralgit/tmp_fd2db5f8_bac2_4a1e_9487_4ac3414788aa";
 
 // force push of the new revision-object to temp repo
-fn transfer<'a>(repo: &'a Repository, rev: &str, source: &Path) -> Object<'a>
-{
+fn transfer<'a>(repo: &'a Repository, rev: &str, source: &Path) -> Object<'a> {
     // TODO: implement using libgit
     let target = &repo.path();
     let shell = Shell {
         cwd: source.to_path_buf(),
     };
     shell.command(&format!("git update-ref {} {}", TMP_NAME, rev));
-    shell.command(&format!("git push --force {} {}", &target.to_string_lossy(), TMP_NAME));
+    shell.command(&format!(
+        "git push --force {} {}",
+        &target.to_string_lossy(),
+        TMP_NAME
+    ));
 
-    let obj = repo.revparse_single(rev)
+    let obj = repo
+        .revparse_single(rev)
         .expect("can't find transfered ref");
     return obj;
 }
 
-fn find_all_subdirs(repo: &Repository, tree: &Tree) -> Vec<String>
-{
+fn find_all_subdirs(repo: &Repository, tree: &Tree) -> Vec<String> {
     let mut sd = vec![];
     for item in tree {
         if let Ok(st) = repo.find_tree(item.id()) {
@@ -49,10 +51,8 @@ fn find_all_subdirs(repo: &Repository, tree: &Tree) -> Vec<String>
     return sd;
 }
 
-
 #[test]
-fn test_find_all_subtrees()
-{
+fn test_find_all_subtrees() {
     let td = TempDir::new("cgh_test").expect("folder cgh_test should be created");
     let scratch = scratch::new(&td.path().join("scratch"));
     let repo = helpers::TestRepo::new();
@@ -96,9 +96,11 @@ fn test_find_all_subtrees()
     );
 }
 
-fn split_subdir_ref(repo: &helpers::TestRepo, module: &str, newrev: git2::Oid)
-    -> Option<git2::Oid>
-{
+fn split_subdir_ref(
+    repo: &helpers::TestRepo,
+    module: &str,
+    newrev: git2::Oid,
+) -> Option<git2::Oid> {
     repo.shell.command("rm -Rf refs/original");
     repo.shell.command("rm -Rf .git-rewrite");
 
@@ -106,8 +108,10 @@ fn split_subdir_ref(repo: &helpers::TestRepo, module: &str, newrev: git2::Oid)
         .set_head_detached(newrev)
         .expect("can't detatch head");;
 
-    repo.shell
-        .command(&format!("git filter-branch --subdirectory-filter {}/ -- HEAD", module));
+    repo.shell.command(&format!(
+        "git filter-branch --subdirectory-filter {}/ -- HEAD",
+        module
+    ));
 
     return Some(
         repo.repo
@@ -117,10 +121,8 @@ fn split_subdir_ref(repo: &helpers::TestRepo, module: &str, newrev: git2::Oid)
     );
 }
 
-
 #[test]
-fn test_split_subdir_one_commit()
-{
+fn test_split_subdir_one_commit() {
     let td = TempDir::new("cgh_test").expect("folder cgh_test should be created");
     let scratch = scratch::new(&td.path().join("scratch"));
     let repo = helpers::TestRepo::new();
@@ -135,8 +137,7 @@ fn test_split_subdir_one_commit()
 }
 
 #[test]
-fn test_split_subdir_two_commits()
-{
+fn test_split_subdir_two_commits() {
     let td = TempDir::new("cgh_test").expect("folder cgh_test should be created");
     let scratch = scratch::new(&td.path().join("scratch"));
     let repo = helpers::TestRepo::new();
@@ -153,8 +154,7 @@ fn test_split_subdir_two_commits()
 }
 
 #[test]
-fn test_split_subdir_does_not_exist()
-{
+fn test_split_subdir_does_not_exist() {
     let td = TempDir::new("cgh_test").expect("folder cgh_test should be created");
     let scratch = scratch::new(&td.path().join("scratch"));
     let repo = helpers::TestRepo::new();
@@ -169,8 +169,7 @@ fn test_split_subdir_does_not_exist()
 }
 
 #[test]
-fn test_split_subdir_two_commits_first_empty()
-{
+fn test_split_subdir_two_commits_first_empty() {
     let td = TempDir::new("cgh_test").expect("folder cgh_test should be created");
     let scratch = scratch::new(&td.path().join("scratch"));
     let repo = helpers::TestRepo::new();
@@ -188,8 +187,7 @@ fn test_split_subdir_two_commits_first_empty()
 }
 
 #[test]
-fn test_split_subdir_three_commits_middle_unrelated()
-{
+fn test_split_subdir_three_commits_middle_unrelated() {
     let td = TempDir::new("cgh_test").expect("folder cgh_test should be created");
     let scratch = scratch::new(&td.path().join("scratch"));
     let repo = helpers::TestRepo::new();
@@ -208,8 +206,7 @@ fn test_split_subdir_three_commits_middle_unrelated()
 }
 
 #[test]
-fn test_split_subdir_three_commits_first_unrelated()
-{
+fn test_split_subdir_three_commits_first_unrelated() {
     let td = TempDir::new("cgh_test").expect("folder cgh_test should be created");
     let scratch = scratch::new(&td.path().join("scratch"));
     let repo = helpers::TestRepo::new();
@@ -228,8 +225,7 @@ fn test_split_subdir_three_commits_first_unrelated()
 }
 
 #[test]
-fn test_split_subdir_branch()
-{
+fn test_split_subdir_branch() {
     let td = TempDir::new("cgh_test").expect("folder cgh_test should be created");
     let scratch = scratch::new(&td.path().join("scratch"));
     let repo = helpers::TestRepo::new();
@@ -257,14 +253,16 @@ fn test_split_subdir_branch()
     // shell.command("gitk --all");
     assert_eq!(
         fparents(&shell.command("git log --pretty=format:%s-@%p --topo-order actual")),
-        fparents(&repo.shell
-            .command("git log --pretty=format:%s-@%p --topo-order --grep=foo_ "))
+        fparents(
+            &repo
+                .shell
+                .command("git log --pretty=format:%s-@%p --topo-order --grep=foo_ ")
+        )
     );
 }
 
 #[test]
-fn test_split_subdir_branch_unrelated()
-{
+fn test_split_subdir_branch_unrelated() {
     let td = TempDir::new("cgh_test").expect("folder cgh_test should be created");
     let scratch = scratch::new(&td.path().join("scratch"));
     let repo = helpers::TestRepo::new();
@@ -294,31 +292,45 @@ fn test_split_subdir_branch_unrelated()
     // shell.command("gitk --all");
     assert_eq!(
         fparents(&shell.command("git log --pretty=format:%s-@%p --topo-order actual")),
-        fparents(&repo.shell
-            .command("git log --pretty=format:%s-@%p --topo-order --grep=foo_ "))
+        fparents(
+            &repo
+                .shell
+                .command("git log --pretty=format:%s-@%p --topo-order --grep=foo_ ")
+        )
     );
 }
 
 #[test]
-fn test_split_merge_identical_to_first()
-{
+fn test_split_merge_identical_to_first() {
     let td = TempDir::new("cgh_test").expect("folder cgh_test should be created");
     let scratch = scratch::new(&td.path().join("scratch"));
     let repo = helpers::TestRepo::new();
 
     repo.add_file("foo/initial");
-    let _ = transfer(&scratch, &repo.commit("foo_initial_on_master"), &repo.repo.path());
+    let _ = transfer(
+        &scratch,
+        &repo.commit("foo_initial_on_master"),
+        &repo.repo.path(),
+    );
 
     repo.shell.command("git branch tmp");
 
     repo.shell.command("git checkout master");
     repo.add_file("foo/bla");
-    let _ = transfer(&scratch, &repo.commit("foo_second_on_master"), &repo.repo.path());
+    let _ = transfer(
+        &scratch,
+        &repo.commit("foo_second_on_master"),
+        &repo.repo.path(),
+    );
 
     repo.shell.command("git checkout tmp");
     repo.add_file("foo/bla");
     repo.add_file("foo/bla_bla");
-    let _ = transfer(&scratch, &repo.commit("foo_second_on_tmp"), &repo.repo.path());
+    let _ = transfer(
+        &scratch,
+        &repo.commit("foo_second_on_tmp"),
+        &repo.repo.path(),
+    );
 
     repo.shell.command("git checkout master");
     repo.shell.command("git merge tmp --no-ff -m foo_merge");
@@ -338,13 +350,15 @@ fn test_split_merge_identical_to_first()
     // shell.command("gitk --all");
     assert_eq!(
         fparents(&shell.command("git log --pretty=format:%s-@%p --topo-order actual")),
-        fparents(&repo.shell
-            .command("git log --pretty=format:%s-@%p --topo-order --grep=foo_ "))
+        fparents(
+            &repo
+                .shell
+                .command("git log --pretty=format:%s-@%p --topo-order --grep=foo_ ")
+        )
     );
 }
 
-fn fparents(ss: &(String, String)) -> String
-{
+fn fparents(ss: &(String, String)) -> String {
     let (s, _) = ss.clone();
     let mut o = String::new();
     for l in s.lines() {
@@ -368,8 +382,7 @@ fn fparents(ss: &(String, String)) -> String
 }
 
 #[test]
-fn test_split_merge_identical_to_second()
-{
+fn test_split_merge_identical_to_second() {
     let td = TempDir::new("cgh_test").expect("folder cgh_test should be created");
     let scratch = scratch::new(&td.path().join("scratch"));
     let repo = helpers::TestRepo::new();
@@ -400,7 +413,10 @@ fn test_split_merge_identical_to_second()
     // shell.command("gitk --all");
     assert_eq!(
         fparents(&shell.command("git log --pretty=format:%s-@%p --topo-order actual")),
-        fparents(&repo.shell
-            .command("git log --pretty=format:%s-@%p --topo-order --grep=foo_ "))
+        fparents(
+            &repo
+                .shell
+                .command("git log --pretty=format:%s-@%p --topo-order --grep=foo_ ")
+        )
     );
 }

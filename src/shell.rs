@@ -5,15 +5,12 @@ use std::path::PathBuf;
 use std::process::Command;
 use tempdir::TempDir;
 
-pub struct Shell
-{
+pub struct Shell {
     pub cwd: PathBuf,
 }
 
-impl Shell
-{
-    pub fn command(&self, cmd: &str) -> (String, String)
-    {
+impl Shell {
+    pub fn command(&self, cmd: &str) -> (String, String) {
         /* debug!("Shell::command: {}", cmd); */
         /* debug!("cwd: {:?}", self.cwd); */
         let git_dir = if self.cwd.join(".git").exists() {
@@ -47,8 +44,7 @@ impl Shell
     }
 }
 
-struct TLocals
-{
+struct TLocals {
     td: TempDir,
 }
 
@@ -72,8 +68,7 @@ thread_local!(
     )
 );
 
-pub fn thread_local_temp_dir() -> PathBuf
-{
+pub fn thread_local_temp_dir() -> PathBuf {
     let mut t = PathBuf::new();
     TMP.with(|tmp| {
         println!("old TMP {:?}", tmp.borrow().td.path());

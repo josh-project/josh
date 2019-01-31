@@ -9,7 +9,6 @@ use std::path::Path;
 use std::path::PathBuf;
 
 pub fn setup_tmp_repo(scratch_dir: &Path) {
-
     let shell = Shell {
         cwd: scratch_dir.to_path_buf(),
     };
@@ -24,19 +23,14 @@ pub fn setup_tmp_repo(scratch_dir: &Path) {
     shell.command("rm -Rf refs/drafts");
 }
 
-
 pub fn update_hook(refname: &str, _old: &str, new: &str) -> i32 {
-    let scratch = scratch::new(&Path::new(
-        &env::var("GIT_DIR").expect("GIT_DIR not set"),
-    ));
-
+    let scratch = scratch::new(&Path::new(&env::var("GIT_DIR").expect("GIT_DIR not set")));
 
     let username = env::var("GRIB_USERNAME").expect("GRIB_USERNAME not set");
     let password = env::var("GRIB_PASSWORD").expect("GRIB_PASSWORD not set");
     let remote_url = env::var("GRIB_REMOTE").expect("GRIB_REMOTE not set");
 
     let new_oid = if let Ok(viewstr) = env::var("GIT_NAMESPACE") {
-
         let viewobj = build_view(&viewstr);
         debug!("=== MORE");
 
@@ -58,7 +52,6 @@ pub fn update_hook(refname: &str, _old: &str, new: &str) -> i32 {
         let old = namespaced_repo.refname_to_id(&without_refs_for).unwrap();
 
         debug!("=== processed_old {}", old);
-
 
         match scratch::unapply_view(
             &scratch,

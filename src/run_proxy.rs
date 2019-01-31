@@ -9,17 +9,16 @@ extern crate regex;
 extern crate tempdir;
 extern crate tokio_core;
 
-
-use self::futures::Stream;
 use self::futures::future::Future;
+use self::futures::Stream;
 use self::futures_cpupool::CpuPool;
 use self::hyper::header::{Authorization, Basic};
 use self::hyper::server::{Http, Request, Response, Service};
 use self::regex::Regex;
-use super::*;
 use super::cgi;
 use super::scratch;
 use super::virtual_repo;
+use super::*;
 use std::collections::HashMap;
 use std::net;
 use std::path::Path;
@@ -32,12 +31,10 @@ lazy_static! {
         Regex::new(r"(?P<prefix>/.*[.]git)/(?P<view>.*)[.]git(?P<pathinfo>/.*)")
             .expect("can't compile regex");
     static ref FULL_REGEX: Regex =
-        Regex::new(r"(?P<prefix>/\w*[.]git)(?P<pathinfo>/.*)")
-            .expect("can't compile regex");
+        Regex::new(r"(?P<prefix>/\w*[.]git)(?P<pathinfo>/.*)").expect("can't compile regex");
 }
 
-struct GribHttp
-{
+struct GribHttp {
     handle: tokio_core::reactor::Handle,
     pool: CpuPool,
     base_path: PathBuf,
@@ -52,8 +49,7 @@ fn async_fetch(
     username: &str,
     password: &str,
     remote_url: String,
-) -> Box<Future<Item = Result<PathBuf, git2::Error>, Error = hyper::Error>>
-{
+) -> Box<Future<Item = Result<PathBuf, git2::Error>, Error = hyper::Error>> {
     let br_path = http.base_path.join(prefix.trim_left_matches("/"));
     base_repo::create_local(&br_path);
 
@@ -64,17 +60,14 @@ fn async_fetch(
     Box::new(http.pool.spawn(
         futures::future::ok(view_string.to_owned()).map(move |view_string| {
             match base_repo::fetch_refs_from_url(&br_path, &remote_url, &username, &password) {
-                Ok(_) => Ok(
-                    make_view_repo(&view_string, &br_path, cache),
-                ),
+                Ok(_) => Ok(make_view_repo(&view_string, &br_path, cache)),
                 Err(e) => Err(e),
             }
         }),
     ))
 }
 
-fn respond_unauthorized() -> Response
-{
+fn respond_unauthorized() -> Response {
     let mut response: Response = Response::new().with_status(hyper::StatusCode::Unauthorized);
     response
         .headers_mut()
@@ -82,18 +75,14 @@ fn respond_unauthorized() -> Response
     response
 }
 
-
-impl Service for GribHttp
-{
+impl Service for GribHttp {
     type Request = Request;
     type Response = Response;
     type Error = hyper::Error;
 
     type Future = Box<Future<Item = Self::Response, Error = Self::Error>>;
 
-
-    fn call(&self, req: Request) -> Self::Future
-    {
+    fn call(&self, req: Request) -> Self::Future {
         let (prefix, view_string, pathinfo) =
             if let Some(caps) = VIEW_REGEX.captures(&req.uri().path()) {
                 (
@@ -108,14 +97,12 @@ impl Service for GribHttp
                     caps.name("pathinfo").unwrap().as_str().to_string(),
                 )
             } else if req.uri().path() == "/version" {
-                let response =
-                    Response::new()
+                let response = Response::new()
                     .with_body(format!("Version: {}\n", env!("VERSION")))
                     .with_status(hyper::StatusCode::Ok);
                 return Box::new(futures::future::ok(response));
             } else {
-                let response = Response::new()
-                .with_status(hyper::StatusCode::NotFound);
+                let response = Response::new().with_status(hyper::StatusCode::NotFound);
                 return Box::new(futures::future::ok(response));
             };
 
@@ -123,14 +110,15 @@ impl Service for GribHttp
             Some(&Authorization(Basic {
                 ref username,
                 ref password,
-            })) => (username.to_owned(), password.to_owned().unwrap_or("".to_owned()).to_owned()),
+            })) => (
+                username.to_owned(),
+                password.to_owned().unwrap_or("".to_owned()).to_owned(),
+            ),
             _ => {
                 println!("no credentials in request");
                 return Box::new(futures::future::ok(respond_unauthorized()));
             }
         };
-
-
 
         let passwd = password.clone();
         let usernm = username.clone();
@@ -160,7 +148,9 @@ impl Service for GribHttp
                 cmd.env("PATH_INFO", pathinfo);
                 cmd.env("GRIB_PASSWORD", passwd);
                 cmd.env("GRIB_USERNAME", usernm);
-                if viewstr != "" { cmd.env("GIT_NAMESPACE", viewstr); }
+                if viewstr != "" {
+                    cmd.env("GIT_NAMESPACE", viewstr);
+                }
                 cmd.env("GRIB_REMOTE", remote_url);
 
                 cgi::do_cgi(request, cmd, handle.clone())
@@ -170,19 +160,15 @@ impl Service for GribHttp
         println!("VIEW: {}", &view_string);
         println!("PATH_INFO: {:?}", &pathinfo);
 
-
-
         let handle = self.handle.clone();
-
 
         Box::new({
             async_fetch(&self, &prefix, &view_string, &username, &password, br_url).and_then(
                 move |view_repo| match view_repo {
-                    Err(e) =>
-                    {
+                    Err(e) => {
                         println!("wrong credentials");
                         Box::new(futures::future::ok(respond_unauthorized()))
-                    },
+                    }
 
                     Ok(path) => call_git_http_backend(req, path, &pathinfo, &handle),
                 },
@@ -191,19 +177,22 @@ impl Service for GribHttp
     }
 }
 
-pub fn run_proxy(args: Vec<String>) -> i32
-{
+pub fn run_proxy(args: Vec<String>) -> i32 {
     println!("RUN PROXY {:?}", &args);
     let logfilename = Path::new("/tmp/centralgit.log");
     fern::Dispatch::new()
         .format(|out, message, record| {
-            out.finish(format_args!("{}[{}] {}", record.target(), record.level(), message))
+            out.finish(format_args!(
+                "{}[{}] {}",
+                record.target(),
+                record.level(),
+                message
+            ))
         })
         .chain(std::io::stdout())
         .chain(fern::log_file(logfilename).unwrap())
         .apply()
         .unwrap();
-
 
     debug!("args: {:?}", args);
 
@@ -226,7 +215,6 @@ pub fn run_proxy(args: Vec<String>) -> i32
         .arg(clap::Arg::with_name("port").long("port").takes_value(true))
         .get_matches_from(args);
 
-
     let port = args.value_of("port").unwrap_or("8000").to_owned();
     println!("Now listening on localhost:{}", port);
 
@@ -240,13 +228,10 @@ pub fn run_proxy(args: Vec<String>) -> i32
         &args.value_of("remote").expect("missing remote repo url"),
     );
 
-
     return 0;
 }
 
-
-fn run_http_server(addr: net::SocketAddr, pool: &CpuPool, local: &Path, remote: &str)
-{
+fn run_http_server(addr: net::SocketAddr, pool: &CpuPool, local: &Path, remote: &str) {
     let mut core = tokio_core::reactor::Core::new().unwrap();
     let h2 = core.handle();
     let cache = Arc::new(Mutex::new(HashMap::new()));
@@ -286,8 +271,7 @@ fn make_view_repo(
     view_string: &str,
     br_path: &Path,
     cache: Arc<Mutex<scratch::ViewCaches>>,
-) -> PathBuf
-{
+) -> PathBuf {
     let scratch = scratch::new(&br_path);
 
     for branch in scratch.branches(None).unwrap() {

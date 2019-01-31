@@ -1,9 +1,9 @@
 extern crate git2;
 
 use super::build_view;
+use super::replace_subtree;
 use super::UnapplyView;
 use super::View;
-use super::replace_subtree;
 use git2::*;
 use shell::Shell;
 use std::collections::HashMap;
@@ -14,23 +14,28 @@ pub type ViewCaches = HashMap<String, ViewCache>;
 
 // takes everything from base except it's tree and replaces it with the tree
 // given
-pub fn rewrite(repo: &Repository, base: &Commit, parents: &[&Commit], tree: &Tree) -> Oid
-{
-    let result = repo.commit(
-        None,
-        &base.author(),
-        &base.committer(),
-        &base.message().unwrap_or("no message"),
-        tree,
-        parents,
-    ).expect("rewrite: can't commit {:?}");
+pub fn rewrite(repo: &Repository, base: &Commit, parents: &[&Commit], tree: &Tree) -> Oid {
+    let result = repo
+        .commit(
+            None,
+            &base.author(),
+            &base.committer(),
+            &base.message().unwrap_or("no message"),
+            tree,
+            parents,
+        )
+        .expect("rewrite: can't commit {:?}");
 
     result
 }
 
-pub fn unapply_view(repo: &Repository, current: Oid, viewobj: &View, old: Oid, new: Oid)
-    -> UnapplyView
-{
+pub fn unapply_view(
+    repo: &Repository,
+    current: Oid,
+    viewobj: &View,
+    old: Oid,
+    new: Oid,
+) -> UnapplyView {
     if old == new {
         return UnapplyView::NoChanges;
     }
@@ -61,7 +66,8 @@ pub fn unapply_view(repo: &Repository, current: Oid, viewobj: &View, old: Oid, n
 
         debug!("==== walking commit {}", rev);
 
-        let module_commit = repo.find_commit(rev)
+        let module_commit = repo
+            .find_commit(rev)
             .expect("walk: object is not actually a commit");
 
         if module_commit.parents().count() > 1 {
@@ -72,13 +78,15 @@ pub fn unapply_view(repo: &Repository, current: Oid, viewobj: &View, old: Oid, n
         debug!("==== Rewriting commit {}", rev);
 
         let tree = module_commit.tree().expect("walk: commit has no tree");
-        let parent = repo.find_commit(current)
+        let parent = repo
+            .find_commit(current)
             .expect("walk: current object is no commit");
 
-        if let Some(new_tree) =
-            viewobj.unapply(&repo, &tree, &parent.tree().expect("walk: parent has no tree"))
-        {
-
+        if let Some(new_tree) = viewobj.unapply(
+            &repo,
+            &tree,
+            &parent.tree().expect("walk: parent has no tree"),
+        ) {
             current = rewrite(
                 &repo,
                 &module_commit,
@@ -90,14 +98,17 @@ pub fn unapply_view(repo: &Repository, current: Oid, viewobj: &View, old: Oid, n
     return UnapplyView::Done(current);
 }
 
-
-pub fn new(path: &Path) -> Repository
-{
+pub fn new(path: &Path) -> Repository {
     Repository::init_bare(&path).expect("could not init scratch")
 }
 
-fn transform_commit(repo: &Repository, viewstr: &str, from_refsname: &str, to_refname: &str, view_cache: &mut ViewCache)
-{
+fn transform_commit(
+    repo: &Repository,
+    viewstr: &str,
+    from_refsname: &str,
+    to_refname: &str,
+    view_cache: &mut ViewCache,
+) {
     let viewobj = build_view(&viewstr);
 
     if let Ok(reference) = repo.find_reference(&from_refsname) {
@@ -115,8 +126,7 @@ pub fn apply_view_to_branch(
     branchname: &str,
     viewstr: &str,
     caches: &mut ViewCaches,
-)
-{
+) {
     if viewstr == "." {
         return;
     }
@@ -125,25 +135,32 @@ pub fn apply_view_to_branch(
         .entry(format!("{}--{}", &branchname, &viewstr))
         .or_insert(ViewCache::new());
 
-
-    let ns = viewstr.replace("/","/refs/namespaces/");
+    let ns = viewstr.replace("/", "/refs/namespaces/");
     let to_refname = format!("refs/namespaces/{}/refs/heads/{}", &ns, &branchname);
     let to_head = format!("refs/namespaces/{}/HEAD", &ns);
     let from_refsname = format!("refs/heads/{}", branchname);
 
     debug!("apply_view_to_branch {}", branchname);
-    transform_commit(&repo, &viewstr, &from_refsname, &to_refname, &mut view_cache);
+    transform_commit(
+        &repo,
+        &viewstr,
+        &from_refsname,
+        &to_refname,
+        &mut view_cache,
+    );
 
     if branchname == "master" {
-        transform_commit(&repo, &viewstr, "refs/heads/master", &to_head, &mut view_cache);
+        transform_commit(
+            &repo,
+            &viewstr,
+            "refs/heads/master",
+            &to_head,
+            &mut view_cache,
+        );
     }
 }
 
-
-
-
-pub fn apply_view(repo: &Repository, view: &View, newrev: Oid) -> Option<Oid>
-{
+pub fn apply_view(repo: &Repository, view: &View, newrev: Oid) -> Option<Oid> {
     return apply_view_cached(&repo, view, newrev, &mut ViewCache::new());
 }
 
@@ -152,8 +169,7 @@ pub fn apply_view_cached(
     view: &View,
     newrev: Oid,
     view_cache: &mut ViewCache,
-) -> Option<Oid>
-{
+) -> Option<Oid> {
     let walk = {
         let mut walk = repo.revwalk().expect("walk: can't create revwalk");
         walk.set_sorting(Sort::REVERSE | Sort::TOPOLOGICAL);
@@ -161,11 +177,9 @@ pub fn apply_view_cached(
         walk
     };
 
-
     if let Some(id) = view_cache.get(&newrev) {
         return Some(id.clone());
     }
-
 
     'walk: for commit in walk {
         let commit = repo.find_commit(commit.unwrap()).unwrap();
@@ -184,7 +198,7 @@ pub fn apply_view_cached(
 
         let mut parents = vec![];
         for parent in commit.parents() {
-            if let Some(parent) = view_cache.get(&parent.id()){
+            if let Some(parent) = view_cache.get(&parent.id()) {
                 let parent = repo.find_commit(*parent).unwrap();
                 parents.push(parent);
             };
@@ -198,18 +212,16 @@ pub fn apply_view_cached(
                 continue 'walk;
             }
         }
-        view_cache.insert(commit.id(), rewrite(&repo, &commit, &parent_refs, &new_tree));
+        view_cache.insert(
+            commit.id(),
+            rewrite(&repo, &commit, &parent_refs, &new_tree),
+        );
     }
 
     return view_cache.get(&newrev).map(|&id| id);
 }
 
-pub fn join_to_subdir(
-    repo: &Repository,
-    path: &Path,
-    src: Oid,
-) -> Oid
-{
+pub fn join_to_subdir(repo: &Repository, path: &Path, src: Oid) -> Oid {
     let src = repo.find_commit(src).unwrap();
 
     let walk = {
@@ -219,14 +231,16 @@ pub fn join_to_subdir(
         walk
     };
 
-    let empty = repo.find_tree(repo.treebuilder(None).unwrap().write().unwrap())
+    let empty = repo
+        .find_tree(repo.treebuilder(None).unwrap().write().unwrap())
         .unwrap();
     let mut map = HashMap::<Oid, Oid>::new();
 
     'walk: for commit in walk {
         let commit = repo.find_commit(commit.unwrap()).unwrap();
         let tree = commit.tree().expect("commit has no tree");
-        let new_tree = repo.find_tree(replace_subtree(&repo, path, &tree, &empty))
+        let new_tree = repo
+            .find_tree(replace_subtree(&repo, path, &tree, &empty))
             .expect("can't find tree");
 
         let mut parents = vec![];
@@ -237,7 +251,10 @@ pub fn join_to_subdir(
         }
 
         let parent_refs: Vec<&_> = parents.iter().collect();
-        map.insert(commit.id(), rewrite(&repo, &commit, &parent_refs, &new_tree));
+        map.insert(
+            commit.id(),
+            rewrite(&repo, &commit, &parent_refs, &new_tree),
+        );
     }
 
     let in_subdir = repo.find_commit(map[&src.id()]).unwrap();
