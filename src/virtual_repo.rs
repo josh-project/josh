@@ -30,7 +30,7 @@ pub fn update_hook(refname: &str, _old: &str, new: &str) -> i32 {
     let password = env::var("GRIB_PASSWORD").expect("GRIB_PASSWORD not set");
     let remote_url = env::var("GRIB_REMOTE").expect("GRIB_REMOTE not set");
 
-    let new_oid = if let Ok(viewstr) = env::var("GIT_NAMESPACE") {
+    let new_oid = if let Ok(viewstr) = env::var("GRIB_VIEWSTR") {
         let viewobj = build_view(&viewstr);
         debug!("=== MORE");
 

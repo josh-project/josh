@@ -1,4 +1,5 @@
 extern crate git2;
+extern crate crypto;
 
 use super::build_view;
 use super::replace_subtree;
@@ -11,6 +12,9 @@ use std::path::Path;
 
 pub type ViewCache = HashMap<Oid, Oid>;
 pub type ViewCaches = HashMap<String, ViewCache>;
+
+use self::crypto::digest::Digest;
+use self::crypto::sha1::Sha1;
 
 // takes everything from base except it's tree and replaces it with the tree
 // given
@@ -135,7 +139,11 @@ pub fn apply_view_to_branch(
         .entry(format!("{}--{}", &branchname, &viewstr))
         .or_insert(ViewCache::new());
 
-    let ns = viewstr.replace("/", "/refs/namespaces/");
+    let ns = {
+        let mut hasher = Sha1::new();
+        hasher.input_str(&viewstr);
+        hasher.result_str()
+    };
     let to_refname = format!("refs/namespaces/{}/refs/heads/{}", &ns, &branchname);
     let to_head = format!("refs/namespaces/{}/HEAD", &ns);
     let from_refsname = format!("refs/heads/{}", branchname);

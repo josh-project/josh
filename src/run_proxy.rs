@@ -8,6 +8,7 @@ extern crate hyper;
 extern crate regex;
 extern crate tempdir;
 extern crate tokio_core;
+extern crate crypto;
 
 use self::futures::future::Future;
 use self::futures::Stream;
@@ -25,6 +26,9 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::{Arc, Mutex};
+
+use self::crypto::digest::Digest;
+use self::crypto::sha1::Sha1;
 
 lazy_static! {
     static ref VIEW_REGEX: Regex =
@@ -133,6 +137,12 @@ impl Service for GribHttp {
 
         let br_url = remote_url.clone();
 
+        let ns = {
+            let mut hasher = Sha1::new();
+            hasher.input_str(&viewstr);
+            hasher.result_str().to_string()
+        };
+
         let call_git_http_backend =
             |request: Request,
              path: PathBuf,
@@ -149,7 +159,10 @@ impl Service for GribHttp {
                 cmd.env("GRIB_PASSWORD", passwd);
                 cmd.env("GRIB_USERNAME", usernm);
                 if viewstr != "" {
-                    cmd.env("GIT_NAMESPACE", viewstr);
+                    cmd.env("GIT_NAMESPACE", ns);
+                }
+                if viewstr != "" {
+                    cmd.env("GRIB_VIEWSTR", viewstr);
                 }
                 cmd.env("GRIB_REMOTE", remote_url);
 
