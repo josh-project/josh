@@ -52,7 +52,7 @@
    * [new branch]      master -> master
 
   $ cd ${TESTTMP}
-  $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8002/real_repo.git/sub1.git
+  $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8002/real_repo.git!/sub1.git
   $ cd sub1
   $ tree
   .
@@ -65,7 +65,7 @@
   * add file1
 
   $ cd ${TESTTMP}
-  $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8002/real_repo.git/sub1/subsub.git
+  $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8002/real_repo.git!/sub1/subsub.git
   $ cd subsub
   $ git branch
   * master

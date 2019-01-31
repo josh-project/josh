@@ -33,7 +33,7 @@
   $ git commit --allow-empty -m "initial" &> /dev/null
   $ git push &> /dev/null
 
-  $ git fetch --force http://${TESTUSER}:${TESTPASS}@localhost:8002/repo1.git/+repo1.git master:repo1_in_subdir &> /dev/null
+  $ git fetch --force http://${TESTUSER}:${TESTPASS}@localhost:8002/repo1.git!+/repo1.git master:repo1_in_subdir &> /dev/null
   $ git checkout repo1_in_subdir
   Switched to branch 'repo1_in_subdir'
   $ git log --graph --pretty=%s
@@ -45,7 +45,7 @@
   
   1 directory, 1 file
 
-  $ git fetch --force http://${TESTUSER}:${TESTPASS}@localhost:8002/repo2.git/+repo2.git master:repo2_in_subdir &> /dev/null
+  $ git fetch --force http://${TESTUSER}:${TESTPASS}@localhost:8002/repo2.git!+/repo2.git master:repo2_in_subdir &> /dev/null
   $ git merge -m "Combine" repo2_in_subdir --allow-unrelated-histories &> /dev/null
 
   $ git log --graph --pretty=%s
@@ -94,7 +94,7 @@
   $ git push &> /dev/null
 
   $ cd ${TESTTMP}
-  $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8002/real_repo.git/repo1.git r1 &> /dev/null
+  $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8002/real_repo.git!/repo1.git r1 &> /dev/null
   $ cd r1
 
   $ git log --graph --pretty=%s
@@ -118,7 +118,7 @@
 
   $ cd ${TESTTMP}/real_repo
   $ git checkout master &> /dev/null
-  $ git fetch --force http://${TESTUSER}:${TESTPASS}@localhost:8002/repo1.git/+repo1.git master:repo1_in_subdir &> /dev/null
+  $ git fetch --force http://${TESTUSER}:${TESTPASS}@localhost:8002/repo1.git!+/repo1.git master:repo1_in_subdir &> /dev/null
   $ git log --graph --pretty=%s repo1_in_subdir
   * add new_file2
   * initial1
@@ -177,7 +177,7 @@
 
   $ cd ${TESTTMP}/real_repo
   $ git checkout master &> /dev/null
-  $ git fetch --force http://${TESTUSER}:${TESTPASS}@localhost:8002/repo1.git/+repo1.git master:repo1_in_subdir &> /dev/null
+  $ git fetch --force http://${TESTUSER}:${TESTPASS}@localhost:8002/repo1.git!+/repo1.git master:repo1_in_subdir &> /dev/null
   $ git log --graph --pretty=%s repo1_in_subdir
   * add great new_file2
   * initial1

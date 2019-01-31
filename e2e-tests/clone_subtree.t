@@ -48,7 +48,7 @@
 
   $ cd ${TESTTMP}
 
-  $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8002/real_repo.git/sub1.git
+  $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8002/real_repo.git!/sub1.git sub1
 
   $ cd sub1
 

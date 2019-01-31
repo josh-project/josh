@@ -51,13 +51,12 @@ pub trait View {
 }
 
 fn create_view_node(name: &str) -> Box<dyn View> {
-    if name.starts_with("+") {
-        Box::new(PrefixView::new(&Path::new(
-            &name[1..].trim_left_matches("/"),
-        )))
-    } else {
-        Box::new(SubdirView::new(&Path::new(&name)))
+    if name.starts_with("+/") {
+        return Box::new(PrefixView::new(&Path::new(&name[2..])));
+    } else if name.starts_with("/") {
+        return Box::new(SubdirView::new(&Path::new(&name[1..])));
     }
+    return Box::new(NopView);
 }
 
 struct NopView;
@@ -74,7 +73,7 @@ impl View for NopView {
 
 pub fn build_view(viewstr: &str) -> Box<dyn View> {
     let mut chain: Box<dyn View> = Box::new(NopView);
-    for v in viewstr.split("/") {
+    for v in viewstr.split("!") {
         let new = create_view_node(&v);
         chain = Box::new(ChainView {
             first: chain,

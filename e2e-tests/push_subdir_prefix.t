@@ -12,7 +12,7 @@
 
   $ cd ${TESTTMP}
 
-  $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8002/real_repo.git/sub1/+pre.git pre
+  $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8002/real_repo.git!/sub1!+/pre.git pre
   $ cd pre
 
   $ echo contents2 > pre/file2

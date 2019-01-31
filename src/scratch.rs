@@ -131,10 +131,6 @@ pub fn apply_view_to_branch(
     viewstr: &str,
     caches: &mut ViewCaches,
 ) {
-    if viewstr == "." {
-        return;
-    }
-
     let mut view_cache = caches
         .entry(format!("{}--{}", &branchname, &viewstr))
         .or_insert(ViewCache::new());

@@ -32,7 +32,7 @@ use self::crypto::sha1::Sha1;
 
 lazy_static! {
     static ref VIEW_REGEX: Regex =
-        Regex::new(r"(?P<prefix>/.*[.]git)/(?P<view>.*)[.]git(?P<pathinfo>/.*)")
+        Regex::new(r"(?P<prefix>/.*[.]git)!(?P<view>.*)[.]git(?P<pathinfo>/.*)")
             .expect("can't compile regex");
     static ref FULL_REGEX: Regex =
         Regex::new(r"(?P<prefix>/.*[.]git)(?P<pathinfo>/.*)").expect("can't compile regex");
@@ -97,7 +97,7 @@ impl Service for GribHttp {
             } else if let Some(caps) = FULL_REGEX.captures(&req.uri().path()) {
                 (
                     caps.name("prefix").unwrap().as_str().to_string(),
-                    String::new(),
+                    "nop".to_string(),
                     caps.name("pathinfo").unwrap().as_str().to_string(),
                 )
             } else if req.uri().path() == "/version" {
@@ -158,12 +158,8 @@ impl Service for GribHttp {
                 cmd.env("PATH_INFO", pathinfo);
                 cmd.env("GRIB_PASSWORD", passwd);
                 cmd.env("GRIB_USERNAME", usernm);
-                if viewstr != "" {
-                    cmd.env("GIT_NAMESPACE", ns);
-                }
-                if viewstr != "" {
-                    cmd.env("GRIB_VIEWSTR", viewstr);
-                }
+                cmd.env("GIT_NAMESPACE", ns);
+                cmd.env("GRIB_VIEWSTR", viewstr);
                 cmd.env("GRIB_REMOTE", remote_url);
 
                 cgi::do_cgi(request, cmd, handle.clone())

@@ -19,7 +19,7 @@
   $ git push &> /dev/null
 
   $ cd ${TESTTMP}
-  $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8002/real_repo.git/sub1.git
+  $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8002/real_repo.git!/sub1.git
   $ cd sub1
   $ echo contents2 > file2
   $ git add file2
@@ -27,7 +27,7 @@
   $ git push &> /dev/null
 
   $ cd ${TESTTMP}
-  $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8002/real_repo2.git/sub1.git sub1_repo2
+  $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8002/real_repo2.git!/sub1.git sub1_repo2
   $ cd sub1_repo2
   $ echo contents2_repo2 > file2
   $ git add file2
