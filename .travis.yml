@@ -5,10 +5,13 @@ rust:
 sudo: false
 before_script:
   - pip install 'travis-cargo<0.2' --user && export PATH=$HOME/.local/bin:$PATH
+  - pip install 'cram' --user && export PATH=$HOME/.local/bin:$PATH
   - export RUST_LOG=josh=debug
 script:
   - export CARGO_TARGET_DIR=`pwd`/target
   - cargo test
+  - cargo build
+  - cram e2e-tests/*.t
 after_success:
   - travis-cargo coveralls --no-sudo
 notifications:
