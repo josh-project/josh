@@ -132,7 +132,7 @@ fn test_split_subdir_one_commit() {
 
     assert_eq!(
         split_subdir_ref(&repo, "foo", head.id()),
-        scratch::apply_view(&scratch, &SubdirView::new(&Path::new("foo")), head.id())
+        scratch::apply_view(&scratch, &*views::build_view("!/foo"), head.id())
     );
 }
 
@@ -149,7 +149,7 @@ fn test_split_subdir_two_commits() {
 
     assert_eq!(
         split_subdir_ref(&repo, "foo", head.id()),
-        scratch::apply_view(&scratch, &SubdirView::new(Path::new("foo")), head.id())
+        scratch::apply_view(&scratch, &*views::build_view("!/foo"), head.id())
     );
 }
 
@@ -181,7 +181,7 @@ fn test_split_subdir_two_commits_first_empty() {
 
     assert_eq!(
         split_subdir_ref(&repo, "foo", head.id()),
-        scratch::apply_view(&scratch, &SubdirView::new(Path::new("foo")), head.id())
+        scratch::apply_view(&scratch, &*views::build_view("!/foo"), head.id())
     );
     // assert!(false);
 }
@@ -201,7 +201,7 @@ fn test_split_subdir_three_commits_middle_unrelated() {
 
     assert_eq!(
         split_subdir_ref(&repo, "foo", head.id()),
-        scratch::apply_view(&scratch, &SubdirView::new(Path::new("foo")), head.id())
+        scratch::apply_view(&scratch, &*views::build_view("!/foo"), head.id())
     );
 }
 
@@ -220,7 +220,7 @@ fn test_split_subdir_three_commits_first_unrelated() {
 
     assert_eq!(
         split_subdir_ref(&repo, "foo", head.id()),
-        scratch::apply_view(&scratch, &SubdirView::new(Path::new("foo")), head.id())
+        scratch::apply_view(&scratch, &*views::build_view("!/foo"), head.id())
     );
 }
 
@@ -240,7 +240,7 @@ fn test_split_subdir_branch() {
 
     let head = transfer(&scratch, &repo.rev("HEAD"), &repo.repo.path());
 
-    let actual = scratch::apply_view(&scratch, &SubdirView::new(Path::new("foo")), head.id());
+    let actual = scratch::apply_view(&scratch, &*views::build_view("!/foo"), head.id());
 
     scratch
         .reference("refs/heads/actual", actual.unwrap(), true, "x")
@@ -279,7 +279,7 @@ fn test_split_subdir_branch_unrelated() {
 
     let head = transfer(&scratch, &repo.rev("HEAD"), &repo.repo.path());
 
-    let actual = scratch::apply_view(&scratch, &SubdirView::new(Path::new("foo")), head.id());
+    let actual = scratch::apply_view(&scratch, &*views::build_view("!/foo"), head.id());
 
     scratch
         .reference("refs/heads/actual", actual.unwrap(), true, "x")
@@ -338,7 +338,7 @@ fn test_split_merge_identical_to_first() {
     println!("{:?}", repo.shell.command("git log"));
     let head = transfer(&scratch, &repo.rev("HEAD"), &repo.repo.path());
 
-    let actual = scratch::apply_view(&scratch, &SubdirView::new(Path::new("foo")), head.id());
+    let actual = scratch::apply_view(&scratch, &*views::build_view("!/foo"), head.id());
 
     let shell = Shell {
         cwd: scratch.path().to_path_buf(),
@@ -401,7 +401,7 @@ fn test_split_merge_identical_to_second() {
     println!("{:?}", repo.shell.command("git log"));
     let head = transfer(&scratch, &repo.rev("HEAD"), &repo.repo.path());
 
-    let actual = scratch::apply_view(&scratch, &SubdirView::new(Path::new("foo")), head.id());
+    let actual = scratch::apply_view(&scratch, &*views::build_view("!/foo"), head.id());
 
     let shell = Shell {
         cwd: scratch.path().to_path_buf(),

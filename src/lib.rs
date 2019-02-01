@@ -13,7 +13,7 @@ pub mod run_proxy;
 pub mod scratch;
 mod shell;
 mod treeops;
-mod views;
+pub mod views;
 pub mod virtual_repo;
 
 pub use run_proxy::*;

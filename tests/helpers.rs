@@ -4,7 +4,6 @@ extern crate fern;
 extern crate futures;
 extern crate futures_cpupool;
 extern crate git2;
-extern crate hyper;
 extern crate josh;
 extern crate lazy_static;
 extern crate log;
