@@ -118,7 +118,7 @@ impl Service for HttpService {
                 username.to_owned(),
                 password.to_owned().unwrap_or("".to_owned()).to_owned(),
             ),
-            _ => (String::new(), String::new())
+            _ => (String::new(), String::new()),
         };
 
         let passwd = password.clone();

@@ -58,22 +58,19 @@ pub fn do_cgi(
             &format!("{}", req.headers().get().unwrap_or(&ContentLength(0))),
         );
 
-    let mut child = cmd.spawn_async(&handle).expect("can't spawn CGI command");
+    let mut child = cmd
+        .spawn_async_with_handle(&handle.new_tokio_handle())
+        .expect("can't spawn CGI command");
 
     Box::new(req.body().concat2().and_then(move |body| {
-        child
-            .stdin()
-            .take()
-            .unwrap()
-            .write_all(&body)
-            .expect("can't write command output (body)");
+        if !child.stdin().take().unwrap().write_all(&body).is_ok() {
+            debug!("write_all(body) failed");
+        }
 
-        Box::new(
-            child
-                .wait_with_output()
-                .map(build_response)
-                .map_err(|e| e.into()),
-        )
+        child
+            .wait_with_output()
+            .map(build_response)
+            .map_err(|e| e.into())
     }))
 }
 
@@ -88,8 +85,7 @@ fn build_response(command_result: std::process::Output) -> Response {
         if line.as_ref().unwrap().is_empty() {
             break;
         }
-        let l: Vec<&str> =
-            line.as_ref().unwrap().as_str().splitn(2, ": ").collect();
+        let l: Vec<&str> = line.as_ref().unwrap().as_str().splitn(2, ": ").collect();
         if l[0] == "Status" {
             response.set_status(hyper::StatusCode::Unregistered(
                 u16::from_str(l[1].split(" ").next().unwrap()).unwrap(),
