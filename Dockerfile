@@ -4,8 +4,8 @@ RUN apt-get update \
  && apt-get install -y cmake \
  && rm -rf /var/lib/apt/lists/*
 
-# RUN USER=root cargo new --bin /usr/src/grib
-WORKDIR /usr/src/grib
+# RUN USER=root cargo new --bin /usr/src/josh
+WORKDIR /usr/src/josh
 
 # COPY ./Cargo.lock ./Cargo.lock
 # COPY ./Cargo.toml ./Cargo.toml
@@ -15,11 +15,11 @@ WORKDIR /usr/src/grib
 
 COPY . .
 
-# RUN rm ./target/release/deps/grib* && cargo build --release
+# RUN rm ./target/release/deps/josh* && cargo build --release
 RUN cargo build --release
 
 FROM rust:1.32.0
 
-COPY --from=builder /usr/src/grib/target/release/grib /usr/bin/grib
+COPY --from=builder /usr/src/josh/target/release/josh-proxy /usr/bin/josh-proxy
 
-CMD grib --local=/tmp/grib-scratch/ --remote=https://gerrit.int.esrlabs.com
+CMD josh-proxy --local=/tmp/josh-scratch/ --remote=https://gerrit.int.esrlabs.com

@@ -1,10 +1,10 @@
 #[allow(dead_code)]
 extern crate git2;
-extern crate grib;
+extern crate josh;
 extern crate tempdir;
 mod helpers;
 use git2::*;
-use grib::*;
+use josh::*;
 use std::path::Path;
 use tempdir::TempDir;
 

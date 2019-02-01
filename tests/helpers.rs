@@ -4,14 +4,14 @@ extern crate fern;
 extern crate futures;
 extern crate futures_cpupool;
 extern crate git2;
-extern crate grib;
+extern crate josh;
 extern crate hyper;
 extern crate lazy_static;
 extern crate log;
 extern crate regex;
 extern crate tempdir;
 extern crate tokio_core;
-use grib::Shell;
+use josh::Shell;
 use tempdir::TempDir;
 
 pub struct TestRepo {

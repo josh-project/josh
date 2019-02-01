@@ -1,4 +1,4 @@
-extern crate grib;
+extern crate josh;
 use std::env;
 use std::process::exit;
 
@@ -11,5 +11,5 @@ fn main() {
         args
     };
 
-    exit(grib::run_proxy(args));
+    exit(josh::run_proxy(args));
 }

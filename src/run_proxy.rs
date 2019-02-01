@@ -38,7 +38,7 @@ lazy_static! {
         Regex::new(r"(?P<prefix>/.*[.]git)(?P<pathinfo>/.*)").expect("can't compile regex");
 }
 
-struct GribHttp {
+struct HttpService {
     handle: tokio_core::reactor::Handle,
     pool: CpuPool,
     base_path: PathBuf,
@@ -47,7 +47,7 @@ struct GribHttp {
 }
 
 fn async_fetch(
-    http: &GribHttp,
+    http: &HttpService,
     prefix: &str,
     view_string: &str,
     username: &str,
@@ -79,7 +79,7 @@ fn respond_unauthorized() -> Response {
     response
 }
 
-impl Service for GribHttp {
+impl Service for HttpService {
     type Request = Request;
     type Response = Response;
     type Error = hyper::Error;
@@ -156,11 +156,11 @@ impl Service for GribHttp {
                 cmd.env("GIT_DIR", path.to_str().unwrap());
                 cmd.env("GIT_HTTP_EXPORT_ALL", "");
                 cmd.env("PATH_INFO", pathinfo);
-                cmd.env("GRIB_PASSWORD", passwd);
-                cmd.env("GRIB_USERNAME", usernm);
+                cmd.env("JOSH_PASSWORD", passwd);
+                cmd.env("JOSH_USERNAME", usernm);
                 cmd.env("GIT_NAMESPACE", ns);
-                cmd.env("GRIB_VIEWSTR", viewstr);
-                cmd.env("GRIB_REMOTE", remote_url);
+                cmd.env("JOSH_VIEWSTR", viewstr);
+                cmd.env("JOSH_REMOTE", remote_url);
 
                 cgi::do_cgi(request, cmd, handle.clone())
             };
@@ -210,7 +210,7 @@ pub fn run_proxy(args: Vec<String>) -> i32 {
         return virtual_repo::update_hook(&args[1], &args[2], &args[3]);
     }
 
-    let args = clap::App::new("grib")
+    let args = clap::App::new("josh-proxy")
         .arg(
             clap::Arg::with_name("remote")
                 .long("remote")
@@ -250,7 +250,7 @@ fn run_http_server(addr: net::SocketAddr, pool: &CpuPool, local: &Path, remote: 
     let local = local.to_owned();
     let serve = Http::new()
         .serve_addr_handle(&addr, &server_handle, move || {
-            let cghttp = GribHttp {
+            let cghttp = HttpService {
                 handle: h2.clone(),
                 pool: pool.clone(),
                 base_path: local.clone(),

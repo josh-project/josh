@@ -4,7 +4,7 @@ extern crate fern;
 extern crate futures;
 extern crate futures_cpupool;
 extern crate git2;
-extern crate grib;
+extern crate josh;
 extern crate hyper;
 extern crate lazy_static;
 extern crate regex;
@@ -19,8 +19,8 @@ use self::futures::Stream;
 use self::hyper::header::{Authorization, Basic};
 use self::hyper::server::Http;
 use self::hyper::server::{Request, Response, Service};
-use grib::Shell;
-use grib::*;
+use josh::Shell;
+use josh::*;
 use std::env;
 use std::net;
 use std::path::Path;
@@ -151,7 +151,7 @@ fn run_server(args: Vec<String>) -> i32 {
 
     debug!("args: {:?}", args);
 
-    let args = clap::App::new("grib")
+    let args = clap::App::new("josh-test-server")
         .arg(
             clap::Arg::with_name("local")
                 .long("local")

@@ -28,7 +28,9 @@
    1 file changed, 0 insertions(+), 0 deletions(-)
    create mode 100644 newfile1
 
-  $ git-join --branch master --subdir sub1 --output joined
+  $ git push &> /dev/null
+
+  $ git fetch --force http://${TESTUSER}:${TESTPASS}@localhost:8002/real_repo.git!+/sub1.git master:joined &> /dev/null
 
   $ git checkout joined
   Switched to branch 'joined'

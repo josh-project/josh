@@ -1,5 +1,5 @@
 [package]
-name = "grib"
+name = "josh"
 version = "0.1.0"
 authors = ["Christian Schilling <christian.schilling@esrlabs.com>"]
 build = "build.rs"

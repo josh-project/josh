@@ -26,11 +26,11 @@ pub fn setup_tmp_repo(scratch_dir: &Path) {
 pub fn update_hook(refname: &str, _old: &str, new: &str) -> i32 {
     let scratch = scratch::new(&Path::new(&env::var("GIT_DIR").expect("GIT_DIR not set")));
 
-    let username = env::var("GRIB_USERNAME").expect("GRIB_USERNAME not set");
-    let password = env::var("GRIB_PASSWORD").expect("GRIB_PASSWORD not set");
-    let remote_url = env::var("GRIB_REMOTE").expect("GRIB_REMOTE not set");
+    let username = env::var("JOSH_USERNAME").expect("JOSH_USERNAME not set");
+    let password = env::var("JOSH_PASSWORD").expect("JOSH_PASSWORD not set");
+    let remote_url = env::var("JOSH_REMOTE").expect("JOSH_REMOTE not set");
 
-    let new_oid = if let Ok(viewstr) = env::var("GRIB_VIEWSTR") {
+    let new_oid = if let Ok(viewstr) = env::var("JOSH_VIEWSTR") {
         let viewobj = build_view(&viewstr);
         debug!("=== MORE");
 
