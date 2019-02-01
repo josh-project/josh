@@ -71,36 +71,38 @@ pub fn do_cgi(
         Box::new(
             child
                 .wait_with_output()
-                .map(|command_result| {
-                    let mut stdout = io::BufReader::new(command_result.stdout.as_slice());
-
-                    let mut data = vec![];
-                    let mut response = Response::new();
-
-                    for line in stdout.by_ref().lines() {
-                        println!("STDOUT line: {:?}", line);
-                        if line.as_ref().unwrap().is_empty() {
-                            break;
-                        }
-                        let l: Vec<&str> =
-                            line.as_ref().unwrap().as_str().splitn(2, ": ").collect();
-                        if l[0] == "Status" {
-                            response.set_status(hyper::StatusCode::Unregistered(
-                                u16::from_str(l[1].split(" ").next().unwrap()).unwrap(),
-                            ));
-                        } else {
-                            response
-                                .headers_mut()
-                                .set_raw(l[0].to_string(), l[1].to_string());
-                        }
-                    }
-                    stdout
-                        .read_to_end(&mut data)
-                        .expect("can't read command output");
-                    response.set_body(hyper::Chunk::from(data));
-                    response
-                })
+                .map(build_response)
                 .map_err(|e| e.into()),
         )
     }))
+}
+
+fn build_response(command_result: std::process::Output) -> Response {
+    let mut stdout = io::BufReader::new(command_result.stdout.as_slice());
+
+    let mut data = vec![];
+    let mut response = Response::new();
+
+    for line in stdout.by_ref().lines() {
+        println!("STDOUT line: {:?}", line);
+        if line.as_ref().unwrap().is_empty() {
+            break;
+        }
+        let l: Vec<&str> =
+            line.as_ref().unwrap().as_str().splitn(2, ": ").collect();
+        if l[0] == "Status" {
+            response.set_status(hyper::StatusCode::Unregistered(
+                u16::from_str(l[1].split(" ").next().unwrap()).unwrap(),
+            ));
+        } else {
+            response
+                .headers_mut()
+                .set_raw(l[0].to_string(), l[1].to_string());
+        }
+    }
+    stdout
+        .read_to_end(&mut data)
+        .expect("can't read command output");
+    response.set_body(hyper::Chunk::from(data));
+    response
 }
