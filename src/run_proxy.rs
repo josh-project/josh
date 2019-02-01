@@ -1,5 +1,6 @@
 /* #![deny(warnings)] */
 extern crate clap;
+extern crate crypto;
 extern crate fern;
 extern crate futures;
 extern crate futures_cpupool;
@@ -8,7 +9,6 @@ extern crate hyper;
 extern crate regex;
 extern crate tempdir;
 extern crate tokio_core;
-extern crate crypto;
 
 use self::futures::future::Future;
 use self::futures::Stream;
@@ -127,7 +127,6 @@ impl Service for HttpService {
         let passwd = password.clone();
         let usernm = username.clone();
         let viewstr = view_string.clone();
-        let br_path = self.base_path.join(prefix.trim_left_matches("/"));
 
         let remote_url = {
             let mut remote_url = self.base_url.clone();
@@ -174,7 +173,7 @@ impl Service for HttpService {
         Box::new({
             async_fetch(&self, &prefix, &view_string, &username, &password, br_url).and_then(
                 move |view_repo| match view_repo {
-                    Err(e) => {
+                    Err(_e) => {
                         println!("wrong credentials");
                         Box::new(futures::future::ok(respond_unauthorized()))
                     }

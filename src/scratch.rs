@@ -1,12 +1,11 @@
-extern crate git2;
 extern crate crypto;
+extern crate git2;
 
 use super::build_view;
 use super::replace_subtree;
 use super::UnapplyView;
 use super::View;
 use git2::*;
-use shell::Shell;
 use std::collections::HashMap;
 use std::path::Path;
 

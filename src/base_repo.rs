@@ -32,7 +32,7 @@ pub fn fetch_refs_from_url(
     let cmd = format!("git fetch {} '{}'", &nurl, &spec);
     println!("fetch_refs_from_url {:?} {:?} {:?}", cmd, path, "");
 
-    let (stdout, stderr) = shell.command(&cmd);
+    let (_stdout, stderr) = shell.command(&cmd);
     if stderr.contains("fatal: Authentication failed") {
         return Err(git2::Error::from_str("auth"));
     }
@@ -64,7 +64,7 @@ pub fn push_head_url(path: &Path, refname: &str, url: &str, username: &str, pass
 
 pub fn create_local(path: &Path) {
     println!("init base repo: {:?}", path);
-    fs::create_dir_all(path);
+    fs::create_dir_all(path).expect("can't create_dir_all");
 
     match git2::Repository::open(path) {
         Ok(_) => {

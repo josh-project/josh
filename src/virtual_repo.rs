@@ -2,11 +2,8 @@ use super::*;
 use git2::Oid;
 use std::env;
 use std::env::current_exe;
-use std::fs::File;
-use std::io::Read;
 use std::os::unix::fs::symlink;
 use std::path::Path;
-use std::path::PathBuf;
 
 pub fn setup_tmp_repo(scratch_dir: &Path) {
     let shell = Shell {

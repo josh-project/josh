@@ -4,8 +4,8 @@ extern crate fern;
 extern crate futures;
 extern crate futures_cpupool;
 extern crate git2;
-extern crate josh;
 extern crate hyper;
+extern crate josh;
 extern crate lazy_static;
 extern crate regex;
 extern crate tempdir;
@@ -19,7 +19,6 @@ use self::futures::Stream;
 use self::hyper::header::{Authorization, Basic};
 use self::hyper::server::Http;
 use self::hyper::server::{Request, Response, Service};
-use josh::Shell;
 use josh::*;
 use std::env;
 use std::net;
@@ -27,7 +26,6 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::process::exit;
 use std::process::Command;
-use tempdir::TempDir;
 
 pub struct ServeTestGit {
     handle: tokio_core::reactor::Handle,
