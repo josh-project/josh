@@ -118,10 +118,7 @@ impl Service for HttpService {
                 username.to_owned(),
                 password.to_owned().unwrap_or("".to_owned()).to_owned(),
             ),
-            _ => {
-                println!("no credentials in request");
-                return Box::new(futures::future::ok(respond_unauthorized()));
-            }
+            _ => (String::new(), String::new())
         };
 
         let passwd = password.clone();
