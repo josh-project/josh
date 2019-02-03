@@ -141,7 +141,6 @@ fn run_server(args: Vec<String>) -> i32 {
                 message
             ))
         })
-        .level(log::LevelFilter::Debug)
         .chain(std::io::stdout())
         .chain(fern::log_file(logfilename).unwrap())
         .apply()

@@ -23,4 +23,6 @@ lazy_static = "*"
 hyper = "0.11"
 futures-cpupool = "*"
 rust-crypto = "*"
+pest_derive = "*"
+pest= "*"
 

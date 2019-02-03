@@ -1,5 +1,6 @@
 use super::replace_subtree;
 use git2::*;
+use pest::*;
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -12,6 +13,44 @@ pub trait View {
         parent_tree: &git2::Tree,
     ) -> Option<git2::Oid>;
 }
+
+struct NopView;
+
+impl View for NopView {
+    fn apply(&self, _repo: &Repository, tree: &Tree) -> Option<Oid> {
+        Some(tree.id())
+    }
+
+    fn unapply(&self, _repo: &Repository, tree: &Tree, _parent_tree: &Tree) -> Option<Oid> {
+        Some(tree.id())
+    }
+}
+
+
+struct ChainView {
+    first: Box<dyn View>,
+    second: Box<dyn View>,
+}
+
+impl View for ChainView {
+    fn apply(&self, repo: &Repository, tree: &Tree) -> Option<Oid> {
+        if let Some(r) = self.first.apply(&repo, &tree) {
+            if let Ok(t) = repo.find_tree(r) {
+                return self.second.apply(&repo, &t);
+            }
+        }
+        return None;
+    }
+
+    fn unapply(&self, repo: &Repository, tree: &Tree, parent_tree: &Tree) -> Option<Oid> {
+        let p = self.first.apply(&repo, &parent_tree).expect("no tree");
+        let p = repo.find_tree(p).expect("no tree");
+        let a = self.second.unapply(&repo, &tree, &p).expect("no tree");
+        self.first
+            .unapply(&repo, &repo.find_tree(a).expect("no tree"), &parent_tree)
+    }
+}
+
 
 struct SubdirView {
     subdir: PathBuf,
@@ -44,63 +83,51 @@ impl View for PrefixView {
     }
 }
 
-struct ChainView {
-    first: Box<dyn View>,
-    second: Box<dyn View>,
-}
+#[derive(Parser)]
+#[grammar = "view_parser.pest"]
+struct MyParser;
 
-impl View for ChainView {
-    fn apply(&self, repo: &Repository, tree: &Tree) -> Option<Oid> {
-        if let Some(r) = self.first.apply(&repo, &tree) {
-            if let Ok(t) = repo.find_tree(r) {
-                return self.second.apply(&repo, &t);
-            }
-        }
-        return None;
-    }
+use pest::iterators::Pair;
 
-    fn unapply(&self, repo: &Repository, tree: &Tree, parent_tree: &Tree) -> Option<Oid> {
-        let p = self.first.apply(&repo, &parent_tree).expect("no tree");
-        let p = repo.find_tree(p).expect("no tree");
-        let a = self.second.unapply(&repo, &tree, &p).expect("no tree");
-        self.first
-            .unapply(&repo, &repo.find_tree(a).expect("no tree"), &parent_tree)
-    }
-}
-
-fn create_view_node(name: &str) -> Box<dyn View> {
-    if name.starts_with("+/") {
+fn make_view(cmd: &str, name: &str) -> Box<dyn View> {
+    if cmd == "+" {
         return Box::new(PrefixView {
-            prefix: Path::new(&name[2..]).to_owned(),
+            prefix: Path::new(name).to_owned(),
         });
-    } else if name.starts_with("/") {
+    } else {
         return Box::new(SubdirView {
-            subdir: Path::new(&name[1..]).to_owned(),
+            subdir: Path::new(name).to_owned(),
         });
     }
-    return Box::new(NopView);
 }
 
-struct NopView;
-
-impl View for NopView {
-    fn apply(&self, _repo: &Repository, tree: &Tree) -> Option<Oid> {
-        Some(tree.id())
-    }
-
-    fn unapply(&self, _repo: &Repository, tree: &Tree, _parent_tree: &Tree) -> Option<Oid> {
-        Some(tree.id())
+fn parse_item(pair: Pair<Rule>) -> Box<dyn View> {
+    match pair.as_rule() {
+        Rule::transform => {
+            let mut inner = pair.into_inner();
+            make_view(
+                inner.next().unwrap().as_str(),
+                inner.next().unwrap().as_str(),
+            )
+        }
+        _ => unreachable!(),
     }
 }
 
 pub fn build_view(viewstr: &str) -> Box<dyn View> {
     let mut chain: Box<dyn View> = Box::new(NopView);
-    for v in viewstr.split("!") {
-        let new = create_view_node(&v);
-        chain = Box::new(ChainView {
-            first: chain,
-            second: new,
-        });
-    }
+
+    if let Ok(r) = MyParser::parse(Rule::view, viewstr) {
+        let mut r = r;
+        let r = r.next().unwrap();
+        for pair in r.into_inner() {
+            chain = Box::new(ChainView {
+                first: chain,
+                second: parse_item(pair),
+            });
+        }
+        return chain;
+    };
+
     return chain;
 }

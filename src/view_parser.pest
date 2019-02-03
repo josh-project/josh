@@ -1,0 +1,13 @@
+
+
+view = { item* }
+
+item = _{ transform }
+
+transform = { "!" ~ cmd ~ "/" ~ name }
+
+name = { (!("!"|")"|",") ~ ANY)+ }
+
+group = { "!(" ~ item ~ ("," ~ item)* ~ ")"}
+
+cmd = { (!("/"|"("|",") ~ ANY)* }
