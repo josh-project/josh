@@ -61,16 +61,20 @@ impl Service for ServeTestGit {
             }
         };
 
-        if username != self.username || password != self.password {
-            println!("ServeTestGit: wrong user/pass");
-            println!("user: {:?} - {:?}", username, self.username);
-            println!("pass: {:?} - {:?}", password, self.password);
-            let mut response = Response::new().with_status(hyper::StatusCode::Unauthorized);
-            response
-                .headers_mut()
-                .set_raw("WWW-Authenticate", "Basic realm=\"User Visible Realm\"");
-            return Box::new(futures::future::ok(response));
+        if username != "admin" {
+            if username != self.username || password != self.password {
+                println!("ServeTestGit: wrong user/pass");
+                println!("user: {:?} - {:?}", username, self.username);
+                println!("pass: {:?} - {:?}", password, self.password);
+                let mut response = Response::new().with_status(hyper::StatusCode::Unauthorized);
+                response
+                    .headers_mut()
+                    .set_raw("WWW-Authenticate", "Basic realm=\"User Visible Realm\"");
+                return Box::new(futures::future::ok(response));
+            }
         }
+
+        println!("CREDENTIALS OK {:?} {:?}", &username, &password);
 
         let path = &self.repo_path;
 

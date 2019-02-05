@@ -23,11 +23,15 @@ pub fn fetch_refs_from_url(
         let rest = splitted[1];
         format!("{}://{}@{}", &proto, &username, &rest)
     };
-    let cmd = format!(
-        "git config --local credential.helper '!f() {{ echo \"password={}\"; }}; f'",
-        &password
-    );
-    shell.command(&cmd);
+
+    git2::Repository::open(path)
+        .expect("no repo")
+        .config()
+        .unwrap()
+        .set_str(
+            "credential.helper",
+            &format!("!f() {{ echo \"password={}\"; }}; f", &password),
+        );
 
     let cmd = format!("git fetch {} '{}'", &nurl, &spec);
     println!("fetch_refs_from_url {:?} {:?} {:?}", cmd, path, "");
@@ -35,6 +39,9 @@ pub fn fetch_refs_from_url(
     let (_stdout, stderr) = shell.command(&cmd);
     if stderr.contains("fatal: Authentication failed") {
         return Err(git2::Error::from_str("auth"));
+    }
+    if stderr.contains("fatal:") {
+        return Err(git2::Error::from_str("error"));
     }
     return Ok(());
 }
@@ -51,11 +58,14 @@ pub fn push_head_url(path: &Path, refname: &str, url: &str, username: &str, pass
         let rest = splitted[1];
         format!("{}://{}@{}", &proto, &username, &rest)
     };
-    let cmd = format!(
-        "git config --local credential.helper '!f() {{ echo \"password={}\"; }}; f'",
-        &password
-    );
-    shell.command(&cmd);
+    git2::Repository::open(path)
+        .expect("no repo")
+        .config()
+        .unwrap()
+        .set_str(
+            "credential.helper",
+            &format!("!f() {{ echo \"password={}\"; }}; f", &password),
+        );
     let cmd = format!("git push {} '{}'", &nurl, &spec);
     let (stdout, stderr) = shell.command(&cmd);
     println!("{}", &stderr);
