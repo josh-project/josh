@@ -105,6 +105,8 @@ impl Service for HttpService {
                     .with_body(format!("Version: {}\n", env!("VERSION")))
                     .with_status(hyper::StatusCode::Ok);
                 return Box::new(futures::future::ok(response));
+            } else if req.uri().path() == "/panic" {
+                panic!();
             } else {
                 let response = Response::new().with_status(hyper::StatusCode::NotFound);
                 return Box::new(futures::future::ok(response));
