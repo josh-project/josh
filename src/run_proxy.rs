@@ -204,7 +204,7 @@ impl Service for HttpService {
         let rname = format!("request {}", rid);
         trace_begin!(&rname, "req": format!("{:?}", &req));
         Box::new(call_service(&self, req).map(move |x| {
-            trace_end!(&rname);
+            trace_end!(&rname, "response": format!("{:?}", x));
             x
         }))
     }

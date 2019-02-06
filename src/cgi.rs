@@ -76,18 +76,22 @@ pub fn do_cgi(
 }
 
 fn build_response(command_result: std::process::Output) -> Response {
-    trace_scoped!("build_response");
+    trace_begin!("build_response");
     let mut stdout = io::BufReader::new(command_result.stdout.as_slice());
+    let mut stderr = io::BufReader::new(command_result.stderr.as_slice());
 
-    let mut data = vec![];
     let mut response = Response::new();
 
+    let mut headers = vec![];
     for line in stdout.by_ref().lines() {
         println!("STDOUT line: {:?}", line);
         if line.as_ref().unwrap().is_empty() {
             break;
         }
         let l: Vec<&str> = line.as_ref().unwrap().as_str().splitn(2, ": ").collect();
+        for x in &l {
+        headers.push(x.to_string());
+        }
         if l[0] == "Status" {
             response.set_status(hyper::StatusCode::Unregistered(
                 u16::from_str(l[1].split(" ").next().unwrap()).unwrap(),
@@ -98,9 +102,19 @@ fn build_response(command_result: std::process::Output) -> Response {
                 .set_raw(l[0].to_string(), l[1].to_string());
         }
     }
+
+    let mut data = vec![];
     stdout
         .read_to_end(&mut data)
         .expect("can't read command output");
+
+    let mut stderrdata = vec![];
+    stderr
+        .read_to_end(&mut stderrdata)
+        .expect("can't read command output");
+
+    trace_end!("build_response", "stdout": &data, "stderr": &stderrdata, "headers": headers);
     response.set_body(hyper::Chunk::from(data));
+
     response
 }
