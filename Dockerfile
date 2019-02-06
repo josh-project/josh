@@ -23,6 +23,4 @@ FROM rust:1.32.0
 COPY --from=builder /usr/src/josh/target/debug/josh-proxy /usr/bin/josh-proxy
 COPY --from=builder /usr/src/josh/run-josh.sh /usr/bin/run-josh.sh
 
-VOLUME /data/logs
-
 CMD sh /usr/bin/run-josh.sh
