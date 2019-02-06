@@ -23,6 +23,7 @@ pub fn do_cgi(
     cmd: Command,
     handle: tokio_core::reactor::Handle,
 ) -> Box<Future<Item = Response, Error = hyper::Error>> {
+    trace_scoped!("do_cgi");
     let mut cmd = cmd;
     cmd.stdout(Stdio::piped());
     cmd.stderr(Stdio::inherit());
@@ -75,6 +76,7 @@ pub fn do_cgi(
 }
 
 fn build_response(command_result: std::process::Output) -> Response {
+    trace_scoped!("build_response");
     let mut stdout = io::BufReader::new(command_result.stdout.as_slice());
 
     let mut data = vec![];

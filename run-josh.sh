@@ -1,3 +1,4 @@
 #!/bin/bash
-mkdir -p /data/logs
-RUST_BACKTRACE=1 josh-proxy --local=/tmp/josh-scratch/ --remote=https://gerrit.int.esrlabs.com | tee "/data/logs/$(date).log"
+DATE=$(date)
+mkdir -p /data/logs/${DATE}/
+RUST_BACKTRACE=1 josh-proxy --local=/tmp/josh-scratch/ --remote=https://gerrit.int.esrlabs.com --trace "/data/logs/${DATE}/" | tee "/data/logs/${DATE}/out.log"

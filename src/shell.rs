@@ -9,14 +9,12 @@ pub struct Shell {
 
 impl Shell {
     pub fn command(&self, cmd: &str) -> (String, String) {
-        debug!("Shell::command: {}", cmd);
-        debug!("cwd: {:?}", self.cwd);
         let git_dir = if self.cwd.join(".git").exists() {
             self.cwd.join(".git")
         } else {
             self.cwd.to_path_buf()
         };
-        debug!("GIT_DIR: {:?}", git_dir);
+        trace_begin!("shell:command", "cmd": cmd, "cwd": self.cwd, "GIT_DIR": git_dir);
 
         let output = Command::new("sh")
             .current_dir(&self.cwd)
@@ -34,10 +32,7 @@ impl Shell {
             .expect("failed to decode utf8")
             .trim()
             .to_string();
-        debug!("stdout:\n{}", &stdout);
-        debug!("stderr:\n{}", &stderr);
-        debug!("\n");
-        debug!("\n");
+        trace_end!("shell:command", "stdout": stdout, "stderr": stderr);
         return (stdout, stderr);
     }
 }

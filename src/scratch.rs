@@ -39,6 +39,14 @@ pub fn unapply_view(
     old: Oid,
     new: Oid,
 ) -> UnapplyView {
+
+    trace_scoped!(
+        "unapply_view",
+        "repo": repo.path(),
+        "current": format!("{:?}", current),
+        "old": format!("{:?}", old),
+        "new": format!("{:?}", new));
+
     if old == new {
         return UnapplyView::NoChanges;
     }
@@ -130,6 +138,7 @@ pub fn apply_view_to_branch(
     viewstr: &str,
     caches: &mut ViewCaches,
 ) {
+    trace_scoped!("apply_view_to_branch", "repo": repo.path(), "branchname": branchname, "viewstr": viewstr);
     let mut view_cache = caches
         .entry(format!("{}--{}", &branchname, &viewstr))
         .or_insert(ViewCache::new());
@@ -222,44 +231,4 @@ pub fn apply_view_cached(
     }
 
     return view_cache.get(&newrev).map(|&id| id);
-}
-
-pub fn join_to_subdir(repo: &Repository, path: &Path, src: Oid) -> Oid {
-    let src = repo.find_commit(src).unwrap();
-
-    let walk = {
-        let mut walk = repo.revwalk().expect("walk: can't create revwalk");
-        walk.set_sorting(Sort::REVERSE | Sort::TOPOLOGICAL);
-        walk.push(src.id()).expect("walk.push");
-        walk
-    };
-
-    let empty = repo
-        .find_tree(repo.treebuilder(None).unwrap().write().unwrap())
-        .unwrap();
-    let mut map = HashMap::<Oid, Oid>::new();
-
-    'walk: for commit in walk {
-        let commit = repo.find_commit(commit.unwrap()).unwrap();
-        let tree = commit.tree().expect("commit has no tree");
-        let new_tree = repo
-            .find_tree(replace_subtree(&repo, path, &tree, &empty))
-            .expect("can't find tree");
-
-        let mut parents = vec![];
-        for parent in commit.parents() {
-            let parent = map.get(&parent.id()).unwrap();
-            let parent = repo.find_commit(*parent).unwrap();
-            parents.push(parent);
-        }
-
-        let parent_refs: Vec<&_> = parents.iter().collect();
-        map.insert(
-            commit.id(),
-            rewrite(&repo, &commit, &parent_refs, &new_tree),
-        );
-    }
-
-    let in_subdir = repo.find_commit(map[&src.id()]).unwrap();
-    return in_subdir.id();
 }

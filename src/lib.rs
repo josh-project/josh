@@ -10,7 +10,11 @@ extern crate log;
 #[macro_use]
 extern crate pest_derive;
 
+#[macro_use]
+extern crate rs_tracing;
+
 extern crate pest;
+extern crate rand;
 
 pub mod base_repo;
 pub mod cgi;

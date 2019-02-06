@@ -25,4 +25,6 @@ futures-cpupool = "*"
 rust-crypto = "*"
 pest_derive = "*"
 pest= "*"
+rand= "*"
+rs_tracing= { version = "*", features = ["rs_tracing"]}
 
