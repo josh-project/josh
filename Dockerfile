@@ -21,10 +21,8 @@ RUN cargo build
 FROM rust:1.32.0
 
 COPY --from=builder /usr/src/josh/target/debug/josh-proxy /usr/bin/josh-proxy
+COPY --from=builder /usr/src/josh/run-josh.sh /usr/bin/run-josh.sh
 
 VOLUME /data/logs
 
-CMD RUST_BACKTRACE=1 josh-proxy\
-    --local=/tmp/josh-scratch/\
-    --remote=https://gerrit.int.esrlabs.com\
-    &> /data/logs/$(date).log
+CMD sh /usr/bin/run-josh.sh
