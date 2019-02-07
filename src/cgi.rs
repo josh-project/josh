@@ -1,6 +1,7 @@
 extern crate futures;
 extern crate hyper;
 extern crate tokio_core;
+extern crate tokio_io;
 extern crate tokio_process;
 
 use self::futures::future::Future;
@@ -9,6 +10,7 @@ use self::hyper::header::ContentEncoding;
 use self::hyper::header::ContentLength;
 use self::hyper::header::ContentType;
 use self::hyper::server::{Request, Response};
+use cgi::tokio_io::AsyncWrite;
 use cgi::tokio_process::CommandExt;
 use std::io;
 use std::io::BufRead;
@@ -63,8 +65,12 @@ pub fn do_cgi(
         .spawn_async_with_handle(&handle.new_tokio_handle())
         .expect("can't spawn CGI command");
 
-    Box::new(req.body().concat2().and_then(move |body| {
-        if !child.stdin().take().unwrap().write_all(&body).is_ok() {
+    /* Box::new(req.body().concat2().and_then(move |body| { */
+    /*     if !child.stdin().take().unwrap().write_all(&body).is_ok() { */
+    /*         debug!("write_all(body) failed"); */
+    /*     } */
+    let r = req.body().concat2().and_then(move |body| {
+        if !child.stdin().take().unwrap().poll_write(&body).is_ok() {
             debug!("write_all(body) failed");
         }
 
@@ -72,7 +78,9 @@ pub fn do_cgi(
             .wait_with_output()
             .map(build_response)
             .map_err(|e| e.into())
-    }))
+    });
+
+    Box::new(r)
 }
 
 fn build_response(command_result: std::process::Output) -> Response {
