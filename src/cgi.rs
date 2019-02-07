@@ -113,10 +113,16 @@ fn build_response(command_result: std::process::Output) -> Response {
         .read_to_end(&mut stderrdata)
         .expect("can't read command output");
 
+    let out = String::from_utf8_lossy(&data).to_string();
+    let err = String::from_utf8_lossy(&stderrdata);
+
+    println!("build_response out {:?}", &out);
+    println!("build_response err {:?}", &err);
+
     trace_end!(
         "build_response",
-        "stdout": &data,
-        "stderr": &stderrdata,
+        "stdout": out,
+        "stderr": err,
         "headers": headers
     );
     response.set_body(hyper::Chunk::from(data));
