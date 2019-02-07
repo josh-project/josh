@@ -26,7 +26,6 @@ impl View for NopView {
     }
 }
 
-
 struct ChainView {
     first: Box<dyn View>,
     second: Box<dyn View>,
@@ -50,7 +49,6 @@ impl View for ChainView {
             .unapply(&repo, &repo.find_tree(a).expect("no tree"), &parent_tree)
     }
 }
-
 
 struct SubdirView {
     subdir: PathBuf,

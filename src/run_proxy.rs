@@ -202,7 +202,21 @@ impl Service for HttpService {
     fn call(&self, req: Request) -> Self::Future {
         let rid: usize = random();
         let rname = format!("request {}", rid);
-        trace_begin!(&rname, "req": format!("{:?}", &req));
+
+        let username = match req.headers().get() {
+            Some(&Authorization(Basic {
+                ref username,
+                ref password,
+            })) => username.to_owned(),
+            None => "".to_owned(),
+        };
+        let mut headers = req.headers().clone();
+        headers.set(Authorization(Basic {
+            username: username,
+            password: None,
+        }));
+
+        trace_begin!(&rname, "path": req.path(), "headers": format!("{:?}", &headers));
         Box::new(call_service(&self, req).map(move |x| {
             trace_end!(&rname, "response": format!("{:?}", x));
             x
@@ -320,7 +334,11 @@ fn make_view_repo(
     br_path: &Path,
     cache: Arc<Mutex<scratch::ViewCaches>>,
 ) -> PathBuf {
-    trace_scoped!("make_view_repo", "view_string": view_string, "br_path": br_path);
+    trace_scoped!(
+        "make_view_repo",
+        "view_string": view_string,
+        "br_path": br_path
+    );
 
     let scratch = scratch::new(&br_path);
 

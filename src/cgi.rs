@@ -90,7 +90,7 @@ fn build_response(command_result: std::process::Output) -> Response {
         }
         let l: Vec<&str> = line.as_ref().unwrap().as_str().splitn(2, ": ").collect();
         for x in &l {
-        headers.push(x.to_string());
+            headers.push(x.to_string());
         }
         if l[0] == "Status" {
             response.set_status(hyper::StatusCode::Unregistered(
@@ -113,7 +113,12 @@ fn build_response(command_result: std::process::Output) -> Response {
         .read_to_end(&mut stderrdata)
         .expect("can't read command output");
 
-    trace_end!("build_response", "stdout": &data, "stderr": &stderrdata, "headers": headers);
+    trace_end!(
+        "build_response",
+        "stdout": &data,
+        "stderr": &stderrdata,
+        "headers": headers
+    );
     response.set_body(hyper::Chunk::from(data));
 
     response

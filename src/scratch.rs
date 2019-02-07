@@ -39,7 +39,6 @@ pub fn unapply_view(
     old: Oid,
     new: Oid,
 ) -> UnapplyView {
-
     trace_scoped!(
         "unapply_view",
         "repo": repo.path(),
