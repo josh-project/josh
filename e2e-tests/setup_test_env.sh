@@ -26,3 +26,5 @@ josh-proxy\
     --remote=http://localhost:8001\
     &> ${TESTTMP}/josh-proxy.out&
 echo $! > ${TESTTMP}/proxy_pid
+
+sleep 1
