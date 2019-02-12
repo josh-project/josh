@@ -66,14 +66,8 @@ pub fn do_cgi(
     let mut child = cmd
         .spawn_async_with_handle(&handle.new_tokio_handle())
         .expect("can't spawn CGI command");
-    /* Box::new(req.body().concat2().and_then(move |body| { */
-    /*     if !child.stdin().take().unwrap().write_all(&body).is_ok() { */
-    /*         debug!("write_all(body) failed"); */
-    /*     } */
+
     let r = req.body().concat2().and_then(move |body| {
-        /* if !child.stdin().take().unwrap().poll_write(&body).is_ok() { */
-        /*     debug!("write_all(body) failed"); */
-        /* } */
         tokio_io::io::write_all(child.stdin().take().unwrap(), body)
             .and_then(move |wa| {
                 child
@@ -125,15 +119,12 @@ fn build_response(command_result: std::process::Output) -> Response {
         .read_to_end(&mut stderrdata)
         .expect("can't read command output");
 
-    /* let out = String::from_utf8_lossy(&data).to_string(); */
     let err = String::from_utf8_lossy(&stderrdata);
 
-    /* println!("build_response out {:?}", &out); */
     println!("build_response err {:?}", &err);
 
     trace_end!(
         "build_response",
-        /* "stdout": out, */
         "stderr": err,
         "headers": headers
     );
