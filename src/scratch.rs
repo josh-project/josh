@@ -18,6 +18,12 @@ use self::crypto::sha1::Sha1;
 // takes everything from base except it's tree and replaces it with the tree
 // given
 pub fn rewrite(repo: &Repository, base: &Commit, parents: &[&Commit], tree: &Tree) -> Oid {
+    if base.tree().unwrap().id() == tree.id() {
+        // Looks like an optimization, but in fact serves to not change the commit in case
+        // it was signed.
+        return base.id();
+    }
+
     let result = repo
         .commit(
             None,
@@ -207,26 +213,27 @@ pub fn apply_view_cached(
             continue 'walk;
         };
 
-        let mut parents = vec![];
+        let mut transformed_parents = vec![];
         for parent in commit.parents() {
             if let Some(parent) = view_cache.get(&parent.id()) {
                 let parent = repo.find_commit(*parent).unwrap();
-                parents.push(parent);
+                transformed_parents.push(parent);
             };
         }
 
-        let parent_refs: Vec<&_> = parents.iter().collect();
+        let transformed_parent_refs: Vec<&_> = transformed_parents.iter().collect();
 
-        if let [only_parent] = parent_refs.as_slice() {
+        if let [only_parent] = transformed_parent_refs.as_slice() {
             if new_tree.id() == only_parent.tree().unwrap().id() {
-                view_cache.insert(commit.id(), only_parent.id());
-                continue 'walk;
+                if tree.id() != commit.parents().next().unwrap().tree().unwrap().id() {
+                    view_cache.insert(commit.id(), only_parent.id());
+                    continue 'walk;
+                }
             }
         }
-        view_cache.insert(
-            commit.id(),
-            rewrite(&repo, &commit, &parent_refs, &new_tree),
-        );
+
+        let transformed = rewrite(&repo, &commit, &transformed_parent_refs, &new_tree);
+        view_cache.insert(commit.id(), transformed);
     }
 
     return view_cache.get(&newrev).map(|&id| id);
