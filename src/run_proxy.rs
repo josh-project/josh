@@ -244,7 +244,7 @@ fn call_service(
         )
         .and_then(
             move |view_repo| -> Box<Future<Item = Response, Error = hyper::Error>> {
-                let path = some_or!(view_repo.ok(), {
+                let path = ok_or!(view_repo, {
                     println!("wrong credentials");
                     return Box::new(futures::future::ok(respond_unauthorized()));
                 });
@@ -269,7 +269,7 @@ impl Service for HttpService {
         let username = match req.headers().get() {
             Some(&Authorization(Basic {
                 ref username,
-                ref password,
+                password: _,
             })) => username.to_owned(),
             None => "".to_owned(),
         };

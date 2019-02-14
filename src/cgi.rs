@@ -1,6 +1,5 @@
 extern crate futures;
 extern crate hyper;
-/* extern crate tokio; */
 extern crate tokio_core;
 extern crate tokio_io;
 extern crate tokio_process;
@@ -11,13 +10,11 @@ use self::hyper::header::ContentEncoding;
 use self::hyper::header::ContentLength;
 use self::hyper::header::ContentType;
 use self::hyper::server::{Request, Response};
-use cgi::tokio_io::AsyncWrite;
 use cgi::tokio_process::CommandExt;
 /* use tokio::prelude::*; */
 use std::io;
 use std::io::BufRead;
 use std::io::Read;
-use std::io::Write;
 use std::process::Command;
 use std::process::Stdio;
 use std::str::FromStr;
@@ -69,7 +66,7 @@ pub fn do_cgi(
 
     let r = req.body().concat2().and_then(move |body| {
         tokio_io::io::write_all(child.stdin().take().unwrap(), body)
-            .and_then(move |wa| {
+            .and_then(move |_| {
                 child
                     .wait_with_output()
                     .map(build_response)

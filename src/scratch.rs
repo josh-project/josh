@@ -2,7 +2,6 @@ extern crate crypto;
 extern crate git2;
 
 use super::build_view;
-use super::replace_subtree;
 use super::UnapplyView;
 use super::View;
 use git2::*;
@@ -71,7 +70,7 @@ pub fn unapply_view(
         walk.set_sorting(Sort::REVERSE | Sort::TOPOLOGICAL);
         let range = format!("{}..{}", old, new);
         walk.push_range(&range)
-            .expect(&format!("walk: invalid range: {}", range));;
+            .unwrap_or_else(|_| panic!("walk: invalid range: {}", range));;
         walk.hide(old).expect("walk: can't hide");
         walk
     };
@@ -106,7 +105,7 @@ pub fn unapply_view(
             current = rewrite(
                 &repo,
                 &module_commit,
-                &vec![&parent],
+                &[&parent],
                 &repo.find_tree(new_tree).expect("can't find rewritten tree"),
             );
         };
@@ -146,7 +145,7 @@ pub fn apply_view_to_branch(
     trace_scoped!("apply_view_to_branch", "repo": repo.path(), "branchname": branchname, "viewstr": viewstr);
     let mut view_cache = caches
         .entry(format!("{}--{}", &branchname, &viewstr))
-        .or_insert(ViewCache::new());
+        .or_insert_with(ViewCache::new);
 
     let ns = {
         let mut hasher = Sha1::new();
@@ -195,7 +194,7 @@ pub fn apply_view_cached(
     };
 
     if let Some(id) = view_cache.get(&newrev) {
-        return Some(id.clone());
+        return Some(*id);
     }
 
     'walk: for commit in walk {
@@ -236,5 +235,5 @@ pub fn apply_view_cached(
         view_cache.insert(commit.id(), transformed);
     }
 
-    return view_cache.get(&newrev).map(|&id| id);
+    return view_cache.get(&newrev).cloned();
 }

@@ -8,6 +8,16 @@ macro_rules! some_or {
     };
 }
 
+macro_rules! ok_or {
+    ($e:expr, $b:block) => {
+        if let Ok(x) = $e {
+            x
+        } else {
+            $b
+        }
+    };
+}
+
 extern crate git2;
 extern crate tempdir;
 

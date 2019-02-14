@@ -1,3 +1,4 @@
+#![deny(warnings)]
 extern crate josh;
 use std::env;
 use std::process::exit;

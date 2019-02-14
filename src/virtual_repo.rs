@@ -38,12 +38,16 @@ pub fn update_hook(refname: &str, _old: &str, new: &str) -> i32 {
 
         let without_refs_for = format!("refs/heads/{}", &without_refs_for);
 
-        let central_head = scratch.refname_to_id(&without_refs_for).expect(&format!(
-            "no ref: {} ({}) in {:?}",
-            &refname,
-            &without_refs_for,
-            scratch.path()
-        ));
+        let central_head = ok_or!(scratch.refname_to_id(&without_refs_for), {
+            debug!(
+                "no ref: {} ({}) in {:?}",
+                &refname,
+                &without_refs_for,
+                scratch.path()
+            );
+
+            return 1;
+        });
 
         let namespaced_repo = git2::Repository::open_from_env().unwrap();
         let old = namespaced_repo.refname_to_id(&without_refs_for).unwrap();
@@ -68,7 +72,12 @@ pub fn update_hook(refname: &str, _old: &str, new: &str) -> i32 {
     scratch.set_head_detached(new_oid).expect("can't set head");
 
     debug!("=== pushing {}:{}", "HEAD", refname);
-    base_repo::push_head_url(scratch.path(), &refname, &remote_url, &username, &password);
+    ok_or!(
+        base_repo::push_head_url(scratch.path(), &refname, &remote_url, &username, &password),
+        {
+            return 1;
+        }
+    );
 
     return 0;
 }
