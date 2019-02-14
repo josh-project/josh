@@ -1,3 +1,13 @@
+macro_rules! some_or {
+    ($e:expr, $b:block) => {
+        if let Some(x) = $e {
+            x
+        } else {
+            $b
+        }
+    };
+}
+
 extern crate git2;
 extern crate tempdir;
 

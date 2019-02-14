@@ -123,11 +123,7 @@ fn build_response(command_result: std::process::Output) -> Response {
 
     println!("build_response err {:?}", &err);
 
-    trace_end!(
-        "build_response",
-        "stderr": err,
-        "headers": headers
-    );
+    trace_end!("build_response", "stderr": err, "headers": headers);
     response.set_body(hyper::Chunk::from(data));
 
     response
