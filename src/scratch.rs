@@ -15,13 +15,16 @@ pub type ViewCaches = HashMap<String, ViewCache>;
 use self::crypto::digest::Digest;
 use self::crypto::sha1::Sha1;
 
-fn all_equal(a: Parents, b: &[&Commit]) -> bool
-{
+fn all_equal(a: Parents, b: &[&Commit]) -> bool {
     let a: Vec<_> = a.collect();
-    if a.len() != b.len() { return false; }
+    if a.len() != b.len() {
+        return false;
+    }
 
     for (x, y) in b.iter().zip(a.iter()) {
-        if x.id() != y.id() { return false; }
+        if x.id() != y.id() {
+            return false;
+        }
     }
     return true;
 }
@@ -209,20 +212,20 @@ pub fn apply_view_cached(
         return Some(*id);
     }
 
+    let empty = empty_tree(repo).id();
+
     'walk: for commit in walk {
         let commit = repo.find_commit(commit.unwrap()).unwrap();
         if view_cache.contains_key(&commit.id()) {
             continue 'walk;
         }
 
-        let tree = commit.tree().expect("commit has no tree");
+        let full_tree = commit.tree().expect("commit has no tree");
 
-        let new_tree = if let Some(tree_id) = view.apply(&repo, &tree) {
-            repo.find_tree(tree_id)
-                .expect("apply_view_cached: can't find tree")
-        } else {
+        let new_tree = view.apply(&repo, &full_tree);
+        if new_tree == empty {
             continue 'walk;
-        };
+        }
 
         let mut transformed_parents = vec![];
         for parent in commit.parents() {
@@ -234,15 +237,20 @@ pub fn apply_view_cached(
 
         let transformed_parent_refs: Vec<&_> = transformed_parents.iter().collect();
 
+        if transformed_parent_refs.len() == 0 && commit.parents().count() != 0 {}
+
         if let [only_parent] = transformed_parent_refs.as_slice() {
-            if new_tree.id() == only_parent.tree().unwrap().id() {
-                if tree.id() != commit.parents().next().unwrap().tree().unwrap().id() {
+            if new_tree == only_parent.tree().unwrap().id() {
+                if full_tree.id() != commit.parents().next().unwrap().tree().unwrap().id() {
                     view_cache.insert(commit.id(), only_parent.id());
                     continue 'walk;
                 }
             }
         }
 
+        let new_tree = repo
+            .find_tree(new_tree)
+            .expect("apply_view_cached: can't find tree");
         let transformed = rewrite(&repo, &commit, &transformed_parent_refs, &new_tree);
         view_cache.insert(commit.id(), transformed);
     }

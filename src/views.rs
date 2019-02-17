@@ -6,7 +6,7 @@ use std::path::Path;
 use std::path::PathBuf;
 
 pub trait View {
-    fn apply(&self, repo: &git2::Repository, tree: &git2::Tree) -> Option<git2::Oid>;
+    fn apply(&self, repo: &git2::Repository, tree: &git2::Tree) -> git2::Oid;
     fn unapply(
         &self,
         repo: &git2::Repository,
@@ -18,8 +18,8 @@ pub trait View {
 struct NopView;
 
 impl View for NopView {
-    fn apply(&self, repo: &Repository, tree: &Tree) -> Option<Oid> {
-        Some(tree.id())
+    fn apply(&self, repo: &Repository, tree: &Tree) -> Oid {
+        tree.id()
     }
 
     fn unapply(&self, _repo: &Repository, tree: &Tree, _parent_tree: &Tree) -> Option<Oid> {
@@ -30,9 +30,8 @@ impl View for NopView {
 struct EmptyView;
 
 impl View for EmptyView {
-    fn apply(&self, repo: &Repository, tree: &Tree) -> Option<Oid> {
-        let empty = repo.treebuilder(None).unwrap().write().unwrap();
-        Some(empty)
+    fn apply(&self, repo: &Repository, tree: &Tree) -> Oid {
+        repo.treebuilder(None).unwrap().write().unwrap()
     }
 
     fn unapply(&self, _repo: &Repository, tree: &Tree, _parent_tree: &Tree) -> Option<Oid> {
@@ -46,17 +45,16 @@ struct ChainView {
 }
 
 impl View for ChainView {
-    fn apply(&self, repo: &Repository, tree: &Tree) -> Option<Oid> {
-        if let Some(r) = self.first.apply(&repo, &tree) {
-            if let Ok(t) = repo.find_tree(r) {
-                return self.second.apply(&repo, &t);
-            }
+    fn apply(&self, repo: &Repository, tree: &Tree) -> Oid {
+        let r = self.first.apply(&repo, &tree);
+        if let Ok(t) = repo.find_tree(r) {
+            return self.second.apply(&repo, &t);
         }
-        return None;
+        return repo.treebuilder(None).unwrap().write().unwrap();
     }
 
     fn unapply(&self, repo: &Repository, tree: &Tree, parent_tree: &Tree) -> Option<Oid> {
-        let p = self.first.apply(&repo, &parent_tree).expect("no tree");
+        let p = self.first.apply(&repo, &parent_tree);
         let p = repo.find_tree(p).expect("no tree");
         let a = self.second.unapply(&repo, &tree, &p).expect("no tree");
         self.first
@@ -69,8 +67,11 @@ struct SubdirView {
 }
 
 impl View for SubdirView {
-    fn apply(&self, _repo: &Repository, tree: &Tree) -> Option<Oid> {
-        tree.get_path(&self.subdir).map(|x| x.id()).ok()
+    fn apply(&self, repo: &Repository, tree: &Tree) -> Oid {
+        return tree
+            .get_path(&self.subdir)
+            .map(|x| x.id())
+            .unwrap_or(empty_tree(repo).id());
     }
 
     fn unapply(&self, repo: &Repository, tree: &Tree, parent_tree: &Tree) -> Option<Oid> {
@@ -83,11 +84,8 @@ struct PrefixView {
 }
 
 impl View for PrefixView {
-    fn apply(&self, repo: &Repository, tree: &Tree) -> Option<Oid> {
-        let empty = repo
-            .find_tree(repo.treebuilder(None).unwrap().write().unwrap())
-            .unwrap();
-        Some(replace_subtree(&repo, &self.prefix, &tree, &empty))
+    fn apply(&self, repo: &Repository, tree: &Tree) -> Oid {
+        replace_subtree(&repo, &self.prefix, &tree, &empty_tree(repo))
     }
 
     fn unapply(&self, _repo: &Repository, tree: &Tree, _parent_tree: &Tree) -> Option<Oid> {
@@ -102,18 +100,19 @@ struct CombineView {
 }
 
 impl View for CombineView {
-    fn apply(&self, repo: &Repository, tree: &Tree) -> Option<Oid> {
-        let empty = repo.treebuilder(None).unwrap().write().unwrap();
-        let mut base = some_or!(self.base.apply(&repo, &tree), { empty });
+    fn apply(&self, repo: &Repository, tree: &Tree) -> Oid {
+        let mut base = self.base.apply(&repo, &tree);
 
         for (other, prefix) in self.others.iter().zip(self.prefixes.iter()) {
-
-            let otree = other.apply(&repo, &tree).unwrap_or(empty);
+            let otree = other.apply(&repo, &tree);
+            if otree == empty_tree(repo).id() {
+                continue;
+            }
             let otree = repo.find_tree(otree).expect("can't find tree");
             base = replace_subtree(&repo, &prefix, &otree, &repo.find_tree(base).unwrap());
         }
 
-        return Some(base);
+        return base;
     }
 
     fn unapply(&self, _repo: &Repository, tree: &Tree, _parent_tree: &Tree) -> Option<Oid> {

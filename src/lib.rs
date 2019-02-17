@@ -63,3 +63,9 @@ pub enum UnapplyView {
     RejectMerge,
     NoChanges,
 }
+
+fn empty_tree(repo: &git2::Repository) -> git2::Tree {
+    return repo
+        .find_tree(repo.treebuilder(None).unwrap().write().unwrap())
+        .unwrap();
+}

@@ -17,22 +17,55 @@
   
   nothing to commit (create/copy files and use "git add" to track)
 
+  $ git checkout -b master
+  Switched to a new branch 'master'
+  $ echo content1 > file1 &> /dev/null
+  $ git add .
+  $ git commit -m "initial" &> /dev/null
+
+  $ git checkout -b new1
+  Switched to a new branch 'new1'
+  $ echo content > newfile1 &> /dev/null
+  $ git add .
+  $ git commit -m "add newfile1" &> /dev/null
+
+  $ git checkout master &> /dev/null
+  $ echo content > newfile_master &> /dev/null
+  $ git add .
+  $ git commit -m "newfile master" &> /dev/null
+
+  $ git merge new1 --no-ff
+  Merge made by the 'recursive' strategy.
+   newfile1 | 0
+   1 file changed, 0 insertions(+), 0 deletions(-)
+   create mode 100644 newfile1
+
+  $ mkdir sub3
+  $ echo contents3 > sub3/file3
+  $ git add sub3
+  $ git commit -m "add file3" &> /dev/null
+
   $ mkdir -p sub1/subsub
   $ echo contents1 > sub1/subsub/file1
   $ git add .
-  $ git commit -m "add file1"
-  [master (root-commit) *] add file1 (glob)
-   1 file changed, 1 insertion(+)
-   create mode 100644 sub1/subsub/file1
+  $ git commit -m "add file1" &> /dev/null
 
   $ mkdir sub2
   $ echo contents1 > sub2/file2
   $ git add sub2
   $ git commit -m "add file2" &> /dev/null
 
+
   $ git log --graph --pretty=%s
   * add file2
   * add file1
+  * add file3
+  *   Merge branch 'new1'
+  |\  
+  | * add newfile1
+  * | newfile master
+  |/  
+  * initial
 
   $ git push
   To http://localhost:8001/real_repo.git

@@ -125,12 +125,10 @@ fn parse_url(path: &str, stored_views: &StoredViews) -> Option<(String, String, 
 
     if let Some(caps) = STORED_VIEW_REGEX.captures(&path) {
         let id = caps.name("id").unwrap().as_str();
-        let stored_str = stored_views
-            .lock()
-            .unwrap()
-            .get(id)
-            .expect(&format!("stored view missing {:?}", &id))
-            .clone();
+        let stored_str = some_or!(stored_views.lock().unwrap().get(id), {
+            return None;
+        })
+        .clone();
         let caps2 = some_or!(SVIEW_REGEX.captures(&stored_str), {
             return None;
         });
