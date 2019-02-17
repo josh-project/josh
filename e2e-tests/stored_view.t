@@ -106,4 +106,47 @@
   
   2 directories, 1 file
 
+  $ git checkout master &> /dev/null
+
+  $ echo newfile_1_contents > c/subsub/newfile_1
+  $ echo newfile_2_contents > a/b/newfile_2
+
+  $ git add .
+
+  $ git commit -m "add in view" &> /dev/null
+
+  $ git push &> /dev/null
+
+  $ cd ${TESTTMP}/real_repo
+
+  $ git pull &> /dev/null
+
+  $ tree
+  .
+  |-- file1
+  |-- newfile1
+  |-- newfile_master
+  |-- sub1
+  |   `-- subsub
+  |       |-- file1
+  |       `-- newfile_1
+  |-- sub2
+  |   |-- file2
+  |   `-- newfile_2
+  `-- sub3
+      `-- file3
+  
+  4 directories, 8 files
+  $ git log --graph --pretty=%s
+  * add in view
+  * add file2
+  * add file1
+  * add file3
+  *   Merge branch 'new1'
+  |\  
+  | * add newfile1
+  * | newfile master
+  |/  
+  * initial
+
   $ bash ${TESTDIR}/destroy_test_env.sh

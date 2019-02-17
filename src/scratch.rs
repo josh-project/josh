@@ -112,18 +112,17 @@ pub fn unapply_view(
             .find_commit(current)
             .expect("walk: current object is no commit");
 
-        if let Some(new_tree) = viewobj.unapply(
+        let new_tree = viewobj.unapply(
             &repo,
             &tree,
             &parent.tree().expect("walk: parent has no tree"),
-        ) {
-            current = rewrite(
-                &repo,
-                &module_commit,
-                &[&parent],
-                &repo.find_tree(new_tree).expect("can't find rewritten tree"),
-            );
-        };
+        );
+        current = rewrite(
+            &repo,
+            &module_commit,
+            &[&parent],
+            &repo.find_tree(new_tree).expect("can't find rewritten tree"),
+        );
     }
     return UnapplyView::Done(current);
 }

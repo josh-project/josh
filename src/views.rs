@@ -12,7 +12,7 @@ pub trait View {
         repo: &git2::Repository,
         tree: &git2::Tree,
         parent_tree: &git2::Tree,
-    ) -> Option<git2::Oid>;
+    ) -> git2::Oid;
 }
 
 struct NopView;
@@ -22,8 +22,8 @@ impl View for NopView {
         tree.id()
     }
 
-    fn unapply(&self, _repo: &Repository, tree: &Tree, _parent_tree: &Tree) -> Option<Oid> {
-        Some(tree.id())
+    fn unapply(&self, _repo: &Repository, tree: &Tree, _parent_tree: &Tree) -> Oid {
+        tree.id()
     }
 }
 
@@ -34,8 +34,8 @@ impl View for EmptyView {
         repo.treebuilder(None).unwrap().write().unwrap()
     }
 
-    fn unapply(&self, _repo: &Repository, tree: &Tree, _parent_tree: &Tree) -> Option<Oid> {
-        Some(tree.id())
+    fn unapply(&self, _repo: &Repository, _tree: &Tree, parent_tree: &Tree) -> Oid {
+        parent_tree.id()
     }
 }
 
@@ -53,10 +53,10 @@ impl View for ChainView {
         return repo.treebuilder(None).unwrap().write().unwrap();
     }
 
-    fn unapply(&self, repo: &Repository, tree: &Tree, parent_tree: &Tree) -> Option<Oid> {
+    fn unapply(&self, repo: &Repository, tree: &Tree, parent_tree: &Tree) -> Oid {
         let p = self.first.apply(&repo, &parent_tree);
         let p = repo.find_tree(p).expect("no tree");
-        let a = self.second.unapply(&repo, &tree, &p).expect("no tree");
+        let a = self.second.unapply(&repo, &tree, &p);
         self.first
             .unapply(&repo, &repo.find_tree(a).expect("no tree"), &parent_tree)
     }
@@ -74,8 +74,8 @@ impl View for SubdirView {
             .unwrap_or(empty_tree(repo).id());
     }
 
-    fn unapply(&self, repo: &Repository, tree: &Tree, parent_tree: &Tree) -> Option<Oid> {
-        Some(replace_subtree(&repo, &self.subdir, &tree, &parent_tree))
+    fn unapply(&self, repo: &Repository, tree: &Tree, parent_tree: &Tree) -> Oid {
+        replace_subtree(&repo, &self.subdir, &tree, &parent_tree)
     }
 }
 
@@ -88,8 +88,11 @@ impl View for PrefixView {
         replace_subtree(&repo, &self.prefix, &tree, &empty_tree(repo))
     }
 
-    fn unapply(&self, _repo: &Repository, tree: &Tree, _parent_tree: &Tree) -> Option<Oid> {
-        tree.get_path(&self.prefix).map(|x| x.id()).ok()
+    fn unapply(&self, repo: &Repository, tree: &Tree, _parent_tree: &Tree) -> Oid {
+        return tree
+            .get_path(&self.prefix)
+            .map(|x| x.id())
+            .unwrap_or(empty_tree(repo).id());
     }
 }
 
@@ -115,8 +118,29 @@ impl View for CombineView {
         return base;
     }
 
-    fn unapply(&self, _repo: &Repository, tree: &Tree, _parent_tree: &Tree) -> Option<Oid> {
-        Some(tree.id())
+    fn unapply(&self, repo: &Repository, tree: &Tree, parent_tree: &Tree) -> Oid {
+        let mut res = self.base.unapply(repo, tree, parent_tree);
+
+        for (other, prefix) in self.others.iter().zip(self.prefixes.iter()) {
+            let r = tree.get_path(&prefix).map(|x| x.id()).unwrap();
+            let r = repo.find_tree(r).unwrap();
+            let ua = other.unapply(&repo, &r, &parent_tree);
+
+            let merged = repo
+                .merge_trees(
+                    &empty_tree(repo),
+                    &repo.find_tree(res).unwrap(),
+                    &repo.find_tree(ua).unwrap(),
+                    None,
+                )
+                .unwrap()
+                .write_tree_to(&repo)
+                .unwrap();
+
+            res = merged;
+        }
+
+        return res;
     }
 }
 
