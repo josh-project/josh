@@ -4,6 +4,7 @@ extern crate git2;
 use super::build_view;
 use super::UnapplyView;
 use super::View;
+use super::*;
 use git2::*;
 use std::collections::HashMap;
 use std::path::Path;
@@ -14,10 +15,21 @@ pub type ViewCaches = HashMap<String, ViewCache>;
 use self::crypto::digest::Digest;
 use self::crypto::sha1::Sha1;
 
+fn all_equal(a: Parents, b: &[&Commit]) -> bool
+{
+    let a: Vec<_> = a.collect();
+    if a.len() != b.len() { return false; }
+
+    for (x, y) in b.iter().zip(a.iter()) {
+        if x.id() != y.id() { return false; }
+    }
+    return true;
+}
+
 // takes everything from base except it's tree and replaces it with the tree
 // given
 pub fn rewrite(repo: &Repository, base: &Commit, parents: &[&Commit], tree: &Tree) -> Oid {
-    if base.tree().unwrap().id() == tree.id() {
+    if base.tree().unwrap().id() == tree.id() && all_equal(base.parents(), parents) {
         // Looks like an optimization, but in fact serves to not change the commit in case
         // it was signed.
         return base.id();
@@ -119,13 +131,11 @@ pub fn new(path: &Path) -> Repository {
 
 fn transform_commit(
     repo: &Repository,
-    viewstr: &str,
+    viewobj: &View,
     from_refsname: &str,
     to_refname: &str,
     view_cache: &mut ViewCache,
 ) {
-    let viewobj = build_view(&viewstr);
-
     if let Ok(reference) = repo.find_reference(&from_refsname) {
         let r = reference.target().expect("no ref");
 
@@ -156,10 +166,12 @@ pub fn apply_view_to_branch(
     let to_head = format!("refs/namespaces/{}/HEAD", &ns);
     let from_refsname = format!("refs/heads/{}", branchname);
 
+    let viewobj = build_view(&viewstr);
+
     debug!("apply_view_to_branch {}", branchname);
     transform_commit(
         &repo,
-        &viewstr,
+        &*viewobj,
         &from_refsname,
         &to_refname,
         &mut view_cache,
@@ -168,7 +180,7 @@ pub fn apply_view_to_branch(
     if branchname == "master" {
         transform_commit(
             &repo,
-            &viewstr,
+            &*viewobj,
             "refs/heads/master",
             &to_head,
             &mut view_cache,
@@ -207,7 +219,7 @@ pub fn apply_view_cached(
 
         let new_tree = if let Some(tree_id) = view.apply(&repo, &tree) {
             repo.find_tree(tree_id)
-                .expect("central_submit: can't find tree")
+                .expect("apply_view_cached: can't find tree")
         } else {
             continue 'walk;
         };

@@ -39,15 +39,38 @@
    * [new branch]      master -> master
 
   $ cd ${TESTTMP}
-  $ echo 'real_repo.git!/sub1.git' > viewfile
+  $ cat > viewfile <<EOF
+  > real_repo.git
+  > / : !empty/empty
+  > a/b : !/sub2
+  > c : !/sub1
+  > EOF
   $ X=$(curl -s http://localhost:8002/view --upload-file viewfile)
   $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8002/view/${X}/ stored
   $ cd stored
   $ tree
   .
-  `-- subsub
-      `-- file1
+  |-- a
+  |   `-- b
+  |       `-- file2
+  `-- c
+      `-- subsub
+          `-- file1
   
-  1 directory, 1 file
+  4 directories, 2 files
+
+  $ git log --graph --pretty=%s
+  * add file2
+  * add file1
+
+  $ git checkout HEAD~1 &> /dev/null
+
+  $ tree
+  .
+  `-- c
+      `-- subsub
+          `-- file1
+  
+  2 directories, 1 file
 
   $ bash ${TESTDIR}/destroy_test_env.sh

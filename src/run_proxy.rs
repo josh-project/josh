@@ -38,13 +38,13 @@ lazy_static! {
     static ref VIEW_REGEX: Regex =
         Regex::new(r"(?P<prefix>/.*[.]git)(?P<view>!.*)[.]git(?P<pathinfo>/.*)")
             .expect("can't compile regex");
+    static ref SVIEW_REGEX: Regex =
+        Regex::new(r"(?P<prefix>.*[.]git)(?P<view>(\n.*)*)").expect("can't compile regex");
     static ref FULL_REGEX: Regex =
         Regex::new(r"(?P<prefix>/.*[.]git)(?P<pathinfo>/.*)").expect("can't compile regex");
     static ref STORED_VIEW_REGEX: Regex =
         Regex::new(r"/view/(?P<id>\w*)(?P<pathinfo>/.*)").expect("can't compile regex");
 }
-
-type StoredViews = Arc<Mutex<HashMap<String, String>>>;
 
 struct HttpService {
     handle: tokio_core::reactor::Handle,
@@ -131,12 +131,11 @@ fn parse_url(path: &str, stored_views: &StoredViews) -> Option<(String, String, 
             .get(id)
             .expect(&format!("stored view missing {:?}", &id))
             .clone();
-        let stored_str = format!("/{}/", stored_str);
-        let caps2 = some_or!(VIEW_REGEX.captures(&stored_str), {
+        let caps2 = some_or!(SVIEW_REGEX.captures(&stored_str), {
             return None;
         });
         return Some((
-            caps2.name("prefix").unwrap().as_str().to_string(),
+            format!("/{}", caps2.name("prefix").unwrap().as_str()),
             caps2.name("view").unwrap().as_str().to_string(),
             caps.name("pathinfo").unwrap().as_str().to_string(),
         ));
@@ -144,7 +143,7 @@ fn parse_url(path: &str, stored_views: &StoredViews) -> Option<(String, String, 
     if let Some(caps) = FULL_REGEX.captures(&path) {
         return Some((
             caps.name("prefix").unwrap().as_str().to_string(),
-            "nop".to_string(),
+            "!nop".to_string(),
             caps.name("pathinfo").unwrap().as_str().to_string(),
         ));
     }

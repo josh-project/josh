@@ -36,6 +36,10 @@ extern crate rs_tracing;
 extern crate pest;
 extern crate rand;
 
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+type StoredViews = Arc<Mutex<HashMap<String, String>>>;
+
 pub mod base_repo;
 pub mod cgi;
 pub mod run_proxy;

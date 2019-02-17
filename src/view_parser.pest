@@ -1,3 +1,4 @@
+WHITESPACE = _{ " " | "\t" }
 
 
 view = { item* }
@@ -6,8 +7,15 @@ item = _{ transform }
 
 transform = { "!" ~ cmd ~ "/" ~ name }
 
-name = { (!("!"|")"|",") ~ ANY)+ }
+name = { (!("!" | ")" | "," | "\n") ~ ANY)+ }
 
-group = { "!(" ~ item ~ ("," ~ item)* ~ ")"}
+cmd = { (!("/" | "(" | "," | "\n") ~ ANY)* }
 
-cmd = { (!("/"|"("|",") ~ ANY)* }
+viewfile = { "\n" ~ root_entry ~ ("\n" ~ file_entry)* }
+
+root_entry = { "/" ~ ":" ~ view }
+
+file_entry = { dst_path ~ ":" ~ view }
+
+dst_path = @{ (!(":" | WHITESPACE) ~ ANY)+ }
+
