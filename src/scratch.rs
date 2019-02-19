@@ -200,6 +200,12 @@ pub fn apply_view_cached(
     newrev: Oid,
     view_cache: &mut ViewCache,
 ) -> Option<Oid> {
+    if let Some(id) = view_cache.get(&newrev) {
+        return Some(*id);
+    }
+    let tname = format!("apply_view_cached {:?}", newrev);
+    trace_begin!(&tname);
+
     let walk = {
         let mut walk = repo.revwalk().expect("walk: can't create revwalk");
         walk.set_sorting(Sort::REVERSE | Sort::TOPOLOGICAL);
@@ -207,13 +213,13 @@ pub fn apply_view_cached(
         walk
     };
 
-    if let Some(id) = view_cache.get(&newrev) {
-        return Some(*id);
-    }
-
     let empty = empty_tree(repo).id();
 
+    let mut in_commit_count = 0;
+    let mut out_commit_count = 0;
+    let mut empty_tree_count = 0;
     'walk: for commit in walk {
+        in_commit_count += 1;
         let commit = repo.find_commit(commit.unwrap()).unwrap();
         if view_cache.contains_key(&commit.id()) {
             continue 'walk;
@@ -228,8 +234,8 @@ pub fn apply_view_cached(
 
         let mut transformed_parents = vec![];
         for parent in commit.parents() {
-            if let Some(parent) = view_cache.get(&parent.id()) {
-                let parent = repo.find_commit(*parent).unwrap();
+            if let Some(parent) = apply_view_cached(&repo, view, parent.id(), view_cache) {
+                let parent = repo.find_commit(parent).unwrap();
                 transformed_parents.push(parent);
             };
         }
@@ -241,6 +247,7 @@ pub fn apply_view_cached(
         if let [only_parent] = transformed_parent_refs.as_slice() {
             if new_tree == only_parent.tree().unwrap().id() {
                 if full_tree.id() != commit.parents().next().unwrap().tree().unwrap().id() {
+                    out_commit_count += 1;
                     view_cache.insert(commit.id(), only_parent.id());
                     continue 'walk;
                 }
@@ -254,5 +261,11 @@ pub fn apply_view_cached(
         view_cache.insert(commit.id(), transformed);
     }
 
+    trace_end!(
+        &tname,
+        "in_commit_count": in_commit_count,
+        "out_commit_count": out_commit_count,
+        "empty_tree_count": empty_tree_count
+    );
     return view_cache.get(&newrev).cloned();
 }
