@@ -247,7 +247,6 @@ pub fn apply_view_cached(
         if let [only_parent] = transformed_parent_refs.as_slice() {
             if new_tree == only_parent.tree().unwrap().id() {
                 if full_tree.id() != commit.parents().next().unwrap().tree().unwrap().id() {
-                    out_commit_count += 1;
                     view_cache.insert(commit.id(), only_parent.id());
                     continue 'walk;
                 }
@@ -259,6 +258,7 @@ pub fn apply_view_cached(
             .expect("apply_view_cached: can't find tree");
         let transformed = rewrite(&repo, &commit, &transformed_parent_refs, &new_tree);
         view_cache.insert(commit.id(), transformed);
+        out_commit_count += 1;
     }
 
     trace_end!(
