@@ -4,6 +4,7 @@ use git2::*;
 use pest::*;
 use std::path::Path;
 use std::path::PathBuf;
+use std::str;
 
 pub trait View {
     fn apply(&self, repo: &git2::Repository, tree: &git2::Tree) -> git2::Oid;
@@ -144,6 +145,42 @@ impl View for CombineView {
     }
 }
 
+struct WorkspaceView {
+    ws_path: PathBuf,
+}
+
+impl View for WorkspaceView {
+    fn apply(&self, repo: &Repository, tree: &Tree) -> Oid {
+        println!("VIEW WorkspaceView enter");
+        let ws_config_oid = ok_or!(tree.get_path(&self.ws_path).map(|x| x.id()), {
+            return empty_tree(repo).id();
+        });
+
+        let ws_blob = ok_or!(repo.find_blob(ws_config_oid), {
+            return empty_tree(repo).id();
+        });
+
+        let ws_content = ok_or!(str::from_utf8(ws_blob.content()), { return empty_tree(repo).id(); });
+
+        println!("VIEW WorkspaceView return");
+        return build_view(ws_content).apply(repo, tree);
+    }
+
+    fn unapply(&self, repo: &Repository, tree: &Tree, parent_tree: &Tree) -> Oid {
+        let ws_config_oid = ok_or!(parent_tree.get_path(&self.ws_path).map(|x| x.id()), {
+            return empty_tree(repo).id();
+        });
+
+        let ws_blob = ok_or!(repo.find_blob(ws_config_oid), {
+            return empty_tree(repo).id();
+        });
+
+        let ws_content = ok_or!(str::from_utf8(ws_blob.content()), { return empty_tree(repo).id(); });
+
+        return build_view(ws_content).unapply(repo, tree, parent_tree);
+    }
+}
+
 #[derive(Parser)]
 #[grammar = "view_parser.pest"]
 struct MyParser;
@@ -158,6 +195,11 @@ fn make_view(cmd: &str, name: &str) -> Box<dyn View> {
     } else if cmd == "empty" {
         println!("MKVIEW empty");
         return Box::new(EmptyView);
+    } else if cmd == "workspace" {
+        println!("MKVIEW workspace");
+        return Box::new(WorkspaceView {
+            ws_path: Path::new(name).to_owned(),
+        });
     } else {
         return Box::new(SubdirView {
             subdir: Path::new(name).to_owned(),

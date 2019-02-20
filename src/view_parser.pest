@@ -11,7 +11,7 @@ name = { (!("!" | ")" | "," | "\n") ~ ANY)+ }
 
 cmd = { (!("/" | "(" | "," | "\n") ~ ANY)* }
 
-viewfile = { "\n" ~ root_entry ~ ("\n" ~ file_entry)* }
+viewfile = { "\n"? ~ root_entry ~ ("\n" ~ file_entry)* }
 
 root_entry = { "/" ~ ":" ~ view }
 
