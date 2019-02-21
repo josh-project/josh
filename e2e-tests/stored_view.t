@@ -74,7 +74,6 @@
   $ cd ${TESTTMP}
   $ cat > viewfile <<EOF
   > real_repo.git
-  > / : !empty/empty
   > a/b : !/sub2
   > c : !/sub1
   > EOF

@@ -290,12 +290,6 @@ fn parse_item(pair: Pair<Rule>) -> Box<dyn View> {
 
 fn parse_file_entry(pair: Pair<Rule>, combine_view: &mut CombineView) {
     match pair.as_rule() {
-        Rule::root_entry => {
-            let mut inner = pair.into_inner();
-            let v = inner.next().unwrap().as_str();
-            println!("MKVIEW root_entry {:?}", v);
-            combine_view.base = build_view(v);
-        }
         Rule::file_entry => {
             let mut inner = pair.into_inner();
             let path = inner.next().unwrap().as_str();

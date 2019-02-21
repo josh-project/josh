@@ -22,7 +22,6 @@
 
   $ mkdir ws
   $ cat > ws/stored <<EOF
-  > / : !empty/empty
   > a/b : !/sub2
   > c : !/sub1
   > EOF

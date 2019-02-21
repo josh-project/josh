@@ -11,11 +11,8 @@ name = { (!("!" | ")" | "," | "\n") ~ ANY)+ }
 
 cmd = { (!("/" | "(" | "," | "\n") ~ ANY)* }
 
-viewfile = { "\n"? ~ root_entry ~ ("\n" ~ file_entry)* }
-
-root_entry = { "/" ~ ":" ~ view }
+viewfile = { "\n"? ~ file_entry ~ ("\n" ~ file_entry)* }
 
 file_entry = { dst_path ~ ":" ~ view }
 
 dst_path = @{ (!(":" | WHITESPACE) ~ ANY)+ }
-
