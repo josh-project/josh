@@ -5,6 +5,7 @@ use pest::*;
 use std::path::Path;
 use std::path::PathBuf;
 use std::str;
+use std::collections::HashSet;
 
 pub trait View {
     fn apply_to_commit(
@@ -27,6 +28,8 @@ pub trait View {
         tree: &git2::Tree,
         parent_tree: &git2::Tree,
     ) -> git2::Oid;
+
+    fn viewstr(&self) -> String;
 }
 
 struct NopView;
@@ -39,6 +42,10 @@ impl View for NopView {
     fn unapply(&self, _repo: &Repository, tree: &Tree, _parent_tree: &Tree) -> Oid {
         tree.id()
     }
+
+    fn viewstr(&self) -> String {
+        return "!nop/".to_owned();
+    }
 }
 
 struct EmptyView;
@@ -50,6 +57,10 @@ impl View for EmptyView {
 
     fn unapply(&self, _repo: &Repository, _tree: &Tree, parent_tree: &Tree) -> Oid {
         parent_tree.id()
+    }
+
+    fn viewstr(&self) -> String {
+        return "!empty/".to_owned();
     }
 }
 
@@ -74,6 +85,10 @@ impl View for ChainView {
         self.first
             .unapply(&repo, &repo.find_tree(a).expect("no tree"), &parent_tree)
     }
+
+    fn viewstr(&self) -> String {
+        return format!("{}{}", &self.first.viewstr(), &self.second.viewstr());
+    }
 }
 
 struct SubdirView {
@@ -91,6 +106,10 @@ impl View for SubdirView {
     fn unapply(&self, repo: &Repository, tree: &Tree, parent_tree: &Tree) -> Oid {
         replace_subtree(&repo, &self.subdir, &tree, &parent_tree)
     }
+
+    fn viewstr(&self) -> String {
+        return format!("!/{}", &self.subdir.to_str().unwrap());
+    }
 }
 
 struct PrefixView {
@@ -107,6 +126,10 @@ impl View for PrefixView {
             .get_path(&self.prefix)
             .map(|x| x.id())
             .unwrap_or(empty_tree(repo).id());
+    }
+
+    fn viewstr(&self) -> String {
+        return format!("!+/{}", &self.prefix.to_str().unwrap());
     }
 }
 
@@ -156,45 +179,73 @@ impl View for CombineView {
 
         return res;
     }
+
+    fn viewstr(&self) -> String {
+        let mut s = format!("/ = {}", &self.base.viewstr());
+
+        for (other, prefix) in self.others.iter().zip(self.prefixes.iter()) {
+            s = format!("{}\n{} = {}", &s, prefix.to_str().unwrap(), other.viewstr());
+        }
+        return s;
+    }
 }
 
 struct WorkspaceView {
     ws_path: PathBuf,
 }
 
+fn combine_view_from_ws(repo: &Repository, tree: &Tree, ws_path: &Path) -> Box<CombineView>
+{
+    let ws_config_oid = ok_or!(tree.get_path(ws_path).map(|x| x.id()), {
+        return build_combine_view("");
+    });
+
+    let ws_blob = ok_or!(repo.find_blob(ws_config_oid), {
+        return build_combine_view("");
+    });
+
+    let ws_content = ok_or!(str::from_utf8(ws_blob.content()), {
+        return build_combine_view("");
+    });
+
+    return build_combine_view(ws_content);
+}
+
 impl View for WorkspaceView {
+
+    fn apply_to_commit(
+        &self,
+        repo: &git2::Repository,
+        commit: &git2::Commit,
+    ) -> (git2::Oid, Vec<(Option<Box<dyn View>>, Oid)>) {
+        let full_tree = commit.tree().expect("commit has no tree");
+        let mut parent_transforms = vec![];
+
+        let mut in_parents = HashSet::new();
+        for parent in commit.parents() {
+            parent_transforms.push((None, parent.id()));
+
+            let pcw = combine_view_from_ws(repo, &parent.tree().unwrap(), &self.ws_path);
+
+            for (other, prefix) in pcw.others.iter().zip(pcw.prefixes.iter()) {
+                in_parents.insert(format!("{} = {}", prefix.to_str().unwrap(), other.viewstr()));
+            }
+        }
+        return (self.apply_to_tree(&repo, &full_tree), parent_transforms);
+    }
+
     fn apply_to_tree(&self, repo: &Repository, tree: &Tree) -> Oid {
         println!("VIEW WorkspaceView enter");
-        let ws_config_oid = ok_or!(tree.get_path(&self.ws_path).map(|x| x.id()), {
-            return empty_tree(repo).id();
-        });
-
-        let ws_blob = ok_or!(repo.find_blob(ws_config_oid), {
-            return empty_tree(repo).id();
-        });
-
-        let ws_content = ok_or!(str::from_utf8(ws_blob.content()), {
-            return empty_tree(repo).id();
-        });
-
-        println!("VIEW WorkspaceView return");
-        return build_combine_view(ws_content).apply_to_tree(repo, tree);
+        return combine_view_from_ws(repo, tree, &self.ws_path).apply_to_tree(repo, tree);
     }
 
     fn unapply(&self, repo: &Repository, tree: &Tree, parent_tree: &Tree) -> Oid {
-        let ws_config_oid = ok_or!(parent_tree.get_path(&self.ws_path).map(|x| x.id()), {
-            return empty_tree(repo).id();
-        });
 
-        let ws_blob = ok_or!(repo.find_blob(ws_config_oid), {
-            return empty_tree(repo).id();
-        });
+        return combine_view_from_ws(repo, parent_tree, &self.ws_path).unapply(repo, tree, parent_tree);
+    }
 
-        let ws_content = ok_or!(str::from_utf8(ws_blob.content()), {
-            return empty_tree(repo).id();
-        });
-
-        return build_combine_view(ws_content).unapply(repo, tree, parent_tree);
+    fn viewstr(&self) -> String {
+        return format!("!workspace/{}", &self.ws_path.to_str().unwrap());
     }
 }
 
@@ -258,10 +309,9 @@ fn parse_file_entry(pair: Pair<Rule>, combine_view: &mut CombineView) {
     }
 }
 
-fn build_combine_view(viewstr: &str) -> Box<CombineView>
-{
+fn build_combine_view(viewstr: &str) -> Box<CombineView> {
     let mut combine_view = Box::new(CombineView {
-        base: Box::new(NopView),
+        base: Box::new(EmptyView),
         others: vec![],
         prefixes: vec![],
     });
