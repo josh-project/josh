@@ -2,10 +2,10 @@ use super::replace_subtree;
 use super::*;
 use git2::*;
 use pest::*;
+use std::collections::HashSet;
 use std::path::Path;
 use std::path::PathBuf;
 use std::str;
-use std::collections::HashSet;
 
 pub trait View {
     fn apply_to_commit(
@@ -194,8 +194,7 @@ struct WorkspaceView {
     ws_path: PathBuf,
 }
 
-fn combine_view_from_ws(repo: &Repository, tree: &Tree, ws_path: &Path) -> Box<CombineView>
-{
+fn combine_view_from_ws(repo: &Repository, tree: &Tree, ws_path: &Path) -> Box<CombineView> {
     let ws_config_oid = ok_or!(tree.get_path(ws_path).map(|x| x.id()), {
         return build_combine_view("");
     });
@@ -212,7 +211,6 @@ fn combine_view_from_ws(repo: &Repository, tree: &Tree, ws_path: &Path) -> Box<C
 }
 
 impl View for WorkspaceView {
-
     fn apply_to_commit(
         &self,
         repo: &git2::Repository,
@@ -228,7 +226,11 @@ impl View for WorkspaceView {
             let pcw = combine_view_from_ws(repo, &parent.tree().unwrap(), &self.ws_path);
 
             for (other, prefix) in pcw.others.iter().zip(pcw.prefixes.iter()) {
-                in_parents.insert(format!("{} = {}", prefix.to_str().unwrap(), other.viewstr()));
+                in_parents.insert(format!(
+                    "{} = {}",
+                    prefix.to_str().unwrap(),
+                    other.viewstr()
+                ));
             }
         }
         return (self.apply_to_tree(&repo, &full_tree), parent_transforms);
@@ -240,8 +242,11 @@ impl View for WorkspaceView {
     }
 
     fn unapply(&self, repo: &Repository, tree: &Tree, parent_tree: &Tree) -> Oid {
-
-        return combine_view_from_ws(repo, parent_tree, &self.ws_path).unapply(repo, tree, parent_tree);
+        return combine_view_from_ws(repo, parent_tree, &self.ws_path).unapply(
+            repo,
+            tree,
+            parent_tree,
+        );
     }
 
     fn viewstr(&self) -> String {

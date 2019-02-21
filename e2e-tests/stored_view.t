@@ -74,8 +74,8 @@
   $ cd ${TESTTMP}
   $ cat > viewfile <<EOF
   > real_repo.git
-  > a/b : !/sub2
-  > c : !/sub1
+  > a/b = !/sub2
+  > c = !/sub1
   > EOF
   $ X=$(curl -s http://localhost:8002/view --upload-file viewfile)
   $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8002/view/${X}/ stored

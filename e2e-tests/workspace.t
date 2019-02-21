@@ -22,8 +22,8 @@
 
   $ mkdir ws
   $ cat > ws/stored <<EOF
-  > a/b : !/sub2
-  > c : !/sub1
+  > a/b = !/sub2
+  > c = !/sub1
   > EOF
 
   $ git add ws

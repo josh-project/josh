@@ -13,6 +13,6 @@ cmd = { (!("/" | "(" | "," | "\n") ~ ANY)* }
 
 viewfile = { "\n"? ~ file_entry ~ ("\n" ~ file_entry)* }
 
-file_entry = { dst_path ~ ":" ~ view }
+file_entry = { dst_path ~ "=" ~ view }
 
-dst_path = @{ (!(":" | WHITESPACE) ~ ANY)+ }
+dst_path = @{ (!("=" | WHITESPACE) ~ ANY)+ }
