@@ -225,19 +225,28 @@ pub fn apply_view_cached(
             continue 'walk;
         }
 
-        let full_tree = commit.tree().expect("commit has no tree");
+        let (new_tree, parent_transforms) = view.apply_to_commit(&repo, &commit);
 
-        let new_tree = view.apply(&repo, &full_tree);
         if new_tree == empty {
             continue 'walk;
         }
 
         let mut transformed_parents = vec![];
-        for parent in commit.parents() {
-            if let Some(parent) = apply_view_cached(&repo, view, parent.id(), view_cache) {
-                let parent = repo.find_commit(parent).unwrap();
-                transformed_parents.push(parent);
-            };
+        for (transform, parent_id) in parent_transforms {
+            match transform {
+                None => {
+                    if let Some(parent) = apply_view_cached(&repo, view, parent_id, view_cache) {
+                        let parent = repo.find_commit(parent).unwrap();
+                        transformed_parents.push(parent);
+                    }
+                }
+                Some(tview) => {
+                    if let Some(parent) = apply_view(&repo, &*tview, parent_id) {
+                        let parent = repo.find_commit(parent).unwrap();
+                        transformed_parents.push(parent);
+                    }
+                }
+            }
         }
 
         let transformed_parent_refs: Vec<&_> = transformed_parents.iter().collect();
@@ -246,7 +255,9 @@ pub fn apply_view_cached(
 
         if let [only_parent] = transformed_parent_refs.as_slice() {
             if new_tree == only_parent.tree().unwrap().id() {
-                if full_tree.id() != commit.parents().next().unwrap().tree().unwrap().id() {
+                if commit.tree().expect("missing tree").id()
+                    != commit.parents().next().unwrap().tree().unwrap().id()
+                {
                     view_cache.insert(commit.id(), only_parent.id());
                     continue 'walk;
                 }

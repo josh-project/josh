@@ -7,7 +7,20 @@ use std::path::PathBuf;
 use std::str;
 
 pub trait View {
-    fn apply(&self, repo: &git2::Repository, tree: &git2::Tree) -> git2::Oid;
+    fn apply_to_commit(
+        &self,
+        repo: &git2::Repository,
+        commit: &git2::Commit,
+    ) -> (git2::Oid, Vec<(Option<Box<dyn View>>, Oid)>) {
+        let full_tree = commit.tree().expect("commit has no tree");
+        let mut parent_transforms = vec![];
+        for parent in commit.parents() {
+            parent_transforms.push((None, parent.id()));
+        }
+        return (self.apply_to_tree(&repo, &full_tree), parent_transforms);
+    }
+
+    fn apply_to_tree(&self, repo: &git2::Repository, tree: &git2::Tree) -> git2::Oid;
     fn unapply(
         &self,
         repo: &git2::Repository,
@@ -19,7 +32,7 @@ pub trait View {
 struct NopView;
 
 impl View for NopView {
-    fn apply(&self, repo: &Repository, tree: &Tree) -> Oid {
+    fn apply_to_tree(&self, repo: &Repository, tree: &Tree) -> Oid {
         tree.id()
     }
 
@@ -31,7 +44,7 @@ impl View for NopView {
 struct EmptyView;
 
 impl View for EmptyView {
-    fn apply(&self, repo: &Repository, tree: &Tree) -> Oid {
+    fn apply_to_tree(&self, repo: &Repository, tree: &Tree) -> Oid {
         repo.treebuilder(None).unwrap().write().unwrap()
     }
 
@@ -46,16 +59,16 @@ struct ChainView {
 }
 
 impl View for ChainView {
-    fn apply(&self, repo: &Repository, tree: &Tree) -> Oid {
-        let r = self.first.apply(&repo, &tree);
+    fn apply_to_tree(&self, repo: &Repository, tree: &Tree) -> Oid {
+        let r = self.first.apply_to_tree(&repo, &tree);
         if let Ok(t) = repo.find_tree(r) {
-            return self.second.apply(&repo, &t);
+            return self.second.apply_to_tree(&repo, &t);
         }
         return repo.treebuilder(None).unwrap().write().unwrap();
     }
 
     fn unapply(&self, repo: &Repository, tree: &Tree, parent_tree: &Tree) -> Oid {
-        let p = self.first.apply(&repo, &parent_tree);
+        let p = self.first.apply_to_tree(&repo, &parent_tree);
         let p = repo.find_tree(p).expect("no tree");
         let a = self.second.unapply(&repo, &tree, &p);
         self.first
@@ -68,7 +81,7 @@ struct SubdirView {
 }
 
 impl View for SubdirView {
-    fn apply(&self, repo: &Repository, tree: &Tree) -> Oid {
+    fn apply_to_tree(&self, repo: &Repository, tree: &Tree) -> Oid {
         return tree
             .get_path(&self.subdir)
             .map(|x| x.id())
@@ -85,7 +98,7 @@ struct PrefixView {
 }
 
 impl View for PrefixView {
-    fn apply(&self, repo: &Repository, tree: &Tree) -> Oid {
+    fn apply_to_tree(&self, repo: &Repository, tree: &Tree) -> Oid {
         replace_subtree(&repo, &self.prefix, &tree, &empty_tree(repo))
     }
 
@@ -104,11 +117,11 @@ struct CombineView {
 }
 
 impl View for CombineView {
-    fn apply(&self, repo: &Repository, tree: &Tree) -> Oid {
-        let mut base = self.base.apply(&repo, &tree);
+    fn apply_to_tree(&self, repo: &Repository, tree: &Tree) -> Oid {
+        let mut base = self.base.apply_to_tree(&repo, &tree);
 
         for (other, prefix) in self.others.iter().zip(self.prefixes.iter()) {
-            let otree = other.apply(&repo, &tree);
+            let otree = other.apply_to_tree(&repo, &tree);
             if otree == empty_tree(repo).id() {
                 continue;
             }
@@ -150,7 +163,7 @@ struct WorkspaceView {
 }
 
 impl View for WorkspaceView {
-    fn apply(&self, repo: &Repository, tree: &Tree) -> Oid {
+    fn apply_to_tree(&self, repo: &Repository, tree: &Tree) -> Oid {
         println!("VIEW WorkspaceView enter");
         let ws_config_oid = ok_or!(tree.get_path(&self.ws_path).map(|x| x.id()), {
             return empty_tree(repo).id();
@@ -160,10 +173,12 @@ impl View for WorkspaceView {
             return empty_tree(repo).id();
         });
 
-        let ws_content = ok_or!(str::from_utf8(ws_blob.content()), { return empty_tree(repo).id(); });
+        let ws_content = ok_or!(str::from_utf8(ws_blob.content()), {
+            return empty_tree(repo).id();
+        });
 
         println!("VIEW WorkspaceView return");
-        return build_view(ws_content).apply(repo, tree);
+        return build_combine_view(ws_content).apply_to_tree(repo, tree);
     }
 
     fn unapply(&self, repo: &Repository, tree: &Tree, parent_tree: &Tree) -> Oid {
@@ -175,9 +190,11 @@ impl View for WorkspaceView {
             return empty_tree(repo).id();
         });
 
-        let ws_content = ok_or!(str::from_utf8(ws_blob.content()), { return empty_tree(repo).id(); });
+        let ws_content = ok_or!(str::from_utf8(ws_blob.content()), {
+            return empty_tree(repo).id();
+        });
 
-        return build_view(ws_content).unapply(repo, tree, parent_tree);
+        return build_combine_view(ws_content).unapply(repo, tree, parent_tree);
     }
 }
 
@@ -241,6 +258,25 @@ fn parse_file_entry(pair: Pair<Rule>, combine_view: &mut CombineView) {
     }
 }
 
+fn build_combine_view(viewstr: &str) -> Box<CombineView>
+{
+    let mut combine_view = Box::new(CombineView {
+        base: Box::new(NopView),
+        others: vec![],
+        prefixes: vec![],
+    });
+
+    if let Ok(r) = MyParser::parse(Rule::viewfile, viewstr) {
+        let mut r = r;
+        let r = r.next().unwrap();
+        for pair in r.into_inner() {
+            parse_file_entry(pair, &mut combine_view);
+        }
+    };
+
+    return combine_view;
+}
+
 pub fn build_view(viewstr: &str) -> Box<dyn View> {
     println!("MKVIEW {:?}", viewstr);
     if viewstr.starts_with("!") {
@@ -258,21 +294,5 @@ pub fn build_view(viewstr: &str) -> Box<dyn View> {
         };
     }
 
-    /* println!("MKVIEW {:?}", viewstr); */
-
-    let mut combine_view = Box::new(CombineView {
-        base: Box::new(NopView),
-        others: vec![],
-        prefixes: vec![],
-    });
-
-    if let Ok(r) = MyParser::parse(Rule::viewfile, viewstr) {
-        let mut r = r;
-        let r = r.next().unwrap();
-        for pair in r.into_inner() {
-            parse_file_entry(pair, &mut combine_view);
-        }
-    };
-
-    return combine_view;
+    return build_combine_view(viewstr);
 }
