@@ -156,12 +156,26 @@
 
   $ git push &> /dev/null
 
+  $ cat > workspace.josh <<EOF
+  > a/b = !/sub2
+  > c = !/sub1
+  > w = !/sub3
+  > EOF
+
+  $ git add .
+  $ git commit -m "try to modify ws" &> /dev/null
+
+This should fail
+  $ git push &> /dev/null
+  [1]
+
+
+
   $ cd ${TESTTMP}/real_repo
 
   $ git pull &> /dev/null
 
   $ git clean -ffdx &> /dev/null
-
   $ tree
   .
   |-- file1

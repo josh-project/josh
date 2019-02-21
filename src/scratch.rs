@@ -117,13 +117,23 @@ pub fn unapply_view(
             &tree,
             &parent.tree().expect("walk: parent has no tree"),
         );
+
+        let new_tree = repo.find_tree(new_tree).expect("can't find rewritten tree");
+        let check = viewobj.apply_to_tree(&repo, &new_tree);
+
+        if check != tree.id()
+        {
+            println!("##### reverse transform mismatch");
+            return UnapplyView::RejectMerge;
+        }
         current = rewrite(
             &repo,
             &module_commit,
             &[&parent],
-            &repo.find_tree(new_tree).expect("can't find rewritten tree"),
+            &new_tree,
         );
     }
+
     return UnapplyView::Done(current);
 }
 
@@ -154,7 +164,11 @@ pub fn apply_view_to_branch(
     viewstr: &str,
     caches: &mut ViewCaches,
 ) {
-    trace_scoped!("apply_view_to_branch", "repo": repo.path(), "branchname": branchname, "viewstr": viewstr);
+    trace_scoped!(
+        "apply_view_to_branch",
+        "repo": repo.path(),
+        "branchname": branchname,
+        "viewstr": viewstr);
     let mut view_cache = caches
         .entry(format!("{}--{}", &branchname, &viewstr))
         .or_insert_with(ViewCache::new);
@@ -204,7 +218,7 @@ pub fn apply_view_cached(
         return Some(*id);
     }
     let tname = format!("apply_view_cached {:?}", newrev);
-    trace_begin!(&tname);
+    trace_begin!(&tname, "viewstr": view.viewstr());
 
     let walk = {
         let mut walk = repo.revwalk().expect("walk: can't create revwalk");
@@ -228,6 +242,7 @@ pub fn apply_view_cached(
         let (new_tree, parent_transforms) = view.apply_to_commit(&repo, &commit);
 
         if new_tree == empty {
+            empty_tree_count += 1;
             continue 'walk;
         }
 

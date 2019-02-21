@@ -36,7 +36,7 @@ pub trait View {
 struct NopView;
 
 impl View for NopView {
-    fn apply_to_tree(&self, repo: &Repository, tree: &Tree) -> Oid {
+    fn apply_to_tree(&self, _repo: &Repository, tree: &Tree) -> Oid {
         tree.id()
     }
 
@@ -52,8 +52,8 @@ impl View for NopView {
 struct EmptyView;
 
 impl View for EmptyView {
-    fn apply_to_tree(&self, repo: &Repository, tree: &Tree) -> Oid {
-        repo.treebuilder(None).unwrap().write().unwrap()
+    fn apply_to_tree(&self, repo: &Repository, _tree: &Tree) -> Oid {
+        empty_tree(repo).id()
     }
 
     fn unapply(&self, _repo: &Repository, _tree: &Tree, parent_tree: &Tree) -> Oid {
@@ -273,7 +273,11 @@ impl View for WorkspaceView {
     }
 
     fn unapply(&self, repo: &Repository, tree: &Tree, parent_tree: &Tree) -> Oid {
-        return combine_view_from_ws(repo, parent_tree, &self.ws_path).unapply(
+        let mut cw = combine_view_from_ws(repo, parent_tree, &self.ws_path);
+        /* let mut cw = combine_view_from_ws(repo, tree, &PathBuf::from("workspace.josh")); */
+
+        /* cw.base = Box::new(SubdirView{ subdir: self.ws_path.to_owned(), }); */
+        return cw.unapply(
             repo,
             tree,
             parent_tree,

@@ -42,8 +42,6 @@ lazy_static! {
         Regex::new(r"(?P<prefix>.*[.]git)(?P<view>(\n.*)*)").expect("can't compile regex");
     static ref FULL_REGEX: Regex =
         Regex::new(r"(?P<prefix>/.*[.]git)(?P<pathinfo>/.*)").expect("can't compile regex");
-    static ref STORED_VIEW_REGEX: Regex =
-        Regex::new(r"/view/(?P<id>\w*)(?P<pathinfo>/.*)").expect("can't compile regex");
 }
 
 struct HttpService {
@@ -52,7 +50,6 @@ struct HttpService {
     base_path: PathBuf,
     base_url: String,
     cache: Arc<Mutex<scratch::ViewCaches>>,
-    stored_views: StoredViews,
 }
 
 fn async_fetch(
@@ -88,33 +85,7 @@ fn respond_unauthorized() -> Response {
     response
 }
 
-fn store_view(
-    req: Request,
-    stored_views: StoredViews,
-) -> Box<Future<Item = Response, Error = hyper::Error>> {
-    let r = req
-        .body()
-        .concat2()
-        .map(move |body| {
-            let viewstr = some_or!(String::from_utf8(body.to_vec()).ok(), {
-                return Response::new()
-                    .with_body("Invalid view\n")
-                    .with_status(hyper::StatusCode::NotAcceptable);
-            });
-            let viewstr = viewstr.trim_right().to_string();
-            let mut hasher = Sha1::new();
-            hasher.input_str(&viewstr);
-            let id = hasher.result_str().to_string();
-            stored_views.lock().unwrap().insert(id.clone(), viewstr);
-            return Response::new()
-                .with_body(format!("{}\n", id))
-                .with_status(hyper::StatusCode::Ok);
-        })
-        .map_err(|e| e.into());
-    Box::new(r)
-}
-
-fn parse_url(path: &str, stored_views: &StoredViews) -> Option<(String, String, String)> {
+fn parse_url(path: &str) -> Option<(String, String, String)> {
     if let Some(caps) = VIEW_REGEX.captures(&path) {
         return Some((
             caps.name("prefix").unwrap().as_str().to_string(),
@@ -123,21 +94,6 @@ fn parse_url(path: &str, stored_views: &StoredViews) -> Option<(String, String, 
         ));
     }
 
-    if let Some(caps) = STORED_VIEW_REGEX.captures(&path) {
-        let id = caps.name("id").unwrap().as_str();
-        let stored_str = some_or!(stored_views.lock().unwrap().get(id), {
-            return None;
-        })
-        .clone();
-        let caps2 = some_or!(SVIEW_REGEX.captures(&stored_str), {
-            return None;
-        });
-        return Some((
-            format!("/{}", caps2.name("prefix").unwrap().as_str()),
-            caps2.name("view").unwrap().as_str().to_string(),
-            caps.name("pathinfo").unwrap().as_str().to_string(),
-        ));
-    }
     if let Some(caps) = FULL_REGEX.captures(&path) {
         return Some((
             caps.name("prefix").unwrap().as_str().to_string(),
@@ -158,15 +114,12 @@ fn call_service(
             .with_status(hyper::StatusCode::Ok);
         return Box::new(futures::future::ok(response));
     }
-    if req.uri().path() == "/view" {
-        return store_view(req, service.stored_views.clone());
-    }
     if req.uri().path() == "/panic" {
         panic!();
     }
 
     let (prefix, view_string, pathinfo) =
-        some_or!(parse_url(&req.uri().path(), &service.stored_views), {
+        some_or!(parse_url(&req.uri().path()), {
             let response = Response::new().with_status(hyper::StatusCode::NotFound);
             return Box::new(futures::future::ok(response));
         });
@@ -361,7 +314,6 @@ fn run_http_server(addr: net::SocketAddr, pool: &CpuPool, local: &Path, remote: 
     let pool = pool.clone();
     let remote = remote.to_owned();
     let local = local.to_owned();
-    let stored_views = Arc::new(Mutex::new(HashMap::new()));
     let serve = Http::new()
         .serve_addr_handle(&addr, &server_handle, move || {
             let cghttp = HttpService {
@@ -370,7 +322,6 @@ fn run_http_server(addr: net::SocketAddr, pool: &CpuPool, local: &Path, remote: 
                 base_path: local.clone(),
                 base_url: remote.clone(),
                 cache: cache.clone(),
-                stored_views: stored_views.clone(),
             };
             Ok(cghttp)
         })
