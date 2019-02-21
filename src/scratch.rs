@@ -196,7 +196,7 @@ pub fn apply_view(repo: &Repository, view: &View, newrev: Oid) -> Option<Oid> {
 
 pub fn apply_view_cached(
     repo: &Repository,
-    view: &View,
+    view: &dyn View,
     newrev: Oid,
     view_cache: &mut ViewCache,
 ) -> Option<Oid> {

@@ -14,6 +14,7 @@ pub trait View {
         commit: &git2::Commit,
     ) -> (git2::Oid, Vec<(Option<Box<dyn View>>, Oid)>) {
         let full_tree = commit.tree().expect("commit has no tree");
+
         let mut parent_transforms = vec![];
         for parent in commit.parents() {
             parent_transforms.push((None, parent.id()));
@@ -44,7 +45,7 @@ impl View for NopView {
     }
 
     fn viewstr(&self) -> String {
-        return "!nop/".to_owned();
+        return "!nop/nop".to_owned();
     }
 }
 
@@ -60,7 +61,7 @@ impl View for EmptyView {
     }
 
     fn viewstr(&self) -> String {
-        return "!empty/".to_owned();
+        return "!empty/empty".to_owned();
     }
 }
 
@@ -156,7 +157,9 @@ impl View for CombineView {
     }
 
     fn unapply(&self, repo: &Repository, tree: &Tree, parent_tree: &Tree) -> Oid {
-        let mut res = self.base.unapply(repo, tree, parent_tree);
+        // TODO
+        /* let mut res = self.base.unapply(repo, tree, parent_tree); */
+        let mut res = parent_tree.id();
 
         for (other, prefix) in self.others.iter().zip(self.prefixes.iter()) {
             let r = tree.get_path(&prefix).map(|x| x.id()).unwrap();
@@ -195,7 +198,8 @@ struct WorkspaceView {
 }
 
 fn combine_view_from_ws(repo: &Repository, tree: &Tree, ws_path: &Path) -> Box<CombineView> {
-    let ws_config_oid = ok_or!(tree.get_path(ws_path).map(|x| x.id()), {
+    let wsp = ws_path.join("workspace.josh");
+    let ws_config_oid = ok_or!(tree.get_path(&wsp).map(|x| x.id()), {
         return build_combine_view("");
     });
 
@@ -207,7 +211,9 @@ fn combine_view_from_ws(repo: &Repository, tree: &Tree, ws_path: &Path) -> Box<C
         return build_combine_view("");
     });
 
-    return build_combine_view(ws_content);
+    let mut cw = build_combine_view(ws_content);
+    cw.base = Box::new(SubdirView{ subdir: ws_path.to_owned() });
+    return cw;
 }
 
 impl View for WorkspaceView {
@@ -217,27 +223,52 @@ impl View for WorkspaceView {
         commit: &git2::Commit,
     ) -> (git2::Oid, Vec<(Option<Box<dyn View>>, Oid)>) {
         let full_tree = commit.tree().expect("commit has no tree");
+        
+        let mut in_this = HashSet::new();
+
+        let cw = combine_view_from_ws(repo, &full_tree, &self.ws_path);
+
+
+        for (other, prefix) in cw.others.iter().zip(cw.prefixes.iter()) {
+            in_this.insert(format!(
+                "{} = {}",
+                prefix.to_str().unwrap(),
+                other.viewstr()
+            ));
+        }
+
         let mut parent_transforms = vec![];
 
-        let mut in_parents = HashSet::new();
         for parent in commit.parents() {
             parent_transforms.push((None, parent.id()));
 
             let pcw = combine_view_from_ws(repo, &parent.tree().unwrap(), &self.ws_path);
 
             for (other, prefix) in pcw.others.iter().zip(pcw.prefixes.iter()) {
-                in_parents.insert(format!(
+                in_this.remove(&format!(
                     "{} = {}",
                     prefix.to_str().unwrap(),
                     other.viewstr()
                 ));
             }
         }
-        return (self.apply_to_tree(&repo, &full_tree), parent_transforms);
+
+        let mut s = String::new();
+        for x in in_this {
+            s = format!("{}{}\n", s, x);
+        }
+
+
+        let pcw: Box<dyn View> = build_combine_view(&s);
+
+        if let Some(&(_, pid)) = parent_transforms.get(0) {
+            parent_transforms.push((Some(pcw), pid));
+        }
+
+        return (cw.apply_to_tree(repo, &full_tree), parent_transforms);
     }
 
     fn apply_to_tree(&self, repo: &Repository, tree: &Tree) -> Oid {
-        println!("VIEW WorkspaceView enter");
         return combine_view_from_ws(repo, tree, &self.ws_path).apply_to_tree(repo, tree);
     }
 
@@ -268,6 +299,9 @@ fn make_view(cmd: &str, name: &str) -> Box<dyn View> {
     } else if cmd == "empty" {
         println!("MKVIEW empty");
         return Box::new(EmptyView);
+    } else if cmd == "nop" {
+        println!("MKVIEW nop");
+        return Box::new(NopView);
     } else if cmd == "workspace" {
         println!("MKVIEW workspace");
         return Box::new(WorkspaceView {
@@ -328,6 +362,17 @@ fn build_combine_view(viewstr: &str) -> Box<CombineView> {
 
 pub fn build_view(viewstr: &str) -> Box<dyn View> {
     println!("MKVIEW {:?}", viewstr);
+
+    if viewstr.starts_with("!workspace/") {
+        if let Ok(r) = MyParser::parse(Rule::view, viewstr) {
+            let mut r = r;
+            let r = r.next().unwrap();
+            for pair in r.into_inner() {
+                return parse_item(pair);
+            }
+        }
+    }
+
     if viewstr.starts_with("!") {
         let mut chain: Box<dyn View> = Box::new(NopView);
         if let Ok(r) = MyParser::parse(Rule::view, viewstr) {

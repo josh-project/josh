@@ -20,14 +20,6 @@
   $ git checkout -b master
   Switched to a new branch 'master'
 
-  $ mkdir ws
-  $ cat > ws/workspace.josh <<EOF
-  > a/b = !/sub2
-  > c = !/sub1
-  > EOF
-
-  $ git add ws
-  $ git commit -m "add workspace" &> /dev/null
 
   $ echo content1 > file1 &> /dev/null
   $ git add .
@@ -50,10 +42,6 @@
    1 file changed, 0 insertions(+), 0 deletions(-)
    create mode 100644 newfile1
 
-  $ mkdir sub3
-  $ echo contents3 > sub3/file3
-  $ git add sub3
-  $ git commit -m "add file3" &> /dev/null
 
   $ mkdir -p sub1/subsub
   $ echo contents1 > sub1/subsub/file1
@@ -65,18 +53,41 @@
   $ git add sub2
   $ git commit -m "add file2" &> /dev/null
 
+  $ mkdir ws
+  $ cat > ws/workspace.josh <<EOF
+  > a/b = !/sub2
+  > c = !/sub1
+  > EOF
+
+  $ git add ws
+  $ git commit -m "add workspace" &> /dev/null
+
+  $ mkdir sub3
+  $ echo contents3 > sub3/file3
+  $ git add sub3
+  $ git commit -m "add file3" &> /dev/null
+
+  $ cat > ws/workspace.josh <<EOF
+  > a/b = !/sub2
+  > c = !/sub1
+  > d = !/sub3
+  > EOF
+
+  $ git add ws
+  $ git commit -m "mod workspace" &> /dev/null
 
   $ git log --graph --pretty=%s
+  * mod workspace
+  * add file3
+  * add workspace
   * add file2
   * add file1
-  * add file3
   *   Merge branch 'new1'
   |\  
   | * add newfile1
   * | newfile master
   |/  
   * initial
-  * add workspace
 
 
   $ git push
@@ -95,28 +106,44 @@
   |-- c
   |   `-- subsub
   |       `-- file1
+  |-- d
+  |   `-- file3
   `-- workspace.josh
   
-  4 directories, 3 files
+  5 directories, 4 files
 
   $ git log --graph --pretty=%s
+  *   mod workspace
+  |\  
+  | * add file3
+  * add workspace
   * add file2
   * add file1
-  *   Merge branch 'new1'
-  |\  
-  |/  
-  * add workspace
 
   $ git checkout HEAD~1 &> /dev/null
-
   $ tree
   .
+  |-- a
+  |   `-- b
+  |       `-- file2
   |-- c
   |   `-- subsub
   |       `-- file1
   `-- workspace.josh
   
-  2 directories, 2 files
+  4 directories, 3 files
+
+  $ git checkout HEAD~1 &> /dev/null
+  $ tree
+  .
+  |-- a
+  |   `-- b
+  |       `-- file2
+  `-- c
+      `-- subsub
+          `-- file1
+  
+  4 directories, 2 files
 
   $ git checkout master &> /dev/null
 
@@ -155,16 +182,17 @@
   5 directories, 9 files
   $ git log --graph --pretty=%s
   * add in view
+  * mod workspace
+  * add file3
+  * add workspace
   * add file2
   * add file1
-  * add file3
   *   Merge branch 'new1'
   |\  
   | * add newfile1
   * | newfile master
   |/  
   * initial
-  * add workspace
 
   $ git checkout HEAD~1 &> /dev/null
   $ git clean -ffdx &> /dev/null
