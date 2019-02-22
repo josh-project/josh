@@ -212,7 +212,9 @@ fn combine_view_from_ws(repo: &Repository, tree: &Tree, ws_path: &Path) -> Box<C
     });
 
     let mut cw = build_combine_view(ws_content);
-    cw.base = Box::new(SubdirView{ subdir: ws_path.to_owned() });
+    cw.base = Box::new(SubdirView {
+        subdir: ws_path.to_owned(),
+    });
     return cw;
 }
 
@@ -223,11 +225,10 @@ impl View for WorkspaceView {
         commit: &git2::Commit,
     ) -> (git2::Oid, Vec<(Option<Box<dyn View>>, Oid)>) {
         let full_tree = commit.tree().expect("commit has no tree");
-        
+
         let mut in_this = HashSet::new();
 
         let cw = combine_view_from_ws(repo, &full_tree, &self.ws_path);
-
 
         for (other, prefix) in cw.others.iter().zip(cw.prefixes.iter()) {
             in_this.insert(format!(
@@ -258,7 +259,6 @@ impl View for WorkspaceView {
             s = format!("{}{}\n", s, x);
         }
 
-
         let pcw: Box<dyn View> = build_combine_view(&s);
 
         if let Some(&(_, pid)) = parent_transforms.get(0) {
@@ -277,11 +277,7 @@ impl View for WorkspaceView {
         /* let mut cw = combine_view_from_ws(repo, tree, &PathBuf::from("workspace.josh")); */
 
         /* cw.base = Box::new(SubdirView{ subdir: self.ws_path.to_owned(), }); */
-        return cw.unapply(
-            repo,
-            tree,
-            parent_tree,
-        );
+        return cw.unapply(repo, tree, parent_tree);
     }
 
     fn viewstr(&self) -> String {

@@ -121,17 +121,11 @@ pub fn unapply_view(
         let new_tree = repo.find_tree(new_tree).expect("can't find rewritten tree");
         let check = viewobj.apply_to_tree(&repo, &new_tree);
 
-        if check != tree.id()
-        {
+        if check != tree.id() {
             println!("##### reverse transform mismatch");
             return UnapplyView::RejectMerge;
         }
-        current = rewrite(
-            &repo,
-            &module_commit,
-            &[&parent],
-            &new_tree,
-        );
+        current = rewrite(&repo, &module_commit, &[&parent], &new_tree);
     }
 
     return UnapplyView::Done(current);
@@ -161,46 +155,25 @@ fn transform_commit(
 pub fn apply_view_to_branch(
     repo: &Repository,
     branchname: &str,
-    viewstr: &str,
-    caches: &mut ViewCaches,
+    viewobj: &dyn View,
+    view_cache: &mut ViewCache,
+    ns: &str,
 ) {
     trace_scoped!(
         "apply_view_to_branch",
         "repo": repo.path(),
         "branchname": branchname,
-        "viewstr": viewstr);
-    let mut view_cache = caches
-        .entry(format!("{}--{}", &branchname, &viewstr))
-        .or_insert_with(ViewCache::new);
+        "viewstr": viewobj.viewstr());
 
-    let ns = {
-        let mut hasher = Sha1::new();
-        hasher.input_str(&viewstr);
-        hasher.result_str()
-    };
     let to_refname = format!("refs/namespaces/{}/refs/heads/{}", &ns, &branchname);
     let to_head = format!("refs/namespaces/{}/HEAD", &ns);
     let from_refsname = format!("refs/heads/{}", branchname);
 
-    let viewobj = build_view(&viewstr);
-
     debug!("apply_view_to_branch {}", branchname);
-    transform_commit(
-        &repo,
-        &*viewobj,
-        &from_refsname,
-        &to_refname,
-        &mut view_cache,
-    );
+    transform_commit(&repo, &*viewobj, &from_refsname, &to_refname, view_cache);
 
     if branchname == "master" {
-        transform_commit(
-            &repo,
-            &*viewobj,
-            "refs/heads/master",
-            &to_head,
-            &mut view_cache,
-        );
+        transform_commit(&repo, &*viewobj, "refs/heads/master", &to_head, view_cache);
     }
 }
 

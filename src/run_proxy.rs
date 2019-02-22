@@ -118,11 +118,10 @@ fn call_service(
         panic!();
     }
 
-    let (prefix, view_string, pathinfo) =
-        some_or!(parse_url(&req.uri().path()), {
-            let response = Response::new().with_status(hyper::StatusCode::NotFound);
-            return Box::new(futures::future::ok(response));
-        });
+    let (prefix, view_string, pathinfo) = some_or!(parse_url(&req.uri().path()), {
+        let response = Response::new().with_status(hyper::StatusCode::NotFound);
+        return Box::new(futures::future::ok(response));
+    });
 
     let (username, password) = match req.headers().get() {
         Some(&Authorization(Basic {
@@ -355,13 +354,54 @@ fn make_view_repo(
 
     let scratch = scratch::new(&br_path);
 
+    let mut view_cache = cache.lock().unwrap();
+
+    let mut vc = view_cache
+        .entry(format!("{:?}--{}", &scratch.path(), &view_string))
+        .or_insert_with(ViewCache::new);
+
+    let ns = {
+        let mut hasher = Sha1::new();
+        hasher.input_str(&view_string);
+        hasher.result_str()
+    };
+
+    let viewobj = build_view(&view_string);
+
     for branch in scratch.branches(None).unwrap() {
         scratch::apply_view_to_branch(
             &scratch,
             &branch.unwrap().0.name().unwrap().unwrap(),
-            &view_string,
-            &mut cache.lock().unwrap(),
+            &*viewobj,
+            &mut vc,
+            &ns,
         );
+    }
+
+    for tag in scratch.tag_names(None).expect("scratch.tag_names").iter() {
+        let tag = some_or!(tag, {
+            continue;
+        });
+        let r = ok_or!(scratch.find_reference(&format!("refs/tags/{}", tag)), {
+            continue;
+        });
+        let target = some_or!(r.target(), {
+            continue;
+        });
+
+        if let Some(n) = vc.get(&target) {
+            ok_or!(
+                scratch.reference(
+                    &format!("refs/namespaces/{}/refs/tags/{}", &ns, &tag),
+                    *n,
+                    true,
+                    "crate tag",
+                ),
+                {
+                    continue;
+                }
+            );
+        }
     }
 
     virtual_repo::setup_tmp_repo(&br_path);
