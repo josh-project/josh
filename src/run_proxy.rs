@@ -36,10 +36,8 @@ use self::crypto::sha1::Sha1;
 
 lazy_static! {
     static ref VIEW_REGEX: Regex =
-        Regex::new(r"(?P<prefix>/.*[.]git)(?P<view>!.*)[.]git(?P<pathinfo>/.*)")
+        Regex::new(r"(?P<prefix>/.*[.]git)(?P<view>.*)[.]git(?P<pathinfo>/.*)")
             .expect("can't compile regex");
-    static ref SVIEW_REGEX: Regex =
-        Regex::new(r"(?P<prefix>.*[.]git)(?P<view>(\n.*)*)").expect("can't compile regex");
     static ref FULL_REGEX: Regex =
         Regex::new(r"(?P<prefix>/.*[.]git)(?P<pathinfo>/.*)").expect("can't compile regex");
 }

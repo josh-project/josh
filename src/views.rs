@@ -168,10 +168,10 @@ impl View for CombineView {
 
             let merged = repo
                 .merge_trees(
-                    &empty_tree(repo),
+                    &parent_tree,
                     &repo.find_tree(res).unwrap(),
                     &repo.find_tree(ua).unwrap(),
-                    None,
+                    Some(MergeOptions::new().file_favor(FileFavor::Theirs)),
                 )
                 .unwrap()
                 .write_tree_to(&repo)
@@ -273,10 +273,10 @@ impl View for WorkspaceView {
     }
 
     fn unapply(&self, repo: &Repository, tree: &Tree, parent_tree: &Tree) -> Oid {
-        let mut cw = combine_view_from_ws(repo, parent_tree, &self.ws_path);
-        /* let mut cw = combine_view_from_ws(repo, tree, &PathBuf::from("workspace.josh")); */
+        /* let mut cw = combine_view_from_ws(repo, parent_tree, &self.ws_path); */
+        let mut cw = combine_view_from_ws(repo, tree, &PathBuf::from(""));
 
-        /* cw.base = Box::new(SubdirView{ subdir: self.ws_path.to_owned(), }); */
+        cw.base = Box::new(SubdirView{ subdir: self.ws_path.to_owned(), });
         return cw.unapply(repo, tree, parent_tree);
     }
 

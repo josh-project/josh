@@ -147,6 +147,7 @@
 
   $ git checkout master &> /dev/null
 
+  $ echo updated_1_contents > c/subsub/file1
   $ echo newfile_1_contents > c/subsub/newfile_1
   $ echo newfile_2_contents > a/b/newfile_2
 
@@ -208,6 +209,9 @@ This should fail
   |/  
   * initial
 
+  $ cat sub1/subsub/file1
+  updated_1_contents
+
   $ git checkout HEAD~1 &> /dev/null
   $ git clean -ffdx &> /dev/null
   $ tree
@@ -226,6 +230,7 @@ This should fail
       `-- workspace.josh
   
   5 directories, 7 files
+
 
   $ bash ${TESTDIR}/destroy_test_env.sh
 
