@@ -1,17 +1,17 @@
 WHITESPACE = _{ " " | "\t" }
+CMD_START = _{(":"|"!")}
+CMD_END = _{("="|"/")}
 
 
-view = { item* }
+view = { transform* }
 
-item = _{ transform }
+transform = { CMD_START ~ cmd ~ CMD_END ~ argument }
 
-transform = { "!" ~ cmd ~ "/" ~ name }
+argument = { (!(CMD_START | "\n") ~ ANY)+ }
 
-name = { (!("!" | ")" | "," | "\n") ~ ANY)+ }
+cmd = { (!(CMD_END | "\n") ~ ANY)* }
 
-cmd = { (!("/" | "(" | "," | "\n") ~ ANY)* }
-
-viewfile = { "\n"? ~ file_entry ~ ("\n" ~ file_entry)* }
+viewfile = { "\n"* ~ file_entry ~ ("\n"+ ~ file_entry)* }
 
 file_entry = { dst_path ~ "=" ~ view }
 

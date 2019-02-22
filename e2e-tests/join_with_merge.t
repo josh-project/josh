@@ -30,7 +30,7 @@
 
   $ git push &> /dev/null
 
-  $ git fetch --force http://${TESTUSER}:${TESTPASS}@localhost:8002/real_repo.git!+/sub1.git master:joined &> /dev/null
+  $ git fetch --force http://${TESTUSER}:${TESTPASS}@localhost:8002/real_repo.git:prefix=sub1.git master:joined &> /dev/null
 
   $ git checkout joined
   Switched to branch 'joined'

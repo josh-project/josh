@@ -45,7 +45,7 @@ impl View for NopView {
     }
 
     fn viewstr(&self) -> String {
-        return "!nop/nop".to_owned();
+        return ":nop=nop".to_owned();
     }
 }
 
@@ -61,7 +61,7 @@ impl View for EmptyView {
     }
 
     fn viewstr(&self) -> String {
-        return "!empty/empty".to_owned();
+        return ":empty=empty".to_owned();
     }
 }
 
@@ -109,7 +109,7 @@ impl View for SubdirView {
     }
 
     fn viewstr(&self) -> String {
-        return format!("!/{}", &self.subdir.to_str().unwrap());
+        return format!(":/{}", &self.subdir.to_str().unwrap());
     }
 }
 
@@ -130,7 +130,7 @@ impl View for PrefixView {
     }
 
     fn viewstr(&self) -> String {
-        return format!("!+/{}", &self.prefix.to_str().unwrap());
+        return format!(":prefix={}", &self.prefix.to_str().unwrap());
     }
 }
 
@@ -281,7 +281,7 @@ impl View for WorkspaceView {
     }
 
     fn viewstr(&self) -> String {
-        return format!("!workspace/{}", &self.ws_path.to_str().unwrap());
+        return format!(":workspace={}", &self.ws_path.to_str().unwrap());
     }
 }
 
@@ -292,7 +292,7 @@ struct MyParser;
 use pest::iterators::Pair;
 
 fn make_view(cmd: &str, name: &str) -> Box<dyn View> {
-    if cmd == "+" {
+    if cmd == "+" || cmd == "prefix" {
         return Box::new(PrefixView {
             prefix: Path::new(name).to_owned(),
         });
@@ -363,7 +363,7 @@ fn build_combine_view(viewstr: &str) -> Box<CombineView> {
 pub fn build_view(viewstr: &str) -> Box<dyn View> {
     println!("MKVIEW {:?}", viewstr);
 
-    if viewstr.starts_with("!workspace/") {
+    if viewstr.starts_with(":workspace=") {
         if let Ok(r) = MyParser::parse(Rule::view, viewstr) {
             let mut r = r;
             let r = r.next().unwrap();
@@ -373,7 +373,7 @@ pub fn build_view(viewstr: &str) -> Box<dyn View> {
         }
     }
 
-    if viewstr.starts_with("!") {
+    if viewstr.starts_with("!") || viewstr.starts_with(":") {
         let mut chain: Box<dyn View> = Box::new(NopView);
         if let Ok(r) = MyParser::parse(Rule::view, viewstr) {
             let mut r = r;

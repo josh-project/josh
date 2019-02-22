@@ -55,8 +55,8 @@
 
   $ mkdir ws
   $ cat > ws/workspace.josh <<EOF
-  > a/b = !/sub2
-  > c = !/sub1
+  > a/b = :/sub2
+  > c = :/sub1
   > EOF
 
   $ git add ws
@@ -68,9 +68,9 @@
   $ git commit -m "add file3" &> /dev/null
 
   $ cat > ws/workspace.josh <<EOF
-  > a/b = !/sub2
-  > c = !/sub1
-  > d = !/sub3
+  > a/b = :/sub2
+  > c = :/sub1
+  > d = :/sub3
   > EOF
 
   $ git add ws
@@ -96,7 +96,7 @@
 
   $ cd ${TESTTMP}
 
-  $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8002/real_repo.git!workspace/ws.git
+  $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8002/real_repo.git:workspace=ws.git ws
   $ cd ws
   $ tree
   .
@@ -158,9 +158,9 @@
   $ git push &> /dev/null
 
   $ cat > workspace.josh <<EOF
-  > a/b = !/sub2
-  > c = !/sub1
-  > w = !/sub3
+  > a/b = :/sub2
+  > c = :/sub1
+  > w = :/sub3
   > EOF
 
   $ git add .

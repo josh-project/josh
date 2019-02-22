@@ -12,7 +12,7 @@
 
   $ cd ${TESTTMP}
 
-  $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8002/real_repo.git:prefix=pre.git pre
+  $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8002/real_repo.git!/sub1!+/pre.git pre
   $ cd pre
 
   $ echo contents2 > pre/file2
@@ -26,16 +26,16 @@
      *..*  master     -> origin/master (glob)
   Updating *..* (glob)
   Fast-forward
-   file2 | 1 +
+   sub1/file2 | 1 +
    1 file changed, 1 insertion(+)
-   create mode 100644 file2
+   create mode 100644 sub1/file2
   Current branch master is up to date.
 
   $ tree
   .
-  |-- file2
   `-- sub1
-      `-- file1
+      |-- file1
+      `-- file2
   
   1 directory, 2 files
 
