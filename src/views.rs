@@ -157,12 +157,25 @@ impl View for CombineView {
     }
 
     fn unapply(&self, repo: &Repository, tree: &Tree, parent_tree: &Tree) -> Oid {
-        // TODO
-        /* let mut res = self.base.unapply(repo, tree, parent_tree); */
-        let mut res = parent_tree.id();
+        let mut base_wo = tree.id();
+
+        for prefix in self.prefixes.iter() {
+            base_wo = replace_subtree(
+                repo,
+                prefix,
+                &empty_tree(repo),
+                &repo.find_tree(base_wo).unwrap(),
+            );
+        }
+
+        let mut res = self
+            .base
+            .unapply(repo, &repo.find_tree(base_wo).unwrap(), parent_tree);
 
         for (other, prefix) in self.others.iter().zip(self.prefixes.iter()) {
-            let r = tree.get_path(&prefix).map(|x| x.id()).unwrap();
+            let r = ok_or!(tree.get_path(&prefix).map(|x| x.id()), {
+                continue;
+            });
             let r = repo.find_tree(r).unwrap();
             let ua = other.unapply(&repo, &r, &parent_tree);
 
@@ -276,7 +289,9 @@ impl View for WorkspaceView {
         /* let mut cw = combine_view_from_ws(repo, parent_tree, &self.ws_path); */
         let mut cw = combine_view_from_ws(repo, tree, &PathBuf::from(""));
 
-        cw.base = Box::new(SubdirView{ subdir: self.ws_path.to_owned(), });
+        cw.base = Box::new(SubdirView {
+            subdir: self.ws_path.to_owned(),
+        });
         return cw.unapply(repo, tree, parent_tree);
     }
 

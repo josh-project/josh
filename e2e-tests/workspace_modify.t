@@ -150,6 +150,7 @@
   $ echo updated_1_contents > c/subsub/file1
   $ echo newfile_1_contents > c/subsub/newfile_1
   $ echo newfile_2_contents > a/b/newfile_2
+  $ echo ws_file_contents > ws_file
 
   $ git add .
 
@@ -166,9 +167,28 @@
   $ git add .
   $ git commit -m "try to modify ws" &> /dev/null
 
-This should fail
   $ git push &> /dev/null
-  [1]
+  $ git pull &> /dev/null
+
+Note that d/ is still in the tree but now it is not overlayed
+  $ tree
+  .
+  |-- a
+  |   `-- b
+  |       |-- file2
+  |       `-- newfile_2
+  |-- c
+  |   `-- subsub
+  |       |-- file1
+  |       `-- newfile_1
+  |-- d
+  |   `-- file3
+  |-- w
+  |   `-- file3
+  |-- workspace.josh
+  `-- ws_file
+  
+  6 directories, 8 files
 
 
 
@@ -176,6 +196,49 @@ This should fail
 
   $ git pull &> /dev/null
 
+  $ git clean -ffdx &> /dev/null
+
+Note that ws/d/ is now present in the ws
+  $ tree
+  .
+  |-- file1
+  |-- newfile1
+  |-- newfile_master
+  |-- sub1
+  |   `-- subsub
+  |       |-- file1
+  |       `-- newfile_1
+  |-- sub2
+  |   |-- file2
+  |   `-- newfile_2
+  |-- sub3
+  |   `-- file3
+  `-- ws
+      |-- d
+      |   `-- file3
+      |-- workspace.josh
+      `-- ws_file
+  
+  6 directories, 11 files
+  $ git log --graph --pretty=%s
+  * try to modify ws
+  * add in view
+  * mod workspace
+  * add file3
+  * add workspace
+  * add file2
+  * add file1
+  *   Merge branch 'new1'
+  |\  
+  | * add newfile1
+  * | newfile master
+  |/  
+  * initial
+
+  $ cat sub1/subsub/file1
+  updated_1_contents
+
+  $ git checkout HEAD~1 &> /dev/null
   $ git clean -ffdx &> /dev/null
   $ tree
   .
@@ -192,25 +255,10 @@ This should fail
   |-- sub3
   |   `-- file3
   `-- ws
-      `-- workspace.josh
+      |-- workspace.josh
+      `-- ws_file
   
-  5 directories, 9 files
-  $ git log --graph --pretty=%s
-  * add in view
-  * mod workspace
-  * add file3
-  * add workspace
-  * add file2
-  * add file1
-  *   Merge branch 'new1'
-  |\  
-  | * add newfile1
-  * | newfile master
-  |/  
-  * initial
-
-  $ cat sub1/subsub/file1
-  updated_1_contents
+  5 directories, 10 files
 
   $ git checkout HEAD~1 &> /dev/null
   $ git clean -ffdx &> /dev/null

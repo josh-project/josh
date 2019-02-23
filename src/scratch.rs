@@ -121,10 +121,6 @@ pub fn unapply_view(
         let new_tree = repo.find_tree(new_tree).expect("can't find rewritten tree");
         let check = viewobj.apply_to_tree(&repo, &new_tree);
 
-        if check != tree.id() {
-            println!("##### reverse transform mismatch");
-            return UnapplyView::RejectMerge;
-        }
         current = rewrite(&repo, &module_commit, &[&parent], &new_tree);
     }
 
