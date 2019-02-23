@@ -27,5 +27,7 @@ rust-crypto = "*"
 pest_derive = "*"
 pest= "*"
 rand= "*"
+serde_json= "*"
 rs_tracing= { version = "*", features = ["rs_tracing"]}
+reqwest= "*"
 

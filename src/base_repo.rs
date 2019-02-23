@@ -52,7 +52,7 @@ pub fn push_head_url(
     url: &str,
     username: &str,
     password: &str,
-) -> Result<(), ()> {
+) -> Result<String, ()> {
     let spec = format!("HEAD:{}", &refname);
 
     let shell = Shell {
@@ -83,7 +83,7 @@ pub fn push_head_url(
     println!("{}", &stderr);
     println!("{}", &stdout);
 
-    return Ok(());
+    return Ok(stderr);
 }
 
 pub fn create_local(path: &Path) {

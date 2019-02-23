@@ -18,7 +18,15 @@
   $ echo contents2 > file2
   $ git add file2
   $ git commit -m "add file2" &> /dev/null
-  $ git push &> /dev/null
+  $ git push
+  remote: josh-proxy        
+  remote: response from upstream:        
+  remote:  To http://localhost:8001/real_repo.git        
+  remote:    *..*  HEAD -> master* (glob)
+  remote: 
+  remote: 
+  To http://localhost:8002/real_repo.git:/sub1.git
+     *..*  master -> master (glob)
 
   $ cd ${TESTTMP}/real_repo
   $ git pull
@@ -44,3 +52,4 @@
 
   $ bash ${TESTDIR}/destroy_test_env.sh
 
+$ cat ${TESTTMP}/josh-proxy.out | grep REPO_UPDATE

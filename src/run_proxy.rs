@@ -7,6 +7,7 @@ extern crate futures_cpupool;
 extern crate git2;
 extern crate hyper;
 extern crate regex;
+extern crate serde_json;
 extern crate tempdir;
 extern crate tokio_core;
 
@@ -24,7 +25,9 @@ use super::virtual_repo;
 use super::*;
 
 use std::collections::HashMap;
+use std::env::current_exe;
 use std::net;
+use std::os::unix::fs::symlink;
 use std::panic;
 use std::path::Path;
 use std::path::PathBuf;
@@ -45,6 +48,7 @@ lazy_static! {
 struct HttpService {
     handle: tokio_core::reactor::Handle,
     pool: CpuPool,
+    port: String,
     base_path: PathBuf,
     base_url: String,
     cache: Arc<Mutex<scratch::ViewCaches>>,
@@ -115,6 +119,38 @@ fn call_service(
     if req.uri().path() == "/panic" {
         panic!();
     }
+    if req.uri().path() == "/repo_update" {
+        let pool = service.pool.clone();
+        return Box::new(
+            req.body()
+                .concat2()
+                .map(move |body| {
+                    let mut buffer: Vec<u8> = Vec::new();
+                    for i in body {
+                        buffer.push(i);
+                    }
+
+                    String::from_utf8(buffer).unwrap_or("".to_string())
+                })
+                .and_then(move |buffer| {
+                    return pool.spawn(futures::future::ok(buffer).map(move |buffer| {
+                        let repo_update: virtual_repo::RepoUpdate = serde_json::from_str(&buffer)
+                            .unwrap_or(virtual_repo::RepoUpdate::new());
+                        virtual_repo::process_repo_update(repo_update)
+                    }));
+                })
+                .and_then(move |result| {
+                    if let Ok(stderr) = result {
+                        let response = Response::new()
+                            .with_body(stderr)
+                            .with_status(hyper::StatusCode::Ok);
+                        return Box::new(futures::future::ok(response));
+                    }
+                    let response = Response::new().with_status(hyper::StatusCode::Forbidden);
+                    return Box::new(futures::future::ok(response));
+                }),
+        );
+    }
 
     let (prefix, view_string, pathinfo) = some_or!(parse_url(&req.uri().path()), {
         let response = Response::new().with_status(hyper::StatusCode::NotFound);
@@ -137,6 +173,8 @@ fn call_service(
     let passwd = password.clone();
     let usernm = username.clone();
     let viewstr = view_string.clone();
+
+    let port = service.port.clone();
 
     let remote_url = {
         let mut remote_url = service.base_url.clone();
@@ -167,6 +205,7 @@ fn call_service(
         cmd.env("PATH_INFO", pathinfo);
         cmd.env("JOSH_PASSWORD", passwd);
         cmd.env("JOSH_USERNAME", usernm);
+        cmd.env("JOSH_PORT", port);
         cmd.env("GIT_NAMESPACE", ns);
         cmd.env("JOSH_VIEWSTR", viewstr);
         cmd.env("JOSH_REMOTE", remote_url);
@@ -236,6 +275,7 @@ impl Service for HttpService {
 
 pub fn run_proxy(args: Vec<String>) -> i32 {
     println!("RUN PROXY {:?}", &args);
+
     let logfilename = Path::new("/tmp/centralgit.log");
     fern::Dispatch::new()
         .format(|out, message, record| {
@@ -250,13 +290,6 @@ pub fn run_proxy(args: Vec<String>) -> i32 {
         .chain(fern::log_file(logfilename).unwrap())
         .apply()
         .unwrap();
-
-    debug!("args: {:?}", args);
-
-    if args[0].ends_with("/update") {
-        debug!("================= HOOK {:?}", args);
-        return virtual_repo::update_hook(&args[1], &args[2], &args[3]);
-    }
 
     let args = clap::App::new("josh-proxy")
         .arg(
@@ -295,6 +328,7 @@ pub fn run_proxy(args: Vec<String>) -> i32 {
     let addr = format!("0.0.0.0:{}", port).parse().unwrap();
     run_http_server(
         addr,
+        port,
         &pool,
         &PathBuf::from(args.value_of("local").expect("missing local directory")),
         &args.value_of("remote").expect("missing remote repo url"),
@@ -303,12 +337,19 @@ pub fn run_proxy(args: Vec<String>) -> i32 {
     return 0;
 }
 
-fn run_http_server(addr: net::SocketAddr, pool: &CpuPool, local: &Path, remote: &str) {
+fn run_http_server(
+    addr: net::SocketAddr,
+    port: String,
+    pool: &CpuPool,
+    local: &Path,
+    remote: &str,
+) {
     let mut core = tokio_core::reactor::Core::new().unwrap();
     let h2 = core.handle();
     let cache = Arc::new(Mutex::new(HashMap::new()));
     let server_handle = core.handle();
     let pool = pool.clone();
+    let port = port.clone();
     let remote = remote.to_owned();
     let local = local.to_owned();
     let serve = Http::new()
@@ -316,6 +357,7 @@ fn run_http_server(addr: net::SocketAddr, pool: &CpuPool, local: &Path, remote: 
             let cghttp = HttpService {
                 handle: h2.clone(),
                 pool: pool.clone(),
+                port: port.clone(),
                 base_path: local.clone(),
                 base_url: remote.clone(),
                 cache: cache.clone(),
@@ -402,6 +444,21 @@ fn make_view_repo(
         }
     }
 
-    virtual_repo::setup_tmp_repo(&br_path);
+    setup_tmp_repo(&br_path);
     br_path.to_owned()
+}
+
+fn setup_tmp_repo(scratch_dir: &Path) {
+    let shell = Shell {
+        cwd: scratch_dir.to_path_buf(),
+    };
+
+    let ce = current_exe().expect("can't find path to exe");
+    shell.command("rm -Rf hooks");
+    shell.command("mkdir hooks");
+    symlink(ce, scratch_dir.join("hooks").join("update")).expect("can't symlink update hook");
+
+    shell.command("git config http.receivepack true");
+    shell.command("rm -Rf refs/for");
+    shell.command("rm -Rf refs/drafts");
 }
