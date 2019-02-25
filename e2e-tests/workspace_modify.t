@@ -147,8 +147,9 @@
 
   $ git checkout master &> /dev/null
 
-  $ echo updated_1_contents > c/subsub/file1
   $ echo newfile_1_contents > c/subsub/newfile_1
+  $ git rm c/subsub/file1
+  rm 'c/subsub/file1'
   $ echo newfile_2_contents > a/b/newfile_2
   $ echo ws_file_contents > ws_file
 
@@ -179,7 +180,6 @@ Note that d/ is still in the tree but now it is not overlayed
   |       `-- newfile_2
   |-- c
   |   `-- subsub
-  |       |-- file1
   |       `-- newfile_1
   |-- d
   |   `-- file3
@@ -188,7 +188,7 @@ Note that d/ is still in the tree but now it is not overlayed
   |-- workspace.josh
   `-- ws_file
   
-  6 directories, 8 files
+  6 directories, 7 files
 
 
 
@@ -206,7 +206,6 @@ Note that ws/d/ is now present in the ws
   |-- newfile_master
   |-- sub1
   |   `-- subsub
-  |       |-- file1
   |       `-- newfile_1
   |-- sub2
   |   |-- file2
@@ -219,7 +218,7 @@ Note that ws/d/ is now present in the ws
       |-- workspace.josh
       `-- ws_file
   
-  6 directories, 11 files
+  6 directories, 10 files
   $ git log --graph --pretty=%s
   * try to modify ws
   * add in view
@@ -236,7 +235,8 @@ Note that ws/d/ is now present in the ws
   * initial
 
   $ cat sub1/subsub/file1
-  updated_1_contents
+  cat: sub1/subsub/file1: No such file or directory
+  [1]
 
   $ git checkout HEAD~1 &> /dev/null
   $ git clean -ffdx &> /dev/null
@@ -247,7 +247,6 @@ Note that ws/d/ is now present in the ws
   |-- newfile_master
   |-- sub1
   |   `-- subsub
-  |       |-- file1
   |       `-- newfile_1
   |-- sub2
   |   |-- file2
@@ -258,7 +257,7 @@ Note that ws/d/ is now present in the ws
       |-- workspace.josh
       `-- ws_file
   
-  5 directories, 10 files
+  5 directories, 9 files
 
   $ git checkout HEAD~1 &> /dev/null
   $ git clean -ffdx &> /dev/null
