@@ -8,9 +8,10 @@ use super::*;
 use git2::*;
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::{Arc, Mutex};
 
-pub type ViewCache = HashMap<Oid, Oid>;
-pub type ViewCaches = HashMap<String, ViewCache>;
+pub type ViewMap = HashMap<Oid, Oid>;
+pub type ViewMaps = HashMap<String, ViewMap>;
 
 use self::crypto::digest::Digest;
 use self::crypto::sha1::Sha1;
@@ -54,7 +55,8 @@ pub fn rewrite(repo: &Repository, base: &Commit, parents: &[&Commit], tree: &Tre
 
 pub fn unapply_view(
     repo: &Repository,
-    current: Oid,
+    backward_maps: Arc<Mutex<ViewMaps>>,
+    viewstr: &str,
     viewobj: &View,
     old: Oid,
     new: Oid,
@@ -62,13 +64,24 @@ pub fn unapply_view(
     trace_scoped!(
         "unapply_view",
         "repo": repo.path(),
-        "current": format!("{:?}", current),
         "old": format!("{:?}", old),
         "new": format!("{:?}", new));
 
     if old == new {
         return UnapplyView::NoChanges;
     }
+
+    let current = {
+        let mut backward_map = backward_maps.lock().unwrap();
+
+        let mut bm = backward_map
+            .entry(format!("{:?}--{}", &repo.path(), &viewstr))
+            .or_insert_with(ViewMap::new);
+
+        *some_or!(bm.get(&old), {
+            return UnapplyView::RejectNoFF;
+        })
+    };
 
     match repo.graph_descendant_of(new, old) {
         Err(_) | Ok(false) => {
@@ -83,9 +96,7 @@ pub fn unapply_view(
     let walk = {
         let mut walk = repo.revwalk().expect("walk: can't create revwalk");
         walk.set_sorting(Sort::REVERSE | Sort::TOPOLOGICAL);
-        let range = format!("{}..{}", old, new);
-        walk.push_range(&range)
-            .unwrap_or_else(|_| panic!("walk: invalid range: {}", range));;
+        walk.push(new).expect("walk.push");
         walk.hide(old).expect("walk: can't hide");
         walk
     };
@@ -136,12 +147,14 @@ fn transform_commit(
     viewobj: &View,
     from_refsname: &str,
     to_refname: &str,
-    view_cache: &mut ViewCache,
+    forward_map: &mut ViewMap,
+    backward_map: &mut ViewMap,
 ) {
     if let Ok(reference) = repo.find_reference(&from_refsname) {
         let r = reference.target().expect("no ref");
 
-        if let Some(view_commit) = apply_view_cached(&repo, &*viewobj, r, view_cache) {
+        if let Some(view_commit) = apply_view_cached(&repo, &*viewobj, r, forward_map, backward_map)
+        {
             repo.reference(&to_refname, view_commit, true, "apply_view")
                 .expect("can't create reference");
         }
@@ -152,7 +165,8 @@ pub fn apply_view_to_branch(
     repo: &Repository,
     branchname: &str,
     viewobj: &dyn View,
-    view_cache: &mut ViewCache,
+    forward_map: &mut ViewMap,
+    backward_map: &mut ViewMap,
     ns: &str,
 ) {
     trace_scoped!(
@@ -166,24 +180,45 @@ pub fn apply_view_to_branch(
     let from_refsname = format!("refs/heads/{}", branchname);
 
     debug!("apply_view_to_branch {}", branchname);
-    transform_commit(&repo, &*viewobj, &from_refsname, &to_refname, view_cache);
+    transform_commit(
+        &repo,
+        &*viewobj,
+        &from_refsname,
+        &to_refname,
+        forward_map,
+        backward_map,
+    );
 
     if branchname == "master" {
-        transform_commit(&repo, &*viewobj, "refs/heads/master", &to_head, view_cache);
+        transform_commit(
+            &repo,
+            &*viewobj,
+            "refs/heads/master",
+            &to_head,
+            forward_map,
+            backward_map,
+        );
     }
 }
 
 pub fn apply_view(repo: &Repository, view: &View, newrev: Oid) -> Option<Oid> {
-    return apply_view_cached(&repo, view, newrev, &mut ViewCache::new());
+    return apply_view_cached(
+        &repo,
+        view,
+        newrev,
+        &mut ViewMap::new(),
+        &mut ViewMap::new(),
+    );
 }
 
 pub fn apply_view_cached(
     repo: &Repository,
     view: &dyn View,
     newrev: Oid,
-    view_cache: &mut ViewCache,
+    forward_map: &mut ViewMap,
+    backward_map: &mut ViewMap,
 ) -> Option<Oid> {
-    if let Some(id) = view_cache.get(&newrev) {
+    if let Some(id) = forward_map.get(&newrev) {
         return Some(*id);
     }
     let tname = format!("apply_view_cached {:?}", newrev);
@@ -204,7 +239,7 @@ pub fn apply_view_cached(
     'walk: for commit in walk {
         in_commit_count += 1;
         let commit = repo.find_commit(commit.unwrap()).unwrap();
-        if view_cache.contains_key(&commit.id()) {
+        if forward_map.contains_key(&commit.id()) {
             continue 'walk;
         }
 
@@ -219,7 +254,9 @@ pub fn apply_view_cached(
         for (transform, parent_id) in parent_transforms {
             match transform {
                 None => {
-                    if let Some(parent) = apply_view_cached(&repo, view, parent_id, view_cache) {
+                    if let Some(parent) =
+                        apply_view_cached(&repo, view, parent_id, forward_map, backward_map)
+                    {
                         let parent = repo.find_commit(parent).unwrap();
                         transformed_parents.push(parent);
                     }
@@ -242,7 +279,7 @@ pub fn apply_view_cached(
                 if commit.tree().expect("missing tree").id()
                     != commit.parents().next().unwrap().tree().unwrap().id()
                 {
-                    view_cache.insert(commit.id(), only_parent.id());
+                    forward_map.insert(commit.id(), only_parent.id());
                     continue 'walk;
                 }
             }
@@ -252,7 +289,8 @@ pub fn apply_view_cached(
             .find_tree(new_tree)
             .expect("apply_view_cached: can't find tree");
         let transformed = rewrite(&repo, &commit, &transformed_parent_refs, &new_tree);
-        view_cache.insert(commit.id(), transformed);
+        forward_map.insert(commit.id(), transformed);
+        backward_map.insert(transformed, commit.id());
         out_commit_count += 1;
     }
 
@@ -262,5 +300,5 @@ pub fn apply_view_cached(
         "out_commit_count": out_commit_count,
         "empty_tree_count": empty_tree_count
     );
-    return view_cache.get(&newrev).cloned();
+    return forward_map.get(&newrev).cloned();
 }

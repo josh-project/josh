@@ -2,6 +2,7 @@ use super::*;
 use git2::Oid;
 use std::env;
 use std::path::Path;
+use std::sync::{Arc, Mutex};
 
 extern crate reqwest;
 
@@ -11,7 +12,10 @@ use std::collections::HashMap;
 
 pub type RepoUpdate = HashMap<String, String>;
 
-pub fn process_repo_update(repo_update: RepoUpdate) -> Result<String, ()> {
+pub fn process_repo_update(
+    repo_update: RepoUpdate,
+    backward_maps: Arc<Mutex<ViewMaps>>,
+) -> Result<String, ()> {
     let ru = {
         let mut ru = repo_update.clone();
         ru.insert("password".to_owned(), "...".to_owned());
@@ -51,43 +55,13 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> Result<String, ()> {
         let viewobj = build_view(&viewstr);
         debug!("=== MORE");
 
-        let without_refs_for = refname.to_owned();
-        let without_refs_for = without_refs_for.trim_left_matches("refs/for/");
-        let without_refs_for = without_refs_for.trim_left_matches("refs/drafts/");
-        let without_refs_for = without_refs_for.trim_left_matches("refs/heads/");
-
-        let without_refs_for = format!("refs/heads/{}", &without_refs_for);
-
-        let central_head = ok_or!(scratch.refname_to_id(&without_refs_for), {
-            debug!(
-                "no ref: {} ({}) in {:?}",
-                &refname,
-                &without_refs_for,
-                scratch.path()
-            );
-
-            println!(
-                "REPO_UPDATE no ref: {} ({}) in {:?}",
-                &refname,
-                &without_refs_for,
-                scratch.path()
-            );
-
-            return Err(());
-        });
-
-        let old = scratch
-            .refname_to_id(&format!(
-                "refs/namespaces/{}/{}",
-                &git_namespace, &without_refs_for
-            ))
-            .unwrap();
-
-        debug!("=== processed_old {}", old);
+        let old = Oid::from_str(old).unwrap();
+        debug!("=== processed_old {:?}", old);
 
         match scratch::unapply_view(
             &scratch,
-            central_head,
+            backward_maps,
+            viewstr,
             &*viewobj,
             old,
             Oid::from_str(&new).expect("can't parse new OID"),
@@ -97,10 +71,9 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> Result<String, ()> {
         }
     };
 
-    scratch.set_head_detached(new_oid).expect("can't set head");
 
     let stderr = ok_or!(
-        base_repo::push_head_url(scratch.path(), &refname, &remote_url, &username, &password),
+        base_repo::push_head_url(&scratch, new_oid, &refname, &remote_url, &username, &password),
         {
             println!("REPO_UPDATE push fail");
             return Err(());
@@ -153,10 +126,9 @@ pub fn update_hook(refname: &str, old: &str, new: &str) -> i32 {
 
     if let Ok(mut r) = resp {
         if r.status().is_success() {
-            if let Ok(body) = r.text(){
+            if let Ok(body) = r.text() {
                 println!("response from upstream:\n {}\n\n", body);
-            }
-            else {
+            } else {
                 println!("no upstream response");
             }
             return 0;

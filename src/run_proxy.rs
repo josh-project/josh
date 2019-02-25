@@ -51,7 +51,8 @@ struct HttpService {
     port: String,
     base_path: PathBuf,
     base_url: String,
-    cache: Arc<Mutex<scratch::ViewCaches>>,
+    forward_maps: Arc<Mutex<scratch::ViewMaps>>,
+    backward_maps: Arc<Mutex<scratch::ViewMaps>>,
 }
 
 fn async_fetch(
@@ -67,12 +68,18 @@ fn async_fetch(
 
     let username = username.to_owned();
     let password = password.to_owned();
-    let cache = http.cache.clone();
+    let forward_maps = http.forward_maps.clone();
+    let backward_maps = http.backward_maps.clone();
 
     Box::new(http.pool.spawn(
         futures::future::ok(view_string.to_owned()).map(move |view_string| {
             match base_repo::fetch_refs_from_url(&br_path, &remote_url, &username, &password) {
-                Ok(_) => Ok(make_view_repo(&view_string, &br_path, cache)),
+                Ok(_) => Ok(make_view_repo(
+                    &view_string,
+                    &br_path,
+                    forward_maps,
+                    backward_maps,
+                )),
                 Err(e) => Err(e),
             }
         }),
@@ -110,6 +117,7 @@ fn call_service(
     service: &HttpService,
     req: Request,
 ) -> Box<Future<Item = Response, Error = hyper::Error>> {
+    let backward_maps = service.backward_maps.clone();
     if req.uri().path() == "/version" {
         let response = Response::new()
             .with_body(format!("Version: {}\n", env!("VERSION")))
@@ -136,7 +144,7 @@ fn call_service(
                     return pool.spawn(futures::future::ok(buffer).map(move |buffer| {
                         let repo_update: virtual_repo::RepoUpdate = serde_json::from_str(&buffer)
                             .unwrap_or(virtual_repo::RepoUpdate::new());
-                        virtual_repo::process_repo_update(repo_update)
+                        virtual_repo::process_repo_update(repo_update, backward_maps)
                     }));
                 })
                 .and_then(move |result| {
@@ -346,7 +354,8 @@ fn run_http_server(
 ) {
     let mut core = tokio_core::reactor::Core::new().unwrap();
     let h2 = core.handle();
-    let cache = Arc::new(Mutex::new(HashMap::new()));
+    let forward_maps = Arc::new(Mutex::new(HashMap::new()));
+    let backward_maps = Arc::new(Mutex::new(HashMap::new()));
     let server_handle = core.handle();
     let pool = pool.clone();
     let port = port.clone();
@@ -360,7 +369,8 @@ fn run_http_server(
                 port: port.clone(),
                 base_path: local.clone(),
                 base_url: remote.clone(),
-                cache: cache.clone(),
+                forward_maps: forward_maps.clone(),
+                backward_maps: backward_maps.clone(),
             };
             Ok(cghttp)
         })
@@ -384,7 +394,8 @@ fn run_http_server(
 fn make_view_repo(
     view_string: &str,
     br_path: &Path,
-    cache: Arc<Mutex<scratch::ViewCaches>>,
+    forward_maps: Arc<Mutex<scratch::ViewMaps>>,
+    backward_maps: Arc<Mutex<scratch::ViewMaps>>,
 ) -> PathBuf {
     trace_scoped!(
         "make_view_repo",
@@ -394,11 +405,15 @@ fn make_view_repo(
 
     let scratch = scratch::new(&br_path);
 
-    let mut view_cache = cache.lock().unwrap();
+    let mut forward_map = forward_maps.lock().unwrap();
+    let mut backward_map = backward_maps.lock().unwrap();
 
-    let mut vc = view_cache
+    let mut fm = forward_map
         .entry(format!("{:?}--{}", &scratch.path(), &view_string))
-        .or_insert_with(ViewCache::new);
+        .or_insert_with(ViewMap::new);
+    let mut bm = backward_map
+        .entry(format!("{:?}--{}", &scratch.path(), &view_string))
+        .or_insert_with(ViewMap::new);
 
     let ns = {
         let mut hasher = Sha1::new();
@@ -413,7 +428,8 @@ fn make_view_repo(
             &scratch,
             &branch.unwrap().0.name().unwrap().unwrap(),
             &*viewobj,
-            &mut vc,
+            &mut fm,
+            &mut bm,
             &ns,
         );
     }
@@ -429,7 +445,7 @@ fn make_view_repo(
             continue;
         });
 
-        if let Some(n) = vc.get(&target) {
+        if let Some(n) = fm.get(&target) {
             ok_or!(
                 scratch.reference(
                     &format!("refs/namespaces/{}/refs/tags/{}", &ns, &tag),

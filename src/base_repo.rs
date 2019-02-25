@@ -47,16 +47,20 @@ pub fn fetch_refs_from_url(
 }
 
 pub fn push_head_url(
-    path: &Path,
+    repo: &git2::Repository,
+    oid: git2::Oid,
     refname: &str,
     url: &str,
     username: &str,
     password: &str,
 ) -> Result<String, ()> {
+
+    repo.set_head_detached(oid).expect("can't set head");
+
     let spec = format!("HEAD:{}", &refname);
 
     let shell = Shell {
-        cwd: path.to_owned(),
+        cwd: repo.path().to_owned(),
     };
     let nurl = {
         let splitted: Vec<&str> = url.splitn(2, "://").collect();
@@ -65,8 +69,7 @@ pub fn push_head_url(
         format!("{}://{}@{}", &proto, &username, &rest)
     };
     some_or!(
-        git2::Repository::open(path)
-            .expect("no repo")
+        repo
             .config()
             .unwrap()
             .set_str(
