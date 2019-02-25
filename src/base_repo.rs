@@ -54,7 +54,6 @@ pub fn push_head_url(
     username: &str,
     password: &str,
 ) -> Result<String, ()> {
-
     repo.set_head_detached(oid).expect("can't set head");
 
     let spec = format!("HEAD:{}", &refname);
@@ -69,8 +68,7 @@ pub fn push_head_url(
         format!("{}://{}@{}", &proto, &username, &rest)
     };
     some_or!(
-        repo
-            .config()
+        repo.config()
             .unwrap()
             .set_str(
                 "credential.helper",

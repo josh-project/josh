@@ -271,24 +271,30 @@ pub fn apply_view_cached(
         }
 
         let transformed_parent_refs: Vec<&_> = transformed_parents.iter().collect();
+        let mut filtered_transformed_parent_refs: Vec<&_> = vec![];
 
-        if transformed_parent_refs.len() == 0 && commit.parents().count() != 0 {}
-
-        if let [only_parent] = transformed_parent_refs.as_slice() {
-            if new_tree == only_parent.tree().unwrap().id() {
-                if commit.tree().expect("missing tree").id()
-                    != commit.parents().next().unwrap().tree().unwrap().id()
-                {
-                    forward_map.insert(commit.id(), only_parent.id());
-                    continue 'walk;
-                }
+        for only_parent in transformed_parent_refs {
+            if new_tree != only_parent.tree().unwrap().id() {
+                filtered_transformed_parent_refs.push(only_parent);
+                continue;
             }
+            if commit.tree().expect("missing tree").id()
+                == commit.parents().next().unwrap().tree().unwrap().id()
+            {
+                filtered_transformed_parent_refs.push(only_parent);
+                continue;
+            }
+        }
+
+        if filtered_transformed_parent_refs.len() == 0 && transformed_parents.len() != 0 {
+            forward_map.insert(commit.id(), transformed_parents[0].id());
+            continue 'walk;
         }
 
         let new_tree = repo
             .find_tree(new_tree)
             .expect("apply_view_cached: can't find tree");
-        let transformed = rewrite(&repo, &commit, &transformed_parent_refs, &new_tree);
+        let transformed = rewrite(&repo, &commit, &filtered_transformed_parent_refs, &new_tree);
         forward_map.insert(commit.id(), transformed);
         backward_map.insert(transformed, commit.id());
         out_commit_count += 1;

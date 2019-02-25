@@ -102,9 +102,6 @@
   $ git log --graph --pretty=%s
   * add file2
   * add file1
-  *   Merge branch 'new1'
-  |\  
-  |/  
   * add workspace
 
   $ git checkout HEAD~1 &> /dev/null

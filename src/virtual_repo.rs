@@ -71,9 +71,15 @@ pub fn process_repo_update(
         }
     };
 
-
     let stderr = ok_or!(
-        base_repo::push_head_url(&scratch, new_oid, &refname, &remote_url, &username, &password),
+        base_repo::push_head_url(
+            &scratch,
+            new_oid,
+            &refname,
+            &remote_url,
+            &username,
+            &password
+        ),
         {
             println!("REPO_UPDATE push fail");
             return Err(());
