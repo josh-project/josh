@@ -78,7 +78,8 @@ pub fn process_repo_update(
             &refname,
             &remote_url,
             &username,
-            &password
+            &password,
+            &git_namespace,
         ),
         {
             println!("REPO_UPDATE push fail");

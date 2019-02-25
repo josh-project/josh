@@ -53,10 +53,12 @@ pub fn push_head_url(
     url: &str,
     username: &str,
     password: &str,
+    namespace: &str,
 ) -> Result<String, ()> {
-    repo.set_head_detached(oid).expect("can't set head");
 
-    let spec = format!("HEAD:{}", &refname);
+    let rn = format!("refs/{}", &namespace);
+
+    let spec = format!("{}:{}", &rn, &refname);
 
     let shell = Shell {
         cwd: repo.path().to_owned(),
@@ -80,9 +82,14 @@ pub fn push_head_url(
         }
     );
     let cmd = format!("git push {} '{}'", &nurl, &spec);
+    let mut fakehead = repo.reference(&rn, oid, true, "push_head_url")
+        .expect("can't create reference");
     let (stdout, stderr) = shell.command(&cmd);
+    fakehead.delete();
     println!("{}", &stderr);
     println!("{}", &stdout);
+
+    let stderr = stderr.replace(&rn, "JOSH_PUSH");
 
     return Ok(stderr);
 }

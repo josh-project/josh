@@ -22,7 +22,7 @@
   remote: josh-proxy        
   remote: response from upstream:        
   remote:  To http://localhost:8001/real_repo.git        
-  remote:    *..*  HEAD -> master* (glob)
+  remote:    *..*  JOSH_PUSH -> master* (glob)
   remote: 
   remote: 
   To http://localhost:8002/real_repo.git:/sub1.git
@@ -49,6 +49,10 @@
 
   $ cat sub1/file2
   contents2
+
+Make sure all temporary namespace got removed
+  $ tree ${TESTTMP}/remote/scratch/real_repo.git/refs/ | grep request_
+  [1]
 
   $ bash ${TESTDIR}/destroy_test_env.sh
 
