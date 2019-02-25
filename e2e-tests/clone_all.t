@@ -48,4 +48,8 @@
   $ cat sub1/file1
   contents1
 
+Make sure all temporary namespace got removed
+  $ tree ${TESTTMP}/remote/scratch/real_repo.git/refs/ | grep request_
+  [1]
+
   $ bash ${TESTDIR}/destroy_test_env.sh &> /dev/null

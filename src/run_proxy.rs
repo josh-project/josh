@@ -26,6 +26,7 @@ use super::*;
 
 use std::collections::HashMap;
 use std::env::current_exe;
+use std::fs::remove_dir_all;
 use std::net;
 use std::os::unix::fs::symlink;
 use std::panic;
@@ -33,9 +34,6 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::{Arc, Mutex};
-
-use self::crypto::digest::Digest;
-use self::crypto::sha1::Sha1;
 
 lazy_static! {
     static ref VIEW_REGEX: Regex =
@@ -61,6 +59,7 @@ fn async_fetch(
     view_string: &str,
     username: &str,
     password: &str,
+    namespace: &str,
     remote_url: String,
 ) -> Box<Future<Item = Result<PathBuf, git2::Error>, Error = hyper::Error>> {
     let br_path = http.base_path.join(prefix.trim_left_matches("/"));
@@ -70,12 +69,14 @@ fn async_fetch(
     let password = password.to_owned();
     let forward_maps = http.forward_maps.clone();
     let backward_maps = http.backward_maps.clone();
+    let namespace = namespace.to_owned();
 
     Box::new(http.pool.spawn(
         futures::future::ok(view_string.to_owned()).map(move |view_string| {
             match base_repo::fetch_refs_from_url(&br_path, &remote_url, &username, &password) {
                 Ok(_) => Ok(make_view_repo(
                     &view_string,
+                    &namespace,
                     &br_path,
                     forward_maps,
                     backward_maps,
@@ -116,6 +117,7 @@ fn parse_url(path: &str) -> Option<(String, String, String)> {
 fn call_service(
     service: &HttpService,
     req: Request,
+    namespace: &str,
 ) -> Box<Future<Item = Response, Error = hyper::Error>> {
     let backward_maps = service.backward_maps.clone();
     if req.uri().path() == "/version" {
@@ -181,6 +183,7 @@ fn call_service(
     let passwd = password.clone();
     let usernm = username.clone();
     let viewstr = view_string.clone();
+    let ns = namespace.to_owned();
 
     let port = service.port.clone();
 
@@ -191,12 +194,6 @@ fn call_service(
     };
 
     let br_url = remote_url.clone();
-
-    let ns = {
-        let mut hasher = Sha1::new();
-        hasher.input_str(&viewstr);
-        hasher.result_str().to_string()
-    };
 
     let call_git_http_backend = |request: Request,
                                  path: PathBuf,
@@ -226,6 +223,9 @@ fn call_service(
     println!("PATH_INFO: {:?}", &pathinfo);
 
     let handle = service.handle.clone();
+    let ns_path = service.base_path.join(prefix.trim_left_matches("/"));
+    let ns_path = ns_path.join("refs/namespaces");
+    let ns_path = ns_path.join(&namespace);
 
     Box::new({
         async_fetch(
@@ -234,6 +234,7 @@ fn call_service(
             &view_string,
             &username,
             &password,
+            &namespace,
             br_url,
         )
         .and_then(
@@ -246,6 +247,10 @@ fn call_service(
                 call_git_http_backend(req, path, &pathinfo, &handle)
             },
         )
+        .map(move |x| {
+            remove_dir_all(ns_path);
+            x
+        })
     })
 }
 
@@ -258,7 +263,7 @@ impl Service for HttpService {
 
     fn call(&self, req: Request) -> Self::Future {
         let rid: usize = random();
-        let rname = format!("request {}", rid);
+        let rname = format!("request_{}", rid);
 
         let username = match req.headers().get() {
             Some(&Authorization(Basic {
@@ -274,7 +279,7 @@ impl Service for HttpService {
         }));
 
         trace_begin!(&rname, "path": req.path(), "headers": format!("{:?}", &headers));
-        Box::new(call_service(&self, req).map(move |x| {
+        Box::new(call_service(&self, req, &rname).map(move |x| {
             trace_end!(&rname, "response": format!("{:?}", x));
             x
         }))
@@ -393,6 +398,7 @@ fn run_http_server(
 
 fn make_view_repo(
     view_string: &str,
+    namespace: &str,
     br_path: &Path,
     forward_maps: Arc<Mutex<scratch::ViewMaps>>,
     backward_maps: Arc<Mutex<scratch::ViewMaps>>,
@@ -415,12 +421,6 @@ fn make_view_repo(
         .entry(format!("{:?}--{}", &scratch.path(), &view_string))
         .or_insert_with(ViewMap::new);
 
-    let ns = {
-        let mut hasher = Sha1::new();
-        hasher.input_str(&view_string);
-        hasher.result_str()
-    };
-
     let viewobj = build_view(&view_string);
 
     for branch in scratch.branches(None).unwrap() {
@@ -430,7 +430,7 @@ fn make_view_repo(
             &*viewobj,
             &mut fm,
             &mut bm,
-            &ns,
+            &namespace,
         );
     }
 
@@ -448,7 +448,7 @@ fn make_view_repo(
         if let Some(n) = fm.get(&target) {
             ok_or!(
                 scratch.reference(
-                    &format!("refs/namespaces/{}/refs/tags/{}", &ns, &tag),
+                    &format!("refs/namespaces/{}/refs/tags/{}", &namespace, &tag),
                     *n,
                     true,
                     "crate tag",
@@ -469,12 +469,12 @@ fn setup_tmp_repo(scratch_dir: &Path) {
         cwd: scratch_dir.to_path_buf(),
     };
 
-    let ce = current_exe().expect("can't find path to exe");
-    shell.command("rm -Rf hooks");
-    shell.command("mkdir hooks");
-    symlink(ce, scratch_dir.join("hooks").join("update")).expect("can't symlink update hook");
-
-    shell.command("git config http.receivepack true");
-    shell.command("rm -Rf refs/for");
-    shell.command("rm -Rf refs/drafts");
+    if !scratch_dir.join("josh_hook_installed").exists() {
+        shell.command("touch josh_hook_installed");
+        shell.command("git config http.receivepack true");
+        let ce = current_exe().expect("can't find path to exe");
+        shell.command("rm -Rf hooks");
+        shell.command("mkdir hooks");
+        symlink(ce, scratch_dir.join("hooks").join("update")).expect("can't symlink update hook");
+    }
 }
