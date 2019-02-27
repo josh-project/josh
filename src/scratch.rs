@@ -273,15 +273,15 @@ pub fn apply_view_cached(
         let transformed_parent_refs: Vec<&_> = transformed_parents.iter().collect();
         let mut filtered_transformed_parent_refs: Vec<&_> = vec![];
 
-        for only_parent in transformed_parent_refs {
-            if new_tree != only_parent.tree().unwrap().id() {
-                filtered_transformed_parent_refs.push(only_parent);
+        for transformed_parent in transformed_parent_refs {
+            if new_tree != transformed_parent.tree().unwrap().id() {
+                filtered_transformed_parent_refs.push(transformed_parent);
                 continue;
             }
             if commit.tree().expect("missing tree").id()
                 == commit.parents().next().unwrap().tree().unwrap().id()
             {
-                filtered_transformed_parent_refs.push(only_parent);
+                filtered_transformed_parent_refs.push(transformed_parent);
                 continue;
             }
         }
