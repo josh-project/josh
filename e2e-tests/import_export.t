@@ -226,4 +226,35 @@
   |/  
   * initial1
 
+
+Empty roots should be dropped -> No sha1 equal guarantee for "nop"
+  $ cd ${TESTTMP}
+  $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8002/real_repo.git rr &> /dev/null
+  $ cd rr
+  $ git log --graph --pretty=%s
+  *   Import 3
+  |\  
+  | * add great new_file2
+  * |   Import 2
+  |\ \  
+  | * | add new_file2
+  | |/  
+  * | add new_file1
+  * |   Combine
+  |\ \  
+  | |/  
+  |/|   
+  | * initial2
+  * initial1
+  $ tree
+  .
+  |-- repo1
+  |   |-- file1
+  |   |-- new_file1
+  |   `-- new_file2
+  `-- repo2
+      `-- file2
+  
+  2 directories, 4 files
+
   $ bash ${TESTDIR}/destroy_test_env.sh
