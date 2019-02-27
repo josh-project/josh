@@ -55,6 +55,7 @@ pub fn push_head_url(
     password: &str,
     namespace: &str,
 ) -> Result<String, ()> {
+
     let rn = format!("refs/{}", &namespace);
 
     let spec = format!("{}:{}", &rn, &refname);
@@ -81,8 +82,7 @@ pub fn push_head_url(
         }
     );
     let cmd = format!("git push {} '{}'", &nurl, &spec);
-    let mut fakehead = repo
-        .reference(&rn, oid, true, "push_head_url")
+    let mut fakehead = repo.reference(&rn, oid, true, "push_head_url")
         .expect("can't create reference");
     let (stdout, stderr) = shell.command(&cmd);
     fakehead.delete();

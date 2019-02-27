@@ -31,9 +31,6 @@
   $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8001/real_repo.git &> /dev/null
   $ cd real_repo
   $ git commit --allow-empty -m "initial" &> /dev/null
-  $ touch first_file
-  $ git add first_file
-  $ git commit -m "add first_file" &> /dev/null
   $ git push &> /dev/null
 
   $ git fetch --force http://${TESTUSER}:${TESTPASS}@localhost:8002/repo1.git!+/repo1.git master:repo1_in_subdir &> /dev/null
@@ -78,7 +75,6 @@
   | |\  
   | | * initial2
   | * initial1
-  * add first_file
   * initial
 
   $ echo new_content1 > repo1/new_file1 &> /dev/null
@@ -87,14 +83,13 @@
 
   $ tree
   .
-  |-- first_file
   |-- repo1
   |   |-- file1
   |   `-- new_file1
   `-- repo2
       `-- file2
   
-  2 directories, 4 files
+  2 directories, 3 files
 
   $ git push &> /dev/null
 
@@ -131,7 +126,6 @@
   $ git merge -m "Import 2" repo1_in_subdir --allow-unrelated-histories &> /dev/null
   $ tree
   .
-  |-- first_file
   |-- repo1
   |   |-- file1
   |   |-- new_file1
@@ -139,7 +133,7 @@
   `-- repo2
       `-- file2
   
-  2 directories, 5 files
+  2 directories, 4 files
 
   $ git log --graph --pretty=%s
   *   Import 2
@@ -154,7 +148,6 @@
   | |/|   
   | | * initial2
   | * initial1
-  * add first_file
   * initial
 
   $ git push &> /dev/null
@@ -208,7 +201,6 @@
   | |/|   
   | | * initial2
   | * initial1
-  * add first_file
   * initial
 
   $ git push &> /dev/null

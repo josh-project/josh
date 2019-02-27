@@ -245,7 +245,7 @@ pub fn apply_view_cached(
 
         let (new_tree, parent_transforms) = view.apply_to_commit(&repo, &commit);
 
-        if new_tree == empty && commit.tree().unwrap().id() != empty {
+        if new_tree == empty {
             empty_tree_count += 1;
             continue 'walk;
         }
@@ -273,26 +273,20 @@ pub fn apply_view_cached(
         let transformed_parent_refs: Vec<&_> = transformed_parents.iter().collect();
         let mut filtered_transformed_parent_refs: Vec<&_> = vec![];
 
-        for transformed_parent_ref in transformed_parent_refs {
-            if new_tree != transformed_parent_ref.tree().unwrap().id() {
-                filtered_transformed_parent_refs.push(transformed_parent_ref);
+        for only_parent in transformed_parent_refs {
+            if new_tree != only_parent.tree().unwrap().id() {
+                filtered_transformed_parent_refs.push(only_parent);
                 continue;
             }
             if commit.tree().expect("missing tree").id()
-                == repo
-                    .find_commit(backward_map[&transformed_parent_ref.id()])
-                    .unwrap()
-                    .tree()
-                    .unwrap()
-                    .id()
+                == commit.parents().next().unwrap().tree().unwrap().id()
             {
-                filtered_transformed_parent_refs.push(transformed_parent_ref);
+                filtered_transformed_parent_refs.push(only_parent);
                 continue;
             }
         }
 
         if filtered_transformed_parent_refs.len() == 0 && transformed_parents.len() != 0 {
-            println!("XXXXXX {:?} {:?}", commit.id(), transformed_parents[0].id());
             forward_map.insert(commit.id(), transformed_parents[0].id());
             continue 'walk;
         }
@@ -301,7 +295,6 @@ pub fn apply_view_cached(
             .find_tree(new_tree)
             .expect("apply_view_cached: can't find tree");
         let transformed = rewrite(&repo, &commit, &filtered_transformed_parent_refs, &new_tree);
-
         forward_map.insert(commit.id(), transformed);
         backward_map.insert(transformed, commit.id());
         out_commit_count += 1;
