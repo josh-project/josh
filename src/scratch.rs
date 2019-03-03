@@ -175,7 +175,9 @@ pub fn apply_view_to_branch(
         "branchname": branchname,
         "viewstr": viewobj.viewstr());
 
-    let to_refname = format!("refs/namespaces/{}/refs/heads/{}", &ns, &branchname);
+    let to_branch = format!("refs/namespaces/{}/refs/heads/{}", &ns, &branchname);
+    let to_refs_for = format!("refs/namespaces/{}/refs/for/{}", &ns, &branchname);
+    let to_refs_drafts = format!("refs/namespaces/{}/refs/drafts/{}", &ns, &branchname);
     let to_head = format!("refs/namespaces/{}/HEAD", &ns);
     let from_refsname = format!("refs/heads/{}", branchname);
 
@@ -184,7 +186,23 @@ pub fn apply_view_to_branch(
         &repo,
         &*viewobj,
         &from_refsname,
-        &to_refname,
+        &to_branch,
+        forward_map,
+        backward_map,
+    );
+    transform_commit(
+        &repo,
+        &*viewobj,
+        &from_refsname,
+        &to_refs_for,
+        forward_map,
+        backward_map,
+    );
+    transform_commit(
+        &repo,
+        &*viewobj,
+        &from_refsname,
+        &to_refs_drafts,
         forward_map,
         backward_map,
     );
