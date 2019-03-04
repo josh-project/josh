@@ -58,7 +58,7 @@
 #![doc(
     html_logo_url = "https://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png",
     html_favicon_url = "https://www.rust-lang.org/favicon.ico",
-    html_root_url = "https://doc.rust-lang.org/glob/"
+    html_root_url = "https://docs.rs/glob/0.3.0"
 )]
 #![deny(missing_docs)]
 #![cfg_attr(all(test, windows), feature(std_misc))]
