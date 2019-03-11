@@ -46,3 +46,28 @@ git merge foo --allow-unrelated
 
 One obvious use case for this feature is to help when switching a project or organization
 from a manyrepo setup to a monorepo.
+
+Workspaces
+----------
+
+Each virtual repository that Josh exposes is the result of applying a transformation to the
+upstream repository.
+This transformations can be combined to define a workspace that includes arbitrary parts
+of the upstream tree and rearranges them in a different way.
+
+A workspace is defined by creating a directory in the upstream repository with a file
+`workspace.josh` inside it.
+
+For example:
+
+```
+libs/a = :/modules/a
+bin/b = :/tools/b
+```
+
+Checking this file in as `/ws_x/workspace.josh` in the upstream will than make the virtual
+repository available as:
+`http://localhost:8000/upstream.git:workspace=ws_x.git`
+
+And the contents will be all the contents inside the `ws_x` directory in the upstream, plus
+the contents defined in the `workspace.josh` file in the specified locations.
