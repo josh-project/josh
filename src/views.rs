@@ -211,24 +211,23 @@ struct WorkspaceView {
 }
 
 fn combine_view_from_ws(repo: &Repository, tree: &Tree, ws_path: &Path) -> Box<CombineView> {
+    let base = Box::new(SubdirView {
+        subdir: ws_path.to_owned(),
+    });
     let wsp = ws_path.join("workspace.josh");
     let ws_config_oid = ok_or!(tree.get_path(&wsp).map(|x| x.id()), {
-        return build_combine_view("");
+        return build_combine_view("", base);
     });
 
     let ws_blob = ok_or!(repo.find_blob(ws_config_oid), {
-        return build_combine_view("");
+        return build_combine_view("", base);
     });
 
     let ws_content = ok_or!(str::from_utf8(ws_blob.content()), {
-        return build_combine_view("");
+        return build_combine_view("", base);
     });
 
-    let mut cw = build_combine_view(ws_content);
-    cw.base = Box::new(SubdirView {
-        subdir: ws_path.to_owned(),
-    });
-    return cw;
+    return build_combine_view(ws_content, base);
 }
 
 impl View for WorkspaceView {
@@ -272,7 +271,7 @@ impl View for WorkspaceView {
             s = format!("{}{}\n", s, x);
         }
 
-        let pcw: Box<dyn View> = build_combine_view(&s);
+        let pcw: Box<dyn View> = build_combine_view(&s, Box::new(EmptyView));
 
         if let Some(&(_, pid)) = parent_transforms.get(0) {
             parent_transforms.push((Some(pcw), pid));
@@ -357,9 +356,9 @@ fn parse_file_entry(pair: Pair<Rule>, combine_view: &mut CombineView) {
     }
 }
 
-fn build_combine_view(viewstr: &str) -> Box<CombineView> {
+fn build_combine_view(viewstr: &str, base: Box<dyn View>) -> Box<CombineView> {
     let mut combine_view = Box::new(CombineView {
-        base: Box::new(EmptyView),
+        base: base,
         others: vec![],
         prefixes: vec![],
     });
@@ -403,5 +402,5 @@ pub fn build_view(viewstr: &str) -> Box<dyn View> {
         };
     }
 
-    return build_combine_view(viewstr);
+    return build_combine_view(viewstr, Box::new(EmptyView));
 }
