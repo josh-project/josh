@@ -7,11 +7,11 @@ view = { transform* }
 
 transform = { CMD_START ~ cmd ~ CMD_END ~ argument }
 
-argument = { (!(CMD_START | "\n") ~ ANY)+ }
+argument = { (!(CMD_START | NEWLINE) ~ ANY)+ }
 
-cmd = { (!(CMD_END | "\n") ~ ANY)* }
+cmd = { (!(CMD_END | NEWLINE) ~ ANY)* }
 
-viewfile = { "\n"* ~ file_entry ~ ("\n"+ ~ file_entry)* }
+viewfile = { NEWLINE* ~ file_entry ~ (NEWLINE+ ~ file_entry)* }
 
 file_entry = { dst_path ~ "=" ~ view }
 
