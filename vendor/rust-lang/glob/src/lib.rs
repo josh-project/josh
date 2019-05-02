@@ -63,6 +63,13 @@
 #![deny(missing_docs)]
 #![cfg_attr(all(test, windows), feature(std_misc))]
 
+#[cfg(test)]
+#[macro_use]
+extern crate doc_comment;
+
+#[cfg(test)]
+doctest!("../README.md");
+
 use std::cmp;
 use std::error::Error;
 use std::fmt;
