@@ -61,13 +61,18 @@ pub fn process_repo_update(
         match scratch::unapply_view(
             &scratch,
             backward_maps,
-            viewstr,
             &*viewobj,
             old,
             Oid::from_str(&new).expect("can't parse new OID"),
         ) {
-            UnapplyView::Done(rewritten) => rewritten,
-            _ => return Err(()),
+            UnapplyView::Done(rewritten) => {
+                debug!("rewritten");
+                rewritten
+            }
+            _ => {
+                debug!("rewritten ERROR");
+                return Err(());
+            }
         }
     };
 

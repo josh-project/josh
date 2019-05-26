@@ -411,28 +411,29 @@ fn make_view_repo(
 
     let scratch = scratch::new(&br_path);
 
-    let mut forward_map = forward_maps.lock().unwrap();
-    let mut backward_map = backward_maps.lock().unwrap();
-
-    let mut fm = forward_map
-        .entry(format!("{:?}--{}", &scratch.path(), &view_string))
-        .or_insert_with(ViewMap::new);
-    let mut bm = backward_map
-        .entry(format!("{:?}--{}", &scratch.path(), &view_string))
-        .or_insert_with(ViewMap::new);
+    let mut forward_maps = forward_maps.lock().unwrap();
+    let mut backward_maps = backward_maps.lock().unwrap();
 
     let viewobj = build_view(&view_string);
+
+    let mut bm = backward_maps
+        .entry(viewobj.viewstr())
+        .or_insert_with(ViewMap::new);
 
     for branch in scratch.branches(None).unwrap() {
         scratch::apply_view_to_branch(
             &scratch,
             &branch.unwrap().0.name().unwrap().unwrap(),
             &*viewobj,
-            &mut fm,
+            &mut forward_maps,
             &mut bm,
             &namespace,
         );
     }
+
+    let mut forward_map = forward_maps
+        .entry(viewobj.viewstr())
+        .or_insert_with(ViewMap::new);
 
     for tag in scratch.tag_names(None).expect("scratch.tag_names").iter() {
         let tag = some_or!(tag, {
@@ -445,7 +446,10 @@ fn make_view_repo(
             continue;
         });
 
-        if let Some(n) = fm.get(&target) {
+        if let Some(n) = forward_map.get(&target) {
+            if *n == git2::Oid::zero() {
+                continue;
+            }
             ok_or!(
                 scratch.reference(
                     &format!("refs/namespaces/{}/refs/tags/{}", &namespace, &tag),
