@@ -359,8 +359,8 @@ fn run_http_server(
 ) {
     let mut core = tokio_core::reactor::Core::new().unwrap();
     let h2 = core.handle();
-    let forward_maps = Arc::new(Mutex::new(HashMap::new()));
-    let backward_maps = Arc::new(Mutex::new(HashMap::new()));
+    let forward_maps = Arc::new(Mutex::new(ViewMaps::new()));
+    let backward_maps = Arc::new(Mutex::new(ViewMaps::new()));
     let server_handle = core.handle();
     let pool = pool.clone();
     let port = port.clone();
@@ -416,24 +416,16 @@ fn make_view_repo(
 
     let viewobj = build_view(&view_string);
 
-    let mut bm = backward_maps
-        .entry(viewobj.viewstr())
-        .or_insert_with(ViewMap::new);
-
     for branch in scratch.branches(None).unwrap() {
         scratch::apply_view_to_branch(
             &scratch,
             &branch.unwrap().0.name().unwrap().unwrap(),
             &*viewobj,
             &mut forward_maps,
-            &mut bm,
+            &mut backward_maps,
             &namespace,
         );
     }
-
-    let mut forward_map = forward_maps
-        .entry(viewobj.viewstr())
-        .or_insert_with(ViewMap::new);
 
     for tag in scratch.tag_names(None).expect("scratch.tag_names").iter() {
         let tag = some_or!(tag, {
@@ -446,22 +438,21 @@ fn make_view_repo(
             continue;
         });
 
-        if let Some(n) = forward_map.get(&target) {
-            if *n == git2::Oid::zero() {
+        let n = forward_maps.get(&viewobj.viewstr(), target);
+        if n == git2::Oid::zero() {
+            continue;
+        }
+        ok_or!(
+            scratch.reference(
+                &format!("refs/namespaces/{}/refs/tags/{}", &namespace, &tag),
+                n,
+                true,
+                "crate tag",
+            ),
+            {
                 continue;
             }
-            ok_or!(
-                scratch.reference(
-                    &format!("refs/namespaces/{}/refs/tags/{}", &namespace, &tag),
-                    *n,
-                    true,
-                    "crate tag",
-                ),
-                {
-                    continue;
-                }
-            );
-        }
+        );
     }
 
     setup_tmp_repo(&br_path);
