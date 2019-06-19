@@ -12,6 +12,7 @@ use std::sync::{Arc, Mutex};
 
 pub type ViewMap = HashMap<Oid, Oid>;
 
+#[derive(Clone)]
 pub struct ViewMaps {
     maps: HashMap<String, ViewMap>,
 }
