@@ -50,7 +50,7 @@ pub use scratch::*;
 pub use shell::Shell;
 pub use treeops::*;
 
-pub use views::*;
+use views::*;
 
 #[derive(Clone)]
 pub enum UnapplyView {
