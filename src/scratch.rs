@@ -185,7 +185,10 @@ fn transform_commit(
     if let Ok(reference) = repo.find_reference(&from_refsname) {
         let r = reference.target().expect("no ref");
 
-        let original_commit = repo.find_commit(r).expect("no a commit");
+        let original_commit = ok_or!(repo.find_commit(r), {
+            debug!("transform_commit, not a commit: {}", from_refsname);
+            return;
+        });
         let view_commit = apply_view_to_commit(
             &repo,
             &*viewobj,
