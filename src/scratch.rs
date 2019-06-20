@@ -11,7 +11,40 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 pub type ViewMap = HashMap<Oid, Oid>;
-pub type ViewMaps = HashMap<String, ViewMap>;
+
+pub struct ViewMaps {
+    maps: HashMap<String, ViewMap>,
+}
+
+impl ViewMaps {
+    pub fn set(&mut self, viewstr: &str, from: Oid, to: Oid) {
+        let mut m = self
+            .maps
+            .entry(viewstr.to_string())
+            .or_insert_with(ViewMap::new);
+        m.insert(from, to);
+    }
+
+    pub fn get(&self, viewstr: &str, from: Oid) -> Oid {
+        if let Some(m) = self.maps.get(viewstr) {
+            return m.get(&from).cloned().unwrap_or_else(Oid::zero);
+        }
+        return Oid::zero();
+    }
+
+    pub fn has(&self, viewstr: &str, from: Oid) -> bool {
+        if let Some(m) = self.maps.get(viewstr) {
+            return m.contains_key(&from);
+        }
+        return false;
+    }
+
+    pub fn new() -> ViewMaps {
+        return ViewMaps {
+            maps: HashMap::new(),
+        };
+    }
+}
 
 use self::crypto::digest::Digest;
 use self::crypto::sha1::Sha1;
@@ -56,7 +89,6 @@ pub fn rewrite(repo: &Repository, base: &Commit, parents: &[&Commit], tree: &Tre
 pub fn unapply_view(
     repo: &Repository,
     backward_maps: Arc<Mutex<ViewMaps>>,
-    viewstr: &str,
     viewobj: &View,
     old: Oid,
     new: Oid,
@@ -66,21 +98,21 @@ pub fn unapply_view(
         "repo": repo.path(),
         "old": format!("{:?}", old),
         "new": format!("{:?}", new));
+    debug!("unapply_view");
 
     if old == new {
         return UnapplyView::NoChanges;
     }
 
     let current = {
-        let mut backward_map = backward_maps.lock().unwrap();
+        let mut backward_maps = backward_maps.lock().unwrap();
 
-        let mut bm = backward_map
-            .entry(format!("{:?}--{}", &repo.path(), &viewstr))
-            .or_insert_with(ViewMap::new);
-
-        *some_or!(bm.get(&old), {
+        let current = backward_maps.get(&viewobj.viewstr(), old);
+        if current == Oid::zero() {
+            debug!("not in backward_maps({},{})", viewobj.viewstr(), old);
             return UnapplyView::RejectNoFF;
-        })
+        }
+        current
     };
 
     match repo.graph_descendant_of(new, old) {
@@ -147,26 +179,63 @@ fn transform_commit(
     viewobj: &View,
     from_refsname: &str,
     to_refname: &str,
-    forward_map: &mut ViewMap,
-    backward_map: &mut ViewMap,
+    forward_maps: &mut ViewMaps,
+    backward_maps: &mut ViewMaps,
 ) {
     if let Ok(reference) = repo.find_reference(&from_refsname) {
         let r = reference.target().expect("no ref");
 
-        if let Some(view_commit) = apply_view_cached(&repo, &*viewobj, r, forward_map, backward_map)
-        {
+        let original_commit = repo.find_commit(r).expect("no a commit");
+        let view_commit = apply_view_to_commit(
+            &repo,
+            &*viewobj,
+            &original_commit,
+            forward_maps,
+            backward_maps,
+        );
+        forward_maps.set(&viewobj.viewstr(), original_commit.id(), view_commit);
+        backward_maps.set(&viewobj.viewstr(), view_commit, original_commit.id());
+        if view_commit != git2::Oid::zero() {
             repo.reference(&to_refname, view_commit, true, "apply_view")
                 .expect("can't create reference");
         }
     };
 }
 
+pub fn apply_view_to_tag(
+    repo: &Repository,
+    tagname: &str,
+    viewobj: &dyn View,
+    forward_maps: &mut ViewMaps,
+    backward_maps: &mut ViewMaps,
+    ns: &str,
+) {
+    trace_scoped!(
+        "apply_view_to_tag",
+        "repo": repo.path(),
+        "tagname": tagname,
+        "viewstr": viewobj.viewstr());
+
+    let to_tag = format!("refs/namespaces/{}/refs/tags/{}", &ns, &tagname);
+    let from_refsname = format!("refs/tags/{}", tagname);
+
+    debug!("apply_view_to_tag {}", tagname);
+    transform_commit(
+        &repo,
+        &*viewobj,
+        &from_refsname,
+        &to_tag,
+        forward_maps,
+        backward_maps,
+    );
+}
+
 pub fn apply_view_to_branch(
     repo: &Repository,
     branchname: &str,
     viewobj: &dyn View,
-    forward_map: &mut ViewMap,
-    backward_map: &mut ViewMap,
+    forward_maps: &mut ViewMaps,
+    backward_maps: &mut ViewMaps,
     ns: &str,
 ) {
     trace_scoped!(
@@ -187,24 +256,24 @@ pub fn apply_view_to_branch(
         &*viewobj,
         &from_refsname,
         &to_branch,
-        forward_map,
-        backward_map,
+        forward_maps,
+        backward_maps,
     );
     transform_commit(
         &repo,
         &*viewobj,
         &from_refsname,
         &to_refs_for,
-        forward_map,
-        backward_map,
+        forward_maps,
+        backward_maps,
     );
     transform_commit(
         &repo,
         &*viewobj,
         &from_refsname,
         &to_refs_drafts,
-        forward_map,
-        backward_map,
+        forward_maps,
+        backward_maps,
     );
 
     if branchname == "master" {
@@ -213,32 +282,85 @@ pub fn apply_view_to_branch(
             &*viewobj,
             "refs/heads/master",
             &to_head,
-            forward_map,
-            backward_map,
+            forward_maps,
+            backward_maps,
         );
     }
 }
 
-pub fn apply_view(repo: &Repository, view: &View, newrev: Oid) -> Option<Oid> {
-    return apply_view_cached(
-        &repo,
-        view,
-        newrev,
-        &mut ViewMap::new(),
-        &mut ViewMap::new(),
-    );
+fn filter_parents<'a>(
+    commit: &'a Commit,
+    new_tree: Oid,
+    transformed_parent_refs: Vec<&'a Commit>,
+) -> Vec<&'a Commit<'a>> {
+    let mut filtered_transformed_parent_refs: Vec<&Commit> = vec![];
+    for transformed_parent in transformed_parent_refs {
+        if new_tree != transformed_parent.tree().unwrap().id() {
+            filtered_transformed_parent_refs.push(transformed_parent);
+            continue;
+        }
+        if commit.tree().expect("missing tree").id()
+            == commit.parents().next().unwrap().tree().unwrap().id()
+        {
+            filtered_transformed_parent_refs.push(transformed_parent);
+            continue;
+        }
+    }
+    return filtered_transformed_parent_refs;
+}
+
+fn apply_view_to_commit(
+    repo: &Repository,
+    view: &dyn View,
+    commit: &Commit,
+    forward_maps: &mut ViewMaps,
+    backward_maps: &mut ViewMaps,
+) -> Oid {
+    let empty = empty_tree(repo).id();
+    if forward_maps.has(&view.viewstr(), commit.id()) {
+        return forward_maps.get(&view.viewstr(), commit.id());
+    }
+
+    let (new_tree, transformed_parents_ids) =
+        view.apply_to_commit(&repo, &commit, forward_maps, backward_maps);
+
+    if new_tree == empty {
+        return Oid::zero();
+    }
+
+    let mut transformed_parents = vec![];
+    for parent_id in transformed_parents_ids {
+        if let Ok(parent) = repo.find_commit(parent_id) {
+            transformed_parents.push(parent);
+        }
+    }
+
+    let transformed_parent_refs: Vec<&_> = transformed_parents.iter().collect();
+    let mut filtered_transformed_parent_refs: Vec<&Commit> =
+        filter_parents(&commit, new_tree, transformed_parent_refs);
+
+    if filtered_transformed_parent_refs.len() == 0 && transformed_parents.len() != 0 {
+        return transformed_parents[0].id();
+    }
+
+    let new_tree = repo
+        .find_tree(new_tree)
+        .expect("apply_view_cached: can't find tree");
+
+    return rewrite(&repo, &commit, &filtered_transformed_parent_refs, &new_tree);
 }
 
 pub fn apply_view_cached(
     repo: &Repository,
     view: &dyn View,
     newrev: Oid,
-    forward_map: &mut ViewMap,
-    backward_map: &mut ViewMap,
-) -> Option<Oid> {
-    if let Some(id) = forward_map.get(&newrev) {
-        return Some(*id);
+    forward_maps: &mut ViewMaps,
+    backward_maps: &mut ViewMaps,
+) -> Oid {
+    if forward_maps.has(&view.viewstr(), newrev) {
+        return forward_maps.get(&view.viewstr(), newrev);
     }
+
     let tname = format!("apply_view_cached {:?}", newrev);
     trace_begin!(&tname, "viewstr": view.viewstr());
 
@@ -249,80 +371,35 @@ pub fn apply_view_cached(
         walk
     };
 
-    let empty = empty_tree(repo).id();
-
     let mut in_commit_count = 0;
     let mut out_commit_count = 0;
     let mut empty_tree_count = 0;
     'walk: for commit in walk {
         in_commit_count += 1;
+
         let commit = repo.find_commit(commit.unwrap()).unwrap();
-        if forward_map.contains_key(&commit.id()) {
-            continue 'walk;
-        }
 
-        let (new_tree, parent_transforms) = view.apply_to_commit(&repo, &commit);
+        let transformed = apply_view_to_commit(&repo, view, &commit, forward_maps, backward_maps);
 
-        if new_tree == empty {
+        if transformed == Oid::zero() {
             empty_tree_count += 1;
-            continue 'walk;
         }
-
-        let mut transformed_parents = vec![];
-        for (transform, parent_id) in parent_transforms {
-            match transform {
-                None => {
-                    if let Some(parent) =
-                        apply_view_cached(&repo, view, parent_id, forward_map, backward_map)
-                    {
-                        let parent = repo.find_commit(parent).unwrap();
-                        transformed_parents.push(parent);
-                    }
-                }
-                Some(tview) => {
-                    if let Some(parent) = apply_view(&repo, &*tview, parent_id) {
-                        let parent = repo.find_commit(parent).unwrap();
-                        transformed_parents.push(parent);
-                    }
-                }
-            }
-        }
-
-        let transformed_parent_refs: Vec<&_> = transformed_parents.iter().collect();
-        let mut filtered_transformed_parent_refs: Vec<&_> = vec![];
-
-        for transformed_parent in transformed_parent_refs {
-            if new_tree != transformed_parent.tree().unwrap().id() {
-                filtered_transformed_parent_refs.push(transformed_parent);
-                continue;
-            }
-            if commit.tree().expect("missing tree").id()
-                == commit.parents().next().unwrap().tree().unwrap().id()
-            {
-                filtered_transformed_parent_refs.push(transformed_parent);
-                continue;
-            }
-        }
-
-        if filtered_transformed_parent_refs.len() == 0 && transformed_parents.len() != 0 {
-            forward_map.insert(commit.id(), transformed_parents[0].id());
-            continue 'walk;
-        }
-
-        let new_tree = repo
-            .find_tree(new_tree)
-            .expect("apply_view_cached: can't find tree");
-        let transformed = rewrite(&repo, &commit, &filtered_transformed_parent_refs, &new_tree);
-        forward_map.insert(commit.id(), transformed);
-        backward_map.insert(transformed, commit.id());
+        forward_maps.set(&view.viewstr(), commit.id(), transformed);
+        backward_maps.set(&view.viewstr(), transformed, commit.id());
         out_commit_count += 1;
     }
 
+    if !forward_maps.has(&view.viewstr(), newrev) {
+        forward_maps.set(&view.viewstr(), newrev, Oid::zero());
+    }
+    let rewritten = forward_maps.get(&view.viewstr(), newrev);
     trace_end!(
         &tname,
         "in_commit_count": in_commit_count,
         "out_commit_count": out_commit_count,
-        "empty_tree_count": empty_tree_count
+        "empty_tree_count": empty_tree_count,
+        "original": newrev.to_string(),
+        "rewritten": rewritten.to_string(),
     );
-    return forward_map.get(&newrev).cloned();
+    return rewritten;
 }

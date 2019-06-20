@@ -359,8 +359,8 @@ fn run_http_server(
 ) {
     let mut core = tokio_core::reactor::Core::new().unwrap();
     let h2 = core.handle();
-    let forward_maps = Arc::new(Mutex::new(HashMap::new()));
-    let backward_maps = Arc::new(Mutex::new(HashMap::new()));
+    let forward_maps = Arc::new(Mutex::new(ViewMaps::new()));
+    let backward_maps = Arc::new(Mutex::new(ViewMaps::new()));
     let server_handle = core.handle();
     let pool = pool.clone();
     let port = port.clone();
@@ -411,15 +411,8 @@ fn make_view_repo(
 
     let scratch = scratch::new(&br_path);
 
-    let mut forward_map = forward_maps.lock().unwrap();
-    let mut backward_map = backward_maps.lock().unwrap();
-
-    let mut fm = forward_map
-        .entry(format!("{:?}--{}", &scratch.path(), &view_string))
-        .or_insert_with(ViewMap::new);
-    let mut bm = backward_map
-        .entry(format!("{:?}--{}", &scratch.path(), &view_string))
-        .or_insert_with(ViewMap::new);
+    let mut forward_maps = forward_maps.lock().unwrap();
+    let mut backward_maps = backward_maps.lock().unwrap();
 
     let viewobj = build_view(&view_string);
 
@@ -428,8 +421,8 @@ fn make_view_repo(
             &scratch,
             &branch.unwrap().0.name().unwrap().unwrap(),
             &*viewobj,
-            &mut fm,
-            &mut bm,
+            &mut forward_maps,
+            &mut backward_maps,
             &namespace,
         );
     }
@@ -438,26 +431,14 @@ fn make_view_repo(
         let tag = some_or!(tag, {
             continue;
         });
-        let r = ok_or!(scratch.find_reference(&format!("refs/tags/{}", tag)), {
-            continue;
-        });
-        let target = some_or!(r.target(), {
-            continue;
-        });
-
-        if let Some(n) = fm.get(&target) {
-            ok_or!(
-                scratch.reference(
-                    &format!("refs/namespaces/{}/refs/tags/{}", &namespace, &tag),
-                    *n,
-                    true,
-                    "crate tag",
-                ),
-                {
-                    continue;
-                }
-            );
-        }
+        scratch::apply_view_to_tag(
+            &scratch,
+            &tag,
+            &*viewobj,
+            &mut forward_maps,
+            &mut backward_maps,
+            &namespace,
+        );
     }
 
     setup_tmp_repo(&br_path);
