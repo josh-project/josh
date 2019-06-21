@@ -130,7 +130,10 @@ pub fn update_hook(refname: &str, old: &str, new: &str) -> i32 {
 
     let port = env::var("JOSH_PORT").expect("JOSH_PORT not set");
 
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .timeout(None)
+        .build()
+        .unwrap();
     let resp = client
         .post(&format!("http://localhost:{}/repo_update", port))
         .json(&repo_update)
