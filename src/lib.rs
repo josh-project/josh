@@ -42,9 +42,9 @@ pub mod run_proxy;
 pub mod scratch;
 mod shell;
 mod treeops;
+pub mod view_maps;
 pub mod views;
 pub mod virtual_repo;
-pub mod view_maps;
 
 pub use run_proxy::*;
 pub use scratch::*;

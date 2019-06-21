@@ -33,7 +33,7 @@ use std::panic;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, RwLock};
 
 lazy_static! {
     static ref VIEW_REGEX: Regex =
@@ -49,8 +49,8 @@ struct HttpService {
     port: String,
     base_path: PathBuf,
     base_url: String,
-    forward_maps: Arc<Mutex<view_maps::ViewMaps>>,
-    backward_maps: Arc<Mutex<view_maps::ViewMaps>>,
+    forward_maps: Arc<RwLock<view_maps::ViewMaps>>,
+    backward_maps: Arc<RwLock<view_maps::ViewMaps>>,
 }
 
 fn async_fetch(
@@ -146,7 +146,7 @@ fn call_service(
                     return pool.spawn(futures::future::ok(buffer).map(move |buffer| {
                         let repo_update: virtual_repo::RepoUpdate = serde_json::from_str(&buffer)
                             .unwrap_or(virtual_repo::RepoUpdate::new());
-                        let backward_maps = backward_maps.lock().unwrap();
+                        let backward_maps = backward_maps.read().unwrap();
                         virtual_repo::process_repo_update(repo_update, &backward_maps)
                     }));
                 })
@@ -360,8 +360,8 @@ fn run_http_server(
 ) {
     let mut core = tokio_core::reactor::Core::new().unwrap();
     let h2 = core.handle();
-    let forward_maps = Arc::new(Mutex::new(view_maps::ViewMaps::new()));
-    let backward_maps = Arc::new(Mutex::new(view_maps::ViewMaps::new()));
+    let forward_maps = Arc::new(RwLock::new(view_maps::ViewMaps::new()));
+    let backward_maps = Arc::new(RwLock::new(view_maps::ViewMaps::new()));
     let server_handle = core.handle();
     let pool = pool.clone();
     let port = port.clone();
@@ -401,8 +401,8 @@ fn make_view_repo(
     view_string: &str,
     namespace: &str,
     br_path: &Path,
-    forward_maps: Arc<Mutex<view_maps::ViewMaps>>,
-    backward_maps: Arc<Mutex<view_maps::ViewMaps>>,
+    forward_maps: Arc<RwLock<view_maps::ViewMaps>>,
+    backward_maps: Arc<RwLock<view_maps::ViewMaps>>,
 ) -> PathBuf {
     trace_scoped!(
         "make_view_repo",
@@ -412,8 +412,8 @@ fn make_view_repo(
 
     let scratch = scratch::new(&br_path);
 
-    let mut forward_maps = forward_maps.lock().unwrap();
-    let mut backward_maps = backward_maps.lock().unwrap();
+    let mut bm = view_maps::ViewMaps::new_downstream(backward_maps.clone());
+    let mut fm = view_maps::ViewMaps::new_downstream(forward_maps.clone());
 
     let viewobj = build_view(&view_string);
 
@@ -422,8 +422,8 @@ fn make_view_repo(
             &scratch,
             &branch.unwrap().0.name().unwrap().unwrap(),
             &*viewobj,
-            &mut forward_maps,
-            &mut backward_maps,
+            &mut fm,
+            &mut bm,
             &namespace,
         );
     }
@@ -432,17 +432,23 @@ fn make_view_repo(
         let tag = some_or!(tag, {
             continue;
         });
-        scratch::apply_view_to_tag(
-            &scratch,
-            &tag,
-            &*viewobj,
-            &mut forward_maps,
-            &mut backward_maps,
-            &namespace,
+        scratch::apply_view_to_tag(&scratch, &tag, &*viewobj, &mut fm, &mut bm, &namespace);
+    }
+    {
+        trace_scoped!(
+            "write_lock",
+            "viewstr": view_string,
+            "namespace": namespace,
+            "br_path": br_path
         );
+        let mut forward_maps = forward_maps.write().unwrap();
+        let mut backward_maps = backward_maps.write().unwrap();
+        forward_maps.merge(&fm);
+        backward_maps.merge(&bm);
     }
 
     setup_tmp_repo(&br_path);
+
     br_path.to_owned()
 }
 

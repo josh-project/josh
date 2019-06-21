@@ -2,13 +2,12 @@ extern crate crypto;
 extern crate git2;
 
 use super::build_view;
+use super::view_maps::*;
 use super::UnapplyView;
 use super::View;
 use super::*;
-use super::view_maps::*;
 use git2::*;
 use std::path::Path;
-use std::sync::{Arc, Mutex};
 
 use self::crypto::digest::Digest;
 use self::crypto::sha1::Sha1;

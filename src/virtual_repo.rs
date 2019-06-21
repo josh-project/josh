@@ -1,5 +1,5 @@
-use super::*;
 use super::view_maps::*;
+use super::*;
 use git2::Oid;
 use std::env;
 use std::path::Path;
