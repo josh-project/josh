@@ -45,7 +45,8 @@ lazy_static! {
 
 struct HttpService {
     handle: tokio_core::reactor::Handle,
-    pool: CpuPool,
+    fetch_push_pool: CpuPool,
+    compute_pool: CpuPool,
     port: String,
     base_path: PathBuf,
     base_url: String,
@@ -71,20 +72,34 @@ fn async_fetch(
     let backward_maps = http.backward_maps.clone();
     let namespace = namespace.to_owned();
 
-    Box::new(http.pool.spawn(
-        futures::future::ok(view_string.to_owned()).map(move |view_string| {
-            match base_repo::fetch_refs_from_url(&br_path, &remote_url, &username, &password) {
-                Ok(_) => Ok(make_view_repo(
+    let b = Box::new(
+        http.fetch_push_pool.spawn(
+            futures::future::ok(view_string.to_owned()).map(move |view_string| {
+                let r = base_repo::fetch_refs_from_url(&br_path, &remote_url, &username, &password);
+                (
+                    view_string,
+                    namespace,
+                    br_path,
+                    forward_maps,
+                    backward_maps,
+                    r,
+                )
+            }),
+        ),
+    );
+    Box::new(http.compute_pool.spawn(b.map(
+        move |(view_string, namespace, br_path, forward_maps, backward_maps, r)| {
+            r.map(move |r| {
+                make_view_repo(
                     &view_string,
                     &namespace,
                     &br_path,
                     forward_maps,
                     backward_maps,
-                )),
-                Err(e) => Err(e),
-            }
-        }),
-    ))
+                )
+            })
+        },
+    )))
 }
 
 fn respond_unauthorized() -> Response {
@@ -130,7 +145,7 @@ fn call_service(
         panic!();
     }
     if req.uri().path() == "/repo_update" {
-        let pool = service.pool.clone();
+        let pool = service.fetch_push_pool.clone();
         return Box::new(
             req.body()
                 .concat2()
@@ -327,8 +342,6 @@ pub fn run_proxy(args: Vec<String>) -> i32 {
     let port = args.value_of("port").unwrap_or("8000").to_owned();
     println!("Now listening on localhost:{}", port);
 
-    let pool = CpuPool::new(1);
-
     if let Some(tf) = args.value_of("trace") {
         open_trace_file!(tf).expect("can't open tracefile");
 
@@ -343,7 +356,6 @@ pub fn run_proxy(args: Vec<String>) -> i32 {
     run_http_server(
         addr,
         port,
-        &pool,
         &PathBuf::from(args.value_of("local").expect("missing local directory")),
         &args.value_of("remote").expect("missing remote repo url"),
     );
@@ -354,7 +366,6 @@ pub fn run_proxy(args: Vec<String>) -> i32 {
 fn run_http_server(
     addr: net::SocketAddr,
     port: String,
-    pool: &CpuPool,
     local: &Path,
     remote: &str,
 ) {
@@ -363,7 +374,8 @@ fn run_http_server(
     let forward_maps = Arc::new(RwLock::new(view_maps::ViewMaps::new()));
     let backward_maps = Arc::new(RwLock::new(view_maps::ViewMaps::new()));
     let server_handle = core.handle();
-    let pool = pool.clone();
+    let fetch_push_pool = CpuPool::new(1);
+    let compute_pool = CpuPool::new(4);
     let port = port.clone();
     let remote = remote.to_owned();
     let local = local.to_owned();
@@ -371,7 +383,8 @@ fn run_http_server(
         .serve_addr_handle(&addr, &server_handle, move || {
             let cghttp = HttpService {
                 handle: h2.clone(),
-                pool: pool.clone(),
+                fetch_push_pool: fetch_push_pool.clone(),
+                compute_pool: compute_pool.clone(),
                 port: port.clone(),
                 base_path: local.clone(),
                 base_url: remote.clone(),
