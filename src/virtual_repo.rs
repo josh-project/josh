@@ -136,15 +136,20 @@ pub fn update_hook(refname: &str, old: &str, new: &str) -> i32 {
         .json(&repo_update)
         .send();
 
-    if let Ok(mut r) = resp {
-        if r.status().is_success() {
-            if let Ok(body) = r.text() {
-                println!("response from upstream:\n {}\n\n", body);
-            } else {
-                println!("no upstream response");
+    match resp {
+        Ok(mut r) => {
+            if r.status().is_success() {
+                if let Ok(body) = r.text() {
+                    println!("response from upstream:\n {}\n\n", body);
+                } else {
+                    println!("no upstream response");
+                }
+                return 0;
             }
-            return 0;
         }
-    }
+        Err(err) => {
+            println!("/repo_update request failed {:?}", err);
+        }
+    };
     return 1;
 }
