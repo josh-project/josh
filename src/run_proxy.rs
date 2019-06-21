@@ -73,19 +73,21 @@ fn async_fetch(
     let namespace = namespace.to_owned();
 
     let b = Box::new(
-        http.fetch_push_pool.spawn(
-            futures::future::ok(view_string.to_owned()).map(move |view_string| {
-                let r = base_repo::fetch_refs_from_url(&br_path, &remote_url, &username, &password);
-                (
-                    view_string,
-                    namespace,
-                    br_path,
-                    forward_maps,
-                    backward_maps,
-                    r,
-                )
-            }),
-        ),
+        http.fetch_push_pool
+            .spawn(
+                futures::future::ok(view_string.to_owned()).map(move |view_string| {
+                    let r =
+                        base_repo::fetch_refs_from_url(&br_path, &remote_url, &username, &password);
+                    (
+                        view_string,
+                        namespace,
+                        br_path,
+                        forward_maps,
+                        backward_maps,
+                        r,
+                    )
+                }),
+            ),
     );
     Box::new(http.compute_pool.spawn(b.map(
         move |(view_string, namespace, br_path, forward_maps, backward_maps, r)| {
@@ -363,12 +365,7 @@ pub fn run_proxy(args: Vec<String>) -> i32 {
     return 0;
 }
 
-fn run_http_server(
-    addr: net::SocketAddr,
-    port: String,
-    local: &Path,
-    remote: &str,
-) {
+fn run_http_server(addr: net::SocketAddr, port: String, local: &Path, remote: &str) {
     let mut core = tokio_core::reactor::Core::new().unwrap();
     let h2 = core.handle();
     let forward_maps = Arc::new(RwLock::new(view_maps::ViewMaps::new()));
@@ -447,6 +444,11 @@ fn make_view_repo(
         });
         scratch::apply_view_to_tag(&scratch, &tag, &*viewobj, &mut fm, &mut bm, &namespace);
     }
+
+    trace_begin!(
+        "merge_maps",
+        "before_fm": forward_maps.read().unwrap().stats(),
+        "before_bm": backward_maps.read().unwrap().stats());
     {
         trace_scoped!(
             "write_lock",
@@ -459,6 +461,11 @@ fn make_view_repo(
         forward_maps.merge(&fm);
         backward_maps.merge(&bm);
     }
+
+    trace_end!(
+        "merge_maps",
+        "after_fm": forward_maps.read().unwrap().stats(),
+        "after_bm": backward_maps.read().unwrap().stats());
 
     setup_tmp_repo(&br_path);
 

@@ -21,7 +21,9 @@ impl ViewMaps {
 
     pub fn get(&self, viewstr: &str, from: Oid) -> Oid {
         if let Some(m) = self.maps.get(viewstr) {
-            return m.get(&from).cloned().unwrap_or_else(Oid::zero);
+            if let Some(oid) = m.get(&from).cloned() {
+                return oid;
+            }
         }
         if let Some(upsteam) = self.upsteam.clone() {
             trace_scoped!("read_lock: get", "viewstr": viewstr, "from": from.to_string());
@@ -32,7 +34,9 @@ impl ViewMaps {
 
     pub fn has(&self, viewstr: &str, from: Oid) -> bool {
         if let Some(m) = self.maps.get(viewstr) {
-            return m.contains_key(&from);
+            if m.contains_key(&from) {
+                return true;
+            }
         }
         if let Some(upsteam) = self.upsteam.clone() {
             trace_scoped!("read_lock: has", "viewstr": viewstr, "from": from.to_string());
@@ -63,5 +67,13 @@ impl ViewMaps {
                 .or_insert_with(ViewMap::new);
             m.extend(om);
         }
+    }
+
+    pub fn stats(&self) -> HashMap<String, usize> {
+        let mut s = HashMap::new();
+        for (viewstr, m) in self.maps.iter() {
+            s.insert(viewstr.to_string(), m.len());
+        }
+        return s;
     }
 }
