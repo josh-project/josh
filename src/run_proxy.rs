@@ -49,8 +49,8 @@ struct HttpService {
     port: String,
     base_path: PathBuf,
     base_url: String,
-    forward_maps: Arc<Mutex<scratch::ViewMaps>>,
-    backward_maps: Arc<Mutex<scratch::ViewMaps>>,
+    forward_maps: Arc<Mutex<view_maps::ViewMaps>>,
+    backward_maps: Arc<Mutex<view_maps::ViewMaps>>,
 }
 
 fn async_fetch(
@@ -359,8 +359,8 @@ fn run_http_server(
 ) {
     let mut core = tokio_core::reactor::Core::new().unwrap();
     let h2 = core.handle();
-    let forward_maps = Arc::new(Mutex::new(ViewMaps::new()));
-    let backward_maps = Arc::new(Mutex::new(ViewMaps::new()));
+    let forward_maps = Arc::new(Mutex::new(view_maps::ViewMaps::new()));
+    let backward_maps = Arc::new(Mutex::new(view_maps::ViewMaps::new()));
     let server_handle = core.handle();
     let pool = pool.clone();
     let port = port.clone();
@@ -400,8 +400,8 @@ fn make_view_repo(
     view_string: &str,
     namespace: &str,
     br_path: &Path,
-    forward_maps: Arc<Mutex<scratch::ViewMaps>>,
-    backward_maps: Arc<Mutex<scratch::ViewMaps>>,
+    forward_maps: Arc<Mutex<view_maps::ViewMaps>>,
+    backward_maps: Arc<Mutex<view_maps::ViewMaps>>,
 ) -> PathBuf {
     trace_scoped!(
         "make_view_repo",

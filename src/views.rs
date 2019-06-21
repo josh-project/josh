@@ -1,7 +1,9 @@
 use super::replace_subtree;
+use super::view_maps::*;
 use super::*;
 use git2::*;
 use pest::*;
+use pest::iterators::Pair;
 use std::collections::HashSet;
 use std::path::Path;
 use std::path::PathBuf;
@@ -439,8 +441,6 @@ impl View for WorkspaceView {
 #[derive(Parser)]
 #[grammar = "view_parser.pest"]
 struct MyParser;
-
-use pest::iterators::Pair;
 
 fn make_view(cmd: &str, name: &str) -> Box<dyn View> {
     if cmd == "+" || cmd == "prefix" {

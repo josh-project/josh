@@ -14,7 +14,7 @@ pub type RepoUpdate = HashMap<String, String>;
 
 pub fn process_repo_update(
     repo_update: RepoUpdate,
-    backward_maps: Arc<Mutex<ViewMaps>>,
+    backward_maps: Arc<Mutex<view_maps::ViewMaps>>,
 ) -> Result<String, ()> {
     let ru = {
         let mut ru = repo_update.clone();
