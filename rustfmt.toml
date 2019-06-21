@@ -1,13 +1,3 @@
-else_if_brace_style = "ClosingNextLine"
-brace_style = "AlwaysNextLine"
-fn_call_width = 80
-fn_return_indent = "WithWhereClause"
-fn_single_line = true
-ideal_width = 90
-control_brace_style = "AlwaysSameLine"
 max_width = 100
-normalize_comments = false
 reorder_imports = true
-single_line_if_else = false
 use_try_shorthand = false
-wrap_comments = true
