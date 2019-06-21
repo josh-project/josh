@@ -52,7 +52,7 @@ pub fn rewrite(repo: &Repository, base: &Commit, parents: &[&Commit], tree: &Tre
 
 pub fn unapply_view(
     repo: &Repository,
-    backward_maps: Arc<Mutex<ViewMaps>>,
+    backward_maps: &ViewMaps,
     viewobj: &View,
     old: Oid,
     new: Oid,
@@ -69,8 +69,6 @@ pub fn unapply_view(
     }
 
     let current = {
-        let mut backward_maps = backward_maps.lock().unwrap();
-
         let current = backward_maps.get(&viewobj.viewstr(), old);
         if current == Oid::zero() {
             debug!("not in backward_maps({},{})", viewobj.viewstr(), old);
