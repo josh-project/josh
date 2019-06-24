@@ -175,7 +175,30 @@ impl View for ChainView {
 }
 
 struct SubdirView {
-    subdir: PathBuf,
+    path: PathBuf,
+}
+
+impl SubdirView {
+    fn new(path: &Path) -> Box<dyn View> {
+        let mut components = path.iter();
+        let mut chain: Box<dyn View> = if let Some(comp) = components.next() {
+            Box::new(SubdirView {
+                path: Path::new(comp).to_owned(),
+            })
+        } else {
+            Box::new(NopView)
+        };
+
+        for comp in components {
+            chain = Box::new(ChainView {
+                first: chain,
+                second: Box::new(SubdirView {
+                    path: Path::new(comp).to_owned(),
+                }),
+            })
+        }
+        return chain;
+    }
 }
 
 impl View for SubdirView {
@@ -196,17 +219,17 @@ impl View for SubdirView {
     }
     fn apply_to_tree(&self, repo: &Repository, tree: &Tree) -> Oid {
         return tree
-            .get_path(&self.subdir)
+            .get_path(&self.path)
             .map(|x| x.id())
             .unwrap_or(empty_tree(repo).id());
     }
 
     fn unapply(&self, repo: &Repository, tree: &Tree, parent_tree: &Tree) -> Oid {
-        replace_subtree(&repo, &self.subdir, &tree, &parent_tree)
+        replace_subtree(&repo, &self.path, &tree, &parent_tree)
     }
 
     fn viewstr(&self) -> String {
-        return format!(":/{}", &self.subdir.to_str().unwrap());
+        return format!(":/{}", &self.path.to_str().unwrap());
     }
 }
 
@@ -339,9 +362,7 @@ struct WorkspaceView {
 }
 
 fn combine_view_from_ws(repo: &Repository, tree: &Tree, ws_path: &Path) -> Box<CombineView> {
-    let base = Box::new(SubdirView {
-        subdir: ws_path.to_owned(),
-    });
+    let base = SubdirView::new(&ws_path);
     let wsp = ws_path.join("workspace.josh");
     let ws_config_oid = ok_or!(tree.get_path(&wsp).map(|x| x.id()), {
         return build_combine_view("", base);
@@ -427,9 +448,7 @@ impl View for WorkspaceView {
         /* let mut cw = combine_view_from_ws(repo, parent_tree, &self.ws_path); */
         let mut cw = combine_view_from_ws(repo, tree, &PathBuf::from(""));
 
-        cw.base = Box::new(SubdirView {
-            subdir: self.ws_path.to_owned(),
-        });
+        cw.base = SubdirView::new(&self.ws_path);
         return cw.unapply(repo, tree, parent_tree);
     }
 
@@ -459,9 +478,7 @@ fn make_view(cmd: &str, name: &str) -> Box<dyn View> {
             ws_path: Path::new(name).to_owned(),
         });
     } else {
-        return Box::new(SubdirView {
-            subdir: Path::new(name).to_owned(),
-        });
+        return SubdirView::new(&Path::new(name));
     }
 }
 
@@ -515,17 +532,22 @@ pub fn build_view(viewstr: &str) -> Box<dyn View> {
     println!("MKVIEW {:?}", viewstr);
 
     if viewstr.starts_with("!") || viewstr.starts_with(":") {
-        let mut chain: Box<dyn View> = Box::new(NopView);
+        let mut chain: Option<Box<dyn View>> = None;
         if let Ok(r) = MyParser::parse(Rule::view, viewstr) {
             let mut r = r;
             let r = r.next().unwrap();
             for pair in r.into_inner() {
-                chain = Box::new(ChainView {
-                    first: chain,
-                    second: parse_item(pair),
+                let v = parse_item(pair);
+                chain = Some(if let Some(c) = chain {
+                    Box::new(ChainView {
+                        first: c,
+                        second: v,
+                    })
+                } else {
+                    v
                 });
             }
-            return chain;
+            return chain.unwrap_or(Box::new(NopView));
         };
     }
 
