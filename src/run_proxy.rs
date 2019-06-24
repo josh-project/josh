@@ -518,7 +518,27 @@ fn get_info(
 
     let transformed = scratch::apply_view_to_commit(&scratch, &*viewobj, &commit, &mut fm, &mut bm);
 
-    return format!("{:?} -> {:?}", commit.id(), transformed);
+    let transformed = scratch.find_commit(transformed).unwrap();
+
+    let mut s =  format!(
+        "commit {:?} -> {:?}\n",
+        commit.id(),
+        transformed);
+
+    s = format!("{}tree: {:?} -> {:?}\n",
+        s,
+        commit.tree_id(),
+        transformed.tree_id()
+    );
+
+    
+    s = format!("{} in:\n", s);
+    for pid in commit.parent_ids() { s = format!("{}parent: {:?}\n", s, pid); }
+
+    s = format!("{} out:\n", s);
+    for pid in transformed.parent_ids() { s = format!("{}parent: {:?}\n", s, pid); }
+
+    s
 }
 
 fn install_josh_hook(scratch_dir: &Path) {
