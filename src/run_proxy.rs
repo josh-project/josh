@@ -166,6 +166,8 @@ fn call_service(
         );
     }
 
+    let compute_pool = service.compute_pool.clone();
+
     if let Some(caps) = INFO_REGEX.captures(&req.uri().path()) {
         let (prefix, view, rev) = (
             caps.name("prefix").unwrap().as_str().to_string(),
@@ -173,19 +175,29 @@ fn call_service(
             caps.name("ref").unwrap().as_str().to_string(),
         );
 
-        /* service.compute_pool.spawn(|| */
-        let info = get_info(
-            &view,
-            &namespace,
-            &rev,
-            &service.base_path.join(prefix.trim_left_matches("/")),
-            service.forward_maps.clone(),
-            service.backward_maps.clone(),
-        );
-        let response = Response::new()
-            .with_body(format!("{}\n",info))
-            .with_status(hyper::StatusCode::Ok);
-        return Box::new(futures::future::ok(response));
+        let forward_maps = service.forward_maps.clone();
+        let backward_maps = service.forward_maps.clone();
+        let br_path = service.base_path.join(prefix.trim_left_matches("/"));
+        let ns = namespace.to_owned();
+
+        let f = compute_pool.spawn(futures::future::ok(true).map(move |_| {
+            let info = get_info(
+                &view,
+                &ns,
+                &rev,
+                &br_path,
+                forward_maps.clone(),
+                backward_maps.clone(),
+            );
+            info
+        }));
+
+        return Box::new(f.and_then(move |info| {
+            let response = Response::new()
+                .with_body(format!("{}\n", info))
+                .with_status(hyper::StatusCode::Ok);
+            return Box::new(futures::future::ok(response));
+        }));
     }
 
     let (prefix, view_string, pathinfo) = some_or!(parse_url(&req.uri().path()), {
@@ -496,9 +508,13 @@ fn get_info(
 
     let viewobj = build_view(&view_string);
 
-    let obj = ok_or!(scratch.revparse_single(rev), { return format!("rev not found: {:?}", &rev); });
+    let obj = ok_or!(scratch.revparse_single(rev), {
+        return format!("rev not found: {:?}", &rev);
+    });
 
-    let commit = ok_or!(obj.peel_to_commit(), { return format!("not a commit"); });
+    let commit = ok_or!(obj.peel_to_commit(), {
+        return format!("not a commit");
+    });
 
     let transformed = scratch::apply_view_to_commit(&scratch, &*viewobj, &commit, &mut fm, &mut bm);
 
