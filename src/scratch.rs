@@ -273,7 +273,7 @@ fn filter_parents<'a>(
     return filtered_transformed_parent_refs;
 }
 
-fn apply_view_to_commit(
+pub fn apply_view_to_commit(
     repo: &Repository,
     view: &dyn View,
     commit: &Commit,

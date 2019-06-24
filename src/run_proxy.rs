@@ -39,6 +39,9 @@ lazy_static! {
     static ref VIEW_REGEX: Regex =
         Regex::new(r"(?P<prefix>/.*[.]git)(?P<view>.*)[.]git(?P<pathinfo>/.*)")
             .expect("can't compile regex");
+    static ref INFO_REGEX: Regex =
+        Regex::new(r"(?P<prefix>/.*[.]git)(?P<view>.*)[.]json@(?P<ref>.*)")
+            .expect("can't compile regex");
     static ref FULL_REGEX: Regex =
         Regex::new(r"(?P<prefix>/.*[.]git)(?P<pathinfo>/.*)").expect("can't compile regex");
 }
@@ -68,40 +71,23 @@ fn async_fetch(
 
     let username = username.to_owned();
     let password = password.to_owned();
-    let forward_maps = http.forward_maps.clone();
-    let backward_maps = http.backward_maps.clone();
-    let namespace = namespace.to_owned();
+    let viewstr = view_string.to_owned();
 
     let b = Box::new(
         http.fetch_push_pool
-            .spawn(
-                futures::future::ok(view_string.to_owned()).map(move |view_string| {
-                    let r =
-                        base_repo::fetch_refs_from_url(&br_path, &remote_url, &username, &password);
-                    (
-                        view_string,
-                        namespace,
-                        br_path,
-                        forward_maps,
-                        backward_maps,
-                        r,
-                    )
-                }),
-            ),
+            .spawn(futures::future::ok(()).map(move |_| {
+                base_repo::fetch_refs_from_url(&br_path, &remote_url, &username, &password)
+            })),
     );
-    Box::new(http.compute_pool.spawn(b.map(
-        move |(view_string, namespace, br_path, forward_maps, backward_maps, r)| {
-            r.map(move |r| {
-                make_view_repo(
-                    &view_string,
-                    &namespace,
-                    &br_path,
-                    forward_maps,
-                    backward_maps,
-                )
-            })
-        },
-    )))
+
+    let viewstr = view_string.to_owned();
+    let forward_maps = http.forward_maps.clone();
+    let backward_maps = http.backward_maps.clone();
+    let namespace = namespace.to_owned();
+    let br_path = http.base_path.join(prefix.trim_left_matches("/"));
+    Box::new(http.compute_pool.spawn(b.map(move |r| {
+        r.map(move |r| make_view_repo(&viewstr, &namespace, &br_path, forward_maps, backward_maps))
+    })))
 }
 
 fn respond_unauthorized() -> Response {
@@ -178,6 +164,28 @@ fn call_service(
                     return Box::new(futures::future::ok(response));
                 }),
         );
+    }
+
+    if let Some(caps) = INFO_REGEX.captures(&req.uri().path()) {
+        let (prefix, view, rev) = (
+            caps.name("prefix").unwrap().as_str().to_string(),
+            caps.name("view").unwrap().as_str().to_string(),
+            caps.name("ref").unwrap().as_str().to_string(),
+        );
+
+        /* service.compute_pool.spawn(|| */
+        let info = get_info(
+            &view,
+            &namespace,
+            &rev,
+            &service.base_path.join(prefix.trim_left_matches("/")),
+            service.forward_maps.clone(),
+            service.backward_maps.clone(),
+        );
+        let response = Response::new()
+            .with_body(format!("{}\n",info))
+            .with_status(hyper::StatusCode::Ok);
+        return Box::new(futures::future::ok(response));
     }
 
     let (prefix, view_string, pathinfo) = some_or!(parse_url(&req.uri().path()), {
@@ -262,6 +270,7 @@ fn call_service(
                     return Box::new(futures::future::ok(respond_unauthorized()));
                 });
 
+                install_josh_hook(&path);
                 call_git_http_backend(req, path, &pathinfo, &handle)
             },
         )
@@ -467,17 +476,40 @@ fn make_view_repo(
         "after_fm": forward_maps.read().unwrap().stats(),
         "after_bm": backward_maps.read().unwrap().stats());
 
-    setup_tmp_repo(&br_path);
-
     br_path.to_owned()
 }
 
-fn setup_tmp_repo(scratch_dir: &Path) {
-    let shell = Shell {
-        cwd: scratch_dir.to_path_buf(),
-    };
+fn get_info(
+    view_string: &str,
+    namespace: &str,
+    rev: &str,
+    br_path: &Path,
+    forward_maps: Arc<RwLock<view_maps::ViewMaps>>,
+    backward_maps: Arc<RwLock<view_maps::ViewMaps>>,
+) -> String {
+    trace_scoped!("get_info", "view_string": view_string, "br_path": br_path);
 
+    let scratch = scratch::new(&br_path);
+
+    let mut bm = view_maps::ViewMaps::new_downstream(backward_maps.clone());
+    let mut fm = view_maps::ViewMaps::new_downstream(forward_maps.clone());
+
+    let viewobj = build_view(&view_string);
+
+    let obj = ok_or!(scratch.revparse_single(rev), { return format!("rev not found: {:?}", &rev); });
+
+    let commit = ok_or!(obj.peel_to_commit(), { return format!("not a commit"); });
+
+    let transformed = scratch::apply_view_to_commit(&scratch, &*viewobj, &commit, &mut fm, &mut bm);
+
+    return format!("{:?} -> {:?}", commit.id(), transformed);
+}
+
+fn install_josh_hook(scratch_dir: &Path) {
     if !scratch_dir.join("josh_hook_installed").exists() {
+        let shell = Shell {
+            cwd: scratch_dir.to_path_buf(),
+        };
         shell.command("touch josh_hook_installed");
         shell.command("git config http.receivepack true");
         let ce = current_exe().expect("can't find path to exe");
