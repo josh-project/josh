@@ -520,25 +520,35 @@ fn get_info(
 
     let transformed = scratch.find_commit(transformed).unwrap();
 
-    let mut s =  format!(
-        "commit {:?} -> {:?}\n",
-        commit.id(),
-        transformed);
+    let parent_ids = |commit: git2::Oid| {
+        let pids: Vec<_> = scratch
+            .find_commit(commit)
+            .unwrap()
+            .parent_ids()
+            .map(|x| {
+                json!({
+                    "commit": x.to_string(),
+                    "tree": scratch.find_commit(x).unwrap().tree_id().to_string(),
+                })
+            })
+            .collect();
+        pids
+    };
 
-    s = format!("{}tree: {:?} -> {:?}\n",
-        s,
-        commit.tree_id(),
-        transformed.tree_id()
-    );
+    let s = json!({
+        "original": {
+            "commit": commit.id().to_string(),
+            "tree": commit.tree_id().to_string(),
+            "parents": parent_ids(commit.id()),
+        },
+        "transformed": {
+            "commit": transformed.id().to_string(),
+            "tree": transformed.tree_id().to_string(),
+            "parents": parent_ids(transformed.id()),
+        }
+    });
 
-    
-    s = format!("{} in:\n", s);
-    for pid in commit.parent_ids() { s = format!("{}parent: {:?}\n", s, pid); }
-
-    s = format!("{} out:\n", s);
-    for pid in transformed.parent_ids() { s = format!("{}parent: {:?}\n", s, pid); }
-
-    s
+    return serde_json::to_string(&s).unwrap();
 }
 
 fn install_josh_hook(scratch_dir: &Path) {

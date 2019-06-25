@@ -34,10 +34,13 @@
   To http://localhost:8001/real_repo.git
    * [new branch]      master -> master
 
-  $ git clone http://${TESTUSER}:${TESTPASS}@localhost:8002/real_repo.git:/sub1.git s1
-  Cloning into 's1'...
+Get /info/refs to trigger rebuilding and pass credentials
+  $ curl -s http://${TESTUSER}:${TESTPASS}@localhost:8002/real_repo.git:/sub1.git/info/refs
+  *\trefs/drafts/master (esc) (glob)
+  *\trefs/for/master (esc) (glob)
+  *\trefs/heads/master (esc) (glob)
 
-  $ curl -s http://${TESTUSER}:${TESTPASS}@localhost:8002/real_repo.git:/sub1.json@master
-  * -> * (glob)
+  $ curl -s http://localhost:8002/real_repo.git:/sub1.json@master
+  {"original":{"commit":"*","parents":[{"commit":"*","tree":"*"}],"tree":"*"},"transformed":{"commit":"*","parents":[],"tree":"*"}} (glob)
 
   $ bash ${TESTDIR}/destroy_test_env.sh
