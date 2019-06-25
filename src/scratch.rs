@@ -253,24 +253,24 @@ pub fn apply_view_to_branch(
 }
 
 fn filter_parents<'a>(
-    commit: &'a Commit,
+    original_commit: &'a Commit,
     new_tree: Oid,
     transformed_parent_refs: Vec<&'a Commit>,
 ) -> Vec<&'a Commit<'a>> {
-    let mut filtered_transformed_parent_refs: Vec<&Commit> = vec![];
-    for transformed_parent in transformed_parent_refs {
-        if new_tree != transformed_parent.tree().unwrap().id() {
-            filtered_transformed_parent_refs.push(transformed_parent);
-            continue;
-        }
-        if commit.tree().expect("missing tree").id()
-            == commit.parents().next().unwrap().tree().unwrap().id()
-        {
-            filtered_transformed_parent_refs.push(transformed_parent);
-            continue;
-        }
-    }
-    return filtered_transformed_parent_refs;
+
+    let affects_transformed = transformed_parent_refs
+        .iter()
+        .any(|x| new_tree != x.tree_id());
+
+    let all_diffs_empty = original_commit
+        .parents()
+        .all(|x| x.tree_id() == original_commit.tree_id());
+
+    return if affects_transformed || all_diffs_empty {
+        transformed_parent_refs
+    } else {
+        vec![]
+    };
 }
 
 pub fn apply_view_to_commit(
