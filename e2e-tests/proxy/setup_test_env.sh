@@ -10,7 +10,7 @@ export RUST_LOG=debug
 export TESTPASS=$(openssl rand -hex 5)
 export TESTUSER=$(openssl rand -hex 5)
 
-PATH=${TESTDIR}/../target/debug/:${PATH}
+PATH=${TESTDIR}/../../target/debug/:${PATH}
 
 josh-test-server\
     --port=8001\
