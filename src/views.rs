@@ -88,20 +88,13 @@ fn default_apply_to_tree_and_parents(
 impl View for NopView {
     fn apply_to_tree_and_parents(
         &self,
-        forward_maps: &mut ViewMaps,
-        backward_maps: &mut ViewMaps,
-        repo: &git2::Repository,
+        _forward_maps: &mut ViewMaps,
+        _backward_maps: &mut ViewMaps,
+        _repo: &git2::Repository,
         tree_and_parents: (git2::Oid, Vec<git2::Oid>),
-        commit_id: git2::Oid,
+        _commit_id: git2::Oid,
     ) -> (git2::Oid, Vec<git2::Oid>) {
-        return default_apply_to_tree_and_parents(
-            self,
-            forward_maps,
-            backward_maps,
-            repo,
-            tree_and_parents,
-            commit_id,
-        );
+        return tree_and_parents;
     }
 
     fn apply_to_tree(

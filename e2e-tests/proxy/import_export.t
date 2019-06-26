@@ -227,7 +227,7 @@
   * initial1
 
 
-Empty roots should be dropped -> No sha1 equal guarantee for "nop"
+Empty roots should not be dropped -> sha1 equal guarantee for "nop"
   $ cd ${TESTTMP}
   $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8002/real_repo.git rr &> /dev/null
   $ cd rr
@@ -240,12 +240,15 @@ Empty roots should be dropped -> No sha1 equal guarantee for "nop"
   | * | add new_file2
   | |/  
   * | add new_file1
-  * |   Combine
+  * |   Import 1
   |\ \  
-  | |/  
-  |/|   
-  | * initial2
-  * initial1
+  | * \   Combine
+  | |\ \  
+  | | |/  
+  | |/|   
+  | | * initial2
+  | * initial1
+  * initial
   $ tree
   .
   |-- repo1
