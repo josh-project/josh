@@ -156,6 +156,55 @@ impl View for EmptyView {
     }
 }
 
+struct CutoffView {
+    rev: git2::Oid,
+}
+
+impl View for CutoffView {
+    fn apply_to_tree_and_parents(
+        &self,
+        forward_maps: &mut ViewMaps,
+        backward_maps: &mut ViewMaps,
+        repo: &git2::Repository,
+        tree_and_parents: (git2::Oid, Vec<git2::Oid>),
+        commit_id: git2::Oid,
+    ) -> (git2::Oid, Vec<git2::Oid>) {
+        if commit_id == self.rev {
+            return (tree_and_parents.0, vec![]);
+        }
+        return default_apply_to_tree_and_parents(
+            self,
+            forward_maps,
+            backward_maps,
+            repo,
+            tree_and_parents,
+            commit_id,
+        );
+    }
+
+    fn apply_to_tree(
+        &self,
+        _repo: &git2::Repository,
+        tree: &git2::Tree,
+        _commit_id: git2::Oid,
+    ) -> git2::Oid {
+        tree.id()
+    }
+
+    fn unapply(
+        &self,
+        _repo: &git2::Repository,
+        tree: &git2::Tree,
+        _parent_tree: &git2::Tree,
+    ) -> git2::Oid {
+        tree.id()
+    }
+
+    fn viewstr(&self) -> String {
+        return format!(":cutoff={}", self.rev);
+    }
+}
+
 struct ChainView {
     first: Box<dyn View>,
     second: Box<dyn View>,
@@ -506,18 +555,18 @@ fn combine_view_from_ws(
     let base = SubdirView::new(&ws_path);
     let wsp = ws_path.join("workspace.josh");
     let ws_config_oid = ok_or!(tree.get_path(&wsp).map(|x| x.id()), {
-        return build_combine_view("", base);
+        return build_combine_view(repo, "", base);
     });
 
     let ws_blob = ok_or!(repo.find_blob(ws_config_oid), {
-        return build_combine_view("", base);
+        return build_combine_view(repo, "", base);
     });
 
     let ws_content = ok_or!(str::from_utf8(ws_blob.content()), {
-        return build_combine_view("", base);
+        return build_combine_view(repo, "", base);
     });
 
-    return build_combine_view(ws_content, base);
+    return build_combine_view(repo, ws_content, base);
 }
 
 impl View for WorkspaceView {
@@ -569,7 +618,7 @@ impl View for WorkspaceView {
             s = format!("{}{}\n", s, x);
         }
 
-        let pcw: Box<dyn View> = build_combine_view(&s, Box::new(EmptyView));
+        let pcw: Box<dyn View> = build_combine_view(repo, &s, Box::new(EmptyView));
 
         for parent in parents {
             let p = scratch::apply_view_cached(repo, &*pcw, parent, forward_maps, backward_maps);
@@ -616,7 +665,7 @@ impl View for WorkspaceView {
 #[grammar = "view_parser.pest"]
 struct MyParser;
 
-fn make_view(cmd: &str, name: &str) -> Box<dyn View> {
+fn make_view(repo: &git2::Repository, cmd: &str, name: &str) -> Box<dyn View> {
     if cmd == "+" || cmd == "prefix" {
         return Box::new(PrefixView {
             prefix: Path::new(name).to_owned(),
@@ -631,6 +680,17 @@ fn make_view(cmd: &str, name: &str) -> Box<dyn View> {
         });
     } else if cmd == "nop" {
         return Box::new(NopView);
+    } else if cmd == "cutoff" {
+        return Box::new(CutoffView {
+            rev: ok_or!(
+                repo.revparse_single(&name)
+                    .and_then(|r| r.peel_to_commit())
+                    .map(|r| r.id()),
+                {
+                    return Box::new(EmptyView);
+                }
+            ),
+        });
     } else if cmd == "workspace" {
         return Box::new(WorkspaceView {
             ws_path: Path::new(name).to_owned(),
@@ -640,11 +700,12 @@ fn make_view(cmd: &str, name: &str) -> Box<dyn View> {
     }
 }
 
-fn parse_item(pair: Pair<Rule>) -> Box<dyn View> {
+fn parse_item(repo: &git2::Repository, pair: Pair<Rule>) -> Box<dyn View> {
     match pair.as_rule() {
         Rule::transform => {
             let mut inner = pair.into_inner();
             make_view(
+                repo,
                 inner.next().unwrap().as_str(),
                 inner.next().unwrap().as_str(),
             )
@@ -653,13 +714,13 @@ fn parse_item(pair: Pair<Rule>) -> Box<dyn View> {
     }
 }
 
-fn parse_file_entry(pair: Pair<Rule>, combine_view: &mut CombineView) {
+fn parse_file_entry(repo: &git2::Repository, pair: Pair<Rule>, combine_view: &mut CombineView) {
     match pair.as_rule() {
         Rule::file_entry => {
             let mut inner = pair.into_inner();
             let path = inner.next().unwrap().as_str();
             let view = inner.next().unwrap().as_str();
-            let view = build_view(view);
+            let view = build_view(repo, view);
             combine_view.prefixes.push(Path::new(path).to_owned());
             combine_view.others.push(view);
         }
@@ -667,7 +728,11 @@ fn parse_file_entry(pair: Pair<Rule>, combine_view: &mut CombineView) {
     }
 }
 
-fn build_combine_view(viewstr: &str, base: Box<dyn View>) -> Box<CombineView> {
+fn build_combine_view(
+    repo: &git2::Repository,
+    viewstr: &str,
+    base: Box<dyn View>,
+) -> Box<CombineView> {
     let mut combine_view = Box::new(CombineView {
         base: base,
         others: vec![],
@@ -678,7 +743,7 @@ fn build_combine_view(viewstr: &str, base: Box<dyn View>) -> Box<CombineView> {
         let mut r = r;
         let r = r.next().unwrap();
         for pair in r.into_inner() {
-            parse_file_entry(pair, &mut combine_view);
+            parse_file_entry(repo, pair, &mut combine_view);
         }
     };
 
@@ -692,14 +757,14 @@ pub fn build_chain(first: Box<dyn View>, second: Box<dyn View>) -> Box<dyn View>
     })
 }
 
-pub fn build_view(viewstr: &str) -> Box<dyn View> {
+pub fn build_view(repo: &git2::Repository, viewstr: &str) -> Box<dyn View> {
     if viewstr.starts_with("!") || viewstr.starts_with(":") {
         let mut chain: Option<Box<dyn View>> = None;
         if let Ok(r) = MyParser::parse(Rule::view, viewstr) {
             let mut r = r;
             let r = r.next().unwrap();
             for pair in r.into_inner() {
-                let v = parse_item(pair);
+                let v = parse_item(repo, pair);
                 chain = Some(if let Some(c) = chain {
                     Box::new(ChainView {
                         first: c,
@@ -713,7 +778,7 @@ pub fn build_view(viewstr: &str) -> Box<dyn View> {
         };
     }
 
-    return build_combine_view(viewstr, Box::new(EmptyView));
+    return build_combine_view(repo, viewstr, Box::new(EmptyView));
 }
 
 fn get_subtree(tree: &git2::Tree, path: &Path) -> Option<git2::Oid> {

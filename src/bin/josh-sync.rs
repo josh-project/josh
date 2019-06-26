@@ -21,12 +21,13 @@ use std::fs::read_to_string;
 
 lazy_static! {
     static ref INFO_REGEX: Regex =
-        Regex::new(r"\[(?P<target>.*):(?P<rev>.*)\](?P<spec>[^\[]*)").expect("can't compile regex");
+        Regex::new(r"\[(?P<src>.*):(?P<target>.*)\](?P<spec>[^\[]*)").expect("can't compile regex");
 }
 
 fn run_sync(args: Vec<String>) -> i32 {
     let args = clap::App::new("josh-sync")
         .arg(clap::Arg::with_name("file").long("file").takes_value(true))
+        .arg(clap::Arg::with_name("squash").long("squash"))
         .arg(
             clap::Arg::with_name("trace")
                 .long("trace")
@@ -44,22 +45,32 @@ fn run_sync(args: Vec<String>) -> i32 {
     for caps in INFO_REGEX
         .captures_iter(&read_to_string(args.value_of("file").unwrap()).expect("read_to_string"))
     {
-        let rev = caps.name("rev").unwrap().as_str().trim().to_owned();
+        let src = caps.name("src").unwrap().as_str().trim().to_owned();
         let target = caps.name("target").unwrap().as_str().trim().to_owned();
         let viewstr = caps.name("spec").unwrap().as_str().trim().to_owned();
 
-        let mut viewobj = josh::build_view(&viewstr);
+        let mut viewobj = josh::build_view(&repo, &viewstr);
 
         let pres = viewobj.prefixes();
 
         for p in pres {
             viewobj = josh::build_chain(
                 viewobj,
-                josh::build_view(&format!(":info={}/.joshinfo,{}", p.to_str().unwrap(), &rev)),
+                josh::build_view(
+                    &repo,
+                    &format!(":info={}/.joshinfo,{}", p.to_str().unwrap(), &src),
+                ),
             );
         }
 
-        josh::transform_commit(&repo, &*viewobj, &rev, &target, &mut fm, &mut bm);
+        if args.is_present("squash") {
+            viewobj = josh::build_chain(
+                josh::build_view(&repo, &format!(":cutoff={}", &src)),
+                viewobj,
+            );
+        }
+
+        josh::transform_commit(&repo, &*viewobj, &src, &target, &mut fm, &mut bm);
     }
 
     return 0;

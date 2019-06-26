@@ -458,7 +458,7 @@ fn make_view_repo(
     let mut bm = view_maps::ViewMaps::new_downstream(backward_maps.clone());
     let mut fm = view_maps::ViewMaps::new_downstream(forward_maps.clone());
 
-    let viewobj = josh::build_view(&view_string);
+    let viewobj = josh::build_view(&scratch, &view_string);
 
     for branch in scratch.branches(None).unwrap() {
         scratch::apply_view_to_branch(
@@ -517,7 +517,7 @@ fn get_info(
     let mut bm = view_maps::ViewMaps::new_downstream(backward_maps.clone());
     let mut fm = view_maps::ViewMaps::new_downstream(forward_maps.clone());
 
-    let viewobj = josh::build_view(&view_string);
+    let viewobj = josh::build_view(&scratch, &view_string);
 
     let obj = ok_or!(scratch.revparse_single(rev), {
         return format!("rev not found: {:?}", &rev);
