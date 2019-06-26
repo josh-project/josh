@@ -21,7 +21,7 @@ use std::fs::read_to_string;
 
 lazy_static! {
     static ref INFO_REGEX: Regex =
-        Regex::new(r"\[(?P<src>.*):(?P<target>.*)\](?P<spec>[^\[]*)").expect("can't compile regex");
+        Regex::new(r"\[(?P<src>.*)\](?P<spec>[^\[]*)").expect("can't compile regex");
 }
 
 fn run_sync(args: Vec<String>) -> i32 {
@@ -46,7 +46,7 @@ fn run_sync(args: Vec<String>) -> i32 {
         .captures_iter(&read_to_string(args.value_of("file").unwrap()).expect("read_to_string"))
     {
         let src = caps.name("src").unwrap().as_str().trim().to_owned();
-        let target = caps.name("target").unwrap().as_str().trim().to_owned();
+        let target = format!("refs/josh-sync/{}", &src);
         let viewstr = caps.name("spec").unwrap().as_str().trim().to_owned();
 
         let mut viewobj = josh::build_view(&repo, &viewstr);

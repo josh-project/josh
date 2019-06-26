@@ -389,7 +389,7 @@ impl View for PrefixView {
 
 struct InfoFileView {
     filename: PathBuf,
-    target: String,
+    src: String,
 }
 
 impl View for InfoFileView {
@@ -417,7 +417,7 @@ impl View for InfoFileView {
         tree: &git2::Tree,
         commit_id: git2::Oid,
     ) -> git2::Oid {
-        let s = format!("commit: {:?}\ntarget: {}\n", commit_id, self.target);
+        let s = format!("commit: {:?}\nsrc: {}\n", commit_id, self.src);
         replace_subtree(
             repo,
             &self.filename,
@@ -676,7 +676,7 @@ fn make_view(repo: &git2::Repository, cmd: &str, name: &str) -> Box<dyn View> {
         let s: Vec<_> = name.split(",").collect();
         return Box::new(InfoFileView {
             filename: Path::new(s[0]).to_owned(),
-            target: s[1].to_owned(),
+            src: s[1].to_owned(),
         });
     } else if cmd == "nop" {
         return Box::new(NopView);
