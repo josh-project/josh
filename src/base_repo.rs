@@ -14,7 +14,7 @@ pub fn fetch_refs_from_url(
 ) -> Result<(), git2::Error> {
     let spec = "+refs/heads/*:refs/heads/*";
 
-    let shell = Shell {
+    let shell = shell::Shell {
         cwd: path.to_owned(),
     };
     let nurl = {
@@ -59,7 +59,7 @@ pub fn push_head_url(
 
     let spec = format!("{}:{}", &rn, &refname);
 
-    let shell = Shell {
+    let shell = shell::Shell {
         cwd: repo.path().to_owned(),
     };
     let nurl = {
@@ -85,7 +85,7 @@ pub fn push_head_url(
         .reference(&rn, oid, true, "push_head_url")
         .expect("can't create reference");
     let (stdout, stderr) = shell.command(&cmd);
-    fakehead.delete();
+    fakehead.delete().expect("fakehead.delete failed");
     println!("{}", &stderr);
     println!("{}", &stdout);
 

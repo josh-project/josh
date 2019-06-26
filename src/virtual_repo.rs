@@ -6,8 +6,6 @@ use std::path::Path;
 
 extern crate reqwest;
 
-use self::reqwest::Client;
-
 use std::collections::HashMap;
 
 pub type RepoUpdate = HashMap<String, String>;
@@ -52,7 +50,7 @@ pub fn process_repo_update(
 
     let scratch = scratch::new(&Path::new(&git_dir));
     let new_oid = {
-        let viewobj = build_view(&viewstr);
+        let viewobj = views::build_view(&viewstr);
         debug!("=== MORE");
 
         let old = Oid::from_str(old).unwrap();

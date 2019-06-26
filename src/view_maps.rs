@@ -1,9 +1,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
-use git2::*;
-
-pub type ViewMap = HashMap<Oid, Oid>;
+pub type ViewMap = HashMap<git2::Oid, git2::Oid>;
 
 pub struct ViewMaps {
     maps: HashMap<String, ViewMap>,
@@ -11,15 +9,14 @@ pub struct ViewMaps {
 }
 
 impl ViewMaps {
-    pub fn set(&mut self, viewstr: &str, from: Oid, to: Oid) {
-        let mut m = self
-            .maps
+    pub fn set(&mut self, viewstr: &str, from: git2::Oid, to: git2::Oid) {
+        self.maps
             .entry(viewstr.to_string())
-            .or_insert_with(ViewMap::new);
-        m.insert(from, to);
+            .or_insert_with(ViewMap::new)
+            .insert(from, to);
     }
 
-    pub fn get(&self, viewstr: &str, from: Oid) -> Oid {
+    pub fn get(&self, viewstr: &str, from: git2::Oid) -> git2::Oid {
         if let Some(m) = self.maps.get(viewstr) {
             if let Some(oid) = m.get(&from).cloned() {
                 return oid;
@@ -29,10 +26,10 @@ impl ViewMaps {
             trace_scoped!("read_lock: get", "viewstr": viewstr, "from": from.to_string());
             return upsteam.read().unwrap().get(viewstr, from);
         }
-        return Oid::zero();
+        return git2::Oid::zero();
     }
 
-    pub fn has(&self, viewstr: &str, from: Oid) -> bool {
+    pub fn has(&self, viewstr: &str, from: git2::Oid) -> bool {
         if let Some(m) = self.maps.get(viewstr) {
             if m.contains_key(&from) {
                 return true;

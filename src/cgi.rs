@@ -11,7 +11,6 @@ use self::hyper::header::ContentLength;
 use self::hyper::header::ContentType;
 use self::hyper::server::{Request, Response};
 use cgi::tokio_process::CommandExt;
-/* use tokio::prelude::*; */
 use std::io;
 use std::io::BufRead;
 use std::io::Read;

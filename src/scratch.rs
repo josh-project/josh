@@ -1,18 +1,13 @@
 extern crate crypto;
 extern crate git2;
 
-use super::build_view;
-use super::view_maps::*;
+use super::empty_tree;
+use super::view_maps;
+use super::views;
 use super::UnapplyView;
-use super::View;
-use super::*;
-use git2::*;
 use std::path::Path;
 
-use self::crypto::digest::Digest;
-use self::crypto::sha1::Sha1;
-
-fn all_equal(a: Parents, b: &[&Commit]) -> bool {
+fn all_equal(a: git2::Parents, b: &[&git2::Commit]) -> bool {
     let a: Vec<_> = a.collect();
     if a.len() != b.len() {
         return false;
@@ -28,7 +23,12 @@ fn all_equal(a: Parents, b: &[&Commit]) -> bool {
 
 // takes everything from base except it's tree and replaces it with the tree
 // given
-pub fn rewrite(repo: &Repository, base: &Commit, parents: &[&Commit], tree: &Tree) -> Oid {
+pub fn rewrite(
+    repo: &git2::Repository,
+    base: &git2::Commit,
+    parents: &[&git2::Commit],
+    tree: &git2::Tree,
+) -> git2::Oid {
     if base.tree().unwrap().id() == tree.id() && all_equal(base.parents(), parents) {
         // Looks like an optimization, but in fact serves to not change the commit in case
         // it was signed.
@@ -50,11 +50,11 @@ pub fn rewrite(repo: &Repository, base: &Commit, parents: &[&Commit], tree: &Tre
 }
 
 pub fn unapply_view(
-    repo: &Repository,
-    backward_maps: &ViewMaps,
-    viewobj: &View,
-    old: Oid,
-    new: Oid,
+    repo: &git2::Repository,
+    backward_maps: &view_maps::ViewMaps,
+    viewobj: &views::View,
+    old: git2::Oid,
+    new: git2::Oid,
 ) -> UnapplyView {
     trace_scoped!(
         "unapply_view",
@@ -69,7 +69,7 @@ pub fn unapply_view(
 
     let current = {
         let current = backward_maps.get(&viewobj.viewstr(), old);
-        if current == Oid::zero() {
+        if current == git2::Oid::zero() {
             debug!("not in backward_maps({},{})", viewobj.viewstr(), old);
             return UnapplyView::RejectNoFF;
         }
@@ -88,7 +88,7 @@ pub fn unapply_view(
 
     let walk = {
         let mut walk = repo.revwalk().expect("walk: can't create revwalk");
-        walk.set_sorting(Sort::REVERSE | Sort::TOPOLOGICAL);
+        walk.set_sorting(git2::Sort::REVERSE | git2::Sort::TOPOLOGICAL);
         walk.push(new).expect("walk.push");
         walk.hide(old).expect("walk: can't hide");
         walk
@@ -123,7 +123,7 @@ pub fn unapply_view(
         );
 
         let new_tree = repo.find_tree(new_tree).expect("can't find rewritten tree");
-        let check = viewobj.apply_to_tree(&repo, &new_tree);
+        viewobj.apply_to_tree(&repo, &new_tree);
 
         current = rewrite(&repo, &module_commit, &[&parent], &new_tree);
     }
@@ -131,17 +131,17 @@ pub fn unapply_view(
     return UnapplyView::Done(current);
 }
 
-pub fn new(path: &Path) -> Repository {
-    Repository::init_bare(&path).expect("could not init scratch")
+pub fn new(path: &Path) -> git2::Repository {
+    git2::Repository::init_bare(&path).expect("could not init scratch")
 }
 
 fn transform_commit(
-    repo: &Repository,
-    viewobj: &View,
+    repo: &git2::Repository,
+    viewobj: &views::View,
     from_refsname: &str,
     to_refname: &str,
-    forward_maps: &mut ViewMaps,
-    backward_maps: &mut ViewMaps,
+    forward_maps: &mut view_maps::ViewMaps,
+    backward_maps: &mut view_maps::ViewMaps,
 ) {
     if let Ok(reference) = repo.find_reference(&from_refsname) {
         let r = reference.target().expect("no ref");
@@ -167,11 +167,11 @@ fn transform_commit(
 }
 
 pub fn apply_view_to_tag(
-    repo: &Repository,
+    repo: &git2::Repository,
     tagname: &str,
-    viewobj: &dyn View,
-    forward_maps: &mut ViewMaps,
-    backward_maps: &mut ViewMaps,
+    viewobj: &dyn views::View,
+    forward_maps: &mut view_maps::ViewMaps,
+    backward_maps: &mut view_maps::ViewMaps,
     ns: &str,
 ) {
     trace_scoped!(
@@ -195,11 +195,11 @@ pub fn apply_view_to_tag(
 }
 
 pub fn apply_view_to_branch(
-    repo: &Repository,
+    repo: &git2::Repository,
     branchname: &str,
-    viewobj: &dyn View,
-    forward_maps: &mut ViewMaps,
-    backward_maps: &mut ViewMaps,
+    viewobj: &dyn views::View,
+    forward_maps: &mut view_maps::ViewMaps,
+    backward_maps: &mut view_maps::ViewMaps,
     ns: &str,
 ) {
     trace_scoped!(
@@ -253,11 +253,10 @@ pub fn apply_view_to_branch(
 }
 
 fn filter_parents<'a>(
-    original_commit: &'a Commit,
-    new_tree: Oid,
-    transformed_parent_refs: Vec<&'a Commit>,
-) -> Vec<&'a Commit<'a>> {
-
+    original_commit: &'a git2::Commit,
+    new_tree: git2::Oid,
+    transformed_parent_refs: Vec<&'a git2::Commit>,
+) -> Vec<&'a git2::Commit<'a>> {
     let affects_transformed = transformed_parent_refs
         .iter()
         .any(|x| new_tree != x.tree_id());
@@ -274,12 +273,12 @@ fn filter_parents<'a>(
 }
 
 pub fn apply_view_to_commit(
-    repo: &Repository,
-    view: &dyn View,
-    commit: &Commit,
-    forward_maps: &mut ViewMaps,
-    backward_maps: &mut ViewMaps,
-) -> Oid {
+    repo: &git2::Repository,
+    view: &dyn views::View,
+    commit: &git2::Commit,
+    forward_maps: &mut view_maps::ViewMaps,
+    backward_maps: &mut view_maps::ViewMaps,
+) -> git2::Oid {
     let empty = empty_tree(repo).id();
     if forward_maps.has(&view.viewstr(), commit.id()) {
         return forward_maps.get(&view.viewstr(), commit.id());
@@ -289,7 +288,7 @@ pub fn apply_view_to_commit(
         view.apply_to_commit(&repo, &commit, forward_maps, backward_maps);
 
     if new_tree == empty {
-        return Oid::zero();
+        return git2::Oid::zero();
     }
 
     let mut transformed_parents = vec![];
@@ -300,7 +299,7 @@ pub fn apply_view_to_commit(
     }
 
     let transformed_parent_refs: Vec<&_> = transformed_parents.iter().collect();
-    let mut filtered_transformed_parent_refs: Vec<&Commit> =
+    let filtered_transformed_parent_refs: Vec<&git2::Commit> =
         filter_parents(&commit, new_tree, transformed_parent_refs);
 
     if filtered_transformed_parent_refs.len() == 0 && transformed_parents.len() != 0 {
@@ -315,12 +314,12 @@ pub fn apply_view_to_commit(
 }
 
 pub fn apply_view_cached(
-    repo: &Repository,
-    view: &dyn View,
-    newrev: Oid,
-    forward_maps: &mut ViewMaps,
-    backward_maps: &mut ViewMaps,
-) -> Oid {
+    repo: &git2::Repository,
+    view: &dyn views::View,
+    newrev: git2::Oid,
+    forward_maps: &mut view_maps::ViewMaps,
+    backward_maps: &mut view_maps::ViewMaps,
+) -> git2::Oid {
     if forward_maps.has(&view.viewstr(), newrev) {
         return forward_maps.get(&view.viewstr(), newrev);
     }
@@ -330,7 +329,7 @@ pub fn apply_view_cached(
 
     let walk = {
         let mut walk = repo.revwalk().expect("walk: can't create revwalk");
-        walk.set_sorting(Sort::REVERSE | Sort::TOPOLOGICAL);
+        walk.set_sorting(git2::Sort::REVERSE | git2::Sort::TOPOLOGICAL);
         walk.push(newrev).expect("walk.push");
         walk
     };
@@ -345,7 +344,7 @@ pub fn apply_view_cached(
 
         let transformed = apply_view_to_commit(&repo, view, &commit, forward_maps, backward_maps);
 
-        if transformed == Oid::zero() {
+        if transformed == git2::Oid::zero() {
             empty_tree_count += 1;
         }
         forward_maps.set(&view.viewstr(), commit.id(), transformed);
@@ -354,7 +353,7 @@ pub fn apply_view_cached(
     }
 
     if !forward_maps.has(&view.viewstr(), newrev) {
-        forward_maps.set(&view.viewstr(), newrev, Oid::zero());
+        forward_maps.set(&view.viewstr(), newrev, git2::Oid::zero());
     }
     let rewritten = forward_maps.get(&view.viewstr(), newrev);
     trace_end!(

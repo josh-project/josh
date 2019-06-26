@@ -1,3 +1,6 @@
+#![deny(warnings)]
+
+#[macro_export]
 macro_rules! some_or {
     ($e:expr, $b:block) => {
         if let Some(x) = $e {
@@ -8,6 +11,7 @@ macro_rules! some_or {
     };
 }
 
+#[macro_export]
 macro_rules! ok_or {
     ($e:expr, $b:block) => {
         if let Ok(x) = $e {
@@ -19,10 +23,6 @@ macro_rules! ok_or {
 }
 
 extern crate git2;
-extern crate tempdir;
-
-#[macro_use]
-extern crate lazy_static;
 
 #[macro_use]
 extern crate log;
@@ -34,24 +34,16 @@ extern crate pest_derive;
 extern crate rs_tracing;
 
 extern crate pest;
-extern crate rand;
 
 pub mod base_repo;
 pub mod cgi;
-pub mod run_proxy;
 pub mod scratch;
-mod shell;
-mod treeops;
+pub mod shell;
 pub mod view_maps;
-pub mod views;
+mod views;
 pub mod virtual_repo;
 
-pub use run_proxy::*;
-pub use scratch::*;
-pub use shell::Shell;
-pub use treeops::*;
-
-pub use views::*;
+pub use views::build_view;
 
 #[derive(Clone)]
 pub enum UnapplyView {
