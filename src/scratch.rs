@@ -123,7 +123,7 @@ pub fn unapply_view(
         );
 
         let new_tree = repo.find_tree(new_tree).expect("can't find rewritten tree");
-        viewobj.apply_to_tree(&repo, &new_tree);
+        viewobj.apply_to_tree(&repo, &new_tree, git2::Oid::zero());
 
         current = rewrite(&repo, &module_commit, &[&parent], &new_tree);
     }

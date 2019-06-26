@@ -43,22 +43,30 @@
   $ git read-tree HEAD sync/master sync/foo
   $ git commit -m "sync"
   [master *] sync (glob)
-   2 files changed, 2 insertions(+)
+   4 files changed, 4 insertions(+)
    create mode 100644 a/b/file2
+   create mode 100644 a/b/joshinfo
    create mode 100644 c/file1
+   create mode 100644 c/joshinfo
   $ git reset --hard
   HEAD is now at * sync (glob)
   $ tree
   .
   |-- a
   |   `-- b
-  |       `-- file2
+  |       |-- file2
+  |       `-- joshinfo
   |-- c
-  |   `-- file1
+  |   |-- file1
+  |   `-- joshinfo
   `-- syncinfo
   
-  3 directories, 3 files
+  3 directories, 5 files
   $ git log --graph --pretty=%s
   * sync
   * initial
 
+  $ cat a/b/joshinfo
+  e8fee4624fc8543bf1e8c46cd57917d1ac72d68f
+  $ cat c/joshinfo
+  540c562ab79645772fa38ee78fd5f4d76059bde2

@@ -43,6 +43,7 @@ pub mod view_maps;
 mod views;
 pub mod virtual_repo;
 
+pub use views::build_chain;
 pub use views::build_view;
 
 #[derive(Clone)]

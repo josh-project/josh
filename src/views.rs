@@ -27,10 +27,16 @@ pub trait View {
             backward_maps,
             repo,
             (full_tree.id(), parent_ids),
+            commit.id(),
         );
     }
 
-    fn apply_to_tree(&self, repo: &git2::Repository, tree: &git2::Tree) -> git2::Oid;
+    fn apply_to_tree(
+        &self,
+        repo: &git2::Repository,
+        tree: &git2::Tree,
+        commit_id: git2::Oid,
+    ) -> git2::Oid;
     fn unapply(
         &self,
         repo: &git2::Repository,
@@ -44,7 +50,12 @@ pub trait View {
         backward_maps: &mut ViewMaps,
         repo: &git2::Repository,
         tree_and_parents: (git2::Oid, Vec<git2::Oid>),
+        commit_id: git2::Oid,
     ) -> (git2::Oid, Vec<git2::Oid>);
+
+    fn prefixes(&self) -> Vec<PathBuf> {
+        vec![]
+    }
 
     fn viewstr(&self) -> String;
 }
@@ -57,6 +68,7 @@ fn default_apply_to_tree_and_parents(
     backward_maps: &mut ViewMaps,
     repo: &git2::Repository,
     tree_and_parents: (git2::Oid, Vec<git2::Oid>),
+    commit_id: git2::Oid,
 ) -> (git2::Oid, Vec<git2::Oid>) {
     trace_scoped!("default_apply_to_tree_and_parents", "viewstr": viewobj.viewstr());
     let (tree, parents) = tree_and_parents;
@@ -68,7 +80,7 @@ fn default_apply_to_tree_and_parents(
         }
     }
     return (
-        viewobj.apply_to_tree(&repo, &repo.find_tree(tree).unwrap()),
+        viewobj.apply_to_tree(&repo, &repo.find_tree(tree).unwrap(), commit_id),
         transformed_parents_ids,
     );
 }
@@ -80,6 +92,7 @@ impl View for NopView {
         backward_maps: &mut ViewMaps,
         repo: &git2::Repository,
         tree_and_parents: (git2::Oid, Vec<git2::Oid>),
+        commit_id: git2::Oid,
     ) -> (git2::Oid, Vec<git2::Oid>) {
         return default_apply_to_tree_and_parents(
             self,
@@ -87,10 +100,16 @@ impl View for NopView {
             backward_maps,
             repo,
             tree_and_parents,
+            commit_id,
         );
     }
 
-    fn apply_to_tree(&self, _repo: &git2::Repository, tree: &git2::Tree) -> git2::Oid {
+    fn apply_to_tree(
+        &self,
+        _repo: &git2::Repository,
+        tree: &git2::Tree,
+        _commit_id: git2::Oid,
+    ) -> git2::Oid {
         tree.id()
     }
 
@@ -117,10 +136,16 @@ impl View for EmptyView {
         _backward_maps: &mut ViewMaps,
         repo: &git2::Repository,
         _tree_and_parents: (git2::Oid, Vec<git2::Oid>),
+        _commit_id: git2::Oid,
     ) -> (git2::Oid, Vec<git2::Oid>) {
         return (empty_tree(repo).id(), vec![]);
     }
-    fn apply_to_tree(&self, repo: &git2::Repository, _tree: &git2::Tree) -> git2::Oid {
+    fn apply_to_tree(
+        &self,
+        repo: &git2::Repository,
+        _tree: &git2::Tree,
+        _commit_id: git2::Oid,
+    ) -> git2::Oid {
         empty_tree(repo).id()
     }
 
@@ -150,22 +175,33 @@ impl View for ChainView {
         backward_maps: &mut ViewMaps,
         repo: &git2::Repository,
         tree_and_parents: (git2::Oid, Vec<git2::Oid>),
+        commit_id: git2::Oid,
     ) -> (git2::Oid, Vec<git2::Oid>) {
         let r = self.first.apply_to_tree_and_parents(
             forward_maps,
             backward_maps,
             repo,
             tree_and_parents,
+            commit_id,
         );
-        return self
-            .second
-            .apply_to_tree_and_parents(forward_maps, backward_maps, repo, r);
+        return self.second.apply_to_tree_and_parents(
+            forward_maps,
+            backward_maps,
+            repo,
+            r,
+            commit_id,
+        );
     }
 
-    fn apply_to_tree(&self, repo: &git2::Repository, tree: &git2::Tree) -> git2::Oid {
-        let r = self.first.apply_to_tree(&repo, &tree);
+    fn apply_to_tree(
+        &self,
+        repo: &git2::Repository,
+        tree: &git2::Tree,
+        commit_id: git2::Oid,
+    ) -> git2::Oid {
+        let r = self.first.apply_to_tree(&repo, &tree, commit_id);
         if let Ok(t) = repo.find_tree(r) {
-            return self.second.apply_to_tree(&repo, &t);
+            return self.second.apply_to_tree(&repo, &t, commit_id);
         }
         return repo.treebuilder(None).unwrap().write().unwrap();
     }
@@ -176,7 +212,9 @@ impl View for ChainView {
         tree: &git2::Tree,
         parent_tree: &git2::Tree,
     ) -> git2::Oid {
-        let p = self.first.apply_to_tree(&repo, &parent_tree);
+        let p = self
+            .first
+            .apply_to_tree(&repo, &parent_tree, git2::Oid::zero());
         let p = repo.find_tree(p).expect("no tree");
         let a = self.second.unapply(&repo, &tree, &p);
         self.first
@@ -222,6 +260,7 @@ impl View for SubdirView {
         backward_maps: &mut ViewMaps,
         repo: &git2::Repository,
         tree_and_parents: (git2::Oid, Vec<git2::Oid>),
+        commit_id: git2::Oid,
     ) -> (git2::Oid, Vec<git2::Oid>) {
         return default_apply_to_tree_and_parents(
             self,
@@ -229,9 +268,15 @@ impl View for SubdirView {
             backward_maps,
             repo,
             tree_and_parents,
+            commit_id,
         );
     }
-    fn apply_to_tree(&self, repo: &git2::Repository, tree: &git2::Tree) -> git2::Oid {
+    fn apply_to_tree(
+        &self,
+        repo: &git2::Repository,
+        tree: &git2::Tree,
+        _commit_id: git2::Oid,
+    ) -> git2::Oid {
         return tree
             .get_path(&self.path)
             .map(|x| x.id())
@@ -244,7 +289,7 @@ impl View for SubdirView {
         tree: &git2::Tree,
         parent_tree: &git2::Tree,
     ) -> git2::Oid {
-        replace_subtree(&repo, &self.path, &tree, &parent_tree)
+        replace_subtree(&repo, &self.path, tree.id(), &parent_tree)
     }
 
     fn viewstr(&self) -> String {
@@ -263,6 +308,7 @@ impl View for PrefixView {
         backward_maps: &mut ViewMaps,
         repo: &git2::Repository,
         tree_and_parents: (git2::Oid, Vec<git2::Oid>),
+        commit_id: git2::Oid,
     ) -> (git2::Oid, Vec<git2::Oid>) {
         return default_apply_to_tree_and_parents(
             self,
@@ -270,10 +316,16 @@ impl View for PrefixView {
             backward_maps,
             repo,
             tree_and_parents,
+            commit_id,
         );
     }
-    fn apply_to_tree(&self, repo: &git2::Repository, tree: &git2::Tree) -> git2::Oid {
-        replace_subtree(&repo, &self.prefix, &tree, &empty_tree(repo))
+    fn apply_to_tree(
+        &self,
+        repo: &git2::Repository,
+        tree: &git2::Tree,
+        _commit_id: git2::Oid,
+    ) -> git2::Oid {
+        replace_subtree(&repo, &self.prefix, tree.id(), &empty_tree(repo))
     }
 
     fn unapply(
@@ -293,19 +345,18 @@ impl View for PrefixView {
     }
 }
 
-struct CombineView {
-    base: Box<dyn View>,
-    others: Vec<Box<dyn View>>,
-    prefixes: Vec<PathBuf>,
+struct InfoFileView {
+    filename: PathBuf,
 }
 
-impl View for CombineView {
+impl View for InfoFileView {
     fn apply_to_tree_and_parents(
         &self,
         forward_maps: &mut ViewMaps,
         backward_maps: &mut ViewMaps,
         repo: &git2::Repository,
         tree_and_parents: (git2::Oid, Vec<git2::Oid>),
+        commit_id: git2::Oid,
     ) -> (git2::Oid, Vec<git2::Oid>) {
         return default_apply_to_tree_and_parents(
             self,
@@ -313,19 +364,82 @@ impl View for CombineView {
             backward_maps,
             repo,
             tree_and_parents,
+            commit_id,
         );
     }
 
-    fn apply_to_tree(&self, repo: &git2::Repository, tree: &git2::Tree) -> git2::Oid {
-        let mut base = self.base.apply_to_tree(&repo, &tree);
+    fn apply_to_tree(
+        &self,
+        repo: &git2::Repository,
+        tree: &git2::Tree,
+        commit_id: git2::Oid,
+    ) -> git2::Oid {
+        let s = format!("{:?}\n", commit_id);
+        replace_subtree(
+            repo,
+            &self.filename,
+            repo.blob(s.as_bytes()).unwrap(),
+            &tree,
+        )
+    }
+
+    fn unapply(
+        &self,
+        _repo: &git2::Repository,
+        tree: &git2::Tree,
+        _parent_tree: &git2::Tree,
+    ) -> git2::Oid {
+        tree.id()
+    }
+
+    fn viewstr(&self) -> String {
+        format!(":info={:?}", self.filename.to_str())
+    }
+}
+
+struct CombineView {
+    base: Box<dyn View>,
+    others: Vec<Box<dyn View>>,
+    prefixes: Vec<PathBuf>,
+}
+
+impl View for CombineView {
+    fn prefixes(&self) -> Vec<PathBuf> {
+        self.prefixes.clone()
+    }
+    fn apply_to_tree_and_parents(
+        &self,
+        forward_maps: &mut ViewMaps,
+        backward_maps: &mut ViewMaps,
+        repo: &git2::Repository,
+        tree_and_parents: (git2::Oid, Vec<git2::Oid>),
+        commit_id: git2::Oid,
+    ) -> (git2::Oid, Vec<git2::Oid>) {
+        return default_apply_to_tree_and_parents(
+            self,
+            forward_maps,
+            backward_maps,
+            repo,
+            tree_and_parents,
+            commit_id,
+        );
+    }
+
+    fn apply_to_tree(
+        &self,
+        repo: &git2::Repository,
+        tree: &git2::Tree,
+        commit_id: git2::Oid,
+    ) -> git2::Oid {
+        let mut base = self.base.apply_to_tree(&repo, &tree, commit_id);
 
         for (other, prefix) in self.others.iter().zip(self.prefixes.iter()) {
-            let otree = other.apply_to_tree(&repo, &tree);
+            let otree = other.apply_to_tree(&repo, &tree, commit_id);
             if otree == empty_tree(repo).id() {
                 continue;
             }
             let otree = repo.find_tree(otree).expect("can't find tree");
-            base = replace_subtree(&repo, &prefix, &otree, &repo.find_tree(base).unwrap());
+            base = replace_subtree(&repo, &prefix, otree.id(), &repo.find_tree(base).unwrap());
         }
 
         return base;
@@ -343,7 +457,7 @@ impl View for CombineView {
             base_wo = replace_subtree(
                 repo,
                 prefix,
-                &empty_tree(repo),
+                empty_tree(repo).id(),
                 &repo.find_tree(base_wo).unwrap(),
             );
         }
@@ -419,6 +533,7 @@ impl View for WorkspaceView {
         backward_maps: &mut ViewMaps,
         repo: &git2::Repository,
         tree_and_parents: (git2::Oid, Vec<git2::Oid>),
+        commit_id: git2::Oid,
     ) -> (git2::Oid, Vec<git2::Oid>) {
         let (tree, parents) = tree_and_parents;
         let full_tree = repo.find_tree(tree).unwrap();
@@ -470,11 +585,19 @@ impl View for WorkspaceView {
             break;
         }
 
-        return (cw.apply_to_tree(repo, &full_tree), transformed_parents_ids);
+        return (
+            cw.apply_to_tree(repo, &full_tree, commit_id),
+            transformed_parents_ids,
+        );
     }
 
-    fn apply_to_tree(&self, repo: &git2::Repository, tree: &git2::Tree) -> git2::Oid {
-        return combine_view_from_ws(repo, tree, &self.ws_path).apply_to_tree(repo, tree);
+    fn apply_to_tree(
+        &self,
+        repo: &git2::Repository,
+        tree: &git2::Tree,
+        commit_id: git2::Oid,
+    ) -> git2::Oid {
+        return combine_view_from_ws(repo, tree, &self.ws_path).apply_to_tree(repo, tree, commit_id);
     }
 
     fn unapply(
@@ -506,6 +629,10 @@ fn make_view(cmd: &str, name: &str) -> Box<dyn View> {
         });
     } else if cmd == "empty" {
         return Box::new(EmptyView);
+    } else if cmd == "info" {
+        return Box::new(InfoFileView {
+            filename: Path::new(name).to_owned(),
+        });
     } else if cmd == "nop" {
         return Box::new(NopView);
     } else if cmd == "workspace" {
@@ -562,6 +689,13 @@ fn build_combine_view(viewstr: &str, base: Box<dyn View>) -> Box<CombineView> {
     return combine_view;
 }
 
+pub fn build_chain(first: Box<dyn View>, second: Box<dyn View>) -> Box<dyn View> {
+    Box::new(ChainView {
+        first: first,
+        second: second,
+    })
+}
+
 pub fn build_view(viewstr: &str) -> Box<dyn View> {
     if viewstr.starts_with("!") || viewstr.starts_with(":") {
         let mut chain: Option<Box<dyn View>> = None;
@@ -593,15 +727,21 @@ fn get_subtree(tree: &git2::Tree, path: &Path) -> Option<git2::Oid> {
 fn replace_child(
     repo: &git2::Repository,
     child: &Path,
-    subtree: git2::Oid,
+    oid: git2::Oid,
     full_tree: &git2::Tree,
 ) -> git2::Oid {
+    let mode = if let Ok(_) = repo.find_tree(oid) {
+        0o0040000 // GIT_FILEMODE_TREE
+    } else {
+        0o0100644
+    };
+
     let full_tree_id = {
         let mut builder = repo
             .treebuilder(Some(&full_tree))
             .expect("replace_child: can't create treebuilder");
         builder
-            .insert(child, subtree, 0o0040000) // GIT_FILEMODE_TREE
+            .insert(child, oid, mode)
             .expect("replace_child: can't insert tree");
         builder.write().expect("replace_child: can't write tree")
     };
@@ -611,12 +751,12 @@ fn replace_child(
 fn replace_subtree(
     repo: &git2::Repository,
     path: &Path,
-    subtree: &git2::Tree,
+    oid: git2::Oid,
     full_tree: &git2::Tree,
 ) -> git2::Oid {
     if path.components().count() == 1 {
         return repo
-            .find_tree(replace_child(&repo, path, subtree.id(), full_tree))
+            .find_tree(replace_child(&repo, path, oid, full_tree))
             .expect("replace_child: can't find new tree")
             .id();
     } else {
@@ -631,9 +771,9 @@ fn replace_subtree(
         };
 
         let tree = repo
-            .find_tree(replace_child(&repo, name, subtree.id(), &st))
+            .find_tree(replace_child(&repo, name, oid, &st))
             .expect("replace_child: can't find new tree");
 
-        return replace_subtree(&repo, path, &tree, full_tree);
+        return replace_subtree(&repo, path, tree.id(), full_tree);
     }
 }

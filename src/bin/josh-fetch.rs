@@ -6,17 +6,11 @@ extern crate josh;
 extern crate rs_tracing;
 
 extern crate clap;
-extern crate fern;
-extern crate futures;
-extern crate futures_cpupool;
 extern crate git2;
 extern crate regex;
 
 #[macro_use]
 extern crate lazy_static;
-
-extern crate tempdir;
-extern crate tokio_core;
 
 use josh::scratch;
 use josh::shell;
@@ -26,8 +20,6 @@ use std::env;
 use std::process::exit;
 
 use std::fs::read_to_string;
-use std::panic;
-use std::path::Path;
 
 lazy_static! {
     static ref INFO_REGEX: Regex =
@@ -36,21 +28,6 @@ lazy_static! {
 }
 
 fn run_fetch(args: Vec<String>) -> i32 {
-    let logfilename = Path::new("/tmp/centralgit.log");
-    fern::Dispatch::new()
-        .format(|out, message, record| {
-            out.finish(format_args!(
-                "{}[{}] {}",
-                record.target(),
-                record.level(),
-                message
-            ))
-        })
-        .chain(std::io::stdout())
-        .chain(fern::log_file(logfilename).unwrap())
-        .apply()
-        .unwrap();
-
     let args = clap::App::new("josh-proxy")
         .arg(clap::Arg::with_name("file").long("file").takes_value(true))
         .arg(
@@ -62,12 +39,6 @@ fn run_fetch(args: Vec<String>) -> i32 {
 
     if let Some(tf) = args.value_of("trace") {
         open_trace_file!(tf).expect("can't open tracefile");
-
-        let h = panic::take_hook();
-        panic::set_hook(Box::new(move |x| {
-            close_trace_file!();
-            h(x);
-        }));
     }
 
     let repo = git2::Repository::open_from_env().unwrap();
@@ -83,7 +54,16 @@ fn run_fetch(args: Vec<String>) -> i32 {
         let target = caps.name("target").unwrap().as_str().trim().to_owned();
         let viewstr = caps.name("spec").unwrap().as_str().trim().to_owned();
 
-        let viewobj = josh::build_view(&viewstr);
+        let mut viewobj = josh::build_view(&viewstr);
+
+        let pres = viewobj.prefixes();
+
+        for p in pres {
+            viewobj = josh::build_chain(
+                viewobj,
+                josh::build_view(&format!(":info={}/joshinfo", p.to_str().unwrap())),
+            );
+        }
 
         let cmd = format!("git fetch {} '{}'", &remote, &rev);
 
