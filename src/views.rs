@@ -436,7 +436,7 @@ impl View for InfoFileView {
     }
 
     fn viewstr(&self) -> String {
-        format!(":info={:?}", self.filename.to_str())
+        format!(":info={:?},{}", self.filename.to_str(), self.src)
     }
 }
 
