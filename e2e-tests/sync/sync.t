@@ -22,10 +22,17 @@
   $ git init apps &>/dev/null
   $ cd apps
 
+  $ git remote add libs ${TESTTMP}/libs
+  $ git fetch --all
+  Fetching libs
+  From * (glob)
+   * [new branch]      foo        -> libs/foo
+   * [new branch]      master     -> libs/master
+
   $ cat > syncinfo <<EOF
-  > [sync/master: ${TESTTMP}/libs @ refs/heads/master]
+  > [sync/master: remotes/libs/master]
   > c = :/sub1
-  > [sync/foo: ${TESTTMP}/libs @ refs/heads/foo]
+  > [sync/foo: remotes/libs/foo]
   > a/b = :/sub2
   > EOF
 
@@ -33,40 +40,42 @@
   $ git commit -m "initial" &> /dev/null
 
   $ josh-fetch --file syncinfo
-  warning: no common commits
-  From */libs (glob)
-   * branch            master     -> FETCH_HEAD
-  warning: no common commits
-  From */libs (glob)
-   * branch            foo        -> FETCH_HEAD
 
   $ git read-tree HEAD sync/master sync/foo
   $ git commit -m "sync"
   [master *] sync (glob)
-   4 files changed, 4 insertions(+)
+   4 files changed, 6 insertions(+)
+   create mode 100644 a/b/.joshinfo
    create mode 100644 a/b/file2
-   create mode 100644 a/b/joshinfo
+   create mode 100644 c/.joshinfo
    create mode 100644 c/file1
-   create mode 100644 c/joshinfo
   $ git reset --hard
   HEAD is now at * sync (glob)
+
   $ tree
   .
   |-- a
   |   `-- b
-  |       |-- file2
-  |       `-- joshinfo
+  |       `-- file2
   |-- c
-  |   |-- file1
-  |   `-- joshinfo
+  |   `-- file1
   `-- syncinfo
   
-  3 directories, 5 files
+  3 directories, 3 files
   $ git log --graph --pretty=%s
   * sync
   * initial
 
-  $ cat a/b/joshinfo
-  e8fee4624fc8543bf1e8c46cd57917d1ac72d68f
-  $ cat c/joshinfo
-  540c562ab79645772fa38ee78fd5f4d76059bde2
+  $ cat c/.joshinfo
+  commit: * (glob)
+  target: remotes/libs/master
+
+  $ cat a/b/.joshinfo
+  commit: * (glob)
+  target: remotes/libs/foo
+
+  $ git show libs/master | grep $(cat c/.joshinfo | grep commit | sed 's/commit: //')
+  commit * (glob)
+  $ git show libs/foo | grep $(cat a/b/.joshinfo | grep commit | sed 's/commit: //')
+  commit * (glob)
+

@@ -143,10 +143,8 @@ pub fn transform_commit(
     forward_maps: &mut view_maps::ViewMaps,
     backward_maps: &mut view_maps::ViewMaps,
 ) {
-    if let Ok(reference) = repo.find_reference(&from_refsname) {
-        let r = reference.target().expect("no ref");
-
-        let original_commit = ok_or!(repo.find_commit(r), {
+    if let Ok(reference) = repo.revparse_single(&from_refsname) {
+        let original_commit = ok_or!(reference.peel_to_commit(), {
             debug!("transform_commit, not a commit: {}", from_refsname);
             return;
         });

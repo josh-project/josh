@@ -43,6 +43,7 @@ pub mod view_maps;
 mod views;
 pub mod virtual_repo;
 
+pub use scratch::transform_commit;
 pub use views::build_chain;
 pub use views::build_view;
 
