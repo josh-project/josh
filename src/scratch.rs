@@ -135,7 +135,7 @@ pub fn new(path: &Path) -> git2::Repository {
     git2::Repository::init_bare(&path).expect("could not init scratch")
 }
 
-fn transform_commit(
+pub fn transform_commit(
     repo: &git2::Repository,
     viewobj: &views::View,
     from_refsname: &str,

@@ -505,13 +505,10 @@ fn make_view(cmd: &str, name: &str) -> Box<dyn View> {
             prefix: Path::new(name).to_owned(),
         });
     } else if cmd == "empty" {
-        println!("MKVIEW empty");
         return Box::new(EmptyView);
     } else if cmd == "nop" {
-        println!("MKVIEW nop");
         return Box::new(NopView);
     } else if cmd == "workspace" {
-        println!("MKVIEW workspace");
         return Box::new(WorkspaceView {
             ws_path: Path::new(name).to_owned(),
         });
@@ -539,7 +536,6 @@ fn parse_file_entry(pair: Pair<Rule>, combine_view: &mut CombineView) {
             let mut inner = pair.into_inner();
             let path = inner.next().unwrap().as_str();
             let view = inner.next().unwrap().as_str();
-            println!("MKVIEW file_entry {:?} {:?}", path, view);
             let view = build_view(view);
             combine_view.prefixes.push(Path::new(path).to_owned());
             combine_view.others.push(view);
@@ -567,8 +563,6 @@ fn build_combine_view(viewstr: &str, base: Box<dyn View>) -> Box<CombineView> {
 }
 
 pub fn build_view(viewstr: &str) -> Box<dyn View> {
-    println!("MKVIEW {:?}", viewstr);
-
     if viewstr.starts_with("!") || viewstr.starts_with(":") {
         let mut chain: Option<Box<dyn View>> = None;
         if let Ok(r) = MyParser::parse(Rule::view, viewstr) {
