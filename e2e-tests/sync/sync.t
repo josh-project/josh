@@ -39,7 +39,7 @@
   $ git add syncinfo
   $ git commit -m "initial" &> /dev/null
 
-  $ josh-fetch --file syncinfo
+  $ josh-sync --file syncinfo
 
   $ git read-tree HEAD sync/master sync/foo
   $ git commit -m "sync"

@@ -24,8 +24,8 @@ lazy_static! {
         Regex::new(r"\[(?P<target>.*):(?P<rev>.*)\](?P<spec>[^\[]*)").expect("can't compile regex");
 }
 
-fn run_fetch(args: Vec<String>) -> i32 {
-    let args = clap::App::new("josh-fetch")
+fn run_sync(args: Vec<String>) -> i32 {
+    let args = clap::App::new("josh-sync")
         .arg(clap::Arg::with_name("file").long("file").takes_value(true))
         .arg(
             clap::Arg::with_name("trace")
@@ -74,5 +74,5 @@ fn main() {
         args
     };
 
-    exit(run_fetch(args));
+    exit(run_sync(args));
 }
