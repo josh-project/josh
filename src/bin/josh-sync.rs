@@ -46,19 +46,24 @@ fn run_sync(args: Vec<String>) -> i32 {
         .captures_iter(&read_to_string(args.value_of("file").unwrap()).expect("read_to_string"))
     {
         let src = caps.name("src").unwrap().as_str().trim().to_owned();
-        let target = format!("refs/josh-sync/{}", &src);
+        let target = format!("refs/josh/sync/{}", &src);
         let viewstr = caps.name("spec").unwrap().as_str().trim().to_owned();
 
         let mut viewobj = josh::build_view(&repo, &viewstr);
 
         let pres = viewobj.prefixes();
 
-        for p in pres {
+        for (p,v) in pres.iter() {
             viewobj = josh::build_chain(
                 viewobj,
                 josh::build_view(
                     &repo,
-                    &format!(":info={}/.joshinfo,{}", p.to_str().unwrap(), &src),
+                    &format!(
+                        ":info={}/.joshinfo,commit=#sha1,src={},view={}",
+                        p,
+                        &src,
+                        v.replace(":","<colon>").replace(",", "<comma>")
+                    ),
                 ),
             );
         }

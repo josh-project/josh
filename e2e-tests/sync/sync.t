@@ -44,16 +44,16 @@
   $ git commit -m "initial" &> /dev/null
 
   $ josh-sync --file syncinfo
-  $ git log --graph --pretty=%s josh-sync/libs/master
+  $ git log --graph --pretty=%s josh/sync/libs/master
   * add file2
   * add file1
-  $ git log --graph --pretty=%s josh-sync/libs/foo
+  $ git log --graph --pretty=%s josh/sync/libs/foo
   * add file3
 
   $ josh-sync --squash --file syncinfo
-  $ git log --graph --pretty=%s josh-sync/libs/master
+  $ git log --graph --pretty=%s josh/sync/libs/master
   * add file2
-  $ git log --graph --pretty=%s josh-sync/libs/foo
+  $ git log --graph --pretty=%s josh/sync/libs/foo
   * add file3
 
   $ git branch -a
@@ -61,30 +61,31 @@
     remotes/libs/foo
     remotes/libs/master
 
-  $ git show-ref | grep josh-sync | sed 's/.* //'
-  refs/josh-sync/libs/foo
-  refs/josh-sync/libs/master
+  $ git show-ref | grep josh/sync | sed 's/.* //'
+  refs/josh/sync/libs/foo
+  refs/josh/sync/libs/master
 
   $ tree .git/refs/
   .git/refs/
   |-- heads
   |   `-- master
-  |-- josh-sync
-  |   `-- libs
-  |       |-- foo
-  |       `-- master
+  |-- josh
+  |   `-- sync
+  |       `-- libs
+  |           |-- foo
+  |           `-- master
   |-- remotes
   |   `-- libs
   |       |-- foo
   |       `-- master
   `-- tags
   
-  6 directories, 5 files
+  7 directories, 5 files
 
-  $ git read-tree HEAD josh-sync/libs/master josh-sync/libs/foo
+  $ git read-tree HEAD josh/sync/libs/master josh/sync/libs/foo
   $ git commit -m "sync"
   [master *] sync (glob)
-   5 files changed, 7 insertions(+)
+   5 files changed, 9 insertions(+)
    create mode 100644 a/b/.joshinfo
    create mode 100644 a/b/file3
    create mode 100644 c/.joshinfo
@@ -111,10 +112,12 @@
   $ cat c/.joshinfo
   commit: * (glob)
   src: libs/master
+  view: :/sub1
 
   $ cat a/b/.joshinfo
   commit: * (glob)
   src: libs/foo
+  view: :/sub2
 
   $ git show libs/master | grep $(cat c/.joshinfo | grep commit | sed 's/commit: //')
   commit * (glob)

@@ -3,6 +3,8 @@ use super::scratch;
 use super::view_maps::ViewMaps;
 use pest::iterators::Pair;
 use pest::Parser;
+use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::collections::HashSet;
 use std::path::Path;
 use std::path::PathBuf;
@@ -53,8 +55,8 @@ pub trait View {
         commit_id: git2::Oid,
     ) -> (git2::Oid, Vec<git2::Oid>);
 
-    fn prefixes(&self) -> Vec<PathBuf> {
-        vec![]
+    fn prefixes(&self) -> HashMap<String, String> {
+        HashMap::new()
     }
 
     fn viewstr(&self) -> String;
@@ -389,7 +391,7 @@ impl View for PrefixView {
 
 struct InfoFileView {
     filename: PathBuf,
-    src: String,
+    values: BTreeMap<String, String>,
 }
 
 impl View for InfoFileView {
@@ -417,7 +419,15 @@ impl View for InfoFileView {
         tree: &git2::Tree,
         commit_id: git2::Oid,
     ) -> git2::Oid {
-        let s = format!("commit: {:?}\nsrc: {}\n", commit_id, self.src);
+        let mut s = "".to_owned();
+        for (k, v) in self.values.iter() {
+            let v  = v.replace("<colon>", ":").replace("<comma>", ",");
+            if v == "#sha1" {
+                s = format!("{}{}: {}\n", &s, k, commit_id.to_string());
+            } else {
+                s = format!("{}{}: {}\n", &s, k, v);
+            }
+        }
         replace_subtree(
             repo,
             &self.filename,
@@ -436,7 +446,12 @@ impl View for InfoFileView {
     }
 
     fn viewstr(&self) -> String {
-        format!(":info={:?},{}", self.filename.to_str(), self.src)
+        let s = format!(":info={:?}", self.filename.to_str());
+
+        for (k, v) in self.values.iter() {
+            format!(",{}={}", k, v);
+        }
+        return s;
     }
 }
 
@@ -447,8 +462,12 @@ struct CombineView {
 }
 
 impl View for CombineView {
-    fn prefixes(&self) -> Vec<PathBuf> {
-        self.prefixes.clone()
+    fn prefixes(&self) -> HashMap<String, String> {
+        let mut p = HashMap::new();
+        for (other, prefix) in self.others.iter().zip(self.prefixes.iter()) {
+            p.insert(prefix.to_str().unwrap().to_owned(), other.viewstr());
+        }
+        p
     }
     fn apply_to_tree_and_parents(
         &self,
@@ -673,10 +692,16 @@ fn make_view(repo: &git2::Repository, cmd: &str, name: &str) -> Box<dyn View> {
     } else if cmd == "empty" {
         return Box::new(EmptyView);
     } else if cmd == "info" {
-        let s: Vec<_> = name.split(",").collect();
+        let mut s = BTreeMap::new();
+        let mut items = name.split(",");
+        let filename = items.next().unwrap();
+        for p in items {
+            let x: Vec<String> = p.split("=").map(|x| x.to_owned()).collect();
+            s.insert(x[0].to_owned(), x[1].to_owned());
+        }
         return Box::new(InfoFileView {
-            filename: Path::new(s[0]).to_owned(),
-            src: s[1].to_owned(),
+            filename: Path::new(filename).to_owned(),
+            values: s,
         });
     } else if cmd == "nop" {
         return Box::new(NopView);
