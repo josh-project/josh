@@ -85,7 +85,7 @@
   $ git read-tree HEAD josh/sync/libs/master josh/sync/libs/foo
   $ git commit -m "sync"
   [master *] sync (glob)
-   5 files changed, 9 insertions(+)
+   5 files changed, 11 insertions(+)
    create mode 100644 a/b/.joshinfo
    create mode 100644 a/b/file3
    create mode 100644 c/.joshinfo
@@ -112,11 +112,13 @@
   $ cat c/.joshinfo
   commit: * (glob)
   src: libs/master
+  tree: * (glob)
   view: :/sub1
 
   $ cat a/b/.joshinfo
   commit: * (glob)
   src: libs/foo
+  tree: * (glob)
   view: :/sub2
 
   $ git show libs/master | grep $(cat c/.joshinfo | grep commit | sed 's/commit: //')

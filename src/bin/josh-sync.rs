@@ -13,20 +13,23 @@ extern crate regex;
 extern crate lazy_static;
 
 use josh::view_maps;
-use regex::Regex;
 use std::env;
 use std::process::exit;
 
 use std::fs::read_to_string;
 
 lazy_static! {
-    static ref INFO_REGEX: Regex =
-        Regex::new(r"\[(?P<src>.*)\](?P<spec>[^\[]*)").expect("can't compile regex");
+    static ref FILE_REGEX: regex::Regex =
+        regex::Regex::new(r"\[(?P<src>.*)\](?P<spec>[^\[]*)").expect("can't compile regex");
+    static ref STR_REGEX: regex::Regex =
+        regex::Regex::new(r"(?P<src>[^:]*)(?P<spec>:[^\[]*)").expect("can't compile regex");
 }
 
 fn run_sync(args: Vec<String>) -> i32 {
     let args = clap::App::new("josh-sync")
         .arg(clap::Arg::with_name("file").long("file").takes_value(true))
+        .arg(clap::Arg::with_name("src").takes_value(true))
+        .arg(clap::Arg::with_name("spec").takes_value(true))
         .arg(clap::Arg::with_name("squash").long("squash"))
         .arg(
             clap::Arg::with_name("trace")
@@ -42,9 +45,17 @@ fn run_sync(args: Vec<String>) -> i32 {
     let mut fm = view_maps::ViewMaps::new();
     let mut bm = view_maps::ViewMaps::new();
 
-    for caps in INFO_REGEX
-        .captures_iter(&read_to_string(args.value_of("file").unwrap()).expect("read_to_string"))
-    {
+
+    let srcstr = args
+        .value_of("src").unwrap_or("");
+    let specstr = args
+        .value_of("spec").unwrap_or("");
+
+    let filestr = args
+        .value_of("file")
+        .and_then(|f| read_to_string(f).ok()).unwrap_or(format!("[{}]{}", srcstr, specstr));
+
+    for caps in FILE_REGEX.captures_iter(&filestr) {
         let src = caps.name("src").unwrap().as_str().trim().to_owned();
         let target = format!("refs/josh/sync/{}", &src);
         let viewstr = caps.name("spec").unwrap().as_str().trim().to_owned();
@@ -53,16 +64,16 @@ fn run_sync(args: Vec<String>) -> i32 {
 
         let pres = viewobj.prefixes();
 
-        for (p,v) in pres.iter() {
+        for (p, v) in pres.iter() {
             viewobj = josh::build_chain(
                 viewobj,
                 josh::build_view(
                     &repo,
                     &format!(
-                        ":info={}/.joshinfo,commit=#sha1,src={},view={}",
+                        ":info={},commit=#sha1,tree=#tree,src={},view={}",
                         p,
                         &src,
-                        v.replace(":","<colon>").replace(",", "<comma>")
+                        v.replace(":", "<colon>").replace(",", "<comma>")
                     ),
                 ),
             );

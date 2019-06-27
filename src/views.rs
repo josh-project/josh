@@ -3,8 +3,8 @@ use super::scratch;
 use super::view_maps::ViewMaps;
 use pest::iterators::Pair;
 use pest::Parser;
-use std::collections::HashMap;
 use std::collections::BTreeMap;
+use std::collections::HashMap;
 use std::collections::HashSet;
 use std::path::Path;
 use std::path::PathBuf;
@@ -421,16 +421,25 @@ impl View for InfoFileView {
     ) -> git2::Oid {
         let mut s = "".to_owned();
         for (k, v) in self.values.iter() {
-            let v  = v.replace("<colon>", ":").replace("<comma>", ",");
-            if v == "#sha1" {
-                s = format!("{}{}: {}\n", &s, k, commit_id.to_string());
-            } else {
-                s = format!("{}{}: {}\n", &s, k, v);
-            }
+            let v = v.replace("<colon>", ":").replace("<comma>", ",");
+            s = format!(
+                "{}{}: {}\n",
+                &s,
+                k,
+                match v.as_str() {
+                    "#sha1" => commit_id.to_string(),
+                    "#tree" => tree
+                        .get_path(&self.filename)
+                        .map(|x| x.id())
+                        .unwrap_or(git2::Oid::zero())
+                        .to_string(),
+                    _ => v,
+                }
+            );
         }
         replace_subtree(
             repo,
-            &self.filename,
+            &self.filename.join(".joshinfo"),
             repo.blob(s.as_bytes()).unwrap(),
             &tree,
         )
