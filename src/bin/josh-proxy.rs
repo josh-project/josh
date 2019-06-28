@@ -563,11 +563,10 @@ fn get_info(
 }
 
 fn install_josh_hook(scratch_dir: &Path) {
-    if !scratch_dir.join("josh_hook_installed").exists() {
+    if !scratch_dir.join("hooks/update").exists() {
         let shell = shell::Shell {
             cwd: scratch_dir.to_path_buf(),
         };
-        shell.command("touch josh_hook_installed");
         shell.command("git config http.receivepack true");
         let ce = current_exe().expect("can't find path to exe");
         shell.command("rm -Rf hooks");
