@@ -1,4 +1,4 @@
-FROM rust:1.32.0 as builder
+FROM rust:1.35.0 as builder
 
 RUN apt-get update \
  && apt-get install -y cmake \
@@ -18,7 +18,7 @@ COPY . .
 # RUN rm ./target/release/deps/josh* && cargo build --release
 RUN cargo build
 
-FROM rust:1.32.0
+FROM rust:1.35.0
 
 COPY --from=builder /usr/src/josh/target/debug/josh-proxy /usr/bin/josh-proxy
 COPY --from=builder /usr/src/josh/run-josh.sh /usr/bin/run-josh.sh
