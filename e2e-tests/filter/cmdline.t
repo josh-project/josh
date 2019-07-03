@@ -35,12 +35,12 @@
 
   $ git commit -m "initial" --allow-empty &> /dev/null
 
-  $ josh-sync libs/master c=:/sub1
-  $ git log --graph --pretty=%s josh/sync/libs/master
+  $ josh-filter libs/master c=:/sub1
+  $ git log --graph --pretty=%s josh/filter/libs/master
   * add file2
   * add file1
-  $ josh-sync libs/foo a/b=:/sub2
-  $ git log --graph --pretty=%s josh/sync/libs/foo
+  $ josh-filter libs/foo a/b=:/sub2
+  $ git log --graph --pretty=%s josh/filter/libs/foo
   * add file3
 
   $ git branch -a
@@ -48,16 +48,16 @@
     remotes/libs/foo
     remotes/libs/master
 
-  $ git show-ref | grep josh/sync | sed 's/.* //'
-  refs/josh/sync/libs/foo
-  refs/josh/sync/libs/master
+  $ git show-ref | grep josh/filter | sed 's/.* //'
+  refs/josh/filter/libs/foo
+  refs/josh/filter/libs/master
 
   $ tree .git/refs/
   .git/refs/
   |-- heads
   |   `-- master
   |-- josh
-  |   `-- sync
+  |   `-- filter
   |       `-- libs
   |           |-- foo
   |           `-- master
@@ -69,7 +69,7 @@
   
   7 directories, 5 files
 
-  $ git read-tree HEAD josh/sync/libs/master josh/sync/libs/foo
+  $ git read-tree HEAD josh/filter/libs/master josh/filter/libs/foo
   $ git commit -m "sync"
   [master *] sync (glob)
    5 files changed, 11 insertions(+)

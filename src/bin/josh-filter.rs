@@ -25,8 +25,8 @@ lazy_static! {
         regex::Regex::new(r"(?P<src>[^:]*)(?P<spec>:[^\[]*)").expect("can't compile regex");
 }
 
-fn run_sync(args: Vec<String>) -> i32 {
-    let args = clap::App::new("josh-sync")
+fn run_filter(args: Vec<String>) -> i32 {
+    let args = clap::App::new("josh-filter")
         .arg(clap::Arg::with_name("file").long("file").takes_value(true))
         .arg(clap::Arg::with_name("src").takes_value(true))
         .arg(clap::Arg::with_name("spec").takes_value(true))
@@ -55,7 +55,7 @@ fn run_sync(args: Vec<String>) -> i32 {
 
     for caps in FILE_REGEX.captures_iter(&filestr) {
         let src = caps.name("src").unwrap().as_str().trim().to_owned();
-        let target = format!("refs/josh/sync/{}", &src);
+        let target = format!("refs/josh/filter/{}", &src);
         let viewstr = caps.name("spec").unwrap().as_str().trim().to_owned();
 
         let mut viewobj = josh::build_view(&repo, &viewstr);
@@ -99,5 +99,5 @@ fn main() {
         args
     };
 
-    exit(run_sync(args));
+    exit(run_filter(args));
 }
