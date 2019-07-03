@@ -40,7 +40,7 @@ Get /info/refs to trigger rebuilding and pass credentials
   *\trefs/for/master (esc) (glob)
   *\trefs/heads/master (esc) (glob)
 
-  $ curl -s http://localhost:8002/real_repo.git:/sub1.json@master
+  $ curl -s http://localhost:8002/real_repo.git:/sub1.json@refs/heads/master
   {"original":{"commit":"*","parents":[{"commit":"*","tree":"*"}],"tree":"*"},"transformed":{"commit":"*","parents":[],"tree":"*"}} (glob)
 
   $ bash ${TESTDIR}/destroy_test_env.sh
