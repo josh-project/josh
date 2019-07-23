@@ -40,7 +40,7 @@ pub fn rewrite(
             None,
             &base.author(),
             &base.committer(),
-            &base.message().unwrap_or("no message"),
+            &base.message_raw().unwrap_or("no message"),
             tree,
             parents,
         )
