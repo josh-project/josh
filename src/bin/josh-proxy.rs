@@ -81,26 +81,45 @@ fn async_fetch(
     namespace: &str,
     remote_url: String,
 ) -> Box<Future<Item = Result<PathBuf, git2::Error>, Error = hyper::Error>> {
-    let br_path = http.base_path.join(prefix.trim_start_matches("/"));
+    let br_path = http.base_path.clone();
     base_repo::create_local(&br_path);
 
-    let username = username.to_owned();
-    let password = password.to_owned();
+    let b = {
+        let username = username.to_owned();
+        let password = password.to_owned();
+        let prefix = prefix.to_owned();
 
-    let b = Box::new(
-        http.fetch_push_pool
-            .spawn(futures::future::ok(()).map(move |_| {
-                base_repo::fetch_refs_from_url(&br_path, &remote_url, &username, &password)
-            })),
-    );
+        Box::new(
+            http.fetch_push_pool
+                .spawn(futures::future::ok(()).map(move |_| {
+                    base_repo::fetch_refs_from_url(
+                        &br_path,
+                        &prefix,
+                        &remote_url,
+                        &username,
+                        &password,
+                    )
+                })),
+        )
+    };
 
     let viewstr = view_string.to_owned();
     let forward_maps = http.forward_maps.clone();
     let backward_maps = http.backward_maps.clone();
     let namespace = namespace.to_owned();
-    let br_path = http.base_path.join(prefix.trim_start_matches("/"));
+    let br_path = http.base_path.clone();
+    let prefix = prefix.to_owned();
     Box::new(http.compute_pool.spawn(b.map(move |r| {
-        r.map(move |_| make_view_repo(&viewstr, &namespace, &br_path, forward_maps, backward_maps))
+        r.map(move |_| {
+            make_view_repo(
+                &viewstr,
+                &prefix,
+                &namespace,
+                &br_path,
+                forward_maps,
+                backward_maps,
+            )
+        })
     })))
 }
 
@@ -191,11 +210,12 @@ fn call_service(
 
         let forward_maps = service.forward_maps.clone();
         let backward_maps = service.forward_maps.clone();
-        let br_path = service.base_path.join(prefix.trim_start_matches("/"));
+        let br_path = service.base_path.clone();
 
         let f = compute_pool.spawn(futures::future::ok(true).map(move |_| {
             let info = get_info(
                 &view,
+                &prefix,
                 &rev,
                 &br_path,
                 forward_maps.clone(),
@@ -273,7 +293,7 @@ fn call_service(
     println!("PATH_INFO: {:?}", &pathinfo);
 
     let handle = service.handle.clone();
-    let ns_path = service.base_path.join(prefix.trim_start_matches("/"));
+    let ns_path = service.base_path.clone();
     let ns_path = ns_path.join("refs/namespaces");
     let ns_path = ns_path.join(&namespace);
 
@@ -440,8 +460,13 @@ fn run_http_server(addr: net::SocketAddr, port: String, local: &Path, remote: &s
     core.run(futures::future::empty::<(), ()>()).unwrap();
 }
 
+fn to_ns(path: &str) -> String {
+    return path.trim_matches('/').replace("/", "/refs/namespaces/");
+}
+
 fn make_view_repo(
     view_string: &str,
+    prefix: &str,
     namespace: &str,
     br_path: &Path,
     forward_maps: Arc<RwLock<view_maps::ViewMaps>>,
@@ -460,23 +485,28 @@ fn make_view_repo(
 
     let viewobj = josh::build_view(&scratch, &view_string);
 
-    for branch in scratch.branches(None).unwrap() {
-        scratch::apply_view_to_branch(
-            &scratch,
-            &branch.unwrap().0.name().unwrap().unwrap(),
-            &*viewobj,
-            &mut fm,
-            &mut bm,
-            &namespace,
-        );
+    let glob = format!("refs/namespaces/{}/*", &to_ns(prefix));
+
+    let mut refs = vec![];
+
+    for refname in scratch.references_glob(&glob).unwrap().names() {
+        let refname = refname.unwrap();
+        let to_ref = refname.replacen(&to_ns(prefix), &namespace, 1);
+
+        refs.push((refname.to_owned(), to_ref.clone()));
+        if to_ref.contains("/refs/heads/") {
+            refs.push((
+                refname.to_owned(),
+                to_ref.replace("/refs/heads/", "/refs/for/"),
+            ));
+            refs.push((
+                refname.to_owned(),
+                to_ref.replace("/refs/heads/", "/refs/drafts/"),
+            ));
+        }
     }
 
-    for tag in scratch.tag_names(None).expect("scratch.tag_names").iter() {
-        let tag = some_or!(tag, {
-            continue;
-        });
-        scratch::apply_view_to_tag(&scratch, &tag, &*viewobj, &mut fm, &mut bm, &namespace);
-    }
+    scratch::apply_view_to_refs(&scratch, &*viewobj, &refs, &mut fm, &mut bm);
 
     trace_begin!(
         "merge_maps",
@@ -505,6 +535,7 @@ fn make_view_repo(
 
 fn get_info(
     view_string: &str,
+    prefix: &str,
     rev: &str,
     br_path: &Path,
     forward_maps: Arc<RwLock<view_maps::ViewMaps>>,
@@ -519,7 +550,9 @@ fn get_info(
 
     let viewobj = josh::build_view(&scratch, &view_string);
 
-    let obj = ok_or!(scratch.revparse_single(rev), {
+    let fr = &format!("refs/namespaces/{}/{}", &to_ns(&prefix), &rev);
+
+    let obj = ok_or!(scratch.revparse_single(&fr), {
         return format!("rev not found: {:?}", &rev);
     });
 
