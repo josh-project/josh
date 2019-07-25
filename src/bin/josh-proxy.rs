@@ -81,7 +81,7 @@ fn async_fetch(
     namespace: &str,
     remote_url: String,
 ) -> Box<Future<Item = Result<PathBuf, git2::Error>, Error = hyper::Error>> {
-    let br_path = http.base_path.join(prefix.trim_left_matches("/"));
+    let br_path = http.base_path.join(prefix.trim_start_matches("/"));
     base_repo::create_local(&br_path);
 
     let username = username.to_owned();
@@ -98,7 +98,7 @@ fn async_fetch(
     let forward_maps = http.forward_maps.clone();
     let backward_maps = http.backward_maps.clone();
     let namespace = namespace.to_owned();
-    let br_path = http.base_path.join(prefix.trim_left_matches("/"));
+    let br_path = http.base_path.join(prefix.trim_start_matches("/"));
     Box::new(http.compute_pool.spawn(b.map(move |r| {
         r.map(move |_| make_view_repo(&viewstr, &namespace, &br_path, forward_maps, backward_maps))
     })))
@@ -191,7 +191,7 @@ fn call_service(
 
         let forward_maps = service.forward_maps.clone();
         let backward_maps = service.forward_maps.clone();
-        let br_path = service.base_path.join(prefix.trim_left_matches("/"));
+        let br_path = service.base_path.join(prefix.trim_start_matches("/"));
 
         let f = compute_pool.spawn(futures::future::ok(true).map(move |_| {
             let info = get_info(
@@ -273,7 +273,7 @@ fn call_service(
     println!("PATH_INFO: {:?}", &pathinfo);
 
     let handle = service.handle.clone();
-    let ns_path = service.base_path.join(prefix.trim_left_matches("/"));
+    let ns_path = service.base_path.join(prefix.trim_start_matches("/"));
     let ns_path = ns_path.join("refs/namespaces");
     let ns_path = ns_path.join(&namespace);
 
