@@ -45,13 +45,15 @@ fn run_filter(args: Vec<String>) -> i32 {
     let mut fm = view_maps::ViewMaps::new();
     let mut bm = view_maps::ViewMaps::new();
 
-    let srcstr = args.value_of("src").unwrap_or("");
-    let specstr = args.value_of("spec").unwrap_or("");
+
+    let srcstr = args
+        .value_of("src").unwrap_or("");
+    let specstr = args
+        .value_of("spec").unwrap_or("");
 
     let filestr = args
         .value_of("file")
-        .and_then(|f| read_to_string(f).ok())
-        .unwrap_or(format!("[{}]{}", srcstr, specstr));
+        .and_then(|f| read_to_string(f).ok()).unwrap_or(format!("[{}]{}", srcstr, specstr));
 
     for caps in FILE_REGEX.captures_iter(&filestr) {
         let src = caps.name("src").unwrap().as_str().trim().to_owned();
@@ -68,7 +70,7 @@ fn run_filter(args: Vec<String>) -> i32 {
                 josh::build_view(
                     &repo,
                     &format!(
-                        ":info=prefix={},commit=#sha1,tree=#tree,src={},view={}",
+                        ":info={},commit=#sha1,tree=#tree,src={},view={}",
                         p,
                         &src,
                         v.replace(":", "<colon>").replace(",", "<comma>")

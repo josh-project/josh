@@ -3,8 +3,8 @@ killall josh-proxy &> /dev/null
 killall josh-test-server &> /dev/null
 git init --bare ${TESTTMP}/remote/real_repo.git/ &> /dev/null
 git config -f ${TESTTMP}/remote/real_repo.git/config http.receivepack true
-git init --bare ${TESTTMP}/remote/real/repo2.git/ &> /dev/null
-git config -f ${TESTTMP}/remote/real/repo2.git/config http.receivepack true
+git init --bare ${TESTTMP}/remote/real_repo2.git/ &> /dev/null
+git config -f ${TESTTMP}/remote/real_repo2.git/config http.receivepack true
 export RUST_LOG=debug
 
 export TESTPASS=$(openssl rand -hex 5)

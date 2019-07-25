@@ -390,6 +390,7 @@ impl View for PrefixView {
 }
 
 struct InfoFileView {
+    filename: PathBuf,
     values: BTreeMap<String, String>,
 }
 
@@ -421,9 +422,6 @@ impl View for InfoFileView {
         let mut s = "".to_owned();
         for (k, v) in self.values.iter() {
             let v = v.replace("<colon>", ":").replace("<comma>", ",");
-            if k == "prefix" {
-                continue;
-            }
             s = format!(
                 "{}{}: {}\n",
                 &s,
@@ -431,7 +429,7 @@ impl View for InfoFileView {
                 match v.as_str() {
                     "#sha1" => commit_id.to_string(),
                     "#tree" => tree
-                        .get_path(&Path::new(&self.values["prefix"]))
+                        .get_path(&self.filename)
                         .map(|x| x.id())
                         .unwrap_or(git2::Oid::zero())
                         .to_string(),
@@ -441,7 +439,7 @@ impl View for InfoFileView {
         }
         replace_subtree(
             repo,
-            &Path::new(&self.values["prefix"]).join(".joshinfo"),
+            &self.filename.join(".joshinfo"),
             repo.blob(s.as_bytes()).unwrap(),
             &tree,
         )
@@ -457,12 +455,12 @@ impl View for InfoFileView {
     }
 
     fn viewstr(&self) -> String {
-        let mut s = format!(":info=");
+        let s = format!(":info={:?}", self.filename.to_str());
 
         for (k, v) in self.values.iter() {
-            s = format!("{}{}={},", s, k, v);
+            format!(",{}={}", k, v);
         }
-        return s.trim_end_matches(",").to_string();
+        return s;
     }
 }
 
@@ -670,8 +668,7 @@ impl View for WorkspaceView {
         tree: &git2::Tree,
         commit_id: git2::Oid,
     ) -> git2::Oid {
-        return combine_view_from_ws(repo, tree, &self.ws_path)
-            .apply_to_tree(repo, tree, commit_id);
+        return combine_view_from_ws(repo, tree, &self.ws_path).apply_to_tree(repo, tree, commit_id);
     }
 
     fn unapply(
@@ -705,11 +702,16 @@ fn make_view(repo: &git2::Repository, cmd: &str, name: &str) -> Box<dyn View> {
         return Box::new(EmptyView);
     } else if cmd == "info" {
         let mut s = BTreeMap::new();
-        for p in name.split(",") {
+        let mut items = name.split(",");
+        let filename = items.next().unwrap();
+        for p in items {
             let x: Vec<String> = p.split("=").map(|x| x.to_owned()).collect();
             s.insert(x[0].to_owned(), x[1].to_owned());
         }
-        return Box::new(InfoFileView { values: s });
+        return Box::new(InfoFileView {
+            filename: Path::new(filename).to_owned(),
+            values: s,
+        });
     } else if cmd == "nop" {
         return Box::new(NopView);
     } else if cmd == "cutoff" {

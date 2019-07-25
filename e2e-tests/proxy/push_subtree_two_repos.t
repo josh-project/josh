@@ -10,7 +10,7 @@
   $ git push &> /dev/null
 
   $ cd ${TESTTMP}
-  $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8001/real/repo2.git real_repo2 &> /dev/null
+  $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8001/real_repo2.git &> /dev/null
   $ cd real_repo2
   $ mkdir sub1
   $ echo contents1_repo2 > sub1/file1
@@ -27,7 +27,7 @@
   $ git push &> /dev/null
 
   $ cd ${TESTTMP}
-  $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8002/real/repo2.git:/sub1.git sub1_repo2
+  $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8002/real_repo2.git:/sub1.git sub1_repo2
   $ cd sub1_repo2
   $ echo contents2_repo2 > file2
   $ git add file2
@@ -58,7 +58,7 @@
 
   $ cd ${TESTTMP}/real_repo2
   $ git pull
-  From http://localhost:8001/real/repo2
+  From http://localhost:8001/real_repo2
      *..*  master     -> origin/master (glob)
   Updating *..* (glob)
   Fast-forward

@@ -6,18 +6,13 @@ use std::fs;
 use super::*;
 use std::path::Path;
 
-fn to_ns(path: &str) -> String {
-    return path.trim_matches('/').replace("/", "/refs/namespaces/");
-}
-
 pub fn fetch_refs_from_url(
     path: &Path,
-    prefix: &str,
     url: &str,
     username: &str,
     password: &str,
 ) -> Result<(), git2::Error> {
-    let spec = format!("+*:refs/namespaces/{}/*", to_ns(prefix));
+    let spec = "+refs/heads/*:refs/heads/*";
 
     let shell = shell::Shell {
         cwd: path.to_owned(),

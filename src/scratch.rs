@@ -164,21 +164,89 @@ pub fn transform_commit(
     };
 }
 
-pub fn apply_view_to_refs(
+pub fn apply_view_to_tag(
     repo: &git2::Repository,
+    tagname: &str,
     viewobj: &dyn views::View,
-    refs: &Vec<(String, String)>,
     forward_maps: &mut view_maps::ViewMaps,
     backward_maps: &mut view_maps::ViewMaps,
+    ns: &str,
 ) {
     trace_scoped!(
-        "apply_view_to_refs",
+        "apply_view_to_tag",
         "repo": repo.path(),
-        "refs": refs,
+        "tagname": tagname,
         "viewstr": viewobj.viewstr());
 
-    for (k, v) in refs {
-        transform_commit(&repo, &*viewobj, &k, &v, forward_maps, backward_maps);
+    let to_tag = format!("refs/namespaces/{}/refs/tags/{}", &ns, &tagname);
+    let from_refsname = format!("refs/tags/{}", tagname);
+
+    debug!("apply_view_to_tag {}", tagname);
+    transform_commit(
+        &repo,
+        &*viewobj,
+        &from_refsname,
+        &to_tag,
+        forward_maps,
+        backward_maps,
+    );
+}
+
+pub fn apply_view_to_branch(
+    repo: &git2::Repository,
+    branchname: &str,
+    viewobj: &dyn views::View,
+    forward_maps: &mut view_maps::ViewMaps,
+    backward_maps: &mut view_maps::ViewMaps,
+    ns: &str,
+) {
+    trace_scoped!(
+        "apply_view_to_branch",
+        "repo": repo.path(),
+        "branchname": branchname,
+        "viewstr": viewobj.viewstr());
+
+    let to_branch = format!("refs/namespaces/{}/refs/heads/{}", &ns, &branchname);
+    let to_refs_for = format!("refs/namespaces/{}/refs/for/{}", &ns, &branchname);
+    let to_refs_drafts = format!("refs/namespaces/{}/refs/drafts/{}", &ns, &branchname);
+    let to_head = format!("refs/namespaces/{}/HEAD", &ns);
+    let from_refsname = format!("refs/heads/{}", branchname);
+
+    debug!("apply_view_to_branch {}", branchname);
+    transform_commit(
+        &repo,
+        &*viewobj,
+        &from_refsname,
+        &to_branch,
+        forward_maps,
+        backward_maps,
+    );
+    transform_commit(
+        &repo,
+        &*viewobj,
+        &from_refsname,
+        &to_refs_for,
+        forward_maps,
+        backward_maps,
+    );
+    transform_commit(
+        &repo,
+        &*viewobj,
+        &from_refsname,
+        &to_refs_drafts,
+        forward_maps,
+        backward_maps,
+    );
+
+    if branchname == "master" {
+        transform_commit(
+            &repo,
+            &*viewobj,
+            "refs/heads/master",
+            &to_head,
+            forward_maps,
+            backward_maps,
+        );
     }
 }
 
