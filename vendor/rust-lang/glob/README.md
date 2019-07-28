@@ -3,9 +3,9 @@ glob
 
 Support for matching file paths against Unix shell style patterns.
 
-[![Build Status](https://travis-ci.org/rust-lang-nursery/glob.svg?branch=master)](https://travis-ci.org/rust-lang-nursery/glob)
+[![Build Status](https://dev.azure.com/rust-lang/glob/_apis/build/status/rust-lang-nursery.glob?branchName=master)](https://dev.azure.com/rust-lang/glob/_build/latest?definitionId=20&branchName=master)
 
-[Documentation](https://doc.rust-lang.org/glob)
+[Documentation](https://docs.rs/glob)
 
 ## Usage
 
