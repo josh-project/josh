@@ -26,9 +26,18 @@
   $ git commit -m "add file2" &> /dev/null
   $ git push &> /dev/null
 
+This uses a repo that has a path with more than one element, causing nested namespaces.
   $ cd ${TESTTMP}
   $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8002/real/repo2.git:/sub1.git sub1_repo2
   $ cd sub1_repo2
+
+Put a double slash in the URL to see that it also works
+  $ git fetch http://${TESTUSER}:${TESTPASS}@localhost:8002/real//repo2.git:/sub1.git
+  From http://localhost:8002/real//repo2.git:/sub1
+   * branch            HEAD       -> FETCH_HEAD
+
+  $ git diff HEAD FETCH_HEAD
+
   $ echo contents2_repo2 > file2
   $ git add file2
   $ git commit -m "add file2" &> /dev/null

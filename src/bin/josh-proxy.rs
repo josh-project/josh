@@ -156,16 +156,25 @@ fn call_service(
     namespace: &str,
 ) -> Box<Future<Item = Response, Error = hyper::Error>> {
     let backward_maps = service.backward_maps.clone();
-    if req.uri().path() == "/version" {
+
+    let path = {
+        let mut path = req.uri().path().to_owned();
+        while path.contains("//") {
+            path = path.replace("//", "/");
+        }
+        path
+    };
+
+    if path == "/version" {
         let response = Response::new()
             .with_body(format!("Version: {}\n", env!("VERSION")))
             .with_status(hyper::StatusCode::Ok);
         return Box::new(futures::future::ok(response));
     }
-    if req.uri().path() == "/panic" {
+    if path == "/panic" {
         panic!();
     }
-    if req.uri().path() == "/repo_update" {
+    if path == "/repo_update" {
         let pool = service.fetch_push_pool.clone();
         return Box::new(
             req.body()
@@ -201,7 +210,7 @@ fn call_service(
 
     let compute_pool = service.compute_pool.clone();
 
-    if let Some(caps) = INFO_REGEX.captures(&req.uri().path()) {
+    if let Some(caps) = INFO_REGEX.captures(&path) {
         let (prefix, view, rev) = (
             caps.name("prefix").unwrap().as_str().to_string(),
             caps.name("view").unwrap().as_str().to_string(),
@@ -232,7 +241,7 @@ fn call_service(
         }));
     }
 
-    let (prefix, view_string, pathinfo) = some_or!(parse_url(&req.uri().path()), {
+    let (prefix, view_string, pathinfo) = some_or!(parse_url(&path), {
         let response = Response::new().with_status(hyper::StatusCode::NotFound);
         return Box::new(futures::future::ok(response));
     });
@@ -319,7 +328,7 @@ fn call_service(
             },
         )
         .map(move |x| {
-            remove_dir_all(ns_path).unwrap_or_else(|e| println!("remove_dir_all failed: {:?}", e));
+            if false {remove_dir_all(ns_path).unwrap_or_else(|e| println!("remove_dir_all failed: {:?}", e));}
             x
         })
     })
@@ -485,13 +494,24 @@ fn make_view_repo(
 
     let viewobj = josh::build_view(&scratch, &view_string);
 
-    let glob = format!("refs/namespaces/{}/*", &to_ns(prefix));
 
     let mut refs = vec![];
 
+    let refname = format!("refs/namespaces/{}/HEAD", &to_ns(prefix));
+    let to_ref = refname.replacen(&to_ns(prefix), &namespace, 1);
+    refs.push((refname.to_owned(), to_ref.clone()));
+
+    let glob = format!("refs/namespaces/{}/*", &to_ns(prefix));
     for refname in scratch.references_glob(&glob).unwrap().names() {
         let refname = refname.unwrap();
         let to_ref = refname.replacen(&to_ns(prefix), &namespace, 1);
+
+        if to_ref.contains("/refs/cache-automerge/") {
+            continue;
+        }
+        if to_ref.contains("/refs/notes/") {
+            continue;
+        }
 
         refs.push((refname.to_owned(), to_ref.clone()));
         if to_ref.contains("/refs/heads/") {
