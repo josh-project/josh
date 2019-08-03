@@ -668,7 +668,8 @@ impl View for WorkspaceView {
         tree: &git2::Tree,
         commit_id: git2::Oid,
     ) -> git2::Oid {
-        return combine_view_from_ws(repo, tree, &self.ws_path).apply_to_tree(repo, tree, commit_id);
+        return combine_view_from_ws(repo, tree, &self.ws_path)
+            .apply_to_tree(repo, tree, commit_id);
     }
 
     fn unapply(
