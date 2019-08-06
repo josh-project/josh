@@ -707,7 +707,12 @@ fn make_view(repo: &git2::Repository, cmd: &str, name: &str) -> Box<dyn View> {
         let mut s = BTreeMap::new();
         for p in name.split(",") {
             let x: Vec<String> = p.split("=").map(|x| x.to_owned()).collect();
-            s.insert(x[0].to_owned(), x[1].to_owned());
+            if x.len() == 2 {
+                s.insert(x[0].to_owned(), x[1].to_owned());
+            }
+            else {
+                s.insert("prefix".to_owned(), x[0].to_owned());
+            }
         }
         return Box::new(InfoFileView { values: s });
     } else if cmd == "nop" {
