@@ -11,7 +11,12 @@ pub struct ViewMaps {
 impl ViewMaps {
     pub fn set(&mut self, viewstr: &str, from: git2::Oid, to: git2::Oid) {
         if self.has(&viewstr, from) {
-            assert!(self.get(&viewstr, from) == to);
+
+            /* return; */
+            /* if self.get(&viewstr, from) != to */
+            /* { */
+            /*     println!("{:?} {:?} {:?}", from, self.get(&viewstr, from), to); */
+            /* } */
         }
         self.maps
             .entry(viewstr.to_string())

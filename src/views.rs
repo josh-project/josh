@@ -10,27 +10,79 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::str;
 
+fn filter_parents<'a>(
+    original_commit: &'a git2::Commit,
+    new_tree: git2::Oid,
+    transformed_parent_refs: Vec<&'a git2::Commit>,
+) -> Vec<&'a git2::Commit<'a>> {
+    let affects_transformed = transformed_parent_refs
+        .iter()
+        .any(|x| new_tree != x.tree_id());
+
+    let all_diffs_empty = original_commit
+        .parents()
+        .all(|x| x.tree_id() == original_commit.tree_id());
+
+    return if affects_transformed || all_diffs_empty {
+        transformed_parent_refs
+    } else {
+        vec![]
+    };
+}
+
 pub trait View {
-    fn apply_to_commit(
+    fn apply_view_to_commit(
         &self,
         repo: &git2::Repository,
         commit: &git2::Commit,
         forward_maps: &mut ViewMaps,
         backward_maps: &mut ViewMaps,
-    ) -> (git2::Oid, Vec<git2::Oid>) {
-        let full_tree = commit.tree().expect("commit has no tree");
-
-        let mut parent_ids = vec![];
-        for parent in commit.parents() {
-            parent_ids.push(parent.id());
+    ) -> git2::Oid {
+        let empty = empty_tree(repo).id();
+        if forward_maps.has(&self.viewstr(), commit.id()) {
+            return forward_maps.get(&self.viewstr(), commit.id());
         }
-        return self.apply_to_tree_and_parents(
-            forward_maps,
-            backward_maps,
-            repo,
-            (full_tree.id(), parent_ids),
-            commit.id(),
-        );
+
+        let (new_tree, transformed_parents_ids) = {
+            let full_tree = commit.tree().expect("commit has no tree");
+
+            let mut parent_ids = vec![];
+            for parent in commit.parents() {
+                parent_ids.push(parent.id());
+            }
+            self.apply_to_tree_and_parents(
+                forward_maps,
+                backward_maps,
+                repo,
+                (full_tree.id(), parent_ids),
+                commit.id(),
+            )
+        };
+
+        if new_tree == empty {
+            return git2::Oid::zero();
+        }
+
+        let mut transformed_parents = vec![];
+        for parent_id in transformed_parents_ids {
+            if let Ok(parent) = repo.find_commit(parent_id) {
+                transformed_parents.push(parent);
+            }
+        }
+
+        let transformed_parent_refs: Vec<&_> = transformed_parents.iter().collect();
+        let filtered_transformed_parent_refs: Vec<&git2::Commit> =
+            filter_parents(&commit, new_tree, transformed_parent_refs);
+
+        if filtered_transformed_parent_refs.len() == 0 && transformed_parents.len() != 0 {
+            return transformed_parents[0].id();
+        }
+
+        let new_tree = repo
+            .find_tree(new_tree)
+            .expect("apply_view_cached: can't find tree");
+
+        return scratch::rewrite(&repo, &commit, &filtered_transformed_parent_refs, &new_tree);
     }
 
     fn apply_to_tree(
@@ -88,6 +140,16 @@ fn default_apply_to_tree_and_parents(
 }
 
 impl View for NopView {
+    fn apply_view_to_commit(
+        &self,
+        repo: &git2::Repository,
+        commit: &git2::Commit,
+        forward_maps: &mut ViewMaps,
+        backward_maps: &mut ViewMaps,
+    ) -> git2::Oid {
+        return commit.id();
+    }
+
     fn apply_to_tree_and_parents(
         &self,
         _forward_maps: &mut ViewMaps,
@@ -213,6 +275,23 @@ struct ChainView {
 }
 
 impl View for ChainView {
+    fn apply_view_to_commit(
+        &self,
+        repo: &git2::Repository,
+        commit: &git2::Commit,
+        forward_maps: &mut ViewMaps,
+        backward_maps: &mut ViewMaps,
+    ) -> git2::Oid {
+        let r = self
+            .first
+            .apply_view_to_commit(repo, commit, forward_maps, backward_maps);
+        return self.second.apply_view_to_commit(
+            repo,
+            &repo.find_commit(r).unwrap(),
+            forward_maps,
+            backward_maps,
+        );
+    }
     fn apply_to_tree_and_parents(
         &self,
         forward_maps: &mut ViewMaps,
@@ -680,7 +759,6 @@ impl View for WorkspaceView {
         tree: &git2::Tree,
         parent_tree: &git2::Tree,
     ) -> git2::Oid {
-        /* let mut cw = combine_view_from_ws(repo, parent_tree, &self.ws_path); */
         let mut cw = combine_view_from_ws(repo, tree, &PathBuf::from(""));
 
         cw.base = SubdirView::new(&self.ws_path);
@@ -709,8 +787,7 @@ fn make_view(repo: &git2::Repository, cmd: &str, name: &str) -> Box<dyn View> {
             let x: Vec<String> = p.split("=").map(|x| x.to_owned()).collect();
             if x.len() == 2 {
                 s.insert(x[0].to_owned(), x[1].to_owned());
-            }
-            else {
+            } else {
                 s.insert("prefix".to_owned(), x[0].to_owned());
             }
         }

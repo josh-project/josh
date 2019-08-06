@@ -1,7 +1,6 @@
 extern crate crypto;
 extern crate git2;
 
-use super::empty_tree;
 use super::view_maps;
 use super::views;
 use super::UnapplyView;
@@ -123,7 +122,6 @@ pub fn unapply_view(
         );
 
         let new_tree = repo.find_tree(new_tree).expect("can't find rewritten tree");
-        viewobj.apply_to_tree(&repo, &new_tree, git2::Oid::zero());
 
         current = rewrite(&repo, &module_commit, &[&parent], &new_tree);
     }
@@ -148,13 +146,8 @@ pub fn transform_commit(
             debug!("transform_commit, not a commit: {}", from_refsname);
             return;
         });
-        let view_commit = apply_view_to_commit(
-            &repo,
-            &*viewobj,
-            &original_commit,
-            forward_maps,
-            backward_maps,
-        );
+        let view_commit =
+            viewobj.apply_view_to_commit(&repo, &original_commit, forward_maps, backward_maps);
         forward_maps.set(&viewobj.viewstr(), original_commit.id(), view_commit);
         backward_maps.set(&viewobj.viewstr(), view_commit, original_commit.id());
         if view_commit != git2::Oid::zero() {
@@ -180,67 +173,6 @@ pub fn apply_view_to_refs(
     for (k, v) in refs {
         transform_commit(&repo, &*viewobj, &k, &v, forward_maps, backward_maps);
     }
-}
-
-fn filter_parents<'a>(
-    original_commit: &'a git2::Commit,
-    new_tree: git2::Oid,
-    transformed_parent_refs: Vec<&'a git2::Commit>,
-) -> Vec<&'a git2::Commit<'a>> {
-    let affects_transformed = transformed_parent_refs
-        .iter()
-        .any(|x| new_tree != x.tree_id());
-
-    let all_diffs_empty = original_commit
-        .parents()
-        .all(|x| x.tree_id() == original_commit.tree_id());
-
-    return if affects_transformed || all_diffs_empty {
-        transformed_parent_refs
-    } else {
-        vec![]
-    };
-}
-
-pub fn apply_view_to_commit(
-    repo: &git2::Repository,
-    view: &dyn views::View,
-    commit: &git2::Commit,
-    forward_maps: &mut view_maps::ViewMaps,
-    backward_maps: &mut view_maps::ViewMaps,
-) -> git2::Oid {
-    let empty = empty_tree(repo).id();
-    if forward_maps.has(&view.viewstr(), commit.id()) {
-        return forward_maps.get(&view.viewstr(), commit.id());
-    }
-
-    let (new_tree, transformed_parents_ids) =
-        view.apply_to_commit(&repo, &commit, forward_maps, backward_maps);
-
-    if new_tree == empty {
-        return git2::Oid::zero();
-    }
-
-    let mut transformed_parents = vec![];
-    for parent_id in transformed_parents_ids {
-        if let Ok(parent) = repo.find_commit(parent_id) {
-            transformed_parents.push(parent);
-        }
-    }
-
-    let transformed_parent_refs: Vec<&_> = transformed_parents.iter().collect();
-    let filtered_transformed_parent_refs: Vec<&git2::Commit> =
-        filter_parents(&commit, new_tree, transformed_parent_refs);
-
-    if filtered_transformed_parent_refs.len() == 0 && transformed_parents.len() != 0 {
-        return transformed_parents[0].id();
-    }
-
-    let new_tree = repo
-        .find_tree(new_tree)
-        .expect("apply_view_cached: can't find tree");
-
-    return rewrite(&repo, &commit, &filtered_transformed_parent_refs, &new_tree);
 }
 
 pub fn apply_view_cached(
@@ -272,7 +204,7 @@ pub fn apply_view_cached(
 
         let commit = repo.find_commit(commit.unwrap()).unwrap();
 
-        let transformed = apply_view_to_commit(&repo, view, &commit, forward_maps, backward_maps);
+        let transformed = view.apply_view_to_commit(&repo, &commit, forward_maps, backward_maps);
 
         if transformed == git2::Oid::zero() {
             empty_tree_count += 1;

@@ -328,7 +328,10 @@ fn call_service(
             },
         )
         .map(move |x| {
-            if false {remove_dir_all(ns_path).unwrap_or_else(|e| println!("remove_dir_all failed: {:?}", e));}
+            if false {
+                remove_dir_all(ns_path)
+                    .unwrap_or_else(|e| println!("remove_dir_all failed: {:?}", e));
+            }
             x
         })
     })
@@ -494,7 +497,6 @@ fn make_view_repo(
 
     let viewobj = josh::build_view(&scratch, &view_string);
 
-
     let mut refs = vec![];
 
     let refname = format!("refs/namespaces/{}/HEAD", &to_ns(prefix));
@@ -580,7 +582,7 @@ fn get_info(
         return format!("not a commit");
     });
 
-    let transformed = scratch::apply_view_to_commit(&scratch, &*viewobj, &commit, &mut fm, &mut bm);
+    let transformed = viewobj.apply_view_to_commit(&scratch, &commit, &mut fm, &mut bm);
 
     let transformed = scratch.find_commit(transformed).unwrap();
 
