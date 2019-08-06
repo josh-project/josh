@@ -19,13 +19,24 @@
   $ git add sub2
   $ git commit -m "add file3" &> /dev/null
 
+  $ echo contents1 > unrelated
+  $ git add .
+  $ git commit -m "unrelated" &> /dev/null
+
   $ josh-filter --infofile master c=:/sub1
+  $ git log --graph --pretty=%s josh/filter/master
+  * unrelated
+  * add file2
+  * add file1
+
+  $ josh-filter master c=:/sub1
   $ git log --graph --pretty=%s josh/filter/master
   * add file2
   * add file1
 
   $ josh-filter --infofile master c=:/sub2
   $ git log --graph --pretty=%s josh/filter/master
+  * unrelated
   * add file3
 
   $ echo contents2 > sub1/file5
@@ -34,4 +45,5 @@
 
   $ josh-filter --infofile master c=:/sub2
   $ git log --graph --pretty=%s josh/filter/master
+  * add file5
   * add file3
