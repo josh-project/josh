@@ -35,9 +35,7 @@
 
   $ cd ${TESTTMP}
 
-  $ cat ${TESTTMP}/josh-test-server.out | grep CREDENTIALS
-  CREDENTIALS OK "admin" ""
-  CREDENTIALS OK "admin" ""
+  $ cat ${TESTTMP}/josh-test-server.out | grep CREDENTIALS | uniq
   CREDENTIALS OK "admin" ""
 
   $ git clone -q http://${TESTUSER}:wrongpass@localhost:8002/real_repo.git full_repo
@@ -48,9 +46,7 @@
 
   $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8002/real_repo.git full_repo
 
-  $ cat ${TESTTMP}/josh-test-server.out | grep CREDENTIALS | grep ${TESTUSER} | grep ${TESTPASS}
-  CREDENTIALS OK "*" "*" (glob)
-  CREDENTIALS OK "*" "*" (glob)
+  $ cat ${TESTTMP}/josh-test-server.out | grep CREDENTIALS | grep ${TESTUSER} | grep ${TESTPASS} | uniq
   CREDENTIALS OK "*" "*" (glob)
 
   $ cd full_repo

@@ -96,9 +96,30 @@ fn async_fetch(
                         &br_path,
                         &prefix,
                         &remote_url,
+                        &"refs/heads/*",
                         &username,
                         &password,
                     )
+                    .and_then(|_| {
+                        base_repo::fetch_refs_from_url(
+                            &br_path,
+                            &prefix,
+                            &remote_url,
+                            &"refs/tags/*",
+                            &username,
+                            &password,
+                        )
+                    })
+                    .and_then(|_| {
+                        base_repo::fetch_refs_from_url(
+                            &br_path,
+                            &prefix,
+                            &remote_url,
+                            &"HEAD",
+                            &username,
+                            &password,
+                        )
+                    })
                 })),
         )
     };
@@ -305,6 +326,7 @@ fn call_service(
     let ns_path = service.base_path.clone();
     let ns_path = ns_path.join("refs/namespaces");
     let ns_path = ns_path.join(&namespace);
+    assert!(namespace.contains("request_"));
 
     Box::new({
         async_fetch(
@@ -328,7 +350,7 @@ fn call_service(
             },
         )
         .map(move |x| {
-            if false {
+            if true {
                 remove_dir_all(ns_path)
                     .unwrap_or_else(|e| println!("remove_dir_all failed: {:?}", e));
             }

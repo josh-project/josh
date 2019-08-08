@@ -14,10 +14,16 @@ pub fn fetch_refs_from_url(
     path: &Path,
     prefix: &str,
     url: &str,
+    refs_prefix: &str,
     username: &str,
     password: &str,
 ) -> Result<(), git2::Error> {
-    let spec = format!("+*:refs/namespaces/{}/*", to_ns(prefix));
+    let spec = format!(
+        "+{}:refs/namespaces/{}/{}",
+        &refs_prefix,
+        to_ns(prefix),
+        &refs_prefix
+    );
 
     let shell = shell::Shell {
         cwd: path.to_owned(),
@@ -40,6 +46,10 @@ pub fn fetch_refs_from_url(
 
     let cmd = format!("git fetch {} '{}'", &nurl, &spec);
     println!("fetch_refs_from_url {:?} {:?} {:?}", cmd, path, "");
+
+    /* shell.command(&"git prune"); */
+    /* shell.command(&"git gc --auto"); */
+    shell.command(&"git config gc.auto 0");
 
     let (_stdout, stderr) = shell.command(&cmd);
     if stderr.contains("fatal: Authentication failed") {
