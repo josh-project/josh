@@ -1,4 +1,4 @@
-use super::empty_tree;
+use super::empty_tree_id;
 use super::scratch;
 use super::view_maps::ViewMaps;
 use pest::iterators::Pair;
@@ -37,27 +37,33 @@ pub trait View {
         commit: &git2::Commit,
         forward_maps: &mut ViewMaps,
         backward_maps: &mut ViewMaps,
+        _meta: &mut HashMap<String, String>,
     ) -> git2::Oid {
-        if forward_maps.has(&self.viewstr(), commit.id()) {
+
+        if forward_maps.has(&repo, &self.viewstr(), commit.id()) {
             return forward_maps.get(&self.viewstr(), commit.id());
         }
         let new_tree = self.apply_to_tree(&repo, &commit.tree().unwrap(), commit.id());
+
         let parents = self.transform_parents(repo, commit, forward_maps, backward_maps);
-        let transformed_parents_ids: Vec<_> = parents
+
+        let transformed_parents: Vec<_> = parents
             .iter()
             .filter(|x| **x != git2::Oid::zero())
+            .map(|x| repo.find_commit(*x).unwrap())
             .collect();
 
-        if new_tree == empty_tree(repo).id() {
+        if new_tree == empty_tree_id()
+            && commit.tree_id() != empty_tree_id()
+            && transformed_parents.len() != 0
+        {
+            return transformed_parents[0].id();
+        }
+        if new_tree == empty_tree_id() {
             return git2::Oid::zero();
         }
 
-        let transformed_parents: Vec<_> = transformed_parents_ids
-            .iter()
-            .map(|x| repo.find_commit(**x).unwrap())
-            .collect();
-
-        let filtered_transformed_parent_refs: Vec<&git2::Commit> =
+        let filtered_transformed_parent_refs: Vec<&_> =
             filter_parents(&commit, new_tree, transformed_parents.iter().collect());
 
         if filtered_transformed_parent_refs.len() == 0 && transformed_parents.len() != 0 {
@@ -117,6 +123,7 @@ impl View for NopView {
         commit: &git2::Commit,
         _forward_maps: &mut ViewMaps,
         _backward_maps: &mut ViewMaps,
+        _meta: &mut HashMap<String, String>,
     ) -> git2::Oid {
         return commit.id();
     }
@@ -156,23 +163,13 @@ impl View for EmptyView {
     ) -> Vec<git2::Oid> {
         return vec![];
     }
-    fn apply_view_to_commit(
-        &self,
-        repo: &git2::Repository,
-        commit: &git2::Commit,
-        _forward_maps: &mut ViewMaps,
-        _backward_maps: &mut ViewMaps,
-    ) -> git2::Oid {
-        let empty = empty_tree(repo);
-        return scratch::rewrite(&repo, &commit, &vec![], &empty);
-    }
     fn apply_to_tree(
         &self,
-        repo: &git2::Repository,
+        _repo: &git2::Repository,
         _tree: &git2::Tree,
         _commit_id: git2::Oid,
     ) -> git2::Oid {
-        empty_tree(repo).id()
+        empty_tree_id()
     }
 
     fn unapply(
@@ -212,6 +209,7 @@ impl View for CutoffView {
         commit: &git2::Commit,
         _forward_maps: &mut ViewMaps,
         _backward_maps: &mut ViewMaps,
+        _meta: &mut HashMap<String, String>,
     ) -> git2::Oid {
         /* if commit_id == self.rev { */
         /*     return (tp.0, vec![]); */
@@ -266,15 +264,17 @@ impl View for ChainView {
         commit: &git2::Commit,
         forward_maps: &mut ViewMaps,
         backward_maps: &mut ViewMaps,
+        _meta: &mut HashMap<String, String>,
     ) -> git2::Oid {
         let r = self
             .first
-            .apply_view_to_commit(repo, commit, forward_maps, backward_maps);
+            .apply_view_to_commit(repo, commit, forward_maps, backward_maps, _meta);
         return self.second.apply_view_to_commit(
             repo,
             &repo.find_commit(r).unwrap(),
             forward_maps,
             backward_maps,
+            _meta,
         );
     }
 
@@ -353,14 +353,14 @@ impl View for SubdirView {
     }
     fn apply_to_tree(
         &self,
-        repo: &git2::Repository,
+        _repo: &git2::Repository,
         tree: &git2::Tree,
         _commit_id: git2::Oid,
     ) -> git2::Oid {
         return tree
             .get_path(&self.path)
             .map(|x| x.id())
-            .unwrap_or(empty_tree(repo).id());
+            .unwrap_or(empty_tree_id());
     }
 
     fn unapply(
@@ -400,19 +400,24 @@ impl View for PrefixView {
         tree: &git2::Tree,
         _commit_id: git2::Oid,
     ) -> git2::Oid {
-        replace_subtree(&repo, &self.prefix, tree.id(), &empty_tree(repo))
+        replace_subtree(
+            &repo,
+            &self.prefix,
+            tree.id(),
+            &repo.find_tree(empty_tree_id()).unwrap(),
+        )
     }
 
     fn unapply(
         &self,
-        repo: &git2::Repository,
+        _repo: &git2::Repository,
         tree: &git2::Tree,
         _parent_tree: &git2::Tree,
     ) -> git2::Oid {
         return tree
             .get_path(&self.prefix)
             .map(|x| x.id())
-            .unwrap_or(empty_tree(repo).id());
+            .unwrap_or(empty_tree_id());
     }
 
     fn viewstr(&self) -> String {
@@ -528,7 +533,7 @@ impl View for CombineView {
 
         for (other, prefix) in self.others.iter().zip(self.prefixes.iter()) {
             let otree = other.apply_to_tree(&repo, &tree, commit_id);
-            if otree == empty_tree(repo).id() {
+            if otree == empty_tree_id() {
                 continue;
             }
             let otree = repo.find_tree(otree).expect("can't find tree");
@@ -550,7 +555,7 @@ impl View for CombineView {
             base_wo = replace_subtree(
                 repo,
                 prefix,
-                empty_tree(repo).id(),
+                empty_tree_id(),
                 &repo.find_tree(base_wo).unwrap(),
             );
         }
@@ -704,8 +709,9 @@ impl View for WorkspaceView {
         commit: &git2::Commit,
         forward_maps: &mut ViewMaps,
         backward_maps: &mut ViewMaps,
+        _meta: &mut HashMap<String, String>,
     ) -> git2::Oid {
-        if forward_maps.has(&self.viewstr(), commit.id()) {
+        if forward_maps.has(repo, &self.viewstr(), commit.id()) {
             return forward_maps.get(&self.viewstr(), commit.id());
         }
 
@@ -717,7 +723,7 @@ impl View for WorkspaceView {
             commit.id(),
         );
 
-        if new_tree == empty_tree(repo).id() {
+        if new_tree == empty_tree_id() {
             return git2::Oid::zero();
         }
 

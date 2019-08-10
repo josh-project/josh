@@ -40,6 +40,7 @@ use regex::Regex;
 use std::env;
 use std::process::exit;
 
+use std::collections::HashMap;
 use std::env::current_exe;
 use std::fs::remove_dir_all;
 use std::net;
@@ -604,7 +605,9 @@ fn get_info(
         return format!("not a commit");
     });
 
-    let transformed = viewobj.apply_view_to_commit(&scratch, &commit, &mut fm, &mut bm);
+    let mut meta = HashMap::new();
+    meta.insert("sha1".to_owned(), "".to_owned());
+    let transformed = viewobj.apply_view_to_commit(&scratch, &commit, &mut fm, &mut bm, &mut meta);
 
     let transformed = scratch.find_commit(transformed).unwrap();
 

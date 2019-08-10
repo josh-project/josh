@@ -87,7 +87,7 @@ fn run_filter(args: Vec<String>) -> i32 {
             );
         }
 
-        josh::transform_commit(&repo, &*viewobj, &src, &target, &mut fm, &mut bm);
+        josh::apply_view_to_refs(&repo, &*viewobj, &[(src, target)], &mut fm, &mut bm);
     }
 
     return 0;

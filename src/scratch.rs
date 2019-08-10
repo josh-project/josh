@@ -4,6 +4,7 @@ extern crate git2;
 use super::view_maps;
 use super::views;
 use super::UnapplyView;
+use std::collections::HashMap;
 use std::path::Path;
 
 fn all_equal(a: git2::Parents, b: &[&git2::Commit]) -> bool {
@@ -133,7 +134,7 @@ pub fn new(path: &Path) -> git2::Repository {
     git2::Repository::init_bare(&path).expect("could not init scratch")
 }
 
-pub fn transform_commit(
+fn transform_commit(
     repo: &git2::Repository,
     viewobj: &views::View,
     from_refsname: &str,
@@ -146,8 +147,13 @@ pub fn transform_commit(
             debug!("transform_commit, not a commit: {}", from_refsname);
             return;
         });
-        let view_commit =
-            viewobj.apply_view_to_commit(&repo, &original_commit, forward_maps, backward_maps);
+        let view_commit = viewobj.apply_view_to_commit(
+            &repo,
+            &original_commit,
+            forward_maps,
+            backward_maps,
+            &mut HashMap::new(),
+        );
         forward_maps.set(&viewobj.viewstr(), original_commit.id(), view_commit);
         backward_maps.set(&viewobj.viewstr(), view_commit, original_commit.id());
         if view_commit != git2::Oid::zero() {
@@ -160,7 +166,7 @@ pub fn transform_commit(
 pub fn apply_view_to_refs(
     repo: &git2::Repository,
     viewobj: &dyn views::View,
-    refs: &Vec<(String, String)>,
+    refs: &[(String, String)],
     forward_maps: &mut view_maps::ViewMaps,
     backward_maps: &mut view_maps::ViewMaps,
 ) {
@@ -182,7 +188,7 @@ pub fn apply_view_cached(
     forward_maps: &mut view_maps::ViewMaps,
     backward_maps: &mut view_maps::ViewMaps,
 ) -> git2::Oid {
-    if forward_maps.has(&view.viewstr(), newrev) {
+    if forward_maps.has(repo, &view.viewstr(), newrev) {
         return forward_maps.get(&view.viewstr(), newrev);
     }
 
@@ -204,7 +210,13 @@ pub fn apply_view_cached(
 
         let commit = repo.find_commit(commit.unwrap()).unwrap();
 
-        let transformed = view.apply_view_to_commit(&repo, &commit, forward_maps, backward_maps);
+        let transformed = view.apply_view_to_commit(
+            &repo,
+            &commit,
+            forward_maps,
+            backward_maps,
+            &mut HashMap::new(),
+        );
 
         if transformed == git2::Oid::zero() {
             empty_tree_count += 1;
@@ -214,7 +226,7 @@ pub fn apply_view_cached(
         out_commit_count += 1;
     }
 
-    if !forward_maps.has(&view.viewstr(), newrev) {
+    if !forward_maps.has(&repo, &view.viewstr(), newrev) {
         forward_maps.set(&view.viewstr(), newrev, git2::Oid::zero());
     }
     let rewritten = forward_maps.get(&view.viewstr(), newrev);

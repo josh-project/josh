@@ -43,7 +43,7 @@ pub mod view_maps;
 mod views;
 pub mod virtual_repo;
 
-pub use scratch::transform_commit;
+pub use scratch::apply_view_to_refs;
 pub use views::build_chain;
 pub use views::build_view;
 
@@ -55,8 +55,6 @@ pub enum UnapplyView {
     NoChanges,
 }
 
-fn empty_tree(repo: &git2::Repository) -> git2::Tree {
-    return repo
-        .find_tree(repo.treebuilder(None).unwrap().write().unwrap())
-        .unwrap();
+fn empty_tree_id() -> git2::Oid {
+    return git2::Oid::from_str("4b825dc642cb6eb9a060e54bf8d69288fbee4904").unwrap();
 }

@@ -10,14 +10,6 @@ pub struct ViewMaps {
 
 impl ViewMaps {
     pub fn set(&mut self, viewstr: &str, from: git2::Oid, to: git2::Oid) {
-        if self.has(&viewstr, from) {
-
-            /* return; */
-            /* if self.get(&viewstr, from) != to */
-            /* { */
-            /*     println!("{:?} {:?} {:?}", from, self.get(&viewstr, from), to); */
-            /* } */
-        }
         self.maps
             .entry(viewstr.to_string())
             .or_insert_with(ViewMap::new)
@@ -37,15 +29,17 @@ impl ViewMaps {
         return git2::Oid::zero();
     }
 
-    pub fn has(&self, viewstr: &str, from: git2::Oid) -> bool {
+    pub fn has(&self, repo: &git2::Repository, viewstr: &str, from: git2::Oid) -> bool {
         if let Some(m) = self.maps.get(viewstr) {
             if m.contains_key(&from) {
-                return true;
+                // Only report an object as cached if it exists in the object database.
+                // This forces a rebuild in case the object was garbage collected.
+                return repo.odb().unwrap().exists(self.get(viewstr, from));
             }
         }
         if let Some(upsteam) = self.upsteam.clone() {
             trace_scoped!("read_lock: has", "viewstr": viewstr, "from": from.to_string());
-            return upsteam.read().unwrap().has(viewstr, from);
+            return upsteam.read().unwrap().has(repo, viewstr, from);
         }
         return false;
     }
