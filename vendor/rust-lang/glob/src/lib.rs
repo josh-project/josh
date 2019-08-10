@@ -298,7 +298,7 @@ impl Error for GlobError {
         self.error.description()
     }
 
-    fn cause(&self) -> Option<&Error> {
+    fn cause(&self) -> Option<&dyn Error> {
         Some(&self.error)
     }
 }
