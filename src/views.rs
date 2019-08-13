@@ -269,9 +269,11 @@ impl View for ChainView {
         let r = self
             .first
             .apply_view_to_commit(repo, commit, forward_maps, backward_maps, _meta);
+
+        let commit = ok_or!(repo.find_commit(r), { return git2::Oid::zero(); });
         return self.second.apply_view_to_commit(
             repo,
-            &repo.find_commit(r).unwrap(),
+            &commit,
             forward_maps,
             backward_maps,
             _meta,
