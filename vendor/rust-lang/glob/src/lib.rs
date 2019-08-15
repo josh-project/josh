@@ -298,7 +298,8 @@ impl Error for GlobError {
         self.error.description()
     }
 
-    fn cause(&self) -> Option<&dyn Error> {
+    #[allow(unknown_lints, bare_trait_objects)]
+    fn cause(&self) -> Option<&Error> {
         Some(&self.error)
     }
 }
