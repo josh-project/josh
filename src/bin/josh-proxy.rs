@@ -21,6 +21,7 @@ extern crate lazy_static;
 #[macro_use]
 extern crate serde_json;
 
+extern crate crypto;
 extern crate tempdir;
 extern crate tokio_core;
 
@@ -40,6 +41,7 @@ use regex::Regex;
 use std::env;
 use std::process::exit;
 
+use crypto::digest::Digest;
 use std::collections::HashMap;
 use std::env::current_exe;
 use std::fs::remove_dir_all;
@@ -62,6 +64,8 @@ lazy_static! {
         Regex::new(r"(?P<prefix>/.*[.]git)(?P<pathinfo>/.*)").expect("can't compile regex");
 }
 
+type CredentialCache = HashMap<String, std::time::Instant>;
+
 struct HttpService {
     handle: tokio_core::reactor::Handle,
     fetch_push_pool: CpuPool,
@@ -71,6 +75,84 @@ struct HttpService {
     base_url: String,
     forward_maps: Arc<RwLock<view_maps::ViewMaps>>,
     backward_maps: Arc<RwLock<view_maps::ViewMaps>>,
+    credential_cache: Arc<RwLock<CredentialCache>>,
+}
+
+fn hash_credentials(url: &str, username: &str, password: &str) -> String {
+    let mut d = crypto::sha1::Sha1::new();
+    d.input_str(&format!("{}:{}:{}", &url, &username, &password));
+    d.result_str().to_owned()
+}
+
+fn fetch_upstream(
+    http: &HttpService,
+    prefix: &str,
+    username: &str,
+    password: &str,
+    remote_url: String,
+) -> Box<futures_cpupool::CpuFuture<std::result::Result<(), git2::Error>, hyper::Error>> {
+    let credentials_hashed = hash_credentials(&remote_url, &username, &password);
+    let username = username.to_owned();
+    let password = password.to_owned();
+    let prefix = prefix.to_owned();
+    let br_path = http.base_path.clone();
+    let credential_cache = http.credential_cache.clone();
+
+    let do_fetch = Box::new(
+        http.fetch_push_pool
+            .spawn(futures::future::ok(()).map(move |_| {
+                base_repo::fetch_refs_from_url(
+                    &br_path,
+                    &prefix,
+                    &remote_url,
+                    &"refs/heads/*",
+                    &username,
+                    &password,
+                )
+                .and_then(|_| {
+                    base_repo::fetch_refs_from_url(
+                        &br_path,
+                        &prefix,
+                        &remote_url,
+                        &"refs/tags/*",
+                        &username,
+                        &password,
+                    )
+                })
+                .and_then(|_| {
+                    base_repo::fetch_refs_from_url(
+                        &br_path,
+                        &prefix,
+                        &remote_url,
+                        &"HEAD",
+                        &username,
+                        &password,
+                    )
+                })
+                .and_then(|_| {
+                    let credentials_hashed = hash_credentials(&remote_url, &username, &password);
+                    if let Ok(mut cc) = credential_cache.write() {
+                        cc.insert(credentials_hashed, std::time::Instant::now());
+                    }
+                    Ok(())
+                })
+            })),
+    );
+
+    let last = http
+        .credential_cache
+        .read()
+        .ok()
+        .map(|cc| cc.get(&credentials_hashed).copied());
+
+    if let Some(Some(c)) = last {
+        if std::time::Instant::now().duration_since(c) < std::time::Duration::from_secs(30) {
+            do_fetch.forget();
+            return Box::new(http.compute_pool.spawn(futures::future::ok(Ok(()))));
+        }
+    }
+
+    return do_fetch;
 }
 
 fn async_fetch(
@@ -85,45 +167,7 @@ fn async_fetch(
     let br_path = http.base_path.clone();
     base_repo::create_local(&br_path);
 
-    let b = {
-        let username = username.to_owned();
-        let password = password.to_owned();
-        let prefix = prefix.to_owned();
-
-        Box::new(
-            http.fetch_push_pool
-                .spawn(futures::future::ok(()).map(move |_| {
-                    base_repo::fetch_refs_from_url(
-                        &br_path,
-                        &prefix,
-                        &remote_url,
-                        &"refs/heads/*",
-                        &username,
-                        &password,
-                    )
-                    .and_then(|_| {
-                        base_repo::fetch_refs_from_url(
-                            &br_path,
-                            &prefix,
-                            &remote_url,
-                            &"refs/tags/*",
-                            &username,
-                            &password,
-                        )
-                    })
-                    .and_then(|_| {
-                        base_repo::fetch_refs_from_url(
-                            &br_path,
-                            &prefix,
-                            &remote_url,
-                            &"HEAD",
-                            &username,
-                            &password,
-                        )
-                    })
-                })),
-        )
-    };
+    let fetch_future = fetch_upstream(http, prefix, username, password, remote_url);
 
     let viewstr = view_string.to_owned();
     let forward_maps = http.forward_maps.clone();
@@ -131,7 +175,7 @@ fn async_fetch(
     let namespace = namespace.to_owned();
     let br_path = http.base_path.clone();
     let prefix = prefix.to_owned();
-    Box::new(http.compute_pool.spawn(b.map(move |r| {
+    Box::new(http.compute_pool.spawn(fetch_future.map(move |r| {
         r.map(move |_| {
             make_view_repo(
                 &viewstr,
@@ -458,6 +502,7 @@ fn run_http_server(addr: net::SocketAddr, port: String, local: &Path, remote: &s
     let h2 = core.handle();
     let forward_maps = Arc::new(RwLock::new(view_maps::ViewMaps::new()));
     let backward_maps = Arc::new(RwLock::new(view_maps::ViewMaps::new()));
+    let credential_cache = Arc::new(RwLock::new(CredentialCache::new()));
     let server_handle = core.handle();
     let fetch_push_pool = CpuPool::new(1);
     let compute_pool = CpuPool::new(4);
@@ -475,6 +520,7 @@ fn run_http_server(addr: net::SocketAddr, port: String, local: &Path, remote: &s
                 base_url: remote.clone(),
                 forward_maps: forward_maps.clone(),
                 backward_maps: backward_maps.clone(),
+                credential_cache: credential_cache.clone(),
             };
             Ok(cghttp)
         })
