@@ -42,7 +42,7 @@ use std::env;
 use std::process::exit;
 
 use crypto::digest::Digest;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::env::current_exe;
 use std::fs::remove_dir_all;
 use std::net;
@@ -65,6 +65,7 @@ lazy_static! {
 }
 
 type CredentialCache = HashMap<String, std::time::Instant>;
+type KnownViews = HashSet<(String, String)>;
 
 struct HttpService {
     handle: tokio_core::reactor::Handle,
@@ -76,9 +77,10 @@ struct HttpService {
     forward_maps: Arc<RwLock<view_maps::ViewMaps>>,
     backward_maps: Arc<RwLock<view_maps::ViewMaps>>,
     credential_cache: Arc<RwLock<CredentialCache>>,
+    known_views: Arc<RwLock<KnownViews>>,
 }
 
-fn hash_credentials(url: &str, username: &str, password: &str) -> String {
+fn hash_strings(url: &str, username: &str, password: &str) -> String {
     let mut d = crypto::sha1::Sha1::new();
     d.input_str(&format!("{}:{}:{}", &url, &username, &password));
     d.result_str().to_owned()
@@ -91,7 +93,7 @@ fn fetch_upstream(
     password: &str,
     remote_url: String,
 ) -> Box<futures_cpupool::CpuFuture<std::result::Result<(), git2::Error>, hyper::Error>> {
-    let credentials_hashed = hash_credentials(&remote_url, &username, &password);
+    let credentials_hashed = hash_strings(&remote_url, &username, &password);
     let username = username.to_owned();
     let password = password.to_owned();
     let prefix = prefix.to_owned();
@@ -130,7 +132,7 @@ fn fetch_upstream(
                     )
                 })
                 .and_then(|_| {
-                    let credentials_hashed = hash_credentials(&remote_url, &username, &password);
+                    let credentials_hashed = hash_strings(&remote_url, &username, &password);
                     if let Ok(mut cc) = credential_cache.write() {
                         cc.insert(credentials_hashed, std::time::Instant::now());
                     }
@@ -146,7 +148,7 @@ fn fetch_upstream(
         .map(|cc| cc.get(&credentials_hashed).copied());
 
     if let Some(Some(c)) = last {
-        if std::time::Instant::now().duration_since(c) < std::time::Duration::from_secs(30) {
+        if std::time::Instant::now().duration_since(c) < std::time::Duration::from_secs(60) {
             do_fetch.forget();
             return Box::new(http.compute_pool.spawn(futures::future::ok(Ok(()))));
         }
@@ -175,7 +177,40 @@ fn async_fetch(
     let namespace = namespace.to_owned();
     let br_path = http.base_path.clone();
     let prefix = prefix.to_owned();
+    let viewstr2 = view_string.to_owned();
+    let forward_maps2 = http.forward_maps.clone();
+    let backward_maps2 = http.backward_maps.clone();
+    let br_path2 = http.base_path.clone();
+    let prefix2 = prefix.to_owned();
+    let cp = http.compute_pool.clone();
+    let known_views = http.known_views.clone();
     Box::new(http.compute_pool.spawn(fetch_future.map(move |r| {
+        let refresh_all_known_views = cp.spawn_fn(move || -> Result<(), ()> {
+            if let Ok(kn) = known_views.read() {
+                trace_scoped!(
+                    "refresh_all_known_views",
+                    "known_views": *known_views,
+                );
+                for v in kn.iter() {
+                    if v.0 != prefix2 {
+                        continue;
+                    }
+                    make_view_repo(
+                        &v.1,
+                        &v.0,
+                        &hash_strings(&v.0, &v.1, ""),
+                        &br_path2,
+                        forward_maps2.clone(),
+                        backward_maps2.clone(),
+                    );
+                }
+            }
+            if let Ok(mut kn) = known_views.write() {
+                kn.insert((prefix2, viewstr2));
+            }
+            Ok(())
+        });
+        refresh_all_known_views.forget();
         r.map(move |_| {
             make_view_repo(
                 &viewstr,
@@ -234,6 +269,13 @@ fn call_service(
     if path == "/version" {
         let response = Response::new()
             .with_body(format!("Version: {}\n", env!("VERSION")))
+            .with_status(hyper::StatusCode::Ok);
+        return Box::new(futures::future::ok(response));
+    }
+    if path == "/flush" {
+        service.credential_cache.write().unwrap().clear();
+        let response = Response::new()
+            .with_body(format!("Flushed credential cache\n"))
             .with_status(hyper::StatusCode::Ok);
         return Box::new(futures::future::ok(response));
     }
@@ -503,6 +545,7 @@ fn run_http_server(addr: net::SocketAddr, port: String, local: &Path, remote: &s
     let forward_maps = Arc::new(RwLock::new(view_maps::ViewMaps::new()));
     let backward_maps = Arc::new(RwLock::new(view_maps::ViewMaps::new()));
     let credential_cache = Arc::new(RwLock::new(CredentialCache::new()));
+    let known_views = Arc::new(RwLock::new(KnownViews::new()));
     let server_handle = core.handle();
     let fetch_push_pool = CpuPool::new(1);
     let compute_pool = CpuPool::new(4);
@@ -521,6 +564,7 @@ fn run_http_server(addr: net::SocketAddr, port: String, local: &Path, remote: &s
                 forward_maps: forward_maps.clone(),
                 backward_maps: backward_maps.clone(),
                 credential_cache: credential_cache.clone(),
+                known_views: known_views.clone(),
             };
             Ok(cghttp)
         })

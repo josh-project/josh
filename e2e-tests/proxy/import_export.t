@@ -33,6 +33,8 @@
   $ git commit --allow-empty -m "initial" &> /dev/null
   $ git push &> /dev/null
 
+  $ curl -s http://localhost:8002/flush
+  Flushed credential cache
   $ git fetch --force http://${TESTUSER}:${TESTPASS}@localhost:8002/repo1.git!+/repo1.git master:repo1_in_subdir &> /dev/null
   $ git checkout repo1_in_subdir
   Switched to branch 'repo1_in_subdir'
@@ -45,6 +47,8 @@
   
   1 directory, 1 file
 
+  $ curl -s http://localhost:8002/flush
+  Flushed credential cache
   $ git fetch --force http://${TESTUSER}:${TESTPASS}@localhost:8002/repo2.git!+/repo2.git master:repo2_in_subdir &> /dev/null
   $ git merge -m "Combine" repo2_in_subdir --allow-unrelated-histories &> /dev/null
 
@@ -118,6 +122,8 @@
 
   $ cd ${TESTTMP}/real_repo
   $ git checkout master &> /dev/null
+  $ curl -s http://localhost:8002/flush
+  Flushed credential cache
   $ git fetch --force http://${TESTUSER}:${TESTPASS}@localhost:8002/repo1.git!+/repo1.git master:repo1_in_subdir &> /dev/null
   $ git log --graph --pretty=%s repo1_in_subdir
   * add new_file2
@@ -153,6 +159,8 @@
   $ git push &> /dev/null
 
   $ cd ${TESTTMP}/r1
+  $ curl -s http://localhost:8002/flush
+  Flushed credential cache
   $ git pull &> /dev/null
   $ tree
   .
@@ -177,6 +185,8 @@
 
   $ cd ${TESTTMP}/real_repo
   $ git checkout master &> /dev/null
+  $ curl -s http://localhost:8002/flush
+  Flushed credential cache
   $ git fetch --force http://${TESTUSER}:${TESTPASS}@localhost:8002/repo1.git!+/repo1.git master:repo1_in_subdir &> /dev/null
   $ git log --graph --pretty=%s repo1_in_subdir
   * add great new_file2
@@ -206,6 +216,8 @@
   $ git push &> /dev/null
 
   $ cd ${TESTTMP}/r1
+  $ curl -s http://localhost:8002/flush
+  Flushed credential cache
   $ git pull &> /dev/null
   $ tree
   .
@@ -229,6 +241,8 @@
 
 Empty roots should not be dropped -> sha1 equal guarantee for "nop"
   $ cd ${TESTTMP}
+  $ curl -s http://localhost:8002/flush
+  Flushed credential cache
   $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8002/real_repo.git rr &> /dev/null
   $ cd rr
   $ git log --graph --pretty=%s

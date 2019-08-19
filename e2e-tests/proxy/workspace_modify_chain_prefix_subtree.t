@@ -169,6 +169,8 @@
   $ git commit -m "try to modify ws" &> /dev/null
 
   $ git push &> /dev/null
+  $ curl -s http://localhost:8002/flush
+  Flushed credential cache
   $ git pull &> /dev/null
 
 Note that d/ is still in the tree but now it is not overlayed
@@ -194,6 +196,8 @@ Note that d/ is still in the tree but now it is not overlayed
 
   $ cd ${TESTTMP}/real_repo
 
+  $ curl -s http://localhost:8002/flush
+  Flushed credential cache
   $ git pull &> /dev/null
 
   $ git clean -ffdx &> /dev/null
