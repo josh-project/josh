@@ -39,7 +39,7 @@
   CREDENTIALS OK "admin" ""
 
   $ git clone -q http://${TESTUSER}:wrongpass@localhost:8002/real_repo.git full_repo
-  fatal: Authentication failed for 'http://*:wrongpass@localhost:8002/real_repo.git/' (glob)
+  fatal: Authentication failed for 'http://localhost:8002/real_repo.git/'
   [128]
 
   $ rm -Rf full_repo

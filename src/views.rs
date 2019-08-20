@@ -39,7 +39,6 @@ pub trait View {
         backward_maps: &mut ViewMaps,
         _meta: &mut HashMap<String, String>,
     ) -> git2::Oid {
-
         if forward_maps.has(&repo, &self.viewstr(), commit.id()) {
             return forward_maps.get(&self.viewstr(), commit.id());
         }
@@ -270,14 +269,12 @@ impl View for ChainView {
             .first
             .apply_view_to_commit(repo, commit, forward_maps, backward_maps, _meta);
 
-        let commit = ok_or!(repo.find_commit(r), { return git2::Oid::zero(); });
-        return self.second.apply_view_to_commit(
-            repo,
-            &commit,
-            forward_maps,
-            backward_maps,
-            _meta,
-        );
+        let commit = ok_or!(repo.find_commit(r), {
+            return git2::Oid::zero();
+        });
+        return self
+            .second
+            .apply_view_to_commit(repo, &commit, forward_maps, backward_maps, _meta);
     }
 
     fn apply_to_tree(

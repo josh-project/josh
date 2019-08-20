@@ -1,5 +1,3 @@
-#![deny(warnings)]
-
 #[macro_use]
 extern crate josh;
 
@@ -55,13 +53,8 @@ use std::sync::{Arc, RwLock};
 
 lazy_static! {
     static ref VIEW_REGEX: Regex =
-        Regex::new(r"(?P<prefix>/.*[.]git)(?P<view>.*)[.]git(?P<pathinfo>/.*)")
+        Regex::new(r"(?P<prefix>/.*[.]git)(?P<headref>@[^:!]*)?(?P<view>[:!].*)[.](?P<ending>(?:git)|(?:json))(?P<pathinfo>/.*)?")
             .expect("can't compile regex");
-    static ref INFO_REGEX: Regex =
-        Regex::new(r"(?P<prefix>/.*[.]git)(?P<view>.*)[.]json@(?P<ref>.*)")
-            .expect("can't compile regex");
-    static ref FULL_REGEX: Regex =
-        Regex::new(r"(?P<prefix>/.*[.]git)(?P<pathinfo>/.*)").expect("can't compile regex");
 }
 
 type CredentialCache = HashMap<String, std::time::Instant>;
@@ -107,20 +100,10 @@ fn fetch_upstream(
                     &br_path,
                     &prefix,
                     &remote_url,
-                    &"refs/heads/*",
+                    &"refs/*",
                     &username,
                     &password,
                 )
-                .and_then(|_| {
-                    base_repo::fetch_refs_from_url(
-                        &br_path,
-                        &prefix,
-                        &remote_url,
-                        &"refs/tags/*",
-                        &username,
-                        &password,
-                    )
-                })
                 .and_then(|_| {
                     base_repo::fetch_refs_from_url(
                         &br_path,
@@ -160,6 +143,7 @@ fn fetch_upstream(
 fn async_fetch(
     http: &HttpService,
     prefix: &str,
+    headref: &str,
     view_string: &str,
     username: &str,
     password: &str,
@@ -171,6 +155,7 @@ fn async_fetch(
 
     let fetch_future = fetch_upstream(http, prefix, username, password, remote_url);
 
+    let headref = headref.to_owned();
     let viewstr = view_string.to_owned();
     let forward_maps = http.forward_maps.clone();
     let backward_maps = http.backward_maps.clone();
@@ -198,6 +183,7 @@ fn async_fetch(
                     make_view_repo(
                         &v.1,
                         &v.0,
+                        "HEAD",
                         &hash_strings(&v.0, &v.1, ""),
                         &br_path2,
                         forward_maps2.clone(),
@@ -215,6 +201,7 @@ fn async_fetch(
             make_view_repo(
                 &viewstr,
                 &prefix,
+                &headref,
                 &namespace,
                 &br_path,
                 forward_maps,
@@ -232,23 +219,27 @@ fn respond_unauthorized() -> Response {
     response
 }
 
-fn parse_url(path: &str) -> Option<(String, String, String)> {
-    if let Some(caps) = VIEW_REGEX.captures(&path) {
-        return Some((
-            caps.name("prefix").unwrap().as_str().to_string(),
-            caps.name("view").unwrap().as_str().to_string(),
-            caps.name("pathinfo").unwrap().as_str().to_string(),
-        ));
-    }
+fn parse_url(path: &str) -> Option<(String, String, String, String, String)> {
+    let nop_path = path.replacen(".git", ".git:nop=nop.git", 1);
+    let caps = if let Some(caps) = VIEW_REGEX.captures(&path) {
+        caps
+    } else {
+        if let Some(caps) = VIEW_REGEX.captures(&nop_path) {
+            caps
+        } else {
+            return None;
+        }
+    };
 
-    if let Some(caps) = FULL_REGEX.captures(&path) {
-        return Some((
-            caps.name("prefix").unwrap().as_str().to_string(),
-            "!nop".to_string(),
-            caps.name("pathinfo").unwrap().as_str().to_string(),
-        ));
-    }
-    return None;
+    let as_str = |x: regex::Match| x.as_str().to_owned();
+
+    return Some((
+        caps.name("prefix").map(as_str).unwrap_or("".to_owned()),
+        caps.name("view").map(as_str).unwrap_or("".to_owned()),
+        caps.name("pathinfo").map(as_str).unwrap_or("".to_owned()),
+        caps.name("headref").map(as_str).unwrap_or("".to_owned()),
+        caps.name("ending").map(as_str).unwrap_or("".to_owned()),
+    ));
 }
 
 fn call_service(
@@ -318,22 +309,23 @@ fn call_service(
 
     let compute_pool = service.compute_pool.clone();
 
-    if let Some(caps) = INFO_REGEX.captures(&path) {
-        let (prefix, view, rev) = (
-            caps.name("prefix").unwrap().as_str().to_string(),
-            caps.name("view").unwrap().as_str().to_string(),
-            caps.name("ref").unwrap().as_str().to_string(),
-        );
+    let (prefix, view_string, pathinfo, headref, ending) = some_or!(parse_url(&path), {
+        let response = Response::new().with_status(hyper::StatusCode::NotFound);
+        return Box::new(futures::future::ok(response));
+    });
 
+    let headref = headref.trim_start_matches("@").to_owned();
+
+    if ending == "json" {
         let forward_maps = service.forward_maps.clone();
         let backward_maps = service.forward_maps.clone();
         let br_path = service.base_path.clone();
 
         let f = compute_pool.spawn(futures::future::ok(true).map(move |_| {
             let info = get_info(
-                &view,
+                &view_string,
                 &prefix,
-                &rev,
+                &headref,
                 &br_path,
                 forward_maps.clone(),
                 backward_maps.clone(),
@@ -348,11 +340,6 @@ fn call_service(
             return Box::new(futures::future::ok(response));
         }));
     }
-
-    let (prefix, view_string, pathinfo) = some_or!(parse_url(&path), {
-        let response = Response::new().with_status(hyper::StatusCode::NotFound);
-        return Box::new(futures::future::ok(response));
-    });
 
     let (username, password) = match req.headers().get() {
         Some(&Authorization(Basic {
@@ -419,6 +406,7 @@ fn call_service(
         async_fetch(
             &service,
             &prefix,
+            &headref,
             &view_string,
             &username,
             &password,
@@ -592,6 +580,7 @@ fn to_ns(path: &str) -> String {
 fn make_view_repo(
     view_string: &str,
     prefix: &str,
+    headref: &str,
     namespace: &str,
     br_path: &Path,
     forward_maps: Arc<RwLock<view_maps::ViewMaps>>,
@@ -612,32 +601,41 @@ fn make_view_repo(
 
     let mut refs = vec![];
 
-    let refname = format!("refs/namespaces/{}/HEAD", &to_ns(prefix));
-    let to_ref = refname.replacen(&to_ns(prefix), &namespace, 1);
-    refs.push((refname.to_owned(), to_ref.clone()));
-
-    let glob = format!("refs/namespaces/{}/*", &to_ns(prefix));
-    for refname in scratch.references_glob(&glob).unwrap().names() {
-        let refname = refname.unwrap();
-        let to_ref = refname.replacen(&to_ns(prefix), &namespace, 1);
-
-        if to_ref.contains("/refs/cache-automerge/") {
-            continue;
-        }
-        if to_ref.contains("/refs/notes/") {
-            continue;
-        }
-
+    if headref != "" {
+        let to_ref = format!("refs/namespaces/{}/HEAD", &namespace);
+        let refname = format!("refs/namespaces/{}/{}", &to_ns(prefix), headref);
         refs.push((refname.to_owned(), to_ref.clone()));
-        if to_ref.contains("/refs/heads/") {
-            refs.push((
-                refname.to_owned(),
-                to_ref.replace("/refs/heads/", "/refs/for/"),
-            ));
-            refs.push((
-                refname.to_owned(),
-                to_ref.replace("/refs/heads/", "/refs/drafts/"),
-            ));
+    } else {
+        let refname = format!("refs/namespaces/{}/HEAD", &to_ns(prefix));
+        let to_ref = refname.replacen(&to_ns(prefix), &namespace, 1);
+        refs.push((refname.to_owned(), to_ref.clone()));
+
+        let glob = format!("refs/namespaces/{}/*", &to_ns(prefix));
+        for refname in scratch.references_glob(&glob).unwrap().names() {
+            let refname = refname.unwrap();
+            let to_ref = refname.replacen(&to_ns(prefix), &namespace, 1);
+
+            if to_ref.contains("/refs/cache-automerge/") {
+                continue;
+            }
+            if to_ref.contains("/refs/changes/") {
+                continue;
+            }
+            if to_ref.contains("/refs/notes/") {
+                continue;
+            }
+
+            refs.push((refname.to_owned(), to_ref.clone()));
+            if to_ref.contains("/refs/heads/") {
+                refs.push((
+                    refname.to_owned(),
+                    to_ref.replace("/refs/heads/", "/refs/for/"),
+                ));
+                refs.push((
+                    refname.to_owned(),
+                    to_ref.replace("/refs/heads/", "/refs/drafts/"),
+                ));
+            }
         }
     }
 
@@ -688,7 +686,9 @@ fn get_info(
     let fr = &format!("refs/namespaces/{}/{}", &to_ns(&prefix), &rev);
 
     let obj = ok_or!(scratch.revparse_single(&fr), {
-        return format!("rev not found: {:?}", &rev);
+        ok_or!(scratch.revparse_single(&rev), {
+            return format!("rev not found: {:?}", &rev);
+        })
     });
 
     let commit = ok_or!(obj.peel_to_commit(), {

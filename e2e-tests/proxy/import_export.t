@@ -68,7 +68,7 @@
 
   $ git checkout master
   Switched to branch 'master'
-  Your branch is up-to-date with 'origin/master'.
+  Your branch is up to date with 'origin/master'.
 
   $ git merge -m "Import 1" repo1_in_subdir --allow-unrelated-histories &> /dev/null
 

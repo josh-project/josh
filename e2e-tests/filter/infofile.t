@@ -25,7 +25,6 @@
 
   $ josh-filter --infofile master c=:/sub1
   $ git log --graph --pretty=%s josh/filter/master
-  * unrelated
   * add file2
   * add file1
 
@@ -36,7 +35,6 @@
 
   $ josh-filter --infofile master c=:/sub2
   $ git log --graph --pretty=%s josh/filter/master
-  * unrelated
   * add file3
 
   $ echo contents2 > sub1/file5
@@ -45,5 +43,4 @@
 
   $ josh-filter --infofile master c=:/sub2
   $ git log --graph --pretty=%s josh/filter/master
-  * add file5
   * add file3

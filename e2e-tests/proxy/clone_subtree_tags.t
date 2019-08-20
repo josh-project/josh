@@ -23,6 +23,13 @@
 
   $ git tag a_tag
 
+  $ echo contents1 > sub1/file12
+  $ git add sub1
+  $ git commit -m "add file12"
+  [master *] add file12 (glob)
+   1 file changed, 1 insertion(+)
+   create mode 100644 sub1/file12
+
 
   $ mkdir sub2
   $ echo contents1 > sub2/file2
@@ -33,19 +40,21 @@
    create mode 100644 sub2/file2
 
   $ git describe --tags
-  a_tag-1-* (glob)
+  a_tag-2-* (glob)
 
   $ tree
   .
   |-- sub1
-  |   `-- file1
+  |   |-- file1
+  |   `-- file12
   `-- sub2
       `-- file2
   
-  2 directories, 2 files
+  2 directories, 3 files
 
   $ git log --graph --pretty=%s
   * add file2
+  * add file12
   * add file1
 
   $ git push
@@ -65,6 +74,29 @@
 
   $ tree
   .
+  |-- file1
+  `-- file12
+  
+  0 directories, 2 files
+
+  $ git log --graph --pretty=%s
+  * add file12
+  * add file1
+
+  $ git describe --tags
+  a_tag-1-* (glob)
+
+  $ cat file1
+  contents1
+
+  $ git fetch http://${TESTUSER}:${TESTPASS}@localhost:8002/real_repo.git@refs/tags/a_tag:/sub1.git HEAD
+  From http://localhost:8002/real_repo.git@refs/tags/a_tag:/sub1
+   * branch            HEAD       -> FETCH_HEAD
+
+  $ git checkout FETCH_HEAD &> /dev/null
+
+  $ tree
+  .
   `-- file1
   
   0 directories, 1 file
@@ -74,9 +106,6 @@
 
   $ git describe --tags
   a_tag
-
-  $ cat file1
-  contents1
 
   $ bash ${TESTDIR}/destroy_test_env.sh
 $ cat ${TESTTMP}/josh-proxy.out | grep TAGS
