@@ -58,7 +58,7 @@ lazy_static! {
 }
 
 type CredentialCache = HashMap<String, std::time::Instant>;
-type KnownViews = HashSet<(String, String)>;
+type KnownViews = HashMap<String, HashSet<String>>;
 
 struct HttpService {
     handle: tokio_core::reactor::Handle,
@@ -176,23 +176,22 @@ fn async_fetch(
                     "refresh_all_known_views",
                     "known_views": *known_views,
                 );
-                for v in kn.iter() {
-                    if v.0 != prefix2 {
-                        continue;
+                if let Some(e) = kn.get(&prefix2) {
+                    for v in e.iter() {
+                        make_view_repo(
+                            &v,
+                            &prefix2,
+                            "HEAD",
+                            &hash_strings(&prefix2, &v, ""),
+                            &br_path2,
+                            forward_maps2.clone(),
+                            backward_maps2.clone(),
+                        );
                     }
-                    make_view_repo(
-                        &v.1,
-                        &v.0,
-                        "HEAD",
-                        &hash_strings(&v.0, &v.1, ""),
-                        &br_path2,
-                        forward_maps2.clone(),
-                        backward_maps2.clone(),
-                    );
                 }
             }
             if let Ok(mut kn) = known_views.write() {
-                kn.insert((prefix2, viewstr2));
+                kn.entry(prefix2).or_insert_with(HashSet::new).insert(viewstr2);
             }
             Ok(())
         });
@@ -267,6 +266,13 @@ fn call_service(
         service.credential_cache.write().unwrap().clear();
         let response = Response::new()
             .with_body(format!("Flushed credential cache\n"))
+            .with_status(hyper::StatusCode::Ok);
+        return Box::new(futures::future::ok(response));
+    }
+    if path == "/info" {
+        let body = serde_json::to_string(&*service.known_views.read().unwrap()).unwrap();
+        let response = Response::new()
+            .with_body(body)
             .with_status(hyper::StatusCode::Ok);
         return Box::new(futures::future::ok(response));
     }
