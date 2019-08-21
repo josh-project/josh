@@ -34,7 +34,8 @@ impl ViewMaps {
             if m.contains_key(&from) {
                 // Only report an object as cached if it exists in the object database.
                 // This forces a rebuild in case the object was garbage collected.
-                return repo.odb().unwrap().exists(self.get(viewstr, from));
+                let oid = self.get(viewstr, from);
+                return oid == git2::Oid::zero() || repo.odb().unwrap().exists(oid);
             }
         }
         if let Some(upsteam) = self.upsteam.clone() {

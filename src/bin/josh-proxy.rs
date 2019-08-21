@@ -172,10 +172,10 @@ fn async_fetch(
     Box::new(http.compute_pool.spawn(fetch_future.map(move |r| {
         let refresh_all_known_views = cp.spawn_fn(move || -> Result<(), ()> {
             if let Ok(mut kn) = known_views.try_write() {
-                kn.entry(prefix2.clone()).or_insert_with(HashSet::new).insert(viewstr2);
-            }
-            else
-            {
+                kn.entry(prefix2.clone())
+                    .or_insert_with(HashSet::new)
+                    .insert(viewstr2);
+            } else {
                 // If we could not get write lock that means a rebuild is in progress,
                 // So don't trigger another one.
                 return Ok(());

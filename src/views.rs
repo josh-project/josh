@@ -153,6 +153,16 @@ impl View for NopView {
 struct EmptyView;
 
 impl View for EmptyView {
+    fn apply_view_to_commit(
+        &self,
+        _repo: &git2::Repository,
+        _commit: &git2::Commit,
+        _forward_maps: &mut ViewMaps,
+        _backward_maps: &mut ViewMaps,
+        _meta: &mut HashMap<String, String>,
+    ) -> git2::Oid {
+        return git2::Oid::zero();
+    }
     fn transform_parents(
         &self,
         _repo: &git2::Repository,
@@ -509,6 +519,11 @@ impl View for CombineView {
         forward_maps: &mut ViewMaps,
         backward_maps: &mut ViewMaps,
     ) -> Vec<git2::Oid> {
+        if self.prefixes.len() == 0 {
+            return self
+                .base
+                .transform_parents(&repo, &commit, forward_maps, backward_maps);
+        }
         return commit
             .parents()
             .map(|x| scratch::apply_view_cached(repo, self, x.id(), forward_maps, backward_maps))
@@ -666,7 +681,6 @@ impl WorkspaceView {
                 ));
             }
         }
-
         let mut s = String::new();
         for x in in_this {
             s = format!("{}{}\n", s, x);
@@ -675,9 +689,17 @@ impl WorkspaceView {
         let pcw: Box<dyn View> = build_combine_view(repo, &s, Box::new(EmptyView));
 
         for parent in parents {
-            let p = scratch::apply_view_cached(repo, &*pcw, parent, forward_maps, backward_maps);
-            if p != git2::Oid::zero() {
-                transformed_parents_ids.push(p);
+            if let Ok(parent) = repo.find_commit(parent) {
+                let p = pcw.apply_view_to_commit(
+                    &repo,
+                    &parent,
+                    forward_maps,
+                    backward_maps,
+                    &mut HashMap::new(),
+                );
+                if p != git2::Oid::zero() {
+                    transformed_parents_ids.push(p);
+                }
             }
             break;
         }
