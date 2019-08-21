@@ -171,6 +171,15 @@ fn async_fetch(
     let known_views = http.known_views.clone();
     Box::new(http.compute_pool.spawn(fetch_future.map(move |r| {
         let refresh_all_known_views = cp.spawn_fn(move || -> Result<(), ()> {
+            if let Ok(mut kn) = known_views.try_write() {
+                kn.entry(prefix2.clone()).or_insert_with(HashSet::new).insert(viewstr2);
+            }
+            else
+            {
+                // If we could not get write lock that means a rebuild is in progress,
+                // So don't trigger another one.
+                return Ok(());
+            }
             if let Ok(kn) = known_views.read() {
                 trace_scoped!(
                     "refresh_all_known_views",
@@ -189,9 +198,6 @@ fn async_fetch(
                         );
                     }
                 }
-            }
-            if let Ok(mut kn) = known_views.write() {
-                kn.entry(prefix2).or_insert_with(HashSet::new).insert(viewstr2);
             }
             Ok(())
         });
@@ -269,7 +275,7 @@ fn call_service(
             .with_status(hyper::StatusCode::Ok);
         return Box::new(futures::future::ok(response));
     }
-    if path == "/info" {
+    if path == "/views" {
         let body = serde_json::to_string(&*service.known_views.read().unwrap()).unwrap();
         let response = Response::new()
             .with_body(body)
