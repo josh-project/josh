@@ -86,6 +86,7 @@ fn fetch_upstream(
     username: &str,
     password: &str,
     remote_url: String,
+    stale_ok: bool,
 ) -> Box<futures_cpupool::CpuFuture<std::result::Result<(), git2::Error>, hyper::Error>> {
     let credentials_hashed = hash_strings(&remote_url, &username, &password);
     let username = username.to_owned();
@@ -95,16 +96,18 @@ fn fetch_upstream(
     let credential_cache = http.credential_cache.clone();
     let fetching = http.fetching.clone();
 
-    let last = http
-        .credential_cache
-        .read()
-        .ok()
-        .map(|cc| cc.get(&credentials_hashed).copied());
+    let credentials_cached_ok = stale_ok && {
+        let last = http
+            .credential_cache
+            .read()
+            .ok()
+            .map(|cc| cc.get(&credentials_hashed).copied());
 
-    let credentials_cached_ok = if let Some(Some(c)) = last {
-        std::time::Instant::now().duration_since(c) < std::time::Duration::from_secs(60)
-    } else {
-        false
+        if let Some(Some(c)) = last {
+            std::time::Instant::now().duration_since(c) < std::time::Duration::from_secs(60)
+        } else {
+            false
+        }
     };
 
     let do_fetch = if credentials_cached_ok
@@ -159,7 +162,7 @@ fn async_fetch(
     let br_path = http.base_path.clone();
     base_repo::create_local(&br_path);
 
-    let fetch_future = fetch_upstream(http, prefix, username, password, remote_url);
+    let fetch_future = fetch_upstream(http, prefix, username, password, remote_url, headref == "");
 
     let headref = headref.to_owned();
     let viewstr = view_string.to_owned();
