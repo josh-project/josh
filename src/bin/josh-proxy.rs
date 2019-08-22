@@ -711,37 +711,46 @@ fn get_info(
     meta.insert("sha1".to_owned(), "".to_owned());
     let transformed = viewobj.apply_view_to_commit(&scratch, &commit, &mut fm, &mut bm, &mut meta);
 
-    let transformed = scratch.find_commit(transformed).unwrap();
-
-    let parent_ids = |commit: git2::Oid| {
-        let pids: Vec<_> = scratch
-            .find_commit(commit)
-            .unwrap()
+    let parent_ids = |commit: &git2::Commit| {
+        let pids: Vec<_> = commit
             .parent_ids()
             .map(|x| {
                 json!({
                     "commit": x.to_string(),
-                    "tree": scratch.find_commit(x).unwrap().tree_id().to_string(),
+                    "tree": scratch.find_commit(x)
+                        .map(|c| { c.tree_id() })
+                        .unwrap_or(git2::Oid::zero())
+                        .to_string(),
                 })
             })
             .collect();
         pids
     };
 
+    let t = if let Ok(transformed) = scratch.find_commit(transformed) {
+        json!({
+            "commit": transformed.id().to_string(),
+            "tree": transformed.tree_id().to_string(),
+            "parents": parent_ids(&transformed),
+        })
+    } else {
+        json!({
+            "commit": git2::Oid::zero().to_string(),
+            "tree": git2::Oid::zero().to_string(),
+            "parents": json!([]),
+        })
+    };
+
     let s = json!({
         "original": {
             "commit": commit.id().to_string(),
             "tree": commit.tree_id().to_string(),
-            "parents": parent_ids(commit.id()),
+            "parents": parent_ids(&commit),
         },
-        "transformed": {
-            "commit": transformed.id().to_string(),
-            "tree": transformed.tree_id().to_string(),
-            "parents": parent_ids(transformed.id()),
-        }
+        "transformed": t,
     });
 
-    return serde_json::to_string(&s).unwrap();
+    return serde_json::to_string(&s).unwrap_or("Json Error".to_string());
 }
 
 fn install_josh_hook(scratch_dir: &Path) {

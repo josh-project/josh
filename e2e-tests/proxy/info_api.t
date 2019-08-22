@@ -43,4 +43,7 @@ Get /info/refs to trigger rebuilding and pass credentials
   $ curl -s http://localhost:8002/real_repo.git@refs/heads/master:/sub1.json
   {"original":{"commit":"*","parents":[{"commit":"*","tree":"*"}],"tree":"*"},"transformed":{"commit":"*","parents":[],"tree":"*"}} (glob)
 
+  $ curl -s http://localhost:8002/real_repo.git@refs/heads/master:/nothing_here.json
+  {"original":{"commit":"8c4a85247e15fa31d5bc25b5da6ab12c9fcd67f3","parents":[{"commit":"617048b495a0fab14a6ce407fe62c83490df7fbd","tree":"c82fc150c43f13cc56c0e9caeba01b58ec612022"}],"tree":"2387c32648eefdee78386575672ac091da849b08"},"transformed":{"commit":"0000000000000000000000000000000000000000","parents":[],"tree":"0000000000000000000000000000000000000000"}}
+
   $ bash ${TESTDIR}/destroy_test_env.sh
