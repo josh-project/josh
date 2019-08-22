@@ -14,49 +14,51 @@ pub fn fetch_refs_from_url(
     path: &Path,
     prefix: &str,
     url: &str,
-    refs_prefix: &str,
+    refs_prefixes: &[&str],
     username: &str,
     password: &str,
 ) -> Result<(), git2::Error> {
-    let spec = format!(
-        "+{}:refs/namespaces/{}/{}",
-        &refs_prefix,
-        to_ns(prefix),
-        &refs_prefix
-    );
+    for refs_prefix in refs_prefixes {
+        let spec = format!(
+            "+{}:refs/namespaces/{}/{}",
+            &refs_prefix,
+            to_ns(prefix),
+            &refs_prefix
+        );
 
-    let shell = shell::Shell {
-        cwd: path.to_owned(),
-    };
-    let nurl = {
-        let splitted: Vec<&str> = url.splitn(2, "://").collect();
-        let proto = splitted[0];
-        let rest = splitted[1];
-        format!("{}://{}@{}", &proto, &username, &rest)
-    };
+        let shell = shell::Shell {
+            cwd: path.to_owned(),
+        };
+        let nurl = {
+            let splitted: Vec<&str> = url.splitn(2, "://").collect();
+            let proto = splitted[0];
+            let rest = splitted[1];
+            format!("{}://{}@{}", &proto, &username, &rest)
+        };
 
-    git2::Repository::open(path)
-        .expect("no repo")
-        .config()
-        .unwrap()
-        .set_str(
-            "credential.helper",
-            &format!("!f() {{ echo \"password={}\"; }}; f", &password),
-        )?;
+        git2::Repository::open(path)
+            .expect("no repo")
+            .config()
+            .unwrap()
+            .set_str(
+                "credential.helper",
+                &format!("!f() {{ echo \"password={}\"; }}; f", &password),
+            )?;
 
-    let cmd = format!("git fetch {} '{}'", &nurl, &spec);
-    println!("fetch_refs_from_url {:?} {:?} {:?}", cmd, path, "");
+        let cmd = format!("git fetch {} '{}'", &nurl, &spec);
+        println!("fetch_refs_from_url {:?} {:?} {:?}", cmd, path, "");
 
-    /* shell.command(&"git prune"); */
-    /* shell.command(&"git gc --auto"); */
-    shell.command(&"git config gc.auto 0");
+        /* shell.command(&"git prune"); */
+        /* shell.command(&"git gc --auto"); */
+        shell.command(&"git config gc.auto 0");
 
-    let (_stdout, stderr) = shell.command(&cmd);
-    if stderr.contains("fatal: Authentication failed") {
-        return Err(git2::Error::from_str("auth"));
-    }
-    if stderr.contains("fatal:") {
-        return Err(git2::Error::from_str("error"));
+        let (_stdout, stderr) = shell.command(&cmd);
+        if stderr.contains("fatal: Authentication failed") {
+            return Err(git2::Error::from_str("auth"));
+        }
+        if stderr.contains("fatal:") {
+            return Err(git2::Error::from_str("error"));
+        }
     }
     return Ok(());
 }

@@ -71,6 +71,7 @@ struct HttpService {
     backward_maps: Arc<RwLock<view_maps::ViewMaps>>,
     credential_cache: Arc<RwLock<CredentialCache>>,
     known_views: Arc<RwLock<KnownViews>>,
+    fetching: Arc<RwLock<HashSet<String>>>,
 }
 
 fn hash_strings(url: &str, username: &str, password: &str) -> String {
@@ -92,37 +93,7 @@ fn fetch_upstream(
     let prefix = prefix.to_owned();
     let br_path = http.base_path.clone();
     let credential_cache = http.credential_cache.clone();
-
-    let do_fetch = Box::new(
-        http.fetch_push_pool
-            .spawn(futures::future::ok(()).map(move |_| {
-                base_repo::fetch_refs_from_url(
-                    &br_path,
-                    &prefix,
-                    &remote_url,
-                    &"refs/*",
-                    &username,
-                    &password,
-                )
-                .and_then(|_| {
-                    base_repo::fetch_refs_from_url(
-                        &br_path,
-                        &prefix,
-                        &remote_url,
-                        &"HEAD",
-                        &username,
-                        &password,
-                    )
-                })
-                .and_then(|_| {
-                    let credentials_hashed = hash_strings(&remote_url, &username, &password);
-                    if let Ok(mut cc) = credential_cache.write() {
-                        cc.insert(credentials_hashed, std::time::Instant::now());
-                    }
-                    Ok(())
-                })
-            })),
-    );
+    let fetching = http.fetching.clone();
 
     let last = http
         .credential_cache
@@ -130,11 +101,46 @@ fn fetch_upstream(
         .ok()
         .map(|cc| cc.get(&credentials_hashed).copied());
 
-    if let Some(Some(c)) = last {
-        if std::time::Instant::now().duration_since(c) < std::time::Duration::from_secs(60) {
-            do_fetch.forget();
-            return Box::new(http.compute_pool.spawn(futures::future::ok(Ok(()))));
-        }
+    let credentials_cached_ok = if let Some(Some(c)) = last {
+        std::time::Instant::now().duration_since(c) < std::time::Duration::from_secs(60)
+    } else {
+        false
+    };
+
+    let do_fetch = if credentials_cached_ok
+        && !fetching.write().unwrap().insert(credentials_hashed.clone())
+    {
+        Box::new(
+            http.compute_pool
+                .spawn(futures::future::ok(()).map(move |_| Ok(()))),
+        )
+    } else {
+        Box::new(
+            http.fetch_push_pool
+                .spawn(futures::future::ok(()).map(move |_| {
+                    base_repo::fetch_refs_from_url(
+                        &br_path,
+                        &prefix,
+                        &remote_url,
+                        &["refs/*", "HEAD"],
+                        &username,
+                        &password,
+                    )
+                    .and_then(|_| {
+                        let credentials_hashed = hash_strings(&remote_url, &username, &password);
+                        fetching.write().unwrap().remove(&credentials_hashed);
+                        if let Ok(mut cc) = credential_cache.write() {
+                            cc.insert(credentials_hashed, std::time::Instant::now());
+                        }
+                        Ok(())
+                    })
+                })),
+        )
+    };
+
+    if credentials_cached_ok {
+        do_fetch.forget();
+        return Box::new(http.compute_pool.spawn(futures::future::ok(Ok(()))));
     }
 
     return do_fetch;
@@ -546,6 +552,7 @@ fn run_http_server(addr: net::SocketAddr, port: String, local: &Path, remote: &s
     let backward_maps = Arc::new(RwLock::new(view_maps::ViewMaps::new()));
     let credential_cache = Arc::new(RwLock::new(CredentialCache::new()));
     let known_views = Arc::new(RwLock::new(KnownViews::new()));
+    let fetching = Arc::new(RwLock::new(HashSet::new()));
     let server_handle = core.handle();
     let fetch_push_pool = CpuPool::new(1);
     let compute_pool = CpuPool::new(4);
@@ -565,6 +572,7 @@ fn run_http_server(addr: net::SocketAddr, port: String, local: &Path, remote: &s
                 backward_maps: backward_maps.clone(),
                 credential_cache: credential_cache.clone(),
                 known_views: known_views.clone(),
+                fetching: fetching.clone(),
             };
             Ok(cghttp)
         })
