@@ -434,6 +434,50 @@ impl View for PrefixView {
     }
 }
 
+struct HideView {
+    path: PathBuf,
+}
+
+impl View for HideView {
+    fn transform_parents(
+        &self,
+        repo: &git2::Repository,
+        commit: &git2::Commit,
+        forward_maps: &mut ViewMaps,
+        backward_maps: &mut ViewMaps,
+    ) -> Vec<git2::Oid> {
+        return commit
+            .parents()
+            .map(|x| scratch::apply_view_cached(repo, self, x.id(), forward_maps, backward_maps))
+            .collect();
+    }
+    fn apply_to_tree(
+        &self,
+        repo: &git2::Repository,
+        tree: &git2::Tree,
+        _commit_id: git2::Oid,
+    ) -> git2::Oid {
+        replace_subtree(&repo, &self.path, git2::Oid::zero(), &tree)
+    }
+
+    fn unapply(
+        &self,
+        repo: &git2::Repository,
+        tree: &git2::Tree,
+        parent_tree: &git2::Tree,
+    ) -> git2::Oid {
+        let hidden = parent_tree
+            .get_path(&self.path)
+            .map(|x| x.id())
+            .unwrap_or(git2::Oid::zero());
+        return replace_subtree(&repo, &self.path, hidden, &tree);
+    }
+
+    fn viewstr(&self) -> String {
+        return format!(":hide={}", &self.path.to_str().unwrap());
+    }
+}
+
 struct InfoFileView {
     values: BTreeMap<String, String>,
 }
@@ -803,6 +847,10 @@ fn make_view(repo: &git2::Repository, cmd: &str, name: &str) -> Box<dyn View> {
         return Box::new(PrefixView {
             prefix: Path::new(name).to_owned(),
         });
+    } else if cmd == "hide" {
+        return Box::new(HideView {
+            path: Path::new(name).to_owned(),
+        });
     } else if cmd == "empty" {
         return Box::new(EmptyView);
     } else if cmd == "info" {
@@ -939,9 +987,13 @@ fn replace_child(
         let mut builder = repo
             .treebuilder(Some(&full_tree))
             .expect("replace_child: can't create treebuilder");
-        builder
-            .insert(child, oid, mode)
-            .expect("replace_child: can't insert tree");
+        if oid == git2::Oid::zero() {
+            builder.remove(child).ok();
+        } else {
+            builder
+                .insert(child, oid, mode)
+                .expect("replace_child: can't insert tree");
+        }
         builder.write().expect("replace_child: can't write tree")
     };
     return full_tree_id;

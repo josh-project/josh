@@ -107,8 +107,8 @@
   tree: * (glob)
   view: :/sub2
 
-  $ git show libs/master | grep $(cat c/.joshinfo | grep commit | sed 's/commit: //')
-  commit * (glob)
-  $ git show libs/foo | grep $(cat a/b/.joshinfo | grep commit | sed 's/commit: //')
-  commit * (glob)
+$ git show libs/master | grep $(cat c/.joshinfo | grep commit | sed 's/commit: //')
+commit * (glob)
+$ git show libs/foo | grep $(cat a/b/.joshinfo | grep commit | sed 's/commit: //')
+commit * (glob)
 
