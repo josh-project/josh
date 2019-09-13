@@ -31,6 +31,7 @@ fn run_filter(args: Vec<String>) -> i32 {
         .arg(clap::Arg::with_name("from_to").takes_value(true))
         .arg(clap::Arg::with_name("spec").takes_value(true))
         .arg(clap::Arg::with_name("squash").long("squash"))
+        .arg(clap::Arg::with_name("reverse").long("reverse"))
         .arg(clap::Arg::with_name("infofile").long("infofile"))
         .arg(
             clap::Arg::with_name("trace")
@@ -90,6 +91,8 @@ fn run_filter(args: Vec<String>) -> i32 {
             }
         }
 
+        let reverse = args.is_present("reverse");
+
         if args.is_present("squash") {
             viewobj = josh::build_chain(
                 josh::build_view(&repo, &format!(":cutoff={}", &src)),
@@ -97,7 +100,37 @@ fn run_filter(args: Vec<String>) -> i32 {
             );
         }
 
-        josh::apply_view_to_refs(&repo, &*viewobj, &[(src, target)], &mut fm, &mut bm);
+        let t = if reverse {
+            "refs/JOSH_TMP".to_owned()
+        } else {
+            target.clone()
+        };
+        let src = repo
+            .revparse_ext(&src)
+            .expect("reference not found 1")
+            .1
+            .expect("reference not found")
+            .name()
+            .unwrap()
+            .to_string();
+
+        josh::apply_view_to_refs(&repo, &*viewobj, &[(src.clone(), t)], &mut fm, &mut bm);
+
+        if reverse {
+            let new = repo.revparse_single(&target).unwrap().id();
+            let old = repo.revparse_single("JOSH_TMP").unwrap().id();
+
+            match josh::unapply_view(&repo, &bm, &*viewobj, old, new) {
+                josh::UnapplyView::Done(rewritten) => {
+                    repo.reference(&src, rewritten, true, "unapply_view")
+                        .expect("can't create reference");
+                }
+                _ => {
+                    /* debug!("rewritten ERROR"); */
+                    return 1;
+                }
+            }
+        }
     }
 
     return 0;

@@ -44,6 +44,7 @@ mod views;
 pub mod virtual_repo;
 
 pub use scratch::apply_view_to_refs;
+pub use scratch::unapply_view;
 pub use views::build_chain;
 pub use views::build_view;
 
