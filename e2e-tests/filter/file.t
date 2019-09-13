@@ -34,9 +34,9 @@
    * [new branch]      master     -> libs/master
 
   $ cat > syncinfo <<EOF
-  > [libs/master]
+  > [libs/master:refs/josh/filter/libs/master]
   > c = :/sub1
-  > [libs/foo]
+  > [libs/foo:refs/josh/filter/libs/foo]
   > a/b = :/sub2
   > EOF
 

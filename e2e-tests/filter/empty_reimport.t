@@ -44,7 +44,7 @@
   * commit1
 
 
-  $ josh-filter master c=:/pre
+  $ josh-filter master:refs/josh/filter/master c=:/pre
 
   $ git log josh/filter/master --graph --pretty=%s
   * change on other 2
@@ -91,7 +91,7 @@
   * commit1
 
 
-  $ josh-filter master c=:/pre
+  $ josh-filter master:refs/josh/filter/master c=:/pre
 
   $ git log josh/filter/master --graph --pretty=%s
   *   Merge branch 'other_branch'

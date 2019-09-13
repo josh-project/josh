@@ -28,7 +28,7 @@ lazy_static! {
 fn run_filter(args: Vec<String>) -> i32 {
     let args = clap::App::new("josh-filter")
         .arg(clap::Arg::with_name("file").long("file").takes_value(true))
-        .arg(clap::Arg::with_name("src").takes_value(true))
+        .arg(clap::Arg::with_name("from_to").takes_value(true))
         .arg(clap::Arg::with_name("spec").takes_value(true))
         .arg(clap::Arg::with_name("squash").long("squash"))
         .arg(clap::Arg::with_name("infofile").long("infofile"))
@@ -46,7 +46,7 @@ fn run_filter(args: Vec<String>) -> i32 {
     let mut fm = view_maps::ViewMaps::new();
     let mut bm = view_maps::ViewMaps::new();
 
-    let srcstr = args.value_of("src").unwrap_or("");
+    let srcstr = args.value_of("from_to").unwrap_or("");
     let specstr = args.value_of("spec").unwrap_or("");
 
     let filestr = args
@@ -55,8 +55,18 @@ fn run_filter(args: Vec<String>) -> i32 {
         .unwrap_or(format!("[{}]{}", srcstr, specstr));
 
     for caps in FILE_REGEX.captures_iter(&filestr) {
-        let src = caps.name("src").unwrap().as_str().trim().to_owned();
-        let target = format!("refs/josh/filter/{}", &src);
+        let from_to = caps.name("src").unwrap().as_str().trim().to_owned();
+        let mut splitted = from_to.splitn(2, ":");
+
+        let src = splitted
+            .next()
+            .expect("from_to must contain \":\"")
+            .to_owned();
+        let target = splitted
+            .next()
+            .expect("from_to must contain \":\"")
+            .to_owned();
+
         let viewstr = caps.name("spec").unwrap().as_str().trim().to_owned();
 
         let mut viewobj = josh::build_view(&repo, &viewstr);

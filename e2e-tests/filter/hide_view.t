@@ -34,7 +34,7 @@
   
   2 directories, 3 files
 
-  $ josh-filter master c=:hide=sub1
+  $ josh-filter master:refs/josh/filter/master c=:hide=sub1
   $ git checkout josh/filter/master &>/dev/null
   $ git log --graph --pretty=%s
   * add file3
@@ -46,7 +46,7 @@
   
   2 directories, 1 file
 
-  $ josh-filter master c=:hide=sub1/file2
+  $ josh-filter master:refs/josh/filter/master c=:hide=sub1/file2
   $ git checkout josh/filter/master &>/dev/null
   $ git log --graph --pretty=%s
   * add file3
@@ -61,7 +61,7 @@
   
   3 directories, 2 files
 
-  $ josh-filter master c=:hide=sub2/file3
+  $ josh-filter master:refs/josh/filter/master c=:hide=sub2/file3
   $ git checkout josh/filter/master &>/dev/null
   $ git log --graph --pretty=%s
   * add file2
