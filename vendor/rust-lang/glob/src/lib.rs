@@ -61,7 +61,6 @@
     html_root_url = "https://docs.rs/glob/0.3.0"
 )]
 #![deny(missing_docs)]
-#![cfg_attr(all(test, windows), feature(std_misc))]
 
 #[cfg(test)]
 #[macro_use]
@@ -177,7 +176,6 @@ pub fn glob(pattern: &str) -> Result<Paths, PatternError> {
 pub fn glob_with(pattern: &str, options: MatchOptions) -> Result<Paths, PatternError> {
     #[cfg(windows)]
     fn check_windows_verbatim(p: &Path) -> bool {
-        use std::path::Prefix;
         match p.components().next() {
             Some(Component::Prefix(ref p)) => p.kind().is_verbatim(),
             _ => false,
@@ -1086,12 +1084,21 @@ mod test {
         #[cfg(windows)]
         fn win() {
             use std::env::current_dir;
-            use std::ffi::AsOsStr;
+            use std::path::Component;
 
             // check windows absolute paths with host/device components
             let root_with_device = current_dir()
                 .ok()
-                .and_then(|p| p.prefix().map(|p| p.join("*")))
+                .and_then(|p| {
+                    match p.components().next().unwrap() {
+                        Component::Prefix(prefix_component) => {
+                            let path = Path::new(prefix_component.as_os_str());
+                            path.join("*");
+                            Some(path.to_path_buf())
+                        }
+                        _ => panic!("no prefix in this path"),
+                    }
+                })
                 .unwrap();
             // FIXME (#9639): This needs to handle non-utf8 paths
             assert!(glob(root_with_device.as_os_str().to_str().unwrap())
