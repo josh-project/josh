@@ -10,6 +10,40 @@ fn to_ns(path: &str) -> String {
     return path.trim_matches('/').replace("/", "/refs/namespaces/");
 }
 
+pub fn run_gc(path: &Path) -> String {
+    let shell = shell::Shell {
+        cwd: path.to_owned(),
+    };
+
+    let output = "";
+
+    let (stdout, stderr) = shell.command(&"git fsck");
+    let output = format!(
+        "{}\n\ngit fsck:\nstdout:\n{}\n\nstderr:{}\n",
+        output, stdout, stderr
+    );
+
+    let (stdout, stderr) = shell.command(&"git gc");
+    let output = format!(
+        "{}\n\ngit prune:\nstdout:\n{}\n\nstderr:{}\n",
+        output, stdout, stderr
+    );
+
+    let (stdout, stderr) = shell.command(&"git prune");
+    let output = format!(
+        "{}\n\ngit prune:\nstdout:\n{}\n\nstderr:{}\n",
+        output, stdout, stderr
+    );
+
+    let (stdout, stderr) = shell.command(&"git fsck");
+    let output = format!(
+        "{}\n\ngit fsck:\nstdout:\n{}\n\nstderr:{}\n",
+        output, stdout, stderr
+    );
+
+    return output;
+}
+
 pub fn fetch_refs_from_url(
     path: &Path,
     prefix: &str,

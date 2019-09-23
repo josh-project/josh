@@ -277,6 +277,15 @@ fn call_service(
             .with_status(hyper::StatusCode::Ok);
         return Box::new(futures::future::ok(response));
     }
+    if path == "/gc" {
+        let br_path = service.base_path.clone();
+        return Box::new(service.fetch_push_pool.spawn_fn(move || {
+            let response = Response::new()
+                .with_body(base_repo::run_gc(&br_path))
+                .with_status(hyper::StatusCode::Ok);
+            return Box::new(futures::future::ok(response));
+        }));
+    }
     if path == "/flush" {
         service.credential_cache.write().unwrap().clear();
         let response = Response::new()
