@@ -10,6 +10,14 @@ fn to_ns(path: &str) -> String {
     return path.trim_matches('/').replace("/", "/refs/namespaces/");
 }
 
+pub fn reset_all(path: &Path) {
+    let shell = shell::Shell {
+        cwd: path.to_owned(),
+    };
+
+    let (_stdout, _stderr) = shell.command(&format!("rm -Rf {:?}", path));
+}
+
 pub fn run_gc(path: &Path) -> String {
     let shell = shell::Shell {
         cwd: path.to_owned(),

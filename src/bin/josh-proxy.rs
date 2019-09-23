@@ -277,6 +277,13 @@ fn call_service(
             .with_status(hyper::StatusCode::Ok);
         return Box::new(futures::future::ok(response));
     }
+    if path == "/reset" {
+        base_repo::reset_all(&service.base_path);
+        let response = Response::new()
+            .with_body("deleted".to_owned())
+            .with_status(hyper::StatusCode::Ok);
+        return Box::new(futures::future::ok(response));
+    }
     if path == "/gc" {
         let br_path = service.base_path.clone();
         return Box::new(service.fetch_push_pool.spawn_fn(move || {
