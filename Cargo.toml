@@ -1,10 +1,14 @@
 [package]
 name = "josh"
 version = "0.1.0"
+repository = "https://github.com/esrlabs/josh"
 authors = ["Christian Schilling <christian.schilling@esrlabs.com>"]
 build = "build.rs"
 license = "MIT"
+license-file = "LICENSE"
 description = "GIT virtualization proxy"
+keywords = ["git", "monorepo", "workflow", "scm"]
+readme = "README.md"
 
 [build-dependencies]
 git-version = "0.2"
