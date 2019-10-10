@@ -20,7 +20,6 @@ extern crate lazy_static;
 extern crate serde_json;
 
 extern crate crypto;
-extern crate tempdir;
 extern crate tokio_core;
 
 use futures::future::Future;

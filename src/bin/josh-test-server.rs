@@ -9,7 +9,6 @@ extern crate hyper;
 extern crate josh;
 extern crate lazy_static;
 extern crate regex;
-extern crate tempdir;
 extern crate tokio_core;
 
 #[macro_use]

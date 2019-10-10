@@ -12,7 +12,6 @@ git-version = "0.2"
 [dependencies]
 git2 = "0.10"
 clap = "2"
-tempdir = "0.3"
 log = "0.4"
 fern = "0.5"
 env_logger = "0.6"

@@ -1,6 +1,5 @@
 extern crate git2;
 
-extern crate tempdir;
 use std::fs;
 
 use super::*;
