@@ -1,7 +1,6 @@
 #![deny(warnings)]
 #![allow(clippy::needless_return)]
 extern crate clap;
-extern crate fern;
 extern crate futures;
 extern crate futures_cpupool;
 extern crate git2;
@@ -132,21 +131,7 @@ fn run_test_server(addr: net::SocketAddr, repo_path: &Path, username: &str, pass
 }
 
 fn run_server(args: Vec<String>) -> i32 {
-    println!("RUN HTTP SERVER {:?}", &args);
-    let logfilename = Path::new("./git-http-server.log");
-    fern::Dispatch::new()
-        .format(|out, message, record| {
-            out.finish(format_args!(
-                "{}[{}] {}",
-                record.target(),
-                record.level(),
-                message
-            ))
-        })
-        .chain(std::io::stdout())
-        .chain(fern::log_file(logfilename).unwrap())
-        .apply()
-        .unwrap();
+    debug!("RUN HTTP SERVER {:?}", &args);
 
     debug!("args: {:?}", args);
 

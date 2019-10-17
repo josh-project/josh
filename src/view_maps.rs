@@ -1,5 +1,9 @@
+extern crate tracing;
+
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
+
+use self::tracing::{span, Level};
 
 pub type ViewMap = HashMap<git2::Oid, git2::Oid>;
 
@@ -23,7 +27,7 @@ impl ViewMaps {
             }
         }
         if let Some(upsteam) = self.upsteam.clone() {
-            trace_scoped!("read_lock: get", "viewstr": viewstr, "from": from.to_string());
+            let _trace_s = span!(Level::TRACE, "read_lock: get", ?viewstr, from=?from.to_string());
             return upsteam.read().unwrap().get(viewstr, from);
         }
         return git2::Oid::zero();
@@ -39,7 +43,7 @@ impl ViewMaps {
             }
         }
         if let Some(upsteam) = self.upsteam.clone() {
-            trace_scoped!("read_lock: has", "viewstr": viewstr, "from": from.to_string());
+            let _trace_s = span!(Level::TRACE,"read_lock: has",  ?viewstr, from=?from.to_string());
             return upsteam.read().unwrap().has(repo, viewstr, from);
         }
         return false;

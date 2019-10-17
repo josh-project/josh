@@ -2,7 +2,6 @@
 
 extern crate josh;
 
-#[macro_use]
 extern crate rs_tracing;
 
 extern crate clap;
@@ -39,9 +38,6 @@ fn run_filter(args: Vec<String>) -> i32 {
                 .takes_value(true),
         )
         .get_matches_from(args);
-
-    args.value_of("trace")
-        .map(|tf| open_trace_file!(tf).expect("can't open tracefile"));
 
     let repo = git2::Repository::open_from_env().unwrap();
     let mut fm = view_maps::ViewMaps::new();

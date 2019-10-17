@@ -87,7 +87,7 @@ pub fn fetch_refs_from_url(
             )?;
 
         let cmd = format!("git fetch {} '{}'", &nurl, &spec);
-        println!("fetch_refs_from_url {:?} {:?} {:?}", cmd, path, "");
+        debug!("fetch_refs_from_url {:?} {:?} {:?}", cmd, path, "");
 
         /* shell.command(&"git prune"); */
         /* shell.command(&"git gc --auto"); */
@@ -144,8 +144,8 @@ pub fn push_head_url(
         .expect("can't create reference");
     let (stdout, stderr) = shell.command(&cmd);
     fakehead.delete().expect("fakehead.delete failed");
-    println!("{}", &stderr);
-    println!("{}", &stdout);
+    debug!("{}", &stderr);
+    debug!("{}", &stdout);
 
     let stderr = stderr.replace(&rn, "JOSH_PUSH");
 
@@ -153,12 +153,12 @@ pub fn push_head_url(
 }
 
 pub fn create_local(path: &Path) {
-    println!("init base repo: {:?}", path);
+    info!("init base repo: {:?}", path);
     fs::create_dir_all(path).expect("can't create_dir_all");
 
     match git2::Repository::open(path) {
         Ok(_) => {
-            println!("repo exists");
+            info!("repo exists");
             return;
         }
         Err(_) => {}
@@ -166,7 +166,7 @@ pub fn create_local(path: &Path) {
 
     match git2::Repository::init_bare(path) {
         Ok(_) => {
-            println!("repo initialized");
+            info!("repo initialized");
             return;
         }
         Err(_) => {}

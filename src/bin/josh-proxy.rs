@@ -1,11 +1,7 @@
 #[macro_use]
 extern crate josh;
 
-#[macro_use]
-extern crate rs_tracing;
-
 extern crate clap;
-extern crate fern;
 extern crate futures;
 extern crate futures_cpupool;
 extern crate git2;
@@ -21,6 +17,9 @@ extern crate serde_json;
 
 extern crate crypto;
 extern crate tokio_core;
+extern crate tracing;
+extern crate tracing_log;
+extern crate tracing_subscriber;
 
 use futures::future::Future;
 use futures::Stream;
@@ -49,6 +48,11 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::{Arc, RwLock};
+
+use tracing::{debug, info, span, Level};
+
+use tracing::*;
+use tracing_subscriber::layer::{Context, Layer};
 
 lazy_static! {
     static ref VIEW_REGEX: Regex =
@@ -189,10 +193,7 @@ fn async_fetch(
                 return Ok(());
             }
             if let Ok(kn) = known_views.read() {
-                trace_scoped!(
-                    "refresh_all_known_views",
-                    "known_views": *known_views,
-                );
+                let _trace_s = span!(Level::TRACE, "refresh_all_known_views");
                 if let Some(e) = kn.get(&prefix2) {
                     for v in e.iter() {
                         make_view_repo(
@@ -245,6 +246,7 @@ fn parse_url(path: &str) -> Option<(String, String, String, String, String)> {
     };
 
     let as_str = |x: regex::Match| x.as_str().to_owned();
+    debug!("parse_url: {:?}", caps);
 
     return Some((
         caps.name("prefix").map(as_str).unwrap_or("".to_owned()),
@@ -410,7 +412,7 @@ fn call_service(
                                  pathinfo: &str,
                                  handle: &tokio_core::reactor::Handle|
      -> Box<Future<Item = Response, Error = hyper::Error>> {
-        println!("CALLING git-http backend {:?} {:?}", path, pathinfo);
+        debug!("CALLING git-http backend {:?} {:?}", path, pathinfo);
         let mut cmd = Command::new("git");
         cmd.arg("http-backend");
         cmd.current_dir(&path);
@@ -428,9 +430,9 @@ fn call_service(
         cgi::do_cgi(request, cmd, handle.clone())
     };
 
-    println!("PREFIX: {}", &prefix);
-    println!("VIEW: {}", &view_string);
-    println!("PATH_INFO: {:?}", &pathinfo);
+    debug!("PREFIX: {}", &prefix);
+    debug!("VIEW: {}", &view_string);
+    debug!("PATH_INFO: {:?}", &pathinfo);
 
     let handle = service.handle.clone();
     let ns_path = service.base_path.clone();
@@ -452,7 +454,7 @@ fn call_service(
         .and_then(
             move |view_repo| -> Box<Future<Item = Response, Error = hyper::Error>> {
                 let path = ok_or!(view_repo, {
-                    println!("wrong credentials");
+                    debug!("wrong credentials");
                     return Box::new(futures::future::ok(respond_unauthorized()));
                 });
 
@@ -463,7 +465,7 @@ fn call_service(
         .map(move |x| {
             if true {
                 remove_dir_all(ns_path)
-                    .unwrap_or_else(|e| println!("remove_dir_all failed: {:?}", e));
+                    .unwrap_or_else(|e| warn!("remove_dir_all failed: {:?}", e));
             }
             x
         })
@@ -494,31 +496,23 @@ impl Service for HttpService {
             password: None,
         }));
 
-        trace_begin!(&rname, "path": req.path(), "headers": format!("{:?}", &headers));
-        Box::new(call_service(&self, req, &rname).map(move |x| {
-            trace_end!(&rname, "response": format!("{:?}", x));
-            x
+        let _trace_s = span!(Level::TRACE, "call_service", path = ?req.path(), ?headers);
+        Box::new(call_service(&self, req, &rname).map(move |response| {
+            event!(parent: &_trace_s, Level::TRACE, ?response);
+            response
         }))
     }
 }
 
 fn run_proxy(args: Vec<String>) -> i32 {
-    println!("RUN PROXY {:?}", &args);
+    tracing_log::LogTracer::init().expect("can't init LogTracer");
+    let subscriber = tracing_subscriber::fmt::Subscriber::builder().with_max_level(Level::TRACE).finish();
+    let filter = tracing_subscriber::filter::EnvFilter::new("josh_proxy=trace,josh=trace");
+    let subscriber = filter.with_subscriber(subscriber);
 
-    let logfilename = Path::new("/tmp/centralgit.log");
-    fern::Dispatch::new()
-        .format(|out, message, record| {
-            out.finish(format_args!(
-                "{}[{}] {}",
-                record.target(),
-                record.level(),
-                message
-            ))
-        })
-        .chain(std::io::stdout())
-        .chain(fern::log_file(logfilename).unwrap())
-        .apply()
-        .unwrap();
+    tracing::subscriber::set_global_default(subscriber).expect("failed to set");
+
+    debug!("RUN PROXY {:?}", &args);
 
     let args = clap::App::new("josh-proxy")
         .arg(
@@ -540,17 +534,7 @@ fn run_proxy(args: Vec<String>) -> i32 {
         .get_matches_from(args);
 
     let port = args.value_of("port").unwrap_or("8000").to_owned();
-    println!("Now listening on localhost:{}", port);
-
-    if let Some(tf) = args.value_of("trace") {
-        open_trace_file!(tf).expect("can't open tracefile");
-
-        let h = panic::take_hook();
-        panic::set_hook(Box::new(move |x| {
-            close_trace_file!();
-            h(x);
-        }));
-    }
+    info!("Now listening on localhost:{}", port);
 
     let addr = format!("0.0.0.0:{}", port).parse().unwrap();
     run_http_server(
@@ -602,7 +586,7 @@ fn run_http_server(addr: net::SocketAddr, port: String, local: &Path, remote: &s
             .for_each(move |conn| {
                 h2.spawn(
                     conn.map(|_| ())
-                        .map_err(|err| println!("serve error:: {:?}", err)),
+                        .map_err(|err| warn!("serve error:: {:?}", err)),
                 );
                 Ok(())
             })
@@ -624,10 +608,11 @@ fn make_view_repo(
     forward_maps: Arc<RwLock<view_maps::ViewMaps>>,
     backward_maps: Arc<RwLock<view_maps::ViewMaps>>,
 ) -> PathBuf {
-    trace_scoped!(
+    let _trace_s= span!(
+        Level::TRACE,
         "make_view_repo",
-        "view_string": view_string,
-        "br_path": br_path
+        ?view_string,
+        ?br_path
     );
 
     let scratch = scratch::new(&br_path);
@@ -679,27 +664,12 @@ fn make_view_repo(
 
     scratch::apply_view_to_refs(&scratch, &*viewobj, &refs, &mut fm, &mut bm);
 
-    trace_begin!(
-        "merge_maps",
-        "before_fm": forward_maps.read().unwrap().stats(),
-        "before_bm": backward_maps.read().unwrap().stats());
-    {
-        trace_scoped!(
-            "write_lock",
-            "viewstr": view_string,
-            "namespace": namespace,
-            "br_path": br_path
-        );
+    span!(Level::TRACE, "write_lock", view_string, namespace, ?br_path).in_scope(|| {
         let mut forward_maps = forward_maps.write().unwrap();
         let mut backward_maps = backward_maps.write().unwrap();
         forward_maps.merge(&fm);
         backward_maps.merge(&bm);
-    }
-
-    trace_end!(
-        "merge_maps",
-        "after_fm": forward_maps.read().unwrap().stats(),
-        "after_bm": backward_maps.read().unwrap().stats());
+    });
 
     br_path.to_owned()
 }
@@ -712,7 +682,7 @@ fn get_info(
     forward_maps: Arc<RwLock<view_maps::ViewMaps>>,
     backward_maps: Arc<RwLock<view_maps::ViewMaps>>,
 ) -> String {
-    trace_scoped!("get_info", "view_string": view_string, "br_path": br_path);
+    let _trace_s= span!(Level::TRACE, "get_info", ?view_string, ?br_path);
 
     let scratch = scratch::new(&br_path);
 

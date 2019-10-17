@@ -3,6 +3,7 @@ extern crate hyper;
 extern crate tokio_core;
 extern crate tokio_io;
 extern crate tokio_process;
+extern crate tracing;
 
 use self::futures::future::Future;
 use self::futures::Stream;
@@ -18,17 +19,20 @@ use std::process::Command;
 use std::process::Stdio;
 use std::str::FromStr;
 
+use self::tracing::{event, span, Level};
+
+
 pub fn do_cgi(
     req: Request,
     cmd: Command,
     handle: tokio_core::reactor::Handle,
 ) -> Box<Future<Item = Response, Error = hyper::Error>> {
-    trace_scoped!("do_cgi");
+    span!(Level::TRACE, "do_cgi");
     let mut cmd = cmd;
     cmd.stdout(Stdio::piped());
     cmd.stderr(Stdio::inherit());
     cmd.stdin(Stdio::piped());
-    println!("REQUEST_METHOD {:?}", req.method());
+    debug!("REQUEST_METHOD {:?}", req.method());
     cmd.env("SERVER_SOFTWARE", "hyper")
         .env("SERVER_NAME", "localhost") // TODO
         .env("GATEWAY_INTERFACE", "CGI/1.1")
@@ -78,7 +82,7 @@ pub fn do_cgi(
 }
 
 fn build_response(command_result: std::process::Output) -> Response {
-    trace_begin!("build_response");
+    let _trace_s = span!(Level::TRACE, "build_response");
     let mut stdout = io::BufReader::new(command_result.stdout.as_slice());
     let mut stderr = io::BufReader::new(command_result.stderr.as_slice());
 
@@ -86,7 +90,7 @@ fn build_response(command_result: std::process::Output) -> Response {
 
     let mut headers = vec![];
     for line in stdout.by_ref().lines() {
-        println!("STDOUT line: {:?}", line);
+         event!(parent:&_trace_s, Level::TRACE, "STDOUT {:?}", line);
         if line.as_ref().unwrap().is_empty() {
             break;
         }
@@ -117,9 +121,9 @@ fn build_response(command_result: std::process::Output) -> Response {
 
     let err = String::from_utf8_lossy(&stderrdata);
 
-    println!("build_response err {:?}", &err);
+    warn!("build_response err {:?}", &err);
 
-    trace_end!("build_response", "stderr": err, "headers": headers);
+    event!(parent: &_trace_s, Level::TRACE, ?err, ?headers);
     response.set_body(hyper::Chunk::from(data));
 
     response

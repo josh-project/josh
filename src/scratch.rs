@@ -1,11 +1,13 @@
 extern crate crypto;
 extern crate git2;
+extern crate tracing;
 
 use super::view_maps;
 use super::views;
 use super::UnapplyView;
 use std::collections::HashMap;
 use std::path::Path;
+use self::tracing::{event, span,Level} ;
 
 fn all_equal(a: git2::Parents, b: &[&git2::Commit]) -> bool {
     let a: Vec<_> = a.collect();
@@ -56,11 +58,7 @@ pub fn unapply_view(
     old: git2::Oid,
     new: git2::Oid,
 ) -> UnapplyView {
-    trace_scoped!(
-        "unapply_view",
-        "repo": repo.path(),
-        "old": format!("{:?}", old),
-        "new": format!("{:?}", new));
+    let _trace_s = span!( Level::TRACE, "unapply_view", repo = ?repo.path(), ?old, ?new);
     debug!("unapply_view");
 
     if old == new {
@@ -170,11 +168,12 @@ pub fn apply_view_to_refs(
     forward_maps: &mut view_maps::ViewMaps,
     backward_maps: &mut view_maps::ViewMaps,
 ) {
-    trace_scoped!(
+    span!(
+        Level::TRACE,
         "apply_view_to_refs",
-        "repo": repo.path(),
-        "refs": refs,
-        "viewstr": viewobj.viewstr());
+        repo = ?repo.path(),
+        ?refs,
+        viewstr=?viewobj.viewstr());
 
     for (k, v) in refs {
         transform_commit(&repo, &*viewobj, &k, &v, forward_maps, backward_maps);
@@ -192,8 +191,7 @@ pub fn apply_view_cached(
         return forward_maps.get(&view.viewstr(), newrev);
     }
 
-    let tname = format!("apply_view_cached {:?}", newrev);
-    trace_begin!(&tname, "viewstr": view.viewstr());
+    let trace_s = span!(Level::TRACE, "apply_view_cached", viewstr = ?view.viewstr());
 
     let walk = {
         let mut walk = repo.revwalk().expect("walk: can't create revwalk");
@@ -230,13 +228,14 @@ pub fn apply_view_cached(
         forward_maps.set(&view.viewstr(), newrev, git2::Oid::zero());
     }
     let rewritten = forward_maps.get(&view.viewstr(), newrev);
-    trace_end!(
-        &tname,
-        "in_commit_count": in_commit_count,
-        "out_commit_count": out_commit_count,
-        "empty_tree_count": empty_tree_count,
-        "original": newrev.to_string(),
-        "rewritten": rewritten.to_string(),
+    event!(
+        parent: &trace_s,
+        Level::TRACE,
+        ?in_commit_count,
+        ?out_commit_count,
+        ?empty_tree_count,
+        original = ?newrev.to_string(),
+        rewritten = ?rewritten.to_string(),
     );
     return rewritten;
 }

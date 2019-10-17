@@ -1,4 +1,7 @@
 extern crate git2;
+extern crate tracing;
+
+use self::tracing::{event, span, Level};
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -14,7 +17,7 @@ impl Shell {
         } else {
             self.cwd.to_path_buf()
         };
-        trace_begin!("shell:command", "cmd": cmd, "cwd": self.cwd, "GIT_DIR": git_dir);
+        let _trace_s = span!(Level::TRACE, "shell:command", ?cmd, cwd =?self.cwd, ?git_dir);
 
         let output = Command::new("sh")
             .current_dir(&self.cwd)
@@ -32,7 +35,7 @@ impl Shell {
             .expect("failed to decode utf8")
             .trim()
             .to_string();
-        trace_end!("shell:command", "stdout": stdout, "stderr": stderr);
+        event!(Level::TRACE, ?stdout, ?stderr);
         return (stdout, stderr);
     }
 }

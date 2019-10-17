@@ -5,6 +5,9 @@ use std::env;
 use std::path::Path;
 
 extern crate reqwest;
+extern crate tracing;
+
+use self::tracing::{span, Level};
 
 use std::collections::HashMap;
 
@@ -18,7 +21,7 @@ pub fn process_repo_update(
         let mut ru = repo_update.clone();
         ru.insert("password".to_owned(), "...".to_owned());
     };
-    trace_scoped!("process_repo_update", "repo_update": ru);
+    let _trace_s = span!(Level::TRACE, "process_repo_update", repo_update= ?ru);
     let refname = some_or!(repo_update.get("refname"), {
         return Err(());
     });
@@ -46,7 +49,7 @@ pub fn process_repo_update(
     let git_namespace = some_or!(repo_update.get("GIT_NAMESPACE"), {
         return Err(());
     });
-    println!("REPO_UPDATE env ok");
+    debug!("REPO_UPDATE env ok");
 
     let scratch = scratch::new(&Path::new(&git_dir));
     let new_oid = {
@@ -85,7 +88,7 @@ pub fn process_repo_update(
             &git_namespace,
         ),
         {
-            println!("REPO_UPDATE push fail");
+            warn!("REPO_UPDATE push fail");
             return Err(());
         }
     );
@@ -146,7 +149,7 @@ pub fn update_hook(refname: &str, old: &str, new: &str) -> i32 {
             }
         }
         Err(err) => {
-            println!("/repo_update request failed {:?}", err);
+            warn!("/repo_update request failed {:?}", err);
         }
     };
     return 1;

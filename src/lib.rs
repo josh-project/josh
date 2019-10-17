@@ -30,9 +30,6 @@ extern crate log;
 #[macro_use]
 extern crate pest_derive;
 
-#[macro_use]
-extern crate rs_tracing;
-
 extern crate pest;
 
 pub mod base_repo;
