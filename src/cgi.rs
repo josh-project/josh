@@ -22,7 +22,7 @@ pub fn do_cgi(
     req: Request,
     cmd: Command,
     handle: tokio_core::reactor::Handle,
-) -> Box<Future<Item = Response, Error = hyper::Error>> {
+) -> Box<dyn Future<Item = Response, Error = hyper::Error>> {
     trace_scoped!("do_cgi");
     let mut cmd = cmd;
     cmd.stdout(Stdio::piped());

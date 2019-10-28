@@ -158,7 +158,7 @@ fn async_fetch(
     password: &str,
     namespace: &str,
     remote_url: String,
-) -> Box<Future<Item = Result<PathBuf, git2::Error>, Error = hyper::Error>> {
+) -> Box<dyn Future<Item = Result<PathBuf, git2::Error>, Error = hyper::Error>> {
     let br_path = http.base_path.clone();
     base_repo::create_local(&br_path);
 
@@ -260,7 +260,7 @@ fn call_service(
     service: &HttpService,
     req: Request,
     namespace: &str,
-) -> Box<Future<Item = Response, Error = hyper::Error>> {
+) -> Box<dyn Future<Item = Response, Error = hyper::Error>> {
     let backward_maps = service.backward_maps.clone();
 
     let path = {
@@ -410,7 +410,7 @@ fn call_service(
                                  path: PathBuf,
                                  pathinfo: &str,
                                  handle: &tokio_core::reactor::Handle|
-     -> Box<Future<Item = Response, Error = hyper::Error>> {
+     -> Box<dyn Future<Item = Response, Error = hyper::Error>> {
         println!("CALLING git-http backend {:?} {:?}", path, pathinfo);
         let mut cmd = Command::new("git");
         cmd.arg("http-backend");
@@ -451,7 +451,7 @@ fn call_service(
             br_url,
         )
         .and_then(
-            move |view_repo| -> Box<Future<Item = Response, Error = hyper::Error>> {
+            move |view_repo| -> Box<dyn Future<Item = Response, Error = hyper::Error>> {
                 let path = ok_or!(view_repo, {
                     println!("wrong credentials");
                     return Box::new(futures::future::ok(respond_unauthorized()));
@@ -476,7 +476,7 @@ impl Service for HttpService {
     type Response = Response;
     type Error = hyper::Error;
 
-    type Future = Box<Future<Item = Self::Response, Error = Self::Error>>;
+    type Future = Box<dyn Future<Item = Self::Response, Error = Self::Error>>;
 
     fn call(&self, req: Request) -> Self::Future {
         let rid: usize = random();

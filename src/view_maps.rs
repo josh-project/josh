@@ -61,7 +61,7 @@ impl ViewMaps {
 
     pub fn merge(&mut self, other: &ViewMaps) {
         for (viewstr, om) in other.maps.iter() {
-            let mut m = self
+            let m = self
                 .maps
                 .entry(viewstr.to_string())
                 .or_insert_with(ViewMap::new);
