@@ -54,7 +54,7 @@ pub fn rewrite(
 pub fn unapply_view(
     repo: &git2::Repository,
     backward_maps: &view_maps::ViewMaps,
-    viewobj: &views::View,
+    viewobj: &dyn views::View,
     old: git2::Oid,
     new: git2::Oid,
 ) -> UnapplyView {
@@ -134,7 +134,7 @@ pub fn new(path: &Path) -> git2::Repository {
 
 fn transform_commit(
     repo: &git2::Repository,
-    viewobj: &views::View,
+    viewobj: &dyn views::View,
     from_refsname: &str,
     to_refname: &str,
     forward_maps: &mut view_maps::ViewMaps,
