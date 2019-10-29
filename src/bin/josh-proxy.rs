@@ -52,7 +52,7 @@ use std::sync::{Arc, RwLock};
 use tracing::{debug, info, span, Level};
 
 use tracing::*;
-use tracing_subscriber::layer::{Context, Layer};
+use tracing_subscriber::layer::Layer;
 
 lazy_static! {
     static ref VIEW_REGEX: Regex =
@@ -161,7 +161,7 @@ fn async_fetch(
     password: &str,
     namespace: &str,
     remote_url: String,
-) -> Box<Future<Item = Result<PathBuf, git2::Error>, Error = hyper::Error>> {
+) -> Box<dyn Future<Item = Result<PathBuf, git2::Error>, Error = hyper::Error>> {
     let br_path = http.base_path.clone();
     base_repo::create_local(&br_path);
 
@@ -261,7 +261,7 @@ fn call_service(
     service: &HttpService,
     req: Request,
     namespace: &str,
-) -> Box<Future<Item = Response, Error = hyper::Error>> {
+) -> Box<dyn Future<Item = Response, Error = hyper::Error>> {
     let backward_maps = service.backward_maps.clone();
 
     let path = {
@@ -411,7 +411,7 @@ fn call_service(
                                  path: PathBuf,
                                  pathinfo: &str,
                                  handle: &tokio_core::reactor::Handle|
-     -> Box<Future<Item = Response, Error = hyper::Error>> {
+     -> Box<dyn Future<Item = Response, Error = hyper::Error>> {
         debug!("CALLING git-http backend {:?} {:?}", path, pathinfo);
         let mut cmd = Command::new("git");
         cmd.arg("http-backend");
@@ -452,7 +452,7 @@ fn call_service(
             br_url,
         )
         .and_then(
-            move |view_repo| -> Box<Future<Item = Response, Error = hyper::Error>> {
+            move |view_repo| -> Box<dyn Future<Item = Response, Error = hyper::Error>> {
                 let path = ok_or!(view_repo, {
                     debug!("wrong credentials");
                     return Box::new(futures::future::ok(respond_unauthorized()));
@@ -464,8 +464,7 @@ fn call_service(
         )
         .map(move |x| {
             if true {
-                remove_dir_all(ns_path)
-                    .unwrap_or_else(|e| warn!("remove_dir_all failed: {:?}", e));
+                remove_dir_all(ns_path).unwrap_or_else(|e| warn!("remove_dir_all failed: {:?}", e));
             }
             x
         })
@@ -477,7 +476,7 @@ impl Service for HttpService {
     type Response = Response;
     type Error = hyper::Error;
 
-    type Future = Box<Future<Item = Self::Response, Error = Self::Error>>;
+    type Future = Box<dyn Future<Item = Self::Response, Error = Self::Error>>;
 
     fn call(&self, req: Request) -> Self::Future {
         let rid: usize = random();
@@ -506,7 +505,9 @@ impl Service for HttpService {
 
 fn run_proxy(args: Vec<String>) -> i32 {
     tracing_log::LogTracer::init().expect("can't init LogTracer");
-    let subscriber = tracing_subscriber::fmt::Subscriber::builder().with_max_level(Level::TRACE).finish();
+    let subscriber = tracing_subscriber::fmt::Subscriber::builder()
+        .with_max_level(Level::TRACE)
+        .finish();
     let filter = tracing_subscriber::filter::EnvFilter::new("josh_proxy=trace,josh=trace");
     let subscriber = filter.with_subscriber(subscriber);
 
@@ -608,12 +609,7 @@ fn make_view_repo(
     forward_maps: Arc<RwLock<view_maps::ViewMaps>>,
     backward_maps: Arc<RwLock<view_maps::ViewMaps>>,
 ) -> PathBuf {
-    let _trace_s= span!(
-        Level::TRACE,
-        "make_view_repo",
-        ?view_string,
-        ?br_path
-    );
+    let _trace_s = span!(Level::TRACE, "make_view_repo", ?view_string, ?br_path);
 
     let scratch = scratch::new(&br_path);
 
@@ -682,7 +678,7 @@ fn get_info(
     forward_maps: Arc<RwLock<view_maps::ViewMaps>>,
     backward_maps: Arc<RwLock<view_maps::ViewMaps>>,
 ) -> String {
-    let _trace_s= span!(Level::TRACE, "get_info", ?view_string, ?br_path);
+    let _trace_s = span!(Level::TRACE, "get_info", ?view_string, ?br_path);
 
     let scratch = scratch::new(&br_path);
 
