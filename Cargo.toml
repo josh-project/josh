@@ -36,4 +36,4 @@ rand= "0.6"
 serde_json= "1.0"
 rs_tracing= { version = "1.0", features = ["rs_tracing"]}
 reqwest= "0.9"
-
+structopt="0.3"

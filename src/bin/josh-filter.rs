@@ -4,18 +4,59 @@ extern crate josh;
 
 extern crate rs_tracing;
 
-extern crate clap;
 extern crate git2;
 extern crate regex;
+extern crate structopt;
 
 #[macro_use]
 extern crate lazy_static;
 
 use josh::view_maps;
 use std::env;
+use std::fs::File;
+use std::io::Read;
 use std::process::exit;
+use structopt::StructOpt;
 
-use std::fs::read_to_string;
+fn parse_file_argument(path: &str) -> Result<File, std::io::Error> {
+    File::open(path)
+}
+
+#[derive(Debug, StructOpt)]
+#[structopt(
+    name = "josh-filter",
+    about = "Runs josh operations in a local git repository"
+)]
+#[structopt(global_settings(&[structopt::clap::AppSettings::ColoredHelp]))]
+pub struct JoshFilter {
+    #[structopt(long = "squash")]
+    #[structopt(help = "all commit leading to the specified view")]
+    pub squash: bool,
+
+    #[structopt(long = "info-file")]
+    #[structopt(
+        help = "create an additional info file which contains information how the workspace have been constructed"
+    )]
+    pub info_file: bool,
+
+    #[structopt(long = "reverse")]
+    pub reverse: bool,
+
+    #[structopt(long = "file")]
+    #[structopt(parse(try_from_str = parse_file_argument))]
+    #[structopt(
+        help = "overwrites what have been specified for from_to with the contents of the specified file"
+    )]
+    pub file: Option<File>,
+
+    #[structopt(name = "from_to")]
+    #[structopt(help = "Format string specifying source and destionation for the workspace")]
+    pub from_to: String,
+
+    #[structopt(name = "spec")]
+    #[structopt(help = "Format string defineing the workspace")]
+    pub spec: String,
+}
 
 lazy_static! {
     static ref FILE_REGEX: regex::Regex =
@@ -25,31 +66,23 @@ lazy_static! {
 }
 
 fn run_filter(args: Vec<String>) -> i32 {
-    let args = clap::App::new("josh-filter")
-        .arg(clap::Arg::with_name("file").long("file").takes_value(true))
-        .arg(clap::Arg::with_name("from_to").takes_value(true))
-        .arg(clap::Arg::with_name("spec").takes_value(true))
-        .arg(clap::Arg::with_name("squash").long("squash"))
-        .arg(clap::Arg::with_name("reverse").long("reverse"))
-        .arg(clap::Arg::with_name("infofile").long("infofile"))
-        .arg(
-            clap::Arg::with_name("trace")
-                .long("trace")
-                .takes_value(true),
-        )
-        .get_matches_from(args);
+    let args = JoshFilter::from_iter(args.iter());
 
     let repo = git2::Repository::open_from_env().unwrap();
     let mut fm = view_maps::ViewMaps::new();
     let mut bm = view_maps::ViewMaps::new();
 
-    let srcstr = args.value_of("from_to").unwrap_or("");
-    let specstr = args.value_of("spec").unwrap_or("");
+    let srcstr = args.from_to;
+    let specstr = args.spec;
 
-    let filestr = args
-        .value_of("file")
-        .and_then(|f| read_to_string(f).ok())
-        .unwrap_or(format!("[{}]{}", srcstr, specstr));
+    let filestr = args.file.map_or_else(
+        || format!("[{}]{}", srcstr, specstr),
+        |mut f| {
+            let mut s = String::new();
+            f.read_to_string(&mut s).unwrap();
+            s
+        },
+    );
 
     for caps in FILE_REGEX.captures_iter(&filestr) {
         let from_to = caps.name("src").unwrap().as_str().trim().to_owned();
@@ -70,7 +103,7 @@ fn run_filter(args: Vec<String>) -> i32 {
 
         let pres = viewobj.prefixes();
 
-        if args.is_present("infofile") {
+        if args.info_file {
             for (p, v) in pres.iter() {
                 viewobj = josh::build_chain(
                     viewobj,
@@ -87,16 +120,14 @@ fn run_filter(args: Vec<String>) -> i32 {
             }
         }
 
-        let reverse = args.is_present("reverse");
-
-        if args.is_present("squash") {
+        if args.squash {
             viewobj = josh::build_chain(
                 josh::build_view(&repo, &format!(":cutoff={}", &src)),
                 viewobj,
             );
         }
 
-        let t = if reverse {
+        let t = if args.reverse {
             "refs/JOSH_TMP".to_owned()
         } else {
             target.clone()
@@ -112,7 +143,7 @@ fn run_filter(args: Vec<String>) -> i32 {
 
         josh::apply_view_to_refs(&repo, &*viewobj, &[(src.clone(), t)], &mut fm, &mut bm);
 
-        if reverse {
+        if args.reverse {
             let new = repo.revparse_single(&target).unwrap().id();
             let old = repo.revparse_single("JOSH_TMP").unwrap().id();
 
