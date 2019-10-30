@@ -328,8 +328,7 @@ fn call_service(
                     return pool.spawn(futures::future::ok(buffer).map(move |buffer| {
                         let repo_update: virtual_repo::RepoUpdate = serde_json::from_str(&buffer)
                             .unwrap_or(virtual_repo::RepoUpdate::new());
-                        let backward_maps = backward_maps.read().unwrap();
-                        virtual_repo::process_repo_update(repo_update, &backward_maps)
+                        virtual_repo::process_repo_update(repo_update, backward_maps)
                     }));
                 })
                 .and_then(move |result| {

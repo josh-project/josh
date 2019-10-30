@@ -2,12 +2,14 @@ extern crate crypto;
 extern crate git2;
 extern crate tracing;
 
+use self::tracing::{event, span, Level};
 use super::view_maps;
 use super::views;
 use super::UnapplyView;
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::path::Path;
-use self::tracing::{event, span,Level} ;
+use std::sync::{Arc, RwLock};
 
 fn all_equal(a: git2::Parents, b: &[&git2::Commit]) -> bool {
     let a: Vec<_> = a.collect();
@@ -53,7 +55,7 @@ pub fn rewrite(
 
 pub fn unapply_view(
     repo: &git2::Repository,
-    backward_maps: &view_maps::ViewMaps,
+    backward_maps: Arc<RwLock<view_maps::ViewMaps>>,
     viewobj: &dyn views::View,
     old: git2::Oid,
     new: git2::Oid,
@@ -65,14 +67,6 @@ pub fn unapply_view(
         return UnapplyView::NoChanges;
     }
 
-    let current = {
-        let current = backward_maps.get(&viewobj.viewstr(), old);
-        if current == git2::Oid::zero() {
-            debug!("not in backward_maps({},{})", viewobj.viewstr(), old);
-            return UnapplyView::RejectNoFF;
-        }
-        current
-    };
 
     match repo.graph_descendant_of(new, old) {
         Err(_) | Ok(false) => {
@@ -92,7 +86,8 @@ pub fn unapply_view(
         walk
     };
 
-    let mut current = current;
+    let mut bm = view_maps::ViewMaps::new_downstream(backward_maps.clone());
+    let mut ret = git2::Oid::zero();
     for rev in walk {
         let rev = rev.expect("walk: invalid rev");
 
@@ -102,30 +97,50 @@ pub fn unapply_view(
             .find_commit(rev)
             .expect("walk: object is not actually a commit");
 
-        if module_commit.parents().count() > 1 {
-            // TODO: invectigate the possibility of allowing merge commits
-            return UnapplyView::RejectMerge;
-        }
+        let original_parent_ids: Vec<_> = module_commit.parent_ids().collect();
+        let original_parents: Vec<_> = original_parent_ids
+            .iter()
+            .map(|x| bm.get(&viewobj.viewstr(), *x))
+            .map(|x| repo.find_commit(x).expect("id is no commit"))
+            .collect();
+
+        let original_parents_refs: Vec<&_> = original_parents.iter().collect();
 
         debug!("==== Rewriting commit {}", rev);
 
         let tree = module_commit.tree().expect("walk: commit has no tree");
-        let parent = repo
-            .find_commit(current)
-            .expect("walk: current object is no commit");
 
-        let new_tree = viewobj.unapply(
-            &repo,
-            &tree,
-            &parent.tree().expect("walk: parent has no tree"),
-        );
+        let new_trees: HashSet<_> = original_parents_refs
+            .iter()
+            .map(|x| {
+                viewobj.unapply(&repo, &tree, &x.tree().expect("walk: parent has no tree"))
+            })
+            .collect();
 
-        let new_tree = repo.find_tree(new_tree).expect("can't find rewritten tree");
 
-        current = rewrite(&repo, &module_commit, &[&parent], &new_tree);
+
+        if new_trees.len() != 1 {
+            // Arriving here means one of two things:
+            // len == 0 -> somebody is trying to push unrelated history
+            //             this could potentially be supported in the futrure
+            //             as an "import" feature
+            //
+            // len > 1 -> This is a merge commit where the parents in the upstream repo
+            //            have differences outside of the current view.
+            //            It is unclear what base tree to pick in this case.
+            debug!("rejecting merge");
+            return UnapplyView::RejectMerge;
+        }
+
+        let new_tree = repo
+            .find_tree(*new_trees.iter().next().unwrap())
+            .expect("can't find rewritten tree");
+
+        ret = rewrite(&repo, &module_commit, &original_parents_refs, &new_tree);
+        bm.set(&viewobj.viewstr(), module_commit.id(), ret);
     }
 
-    return UnapplyView::Done(current);
+    return UnapplyView::Done(ret);
 }
 
 pub fn new(path: &Path) -> git2::Repository {

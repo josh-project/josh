@@ -21,7 +21,6 @@ use std::str::FromStr;
 
 use self::tracing::{event, span, Level};
 
-
 pub fn do_cgi(
     req: Request,
     cmd: Command,
@@ -90,7 +89,7 @@ fn build_response(command_result: std::process::Output) -> Response {
 
     let mut headers = vec![];
     for line in stdout.by_ref().lines() {
-         event!(parent:&_trace_s, Level::TRACE, "STDOUT {:?}", line);
+        event!(parent: &_trace_s, Level::TRACE, "STDOUT {:?}", line);
         if line.as_ref().unwrap().is_empty() {
             break;
         }

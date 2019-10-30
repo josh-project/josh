@@ -14,6 +14,7 @@ extern crate lazy_static;
 use josh::view_maps;
 use std::env;
 use std::process::exit;
+use std::sync::{Arc, RwLock};
 
 use std::fs::read_to_string;
 
@@ -41,7 +42,7 @@ fn run_filter(args: Vec<String>) -> i32 {
 
     let repo = git2::Repository::open_from_env().unwrap();
     let mut fm = view_maps::ViewMaps::new();
-    let mut bm = view_maps::ViewMaps::new();
+    let backward_maps = Arc::new(RwLock::new(view_maps::ViewMaps::new()));
 
     let srcstr = args.value_of("from_to").unwrap_or("");
     let specstr = args.value_of("spec").unwrap_or("");
@@ -110,13 +111,19 @@ fn run_filter(args: Vec<String>) -> i32 {
             .unwrap()
             .to_string();
 
-        josh::apply_view_to_refs(&repo, &*viewobj, &[(src.clone(), t)], &mut fm, &mut bm);
+        josh::apply_view_to_refs(
+            &repo,
+            &*viewobj,
+            &[(src.clone(), t)],
+            &mut fm,
+            &mut backward_maps.write().unwrap(),
+        );
 
         if reverse {
             let new = repo.revparse_single(&target).unwrap().id();
             let old = repo.revparse_single("JOSH_TMP").unwrap().id();
 
-            match josh::unapply_view(&repo, &bm, &*viewobj, old, new) {
+            match josh::unapply_view(&repo, backward_maps.clone(), &*viewobj, old, new) {
                 josh::UnapplyView::Done(rewritten) => {
                     repo.reference(&src, rewritten, true, "unapply_view")
                         .expect("can't create reference");

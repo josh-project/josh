@@ -1,8 +1,8 @@
-use super::view_maps::*;
 use super::*;
 use git2::Oid;
 use std::env;
 use std::path::Path;
+use std::sync::{Arc, RwLock};
 
 extern crate reqwest;
 extern crate tracing;
@@ -15,7 +15,7 @@ pub type RepoUpdate = HashMap<String, String>;
 
 pub fn process_repo_update(
     repo_update: RepoUpdate,
-    backward_maps: &ViewMaps,
+    backward_maps: Arc<RwLock<view_maps::ViewMaps>>,
 ) -> Result<String, ()> {
     let ru = {
         let mut ru = repo_update.clone();
