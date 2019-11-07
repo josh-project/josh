@@ -66,6 +66,7 @@ type KnownViews = HashMap<String, HashSet<String>>;
 struct HttpService {
     handle: tokio_core::reactor::Handle,
     fetch_push_pool: CpuPool,
+    housekeeping_pool: CpuPool,
     compute_pool: CpuPool,
     port: String,
     base_path: PathBuf,
@@ -287,7 +288,7 @@ fn call_service(
     }
     if path == "/gc" {
         let br_path = service.base_path.clone();
-        return Box::new(service.fetch_push_pool.spawn_fn(move || {
+        return Box::new(service.housekeeping_pool.spawn_fn(move || {
             let response = Response::new()
                 .with_body(base_repo::run_gc(&br_path))
                 .with_status(hyper::StatusCode::Ok);
@@ -557,6 +558,7 @@ fn run_http_server(addr: net::SocketAddr, port: String, local: &Path, remote: &s
     let fetching = Arc::new(RwLock::new(HashSet::new()));
     let server_handle = core.handle();
     let fetch_push_pool = CpuPool::new(1);
+    let housekeeping_pool = CpuPool::new(1);
     let compute_pool = CpuPool::new(4);
     let port = port.clone();
     let remote = remote.to_owned();
@@ -566,6 +568,7 @@ fn run_http_server(addr: net::SocketAddr, port: String, local: &Path, remote: &s
             let cghttp = HttpService {
                 handle: h2.clone(),
                 fetch_push_pool: fetch_push_pool.clone(),
+                housekeeping_pool: housekeeping_pool.clone(),
                 compute_pool: compute_pool.clone(),
                 port: port.clone(),
                 base_path: local.clone(),
