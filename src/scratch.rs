@@ -67,7 +67,6 @@ pub fn unapply_view(
         return UnapplyView::NoChanges;
     }
 
-
     match repo.graph_descendant_of(new, old) {
         Err(_) | Ok(false) => {
             debug!("graph_descendant_of({},{})", new, old);
@@ -112,12 +111,8 @@ pub fn unapply_view(
 
         let new_trees: HashSet<_> = original_parents_refs
             .iter()
-            .map(|x| {
-                viewobj.unapply(&repo, &tree, &x.tree().expect("walk: parent has no tree"))
-            })
+            .map(|x| viewobj.unapply(&repo, &tree, &x.tree().expect("walk: parent has no tree")))
             .collect();
-
-
 
         if new_trees.len() != 1 {
             // Arriving here means one of two things:
