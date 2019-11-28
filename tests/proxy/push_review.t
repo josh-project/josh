@@ -26,7 +26,7 @@
   remote: 
   remote: 
   To http://localhost:8002/real_repo.git:/sub1.git
-     *..*  master -> refs/for/master (glob)
+   * [new branch]      master -> refs/for/master
   $ git push origin master:refs/drafts/master
   remote: josh-proxy        
   remote: response from upstream:        
@@ -35,7 +35,7 @@
   remote: 
   remote: 
   To http://localhost:8002/real_repo.git:/sub1.git
-     *..*  master -> refs/drafts/master (glob)
+   * [new branch]      master -> refs/drafts/master
 
   $ cd ${TESTTMP}/real_repo
   $ git fetch origin refs/for/master:rfm
@@ -79,5 +79,6 @@ Make sure all temporary namespace got removed
 
   $ bash ${TESTDIR}/destroy_test_env.sh
 
+$ cat ${TESTTMP}/josh-proxy.out
 $ cat ${TESTTMP}/josh-proxy.out | grep REPO_UPDATE
 $ cat ${TESTTMP}/josh-proxy.out | grep "==="

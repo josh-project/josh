@@ -13,6 +13,18 @@ use std::collections::HashMap;
 
 pub type RepoUpdate = HashMap<String, String>;
 
+fn baseref(refname: &str) -> String {
+    let mut baseref = refname.to_owned();
+
+    if baseref.starts_with("refs/for") {
+        baseref = baseref.replacen("refs/for", "refs/heads", 1)
+    }
+    if baseref.starts_with("refs/drafts") {
+        baseref = baseref.replacen("refs/drafts", "refs/heads", 1)
+    }
+    return baseref;
+}
+
 pub fn process_repo_update(
     repo_update: RepoUpdate,
     backward_maps: Arc<RwLock<view_maps::ViewMaps>>,
@@ -57,6 +69,21 @@ pub fn process_repo_update(
         debug!("=== MORE");
 
         let old = Oid::from_str(old).unwrap();
+
+        let old = if old == Oid::zero() {
+            let rev = format!("refs/namespaces/{}/{}", git_namespace, &baseref(refname));
+            let oid = if let Ok(x) = scratch.revparse_single(&rev) {
+                x.id()
+            } else {
+                old
+            };
+            trace!("push: old oid: {:?}, rev: {:?}", oid, rev);
+            oid
+        } else {
+            trace!("push: old oid: {:?}, refname: {:?}", old, refname);
+            old
+        };
+
         debug!("=== processed_old {:?}", old);
 
         match scratch::unapply_view(

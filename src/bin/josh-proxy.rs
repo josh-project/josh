@@ -647,16 +647,6 @@ fn make_view_repo(
             }
 
             refs.push((refname.to_owned(), to_ref.clone()));
-            if to_ref.contains("/refs/heads/") {
-                refs.push((
-                    refname.to_owned(),
-                    to_ref.replace("/refs/heads/", "/refs/for/"),
-                ));
-                refs.push((
-                    refname.to_owned(),
-                    to_ref.replace("/refs/heads/", "/refs/drafts/"),
-                ));
-            }
         }
     }
 
