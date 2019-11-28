@@ -63,18 +63,6 @@ pub fn unapply_view(
     let _trace_s = span!( Level::TRACE, "unapply_view", repo = ?repo.path(), ?old, ?new);
     debug!("unapply_view");
 
-    if old == new {
-        return UnapplyView::NoChanges;
-    }
-
-    match repo.graph_descendant_of(new, old) {
-        Err(_) | Ok(false) => {
-            debug!("graph_descendant_of({},{})", new, old);
-            return UnapplyView::RejectNoFF;
-        }
-        Ok(true) => (),
-    }
-
     debug!("==== walking commits from {} to {}", old, new);
 
     let walk = {

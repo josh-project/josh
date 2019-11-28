@@ -1,0 +1,85 @@
+  $ source ${TESTDIR}/setup_test_env.sh
+  $ cd ${TESTTMP}
+
+  $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8001/real_repo.git &> /dev/null
+  $ cd ${TESTTMP}/real_repo
+
+  $ mkdir sub1
+  $ echo contents1 > sub1/file1
+  $ git add sub1
+  $ git commit -m "add file1" &> /dev/null
+  $ git push &> /dev/null
+
+  $ cd ${TESTTMP}
+  $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8002/real_repo.git:/sub1.git
+  $ cd ${TESTTMP}/real_repo
+  $ echo contents2 > sub1/file2
+  $ git add sub1
+  $ git commit -m "add file2" &> /dev/null
+  $ git push &> /dev/null
+  $ curl -s http://localhost:8002/flush
+  Flushed credential cache
+
+  $ cd ${TESTTMP}/sub1
+
+  $ echo contents3 > file3
+  $ git add file3
+  $ git commit -m "add file3" &> /dev/null
+  $ git log --graph --pretty=%s master
+  * add file3
+  * add file1
+  $ git push origin master:refs/for/master
+  remote: josh-proxy        
+  remote: response from upstream:        
+  remote:  To http://localhost:8001/real_repo.git        
+  remote:  * [new branch]      JOSH_PUSH -> refs/for/master        
+  remote: 
+  remote: 
+  To http://localhost:8002/real_repo.git:/sub1.git
+   * [new branch]      master -> refs/for/master
+
+  $ cd ${TESTTMP}/real_repo
+  $ git fetch origin refs/for/master:rfm
+  From http://localhost:8001/real_repo
+   * [new ref]         refs/for/master -> rfm
+  $ git checkout rfm
+  Switched to branch 'rfm'
+
+  $ git log --graph --pretty=%s master
+  * add file2
+  * add file1
+  $ git log --graph --pretty=%s rfm
+  * add file3
+  * add file1
+
+  $ tree
+  .
+  `-- sub1
+      |-- file1
+      `-- file3
+  
+  1 directory, 2 files
+
+  $ git rebase master
+  First, rewinding head to replay your work on top of it...
+  Applying: add file3
+  $ git log --graph --pretty=%s
+  * add file3
+  * add file2
+  * add file1
+
+  $ tree
+  .
+  `-- sub1
+      |-- file1
+      |-- file2
+      `-- file3
+  
+  1 directory, 3 files
+
+  $ bash ${TESTDIR}/destroy_test_env.sh
+
+  $ cat ${TESTTMP}/josh-proxy.out | grep graph_descendant_of
+  [1]
+$ cat ${TESTTMP}/josh-proxy.out | grep REPO_UPDATE
+$ cat ${TESTTMP}/josh-proxy.out | grep "==="
