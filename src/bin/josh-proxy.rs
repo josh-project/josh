@@ -274,8 +274,9 @@ fn call_service(
     };
 
     if path == "/version" {
+        let v = option_env!("GIT_DESCRIBE").unwrap_or(env!("CARGO_PKG_VERSION"));
         let response = Response::new()
-            .with_body(format!("Version: {}\n", env!("VERSION")))
+            .with_body(format!("Version: {}\n", v))
             .with_status(hyper::StatusCode::Ok);
         return Box::new(futures::future::ok(response));
     }

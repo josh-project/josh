@@ -33,12 +33,19 @@ fn run_filter(args: Vec<String>) -> i32 {
         .arg(clap::Arg::with_name("squash").long("squash"))
         .arg(clap::Arg::with_name("reverse").long("reverse"))
         .arg(clap::Arg::with_name("infofile").long("infofile"))
+        .arg(clap::Arg::with_name("version").long("version"))
         .arg(
             clap::Arg::with_name("trace")
                 .long("trace")
                 .takes_value(true),
         )
         .get_matches_from(args);
+
+    if args.is_present("version") {
+        let v = option_env!("GIT_DESCRIBE").unwrap_or(env!("CARGO_PKG_VERSION"));
+        println!("Version: {}", v);
+        return 0;
+    }
 
     let repo = git2::Repository::open_from_env().unwrap();
     let mut fm = view_maps::ViewMaps::new();
