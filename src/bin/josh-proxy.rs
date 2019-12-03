@@ -558,7 +558,7 @@ fn run_http_server(addr: net::SocketAddr, port: String, local: &Path, remote: &s
     let known_views = Arc::new(RwLock::new(KnownViews::new()));
     let fetching = Arc::new(RwLock::new(HashSet::new()));
     let server_handle = core.handle();
-    let fetch_push_pool = CpuPool::new(1);
+    let fetch_push_pool = CpuPool::new(4);
     let housekeeping_pool = CpuPool::new(1);
     let compute_pool = CpuPool::new(4);
     let port = port.clone();
