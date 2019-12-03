@@ -17,35 +17,17 @@ pub fn reset_all(path: &Path) {
     let (_stdout, _stderr) = shell.command(&format!("rm -Rf {:?}", path));
 }
 
-pub fn run_gc(path: &Path) -> String {
+pub fn run_housekeeping(path: &Path, cmd: &str) -> String {
     let shell = shell::Shell {
         cwd: path.to_owned(),
     };
 
     let output = "";
 
-    let (stdout, stderr) = shell.command(&"git fsck");
+    let (stdout, stderr) = shell.command(cmd);
     let output = format!(
-        "{}\n\ngit fsck:\nstdout:\n{}\n\nstderr:{}\n",
-        output, stdout, stderr
-    );
-
-    let (stdout, stderr) = shell.command(&"git gc");
-    let output = format!(
-        "{}\n\ngit prune:\nstdout:\n{}\n\nstderr:{}\n",
-        output, stdout, stderr
-    );
-
-    let (stdout, stderr) = shell.command(&"git prune");
-    let output = format!(
-        "{}\n\ngit prune:\nstdout:\n{}\n\nstderr:{}\n",
-        output, stdout, stderr
-    );
-
-    let (stdout, stderr) = shell.command(&"git fsck");
-    let output = format!(
-        "{}\n\ngit fsck:\nstdout:\n{}\n\nstderr:{}\n",
-        output, stdout, stderr
+        "{}\n\n{}:\nstdout:\n{}\n\nstderr:{}\n",
+        output, cmd, stdout, stderr
     );
 
     return output;

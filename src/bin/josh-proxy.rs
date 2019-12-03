@@ -291,7 +291,34 @@ fn call_service(
         let br_path = service.base_path.clone();
         return Box::new(service.housekeeping_pool.spawn_fn(move || {
             let response = Response::new()
-                .with_body(base_repo::run_gc(&br_path))
+                .with_body(base_repo::run_housekeeping(&br_path, "git gc"))
+                .with_status(hyper::StatusCode::Ok);
+            return Box::new(futures::future::ok(response));
+        }));
+    }
+    if path == "/repack" {
+        let br_path = service.base_path.clone();
+        return Box::new(service.housekeeping_pool.spawn_fn(move || {
+            let response = Response::new()
+                .with_body(base_repo::run_housekeeping(&br_path, "git repack -Ad"))
+                .with_status(hyper::StatusCode::Ok);
+            return Box::new(futures::future::ok(response));
+        }));
+    }
+    if path == "/prune" {
+        let br_path = service.base_path.clone();
+        return Box::new(service.housekeeping_pool.spawn_fn(move || {
+            let response = Response::new()
+                .with_body(base_repo::run_housekeeping(&br_path, "git prune"))
+                .with_status(hyper::StatusCode::Ok);
+            return Box::new(futures::future::ok(response));
+        }));
+    }
+    if path == "/fsck" {
+        let br_path = service.base_path.clone();
+        return Box::new(service.housekeeping_pool.spawn_fn(move || {
+            let response = Response::new()
+                .with_body(base_repo::run_housekeeping(&br_path, "git fsck"))
                 .with_status(hyper::StatusCode::Ok);
             return Box::new(futures::future::ok(response));
         }));
