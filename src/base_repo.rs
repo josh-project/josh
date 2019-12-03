@@ -82,6 +82,9 @@ pub fn fetch_refs_from_url(
         if stderr.contains("fatal:") {
             return Err(git2::Error::from_str("error"));
         }
+        if stderr.contains("error:") {
+            return Err(git2::Error::from_str("error"));
+        }
     }
     return Ok(());
 }

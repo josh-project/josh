@@ -42,6 +42,7 @@
   fatal: Authentication failed for 'http://localhost:8002/real_repo.git/'
   [128]
 
+
   $ rm -Rf full_repo
 
   $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8002/real_repo.git full_repo
@@ -50,7 +51,6 @@
   CREDENTIALS OK "*" "*" (glob)
 
   $ cd full_repo
-
   $ tree
   .
   `-- sub1
@@ -60,5 +60,19 @@
 
   $ cat sub1/file1
   contents1
+
+  $ rm -Rf full_repo
+  $ git clone -q http://x\':bla@localhost:8002/real_repo.git full_repo
+  fatal: Authentication failed for 'http://localhost:8002/real_repo.git/'
+  [128]
+  $ cd full_repo
+  /bin/sh: line 46: cd: full_repo: No such file or directory
+  [1]
+  $ tree
+  .
+  `-- sub1
+      `-- file1
+  
+  1 directory, 1 file
 
   $ bash ${TESTDIR}/destroy_test_env.sh &> /dev/null
