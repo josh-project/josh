@@ -184,6 +184,7 @@ fn async_fetch(
     let known_views = http.known_views.clone();
     Box::new(http.compute_pool.spawn(fetch_future.map(move |r| {
         let refresh_all_known_views = cp.spawn_fn(move || -> Result<(), ()> {
+            discover_views("master", &br_path2, known_views.clone());
             if let Ok(mut kn) = known_views.try_write() {
                 kn.entry(prefix2.clone())
                     .or_insert_with(HashSet::new)
@@ -331,6 +332,8 @@ fn call_service(
         return Box::new(futures::future::ok(response));
     }
     if path == "/views" {
+        let br_path = service.base_path.clone();
+        /* discover_views("master", &br_path, service.known_views.clone()); */
         let body = serde_json::to_string(&*service.known_views.read().unwrap()).unwrap();
         let response = Response::new()
             .with_body(body)
@@ -628,6 +631,21 @@ fn run_http_server(addr: net::SocketAddr, port: String, local: &Path, remote: &s
 
 fn to_ns(path: &str) -> String {
     return path.trim_matches('/').replace("/", "/refs/namespaces/");
+}
+fn discover_views(headref: &str, br_path: &Path, known_views: Arc<RwLock<KnownViews>>) {
+    let _trace_s = span!(Level::TRACE, "discover_views", ?br_path);
+
+    let repo = scratch::new(&br_path);
+
+    if let Ok(mut kn) = known_views.try_write() {
+        for (prefix, kv) in kn.iter_mut() {
+            let refname = format!("refs/namespaces/{}/{}", &to_ns(prefix), "refs/heads/master");
+            let hs = scratch::find_all_views(&repo, &refname);
+            for i in hs {
+                kv.insert(i);
+            }
+        }
+    }
 }
 
 fn make_view_repo(

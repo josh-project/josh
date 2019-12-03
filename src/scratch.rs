@@ -53,6 +53,33 @@ pub fn rewrite(
     result
 }
 
+pub fn find_all_views(repo: &git2::Repository, refname: &str) -> HashSet<String> {
+    let mut hs = HashSet::new();
+    if let Ok(reference) = repo.revparse_single(&refname) {
+        let tree = ok_or!(reference.peel_to_tree(), {
+            debug!("find_all_views, not a tree: {}", &refname);
+            return hs;
+        });
+        ok_or!(
+            tree.walk(git2::TreeWalkMode::PreOrder, |root, entry| {
+                if root == "" {
+                    return 0;
+                }
+                hs.insert(format!(":/{}", root.trim_matches('/')));
+
+                if entry.name() == Some(&"workspace.josh") {
+                    hs.insert(format!(":workspace={}", root.trim_matches('/')));
+                }
+                0
+            }),
+            {
+                return hs;
+            }
+        );
+    }
+    return hs;
+}
+
 pub fn unapply_view(
     repo: &git2::Repository,
     backward_maps: Arc<RwLock<view_maps::ViewMaps>>,
