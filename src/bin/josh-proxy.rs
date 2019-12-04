@@ -114,6 +114,12 @@ fn fetch_upstream(
         }
     };
 
+    let refs_to_fetch = if stale_ok {
+        vec!["refs/heads/*", "refs/tags/*"]
+    } else {
+        vec!["refs/*"]
+    };
+
     let do_fetch = if credentials_cached_ok
         && !fetching.write().unwrap().insert(credentials_hashed.clone())
     {
@@ -129,7 +135,7 @@ fn fetch_upstream(
                         &br_path,
                         &prefix,
                         &remote_url,
-                        &["refs/*", "HEAD"],
+                        &refs_to_fetch,
                         &username,
                         &password,
                     )
@@ -302,6 +308,18 @@ fn call_service(
         return Box::new(service.housekeeping_pool.spawn_fn(move || {
             let response = Response::new()
                 .with_body(base_repo::run_housekeeping(&br_path, "git repack -Ad"))
+                .with_status(hyper::StatusCode::Ok);
+            return Box::new(futures::future::ok(response));
+        }));
+    }
+    if path == "/count-objects" {
+        let br_path = service.base_path.clone();
+        return Box::new(service.housekeeping_pool.spawn_fn(move || {
+            let response = Response::new()
+                .with_body(base_repo::run_housekeeping(
+                    &br_path,
+                    "git count-objects -vH",
+                ))
                 .with_status(hyper::StatusCode::Ok);
             return Box::new(futures::future::ok(response));
         }));
@@ -667,14 +685,14 @@ fn make_view_repo(
 
     let mut refs = vec![];
 
+    let to_head = format!("refs/namespaces/{}/HEAD", &namespace);
+
     if headref != "" {
-        let to_ref = format!("refs/namespaces/{}/HEAD", &namespace);
         let refname = format!("refs/namespaces/{}/{}", &to_ns(prefix), headref);
-        refs.push((refname.to_owned(), to_ref.clone()));
+        refs.push((refname.to_owned(), to_head.clone()));
     } else {
-        let refname = format!("refs/namespaces/{}/HEAD", &to_ns(prefix));
-        let to_ref = refname.replacen(&to_ns(prefix), &namespace, 1);
-        refs.push((refname.to_owned(), to_ref.clone()));
+        let mastername = format!("refs/namespaces/{}/refs/heads/master", &to_ns(prefix));
+        refs.push((mastername.to_owned(), to_head.clone()));
 
         let glob = format!("refs/namespaces/{}/*", &to_ns(prefix));
         for refname in scratch.references_glob(&glob).unwrap().names() {

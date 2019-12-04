@@ -44,32 +44,11 @@
   $ curl -s http://localhost:8002/gc
   
   
-  git fsck:
-  stdout:
-  
-  
-  stderr:notice: HEAD points to an unborn branch (master)
-  
-  
-  git prune:
+  git gc:
   stdout:
   
   
   stderr:
-  
-  
-  git prune:
-  stdout:
-  
-  
-  stderr:
-  
-  
-  git fsck:
-  stdout:
-  
-  
-  stderr:notice: HEAD points to an unborn branch (master)
 
 Make sure all temporary namespace got removed
   $ tree ${TESTTMP}/remote/scratch/real_repo.git/refs/ | grep request_
