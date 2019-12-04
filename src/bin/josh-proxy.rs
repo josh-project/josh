@@ -333,7 +333,6 @@ fn call_service(
     }
     if path == "/views" {
         let br_path = service.base_path.clone();
-        /* discover_views("master", &br_path, service.known_views.clone()); */
         let body = serde_json::to_string(&*service.known_views.read().unwrap()).unwrap();
         let response = Response::new()
             .with_body(body)

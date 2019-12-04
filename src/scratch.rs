@@ -62,14 +62,17 @@ pub fn find_all_views(repo: &git2::Repository, refname: &str) -> HashSet<String>
         });
         ok_or!(
             tree.walk(git2::TreeWalkMode::PreOrder, |root, entry| {
-                if root == "" {
-                    return 0;
-                }
-                hs.insert(format!(":/{}", root.trim_matches('/')));
-
                 if entry.name() == Some(&"workspace.josh") {
                     hs.insert(format!(":workspace={}", root.trim_matches('/')));
                 }
+                if root == "" {
+                    return 0;
+                }
+                let v = format!(":/{}", root.trim_matches('/'));
+                if v.split("/").count() < 5 {
+                    hs.insert(v);
+                }
+
                 0
             }),
             {
