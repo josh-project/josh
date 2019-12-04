@@ -90,7 +90,7 @@ fn fetch_upstream(
     username: &str,
     password: &str,
     remote_url: String,
-    stale_ok: bool,
+    headref: &str,
 ) -> Box<futures_cpupool::CpuFuture<std::result::Result<(), git2::Error>, hyper::Error>> {
     let credentials_hashed = hash_strings(&remote_url, &username, &password);
     let username = username.to_owned();
@@ -99,8 +99,9 @@ fn fetch_upstream(
     let br_path = http.base_path.clone();
     let credential_cache = http.credential_cache.clone();
     let fetching = http.fetching.clone();
+    let headref = headref.to_owned();
 
-    let credentials_cached_ok = stale_ok && {
+    let credentials_cached_ok = headref == "" && {
         let last = http
             .credential_cache
             .read()
@@ -114,12 +115,6 @@ fn fetch_upstream(
         }
     };
 
-    let refs_to_fetch = if stale_ok {
-        vec!["refs/heads/*", "refs/tags/*"]
-    } else {
-        vec!["refs/*"]
-    };
-
     let do_fetch = if credentials_cached_ok
         && !fetching.write().unwrap().insert(credentials_hashed.clone())
     {
@@ -131,6 +126,11 @@ fn fetch_upstream(
         Box::new(
             http.fetch_push_pool
                 .spawn(futures::future::ok(()).map(move |_| {
+                    let refs_to_fetch = if headref != "" {
+                        vec![headref.as_str()]
+                    } else {
+                        vec!["refs/heads/*", "refs/tags/*"]
+                    };
                     base_repo::fetch_refs_from_url(
                         &br_path,
                         &prefix,
@@ -172,7 +172,7 @@ fn async_fetch(
     let br_path = http.base_path.clone();
     base_repo::create_local(&br_path);
 
-    let fetch_future = fetch_upstream(http, prefix, username, password, remote_url, headref == "");
+    let fetch_future = fetch_upstream(http, prefix, username, password, remote_url, headref);
 
     let headref = headref.to_owned();
     let viewstr = view_string.to_owned();
