@@ -51,6 +51,8 @@
   $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8002/real_repo.git:/sub1.git sub1
 
   $ cd sub1
+  $ cat .git/refs/remotes/origin/HEAD
+  ref: refs/remotes/origin/master
 
   $ tree
   .

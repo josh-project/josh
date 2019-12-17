@@ -12,7 +12,7 @@ export TESTUSER=$(openssl rand -hex 5)
 
 PATH=${TESTDIR}/../../target/debug/:${PATH}
 
-josh-test-server\
+${TESTDIR}/../../target/debug/josh-test-server\
     --port=8001\
     --local=${TESTTMP}/remote/\
     --username=${TESTUSER}\
@@ -20,7 +20,7 @@ josh-test-server\
     &> ${TESTTMP}/josh-test-server.out&
 echo $! > ${TESTTMP}/server_pid
 
-josh-proxy\
+${TESTDIR}/../../target/debug/josh-proxy\
     --port=8002\
     --local=${TESTTMP}/remote/scratch/\
     --remote=http://localhost:8001\

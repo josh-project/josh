@@ -691,9 +691,6 @@ fn make_view_repo(
         let refname = format!("refs/namespaces/{}/{}", &to_ns(prefix), headref);
         refs.push((refname.to_owned(), to_head.clone()));
     } else {
-        let mastername = format!("refs/namespaces/{}/refs/heads/master", &to_ns(prefix));
-        refs.push((mastername.to_owned(), to_head.clone()));
-
         let glob = format!("refs/namespaces/{}/*", &to_ns(prefix));
         for refname in scratch.references_glob(&glob).unwrap().names() {
             let refname = refname.unwrap();
@@ -714,6 +711,11 @@ fn make_view_repo(
     }
 
     scratch::apply_view_to_refs(&scratch, &*viewobj, &refs, &mut fm, &mut bm);
+
+    if headref == "" {
+        let mastername = format!("refs/namespaces/{}/refs/heads/master", &namespace);
+        scratch.reference_symbolic(&to_head, &mastername, true, "");
+    }
 
     span!(Level::TRACE, "write_lock", view_string, namespace, ?br_path).in_scope(|| {
         let mut forward_maps = forward_maps.write().unwrap();
