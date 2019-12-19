@@ -6,8 +6,8 @@ The Josh project is aimed at supporting trunk based development in a Git monorep
 Proxy
 -----
 
-The main component of Josh is the `josh-proxy` which enables on the fly virtualisation
-of Git repositories hosted on an upsteam Git host.
+The main component of Josh is the `josh-proxy` which enables on the fly virtualization
+of Git repositories hosted on an upstream Git host.
 
 On the most basic level this can be used to support partial cloning for Git repositories.
 
@@ -19,10 +19,10 @@ git clone http://localhost:8000/git/git.git:/Documentation.git
 ```
 
 This will give you a repository containing just the *Documentation* part of the upstream
-git tree including it's history.
+git tree including its history.
 
 Josh supports read and write access to the repository, so when making changes
-to any files in the virtualised repository you can just commit and push them
+to any files in the virtualized repository, you can just commit and push them
 like you are used to.
 
 Prefix
@@ -52,7 +52,7 @@ Workspaces
 
 Each virtual repository that Josh exposes is the result of applying a transformation to the
 upstream repository.
-This transformations can be combined to define a workspace that includes arbitrary parts
+These transformations can be combined to define a workspace that includes arbitrary parts
 of the upstream tree and rearranges them in a different way.
 
 A workspace is defined by creating a directory in the upstream repository with a file
