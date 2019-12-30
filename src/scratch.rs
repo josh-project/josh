@@ -236,7 +236,7 @@ pub fn apply_view_cached(
     let mut in_commit_count = 0;
     let mut out_commit_count = 0;
     let mut empty_tree_count = 0;
-    'walk: for commit in walk {
+    for commit in walk {
         in_commit_count += 1;
 
         let commit = repo.find_commit(commit.unwrap()).unwrap();
