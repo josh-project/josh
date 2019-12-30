@@ -49,6 +49,7 @@ pub use views::build_view;
 pub enum UnapplyView {
     Done(git2::Oid),
     RejectMerge,
+    BranchDoesNotExist,
 }
 
 fn empty_tree_id() -> git2::Oid {

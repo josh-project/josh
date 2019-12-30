@@ -99,7 +99,12 @@ pub fn unapply_view(
         let mut walk = repo.revwalk().expect("walk: can't create revwalk");
         walk.set_sorting(git2::Sort::REVERSE | git2::Sort::TOPOLOGICAL);
         walk.push(new).expect("walk.push");
-        walk.hide(old).expect("walk: can't hide");
+        if let Ok(_) = walk.hide(old) {
+            trace!("walk: hidden {}", old);
+        } else {
+            debug!("walk: can't hide");
+            return UnapplyView::BranchDoesNotExist;
+        }
         walk
     };
 

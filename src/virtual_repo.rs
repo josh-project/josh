@@ -29,38 +29,38 @@ fn baseref(refname: &str) -> String {
 pub fn process_repo_update(
     repo_update: RepoUpdate,
     backward_maps: Arc<RwLock<view_maps::ViewMaps>>,
-) -> Result<String, ()> {
+) -> Result<String, String> {
     let ru = {
         let mut ru = repo_update.clone();
         ru.insert("password".to_owned(), "...".to_owned());
     };
     let _trace_s = span!(Level::TRACE, "process_repo_update", repo_update= ?ru);
     let refname = some_or!(repo_update.get("refname"), {
-        return Err(());
+        return Err("".to_owned());
     });
     let viewstr = some_or!(repo_update.get("viewstr"), {
-        return Err(());
+        return Err("".to_owned());
     });
     let old = some_or!(repo_update.get("old"), {
-        return Err(());
+        return Err("".to_owned());
     });
     let new = some_or!(repo_update.get("new"), {
-        return Err(());
+        return Err("".to_owned());
     });
     let username = some_or!(repo_update.get("username"), {
-        return Err(());
+        return Err("".to_owned());
     });
     let password = some_or!(repo_update.get("password"), {
-        return Err(());
+        return Err("".to_owned());
     });
     let remote_url = some_or!(repo_update.get("remote_url"), {
-        return Err(());
+        return Err("".to_owned());
     });
     let git_dir = some_or!(repo_update.get("GIT_DIR"), {
-        return Err(());
+        return Err("".to_owned());
     });
     let git_namespace = some_or!(repo_update.get("GIT_NAMESPACE"), {
-        return Err(());
+        return Err("".to_owned());
     });
     debug!("REPO_UPDATE env ok");
 
@@ -98,9 +98,12 @@ pub fn process_repo_update(
                 debug!("rewritten");
                 rewritten
             }
+            UnapplyView::BranchDoesNotExist => {
+                return Err("branch does not exist on remote".to_owned());
+            }
             _ => {
                 debug!("rewritten ERROR");
-                return Err(());
+                return Err("".to_owned());
             }
         }
     };
@@ -117,7 +120,7 @@ pub fn process_repo_update(
         ),
         {
             warn!("REPO_UPDATE push fail");
-            return Err(());
+            return Err("".to_owned());
         }
     );
 
@@ -167,13 +170,15 @@ pub fn update_hook(refname: &str, old: &str, new: &str) -> i32 {
 
     match resp {
         Ok(mut r) => {
+            if let Ok(body) = r.text() {
+                println!("response from upstream:\n {}\n\n", body);
+            } else {
+                println!("no upstream response");
+            }
             if r.status().is_success() {
-                if let Ok(body) = r.text() {
-                    println!("response from upstream:\n {}\n\n", body);
-                } else {
-                    println!("no upstream response");
-                }
                 return 0;
+            } else {
+                return 1;
             }
         }
         Err(err) => {

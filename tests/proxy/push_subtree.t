@@ -18,6 +18,17 @@
   $ echo contents2 > file2
   $ git add file2
   $ git commit -m "add file2" &> /dev/null
+  $ git push origin HEAD:refs/heads/new_branch
+  remote: josh-proxy        
+  remote: response from upstream:        
+  remote:  branch does not exist on remote        
+  remote: 
+  remote: 
+  remote: error: hook declined to update refs/heads/new_branch        
+  To http://localhost:8002/real_repo.git:/sub1.git
+   ! [remote rejected] HEAD -> new_branch (hook declined)
+  error: failed to push some refs to '*' (glob)
+  [1]
   $ git push
   remote: josh-proxy        
   remote: response from upstream:        
@@ -56,4 +67,4 @@ Make sure all temporary namespace got removed
 
   $ bash ${TESTDIR}/destroy_test_env.sh
 
-$ cat ${TESTTMP}/josh-proxy.out | grep REPO_UPDATE
+$ cat ${TESTTMP}/josh-proxy.out

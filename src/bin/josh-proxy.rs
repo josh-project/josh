@@ -387,6 +387,12 @@ fn call_service(
                             .with_status(hyper::StatusCode::Ok);
                         return Box::new(futures::future::ok(response));
                     }
+                    if let Err(stderr) = result {
+                        let response = Response::new()
+                            .with_body(stderr)
+                            .with_status(hyper::StatusCode::BadRequest);
+                        return Box::new(futures::future::ok(response));
+                    }
                     let response = Response::new().with_status(hyper::StatusCode::Forbidden);
                     return Box::new(futures::future::ok(response));
                 }),
