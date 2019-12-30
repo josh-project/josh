@@ -22,7 +22,8 @@ fn baseref(refname: &str) -> String {
     if baseref.starts_with("refs/drafts") {
         baseref = baseref.replacen("refs/drafts", "refs/heads", 1)
     }
-    return baseref;
+
+    return baseref.splitn(2, '%').next().unwrap().to_owned();
 }
 
 pub fn process_repo_update(
