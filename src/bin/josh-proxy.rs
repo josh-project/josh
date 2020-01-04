@@ -270,6 +270,7 @@ fn call_service(
     req: Request,
     namespace: &str,
 ) -> Box<dyn Future<Item = Response, Error = hyper::Error>> {
+    let forward_maps = service.forward_maps.clone();
     let backward_maps = service.backward_maps.clone();
 
     let path = {
@@ -377,7 +378,7 @@ fn call_service(
                     return pool.spawn(futures::future::ok(buffer).map(move |buffer| {
                         let repo_update: virtual_repo::RepoUpdate = serde_json::from_str(&buffer)
                             .unwrap_or(virtual_repo::RepoUpdate::new());
-                        virtual_repo::process_repo_update(repo_update, backward_maps)
+                        virtual_repo::process_repo_update(repo_update, forward_maps, backward_maps)
                     }));
                 })
                 .and_then(move |result| {
@@ -460,6 +461,7 @@ fn call_service(
     };
 
     let br_url = remote_url.clone();
+    let base_ns = to_ns(&prefix);
 
     let call_git_http_backend = |request: Request,
                                  path: PathBuf,
@@ -480,6 +482,7 @@ fn call_service(
         cmd.env("GIT_NAMESPACE", ns);
         cmd.env("JOSH_VIEWSTR", viewstr);
         cmd.env("JOSH_REMOTE", remote_url);
+        cmd.env("JOSH_BASE_NS", base_ns);
 
         cgi::do_cgi(request, cmd, handle.clone())
     };
@@ -655,6 +658,7 @@ fn run_http_server(addr: net::SocketAddr, port: String, local: &Path, remote: &s
 fn to_ns(path: &str) -> String {
     return path.trim_matches('/').replace("/", "/refs/namespaces/");
 }
+
 fn discover_views(headref: &str, br_path: &Path, known_views: Arc<RwLock<KnownViews>>) {
     let _trace_s = span!(Level::TRACE, "discover_views", ?br_path);
 

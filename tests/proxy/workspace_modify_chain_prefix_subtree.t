@@ -157,7 +157,15 @@
 
   $ git commit -m "add in view" &> /dev/null
 
-  $ git push &> /dev/null
+  $ git push
+  remote: josh-proxy        
+  remote: response from upstream:        
+  remote:  To http://localhost:8001/real_repo.git        
+  remote:    *..*  JOSH_PUSH -> master         (glob)
+  remote: 
+  remote: 
+  To http://localhost:8002/real_repo.git:workspace=ws:prefix=pre:/pre.git
+     *..*  master -> master (glob)
 
   $ cat > workspace.josh <<EOF
   > a/b = :/sub2
@@ -168,7 +176,15 @@
   $ git add .
   $ git commit -m "try to modify ws" &> /dev/null
 
-  $ git push &> /dev/null
+  $ git push
+  remote: josh-proxy        
+  remote: response from upstream:        
+  remote:  To http://localhost:8001/real_repo.git        
+  remote:    *..*  JOSH_PUSH -> master* (glob)
+  remote: 
+  remote: 
+  To http://localhost:8002/real_repo.git:workspace=ws:prefix=pre:/pre.git
+     *..*  master -> master* (glob)
   $ curl -s http://localhost:8002/flush
   Flushed credential cache
   $ git pull &> /dev/null

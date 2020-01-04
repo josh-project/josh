@@ -3,6 +3,7 @@ extern crate git2;
 extern crate tracing;
 
 use self::tracing::{event, span, Level};
+use super::empty_tree_id;
 use super::view_maps;
 use super::views;
 use super::UnapplyView;
@@ -102,8 +103,8 @@ pub fn unapply_view(
         if let Ok(_) = walk.hide(old) {
             trace!("walk: hidden {}", old);
         } else {
-            debug!("walk: can't hide");
-            return UnapplyView::BranchDoesNotExist;
+            /* debug!("walk: can't hide"); */
+            /* return UnapplyView::BranchDoesNotExist; */
         }
         walk
     };
@@ -137,22 +138,23 @@ pub fn unapply_view(
             .map(|x| viewobj.unapply(&repo, &tree, &x.tree().expect("walk: parent has no tree")))
             .collect();
 
-        if new_trees.len() != 1 {
-            // Arriving here means one of two things:
-            // len == 0 -> somebody is trying to push unrelated history
-            //             this could potentially be supported in the futrure
-            //             as an "import" feature
-            //
-            // len > 1 -> This is a merge commit where the parents in the upstream repo
-            //            have differences outside of the current view.
-            //            It is unclear what base tree to pick in this case.
-            debug!("rejecting merge");
-            return UnapplyView::RejectMerge;
-        }
-
-        let new_tree = repo
-            .find_tree(*new_trees.iter().next().unwrap())
-            .expect("can't find rewritten tree");
+        let new_tree = match new_trees.len() {
+            1 => repo
+                .find_tree(*new_trees.iter().next().unwrap())
+                .expect("can't find rewritten tree"),
+            0 => repo
+                // 0 means the history is unrelated. Pushing it will fail if we are not
+                // dealing with either a force push or a push with the "josh-merge" option set.
+                .find_tree(viewobj.unapply(&repo, &tree, &repo.find_tree(empty_tree_id()).unwrap()))
+                .unwrap(),
+            parent_count => {
+                // This is a merge commit where the parents in the upstream repo
+                // have differences outside of the current view.
+                // It is unclear what base tree to pick in this case.
+                debug!("rejecting merge");
+                return UnapplyView::RejectMerge(parent_count);
+            }
+        };
 
         ret = rewrite(&repo, &module_commit, &original_parents_refs, &new_tree);
         bm.set(&viewobj.viewstr(), module_commit.id(), ret);

@@ -21,14 +21,12 @@
   $ git push origin HEAD:refs/heads/new_branch
   remote: josh-proxy        
   remote: response from upstream:        
-  remote:  branch does not exist on remote        
+  remote:  To http://localhost:8001/real_repo.git        
+  remote:  * [new branch]      JOSH_PUSH -> new_branch        
   remote: 
   remote: 
-  remote: error: hook declined to update refs/heads/new_branch        
   To http://localhost:8002/real_repo.git:/sub1.git
-   ! [remote rejected] HEAD -> new_branch (hook declined)
-  error: failed to push some refs to '*' (glob)
-  [1]
+   * [new branch]      HEAD -> new_branch
   $ git push
   remote: josh-proxy        
   remote: response from upstream:        
@@ -43,6 +41,7 @@
   $ git pull
   From http://localhost:8001/real_repo
      *..*  master     -> origin/master (glob)
+   * [new branch]      new_branch -> origin/new_branch
   Updating *..* (glob)
   Fast-forward
    sub1/file2 | 1 +

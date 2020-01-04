@@ -626,6 +626,9 @@ impl View for CombineView {
             let r = ok_or!(tree.get_path(&prefix).map(|x| x.id()), {
                 continue;
             });
+            if r == empty_tree_id() {
+                continue;
+            }
             let r = repo.find_tree(r).unwrap();
             let ua = other.unapply(&repo, &r, &parent_tree);
 

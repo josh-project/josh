@@ -48,7 +48,7 @@ pub use views::build_view;
 #[derive(Clone)]
 pub enum UnapplyView {
     Done(git2::Oid),
-    RejectMerge,
+    RejectMerge(usize),
     BranchDoesNotExist,
 }
 

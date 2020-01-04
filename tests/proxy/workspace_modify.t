@@ -53,14 +53,68 @@
   $ git add sub2
   $ git commit -m "add file2" &> /dev/null
 
-  $ mkdir ws
-  $ cat > ws/workspace.josh <<EOF
+  $ git push
+  To http://localhost:8001/real_repo.git
+   * [new branch]      master -> master
+
+  $ cd ${TESTTMP}
+  $ curl -s http://localhost:8002/flush
+  Flushed credential cache
+  $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8002/real_repo.git:workspace=ws.git ws
+  warning: You appear to have cloned an empty repository.
+  $ cd ${TESTTMP}/ws
+  $ cat > workspace.josh <<EOF
   > a/b = :/sub2
   > c = :/sub1
   > EOF
 
-  $ git add ws
+  $ git add .
   $ git commit -m "add workspace" &> /dev/null
+  $ git push origin HEAD:refs/heads/master%josh-merge
+  remote: warning: ignoring broken ref refs/namespaces/* (glob)
+  remote: josh-proxy        
+  remote: response from upstream:        
+  remote:  To http://localhost:8001/real_repo.git        
+  remote:    *..* JOSH_PUSH -> master* (glob)
+  remote: 
+  remote: 
+  To http://localhost:8002/real_repo.git:workspace=ws.git
+   * [new branch]      HEAD -> master%josh-merge
+
+  $ curl -s http://localhost:8002/flush
+  Flushed credential cache
+  $ git pull --rebase
+  From http://localhost:8002/real_repo.git:workspace=ws
+   * [new branch]      master     -> origin/master
+  First, rewinding head to replay your work on top of it...
+
+  $ git log --graph --pretty=%s
+  * Merge from :workspace=ws
+  * add workspace
+
+  $ cd ${TESTTMP}/real_repo
+  $ git pull --rebase
+  From http://localhost:8001/real_repo
+     *..*  master     -> origin/master* (glob)
+  Updating *..* (glob)
+  Fast-forward
+   ws/workspace.josh | 2 ++
+   1 file changed, 2 insertions(+)
+   create mode 100644 ws/workspace.josh
+  Current branch master is up to date.
+
+  $ git log --graph --pretty=%s
+  *   Merge from :workspace=ws
+  |\  
+  | * add workspace
+  * add file2
+  * add file1
+  *   Merge branch 'new1'
+  |\  
+  | * add newfile1
+  * | newfile master
+  |/  
+  * initial
 
   $ mkdir sub3
   $ echo contents3 > sub3/file3
@@ -79,7 +133,9 @@
   $ git log --graph --pretty=%s
   * mod workspace
   * add file3
-  * add workspace
+  *   Merge from :workspace=ws
+  |\  
+  | * add workspace
   * add file2
   * add file1
   *   Merge branch 'new1'
@@ -92,12 +148,22 @@
 
   $ git push
   To http://localhost:8001/real_repo.git
-   * [new branch]      master -> master
+     *..*  master -> master* (glob)
 
-  $ cd ${TESTTMP}
+  $ cd ${TESTTMP}/ws
+  $ curl -s http://localhost:8002/flush
+  Flushed credential cache
+  $ git pull --rebase
+  From http://localhost:8002/real_repo.git:workspace=ws
+     *..*  master     -> origin/master* (glob)
+  Updating *..* (glob)
+  Fast-forward
+   d/file3        | 1 +
+   workspace.josh | 1 +
+   2 files changed, 2 insertions(+)
+   create mode 100644 d/file3
+  Current branch master is up to date.
 
-  $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8002/real_repo.git:workspace=ws.git ws
-  $ cd ws
   $ tree
   .
   |-- a
@@ -116,9 +182,8 @@
   *   mod workspace
   |\  
   | * add file3
+  * Merge from :workspace=ws
   * add workspace
-  * add file2
-  * add file1
 
   $ git checkout HEAD~1 &> /dev/null
   $ tree
@@ -136,14 +201,9 @@
   $ git checkout HEAD~1 &> /dev/null
   $ tree
   .
-  |-- a
-  |   `-- b
-  |       `-- file2
-  `-- c
-      `-- subsub
-          `-- file1
+  `-- workspace.josh
   
-  4 directories, 2 files
+  0 directories, 1 file
 
   $ git checkout master &> /dev/null
 
@@ -157,7 +217,15 @@
 
   $ git commit -m "add in view" &> /dev/null
 
-  $ git push &> /dev/null
+  $ git push
+  remote: josh-proxy        
+  remote: response from upstream:        
+  remote:  To http://localhost:8001/real_repo.git        
+  remote:    *..*  JOSH_PUSH -> master* (glob)
+  remote: 
+  remote: 
+  To http://localhost:8002/real_repo.git:workspace=ws.git
+     *..*  master -> master* (glob)
 
   $ cat > workspace.josh <<EOF
   > a/b = :/sub2
@@ -168,10 +236,22 @@
   $ git add .
   $ git commit -m "try to modify ws" &> /dev/null
 
-  $ git push &> /dev/null
+  $ git push
+  remote: josh-proxy        
+  remote: response from upstream:        
+  remote:  To http://localhost:8001/real_repo.git        
+  remote:    *..* JOSH_PUSH -> master* (glob)
+  remote: 
+  remote: 
+  To http://localhost:8002/real_repo.git:workspace=ws.git
+     *..*  master -> master* (glob)
+
   $ curl -s http://localhost:8002/flush
   Flushed credential cache
-  $ git pull &> /dev/null
+  $ git pull --rebase
+  From http://localhost:8002/real_repo.git:workspace=ws
+   + *...* master     -> origin/master  (forced update) (glob)
+  First, rewinding head to replay your work on top of it...
 
 Note that d/ is still in the tree but now it is not overlayed
   $ tree
@@ -192,13 +272,45 @@ Note that d/ is still in the tree but now it is not overlayed
   
   6 directories, 7 files
 
+  $ cat workspace.josh
+  a/b = :/sub2
+  c = :/sub1
+  w = :/sub3
+
+  $ git log --graph --pretty=%s
+  *   try to modify ws
+  |\  
+  | * add file3
+  * add in view
+  *   mod workspace
+  |\  
+  | * add file3
+  * Merge from :workspace=ws
+  * add workspace
 
 
   $ cd ${TESTTMP}/real_repo
 
   $ curl -s http://localhost:8002/flush
   Flushed credential cache
-  $ git pull &> /dev/null
+  $ git pull --rebase
+  From http://localhost:8001/real_repo
+     *..*  master     -> origin/master* (glob)
+  Updating *..* (glob)
+  Fast-forward
+   sub1/subsub/file1     | 1 -
+   sub1/subsub/newfile_1 | 1 +
+   sub2/newfile_2        | 1 +
+   ws/d/file3            | 1 +
+   ws/workspace.josh     | 2 +-
+   ws/ws_file            | 1 +
+   6 files changed, 5 insertions(+), 2 deletions(-)
+   delete mode 100644 sub1/subsub/file1
+   create mode 100644 sub1/subsub/newfile_1
+   create mode 100644 sub2/newfile_2
+   create mode 100644 ws/d/file3
+   create mode 100644 ws/ws_file
+  Current branch master is up to date.
 
   $ git clean -ffdx &> /dev/null
 
@@ -228,7 +340,9 @@ Note that ws/d/ is now present in the ws
   * add in view
   * mod workspace
   * add file3
-  * add workspace
+  *   Merge from :workspace=ws
+  |\  
+  | * add workspace
   * add file2
   * add file1
   *   Merge branch 'new1'
@@ -238,9 +352,6 @@ Note that ws/d/ is now present in the ws
   |/  
   * initial
 
-  $ cat sub1/subsub/file1
-  cat: sub1/subsub/file1: No such file or directory
-  [1]
 
   $ git checkout HEAD~1 &> /dev/null
   $ git clean -ffdx &> /dev/null
@@ -282,7 +393,6 @@ Note that ws/d/ is now present in the ws
   
   5 directories, 7 files
 
-
   $ bash ${TESTDIR}/destroy_test_env.sh
 
-$ cat ${TESTTMP}/josh-proxy.out | grep VIEW
+$ cat ${TESTTMP}/josh-proxy.out

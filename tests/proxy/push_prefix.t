@@ -8,7 +8,9 @@
   $ echo contents1 > sub1/file1
   $ git add sub1
   $ git commit -m "add file1" &> /dev/null
-  $ git push &> /dev/null
+  $ git push
+  To http://localhost:8001/real_repo.git
+   * [new branch]      master -> master
 
   $ cd ${TESTTMP}
 
@@ -18,7 +20,15 @@
   $ echo contents2 > pre/file2
   $ git add .
   $ git commit -m "add file2" &> /dev/null
-  $ git push &> /dev/null
+  $ git push
+  remote: josh-proxy        
+  remote: response from upstream:        
+  remote:  To http://localhost:8001/real_repo.git        
+  remote:    *..*  JOSH_PUSH -> master         (glob)
+  remote: 
+  remote: 
+  To http://localhost:8002/real_repo.git:prefix=pre.git
+     *..*  master -> master (glob)
 
   $ cd ${TESTTMP}/real_repo
   $ git pull
