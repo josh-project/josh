@@ -10,6 +10,8 @@ Welcome to Josh's documentation!
    :maxdepth: 2
    :caption: Contents:
 
+   workspace
+
 
 
 Indices and tables
