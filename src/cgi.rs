@@ -120,7 +120,7 @@ fn build_response(command_result: std::process::Output) -> Response {
 
     let err = String::from_utf8_lossy(&stderrdata);
 
-    warn!("build_response err {:?}", &err);
+    trace!("build_response err {:?}", &err);
 
     event!(parent: &_trace_s, Level::TRACE, ?err, ?headers);
     response.set_body(hyper::Chunk::from(data));

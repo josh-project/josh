@@ -65,7 +65,7 @@ pub fn fetch_refs_from_url(
             .unwrap()
             .set_str(
                 "credential.helper",
-                &format!("!f() {{ echo \"password={}\"; }}; f", &password),
+                &format!("!f() {{ echo \"password={}\"; }}; f", "$GIT_PASSWORD"),
             )?;
 
         let cmd = format!("git fetch {} '{}'", &nurl, &spec);
@@ -75,7 +75,7 @@ pub fn fetch_refs_from_url(
         /* shell.command(&"git gc --auto"); */
         shell.command(&"git config gc.auto 0");
 
-        let (_stdout, stderr) = shell.command(&cmd);
+        let (_stdout, stderr) = shell.command_env(&cmd, &[("GIT_PASSWORD", &password)]);
         if stderr.contains("fatal: Authentication failed") {
             return Err(git2::Error::from_str("auth"));
         }
