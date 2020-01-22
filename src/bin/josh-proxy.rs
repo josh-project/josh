@@ -21,6 +21,13 @@ extern crate tracing;
 extern crate tracing_log;
 extern crate tracing_subscriber;
 
+extern crate opentelemetry;
+extern crate tracing_opentelemetry;
+
+use tracing_subscriber::{Layer, Registry};
+use opentelemetry::{api::Provider, sdk};
+use tracing_opentelemetry::OpentelemetryLayer;
+
 use futures::future::Future;
 use futures::Stream;
 use futures_cpupool::CpuPool;
@@ -50,7 +57,7 @@ use std::sync::{Arc, RwLock};
 use tracing::{debug, span, Level};
 
 use tracing::*;
-use tracing_subscriber::layer::Layer;
+
 
 lazy_static! {
     static ref VIEW_REGEX: Regex =
@@ -560,15 +567,30 @@ impl Service for HttpService {
 
 fn run_proxy(args: Vec<String>) -> i32 {
     tracing_log::LogTracer::init().expect("can't init LogTracer");
-    let subscriber = tracing_subscriber::fmt::Subscriber::builder()
-        .with_max_level(Level::TRACE)
-        .finish();
-    let filter = tracing_subscriber::filter::EnvFilter::new("josh_proxy=trace,josh=trace");
-    let subscriber = filter.with_subscriber(subscriber);
+
+    let tracer = sdk::Provider::default().get_tracer("josh-proxy");
+    let layer = OpentelemetryLayer::with_tracer(tracer);
+
+    /* let subscriber = tracing_subscriber::fmt::Subscriber::builder() */
+    /*     .with_max_level(Level::TRACE) */
+    /*     .finish(); */
+    /* let filter = tracing_subscriber::filter::EnvFilter::new("josh_proxy=trace,josh=trace"); */
+
+    /* let subscriber = filter.with_subscriber(subscriber); */
+    let subscriber = layer.with_subscriber(Registry::default());
 
     tracing::subscriber::set_global_default(subscriber).expect("failed to set");
 
     debug!("RUN PROXY {:?}", &args);
+
+
+    /* // Trace executed code */
+    /* tracing::subscriber::with_default(subscriber, || { */
+    /*     let root = span!(tracing::Level::TRACE, "app_start", work_units = 2); */
+    /*     let _enter = root.enter(); */
+
+    /*     error!("This event will be logged in the root span."); */
+    /* }); */
 
     let args = clap::App::new("josh-proxy")
         .arg(
@@ -590,7 +612,7 @@ fn run_proxy(args: Vec<String>) -> i32 {
         .get_matches_from(args);
 
     let port = args.value_of("port").unwrap_or("8000").to_owned();
-    info!("Now listening on localhost:{}", port);
+    println!("Now listening on localhost:{}", port);
 
     let addr = format!("0.0.0.0:{}", port).parse().unwrap();
     run_http_server(
