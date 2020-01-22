@@ -8,6 +8,7 @@ license-file = "LICENSE"
 description = "GIT virtualization proxy"
 keywords = ["git", "monorepo", "workflow", "scm"]
 readme = "README.md"
+edition = "2018"
 
 [dependencies]
 git2 = "0.10"

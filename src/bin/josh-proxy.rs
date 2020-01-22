@@ -47,7 +47,7 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::sync::{Arc, RwLock};
 
-use tracing::{debug, info, span, Level};
+use tracing::{debug, span, Level};
 
 use tracing::*;
 use tracing_subscriber::layer::Layer;
@@ -350,7 +350,7 @@ fn call_service(
         return Box::new(futures::future::ok(response));
     }
     if path == "/views" {
-        let br_path = service.base_path.clone();
+        let _br_path = service.base_path.clone();
         let body = serde_json::to_string(&*service.known_views.read().unwrap()).unwrap();
         let response = Response::new()
             .with_body(body)
@@ -657,7 +657,7 @@ fn to_ns(path: &str) -> String {
     return path.trim_matches('/').replace("/", "/refs/namespaces/");
 }
 
-fn discover_views(headref: &str, br_path: &Path, known_views: Arc<RwLock<KnownViews>>) {
+fn discover_views(_headref: &str, br_path: &Path, known_views: Arc<RwLock<KnownViews>>) {
     let _trace_s = span!(Level::TRACE, "discover_views", ?br_path);
 
     let repo = scratch::new(&br_path);
