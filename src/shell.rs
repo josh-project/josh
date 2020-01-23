@@ -30,11 +30,12 @@ impl Shell {
             .arg(&cmd)
             .env("GIT_DIR", &git_dir);
 
-        for (k,v) in env.iter() {
+        for (k, v) in env.iter() {
             command.env(&k, &v);
         }
 
-        let output = command.output()
+        let output = command
+            .output()
             .unwrap_or_else(|e| panic!("failed to execute process: {}\n{}", cmd, e));
 
         let stdout = String::from_utf8(output.stdout)

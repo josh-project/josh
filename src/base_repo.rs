@@ -7,10 +7,6 @@ use std::env::current_exe;
 use std::os::unix::fs::symlink;
 use std::path::Path;
 
-fn to_ns(path: &str) -> String {
-    return path.trim_matches('/').replace("/", "/refs/namespaces/");
-}
-
 pub fn reset_all(path: &Path) {
     let shell = shell::Shell {
         cwd: path.to_owned(),

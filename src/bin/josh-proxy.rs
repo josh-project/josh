@@ -24,9 +24,9 @@ extern crate tracing_subscriber;
 extern crate opentelemetry;
 extern crate tracing_opentelemetry;
 
-use tracing_subscriber::{Layer, Registry};
 use opentelemetry::{api::Provider, sdk};
 use tracing_opentelemetry::OpentelemetryLayer;
+use tracing_subscriber::{Layer, Registry};
 
 use futures::future::Future;
 use futures::Stream;
@@ -58,7 +58,6 @@ use tracing::{debug, span, Level};
 
 use tracing::*;
 
-
 lazy_static! {
     static ref VIEW_REGEX: Regex =
         Regex::new(r"(?P<prefix>/.*[.]git)(?P<headref>@[^:!]*)?(?P<view>[:!].*)[.](?P<ending>(?:git)|(?:json))(?P<pathinfo>/.*)?")
@@ -68,6 +67,7 @@ lazy_static! {
 type CredentialCache = HashMap<String, std::time::Instant>;
 type KnownViews = HashMap<String, HashSet<String>>;
 
+#[derive(Clone)]
 struct HttpService {
     handle: tokio_core::reactor::Handle,
     fetch_push_pool: CpuPool,
@@ -167,31 +167,27 @@ fn fetch_upstream(
 
 fn async_fetch(
     http: &HttpService,
-    prefix: &str,
-    headref: &str,
-    view_string: &str,
-    username: &str,
-    password: &str,
-    namespace: &str,
+    prefix: String,
+    headref: String,
+    viewstr: String,
+    username: String,
+    password: String,
+    namespace: String,
     remote_url: String,
 ) -> Box<dyn Future<Item = Result<PathBuf, git2::Error>, Error = hyper::Error>> {
     let br_path = http.base_path.clone();
     base_repo::create_local(&br_path);
 
-    let fetch_future = fetch_upstream(http, prefix, username, password, remote_url, headref);
+    let fetch_future = fetch_upstream(http, &prefix, &username, &password, remote_url, &headref);
 
-    let headref = headref.to_owned();
-    let viewstr = view_string.to_owned();
     let forward_maps = http.forward_maps.clone();
     let backward_maps = http.backward_maps.clone();
-    let namespace = namespace.to_owned();
     let br_path = http.base_path.clone();
-    let prefix = prefix.to_owned();
-    let viewstr2 = view_string.to_owned();
+    let viewstr2 = viewstr.to_owned();
     let forward_maps2 = http.forward_maps.clone();
     let backward_maps2 = http.backward_maps.clone();
     let br_path2 = http.base_path.clone();
-    let prefix2 = prefix.to_owned();
+    let prefix2 = prefix.clone();
     let cp = http.compute_pool.clone();
     let known_views = http.known_views.clone();
     Box::new(http.compute_pool.spawn(fetch_future.map(move |r| {
@@ -276,6 +272,10 @@ fn call_service(
     req: Request,
     namespace: &str,
 ) -> Box<dyn Future<Item = Response, Error = hyper::Error>> {
+    let s1 = span!(Level::TRACE, "j call_service");
+    let _e1 = s1.enter();
+    let s2 = span!(Level::TRACE, "j2 call_service");
+    let _e2 = s2.enter();
     let forward_maps = service.forward_maps.clone();
     let backward_maps = service.backward_maps.clone();
 
@@ -287,10 +287,14 @@ fn call_service(
         path
     };
 
+    let br_path = service.base_path.clone();
+
     if path == "/version" {
-        let v = option_env!("GIT_DESCRIBE").unwrap_or(env!("CARGO_PKG_VERSION"));
         let response = Response::new()
-            .with_body(format!("Version: {}\n", v))
+            .with_body(format!(
+                "Version: {}\n",
+                option_env!("GIT_DESCRIBE").unwrap_or(env!("CARGO_PKG_VERSION"))
+            ))
             .with_status(hyper::StatusCode::Ok);
         return Box::new(futures::future::ok(response));
     }
@@ -301,53 +305,28 @@ fn call_service(
             .with_status(hyper::StatusCode::Ok);
         return Box::new(futures::future::ok(response));
     }
-    if path == "/gc" {
-        let br_path = service.base_path.clone();
+    let housekeep = move |cmd: String, br_path: PathBuf| {
         return Box::new(service.housekeeping_pool.spawn_fn(move || {
             let response = Response::new()
-                .with_body(base_repo::run_housekeeping(&br_path, "git gc"))
+                .with_body(base_repo::run_housekeeping(&br_path, &cmd))
                 .with_status(hyper::StatusCode::Ok);
-            return Box::new(futures::future::ok(response));
+            return futures::future::ok(response);
         }));
+    };
+    if path == "/gc" {
+        return housekeep("git gc".to_owned(), br_path.to_owned());
     }
     if path == "/repack" {
-        let br_path = service.base_path.clone();
-        return Box::new(service.housekeeping_pool.spawn_fn(move || {
-            let response = Response::new()
-                .with_body(base_repo::run_housekeeping(&br_path, "git repack -Ad"))
-                .with_status(hyper::StatusCode::Ok);
-            return Box::new(futures::future::ok(response));
-        }));
+        return housekeep("git repack -Ad".to_owned(), br_path.to_owned());
     }
     if path == "/count-objects" {
-        let br_path = service.base_path.clone();
-        return Box::new(service.housekeeping_pool.spawn_fn(move || {
-            let response = Response::new()
-                .with_body(base_repo::run_housekeeping(
-                    &br_path,
-                    "git count-objects -vH",
-                ))
-                .with_status(hyper::StatusCode::Ok);
-            return Box::new(futures::future::ok(response));
-        }));
+        return housekeep("git count-objects -vH".to_owned(), br_path.to_owned());
     }
     if path == "/prune" {
-        let br_path = service.base_path.clone();
-        return Box::new(service.housekeeping_pool.spawn_fn(move || {
-            let response = Response::new()
-                .with_body(base_repo::run_housekeeping(&br_path, "git prune"))
-                .with_status(hyper::StatusCode::Ok);
-            return Box::new(futures::future::ok(response));
-        }));
+        return housekeep("git prune".to_owned(), br_path.to_owned());
     }
     if path == "/fsck" {
-        let br_path = service.base_path.clone();
-        return Box::new(service.housekeeping_pool.spawn_fn(move || {
-            let response = Response::new()
-                .with_body(base_repo::run_housekeeping(&br_path, "git fsck"))
-                .with_status(hyper::StatusCode::Ok);
-            return Box::new(futures::future::ok(response));
-        }));
+        return housekeep("git fsck".to_owned(), br_path.to_owned());
     }
     if path == "/flush" {
         service.credential_cache.write().unwrap().clear();
@@ -421,11 +400,11 @@ fn call_service(
         let br_path = service.base_path.clone();
 
         let f = compute_pool.spawn(futures::future::ok(true).map(move |_| {
-            let info = get_info(
+            let info = josh::get_info(
                 &view_string,
                 &prefix,
                 &headref,
-                &br_path,
+                &scratch::new(&br_path),
                 forward_maps.clone(),
                 backward_maps.clone(),
             );
@@ -506,12 +485,12 @@ fn call_service(
     Box::new({
         async_fetch(
             &service,
-            &prefix,
-            &headref,
-            &view_string,
-            &username,
-            &password,
-            &namespace,
+            prefix.to_string(),
+            headref.to_string(),
+            view_string.to_string(),
+            username.to_string(),
+            password.to_string(),
+            namespace.to_string(),
             br_url,
         )
         .and_then(
@@ -525,12 +504,26 @@ fn call_service(
             },
         )
         .map(move |x| {
-            if true {
-                remove_dir_all(ns_path).unwrap_or_else(|e| warn!("remove_dir_all failed: {:?}", e));
-            }
+            remove_dir_all(ns_path).unwrap_or_else(|e| warn!("remove_dir_all failed: {:?}", e));
             x
         })
     })
+}
+
+fn without_password(headers: &hyper::Headers) -> hyper::Headers {
+    let username = match headers.get() {
+        Some(&Authorization(Basic {
+            ref username,
+            password: _,
+        })) => username.to_owned(),
+        None => "".to_owned(),
+    };
+    let mut headers = headers.clone();
+    headers.set(Authorization(Basic {
+        username: username,
+        password: None,
+    }));
+    return headers;
 }
 
 impl Service for HttpService {
@@ -544,20 +537,8 @@ impl Service for HttpService {
         let rid: usize = random();
         let rname = format!("request_{}", rid);
 
-        let username = match req.headers().get() {
-            Some(&Authorization(Basic {
-                ref username,
-                password: _,
-            })) => username.to_owned(),
-            None => "".to_owned(),
-        };
-        let mut headers = req.headers().clone();
-        headers.set(Authorization(Basic {
-            username: username,
-            password: None,
-        }));
-
-        let _trace_s = span!(Level::TRACE, "call_service", path = ?req.path(), ?headers);
+        let _trace_s = span!(
+            Level::TRACE, "call_service", path = ?req.path(), headers = ?without_password(req.headers()));
         Box::new(call_service(&self, req, &rname).map(move |response| {
             event!(parent: &_trace_s, Level::TRACE, ?response);
             response
@@ -565,34 +546,8 @@ impl Service for HttpService {
     }
 }
 
-fn run_proxy(args: Vec<String>) -> i32 {
-    tracing_log::LogTracer::init().expect("can't init LogTracer");
-
-    let tracer = sdk::Provider::default().get_tracer("josh-proxy");
-    let layer = OpentelemetryLayer::with_tracer(tracer);
-
-    /* let subscriber = tracing_subscriber::fmt::Subscriber::builder() */
-    /*     .with_max_level(Level::TRACE) */
-    /*     .finish(); */
-    /* let filter = tracing_subscriber::filter::EnvFilter::new("josh_proxy=trace,josh=trace"); */
-
-    /* let subscriber = filter.with_subscriber(subscriber); */
-    let subscriber = layer.with_subscriber(Registry::default());
-
-    tracing::subscriber::set_global_default(subscriber).expect("failed to set");
-
-    debug!("RUN PROXY {:?}", &args);
-
-
-    /* // Trace executed code */
-    /* tracing::subscriber::with_default(subscriber, || { */
-    /*     let root = span!(tracing::Level::TRACE, "app_start", work_units = 2); */
-    /*     let _enter = root.enter(); */
-
-    /*     error!("This event will be logged in the root span."); */
-    /* }); */
-
-    let args = clap::App::new("josh-proxy")
+fn parse_args(args: &[String]) -> clap::ArgMatches {
+    clap::App::new("josh-proxy")
         .arg(
             clap::Arg::with_name("remote")
                 .long("remote")
@@ -609,7 +564,22 @@ fn run_proxy(args: Vec<String>) -> i32 {
                 .takes_value(true),
         )
         .arg(clap::Arg::with_name("port").long("port").takes_value(true))
-        .get_matches_from(args);
+        .get_matches_from(args)
+}
+
+fn run_proxy(args: Vec<String>) -> i32 {
+    tracing_log::LogTracer::init().expect("can't init LogTracer");
+
+    let tracer = sdk::Provider::default().get_tracer("josh-proxy");
+    let layer = OpentelemetryLayer::with_tracer(tracer);
+
+    let subscriber = layer.with_subscriber(Registry::default());
+
+    tracing::subscriber::set_global_default(subscriber).expect("failed to set");
+
+    debug!("RUN PROXY {:?}", &args);
+
+    let args = parse_args(&args);
 
     let port = args.value_of("port").unwrap_or("8000").to_owned();
     println!("Now listening on localhost:{}", port);
@@ -627,37 +597,25 @@ fn run_proxy(args: Vec<String>) -> i32 {
 
 fn run_http_server(addr: net::SocketAddr, port: String, local: &Path, remote: &str) {
     let mut core = tokio_core::reactor::Core::new().unwrap();
-    let h2 = core.handle();
-    let forward_maps = Arc::new(RwLock::new(view_maps::ViewMaps::new()));
-    let backward_maps = Arc::new(RwLock::new(view_maps::ViewMaps::new()));
-    let credential_cache = Arc::new(RwLock::new(CredentialCache::new()));
-    let known_views = Arc::new(RwLock::new(KnownViews::new()));
-    let fetching = Arc::new(RwLock::new(HashSet::new()));
+
+    let cghttp = HttpService {
+        handle: core.handle(),
+        fetch_push_pool: CpuPool::new(8),
+        housekeeping_pool: CpuPool::new(1),
+        compute_pool: CpuPool::new(4),
+        port: port,
+        base_path: local.to_owned(),
+        forward_maps: Arc::new(RwLock::new(view_maps::ViewMaps::new())),
+        backward_maps: Arc::new(RwLock::new(view_maps::ViewMaps::new())),
+        base_url: remote.to_owned(),
+        credential_cache: Arc::new(RwLock::new(CredentialCache::new())),
+        known_views: Arc::new(RwLock::new(KnownViews::new())),
+        fetching: Arc::new(RwLock::new(HashSet::new())),
+    };
+
     let server_handle = core.handle();
-    let fetch_push_pool = CpuPool::new(8);
-    let housekeeping_pool = CpuPool::new(1);
-    let compute_pool = CpuPool::new(4);
-    let port = port.clone();
-    let remote = remote.to_owned();
-    let local = local.to_owned();
     let serve = Http::new()
-        .serve_addr_handle(&addr, &server_handle, move || {
-            let cghttp = HttpService {
-                handle: h2.clone(),
-                fetch_push_pool: fetch_push_pool.clone(),
-                housekeeping_pool: housekeeping_pool.clone(),
-                compute_pool: compute_pool.clone(),
-                port: port.clone(),
-                base_path: local.clone(),
-                base_url: remote.clone(),
-                forward_maps: forward_maps.clone(),
-                backward_maps: backward_maps.clone(),
-                credential_cache: credential_cache.clone(),
-                known_views: known_views.clone(),
-                fetching: fetching.clone(),
-            };
-            Ok(cghttp)
-        })
+        .serve_addr_handle(&addr, &server_handle, move || Ok(cghttp.clone()))
         .unwrap();
 
     let h2 = server_handle.clone();
