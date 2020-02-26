@@ -129,6 +129,8 @@ fn fetch_upstream(
                     } else {
                         vec!["refs/heads/*", "refs/tags/*"]
                     };
+                    let credentials_hashed = hash_strings(&remote_url, &username, &password);
+                    debug!("credentials_hashed {:?}, {:?}, {:?}", &remote_url, &username, &credentials_hashed);
                     base_repo::fetch_refs_from_url(
                         &br_path,
                         &prefix,
@@ -138,7 +140,6 @@ fn fetch_upstream(
                         &password,
                     )
                     .and_then(|_| {
-                        let credentials_hashed = hash_strings(&remote_url, &username, &password);
                         fetching.write().unwrap().remove(&credentials_hashed);
                         if let Ok(mut cc) = credential_cache.write() {
                             cc.insert(credentials_hashed, std::time::Instant::now());
