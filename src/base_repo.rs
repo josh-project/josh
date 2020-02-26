@@ -64,9 +64,6 @@ pub fn fetch_refs_from_url(
         let cmd = format!("git fetch {} '{}'", &nurl, &spec);
         debug!("fetch_refs_from_url {:?} {:?} {:?}", cmd, path, "");
 
-        /* shell.command(&"git prune"); */
-        /* shell.command(&"git gc --auto"); */
-        shell.command(&"git config gc.auto 0");
 
         let (_stdout, stderr) = shell.command_env(&cmd, &[("GIT_PASSWORD", &password)]);
         if stderr.contains("fatal: Authentication failed") {
@@ -131,6 +128,7 @@ fn install_josh_hook(scratch_dir: &Path) {
         shell.command(&format!(
             "git config credential.helper '!f() {{ echo \"password=\"$GIT_PASSWORD\"\"; }}; f'"
         ));
+        shell.command(&"git config gc.auto 0");
     }
 }
 
