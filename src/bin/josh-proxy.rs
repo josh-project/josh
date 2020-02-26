@@ -39,10 +39,8 @@ use std::process::exit;
 
 use crypto::digest::Digest;
 use std::collections::{HashMap, HashSet};
-use std::env::current_exe;
 use std::fs::remove_dir_all;
 use std::net;
-use std::os::unix::fs::symlink;
 use std::panic;
 use std::path::Path;
 use std::path::PathBuf;
@@ -515,7 +513,6 @@ fn call_service(
                     return Box::new(futures::future::ok(respond_unauthorized()));
                 });
 
-                install_josh_hook(&path);
                 call_git_http_backend(req, path, &pathinfo, &handle)
             },
         )
@@ -810,19 +807,6 @@ fn get_info(
     });
 
     return serde_json::to_string(&s).unwrap_or("Json Error".to_string());
-}
-
-fn install_josh_hook(scratch_dir: &Path) {
-    if !scratch_dir.join("hooks/update").exists() {
-        let shell = shell::Shell {
-            cwd: scratch_dir.to_path_buf(),
-        };
-        shell.command("git config http.receivepack true");
-        let ce = current_exe().expect("can't find path to exe");
-        shell.command("rm -Rf hooks");
-        shell.command("mkdir hooks");
-        symlink(ce, scratch_dir.join("hooks").join("update")).expect("can't symlink update hook");
-    }
 }
 
 fn main() {

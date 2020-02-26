@@ -3,6 +3,8 @@ extern crate git2;
 use std::fs;
 
 use super::*;
+use std::env::current_exe;
+use std::os::unix::fs::symlink;
 use std::path::Path;
 
 fn to_ns(path: &str) -> String {
@@ -59,15 +61,6 @@ pub fn fetch_refs_from_url(
             format!("{}://{}@{}", &proto, &username, &rest)
         };
 
-        git2::Repository::open(path)
-            .expect("no repo")
-            .config()
-            .unwrap()
-            .set_str(
-                "credential.helper",
-                &format!("!f() {{ echo \"password={}\"; }}; f", "$GIT_PASSWORD"),
-            )?;
-
         let cmd = format!("git fetch {} '{}'", &nurl, &spec);
         debug!("fetch_refs_from_url {:?} {:?} {:?}", cmd, path, "");
 
@@ -111,23 +104,11 @@ pub fn push_head_url(
         let rest = splitted[1];
         format!("{}://{}@{}", &proto, &username, &rest)
     };
-    some_or!(
-        repo.config()
-            .unwrap()
-            .set_str(
-                "credential.helper",
-                &format!("!f() {{ echo \"password={}\"; }}; f", &password),
-            )
-            .ok(),
-        {
-            return Err(());
-        }
-    );
     let cmd = format!("git push {} '{}'", &nurl, &spec);
     let mut fakehead = repo
         .reference(&rn, oid, true, "push_head_url")
         .expect("can't create reference");
-    let (stdout, stderr) = shell.command(&cmd);
+    let (stdout, stderr) = shell.command_env(&cmd, &[("GIT_PASSWORD", &password)]);
     fakehead.delete().expect("fakehead.delete failed");
     debug!("{}", &stderr);
     debug!("{}", &stdout);
@@ -137,6 +118,22 @@ pub fn push_head_url(
     return Ok(stderr);
 }
 
+fn install_josh_hook(scratch_dir: &Path) {
+    let shell = shell::Shell {
+        cwd: scratch_dir.to_path_buf(),
+    };
+    if !scratch_dir.join("hooks/update").exists() {
+        shell.command("git config http.receivepack true");
+        let ce = current_exe().expect("can't find path to exe");
+        shell.command("rm -Rf hooks");
+        shell.command("mkdir hooks");
+        symlink(ce, scratch_dir.join("hooks").join("update")).expect("can't symlink update hook");
+    }
+    shell.command(&format!(
+        "git config credential.helper '!f() {{ echo \"password=\"$GIT_PASSWORD\"\"; }}; f'"
+    ));
+}
+
 pub fn create_local(path: &Path) {
     info!("init base repo: {:?}", path);
     fs::create_dir_all(path).expect("can't create_dir_all");
@@ -144,6 +141,7 @@ pub fn create_local(path: &Path) {
     match git2::Repository::open(path) {
         Ok(_) => {
             info!("repo exists");
+            install_josh_hook(path);
             return;
         }
         Err(_) => {}
@@ -152,6 +150,7 @@ pub fn create_local(path: &Path) {
     match git2::Repository::init_bare(path) {
         Ok(_) => {
             info!("repo initialized");
+            install_josh_hook(path);
             return;
         }
         Err(_) => {}
