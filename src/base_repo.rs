@@ -119,19 +119,19 @@ pub fn push_head_url(
 }
 
 fn install_josh_hook(scratch_dir: &Path) {
-    let shell = shell::Shell {
-        cwd: scratch_dir.to_path_buf(),
-    };
     if !scratch_dir.join("hooks/update").exists() {
+        let shell = shell::Shell {
+            cwd: scratch_dir.to_path_buf(),
+        };
         shell.command("git config http.receivepack true");
         let ce = current_exe().expect("can't find path to exe");
         shell.command("rm -Rf hooks");
         shell.command("mkdir hooks");
         symlink(ce, scratch_dir.join("hooks").join("update")).expect("can't symlink update hook");
+        shell.command(&format!(
+            "git config credential.helper '!f() {{ echo \"password=\"$GIT_PASSWORD\"\"; }}; f'"
+        ));
     }
-    shell.command(&format!(
-        "git config credential.helper '!f() {{ echo \"password=\"$GIT_PASSWORD\"\"; }}; f'"
-    ));
 }
 
 pub fn create_local(path: &Path) {
