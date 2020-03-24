@@ -17,6 +17,7 @@ log = "0.4"
 tracing = { version = "*", features = ["max_level_trace", "release_max_level_warn"] }
 tracing-opentelemetry = "*"
 opentelemetry = "*"
+toml = "*"
 tracing-log = "*"
 tracing-futures = "*"
 tracing-subscriber = "0.2.0-alpha.4"

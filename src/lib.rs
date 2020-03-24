@@ -33,15 +33,16 @@ extern crate pest_derive;
 #[macro_use]
 extern crate serde_json;
 
-extern crate tracing;
-
 extern crate pest;
+extern crate toml;
+extern crate tracing;
 
 pub mod base_repo;
 pub mod cgi;
 pub mod get_info;
 pub mod scratch;
 pub mod shell;
+pub mod tomlq;
 pub mod view_maps;
 mod views;
 pub mod virtual_repo;
