@@ -306,13 +306,57 @@ fn git_command(
     }));
 }
 
-fn body2tring(body: hyper::Chunk) -> String {
+fn body2string(body: hyper::Chunk) -> String {
     let mut buffer: Vec<u8> = Vec::new();
     for i in body {
         buffer.push(i);
     }
 
     String::from_utf8(buffer).unwrap_or("".to_string())
+}
+
+fn gerrit_api(
+    client: HttpClient,
+    endpoint: String,
+    query: String,
+) -> Box<dyn Future<Item = serde_json::Value, Error = hyper::Error>> {
+    let uri = hyper::Uri::from_str(&format!(
+        "https://gerrit.int.esrlabs.com{}?{}",
+        endpoint, query
+    ))
+    .unwrap();
+
+    println!("gerrit_api: {:?}", &uri);
+
+    let auth = Authorization(Basic {
+        username: env::var("JOSH_USERNAME").unwrap_or("".to_owned()),
+        password: env::var("JOSH_PASSWORD").ok(),
+    });
+
+    let mut r = hyper::Request::new(hyper::Method::Get, uri);
+    r.headers_mut().set(auth);
+    return Box::new(
+        client
+            .request(r)
+            .and_then(move |x| x.body().concat2().map(body2string))
+            .and_then(move |resp_text| {
+                println!("gerrit_api resp: {}", &resp_text);
+                let v: serde_json::Value =
+                    serde_json::from_str(&resp_text[4..]).unwrap();
+                futures::future::ok(v)
+            }),
+    );
+}
+
+fn as_str(x: regex::Match) -> String {
+    x.as_str().to_owned()
+}
+
+fn j2str(val: &serde_json::Value, s: &str) -> String {
+    if let Some(r) = val.pointer(s) {
+        return r.to_string().trim_matches('"').to_string();
+    }
+    return format!("## not found: {:?}", s);
 }
 
 fn call_service(
@@ -405,7 +449,7 @@ fn call_service(
         return Box::new(
             req.body()
                 .concat2()
-                .map(body2tring)
+                .map(body2string)
                 .and_then(move |buffer| {
                     return pool.spawn(futures::future::ok(buffer).map(
                         move |buffer| {
@@ -440,35 +484,6 @@ fn call_service(
         );
     }
 
-    let gerrit_api = |client: HttpClient, endpoint, query| {
-        let uri = hyper::Uri::from_str(&format!(
-            "https://gerrit.int.esrlabs.com{}?{}",
-            endpoint, query
-        ))
-        .unwrap();
-
-        println!("gerrit_api: {:?}", &uri);
-
-        let auth = Authorization(Basic {
-            username: env::var("JOSH_USERNAME").unwrap_or("".to_owned()),
-            password: env::var("JOSH_PASSWORD").ok(),
-        });
-
-        let mut r = hyper::Request::new(hyper::Method::Get, uri);
-        r.headers_mut().set(auth);
-        return Box::new(
-            client
-                .request(r)
-                .and_then(move |x| x.body().concat2().map(body2tring))
-                .and_then(move |resp_text| {
-                    println!("gerrit_api resp: {}", &resp_text);
-                    let v: serde_json::Value =
-                        serde_json::from_str(&resp_text[4..]).unwrap();
-                    futures::future::ok(v)
-                }),
-        );
-    };
-
     if path.starts_with("/static/") {
         return Box::new(
             service.http_client.get(
@@ -480,15 +495,6 @@ fn call_service(
             ),
         );
     }
-
-    let as_str = |x: regex::Match| x.as_str().to_owned();
-
-    let j2str = |val: &serde_json::Value, s: &str| {
-        if let Some(r) = val.pointer(s) {
-            return r.to_string().trim_matches('"').to_string();
-        }
-        return format!("## not found: {:?}", s);
-    };
 
     if let Some(caps) = CHANGE_REGEX.captures(&path) {
         let change = caps.name("change").map(as_str).unwrap_or("".to_owned());
