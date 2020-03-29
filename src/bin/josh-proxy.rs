@@ -70,8 +70,9 @@ lazy_static! {
 }
 
 type CredentialCache = HashMap<String, std::time::Instant>;
-type KnownViews = HashMap<String, HashSet<String>>;
 
+type HttpClient =
+    hyper::Client<hyper_tls::HttpsConnector<hyper::client::HttpConnector>>;
 #[derive(Clone)]
 struct HttpService {
     handle: tokio_core::reactor::Handle,
@@ -80,13 +81,12 @@ struct HttpService {
     compute_pool: CpuPool,
     port: String,
     base_path: PathBuf,
-    http_client:
-        hyper::Client<hyper_tls::HttpsConnector<hyper::client::HttpConnector>>,
+    http_client: HttpClient,
     base_url: String,
     forward_maps: Arc<RwLock<view_maps::ViewMaps>>,
     backward_maps: Arc<RwLock<view_maps::ViewMaps>>,
     credential_cache: Arc<RwLock<CredentialCache>>,
-    known_views: Arc<RwLock<KnownViews>>,
+    known_views: Arc<RwLock<base_repo::KnownViews>>,
     fetching: Arc<RwLock<HashSet<String>>>,
 }
 
@@ -214,7 +214,7 @@ fn async_fetch(
     let known_views = http.known_views.clone();
     Box::new(http.compute_pool.spawn(fetch_future.map(move |r| {
         let refresh_all_known_views = cp.spawn_fn(move || -> Result<(), ()> {
-            discover_views("master", &br_path2, known_views.clone());
+            base_repo::discover_views("master", &br_path2, known_views.clone());
             if let Ok(mut kn) = known_views.try_write() {
                 kn.entry(prefix2.clone())
                     .or_insert_with(HashSet::new)
@@ -228,7 +228,7 @@ fn async_fetch(
                 let _trace_s = span!(Level::TRACE, "refresh_all_known_views");
                 if let Some(e) = kn.get(&prefix2) {
                     for v in e.iter() {
-                        make_view_repo(
+                        base_repo::make_view_repo(
                             &v,
                             &prefix2,
                             "HEAD",
@@ -244,7 +244,7 @@ fn async_fetch(
         });
         refresh_all_known_views.forget();
         r.map(move |_| {
-            make_view_repo(
+            base_repo::make_view_repo(
                 &viewstr,
                 &prefix,
                 &headref,
@@ -294,7 +294,7 @@ fn git_command(
     cmd: String,
     br_path: PathBuf,
     pool: CpuPool,
-) -> Box<dyn Future<Item = Response, Error = hyper::Error>> {
+) -> Box<dyn Future<Item = String, Error = hyper::Error>> {
     return Box::new(pool.spawn_fn(move || {
         let shell = shell::Shell {
             cwd: br_path.to_owned(),
@@ -302,11 +302,17 @@ fn git_command(
         let (stdout, _stderr) = shell.command(&cmd);
         /* println!("git_command stdout: {}", stdout); */
         /* println!("git_command stderr: {}", _stderr); */
-        let response = Response::new()
-            .with_body(stdout)
-            .with_status(hyper::StatusCode::Ok);
-        return futures::future::ok(response);
+        return futures::future::ok(stdout);
     }));
+}
+
+fn body2tring(body: hyper::Chunk) -> String {
+    let mut buffer: Vec<u8> = Vec::new();
+    for i in body {
+        buffer.push(i);
+    }
+
+    String::from_utf8(buffer).unwrap_or("".to_string())
 }
 
 fn call_service(
@@ -394,14 +400,6 @@ fn call_service(
     if path == "/panic" {
         panic!();
     }
-    let body2tring = move |body| {
-        let mut buffer: Vec<u8> = Vec::new();
-        for i in body {
-            buffer.push(i);
-        }
-
-        String::from_utf8(buffer).unwrap_or("".to_string())
-    };
     if path == "/repo_update" {
         let pool = service.fetch_push_pool.clone();
         return Box::new(
@@ -442,7 +440,7 @@ fn call_service(
         );
     }
 
-    let gerrit_api = |endpoint, query| {
+    let gerrit_api = |client: HttpClient, endpoint, query| {
         let uri = hyper::Uri::from_str(&format!(
             "https://gerrit.int.esrlabs.com{}?{}",
             endpoint, query
@@ -458,14 +456,18 @@ fn call_service(
 
         let mut r = hyper::Request::new(hyper::Method::Get, uri);
         r.headers_mut().set(auth);
-        return Box::new(service.http_client.request(r));
-    };
-
-    if path.starts_with("/a/") {
         return Box::new(
-            gerrit_api(path, req.query().unwrap_or("")).map(|x| x),
+            client
+                .request(r)
+                .and_then(move |x| x.body().concat2().map(body2tring))
+                .and_then(move |resp_text| {
+                    println!("gerrit_api resp: {}", &resp_text);
+                    let v: serde_json::Value =
+                        serde_json::from_str(&resp_text[4..]).unwrap();
+                    futures::future::ok(v)
+                }),
         );
-    }
+    };
 
     if path.starts_with("/static/") {
         return Box::new(
@@ -492,23 +494,45 @@ fn call_service(
         let change = caps.name("change").map(as_str).unwrap_or("".to_owned());
         let pool = service.housekeeping_pool.clone();
         let br_path = br_path.clone();
+        let client = service.http_client.clone();
+        let repo = scratch::new(&br_path);
+
+        let get_comments = gerrit_api(
+            client.clone(),
+            format!("/a/changes/{}/comments", change),
+            format!(""),
+        );
 
         let r = gerrit_api(
+            client.clone(),
             "/a/changes/".to_string(),
-            &format!("q=change:{}&o=ALL_REVISIONS&o=ALL_COMMITS", change),
+            format!("q=change:{}&o=ALL_REVISIONS&o=ALL_COMMITS", change),
         )
-        .and_then(move |x| x.body().concat2().map(body2tring))
-        .and_then(move |resp_text| {
-            let resp_value: serde_json::Value =
-                serde_json::from_str(&resp_text[4..]).unwrap();
+        .and_then(move |resp_value| {
             let to = j2str(&resp_value, "/0/current_revision");
             let from = j2str(
                 &resp_value,
                 &format!("/0/revisions/{}/commit/parents/0/commit", &to),
             );
+            futures::future::ok((from, to))
+        })
+        .and_then(move |(from, to)| {
             let cmd = format!("git diff -U99999999 {}..{}", from, to);
             println!("diffcmd: {:?}", cmd);
-            return git_command(cmd, br_path.to_owned(), pool.clone());
+            git_command(cmd, br_path.to_owned(), pool.clone())
+        })
+        .and_then(move |stdout| {
+            get_comments.and_then(|comments_value| {
+                for i in comments_value.as_object().unwrap().keys() {
+                    println!("comments_value: {:?}", &i);
+                }
+                let mut resp = HashMap::<String, String>::new();
+                resp.insert("diff".to_owned(), stdout);
+                let response = Response::new()
+                    .with_body(serde_json::to_string(&resp).unwrap())
+                    .with_status(hyper::StatusCode::Ok);
+                futures::future::ok(response)
+            })
         });
 
         return Box::new(r);
@@ -533,11 +557,11 @@ fn call_service(
         let br_path = service.base_path.clone();
 
         let f = compute_pool.spawn(futures::future::ok(true).map(move |_| {
-            let info = josh::get_info(
+            let info = base_repo::get_info(
                 &view_string,
                 &prefix,
                 &headref,
-                &scratch::new(&br_path),
+                &br_path,
                 forward_maps.clone(),
                 backward_maps.clone(),
             );
@@ -756,7 +780,7 @@ fn run_http_server(
         backward_maps: Arc::new(RwLock::new(view_maps::ViewMaps::new())),
         base_url: remote.to_owned(),
         credential_cache: Arc::new(RwLock::new(CredentialCache::new())),
-        known_views: Arc::new(RwLock::new(KnownViews::new())),
+        known_views: Arc::new(RwLock::new(base_repo::KnownViews::new())),
         fetching: Arc::new(RwLock::new(HashSet::new())),
     };
 
@@ -782,171 +806,6 @@ fn run_http_server(
 
 fn to_ns(path: &str) -> String {
     return path.trim_matches('/').replace("/", "/refs/namespaces/");
-}
-
-fn discover_views(
-    _headref: &str,
-    br_path: &Path,
-    known_views: Arc<RwLock<KnownViews>>,
-) {
-    let _trace_s = span!(Level::TRACE, "discover_views", ?br_path);
-
-    let repo = scratch::new(&br_path);
-
-    if let Ok(mut kn) = known_views.try_write() {
-        for (prefix, kv) in kn.iter_mut() {
-            let refname = format!(
-                "refs/namespaces/{}/{}",
-                &to_ns(prefix),
-                "refs/heads/master"
-            );
-            let hs = scratch::find_all_views(&repo, &refname);
-            for i in hs {
-                kv.insert(i);
-            }
-        }
-    }
-}
-
-fn make_view_repo(
-    view_string: &str,
-    prefix: &str,
-    headref: &str,
-    namespace: &str,
-    br_path: &Path,
-    forward_maps: Arc<RwLock<view_maps::ViewMaps>>,
-    backward_maps: Arc<RwLock<view_maps::ViewMaps>>,
-) -> PathBuf {
-    let _trace_s =
-        span!(Level::TRACE, "make_view_repo", ?view_string, ?br_path);
-
-    let scratch = scratch::new(&br_path);
-
-    let mut bm = view_maps::ViewMaps::new_downstream(backward_maps.clone());
-    let mut fm = view_maps::ViewMaps::new_downstream(forward_maps.clone());
-
-    let viewobj = josh::build_view(&scratch, &view_string);
-
-    let mut refs = vec![];
-
-    let to_head = format!("refs/namespaces/{}/HEAD", &namespace);
-
-    if headref != "" {
-        let refname = format!("refs/namespaces/{}/{}", &to_ns(prefix), headref);
-        refs.push((refname.to_owned(), to_head.clone()));
-    } else {
-        let glob = format!("refs/namespaces/{}/*", &to_ns(prefix));
-        for refname in scratch.references_glob(&glob).unwrap().names() {
-            let refname = refname.unwrap();
-            let to_ref = refname.replacen(&to_ns(prefix), &namespace, 1);
-
-            if to_ref.contains("/refs/cache-automerge/") {
-                continue;
-            }
-            if to_ref.contains("/refs/changes/") {
-                continue;
-            }
-            if to_ref.contains("/refs/notes/") {
-                continue;
-            }
-
-            refs.push((refname.to_owned(), to_ref.clone()));
-        }
-    }
-
-    scratch::apply_view_to_refs(&scratch, &*viewobj, &refs, &mut fm, &mut bm);
-
-    if headref == "" {
-        let mastername =
-            format!("refs/namespaces/{}/refs/heads/master", &namespace);
-        scratch.reference_symbolic(&to_head, &mastername, true, "");
-    }
-
-    span!(Level::TRACE, "write_lock", view_string, namespace, ?br_path)
-        .in_scope(|| {
-            let mut forward_maps = forward_maps.write().unwrap();
-            let mut backward_maps = backward_maps.write().unwrap();
-            forward_maps.merge(&fm);
-            backward_maps.merge(&bm);
-        });
-
-    br_path.to_owned()
-}
-
-fn get_info(
-    view_string: &str,
-    prefix: &str,
-    rev: &str,
-    br_path: &Path,
-    forward_maps: Arc<RwLock<view_maps::ViewMaps>>,
-    backward_maps: Arc<RwLock<view_maps::ViewMaps>>,
-) -> String {
-    let _trace_s = span!(Level::TRACE, "get_info", ?view_string, ?br_path);
-
-    let scratch = scratch::new(&br_path);
-
-    let mut bm = view_maps::ViewMaps::new_downstream(backward_maps.clone());
-    let mut fm = view_maps::ViewMaps::new_downstream(forward_maps.clone());
-
-    let viewobj = josh::build_view(&scratch, &view_string);
-
-    let fr = &format!("refs/namespaces/{}/{}", &to_ns(&prefix), &rev);
-
-    let obj = ok_or!(scratch.revparse_single(&fr), {
-        ok_or!(scratch.revparse_single(&rev), {
-            return format!("rev not found: {:?}", &rev);
-        })
-    });
-
-    let commit = ok_or!(obj.peel_to_commit(), {
-        return format!("not a commit");
-    });
-
-    let mut meta = HashMap::new();
-    meta.insert("sha1".to_owned(), "".to_owned());
-    let transformed = viewobj
-        .apply_view_to_commit(&scratch, &commit, &mut fm, &mut bm, &mut meta);
-
-    let parent_ids = |commit: &git2::Commit| {
-        let pids: Vec<_> = commit
-            .parent_ids()
-            .map(|x| {
-                json!({
-                    "commit": x.to_string(),
-                    "tree": scratch.find_commit(x)
-                        .map(|c| { c.tree_id() })
-                        .unwrap_or(git2::Oid::zero())
-                        .to_string(),
-                })
-            })
-            .collect();
-        pids
-    };
-
-    let t = if let Ok(transformed) = scratch.find_commit(transformed) {
-        json!({
-            "commit": transformed.id().to_string(),
-            "tree": transformed.tree_id().to_string(),
-            "parents": parent_ids(&transformed),
-        })
-    } else {
-        json!({
-            "commit": git2::Oid::zero().to_string(),
-            "tree": git2::Oid::zero().to_string(),
-            "parents": json!([]),
-        })
-    };
-
-    let s = json!({
-        "original": {
-            "commit": commit.id().to_string(),
-            "tree": commit.tree_id().to_string(),
-            "parents": parent_ids(&commit),
-        },
-        "transformed": t,
-    });
-
-    return serde_json::to_string(&s).unwrap_or("Json Error".to_string());
 }
 
 fn main() {
