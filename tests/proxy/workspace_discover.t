@@ -80,16 +80,16 @@
 
   $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8002/real_repo.git:workspace=ws.git ws
 
-  $ curl -s http://localhost:8002/views
-  "/real_repo.git" = [
-      ':/ws2',
-      ':/sub3',
-      ':/sub1/subsub',
-      ':workspace=ws2',
-      ':/ws',
+  $ curl -s http://localhost:8002/views | sort
       ':/sub1',
+      ':/sub1/subsub',
       ':/sub2',
+      ':/sub3',
+      ':/ws',
+      ':/ws2',
       ':workspace=ws',
+      ':workspace=ws2',
+  "/real_repo.git" = [
   ]
 
   $ curl -s http://localhost:8002/views | grep subsub
