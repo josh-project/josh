@@ -6,6 +6,7 @@ extern crate futures;
 extern crate futures_cpupool;
 extern crate git2;
 extern crate hyper;
+extern crate hyper_tls;
 extern crate rand;
 extern crate regex;
 
@@ -52,6 +53,7 @@ use std::panic;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
+use std::str::FromStr;
 use std::sync::{Arc, RwLock};
 
 use tracing::{debug, span, Level};
@@ -61,6 +63,9 @@ use tracing::*;
 lazy_static! {
     static ref VIEW_REGEX: Regex =
         Regex::new(r"(?P<prefix>/.*[.]git)(?P<headref>@[^:!]*)?(?P<view>[:!].*)[.](?P<ending>(?:git)|(?:json))(?P<pathinfo>/.*)?")
+            .expect("can't compile regex");
+    static ref CHANGE_REGEX: Regex =
+        Regex::new(r"/c/(?P<change>.*)/")
             .expect("can't compile regex");
 }
 
@@ -75,6 +80,8 @@ struct HttpService {
     compute_pool: CpuPool,
     port: String,
     base_path: PathBuf,
+    http_client:
+        hyper::Client<hyper_tls::HttpsConnector<hyper::client::HttpConnector>>,
     base_url: String,
     forward_maps: Arc<RwLock<view_maps::ViewMaps>>,
     backward_maps: Arc<RwLock<view_maps::ViewMaps>>,
@@ -134,33 +141,39 @@ fn fetch_upstream(
                 .spawn(futures::future::ok(()).map(move |_| Ok(()))),
         )
     } else {
-        Box::new(
-            http.fetch_push_pool
-                .spawn(futures::future::ok(()).map(move |_| {
-                    let refs_to_fetch = if headref != "" {
-                        vec![headref.as_str()]
-                    } else {
-                        vec!["refs/heads/*", "refs/tags/*"]
-                    };
-                    let credentials_hashed = hash_strings(&remote_url, &username, &password);
-                    debug!("credentials_hashed {:?}, {:?}, {:?}", &remote_url, &username, &credentials_hashed);
-                    base_repo::fetch_refs_from_url(
-                        &br_path,
-                        &prefix,
-                        &remote_url,
-                        &refs_to_fetch,
-                        &username,
-                        &password,
-                    )
-                    .and_then(|_| {
-                        fetching.write().unwrap().remove(&credentials_hashed);
-                        if let Ok(mut cc) = credential_cache.write() {
-                            cc.insert(credentials_hashed, std::time::Instant::now());
-                        }
-                        Ok(())
-                    })
-                })),
-        )
+        Box::new(http.fetch_push_pool.spawn(futures::future::ok(()).map(
+            move |_| {
+                let refs_to_fetch = if headref != "" {
+                    vec![headref.as_str()]
+                } else {
+                    vec!["refs/heads/*", "refs/tags/*"]
+                };
+                let credentials_hashed =
+                    hash_strings(&remote_url, &username, &password);
+                debug!(
+                    "credentials_hashed {:?}, {:?}, {:?}",
+                    &remote_url, &username, &credentials_hashed
+                );
+                base_repo::fetch_refs_from_url(
+                    &br_path,
+                    &prefix,
+                    &remote_url,
+                    &refs_to_fetch,
+                    &username,
+                    &password,
+                )
+                .and_then(|_| {
+                    fetching.write().unwrap().remove(&credentials_hashed);
+                    if let Ok(mut cc) = credential_cache.write() {
+                        cc.insert(
+                            credentials_hashed,
+                            std::time::Instant::now(),
+                        );
+                    }
+                    Ok(())
+                })
+            },
+        )))
     };
 
     if credentials_cached_ok {
@@ -245,7 +258,8 @@ fn async_fetch(
 }
 
 fn respond_unauthorized() -> Response {
-    let mut response: Response = Response::new().with_status(hyper::StatusCode::Unauthorized);
+    let mut response: Response =
+        Response::new().with_status(hyper::StatusCode::Unauthorized);
     response
         .headers_mut()
         .set_raw("WWW-Authenticate", "Basic realm=\"User Visible Realm\"");
@@ -274,6 +288,25 @@ fn parse_url(path: &str) -> Option<(String, String, String, String, String)> {
         caps.name("headref").map(as_str).unwrap_or("".to_owned()),
         caps.name("ending").map(as_str).unwrap_or("".to_owned()),
     ));
+}
+
+fn git_command(
+    cmd: String,
+    br_path: PathBuf,
+    pool: CpuPool,
+) -> Box<dyn Future<Item = Response, Error = hyper::Error>> {
+    return Box::new(pool.spawn_fn(move || {
+        let shell = shell::Shell {
+            cwd: br_path.to_owned(),
+        };
+        let (stdout, _stderr) = shell.command(&cmd);
+        /* println!("git_command stdout: {}", stdout); */
+        /* println!("git_command stderr: {}", _stderr); */
+        let response = Response::new()
+            .with_body(stdout)
+            .with_status(hyper::StatusCode::Ok);
+        return futures::future::ok(response);
+    }));
 }
 
 fn call_service(
@@ -350,8 +383,9 @@ fn call_service(
     }
     if path == "/views" {
         let _br_path = service.base_path.clone();
-        let body = serde_json::to_string(&*service.known_views.read().unwrap())
-            .unwrap();
+        let body =
+            toml::to_string_pretty(&*service.known_views.read().unwrap())
+                .unwrap();
         let response = Response::new()
             .with_body(body)
             .with_status(hyper::StatusCode::Ok);
@@ -360,19 +394,20 @@ fn call_service(
     if path == "/panic" {
         panic!();
     }
+    let body2tring = move |body| {
+        let mut buffer: Vec<u8> = Vec::new();
+        for i in body {
+            buffer.push(i);
+        }
+
+        String::from_utf8(buffer).unwrap_or("".to_string())
+    };
     if path == "/repo_update" {
         let pool = service.fetch_push_pool.clone();
         return Box::new(
             req.body()
                 .concat2()
-                .map(move |body| {
-                    let mut buffer: Vec<u8> = Vec::new();
-                    for i in body {
-                        buffer.push(i);
-                    }
-
-                    String::from_utf8(buffer).unwrap_or("".to_string())
-                })
+                .map(body2tring)
                 .and_then(move |buffer| {
                     return pool.spawn(futures::future::ok(buffer).map(
                         move |buffer| {
@@ -407,14 +442,90 @@ fn call_service(
         );
     }
 
-    let compute_pool = service.compute_pool.clone();
+    let gerrit_api = |endpoint, query| {
+        let uri = hyper::Uri::from_str(&format!(
+            "https://gerrit.int.esrlabs.com{}?{}",
+            endpoint, query
+        ))
+        .unwrap();
 
-    let (prefix, view_string, pathinfo, headref, ending) = some_or!(parse_url(&path), {
-        let response = Response::new().with_status(hyper::StatusCode::NotFound);
-        return Box::new(futures::future::ok(response));
-    });
+        println!("gerrit_api: {:?}", &uri);
+
+        let auth = Authorization(Basic {
+            username: env::var("JOSH_USERNAME").unwrap_or("".to_owned()),
+            password: env::var("JOSH_PASSWORD").ok(),
+        });
+
+        let mut r = hyper::Request::new(hyper::Method::Get, uri);
+        r.headers_mut().set(auth);
+        return Box::new(service.http_client.request(r));
+    };
+
+    if path.starts_with("/a/") {
+        return Box::new(
+            gerrit_api(path, req.query().unwrap_or("")).map(|x| x),
+        );
+    }
+
+    if path.starts_with("/static/") {
+        return Box::new(
+            service.http_client.get(
+                hyper::Uri::from_str(&format!(
+                    "http://localhost:3000{}",
+                    &path
+                ))
+                .unwrap(),
+            ),
+        );
+    }
+
+    let as_str = |x: regex::Match| x.as_str().to_owned();
+
+    let j2str = |val: &serde_json::Value, s: &str| {
+        if let Some(r) = val.pointer(s) {
+            return r.to_string().trim_matches('"').to_string();
+        }
+        return format!("## not found: {:?}", s);
+    };
+
+    if let Some(caps) = CHANGE_REGEX.captures(&path) {
+        let change = caps.name("change").map(as_str).unwrap_or("".to_owned());
+        let pool = service.housekeeping_pool.clone();
+        let br_path = br_path.clone();
+
+        let r = gerrit_api(
+            "/a/changes/".to_string(),
+            &format!("q=change:{}&o=ALL_REVISIONS&o=ALL_COMMITS", change),
+        )
+        .and_then(move |x| x.body().concat2().map(body2tring))
+        .and_then(move |resp_text| {
+            let resp_value: serde_json::Value =
+                serde_json::from_str(&resp_text[4..]).unwrap();
+            let to = j2str(&resp_value, "/0/current_revision");
+            let from = j2str(
+                &resp_value,
+                &format!("/0/revisions/{}/commit/parents/0/commit", &to),
+            );
+            let cmd = format!("git diff -U99999999 {}..{}", from, to);
+            println!("diffcmd: {:?}", cmd);
+            return git_command(cmd, br_path.to_owned(), pool.clone());
+        });
+
+        return Box::new(r);
+    };
+
+    let (prefix, view_string, pathinfo, headref, ending) =
+        some_or!(parse_url(&path), {
+            return Box::new(
+                service.http_client.get(
+                    hyper::Uri::from_str("http://localhost:3000").unwrap(),
+                ),
+            );
+        });
 
     let headref = headref.trim_start_matches("@").to_owned();
+
+    let compute_pool = service.compute_pool.clone();
 
     if ending == "json" {
         let forward_maps = service.forward_maps.clone();
@@ -470,29 +581,30 @@ fn call_service(
     let br_url = remote_url.clone();
     let base_ns = to_ns(&prefix);
 
-    let call_git_http_backend = |request: Request,
-                                 path: PathBuf,
-                                 pathinfo: &str,
-                                 handle: &tokio_core::reactor::Handle|
-     -> Box<dyn Future<Item = Response, Error = hyper::Error>> {
-        debug!("CALLING git-http backend {:?} {:?}", path, pathinfo);
-        let mut cmd = Command::new("git");
-        cmd.arg("http-backend");
-        cmd.current_dir(&path);
-        cmd.env("GIT_PROJECT_ROOT", path.to_str().unwrap());
-        cmd.env("GIT_DIR", path.to_str().unwrap());
-        cmd.env("GIT_HTTP_EXPORT_ALL", "");
-        cmd.env("PATH_INFO", pathinfo);
-        cmd.env("JOSH_PASSWORD", passwd);
-        cmd.env("JOSH_USERNAME", usernm);
-        cmd.env("JOSH_PORT", port);
-        cmd.env("GIT_NAMESPACE", ns);
-        cmd.env("JOSH_VIEWSTR", viewstr);
-        cmd.env("JOSH_REMOTE", remote_url);
-        cmd.env("JOSH_BASE_NS", base_ns);
+    let call_git_http_backend =
+        |request: Request,
+         path: PathBuf,
+         pathinfo: &str,
+         handle: &tokio_core::reactor::Handle|
+         -> Box<dyn Future<Item = Response, Error = hyper::Error>> {
+            debug!("CALLING git-http backend {:?} {:?}", path, pathinfo);
+            let mut cmd = Command::new("git");
+            cmd.arg("http-backend");
+            cmd.current_dir(&path);
+            cmd.env("GIT_PROJECT_ROOT", path.to_str().unwrap());
+            cmd.env("GIT_DIR", path.to_str().unwrap());
+            cmd.env("GIT_HTTP_EXPORT_ALL", "");
+            cmd.env("PATH_INFO", pathinfo);
+            cmd.env("JOSH_PASSWORD", passwd);
+            cmd.env("JOSH_USERNAME", usernm);
+            cmd.env("JOSH_PORT", port);
+            cmd.env("GIT_NAMESPACE", ns);
+            cmd.env("JOSH_VIEWSTR", viewstr);
+            cmd.env("JOSH_REMOTE", remote_url);
+            cmd.env("JOSH_BASE_NS", base_ns);
 
-        cgi::do_cgi(request, cmd, handle.clone())
-    };
+            cgi::do_cgi(request, cmd, handle.clone())
+        };
 
     debug!("PREFIX: {}", &prefix);
     debug!("VIEW: {}", &view_string);
@@ -634,6 +746,12 @@ fn run_http_server(
         compute_pool: CpuPool::new(4),
         port: port,
         base_path: local.to_owned(),
+        http_client: hyper::Client::configure()
+            .connector(
+                ::hyper_tls::HttpsConnector::new(4, &core.handle()).unwrap(),
+            )
+            .keep_alive(true)
+            .build(&core.handle()),
         forward_maps: Arc::new(RwLock::new(view_maps::ViewMaps::new())),
         backward_maps: Arc::new(RwLock::new(view_maps::ViewMaps::new())),
         base_url: remote.to_owned(),

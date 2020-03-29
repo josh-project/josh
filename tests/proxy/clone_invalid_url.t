@@ -22,7 +22,7 @@
   $ cd ${TESTTMP}
 
   $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8002/xxx full_repo
-  fatal: repository 'http://localhost:8002/xxx/' not found
+  fatal: http://localhost:8002/xxx/info/refs not valid: is this a git repository?
   [128]
 
 

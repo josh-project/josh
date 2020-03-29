@@ -80,10 +80,22 @@
 
   $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8002/real_repo.git:workspace=ws.git ws
 
-  $ curl -s http://localhost:8002/views | jq -S | grep subsub
-      ":/sub1/subsub",
-  $ curl -s http://localhost:8002/views | jq -S | grep ws2 | grep workspace
-      ":workspace=ws2",
+  $ curl -s http://localhost:8002/views
+  "/real_repo.git" = [
+      ':/ws2',
+      ':/sub3',
+      ':/sub1/subsub',
+      ':workspace=ws2',
+      ':/ws',
+      ':/sub1',
+      ':/sub2',
+      ':workspace=ws',
+  ]
+
+  $ curl -s http://localhost:8002/views | grep subsub
+      ':/sub1/subsub',
+  $ curl -s http://localhost:8002/views | grep ws2 | grep workspace
+      ':workspace=ws2',
 
   $ bash ${TESTDIR}/destroy_test_env.sh
 
