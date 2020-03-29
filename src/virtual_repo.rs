@@ -109,7 +109,13 @@ pub fn process_repo_update(
 
         debug!("=== processed_old {:?}", old);
 
-        match scratch::unapply_view(&scratch, backward_maps, &*viewobj, old, new_oid) {
+        match scratch::unapply_view(
+            &scratch,
+            backward_maps,
+            &*viewobj,
+            old,
+            new_oid,
+        ) {
             UnapplyView::Done(rewritten) => {
                 debug!("rewritten");
                 rewritten
@@ -118,7 +124,10 @@ pub fn process_repo_update(
                 return Err("branch does not exist on remote".to_owned());
             }
             UnapplyView::RejectMerge(parent_count) => {
-                return Err(format!("rejecting merge with {} parents", parent_count));
+                return Err(format!(
+                    "rejecting merge with {} parents",
+                    parent_count
+                ));
             }
         }
     };
@@ -140,7 +149,9 @@ pub fn process_repo_update(
     let oid_to_push = if josh_merge {
         let rev = format!("refs/namespaces/{}/{}", &base_ns, &baseref);
         let backward_commit = scratch.find_commit(backward_new_oid).unwrap();
-        if let Ok(Ok(base_commit)) = scratch.revparse_single(&rev).map(|x| x.peel_to_commit()) {
+        if let Ok(Ok(base_commit)) =
+            scratch.revparse_single(&rev).map(|x| x.peel_to_commit())
+        {
             let merged_tree = scratch
                 .merge_commits(&base_commit, &backward_commit, None)
                 .unwrap()
@@ -214,7 +225,9 @@ pub fn update_hook(refname: &str, old: &str, new: &str) -> i32 {
         );
     }
 
-    let scratch = scratch::new(&Path::new(&env::var("GIT_DIR").expect("GIT_DIR not set")));
+    let scratch = scratch::new(&Path::new(
+        &env::var("GIT_DIR").expect("GIT_DIR not set"),
+    ));
     repo_update.insert(
         "GIT_DIR".to_owned(),
         scratch.path().to_str().unwrap().to_owned(),

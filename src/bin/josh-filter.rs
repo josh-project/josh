@@ -20,9 +20,11 @@ use std::fs::read_to_string;
 
 lazy_static! {
     static ref FILE_REGEX: regex::Regex =
-        regex::Regex::new(r"\[(?P<src>.*)\](?P<spec>[^\[]*)").expect("can't compile regex");
+        regex::Regex::new(r"\[(?P<src>.*)\](?P<spec>[^\[]*)")
+            .expect("can't compile regex");
     static ref STR_REGEX: regex::Regex =
-        regex::Regex::new(r"(?P<src>[^:]*)(?P<spec>:[^\[]*)").expect("can't compile regex");
+        regex::Regex::new(r"(?P<src>[^:]*)(?P<spec>:[^\[]*)")
+            .expect("can't compile regex");
 }
 
 fn run_filter(args: Vec<String>) -> i32 {
@@ -42,7 +44,8 @@ fn run_filter(args: Vec<String>) -> i32 {
         .get_matches_from(args);
 
     if args.is_present("version") {
-        let v = option_env!("GIT_DESCRIBE").unwrap_or(env!("CARGO_PKG_VERSION"));
+        let v =
+            option_env!("GIT_DESCRIBE").unwrap_or(env!("CARGO_PKG_VERSION"));
         println!("Version: {}", v);
         return 0;
     }
@@ -130,7 +133,13 @@ fn run_filter(args: Vec<String>) -> i32 {
             let new = repo.revparse_single(&target).unwrap().id();
             let old = repo.revparse_single("JOSH_TMP").unwrap().id();
 
-            match josh::unapply_view(&repo, backward_maps.clone(), &*viewobj, old, new) {
+            match josh::unapply_view(
+                &repo,
+                backward_maps.clone(),
+                &*viewobj,
+                old,
+                new,
+            ) {
                 josh::UnapplyView::Done(rewritten) => {
                     repo.reference(&src, rewritten, true, "unapply_view")
                         .expect("can't create reference");

@@ -52,22 +52,28 @@ impl Service for ServeTestGit {
             ),
             _ => {
                 println!("ServeTestGit: no credentials in request");
-                let mut response = Response::new().with_status(hyper::StatusCode::Unauthorized);
-                response
-                    .headers_mut()
-                    .set_raw("WWW-Authenticate", "Basic realm=\"User Visible Realm\"");
+                let mut response = Response::new()
+                    .with_status(hyper::StatusCode::Unauthorized);
+                response.headers_mut().set_raw(
+                    "WWW-Authenticate",
+                    "Basic realm=\"User Visible Realm\"",
+                );
                 return Box::new(futures::future::ok(response));
             }
         };
 
-        if username != "admin" && (username != self.username || password != self.password) {
+        if username != "admin"
+            && (username != self.username || password != self.password)
+        {
             println!("ServeTestGit: wrong user/pass");
             println!("user: {:?} - {:?}", username, self.username);
             println!("pass: {:?} - {:?}", password, self.password);
-            let mut response = Response::new().with_status(hyper::StatusCode::Unauthorized);
-            response
-                .headers_mut()
-                .set_raw("WWW-Authenticate", "Basic realm=\"User Visible Realm\"");
+            let mut response =
+                Response::new().with_status(hyper::StatusCode::Unauthorized);
+            response.headers_mut().set_raw(
+                "WWW-Authenticate",
+                "Basic realm=\"User Visible Realm\"",
+            );
             return Box::new(futures::future::ok(response));
         }
 
@@ -91,7 +97,12 @@ impl Service for ServeTestGit {
     }
 }
 
-fn run_test_server(addr: net::SocketAddr, repo_path: &Path, username: &str, password: &str) {
+fn run_test_server(
+    addr: net::SocketAddr,
+    repo_path: &Path,
+    username: &str,
+    password: &str,
+) {
     let mut core = tokio_core::reactor::Core::new().unwrap();
     let server_handle = core.handle();
 
@@ -109,7 +120,9 @@ fn run_test_server(addr: net::SocketAddr, repo_path: &Path, username: &str, pass
             };
             Ok(cghttp)
         };
-        if let Ok(serve) = Http::new().serve_addr_handle(&addr, &server_handle, make_service) {
+        if let Ok(serve) =
+            Http::new().serve_addr_handle(&addr, &server_handle, make_service)
+        {
             break serve;
         }
     };
@@ -160,7 +173,9 @@ fn run_server(args: Vec<String>) -> i32 {
     let addr = format!("0.0.0.0:{}", port).parse().unwrap();
     run_test_server(
         addr,
-        &PathBuf::from(args.value_of("local").expect("missing local directory")),
+        &PathBuf::from(
+            args.value_of("local").expect("missing local directory"),
+        ),
         args.value_of("username").expect("missing username"),
         args.value_of("password").expect("missing password"),
     );

@@ -34,7 +34,9 @@ pub fn rewrite(
     parents: &[&git2::Commit],
     tree: &git2::Tree,
 ) -> git2::Oid {
-    if base.tree().unwrap().id() == tree.id() && all_equal(base.parents(), parents) {
+    if base.tree().unwrap().id() == tree.id()
+        && all_equal(base.parents(), parents)
+    {
         // Looks like an optimization, but in fact serves to not change the commit in case
         // it was signed.
         return base.id();
@@ -54,7 +56,10 @@ pub fn rewrite(
     result
 }
 
-pub fn find_all_views(repo: &git2::Repository, refname: &str) -> HashSet<String> {
+pub fn find_all_views(
+    repo: &git2::Repository,
+    refname: &str,
+) -> HashSet<String> {
     let mut hs = HashSet::new();
     if let Ok(reference) = repo.revparse_single(&refname) {
         let tree = ok_or!(reference.peel_to_tree(), {
@@ -91,7 +96,8 @@ pub fn unapply_view(
     old: git2::Oid,
     new: git2::Oid,
 ) -> UnapplyView {
-    let _trace_s = span!( Level::TRACE, "unapply_view", repo = ?repo.path(), ?old, ?new);
+    let _trace_s =
+        span!( Level::TRACE, "unapply_view", repo = ?repo.path(), ?old, ?new);
     debug!("unapply_view");
 
     debug!("==== walking commits from {} to {}", old, new);
@@ -135,7 +141,13 @@ pub fn unapply_view(
 
         let new_trees: HashSet<_> = original_parents_refs
             .iter()
-            .map(|x| viewobj.unapply(&repo, &tree, &x.tree().expect("walk: parent has no tree")))
+            .map(|x| {
+                viewobj.unapply(
+                    &repo,
+                    &tree,
+                    &x.tree().expect("walk: parent has no tree"),
+                )
+            })
             .collect();
 
         let new_tree = match new_trees.len() {
@@ -145,7 +157,11 @@ pub fn unapply_view(
             0 => repo
                 // 0 means the history is unrelated. Pushing it will fail if we are not
                 // dealing with either a force push or a push with the "josh-merge" option set.
-                .find_tree(viewobj.unapply(&repo, &tree, &repo.find_tree(empty_tree_id()).unwrap()))
+                .find_tree(viewobj.unapply(
+                    &repo,
+                    &tree,
+                    &repo.find_tree(empty_tree_id()).unwrap(),
+                ))
                 .unwrap(),
             parent_count => {
                 // This is a merge commit where the parents in the upstream repo
@@ -188,7 +204,11 @@ fn transform_commit(
             &mut HashMap::new(),
         );
         forward_maps.set(&viewobj.viewstr(), original_commit.id(), view_commit);
-        backward_maps.set(&viewobj.viewstr(), view_commit, original_commit.id());
+        backward_maps.set(
+            &viewobj.viewstr(),
+            view_commit,
+            original_commit.id(),
+        );
         if view_commit != git2::Oid::zero() {
             repo.reference(&to_refname, view_commit, true, "apply_view")
                 .expect("can't create reference");
@@ -226,7 +246,8 @@ pub fn apply_view_cached(
         return forward_maps.get(&view.viewstr(), newrev);
     }
 
-    let trace_s = span!(Level::TRACE, "apply_view_cached", viewstr = ?view.viewstr());
+    let trace_s =
+        span!(Level::TRACE, "apply_view_cached", viewstr = ?view.viewstr());
 
     let walk = {
         let mut walk = repo.revwalk().expect("walk: can't create revwalk");

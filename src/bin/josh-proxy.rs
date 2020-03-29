@@ -96,7 +96,12 @@ fn fetch_upstream(
     password: &str,
     remote_url: String,
     headref: &str,
-) -> Box<futures_cpupool::CpuFuture<std::result::Result<(), git2::Error>, hyper::Error>> {
+) -> Box<
+    futures_cpupool::CpuFuture<
+        std::result::Result<(), git2::Error>,
+        hyper::Error,
+    >,
+> {
     let credentials_hashed = hash_strings(&remote_url, &username, &password);
     let username = username.to_owned();
     let password = password.to_owned();
@@ -114,7 +119,8 @@ fn fetch_upstream(
             .map(|cc| cc.get(&credentials_hashed).copied());
 
         if let Some(Some(c)) = last {
-            std::time::Instant::now().duration_since(c) < std::time::Duration::from_secs(60)
+            std::time::Instant::now().duration_since(c)
+                < std::time::Duration::from_secs(60)
         } else {
             false
         }
@@ -174,11 +180,14 @@ fn async_fetch(
     password: String,
     namespace: String,
     remote_url: String,
-) -> Box<dyn Future<Item = Result<PathBuf, git2::Error>, Error = hyper::Error>> {
+) -> Box<dyn Future<Item = Result<PathBuf, git2::Error>, Error = hyper::Error>>
+{
     let br_path = http.base_path.clone();
     base_repo::create_local(&br_path);
 
-    let fetch_future = fetch_upstream(http, &prefix, &username, &password, remote_url, &headref);
+    let fetch_future = fetch_upstream(
+        http, &prefix, &username, &password, remote_url, &headref,
+    );
 
     let forward_maps = http.forward_maps.clone();
     let backward_maps = http.backward_maps.clone();
@@ -293,7 +302,8 @@ fn call_service(
         let response = Response::new()
             .with_body(format!(
                 "Version: {}\n",
-                option_env!("GIT_DESCRIBE").unwrap_or(env!("CARGO_PKG_VERSION"))
+                option_env!("GIT_DESCRIBE")
+                    .unwrap_or(env!("CARGO_PKG_VERSION"))
             ))
             .with_status(hyper::StatusCode::Ok);
         return Box::new(futures::future::ok(response));
@@ -320,7 +330,10 @@ fn call_service(
         return housekeep("git repack -Ad".to_owned(), br_path.to_owned());
     }
     if path == "/count-objects" {
-        return housekeep("git count-objects -vH".to_owned(), br_path.to_owned());
+        return housekeep(
+            "git count-objects -vH".to_owned(),
+            br_path.to_owned(),
+        );
     }
     if path == "/prune" {
         return housekeep("git prune".to_owned(), br_path.to_owned());
@@ -337,7 +350,8 @@ fn call_service(
     }
     if path == "/views" {
         let _br_path = service.base_path.clone();
-        let body = serde_json::to_string(&*service.known_views.read().unwrap()).unwrap();
+        let body = serde_json::to_string(&*service.known_views.read().unwrap())
+            .unwrap();
         let response = Response::new()
             .with_body(body)
             .with_status(hyper::StatusCode::Ok);
@@ -360,11 +374,18 @@ fn call_service(
                     String::from_utf8(buffer).unwrap_or("".to_string())
                 })
                 .and_then(move |buffer| {
-                    return pool.spawn(futures::future::ok(buffer).map(move |buffer| {
-                        let repo_update: virtual_repo::RepoUpdate = serde_json::from_str(&buffer)
-                            .unwrap_or(virtual_repo::RepoUpdate::new());
-                        virtual_repo::process_repo_update(repo_update, forward_maps, backward_maps)
-                    }));
+                    return pool.spawn(futures::future::ok(buffer).map(
+                        move |buffer| {
+                            let repo_update: virtual_repo::RepoUpdate =
+                                serde_json::from_str(&buffer)
+                                    .unwrap_or(virtual_repo::RepoUpdate::new());
+                            virtual_repo::process_repo_update(
+                                repo_update,
+                                forward_maps,
+                                backward_maps,
+                            )
+                        },
+                    ));
                 })
                 .and_then(move |result| {
                     if let Ok(stderr) = result {
@@ -379,7 +400,8 @@ fn call_service(
                             .with_status(hyper::StatusCode::BadRequest);
                         return Box::new(futures::future::ok(response));
                     }
-                    let response = Response::new().with_status(hyper::StatusCode::Forbidden);
+                    let response = Response::new()
+                        .with_status(hyper::StatusCode::Forbidden);
                     return Box::new(futures::future::ok(response));
                 }),
         );
@@ -588,14 +610,21 @@ fn run_proxy(args: Vec<String>) -> i32 {
     run_http_server(
         addr,
         port,
-        &PathBuf::from(args.value_of("local").expect("missing local directory")),
+        &PathBuf::from(
+            args.value_of("local").expect("missing local directory"),
+        ),
         &args.value_of("remote").expect("missing remote repo url"),
     );
 
     return 0;
 }
 
-fn run_http_server(addr: net::SocketAddr, port: String, local: &Path, remote: &str) {
+fn run_http_server(
+    addr: net::SocketAddr,
+    port: String,
+    local: &Path,
+    remote: &str,
+) {
     let mut core = tokio_core::reactor::Core::new().unwrap();
 
     let cghttp = HttpService {
@@ -637,14 +666,22 @@ fn to_ns(path: &str) -> String {
     return path.trim_matches('/').replace("/", "/refs/namespaces/");
 }
 
-fn discover_views(_headref: &str, br_path: &Path, known_views: Arc<RwLock<KnownViews>>) {
+fn discover_views(
+    _headref: &str,
+    br_path: &Path,
+    known_views: Arc<RwLock<KnownViews>>,
+) {
     let _trace_s = span!(Level::TRACE, "discover_views", ?br_path);
 
     let repo = scratch::new(&br_path);
 
     if let Ok(mut kn) = known_views.try_write() {
         for (prefix, kv) in kn.iter_mut() {
-            let refname = format!("refs/namespaces/{}/{}", &to_ns(prefix), "refs/heads/master");
+            let refname = format!(
+                "refs/namespaces/{}/{}",
+                &to_ns(prefix),
+                "refs/heads/master"
+            );
             let hs = scratch::find_all_views(&repo, &refname);
             for i in hs {
                 kv.insert(i);
@@ -662,7 +699,8 @@ fn make_view_repo(
     forward_maps: Arc<RwLock<view_maps::ViewMaps>>,
     backward_maps: Arc<RwLock<view_maps::ViewMaps>>,
 ) -> PathBuf {
-    let _trace_s = span!(Level::TRACE, "make_view_repo", ?view_string, ?br_path);
+    let _trace_s =
+        span!(Level::TRACE, "make_view_repo", ?view_string, ?br_path);
 
     let scratch = scratch::new(&br_path);
 
@@ -701,16 +739,18 @@ fn make_view_repo(
     scratch::apply_view_to_refs(&scratch, &*viewobj, &refs, &mut fm, &mut bm);
 
     if headref == "" {
-        let mastername = format!("refs/namespaces/{}/refs/heads/master", &namespace);
+        let mastername =
+            format!("refs/namespaces/{}/refs/heads/master", &namespace);
         scratch.reference_symbolic(&to_head, &mastername, true, "");
     }
 
-    span!(Level::TRACE, "write_lock", view_string, namespace, ?br_path).in_scope(|| {
-        let mut forward_maps = forward_maps.write().unwrap();
-        let mut backward_maps = backward_maps.write().unwrap();
-        forward_maps.merge(&fm);
-        backward_maps.merge(&bm);
-    });
+    span!(Level::TRACE, "write_lock", view_string, namespace, ?br_path)
+        .in_scope(|| {
+            let mut forward_maps = forward_maps.write().unwrap();
+            let mut backward_maps = backward_maps.write().unwrap();
+            forward_maps.merge(&fm);
+            backward_maps.merge(&bm);
+        });
 
     br_path.to_owned()
 }
@@ -746,7 +786,8 @@ fn get_info(
 
     let mut meta = HashMap::new();
     meta.insert("sha1".to_owned(), "".to_owned());
-    let transformed = viewobj.apply_view_to_commit(&scratch, &commit, &mut fm, &mut bm, &mut meta);
+    let transformed = viewobj
+        .apply_view_to_commit(&scratch, &commit, &mut fm, &mut bm, &mut meta);
 
     let parent_ids = |commit: &git2::Commit| {
         let pids: Vec<_> = commit

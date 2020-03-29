@@ -93,7 +93,8 @@ fn build_response(command_result: std::process::Output) -> Response {
         if line.as_ref().unwrap().is_empty() {
             break;
         }
-        let l: Vec<&str> = line.as_ref().unwrap().as_str().splitn(2, ": ").collect();
+        let l: Vec<&str> =
+            line.as_ref().unwrap().as_str().splitn(2, ": ").collect();
         for x in &l {
             headers.push(x.to_string());
         }

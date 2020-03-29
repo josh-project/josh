@@ -60,8 +60,8 @@ pub fn fetch_refs_from_url(
         let cmd = format!("git fetch {} '{}'", &nurl, &spec);
         debug!("fetch_refs_from_url {:?} {:?} {:?}", cmd, path, "");
 
-
-        let (_stdout, stderr) = shell.command_env(&cmd, &[("GIT_PASSWORD", &password)]);
+        let (_stdout, stderr) =
+            shell.command_env(&cmd, &[("GIT_PASSWORD", &password)]);
         if stderr.contains("fatal: Authentication failed") {
             return Err(git2::Error::from_str("auth"));
         }
@@ -101,7 +101,8 @@ pub fn push_head_url(
     let mut fakehead = repo
         .reference(&rn, oid, true, "push_head_url")
         .expect("can't create reference");
-    let (stdout, stderr) = shell.command_env(&cmd, &[("GIT_PASSWORD", &password)]);
+    let (stdout, stderr) =
+        shell.command_env(&cmd, &[("GIT_PASSWORD", &password)]);
     fakehead.delete().expect("fakehead.delete failed");
     debug!("{}", &stderr);
     debug!("{}", &stdout);
@@ -120,7 +121,8 @@ fn install_josh_hook(scratch_dir: &Path) {
         let ce = current_exe().expect("can't find path to exe");
         shell.command("rm -Rf hooks");
         shell.command("mkdir hooks");
-        symlink(ce, scratch_dir.join("hooks").join("update")).expect("can't symlink update hook");
+        symlink(ce, scratch_dir.join("hooks").join("update"))
+            .expect("can't symlink update hook");
         shell.command(&format!(
             "git config credential.helper '!f() {{ echo \"password=\"$GIT_PASSWORD\"\"; }}; f'"
         ));

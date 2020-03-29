@@ -33,13 +33,19 @@ impl ViewMaps {
         return git2::Oid::zero();
     }
 
-    pub fn has(&self, repo: &git2::Repository, viewstr: &str, from: git2::Oid) -> bool {
+    pub fn has(
+        &self,
+        repo: &git2::Repository,
+        viewstr: &str,
+        from: git2::Oid,
+    ) -> bool {
         if let Some(m) = self.maps.get(viewstr) {
             if m.contains_key(&from) {
                 // Only report an object as cached if it exists in the object database.
                 // This forces a rebuild in case the object was garbage collected.
                 let oid = self.get(viewstr, from);
-                return oid == git2::Oid::zero() || repo.odb().unwrap().exists(oid);
+                return oid == git2::Oid::zero()
+                    || repo.odb().unwrap().exists(oid);
             }
         }
         if let Some(upsteam) = self.upsteam.clone() {

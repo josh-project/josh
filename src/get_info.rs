@@ -11,7 +11,8 @@ pub fn get_info(
     forward_maps: Arc<RwLock<view_maps::ViewMaps>>,
     backward_maps: Arc<RwLock<view_maps::ViewMaps>>,
 ) -> String {
-    let _trace_s = span!(Level::TRACE, "get_info", ?view_string, br_path = ?repo.path());
+    let _trace_s =
+        span!(Level::TRACE, "get_info", ?view_string, br_path = ?repo.path());
 
     let mut bm = view_maps::ViewMaps::new_downstream(backward_maps.clone());
     let mut fm = view_maps::ViewMaps::new_downstream(forward_maps.clone());
@@ -32,7 +33,8 @@ pub fn get_info(
 
     let mut meta = HashMap::new();
     meta.insert("sha1".to_owned(), "".to_owned());
-    let transformed = viewobj.apply_view_to_commit(&repo, &commit, &mut fm, &mut bm, &mut meta);
+    let transformed = viewobj
+        .apply_view_to_commit(&repo, &commit, &mut fm, &mut bm, &mut meta);
 
     let parent_ids = |commit: &git2::Commit| {
         let pids: Vec<_> = commit

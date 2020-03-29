@@ -15,7 +15,11 @@ impl Shell {
         return self.command_env(cmd, &[]);
     }
 
-    pub fn command_env(&self, cmd: &str, env: &[(&str, &str)]) -> (String, String) {
+    pub fn command_env(
+        &self,
+        cmd: &str,
+        env: &[(&str, &str)],
+    ) -> (String, String) {
         let git_dir = if self.cwd.join(".git").exists() {
             self.cwd.join(".git")
         } else {
@@ -34,9 +38,9 @@ impl Shell {
             command.env(&k, &v);
         }
 
-        let output = command
-            .output()
-            .unwrap_or_else(|e| panic!("failed to execute process: {}\n{}", cmd, e));
+        let output = command.output().unwrap_or_else(|e| {
+            panic!("failed to execute process: {}\n{}", cmd, e)
+        });
 
         let stdout = String::from_utf8(output.stdout)
             .expect("failed to decode utf8")

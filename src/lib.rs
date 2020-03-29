@@ -61,7 +61,8 @@ pub enum UnapplyView {
 }
 
 fn empty_tree_id() -> git2::Oid {
-    return git2::Oid::from_str("4b825dc642cb6eb9a060e54bf8d69288fbee4904").unwrap();
+    return git2::Oid::from_str("4b825dc642cb6eb9a060e54bf8d69288fbee4904")
+        .unwrap();
 }
 
 pub fn to_ns(path: &str) -> String {
