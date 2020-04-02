@@ -116,7 +116,7 @@ pub fn unapply_view(
     };
 
     let mut bm = view_maps::ViewMaps::new_downstream(backward_maps.clone());
-    let mut ret = git2::Oid::zero();
+    let mut ret = bm.get(&viewobj.viewstr(), new);
     for rev in walk {
         let rev = rev.expect("walk: invalid rev");
 
