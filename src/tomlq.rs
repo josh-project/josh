@@ -1,6 +1,10 @@
 use std::collections::HashMap;
 
-fn visit(path: &Vec<String>, v: &toml::Value, res: &mut HashMap<Vec<String>, Vec<toml::Value>>) {
+fn visit(
+    path: &Vec<String>,
+    v: &toml::Value,
+    res: &mut HashMap<Vec<String>, Vec<toml::Value>>,
+) {
     if v.is_table() {
         for (k, v) in v.as_table().unwrap().iter() {
             let mut path = path.clone();
@@ -15,8 +19,7 @@ fn visit(path: &Vec<String>, v: &toml::Value, res: &mut HashMap<Vec<String>, Vec
                 visit(&path, v, res);
             }
             return;
-        }
-        else {
+        } else {
             for v in v.as_array().unwrap().iter() {
                 let mut path = path.clone();
                 path.push("$all".to_owned());
@@ -30,20 +33,20 @@ fn visit(path: &Vec<String>, v: &toml::Value, res: &mut HashMap<Vec<String>, Vec
 }
 
 pub fn toml_qbe(data: &str, q: &str) -> bool {
-           use crate::toml::macros::Deserialize;
-    
     let a = data.parse::<toml::Value>().unwrap();
     let q = q.replace("$all", "\"$all\"");
 
-    let mut d = toml::de::Deserializer {
-            tokens: toml::Tokenizer::new(&q),
-            input: &q,
-            require_newline_after_table: true,
-            allow_duplciate_after_longer_table: false,
-    };
-    let b = toml::Value::deserialize(&mut d).unwrap();
+    /* let mut d = toml::de::Deserializer { */
+    /*         tokens: toml::Tokenizer::new(&q), */
+    /*         input: &q, */
+    /*         require_newline_after_table: true, */
+    /*         allow_duplciate_after_longer_table: false, */
+    /* }; */
+    /* let b = toml::Value::deserialize(&mut d).unwrap(); */
 
-    d.end().ok();
+    let b = q.parse::<toml::Value>().unwrap();
+
+    /* d.end().ok(); */
 
     let mut res_data = HashMap::new();
     let mut res_q = HashMap::new();
