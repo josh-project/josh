@@ -2,13 +2,13 @@
   $ cd ${TESTTMP}
 
 
-  $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8001/real_repo.git
+  $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8001/real/repo2.git
   warning: You appear to have cloned an empty repository.
 
   $ curl -s http://localhost:8002/version
   Version: * (glob)
 
-  $ cd real_repo
+  $ cd repo2
 
   $ git status
   On branch master
@@ -73,14 +73,17 @@
   $ git commit -m "add file2" &> /dev/null
 
   $ git push
-  To http://localhost:8001/real_repo.git
+  To http://localhost:8001/real/repo2.git
    * [new branch]      master -> master
 
   $ cd ${TESTTMP}
 
-  $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8002/real_repo.git:workspace=ws.git ws
+  $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8002/real/repo2.git:workspace=ws.git ws
 
-  $ curl -s http://localhost:8002/views | sort
+  $ sleep 10
+
+  $ curl -s http://localhost:8002/views
+  "/real/repo2.git" = [
       ':/sub1',
       ':/sub1/subsub',
       ':/sub2',
@@ -89,14 +92,8 @@
       ':/ws2',
       ':workspace=ws',
       ':workspace=ws2',
-  "/real_repo.git" = [
   ]
-
-  $ curl -s http://localhost:8002/views | grep subsub
-      ':/sub1/subsub',
-  $ curl -s http://localhost:8002/views | grep ws2 | grep workspace
-      ':workspace=ws2',
 
   $ bash ${TESTDIR}/destroy_test_env.sh
 
-$ cat ${TESTTMP}/josh-proxy.out | grep VIEW
+$ cat ${TESTTMP}/josh-proxy.out

@@ -3,7 +3,7 @@ extern crate git2;
 use std::fs;
 
 use super::*;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap};
 use std::env::current_exe;
 use std::os::unix::fs::symlink;
 use std::path::Path;
@@ -11,7 +11,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 use tracing::{debug, span, Level};
 
-pub type KnownViews = HashMap<String, HashSet<String>>;
+pub type KnownViews = HashMap<String, BTreeSet<String>>;
 
 pub fn make_view_repo(
     view_string: &str,
@@ -226,25 +226,33 @@ pub fn create_local(path: &Path) {
     }
 }
 
-pub fn discover_views(
-    _headref: &str,
-    br_path: &Path,
-    known_views: Arc<RwLock<KnownViews>>,
-) {
+pub fn discover_views(br_path: &Path, known_views: Arc<RwLock<KnownViews>>) {
     let _trace_s = span!(Level::TRACE, "discover_views", ?br_path);
 
     let repo = scratch::new(&br_path);
 
-    if let Ok(mut kn) = known_views.try_write() {
-        for (prefix, kv) in kn.iter_mut() {
-            let refname = format!(
-                "refs/namespaces/{}/{}",
-                &to_ns(prefix),
-                "refs/heads/master"
-            );
-            let hs = scratch::find_all_views(&repo, &refname);
-            for i in hs {
-                kv.insert(i);
+    let refname = format!("refs/namespaces/*.git/refs/heads/master");
+
+    debug!("discover_views {:?}", &br_path);
+
+    if let Ok(mut kn) = known_views.write() {
+        for reference in repo.references_glob(&refname).unwrap() {
+            let r = reference.unwrap();
+            let name = r
+                .name()
+                .unwrap()
+                .to_owned()
+                .replace("/refs/heads/master", "")
+                .replace("refs/namespaces", "")
+                .replace("//", "/");
+
+            {
+                let hs = scratch::find_all_views(&r);
+                for i in hs {
+                    kn.entry(name.clone())
+                        .or_insert_with(BTreeSet::new)
+                        .insert(i);
+                }
             }
         }
     }

@@ -13,7 +13,6 @@ extern crate regex;
 #[macro_use]
 extern crate lazy_static;
 
-#[macro_use]
 extern crate serde_json;
 
 extern crate crypto;
@@ -36,7 +35,6 @@ use hyper::header::{Authorization, Basic};
 use hyper::server::{Http, Request, Response, Service};
 use josh::base_repo;
 use josh::cgi;
-use josh::scratch;
 use josh::shell;
 use josh::view_maps;
 use josh::virtual_repo;
@@ -46,7 +44,7 @@ use std::env;
 use std::process::exit;
 
 use crypto::digest::Digest;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fs::remove_dir_all;
 use std::net;
 use std::panic;
@@ -79,6 +77,7 @@ struct HttpService {
     fetch_push_pool: CpuPool,
     housekeeping_pool: CpuPool,
     compute_pool: CpuPool,
+    background_pool: CpuPool,
     port: String,
     base_path: PathBuf,
     http_client: HttpClient,
@@ -205,44 +204,8 @@ fn async_fetch(
     let forward_maps = http.forward_maps.clone();
     let backward_maps = http.backward_maps.clone();
     let br_path = http.base_path.clone();
-    let viewstr2 = viewstr.to_owned();
-    let forward_maps2 = http.forward_maps.clone();
-    let backward_maps2 = http.backward_maps.clone();
-    let br_path2 = http.base_path.clone();
-    let prefix2 = prefix.clone();
-    let cp = http.compute_pool.clone();
-    let known_views = http.known_views.clone();
+
     Box::new(http.compute_pool.spawn(fetch_future.map(move |r| {
-        let refresh_all_known_views = cp.spawn_fn(move || -> Result<(), ()> {
-            base_repo::discover_views("master", &br_path2, known_views.clone());
-            if let Ok(mut kn) = known_views.try_write() {
-                kn.entry(prefix2.clone())
-                    .or_insert_with(HashSet::new)
-                    .insert(viewstr2);
-            } else {
-                // If we could not get write lock that means a rebuild is in progress,
-                // So don't trigger another one.
-                return Ok(());
-            }
-            if let Ok(kn) = known_views.read() {
-                let _trace_s = span!(Level::TRACE, "refresh_all_known_views");
-                if let Some(e) = kn.get(&prefix2) {
-                    for v in e.iter() {
-                        base_repo::make_view_repo(
-                            &v,
-                            &prefix2,
-                            "HEAD",
-                            &hash_strings(&prefix2, &v, ""),
-                            &br_path2,
-                            forward_maps2.clone(),
-                            backward_maps2.clone(),
-                        );
-                    }
-                }
-            }
-            Ok(())
-        });
-        refresh_all_known_views.forget();
         r.map(move |_| {
             base_repo::make_view_repo(
                 &viewstr,
@@ -501,7 +464,6 @@ fn call_service(
         let pool = service.housekeeping_pool.clone();
         let br_path = br_path.clone();
         let client = service.http_client.clone();
-        let repo = scratch::new(&br_path);
 
         let get_comments = gerrit_api(
             client.clone(),
@@ -646,6 +608,24 @@ fn call_service(
     let ns_path = ns_path.join(&namespace);
     assert!(namespace.contains("request_"));
 
+    let known_views = service.known_views.clone();
+    let prefix2 = prefix.clone();
+    let viewstr2 = view_string.clone();
+
+    service
+        .background_pool
+        .spawn_fn(move || -> Result<(), ()> {
+            if let Ok(mut kn) = known_views.write() {
+                kn.entry(prefix2.clone())
+                    .or_insert_with(BTreeSet::new)
+                    .insert(viewstr2);
+            } else {
+                warn!("Can't lock 'known_views' for writing");
+            }
+            Ok(())
+        })
+        .forget();
+
     Box::new({
         async_fetch(
             &service,
@@ -774,6 +754,7 @@ fn run_http_server(
         fetch_push_pool: CpuPool::new(8),
         housekeeping_pool: CpuPool::new(1),
         compute_pool: CpuPool::new(4),
+        background_pool: CpuPool::new(1),
         port: port,
         base_path: local.to_owned(),
         http_client: hyper::Client::configure()
@@ -789,6 +770,13 @@ fn run_http_server(
         known_views: Arc::new(RwLock::new(base_repo::KnownViews::new())),
         fetching: Arc::new(RwLock::new(HashSet::new())),
     };
+
+    let known_views = cghttp.known_views.clone();
+    let br_path = cghttp.base_path.clone();
+    let background_pool = cghttp.background_pool.clone();
+
+    let forward_maps = cghttp.forward_maps.clone();
+    let backward_maps = cghttp.backward_maps.clone();
 
     let server_handle = core.handle();
     let serve = Http::new()
@@ -807,7 +795,52 @@ fn run_http_server(
             })
             .map_err(|_| ()),
     );
-    core.run(futures::future::empty::<(), ()>()).unwrap();
+
+    core.run(
+        tokio_core::reactor::Interval::new(
+            std::time::Duration::new(5, 0),
+            &core.handle(),
+        )
+        .unwrap()
+        .map(move |_| {
+            let br_path = br_path.clone();
+            let known_views = known_views.clone();
+            let forward_maps = forward_maps.clone();
+            let backward_maps = backward_maps.clone();
+            background_pool
+                .spawn_fn(move || -> Result<(), ()> {
+                    base_repo::discover_views(
+                        &br_path.clone(),
+                        known_views.clone(),
+                    );
+                    if let Ok(kn) = known_views.read() {
+                        for (prefix2, e) in kn.iter() {
+                            for v in e.iter() {
+                                trace!(
+                                    "background rebuild: {:?} {:?}",
+                                    prefix2,
+                                    v
+                                );
+                                base_repo::make_view_repo(
+                                    &v,
+                                    &prefix2,
+                                    "refs/heads/master",
+                                    &hash_strings(&prefix2, &v, ""),
+                                    &br_path,
+                                    forward_maps.clone(),
+                                    backward_maps.clone(),
+                                );
+                            }
+                        }
+                    }
+                    Ok(())
+                })
+                .forget()
+        })
+        .filter(move |_| false)
+        .collect(),
+    )
+    .unwrap();
 }
 
 fn to_ns(path: &str) -> String {
