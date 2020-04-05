@@ -3,7 +3,6 @@ name = "josh"
 version = "0.2.0"
 repository = "https://github.com/esrlabs/josh"
 authors = ["Christian Schilling <christian.schilling@esrlabs.com>"]
-license = "MIT"
 license-file = "LICENSE"
 description = "GIT virtualization proxy"
 keywords = ["git", "monorepo", "workflow", "scm"]
