@@ -99,7 +99,7 @@ pub fn unapply_view(
 
     let walk = {
         let mut walk = repo.revwalk().expect("walk: can't create revwalk");
-        walk.set_sorting(git2::Sort::REVERSE | git2::Sort::TOPOLOGICAL);
+        walk.set_sorting(git2::Sort::REVERSE | git2::Sort::TOPOLOGICAL).expect("can't set sorting");
         walk.push(new).expect("walk.push");
         if let Ok(_) = walk.hide(old) {
             trace!("walk: hidden {}", old);
@@ -246,7 +246,7 @@ pub fn apply_view_cached(
 
     let walk = {
         let mut walk = repo.revwalk().expect("walk: can't create revwalk");
-        walk.set_sorting(git2::Sort::REVERSE | git2::Sort::TOPOLOGICAL);
+        walk.set_sorting(git2::Sort::REVERSE | git2::Sort::TOPOLOGICAL).expect("can't set sorting");
         walk.push(newrev).expect("walk.push");
         walk
     };

@@ -10,7 +10,7 @@ readme = "README.md"
 edition = "2018"
 
 [dependencies]
-git2 = "0.10"
+git2 = {version = "0.13", default-features = false}
 clap = "2"
 log = "0.4"
 tracing = { version = "*", features = ["max_level_trace", "release_max_level_warn"] }
@@ -28,7 +28,7 @@ tokio-io = "0.1"
 ring = "0.14"
 lazy_static = "1.2"
 hyper = "0.11"
-hyper-tls = "0.1"
+#hyper-tls = "0.1"
 futures-cpupool = "0.1"
 rust-crypto = "0.2"
 pest_derive = "2.1"
@@ -36,5 +36,4 @@ pest= "2.1"
 rand= "0.6"
 serde_json= "1.0"
 rs_tracing= { version = "1.0", features = ["rs_tracing"]}
-reqwest= "0.9"
-
+reqwest= {version = "0.9", default-features = false, features = ["hyper-011"]}

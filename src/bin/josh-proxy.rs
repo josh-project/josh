@@ -6,7 +6,7 @@ extern crate futures;
 extern crate futures_cpupool;
 extern crate git2;
 extern crate hyper;
-extern crate hyper_tls;
+/* extern crate hyper_tls; */
 extern crate rand;
 extern crate regex;
 
@@ -69,8 +69,12 @@ lazy_static! {
 
 type CredentialCache = HashMap<String, std::time::Instant>;
 
+/* type HttpClient = */
+/*     hyper::Client<hyper_tls::HttpsConnector<hyper::client::HttpConnector>>; */
+
 type HttpClient =
-    hyper::Client<hyper_tls::HttpsConnector<hyper::client::HttpConnector>>;
+    hyper::Client<hyper::client::HttpConnector>;
+
 #[derive(Clone)]
 struct HttpService {
     handle: tokio_core::reactor::Handle,
@@ -476,26 +480,36 @@ fn call_service(
             "/a/changes/".to_string(),
             format!("q=change:{}&o=ALL_REVISIONS&o=ALL_COMMITS", change),
         )
-        .and_then(move |resp_value| {
-            let to = j2str(&resp_value, "/0/current_revision");
+        .and_then(move |change_json| {
+            let to = j2str(&change_json, "/0/current_revision");
             let from = j2str(
-                &resp_value,
+                &change_json,
                 &format!("/0/revisions/{}/commit/parents/0/commit", &to),
             );
-            futures::future::ok((from, to))
-        })
-        .and_then(move |(from, to)| {
+            let mut resp = HashMap::<String, String>::new();
             let cmd = format!("git diff -U99999999 {}..{}", from, to);
             println!("diffcmd: {:?}", cmd);
-            git_command(cmd, br_path.to_owned(), pool.clone())
+            git_command(cmd, br_path.to_owned(), pool.clone()).and_then(
+                move |stdout| {
+                    resp.insert("diff".to_owned(), stdout);
+                    futures::future::ok((resp, change_json))
+                },
+            )
         })
-        .and_then(move |stdout| {
-            get_comments.and_then(|comments_value| {
+        .and_then(move |(resp, change_json)| {
+            let mut revision2sha = HashMap::<i64, String>::new();
+            for (k, v) in
+                change_json[0]["revisions"].as_object().unwrap().iter()
+            {
+                revision2sha
+                    .insert(v["_number"].as_i64().unwrap(), k.to_string());
+            }
+
+            get_comments.and_then(move |comments_value| {
                 for i in comments_value.as_object().unwrap().keys() {
                     println!("comments_value: {:?}", &i);
                 }
-                let mut resp = HashMap::<String, String>::new();
-                resp.insert("diff".to_owned(), stdout);
+
                 let response = Response::new()
                     .with_body(serde_json::to_string(&resp).unwrap())
                     .with_status(hyper::StatusCode::Ok);
@@ -757,12 +771,13 @@ fn run_http_server(
         background_pool: CpuPool::new(1),
         port: port,
         base_path: local.to_owned(),
-        http_client: hyper::Client::configure()
-            .connector(
-                ::hyper_tls::HttpsConnector::new(4, &core.handle()).unwrap(),
-            )
-            .keep_alive(true)
-            .build(&core.handle()),
+        /* http_client: hyper::Client::configure() */
+        /*     .connector( */
+        /*         ::hyper_tls::HttpsConnector::new(4, &core.handle()).unwrap(), */
+        /*     ) */
+        /*     .keep_alive(true) */
+        /*     .build(&core.handle()), */
+        http_client: hyper::Client::new(&core.handle()),
         forward_maps: Arc::new(RwLock::new(view_maps::ViewMaps::new())),
         backward_maps: Arc::new(RwLock::new(view_maps::ViewMaps::new())),
         base_url: remote.to_owned(),
