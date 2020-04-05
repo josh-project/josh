@@ -30,6 +30,52 @@ fn filter_parents<'a>(
     };
 }
 
+fn create_transformed_commit(
+    repo: &git2::Repository,
+    commit: &git2::Commit,
+    transformed_parents_ids: Vec<git2::Oid>,
+    new_tree: git2::Oid,
+) -> git2::Oid {
+    let transformed_parents: Vec<_> = transformed_parents_ids
+        .iter()
+        .filter(|x| **x != git2::Oid::zero())
+        .map(|x| repo.find_commit(*x).unwrap())
+        .collect();
+
+    if new_tree == empty_tree_id()
+        && commit.tree_id() != empty_tree_id()
+        && transformed_parents.len() != 0
+    {
+        return transformed_parents[0].id();
+    }
+
+    let filtered_transformed_parent_refs: Vec<&_> =
+        filter_parents(&commit, new_tree, transformed_parents.iter().collect());
+
+    if new_tree == empty_tree_id()
+        && filtered_transformed_parent_refs.len() == 0
+    {
+        return git2::Oid::zero();
+    }
+
+    if filtered_transformed_parent_refs.len() == 0
+        && transformed_parents.len() != 0
+    {
+        return transformed_parents[0].id();
+    }
+
+    let new_tree = repo
+        .find_tree(new_tree)
+        .expect("apply_view_to_commit: can't find tree");
+
+    return scratch::rewrite(
+        &repo,
+        &commit,
+        &filtered_transformed_parent_refs,
+        &new_tree,
+    );
+}
+
 pub trait View {
     fn apply_view_to_commit(
         &self,
@@ -45,46 +91,14 @@ pub trait View {
         let new_tree =
             self.apply_to_tree(&repo, &commit.tree().unwrap(), commit.id());
 
-        let parents =
+        let transformed_parents_ids =
             self.transform_parents(repo, commit, forward_maps, backward_maps);
 
-        let transformed_parents: Vec<_> = parents
-            .iter()
-            .filter(|x| **x != git2::Oid::zero())
-            .map(|x| repo.find_commit(*x).unwrap())
-            .collect();
-
-        if new_tree == empty_tree_id()
-            && commit.tree_id() != empty_tree_id()
-            && transformed_parents.len() != 0
-        {
-            return transformed_parents[0].id();
-        }
-        if new_tree == empty_tree_id() {
-            return git2::Oid::zero();
-        }
-
-        let filtered_transformed_parent_refs: Vec<&_> = filter_parents(
-            &commit,
+        return create_transformed_commit(
+            repo,
+            commit,
+            transformed_parents_ids,
             new_tree,
-            transformed_parents.iter().collect(),
-        );
-
-        if filtered_transformed_parent_refs.len() == 0
-            && transformed_parents.len() != 0
-        {
-            return transformed_parents[0].id();
-        }
-
-        let new_tree = repo
-            .find_tree(new_tree)
-            .expect("apply_view_to_commit: can't find tree");
-
-        return scratch::rewrite(
-            &repo,
-            &commit,
-            &filtered_transformed_parent_refs,
-            &new_tree,
         );
     }
 
@@ -913,37 +927,11 @@ impl View for WorkspaceView {
                 commit.id(),
             );
 
-        if new_tree == empty_tree_id() {
-            return git2::Oid::zero();
-        }
-
-        let transformed_parents: Vec<_> = transformed_parents_ids
-            .iter()
-            .map(|x| repo.find_commit(*x).unwrap())
-            .collect();
-
-        let filtered_transformed_parent_refs: Vec<&git2::Commit> =
-            filter_parents(
-                &commit,
-                new_tree,
-                transformed_parents.iter().collect(),
-            );
-
-        if filtered_transformed_parent_refs.len() == 0
-            && transformed_parents.len() != 0
-        {
-            return transformed_parents[0].id();
-        }
-
-        let new_tree = repo
-            .find_tree(new_tree)
-            .expect("apply_view_to_commit: can't find tree");
-
-        return scratch::rewrite(
-            &repo,
-            &commit,
-            &filtered_transformed_parent_refs,
-            &new_tree,
+        return create_transformed_commit(
+            repo,
+            commit,
+            transformed_parents_ids,
+            new_tree,
         );
     }
 
