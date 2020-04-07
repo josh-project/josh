@@ -64,9 +64,15 @@ pub fn make_view_repo(
     if headref == "" {
         let mastername =
             format!("refs/namespaces/{}/refs/heads/master", &namespace);
-        scratch
-            .reference_symbolic(&to_head, &mastername, true, "")
-            .ok();
+        if let Ok(_) =
+            scratch.reference_symbolic(&to_head, &mastername, true, "")
+        {
+        } else {
+            warn!(
+                "Can't create reference_symbolic: {:?} -> {:?}",
+                &to_head, &mastername
+            );
+        }
     }
 
     span!(Level::TRACE, "write_lock", view_string, namespace, ?br_path)
