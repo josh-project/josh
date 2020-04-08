@@ -71,7 +71,7 @@ pub fn find_all_views(reference: &git2::Reference) -> HashSet<String> {
                 return 0;
             }
             let v = format!(":/{}", root.trim_matches('/'));
-            if v.chars().filter(|x| *x == '/').count() < 2 {
+            if v.chars().filter(|x| *x == '/').count() < 5 {
                 hs.insert(v);
             }
 

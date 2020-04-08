@@ -81,7 +81,6 @@ struct HttpService {
     fetch_push_pool: CpuPool,
     housekeeping_pool: CpuPool,
     compute_pool: CpuPool,
-    background_pool: CpuPool,
     port: String,
     base_path: PathBuf,
     http_client: HttpClient,
@@ -635,7 +634,7 @@ fn call_service(
     let viewstr2 = view_string.clone();
 
     service
-        .background_pool
+        .compute_pool
         .spawn_fn(move || -> Result<(), ()> {
             if let Ok(mut kn) = known_views.write() {
                 kn.entry(prefix2.clone())
@@ -783,7 +782,6 @@ fn run_http_server(
         fetch_push_pool: CpuPool::new(8),
         housekeeping_pool: CpuPool::new(1),
         compute_pool: CpuPool::new(4),
-        background_pool: CpuPool::new(1),
         port: port,
         base_path: local.to_owned(),
         /* http_client: hyper::Client::configure() */
@@ -803,7 +801,6 @@ fn run_http_server(
 
     let known_views = cghttp.known_views.clone();
     let br_path = cghttp.base_path.clone();
-    let background_pool = cghttp.background_pool.clone();
 
     let forward_maps = cghttp.forward_maps.clone();
     let backward_maps = cghttp.backward_maps.clone();
@@ -826,51 +823,28 @@ fn run_http_server(
             .map_err(|_| ()),
     );
 
-    core.run(
-        tokio_core::reactor::Interval::new(
-            std::time::Duration::new(20, 0),
-            &core.handle(),
-        )
-        .unwrap()
-        .map(move |_| {
-            let br_path = br_path.clone();
-            let known_views = known_views.clone();
-            let forward_maps = forward_maps.clone();
-            let backward_maps = backward_maps.clone();
-            background_pool
-                .spawn_fn(move || -> Result<(), ()> {
-                    base_repo::discover_views(
-                        &br_path.clone(),
-                        known_views.clone(),
+    std::thread::spawn(move || {
+        base_repo::discover_views(&br_path.clone(), known_views.clone());
+        if let Ok(kn) = known_views.read() {
+            for (prefix2, e) in kn.iter() {
+                for v in e.iter() {
+                    trace!("background rebuild: {:?} {:?}", prefix2, v);
+                    base_repo::make_view_repo(
+                        &v,
+                        &prefix2,
+                        "refs/heads/master",
+                        &to_known_view(&prefix2, &v),
+                        &br_path,
+                        forward_maps.clone(),
+                        backward_maps.clone(),
                     );
-                    if let Ok(kn) = known_views.read() {
-                        for (prefix2, e) in kn.iter() {
-                            for v in e.iter() {
-                                trace!(
-                                    "background rebuild: {:?} {:?}",
-                                    prefix2,
-                                    v
-                                );
-                                base_repo::make_view_repo(
-                                    &v,
-                                    &prefix2,
-                                    "refs/heads/master",
-                                    &to_known_view(&prefix2, &v),
-                                    &br_path,
-                                    forward_maps.clone(),
-                                    backward_maps.clone(),
-                                );
-                            }
-                        }
-                    }
-                    Ok(())
-                })
-                .forget()
-        })
-        .filter(move |_| false)
-        .collect(),
-    )
-    .unwrap();
+                }
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_secs(10));
+    });
+
+    core.run(futures::future::empty::<(), ()>()).unwrap();
 }
 
 fn to_ns(path: &str) -> String {
