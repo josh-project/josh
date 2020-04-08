@@ -823,7 +823,7 @@ fn run_http_server(
             .map_err(|_| ()),
     );
 
-    std::thread::spawn(move || {
+    std::thread::spawn(move || loop {
         base_repo::discover_views(&br_path.clone(), known_views.clone());
         if let Ok(kn) = known_views.read() {
             for (prefix2, e) in kn.iter() {
