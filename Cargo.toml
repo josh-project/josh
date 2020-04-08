@@ -13,7 +13,7 @@ edition = "2018"
 git2 = {version = "0.13", default-features = false}
 clap = "2"
 log = "0.4"
-tracing = { version = "*", features = ["max_level_trace", "release_max_level_trace"] }
+tracing = { version = "*", features = ["max_level_trace", "release_max_level_debug"] }
 tracing-opentelemetry = "*"
 opentelemetry = "*"
 toml = "*"
