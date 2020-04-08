@@ -828,7 +828,7 @@ fn run_http_server(
 
     core.run(
         tokio_core::reactor::Interval::new(
-            std::time::Duration::new(5, 0),
+            std::time::Duration::new(20, 0),
             &core.handle(),
         )
         .unwrap()

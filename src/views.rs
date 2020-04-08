@@ -34,7 +34,7 @@ fn create_transformed_commit(
     repo: &git2::Repository,
     commit: &git2::Commit,
     transformed_parents_ids: Vec<git2::Oid>,
-    new_tree: git2::Oid,
+    new_tree: &git2::Tree,
 ) -> git2::Oid {
     let transformed_parents: Vec<_> = transformed_parents_ids
         .iter()
@@ -42,17 +42,20 @@ fn create_transformed_commit(
         .map(|x| repo.find_commit(*x).unwrap())
         .collect();
 
-    if new_tree == empty_tree_id()
+    if new_tree.id() == empty_tree_id()
         && commit.tree_id() != empty_tree_id()
         && transformed_parents.len() != 0
     {
         return transformed_parents[0].id();
     }
 
-    let filtered_transformed_parent_refs: Vec<&_> =
-        filter_parents(&commit, new_tree, transformed_parents.iter().collect());
+    let filtered_transformed_parent_refs: Vec<&_> = filter_parents(
+        &commit,
+        new_tree.id(),
+        transformed_parents.iter().collect(),
+    );
 
-    if new_tree == empty_tree_id()
+    if new_tree.id() == empty_tree_id()
         && filtered_transformed_parent_refs.len() == 0
     {
         return git2::Oid::zero();
@@ -63,10 +66,6 @@ fn create_transformed_commit(
     {
         return transformed_parents[0].id();
     }
-
-    let new_tree = repo
-        .find_tree(new_tree)
-        .expect("apply_view_to_commit: can't find tree");
 
     return scratch::rewrite(
         &repo,
@@ -98,7 +97,10 @@ pub trait View {
             repo,
             commit,
             transformed_parents_ids,
-            new_tree,
+            &ok_or!(repo.find_tree(new_tree), {
+                error!("View.apply_view_to_commit: can't find tree");
+                return git2::Oid::zero();
+            }),
         );
     }
 
@@ -931,7 +933,10 @@ impl View for WorkspaceView {
             repo,
             commit,
             transformed_parents_ids,
-            new_tree,
+            &ok_or!(repo.find_tree(new_tree), {
+                error!("WorkspaceView.apply_view_to_commit: can't find tree");
+                return git2::Oid::zero();
+            }),
         );
     }
 

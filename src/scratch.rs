@@ -59,7 +59,7 @@ pub fn rewrite(
 pub fn find_all_views(reference: &git2::Reference) -> HashSet<String> {
     let mut hs = HashSet::new();
     let tree = ok_or!(reference.peel_to_tree(), {
-        debug!("find_all_views, not a tree: {:?}", &reference.name());
+        warn!("find_all_views, not a tree: {:?}", &reference.name());
         return hs;
     });
     ok_or!(
@@ -71,7 +71,7 @@ pub fn find_all_views(reference: &git2::Reference) -> HashSet<String> {
                 return 0;
             }
             let v = format!(":/{}", root.trim_matches('/'));
-            if v.chars().filter(|x| *x == '/').count() < 4 {
+            if v.chars().filter(|x| *x == '/').count() < 2 {
                 hs.insert(v);
             }
 
@@ -91,11 +91,9 @@ pub fn unapply_view(
     old: git2::Oid,
     new: git2::Oid,
 ) -> UnapplyView {
-    let _trace_s =
-        span!( Level::TRACE, "unapply_view", repo = ?repo.path(), ?old, ?new);
-    debug!("unapply_view");
-
-    debug!("==== walking commits from {} to {}", old, new);
+    let trace_s =
+        span!( Level::DEBUG, "unapply_view", repo = ?repo.path(), ?old, ?new);
+    let _e = trace_s.enter();
 
     let walk = {
         let mut walk = repo.revwalk().expect("walk: can't create revwalk");
@@ -116,7 +114,7 @@ pub fn unapply_view(
     for rev in walk {
         let rev = rev.expect("walk: invalid rev");
 
-        debug!("==== walking commit {}", rev);
+        trace!("==== walking commit {}", rev);
 
         let module_commit = repo
             .find_commit(rev)
@@ -131,7 +129,7 @@ pub fn unapply_view(
 
         let original_parents_refs: Vec<&_> = original_parents.iter().collect();
 
-        debug!("==== Rewriting commit {}", rev);
+        trace!("==== Rewriting commit {}", rev);
 
         let tree = module_commit.tree().expect("walk: commit has no tree");
 
@@ -163,7 +161,7 @@ pub fn unapply_view(
                 // This is a merge commit where the parents in the upstream repo
                 // have differences outside of the current view.
                 // It is unclear what base tree to pick in this case.
-                debug!("rejecting merge");
+                info!("rejecting merge");
                 return UnapplyView::RejectMerge(parent_count);
             }
         };
@@ -189,7 +187,7 @@ fn transform_commit(
 ) {
     if let Ok(reference) = repo.revparse_single(&from_refsname) {
         let original_commit = ok_or!(reference.peel_to_commit(), {
-            debug!("transform_commit, not a commit: {}", from_refsname);
+            warn!("transform_commit, not a commit: {}", from_refsname);
             return;
         });
         let view_commit = viewobj.apply_view_to_commit(
