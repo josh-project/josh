@@ -13,7 +13,7 @@ edition = "2018"
 git2 = {version = "0.13", default-features = false}
 clap = "2"
 log = "0.4"
-tracing = { version = "*", features = ["max_level_trace", "release_max_level_warn"] }
+tracing = { version = "*", features = ["max_level_trace", "release_max_level_trace"] }
 tracing-opentelemetry = "*"
 opentelemetry = "*"
 toml = "*"
@@ -22,6 +22,7 @@ tracing-futures = "*"
 tracing-subscriber = "0.2.0-alpha.4"
 regex = "1.1"
 futures = "0.1"
+data-encoding = "2.2"
 tokio-core = "0.1"
 tokio-process = "0.2"
 tokio-io = "0.1"

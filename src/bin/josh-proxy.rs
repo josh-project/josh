@@ -2,6 +2,7 @@
 extern crate josh;
 
 extern crate clap;
+extern crate data_encoding;
 extern crate futures;
 extern crate futures_cpupool;
 extern crate git2;
@@ -72,8 +73,7 @@ type CredentialCache = HashMap<String, std::time::Instant>;
 /* type HttpClient = */
 /*     hyper::Client<hyper_tls::HttpsConnector<hyper::client::HttpConnector>>; */
 
-type HttpClient =
-    hyper::Client<hyper::client::HttpConnector>;
+type HttpClient = hyper::Client<hyper::client::HttpConnector>;
 
 #[derive(Clone)]
 struct HttpService {
@@ -97,6 +97,14 @@ fn hash_strings(url: &str, username: &str, password: &str) -> String {
     let mut d = crypto::sha1::Sha1::new();
     d.input_str(&format!("{}:{}:{}", &url, &username, &password));
     d.result_str().to_owned()
+}
+
+fn to_known_view(prefix: &str, viewstr: &str) -> String {
+    return format!(
+        "known_views/refs/namespaces/{}/refs/namespaces/{}",
+        data_encoding::BASE64URL_NOPAD.encode(prefix.as_bytes()),
+        data_encoding::BASE64URL_NOPAD.encode(viewstr.as_bytes())
+    );
 }
 
 fn fetch_upstream(
@@ -728,11 +736,18 @@ fn parse_args(args: &[String]) -> clap::ArgMatches {
 fn run_proxy(args: Vec<String>) -> i32 {
     tracing_log::LogTracer::init().expect("can't init LogTracer");
 
-    let tracer = sdk::Provider::default().get_tracer("josh-proxy");
-    let layer = OpentelemetryLayer::with_tracer(tracer);
+    /* let tracer = sdk::Provider::default().get_tracer("josh-proxy"); */
+    /* let layer = OpentelemetryLayer::with_tracer(tracer); */
 
-    let subscriber = layer.with_subscriber(Registry::default());
+    /* let subscriber = layer.with_subscriber(Registry::default()); */
 
+    let subscriber = tracing_subscriber::fmt::Subscriber::builder()
+        .with_max_level(Level::TRACE)
+        .finish();
+    let filter = tracing_subscriber::filter::EnvFilter::new(
+        "josh_proxy=trace,josh=trace",
+    );
+    let subscriber = filter.with_subscriber(subscriber);
     tracing::subscriber::set_global_default(subscriber).expect("failed to set");
 
     debug!("RUN PROXY {:?}", &args);
@@ -840,7 +855,7 @@ fn run_http_server(
                                     &v,
                                     &prefix2,
                                     "refs/heads/master",
-                                    &hash_strings(&prefix2, &v, ""),
+                                    &to_known_view(&prefix2, &v),
                                     &br_path,
                                     forward_maps.clone(),
                                     backward_maps.clone(),
