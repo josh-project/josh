@@ -97,16 +97,7 @@ pub trait View {
             repo,
             commit,
             transformed_parents_ids,
-            &ok_or!(repo.find_tree(new_tree), {
-                error!(
-                    "View.apply_view_to_commit: can't find tree: {:?} viewstr: {:?}, original-commit: {:?}, message: {:?}, header: {:?}",
-                    new_tree,
-                    self.viewstr(),
-                    commit.id(),
-                    commit.message(),
-                    commit.raw_header());
-                return git2::Oid::zero();
-            }),
+            &find_tree_or_error(&repo, new_tree, &commit, &self.viewstr()),
         );
     }
 
@@ -703,7 +694,13 @@ impl View for CombineView {
             if otree == empty_tree_id() {
                 continue;
             }
-            let otree = repo.find_tree(otree).expect("can't find tree");
+            /* let otree = repo.find_tree(otree).expect("can't find tree"); */
+            let otree = find_tree_or_error(
+                &repo,
+                otree,
+                &repo.find_commit(commit_id).unwrap(),
+                &self.viewstr(),
+            );
             base = replace_subtree(
                 &repo,
                 &prefix,
@@ -893,6 +890,25 @@ impl WorkspaceView {
     }
 }
 
+fn find_tree_or_error<'a>(
+    repo: &'a git2::Repository,
+    new_tree: git2::Oid,
+    commit: &git2::Commit,
+    viewstr: &str,
+) -> git2::Tree<'a> {
+    ok_or!(repo.find_tree(new_tree), {
+        error!(
+                    "View.apply_view_to_commit: can't find tree: {:?} viewstr: {:?}, original-commit: {:?}, message: {:?}, header: {:?}, obj.kind: {:?}",
+                    new_tree,
+                    viewstr,
+                    commit.id(),
+                    commit.message(),
+                    commit.raw_header(),
+                    repo.find_object(new_tree, None).ok().map(|x| x.kind()));
+        return repo.find_tree(empty_tree_id()).unwrap();
+    })
+}
+
 impl View for WorkspaceView {
     fn transform_parents(
         &self,
@@ -939,10 +955,7 @@ impl View for WorkspaceView {
             repo,
             commit,
             transformed_parents_ids,
-            &ok_or!(repo.find_tree(new_tree), {
-                error!("WorkspaceView.apply_view_to_commit: can't find tree");
-                return git2::Oid::zero();
-            }),
+            &find_tree_or_error(&repo, new_tree, &commit, &self.viewstr()),
         );
     }
 
