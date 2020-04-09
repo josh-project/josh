@@ -55,7 +55,7 @@ use std::process::Command;
 use std::str::FromStr;
 use std::sync::{Arc, RwLock};
 
-use tracing::{debug, span, Level};
+use tracing::{debug, info, warn, trace, span, Level};
 
 use tracing::*;
 
@@ -762,12 +762,10 @@ fn run_proxy(args: Vec<String>) -> i32 {
             for (prefix2, e) in kn.iter() {
                 info!("background rebuild root: {:?}", prefix2);
                 let mut updated_count = 0;
-                    let mut bm = view_maps::ViewMaps::new_downstream(
-                        backward_maps.clone(),
-                    );
-                    let mut fm = view_maps::ViewMaps::new_downstream(
-                        forward_maps.clone(),
-                    );
+                let mut bm =
+                    view_maps::ViewMaps::new_downstream(backward_maps.clone());
+                let mut fm =
+                    view_maps::ViewMaps::new_downstream(forward_maps.clone());
                 for v in e.iter() {
                     trace!("background rebuild: {:?} {:?}", prefix2, v);
 
@@ -782,8 +780,9 @@ fn run_proxy(args: Vec<String>) -> i32 {
                     );
                 }
                 info!("updated {} refs for {:?}", updated_count, prefix2);
-                info!("forward_maps stats: {}",
-            toml::to_string_pretty(&fm.stats()).unwrap()
+                info!(
+                    "forward_maps stats: {}",
+                    toml::to_string_pretty(&fm.stats()).unwrap()
                 );
                 span!(Level::TRACE, "write_lock").in_scope(|| {
                     let mut forward_maps = forward_maps.write().unwrap();

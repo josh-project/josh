@@ -130,6 +130,7 @@ pub fn fetch_refs_from_url(
 
         let (_stdout, stderr) =
             shell.command_env(&cmd, &[("GIT_PASSWORD", &password)]);
+        debug!("fetch_refs_from_url done {:?} {:?} {:?}", cmd, path, stderr);
         if stderr.contains("fatal: Authentication failed") {
             return Err(git2::Error::from_str("auth"));
         }
