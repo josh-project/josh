@@ -2,7 +2,7 @@ extern crate crypto;
 extern crate git2;
 extern crate tracing;
 
-use self::tracing::{event, span, Level};
+use self::tracing::{event, span, trace, Level};
 use super::empty_tree_id;
 use super::view_maps;
 use super::views;
@@ -247,7 +247,7 @@ pub fn apply_view_to_refs(
     refs: &[(String, String)],
     forward_maps: &mut view_maps::ViewMaps,
     backward_maps: &mut view_maps::ViewMaps,
-) {
+) -> usize {
     span!(
         Level::TRACE,
         "apply_view_to_refs",
@@ -255,9 +255,18 @@ pub fn apply_view_to_refs(
         ?refs,
         viewstr=?viewobj.viewstr());
 
+    let mut updated_count = 0;
     for (k, v) in refs {
-        transform_commit(&repo, &*viewobj, &k, &v, forward_maps, backward_maps);
+        updated_count += transform_commit(
+            &repo,
+            &*viewobj,
+            &k,
+            &v,
+            forward_maps,
+            backward_maps,
+        );
     }
+    return updated_count;
 }
 
 pub fn apply_view_cached(
