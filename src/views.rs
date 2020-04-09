@@ -99,11 +99,12 @@ pub trait View {
             transformed_parents_ids,
             &ok_or!(repo.find_tree(new_tree), {
                 error!(
-                    "View.apply_view_to_commit: can't find tree: {:?} viewstr: {:?}, original-commit: {:?}, message: {:?}",
+                    "View.apply_view_to_commit: can't find tree: {:?} viewstr: {:?}, original-commit: {:?}, message: {:?}, header: {:?}",
                     new_tree,
                     self.viewstr(),
                     commit.id(),
-                    commit.message());
+                    commit.message(),
+                    commit.raw_header());
                 return git2::Oid::zero();
             }),
         );
