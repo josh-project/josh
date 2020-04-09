@@ -203,9 +203,21 @@ fn transform_commit(
             view_commit,
             original_commit.id(),
         );
+
+        debug!("transform_commit: update reference: {:?} -> {:?}, target: {:?}, view: {:?}",
+            &from_refsname,
+            &to_refname,
+            view_commit,
+            &viewobj.viewstr());
+
         if view_commit != git2::Oid::zero() {
-            repo.reference(&to_refname, view_commit, true, "apply_view")
-                .expect("can't create reference");
+            ok_or!(
+                repo.reference(&to_refname, view_commit, true, "apply_view")
+                    .map(|_| ()),
+                {
+                    error!("can't create reference");
+                }
+            );
         }
     } else {
         warn!(
