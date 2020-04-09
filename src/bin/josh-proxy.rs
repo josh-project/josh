@@ -801,6 +801,7 @@ fn run_http_server(
         base_repo::discover_views(&br_path.clone(), known_views.clone());
         if let Ok(kn) = known_views.read() {
             for (prefix2, e) in kn.iter() {
+                info!("background rebuild root: {:?}", prefix2);
                 for v in e.iter() {
                     trace!("background rebuild: {:?} {:?}", prefix2, v);
                     base_repo::make_view_repo(

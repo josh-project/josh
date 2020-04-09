@@ -98,7 +98,7 @@ pub trait View {
             commit,
             transformed_parents_ids,
             &ok_or!(repo.find_tree(new_tree), {
-                error!("View.apply_view_to_commit: can't find tree");
+                error!("View.apply_view_to_commit: can't find tree: {:?} viewstr: {:?}, original-commit: {:?}", new_tree, self.viewstr(), commit.id());
                 return git2::Oid::zero();
             }),
         );
