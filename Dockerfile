@@ -16,7 +16,7 @@ WORKDIR /usr/src/josh
 COPY . .
 
 # RUN rm ./target/release/deps/josh* && cargo build --release
-RUN cargo build --release
+RUN cargo build
 
 FROM rust:1.42.0
 

@@ -372,32 +372,6 @@ fn call_service(
             .with_status(hyper::StatusCode::Ok);
         return Box::new(futures::future::ok(response));
     }
-    let housekeep = move |cmd: String, br_path: PathBuf| {
-        return Box::new(service.housekeeping_pool.spawn_fn(move || {
-            let response = Response::new()
-                .with_body(base_repo::run_housekeeping(&br_path, &cmd))
-                .with_status(hyper::StatusCode::Ok);
-            return futures::future::ok(response);
-        }));
-    };
-    if path == "/gc" {
-        return housekeep("git gc".to_owned(), br_path.to_owned());
-    }
-    if path == "/repack" {
-        return housekeep("git repack -Ad".to_owned(), br_path.to_owned());
-    }
-    if path == "/count-objects" {
-        return housekeep(
-            "git count-objects -vH".to_owned(),
-            br_path.to_owned(),
-        );
-    }
-    if path == "/prune" {
-        return housekeep("git prune".to_owned(), br_path.to_owned());
-    }
-    if path == "/fsck" {
-        return housekeep("git fsck".to_owned(), br_path.to_owned());
-    }
     if path == "/flush" {
         service.credential_cache.write().unwrap().clear();
         let response = Response::new()
@@ -841,6 +815,23 @@ fn run_http_server(
                 }
             }
         }
+        std::thread::sleep(std::time::Duration::from_secs(5));
+        info!(
+            "----------\n{}----------",
+            base_repo::run_housekeeping(&br_path, &"git count-objects -vH")
+        );
+        info!(
+            "----------\n{}----------",
+            base_repo::run_housekeeping(&br_path, &"git repack -adkbn")
+        );
+        info!(
+            "----------\n{}----------",
+            base_repo::run_housekeeping(&br_path, &"git count-objects -vH")
+        );
+        info!(
+            "----------\n{}----------",
+            base_repo::run_housekeeping(&br_path, &"git prune --expire=2w")
+        );
         std::thread::sleep(std::time::Duration::from_secs(10));
     });
 
