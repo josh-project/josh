@@ -18,16 +18,13 @@ pub fn make_view_repo(
     headref: &str,
     namespace: &str,
     br_path: &Path,
-    forward_maps: Arc<RwLock<view_maps::ViewMaps>>,
-    backward_maps: Arc<RwLock<view_maps::ViewMaps>>,
+    fm: &mut view_maps::ViewMaps,
+    bm: &mut view_maps::ViewMaps,
 ) -> usize {
     let _trace_s =
         span!(Level::TRACE, "make_view_repo", ?view_string, ?br_path);
 
     let scratch = scratch::new(&br_path);
-
-    let mut bm = view_maps::ViewMaps::new_downstream(backward_maps.clone());
-    let mut fm = view_maps::ViewMaps::new_downstream(forward_maps.clone());
 
     let viewobj = build_view(&scratch, &view_string);
 
@@ -58,9 +55,8 @@ pub fn make_view_repo(
         }
     }
 
-    let updated_count = scratch::apply_view_to_refs(
-        &scratch, &*viewobj, &refs, &mut fm, &mut bm,
-    );
+    let updated_count =
+        scratch::apply_view_to_refs(&scratch, &*viewobj, &refs, fm, bm);
 
     if headref == "" {
         let mastername =
@@ -76,13 +72,6 @@ pub fn make_view_repo(
         }
     }
 
-    span!(Level::TRACE, "write_lock", view_string, namespace, ?br_path)
-        .in_scope(|| {
-            let mut forward_maps = forward_maps.write().unwrap();
-            let mut backward_maps = backward_maps.write().unwrap();
-            forward_maps.merge(&fm);
-            backward_maps.merge(&bm);
-        });
     return updated_count;
 }
 
