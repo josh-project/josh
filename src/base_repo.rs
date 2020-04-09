@@ -7,7 +7,6 @@ use std::collections::{BTreeSet, HashMap};
 use std::env::current_exe;
 use std::os::unix::fs::symlink;
 use std::path::Path;
-use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 use tracing::{debug, span, Level};
 
@@ -21,7 +20,7 @@ pub fn make_view_repo(
     br_path: &Path,
     forward_maps: Arc<RwLock<view_maps::ViewMaps>>,
     backward_maps: Arc<RwLock<view_maps::ViewMaps>>,
-) -> PathBuf {
+) -> usize {
     let _trace_s =
         span!(Level::TRACE, "make_view_repo", ?view_string, ?br_path);
 
@@ -59,7 +58,9 @@ pub fn make_view_repo(
         }
     }
 
-    scratch::apply_view_to_refs(&scratch, &*viewobj, &refs, &mut fm, &mut bm);
+    let updated_count = scratch::apply_view_to_refs(
+        &scratch, &*viewobj, &refs, &mut fm, &mut bm,
+    );
 
     if headref == "" {
         let mastername =
@@ -82,8 +83,7 @@ pub fn make_view_repo(
             forward_maps.merge(&fm);
             backward_maps.merge(&bm);
         });
-
-    br_path.to_owned()
+    return updated_count;
 }
 
 pub fn reset_all(path: &Path) {

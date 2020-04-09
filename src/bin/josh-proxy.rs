@@ -226,7 +226,8 @@ fn async_fetch(
                 &br_path,
                 forward_maps,
                 backward_maps,
-            )
+            );
+            br_path
         })
     })))
 }
@@ -755,9 +756,10 @@ fn run_proxy(args: Vec<String>) -> i32 {
         if let Ok(kn) = known_views.read() {
             for (prefix2, e) in kn.iter() {
                 info!("background rebuild root: {:?}", prefix2);
+                let mut updated_count = 0;
                 for v in e.iter() {
                     trace!("background rebuild: {:?} {:?}", prefix2, v);
-                    base_repo::make_view_repo(
+                    updated_count += base_repo::make_view_repo(
                         &v,
                         &prefix2,
                         "refs/heads/master",
@@ -767,6 +769,7 @@ fn run_proxy(args: Vec<String>) -> i32 {
                         backward_maps.clone(),
                     );
                 }
+                info!("updated {} refs for {:?}", updated_count, prefix2);
             }
         }
         std::thread::sleep(std::time::Duration::from_secs(5));
