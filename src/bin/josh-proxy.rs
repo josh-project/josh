@@ -767,6 +767,8 @@ fn run_proxy(args: Vec<String>) -> i32 {
                 let mut fm =
                     view_maps::ViewMaps::new_downstream(forward_maps.clone());
 
+                let mut updated_count = 0;
+
                 for v in e.iter() {
                     trace!("background rebuild: {:?} {:?}", prefix2, v);
 
