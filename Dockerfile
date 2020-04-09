@@ -16,11 +16,11 @@ WORKDIR /usr/src/josh
 COPY . .
 
 # RUN rm ./target/release/deps/josh* && cargo build --release
-RUN cargo build
+RUN cargo build --release
 
 FROM rust:1.42.0
 
-COPY --from=builder /usr/src/josh/target/debug/josh-proxy /usr/bin/josh-proxy
+COPY --from=builder /usr/src/josh/target/release/josh-proxy /usr/bin/josh-proxy
 COPY --from=builder /usr/src/josh/run-josh.sh /usr/bin/run-josh.sh
 
 CMD sh /usr/bin/run-josh.sh
