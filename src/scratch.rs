@@ -184,11 +184,12 @@ fn transform_commit(
     to_refname: &str,
     forward_maps: &mut view_maps::ViewMaps,
     backward_maps: &mut view_maps::ViewMaps,
-) {
+) -> usize {
+    let mut updated_count = 0;
     if let Ok(reference) = repo.revparse_single(&from_refsname) {
         let original_commit = ok_or!(reference.peel_to_commit(), {
             warn!("transform_commit, not a commit: {}", from_refsname);
-            return;
+            return updated_count;
         });
         let view_commit = viewobj.apply_view_to_commit(
             &repo,
@@ -204,18 +205,30 @@ fn transform_commit(
             original_commit.id(),
         );
 
-        debug!("transform_commit: update reference: {:?} -> {:?}, target: {:?}, view: {:?}",
-            &from_refsname,
-            &to_refname,
-            view_commit,
-            &viewobj.viewstr());
+        let previous = repo
+            .revparse_single(&to_refname)
+            .map(|x| x.id())
+            .unwrap_or(git2::Oid::zero());
+
+        if view_commit != previous {
+            updated_count += 1;
+            trace!("transform_commit: update reference: {:?} -> {:?}, target: {:?}, view: {:?}",
+                &from_refsname,
+                &to_refname,
+                view_commit,
+                &viewobj.viewstr());
+        }
 
         if view_commit != git2::Oid::zero() {
             ok_or!(
                 repo.reference(&to_refname, view_commit, true, "apply_view")
                     .map(|_| ()),
                 {
-                    error!("can't create reference");
+                    error!("can't update reference: {:?} -> {:?}, target: {:?}, view: {:?}",
+                        &from_refsname,
+                        &to_refname,
+                        view_commit,
+                        &viewobj.viewstr());
                 }
             );
         }
@@ -225,6 +238,7 @@ fn transform_commit(
             &from_refsname
         );
     };
+    return updated_count;
 }
 
 pub fn apply_view_to_refs(
