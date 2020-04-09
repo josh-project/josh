@@ -702,6 +702,7 @@ fn parse_args(args: &[String]) -> clap::ArgMatches {
                 .long("trace")
                 .takes_value(true),
         )
+        .arg(clap::Arg::with_name("gc").long("gc").takes_value(false))
         .arg(clap::Arg::with_name("port").long("port").takes_value(true))
         .get_matches_from(args)
 }
@@ -730,8 +731,11 @@ fn run_proxy(args: Vec<String>) -> i32 {
     let port = args.value_of("port").unwrap_or("8000").to_owned();
     println!("Now listening on localhost:{}", port);
 
+    let mut core = tokio_core::reactor::Core::new().unwrap();
+
     let addr = format!("0.0.0.0:{}", port).parse().unwrap();
-    run_http_server(
+    let service = run_http_server(
+        &mut core,
         addr,
         port,
         &PathBuf::from(
@@ -740,17 +744,65 @@ fn run_proxy(args: Vec<String>) -> i32 {
         &args.value_of("remote").expect("missing remote repo url"),
     );
 
+    let known_views = service.known_views.clone();
+    let br_path = service.base_path.clone();
+    let forward_maps = service.forward_maps.clone();
+    let backward_maps = service.backward_maps.clone();
+    let do_gc = args.is_present("gc");
+
+    std::thread::spawn(move || loop {
+        base_repo::discover_views(&br_path.clone(), known_views.clone());
+        if let Ok(kn) = known_views.read() {
+            for (prefix2, e) in kn.iter() {
+                info!("background rebuild root: {:?}", prefix2);
+                for v in e.iter() {
+                    trace!("background rebuild: {:?} {:?}", prefix2, v);
+                    base_repo::make_view_repo(
+                        &v,
+                        &prefix2,
+                        "refs/heads/master",
+                        &to_known_view(&prefix2, &v),
+                        &br_path,
+                        forward_maps.clone(),
+                        backward_maps.clone(),
+                    );
+                }
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_secs(5));
+        info!(
+            "----------\n{}----------",
+            base_repo::run_housekeeping(&br_path, &"git count-objects -vH")
+        );
+        if do_gc {
+            info!(
+                "----------\n{}----------",
+                base_repo::run_housekeeping(&br_path, &"git repack -adkbn")
+            );
+            info!(
+                "----------\n{}----------",
+                base_repo::run_housekeeping(&br_path, &"git count-objects -vH")
+            );
+            info!(
+                "----------\n{}----------",
+                base_repo::run_housekeeping(&br_path, &"git prune --expire=2w")
+            );
+        }
+        std::thread::sleep(std::time::Duration::from_secs(10));
+    });
+
+    core.run(futures::future::empty::<(), ()>()).unwrap();
+
     return 0;
 }
 
 fn run_http_server(
+    core: &mut tokio_core::reactor::Core,
     addr: net::SocketAddr,
     port: String,
     local: &Path,
     remote: &str,
-) {
-    let mut core = tokio_core::reactor::Core::new().unwrap();
-
+) -> HttpService {
     let cghttp = HttpService {
         handle: core.handle(),
         fetch_push_pool: CpuPool::new(8),
@@ -778,6 +830,7 @@ fn run_http_server(
 
     let forward_maps = cghttp.forward_maps.clone();
     let backward_maps = cghttp.backward_maps.clone();
+    let service = cghttp.clone();
 
     let server_handle = core.handle();
     let serve = Http::new()
@@ -797,46 +850,7 @@ fn run_http_server(
             .map_err(|_| ()),
     );
 
-    std::thread::spawn(move || loop {
-        base_repo::discover_views(&br_path.clone(), known_views.clone());
-        if let Ok(kn) = known_views.read() {
-            for (prefix2, e) in kn.iter() {
-                info!("background rebuild root: {:?}", prefix2);
-                for v in e.iter() {
-                    trace!("background rebuild: {:?} {:?}", prefix2, v);
-                    base_repo::make_view_repo(
-                        &v,
-                        &prefix2,
-                        "refs/heads/master",
-                        &to_known_view(&prefix2, &v),
-                        &br_path,
-                        forward_maps.clone(),
-                        backward_maps.clone(),
-                    );
-                }
-            }
-        }
-        std::thread::sleep(std::time::Duration::from_secs(5));
-        info!(
-            "----------\n{}----------",
-            base_repo::run_housekeeping(&br_path, &"git count-objects -vH")
-        );
-        info!(
-            "----------\n{}----------",
-            base_repo::run_housekeeping(&br_path, &"git repack -adkbn")
-        );
-        info!(
-            "----------\n{}----------",
-            base_repo::run_housekeeping(&br_path, &"git count-objects -vH")
-        );
-        info!(
-            "----------\n{}----------",
-            base_repo::run_housekeeping(&br_path, &"git prune --expire=2w")
-        );
-        std::thread::sleep(std::time::Duration::from_secs(10));
-    });
-
-    core.run(futures::future::empty::<(), ()>()).unwrap();
+    return service;
 }
 
 fn to_ns(path: &str) -> String {
