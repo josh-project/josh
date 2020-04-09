@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.org/esrlabs/josh.svg?branch=master)](https://travis-ci.org/esrlabs/josh)
+
 Just One Single History
 =======================
 
