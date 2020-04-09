@@ -83,10 +83,15 @@ impl ViewMaps {
     }
 
     pub fn stats(&self) -> HashMap<String, usize> {
+        let mut count = 0;
         let mut s = HashMap::new();
         for (viewstr, m) in self.maps.iter() {
-            s.insert(viewstr.to_string(), m.len());
+            if m.len() > 1 {
+                count += m.len();
+                s.insert(viewstr.to_string(), m.len());
+            }
         }
+        s.insert("total".to_string(), count);
         return s;
     }
 }

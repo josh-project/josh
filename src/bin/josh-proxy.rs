@@ -218,15 +218,20 @@ fn async_fetch(
 
     Box::new(http.compute_pool.spawn(fetch_future.map(move |r| {
         r.map(move |_| {
+            let mut bm =
+                view_maps::ViewMaps::new_downstream(backward_maps.clone());
+            let mut fm =
+                view_maps::ViewMaps::new_downstream(forward_maps.clone());
             base_repo::make_view_repo(
-                &viewstr,
-                &prefix,
-                &headref,
-                &namespace,
-                &br_path,
-                forward_maps,
-                backward_maps,
+                &viewstr, &prefix, &headref, &namespace, &br_path, &mut fm,
+                &mut bm,
             );
+            span!(Level::TRACE, "write_lock").in_scope(|| {
+                let mut forward_maps = forward_maps.write().unwrap();
+                let mut backward_maps = backward_maps.write().unwrap();
+                forward_maps.merge(&fm);
+                backward_maps.merge(&bm);
+            });
             br_path
         })
     })))
@@ -757,19 +762,35 @@ fn run_proxy(args: Vec<String>) -> i32 {
             for (prefix2, e) in kn.iter() {
                 info!("background rebuild root: {:?}", prefix2);
                 let mut updated_count = 0;
+                    let mut bm = view_maps::ViewMaps::new_downstream(
+                        backward_maps.clone(),
+                    );
+                    let mut fm = view_maps::ViewMaps::new_downstream(
+                        forward_maps.clone(),
+                    );
                 for v in e.iter() {
                     trace!("background rebuild: {:?} {:?}", prefix2, v);
+
                     updated_count += base_repo::make_view_repo(
                         &v,
                         &prefix2,
                         "refs/heads/master",
                         &to_known_view(&prefix2, &v),
                         &br_path,
-                        forward_maps.clone(),
-                        backward_maps.clone(),
+                        &mut fm,
+                        &mut bm,
                     );
                 }
                 info!("updated {} refs for {:?}", updated_count, prefix2);
+                info!("forward_maps stats: {}",
+            toml::to_string_pretty(&fm.stats()).unwrap()
+                );
+                span!(Level::TRACE, "write_lock").in_scope(|| {
+                    let mut forward_maps = forward_maps.write().unwrap();
+                    let mut backward_maps = backward_maps.write().unwrap();
+                    forward_maps.merge(&fm);
+                    backward_maps.merge(&bm);
+                });
             }
         }
         std::thread::sleep(std::time::Duration::from_secs(5));
