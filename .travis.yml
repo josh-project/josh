@@ -10,8 +10,6 @@ script:
   - export CARGO_TARGET_DIR=`pwd`/target
   - cargo build
   - cram tests/**/*.t
-after_success:
-  - travis-cargo coveralls --no-sudo
 notifications:
   email:
     on_success: never
