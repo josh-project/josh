@@ -98,7 +98,7 @@ pub trait View {
             repo,
             commit,
             transformed_parents_ids,
-            &find_tree_or_error(&repo, new_tree, &commit, &self.viewstr()),
+            &find_tree_or_error(&repo, new_tree, Some(&commit), &self.viewstr()),
         );
     }
 
@@ -699,7 +699,7 @@ impl View for CombineView {
             let otree = find_tree_or_error(
                 &repo,
                 otree,
-                &repo.find_commit(commit_id).unwrap(),
+                repo.find_commit(commit_id).ok().as_ref(),
                 &self.viewstr(),
             );
             base = replace_subtree(
@@ -894,7 +894,7 @@ impl WorkspaceView {
 fn find_tree_or_error<'a>(
     repo: &'a git2::Repository,
     new_tree: git2::Oid,
-    commit: &git2::Commit,
+    commit: Option<&git2::Commit>,
     viewstr: &str,
 ) -> git2::Tree<'a> {
     ok_or!(repo.find_tree(new_tree), {
@@ -902,9 +902,9 @@ fn find_tree_or_error<'a>(
                     "View.apply_view_to_commit: can't find tree: {:?} viewstr: {:?}, original-commit: {:?}, message: {:?}, header: {:?}, obj.kind: {:?}",
                     new_tree,
                     viewstr,
-                    commit.id(),
-                    commit.message(),
-                    commit.raw_header(),
+                    commit.map(|x| x.id()),
+                    commit.map(|x| x.message()),
+                    commit.map(|x| x.raw_header()),
                     repo.find_object(new_tree, None).ok().map(|x| x.kind()));
         return repo.find_tree(empty_tree_id()).unwrap();
     })
@@ -956,7 +956,7 @@ impl View for WorkspaceView {
             repo,
             commit,
             transformed_parents_ids,
-            &find_tree_or_error(&repo, new_tree, &commit, &self.viewstr()),
+            &find_tree_or_error(&repo, new_tree, Some(&commit), &self.viewstr()),
         );
     }
 
