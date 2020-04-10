@@ -19,7 +19,7 @@ use std::process::Command;
 use std::process::Stdio;
 use std::str::FromStr;
 
-use tracing::{debug, event, span, trace, Level};
+use tracing::{event, span, trace, Level};
 
 pub fn do_cgi(
     req: Request,
@@ -31,7 +31,6 @@ pub fn do_cgi(
     cmd.stdout(Stdio::piped());
     cmd.stderr(Stdio::inherit());
     cmd.stdin(Stdio::piped());
-    debug!("REQUEST_METHOD {:?}", req.method());
     cmd.env("SERVER_SOFTWARE", "hyper")
         .env("SERVER_NAME", "localhost") // TODO
         .env("GATEWAY_INTERFACE", "CGI/1.1")

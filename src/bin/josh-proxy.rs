@@ -30,7 +30,8 @@ extern crate tracing_subscriber;
 
 /* use opentelemetry::{api::Provider, sdk}; */
 /* use tracing_opentelemetry::OpentelemetryLayer; */
-use tracing_subscriber::{Layer, Registry};
+/* use tracing_subscriber::{Layer, Registry}; */
+use tracing_subscriber::Layer;
 
 use futures::future::Future;
 use futures::Stream;
@@ -229,11 +230,11 @@ fn async_fetch(
                 &viewstr, &prefix, &headref, &namespace, &br_path, &mut fm,
                 &mut bm,
             );
-            span!(Level::TRACE, "write_lock").in_scope(|| {
-                let mut forward_maps = forward_maps.try_write().unwrap();
-                let mut backward_maps = backward_maps.try_write().unwrap();
-                forward_maps.merge(&fm);
-                backward_maps.merge(&bm);
+            span!(Level::TRACE, "write_lock backward_maps").in_scope(|| {
+                backward_maps.write().map(|mut m| m.merge(&bm)).ok();
+            });
+            span!(Level::TRACE, "write_lock forward_maps").in_scope(|| {
+                forward_maps.write().map(|mut m| m.merge(&fm)).ok();
             });
             br_path
         })
@@ -583,7 +584,7 @@ fn call_service(
          pathinfo: &str,
          handle: &tokio_core::reactor::Handle|
          -> Box<dyn Future<Item = Response, Error = hyper::Error>> {
-            debug!("CALLING git-http backend {:?} {:?}", path, pathinfo);
+            trace!("git-http backend {:?} {:?}", path, pathinfo);
             let mut cmd = Command::new("git");
             cmd.arg("http-backend");
             cmd.current_dir(&path);
@@ -601,10 +602,6 @@ fn call_service(
 
             cgi::do_cgi(request, cmd, handle.clone())
         };
-
-    debug!("PREFIX: {}", &prefix);
-    debug!("VIEW: {}", &view_string);
-    debug!("PATH_INFO: {:?}", &pathinfo);
 
     let handle = service.handle.clone();
     let ns_path = service.base_path.clone();
@@ -758,6 +755,9 @@ fn run_proxy(args: Vec<String>) -> i32 {
     let forward_maps = service.forward_maps.clone();
     let backward_maps = service.backward_maps.clone();
     let do_gc = args.is_present("gc");
+    let mut gc_timer = std::time::Instant::now();
+    let mut persist_timer =
+        std::time::Instant::now() - std::time::Duration::from_secs(60 * 5);
 
     std::thread::spawn(move || {
         let mut total = 0;
@@ -808,7 +808,10 @@ fn run_proxy(args: Vec<String>) -> i32 {
                     });
                 }
             }
-            if total > 1000 {
+            if total > 1000
+                || persist_timer.elapsed()
+                    > std::time::Duration::from_secs(60 * 15)
+            {
                 view_maps::persist(
                     &*backward_maps.read().unwrap(),
                     &br_path.join("josh_backward_maps"),
@@ -818,12 +821,15 @@ fn run_proxy(args: Vec<String>) -> i32 {
                     &br_path.join("josh_forward_maps"),
                 );
                 total = 0;
+                persist_timer = std::time::Instant::now();
             }
             info!(
                 "\n----------\n{}\n----------",
                 base_repo::run_housekeeping(&br_path, &"git count-objects -vH")
             );
-            if do_gc {
+            if do_gc
+                && gc_timer.elapsed() > std::time::Duration::from_secs(60 * 60)
+            {
                 info!(
                     "\n----------\n{}\n----------",
                     base_repo::run_housekeeping(&br_path, &"git repack -adkbn")
@@ -842,8 +848,9 @@ fn run_proxy(args: Vec<String>) -> i32 {
                         &"git prune --expire=2w"
                     )
                 );
+                gc_timer = std::time::Instant::now();
             }
-            std::thread::sleep(std::time::Duration::from_secs(30));
+            std::thread::sleep(std::time::Duration::from_secs(60));
         }
     });
 
