@@ -21,6 +21,7 @@ addons:
     sources:
       - kalakris-cmake
     packages:
+      - git
       - cmake
       - libcurl4-openssl-dev
       - libelf-dev
