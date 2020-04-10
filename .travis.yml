@@ -10,7 +10,6 @@ before_script:
 script:
   - export CARGO_TARGET_DIR=`pwd`/target
   - cargo build
-  - cram tests/**/*.t
 notifications:
   email:
     on_success: never
