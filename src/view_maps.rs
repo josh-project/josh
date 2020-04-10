@@ -159,7 +159,7 @@ pub fn try_load(path: &std::path::Path) -> ViewMaps {
 
 pub fn persist(m: &ViewMaps, path: &std::path::Path) {
     info!("persisting: {:?}", &path);
-    let f = ok_or!(tempfile::NamedTempFile::new(), {
+    let f = ok_or!(tempfile::NamedTempFile::new_in(path.parent().unwrap()), {
         error!("NamedTempFile::new");
         return;
     });
