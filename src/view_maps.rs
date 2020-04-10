@@ -3,13 +3,62 @@ extern crate tracing;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
-/* use self::tracing::{span, Level}; */
+use self::tracing::{error, info};
 
-pub type ViewMap = HashMap<git2::Oid, git2::Oid>;
+#[derive(Eq, PartialEq, PartialOrd, Hash, Clone, Copy)]
+pub struct ViewMapOid(git2::Oid);
 
+pub type ViewMap = HashMap<ViewMapOid, ViewMapOid>;
+
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct ViewMaps {
     maps: HashMap<String, ViewMap>,
+
+    #[serde(skip)]
     upsteam: Option<Arc<RwLock<ViewMaps>>>,
+}
+
+impl serde::ser::Serialize for ViewMapOid {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::ser::Serializer,
+    {
+        let ViewMapOid(oid) = *self;
+        serializer.serialize_bytes(oid.as_bytes())
+    }
+}
+
+struct OidVisitor;
+
+impl<'de> serde::de::Visitor<'de> for OidVisitor {
+    type Value = ViewMapOid;
+
+    fn expecting(
+        &self,
+        formatter: &mut std::fmt::Formatter,
+    ) -> std::fmt::Result {
+        formatter.write_str("20 bytes")
+    }
+
+    fn visit_bytes<E>(self, value: &[u8]) -> Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        if let Ok(oid) = git2::Oid::from_bytes(value) {
+            Ok(ViewMapOid(oid))
+        } else {
+            Err(E::custom("err: invalid oid"))
+        }
+    }
+}
+
+impl<'de> serde::de::Deserialize<'de> for ViewMapOid {
+    fn deserialize<D>(deserializer: D) -> Result<ViewMapOid, D::Error>
+    where
+        D: serde::de::Deserializer<'de>,
+    {
+        deserializer.deserialize_bytes(OidVisitor)
+    }
 }
 
 impl ViewMaps {
@@ -17,12 +66,12 @@ impl ViewMaps {
         self.maps
             .entry(viewstr.to_string())
             .or_insert_with(ViewMap::new)
-            .insert(from, to);
+            .insert(ViewMapOid(from), ViewMapOid(to));
     }
 
     pub fn get(&self, viewstr: &str, from: git2::Oid) -> git2::Oid {
         if let Some(m) = self.maps.get(viewstr) {
-            if let Some(oid) = m.get(&from).cloned() {
+            if let Some(ViewMapOid(oid)) = m.get(&ViewMapOid(from)).cloned() {
                 return oid;
             }
         }
@@ -42,7 +91,7 @@ impl ViewMaps {
         from: git2::Oid,
     ) -> bool {
         if let Some(m) = self.maps.get(viewstr) {
-            if m.contains_key(&from) {
+            if m.contains_key(&ViewMapOid(from)) {
                 // Only report an object as cached if it exists in the object database.
                 // This forces a rebuild in case the object was garbage collected.
                 let oid = self.get(viewstr, from);
@@ -93,4 +142,36 @@ impl ViewMaps {
         s.insert("total".to_string(), count);
         return s;
     }
+}
+
+pub fn try_load(path: &std::path::Path) -> ViewMaps {
+    info!("trying to load: {:?}", &path);
+    if let Ok(f) = std::fs::File::open(path) {
+        if let Ok(m) = bincode::deserialize_from(f) {
+            info!("mapfile loaded from: {:?}", &path);
+            return m;
+        }
+        error!("deserialize_from: {:?}", &path);
+    }
+    info!("no map file loaded from: {:?}", &path);
+    ViewMaps::new()
+}
+
+pub fn persist(m: &ViewMaps, path: &std::path::Path) {
+    info!("persisting: {:?}", &path);
+    let f = ok_or!(tempfile::NamedTempFile::new(), {
+        error!("NamedTempFile::new");
+        return;
+    });
+
+    ok_or!(bincode::serialize_into(&f, &m), {
+        error!("serialize_into: {:?}", &path);
+        return;
+    });
+
+    ok_or!(f.persist(path), {
+        error!("persist: {:?}", &path);
+        return;
+    });
+    info!("persisted: {:?}", &path);
 }

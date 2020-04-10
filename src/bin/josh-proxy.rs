@@ -7,6 +7,7 @@ extern crate futures;
 extern crate futures_cpupool;
 extern crate git2;
 extern crate hyper;
+extern crate tempfile;
 /* extern crate hyper_tls; */
 extern crate rand;
 extern crate regex;
@@ -14,19 +15,21 @@ extern crate regex;
 #[macro_use]
 extern crate lazy_static;
 
+extern crate bincode;
 extern crate serde_json;
 
 extern crate crypto;
+extern crate serde;
 extern crate tokio_core;
 extern crate tracing;
 extern crate tracing_log;
 extern crate tracing_subscriber;
 
-extern crate opentelemetry;
-extern crate tracing_opentelemetry;
+/* extern crate opentelemetry; */
+/* extern crate tracing_opentelemetry; */
 
-use opentelemetry::{api::Provider, sdk};
-use tracing_opentelemetry::OpentelemetryLayer;
+/* use opentelemetry::{api::Provider, sdk}; */
+/* use tracing_opentelemetry::OpentelemetryLayer; */
 use tracing_subscriber::{Layer, Registry};
 
 use futures::future::Future;
@@ -227,8 +230,8 @@ fn async_fetch(
                 &mut bm,
             );
             span!(Level::TRACE, "write_lock").in_scope(|| {
-                let mut forward_maps = forward_maps.write().unwrap();
-                let mut backward_maps = backward_maps.write().unwrap();
+                let mut forward_maps = forward_maps.try_write().unwrap();
+                let mut backward_maps = backward_maps.try_write().unwrap();
                 forward_maps.merge(&fm);
                 backward_maps.merge(&bm);
             });
@@ -756,66 +759,92 @@ fn run_proxy(args: Vec<String>) -> i32 {
     let backward_maps = service.backward_maps.clone();
     let do_gc = args.is_present("gc");
 
-    std::thread::spawn(move || loop {
-        base_repo::discover_views(&br_path.clone(), known_views.clone());
-        if let Ok(kn) = known_views.read() {
-            for (prefix2, e) in kn.iter() {
-                info!("background rebuild root: {:?}", prefix2);
+    std::thread::spawn(move || {
+        let mut total = 0;
+        loop {
+            base_repo::discover_views(&br_path.clone(), known_views.clone());
+            if let Ok(kn) = known_views.read() {
+                for (prefix2, e) in kn.iter() {
+                    info!("background rebuild root: {:?}", prefix2);
 
-                let mut bm =
-                    view_maps::ViewMaps::new_downstream(backward_maps.clone());
-                let mut fm =
-                    view_maps::ViewMaps::new_downstream(forward_maps.clone());
-
-                let mut updated_count = 0;
-
-                for v in e.iter() {
-                    trace!("background rebuild: {:?} {:?}", prefix2, v);
-
-                    updated_count += base_repo::make_view_repo(
-                        &v,
-                        &prefix2,
-                        "refs/heads/master",
-                        &to_known_view(&prefix2, &v),
-                        &br_path,
-                        &mut fm,
-                        &mut bm,
+                    let mut bm = view_maps::ViewMaps::new_downstream(
+                        backward_maps.clone(),
                     );
-                }
-                info!("updated {} refs for {:?}", updated_count, prefix2);
+                    let mut fm = view_maps::ViewMaps::new_downstream(
+                        forward_maps.clone(),
+                    );
 
-                info!(
-                    "forward_maps stats: {}",
-                    toml::to_string_pretty(&fm.stats()).unwrap()
-                );
-                span!(Level::TRACE, "write_lock").in_scope(|| {
-                    let mut forward_maps = forward_maps.write().unwrap();
-                    let mut backward_maps = backward_maps.write().unwrap();
-                    forward_maps.merge(&fm);
-                    backward_maps.merge(&bm);
-                });
+                    let mut updated_count = 0;
+
+                    for v in e.iter() {
+                        trace!("background rebuild: {:?} {:?}", prefix2, v);
+
+                        updated_count += base_repo::make_view_repo(
+                            &v,
+                            &prefix2,
+                            "refs/heads/master",
+                            &to_known_view(&prefix2, &v),
+                            &br_path,
+                            &mut fm,
+                            &mut bm,
+                        );
+                    }
+                    info!("updated {} refs for {:?}", updated_count, prefix2);
+
+                    let stats = fm.stats();
+                    total += fm.stats()["total"];
+                    total += bm.stats()["total"];
+                    info!(
+                        "forward_maps stats: {}",
+                        toml::to_string_pretty(&stats).unwrap()
+                    );
+                    span!(Level::TRACE, "write_lock bm").in_scope(|| {
+                        let mut backward_maps = backward_maps.write().unwrap();
+                        backward_maps.merge(&bm);
+                    });
+                    span!(Level::TRACE, "write_lock fm").in_scope(|| {
+                        let mut forward_maps = forward_maps.write().unwrap();
+                        forward_maps.merge(&fm);
+                    });
+                }
             }
-        }
-        std::thread::sleep(std::time::Duration::from_secs(5));
-        info!(
-            "----------\n{}----------",
-            base_repo::run_housekeeping(&br_path, &"git count-objects -vH")
-        );
-        if do_gc {
+            if total > 1000 {
+                view_maps::persist(
+                    &*backward_maps.read().unwrap(),
+                    &br_path.join("josh_backward_maps"),
+                );
+                view_maps::persist(
+                    &*forward_maps.read().unwrap(),
+                    &br_path.join("josh_forward_maps"),
+                );
+                total = 0;
+            }
             info!(
-                "----------\n{}----------",
-                base_repo::run_housekeeping(&br_path, &"git repack -adkbn")
-            );
-            info!(
-                "----------\n{}----------",
+                "\n----------\n{}\n----------",
                 base_repo::run_housekeeping(&br_path, &"git count-objects -vH")
             );
-            info!(
-                "----------\n{}----------",
-                base_repo::run_housekeeping(&br_path, &"git prune --expire=2w")
-            );
+            if do_gc {
+                info!(
+                    "\n----------\n{}\n----------",
+                    base_repo::run_housekeeping(&br_path, &"git repack -adkbn")
+                );
+                info!(
+                    "\n----------\n{}\n----------",
+                    base_repo::run_housekeeping(
+                        &br_path,
+                        &"git count-objects -vH"
+                    )
+                );
+                info!(
+                    "\n----------\n{}\n----------",
+                    base_repo::run_housekeeping(
+                        &br_path,
+                        &"git prune --expire=2w"
+                    )
+                );
+            }
+            std::thread::sleep(std::time::Duration::from_secs(30));
         }
-        std::thread::sleep(std::time::Duration::from_secs(10));
     });
 
     core.run(futures::future::empty::<(), ()>()).unwrap();
@@ -844,19 +873,18 @@ fn run_http_server(
         /*     .keep_alive(true) */
         /*     .build(&core.handle()), */
         http_client: hyper::Client::new(&core.handle()),
-        forward_maps: Arc::new(RwLock::new(view_maps::ViewMaps::new())),
-        backward_maps: Arc::new(RwLock::new(view_maps::ViewMaps::new())),
+        forward_maps: Arc::new(RwLock::new(view_maps::try_load(
+            &local.join("josh_forward_maps"),
+        ))),
+        backward_maps: Arc::new(RwLock::new(view_maps::try_load(
+            &local.join("josh_backward_maps"),
+        ))),
         base_url: remote.to_owned(),
         credential_cache: Arc::new(RwLock::new(CredentialCache::new())),
         known_views: Arc::new(RwLock::new(base_repo::KnownViews::new())),
         fetching: Arc::new(RwLock::new(HashSet::new())),
     };
 
-    let known_views = cghttp.known_views.clone();
-    let br_path = cghttp.base_path.clone();
-
-    let forward_maps = cghttp.forward_maps.clone();
-    let backward_maps = cghttp.backward_maps.clone();
     let service = cghttp.clone();
 
     let server_handle = core.handle();

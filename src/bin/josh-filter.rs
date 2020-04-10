@@ -51,8 +51,10 @@ fn run_filter(args: Vec<String>) -> i32 {
     }
 
     let repo = git2::Repository::open_from_env().unwrap();
-    let mut fm = view_maps::ViewMaps::new();
-    let backward_maps = Arc::new(RwLock::new(view_maps::ViewMaps::new()));
+    let mut fm = view_maps::try_load(&repo.path().join("josh_forward_maps"));
+    let backward_maps = Arc::new(RwLock::new(view_maps::try_load(
+        &repo.path().join("josh_backward_maps"),
+    )));
 
     let srcstr = args.value_of("from_to").unwrap_or("");
     let specstr = args.value_of("spec").unwrap_or("");
@@ -151,6 +153,11 @@ fn run_filter(args: Vec<String>) -> i32 {
             }
         }
     }
+
+    let bm = backward_maps.read().unwrap();
+
+    view_maps::persist(&*bm, &repo.path().join("josh_backward_maps"));
+    view_maps::persist(&fm, &repo.path().join("josh_forward_maps"));
 
     return 0;
 }
