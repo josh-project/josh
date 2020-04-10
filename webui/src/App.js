@@ -42,16 +42,13 @@ const comments = {
   },
 };
 
-function App() {
-  const [prefix, id] = window.location.pathname
-    .split("/")
-    .filter((x) => x != "");
-  const result = useFetch("/c/" + id + "/")["diff"].split("\n");
+function DiffUnified(props) {
 
   var current_ofile = "";
   var current_nfile = "";
 
   var arr = [];
+  var result = props.diff.split("\n")
 
   var oline = 0;
   var nline = 0;
@@ -126,6 +123,15 @@ function App() {
       <tbody>{arr}</tbody>
     </table>
   );
+}
+
+function App() {
+  const [prefix, id] = window.location.pathname
+    .split("/")
+    .filter((x) => x != "");
+  const result = useFetch("/c/" + id + "/")["diff"];
+
+    return <DiffUnified diff={result}/>;
 }
 
 export default App;
