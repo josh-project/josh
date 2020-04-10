@@ -7,7 +7,7 @@ use std::sync::{Arc, RwLock};
 extern crate reqwest;
 extern crate tracing;
 
-use self::tracing::{span, Level};
+use self::tracing::{debug, span, trace, warn, Level};
 
 use std::collections::HashMap;
 

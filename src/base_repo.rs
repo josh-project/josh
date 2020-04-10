@@ -8,7 +8,7 @@ use std::env::current_exe;
 use std::os::unix::fs::symlink;
 use std::path::Path;
 use std::sync::{Arc, RwLock};
-use tracing::{debug, span, Level};
+use tracing::{debug, info, span, warn, Level};
 
 pub type KnownViews = HashMap<String, BTreeSet<String>>;
 

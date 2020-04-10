@@ -19,7 +19,7 @@ use std::process::Command;
 use std::process::Stdio;
 use std::str::FromStr;
 
-use self::tracing::{event, span, Level};
+use tracing::{debug, event, span, trace, Level};
 
 pub fn do_cgi(
     req: Request,

@@ -55,7 +55,7 @@ use std::process::Command;
 use std::str::FromStr;
 use std::sync::{Arc, RwLock};
 
-use tracing::{debug, info, warn, trace, span, Level};
+use tracing::{debug, info, span, trace, warn, Level};
 
 use tracing::*;
 
@@ -787,7 +787,6 @@ fn run_proxy(args: Vec<String>) -> i32 {
                 info!(
                     "forward_maps stats: {}",
                     toml::to_string_pretty(&fm.stats()).unwrap()
-
                 );
                 span!(Level::TRACE, "write_lock").in_scope(|| {
                     let mut forward_maps = forward_maps.write().unwrap();

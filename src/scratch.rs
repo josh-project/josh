@@ -2,7 +2,7 @@ extern crate crypto;
 extern crate git2;
 extern crate tracing;
 
-use self::tracing::{event, span, trace, Level};
+use self::tracing::{error, event, info, span, trace, warn, Level};
 use super::empty_tree_id;
 use super::view_maps;
 use super::views;

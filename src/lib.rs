@@ -25,9 +25,6 @@ macro_rules! ok_or {
 extern crate git2;
 
 #[macro_use]
-extern crate log;
-
-#[macro_use]
 extern crate pest_derive;
 
 #[macro_use]

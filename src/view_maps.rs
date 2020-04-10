@@ -27,7 +27,6 @@ impl ViewMaps {
             }
         }
         if let Some(upsteam) = self.upsteam.clone() {
-            /* let _trace_s = span!(Level::TRACE, "read_lock: get", ?viewstr, from=?from.to_string()); */
             return upsteam.read().unwrap().get(viewstr, from);
         }
         if viewstr == ":nop=nop" {
