@@ -8,7 +8,8 @@ before_script:
   - export RUST_LOG=josh=debug
 script:
   - export CARGO_TARGET_DIR=`pwd`/target
-  - cargo test
+  - cargo build
+  - cram tests/**/*.t
 after_success:
   - travis-cargo coveralls --no-sudo
 notifications:
