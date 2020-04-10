@@ -390,14 +390,27 @@ fn call_service(
         return Box::new(futures::future::ok(response));
     }
     if path == "/views" {
-        let _br_path = service.base_path.clone();
-        let body =
-            toml::to_string_pretty(&*service.known_views.read().unwrap())
-                .unwrap();
-        let response = Response::new()
-            .with_body(body)
-            .with_status(hyper::StatusCode::Ok);
-        return Box::new(futures::future::ok(response));
+        service.credential_cache.write().unwrap().clear();
+
+        let known_views = service.known_views.clone();
+        let discover = service
+            .compute_pool
+            .spawn_fn(move || {
+                base_repo::discover_views(
+                    &br_path.clone(),
+                    known_views.clone(),
+                );
+                Ok(known_views)
+            })
+            .map(move |known_views| {
+                let body =
+                    toml::to_string_pretty(&*known_views.read().unwrap())
+                        .unwrap();
+                Response::new()
+                    .with_body(body)
+                    .with_status(hyper::StatusCode::Ok)
+            });
+        return Box::new(discover);
     }
     if path == "/panic" {
         panic!();

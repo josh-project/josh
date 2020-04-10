@@ -98,7 +98,12 @@ pub trait View {
             repo,
             commit,
             transformed_parents_ids,
-            &find_tree_or_error(&repo, new_tree, Some(&commit), &self.viewstr()),
+            &find_tree_or_error(
+                &repo,
+                new_tree,
+                Some(&commit),
+                &self.viewstr(),
+            ),
         );
     }
 
@@ -956,7 +961,12 @@ impl View for WorkspaceView {
             repo,
             commit,
             transformed_parents_ids,
-            &find_tree_or_error(&repo, new_tree, Some(&commit), &self.viewstr()),
+            &find_tree_or_error(
+                &repo,
+                new_tree,
+                Some(&commit),
+                &self.viewstr(),
+            ),
         );
     }
 
