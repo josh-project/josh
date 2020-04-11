@@ -10,6 +10,9 @@ Welcome to Josh's documentation!
    :maxdepth: 2
    :caption: Contents:
 
+   filters
+   cli
+   proxy
    workspace
 
 
