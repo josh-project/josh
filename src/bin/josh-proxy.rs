@@ -63,6 +63,20 @@ use tracing::{debug, info, span, trace, warn, Level};
 
 use tracing::*;
 
+#[derive(Debug, Clone)]
+struct ProxyError(i32);
+type ProxyResult<T> = std::result::Result<T, ProxyError>;
+
+impl<T> std::convert::From<T> for ProxyError
+where
+    T: std::error::Error,
+{
+    fn from(item: T) -> Self {
+        error!("ProxyError: {:?}", item);
+        ProxyError(0)
+    }
+}
+
 lazy_static! {
     static ref VIEW_REGEX: Regex =
         Regex::new(r"(?P<prefix>/.*[.]git)(?P<headref>@[^:!]*)?(?P<view>[:!].*)[.](?P<ending>(?:git)|(?:json))(?P<pathinfo>/.*)?")
@@ -726,7 +740,7 @@ fn parse_args(args: &[String]) -> clap::ArgMatches {
         .get_matches_from(args)
 }
 
-fn run_proxy(args: Vec<String>) -> i32 {
+fn run_proxy(args: Vec<String>) -> ProxyResult<i32> {
     tracing_log::LogTracer::init().expect("can't init LogTracer");
 
     /* let tracer = sdk::Provider::default().get_tracer("josh-proxy"); */
@@ -750,9 +764,9 @@ fn run_proxy(args: Vec<String>) -> i32 {
     let port = args.value_of("port").unwrap_or("8000").to_owned();
     println!("Now listening on localhost:{}", port);
 
-    let mut core = tokio_core::reactor::Core::new().unwrap();
+    let mut core = tokio_core::reactor::Core::new()?;
 
-    let addr = format!("0.0.0.0:{}", port).parse().unwrap();
+    let addr = format!("0.0.0.0:{}", port).parse()?;
     let service = run_http_server(
         &mut core,
         addr,
@@ -837,8 +851,9 @@ fn run_proxy(args: Vec<String>) -> i32 {
                 persist_timer = std::time::Instant::now();
             }
             info!(
-                "\n----------\n{}\n----------",
-                base_repo::run_housekeeping(&br_path, &"git count-objects -vH")
+                "{}",
+                base_repo::run_housekeeping(&br_path, &"git count-objects -v")
+                    .replace("\n", "  ")
             );
             if do_gc
                 && gc_timer.elapsed() > std::time::Duration::from_secs(60 * 60)
@@ -867,9 +882,9 @@ fn run_proxy(args: Vec<String>) -> i32 {
         }
     });
 
-    core.run(futures::future::empty::<(), ()>()).unwrap();
+    core.run(futures::future::empty::<(), ProxyError>())?;
 
-    return 0;
+    Ok(0)
 }
 
 fn run_http_server(
@@ -945,5 +960,5 @@ fn main() {
         println!("josh-proxy");
         exit(virtual_repo::update_hook(&args[1], &args[2], &args[3]));
     }
-    exit(run_proxy(args));
+    exit(run_proxy(args).unwrap_or(1));
 }

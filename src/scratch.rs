@@ -191,12 +191,21 @@ fn transform_commit(
             warn!("transform_commit, not a commit: {}", from_refsname);
             return updated_count;
         });
-        let view_commit = viewobj.apply_view_to_commit(
-            &repo,
-            &original_commit,
-            forward_maps,
-            backward_maps,
-            &mut HashMap::new(),
+        let view_commit = ok_or!(
+            viewobj.apply_view_to_commit(
+                &repo,
+                &original_commit,
+                forward_maps,
+                backward_maps,
+                &mut HashMap::new(),
+            ),
+            {
+                error!(
+                    "transform_commit, cannot apply_view_to_commit: {}",
+                    from_refsname
+                );
+                return updated_count;
+            }
         );
         forward_maps.set(&viewobj.viewstr(), original_commit.id(), view_commit);
         backward_maps.set(
@@ -299,12 +308,18 @@ pub fn apply_view_cached(
 
         let commit = repo.find_commit(commit.unwrap()).unwrap();
 
-        let transformed = view.apply_view_to_commit(
-            &repo,
-            &commit,
-            forward_maps,
-            backward_maps,
-            &mut HashMap::new(),
+        let transformed = ok_or!(
+            view.apply_view_to_commit(
+                &repo,
+                &commit,
+                forward_maps,
+                backward_maps,
+                &mut HashMap::new(),
+            ),
+            {
+                error!("cannot apply_view_to_commit");
+                git2::Oid::zero()
+            }
         );
 
         if transformed == git2::Oid::zero() {

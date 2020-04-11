@@ -36,7 +36,6 @@ extern crate tracing;
 
 pub mod base_repo;
 pub mod cgi;
-pub mod get_info;
 pub mod scratch;
 pub mod shell;
 pub mod tomlq;
@@ -44,7 +43,6 @@ pub mod view_maps;
 mod views;
 pub mod virtual_repo;
 
-pub use crate::get_info::get_info;
 pub use crate::scratch::apply_view_to_refs;
 pub use crate::scratch::unapply_view;
 pub use crate::views::build_chain;

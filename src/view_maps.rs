@@ -145,7 +145,9 @@ impl ViewMaps {
 }
 
 pub fn try_load(path: &std::path::Path) -> ViewMaps {
-    let file_size = std::fs::metadata(&path).map(|x| x.len() / (1024*1024)).unwrap_or(0);
+    let file_size = std::fs::metadata(&path)
+        .map(|x| x.len() / (1024 * 1024))
+        .unwrap_or(0);
     info!("trying to load: {:?}, size: {} MiB", &path, file_size);
     if let Ok(f) = std::fs::File::open(path) {
         if let Ok(m) = bincode::deserialize_from(f) {
@@ -174,6 +176,8 @@ pub fn persist(m: &ViewMaps, path: &std::path::Path) {
         error!("persist: {:?}", &path);
         return;
     });
-    let file_size = std::fs::metadata(&path).map(|x| x.len() / (1024*1024)).unwrap_or(0);
+    let file_size = std::fs::metadata(&path)
+        .map(|x| x.len() / (1024 * 1024))
+        .unwrap_or(0);
     info!("persisted: {:?}, file size: {} MiB", &path, file_size);
 }

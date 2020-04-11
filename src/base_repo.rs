@@ -285,8 +285,14 @@ pub fn get_info(
 
     let mut meta = HashMap::new();
     meta.insert("sha1".to_owned(), "".to_owned());
-    let transformed = viewobj
-        .apply_view_to_commit(&scratch, &commit, &mut fm, &mut bm, &mut meta);
+    let transformed = ok_or!(
+        viewobj.apply_view_to_commit(
+            &scratch, &commit, &mut fm, &mut bm, &mut meta
+        ),
+        {
+            return format!("cannot apply_view_to_commit");
+        }
+    );
 
     let parent_ids = |commit: &git2::Commit| {
         let pids: Vec<_> = commit
