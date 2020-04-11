@@ -13,9 +13,11 @@ use std::collections::HashMap;
 
 pub type RepoUpdate = HashMap<String, String>;
 
-fn baseref_and_options(refname: &str) -> (String, String, Vec<String>) {
+fn baseref_and_options(
+    refname: &str,
+) -> JoshResult<(String, String, Vec<String>)> {
     let mut split = refname.splitn(2, '%');
-    let push_to = split.next().unwrap().to_owned();
+    let push_to = split.next().ok_or(josh_error("no next"))?.to_owned();
 
     let options = if let Some(options) = split.next() {
         options.split(',').map(|x| x.to_string()).collect()
@@ -31,65 +33,43 @@ fn baseref_and_options(refname: &str) -> (String, String, Vec<String>) {
     if baseref.starts_with("refs/drafts") {
         baseref = baseref.replacen("refs/drafts", "refs/heads", 1)
     }
-    return (baseref, push_to, options);
+    return Ok((baseref, push_to, options));
 }
 
 pub fn process_repo_update(
     repo_update: RepoUpdate,
     _forward_maps: Arc<RwLock<view_maps::ViewMaps>>,
     backward_maps: Arc<RwLock<view_maps::ViewMaps>>,
-) -> Result<String, String> {
+) -> Result<String, JoshError> {
     let ru = {
         let mut ru = repo_update.clone();
         ru.insert("password".to_owned(), "...".to_owned());
     };
     let _trace_s = span!(Level::TRACE, "process_repo_update", repo_update= ?ru);
-    let refname = some_or!(repo_update.get("refname"), {
-        return Err("".to_owned());
-    });
-    let viewstr = some_or!(repo_update.get("viewstr"), {
-        return Err("".to_owned());
-    });
-    let old = some_or!(repo_update.get("old"), {
-        return Err("".to_owned());
-    });
-    let new = some_or!(repo_update.get("new"), {
-        return Err("".to_owned());
-    });
-    let username = some_or!(repo_update.get("username"), {
-        return Err("".to_owned());
-    });
-    let password = some_or!(repo_update.get("password"), {
-        return Err("".to_owned());
-    });
-    let remote_url = some_or!(repo_update.get("remote_url"), {
-        return Err("".to_owned());
-    });
-    let base_ns = some_or!(repo_update.get("base_ns"), {
-        return Err("".to_owned());
-    });
-    let git_dir = some_or!(repo_update.get("GIT_DIR"), {
-        return Err("".to_owned());
-    });
-    let git_namespace = some_or!(repo_update.get("GIT_NAMESPACE"), {
-        return Err("".to_owned());
-    });
+    let refname = repo_update.get("refname").ok_or(josh_error(""))?;
+    let viewstr = repo_update.get("viewstr").ok_or(josh_error(""))?;
+    let old = repo_update.get("old").ok_or(josh_error(""))?;
+    let new = repo_update.get("new").ok_or(josh_error(""))?;
+    let username = repo_update.get("username").ok_or(josh_error(""))?;
+    let password = repo_update.get("password").ok_or(josh_error(""))?;
+    let remote_url = repo_update.get("remote_url").ok_or(josh_error(""))?;
+    let base_ns = repo_update.get("base_ns").ok_or(josh_error(""))?;
+    let git_dir = repo_update.get("GIT_DIR").ok_or(josh_error(""))?;
+    let git_ns = repo_update.get("GIT_NAMESPACE").ok_or(josh_error(""))?;
     debug!("REPO_UPDATE env ok");
 
     let scratch = scratch::new(&Path::new(&git_dir));
-    /* let mut bm = view_maps::ViewMaps::new_downstream(backward_maps.clone()); */
-    /* let mut fm = view_maps::ViewMaps::new_downstream(forward_maps.clone()); */
 
-    let old = Oid::from_str(old).unwrap();
+    let old = Oid::from_str(old)?;
 
-    let (baseref, push_to, options) = baseref_and_options(refname);
+    let (baseref, push_to, options) = baseref_and_options(refname)?;
     let josh_merge = options.contains(&"josh-merge".to_string());
 
     debug!("push options: {:?}", options);
     debug!("XXX josh-merge: {:?}", josh_merge);
 
     let old = if old == Oid::zero() {
-        let rev = format!("refs/namespaces/{}/{}", git_namespace, &baseref);
+        let rev = format!("refs/namespaces/{}/{}", git_ns, &baseref);
         let oid = if let Ok(x) = scratch.revparse_single(&rev) {
             x.id()
         } else {
@@ -103,7 +83,7 @@ pub fn process_repo_update(
     };
 
     let viewobj = views::build_view(&scratch, &viewstr);
-    let new_oid = Oid::from_str(&new).expect("can't parse new OID");
+    let new_oid = Oid::from_str(&new)?;
     let backward_new_oid = {
         debug!("=== MORE");
 
@@ -121,54 +101,36 @@ pub fn process_repo_update(
                 rewritten
             }
             UnapplyView::BranchDoesNotExist => {
-                return Err("branch does not exist on remote".to_owned());
+                return Err(josh_error("branch does not exist on remote"));
             }
             UnapplyView::RejectMerge(parent_count) => {
-                return Err(format!(
+                return Err(josh_error(&format!(
                     "rejecting merge with {} parents",
                     parent_count
-                ));
+                )));
             }
         }
     };
 
-    /* if !update_ws { */
-    /*     let forward_transformed = viewobj.apply_view_to_commit( */
-    /*         &scratch, */
-    /*         &scratch.find_commit(backward_new_oid).unwrap(), */
-    /*         &mut fm, */
-    /*         &mut bm, */
-    /*         &mut HashMap::new(), */
-    /*     ); */
-
-    /*     if new_oid != forward_transformed { */
-    /*         return Err("rewritten Mismatch".to_owned()); */
-    /*     } */
-    /* } */
-
     let oid_to_push = if josh_merge {
         let rev = format!("refs/namespaces/{}/{}", &base_ns, &baseref);
-        let backward_commit = scratch.find_commit(backward_new_oid).unwrap();
+        let backward_commit = scratch.find_commit(backward_new_oid)?;
         if let Ok(Ok(base_commit)) =
             scratch.revparse_single(&rev).map(|x| x.peel_to_commit())
         {
             let merged_tree = scratch
-                .merge_commits(&base_commit, &backward_commit, None)
-                .unwrap()
-                .write_tree_to(&scratch)
-                .unwrap();
-            scratch
-                .commit(
-                    None,
-                    &backward_commit.author(),
-                    &backward_commit.committer(),
-                    &format!("Merge from {}", &viewstr),
-                    &scratch.find_tree(merged_tree).unwrap(),
-                    &[&base_commit, &backward_commit],
-                )
-                .unwrap()
+                .merge_commits(&base_commit, &backward_commit, None)?
+                .write_tree_to(&scratch)?;
+            scratch.commit(
+                None,
+                &backward_commit.author(),
+                &backward_commit.committer(),
+                &format!("Merge from {}", &viewstr),
+                &scratch.find_tree(merged_tree)?,
+                &[&base_commit, &backward_commit],
+            )?
         } else {
-            return Err("josh_merge failed".to_owned());
+            return Err(josh_error("josh_merge failed"));
         }
     } else {
         backward_new_oid
@@ -184,26 +146,18 @@ pub fn process_repo_update(
         push_to
     };
 
-    let stderr = ok_or!(
-        base_repo::push_head_url(
-            &scratch,
-            oid_to_push,
-            &push_with_options,
-            &remote_url,
-            &username,
-            &password,
-            &git_namespace,
-        ),
-        {
-            warn!("REPO_UPDATE push fail");
-            return Err("".to_owned());
-        }
+    return base_repo::push_head_url(
+        &scratch,
+        oid_to_push,
+        &push_with_options,
+        &remote_url,
+        &username,
+        &password,
+        &git_ns,
     );
-
-    return Ok(stderr);
 }
 
-pub fn update_hook(refname: &str, old: &str, new: &str) -> i32 {
+pub fn update_hook(refname: &str, old: &str, new: &str) -> JoshResult<i32> {
     let mut repo_update = RepoUpdate::new();
     repo_update.insert("new".to_owned(), new.to_owned());
     repo_update.insert("old".to_owned(), old.to_owned());
@@ -219,23 +173,22 @@ pub fn update_hook(refname: &str, old: &str, new: &str) -> i32 {
     ]
     .iter()
     {
-        repo_update.insert(
-            name.to_string(),
-            env::var(&env_name).expect(&format!("{} not set", &env_name)),
-        );
+        repo_update.insert(name.to_string(), env::var(&env_name)?);
     }
 
-    let scratch = scratch::new(&Path::new(
-        &env::var("GIT_DIR").expect("GIT_DIR not set"),
-    ));
+    let scratch = scratch::new(&Path::new(&env::var("GIT_DIR")?));
     repo_update.insert(
         "GIT_DIR".to_owned(),
-        scratch.path().to_str().unwrap().to_owned(),
+        scratch
+            .path()
+            .to_str()
+            .ok_or(josh_error("GIT_DIR not set"))?
+            .to_owned(),
     );
 
-    let port = env::var("JOSH_PORT").expect("JOSH_PORT not set");
+    let port = env::var("JOSH_PORT")?;
 
-    let client = reqwest::Client::builder().timeout(None).build().unwrap();
+    let client = reqwest::Client::builder().timeout(None).build()?;
     let resp = client
         .post(&format!("http://localhost:{}/repo_update", port))
         .json(&repo_update)
@@ -249,14 +202,14 @@ pub fn update_hook(refname: &str, old: &str, new: &str) -> i32 {
                 println!("no upstream response");
             }
             if r.status().is_success() {
-                return 0;
+                return Ok(0);
             } else {
-                return 1;
+                return Ok(1);
             }
         }
         Err(err) => {
             warn!("/repo_update request failed {:?}", err);
         }
     };
-    return 1;
+    return Ok(1);
 }

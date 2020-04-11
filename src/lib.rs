@@ -63,3 +63,20 @@ fn empty_tree_id() -> git2::Oid {
 pub fn to_ns(path: &str) -> String {
     return path.trim_matches('/').replace("/", "/refs/namespaces/");
 }
+
+#[derive(Debug, Clone)]
+pub struct JoshError(pub String);
+fn josh_error(s: &str) -> JoshError {
+    JoshError(s.to_owned())
+}
+pub type JoshResult<T> = std::result::Result<T, JoshError>;
+
+impl<T> std::convert::From<T> for JoshError
+where
+    T: std::error::Error,
+{
+    fn from(item: T) -> Self {
+        tracing::error!("JoshError: {:?}", item);
+        josh_error("converted")
+    }
+}

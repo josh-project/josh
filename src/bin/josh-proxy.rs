@@ -63,20 +63,6 @@ use tracing::{debug, info, span, trace, warn, Level};
 
 use tracing::*;
 
-#[derive(Debug, Clone)]
-struct ProxyError(i32);
-type ProxyResult<T> = std::result::Result<T, ProxyError>;
-
-impl<T> std::convert::From<T> for ProxyError
-where
-    T: std::error::Error,
-{
-    fn from(item: T) -> Self {
-        error!("ProxyError: {:?}", item);
-        ProxyError(0)
-    }
-}
-
 lazy_static! {
     static ref VIEW_REGEX: Regex =
         Regex::new(r"(?P<prefix>/.*[.]git)(?P<headref>@[^:!]*)?(?P<view>[:!].*)[.](?P<ending>(?:git)|(?:json))(?P<pathinfo>/.*)?")
@@ -162,7 +148,10 @@ fn fetch_upstream(
     };
 
     let do_fetch = if credentials_cached_ok
-        && !fetching.write().unwrap().insert(credentials_hashed.clone())
+        && !fetching
+            .write()
+            .map(|mut x| x.insert(credentials_hashed.clone()))
+            .unwrap_or(true)
     {
         Box::new(
             http.compute_pool
@@ -191,12 +180,18 @@ fn fetch_upstream(
                     &password,
                 )
                 .and_then(|_| {
-                    fetching.write().unwrap().remove(&credentials_hashed);
+                    if let Ok(mut x) = fetching.write() {
+                        x.remove(&credentials_hashed);
+                    } else {
+                        error!("lock poisoned");
+                    }
                     if let Ok(mut cc) = credential_cache.write() {
                         cc.insert(
                             credentials_hashed,
                             std::time::Instant::now(),
                         );
+                    } else {
+                        error!("lock poisoned");
                     }
                     Ok(())
                 })
@@ -315,14 +310,13 @@ fn body2string(body: hyper::Chunk) -> String {
 
 fn gerrit_api(
     client: HttpClient,
-    endpoint: String,
+    base_url: &str,
+    endpoint: &str,
     query: String,
 ) -> Box<dyn Future<Item = serde_json::Value, Error = hyper::Error>> {
-    let uri = hyper::Uri::from_str(&format!(
-        "https://gerrit.int.esrlabs.com{}?{}",
-        endpoint, query
-    ))
-    .unwrap();
+    let uri =
+        hyper::Uri::from_str(&format!("{}/{}?{}", base_url, endpoint, query))
+            .unwrap();
 
     println!("gerrit_api: {:?}", &uri);
 
@@ -456,7 +450,7 @@ fn call_service(
                             .with_status(hyper::StatusCode::Ok);
                         return Box::new(futures::future::ok(response));
                     }
-                    if let Err(stderr) = result {
+                    if let Err(josh::JoshError(stderr)) = result {
                         let response = Response::new()
                             .with_body(stderr)
                             .with_status(hyper::StatusCode::BadRequest);
@@ -489,13 +483,15 @@ fn call_service(
 
         let get_comments = gerrit_api(
             client.clone(),
-            format!("/a/changes/{}/comments", change),
+            &service.base_url,
+            &format!("/a/changes/{}/comments", change),
             format!(""),
         );
 
         let r = gerrit_api(
             client.clone(),
-            "/a/changes/".to_string(),
+            &service.base_url,
+            "/a/changes/",
             format!("q=change:{}&o=ALL_REVISIONS&o=ALL_COMMITS", change),
         )
         .and_then(move |change_json| {
@@ -740,8 +736,8 @@ fn parse_args(args: &[String]) -> clap::ArgMatches {
         .get_matches_from(args)
 }
 
-fn run_proxy(args: Vec<String>) -> ProxyResult<i32> {
-    tracing_log::LogTracer::init().expect("can't init LogTracer");
+fn run_proxy(args: Vec<String>) -> josh::JoshResult<i32> {
+    tracing_log::LogTracer::init()?;
 
     /* let tracer = sdk::Provider::default().get_tracer("josh-proxy"); */
     /* let layer = OpentelemetryLayer::with_tracer(tracer); */
@@ -755,7 +751,7 @@ fn run_proxy(args: Vec<String>) -> ProxyResult<i32> {
         "josh_proxy=trace,josh=trace",
     );
     let subscriber = filter.with_subscriber(subscriber);
-    tracing::subscriber::set_global_default(subscriber).expect("failed to set");
+    tracing::subscriber::set_global_default(subscriber)?;
 
     debug!("RUN PROXY {:?}", &args);
 
@@ -775,7 +771,7 @@ fn run_proxy(args: Vec<String>) -> ProxyResult<i32> {
             args.value_of("local").expect("missing local directory"),
         ),
         &args.value_of("remote").expect("missing remote repo url"),
-    );
+    )?;
 
     let known_views = service.known_views.clone();
     let br_path = service.base_path.clone();
@@ -882,7 +878,7 @@ fn run_proxy(args: Vec<String>) -> ProxyResult<i32> {
         }
     });
 
-    core.run(futures::future::empty::<(), ProxyError>())?;
+    core.run(futures::future::empty::<(), josh::JoshError>())?;
 
     Ok(0)
 }
@@ -893,7 +889,7 @@ fn run_http_server(
     port: String,
     local: &Path,
     remote: &str,
-) -> HttpService {
+) -> josh::JoshResult<HttpService> {
     let cghttp = HttpService {
         handle: core.handle(),
         fetch_push_pool: CpuPool::new(8),
@@ -923,9 +919,10 @@ fn run_http_server(
     let service = cghttp.clone();
 
     let server_handle = core.handle();
-    let serve = Http::new()
-        .serve_addr_handle(&addr, &server_handle, move || Ok(cghttp.clone()))
-        .unwrap();
+    let serve =
+        Http::new().serve_addr_handle(&addr, &server_handle, move || {
+            Ok(cghttp.clone())
+        })?;
 
     let h2 = server_handle.clone();
     server_handle.spawn(
@@ -940,7 +937,7 @@ fn run_http_server(
             .map_err(|_| ()),
     );
 
-    return service;
+    return Ok(service);
 }
 
 fn to_ns(path: &str) -> String {
@@ -958,7 +955,10 @@ fn main() {
 
     if args[0].ends_with("/update") {
         println!("josh-proxy");
-        exit(virtual_repo::update_hook(&args[1], &args[2], &args[3]));
+        exit(
+            virtual_repo::update_hook(&args[1], &args[2], &args[3])
+                .unwrap_or(1),
+        );
     }
     exit(run_proxy(args).unwrap_or(1));
 }
