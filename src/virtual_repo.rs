@@ -95,7 +95,7 @@ pub fn process_repo_update(
             &*viewobj,
             old,
             new_oid,
-        ) {
+        )? {
             UnapplyView::Done(rewritten) => {
                 debug!("rewritten");
                 rewritten

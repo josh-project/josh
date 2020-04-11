@@ -33,27 +33,21 @@ pub fn rewrite(
     base: &git2::Commit,
     parents: &[&git2::Commit],
     tree: &git2::Tree,
-) -> git2::Oid {
-    if base.tree().unwrap().id() == tree.id()
-        && all_equal(base.parents(), parents)
-    {
+) -> super::JoshResult<git2::Oid> {
+    if base.tree()?.id() == tree.id() && all_equal(base.parents(), parents) {
         // Looks like an optimization, but in fact serves to not change the commit in case
         // it was signed.
-        return base.id();
+        return Ok(base.id());
     }
 
-    let result = repo
-        .commit(
-            None,
-            &base.author(),
-            &base.committer(),
-            &base.message_raw().unwrap_or("no message"),
-            tree,
-            parents,
-        )
-        .expect("rewrite: can't commit {:?}");
-
-    result
+    return Ok(repo.commit(
+        None,
+        &base.author(),
+        &base.committer(),
+        &base.message_raw().unwrap_or("no message"),
+        tree,
+        parents,
+    )?);
 }
 
 pub fn find_all_views(reference: &git2::Reference) -> HashSet<String> {
@@ -90,16 +84,15 @@ pub fn unapply_view(
     viewobj: &dyn views::View,
     old: git2::Oid,
     new: git2::Oid,
-) -> UnapplyView {
+) -> super::JoshResult<UnapplyView> {
     let trace_s =
         span!( Level::DEBUG, "unapply_view", repo = ?repo.path(), ?old, ?new);
     let _e = trace_s.enter();
 
     let walk = {
-        let mut walk = repo.revwalk().expect("walk: can't create revwalk");
-        walk.set_sorting(git2::Sort::REVERSE | git2::Sort::TOPOLOGICAL)
-            .expect("can't set sorting");
-        walk.push(new).expect("walk.push");
+        let mut walk = repo.revwalk()?;
+        walk.set_sorting(git2::Sort::REVERSE | git2::Sort::TOPOLOGICAL)?;
+        walk.push(new)?;
         if let Ok(_) = walk.hide(old) {
             trace!("walk: hidden {}", old);
         } else {
@@ -145,32 +138,35 @@ pub fn unapply_view(
             .collect();
 
         let new_tree = match new_trees.len() {
-            1 => repo
-                .find_tree(*new_trees.iter().next().unwrap())
-                .expect("can't find rewritten tree"),
+            1 => repo.find_tree(
+                *new_trees
+                    .iter()
+                    .next()
+                    .ok_or(super::josh_error("iter.next"))?,
+            )?,
             0 => repo
                 // 0 means the history is unrelated. Pushing it will fail if we are not
                 // dealing with either a force push or a push with the "josh-merge" option set.
                 .find_tree(viewobj.unapply(
                     &repo,
                     &tree,
-                    &repo.find_tree(empty_tree_id()).unwrap(),
-                ))
-                .unwrap(),
+                    &repo.find_tree(empty_tree_id())?,
+                ))?,
             parent_count => {
                 // This is a merge commit where the parents in the upstream repo
                 // have differences outside of the current view.
                 // It is unclear what base tree to pick in this case.
                 info!("rejecting merge");
-                return UnapplyView::RejectMerge(parent_count);
+                return Ok(UnapplyView::RejectMerge(parent_count));
             }
         };
 
-        ret = rewrite(&repo, &module_commit, &original_parents_refs, &new_tree);
+        ret =
+            rewrite(&repo, &module_commit, &original_parents_refs, &new_tree)?;
         bm.set(&viewobj.viewstr(), module_commit.id(), ret);
     }
 
-    return UnapplyView::Done(ret);
+    return Ok(UnapplyView::Done(ret));
 }
 
 pub fn new(path: &Path) -> git2::Repository {

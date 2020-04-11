@@ -9,21 +9,7 @@ use std::collections::HashSet;
 use std::path::Path;
 use std::path::PathBuf;
 use std::str;
-use tracing::{error, warn};
-
-#[derive(Debug, Clone)]
-pub struct ViewError(i32);
-pub type ViewResult<T> = std::result::Result<T, ViewError>;
-
-impl<T> std::convert::From<T> for ViewError
-where
-    T: std::error::Error,
-{
-    fn from(item: T) -> Self {
-        error!("ViewError: {:?}", item);
-        ViewError(0)
-    }
-}
+use tracing::warn;
 
 fn filter_parents<'a>(
     original_commit: &'a git2::Commit,
@@ -50,7 +36,7 @@ fn create_transformed_commit(
     commit: &git2::Commit,
     transformed_parents_ids: Vec<git2::Oid>,
     new_tree: &git2::Tree,
-) -> ViewResult<git2::Oid> {
+) -> super::JoshResult<git2::Oid> {
     let transformed_parents: std::result::Result<Vec<_>, _> =
         transformed_parents_ids
             .iter()
@@ -85,12 +71,12 @@ fn create_transformed_commit(
         return Ok(transformed_parents[0].id());
     }
 
-    return Ok(scratch::rewrite(
+    return scratch::rewrite(
         &repo,
         &commit,
         &filtered_transformed_parent_refs,
         &new_tree,
-    ));
+    );
 }
 
 pub trait View {
@@ -101,7 +87,7 @@ pub trait View {
         forward_maps: &mut ViewMaps,
         backward_maps: &mut ViewMaps,
         _meta: &mut HashMap<String, String>,
-    ) -> ViewResult<git2::Oid> {
+    ) -> super::JoshResult<git2::Oid> {
         if forward_maps.has(&repo, &self.viewstr(), commit.id()) {
             return Ok(forward_maps.get(&self.viewstr(), commit.id()));
         }
@@ -171,7 +157,7 @@ impl View for NopView {
         _forward_maps: &mut ViewMaps,
         _backward_maps: &mut ViewMaps,
         _meta: &mut HashMap<String, String>,
-    ) -> ViewResult<git2::Oid> {
+    ) -> super::JoshResult<git2::Oid> {
         return Ok(commit.id());
     }
 
@@ -208,7 +194,7 @@ impl View for EmptyView {
         _forward_maps: &mut ViewMaps,
         _backward_maps: &mut ViewMaps,
         _meta: &mut HashMap<String, String>,
-    ) -> ViewResult<git2::Oid> {
+    ) -> super::JoshResult<git2::Oid> {
         return Ok(git2::Oid::zero());
     }
     fn transform_parents(
@@ -276,16 +262,16 @@ impl View for CutoffView {
         _forward_maps: &mut ViewMaps,
         _backward_maps: &mut ViewMaps,
         _meta: &mut HashMap<String, String>,
-    ) -> ViewResult<git2::Oid> {
+    ) -> super::JoshResult<git2::Oid> {
         /* if commit_id == self.rev { */
         /*     return (tp.0, vec![]); */
         /* } */
-        return Ok(scratch::rewrite(
+        return scratch::rewrite(
             &repo,
             &commit,
             &vec![],
             &commit.tree().unwrap(),
-        ));
+        );
     }
 
     fn apply_to_tree(
@@ -344,7 +330,7 @@ impl View for ChainView {
         forward_maps: &mut ViewMaps,
         backward_maps: &mut ViewMaps,
         _meta: &mut HashMap<String, String>,
-    ) -> ViewResult<git2::Oid> {
+    ) -> super::JoshResult<git2::Oid> {
         let r = self.first.apply_view_to_commit(
             repo,
             commit,
@@ -838,7 +824,7 @@ impl WorkspaceView {
         repo: &git2::Repository,
         tree_and_parents: (git2::Oid, Vec<git2::Oid>),
         commit_id: git2::Oid,
-    ) -> ViewResult<(git2::Oid, Vec<git2::Oid>)> {
+    ) -> super::JoshResult<(git2::Oid, Vec<git2::Oid>)> {
         let (tree, parents) = tree_and_parents;
         let full_tree = repo.find_tree(tree).unwrap();
 
@@ -961,7 +947,7 @@ impl View for WorkspaceView {
         forward_maps: &mut ViewMaps,
         backward_maps: &mut ViewMaps,
         _meta: &mut HashMap<String, String>,
-    ) -> ViewResult<git2::Oid> {
+    ) -> super::JoshResult<git2::Oid> {
         if forward_maps.has(repo, &self.viewstr(), commit.id()) {
             return Ok(forward_maps.get(&self.viewstr(), commit.id()));
         }

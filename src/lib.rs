@@ -66,7 +66,7 @@ pub fn to_ns(path: &str) -> String {
 
 #[derive(Debug, Clone)]
 pub struct JoshError(pub String);
-fn josh_error(s: &str) -> JoshError {
+pub fn josh_error(s: &str) -> JoshError {
     JoshError(s.to_owned())
 }
 pub type JoshResult<T> = std::result::Result<T, JoshError>;

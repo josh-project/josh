@@ -27,7 +27,7 @@ lazy_static! {
             .expect("can't compile regex");
 }
 
-fn run_filter(args: Vec<String>) -> i32 {
+fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
     let args = clap::App::new("josh-filter")
         .arg(clap::Arg::with_name("file").long("file").takes_value(true))
         .arg(clap::Arg::with_name("from_to").takes_value(true))
@@ -47,10 +47,10 @@ fn run_filter(args: Vec<String>) -> i32 {
         let v =
             option_env!("GIT_DESCRIBE").unwrap_or(env!("CARGO_PKG_VERSION"));
         println!("Version: {}", v);
-        return 0;
+        return Ok(0);
     }
 
-    let repo = git2::Repository::open_from_env().unwrap();
+    let repo = git2::Repository::open_from_env()?;
     let mut fm = view_maps::try_load(&repo.path().join("josh_forward_maps"));
     let backward_maps = Arc::new(RwLock::new(view_maps::try_load(
         &repo.path().join("josh_backward_maps"),
@@ -70,11 +70,11 @@ fn run_filter(args: Vec<String>) -> i32 {
 
         let src = splitted
             .next()
-            .expect("from_to must contain \":\"")
+            .ok_or(josh::josh_error("from_to must contain \":\""))?
             .to_owned();
         let target = splitted
             .next()
-            .expect("from_to must contain \":\"")
+            .ok_or(josh::josh_error("from_to must contain \":\""))?
             .to_owned();
 
         let viewstr = caps.name("spec").unwrap().as_str().trim().to_owned();
@@ -115,10 +115,9 @@ fn run_filter(args: Vec<String>) -> i32 {
             target.clone()
         };
         let src = repo
-            .revparse_ext(&src)
-            .expect("reference not found 1")
+            .revparse_ext(&src)?
             .1
-            .expect("reference not found")
+            .ok_or(josh::josh_error("reference not found"))?
             .name()
             .unwrap()
             .to_string();
@@ -141,14 +140,13 @@ fn run_filter(args: Vec<String>) -> i32 {
                 &*viewobj,
                 old,
                 new,
-            ) {
+            )? {
                 josh::UnapplyView::Done(rewritten) => {
-                    repo.reference(&src, rewritten, true, "unapply_view")
-                        .expect("can't create reference");
+                    repo.reference(&src, rewritten, true, "unapply_view")?;
                 }
                 _ => {
                     /* debug!("rewritten ERROR"); */
-                    return 1;
+                    return Ok(1);
                 }
             }
         }
@@ -159,7 +157,7 @@ fn run_filter(args: Vec<String>) -> i32 {
     view_maps::persist(&*bm, &repo.path().join("josh_backward_maps"));
     view_maps::persist(&fm, &repo.path().join("josh_forward_maps"));
 
-    return 0;
+    return Ok(0);
 }
 
 fn main() {
@@ -171,5 +169,5 @@ fn main() {
         args
     };
 
-    exit(run_filter(args));
+    exit(run_filter(args).unwrap_or(1));
 }
