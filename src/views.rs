@@ -907,7 +907,7 @@ fn find_tree_or_error<'a>(
     viewstr: &str,
 ) -> git2::Tree<'a> {
     ok_or!(repo.find_tree(new_tree), {
-        warn!(
+        debug!(
                     "View.apply_view_to_commit: can't find tree: {:?} viewstr: {:?}, original-commit: {:?}, message: {:?}, header: {:?}, obj.kind: {:?}",
                     new_tree,
                     viewstr,

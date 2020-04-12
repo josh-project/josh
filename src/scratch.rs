@@ -156,7 +156,7 @@ pub fn unapply_view(
                 // This is a merge commit where the parents in the upstream repo
                 // have differences outside of the current view.
                 // It is unclear what base tree to pick in this case.
-                info!("rejecting merge");
+                warn!("rejecting merge");
                 return Ok(UnapplyView::RejectMerge(parent_count));
             }
         };

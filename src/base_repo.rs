@@ -198,12 +198,12 @@ fn install_josh_hook(scratch_dir: &Path) {
 }
 
 pub fn create_local(path: &Path) {
-    info!("init base repo: {:?}", path);
+    debug!("init base repo: {:?}", path);
     fs::create_dir_all(path).expect("can't create_dir_all");
 
     match git2::Repository::open(path) {
         Ok(_) => {
-            info!("repo exists");
+            debug!("repo exists");
             install_josh_hook(path);
             return;
         }

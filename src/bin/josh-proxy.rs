@@ -817,7 +817,7 @@ fn run_proxy(args: Vec<String>) -> josh::JoshResult<i32> {
                     let stats = fm.stats();
                     total += fm.stats()["total"];
                     total += bm.stats()["total"];
-                    info!(
+                    debug!(
                         "forward_maps stats: {}",
                         toml::to_string_pretty(&stats).unwrap()
                     );
