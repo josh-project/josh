@@ -1,30 +1,33 @@
-#![deny(warnings)]
 #![allow(clippy::needless_return)]
 extern crate clap;
 extern crate futures;
-extern crate futures_cpupool;
-extern crate git2;
 extern crate hyper;
-extern crate josh;
-extern crate lazy_static;
-extern crate regex;
 extern crate tokio_core;
+extern crate tokio_io;
+extern crate tokio_process;
 
-#[macro_use]
-extern crate log;
 
-use self::futures::future::Future;
+
 use self::futures::Stream;
+use self::futures::future::Future;
+use self::hyper::header::ContentEncoding;
+use self::hyper::header::ContentLength;
+use self::hyper::header::ContentType;
 use self::hyper::header::{Authorization, Basic};
 use self::hyper::server::Http;
 use self::hyper::server::{Request, Response, Service};
-use josh::*;
 use std::env;
+use std::io::BufRead;
+use std::io::Read;
+use std::io;
 use std::net;
 use std::path::Path;
 use std::path::PathBuf;
-use std::process::exit;
 use std::process::Command;
+use std::process::Stdio;
+use std::process::exit;
+use std::str::FromStr;
+use tokio_process::CommandExt;
 
 pub struct ServeTestGit {
     handle: tokio_core::reactor::Handle,
@@ -93,7 +96,7 @@ impl Service for ServeTestGit {
         cmd.env("GIT_HTTP_EXPORT_ALL", "");
         cmd.env("PATH_INFO", req.uri().path());
 
-        cgi::do_cgi(req, cmd, handle.clone())
+        do_cgi(req, cmd, handle.clone())
     }
 }
 
@@ -144,9 +147,9 @@ fn run_test_server(
 }
 
 fn run_server(args: Vec<String>) -> i32 {
-    debug!("RUN HTTP SERVER {:?}", &args);
+    println!("RUN HTTP SERVER {:?}", &args);
 
-    debug!("args: {:?}", args);
+    println!("args: {:?}", args);
 
     let args = clap::App::new("josh-test-server")
         .arg(
@@ -193,4 +196,106 @@ fn main() {
     };
 
     exit(run_server(args));
+}
+
+
+fn do_cgi(
+    req: Request,
+    cmd: Command,
+    handle: tokio_core::reactor::Handle,
+) -> Box<dyn Future<Item = Response, Error = hyper::Error>> {
+    let mut cmd = cmd;
+    cmd.stdout(Stdio::piped());
+    cmd.stderr(Stdio::inherit());
+    cmd.stdin(Stdio::piped());
+    cmd.env("SERVER_SOFTWARE", "hyper")
+        .env("SERVER_NAME", "localhost") // TODO
+        .env("GATEWAY_INTERFACE", "CGI/1.1")
+        .env("SERVER_PROTOCOL", "HTTP/1.1") // TODO
+        .env("SERVER_PORT", "80") // TODO
+        .env("REQUEST_METHOD", format!("{}", req.method()))
+        .env("SCRIPT_NAME", "") // TODO
+        .env("QUERY_STRING", req.query().unwrap_or(""))
+        .env("REMOTE_ADDR", "") // TODO
+        .env("AUTH_TYPE", "") // TODO
+        .env("REMOTE_USER", "") // TODO
+        .env(
+            "CONTENT_TYPE",
+            &format!(
+                "{}",
+                req.headers().get().unwrap_or(&ContentType::plaintext())
+            ),
+        )
+        .env(
+            "HTTP_CONTENT_ENCODING",
+            &format!(
+                "{}",
+                req.headers().get().unwrap_or(&ContentEncoding(vec![]))
+            ),
+        )
+        .env(
+            "CONTENT_LENGTH",
+            &format!("{}", req.headers().get().unwrap_or(&ContentLength(0))),
+        );
+
+    let mut child = cmd
+        .spawn_async_with_handle(&handle.new_tokio_handle())
+        .expect("can't spawn CGI command");
+
+    let r = req.body().concat2().and_then(move |body| {
+        tokio_io::io::write_all(child.stdin().take().unwrap(), body)
+            .and_then(move |_| {
+                child
+                    .wait_with_output()
+                    .map(build_response)
+                    .map_err(|e| e.into())
+            })
+            .map_err(|e| e.into())
+    });
+
+    Box::new(r)
+}
+
+fn build_response(command_result: std::process::Output) -> Response {
+    let mut stdout = io::BufReader::new(command_result.stdout.as_slice());
+    let mut stderr = io::BufReader::new(command_result.stderr.as_slice());
+
+    let mut response = Response::new();
+
+    let mut headers = vec![];
+    for line in stdout.by_ref().lines() {
+        if line.as_ref().unwrap().is_empty() {
+            break;
+        }
+        let l: Vec<&str> =
+            line.as_ref().unwrap().as_str().splitn(2, ": ").collect();
+        for x in &l {
+            headers.push(x.to_string());
+        }
+        if l[0] == "Status" {
+            response.set_status(hyper::StatusCode::Unregistered(
+                u16::from_str(l[1].split(" ").next().unwrap()).unwrap(),
+            ));
+        } else {
+            response
+                .headers_mut()
+                .set_raw(l[0].to_string(), l[1].to_string());
+        }
+    }
+
+    let mut data = vec![];
+    stdout
+        .read_to_end(&mut data)
+        .expect("can't read command output");
+
+    let mut stderrdata = vec![];
+    stderr
+        .read_to_end(&mut stderrdata)
+        .expect("can't read command output");
+
+    let err = String::from_utf8_lossy(&stderrdata);
+
+    response.set_body(hyper::Chunk::from(data));
+
+    response
 }

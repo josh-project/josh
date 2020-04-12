@@ -9,6 +9,9 @@ keywords = ["git", "monorepo", "workflow", "scm"]
 readme = "README.md"
 edition = "2018"
 
+[workspace]
+members = ["josh-test-server"]
+
 [dependencies]
 git2 = {version = "0.13", default-features = false}
 clap = "2"
