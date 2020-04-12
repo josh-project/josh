@@ -1,5 +1,7 @@
+use super::empty_tree;
 use super::empty_tree_id;
 use super::scratch;
+use super::view_maps;
 use super::view_maps::ViewMaps;
 use pest::Parser;
 use std::collections::HashMap;
@@ -246,7 +248,7 @@ impl Filter for CutoffView {
         return commit
             .parents()
             .map(|x| {
-                scratch::apply_view_cached(
+                apply_view_cached(
                     repo,
                     self,
                     x.id(),
@@ -307,7 +309,7 @@ impl Filter for ChainView {
         return commit
             .parents()
             .map(|x| {
-                scratch::apply_view_cached(
+                apply_view_cached(
                     repo,
                     self,
                     x.id(),
@@ -355,7 +357,7 @@ impl Filter for ChainView {
         if let Ok(t) = repo.find_tree(r) {
             return self.second.apply_to_tree(&repo, &t, commit_id);
         }
-        return repo.treebuilder(None).unwrap().write().unwrap();
+        return empty_tree_id();
     }
 
     fn unapply(
@@ -423,7 +425,7 @@ impl Filter for SubdirView {
         return commit
             .parents()
             .map(|x| {
-                scratch::apply_view_cached(
+                apply_view_cached(
                     repo,
                     self,
                     x.id(),
@@ -474,7 +476,7 @@ impl Filter for PrefixView {
         return commit
             .parents()
             .map(|x| {
-                scratch::apply_view_cached(
+                apply_view_cached(
                     repo,
                     self,
                     x.id(),
@@ -490,12 +492,7 @@ impl Filter for PrefixView {
         tree: &git2::Tree,
         _commit_id: git2::Oid,
     ) -> git2::Oid {
-        replace_subtree(
-            &repo,
-            &self.prefix,
-            tree.id(),
-            &repo.find_tree(empty_tree_id()).unwrap(),
-        )
+        replace_subtree(&repo, &self.prefix, tree.id(), &empty_tree(&repo))
     }
 
     fn unapply(
@@ -530,7 +527,7 @@ impl Filter for HideView {
         return commit
             .parents()
             .map(|x| {
-                scratch::apply_view_cached(
+                apply_view_cached(
                     repo,
                     self,
                     x.id(),
@@ -582,7 +579,7 @@ impl Filter for InfoFileView {
         return commit
             .parents()
             .map(|x| {
-                scratch::apply_view_cached(
+                apply_view_cached(
                     repo,
                     self,
                     x.id(),
@@ -671,7 +668,7 @@ impl Filter for CombineView {
         return commit
             .parents()
             .map(|x| {
-                scratch::apply_view_cached(
+                apply_view_cached(
                     repo,
                     self,
                     x.id(),
@@ -840,7 +837,7 @@ impl WorkspaceView {
 
         let mut transformed_parents_ids = vec![];
         for parent in parents.iter() {
-            let p = scratch::apply_view_cached(
+            let p = apply_view_cached(
                 repo,
                 self,
                 *parent,
@@ -914,7 +911,7 @@ fn find_tree_or_error<'a>(
                     commit.map(|x| x.message()),
                     commit.map(|x| x.raw_header()),
                     repo.find_object(new_tree, None).ok().map(|x| x.kind()));
-        return repo.find_tree(empty_tree_id()).unwrap();
+        return empty_tree(&repo);
     })
 }
 
@@ -929,7 +926,7 @@ impl Filter for WorkspaceView {
         return commit
             .parents()
             .map(|x| {
-                scratch::apply_view_cached(
+                apply_view_cached(
                     repo,
                     self,
                     x.id(),
@@ -1177,8 +1174,7 @@ fn replace_subtree(
         let st = if let Some(st) = get_subtree(&full_tree, path) {
             repo.find_tree(st).unwrap()
         } else {
-            let empty = repo.treebuilder(None).unwrap().write().unwrap();
-            repo.find_tree(empty).unwrap()
+            empty_tree(&repo)
         };
 
         let tree = repo
@@ -1187,4 +1183,78 @@ fn replace_subtree(
 
         return replace_subtree(&repo, path, tree.id(), full_tree);
     }
+}
+
+fn apply_view_cached(
+    repo: &git2::Repository,
+    view: &dyn Filter,
+    newrev: git2::Oid,
+    forward_maps: &mut view_maps::ViewMaps,
+    backward_maps: &mut view_maps::ViewMaps,
+) -> super::JoshResult<git2::Oid> {
+    if forward_maps.has(repo, &view.filter_spec(), newrev) {
+        return Ok(forward_maps.get(&view.filter_spec(), newrev));
+    }
+
+    let trace_s = tracing::span!(tracing::Level::TRACE, "apply_view_cached", filter_spec = ?view.filter_spec());
+
+    let walk = {
+        let mut walk = repo.revwalk()?;
+        walk.set_sorting(git2::Sort::REVERSE | git2::Sort::TOPOLOGICAL)?;
+        walk.push(newrev)?;
+        walk
+    };
+
+    let mut in_commit_count = 0;
+    let mut out_commit_count = 0;
+    let mut empty_tree_count = 0;
+    for original_commit_id in walk {
+        in_commit_count += 1;
+
+        let original_commit = repo.find_commit(original_commit_id?)?;
+
+        let filtered_commit = ok_or!(
+            view.apply_to_commit(
+                &repo,
+                &original_commit,
+                forward_maps,
+                backward_maps,
+                &mut HashMap::new(),
+            ),
+            {
+                tracing::error!("cannot apply_to_commit");
+                git2::Oid::zero()
+            }
+        );
+
+        if filtered_commit == git2::Oid::zero() {
+            empty_tree_count += 1;
+        }
+        forward_maps.set(
+            &view.filter_spec(),
+            original_commit.id(),
+            filtered_commit,
+        );
+        backward_maps.set(
+            &view.filter_spec(),
+            filtered_commit,
+            original_commit.id(),
+        );
+        out_commit_count += 1;
+    }
+
+    if !forward_maps.has(&repo, &view.filter_spec(), newrev) {
+        forward_maps.set(&view.filter_spec(), newrev, git2::Oid::zero());
+    }
+    let rewritten = forward_maps.get(&view.filter_spec(), newrev);
+    tracing::event!(
+        parent: &trace_s,
+        tracing::Level::TRACE,
+        ?in_commit_count,
+        ?out_commit_count,
+        ?empty_tree_count,
+        original = ?newrev.to_string(),
+        rewritten = ?rewritten.to_string(),
+    );
+    return Ok(rewritten);
 }

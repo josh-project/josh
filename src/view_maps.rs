@@ -113,13 +113,6 @@ impl ViewMaps {
         };
     }
 
-    pub fn new_downstream(u: Arc<RwLock<ViewMaps>>) -> ViewMaps {
-        return ViewMaps {
-            maps: HashMap::new(),
-            upsteam: Some(u),
-        };
-    }
-
     pub fn merge(&mut self, other: &ViewMaps) {
         for (filter_spec, om) in other.maps.iter() {
             let m = self
@@ -180,4 +173,41 @@ pub fn persist(m: &ViewMaps, path: &std::path::Path) {
         .map(|x| x.len() / (1024 * 1024))
         .unwrap_or(0);
     info!("persisted: {:?}, file size: {} MiB", &path, file_size);
+}
+
+pub fn try_merge_both(
+    forward_maps: Arc<RwLock<ViewMaps>>,
+    backward_maps: Arc<RwLock<ViewMaps>>,
+    fm: &ViewMaps,
+    bm: &ViewMaps,
+) {
+    tracing::span!(tracing::Level::TRACE, "write_lock backward_maps").in_scope(
+        || {
+            backward_maps
+                .try_write()
+                .map(|mut bm_locked| {
+                    tracing::span!(
+                        tracing::Level::TRACE,
+                        "write_lock forward_maps"
+                    )
+                    .in_scope(|| {
+                        forward_maps
+                            .try_write()
+                            .map(|mut fm_locked| {
+                                bm_locked.merge(&bm);
+                                fm_locked.merge(&fm);
+                            })
+                            .ok();
+                    });
+                })
+                .ok();
+        },
+    );
+}
+
+pub fn new_downstream(u: &Arc<RwLock<ViewMaps>>) -> ViewMaps {
+    return ViewMaps {
+        maps: HashMap::new(),
+        upsteam: Some(u.clone()),
+    };
 }

@@ -12,8 +12,43 @@ use tracing::{debug, info, span, warn, Level};
 
 pub type KnownViews = HashMap<String, BTreeSet<String>>;
 
+pub fn find_refs(
+    repo: &git2::Repository,
+    namespace: &str,
+    prefix: &str,
+    headref: &str,
+) -> Vec<(String, String)> {
+    if headref != "" {
+        return vec![(
+            format!("refs/namespaces/{}/HEAD", &namespace),
+            format!("refs/namespaces/{}/{}", &to_ns(prefix), headref),
+        )];
+    }
+
+    let mut refs = vec![];
+    let glob = format!("refs/namespaces/{}/*", &to_ns(prefix));
+    for refname in repo.references_glob(&glob).unwrap().names() {
+        let refname = refname.unwrap();
+        let to_ref = refname.replacen(&to_ns(prefix), &namespace, 1);
+
+        if to_ref.contains("/refs/cache-automerge/") {
+            continue;
+        }
+        if to_ref.contains("/refs/changes/") {
+            continue;
+        }
+        if to_ref.contains("/refs/notes/") {
+            continue;
+        }
+
+        refs.push((refname.to_owned(), to_ref.clone()));
+    }
+
+    return refs;
+}
+
 pub fn make_view_repo(
-    view_string: &str,
+    filter: &dyn views::Filter,
     prefix: &str,
     headref: &str,
     namespace: &str,
@@ -21,42 +56,17 @@ pub fn make_view_repo(
     fm: &mut view_maps::ViewMaps,
     bm: &mut view_maps::ViewMaps,
 ) -> usize {
+    let filter_spec = filter.filter_spec();
     let _trace_s =
-        span!(Level::TRACE, "make_view_repo", ?view_string, ?br_path);
+        span!(Level::TRACE, "make_view_repo", ?filter_spec, ?br_path);
 
     let scratch = scratch::new(&br_path);
 
-    let viewobj = build_filter(&view_string);
-
-    let mut refs = vec![];
-
+    let refs = find_refs(&scratch, namespace, prefix, headref);
     let to_head = format!("refs/namespaces/{}/HEAD", &namespace);
 
-    if headref != "" {
-        let refname = format!("refs/namespaces/{}/{}", &to_ns(prefix), headref);
-        refs.push((refname.to_owned(), to_head.clone()));
-    } else {
-        let glob = format!("refs/namespaces/{}/*", &to_ns(prefix));
-        for refname in scratch.references_glob(&glob).unwrap().names() {
-            let refname = refname.unwrap();
-            let to_ref = refname.replacen(&to_ns(prefix), &namespace, 1);
-
-            if to_ref.contains("/refs/cache-automerge/") {
-                continue;
-            }
-            if to_ref.contains("/refs/changes/") {
-                continue;
-            }
-            if to_ref.contains("/refs/notes/") {
-                continue;
-            }
-
-            refs.push((refname.to_owned(), to_ref.clone()));
-        }
-    }
-
     let updated_count =
-        scratch::apply_view_to_refs(&scratch, &*viewobj, &refs, fm, bm);
+        scratch::apply_view_to_refs(&scratch, &*filter, &refs, fm, bm);
 
     if headref == "" {
         let mastername =
@@ -73,14 +83,6 @@ pub fn make_view_repo(
     }
 
     return updated_count;
-}
-
-pub fn reset_all(path: &Path) {
-    let shell = shell::Shell {
-        cwd: path.to_owned(),
-    };
-
-    let (_stdout, _stderr) = shell.command(&format!("rm -Rf {:?}", path));
 }
 
 pub fn run_housekeeping(path: &Path, cmd: &str) -> String {
@@ -264,8 +266,8 @@ pub fn get_info(
 
     let scratch = scratch::new(&br_path);
 
-    let mut bm = view_maps::ViewMaps::new_downstream(backward_maps.clone());
-    let mut fm = view_maps::ViewMaps::new_downstream(forward_maps.clone());
+    let mut bm = view_maps::new_downstream(&backward_maps);
+    let mut fm = view_maps::new_downstream(&forward_maps);
 
     let viewobj = build_filter(&view_string);
 

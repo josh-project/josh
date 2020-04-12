@@ -112,11 +112,11 @@ fn to_known_view(prefix: &str, filter_spec: &str) -> String {
 
 fn fetch_upstream(
     http: &HttpService,
-    prefix: &str,
-    username: &str,
-    password: &str,
+    prefix: String,
+    username: String,
+    password: String,
     remote_url: String,
-    headref: &str,
+    headref: String,
 ) -> Box<
     futures_cpupool::CpuFuture<
         std::result::Result<(), git2::Error>,
@@ -124,13 +124,9 @@ fn fetch_upstream(
     >,
 > {
     let credentials_hashed = hash_strings(&remote_url, &username, &password);
-    let username = username.to_owned();
-    let password = password.to_owned();
-    let prefix = prefix.to_owned();
     let br_path = http.base_path.clone();
     let credential_cache = http.credential_cache.clone();
     let fetching = http.fetching.clone();
-    let headref = headref.to_owned();
 
     let credentials_cached_ok = headref == "" && {
         let last = http
@@ -207,30 +203,6 @@ fn fetch_upstream(
     return do_fetch;
 }
 
-fn try_merge_both(
-    forward_maps: Arc<RwLock<view_maps::ViewMaps>>,
-    backward_maps: Arc<RwLock<view_maps::ViewMaps>>,
-    fm: &view_maps::ViewMaps,
-    bm: &view_maps::ViewMaps,
-) {
-    span!(Level::TRACE, "write_lock backward_maps").in_scope(|| {
-        backward_maps
-            .try_write()
-            .map(|mut bm_locked| {
-                span!(Level::TRACE, "write_lock forward_maps").in_scope(|| {
-                    forward_maps
-                        .try_write()
-                        .map(|mut fm_locked| {
-                            bm_locked.merge(&bm);
-                            fm_locked.merge(&fm);
-                        })
-                        .ok();
-                });
-            })
-            .ok();
-    });
-}
-
 fn async_fetch(
     http: &HttpService,
     prefix: String,
@@ -246,7 +218,12 @@ fn async_fetch(
     base_repo::create_local(&br_path);
 
     let fetch_future = fetch_upstream(
-        http, &prefix, &username, &password, remote_url, &headref,
+        http,
+        prefix.clone(),
+        username,
+        password,
+        remote_url,
+        headref.clone(),
     );
 
     let forward_maps = http.forward_maps.clone();
@@ -255,12 +232,10 @@ fn async_fetch(
 
     Box::new(http.compute_pool.spawn(fetch_future.map(move |r| {
         r.map(move |_| {
-            let mut bm =
-                view_maps::ViewMaps::new_downstream(backward_maps.clone());
-            let mut fm =
-                view_maps::ViewMaps::new_downstream(forward_maps.clone());
+            let mut bm = view_maps::new_downstream(&backward_maps);
+            let mut fm = view_maps::new_downstream(&forward_maps);
             base_repo::make_view_repo(
-                &filter_spec,
+                &*josh::build_filter(&filter_spec),
                 &prefix,
                 &headref,
                 &namespace,
@@ -268,7 +243,7 @@ fn async_fetch(
                 &mut fm,
                 &mut bm,
             );
-            try_merge_both(forward_maps, backward_maps, &fm, &bm);
+            view_maps::try_merge_both(forward_maps, backward_maps, &fm, &bm);
             br_path
         })
     })))
@@ -404,13 +379,6 @@ fn call_service(
                 option_env!("GIT_DESCRIBE")
                     .unwrap_or(env!("CARGO_PKG_VERSION"))
             ))
-            .with_status(hyper::StatusCode::Ok);
-        return Box::new(futures::future::ok(response));
-    }
-    if path == "/reset" {
-        base_repo::reset_all(&service.base_path);
-        let response = Response::new()
-            .with_body("deleted".to_owned())
             .with_status(hyper::StatusCode::Ok);
         return Box::new(futures::future::ok(response));
     }
@@ -814,12 +782,8 @@ fn run_proxy(args: Vec<String>) -> josh::JoshResult<i32> {
                 for (prefix2, e) in kn.iter() {
                     info!("background rebuild root: {:?}", prefix2);
 
-                    let mut bm = view_maps::ViewMaps::new_downstream(
-                        backward_maps.clone(),
-                    );
-                    let mut fm = view_maps::ViewMaps::new_downstream(
-                        forward_maps.clone(),
-                    );
+                    let mut bm = view_maps::new_downstream(&backward_maps);
+                    let mut fm = view_maps::new_downstream(&forward_maps);
 
                     let mut updated_count = 0;
 
@@ -827,7 +791,7 @@ fn run_proxy(args: Vec<String>) -> josh::JoshResult<i32> {
                         trace!("background rebuild: {:?} {:?}", prefix2, v);
 
                         updated_count += base_repo::make_view_repo(
-                            &v,
+                            &*josh::build_filter(&v),
                             &prefix2,
                             "refs/heads/master",
                             &to_known_view(&prefix2, &v),

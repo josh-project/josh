@@ -60,6 +60,10 @@ fn empty_tree_id() -> git2::Oid {
         .unwrap();
 }
 
+fn empty_tree(repo: &git2::Repository) -> git2::Tree {
+    repo.find_tree(empty_tree_id()).unwrap()
+}
+
 pub fn to_ns(path: &str) -> String {
     return path.trim_matches('/').replace("/", "/refs/namespaces/");
 }
