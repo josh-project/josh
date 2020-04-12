@@ -62,23 +62,23 @@ impl<'de> serde::de::Deserialize<'de> for ViewMapOid {
 }
 
 impl ViewMaps {
-    pub fn set(&mut self, viewstr: &str, from: git2::Oid, to: git2::Oid) {
+    pub fn set(&mut self, filter_spec: &str, from: git2::Oid, to: git2::Oid) {
         self.maps
-            .entry(viewstr.to_string())
+            .entry(filter_spec.to_string())
             .or_insert_with(ViewMap::new)
             .insert(ViewMapOid(from), ViewMapOid(to));
     }
 
-    pub fn get(&self, viewstr: &str, from: git2::Oid) -> git2::Oid {
-        if let Some(m) = self.maps.get(viewstr) {
+    pub fn get(&self, filter_spec: &str, from: git2::Oid) -> git2::Oid {
+        if let Some(m) = self.maps.get(filter_spec) {
             if let Some(ViewMapOid(oid)) = m.get(&ViewMapOid(from)).cloned() {
                 return oid;
             }
         }
         if let Some(upsteam) = self.upsteam.clone() {
-            return upsteam.read().unwrap().get(viewstr, from);
+            return upsteam.read().unwrap().get(filter_spec, from);
         }
-        if viewstr == ":nop=nop" {
+        if filter_spec == ":nop=nop" {
             return from;
         }
         return git2::Oid::zero();
@@ -87,21 +87,21 @@ impl ViewMaps {
     pub fn has(
         &self,
         repo: &git2::Repository,
-        viewstr: &str,
+        filter_spec: &str,
         from: git2::Oid,
     ) -> bool {
-        if let Some(m) = self.maps.get(viewstr) {
+        if let Some(m) = self.maps.get(filter_spec) {
             if m.contains_key(&ViewMapOid(from)) {
                 // Only report an object as cached if it exists in the object database.
                 // This forces a rebuild in case the object was garbage collected.
-                let oid = self.get(viewstr, from);
+                let oid = self.get(filter_spec, from);
                 return oid == git2::Oid::zero()
                     || repo.odb().unwrap().exists(oid);
             }
         }
         if let Some(upsteam) = self.upsteam.clone() {
-            /* let _trace_s = span!(Level::TRACE,"read_lock: has",  ?viewstr, from=?from.to_string()); */
-            return upsteam.read().unwrap().has(repo, viewstr, from);
+            /* let _trace_s = span!(Level::TRACE,"read_lock: has",  ?filter_spec, from=?from.to_string()); */
+            return upsteam.read().unwrap().has(repo, filter_spec, from);
         }
         return false;
     }
@@ -121,10 +121,10 @@ impl ViewMaps {
     }
 
     pub fn merge(&mut self, other: &ViewMaps) {
-        for (viewstr, om) in other.maps.iter() {
+        for (filter_spec, om) in other.maps.iter() {
             let m = self
                 .maps
-                .entry(viewstr.to_string())
+                .entry(filter_spec.to_string())
                 .or_insert_with(ViewMap::new);
             m.extend(om);
         }
@@ -133,10 +133,10 @@ impl ViewMaps {
     pub fn stats(&self) -> HashMap<String, usize> {
         let mut count = 0;
         let mut s = HashMap::new();
-        for (viewstr, m) in self.maps.iter() {
+        for (filter_spec, m) in self.maps.iter() {
             if m.len() > 1 {
                 count += m.len();
-                s.insert(viewstr.to_string(), m.len());
+                s.insert(filter_spec.to_string(), m.len());
             }
         }
         s.insert("total".to_string(), count);

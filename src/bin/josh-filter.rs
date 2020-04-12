@@ -77,9 +77,9 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
             .ok_or(josh::josh_error("from_to must contain \":\""))?
             .to_owned();
 
-        let viewstr = caps.name("spec").unwrap().as_str().trim().to_owned();
+        let filter_spec = caps.name("spec").unwrap().as_str().trim().to_owned();
 
-        let mut viewobj = josh::build_view(&repo, &viewstr);
+        let mut viewobj = josh::build_filter(&filter_spec);
 
         let pres = viewobj.prefixes();
 
@@ -87,15 +87,12 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
             for (p, v) in pres.iter() {
                 viewobj = josh::build_chain(
                     viewobj,
-                    josh::build_view(
-                        &repo,
-                        &format!(
-                            ":info={},commit=#sha1,tree=#tree,src={},view={}",
-                            p,
-                            &src,
-                            v.replace(":", "<colon>").replace(",", "<comma>")
-                        ),
-                    ),
+                    josh::build_filter(&format!(
+                        ":info={},commit=#sha1,tree=#tree,src={},view={}",
+                        p,
+                        &src,
+                        v.replace(":", "<colon>").replace(",", "<comma>")
+                    )),
                 );
             }
         }
@@ -104,7 +101,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
 
         if args.is_present("squash") {
             viewobj = josh::build_chain(
-                josh::build_view(&repo, &format!(":cutoff={}", &src)),
+                josh::build_filter(&format!(":cutoff={}", &src)),
                 viewobj,
             );
         }

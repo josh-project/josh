@@ -2,7 +2,7 @@ extern crate crypto;
 extern crate git2;
 extern crate tracing;
 
-use self::tracing::{error, event, info, span, trace, warn, Level};
+use self::tracing::{warn, Level};
 use super::empty_tree_id;
 use super::view_maps;
 use super::views;
@@ -10,7 +10,6 @@ use super::UnapplyView;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::path::Path;
-use std::sync::{Arc, RwLock};
 
 fn all_equal(a: git2::Parents, b: &[&git2::Commit]) -> bool {
     let a: Vec<_> = a.collect();
@@ -80,13 +79,12 @@ pub fn find_all_views(reference: &git2::Reference) -> HashSet<String> {
 
 pub fn unapply_view(
     repo: &git2::Repository,
-    backward_maps: Arc<RwLock<view_maps::ViewMaps>>,
-    viewobj: &dyn views::View,
+    backward_maps: std::sync::Arc<std::sync::RwLock<view_maps::ViewMaps>>,
+    viewobj: &dyn views::Filter,
     old: git2::Oid,
     new: git2::Oid,
 ) -> super::JoshResult<UnapplyView> {
-    let trace_s =
-        span!( Level::DEBUG, "unapply_view", repo = ?repo.path(), ?old, ?new);
+    let trace_s = tracing::span!( Level::DEBUG, "unapply_view", repo = ?repo.path(), ?old, ?new);
     let _e = trace_s.enter();
 
     let walk = {
@@ -94,48 +92,47 @@ pub fn unapply_view(
         walk.set_sorting(git2::Sort::REVERSE | git2::Sort::TOPOLOGICAL)?;
         walk.push(new)?;
         if let Ok(_) = walk.hide(old) {
-            trace!("walk: hidden {}", old);
+            tracing::trace!("walk: hidden {}", old);
         } else {
-            /* debug!("walk: can't hide"); */
-            /* return UnapplyView::BranchDoesNotExist; */
+            tracing::warn!("walk: can't hide");
         }
         walk
     };
 
     let mut bm = view_maps::ViewMaps::new_downstream(backward_maps.clone());
-    let mut ret = bm.get(&viewobj.viewstr(), new);
+    let mut ret = bm.get(&viewobj.filter_spec(), new);
     for rev in walk {
-        let rev = rev.expect("walk: invalid rev");
+        let rev = rev?;
 
-        trace!("==== walking commit {}", rev);
+        tracing::trace!("==== walking commit {}", rev);
 
-        let module_commit = repo
-            .find_commit(rev)
-            .expect("walk: object is not actually a commit");
+        let module_commit = repo.find_commit(rev)?;
 
         let original_parent_ids: Vec<_> = module_commit.parent_ids().collect();
-        let original_parents: Vec<_> = original_parent_ids
-            .iter()
-            .map(|x| bm.get(&viewobj.viewstr(), *x))
-            .map(|x| repo.find_commit(x).expect("id is no commit"))
-            .collect();
+
+        let original_parents: std::result::Result<Vec<_>, _> =
+            original_parent_ids
+                .iter()
+                .map(|x| bm.get(&viewobj.filter_spec(), *x))
+                .map(|x| repo.find_commit(x))
+                .collect();
+
+        let original_parents = original_parents?;
 
         let original_parents_refs: Vec<&_> = original_parents.iter().collect();
 
-        trace!("==== Rewriting commit {}", rev);
+        tracing::trace!("==== Rewriting commit {}", rev);
 
-        let tree = module_commit.tree().expect("walk: commit has no tree");
+        let tree = module_commit.tree()?;
 
-        let new_trees: HashSet<_> = original_parents_refs
+        let new_trees: super::JoshResult<HashSet<_>> = original_parents_refs
             .iter()
-            .map(|x| {
-                viewobj.unapply(
-                    &repo,
-                    &tree,
-                    &x.tree().expect("walk: parent has no tree"),
-                )
+            .map(|x| -> super::JoshResult<_> {
+                Ok(viewobj.unapply(&repo, &tree, &x.tree()?))
             })
             .collect();
+
+        let new_trees = new_trees?;
 
         let new_tree = match new_trees.len() {
             1 => repo.find_tree(
@@ -163,7 +160,7 @@ pub fn unapply_view(
 
         ret =
             rewrite(&repo, &module_commit, &original_parents_refs, &new_tree)?;
-        bm.set(&viewobj.viewstr(), module_commit.id(), ret);
+        bm.set(&viewobj.filter_spec(), module_commit.id(), ret);
     }
 
     return Ok(UnapplyView::Done(ret));
@@ -175,7 +172,7 @@ pub fn new(path: &Path) -> git2::Repository {
 
 fn transform_commit(
     repo: &git2::Repository,
-    viewobj: &dyn views::View,
+    viewobj: &dyn views::Filter,
     from_refsname: &str,
     to_refname: &str,
     forward_maps: &mut view_maps::ViewMaps,
@@ -188,7 +185,7 @@ fn transform_commit(
             return updated_count;
         });
         let view_commit = ok_or!(
-            viewobj.apply_view_to_commit(
+            viewobj.apply_to_commit(
                 &repo,
                 &original_commit,
                 forward_maps,
@@ -196,16 +193,20 @@ fn transform_commit(
                 &mut HashMap::new(),
             ),
             {
-                error!(
-                    "transform_commit, cannot apply_view_to_commit: {}",
+                tracing::error!(
+                    "transform_commit, cannot apply_to_commit: {}",
                     from_refsname
                 );
                 return updated_count;
             }
         );
-        forward_maps.set(&viewobj.viewstr(), original_commit.id(), view_commit);
+        forward_maps.set(
+            &viewobj.filter_spec(),
+            original_commit.id(),
+            view_commit,
+        );
         backward_maps.set(
-            &viewobj.viewstr(),
+            &viewobj.filter_spec(),
             view_commit,
             original_commit.id(),
         );
@@ -217,11 +218,11 @@ fn transform_commit(
 
         if view_commit != previous {
             updated_count += 1;
-            trace!("transform_commit: update reference: {:?} -> {:?}, target: {:?}, view: {:?}",
+            tracing::trace!("transform_commit: update reference: {:?} -> {:?}, target: {:?}, view: {:?}",
                 &from_refsname,
                 &to_refname,
                 view_commit,
-                &viewobj.viewstr());
+                &viewobj.filter_spec());
         }
 
         if view_commit != git2::Oid::zero() {
@@ -229,11 +230,11 @@ fn transform_commit(
                 repo.reference(&to_refname, view_commit, true, "apply_view")
                     .map(|_| ()),
                 {
-                    error!("can't update reference: {:?} -> {:?}, target: {:?}, view: {:?}",
+                    tracing::error!("can't update reference: {:?} -> {:?}, target: {:?}, view: {:?}",
                         &from_refsname,
                         &to_refname,
                         view_commit,
-                        &viewobj.viewstr());
+                        &viewobj.filter_spec());
                 }
             );
         }
@@ -248,17 +249,17 @@ fn transform_commit(
 
 pub fn apply_view_to_refs(
     repo: &git2::Repository,
-    viewobj: &dyn views::View,
+    viewobj: &dyn views::Filter,
     refs: &[(String, String)],
     forward_maps: &mut view_maps::ViewMaps,
     backward_maps: &mut view_maps::ViewMaps,
 ) -> usize {
-    span!(
+    tracing::span!(
         Level::TRACE,
         "apply_view_to_refs",
         repo = ?repo.path(),
         ?refs,
-        viewstr=?viewobj.viewstr());
+        filter_spec=?viewobj.filter_spec());
 
     let mut updated_count = 0;
     for (k, v) in refs {
@@ -276,61 +277,67 @@ pub fn apply_view_to_refs(
 
 pub fn apply_view_cached(
     repo: &git2::Repository,
-    view: &dyn views::View,
+    view: &dyn views::Filter,
     newrev: git2::Oid,
     forward_maps: &mut view_maps::ViewMaps,
     backward_maps: &mut view_maps::ViewMaps,
-) -> git2::Oid {
-    if forward_maps.has(repo, &view.viewstr(), newrev) {
-        return forward_maps.get(&view.viewstr(), newrev);
+) -> super::JoshResult<git2::Oid> {
+    if forward_maps.has(repo, &view.filter_spec(), newrev) {
+        return Ok(forward_maps.get(&view.filter_spec(), newrev));
     }
 
-    let trace_s =
-        span!(Level::TRACE, "apply_view_cached", viewstr = ?view.viewstr());
+    let trace_s = tracing::span!(Level::TRACE, "apply_view_cached", filter_spec = ?view.filter_spec());
 
     let walk = {
-        let mut walk = repo.revwalk().expect("walk: can't create revwalk");
-        walk.set_sorting(git2::Sort::REVERSE | git2::Sort::TOPOLOGICAL)
-            .expect("can't set sorting");
-        walk.push(newrev).expect("walk.push");
+        let mut walk = repo.revwalk()?;
+        walk.set_sorting(git2::Sort::REVERSE | git2::Sort::TOPOLOGICAL)?;
+        walk.push(newrev)?;
         walk
     };
 
     let mut in_commit_count = 0;
     let mut out_commit_count = 0;
     let mut empty_tree_count = 0;
-    for commit in walk {
+    for original_commit_id in walk {
         in_commit_count += 1;
 
-        let commit = repo.find_commit(commit.unwrap()).unwrap();
+        let original_commit = repo.find_commit(original_commit_id?)?;
 
-        let transformed = ok_or!(
-            view.apply_view_to_commit(
+        let filtered_commit = ok_or!(
+            view.apply_to_commit(
                 &repo,
-                &commit,
+                &original_commit,
                 forward_maps,
                 backward_maps,
                 &mut HashMap::new(),
             ),
             {
-                error!("cannot apply_view_to_commit");
+                tracing::error!("cannot apply_to_commit");
                 git2::Oid::zero()
             }
         );
 
-        if transformed == git2::Oid::zero() {
+        if filtered_commit == git2::Oid::zero() {
             empty_tree_count += 1;
         }
-        forward_maps.set(&view.viewstr(), commit.id(), transformed);
-        backward_maps.set(&view.viewstr(), transformed, commit.id());
+        forward_maps.set(
+            &view.filter_spec(),
+            original_commit.id(),
+            filtered_commit,
+        );
+        backward_maps.set(
+            &view.filter_spec(),
+            filtered_commit,
+            original_commit.id(),
+        );
         out_commit_count += 1;
     }
 
-    if !forward_maps.has(&repo, &view.viewstr(), newrev) {
-        forward_maps.set(&view.viewstr(), newrev, git2::Oid::zero());
+    if !forward_maps.has(&repo, &view.filter_spec(), newrev) {
+        forward_maps.set(&view.filter_spec(), newrev, git2::Oid::zero());
     }
-    let rewritten = forward_maps.get(&view.viewstr(), newrev);
-    event!(
+    let rewritten = forward_maps.get(&view.filter_spec(), newrev);
+    tracing::event!(
         parent: &trace_s,
         Level::TRACE,
         ?in_commit_count,
@@ -339,5 +346,5 @@ pub fn apply_view_cached(
         original = ?newrev.to_string(),
         rewritten = ?rewritten.to_string(),
     );
-    return rewritten;
+    return Ok(rewritten);
 }

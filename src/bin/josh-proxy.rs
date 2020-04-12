@@ -102,11 +102,11 @@ fn hash_strings(url: &str, username: &str, password: &str) -> String {
     d.result_str().to_owned()
 }
 
-fn to_known_view(prefix: &str, viewstr: &str) -> String {
+fn to_known_view(prefix: &str, filter_spec: &str) -> String {
     return format!(
         "known_views/refs/namespaces/{}/refs/namespaces/{}",
         data_encoding::BASE64URL_NOPAD.encode(prefix.as_bytes()),
-        data_encoding::BASE64URL_NOPAD.encode(viewstr.as_bytes())
+        data_encoding::BASE64URL_NOPAD.encode(filter_spec.as_bytes())
     );
 }
 
@@ -207,11 +207,35 @@ fn fetch_upstream(
     return do_fetch;
 }
 
+fn try_merge_both(
+    forward_maps: Arc<RwLock<view_maps::ViewMaps>>,
+    backward_maps: Arc<RwLock<view_maps::ViewMaps>>,
+    fm: &view_maps::ViewMaps,
+    bm: &view_maps::ViewMaps,
+) {
+    span!(Level::TRACE, "write_lock backward_maps").in_scope(|| {
+        backward_maps
+            .try_write()
+            .map(|mut bm_locked| {
+                span!(Level::TRACE, "write_lock forward_maps").in_scope(|| {
+                    forward_maps
+                        .try_write()
+                        .map(|mut fm_locked| {
+                            bm_locked.merge(&bm);
+                            fm_locked.merge(&fm);
+                        })
+                        .ok();
+                });
+            })
+            .ok();
+    });
+}
+
 fn async_fetch(
     http: &HttpService,
     prefix: String,
     headref: String,
-    viewstr: String,
+    filter_spec: String,
     username: String,
     password: String,
     namespace: String,
@@ -236,15 +260,15 @@ fn async_fetch(
             let mut fm =
                 view_maps::ViewMaps::new_downstream(forward_maps.clone());
             base_repo::make_view_repo(
-                &viewstr, &prefix, &headref, &namespace, &br_path, &mut fm,
+                &filter_spec,
+                &prefix,
+                &headref,
+                &namespace,
+                &br_path,
+                &mut fm,
                 &mut bm,
             );
-            span!(Level::TRACE, "write_lock backward_maps").in_scope(|| {
-                backward_maps.write().map(|mut m| m.merge(&bm)).ok();
-            });
-            span!(Level::TRACE, "write_lock forward_maps").in_scope(|| {
-                forward_maps.write().map(|mut m| m.merge(&fm)).ok();
-            });
+            try_merge_both(forward_maps, backward_maps, &fm, &bm);
             br_path
         })
     })))
@@ -587,7 +611,7 @@ fn call_service(
 
     let passwd = password.clone();
     let usernm = username.clone();
-    let viewstr = view_string.clone();
+    let filter_spec = view_string.clone();
     let ns = namespace.to_owned();
 
     let port = service.port.clone();
@@ -619,7 +643,7 @@ fn call_service(
             cmd.env("JOSH_USERNAME", usernm);
             cmd.env("JOSH_PORT", port);
             cmd.env("GIT_NAMESPACE", ns);
-            cmd.env("JOSH_VIEWSTR", viewstr);
+            cmd.env("JOSH_VIEWSTR", filter_spec);
             cmd.env("JOSH_REMOTE", remote_url);
             cmd.env("JOSH_BASE_NS", base_ns);
 
@@ -634,7 +658,7 @@ fn call_service(
 
     let known_views = service.known_views.clone();
     let prefix2 = prefix.clone();
-    let viewstr2 = view_string.clone();
+    let filter_spec = view_string.clone();
 
     service
         .compute_pool
@@ -642,7 +666,7 @@ fn call_service(
             if let Ok(mut kn) = known_views.write() {
                 kn.entry(prefix2.clone())
                     .or_insert_with(BTreeSet::new)
-                    .insert(viewstr2);
+                    .insert(filter_spec);
             } else {
                 warn!("Can't lock 'known_views' for writing");
             }

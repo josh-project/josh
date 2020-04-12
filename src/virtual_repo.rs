@@ -47,7 +47,7 @@ pub fn process_repo_update(
     };
     let _trace_s = span!(Level::TRACE, "process_repo_update", repo_update= ?ru);
     let refname = repo_update.get("refname").ok_or(josh_error(""))?;
-    let viewstr = repo_update.get("viewstr").ok_or(josh_error(""))?;
+    let filter_spec = repo_update.get("filter_spec").ok_or(josh_error(""))?;
     let old = repo_update.get("old").ok_or(josh_error(""))?;
     let new = repo_update.get("new").ok_or(josh_error(""))?;
     let username = repo_update.get("username").ok_or(josh_error(""))?;
@@ -82,7 +82,7 @@ pub fn process_repo_update(
         old
     };
 
-    let viewobj = views::build_view(&scratch, &viewstr);
+    let viewobj = views::build_filter(&filter_spec);
     let new_oid = Oid::from_str(&new)?;
     let backward_new_oid = {
         debug!("=== MORE");
@@ -125,7 +125,7 @@ pub fn process_repo_update(
                 None,
                 &backward_commit.author(),
                 &backward_commit.committer(),
-                &format!("Merge from {}", &viewstr),
+                &format!("Merge from {}", &filter_spec),
                 &scratch.find_tree(merged_tree)?,
                 &[&base_commit, &backward_commit],
             )?
@@ -168,7 +168,7 @@ pub fn update_hook(refname: &str, old: &str, new: &str) -> JoshResult<i32> {
         ("JOSH_PASSWORD", "password"),
         ("JOSH_REMOTE", "remote_url"),
         ("JOSH_BASE_NS", "base_ns"),
-        ("JOSH_VIEWSTR", "viewstr"),
+        ("JOSH_VIEWSTR", "filter_spec"),
         ("GIT_NAMESPACE", "GIT_NAMESPACE"),
     ]
     .iter()

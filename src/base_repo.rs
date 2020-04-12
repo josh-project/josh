@@ -26,7 +26,7 @@ pub fn make_view_repo(
 
     let scratch = scratch::new(&br_path);
 
-    let viewobj = build_view(&scratch, &view_string);
+    let viewobj = build_filter(&view_string);
 
     let mut refs = vec![];
 
@@ -126,7 +126,7 @@ pub fn fetch_refs_from_url(
         };
 
         let cmd = format!("git fetch {} '{}'", &nurl, &spec);
-        debug!("fetch_refs_from_url {:?} {:?} {:?}", cmd, path, "");
+        info!("fetch_refs_from_url {:?} {:?} {:?}", cmd, path, "");
 
         let (_stdout, stderr) =
             shell.command_env(&cmd, &[("GIT_PASSWORD", &password)]);
@@ -267,7 +267,7 @@ pub fn get_info(
     let mut bm = view_maps::ViewMaps::new_downstream(backward_maps.clone());
     let mut fm = view_maps::ViewMaps::new_downstream(forward_maps.clone());
 
-    let viewobj = build_view(&scratch, &view_string);
+    let viewobj = build_filter(&view_string);
 
     let fr = &format!("refs/namespaces/{}/{}", &to_ns(&prefix), &rev);
 
@@ -284,11 +284,9 @@ pub fn get_info(
     let mut meta = HashMap::new();
     meta.insert("sha1".to_owned(), "".to_owned());
     let transformed = ok_or!(
-        viewobj.apply_view_to_commit(
-            &scratch, &commit, &mut fm, &mut bm, &mut meta
-        ),
+        viewobj.apply_to_commit(&scratch, &commit, &mut fm, &mut bm, &mut meta),
         {
-            return format!("cannot apply_view_to_commit");
+            return format!("cannot apply_to_commit");
         }
     );
 

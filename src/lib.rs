@@ -46,7 +46,7 @@ pub mod virtual_repo;
 pub use crate::scratch::apply_view_to_refs;
 pub use crate::scratch::unapply_view;
 pub use crate::views::build_chain;
-pub use crate::views::build_view;
+pub use crate::views::build_filter;
 
 #[derive(Clone)]
 pub enum UnapplyView {
