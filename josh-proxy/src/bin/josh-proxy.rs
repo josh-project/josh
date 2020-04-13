@@ -101,14 +101,6 @@ fn hash_strings(url: &str, username: &str, password: &str) -> String {
     d.result_str().to_owned()
 }
 
-fn to_known_view(prefix: &str, filter_spec: &str) -> String {
-    return format!(
-        "known_views/refs/namespaces/{}/refs/namespaces/{}",
-        data_encoding::BASE64URL_NOPAD.encode(prefix.as_bytes()),
-        data_encoding::BASE64URL_NOPAD.encode(filter_spec.as_bytes())
-    );
-}
-
 fn fetch_upstream(
     http: &HttpService,
     prefix: String,
@@ -423,7 +415,8 @@ fn call_service(
                 .and_then(move |buffer| {
                     return pool.spawn(futures::future::ok(buffer).map(
                         move |buffer| {
-                            let repo_update = serde_json::from_str(&buffer).unwrap_or(HashMap::new());
+                            let repo_update = serde_json::from_str(&buffer)
+                                .unwrap_or(HashMap::new());
                             virtual_repo::process_repo_update(
                                 repo_update,
                                 forward_maps,
@@ -767,101 +760,14 @@ fn run_proxy(args: Vec<String>) -> josh::JoshResult<i32> {
     let forward_maps = service.forward_maps.clone();
     let backward_maps = service.backward_maps.clone();
     let do_gc = args.is_present("gc");
-    let mut gc_timer = std::time::Instant::now();
-    let mut persist_timer =
-        std::time::Instant::now() - std::time::Duration::from_secs(60 * 5);
 
-    std::thread::spawn(move || {
-        let mut total = 0;
-        loop {
-            base_repo::discover_views(&br_path.clone(), known_views.clone());
-            if let Ok(kn) = known_views.read() {
-                for (prefix2, e) in kn.iter() {
-                    info!("background rebuild root: {:?}", prefix2);
-
-                    let mut bm = view_maps::new_downstream(&backward_maps);
-                    let mut fm = view_maps::new_downstream(&forward_maps);
-
-                    let mut updated_count = 0;
-
-                    for v in e.iter() {
-                        trace!("background rebuild: {:?} {:?}", prefix2, v);
-
-                        updated_count += base_repo::make_view_repo(
-                            &*josh::build_filter(&v),
-                            &prefix2,
-                            "refs/heads/master",
-                            &to_known_view(&prefix2, &v),
-                            &br_path,
-                            &mut fm,
-                            &mut bm,
-                        );
-                    }
-                    info!("updated {} refs for {:?}", updated_count, prefix2);
-
-                    let stats = fm.stats();
-                    total += fm.stats()["total"];
-                    total += bm.stats()["total"];
-                    debug!(
-                        "forward_maps stats: {}",
-                        toml::to_string_pretty(&stats).unwrap()
-                    );
-                    span!(Level::TRACE, "write_lock bm").in_scope(|| {
-                        let mut backward_maps = backward_maps.write().unwrap();
-                        backward_maps.merge(&bm);
-                    });
-                    span!(Level::TRACE, "write_lock fm").in_scope(|| {
-                        let mut forward_maps = forward_maps.write().unwrap();
-                        forward_maps.merge(&fm);
-                    });
-                }
-            }
-            if total > 1000
-                || persist_timer.elapsed()
-                    > std::time::Duration::from_secs(60 * 15)
-            {
-                view_maps::persist(
-                    &*backward_maps.read().unwrap(),
-                    &br_path.join("josh_backward_maps"),
-                );
-                view_maps::persist(
-                    &*forward_maps.read().unwrap(),
-                    &br_path.join("josh_forward_maps"),
-                );
-                total = 0;
-                persist_timer = std::time::Instant::now();
-            }
-            info!(
-                "{}",
-                base_repo::run_housekeeping(&br_path, &"git count-objects -v")
-                    .replace("\n", "  ")
-            );
-            if do_gc
-                && gc_timer.elapsed() > std::time::Duration::from_secs(60 * 60)
-            {
-                info!(
-                    "\n----------\n{}\n----------",
-                    base_repo::run_housekeeping(&br_path, &"git repack -adkbn")
-                );
-                info!(
-                    "\n----------\n{}\n----------",
-                    base_repo::run_housekeeping(
-                        &br_path,
-                        &"git count-objects -vH"
-                    )
-                );
-                info!(
-                    "\n----------\n{}\n----------",
-                    base_repo::run_housekeeping(
-                        &br_path,
-                        &"git prune --expire=2w"
-                    )
-                );
-                gc_timer = std::time::Instant::now();
-            }
-            std::thread::sleep(std::time::Duration::from_secs(60));
-        }
-    });
+    base_repo::spawn_housekeeping_thread(
+        known_views,
+        br_path,
+        forward_maps,
+        backward_maps,
+        do_gc,
+    );
 
     core.run(futures::future::empty::<(), josh::JoshError>())?;
 
@@ -948,7 +854,8 @@ fn update_hook(refname: &str, old: &str, new: &str) -> josh::JoshResult<i32> {
         repo_update.insert(name.to_string(), env::var(&env_name)?);
     }
 
-    let scratch = git2::Repository::init_bare(&Path::new(&env::var("GIT_DIR")?))?;
+    let scratch =
+        git2::Repository::init_bare(&Path::new(&env::var("GIT_DIR")?))?;
     repo_update.insert(
         "GIT_DIR".to_owned(),
         scratch
@@ -997,10 +904,7 @@ fn main() {
 
     if args[0].ends_with("/update") {
         println!("josh-proxy");
-        exit(
-            update_hook(&args[1], &args[2], &args[3])
-                .unwrap_or(1),
-        );
+        exit(update_hook(&args[1], &args[2], &args[3]).unwrap_or(1));
     }
     exit(run_proxy(args).unwrap_or(1));
 }

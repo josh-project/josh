@@ -1,10 +1,10 @@
+use hyper::header::AUTHORIZATION;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Error, Request, Response, Server};
 use std::env;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, RwLock};
-use hyper::header::{AUTHORIZATION};
 
 /* fn auth_response( */
 /*     req: &Request<Body>, */
@@ -85,7 +85,6 @@ async fn main() {
     let addr = format!("0.0.0.0:{}", port).parse().unwrap();
 
     let myservice = Arc::new(MyService { num: 0 });
-
 
     let make_service = make_service_fn(move |_| {
         let myservice = myservice.clone();

@@ -152,4 +152,3 @@ pub fn process_repo_update(
         &git_ns,
     );
 }
-

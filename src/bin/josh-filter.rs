@@ -34,14 +34,15 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         .get_matches_from(args);
 
     if args.is_present("version") {
-        let v =
-            option_env!("GIT_DESCRIBE").unwrap_or(std::env!("CARGO_PKG_VERSION"));
+        let v = option_env!("GIT_DESCRIBE")
+            .unwrap_or(std::env!("CARGO_PKG_VERSION"));
         println!("Version: {}", v);
         return Ok(0);
     }
 
     let repo = git2::Repository::open_from_env()?;
-    let mut fm = josh::view_maps::try_load(&repo.path().join("josh_forward_maps"));
+    let mut fm =
+        josh::view_maps::try_load(&repo.path().join("josh_forward_maps"));
     let backward_maps = Arc::new(RwLock::new(josh::view_maps::try_load(
         &repo.path().join("josh_backward_maps"),
     )));
