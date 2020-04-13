@@ -20,8 +20,8 @@ pub fn find_refs(
 ) -> Vec<(String, String)> {
     if headref != "" {
         return vec![(
-            format!("refs/namespaces/{}/HEAD", &namespace),
             format!("refs/namespaces/{}/{}", &to_ns(prefix), headref),
+            format!("refs/namespaces/{}/HEAD", &namespace),
         )];
     }
 
