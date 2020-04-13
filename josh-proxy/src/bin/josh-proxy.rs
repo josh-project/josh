@@ -73,6 +73,8 @@ lazy_static! {
 
 type CredentialCache = HashMap<String, std::time::Instant>;
 
+type BoxedFuture<T> = Box<dyn Future<Item = T, Error = hyper::Error>>;
+
 /* type HttpClient = */
 /*     hyper::Client<hyper_tls::HttpsConnector<hyper::client::HttpConnector>>; */
 
@@ -101,25 +103,51 @@ fn hash_strings(url: &str, username: &str, password: &str) -> String {
     d.result_str().to_owned()
 }
 
-fn fetch_upstream(
+fn fetch_upstream_ref(
     http: &HttpService,
     upstream_repo: String,
     username: String,
     password: String,
     remote_url: String,
     headref: String,
-) -> Box<
-    futures_cpupool::CpuFuture<
-        std::result::Result<(), git2::Error>,
-        hyper::Error,
-    >,
-> {
+) -> Box<futures_cpupool::CpuFuture<bool, hyper::Error>> {
+    let br_path = http.base_path.clone();
+
+    Box::new(http.fetch_push_pool.spawn_fn(move || {
+        let refs_to_fetch = vec![headref.as_str()];
+        if let Ok(_) = base_repo::fetch_refs_from_url(
+            &br_path,
+            &upstream_repo,
+            &remote_url,
+            &refs_to_fetch,
+            &username,
+            &password,
+        ) {
+            futures::future::ok(true)
+        } else {
+            futures::future::ok(false)
+        }
+    }))
+}
+
+fn fetch_upstream(
+    http: &HttpService,
+    upstream_repo: String,
+    username: String,
+    password: String,
+    remote_url: String,
+) -> Box<futures_cpupool::CpuFuture<bool, hyper::Error>> {
     let credentials_hashed = hash_strings(&remote_url, &username, &password);
     let br_path = http.base_path.clone();
     let credential_cache = http.credential_cache.clone();
     let fetching = http.fetching.clone();
 
-    let credentials_cached_ok = headref == "" && {
+    debug!(
+        "credentials_hashed {:?}, {:?}, {:?}",
+        &remote_url, &username, &credentials_hashed
+    );
+
+    let credentials_cached_ok = {
         let last = credential_cache
             .read()
             .ok()
@@ -132,6 +160,7 @@ fn fetch_upstream(
             false
         }
     };
+    let refs_to_fetch = vec!["refs/heads/*", "refs/tags/*"];
 
     let do_fetch = if credentials_cached_ok
         && !fetching
@@ -139,100 +168,40 @@ fn fetch_upstream(
             .map(|mut x| x.insert(credentials_hashed.clone()))
             .unwrap_or(true)
     {
-        Box::new(
-            http.compute_pool
-                .spawn(futures::future::ok(()).map(move |_| Ok(()))),
-        )
+        Box::new(http.compute_pool.spawn(futures::future::ok(true)))
     } else {
-        Box::new(http.fetch_push_pool.spawn(futures::future::ok(()).map(
-            move |_| {
-                let refs_to_fetch = if headref != "" {
-                    vec![headref.as_str()]
+        Box::new(http.fetch_push_pool.spawn_fn(move || {
+            if let Ok(_) = base_repo::fetch_refs_from_url(
+                &br_path,
+                &upstream_repo,
+                &remote_url,
+                &refs_to_fetch,
+                &username,
+                &password,
+            ) {
+                if let Ok(mut x) = fetching.write() {
+                    x.remove(&credentials_hashed);
                 } else {
-                    vec!["refs/heads/*", "refs/tags/*"]
-                };
-                let credentials_hashed =
-                    hash_strings(&remote_url, &username, &password);
-                debug!(
-                    "credentials_hashed {:?}, {:?}, {:?}",
-                    &remote_url, &username, &credentials_hashed
-                );
-                base_repo::fetch_refs_from_url(
-                    &br_path,
-                    &upstream_repo,
-                    &remote_url,
-                    &refs_to_fetch,
-                    &username,
-                    &password,
-                )
-                .and_then(|_| {
-                    if let Ok(mut x) = fetching.write() {
-                        x.remove(&credentials_hashed);
-                    } else {
-                        error!("lock poisoned");
-                    }
-                    if let Ok(mut cc) = credential_cache.write() {
-                        cc.insert(
-                            credentials_hashed,
-                            std::time::Instant::now(),
-                        );
-                    } else {
-                        error!("lock poisoned");
-                    }
-                    Ok(())
-                })
-            },
-        )))
+                    error!("lock poisoned");
+                }
+                if let Ok(mut cc) = credential_cache.write() {
+                    cc.insert(credentials_hashed, std::time::Instant::now());
+                } else {
+                    error!("lock poisoned");
+                }
+                futures::future::ok(true)
+            } else {
+                futures::future::ok(false)
+            }
+        }))
     };
 
     if credentials_cached_ok {
         do_fetch.forget();
-        return Box::new(http.compute_pool.spawn(futures::future::ok(Ok(()))));
+        return Box::new(http.compute_pool.spawn(futures::future::ok(true)));
     }
 
     return do_fetch;
-}
-
-fn async_fetch(
-    http: &HttpService,
-    upstream_repo: String,
-    headref: String,
-    filter_spec: String,
-    username: String,
-    password: String,
-    namespace: String,
-    remote_url: String,
-) -> Box<dyn Future<Item = Result<(), git2::Error>, Error = hyper::Error>> {
-    let fetch_future = fetch_upstream(
-        http,
-        upstream_repo.clone(),
-        username,
-        password,
-        remote_url,
-        headref.clone(),
-    );
-
-    let forward_maps = http.forward_maps.clone();
-    let backward_maps = http.backward_maps.clone();
-    let br_path = http.base_path.clone();
-
-    Box::new(http.compute_pool.spawn(fetch_future.map(move |r| {
-        r.map(move |_| {
-            let mut bm = view_maps::new_downstream(&backward_maps);
-            let mut fm = view_maps::new_downstream(&forward_maps);
-            base_repo::make_view_repo(
-                &*josh::build_filter(&filter_spec),
-                &upstream_repo,
-                &headref,
-                &namespace,
-                &br_path,
-                &mut fm,
-                &mut bm,
-            );
-            view_maps::try_merge_both(forward_maps, backward_maps, &fm, &bm);
-            ()
-        })
-    })))
 }
 
 fn respond_unauthorized() -> Response {
@@ -274,7 +243,7 @@ fn git_command(
     cmd: String,
     br_path: PathBuf,
     pool: CpuPool,
-) -> Box<dyn Future<Item = String, Error = hyper::Error>> {
+) -> BoxedFuture<String> {
     return Box::new(pool.spawn_fn(move || {
         let shell = shell::Shell {
             cwd: br_path.to_owned(),
@@ -300,7 +269,7 @@ fn gerrit_api(
     base_url: &str,
     endpoint: &str,
     query: String,
-) -> Box<dyn Future<Item = serde_json::Value, Error = hyper::Error>> {
+) -> BoxedFuture<serde_json::Value> {
     let uri =
         hyper::Uri::from_str(&format!("{}/{}?{}", base_url, endpoint, query))
             .unwrap();
@@ -342,7 +311,7 @@ fn call_service(
     service: &HttpService,
     req: Request,
     namespace: &str,
-) -> Box<dyn Future<Item = Response, Error = hyper::Error>> {
+) -> BoxedFuture<Response> {
     let s1 = span!(Level::TRACE, "j call_service");
     let _e1 = s1.enter();
     let s2 = span!(Level::TRACE, "j2 call_service");
@@ -580,30 +549,29 @@ fn call_service(
     let br_url = remote_url.clone();
     let base_ns = to_ns(&upstream_repo);
 
-    let call_git_http_backend =
-        |request: Request,
-         path: PathBuf,
-         pathinfo: &str,
-         handle: &tokio_core::reactor::Handle|
-         -> Box<dyn Future<Item = Response, Error = hyper::Error>> {
-            trace!("git-http backend {:?} {:?}", path, pathinfo);
-            let mut cmd = Command::new("git");
-            cmd.arg("http-backend");
-            cmd.current_dir(&path);
-            cmd.env("GIT_PROJECT_ROOT", path.to_str().unwrap());
-            cmd.env("GIT_DIR", path.to_str().unwrap());
-            cmd.env("GIT_HTTP_EXPORT_ALL", "");
-            cmd.env("PATH_INFO", pathinfo);
-            cmd.env("JOSH_PASSWORD", passwd);
-            cmd.env("JOSH_USERNAME", usernm);
-            cmd.env("JOSH_PORT", port);
-            cmd.env("GIT_NAMESPACE", ns);
-            cmd.env("JOSH_VIEWSTR", filter_spec);
-            cmd.env("JOSH_REMOTE", remote_url);
-            cmd.env("JOSH_BASE_NS", base_ns);
+    let call_git_http_backend = |request: Request,
+                                 path: PathBuf,
+                                 pathinfo: &str,
+                                 handle: &tokio_core::reactor::Handle|
+     -> BoxedFuture<Response> {
+        trace!("git-http backend {:?} {:?}", path, pathinfo);
+        let mut cmd = Command::new("git");
+        cmd.arg("http-backend");
+        cmd.current_dir(&path);
+        cmd.env("GIT_PROJECT_ROOT", path.to_str().unwrap());
+        cmd.env("GIT_DIR", path.to_str().unwrap());
+        cmd.env("GIT_HTTP_EXPORT_ALL", "");
+        cmd.env("PATH_INFO", pathinfo);
+        cmd.env("JOSH_PASSWORD", passwd);
+        cmd.env("JOSH_USERNAME", usernm);
+        cmd.env("JOSH_PORT", port);
+        cmd.env("GIT_NAMESPACE", ns);
+        cmd.env("JOSH_VIEWSTR", filter_spec);
+        cmd.env("JOSH_REMOTE", remote_url);
+        cmd.env("JOSH_BASE_NS", base_ns);
 
-            josh_proxy::do_cgi(request, cmd, handle.clone())
-        };
+        josh_proxy::do_cgi(request, cmd, handle.clone())
+    };
 
     let handle = service.handle.clone();
 
@@ -616,32 +584,81 @@ fn call_service(
         view_string.clone(),
     );
 
-    Box::new({
-        async_fetch(
+    let fetch_future = if headref == "" {
+        fetch_upstream(
             &service,
-            upstream_repo.to_string(),
-            headref.to_string(),
-            view_string.to_string(),
-            username.to_string(),
-            password.to_string(),
-            namespace.to_string(),
+            upstream_repo.clone(),
+            username,
+            password,
             br_url,
         )
-        .and_then(
-            move |view_repo| -> Box<dyn Future<Item = Response, Error = hyper::Error>> {
-                let path = ok_or!(view_repo, {
-                    debug!("wrong credentials");
-                    return Box::new(futures::future::ok(respond_unauthorized()));
-                });
-
-                call_git_http_backend(req, br_path, &pathinfo, &handle)
-            },
+    } else {
+        fetch_upstream_ref(
+            &service,
+            upstream_repo.clone(),
+            username,
+            password,
+            br_url,
+            headref.clone(),
         )
-        .map(move |x| {
-            remove_dir_all(request_tmp_namespace).unwrap_or_else(|e| warn!("remove_dir_all failed: {:?}", e));
+    };
+
+    let namespace = namespace.to_owned();
+    let br_path = br_path.to_owned();
+    let filter_spec = view_string.clone();
+    let service = service.clone();
+
+    let fetch_future =
+        fetch_future.and_then(move |authorized| -> BoxedFuture<Response> {
+            if !authorized {
+                debug!("wrong credentials");
+                return Box::new(futures::future::ok(respond_unauthorized()));
+            }
+
+            let do_filter = do_filter(&service, upstream_repo, namespace, filter_spec);
+
+            let respond = do_filter.and_then(move |_| {
+                call_git_http_backend(req, br_path, &pathinfo, &handle)
+            });
+
+            Box::new(respond)
+        });
+
+    Box::new({
+        fetch_future.map(move |x| {
+            remove_dir_all(request_tmp_namespace)
+                .unwrap_or_else(|e| warn!("remove_dir_all failed: {:?}", e));
             x
         })
     })
+}
+
+fn do_filter(
+    service: &HttpService,
+    upstream_repo: String,
+    namespace: String,
+    filter_spec: String,
+) -> BoxedFuture<()> {
+    let pool = service.compute_pool.clone();
+    let forward_maps = service.forward_maps.clone();
+    let backward_maps = service.backward_maps.clone();
+    let br_path = service.base_path.clone();
+    let r = pool.spawn_fn(move || {
+        let mut bm = view_maps::new_downstream(&backward_maps);
+        let mut fm = view_maps::new_downstream(&forward_maps);
+        base_repo::make_view_repo(
+            &*josh::build_filter(&filter_spec),
+            &upstream_repo,
+            &"",
+            &namespace,
+            &br_path,
+            &mut fm,
+            &mut bm,
+        );
+        view_maps::try_merge_both(forward_maps, backward_maps, &fm, &bm);
+        return futures::future::ok(());
+    });
+    return Box::new(r);
 }
 
 fn without_password(headers: &hyper::Headers) -> hyper::Headers {
