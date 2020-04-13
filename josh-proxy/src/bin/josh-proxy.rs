@@ -64,7 +64,7 @@ use tracing::*;
 
 lazy_static! {
     static ref VIEW_REGEX: Regex =
-        Regex::new(r"(?P<prefix>/.*[.]git)(?P<headref>@[^:!]*)?(?P<view>[:!].*)[.](?P<ending>(?:git)|(?:json))(?P<pathinfo>/.*)?")
+        Regex::new(r"(?P<upstream_repo>/.*[.]git)(?P<headref>@[^:!]*)?(?P<view>[:!].*)[.](?P<ending>(?:git)|(?:json))(?P<pathinfo>/.*)?")
             .expect("can't compile regex");
     static ref CHANGE_REGEX: Regex =
         Regex::new(r"/c/(?P<change>.*)/")
@@ -103,7 +103,7 @@ fn hash_strings(url: &str, username: &str, password: &str) -> String {
 
 fn fetch_upstream(
     http: &HttpService,
-    prefix: String,
+    upstream_repo: String,
     username: String,
     password: String,
     remote_url: String,
@@ -120,8 +120,7 @@ fn fetch_upstream(
     let fetching = http.fetching.clone();
 
     let credentials_cached_ok = headref == "" && {
-        let last = http
-            .credential_cache
+        let last = credential_cache
             .read()
             .ok()
             .map(|cc| cc.get(&credentials_hashed).copied());
@@ -160,7 +159,7 @@ fn fetch_upstream(
                 );
                 base_repo::fetch_refs_from_url(
                     &br_path,
-                    &prefix,
+                    &upstream_repo,
                     &remote_url,
                     &refs_to_fetch,
                     &username,
@@ -196,21 +195,17 @@ fn fetch_upstream(
 
 fn async_fetch(
     http: &HttpService,
-    prefix: String,
+    upstream_repo: String,
     headref: String,
     filter_spec: String,
     username: String,
     password: String,
     namespace: String,
     remote_url: String,
-) -> Box<dyn Future<Item = Result<PathBuf, git2::Error>, Error = hyper::Error>>
-{
-    let br_path = http.base_path.clone();
-    base_repo::create_local(&br_path);
-
+) -> Box<dyn Future<Item = Result<(), git2::Error>, Error = hyper::Error>> {
     let fetch_future = fetch_upstream(
         http,
-        prefix.clone(),
+        upstream_repo.clone(),
         username,
         password,
         remote_url,
@@ -227,7 +222,7 @@ fn async_fetch(
             let mut fm = view_maps::new_downstream(&forward_maps);
             base_repo::make_view_repo(
                 &*josh::build_filter(&filter_spec),
-                &prefix,
+                &upstream_repo,
                 &headref,
                 &namespace,
                 &br_path,
@@ -235,7 +230,7 @@ fn async_fetch(
                 &mut bm,
             );
             view_maps::try_merge_both(forward_maps, backward_maps, &fm, &bm);
-            br_path
+            ()
         })
     })))
 }
@@ -265,7 +260,9 @@ fn parse_url(path: &str) -> Option<(String, String, String, String, String)> {
     debug!("parse_url: {:?}", caps);
 
     return Some((
-        caps.name("prefix").map(as_str).unwrap_or("".to_owned()),
+        caps.name("upstream_repo")
+            .map(as_str)
+            .unwrap_or("".to_owned()),
         caps.name("view").map(as_str).unwrap_or("".to_owned()),
         caps.name("pathinfo").map(as_str).unwrap_or("".to_owned()),
         caps.name("headref").map(as_str).unwrap_or("".to_owned()),
@@ -516,7 +513,7 @@ fn call_service(
         return Box::new(r);
     };
 
-    let (prefix, view_string, pathinfo, headref, ending) =
+    let (upstream_repo, view_string, pathinfo, headref, ending) =
         some_or!(parse_url(&path), {
             return Box::new(
                 service.http_client.get(
@@ -537,7 +534,7 @@ fn call_service(
         let f = compute_pool.spawn(futures::future::ok(true).map(move |_| {
             let info = base_repo::get_info(
                 &view_string,
-                &prefix,
+                &upstream_repo,
                 &headref,
                 &br_path,
                 forward_maps.clone(),
@@ -576,12 +573,12 @@ fn call_service(
 
     let remote_url = {
         let mut remote_url = service.base_url.clone();
-        remote_url.push_str(&prefix);
+        remote_url.push_str(&upstream_repo);
         remote_url
     };
 
     let br_url = remote_url.clone();
-    let base_ns = to_ns(&prefix);
+    let base_ns = to_ns(&upstream_repo);
 
     let call_git_http_backend =
         |request: Request,
@@ -609,33 +606,20 @@ fn call_service(
         };
 
     let handle = service.handle.clone();
-    let ns_path = service.base_path.clone();
-    let ns_path = ns_path.join("refs/namespaces");
-    let ns_path = ns_path.join(&namespace);
-    assert!(namespace.contains("request_"));
 
-    let known_views = service.known_views.clone();
-    let prefix2 = prefix.clone();
-    let filter_spec = view_string.clone();
+    let request_tmp_namespace =
+        service.base_path.join("refs/namespaces").join(&namespace);
 
-    service
-        .compute_pool
-        .spawn_fn(move || -> Result<(), ()> {
-            if let Ok(mut kn) = known_views.write() {
-                kn.entry(prefix2.clone())
-                    .or_insert_with(BTreeSet::new)
-                    .insert(filter_spec);
-            } else {
-                warn!("Can't lock 'known_views' for writing");
-            }
-            Ok(())
-        })
-        .forget();
+    remember_known_filter_spec(
+        &service,
+        upstream_repo.clone(),
+        view_string.clone(),
+    );
 
     Box::new({
         async_fetch(
             &service,
-            prefix.to_string(),
+            upstream_repo.to_string(),
             headref.to_string(),
             view_string.to_string(),
             username.to_string(),
@@ -650,11 +634,11 @@ fn call_service(
                     return Box::new(futures::future::ok(respond_unauthorized()));
                 });
 
-                call_git_http_backend(req, path, &pathinfo, &handle)
+                call_git_http_backend(req, br_path, &pathinfo, &handle)
             },
         )
         .map(move |x| {
-            remove_dir_all(ns_path).unwrap_or_else(|e| warn!("remove_dir_all failed: {:?}", e));
+            remove_dir_all(request_tmp_namespace).unwrap_or_else(|e| warn!("remove_dir_all failed: {:?}", e));
             x
         })
     })
@@ -761,6 +745,7 @@ fn run_proxy(args: Vec<String>) -> josh::JoshResult<i32> {
     let backward_maps = service.backward_maps.clone();
     let do_gc = args.is_present("gc");
 
+    base_repo::create_local(&br_path);
     base_repo::spawn_housekeeping_thread(
         known_views,
         br_path,
@@ -907,4 +892,25 @@ fn main() {
         exit(update_hook(&args[1], &args[2], &args[3]).unwrap_or(1));
     }
     exit(run_proxy(args).unwrap_or(1));
+}
+
+fn remember_known_filter_spec(
+    service: &HttpService,
+    upstream_repo: String,
+    filter_spec: String,
+) {
+    let known_views = service.known_views.clone();
+    service
+        .compute_pool
+        .spawn_fn(move || -> Result<(), ()> {
+            if let Ok(mut kn) = known_views.write() {
+                kn.entry(upstream_repo)
+                    .or_insert_with(BTreeSet::new)
+                    .insert(filter_spec);
+            } else {
+                warn!("Can't lock 'known_views' for writing");
+            }
+            Ok(())
+        })
+        .forget();
 }

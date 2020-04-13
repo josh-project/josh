@@ -15,21 +15,21 @@ pub type KnownViews = HashMap<String, BTreeSet<String>>;
 pub fn find_refs(
     repo: &git2::Repository,
     namespace: &str,
-    prefix: &str,
+    upstream_repo: &str,
     headref: &str,
 ) -> Vec<(String, String)> {
     if headref != "" {
         return vec![(
-            format!("refs/namespaces/{}/{}", &to_ns(prefix), headref),
+            format!("refs/namespaces/{}/{}", &to_ns(upstream_repo), headref),
             format!("refs/namespaces/{}/HEAD", &namespace),
         )];
     }
 
     let mut refs = vec![];
-    let glob = format!("refs/namespaces/{}/*", &to_ns(prefix));
+    let glob = format!("refs/namespaces/{}/*", &to_ns(upstream_repo));
     for refname in repo.references_glob(&glob).unwrap().names() {
         let refname = refname.unwrap();
-        let to_ref = refname.replacen(&to_ns(prefix), &namespace, 1);
+        let to_ref = refname.replacen(&to_ns(upstream_repo), &namespace, 1);
 
         if to_ref.contains("/refs/cache-automerge/") {
             continue;
@@ -49,7 +49,7 @@ pub fn find_refs(
 
 pub fn make_view_repo(
     filter: &dyn views::Filter,
-    prefix: &str,
+    upstream_repo: &str,
     headref: &str,
     namespace: &str,
     br_path: &Path,
@@ -62,7 +62,7 @@ pub fn make_view_repo(
 
     let scratch = scratch::new(&br_path);
 
-    let refs = find_refs(&scratch, namespace, prefix, headref);
+    let refs = find_refs(&scratch, namespace, upstream_repo, headref);
     let to_head = format!("refs/namespaces/{}/HEAD", &namespace);
 
     let updated_count =
@@ -103,7 +103,7 @@ pub fn run_housekeeping(path: &Path, cmd: &str) -> String {
 
 pub fn fetch_refs_from_url(
     path: &Path,
-    prefix: &str,
+    upstream_repo: &str,
     url: &str,
     refs_prefixes: &[&str],
     username: &str,
@@ -113,7 +113,7 @@ pub fn fetch_refs_from_url(
         let spec = format!(
             "+{}:refs/namespaces/{}/{}",
             &refs_prefix,
-            to_ns(prefix),
+            to_ns(upstream_repo),
             &refs_prefix
         );
 
@@ -256,7 +256,7 @@ pub fn discover_views(br_path: &Path, known_views: Arc<RwLock<KnownViews>>) {
 
 pub fn get_info(
     view_string: &str,
-    prefix: &str,
+    upstream_repo: &str,
     rev: &str,
     br_path: &Path,
     forward_maps: Arc<RwLock<view_maps::ViewMaps>>,
@@ -271,7 +271,7 @@ pub fn get_info(
 
     let viewobj = build_filter(&view_string);
 
-    let fr = &format!("refs/namespaces/{}/{}", &to_ns(&prefix), &rev);
+    let fr = &format!("refs/namespaces/{}/{}", &to_ns(&upstream_repo), &rev);
 
     let obj = ok_or!(scratch.revparse_single(&fr), {
         ok_or!(scratch.revparse_single(&rev), {
@@ -334,10 +334,10 @@ pub fn get_info(
     return serde_json::to_string(&s).unwrap_or("Json Error".to_string());
 }
 
-fn to_known_view(prefix: &str, filter_spec: &str) -> String {
+fn to_known_view(upstream_repo: &str, filter_spec: &str) -> String {
     return format!(
         "known_views/refs/namespaces/{}/refs/namespaces/{}",
-        data_encoding::BASE64URL_NOPAD.encode(prefix.as_bytes()),
+        data_encoding::BASE64URL_NOPAD.encode(upstream_repo.as_bytes()),
         data_encoding::BASE64URL_NOPAD.encode(filter_spec.as_bytes())
     );
 }

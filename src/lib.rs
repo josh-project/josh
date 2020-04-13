@@ -22,15 +22,12 @@ macro_rules! ok_or {
     };
 }
 
-use git2;
-
 #[macro_use]
 extern crate pest_derive;
 
 #[macro_use]
 extern crate serde_json;
 
-use pest;
 use tracing;
 
 pub mod base_repo;
