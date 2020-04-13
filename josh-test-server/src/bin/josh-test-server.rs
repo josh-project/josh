@@ -6,10 +6,8 @@ extern crate tokio_core;
 extern crate tokio_io;
 extern crate tokio_process;
 
-
-
-use self::futures::Stream;
 use self::futures::future::Future;
+use self::futures::Stream;
 use self::hyper::header::ContentEncoding;
 use self::hyper::header::ContentLength;
 use self::hyper::header::ContentType;
@@ -17,15 +15,15 @@ use self::hyper::header::{Authorization, Basic};
 use self::hyper::server::Http;
 use self::hyper::server::{Request, Response, Service};
 use std::env;
+use std::io;
 use std::io::BufRead;
 use std::io::Read;
-use std::io;
 use std::net;
 use std::path::Path;
 use std::path::PathBuf;
+use std::process::exit;
 use std::process::Command;
 use std::process::Stdio;
-use std::process::exit;
 use std::str::FromStr;
 use tokio_process::CommandExt;
 
@@ -34,6 +32,48 @@ pub struct ServeTestGit {
     repo_path: PathBuf,
     username: String,
     password: String,
+}
+
+fn auth_response(
+    req: &Request,
+    username: &str,
+    password: &str,
+) -> Option<Response> {
+    let (rusername, rpassword) = match req.headers().get() {
+        Some(&Authorization(Basic {
+            ref username,
+            ref password,
+        })) => (
+            username.to_owned(),
+            password.to_owned().unwrap_or_else(|| "".to_owned()),
+        ),
+        _ => {
+            println!("ServeTestGit: no credentials in request");
+            let mut response =
+                Response::new().with_status(hyper::StatusCode::Unauthorized);
+            response.headers_mut().set_raw(
+                "WWW-Authenticate",
+                "Basic realm=\"User Visible Realm\"",
+            );
+            return Some(response);
+        }
+    };
+
+    if rusername != "admin" && (rusername != username || rpassword != password)
+    {
+        println!("ServeTestGit: wrong user/pass");
+        println!("user: {:?} - {:?}", rusername, username);
+        println!("pass: {:?} - {:?}", rpassword, password);
+        let mut response =
+            Response::new().with_status(hyper::StatusCode::Unauthorized);
+        response
+            .headers_mut()
+            .set_raw("WWW-Authenticate", "Basic realm=\"User Visible Realm\"");
+        return Some(response);
+    }
+
+    println!("CREDENTIALS OK {:?} {:?}", &rusername, &rpassword);
+    return None;
 }
 
 impl Service for ServeTestGit {
@@ -45,42 +85,12 @@ impl Service for ServeTestGit {
 
     fn call(&self, req: Request) -> Self::Future {
         println!("call");
-        let (username, password) = match req.headers().get() {
-            Some(&Authorization(Basic {
-                ref username,
-                ref password,
-            })) => (
-                username.to_owned(),
-                password.to_owned().unwrap_or_else(|| "".to_owned()),
-            ),
-            _ => {
-                println!("ServeTestGit: no credentials in request");
-                let mut response = Response::new()
-                    .with_status(hyper::StatusCode::Unauthorized);
-                response.headers_mut().set_raw(
-                    "WWW-Authenticate",
-                    "Basic realm=\"User Visible Realm\"",
-                );
-                return Box::new(futures::future::ok(response));
-            }
-        };
 
-        if username != "admin"
-            && (username != self.username || password != self.password)
+        if let Some(response) =
+            auth_response(&req, &self.username, &self.password)
         {
-            println!("ServeTestGit: wrong user/pass");
-            println!("user: {:?} - {:?}", username, self.username);
-            println!("pass: {:?} - {:?}", password, self.password);
-            let mut response =
-                Response::new().with_status(hyper::StatusCode::Unauthorized);
-            response.headers_mut().set_raw(
-                "WWW-Authenticate",
-                "Basic realm=\"User Visible Realm\"",
-            );
             return Box::new(futures::future::ok(response));
         }
-
-        println!("CREDENTIALS OK {:?} {:?}", &username, &password);
 
         let path = &self.repo_path;
 
@@ -197,7 +207,6 @@ fn main() {
 
     exit(run_server(args));
 }
-
 
 fn do_cgi(
     req: Request,
