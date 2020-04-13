@@ -1,4 +1,4 @@
-#![deny(warnings)]
+#![warn(unused_extern_crates)]
 
 #[macro_export]
 macro_rules! some_or {
@@ -22,7 +22,7 @@ macro_rules! ok_or {
     };
 }
 
-extern crate git2;
+use git2;
 
 #[macro_use]
 extern crate pest_derive;
@@ -30,15 +30,12 @@ extern crate pest_derive;
 #[macro_use]
 extern crate serde_json;
 
-extern crate pest;
-extern crate toml;
-extern crate tracing;
+use pest;
+use tracing;
 
 pub mod base_repo;
-pub mod cgi;
 pub mod scratch;
 pub mod shell;
-pub mod tomlq;
 pub mod view_maps;
 mod views;
 pub mod virtual_repo;

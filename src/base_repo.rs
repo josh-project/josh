@@ -1,4 +1,4 @@
-extern crate git2;
+use git2;
 
 use std::fs;
 

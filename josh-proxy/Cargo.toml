@@ -1,5 +1,5 @@
 [package]
-name = "josh"
+name = "josh-proxy"
 version = "0.3.0"
 repository = "https://github.com/esrlabs/josh"
 authors = ["Christian Schilling <christian.schilling@esrlabs.com>"]
@@ -9,20 +9,36 @@ keywords = ["git", "monorepo", "workflow", "scm"]
 readme = "README.md"
 edition = "2018"
 
-[workspace]
-members = ["josh-test-server", "josh-proxy", "josh-test-server2"]
-
 [dependencies]
+josh = {path = "../"}
 git2 = {version = "0.13", default-features = false}
 clap = "2"
+log = "0.4"
 tracing = { version = "*", features = ["max_level_debug", "release_max_level_info"] }
+tracing-opentelemetry = "*"
+opentelemetry = "*"
+toml = "*"
 bincode = "*"
-serde = {version = "*", features = ["derive"]}
+serde = "*"
 tempfile = "*"
+tracing-log = "*"
+tracing-futures = "*"
+tracing-subscriber = "0.2.0-alpha.4"
 regex = "1.1"
+futures = "0.1"
 data-encoding = "2.2"
+tokio-core = "0.1"
+tokio-process = "0.2"
+tokio-io = "0.1"
+ring = "0.14"
 lazy_static = "1.2"
+hyper = "0.11"
+#hyper-tls = "0.1"
+futures-cpupool = "0.1"
+rust-crypto = "0.2"
 pest_derive = "2.1"
 pest= "2.1"
+rand= "0.6"
 serde_json= "1.0"
 rs_tracing= { version = "1.0", features = ["rs_tracing"]}
+reqwest= {version = "0.9", default-features = false, features = ["hyper-011"]}

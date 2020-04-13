@@ -1,5 +1,4 @@
-extern crate git2;
-extern crate tracing;
+use tracing;
 
 use self::tracing::{event, span, Level};
 

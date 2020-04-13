@@ -1,9 +1,6 @@
-extern crate tracing;
 
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
-
-use self::tracing::{error, info};
 
 #[derive(Eq, PartialEq, PartialOrd, Hash, Clone, Copy)]
 pub struct ViewMapOid(git2::Oid);
@@ -141,38 +138,38 @@ pub fn try_load(path: &std::path::Path) -> ViewMaps {
     let file_size = std::fs::metadata(&path)
         .map(|x| x.len() / (1024 * 1024))
         .unwrap_or(0);
-    info!("trying to load: {:?}, size: {} MiB", &path, file_size);
+    tracing::info!("trying to load: {:?}, size: {} MiB", &path, file_size);
     if let Ok(f) = std::fs::File::open(path) {
         if let Ok(m) = bincode::deserialize_from(f) {
-            info!("mapfile loaded from: {:?}", &path);
+            tracing::info!("mapfile loaded from: {:?}", &path);
             return m;
         }
-        error!("deserialize_from: {:?}", &path);
+        tracing::error!("deserialize_from: {:?}", &path);
     }
-    info!("no map file loaded from: {:?}", &path);
+    tracing::info!("no map file loaded from: {:?}", &path);
     ViewMaps::new()
 }
 
 pub fn persist(m: &ViewMaps, path: &std::path::Path) {
-    info!("persisting: {:?}", &path);
+    tracing::info!("persisting: {:?}", &path);
     let f = ok_or!(tempfile::NamedTempFile::new_in(path.parent().unwrap()), {
-        error!("NamedTempFile::new");
+        tracing::error!("NamedTempFile::new");
         return;
     });
 
     ok_or!(bincode::serialize_into(&f, &m), {
-        error!("serialize_into: {:?}", &path);
+        tracing::error!("serialize_into: {:?}", &path);
         return;
     });
 
     ok_or!(f.persist(path), {
-        error!("persist: {:?}", &path);
+        tracing::error!("persist: {:?}", &path);
         return;
     });
     let file_size = std::fs::metadata(&path)
         .map(|x| x.len() / (1024 * 1024))
         .unwrap_or(0);
-    info!("persisted: {:?}, file size: {} MiB", &path, file_size);
+    tracing::info!("persisted: {:?}, file size: {} MiB", &path, file_size);
 }
 
 pub fn try_merge_both(

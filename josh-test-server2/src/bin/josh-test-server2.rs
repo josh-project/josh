@@ -6,47 +6,47 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, RwLock};
 use hyper::header::{AUTHORIZATION};
 
-fn auth_response(
-    req: &Request<Body>,
-    username: &str,
-    password: &str,
-) -> Option<Response<Body>> {
-    let (rusername, rpassword) = match req.headers().get() {
-        Some(&Authorization(Basic {
-            ref username,
-            ref password,
-        })) => (
-            username.to_owned(),
-            password.to_owned().unwrap_or_else(|| "".to_owned()),
-        ),
-        _ => {
-            println!("ServeTestGit: no credentials in request");
-            let mut response =
-                Response::new().with_status(hyper::StatusCode::Unauthorized);
-            response.headers_mut().set_raw(
-                "WWW-Authenticate",
-                "Basic realm=\"User Visible Realm\"",
-            );
-            return Some(response);
-        }
-    };
+/* fn auth_response( */
+/*     req: &Request<Body>, */
+/*     username: &str, */
+/*     password: &str, */
+/* ) -> Option<Response<Body>> { */
+/*     let (rusername, rpassword) = match req.headers().get() { */
+/*         Some(&Authorization(Basic { */
+/*             ref username, */
+/*             ref password, */
+/*         })) => ( */
+/*             username.to_owned(), */
+/*             password.to_owned().unwrap_or_else(|| "".to_owned()), */
+/*         ), */
+/*         _ => { */
+/*             println!("ServeTestGit: no credentials in request"); */
+/*             let mut response = */
+/*                 Response::new().with_status(hyper::StatusCode::Unauthorized); */
+/*             response.headers_mut().set_raw( */
+/*                 "WWW-Authenticate", */
+/*                 "Basic realm=\"User Visible Realm\"", */
+/*             ); */
+/*             return Some(response); */
+/*         } */
+/*     }; */
 
-    if rusername != "admin" && (rusername != username || rpassword != password)
-    {
-        println!("ServeTestGit: wrong user/pass");
-        println!("user: {:?} - {:?}", rusername, username);
-        println!("pass: {:?} - {:?}", rpassword, password);
-        let mut response =
-            Response::new().with_status(hyper::StatusCode::Unauthorized);
-        response
-            .headers_mut()
-            .set_raw("WWW-Authenticate", "Basic realm=\"User Visible Realm\"");
-        return Some(response);
-    }
+/*     if rusername != "admin" && (rusername != username || rpassword != password) */
+/*     { */
+/*         println!("ServeTestGit: wrong user/pass"); */
+/*         println!("user: {:?} - {:?}", rusername, username); */
+/*         println!("pass: {:?} - {:?}", rpassword, password); */
+/*         let mut response = */
+/*             Response::new().with_status(hyper::StatusCode::Unauthorized); */
+/*         response */
+/*             .headers_mut() */
+/*             .set_raw("WWW-Authenticate", "Basic realm=\"User Visible Realm\""); */
+/*         return Some(response); */
+/*     } */
 
-    println!("CREDENTIALS OK {:?} {:?}", &rusername, &rpassword);
-    return None;
-}
+/*     println!("CREDENTIALS OK {:?} {:?}", &rusername, &rpassword); */
+/*     return None; */
+/* } */
 
 struct MyService {
     num: usize,

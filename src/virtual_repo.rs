@@ -1,17 +1,13 @@
 use super::*;
 use git2::Oid;
-use std::env;
 use std::path::Path;
 use std::sync::{Arc, RwLock};
 
-extern crate reqwest;
-extern crate tracing;
+use tracing;
 
-use self::tracing::{debug, span, trace, warn, Level};
+use self::tracing::{debug, span, trace, Level};
 
 use std::collections::HashMap;
-
-pub type RepoUpdate = HashMap<String, String>;
 
 fn baseref_and_options(
     refname: &str,
@@ -37,7 +33,7 @@ fn baseref_and_options(
 }
 
 pub fn process_repo_update(
-    repo_update: RepoUpdate,
+    repo_update: HashMap<String, String>,
     _forward_maps: Arc<RwLock<view_maps::ViewMaps>>,
     backward_maps: Arc<RwLock<view_maps::ViewMaps>>,
 ) -> Result<String, JoshError> {
@@ -157,59 +153,3 @@ pub fn process_repo_update(
     );
 }
 
-pub fn update_hook(refname: &str, old: &str, new: &str) -> JoshResult<i32> {
-    let mut repo_update = RepoUpdate::new();
-    repo_update.insert("new".to_owned(), new.to_owned());
-    repo_update.insert("old".to_owned(), old.to_owned());
-    repo_update.insert("refname".to_owned(), refname.to_owned());
-
-    for (env_name, name) in [
-        ("JOSH_USERNAME", "username"),
-        ("JOSH_PASSWORD", "password"),
-        ("JOSH_REMOTE", "remote_url"),
-        ("JOSH_BASE_NS", "base_ns"),
-        ("JOSH_VIEWSTR", "filter_spec"),
-        ("GIT_NAMESPACE", "GIT_NAMESPACE"),
-    ]
-    .iter()
-    {
-        repo_update.insert(name.to_string(), env::var(&env_name)?);
-    }
-
-    let scratch = scratch::new(&Path::new(&env::var("GIT_DIR")?));
-    repo_update.insert(
-        "GIT_DIR".to_owned(),
-        scratch
-            .path()
-            .to_str()
-            .ok_or(josh_error("GIT_DIR not set"))?
-            .to_owned(),
-    );
-
-    let port = env::var("JOSH_PORT")?;
-
-    let client = reqwest::Client::builder().timeout(None).build()?;
-    let resp = client
-        .post(&format!("http://localhost:{}/repo_update", port))
-        .json(&repo_update)
-        .send();
-
-    match resp {
-        Ok(mut r) => {
-            if let Ok(body) = r.text() {
-                println!("response from upstream:\n {}\n\n", body);
-            } else {
-                println!("no upstream response");
-            }
-            if r.status().is_success() {
-                return Ok(0);
-            } else {
-                return Ok(1);
-            }
-        }
-        Err(err) => {
-            warn!("/repo_update request failed {:?}", err);
-        }
-    };
-    return Ok(1);
-}

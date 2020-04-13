@@ -39,7 +39,6 @@ use futures_cpupool::CpuPool;
 use hyper::header::{Authorization, Basic};
 use hyper::server::{Http, Request, Response, Service};
 use josh::base_repo;
-use josh::cgi;
 use josh::shell;
 use josh::view_maps;
 use josh::virtual_repo;
@@ -424,9 +423,7 @@ fn call_service(
                 .and_then(move |buffer| {
                     return pool.spawn(futures::future::ok(buffer).map(
                         move |buffer| {
-                            let repo_update: virtual_repo::RepoUpdate =
-                                serde_json::from_str(&buffer)
-                                    .unwrap_or(virtual_repo::RepoUpdate::new());
+                            let repo_update = serde_json::from_str(&buffer).unwrap_or(HashMap::new());
                             virtual_repo::process_repo_update(
                                 repo_update,
                                 forward_maps,
@@ -615,7 +612,7 @@ fn call_service(
             cmd.env("JOSH_REMOTE", remote_url);
             cmd.env("JOSH_BASE_NS", base_ns);
 
-            cgi::do_cgi(request, cmd, handle.clone())
+            josh_proxy::do_cgi(request, cmd, handle.clone())
         };
 
     let handle = service.handle.clone();
@@ -932,6 +929,63 @@ fn to_ns(path: &str) -> String {
     return path.trim_matches('/').replace("/", "/refs/namespaces/");
 }
 
+fn update_hook(refname: &str, old: &str, new: &str) -> josh::JoshResult<i32> {
+    let mut repo_update = HashMap::new();
+    repo_update.insert("new".to_owned(), new.to_owned());
+    repo_update.insert("old".to_owned(), old.to_owned());
+    repo_update.insert("refname".to_owned(), refname.to_owned());
+
+    for (env_name, name) in [
+        ("JOSH_USERNAME", "username"),
+        ("JOSH_PASSWORD", "password"),
+        ("JOSH_REMOTE", "remote_url"),
+        ("JOSH_BASE_NS", "base_ns"),
+        ("JOSH_VIEWSTR", "filter_spec"),
+        ("GIT_NAMESPACE", "GIT_NAMESPACE"),
+    ]
+    .iter()
+    {
+        repo_update.insert(name.to_string(), env::var(&env_name)?);
+    }
+
+    let scratch = git2::Repository::init_bare(&Path::new(&env::var("GIT_DIR")?))?;
+    repo_update.insert(
+        "GIT_DIR".to_owned(),
+        scratch
+            .path()
+            .to_str()
+            .ok_or(josh::josh_error("GIT_DIR not set"))?
+            .to_owned(),
+    );
+
+    let port = env::var("JOSH_PORT")?;
+
+    let client = reqwest::Client::builder().timeout(None).build()?;
+    let resp = client
+        .post(&format!("http://localhost:{}/repo_update", port))
+        .json(&repo_update)
+        .send();
+
+    match resp {
+        Ok(mut r) => {
+            if let Ok(body) = r.text() {
+                println!("response from upstream:\n {}\n\n", body);
+            } else {
+                println!("no upstream response");
+            }
+            if r.status().is_success() {
+                return Ok(0);
+            } else {
+                return Ok(1);
+            }
+        }
+        Err(err) => {
+            warn!("/repo_update request failed {:?}", err);
+        }
+    };
+    return Ok(1);
+}
+
 fn main() {
     let args = {
         let mut args = vec![];
@@ -944,7 +998,7 @@ fn main() {
     if args[0].ends_with("/update") {
         println!("josh-proxy");
         exit(
-            virtual_repo::update_hook(&args[1], &args[2], &args[3])
+            update_hook(&args[1], &args[2], &args[3])
                 .unwrap_or(1),
         );
     }

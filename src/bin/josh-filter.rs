@@ -1,19 +1,9 @@
 #![deny(warnings)]
-
-extern crate josh;
-
-extern crate rs_tracing;
-
-extern crate clap;
-extern crate git2;
-extern crate regex;
+#![warn(unused_extern_crates)]
 
 #[macro_use]
 extern crate lazy_static;
 
-use josh::view_maps;
-use std::env;
-use std::process::exit;
 use std::sync::{Arc, RwLock};
 
 use std::fs::read_to_string;
@@ -45,14 +35,14 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
 
     if args.is_present("version") {
         let v =
-            option_env!("GIT_DESCRIBE").unwrap_or(env!("CARGO_PKG_VERSION"));
+            option_env!("GIT_DESCRIBE").unwrap_or(std::env!("CARGO_PKG_VERSION"));
         println!("Version: {}", v);
         return Ok(0);
     }
 
     let repo = git2::Repository::open_from_env()?;
-    let mut fm = view_maps::try_load(&repo.path().join("josh_forward_maps"));
-    let backward_maps = Arc::new(RwLock::new(view_maps::try_load(
+    let mut fm = josh::view_maps::try_load(&repo.path().join("josh_forward_maps"));
+    let backward_maps = Arc::new(RwLock::new(josh::view_maps::try_load(
         &repo.path().join("josh_backward_maps"),
     )));
 
@@ -151,8 +141,8 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
 
     let bm = backward_maps.read().unwrap();
 
-    view_maps::persist(&*bm, &repo.path().join("josh_backward_maps"));
-    view_maps::persist(&fm, &repo.path().join("josh_forward_maps"));
+    josh::view_maps::persist(&*bm, &repo.path().join("josh_backward_maps"));
+    josh::view_maps::persist(&fm, &repo.path().join("josh_forward_maps"));
 
     return Ok(0);
 }
@@ -160,11 +150,11 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
 fn main() {
     let args = {
         let mut args = vec![];
-        for arg in env::args() {
+        for arg in std::env::args() {
             args.push(arg);
         }
         args
     };
 
-    exit(run_filter(args).unwrap_or(1));
+    std::process::exit(run_filter(args).unwrap_or(1));
 }

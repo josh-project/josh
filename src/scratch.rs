@@ -1,6 +1,5 @@
-extern crate crypto;
-extern crate git2;
-extern crate tracing;
+use git2;
+use tracing;
 
 use self::tracing::{warn, Level};
 use super::empty_tree;
