@@ -615,7 +615,7 @@ fn call_service(
                 return Box::new(futures::future::ok(respond_unauthorized()));
             }
 
-            let do_filter = do_filter(&service, upstream_repo, namespace, filter_spec);
+            let do_filter = do_filter(&service, upstream_repo, namespace, filter_spec, headref);
 
             let respond = do_filter.and_then(move |_| {
                 call_git_http_backend(req, br_path, &pathinfo, &handle)
@@ -638,6 +638,7 @@ fn do_filter(
     upstream_repo: String,
     namespace: String,
     filter_spec: String,
+    headref: String,
 ) -> BoxedFuture<()> {
     let pool = service.compute_pool.clone();
     let forward_maps = service.forward_maps.clone();
@@ -649,7 +650,7 @@ fn do_filter(
         base_repo::make_view_repo(
             &*josh::build_filter(&filter_spec),
             &upstream_repo,
-            &"",
+            &headref,
             &namespace,
             &br_path,
             &mut fm,
@@ -756,19 +757,13 @@ fn run_proxy(args: Vec<String>) -> josh::JoshResult<i32> {
         &args.value_of("remote").expect("missing remote repo url"),
     )?;
 
-    let known_views = service.known_views.clone();
-    let br_path = service.base_path.clone();
-    let forward_maps = service.forward_maps.clone();
-    let backward_maps = service.backward_maps.clone();
-    let do_gc = args.is_present("gc");
-
     base_repo::create_local(&br_path);
     base_repo::spawn_housekeeping_thread(
-        known_views,
-        br_path,
-        forward_maps,
-        backward_maps,
-        do_gc,
+        service.known_views.clone(),
+        service.base_path.clone(),
+        service.forward_maps.clone(),
+        service.backward_maps.clone(),
+        args.is_present("gc")
     );
 
     core.run(futures::future::empty::<(), josh::JoshError>())?;
