@@ -757,7 +757,7 @@ fn run_proxy(args: Vec<String>) -> josh::JoshResult<i32> {
         &args.value_of("remote").expect("missing remote repo url"),
     )?;
 
-    base_repo::create_local(&br_path);
+    base_repo::create_local(&service.base_path);
     base_repo::spawn_housekeeping_thread(
         service.known_views.clone(),
         service.base_path.clone(),
