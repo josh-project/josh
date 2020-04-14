@@ -3,14 +3,14 @@ use git2;
 use std::fs;
 
 use super::*;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, BTreeMap};
 use std::env::current_exe;
 use std::os::unix::fs::symlink;
 use std::path::Path;
 use std::sync::{Arc, RwLock};
 use tracing::{debug, info, span, warn, Level};
 
-pub type KnownViews = HashMap<String, BTreeSet<String>>;
+pub type KnownViews = BTreeMap<String, BTreeSet<String>>;
 
 pub fn find_refs(
     repo: &git2::Repository,
@@ -283,7 +283,7 @@ pub fn get_info(
         return format!("not a commit");
     });
 
-    let mut meta = HashMap::new();
+    let mut meta = std::collections::HashMap::new();
     meta.insert("sha1".to_owned(), "".to_owned());
     let transformed = ok_or!(
         viewobj.apply_to_commit(&scratch, &commit, &mut fm, &mut bm, &mut meta),
