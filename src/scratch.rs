@@ -3,8 +3,8 @@ use tracing;
 
 use self::tracing::{warn, Level};
 use super::empty_tree;
-use super::view_maps;
 use super::filters;
+use super::view_maps;
 use super::UnapplyView;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -159,10 +159,6 @@ pub fn unapply_view(
     }
 
     return Ok(UnapplyView::Done(ret));
-}
-
-pub fn new(path: &Path) -> git2::Repository {
-    git2::Repository::init_bare(&path).expect("could not init scratch")
 }
 
 fn transform_commit(

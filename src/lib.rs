@@ -31,15 +31,14 @@ extern crate serde_json;
 use tracing;
 
 pub mod base_repo;
+pub mod filters;
 pub mod scratch;
 pub mod shell;
 pub mod view_maps;
-pub mod filters;
-pub mod virtual_repo;
 
+pub use crate::filters::build_chain;
 pub use crate::scratch::apply_view_to_refs;
 pub use crate::scratch::unapply_view;
-pub use crate::filters::build_chain;
 
 #[derive(Clone)]
 pub enum UnapplyView {

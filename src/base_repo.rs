@@ -1,6 +1,5 @@
 use git2;
 
-
 use super::*;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
@@ -45,31 +44,27 @@ pub fn find_refs(
 }
 
 pub fn make_view_repo(
+    repo: &git2::Repository,
     filter: &dyn filters::Filter,
     upstream_repo: &str,
     headref: &str,
     namespace: &str,
-    br_path: &Path,
     fm: &mut view_maps::ViewMaps,
     bm: &mut view_maps::ViewMaps,
 ) -> usize {
     let filter_spec = filter.filter_spec();
-    let _trace_s =
-        span!(Level::TRACE, "make_view_repo", ?filter_spec, ?br_path);
+    let _trace_s = span!(Level::TRACE, "make_view_repo", ?filter_spec);
 
-    let scratch = scratch::new(&br_path);
-
-    let refs = find_refs(&scratch, namespace, upstream_repo, headref);
+    let refs = find_refs(&repo, namespace, upstream_repo, headref);
     let to_head = format!("refs/namespaces/{}/HEAD", &namespace);
 
     let updated_count =
-        scratch::apply_view_to_refs(&scratch, &*filter, &refs, fm, bm);
+        scratch::apply_view_to_refs(&repo, &*filter, &refs, fm, bm);
 
     if headref == "" {
         let mastername =
             format!("refs/namespaces/{}/refs/heads/master", &namespace);
-        if let Ok(_) =
-            scratch.reference_symbolic(&to_head, &mastername, true, "")
+        if let Ok(_) = repo.reference_symbolic(&to_head, &mastername, true, "")
         {
         } else {
             warn!(
@@ -98,16 +93,13 @@ fn run_housekeeping(path: &Path, cmd: &str) -> String {
     return output;
 }
 
-
-
-pub fn discover_views(br_path: &Path, known_views: Arc<RwLock<KnownViews>>) {
-    let _trace_s = span!(Level::TRACE, "discover_views", ?br_path);
-
-    let repo = scratch::new(&br_path);
+pub fn discover_views(
+    repo: &git2::Repository,
+    known_views: Arc<RwLock<KnownViews>>,
+) {
+    let _trace_s = span!(Level::TRACE, "discover_views");
 
     let refname = format!("refs/namespaces/*.git/refs/heads/master");
-
-    debug!("discover_views {:?}", &br_path);
 
     if let Ok(mut kn) = known_views.write() {
         for reference in repo.references_glob(&refname).unwrap() {
@@ -133,16 +125,14 @@ pub fn discover_views(br_path: &Path, known_views: Arc<RwLock<KnownViews>>) {
 }
 
 pub fn get_info(
+    repo: &git2::Repository,
     view_string: &str,
     upstream_repo: &str,
     rev: &str,
-    br_path: &Path,
     forward_maps: Arc<RwLock<view_maps::ViewMaps>>,
     backward_maps: Arc<RwLock<view_maps::ViewMaps>>,
 ) -> String {
-    let _trace_s = span!(Level::TRACE, "get_info", ?view_string, ?br_path);
-
-    let scratch = scratch::new(&br_path);
+    let _trace_s = span!(Level::TRACE, "get_info", ?view_string);
 
     let mut bm = view_maps::new_downstream(&backward_maps);
     let mut fm = view_maps::new_downstream(&forward_maps);
@@ -151,8 +141,8 @@ pub fn get_info(
 
     let fr = &format!("refs/namespaces/{}/{}", &to_ns(&upstream_repo), &rev);
 
-    let obj = ok_or!(scratch.revparse_single(&fr), {
-        ok_or!(scratch.revparse_single(&rev), {
+    let obj = ok_or!(repo.revparse_single(&fr), {
+        ok_or!(repo.revparse_single(&rev), {
             return format!("rev not found: {:?}", &rev);
         })
     });
@@ -164,7 +154,7 @@ pub fn get_info(
     let mut meta = std::collections::HashMap::new();
     meta.insert("sha1".to_owned(), "".to_owned());
     let transformed = ok_or!(
-        viewobj.apply_to_commit(&scratch, &commit, &mut fm, &mut bm, &mut meta),
+        viewobj.apply_to_commit(&repo, &commit, &mut fm, &mut bm, &mut meta),
         {
             return format!("cannot apply_to_commit");
         }
@@ -176,7 +166,7 @@ pub fn get_info(
             .map(|x| {
                 json!({
                     "commit": x.to_string(),
-                    "tree": scratch.find_commit(x)
+                    "tree": repo.find_commit(x)
                         .map(|c| { c.tree_id() })
                         .unwrap_or(git2::Oid::zero())
                         .to_string(),
@@ -186,7 +176,7 @@ pub fn get_info(
         pids
     };
 
-    let t = if let Ok(transformed) = scratch.find_commit(transformed) {
+    let t = if let Ok(transformed) = repo.find_commit(transformed) {
         json!({
             "commit": transformed.id().to_string(),
             "tree": transformed.tree_id().to_string(),
@@ -221,8 +211,8 @@ fn to_known_view(upstream_repo: &str, filter_spec: &str) -> String {
 }
 
 pub fn spawn_housekeeping_thread(
+    repo: git2::Repository,
     known_views: Arc<RwLock<base_repo::KnownViews>>,
-    br_path: std::path::PathBuf,
     forward_maps: Arc<RwLock<view_maps::ViewMaps>>,
     backward_maps: Arc<RwLock<view_maps::ViewMaps>>,
     do_gc: bool,
@@ -233,7 +223,7 @@ pub fn spawn_housekeeping_thread(
     std::thread::spawn(move || {
         let mut total = 0;
         loop {
-            base_repo::discover_views(&br_path.clone(), known_views.clone());
+            base_repo::discover_views(&repo, known_views.clone());
             if let Ok(kn) = known_views.read() {
                 for (prefix2, e) in kn.iter() {
                     info!("background rebuild root: {:?}", prefix2);
@@ -251,11 +241,11 @@ pub fn spawn_housekeeping_thread(
                         );
 
                         updated_count += base_repo::make_view_repo(
+                            &repo,
                             &*filters::parse(&v),
                             &prefix2,
                             "refs/heads/master",
                             &to_known_view(&prefix2, &v),
-                            &br_path,
                             &mut fm,
                             &mut bm,
                         );
@@ -285,38 +275,44 @@ pub fn spawn_housekeeping_thread(
             {
                 view_maps::persist(
                     &*backward_maps.read().unwrap(),
-                    &br_path.join("josh_backward_maps"),
+                    &repo.path().join("josh_backward_maps"),
                 );
                 view_maps::persist(
                     &*forward_maps.read().unwrap(),
-                    &br_path.join("josh_forward_maps"),
+                    &repo.path().join("josh_forward_maps"),
                 );
                 total = 0;
                 persist_timer = std::time::Instant::now();
             }
             info!(
                 "{}",
-                base_repo::run_housekeeping(&br_path, &"git count-objects -v")
-                    .replace("\n", "  ")
+                base_repo::run_housekeeping(
+                    &repo.path(),
+                    &"git count-objects -v"
+                )
+                .replace("\n", "  ")
             );
             if do_gc
                 && gc_timer.elapsed() > std::time::Duration::from_secs(60 * 60)
             {
                 info!(
                     "\n----------\n{}\n----------",
-                    base_repo::run_housekeeping(&br_path, &"git repack -adkbn")
+                    base_repo::run_housekeeping(
+                        &repo.path(),
+                        &"git repack -adkbn"
+                    )
                 );
                 info!(
                     "\n----------\n{}\n----------",
                     base_repo::run_housekeeping(
-                        &br_path,
+                        &repo.path(),
                         &"git count-objects -vH"
                     )
                 );
                 info!(
                     "\n----------\n{}\n----------",
                     base_repo::run_housekeeping(
-                        &br_path,
+                        &repo.path(),
                         &"git prune --expire=2w"
                     )
                 );

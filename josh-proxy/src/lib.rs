@@ -5,29 +5,29 @@ extern crate tokio_io;
 extern crate tokio_process;
 extern crate tracing;
 
-use std::fs;
-use std::env::current_exe;
-use std::os::unix::fs::symlink;
-use git2::Oid;
-use self::futures::Stream;
 use self::futures::future::Future;
+use self::futures::Stream;
 use self::hyper::header::ContentEncoding;
 use self::hyper::header::ContentLength;
 use self::hyper::header::ContentType;
 use self::hyper::server::{Request, Response};
 use self::tokio_process::CommandExt;
 use self::tracing::{debug, span, trace, Level};
+use git2::Oid;
 use std::collections::HashMap;
+use std::env::current_exe;
+use std::fs;
+use std::io;
 use std::io::BufRead;
 use std::io::Read;
-use std::io;
+use std::os::unix::fs::symlink;
 use std::path::Path;
 use std::process::Command;
 use std::process::Stdio;
 use std::str::FromStr;
 use std::sync::{Arc, RwLock};
 
-use tracing::{event};
+use tracing::event;
 
 pub fn do_cgi(
     req: Request,
@@ -136,7 +136,6 @@ fn build_response(command_result: std::process::Output) -> Response {
     response
 }
 
-
 fn baseref_and_options(
     refname: &str,
 ) -> josh::JoshResult<(String, String, Vec<String>)> {
@@ -171,15 +170,19 @@ pub fn process_repo_update(
     };
     let _trace_s = span!(Level::TRACE, "process_repo_update", repo_update= ?ru);
     let refname = repo_update.get("refname").ok_or(josh::josh_error(""))?;
-    let filter_spec = repo_update.get("filter_spec").ok_or(josh::josh_error(""))?;
+    let filter_spec =
+        repo_update.get("filter_spec").ok_or(josh::josh_error(""))?;
     let old = repo_update.get("old").ok_or(josh::josh_error(""))?;
     let new = repo_update.get("new").ok_or(josh::josh_error(""))?;
     let username = repo_update.get("username").ok_or(josh::josh_error(""))?;
     let password = repo_update.get("password").ok_or(josh::josh_error(""))?;
-    let remote_url = repo_update.get("remote_url").ok_or(josh::josh_error(""))?;
+    let remote_url =
+        repo_update.get("remote_url").ok_or(josh::josh_error(""))?;
     let base_ns = repo_update.get("base_ns").ok_or(josh::josh_error(""))?;
     let git_dir = repo_update.get("GIT_DIR").ok_or(josh::josh_error(""))?;
-    let git_ns = repo_update.get("GIT_NAMESPACE").ok_or(josh::josh_error(""))?;
+    let git_ns = repo_update
+        .get("GIT_NAMESPACE")
+        .ok_or(josh::josh_error(""))?;
     debug!("REPO_UPDATE env ok");
 
     let repo = git2::Repository::init_bare(&Path::new(&git_dir))?;
@@ -225,7 +228,9 @@ pub fn process_repo_update(
                 rewritten
             }
             josh::UnapplyView::BranchDoesNotExist => {
-                return Err(josh::josh_error("branch does not exist on remote"));
+                return Err(josh::josh_error(
+                    "branch does not exist on remote",
+                ));
             }
             josh::UnapplyView::RejectMerge(parent_count) => {
                 return Err(josh::josh_error(&format!(
@@ -316,45 +321,27 @@ fn push_head_url(
     return Ok(stderr);
 }
 
-fn install_josh_hook(scratch_dir: &Path) {
-    if !scratch_dir.join("hooks/update").exists() {
+pub fn create_repo(path: &Path) -> josh::JoshResult<git2::Repository> {
+    debug!("init base repo: {:?}", path);
+    fs::create_dir_all(path).expect("can't create_dir_all");
+    let repo = git2::Repository::init_bare(path)?;
+    if !path.join("hooks/update").exists() {
         let shell = josh::shell::Shell {
-            cwd: scratch_dir.to_path_buf(),
+            cwd: path.to_path_buf(),
         };
         shell.command("git config http.receivepack true");
         let ce = current_exe().expect("can't find path to exe");
         shell.command("rm -Rf hooks");
         shell.command("mkdir hooks");
-        symlink(ce, scratch_dir.join("hooks").join("update"))
+        symlink(ce, path.join("hooks").join("update"))
             .expect("can't symlink update hook");
         shell.command(&format!(
             "git config credential.helper '!f() {{ echo \"password=\"$GIT_PASSWORD\"\"; }}; f'"
         ));
         shell.command(&"git config gc.auto 0");
     }
-}
-
-pub fn create_repo(path: &Path) {
-    debug!("init base repo: {:?}", path);
-    fs::create_dir_all(path).expect("can't create_dir_all");
-
-    match git2::Repository::open(path) {
-        Ok(_) => {
-            tracing::debug!("repo exists");
-            install_josh_hook(path);
-            return;
-        }
-        Err(_) => {}
-    };
-
-    match git2::Repository::init_bare(path) {
-        Ok(_) => {
-            tracing::info!("repo initialized");
-            install_josh_hook(path);
-            return;
-        }
-        Err(_) => {}
-    }
+    tracing::info!("repo initialized");
+    return Ok(repo);
 }
 
 pub fn fetch_refs_from_url(
