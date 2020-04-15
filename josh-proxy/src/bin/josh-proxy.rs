@@ -41,7 +41,6 @@ use hyper::server::{Http, Request, Response, Service};
 use josh::base_repo;
 use josh::shell;
 use josh::view_maps;
-use josh::virtual_repo;
 use rand::random;
 use regex::Regex;
 use std::env;
@@ -115,7 +114,7 @@ fn fetch_upstream_ref(
 
     Box::new(http.fetch_push_pool.spawn_fn(move || {
         let refs_to_fetch = vec![headref.as_str()];
-        if let Ok(_) = base_repo::fetch_refs_from_url(
+        if let Ok(_) = josh_proxy::fetch_refs_from_url(
             &br_path,
             &upstream_repo,
             &remote_url,
@@ -171,7 +170,7 @@ fn fetch_upstream(
         Box::new(http.compute_pool.spawn(futures::future::ok(true)))
     } else {
         Box::new(http.fetch_push_pool.spawn_fn(move || {
-            if let Ok(_) = base_repo::fetch_refs_from_url(
+            if let Ok(_) = josh_proxy::fetch_refs_from_url(
                 &br_path,
                 &upstream_repo,
                 &remote_url,
@@ -383,7 +382,7 @@ fn call_service(
                         move |buffer| {
                             let repo_update = serde_json::from_str(&buffer)
                                 .unwrap_or(HashMap::new());
-                            virtual_repo::process_repo_update(
+                            josh_proxy::process_repo_update(
                                 repo_update,
                                 forward_maps,
                                 backward_maps,
@@ -615,7 +614,13 @@ fn call_service(
                 return Box::new(futures::future::ok(respond_unauthorized()));
             }
 
-            let do_filter = do_filter(&service, upstream_repo, namespace, filter_spec, headref);
+            let do_filter = do_filter(
+                &service,
+                upstream_repo,
+                namespace,
+                filter_spec,
+                headref,
+            );
 
             let respond = do_filter.and_then(move |_| {
                 call_git_http_backend(req, br_path, &pathinfo, &handle)
@@ -648,7 +653,7 @@ fn do_filter(
         let mut bm = view_maps::new_downstream(&backward_maps);
         let mut fm = view_maps::new_downstream(&forward_maps);
         base_repo::make_view_repo(
-            &*josh::build_filter(&filter_spec),
+            &*josh::filters::parse(&filter_spec),
             &upstream_repo,
             &headref,
             &namespace,
@@ -757,13 +762,13 @@ fn run_proxy(args: Vec<String>) -> josh::JoshResult<i32> {
         &args.value_of("remote").expect("missing remote repo url"),
     )?;
 
-    base_repo::create_local(&service.base_path);
+    josh_proxy::create_repo(&service.base_path);
     base_repo::spawn_housekeeping_thread(
         service.known_views.clone(),
         service.base_path.clone(),
         service.forward_maps.clone(),
         service.backward_maps.clone(),
-        args.is_present("gc")
+        args.is_present("gc"),
     );
 
     core.run(futures::future::empty::<(), josh::JoshError>())?;

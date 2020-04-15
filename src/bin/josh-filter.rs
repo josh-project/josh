@@ -70,7 +70,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
 
         let filter_spec = caps.name("spec").unwrap().as_str().trim().to_owned();
 
-        let mut viewobj = josh::build_filter(&filter_spec);
+        let mut viewobj = josh::filters::parse(&filter_spec);
 
         let pres = viewobj.prefixes();
 
@@ -78,7 +78,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
             for (p, v) in pres.iter() {
                 viewobj = josh::build_chain(
                     viewobj,
-                    josh::build_filter(&format!(
+                    josh::filters::parse(&format!(
                         ":info={},commit=#sha1,tree=#tree,src={},view={}",
                         p,
                         &src,
@@ -92,7 +92,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
 
         if args.is_present("squash") {
             viewobj = josh::build_chain(
-                josh::build_filter(&format!(":cutoff={}", &src)),
+                josh::filters::parse(&format!(":cutoff={}", &src)),
                 viewobj,
             );
         }

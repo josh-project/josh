@@ -34,13 +34,12 @@ pub mod base_repo;
 pub mod scratch;
 pub mod shell;
 pub mod view_maps;
-mod views;
+pub mod filters;
 pub mod virtual_repo;
 
 pub use crate::scratch::apply_view_to_refs;
 pub use crate::scratch::unapply_view;
-pub use crate::views::build_chain;
-pub use crate::views::build_filter;
+pub use crate::filters::build_chain;
 
 #[derive(Clone)]
 pub enum UnapplyView {

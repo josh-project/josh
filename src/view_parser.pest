@@ -3,16 +3,16 @@ CMD_START = _{(":"|"!")}
 CMD_END = _{("="|"/")}
 
 
-view = { transform* }
+filter_spec = { filter* }
 
-transform = { CMD_START ~ cmd ~ CMD_END ~ argument }
+filter = { CMD_START ~ cmd ~ CMD_END ~ argument }
 
 argument = { (!(CMD_START | NEWLINE) ~ ANY)+ }
 
 cmd = { (!(CMD_END | NEWLINE) ~ ANY)* }
 
-viewfile = { NEWLINE* ~ file_entry ~ (NEWLINE+ ~ file_entry)* }
+workspace_file = { NEWLINE* ~ file_entry ~ (NEWLINE+ ~ file_entry)* }
 
-file_entry = { dst_path ~ "=" ~ view }
+file_entry = { dst_path ~ "=" ~ filter_spec }
 
 dst_path = @{ (!("=" | WHITESPACE) ~ ANY)+ }

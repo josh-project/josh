@@ -4,7 +4,7 @@ use tracing;
 use self::tracing::{warn, Level};
 use super::empty_tree;
 use super::view_maps;
-use super::views;
+use super::filters;
 use super::UnapplyView;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -79,7 +79,7 @@ pub fn find_all_views(reference: &git2::Reference) -> HashSet<String> {
 pub fn unapply_view(
     repo: &git2::Repository,
     backward_maps: std::sync::Arc<std::sync::RwLock<view_maps::ViewMaps>>,
-    viewobj: &dyn views::Filter,
+    viewobj: &dyn filters::Filter,
     old: git2::Oid,
     new: git2::Oid,
 ) -> super::JoshResult<UnapplyView> {
@@ -167,7 +167,7 @@ pub fn new(path: &Path) -> git2::Repository {
 
 fn transform_commit(
     repo: &git2::Repository,
-    viewobj: &dyn views::Filter,
+    viewobj: &dyn filters::Filter,
     from_refsname: &str,
     to_refname: &str,
     forward_maps: &mut view_maps::ViewMaps,
@@ -244,7 +244,7 @@ fn transform_commit(
 
 pub fn apply_view_to_refs(
     repo: &git2::Repository,
-    viewobj: &dyn views::Filter,
+    viewobj: &dyn filters::Filter,
     refs: &[(String, String)],
     forward_maps: &mut view_maps::ViewMaps,
     backward_maps: &mut view_maps::ViewMaps,

@@ -12,7 +12,7 @@ fn select_parent_commits<'a>(
     filtered_tree_id: git2::Oid,
     filtered_parent_commits: Vec<&'a git2::Commit>,
 ) -> Vec<&'a git2::Commit<'a>> {
-    let affects_transformed = filtered_parent_commits
+    let affects_filtered = filtered_parent_commits
         .iter()
         .any(|x| filtered_tree_id != x.tree_id());
 
@@ -20,7 +20,7 @@ fn select_parent_commits<'a>(
         .parents()
         .all(|x| x.tree_id() == original_commit.tree_id());
 
-    return if affects_transformed || all_diffs_empty {
+    return if affects_filtered || all_diffs_empty {
         filtered_parent_commits
     } else {
         vec![]
@@ -30,48 +30,46 @@ fn select_parent_commits<'a>(
 fn create_filtered_commit(
     repo: &git2::Repository,
     original_commmit: &git2::Commit,
-    transformed_parents_ids: Vec<git2::Oid>,
-    new_tree: &git2::Tree,
+    filtered_parent_ids: Vec<git2::Oid>,
+    filtered_tree: &git2::Tree,
 ) -> super::JoshResult<git2::Oid> {
-    let transformed_parents: std::result::Result<Vec<_>, _> =
-        transformed_parents_ids
+    let filtered_parent_commits: std::result::Result<Vec<_>, _> =
+        filtered_parent_ids
             .iter()
             .filter(|x| **x != git2::Oid::zero())
             .map(|x| repo.find_commit(*x))
             .collect();
 
-    let transformed_parents = transformed_parents?;
+    let filtered_parent_commits = filtered_parent_commits?;
 
-    if new_tree.id() == empty_tree_id()
+    if filtered_tree.id() == empty_tree_id()
         && original_commmit.tree_id() != empty_tree_id()
-        && transformed_parents.len() != 0
+        && filtered_parent_commits.len() != 0
     {
-        return Ok(transformed_parents[0].id());
+        return Ok(filtered_parent_commits[0].id());
     }
 
-    let filtered_transformed_parent_refs: Vec<&_> = select_parent_commits(
+    let selected_filtered_parent_commits: Vec<&_> = select_parent_commits(
         &original_commmit,
-        new_tree.id(),
-        transformed_parents.iter().collect(),
+        filtered_tree.id(),
+        filtered_parent_commits.iter().collect(),
     );
 
-    if new_tree.id() == empty_tree_id()
-        && filtered_transformed_parent_refs.len() == 0
-    {
-        return Ok(git2::Oid::zero());
-    }
+    if selected_filtered_parent_commits.len() == 0 {
+        if filtered_tree.id() == empty_tree_id() {
+            return Ok(git2::Oid::zero());
+        }
 
-    if filtered_transformed_parent_refs.len() == 0
-        && transformed_parents.len() != 0
-    {
-        return Ok(transformed_parents[0].id());
+        if filtered_parent_commits.len() != 0 {
+            return Ok(filtered_parent_commits[0].id());
+        }
     }
 
     return scratch::rewrite(
         &repo,
         &original_commmit,
-        &filtered_transformed_parent_refs,
-        &new_tree,
+        &selected_filtered_parent_commits,
+        &filtered_tree,
     );
 }
 
@@ -87,18 +85,19 @@ pub trait Filter {
         if forward_maps.has(&repo, &self.filter_spec(), commit.id()) {
             return Ok(forward_maps.get(&self.filter_spec(), commit.id()));
         }
-        let new_tree = self.apply_to_tree(&repo, &commit.tree()?, commit.id());
+        let filtered_tree =
+            self.apply_to_tree(&repo, &commit.tree()?, commit.id());
 
-        let transformed_parents_ids =
+        let filtered_parent_ids =
             self.apply_to_parents(repo, commit, forward_maps, backward_maps)?;
 
         return create_filtered_commit(
             repo,
             commit,
-            transformed_parents_ids,
+            filtered_parent_ids,
             &find_tree_or_error(
                 &repo,
-                new_tree,
+                filtered_tree,
                 Some(&commit),
                 &self.filter_spec(),
             ),
@@ -119,6 +118,7 @@ pub trait Filter {
         tree: &git2::Tree,
         commit_id: git2::Oid,
     ) -> git2::Oid;
+
     fn unapply(
         &self,
         repo: &git2::Repository,
@@ -835,7 +835,7 @@ impl WorkspaceView {
             ));
         }
 
-        let mut transformed_parents_ids = vec![];
+        let mut filtered_parent_ids = vec![];
         for parent in parents.iter() {
             let p = apply_view_cached(
                 repo,
@@ -845,7 +845,7 @@ impl WorkspaceView {
                 backward_maps,
             )?;
             if p != git2::Oid::zero() {
-                transformed_parents_ids.push(p);
+                filtered_parent_ids.push(p);
             }
 
             let parent_commit = repo.find_commit(*parent)?;
@@ -883,7 +883,7 @@ impl WorkspaceView {
                     &mut HashMap::new(),
                 )?;
                 if p != git2::Oid::zero() {
-                    transformed_parents_ids.push(p);
+                    filtered_parent_ids.push(p);
                 }
             }
             break;
@@ -891,26 +891,26 @@ impl WorkspaceView {
 
         return Ok((
             cw.apply_to_tree(repo, &full_tree, commit_id),
-            transformed_parents_ids,
+            filtered_parent_ids,
         ));
     }
 }
 
 fn find_tree_or_error<'a>(
     repo: &'a git2::Repository,
-    new_tree: git2::Oid,
+    filtered_tree: git2::Oid,
     commit: Option<&git2::Commit>,
     filter_spec: &str,
 ) -> git2::Tree<'a> {
-    ok_or!(repo.find_tree(new_tree), {
+    ok_or!(repo.find_tree(filtered_tree), {
         tracing::debug!(
                     "Filter.apply_to_commit: can't find tree: {:?} filter_spec: {:?}, original-commit: {:?}, message: {:?}, header: {:?}, obj.kind: {:?}",
-                    new_tree,
+                    filtered_tree,
                     filter_spec,
                     commit.map(|x| x.id()),
                     commit.map(|x| x.message()),
                     commit.map(|x| x.raw_header()),
-                    repo.find_object(new_tree, None).ok().map(|x| x.kind()));
+                    repo.find_object(filtered_tree, None).ok().map(|x| x.kind()));
         return empty_tree(&repo);
     })
 }
@@ -948,7 +948,7 @@ impl Filter for WorkspaceView {
             return Ok(forward_maps.get(&self.filter_spec(), commit.id()));
         }
 
-        let (new_tree, transformed_parents_ids) = self
+        let (filtered_tree, filtered_parent_ids) = self
             .ws_apply_to_tree_and_parents(
                 forward_maps,
                 backward_maps,
@@ -960,10 +960,10 @@ impl Filter for WorkspaceView {
         return create_filtered_commit(
             repo,
             commit,
-            transformed_parents_ids,
+            filtered_parent_ids,
             &find_tree_or_error(
                 &repo,
-                new_tree,
+                filtered_tree,
                 Some(&commit),
                 &self.filter_spec(),
             ),
@@ -1041,7 +1041,7 @@ fn make_view(cmd: &str, name: &str) -> Box<dyn Filter> {
 
 fn parse_item(pair: pest::iterators::Pair<Rule>) -> Box<dyn Filter> {
     match pair.as_rule() {
-        Rule::transform => {
+        Rule::filter => {
             let mut inner = pair.into_inner();
             make_view(
                 inner.next().unwrap().as_str(),
@@ -1061,7 +1061,7 @@ fn parse_file_entry(
             let mut inner = pair.into_inner();
             let path = inner.next().unwrap().as_str();
             let view = inner.next().unwrap().as_str();
-            let view = build_filter(view);
+            let view = parse(view);
             combine_view.prefixes.push(Path::new(path).to_owned());
             combine_view.others.push(view);
         }
@@ -1079,7 +1079,7 @@ fn build_combine_view(
         prefixes: vec![],
     });
 
-    if let Ok(r) = MyParser::parse(Rule::viewfile, filter_spec) {
+    if let Ok(r) = MyParser::parse(Rule::workspace_file, filter_spec) {
         let mut r = r;
         let r = r.next().unwrap();
         for pair in r.into_inner() {
@@ -1100,10 +1100,10 @@ pub fn build_chain(
     })
 }
 
-pub fn build_filter(filter_spec: &str) -> Box<dyn Filter> {
+pub fn parse(filter_spec: &str) -> Box<dyn Filter> {
     if filter_spec.starts_with("!") || filter_spec.starts_with(":") {
         let mut chain: Option<Box<dyn Filter>> = None;
-        if let Ok(r) = MyParser::parse(Rule::view, filter_spec) {
+        if let Ok(r) = MyParser::parse(Rule::filter_spec, filter_spec) {
             let mut r = r;
             let r = r.next().unwrap();
             for pair in r.into_inner() {

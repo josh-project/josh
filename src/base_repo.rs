@@ -1,11 +1,8 @@
 use git2;
 
-use std::fs;
 
 use super::*;
-use std::collections::{BTreeSet, BTreeMap};
-use std::env::current_exe;
-use std::os::unix::fs::symlink;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::sync::{Arc, RwLock};
 use tracing::{debug, info, span, warn, Level};
@@ -48,7 +45,7 @@ pub fn find_refs(
 }
 
 pub fn make_view_repo(
-    filter: &dyn views::Filter,
+    filter: &dyn filters::Filter,
     upstream_repo: &str,
     headref: &str,
     namespace: &str,
@@ -85,7 +82,7 @@ pub fn make_view_repo(
     return updated_count;
 }
 
-pub fn run_housekeeping(path: &Path, cmd: &str) -> String {
+fn run_housekeeping(path: &Path, cmd: &str) -> String {
     let shell = shell::Shell {
         cwd: path.to_owned(),
     };
@@ -101,126 +98,7 @@ pub fn run_housekeeping(path: &Path, cmd: &str) -> String {
     return output;
 }
 
-pub fn fetch_refs_from_url(
-    path: &Path,
-    upstream_repo: &str,
-    url: &str,
-    refs_prefixes: &[&str],
-    username: &str,
-    password: &str,
-) -> Result<(), git2::Error> {
-    for refs_prefix in refs_prefixes {
-        let spec = format!(
-            "+{}:refs/namespaces/{}/{}",
-            &refs_prefix,
-            to_ns(upstream_repo),
-            &refs_prefix
-        );
 
-        let shell = shell::Shell {
-            cwd: path.to_owned(),
-        };
-        let nurl = {
-            let splitted: Vec<&str> = url.splitn(2, "://").collect();
-            let proto = splitted[0];
-            let rest = splitted[1];
-            format!("{}://{}@{}", &proto, &username, &rest)
-        };
-
-        let cmd = format!("git fetch {} '{}'", &nurl, &spec);
-        info!("fetch_refs_from_url {:?} {:?} {:?}", cmd, path, "");
-
-        let (_stdout, stderr) =
-            shell.command_env(&cmd, &[("GIT_PASSWORD", &password)]);
-        debug!("fetch_refs_from_url done {:?} {:?} {:?}", cmd, path, stderr);
-        if stderr.contains("fatal: Authentication failed") {
-            return Err(git2::Error::from_str("auth"));
-        }
-        if stderr.contains("fatal:") {
-            return Err(git2::Error::from_str("error"));
-        }
-        if stderr.contains("error:") {
-            return Err(git2::Error::from_str("error"));
-        }
-    }
-    return Ok(());
-}
-
-pub fn push_head_url(
-    repo: &git2::Repository,
-    oid: git2::Oid,
-    refname: &str,
-    url: &str,
-    username: &str,
-    password: &str,
-    namespace: &str,
-) -> JoshResult<String> {
-    let rn = format!("refs/{}", &namespace);
-
-    let spec = format!("{}:{}", &rn, &refname);
-
-    let shell = shell::Shell {
-        cwd: repo.path().to_owned(),
-    };
-    let nurl = {
-        let splitted: Vec<&str> = url.splitn(2, "://").collect();
-        let proto = splitted[0];
-        let rest = splitted[1];
-        format!("{}://{}@{}", &proto, &username, &rest)
-    };
-    let cmd = format!("git push {} '{}'", &nurl, &spec);
-    let mut fakehead = repo.reference(&rn, oid, true, "push_head_url")?;
-    let (stdout, stderr) =
-        shell.command_env(&cmd, &[("GIT_PASSWORD", &password)]);
-    fakehead.delete()?;
-    debug!("{}", &stderr);
-    debug!("{}", &stdout);
-
-    let stderr = stderr.replace(&rn, "JOSH_PUSH");
-
-    return Ok(stderr);
-}
-
-fn install_josh_hook(scratch_dir: &Path) {
-    if !scratch_dir.join("hooks/update").exists() {
-        let shell = shell::Shell {
-            cwd: scratch_dir.to_path_buf(),
-        };
-        shell.command("git config http.receivepack true");
-        let ce = current_exe().expect("can't find path to exe");
-        shell.command("rm -Rf hooks");
-        shell.command("mkdir hooks");
-        symlink(ce, scratch_dir.join("hooks").join("update"))
-            .expect("can't symlink update hook");
-        shell.command(&format!(
-            "git config credential.helper '!f() {{ echo \"password=\"$GIT_PASSWORD\"\"; }}; f'"
-        ));
-        shell.command(&"git config gc.auto 0");
-    }
-}
-
-pub fn create_local(path: &Path) {
-    debug!("init base repo: {:?}", path);
-    fs::create_dir_all(path).expect("can't create_dir_all");
-
-    match git2::Repository::open(path) {
-        Ok(_) => {
-            debug!("repo exists");
-            install_josh_hook(path);
-            return;
-        }
-        Err(_) => {}
-    };
-
-    match git2::Repository::init_bare(path) {
-        Ok(_) => {
-            info!("repo initialized");
-            install_josh_hook(path);
-            return;
-        }
-        Err(_) => {}
-    }
-}
 
 pub fn discover_views(br_path: &Path, known_views: Arc<RwLock<KnownViews>>) {
     let _trace_s = span!(Level::TRACE, "discover_views", ?br_path);
@@ -269,7 +147,7 @@ pub fn get_info(
     let mut bm = view_maps::new_downstream(&backward_maps);
     let mut fm = view_maps::new_downstream(&forward_maps);
 
-    let viewobj = build_filter(&view_string);
+    let viewobj = filters::parse(&view_string);
 
     let fr = &format!("refs/namespaces/{}/{}", &to_ns(&upstream_repo), &rev);
 
@@ -373,7 +251,7 @@ pub fn spawn_housekeeping_thread(
                         );
 
                         updated_count += base_repo::make_view_repo(
-                            &*super::build_filter(&v),
+                            &*filters::parse(&v),
                             &prefix2,
                             "refs/heads/master",
                             &to_known_view(&prefix2, &v),
