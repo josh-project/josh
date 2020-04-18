@@ -48,34 +48,6 @@ pub fn rewrite(
     )?);
 }
 
-pub fn find_all_views(reference: &git2::Reference) -> HashSet<String> {
-    let mut hs = HashSet::new();
-    let tree = ok_or!(reference.peel_to_tree(), {
-        warn!("find_all_views, not a tree: {:?}", &reference.name());
-        return hs;
-    });
-    ok_or!(
-        tree.walk(git2::TreeWalkMode::PreOrder, |root, entry| {
-            if entry.name() == Some(&"workspace.josh") {
-                hs.insert(format!(":workspace={}", root.trim_matches('/')));
-            }
-            if root == "" {
-                return 0;
-            }
-            let v = format!(":/{}", root.trim_matches('/'));
-            if v.chars().filter(|x| *x == '/').count() < 5 {
-                hs.insert(v);
-            }
-
-            0
-        }),
-        {
-            return hs;
-        }
-    );
-    return hs;
-}
-
 pub fn unapply_view(
     repo: &git2::Repository,
     backward_maps: std::sync::Arc<std::sync::RwLock<view_maps::ViewMaps>>,

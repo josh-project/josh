@@ -38,7 +38,7 @@ use futures::Stream;
 use futures_cpupool::CpuPool;
 use hyper::header::{Authorization, Basic};
 use hyper::server::{Http, Request, Response, Service};
-use josh::base_repo;
+use josh::housekeeping;
 use josh::shell;
 use josh::view_maps;
 use rand::random;
@@ -92,7 +92,7 @@ struct JoshProxyService {
     forward_maps: Arc<RwLock<view_maps::ViewMaps>>,
     backward_maps: Arc<RwLock<view_maps::ViewMaps>>,
     credential_cache: Arc<RwLock<CredentialCache>>,
-    known_views: Arc<RwLock<base_repo::KnownViews>>,
+    known_views: Arc<RwLock<housekeeping::KnownViews>>,
     fetching: Arc<RwLock<HashSet<String>>>,
 }
 
@@ -351,7 +351,10 @@ fn call_service(
         let discover = service
             .compute_pool
             .spawn_fn(move || {
-                base_repo::discover_views(&repo, known_views.clone());
+                housekeeping::discover_filter_candidates(
+                    &repo,
+                    known_views.clone(),
+                );
                 Ok(known_views)
             })
             .map(move |known_views| {
@@ -490,15 +493,15 @@ fn call_service(
         let backward_maps = service.forward_maps.clone();
 
         let f = compute_pool.spawn(futures::future::ok(true).map(move |_| {
-            let info = base_repo::get_info(
+            housekeeping::get_info(
                 &repo,
-                &view_string,
+                &josh::filters::parse(&view_string),
                 &upstream_repo,
                 &headref,
                 forward_maps.clone(),
                 backward_maps.clone(),
-            );
-            info
+            )
+            .unwrap_or("get_info: error".to_owned())
         }));
 
         return Box::new(f.and_then(move |info| {
@@ -649,7 +652,7 @@ fn do_filter(
     let r = pool.spawn_fn(move || {
         let mut bm = view_maps::new_downstream(&backward_maps);
         let mut fm = view_maps::new_downstream(&forward_maps);
-        base_repo::make_view_repo(
+        housekeeping::make_view_repo(
             &repo,
             &*josh::filters::parse(&filter_spec),
             &upstream_repo,
@@ -760,7 +763,7 @@ fn run_proxy(args: Vec<String>) -> josh::JoshResult<i32> {
     )?;
 
     let repo = josh_proxy::create_repo(&service.repo_path)?;
-    base_repo::spawn_housekeeping_thread(
+    housekeeping::spawn_thread(
         repo,
         service.known_views.clone(),
         service.forward_maps.clone(),
@@ -802,7 +805,7 @@ fn run_http_server(
         ))),
         upstream_url: remote.to_owned(),
         credential_cache: Arc::new(RwLock::new(CredentialCache::new())),
-        known_views: Arc::new(RwLock::new(base_repo::KnownViews::new())),
+        known_views: Arc::new(RwLock::new(housekeeping::KnownViews::new())),
         fetching: Arc::new(RwLock::new(HashSet::new())),
     };
 

@@ -77,7 +77,7 @@ pub fn make_view_repo(
     return updated_count;
 }
 
-fn run_housekeeping(path: &Path, cmd: &str) -> String {
+fn run_command(path: &Path, cmd: &str) -> String {
     let shell = shell::Shell {
         cwd: path.to_owned(),
     };
@@ -93,72 +93,89 @@ fn run_housekeeping(path: &Path, cmd: &str) -> String {
     return output;
 }
 
-pub fn discover_views(
+/**
+ * Determine filter specs that are either likely to be requested and/or
+ * expensive to build from scratch using heuristics.
+ */
+pub fn discover_filter_candidates(
     repo: &git2::Repository,
     known_views: Arc<RwLock<KnownViews>>,
-) {
-    let _trace_s = span!(Level::TRACE, "discover_views");
+) -> JoshResult<()> {
+    let _trace_s = span!(Level::TRACE, "discover_filter_candidates");
 
     let refname = format!("refs/namespaces/*.git/refs/heads/master");
 
-    if let Ok(mut kn) = known_views.write() {
-        for reference in repo.references_glob(&refname).unwrap() {
-            let r = reference.unwrap();
-            let name = r
-                .name()
-                .unwrap()
-                .to_owned()
-                .replace("/refs/heads/master", "")
-                .replace("refs/namespaces", "")
-                .replace("//", "/");
+    let mut kn = known_views.write()?;
+    for reference in repo.references_glob(&refname)? {
+        let r = reference?;
+        let name = r
+            .name()
+            .ok_or(josh_error("reference without name"))?
+            .to_owned()
+            .replace("/refs/heads/master", "")
+            .replace("refs/namespaces", "")
+            .replace("//", "/");
 
-            {
-                let hs = scratch::find_all_views(&r);
-                for i in hs {
-                    kn.entry(name.clone())
-                        .or_insert_with(BTreeSet::new)
-                        .insert(i);
-                }
+        {
+            let hs =
+                find_all_workspaces_and_subdirectories(&r.peel_to_tree()?)?;
+            for i in hs {
+                kn.entry(name.clone())
+                    .or_insert_with(BTreeSet::new)
+                    .insert(i);
             }
         }
     }
+
+    return Ok(());
+}
+
+fn find_all_workspaces_and_subdirectories(
+    tree: &git2::Tree,
+) -> JoshResult<std::collections::HashSet<String>> {
+    let mut hs = std::collections::HashSet::new();
+    tree.walk(git2::TreeWalkMode::PreOrder, |root, entry| {
+        if entry.name() == Some(&"workspace.josh") {
+            hs.insert(format!(":workspace={}", root.trim_matches('/')));
+        }
+        if root == "" {
+            return 0;
+        }
+        let v = format!(":/{}", root.trim_matches('/'));
+        if v.chars().filter(|x| *x == '/').count() < 5 {
+            hs.insert(v);
+        }
+
+        0
+    })?;
+    return Ok(hs);
 }
 
 pub fn get_info(
     repo: &git2::Repository,
-    view_string: &str,
+    filter: &dyn filters::Filter,
     upstream_repo: &str,
-    rev: &str,
+    headref: &str,
     forward_maps: Arc<RwLock<view_maps::ViewMaps>>,
     backward_maps: Arc<RwLock<view_maps::ViewMaps>>,
-) -> String {
-    let _trace_s = span!(Level::TRACE, "get_info", ?view_string);
+) -> JoshResult<String> {
+    let _trace_s = span!(Level::TRACE, "get_info");
 
     let mut bm = view_maps::new_downstream(&backward_maps);
     let mut fm = view_maps::new_downstream(&forward_maps);
 
-    let viewobj = filters::parse(&view_string);
+    let obj = repo.revparse_single(&format!(
+        "refs/namespaces/{}/{}",
+        &to_ns(&upstream_repo),
+        &headref
+    ))?;
 
-    let fr = &format!("refs/namespaces/{}/{}", &to_ns(&upstream_repo), &rev);
-
-    let obj = ok_or!(repo.revparse_single(&fr), {
-        ok_or!(repo.revparse_single(&rev), {
-            return format!("rev not found: {:?}", &rev);
-        })
-    });
-
-    let commit = ok_or!(obj.peel_to_commit(), {
-        return format!("not a commit");
-    });
+    let commit = obj.peel_to_commit()?;
 
     let mut meta = std::collections::HashMap::new();
     meta.insert("sha1".to_owned(), "".to_owned());
-    let transformed = ok_or!(
-        viewobj.apply_to_commit(&repo, &commit, &mut fm, &mut bm, &mut meta),
-        {
-            return format!("cannot apply_to_commit");
-        }
-    );
+    let transformed =
+        filter.apply_to_commit(&repo, &commit, &mut fm, &mut bm, &mut meta)?;
 
     let parent_ids = |commit: &git2::Commit| {
         let pids: Vec<_> = commit
@@ -199,7 +216,7 @@ pub fn get_info(
         "transformed": t,
     });
 
-    return serde_json::to_string(&s).unwrap_or("Json Error".to_string());
+    return Ok(serde_json::to_string(&s)?);
 }
 
 fn to_known_view(upstream_repo: &str, filter_spec: &str) -> String {
@@ -210,9 +227,9 @@ fn to_known_view(upstream_repo: &str, filter_spec: &str) -> String {
     );
 }
 
-pub fn spawn_housekeeping_thread(
+pub fn spawn_thread(
     repo: git2::Repository,
-    known_views: Arc<RwLock<base_repo::KnownViews>>,
+    known_views: Arc<RwLock<housekeeping::KnownViews>>,
     forward_maps: Arc<RwLock<view_maps::ViewMaps>>,
     backward_maps: Arc<RwLock<view_maps::ViewMaps>>,
     do_gc: bool,
@@ -223,7 +240,10 @@ pub fn spawn_housekeeping_thread(
     std::thread::spawn(move || {
         let mut total = 0;
         loop {
-            base_repo::discover_views(&repo, known_views.clone());
+            housekeeping::discover_filter_candidates(
+                &repo,
+                known_views.clone(),
+            );
             if let Ok(kn) = known_views.read() {
                 for (prefix2, e) in kn.iter() {
                     info!("background rebuild root: {:?}", prefix2);
@@ -240,7 +260,7 @@ pub fn spawn_housekeeping_thread(
                             v
                         );
 
-                        updated_count += base_repo::make_view_repo(
+                        updated_count += housekeeping::make_view_repo(
                             &repo,
                             &*filters::parse(&v),
                             &prefix2,
@@ -255,10 +275,6 @@ pub fn spawn_housekeeping_thread(
                     let stats = fm.stats();
                     total += fm.stats()["total"];
                     total += bm.stats()["total"];
-                    /* debug!( */
-                    /*     "forward_maps stats: {}", */
-                    /*     toml::to_string_pretty(&stats).unwrap() */
-                    /* ); */
                     span!(Level::TRACE, "write_lock bm").in_scope(|| {
                         let mut backward_maps = backward_maps.write().unwrap();
                         backward_maps.merge(&bm);
@@ -286,35 +302,23 @@ pub fn spawn_housekeeping_thread(
             }
             info!(
                 "{}",
-                base_repo::run_housekeeping(
-                    &repo.path(),
-                    &"git count-objects -v"
-                )
-                .replace("\n", "  ")
+                run_command(&repo.path(), &"git count-objects -v")
+                    .replace("\n", "  ")
             );
             if do_gc
                 && gc_timer.elapsed() > std::time::Duration::from_secs(60 * 60)
             {
                 info!(
                     "\n----------\n{}\n----------",
-                    base_repo::run_housekeeping(
-                        &repo.path(),
-                        &"git repack -adkbn"
-                    )
+                    run_command(&repo.path(), &"git repack -adkbn")
                 );
                 info!(
                     "\n----------\n{}\n----------",
-                    base_repo::run_housekeeping(
-                        &repo.path(),
-                        &"git count-objects -vH"
-                    )
+                    run_command(&repo.path(), &"git count-objects -vH")
                 );
                 info!(
                     "\n----------\n{}\n----------",
-                    base_repo::run_housekeeping(
-                        &repo.path(),
-                        &"git prune --expire=2w"
-                    )
+                    run_command(&repo.path(), &"git prune --expire=2w")
                 );
                 gc_timer = std::time::Instant::now();
             }

@@ -71,11 +71,13 @@ impl ViewMaps {
                 return oid;
             }
         }
-        if let Some(upsteam) = self.upsteam.clone() {
-            return upsteam.read().unwrap().get(filter_spec, from);
-        }
         if filter_spec == ":nop=nop" {
             return from;
+        }
+        if let Some(upsteam) = self.upsteam.clone() {
+            if let Ok(upsteam) = upsteam.read() {
+                return upsteam.get(filter_spec, from);
+            }
         }
         return git2::Oid::zero();
     }
