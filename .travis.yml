@@ -9,7 +9,7 @@ before_script:
   - export RUST_LOG=josh=debug
 script:
   - export CARGO_TARGET_DIR=`pwd`/target
-  - cargo build
+  - cargo build --workspace
 notifications:
   email:
     on_success: never
