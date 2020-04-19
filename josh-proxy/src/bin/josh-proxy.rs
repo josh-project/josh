@@ -495,7 +495,7 @@ fn call_service(
         let f = compute_pool.spawn(futures::future::ok(true).map(move |_| {
             housekeeping::get_info(
                 &repo,
-                &josh::filters::parse(&view_string),
+                &*josh::filters::parse(&view_string),
                 &upstream_repo,
                 &headref,
                 forward_maps.clone(),
