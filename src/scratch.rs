@@ -8,7 +8,6 @@ use super::view_maps;
 use super::UnapplyView;
 use std::collections::HashMap;
 use std::collections::HashSet;
-use std::path::Path;
 
 fn all_equal(a: git2::Parents, b: &[&git2::Commit]) -> bool {
     let a: Vec<_> = a.collect();
@@ -210,7 +209,7 @@ fn transform_commit(
     return updated_count;
 }
 
-pub fn apply_view_to_refs(
+pub fn apply_filter_to_refs(
     repo: &git2::Repository,
     viewobj: &dyn filters::Filter,
     refs: &[(String, String)],
@@ -219,7 +218,7 @@ pub fn apply_view_to_refs(
 ) -> usize {
     tracing::span!(
         Level::TRACE,
-        "apply_view_to_refs",
+        "apply_filter_to_refs",
         repo = ?repo.path(),
         ?refs,
         filter_spec=?viewobj.filter_spec());

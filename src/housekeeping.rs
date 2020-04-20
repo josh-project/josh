@@ -4,7 +4,7 @@ use super::*;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::sync::{Arc, RwLock};
-use tracing::{debug, info, span, warn, Level};
+use tracing::{info, span, Level};
 
 pub type KnownViews = BTreeMap<String, BTreeSet<String>>;
 
@@ -12,15 +12,7 @@ pub fn find_refs(
     repo: &git2::Repository,
     namespace: &str,
     upstream_repo: &str,
-    headref: &str,
 ) -> Vec<(String, String)> {
-    if headref != "" {
-        return vec![(
-            format!("refs/namespaces/{}/{}", &to_ns(upstream_repo), headref),
-            format!("refs/namespaces/{}/HEAD", &namespace),
-        )];
-    }
-
     let mut refs = vec![];
     let glob = format!("refs/namespaces/{}/*", &to_ns(upstream_repo));
     for refname in repo.references_glob(&glob).unwrap().names() {
@@ -41,40 +33,6 @@ pub fn find_refs(
     }
 
     return refs;
-}
-
-pub fn make_view_repo(
-    repo: &git2::Repository,
-    filter: &dyn filters::Filter,
-    upstream_repo: &str,
-    headref: &str,
-    namespace: &str,
-    fm: &mut view_maps::ViewMaps,
-    bm: &mut view_maps::ViewMaps,
-) -> usize {
-    let filter_spec = filter.filter_spec();
-    let _trace_s = span!(Level::TRACE, "make_view_repo", ?filter_spec);
-
-    let refs = find_refs(&repo, namespace, upstream_repo, headref);
-    let to_head = format!("refs/namespaces/{}/HEAD", &namespace);
-
-    let updated_count =
-        scratch::apply_view_to_refs(&repo, &*filter, &refs, fm, bm);
-
-    if headref == "" {
-        let mastername =
-            format!("refs/namespaces/{}/refs/heads/master", &namespace);
-        if let Ok(_) = repo.reference_symbolic(&to_head, &mastername, true, "")
-        {
-        } else {
-            warn!(
-                "Can't create reference_symbolic: {:?} -> {:?}",
-                &to_head, &mastername
-            );
-        }
-    }
-
-    return updated_count;
 }
 
 fn run_command(path: &Path, cmd: &str) -> String {
@@ -243,7 +201,8 @@ pub fn spawn_thread(
             housekeeping::discover_filter_candidates(
                 &repo,
                 known_views.clone(),
-            );
+            )
+            .ok();
             if let Ok(kn) = known_views.read() {
                 for (prefix2, e) in kn.iter() {
                     info!("background rebuild root: {:?}", prefix2);
@@ -260,19 +219,22 @@ pub fn spawn_thread(
                             v
                         );
 
-                        updated_count += housekeeping::make_view_repo(
+                        let refs = find_refs(
+                            &repo,
+                            &&to_known_view(&prefix2, &v),
+                            &prefix2,
+                        );
+
+                        updated_count += scratch::apply_filter_to_refs(
                             &repo,
                             &*filters::parse(&v),
-                            &prefix2,
-                            "refs/heads/master",
-                            &to_known_view(&prefix2, &v),
+                            &refs,
                             &mut fm,
                             &mut bm,
                         );
                     }
                     info!("updated {} refs for {:?}", updated_count, prefix2);
 
-                    let stats = fm.stats();
                     total += fm.stats()["total"];
                     total += bm.stats()["total"];
                     span!(Level::TRACE, "write_lock bm").in_scope(|| {

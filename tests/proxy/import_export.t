@@ -234,7 +234,7 @@
   |\ \  
   | * | add new_file2
   | |/  
-  * | add new_file1
+  * / add new_file1
   |/  
   * initial1
 

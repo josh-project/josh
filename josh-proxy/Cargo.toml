@@ -18,6 +18,7 @@ tracing = { version = "*", features = ["max_level_debug", "release_max_level_inf
 tracing-opentelemetry = "*"
 opentelemetry = "*"
 toml = "*"
+uuid = "*"
 bincode = "*"
 serde = "*"
 tempfile = "*"

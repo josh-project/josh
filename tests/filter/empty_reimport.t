@@ -81,9 +81,8 @@
   | * more change on other 2
   | * more change on other
   * | more unrelated change on this
-  * |   Merge branch 'other_branch'
-  |\ \  
-  | |/  
+  * | Merge branch 'other_branch'
+  |\| 
   | * change on other 2
   | * change on other
   * | unrelated change on this

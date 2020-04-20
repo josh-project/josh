@@ -110,7 +110,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
             .unwrap()
             .to_string();
 
-        josh::apply_view_to_refs(
+        josh::apply_filter_to_refs(
             &repo,
             &*viewobj,
             &[(src.clone(), t)],

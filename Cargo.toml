@@ -10,7 +10,8 @@ readme = "README.md"
 edition = "2018"
 
 [workspace]
-members = ["josh-test-server", "josh-proxy", "josh-test-server2"]
+members = ["josh-test-server", "josh-proxy"]
+exclude = ["josh-test-server2"]
 
 [dependencies]
 git2 = {version = "0.13", default-features = false}

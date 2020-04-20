@@ -86,7 +86,8 @@
   $ git pull --rebase
   From http://localhost:8002/real_repo.git:workspace=ws
    * [new branch]      master     -> origin/master
-  First, rewinding head to replay your work on top of it...
+  \r (no-eol) (esc)
+  \x1b[KSuccessfully rebased and updated refs/heads/master. (esc)
 
   $ git log --graph --pretty=%s
   * Merge from :workspace=ws
@@ -251,7 +252,8 @@
   $ git pull --rebase
   From http://localhost:8002/real_repo.git:workspace=ws
    + *...* master     -> origin/master  (forced update) (glob)
-  First, rewinding head to replay your work on top of it...
+  \r (no-eol) (esc)
+  \x1b[KSuccessfully rebased and updated refs/heads/master. (esc)
 
 Note that d/ is still in the tree but now it is not overlayed
   $ tree

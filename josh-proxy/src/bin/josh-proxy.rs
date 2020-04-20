@@ -1,4 +1,3 @@
-#[macro_use]
 extern crate josh;
 
 extern crate clap;
@@ -39,10 +38,8 @@ use futures_cpupool::CpuPool;
 use hyper::header::{Authorization, Basic};
 use hyper::server::{Http, Request, Response, Service};
 use josh::housekeeping;
-use josh::shell;
 use josh::view_maps;
-use rand::random;
-use regex::Regex;
+use josh_proxy::BoxedFuture;
 use std::env;
 use std::process::exit;
 
@@ -50,34 +47,29 @@ use crypto::digest::Digest;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fs::remove_dir_all;
 use std::net;
-use std::panic;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
-use std::str::FromStr;
 use std::sync::{Arc, RwLock};
 
-use tracing::{debug, info, span, trace, warn, Level};
+use tracing::{debug, span, trace, warn, Level};
 
 use tracing::*;
 
-lazy_static! {
-    static ref VIEW_REGEX: Regex =
-        Regex::new(r"(?P<upstream_repo>/.*[.]git)(?P<headref>@[^:!]*)?(?P<view>[:!].*)[.](?P<ending>(?:git)|(?:json))(?P<pathinfo>/.*)?")
-            .expect("can't compile regex");
-    static ref CHANGE_REGEX: Regex =
-        Regex::new(r"/c/(?P<change>.*)/")
-            .expect("can't compile regex");
+fn version_str() -> String {
+    format!(
+        "Version: {}\n",
+        option_env!("GIT_DESCRIBE").unwrap_or(env!("CARGO_PKG_VERSION"))
+    )
 }
 
+josh_proxy::regex_parsed!(
+    TransformedRepoUrl,
+    r"(?P<upstream_repo>/.*[.]git)(?P<headref>@[^:!]*)?(?P<view>[:!].*)[.](?P<ending>(?:git)|(?:json))(?P<pathinfo>/.*)?",
+    [upstream_repo, view, pathinfo, headref, ending]
+);
+
 type CredentialCache = HashMap<String, std::time::Instant>;
-
-type BoxedFuture<T> = Box<dyn Future<Item = T, Error = hyper::Error>>;
-
-/* type HttpClient = */
-/*     hyper::Client<hyper_tls::HttpsConnector<hyper::client::HttpConnector>>; */
-
-type HttpClient = hyper::Client<hyper::client::HttpConnector>;
 
 #[derive(Clone)]
 struct JoshProxyService {
@@ -87,7 +79,7 @@ struct JoshProxyService {
     compute_pool: CpuPool,
     port: String,
     repo_path: PathBuf,
-    http_client: HttpClient,
+    /* gerrit: gerrit::Gerrit(), */
     upstream_url: String,
     forward_maps: Arc<RwLock<view_maps::ViewMaps>>,
     backward_maps: Arc<RwLock<view_maps::ViewMaps>>,
@@ -204,108 +196,13 @@ fn fetch_upstream(
 }
 
 fn respond_unauthorized() -> Response {
+    debug!("wrong credentials");
     let mut response: Response =
         Response::new().with_status(hyper::StatusCode::Unauthorized);
     response
         .headers_mut()
         .set_raw("WWW-Authenticate", "Basic realm=\"User Visible Realm\"");
     response
-}
-
-fn parse_url(path: &str) -> Option<(String, String, String, String, String)> {
-    let nop_path = path.replacen(".git", ".git:nop=nop.git", 1);
-    let caps = if let Some(caps) = VIEW_REGEX.captures(&path) {
-        caps
-    } else {
-        if let Some(caps) = VIEW_REGEX.captures(&nop_path) {
-            caps
-        } else {
-            return None;
-        }
-    };
-
-    let as_str = |x: regex::Match| x.as_str().to_owned();
-    debug!("parse_url: {:?}", caps);
-
-    return Some((
-        caps.name("upstream_repo")
-            .map(as_str)
-            .unwrap_or("".to_owned()),
-        caps.name("view").map(as_str).unwrap_or("".to_owned()),
-        caps.name("pathinfo").map(as_str).unwrap_or("".to_owned()),
-        caps.name("headref").map(as_str).unwrap_or("".to_owned()),
-        caps.name("ending").map(as_str).unwrap_or("".to_owned()),
-    ));
-}
-
-fn git_command(
-    cmd: String,
-    br_path: PathBuf,
-    pool: CpuPool,
-) -> BoxedFuture<String> {
-    return Box::new(pool.spawn_fn(move || {
-        let shell = shell::Shell {
-            cwd: br_path.to_owned(),
-        };
-        let (stdout, _stderr) = shell.command(&cmd);
-        /* println!("git_command stdout: {}", stdout); */
-        /* println!("git_command stderr: {}", _stderr); */
-        return futures::future::ok(stdout);
-    }));
-}
-
-fn body2string(body: hyper::Chunk) -> String {
-    let mut buffer: Vec<u8> = Vec::new();
-    for i in body {
-        buffer.push(i);
-    }
-
-    String::from_utf8(buffer).unwrap_or("".to_string())
-}
-
-fn gerrit_api(
-    client: HttpClient,
-    upstream_url: &str,
-    endpoint: &str,
-    query: String,
-) -> BoxedFuture<serde_json::Value> {
-    let uri = hyper::Uri::from_str(&format!(
-        "{}/{}?{}",
-        upstream_url, endpoint, query
-    ))
-    .unwrap();
-
-    println!("gerrit_api: {:?}", &uri);
-
-    let auth = Authorization(Basic {
-        username: env::var("JOSH_USERNAME").unwrap_or("".to_owned()),
-        password: env::var("JOSH_PASSWORD").ok(),
-    });
-
-    let mut r = hyper::Request::new(hyper::Method::Get, uri);
-    r.headers_mut().set(auth);
-    return Box::new(
-        client
-            .request(r)
-            .and_then(move |x| x.body().concat2().map(body2string))
-            .and_then(move |resp_text| {
-                println!("gerrit_api resp: {}", &resp_text);
-                let v: serde_json::Value =
-                    serde_json::from_str(&resp_text[4..]).unwrap();
-                futures::future::ok(v)
-            }),
-    );
-}
-
-fn as_str(x: regex::Match) -> String {
-    x.as_str().to_owned()
-}
-
-fn j2str(val: &serde_json::Value, s: &str) -> String {
-    if let Some(r) = val.pointer(s) {
-        return r.to_string().trim_matches('"').to_string();
-    }
-    return format!("## not found: {:?}", s);
 }
 
 fn call_service(
@@ -329,11 +226,7 @@ fn call_service(
 
     if path == "/version" {
         let response = Response::new()
-            .with_body(format!(
-                "Version: {}\n",
-                option_env!("GIT_DESCRIBE")
-                    .unwrap_or(env!("CARGO_PKG_VERSION"))
-            ))
+            .with_body(version_str())
             .with_status(hyper::StatusCode::Ok);
         return Box::new(futures::future::ok(response));
     }
@@ -348,27 +241,20 @@ fn call_service(
         service.credential_cache.write().unwrap().clear();
 
         let known_views = service.known_views.clone();
-        let discover = service
-            .compute_pool
-            .spawn_fn(move || {
-                housekeeping::discover_filter_candidates(
-                    &repo,
-                    known_views.clone(),
-                );
-                Ok(known_views)
-            })
-            .map(move |known_views| {
-                let body =
-                    toml::to_string_pretty(&*known_views.read().unwrap())
-                        .unwrap();
-                Response::new()
-                    .with_body(body)
-                    .with_status(hyper::StatusCode::Ok)
-            });
+        let discover = service.compute_pool.spawn_fn(move || {
+            housekeeping::discover_filter_candidates(
+                &repo,
+                known_views.clone(),
+            )
+            .ok();
+            let body =
+                toml::to_string_pretty(&*known_views.read().unwrap()).unwrap();
+            let response = Response::new()
+                .with_body(body)
+                .with_status(hyper::StatusCode::Ok);
+            futures::future::ok(response)
+        });
         return Box::new(discover);
-    }
-    if path == "/panic" {
-        panic!();
     }
     if path == "/repo_update" {
         let pool = service.fetch_push_pool.clone();
@@ -377,7 +263,7 @@ fn call_service(
         let response = req
             .body()
             .concat2()
-            .map(body2string)
+            .map(josh_proxy::body2string)
             .and_then(move |buffer| {
                 pool.spawn(futures::future::ok(buffer).map(move |buffer| {
                     josh_proxy::process_repo_update(
@@ -404,112 +290,60 @@ fn call_service(
         return Box::new(response);
     }
 
-    if path.starts_with("/static/") {
-        return Box::new(
-            service.http_client.get(
-                hyper::Uri::from_str(&format!(
-                    "http://localhost:3000{}",
-                    &path
-                ))
-                .unwrap(),
-            ),
-        );
-    }
+    /* if path.starts_with("/static/") { */
+    /*     return Box::new( */
+    /*         service.http_client.get( */
+    /*             hyper::Uri::from_str(&format!( */
+    /*                 "http://localhost:3000{}", */
+    /*                 &path */
+    /*             )) */
+    /*             .unwrap(), */
+    /*         ), */
+    /*     ); */
+    /* } */
 
-    if let Some(caps) = CHANGE_REGEX.captures(&path) {
-        let change = caps.name("change").map(as_str).unwrap_or("".to_owned());
-        let pool = service.housekeeping_pool.clone();
-        let client = service.http_client.clone();
+    /* josh_proxy::gerrit::handle_request(); */
 
-        let get_comments = gerrit_api(
-            client.clone(),
-            &service.upstream_url,
-            &format!("/a/changes/{}/comments", change),
-            format!(""),
-        );
-
-        let br_path = service.repo_path.clone();
-        let r = gerrit_api(
-            client.clone(),
-            &service.upstream_url,
-            "/a/changes/",
-            format!("q=change:{}&o=ALL_REVISIONS&o=ALL_COMMITS", change),
-        )
-        .and_then(move |change_json| {
-            let to = j2str(&change_json, "/0/current_revision");
-            let from = j2str(
-                &change_json,
-                &format!("/0/revisions/{}/commit/parents/0/commit", &to),
-            );
-            let mut resp = HashMap::<String, String>::new();
-            let cmd = format!("git diff -U99999999 {}..{}", from, to);
-            println!("diffcmd: {:?}", cmd);
-            git_command(cmd, br_path.to_owned(), pool.clone()).and_then(
-                move |stdout| {
-                    resp.insert("diff".to_owned(), stdout);
-                    futures::future::ok((resp, change_json))
-                },
-            )
-        })
-        .and_then(move |(resp, change_json)| {
-            let mut revision2sha = HashMap::<i64, String>::new();
-            for (k, v) in
-                change_json[0]["revisions"].as_object().unwrap().iter()
-            {
-                revision2sha
-                    .insert(v["_number"].as_i64().unwrap(), k.to_string());
-            }
-
-            get_comments.and_then(move |comments_value| {
-                for i in comments_value.as_object().unwrap().keys() {
-                    println!("comments_value: {:?}", &i);
-                }
-
-                let response = Response::new()
-                    .with_body(serde_json::to_string(&resp).unwrap())
-                    .with_status(hyper::StatusCode::Ok);
-                futures::future::ok(response)
-            })
-        });
-
-        return Box::new(r);
+    let parsed_url = {
+        let nop_path = path.replacen(".git", ".git:nop=nop.git", 1);
+        if let Some(parsed_url) = TransformedRepoUrl::from_str(&path) {
+            parsed_url
+        } else if let Some(parsed_url) = TransformedRepoUrl::from_str(&nop_path)
+        {
+            parsed_url
+        } else {
+            return Box::new(futures::future::ok(
+                Response::new().with_status(hyper::StatusCode::NotFound),
+            ));
+        }
     };
 
-    let (upstream_repo, view_string, pathinfo, headref, ending) =
-        some_or!(parse_url(&path), {
-            return Box::new(
-                service.http_client.get(
-                    hyper::Uri::from_str("http://localhost:3000").unwrap(),
-                ),
-            );
-        });
-
-    let headref = headref.trim_start_matches("@").to_owned();
+    let headref = parsed_url.headref.trim_start_matches("@").to_owned();
 
     let compute_pool = service.compute_pool.clone();
 
-    if ending == "json" {
+    if parsed_url.ending == "json" {
         let forward_maps = service.forward_maps.clone();
         let backward_maps = service.forward_maps.clone();
 
-        let f = compute_pool.spawn(futures::future::ok(true).map(move |_| {
-            housekeeping::get_info(
+        let f = compute_pool.spawn_fn(move || {
+            let info = housekeeping::get_info(
                 &repo,
-                &*josh::filters::parse(&view_string),
-                &upstream_repo,
+                &*josh::filters::parse(&parsed_url.view),
+                &parsed_url.upstream_repo,
                 &headref,
                 forward_maps.clone(),
                 backward_maps.clone(),
             )
-            .unwrap_or("get_info: error".to_owned())
-        }));
+            .unwrap_or("get_info: error".to_owned());
 
-        return Box::new(f.and_then(move |info| {
             let response = Response::new()
                 .with_body(format!("{}\n", info))
                 .with_status(hyper::StatusCode::Ok);
             return Box::new(futures::future::ok(response));
-        }));
+        });
+
+        return Box::new(f);
     }
 
     let (username, password) = match req.headers().get() {
@@ -527,19 +361,19 @@ fn call_service(
 
     let passwd = password.clone();
     let usernm = username.clone();
-    let filter_spec = view_string.clone();
+    let filter_spec = parsed_url.view.clone();
     let ns = namespace.to_owned();
 
     let port = service.port.clone();
 
     let remote_url = {
         let mut remote_url = service.upstream_url.clone();
-        remote_url.push_str(&upstream_repo);
+        remote_url.push_str(&parsed_url.upstream_repo);
         remote_url
     };
 
     let br_url = remote_url.clone();
-    let base_ns = josh::to_ns(&upstream_repo);
+    let base_ns = josh::to_ns(&parsed_url.upstream_repo);
 
     let call_git_http_backend = |request: Request,
                                  path: PathBuf,
@@ -572,14 +406,14 @@ fn call_service(
 
     remember_known_filter_spec(
         &service,
-        upstream_repo.clone(),
-        view_string.clone(),
+        parsed_url.upstream_repo.clone(),
+        parsed_url.view.clone(),
     );
 
     let fetch_future = if headref == "" {
         fetch_upstream(
             service.clone(),
-            upstream_repo.clone(),
+            parsed_url.upstream_repo.clone(),
             username,
             password,
             br_url,
@@ -587,33 +421,46 @@ fn call_service(
     } else {
         fetch_upstream_ref(
             service.clone(),
-            upstream_repo.clone(),
+            parsed_url.upstream_repo.clone(),
             username,
             password,
             br_url,
             headref.clone(),
         )
     };
+    let refs = if headref != "" {
+        Some(vec![(
+            format!(
+                "refs/namespaces/{}/{}",
+                &josh::to_ns(&parsed_url.upstream_repo),
+                headref
+            ),
+            format!("refs/namespaces/{}/refs/heads/master", &namespace),
+        )])
+    } else {
+        None
+    };
 
     let namespace = namespace.to_owned();
-    let filter_spec = view_string.clone();
+    let filter_spec = parsed_url.view.clone();
     let service = service.clone();
 
     let fetch_future =
         fetch_future.and_then(move |authorized| -> BoxedFuture<Response> {
             if !authorized {
-                debug!("wrong credentials");
                 return Box::new(futures::future::ok(respond_unauthorized()));
             }
 
             let do_filter = do_filter(
                 repo,
                 &service,
-                upstream_repo,
+                parsed_url.upstream_repo,
                 namespace,
                 filter_spec,
-                headref,
+                refs,
             );
+
+            let pathinfo = parsed_url.pathinfo.clone();
 
             let response = do_filter.and_then(move |_| {
                 call_git_http_backend(
@@ -644,25 +491,34 @@ fn do_filter(
     upstream_repo: String,
     namespace: String,
     filter_spec: String,
-    headref: String,
-) -> BoxedFuture<()> {
-    let pool = service.compute_pool.clone();
+    refs: Option<Vec<(String, String)>>,
+) -> BoxedFuture<git2::Repository> {
     let forward_maps = service.forward_maps.clone();
     let backward_maps = service.backward_maps.clone();
-    let r = pool.spawn_fn(move || {
+    let r = service.compute_pool.spawn_fn(move || {
         let mut bm = view_maps::new_downstream(&backward_maps);
         let mut fm = view_maps::new_downstream(&forward_maps);
-        housekeeping::make_view_repo(
+
+        let refs = refs.unwrap_or_else(|| {
+            josh::housekeeping::find_refs(&repo, &namespace, &upstream_repo)
+        });
+
+        josh::scratch::apply_filter_to_refs(
             &repo,
             &*josh::filters::parse(&filter_spec),
-            &upstream_repo,
-            &headref,
-            &namespace,
+            &refs,
             &mut fm,
             &mut bm,
         );
         view_maps::try_merge_both(forward_maps, backward_maps, &fm, &bm);
-        return futures::future::ok(());
+        repo.reference_symbolic(
+            &format!("refs/namespaces/{}/HEAD", &namespace),
+            &format!("refs/namespaces/{}/refs/heads/master", &namespace),
+            true,
+            "",
+        )
+        .ok();
+        return futures::future::ok(repo);
     });
     return Box::new(r);
 }
@@ -691,8 +547,7 @@ impl Service for JoshProxyService {
     type Future = Box<dyn Future<Item = Self::Response, Error = Self::Error>>;
 
     fn call(&self, req: Request) -> Self::Future {
-        let rid: usize = random();
-        let rname = format!("request_{}", rid);
+        let rname = format!("request_{}", uuid::Uuid::new_v4());
 
         let _trace_s = span!(
             Level::TRACE, "call_service", path = ?req.path(), headers = ?without_password(req.headers()));
@@ -790,13 +645,6 @@ fn run_http_server(
         compute_pool: CpuPool::new(4),
         port: port,
         repo_path: local.to_owned(),
-        /* http_client: hyper::Client::configure() */
-        /*     .connector( */
-        /*         ::hyper_tls::HttpsConnector::new(4, &core.handle()).unwrap(), */
-        /*     ) */
-        /*     .keep_alive(true) */
-        /*     .build(&core.handle()), */
-        http_client: hyper::Client::new(&core.handle()),
         forward_maps: Arc::new(RwLock::new(view_maps::try_load(
             &local.join("josh_forward_maps"),
         ))),

@@ -37,7 +37,7 @@ pub mod shell;
 pub mod view_maps;
 
 pub use crate::filters::build_chain;
-pub use crate::scratch::apply_view_to_refs;
+pub use crate::scratch::apply_filter_to_refs;
 pub use crate::scratch::unapply_view;
 
 #[derive(Clone)]

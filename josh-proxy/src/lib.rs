@@ -1,9 +1,13 @@
 extern crate futures;
 extern crate hyper;
+extern crate regex;
 extern crate tokio_core;
 extern crate tokio_io;
 extern crate tokio_process;
 extern crate tracing;
+
+#[macro_use]
+extern crate lazy_static;
 
 use self::futures::future::Future;
 use self::futures::Stream;
@@ -28,6 +32,10 @@ use std::str::FromStr;
 use std::sync::{Arc, RwLock};
 
 use tracing::event;
+
+pub mod gerrit;
+
+pub type BoxedFuture<T> = Box<dyn Future<Item = T, Error = hyper::Error>>;
 
 pub fn do_cgi(
     req: Request,
@@ -387,4 +395,51 @@ pub fn fetch_refs_from_url(
         }
     }
     return Ok(());
+}
+
+pub fn body2string(body: hyper::Chunk) -> String {
+    let mut buffer: Vec<u8> = Vec::new();
+    for i in body {
+        buffer.push(i);
+    }
+
+    String::from_utf8(buffer).unwrap_or("".to_string())
+}
+
+#[macro_export]
+macro_rules! regex_parsed {
+    ($name:ident, $re:literal,  [$( $i:ident ),+]) => {
+
+        struct $name {
+            $(
+                $i: String,
+            )+
+        }
+
+impl $name {
+    fn from_str(path: &str) -> Option<$name> {
+
+lazy_static! {
+    static ref REGEX: regex::Regex =
+        regex::Regex::new($re)
+            .expect("can't compile regex");
+}
+
+        let caps = if let Some(caps) = REGEX.captures(&path) {
+            caps
+        } else {
+            return None;
+        };
+
+        let as_str = |x: regex::Match| x.as_str().to_owned();
+        tracing::debug!("regex_parsed {:?}: {:?}", stringify!($name), caps);
+
+        return Some($name {
+            $(
+            $i: caps.name(stringify!($i)).map(as_str).unwrap_or("".to_owned()),
+            )+
+        });
+    }
+}
+    }
 }
