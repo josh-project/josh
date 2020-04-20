@@ -185,6 +185,52 @@ fn to_known_view(upstream_repo: &str, filter_spec: &str) -> String {
     );
 }
 
+fn refresh_known_filters(
+    repo: &git2::Repository,
+    known_views: Arc<RwLock<housekeeping::KnownViews>>,
+    forward_maps: Arc<RwLock<view_maps::ViewMaps>>,
+    backward_maps: Arc<RwLock<view_maps::ViewMaps>>,
+) -> JoshResult<usize> {
+    let mut total = 0;
+    let kn = known_views.read()?.clone();
+    for (prefix2, e) in kn.iter() {
+        info!("background rebuild root: {:?}", prefix2);
+
+        let mut bm = view_maps::new_downstream(&backward_maps);
+        let mut fm = view_maps::new_downstream(&forward_maps);
+
+        let mut updated_count = 0;
+
+        for v in e.iter() {
+            tracing::trace!("background rebuild: {:?} {:?}", prefix2, v);
+
+            let refs =
+                find_refs(&repo, &&to_known_view(&prefix2, &v), &prefix2);
+
+            updated_count += scratch::apply_filter_to_refs(
+                &repo,
+                &*filters::parse(&v),
+                &refs,
+                &mut fm,
+                &mut bm,
+            );
+        }
+        info!("updated {} refs for {:?}", updated_count, prefix2);
+
+        total += fm.stats()["total"];
+        total += bm.stats()["total"];
+        span!(Level::TRACE, "write_lock bm").in_scope(|| {
+            let mut backward_maps = backward_maps.write().unwrap();
+            backward_maps.merge(&bm);
+        });
+        span!(Level::TRACE, "write_lock fm").in_scope(|| {
+            let mut forward_maps = forward_maps.write().unwrap();
+            forward_maps.merge(&fm);
+        });
+    }
+    return Ok(total);
+}
+
 pub fn spawn_thread(
     repo: git2::Repository,
     known_views: Arc<RwLock<housekeeping::KnownViews>>,
@@ -203,50 +249,13 @@ pub fn spawn_thread(
                 known_views.clone(),
             )
             .ok();
-            if let Ok(kn) = known_views.read() {
-                for (prefix2, e) in kn.iter() {
-                    info!("background rebuild root: {:?}", prefix2);
-
-                    let mut bm = view_maps::new_downstream(&backward_maps);
-                    let mut fm = view_maps::new_downstream(&forward_maps);
-
-                    let mut updated_count = 0;
-
-                    for v in e.iter() {
-                        tracing::trace!(
-                            "background rebuild: {:?} {:?}",
-                            prefix2,
-                            v
-                        );
-
-                        let refs = find_refs(
-                            &repo,
-                            &&to_known_view(&prefix2, &v),
-                            &prefix2,
-                        );
-
-                        updated_count += scratch::apply_filter_to_refs(
-                            &repo,
-                            &*filters::parse(&v),
-                            &refs,
-                            &mut fm,
-                            &mut bm,
-                        );
-                    }
-                    info!("updated {} refs for {:?}", updated_count, prefix2);
-
-                    total += fm.stats()["total"];
-                    total += bm.stats()["total"];
-                    span!(Level::TRACE, "write_lock bm").in_scope(|| {
-                        let mut backward_maps = backward_maps.write().unwrap();
-                        backward_maps.merge(&bm);
-                    });
-                    span!(Level::TRACE, "write_lock fm").in_scope(|| {
-                        let mut forward_maps = forward_maps.write().unwrap();
-                        forward_maps.merge(&fm);
-                    });
-                }
-            }
+            total += refresh_known_filters(
+                &repo,
+                known_views.clone(),
+                forward_maps.clone(),
+                backward_maps.clone(),
+            )
+            .unwrap_or(0);
             if total > 1000
                 || persist_timer.elapsed()
                     > std::time::Duration::from_secs(60 * 15)
