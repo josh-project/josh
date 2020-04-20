@@ -151,26 +151,15 @@ pub fn try_load(path: &std::path::Path) -> ViewMaps {
     ViewMaps::new()
 }
 
-pub fn persist(m: &ViewMaps, path: &std::path::Path) {
+pub fn persist(m: &ViewMaps, path: &std::path::Path) -> crate::JoshResult<()> {
     tracing::info!("persisting: {:?}", &path);
-    let f = ok_or!(tempfile::NamedTempFile::new_in(path.parent().unwrap()), {
-        tracing::error!("NamedTempFile::new");
-        return;
-    });
-
-    ok_or!(bincode::serialize_into(&f, &m), {
-        tracing::error!("serialize_into: {:?}", &path);
-        return;
-    });
-
-    ok_or!(f.persist(path), {
-        tracing::error!("persist: {:?}", &path);
-        return;
-    });
+    let af = atomicwrites::AtomicFile::new(path, atomicwrites::AllowOverwrite);
+    af.write(|f| bincode::serialize_into(f, &m))?;
     let file_size = std::fs::metadata(&path)
         .map(|x| x.len() / (1024 * 1024))
         .unwrap_or(0);
     tracing::info!("persisted: {:?}, file size: {} MiB", &path, file_size);
+    return Ok(());
 }
 
 pub fn try_merge_both(

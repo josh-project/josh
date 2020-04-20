@@ -19,7 +19,7 @@ clap = "2"
 tracing = { version = "*", features = ["max_level_debug", "release_max_level_info"] }
 bincode = "*"
 serde = {version = "*", features = ["derive"]}
-tempfile = "*"
+atomicwrites = "*"
 regex = "1.1"
 data-encoding = "2.2"
 lazy_static = "1.2"

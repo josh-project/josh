@@ -254,11 +254,13 @@ pub fn spawn_thread(
                 view_maps::persist(
                     &*backward_maps.read().unwrap(),
                     &repo.path().join("josh_backward_maps"),
-                );
+                )
+                .ok();
                 view_maps::persist(
                     &*forward_maps.read().unwrap(),
                     &repo.path().join("josh_forward_maps"),
-                );
+                )
+                .ok();
                 total = 0;
                 persist_timer = std::time::Instant::now();
             }

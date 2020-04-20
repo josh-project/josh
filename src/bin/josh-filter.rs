@@ -142,8 +142,9 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
 
     let bm = backward_maps.read().unwrap();
 
-    josh::view_maps::persist(&*bm, &repo.path().join("josh_backward_maps"));
-    josh::view_maps::persist(&fm, &repo.path().join("josh_forward_maps"));
+    josh::view_maps::persist(&*bm, &repo.path().join("josh_backward_maps"))
+        .ok();
+    josh::view_maps::persist(&fm, &repo.path().join("josh_forward_maps")).ok();
 
     return Ok(0);
 }
