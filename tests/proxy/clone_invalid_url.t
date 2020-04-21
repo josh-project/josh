@@ -26,5 +26,10 @@
   [128]
 
 
-  $ bash ${TESTDIR}/destroy_test_env.sh &> /dev/null
+  $ bash ${TESTDIR}/destroy_test_env.sh
+  remote/scratch/refs
+  |-- heads
+  `-- tags
+  
+  2 directories, 0 files
 

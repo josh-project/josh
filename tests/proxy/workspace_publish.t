@@ -115,5 +115,27 @@
   4 directories, 4 files
 
   $ bash ${TESTDIR}/destroy_test_env.sh
+  remote/scratch/refs
+  |-- heads
+  |-- josh
+  |   `-- filtered
+  |       `-- real_repo.git
+  |           |-- #%sub2
+  |           |   `-- heads
+  |           |       `-- master
+  |           |-- #%ws
+  |           |   `-- heads
+  |           |       `-- master
+  |           `-- #workspace=ws
+  |               `-- heads
+  |                   `-- master
+  |-- namespaces
+  |   `-- real_repo.git
+  |       `-- refs
+  |           `-- heads
+  |               `-- master
+  `-- tags
+  
+  15 directories, 4 files
 
 $ cat ${TESTTMP}/josh-proxy.out | grep VIEW

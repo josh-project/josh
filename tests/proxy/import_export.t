@@ -275,3 +275,41 @@ Empty roots should not be dropped -> sha1 equal guarantee for "nop"
   2 directories, 4 files
 
   $ bash ${TESTDIR}/destroy_test_env.sh
+  remote/scratch/refs
+  |-- heads
+  |-- josh
+  |   `-- filtered
+  |       |-- real_repo.git
+  |       |   |-- #%repo1
+  |       |   |   `-- heads
+  |       |   |       `-- master
+  |       |   |-- #%repo2
+  |       |   |   `-- heads
+  |       |   |       `-- master
+  |       |   `-- #nop=nop
+  |       |       `-- heads
+  |       |           `-- master
+  |       |-- repo1.git
+  |       |   `-- #prefix=repo1
+  |       |       `-- heads
+  |       |           `-- master
+  |       `-- repo2.git
+  |           `-- #prefix=repo2
+  |               `-- heads
+  |                   `-- master
+  |-- namespaces
+  |   |-- real_repo.git
+  |   |   `-- refs
+  |   |       `-- heads
+  |   |           `-- master
+  |   |-- repo1.git
+  |   |   `-- refs
+  |   |       `-- heads
+  |   |           `-- master
+  |   `-- repo2.git
+  |       `-- refs
+  |           `-- heads
+  |               `-- master
+  `-- tags
+  
+  27 directories, 8 files

@@ -57,7 +57,11 @@ fn empty_tree(repo: &git2::Repository) -> git2::Tree {
 }
 
 pub fn to_ns(path: &str) -> String {
-    return path.trim_matches('/').replace("/", "/refs/namespaces/");
+    return path.trim_matches('/').replace("/", "%").replace(":", "#");
+}
+
+pub fn from_ns(path: &str) -> String {
+    return path.trim_matches('/').replace("%", "/").replace("#", ":");
 }
 
 #[derive(Debug, Clone)]

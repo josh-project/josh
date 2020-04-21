@@ -33,6 +33,22 @@ Make sure all temporary namespace got removed
   [1]
 
   $ bash ${TESTDIR}/destroy_test_env.sh
+  remote/scratch/refs
+  |-- heads
+  |-- josh
+  |   `-- filtered
+  |       `-- real_repo.git
+  |           `-- #%sub1
+  |               `-- heads
+  |                   `-- master
+  |-- namespaces
+  |   `-- real_repo.git
+  |       `-- refs
+  |           `-- heads
+  |               `-- master
+  `-- tags
+  
+  11 directories, 2 files
 
 $ cat ${TESTTMP}/josh-proxy.out
 $ cat ${TESTTMP}/josh-proxy.out | grep REPO_UPDATE

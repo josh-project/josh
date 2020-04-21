@@ -88,4 +88,28 @@ Put a double slash in the URL to see that it also works
   contents2_repo2
 
   $ bash ${TESTDIR}/destroy_test_env.sh
+  remote/scratch/refs
+  |-- heads
+  |-- josh
+  |   `-- filtered
+  |       |-- real%repo2.git
+  |       |   `-- #%sub1
+  |       |       `-- heads
+  |       |           `-- master
+  |       `-- real_repo.git
+  |           `-- #%sub1
+  |               `-- heads
+  |                   `-- master
+  |-- namespaces
+  |   |-- real%repo2.git
+  |   |   `-- refs
+  |   |       `-- heads
+  |   |           `-- master
+  |   `-- real_repo.git
+  |       `-- refs
+  |           `-- heads
+  |               `-- master
+  `-- tags
+  
+  17 directories, 4 files
 

@@ -300,5 +300,42 @@ Note that ws/d/ is now present in the ws
 
 
   $ bash ${TESTDIR}/destroy_test_env.sh
+  remote/scratch/refs
+  |-- heads
+  |-- josh
+  |   `-- filtered
+  |       `-- real_repo.git
+  |           |-- #%sub1
+  |           |   `-- heads
+  |           |       `-- master
+  |           |-- #%sub1%subsub
+  |           |   `-- heads
+  |           |       `-- master
+  |           |-- #%sub2
+  |           |   `-- heads
+  |           |       `-- master
+  |           |-- #%sub3
+  |           |   `-- heads
+  |           |       `-- master
+  |           |-- #%ws
+  |           |   `-- heads
+  |           |       `-- master
+  |           |-- #%ws%d
+  |           |   `-- heads
+  |           |       `-- master
+  |           |-- #workspace=ws
+  |           |   `-- heads
+  |           |       `-- master
+  |           `-- #workspace=ws#prefix=pre#%pre
+  |               `-- heads
+  |                   `-- master
+  |-- namespaces
+  |   `-- real_repo.git
+  |       `-- refs
+  |           `-- heads
+  |               `-- master
+  `-- tags
+  
+  25 directories, 9 files
 
 $ cat ${TESTTMP}/josh-proxy.out | grep VIEW

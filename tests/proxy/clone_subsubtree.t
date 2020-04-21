@@ -78,4 +78,30 @@
   $ git log --graph --pretty=%s master
   * add file1
 
+
   $ bash ${TESTDIR}/destroy_test_env.sh
+  remote/scratch/refs
+  |-- heads
+  |-- josh
+  |   `-- filtered
+  |       `-- real_repo.git
+  |           |-- #%sub1
+  |           |   `-- heads
+  |           |       `-- master
+  |           |-- #%sub1#%subsub
+  |           |   `-- heads
+  |           |       `-- master
+  |           |-- #%sub1%subsub
+  |           |   `-- heads
+  |           |       `-- master
+  |           `-- #%sub2
+  |               `-- heads
+  |                   `-- master
+  |-- namespaces
+  |   `-- real_repo.git
+  |       `-- refs
+  |           `-- heads
+  |               `-- master
+  `-- tags
+  
+  17 directories, 5 files

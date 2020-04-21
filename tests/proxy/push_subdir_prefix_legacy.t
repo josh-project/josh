@@ -40,4 +40,23 @@
   1 directory, 2 files
 
   $ bash ${TESTDIR}/destroy_test_env.sh
+  remote/scratch/refs
+  |-- heads
+  |-- josh
+  |   `-- filtered
+  |       `-- real_repo.git
+  |           |-- #%sub1
+  |           |   `-- heads
+  |           |       `-- master
+  |           `-- #%sub1#prefix=pre
+  |               `-- heads
+  |                   `-- master
+  |-- namespaces
+  |   `-- real_repo.git
+  |       `-- refs
+  |           `-- heads
+  |               `-- master
+  `-- tags
+  
+  13 directories, 3 files
 

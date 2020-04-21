@@ -67,3 +67,22 @@
   contents1
 
   $ bash ${TESTDIR}/destroy_test_env.sh
+  remote/scratch/refs
+  |-- heads
+  |-- josh
+  |   `-- filtered
+  |       `-- real_repo.git
+  |           |-- #%sub1
+  |           |   `-- heads
+  |           |       `-- master
+  |           `-- #%sub2
+  |               `-- heads
+  |                   `-- master
+  |-- namespaces
+  |   `-- real_repo.git
+  |       `-- refs
+  |           `-- heads
+  |               `-- master
+  `-- tags
+  
+  13 directories, 3 files

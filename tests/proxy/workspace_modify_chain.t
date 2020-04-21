@@ -235,5 +235,39 @@
  
  
   $ bash ${TESTDIR}/destroy_test_env.sh
+  remote/scratch/refs
+  |-- heads
+  |-- josh
+  |   `-- filtered
+  |       `-- real_repo.git
+  |           |-- #%sub1
+  |           |   `-- heads
+  |           |       `-- master
+  |           |-- #%sub1%subsub
+  |           |   `-- heads
+  |           |       `-- master
+  |           |-- #%sub2
+  |           |   `-- heads
+  |           |       `-- master
+  |           |-- #%sub3
+  |           |   `-- heads
+  |           |       `-- master
+  |           |-- #%ws
+  |           |   `-- heads
+  |           |       `-- master
+  |           |-- #workspace=ws
+  |           |   `-- heads
+  |           |       `-- master
+  |           `-- #workspace=ws#%pre
+  |               `-- heads
+  |                   `-- master
+  |-- namespaces
+  |   `-- real_repo.git
+  |       `-- refs
+  |           `-- heads
+  |               `-- master
+  `-- tags
+  
+  23 directories, 8 files
 
 $ cat ${TESTTMP}/josh-proxy.out | grep VIEW

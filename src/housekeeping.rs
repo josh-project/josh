@@ -68,6 +68,12 @@ fn run_command(path: &Path, cmd: &str) -> String {
     return output;
 }
 
+super::regex_parsed!(
+    RepoNs,
+    r"refs/namespaces/(?P<ns>*.git)/refs/heads/master",
+    [ns]
+);
+
 /**
  * Determine filter specs that are either likely to be requested and/or
  * expensive to build from scratch using heuristics.

@@ -65,5 +65,22 @@ Make sure all temporary namespace got removed
   [1]
 
   $ bash ${TESTDIR}/destroy_test_env.sh
+  remote/scratch/refs
+  |-- heads
+  |-- josh
+  |   `-- filtered
+  |       `-- real_repo.git
+  |           `-- #%sub1
+  |               `-- heads
+  |                   `-- master
+  |-- namespaces
+  |   `-- real_repo.git
+  |       `-- refs
+  |           `-- heads
+  |               |-- master
+  |               `-- new_branch
+  `-- tags
+  
+  11 directories, 3 files
 
 $ cat ${TESTTMP}/josh-proxy.out

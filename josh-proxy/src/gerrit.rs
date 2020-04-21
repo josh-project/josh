@@ -1,4 +1,4 @@
-super::regex_parsed!(ChangeUrl, r"/c/(?P<change>.*)/", [change]);
+josh::regex_parsed!(ChangeUrl, r"/c/(?P<change>.*)/", [change]);
 
 /* type HttpClient = */
 /*     hyper::Client<hyper_tls::HttpsConnector<hyper::client::HttpConnector>>; */

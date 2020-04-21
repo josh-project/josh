@@ -83,7 +83,7 @@
   $ sleep 10
 
   $ curl -s http://localhost:8002/views
-  "/real/repo2.git" = [
+  "real/repo2.git" = [
       ':/sub1',
       ':/sub1/subsub',
       ':/sub2',
@@ -95,5 +95,42 @@
   ]
 
   $ bash ${TESTDIR}/destroy_test_env.sh
+  remote/scratch/refs
+  |-- heads
+  |-- josh
+  |   `-- filtered
+  |       `-- real%repo2.git
+  |           |-- #%sub1
+  |           |   `-- heads
+  |           |       `-- master
+  |           |-- #%sub1%subsub
+  |           |   `-- heads
+  |           |       `-- master
+  |           |-- #%sub2
+  |           |   `-- heads
+  |           |       `-- master
+  |           |-- #%sub3
+  |           |   `-- heads
+  |           |       `-- master
+  |           |-- #%ws
+  |           |   `-- heads
+  |           |       `-- master
+  |           |-- #%ws2
+  |           |   `-- heads
+  |           |       `-- master
+  |           |-- #workspace=ws
+  |           |   `-- heads
+  |           |       `-- master
+  |           `-- #workspace=ws2
+  |               `-- heads
+  |                   `-- master
+  |-- namespaces
+  |   `-- real%repo2.git
+  |       `-- refs
+  |           `-- heads
+  |               `-- master
+  `-- tags
+  
+  25 directories, 9 files
 
 $ cat ${TESTTMP}/josh-proxy.out
