@@ -35,6 +35,23 @@ pub fn find_refs(
     return refs;
 }
 
+pub fn find_heads(
+    repo: &git2::Repository,
+    namespace: &str,
+    upstream_repo: &str,
+) -> Vec<(String, String)> {
+    let mut refs = vec![];
+    let glob = format!("refs/namespaces/{}/*/refs/heads/*", &to_ns(upstream_repo));
+    for refname in repo.references_glob(&glob).unwrap().names() {
+        let refname = refname.unwrap();
+        let to_ref = refname.replacen(&to_ns(upstream_repo), &namespace, 1);
+
+        refs.push((refname.to_owned(), to_ref.clone()));
+    }
+
+    return refs;
+}
+
 fn run_command(path: &Path, cmd: &str) -> String {
     let shell = shell::Shell {
         cwd: path.to_owned(),
@@ -205,7 +222,7 @@ fn refresh_known_filters(
             tracing::trace!("background rebuild: {:?} {:?}", prefix2, v);
 
             let refs =
-                find_refs(&repo, &&to_known_view(&prefix2, &v), &prefix2);
+                find_heads(&repo, &&to_known_view(&prefix2, &v), &prefix2);
 
             updated_count += scratch::apply_filter_to_refs(
                 &repo,
