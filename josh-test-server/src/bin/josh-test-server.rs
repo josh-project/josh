@@ -1,19 +1,13 @@
 #![allow(clippy::needless_return)]
-extern crate clap;
-extern crate futures;
-extern crate hyper;
-extern crate tokio_core;
-extern crate tokio_io;
-extern crate tokio_process;
 
-use self::futures::future::Future;
-use self::futures::Stream;
-use self::hyper::header::ContentEncoding;
-use self::hyper::header::ContentLength;
-use self::hyper::header::ContentType;
-use self::hyper::header::{Authorization, Basic};
-use self::hyper::server::Http;
-use self::hyper::server::{Request, Response, Service};
+use futures::future::Future;
+use futures::Stream;
+use hyper::header::ContentEncoding;
+use hyper::header::ContentLength;
+use hyper::header::ContentType;
+use hyper::header::{Authorization, Basic};
+use hyper::server::Http;
+use hyper::server::{Request, Response, Service};
 use std::env;
 use std::io;
 use std::io::BufRead;

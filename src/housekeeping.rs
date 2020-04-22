@@ -8,10 +8,11 @@ use tracing::{info, span, Level};
 
 pub type KnownViews = BTreeMap<String, BTreeSet<String>>;
 
-pub fn find_refs(
+pub fn default_from_to(
     repo: &git2::Repository,
     namespace: &str,
     upstream_repo: &str,
+    filter_spec: &str,
 ) -> Vec<(String, String)> {
     let mut refs = vec![];
 
@@ -30,10 +31,16 @@ pub fn find_refs(
         refs.push((refname.to_owned(), to_ref.clone()));
     }
 
+    refs.append(&mut memorize_from_to(
+        &repo,
+        &crate::to_filtered_ref(&upstream_repo, &filter_spec),
+        &upstream_repo,
+    ));
+
     return refs;
 }
 
-pub fn find_heads(
+pub fn memorize_from_to(
     repo: &git2::Repository,
     namespace: &str,
     upstream_repo: &str,
@@ -238,9 +245,9 @@ pub fn refresh_known_filters(
                 filter_spec
             );
 
-            let refs = find_heads(
+            let refs = memorize_from_to(
                 &repo,
-                &&to_filtered_ref(&upstream_repo, &filter_spec),
+                &to_filtered_ref(&upstream_repo, &filter_spec),
                 &upstream_repo,
             );
 

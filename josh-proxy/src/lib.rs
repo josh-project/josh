@@ -1,35 +1,22 @@
-extern crate futures;
-extern crate hyper;
-extern crate regex;
-extern crate tokio_core;
-extern crate tokio_io;
-extern crate tokio_process;
-extern crate tracing;
-
 #[macro_use]
 extern crate lazy_static;
 
-use self::futures::future::Future;
-use self::futures::Stream;
-use self::hyper::header::ContentEncoding;
-use self::hyper::header::ContentLength;
-use self::hyper::header::ContentType;
-use self::hyper::server::{Request, Response};
-use self::tokio_process::CommandExt;
-use self::tracing::{debug, span, trace, Level};
-use git2::Oid;
+use futures::future::Future;
+use futures::Stream;
+use hyper::header::ContentEncoding;
+use hyper::header::ContentLength;
+use hyper::header::ContentType;
+use hyper::server::{Request, Response};
 use std::collections::HashMap;
-use std::env::current_exe;
-use std::fs;
 use std::io;
 use std::io::BufRead;
 use std::io::Read;
-use std::os::unix::fs::symlink;
 use std::path::Path;
 use std::process::Command;
 use std::process::Stdio;
 use std::str::FromStr;
 use std::sync::{Arc, RwLock};
+use tokio_process::CommandExt;
 
 use tracing::event;
 
@@ -42,7 +29,7 @@ pub fn do_cgi(
     cmd: Command,
     handle: tokio_core::reactor::Handle,
 ) -> Box<dyn Future<Item = Response, Error = hyper::Error>> {
-    span!(Level::TRACE, "do_cgi");
+    tracing::span!(tracing::Level::TRACE, "do_cgi");
     let mut cmd = cmd;
     cmd.stdout(Stdio::piped());
     cmd.stderr(Stdio::inherit());
@@ -96,7 +83,7 @@ pub fn do_cgi(
 }
 
 fn build_response(command_result: std::process::Output) -> Response {
-    let _trace_s = span!(Level::TRACE, "build_response");
+    let _trace_s = tracing::span!(tracing::Level::TRACE, "build_response");
     let mut stdout = io::BufReader::new(command_result.stdout.as_slice());
     let mut stderr = io::BufReader::new(command_result.stderr.as_slice());
 
@@ -104,7 +91,12 @@ fn build_response(command_result: std::process::Output) -> Response {
 
     let mut headers = vec![];
     for line in stdout.by_ref().lines() {
-        event!(parent: &_trace_s, Level::TRACE, "STDOUT {:?}", line);
+        event!(
+            parent: &_trace_s,
+            tracing::Level::TRACE,
+            "STDOUT {:?}",
+            line
+        );
         if line.as_ref().unwrap().is_empty() {
             break;
         }
@@ -136,9 +128,9 @@ fn build_response(command_result: std::process::Output) -> Response {
 
     let err = String::from_utf8_lossy(&stderrdata);
 
-    trace!("build_response err {:?}", &err);
+    tracing::trace!("build_response err {:?}", &err);
 
-    event!(parent: &_trace_s, Level::TRACE, ?err, ?headers);
+    event!(parent: &_trace_s, tracing::Level::TRACE, ?err, ?headers);
     response.set_body(hyper::Chunk::from(data));
 
     response
@@ -176,7 +168,7 @@ pub fn process_repo_update(
         let mut ru = repo_update.clone();
         ru.insert("password".to_owned(), "...".to_owned());
     };
-    let _trace_s = span!(Level::TRACE, "process_repo_update", repo_update= ?ru);
+    let _trace_s = tracing::span!(tracing::Level::TRACE, "process_repo_update", repo_update= ?ru);
     let refname = repo_update.get("refname").ok_or(josh::josh_error(""))?;
     let filter_spec =
         repo_update.get("filter_spec").ok_or(josh::josh_error(""))?;
@@ -191,38 +183,38 @@ pub fn process_repo_update(
     let git_ns = repo_update
         .get("GIT_NAMESPACE")
         .ok_or(josh::josh_error(""))?;
-    debug!("REPO_UPDATE env ok");
+    tracing::debug!("REPO_UPDATE env ok");
 
     let repo = git2::Repository::init_bare(&Path::new(&git_dir))?;
 
-    let old = Oid::from_str(old)?;
+    let old = git2::Oid::from_str(old)?;
 
     let (baseref, push_to, options) = baseref_and_options(refname)?;
     let josh_merge = options.contains(&"josh-merge".to_string());
 
-    debug!("push options: {:?}", options);
-    debug!("XXX josh-merge: {:?}", josh_merge);
+    tracing::debug!("push options: {:?}", options);
+    tracing::debug!("XXX josh-merge: {:?}", josh_merge);
 
-    let old = if old == Oid::zero() {
+    let old = if old == git2::Oid::zero() {
         let rev = format!("refs/namespaces/{}/{}", git_ns, &baseref);
         let oid = if let Ok(x) = repo.revparse_single(&rev) {
             x.id()
         } else {
             old
         };
-        trace!("push: old oid: {:?}, rev: {:?}", oid, rev);
+        tracing::trace!("push: old oid: {:?}, rev: {:?}", oid, rev);
         oid
     } else {
-        trace!("push: old oid: {:?}, refname: {:?}", old, refname);
+        tracing::trace!("push: old oid: {:?}, refname: {:?}", old, refname);
         old
     };
 
     let viewobj = josh::filters::parse(&filter_spec);
-    let new_oid = Oid::from_str(&new)?;
+    let new_oid = git2::Oid::from_str(&new)?;
     let backward_new_oid = {
-        debug!("=== MORE");
+        tracing::debug!("=== MORE");
 
-        debug!("=== processed_old {:?}", old);
+        tracing::debug!("=== processed_old {:?}", old);
 
         match josh::scratch::unapply_view(
             &repo,
@@ -232,7 +224,7 @@ pub fn process_repo_update(
             new_oid,
         )? {
             josh::UnapplyView::Done(rewritten) => {
-                debug!("rewritten");
+                tracing::debug!("rewritten");
                 rewritten
             }
             josh::UnapplyView::BranchDoesNotExist => {
@@ -321,8 +313,8 @@ fn push_head_url(
     let (stdout, stderr) =
         shell.command_env(&cmd, &[("GIT_PASSWORD", &password)]);
     fakehead.delete()?;
-    debug!("{}", &stderr);
-    debug!("{}", &stdout);
+    tracing::debug!("{}", &stderr);
+    tracing::debug!("{}", &stdout);
 
     let stderr = stderr.replace(&rn, "JOSH_PUSH");
 
@@ -330,18 +322,18 @@ fn push_head_url(
 }
 
 pub fn create_repo(path: &Path) -> josh::JoshResult<()> {
-    debug!("init base repo: {:?}", path);
-    fs::create_dir_all(path).expect("can't create_dir_all");
+    tracing::debug!("init base repo: {:?}", path);
+    std::fs::create_dir_all(path).expect("can't create_dir_all");
     git2::Repository::init_bare(path)?;
     if !path.join("hooks/update").exists() {
         let shell = josh::shell::Shell {
             cwd: path.to_path_buf(),
         };
         shell.command("git config http.receivepack true");
-        let ce = current_exe().expect("can't find path to exe");
+        let ce = std::env::current_exe().expect("can't find path to exe");
         shell.command("rm -Rf hooks");
         shell.command("mkdir hooks");
-        symlink(ce, path.join("hooks").join("update"))
+        std::os::unix::fs::symlink(ce, path.join("hooks").join("update"))
             .expect("can't symlink update hook");
         shell.command(&format!(
             "git config credential.helper '!f() {{ echo \"password=\"$GIT_PASSWORD\"\"; }}; f'"
@@ -383,7 +375,12 @@ pub fn fetch_refs_from_url(
 
         let (_stdout, stderr) =
             shell.command_env(&cmd, &[("GIT_PASSWORD", &password)]);
-        debug!("fetch_refs_from_url done {:?} {:?} {:?}", cmd, path, stderr);
+        tracing::debug!(
+            "fetch_refs_from_url done {:?} {:?} {:?}",
+            cmd,
+            path,
+            stderr
+        );
         if stderr.contains("fatal: Authentication failed") {
             return Err(git2::Error::from_str("auth"));
         }
@@ -407,7 +404,7 @@ pub fn body2string(body: hyper::Chunk) -> String {
 }
 
 pub struct TmpGitNamespace {
-    pub name: String,
+    name: String,
     repo_path: std::path::PathBuf,
 }
 
@@ -417,6 +414,13 @@ impl TmpGitNamespace {
             name: format!("request_{}", uuid::Uuid::new_v4()),
             repo_path: repo_path.to_owned(),
         }
+    }
+
+    pub fn name(&self) -> &str {
+        return &self.name;
+    }
+    pub fn reference(&self, refname: &str) -> String {
+        return format!("refs/namespaces/{}/{}", &self.name, refname);
     }
 }
 
@@ -429,4 +433,3 @@ impl Drop for TmpGitNamespace {
         });
     }
 }
-

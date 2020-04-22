@@ -1,37 +1,13 @@
-extern crate josh;
-
-extern crate clap;
-extern crate futures;
-extern crate futures_cpupool;
-extern crate git2;
-extern crate hyper;
-extern crate tempfile;
-/* extern crate hyper_tls; */
-extern crate rand;
-extern crate regex;
-
 #[macro_use]
 extern crate lazy_static;
-
-extern crate bincode;
-extern crate serde_json;
-
-extern crate crypto;
-extern crate serde;
-extern crate tokio_core;
-extern crate tracing;
-extern crate tracing_log;
-extern crate tracing_subscriber;
 
 use futures::future::Future;
 use futures::Stream;
 use hyper::server::{Request, Response};
-use josh::housekeeping;
-use josh::view_maps;
 use josh_proxy::BoxedFuture;
 use tracing_subscriber::Layer;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
 use tracing::*;
@@ -61,10 +37,10 @@ struct JoshProxyService {
     repo_path: std::path::PathBuf,
     /* gerrit: gerrit::Gerrit(), */
     upstream_url: String,
-    forward_maps: Arc<RwLock<view_maps::ViewMaps>>,
-    backward_maps: Arc<RwLock<view_maps::ViewMaps>>,
+    forward_maps: Arc<RwLock<josh::view_maps::ViewMaps>>,
+    backward_maps: Arc<RwLock<josh::view_maps::ViewMaps>>,
     credential_cache: Arc<RwLock<CredentialCache>>,
-    fetching: Arc<RwLock<HashSet<String>>>,
+    fetching: Arc<RwLock<std::collections::HashSet<String>>>,
 }
 
 fn hash_strings(url: &str, username: &str, password: &str) -> String {
@@ -205,10 +181,10 @@ fn static_paths(
     if path == "/views" {
         service.credential_cache.write().unwrap().clear();
 
-            let repo = git2::Repository::init_bare(&service.repo_path).unwrap();
+        let repo = git2::Repository::init_bare(&service.repo_path).unwrap();
         let discover = service.compute_pool.spawn_fn(move || {
             let known_filters =
-                housekeeping::discover_filter_candidates(&repo).ok();
+                josh::housekeeping::discover_filter_candidates(&repo).ok();
             let body = toml::to_string_pretty(&known_filters).unwrap();
             let response = Response::new()
                 .with_body(body)
@@ -234,10 +210,9 @@ fn call_service(
         path
     };
 
-    if let Some(r) = static_paths(&service,  &path) {
+    if let Some(r) = static_paths(&service, &path) {
         return r;
     }
-
 
     if path == "/repo_update" {
         let pool = service.fetch_push_pool.clone();
@@ -310,7 +285,7 @@ fn call_service(
         let backward_maps = service.forward_maps.clone();
 
         let f = compute_pool.spawn_fn(move || {
-            let info = housekeeping::get_info(
+            let info = josh::housekeeping::get_info(
                 &repo,
                 &*josh::filters::parse(&parsed_url.view),
                 &parsed_url.upstream_repo,
@@ -357,7 +332,6 @@ fn call_service(
     let base_ns = josh::to_ns(&parsed_url.upstream_repo);
     let handle = service.handle.clone();
 
-
     let fetch_future = if headref == "" {
         fetch_upstream(
             service.clone(),
@@ -377,8 +351,8 @@ fn call_service(
         )
     };
 
-
-    let namespace = Arc::new(josh_proxy::TmpGitNamespace::new(&service.repo_path));
+    let temp_ns =
+        Arc::new(josh_proxy::TmpGitNamespace::new(&service.repo_path));
 
     let refs = if headref != "" {
         Some(vec![(
@@ -387,18 +361,17 @@ fn call_service(
                 &josh::to_ns(&parsed_url.upstream_repo),
                 headref
             ),
-            format!("refs/namespaces/{}/refs/heads/master", &namespace.name),
+            temp_ns.reference("refs/heads/master"),
         )])
     } else {
         None
     };
 
-
     let filter_spec = parsed_url.view.clone();
     let service = service.clone();
     let fs = filter_spec.clone();
 
-    let ns = namespace.clone();
+    let ns = temp_ns.clone();
 
     let fetch_future =
         fetch_future.and_then(move |authorized| -> BoxedFuture<Response> {
@@ -419,7 +392,7 @@ fn call_service(
             let mut cmd = std::process::Command::new("git");
             let repo_path = service.repo_path.to_str().unwrap();
             cmd.arg("http-backend");
-            cmd.current_dir(&path);
+            cmd.current_dir(&service.repo_path);
             cmd.env("GIT_PROJECT_ROOT", repo_path);
             cmd.env("GIT_DIR", repo_path);
             cmd.env("GIT_HTTP_EXPORT_ALL", "");
@@ -427,7 +400,7 @@ fn call_service(
             cmd.env("JOSH_PASSWORD", passwd);
             cmd.env("JOSH_USERNAME", usernm);
             cmd.env("JOSH_PORT", port);
-            cmd.env("GIT_NAMESPACE", ns.name.clone());
+            cmd.env("GIT_NAMESPACE", ns.name().clone());
             cmd.env("JOSH_VIEWSTR", fs);
             cmd.env("JOSH_REMOTE", remote_url);
             cmd.env("JOSH_BASE_NS", base_ns);
@@ -444,7 +417,7 @@ fn call_service(
     // it is executed in all cases.
     Box::new({
         fetch_future.map(move |response| {
-            std::mem::drop(namespace);
+            std::mem::drop(temp_ns);
             response
         })
     })
@@ -454,40 +427,34 @@ fn do_filter(
     repo: git2::Repository,
     service: &JoshProxyService,
     upstream_repo: String,
-    namespace: Arc<josh_proxy::TmpGitNamespace>,
+    temp_ns: Arc<josh_proxy::TmpGitNamespace>,
     filter_spec: String,
-    refs: Option<Vec<(String, String)>>,
+    from_to: Option<Vec<(String, String)>>,
 ) -> BoxedFuture<git2::Repository> {
     let forward_maps = service.forward_maps.clone();
     let backward_maps = service.backward_maps.clone();
     let r = service.compute_pool.spawn_fn(move || {
-        let mut bm = view_maps::new_downstream(&backward_maps);
-        let mut fm = view_maps::new_downstream(&forward_maps);
-
         let filter = josh::filters::parse(&filter_spec);
         let filter_spec = filter.filter_spec();
 
-        let refs = refs.unwrap_or_else(|| {
-            let mut r = josh::housekeeping::find_refs(
+        let from_to = from_to.unwrap_or_else(|| {
+            josh::housekeeping::default_from_to(
                 &repo,
-                &namespace.name,
+                &temp_ns.name(),
                 &upstream_repo,
-            );
-            r.append(&mut josh::housekeeping::find_heads(
-                &repo,
-                &&josh::to_filtered_ref(&upstream_repo, &filter_spec),
-                &upstream_repo,
-            ));
-            r
+                &filter_spec,
+            )
         });
 
+        let mut bm = josh::view_maps::new_downstream(&backward_maps);
+        let mut fm = josh::view_maps::new_downstream(&forward_maps);
         josh::scratch::apply_filter_to_refs(
-            &repo, &*filter, &refs, &mut fm, &mut bm,
+            &repo, &*filter, &from_to, &mut fm, &mut bm,
         );
-        view_maps::try_merge_both(forward_maps, backward_maps, &fm, &bm);
+        josh::view_maps::try_merge_both(forward_maps, backward_maps, &fm, &bm);
         repo.reference_symbolic(
-            &format!("refs/namespaces/{}/HEAD", &namespace.name),
-            &format!("refs/namespaces/{}/refs/heads/master", &namespace.name),
+            &temp_ns.reference("HEAD"),
+            &temp_ns.reference("refs/heads/master"),
             true,
             "",
         )
@@ -521,7 +488,6 @@ impl hyper::server::Service for JoshProxyService {
     type Future = Box<dyn Future<Item = Self::Response, Error = Self::Error>>;
 
     fn call(&self, req: Request) -> Self::Future {
-
         let _trace_s = tracing::span!(
             tracing::Level::TRACE, "call_service", path = ?req.path(), headers = ?without_password(req.headers()));
         Box::new(call_service(&self, req).map(move |response| {
@@ -575,17 +541,18 @@ fn run_proxy(args: Vec<String>) -> josh::JoshResult<i32> {
 
     josh_proxy::create_repo(&local)?;
 
-    let forward_maps = Arc::new(RwLock::new(view_maps::try_load(
+    let forward_maps = Arc::new(RwLock::new(josh::view_maps::try_load(
         &local.join("josh_forward_maps"),
     )));
-    let backward_maps = Arc::new(RwLock::new(view_maps::try_load(
+    let backward_maps = Arc::new(RwLock::new(josh::view_maps::try_load(
         &local.join("josh_backward_maps"),
     )));
 
     if args.is_present("m") {
         let repo = git2::Repository::init_bare(&local)?;
-        let known_filters = housekeeping::discover_filter_candidates(&repo)?;
-        housekeeping::refresh_known_filters(
+        let known_filters =
+            josh::housekeeping::discover_filter_candidates(&repo)?;
+        josh::housekeeping::refresh_known_filters(
             &repo,
             &known_filters,
             forward_maps.clone(),
@@ -610,7 +577,7 @@ fn run_proxy(args: Vec<String>) -> josh::JoshResult<i32> {
         backward_maps.clone(),
     )?;
 
-    housekeeping::spawn_thread(
+    josh::housekeeping::spawn_thread(
         local,
         service.forward_maps.clone(),
         service.backward_maps.clone(),
@@ -628,8 +595,8 @@ fn run_http_server(
     port: String,
     local: &std::path::Path,
     remote: &str,
-    forward_maps: Arc<RwLock<view_maps::ViewMaps>>,
-    backward_maps: Arc<RwLock<view_maps::ViewMaps>>,
+    forward_maps: Arc<RwLock<josh::view_maps::ViewMaps>>,
+    backward_maps: Arc<RwLock<josh::view_maps::ViewMaps>>,
 ) -> josh::JoshResult<JoshProxyService> {
     let service = JoshProxyService {
         handle: core.handle(),
@@ -642,7 +609,7 @@ fn run_http_server(
         backward_maps: backward_maps,
         upstream_url: remote.to_owned(),
         credential_cache: Arc::new(RwLock::new(CredentialCache::new())),
-        fetching: Arc::new(RwLock::new(HashSet::new())),
+        fetching: Arc::new(RwLock::new(std::collections::HashSet::new())),
     };
 
     let service2 = service.clone();
