@@ -14,21 +14,19 @@ pub fn find_refs(
     upstream_repo: &str,
 ) -> Vec<(String, String)> {
     let mut refs = vec![];
-    let glob = format!("refs/namespaces/{}/*", &to_ns(upstream_repo));
+
+    let glob =
+        format!("refs/namespaces/{}/refs/heads/*", &to_ns(upstream_repo));
     for refname in repo.references_glob(&glob).unwrap().names() {
         let refname = refname.unwrap();
         let to_ref = refname.replacen(&to_ns(upstream_repo), &namespace, 1);
+        refs.push((refname.to_owned(), to_ref.clone()));
+    }
 
-        if to_ref.contains("/refs/cache-automerge/") {
-            continue;
-        }
-        if to_ref.contains("/refs/changes/") {
-            continue;
-        }
-        if to_ref.contains("/refs/notes/") {
-            continue;
-        }
-
+    let glob = format!("refs/namespaces/{}/refs/tags/*", &to_ns(upstream_repo));
+    for refname in repo.references_glob(&glob).unwrap().names() {
+        let refname = refname.unwrap();
+        let to_ref = refname.replacen(&to_ns(upstream_repo), &namespace, 1);
         refs.push((refname.to_owned(), to_ref.clone()));
     }
 
@@ -41,10 +39,15 @@ pub fn find_heads(
     upstream_repo: &str,
 ) -> Vec<(String, String)> {
     let mut refs = vec![];
-    let glob = format!("refs/namespaces/{}/*/refs/heads/*", &to_ns(upstream_repo));
+    let glob = format!(
+        "refs/namespaces/{}/refs/heads/master",
+        &to_ns(upstream_repo)
+    );
+    tracing::debug!("glob {:?}", glob);
     for refname in repo.references_glob(&glob).unwrap().names() {
         let refname = refname.unwrap();
-        let to_ref = refname.replacen(&to_ns(upstream_repo), &namespace, 1);
+        tracing::debug!("refname {:?}", refname);
+        let to_ref = format!("refs/{}/heads/master", &namespace);
 
         refs.push((refname.to_owned(), to_ref.clone()));
     }
@@ -70,8 +73,14 @@ fn run_command(path: &Path, cmd: &str) -> String {
 
 super::regex_parsed!(
     RepoNs,
-    r"refs/namespaces/(?P<ns>*.git)/refs/heads/master",
+    r"refs/namespaces/(?P<ns>.*[.]git)/refs/heads/.*",
     [ns]
+);
+
+super::regex_parsed!(
+    FilteredRefRegex,
+    r"josh/filtered/(?P<upstream_repo>[^/]*[.]git)/(?P<filter_spec>[^/]*)/.*",
+    [upstream_repo, filter_spec]
 );
 
 /**
@@ -80,35 +89,42 @@ super::regex_parsed!(
  */
 pub fn discover_filter_candidates(
     repo: &git2::Repository,
-    known_views: Arc<RwLock<KnownViews>>,
-) -> JoshResult<()> {
+) -> JoshResult<KnownViews> {
+    let mut known_filters = KnownViews::new();
     let _trace_s = span!(Level::TRACE, "discover_filter_candidates");
 
     let refname = format!("refs/namespaces/*.git/refs/heads/master");
 
-    let mut kn = known_views.write()?;
     for reference in repo.references_glob(&refname)? {
         let r = reference?;
-        let name = r
-            .name()
-            .ok_or(josh_error("reference without name"))?
-            .to_owned()
-            .replace("/refs/heads/master", "")
-            .replace("refs/namespaces", "")
-            .replace("//", "/");
+        let name = r.name().ok_or(josh_error("reference without name"))?;
+        let name = RepoNs::from_str(name).ok_or(josh_error("not a ns"))?.ns;
+        let name = super::from_ns(&name);
 
-        {
-            let hs =
-                find_all_workspaces_and_subdirectories(&r.peel_to_tree()?)?;
-            for i in hs {
-                kn.entry(name.clone())
-                    .or_insert_with(BTreeSet::new)
-                    .insert(i);
-            }
+        let hs = find_all_workspaces_and_subdirectories(&r.peel_to_tree()?)?;
+
+        for i in hs {
+            known_filters
+                .entry(name.clone())
+                .or_insert_with(BTreeSet::new)
+                .insert(i);
         }
     }
 
-    return Ok(());
+    let refname = format!("josh/filtered/*.git/*/refs/heads/master");
+    for reference in repo.references_glob(&refname)? {
+        let r = reference?;
+        let name = r.name().ok_or(josh_error("reference without name"))?;
+        let filtered =
+            FilteredRefRegex::from_str(name).ok_or(josh_error("not a ns"))?;
+
+        known_filters
+            .entry(from_ns(&filtered.upstream_repo))
+            .or_insert_with(BTreeSet::new)
+            .insert(from_ns(&filtered.filter_spec));
+    }
+
+    return Ok(known_filters);
 }
 
 fn find_all_workspaces_and_subdirectories(
@@ -200,45 +216,43 @@ pub fn get_info(
     return Ok(serde_json::to_string(&s)?);
 }
 
-fn to_known_view(upstream_repo: &str, filter_spec: &str) -> String {
-    return format!(
-        "known_views/refs/namespaces/{}/refs/namespaces/{}",
-        data_encoding::BASE64URL_NOPAD.encode(upstream_repo.as_bytes()),
-        data_encoding::BASE64URL_NOPAD.encode(filter_spec.as_bytes())
-    );
-}
-
-fn refresh_known_filters(
+pub fn refresh_known_filters(
     repo: &git2::Repository,
-    known_views: Arc<RwLock<housekeeping::KnownViews>>,
+    known_filters: &KnownViews,
     forward_maps: Arc<RwLock<view_maps::ViewMaps>>,
     backward_maps: Arc<RwLock<view_maps::ViewMaps>>,
 ) -> JoshResult<usize> {
     let mut total = 0;
-    let kn = known_views.read()?.clone();
-    for (prefix2, e) in kn.iter() {
-        info!("background rebuild root: {:?}", prefix2);
+    for (upstream_repo, e) in known_filters.iter() {
+        info!("background rebuild root: {:?}", upstream_repo);
 
         let mut bm = view_maps::new_downstream(&backward_maps);
         let mut fm = view_maps::new_downstream(&forward_maps);
 
         let mut updated_count = 0;
 
-        for v in e.iter() {
-            tracing::trace!("background rebuild: {:?} {:?}", prefix2, v);
+        for filter_spec in e.iter() {
+            tracing::trace!(
+                "background rebuild: {:?} {:?}",
+                upstream_repo,
+                filter_spec
+            );
 
-            let refs =
-                find_heads(&repo, &&to_known_view(&prefix2, &v), &prefix2);
+            let refs = find_heads(
+                &repo,
+                &&to_filtered_ref(&upstream_repo, &filter_spec),
+                &upstream_repo,
+            );
 
             updated_count += scratch::apply_filter_to_refs(
                 &repo,
-                &*filters::parse(&v),
+                &*filters::parse(&filter_spec),
                 &refs,
                 &mut fm,
                 &mut bm,
             );
         }
-        info!("updated {} refs for {:?}", updated_count, prefix2);
+        info!("updated {} refs for {:?}", updated_count, upstream_repo);
 
         total += fm.stats()["total"];
         total += bm.stats()["total"];
@@ -255,8 +269,7 @@ fn refresh_known_filters(
 }
 
 pub fn spawn_thread(
-    repo: git2::Repository,
-    known_views: Arc<RwLock<housekeeping::KnownViews>>,
+    repo_path: std::path::PathBuf,
     forward_maps: Arc<RwLock<view_maps::ViewMaps>>,
     backward_maps: Arc<RwLock<view_maps::ViewMaps>>,
     do_gc: bool,
@@ -267,14 +280,12 @@ pub fn spawn_thread(
     std::thread::spawn(move || {
         let mut total = 0;
         loop {
-            housekeeping::discover_filter_candidates(
-                &repo,
-                known_views.clone(),
-            )
-            .ok();
+            let repo = git2::Repository::init_bare(&repo_path).unwrap();
+            let known_filters =
+                housekeeping::discover_filter_candidates(&repo).unwrap();
             total += refresh_known_filters(
                 &repo,
-                known_views.clone(),
+                &known_filters,
                 forward_maps.clone(),
                 backward_maps.clone(),
             )

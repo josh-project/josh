@@ -21,7 +21,6 @@ bincode = "*"
 serde = {version = "*", features = ["derive"]}
 atomicwrites = "*"
 regex = "1.1"
-data-encoding = "2.2"
 lazy_static = "1.2"
 pest_derive = "2.1"
 pest= "2.1"

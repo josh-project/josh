@@ -1,7 +1,6 @@
 extern crate josh;
 
 extern crate clap;
-extern crate data_encoding;
 extern crate futures;
 extern crate futures_cpupool;
 extern crate git2;
@@ -24,46 +23,27 @@ extern crate tracing;
 extern crate tracing_log;
 extern crate tracing_subscriber;
 
-/* extern crate opentelemetry; */
-/* extern crate tracing_opentelemetry; */
-
-/* use opentelemetry::{api::Provider, sdk}; */
-/* use tracing_opentelemetry::OpentelemetryLayer; */
-/* use tracing_subscriber::{Layer, Registry}; */
-use tracing_subscriber::Layer;
-
 use futures::future::Future;
 use futures::Stream;
-use futures_cpupool::CpuPool;
-use hyper::header::{Authorization, Basic};
-use hyper::server::{Http, Request, Response, Service};
+use hyper::server::{Request, Response};
 use josh::housekeeping;
 use josh::view_maps;
 use josh_proxy::BoxedFuture;
-use std::env;
-use std::process::exit;
+use tracing_subscriber::Layer;
 
-use crypto::digest::Digest;
-use std::collections::{BTreeSet, HashMap, HashSet};
-use std::fs::remove_dir_all;
-use std::net;
-use std::path::Path;
-use std::path::PathBuf;
-use std::process::Command;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
-
-use tracing::{debug, span, trace, warn, Level};
 
 use tracing::*;
 
 fn version_str() -> String {
     format!(
         "Version: {}\n",
-        option_env!("GIT_DESCRIBE").unwrap_or(env!("CARGO_PKG_VERSION"))
+        option_env!("GIT_DESCRIBE").unwrap_or(std::env!("CARGO_PKG_VERSION"))
     )
 }
 
-josh_proxy::regex_parsed!(
+josh::regex_parsed!(
     TransformedRepoUrl,
     r"(?P<upstream_repo>/.*[.]git)(?P<headref>@[^:!]*)?(?P<view>[:!].*)[.](?P<ending>(?:git)|(?:json))(?P<pathinfo>/.*)?",
     [upstream_repo, view, pathinfo, headref, ending]
@@ -74,21 +54,21 @@ type CredentialCache = HashMap<String, std::time::Instant>;
 #[derive(Clone)]
 struct JoshProxyService {
     handle: tokio_core::reactor::Handle,
-    fetch_push_pool: CpuPool,
-    housekeeping_pool: CpuPool,
-    compute_pool: CpuPool,
+    fetch_push_pool: futures_cpupool::CpuPool,
+    housekeeping_pool: futures_cpupool::CpuPool,
+    compute_pool: futures_cpupool::CpuPool,
     port: String,
-    repo_path: PathBuf,
+    repo_path: std::path::PathBuf,
     /* gerrit: gerrit::Gerrit(), */
     upstream_url: String,
     forward_maps: Arc<RwLock<view_maps::ViewMaps>>,
     backward_maps: Arc<RwLock<view_maps::ViewMaps>>,
     credential_cache: Arc<RwLock<CredentialCache>>,
-    known_views: Arc<RwLock<housekeeping::KnownViews>>,
     fetching: Arc<RwLock<HashSet<String>>>,
 }
 
 fn hash_strings(url: &str, username: &str, password: &str) -> String {
+    use crypto::digest::Digest;
     let mut d = crypto::sha1::Sha1::new();
     d.input_str(&format!("{}:{}:{}", &url, &username, &password));
     d.result_str().to_owned()
@@ -210,9 +190,9 @@ fn call_service(
     req: Request,
     namespace: &str,
 ) -> BoxedFuture<Response> {
-    let s1 = span!(Level::TRACE, "j call_service");
+    let s1 = tracing::span!(Level::TRACE, "j call_service");
     let _e1 = s1.enter();
-    let s2 = span!(Level::TRACE, "j2 call_service");
+    let s2 = tracing::span!(tracing::Level::TRACE, "j2 call_service");
     let _e2 = s2.enter();
     let repo = git2::Repository::init_bare(&service.repo_path).unwrap();
 
@@ -240,15 +220,10 @@ fn call_service(
     if path == "/views" {
         service.credential_cache.write().unwrap().clear();
 
-        let known_views = service.known_views.clone();
         let discover = service.compute_pool.spawn_fn(move || {
-            housekeeping::discover_filter_candidates(
-                &repo,
-                known_views.clone(),
-            )
-            .ok();
-            let body =
-                toml::to_string_pretty(&*known_views.read().unwrap()).unwrap();
+            let known_filters =
+                housekeeping::discover_filter_candidates(&repo).ok();
+            let body = toml::to_string_pretty(&known_filters).unwrap();
             let response = Response::new()
                 .with_body(body)
                 .with_status(hyper::StatusCode::Ok);
@@ -347,7 +322,7 @@ fn call_service(
     }
 
     let (username, password) = match req.headers().get() {
-        Some(&Authorization(Basic {
+        Some(&hyper::header::Authorization(hyper::header::Basic {
             ref username,
             ref password,
         })) => (
@@ -361,7 +336,6 @@ fn call_service(
 
     let passwd = password.clone();
     let usernm = username.clone();
-    let filter_spec = parsed_url.view.clone();
     let ns = namespace.to_owned();
 
     let port = service.port.clone();
@@ -374,41 +348,10 @@ fn call_service(
 
     let br_url = remote_url.clone();
     let base_ns = josh::to_ns(&parsed_url.upstream_repo);
-
-    let call_git_http_backend = |request: Request,
-                                 path: PathBuf,
-                                 pathinfo: &str,
-                                 handle: &tokio_core::reactor::Handle|
-     -> BoxedFuture<Response> {
-        trace!("git-http backend {:?} {:?}", path, pathinfo);
-        let mut cmd = Command::new("git");
-        cmd.arg("http-backend");
-        cmd.current_dir(&path);
-        cmd.env("GIT_PROJECT_ROOT", path.to_str().unwrap());
-        cmd.env("GIT_DIR", path.to_str().unwrap());
-        cmd.env("GIT_HTTP_EXPORT_ALL", "");
-        cmd.env("PATH_INFO", pathinfo);
-        cmd.env("JOSH_PASSWORD", passwd);
-        cmd.env("JOSH_USERNAME", usernm);
-        cmd.env("JOSH_PORT", port);
-        cmd.env("GIT_NAMESPACE", ns);
-        cmd.env("JOSH_VIEWSTR", filter_spec);
-        cmd.env("JOSH_REMOTE", remote_url);
-        cmd.env("JOSH_BASE_NS", base_ns);
-
-        josh_proxy::do_cgi(request, cmd, handle.clone())
-    };
-
     let handle = service.handle.clone();
 
     let request_tmp_namespace =
         service.repo_path.join("refs/namespaces").join(&namespace);
-
-    remember_known_filter_spec(
-        &service,
-        parsed_url.upstream_repo.clone(),
-        parsed_url.view.clone(),
-    );
 
     let fetch_future = if headref == "" {
         fetch_upstream(
@@ -444,6 +387,7 @@ fn call_service(
     let namespace = namespace.to_owned();
     let filter_spec = parsed_url.view.clone();
     let service = service.clone();
+    let fs = filter_spec.clone();
 
     let fetch_future =
         fetch_future.and_then(move |authorized| -> BoxedFuture<Response> {
@@ -463,12 +407,24 @@ fn call_service(
             let pathinfo = parsed_url.pathinfo.clone();
 
             let response = do_filter.and_then(move |_| {
-                call_git_http_backend(
-                    req,
-                    service.repo_path,
-                    &pathinfo,
-                    &handle,
-                )
+                tracing::trace!("git-http backend {:?} {:?}", path, pathinfo);
+                let mut cmd = std::process::Command::new("git");
+                let repo_path = service.repo_path.to_str().unwrap();
+                cmd.arg("http-backend");
+                cmd.current_dir(&path);
+                cmd.env("GIT_PROJECT_ROOT", repo_path);
+                cmd.env("GIT_DIR", repo_path);
+                cmd.env("GIT_HTTP_EXPORT_ALL", "");
+                cmd.env("PATH_INFO", pathinfo);
+                cmd.env("JOSH_PASSWORD", passwd);
+                cmd.env("JOSH_USERNAME", usernm);
+                cmd.env("JOSH_PORT", port);
+                cmd.env("GIT_NAMESPACE", ns);
+                cmd.env("JOSH_VIEWSTR", fs);
+                cmd.env("JOSH_REMOTE", remote_url);
+                cmd.env("JOSH_BASE_NS", base_ns);
+
+                josh_proxy::do_cgi(req, cmd, handle.clone())
             });
 
             Box::new(response)
@@ -478,8 +434,9 @@ fn call_service(
     // it is executed in all cases.
     Box::new({
         fetch_future.map(move |response| {
-            remove_dir_all(request_tmp_namespace)
-                .unwrap_or_else(|e| warn!("remove_dir_all failed: {:?}", e));
+            std::fs::remove_dir_all(request_tmp_namespace).unwrap_or_else(
+                |e| tracing::warn!("remove_dir_all failed: {:?}", e),
+            );
             response
         })
     })
@@ -499,16 +456,25 @@ fn do_filter(
         let mut bm = view_maps::new_downstream(&backward_maps);
         let mut fm = view_maps::new_downstream(&forward_maps);
 
+        let filter = josh::filters::parse(&filter_spec);
+        let filter_spec = filter.filter_spec();
+
         let refs = refs.unwrap_or_else(|| {
-            josh::housekeeping::find_refs(&repo, &namespace, &upstream_repo)
+            let mut r = josh::housekeeping::find_refs(
+                &repo,
+                &namespace,
+                &upstream_repo,
+            );
+            r.append(&mut josh::housekeeping::find_heads(
+                &repo,
+                &&josh::to_filtered_ref(&upstream_repo, &filter_spec),
+                &upstream_repo,
+            ));
+            r
         });
 
         josh::scratch::apply_filter_to_refs(
-            &repo,
-            &*josh::filters::parse(&filter_spec),
-            &refs,
-            &mut fm,
-            &mut bm,
+            &repo, &*filter, &refs, &mut fm, &mut bm,
         );
         view_maps::try_merge_both(forward_maps, backward_maps, &fm, &bm);
         repo.reference_symbolic(
@@ -525,21 +491,21 @@ fn do_filter(
 
 fn without_password(headers: &hyper::Headers) -> hyper::Headers {
     let username = match headers.get() {
-        Some(&Authorization(Basic {
+        Some(&hyper::header::Authorization(hyper::header::Basic {
             ref username,
             password: _,
         })) => username.to_owned(),
         None => "".to_owned(),
     };
     let mut headers = headers.clone();
-    headers.set(Authorization(Basic {
+    headers.set(hyper::header::Authorization(hyper::header::Basic {
         username: username,
         password: None,
     }));
     return headers;
 }
 
-impl Service for JoshProxyService {
+impl hyper::server::Service for JoshProxyService {
     type Request = Request;
     type Response = Response;
     type Error = hyper::Error;
@@ -549,10 +515,10 @@ impl Service for JoshProxyService {
     fn call(&self, req: Request) -> Self::Future {
         let rname = format!("request_{}", uuid::Uuid::new_v4());
 
-        let _trace_s = span!(
-            Level::TRACE, "call_service", path = ?req.path(), headers = ?without_password(req.headers()));
+        let _trace_s = tracing::span!(
+            tracing::Level::TRACE, "call_service", path = ?req.path(), headers = ?without_password(req.headers()));
         Box::new(call_service(&self, req, &rname).map(move |response| {
-            event!(parent: &_trace_s, Level::TRACE, ?response);
+            event!(parent: &_trace_s, tracing::Level::TRACE, ?response);
             response
         }))
     }
@@ -576,20 +542,15 @@ fn parse_args(args: &[String]) -> clap::ArgMatches {
                 .takes_value(true),
         )
         .arg(clap::Arg::with_name("gc").long("gc").takes_value(false))
+        .arg(clap::Arg::with_name("m").long("m").takes_value(false))
         .arg(clap::Arg::with_name("port").long("port").takes_value(true))
         .get_matches_from(args)
 }
 
 fn run_proxy(args: Vec<String>) -> josh::JoshResult<i32> {
     tracing_log::LogTracer::init()?;
-
-    /* let tracer = sdk::Provider::default().get_tracer("josh-proxy"); */
-    /* let layer = OpentelemetryLayer::with_tracer(tracer); */
-
-    /* let subscriber = layer.with_subscriber(Registry::default()); */
-
     let subscriber = tracing_subscriber::fmt::Subscriber::builder()
-        .with_max_level(Level::TRACE)
+        .with_max_level(tracing::Level::TRACE)
         .finish();
     let filter = tracing_subscriber::filter::EnvFilter::new(
         "josh_proxy=trace,josh=trace",
@@ -601,26 +562,49 @@ fn run_proxy(args: Vec<String>) -> josh::JoshResult<i32> {
 
     let args = parse_args(&args);
 
+    let local = std::path::PathBuf::from(
+        args.value_of("local").expect("missing local directory"),
+    );
+
+    josh_proxy::create_repo(&local)?;
+
+    let forward_maps = Arc::new(RwLock::new(view_maps::try_load(
+        &local.join("josh_forward_maps"),
+    )));
+    let backward_maps = Arc::new(RwLock::new(view_maps::try_load(
+        &local.join("josh_backward_maps"),
+    )));
+
+    if args.is_present("m") {
+        let repo = git2::Repository::init_bare(&local)?;
+        let known_filters = housekeeping::discover_filter_candidates(&repo)?;
+        housekeeping::refresh_known_filters(
+            &repo,
+            &known_filters,
+            forward_maps.clone(),
+            backward_maps.clone(),
+        )?;
+        return Ok(0);
+    }
+
+    let remote = args.value_of("remote").expect("missing remote repo url");
+
     let port = args.value_of("port").unwrap_or("8000").to_owned();
     println!("Now listening on localhost:{}", port);
-
-    let mut core = tokio_core::reactor::Core::new()?;
-
     let addr = format!("0.0.0.0:{}", port).parse()?;
+    let mut core = tokio_core::reactor::Core::new()?;
     let service = run_http_server(
         &mut core,
         addr,
         port,
-        &PathBuf::from(
-            args.value_of("local").expect("missing local directory"),
-        ),
-        &args.value_of("remote").expect("missing remote repo url"),
+        &local,
+        remote,
+        forward_maps.clone(),
+        backward_maps.clone(),
     )?;
 
-    let repo = josh_proxy::create_repo(&service.repo_path)?;
     housekeeping::spawn_thread(
-        repo,
-        service.known_views.clone(),
+        local,
         service.forward_maps.clone(),
         service.backward_maps.clone(),
         args.is_present("gc"),
@@ -633,45 +617,44 @@ fn run_proxy(args: Vec<String>) -> josh::JoshResult<i32> {
 
 fn run_http_server(
     core: &mut tokio_core::reactor::Core,
-    addr: net::SocketAddr,
+    addr: std::net::SocketAddr,
     port: String,
-    local: &Path,
+    local: &std::path::Path,
     remote: &str,
+    forward_maps: Arc<RwLock<view_maps::ViewMaps>>,
+    backward_maps: Arc<RwLock<view_maps::ViewMaps>>,
 ) -> josh::JoshResult<JoshProxyService> {
     let service = JoshProxyService {
         handle: core.handle(),
-        fetch_push_pool: CpuPool::new(8),
-        housekeeping_pool: CpuPool::new(1),
-        compute_pool: CpuPool::new(4),
+        fetch_push_pool: futures_cpupool::CpuPool::new(8),
+        housekeeping_pool: futures_cpupool::CpuPool::new(1),
+        compute_pool: futures_cpupool::CpuPool::new(4),
         port: port,
         repo_path: local.to_owned(),
-        forward_maps: Arc::new(RwLock::new(view_maps::try_load(
-            &local.join("josh_forward_maps"),
-        ))),
-        backward_maps: Arc::new(RwLock::new(view_maps::try_load(
-            &local.join("josh_backward_maps"),
-        ))),
+        forward_maps: forward_maps,
+        backward_maps: backward_maps,
         upstream_url: remote.to_owned(),
         credential_cache: Arc::new(RwLock::new(CredentialCache::new())),
-        known_views: Arc::new(RwLock::new(housekeeping::KnownViews::new())),
         fetching: Arc::new(RwLock::new(HashSet::new())),
     };
 
     let service2 = service.clone();
 
-    let server_handle = core.handle();
-    let serve =
-        Http::new().serve_addr_handle(&addr, &server_handle, move || {
-            Ok(service2.clone())
-        })?;
+    let server_handle = service.handle.clone();
+    let serve = hyper::server::Http::new().serve_addr_handle(
+        &addr,
+        &server_handle,
+        move || Ok(service2.clone()),
+    )?;
 
     let h2 = server_handle.clone();
     server_handle.spawn(
         serve
             .for_each(move |conn| {
                 h2.spawn(
-                    conn.map(|_| ())
-                        .map_err(|err| warn!("serve error:: {:?}", err)),
+                    conn.map(|_| ()).map_err(|err| {
+                        tracing::warn!("serve error:: {:?}", err)
+                    }),
                 );
                 Ok(())
             })
@@ -697,19 +680,21 @@ fn update_hook(refname: &str, old: &str, new: &str) -> josh::JoshResult<i32> {
     ]
     .iter()
     {
-        repo_update.insert(name.to_string(), env::var(&env_name)?);
+        repo_update.insert(name.to_string(), std::env::var(&env_name)?);
     }
 
     repo_update.insert(
         "GIT_DIR".to_owned(),
-        git2::Repository::init_bare(&Path::new(&env::var("GIT_DIR")?))?
-            .path()
-            .to_str()
-            .ok_or(josh::josh_error("GIT_DIR not set"))?
-            .to_owned(),
+        git2::Repository::init_bare(&std::path::Path::new(&std::env::var(
+            "GIT_DIR",
+        )?))?
+        .path()
+        .to_str()
+        .ok_or(josh::josh_error("GIT_DIR not set"))?
+        .to_owned(),
     );
 
-    let port = env::var("JOSH_PORT")?;
+    let port = std::env::var("JOSH_PORT")?;
 
     let client = reqwest::Client::builder().timeout(None).build()?;
     let resp = client
@@ -731,7 +716,7 @@ fn update_hook(refname: &str, old: &str, new: &str) -> josh::JoshResult<i32> {
             }
         }
         Err(err) => {
-            warn!("/repo_update request failed {:?}", err);
+            tracing::warn!("/repo_update request failed {:?}", err);
         }
     };
     return Ok(1);
@@ -740,7 +725,7 @@ fn update_hook(refname: &str, old: &str, new: &str) -> josh::JoshResult<i32> {
 fn main() {
     let args = {
         let mut args = vec![];
-        for arg in env::args() {
+        for arg in std::env::args() {
             args.push(arg);
         }
         args
@@ -748,28 +733,9 @@ fn main() {
 
     if args[0].ends_with("/update") {
         println!("josh-proxy");
-        exit(update_hook(&args[1], &args[2], &args[3]).unwrap_or(1));
+        std::process::exit(
+            update_hook(&args[1], &args[2], &args[3]).unwrap_or(1),
+        );
     }
-    exit(run_proxy(args).unwrap_or(1));
-}
-
-fn remember_known_filter_spec(
-    service: &JoshProxyService,
-    upstream_repo: String,
-    filter_spec: String,
-) {
-    let known_views = service.known_views.clone();
-    service
-        .compute_pool
-        .spawn_fn(move || -> Result<(), ()> {
-            if let Ok(mut kn) = known_views.write() {
-                kn.entry(upstream_repo)
-                    .or_insert_with(BTreeSet::new)
-                    .insert(filter_spec);
-            } else {
-                warn!("Can't lock 'known_views' for writing");
-            }
-            Ok(())
-        })
-        .forget();
+    std::process::exit(run_proxy(args).unwrap_or(1));
 }

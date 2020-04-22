@@ -329,10 +329,10 @@ fn push_head_url(
     return Ok(stderr);
 }
 
-pub fn create_repo(path: &Path) -> josh::JoshResult<git2::Repository> {
+pub fn create_repo(path: &Path) -> josh::JoshResult<()> {
     debug!("init base repo: {:?}", path);
     fs::create_dir_all(path).expect("can't create_dir_all");
-    let repo = git2::Repository::init_bare(path)?;
+    git2::Repository::init_bare(path)?;
     if !path.join("hooks/update").exists() {
         let shell = josh::shell::Shell {
             cwd: path.to_path_buf(),
@@ -349,7 +349,7 @@ pub fn create_repo(path: &Path) -> josh::JoshResult<git2::Repository> {
         shell.command(&"git config gc.auto 0");
     }
     tracing::info!("repo initialized");
-    return Ok(repo);
+    return Ok(());
 }
 
 pub fn fetch_refs_from_url(

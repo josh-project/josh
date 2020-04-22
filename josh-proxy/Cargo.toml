@@ -12,7 +12,6 @@ version = "0.3.0"
 [dependencies]
 bincode = "*"
 clap = "2"
-data-encoding = "2.2"
 futures = "0.1"
 futures-cpupool = "0.1"
 git2 = {version = "0.13", default-features = false}
@@ -20,7 +19,6 @@ hyper = "0.11"
 josh = {path = "../"}
 lazy_static = "1.2"
 log = "0.4"
-opentelemetry = "*"
 pest= "2.1"
 pest_derive = "2.1"
 rand= "0.6"
@@ -40,6 +38,5 @@ toml = "*"
 tracing = { version = "*", features = ["max_level_debug", "release_max_level_info"] }
 tracing-futures = "*"
 tracing-log = "*"
-tracing-opentelemetry = "*"
 tracing-subscriber = "0.2.0-alpha.4"
 uuid = "*"

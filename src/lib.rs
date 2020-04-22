@@ -64,6 +64,14 @@ pub fn from_ns(path: &str) -> String {
     return path.trim_matches('/').replace("%", "/").replace("#", ":");
 }
 
+pub fn to_filtered_ref(upstream_repo: &str, filter_spec: &str) -> String {
+    return format!(
+        "josh/filtered/{}/{}",
+        to_ns(&upstream_repo),
+        to_ns(&filter_spec)
+    );
+}
+
 #[derive(Debug, Clone)]
 pub struct JoshError(pub String);
 pub fn josh_error(s: &str) -> JoshError {
@@ -78,5 +86,46 @@ where
     fn from(item: T) -> Self {
         tracing::error!("JoshError: {:?}", item);
         josh_error("converted")
+    }
+}
+
+#[macro_use]
+extern crate lazy_static;
+
+#[macro_export]
+macro_rules! regex_parsed {
+    ($name:ident, $re:literal,  [$( $i:ident ),+]) => {
+
+        struct $name {
+            $(
+                $i: String,
+            )+
+        }
+
+impl $name {
+    fn from_str(path: &str) -> Option<$name> {
+
+lazy_static! {
+    static ref REGEX: regex::Regex =
+        regex::Regex::new($re)
+            .expect("can't compile regex");
+}
+
+        let caps = if let Some(caps) = REGEX.captures(&path) {
+            caps
+        } else {
+            return None;
+        };
+
+        let as_str = |x: regex::Match| x.as_str().to_owned();
+        tracing::debug!("regex_parsed {:?}: {:?}", stringify!($name), caps);
+
+        return Some($name {
+            $(
+            $i: caps.name(stringify!($i)).map(as_str).unwrap_or("".to_owned()),
+            )+
+        });
+    }
+}
     }
 }
