@@ -185,15 +185,45 @@ fn respond_unauthorized() -> Response {
     response
 }
 
+fn static_paths(
+    service: &JoshProxyService,
+    path: &str,
+) -> Option<BoxedFuture<Response>> {
+    if path == "/version" {
+        let response = Response::new()
+            .with_body(version_str())
+            .with_status(hyper::StatusCode::Ok);
+        return Some(Box::new(futures::future::ok(response)));
+    }
+    if path == "/flush" {
+        service.credential_cache.write().unwrap().clear();
+        let response = Response::new()
+            .with_body(format!("Flushed credential cache\n"))
+            .with_status(hyper::StatusCode::Ok);
+        return Some(Box::new(futures::future::ok(response)));
+    }
+    if path == "/views" {
+        service.credential_cache.write().unwrap().clear();
+
+            let repo = git2::Repository::init_bare(&service.repo_path).unwrap();
+        let discover = service.compute_pool.spawn_fn(move || {
+            let known_filters =
+                housekeeping::discover_filter_candidates(&repo).ok();
+            let body = toml::to_string_pretty(&known_filters).unwrap();
+            let response = Response::new()
+                .with_body(body)
+                .with_status(hyper::StatusCode::Ok);
+            futures::future::ok(response)
+        });
+        return Some(Box::new(discover));
+    }
+    return None;
+}
+
 fn call_service(
     service: &JoshProxyService,
     req: Request,
-    namespace: &str,
 ) -> BoxedFuture<Response> {
-    let s1 = tracing::span!(Level::TRACE, "j call_service");
-    let _e1 = s1.enter();
-    let s2 = tracing::span!(tracing::Level::TRACE, "j2 call_service");
-    let _e2 = s2.enter();
     let repo = git2::Repository::init_bare(&service.repo_path).unwrap();
 
     let path = {
@@ -204,33 +234,11 @@ fn call_service(
         path
     };
 
-    if path == "/version" {
-        let response = Response::new()
-            .with_body(version_str())
-            .with_status(hyper::StatusCode::Ok);
-        return Box::new(futures::future::ok(response));
+    if let Some(r) = static_paths(&service,  &path) {
+        return r;
     }
-    if path == "/flush" {
-        service.credential_cache.write().unwrap().clear();
-        let response = Response::new()
-            .with_body(format!("Flushed credential cache\n"))
-            .with_status(hyper::StatusCode::Ok);
-        return Box::new(futures::future::ok(response));
-    }
-    if path == "/views" {
-        service.credential_cache.write().unwrap().clear();
 
-        let discover = service.compute_pool.spawn_fn(move || {
-            let known_filters =
-                housekeeping::discover_filter_candidates(&repo).ok();
-            let body = toml::to_string_pretty(&known_filters).unwrap();
-            let response = Response::new()
-                .with_body(body)
-                .with_status(hyper::StatusCode::Ok);
-            futures::future::ok(response)
-        });
-        return Box::new(discover);
-    }
+
     if path == "/repo_update" {
         let pool = service.fetch_push_pool.clone();
         let forward_maps = service.forward_maps.clone();
@@ -336,7 +344,6 @@ fn call_service(
 
     let passwd = password.clone();
     let usernm = username.clone();
-    let ns = namespace.to_owned();
 
     let port = service.port.clone();
 
@@ -350,8 +357,6 @@ fn call_service(
     let base_ns = josh::to_ns(&parsed_url.upstream_repo);
     let handle = service.handle.clone();
 
-    let request_tmp_namespace =
-        service.repo_path.join("refs/namespaces").join(&namespace);
 
     let fetch_future = if headref == "" {
         fetch_upstream(
@@ -371,6 +376,10 @@ fn call_service(
             headref.clone(),
         )
     };
+
+
+    let namespace = Arc::new(josh_proxy::TmpGitNamespace::new(&service.repo_path));
+
     let refs = if headref != "" {
         Some(vec![(
             format!(
@@ -378,16 +387,18 @@ fn call_service(
                 &josh::to_ns(&parsed_url.upstream_repo),
                 headref
             ),
-            format!("refs/namespaces/{}/refs/heads/master", &namespace),
+            format!("refs/namespaces/{}/refs/heads/master", &namespace.name),
         )])
     } else {
         None
     };
 
-    let namespace = namespace.to_owned();
+
     let filter_spec = parsed_url.view.clone();
     let service = service.clone();
     let fs = filter_spec.clone();
+
+    let ns = namespace.clone();
 
     let fetch_future =
         fetch_future.and_then(move |authorized| -> BoxedFuture<Response> {
@@ -399,31 +410,30 @@ fn call_service(
                 repo,
                 &service,
                 parsed_url.upstream_repo,
-                namespace,
+                ns.clone(),
                 filter_spec,
                 refs,
             );
 
             let pathinfo = parsed_url.pathinfo.clone();
+            let mut cmd = std::process::Command::new("git");
+            let repo_path = service.repo_path.to_str().unwrap();
+            cmd.arg("http-backend");
+            cmd.current_dir(&path);
+            cmd.env("GIT_PROJECT_ROOT", repo_path);
+            cmd.env("GIT_DIR", repo_path);
+            cmd.env("GIT_HTTP_EXPORT_ALL", "");
+            cmd.env("PATH_INFO", pathinfo);
+            cmd.env("JOSH_PASSWORD", passwd);
+            cmd.env("JOSH_USERNAME", usernm);
+            cmd.env("JOSH_PORT", port);
+            cmd.env("GIT_NAMESPACE", ns.name.clone());
+            cmd.env("JOSH_VIEWSTR", fs);
+            cmd.env("JOSH_REMOTE", remote_url);
+            cmd.env("JOSH_BASE_NS", base_ns);
 
             let response = do_filter.and_then(move |_| {
-                tracing::trace!("git-http backend {:?} {:?}", path, pathinfo);
-                let mut cmd = std::process::Command::new("git");
-                let repo_path = service.repo_path.to_str().unwrap();
-                cmd.arg("http-backend");
-                cmd.current_dir(&path);
-                cmd.env("GIT_PROJECT_ROOT", repo_path);
-                cmd.env("GIT_DIR", repo_path);
-                cmd.env("GIT_HTTP_EXPORT_ALL", "");
-                cmd.env("PATH_INFO", pathinfo);
-                cmd.env("JOSH_PASSWORD", passwd);
-                cmd.env("JOSH_USERNAME", usernm);
-                cmd.env("JOSH_PORT", port);
-                cmd.env("GIT_NAMESPACE", ns);
-                cmd.env("JOSH_VIEWSTR", fs);
-                cmd.env("JOSH_REMOTE", remote_url);
-                cmd.env("JOSH_BASE_NS", base_ns);
-
+                tracing::trace!("git-http backend {:?}", path);
                 josh_proxy::do_cgi(req, cmd, handle.clone())
             });
 
@@ -434,9 +444,7 @@ fn call_service(
     // it is executed in all cases.
     Box::new({
         fetch_future.map(move |response| {
-            std::fs::remove_dir_all(request_tmp_namespace).unwrap_or_else(
-                |e| tracing::warn!("remove_dir_all failed: {:?}", e),
-            );
+            std::mem::drop(namespace);
             response
         })
     })
@@ -446,7 +454,7 @@ fn do_filter(
     repo: git2::Repository,
     service: &JoshProxyService,
     upstream_repo: String,
-    namespace: String,
+    namespace: Arc<josh_proxy::TmpGitNamespace>,
     filter_spec: String,
     refs: Option<Vec<(String, String)>>,
 ) -> BoxedFuture<git2::Repository> {
@@ -462,7 +470,7 @@ fn do_filter(
         let refs = refs.unwrap_or_else(|| {
             let mut r = josh::housekeeping::find_refs(
                 &repo,
-                &namespace,
+                &namespace.name,
                 &upstream_repo,
             );
             r.append(&mut josh::housekeeping::find_heads(
@@ -478,8 +486,8 @@ fn do_filter(
         );
         view_maps::try_merge_both(forward_maps, backward_maps, &fm, &bm);
         repo.reference_symbolic(
-            &format!("refs/namespaces/{}/HEAD", &namespace),
-            &format!("refs/namespaces/{}/refs/heads/master", &namespace),
+            &format!("refs/namespaces/{}/HEAD", &namespace.name),
+            &format!("refs/namespaces/{}/refs/heads/master", &namespace.name),
             true,
             "",
         )
@@ -513,11 +521,10 @@ impl hyper::server::Service for JoshProxyService {
     type Future = Box<dyn Future<Item = Self::Response, Error = Self::Error>>;
 
     fn call(&self, req: Request) -> Self::Future {
-        let rname = format!("request_{}", uuid::Uuid::new_v4());
 
         let _trace_s = tracing::span!(
             tracing::Level::TRACE, "call_service", path = ?req.path(), headers = ?without_password(req.headers()));
-        Box::new(call_service(&self, req, &rname).map(move |response| {
+        Box::new(call_service(&self, req).map(move |response| {
             event!(parent: &_trace_s, tracing::Level::TRACE, ?response);
             response
         }))

@@ -405,3 +405,28 @@ pub fn body2string(body: hyper::Chunk) -> String {
 
     String::from_utf8(buffer).unwrap_or("".to_string())
 }
+
+pub struct TmpGitNamespace {
+    pub name: String,
+    repo_path: std::path::PathBuf,
+}
+
+impl TmpGitNamespace {
+    pub fn new(repo_path: &std::path::Path) -> TmpGitNamespace {
+        TmpGitNamespace {
+            name: format!("request_{}", uuid::Uuid::new_v4()),
+            repo_path: repo_path.to_owned(),
+        }
+    }
+}
+
+impl Drop for TmpGitNamespace {
+    fn drop(&mut self) {
+        let request_tmp_namespace =
+            self.repo_path.join("refs/namespaces").join(&self.name);
+        std::fs::remove_dir_all(request_tmp_namespace).unwrap_or_else(|e| {
+            tracing::warn!("remove_dir_all failed: {:?}", e)
+        });
+    }
+}
+
