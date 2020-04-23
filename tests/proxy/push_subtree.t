@@ -70,7 +70,7 @@ Make sure all temporary namespace got removed
   |-- josh
   |   `-- filtered
   |       `-- real_repo.git
-  |           `-- #%sub1
+  |           `-- %3A%2Fsub1
   |               `-- heads
   |                   `-- master
   |-- namespaces

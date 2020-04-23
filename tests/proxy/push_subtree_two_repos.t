@@ -92,16 +92,16 @@ Put a double slash in the URL to see that it also works
   |-- heads
   |-- josh
   |   `-- filtered
-  |       |-- real%repo2.git
-  |       |   `-- #%sub1
+  |       |-- real%2Frepo2.git
+  |       |   `-- %3A%2Fsub1
   |       |       `-- heads
   |       |           `-- master
   |       `-- real_repo.git
-  |           `-- #%sub1
+  |           `-- %3A%2Fsub1
   |               `-- heads
   |                   `-- master
   |-- namespaces
-  |   |-- real%repo2.git
+  |   |-- real%2Frepo2.git
   |   |   `-- refs
   |   |       `-- heads
   |   |           `-- master

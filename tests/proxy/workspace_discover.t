@@ -99,33 +99,33 @@
   |-- heads
   |-- josh
   |   `-- filtered
-  |       `-- real%repo2.git
-  |           |-- #%sub1
+  |       `-- real%2Frepo2.git
+  |           |-- %3A%2Fsub1
   |           |   `-- heads
   |           |       `-- master
-  |           |-- #%sub1%subsub
+  |           |-- %3A%2Fsub1%2Fsubsub
   |           |   `-- heads
   |           |       `-- master
-  |           |-- #%sub2
+  |           |-- %3A%2Fsub2
   |           |   `-- heads
   |           |       `-- master
-  |           |-- #%sub3
+  |           |-- %3A%2Fsub3
   |           |   `-- heads
   |           |       `-- master
-  |           |-- #%ws
+  |           |-- %3A%2Fws
   |           |   `-- heads
   |           |       `-- master
-  |           |-- #%ws2
+  |           |-- %3A%2Fws2
   |           |   `-- heads
   |           |       `-- master
-  |           |-- #workspace=ws
+  |           |-- %3Aworkspace=ws
   |           |   `-- heads
   |           |       `-- master
-  |           `-- #workspace=ws2
+  |           `-- %3Aworkspace=ws2
   |               `-- heads
   |                   `-- master
   |-- namespaces
-  |   `-- real%repo2.git
+  |   `-- real%2Frepo2.git
   |       `-- refs
   |           `-- heads
   |               `-- master

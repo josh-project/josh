@@ -56,12 +56,33 @@ fn empty_tree(repo: &git2::Repository) -> git2::Tree {
     repo.find_tree(empty_tree_id()).unwrap()
 }
 
+const FRAGMENT: &percent_encoding::AsciiSet = &percent_encoding::CONTROLS
+    .add(b'/')
+    .add(b'*')
+    .add(b' ')
+    .add(b'~')
+    .add(b'^')
+    .add(b':')
+    .add(b'?')
+    .add(b'[')
+    .add(b']')
+    .add(b'{')
+    .add(b'}')
+    .add(b'@')
+    .add(b'\\');
+
 pub fn to_ns(path: &str) -> String {
-    return path.trim_matches('/').replace("/", "%").replace(":", "#");
+    return percent_encoding::utf8_percent_encode(
+        path.trim_matches('/'),
+        FRAGMENT,
+    )
+    .to_string();
 }
 
 pub fn from_ns(path: &str) -> String {
-    return path.trim_matches('/').replace("%", "/").replace("#", ":");
+    return percent_encoding::percent_decode_str(path.trim_matches('/'))
+        .decode_utf8_lossy()
+        .to_string();
 }
 
 pub fn to_filtered_ref(upstream_repo: &str, filter_spec: &str) -> String {

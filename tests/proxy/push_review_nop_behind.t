@@ -54,7 +54,7 @@ This is a regression test for that problem.
   |-- josh
   |   `-- filtered
   |       `-- real_repo.git
-  |           `-- #nop=nop
+  |           `-- %3Anop=nop
   |               `-- heads
   |                   `-- master
   |-- namespaces

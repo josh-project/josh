@@ -370,7 +370,7 @@ pub fn fetch_refs_from_url(
             format!("{}://{}@{}", &proto, &username, &rest)
         };
 
-        let cmd = format!("git fetch {} '{}'", &nurl, &spec);
+        let cmd = format!("git fetch --no-tags {} '{}'", &nurl, &spec);
         tracing::info!("fetch_refs_from_url {:?} {:?} {:?}", cmd, path, "");
 
         let (_stdout, stderr) =

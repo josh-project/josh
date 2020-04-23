@@ -55,10 +55,10 @@
   |-- josh
   |   `-- filtered
   |       `-- real_repo.git
-  |           |-- #%sub1
+  |           |-- %3A%2Fsub1
   |           |   `-- heads
   |           |       `-- master
-  |           `-- #nop=nop
+  |           `-- %3Anop=nop
   |               `-- heads
   |                   `-- master
   |-- namespaces
@@ -69,3 +69,4 @@
   `-- tags
   
   13 directories, 3 files
+

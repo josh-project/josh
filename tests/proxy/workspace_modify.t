@@ -401,25 +401,25 @@ Note that ws/d/ is now present in the ws
   |-- josh
   |   `-- filtered
   |       `-- real_repo.git
-  |           |-- #%sub1
+  |           |-- %3A%2Fsub1
   |           |   `-- heads
   |           |       `-- master
-  |           |-- #%sub1%subsub
+  |           |-- %3A%2Fsub1%2Fsubsub
   |           |   `-- heads
   |           |       `-- master
-  |           |-- #%sub2
+  |           |-- %3A%2Fsub2
   |           |   `-- heads
   |           |       `-- master
-  |           |-- #%sub3
+  |           |-- %3A%2Fsub3
   |           |   `-- heads
   |           |       `-- master
-  |           |-- #%ws
+  |           |-- %3A%2Fws
   |           |   `-- heads
   |           |       `-- master
-  |           |-- #%ws%d
+  |           |-- %3A%2Fws%2Fd
   |           |   `-- heads
   |           |       `-- master
-  |           `-- #workspace=ws
+  |           `-- %3Aworkspace=ws
   |               `-- heads
   |                   `-- master
   |-- namespaces

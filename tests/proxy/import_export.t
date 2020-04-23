@@ -280,21 +280,21 @@ Empty roots should not be dropped -> sha1 equal guarantee for "nop"
   |-- josh
   |   `-- filtered
   |       |-- real_repo.git
-  |       |   |-- #%repo1
+  |       |   |-- %3A%2Frepo1
   |       |   |   `-- heads
   |       |   |       `-- master
-  |       |   |-- #%repo2
+  |       |   |-- %3A%2Frepo2
   |       |   |   `-- heads
   |       |   |       `-- master
-  |       |   `-- #nop=nop
+  |       |   `-- %3Anop=nop
   |       |       `-- heads
   |       |           `-- master
   |       |-- repo1.git
-  |       |   `-- #prefix=repo1
+  |       |   `-- %3Aprefix=repo1
   |       |       `-- heads
   |       |           `-- master
   |       `-- repo2.git
-  |           `-- #prefix=repo2
+  |           `-- %3Aprefix=repo2
   |               `-- heads
   |                   `-- master
   |-- namespaces

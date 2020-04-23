@@ -18,6 +18,7 @@ git2 = {version = "0.13", default-features = false}
 clap = "2"
 tracing = { version = "*", features = ["max_level_debug", "release_max_level_info"] }
 bincode = "*"
+percent-encoding = "2.1"
 serde = {version = "*", features = ["derive"]}
 atomicwrites = "*"
 regex = "1.1"

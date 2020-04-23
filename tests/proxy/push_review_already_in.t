@@ -47,7 +47,7 @@ test for that.
   |-- josh
   |   `-- filtered
   |       `-- real_repo.git
-  |           `-- #nop=nop
+  |           `-- %3Anop=nop
   |               `-- heads
   |                   `-- master
   |-- namespaces

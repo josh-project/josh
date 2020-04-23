@@ -59,7 +59,7 @@
   |-- josh
   |   `-- filtered
   |       `-- real_repo.git
-  |           `-- #prefix=sub1
+  |           `-- %3Aprefix=sub1
   |               `-- heads
   |                   `-- master
   |-- namespaces

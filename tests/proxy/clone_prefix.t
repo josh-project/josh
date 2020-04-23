@@ -72,13 +72,13 @@
   |-- josh
   |   `-- filtered
   |       `-- real_repo.git
-  |           |-- #%sub1
+  |           |-- %3A%2Fsub1
   |           |   `-- heads
   |           |       `-- master
-  |           |-- #%sub2
+  |           |-- %3A%2Fsub2
   |           |   `-- heads
   |           |       `-- master
-  |           `-- #prefix=pre
+  |           `-- %3Aprefix=pre
   |               `-- heads
   |                   `-- master
   |-- namespaces

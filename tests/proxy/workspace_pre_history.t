@@ -87,16 +87,16 @@ file was created
   |-- josh
   |   `-- filtered
   |       `-- real_repo.git
-  |           |-- #%sub1
+  |           |-- %3A%2Fsub1
   |           |   `-- heads
   |           |       `-- master
-  |           |-- #%sub1%subsub
+  |           |-- %3A%2Fsub1%2Fsubsub
   |           |   `-- heads
   |           |       `-- master
-  |           |-- #%ws
+  |           |-- %3A%2Fws
   |           |   `-- heads
   |           |       `-- master
-  |           `-- #workspace=ws
+  |           `-- %3Aworkspace=ws
   |               `-- heads
   |                   `-- master
   |-- namespaces

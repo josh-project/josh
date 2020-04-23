@@ -120,13 +120,13 @@
   |-- josh
   |   `-- filtered
   |       `-- real_repo.git
-  |           |-- #%sub2
+  |           |-- %3A%2Fsub2
   |           |   `-- heads
   |           |       `-- master
-  |           |-- #%ws
+  |           |-- %3A%2Fws
   |           |   `-- heads
   |           |       `-- master
-  |           `-- #workspace=ws
+  |           `-- %3Aworkspace=ws
   |               `-- heads
   |                   `-- master
   |-- namespaces
