@@ -132,7 +132,7 @@ pub fn discover_filter_candidates(
         let r = reference?;
         let name = r.name().ok_or(josh_error("reference without name"))?;
         let name = RepoNs::from_str(name).ok_or(josh_error("not a ns"))?.ns;
-        let name = name.replace("refs/namespaces", "/");
+        let name = name.replace("/refs/namespaces/", "/");
 
         let hs = find_all_workspaces_and_subdirectories(&r.peel_to_tree()?)?;
 
