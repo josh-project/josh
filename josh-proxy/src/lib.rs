@@ -364,7 +364,7 @@ fn convert_legacy_ns(repo: &git2::Repository) -> josh::JoshResult<()> {
         let name = name.replace("/refs/namespaces/", "/");
 
         repo.reference(
-            &format!("josh/upstream/{}/refs/heads/master", josh::to_ns(&name)),
+            &format!("refs/josh/upstream/{}/refs/heads/master", josh::to_ns(&name)),
             r.target().ok_or(josh::josh_error("no target"))?,
             false,
             "convert_legacy_ns",
