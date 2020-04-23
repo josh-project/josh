@@ -55,10 +55,8 @@ pub fn memorize_from_to(
         "refs/josh/upstream/{}/refs/heads/master",
         &to_ns(upstream_repo)
     );
-    tracing::debug!("glob {:?}", glob);
     for refname in repo.references_glob(&glob).unwrap().names() {
         let refname = refname.unwrap();
-        tracing::debug!("refname {:?}", refname);
         let to_ref = format!("refs/{}/heads/master", &namespace);
 
         refs.push((refname.to_owned(), to_ref.clone()));
