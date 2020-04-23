@@ -352,44 +352,47 @@ pub fn fetch_refs_from_url(
     username: &str,
     password: &str,
 ) -> Result<(), git2::Error> {
-    for refs_prefix in refs_prefixes {
-        let spec = format!(
-            "+{}:refs/namespaces/{}/{}",
-            &refs_prefix,
-            josh::to_ns(upstream_repo),
-            &refs_prefix
-        );
+    let specs: Vec<_> = refs_prefixes
+        .iter()
+        .map(|r| {
+            format!(
+                "'+{}:refs/namespaces/{}/{}'",
+                &r,
+                josh::to_ns(upstream_repo),
+                &r
+            )
+        })
+        .collect();
 
-        let shell = josh::shell::Shell {
-            cwd: path.to_owned(),
-        };
-        let nurl = {
-            let splitted: Vec<&str> = url.splitn(2, "://").collect();
-            let proto = splitted[0];
-            let rest = splitted[1];
-            format!("{}://{}@{}", &proto, &username, &rest)
-        };
+    let shell = josh::shell::Shell {
+        cwd: path.to_owned(),
+    };
+    let nurl = {
+        let splitted: Vec<&str> = url.splitn(2, "://").collect();
+        let proto = splitted[0];
+        let rest = splitted[1];
+        format!("{}://{}@{}", &proto, &username, &rest)
+    };
 
-        let cmd = format!("git fetch --no-tags {} '{}'", &nurl, &spec);
-        tracing::info!("fetch_refs_from_url {:?} {:?} {:?}", cmd, path, "");
+    let cmd = format!("git fetch --no-tags {} {}", &nurl, &specs.join(" "));
+    tracing::info!("fetch_refs_from_url {:?} {:?} {:?}", cmd, path, "");
 
-        let (_stdout, stderr) =
-            shell.command_env(&cmd, &[("GIT_PASSWORD", &password)]);
-        tracing::debug!(
-            "fetch_refs_from_url done {:?} {:?} {:?}",
-            cmd,
-            path,
-            stderr
-        );
-        if stderr.contains("fatal: Authentication failed") {
-            return Err(git2::Error::from_str("auth"));
-        }
-        if stderr.contains("fatal:") {
-            return Err(git2::Error::from_str("error"));
-        }
-        if stderr.contains("error:") {
-            return Err(git2::Error::from_str("error"));
-        }
+    let (_stdout, stderr) =
+        shell.command_env(&cmd, &[("GIT_PASSWORD", &password)]);
+    tracing::debug!(
+        "fetch_refs_from_url done {:?} {:?} {:?}",
+        cmd,
+        path,
+        stderr
+    );
+    if stderr.contains("fatal: Authentication failed") {
+        return Err(git2::Error::from_str("auth"));
+    }
+    if stderr.contains("fatal:") {
+        return Err(git2::Error::from_str("error"));
+    }
+    if stderr.contains("error:") {
+        return Err(git2::Error::from_str("error"));
     }
     return Ok(());
 }
