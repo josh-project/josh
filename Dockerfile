@@ -2,6 +2,7 @@ FROM rust:1.42.0 as builder
 
 RUN apt-get update \
  && apt-get install -y cmake \
+ && sudo apt-get install pkg-config libssl-dev \
  && rm -rf /var/lib/apt/lists/*
 
 # RUN USER=root cargo new --bin /usr/src/josh
