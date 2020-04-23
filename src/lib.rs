@@ -139,7 +139,6 @@ lazy_static! {
         };
 
         let as_str = |x: regex::Match| x.as_str().to_owned();
-        tracing::debug!("regex_parsed {:?}: {:?}", stringify!($name), caps);
 
         return Some($name {
             $(
