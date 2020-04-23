@@ -341,9 +341,9 @@ pub fn create_repo(path: &Path) -> josh::JoshResult<()> {
         shell.command(&"git config gc.auto 0");
     }
 
-    if std::env::var_os("JOSH_KEEP_NS") == None {
-        std::fs::remove_dir_all(path.join("refs/namespaces")).ok();
-    }
+    /* if std::env::var_os("JOSH_KEEP_NS") == None { */
+    /*     std::fs::remove_dir_all(path.join("refs/namespaces")).ok(); */
+    /* } */
     tracing::info!("repo initialized");
     return Ok(());
 }

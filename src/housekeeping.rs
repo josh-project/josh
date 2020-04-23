@@ -84,8 +84,14 @@ fn run_command(path: &Path, cmd: &str) -> String {
 }
 
 super::regex_parsed!(
-    RepoNs,
+    UpstreamRef,
     r"refs/josh/upstream/(?P<ns>.*[.]git)/refs/heads/.*",
+    [ns]
+);
+
+super::regex_parsed!(
+    RepoNs,
+    r"refs/namespaces/(?P<ns>.*[.]git)/refs/heads/.*",
     [ns]
 );
 
@@ -110,8 +116,25 @@ pub fn discover_filter_candidates(
     for reference in repo.references_glob(&refname)? {
         let r = reference?;
         let name = r.name().ok_or(josh_error("reference without name"))?;
-        let name = RepoNs::from_str(name).ok_or(josh_error("not a ns"))?.ns;
+        let name = UpstreamRef::from_str(name).ok_or(josh_error("not a ns"))?.ns;
         let name = super::from_ns(&name);
+
+        let hs = find_all_workspaces_and_subdirectories(&r.peel_to_tree()?)?;
+
+        for i in hs {
+            known_filters
+                .entry(name.clone())
+                .or_insert_with(BTreeSet::new)
+                .insert(i);
+        }
+    }
+
+    let refname = format!("refs/namespaces/*.git/refs/heads/master");
+    for reference in repo.references_glob(&refname)? {
+        let r = reference?;
+        let name = r.name().ok_or(josh_error("reference without name"))?;
+        let name = RepoNs::from_str(name).ok_or(josh_error("not a ns"))?.ns;
+        let name = name.replace("refs/namespaces", "/");
 
         let hs = find_all_workspaces_and_subdirectories(&r.peel_to_tree()?)?;
 
