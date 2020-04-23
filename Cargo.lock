@@ -769,7 +769,7 @@ dependencies = [
  "josh",
  "lazy_static 1.4.0",
  "log 0.4.8",
- "rand 0.6.5",
+ "rand 0.7.3",
  "regex",
  "reqwest",
  "ring",
