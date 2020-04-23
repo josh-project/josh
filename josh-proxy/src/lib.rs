@@ -324,7 +324,7 @@ fn push_head_url(
 pub fn create_repo(path: &Path) -> josh::JoshResult<()> {
     tracing::debug!("init base repo: {:?}", path);
     std::fs::create_dir_all(path).expect("can't create_dir_all");
-    let repo = git2::Repository::init_bare(path)?;
+    git2::Repository::init_bare(path)?;
     if !path.join("hooks/update").exists() {
         let shell = josh::shell::Shell {
             cwd: path.to_path_buf(),
@@ -341,38 +341,12 @@ pub fn create_repo(path: &Path) -> josh::JoshResult<()> {
         shell.command(&"git config gc.auto 0");
     }
 
-    convert_legacy_ns(&repo)?;
-    /* if std::env::var_os("JOSH_KEEP_NS") == None { */
-    /*     std::fs::remove_dir_all(path.join("refs/namespaces")).ok(); */
-    /* } */
+    if std::env::var_os("JOSH_KEEP_NS") == None {
+        std::fs::remove_dir_all(path.join("refs/namespaces")).ok();
+    }
     tracing::info!("repo initialized");
     return Ok(());
 }
-
-josh::regex_parsed!(
-    RepoNs,
-    r"refs/namespaces/(?P<ns>.*[.]git)/refs/heads/.*",
-    [ns]
-);
-
-fn convert_legacy_ns(repo: &git2::Repository) -> josh::JoshResult<()> {
-    let refname = format!("refs/namespaces/*.git/refs/heads/master");
-    for reference in repo.references_glob(&refname)? {
-        let r = reference?;
-        let name = r.name().ok_or(josh::josh_error("reference without name"))?;
-        let name = RepoNs::from_str(name).ok_or(josh::josh_error("not a ns"))?.ns;
-        let name = name.replace("/refs/namespaces/", "/");
-
-        repo.reference(
-            &format!("refs/josh/upstream/{}/refs/heads/master", josh::to_ns(&name)),
-            r.target().ok_or(josh::josh_error("no target"))?,
-            false,
-            "convert_legacy_ns",
-        ).ok();
-    }
-    return Ok(());
-}
-
 
 pub fn fetch_refs_from_url(
     path: &Path,
