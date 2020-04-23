@@ -383,7 +383,7 @@ impl Filter for ChainView {
             "{}{}",
             &self.first.filter_spec(),
             &self.second.filter_spec()
-        );
+        ).replacen(":nop=nop", "", 1);
     }
 }
 

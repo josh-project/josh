@@ -1,8 +1,8 @@
 josh::regex_parsed!(ChangeUrl, r"/c/(?P<change>.*)/", [change]);
 
-/* type HttpClient = */
-/*     hyper::Client<hyper_tls::HttpsConnector<hyper::client::HttpConnector>>; */
-type HttpClient = hyper::Client<hyper::client::HttpConnector>;
+type HttpClient =
+    hyper::Client<hyper_tls::HttpsConnector<hyper::client::HttpConnector>>;
+/* type HttpClient = hyper::Client<hyper::client::HttpConnector>; */
 use hyper::server::{Request, Response};
 
 use super::BoxedFuture;
@@ -13,49 +13,8 @@ use std::str::FromStr;
 pub struct Gerrit {
     repo_path: std::path::PathBuf,
     http_client: HttpClient,
-    /* http_client: hyper::Client::configure() */
-    /*     .connector( */
-    /*         ::hyper_tls::HttpsConnector::new(4, &core.handle()).unwrap(), */
-    /*     ) */
-    /*     .keep_alive(true) */
-    /*     .build(&core.handle()), */
-    /* http_client: hyper::Client::new(&core.handle()), */
     upstream_url: String,
-    housekeeping_pool: futures_cpupool::CpuPool,
-}
-
-fn gerrit_api(
-    client: HttpClient,
-    upstream_url: &str,
-    endpoint: &str,
-    query: String,
-) -> BoxedFuture<serde_json::Value> {
-    let uri = hyper::Uri::from_str(&format!(
-        "{}/{}?{}",
-        upstream_url, endpoint, query
-    ))
-    .unwrap();
-
-    println!("gerrit_api: {:?}", &uri);
-
-    let auth = hyper::header::Authorization(hyper::header::Basic {
-        username: std::env::var("JOSH_USERNAME").unwrap_or("".to_owned()),
-        password: std::env::var("JOSH_PASSWORD").ok(),
-    });
-
-    let mut r = Request::new(hyper::Method::Get, uri);
-    r.headers_mut().set(auth);
-    return Box::new(
-        client
-            .request(r)
-            .and_then(move |x| x.body().concat2().map(super::body2string))
-            .and_then(move |resp_text| {
-                println!("gerrit_api resp: {}", &resp_text);
-                let v: serde_json::Value =
-                    serde_json::from_str(&resp_text[4..]).unwrap();
-                futures::future::ok(v)
-            }),
-    );
+    cpu_pool: futures_cpupool::CpuPool,
 }
 
 fn j2str(val: &serde_json::Value, s: &str) -> String {
@@ -66,24 +25,38 @@ fn j2str(val: &serde_json::Value, s: &str) -> String {
 }
 
 impl Gerrit {
+    pub fn new(
+        core: &tokio_core::reactor::Core,
+        repo_path: std::path::PathBuf,
+        upstream_url: String,
+    ) -> Gerrit {
+        Gerrit {
+            repo_path: repo_path,
+            http_client: hyper::Client::configure()
+                .connector(
+                    ::hyper_tls::HttpsConnector::new(4, &core.handle())
+                        .unwrap(),
+                )
+                .keep_alive(true)
+                .build(&core.handle()),
+            /* http_client: hyper::Client::new(&core.handle()), */
+            upstream_url: upstream_url,
+            cpu_pool: futures_cpupool::CpuPool::new(1),
+        }
+    }
     pub fn handle_request(&self, path: &str) -> Option<BoxedFuture<Response>> {
         let parsed_url =
             josh::some_or!(ChangeUrl::from_str(&path), { return None });
 
-        let pool = self.housekeeping_pool.clone();
-        let client = self.http_client.clone();
+        let pool = self.cpu_pool.clone();
 
-        let get_comments = gerrit_api(
-            client.clone(),
-            &self.upstream_url,
+        let get_comments = self.gerrit_api(
             &format!("/a/changes/{}/comments", parsed_url.change),
             format!(""),
         );
 
         let br_path = self.repo_path.clone();
-        let r = gerrit_api(
-            client.clone(),
-            &self.upstream_url,
+        let r = self.gerrit_api(
             "/a/changes/",
             format!(
                 "q=change:{}&o=ALL_REVISIONS&o=ALL_COMMITS",
@@ -130,6 +103,40 @@ impl Gerrit {
 
         return Some(Box::new(r));
     }
+
+    fn gerrit_api(
+        &self,
+        endpoint: &str,
+        query: String,
+    ) -> BoxedFuture<serde_json::Value> {
+        let uri = hyper::Uri::from_str(&format!(
+            "{}/{}?{}",
+            self.upstream_url, endpoint, query
+        ))
+        .unwrap();
+
+        println!("gerrit_api: {:?}", &uri);
+
+        let auth = hyper::header::Authorization(hyper::header::Basic {
+            username: std::env::var("JOSH_USERNAME").unwrap_or("".to_owned()),
+            password: std::env::var("JOSH_PASSWORD").ok(),
+        });
+
+        let mut r = Request::new(hyper::Method::Get, uri);
+        r.headers_mut().set(auth);
+        return Box::new(
+            self.http_client
+                .request(r)
+                .and_then(move |x| x.body().concat2().map(super::body2string))
+                .and_then(move |resp_text| {
+                    println!("gerrit_api resp: {}", &resp_text);
+                    let v: serde_json::Value =
+                        serde_json::from_str(&resp_text[4..]).unwrap();
+                    futures::future::ok(v)
+                }),
+        );
+    }
+
 }
 fn git_command(
     cmd: String,
@@ -141,8 +148,6 @@ fn git_command(
             cwd: br_path.to_owned(),
         };
         let (stdout, _stderr) = shell.command(&cmd);
-        /* println!("git_command stdout: {}", stdout); */
-        /* println!("git_command stderr: {}", _stderr); */
         return futures::future::ok(stdout);
     }));
 }

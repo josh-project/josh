@@ -152,7 +152,7 @@ fn fetch_upstream(
 }
 
 fn respond_unauthorized() -> Response {
-    debug!("wrong credentials");
+    debug!("respond_unauthorized");
     let mut response: Response =
         Response::new().with_status(hyper::StatusCode::Unauthorized);
     response

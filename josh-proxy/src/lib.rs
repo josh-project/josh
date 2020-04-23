@@ -3,37 +3,23 @@ extern crate lazy_static;
 
 use futures::future::Future;
 use futures::Stream;
-use hyper::header::ContentEncoding;
-use hyper::header::ContentLength;
-use hyper::header::ContentType;
-use hyper::server::{Request, Response};
-use std::collections::HashMap;
-use std::io;
-use std::io::BufRead;
-use std::io::Read;
-use std::path::Path;
-use std::process::Command;
-use std::process::Stdio;
+use hyper::server::Response;
 use std::str::FromStr;
-use std::sync::{Arc, RwLock};
-use tokio_process::CommandExt;
-
-use tracing::event;
 
 pub mod gerrit;
 
 pub type BoxedFuture<T> = Box<dyn Future<Item = T, Error = hyper::Error>>;
 
 pub fn do_cgi(
-    req: Request,
-    cmd: Command,
+    req: hyper::server::Request,
+    cmd: std::process::Command,
     handle: tokio_core::reactor::Handle,
-) -> Box<dyn Future<Item = Response, Error = hyper::Error>> {
+) -> BoxedFuture<Response> {
     tracing::span!(tracing::Level::TRACE, "do_cgi");
     let mut cmd = cmd;
-    cmd.stdout(Stdio::piped());
-    cmd.stderr(Stdio::inherit());
-    cmd.stdin(Stdio::piped());
+    cmd.stdout(std::process::Stdio::piped());
+    cmd.stderr(std::process::Stdio::inherit());
+    cmd.stdin(std::process::Stdio::piped());
     cmd.env("SERVER_SOFTWARE", "hyper")
         .env("SERVER_NAME", "localhost") // TODO
         .env("GATEWAY_INTERFACE", "CGI/1.1")
@@ -49,21 +35,31 @@ pub fn do_cgi(
             "CONTENT_TYPE",
             &format!(
                 "{}",
-                req.headers().get().unwrap_or(&ContentType::plaintext())
+                req.headers()
+                    .get()
+                    .unwrap_or(&hyper::header::ContentType::plaintext())
             ),
         )
         .env(
             "HTTP_CONTENT_ENCODING",
             &format!(
                 "{}",
-                req.headers().get().unwrap_or(&ContentEncoding(vec![]))
+                req.headers()
+                    .get()
+                    .unwrap_or(&hyper::header::ContentEncoding(vec![]))
             ),
         )
         .env(
             "CONTENT_LENGTH",
-            &format!("{}", req.headers().get().unwrap_or(&ContentLength(0))),
+            &format!(
+                "{}",
+                req.headers()
+                    .get()
+                    .unwrap_or(&hyper::header::ContentLength(0))
+            ),
         );
 
+    use tokio_process::CommandExt;
     let mut child = cmd
         .spawn_async_with_handle(&handle.new_tokio_handle())
         .expect("can't spawn CGI command");
@@ -83,15 +79,17 @@ pub fn do_cgi(
 }
 
 fn build_response(command_result: std::process::Output) -> Response {
+    use std::io::BufRead;
+    use std::io::Read;
     let _trace_s = tracing::span!(tracing::Level::TRACE, "build_response");
-    let mut stdout = io::BufReader::new(command_result.stdout.as_slice());
-    let mut stderr = io::BufReader::new(command_result.stderr.as_slice());
+    let mut stdout = std::io::BufReader::new(command_result.stdout.as_slice());
+    let mut stderr = std::io::BufReader::new(command_result.stderr.as_slice());
 
     let mut response = Response::new();
 
     let mut headers = vec![];
     for line in stdout.by_ref().lines() {
-        event!(
+        tracing::event!(
             parent: &_trace_s,
             tracing::Level::TRACE,
             "STDOUT {:?}",
@@ -130,7 +128,7 @@ fn build_response(command_result: std::process::Output) -> Response {
 
     tracing::trace!("build_response err {:?}", &err);
 
-    event!(parent: &_trace_s, tracing::Level::TRACE, ?err, ?headers);
+    tracing::event!(parent: &_trace_s, tracing::Level::TRACE, ?err, ?headers);
     response.set_body(hyper::Chunk::from(data));
 
     response
@@ -160,9 +158,9 @@ fn baseref_and_options(
 }
 
 pub fn process_repo_update(
-    repo_update: HashMap<String, String>,
-    _forward_maps: Arc<RwLock<josh::view_maps::ViewMaps>>,
-    backward_maps: Arc<RwLock<josh::view_maps::ViewMaps>>,
+    repo_update: std::collections::HashMap<String, String>,
+    _forward_maps: std::sync::Arc<std::sync::RwLock<josh::view_maps::ViewMaps>>,
+    backward_maps: std::sync::Arc<std::sync::RwLock<josh::view_maps::ViewMaps>>,
 ) -> Result<String, josh::JoshError> {
     let ru = {
         let mut ru = repo_update.clone();
@@ -185,7 +183,7 @@ pub fn process_repo_update(
         .ok_or(josh::josh_error(""))?;
     tracing::debug!("REPO_UPDATE env ok");
 
-    let repo = git2::Repository::init_bare(&Path::new(&git_dir))?;
+    let repo = git2::Repository::init_bare(&std::path::Path::new(&git_dir))?;
 
     let old = git2::Oid::from_str(old)?;
 
@@ -321,7 +319,7 @@ fn push_head_url(
     return Ok(stderr);
 }
 
-pub fn create_repo(path: &Path) -> josh::JoshResult<()> {
+pub fn create_repo(path: &std::path::Path) -> josh::JoshResult<()> {
     tracing::debug!("init base repo: {:?}", path);
     std::fs::create_dir_all(path).expect("can't create_dir_all");
     git2::Repository::init_bare(path)?;
@@ -349,7 +347,7 @@ pub fn create_repo(path: &Path) -> josh::JoshResult<()> {
 }
 
 pub fn fetch_refs_from_url(
-    path: &Path,
+    path: &std::path::Path,
     upstream_repo: &str,
     url: &str,
     refs_prefixes: &[&str],

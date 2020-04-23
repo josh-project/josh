@@ -95,9 +95,11 @@ pub fn to_filtered_ref(upstream_repo: &str, filter_spec: &str) -> String {
 
 #[derive(Debug, Clone)]
 pub struct JoshError(pub String);
+
 pub fn josh_error(s: &str) -> JoshError {
     JoshError(s.to_owned())
 }
+
 pub type JoshResult<T> = std::result::Result<T, JoshError>;
 
 impl<T> std::convert::From<T> for JoshError
