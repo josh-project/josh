@@ -53,20 +53,21 @@
   remote/scratch/refs
   |-- heads
   |-- josh
-  |   `-- filtered
+  |   |-- filtered
+  |   |   `-- real_repo.git
+  |   |       |-- %3A%2Fsub1
+  |   |       |   `-- heads
+  |   |       |       `-- master
+  |   |       `-- %3Anop=nop
+  |   |           `-- heads
+  |   |               `-- master
+  |   `-- upstream
   |       `-- real_repo.git
-  |           |-- %3A%2Fsub1
-  |           |   `-- heads
-  |           |       `-- master
-  |           `-- %3Anop=nop
+  |           `-- refs
   |               `-- heads
   |                   `-- master
   |-- namespaces
-  |   `-- real_repo.git
-  |       `-- refs
-  |           `-- heads
-  |               `-- master
   `-- tags
   
-  13 directories, 3 files
+  14 directories, 3 files
 

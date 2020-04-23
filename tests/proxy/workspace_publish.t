@@ -118,24 +118,25 @@
   remote/scratch/refs
   |-- heads
   |-- josh
-  |   `-- filtered
+  |   |-- filtered
+  |   |   `-- real_repo.git
+  |   |       |-- %3A%2Fsub2
+  |   |       |   `-- heads
+  |   |       |       `-- master
+  |   |       |-- %3A%2Fws
+  |   |       |   `-- heads
+  |   |       |       `-- master
+  |   |       `-- %3Aworkspace=ws
+  |   |           `-- heads
+  |   |               `-- master
+  |   `-- upstream
   |       `-- real_repo.git
-  |           |-- %3A%2Fsub2
-  |           |   `-- heads
-  |           |       `-- master
-  |           |-- %3A%2Fws
-  |           |   `-- heads
-  |           |       `-- master
-  |           `-- %3Aworkspace=ws
+  |           `-- refs
   |               `-- heads
   |                   `-- master
   |-- namespaces
-  |   `-- real_repo.git
-  |       `-- refs
-  |           `-- heads
-  |               `-- master
   `-- tags
   
-  15 directories, 4 files
+  16 directories, 4 files
 
 $ cat ${TESTTMP}/josh-proxy.out | grep VIEW

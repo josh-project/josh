@@ -52,16 +52,17 @@ This is a regression test for that problem.
   remote/scratch/refs
   |-- heads
   |-- josh
-  |   `-- filtered
+  |   |-- filtered
+  |   |   `-- real_repo.git
+  |   |       `-- %3Anop=nop
+  |   |           `-- heads
+  |   |               `-- master
+  |   `-- upstream
   |       `-- real_repo.git
-  |           `-- %3Anop=nop
+  |           `-- refs
   |               `-- heads
   |                   `-- master
   |-- namespaces
-  |   `-- real_repo.git
-  |       `-- refs
-  |           `-- heads
-  |               `-- master
   `-- tags
   
-  11 directories, 2 files
+  12 directories, 2 files

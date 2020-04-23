@@ -82,19 +82,20 @@
   remote/scratch/refs
   |-- heads
   |-- josh
-  |   `-- filtered
+  |   |-- filtered
+  |   |   `-- real_repo.git
+  |   |       `-- %3A%2Fsub1
+  |   |           `-- heads
+  |   |               `-- master
+  |   `-- upstream
   |       `-- real_repo.git
-  |           `-- %3A%2Fsub1
+  |           `-- refs
   |               `-- heads
   |                   `-- master
   |-- namespaces
-  |   `-- real_repo.git
-  |       `-- refs
-  |           `-- heads
-  |               `-- master
   `-- tags
   
-  11 directories, 2 files
+  12 directories, 2 files
 
   $ cat ${TESTTMP}/josh-proxy.out | grep graph_descendant_of
   [1]

@@ -278,38 +278,39 @@ Empty roots should not be dropped -> sha1 equal guarantee for "nop"
   remote/scratch/refs
   |-- heads
   |-- josh
-  |   `-- filtered
+  |   |-- filtered
+  |   |   |-- real_repo.git
+  |   |   |   |-- %3A%2Frepo1
+  |   |   |   |   `-- heads
+  |   |   |   |       `-- master
+  |   |   |   |-- %3A%2Frepo2
+  |   |   |   |   `-- heads
+  |   |   |   |       `-- master
+  |   |   |   `-- %3Anop=nop
+  |   |   |       `-- heads
+  |   |   |           `-- master
+  |   |   |-- repo1.git
+  |   |   |   `-- %3Aprefix=repo1
+  |   |   |       `-- heads
+  |   |   |           `-- master
+  |   |   `-- repo2.git
+  |   |       `-- %3Aprefix=repo2
+  |   |           `-- heads
+  |   |               `-- master
+  |   `-- upstream
   |       |-- real_repo.git
-  |       |   |-- %3A%2Frepo1
-  |       |   |   `-- heads
-  |       |   |       `-- master
-  |       |   |-- %3A%2Frepo2
-  |       |   |   `-- heads
-  |       |   |       `-- master
-  |       |   `-- %3Anop=nop
+  |       |   `-- refs
   |       |       `-- heads
   |       |           `-- master
   |       |-- repo1.git
-  |       |   `-- %3Aprefix=repo1
+  |       |   `-- refs
   |       |       `-- heads
   |       |           `-- master
   |       `-- repo2.git
-  |           `-- %3Aprefix=repo2
+  |           `-- refs
   |               `-- heads
   |                   `-- master
   |-- namespaces
-  |   |-- real_repo.git
-  |   |   `-- refs
-  |   |       `-- heads
-  |   |           `-- master
-  |   |-- repo1.git
-  |   |   `-- refs
-  |   |       `-- heads
-  |   |           `-- master
-  |   `-- repo2.git
-  |       `-- refs
-  |           `-- heads
-  |               `-- master
   `-- tags
   
-  27 directories, 8 files
+  28 directories, 8 files

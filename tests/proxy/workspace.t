@@ -186,33 +186,34 @@
   remote/scratch/refs
   |-- heads
   |-- josh
-  |   `-- filtered
+  |   |-- filtered
+  |   |   `-- real_repo.git
+  |   |       |-- %3A%2Fsub1
+  |   |       |   `-- heads
+  |   |       |       `-- master
+  |   |       |-- %3A%2Fsub1%2Fsubsub
+  |   |       |   `-- heads
+  |   |       |       `-- master
+  |   |       |-- %3A%2Fsub2
+  |   |       |   `-- heads
+  |   |       |       `-- master
+  |   |       |-- %3A%2Fsub3
+  |   |       |   `-- heads
+  |   |       |       `-- master
+  |   |       |-- %3A%2Fws
+  |   |       |   `-- heads
+  |   |       |       `-- master
+  |   |       `-- %3Aworkspace=ws
+  |   |           `-- heads
+  |   |               `-- master
+  |   `-- upstream
   |       `-- real_repo.git
-  |           |-- %3A%2Fsub1
-  |           |   `-- heads
-  |           |       `-- master
-  |           |-- %3A%2Fsub1%2Fsubsub
-  |           |   `-- heads
-  |           |       `-- master
-  |           |-- %3A%2Fsub2
-  |           |   `-- heads
-  |           |       `-- master
-  |           |-- %3A%2Fsub3
-  |           |   `-- heads
-  |           |       `-- master
-  |           |-- %3A%2Fws
-  |           |   `-- heads
-  |           |       `-- master
-  |           `-- %3Aworkspace=ws
+  |           `-- refs
   |               `-- heads
   |                   `-- master
   |-- namespaces
-  |   `-- real_repo.git
-  |       `-- refs
-  |           `-- heads
-  |               `-- master
   `-- tags
   
-  21 directories, 7 files
+  22 directories, 7 files
 
 $ cat ${TESTTMP}/josh-proxy.out | grep VIEW

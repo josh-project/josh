@@ -399,36 +399,37 @@ Note that ws/d/ is now present in the ws
   remote/scratch/refs
   |-- heads
   |-- josh
-  |   `-- filtered
+  |   |-- filtered
+  |   |   `-- real_repo.git
+  |   |       |-- %3A%2Fsub1
+  |   |       |   `-- heads
+  |   |       |       `-- master
+  |   |       |-- %3A%2Fsub1%2Fsubsub
+  |   |       |   `-- heads
+  |   |       |       `-- master
+  |   |       |-- %3A%2Fsub2
+  |   |       |   `-- heads
+  |   |       |       `-- master
+  |   |       |-- %3A%2Fsub3
+  |   |       |   `-- heads
+  |   |       |       `-- master
+  |   |       |-- %3A%2Fws
+  |   |       |   `-- heads
+  |   |       |       `-- master
+  |   |       |-- %3A%2Fws%2Fd
+  |   |       |   `-- heads
+  |   |       |       `-- master
+  |   |       `-- %3Aworkspace=ws
+  |   |           `-- heads
+  |   |               `-- master
+  |   `-- upstream
   |       `-- real_repo.git
-  |           |-- %3A%2Fsub1
-  |           |   `-- heads
-  |           |       `-- master
-  |           |-- %3A%2Fsub1%2Fsubsub
-  |           |   `-- heads
-  |           |       `-- master
-  |           |-- %3A%2Fsub2
-  |           |   `-- heads
-  |           |       `-- master
-  |           |-- %3A%2Fsub3
-  |           |   `-- heads
-  |           |       `-- master
-  |           |-- %3A%2Fws
-  |           |   `-- heads
-  |           |       `-- master
-  |           |-- %3A%2Fws%2Fd
-  |           |   `-- heads
-  |           |       `-- master
-  |           `-- %3Aworkspace=ws
+  |           `-- refs
   |               `-- heads
   |                   `-- master
   |-- namespaces
-  |   `-- real_repo.git
-  |       `-- refs
-  |           `-- heads
-  |               `-- master
   `-- tags
   
-  23 directories, 8 files
+  24 directories, 8 files
 
 $ cat ${TESTTMP}/josh-proxy.out

@@ -357,7 +357,7 @@ fn call_service(
     let refs = if headref != "" {
         Some(vec![(
             format!(
-                "refs/namespaces/{}/{}",
+                "refs/josh/upstream/{}/{}",
                 &josh::to_ns(&parsed_url.upstream_repo),
                 headref
             ),

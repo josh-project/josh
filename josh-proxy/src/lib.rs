@@ -242,7 +242,7 @@ pub fn process_repo_update(
     };
 
     let oid_to_push = if josh_merge {
-        let rev = format!("refs/namespaces/{}/{}", &base_ns, &baseref);
+        let rev = format!("refs/josh/upstream/{}/{}", &base_ns, &baseref);
         let backward_commit = repo.find_commit(backward_new_oid)?;
         if let Ok(Ok(base_commit)) =
             repo.revparse_single(&rev).map(|x| x.peel_to_commit())
@@ -340,6 +340,10 @@ pub fn create_repo(path: &Path) -> josh::JoshResult<()> {
         ));
         shell.command(&"git config gc.auto 0");
     }
+
+    if std::env::var_os("JOSH_KEEP_NS") == None {
+        std::fs::remove_dir_all(path.join("refs/namespaces")).ok();
+    }
     tracing::info!("repo initialized");
     return Ok(());
 }
@@ -356,7 +360,7 @@ pub fn fetch_refs_from_url(
         .iter()
         .map(|r| {
             format!(
-                "'+{}:refs/namespaces/{}/{}'",
+                "'+{}:refs/josh/upstream/{}/{}'",
                 &r,
                 josh::to_ns(upstream_repo),
                 &r
@@ -429,6 +433,9 @@ impl TmpGitNamespace {
 
 impl Drop for TmpGitNamespace {
     fn drop(&mut self) {
+        if std::env::var_os("JOSH_KEEP_NS") != None {
+            return;
+        }
         let request_tmp_namespace =
             self.repo_path.join("refs/namespaces").join(&self.name);
         std::fs::remove_dir_all(request_tmp_namespace).unwrap_or_else(|e| {

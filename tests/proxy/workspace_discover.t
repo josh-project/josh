@@ -98,39 +98,40 @@
   remote/scratch/refs
   |-- heads
   |-- josh
-  |   `-- filtered
+  |   |-- filtered
+  |   |   `-- real%2Frepo2.git
+  |   |       |-- %3A%2Fsub1
+  |   |       |   `-- heads
+  |   |       |       `-- master
+  |   |       |-- %3A%2Fsub1%2Fsubsub
+  |   |       |   `-- heads
+  |   |       |       `-- master
+  |   |       |-- %3A%2Fsub2
+  |   |       |   `-- heads
+  |   |       |       `-- master
+  |   |       |-- %3A%2Fsub3
+  |   |       |   `-- heads
+  |   |       |       `-- master
+  |   |       |-- %3A%2Fws
+  |   |       |   `-- heads
+  |   |       |       `-- master
+  |   |       |-- %3A%2Fws2
+  |   |       |   `-- heads
+  |   |       |       `-- master
+  |   |       |-- %3Aworkspace=ws
+  |   |       |   `-- heads
+  |   |       |       `-- master
+  |   |       `-- %3Aworkspace=ws2
+  |   |           `-- heads
+  |   |               `-- master
+  |   `-- upstream
   |       `-- real%2Frepo2.git
-  |           |-- %3A%2Fsub1
-  |           |   `-- heads
-  |           |       `-- master
-  |           |-- %3A%2Fsub1%2Fsubsub
-  |           |   `-- heads
-  |           |       `-- master
-  |           |-- %3A%2Fsub2
-  |           |   `-- heads
-  |           |       `-- master
-  |           |-- %3A%2Fsub3
-  |           |   `-- heads
-  |           |       `-- master
-  |           |-- %3A%2Fws
-  |           |   `-- heads
-  |           |       `-- master
-  |           |-- %3A%2Fws2
-  |           |   `-- heads
-  |           |       `-- master
-  |           |-- %3Aworkspace=ws
-  |           |   `-- heads
-  |           |       `-- master
-  |           `-- %3Aworkspace=ws2
+  |           `-- refs
   |               `-- heads
   |                   `-- master
   |-- namespaces
-  |   `-- real%2Frepo2.git
-  |       `-- refs
-  |           `-- heads
-  |               `-- master
   `-- tags
   
-  25 directories, 9 files
+  26 directories, 9 files
 
 $ cat ${TESTTMP}/josh-proxy.out

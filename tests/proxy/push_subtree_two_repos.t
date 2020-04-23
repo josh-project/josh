@@ -91,25 +91,26 @@ Put a double slash in the URL to see that it also works
   remote/scratch/refs
   |-- heads
   |-- josh
-  |   `-- filtered
+  |   |-- filtered
+  |   |   |-- real%2Frepo2.git
+  |   |   |   `-- %3A%2Fsub1
+  |   |   |       `-- heads
+  |   |   |           `-- master
+  |   |   `-- real_repo.git
+  |   |       `-- %3A%2Fsub1
+  |   |           `-- heads
+  |   |               `-- master
+  |   `-- upstream
   |       |-- real%2Frepo2.git
-  |       |   `-- %3A%2Fsub1
+  |       |   `-- refs
   |       |       `-- heads
   |       |           `-- master
   |       `-- real_repo.git
-  |           `-- %3A%2Fsub1
+  |           `-- refs
   |               `-- heads
   |                   `-- master
   |-- namespaces
-  |   |-- real%2Frepo2.git
-  |   |   `-- refs
-  |   |       `-- heads
-  |   |           `-- master
-  |   `-- real_repo.git
-  |       `-- refs
-  |           `-- heads
-  |               `-- master
   `-- tags
   
-  17 directories, 4 files
+  18 directories, 4 files
 

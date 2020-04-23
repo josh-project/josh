@@ -68,19 +68,20 @@ Make sure all temporary namespace got removed
   remote/scratch/refs
   |-- heads
   |-- josh
-  |   `-- filtered
+  |   |-- filtered
+  |   |   `-- real_repo.git
+  |   |       `-- %3A%2Fsub1
+  |   |           `-- heads
+  |   |               `-- master
+  |   `-- upstream
   |       `-- real_repo.git
-  |           `-- %3A%2Fsub1
+  |           `-- refs
   |               `-- heads
-  |                   `-- master
+  |                   |-- master
+  |                   `-- new_branch
   |-- namespaces
-  |   `-- real_repo.git
-  |       `-- refs
-  |           `-- heads
-  |               |-- master
-  |               `-- new_branch
   `-- tags
   
-  11 directories, 3 files
+  12 directories, 3 files
 
 $ cat ${TESTTMP}/josh-proxy.out

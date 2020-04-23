@@ -17,17 +17,22 @@ pub fn default_from_to(
     let mut refs = vec![];
 
     let glob =
-        format!("refs/namespaces/{}/refs/heads/*", &to_ns(upstream_repo));
+        format!("refs/josh/upstream/{}/refs/heads/*", &to_ns(upstream_repo));
     for refname in repo.references_glob(&glob).unwrap().names() {
         let refname = refname.unwrap();
-        let to_ref = refname.replacen(&to_ns(upstream_repo), &namespace, 1);
+        let to_ref =
+            refname.replacen("refs/josh/upstream", "refs/namespaces", 1);
+        let to_ref = to_ref.replacen(&to_ns(upstream_repo), &namespace, 1);
         refs.push((refname.to_owned(), to_ref.clone()));
     }
 
-    let glob = format!("refs/namespaces/{}/refs/tags/*", &to_ns(upstream_repo));
+    let glob =
+        format!("refs/josh/upstream/{}/refs/tags/*", &to_ns(upstream_repo));
     for refname in repo.references_glob(&glob).unwrap().names() {
         let refname = refname.unwrap();
-        let to_ref = refname.replacen(&to_ns(upstream_repo), &namespace, 1);
+        let to_ref =
+            refname.replacen("refs/josh/upstream", "refs/namespaces", 1);
+        let to_ref = to_ref.replacen(&to_ns(upstream_repo), &namespace, 1);
         refs.push((refname.to_owned(), to_ref.clone()));
     }
 
@@ -47,7 +52,7 @@ pub fn memorize_from_to(
 ) -> Vec<(String, String)> {
     let mut refs = vec![];
     let glob = format!(
-        "refs/namespaces/{}/refs/heads/master",
+        "refs/josh/upstream/{}/refs/heads/master",
         &to_ns(upstream_repo)
     );
     tracing::debug!("glob {:?}", glob);
@@ -80,7 +85,7 @@ fn run_command(path: &Path, cmd: &str) -> String {
 
 super::regex_parsed!(
     RepoNs,
-    r"refs/namespaces/(?P<ns>.*[.]git)/refs/heads/.*",
+    r"refs/josh/upstream/(?P<ns>.*[.]git)/refs/heads/.*",
     [ns]
 );
 
@@ -100,7 +105,7 @@ pub fn discover_filter_candidates(
     let mut known_filters = KnownViews::new();
     let _trace_s = span!(Level::TRACE, "discover_filter_candidates");
 
-    let refname = format!("refs/namespaces/*.git/refs/heads/master");
+    let refname = format!("refs/josh/upstream/*.git/refs/heads/master");
 
     for reference in repo.references_glob(&refname)? {
         let r = reference?;
@@ -169,7 +174,7 @@ pub fn get_info(
     let mut fm = view_maps::new_downstream(&forward_maps);
 
     let obj = repo.revparse_single(&format!(
-        "refs/namespaces/{}/{}",
+        "refs/josh/upstream/{}/{}",
         &to_ns(&upstream_repo),
         &headref
     ))?;
