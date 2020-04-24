@@ -383,7 +383,8 @@ impl Filter for ChainView {
             "{}{}",
             &self.first.filter_spec(),
             &self.second.filter_spec()
-        ).replacen(":nop=nop", "", 1);
+        )
+        .replacen(":nop=nop", "", 1);
     }
 }
 
@@ -1101,6 +1102,9 @@ pub fn build_chain(
 }
 
 pub fn parse(filter_spec: &str) -> Box<dyn Filter> {
+    if filter_spec == "" {
+        return parse(":nop=nop");
+    }
     if filter_spec.starts_with("!") || filter_spec.starts_with(":") {
         let mut chain: Option<Box<dyn Filter>> = None;
         if let Ok(r) = MyParser::parse(Rule::filter_spec, filter_spec) {

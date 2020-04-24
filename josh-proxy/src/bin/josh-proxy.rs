@@ -19,6 +19,10 @@ fn version_str() -> String {
     )
 }
 
+lazy_static! {
+    static ref ARGS: clap::ArgMatches<'static> = parse_args();
+}
+
 josh::regex_parsed!(
     TransformedRepoUrl,
     r"(?P<upstream_repo>/.*[.]git)(?P<headref>@[^:!]*)?(?P<view>[:!].*)[.](?P<ending>(?:git)|(?:json))(?P<pathinfo>/.*)?",
@@ -41,6 +45,37 @@ struct JoshProxyService {
     backward_maps: Arc<RwLock<josh::view_maps::ViewMaps>>,
     credential_cache: Arc<RwLock<CredentialCache>>,
     fetching: Arc<RwLock<std::collections::HashSet<String>>>,
+}
+
+fn parse_args() -> clap::ArgMatches<'static> {
+    let args = {
+        let mut args = vec![];
+        for arg in std::env::args() {
+            args.push(arg);
+        }
+        args
+    };
+
+    clap::App::new("josh-proxy")
+        .arg(
+            clap::Arg::with_name("remote")
+                .long("remote")
+                .takes_value(true),
+        )
+        .arg(
+            clap::Arg::with_name("local")
+                .long("local")
+                .takes_value(true),
+        )
+        .arg(
+            clap::Arg::with_name("trace")
+                .long("trace")
+                .takes_value(true),
+        )
+        .arg(clap::Arg::with_name("gc").long("gc").takes_value(false))
+        .arg(clap::Arg::with_name("m").long("m").takes_value(false))
+        .arg(clap::Arg::with_name("port").long("port").takes_value(true))
+        .get_matches_from(args)
 }
 
 fn hash_strings(url: &str, username: &str, password: &str) -> String {
@@ -490,30 +525,8 @@ impl hyper::server::Service for JoshProxyService {
     }
 }
 
-fn parse_args(args: &[String]) -> clap::ArgMatches {
-    clap::App::new("josh-proxy")
-        .arg(
-            clap::Arg::with_name("remote")
-                .long("remote")
-                .takes_value(true),
-        )
-        .arg(
-            clap::Arg::with_name("local")
-                .long("local")
-                .takes_value(true),
-        )
-        .arg(
-            clap::Arg::with_name("trace")
-                .long("trace")
-                .takes_value(true),
-        )
-        .arg(clap::Arg::with_name("gc").long("gc").takes_value(false))
-        .arg(clap::Arg::with_name("m").long("m").takes_value(false))
-        .arg(clap::Arg::with_name("port").long("port").takes_value(true))
-        .get_matches_from(args)
-}
 
-fn run_proxy(args: Vec<String>) -> josh::JoshResult<i32> {
+fn run_proxy() -> josh::JoshResult<i32> {
     tracing_log::LogTracer::init()?;
     let subscriber = tracing_subscriber::fmt::Subscriber::builder()
         .with_max_level(tracing::Level::TRACE)
@@ -524,12 +537,8 @@ fn run_proxy(args: Vec<String>) -> josh::JoshResult<i32> {
     let subscriber = filter.with_subscriber(subscriber);
     tracing::subscriber::set_global_default(subscriber)?;
 
-    debug!("RUN PROXY {:?}", &args);
-
-    let args = parse_args(&args);
-
     let local = std::path::PathBuf::from(
-        args.value_of("local").expect("missing local directory"),
+        ARGS.value_of("local").expect("missing local directory"),
     );
 
     josh_proxy::create_repo(&local)?;
@@ -541,7 +550,7 @@ fn run_proxy(args: Vec<String>) -> josh::JoshResult<i32> {
         &local.join("josh_backward_maps"),
     )));
 
-    if args.is_present("m") {
+    if ARGS.is_present("m") {
         let repo = git2::Repository::init_bare(&local)?;
         let known_filters =
             josh::housekeeping::discover_filter_candidates(&repo)?;
@@ -554,9 +563,9 @@ fn run_proxy(args: Vec<String>) -> josh::JoshResult<i32> {
         return Ok(0);
     }
 
-    let remote = args.value_of("remote").expect("missing remote repo url");
+    let remote = ARGS.value_of("remote").expect("missing remote repo url");
 
-    let port = args.value_of("port").unwrap_or("8000").to_owned();
+    let port = ARGS.value_of("port").unwrap_or("8000").to_owned();
     println!("Now listening on localhost:{}", port);
     let addr = format!("0.0.0.0:{}", port).parse()?;
     let mut core = tokio_core::reactor::Core::new()?;
@@ -574,7 +583,7 @@ fn run_proxy(args: Vec<String>) -> josh::JoshResult<i32> {
         local,
         service.forward_maps.clone(),
         service.backward_maps.clone(),
-        args.is_present("gc"),
+        ARGS.is_present("gc"),
     );
 
     core.run(futures::future::empty::<(), josh::JoshError>())?;
@@ -690,19 +699,14 @@ fn update_hook(refname: &str, old: &str, new: &str) -> josh::JoshResult<i32> {
 }
 
 fn main() {
-    let args = {
-        let mut args = vec![];
-        for arg in std::env::args() {
-            args.push(arg);
+    if let [a0, a1, a2, a3, ..] =
+        &std::env::args().collect::<Vec<_>>().as_slice()
+    {
+        if a0.ends_with("/update") {
+            println!("josh-proxy");
+            std::process::exit(update_hook(&a1, &a2, &a3).unwrap_or(1));
         }
-        args
-    };
-
-    if args[0].ends_with("/update") {
-        println!("josh-proxy");
-        std::process::exit(
-            update_hook(&args[1], &args[2], &args[3]).unwrap_or(1),
-        );
     }
-    std::process::exit(run_proxy(args).unwrap_or(1));
+
+    std::process::exit(run_proxy().unwrap_or(1));
 }
