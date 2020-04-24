@@ -1,4 +1,5 @@
 [![Build Status](https://travis-ci.org/esrlabs/josh.svg?branch=master)](https://travis-ci.org/esrlabs/josh)
+[![Documentation Status](https://readthedocs.org/projects/josh/badge/?version=latest)](https://josh.readthedocs.io/en/latest/?badge=latest)
 
 Just One Single History
 =======================
