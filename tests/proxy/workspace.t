@@ -211,9 +211,8 @@
   |           `-- refs
   |               `-- heads
   |                   `-- master
-  |-- namespaces
   `-- tags
   
-  22 directories, 7 files
+  21 directories, 7 files
 
 $ cat ${TESTTMP}/josh-proxy.out | grep VIEW

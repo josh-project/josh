@@ -53,12 +53,15 @@ fn hash_strings(url: &str, username: &str, password: &str) -> String {
 fn fetch_upstream_ref(
     service: JoshProxyService,
     upstream_repo: String,
-    username: String,
-    password: String,
+    username: &str,
+    password: &str,
     remote_url: String,
     headref: String,
 ) -> Box<futures_cpupool::CpuFuture<bool, hyper::Error>> {
     let repo_path = service.repo_path.clone();
+
+    let username = username.to_owned();
+    let password = password.to_owned();
 
     Box::new(service.fetch_push_pool.spawn_fn(move || {
         futures::future::ok(
@@ -78,10 +81,12 @@ fn fetch_upstream_ref(
 fn fetch_upstream(
     service: JoshProxyService,
     upstream_repo: String,
-    username: String,
-    password: String,
+    username: &str,
+    password: &str,
     remote_url: String,
 ) -> Box<futures_cpupool::CpuFuture<bool, hyper::Error>> {
+    let username = username.to_owned();
+    let password = password.to_owned();
     let credentials_hashed = hash_strings(&remote_url, &username, &password);
 
     debug!(
@@ -304,29 +309,17 @@ fn call_service(
         return Box::new(f);
     }
 
-    let (username, password) = match req.headers().get() {
-        Some(&hyper::header::Authorization(hyper::header::Basic {
-            ref username,
-            ref password,
-        })) => (
-            username.to_owned(),
-            password.to_owned().unwrap_or("".to_owned()).to_owned(),
-        ),
-        _ => {
-            return Box::new(futures::future::ok(respond_unauthorized()));
-        }
-    };
-
-    let passwd = password.clone();
-    let usernm = username.clone();
+    let (username, password) = josh::some_or!(josh_proxy::parse_auth(&req), {
+        return Box::new(futures::future::ok(respond_unauthorized()));
+    });
 
     let port = service.port.clone();
 
-    let remote_url = {
-        let mut remote_url = service.upstream_url.clone();
-        remote_url.push_str(&parsed_url.upstream_repo);
-        remote_url
-    };
+    let remote_url = [
+        service.upstream_url.as_str(),
+        parsed_url.upstream_repo.as_str(),
+    ]
+    .join("");
 
     let br_url = remote_url.clone();
     let base_ns = josh::to_ns(&parsed_url.upstream_repo);
@@ -336,16 +329,16 @@ fn call_service(
         fetch_upstream(
             service.clone(),
             parsed_url.upstream_repo.clone(),
-            username,
-            password,
+            &username,
+            &password,
             br_url,
         )
     } else {
         fetch_upstream_ref(
             service.clone(),
             parsed_url.upstream_repo.clone(),
-            username,
-            password,
+            &username,
+            &password,
             br_url,
             headref.clone(),
         )
@@ -397,8 +390,8 @@ fn call_service(
             cmd.env("GIT_DIR", repo_path);
             cmd.env("GIT_HTTP_EXPORT_ALL", "");
             cmd.env("PATH_INFO", pathinfo);
-            cmd.env("JOSH_PASSWORD", passwd);
-            cmd.env("JOSH_USERNAME", usernm);
+            cmd.env("JOSH_PASSWORD", password);
+            cmd.env("JOSH_USERNAME", username);
             cmd.env("JOSH_PORT", port);
             cmd.env("GIT_NAMESPACE", ns.name().clone());
             cmd.env("JOSH_VIEWSTR", fs);

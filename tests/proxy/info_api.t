@@ -61,7 +61,6 @@ Get /info/refs to trigger rebuilding and pass credentials
   |           `-- refs
   |               `-- heads
   |                   `-- master
-  |-- namespaces
   `-- tags
   
-  14 directories, 3 files
+  13 directories, 3 files

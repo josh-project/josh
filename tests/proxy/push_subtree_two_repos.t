@@ -109,8 +109,7 @@ Put a double slash in the URL to see that it also works
   |           `-- refs
   |               `-- heads
   |                   `-- master
-  |-- namespaces
   `-- tags
   
-  18 directories, 4 files
+  17 directories, 4 files
 

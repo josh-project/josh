@@ -62,7 +62,6 @@ This is a regression test for that problem.
   |           `-- refs
   |               `-- heads
   |                   `-- master
-  |-- namespaces
   `-- tags
   
-  12 directories, 2 files
+  11 directories, 2 files

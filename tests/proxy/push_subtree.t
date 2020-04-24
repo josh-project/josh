@@ -79,9 +79,8 @@ Make sure all temporary namespace got removed
   |               `-- heads
   |                   |-- master
   |                   `-- new_branch
-  |-- namespaces
   `-- tags
   
-  12 directories, 3 files
+  11 directories, 3 files
 
 $ cat ${TESTTMP}/josh-proxy.out

@@ -180,11 +180,13 @@ fn transform_commit(
 
         if view_commit != previous {
             updated_count += 1;
-            tracing::trace!("transform_commit: update reference: {:?} -> {:?}, target: {:?}, view: {:?}",
+            tracing::trace!(
+                "transform_commit: update reference: {:?} -> {:?}, target: {:?}, view: {:?}",
                 &from_refsname,
                 &to_refname,
                 view_commit,
-                &viewobj.filter_spec());
+                &viewobj.filter_spec()
+            );
         }
 
         if view_commit != git2::Oid::zero() {
@@ -192,11 +194,13 @@ fn transform_commit(
                 repo.reference(&to_refname, view_commit, true, "apply_view")
                     .map(|_| ()),
                 {
-                    tracing::error!("can't update reference: {:?} -> {:?}, target: {:?}, view: {:?}",
+                    tracing::error!(
+                        "can't update reference: {:?} -> {:?}, target: {:?}, view: {:?}",
                         &from_refsname,
                         &to_refname,
                         view_commit,
-                        &viewobj.filter_spec());
+                        &viewobj.filter_spec()
+                    );
                 }
             );
         }

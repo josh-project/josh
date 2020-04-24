@@ -92,10 +92,9 @@
   |           `-- refs
   |               `-- heads
   |                   `-- master
-  |-- namespaces
   `-- tags
   
-  12 directories, 2 files
+  11 directories, 2 files
 
   $ cat ${TESTTMP}/josh-proxy.out | grep graph_descendant_of
   [1]

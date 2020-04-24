@@ -759,6 +759,7 @@ dependencies = [
 name = "josh-proxy"
 version = "0.3.0"
 dependencies = [
+ "base64 0.9.3",
  "bincode",
  "clap",
  "futures",

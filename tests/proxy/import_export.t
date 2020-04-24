@@ -310,7 +310,6 @@ Empty roots should not be dropped -> sha1 equal guarantee for "nop"
   |           `-- refs
   |               `-- heads
   |                   `-- master
-  |-- namespaces
   `-- tags
   
-  28 directories, 8 files
+  27 directories, 8 files

@@ -126,8 +126,7 @@
   |               |   `-- master
   |               `-- tags
   |                   `-- a_tag
-  |-- namespaces
   `-- tags
   
-  15 directories, 4 files
+  14 directories, 4 files
 $ cat ${TESTTMP}/josh-proxy.out | grep TAGS

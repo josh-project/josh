@@ -441,3 +441,27 @@ impl Drop for TmpGitNamespace {
         });
     }
 }
+
+pub fn parse_auth(req: &hyper::server::Request) -> Option<(String, String)> {
+    let line = josh::some_or!(
+        req.headers().get_raw("authorization").and_then(|h| h.one()),
+        {
+            return None;
+        }
+    );
+    let u = josh::ok_or!(String::from_utf8(line[6..].to_vec()), {
+        return None;
+    });
+    let decoded = josh::ok_or!(base64::decode(&u), {
+        return None;
+    });
+    let s = josh::ok_or!(String::from_utf8(decoded), {
+        return None;
+    });
+    if let [username, password] =
+        s.as_str().split(':').collect::<Vec<_>>().as_slice()
+    {
+        return Some((username.to_string(), password.to_string()));
+    }
+    return None;
+}

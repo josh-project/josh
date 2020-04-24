@@ -129,9 +129,8 @@
   |           `-- refs
   |               `-- heads
   |                   `-- master
-  |-- namespaces
   `-- tags
   
-  26 directories, 9 files
+  25 directories, 9 files
 
 $ cat ${TESTTMP}/josh-proxy.out

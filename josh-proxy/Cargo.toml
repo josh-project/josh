@@ -34,6 +34,7 @@ tokio-core = "0.1"
 tokio-io = "0.1"
 tokio-process = "0.2"
 toml = "*"
+base64 = "*"
 tracing = { version = "*", features = ["max_level_debug", "release_max_level_info"] }
 tracing-futures = "*"
 tracing-log = "*"
