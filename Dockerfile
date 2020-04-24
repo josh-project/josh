@@ -1,8 +1,7 @@
-FROM rust:1.42.0 as builder
+FROM rust:1.43-stretch as builder
 
 RUN apt-get update \
  && apt-get install -y cmake \
- && sudo apt-get install pkg-config libssl-dev \
  && rm -rf /var/lib/apt/lists/*
 
 # RUN USER=root cargo new --bin /usr/src/josh
@@ -19,7 +18,7 @@ COPY . .
 # RUN rm ./target/release/deps/josh* && cargo build --release
 RUN cargo build -p josh-proxy
 
-FROM rust:1.42.0
+FROM rust:1.43-stretch
 
 COPY --from=builder /usr/src/josh/target/debug/josh-proxy /usr/bin/josh-proxy
 COPY --from=builder /usr/src/josh/run-josh.sh /usr/bin/run-josh.sh
