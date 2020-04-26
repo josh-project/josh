@@ -39,7 +39,7 @@ struct JoshProxyService {
     compute_pool: futures_cpupool::CpuPool,
     port: String,
     repo_path: std::path::PathBuf,
-    /* gerrit: gerrit::Gerrit(), */
+    gerrit: Arc<josh_proxy::gerrit::Gerrit>,
     upstream_url: String,
     forward_maps: Arc<RwLock<josh::view_maps::ViewMaps>>,
     backward_maps: Arc<RwLock<josh::view_maps::ViewMaps>>,
@@ -288,19 +288,9 @@ fn call_service(
         return Box::new(response);
     }
 
-    /* if path.starts_with("/static/") { */
-    /*     return Box::new( */
-    /*         service.http_client.get( */
-    /*             hyper::Uri::from_str(&format!( */
-    /*                 "http://localhost:3000{}", */
-    /*                 &path */
-    /*             )) */
-    /*             .unwrap(), */
-    /*         ), */
-    /*     ); */
-    /* } */
-
-    /* josh_proxy::gerrit::handle_request(); */
+    if let Some(response) = service.gerrit.handle_request(&path) {
+        return response;
+    }
 
     let parsed_url = {
         let nop_path = path.replacen(".git", ".git:nop=nop.git", 1);
@@ -525,7 +515,6 @@ impl hyper::server::Service for JoshProxyService {
     }
 }
 
-
 fn run_proxy() -> josh::JoshResult<i32> {
     tracing_log::LogTracer::init()?;
     let subscriber = tracing_subscriber::fmt::Subscriber::builder()
@@ -602,6 +591,11 @@ fn run_http_server(
 ) -> josh::JoshResult<JoshProxyService> {
     let service = JoshProxyService {
         handle: core.handle(),
+        gerrit: Arc::new(josh_proxy::gerrit::Gerrit::new(
+            &core,
+            local.to_owned(),
+            remote.to_owned(),
+        )),
         fetch_push_pool: futures_cpupool::CpuPool::new(8),
         housekeeping_pool: futures_cpupool::CpuPool::new(1),
         compute_pool: futures_cpupool::CpuPool::new(4),

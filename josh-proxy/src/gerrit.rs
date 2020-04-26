@@ -2,7 +2,6 @@ josh::regex_parsed!(ChangeUrl, r"/c/(?P<change>.*)/", [change]);
 
 type HttpClient =
     hyper::Client<hyper_tls::HttpsConnector<hyper::client::HttpConnector>>;
-/* type HttpClient = hyper::Client<hyper::client::HttpConnector>; */
 use hyper::server::{Request, Response};
 
 use super::BoxedFuture;
@@ -39,12 +38,31 @@ impl Gerrit {
                 )
                 .keep_alive(true)
                 .build(&core.handle()),
-            /* http_client: hyper::Client::new(&core.handle()), */
             upstream_url: upstream_url,
             cpu_pool: futures_cpupool::CpuPool::new(1),
         }
     }
     pub fn handle_request(&self, path: &str) -> Option<BoxedFuture<Response>> {
+        if path.starts_with("/static/") {
+            return Some(Box::new(
+                self.http_client.get(
+                    hyper::Uri::from_str(&format!(
+                        "http://localhost:3000{}",
+                        &path
+                    ))
+                    .unwrap(),
+                ),
+            ));
+        }
+        if path.starts_with("/_c/") {
+            return Some(Box::new(
+                self.http_client.get(
+                    hyper::Uri::from_str("http://localhost:3000/index.html")
+                        .unwrap(),
+                ),
+            ));
+        }
+
         let parsed_url =
             josh::some_or!(ChangeUrl::from_str(&path), { return None });
 
@@ -112,7 +130,7 @@ impl Gerrit {
         query: String,
     ) -> BoxedFuture<serde_json::Value> {
         let uri = hyper::Uri::from_str(&format!(
-            "{}/{}?{}",
+            "{}{}?{}",
             self.upstream_url, endpoint, query
         ))
         .unwrap();
