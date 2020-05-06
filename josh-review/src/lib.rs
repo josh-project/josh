@@ -6,8 +6,17 @@ use serde::{Deserialize, Serialize};
 //     Init
 // ------ ------
 
-fn init(_: Url, orders: &mut impl Orders<Msg>) -> Model {
-    orders.send_msg(Msg::FetchData);
+fn init(url: Url, orders: &mut impl Orders<Msg>) -> Model {
+    let mut url = url;
+    match url.next_path_part() {
+        Some("review") => match url.next_path_part() {
+            Some(c) => {
+                orders.send_msg(Msg::FetchData(c.to_string()));
+            }
+            _ => {}
+        },
+        _ => {}
+    };
     Model::default()
 }
 
@@ -31,15 +40,15 @@ struct Change {
 
 enum Msg {
     DataFetched(Change),
-    FetchData,
+    FetchData(String),
 }
 
 fn update(msg: Msg, model: &mut Model, orders: &mut impl Orders<Msg>) {
     match msg {
-        Msg::FetchData => {
+        Msg::FetchData(c) => {
             orders.skip();
+            let url = format!("/c/{}/", c);
             orders.perform_cmd(async {
-                let url = "/c/55281/";
                 let response = fetch(url).await.expect("fetch failed");
 
                 let change = response

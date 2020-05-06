@@ -45,15 +45,23 @@ impl Gerrit {
         }
     }
     pub fn handle_request(&self, req: Request) -> BoxedFuture<Response> {
+        let (username, password) = josh::some_or!(super::parse_auth(&req), {
+            return Box::new(
+                futures::future::ok(super::respond_unauthorized()),
+            );
+        });
         let mut req = req;
         tracing::info!("gerrit handle_request static {:?}", &req.path());
-        if req.path() == "/review/" {
+        let mut is_static = req.path().starts_with("/review/static/")
+            || req.path().starts_with("/review/pkg/");
+
+        if !is_static && req.path().starts_with("/review/") {
             req.set_uri(
                 hyper::Uri::from_str("/review/static/index.html").unwrap(),
             );
+            is_static = true;
         }
-        if req.path().starts_with("/review/static/")
-            || req.path().starts_with("/review/pkg/")
+        if is_static
         {
             tracing::info!("serving static {:?}", &req.path());
             return Box::new(
@@ -79,6 +87,8 @@ impl Gerrit {
         let cpu_pool = self.cpu_pool.clone();
 
         let get_comments = self.gerrit_api(
+            &username,
+            &password,
             &format!("/a/changes/{}/comments", parsed_url.change),
             format!(""),
         );
@@ -86,6 +96,8 @@ impl Gerrit {
         let br_path = self.repo_path.clone();
         let r = self
             .gerrit_api(
+                &username,
+                &password,
                 "/a/changes/",
                 format!(
                     "q=change:{}&o=ALL_REVISIONS&o=ALL_COMMITS",
@@ -136,6 +148,8 @@ impl Gerrit {
 
     fn gerrit_api(
         &self,
+        username: &str,
+        password: &str,
         endpoint: &str,
         query: String,
     ) -> BoxedFuture<serde_json::Value> {
@@ -148,8 +162,8 @@ impl Gerrit {
         println!("gerrit_api: {:?}", &uri);
 
         let auth = hyper::header::Authorization(hyper::header::Basic {
-            username: std::env::var("JOSH_USERNAME").unwrap(),
-            password: std::env::var("JOSH_PASSWORD").ok(),
+            username: username.to_string(),
+            password: Some(password.to_string()),
         });
 
         let mut r = Request::new(hyper::Method::Get, uri);

@@ -465,3 +465,13 @@ pub fn parse_auth(req: &hyper::server::Request) -> Option<(String, String)> {
     }
     return None;
 }
+
+pub fn respond_unauthorized() -> Response {
+    tracing::debug!("respond_unauthorized");
+    let mut response: Response =
+        Response::new().with_status(hyper::StatusCode::Unauthorized);
+    response
+        .headers_mut()
+        .set_raw("WWW-Authenticate", "Basic realm=\"User Visible Realm\"");
+    response
+}

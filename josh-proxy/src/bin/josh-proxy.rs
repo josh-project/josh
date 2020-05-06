@@ -191,16 +191,6 @@ fn fetch_upstream(
     return do_fetch;
 }
 
-fn respond_unauthorized() -> Response {
-    debug!("respond_unauthorized");
-    let mut response: Response =
-        Response::new().with_status(hyper::StatusCode::Unauthorized);
-    response
-        .headers_mut()
-        .set_raw("WWW-Authenticate", "Basic realm=\"User Visible Realm\"");
-    response
-}
-
 fn static_paths(
     service: &JoshProxyService,
     path: &str,
@@ -335,7 +325,9 @@ fn call_service(
     }
 
     let (username, password) = josh::some_or!(josh_proxy::parse_auth(&req), {
-        return Box::new(futures::future::ok(respond_unauthorized()));
+        return Box::new(futures::future::ok(
+            josh_proxy::respond_unauthorized(),
+        ));
     });
 
     let port = service.port.clone();
@@ -394,7 +386,9 @@ fn call_service(
     let fetch_future =
         fetch_future.and_then(move |authorized| -> BoxedFuture<Response> {
             if !authorized {
-                return Box::new(futures::future::ok(respond_unauthorized()));
+                return Box::new(futures::future::ok(
+                    josh_proxy::respond_unauthorized(),
+                ));
             }
 
             let do_filter = do_filter(
