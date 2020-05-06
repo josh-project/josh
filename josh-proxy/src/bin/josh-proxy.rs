@@ -288,8 +288,8 @@ fn call_service(
         return Box::new(response);
     }
 
-    if let Some(response) = service.gerrit.handle_request(&path) {
-        return response;
+    if path.starts_with("/review/") || path.starts_with("/c/") {
+        return service.gerrit.handle_request(req);
     }
 
     let parsed_url = {

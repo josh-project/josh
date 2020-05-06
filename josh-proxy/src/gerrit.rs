@@ -10,6 +10,7 @@ use futures::Stream;
 use std::str::FromStr;
 
 pub struct Gerrit {
+    handle: tokio_core::reactor::Handle,
     repo_path: std::path::PathBuf,
     http_client: HttpClient,
     upstream_url: String,
@@ -30,6 +31,7 @@ impl Gerrit {
         upstream_url: String,
     ) -> Gerrit {
         Gerrit {
+            handle: core.handle(),
             repo_path: repo_path,
             http_client: hyper::Client::configure()
                 .connector(
@@ -39,34 +41,42 @@ impl Gerrit {
                 .keep_alive(true)
                 .build(&core.handle()),
             upstream_url: upstream_url,
-            cpu_pool: futures_cpupool::CpuPool::new(1),
+            cpu_pool: futures_cpupool::CpuPool::new(4),
         }
     }
-    pub fn handle_request(&self, path: &str) -> Option<BoxedFuture<Response>> {
-        if path.starts_with("/static/") {
-            return Some(Box::new(
-                self.http_client.get(
-                    hyper::Uri::from_str(&format!(
-                        "http://localhost:3000{}",
-                        &path
-                    ))
-                    .unwrap(),
-                ),
-            ));
+    pub fn handle_request(&self, req: Request) -> BoxedFuture<Response> {
+        let mut req = req;
+        tracing::info!("gerrit handle_request static {:?}", &req.path());
+        if req.path() == "/review/" {
+            req.set_uri(
+                hyper::Uri::from_str("/review/static/index.html").unwrap(),
+            );
         }
-        if path.starts_with("/_c/") {
-            return Some(Box::new(
-                self.http_client.get(
-                    hyper::Uri::from_str("http://localhost:3000/index.html")
-                        .unwrap(),
-                ),
-            ));
+        if req.path().starts_with("/review/static/")
+            || req.path().starts_with("/review/pkg/")
+        {
+            tracing::info!("serving static {:?}", &req.path());
+            return Box::new(
+                hyper_fs::StaticFs::new(
+                    self.handle.clone(),
+                    self.cpu_pool.clone(),
+                    "/review/",
+                    "./josh-review/",
+                    hyper_fs::Config::new(),
+                )
+                .call(req)
+                .or_else(hyper_fs::error_handler)
+                .map(|res_req| res_req.0),
+            );
         }
 
-        let parsed_url =
-            josh::some_or!(ChangeUrl::from_str(&path), { return None });
+        let parsed_url = josh::some_or!(ChangeUrl::from_str(&req.path()), {
+            return Box::new(futures::future::ok(
+                Response::new().with_status(hyper::StatusCode::NotFound),
+            ));
+        });
 
-        let pool = self.cpu_pool.clone();
+        let cpu_pool = self.cpu_pool.clone();
 
         let get_comments = self.gerrit_api(
             &format!("/a/changes/{}/comments", parsed_url.change),
@@ -92,7 +102,7 @@ impl Gerrit {
                     std::collections::HashMap::<String, String>::new();
                 let cmd = format!("git diff -U99999999 {}..{}", from, to);
                 println!("diffcmd: {:?}", cmd);
-                git_command(cmd, br_path.to_owned(), pool.clone()).and_then(
+                git_command(cmd, br_path.to_owned(), cpu_pool.clone()).and_then(
                     move |stdout| {
                         resp.insert("diff".to_owned(), stdout);
                         futures::future::ok((resp, change_json))
@@ -121,7 +131,7 @@ impl Gerrit {
                 })
             });
 
-        return Some(Box::new(r));
+        return Box::new(r);
     }
 
     fn gerrit_api(
@@ -138,7 +148,7 @@ impl Gerrit {
         println!("gerrit_api: {:?}", &uri);
 
         let auth = hyper::header::Authorization(hyper::header::Basic {
-            username: std::env::var("JOSH_USERNAME").unwrap_or("".to_owned()),
+            username: std::env::var("JOSH_USERNAME").unwrap(),
             password: std::env::var("JOSH_PASSWORD").ok(),
         });
 
@@ -150,19 +160,24 @@ impl Gerrit {
                 .and_then(move |x| x.body().concat2().map(super::body2string))
                 .and_then(move |resp_text| {
                     println!("gerrit_api resp: {}", &resp_text);
+                    if resp_text.len() < 4 {
+                        return futures::future::ok("to short".into());
+                    }
                     let v: serde_json::Value =
-                        serde_json::from_str(&resp_text[4..]).unwrap();
+                        serde_json::from_str(&resp_text[4..])
+                            .unwrap_or("can't parse json".into());
                     futures::future::ok(v)
                 }),
         );
     }
 }
+
 fn git_command(
     cmd: String,
     br_path: std::path::PathBuf,
-    pool: futures_cpupool::CpuPool,
+    cpu_pool: futures_cpupool::CpuPool,
 ) -> BoxedFuture<String> {
-    return Box::new(pool.spawn_fn(move || {
+    return Box::new(cpu_pool.spawn_fn(move || {
         let shell = josh::shell::Shell {
             cwd: br_path.to_owned(),
         };

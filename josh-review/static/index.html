@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+    <meta name="description" content="">
+
+    <link rel="icon" type="image/png" href="/ui/static/favicon.png">
+    <link rel="stylesheet" type="text/css" href="/ui/static/diff.css">
+
+    <title>A Title</title>
+
+    </head>
+
+    <body>
+        <section id="app"></section>
+        <script type="module">
+            // https://rustwasm.github.io/docs/wasm-bindgen/examples/without-a-bundler.html
+            import init from '/ui/pkg/package.js';
+            init('/ui/pkg/package_bg.wasm');
+        </script>
+
+    </body>
+</html>
