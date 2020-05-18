@@ -1,4 +1,3 @@
-use seed::web_sys::console;
 use seed::{prelude::*, *};
 use serde::{Deserialize, Serialize};
 
@@ -11,22 +10,33 @@ fn init(url: Url, orders: &mut impl Orders<Msg>) -> Model {
     match url.next_path_part() {
         Some("review") => match url.next_path_part() {
             Some(c) => {
-                orders.send_msg(Msg::FetchData(c.to_string()));
+                orders.send_msg(Msg::FetchDiff(c.to_string()));
             }
             _ => {}
         },
         _ => {}
     };
-    Model::default()
+    Model {
+        page: Page::List {},
+    }
 }
 
 // ------ ------
 //     Model
 // ------ ------
 
-#[derive(Default)]
+/* struct List {} */
+
+
+#[derive(Debug, Deserialize, Serialize)]
+enum Page {
+    List,
+    Review(Change),
+}
+
+#[derive(Debug, Deserialize, Serialize)]
 struct Model {
-    change: Option<Change>,
+    page: Page,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -39,13 +49,16 @@ struct Change {
 // ------ ------
 
 enum Msg {
-    DataFetched(Change),
-    FetchData(String),
+    DiffFetched(Change),
+    FetchDiff(String),
+
+    /* ListFetched(List), */
+    /* FetchList, */
 }
 
 fn update(msg: Msg, model: &mut Model, orders: &mut impl Orders<Msg>) {
     match msg {
-        Msg::FetchData(c) => {
+        Msg::FetchDiff(c) => {
             orders.skip();
             let url = format!("/c/{}/", c);
             orders.perform_cmd(async {
@@ -58,15 +71,16 @@ fn update(msg: Msg, model: &mut Model, orders: &mut impl Orders<Msg>) {
                     .await
                     .expect("deserialization failed");
 
-                Msg::DataFetched(change)
+                Msg::DiffFetched(change)
             });
         }
-        Msg::DataFetched(change) => {
-            model.change = Some(change);
+        Msg::DiffFetched(change) => {
+            model.page = Page::Review(change);
             orders.after_next_render(|_| {
-                console::time_end_with_label("rendering");
+                web_sys::console::time_end_with_label("rendering");
             });
-        }
+        },
+        /* _ => {} */
     }
 }
 
@@ -156,17 +170,18 @@ fn code_line(
 // ------ ------
 
 fn view(model: &Model) -> Node<Msg> {
-    if let Some(change) = &model.change {
-        log!("view with `change` invoked");
+    match &model.page {
+        Page::Review(change) => {
+            log!("view with `change` invoked");
 
-        console::time_with_label("diffing");
-        let diff_html = unified_diff(&change.diff);
-        console::time_end_with_label("diffing");
+            web_sys::console::time_with_label("diffing");
+            let diff_html = unified_diff(&change.diff);
+            web_sys::console::time_end_with_label("diffing");
 
-        console::time_with_label("rendering");
-        diff_html
-    } else {
-        div!["No diff"]
+            web_sys::console::time_with_label("rendering");
+            diff_html
+        }
+        _ => div!["No diff"],
     }
 }
 

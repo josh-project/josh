@@ -61,8 +61,7 @@ impl Gerrit {
             );
             is_static = true;
         }
-        if is_static
-        {
+        if is_static {
             tracing::info!("serving static {:?}", &req.path());
             return Box::new(
                 hyper_fs::StaticFs::new(
@@ -78,72 +77,17 @@ impl Gerrit {
             );
         }
 
-        let parsed_url = josh::some_or!(ChangeUrl::from_str(&req.path()), {
-            return Box::new(futures::future::ok(
-                Response::new().with_status(hyper::StatusCode::NotFound),
-            ));
-        });
+        if let Some(parsed_url) = ChangeUrl::from_str(&req.path()) {
+            return self.change_page(&username, &password, &parsed_url.change);
+        };
 
-        let cpu_pool = self.cpu_pool.clone();
+        if req.path() == "/review/" {
+            return self.list_page(&username, &password);
+        };
 
-        let get_comments = self.gerrit_api(
-            &username,
-            &password,
-            &format!("/a/changes/{}/comments", parsed_url.change),
-            format!(""),
-        );
-
-        let br_path = self.repo_path.clone();
-        let r = self
-            .gerrit_api(
-                &username,
-                &password,
-                "/a/changes/",
-                format!(
-                    "q=change:{}&o=ALL_REVISIONS&o=ALL_COMMITS",
-                    parsed_url.change
-                ),
-            )
-            .and_then(move |change_json| {
-                let to = j2str(&change_json, "/0/current_revision");
-                let from = j2str(
-                    &change_json,
-                    &format!("/0/revisions/{}/commit/parents/0/commit", &to),
-                );
-                let mut resp =
-                    std::collections::HashMap::<String, String>::new();
-                let cmd = format!("git diff -U99999999 {}..{}", from, to);
-                println!("diffcmd: {:?}", cmd);
-                git_command(cmd, br_path.to_owned(), cpu_pool.clone()).and_then(
-                    move |stdout| {
-                        resp.insert("diff".to_owned(), stdout);
-                        futures::future::ok((resp, change_json))
-                    },
-                )
-            })
-            .and_then(move |(resp, change_json)| {
-                let mut revision2sha =
-                    std::collections::HashMap::<i64, String>::new();
-                for (k, v) in
-                    change_json[0]["revisions"].as_object().unwrap().iter()
-                {
-                    revision2sha
-                        .insert(v["_number"].as_i64().unwrap(), k.to_string());
-                }
-
-                get_comments.and_then(move |comments_value| {
-                    for i in comments_value.as_object().unwrap().keys() {
-                        println!("comments_value: {:?}", &i);
-                    }
-
-                    let response = hyper::server::Response::new()
-                        .with_body(serde_json::to_string(&resp).unwrap())
-                        .with_status(hyper::StatusCode::Ok);
-                    futures::future::ok(response)
-                })
-            });
-
-        return Box::new(r);
+        return Box::new(futures::future::ok(
+            Response::new().with_status(hyper::StatusCode::NotFound),
+        ));
     }
 
     fn gerrit_api(
@@ -183,6 +127,121 @@ impl Gerrit {
                     futures::future::ok(v)
                 }),
         );
+    }
+
+    fn change_page(
+        &self,
+        username: &str,
+        password: &str,
+        change: &str,
+    ) -> BoxedFuture<Response> {
+        let get_comments = self.gerrit_api(
+            &username,
+            &password,
+            &format!("/a/changes/{}/comments", &change),
+            format!(""),
+        );
+        let get_changes = self.gerrit_api(
+            &username,
+            &password,
+            "/a/changes/",
+            format!("q=change:{}&o=ALL_REVISIONS&o=ALL_COMMITS", change),
+        );
+
+        let cpu_pool = self.cpu_pool.clone();
+        let br_path = self.repo_path.clone();
+        let r = get_changes
+            .and_then(move |change_json| {
+                let to = j2str(&change_json, "/0/current_revision");
+                let from = j2str(
+                    &change_json,
+                    &format!("/0/revisions/{}/commit/parents/0/commit", &to),
+                );
+                let cmd = format!("git diff -U99999999 {}..{}", from, to);
+
+                println!("diffcmd: {:?}", cmd);
+                git_command(cmd, br_path, cpu_pool)
+                    .join(futures::future::ok(change_json))
+            })
+            .and_then(move |(stdout, change_json)| {
+                let mut resp =
+                    std::collections::HashMap::<String, String>::new();
+                resp.insert("diff".to_owned(), stdout);
+                futures::future::ok((resp, change_json))
+            })
+            .join(get_comments)
+            .and_then(move |((resp, change_json), comments_value)| {
+                let mut revision2sha =
+                    std::collections::HashMap::<i64, String>::new();
+                for (k, v) in
+                    change_json[0]["revisions"].as_object().unwrap().iter()
+                {
+                    revision2sha
+                        .insert(v["_number"].as_i64().unwrap(), k.to_string());
+                }
+
+                for i in comments_value.as_object().unwrap().keys() {
+                    println!("comments_value: {:?}", &i);
+                }
+
+                let response = hyper::server::Response::new()
+                    .with_body(serde_json::to_string(&resp).unwrap())
+                    .with_status(hyper::StatusCode::Ok);
+                futures::future::ok(response)
+            });
+        return Box::new(r);
+    }
+
+    fn list_page(
+        &self,
+        username: &str,
+        password: &str,
+    ) -> BoxedFuture<Response> {
+        let get_changes = self.gerrit_api(
+            &username,
+            &password,
+            "/a/changes/",
+            format!("o=ALL_REVISIONS&o=ALL_COMMITS"),
+        );
+
+        let cpu_pool = self.cpu_pool.clone();
+        let br_path = self.repo_path.clone();
+        let r = get_changes
+            .and_then(move |change_json| {
+                let to = j2str(&change_json, "/0/current_revision");
+                let from = j2str(
+                    &change_json,
+                    &format!("/0/revisions/{}/commit/parents/0/commit", &to),
+                );
+                let cmd = format!("git diff -U99999999 {}..{}", from, to);
+
+                println!("diffcmd: {:?}", cmd);
+                git_command(cmd, br_path, cpu_pool)
+                    .join(futures::future::ok(change_json))
+            })
+            .and_then(move |(stdout, change_json)| {
+                let mut resp =
+                    std::collections::HashMap::<String, String>::new();
+                resp.insert("diff".to_owned(), stdout);
+                futures::future::ok((resp, change_json))
+            })
+            .and_then(move |((resp, change_json))| {
+                let mut revision2sha =
+                    std::collections::HashMap::<i64, String>::new();
+                for (k, v) in
+                    change_json[0]["revisions"].as_object().unwrap().iter()
+                {
+                    revision2sha
+                        .insert(v["_number"].as_i64().unwrap(), k.to_string());
+                }
+
+
+                let response = hyper::server::Response::new()
+                    .with_body(serde_json::to_string(&resp).unwrap())
+                    .with_status(hyper::StatusCode::Ok);
+                futures::future::ok(response)
+            });
+        return Box::new(r);
     }
 }
 

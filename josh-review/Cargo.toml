@@ -1,7 +1,7 @@
 [package]
-name = "appname"
+name = "josh-review"
 version = "0.1.0"
-authors = ["Your Name <email@address.com>"]
+authors = ["Christian Schilling <initcrash@gmail.com>"]
 edition = "2018"
 
 [lib]
@@ -11,7 +11,7 @@ crate-type = ["cdylib"]
 wasm-bindgen-test = "0.3.10"
 
 [dependencies]
-seed = { git = "https://github.com/seed-rs/seed.git" }
+seed = { git = "https://github.com/seed-rs/seed.git"}
 
 serde = { version = "1.0.106", features = ['derive'] }
 
