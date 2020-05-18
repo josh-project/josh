@@ -16,7 +16,7 @@ futures = "0.1"
 futures-cpupool = "0.1"
 git2 = {version = "0.13", default-features = false}
 hyper = "0.11"
-hyper-tls = "0.1"
+hyper-tls = "0.4"
 hyper-fs = "*"
 josh = {path = "../"}
 josh-review = {path = "../josh-review"}
