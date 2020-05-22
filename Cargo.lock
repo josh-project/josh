@@ -1008,7 +1008,7 @@ dependencies = [
  "tracing-futures",
  "tracing-log",
  "tracing-subscriber",
- "uuid 0.8.1",
+ "uuid 0.7.4",
 ]
 
 [[package]]
@@ -1977,7 +1977,7 @@ dependencies = [
 [[package]]
 name = "seed"
 version = "0.7.0"
-source = "git+https://github.com/seed-rs/seed.git#b25cf5990ae2189548281942713f4e305743f6d5"
+source = "git+https://github.com/seed-rs/seed.git#f0cc36268eff00a6e85fa79519800d5c582f9085"
 dependencies = [
  "console_error_panic_hook",
  "cookie 0.13.3",
