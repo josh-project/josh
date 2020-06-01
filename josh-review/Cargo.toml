@@ -13,7 +13,7 @@ wasm-bindgen-test = "0.3.10"
 [dependencies]
 seed = { git = "https://github.com/seed-rs/seed.git"}
 
-serde = { version = "1.0.106", features = ['derive'] }
+serde = { version = "1.0.111", features = ['derive'] }
 
 [package.metadata.wasm-pack.profile.release]
 wasm-opt = ['-Os']
