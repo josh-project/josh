@@ -1008,7 +1008,7 @@ dependencies = [
  "tracing-futures",
  "tracing-log",
  "tracing-subscriber",
- "uuid 0.7.4",
+ "uuid 0.8.1",
 ]
 
 [[package]]
@@ -1845,9 +1845,9 @@ dependencies = [
 
 [[package]]
 name = "ring"
-version = "0.16.13"
+version = "0.16.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "703516ae74571f24b465b4a1431e81e2ad51336cb0ded733a55a1aa3eccac196"
+checksum = "952cd6b98c85bbc30efa1ba5783b8abf12fec8b3287ffa52605b9432313e34e4"
 dependencies = [
  "cc",
  "libc",
