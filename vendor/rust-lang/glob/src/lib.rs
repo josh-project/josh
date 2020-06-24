@@ -91,6 +91,7 @@ use PatternToken::{AnyChar, AnyRecursiveSequence, AnySequence, AnyWithin, Char};
 /// `GlobError` is returned to express this.
 ///
 /// See the `glob` function for more details.
+#[derive(Debug)]
 pub struct Paths {
     dir_patterns: Vec<Pattern>,
     require_dir: bool,
