@@ -85,6 +85,11 @@ fn parse_args() -> clap::ArgMatches<'static> {
                 .help("Only run maintance and exit"),
         )
         .arg(
+            clap::Arg::with_name("n").short("n").takes_value(true).help(
+                "Number of concurrent upstream git fetch/push operations",
+            ),
+        )
+        .arg(
             clap::Arg::with_name("g")
                 .short("g")
                 .takes_value(false)
@@ -610,7 +615,12 @@ fn run_http_server(
             local.to_owned(),
             remote.to_owned(),
         )),
-        fetch_push_pool: futures_cpupool::CpuPool::new(8),
+        fetch_push_pool: futures_cpupool::CpuPool::new(
+            ARGS.value_of("n")
+                .unwrap_or("1")
+                .parse()
+                .expect("not a number"),
+        ),
         housekeeping_pool: futures_cpupool::CpuPool::new(1),
         compute_pool: futures_cpupool::CpuPool::new(4),
         port: port,
