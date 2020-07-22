@@ -323,21 +323,19 @@ pub fn create_repo(path: &std::path::Path) -> josh::JoshResult<()> {
     tracing::debug!("init base repo: {:?}", path);
     std::fs::create_dir_all(path).expect("can't create_dir_all");
     git2::Repository::init_bare(path)?;
-    if !path.join("hooks/update").exists() {
-        let shell = josh::shell::Shell {
-            cwd: path.to_path_buf(),
-        };
-        shell.command("git config http.receivepack true");
-        let ce = std::env::current_exe().expect("can't find path to exe");
-        shell.command("rm -Rf hooks");
-        shell.command("mkdir hooks");
-        std::os::unix::fs::symlink(ce, path.join("hooks").join("update"))
-            .expect("can't symlink update hook");
-        shell.command(&format!(
-            "git config credential.helper '!f() {{ echo \"password=\"$GIT_PASSWORD\"\"; }}; f'"
-        ));
-        shell.command(&"git config gc.auto 0");
-    }
+    let shell = josh::shell::Shell {
+        cwd: path.to_path_buf(),
+    };
+    shell.command("git config http.receivepack true");
+    let ce = std::env::current_exe().expect("can't find path to exe");
+    shell.command("rm -Rf hooks");
+    shell.command("mkdir hooks");
+    std::os::unix::fs::symlink(ce, path.join("hooks").join("update"))
+        .expect("can't symlink update hook");
+    shell.command(&format!(
+                "git config credential.helper '!f() {{ echo \"password=\"$GIT_PASSWORD\"\"; }}; f'"
+                ));
+    shell.command(&"git config gc.auto 0");
 
     if std::env::var_os("JOSH_KEEP_NS") == None {
         std::fs::remove_dir_all(path.join("refs/namespaces")).ok();

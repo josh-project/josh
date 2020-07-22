@@ -204,43 +204,21 @@ impl Gerrit {
             format!("o=ALL_REVISIONS&o=ALL_COMMITS"),
         );
 
-        let cpu_pool = self.cpu_pool.clone();
-        let br_path = self.repo_path.clone();
-        let r = get_changes
-            .and_then(move |change_json| {
-                let to = j2str(&change_json, "/0/current_revision");
-                let from = j2str(
-                    &change_json,
-                    &format!("/0/revisions/{}/commit/parents/0/commit", &to),
-                );
-                let cmd = format!("git diff -U99999999 {}..{}", from, to);
+        let r = get_changes.and_then(move |change_json| {
+            let mut revision2sha =
+                std::collections::HashMap::<i64, String>::new();
+            for (k, v) in
+                change_json[0]["revisions"].as_object().unwrap().iter()
+            {
+                revision2sha
+                    .insert(v["_number"].as_i64().unwrap(), k.to_string());
+            }
 
-                println!("diffcmd: {:?}", cmd);
-                git_command(cmd, br_path, cpu_pool)
-                    .join(futures::future::ok(change_json))
-            })
-            .and_then(move |(stdout, change_json)| {
-                let mut resp =
-                    std::collections::HashMap::<String, String>::new();
-                resp.insert("diff".to_owned(), stdout);
-                futures::future::ok((resp, change_json))
-            })
-            .and_then(move |((resp, change_json))| {
-                let mut revision2sha =
-                    std::collections::HashMap::<i64, String>::new();
-                for (k, v) in
-                    change_json[0]["revisions"].as_object().unwrap().iter()
-                {
-                    revision2sha
-                        .insert(v["_number"].as_i64().unwrap(), k.to_string());
-                }
-
-
-                let response = hyper::server::Response::new()
-                    .with_body(serde_json::to_string(&resp).unwrap())
-                    .with_status(hyper::StatusCode::Ok);
-                futures::future::ok(response)
-            });
+            let response = hyper::server::Response::new()
+                .with_body(serde_json::to_string(&change_json).unwrap())
+                .with_status(hyper::StatusCode::Ok);
+            futures::future::ok(response)
+        });
         return Box::new(r);
     }
 }
@@ -257,4 +235,33 @@ fn git_command(
         let (stdout, _stderr) = shell.command(&cmd);
         return futures::future::ok(stdout);
     }));
+}
+
+pub fn spawn_poll_thread(
+    repo_path: std::path::PathBuf,
+    remote_url: String,
+) -> std::thread::JoinHandle<()> {
+    let username = std::env::var("JOSH_GERRIT_USERNAME")
+        .expect("JOSH_GERRIT_USERNAME needs to be set");
+    let password = std::env::var("JOSH_GERRIT_PASSWORD")
+        .expect("JOSH_GERRIT_PASSWORD needs to be set");
+    std::thread::spawn(move || loop {
+        let repo = git2::Repository::init_bare(&repo_path).unwrap();
+
+        for upstream_repo in josh::housekeeping::discover_repos(&repo)
+            .expect("discover_repos fail")
+        {
+            let rurl = format!("{}/{}", &remote_url, &upstream_repo);
+            super::fetch_refs_from_url(
+                &repo_path,
+                &upstream_repo,
+                &rurl,
+                &["refs/changes/*"],
+                &username,
+                &password,
+            )
+            .ok();
+        }
+        std::thread::sleep(std::time::Duration::from_secs(1));
+    })
 }

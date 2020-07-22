@@ -72,8 +72,24 @@ fn parse_args() -> clap::ArgMatches<'static> {
                 .long("trace")
                 .takes_value(true),
         )
-        .arg(clap::Arg::with_name("gc").long("gc").takes_value(false))
-        .arg(clap::Arg::with_name("m").long("m").takes_value(false))
+        .arg(
+            clap::Arg::with_name("gc")
+                .long("gc")
+                .takes_value(false)
+                .help("Run git gc in maintanance"),
+        )
+        .arg(
+            clap::Arg::with_name("m")
+                .short("m")
+                .takes_value(false)
+                .help("Only run maintance and exit"),
+        )
+        .arg(
+            clap::Arg::with_name("g")
+                .short("g")
+                .takes_value(false)
+                .help("Enable gerrit integration"),
+        )
         .arg(clap::Arg::with_name("port").long("port").takes_value(true))
         .get_matches_from(args)
 }
@@ -546,7 +562,7 @@ fn run_proxy() -> josh::JoshResult<i32> {
         return Ok(0);
     }
 
-    let remote = ARGS.value_of("remote").expect("missing remote repo url");
+    let remote = ARGS.value_of("remote").expect("missing remote host url");
 
     let port = ARGS.value_of("port").unwrap_or("8000").to_owned();
     println!("Now listening on localhost:{}", port);
@@ -563,11 +579,15 @@ fn run_proxy() -> josh::JoshResult<i32> {
     )?;
 
     josh::housekeeping::spawn_thread(
-        local,
+        local.clone(),
         service.forward_maps.clone(),
         service.backward_maps.clone(),
         ARGS.is_present("gc"),
     );
+
+    if ARGS.is_present("g") {
+        josh_proxy::gerrit::spawn_poll_thread(local, remote.to_string());
+    }
 
     core.run(futures::future::empty::<(), josh::JoshError>())?;
 
