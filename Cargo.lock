@@ -985,7 +985,7 @@ dependencies = [
  "futures 0.1.29",
  "futures-cpupool",
  "git2",
- "hyper 0.11.27",
+ "hyper 0.12.35",
  "hyper-fs",
  "hyper-tls",
  "josh",
@@ -1028,7 +1028,7 @@ version = "0.3.0"
 dependencies = [
  "clap",
  "futures 0.1.29",
- "hyper 0.11.27",
+ "hyper 0.12.35",
  "tokio-core",
  "tokio-io",
  "tokio-process",
