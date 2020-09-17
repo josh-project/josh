@@ -1,4 +1,4 @@
-If a directory gets deleted then the last commit
+If a directory gets moved to another part of the tree the last commit
 in that subtree repo should have an empty tree
 
   $ export TESTTMP=${PWD}
@@ -27,15 +27,17 @@ in that subtree repo should have an empty tree
   c/file1
   c/file2
 
-  $ git rm -r sub1
-  rm 'sub1/file1'
-  rm 'sub1/file2'
-  $ git commit -m "rm sub1" &>/dev/null
+  $ git mv sub1 sub1_new
+  $ git commit -m "mv sub1" &>/dev/null
+
+  $ git ls-tree --name-only -r master
+  sub1_new/file1
+  sub1_new/file2
 
   $ josh-filter master:refs/josh/filter/master c=:/sub1
 
   $ git log refs/josh/filter/master --graph --pretty=%s
-  * rm sub1
+  * mv sub1
   * add file2
   * add file1
 

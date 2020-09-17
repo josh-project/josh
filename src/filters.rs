@@ -42,13 +42,6 @@ fn create_filtered_commit(
 
     let filtered_parent_commits = filtered_parent_commits?;
 
-    if filtered_tree.id() == empty_tree_id()
-        && original_commmit.tree_id() != empty_tree_id()
-        && filtered_parent_commits.len() != 0
-    {
-        return Ok(filtered_parent_commits[0].id());
-    }
-
     let selected_filtered_parent_commits: Vec<&_> = select_parent_commits(
         &original_commmit,
         filtered_tree.id(),
