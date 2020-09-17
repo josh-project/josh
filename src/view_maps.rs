@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
+const FORMAT_VERSION: u64 = 1;
+
 #[derive(Eq, PartialEq, PartialOrd, Hash, Clone, Copy)]
 pub struct ViewMapOid(git2::Oid);
 
@@ -9,6 +11,7 @@ pub type ViewMap = HashMap<ViewMapOid, ViewMapOid>;
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct ViewMaps {
     maps: HashMap<String, ViewMap>,
+    version: u64,
 
     #[serde(skip)]
     upsteam: Option<Arc<RwLock<ViewMaps>>>,
@@ -108,6 +111,7 @@ impl ViewMaps {
         return ViewMaps {
             maps: HashMap::new(),
             upsteam: None,
+            version: FORMAT_VERSION,
         };
     }
 
@@ -141,9 +145,13 @@ pub fn try_load(path: &std::path::Path) -> ViewMaps {
         .unwrap_or(0);
     tracing::info!("trying to load: {:?}, size: {} MiB", &path, file_size);
     if let Ok(f) = std::fs::File::open(path) {
-        if let Ok(m) = bincode::deserialize_from(f) {
+        if let Ok(m) = bincode::deserialize_from::<_, ViewMaps>(f) {
             tracing::info!("mapfile loaded from: {:?}", &path);
-            return m;
+            if m.version == FORMAT_VERSION {
+                return m;
+            } else {
+                tracing::info!("mapfile version mismatch: {:?}", &path);
+            }
         }
         tracing::error!("deserialize_from: {:?}", &path);
     }
@@ -196,5 +204,6 @@ pub fn new_downstream(u: &Arc<RwLock<ViewMaps>>) -> ViewMaps {
     return ViewMaps {
         maps: HashMap::new(),
         upsteam: Some(u.clone()),
+        version: FORMAT_VERSION,
     };
 }
