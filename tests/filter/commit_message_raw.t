@@ -2,14 +2,14 @@
   $ export PATH=${TESTDIR}/../../target/debug/:${PATH}
 
   $ cd ${TESTTMP}
-  $ git init testrepo &>/dev/null
+  $ git init testrepo 1> /dev/null
   $ cd testrepo
 
   $ echo contents1 > testfile
   $ git add testfile
   $ git commit --cleanup=verbatim -m '
   > #2345346
-  > ' -m "blabla" &>/dev/null
+  > ' -m "blabla" 1> /dev/null
 
   $ josh-filter master:refs/josh/filter/master c=:prefix=pre
   $ git cat-file commit master

@@ -1,8 +1,8 @@
 FROM rust:1.43-stretch as builder
 
 RUN apt-get update \
- && apt-get install -y cmake \
- && rm -rf /var/lib/apt/lists/*
+ && apt-get install -y cmake python3-pip tree
+RUN pip3 install cram
 
 # RUN USER=root cargo new --bin /usr/src/josh
 WORKDIR /usr/src/josh
@@ -15,7 +15,13 @@ WORKDIR /usr/src/josh
 
 COPY . .
 
-# RUN rm ./target/release/deps/josh* && cargo build --release
+RUN cargo build --all
+RUN git config --global user.email "josh@test.com"
+RUN git config --global user.name "Josh Mac Testington the third"
+
+# RUN cram ./tests/filter/*.t
+
+RUN rm ./target/release/deps/josh* && cargo build --release
 RUN cargo build -p josh-proxy
 
 FROM rust:1.43-stretch

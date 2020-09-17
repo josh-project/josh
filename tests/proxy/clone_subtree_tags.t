@@ -1,4 +1,4 @@
-  $ source ${TESTDIR}/setup_test_env.sh
+  $ . ${TESTDIR}/setup_test_env.sh
   $ cd ${TESTTMP}
 
   $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8001/real_repo.git
@@ -93,7 +93,7 @@
   From http://localhost:8002/real_repo.git@refs/tags/a_tag:/sub1
    * branch            HEAD       -> FETCH_HEAD
 
-  $ git checkout FETCH_HEAD &> /dev/null
+  $ git checkout FETCH_HEAD 2> /dev/null
 
   $ tree
   .

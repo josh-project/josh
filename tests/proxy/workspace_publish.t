@@ -1,4 +1,4 @@
-  $ source ${TESTDIR}/setup_test_env.sh
+  $ . ${TESTDIR}/setup_test_env.sh
   $ cd ${TESTTMP}
 
 
@@ -23,12 +23,12 @@
   > EOF
 
   $ git add ws
-  $ git commit -m "add workspace" &> /dev/null
+  $ git commit -m "add workspace" 1> /dev/null
 
   $ mkdir sub2
   $ echo contents1 > sub2/file2
   $ git add sub2
-  $ git commit -m "add file2" &> /dev/null
+  $ git commit -m "add file2" 1> /dev/null
 
   $ git log --graph --pretty=%s
   * add file2
@@ -56,7 +56,8 @@
   * add file2
   * add workspace
 
-  $ git checkout master &> /dev/null
+  $ git checkout master 1> /dev/null
+  Already on 'master'
 
   $ mkdir -p c/subsub
   $ echo newfile_1_contents > c/subsub/newfile_1
@@ -64,7 +65,7 @@
 
   $ git add .
 
-  $ git commit -m "add in view" &> /dev/null
+  $ git commit -m "add in view" 1> /dev/null
 
   $ cat > workspace.josh <<EOF
   > a/b = :/sub2
@@ -72,15 +73,17 @@
   > EOF
 
   $ git add .
-  $ git commit -m "publish" &> /dev/null
+  $ git commit -m "publish" 1> /dev/null
 
-  $ git push &> /dev/null
+  $ git push 2> /dev/null
 
   $ cd ${TESTTMP}/real_repo
 
-  $ git pull &> /dev/null
+  $ git pull 1> /dev/null
+  From http://localhost:8001/real_repo
+     *..*  master     -> origin/master (glob)
 
-  $ git clean -ffdx &> /dev/null
+  $ git clean -ffdx 1> /dev/null
 
   $ tree
   .
@@ -100,7 +103,25 @@
   * add file2
   * add workspace
 
-  $ git checkout HEAD~1 &> /dev/null
+  $ git checkout HEAD~1 1> /dev/null
+  Note: switching to 'HEAD~1'.
+  
+  You are in 'detached HEAD' state. You can look around, make experimental
+  changes and commit them, and you can discard any commits you make in this
+  state without impacting any branches by switching back to a branch.
+  
+  If you want to create a new branch to retain commits you create, you may
+  do so (now or later) by using -c with the switch command. Example:
+  
+    git switch -c <new-branch-name>
+  
+  Or undo this operation with:
+  
+    git switch -
+  
+  Turn off this advice by setting config variable advice.detachedHead to false
+  
+  HEAD is now at * add in view (glob)
   $ tree
   .
   |-- sub2
