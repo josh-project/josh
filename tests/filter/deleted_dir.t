@@ -2,17 +2,17 @@
   $ export PATH=${TESTDIR}/../../target/debug/:${PATH}
 
   $ cd ${TESTTMP}
-  $ git init libs &>/dev/null
+  $ git init libs 1> /dev/null
   $ cd libs
 
   $ mkdir sub1
   $ echo contents1 > sub1/file1
   $ git add sub1
-  $ git commit -m "add file1" &> /dev/null
+  $ git commit -m "add file1" 1> /dev/null
 
   $ echo contents2 > sub1/file2
   $ git add sub1
-  $ git commit -m "add file2" &> /dev/null
+  $ git commit -m "add file2" 1> /dev/null
 
   $ josh-filter master:refs/josh/filter/master c=:/sub1
 
@@ -27,7 +27,7 @@
   $ git rm -r sub1
   rm 'sub1/file1'
   rm 'sub1/file2'
-  $ git commit -m "rm sub1" &>/dev/null
+  $ git commit -m "rm sub1" 1> /dev/null
 
   $ josh-filter master:refs/josh/filter/master c=:/sub1
 

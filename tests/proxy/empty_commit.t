@@ -7,7 +7,7 @@ However in case the diff was also empty in the untransformed commit this means t
 was creaded on purpose (by passing --allow-empty to git commit) and in this case the commit
 should still be included.
 
-  $ source ${TESTDIR}/setup_test_env.sh
+  $ . ${TESTDIR}/setup_test_env.sh
   $ cd ${TESTTMP}
 
   $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8001/real_repo.git

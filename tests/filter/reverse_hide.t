@@ -2,21 +2,21 @@
   $ export PATH=${TESTDIR}/../../target/debug/:${PATH}
 
   $ cd ${TESTTMP}
-  $ git init real_repo &>/dev/null
+  $ git init real_repo 1> /dev/null
   $ cd real_repo
 
   $ mkdir sub1
   $ echo contents1 > sub1/file1
   $ git add sub1
-  $ git commit -m "add file1" &> /dev/null
+  $ git commit -m "add file1" 1> /dev/null
 
   $ mkdir sub2
   $ echo contents1 > sub2/file2
   $ git add sub2
-  $ git commit -m "add file2" &> /dev/null
+  $ git commit -m "add file2" 1> /dev/null
 
   $ josh-filter master:refs/heads/hidden :hide=sub2
-  $ git checkout hidden &> /dev/null
+  $ git checkout hidden 1> /dev/null
   $ tree
   .
   `-- sub1
@@ -28,7 +28,7 @@
 
   $ echo contents3 > sub1/file3
   $ git add sub1/file3
-  $ git commit -m "add sub1/file3" &> /dev/null
+  $ git commit -m "add sub1/file3" 1> /dev/null
 
   $ josh-filter --reverse master:refs/heads/hidden :hide=sub2
 

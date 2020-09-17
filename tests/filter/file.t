@@ -2,17 +2,17 @@
   $ export PATH=${TESTDIR}/../../target/debug/:${PATH}
 
   $ cd ${TESTTMP}
-  $ git init libs &>/dev/null
+  $ git init libs 1> /dev/null
   $ cd libs
 
   $ mkdir sub1
   $ echo contents1 > sub1/file1
   $ git add sub1
-  $ git commit -m "add file1" &> /dev/null
+  $ git commit -m "add file1" 1> /dev/null
 
   $ echo contents2 > sub1/file2
   $ git add sub1
-  $ git commit -m "add file2" &> /dev/null
+  $ git commit -m "add file2" 1> /dev/null
 
   $ git checkout -b foo
   Switched to a new branch 'foo'
@@ -20,10 +20,10 @@
   $ mkdir sub2
   $ echo contents1 > sub2/file3
   $ git add sub2
-  $ git commit -m "add file3" &> /dev/null
+  $ git commit -m "add file3" 1> /dev/null
 
   $ cd ${TESTTMP}
-  $ git init apps &>/dev/null
+  $ git init apps 1> /dev/null
   $ cd apps
 
   $ git remote add libs ${TESTTMP}/libs
@@ -41,7 +41,7 @@
   > EOF
 
   $ git add syncinfo
-  $ git commit -m "initial" &> /dev/null
+  $ git commit -m "initial" 1> /dev/null
 
   $ josh-filter --infofile --file syncinfo
   $ git log --graph --pretty=%s josh/filter/libs/master

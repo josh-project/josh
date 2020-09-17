@@ -2,23 +2,23 @@
   $ export PATH=${TESTDIR}/../../target/debug/:${PATH}
 
   $ cd ${TESTTMP}
-  $ git init real_repo &>/dev/null
+  $ git init real_repo 1> /dev/null
   $ cd real_repo
 
   $ mkdir sub2
   $ echo contents1 > sub2/file2
   $ git add sub2
-  $ git commit -m "add sub2" &> /dev/null
+  $ git commit -m "add sub2" 1> /dev/null
 
   $ mkdir sub1
   $ echo contents1 > sub1/file1
   $ git add sub1
-  $ git commit -m "add file1" &> /dev/null
+  $ git commit -m "add file1" 1> /dev/null
   $ git branch branch1
 
   $ echo contents1 > sub1/file2
   $ git add sub1
-  $ git commit -m "add file2" &> /dev/null
+  $ git commit -m "add file2" 1> /dev/null
 
   $ git log --graph --pretty=%s
   * add file2
@@ -36,7 +36,7 @@
   1 directory, 1 file
   $ echo contents3 > sub1/file3
   $ git add sub1/file3
-  $ git commit -m "add file3" &> /dev/null
+  $ git commit -m "add file3" 1> /dev/null
 
   $ josh-filter master:refs/heads/hidden_master :hide=sub2
   $ git checkout hidden_master
@@ -50,7 +50,7 @@
   1 directory, 2 files
   $ echo contents4 > sub1/file4
   $ git add sub1/file4
-  $ git commit -m "add file4" &> /dev/null
+  $ git commit -m "add file4" 1> /dev/null
 
   $ git log hidden_master --graph --pretty=%s
   * add file4

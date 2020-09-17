@@ -1,4 +1,4 @@
-  $ source ${TESTDIR}/setup_test_env.sh
+  $ . ${TESTDIR}/setup_test_env.sh
   $ cd ${TESTTMP}
 
   $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8001/real_repo.git

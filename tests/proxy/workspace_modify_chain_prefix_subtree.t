@@ -1,4 +1,4 @@
-  $ source ${TESTDIR}/setup_test_env.sh
+  $ . ${TESTDIR}/setup_test_env.sh
   $ cd ${TESTTMP}
 
 
@@ -21,20 +21,20 @@
   Switched to a new branch 'master'
 
 
-  $ echo content1 > file1 &> /dev/null
+  $ echo content1 > file1 1> /dev/null
   $ git add .
-  $ git commit -m "initial" &> /dev/null
+  $ git commit -m "initial" 1> /dev/null
 
   $ git checkout -b new1
   Switched to a new branch 'new1'
-  $ echo content > newfile1 &> /dev/null
+  $ echo content > newfile1 1> /dev/null
   $ git add .
-  $ git commit -m "add newfile1" &> /dev/null
+  $ git commit -m "add newfile1" 1> /dev/null
 
-  $ git checkout master &> /dev/null
-  $ echo content > newfile_master &> /dev/null
+  $ git checkout master 1> /dev/null
+  $ echo content > newfile_master 1> /dev/null
   $ git add .
-  $ git commit -m "newfile master" &> /dev/null
+  $ git commit -m "newfile master" 1> /dev/null
 
   $ git merge new1 --no-ff
   Merge made by the 'recursive' strategy.
@@ -46,12 +46,12 @@
   $ mkdir -p sub1/subsub
   $ echo contents1 > sub1/subsub/file1
   $ git add .
-  $ git commit -m "add file1" &> /dev/null
+  $ git commit -m "add file1" 1> /dev/null
 
   $ mkdir sub2
   $ echo contents1 > sub2/file2
   $ git add sub2
-  $ git commit -m "add file2" &> /dev/null
+  $ git commit -m "add file2" 1> /dev/null
 
   $ mkdir ws
   $ cat > ws/workspace.josh <<EOF
@@ -60,12 +60,12 @@
   > EOF
 
   $ git add ws
-  $ git commit -m "add workspace" &> /dev/null
+  $ git commit -m "add workspace" 1> /dev/null
 
   $ mkdir sub3
   $ echo contents3 > sub3/file3
   $ git add sub3
-  $ git commit -m "add file3" &> /dev/null
+  $ git commit -m "add file3" 1> /dev/null
 
   $ cat > ws/workspace.josh <<EOF
   > a/b = :/sub2
@@ -74,7 +74,7 @@
   > EOF
 
   $ git add ws
-  $ git commit -m "mod workspace" &> /dev/null
+  $ git commit -m "mod workspace" 1> /dev/null
 
   $ git log --graph --pretty=%s
   * mod workspace
@@ -120,7 +120,7 @@
   * add file2
   * add file1
 
-  $ git checkout HEAD~1 &> /dev/null
+  $ git checkout HEAD~1 1> /dev/null
   $ tree
   .
   |-- a
@@ -133,7 +133,7 @@
   
   4 directories, 3 files
 
-  $ git checkout HEAD~1 &> /dev/null
+  $ git checkout HEAD~1 1> /dev/null
   $ tree
   .
   |-- a
@@ -145,7 +145,7 @@
   
   4 directories, 2 files
 
-  $ git checkout master &> /dev/null
+  $ git checkout master 1> /dev/null
 
   $ echo newfile_1_contents > c/subsub/newfile_1
   $ git rm c/subsub/file1
@@ -155,7 +155,7 @@
 
   $ git add .
 
-  $ git commit -m "add in view" &> /dev/null
+  $ git commit -m "add in view" 1> /dev/null
 
   $ git push
   remote: josh-proxy        
@@ -174,7 +174,7 @@
   > EOF
 
   $ git add .
-  $ git commit -m "try to modify ws" &> /dev/null
+  $ git commit -m "try to modify ws" 1> /dev/null
 
   $ git push
   remote: josh-proxy        
@@ -187,7 +187,7 @@
      *..*  master -> master* (glob)
   $ curl -s http://localhost:8002/flush
   Flushed credential cache
-  $ git pull &> /dev/null
+  $ git pull 1> /dev/null
 
 Note that d/ is still in the tree but now it is not overlayed
   $ tree
@@ -214,9 +214,9 @@ Note that d/ is still in the tree but now it is not overlayed
 
   $ curl -s http://localhost:8002/flush
   Flushed credential cache
-  $ git pull &> /dev/null
+  $ git pull 1> /dev/null
 
-  $ git clean -ffdx &> /dev/null
+  $ git clean -ffdx 1> /dev/null
 
 Note that ws/d/ is now present in the ws
   $ tree
@@ -258,8 +258,8 @@ Note that ws/d/ is now present in the ws
   cat: sub1/subsub/file1: No such file or directory
   [1]
 
-  $ git checkout HEAD~1 &> /dev/null
-  $ git clean -ffdx &> /dev/null
+  $ git checkout HEAD~1 1> /dev/null
+  $ git clean -ffdx 1> /dev/null
   $ tree
   .
   |-- file1
@@ -279,8 +279,8 @@ Note that ws/d/ is now present in the ws
   
   5 directories, 9 files
 
-  $ git checkout HEAD~1 &> /dev/null
-  $ git clean -ffdx &> /dev/null
+  $ git checkout HEAD~1 1> /dev/null
+  $ git clean -ffdx 1> /dev/null
   $ tree
   .
   |-- file1

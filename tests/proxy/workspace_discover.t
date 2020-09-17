@@ -1,4 +1,4 @@
-  $ source ${TESTDIR}/setup_test_env.sh
+  $ . ${TESTDIR}/setup_test_env.sh
   $ cd ${TESTTMP}
 
 
@@ -34,22 +34,22 @@
 
   $ git add ws
   $ git add ws2
-  $ git commit -m "add workspace" &> /dev/null
+  $ git commit -m "add workspace" 1> /dev/null
 
-  $ echo content1 > file1 &> /dev/null
+  $ echo content1 > file1 1> /dev/null
   $ git add .
-  $ git commit -m "initial" &> /dev/null
+  $ git commit -m "initial" 1> /dev/null
 
   $ git checkout -b new1
   Switched to a new branch 'new1'
-  $ echo content > newfile1 &> /dev/null
+  $ echo content > newfile1 1> /dev/null
   $ git add .
-  $ git commit -m "add newfile1" &> /dev/null
+  $ git commit -m "add newfile1" 1> /dev/null
 
-  $ git checkout master &> /dev/null
-  $ echo content > newfile_master &> /dev/null
+  $ git checkout master 1> /dev/null
+  $ echo content > newfile_master 1> /dev/null
   $ git add .
-  $ git commit -m "newfile master" &> /dev/null
+  $ git commit -m "newfile master" 1> /dev/null
 
   $ git merge new1 --no-ff
   Merge made by the 'recursive' strategy.
@@ -60,17 +60,17 @@
   $ mkdir sub3
   $ echo contents3 > sub3/file3
   $ git add sub3
-  $ git commit -m "add file3" &> /dev/null
+  $ git commit -m "add file3" 1> /dev/null
 
   $ mkdir -p sub1/subsub
   $ echo contents1 > sub1/subsub/file1
   $ git add .
-  $ git commit -m "add file1" &> /dev/null
+  $ git commit -m "add file1" 1> /dev/null
 
   $ mkdir sub2
   $ echo contents1 > sub2/file2
   $ git add sub2
-  $ git commit -m "add file2" &> /dev/null
+  $ git commit -m "add file2" 1> /dev/null
 
   $ git push
   To http://localhost:8001/real/repo2.git

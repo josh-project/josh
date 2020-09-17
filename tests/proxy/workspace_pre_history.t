@@ -2,7 +2,7 @@ Worspaces should also contain the history of the main directory before the works
 file was created
 
 
-  $ source ${TESTDIR}/setup_test_env.sh
+  $ . ${TESTDIR}/setup_test_env.sh
   $ cd ${TESTTMP}
 
 
@@ -26,9 +26,9 @@ file was created
 
   $ mkdir ws
 
-  $ echo content1 > ws/file1 &> /dev/null
+  $ echo content1 > ws/file1 1> /dev/null
   $ git add .
-  $ git commit -m "initial" &> /dev/null
+  $ git commit -m "initial" 1> /dev/null
 
   $ cat > ws/workspace.josh <<EOF
   > a/b = :/sub2
@@ -36,12 +36,12 @@ file was created
   > EOF
 
   $ git add ws
-  $ git commit -m "add workspace" &> /dev/null
+  $ git commit -m "add workspace" 1> /dev/null
 
   $ mkdir -p sub1/subsub
   $ echo contents1 > sub1/subsub/file1
   $ git add .
-  $ git commit -m "add file1" &> /dev/null
+  $ git commit -m "add file1" 1> /dev/null
 
   $ git log --graph --pretty=%s
   * add file1
@@ -72,7 +72,7 @@ file was created
   * add workspace
   * initial
 
-  $ git checkout HEAD~1 &> /dev/null
+  $ git checkout HEAD~1 1> /dev/null
 
   $ tree
   .
