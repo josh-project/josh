@@ -2,12 +2,12 @@
   $ export PATH=${TESTDIR}/../../target/debug/:${PATH}
 
   $ cd ${TESTTMP}
-  $ git init testrepo &>/dev/null
+  $ git init testrepo 1> /dev/null
   $ cd testrepo
 
   $ echo contents1 > testfile
   $ git add testfile
-  $ git commit -m "commit1" &> /dev/null
+  $ git commit -m "commit1" 1> /dev/null
 
   $ git checkout -b other_branch
   Switched to a new branch 'other_branch'
@@ -15,17 +15,17 @@
   $ mkdir pre
   $ echo content > pre/testfile2
   $ git add pre
-  $ git commit -m "change on other" &> /dev/null
+  $ git commit -m "change on other" 1> /dev/null
 
   $ echo content > pre/testfile4
   $ git add pre
-  $ git commit -m "change on other 2" &> /dev/null
+  $ git commit -m "change on other 2" 1> /dev/null
 
   $ git checkout master
   Switched to branch 'master'
   $ echo content > testfile3
   $ git add .
-  $ git commit -m "unrelated change on this" &> /dev/null
+  $ git commit -m "unrelated change on this" 1> /dev/null
 
   $ git merge other_branch
   Merge made by the 'recursive' strategy.
@@ -55,18 +55,18 @@
 
   $ echo content > pre/blafile1
   $ git add pre
-  $ git commit -m "more change on other" &> /dev/null
+  $ git commit -m "more change on other" 1> /dev/null
 
   $ echo content > pre/blefile2
   $ git add pre
-  $ git commit -m "more change on other 2" &> /dev/null
+  $ git commit -m "more change on other 2" 1> /dev/null
 
   $ git checkout master
   Switched to branch 'master'
 
   $ echo content > testfile7
   $ git add .
-  $ git commit -m "more unrelated change on this" &> /dev/null
+  $ git commit -m "more unrelated change on this" 1> /dev/null
   $ git merge other_branch
   Merge made by the 'recursive' strategy.
    pre/blafile1 | 1 +

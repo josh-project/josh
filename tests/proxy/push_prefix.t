@@ -1,13 +1,14 @@
-  $ source ${TESTDIR}/setup_test_env.sh
+  $ . ${TESTDIR}/setup_test_env.sh
   $ cd ${TESTTMP}
 
-  $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8001/real_repo.git &> /dev/null
+  $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8001/real_repo.git 1> /dev/null
+  warning: You appear to have cloned an empty repository.
   $ cd real_repo
 
   $ mkdir sub1
   $ echo contents1 > sub1/file1
   $ git add sub1
-  $ git commit -m "add file1" &> /dev/null
+  $ git commit -m "add file1" 1> /dev/null
   $ git push
   To http://localhost:8001/real_repo.git
    * [new branch]      master -> master
@@ -19,7 +20,7 @@
 
   $ echo contents2 > pre/file2
   $ git add .
-  $ git commit -m "add file2" &> /dev/null
+  $ git commit -m "add file2" 1> /dev/null
   $ git push
   remote: josh-proxy        
   remote: response from upstream:        

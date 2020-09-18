@@ -1,7 +1,7 @@
-  $ source ${TESTDIR}/setup_test_env.sh
+  $ . ${TESTDIR}/setup_test_env.sh
   $ cd ${TESTTMP}
 
-  $ killall josh-test-server &> /dev/null
+  $ killall josh-test-server 1> /dev/null
   * (glob)
 
   $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8001/real_repo.git

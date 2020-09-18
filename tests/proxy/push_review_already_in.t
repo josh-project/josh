@@ -2,21 +2,24 @@ Here we are pushing a commit for review that is already in the target branch.
 Nothing needs to be done, but this used to cause an error so this is a regression
 test for that.
 
-  $ source ${TESTDIR}/setup_test_env.sh
+  $ . ${TESTDIR}/setup_test_env.sh
   $ cd ${TESTTMP}
 
-  $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8001/real_repo.git &> /dev/null
+  $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8001/real_repo.git 1> /dev/null
+  warning: You appear to have cloned an empty repository.
   $ cd ${TESTTMP}/real_repo
 
   $ echo contents > file1
   $ git add .
-  $ git commit -m "add file1" &> /dev/null
+  $ git commit -m "add file1" 1> /dev/null
 
   $ echo contents > file2
   $ git add .
-  $ git commit -m "add file2" &> /dev/null
+  $ git commit -m "add file2" 1> /dev/null
 
-  $ git push &> /dev/null
+  $ git push 1> /dev/null
+  To http://localhost:8001/real_repo.git
+   * [new branch]      master -> master
 
   $ cd ${TESTTMP}
 
