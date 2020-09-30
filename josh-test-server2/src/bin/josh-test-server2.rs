@@ -16,6 +16,7 @@ use tokio::stream::StreamExt;
 use tokio::io::BufReader;
 use tokio::io::AsyncBufReadExt;
 use tokio::io::AsyncReadExt;
+use tokio::io::AsyncWriteExt;
 use std::str::FromStr;
 
 #[macro_export]
@@ -245,25 +246,18 @@ async fn do_cgi(
         .env("REMOTE_USER", "") // TODO
         .env(
             "CONTENT_TYPE",
-            &format!(
-                "{:?}",
-                req.headers().get(hyper::header::CONTENT_TYPE).unwrap_or(&HeaderValue::from_static(""))
-            ),
+            req.headers().get(hyper::header::CONTENT_TYPE).unwrap_or(&HeaderValue::from_static("")).to_str().unwrap()
         )
         .env(
             "HTTP_CONTENT_ENCODING",
-            &format!(
-                "{:?}",
-                req.headers().get(hyper::header::CONTENT_ENCODING).unwrap_or(&HeaderValue::from_static(""))
-            ),
+            req.headers().get(hyper::header::CONTENT_ENCODING).unwrap_or(&HeaderValue::from_static("")).to_str().unwrap()
         )
         .env(
             "CONTENT_LENGTH",
-            &format!(
-                "{:?}",
-                req.headers().get(hyper::header::CONTENT_LENGTH).unwrap_or(&HeaderValue::from_static(""))
-            ),
+            req.headers().get(hyper::header::CONTENT_LENGTH).unwrap_or(&HeaderValue::from_static("")).to_str().unwrap()
         );
+
+    println!("{:?}", cmd);
 
     let mut child = cmd.spawn().expect("can't spawn CGI command");
     let mut stdin = child.stdin.as_mut().expect("Failed to open stdin");
@@ -282,7 +276,12 @@ async fn do_cgi(
     let mut req_body = to_tokio_async_read(req_body);
 
     let res = tokio::try_join!(
-        tokio::io::copy(&mut req_body, &mut stdin),
+        async {
+            tokio::io::copy(&mut req_body, &mut stdin).await?;
+            stdin.shutdown().await?;
+            println!("shutdown");
+            Ok(())
+        },
         build_response(&mut stdout, &mut stderr)
     );
 
@@ -334,9 +333,12 @@ async fn build_response(
     stderr
         .read_to_end(&mut stderrdata).await.unwrap();
 
+    println!("STDERRDATA: {:?}", String::from_utf8(stderrdata.clone()));
+    println!("DATA: {:?}", String::from_utf8(data.clone()));
+
     let body = response.body(hyper::Body::from(data));
 
-    println!("{:?}", body);
+    println!("BODY: {:?}", body);
 
     convert_error_io_hyper(body)
 }
