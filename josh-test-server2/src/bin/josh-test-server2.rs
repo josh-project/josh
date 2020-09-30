@@ -101,8 +101,7 @@ fn auth_response(
         println!("user: {:?} - {:?}", rusername, username);
         println!("pass: {:?} - {:?}", rpassword, password);
         let builder = Response::builder()
-            .header("WWW-Authenticate", "")
-            .header("Basic realm", "User Visible Realm")
+            .header("WWW-Authenticate", "Basic realm=User Visible Realm")
             .status(hyper::StatusCode::UNAUTHORIZED);
         return Some(
             builder
