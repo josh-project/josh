@@ -2,22 +2,22 @@ use base64;
 use futures::future;
 use futures::FutureExt;
 use futures::TryStreamExt;
+use hyper::header::HeaderValue;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Request, Response, Server};
-use hyper::header::HeaderValue;
 use std::env;
 use std::net;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::Stdio;
+use std::str::FromStr;
 use std::sync::Arc;
-use tokio::process::Command;
-use tokio::stream::StreamExt;
-use tokio::io::BufReader;
 use tokio::io::AsyncBufReadExt;
 use tokio::io::AsyncReadExt;
 use tokio::io::AsyncWriteExt;
-use std::str::FromStr;
+use tokio::io::BufReader;
+use tokio::process::Command;
+use tokio::stream::StreamExt;
 
 #[macro_export]
 macro_rules! some_or {
@@ -87,11 +87,7 @@ fn auth_response(
             let builder = Response::builder()
                 .header("WWW-Authenticate", "Basic realm=User Visible Realm")
                 .status(hyper::StatusCode::UNAUTHORIZED);
-            return Some(
-                builder
-                    .body(hyper::Body::empty())
-                    .unwrap(),
-            );
+            return Some(builder.body(hyper::Body::empty()).unwrap());
         }
     };
 
@@ -217,7 +213,8 @@ async fn main() {
         ),
         args.value_of("username").expect("missing username"),
         args.value_of("password").expect("missing password"),
-    ).await;
+    )
+    .await;
 
     ()
 }
@@ -243,15 +240,27 @@ async fn do_cgi(
         .env("REMOTE_USER", "") // TODO
         .env(
             "CONTENT_TYPE",
-            req.headers().get(hyper::header::CONTENT_TYPE).unwrap_or(&HeaderValue::from_static("")).to_str().unwrap()
+            req.headers()
+                .get(hyper::header::CONTENT_TYPE)
+                .unwrap_or(&HeaderValue::from_static(""))
+                .to_str()
+                .unwrap(),
         )
         .env(
             "HTTP_CONTENT_ENCODING",
-            req.headers().get(hyper::header::CONTENT_ENCODING).unwrap_or(&HeaderValue::from_static("")).to_str().unwrap()
+            req.headers()
+                .get(hyper::header::CONTENT_ENCODING)
+                .unwrap_or(&HeaderValue::from_static(""))
+                .to_str()
+                .unwrap(),
         )
         .env(
             "CONTENT_LENGTH",
-            req.headers().get(hyper::header::CONTENT_LENGTH).unwrap_or(&HeaderValue::from_static("")).to_str().unwrap()
+            req.headers()
+                .get(hyper::header::CONTENT_LENGTH)
+                .unwrap_or(&HeaderValue::from_static(""))
+                .to_str()
+                .unwrap(),
         );
 
     println!("{:?}", cmd);
@@ -302,33 +311,35 @@ async fn build_response(
     let mut stdout = BufReader::new(stdout);
     let mut line = String::new();
     while stdout.read_line(&mut line).await.unwrap_or(0) > 0 {
-        line = line.trim_end_matches("\n").trim_end_matches("\r").to_owned();
+        line = line
+            .trim_end_matches("\n")
+            .trim_end_matches("\r")
+            .to_owned();
         println!("{}", line);
 
-        let l: Vec<&str> =
-            line.splitn(2, ": ").collect();
+        let l: Vec<&str> = line.splitn(2, ": ").collect();
         if l.len() < 2 {
             break;
         }
         if l[0] == "Status" {
-            response = response.status(hyper::StatusCode::from_u16(
-                u16::from_str(l[1].split(" ").next().unwrap()).unwrap(),
-            ).unwrap());
+            response = response.status(
+                hyper::StatusCode::from_u16(
+                    u16::from_str(l[1].split(" ").next().unwrap()).unwrap(),
+                )
+                .unwrap(),
+            );
         } else {
             println!("{:?}", l);
-            response = response
-                .header(l[0], l[1]);
+            response = response.header(l[0], l[1]);
         }
         line = String::new();
     }
 
     let mut data = vec![];
-    stdout
-        .read_to_end(&mut data).await.unwrap();
+    stdout.read_to_end(&mut data).await.unwrap();
 
     let mut stderrdata = vec![];
-    stderr
-        .read_to_end(&mut stderrdata).await.unwrap();
+    stderr.read_to_end(&mut stderrdata).await.unwrap();
 
     println!("STDERRDATA: {:?}", String::from_utf8(stderrdata.clone()));
     println!("DATA: {:?}", String::from_utf8(data.clone()));
@@ -340,10 +351,11 @@ async fn build_response(
     convert_error_io_hyper(body)
 }
 
-fn convert_error_io_hyper<T>(res: Result<T, hyper::http::Error>) -> Result<T, std::io::Error>
-{
+fn convert_error_io_hyper<T>(
+    res: Result<T, hyper::http::Error>,
+) -> Result<T, std::io::Error> {
     match res {
         Ok(res) => Ok(res),
-        Err(_) => Err(std::io::Error::new(std::io::ErrorKind::Other, "Error!"))
+        Err(_) => Err(std::io::Error::new(std::io::ErrorKind::Other, "Error!")),
     }
 }
