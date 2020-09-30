@@ -85,13 +85,12 @@ fn auth_response(
         None => {
             println!("ServeTestGit: no credentials in request");
             let builder = Response::builder()
-                .header("WWW-Authenticate", "")
-                .header("Basic realm", "User Visible Realm")
+                .header("WWW-Authenticate", "Basic realm=User Visible Realm")
                 .status(hyper::StatusCode::UNAUTHORIZED);
             return Some(
                 builder
                     .body(hyper::Body::empty())
-                    .unwrap_or(Response::default()),
+                    .unwrap(),
             );
         }
     };
@@ -122,11 +121,10 @@ async fn call(
 ) -> Response<hyper::Body> {
     println!("call");
 
-    /*
     if let Some(response) = auth_response(&req, &serv.username, &serv.password)
     {
         return response;
-    }*/
+    }
 
     let path = &serv.repo_path;
 
