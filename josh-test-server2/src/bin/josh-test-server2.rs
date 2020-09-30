@@ -4,6 +4,7 @@ use futures::FutureExt;
 use futures::TryStreamExt;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Request, Response, Server};
+use hyper::header::HeaderValue;
 use std::env;
 use std::net;
 use std::path::Path;
@@ -120,10 +121,11 @@ async fn call(
 ) -> Response<hyper::Body> {
     println!("call");
 
+    /*
     if let Some(response) = auth_response(&req, &serv.username, &serv.password)
     {
         return response;
-    }
+    }*/
 
     let path = &serv.repo_path;
 
@@ -245,21 +247,21 @@ async fn do_cgi(
             "CONTENT_TYPE",
             &format!(
                 "{:?}",
-                req.headers().get(hyper::header::CONTENT_TYPE).unwrap()
+                req.headers().get(hyper::header::CONTENT_TYPE).unwrap_or(&HeaderValue::from_static(""))
             ),
         )
         .env(
             "HTTP_CONTENT_ENCODING",
             &format!(
                 "{:?}",
-                req.headers().get(hyper::header::CONTENT_ENCODING).unwrap()
+                req.headers().get(hyper::header::CONTENT_ENCODING).unwrap_or(&HeaderValue::from_static(""))
             ),
         )
         .env(
             "CONTENT_LENGTH",
             &format!(
                 "{:?}",
-                req.headers().get(hyper::header::CONTENT_LENGTH).unwrap()
+                req.headers().get(hyper::header::CONTENT_LENGTH).unwrap_or(&HeaderValue::from_static(""))
             ),
         );
 
@@ -301,26 +303,27 @@ async fn build_response(
 ) -> Result<Response<hyper::Body>, std::io::Error> {
     let mut response = Response::builder();
 
-    let mut headers = vec![];
     let mut stdout = BufReader::new(stdout);
     let mut line = String::new();
     while stdout.read_line(&mut line).await.unwrap_or(0) > 0 {
-        if line.is_empty() {
-            break;
-        }
+        line = line.trim_end_matches("\n").trim_end_matches("\r").to_owned();
+        println!("{}", line);
+
         let l: Vec<&str> =
             line.splitn(2, ": ").collect();
-        for x in &l {
-            headers.push(x.to_string());
+        if l.len() < 2 {
+            break;
         }
         if l[0] == "Status" {
             response = response.status(hyper::StatusCode::from_u16(
                 u16::from_str(l[1].split(" ").next().unwrap()).unwrap(),
             ).unwrap());
         } else {
+            println!("{:?}", l);
             response = response
                 .header(l[0], l[1]);
         }
+        line = String::new();
     }
 
     let mut data = vec![];
@@ -331,7 +334,11 @@ async fn build_response(
     stderr
         .read_to_end(&mut stderrdata).await.unwrap();
 
-    convert_error_io_hyper(response.body(hyper::Body::from(data)))
+    let body = response.body(hyper::Body::from(data));
+
+    println!("{:?}", body);
+
+    convert_error_io_hyper(body)
 }
 
 fn convert_error_io_hyper<T>(res: Result<T, hyper::http::Error>) -> Result<T, std::io::Error>
