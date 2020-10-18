@@ -705,9 +705,9 @@ checksum = "aaf91faf136cb47367fa430cd46e37a788775e7fa104f8b4bcb3861dc389b724"
 
 [[package]]
 name = "git2"
-version = "0.13.11"
+version = "0.13.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1e094214efbc7fdbbdee952147e493b00e99a4e52817492277e98967ae918165"
+checksum = "11e4b2082980e751c4bf4273e9cbb4a02c655729c8ee8a79f66cad03c8f4d31e"
 dependencies = [
  "bitflags 1.2.1",
  "libc",
@@ -1002,6 +1002,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "hyper_cgi"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4831df2c2a3d9487bde1c3bf11797eebf2a3027c33f8bc5058a3f988327347bf"
+dependencies = [
+ "futures 0.3.5",
+ "hyper 0.13.8",
+ "tokio 0.2.22",
+ "tokio-util",
+]
+
+[[package]]
 name = "idna"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1131,6 +1143,7 @@ dependencies = [
  "clap",
  "futures 0.3.5",
  "hyper 0.13.8",
+ "hyper_cgi",
  "mime",
  "tokio 0.2.22",
  "tokio-io",
@@ -1183,9 +1196,9 @@ checksum = "f2f96b10ec2560088a8e76961b00d47107b3a625fecb76dedb29ee7ccbf98235"
 
 [[package]]
 name = "libgit2-sys"
-version = "0.12.13+1.0.1"
+version = "0.12.7+1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "069eea34f76ec15f2822ccf78fe0cdb8c9016764d0a12865278585a74dbdeae5"
+checksum = "bcd07968649bcb7b9351ecfde53ca4d27673cccfdf57c84255ec18710f3153e0"
 dependencies = [
  "cc",
  "libc",

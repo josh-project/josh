@@ -133,7 +133,7 @@ async fn call(
     cmd.env("GIT_HTTP_EXPORT_ALL", "");
     cmd.env("PATH_INFO", req.uri().path());
 
-    do_cgi(req, cmd).await
+    hyper_cgi::do_cgi(req, cmd).await.0
 }
 
 async fn run_test_server(
@@ -217,83 +217,6 @@ async fn main() {
     .await;
 
     ()
-}
-
-async fn do_cgi(
-    req: Request<hyper::Body>,
-    cmd: Command,
-) -> hyper::http::Response<hyper::Body> {
-    let mut cmd = cmd;
-    cmd.stdout(Stdio::piped());
-    cmd.stderr(Stdio::piped());
-    cmd.stdin(Stdio::piped());
-    cmd.env("SERVER_SOFTWARE", "hyper")
-        .env("SERVER_NAME", "localhost") // TODO
-        .env("GATEWAY_INTERFACE", "CGI/1.1")
-        .env("SERVER_PROTOCOL", "HTTP/1.1") // TODO
-        .env("SERVER_PORT", "80") // TODO
-        .env("REQUEST_METHOD", format!("{}", req.method()))
-        .env("SCRIPT_NAME", "") // TODO
-        .env("QUERY_STRING", req.uri().query().unwrap_or(""))
-        .env("REMOTE_ADDR", "") // TODO
-        .env("AUTH_TYPE", "") // TODO
-        .env("REMOTE_USER", "") // TODO
-        .env(
-            "CONTENT_TYPE",
-            req.headers()
-                .get(hyper::header::CONTENT_TYPE)
-                .unwrap_or(&HeaderValue::from_static(""))
-                .to_str()
-                .unwrap(),
-        )
-        .env(
-            "HTTP_CONTENT_ENCODING",
-            req.headers()
-                .get(hyper::header::CONTENT_ENCODING)
-                .unwrap_or(&HeaderValue::from_static(""))
-                .to_str()
-                .unwrap(),
-        )
-        .env(
-            "CONTENT_LENGTH",
-            req.headers()
-                .get(hyper::header::CONTENT_LENGTH)
-                .unwrap_or(&HeaderValue::from_static(""))
-                .to_str()
-                .unwrap(),
-        );
-
-    println!("{:?}", cmd);
-
-    let mut child = cmd.spawn().expect("can't spawn CGI command");
-    let mut stdin = child.stdin.as_mut().expect("Failed to open stdin");
-    let mut stdout = child.stdout.as_mut().expect("Failed to open stdout");
-    let mut stderr = child.stderr.as_mut().expect("Failed to open stderr");
-
-    let req_body = req
-        .into_body()
-        .map(|result| {
-            result.map_err(|_error| {
-                std::io::Error::new(std::io::ErrorKind::Other, "Error!")
-            })
-        })
-        .into_async_read();
-
-    let mut req_body = to_tokio_async_read(req_body);
-
-    let res = tokio::try_join!(
-        async {
-            tokio::io::copy(&mut req_body, &mut stdin).await?;
-            stdin.shutdown().await?;
-            println!("shutdown");
-            Ok(())
-        },
-        build_response(&mut stdout, &mut stderr)
-    );
-
-    let (_, r2) = res.unwrap();
-
-    r2
 }
 
 fn to_tokio_async_read(

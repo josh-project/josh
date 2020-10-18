@@ -14,7 +14,7 @@ members = ["josh-test-server2", "josh-proxy", "josh-review"]
 exclude = ["josh-test-server"]
 
 [dependencies]
-git2 = {version = "0.13", default-features = false}
+git2 = {version = "*", default-features = false}
 clap = "2"
 tracing = { version = "*", features = ["max_level_debug", "release_max_level_info"] }
 bincode = "*"

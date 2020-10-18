@@ -18,5 +18,6 @@ tokio-process = "*"
 tokio-io = "*"
 tokio-util = { version = "0.3.1", features=["compat"] }
 hyper = "*"
+hyper_cgi = "*"
 mime = "*"
 base64 = "*"
