@@ -27,7 +27,6 @@ fn init(url: Url, orders: &mut impl Orders<Msg>) -> Model {
 
 /* struct List {} */
 
-
 #[derive(Debug, Deserialize, Serialize)]
 enum Page {
     List,
@@ -51,7 +50,6 @@ struct Change {
 enum Msg {
     DiffFetched(Change),
     FetchDiff(String),
-
     /* ListFetched(List), */
     /* FetchList, */
 }
@@ -79,7 +77,7 @@ fn update(msg: Msg, model: &mut Model, orders: &mut impl Orders<Msg>) {
             orders.after_next_render(|_| {
                 web_sys::console::time_end_with_label("rendering");
             });
-        },
+        }
         /* _ => {} */
     }
 }
