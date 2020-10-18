@@ -42,3 +42,12 @@ in that subtree repo should have an empty tree
   * add file1
 
   $ git ls-tree --name-only -r refs/josh/filter/master 
+
+  $ echo contents2 > unrelated_file
+  $ git add unrelated_file
+  $ git commit -m "add unrelated_file" &> /dev/null
+  $ josh-filter master:refs/josh/filter/master2 c=:/sub1
+  $ git log refs/josh/filter/master2 --graph --pretty=%s
+  * mv sub1
+  * add file2
+  * add file1

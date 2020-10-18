@@ -49,12 +49,11 @@ fn create_filtered_commit(
     );
 
     if selected_filtered_parent_commits.len() == 0 {
-        if filtered_tree.id() == empty_tree_id() {
-            return Ok(git2::Oid::zero());
-        }
-
         if filtered_parent_commits.len() != 0 {
             return Ok(filtered_parent_commits[0].id());
+        }
+        if filtered_tree.id() == empty_tree_id() {
+            return Ok(git2::Oid::zero());
         }
     }
 
