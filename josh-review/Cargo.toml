@@ -11,7 +11,8 @@ crate-type = ["cdylib"]
 wasm-bindgen-test = "0.3.10"
 
 [dependencies]
-seed = { git = "https://github.com/seed-rs/seed.git"}
+#seed = { git = "https://github.com/seed-rs/seed.git"}
+seed = "*"
 
 serde = { version = "1.0.106", features = ['derive'] }
 

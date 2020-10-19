@@ -12,9 +12,12 @@ edition = "2018"
 
 [dependencies]
 clap = "2"
-futures = "0.1"
-tokio-core = "0.1"
-tokio-process = "0.2"
-tokio-io = "0.1"
-hyper = "0.11"
-
+futures = "*"
+tokio = {version = "*", features = ["full"] }
+tokio-process = "*"
+tokio-io = "*"
+tokio-util = { version = "0.3.1", features=["compat"] }
+hyper = "*"
+hyper_cgi = "*"
+mime = "*"
+base64 = "*"
