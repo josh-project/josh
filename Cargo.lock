@@ -206,6 +206,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0e4cec68f03f32e44924783795810fa50a7035d8c8ebe78580ad7e6c703fba38"
 
 [[package]]
+name = "bytes"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e0dcbc35f504eb6fc275a6d20e4ebcda18cf50d40ba6fabff8c711fa16cb3b16"
+
+[[package]]
 name = "cc"
 version = "1.0.61"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -300,13 +306,12 @@ dependencies = [
 
 [[package]]
 name = "cookie"
-version = "0.14.2"
+version = "0.13.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1373a16a4937bc34efec7b391f9c1500c30b8478a701a4f44c9165cc0475a6e0"
+checksum = "0c60ef6d0bbf56ad2674249b6bb74f2c6aeb98b98dd57b5d3e37cace33011d69"
 dependencies = [
  "percent-encoding 2.1.0",
  "time 0.2.22",
- "version_check 0.9.2",
 ]
 
 [[package]]
@@ -1169,7 +1174,7 @@ dependencies = [
  "hyper 0.13.8",
  "hyper_cgi",
  "mime",
- "tokio 0.3.0",
+ "tokio 0.3.1",
  "tokio-io",
  "tokio-process",
  "tokio-util",
@@ -2182,10 +2187,11 @@ dependencies = [
 [[package]]
 name = "seed"
 version = "0.7.0"
-source = "git+https://github.com/seed-rs/seed.git#28498c0f2dfd3f9a1d59535c385b856a62854805"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "882f4569a394bbb2f15f2fc410e0fbcef178fe24fc2d91599607a598443c6df8"
 dependencies = [
  "console_error_panic_hook",
- "cookie 0.14.2",
+ "cookie 0.13.3",
  "dbg",
  "enclose",
  "futures 0.3.6",
@@ -2623,11 +2629,11 @@ dependencies = [
 
 [[package]]
 name = "tokio"
-version = "0.3.0"
+version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7137dbb0abee577362ccdc7df21605cfcbb949243aeab47dac9ea6ef7d830e21"
+checksum = "1911a203c5c240fd237e23a42e48846475f3d3b1e1dad3f17e6cc17a775b707c"
 dependencies = [
- "bytes 0.5.6",
+ "bytes 0.6.0",
  "fnv",
  "futures-core",
  "lazy_static 1.4.0",
