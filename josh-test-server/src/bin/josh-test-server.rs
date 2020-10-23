@@ -1,23 +1,14 @@
 use base64;
 use futures::future;
 use futures::FutureExt;
-use futures::TryStreamExt;
-use hyper::header::HeaderValue;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Request, Response, Server};
 use std::env;
 use std::net;
 use std::path::Path;
 use std::path::PathBuf;
-use std::process::Stdio;
-use std::str::FromStr;
 use std::sync::Arc;
-use tokio::io::AsyncBufReadExt;
-use tokio::io::AsyncReadExt;
-use tokio::io::AsyncWriteExt;
-use tokio::io::BufReader;
 use tokio::process::Command;
-use tokio::stream::StreamExt;
 
 #[macro_export]
 macro_rules! some_or {
@@ -217,68 +208,4 @@ async fn main() {
     .await;
 
     ()
-}
-
-fn to_tokio_async_read(
-    r: impl futures::io::AsyncRead,
-) -> impl tokio::io::AsyncRead {
-    tokio_util::compat::FuturesAsyncReadCompatExt::compat(r)
-}
-
-async fn build_response(
-    stdout: &mut &mut tokio::process::ChildStdout,
-    stderr: &mut &mut tokio::process::ChildStderr,
-) -> Result<Response<hyper::Body>, std::io::Error> {
-    let mut response = Response::builder();
-
-    let mut stdout = BufReader::new(stdout);
-    let mut line = String::new();
-    while stdout.read_line(&mut line).await.unwrap_or(0) > 0 {
-        line = line
-            .trim_end_matches("\n")
-            .trim_end_matches("\r")
-            .to_owned();
-        println!("{}", line);
-
-        let l: Vec<&str> = line.splitn(2, ": ").collect();
-        if l.len() < 2 {
-            break;
-        }
-        if l[0] == "Status" {
-            response = response.status(
-                hyper::StatusCode::from_u16(
-                    u16::from_str(l[1].split(" ").next().unwrap()).unwrap(),
-                )
-                .unwrap(),
-            );
-        } else {
-            println!("{:?}", l);
-            response = response.header(l[0], l[1]);
-        }
-        line = String::new();
-    }
-
-    let mut data = vec![];
-    stdout.read_to_end(&mut data).await.unwrap();
-
-    let mut stderrdata = vec![];
-    stderr.read_to_end(&mut stderrdata).await.unwrap();
-
-    println!("STDERRDATA: {:?}", String::from_utf8(stderrdata.clone()));
-    println!("DATA: {:?}", String::from_utf8(data.clone()));
-
-    let body = response.body(hyper::Body::from(data));
-
-    println!("BODY: {:?}", body);
-
-    convert_error_io_hyper(body)
-}
-
-fn convert_error_io_hyper<T>(
-    res: Result<T, hyper::http::Error>,
-) -> Result<T, std::io::Error> {
-    match res {
-        Ok(res) => Ok(res),
-        Err(_) => Err(std::io::Error::new(std::io::ErrorKind::Other, "Error!")),
-    }
 }

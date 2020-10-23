@@ -77,8 +77,7 @@ fn update(msg: Msg, model: &mut Model, orders: &mut impl Orders<Msg>) {
             orders.after_next_render(|_| {
                 web_sys::console::time_end_with_label("rendering");
             });
-        }
-        /* _ => {} */
+        } /* _ => {} */
     }
 }
 
