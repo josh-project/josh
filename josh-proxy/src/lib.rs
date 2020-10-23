@@ -6,7 +6,7 @@ use futures::Stream;
 use hyper::server::Response;
 use std::str::FromStr;
 
-pub mod gerrit;
+//pub mod gerrit;
 
 pub type BoxedFuture<T> = Box<dyn Future<Item = T, Error = hyper::Error>>;
 

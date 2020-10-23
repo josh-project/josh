@@ -39,7 +39,7 @@ struct JoshProxyService {
     compute_pool: futures_cpupool::CpuPool,
     port: String,
     repo_path: std::path::PathBuf,
-    gerrit: Arc<josh_proxy::gerrit::Gerrit>,
+    /* gerrit: Arc<josh_proxy::gerrit::Gerrit>, */
     upstream_url: String,
     forward_maps: Arc<RwLock<josh::view_maps::ViewMaps>>,
     backward_maps: Arc<RwLock<josh::view_maps::ViewMaps>>,
@@ -89,12 +89,12 @@ fn parse_args() -> clap::ArgMatches<'static> {
                 "Number of concurrent upstream git fetch/push operations",
             ),
         )
-        .arg(
-            clap::Arg::with_name("g")
-                .short("g")
-                .takes_value(false)
-                .help("Enable gerrit integration"),
-        )
+        /* .arg( */
+        /*     clap::Arg::with_name("g") */
+        /*         .short("g") */
+        /*         .takes_value(false) */
+        /*         .help("Enable gerrit integration"), */
+        /* ) */
         .arg(clap::Arg::with_name("port").long("port").takes_value(true))
         .get_matches_from(args)
 }
@@ -299,9 +299,9 @@ fn call_service(
         return Box::new(response);
     }
 
-    if path.starts_with("/review/") || path.starts_with("/c/") {
-        return service.gerrit.handle_request(req);
-    }
+    /* if path.starts_with("/review/") || path.starts_with("/c/") { */
+    /*     return service.gerrit.handle_request(req); */
+    /* } */
 
     let parsed_url = {
         let nop_path = path.replacen(".git", ".git:nop=nop.git", 1);
@@ -590,9 +590,9 @@ fn run_proxy() -> josh::JoshResult<i32> {
         ARGS.is_present("gc"),
     );
 
-    if ARGS.is_present("g") {
-        josh_proxy::gerrit::spawn_poll_thread(local, remote.to_string());
-    }
+    /* if ARGS.is_present("g") { */
+    /*     josh_proxy::gerrit::spawn_poll_thread(local, remote.to_string()); */
+    /* } */
 
     core.run(futures::future::empty::<(), josh::JoshError>())?;
 
@@ -610,11 +610,11 @@ fn run_http_server(
 ) -> josh::JoshResult<JoshProxyService> {
     let service = JoshProxyService {
         handle: core.handle(),
-        gerrit: Arc::new(josh_proxy::gerrit::Gerrit::new(
-            &core,
-            local.to_owned(),
-            remote.to_owned(),
-        )),
+        /* gerrit: Arc::new(josh_proxy::gerrit::Gerrit::new( */
+        /*     &core, */
+        /*     local.to_owned(), */
+        /*     remote.to_owned(), */
+        /* )), */
         fetch_push_pool: futures_cpupool::CpuPool::new(
             ARGS.value_of("n")
                 .unwrap_or("1")
