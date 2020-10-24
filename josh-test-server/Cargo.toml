@@ -13,11 +13,11 @@ edition = "2018"
 [dependencies]
 clap = "2"
 futures = "*"
-tokio = {version = "0.2.22", features = ["full"] }
+tokio = {version = "0.3", features = ["full"] }
 tokio-process = "*"
 tokio-io = "*"
 tokio-util = { version = "0.3.1", features=["compat"] }
 hyper = "0.13"
-hyper_cgi = "*"
+hyper_cgi = "0.2"
 mime = "*"
 base64 = "*"
