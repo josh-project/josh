@@ -35,7 +35,6 @@ type CredentialCache = HashMap<String, std::time::Instant>;
 struct JoshProxyService {
     handle: tokio_core::reactor::Handle,
     fetch_push_pool: futures_cpupool::CpuPool,
-    housekeeping_pool: futures_cpupool::CpuPool,
     compute_pool: futures_cpupool::CpuPool,
     port: String,
     repo_path: std::path::PathBuf,
@@ -621,7 +620,6 @@ fn run_http_server(
                 .parse()
                 .expect("not a number"),
         ),
-        housekeeping_pool: futures_cpupool::CpuPool::new(1),
         compute_pool: futures_cpupool::CpuPool::new(4),
         port: port,
         repo_path: local.to_owned(),
