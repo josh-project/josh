@@ -1,0 +1,25 @@
+
+[package]
+authors = ["Christian Schilling <christian.schilling@esrlabs.com>"]
+description = "GIT virtualization proxy"
+edition = "2018"
+keywords = ["git", "monorepo", "workflow", "scm"]
+license-file = "LICENSE"
+name = "josh-proxy2"
+readme = "README.md"
+repository = "https://github.com/esrlabs/josh"
+version = "0.3.0"
+
+
+[dependencies]
+clap = "2"
+futures = "0.3"
+tokio = {version = "0.2.22", features = ["full"] }
+tokio-process = "*"
+tokio-io = "*"
+tokio-util = { version = "0.3.1", features=["compat"] }
+hyper = "0.13"
+hyper_cgi = "*"
+mime = "*"
+base64 = "*"
+josh = {path = "../"}
