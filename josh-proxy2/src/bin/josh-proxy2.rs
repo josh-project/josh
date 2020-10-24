@@ -4,6 +4,7 @@ use base64;
 
 use futures::future;
 use futures::FutureExt;
+use futures::TryStreamExt;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Request, Response, Server};
 use std::collections::HashMap;
@@ -178,6 +179,38 @@ async fn static_paths(
     return None;
 }
 
+async fn repo_update_fn(
+    serv: Arc<JoshProxyService>,
+    req: Request<hyper::Body>,
+) -> Response<hyper::Body> {
+    let forward_maps = serv.forward_maps.clone();
+    let backward_maps = serv.backward_maps.clone();
+
+    let body = hyper::body::to_bytes(req.into_body()).await;
+
+    let result = tokio::task::spawn_blocking(move || {
+        let body = body?;
+        let buffer = std::str::from_utf8(&body)?;
+        josh_proxy2::process_repo_update(
+            serde_json::from_str(&buffer)?,
+            forward_maps,
+            backward_maps,
+        )
+    })
+    .await
+    .unwrap();
+
+    return match result {
+        Ok(stderr) => Response::builder()
+            .status(hyper::StatusCode::OK)
+            .body(hyper::Body::from(stderr)),
+        Err(josh::JoshError(stderr)) => Response::builder()
+            .status(hyper::StatusCode::BAD_REQUEST)
+            .body(hyper::Body::from(stderr)),
+    }
+    .unwrap();
+}
+
 async fn call_service(
     serv: Arc<JoshProxyService>,
     req: Request<hyper::Body>,
@@ -194,6 +227,14 @@ async fn call_service(
         path
     };
 
+    if let Some(r) = static_paths(&serv, &path).await {
+        return r;
+    }
+
+    if path == "/repo_update" {
+        return repo_update_fn(serv, req).await;
+    }
+
     println!("ServeTestGit CALLING git-http backend");
     let mut cmd = Command::new("git");
     cmd.arg("http-backend");
@@ -204,45 +245,7 @@ async fn call_service(
     cmd.env("GIT_HTTP_EXPORT_ALL", "");
     cmd.env("PATH_INFO", &path);
 
-    if let Some(r) = static_paths(&serv, &path).await {
-        return r;
-    }
-
     return hyper_cgi::do_cgi(req, cmd).await.0;
-
-    /* if path == "/repo_update" { */
-    /*     let pool = service.fetch_push_pool.clone(); */
-    /*     let forward_maps = service.forward_maps.clone(); */
-    /*     let backward_maps = service.backward_maps.clone(); */
-    /*     let response = req */
-    /*         .body() */
-    /*         .concat2() */
-    /*         .map(josh_proxy::body2string) */
-    /*         .and_then(move |buffer| { */
-    /*             pool.spawn(futures::future::ok(buffer).map(move |buffer| { */
-    /*                 josh_proxy::process_repo_update( */
-    /*                     serde_json::from_str(&buffer).unwrap_or(HashMap::new()), */
-    /*                     forward_maps, */
-    /*                     backward_maps, */
-    /*                 ) */
-    /*             })) */
-    /*         }) */
-    /*         .and_then(move |result| { */
-    /*             let response = if let Ok(stderr) = result { */
-    /*                 Response::new() */
-    /*                     .with_body(stderr) */
-    /*                     .with_status(hyper::StatusCode::Ok) */
-    /*             } else if let Err(josh::JoshError(stderr)) = result { */
-    /*                 Response::new() */
-    /*                     .with_body(stderr) */
-    /*                     .with_status(hyper::StatusCode::BadRequest) */
-    /*             } else { */
-    /*                 Response::new().with_status(hyper::StatusCode::Forbidden) */
-    /*             }; */
-    /*             futures::future::ok(response) */
-    /*         }); */
-    /*     return Box::new(response); */
-    /* } */
 
     /* /1* if path.starts_with("/review/") || path.starts_with("/c/") { *1/ */
     /* /1*     return service.gerrit.handle_request(req); *1/ */
