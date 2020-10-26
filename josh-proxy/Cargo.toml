@@ -41,4 +41,4 @@ tracing = { version = "*", features = ["max_level_debug", "release_max_level_inf
 tracing-futures = "*"
 tracing-log = "*"
 tracing-subscriber = "0.2.0-alpha.4"
-uuid = {version = "*", features = ["v4"]}
+uuid = {version = "0.8", features = ["v4"]}

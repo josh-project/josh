@@ -4,14 +4,9 @@ use base64;
 
 use futures::future;
 use futures::FutureExt;
-use futures::TryStreamExt;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Request, Response, Server};
 use std::collections::HashMap;
-use std::env;
-use std::net;
-use std::path::Path;
-use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 use tokio::process::Command;
 
@@ -36,8 +31,6 @@ type CredentialCache = HashMap<String, std::time::Instant>;
 
 #[derive(Clone)]
 struct JoshProxyService {
-    /* fetch_push_pool: futures_cpupool::CpuPool, */
-    /* compute_pool: futures_cpupool::CpuPool, */
     port: String,
     repo_path: std::path::PathBuf,
     /* gerrit: Arc<josh_proxy::gerrit::Gerrit>, */
@@ -46,10 +39,6 @@ struct JoshProxyService {
     backward_maps: Arc<RwLock<josh::view_maps::ViewMaps>>,
     credential_cache: Arc<RwLock<CredentialCache>>,
     fetching: Arc<RwLock<std::collections::HashSet<String>>>,
-}
-
-pub struct ServeTestGit {
-    repo_path: PathBuf,
 }
 
 pub fn parse_auth(
@@ -80,60 +69,98 @@ pub fn parse_auth(
     return None;
 }
 
-fn auth_response(
-    req: &Request<hyper::Body>,
-    username: &str,
-    password: &str,
-) -> Option<Response<hyper::Body>> {
-    let (rusername, rpassword) = match parse_auth(req) {
-        Some(x) => x,
-        None => {
-            println!("ServeTestGit: no credentials in request");
-            let builder = Response::builder()
-                .header("WWW-Authenticate", "Basic realm=User Visible Realm")
-                .status(hyper::StatusCode::UNAUTHORIZED);
-            return Some(builder.body(hyper::Body::empty()).unwrap());
-        }
-    };
-
-    if rusername != "admin" && (rusername != username || rpassword != password)
-    {
-        println!("ServeTestGit: wrong user/pass");
-        println!("user: {:?} - {:?}", rusername, username);
-        println!("pass: {:?} - {:?}", rpassword, password);
-        let builder = Response::builder()
-            .header("WWW-Authenticate", "Basic realm=User Visible Realm")
-            .status(hyper::StatusCode::UNAUTHORIZED);
-        return Some(
-            builder
-                .body(hyper::Body::empty())
-                .unwrap_or(Response::default()),
-        );
-    }
-
-    println!("CREDENTIALS OK {:?} {:?}", &rusername, &rpassword);
-    return None;
+fn hash_strings(url: &str, username: &str, password: &str) -> String {
+    use crypto::digest::Digest;
+    let mut d = crypto::sha1::Sha1::new();
+    d.input_str(&format!("{}:{}:{}", &url, &username, &password));
+    d.result_str().to_owned()
 }
 
-async fn call(
-    serv: Arc<ServeTestGit>,
-    req: Request<hyper::Body>,
-) -> Response<hyper::Body> {
-    println!("call");
+async fn fetch_upstream(
+    service: Arc<JoshProxyService>,
+    upstream_repo: String,
+    username: &str,
+    password: &str,
+    remote_url: String,
+) -> bool {
+    let username = username.to_owned();
+    let password = password.to_owned();
+    let credentials_hashed = hash_strings(&remote_url, &username, &password);
 
-    let path = &serv.repo_path;
+    tracing::debug!(
+        "credentials_hashed {:?}, {:?}, {:?}",
+        &remote_url,
+        &username,
+        &credentials_hashed
+    );
 
-    println!("ServeTestGit CALLING git-http backend");
-    let mut cmd = Command::new("git");
-    cmd.arg("http-backend");
-    cmd.current_dir(&path);
-    cmd.env("GIT_PROJECT_ROOT", &path);
-    /* cmd.env("PATH_TRANSLATED", "/"); */
-    cmd.env("GIT_DIR", &path);
-    cmd.env("GIT_HTTP_EXPORT_ALL", "");
-    cmd.env("PATH_INFO", req.uri().path());
+    let refs_to_fetch = vec!["refs/heads/*", "refs/tags/*"];
 
-    hyper_cgi::do_cgi(req, cmd).await.0
+    //let credentials_cached_ok = {
+    //    let last = service
+    //        .credential_cache
+    //        .read()
+    //        .ok()
+    //        .map(|cc| cc.get(&credentials_hashed).copied());
+
+    //    if let Some(Some(c)) = last {
+    //        std::time::Instant::now().duration_since(c)
+    //            < std::time::Duration::from_secs(60)
+    //    } else {
+    //        false
+    //    }
+    //};
+
+    //if credentials_cached_ok
+    //    && !service
+    //        .fetching
+    //        .write()
+    //        .map(|mut x| x.insert(credentials_hashed.clone()))
+    //        .unwrap_or(true)
+    //{
+    //    return true;
+    //}
+
+    let credential_cache = service.credential_cache.clone();
+    let br_path = service.repo_path.clone();
+    let fetching = service.fetching.clone();
+
+    let res = tokio::task::spawn_blocking(move || {
+        josh_proxy2::fetch_refs_from_url(
+            &br_path,
+            &upstream_repo,
+            &remote_url,
+            &refs_to_fetch,
+            &username,
+            &password,
+        )
+    })
+    .await
+    .unwrap();
+
+    if let Ok(_) = res {
+        if let Ok(mut x) = fetching.write() {
+            x.remove(&credentials_hashed);
+        } else {
+            tracing::error!("lock poisoned");
+        }
+        if let Ok(mut cc) = credential_cache.write() {
+            cc.insert(credentials_hashed, std::time::Instant::now());
+        } else {
+            tracing::error!("lock poisoned");
+        }
+        return true;
+    }
+
+    return false;
+
+    // TODO
+    /* if credentials_cached_ok { */
+    /*     do_fetch.forget(); */
+    /*     return true; */
+    /* } */
+
+    /* return do_fetch; */
 }
 
 async fn static_paths(
@@ -211,6 +238,46 @@ async fn repo_update_fn(
     .unwrap();
 }
 
+async fn do_filter(
+    repo: git2::Repository,
+    service: Arc<JoshProxyService>,
+    upstream_repo: String,
+    temp_ns: Arc<josh_proxy2::TmpGitNamespace>,
+    filter_spec: String,
+    from_to: Option<Vec<(String, String)>>,
+) -> git2::Repository {
+    let forward_maps = service.forward_maps.clone();
+    let backward_maps = service.backward_maps.clone();
+    return tokio::task::spawn_blocking(move || {
+        let filter = josh::filters::parse(&filter_spec);
+        let filter_spec = filter.filter_spec();
+        let from_to = from_to.unwrap_or_else(|| {
+            josh::housekeeping::default_from_to(
+                &repo,
+                &temp_ns.name(),
+                &upstream_repo,
+                &filter_spec,
+            )
+        });
+        let mut bm = josh::view_maps::new_downstream(&backward_maps);
+        let mut fm = josh::view_maps::new_downstream(&forward_maps);
+        josh::scratch::apply_filter_to_refs(
+            &repo, &*filter, &from_to, &mut fm, &mut bm,
+        );
+        josh::view_maps::try_merge_both(forward_maps, backward_maps, &fm, &bm);
+        repo.reference_symbolic(
+            &temp_ns.reference("HEAD"),
+            &temp_ns.reference("refs/heads/master"),
+            true,
+            "",
+        )
+        .ok();
+        return repo;
+    })
+    .await
+    .unwrap();
+}
+
 async fn call_service(
     serv: Arc<JoshProxyService>,
     req: Request<hyper::Body>,
@@ -235,91 +302,80 @@ async fn call_service(
         return repo_update_fn(serv, req).await;
     }
 
-    println!("ServeTestGit CALLING git-http backend");
-    let mut cmd = Command::new("git");
-    cmd.arg("http-backend");
-    cmd.current_dir(&serv.repo_path);
-    cmd.env("GIT_PROJECT_ROOT", &serv.repo_path);
-    /* cmd.env("PATH_TRANSLATED", "/"); */
-    cmd.env("GIT_DIR", &serv.repo_path);
-    cmd.env("GIT_HTTP_EXPORT_ALL", "");
-    cmd.env("PATH_INFO", &path);
-
-    return hyper_cgi::do_cgi(req, cmd).await.0;
-
     /* /1* if path.starts_with("/review/") || path.starts_with("/c/") { *1/ */
     /* /1*     return service.gerrit.handle_request(req); *1/ */
     /* /1* } *1/ */
 
-    /* let parsed_url = { */
-    /*     let nop_path = path.replacen(".git", ".git:nop=nop.git", 1); */
-    /*     if let Some(parsed_url) = TransformedRepoUrl::from_str(&path) { */
-    /*         parsed_url */
-    /*     } else if let Some(parsed_url) = TransformedRepoUrl::from_str(&nop_path) */
-    /*     { */
-    /*         parsed_url */
-    /*     } else { */
-    /*         return Box::new(futures::future::ok( */
-    /*             Response::new().with_status(hyper::StatusCode::NotFound), */
-    /*         )); */
-    /*     } */
-    /* }; */
+    let parsed_url = {
+        let nop_path = path.replacen(".git", ".git:nop=nop.git", 1);
+        if let Some(parsed_url) = TransformedRepoUrl::from_str(&path) {
+            parsed_url
+        } else if let Some(parsed_url) = TransformedRepoUrl::from_str(&nop_path)
+        {
+            parsed_url
+        } else {
+            return Response::builder()
+                .status(hyper::StatusCode::NOT_FOUND)
+                .body(hyper::Body::empty())
+                .unwrap();
+        }
+    };
 
-    /* let headref = parsed_url.headref.trim_start_matches("@").to_owned(); */
+    let headref = parsed_url.headref.trim_start_matches("@").to_owned();
 
-    /* let compute_pool = service.compute_pool.clone(); */
+    if parsed_url.ending == "json" {
+        let forward_maps = serv.forward_maps.clone();
+        let backward_maps = serv.forward_maps.clone();
 
-    /* if parsed_url.ending == "json" { */
-    /*     let forward_maps = service.forward_maps.clone(); */
-    /*     let backward_maps = service.forward_maps.clone(); */
+        let info_str = tokio::task::spawn_blocking(move || {
+            josh::housekeeping::get_info(
+                &repo,
+                &*josh::filters::parse(&parsed_url.view),
+                &parsed_url.upstream_repo,
+                &headref,
+                forward_maps.clone(),
+                backward_maps.clone(),
+            )
+            .unwrap_or("get_info: error".to_owned())
+        })
+        .await
+        .unwrap();
 
-    /*     let f = compute_pool.spawn_fn(move || { */
-    /*         let info = josh::housekeeping::get_info( */
-    /*             &repo, */
-    /*             &*josh::filters::parse(&parsed_url.view), */
-    /*             &parsed_url.upstream_repo, */
-    /*             &headref, */
-    /*             forward_maps.clone(), */
-    /*             backward_maps.clone(), */
-    /*         ) */
-    /*         .unwrap_or("get_info: error".to_owned()); */
+        return Response::builder()
+            .status(hyper::StatusCode::OK)
+            .body(hyper::Body::from(format!("{}\n", info_str)))
+            .unwrap();
+    }
 
-    /*         let response = Response::new() */
-    /*             .with_body(format!("{}\n", info)) */
-    /*             .with_status(hyper::StatusCode::Ok); */
-    /*         return Box::new(futures::future::ok(response)); */
-    /*     }); */
+    let (username, password) = josh::some_or!(parse_auth(&req), {
+        let builder = Response::builder()
+            .header("WWW-Authenticate", "Basic realm=User Visible Realm")
+            .status(hyper::StatusCode::UNAUTHORIZED);
+        return builder.body(hyper::Body::empty()).unwrap();
+    });
 
-    /*     return Box::new(f); */
-    /* } */
+    let port = serv.port.clone();
 
-    /* let (username, password) = josh::some_or!(josh_proxy::parse_auth(&req), { */
-    /*     return Box::new(futures::future::ok( */
-    /*         josh_proxy::respond_unauthorized(), */
-    /*     )); */
-    /* }); */
+    let remote_url = [
+        serv.upstream_url.as_str(),
+        parsed_url.upstream_repo.as_str(),
+    ]
+    .join("");
 
-    /* let port = service.port.clone(); */
+    let br_url = remote_url.clone();
+    let base_ns = josh::to_ns(&parsed_url.upstream_repo);
 
-    /* let remote_url = [ */
-    /*     service.upstream_url.as_str(), */
-    /*     parsed_url.upstream_repo.as_str(), */
-    /* ] */
-    /* .join(""); */
-
-    /* let br_url = remote_url.clone(); */
-    /* let base_ns = josh::to_ns(&parsed_url.upstream_repo); */
-    /* let handle = service.handle.clone(); */
-
-    /* let fetch_future = if headref == "" { */
-    /*     fetch_upstream( */
-    /*         service.clone(), */
-    /*         parsed_url.upstream_repo.clone(), */
-    /*         &username, */
-    /*         &password, */
-    /*         br_url, */
-    /*     ) */
+    /* if headref == "" { */
+    let authorized = fetch_upstream(
+        serv.clone(),
+        parsed_url.upstream_repo.clone(),
+        &username,
+        &password,
+        br_url,
+    )
+    .await;
     /* } else { */
+    // TODO
     /*     fetch_upstream_ref( */
     /*         service.clone(), */
     /*         parsed_url.upstream_repo.clone(), */
@@ -327,91 +383,79 @@ async fn call_service(
     /*         &password, */
     /*         br_url, */
     /*         headref.clone(), */
-    /*     ) */
+    /*     ).await */
     /* }; */
 
-    /* let temp_ns = */
-    /*     Arc::new(josh_proxy::TmpGitNamespace::new(&service.repo_path)); */
+    if !authorized {
+        let builder = Response::builder()
+            .header("WWW-Authenticate", "Basic realm=User Visible Realm")
+            .status(hyper::StatusCode::UNAUTHORIZED);
+        return builder.body(hyper::Body::empty()).unwrap();
+    }
 
-    /* let refs = if headref != "" { */
-    /*     Some(vec![( */
-    /*         format!( */
-    /*             "refs/josh/upstream/{}/{}", */
-    /*             &josh::to_ns(&parsed_url.upstream_repo), */
-    /*             headref */
-    /*         ), */
-    /*         temp_ns.reference("refs/heads/master"), */
-    /*     )]) */
-    /* } else { */
-    /*     None */
-    /* }; */
+    let temp_ns = Arc::new(josh_proxy2::TmpGitNamespace::new(&serv.repo_path));
 
-    /* let filter_spec = parsed_url.view.clone(); */
-    /* let service = service.clone(); */
-    /* let fs = filter_spec.clone(); */
+    let refs = if headref != "" {
+        Some(vec![(
+            format!(
+                "refs/josh/upstream/{}/{}",
+                &josh::to_ns(&parsed_url.upstream_repo),
+                headref
+            ),
+            temp_ns.reference("refs/heads/master"),
+        )])
+    } else {
+        None
+    };
 
-    /* let ns = temp_ns.clone(); */
+    let filter_spec = parsed_url.view.clone();
+    let serv = serv.clone();
+    let fs = filter_spec.clone();
 
-    /* let fetch_future = */
-    /*     fetch_future.and_then(move |authorized| -> BoxedFuture<Response> { */
-    /*         if !authorized { */
-    /*             return Box::new(futures::future::ok( */
-    /*                 josh_proxy::respond_unauthorized(), */
-    /*             )); */
-    /*         } */
+    let ns = temp_ns.clone();
 
-    /*         let do_filter = do_filter( */
-    /*             repo, */
-    /*             &service, */
-    /*             parsed_url.upstream_repo, */
-    /*             ns.clone(), */
-    /*             filter_spec, */
-    /*             refs, */
-    /*         ); */
+    do_filter(
+        repo,
+        serv.clone(),
+        parsed_url.upstream_repo,
+        ns.clone(),
+        filter_spec,
+        refs,
+    )
+    .await;
 
-    /*         let pathinfo = parsed_url.pathinfo.clone(); */
-    /*         let mut cmd = std::process::Command::new("git"); */
-    /*         let repo_path = service.repo_path.to_str().unwrap(); */
-    /*         cmd.arg("http-backend"); */
-    /*         cmd.current_dir(&service.repo_path); */
-    /*         cmd.env("GIT_PROJECT_ROOT", repo_path); */
-    /*         cmd.env("GIT_DIR", repo_path); */
-    /*         cmd.env("GIT_HTTP_EXPORT_ALL", ""); */
-    /*         cmd.env("PATH_INFO", pathinfo); */
-    /*         cmd.env("JOSH_PASSWORD", password); */
-    /*         cmd.env("JOSH_USERNAME", username); */
-    /*         cmd.env("JOSH_PORT", port); */
-    /*         cmd.env("GIT_NAMESPACE", ns.name().clone()); */
-    /*         cmd.env("JOSH_VIEWSTR", fs); */
-    /*         cmd.env("JOSH_REMOTE", remote_url); */
-    /*         cmd.env("JOSH_BASE_NS", base_ns); */
+    let pathinfo = parsed_url.pathinfo.clone();
+    let repo_path = serv.repo_path.to_str().unwrap();
 
-    /*         let response = do_filter.and_then(move |_| { */
-    /*             tracing::trace!("git-http backend {:?}", path); */
-    /*             josh_proxy::do_cgi(req, cmd, handle.clone()) */
-    /*         }); */
+    println!("Josh Proxy CALLING git-http backend");
+    let mut cmd = Command::new("git");
+    cmd.arg("http-backend");
+    cmd.current_dir(&serv.repo_path);
+    cmd.env("GIT_DIR", repo_path);
+    cmd.env("GIT_HTTP_EXPORT_ALL", "");
+    cmd.env("GIT_NAMESPACE", ns.name().clone());
+    cmd.env("GIT_PROJECT_ROOT", repo_path);
+    cmd.env("JOSH_BASE_NS", base_ns);
+    cmd.env("JOSH_PASSWORD", password);
+    cmd.env("JOSH_PORT", port);
+    cmd.env("JOSH_REMOTE", remote_url);
+    cmd.env("JOSH_USERNAME", username);
+    cmd.env("JOSH_VIEWSTR", fs);
+    cmd.env("PATH_INFO", pathinfo);
 
-    /*         Box::new(response) */
-    /*     }); */
+    let cgires = hyper_cgi::do_cgi(req, cmd).await.0;
 
-    /* // This is chained as a seperate future to make sure that */
-    /* // it is executed in all cases. */
-    /* Box::new({ */
-    /*     fetch_future.map(move |response| { */
-    /*         std::mem::drop(temp_ns); */
-    /*         response */
-    /*     }) */
-    /* }) */
+    // This is chained as a seperate future to make sure that
+    // it is executed in all cases.
+    std::mem::drop(temp_ns);
+
+    return cgires;
 }
 
-async fn run_test_server() -> josh::JoshResult<i32> {
-    let repo_path =
-        PathBuf::from(ARGS.value_of("local").expect("missing local directory"));
+#[tokio::main]
+async fn run_proxy() -> josh::JoshResult<i32> {
     let port = ARGS.value_of("port").unwrap_or("8000").to_owned();
     let addr = format!("0.0.0.0:{}", port).parse().unwrap();
-    let serve_test_git = Arc::new(ServeTestGit {
-        repo_path: repo_path.to_owned(),
-    });
 
     let remote = ARGS.value_of("remote").expect("missing remote host url");
     let local = std::path::PathBuf::from(
@@ -428,13 +472,6 @@ async fn run_test_server() -> josh::JoshResult<i32> {
     )));
 
     let proxy_service = Arc::new(JoshProxyService {
-        /* fetch_push_pool: futures_cpupool::CpuPool::new( */
-        /*     ARGS.value_of("n") */
-        /*         .unwrap_or("1") */
-        /*         .parse() */
-        /*         .expect("not a number"), */
-        /* ), */
-        /* compute_pool: futures_cpupool::CpuPool::new(4), */
         port: port,
         repo_path: local.to_owned(),
         forward_maps: forward_maps,
@@ -445,12 +482,12 @@ async fn run_test_server() -> josh::JoshResult<i32> {
     });
 
     let make_service = make_service_fn(move |_| {
-        let serve_test_git = serve_test_git.clone();
+        let proxy_service = proxy_service.clone();
 
         let service = service_fn(move |_req| {
-            let serve_test_git = serve_test_git.clone();
+            let proxy_service = proxy_service.clone();
 
-            call(serve_test_git, _req).map(Ok::<_, hyper::http::Error>)
+            call_service(proxy_service, _req).map(Ok::<_, hyper::http::Error>)
         });
 
         future::ok::<_, hyper::http::Error>(service)
@@ -548,20 +585,21 @@ fn update_hook(refname: &str, old: &str, new: &str) -> josh::JoshResult<i32> {
 
     let port = std::env::var("JOSH_PORT")?;
 
-    let client = reqwest::Client::builder().timeout(None).build()?;
+    let client = reqwest::blocking::Client::builder().timeout(None).build()?;
     let resp = client
         .post(&format!("http://localhost:{}/repo_update", port))
         .json(&repo_update)
         .send();
 
     match resp {
-        Ok(mut r) => {
+        Ok(r) => {
+            let success = r.status().is_success();
             if let Ok(body) = r.text() {
                 println!("response from upstream:\n {}\n\n", body);
             } else {
                 println!("no upstream response");
             }
-            if r.status().is_success() {
+            if success {
                 return Ok(0);
             } else {
                 return Ok(1);
@@ -590,13 +628,5 @@ fn main() {
         }
     }
 
-    // As the tokio runtime shall only be started when we are not running as
-    // a hook we cannot use the #[tokio::main] macro.
-    // This is doing the same thing by hand.
-    tokio::runtime::Builder::new_multi_thread()
-        .build()
-        .unwrap()
-        .block_on(async {
-            run_test_server().await;
-        })
+    std::process::exit(run_proxy().unwrap_or(1));
 }
