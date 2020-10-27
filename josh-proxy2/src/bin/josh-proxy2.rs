@@ -186,9 +186,10 @@ async fn static_paths(
     }
     if path == "/views" {
         service.credential_cache.write().unwrap().clear();
+        let service = service.clone();
 
-        let repo = git2::Repository::init_bare(&service.repo_path).unwrap();
         let body_str = tokio::task::spawn_blocking(move || {
+            let repo = git2::Repository::init_bare(&service.repo_path).unwrap();
             let known_filters =
                 josh::housekeeping::discover_filter_candidates(&repo).ok();
             toml::to_string_pretty(&known_filters).unwrap()
@@ -239,7 +240,7 @@ async fn repo_update_fn(
 }
 
 async fn do_filter(
-    repo: git2::Repository,
+    repo_path: std::path::PathBuf,
     service: Arc<JoshProxyService>,
     upstream_repo: String,
     temp_ns: Arc<josh_proxy2::TmpGitNamespace>,
@@ -249,6 +250,7 @@ async fn do_filter(
     let forward_maps = service.forward_maps.clone();
     let backward_maps = service.backward_maps.clone();
     return tokio::task::spawn_blocking(move || {
+        let repo = git2::Repository::init_bare(&repo_path).unwrap();
         let filter = josh::filters::parse(&filter_spec);
         let filter_spec = filter.filter_spec();
         let from_to = from_to.unwrap_or_else(|| {
@@ -282,8 +284,6 @@ async fn call_service(
     serv: Arc<JoshProxyService>,
     req: Request<hyper::Body>,
 ) -> Response<hyper::Body> {
-    let repo = git2::Repository::init_bare(&serv.repo_path).unwrap();
-
     println!("call_service");
 
     let path = {
@@ -328,6 +328,7 @@ async fn call_service(
         let backward_maps = serv.forward_maps.clone();
 
         let info_str = tokio::task::spawn_blocking(move || {
+            let repo = git2::Repository::init_bare(&serv.repo_path).unwrap();
             josh::housekeeping::get_info(
                 &repo,
                 &*josh::filters::parse(&parsed_url.view),
@@ -415,7 +416,7 @@ async fn call_service(
     let ns = temp_ns.clone();
 
     do_filter(
-        repo,
+        serv.repo_path.clone(),
         serv.clone(),
         parsed_url.upstream_repo,
         ns.clone(),
