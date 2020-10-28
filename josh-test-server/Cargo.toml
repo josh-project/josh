@@ -17,6 +17,6 @@ tokio = {version = "0.2", features = ["full"] }
 tokio-process = "*"
 tokio-io = "*"
 hyper = "0.13"
-hyper_cgi = "0.1"
+hyper_cgi = "0.2"
 mime = "*"
 base64 = "*"
