@@ -1027,8 +1027,10 @@ fn make_view(cmd: &str, name: &str) -> Box<dyn Filter> {
         return Box::new(WorkspaceView {
             ws_path: Path::new(name).to_owned(),
         });
-    } else {
+    } else if cmd == "" {
         return SubdirView::new(&Path::new(name));
+    } else {
+        return Box::new(EmptyView);
     }
 }
 
