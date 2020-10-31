@@ -171,6 +171,74 @@ impl Filter for NopView {
     }
 }
 
+struct DirsView;
+
+impl Filter for DirsView {
+    fn apply_to_parents(
+        &self,
+        repo: &git2::Repository,
+        commit: &git2::Commit,
+        forward_maps: &mut ViewMaps,
+        backward_maps: &mut ViewMaps,
+    ) -> super::JoshResult<Vec<git2::Oid>> {
+        return commit
+            .parents()
+            .map(|x| {
+                apply_view_cached(
+                    repo,
+                    self,
+                    x.id(),
+                    forward_maps,
+                    backward_maps,
+                )
+            })
+            .collect();
+    }
+
+    fn apply_to_tree(
+        &self,
+        repo: &git2::Repository,
+        tree: &git2::Tree,
+        _commit_id: git2::Oid,
+    ) -> git2::Oid {
+        let mut result_tree = empty_tree(&repo);
+
+        tree.walk(git2::TreeWalkMode::PreOrder, |root, entry| {
+            if root == "" {
+                return git2::TreeWalkResult::Ok;
+            }
+
+            let r = replace_subtree(
+                &repo,
+                &Path::new(root).join("JOSH_ORIG_PATH"),
+                repo.blob(format!("{}\n", root).as_bytes()).unwrap(),
+                &result_tree,
+            );
+
+            result_tree =
+                repo.find_tree(r).expect("dirs filter: can't find new tree");
+
+            git2::TreeWalkResult::Ok
+        })
+        .unwrap();
+
+        return result_tree.id();
+    }
+
+    fn unapply(
+        &self,
+        _repo: &git2::Repository,
+        tree: &git2::Tree,
+        _parent_tree: &git2::Tree,
+    ) -> git2::Oid {
+        empty_tree_id()
+    }
+
+    fn filter_spec(&self) -> String {
+        return ":dirs".to_owned();
+    }
+}
+
 struct EmptyView;
 
 impl Filter for EmptyView {
@@ -1027,6 +1095,8 @@ fn make_view(cmd: &str, name: &str) -> Box<dyn Filter> {
         return Box::new(WorkspaceView {
             ws_path: Path::new(name).to_owned(),
         });
+    } else if cmd == "dirs" {
+        return Box::new(DirsView);
     } else if cmd == "" {
         return SubdirView::new(&Path::new(name));
     } else {
