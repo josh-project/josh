@@ -167,7 +167,7 @@ impl Filter for NopView {
     }
 
     fn filter_spec(&self) -> String {
-        return ":nop=nop".to_owned();
+        return ":nop".to_owned();
     }
 }
 
@@ -212,7 +212,7 @@ impl Filter for EmptyView {
     }
 
     fn filter_spec(&self) -> String {
-        return ":empty=empty".to_owned();
+        return ":empty".to_owned();
     }
 }
 
@@ -376,7 +376,7 @@ impl Filter for ChainView {
             &self.first.filter_spec(),
             &self.second.filter_spec()
         )
-        .replacen(":nop=nop", "", 1);
+        .replacen(":nop", "", 1);
     }
 }
 
@@ -1043,6 +1043,10 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> Box<dyn Filter> {
                 inner.next().unwrap().as_str(),
             )
         }
+        Rule::filter_noarg => {
+            let mut inner = pair.into_inner();
+            make_view(inner.next().unwrap().as_str(), "")
+        }
         _ => unreachable!(),
     }
 }
@@ -1097,7 +1101,7 @@ pub fn build_chain(
 
 pub fn parse(filter_spec: &str) -> Box<dyn Filter> {
     if filter_spec == "" {
-        return parse(":nop=nop");
+        return parse(":nop");
     }
     if filter_spec.starts_with("!") || filter_spec.starts_with(":") {
         let mut chain: Option<Box<dyn Filter>> = None;
