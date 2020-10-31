@@ -74,7 +74,7 @@ impl ViewMaps {
                 return oid;
             }
         }
-        if filter_spec == ":nop=nop" {
+        if filter_spec == ":nop" {
             return from;
         }
         if let Some(upsteam) = self.upsteam.clone() {
