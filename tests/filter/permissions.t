@@ -5,7 +5,7 @@
   $ git init 1> /dev/null
 
   $ mkdir a
-  $ echo contents1 > a/file_a1
+  $ echo "cws = :/c" > a/workspace.josh
   $ echo contents1 > a/file_a2
   $ git add a
 
@@ -42,24 +42,18 @@
   $ tree
   .
   |-- a
-  |   `-- JOSH_ORIG_PATH
+  |   |-- JOSH_ORIG_PATH_a
+  |   `-- workspace.josh
   |-- b
-  |   `-- JOSH_ORIG_PATH
+  |   `-- JOSH_ORIG_PATH_b
   `-- c
-      |-- JOSH_ORIG_PATH
+      |-- JOSH_ORIG_PATH_c
       `-- d
-          |-- JOSH_ORIG_PATH
+          |-- JOSH_ORIG_PATH_c%2Fd
           `-- e
-              `-- JOSH_ORIG_PATH
+              `-- JOSH_ORIG_PATH_c%2Fd%2Fe
   
-  5 directories, 5 files
-
-  $ cat $(find . -name JOSH_ORIG_PATH) | sort
-  a/
-  b/
-  c/
-  c/d/
-  c/d/e/
+  5 directories, 6 files
 
   $ josh-filter master:refs/josh/filtered :dirs:/c
 
@@ -70,18 +64,14 @@
   $ git checkout refs/josh/filtered 2> /dev/null
   $ tree
   .
-  |-- JOSH_ORIG_PATH
+  |-- JOSH_ORIG_PATH_c
   `-- d
-      |-- JOSH_ORIG_PATH
+      |-- JOSH_ORIG_PATH_c%2Fd
       `-- e
-          `-- JOSH_ORIG_PATH
+          `-- JOSH_ORIG_PATH_c%2Fd%2Fe
   
   2 directories, 3 files
 
-  $ cat $(find . -name JOSH_ORIG_PATH) | sort
-  c/
-  c/d/
-  c/d/e/
 
   $ josh-filter master:refs/josh/filtered :dirs:/a
 
@@ -91,12 +81,11 @@
   $ git checkout refs/josh/filtered 2> /dev/null
   $ tree
   .
-  `-- JOSH_ORIG_PATH
+  |-- JOSH_ORIG_PATH_a
+  `-- workspace.josh
   
-  0 directories, 1 file
+  0 directories, 2 files
 
-  $ cat $(find . -name JOSH_ORIG_PATH) | sort
-  a/
 
   $ josh-filter master:refs/josh/filtered :dirs:hide=c:prefix=x
 
@@ -108,12 +97,111 @@
   .
   `-- x
       |-- a
-      |   `-- JOSH_ORIG_PATH
+      |   |-- JOSH_ORIG_PATH_a
+      |   `-- workspace.josh
       `-- b
-          `-- JOSH_ORIG_PATH
+          `-- JOSH_ORIG_PATH_b
   
-  3 directories, 2 files
+  3 directories, 3 files
 
-  $ cat $(find . -name JOSH_ORIG_PATH) | sort
-  a/
-  b/
+
+
+  $ git checkout master 2> /dev/null
+  $ git rm -r c/d
+  rm 'c/d/e/file_cd3'
+  rm 'c/d/file_cd'
+  rm 'c/d/file_cd2'
+  $ git commit -m "rm" 1> /dev/null
+
+  $ echo contents2 > a/newfile
+  $ git add a
+  $ git commit -m "add newfile" 1> /dev/null
+
+  $ josh-filter master:refs/josh/filtered :dirs
+
+  $ git log --graph --pretty=%s master
+  * add newfile
+  * rm
+  * add file_cd3
+  * add file_cd2
+  * add dirs
+
+  $ git log --graph --pretty=%s refs/josh/filtered
+  * rm
+  * add file_cd3
+  * add dirs
+
+  $ git checkout refs/josh/filtered 2> /dev/null
+  $ tree
+  .
+  |-- a
+  |   |-- JOSH_ORIG_PATH_a
+  |   `-- workspace.josh
+  `-- b
+      `-- JOSH_ORIG_PATH_b
+  
+  2 directories, 3 files
+
+
+  $ josh-filter master:refs/josh/filtered :dirs:fold
+
+  $ git log --graph --pretty=%s refs/josh/filtered
+  * add file_cd3
+  * add dirs
+
+  $ git checkout refs/josh/filtered 2> /dev/null
+  $ tree
+  .
+  |-- a
+  |   |-- JOSH_ORIG_PATH_a
+  |   `-- workspace.josh
+  |-- b
+  |   `-- JOSH_ORIG_PATH_b
+  `-- c
+      |-- JOSH_ORIG_PATH_c
+      `-- d
+          |-- JOSH_ORIG_PATH_c%2Fd
+          `-- e
+              `-- JOSH_ORIG_PATH_c%2Fd%2Fe
+  
+  5 directories, 6 files
+
+
+  $ josh-filter master:refs/josh/filtered :dirs:/c:fold
+
+  $ git log --graph --pretty=%s refs/josh/filtered
+  * add file_cd3
+  * add dirs
+
+  $ git checkout refs/josh/filtered 2> /dev/null
+  $ tree
+  .
+  |-- JOSH_ORIG_PATH_c
+  `-- d
+      |-- JOSH_ORIG_PATH_c%2Fd
+      `-- e
+          `-- JOSH_ORIG_PATH_c%2Fd%2Fe
+  
+  2 directories, 3 files
+
+
+  $ josh-filter master:refs/josh/filtered :dirs:workspace=a:fold
+
+  $ git log --graph --pretty=%s refs/josh/filtered
+  * add file_cd3
+  * add dirs
+
+  $ git checkout refs/josh/filtered 2> /dev/null
+  $ tree
+  .
+  |-- JOSH_ORIG_PATH_a
+  |-- cws
+  |   |-- JOSH_ORIG_PATH_c
+  |   `-- d
+  |       |-- JOSH_ORIG_PATH_c%2Fd
+  |       `-- e
+  |           `-- JOSH_ORIG_PATH_c%2Fd%2Fe
+  `-- workspace.josh
+  
+  3 directories, 5 files
+

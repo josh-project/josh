@@ -202,16 +202,33 @@ impl Filter for DirsView {
         _commit_id: git2::Oid,
     ) -> git2::Oid {
         let mut result_tree = empty_tree(&repo);
+        let empty_blob = repo.blob("".as_bytes()).unwrap();
 
-        tree.walk(git2::TreeWalkMode::PreOrder, |root, entry| {
+        tree.walk(git2::TreeWalkMode::PostOrder, |root, entry| {
+            if entry.kind() == Some(git2::ObjectType::Blob)
+                && entry.name().unwrap() == "workspace.josh"
+            {
+                let r = replace_subtree(
+                    &repo,
+                    &Path::new(root).join(entry.name().unwrap()),
+                    entry.id(),
+                    &result_tree,
+                );
+
+                result_tree = repo
+                    .find_tree(r)
+                    .expect("dirs filter: can't find new tree");
+            }
+
             if root == "" {
                 return git2::TreeWalkResult::Ok;
             }
 
             let r = replace_subtree(
                 &repo,
-                &Path::new(root).join("JOSH_ORIG_PATH"),
-                repo.blob(format!("{}\n", root).as_bytes()).unwrap(),
+                &Path::new(root)
+                    .join(format!("JOSH_ORIG_PATH_{}", super::to_ns(root))),
+                empty_blob,
                 &result_tree,
             );
 
@@ -236,6 +253,115 @@ impl Filter for DirsView {
 
     fn filter_spec(&self) -> String {
         return ":dirs".to_owned();
+    }
+}
+
+struct FoldView;
+
+impl Filter for FoldView {
+    fn apply_to_parents(
+        &self,
+        repo: &git2::Repository,
+        commit: &git2::Commit,
+        forward_maps: &mut ViewMaps,
+        backward_maps: &mut ViewMaps,
+    ) -> super::JoshResult<Vec<git2::Oid>> {
+        return commit
+            .parents()
+            .map(|x| {
+                apply_view_cached(
+                    repo,
+                    self,
+                    x.id(),
+                    forward_maps,
+                    backward_maps,
+                )
+            })
+            .collect();
+    }
+
+    fn apply_to_commit(
+        &self,
+        repo: &git2::Repository,
+        commit: &git2::Commit,
+        forward_maps: &mut ViewMaps,
+        backward_maps: &mut ViewMaps,
+        _meta: &mut HashMap<String, String>,
+    ) -> super::JoshResult<git2::Oid> {
+        if forward_maps.has(&repo, &self.filter_spec(), commit.id()) {
+            return Ok(forward_maps.get(&self.filter_spec(), commit.id()));
+        }
+
+        let filtered_parent_ids =
+            self.apply_to_parents(repo, commit, forward_maps, backward_maps)?;
+
+        let mut filtered_tree = empty_tree(&repo);
+
+        let mut trees = vec![];
+
+        for parent_id in &filtered_parent_ids {
+            trees.push(repo.find_commit(*parent_id).unwrap().tree_id());
+        }
+
+        trees.push(commit.tree_id());
+
+        for t in trees {
+            repo.find_tree(t)
+                .unwrap()
+                .walk(git2::TreeWalkMode::PostOrder, |root, entry| {
+                    if entry.kind() != Some(git2::ObjectType::Blob) {
+                        return git2::TreeWalkResult::Ok;
+                    }
+
+                    let r = replace_subtree(
+                        &repo,
+                        &Path::new(root).join(entry.name().unwrap()),
+                        entry.id(),
+                        &filtered_tree,
+                    );
+
+                    filtered_tree = repo
+                        .find_tree(r)
+                        .expect("fold filter: can't find new tree");
+
+                    git2::TreeWalkResult::Ok
+                })
+                .unwrap();
+        }
+
+        return create_filtered_commit(
+            repo,
+            commit,
+            filtered_parent_ids,
+            &find_tree_or_error(
+                &repo,
+                filtered_tree.id(),
+                Some(&commit),
+                &self.filter_spec(),
+            ),
+        );
+    }
+
+    fn apply_to_tree(
+        &self,
+        repo: &git2::Repository,
+        tree: &git2::Tree,
+        commit_id: git2::Oid,
+    ) -> git2::Oid {
+        empty_tree_id()
+    }
+
+    fn unapply(
+        &self,
+        _repo: &git2::Repository,
+        tree: &git2::Tree,
+        _parent_tree: &git2::Tree,
+    ) -> git2::Oid {
+        empty_tree_id()
+    }
+
+    fn filter_spec(&self) -> String {
+        return ":fold".to_owned();
     }
 }
 
@@ -1097,6 +1223,8 @@ fn make_view(cmd: &str, name: &str) -> Box<dyn Filter> {
         });
     } else if cmd == "dirs" {
         return Box::new(DirsView);
+    } else if cmd == "fold" {
+        return Box::new(FoldView);
     } else if cmd == "" {
         return SubdirView::new(&Path::new(name));
     } else {
