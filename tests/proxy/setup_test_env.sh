@@ -1,5 +1,5 @@
 export TESTTMP=${PWD}
-killall josh-proxy &> /dev/null
+killall josh-proxy2 &> /dev/null
 killall josh-test-server &> /dev/null
 
 git init --bare ${TESTTMP}/remote/real_repo.git/ &> /dev/null
@@ -21,7 +21,7 @@ ${TESTDIR}/../../target/debug/josh-test-server\
     &> ${TESTTMP}/josh-test-server.out&
 echo $! > ${TESTTMP}/server_pid
 
-${TESTDIR}/../../target/debug/josh-proxy\
+${TESTDIR}/../../target/debug/josh-proxy2\
     --port=8002\
     --local=${TESTTMP}/remote/scratch/\
     --remote=http://localhost:8001\
