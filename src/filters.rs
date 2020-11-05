@@ -291,6 +291,58 @@ impl Filter for DirsView {
     }
 }
 
+fn merged_tree(
+    repo: &git2::Repository,
+    input1: git2::Oid,
+    input2: git2::Oid,
+) -> git2::Oid {
+    if input1 == input2 {
+        return input1;
+    }
+    if input1 == empty_tree_id() {
+        return input2;
+    }
+    if input2 == empty_tree_id() {
+        return input1;
+    }
+
+    if let (Ok(tree1), Ok(tree2)) =
+        (repo.find_tree(input1), repo.find_tree(input2))
+    {
+        let mut result_tree = tree1.clone();
+
+        for entry in tree2.iter() {
+            if let Some(e) = tree1.get_name(entry.name().unwrap()) {
+                let r = replace_child(
+                    &repo,
+                    &Path::new(entry.name().unwrap()),
+                    merged_tree(repo, entry.id(), e.id()),
+                    &result_tree,
+                );
+
+                result_tree = repo
+                    .find_tree(r)
+                    .expect("FOLD filter: can't find new tree");
+            } else {
+                let r = replace_child(
+                    &repo,
+                    &Path::new(entry.name().unwrap()),
+                    entry.id(),
+                    &result_tree,
+                );
+
+                result_tree = repo
+                    .find_tree(r)
+                    .expect("FOLD filter: can't find new tree");
+            }
+        }
+
+        return result_tree.id();
+    }
+
+    return input1;
+}
+
 struct FoldView;
 
 impl Filter for FoldView {
@@ -330,38 +382,15 @@ impl Filter for FoldView {
         let filtered_parent_ids =
             self.apply_to_parents(repo, commit, forward_maps, backward_maps)?;
 
-        let mut filtered_tree = empty_tree(&repo);
-
         let mut trees = vec![];
-
         for parent_id in &filtered_parent_ids {
             trees.push(repo.find_commit(*parent_id).unwrap().tree_id());
         }
 
-        trees.push(commit.tree_id());
+        let mut filtered_tree = commit.tree_id();
 
         for t in trees {
-            repo.find_tree(t)
-                .unwrap()
-                .walk(git2::TreeWalkMode::PostOrder, |root, entry| {
-                    if entry.kind() != Some(git2::ObjectType::Blob) {
-                        return git2::TreeWalkResult::Ok;
-                    }
-
-                    let r = replace_subtree(
-                        &repo,
-                        &Path::new(root).join(entry.name().unwrap()),
-                        entry.id(),
-                        &filtered_tree,
-                    );
-
-                    filtered_tree = repo
-                        .find_tree(r)
-                        .expect("FOLD filter: can't find new tree");
-
-                    git2::TreeWalkResult::Ok
-                })
-                .unwrap();
+            filtered_tree = merged_tree(repo, filtered_tree, t);
         }
 
         return create_filtered_commit(
@@ -370,7 +399,7 @@ impl Filter for FoldView {
             filtered_parent_ids,
             &find_tree_or_error(
                 &repo,
-                filtered_tree.id(),
+                filtered_tree,
                 Some(&commit),
                 &self.filter_spec(),
             ),
