@@ -171,7 +171,75 @@ impl Filter for NopView {
     }
 }
 
-struct DirsView;
+struct DirsView {
+    cache: std::cell::RefCell<
+        std::collections::HashMap<(git2::Oid, String), git2::Oid>,
+    >,
+}
+
+fn striped_tree(
+    repo: &git2::Repository,
+    root: &str,
+    input: git2::Oid,
+    cache: &mut std::collections::HashMap<(git2::Oid, String), git2::Oid>,
+) -> git2::Oid {
+    if let Some(cached) = cache.get(&(input, root.to_string())) {
+        return *cached;
+    }
+
+    let tree = repo.find_tree(input).unwrap();
+    let mut result = empty_tree(&repo);
+
+    for entry in tree.iter() {
+        if entry.kind() == Some(git2::ObjectType::Blob)
+            && entry.name().unwrap() == "workspace.josh"
+        {
+            let r = replace_child(
+                &repo,
+                &Path::new(entry.name().unwrap()),
+                entry.id(),
+                &result,
+            );
+
+            result =
+                repo.find_tree(r).expect("DIRS filter: can't find new tree");
+        }
+
+        if entry.kind() == Some(git2::ObjectType::Tree) {
+            let r = replace_child(
+                &repo,
+                &Path::new(entry.name().unwrap()),
+                striped_tree(
+                    &repo,
+                    &format!("{}/{}", root, entry.name().unwrap()),
+                    entry.id(),
+                    cache,
+                ),
+                &result,
+            );
+
+            result =
+                repo.find_tree(r).expect("DIRS filter: can't find new tree");
+        }
+    }
+
+    if root != "" {
+        let empty_blob = repo.blob("".as_bytes()).unwrap();
+
+        let r = replace_child(
+            &repo,
+            &Path::new(&format!("JOSH_ORIG_PATH_{}", super::to_ns(&root))),
+            empty_blob,
+            &result,
+        );
+
+        result = repo.find_tree(r).expect("DIRS filter: can't find new tree");
+    }
+    let result_id = result.id();
+
+    cache.insert((input, root.to_string()), result_id);
+    return result_id;
+}
 
 impl Filter for DirsView {
     fn apply_to_parents(
@@ -201,45 +269,12 @@ impl Filter for DirsView {
         tree: &git2::Tree,
         _commit_id: git2::Oid,
     ) -> git2::Oid {
-        let mut result_tree = empty_tree(&repo);
-        let empty_blob = repo.blob("".as_bytes()).unwrap();
-
-        tree.walk(git2::TreeWalkMode::PostOrder, |root, entry| {
-            if entry.kind() == Some(git2::ObjectType::Blob)
-                && entry.name().unwrap() == "workspace.josh"
-            {
-                let r = replace_subtree(
-                    &repo,
-                    &Path::new(root).join(entry.name().unwrap()),
-                    entry.id(),
-                    &result_tree,
-                );
-
-                result_tree = repo
-                    .find_tree(r)
-                    .expect("DIRS filter: can't find new tree");
-            }
-
-            if root == "" {
-                return git2::TreeWalkResult::Ok;
-            }
-
-            let r = replace_subtree(
-                &repo,
-                &Path::new(root)
-                    .join(format!("JOSH_ORIG_PATH_{}", super::to_ns(root))),
-                empty_blob,
-                &result_tree,
-            );
-
-            result_tree =
-                repo.find_tree(r).expect("DIRS filter: can't find new tree");
-
-            git2::TreeWalkResult::Ok
-        })
-        .unwrap();
-
-        return result_tree.id();
+        return striped_tree(
+            &repo,
+            "",
+            tree.id(),
+            &mut self.cache.borrow_mut(),
+        );
     }
 
     fn unapply(
@@ -1222,7 +1257,9 @@ fn make_view(cmd: &str, name: &str) -> Box<dyn Filter> {
             ws_path: Path::new(name).to_owned(),
         });
     } else if cmd == "DIRS" {
-        return Box::new(DirsView);
+        return Box::new(DirsView {
+            cache: std::cell::RefCell::new(std::collections::HashMap::new()),
+        });
     } else if cmd == "FOLD" {
         return Box::new(FoldView);
     } else if cmd == "" {
