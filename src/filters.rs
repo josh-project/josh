@@ -217,7 +217,7 @@ impl Filter for DirsView {
 
                 result_tree = repo
                     .find_tree(r)
-                    .expect("dirs filter: can't find new tree");
+                    .expect("DIRS filter: can't find new tree");
             }
 
             if root == "" {
@@ -233,7 +233,7 @@ impl Filter for DirsView {
             );
 
             result_tree =
-                repo.find_tree(r).expect("dirs filter: can't find new tree");
+                repo.find_tree(r).expect("DIRS filter: can't find new tree");
 
             git2::TreeWalkResult::Ok
         })
@@ -252,7 +252,7 @@ impl Filter for DirsView {
     }
 
     fn filter_spec(&self) -> String {
-        return ":dirs".to_owned();
+        return ":DIRS".to_owned();
     }
 }
 
@@ -322,7 +322,7 @@ impl Filter for FoldView {
 
                     filtered_tree = repo
                         .find_tree(r)
-                        .expect("fold filter: can't find new tree");
+                        .expect("FOLD filter: can't find new tree");
 
                     git2::TreeWalkResult::Ok
                 })
@@ -361,7 +361,7 @@ impl Filter for FoldView {
     }
 
     fn filter_spec(&self) -> String {
-        return ":fold".to_owned();
+        return ":FOLD".to_owned();
     }
 }
 
@@ -1221,9 +1221,9 @@ fn make_view(cmd: &str, name: &str) -> Box<dyn Filter> {
         return Box::new(WorkspaceView {
             ws_path: Path::new(name).to_owned(),
         });
-    } else if cmd == "dirs" {
+    } else if cmd == "DIRS" {
         return Box::new(DirsView);
-    } else if cmd == "fold" {
+    } else if cmd == "FOLD" {
         return Box::new(FoldView);
     } else if cmd == "" {
         return SubdirView::new(&Path::new(name));
