@@ -1,5 +1,5 @@
 export TESTTMP=${PWD}
-killall josh-proxy2 >/dev/null 2>&1
+killall josh-proxy >/dev/null 2>&1
 killall josh-test-server >/dev/null 2>&1
 
 git init --bare ${TESTTMP}/remote/real_repo.git/ 1> /dev/null
