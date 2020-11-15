@@ -1,7 +1,7 @@
   $ . ${TESTDIR}/setup_test_env.sh
   $ cd ${TESTTMP}
 
-  $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8001/real_repo.git
+  $ git clone -q http://localhost:8001/real_repo.git
   warning: You appear to have cloned an empty repository.
 
   $ cd real_repo
@@ -35,7 +35,7 @@
    * [new branch]      master -> master
 
 Get /info/refs to trigger rebuilding and pass credentials
-  $ curl -s http://${TESTUSER}:${TESTPASS}@localhost:8002/real_repo.git:/sub1.git/info/refs
+  $ curl -s http://localhost:8002/real_repo.git:/sub1.git/info/refs
   *\trefs/heads/master (esc) (glob)
 
   $ curl -s http://localhost:8002/real_repo.git@refs/heads/master:/sub1.json

@@ -1,7 +1,7 @@
   $ . ${TESTDIR}/setup_test_env.sh
   $ cd ${TESTTMP}
 
-  $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8001/real_repo.git 1> /dev/null
+  $ git clone -q http://localhost:8001/real_repo.git 1> /dev/null
   warning: You appear to have cloned an empty repository.
   $ cd ${TESTTMP}/real_repo
 
@@ -14,7 +14,7 @@
    * [new branch]      master -> master
 
   $ cd ${TESTTMP}
-  $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8002/real_repo.git:/sub1.git
+  $ git clone -q http://localhost:8002/real_repo.git:/sub1.git
   $ cd ${TESTTMP}/real_repo
   $ echo contents2 > sub1/file2
   $ git add sub1

@@ -1,14 +1,14 @@
   $ . ${TESTDIR}/setup_test_env.sh
   $ cd ${TESTTMP}
 
-  $ killall josh-test-server 1> /dev/null
+  $ killall hyper-cgi-test-server 1> /dev/null
   * (glob)
 
-  $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8001/real_repo.git
+  $ git clone -q http://someuser:somepass@localhost:8001/real_repo.git
   fatal: unable to access 'http://localhost:8001/real_repo.git/': Failed to connect to localhost port 8001: Connection refused
   [128]
 
-  $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8002/real_repo.git full_repo
+  $ git clone -q http://someuser:somepass@localhost:8002/real_repo.git full_repo
   fatal: Authentication failed for 'http://localhost:8002/real_repo.git/'
   [128]
 

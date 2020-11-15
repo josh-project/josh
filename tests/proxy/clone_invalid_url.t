@@ -1,7 +1,7 @@
   $ . ${TESTDIR}/setup_test_env.sh
   $ cd ${TESTTMP}
 
-  $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8001/real_repo.git
+  $ git clone -q http://localhost:8001/real_repo.git
   warning: You appear to have cloned an empty repository.
 
   $ cd real_repo
@@ -23,7 +23,7 @@
 
   $ cd ${TESTTMP}
 
-  $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8002/xxx full_repo
+  $ git clone -q http://localhost:8002/xxx full_repo
   fatal: repository 'http://localhost:8002/xxx/' not found
   [128]
 
