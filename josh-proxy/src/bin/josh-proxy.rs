@@ -345,9 +345,7 @@ fn call_service(
     }
 
     let (username, password) = josh::some_or!(josh_proxy::parse_auth(&req), {
-        return Box::new(futures::future::ok(
-            josh_proxy::respond_unauthorized(),
-        ));
+        ("".to_owned(), "".to_owned())
     });
 
     let port = service.port.clone();

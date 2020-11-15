@@ -299,11 +299,13 @@ fn push_head_url(
     let shell = josh::shell::Shell {
         cwd: repo.path().to_owned(),
     };
-    let nurl = {
+    let nurl = if username != "" {
         let splitted: Vec<&str> = url.splitn(2, "://").collect();
         let proto = splitted[0];
         let rest = splitted[1];
         format!("{}://{}@{}", &proto, &username, &rest)
+    } else {
+        url.to_owned()
     };
     let cmd = format!("git push {} '{}'", &nurl, &spec);
     let mut fakehead = repo.reference(&rn, oid, true, "push_head_url")?;
