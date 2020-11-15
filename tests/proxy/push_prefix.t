@@ -32,7 +32,7 @@
      *..*  master -> master (glob)
 
   $ cd ${TESTTMP}/real_repo
-  $ git pull
+  $ git pull --rebase
   From http://localhost:8001/real_repo
      *..*  master     -> origin/master (glob)
   Updating *..* (glob)
@@ -40,7 +40,6 @@
    file2 | 1 +
    1 file changed, 1 insertion(+)
    create mode 100644 file2
-  Current branch master is up to date.
 
   $ tree
   .

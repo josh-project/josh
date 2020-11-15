@@ -157,7 +157,7 @@
 
   $ cd ${TESTTMP}/real_repo
 
-  $ git pull 1> /dev/null
+  $ git pull --rebase 1> /dev/null
   From http://localhost:8001/real_repo
      *..*  master     -> origin/master (glob)
 

@@ -103,7 +103,6 @@
    ws/workspace.josh | 2 ++
    1 file changed, 2 insertions(+)
    create mode 100644 ws/workspace.josh
-  Current branch master is up to date.
 
   $ git log --graph --pretty=%s
   *   Merge from :workspace=ws
@@ -164,7 +163,6 @@
    workspace.josh | 1 +
    2 files changed, 2 insertions(+)
    create mode 100644 d/file3
-  Current branch master is up to date.
 
   $ tree
   .
@@ -335,7 +333,6 @@ Note that d/ is still in the tree but now it is not overlayed
    create mode 100644 sub2/newfile_2
    create mode 100644 ws/d/file3
    create mode 100644 ws/ws_file
-  Current branch master is up to date.
 
   $ git clean -ffdx 1> /dev/null
 

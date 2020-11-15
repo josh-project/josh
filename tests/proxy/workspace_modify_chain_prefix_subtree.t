@@ -210,7 +210,7 @@
      *..*  master -> master* (glob)
   $ curl -s http://localhost:8002/flush
   Flushed credential cache
-  $ git pull 2> /dev/null
+  $ git pull --rebase 2> /dev/null
 
 Note that d/ is still in the tree but now it is not overlayed
   $ tree
@@ -237,7 +237,7 @@ Note that d/ is still in the tree but now it is not overlayed
 
   $ curl -s http://localhost:8002/flush
   Flushed credential cache
-  $ git pull 1> /dev/null
+  $ git pull --rebase 1> /dev/null
   From http://localhost:8001/real_repo
      *..*  master     -> origin/master (glob)
 
