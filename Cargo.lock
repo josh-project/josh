@@ -1097,21 +1097,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "josh-test-server"
-version = "0.3.0"
-dependencies = [
- "base64 0.13.0",
- "clap",
- "futures 0.3.7",
- "hyper 0.13.8",
- "hyper_cgi",
- "mime",
- "tokio 0.2.22",
- "tokio-io",
- "tokio-process",
-]
-
-[[package]]
 name = "js-sys"
 version = "0.3.45"
 source = "registry+https://github.com/rust-lang/crates.io-index"
