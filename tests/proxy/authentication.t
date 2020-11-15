@@ -60,9 +60,6 @@
   $ git clone -q http://x\':bla@localhost:8002/real_repo.git full_repo
   fatal: Authentication failed for 'http://localhost:8002/real_repo.git/'
   [128]
-  $ cd full_repo
-  /bin/sh: line 44: cd: full_repo: No such file or directory
-  [1]
   $ tree
   .
   `-- sub1
