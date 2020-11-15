@@ -2,7 +2,7 @@
   $ cd ${TESTTMP}
 
 
-  $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8001/real_repo.git
+  $ git clone -q http://localhost:8001/real_repo.git
   warning: You appear to have cloned an empty repository.
 
   $ curl -s http://localhost:8002/version
@@ -86,7 +86,7 @@
 
   $ cd ${TESTTMP}
 
-  $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8002/real_repo.git:workspace=ws.git ws
+  $ git clone -q http://localhost:8002/real_repo.git:workspace=ws.git ws
   $ cd ws
   $ tree
   .

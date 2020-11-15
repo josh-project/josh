@@ -1,7 +1,7 @@
   $ . ${TESTDIR}/setup_test_env.sh
 
   $ cd ${TESTTMP}
-  $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8001/real_repo.git 1> /dev/null
+  $ git clone -q http://localhost:8001/real_repo.git 1> /dev/null
   warning: You appear to have cloned an empty repository.
   $ cd real_repo
   $ mkdir sub1
@@ -13,7 +13,7 @@
    * [new branch]      master -> master
 
   $ cd ${TESTTMP}
-  $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8001/real/repo2.git real_repo2 1> /dev/null
+  $ git clone -q http://localhost:8001/real/repo2.git real_repo2 1> /dev/null
   warning: You appear to have cloned an empty repository.
   $ cd real_repo2
   $ mkdir sub1
@@ -25,7 +25,7 @@
    * [new branch]      master -> master
 
   $ cd ${TESTTMP}
-  $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8002/real_repo.git:/sub1.git
+  $ git clone -q http://localhost:8002/real_repo.git:/sub1.git
   $ cd sub1
   $ echo contents2 > file2
   $ git add file2
@@ -42,11 +42,11 @@
 
 This uses a repo that has a path with more than one element, causing nested namespaces.
   $ cd ${TESTTMP}
-  $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8002/real/repo2.git:/sub1.git sub1_repo2
+  $ git clone -q http://localhost:8002/real/repo2.git:/sub1.git sub1_repo2
   $ cd sub1_repo2
 
 Put a double slash in the URL to see that it also works
-  $ git fetch http://${TESTUSER}:${TESTPASS}@localhost:8002/real//repo2.git:/sub1.git
+  $ git fetch http://localhost:8002/real//repo2.git:/sub1.git
   From http://localhost:8002/real//repo2.git:/sub1
    * branch            HEAD       -> FETCH_HEAD
 

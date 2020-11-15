@@ -167,7 +167,265 @@ impl Filter for NopView {
     }
 
     fn filter_spec(&self) -> String {
-        return ":nop=nop".to_owned();
+        return ":nop".to_owned();
+    }
+}
+
+struct DirsView {
+    cache: std::cell::RefCell<
+        std::collections::HashMap<(git2::Oid, String), git2::Oid>,
+    >,
+}
+
+fn striped_tree(
+    repo: &git2::Repository,
+    root: &str,
+    input: git2::Oid,
+    cache: &mut std::collections::HashMap<(git2::Oid, String), git2::Oid>,
+) -> git2::Oid {
+    if let Some(cached) = cache.get(&(input, root.to_string())) {
+        return *cached;
+    }
+
+    let tree = repo.find_tree(input).unwrap();
+    let mut result = empty_tree(&repo);
+
+    for entry in tree.iter() {
+        if entry.kind() == Some(git2::ObjectType::Blob)
+            && entry.name().unwrap() == "workspace.josh"
+        {
+            let r = replace_child(
+                &repo,
+                &Path::new(entry.name().unwrap()),
+                entry.id(),
+                &result,
+            );
+
+            result =
+                repo.find_tree(r).expect("DIRS filter: can't find new tree");
+        }
+
+        if entry.kind() == Some(git2::ObjectType::Tree) {
+            let r = replace_child(
+                &repo,
+                &Path::new(entry.name().unwrap()),
+                striped_tree(
+                    &repo,
+                    &format!("{}/{}", root, entry.name().unwrap()),
+                    entry.id(),
+                    cache,
+                ),
+                &result,
+            );
+
+            result =
+                repo.find_tree(r).expect("DIRS filter: can't find new tree");
+        }
+    }
+
+    if root != "" {
+        let empty_blob = repo.blob("".as_bytes()).unwrap();
+
+        let r = replace_child(
+            &repo,
+            &Path::new(&format!("JOSH_ORIG_PATH_{}", super::to_ns(&root))),
+            empty_blob,
+            &result,
+        );
+
+        result = repo.find_tree(r).expect("DIRS filter: can't find new tree");
+    }
+    let result_id = result.id();
+
+    cache.insert((input, root.to_string()), result_id);
+    return result_id;
+}
+
+impl Filter for DirsView {
+    fn apply_to_parents(
+        &self,
+        repo: &git2::Repository,
+        commit: &git2::Commit,
+        forward_maps: &mut ViewMaps,
+        backward_maps: &mut ViewMaps,
+    ) -> super::JoshResult<Vec<git2::Oid>> {
+        return commit
+            .parents()
+            .map(|x| {
+                apply_view_cached(
+                    repo,
+                    self,
+                    x.id(),
+                    forward_maps,
+                    backward_maps,
+                )
+            })
+            .collect();
+    }
+
+    fn apply_to_tree(
+        &self,
+        repo: &git2::Repository,
+        tree: &git2::Tree,
+        _commit_id: git2::Oid,
+    ) -> git2::Oid {
+        return striped_tree(
+            &repo,
+            "",
+            tree.id(),
+            &mut self.cache.borrow_mut(),
+        );
+    }
+
+    fn unapply(
+        &self,
+        _repo: &git2::Repository,
+        tree: &git2::Tree,
+        _parent_tree: &git2::Tree,
+    ) -> git2::Oid {
+        empty_tree_id()
+    }
+
+    fn filter_spec(&self) -> String {
+        return ":DIRS".to_owned();
+    }
+}
+
+fn merged_tree(
+    repo: &git2::Repository,
+    input1: git2::Oid,
+    input2: git2::Oid,
+) -> git2::Oid {
+    if input1 == input2 {
+        return input1;
+    }
+    if input1 == empty_tree_id() {
+        return input2;
+    }
+    if input2 == empty_tree_id() {
+        return input1;
+    }
+
+    if let (Ok(tree1), Ok(tree2)) =
+        (repo.find_tree(input1), repo.find_tree(input2))
+    {
+        let mut result_tree = tree1.clone();
+
+        for entry in tree2.iter() {
+            if let Some(e) = tree1.get_name(entry.name().unwrap()) {
+                let r = replace_child(
+                    &repo,
+                    &Path::new(entry.name().unwrap()),
+                    merged_tree(repo, entry.id(), e.id()),
+                    &result_tree,
+                );
+
+                result_tree = repo
+                    .find_tree(r)
+                    .expect("FOLD filter: can't find new tree");
+            } else {
+                let r = replace_child(
+                    &repo,
+                    &Path::new(entry.name().unwrap()),
+                    entry.id(),
+                    &result_tree,
+                );
+
+                result_tree = repo
+                    .find_tree(r)
+                    .expect("FOLD filter: can't find new tree");
+            }
+        }
+
+        return result_tree.id();
+    }
+
+    return input1;
+}
+
+struct FoldView;
+
+impl Filter for FoldView {
+    fn apply_to_parents(
+        &self,
+        repo: &git2::Repository,
+        commit: &git2::Commit,
+        forward_maps: &mut ViewMaps,
+        backward_maps: &mut ViewMaps,
+    ) -> super::JoshResult<Vec<git2::Oid>> {
+        return commit
+            .parents()
+            .map(|x| {
+                apply_view_cached(
+                    repo,
+                    self,
+                    x.id(),
+                    forward_maps,
+                    backward_maps,
+                )
+            })
+            .collect();
+    }
+
+    fn apply_to_commit(
+        &self,
+        repo: &git2::Repository,
+        commit: &git2::Commit,
+        forward_maps: &mut ViewMaps,
+        backward_maps: &mut ViewMaps,
+        _meta: &mut HashMap<String, String>,
+    ) -> super::JoshResult<git2::Oid> {
+        if forward_maps.has(&repo, &self.filter_spec(), commit.id()) {
+            return Ok(forward_maps.get(&self.filter_spec(), commit.id()));
+        }
+
+        let filtered_parent_ids =
+            self.apply_to_parents(repo, commit, forward_maps, backward_maps)?;
+
+        let mut trees = vec![];
+        for parent_id in &filtered_parent_ids {
+            trees.push(repo.find_commit(*parent_id).unwrap().tree_id());
+        }
+
+        let mut filtered_tree = commit.tree_id();
+
+        for t in trees {
+            filtered_tree = merged_tree(repo, filtered_tree, t);
+        }
+
+        return create_filtered_commit(
+            repo,
+            commit,
+            filtered_parent_ids,
+            &find_tree_or_error(
+                &repo,
+                filtered_tree,
+                Some(&commit),
+                &self.filter_spec(),
+            ),
+        );
+    }
+
+    fn apply_to_tree(
+        &self,
+        repo: &git2::Repository,
+        tree: &git2::Tree,
+        commit_id: git2::Oid,
+    ) -> git2::Oid {
+        empty_tree_id()
+    }
+
+    fn unapply(
+        &self,
+        _repo: &git2::Repository,
+        tree: &git2::Tree,
+        _parent_tree: &git2::Tree,
+    ) -> git2::Oid {
+        empty_tree_id()
+    }
+
+    fn filter_spec(&self) -> String {
+        return ":FOLD".to_owned();
     }
 }
 
@@ -212,7 +470,7 @@ impl Filter for EmptyView {
     }
 
     fn filter_spec(&self) -> String {
-        return ":empty=empty".to_owned();
+        return ":empty".to_owned();
     }
 }
 
@@ -376,7 +634,7 @@ impl Filter for ChainView {
             &self.first.filter_spec(),
             &self.second.filter_spec()
         )
-        .replacen(":nop=nop", "", 1);
+        .replacen(":nop", "", 1);
     }
 }
 
@@ -1027,6 +1285,12 @@ fn make_view(cmd: &str, name: &str) -> Box<dyn Filter> {
         return Box::new(WorkspaceView {
             ws_path: Path::new(name).to_owned(),
         });
+    } else if cmd == "DIRS" {
+        return Box::new(DirsView {
+            cache: std::cell::RefCell::new(std::collections::HashMap::new()),
+        });
+    } else if cmd == "FOLD" {
+        return Box::new(FoldView);
     } else if cmd == "" {
         return SubdirView::new(&Path::new(name));
     } else {
@@ -1042,6 +1306,10 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> Box<dyn Filter> {
                 inner.next().unwrap().as_str(),
                 inner.next().unwrap().as_str(),
             )
+        }
+        Rule::filter_noarg => {
+            let mut inner = pair.into_inner();
+            make_view(inner.next().unwrap().as_str(), "")
         }
         _ => unreachable!(),
     }
@@ -1097,7 +1365,7 @@ pub fn build_chain(
 
 pub fn parse(filter_spec: &str) -> Box<dyn Filter> {
     if filter_spec == "" {
-        return parse(":nop=nop");
+        return parse(":nop");
     }
     if filter_spec.starts_with("!") || filter_spec.starts_with(":") {
         let mut chain: Option<Box<dyn Filter>> = None;

@@ -10,7 +10,7 @@ should still be included.
   $ . ${TESTDIR}/setup_test_env.sh
   $ cd ${TESTTMP}
 
-  $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8001/real_repo.git
+  $ git clone -q http://localhost:8001/real_repo.git
   warning: You appear to have cloned an empty repository.
 
   $ cd real_repo
@@ -59,7 +59,7 @@ should still be included.
 
   $ cd ${TESTTMP}
 
-  $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8002/real_repo.git full_repo
+  $ git clone -q http://localhost:8002/real_repo.git full_repo
 
   $ cd full_repo
 
@@ -88,7 +88,7 @@ should still be included.
   |   |       |-- %3A%2Fsub1
   |   |       |   `-- heads
   |   |       |       `-- master
-  |   |       `-- %3Anop=nop
+  |   |       `-- %3Anop
   |   |           `-- heads
   |   |               `-- master
   |   `-- upstream

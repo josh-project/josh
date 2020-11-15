@@ -2,7 +2,7 @@
   $ . ${TESTDIR}/setup_test_env.sh
   $ cd ${TESTTMP}
 
-  $ git clone -q http://admin@localhost:8001/real_repo.git
+  $ git clone -q http://localhost:8001/real_repo.git
   warning: You appear to have cloned an empty repository.
 
   $ cd real_repo
@@ -35,20 +35,15 @@
 
   $ cd ${TESTTMP}
 
-  $ cat ${TESTTMP}/josh-test-server.out | grep CREDENTIALS | uniq
-  CREDENTIALS OK "admin" ""
+  $ export TESTPASS=$(curl -s http://localhost:8001/_make_user/testuser)
 
-  $ git clone -q http://${TESTUSER}:wrongpass@localhost:8002/real_repo.git full_repo
+  $ git clone -q http://testuser:wrongpass@localhost:8002/real_repo.git full_repo
   fatal: Authentication failed for 'http://localhost:8002/real_repo.git/'
   [128]
 
-
   $ rm -Rf full_repo
 
-  $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8002/real_repo.git full_repo
-
-  $ cat ${TESTTMP}/josh-test-server.out | grep CREDENTIALS | grep ${TESTUSER} | grep ${TESTPASS} | uniq
-  CREDENTIALS OK "*" "*" (glob)
+  $ git clone -q http://testuser:${TESTPASS}@localhost:8002/real_repo.git full_repo
 
   $ cd full_repo
   $ tree
@@ -66,7 +61,7 @@
   fatal: Authentication failed for 'http://localhost:8002/real_repo.git/'
   [128]
   $ cd full_repo
-  /bin/sh: line 46: cd: full_repo: No such file or directory
+  /bin/sh: line 44: cd: full_repo: No such file or directory
   [1]
   $ tree
   .
@@ -84,7 +79,7 @@
   |   |       |-- %3A%2Fsub1
   |   |       |   `-- heads
   |   |       |       `-- master
-  |   |       `-- %3Anop=nop
+  |   |       `-- %3Anop
   |   |           `-- heads
   |   |               `-- master
   |   `-- upstream

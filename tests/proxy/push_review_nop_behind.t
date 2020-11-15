@@ -5,7 +5,7 @@ This is a regression test for that problem.
   $ . ${TESTDIR}/setup_test_env.sh
   $ cd ${TESTTMP}
 
-  $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8001/real_repo.git 1> /dev/null
+  $ git clone -q http://localhost:8001/real_repo.git 1> /dev/null
   warning: You appear to have cloned an empty repository.
   $ cd ${TESTTMP}/real_repo
 
@@ -23,7 +23,7 @@ This is a regression test for that problem.
 
   $ cd ${TESTTMP}
 
-  $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8002/real_repo.git vrepo
+  $ git clone -q http://localhost:8002/real_repo.git vrepo
   $ cd ${TESTTMP}/vrepo
 
   $ git checkout HEAD~1 2> /dev/null
@@ -57,7 +57,7 @@ This is a regression test for that problem.
   |-- josh
   |   |-- filtered
   |   |   `-- real_repo.git
-  |   |       `-- %3Anop=nop
+  |   |       `-- %3Anop
   |   |           `-- heads
   |   |               `-- master
   |   `-- upstream

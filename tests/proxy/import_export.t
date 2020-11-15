@@ -6,7 +6,7 @@
   $ git config -f ${TESTTMP}/remote/repo2.git/config http.receivepack true
 
   $ cd ${TESTTMP}
-  $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8001/repo1.git
+  $ git clone -q http://localhost:8001/repo1.git
   warning: You appear to have cloned an empty repository.
   $ cd ${TESTTMP}/repo1 1> /dev/null
   $ echo content1 > file1 1> /dev/null
@@ -17,7 +17,7 @@
    * [new branch]      master -> master
 
   $ cd ${TESTTMP}
-  $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8001/repo2.git
+  $ git clone -q http://localhost:8001/repo2.git
   warning: You appear to have cloned an empty repository.
   $ cd ${TESTTMP}/repo2 1> /dev/null
   $ echo content2 > file2 1> /dev/null
@@ -28,7 +28,7 @@
    * [new branch]      master -> master
 
   $ cd ${TESTTMP}
-  $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8001/real_repo.git 1> /dev/null
+  $ git clone -q http://localhost:8001/real_repo.git 1> /dev/null
   warning: You appear to have cloned an empty repository.
   $ cd real_repo
   $ git commit --allow-empty -m "initial" 1> /dev/null
@@ -38,7 +38,7 @@
 
   $ curl -s http://localhost:8002/flush
   Flushed credential cache
-  $ git fetch --force http://${TESTUSER}:${TESTPASS}@localhost:8002/repo1.git!+/repo1.git master:repo1_in_subdir 1> /dev/null
+  $ git fetch --force http://localhost:8002/repo1.git!+/repo1.git master:repo1_in_subdir 1> /dev/null
   warning: no common commits
   From http://localhost:8002/repo1.git!+/repo1
    * [new branch]      master     -> repo1_in_subdir
@@ -55,7 +55,7 @@
 
   $ curl -s http://localhost:8002/flush
   Flushed credential cache
-  $ git fetch --force http://${TESTUSER}:${TESTPASS}@localhost:8002/repo2.git!+/repo2.git master:repo2_in_subdir 1> /dev/null
+  $ git fetch --force http://localhost:8002/repo2.git!+/repo2.git master:repo2_in_subdir 1> /dev/null
   From http://localhost:8002/repo2.git!+/repo2
    * [new branch]      master     -> repo2_in_subdir
   $ git merge -m "Combine" repo2_in_subdir --allow-unrelated-histories 1> /dev/null
@@ -106,7 +106,7 @@
   $ git push 2> /dev/null
 
   $ cd ${TESTTMP}
-  $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8002/real_repo.git!/repo1.git r1 1> /dev/null
+  $ git clone -q http://localhost:8002/real_repo.git!/repo1.git r1 1> /dev/null
   $ cd r1
 
   $ git log --graph --pretty=%s
@@ -133,7 +133,7 @@
   Already on 'master'
   $ curl -s http://localhost:8002/flush
   Flushed credential cache
-  $ git fetch --force http://${TESTUSER}:${TESTPASS}@localhost:8002/repo1.git!+/repo1.git master:repo1_in_subdir 2> /dev/null
+  $ git fetch --force http://localhost:8002/repo1.git!+/repo1.git master:repo1_in_subdir 2> /dev/null
   $ git log --graph --pretty=%s repo1_in_subdir
   * add new_file2
   * initial1
@@ -203,7 +203,7 @@
   Already on 'master'
   $ curl -s http://localhost:8002/flush
   Flushed credential cache
-  $ git fetch --force http://${TESTUSER}:${TESTPASS}@localhost:8002/repo1.git!+/repo1.git master:repo1_in_subdir 2> /dev/null
+  $ git fetch --force http://localhost:8002/repo1.git!+/repo1.git master:repo1_in_subdir 2> /dev/null
   $ git log --graph --pretty=%s repo1_in_subdir
   * add great new_file2
   * initial1
@@ -262,7 +262,7 @@ Empty roots should not be dropped -> sha1 equal guarantee for "nop"
   $ cd ${TESTTMP}
   $ curl -s http://localhost:8002/flush
   Flushed credential cache
-  $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8002/real_repo.git rr 1> /dev/null
+  $ git clone -q http://localhost:8002/real_repo.git rr 1> /dev/null
   $ cd rr
   $ git log --graph --pretty=%s
   *   Import 3
@@ -305,7 +305,7 @@ Empty roots should not be dropped -> sha1 equal guarantee for "nop"
   |   |   |   |-- %3A%2Frepo2
   |   |   |   |   `-- heads
   |   |   |   |       `-- master
-  |   |   |   `-- %3Anop=nop
+  |   |   |   `-- %3Anop
   |   |   |       `-- heads
   |   |   |           `-- master
   |   |   |-- repo1.git

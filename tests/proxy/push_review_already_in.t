@@ -5,7 +5,7 @@ test for that.
   $ . ${TESTDIR}/setup_test_env.sh
   $ cd ${TESTTMP}
 
-  $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8001/real_repo.git 1> /dev/null
+  $ git clone -q http://localhost:8001/real_repo.git 1> /dev/null
   warning: You appear to have cloned an empty repository.
   $ cd ${TESTTMP}/real_repo
 
@@ -23,7 +23,7 @@ test for that.
 
   $ cd ${TESTTMP}
 
-  $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8002/real_repo.git vrepo
+  $ git clone -q http://localhost:8002/real_repo.git vrepo
   $ cd ${TESTTMP}/vrepo
   $ git push origin master:refs/for/master
   remote: josh-proxy        
@@ -50,7 +50,7 @@ test for that.
   |-- josh
   |   |-- filtered
   |   |   `-- real_repo.git
-  |   |       `-- %3Anop=nop
+  |   |       `-- %3Anop
   |   |           `-- heads
   |   |               `-- master
   |   `-- upstream

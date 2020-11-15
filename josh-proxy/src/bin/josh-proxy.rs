@@ -303,7 +303,7 @@ fn call_service(
     /* } */
 
     let parsed_url = {
-        let nop_path = path.replacen(".git", ".git:nop=nop.git", 1);
+        let nop_path = path.replacen(".git", ".git:nop.git", 1);
         if let Some(parsed_url) = TransformedRepoUrl::from_str(&path) {
             parsed_url
         } else if let Some(parsed_url) = TransformedRepoUrl::from_str(&nop_path)

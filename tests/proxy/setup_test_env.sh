@@ -1,6 +1,7 @@
 export TESTTMP=${PWD}
 killall josh-proxy >/dev/null 2>&1
-killall josh-test-server >/dev/null 2>&1
+
+killall hyper-cgi-test-server >/dev/null 2>&1
 
 git init --bare ${TESTTMP}/remote/real_repo.git/ 1> /dev/null
 git config -f ${TESTTMP}/remote/real_repo.git/config http.receivepack true
@@ -8,17 +9,16 @@ git init --bare ${TESTTMP}/remote/real/repo2.git/ 1> /dev/null
 git config -f ${TESTTMP}/remote/real/repo2.git/config http.receivepack true
 export RUST_LOG=debug
 
-export TESTPASS=$(openssl rand -hex 5)
-export TESTUSER=$(openssl rand -hex 5)
+export GIT_CONFIG_NOSYSTEM=1
 
 PATH=${TESTDIR}/../../target/debug/:${PATH}
 
-${TESTDIR}/../../target/debug/josh-test-server\
+GIT_DIR=${TESTTMP}/remote/ GIT_PROJECT_ROOT=${TESTTMP}/remote/ GIT_HTTP_EXPORT_ALL=1 hyper-cgi-test-server\
     --port=8001\
-    --local=${TESTTMP}/remote/\
-    --username=${TESTUSER}\
-    --password=${TESTPASS}\
-    > ${TESTTMP}/josh-test-server.out 2>&1 &
+    --dir=${TESTTMP}/remote/\
+    --cmd=git\
+    --args=http-backend\
+    > ${TESTTMP}/hyper-cgi-test-server.out 2>&1 &
 echo $! > ${TESTTMP}/server_pid
 
 ${TESTDIR}/../../target/debug/josh-proxy2\

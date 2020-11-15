@@ -2,7 +2,7 @@
 
 
   $ cd ${TESTTMP}
-  $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8001/real_repo.git 1> /dev/null
+  $ git clone -q http://localhost:8001/real_repo.git 1> /dev/null
   warning: You appear to have cloned an empty repository.
   $ cd real_repo
 
@@ -34,7 +34,7 @@
   To http://localhost:8001/real_repo.git
    * [new branch]      master -> master
 
-  $ git fetch --force http://${TESTUSER}:${TESTPASS}@localhost:8002/real_repo.git:prefix=sub1.git master:joined 1> /dev/null
+  $ git fetch --force http://localhost:8002/real_repo.git:prefix=sub1.git master:joined 1> /dev/null
   From http://localhost:8002/real_repo.git:prefix=sub1
    * [new branch]      master     -> joined
 

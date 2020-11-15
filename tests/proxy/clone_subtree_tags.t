@@ -1,7 +1,7 @@
   $ . ${TESTDIR}/setup_test_env.sh
   $ cd ${TESTTMP}
 
-  $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8001/real_repo.git
+  $ git clone -q http://localhost:8001/real_repo.git
   warning: You appear to have cloned an empty repository.
 
   $ cd real_repo
@@ -68,7 +68,7 @@
 
   $ cd ${TESTTMP}
 
-  $ git clone -q http://${TESTUSER}:${TESTPASS}@localhost:8002/real_repo.git:/sub1.git sub1
+  $ git clone -q http://localhost:8002/real_repo.git:/sub1.git sub1
 
   $ cd sub1
 
@@ -89,7 +89,7 @@
   $ cat file1
   contents1
 
-  $ git fetch http://${TESTUSER}:${TESTPASS}@localhost:8002/real_repo.git@refs/tags/a_tag:/sub1.git HEAD
+  $ git fetch http://localhost:8002/real_repo.git@refs/tags/a_tag:/sub1.git HEAD
   From http://localhost:8002/real_repo.git@refs/tags/a_tag:/sub1
    * branch            HEAD       -> FETCH_HEAD
 
