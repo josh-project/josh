@@ -25,6 +25,11 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         .arg(clap::Arg::with_name("update").long("update").takes_value(true))
         .arg(clap::Arg::with_name("squash").long("squash"))
         .arg(clap::Arg::with_name("reverse").long("reverse"))
+        .arg(
+            clap::Arg::with_name("check-permission")
+                .long("check-permission")
+                .takes_value(true),
+        )
         .arg(clap::Arg::with_name("infofile").long("infofile"))
         .arg(clap::Arg::with_name("version").long("version"))
         .arg(
@@ -92,12 +97,18 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         }
 
         let reverse = args.is_present("reverse");
+        let check_permissions = args.is_present("check-permission");
 
         if args.is_present("squash") {
             viewobj = josh::build_chain(
                 josh::filters::parse(&format!(":cutoff={}", &src)),
                 viewobj,
             );
+        }
+
+        if check_permissions {
+            viewobj = josh::build_chain(josh::filters::parse(":DIRS"), viewobj);
+            viewobj = josh::build_chain(viewobj, josh::filters::parse(":FOLD"));
         }
 
         let t = if reverse {
@@ -116,10 +127,52 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         josh::apply_filter_to_refs(
             &repo,
             &*viewobj,
-            &[(src.clone(), t)],
+            &[(src.clone(), t.clone())],
             &mut fm,
             &mut backward_maps.write().unwrap(),
         )?;
+
+        let mut all_dirs = vec![];
+
+        if check_permissions {
+            let result_tree = repo.find_reference(&t)?.peel_to_tree()?;
+
+            result_tree.walk(git2::TreeWalkMode::PreOrder, |_, entry| {
+                let name = entry.name().unwrap();
+                if name.starts_with("JOSH_ORIG_PATH_") {
+                    let dirname = format!(
+                        "{}",
+                        josh::from_ns(&name.replacen("JOSH_ORIG_PATH_", "", 1))
+                    );
+                    all_dirs.push(dirname);
+                }
+                git2::TreeWalkResult::Ok
+            })?;
+        }
+
+        let mut dedup = vec![];
+
+        for w in all_dirs.as_slice().windows(2) {
+            if let [a, b, ..] = w {
+                if !b.starts_with(a) {
+                    dedup.push(a.to_owned());
+                }
+            }
+        }
+
+        if let Some(cp) = args.value_of("check-permission") {
+            let permission_regex = regex::Regex::new(cp)?;
+
+            let mut allowed = dedup.len() != 0;
+            for d in dedup.iter() {
+                let m = permission_regex.is_match(&d);
+                if !m {
+                    allowed = false;
+                    println!("missing permission for: {}", &d);
+                }
+            }
+            println!("Allowed = {:?}", allowed);
+        }
 
         if reverse {
             let new = repo.revparse_single(&target).unwrap().id();
