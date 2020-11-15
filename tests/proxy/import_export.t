@@ -170,13 +170,12 @@
   $ cd ${TESTTMP}/r1
   $ curl -s http://localhost:8002/flush
   Flushed credential cache
-  $ git pull 2> /dev/null
+  $ git pull --rebase 2> /dev/null
   Updating *..* (glob)
   Fast-forward
    new_file2 | 0
    1 file changed, 0 insertions(+), 0 deletions(-)
    create mode 100644 new_file2
-  Current branch master is up to date.
   $ tree
   .
   |-- file1
@@ -234,10 +233,9 @@
   $ cd ${TESTTMP}/r1
   $ curl -s http://localhost:8002/flush
   Flushed credential cache
-  $ git pull 2> /dev/null
+  $ git pull --rebase 2> /dev/null
   Updating *..* (glob)
   Fast-forward
-  Current branch master is up to date.
   $ tree
   .
   |-- file1
