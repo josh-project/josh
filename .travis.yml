@@ -7,9 +7,11 @@ before_script:
   - pip install 'travis-cargo<0.2' --user && export PATH=$HOME/.local/bin:$PATH
   - pip install 'cram' --user
   - export RUST_LOG=josh=debug
+  - cargo install hyper_cgi --features=test-server
 script:
   - export CARGO_TARGET_DIR=`pwd`/target
-  - cargo build --workspace
+  - cargo build --all
+  - cram tests/**/*.t
 notifications:
   email:
     on_success: never
