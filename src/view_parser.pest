@@ -5,11 +5,11 @@ CMD_END = _{("="|"/")}
 
 filter_spec = { (filter | filter_noarg)* }
 
-filter = { CMD_START ~ cmd ~ CMD_END ~ argument }
+filter = { CMD_START ~ cmd ~ CMD_END ~ (argument ~ ("," ~ argument)*)? }
 
 filter_noarg = { CMD_START ~ cmd }
 
-argument = { (!(CMD_START | NEWLINE) ~ ANY)+ }
+argument = { (!(CMD_START | NEWLINE | ",") ~ ANY)+ }
 
 cmd = { (!(CMD_END | NEWLINE | CMD_START) ~ ANY)* }
 
