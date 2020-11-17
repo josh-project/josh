@@ -283,7 +283,7 @@ pub fn refresh_known_filters(
                 &refs,
                 &mut fm,
                 &mut bm,
-            );
+            )?;
         }
         info!("updated {} refs for {:?}", updated_count, upstream_repo);
 
