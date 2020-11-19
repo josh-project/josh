@@ -78,7 +78,7 @@ pub trait Filter {
             return Ok(forward_maps.get(&self.filter_spec(), commit.id()));
         }
         let filtered_tree =
-            self.apply_to_tree(&repo, &commit.tree()?, commit.id());
+            self.apply_to_tree(&repo, &commit.tree()?, commit.id())?;
 
         let filtered_parent_ids =
             self.apply_to_parents(repo, commit, forward_maps, backward_maps)?;
@@ -109,14 +109,14 @@ pub trait Filter {
         repo: &git2::Repository,
         tree: &git2::Tree,
         commit_id: git2::Oid,
-    ) -> git2::Oid;
+    ) -> super::JoshResult<git2::Oid>;
 
     fn unapply(
         &self,
         repo: &git2::Repository,
         tree: &git2::Tree,
         parent_tree: &git2::Tree,
-    ) -> git2::Oid;
+    ) -> super::JoshResult<git2::Oid>;
 
     fn prefixes(&self) -> HashMap<String, String> {
         HashMap::new()
@@ -153,8 +153,8 @@ impl Filter for NopView {
         _repo: &git2::Repository,
         tree: &git2::Tree,
         _commit_id: git2::Oid,
-    ) -> git2::Oid {
-        tree.id()
+    ) -> super::JoshResult<git2::Oid> {
+        Ok(tree.id())
     }
 
     fn unapply(
@@ -162,8 +162,8 @@ impl Filter for NopView {
         _repo: &git2::Repository,
         tree: &git2::Tree,
         _parent_tree: &git2::Tree,
-    ) -> git2::Oid {
-        tree.id()
+    ) -> super::JoshResult<git2::Oid> {
+        Ok(tree.id())
     }
 
     fn filter_spec(&self) -> String {
@@ -182,24 +182,25 @@ fn striped_tree(
     root: &str,
     input: git2::Oid,
     cache: &mut std::collections::HashMap<(git2::Oid, String), git2::Oid>,
-) -> git2::Oid {
+) -> super::JoshResult<git2::Oid> {
     if let Some(cached) = cache.get(&(input, root.to_string())) {
-        return *cached;
+        return Ok(*cached);
     }
 
-    let tree = repo.find_tree(input).unwrap();
+    let tree = repo.find_tree(input)?;
     let mut result = empty_tree(&repo);
 
     for entry in tree.iter() {
         if entry.kind() == Some(git2::ObjectType::Blob)
-            && entry.name().unwrap() == "workspace.josh"
+            && entry.name().ok_or(super::josh_error("no name"))?
+                == "workspace.josh"
         {
             let r = replace_child(
                 &repo,
-                &Path::new(entry.name().unwrap()),
+                &Path::new(entry.name().ok_or(super::josh_error("no name"))?),
                 entry.id(),
                 &result,
-            );
+            )?;
 
             result =
                 repo.find_tree(r).expect("DIRS filter: can't find new tree");
@@ -208,15 +209,19 @@ fn striped_tree(
         if entry.kind() == Some(git2::ObjectType::Tree) {
             let r = replace_child(
                 &repo,
-                &Path::new(entry.name().unwrap()),
+                &Path::new(entry.name().ok_or(super::josh_error("no name"))?),
                 striped_tree(
                     &repo,
-                    &format!("{}/{}", root, entry.name().unwrap()),
+                    &format!(
+                        "{}/{}",
+                        root,
+                        entry.name().ok_or(super::josh_error("no name"))?
+                    ),
                     entry.id(),
                     cache,
-                ),
+                )?,
                 &result,
-            );
+            )?;
 
             result =
                 repo.find_tree(r).expect("DIRS filter: can't find new tree");
@@ -224,21 +229,21 @@ fn striped_tree(
     }
 
     if root != "" {
-        let empty_blob = repo.blob("".as_bytes()).unwrap();
+        let empty_blob = repo.blob("".as_bytes())?;
 
         let r = replace_child(
             &repo,
             &Path::new(&format!("JOSH_ORIG_PATH_{}", super::to_ns(&root))),
             empty_blob,
             &result,
-        );
+        )?;
 
         result = repo.find_tree(r).expect("DIRS filter: can't find new tree");
     }
     let result_id = result.id();
 
     cache.insert((input, root.to_string()), result_id);
-    return result_id;
+    return Ok(result_id);
 }
 
 impl Filter for DirsView {
@@ -268,7 +273,7 @@ impl Filter for DirsView {
         repo: &git2::Repository,
         tree: &git2::Tree,
         _commit_id: git2::Oid,
-    ) -> git2::Oid {
+    ) -> super::JoshResult<git2::Oid> {
         return striped_tree(
             &repo,
             "",
@@ -280,10 +285,10 @@ impl Filter for DirsView {
     fn unapply(
         &self,
         _repo: &git2::Repository,
-        tree: &git2::Tree,
+        _tree: &git2::Tree,
         _parent_tree: &git2::Tree,
-    ) -> git2::Oid {
-        empty_tree_id()
+    ) -> super::JoshResult<git2::Oid> {
+        Ok(empty_tree_id())
     }
 
     fn filter_spec(&self) -> String {
@@ -295,15 +300,15 @@ fn merged_tree(
     repo: &git2::Repository,
     input1: git2::Oid,
     input2: git2::Oid,
-) -> git2::Oid {
+) -> super::JoshResult<git2::Oid> {
     if input1 == input2 {
-        return input1;
+        return Ok(input1);
     }
     if input1 == empty_tree_id() {
-        return input2;
+        return Ok(input2);
     }
     if input2 == empty_tree_id() {
-        return input1;
+        return Ok(input1);
     }
 
     if let (Ok(tree1), Ok(tree2)) =
@@ -312,13 +317,17 @@ fn merged_tree(
         let mut result_tree = tree1.clone();
 
         for entry in tree2.iter() {
-            if let Some(e) = tree1.get_name(entry.name().unwrap()) {
+            if let Some(e) = tree1
+                .get_name(entry.name().ok_or(super::josh_error("no name"))?)
+            {
                 let r = replace_child(
                     &repo,
-                    &Path::new(entry.name().unwrap()),
-                    merged_tree(repo, entry.id(), e.id()),
+                    &Path::new(
+                        entry.name().ok_or(super::josh_error("no name"))?,
+                    ),
+                    merged_tree(repo, entry.id(), e.id())?,
                     &result_tree,
-                );
+                )?;
 
                 result_tree = repo
                     .find_tree(r)
@@ -326,10 +335,12 @@ fn merged_tree(
             } else {
                 let r = replace_child(
                     &repo,
-                    &Path::new(entry.name().unwrap()),
+                    &Path::new(
+                        entry.name().ok_or(super::josh_error("no name"))?,
+                    ),
                     entry.id(),
                     &result_tree,
-                );
+                )?;
 
                 result_tree = repo
                     .find_tree(r)
@@ -337,10 +348,10 @@ fn merged_tree(
             }
         }
 
-        return result_tree.id();
+        return Ok(result_tree.id());
     }
 
-    return input1;
+    return Ok(input1);
 }
 
 struct FoldView;
@@ -384,13 +395,13 @@ impl Filter for FoldView {
 
         let mut trees = vec![];
         for parent_id in &filtered_parent_ids {
-            trees.push(repo.find_commit(*parent_id).unwrap().tree_id());
+            trees.push(repo.find_commit(*parent_id)?.tree_id());
         }
 
         let mut filtered_tree = commit.tree_id();
 
         for t in trees {
-            filtered_tree = merged_tree(repo, filtered_tree, t);
+            filtered_tree = merged_tree(repo, filtered_tree, t)?;
         }
 
         return create_filtered_commit(
@@ -408,20 +419,20 @@ impl Filter for FoldView {
 
     fn apply_to_tree(
         &self,
-        repo: &git2::Repository,
-        tree: &git2::Tree,
-        commit_id: git2::Oid,
-    ) -> git2::Oid {
-        empty_tree_id()
+        _repo: &git2::Repository,
+        _tree: &git2::Tree,
+        _commit_id: git2::Oid,
+    ) -> super::JoshResult<git2::Oid> {
+        Ok(empty_tree_id())
     }
 
     fn unapply(
         &self,
         _repo: &git2::Repository,
-        tree: &git2::Tree,
+        _tree: &git2::Tree,
         _parent_tree: &git2::Tree,
-    ) -> git2::Oid {
-        empty_tree_id()
+    ) -> super::JoshResult<git2::Oid> {
+        Ok(empty_tree_id())
     }
 
     fn filter_spec(&self) -> String {
@@ -456,8 +467,8 @@ impl Filter for EmptyView {
         _repo: &git2::Repository,
         _tree: &git2::Tree,
         _commit_id: git2::Oid,
-    ) -> git2::Oid {
-        empty_tree_id()
+    ) -> super::JoshResult<git2::Oid> {
+        Ok(empty_tree_id())
     }
 
     fn unapply(
@@ -465,8 +476,8 @@ impl Filter for EmptyView {
         _repo: &git2::Repository,
         _tree: &git2::Tree,
         parent_tree: &git2::Tree,
-    ) -> git2::Oid {
-        parent_tree.id()
+    ) -> super::JoshResult<git2::Oid> {
+        Ok(parent_tree.id())
     }
 
     fn filter_spec(&self) -> String {
@@ -525,8 +536,8 @@ impl Filter for CutoffView {
         _repo: &git2::Repository,
         tree: &git2::Tree,
         _commit_id: git2::Oid,
-    ) -> git2::Oid {
-        tree.id()
+    ) -> super::JoshResult<git2::Oid> {
+        Ok(tree.id())
     }
 
     fn unapply(
@@ -534,8 +545,8 @@ impl Filter for CutoffView {
         _repo: &git2::Repository,
         tree: &git2::Tree,
         _parent_tree: &git2::Tree,
-    ) -> git2::Oid {
-        tree.id()
+    ) -> super::JoshResult<git2::Oid> {
+        Ok(tree.id())
     }
 
     fn filter_spec(&self) -> String {
@@ -602,12 +613,12 @@ impl Filter for ChainView {
         repo: &git2::Repository,
         tree: &git2::Tree,
         commit_id: git2::Oid,
-    ) -> git2::Oid {
-        let r = self.first.apply_to_tree(&repo, &tree, commit_id);
+    ) -> super::JoshResult<git2::Oid> {
+        let r = self.first.apply_to_tree(&repo, &tree, commit_id)?;
         if let Ok(t) = repo.find_tree(r) {
             return self.second.apply_to_tree(&repo, &t, commit_id);
         }
-        return empty_tree_id();
+        return Ok(empty_tree_id());
     }
 
     fn unapply(
@@ -615,17 +626,13 @@ impl Filter for ChainView {
         repo: &git2::Repository,
         tree: &git2::Tree,
         parent_tree: &git2::Tree,
-    ) -> git2::Oid {
+    ) -> super::JoshResult<git2::Oid> {
         let p =
             self.first
-                .apply_to_tree(&repo, &parent_tree, git2::Oid::zero());
-        let p = repo.find_tree(p).expect("no tree");
-        let a = self.second.unapply(&repo, &tree, &p);
-        self.first.unapply(
-            &repo,
-            &repo.find_tree(a).expect("no tree"),
-            &parent_tree,
-        )
+                .apply_to_tree(&repo, &parent_tree, git2::Oid::zero())?;
+        let p = repo.find_tree(p)?;
+        let a = self.second.unapply(&repo, &tree, &p)?;
+        self.first.unapply(&repo, &repo.find_tree(a)?, &parent_tree)
     }
 
     fn filter_spec(&self) -> String {
@@ -691,11 +698,11 @@ impl Filter for SubdirView {
         _repo: &git2::Repository,
         tree: &git2::Tree,
         _commit_id: git2::Oid,
-    ) -> git2::Oid {
-        return tree
+    ) -> super::JoshResult<git2::Oid> {
+        return Ok(tree
             .get_path(&self.path)
             .map(|x| x.id())
-            .unwrap_or(empty_tree_id());
+            .unwrap_or(empty_tree_id()));
     }
 
     fn unapply(
@@ -703,7 +710,7 @@ impl Filter for SubdirView {
         repo: &git2::Repository,
         tree: &git2::Tree,
         parent_tree: &git2::Tree,
-    ) -> git2::Oid {
+    ) -> super::JoshResult<git2::Oid> {
         replace_subtree(&repo, &self.path, tree.id(), &parent_tree)
     }
 
@@ -742,7 +749,7 @@ impl Filter for PrefixView {
         repo: &git2::Repository,
         tree: &git2::Tree,
         _commit_id: git2::Oid,
-    ) -> git2::Oid {
+    ) -> super::JoshResult<git2::Oid> {
         replace_subtree(&repo, &self.prefix, tree.id(), &empty_tree(&repo))
     }
 
@@ -751,11 +758,11 @@ impl Filter for PrefixView {
         _repo: &git2::Repository,
         tree: &git2::Tree,
         _parent_tree: &git2::Tree,
-    ) -> git2::Oid {
-        return tree
+    ) -> super::JoshResult<git2::Oid> {
+        return Ok(tree
             .get_path(&self.prefix)
             .map(|x| x.id())
-            .unwrap_or(empty_tree_id());
+            .unwrap_or(empty_tree_id()));
     }
 
     fn filter_spec(&self) -> String {
@@ -793,7 +800,7 @@ impl Filter for HideView {
         repo: &git2::Repository,
         tree: &git2::Tree,
         _commit_id: git2::Oid,
-    ) -> git2::Oid {
+    ) -> super::JoshResult<git2::Oid> {
         replace_subtree(&repo, &self.path, git2::Oid::zero(), &tree)
     }
 
@@ -802,12 +809,12 @@ impl Filter for HideView {
         repo: &git2::Repository,
         tree: &git2::Tree,
         parent_tree: &git2::Tree,
-    ) -> git2::Oid {
+    ) -> super::JoshResult<git2::Oid> {
         let hidden = parent_tree
             .get_path(&self.path)
             .map(|x| x.id())
             .unwrap_or(git2::Oid::zero());
-        return replace_subtree(&repo, &self.path, hidden, &tree);
+        replace_subtree(&repo, &self.path, hidden, &tree)
     }
 
     fn filter_spec(&self) -> String {
@@ -845,7 +852,7 @@ impl Filter for InfoFileView {
         repo: &git2::Repository,
         tree: &git2::Tree,
         commit_id: git2::Oid,
-    ) -> git2::Oid {
+    ) -> super::JoshResult<git2::Oid> {
         let mut s = "".to_owned();
         for (k, v) in self.values.iter() {
             let v = v.replace("<colon>", ":").replace("<comma>", ",");
@@ -870,7 +877,7 @@ impl Filter for InfoFileView {
         replace_subtree(
             repo,
             &Path::new(&self.values["prefix"]).join(".joshinfo"),
-            repo.blob(s.as_bytes()).unwrap(),
+            repo.blob(s.as_bytes())?,
             &tree,
         )
     }
@@ -880,8 +887,8 @@ impl Filter for InfoFileView {
         _repo: &git2::Repository,
         tree: &git2::Tree,
         _parent_tree: &git2::Tree,
-    ) -> git2::Oid {
-        tree.id()
+    ) -> super::JoshResult<git2::Oid> {
+        Ok(tree.id())
     }
 
     fn filter_spec(&self) -> String {
@@ -942,11 +949,11 @@ impl Filter for CombineView {
         repo: &git2::Repository,
         tree: &git2::Tree,
         commit_id: git2::Oid,
-    ) -> git2::Oid {
-        let mut base = self.base.apply_to_tree(&repo, &tree, commit_id);
+    ) -> super::JoshResult<git2::Oid> {
+        let mut base = self.base.apply_to_tree(&repo, &tree, commit_id)?;
 
         for (other, prefix) in self.others.iter().zip(self.prefixes.iter()) {
-            let otree = other.apply_to_tree(&repo, &tree, commit_id);
+            let otree = other.apply_to_tree(&repo, &tree, commit_id)?;
             if otree == empty_tree_id() {
                 continue;
             }
@@ -961,11 +968,11 @@ impl Filter for CombineView {
                 &repo,
                 &prefix,
                 otree.id(),
-                &repo.find_tree(base).unwrap(),
-            );
+                &repo.find_tree(base)?,
+            )?;
         }
 
-        return base;
+        return Ok(base);
     }
 
     fn unapply(
@@ -973,7 +980,7 @@ impl Filter for CombineView {
         repo: &git2::Repository,
         tree: &git2::Tree,
         parent_tree: &git2::Tree,
-    ) -> git2::Oid {
+    ) -> super::JoshResult<git2::Oid> {
         let mut base_wo = tree.id();
 
         for prefix in self.prefixes.iter() {
@@ -981,15 +988,13 @@ impl Filter for CombineView {
                 repo,
                 prefix,
                 empty_tree_id(),
-                &repo.find_tree(base_wo).unwrap(),
-            );
+                &repo.find_tree(base_wo)?,
+            )?;
         }
 
-        let mut res = self.base.unapply(
-            repo,
-            &repo.find_tree(base_wo).unwrap(),
-            parent_tree,
-        );
+        let mut res =
+            self.base
+                .unapply(repo, &repo.find_tree(base_wo)?, parent_tree)?;
 
         for (other, prefix) in self.others.iter().zip(self.prefixes.iter()) {
             let r = ok_or!(tree.get_path(&prefix).map(|x| x.id()), {
@@ -998,27 +1003,25 @@ impl Filter for CombineView {
             if r == empty_tree_id() {
                 continue;
             }
-            let r = repo.find_tree(r).unwrap();
-            let ua = other.unapply(&repo, &r, &parent_tree);
+            let r = repo.find_tree(r)?;
+            let ua = other.unapply(&repo, &r, &parent_tree)?;
 
             let merged = repo
                 .merge_trees(
                     &parent_tree,
-                    &repo.find_tree(res).unwrap(),
-                    &repo.find_tree(ua).unwrap(),
+                    &repo.find_tree(res)?,
+                    &repo.find_tree(ua)?,
                     Some(
                         git2::MergeOptions::new()
                             .file_favor(git2::FileFavor::Theirs),
                     ),
-                )
-                .unwrap()
-                .write_tree_to(&repo)
-                .unwrap();
+                )?
+                .write_tree_to(&repo)?;
 
             res = merged;
         }
 
-        return res;
+        return Ok(res);
     }
 
     fn filter_spec(&self) -> String {
@@ -1141,7 +1144,7 @@ impl WorkspaceView {
         }
 
         return Ok((
-            cw.apply_to_tree(repo, &full_tree, commit_id),
+            cw.apply_to_tree(repo, &full_tree, commit_id)?,
             filtered_parent_ids,
         ));
     }
@@ -1226,7 +1229,7 @@ impl Filter for WorkspaceView {
         repo: &git2::Repository,
         tree: &git2::Tree,
         commit_id: git2::Oid,
-    ) -> git2::Oid {
+    ) -> super::JoshResult<git2::Oid> {
         return combine_view_from_ws(repo, tree, &self.ws_path)
             .apply_to_tree(repo, tree, commit_id);
     }
@@ -1236,7 +1239,7 @@ impl Filter for WorkspaceView {
         repo: &git2::Repository,
         tree: &git2::Tree,
         parent_tree: &git2::Tree,
-    ) -> git2::Oid {
+    ) -> super::JoshResult<git2::Oid> {
         let mut cw =
             combine_view_from_ws(repo, tree, &std::path::PathBuf::from(""));
 
@@ -1395,7 +1398,7 @@ fn replace_child(
     child: &Path,
     oid: git2::Oid,
     full_tree: &git2::Tree,
-) -> git2::Oid {
+) -> super::JoshResult<git2::Oid> {
     let mode = if let Ok(_) = repo.find_tree(oid) {
         0o0040000 // GIT_FILEMODE_TREE
     } else {
@@ -1403,19 +1406,15 @@ fn replace_child(
     };
 
     let full_tree_id = {
-        let mut builder = repo
-            .treebuilder(Some(&full_tree))
-            .expect("replace_child: can't create treebuilder");
+        let mut builder = repo.treebuilder(Some(&full_tree))?;
         if oid == git2::Oid::zero() {
             builder.remove(child).ok();
         } else {
-            builder
-                .insert(child, oid, mode)
-                .expect("replace_child: can't insert tree");
+            builder.insert(child, oid, mode)?;
         }
-        builder.write().expect("replace_child: can't write tree")
+        builder.write()?
     };
-    return full_tree_id;
+    return Ok(full_tree_id);
 }
 
 fn replace_subtree(
@@ -1423,25 +1422,23 @@ fn replace_subtree(
     path: &Path,
     oid: git2::Oid,
     full_tree: &git2::Tree,
-) -> git2::Oid {
+) -> super::JoshResult<git2::Oid> {
     if path.components().count() == 1 {
-        return repo
-            .find_tree(replace_child(&repo, path, oid, full_tree))
-            .expect("replace_child: can't find new tree")
-            .id();
+        return Ok(repo
+            .find_tree(replace_child(&repo, path, oid, full_tree)?)?
+            .id());
     } else {
-        let name = Path::new(path.file_name().expect("no module name"));
-        let path = path.parent().expect("module not in subdir");
+        let name =
+            Path::new(path.file_name().ok_or(super::josh_error("file_name"))?);
+        let path = path.parent().ok_or(super::josh_error("path.parent"))?;
 
         let st = if let Some(st) = get_subtree(&full_tree, path) {
-            repo.find_tree(st).unwrap()
+            repo.find_tree(st)?
         } else {
             empty_tree(&repo)
         };
 
-        let tree = repo
-            .find_tree(replace_child(&repo, name, oid, &st))
-            .expect("replace_child: can't find new tree");
+        let tree = repo.find_tree(replace_child(&repo, name, oid, &st)?)?;
 
         return replace_subtree(&repo, path, tree.id(), full_tree);
     }

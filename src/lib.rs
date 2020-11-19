@@ -108,7 +108,7 @@ where
 {
     fn from(item: T) -> Self {
         tracing::error!("JoshError: {:?}", item);
-        josh_error("converted")
+        josh_error(&format!("converted {:?}", item))
     }
 }
 
