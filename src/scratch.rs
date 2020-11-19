@@ -98,7 +98,7 @@ pub fn unapply_view(
         let new_trees: super::JoshResult<HashSet<_>> = original_parents_refs
             .iter()
             .map(|x| -> super::JoshResult<_> {
-                Ok(viewobj.unapply(&repo, &tree, &x.tree()?))
+                Ok(viewobj.unapply(&repo, &tree, &x.tree()?)?)
             })
             .collect();
 
@@ -114,7 +114,11 @@ pub fn unapply_view(
             0 => repo
                 // 0 means the history is unrelated. Pushing it will fail if we are not
                 // dealing with either a force push or a push with the "josh-merge" option set.
-                .find_tree(viewobj.unapply(&repo, &tree, &empty_tree(&repo)))?,
+                .find_tree(viewobj.unapply(
+                    &repo,
+                    &tree,
+                    &empty_tree(&repo),
+                )?)?,
             parent_count => {
                 // This is a merge commit where the parents in the upstream repo
                 // have differences outside of the current view.
@@ -139,29 +143,17 @@ fn transform_commit(
     to_refname: &str,
     forward_maps: &mut view_maps::ViewMaps,
     backward_maps: &mut view_maps::ViewMaps,
-) -> usize {
+) -> super::JoshResult<usize> {
     let mut updated_count = 0;
     if let Ok(reference) = repo.revparse_single(&from_refsname) {
-        let original_commit = ok_or!(reference.peel_to_commit(), {
-            warn!("transform_commit, not a commit: {}", from_refsname);
-            return updated_count;
-        });
-        let view_commit = ok_or!(
-            viewobj.apply_to_commit(
-                &repo,
-                &original_commit,
-                forward_maps,
-                backward_maps,
-                &mut HashMap::new(),
-            ),
-            {
-                tracing::error!(
-                    "transform_commit, cannot apply_to_commit: {}",
-                    from_refsname
-                );
-                return updated_count;
-            }
-        );
+        let original_commit = reference.peel_to_commit()?;
+        let view_commit = viewobj.apply_to_commit(
+            &repo,
+            &original_commit,
+            forward_maps,
+            backward_maps,
+            &mut HashMap::new(),
+        )?;
         forward_maps.set(
             &viewobj.filter_spec(),
             original_commit.id(),
@@ -210,7 +202,7 @@ fn transform_commit(
             &from_refsname
         );
     };
-    return updated_count;
+    return Ok(updated_count);
 }
 
 pub fn apply_filter_to_refs(
@@ -219,7 +211,7 @@ pub fn apply_filter_to_refs(
     refs: &[(String, String)],
     forward_maps: &mut view_maps::ViewMaps,
     backward_maps: &mut view_maps::ViewMaps,
-) -> usize {
+) -> super::JoshResult<usize> {
     tracing::span!(
         Level::TRACE,
         "apply_filter_to_refs",
@@ -236,7 +228,7 @@ pub fn apply_filter_to_refs(
             &v,
             forward_maps,
             backward_maps,
-        );
+        )?;
     }
-    return updated_count;
+    return Ok(updated_count);
 }

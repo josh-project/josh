@@ -116,7 +116,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
             &[(src.clone(), t)],
             &mut fm,
             &mut backward_maps.write().unwrap(),
-        );
+        )?;
 
         if reverse {
             let new = repo.revparse_single(&target).unwrap().id();
@@ -158,5 +158,10 @@ fn main() {
         args
     };
 
-    std::process::exit(run_filter(args).unwrap_or(1));
+    std::process::exit(if let Err(e) = run_filter(args) {
+        println!("ERROR: {:?}", e);
+        1
+    } else {
+        0
+    })
 }

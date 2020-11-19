@@ -265,7 +265,8 @@ async fn do_filter(
         let mut fm = josh::view_maps::new_downstream(&forward_maps);
         josh::scratch::apply_filter_to_refs(
             &repo, &*filter, &from_to, &mut fm, &mut bm,
-        );
+        )
+        .ok();
         josh::view_maps::try_merge_both(forward_maps, backward_maps, &fm, &bm);
         repo.reference_symbolic(
             &temp_ns.reference("HEAD"),
