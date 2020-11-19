@@ -334,8 +334,8 @@ pub fn create_repo(path: &std::path::Path) -> josh::JoshResult<()> {
     std::os::unix::fs::symlink(ce, path.join("hooks").join("update"))
         .expect("can't symlink update hook");
     shell.command(&format!(
-                "git config credential.helper '!f() {{ echo \"password=\"$GIT_PASSWORD\"\"; }}; f'"
-                ));
+        "git config credential.helper '!f() {{ echo \"password=\"$GIT_PASSWORD\"\"; }}; f'"
+    ));
     shell.command(&"git config gc.auto 0");
 
     if std::env::var_os("JOSH_KEEP_NS") == None {

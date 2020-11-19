@@ -1253,63 +1253,59 @@ impl Filter for WorkspaceView {
 #[grammar = "view_parser.pest"]
 struct MyParser;
 
-fn make_view(cmd: &str, name: &str) -> Box<dyn Filter> {
-    if cmd == "+" || cmd == "prefix" {
-        return Box::new(PrefixView {
-            prefix: Path::new(name).to_owned(),
-        });
-    } else if cmd == "hide" {
-        return Box::new(HideView {
-            path: Path::new(name).to_owned(),
-        });
-    } else if cmd == "empty" {
-        return Box::new(EmptyView);
-    } else if cmd == "info" {
-        let mut s = std::collections::BTreeMap::new();
-        for p in name.split(",") {
-            let x: Vec<String> = p.split("=").map(|x| x.to_owned()).collect();
-            if x.len() == 2 {
-                s.insert(x[0].to_owned(), x[1].to_owned());
-            } else {
-                s.insert("prefix".to_owned(), x[0].to_owned());
-            }
+fn kvargs(args: &[&str]) -> std::collections::BTreeMap<String, String> {
+    let mut s = std::collections::BTreeMap::new();
+    for p in args {
+        let x: Vec<_> = p.split("=").collect();
+        if let [k, v] = x.as_slice() {
+            s.insert(k.to_owned().to_string(), v.to_owned().to_string());
+        } else if let [v] = x.as_slice() {
+            s.insert("prefix".to_owned(), v.to_owned().to_string());
         }
-        return Box::new(InfoFileView { values: s });
-    } else if cmd == "nop" {
-        return Box::new(NopView);
-    } else if cmd == "cutoff" {
-        return Box::new(CutoffView {
-            name: name.to_owned(),
-        });
-    } else if cmd == "workspace" {
-        return Box::new(WorkspaceView {
-            ws_path: Path::new(name).to_owned(),
-        });
-    } else if cmd == "DIRS" {
-        return Box::new(DirsView {
+    }
+    return s;
+}
+
+fn make_view(args: &[&str]) -> Box<dyn Filter> {
+    match args {
+        ["", arg] => SubdirView::new(&Path::new(arg)),
+        ["empty", arg] => Box::new(EmptyView),
+        ["nop"] => Box::new(NopView),
+        ["info", iargs @ ..] => Box::new(InfoFileView {
+            values: kvargs(iargs),
+        }),
+        ["prefix", arg] => Box::new(PrefixView {
+            prefix: Path::new(arg).to_owned(),
+        }),
+        ["+", arg] => Box::new(PrefixView {
+            prefix: Path::new(arg).to_owned(),
+        }),
+        ["hide", arg] => Box::new(HideView {
+            path: Path::new(arg).to_owned(),
+        }),
+        ["cutoff", arg] => Box::new(CutoffView {
+            name: arg.to_owned().to_string(),
+        }),
+        ["workspace", arg] => Box::new(WorkspaceView {
+            ws_path: Path::new(arg).to_owned(),
+        }),
+        ["DIRS"] => Box::new(DirsView {
             cache: std::cell::RefCell::new(std::collections::HashMap::new()),
-        });
-    } else if cmd == "FOLD" {
-        return Box::new(FoldView);
-    } else if cmd == "" {
-        return SubdirView::new(&Path::new(name));
-    } else {
-        return Box::new(EmptyView);
+        }),
+        ["FOLD"] => Box::new(FoldView),
+        _ => Box::new(EmptyView),
     }
 }
 
 fn parse_item(pair: pest::iterators::Pair<Rule>) -> Box<dyn Filter> {
     match pair.as_rule() {
         Rule::filter => {
-            let mut inner = pair.into_inner();
-            make_view(
-                inner.next().unwrap().as_str(),
-                inner.next().unwrap().as_str(),
-            )
+            let v: Vec<_> = pair.into_inner().map(|x| x.as_str()).collect();
+            make_view(v.as_slice())
         }
         Rule::filter_noarg => {
             let mut inner = pair.into_inner();
-            make_view(inner.next().unwrap().as_str(), "")
+            make_view(&[inner.next().unwrap().as_str()])
         }
         _ => unreachable!(),
     }
