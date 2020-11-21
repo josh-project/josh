@@ -1,138 +1,3 @@
-extern crate lazy_static;
-
-use futures::future::Future;
-use futures::Stream;
-use hyper::server::Response;
-use std::str::FromStr;
-
-//pub mod gerrit;
-
-pub type BoxedFuture<T> = Box<dyn Future<Item = T, Error = hyper::Error>>;
-
-pub fn do_cgi(
-    req: hyper::server::Request,
-    cmd: std::process::Command,
-    handle: tokio_core::reactor::Handle,
-) -> BoxedFuture<Response> {
-    tracing::span!(tracing::Level::TRACE, "do_cgi");
-    let mut cmd = cmd;
-    cmd.stdout(std::process::Stdio::piped());
-    cmd.stderr(std::process::Stdio::inherit());
-    cmd.stdin(std::process::Stdio::piped());
-    cmd.env("SERVER_SOFTWARE", "hyper")
-        .env("SERVER_NAME", "localhost") // TODO
-        .env("GATEWAY_INTERFACE", "CGI/1.1")
-        .env("SERVER_PROTOCOL", "HTTP/1.1") // TODO
-        .env("SERVER_PORT", "80") // TODO
-        .env("REQUEST_METHOD", format!("{}", req.method()))
-        .env("SCRIPT_NAME", "") // TODO
-        .env("QUERY_STRING", req.query().unwrap_or(""))
-        .env("REMOTE_ADDR", "") // TODO
-        .env("AUTH_TYPE", "") // TODO
-        .env("REMOTE_USER", "") // TODO
-        .env(
-            "CONTENT_TYPE",
-            &format!(
-                "{}",
-                req.headers()
-                    .get()
-                    .unwrap_or(&hyper::header::ContentType::plaintext())
-            ),
-        )
-        .env(
-            "HTTP_CONTENT_ENCODING",
-            &format!(
-                "{}",
-                req.headers()
-                    .get()
-                    .unwrap_or(&hyper::header::ContentEncoding(vec![]))
-            ),
-        )
-        .env(
-            "CONTENT_LENGTH",
-            &format!(
-                "{}",
-                req.headers()
-                    .get()
-                    .unwrap_or(&hyper::header::ContentLength(0))
-            ),
-        );
-
-    use tokio_process::CommandExt;
-    let mut child = cmd
-        .spawn_async_with_handle(&handle.new_tokio_handle())
-        .expect("can't spawn CGI command");
-
-    let r = req.body().concat2().and_then(move |body| {
-        tokio_io::io::write_all(child.stdin().take().unwrap(), body)
-            .and_then(move |_| {
-                child
-                    .wait_with_output()
-                    .map(build_response)
-                    .map_err(|e| e.into())
-            })
-            .map_err(|e| e.into())
-    });
-
-    Box::new(r)
-}
-
-fn build_response(command_result: std::process::Output) -> Response {
-    use std::io::BufRead;
-    use std::io::Read;
-    let _trace_s = tracing::span!(tracing::Level::TRACE, "build_response");
-    let mut stdout = std::io::BufReader::new(command_result.stdout.as_slice());
-    let mut stderr = std::io::BufReader::new(command_result.stderr.as_slice());
-
-    let mut response = Response::new();
-
-    let mut headers = vec![];
-    for line in stdout.by_ref().lines() {
-        tracing::event!(
-            parent: &_trace_s,
-            tracing::Level::TRACE,
-            "STDOUT {:?}",
-            line
-        );
-        if line.as_ref().unwrap().is_empty() {
-            break;
-        }
-        let l: Vec<&str> =
-            line.as_ref().unwrap().as_str().splitn(2, ": ").collect();
-        for x in &l {
-            headers.push(x.to_string());
-        }
-        if l[0] == "Status" {
-            response.set_status(hyper::StatusCode::Unregistered(
-                u16::from_str(l[1].split(" ").next().unwrap()).unwrap(),
-            ));
-        } else {
-            response
-                .headers_mut()
-                .set_raw(l[0].to_string(), l[1].to_string());
-        }
-    }
-
-    let mut data = vec![];
-    stdout
-        .read_to_end(&mut data)
-        .expect("can't read command output");
-
-    let mut stderrdata = vec![];
-    stderr
-        .read_to_end(&mut stderrdata)
-        .expect("can't read command output");
-
-    let err = String::from_utf8_lossy(&stderrdata);
-
-    tracing::trace!("build_response err {:?}", &err);
-
-    tracing::event!(parent: &_trace_s, tracing::Level::TRACE, ?err, ?headers);
-    response.set_body(hyper::Chunk::from(data));
-
-    response
-}
-
 fn baseref_and_options(
     refname: &str,
 ) -> josh::JoshResult<(String, String, Vec<String>)> {
@@ -355,8 +220,8 @@ pub fn fetch_refs_from_url(
     url: &str,
     refs_prefixes: &[&str],
     username: &str,
-    password: &str,
-) -> Result<(), git2::Error> {
+    password: &Password,
+) -> Result<bool, git2::Error> {
     let specs: Vec<_> = refs_prefixes
         .iter()
         .map(|r| {
@@ -372,18 +237,23 @@ pub fn fetch_refs_from_url(
     let shell = josh::shell::Shell {
         cwd: path.to_owned(),
     };
-    let nurl = {
+    let nurl = if username != "" {
         let splitted: Vec<&str> = url.splitn(2, "://").collect();
         let proto = splitted[0];
         let rest = splitted[1];
         format!("{}://{}@{}", &proto, &username, &rest)
+    } else {
+        let splitted: Vec<&str> = url.splitn(2, "://").collect();
+        let proto = splitted[0];
+        let rest = splitted[1];
+        format!("{}://{}@{}", &proto, "annonymous", &rest)
     };
 
     let cmd = format!("git fetch --no-tags {} {}", &nurl, &specs.join(" "));
     tracing::info!("fetch_refs_from_url {:?} {:?} {:?}", cmd, path, "");
 
     let (_stdout, stderr) =
-        shell.command_env(&cmd, &[("GIT_PASSWORD", &password)]);
+        shell.command_env(&cmd, &[("GIT_PASSWORD", &password.value)]);
     tracing::debug!(
         "fetch_refs_from_url done {:?} {:?} {:?}",
         cmd,
@@ -391,7 +261,7 @@ pub fn fetch_refs_from_url(
         stderr
     );
     if stderr.contains("fatal: Authentication failed") {
-        return Err(git2::Error::from_str("auth"));
+        return Ok(false);
     }
     if stderr.contains("fatal:") {
         return Err(git2::Error::from_str("error"));
@@ -399,16 +269,22 @@ pub fn fetch_refs_from_url(
     if stderr.contains("error:") {
         return Err(git2::Error::from_str("error"));
     }
-    return Ok(());
+    return Ok(true);
 }
 
-pub fn body2string(body: hyper::Chunk) -> String {
-    let mut buffer: Vec<u8> = Vec::new();
-    for i in body {
-        buffer.push(i);
-    }
+// Wrapper struct for storing passwords to avoid having
+// them output to traces by accident
+#[derive(Clone)]
+pub struct Password {
+    pub value: String,
+}
 
-    String::from_utf8(buffer).unwrap_or("".to_string())
+impl std::fmt::Debug for Password {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Password")
+            .field("value", &"<hidden>")
+            .finish()
+    }
 }
 
 pub struct TmpGitNamespace {
@@ -432,6 +308,15 @@ impl TmpGitNamespace {
     }
 }
 
+impl std::fmt::Debug for TmpGitNamespace {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("JoshProxyService")
+            .field("repo_path", &self.repo_path)
+            .field("name", &self.name)
+            .finish()
+    }
+}
+
 impl Drop for TmpGitNamespace {
     fn drop(&mut self) {
         if std::env::var_os("JOSH_KEEP_NS") != None {
@@ -443,38 +328,4 @@ impl Drop for TmpGitNamespace {
             tracing::warn!("remove_dir_all failed: {:?}", e)
         });
     }
-}
-
-pub fn parse_auth(req: &hyper::server::Request) -> Option<(String, String)> {
-    let line = josh::some_or!(
-        req.headers().get_raw("authorization").and_then(|h| h.one()),
-        {
-            return None;
-        }
-    );
-    let u = josh::ok_or!(String::from_utf8(line[6..].to_vec()), {
-        return None;
-    });
-    let decoded = josh::ok_or!(base64::decode(&u), {
-        return None;
-    });
-    let s = josh::ok_or!(String::from_utf8(decoded), {
-        return None;
-    });
-    if let [username, password] =
-        s.as_str().split(':').collect::<Vec<_>>().as_slice()
-    {
-        return Some((username.to_string(), password.to_string()));
-    }
-    return None;
-}
-
-pub fn respond_unauthorized() -> Response {
-    tracing::debug!("respond_unauthorized");
-    let mut response: Response =
-        Response::new().with_status(hyper::StatusCode::Unauthorized);
-    response
-        .headers_mut()
-        .set_raw("WWW-Authenticate", "Basic realm=\"User Visible Realm\"");
-    response
 }
