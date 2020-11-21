@@ -1273,7 +1273,7 @@ fn kvargs(args: &[&str]) -> std::collections::BTreeMap<String, String> {
 fn make_filter(args: &[&str]) -> Box<dyn Filter> {
     match args {
         ["", arg] => SubdirFilter::new(&Path::new(arg)),
-        ["empty", arg] => Box::new(EmptyFilter),
+        ["empty"] => Box::new(EmptyFilter),
         ["nop"] => Box::new(NopFilter),
         ["info", iargs @ ..] => Box::new(InfoFileFilter {
             values: kvargs(iargs),
