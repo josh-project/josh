@@ -19,12 +19,12 @@
   $ git add sub2
   $ git commit -m "add file3" 1> /dev/null
 
-  $ josh-filter master:refs/josh/filter/master :/sub1
+  $ josh-filter master --update refs/josh/filter/master :/sub1
   $ git log --graph --pretty=%s josh/filter/master
   * add file2
   * add file1
 
-  $ josh-filter master:refs/josh/filter/master :/sub2
+  $ josh-filter master --update refs/josh/filter/master :/sub2
   $ git log --graph --pretty=%s josh/filter/master
   * add file3
 
@@ -32,6 +32,6 @@
   $ git add sub1
   $ git commit -m "add file5" 1> /dev/null
 
-  $ josh-filter master:refs/josh/filter/master :/sub2
+  $ josh-filter master --update refs/josh/filter/master :/sub2
   $ git log --graph --pretty=%s josh/filter/master
   * add file3

@@ -15,7 +15,7 @@
   $ git add sub2
   $ git commit -m "add file2" 1> /dev/null
 
-  $ josh-filter master:refs/heads/hidden :hide=sub2
+  $ josh-filter master --update refs/heads/hidden :hide=sub2
   $ git checkout hidden 1> /dev/null
   Switched to branch 'hidden'
   $ tree
@@ -31,7 +31,7 @@
   $ git add sub1/file3
   $ git commit -m "add sub1/file3" 1> /dev/null
 
-  $ josh-filter --reverse master:refs/heads/hidden :hide=sub2
+  $ josh-filter --reverse master --update refs/heads/hidden :hide=sub2
 
   $ git checkout master
   Switched to branch 'master'

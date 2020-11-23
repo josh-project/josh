@@ -24,11 +24,11 @@
   * add libs
   * init
 
-  $ josh-filter master:refs/josh/filter/master :/libs
+  $ josh-filter master --update refs/josh/filter/master :/libs
   $ git ls-tree --name-only -r refs/josh/filter/master 
   fatal: Not a valid object name refs/josh/filter/master
   [128]
-  $ josh-filter master:refs/josh/filter/master c=:/libs
+  $ josh-filter master --update refs/josh/filter/master c=:/libs
   $ git ls-tree --name-only -r refs/josh/filter/master 
 
 $ git log refs/josh/filter/master --graph --pretty=%s
@@ -44,7 +44,7 @@ rm 'sub1/file1'
 rm 'sub1/file2'
 $ git commit -m "rm sub1" 1> /dev/null
 
-$ josh-filter master:refs/josh/filter/master c=:/sub1
+$ josh-filter master --update refs/josh/filter/master c=:/sub1
 
 $ git log refs/josh/filter/master --graph --pretty=%s
 * rm sub1

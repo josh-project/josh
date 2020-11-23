@@ -35,11 +35,11 @@
 
   $ git commit -m "initial" --allow-empty 1> /dev/null
 
-  $ josh-filter --infofile libs/master:refs/josh/filter/libs/master c=:/sub1
+  $ josh-filter --update refs/josh/filter/libs/master --infofile libs/master c=:/sub1
   $ git log --graph --pretty=%s josh/filter/libs/master
   * add file2
   * add file1
-  $ josh-filter --infofile libs/foo:refs/josh/filter/libs/foo a/b=:/sub2
+  $ josh-filter --update refs/josh/filter/libs/foo --infofile libs/foo a/b=:/sub2
   $ git log --graph --pretty=%s josh/filter/libs/foo
   * add file3
 

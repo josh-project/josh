@@ -21,7 +21,7 @@
   $ git log --graph --pretty=%s
   * add files
 
-  $ josh-filter master:refs/josh/filtered :nosuch=filter
+  $ josh-filter master --update refs/josh/filtered :nosuch=filter
 
   $ git ls-tree --name-only -r refs/josh/filtered
   fatal: Not a valid object name refs/josh/filtered

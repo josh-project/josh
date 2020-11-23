@@ -16,7 +16,7 @@ Empty root commits from unrelated parts of the tree should not be included
   $ git add sub1
   $ git commit -m "add file2" 1> /dev/null
 
-  $ josh-filter master:refs/josh/filter/master c=:/sub1
+  $ josh-filter master --update refs/josh/filter/master c=:/sub1
 
   $ git log refs/josh/filter/master --graph --pretty=%s
   * add file2
@@ -51,7 +51,7 @@ Empty root commits from unrelated parts of the tree should not be included
   * add file2
   * add file1
 
-  $ josh-filter master:refs/josh/filter/master c=:/sub1
+  $ josh-filter master --update refs/josh/filter/master c=:/sub1
 
   $ git log refs/josh/filter/master --graph --pretty=%s
   * add file2

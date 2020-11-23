@@ -23,7 +23,7 @@
   $ git add ws
   $ git commit -m "add ws" 1> /dev/null
 
-  $ josh-filter master:refs/josh/master :workspace=ws
+  $ josh-filter master --update refs/josh/master :workspace=ws
 
   $ git log --graph --pretty=%s refs/josh/master
   * add ws
@@ -38,7 +38,7 @@
   $ git add ws
   $ git commit -m "add trailing slash" 1> /dev/null
 
-  $ josh-filter master:refs/josh/master :workspace=ws
+  $ josh-filter master --update refs/josh/master :workspace=ws
   ERROR: JoshError("converted Error { code: -1, klass: 14, message: \"failed to insert entry: invalid name for a tree entry - c/\" }")
   [1]
 

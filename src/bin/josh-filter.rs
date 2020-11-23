@@ -19,9 +19,10 @@ lazy_static! {
 
 fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
     let args = clap::App::new("josh-filter")
-        .arg(clap::Arg::with_name("file").long("file").takes_value(true))
-        .arg(clap::Arg::with_name("from_to").takes_value(true))
+        .arg(clap::Arg::with_name("input_ref").takes_value(true))
         .arg(clap::Arg::with_name("spec").takes_value(true))
+        .arg(clap::Arg::with_name("file").long("file").takes_value(true))
+        .arg(clap::Arg::with_name("update").long("update").takes_value(true))
         .arg(clap::Arg::with_name("squash").long("squash"))
         .arg(clap::Arg::with_name("reverse").long("reverse"))
         .arg(clap::Arg::with_name("infofile").long("infofile"))
@@ -47,8 +48,10 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         &repo.path().join("josh_backward_maps"),
     )));
 
-    let srcstr = args.value_of("from_to").unwrap_or("");
+    let input_ref = args.value_of("input_ref").unwrap_or("");
     let specstr = args.value_of("spec").unwrap_or("");
+    let update_target = args.value_of("update").unwrap_or("refs/JOSH_OUT");
+    let srcstr = format!("{}:{}", input_ref, update_target);
 
     let filestr = args
         .value_of("file")
