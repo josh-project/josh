@@ -1,8 +1,8 @@
 use super::empty_tree;
 use super::empty_tree_id;
+use super::filter_cache;
+use super::filter_cache::FilterCache;
 use super::scratch;
-use super::view_maps;
-use super::view_maps::ViewMaps;
 use pest::Parser;
 use std::collections::HashMap;
 use std::path::Path;
@@ -70,8 +70,8 @@ pub trait Filter {
         &self,
         repo: &git2::Repository,
         commit: &git2::Commit,
-        forward_maps: &mut ViewMaps,
-        backward_maps: &mut ViewMaps,
+        forward_maps: &mut FilterCache,
+        backward_maps: &mut FilterCache,
         _meta: &mut HashMap<String, String>,
     ) -> super::JoshResult<git2::Oid> {
         if forward_maps.has(&repo, &self.filter_spec(), commit.id()) {
@@ -100,8 +100,8 @@ pub trait Filter {
         &self,
         repo: &git2::Repository,
         commit: &git2::Commit,
-        forward_maps: &mut ViewMaps,
-        backward_maps: &mut ViewMaps,
+        forward_maps: &mut FilterCache,
+        backward_maps: &mut FilterCache,
     ) -> super::JoshResult<Vec<git2::Oid>>;
 
     fn apply_to_tree(
@@ -125,15 +125,15 @@ pub trait Filter {
     fn filter_spec(&self) -> String;
 }
 
-struct NopView;
+struct NopFilter;
 
-impl Filter for NopView {
+impl Filter for NopFilter {
     fn apply_to_parents(
         &self,
         _repo: &git2::Repository,
         commit: &git2::Commit,
-        _forward_maps: &mut ViewMaps,
-        _backward_maps: &mut ViewMaps,
+        _forward_maps: &mut FilterCache,
+        _backward_maps: &mut FilterCache,
     ) -> super::JoshResult<Vec<git2::Oid>> {
         return Ok(commit.parent_ids().collect());
     }
@@ -141,8 +141,8 @@ impl Filter for NopView {
         &self,
         _repo: &git2::Repository,
         commit: &git2::Commit,
-        _forward_maps: &mut ViewMaps,
-        _backward_maps: &mut ViewMaps,
+        _forward_maps: &mut FilterCache,
+        _backward_maps: &mut FilterCache,
         _meta: &mut HashMap<String, String>,
     ) -> super::JoshResult<git2::Oid> {
         return Ok(commit.id());
@@ -171,7 +171,7 @@ impl Filter for NopView {
     }
 }
 
-struct DirsView {
+struct DirsFilter {
     cache: std::cell::RefCell<
         std::collections::HashMap<(git2::Oid, String), git2::Oid>,
     >,
@@ -246,18 +246,18 @@ fn striped_tree(
     return Ok(result_id);
 }
 
-impl Filter for DirsView {
+impl Filter for DirsFilter {
     fn apply_to_parents(
         &self,
         repo: &git2::Repository,
         commit: &git2::Commit,
-        forward_maps: &mut ViewMaps,
-        backward_maps: &mut ViewMaps,
+        forward_maps: &mut FilterCache,
+        backward_maps: &mut FilterCache,
     ) -> super::JoshResult<Vec<git2::Oid>> {
         return commit
             .parents()
             .map(|x| {
-                apply_view_cached(
+                apply_filter_cached(
                     repo,
                     self,
                     x.id(),
@@ -354,20 +354,20 @@ fn merged_tree(
     return Ok(input1);
 }
 
-struct FoldView;
+struct FoldFilter;
 
-impl Filter for FoldView {
+impl Filter for FoldFilter {
     fn apply_to_parents(
         &self,
         repo: &git2::Repository,
         commit: &git2::Commit,
-        forward_maps: &mut ViewMaps,
-        backward_maps: &mut ViewMaps,
+        forward_maps: &mut FilterCache,
+        backward_maps: &mut FilterCache,
     ) -> super::JoshResult<Vec<git2::Oid>> {
         return commit
             .parents()
             .map(|x| {
-                apply_view_cached(
+                apply_filter_cached(
                     repo,
                     self,
                     x.id(),
@@ -382,8 +382,8 @@ impl Filter for FoldView {
         &self,
         repo: &git2::Repository,
         commit: &git2::Commit,
-        forward_maps: &mut ViewMaps,
-        backward_maps: &mut ViewMaps,
+        forward_maps: &mut FilterCache,
+        backward_maps: &mut FilterCache,
         _meta: &mut HashMap<String, String>,
     ) -> super::JoshResult<git2::Oid> {
         if forward_maps.has(&repo, &self.filter_spec(), commit.id()) {
@@ -440,15 +440,15 @@ impl Filter for FoldView {
     }
 }
 
-struct EmptyView;
+struct EmptyFilter;
 
-impl Filter for EmptyView {
+impl Filter for EmptyFilter {
     fn apply_to_commit(
         &self,
         _repo: &git2::Repository,
         _commit: &git2::Commit,
-        _forward_maps: &mut ViewMaps,
-        _backward_maps: &mut ViewMaps,
+        _forward_maps: &mut FilterCache,
+        _backward_maps: &mut FilterCache,
         _meta: &mut HashMap<String, String>,
     ) -> super::JoshResult<git2::Oid> {
         return Ok(git2::Oid::zero());
@@ -457,8 +457,8 @@ impl Filter for EmptyView {
         &self,
         _repo: &git2::Repository,
         _commit: &git2::Commit,
-        _forward_maps: &mut ViewMaps,
-        _backward_maps: &mut ViewMaps,
+        _forward_maps: &mut FilterCache,
+        _backward_maps: &mut FilterCache,
     ) -> super::JoshResult<Vec<git2::Oid>> {
         return Ok(vec![]);
     }
@@ -485,7 +485,7 @@ impl Filter for EmptyView {
     }
 }
 
-struct CutoffView {
+struct CutoffFilter {
     /* rev: git2::Oid, */
     name: String,
     /*         rev: ok_or!( */
@@ -493,23 +493,23 @@ struct CutoffView {
     /*                 .and_then(|r| r.peel_to_commit()) */
     /*                 .map(|r| r.id()), */
     /*             { */
-    /*                 return Box::new(EmptyView); */
+    /*                 return Box::new(EmptyFilter); */
     /*             } */
     /*         ), */
 }
 
-impl Filter for CutoffView {
+impl Filter for CutoffFilter {
     fn apply_to_parents(
         &self,
         repo: &git2::Repository,
         commit: &git2::Commit,
-        forward_maps: &mut ViewMaps,
-        backward_maps: &mut ViewMaps,
+        forward_maps: &mut FilterCache,
+        backward_maps: &mut FilterCache,
     ) -> super::JoshResult<Vec<git2::Oid>> {
         return commit
             .parents()
             .map(|x| {
-                apply_view_cached(
+                apply_filter_cached(
                     repo,
                     self,
                     x.id(),
@@ -524,8 +524,8 @@ impl Filter for CutoffView {
         &self,
         repo: &git2::Repository,
         commit: &git2::Commit,
-        _forward_maps: &mut ViewMaps,
-        _backward_maps: &mut ViewMaps,
+        _forward_maps: &mut FilterCache,
+        _backward_maps: &mut FilterCache,
         _meta: &mut HashMap<String, String>,
     ) -> super::JoshResult<git2::Oid> {
         return scratch::rewrite(&repo, &commit, &vec![], &commit.tree()?);
@@ -554,23 +554,23 @@ impl Filter for CutoffView {
     }
 }
 
-struct ChainView {
+struct ChainFilter {
     first: Box<dyn Filter>,
     second: Box<dyn Filter>,
 }
 
-impl Filter for ChainView {
+impl Filter for ChainFilter {
     fn apply_to_parents(
         &self,
         repo: &git2::Repository,
         commit: &git2::Commit,
-        forward_maps: &mut ViewMaps,
-        backward_maps: &mut ViewMaps,
+        forward_maps: &mut FilterCache,
+        backward_maps: &mut FilterCache,
     ) -> super::JoshResult<Vec<git2::Oid>> {
         return commit
             .parents()
             .map(|x| {
-                apply_view_cached(
+                apply_filter_cached(
                     repo,
                     self,
                     x.id(),
@@ -584,8 +584,8 @@ impl Filter for ChainView {
         &self,
         repo: &git2::Repository,
         commit: &git2::Commit,
-        forward_maps: &mut ViewMaps,
-        backward_maps: &mut ViewMaps,
+        forward_maps: &mut FilterCache,
+        backward_maps: &mut FilterCache,
         _meta: &mut HashMap<String, String>,
     ) -> super::JoshResult<git2::Oid> {
         let r = self.first.apply_to_commit(
@@ -645,25 +645,25 @@ impl Filter for ChainView {
     }
 }
 
-struct SubdirView {
+struct SubdirFilter {
     path: std::path::PathBuf,
 }
 
-impl SubdirView {
+impl SubdirFilter {
     fn new(path: &Path) -> Box<dyn Filter> {
         let mut components = path.iter();
         let mut chain: Box<dyn Filter> = if let Some(comp) = components.next() {
-            Box::new(SubdirView {
+            Box::new(SubdirFilter {
                 path: Path::new(comp).to_owned(),
             })
         } else {
-            Box::new(NopView)
+            Box::new(NopFilter)
         };
 
         for comp in components {
-            chain = Box::new(ChainView {
+            chain = Box::new(ChainFilter {
                 first: chain,
-                second: Box::new(SubdirView {
+                second: Box::new(SubdirFilter {
                     path: Path::new(comp).to_owned(),
                 }),
             })
@@ -672,18 +672,18 @@ impl SubdirView {
     }
 }
 
-impl Filter for SubdirView {
+impl Filter for SubdirFilter {
     fn apply_to_parents(
         &self,
         repo: &git2::Repository,
         commit: &git2::Commit,
-        forward_maps: &mut ViewMaps,
-        backward_maps: &mut ViewMaps,
+        forward_maps: &mut FilterCache,
+        backward_maps: &mut FilterCache,
     ) -> super::JoshResult<Vec<git2::Oid>> {
         return commit
             .parents()
             .map(|x| {
-                apply_view_cached(
+                apply_filter_cached(
                     repo,
                     self,
                     x.id(),
@@ -719,22 +719,22 @@ impl Filter for SubdirView {
     }
 }
 
-struct PrefixView {
+struct PrefixFilter {
     prefix: std::path::PathBuf,
 }
 
-impl Filter for PrefixView {
+impl Filter for PrefixFilter {
     fn apply_to_parents(
         &self,
         repo: &git2::Repository,
         commit: &git2::Commit,
-        forward_maps: &mut ViewMaps,
-        backward_maps: &mut ViewMaps,
+        forward_maps: &mut FilterCache,
+        backward_maps: &mut FilterCache,
     ) -> super::JoshResult<Vec<git2::Oid>> {
         return commit
             .parents()
             .map(|x| {
-                apply_view_cached(
+                apply_filter_cached(
                     repo,
                     self,
                     x.id(),
@@ -770,22 +770,22 @@ impl Filter for PrefixView {
     }
 }
 
-struct HideView {
+struct HideFilter {
     path: std::path::PathBuf,
 }
 
-impl Filter for HideView {
+impl Filter for HideFilter {
     fn apply_to_parents(
         &self,
         repo: &git2::Repository,
         commit: &git2::Commit,
-        forward_maps: &mut ViewMaps,
-        backward_maps: &mut ViewMaps,
+        forward_maps: &mut FilterCache,
+        backward_maps: &mut FilterCache,
     ) -> super::JoshResult<Vec<git2::Oid>> {
         return commit
             .parents()
             .map(|x| {
-                apply_view_cached(
+                apply_filter_cached(
                     repo,
                     self,
                     x.id(),
@@ -822,22 +822,22 @@ impl Filter for HideView {
     }
 }
 
-struct InfoFileView {
+struct InfoFileFilter {
     values: std::collections::BTreeMap<String, String>,
 }
 
-impl Filter for InfoFileView {
+impl Filter for InfoFileFilter {
     fn apply_to_parents(
         &self,
         repo: &git2::Repository,
         commit: &git2::Commit,
-        forward_maps: &mut ViewMaps,
-        backward_maps: &mut ViewMaps,
+        forward_maps: &mut FilterCache,
+        backward_maps: &mut FilterCache,
     ) -> super::JoshResult<Vec<git2::Oid>> {
         return commit
             .parents()
             .map(|x| {
-                apply_view_cached(
+                apply_filter_cached(
                     repo,
                     self,
                     x.id(),
@@ -901,19 +901,19 @@ impl Filter for InfoFileView {
     }
 }
 
-struct CombineView {
+struct CombineFilter {
     base: Box<dyn Filter>,
     others: Vec<Box<dyn Filter>>,
     prefixes: Vec<std::path::PathBuf>,
 }
 
-impl Filter for CombineView {
+impl Filter for CombineFilter {
     fn apply_to_parents(
         &self,
         repo: &git2::Repository,
         commit: &git2::Commit,
-        forward_maps: &mut ViewMaps,
-        backward_maps: &mut ViewMaps,
+        forward_maps: &mut FilterCache,
+        backward_maps: &mut FilterCache,
     ) -> super::JoshResult<Vec<git2::Oid>> {
         if self.prefixes.len() == 0 {
             return self.base.apply_to_parents(
@@ -926,7 +926,7 @@ impl Filter for CombineView {
         return commit
             .parents()
             .map(|x| {
-                apply_view_cached(
+                apply_filter_cached(
                     repo,
                     self,
                     x.id(),
@@ -1039,37 +1039,37 @@ impl Filter for CombineView {
     }
 }
 
-struct WorkspaceView {
+struct WorkspaceFilter {
     ws_path: std::path::PathBuf,
 }
 
-fn combine_view_from_ws(
+fn combine_filter_from_ws(
     repo: &git2::Repository,
     tree: &git2::Tree,
     ws_path: &Path,
-) -> Box<CombineView> {
-    let base = SubdirView::new(&ws_path);
+) -> Box<CombineFilter> {
+    let base = SubdirFilter::new(&ws_path);
     let wsp = ws_path.join("workspace.josh");
     let ws_config_oid = ok_or!(tree.get_path(&wsp).map(|x| x.id()), {
-        return build_combine_view("", base);
+        return build_combine_filter("", base);
     });
 
     let ws_blob = ok_or!(repo.find_blob(ws_config_oid), {
-        return build_combine_view("", base);
+        return build_combine_filter("", base);
     });
 
     let ws_content = ok_or!(std::str::from_utf8(ws_blob.content()), {
-        return build_combine_view("", base);
+        return build_combine_filter("", base);
     });
 
-    return build_combine_view(ws_content, base);
+    return build_combine_filter(ws_content, base);
 }
 
-impl WorkspaceView {
+impl WorkspaceFilter {
     fn ws_apply_to_tree_and_parents(
         &self,
-        forward_maps: &mut ViewMaps,
-        backward_maps: &mut ViewMaps,
+        forward_maps: &mut FilterCache,
+        backward_maps: &mut FilterCache,
         repo: &git2::Repository,
         tree_and_parents: (git2::Oid, Vec<git2::Oid>),
         commit_id: git2::Oid,
@@ -1079,7 +1079,7 @@ impl WorkspaceView {
 
         let mut in_this = std::collections::HashSet::new();
 
-        let cw = combine_view_from_ws(repo, &full_tree, &self.ws_path);
+        let cw = combine_filter_from_ws(repo, &full_tree, &self.ws_path);
 
         for (other, prefix) in cw.others.iter().zip(cw.prefixes.iter()) {
             in_this.insert(format!(
@@ -1091,7 +1091,7 @@ impl WorkspaceView {
 
         let mut filtered_parent_ids = vec![];
         for parent in parents.iter() {
-            let p = apply_view_cached(
+            let p = apply_filter_cached(
                 repo,
                 self,
                 *parent,
@@ -1104,7 +1104,7 @@ impl WorkspaceView {
 
             let parent_commit = repo.find_commit(*parent)?;
 
-            let pcw = combine_view_from_ws(
+            let pcw = combine_filter_from_ws(
                 repo,
                 &parent_commit.tree()?,
                 &self.ws_path,
@@ -1125,7 +1125,8 @@ impl WorkspaceView {
             s = format!("{}{}\n", s, x);
         }
 
-        let pcw: Box<dyn Filter> = build_combine_view(&s, Box::new(EmptyView));
+        let pcw: Box<dyn Filter> =
+            build_combine_filter(&s, Box::new(EmptyFilter));
 
         for parent in parents {
             if let Ok(parent) = repo.find_commit(parent) {
@@ -1169,18 +1170,18 @@ fn find_tree_or_error<'a>(
     })
 }
 
-impl Filter for WorkspaceView {
+impl Filter for WorkspaceFilter {
     fn apply_to_parents(
         &self,
         repo: &git2::Repository,
         commit: &git2::Commit,
-        forward_maps: &mut ViewMaps,
-        backward_maps: &mut ViewMaps,
+        forward_maps: &mut FilterCache,
+        backward_maps: &mut FilterCache,
     ) -> super::JoshResult<Vec<git2::Oid>> {
         return commit
             .parents()
             .map(|x| {
-                apply_view_cached(
+                apply_filter_cached(
                     repo,
                     self,
                     x.id(),
@@ -1194,8 +1195,8 @@ impl Filter for WorkspaceView {
         &self,
         repo: &git2::Repository,
         commit: &git2::Commit,
-        forward_maps: &mut ViewMaps,
-        backward_maps: &mut ViewMaps,
+        forward_maps: &mut FilterCache,
+        backward_maps: &mut FilterCache,
         _meta: &mut HashMap<String, String>,
     ) -> super::JoshResult<git2::Oid> {
         if forward_maps.has(repo, &self.filter_spec(), commit.id()) {
@@ -1230,7 +1231,7 @@ impl Filter for WorkspaceView {
         tree: &git2::Tree,
         commit_id: git2::Oid,
     ) -> super::JoshResult<git2::Oid> {
-        return combine_view_from_ws(repo, tree, &self.ws_path)
+        return combine_filter_from_ws(repo, tree, &self.ws_path)
             .apply_to_tree(repo, tree, commit_id);
     }
 
@@ -1241,9 +1242,9 @@ impl Filter for WorkspaceView {
         parent_tree: &git2::Tree,
     ) -> super::JoshResult<git2::Oid> {
         let mut cw =
-            combine_view_from_ws(repo, tree, &std::path::PathBuf::from(""));
+            combine_filter_from_ws(repo, tree, &std::path::PathBuf::from(""));
 
-        cw.base = SubdirView::new(&self.ws_path);
+        cw.base = SubdirFilter::new(&self.ws_path);
         return cw.unapply(repo, tree, parent_tree);
     }
 
@@ -1253,7 +1254,7 @@ impl Filter for WorkspaceView {
 }
 
 #[derive(Parser)]
-#[grammar = "view_parser.pest"]
+#[grammar = "filter_parser.pest"]
 struct MyParser;
 
 fn kvargs(args: &[&str]) -> std::collections::BTreeMap<String, String> {
@@ -1269,34 +1270,34 @@ fn kvargs(args: &[&str]) -> std::collections::BTreeMap<String, String> {
     return s;
 }
 
-fn make_view(args: &[&str]) -> Box<dyn Filter> {
+fn make_filter(args: &[&str]) -> Box<dyn Filter> {
     match args {
-        ["", arg] => SubdirView::new(&Path::new(arg)),
-        ["empty", arg] => Box::new(EmptyView),
-        ["nop"] => Box::new(NopView),
-        ["info", iargs @ ..] => Box::new(InfoFileView {
+        ["", arg] => SubdirFilter::new(&Path::new(arg)),
+        ["empty", arg] => Box::new(EmptyFilter),
+        ["nop"] => Box::new(NopFilter),
+        ["info", iargs @ ..] => Box::new(InfoFileFilter {
             values: kvargs(iargs),
         }),
-        ["prefix", arg] => Box::new(PrefixView {
+        ["prefix", arg] => Box::new(PrefixFilter {
             prefix: Path::new(arg).to_owned(),
         }),
-        ["+", arg] => Box::new(PrefixView {
+        ["+", arg] => Box::new(PrefixFilter {
             prefix: Path::new(arg).to_owned(),
         }),
-        ["hide", arg] => Box::new(HideView {
+        ["hide", arg] => Box::new(HideFilter {
             path: Path::new(arg).to_owned(),
         }),
-        ["cutoff", arg] => Box::new(CutoffView {
+        ["cutoff", arg] => Box::new(CutoffFilter {
             name: arg.to_owned().to_string(),
         }),
-        ["workspace", arg] => Box::new(WorkspaceView {
+        ["workspace", arg] => Box::new(WorkspaceFilter {
             ws_path: Path::new(arg).to_owned(),
         }),
-        ["DIRS"] => Box::new(DirsView {
+        ["DIRS"] => Box::new(DirsFilter {
             cache: std::cell::RefCell::new(std::collections::HashMap::new()),
         }),
-        ["FOLD"] => Box::new(FoldView),
-        _ => Box::new(EmptyView),
+        ["FOLD"] => Box::new(FoldFilter),
+        _ => Box::new(EmptyFilter),
     }
 }
 
@@ -1304,11 +1305,11 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> Box<dyn Filter> {
     match pair.as_rule() {
         Rule::filter => {
             let v: Vec<_> = pair.into_inner().map(|x| x.as_str()).collect();
-            make_view(v.as_slice())
+            make_filter(v.as_slice())
         }
         Rule::filter_noarg => {
             let mut inner = pair.into_inner();
-            make_view(&[inner.next().unwrap().as_str()])
+            make_filter(&[inner.next().unwrap().as_str()])
         }
         _ => unreachable!(),
     }
@@ -1316,26 +1317,26 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> Box<dyn Filter> {
 
 fn parse_file_entry(
     pair: pest::iterators::Pair<Rule>,
-    combine_view: &mut CombineView,
+    combine_filter: &mut CombineFilter,
 ) {
     match pair.as_rule() {
         Rule::file_entry => {
             let mut inner = pair.into_inner();
             let path = inner.next().unwrap().as_str();
-            let view = inner.next().unwrap().as_str();
-            let view = parse(view);
-            combine_view.prefixes.push(Path::new(path).to_owned());
-            combine_view.others.push(view);
+            let filter = inner.next().unwrap().as_str();
+            let filter = parse(filter);
+            combine_filter.prefixes.push(Path::new(path).to_owned());
+            combine_filter.others.push(filter);
         }
         _ => unreachable!(),
     }
 }
 
-fn build_combine_view(
+fn build_combine_filter(
     filter_spec: &str,
     base: Box<dyn Filter>,
-) -> Box<CombineView> {
-    let mut combine_view = Box::new(CombineView {
+) -> Box<CombineFilter> {
+    let mut combine_filter = Box::new(CombineFilter {
         base: base,
         others: vec![],
         prefixes: vec![],
@@ -1345,18 +1346,18 @@ fn build_combine_view(
         let mut r = r;
         let r = r.next().unwrap();
         for pair in r.into_inner() {
-            parse_file_entry(pair, &mut combine_view);
+            parse_file_entry(pair, &mut combine_filter);
         }
     };
 
-    return combine_view;
+    return combine_filter;
 }
 
 pub fn build_chain(
     first: Box<dyn Filter>,
     second: Box<dyn Filter>,
 ) -> Box<dyn Filter> {
-    Box::new(ChainView {
+    Box::new(ChainFilter {
         first: first,
         second: second,
     })
@@ -1374,7 +1375,7 @@ pub fn parse(filter_spec: &str) -> Box<dyn Filter> {
             for pair in r.into_inner() {
                 let v = parse_item(pair);
                 chain = Some(if let Some(c) = chain {
-                    Box::new(ChainView {
+                    Box::new(ChainFilter {
                         first: c,
                         second: v,
                     })
@@ -1382,11 +1383,11 @@ pub fn parse(filter_spec: &str) -> Box<dyn Filter> {
                     v
                 });
             }
-            return chain.unwrap_or(Box::new(NopView));
+            return chain.unwrap_or(Box::new(NopFilter));
         };
     }
 
-    return build_combine_view(filter_spec, Box::new(EmptyView));
+    return build_combine_filter(filter_spec, Box::new(EmptyFilter));
 }
 
 fn get_subtree(tree: &git2::Tree, path: &Path) -> Option<git2::Oid> {
@@ -1444,18 +1445,18 @@ fn replace_subtree(
     }
 }
 
-fn apply_view_cached(
+fn apply_filter_cached(
     repo: &git2::Repository,
-    view: &dyn Filter,
+    filter: &dyn Filter,
     newrev: git2::Oid,
-    forward_maps: &mut view_maps::ViewMaps,
-    backward_maps: &mut view_maps::ViewMaps,
+    forward_maps: &mut filter_cache::FilterCache,
+    backward_maps: &mut filter_cache::FilterCache,
 ) -> super::JoshResult<git2::Oid> {
-    if forward_maps.has(repo, &view.filter_spec(), newrev) {
-        return Ok(forward_maps.get(&view.filter_spec(), newrev));
+    if forward_maps.has(repo, &filter.filter_spec(), newrev) {
+        return Ok(forward_maps.get(&filter.filter_spec(), newrev));
     }
 
-    let trace_s = tracing::span!(tracing::Level::TRACE, "apply_view_cached", filter_spec = ?view.filter_spec());
+    let trace_s = tracing::span!(tracing::Level::TRACE, "apply_filter_cached", filter_spec = ?filter.filter_spec());
 
     let walk = {
         let mut walk = repo.revwalk()?;
@@ -1473,7 +1474,7 @@ fn apply_view_cached(
         let original_commit = repo.find_commit(original_commit_id?)?;
 
         let filtered_commit = ok_or!(
-            view.apply_to_commit(
+            filter.apply_to_commit(
                 &repo,
                 &original_commit,
                 forward_maps,
@@ -1490,22 +1491,22 @@ fn apply_view_cached(
             empty_tree_count += 1;
         }
         forward_maps.set(
-            &view.filter_spec(),
+            &filter.filter_spec(),
             original_commit.id(),
             filtered_commit,
         );
         backward_maps.set(
-            &view.filter_spec(),
+            &filter.filter_spec(),
             filtered_commit,
             original_commit.id(),
         );
         out_commit_count += 1;
     }
 
-    if !forward_maps.has(&repo, &view.filter_spec(), newrev) {
-        forward_maps.set(&view.filter_spec(), newrev, git2::Oid::zero());
+    if !forward_maps.has(&repo, &filter.filter_spec(), newrev) {
+        forward_maps.set(&filter.filter_spec(), newrev, git2::Oid::zero());
     }
-    let rewritten = forward_maps.get(&view.filter_spec(), newrev);
+    let rewritten = forward_maps.get(&filter.filter_spec(), newrev);
     tracing::event!(
         parent: &trace_s,
         tracing::Level::TRACE,

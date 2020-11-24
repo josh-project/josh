@@ -178,7 +178,7 @@
 
   $ git add .
 
-  $ git commit -m "add in view" 1> /dev/null
+  $ git commit -m "add in filter" 1> /dev/null
 
   $ git push
   remote: josh-proxy        
@@ -266,7 +266,7 @@ Note that ws/d/ is now present in the ws
   6 directories, 10 files
   $ git log --graph --pretty=%s
   * try to modify ws
-  * add in view
+  * add in filter
   * mod workspace
   * add file3
   * add workspace
@@ -301,7 +301,7 @@ Note that ws/d/ is now present in the ws
   
   Turn off this advice by setting config variable advice.detachedHead to false
   
-  HEAD is now at * add in view (glob)
+  HEAD is now at * add in filter (glob)
   $ git clean -ffdx 1> /dev/null
   $ tree
   .
@@ -323,7 +323,7 @@ Note that ws/d/ is now present in the ws
   5 directories, 9 files
 
   $ git checkout HEAD~1 1> /dev/null
-  Previous HEAD position was * add in view (glob)
+  Previous HEAD position was * add in filter (glob)
   HEAD is now at * mod workspace (glob)
   $ git clean -ffdx 1> /dev/null
   $ tree

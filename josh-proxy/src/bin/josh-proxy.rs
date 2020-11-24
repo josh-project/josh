@@ -25,8 +25,8 @@ lazy_static! {
 
 josh::regex_parsed!(
     TransformedRepoUrl,
-    r"(?P<upstream_repo>/.*[.]git)(?P<headref>@[^:!]*)?(?P<view>[:!].*)[.](?P<ending>(?:git)|(?:json))(?P<pathinfo>/.*)?",
-    [upstream_repo, view, pathinfo, headref, ending]
+    r"(?P<upstream_repo>/.*[.]git)(?P<headref>@[^:!]*)?(?P<filter>[:!].*)[.](?P<ending>(?:git)|(?:json))(?P<pathinfo>/.*)?",
+    [upstream_repo, filter, pathinfo, headref, ending]
 );
 
 type CredentialCache = HashMap<String, std::time::Instant>;
@@ -40,8 +40,8 @@ struct JoshProxyService {
     repo_path: std::path::PathBuf,
     /* gerrit: Arc<josh_proxy::gerrit::Gerrit>, */
     upstream_url: String,
-    forward_maps: Arc<RwLock<josh::view_maps::ViewMaps>>,
-    backward_maps: Arc<RwLock<josh::view_maps::ViewMaps>>,
+    forward_maps: Arc<RwLock<josh::filter_cache::FilterCache>>,
+    backward_maps: Arc<RwLock<josh::filter_cache::FilterCache>>,
     credential_cache: Arc<RwLock<CredentialCache>>,
     fetching: Arc<RwLock<std::collections::HashSet<String>>>,
 }
@@ -228,7 +228,7 @@ fn static_paths(
             .with_status(hyper::StatusCode::Ok);
         return Some(Box::new(futures::future::ok(response)));
     }
-    if path == "/views" {
+    if path == "/filters" {
         service.credential_cache.write().unwrap().clear();
 
         let repo = git2::Repository::init_bare(&service.repo_path).unwrap();
@@ -327,7 +327,7 @@ fn call_service(
         let f = compute_pool.spawn_fn(move || {
             let info = josh::housekeeping::get_info(
                 &repo,
-                &*josh::filters::parse(&parsed_url.view),
+                &*josh::filters::parse(&parsed_url.filter),
                 &parsed_url.upstream_repo,
                 &headref,
                 forward_maps.clone(),
@@ -395,7 +395,7 @@ fn call_service(
         None
     };
 
-    let filter_spec = parsed_url.view.clone();
+    let filter_spec = parsed_url.filter.clone();
     let service = service.clone();
     let fs = filter_spec.clone();
 
@@ -476,13 +476,18 @@ fn do_filter(
             )
         });
 
-        let mut bm = josh::view_maps::new_downstream(&backward_maps);
-        let mut fm = josh::view_maps::new_downstream(&forward_maps);
+        let mut bm = josh::filter_cache::new_downstream(&backward_maps);
+        let mut fm = josh::filter_cache::new_downstream(&forward_maps);
         josh::scratch::apply_filter_to_refs(
             &repo, &*filter, &from_to, &mut fm, &mut bm,
         )
         .ok();
-        josh::view_maps::try_merge_both(forward_maps, backward_maps, &fm, &bm);
+        josh::filter_cache::try_merge_both(
+            forward_maps,
+            backward_maps,
+            &fm,
+            &bm,
+        );
         repo.reference_symbolic(
             &temp_ns.reference("HEAD"),
             &temp_ns.reference("refs/heads/master"),
@@ -545,10 +550,10 @@ fn run_proxy() -> josh::JoshResult<i32> {
 
     josh_proxy::create_repo(&local)?;
 
-    let forward_maps = Arc::new(RwLock::new(josh::view_maps::try_load(
+    let forward_maps = Arc::new(RwLock::new(josh::filter_cache::try_load(
         &local.join("josh_forward_maps"),
     )));
-    let backward_maps = Arc::new(RwLock::new(josh::view_maps::try_load(
+    let backward_maps = Arc::new(RwLock::new(josh::filter_cache::try_load(
         &local.join("josh_backward_maps"),
     )));
 
@@ -603,8 +608,8 @@ fn run_http_server(
     port: String,
     local: &std::path::Path,
     remote: &str,
-    forward_maps: Arc<RwLock<josh::view_maps::ViewMaps>>,
-    backward_maps: Arc<RwLock<josh::view_maps::ViewMaps>>,
+    forward_maps: Arc<RwLock<josh::filter_cache::FilterCache>>,
+    backward_maps: Arc<RwLock<josh::filter_cache::FilterCache>>,
 ) -> josh::JoshResult<JoshProxyService> {
     let service = JoshProxyService {
         handle: core.handle(),

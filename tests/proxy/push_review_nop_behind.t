@@ -1,4 +1,4 @@
-When using nop view the backward map never gets populated because no translation
+When using nop filter the backward map never gets populated because no translation
 is done. This caused a crash when pushing changes that are not fully rebased.
 This is a regression test for that problem.
 

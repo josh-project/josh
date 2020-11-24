@@ -158,8 +158,12 @@ fn baseref_and_options(
 
 pub fn process_repo_update(
     repo_update: std::collections::HashMap<String, String>,
-    _forward_maps: std::sync::Arc<std::sync::RwLock<josh::view_maps::ViewMaps>>,
-    backward_maps: std::sync::Arc<std::sync::RwLock<josh::view_maps::ViewMaps>>,
+    _forward_maps: std::sync::Arc<
+        std::sync::RwLock<josh::filter_cache::FilterCache>,
+    >,
+    backward_maps: std::sync::Arc<
+        std::sync::RwLock<josh::filter_cache::FilterCache>,
+    >,
 ) -> Result<String, josh::JoshError> {
     let ru = {
         let mut ru = repo_update.clone();
@@ -206,30 +210,30 @@ pub fn process_repo_update(
         old
     };
 
-    let viewobj = josh::filters::parse(&filter_spec);
+    let filterobj = josh::filters::parse(&filter_spec);
     let new_oid = git2::Oid::from_str(&new)?;
     let backward_new_oid = {
         tracing::debug!("=== MORE");
 
         tracing::debug!("=== processed_old {:?}", old);
 
-        match josh::scratch::unapply_view(
+        match josh::scratch::unapply_filter(
             &repo,
             backward_maps,
-            &*viewobj,
+            &*filterobj,
             old,
             new_oid,
         )? {
-            josh::UnapplyView::Done(rewritten) => {
+            josh::UnapplyFilter::Done(rewritten) => {
                 tracing::debug!("rewritten");
                 rewritten
             }
-            josh::UnapplyView::BranchDoesNotExist => {
+            josh::UnapplyFilter::BranchDoesNotExist => {
                 return Err(josh::josh_error(
                     "branch does not exist on remote",
                 ));
             }
-            josh::UnapplyView::RejectMerge(parent_count) => {
+            josh::UnapplyFilter::RejectMerge(parent_count) => {
                 return Err(josh::josh_error(&format!(
                     "rejecting merge with {} parents",
                     parent_count

@@ -186,13 +186,13 @@ pub fn get_info(
     filter: &dyn filters::Filter,
     upstream_repo: &str,
     headref: &str,
-    forward_maps: Arc<RwLock<view_maps::ViewMaps>>,
-    backward_maps: Arc<RwLock<view_maps::ViewMaps>>,
+    forward_maps: Arc<RwLock<filter_cache::FilterCache>>,
+    backward_maps: Arc<RwLock<filter_cache::FilterCache>>,
 ) -> JoshResult<String> {
     let _trace_s = span!(Level::TRACE, "get_info");
 
-    let mut bm = view_maps::new_downstream(&backward_maps);
-    let mut fm = view_maps::new_downstream(&forward_maps);
+    let mut bm = filter_cache::new_downstream(&backward_maps);
+    let mut fm = filter_cache::new_downstream(&forward_maps);
 
     let obj = repo.revparse_single(&format!(
         "refs/josh/upstream/{}/{}",
@@ -252,15 +252,15 @@ pub fn get_info(
 pub fn refresh_known_filters(
     repo: &git2::Repository,
     known_filters: &KnownViews,
-    forward_maps: Arc<RwLock<view_maps::ViewMaps>>,
-    backward_maps: Arc<RwLock<view_maps::ViewMaps>>,
+    forward_maps: Arc<RwLock<filter_cache::FilterCache>>,
+    backward_maps: Arc<RwLock<filter_cache::FilterCache>>,
 ) -> JoshResult<usize> {
     let mut total = 0;
     for (upstream_repo, e) in known_filters.iter() {
         info!("background rebuild root: {:?}", upstream_repo);
 
-        let mut bm = view_maps::new_downstream(&backward_maps);
-        let mut fm = view_maps::new_downstream(&forward_maps);
+        let mut bm = filter_cache::new_downstream(&backward_maps);
+        let mut fm = filter_cache::new_downstream(&forward_maps);
 
         let mut updated_count = 0;
 
@@ -303,8 +303,8 @@ pub fn refresh_known_filters(
 
 pub fn spawn_thread(
     repo_path: std::path::PathBuf,
-    forward_maps: Arc<RwLock<view_maps::ViewMaps>>,
-    backward_maps: Arc<RwLock<view_maps::ViewMaps>>,
+    forward_maps: Arc<RwLock<filter_cache::FilterCache>>,
+    backward_maps: Arc<RwLock<filter_cache::FilterCache>>,
     do_gc: bool,
 ) -> std::thread::JoinHandle<()> {
     let mut gc_timer = std::time::Instant::now();
@@ -327,12 +327,12 @@ pub fn spawn_thread(
                 || persist_timer.elapsed()
                     > std::time::Duration::from_secs(60 * 15)
             {
-                view_maps::persist(
+                filter_cache::persist(
                     &*backward_maps.read().unwrap(),
                     &repo.path().join("josh_backward_maps"),
                 )
                 .ok();
-                view_maps::persist(
+                filter_cache::persist(
                     &*forward_maps.read().unwrap(),
                     &repo.path().join("josh_forward_maps"),
                 )
