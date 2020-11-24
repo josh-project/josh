@@ -39,7 +39,8 @@ struct JoshProxyService {
     forward_maps: Arc<RwLock<josh::filter_cache::FilterCache>>,
     backward_maps: Arc<RwLock<josh::filter_cache::FilterCache>>,
     credential_cache: Arc<RwLock<CredentialCache>>,
-    fetching: Arc<RwLock<std::collections::HashSet<String>>>,
+    fetch_permits: Arc<tokio::sync::Semaphore>,
+    filter_permits: Arc<tokio::sync::Semaphore>,
 }
 
 impl std::fmt::Debug for JoshProxyService {
@@ -138,6 +139,8 @@ async fn fetch_upstream(
     let credential_cache = service.credential_cache.clone();
     let br_path = service.repo_path.clone();
 
+    let permit = service.fetch_permits.acquire().await;
+
     let res = tokio::task::spawn_blocking(move || {
         josh_proxy::fetch_refs_from_url(
             &br_path,
@@ -149,6 +152,8 @@ async fn fetch_upstream(
         )
     })
     .await??;
+
+    std::mem::drop(permit);
 
     if res {
         credential_cache
@@ -247,7 +252,8 @@ async fn do_filter(
 ) -> git2::Repository {
     let forward_maps = service.forward_maps.clone();
     let backward_maps = service.backward_maps.clone();
-    return tokio::task::spawn_blocking(move || {
+    let permit = service.filter_permits.acquire().await;
+    let r = tokio::task::spawn_blocking(move || {
         let repo = git2::Repository::init_bare(&repo_path).unwrap();
         let filter = josh::filters::parse(&filter_spec);
         let filter_spec = filter.filter_spec();
@@ -282,6 +288,10 @@ async fn do_filter(
     })
     .await
     .unwrap();
+
+    std::mem::drop(permit);
+
+    return r;
 }
 
 /* #[tracing::instrument] */
@@ -480,7 +490,8 @@ async fn run_proxy() -> josh::JoshResult<i32> {
         backward_maps: backward_maps,
         upstream_url: remote.to_owned(),
         credential_cache: Arc::new(RwLock::new(CredentialCache::new())),
-        fetching: Arc::new(RwLock::new(std::collections::HashSet::new())),
+        fetch_permits: Arc::new(tokio::sync::Semaphore::new(1)),
+        filter_permits: Arc::new(tokio::sync::Semaphore::new(10)),
     });
 
     let make_service = make_service_fn(move |_| {
