@@ -249,7 +249,7 @@ async fn do_filter(
     temp_ns: Arc<josh_proxy::TmpGitNamespace>,
     filter_spec: String,
     from_to: Option<Vec<(String, String)>>,
-) -> git2::Repository {
+) -> josh::JoshResult<git2::Repository> {
     let forward_maps = service.forward_maps.clone();
     let backward_maps = service.backward_maps.clone();
     let permit = service.filter_permits.acquire().await;
@@ -286,12 +286,11 @@ async fn do_filter(
         .ok();
         return repo;
     })
-    .await
-    .unwrap();
+    .await?;
 
     std::mem::drop(permit);
 
-    return r;
+    return Ok(r);
 }
 
 /* #[tracing::instrument] */
@@ -427,7 +426,7 @@ async fn call_service(
 
     let ns = temp_ns.clone();
 
-    do_filter(
+    if !do_filter(
         serv.repo_path.clone(),
         serv.clone(),
         parsed_url.upstream_repo,
@@ -435,7 +434,13 @@ async fn call_service(
         filter_spec,
         refs,
     )
-    .await;
+    .await
+    .is_ok()
+    {
+        let builder = Response::builder()
+            .status(hyper::StatusCode::INTERNAL_SERVER_ERROR);
+        return builder.body(hyper::Body::empty()).unwrap();
+    }
 
     let pathinfo = parsed_url.pathinfo.clone();
     let repo_path = serv.repo_path.to_str().unwrap();
