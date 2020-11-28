@@ -254,7 +254,7 @@ async fn do_filter(
     let backward_maps = service.backward_maps.clone();
     let permit = service.filter_permits.acquire().await;
     let r = tokio::task::spawn_blocking(move || {
-        let repo = git2::Repository::init_bare(&repo_path).unwrap();
+        let repo = git2::Repository::init_bare(&repo_path)?;
         let filter = josh::filters::parse(&filter_spec);
         let filter_spec = filter.filter_spec();
         let from_to = from_to.unwrap_or_else(|| {
@@ -269,8 +269,7 @@ async fn do_filter(
         let mut fm = josh::filter_cache::new_downstream(&forward_maps);
         josh::scratch::apply_filter_to_refs(
             &repo, &*filter, &from_to, &mut fm, &mut bm,
-        )
-        .ok();
+        )?;
         josh::filter_cache::try_merge_both(
             forward_maps,
             backward_maps,
@@ -282,15 +281,14 @@ async fn do_filter(
             &temp_ns.reference("refs/heads/master"),
             true,
             "",
-        )
-        .ok();
-        return repo;
+        )?;
+        return Ok(repo);
     })
     .await?;
 
     std::mem::drop(permit);
 
-    return Ok(r);
+    return r;
 }
 
 /* #[tracing::instrument] */
