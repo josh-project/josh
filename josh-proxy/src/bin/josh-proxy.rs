@@ -4,6 +4,7 @@ use base64;
 
 use futures::future;
 use futures::FutureExt;
+use futures::TryStreamExt;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Request, Response, Server};
 use std::collections::HashMap;
@@ -23,10 +24,12 @@ lazy_static! {
 }
 
 josh::regex_parsed!(
-    TransformedRepoUrl,
-    r"(?P<upstream_repo>/.*[.]git)(?P<headref>@[^:!]*)?(?P<view>[:!].*)[.](?P<ending>(?:git)|(?:json))(?P<pathinfo>/.*)?",
-    [upstream_repo, view, pathinfo, headref, ending]
+    FilteredRepoUrl,
+    r"(?P<upstream_repo>/.*[.]git)(?P<headref>@[^:!]*)?(?P<filter>[:!].*)[.](?P<ending>(?:git)|(?:json))(?P<pathinfo>/.*)?",
+    [upstream_repo, filter, pathinfo, headref, ending]
 );
+
+josh::regex_parsed!(KvUrl, r"/@kv/(?P<k>.*)", [k]);
 
 type CredentialCache = HashMap<String, std::time::Instant>;
 
@@ -41,6 +44,7 @@ struct JoshProxyService {
     credential_cache: Arc<RwLock<CredentialCache>>,
     fetch_permits: Arc<tokio::sync::Semaphore>,
     filter_permits: Arc<tokio::sync::Semaphore>,
+    kv_store: Arc<RwLock<std::collections::HashMap<String, serde_json::Value>>>,
 }
 
 impl std::fmt::Debug for JoshProxyService {
@@ -54,35 +58,41 @@ impl std::fmt::Debug for JoshProxyService {
 
 pub fn parse_auth(
     req: &hyper::Request<hyper::Body>,
-) -> Option<(String, josh_proxy::Password)> {
+) -> (String, josh_proxy::Password) {
+    let blank = (
+        "".to_owned(),
+        josh_proxy::Password {
+            value: "".to_owned(),
+        },
+    );
     let line = josh::some_or!(
         req.headers()
             .get("authorization")
             .and_then(|h| Some(h.as_bytes())),
         {
-            return None;
+            return blank;
         }
     );
     let u = josh::ok_or!(String::from_utf8(line[6..].to_vec()), {
-        return None;
+        return blank;
     });
     let decoded = josh::ok_or!(base64::decode(&u), {
-        return None;
+        return blank;
     });
     let s = josh::ok_or!(String::from_utf8(decoded), {
-        return None;
+        return blank;
     });
     if let [username, password] =
         s.as_str().split(':').collect::<Vec<_>>().as_slice()
     {
-        return Some((
+        return (
             username.to_string(),
             josh_proxy::Password {
                 value: password.to_string(),
             },
-        ));
+        );
     }
-    return None;
+    return blank;
 }
 
 fn hash_strings(url: &str, username: &str, password: &str) -> String {
@@ -312,16 +322,37 @@ async fn call_service(
         return repo_update_fn(serv, req).await;
     }
 
-    /* /1* if path.starts_with("/review/") || path.starts_with("/c/") { *1/ */
-    /* /1*     return service.gerrit.handle_request(req); *1/ */
-    /* /1* } *1/ */
+    if let Some(kv_url) = KvUrl::from_str(&path) {
+        let body = req
+            .into_body()
+            .try_fold(String::new(), |mut acc, elt| async move {
+                acc.push_str(std::str::from_utf8(&elt).unwrap());
+                Ok(acc)
+            })
+            .await
+            .unwrap();
+
+        if body == "" {
+            if let Some(v) = serv.kv_store.read().unwrap().get(&kv_url.k) {
+                return Response::builder()
+                    .body(hyper::Body::from(v.to_string()))
+                    .unwrap();
+            }
+            return Response::builder().body(hyper::Body::from("")).unwrap();
+        } else {
+            serv.kv_store
+                .write()
+                .unwrap()
+                .insert(kv_url.k, serde_json::from_str(&body).unwrap());
+            return Response::builder().body(hyper::Body::from("ok")).unwrap();
+        }
+    }
 
     let parsed_url = {
         let nop_path = path.replacen(".git", ".git:nop.git", 1);
-        if let Some(parsed_url) = TransformedRepoUrl::from_str(&path) {
+        if let Some(parsed_url) = FilteredRepoUrl::from_str(&path) {
             parsed_url
-        } else if let Some(parsed_url) = TransformedRepoUrl::from_str(&nop_path)
-        {
+        } else if let Some(parsed_url) = FilteredRepoUrl::from_str(&nop_path) {
             parsed_url
         } else {
             return Response::builder()
@@ -333,6 +364,28 @@ async fn call_service(
 
     let headref = parsed_url.headref.trim_start_matches("@").to_owned();
 
+    let remote_url = [
+        serv.upstream_url.as_str(),
+        parsed_url.upstream_repo.as_str(),
+    ]
+    .join("");
+
+    let (username, password) = parse_auth(&req);
+
+    let temp_ns = match prepare_namespace(
+        serv.clone(),
+        &parsed_url.upstream_repo,
+        &remote_url,
+        &parsed_url.filter,
+        &headref,
+        (username.clone(), password.clone()),
+    )
+    .await
+    {
+        PrepareNsResult::Ns(temp_ns) => temp_ns,
+        PrepareNsResult::Resp(resp) => return resp,
+    };
+
     if parsed_url.ending == "json" {
         let forward_maps = serv.forward_maps.clone();
         let backward_maps = serv.forward_maps.clone();
@@ -341,7 +394,7 @@ async fn call_service(
             let repo = git2::Repository::init_bare(&serv.repo_path).unwrap();
             josh::housekeeping::get_info(
                 &repo,
-                &*josh::filters::parse(&parsed_url.view),
+                &*josh::filters::parse(&parsed_url.filter),
                 &parsed_url.upstream_repo,
                 &headref,
                 forward_maps.clone(),
@@ -358,105 +411,46 @@ async fn call_service(
             .unwrap();
     }
 
-    let (username, password) = josh::some_or!(parse_auth(&req), {
-        (
-            "".to_owned(),
-            josh_proxy::Password {
-                value: "".to_owned(),
-            },
-        )
-    });
-
-    let port = serv.port.clone();
-
-    let remote_url = [
-        serv.upstream_url.as_str(),
-        parsed_url.upstream_repo.as_str(),
-    ]
-    .join("");
-
-    let br_url = remote_url.clone();
-    let base_ns = josh::to_ns(&parsed_url.upstream_repo);
-
-    let headref = if headref != "" { Some(headref) } else { None };
-
-    let authorized = fetch_upstream(
-        serv.clone(),
-        parsed_url.upstream_repo.clone(),
-        &username,
-        password.clone(),
-        br_url,
-        &headref,
-    )
-    .await;
-
-    if let Ok(false) = authorized {
-        let builder = Response::builder()
-            .header("WWW-Authenticate", "Basic realm=User Visible Realm")
-            .status(hyper::StatusCode::UNAUTHORIZED);
-        return builder.body(hyper::Body::empty()).unwrap();
-    }
-
-    if let Err(_) = authorized {
-        let builder = Response::builder()
-            .status(hyper::StatusCode::INTERNAL_SERVER_ERROR);
-        return builder.body(hyper::Body::empty()).unwrap();
-    }
-
-    let temp_ns = Arc::new(josh_proxy::TmpGitNamespace::new(&serv.repo_path));
-
-    let refs = if let Some(headref) = headref {
-        Some(vec![(
-            format!(
-                "refs/josh/upstream/{}/{}",
-                &josh::to_ns(&parsed_url.upstream_repo),
-                headref
-            ),
-            temp_ns.reference("refs/heads/master"),
-        )])
-    } else {
-        None
-    };
-
-    let filter_spec = parsed_url.view.clone();
-    let serv = serv.clone();
-    let fs = filter_spec.clone();
-
-    let ns = temp_ns.clone();
-
-    if !do_filter(
-        serv.repo_path.clone(),
-        serv.clone(),
-        parsed_url.upstream_repo,
-        ns.clone(),
-        filter_spec,
-        refs,
-    )
-    .await
-    .is_ok()
-    {
-        let builder = Response::builder()
-            .status(hyper::StatusCode::INTERNAL_SERVER_ERROR);
-        return builder.body(hyper::Body::empty()).unwrap();
-    }
-
-    let pathinfo = parsed_url.pathinfo.clone();
     let repo_path = serv.repo_path.to_str().unwrap();
+
+    if let Some(q) = req.uri().query().map(|x| x.to_string()) {
+        if parsed_url.pathinfo == "" {
+            let res = tokio::task::spawn_blocking(move || {
+                let repo =
+                    git2::Repository::init_bare(&serv.repo_path).unwrap();
+                josh::query::render(
+                    &repo,
+                    &temp_ns.reference("HEAD"),
+                    &q,
+                    serv.kv_store.clone(),
+                    serv.forward_maps.clone(),
+                    serv.backward_maps.clone(),
+                )
+                .unwrap_or(format!("query ERROR {:?}", q))
+            })
+            .await
+            .unwrap();
+            return Response::builder()
+                .status(hyper::StatusCode::OK)
+                .body(hyper::Body::from(res))
+                .unwrap();
+        }
+    }
 
     let mut cmd = Command::new("git");
     cmd.arg("http-backend");
     cmd.current_dir(&serv.repo_path);
     cmd.env("GIT_DIR", repo_path);
     cmd.env("GIT_HTTP_EXPORT_ALL", "");
-    cmd.env("GIT_NAMESPACE", ns.name().clone());
+    cmd.env("GIT_NAMESPACE", temp_ns.name().clone());
     cmd.env("GIT_PROJECT_ROOT", repo_path);
-    cmd.env("JOSH_BASE_NS", base_ns);
+    cmd.env("JOSH_BASE_NS", josh::to_ns(&parsed_url.upstream_repo));
     cmd.env("JOSH_PASSWORD", password.value);
-    cmd.env("JOSH_PORT", port);
+    cmd.env("JOSH_PORT", serv.port.clone());
     cmd.env("JOSH_REMOTE", remote_url);
     cmd.env("JOSH_USERNAME", username);
-    cmd.env("JOSH_VIEWSTR", fs);
-    cmd.env("PATH_INFO", pathinfo);
+    cmd.env("JOSH_VIEWSTR", parsed_url.filter.clone());
+    cmd.env("PATH_INFO", parsed_url.pathinfo.clone());
 
     let cgires = hyper_cgi::do_cgi(req, cmd).await.0;
 
@@ -465,6 +459,92 @@ async fn call_service(
     std::mem::drop(temp_ns);
 
     return cgires;
+}
+
+enum PrepareNsResult {
+    Ns(std::sync::Arc<josh_proxy::TmpGitNamespace>),
+    Resp(hyper::Response<hyper::Body>),
+}
+
+async fn prepare_namespace(
+    serv: Arc<JoshProxyService>,
+    upstream_repo: &str,
+    remote_url: &str,
+    filter_spec: &str,
+    headref: &str,
+    auth: (String, josh_proxy::Password),
+) -> PrepareNsResult {
+    let (username, password) = auth;
+
+    let headref = if headref != "" {
+        Some(headref.to_owned())
+    } else {
+        None
+    };
+
+    let authorized = fetch_upstream(
+        serv.clone(),
+        upstream_repo.to_owned(),
+        &username,
+        password.clone(),
+        remote_url.to_owned(),
+        &headref,
+    )
+    .await;
+
+    if let Ok(false) = authorized {
+        let builder = Response::builder()
+            .header("WWW-Authenticate", "Basic realm=User Visible Realm")
+            .status(hyper::StatusCode::UNAUTHORIZED);
+        return PrepareNsResult::Resp(
+            builder.body(hyper::Body::empty()).unwrap(),
+        );
+    }
+
+    if let Err(_) = authorized {
+        let builder = Response::builder()
+            .status(hyper::StatusCode::INTERNAL_SERVER_ERROR);
+        return PrepareNsResult::Resp(
+            builder.body(hyper::Body::empty()).unwrap(),
+        );
+    }
+
+    let temp_ns = Arc::new(josh_proxy::TmpGitNamespace::new(&serv.repo_path));
+
+    let refs = if let Some(headref) = headref {
+        Some(vec![(
+            format!(
+                "refs/josh/upstream/{}/{}",
+                &josh::to_ns(&upstream_repo),
+                headref
+            ),
+            temp_ns.reference("refs/heads/master"),
+        )])
+    } else {
+        None
+    };
+
+    let serv = serv.clone();
+
+    if !do_filter(
+        serv.repo_path.clone(),
+        serv.clone(),
+        upstream_repo.to_owned(),
+        temp_ns.to_owned(),
+        filter_spec.to_owned(),
+        refs,
+    )
+    .await
+    .is_ok()
+    {
+        let builder = Response::builder()
+            .status(hyper::StatusCode::INTERNAL_SERVER_ERROR);
+        return PrepareNsResult::Resp(
+            builder.body(hyper::Body::empty()).unwrap(),
+        );
+    }
+
+    return PrepareNsResult::Ns(temp_ns);
 }
 
 #[tokio::main]
@@ -495,6 +575,7 @@ async fn run_proxy() -> josh::JoshResult<i32> {
         credential_cache: Arc::new(RwLock::new(CredentialCache::new())),
         fetch_permits: Arc::new(tokio::sync::Semaphore::new(1)),
         filter_permits: Arc::new(tokio::sync::Semaphore::new(10)),
+        kv_store: Arc::new(RwLock::new(HashMap::new())),
     });
 
     let make_service = make_service_fn(move |_| {

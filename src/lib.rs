@@ -23,6 +23,9 @@ macro_rules! ok_or {
 }
 
 #[macro_use]
+extern crate handlebars;
+
+#[macro_use]
 extern crate pest_derive;
 
 #[macro_use]
@@ -33,6 +36,7 @@ use tracing;
 pub mod filter_cache;
 pub mod filters;
 pub mod housekeeping;
+pub mod query;
 pub mod scratch;
 pub mod shell;
 
