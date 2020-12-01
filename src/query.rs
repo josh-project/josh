@@ -195,6 +195,8 @@ impl handlebars::HelperDef for KvHelper {
 
 handlebars_helper!(concat_helper: |x: str, y: str| format!("{}{}", x, y) );
 
+handlebars_helper!(toml_helper: |x: str| toml::de::from_str::<serde_json::Value>(x).unwrap_or(json!({})) );
+
 pub fn render(
     repo: &git2::Repository,
     headref: &str,
@@ -237,6 +239,7 @@ pub fn render(
     let mut handlebars = handlebars::Handlebars::new();
     handlebars.register_template_string("template", template)?;
     handlebars.register_helper("concat", Box::new(concat_helper));
+    handlebars.register_helper("toml-parse", Box::new(toml_helper));
     handlebars.register_helper(
         "git-find",
         Box::new(FindFilesHelper {

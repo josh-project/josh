@@ -6,6 +6,10 @@
   $ cd repo
 
   $ echo contents0 > file0
+  $ cat > config_file.toml <<EOF
+  > [a]
+  > b = "my_value"
+  > EOF
   $ mkdir sub1
   $ mkdir sub2
   $ echo contents1 > sub1/file1
@@ -16,7 +20,10 @@
 
 
   $ cat > sub1/tmpl_file <<EOF
-  > {{ #each (git-find "file.") }}
+  > {{ #with (toml-parse (git-blob "config_file.toml")) }}
+  > From TOML: {{ a.b }}
+  > {{ /with }}
+  > {{ #each (git-find "file.$") }}
   > {{ ~@index}}:
   > name: {{ this.name }}
   > path: {{ this.path }}
@@ -56,6 +63,9 @@
   $ josh-filter HEAD :nop -q render=sub1/file1
   contents1
   $ josh-filter HEAD :nop -q render=sub1/tmpl_file
+  
+  From TOML: my_value
+  
   0:
   name: file0
   path: file0

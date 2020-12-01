@@ -662,6 +662,7 @@ dependencies = [
  "rs_tracing",
  "serde",
  "serde_json",
+ "toml",
  "tracing",
  "tracing-log",
  "tracing-subscriber",
