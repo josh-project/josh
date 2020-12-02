@@ -1,0 +1,43 @@
+  $ . ${TESTDIR}/setup_test_env.sh
+  $ cd ${TESTTMP}
+
+  $ git clone -q http://localhost:8001/real_repo.git
+  warning: You appear to have cloned an empty repository.
+
+  $ cd real_repo
+
+  $ mkdir sub1
+  $ echo contents1 > sub1/file1
+  $ git add sub1
+  $ git commit -m "add file1" 1> /dev/null
+
+  $ mkdir sub2
+  $ echo contents1 > sub2/file2
+  $ git add sub2
+  $ git commit -m "add file2" 1> /dev/null
+
+  $ cat > tmpl_file <<EOF
+  > kv: {{ #with (josh-kv "stored_value") }} {{ from_storage }} {{ /with }}
+  > EOF
+
+  $ git add tmpl_file
+  $ git commit -m "add tmpl_file" 1> /dev/null
+
+
+  $ git push
+  To http://localhost:8001/real_repo.git
+   * [new branch]      master -> master
+
+  $ cd ${TESTTMP}
+
+  $ curl -s http://localhost:8002/@kv/stored_value -X POST -d "{\"from_storage\":1234}"
+  ok (no-eol)
+  $ curl -s http://localhost:8002/@kv/stored_value
+  {"from_storage":1234} (no-eol)
+
+  $ curl -s http://localhost:8002/real_repo.git:/sub1.git?get=file1
+  contents1
+  $ curl -s http://localhost:8002/real_repo.git?render=tmpl_file
+  kv:  1234 
+  $ curl -s http://localhost:8002/real_repo.git?get=sub1/file1
+  contents1

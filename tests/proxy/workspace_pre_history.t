@@ -122,8 +122,9 @@ file was created
   |           `-- refs
   |               `-- heads
   |                   `-- master
+  |-- namespaces
   `-- tags
   
-  17 directories, 5 files
+  18 directories, 5 files
 
 $ cat ${TESTTMP}/josh-proxy.out | grep VIEW

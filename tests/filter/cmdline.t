@@ -97,15 +97,15 @@
 
   $ cat c/.joshinfo
   commit: * (glob)
+  filter: :/sub1
   src: libs/master
   tree: * (glob)
-  view: :/sub1
 
   $ cat a/b/.joshinfo
   commit: * (glob)
+  filter: :/sub2
   src: libs/foo
   tree: * (glob)
-  view: :/sub2
 
 $ git show libs/master | grep $(cat c/.joshinfo | grep commit | sed 's/commit: //')
 commit * (glob)

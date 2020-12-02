@@ -83,6 +83,7 @@
   |           `-- refs
   |               `-- heads
   |                   `-- master
+  |-- namespaces
   `-- tags
   
-  13 directories, 3 files
+  14 directories, 3 files

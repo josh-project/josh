@@ -83,7 +83,7 @@
 
   $ sleep 10
 
-  $ curl -s http://localhost:8002/views
+  $ curl -s http://localhost:8002/filters
   "real/repo2.git" = [
       ':/sub1',
       ':/sub1/subsub',
@@ -130,8 +130,9 @@
   |           `-- refs
   |               `-- heads
   |                   `-- master
+  |-- namespaces
   `-- tags
   
-  25 directories, 9 files
+  26 directories, 9 files
 
 $ cat ${TESTTMP}/josh-proxy.out

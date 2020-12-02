@@ -1,4 +1,4 @@
-#![deny(warnings)]
+/* #![deny(warnings)] */
 #![warn(unused_extern_crates)]
 
 #[macro_use]
@@ -22,8 +22,18 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         .arg(clap::Arg::with_name("input_ref").takes_value(true))
         .arg(clap::Arg::with_name("spec").takes_value(true))
         .arg(clap::Arg::with_name("file").long("file").takes_value(true))
-        .arg(clap::Arg::with_name("update").long("update").takes_value(true))
+        .arg(
+            clap::Arg::with_name("update")
+                .long("update")
+                .takes_value(true),
+        )
         .arg(clap::Arg::with_name("squash").long("squash"))
+        .arg(
+            clap::Arg::with_name("query")
+                .long("query")
+                .short("q")
+                .takes_value(true),
+        )
         .arg(clap::Arg::with_name("reverse").long("reverse"))
         .arg(
             clap::Arg::with_name("check-permission")
@@ -47,15 +57,16 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
     }
 
     let repo = git2::Repository::open_from_env()?;
-    let mut fm =
-        josh::view_maps::try_load(&repo.path().join("josh_forward_maps"));
-    let backward_maps = Arc::new(RwLock::new(josh::view_maps::try_load(
+    let forward_maps = Arc::new(RwLock::new(josh::filter_cache::try_load(
+        &repo.path().join("josh_forward_maps"),
+    )));
+    let backward_maps = Arc::new(RwLock::new(josh::filter_cache::try_load(
         &repo.path().join("josh_backward_maps"),
     )));
 
     let input_ref = args.value_of("input_ref").unwrap_or("");
     let specstr = args.value_of("spec").unwrap_or("");
-    let update_target = args.value_of("update").unwrap_or("refs/JOSH_OUT");
+    let update_target = args.value_of("update").unwrap_or("refs/JOSH_HEAD");
     let srcstr = format!("{}:{}", input_ref, update_target);
 
     let filestr = args
@@ -78,16 +89,16 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
 
         let filter_spec = caps.name("spec").unwrap().as_str().trim().to_owned();
 
-        let mut viewobj = josh::filters::parse(&filter_spec);
+        let mut filterobj = josh::filters::parse(&filter_spec);
 
-        let pres = viewobj.prefixes();
+        let pres = filterobj.prefixes();
 
         if args.is_present("infofile") {
             for (p, v) in pres.iter() {
-                viewobj = josh::build_chain(
-                    viewobj,
+                filterobj = josh::build_chain(
+                    filterobj,
                     josh::filters::parse(&format!(
-                        ":info={},commit=#sha1,tree=#tree,src={},view={}",
+                        ":info={},commit=#sha1,tree=#tree,src={},filter={}",
                         p,
                         &src,
                         v.replace(":", "<colon>").replace(",", "<comma>")
@@ -100,15 +111,17 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         let check_permissions = args.is_present("check-permission");
 
         if args.is_present("squash") {
-            viewobj = josh::build_chain(
+            filterobj = josh::build_chain(
                 josh::filters::parse(&format!(":cutoff={}", &src)),
-                viewobj,
+                filterobj,
             );
         }
 
         if check_permissions {
-            viewobj = josh::build_chain(josh::filters::parse(":DIRS"), viewobj);
-            viewobj = josh::build_chain(viewobj, josh::filters::parse(":FOLD"));
+            filterobj =
+                josh::build_chain(josh::filters::parse(":DIRS"), filterobj);
+            filterobj =
+                josh::build_chain(filterobj, josh::filters::parse(":FOLD"));
         }
 
         let t = if reverse {
@@ -126,9 +139,9 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
 
         josh::apply_filter_to_refs(
             &repo,
-            &*viewobj,
+            &*filterobj,
             &[(src.clone(), t.clone())],
-            &mut fm,
+            &mut forward_maps.write().unwrap(),
             &mut backward_maps.write().unwrap(),
         )?;
 
@@ -174,19 +187,37 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
             println!("Allowed = {:?}", allowed);
         }
 
+        if let Some(query) = args.value_of("query") {
+            let kv_store = Arc::new(RwLock::new(serde_json::from_str(
+                &std::fs::read_to_string(".git/josh_kv.json")
+                    .unwrap_or("{}".to_string()),
+            )?));
+            print!(
+                "{}",
+                josh::query::render(
+                    &repo,
+                    &update_target.to_string(),
+                    &query,
+                    kv_store.clone(),
+                    forward_maps.clone(),
+                    backward_maps.clone(),
+                )?
+            );
+        }
+
         if reverse {
             let new = repo.revparse_single(&target).unwrap().id();
             let old = repo.revparse_single("JOSH_TMP").unwrap().id();
 
-            match josh::unapply_view(
+            match josh::unapply_filter(
                 &repo,
                 backward_maps.clone(),
-                &*viewobj,
+                &*filterobj,
                 old,
                 new,
             )? {
-                josh::UnapplyView::Done(rewritten) => {
-                    repo.reference(&src, rewritten, true, "unapply_view")?;
+                josh::UnapplyFilter::Done(rewritten) => {
+                    repo.reference(&src, rewritten, true, "unapply_filter")?;
                 }
                 _ => {
                     /* debug!("rewritten ERROR"); */
@@ -198,9 +229,13 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
 
     let bm = backward_maps.read().unwrap();
 
-    josh::view_maps::persist(&*bm, &repo.path().join("josh_backward_maps"))
+    josh::filter_cache::persist(&*bm, &repo.path().join("josh_backward_maps"))
         .ok();
-    josh::view_maps::persist(&fm, &repo.path().join("josh_forward_maps")).ok();
+    josh::filter_cache::persist(
+        &forward_maps.read().unwrap(),
+        &repo.path().join("josh_forward_maps"),
+    )
+    .ok();
 
     return Ok(0);
 }

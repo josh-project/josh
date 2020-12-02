@@ -30,6 +30,9 @@
   remote: 
   To http://localhost:8002/real_repo.git:/sub1.git
    * [new branch]      HEAD -> new_branch
+
+  $ curl -s http://localhost:8002/flush
+  Flushed credential cache
   $ git push
   remote: josh-proxy        
   remote: response from upstream:        
@@ -81,8 +84,9 @@ Make sure all temporary namespace got removed
   |               `-- heads
   |                   |-- master
   |                   `-- new_branch
+  |-- namespaces
   `-- tags
   
-  11 directories, 3 files
+  12 directories, 3 files
 
 $ cat ${TESTTMP}/josh-proxy.out

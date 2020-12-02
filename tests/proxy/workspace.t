@@ -143,7 +143,7 @@
 
   $ git add .
 
-  $ git commit -m "add in view" 1> /dev/null
+  $ git commit -m "add in filter" 1> /dev/null
 
   $ git push 1> /dev/null
   remote: josh-proxy        
@@ -182,7 +182,7 @@
   
   5 directories, 9 files
   $ git log --graph --pretty=%s
-  * add in view
+  * add in filter
   * add file2
   * add file1
   * add file3
@@ -260,8 +260,9 @@
   |           `-- refs
   |               `-- heads
   |                   `-- master
+  |-- namespaces
   `-- tags
   
-  21 directories, 7 files
+  22 directories, 7 files
 
 $ cat ${TESTTMP}/josh-proxy.out | grep VIEW

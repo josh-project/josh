@@ -3,9 +3,9 @@ use tracing;
 
 use self::tracing::{warn, Level};
 use super::empty_tree;
+use super::filter_cache;
 use super::filters;
-use super::view_maps;
-use super::UnapplyView;
+use super::UnapplyFilter;
 use std::collections::HashMap;
 use std::collections::HashSet;
 
@@ -47,14 +47,14 @@ pub fn rewrite(
     )?);
 }
 
-pub fn unapply_view(
+pub fn unapply_filter(
     repo: &git2::Repository,
-    backward_maps: std::sync::Arc<std::sync::RwLock<view_maps::ViewMaps>>,
-    viewobj: &dyn filters::Filter,
+    backward_maps: std::sync::Arc<std::sync::RwLock<filter_cache::FilterCache>>,
+    filterobj: &dyn filters::Filter,
     old: git2::Oid,
     new: git2::Oid,
-) -> super::JoshResult<UnapplyView> {
-    let trace_s = tracing::span!( Level::DEBUG, "unapply_view", repo = ?repo.path(), ?old, ?new);
+) -> super::JoshResult<UnapplyFilter> {
+    let trace_s = tracing::span!( Level::DEBUG, "unapply_filter", repo = ?repo.path(), ?old, ?new);
     let _e = trace_s.enter();
 
     let walk = {
@@ -69,8 +69,8 @@ pub fn unapply_view(
         walk
     };
 
-    let mut bm = view_maps::new_downstream(&backward_maps);
-    let mut ret = bm.get(&viewobj.filter_spec(), new);
+    let mut bm = filter_cache::new_downstream(&backward_maps);
+    let mut ret = bm.get(&filterobj.filter_spec(), new);
     for rev in walk {
         let rev = rev?;
 
@@ -83,7 +83,7 @@ pub fn unapply_view(
         let original_parents: std::result::Result<Vec<_>, _> =
             original_parent_ids
                 .iter()
-                .map(|x| bm.get(&viewobj.filter_spec(), *x))
+                .map(|x| bm.get(&filterobj.filter_spec(), *x))
                 .map(|x| repo.find_commit(x))
                 .collect();
 
@@ -98,7 +98,7 @@ pub fn unapply_view(
         let new_trees: super::JoshResult<HashSet<_>> = original_parents_refs
             .iter()
             .map(|x| -> super::JoshResult<_> {
-                Ok(viewobj.unapply(&repo, &tree, &x.tree()?)?)
+                Ok(filterobj.unapply(&repo, &tree, &x.tree()?)?)
             })
             .collect();
 
@@ -114,40 +114,40 @@ pub fn unapply_view(
             0 => repo
                 // 0 means the history is unrelated. Pushing it will fail if we are not
                 // dealing with either a force push or a push with the "josh-merge" option set.
-                .find_tree(viewobj.unapply(
+                .find_tree(filterobj.unapply(
                     &repo,
                     &tree,
                     &empty_tree(&repo),
                 )?)?,
             parent_count => {
                 // This is a merge commit where the parents in the upstream repo
-                // have differences outside of the current view.
+                // have differences outside of the current filter.
                 // It is unclear what base tree to pick in this case.
                 warn!("rejecting merge");
-                return Ok(UnapplyView::RejectMerge(parent_count));
+                return Ok(UnapplyFilter::RejectMerge(parent_count));
             }
         };
 
         ret =
             rewrite(&repo, &module_commit, &original_parents_refs, &new_tree)?;
-        bm.set(&viewobj.filter_spec(), module_commit.id(), ret);
+        bm.set(&filterobj.filter_spec(), module_commit.id(), ret);
     }
 
-    return Ok(UnapplyView::Done(ret));
+    return Ok(UnapplyFilter::Done(ret));
 }
 
 fn transform_commit(
     repo: &git2::Repository,
-    viewobj: &dyn filters::Filter,
+    filterobj: &dyn filters::Filter,
     from_refsname: &str,
     to_refname: &str,
-    forward_maps: &mut view_maps::ViewMaps,
-    backward_maps: &mut view_maps::ViewMaps,
+    forward_maps: &mut filter_cache::FilterCache,
+    backward_maps: &mut filter_cache::FilterCache,
 ) -> super::JoshResult<usize> {
     let mut updated_count = 0;
     if let Ok(reference) = repo.revparse_single(&from_refsname) {
         let original_commit = reference.peel_to_commit()?;
-        let view_commit = viewobj.apply_to_commit(
+        let filter_commit = filterobj.apply_to_commit(
             &repo,
             &original_commit,
             forward_maps,
@@ -155,13 +155,13 @@ fn transform_commit(
             &mut HashMap::new(),
         )?;
         forward_maps.set(
-            &viewobj.filter_spec(),
+            &filterobj.filter_spec(),
             original_commit.id(),
-            view_commit,
+            filter_commit,
         );
         backward_maps.set(
-            &viewobj.filter_spec(),
-            view_commit,
+            &filterobj.filter_spec(),
+            filter_commit,
             original_commit.id(),
         );
 
@@ -170,28 +170,33 @@ fn transform_commit(
             .map(|x| x.id())
             .unwrap_or(git2::Oid::zero());
 
-        if view_commit != previous {
+        if filter_commit != previous {
             updated_count += 1;
             tracing::trace!(
-                "transform_commit: update reference: {:?} -> {:?}, target: {:?}, view: {:?}",
+                "transform_commit: update reference: {:?} -> {:?}, target: {:?}, filter: {:?}",
                 &from_refsname,
                 &to_refname,
-                view_commit,
-                &viewobj.filter_spec()
+                filter_commit,
+                &filterobj.filter_spec()
             );
         }
 
-        if view_commit != git2::Oid::zero() {
+        if filter_commit != git2::Oid::zero() {
             ok_or!(
-                repo.reference(&to_refname, view_commit, true, "apply_view")
-                    .map(|_| ()),
+                repo.reference(
+                    &to_refname,
+                    filter_commit,
+                    true,
+                    "apply_filter"
+                )
+                .map(|_| ()),
                 {
                     tracing::error!(
-                        "can't update reference: {:?} -> {:?}, target: {:?}, view: {:?}",
+                        "can't update reference: {:?} -> {:?}, target: {:?}, filter: {:?}",
                         &from_refsname,
                         &to_refname,
-                        view_commit,
-                        &viewobj.filter_spec()
+                        filter_commit,
+                        &filterobj.filter_spec()
                     );
                 }
             );
@@ -207,23 +212,23 @@ fn transform_commit(
 
 pub fn apply_filter_to_refs(
     repo: &git2::Repository,
-    viewobj: &dyn filters::Filter,
+    filterobj: &dyn filters::Filter,
     refs: &[(String, String)],
-    forward_maps: &mut view_maps::ViewMaps,
-    backward_maps: &mut view_maps::ViewMaps,
+    forward_maps: &mut filter_cache::FilterCache,
+    backward_maps: &mut filter_cache::FilterCache,
 ) -> super::JoshResult<usize> {
     tracing::span!(
         Level::TRACE,
         "apply_filter_to_refs",
         repo = ?repo.path(),
         ?refs,
-        filter_spec=?viewobj.filter_spec());
+        filter_spec=?filterobj.filter_spec());
 
     let mut updated_count = 0;
     for (k, v) in refs {
         updated_count += transform_commit(
             &repo,
-            &*viewobj,
+            &*filterobj,
             &k,
             &v,
             forward_maps,

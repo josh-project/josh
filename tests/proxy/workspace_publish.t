@@ -65,7 +65,7 @@
 
   $ git add .
 
-  $ git commit -m "add in view" 1> /dev/null
+  $ git commit -m "add in filter" 1> /dev/null
 
   $ cat > workspace.josh <<EOF
   > a/b = :/sub2
@@ -99,7 +99,7 @@
   4 directories, 4 files
   $ git log --graph --pretty=%s
   * publish
-  * add in view
+  * add in filter
   * add file2
   * add workspace
 
@@ -121,7 +121,7 @@
   
   Turn off this advice by setting config variable advice.detachedHead to false
   
-  HEAD is now at * add in view (glob)
+  HEAD is now at * add in filter (glob)
   $ tree
   .
   |-- sub2
@@ -155,8 +155,9 @@
   |           `-- refs
   |               `-- heads
   |                   `-- master
+  |-- namespaces
   `-- tags
   
-  15 directories, 4 files
+  16 directories, 4 files
 
 $ cat ${TESTTMP}/josh-proxy.out | grep VIEW

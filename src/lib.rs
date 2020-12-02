@@ -23,6 +23,9 @@ macro_rules! ok_or {
 }
 
 #[macro_use]
+extern crate handlebars;
+
+#[macro_use]
 extern crate pest_derive;
 
 #[macro_use]
@@ -30,18 +33,19 @@ extern crate serde_json;
 
 use tracing;
 
+pub mod filter_cache;
 pub mod filters;
 pub mod housekeeping;
+pub mod query;
 pub mod scratch;
 pub mod shell;
-pub mod view_maps;
 
 pub use crate::filters::build_chain;
 pub use crate::scratch::apply_filter_to_refs;
-pub use crate::scratch::unapply_view;
+pub use crate::scratch::unapply_filter;
 
 #[derive(Clone)]
-pub enum UnapplyView {
+pub enum UnapplyFilter {
     Done(git2::Oid),
     RejectMerge(usize),
     BranchDoesNotExist,

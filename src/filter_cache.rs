@@ -4,25 +4,25 @@ use std::sync::{Arc, RwLock};
 const FORMAT_VERSION: u64 = 2;
 
 #[derive(Eq, PartialEq, PartialOrd, Hash, Clone, Copy)]
-pub struct ViewMapOid(git2::Oid);
+pub struct JoshOid(git2::Oid);
 
-pub type ViewMap = HashMap<ViewMapOid, ViewMapOid>;
+pub type OidMap = HashMap<JoshOid, JoshOid>;
 
 #[derive(serde::Serialize, serde::Deserialize)]
-pub struct ViewMaps {
-    maps: HashMap<String, ViewMap>,
+pub struct FilterCache {
+    maps: HashMap<String, OidMap>,
     version: u64,
 
     #[serde(skip)]
-    upsteam: Option<Arc<RwLock<ViewMaps>>>,
+    upsteam: Option<Arc<RwLock<FilterCache>>>,
 }
 
-impl serde::ser::Serialize for ViewMapOid {
+impl serde::ser::Serialize for JoshOid {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::ser::Serializer,
     {
-        let ViewMapOid(oid) = *self;
+        let JoshOid(oid) = *self;
         serializer.serialize_bytes(oid.as_bytes())
     }
 }
@@ -30,7 +30,7 @@ impl serde::ser::Serialize for ViewMapOid {
 struct OidVisitor;
 
 impl<'de> serde::de::Visitor<'de> for OidVisitor {
-    type Value = ViewMapOid;
+    type Value = JoshOid;
 
     fn expecting(
         &self,
@@ -44,15 +44,15 @@ impl<'de> serde::de::Visitor<'de> for OidVisitor {
         E: serde::de::Error,
     {
         if let Ok(oid) = git2::Oid::from_bytes(value) {
-            Ok(ViewMapOid(oid))
+            Ok(JoshOid(oid))
         } else {
             Err(E::custom("err: invalid oid"))
         }
     }
 }
 
-impl<'de> serde::de::Deserialize<'de> for ViewMapOid {
-    fn deserialize<D>(deserializer: D) -> Result<ViewMapOid, D::Error>
+impl<'de> serde::de::Deserialize<'de> for JoshOid {
+    fn deserialize<D>(deserializer: D) -> Result<JoshOid, D::Error>
     where
         D: serde::de::Deserializer<'de>,
     {
@@ -60,17 +60,17 @@ impl<'de> serde::de::Deserialize<'de> for ViewMapOid {
     }
 }
 
-impl ViewMaps {
+impl FilterCache {
     pub fn set(&mut self, filter_spec: &str, from: git2::Oid, to: git2::Oid) {
         self.maps
             .entry(filter_spec.to_string())
-            .or_insert_with(ViewMap::new)
-            .insert(ViewMapOid(from), ViewMapOid(to));
+            .or_insert_with(OidMap::new)
+            .insert(JoshOid(from), JoshOid(to));
     }
 
     pub fn get(&self, filter_spec: &str, from: git2::Oid) -> git2::Oid {
         if let Some(m) = self.maps.get(filter_spec) {
-            if let Some(ViewMapOid(oid)) = m.get(&ViewMapOid(from)).cloned() {
+            if let Some(JoshOid(oid)) = m.get(&JoshOid(from)).cloned() {
                 return oid;
             }
         }
@@ -92,7 +92,7 @@ impl ViewMaps {
         from: git2::Oid,
     ) -> bool {
         if let Some(m) = self.maps.get(filter_spec) {
-            if m.contains_key(&ViewMapOid(from)) {
+            if m.contains_key(&JoshOid(from)) {
                 // Only report an object as cached if it exists in the object database.
                 // This forces a rebuild in case the object was garbage collected.
                 let oid = self.get(filter_spec, from);
@@ -107,20 +107,20 @@ impl ViewMaps {
         return false;
     }
 
-    pub fn new() -> ViewMaps {
-        return ViewMaps {
+    pub fn new() -> FilterCache {
+        return FilterCache {
             maps: HashMap::new(),
             upsteam: None,
             version: FORMAT_VERSION,
         };
     }
 
-    pub fn merge(&mut self, other: &ViewMaps) {
+    pub fn merge(&mut self, other: &FilterCache) {
         for (filter_spec, om) in other.maps.iter() {
             let m = self
                 .maps
                 .entry(filter_spec.to_string())
-                .or_insert_with(ViewMap::new);
+                .or_insert_with(OidMap::new);
             m.extend(om);
         }
     }
@@ -139,13 +139,13 @@ impl ViewMaps {
     }
 }
 
-pub fn try_load(path: &std::path::Path) -> ViewMaps {
+pub fn try_load(path: &std::path::Path) -> FilterCache {
     let file_size = std::fs::metadata(&path)
         .map(|x| x.len() / (1024 * 1024))
         .unwrap_or(0);
     tracing::info!("trying to load: {:?}, size: {} MiB", &path, file_size);
     if let Ok(f) = std::fs::File::open(path) {
-        if let Ok(m) = bincode::deserialize_from::<_, ViewMaps>(f) {
+        if let Ok(m) = bincode::deserialize_from::<_, FilterCache>(f) {
             tracing::info!("mapfile loaded from: {:?}", &path);
             if m.version == FORMAT_VERSION {
                 return m;
@@ -156,10 +156,13 @@ pub fn try_load(path: &std::path::Path) -> ViewMaps {
         tracing::error!("deserialize_from: {:?}", &path);
     }
     tracing::info!("no map file loaded from: {:?}", &path);
-    ViewMaps::new()
+    FilterCache::new()
 }
 
-pub fn persist(m: &ViewMaps, path: &std::path::Path) -> crate::JoshResult<()> {
+pub fn persist(
+    m: &FilterCache,
+    path: &std::path::Path,
+) -> crate::JoshResult<()> {
     tracing::info!("persisting: {:?}", &path);
     let af = atomicwrites::AtomicFile::new(path, atomicwrites::AllowOverwrite);
     af.write(|f| bincode::serialize_into(f, &m))?;
@@ -171,10 +174,10 @@ pub fn persist(m: &ViewMaps, path: &std::path::Path) -> crate::JoshResult<()> {
 }
 
 pub fn try_merge_both(
-    forward_maps: Arc<RwLock<ViewMaps>>,
-    backward_maps: Arc<RwLock<ViewMaps>>,
-    fm: &ViewMaps,
-    bm: &ViewMaps,
+    forward_maps: Arc<RwLock<FilterCache>>,
+    backward_maps: Arc<RwLock<FilterCache>>,
+    fm: &FilterCache,
+    bm: &FilterCache,
 ) {
     tracing::span!(tracing::Level::TRACE, "write_lock backward_maps").in_scope(
         || {
@@ -200,8 +203,8 @@ pub fn try_merge_both(
     );
 }
 
-pub fn new_downstream(u: &Arc<RwLock<ViewMaps>>) -> ViewMaps {
-    return ViewMaps {
+pub fn new_downstream(u: &Arc<RwLock<FilterCache>>) -> FilterCache {
+    return FilterCache {
         maps: HashMap::new(),
         upsteam: Some(u.clone()),
         version: FORMAT_VERSION,
