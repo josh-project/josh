@@ -25,8 +25,8 @@ lazy_static! {
 
 josh::regex_parsed!(
     FilteredRepoUrl,
-    r"(?P<upstream_repo>/.*[.]git)(?P<headref>@[^:!]*)?(?P<filter>[:!].*)[.](?P<ending>(?:git)|(?:json))(?P<pathinfo>/.*)?",
-    [upstream_repo, filter, pathinfo, headref, ending]
+    r"(?P<upstream_repo>/[^:!]*[.]git)(?P<headref>@[^:!]*)?((?P<filter>[:!].*)[.]git)?(?P<pathinfo>/.*)?",
+    [upstream_repo, filter, pathinfo, headref]
 );
 
 josh::regex_parsed!(KvUrl, r"/@kv/(?P<k>.*)", [k]);
@@ -109,7 +109,7 @@ async fn fetch_upstream(
     username: &str,
     password: josh_proxy::Password,
     remote_url: String,
-    headref: &Option<String>,
+    headref: &str,
 ) -> josh::JoshResult<bool> {
     let repo = git2::Repository::init_bare(&service.repo_path)?;
     let username = username.to_owned();
@@ -137,11 +137,7 @@ async fn fetch_upstream(
     };
 
     if credentials_cached_ok {
-        if let Some(headref) = headref {
-            if repo.refname_to_id(&headref).is_ok() {
-                return Ok(true);
-            }
-        } else {
+        if repo.refname_to_id(&headref).is_ok() {
             return Ok(true);
         }
     }
@@ -258,7 +254,7 @@ async fn do_filter(
     upstream_repo: String,
     temp_ns: Arc<josh_proxy::TmpGitNamespace>,
     filter_spec: String,
-    from_to: Option<Vec<(String, String)>>,
+    headref: String,
 ) -> josh::JoshResult<git2::Repository> {
     let forward_maps = service.forward_maps.clone();
     let backward_maps = service.backward_maps.clone();
@@ -267,14 +263,22 @@ async fn do_filter(
         let repo = git2::Repository::init_bare(&repo_path)?;
         let filter = josh::filters::parse(&filter_spec);
         let filter_spec = filter.filter_spec();
-        let from_to = from_to.unwrap_or_else(|| {
-            josh::housekeeping::default_from_to(
-                &repo,
-                &temp_ns.name(),
-                &upstream_repo,
-                &filter_spec,
-            )
-        });
+        let mut from_to = josh::housekeeping::default_from_to(
+            &repo,
+            &temp_ns.name(),
+            &upstream_repo,
+            &filter_spec,
+        );
+
+        from_to.push((
+            format!(
+                "refs/josh/upstream/{}/{}",
+                &josh::to_ns(&upstream_repo),
+                headref
+            ),
+            temp_ns.reference(&headref),
+        ));
+
         let mut bm = josh::filter_cache::new_downstream(&backward_maps);
         let mut fm = josh::filter_cache::new_downstream(&forward_maps);
         josh::scratch::apply_filter_to_refs(
@@ -288,7 +292,7 @@ async fn do_filter(
         );
         repo.reference_symbolic(
             &temp_ns.reference("HEAD"),
-            &temp_ns.reference("refs/heads/master"),
+            &temp_ns.reference(&headref),
             true,
             "",
         )?;
@@ -349,11 +353,12 @@ async fn call_service(
     }
 
     let parsed_url = {
-        let nop_path = path.replacen(".git", ".git:nop.git", 1);
         if let Some(parsed_url) = FilteredRepoUrl::from_str(&path) {
-            parsed_url
-        } else if let Some(parsed_url) = FilteredRepoUrl::from_str(&nop_path) {
-            parsed_url
+            let mut pu = parsed_url;
+            if pu.filter == "" {
+                pu.filter = ":nop".to_string();
+            }
+            pu
         } else {
             return Response::builder()
                 .status(hyper::StatusCode::NOT_FOUND)
@@ -362,7 +367,10 @@ async fn call_service(
         }
     };
 
-    let headref = parsed_url.headref.trim_start_matches("@").to_owned();
+    let mut headref = parsed_url.headref.trim_start_matches("@").to_owned();
+    if headref == "" {
+        headref = "refs/heads/master".to_string();
+    }
 
     let remote_url = [
         serv.upstream_url.as_str(),
@@ -386,7 +394,7 @@ async fn call_service(
         PrepareNsResult::Resp(resp) => return resp,
     };
 
-    if parsed_url.ending == "json" {
+    if req.uri().query() == Some("info") {
         let forward_maps = serv.forward_maps.clone();
         let backward_maps = serv.forward_maps.clone();
 
@@ -420,7 +428,7 @@ async fn call_service(
                     git2::Repository::init_bare(&serv.repo_path).unwrap();
                 josh::query::render(
                     &repo,
-                    &temp_ns.reference("HEAD"),
+                    &temp_ns.reference(&headref),
                     &q,
                     serv.kv_store.clone(),
                     serv.forward_maps.clone(),
@@ -476,12 +484,6 @@ async fn prepare_namespace(
 ) -> PrepareNsResult {
     let (username, password) = auth;
 
-    let headref = if headref != "" {
-        Some(headref.to_owned())
-    } else {
-        None
-    };
-
     let authorized = fetch_upstream(
         serv.clone(),
         upstream_repo.to_owned(),
@@ -511,19 +513,6 @@ async fn prepare_namespace(
 
     let temp_ns = Arc::new(josh_proxy::TmpGitNamespace::new(&serv.repo_path));
 
-    let refs = if let Some(headref) = headref {
-        Some(vec![(
-            format!(
-                "refs/josh/upstream/{}/{}",
-                &josh::to_ns(&upstream_repo),
-                headref
-            ),
-            temp_ns.reference("refs/heads/master"),
-        )])
-    } else {
-        None
-    };
-
     let serv = serv.clone();
 
     if !do_filter(
@@ -532,7 +521,7 @@ async fn prepare_namespace(
         upstream_repo.to_owned(),
         temp_ns.to_owned(),
         filter_spec.to_owned(),
-        refs,
+        headref.to_string(),
     )
     .await
     .is_ok()
