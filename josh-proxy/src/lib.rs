@@ -264,10 +264,10 @@ pub fn fetch_refs_from_url(
         return Ok(false);
     }
     if stderr.contains("fatal:") {
-        return Err(git2::Error::from_str("error"));
+        return Err(git2::Error::from_str(&format!("error: {:?}", stderr)));
     }
     if stderr.contains("error:") {
-        return Err(git2::Error::from_str("error"));
+        return Err(git2::Error::from_str(&format!("error: {:?}", stderr)));
     }
     return Ok(true);
 }

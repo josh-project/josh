@@ -18,7 +18,6 @@
   $ git add .
   $ git commit -m "add file1" 1> /dev/null
 
-
   $ cat > sub1/tmpl_file <<EOF
   > {{ #with (toml-parse (git-blob "config_file.toml")) }}
   > From TOML: {{ a.b }}

@@ -23,10 +23,17 @@
   $ git add tmpl_file
   $ git commit -m "add tmpl_file" 1> /dev/null
 
-
-  $ git push
+  $ git push --all
   To http://localhost:8001/real_repo.git
    * [new branch]      master -> master
+
+  $ echo changes_contents > sub2/on_change
+  $ git add sub2
+  $ git commit -m "add on_change" 1> /dev/null
+
+  $ git push origin HEAD:refs/changes/123/2
+  To http://localhost:8001/real_repo.git
+   * [new reference]   HEAD -> refs/changes/123/2
 
   $ cd ${TESTTMP}
 
@@ -41,3 +48,7 @@
   kv:  1234 
   $ curl -s http://localhost:8002/real_repo.git?get=sub1/file1
   contents1
+  $ curl -s http://localhost:8002/real_repo.git@refs/changes/123/2:nop.git?get=sub2/on_change
+  changes_contents
+  $ curl -s http://localhost:8002/real_repo.git@refs/changes/123/2?get=sub2/on_change
+  changes_contents
