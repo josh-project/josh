@@ -1,6 +1,6 @@
 use tracing;
 
-use self::tracing::{event, span, Level};
+use self::tracing::Level;
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -14,6 +14,7 @@ impl Shell {
         return self.command_env(cmd, &[]);
     }
 
+    #[tracing::instrument(skip(self))]
     pub fn command_env(
         &self,
         cmd: &str,
@@ -24,7 +25,6 @@ impl Shell {
         } else {
             self.cwd.to_path_buf()
         };
-        let _trace_s = span!(Level::TRACE, "shell:command", ?cmd, cwd =?self.cwd, ?git_dir);
 
         let mut command = Command::new("sh");
         command
@@ -49,7 +49,7 @@ impl Shell {
             .expect("failed to decode utf8")
             .trim()
             .to_string();
-        event!(Level::TRACE, ?stdout, ?stderr);
+        tracing::event!(Level::TRACE, ?stdout, ?stderr);
         return (stdout, stderr);
     }
 }

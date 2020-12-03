@@ -139,11 +139,12 @@ impl FilterCache {
     }
 }
 
+#[tracing::instrument]
 pub fn try_load(path: &std::path::Path) -> FilterCache {
     let file_size = std::fs::metadata(&path)
         .map(|x| x.len() / (1024 * 1024))
         .unwrap_or(0);
-    tracing::info!("trying to load: {:?}, size: {} MiB", &path, file_size);
+    tracing::info!("file size: {}", file_size);
     if let Ok(f) = std::fs::File::open(path) {
         if let Ok(m) = bincode::deserialize_from::<_, FilterCache>(f) {
             tracing::info!("mapfile loaded from: {:?}", &path);
@@ -159,11 +160,11 @@ pub fn try_load(path: &std::path::Path) -> FilterCache {
     FilterCache::new()
 }
 
+#[tracing::instrument(skip(m))]
 pub fn persist(
     m: &FilterCache,
     path: &std::path::Path,
 ) -> crate::JoshResult<()> {
-    tracing::info!("persisting: {:?}", &path);
     let af = atomicwrites::AtomicFile::new(path, atomicwrites::AllowOverwrite);
     af.write(|f| bincode::serialize_into(f, &m))?;
     let file_size = std::fs::metadata(&path)

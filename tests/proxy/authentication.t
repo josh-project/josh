@@ -5,7 +5,7 @@
   $ git clone -q http://localhost:8001/real_repo.git
   warning: You appear to have cloned an empty repository.
 
-  $ cd real_repo
+  $ cd ${TESTTMP}/real_repo
 
   $ git status
   On branch master
@@ -56,16 +56,45 @@
   $ cat sub1/file1
   contents1
 
+  $ echo contents1 > file2
+  $ git add .
+  $ git commit -m "push test"
+  [master *] push test (glob)
+   1 file changed, 1 insertion(+)
+   create mode 100644 file2
+  $ git push
+  remote: josh-proxy        
+  remote: response from upstream:        
+  remote:  To http://localhost:8001/real_repo.git        
+  remote:  * (glob)
+  remote: 
+  remote: 
+  To http://localhost:8002/real_repo.git
+     *..*  master -> master (glob)
+
   $ rm -Rf full_repo
   $ git clone -q http://x\':bla@localhost:8002/real_repo.git full_repo
   fatal: unable to access 'http://localhost:8002/real_repo.git/': The requested URL returned error: 500
   [128]
   $ tree
   .
+  |-- file2
   `-- sub1
       `-- file1
   
-  1 directory, 1 file
+  1 directory, 2 files
+
+  $ cd ${TESTTMP}/real_repo
+  $ curl -s http://localhost:8001/_noauth
+  $ git pull --rebase 2> /dev/null
+  Updating *..* (glob)
+  Fast-forward
+   file2 | 1 +
+   1 file changed, 1 insertion(+)
+   create mode 100644 file2
+  $ git log --graph --pretty=%s
+  * push test
+  * add file1
 
   $ bash ${TESTDIR}/destroy_test_env.sh
   remote/scratch/refs

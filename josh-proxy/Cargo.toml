@@ -19,9 +19,12 @@ hyper = "0.13"
 hyper_cgi = {version = "0.1"}
 toml = "*"
 git2 = {version = "*", default-features = false}
-tracing = { version = "*", features = ["max_level_debug", "release_max_level_info"] }
+tracing = { version = "*", features = ["max_level_trace", "release_max_level_trace"] }
 tracing-futures = "*"
 tracing-subscriber = "*"
+tracing-opentelemetry = "*"
+opentelemetry = "*"
+opentelemetry-jaeger = "*"
 reqwest= {version = "0.10", default-features = false, features = ["blocking", "json"]}
 uuid = {version = "0.8", features = ["v4"]}
 base64 = "0.12"

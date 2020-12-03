@@ -264,7 +264,9 @@ pub fn render(
         }),
     );
 
-    handlebars
-        .register_helper("db-lookup", Box::new(KvHelper { kv_store: kv_store }));
+    handlebars.register_helper(
+        "db-lookup",
+        Box::new(KvHelper { kv_store: kv_store }),
+    );
     return Ok(format!("{}", handlebars.render("template", &json!({}))?));
 }

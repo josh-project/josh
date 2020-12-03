@@ -249,6 +249,7 @@ pub fn get_info(
     return Ok(serde_json::to_string(&s)?);
 }
 
+#[tracing::instrument(skip(repo, forward_maps, backward_maps))]
 pub fn refresh_known_filters(
     repo: &git2::Repository,
     known_filters: &KnownViews,
