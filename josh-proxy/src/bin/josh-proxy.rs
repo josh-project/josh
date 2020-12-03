@@ -29,7 +29,7 @@ josh::regex_parsed!(
     [upstream_repo, filter, pathinfo, headref]
 );
 
-josh::regex_parsed!(KvUrl, r"/@kv/(?P<k>.*)", [k]);
+josh::regex_parsed!(DbUrl, r"/@db/(?P<k>.*)", [k]);
 
 type CredentialCache = HashMap<String, std::time::Instant>;
 
@@ -44,7 +44,7 @@ struct JoshProxyService {
     credential_cache: Arc<RwLock<CredentialCache>>,
     fetch_permits: Arc<tokio::sync::Semaphore>,
     filter_permits: Arc<tokio::sync::Semaphore>,
-    kv_store: Arc<RwLock<std::collections::HashMap<String, serde_json::Value>>>,
+    db_store: Arc<RwLock<std::collections::HashMap<String, serde_json::Value>>>,
 }
 
 impl std::fmt::Debug for JoshProxyService {
@@ -326,7 +326,7 @@ async fn call_service(
         return repo_update_fn(serv, req).await;
     }
 
-    if let Some(kv_url) = KvUrl::from_str(&path) {
+    if let Some(db_url) = DbUrl::from_str(&path) {
         let body = req
             .into_body()
             .try_fold(String::new(), |mut acc, elt| async move {
@@ -337,17 +337,17 @@ async fn call_service(
             .unwrap();
 
         if body == "" {
-            if let Some(v) = serv.kv_store.read().unwrap().get(&kv_url.k) {
+            if let Some(v) = serv.db_store.read().unwrap().get(&db_url.k) {
                 return Response::builder()
                     .body(hyper::Body::from(v.to_string()))
                     .unwrap();
             }
             return Response::builder().body(hyper::Body::from("")).unwrap();
         } else {
-            serv.kv_store
+            serv.db_store
                 .write()
                 .unwrap()
-                .insert(kv_url.k, serde_json::from_str(&body).unwrap());
+                .insert(db_url.k, serde_json::from_str(&body).unwrap());
             return Response::builder().body(hyper::Body::from("ok")).unwrap();
         }
     }
@@ -430,7 +430,7 @@ async fn call_service(
                     &repo,
                     &temp_ns.reference(&headref),
                     &q,
-                    serv.kv_store.clone(),
+                    serv.db_store.clone(),
                     serv.forward_maps.clone(),
                     serv.backward_maps.clone(),
                 )
@@ -564,7 +564,7 @@ async fn run_proxy() -> josh::JoshResult<i32> {
         credential_cache: Arc::new(RwLock::new(CredentialCache::new())),
         fetch_permits: Arc::new(tokio::sync::Semaphore::new(1)),
         filter_permits: Arc::new(tokio::sync::Semaphore::new(10)),
-        kv_store: Arc::new(RwLock::new(HashMap::new())),
+        db_store: Arc::new(RwLock::new(HashMap::new())),
     });
 
     let make_service = make_service_fn(move |_| {
@@ -575,7 +575,6 @@ async fn run_proxy() -> josh::JoshResult<i32> {
 
             call_service(proxy_service, _req)
                 .map(Ok::<_, hyper::http::Error>)
-                .instrument(tracing::info_span!("call_service"))
         });
 
         future::ok::<_, hyper::http::Error>(service)
