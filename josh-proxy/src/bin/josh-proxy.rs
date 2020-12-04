@@ -256,7 +256,9 @@ async fn repo_update_fn(
 
     let body = hyper::body::to_bytes(req.into_body()).await;
 
+    let s = tracing::span!(tracing::Level::TRACE, "repo update worker");
     let result = tokio::task::spawn_blocking(move || {
+        let _e = s.enter();
         let body = body?;
         let buffer = std::str::from_utf8(&body)?;
         josh_proxy::process_repo_update(
@@ -556,7 +558,10 @@ async fn prepare_namespace(
         );
     }
 
-    let temp_ns = Arc::new(josh_proxy::TmpGitNamespace::new(&serv.repo_path));
+    let temp_ns = Arc::new(josh_proxy::TmpGitNamespace::new(
+        &serv.repo_path,
+        tracing::Span::current(),
+    ));
 
     let serv = serv.clone();
 
@@ -581,6 +586,7 @@ async fn prepare_namespace(
     return PrepareNsResult::Ns(temp_ns);
 }
 
+#[tracing::instrument]
 #[tokio::main]
 async fn run_proxy() -> josh::JoshResult<i32> {
     let port = ARGS.value_of("port").unwrap_or("8000").to_owned();
@@ -613,15 +619,20 @@ async fn run_proxy() -> josh::JoshResult<i32> {
         credential_store: Arc::new(RwLock::new(HashMap::new())),
     });
 
+    let s = tracing::Span::current();
+
     let make_service = make_service_fn(move |_| {
         let proxy_service = proxy_service.clone();
+        let s2 = s.clone();
 
         let service = service_fn(move |_req| {
+            let s3 = s2.clone();
             let (auth, req) =
                 parse_auth(proxy_service.credential_store.clone(), _req);
             let proxy_service = proxy_service.clone();
 
             call_service(proxy_service, req, auth)
+                .instrument(s3)
                 .map(Ok::<_, hyper::http::Error>)
         });
 
@@ -638,7 +649,7 @@ async fn run_proxy() -> josh::JoshResult<i32> {
     );
     println!("Now listening on {}", addr);
 
-    server.await?;
+    server.with_graceful_shutdown(shutdown_signal()).await?;
     Ok(0)
 }
 
@@ -751,6 +762,14 @@ fn update_hook(refname: &str, old: &str, new: &str) -> josh::JoshResult<i32> {
         }
     };
     return Ok(1);
+}
+
+async fn shutdown_signal() {
+    // Wait for the CTRL+C signal
+    tokio::signal::ctrl_c()
+        .await
+        .expect("failed to install CTRL+C signal handler");
+    println!("shutdown_signal");
 }
 
 fn main() {
