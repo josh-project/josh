@@ -77,6 +77,13 @@ pub fn process_repo_update(
         old
     };
 
+    let unfiltered_old = {
+        let rev = format!("refs/josh/upstream/{}/{}", base_ns, &baseref);
+        let oid = repo.refname_to_id(&rev).unwrap_or(git2::Oid::zero());
+        tracing::debug!("push: unfiltered_old oid: {:?}, rev: {:?}", oid, rev);
+        oid
+    };
+
     let filterobj = josh::filters::parse(&filter_spec);
     let new_oid = git2::Oid::from_str(&new)?;
     let backward_new_oid = {
@@ -88,6 +95,7 @@ pub fn process_repo_update(
             &repo,
             backward_maps,
             &*filterobj,
+            unfiltered_old,
             old,
             new_oid,
         )? {
@@ -318,13 +326,23 @@ impl std::fmt::Debug for HashedPassword {
 pub struct TmpGitNamespace {
     name: String,
     repo_path: std::path::PathBuf,
+    _span: tracing::Span,
 }
 
 impl TmpGitNamespace {
-    pub fn new(repo_path: &std::path::Path) -> TmpGitNamespace {
+    pub fn new(
+        repo_path: &std::path::Path,
+        span: tracing::Span,
+    ) -> TmpGitNamespace {
+        let n = format!("request_{}", uuid::Uuid::new_v4());
         TmpGitNamespace {
-            name: format!("request_{}", uuid::Uuid::new_v4()),
+            name: n,
             repo_path: repo_path.to_owned(),
+            _span: tracing::span!(
+                parent: span,
+                tracing::Level::TRACE,
+                "TmpGitNamespace"
+            ),
         }
     }
 

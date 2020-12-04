@@ -51,6 +51,7 @@ pub fn unapply_filter(
     repo: &git2::Repository,
     backward_maps: std::sync::Arc<std::sync::RwLock<filter_cache::FilterCache>>,
     filterobj: &dyn filters::Filter,
+    unfiltered_old: git2::Oid,
     old: git2::Oid,
     new: git2::Oid,
 ) -> super::JoshResult<UnapplyFilter> {
@@ -75,12 +76,22 @@ pub fn unapply_filter(
 
         let module_commit = repo.find_commit(rev)?;
 
-        let original_parent_ids: Vec<_> = module_commit.parent_ids().collect();
+        if bm.has(&repo, &filterobj.filter_spec(), module_commit.id()) {
+            continue;
+        }
+
+        let filtered_parent_ids: Vec<_> = module_commit.parent_ids().collect();
 
         let original_parents: std::result::Result<Vec<_>, _> =
-            original_parent_ids
+            filtered_parent_ids
                 .iter()
-                .map(|x| bm.get(&filterobj.filter_spec(), *x))
+                .map(|x| {
+                    if *x == old {
+                        unfiltered_old
+                    } else {
+                        bm.get(&filterobj.filter_spec(), *x)
+                    }
+                })
                 .map(|x| repo.find_commit(x))
                 .collect();
 
@@ -88,7 +99,12 @@ pub fn unapply_filter(
 
         let original_parents_refs: Vec<&_> = original_parents.iter().collect();
 
-        tracing::trace!("==== Rewriting commit {}", rev);
+        tracing::trace!(
+            "==== Rewriting commit {:?} {}, filtered-parents: {:?}, unfiltered-parents: {:?}",
+            module_commit.summary().unwrap(),
+            rev,
+            filtered_parent_ids,
+            original_parents_refs);
 
         let tree = module_commit.tree()?;
 
@@ -133,6 +149,7 @@ pub fn unapply_filter(
     return Ok(UnapplyFilter::Done(ret));
 }
 
+#[tracing::instrument(skip(repo, forward_maps, backward_maps))]
 fn transform_commit(
     repo: &git2::Repository,
     filterobj: &dyn filters::Filter,
