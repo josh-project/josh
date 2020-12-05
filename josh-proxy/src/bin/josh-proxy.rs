@@ -792,7 +792,8 @@ fn main() {
     let fmt_layer = tracing_subscriber::fmt::layer().with_ansi(false);
 
     let (tracer, _uninstall) = opentelemetry_jaeger::new_pipeline()
-        .with_service_name("josh-proxy")
+        .from_env()
+        .with_service_name(std::env::var("JOSH_SERVICE_NAME").unwrap_or("josh-proxy".to_owned()))
         .install()
         .expect("can't install opentelemetry pipeline");
 
