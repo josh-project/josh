@@ -34,15 +34,11 @@
   To http://localhost:8001/real_repo.git
    * [new branch]      master -> master
 
-Get /info/refs to trigger rebuilding and pass credentials
-  $ curl -s http://localhost:8002/real_repo.git:/sub1.git/info/refs
-  *\trefs/heads/master (esc) (glob)
-
   $ curl -s http://localhost:8002/real_repo.git@refs/heads/master:/sub1.git?info
-  {"original":{"commit":"*","parents":[{"commit":"*","tree":"*"}],"tree":"*"},"transformed":{"commit":"*","parents":[],"tree":"*"}} (glob)
+  {"commit":"*","filtered":{"commit":"*","parents":[],"tree":"*"},"parents":[{"commit":"*","tree":"*"}],"tree":"*"} (glob)
 
   $ curl -s http://localhost:8002/real_repo.git@refs/heads/master:/nothing_here.git?info
-  {"original":{"commit":"*","parents":[{"commit":"*","tree":"*"}],"tree":"*"},"transformed":{"commit":"0000000000000000000000000000000000000000","parents":[],"tree":"0000000000000000000000000000000000000000"}} (glob)
+  {"commit":"*","filtered":{"commit":"0000000000000000000000000000000000000000","parents":[],"tree":"0000000000000000000000000000000000000000"},"parents":[{"commit":"*","tree":"*"}],"tree":"*"} (glob)
 
   $ bash ${TESTDIR}/destroy_test_env.sh
   remote/scratch/refs
