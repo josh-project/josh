@@ -101,7 +101,7 @@ pub fn unapply_filter(
 
         tracing::trace!(
             "==== Rewriting commit {:?} {}, filtered-parents: {:?}, unfiltered-parents: {:?}",
-            module_commit.summary().unwrap(),
+            module_commit.summary().unwrap_or("NO COMMIT MESSAGE"),
             rev,
             filtered_parent_ids,
             original_parents_refs);
