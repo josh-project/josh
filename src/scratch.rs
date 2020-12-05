@@ -1,7 +1,6 @@
 use git2;
 use tracing;
 
-use self::tracing::{warn, Level};
 use super::empty_tree;
 use super::filter_cache;
 use super::filters;
@@ -47,6 +46,7 @@ pub fn rewrite(
     )?);
 }
 
+#[tracing::instrument(skip(backward_maps, repo))]
 pub fn unapply_filter(
     repo: &git2::Repository,
     backward_maps: std::sync::Arc<std::sync::RwLock<filter_cache::FilterCache>>,
@@ -54,9 +54,6 @@ pub fn unapply_filter(
     old: git2::Oid,
     new: git2::Oid,
 ) -> super::JoshResult<UnapplyFilter> {
-    let trace_s = tracing::span!( Level::DEBUG, "unapply_filter", repo = ?repo.path(), ?old, ?new);
-    let _e = trace_s.enter();
-
     let walk = {
         let mut walk = repo.revwalk()?;
         walk.set_sorting(git2::Sort::REVERSE | git2::Sort::TOPOLOGICAL)?;
@@ -123,7 +120,7 @@ pub fn unapply_filter(
                 // This is a merge commit where the parents in the upstream repo
                 // have differences outside of the current filter.
                 // It is unclear what base tree to pick in this case.
-                warn!("rejecting merge");
+                tracing::warn!("rejecting merge");
                 return Ok(UnapplyFilter::RejectMerge(parent_count));
             }
         };
@@ -202,7 +199,7 @@ fn transform_commit(
             );
         }
     } else {
-        warn!(
+        tracing::warn!(
             "transform_commit: Can't find reference {:?}",
             &from_refsname
         );
@@ -210,6 +207,7 @@ fn transform_commit(
     return Ok(updated_count);
 }
 
+#[tracing::instrument(skip(repo, forward_maps, backward_maps))]
 pub fn apply_filter_to_refs(
     repo: &git2::Repository,
     filterobj: &dyn filters::Filter,
@@ -217,13 +215,6 @@ pub fn apply_filter_to_refs(
     forward_maps: &mut filter_cache::FilterCache,
     backward_maps: &mut filter_cache::FilterCache,
 ) -> super::JoshResult<usize> {
-    tracing::span!(
-        Level::TRACE,
-        "apply_filter_to_refs",
-        repo = ?repo.path(),
-        ?refs,
-        filter_spec=?filterobj.filter_spec());
-
     let mut updated_count = 0;
     for (k, v) in refs {
         updated_count += transform_commit(

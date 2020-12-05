@@ -239,7 +239,7 @@ pub fn render(
     let mut handlebars = handlebars::Handlebars::new();
     handlebars.register_template_string("template", template)?;
     handlebars.register_helper("concat", Box::new(concat_helper));
-    handlebars.register_helper("toml-parse", Box::new(toml_helper));
+    handlebars.register_helper("toml", Box::new(toml_helper));
     handlebars.register_helper(
         "git-find",
         Box::new(FindFilesHelper {
@@ -264,7 +264,9 @@ pub fn render(
         }),
     );
 
-    handlebars
-        .register_helper("josh-kv", Box::new(KvHelper { kv_store: kv_store }));
+    handlebars.register_helper(
+        "db-lookup",
+        Box::new(KvHelper { kv_store: kv_store }),
+    );
     return Ok(format!("{}", handlebars.render("template", &json!({}))?));
 }

@@ -2,6 +2,8 @@
 extern crate lazy_static;
 use base64;
 
+use tracing_subscriber::layer::SubscriberExt;
+
 use futures::future;
 use futures::FutureExt;
 use futures::TryStreamExt;
@@ -29,7 +31,7 @@ josh::regex_parsed!(
     [upstream_repo, filter, pathinfo, headref]
 );
 
-josh::regex_parsed!(KvUrl, r"/@kv/(?P<k>.*)", [k]);
+josh::regex_parsed!(DbUrl, r"/@db/(?P<k>.*)", [k]);
 
 type CredentialCache = HashMap<String, std::time::Instant>;
 
@@ -44,7 +46,8 @@ struct JoshProxyService {
     credential_cache: Arc<RwLock<CredentialCache>>,
     fetch_permits: Arc<tokio::sync::Semaphore>,
     filter_permits: Arc<tokio::sync::Semaphore>,
-    kv_store: Arc<RwLock<std::collections::HashMap<String, serde_json::Value>>>,
+    db_store: Arc<RwLock<std::collections::HashMap<String, serde_json::Value>>>,
+    credential_store: Arc<RwLock<josh_proxy::CredentialStore>>,
 }
 
 impl std::fmt::Debug for JoshProxyService {
@@ -57,42 +60,57 @@ impl std::fmt::Debug for JoshProxyService {
 }
 
 pub fn parse_auth(
-    req: &hyper::Request<hyper::Body>,
-) -> (String, josh_proxy::Password) {
-    let blank = (
-        "".to_owned(),
-        josh_proxy::Password {
-            value: "".to_owned(),
-        },
-    );
+    credential_store: Arc<RwLock<josh_proxy::CredentialStore>>,
+    req: hyper::Request<hyper::Body>,
+) -> (
+    (String, josh_proxy::HashedPassword),
+    hyper::Request<hyper::Body>,
+) {
+    let blank = |r| {
+        (
+            (
+                "".to_owned(),
+                josh_proxy::HashedPassword {
+                    hash: "".to_owned(),
+                },
+            ),
+            r,
+        )
+    };
+    let mut req = req;
     let line = josh::some_or!(
-        req.headers()
-            .get("authorization")
-            .and_then(|h| Some(h.as_bytes())),
+        req.headers_mut()
+            .remove("authorization")
+            .and_then(|h| Some(h.as_bytes().to_owned())),
         {
-            return blank;
+            return blank(req);
         }
     );
     let u = josh::ok_or!(String::from_utf8(line[6..].to_vec()), {
-        return blank;
+        return blank(req);
     });
     let decoded = josh::ok_or!(base64::decode(&u), {
-        return blank;
+        return blank(req);
     });
     let s = josh::ok_or!(String::from_utf8(decoded), {
-        return blank;
+        return blank(req);
     });
     if let [username, password] =
         s.as_str().split(':').collect::<Vec<_>>().as_slice()
     {
-        return (
-            username.to_string(),
-            josh_proxy::Password {
-                value: password.to_string(),
-            },
-        );
+        use crypto::digest::Digest;
+        let mut d = crypto::sha1::Sha1::new();
+        d.input_str(&format!("{}:{}", &username, &password));
+        let hp = josh_proxy::HashedPassword {
+            hash: d.result_str().to_owned(),
+        };
+        let p = josh_proxy::Password {
+            value: password.to_string(),
+        };
+        credential_store.write().unwrap().insert(hp.clone(), p);
+        return ((username.to_string(), hp), req);
     }
-    return blank;
+    return blank(req);
 }
 
 fn hash_strings(url: &str, username: &str, password: &str) -> String {
@@ -107,14 +125,14 @@ async fn fetch_upstream(
     service: Arc<JoshProxyService>,
     upstream_repo: String,
     username: &str,
-    password: josh_proxy::Password,
+    password: josh_proxy::HashedPassword,
     remote_url: String,
     headref: &str,
 ) -> josh::JoshResult<bool> {
     let repo = git2::Repository::init_bare(&service.repo_path)?;
     let username = username.to_owned();
     let credentials_hashed =
-        hash_strings(&remote_url, &username, &password.value);
+        hash_strings(&remote_url, &username, &password.hash);
 
     tracing::debug!(
         "credentials_hashed {:?}, {:?}, {:?}",
@@ -129,25 +147,38 @@ async fn fetch_upstream(
         if let Some(last) =
             service.credential_cache.read()?.get(&credentials_hashed)
         {
-            std::time::Instant::now().duration_since(*last)
-                < std::time::Duration::from_secs(60)
+            let since = std::time::Instant::now().duration_since(*last);
+            tracing::trace!("last: {:?}, since: {:?}", last, since);
+            since < std::time::Duration::from_secs(60)
         } else {
             false
         }
     };
 
+    tracing::trace!("credentials_cached_ok {:?}", credentials_cached_ok);
+
     if credentials_cached_ok {
-        if repo.refname_to_id(&headref).is_ok() {
+        let refname = format!(
+            "refs/josh/upstream/{}/{}",
+            &josh::to_ns(&upstream_repo),
+            headref
+        );
+        let id = repo.refname_to_id(&refname);
+        tracing::trace!("refname_to_id: {:?}", id);
+        if id.is_ok() {
             return Ok(true);
         }
     }
 
     let credential_cache = service.credential_cache.clone();
+    let credential_store = service.credential_store.clone();
     let br_path = service.repo_path.clone();
 
     let permit = service.fetch_permits.acquire().await;
 
+    let s = tracing::span!(tracing::Level::TRACE, "fetch worker");
     let res = tokio::task::spawn_blocking(move || {
+        let _e = s.enter();
         josh_proxy::fetch_refs_from_url(
             &br_path,
             &upstream_repo,
@@ -155,6 +186,7 @@ async fn fetch_upstream(
             &refs_to_fetch,
             &username,
             &password,
+            credential_store,
         )
     })
     .await??;
@@ -228,6 +260,7 @@ async fn repo_update_fn(
         let body = body?;
         let buffer = std::str::from_utf8(&body)?;
         josh_proxy::process_repo_update(
+            serv.credential_store.clone(),
             serde_json::from_str(&buffer)?,
             forward_maps,
             backward_maps,
@@ -259,7 +292,11 @@ async fn do_filter(
     let forward_maps = service.forward_maps.clone();
     let backward_maps = service.backward_maps.clone();
     let permit = service.filter_permits.acquire().await;
+
+    let s = tracing::span!(tracing::Level::TRACE, "do_filter worker");
     let r = tokio::task::spawn_blocking(move || {
+        let _e = s.enter();
+        tracing::trace!("in do_filter worker");
         let repo = git2::Repository::init_bare(&repo_path)?;
         let filter = josh::filters::parse(&filter_spec);
         let filter_spec = filter.filter_spec();
@@ -305,10 +342,11 @@ async fn do_filter(
     return r;
 }
 
-/* #[tracing::instrument] */
+#[tracing::instrument]
 async fn call_service(
     serv: Arc<JoshProxyService>,
     req: Request<hyper::Body>,
+    auth: (String, josh_proxy::HashedPassword),
 ) -> Response<hyper::Body> {
     let path = {
         let mut path = req.uri().path().to_owned();
@@ -326,7 +364,7 @@ async fn call_service(
         return repo_update_fn(serv, req).await;
     }
 
-    if let Some(kv_url) = KvUrl::from_str(&path) {
+    if let Some(db_url) = DbUrl::from_str(&path) {
         let body = req
             .into_body()
             .try_fold(String::new(), |mut acc, elt| async move {
@@ -337,17 +375,17 @@ async fn call_service(
             .unwrap();
 
         if body == "" {
-            if let Some(v) = serv.kv_store.read().unwrap().get(&kv_url.k) {
+            if let Some(v) = serv.db_store.read().unwrap().get(&db_url.k) {
                 return Response::builder()
                     .body(hyper::Body::from(v.to_string()))
                     .unwrap();
             }
             return Response::builder().body(hyper::Body::from("")).unwrap();
         } else {
-            serv.kv_store
+            serv.db_store
                 .write()
                 .unwrap()
-                .insert(kv_url.k, serde_json::from_str(&body).unwrap());
+                .insert(db_url.k, serde_json::from_str(&body).unwrap());
             return Response::builder().body(hyper::Body::from("ok")).unwrap();
         }
     }
@@ -378,7 +416,7 @@ async fn call_service(
     ]
     .join("");
 
-    let (username, password) = parse_auth(&req);
+    let (username, password) = auth;
 
     let temp_ns = match prepare_namespace(
         serv.clone(),
@@ -388,6 +426,7 @@ async fn call_service(
         &headref,
         (username.clone(), password.clone()),
     )
+    .in_current_span()
     .await
     {
         PrepareNsResult::Ns(temp_ns) => temp_ns,
@@ -423,14 +462,16 @@ async fn call_service(
 
     if let Some(q) = req.uri().query().map(|x| x.to_string()) {
         if parsed_url.pathinfo == "" {
+            let s = tracing::span!(tracing::Level::TRACE, "render worker");
             let res = tokio::task::spawn_blocking(move || {
+                let _e = s.enter();
                 let repo =
                     git2::Repository::init_bare(&serv.repo_path).unwrap();
                 josh::query::render(
                     &repo,
                     &temp_ns.reference(&headref),
                     &q,
-                    serv.kv_store.clone(),
+                    serv.db_store.clone(),
                     serv.forward_maps.clone(),
                     serv.backward_maps.clone(),
                 )
@@ -453,14 +494,17 @@ async fn call_service(
     cmd.env("GIT_NAMESPACE", temp_ns.name().clone());
     cmd.env("GIT_PROJECT_ROOT", repo_path);
     cmd.env("JOSH_BASE_NS", josh::to_ns(&parsed_url.upstream_repo));
-    cmd.env("JOSH_PASSWORD", password.value);
+    cmd.env("JOSH_PASSWORD", password.hash);
     cmd.env("JOSH_PORT", serv.port.clone());
     cmd.env("JOSH_REMOTE", remote_url);
     cmd.env("JOSH_USERNAME", username);
     cmd.env("JOSH_VIEWSTR", parsed_url.filter.clone());
     cmd.env("PATH_INFO", parsed_url.pathinfo.clone());
 
-    let cgires = hyper_cgi::do_cgi(req, cmd).await.0;
+    let cgires = hyper_cgi::do_cgi(req, cmd)
+        .instrument(tracing::span!(tracing::Level::TRACE, "git http-backend"))
+        .await
+        .0;
 
     // This is chained as a seperate future to make sure that
     // it is executed in all cases.
@@ -474,13 +518,14 @@ enum PrepareNsResult {
     Resp(hyper::Response<hyper::Body>),
 }
 
+#[tracing::instrument]
 async fn prepare_namespace(
     serv: Arc<JoshProxyService>,
     upstream_repo: &str,
     remote_url: &str,
     filter_spec: &str,
     headref: &str,
-    auth: (String, josh_proxy::Password),
+    auth: (String, josh_proxy::HashedPassword),
 ) -> PrepareNsResult {
     let (username, password) = auth;
 
@@ -558,24 +603,26 @@ async fn run_proxy() -> josh::JoshResult<i32> {
     let proxy_service = Arc::new(JoshProxyService {
         port: port,
         repo_path: local.to_owned(),
-        forward_maps: forward_maps,
-        backward_maps: backward_maps,
+        forward_maps: forward_maps.clone(),
+        backward_maps: backward_maps.clone(),
         upstream_url: remote.to_owned(),
         credential_cache: Arc::new(RwLock::new(CredentialCache::new())),
         fetch_permits: Arc::new(tokio::sync::Semaphore::new(1)),
         filter_permits: Arc::new(tokio::sync::Semaphore::new(10)),
-        kv_store: Arc::new(RwLock::new(HashMap::new())),
+        db_store: Arc::new(RwLock::new(HashMap::new())),
+        credential_store: Arc::new(RwLock::new(HashMap::new())),
     });
 
     let make_service = make_service_fn(move |_| {
         let proxy_service = proxy_service.clone();
 
         let service = service_fn(move |_req| {
+            let (auth, req) =
+                parse_auth(proxy_service.credential_store.clone(), _req);
             let proxy_service = proxy_service.clone();
 
-            call_service(proxy_service, _req)
+            call_service(proxy_service, req, auth)
                 .map(Ok::<_, hyper::http::Error>)
-                .instrument(tracing::info_span!("call_service"))
         });
 
         future::ok::<_, hyper::http::Error>(service)
@@ -583,6 +630,12 @@ async fn run_proxy() -> josh::JoshResult<i32> {
 
     let server = Server::bind(&addr).serve(make_service);
 
+    let _jh = josh::housekeeping::spawn_thread(
+        local,
+        forward_maps,
+        backward_maps,
+        ARGS.is_present("gc"),
+    );
     println!("Now listening on {}", addr);
 
     server.await?;
@@ -716,12 +769,20 @@ fn main() {
         }
     }
 
-    tracing_subscriber::fmt::init();
-    /* let collector = tracing_subscriber::fmt() */
-    /*     .with_max_level(tracing::Level::TRACE) */
-    /*     .finish(); */
+    let fmt_layer = tracing_subscriber::fmt::layer().with_ansi(false);
 
-    /* tracing::collector::with_default(collector, || { */
+    let (tracer, _uninstall) = opentelemetry_jaeger::new_pipeline()
+        .with_service_name("josh-proxy")
+        .install()
+        .unwrap();
+
+    let telemetry_layer = tracing_opentelemetry::layer().with_tracer(tracer);
+
+    let subscriber = tracing_subscriber::Registry::default()
+        .with(telemetry_layer)
+        .with(fmt_layer);
+
+    tracing::subscriber::set_global_default(subscriber).unwrap();
 
     let local = std::path::PathBuf::from(
         ARGS.value_of("local").expect("missing local directory"),
@@ -747,5 +808,4 @@ fn main() {
     }
 
     std::process::exit(run_proxy().unwrap_or(1));
-    /* }); */
 }

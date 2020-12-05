@@ -21,7 +21,9 @@ fn baseref_and_options(
     return Ok((baseref, push_to, options));
 }
 
+#[tracing::instrument(skip(_forward_maps, backward_maps, credential_store))]
 pub fn process_repo_update(
+    credential_store: std::sync::Arc<std::sync::RwLock<CredentialStore>>,
     repo_update: std::collections::HashMap<String, String>,
     _forward_maps: std::sync::Arc<
         std::sync::RwLock<josh::filter_cache::FilterCache>,
@@ -30,18 +32,18 @@ pub fn process_repo_update(
         std::sync::RwLock<josh::filter_cache::FilterCache>,
     >,
 ) -> Result<String, josh::JoshError> {
-    let ru = {
-        let mut ru = repo_update.clone();
-        ru.insert("password".to_owned(), "...".to_owned());
-    };
-    let _trace_s = tracing::span!(tracing::Level::TRACE, "process_repo_update", repo_update= ?ru);
     let refname = repo_update.get("refname").ok_or(josh::josh_error(""))?;
     let filter_spec =
         repo_update.get("filter_spec").ok_or(josh::josh_error(""))?;
     let old = repo_update.get("old").ok_or(josh::josh_error(""))?;
     let new = repo_update.get("new").ok_or(josh::josh_error(""))?;
     let username = repo_update.get("username").ok_or(josh::josh_error(""))?;
-    let password = repo_update.get("password").ok_or(josh::josh_error(""))?;
+    let password = HashedPassword {
+        hash: repo_update
+            .get("password")
+            .ok_or(josh::josh_error(""))?
+            .to_string(),
+    };
     let remote_url =
         repo_update.get("remote_url").ok_or(josh::josh_error(""))?;
     let base_ns = repo_update.get("base_ns").ok_or(josh::josh_error(""))?;
@@ -68,10 +70,10 @@ pub fn process_repo_update(
         } else {
             old
         };
-        tracing::trace!("push: old oid: {:?}, rev: {:?}", oid, rev);
+        tracing::debug!("push: old oid: {:?}, rev: {:?}", oid, rev);
         oid
     } else {
-        tracing::trace!("push: old oid: {:?}, refname: {:?}", old, refname);
+        tracing::debug!("push: old oid: {:?}, refname: {:?}", old, refname);
         old
     };
 
@@ -141,6 +143,14 @@ pub fn process_repo_update(
         push_to
     };
 
+    let password = credential_store
+        .read()?
+        .get(&password)
+        .unwrap_or(&Password {
+            value: "".to_owned(),
+        })
+        .to_owned();
+
     return push_head_url(
         &repo,
         oid_to_push,
@@ -158,7 +168,7 @@ fn push_head_url(
     refname: &str,
     url: &str,
     username: &str,
-    password: &str,
+    password: &Password,
     namespace: &str,
 ) -> josh::JoshResult<String> {
     let rn = format!("refs/{}", &namespace);
@@ -179,7 +189,7 @@ fn push_head_url(
     let cmd = format!("git push {} '{}'", &nurl, &spec);
     let mut fakehead = repo.reference(&rn, oid, true, "push_head_url")?;
     let (stdout, stderr) =
-        shell.command_env(&cmd, &[("GIT_PASSWORD", &password)]);
+        shell.command_env(&cmd, &[("GIT_PASSWORD", &password.value)]);
     fakehead.delete()?;
     tracing::debug!("{}", &stderr);
     tracing::debug!("{}", &stdout);
@@ -214,13 +224,15 @@ pub fn create_repo(path: &std::path::Path) -> josh::JoshResult<()> {
     return Ok(());
 }
 
+#[tracing::instrument(skip(credential_store))]
 pub fn fetch_refs_from_url(
     path: &std::path::Path,
     upstream_repo: &str,
     url: &str,
     refs_prefixes: &[&str],
     username: &str,
-    password: &Password,
+    password: &HashedPassword,
+    credential_store: std::sync::Arc<std::sync::RwLock<CredentialStore>>,
 ) -> Result<bool, git2::Error> {
     let specs: Vec<_> = refs_prefixes
         .iter()
@@ -252,6 +264,15 @@ pub fn fetch_refs_from_url(
     let cmd = format!("git fetch --no-tags {} {}", &nurl, &specs.join(" "));
     tracing::info!("fetch_refs_from_url {:?} {:?} {:?}", cmd, path, "");
 
+    let password = credential_store
+        .read()
+        .unwrap()
+        .get(&password)
+        .unwrap_or(&Password {
+            value: "".to_owned(),
+        })
+        .to_owned();
+
     let (_stdout, stderr) =
         shell.command_env(&cmd, &[("GIT_PASSWORD", &password.value)]);
     tracing::debug!(
@@ -279,10 +300,17 @@ pub struct Password {
     pub value: String,
 }
 
-impl std::fmt::Debug for Password {
+#[derive(Clone, PartialEq, Eq, Hash)]
+pub struct HashedPassword {
+    pub hash: String,
+}
+
+pub type CredentialStore = std::collections::HashMap<HashedPassword, Password>;
+
+impl std::fmt::Debug for HashedPassword {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Password")
-            .field("value", &"<hidden>")
+        f.debug_struct("HashedPassword")
+            .field("value", &self.hash)
             .finish()
     }
 }
