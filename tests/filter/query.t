@@ -22,7 +22,7 @@
   > {{ #with (toml (git-blob "config_file.toml")) }}
   > From TOML: {{ a.b }}
   > {{ /with }}
-  > {{ #each (git-find "file.$") }}
+  > {{ #each (git-find glob="**/file*") }}
   > {{ ~@index}}:
   > name: {{ this.name }}
   > path: {{ this.path }}
