@@ -19,7 +19,7 @@
   $ git commit -m "add file1" 1> /dev/null
 
   $ cat > sub1/tmpl_file <<EOF
-  > {{ #with (toml (git-blob "config_file.toml")) }}
+  > {{ #with (toml (git-blob path="config_file.toml")) }}
   > From TOML: {{ a.b }}
   > {{ /with }}
   > {{ #each (git-find glob="**/file*") }}
@@ -28,11 +28,11 @@
   > path: {{ this.path }}
   > base: {{ this.base }}
   > sha1: {{ this.sha1 }}
-  > {{ ~#with (git-blob this.path) as |b| }}
+  > {{ ~#with (git-blob path=this.path) as |b| }}
   > blob: {{{ b }}}
   > {{ ~/with~ }}
   > {{ ~#if this.base }}
-  >   {{ ~#with (josh-filter (concat ":workspace=" this.base))~ }}
+  >   {{ ~#with (josh-filter spec=(concat ":workspace=" this.base))~ }}
   > filtered: {{{ sha1 }}}
   > db: {{ db-lookup sha1 }}
   >   {{ /with~ }}

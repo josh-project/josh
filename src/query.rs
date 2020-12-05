@@ -7,9 +7,9 @@ struct BlobHelper {
 impl BlobHelper {
     fn josh_helper(
         &self,
-        params: &[handlebars::PathAndJson],
+        hash: &std::collections::BTreeMap<&str, handlebars::PathAndJson>,
     ) -> super::JoshResult<serde_json::Value> {
-        let path = if let [f, ..] = params {
+        let path = if let Some(f) = hash.get("path") {
             f.render()
         } else {
             return Err(super::josh_error("missing pattern"));
@@ -38,7 +38,7 @@ impl handlebars::HelperDef for BlobHelper {
         handlebars::RenderError,
     > {
         return Ok(Some(handlebars::ScopedJson::Derived(
-            self.josh_helper(h.params().as_slice())
+            self.josh_helper(h.hash())
                 .map_err(|_| handlebars::RenderError::new("josh"))?,
         )));
     }
@@ -52,7 +52,6 @@ struct FindFilesHelper {
 impl FindFilesHelper {
     fn josh_helper(
         &self,
-        params: &[handlebars::PathAndJson],
         hash: &std::collections::BTreeMap<&str, handlebars::PathAndJson>,
     ) -> super::JoshResult<serde_json::Value> {
         let filename = if let Some(f) = hash.get("glob") {
@@ -97,7 +96,7 @@ impl handlebars::HelperDef for FindFilesHelper {
         handlebars::RenderError,
     > {
         return Ok(Some(handlebars::ScopedJson::Derived(
-            self.josh_helper(h.params().as_slice(), h.hash())
+            self.josh_helper(h.hash())
                 .map_err(|_| handlebars::RenderError::new("josh"))?,
         )));
     }
@@ -115,9 +114,9 @@ struct FilterHelper {
 impl FilterHelper {
     fn josh_helper(
         &self,
-        params: &[handlebars::PathAndJson],
+        hash: &std::collections::BTreeMap<&str, handlebars::PathAndJson>,
     ) -> super::JoshResult<serde_json::Value> {
-        let filter_spec = if let [f, ..] = params {
+        let filter_spec = if let Some(f) = hash.get("spec") {
             f.render()
         } else {
             return Err(super::josh_error("missing spec"));
@@ -149,7 +148,7 @@ impl handlebars::HelperDef for FilterHelper {
         handlebars::RenderError,
     > {
         return Ok(Some(handlebars::ScopedJson::Derived(
-            self.josh_helper(h.params().as_slice())
+            self.josh_helper(h.hash())
                 .map_err(|_| handlebars::RenderError::new("josh"))?,
         )));
     }
