@@ -11,14 +11,15 @@ pub struct Shell {
 
 impl Shell {
     pub fn command(&self, cmd: &str) -> (String, String) {
-        return self.command_env(cmd, &[]);
+        return self.command_env(cmd, &[], &[]);
     }
 
-    #[tracing::instrument(skip(self))]
+    #[tracing::instrument(skip(self, env_notrace))]
     pub fn command_env(
         &self,
         cmd: &str,
         env: &[(&str, &str)],
+        env_notrace: &[(&str, &str)],
     ) -> (String, String) {
         let git_dir = if self.cwd.join(".git").exists() {
             self.cwd.join(".git")
@@ -34,6 +35,10 @@ impl Shell {
             .env("GIT_DIR", &git_dir);
 
         for (k, v) in env.iter() {
+            command.env(&k, &v);
+        }
+
+        for (k, v) in env_notrace.iter() {
             command.env(&k, &v);
         }
 

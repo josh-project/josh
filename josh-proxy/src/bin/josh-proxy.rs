@@ -62,12 +62,12 @@ impl std::fmt::Debug for JoshProxyService {
 pub fn parse_auth(
     credential_store: Arc<RwLock<josh_proxy::CredentialStore>>,
     req: hyper::Request<hyper::Body>,
-) -> (
+) -> josh::JoshResult<(
     (String, josh_proxy::HashedPassword),
     hyper::Request<hyper::Body>,
-) {
+)> {
     let blank = |r| {
-        (
+        Ok((
             (
                 "".to_owned(),
                 josh_proxy::HashedPassword {
@@ -75,7 +75,7 @@ pub fn parse_auth(
                 },
             ),
             r,
-        )
+        ))
     };
     let mut req = req;
     let line = josh::some_or!(
@@ -107,8 +107,8 @@ pub fn parse_auth(
         let p = josh_proxy::Password {
             value: password.to_string(),
         };
-        credential_store.write().unwrap().insert(hp.clone(), p);
-        return ((username.to_string(), hp), req);
+        credential_store.write()?.insert(hp.clone(), p);
+        return Ok(((username.to_string(), hp), req));
     }
     return blank(req);
 }
@@ -205,52 +205,52 @@ async fn fetch_upstream(
 async fn static_paths(
     service: &JoshProxyService,
     path: &str,
-) -> Option<Response<hyper::Body>> {
+) -> josh::JoshResult<Option<Response<hyper::Body>>> {
     if path == "/version" {
-        return Some(
+        return Ok(Some(
             Response::builder()
                 .status(hyper::StatusCode::OK)
                 .body(hyper::Body::from(version_str()))
                 .unwrap_or(Response::default()),
-        );
+        ));
     }
     if path == "/flush" {
-        service.credential_cache.write().unwrap().clear();
-        return Some(
+        service.credential_cache.write()?.clear();
+        return Ok(Some(
             Response::builder()
                 .status(hyper::StatusCode::OK)
                 .body(hyper::Body::from("Flushed credential cache\n"))
                 .unwrap_or(Response::default()),
-        );
+        ));
     }
     if path == "/filters" {
-        service.credential_cache.write().unwrap().clear();
+        service.credential_cache.write()?.clear();
         let service = service.clone();
 
-        let body_str = tokio::task::spawn_blocking(move || {
-            let repo = git2::Repository::init_bare(&service.repo_path).unwrap();
-            let known_filters =
-                josh::housekeeping::discover_filter_candidates(&repo).ok();
-            toml::to_string_pretty(&known_filters).unwrap()
-        })
-        .await
-        .unwrap();
+        let body_str =
+            tokio::task::spawn_blocking(move || -> josh::JoshResult<_> {
+                let repo = git2::Repository::init_bare(&service.repo_path)?;
+                let known_filters =
+                    josh::housekeeping::discover_filter_candidates(&repo).ok();
+                Ok(toml::to_string_pretty(&known_filters)?)
+            })
+            .await??;
 
-        return Some(
+        return Ok(Some(
             Response::builder()
                 .status(hyper::StatusCode::OK)
                 .body(hyper::Body::from(body_str))
                 .unwrap_or(Response::default()),
-        );
+        ));
     }
-    return None;
+    return Ok(None);
 }
 
 #[tracing::instrument]
 async fn repo_update_fn(
     serv: Arc<JoshProxyService>,
     req: Request<hyper::Body>,
-) -> Response<hyper::Body> {
+) -> josh::JoshResult<Response<hyper::Body>> {
     let forward_maps = serv.forward_maps.clone();
     let backward_maps = serv.backward_maps.clone();
 
@@ -268,18 +268,16 @@ async fn repo_update_fn(
             backward_maps,
         )
     })
-    .await
-    .unwrap();
+    .await?;
 
-    return match result {
+    return Ok(match result {
         Ok(stderr) => Response::builder()
             .status(hyper::StatusCode::OK)
             .body(hyper::Body::from(stderr)),
         Err(josh::JoshError(stderr)) => Response::builder()
-            .status(hyper::StatusCode::BAD_REQUEST)
+            .status(hyper::StatusCode::INTERNAL_SERVER_ERROR)
             .body(hyper::Body::from(stderr)),
-    }
-    .unwrap();
+    }?);
 }
 
 #[tracing::instrument]
@@ -344,12 +342,20 @@ async fn do_filter(
     return r;
 }
 
+async fn error_response() -> Response<hyper::Body> {
+    Response::builder()
+        .status(hyper::StatusCode::INTERNAL_SERVER_ERROR)
+        .body(hyper::Body::empty())
+        .expect("Can't build response")
+}
+
 #[tracing::instrument]
 async fn call_service(
     serv: Arc<JoshProxyService>,
-    req: Request<hyper::Body>,
-    auth: (String, josh_proxy::HashedPassword),
-) -> Response<hyper::Body> {
+    req_auth: ((String, josh_proxy::HashedPassword), Request<hyper::Body>),
+) -> josh::JoshResult<Response<hyper::Body>> {
+    let (auth, req) = req_auth;
+
     let path = {
         let mut path = req.uri().path().to_owned();
         while path.contains("//") {
@@ -358,8 +364,8 @@ async fn call_service(
         path
     };
 
-    if let Some(r) = static_paths(&serv, &path).await {
-        return r;
+    if let Some(r) = static_paths(&serv, &path).await? {
+        return Ok(r);
     }
 
     if path == "/repo_update" {
@@ -370,25 +376,24 @@ async fn call_service(
         let body = req
             .into_body()
             .try_fold(String::new(), |mut acc, elt| async move {
-                acc.push_str(std::str::from_utf8(&elt).unwrap());
+                acc.push_str(
+                    std::str::from_utf8(&elt).unwrap_or("ERROR: from_utf8"),
+                );
                 Ok(acc)
             })
-            .await
-            .unwrap();
+            .await?;
 
         if body == "" {
-            if let Some(v) = serv.db_store.read().unwrap().get(&db_url.k) {
-                return Response::builder()
-                    .body(hyper::Body::from(v.to_string()))
-                    .unwrap();
+            if let Some(v) = serv.db_store.read()?.get(&db_url.k) {
+                return Ok(Response::builder()
+                    .body(hyper::Body::from(v.to_string()))?);
             }
-            return Response::builder().body(hyper::Body::from("")).unwrap();
+            return Ok(Response::builder().body(hyper::Body::from(""))?);
         } else {
             serv.db_store
-                .write()
-                .unwrap()
-                .insert(db_url.k, serde_json::from_str(&body).unwrap());
-            return Response::builder().body(hyper::Body::from("ok")).unwrap();
+                .write()?
+                .insert(db_url.k, serde_json::from_str(&body)?);
+            return Ok(Response::builder().body(hyper::Body::from("ok"))?);
         }
     }
 
@@ -400,10 +405,9 @@ async fn call_service(
             }
             pu
         } else {
-            return Response::builder()
+            return Ok(Response::builder()
                 .status(hyper::StatusCode::NOT_FOUND)
-                .body(hyper::Body::empty())
-                .unwrap();
+                .body(hyper::Body::empty())?);
         }
     };
 
@@ -429,62 +433,60 @@ async fn call_service(
         (username.clone(), password.clone()),
     )
     .in_current_span()
-    .await
+    .await?
     {
         PrepareNsResult::Ns(temp_ns) => temp_ns,
-        PrepareNsResult::Resp(resp) => return resp,
+        PrepareNsResult::Resp(resp) => return Ok(resp),
     };
 
     if req.uri().query() == Some("info") {
         let forward_maps = serv.forward_maps.clone();
         let backward_maps = serv.forward_maps.clone();
 
-        let info_str = tokio::task::spawn_blocking(move || {
-            let repo = git2::Repository::init_bare(&serv.repo_path).unwrap();
-            josh::housekeeping::get_info(
-                &repo,
-                &*josh::filters::parse(&parsed_url.filter),
-                &parsed_url.upstream_repo,
-                &headref,
-                forward_maps.clone(),
-                backward_maps.clone(),
-            )
-            .unwrap_or("get_info: error".to_owned())
-        })
-        .await
-        .unwrap();
+        let info_str =
+            tokio::task::spawn_blocking(move || -> josh::JoshResult<_> {
+                let repo = git2::Repository::init_bare(&serv.repo_path)?;
+                josh::housekeeping::get_info(
+                    &repo,
+                    &*josh::filters::parse(&parsed_url.filter),
+                    &parsed_url.upstream_repo,
+                    &headref,
+                    forward_maps.clone(),
+                    backward_maps.clone(),
+                )
+            })
+            .await??;
 
-        return Response::builder()
+        return Ok(Response::builder()
             .status(hyper::StatusCode::OK)
-            .body(hyper::Body::from(format!("{}\n", info_str)))
-            .unwrap();
+            .body(hyper::Body::from(format!("{}\n", info_str)))?);
     }
 
-    let repo_path = serv.repo_path.to_str().unwrap();
+    let repo_path = serv
+        .repo_path
+        .to_str()
+        .ok_or(josh::josh_error("repo_path.to_str"))?;
 
     if let Some(q) = req.uri().query().map(|x| x.to_string()) {
         if parsed_url.pathinfo == "" {
             let s = tracing::span!(tracing::Level::TRACE, "render worker");
-            let res = tokio::task::spawn_blocking(move || {
-                let _e = s.enter();
-                let repo =
-                    git2::Repository::init_bare(&serv.repo_path).unwrap();
-                josh::query::render(
-                    &repo,
-                    &temp_ns.reference(&headref),
-                    &q,
-                    serv.db_store.clone(),
-                    serv.forward_maps.clone(),
-                    serv.backward_maps.clone(),
-                )
-                .unwrap_or(format!("query ERROR {:?}", q))
-            })
-            .await
-            .unwrap();
-            return Response::builder()
+            let res =
+                tokio::task::spawn_blocking(move || -> josh::JoshResult<_> {
+                    let _e = s.enter();
+                    let repo = git2::Repository::init_bare(&serv.repo_path)?;
+                    josh::query::render(
+                        &repo,
+                        &temp_ns.reference(&headref),
+                        &q,
+                        serv.db_store.clone(),
+                        serv.forward_maps.clone(),
+                        serv.backward_maps.clone(),
+                    )
+                })
+                .await??;
+            return Ok(Response::builder()
                 .status(hyper::StatusCode::OK)
-                .body(hyper::Body::from(res))
-                .unwrap();
+                .body(hyper::Body::from(res))?);
         }
     }
 
@@ -512,7 +514,7 @@ async fn call_service(
     // it is executed in all cases.
     std::mem::drop(temp_ns);
 
-    return cgires;
+    return Ok(cgires);
 }
 
 enum PrepareNsResult {
@@ -528,7 +530,7 @@ async fn prepare_namespace(
     filter_spec: &str,
     headref: &str,
     auth: (String, josh_proxy::HashedPassword),
-) -> PrepareNsResult {
+) -> josh::JoshResult<PrepareNsResult> {
     let (username, password) = auth;
 
     let authorized = fetch_upstream(
@@ -539,23 +541,13 @@ async fn prepare_namespace(
         remote_url.to_owned(),
         &headref,
     )
-    .await;
+    .await?;
 
-    if let Ok(false) = authorized {
+    if !authorized {
         let builder = Response::builder()
             .header("WWW-Authenticate", "Basic realm=User Visible Realm")
             .status(hyper::StatusCode::UNAUTHORIZED);
-        return PrepareNsResult::Resp(
-            builder.body(hyper::Body::empty()).unwrap(),
-        );
-    }
-
-    if let Err(_) = authorized {
-        let builder = Response::builder()
-            .status(hyper::StatusCode::INTERNAL_SERVER_ERROR);
-        return PrepareNsResult::Resp(
-            builder.body(hyper::Body::empty()).unwrap(),
-        );
+        return Ok(PrepareNsResult::Resp(builder.body(hyper::Body::empty())?));
     }
 
     let temp_ns = Arc::new(josh_proxy::TmpGitNamespace::new(
@@ -565,7 +557,7 @@ async fn prepare_namespace(
 
     let serv = serv.clone();
 
-    if !do_filter(
+    do_filter(
         serv.repo_path.clone(),
         serv.clone(),
         upstream_repo.to_owned(),
@@ -573,28 +565,23 @@ async fn prepare_namespace(
         filter_spec.to_owned(),
         headref.to_string(),
     )
-    .await
-    .is_ok()
-    {
-        let builder = Response::builder()
-            .status(hyper::StatusCode::INTERNAL_SERVER_ERROR);
-        return PrepareNsResult::Resp(
-            builder.body(hyper::Body::empty()).unwrap(),
-        );
-    }
+    .await?;
 
-    return PrepareNsResult::Ns(temp_ns);
+    return Ok(PrepareNsResult::Ns(temp_ns));
 }
 
 #[tracing::instrument]
 #[tokio::main]
 async fn run_proxy() -> josh::JoshResult<i32> {
     let port = ARGS.value_of("port").unwrap_or("8000").to_owned();
-    let addr = format!("0.0.0.0:{}", port).parse().unwrap();
+    let addr = format!("0.0.0.0:{}", port).parse()?;
 
-    let remote = ARGS.value_of("remote").expect("missing remote host url");
+    let remote = ARGS
+        .value_of("remote")
+        .ok_or(josh::josh_error("missing remote host url"))?;
     let local = std::path::PathBuf::from(
-        ARGS.value_of("local").expect("missing local directory"),
+        ARGS.value_of("local")
+            .ok_or(josh::josh_error("missing local directory"))?,
     );
 
     josh_proxy::create_repo(&local)?;
@@ -627,13 +614,27 @@ async fn run_proxy() -> josh::JoshResult<i32> {
 
         let service = service_fn(move |_req| {
             let s3 = s2.clone();
-            let (auth, req) =
-                parse_auth(proxy_service.credential_store.clone(), _req);
             let proxy_service = proxy_service.clone();
 
-            call_service(proxy_service, req, auth)
-                .instrument(s3)
-                .map(Ok::<_, hyper::http::Error>)
+            {
+                async {
+                    if let Ok(req_auth) =
+                        parse_auth(proxy_service.credential_store.clone(), _req)
+                    {
+                        if let Ok(r) =
+                            call_service(proxy_service, req_auth).await
+                        {
+                            r
+                        } else {
+                            error_response().await
+                        }
+                    } else {
+                        error_response().await
+                    }
+                }
+            }
+            .instrument(s3)
+            .map(Ok::<_, hyper::http::Error>)
         });
 
         future::ok::<_, hyper::http::Error>(service)
@@ -793,7 +794,7 @@ fn main() {
     let (tracer, _uninstall) = opentelemetry_jaeger::new_pipeline()
         .with_service_name("josh-proxy")
         .install()
-        .unwrap();
+        .expect("can't install opentelemetry pipeline");
 
     let telemetry_layer = tracing_opentelemetry::layer().with_tracer(tracer);
 
@@ -801,7 +802,8 @@ fn main() {
         .with(telemetry_layer)
         .with(fmt_layer);
 
-    tracing::subscriber::set_global_default(subscriber).unwrap();
+    tracing::subscriber::set_global_default(subscriber)
+        .expect("can't set_global_default");
 
     let local = std::path::PathBuf::from(
         ARGS.value_of("local").expect("missing local directory"),
@@ -813,16 +815,18 @@ fn main() {
         &local.join("josh_backward_maps"),
     )));
     if ARGS.is_present("m") {
-        let repo = git2::Repository::init_bare(&local).unwrap();
+        let repo =
+            git2::Repository::init_bare(&local).expect("can't init_bare");
         let known_filters =
-            josh::housekeeping::discover_filter_candidates(&repo).unwrap();
+            josh::housekeeping::discover_filter_candidates(&repo)
+                .expect("can't discover_filter_candidates");
         josh::housekeeping::refresh_known_filters(
             &repo,
             &known_filters,
             forward_maps.clone(),
             backward_maps.clone(),
         )
-        .unwrap();
+        .expect("can't refresh_known_filters");
         std::process::exit(0);
     }
 

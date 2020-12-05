@@ -197,7 +197,7 @@ fn push_head_url(
     let cmd = format!("git push {} '{}'", &nurl, &spec);
     let mut fakehead = repo.reference(&rn, oid, true, "push_head_url")?;
     let (stdout, stderr) =
-        shell.command_env(&cmd, &[("GIT_PASSWORD", &password.value)]);
+        shell.command_env(&cmd, &[], &[("GIT_PASSWORD", &password.value)]);
     fakehead.delete()?;
     tracing::debug!("{}", &stderr);
     tracing::debug!("{}", &stdout);
@@ -241,7 +241,7 @@ pub fn fetch_refs_from_url(
     username: &str,
     password: &HashedPassword,
     credential_store: std::sync::Arc<std::sync::RwLock<CredentialStore>>,
-) -> Result<bool, git2::Error> {
+) -> josh::JoshResult<bool> {
     let specs: Vec<_> = refs_prefixes
         .iter()
         .map(|r| {
@@ -273,8 +273,7 @@ pub fn fetch_refs_from_url(
     tracing::info!("fetch_refs_from_url {:?} {:?} {:?}", cmd, path, "");
 
     let password = credential_store
-        .read()
-        .unwrap()
+        .read()?
         .get(&password)
         .unwrap_or(&Password {
             value: "".to_owned(),
@@ -282,7 +281,7 @@ pub fn fetch_refs_from_url(
         .to_owned();
 
     let (_stdout, stderr) =
-        shell.command_env(&cmd, &[("GIT_PASSWORD", &password.value)]);
+        shell.command_env(&cmd, &[], &[("GIT_PASSWORD", &password.value)]);
     tracing::debug!(
         "fetch_refs_from_url done {:?} {:?} {:?}",
         cmd,
@@ -293,10 +292,10 @@ pub fn fetch_refs_from_url(
         return Ok(false);
     }
     if stderr.contains("fatal:") {
-        return Err(git2::Error::from_str(&format!("error: {:?}", stderr)));
+        return Err(josh::josh_error(&format!("git error: {:?}", stderr)));
     }
     if stderr.contains("error:") {
-        return Err(git2::Error::from_str(&format!("error: {:?}", stderr)));
+        return Err(josh::josh_error(&format!("git error: {:?}", stderr)));
     }
     return Ok(true);
 }
