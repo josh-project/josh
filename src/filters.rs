@@ -125,6 +125,15 @@ pub trait Filter {
     fn filter_spec(&self) -> String;
 }
 
+impl std::fmt::Debug for &dyn Filter {
+    fn fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::result::Result<(), std::fmt::Error> {
+        write!(f, "{}", self.filter_spec())
+    }
+}
+
 struct NopFilter;
 
 impl Filter for NopFilter {
@@ -1456,8 +1465,6 @@ fn apply_filter_cached(
         return Ok(forward_maps.get(&filter.filter_spec(), newrev));
     }
 
-    let trace_s = tracing::span!(tracing::Level::TRACE, "apply_filter_cached", filter_spec = ?filter.filter_spec());
-
     let walk = {
         let mut walk = repo.revwalk()?;
         walk.set_sorting(git2::Sort::REVERSE | git2::Sort::TOPOLOGICAL)?;
@@ -1508,7 +1515,6 @@ fn apply_filter_cached(
     }
     let rewritten = forward_maps.get(&filter.filter_spec(), newrev);
     tracing::event!(
-        parent: &trace_s,
         tracing::Level::TRACE,
         ?in_commit_count,
         ?out_commit_count,

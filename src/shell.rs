@@ -1,6 +1,6 @@
 use tracing;
 
-use self::tracing::{event, span, Level};
+use self::tracing::Level;
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -11,20 +11,21 @@ pub struct Shell {
 
 impl Shell {
     pub fn command(&self, cmd: &str) -> (String, String) {
-        return self.command_env(cmd, &[]);
+        return self.command_env(cmd, &[], &[]);
     }
 
+    #[tracing::instrument(skip(self, env_notrace))]
     pub fn command_env(
         &self,
         cmd: &str,
         env: &[(&str, &str)],
+        env_notrace: &[(&str, &str)],
     ) -> (String, String) {
         let git_dir = if self.cwd.join(".git").exists() {
             self.cwd.join(".git")
         } else {
             self.cwd.to_path_buf()
         };
-        let _trace_s = span!(Level::TRACE, "shell:command", ?cmd, cwd =?self.cwd, ?git_dir);
 
         let mut command = Command::new("sh");
         command
@@ -34,6 +35,10 @@ impl Shell {
             .env("GIT_DIR", &git_dir);
 
         for (k, v) in env.iter() {
+            command.env(&k, &v);
+        }
+
+        for (k, v) in env_notrace.iter() {
             command.env(&k, &v);
         }
 
@@ -49,7 +54,7 @@ impl Shell {
             .expect("failed to decode utf8")
             .trim()
             .to_string();
-        event!(Level::TRACE, ?stdout, ?stderr);
+        tracing::event!(Level::TRACE, ?stdout, ?stderr);
         return (stdout, stderr);
     }
 }

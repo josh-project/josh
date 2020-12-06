@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
-const FORMAT_VERSION: u64 = 2;
+const FORMAT_VERSION: u64 = 3;
 
 #[derive(Eq, PartialEq, PartialOrd, Hash, Clone, Copy)]
 pub struct JoshOid(git2::Oid);
@@ -11,7 +11,11 @@ pub type OidMap = HashMap<JoshOid, JoshOid>;
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct FilterCache {
     maps: HashMap<String, OidMap>,
+
     version: u64,
+
+    #[serde(skip)]
+    name: String,
 
     #[serde(skip)]
     upsteam: Option<Arc<RwLock<FilterCache>>>,
@@ -62,6 +66,10 @@ impl<'de> serde::de::Deserialize<'de> for JoshOid {
 
 impl FilterCache {
     pub fn set(&mut self, filter_spec: &str, from: git2::Oid, to: git2::Oid) {
+        let prev = self.get(&filter_spec, from);
+        if prev != git2::Oid::zero() {
+            return;
+        }
         self.maps
             .entry(filter_spec.to_string())
             .or_insert_with(OidMap::new)
@@ -107,8 +115,9 @@ impl FilterCache {
         return false;
     }
 
-    pub fn new() -> FilterCache {
+    pub fn new(name: String) -> FilterCache {
         return FilterCache {
+            name: name,
             maps: HashMap::new(),
             upsteam: None,
             version: FORMAT_VERSION,
@@ -139,11 +148,12 @@ impl FilterCache {
     }
 }
 
+#[tracing::instrument]
 pub fn try_load(path: &std::path::Path) -> FilterCache {
     let file_size = std::fs::metadata(&path)
         .map(|x| x.len() / (1024 * 1024))
         .unwrap_or(0);
-    tracing::info!("trying to load: {:?}, size: {} MiB", &path, file_size);
+    tracing::info!("file size: {}", file_size);
     if let Ok(f) = std::fs::File::open(path) {
         if let Ok(m) = bincode::deserialize_from::<_, FilterCache>(f) {
             tracing::info!("mapfile loaded from: {:?}", &path);
@@ -156,14 +166,14 @@ pub fn try_load(path: &std::path::Path) -> FilterCache {
         tracing::error!("deserialize_from: {:?}", &path);
     }
     tracing::info!("no map file loaded from: {:?}", &path);
-    FilterCache::new()
+    FilterCache::new(path.file_name().unwrap().to_string_lossy().to_string())
 }
 
+#[tracing::instrument(skip(m))]
 pub fn persist(
     m: &FilterCache,
     path: &std::path::Path,
 ) -> crate::JoshResult<()> {
-    tracing::info!("persisting: {:?}", &path);
     let af = atomicwrites::AtomicFile::new(path, atomicwrites::AllowOverwrite);
     af.write(|f| bincode::serialize_into(f, &m))?;
     let file_size = std::fs::metadata(&path)
@@ -206,6 +216,7 @@ pub fn try_merge_both(
 pub fn new_downstream(u: &Arc<RwLock<FilterCache>>) -> FilterCache {
     return FilterCache {
         maps: HashMap::new(),
+        name: u.read().unwrap().name.clone(),
         upsteam: Some(u.clone()),
         version: FORMAT_VERSION,
     };

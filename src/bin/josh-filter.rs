@@ -208,11 +208,13 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         if reverse {
             let new = repo.revparse_single(&target).unwrap().id();
             let old = repo.revparse_single("JOSH_TMP").unwrap().id();
+            let unfiltered_old = repo.revparse_single(&input_ref).unwrap().id();
 
             match josh::unapply_filter(
                 &repo,
                 backward_maps.clone(),
                 &*filterobj,
+                unfiltered_old,
                 old,
                 new,
             )? {

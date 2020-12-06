@@ -204,7 +204,7 @@ pub fn get_info(
 
     let mut meta = std::collections::HashMap::new();
     meta.insert("sha1".to_owned(), "".to_owned());
-    let transformed =
+    let filtered =
         filter.apply_to_commit(&repo, &commit, &mut fm, &mut bm, &mut meta)?;
 
     let parent_ids = |commit: &git2::Commit| {
@@ -223,11 +223,11 @@ pub fn get_info(
         pids
     };
 
-    let t = if let Ok(transformed) = repo.find_commit(transformed) {
+    let t = if let Ok(filtered) = repo.find_commit(filtered) {
         json!({
-            "commit": transformed.id().to_string(),
-            "tree": transformed.tree_id().to_string(),
-            "parents": parent_ids(&transformed),
+            "commit": filtered.id().to_string(),
+            "tree": filtered.tree_id().to_string(),
+            "parents": parent_ids(&filtered),
         })
     } else {
         json!({
@@ -238,17 +238,16 @@ pub fn get_info(
     };
 
     let s = json!({
-        "original": {
-            "commit": commit.id().to_string(),
-            "tree": commit.tree_id().to_string(),
-            "parents": parent_ids(&commit),
-        },
-        "transformed": t,
+        "commit": commit.id().to_string(),
+        "tree": commit.tree_id().to_string(),
+        "parents": parent_ids(&commit),
+        "filtered": t,
     });
 
     return Ok(serde_json::to_string(&s)?);
 }
 
+#[tracing::instrument(skip(repo, forward_maps, backward_maps))]
 pub fn refresh_known_filters(
     repo: &git2::Repository,
     known_filters: &KnownViews,

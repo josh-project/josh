@@ -16,7 +16,7 @@ members = ["josh-proxy", "josh-review"]
 handlebars = "3.5"
 git2 = {version = "0.13", default-features = false}
 clap = "2"
-tracing = { version = "*", features = ["max_level_debug", "release_max_level_info"] }
+tracing = "*"
 bincode = "*"
 percent-encoding = "2.1"
 serde = {version = "*", features = ["derive"]}
@@ -26,6 +26,7 @@ lazy_static = "1.4"
 pest_derive = "2.1"
 pest= "2.1"
 toml= "0.5"
+glob = "*"
 serde_json= "1.0"
 rs_tracing= { version = "1", features = ["rs_tracing"]}
 tracing-log = "*"

@@ -19,22 +19,22 @@
   $ git commit -m "add file1" 1> /dev/null
 
   $ cat > sub1/tmpl_file <<EOF
-  > {{ #with (toml-parse (git-blob "config_file.toml")) }}
+  > {{ #with (toml (git-blob path="config_file.toml")) }}
   > From TOML: {{ a.b }}
   > {{ /with }}
-  > {{ #each (git-find "file.$") }}
+  > {{ #each (git-find glob="**/file*") }}
   > {{ ~@index}}:
   > name: {{ this.name }}
   > path: {{ this.path }}
   > base: {{ this.base }}
   > sha1: {{ this.sha1 }}
-  > {{ ~#with (git-blob this.path) as |b| }}
+  > {{ ~#with (git-blob path=this.path) as |b| }}
   > blob: {{{ b }}}
   > {{ ~/with~ }}
   > {{ ~#if this.base }}
-  >   {{ ~#with (josh-filter (concat ":workspace=" this.base))~ }}
+  >   {{ ~#with (josh-filter spec=(concat ":workspace=" this.base))~ }}
   > filtered: {{{ sha1 }}}
-  > kv: {{ josh-kv sha1 }}
+  > db: {{ db-lookup sha1 }}
   >   {{ /with~ }}
   > {{ ~/if }}
   > {{ ~#unless @last }}-----{{ /unless }}
@@ -79,7 +79,7 @@
   sha1: * (glob)
   blob: contents1
   filtered: * (glob)
-  kv: SUCCESS
+  db: SUCCESS
     -----
   2:
   name: file2
@@ -88,7 +88,7 @@
   sha1: * (glob)
   blob: contents2
   filtered: * (glob)
-  kv: SUCCESS
+  db: SUCCESS
     -----
   3:
   name: file3
@@ -97,7 +97,7 @@
   sha1: * (glob)
   blob: contents3
   filtered: * (glob)
-  kv: 
+  db: 
     
   $ josh-filter HEAD :/sub1 -q render=file2
   contents2
