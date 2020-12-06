@@ -237,7 +237,7 @@ pub fn fetch_refs_from_url(
     path: &std::path::Path,
     upstream_repo: &str,
     url: &str,
-    refs_prefixes: &[&str],
+    refs_prefixes: &[String],
     username: &str,
     password: &HashedPassword,
     credential_store: std::sync::Arc<std::sync::RwLock<CredentialStore>>,

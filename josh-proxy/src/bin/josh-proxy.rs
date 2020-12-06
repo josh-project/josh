@@ -141,7 +141,14 @@ async fn fetch_upstream(
         &credentials_hashed
     );
 
-    let refs_to_fetch = vec!["refs/heads/*", "refs/tags/*", "refs/changes/*"];
+    let refs_to_fetch = if headref != "" {
+        vec!["refs/heads/*", "refs/tags/*", headref]
+    } else {
+        vec!["refs/heads/*", "refs/tags/*"]
+    };
+
+    let refs_to_fetch: Vec<_> =
+        refs_to_fetch.iter().map(|x| x.to_string()).collect();
 
     let credentials_cached_ok = {
         if let Some(last) =
@@ -605,7 +612,6 @@ async fn run_proxy() -> josh::JoshResult<i32> {
         credential_store: Arc::new(RwLock::new(HashMap::new())),
     });
 
-
     let make_service = make_service_fn(move |_| {
         let proxy_service = proxy_service.clone();
 
@@ -616,8 +622,7 @@ async fn run_proxy() -> josh::JoshResult<i32> {
                 if let Ok(req_auth) =
                     parse_auth(proxy_service.credential_store.clone(), _req)
                 {
-                    if let Ok(r) = call_service(proxy_service, req_auth)
-                        .await {
+                    if let Ok(r) = call_service(proxy_service, req_auth).await {
                         r
                     } else {
                         error_response().await
@@ -804,13 +809,13 @@ fn main() {
     let local = std::path::PathBuf::from(
         ARGS.value_of("local").expect("missing local directory"),
     );
-    let forward_maps = Arc::new(RwLock::new(josh::filter_cache::try_load(
-        &local.join("josh_forward_maps"),
-    )));
-    let backward_maps = Arc::new(RwLock::new(josh::filter_cache::try_load(
-        &local.join("josh_backward_maps"),
-    )));
     if ARGS.is_present("m") {
+        let forward_maps = Arc::new(RwLock::new(josh::filter_cache::try_load(
+            &local.join("josh_forward_maps"),
+        )));
+        let backward_maps = Arc::new(RwLock::new(
+            josh::filter_cache::try_load(&local.join("josh_backward_maps")),
+        ));
         let repo =
             git2::Repository::init_bare(&local).expect("can't init_bare");
         let known_filters =
@@ -819,8 +824,8 @@ fn main() {
         josh::housekeeping::refresh_known_filters(
             &repo,
             &known_filters,
-            forward_maps.clone(),
-            backward_maps.clone(),
+            forward_maps,
+            backward_maps,
         )
         .expect("can't refresh_known_filters");
         std::process::exit(0);
