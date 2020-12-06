@@ -570,7 +570,6 @@ async fn prepare_namespace(
     return Ok(PrepareNsResult::Ns(temp_ns));
 }
 
-#[tracing::instrument]
 #[tokio::main]
 async fn run_proxy() -> josh::JoshResult<i32> {
     let port = ARGS.value_of("port").unwrap_or("8000").to_owned();
@@ -606,34 +605,27 @@ async fn run_proxy() -> josh::JoshResult<i32> {
         credential_store: Arc::new(RwLock::new(HashMap::new())),
     });
 
-    let s = tracing::Span::current();
 
     let make_service = make_service_fn(move |_| {
         let proxy_service = proxy_service.clone();
-        let s2 = s.clone();
 
         let service = service_fn(move |_req| {
-            let s3 = s2.clone();
             let proxy_service = proxy_service.clone();
 
-            {
-                async {
-                    if let Ok(req_auth) =
-                        parse_auth(proxy_service.credential_store.clone(), _req)
-                    {
-                        if let Ok(r) =
-                            call_service(proxy_service, req_auth).await
-                        {
-                            r
-                        } else {
-                            error_response().await
-                        }
+            async {
+                if let Ok(req_auth) =
+                    parse_auth(proxy_service.credential_store.clone(), _req)
+                {
+                    if let Ok(r) = call_service(proxy_service, req_auth)
+                        .await {
+                        r
                     } else {
                         error_response().await
                     }
+                } else {
+                    error_response().await
                 }
             }
-            .instrument(s3)
             .map(Ok::<_, hyper::http::Error>)
         });
 
@@ -793,7 +785,10 @@ fn main() {
 
     let (tracer, _uninstall) = opentelemetry_jaeger::new_pipeline()
         .from_env()
-        .with_service_name(std::env::var("JOSH_SERVICE_NAME").unwrap_or("josh-proxy".to_owned()))
+        .with_service_name(
+            std::env::var("JOSH_SERVICE_NAME")
+                .unwrap_or("josh-proxy".to_owned()),
+        )
         .install()
         .expect("can't install opentelemetry pipeline");
 

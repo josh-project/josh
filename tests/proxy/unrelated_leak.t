@@ -77,5 +77,24 @@
   * add file1
   * initial
 
-  $ killall -2 josh-proxy
-
+  $ . ${TESTDIR}/destroy_test_env.sh
+  remote/scratch/refs
+  |-- heads
+  |-- josh
+  |   |-- filtered
+  |   |   `-- real_repo.git
+  |   |       |-- %3A%2Fsub1
+  |   |       |   `-- heads
+  |   |       |       `-- master
+  |   |       `-- %3A%2Fsub2
+  |   |           `-- heads
+  |   |               `-- master
+  |   `-- upstream
+  |       `-- real_repo.git
+  |           `-- refs
+  |               `-- heads
+  |                   `-- master
+  |-- namespaces
+  `-- tags
+  
+  14 directories, 3 files

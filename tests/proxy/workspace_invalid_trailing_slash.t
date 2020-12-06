@@ -137,3 +137,34 @@
   * mod workspace
   * Merge from :workspace=ws
   * add workspace
+
+  $ bash ${TESTDIR}/destroy_test_env.sh
+  remote/scratch/refs
+  |-- heads
+  |-- josh
+  |   |-- filtered
+  |   |   `-- real_repo.git
+  |   |       |-- %3A%2Fsub1
+  |   |       |   `-- heads
+  |   |       |       `-- master
+  |   |       |-- %3A%2Fsub1%2Fsubsub1
+  |   |       |   `-- heads
+  |   |       |       `-- master
+  |   |       |-- %3A%2Fsub1%2Fsubsub2
+  |   |       |   `-- heads
+  |   |       |       `-- master
+  |   |       |-- %3A%2Fws
+  |   |       |   `-- heads
+  |   |       |       `-- master
+  |   |       `-- %3Aworkspace=ws
+  |   |           `-- heads
+  |   |               `-- master
+  |   `-- upstream
+  |       `-- real_repo.git
+  |           `-- refs
+  |               `-- heads
+  |                   `-- master
+  |-- namespaces
+  `-- tags
+  
+  20 directories, 6 files
