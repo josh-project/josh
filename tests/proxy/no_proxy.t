@@ -31,3 +31,10 @@
   $ git push
   To http://localhost:8001/real_repo.git
    * [new branch]      master -> master
+
+  $ bash ${TESTDIR}/destroy_test_env.sh
+  remote/scratch/refs
+  |-- heads
+  `-- tags
+  
+  2 directories, 0 files

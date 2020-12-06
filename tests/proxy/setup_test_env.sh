@@ -9,6 +9,7 @@ git config -f ${TESTTMP}/remote/real/repo2.git/config http.receivepack true
 export RUST_LOG=debug
 
 export GIT_CONFIG_NOSYSTEM=1
+export JOSH_SERVICE_NAME="josh-proxy-test"
 
 PATH=${TESTDIR}/../../target/debug/:${PATH}
 
@@ -27,4 +28,7 @@ ${TESTDIR}/../../target/debug/josh-proxy\
     > ${TESTTMP}/josh-proxy.out 2>&1 &
 echo $! > ${TESTTMP}/proxy_pid
 
-sleep 1
+until curl -s http://localhost:8002/
+do
+    sleep 0.1
+done
