@@ -19,6 +19,8 @@
   $ git commit -m "add file1" 1> /dev/null
 
   $ cat > sub1/tmpl_file <<EOF
+  > tmpl_param1: {{ tmpl_param1 }}
+  > tmpl_p2: {{ tmpl_p2 }}
   > {{ #with (toml (git-blob path="config_file.toml")) }}
   > From TOML: {{ a.b }}
   > {{ /with }}
@@ -61,7 +63,9 @@
 
   $ josh-filter HEAD :nop -q render=sub1/file1
   contents1
-  $ josh-filter HEAD :nop -q render=sub1/tmpl_file
+  $ josh-filter HEAD :nop -q "render=sub1/tmpl_file&tmpl_param1=tmpl_param_value1&tmpl_p2=val2"
+  tmpl_param1: tmpl_param_value1
+  tmpl_p2: val2
   
   From TOML: my_value
   
