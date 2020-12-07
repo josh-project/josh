@@ -202,7 +202,7 @@ handlebars_helper!(toml_helper: |x: str| toml::de::from_str::<serde_json::Value>
 pub fn render(
     repo: &git2::Repository,
     headref: &str,
-    query: &str,
+    query_and_params: &str,
     kv_store: Arc<RwLock<std::collections::HashMap<String, serde_json::Value>>>,
     backward_maps: std::sync::Arc<
         std::sync::RwLock<super::filter_cache::FilterCache>,
@@ -211,13 +211,20 @@ pub fn render(
         std::sync::RwLock<super::filter_cache::FilterCache>,
     >,
 ) -> super::JoshResult<String> {
+    let mut parameters = query_and_params.split("&");
+    let query = parameters.next().ok_or(super::josh_error(&format!(
+        "invalid query {:?}",
+        query_and_params
+    )))?;
     let mut split = query.splitn(2, "=");
-    let cmd = split
-        .next()
-        .ok_or(super::josh_error(&format!("invalid query {:?}", query)))?;
-    let path = split
-        .next()
-        .ok_or(super::josh_error(&format!("invalid query {:?}", query)))?;
+    let cmd = split.next().ok_or(super::josh_error(&format!(
+        "invalid query {:?}",
+        query_and_params
+    )))?;
+    let path = split.next().ok_or(super::josh_error(&format!(
+        "invalid query {:?}",
+        query_and_params
+    )))?;
     let tree = repo.find_reference(&headref)?.peel_to_tree()?;
 
     let obj = tree
@@ -270,5 +277,22 @@ pub fn render(
         "db-lookup",
         Box::new(KvHelper { kv_store: kv_store }),
     );
-    return Ok(format!("{}", handlebars.render("template", &json!({}))?));
+    let mut params = std::collections::BTreeMap::new();
+    for p in parameters {
+        let mut split = p.splitn(2, "=");
+        let name = split.next().ok_or(super::josh_error(&format!(
+            "invalid query {:?}",
+            query_and_params
+        )))?;
+        let value = split.next().ok_or(super::josh_error(&format!(
+            "invalid query {:?}",
+            query_and_params
+        )))?;
+        params.insert(name.to_string(), value.to_string());
+    }
+
+    return Ok(format!(
+        "{}",
+        handlebars.render("template", &json!(params))?
+    ));
 }
