@@ -540,6 +540,14 @@ async fn prepare_namespace(
 ) -> josh::JoshResult<PrepareNsResult> {
     let (username, password) = auth;
 
+    if ARGS.is_present("require-auth") && username == "" {
+        tracing::trace!("require-auth");
+        let builder = Response::builder()
+            .header("WWW-Authenticate", "Basic realm=User Visible Realm")
+            .status(hyper::StatusCode::UNAUTHORIZED);
+        return Ok(PrepareNsResult::Resp(builder.body(hyper::Body::empty())?));
+    }
+
     let authorized = fetch_upstream(
         serv.clone(),
         upstream_repo.to_owned(),
@@ -606,7 +614,9 @@ async fn run_proxy() -> josh::JoshResult<i32> {
         backward_maps: backward_maps.clone(),
         upstream_url: remote.to_owned(),
         credential_cache: Arc::new(RwLock::new(CredentialCache::new())),
-        fetch_permits: Arc::new(tokio::sync::Semaphore::new(1)),
+        fetch_permits: Arc::new(tokio::sync::Semaphore::new(
+            ARGS.value_of("n").unwrap_or("1").parse()?,
+        )),
         filter_permits: Arc::new(tokio::sync::Semaphore::new(10)),
         db_store: Arc::new(RwLock::new(HashMap::new())),
         credential_store: Arc::new(RwLock::new(HashMap::new())),
@@ -672,15 +682,15 @@ fn parse_args() -> clap::ArgMatches<'static> {
                 .takes_value(true),
         )
         .arg(
-            clap::Arg::with_name("trace")
-                .long("trace")
-                .takes_value(true),
-        )
-        .arg(
             clap::Arg::with_name("gc")
                 .long("gc")
                 .takes_value(false)
                 .help("Run git gc in maintanance"),
+        )
+        .arg(
+            clap::Arg::with_name("require-auth")
+                .long("require-auth")
+                .takes_value(false),
         )
         .arg(
             clap::Arg::with_name("m")
@@ -789,10 +799,13 @@ fn main() {
     let fmt_layer = tracing_subscriber::fmt::layer().with_ansi(false);
 
     let (tracer, _uninstall) = opentelemetry_jaeger::new_pipeline()
-        .from_env()
         .with_service_name(
             std::env::var("JOSH_SERVICE_NAME")
                 .unwrap_or("josh-proxy".to_owned()),
+        )
+        .with_agent_endpoint(
+            std::env::var("JOSH_JAEGER_ENDPOINT")
+                .unwrap_or("localhost:6831".to_owned()),
         )
         .install()
         .expect("can't install opentelemetry pipeline");
