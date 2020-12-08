@@ -36,7 +36,6 @@
   > {{ ~#if this.base }}
   >   {{ ~#with (josh-filter spec=(concat ":workspace=" this.base))~ }}
   > filtered: {{{ sha1 }}}
-  > db: {{ db-lookup sha1 }}
   >   {{ /with~ }}
   > {{ ~/if }}
   > {{ ~#unless @last }}-----{{ /unless }}
@@ -83,7 +82,6 @@
   sha1: * (glob)
   blob: contents1
   filtered: * (glob)
-  db: SUCCESS
     -----
   2:
   name: file2
@@ -92,7 +90,6 @@
   sha1: * (glob)
   blob: contents2
   filtered: * (glob)
-  db: SUCCESS
     -----
   3:
   name: file3
@@ -101,7 +98,6 @@
   sha1: * (glob)
   blob: contents3
   filtered: * (glob)
-  db: 
     
   $ josh-filter HEAD :/sub1 -q render=file2
   contents2

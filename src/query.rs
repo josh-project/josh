@@ -1,4 +1,3 @@
-use std::sync::{Arc, RwLock};
 struct BlobHelper {
     repo_path: std::path::PathBuf,
     headref: String,
@@ -152,47 +151,6 @@ impl handlebars::HelperDef for FilterHelper {
     }
 }
 
-struct KvHelper {
-    kv_store: Arc<RwLock<std::collections::HashMap<String, serde_json::Value>>>,
-}
-
-impl KvHelper {
-    fn josh_helper(
-        &self,
-        params: &[handlebars::PathAndJson],
-    ) -> super::JoshResult<serde_json::Value> {
-        let key = if let [f, ..] = params {
-            f.render()
-        } else {
-            return Err(super::josh_error("missing spec"));
-        };
-
-        if let Some(v) = self.kv_store.read()?.get(&key) {
-            return Ok(v.to_owned());
-        } else {
-            return Ok(json!(""));
-        }
-    }
-}
-
-impl handlebars::HelperDef for KvHelper {
-    fn call_inner<'reg: 'rc, 'rc>(
-        &self,
-        h: &handlebars::Helper,
-        _: &handlebars::Handlebars,
-        _: &handlebars::Context,
-        _rc: &mut handlebars::RenderContext,
-    ) -> Result<
-        Option<handlebars::ScopedJson<'reg, 'rc>>,
-        handlebars::RenderError,
-    > {
-        return Ok(Some(handlebars::ScopedJson::Derived(
-            self.josh_helper(h.params().as_slice())
-                .map_err(|_| handlebars::RenderError::new("josh"))?,
-        )));
-    }
-}
-
 handlebars_helper!(concat_helper: |x: str, y: str| format!("{}{}", x, y) );
 
 handlebars_helper!(toml_helper: |x: str| toml::de::from_str::<serde_json::Value>(x).unwrap_or(json!({})) );
@@ -201,7 +159,6 @@ pub fn render(
     repo: &git2::Repository,
     headref: &str,
     query_and_params: &str,
-    kv_store: Arc<RwLock<std::collections::HashMap<String, serde_json::Value>>>,
     forward_maps: super::filter_cache::FilterCache,
     backward_maps: super::filter_cache::FilterCache,
 ) -> super::JoshResult<Option<String>> {
@@ -271,10 +228,6 @@ pub fn render(
         }),
     );
 
-    handlebars.register_helper(
-        "db-lookup",
-        Box::new(KvHelper { kv_store: kv_store }),
-    );
     let mut params = std::collections::BTreeMap::new();
     for p in parameters {
         let mut split = p.splitn(2, "=");
