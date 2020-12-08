@@ -191,7 +191,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
             print!(
                 "{}",
                 josh::query::render(
-                    &repo,
+                    git2::Repository::open_from_env()?,
                     &update_target.to_string(),
                     &query,
                     josh::filter_cache::new_downstream(&forward_maps),
