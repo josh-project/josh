@@ -453,7 +453,7 @@ async fn call_service(
                     let _e = s.enter();
                     let repo = git2::Repository::init_bare(&serv.repo_path)?;
                     josh::query::render(
-                        &repo,
+                        repo,
                         &temp_ns.reference(&headref),
                         &q,
                         josh::filter_cache::new_downstream(&serv.forward_maps),

@@ -1,5 +1,5 @@
 struct BlobHelper {
-    repo_path: std::path::PathBuf,
+    repo: std::sync::Arc<std::sync::Mutex<git2::Repository>>,
     headref: String,
 }
 
@@ -14,7 +14,7 @@ impl BlobHelper {
             return Err(super::josh_error("missing pattern"));
         };
 
-        let repo = git2::Repository::init_bare(&self.repo_path)?;
+        let repo = self.repo.lock()?;
         let tree = repo.find_reference(&self.headref)?.peel_to_tree()?;
 
         let blob = tree
@@ -44,7 +44,7 @@ impl handlebars::HelperDef for BlobHelper {
 }
 
 struct FindFilesHelper {
-    repo_path: std::path::PathBuf,
+    repo: std::sync::Arc<std::sync::Mutex<git2::Repository>>,
     headref: String,
 }
 
@@ -58,7 +58,7 @@ impl FindFilesHelper {
         } else {
             return Err(super::josh_error("missing pattern"));
         };
-        let repo = git2::Repository::init_bare(&self.repo_path)?;
+        let repo = self.repo.lock()?;
         let tree = repo.find_reference(&self.headref)?.peel_to_tree()?;
 
         let mut names = vec![];
@@ -102,7 +102,7 @@ impl handlebars::HelperDef for FindFilesHelper {
 }
 
 struct FilterHelper {
-    repo_path: std::path::PathBuf,
+    repo: std::sync::Arc<std::sync::Mutex<git2::Repository>>,
     headref: String,
     forward_maps: std::sync::Mutex<super::filter_cache::FilterCache>,
     backward_maps: std::sync::Mutex<super::filter_cache::FilterCache>,
@@ -118,7 +118,7 @@ impl FilterHelper {
         } else {
             return Err(super::josh_error("missing spec"));
         };
-        let repo = git2::Repository::init_bare(&self.repo_path)?;
+        let repo = self.repo.lock()?;
         let original_commit =
             repo.find_reference(&self.headref)?.peel_to_commit()?;
         let filterobj = super::filters::parse(&filter_spec);
@@ -156,7 +156,7 @@ handlebars_helper!(concat_helper: |x: str, y: str| format!("{}{}", x, y) );
 handlebars_helper!(toml_helper: |x: str| toml::de::from_str::<serde_json::Value>(x).unwrap_or(json!({})) );
 
 pub fn render(
-    repo: &git2::Repository,
+    repo: git2::Repository,
     headref: &str,
     query_and_params: &str,
     forward_maps: super::filter_cache::FilterCache,
@@ -200,6 +200,11 @@ pub fn render(
         return Ok(Some("".to_string()));
     };
 
+    std::mem::drop(obj);
+    std::mem::drop(tree);
+
+    let repo = std::sync::Arc::new(std::sync::Mutex::new(repo));
+
     let mut handlebars = handlebars::Handlebars::new();
     handlebars.register_template_string("template", template)?;
     handlebars.register_helper("concat", Box::new(concat_helper));
@@ -207,21 +212,21 @@ pub fn render(
     handlebars.register_helper(
         "git-find",
         Box::new(FindFilesHelper {
-            repo_path: repo.path().to_owned(),
+            repo: repo.clone(),
             headref: headref.to_string(),
         }),
     );
     handlebars.register_helper(
         "git-blob",
         Box::new(BlobHelper {
-            repo_path: repo.path().to_owned(),
+            repo: repo.clone(),
             headref: headref.to_string(),
         }),
     );
     handlebars.register_helper(
         "josh-filter",
         Box::new(FilterHelper {
-            repo_path: repo.path().to_owned(),
+            repo: repo.clone(),
             headref: headref.to_string(),
             forward_maps: std::sync::Mutex::new(forward_maps),
             backward_maps: std::sync::Mutex::new(backward_maps),
