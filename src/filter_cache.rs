@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
-const FORMAT_VERSION: u64 = 3;
+const FORMAT_VERSION: u64 = 4;
 
 #[derive(Eq, PartialEq, PartialOrd, Hash, Clone, Copy)]
 pub struct JoshOid(git2::Oid);

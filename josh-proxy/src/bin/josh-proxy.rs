@@ -486,8 +486,8 @@ async fn call_service(
                         &temp_ns.reference(&headref),
                         &q,
                         serv.db_store.clone(),
-                        serv.forward_maps.clone(),
-                        serv.backward_maps.clone(),
+                        josh::filter_cache::new_downstream(&serv.forward_maps),
+                        josh::filter_cache::new_downstream(&serv.backward_maps),
                     )
                 })
                 .await??;
