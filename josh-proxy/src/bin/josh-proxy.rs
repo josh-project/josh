@@ -6,7 +6,6 @@ use tracing_subscriber::layer::SubscriberExt;
 
 use futures::future;
 use futures::FutureExt;
-use futures::TryStreamExt;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Request, Response, Server};
 use std::collections::HashMap;
@@ -31,8 +30,6 @@ josh::regex_parsed!(
     [upstream_repo, filter, pathinfo, headref]
 );
 
-josh::regex_parsed!(DbUrl, r"/@db/(?P<k>.*)", [k]);
-
 type CredentialCache = HashMap<String, std::time::Instant>;
 
 #[derive(Clone)]
@@ -46,7 +43,6 @@ struct JoshProxyService {
     credential_cache: Arc<RwLock<CredentialCache>>,
     fetch_permits: Arc<tokio::sync::Semaphore>,
     filter_permits: Arc<tokio::sync::Semaphore>,
-    db_store: Arc<RwLock<std::collections::HashMap<String, serde_json::Value>>>,
     credential_store: Arc<RwLock<josh_proxy::CredentialStore>>,
 }
 
@@ -379,31 +375,6 @@ async fn call_service(
         return repo_update_fn(serv, req).await;
     }
 
-    if let Some(db_url) = DbUrl::from_str(&path) {
-        let body = req
-            .into_body()
-            .try_fold(String::new(), |mut acc, elt| async move {
-                acc.push_str(
-                    std::str::from_utf8(&elt).unwrap_or("ERROR: from_utf8"),
-                );
-                Ok(acc)
-            })
-            .await?;
-
-        if body == "" {
-            if let Some(v) = serv.db_store.read()?.get(&db_url.k) {
-                return Ok(Response::builder()
-                    .body(hyper::Body::from(v.to_string()))?);
-            }
-            return Ok(Response::builder().body(hyper::Body::from(""))?);
-        } else {
-            serv.db_store
-                .write()?
-                .insert(db_url.k, serde_json::from_str(&body)?);
-            return Ok(Response::builder().body(hyper::Body::from("ok"))?);
-        }
-    }
-
     let parsed_url = {
         if let Some(parsed_url) = FilteredRepoUrl::from_str(&path) {
             let mut pu = parsed_url;
@@ -485,7 +456,6 @@ async fn call_service(
                         &repo,
                         &temp_ns.reference(&headref),
                         &q,
-                        serv.db_store.clone(),
                         josh::filter_cache::new_downstream(&serv.forward_maps),
                         josh::filter_cache::new_downstream(&serv.backward_maps),
                     )
@@ -624,7 +594,6 @@ async fn run_proxy() -> josh::JoshResult<i32> {
             ARGS.value_of("n").unwrap_or("1").parse()?,
         )),
         filter_permits: Arc::new(tokio::sync::Semaphore::new(10)),
-        db_store: Arc::new(RwLock::new(HashMap::new())),
         credential_store: Arc::new(RwLock::new(HashMap::new())),
     });
 
