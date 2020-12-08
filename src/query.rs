@@ -15,7 +15,7 @@ impl BlobHelper {
             return Err(super::josh_error("missing pattern"));
         };
 
-        let repo = git2::Repository::init(&self.repo_path)?;
+        let repo = git2::Repository::init_bare(&self.repo_path)?;
         let tree = repo.find_reference(&self.headref)?.peel_to_tree()?;
 
         let blob = tree
@@ -59,7 +59,7 @@ impl FindFilesHelper {
         } else {
             return Err(super::josh_error("missing pattern"));
         };
-        let repo = git2::Repository::init(&self.repo_path)?;
+        let repo = git2::Repository::init_bare(&self.repo_path)?;
         let tree = repo.find_reference(&self.headref)?.peel_to_tree()?;
 
         let mut names = vec![];
@@ -119,7 +119,7 @@ impl FilterHelper {
         } else {
             return Err(super::josh_error("missing spec"));
         };
-        let repo = git2::Repository::init(&self.repo_path)?;
+        let repo = git2::Repository::init_bare(&self.repo_path)?;
         let original_commit =
             repo.find_reference(&self.headref)?.peel_to_commit()?;
         let filterobj = super::filters::parse(&filter_spec);
