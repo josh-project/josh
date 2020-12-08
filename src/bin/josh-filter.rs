@@ -199,8 +199,8 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
                     &update_target.to_string(),
                     &query,
                     kv_store.clone(),
-                    forward_maps.clone(),
-                    backward_maps.clone(),
+                    josh::filter_cache::new_downstream(&forward_maps),
+                    josh::filter_cache::new_downstream(&backward_maps),
                 )?
             );
         }

@@ -105,10 +105,8 @@ impl handlebars::HelperDef for FindFilesHelper {
 struct FilterHelper {
     repo_path: std::path::PathBuf,
     headref: String,
-    forward_maps:
-        std::sync::Arc<std::sync::RwLock<super::filter_cache::FilterCache>>,
-    backward_maps:
-        std::sync::Arc<std::sync::RwLock<super::filter_cache::FilterCache>>,
+    forward_maps: std::sync::Mutex<super::filter_cache::FilterCache>,
+    backward_maps: std::sync::Mutex<super::filter_cache::FilterCache>,
 }
 
 impl FilterHelper {
@@ -128,8 +126,8 @@ impl FilterHelper {
         let filter_commit = filterobj.apply_to_commit(
             &repo,
             &original_commit,
-            &mut *self.forward_maps.write()?,
-            &mut *self.backward_maps.write()?,
+            &mut *&mut self.forward_maps.lock()?,
+            &mut *&mut self.backward_maps.lock()?,
             &mut std::collections::HashMap::new(),
         )?;
         return Ok(json!({ "sha1": format!("{}", filter_commit) }));
@@ -204,12 +202,8 @@ pub fn render(
     headref: &str,
     query_and_params: &str,
     kv_store: Arc<RwLock<std::collections::HashMap<String, serde_json::Value>>>,
-    backward_maps: std::sync::Arc<
-        std::sync::RwLock<super::filter_cache::FilterCache>,
-    >,
-    forward_maps: std::sync::Arc<
-        std::sync::RwLock<super::filter_cache::FilterCache>,
-    >,
+    forward_maps: super::filter_cache::FilterCache,
+    backward_maps: super::filter_cache::FilterCache,
 ) -> super::JoshResult<String> {
     let mut parameters = query_and_params.split("&");
     let query = parameters.next().ok_or(super::josh_error(&format!(
@@ -268,8 +262,8 @@ pub fn render(
         Box::new(FilterHelper {
             repo_path: repo.path().to_owned(),
             headref: headref.to_string(),
-            forward_maps: forward_maps.clone(),
-            backward_maps: backward_maps.clone(),
+            forward_maps: std::sync::Mutex::new(forward_maps),
+            backward_maps: std::sync::Mutex::new(backward_maps),
         }),
     );
 
