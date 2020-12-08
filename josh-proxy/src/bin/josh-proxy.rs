@@ -491,9 +491,15 @@ async fn call_service(
                     )
                 })
                 .await??;
-            return Ok(Response::builder()
-                .status(hyper::StatusCode::OK)
-                .body(hyper::Body::from(res))?);
+            if let Some(res) = res {
+                return Ok(Response::builder()
+                    .status(hyper::StatusCode::OK)
+                    .body(hyper::Body::from(res))?);
+            } else {
+                return Ok(Response::builder()
+                    .status(hyper::StatusCode::NOT_FOUND)
+                    .body(hyper::Body::from("File not found".to_string()))?);
+            }
         }
     }
 
