@@ -334,13 +334,15 @@ impl TmpGitNamespace {
         span: tracing::Span,
     ) -> TmpGitNamespace {
         let n = format!("request_{}", uuid::Uuid::new_v4());
+        let n2 = n.clone();
         TmpGitNamespace {
             name: n,
             repo_path: repo_path.to_owned(),
             _span: tracing::span!(
                 parent: span,
                 tracing::Level::TRACE,
-                "TmpGitNamespace"
+                "TmpGitNamespace",
+                name = n2.as_str(),
             ),
         }
     }
@@ -369,8 +371,12 @@ impl Drop for TmpGitNamespace {
         }
         let request_tmp_namespace =
             self.repo_path.join("refs/namespaces").join(&self.name);
-        std::fs::remove_dir_all(request_tmp_namespace).unwrap_or_else(|e| {
-            tracing::warn!("remove_dir_all failed: {:?}", e)
+        std::fs::remove_dir_all(&request_tmp_namespace).unwrap_or_else(|e| {
+            tracing::error!(
+                "remove_dir_all {:?} failed, error:{:?}",
+                request_tmp_namespace,
+                e
+            )
         });
     }
 }
