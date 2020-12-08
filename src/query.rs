@@ -204,7 +204,7 @@ pub fn render(
     kv_store: Arc<RwLock<std::collections::HashMap<String, serde_json::Value>>>,
     forward_maps: super::filter_cache::FilterCache,
     backward_maps: super::filter_cache::FilterCache,
-) -> super::JoshResult<String> {
+) -> super::JoshResult<Option<String>> {
     let mut parameters = query_and_params.split("&");
     let query = parameters.next().ok_or(super::josh_error(&format!(
         "invalid query {:?}",
@@ -221,14 +221,18 @@ pub fn render(
     )))?;
     let tree = repo.find_reference(&headref)?.peel_to_tree()?;
 
-    let obj = tree
-        .get_path(&std::path::PathBuf::from(path))?
-        .to_object(&repo)?;
+    let obj = super::ok_or!(
+        tree.get_path(&std::path::PathBuf::from(path))?
+            .to_object(&repo),
+        {
+            return Ok(None);
+        }
+    );
 
     let template = if let Ok(blob) = obj.peel_to_blob() {
         let template = std::str::from_utf8(blob.content())?;
         if cmd == "get" {
-            return Ok(template.to_string());
+            return Ok(Some(template.to_string()));
         }
         if cmd == "render" {
             template.to_string()
@@ -236,7 +240,7 @@ pub fn render(
             return Err(super::josh_error("no such cmd"));
         }
     } else {
-        return Ok("".to_string());
+        return Ok(Some("".to_string()));
     };
 
     let mut handlebars = handlebars::Handlebars::new();
@@ -285,8 +289,8 @@ pub fn render(
         params.insert(name.to_string(), value.to_string());
     }
 
-    return Ok(format!(
+    return Ok(Some(format!(
         "{}",
         handlebars.render("template", &json!(params))?
-    ));
+    )));
 }

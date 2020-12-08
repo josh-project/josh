@@ -202,6 +202,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
                     josh::filter_cache::new_downstream(&forward_maps),
                     josh::filter_cache::new_downstream(&backward_maps),
                 )?
+                .unwrap_or("File not found".to_string())
             );
         }
 
