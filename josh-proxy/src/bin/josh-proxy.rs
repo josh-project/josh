@@ -137,7 +137,7 @@ async fn fetch_upstream(
         &credentials_hashed
     );
 
-    let refs_to_fetch = if headref != "" {
+    let refs_to_fetch = if headref != "" && !headref.starts_with("refs/heads/") {
         vec!["refs/heads/*", "refs/tags/*", headref]
     } else {
         vec!["refs/heads/*", "refs/tags/*"]
