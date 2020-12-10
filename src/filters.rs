@@ -1332,8 +1332,11 @@ fn parse_file_entry(
         Rule::file_entry => {
             let mut inner = pair.into_inner();
             let path = inner.next().unwrap().as_str();
-            let filter = inner.next().unwrap().as_str();
-            let filter = parse(filter);
+            let filter = inner
+                .next()
+                .map(|x| x.as_str().to_owned())
+                .unwrap_or(format!(":/{}", path));
+            let filter = parse(&filter);
             combine_filter.prefixes.push(Path::new(path).to_owned());
             combine_filter.others.push(filter);
         }
