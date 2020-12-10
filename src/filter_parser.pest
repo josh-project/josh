@@ -15,6 +15,6 @@ cmd = { (!(CMD_END | NEWLINE | CMD_START) ~ ANY)* }
 
 workspace_file = { NEWLINE* ~ file_entry ~ (NEWLINE+ ~ file_entry)* }
 
-file_entry = { dst_path ~ "=" ~ filter_spec }
+file_entry = { dst_path ~ ("=" ~ filter_spec)? }
 
-dst_path = @{ (!("=" | WHITESPACE) ~ ANY)+ }
+dst_path = @{ (!("=" | WHITESPACE | NEWLINE) ~ ANY)+ }
