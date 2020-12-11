@@ -72,7 +72,8 @@ pub fn unapply_filter(
     for rev in walk {
         let rev = rev?;
 
-        tracing::trace!("==== walking commit {}", rev);
+        let s = tracing::span!(tracing::Level::TRACE, "walk commit", ?rev);
+        let _e = s.enter();
 
         let module_commit = repo.find_commit(rev)?;
 
@@ -99,21 +100,22 @@ pub fn unapply_filter(
 
         let original_parents_refs: Vec<&_> = original_parents.iter().collect();
 
-        tracing::trace!(
-            "==== Rewriting commit {:?} {}, filtered-parents: {:?}, unfiltered-parents: {:?}",
-            module_commit.summary().unwrap_or("NO COMMIT MESSAGE"),
-            rev,
-            filtered_parent_ids,
-            original_parents_refs);
-
         let tree = module_commit.tree()?;
 
-        let new_trees: super::JoshResult<HashSet<_>> = original_parents_refs
-            .iter()
-            .map(|x| -> super::JoshResult<_> {
-                Ok(filterobj.unapply(&repo, &tree, &x.tree()?)?)
-            })
-            .collect();
+        let new_trees: super::JoshResult<HashSet<_>> = {
+            let s = tracing::span!(tracing::Level::TRACE, "unapply filter",
+            msg = ?module_commit.summary().unwrap_or("NO COMMIT MESSAGE"),
+            ?rev,
+            ?filtered_parent_ids,
+            ?original_parents_refs);
+            let _e = s.enter();
+            original_parents_refs
+                .iter()
+                .map(|x| -> super::JoshResult<_> {
+                    Ok(filterobj.unapply(&repo, &tree, &x.tree()?)?)
+                })
+                .collect()
+        };
 
         let new_trees = new_trees?;
 
@@ -124,14 +126,17 @@ pub fn unapply_filter(
                     .next()
                     .ok_or(super::josh_error("iter.next"))?,
             )?,
-            0 => repo
-                // 0 means the history is unrelated. Pushing it will fail if we are not
-                // dealing with either a force push or a push with the "josh-merge" option set.
-                .find_tree(filterobj.unapply(
-                    &repo,
-                    &tree,
-                    &empty_tree(&repo),
-                )?)?,
+            0 => {
+                tracing::debug!("unrelated history");
+                repo
+                    // 0 means the history is unrelated. Pushing it will fail if we are not
+                    // dealing with either a force push or a push with the "josh-merge" option set.
+                    .find_tree(filterobj.unapply(
+                        &repo,
+                        &tree,
+                        &empty_tree(&repo),
+                    )?)?
+            }
             parent_count => {
                 // This is a merge commit where the parents in the upstream repo
                 // have differences outside of the current filter.
@@ -146,6 +151,7 @@ pub fn unapply_filter(
         bm.set(&filterobj.filter_spec(), module_commit.id(), ret);
     }
 
+    tracing::trace!("done {:?}", ret);
     return Ok(UnapplyFilter::Done(ret));
 }
 
