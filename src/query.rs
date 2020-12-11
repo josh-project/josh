@@ -63,12 +63,18 @@ impl FindFilesHelper {
 
         let mut names = vec![];
 
-        tree.walk(git2::TreeWalkMode::PreOrder, |root, entry| {
+        tree.walk(
+
+        git2::TreeWalkMode::PreOrder, |root, entry| {
             let name = entry.name().unwrap_or("INVALID_FILENAME");
             let path = std::path::PathBuf::from(root).join(name);
             let path_str = path.to_string_lossy();
 
-            if filename.matches(&path_str) {
+            if filename.matches_path_with(&path, glob::MatchOptions {
+                case_sensitive: true,
+                require_literal_separator: true,
+                require_literal_leading_dot: true
+            }){
                 names.push(json!({
                 "path": path_str,
                 "name": path.file_name().map(|x|x.to_str()).flatten().unwrap_or("INVALID_FILE_NAME"),
