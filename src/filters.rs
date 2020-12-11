@@ -1084,47 +1084,34 @@ impl Filter for CombineFilter {
         tree: &git2::Tree,
         parent_tree: &git2::Tree,
     ) -> super::JoshResult<git2::Oid> {
-        let mut base_wo = tree.id();
+        let mut ws_tree = tree.id();
+        let mut result = parent_tree.id();
 
-        for prefix in self.prefixes.iter() {
-            base_wo = replace_subtree(
+        for (other, prefix) in self.others.iter().zip(self.prefixes.iter()) {
+            let r = ok_or!(
+                repo.find_tree(ws_tree)?.get_path(&prefix).map(|x| x.id()),
+                { empty_tree_id() }
+            );
+            ws_tree = replace_subtree(
                 repo,
                 prefix,
                 empty_tree_id(),
-                &repo.find_tree(base_wo)?,
+                &repo.find_tree(ws_tree)?,
             )?;
-        }
-
-        let mut res =
-            self.base
-                .unapply(repo, &repo.find_tree(base_wo)?, parent_tree)?;
-
-        for (other, prefix) in self.others.iter().zip(self.prefixes.iter()) {
-            let r = ok_or!(tree.get_path(&prefix).map(|x| x.id()), {
-                continue;
-            });
             if r == empty_tree_id() {
                 continue;
             }
             let r = repo.find_tree(r)?;
-            let ua = other.unapply(&repo, &r, &parent_tree)?;
-
-            let merged = repo
-                .merge_trees(
-                    &parent_tree,
-                    &repo.find_tree(res)?,
-                    &repo.find_tree(ua)?,
-                    Some(
-                        git2::MergeOptions::new()
-                            .file_favor(git2::FileFavor::Theirs),
-                    ),
-                )?
-                .write_tree_to(&repo)?;
-
-            res = merged;
+            result = other.unapply(&repo, &r, &repo.find_tree(result)?)?;
         }
 
-        return Ok(res);
+        result = self.base.unapply(
+            repo,
+            &repo.find_tree(ws_tree)?,
+            &repo.find_tree(result)?,
+        )?;
+
+        return Ok(result);
     }
 
     fn filter_spec(&self) -> String {
@@ -1150,7 +1137,7 @@ fn combine_filter_from_ws(
     repo: &git2::Repository,
     tree: &git2::Tree,
     ws_path: &Path,
-) -> Box<CombineFilter> {
+) -> super::JoshResult<Box<CombineFilter>> {
     let base = SubdirFilter::new(&ws_path);
     let wsp = ws_path.join("workspace.josh");
     let ws_config_oid = ok_or!(tree.get_path(&wsp).map(|x| x.id()), {
@@ -1182,7 +1169,13 @@ impl WorkspaceFilter {
 
         let mut in_this = std::collections::HashSet::new();
 
-        let cw = combine_filter_from_ws(repo, &full_tree, &self.ws_path);
+        let cw = if let Ok(cw) =
+            combine_filter_from_ws(repo, &full_tree, &self.ws_path)
+        {
+            cw
+        } else {
+            build_combine_filter("", SubdirFilter::new(&self.ws_path))?
+        };
 
         for (other, prefix) in cw.others.iter().zip(cw.prefixes.iter()) {
             in_this.insert(format!(
@@ -1207,11 +1200,15 @@ impl WorkspaceFilter {
 
             let parent_commit = repo.find_commit(*parent)?;
 
-            let pcw = combine_filter_from_ws(
+            let pcw = if let Ok(pcw) = combine_filter_from_ws(
                 repo,
                 &parent_commit.tree()?,
                 &self.ws_path,
-            );
+            ) {
+                pcw
+            } else {
+                build_combine_filter("", SubdirFilter::new(&self.ws_path))?
+            };
 
             for (other, prefix) in pcw.others.iter().zip(pcw.prefixes.iter()) {
                 in_this.remove(&format!(
@@ -1229,7 +1226,7 @@ impl WorkspaceFilter {
         }
 
         let pcw: Box<dyn Filter> =
-            build_combine_filter(&s, Box::new(EmptyFilter));
+            build_combine_filter(&s, Box::new(EmptyFilter))?;
 
         for parent in parents {
             if let Ok(parent) = repo.find_commit(parent) {
@@ -1334,8 +1331,12 @@ impl Filter for WorkspaceFilter {
         tree: &git2::Tree,
         commit_id: git2::Oid,
     ) -> super::JoshResult<git2::Oid> {
-        return combine_filter_from_ws(repo, tree, &self.ws_path)
-            .apply_to_tree(repo, tree, commit_id);
+        if let Ok(cw) = combine_filter_from_ws(repo, tree, &self.ws_path) {
+            cw
+        } else {
+            build_combine_filter("", SubdirFilter::new(&self.ws_path))?
+        }
+        .apply_to_tree(repo, tree, commit_id)
     }
 
     fn unapply(
@@ -1345,8 +1346,7 @@ impl Filter for WorkspaceFilter {
         parent_tree: &git2::Tree,
     ) -> super::JoshResult<git2::Oid> {
         let mut cw =
-            combine_filter_from_ws(repo, tree, &std::path::PathBuf::from(""));
-
+            combine_filter_from_ws(repo, tree, &std::path::PathBuf::from(""))?;
         cw.base = SubdirFilter::new(&self.ws_path);
         return cw.unapply(repo, tree, parent_tree);
     }
@@ -1431,7 +1431,7 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> Box<dyn Filter> {
 fn parse_file_entry(
     pair: pest::iterators::Pair<Rule>,
     combine_filter: &mut CombineFilter,
-) {
+) -> super::JoshResult<()> {
     match pair.as_rule() {
         Rule::file_entry => {
             let mut inner = pair.into_inner();
@@ -1440,33 +1440,41 @@ fn parse_file_entry(
                 .next()
                 .map(|x| x.as_str().to_owned())
                 .unwrap_or(format!(":/{}", path));
-            let filter = parse(&filter);
+            let filter = parse(&filter)?;
             combine_filter.prefixes.push(Path::new(path).to_owned());
             combine_filter.others.push(filter);
+            Ok(())
         }
-        _ => unreachable!(),
+        Rule::EOI => Ok(()),
+        _ => Err(super::josh_error(&format!(
+            "invalid workspace file {:?}",
+            pair
+        ))),
     }
 }
 
 fn build_combine_filter(
     filter_spec: &str,
     base: Box<dyn Filter>,
-) -> Box<CombineFilter> {
+) -> super::JoshResult<Box<CombineFilter>> {
     let mut combine_filter = Box::new(CombineFilter {
         base: base,
         others: vec![],
         prefixes: vec![],
     });
 
-    if let Ok(r) = MyParser::parse(Rule::workspace_file, filter_spec) {
-        let mut r = r;
+    if let Ok(mut r) = MyParser::parse(Rule::workspace_file, filter_spec) {
         let r = r.next().unwrap();
         for pair in r.into_inner() {
-            parse_file_entry(pair, &mut combine_filter);
+            parse_file_entry(pair, &mut combine_filter)?;
         }
-    };
 
-    return combine_filter;
+        return Ok(combine_filter);
+    }
+    return Err(super::josh_error(&format!(
+        "Invalid workspace:\n----\n{}\n----",
+        filter_spec
+    )));
 }
 
 pub fn build_chain(
@@ -1479,7 +1487,7 @@ pub fn build_chain(
     })
 }
 
-pub fn parse(filter_spec: &str) -> Box<dyn Filter> {
+pub fn parse(filter_spec: &str) -> super::JoshResult<Box<dyn Filter>> {
     if filter_spec == "" {
         return parse(":nop");
     }
@@ -1499,11 +1507,11 @@ pub fn parse(filter_spec: &str) -> Box<dyn Filter> {
                     v
                 });
             }
-            return chain.unwrap_or(Box::new(NopFilter));
+            return Ok(chain.unwrap_or(Box::new(NopFilter)));
         };
     }
 
-    return build_combine_filter(filter_spec, Box::new(EmptyFilter));
+    return Ok(build_combine_filter(filter_spec, Box::new(EmptyFilter))?);
 }
 
 fn get_subtree(tree: &git2::Tree, path: &Path) -> Option<git2::Oid> {
@@ -1524,7 +1532,7 @@ fn replace_child(
 
     let full_tree_id = {
         let mut builder = repo.treebuilder(Some(&full_tree))?;
-        if oid == git2::Oid::zero() {
+        if oid == git2::Oid::zero() || oid == empty_tree_id() {
             builder.remove(child).ok();
         } else {
             builder.insert(child, oid, mode)?;

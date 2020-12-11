@@ -39,15 +39,23 @@
   $ git commit -m "add trailing slash" 1> /dev/null
 
   $ josh-filter master --update refs/josh/master :workspace=ws
-  ERROR: JoshError("converted Error { code: -1, klass: 14, message: \"failed to insert entry: invalid name for a tree entry - c/\" }")
-  [1]
 
   $ git log --graph --pretty=%s refs/josh/master
+  * add trailing slash
   * add ws
   * add file2
   * add file1
 
   $ git checkout -q refs/josh/master 1> /dev/null
+  $ tree
+  .
+  |-- workspace.josh
+  `-- ws
+      `-- c
+  
+  2 directories, 1 file
+
+  $ git checkout -q HEAD~1
   $ tree
   .
   |-- a
@@ -60,17 +68,4 @@
       `-- c
   
   5 directories, 3 files
-
-  $ git checkout -q HEAD~1
-  $ tree
-  .
-  |-- a
-  |   `-- b
-  |       `-- file2
-  |-- c
-  |   `-- file1
-  `-- ws
-      `-- c
-  
-  5 directories, 2 files
 

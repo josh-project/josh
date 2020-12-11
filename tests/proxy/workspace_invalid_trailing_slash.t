@@ -104,17 +104,23 @@
   * add workspace
 
 
-  $ git push
-  remote: josh-proxy        
-  remote: response from upstream:        
-  remote:  converted Error { code: -1, klass: 14, message: "failed to insert entry: invalid name for a tree entry - a/" }        
-  remote: 
-  remote: 
-  remote: error: hook declined to update refs/heads/master        
+  $ git push 2>&1 >/dev/null | sed -e 's/[ ]*$//g'
+  remote: josh-proxy
+  remote: response from upstream:
+  remote:
+  remote: Can't apply "mod workspace" (*) (glob)
+  remote: Invalid workspace:
+  remote: ----
+  remote: a/ = :/sub1
+  remote:
+  remote: ----
+  remote:
+  remote:
+  remote: error: hook declined to update refs/heads/master
   To http://localhost:8002/real_repo.git:workspace=ws.git
    ! [remote rejected] master -> master (hook declined)
   error: failed to push some refs to 'http://localhost:8002/real_repo.git:workspace=ws.git'
-  [1]
+
 
   $ cd ${TESTTMP}/ws
   $ curl -s http://localhost:8002/flush

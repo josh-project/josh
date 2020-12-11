@@ -30,6 +30,8 @@
   [128]
   $ josh-filter master --update refs/josh/filter/master c=:/libs
   $ git ls-tree --name-only -r refs/josh/filter/master 
+  fatal: Not a valid object name refs/josh/filter/master
+  [128]
 
 $ git log refs/josh/filter/master --graph --pretty=%s
 * add file2

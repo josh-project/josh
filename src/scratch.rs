@@ -102,12 +102,18 @@ pub fn unapply_filter(
 
         let tree = module_commit.tree()?;
 
+        let commit_message =
+            module_commit.summary().unwrap_or("NO COMMIT MESSAGE");
+
         let new_trees: super::JoshResult<HashSet<_>> = {
-            let s = tracing::span!(tracing::Level::TRACE, "unapply filter",
-            msg = ?module_commit.summary().unwrap_or("NO COMMIT MESSAGE"),
-            ?rev,
-            ?filtered_parent_ids,
-            ?original_parents_refs);
+            let s = tracing::span!(
+                tracing::Level::TRACE,
+                "unapply filter",
+                ?commit_message,
+                ?rev,
+                ?filtered_parent_ids,
+                ?original_parents_refs
+            );
             let _e = s.enter();
             original_parents_refs
                 .iter()
@@ -117,7 +123,17 @@ pub fn unapply_filter(
                 .collect()
         };
 
-        let new_trees = new_trees?;
+        let new_trees = match new_trees {
+            Ok(new_trees) => new_trees,
+            Err(super::JoshError(msg)) => {
+                return Err(super::josh_error(&format!(
+                    "\nCan't apply {:?} ({:?})\n{}",
+                    commit_message,
+                    module_commit.id(),
+                    msg
+                )))
+            }
+        };
 
         let new_tree = match new_trees.len() {
             1 => repo.find_tree(

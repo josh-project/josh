@@ -278,7 +278,7 @@ pub fn refresh_known_filters(
 
             updated_count += scratch::apply_filter_to_refs(
                 &repo,
-                &*filters::parse(&filter_spec),
+                &*filters::parse(&filter_spec)?,
                 &refs,
                 &mut fm,
                 &mut bm,
