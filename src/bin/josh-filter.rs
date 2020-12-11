@@ -89,7 +89,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
 
         let filter_spec = caps.name("spec").unwrap().as_str().trim().to_owned();
 
-        let mut filterobj = josh::filters::parse(&filter_spec);
+        let mut filterobj = josh::filters::parse(&filter_spec)?;
 
         let pres = filterobj.prefixes();
 
@@ -102,7 +102,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
                         p,
                         &src,
                         v.replace(":", "<colon>").replace(",", "<comma>")
-                    )),
+                    ))?,
                 );
             }
         }
@@ -112,16 +112,16 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
 
         if args.is_present("squash") {
             filterobj = josh::build_chain(
-                josh::filters::parse(&format!(":cutoff={}", &src)),
+                josh::filters::parse(&format!(":cutoff={}", &src))?,
                 filterobj,
             );
         }
 
         if check_permissions {
             filterobj =
-                josh::build_chain(josh::filters::parse(":DIRS"), filterobj);
+                josh::build_chain(josh::filters::parse(":DIRS")?, filterobj);
             filterobj =
-                josh::build_chain(filterobj, josh::filters::parse(":FOLD"));
+                josh::build_chain(filterobj, josh::filters::parse(":FOLD")?);
         }
 
         let t = if reverse {

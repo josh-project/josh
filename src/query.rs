@@ -127,7 +127,7 @@ impl FilterHelper {
         let repo = self.repo.lock()?;
         let original_commit =
             repo.find_reference(&self.headref)?.peel_to_commit()?;
-        let filterobj = super::filters::parse(&filter_spec);
+        let filterobj = super::filters::parse(&filter_spec)?;
         let filter_commit = filterobj.apply_to_commit(
             &repo,
             &original_commit,

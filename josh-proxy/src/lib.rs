@@ -84,7 +84,7 @@ pub fn process_repo_update(
         oid
     };
 
-    let filterobj = josh::filters::parse(&filter_spec);
+    let filterobj = josh::filters::parse(&filter_spec)?;
     let new_oid = git2::Oid::from_str(&new)?;
     let backward_new_oid = {
         tracing::debug!("=== MORE");

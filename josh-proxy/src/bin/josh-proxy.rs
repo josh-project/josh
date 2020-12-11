@@ -302,7 +302,7 @@ async fn do_filter(
         let _e = s.enter();
         tracing::trace!("in do_filter worker");
         let repo = git2::Repository::init_bare(&repo_path)?;
-        let filter = josh::filters::parse(&filter_spec);
+        let filter = josh::filters::parse(&filter_spec)?;
         let filter_spec = filter.filter_spec();
         let mut from_to = josh::housekeeping::default_from_to(
             &repo,
@@ -427,7 +427,7 @@ async fn call_service(
                 let repo = git2::Repository::init_bare(&serv.repo_path)?;
                 josh::housekeeping::get_info(
                     &repo,
-                    &*josh::filters::parse(&parsed_url.filter),
+                    &*josh::filters::parse(&parsed_url.filter)?,
                     &parsed_url.upstream_repo,
                     &headref,
                     forward_maps.clone(),
