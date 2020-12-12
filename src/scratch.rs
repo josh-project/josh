@@ -118,7 +118,7 @@ pub fn unapply_filter(
             original_parents_refs
                 .iter()
                 .map(|x| -> super::JoshResult<_> {
-                    Ok(filterobj.unapply(&repo, &tree, &x.tree()?)?)
+                    Ok(filterobj.unapply(&repo, tree.clone(), x.tree()?)?.id())
                 })
                 .collect()
         };
@@ -144,14 +144,9 @@ pub fn unapply_filter(
             )?,
             0 => {
                 tracing::debug!("unrelated history");
-                repo
-                    // 0 means the history is unrelated. Pushing it will fail if we are not
-                    // dealing with either a force push or a push with the "josh-merge" option set.
-                    .find_tree(filterobj.unapply(
-                        &repo,
-                        &tree,
-                        &empty_tree(&repo),
-                    )?)?
+                // 0 means the history is unrelated. Pushing it will fail if we are not
+                // dealing with either a force push or a push with the "josh-merge" option set.
+                filterobj.unapply(&repo, tree, empty_tree(&repo))?
             }
             parent_count => {
                 // This is a merge commit where the parents in the upstream repo

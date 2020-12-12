@@ -1,4 +1,4 @@
-/* #![deny(warnings)] */
+#![deny(warnings)]
 #![warn(unused_extern_crates)]
 
 #[macro_use]
@@ -98,7 +98,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
                 filterobj = josh::build_chain(
                     filterobj,
                     josh::filters::parse(&format!(
-                        ":info={},commit=#sha1,tree=#tree,src={},filter={}",
+                        ":INFO={},commit=#sha1,tree=#tree,src={},filter={}",
                         p,
                         &src,
                         v.replace(":", "<colon>").replace(",", "<comma>")
@@ -112,7 +112,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
 
         if args.is_present("squash") {
             filterobj = josh::build_chain(
-                josh::filters::parse(&format!(":cutoff={}", &src))?,
+                josh::filters::parse(&format!(":CUTOFF={}", &src))?,
                 filterobj,
             );
         }
@@ -218,7 +218,6 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
                     repo.reference(&src, rewritten, true, "unapply_filter")?;
                 }
                 _ => {
-                    /* debug!("rewritten ERROR"); */
                     return Ok(1);
                 }
             }
