@@ -27,11 +27,11 @@ fn select_parent_commits<'a>(
     };
 }
 
-fn create_filtered_commit(
-    repo: &git2::Repository,
-    original_commmit: &git2::Commit,
+fn create_filtered_commit<'a>(
+    repo: &'a git2::Repository,
+    original_commmit: &'a git2::Commit,
     filtered_parent_ids: Vec<git2::Oid>,
-    filtered_tree: &git2::Tree,
+    filtered_tree: git2::Tree<'a>,
 ) -> super::JoshResult<git2::Oid> {
     let filtered_parent_commits: std::result::Result<Vec<_>, _> =
         filtered_parent_ids
@@ -78,7 +78,7 @@ pub trait Filter {
         if forward_maps.has(&repo, &self.filter_spec(), commit.id()) {
             return Ok(forward_maps.get(&self.filter_spec(), commit.id()));
         }
-        let filtered_tree = self.apply_to_tree(&repo, &commit.tree()?)?;
+        let filtered_tree = self.apply_to_tree(&repo, commit.tree()?)?;
 
         let filtered_parent_ids = commit
             .parents()
@@ -97,15 +97,15 @@ pub trait Filter {
             repo,
             commit,
             filtered_parent_ids,
-            &find_tree_or_error(&repo, filtered_tree, &self.filter_spec()),
+            filtered_tree,
         );
     }
 
-    fn apply_to_tree(
+    fn apply_to_tree<'a>(
         &self,
-        repo: &git2::Repository,
-        tree: &git2::Tree,
-    ) -> super::JoshResult<git2::Oid>;
+        repo: &'a git2::Repository,
+        tree: git2::Tree<'a>,
+    ) -> super::JoshResult<git2::Tree<'a>>;
 
     fn unapply<'a>(
         &self,
@@ -142,12 +142,12 @@ impl Filter for NopFilter {
         self
     }
 
-    fn apply_to_tree(
+    fn apply_to_tree<'a>(
         &self,
-        _repo: &git2::Repository,
-        tree: &git2::Tree,
-    ) -> super::JoshResult<git2::Oid> {
-        Ok(tree.id())
+        _repo: &'a git2::Repository,
+        tree: git2::Tree<'a>,
+    ) -> super::JoshResult<git2::Tree<'a>> {
+        Ok(tree)
     }
 
     fn unapply<'a>(
@@ -170,17 +170,17 @@ struct DirsFilter {
     >,
 }
 
-fn striped_tree(
-    repo: &git2::Repository,
+fn striped_tree<'a>(
+    repo: &'a git2::Repository,
     root: &str,
     input: git2::Oid,
     pattern: &glob::Pattern,
     invert: bool,
     dirs: bool,
     cache: &mut std::collections::HashMap<(git2::Oid, String), git2::Oid>,
-) -> super::JoshResult<git2::Oid> {
+) -> super::JoshResult<git2::Tree<'a>> {
     if let Some(cached) = cache.get(&(input, root.to_string())) {
-        return Ok(*cached);
+        return Ok(repo.find_tree(*cached)?);
     }
 
     let tree = repo.find_tree(input)?;
@@ -228,13 +228,13 @@ fn striped_tree(
                 cache,
             )?;
 
-            if s != empty_tree_id() {
+            if s.id() != empty_tree_id() {
                 result = replace_child(
                     &repo,
                     &Path::new(
                         entry.name().ok_or(super::josh_error("no name"))?,
                     ),
-                    s,
+                    s.id(),
                     &result,
                 )?;
             }
@@ -251,22 +251,20 @@ fn striped_tree(
             &result,
         )?;
     }
-    let result_id = result.id();
-
-    cache.insert((input, root.to_string()), result_id);
-    return Ok(result_id);
+    cache.insert((input, root.to_string()), result.id());
+    return Ok(result);
 }
 
 impl Filter for DirsFilter {
     fn get(&self) -> &dyn Filter {
         self
     }
-    fn apply_to_tree(
+    fn apply_to_tree<'a>(
         &self,
-        repo: &git2::Repository,
-        tree: &git2::Tree,
-    ) -> super::JoshResult<git2::Oid> {
-        return striped_tree(
+        repo: &'a git2::Repository,
+        tree: git2::Tree<'a>,
+    ) -> super::JoshResult<git2::Tree<'a>> {
+        striped_tree(
             &repo,
             "",
             tree.id(),
@@ -274,7 +272,7 @@ impl Filter for DirsFilter {
             false,
             true,
             &mut self.cache.borrow_mut(),
-        );
+        )
     }
 
     fn filter_spec(&self) -> String {
@@ -378,16 +376,16 @@ impl Filter for FoldFilter {
             repo,
             commit,
             filtered_parent_ids,
-            &find_tree_or_error(&repo, filtered_tree, &self.filter_spec()),
+            repo.find_tree(filtered_tree)?,
         );
     }
 
-    fn apply_to_tree(
+    fn apply_to_tree<'a>(
         &self,
-        _repo: &git2::Repository,
-        _tree: &git2::Tree,
-    ) -> super::JoshResult<git2::Oid> {
-        Ok(empty_tree_id())
+        repo: &'a git2::Repository,
+        _tree: git2::Tree<'a>,
+    ) -> super::JoshResult<git2::Tree<'a>> {
+        Ok(empty_tree(&repo))
     }
 
     fn filter_spec(&self) -> String {
@@ -402,12 +400,12 @@ impl Filter for EmptyFilter {
         self
     }
 
-    fn apply_to_tree(
+    fn apply_to_tree<'a>(
         &self,
-        _repo: &git2::Repository,
-        _tree: &git2::Tree,
-    ) -> super::JoshResult<git2::Oid> {
-        Ok(empty_tree_id())
+        repo: &'a git2::Repository,
+        _tree: git2::Tree<'a>,
+    ) -> super::JoshResult<git2::Tree<'a>> {
+        Ok(empty_tree(&repo))
     }
 
     fn unapply<'a>(
@@ -444,12 +442,12 @@ impl Filter for CutoffFilter {
         return scratch::rewrite(&repo, &commit, &vec![], &commit.tree()?);
     }
 
-    fn apply_to_tree(
+    fn apply_to_tree<'a>(
         &self,
-        _repo: &git2::Repository,
-        tree: &git2::Tree,
-    ) -> super::JoshResult<git2::Oid> {
-        Ok(tree.id())
+        _repo: &'a git2::Repository,
+        tree: git2::Tree<'a>,
+    ) -> super::JoshResult<git2::Tree<'a>> {
+        Ok(tree)
     }
 
     fn filter_spec(&self) -> String {
@@ -494,16 +492,13 @@ impl Filter for ChainFilter {
         );
     }
 
-    fn apply_to_tree(
+    fn apply_to_tree<'a>(
         &self,
-        repo: &git2::Repository,
-        tree: &git2::Tree,
-    ) -> super::JoshResult<git2::Oid> {
-        let r = self.first.apply_to_tree(&repo, &tree)?;
-        if let Ok(t) = repo.find_tree(r) {
-            return self.second.apply_to_tree(&repo, &t);
-        }
-        return Ok(empty_tree_id());
+        repo: &'a git2::Repository,
+        tree: git2::Tree<'a>,
+    ) -> super::JoshResult<git2::Tree<'a>> {
+        let t = self.first.apply_to_tree(&repo, tree)?;
+        return self.second.apply_to_tree(&repo, t);
     }
 
     fn unapply<'a>(
@@ -512,8 +507,7 @@ impl Filter for ChainFilter {
         tree: git2::Tree<'a>,
         parent_tree: git2::Tree<'a>,
     ) -> super::JoshResult<git2::Tree<'a>> {
-        let p = self.first.apply_to_tree(&repo, &parent_tree)?;
-        let p = repo.find_tree(p)?;
+        let p = self.first.apply_to_tree(&repo, parent_tree.clone())?;
         let a = self.second.unapply(&repo, tree, p)?;
         Ok(repo.find_tree(self.first.unapply(&repo, a, parent_tree)?.id())?)
     }
@@ -559,15 +553,15 @@ impl Filter for SubdirFilter {
     fn get(&self) -> &dyn Filter {
         self
     }
-    fn apply_to_tree(
+    fn apply_to_tree<'a>(
         &self,
-        _repo: &git2::Repository,
-        tree: &git2::Tree,
-    ) -> super::JoshResult<git2::Oid> {
+        repo: &'a git2::Repository,
+        tree: git2::Tree<'a>,
+    ) -> super::JoshResult<git2::Tree<'a>> {
         return Ok(tree
             .get_path(&self.path)
-            .map(|x| x.id())
-            .unwrap_or(empty_tree_id()));
+            .and_then(|x| repo.find_tree(x.id()))
+            .unwrap_or(empty_tree(&repo)));
     }
 
     fn unapply<'a>(
@@ -592,20 +586,12 @@ impl Filter for PrefixFilter {
     fn get(&self) -> &dyn Filter {
         self
     }
-    fn apply_to_tree(
+    fn apply_to_tree<'a>(
         &self,
-        repo: &git2::Repository,
-        tree: &git2::Tree,
-    ) -> super::JoshResult<git2::Oid> {
-        Ok(
-            replace_subtree(
-                &repo,
-                &self.prefix,
-                tree.id(),
-                &empty_tree(&repo),
-            )?
-            .id(),
-        )
+        repo: &'a git2::Repository,
+        tree: git2::Tree<'a>,
+    ) -> super::JoshResult<git2::Tree<'a>> {
+        replace_subtree(&repo, &self.prefix, tree.id(), &empty_tree(&repo))
     }
 
     fn unapply<'a>(
@@ -614,11 +600,10 @@ impl Filter for PrefixFilter {
         tree: git2::Tree<'a>,
         _parent_tree: git2::Tree,
     ) -> super::JoshResult<git2::Tree<'a>> {
-        return Ok(repo.find_tree(
-            tree.get_path(&self.prefix)
-                .map(|x| x.id())
-                .unwrap_or(empty_tree_id()),
-        )?);
+        Ok(tree
+            .get_path(&self.prefix)
+            .and_then(|x| repo.find_tree(x.id()))
+            .unwrap_or(empty_tree(&repo)))
     }
 
     fn filter_spec(&self) -> String {
@@ -634,12 +619,12 @@ impl Filter for HideFilter {
     fn get(&self) -> &dyn Filter {
         self
     }
-    fn apply_to_tree(
+    fn apply_to_tree<'a>(
         &self,
-        repo: &git2::Repository,
-        tree: &git2::Tree,
-    ) -> super::JoshResult<git2::Oid> {
-        Ok(replace_subtree(&repo, &self.path, git2::Oid::zero(), &tree)?.id())
+        repo: &'a git2::Repository,
+        tree: git2::Tree<'a>,
+    ) -> super::JoshResult<git2::Tree<'a>> {
+        replace_subtree(&repo, &self.path, git2::Oid::zero(), &tree)
     }
 
     fn unapply<'a>(
@@ -672,11 +657,11 @@ impl Filter for GlobFilter {
     fn get(&self) -> &dyn Filter {
         self
     }
-    fn apply_to_tree(
+    fn apply_to_tree<'a>(
         &self,
-        repo: &git2::Repository,
-        tree: &git2::Tree,
-    ) -> super::JoshResult<git2::Oid> {
+        repo: &'a git2::Repository,
+        tree: git2::Tree<'a>,
+    ) -> super::JoshResult<git2::Tree<'a>> {
         striped_tree(
             &repo,
             "",
@@ -703,7 +688,11 @@ impl Filter for GlobFilter {
             false,
             &mut self.cache.borrow_mut(),
         )?;
-        Ok(repo.find_tree(merged_tree(&repo, parent_tree.id(), stripped)?)?)
+        Ok(repo.find_tree(merged_tree(
+            &repo,
+            parent_tree.id(),
+            stripped.id(),
+        )?)?)
     }
 
     fn filter_spec(&self) -> String {
@@ -723,11 +712,11 @@ impl Filter for InfoFileFilter {
     fn get(&self) -> &dyn Filter {
         self
     }
-    fn apply_to_tree(
+    fn apply_to_tree<'a>(
         &self,
-        repo: &git2::Repository,
-        tree: &git2::Tree,
-    ) -> super::JoshResult<git2::Oid> {
+        repo: &'a git2::Repository,
+        tree: git2::Tree<'a>,
+    ) -> super::JoshResult<git2::Tree<'a>> {
         let mut s = "".to_owned();
         for (k, v) in self.values.iter() {
             let v = v.replace("<colon>", ":").replace("<comma>", ",");
@@ -748,13 +737,12 @@ impl Filter for InfoFileFilter {
                 }
             );
         }
-        Ok(replace_subtree(
+        replace_subtree(
             repo,
             &Path::new(&self.values["prefix"]).join(".joshinfo"),
             repo.blob(s.as_bytes())?,
             &tree,
-        )?
-        .id())
+        )
     }
 
     fn filter_spec(&self) -> String {
@@ -785,27 +773,19 @@ impl Filter for CombineFilter {
         p
     }
 
-    fn apply_to_tree(
+    fn apply_to_tree<'a>(
         &self,
-        repo: &git2::Repository,
-        tree: &git2::Tree,
-    ) -> super::JoshResult<git2::Oid> {
-        let mut base = self.base.apply_to_tree(&repo, &tree)?;
+        repo: &'a git2::Repository,
+        tree: git2::Tree<'a>,
+    ) -> super::JoshResult<git2::Tree<'a>> {
+        let mut base = self.base.apply_to_tree(&repo, tree.clone())?;
 
         for (other, prefix) in self.others.iter().zip(self.prefixes.iter()) {
-            let otree = other.apply_to_tree(&repo, &tree)?;
-            if otree == empty_tree_id() {
+            let otree = other.apply_to_tree(&repo, tree.clone())?;
+            if otree.id() == empty_tree_id() {
                 continue;
             }
-            /* let otree = repo.find_tree(otree).expect("can't find tree"); */
-            let otree = find_tree_or_error(&repo, otree, &self.filter_spec());
-            base = replace_subtree(
-                &repo,
-                &prefix,
-                otree.id(),
-                &repo.find_tree(base)?,
-            )?
-            .id();
+            base = replace_subtree(&repo, &prefix, otree.id(), &base)?;
         }
 
         return Ok(base);
@@ -879,15 +859,14 @@ fn combine_filter_from_ws(
 }
 
 impl WorkspaceFilter {
-    fn ws_apply_to_tree_and_parents(
+    fn ws_apply_to_tree_and_parents<'a>(
         &self,
         forward_maps: &mut FilterCache,
         backward_maps: &mut FilterCache,
-        repo: &git2::Repository,
-        tree_and_parents: (git2::Oid, Vec<git2::Oid>),
-    ) -> super::JoshResult<(git2::Oid, Vec<git2::Oid>)> {
-        let (tree, parents) = tree_and_parents;
-        let full_tree = repo.find_tree(tree)?;
+        repo: &'a git2::Repository,
+        tree_and_parents: (git2::Tree<'a>, Vec<git2::Oid>),
+    ) -> super::JoshResult<(git2::Tree<'a>, Vec<git2::Oid>)> {
+        let (full_tree, parents) = tree_and_parents;
 
         let mut in_this = std::collections::HashSet::new();
 
@@ -966,24 +945,8 @@ impl WorkspaceFilter {
             break;
         }
 
-        return Ok((cw.apply_to_tree(repo, &full_tree)?, filtered_parent_ids));
+        return Ok((cw.apply_to_tree(repo, full_tree)?, filtered_parent_ids));
     }
-}
-
-fn find_tree_or_error<'a>(
-    repo: &'a git2::Repository,
-    filtered_tree: git2::Oid,
-    filter_spec: &str,
-) -> git2::Tree<'a> {
-    ok_or!(repo.find_tree(filtered_tree), {
-        tracing::debug!(
-                    "Filter.apply_to_commit: can't find tree: {:?} filter_spec: {:?}, original-commit: {:?}, message: {:?}, header: {:?}, obj.kind: {:?}",
-                    filtered_tree,
-                    filter_spec,
-                    "","","",
-                    repo.find_object(filtered_tree, None).ok().map(|x| x.kind()));
-        return empty_tree(&repo);
-    })
 }
 
 impl Filter for WorkspaceFilter {
@@ -1007,23 +970,23 @@ impl Filter for WorkspaceFilter {
                 forward_maps,
                 backward_maps,
                 repo,
-                (commit.tree_id(), commit.parents().map(|x| x.id()).collect()),
+                (commit.tree()?, commit.parents().map(|x| x.id()).collect()),
             )?;
 
         return create_filtered_commit(
             repo,
             commit,
             filtered_parent_ids,
-            &find_tree_or_error(&repo, filtered_tree, &self.filter_spec()),
+            filtered_tree,
         );
     }
 
-    fn apply_to_tree(
+    fn apply_to_tree<'a>(
         &self,
-        repo: &git2::Repository,
-        tree: &git2::Tree,
-    ) -> super::JoshResult<git2::Oid> {
-        if let Ok(cw) = combine_filter_from_ws(repo, tree, &self.ws_path) {
+        repo: &'a git2::Repository,
+        tree: git2::Tree<'a>,
+    ) -> super::JoshResult<git2::Tree<'a>> {
+        if let Ok(cw) = combine_filter_from_ws(repo, &tree, &self.ws_path) {
             cw
         } else {
             build_combine_filter("", SubdirFilter::new(&self.ws_path))?
@@ -1227,7 +1190,7 @@ fn replace_child<'a>(
         if oid == git2::Oid::zero() || oid == empty_tree_id() {
             builder.remove(child).ok();
         } else {
-            builder.insert(child, oid, mode)?;
+            builder.insert(child, oid, mode).ok();
         }
         builder.write()?
     };
@@ -1248,7 +1211,7 @@ fn replace_subtree<'a>(
         let path = path.parent().ok_or(super::josh_error("path.parent"))?;
 
         let st = if let Some(st) = get_subtree(&full_tree, path) {
-            repo.find_tree(st)?
+            repo.find_tree(st).unwrap_or(empty_tree(&repo))
         } else {
             empty_tree(&repo)
         };
