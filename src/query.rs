@@ -1,6 +1,5 @@
-use std::sync::{Arc, RwLock};
 struct BlobHelper {
-    repo_path: std::path::PathBuf,
+    repo: std::sync::Arc<std::sync::Mutex<git2::Repository>>,
     headref: String,
 }
 
@@ -15,7 +14,7 @@ impl BlobHelper {
             return Err(super::josh_error("missing pattern"));
         };
 
-        let repo = git2::Repository::init(&self.repo_path)?;
+        let repo = self.repo.lock()?;
         let tree = repo.find_reference(&self.headref)?.peel_to_tree()?;
 
         let blob = tree
@@ -45,7 +44,7 @@ impl handlebars::HelperDef for BlobHelper {
 }
 
 struct FindFilesHelper {
-    repo_path: std::path::PathBuf,
+    repo: std::sync::Arc<std::sync::Mutex<git2::Repository>>,
     headref: String,
 }
 
@@ -59,17 +58,23 @@ impl FindFilesHelper {
         } else {
             return Err(super::josh_error("missing pattern"));
         };
-        let repo = git2::Repository::init(&self.repo_path)?;
+        let repo = self.repo.lock()?;
         let tree = repo.find_reference(&self.headref)?.peel_to_tree()?;
 
         let mut names = vec![];
 
-        tree.walk(git2::TreeWalkMode::PreOrder, |root, entry| {
+        tree.walk(
+
+        git2::TreeWalkMode::PreOrder, |root, entry| {
             let name = entry.name().unwrap_or("INVALID_FILENAME");
             let path = std::path::PathBuf::from(root).join(name);
             let path_str = path.to_string_lossy();
 
-            if filename.matches(&path_str) {
+            if filename.matches_path_with(&path, glob::MatchOptions {
+                case_sensitive: true,
+                require_literal_separator: true,
+                require_literal_leading_dot: true
+            }){
                 names.push(json!({
                 "path": path_str,
                 "name": path.file_name().map(|x|x.to_str()).flatten().unwrap_or("INVALID_FILE_NAME"),
@@ -103,12 +108,10 @@ impl handlebars::HelperDef for FindFilesHelper {
 }
 
 struct FilterHelper {
-    repo_path: std::path::PathBuf,
+    repo: std::sync::Arc<std::sync::Mutex<git2::Repository>>,
     headref: String,
-    forward_maps:
-        std::sync::Arc<std::sync::RwLock<super::filter_cache::FilterCache>>,
-    backward_maps:
-        std::sync::Arc<std::sync::RwLock<super::filter_cache::FilterCache>>,
+    forward_maps: std::sync::Mutex<super::filter_cache::FilterCache>,
+    backward_maps: std::sync::Mutex<super::filter_cache::FilterCache>,
 }
 
 impl FilterHelper {
@@ -121,15 +124,15 @@ impl FilterHelper {
         } else {
             return Err(super::josh_error("missing spec"));
         };
-        let repo = git2::Repository::init(&self.repo_path)?;
+        let repo = self.repo.lock()?;
         let original_commit =
             repo.find_reference(&self.headref)?.peel_to_commit()?;
         let filterobj = super::filters::parse(&filter_spec);
         let filter_commit = filterobj.apply_to_commit(
             &repo,
             &original_commit,
-            &mut *self.forward_maps.write()?,
-            &mut *self.backward_maps.write()?,
+            &mut *&mut self.forward_maps.lock()?,
+            &mut *&mut self.backward_maps.lock()?,
             &mut std::collections::HashMap::new(),
         )?;
         return Ok(json!({ "sha1": format!("{}", filter_commit) }));
@@ -154,80 +157,45 @@ impl handlebars::HelperDef for FilterHelper {
     }
 }
 
-struct KvHelper {
-    kv_store: Arc<RwLock<std::collections::HashMap<String, serde_json::Value>>>,
-}
-
-impl KvHelper {
-    fn josh_helper(
-        &self,
-        params: &[handlebars::PathAndJson],
-    ) -> super::JoshResult<serde_json::Value> {
-        let key = if let [f, ..] = params {
-            f.render()
-        } else {
-            return Err(super::josh_error("missing spec"));
-        };
-
-        if let Some(v) = self.kv_store.read()?.get(&key) {
-            return Ok(v.to_owned());
-        } else {
-            return Ok(json!(""));
-        }
-    }
-}
-
-impl handlebars::HelperDef for KvHelper {
-    fn call_inner<'reg: 'rc, 'rc>(
-        &self,
-        h: &handlebars::Helper,
-        _: &handlebars::Handlebars,
-        _: &handlebars::Context,
-        _rc: &mut handlebars::RenderContext,
-    ) -> Result<
-        Option<handlebars::ScopedJson<'reg, 'rc>>,
-        handlebars::RenderError,
-    > {
-        return Ok(Some(handlebars::ScopedJson::Derived(
-            self.josh_helper(h.params().as_slice())
-                .map_err(|_| handlebars::RenderError::new("josh"))?,
-        )));
-    }
-}
-
 handlebars_helper!(concat_helper: |x: str, y: str| format!("{}{}", x, y) );
 
 handlebars_helper!(toml_helper: |x: str| toml::de::from_str::<serde_json::Value>(x).unwrap_or(json!({})) );
 
 pub fn render(
-    repo: &git2::Repository,
+    repo: git2::Repository,
     headref: &str,
-    query: &str,
-    kv_store: Arc<RwLock<std::collections::HashMap<String, serde_json::Value>>>,
-    backward_maps: std::sync::Arc<
-        std::sync::RwLock<super::filter_cache::FilterCache>,
-    >,
-    forward_maps: std::sync::Arc<
-        std::sync::RwLock<super::filter_cache::FilterCache>,
-    >,
-) -> super::JoshResult<String> {
+    query_and_params: &str,
+    forward_maps: super::filter_cache::FilterCache,
+    backward_maps: super::filter_cache::FilterCache,
+) -> super::JoshResult<Option<String>> {
+    let mut parameters = query_and_params.split("&");
+    let query = parameters.next().ok_or(super::josh_error(&format!(
+        "invalid query {:?}",
+        query_and_params
+    )))?;
     let mut split = query.splitn(2, "=");
-    let cmd = split
-        .next()
-        .ok_or(super::josh_error(&format!("invalid query {:?}", query)))?;
-    let path = split
-        .next()
-        .ok_or(super::josh_error(&format!("invalid query {:?}", query)))?;
+    let cmd = split.next().ok_or(super::josh_error(&format!(
+        "invalid query {:?}",
+        query_and_params
+    )))?;
+    let path = split.next().ok_or(super::josh_error(&format!(
+        "invalid query {:?}",
+        query_and_params
+    )))?;
     let tree = repo.find_reference(&headref)?.peel_to_tree()?;
 
-    let obj = tree
-        .get_path(&std::path::PathBuf::from(path))?
-        .to_object(&repo)?;
+    let obj = super::ok_or!(
+        tree.get_path(&std::path::PathBuf::from(path))?
+            .to_object(&repo),
+        {
+            return Ok(None);
+        }
+    );
 
     let template = if let Ok(blob) = obj.peel_to_blob() {
         let template = std::str::from_utf8(blob.content())?;
         if cmd == "get" {
-            return Ok(template.to_string());
+            return Ok(Some(template.to_string()));
         }
         if cmd == "render" {
             template.to_string()
@@ -235,8 +203,13 @@ pub fn render(
             return Err(super::josh_error("no such cmd"));
         }
     } else {
-        return Ok("".to_string());
+        return Ok(Some("".to_string()));
     };
+
+    std::mem::drop(obj);
+    std::mem::drop(tree);
+
+    let repo = std::sync::Arc::new(std::sync::Mutex::new(repo));
 
     let mut handlebars = handlebars::Handlebars::new();
     handlebars.register_template_string("template", template)?;
@@ -245,30 +218,43 @@ pub fn render(
     handlebars.register_helper(
         "git-find",
         Box::new(FindFilesHelper {
-            repo_path: repo.path().to_owned(),
+            repo: repo.clone(),
             headref: headref.to_string(),
         }),
     );
     handlebars.register_helper(
         "git-blob",
         Box::new(BlobHelper {
-            repo_path: repo.path().to_owned(),
+            repo: repo.clone(),
             headref: headref.to_string(),
         }),
     );
     handlebars.register_helper(
         "josh-filter",
         Box::new(FilterHelper {
-            repo_path: repo.path().to_owned(),
+            repo: repo.clone(),
             headref: headref.to_string(),
-            forward_maps: forward_maps.clone(),
-            backward_maps: backward_maps.clone(),
+            forward_maps: std::sync::Mutex::new(forward_maps),
+            backward_maps: std::sync::Mutex::new(backward_maps),
         }),
     );
 
-    handlebars.register_helper(
-        "db-lookup",
-        Box::new(KvHelper { kv_store: kv_store }),
-    );
-    return Ok(format!("{}", handlebars.render("template", &json!({}))?));
+    let mut params = std::collections::BTreeMap::new();
+    for p in parameters {
+        let mut split = p.splitn(2, "=");
+        let name = split.next().ok_or(super::josh_error(&format!(
+            "invalid query {:?}",
+            query_and_params
+        )))?;
+        let value = split.next().ok_or(super::josh_error(&format!(
+            "invalid query {:?}",
+            query_and_params
+        )))?;
+        params.insert(name.to_string(), value.to_string());
+    }
+
+    return Ok(Some(format!(
+        "{}",
+        handlebars.render("template", &json!(params))?
+    )));
 }

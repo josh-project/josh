@@ -19,6 +19,8 @@
   $ git commit -m "add file1" 1> /dev/null
 
   $ cat > sub1/tmpl_file <<EOF
+  > tmpl_param1: {{ tmpl_param1 }}
+  > tmpl_p2: {{ tmpl_p2 }}
   > {{ #with (toml (git-blob path="config_file.toml")) }}
   > From TOML: {{ a.b }}
   > {{ /with }}
@@ -34,7 +36,6 @@
   > {{ ~#if this.base }}
   >   {{ ~#with (josh-filter spec=(concat ":workspace=" this.base))~ }}
   > filtered: {{{ sha1 }}}
-  > db: {{ db-lookup sha1 }}
   >   {{ /with~ }}
   > {{ ~/if }}
   > {{ ~#unless @last }}-----{{ /unless }}
@@ -61,7 +62,9 @@
 
   $ josh-filter HEAD :nop -q render=sub1/file1
   contents1
-  $ josh-filter HEAD :nop -q render=sub1/tmpl_file
+  $ josh-filter HEAD :nop -q "render=sub1/tmpl_file&tmpl_param1=tmpl_param_value1&tmpl_p2=val2"
+  tmpl_param1: tmpl_param_value1
+  tmpl_p2: val2
   
   From TOML: my_value
   
@@ -79,7 +82,6 @@
   sha1: * (glob)
   blob: contents1
   filtered: * (glob)
-  db: SUCCESS
     -----
   2:
   name: file2
@@ -88,7 +90,6 @@
   sha1: * (glob)
   blob: contents2
   filtered: * (glob)
-  db: SUCCESS
     -----
   3:
   name: file3
@@ -97,7 +98,6 @@
   sha1: * (glob)
   blob: contents3
   filtered: * (glob)
-  db: 
     
   $ josh-filter HEAD :/sub1 -q render=file2
   contents2

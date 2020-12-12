@@ -188,20 +188,16 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         }
 
         if let Some(query) = args.value_of("query") {
-            let kv_store = Arc::new(RwLock::new(serde_json::from_str(
-                &std::fs::read_to_string(".git/josh_kv.json")
-                    .unwrap_or("{}".to_string()),
-            )?));
             print!(
                 "{}",
                 josh::query::render(
-                    &repo,
+                    git2::Repository::open_from_env()?,
                     &update_target.to_string(),
                     &query,
-                    kv_store.clone(),
-                    forward_maps.clone(),
-                    backward_maps.clone(),
+                    josh::filter_cache::new_downstream(&forward_maps),
+                    josh::filter_cache::new_downstream(&backward_maps),
                 )?
+                .unwrap_or("File not found".to_string())
             );
         }
 

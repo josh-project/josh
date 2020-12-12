@@ -17,7 +17,7 @@
   $ git commit -m "add file2" 1> /dev/null
 
   $ cat > tmpl_file <<EOF
-  > db: {{ #with (db-lookup "stored_value") }} {{ from_storage }} {{ /with }}
+  > param: {{ param_val }}
   > EOF
 
   $ git add tmpl_file
@@ -37,15 +37,10 @@
 
   $ cd ${TESTTMP}
 
-  $ curl -s http://localhost:8002/@db/stored_value -X POST -d "{\"from_storage\":1234}"
-  ok (no-eol)
-  $ curl -s http://localhost:8002/@db/stored_value
-  {"from_storage":1234} (no-eol)
-
   $ curl -s http://localhost:8002/real_repo.git:/sub1.git?get=file1
   contents1
-  $ curl -s http://localhost:8002/real_repo.git?render=tmpl_file
-  db:  1234 
+  $ curl -s http://localhost:8002/real_repo.git?render=tmpl_file\&param_val=12345
+  param: 12345
   $ curl -s http://localhost:8002/real_repo.git?get=sub1/file1
   contents1
   $ curl -s http://localhost:8002/real_repo.git@refs/changes/123/2:nop.git?get=sub2/on_change

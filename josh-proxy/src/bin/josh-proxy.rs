@@ -6,7 +6,6 @@ use tracing_subscriber::layer::SubscriberExt;
 
 use futures::future;
 use futures::FutureExt;
-use futures::TryStreamExt;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Request, Response, Server};
 use std::collections::HashMap;
@@ -31,8 +30,6 @@ josh::regex_parsed!(
     [upstream_repo, filter, pathinfo, headref]
 );
 
-josh::regex_parsed!(DbUrl, r"/@db/(?P<k>.*)", [k]);
-
 type CredentialCache = HashMap<String, std::time::Instant>;
 
 #[derive(Clone)]
@@ -46,7 +43,6 @@ struct JoshProxyService {
     credential_cache: Arc<RwLock<CredentialCache>>,
     fetch_permits: Arc<tokio::sync::Semaphore>,
     filter_permits: Arc<tokio::sync::Semaphore>,
-    db_store: Arc<RwLock<std::collections::HashMap<String, serde_json::Value>>>,
     credential_store: Arc<RwLock<josh_proxy::CredentialStore>>,
 }
 
@@ -141,7 +137,8 @@ async fn fetch_upstream(
         &credentials_hashed
     );
 
-    let refs_to_fetch = if headref != "" {
+    let refs_to_fetch = if headref != "" && !headref.starts_with("refs/heads/")
+    {
         vec!["refs/heads/*", "refs/tags/*", headref]
     } else {
         vec!["refs/heads/*", "refs/tags/*"]
@@ -379,31 +376,6 @@ async fn call_service(
         return repo_update_fn(serv, req).await;
     }
 
-    if let Some(db_url) = DbUrl::from_str(&path) {
-        let body = req
-            .into_body()
-            .try_fold(String::new(), |mut acc, elt| async move {
-                acc.push_str(
-                    std::str::from_utf8(&elt).unwrap_or("ERROR: from_utf8"),
-                );
-                Ok(acc)
-            })
-            .await?;
-
-        if body == "" {
-            if let Some(v) = serv.db_store.read()?.get(&db_url.k) {
-                return Ok(Response::builder()
-                    .body(hyper::Body::from(v.to_string()))?);
-            }
-            return Ok(Response::builder().body(hyper::Body::from(""))?);
-        } else {
-            serv.db_store
-                .write()?
-                .insert(db_url.k, serde_json::from_str(&body)?);
-            return Ok(Response::builder().body(hyper::Body::from("ok"))?);
-        }
-    }
-
     let parsed_url = {
         if let Some(parsed_url) = FilteredRepoUrl::from_str(&path) {
             let mut pu = parsed_url;
@@ -482,18 +454,23 @@ async fn call_service(
                     let _e = s.enter();
                     let repo = git2::Repository::init_bare(&serv.repo_path)?;
                     josh::query::render(
-                        &repo,
+                        repo,
                         &temp_ns.reference(&headref),
                         &q,
-                        serv.db_store.clone(),
-                        serv.forward_maps.clone(),
-                        serv.backward_maps.clone(),
+                        josh::filter_cache::new_downstream(&serv.forward_maps),
+                        josh::filter_cache::new_downstream(&serv.backward_maps),
                     )
                 })
                 .await??;
-            return Ok(Response::builder()
-                .status(hyper::StatusCode::OK)
-                .body(hyper::Body::from(res))?);
+            if let Some(res) = res {
+                return Ok(Response::builder()
+                    .status(hyper::StatusCode::OK)
+                    .body(hyper::Body::from(res))?);
+            } else {
+                return Ok(Response::builder()
+                    .status(hyper::StatusCode::NOT_FOUND)
+                    .body(hyper::Body::from("File not found".to_string()))?);
+            }
         }
     }
 
@@ -539,6 +516,14 @@ async fn prepare_namespace(
     auth: (String, josh_proxy::HashedPassword),
 ) -> josh::JoshResult<PrepareNsResult> {
     let (username, password) = auth;
+
+    if ARGS.is_present("require-auth") && username == "" {
+        tracing::trace!("require-auth");
+        let builder = Response::builder()
+            .header("WWW-Authenticate", "Basic realm=User Visible Realm")
+            .status(hyper::StatusCode::UNAUTHORIZED);
+        return Ok(PrepareNsResult::Resp(builder.body(hyper::Body::empty())?));
+    }
 
     let authorized = fetch_upstream(
         serv.clone(),
@@ -606,9 +591,10 @@ async fn run_proxy() -> josh::JoshResult<i32> {
         backward_maps: backward_maps.clone(),
         upstream_url: remote.to_owned(),
         credential_cache: Arc::new(RwLock::new(CredentialCache::new())),
-        fetch_permits: Arc::new(tokio::sync::Semaphore::new(1)),
+        fetch_permits: Arc::new(tokio::sync::Semaphore::new(
+            ARGS.value_of("n").unwrap_or("1").parse()?,
+        )),
         filter_permits: Arc::new(tokio::sync::Semaphore::new(10)),
-        db_store: Arc::new(RwLock::new(HashMap::new())),
         credential_store: Arc::new(RwLock::new(HashMap::new())),
     });
 
@@ -672,15 +658,15 @@ fn parse_args() -> clap::ArgMatches<'static> {
                 .takes_value(true),
         )
         .arg(
-            clap::Arg::with_name("trace")
-                .long("trace")
-                .takes_value(true),
-        )
-        .arg(
             clap::Arg::with_name("gc")
                 .long("gc")
                 .takes_value(false)
                 .help("Run git gc in maintanance"),
+        )
+        .arg(
+            clap::Arg::with_name("require-auth")
+                .long("require-auth")
+                .takes_value(false),
         )
         .arg(
             clap::Arg::with_name("m")
@@ -789,10 +775,13 @@ fn main() {
     let fmt_layer = tracing_subscriber::fmt::layer().with_ansi(false);
 
     let (tracer, _uninstall) = opentelemetry_jaeger::new_pipeline()
-        .from_env()
         .with_service_name(
             std::env::var("JOSH_SERVICE_NAME")
                 .unwrap_or("josh-proxy".to_owned()),
+        )
+        .with_agent_endpoint(
+            std::env::var("JOSH_JAEGER_ENDPOINT")
+                .unwrap_or("localhost:6831".to_owned()),
         )
         .install()
         .expect("can't install opentelemetry pipeline");
