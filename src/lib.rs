@@ -1,3 +1,4 @@
+#![deny(warnings)]
 #![warn(unused_extern_crates)]
 
 #[macro_export]
