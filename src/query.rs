@@ -133,7 +133,6 @@ impl FilterHelper {
             &original_commit,
             &mut *&mut self.forward_maps.lock()?,
             &mut *&mut self.backward_maps.lock()?,
-            &mut std::collections::HashMap::new(),
         )?;
         return Ok(json!({ "sha1": format!("{}", filter_commit) }));
     }

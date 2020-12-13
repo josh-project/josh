@@ -85,10 +85,8 @@
   $ git read-tree HEAD josh/filter/libs/master josh/filter/libs/foo
   $ git commit -m "sync"
   [master *] sync (glob)
-   5 files changed, 11 insertions(+)
-   create mode 100644 a/b/.joshinfo
+   3 files changed, 3 insertions(+)
    create mode 100644 a/b/file3
-   create mode 100644 c/.joshinfo
    create mode 100644 c/file1
    create mode 100644 c/file2
   $ git reset --hard
@@ -110,16 +108,12 @@
   * initial
 
   $ cat c/.joshinfo
-  commit: * (glob)
-  filter: :/sub1
-  src: libs/master
-  tree: * (glob)
+  cat: c/.joshinfo: No such file or directory
+  [1]
 
   $ cat a/b/.joshinfo
-  commit: * (glob)
-  filter: :/sub2
-  src: libs/foo
-  tree: * (glob)
+  cat: a/b/.joshinfo: No such file or directory
+  [1]
 
 $ git show libs/master | grep $(cat c/.joshinfo | grep commit | sed 's/commit: //')
 commit * (glob)
