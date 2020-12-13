@@ -117,10 +117,6 @@ pub trait Filter {
         )))
     }
 
-    /* fn prefixes(&self) -> HashMap<String, String> { */
-    /*     HashMap::new() */
-    /* } */
-
     fn filter_spec(&self) -> String;
 }
 
@@ -168,12 +164,10 @@ struct DirsFilter {
     >,
 }
 
-fn striped_tree<'a>(
+fn dirtree<'a>(
     repo: &'a git2::Repository,
     root: &str,
     input: git2::Oid,
-    pred: &dyn Fn(&std::path::Path) -> bool,
-    dirs: bool,
     cache: &mut std::collections::HashMap<(git2::Oid, String), git2::Oid>,
 ) -> super::JoshResult<git2::Tree<'a>> {
     if let Some(cached) = cache.get(&(input, root.to_string())) {
@@ -184,12 +178,10 @@ fn striped_tree<'a>(
     let mut result = empty_tree(&repo);
 
     for entry in tree.iter() {
-        if entry.kind() == Some(git2::ObjectType::Blob) {
-            let name =
-                entry.name().ok_or(super::josh_error("INVALID_FILENAME"))?;
-            let path = std::path::PathBuf::from(root).join(name);
+        let name = entry.name().ok_or(super::josh_error("INVALID_FILENAME"))?;
 
-            if pred(&path) {
+        if entry.kind() == Some(git2::ObjectType::Blob) {
+            if name == "workspace.josh" {
                 result = replace_child(
                     &repo,
                     &Path::new(
@@ -202,7 +194,7 @@ fn striped_tree<'a>(
         }
 
         if entry.kind() == Some(git2::ObjectType::Tree) {
-            let s = striped_tree(
+            let s = dirtree(
                 &repo,
                 &format!(
                     "{}{}{}",
@@ -211,25 +203,24 @@ fn striped_tree<'a>(
                     entry.name().ok_or(super::josh_error("no name"))?
                 ),
                 entry.id(),
-                &pred,
-                dirs,
                 cache,
-            )?;
+            )?
+            .id();
 
-            if s.id() != empty_tree_id() {
+            if s != empty_tree_id() {
                 result = replace_child(
                     &repo,
                     &Path::new(
                         entry.name().ok_or(super::josh_error("no name"))?,
                     ),
-                    s.id(),
+                    s,
                     &result,
                 )?;
             }
         }
     }
 
-    if dirs && root != "" {
+    if root != "" {
         let empty_blob = repo.blob("".as_bytes())?;
 
         result = replace_child(
@@ -243,6 +234,75 @@ fn striped_tree<'a>(
     return Ok(result);
 }
 
+fn substract_tree<'a>(
+    repo: &'a git2::Repository,
+    root: &str,
+    input: git2::Oid,
+    pred: &dyn Fn(&std::path::Path, bool) -> bool,
+    key: git2::Oid,
+    cache: &mut std::collections::HashMap<(git2::Oid, git2::Oid), git2::Oid>,
+) -> super::JoshResult<git2::Tree<'a>> {
+    if let Some(cached) = cache.get(&(input, key)) {
+        return Ok(repo.find_tree(*cached)?);
+    }
+
+    let tree = repo.find_tree(input)?;
+    let mut result = empty_tree(&repo);
+
+    for entry in tree.iter() {
+        let name = entry.name().ok_or(super::josh_error("INVALID_FILENAME"))?;
+        let path = std::path::PathBuf::from(root).join(name);
+
+        if entry.kind() == Some(git2::ObjectType::Blob) {
+            if pred(&path, true) {
+                result = replace_child(
+                    &repo,
+                    &Path::new(
+                        entry.name().ok_or(super::josh_error("no name"))?,
+                    ),
+                    entry.id(),
+                    &result,
+                )?;
+            }
+        }
+
+        if entry.kind() == Some(git2::ObjectType::Tree) {
+            let s = if (root != "") && pred(&path, false) {
+                entry.id()
+            } else {
+                substract_tree(
+                    &repo,
+                    &format!(
+                        "{}{}{}",
+                        root,
+                        if root == "" { "" } else { "/" },
+                        entry.name().ok_or(super::josh_error("no name"))?
+                    ),
+                    entry.id(),
+                    &pred,
+                    key,
+                    cache,
+                )?
+                .id()
+            };
+
+            if s != empty_tree_id() {
+                result = replace_child(
+                    &repo,
+                    &Path::new(
+                        entry.name().ok_or(super::josh_error("no name"))?,
+                    ),
+                    s,
+                    &result,
+                )?;
+            }
+        }
+    }
+
+    cache.insert((input, key), result.id());
+    return Ok(result);
+}
+
 impl Filter for DirsFilter {
     fn get(&self) -> &dyn Filter {
         self
@@ -252,20 +312,7 @@ impl Filter for DirsFilter {
         repo: &'a git2::Repository,
         tree: git2::Tree<'a>,
     ) -> super::JoshResult<git2::Tree<'a>> {
-        let pattern = glob::Pattern::new("**/workspace.josh")?;
-        let options = glob::MatchOptions {
-            case_sensitive: true,
-            require_literal_separator: true,
-            require_literal_leading_dot: true,
-        };
-        striped_tree(
-            &repo,
-            "",
-            tree.id(),
-            &|path| pattern.matches_path_with(path, options),
-            true,
-            &mut self.cache.borrow_mut(),
-        )
+        dirtree(&repo, "", tree.id(), &mut self.cache.borrow_mut())
     }
 
     fn filter_spec(&self) -> String {
@@ -382,45 +429,6 @@ impl Filter for FoldFilter {
 
     fn filter_spec(&self) -> String {
         return ":FOLD".to_owned();
-    }
-}
-
-struct EmptyFilter;
-
-impl Filter for EmptyFilter {
-    fn get(&self) -> &dyn Filter {
-        self
-    }
-
-    fn apply_to_commit(
-        &self,
-        _repo: &git2::Repository,
-        _commit: &git2::Commit,
-        _forward_maps: &mut FilterCache,
-        _backward_maps: &mut FilterCache,
-    ) -> super::JoshResult<git2::Oid> {
-        return Ok(git2::Oid::zero());
-    }
-
-    fn apply_to_tree<'a>(
-        &self,
-        repo: &'a git2::Repository,
-        _tree: git2::Tree<'a>,
-    ) -> super::JoshResult<git2::Tree<'a>> {
-        Ok(empty_tree(&repo))
-    }
-
-    fn unapply<'a>(
-        &self,
-        _repo: &'a git2::Repository,
-        _tree: git2::Tree<'a>,
-        parent_tree: git2::Tree<'a>,
-    ) -> super::JoshResult<git2::Tree<'a>> {
-        Ok(parent_tree.clone())
-    }
-
-    fn filter_spec(&self) -> String {
-        return ":empty".to_owned();
     }
 }
 
@@ -647,7 +655,7 @@ struct GlobFilter {
     pattern: glob::Pattern,
     invert: bool,
     cache: std::cell::RefCell<
-        std::collections::HashMap<(git2::Oid, String), git2::Oid>,
+        std::collections::HashMap<(git2::Oid, git2::Oid), git2::Oid>,
     >,
 }
 
@@ -665,14 +673,16 @@ impl Filter for GlobFilter {
             require_literal_separator: true,
             require_literal_leading_dot: true,
         };
-        striped_tree(
+        substract_tree(
             &repo,
             "",
             tree.id(),
-            &|path| {
-                self.invert != self.pattern.matches_path_with(&path, options)
+            &|path, isblob| {
+                isblob
+                    && (self.invert
+                        != self.pattern.matches_path_with(&path, options))
             },
-            false,
+            git2::Oid::zero(),
             &mut self.cache.borrow_mut(),
         )
     }
@@ -688,20 +698,22 @@ impl Filter for GlobFilter {
             require_literal_separator: true,
             require_literal_leading_dot: true,
         };
-        let stripped = striped_tree(
+        let substracted = substract_tree(
             &repo,
             "",
             tree.id(),
-            &|path| {
-                self.invert != self.pattern.matches_path_with(&path, options)
+            &|path, isblob| {
+                isblob
+                    && (self.invert
+                        != self.pattern.matches_path_with(&path, options))
             },
-            false,
+            git2::Oid::zero(),
             &mut self.cache.borrow_mut(),
         )?;
         Ok(repo.find_tree(merged_tree(
             &repo,
             parent_tree.id(),
-            stripped.id(),
+            substracted.id(),
         )?)?)
     }
 
@@ -714,60 +726,15 @@ impl Filter for GlobFilter {
     }
 }
 
-struct InfoFileFilter {
-    values: std::collections::BTreeMap<String, String>,
-}
-
-impl Filter for InfoFileFilter {
-    fn get(&self) -> &dyn Filter {
-        self
-    }
-    fn apply_to_tree<'a>(
-        &self,
-        repo: &'a git2::Repository,
-        tree: git2::Tree<'a>,
-    ) -> super::JoshResult<git2::Tree<'a>> {
-        let mut s = "".to_owned();
-        for (k, v) in self.values.iter() {
-            let v = v.replace("<colon>", ":").replace("<comma>", ",");
-            if k == "prefix" {
-                continue;
-            }
-            s = format!(
-                "{}{}: {}\n",
-                &s,
-                k,
-                match v.as_str() {
-                    "#tree" => tree
-                        .get_path(&Path::new(&self.values["prefix"]))
-                        .map(|x| x.id())
-                        .unwrap_or(git2::Oid::zero())
-                        .to_string(),
-                    _ => v,
-                }
-            );
-        }
-        replace_subtree(
-            repo,
-            &Path::new(&self.values["prefix"]).join(".joshinfo"),
-            repo.blob(s.as_bytes())?,
-            &tree,
-        )
-    }
-
-    fn filter_spec(&self) -> String {
-        let mut s = format!(":INFO=");
-
-        for (k, v) in self.values.iter() {
-            s = format!("{}{}={},", s, k, v);
-        }
-        return s.trim_end_matches(",").to_string();
-    }
-}
-
 struct CombineFilter {
     others: Vec<Box<dyn Filter>>,
     cache: std::cell::RefCell<
+        std::collections::HashMap<
+            (String, git2::Oid, git2::Oid),
+            (git2::Oid, git2::Oid),
+        >,
+    >,
+    substract_cache: std::cell::RefCell<
         std::collections::HashMap<(git2::Oid, git2::Oid), git2::Oid>,
     >,
 }
@@ -783,19 +750,40 @@ impl Filter for CombineFilter {
         tree: git2::Tree<'a>,
     ) -> super::JoshResult<git2::Tree<'a>> {
         let mut result = empty_tree(&repo);
+        let mut tree = tree;
 
         for other in self.others.iter() {
-            let t1 = result.id();
-            let t2 = other.apply_to_tree(&repo, tree.clone())?.id();
+            let rid = result.id();
+            let tid = tree.id();
 
-            if let Some(cached) = self.cache.borrow().get(&(t1, t2)) {
-                result = repo.find_tree(*cached)?;
+            if let Some((r, t)) =
+                self.cache.borrow().get(&(other.filter_spec(), rid, tid))
+            {
+                result = repo.find_tree(*r)?;
+                tree = repo.find_tree(*t)?;
                 continue;
             }
 
-            result = repo.find_tree(merged_tree(&repo, t1, t2)?)?;
+            let t2 = other.apply_to_tree(&repo, tree.clone())?;
 
-            self.cache.borrow_mut().insert((t1, t2), result.id());
+            let _unapplied =
+                other.unapply(&repo, t2.clone(), empty_tree(&repo))?;
+
+            tree = substract_tree(
+                &repo,
+                "",
+                tree.id(),
+                &|path, _| !_unapplied.get_path(path).is_ok(),
+                _unapplied.id(),
+                &mut self.substract_cache.borrow_mut()
+            )?;
+
+            result = repo.find_tree(merged_tree(&repo, rid, t2.id())?)?;
+
+            self.cache.borrow_mut().insert(
+                (other.filter_spec(), rid, tid),
+                (result.id(), tree.id()),
+            );
         }
 
         return Ok(result);
@@ -818,12 +806,12 @@ impl Filter for CombineFilter {
             }
             result = other.unapply(&repo, ws_tree.clone(), result)?;
             let reapply = other.apply_to_tree(&repo, from_empty.clone())?;
-            ws_tree = striped_tree(
+            ws_tree = substract_tree(
                 &repo,
                 "",
                 ws_tree.id(),
-                &|path| !reapply.get_path(path).is_ok(),
-                false,
+                &|path, _| !reapply.get_path(path).is_ok(),
+                reapply.id(),
                 &mut std::collections::HashMap::new(),
             )?;
         }
@@ -914,7 +902,10 @@ impl WorkspaceFilter {
             ) {
                 pcw
             } else {
-                build_combine_filter("", Some(SubdirFilter::new(&self.ws_path)))?
+                build_combine_filter(
+                    "",
+                    Some(SubdirFilter::new(&self.ws_path)),
+                )?
             };
 
             for other in pcw.others.iter() {
@@ -927,8 +918,7 @@ impl WorkspaceFilter {
             s = format!("{}\n{}", s, x);
         }
 
-        let pcw: Box<dyn Filter> =
-            build_combine_filter(&s, None)?;
+        let pcw: Box<dyn Filter> = build_combine_filter(&s, None)?;
 
         for parent in parents {
             // TODO: maybe consider doing this for the parents individually
@@ -1016,61 +1006,47 @@ impl Filter for WorkspaceFilter {
 #[grammar = "filter_parser.pest"]
 struct MyParser;
 
-fn kvargs(args: &[&str]) -> std::collections::BTreeMap<String, String> {
-    let mut s = std::collections::BTreeMap::new();
-    for p in args {
-        let x: Vec<_> = p.split("=").collect();
-        if let [k, v] = x.as_slice() {
-            s.insert(k.to_owned().to_string(), v.to_owned().to_string());
-        } else if let [v] = x.as_slice() {
-            s.insert("prefix".to_owned(), v.to_owned().to_string());
-        }
-    }
-    return s;
-}
 
-fn make_filter(args: &[&str]) -> Box<dyn Filter> {
+fn make_filter(args: &[&str]) -> super::JoshResult<Box<dyn Filter>> {
     match args {
-        ["", arg] => SubdirFilter::new(&Path::new(arg)),
-        ["empty"] => Box::new(EmptyFilter),
-        ["nop"] => Box::new(NopFilter),
-        ["prefix", arg] => Box::new(PrefixFilter {
+        ["", arg] => Ok(SubdirFilter::new(&Path::new(arg))),
+        ["nop"] => Ok(Box::new(NopFilter)),
+        ["prefix", arg] => Ok(Box::new(PrefixFilter {
             prefix: Path::new(arg).to_owned(),
-        }),
-        ["+", arg] => Box::new(PrefixFilter {
+        })),
+        ["+", arg] => Ok(Box::new(PrefixFilter {
             prefix: Path::new(arg).to_owned(),
-        }),
-        ["hide", arg] => Box::new(HideFilter {
+        })),
+        ["hide", arg] => Ok(Box::new(HideFilter {
             path: Path::new(arg).to_owned(),
-        }),
-        ["~glob", arg] => Box::new(GlobFilter {
+        })),
+        ["~glob", arg] => Ok(Box::new(GlobFilter {
             pattern: glob::Pattern::new(arg).unwrap(),
             invert: true,
             cache: std::cell::RefCell::new(std::collections::HashMap::new()),
-        }),
-        ["glob", arg] => Box::new(GlobFilter {
+        })),
+        ["glob", arg] => Ok(Box::new(GlobFilter {
             pattern: glob::Pattern::new(arg).unwrap(),
             invert: false,
             cache: std::cell::RefCell::new(std::collections::HashMap::new()),
-        }),
-        ["workspace", arg] => Box::new(WorkspaceFilter {
+        })),
+        ["workspace", arg] => Ok(Box::new(WorkspaceFilter {
             ws_path: Path::new(arg).to_owned(),
-        }),
-        ["INFO", iargs @ ..] => Box::new(InfoFileFilter {
-            values: kvargs(iargs),
-        }),
-        ["CUTOFF", arg] => Box::new(CutoffFilter {
+        })),
+        ["CUTOFF", arg] => Ok(Box::new(CutoffFilter {
             name: arg.to_owned().to_string(),
-        }),
-        ["DIRS"] => Box::new(DirsFilter {
+        })),
+        ["DIRS"] => Ok(Box::new(DirsFilter {
             cache: std::cell::RefCell::new(std::collections::HashMap::new()),
-        }),
-        ["FOLD"] => Box::new(FoldFilter),
-        _ => Box::new(EmptyFilter),
+        })),
+        ["FOLD"] => Ok(Box::new(FoldFilter)),
+        _ => Err(super::josh_error("invalid filter")),
     }
 }
 
-fn parse_item(pair: pest::iterators::Pair<Rule>) -> Box<dyn Filter> {
+fn parse_item(
+    pair: pest::iterators::Pair<Rule>,
+) -> super::JoshResult<Box<dyn Filter>> {
     match pair.as_rule() {
         Rule::filter => {
             let v: Vec<_> = pair.into_inner().map(|x| x.as_str()).collect();
@@ -1080,7 +1056,7 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> Box<dyn Filter> {
             let mut inner = pair.into_inner();
             make_filter(&[inner.next().unwrap().as_str()])
         }
-        _ => unreachable!(),
+        _ => Err(super::josh_error("parse_item: no match")),
     }
 }
 
@@ -1125,8 +1101,15 @@ fn build_combine_filter(
     base: Option<Box<dyn Filter>>,
 ) -> super::JoshResult<Box<CombineFilter>> {
     let mut combine_filter = Box::new(CombineFilter {
-        others: if let Some(base) = base {vec![base]} else {vec![]},
+        others: if let Some(base) = base {
+            vec![base]
+        } else {
+            vec![]
+        },
         cache: std::cell::RefCell::new(std::collections::HashMap::new()),
+        substract_cache: std::cell::RefCell::new(
+            std::collections::HashMap::new(),
+        ),
     });
 
     if let Ok(mut r) = MyParser::parse(Rule::workspace_file, filter_spec) {
@@ -1163,7 +1146,7 @@ pub fn parse(filter_spec: &str) -> super::JoshResult<Box<dyn Filter>> {
             let mut r = r;
             let r = r.next().unwrap();
             for pair in r.into_inner() {
-                let v = parse_item(pair);
+                let v = parse_item(pair)?;
                 chain = Some(if let Some(c) = chain {
                     Box::new(ChainFilter {
                         first: c,
@@ -1240,7 +1223,7 @@ fn apply_filter_cached(
     forward_maps: &mut filter_cache::FilterCache,
     backward_maps: &mut filter_cache::FilterCache,
 ) -> super::JoshResult<git2::Oid> {
-    if filter.filter_spec() == ":empty" {
+    if filter.filter_spec() == "" {
         return Ok(git2::Oid::zero());
     }
 
