@@ -4,7 +4,6 @@ use super::filter_cache;
 use super::filter_cache::FilterCache;
 use super::scratch;
 use pest::Parser;
-use std::collections::HashMap;
 use std::path::Path;
 
 fn select_parent_commits<'a>(
@@ -73,7 +72,6 @@ pub trait Filter {
         commit: &git2::Commit,
         forward_maps: &mut FilterCache,
         backward_maps: &mut FilterCache,
-        _meta: &mut HashMap<String, String>,
     ) -> super::JoshResult<git2::Oid> {
         if forward_maps.has(&repo, &self.filter_spec(), commit.id()) {
             return Ok(forward_maps.get(&self.filter_spec(), commit.id()));
@@ -119,9 +117,9 @@ pub trait Filter {
         )))
     }
 
-    fn prefixes(&self) -> HashMap<String, String> {
-        HashMap::new()
-    }
+    /* fn prefixes(&self) -> HashMap<String, String> { */
+    /*     HashMap::new() */
+    /* } */
 
     fn filter_spec(&self) -> String;
 }
@@ -337,7 +335,6 @@ impl Filter for FoldFilter {
         commit: &git2::Commit,
         forward_maps: &mut FilterCache,
         backward_maps: &mut FilterCache,
-        _meta: &mut HashMap<String, String>,
     ) -> super::JoshResult<git2::Oid> {
         if forward_maps.has(&repo, &self.filter_spec(), commit.id()) {
             return Ok(forward_maps.get(&self.filter_spec(), commit.id()));
@@ -395,6 +392,16 @@ impl Filter for EmptyFilter {
         self
     }
 
+    fn apply_to_commit(
+        &self,
+        _repo: &git2::Repository,
+        _commit: &git2::Commit,
+        _forward_maps: &mut FilterCache,
+        _backward_maps: &mut FilterCache,
+    ) -> super::JoshResult<git2::Oid> {
+        return Ok(git2::Oid::zero());
+    }
+
     fn apply_to_tree<'a>(
         &self,
         repo: &'a git2::Repository,
@@ -432,7 +439,6 @@ impl Filter for CutoffFilter {
         commit: &git2::Commit,
         _forward_maps: &mut FilterCache,
         _backward_maps: &mut FilterCache,
-        _meta: &mut HashMap<String, String>,
     ) -> super::JoshResult<git2::Oid> {
         return scratch::rewrite(&repo, &commit, &vec![], &commit.tree()?);
     }
@@ -465,14 +471,12 @@ impl Filter for ChainFilter {
         commit: &git2::Commit,
         forward_maps: &mut FilterCache,
         backward_maps: &mut FilterCache,
-        _meta: &mut HashMap<String, String>,
     ) -> super::JoshResult<git2::Oid> {
         let r = self.first.apply_to_commit(
             repo,
             commit,
             forward_maps,
             backward_maps,
-            _meta,
         )?;
 
         let commit = ok_or!(repo.find_commit(r), {
@@ -483,7 +487,6 @@ impl Filter for ChainFilter {
             &commit,
             forward_maps,
             backward_maps,
-            _meta,
         );
     }
 
@@ -765,19 +768,14 @@ impl Filter for InfoFileFilter {
 struct CombineFilter {
     base: Box<dyn Filter>,
     others: Vec<Box<dyn Filter>>,
-    prefixes: Vec<std::path::PathBuf>,
+    cache: std::cell::RefCell<
+        std::collections::HashMap<(git2::Oid, git2::Oid), git2::Oid>,
+    >,
 }
 
 impl Filter for CombineFilter {
     fn get(&self) -> &dyn Filter {
         self
-    }
-    fn prefixes(&self) -> HashMap<String, String> {
-        let mut p = HashMap::new();
-        for (other, prefix) in self.others.iter().zip(self.prefixes.iter()) {
-            p.insert(prefix.to_str().unwrap().to_owned(), other.filter_spec());
-        }
-        p
     }
 
     fn apply_to_tree<'a>(
@@ -787,19 +785,18 @@ impl Filter for CombineFilter {
     ) -> super::JoshResult<git2::Tree<'a>> {
         let mut base = self.base.apply_to_tree(&repo, tree.clone())?;
 
-        for (other, _prefix) in self.others.iter().zip(self.prefixes.iter()) {
-            let _pf = build_chain(
-                parse(&other.filter_spec())?,
-                Box::new(PrefixFilter {
-                    prefix: _prefix.clone(),
-                }),
-            );
+        for other in self.others.iter() {
+            let t1 = base.id();
+            let t2 = other.apply_to_tree(&repo, tree.clone())?.id();
 
-            base = repo.find_tree(merged_tree(
-                &repo,
-                base.id(),
-                _pf.apply_to_tree(&repo, tree.clone())?.id(),
-            )?)?;
+            if let Some(cached) = self.cache.borrow().get(&(t1, t2)) {
+                base = repo.find_tree(*cached)?;
+                continue;
+            }
+
+            base = repo.find_tree(merged_tree(&repo, t1, t2)?)?;
+
+            self.cache.borrow_mut().insert((t1, t2), base.id());
         }
 
         return Ok(base);
@@ -814,21 +811,14 @@ impl Filter for CombineFilter {
         let mut ws_tree = tree.clone();
         let mut result = parent_tree.clone();
 
-        for (other, _prefix) in self.others.iter().zip(self.prefixes.iter()) {
-            let _pf = build_chain(
-                parse(&other.filter_spec())?,
-                Box::new(PrefixFilter {
-                    prefix: _prefix.clone(),
-                }),
-            );
-
-            let agains_empty =
-                _pf.unapply(&repo, ws_tree.clone(), empty_tree(&repo))?;
-            if empty_tree_id() == agains_empty.id() {
+        for other in self.others.iter() {
+            let from_empty =
+                other.unapply(&repo, ws_tree.clone(), empty_tree(&repo))?;
+            if empty_tree_id() == from_empty.id() {
                 continue;
             }
-            result = _pf.unapply(&repo, ws_tree.clone(), result)?;
-            let reapply = _pf.apply_to_tree(&repo, agains_empty.clone())?;
+            result = other.unapply(&repo, ws_tree.clone(), result)?;
+            let reapply = other.apply_to_tree(&repo, from_empty.clone())?;
             ws_tree = striped_tree(
                 &repo,
                 "",
@@ -845,15 +835,10 @@ impl Filter for CombineFilter {
     }
 
     fn filter_spec(&self) -> String {
-        let mut s = format!("/ = {}", &self.base.filter_spec());
+        let mut s = format!("{}", &self.base.filter_spec());
 
-        for (other, prefix) in self.others.iter().zip(self.prefixes.iter()) {
-            s = format!(
-                "{}\n{} = {}",
-                &s,
-                prefix.to_str().unwrap(),
-                other.filter_spec()
-            );
+        for other in self.others.iter() {
+            s = format!("{}\n{}", &s, other.filter_spec());
         }
         return s;
     }
@@ -905,12 +890,8 @@ impl WorkspaceFilter {
             build_combine_filter("", SubdirFilter::new(&self.ws_path))?
         };
 
-        for (other, _prefix) in cw.others.iter().zip(cw.prefixes.iter()) {
-            in_this.push(format!(
-                "{} = {}",
-                _prefix.to_str().ok_or(super::josh_error("_prefix.to_str"))?,
-                other.filter_spec()
-            ));
+        for other in cw.others.iter() {
+            in_this.push(format!("{}", other.filter_spec()));
         }
 
         let mut in_parents = std::collections::HashSet::new();
@@ -940,23 +921,15 @@ impl WorkspaceFilter {
                 build_combine_filter("", SubdirFilter::new(&self.ws_path))?
             };
 
-            for (other, _prefix) in pcw.others.iter().zip(pcw.prefixes.iter()) {
-                in_parents.insert(format!(
-                    "{} = {}",
-                    _prefix
-                        .to_str()
-                        .ok_or(super::josh_error("prefix.to_str"))?,
-                    other.filter_spec()
-                ));
+            for other in pcw.others.iter() {
+                in_parents.insert(format!("{}", other.filter_spec()));
             }
         }
         let mut s = String::new();
         in_this.retain(|x| !in_parents.contains(x));
         for x in in_this {
-            s = format!("{}{}\n", s, x);
+            s = format!("{}\n{}", s, x);
         }
-
-        /* println!("\n pcw: \n{}", s); */
 
         let pcw: Box<dyn Filter> =
             build_combine_filter(&s, Box::new(EmptyFilter))?;
@@ -970,7 +943,6 @@ impl WorkspaceFilter {
                     &parent,
                     forward_maps,
                     backward_maps,
-                    &mut HashMap::new(),
                 )?;
                 if p != git2::Oid::zero() {
                     filtered_parent_ids.push(p);
@@ -993,7 +965,6 @@ impl Filter for WorkspaceFilter {
         commit: &git2::Commit,
         forward_maps: &mut FilterCache,
         backward_maps: &mut FilterCache,
-        _meta: &mut HashMap<String, String>,
     ) -> super::JoshResult<git2::Oid> {
         if forward_maps.has(repo, &self.filter_spec(), commit.id()) {
             return Ok(forward_maps.get(&self.filter_spec(), commit.id()));
@@ -1130,19 +1101,18 @@ fn parse_file_entry(
                 .map(|x| x.as_str().to_owned())
                 .unwrap_or(format!(":/{}", path));
             let filter = parse(&filter)?;
-            /* let filter = build_chain(filter, */ 
-            /*     Box::new(PrefixFilter { */
-            /*         prefix: Path::new(path).to_owned(), */
-            /*     })); */
-            combine_filter.prefixes.push(Path::new(path).to_owned());
+            let filter = build_chain(
+                filter,
+                Box::new(PrefixFilter {
+                    prefix: Path::new(path).to_owned(),
+                }),
+            );
             combine_filter.others.push(filter);
             Ok(())
         }
         Rule::filter_spec => {
-            let mut inner = pair.into_inner();
-            let filter = inner.next().unwrap().as_str();
+            let filter = pair.as_str();
             let filter = parse(&filter)?;
-            combine_filter.prefixes.push(Path::new("").to_owned());
             combine_filter.others.push(filter);
             Ok(())
         }
@@ -1161,7 +1131,7 @@ fn build_combine_filter(
     let mut combine_filter = Box::new(CombineFilter {
         base: base,
         others: vec![],
-        prefixes: vec![],
+        cache: std::cell::RefCell::new(std::collections::HashMap::new()),
     });
 
     if let Ok(mut r) = MyParser::parse(Rule::workspace_file, filter_spec) {
@@ -1275,6 +1245,10 @@ fn apply_filter_cached(
     forward_maps: &mut filter_cache::FilterCache,
     backward_maps: &mut filter_cache::FilterCache,
 ) -> super::JoshResult<git2::Oid> {
+    if filter.filter_spec() == ":empty" {
+        return Ok(git2::Oid::zero());
+    }
+
     if forward_maps.has(repo, &filter.filter_spec(), newrev) {
         return Ok(forward_maps.get(&filter.filter_spec(), newrev));
     }
@@ -1300,7 +1274,6 @@ fn apply_filter_cached(
                 &original_commit,
                 forward_maps,
                 backward_maps,
-                &mut HashMap::new(),
             ),
             {
                 tracing::error!("cannot apply_to_commit");

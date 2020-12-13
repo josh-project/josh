@@ -91,21 +91,20 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
 
         let mut filterobj = josh::filters::parse(&filter_spec)?;
 
-        let pres = filterobj.prefixes();
-
-        if args.is_present("infofile") {
-            for (p, v) in pres.iter() {
-                filterobj = josh::build_chain(
-                    filterobj,
-                    josh::filters::parse(&format!(
-                        ":INFO={},commit=#sha1,tree=#tree,src={},filter={}",
-                        p,
-                        &src,
-                        v.replace(":", "<colon>").replace(",", "<comma>")
-                    ))?,
-                );
-            }
-        }
+        /* if args.is_present("infofile") { */
+        /*     let pres = filterobj.prefixes(); */
+        /*     for (p, v) in pres.iter() { */
+        /*         filterobj = josh::build_chain( */
+        /*             filterobj, */
+        /*             josh::filters::parse(&format!( */
+        /*                 ":INFO={},commit=#sha1,tree=#tree,src={},filter={}", */
+        /*                 p, */
+        /*                 &src, */
+        /*                 v.replace(":", "<colon>").replace(",", "<comma>") */
+        /*             ))?, */
+        /*         ); */
+        /*     } */
+        /* } */
 
         let reverse = args.is_present("reverse");
         let check_permissions = args.is_present("check-permission");

@@ -5,7 +5,6 @@ use super::empty_tree;
 use super::filter_cache;
 use super::filters;
 use super::UnapplyFilter;
-use std::collections::HashMap;
 use std::collections::HashSet;
 
 fn all_equal(a: git2::Parents, b: &[&git2::Commit]) -> bool {
@@ -183,7 +182,6 @@ fn transform_commit(
             &original_commit,
             forward_maps,
             backward_maps,
-            &mut HashMap::new(),
         )?;
         forward_maps.set(
             &filterobj.filter_spec(),
