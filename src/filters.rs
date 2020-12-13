@@ -174,8 +174,7 @@ fn striped_tree<'a>(
     repo: &'a git2::Repository,
     root: &str,
     input: git2::Oid,
-    pattern: &glob::Pattern,
-    invert: bool,
+    pred: &dyn Fn(&std::path::Path) -> bool,
     dirs: bool,
     cache: &mut std::collections::HashMap<(git2::Oid, String), git2::Oid>,
 ) -> super::JoshResult<git2::Tree<'a>> {
@@ -192,15 +191,7 @@ fn striped_tree<'a>(
                 entry.name().ok_or(super::josh_error("INVALID_FILENAME"))?;
             let path = std::path::PathBuf::from(root).join(name);
 
-            if pattern.matches_path_with(
-                &path,
-                glob::MatchOptions {
-                    case_sensitive: true,
-                    require_literal_separator: true,
-                    require_literal_leading_dot: true,
-                },
-            ) == !invert
-            {
+            if pred(&path) {
                 result = replace_child(
                     &repo,
                     &Path::new(
@@ -222,8 +213,7 @@ fn striped_tree<'a>(
                     entry.name().ok_or(super::josh_error("no name"))?
                 ),
                 entry.id(),
-                &pattern,
-                invert,
+                &pred,
                 dirs,
                 cache,
             )?;
@@ -264,12 +254,17 @@ impl Filter for DirsFilter {
         repo: &'a git2::Repository,
         tree: git2::Tree<'a>,
     ) -> super::JoshResult<git2::Tree<'a>> {
+        let pattern = glob::Pattern::new("**/workspace.josh")?;
+        let options = glob::MatchOptions {
+            case_sensitive: true,
+            require_literal_separator: true,
+            require_literal_leading_dot: true,
+        };
         striped_tree(
             &repo,
             "",
             tree.id(),
-            &glob::Pattern::new("**/workspace.josh")?,
-            false,
+            &|path| pattern.matches_path_with(path, options),
             true,
             &mut self.cache.borrow_mut(),
         )
@@ -662,12 +657,18 @@ impl Filter for GlobFilter {
         repo: &'a git2::Repository,
         tree: git2::Tree<'a>,
     ) -> super::JoshResult<git2::Tree<'a>> {
+        let options = glob::MatchOptions {
+            case_sensitive: true,
+            require_literal_separator: true,
+            require_literal_leading_dot: true,
+        };
         striped_tree(
             &repo,
             "",
             tree.id(),
-            &self.pattern,
-            self.invert,
+            &|path| {
+                self.invert != self.pattern.matches_path_with(&path, options)
+            },
             false,
             &mut self.cache.borrow_mut(),
         )
@@ -679,12 +680,18 @@ impl Filter for GlobFilter {
         tree: git2::Tree<'a>,
         parent_tree: git2::Tree,
     ) -> super::JoshResult<git2::Tree<'a>> {
+        let options = glob::MatchOptions {
+            case_sensitive: true,
+            require_literal_separator: true,
+            require_literal_leading_dot: true,
+        };
         let stripped = striped_tree(
             &repo,
             "",
             tree.id(),
-            &self.pattern,
-            self.invert,
+            &|path| {
+                self.invert != self.pattern.matches_path_with(&path, options)
+            },
             false,
             &mut self.cache.borrow_mut(),
         )?;
