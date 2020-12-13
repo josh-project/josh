@@ -766,7 +766,6 @@ impl Filter for InfoFileFilter {
 }
 
 struct CombineFilter {
-    base: Box<dyn Filter>,
     others: Vec<Box<dyn Filter>>,
     cache: std::cell::RefCell<
         std::collections::HashMap<(git2::Oid, git2::Oid), git2::Oid>,
@@ -783,23 +782,23 @@ impl Filter for CombineFilter {
         repo: &'a git2::Repository,
         tree: git2::Tree<'a>,
     ) -> super::JoshResult<git2::Tree<'a>> {
-        let mut base = self.base.apply_to_tree(&repo, tree.clone())?;
+        let mut result = empty_tree(&repo);
 
         for other in self.others.iter() {
-            let t1 = base.id();
+            let t1 = result.id();
             let t2 = other.apply_to_tree(&repo, tree.clone())?.id();
 
             if let Some(cached) = self.cache.borrow().get(&(t1, t2)) {
-                base = repo.find_tree(*cached)?;
+                result = repo.find_tree(*cached)?;
                 continue;
             }
 
-            base = repo.find_tree(merged_tree(&repo, t1, t2)?)?;
+            result = repo.find_tree(merged_tree(&repo, t1, t2)?)?;
 
-            self.cache.borrow_mut().insert((t1, t2), base.id());
+            self.cache.borrow_mut().insert((t1, t2), result.id());
         }
 
-        return Ok(base);
+        return Ok(result);
     }
 
     fn unapply<'a>(
@@ -811,7 +810,7 @@ impl Filter for CombineFilter {
         let mut ws_tree = tree.clone();
         let mut result = parent_tree.clone();
 
-        for other in self.others.iter() {
+        for other in self.others.iter().rev() {
             let from_empty =
                 other.unapply(&repo, ws_tree.clone(), empty_tree(&repo))?;
             if empty_tree_id() == from_empty.id() {
@@ -829,14 +828,11 @@ impl Filter for CombineFilter {
             )?;
         }
 
-        result = self.base.unapply(repo, ws_tree, result)?;
-
         return Ok(result);
     }
 
     fn filter_spec(&self) -> String {
-        let mut s = format!("{}", &self.base.filter_spec());
-
+        let mut s = String::new();
         for other in self.others.iter() {
             s = format!("{}\n{}", &s, other.filter_spec());
         }
@@ -856,18 +852,18 @@ fn combine_filter_from_ws(
     let base = SubdirFilter::new(&ws_path);
     let wsp = ws_path.join("workspace.josh");
     let ws_config_oid = ok_or!(tree.get_path(&wsp).map(|x| x.id()), {
-        return build_combine_filter("", base);
+        return build_combine_filter("", Some(base));
     });
 
     let ws_blob = ok_or!(repo.find_blob(ws_config_oid), {
-        return build_combine_filter("", base);
+        return build_combine_filter("", Some(base));
     });
 
     let ws_content = ok_or!(std::str::from_utf8(ws_blob.content()), {
-        return build_combine_filter("", base);
+        return build_combine_filter("", Some(base));
     });
 
-    return build_combine_filter(ws_content, base);
+    return build_combine_filter(ws_content, Some(base));
 }
 
 impl WorkspaceFilter {
@@ -887,7 +883,7 @@ impl WorkspaceFilter {
         {
             cw
         } else {
-            build_combine_filter("", SubdirFilter::new(&self.ws_path))?
+            build_combine_filter("", Some(SubdirFilter::new(&self.ws_path)))?
         };
 
         for other in cw.others.iter() {
@@ -918,7 +914,7 @@ impl WorkspaceFilter {
             ) {
                 pcw
             } else {
-                build_combine_filter("", SubdirFilter::new(&self.ws_path))?
+                build_combine_filter("", Some(SubdirFilter::new(&self.ws_path)))?
             };
 
             for other in pcw.others.iter() {
@@ -932,7 +928,7 @@ impl WorkspaceFilter {
         }
 
         let pcw: Box<dyn Filter> =
-            build_combine_filter(&s, Box::new(EmptyFilter))?;
+            build_combine_filter(&s, None)?;
 
         for parent in parents {
             // TODO: maybe consider doing this for the parents individually
@@ -994,7 +990,7 @@ impl Filter for WorkspaceFilter {
         if let Ok(cw) = combine_filter_from_ws(repo, &tree, &self.ws_path) {
             cw
         } else {
-            build_combine_filter("", SubdirFilter::new(&self.ws_path))?
+            build_combine_filter("", Some(SubdirFilter::new(&self.ws_path)))?
         }
         .apply_to_tree(repo, tree)
     }
@@ -1007,7 +1003,7 @@ impl Filter for WorkspaceFilter {
     ) -> super::JoshResult<git2::Tree<'a>> {
         let mut cw =
             combine_filter_from_ws(repo, &tree, &std::path::PathBuf::from(""))?;
-        cw.base = SubdirFilter::new(&self.ws_path);
+        cw.others[0] = SubdirFilter::new(&self.ws_path);
         return cw.unapply(repo, tree, parent_tree);
     }
 
@@ -1126,11 +1122,10 @@ fn parse_file_entry(
 
 fn build_combine_filter(
     filter_spec: &str,
-    base: Box<dyn Filter>,
+    base: Option<Box<dyn Filter>>,
 ) -> super::JoshResult<Box<CombineFilter>> {
     let mut combine_filter = Box::new(CombineFilter {
-        base: base,
-        others: vec![],
+        others: if let Some(base) = base {vec![base]} else {vec![]},
         cache: std::cell::RefCell::new(std::collections::HashMap::new()),
     });
 
@@ -1182,7 +1177,7 @@ pub fn parse(filter_spec: &str) -> super::JoshResult<Box<dyn Filter>> {
         };
     }
 
-    return Ok(build_combine_filter(filter_spec, Box::new(EmptyFilter))?);
+    return Ok(build_combine_filter(filter_spec, None)?);
 }
 
 fn get_subtree(tree: &git2::Tree, path: &Path) -> Option<git2::Oid> {
