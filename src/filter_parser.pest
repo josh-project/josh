@@ -3,7 +3,7 @@ CMD_START = _{(":"|"!")}
 CMD_END = _{("="|"/")}
 
 
-filter_spec = { (filter | filter_noarg)* }
+filter_spec = { (filter | filter_noarg)+ }
 
 filter = { CMD_START ~ cmd ~ CMD_END ~ (argument ~ ("," ~ argument)*)? }
 
@@ -13,9 +13,9 @@ argument = { (!(CMD_START | NEWLINE | ",") ~ ANY)+ }
 
 cmd = { (!(CMD_END | NEWLINE | CMD_START) ~ ANY)* }
 
-workspace_file = { NEWLINE* ~ file_entry? ~ (NEWLINE+ ~ file_entry)* ~ NEWLINE* ~ EOI }
+workspace_file = { NEWLINE* ~ (filter_spec|file_entry)? ~ (NEWLINE+ ~ (filter_spec|file_entry))* ~ NEWLINE* ~ EOI }
 
 file_entry = { dst_path ~ ("=" ~ filter_spec)? }
 
 dst_path = @{ path ~ ("/" ~ path)* }
-path = @{ (!("=" | "/" | WHITESPACE | NEWLINE) ~ ANY)+ }
+path = @{ (!("=" | "/" | CMD_START | WHITESPACE | NEWLINE) ~ ANY)+ }

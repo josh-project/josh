@@ -787,12 +787,19 @@ impl Filter for CombineFilter {
     ) -> super::JoshResult<git2::Tree<'a>> {
         let mut base = self.base.apply_to_tree(&repo, tree.clone())?;
 
-        for (other, prefix) in self.others.iter().zip(self.prefixes.iter()) {
-            let otree = other.apply_to_tree(&repo, tree.clone())?;
-            if otree.id() == empty_tree_id() {
-                continue;
-            }
-            base = replace_subtree(&repo, &prefix, otree.id(), &base)?;
+        for (other, _prefix) in self.others.iter().zip(self.prefixes.iter()) {
+            let _pf = build_chain(
+                parse(&other.filter_spec())?,
+                Box::new(PrefixFilter {
+                    prefix: _prefix.clone(),
+                }),
+            );
+
+            base = repo.find_tree(merged_tree(
+                &repo,
+                base.id(),
+                _pf.apply_to_tree(&repo, tree.clone())?.id(),
+            )?)?;
         }
 
         return Ok(base);
@@ -807,16 +814,29 @@ impl Filter for CombineFilter {
         let mut ws_tree = tree.clone();
         let mut result = parent_tree.clone();
 
-        for (other, prefix) in self.others.iter().zip(self.prefixes.iter()) {
-            let r = ok_or!(ws_tree.get_path(&prefix).map(|x| x.id()), {
-                empty_tree_id()
-            });
-            ws_tree = replace_subtree(repo, prefix, empty_tree_id(), &ws_tree)?;
-            if r == empty_tree_id() {
+        for (other, _prefix) in self.others.iter().zip(self.prefixes.iter()) {
+            let _pf = build_chain(
+                parse(&other.filter_spec())?,
+                Box::new(PrefixFilter {
+                    prefix: _prefix.clone(),
+                }),
+            );
+
+            let agains_empty =
+                _pf.unapply(&repo, ws_tree.clone(), empty_tree(&repo))?;
+            if empty_tree_id() == agains_empty.id() {
                 continue;
             }
-            let r = repo.find_tree(r)?;
-            result = other.unapply(&repo, r, result)?;
+            result = _pf.unapply(&repo, ws_tree.clone(), result)?;
+            let reapply = _pf.apply_to_tree(&repo, agains_empty.clone())?;
+            ws_tree = striped_tree(
+                &repo,
+                "",
+                ws_tree.id(),
+                &|path| !reapply.get_path(path).is_ok(),
+                false,
+                &mut std::collections::HashMap::new(),
+            )?;
         }
 
         result = self.base.unapply(repo, ws_tree, result)?;
@@ -875,7 +895,7 @@ impl WorkspaceFilter {
     ) -> super::JoshResult<(git2::Tree<'a>, Vec<git2::Oid>)> {
         let (full_tree, parents) = tree_and_parents;
 
-        let mut in_this = std::collections::HashSet::new();
+        let mut in_this = vec![];
 
         let cw = if let Ok(cw) =
             combine_filter_from_ws(repo, &full_tree, &self.ws_path)
@@ -885,13 +905,15 @@ impl WorkspaceFilter {
             build_combine_filter("", SubdirFilter::new(&self.ws_path))?
         };
 
-        for (other, prefix) in cw.others.iter().zip(cw.prefixes.iter()) {
-            in_this.insert(format!(
+        for (other, _prefix) in cw.others.iter().zip(cw.prefixes.iter()) {
+            in_this.push(format!(
                 "{} = {}",
-                prefix.to_str().ok_or(super::josh_error("prefix.to_str"))?,
+                _prefix.to_str().ok_or(super::josh_error("_prefix.to_str"))?,
                 other.filter_spec()
             ));
         }
+
+        let mut in_parents = std::collections::HashSet::new();
 
         let mut filtered_parent_ids = vec![];
         for parent in parents.iter() {
@@ -918,10 +940,10 @@ impl WorkspaceFilter {
                 build_combine_filter("", SubdirFilter::new(&self.ws_path))?
             };
 
-            for (other, prefix) in pcw.others.iter().zip(pcw.prefixes.iter()) {
-                in_this.remove(&format!(
+            for (other, _prefix) in pcw.others.iter().zip(pcw.prefixes.iter()) {
+                in_parents.insert(format!(
                     "{} = {}",
-                    prefix
+                    _prefix
                         .to_str()
                         .ok_or(super::josh_error("prefix.to_str"))?,
                     other.filter_spec()
@@ -929,14 +951,19 @@ impl WorkspaceFilter {
             }
         }
         let mut s = String::new();
+        in_this.retain(|x| !in_parents.contains(x));
         for x in in_this {
             s = format!("{}{}\n", s, x);
         }
+
+        /* println!("\n pcw: \n{}", s); */
 
         let pcw: Box<dyn Filter> =
             build_combine_filter(&s, Box::new(EmptyFilter))?;
 
         for parent in parents {
+            // TODO: maybe consider doing this for the parents individually
+            // -> move this into the loop above
             if let Ok(parent) = repo.find_commit(parent) {
                 let p = pcw.apply_to_commit(
                     &repo,
@@ -1103,7 +1130,19 @@ fn parse_file_entry(
                 .map(|x| x.as_str().to_owned())
                 .unwrap_or(format!(":/{}", path));
             let filter = parse(&filter)?;
+            /* let filter = build_chain(filter, */ 
+            /*     Box::new(PrefixFilter { */
+            /*         prefix: Path::new(path).to_owned(), */
+            /*     })); */
             combine_filter.prefixes.push(Path::new(path).to_owned());
+            combine_filter.others.push(filter);
+            Ok(())
+        }
+        Rule::filter_spec => {
+            let mut inner = pair.into_inner();
+            let filter = inner.next().unwrap().as_str();
+            let filter = parse(&filter)?;
+            combine_filter.prefixes.push(Path::new("").to_owned());
             combine_filter.others.push(filter);
             Ok(())
         }
