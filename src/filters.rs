@@ -26,12 +26,32 @@ fn select_parent_commits<'a>(
     };
 }
 
+fn is_empty_root(repo: &git2::Repository, tree: &git2::Tree) -> bool {
+    if tree.id() == empty_tree_id() {
+        return true;
+    }
+
+    let mut all_empty = true;
+
+    for e in tree.iter() {
+        if let Ok(Ok(t)) = e.to_object(&repo).map(|x| x.into_tree()) {
+            all_empty = all_empty && is_empty_root(&repo, &t);
+        } else {
+            return false;
+        }
+    }
+    return all_empty;
+}
+
 fn create_filtered_commit<'a>(
     repo: &'a git2::Repository,
     original_commmit: &'a git2::Commit,
     filtered_parent_ids: Vec<git2::Oid>,
     filtered_tree: git2::Tree<'a>,
 ) -> super::JoshResult<git2::Oid> {
+    let is_initial_merge = filtered_parent_ids.len() > 1
+        && !repo.merge_base_many(&filtered_parent_ids).is_ok();
+
     let filtered_parent_commits: std::result::Result<Vec<_>, _> =
         filtered_parent_ids
             .iter()
@@ -39,7 +59,11 @@ fn create_filtered_commit<'a>(
             .map(|x| repo.find_commit(*x))
             .collect();
 
-    let filtered_parent_commits = filtered_parent_commits?;
+    let mut filtered_parent_commits = filtered_parent_commits?;
+
+    if is_initial_merge {
+        filtered_parent_commits.retain(|x| (x.tree_id() != empty_tree_id()));
+    }
 
     let selected_filtered_parent_commits: Vec<&_> = select_parent_commits(
         &original_commmit,
@@ -47,7 +71,10 @@ fn create_filtered_commit<'a>(
         filtered_parent_commits.iter().collect(),
     );
 
-    if selected_filtered_parent_commits.len() == 0 {
+    if selected_filtered_parent_commits.len() == 0
+        && !(original_commmit.parents().len() == 0
+            && is_empty_root(&repo, &original_commmit.tree()?))
+    {
         if filtered_parent_commits.len() != 0 {
             return Ok(filtered_parent_commits[0].id());
         }
@@ -754,13 +781,17 @@ impl Filter for CombineFilter {
                 &repo,
                 "",
                 applied.id(),
-                &|path, _| ! taken_applied.get_path(path).is_ok(),
+                &|path, _| !taken_applied.get_path(path).is_ok(),
                 taken_applied.id(),
-                &mut self.substract_cache.borrow_mut()
+                &mut self.substract_cache.borrow_mut(),
             )?;
 
             taken = other.unapply(&repo, applied.clone(), taken.clone())?;
-            result = repo.find_tree(merged_tree(&repo, result.id(), substracted.id())?)?;
+            result = repo.find_tree(merged_tree(
+                &repo,
+                result.id(),
+                substracted.id(),
+            )?)?;
         }
 
         return Ok(result);
@@ -797,7 +828,12 @@ impl Filter for CombineFilter {
     }
 
     fn filter_spec(&self) -> String {
-        return self.others.iter().map(|x|x.filter_spec()).collect::<Vec<_>>().join("\n");
+        return self
+            .others
+            .iter()
+            .map(|x| x.filter_spec())
+            .collect::<Vec<_>>()
+            .join("\n");
     }
 }
 
@@ -890,7 +926,9 @@ impl WorkspaceFilter {
 
         let pcw: Box<dyn Filter> = if in_this.len() == 1 {
             parse(&in_this[0])?
-        } else { build_combine_filter(&s, None)? };
+        } else {
+            build_combine_filter(&s, None)?
+        };
 
         for parent in parents {
             // TODO: maybe consider doing this for the parents individually
@@ -977,7 +1015,6 @@ impl Filter for WorkspaceFilter {
 #[derive(Parser)]
 #[grammar = "filter_parser.pest"]
 struct MyParser;
-
 
 fn make_filter(args: &[&str]) -> super::JoshResult<Box<dyn Filter>> {
     match args {
@@ -1152,7 +1189,9 @@ fn replace_child<'a>(
 
     let full_tree_id = {
         let mut builder = repo.treebuilder(Some(&full_tree))?;
-        if oid == git2::Oid::zero() || oid == empty_tree_id() {
+        if oid == git2::Oid::zero() {
+            builder.remove(child).ok();
+        } else if oid == empty_tree_id() {
             builder.remove(child).ok();
         } else {
             builder.insert(child, oid, mode).ok();
@@ -1187,10 +1226,11 @@ fn replace_subtree<'a>(
     }
 }
 
+#[tracing::instrument(skip(repo, forward_maps, backward_maps))]
 fn apply_filter_cached(
     repo: &git2::Repository,
     filter: &dyn Filter,
-    newrev: git2::Oid,
+    input: git2::Oid,
     forward_maps: &mut filter_cache::FilterCache,
     backward_maps: &mut filter_cache::FilterCache,
 ) -> super::JoshResult<git2::Oid> {
@@ -1198,16 +1238,14 @@ fn apply_filter_cached(
         return Ok(git2::Oid::zero());
     }
 
-    if forward_maps.has(repo, &filter.filter_spec(), newrev) {
-        return Ok(forward_maps.get(&filter.filter_spec(), newrev));
+    if forward_maps.has(repo, &filter.filter_spec(), input) {
+        return Ok(forward_maps.get(&filter.filter_spec(), input));
     }
-
-    /* println!("apply_filter_cached {:?}", filter.filter_spec()); */
 
     let walk = {
         let mut walk = repo.revwalk()?;
         walk.set_sorting(git2::Sort::REVERSE | git2::Sort::TOPOLOGICAL)?;
-        walk.push(newrev)?;
+        walk.push(input)?;
         walk
     };
 
@@ -1248,18 +1286,17 @@ fn apply_filter_cached(
         out_commit_count += 1;
     }
 
-    if !forward_maps.has(&repo, &filter.filter_spec(), newrev) {
-        forward_maps.set(&filter.filter_spec(), newrev, git2::Oid::zero());
+    if !forward_maps.has(&repo, &filter.filter_spec(), input) {
+        forward_maps.set(&filter.filter_spec(), input, git2::Oid::zero());
     }
-    let rewritten = forward_maps.get(&filter.filter_spec(), newrev);
+    let rewritten = forward_maps.get(&filter.filter_spec(), input);
     tracing::event!(
         tracing::Level::TRACE,
         ?in_commit_count,
         ?out_commit_count,
         ?empty_tree_count,
-        original = ?newrev.to_string(),
-        rewritten = ?rewritten.to_string(),
+        original = ?input,
+        rewritten = ?rewritten,
     );
-    /* println!(" done: {:?} {:?} ", rewritten, in_commit_count); */
     return Ok(rewritten);
 }
