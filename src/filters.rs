@@ -728,12 +728,6 @@ impl Filter for GlobFilter {
 
 struct CombineFilter {
     others: Vec<Box<dyn Filter>>,
-    cache: std::cell::RefCell<
-        std::collections::HashMap<
-            (String, git2::Oid, git2::Oid),
-            (git2::Oid, git2::Oid),
-        >,
-    >,
     substract_cache: std::cell::RefCell<
         std::collections::HashMap<(git2::Oid, git2::Oid), git2::Oid>,
     >,
@@ -750,40 +744,23 @@ impl Filter for CombineFilter {
         tree: git2::Tree<'a>,
     ) -> super::JoshResult<git2::Tree<'a>> {
         let mut result = empty_tree(&repo);
-        let mut tree = tree;
+        let mut taken = empty_tree(&repo);
 
         for other in self.others.iter() {
-            let rid = result.id();
-            let tid = tree.id();
+            let applied = other.apply_to_tree(&repo, tree.clone())?;
+            let taken_applied = other.apply_to_tree(&repo, taken.clone())?;
 
-            if let Some((r, t)) =
-                self.cache.borrow().get(&(other.filter_spec(), rid, tid))
-            {
-                result = repo.find_tree(*r)?;
-                tree = repo.find_tree(*t)?;
-                continue;
-            }
-
-            let t2 = other.apply_to_tree(&repo, tree.clone())?;
-
-            let _unapplied =
-                other.unapply(&repo, t2.clone(), empty_tree(&repo))?;
-
-            tree = substract_tree(
+            let substracted = substract_tree(
                 &repo,
                 "",
-                tree.id(),
-                &|path, _| !_unapplied.get_path(path).is_ok(),
-                _unapplied.id(),
+                applied.id(),
+                &|path, _| ! taken_applied.get_path(path).is_ok(),
+                taken_applied.id(),
                 &mut self.substract_cache.borrow_mut()
             )?;
 
-            result = repo.find_tree(merged_tree(&repo, rid, t2.id())?)?;
-
-            self.cache.borrow_mut().insert(
-                (other.filter_spec(), rid, tid),
-                (result.id(), tree.id()),
-            );
+            taken = other.unapply(&repo, applied.clone(), taken.clone())?;
+            result = repo.find_tree(merged_tree(&repo, result.id(), substracted.id())?)?;
         }
 
         return Ok(result);
@@ -795,21 +772,21 @@ impl Filter for CombineFilter {
         tree: git2::Tree<'a>,
         parent_tree: git2::Tree<'a>,
     ) -> super::JoshResult<git2::Tree<'a>> {
-        let mut ws_tree = tree.clone();
+        let mut remaining = tree.clone();
         let mut result = parent_tree.clone();
 
         for other in self.others.iter().rev() {
             let from_empty =
-                other.unapply(&repo, ws_tree.clone(), empty_tree(&repo))?;
+                other.unapply(&repo, remaining.clone(), empty_tree(&repo))?;
             if empty_tree_id() == from_empty.id() {
                 continue;
             }
-            result = other.unapply(&repo, ws_tree.clone(), result)?;
+            result = other.unapply(&repo, remaining.clone(), result)?;
             let reapply = other.apply_to_tree(&repo, from_empty.clone())?;
-            ws_tree = substract_tree(
+            remaining = substract_tree(
                 &repo,
                 "",
-                ws_tree.id(),
+                remaining.id(),
                 &|path, _| !reapply.get_path(path).is_ok(),
                 reapply.id(),
                 &mut std::collections::HashMap::new(),
@@ -820,11 +797,7 @@ impl Filter for CombineFilter {
     }
 
     fn filter_spec(&self) -> String {
-        let mut s = String::new();
-        for other in self.others.iter() {
-            s = format!("{}\n{}", &s, other.filter_spec());
-        }
-        return s;
+        return self.others.iter().map(|x|x.filter_spec()).collect::<Vec<_>>().join("\n");
     }
 }
 
@@ -912,13 +885,12 @@ impl WorkspaceFilter {
                 in_parents.insert(format!("{}", other.filter_spec()));
             }
         }
-        let mut s = String::new();
         in_this.retain(|x| !in_parents.contains(x));
-        for x in in_this {
-            s = format!("{}\n{}", s, x);
-        }
+        let s = in_this.join("\n");
 
-        let pcw: Box<dyn Filter> = build_combine_filter(&s, None)?;
+        let pcw: Box<dyn Filter> = if in_this.len() == 1 {
+            parse(&in_this[0])?
+        } else { build_combine_filter(&s, None)? };
 
         for parent in parents {
             // TODO: maybe consider doing this for the parents individually
@@ -1106,7 +1078,6 @@ fn build_combine_filter(
         } else {
             vec![]
         },
-        cache: std::cell::RefCell::new(std::collections::HashMap::new()),
         substract_cache: std::cell::RefCell::new(
             std::collections::HashMap::new(),
         ),
@@ -1231,6 +1202,8 @@ fn apply_filter_cached(
         return Ok(forward_maps.get(&filter.filter_spec(), newrev));
     }
 
+    /* println!("apply_filter_cached {:?}", filter.filter_spec()); */
+
     let walk = {
         let mut walk = repo.revwalk()?;
         walk.set_sorting(git2::Sort::REVERSE | git2::Sort::TOPOLOGICAL)?;
@@ -1287,5 +1260,6 @@ fn apply_filter_cached(
         original = ?newrev.to_string(),
         rewritten = ?rewritten.to_string(),
     );
+    /* println!(" done: {:?} {:?} ", rewritten, in_commit_count); */
     return Ok(rewritten);
 }
