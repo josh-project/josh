@@ -130,7 +130,7 @@ impl FilterCache {
         return false;
     }
 
-    pub fn new(name: String) -> FilterCache {
+    fn new(name: String) -> FilterCache {
         return FilterCache {
             name: name,
             maps: HashMap::new(),
@@ -139,7 +139,7 @@ impl FilterCache {
         };
     }
 
-    pub fn merge(&mut self, other: &FilterCache) {
+    fn merge(&mut self, other: &FilterCache) {
         for (filter_spec, om) in other.maps.iter() {
             let m = self
                 .maps
@@ -198,7 +198,7 @@ pub fn persist(
     return Ok(());
 }
 
-pub fn try_merge_both(fm: &FilterCache, bm: &FilterCache) {
+fn try_merge_both(fm: &FilterCache, bm: &FilterCache) {
     tracing::span!(tracing::Level::TRACE, "write_lock backward_maps").in_scope(
         || {
             backward()
@@ -230,4 +230,41 @@ pub fn new_downstream(u: &Arc<RwLock<FilterCache>>) -> FilterCache {
         upsteam: Some(u.clone()),
         version: FORMAT_VERSION,
     };
+}
+
+pub struct Transaction {
+    fm: FilterCache,
+    bm: FilterCache,
+    spec: String,
+}
+
+impl Transaction {
+    pub fn new(spec: String) -> Transaction {
+        Transaction {
+            fm: new_downstream(&super::filter_cache::forward()),
+            bm: new_downstream(&super::filter_cache::backward()),
+            spec: spec,
+        }
+    }
+
+    pub fn insert(&mut self, from: git2::Oid, to: git2::Oid) {
+        self.fm.set(&self.spec, from, to);
+        if to != git2::Oid::zero() {
+            self.bm.set(&self.spec, to, from);
+        }
+    }
+
+    pub fn has(&self, repo: &git2::Repository, from: git2::Oid) -> bool {
+        self.fm.has(&repo, &self.spec, from)
+    }
+
+    pub fn get(&self, from: git2::Oid) -> git2::Oid {
+        self.fm.get(&self.spec, from)
+    }
+}
+
+impl Drop for Transaction {
+    fn drop(&mut self) {
+        try_merge_both(&self.fm, &self.bm);
+    }
 }

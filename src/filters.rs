@@ -1193,15 +1193,12 @@ fn apply_filter_cached(
         return Ok(git2::Oid::zero());
     }
 
-    let mut forward_maps =
-        super::filter_cache::new_downstream(&super::filter_cache::forward());
+    let mut transaction =
+        super::filter_cache::Transaction::new(filter.filter_spec());
 
-    if forward_maps.has(repo, &filter.filter_spec(), input) {
-        return Ok(forward_maps.get(&filter.filter_spec(), input));
+    if transaction.has(repo, input) {
+        return Ok(transaction.get(input));
     }
-
-    let mut backward_maps =
-        super::filter_cache::new_downstream(&super::filter_cache::backward());
 
     let walk = {
         let mut walk = repo.revwalk()?;
@@ -1227,23 +1224,14 @@ fn apply_filter_cached(
         if filtered_commit == git2::Oid::zero() {
             empty_tree_count += 1;
         }
-        forward_maps.set(
-            &filter.filter_spec(),
-            original_commit.id(),
-            filtered_commit,
-        );
-        backward_maps.set(
-            &filter.filter_spec(),
-            filtered_commit,
-            original_commit.id(),
-        );
+        transaction.insert(original_commit.id(), filtered_commit);
         out_commit_count += 1;
     }
 
-    if !forward_maps.has(&repo, &filter.filter_spec(), input) {
-        forward_maps.set(&filter.filter_spec(), input, git2::Oid::zero());
+    if !transaction.has(&repo, input) {
+        transaction.insert(input, git2::Oid::zero());
     }
-    let rewritten = forward_maps.get(&filter.filter_spec(), input);
+    let rewritten = transaction.get(input);
     tracing::event!(
         tracing::Level::TRACE,
         ?in_commit_count,
@@ -1252,6 +1240,5 @@ fn apply_filter_cached(
         original = ?input,
         rewritten = ?rewritten,
     );
-    super::filter_cache::try_merge_both(&forward_maps, &backward_maps);
     return Ok(rewritten);
 }
