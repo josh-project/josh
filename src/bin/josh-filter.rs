@@ -4,8 +4,6 @@
 #[macro_use]
 extern crate lazy_static;
 
-use std::sync::{Arc, RwLock};
-
 use std::fs::read_to_string;
 
 lazy_static! {
@@ -57,12 +55,11 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
     }
 
     let repo = git2::Repository::open_from_env()?;
-    let forward_maps = Arc::new(RwLock::new(josh::filter_cache::try_load(
-        &repo.path().join("josh_forward_maps"),
-    )));
-    let backward_maps = Arc::new(RwLock::new(josh::filter_cache::try_load(
-        &repo.path().join("josh_backward_maps"),
-    )));
+
+    *(josh::filter_cache::forward().write().unwrap()) =
+        josh::filter_cache::try_load(&repo.path().join("josh_forward_maps"));
+    *(josh::filter_cache::backward().write().unwrap()) =
+        josh::filter_cache::try_load(&repo.path().join("josh_backward_maps"));
 
     let input_ref = args.value_of("input_ref").unwrap_or("");
     let specstr = args.value_of("spec").unwrap_or("");
@@ -125,8 +122,6 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
             &repo,
             &*filterobj,
             &[(src.clone(), t.clone())],
-            &mut forward_maps.write().unwrap(),
-            &mut backward_maps.write().unwrap(),
         )?;
 
         let mut all_dirs = vec![];
@@ -178,8 +173,6 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
                     git2::Repository::open_from_env()?,
                     &update_target.to_string(),
                     &query,
-                    josh::filter_cache::new_downstream(&forward_maps),
-                    josh::filter_cache::new_downstream(&backward_maps),
                 )?
                 .unwrap_or("File not found".to_string())
             );
@@ -192,7 +185,6 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
 
             match josh::unapply_filter(
                 &repo,
-                backward_maps.clone(),
                 &*filterobj,
                 unfiltered_old,
                 old,
@@ -208,12 +200,13 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         }
     }
 
-    let bm = backward_maps.read().unwrap();
-
-    josh::filter_cache::persist(&*bm, &repo.path().join("josh_backward_maps"))
-        .ok();
     josh::filter_cache::persist(
-        &forward_maps.read().unwrap(),
+        &*josh::filter_cache::backward().read().unwrap(),
+        &repo.path().join("josh_backward_maps"),
+    )
+    .ok();
+    josh::filter_cache::persist(
+        &josh::filter_cache::forward().read().unwrap(),
         &repo.path().join("josh_forward_maps"),
     )
     .ok();
