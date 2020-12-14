@@ -8,6 +8,21 @@ pub struct JoshOid(git2::Oid);
 
 pub type OidMap = HashMap<JoshOid, JoshOid>;
 
+lazy_static! {
+    static ref FORWARD_MAPS: Arc<RwLock<FilterCache>> =
+        Arc::new(RwLock::new(FilterCache::new("forward".to_owned())));
+    static ref BACKWARD_MAPS: Arc<RwLock<FilterCache>> =
+        Arc::new(RwLock::new(FilterCache::new("backward".to_owned())));
+}
+
+pub fn forward() -> Arc<RwLock<FilterCache>> {
+    FORWARD_MAPS.clone()
+}
+
+pub fn backward() -> Arc<RwLock<FilterCache>> {
+    BACKWARD_MAPS.clone()
+}
+
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct FilterCache {
     maps: HashMap<String, OidMap>,
@@ -183,15 +198,10 @@ pub fn persist(
     return Ok(());
 }
 
-pub fn try_merge_both(
-    forward_maps: Arc<RwLock<FilterCache>>,
-    backward_maps: Arc<RwLock<FilterCache>>,
-    fm: &FilterCache,
-    bm: &FilterCache,
-) {
+pub fn try_merge_both(fm: &FilterCache, bm: &FilterCache) {
     tracing::span!(tracing::Level::TRACE, "write_lock backward_maps").in_scope(
         || {
-            backward_maps
+            backward()
                 .try_write()
                 .map(|mut bm_locked| {
                     tracing::span!(
@@ -199,7 +209,7 @@ pub fn try_merge_both(
                         "write_lock forward_maps"
                     )
                     .in_scope(|| {
-                        forward_maps
+                        forward()
                             .try_write()
                             .map(|mut fm_locked| {
                                 bm_locked.merge(&bm);

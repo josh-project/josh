@@ -45,15 +45,15 @@ pub fn rewrite(
     )?);
 }
 
-#[tracing::instrument(skip(backward_maps, repo))]
+#[tracing::instrument(skip(repo))]
 pub fn unapply_filter(
     repo: &git2::Repository,
-    backward_maps: std::sync::Arc<std::sync::RwLock<filter_cache::FilterCache>>,
     filterobj: &dyn filters::Filter,
     unfiltered_old: git2::Oid,
     old: git2::Oid,
     new: git2::Oid,
 ) -> super::JoshResult<UnapplyFilter> {
+    let backward_maps = super::filter_cache::backward();
     let walk = {
         let mut walk = repo.revwalk()?;
         walk.set_sorting(git2::Sort::REVERSE | git2::Sort::TOPOLOGICAL)?;
@@ -177,12 +177,8 @@ fn transform_commit(
     let mut updated_count = 0;
     if let Ok(reference) = repo.revparse_single(&from_refsname) {
         let original_commit = reference.peel_to_commit()?;
-        let filter_commit = filterobj.apply_to_commit(
-            &repo,
-            &original_commit,
-            forward_maps,
-            backward_maps,
-        )?;
+        let filter_commit =
+            filterobj.apply_to_commit(&repo, &original_commit)?;
         forward_maps.set(
             &filterobj.filter_spec(),
             original_commit.id(),
@@ -239,14 +235,16 @@ fn transform_commit(
     return Ok(updated_count);
 }
 
-#[tracing::instrument(skip(repo, forward_maps, backward_maps))]
+#[tracing::instrument(skip(repo))]
 pub fn apply_filter_to_refs(
     repo: &git2::Repository,
     filterobj: &dyn filters::Filter,
     refs: &[(String, String)],
-    forward_maps: &mut filter_cache::FilterCache,
-    backward_maps: &mut filter_cache::FilterCache,
 ) -> super::JoshResult<usize> {
+    let mut backward_maps =
+        super::filter_cache::new_downstream(&super::filter_cache::backward());
+    let mut forward_maps =
+        super::filter_cache::new_downstream(&super::filter_cache::forward());
     let mut updated_count = 0;
     for (k, v) in refs {
         updated_count += transform_commit(
@@ -254,9 +252,10 @@ pub fn apply_filter_to_refs(
             &*filterobj,
             &k,
             &v,
-            forward_maps,
-            backward_maps,
+            &mut forward_maps,
+            &mut backward_maps,
         )?;
     }
+    super::filter_cache::try_merge_both(&forward_maps, &backward_maps);
     return Ok(updated_count);
 }

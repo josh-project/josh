@@ -1,7 +1,5 @@
 use super::empty_tree;
 use super::empty_tree_id;
-use super::filter_cache;
-use super::filter_cache::FilterCache;
 use super::scratch;
 use pest::Parser;
 use std::path::Path;
@@ -97,9 +95,11 @@ pub trait Filter {
         &self,
         repo: &git2::Repository,
         commit: &git2::Commit,
-        forward_maps: &mut FilterCache,
-        backward_maps: &mut FilterCache,
     ) -> super::JoshResult<git2::Oid> {
+        let forward_maps = super::filter_cache::new_downstream(
+            &super::filter_cache::forward(),
+        );
+
         if forward_maps.has(&repo, &self.filter_spec(), commit.id()) {
             return Ok(forward_maps.get(&self.filter_spec(), commit.id()));
         }
@@ -107,15 +107,7 @@ pub trait Filter {
 
         let filtered_parent_ids = commit
             .parents()
-            .map(|x| {
-                apply_filter_cached(
-                    repo,
-                    self.get(),
-                    x.id(),
-                    forward_maps,
-                    backward_maps,
-                )
-            })
+            .map(|x| apply_filter_cached(repo, self.get(), x.id()))
             .collect::<super::JoshResult<_>>()?;
 
         return create_filtered_commit(
@@ -407,24 +399,17 @@ impl Filter for FoldFilter {
         &self,
         repo: &git2::Repository,
         commit: &git2::Commit,
-        forward_maps: &mut FilterCache,
-        backward_maps: &mut FilterCache,
     ) -> super::JoshResult<git2::Oid> {
+        let forward_maps = super::filter_cache::new_downstream(
+            &super::filter_cache::forward(),
+        );
         if forward_maps.has(&repo, &self.filter_spec(), commit.id()) {
             return Ok(forward_maps.get(&self.filter_spec(), commit.id()));
         }
 
         let filtered_parent_ids: Vec<git2::Oid> = commit
             .parents()
-            .map(|x| {
-                apply_filter_cached(
-                    repo,
-                    self.get(),
-                    x.id(),
-                    forward_maps,
-                    backward_maps,
-                )
-            })
+            .map(|x| apply_filter_cached(repo, self.get(), x.id()))
             .collect::<super::JoshResult<_>>()?;
 
         let mut trees = vec![];
@@ -472,8 +457,6 @@ impl Filter for CutoffFilter {
         &self,
         repo: &git2::Repository,
         commit: &git2::Commit,
-        _forward_maps: &mut FilterCache,
-        _backward_maps: &mut FilterCache,
     ) -> super::JoshResult<git2::Oid> {
         return scratch::rewrite(&repo, &commit, &vec![], &commit.tree()?);
     }
@@ -504,25 +487,13 @@ impl Filter for ChainFilter {
         &self,
         repo: &git2::Repository,
         commit: &git2::Commit,
-        forward_maps: &mut FilterCache,
-        backward_maps: &mut FilterCache,
     ) -> super::JoshResult<git2::Oid> {
-        let r = self.first.apply_to_commit(
-            repo,
-            commit,
-            forward_maps,
-            backward_maps,
-        )?;
+        let r = self.first.apply_to_commit(repo, commit)?;
 
         let commit = ok_or!(repo.find_commit(r), {
             return Ok(git2::Oid::zero());
         });
-        return self.second.apply_to_commit(
-            repo,
-            &commit,
-            forward_maps,
-            backward_maps,
-        );
+        return self.second.apply_to_commit(repo, &commit);
     }
 
     fn apply_to_tree<'a>(
@@ -866,8 +837,6 @@ fn combine_filter_from_ws(
 impl WorkspaceFilter {
     fn ws_apply_to_tree_and_parents<'a>(
         &self,
-        forward_maps: &mut FilterCache,
-        backward_maps: &mut FilterCache,
         repo: &'a git2::Repository,
         tree_and_parents: (git2::Tree<'a>, Vec<git2::Oid>),
     ) -> super::JoshResult<(git2::Tree<'a>, Vec<git2::Oid>)> {
@@ -891,13 +860,7 @@ impl WorkspaceFilter {
 
         let mut filtered_parent_ids = vec![];
         for parent in parents.iter() {
-            let p = apply_filter_cached(
-                repo,
-                self,
-                *parent,
-                forward_maps,
-                backward_maps,
-            )?;
+            let p = apply_filter_cached(repo, self, *parent)?;
             if p != git2::Oid::zero() {
                 filtered_parent_ids.push(p);
             }
@@ -934,12 +897,7 @@ impl WorkspaceFilter {
             // TODO: maybe consider doing this for the parents individually
             // -> move this into the loop above
             if let Ok(parent) = repo.find_commit(parent) {
-                let p = pcw.apply_to_commit(
-                    &repo,
-                    &parent,
-                    forward_maps,
-                    backward_maps,
-                )?;
+                let p = pcw.apply_to_commit(&repo, &parent)?;
                 if p != git2::Oid::zero() {
                     filtered_parent_ids.push(p);
                 }
@@ -959,17 +917,16 @@ impl Filter for WorkspaceFilter {
         &self,
         repo: &git2::Repository,
         commit: &git2::Commit,
-        forward_maps: &mut FilterCache,
-        backward_maps: &mut FilterCache,
     ) -> super::JoshResult<git2::Oid> {
+        let forward_maps = super::filter_cache::new_downstream(
+            &super::filter_cache::forward(),
+        );
         if forward_maps.has(repo, &self.filter_spec(), commit.id()) {
             return Ok(forward_maps.get(&self.filter_spec(), commit.id()));
         }
 
         let (filtered_tree, filtered_parent_ids) = self
             .ws_apply_to_tree_and_parents(
-                forward_maps,
-                backward_maps,
                 repo,
                 (commit.tree()?, commit.parents().map(|x| x.id()).collect()),
             )?;
@@ -1226,21 +1183,25 @@ fn replace_subtree<'a>(
     }
 }
 
-#[tracing::instrument(skip(repo, forward_maps, backward_maps))]
+#[tracing::instrument(skip(repo))]
 fn apply_filter_cached(
     repo: &git2::Repository,
     filter: &dyn Filter,
     input: git2::Oid,
-    forward_maps: &mut filter_cache::FilterCache,
-    backward_maps: &mut filter_cache::FilterCache,
 ) -> super::JoshResult<git2::Oid> {
     if filter.filter_spec() == "" {
         return Ok(git2::Oid::zero());
     }
 
+    let mut forward_maps =
+        super::filter_cache::new_downstream(&super::filter_cache::forward());
+
     if forward_maps.has(repo, &filter.filter_spec(), input) {
         return Ok(forward_maps.get(&filter.filter_spec(), input));
     }
+
+    let mut backward_maps =
+        super::filter_cache::new_downstream(&super::filter_cache::backward());
 
     let walk = {
         let mut walk = repo.revwalk()?;
@@ -1257,18 +1218,11 @@ fn apply_filter_cached(
 
         let original_commit = repo.find_commit(original_commit_id?)?;
 
-        let filtered_commit = ok_or!(
-            filter.apply_to_commit(
-                &repo,
-                &original_commit,
-                forward_maps,
-                backward_maps,
-            ),
-            {
+        let filtered_commit =
+            ok_or!(filter.apply_to_commit(&repo, &original_commit,), {
                 tracing::error!("cannot apply_to_commit");
                 git2::Oid::zero()
-            }
-        );
+            });
 
         if filtered_commit == git2::Oid::zero() {
             empty_tree_count += 1;
@@ -1298,5 +1252,6 @@ fn apply_filter_cached(
         original = ?input,
         rewritten = ?rewritten,
     );
+    super::filter_cache::try_merge_both(&forward_maps, &backward_maps);
     return Ok(rewritten);
 }

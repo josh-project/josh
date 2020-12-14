@@ -38,8 +38,6 @@ struct JoshProxyService {
     repo_path: std::path::PathBuf,
     /* gerrit: Arc<josh_proxy::gerrit::Gerrit>, */
     upstream_url: String,
-    forward_maps: Arc<RwLock<josh::filter_cache::FilterCache>>,
-    backward_maps: Arc<RwLock<josh::filter_cache::FilterCache>>,
     credential_cache: Arc<RwLock<CredentialCache>>,
     fetch_permits: Arc<tokio::sync::Semaphore>,
     filter_permits: Arc<tokio::sync::Semaphore>,
@@ -255,9 +253,6 @@ async fn repo_update_fn(
     serv: Arc<JoshProxyService>,
     req: Request<hyper::Body>,
 ) -> josh::JoshResult<Response<hyper::Body>> {
-    let forward_maps = serv.forward_maps.clone();
-    let backward_maps = serv.backward_maps.clone();
-
     let body = hyper::body::to_bytes(req.into_body()).await;
 
     let s = tracing::span!(tracing::Level::TRACE, "repo update worker");
@@ -268,8 +263,6 @@ async fn repo_update_fn(
         josh_proxy::process_repo_update(
             serv.credential_store.clone(),
             serde_json::from_str(&buffer)?,
-            forward_maps,
-            backward_maps,
         )
     })
     .await?;
@@ -293,8 +286,6 @@ async fn do_filter(
     filter_spec: String,
     headref: String,
 ) -> josh::JoshResult<git2::Repository> {
-    let forward_maps = service.forward_maps.clone();
-    let backward_maps = service.backward_maps.clone();
     let permit = service.filter_permits.acquire().await;
 
     let s = tracing::span!(tracing::Level::TRACE, "do_filter worker");
@@ -320,17 +311,7 @@ async fn do_filter(
             temp_ns.reference(&headref),
         ));
 
-        let mut bm = josh::filter_cache::new_downstream(&backward_maps);
-        let mut fm = josh::filter_cache::new_downstream(&forward_maps);
-        josh::scratch::apply_filter_to_refs(
-            &repo, &*filter, &from_to, &mut fm, &mut bm,
-        )?;
-        josh::filter_cache::try_merge_both(
-            forward_maps,
-            backward_maps,
-            &fm,
-            &bm,
-        );
+        josh::scratch::apply_filter_to_refs(&repo, &*filter, &from_to)?;
         repo.reference_symbolic(
             &temp_ns.reference("HEAD"),
             &temp_ns.reference(&headref),
@@ -419,9 +400,6 @@ async fn call_service(
     };
 
     if req.uri().query() == Some("info") {
-        let forward_maps = serv.forward_maps.clone();
-        let backward_maps = serv.forward_maps.clone();
-
         let info_str =
             tokio::task::spawn_blocking(move || -> josh::JoshResult<_> {
                 let repo = git2::Repository::init_bare(&serv.repo_path)?;
@@ -430,8 +408,6 @@ async fn call_service(
                     &*josh::filters::parse(&parsed_url.filter)?,
                     &parsed_url.upstream_repo,
                     &headref,
-                    forward_maps.clone(),
-                    backward_maps.clone(),
                 )
             })
             .await??;
@@ -453,13 +429,7 @@ async fn call_service(
                 tokio::task::spawn_blocking(move || -> josh::JoshResult<_> {
                     let _e = s.enter();
                     let repo = git2::Repository::init_bare(&serv.repo_path)?;
-                    josh::query::render(
-                        repo,
-                        &temp_ns.reference(&headref),
-                        &q,
-                        josh::filter_cache::new_downstream(&serv.forward_maps),
-                        josh::filter_cache::new_downstream(&serv.backward_maps),
-                    )
+                    josh::query::render(repo, &temp_ns.reference(&headref), &q)
                 })
                 .await??;
             if let Some(res) = res {
@@ -577,18 +547,15 @@ async fn run_proxy() -> josh::JoshResult<i32> {
 
     josh_proxy::create_repo(&local)?;
 
-    let forward_maps = Arc::new(RwLock::new(josh::filter_cache::try_load(
-        &local.join("josh_forward_maps"),
-    )));
-    let backward_maps = Arc::new(RwLock::new(josh::filter_cache::try_load(
-        &local.join("josh_backward_maps"),
-    )));
+    *(josh::filter_cache::forward().write()?) =
+        josh::filter_cache::try_load(&local.join("josh_forward_maps"));
+
+    *(josh::filter_cache::backward().write()?) =
+        josh::filter_cache::try_load(&local.join("josh_backward_maps"));
 
     let proxy_service = Arc::new(JoshProxyService {
         port: port,
         repo_path: local.to_owned(),
-        forward_maps: forward_maps.clone(),
-        backward_maps: backward_maps.clone(),
         upstream_url: remote.to_owned(),
         credential_cache: Arc::new(RwLock::new(CredentialCache::new())),
         fetch_permits: Arc::new(tokio::sync::Semaphore::new(
@@ -625,12 +592,7 @@ async fn run_proxy() -> josh::JoshResult<i32> {
 
     let server = Server::bind(&addr).serve(make_service);
 
-    let _jh = josh::housekeeping::spawn_thread(
-        local,
-        forward_maps,
-        backward_maps,
-        ARGS.is_present("gc"),
-    );
+    let _jh = josh::housekeeping::spawn_thread(local, ARGS.is_present("gc"));
     println!("Now listening on {}", addr);
 
     server.with_graceful_shutdown(shutdown_signal()).await?;
@@ -799,24 +761,17 @@ fn main() {
         ARGS.value_of("local").expect("missing local directory"),
     );
     if ARGS.is_present("m") {
-        let forward_maps = Arc::new(RwLock::new(josh::filter_cache::try_load(
-            &local.join("josh_forward_maps"),
-        )));
-        let backward_maps = Arc::new(RwLock::new(
-            josh::filter_cache::try_load(&local.join("josh_backward_maps")),
-        ));
         let repo =
             git2::Repository::init_bare(&local).expect("can't init_bare");
         let known_filters =
             josh::housekeeping::discover_filter_candidates(&repo)
                 .expect("can't discover_filter_candidates");
-        josh::housekeeping::refresh_known_filters(
-            &repo,
-            &known_filters,
-            forward_maps,
-            backward_maps,
-        )
-        .expect("can't refresh_known_filters");
+        *(josh::filter_cache::forward().write().unwrap()) =
+            josh::filter_cache::try_load(&local.join("josh_forward_maps"));
+        *(josh::filter_cache::backward().write().unwrap()) =
+            josh::filter_cache::try_load(&local.join("josh_backward_maps"));
+        josh::housekeeping::refresh_known_filters(&repo, &known_filters)
+            .expect("can't refresh_known_filters");
         std::process::exit(0);
     }
 
