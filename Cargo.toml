@@ -20,7 +20,6 @@ tracing = "*"
 bincode = "*"
 percent-encoding = "2.1"
 serde = {version = "*", features = ["derive"]}
-atomicwrites = "*"
 regex = "1.4"
 lazy_static = "1.4"
 pest_derive = "2.1"
