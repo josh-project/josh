@@ -11,7 +11,7 @@
   > #2345346
   > ' -m "blabla" 1> /dev/null
 
-  $ josh-filter master --update refs/josh/filter/master c=:prefix=pre
+  $ josh-filter c=:prefix=pre master --update refs/josh/filter/master
   $ git cat-file commit master
   tree * (glob)
   author * (glob)

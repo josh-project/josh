@@ -17,8 +17,8 @@ lazy_static! {
 
 fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
     let args = clap::App::new("josh-filter")
-        .arg(clap::Arg::with_name("input_ref").takes_value(true))
         .arg(clap::Arg::with_name("spec").takes_value(true))
+        .arg(clap::Arg::with_name("input_ref").takes_value(true))
         .arg(clap::Arg::with_name("file").long("file").takes_value(true))
         .arg(
             clap::Arg::with_name("update")
@@ -38,7 +38,6 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
                 .long("check-permission")
                 .takes_value(true),
         )
-        .arg(clap::Arg::with_name("infofile").long("infofile"))
         .arg(clap::Arg::with_name("version").long("version"))
         .arg(
             clap::Arg::with_name("trace")
@@ -58,8 +57,8 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
 
     josh::filter_cache::load(&repo.path());
 
-    let input_ref = args.value_of("input_ref").unwrap_or("");
-    let specstr = args.value_of("spec").unwrap_or("");
+    let input_ref = args.value_of("input_ref").unwrap_or("HEAD");
+    let specstr = args.value_of("spec").unwrap_or(":nop");
     let update_target = args.value_of("update").unwrap_or("refs/JOSH_HEAD");
     let srcstr = format!("{}:{}", input_ref, update_target);
 

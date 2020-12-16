@@ -43,14 +43,14 @@
   $ git add syncinfo
   $ git commit -m "initial" 1> /dev/null
 
-  $ josh-filter --infofile --file syncinfo
+  $ josh-filter --file syncinfo
   $ git log --graph --pretty=%s josh/filter/libs/master
   * add file2
   * add file1
   $ git log --graph --pretty=%s josh/filter/libs/foo
   * add file3
 
-  $ josh-filter --infofile --squash --file syncinfo
+  $ josh-filter --squash --file syncinfo
   $ git log --graph --pretty=%s josh/filter/libs/master
   * add file2
   $ git log --graph --pretty=%s josh/filter/libs/foo

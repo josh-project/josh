@@ -25,7 +25,7 @@
   $ git add sub2
   $ git commit -m "add file2" 1> /dev/null
 
-  $ josh-filter master --update refs/heads/hidden ":~glob=sub1/file*"
+  $ josh-filter ":~glob=sub1/file*" master --update refs/heads/hidden
   $ git checkout hidden 1> /dev/null
   Switched to branch 'hidden'
   $ tree
@@ -46,7 +46,7 @@
   $ git add .
   $ git commit -m "add sub1/file3, sub2/file4" 1> /dev/null
 
-  $ josh-filter --reverse master --update refs/heads/hidden ":~glob=sub1/file*"
+  $ josh-filter ":~glob=sub1/file*" --reverse master --update refs/heads/hidden
 
   $ git checkout master
   Switched to branch 'master'

@@ -17,7 +17,7 @@ in that subtree repo should have an empty tree
   $ git add sub1
   $ git commit -m "add file2" 1> /dev/null
 
-  $ josh-filter master --update refs/josh/filter/master c=:/sub1
+  $ josh-filter c=:/sub1 master --update refs/josh/filter/master
 
   $ git log refs/josh/filter/master --graph --pretty=%s
   * add file2
@@ -34,7 +34,7 @@ in that subtree repo should have an empty tree
   sub1_new/file1
   sub1_new/file2
 
-  $ josh-filter master --update refs/josh/filter/master c=:/sub1
+  $ josh-filter c=:/sub1 master --update refs/josh/filter/master
 
   $ git log refs/josh/filter/master --graph --pretty=%s
   * mv sub1
@@ -46,7 +46,7 @@ in that subtree repo should have an empty tree
   $ echo contents2 > unrelated_file
   $ git add unrelated_file
   $ git commit -m "add unrelated_file" 1> /dev/null
-  $ josh-filter master --update refs/josh/filter/master2 c=:/sub1
+  $ josh-filter c=:/sub1 master --update refs/josh/filter/master2
   $ git log refs/josh/filter/master2 --graph --pretty=%s
   * mv sub1
   * add file2
