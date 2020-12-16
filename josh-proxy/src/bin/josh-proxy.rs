@@ -546,12 +546,7 @@ async fn run_proxy() -> josh::JoshResult<i32> {
     );
 
     josh_proxy::create_repo(&local)?;
-
-    *(josh::filter_cache::forward().write()?) =
-        josh::filter_cache::try_load(&local.join("josh_forward_maps"));
-
-    *(josh::filter_cache::backward().write()?) =
-        josh::filter_cache::try_load(&local.join("josh_backward_maps"));
+    josh::filter_cache::load(&local);
 
     let proxy_service = Arc::new(JoshProxyService {
         port: port,
@@ -766,10 +761,7 @@ fn main() {
         let known_filters =
             josh::housekeeping::discover_filter_candidates(&repo)
                 .expect("can't discover_filter_candidates");
-        *(josh::filter_cache::forward().write().unwrap()) =
-            josh::filter_cache::try_load(&local.join("josh_forward_maps"));
-        *(josh::filter_cache::backward().write().unwrap()) =
-            josh::filter_cache::try_load(&local.join("josh_backward_maps"));
+        josh::filter_cache::load(&local);
         josh::housekeeping::refresh_known_filters(&repo, &known_filters)
             .expect("can't refresh_known_filters");
         std::process::exit(0);

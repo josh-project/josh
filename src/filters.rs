@@ -60,7 +60,7 @@ fn create_filtered_commit<'a>(
     let mut filtered_parent_commits = filtered_parent_commits?;
 
     if is_initial_merge {
-        filtered_parent_commits.retain(|x| (x.tree_id() != empty_tree_id()));
+        filtered_parent_commits.retain(|x| x.tree_id() != empty_tree_id());
     }
 
     let selected_filtered_parent_commits: Vec<&_> = select_parent_commits(
@@ -96,12 +96,12 @@ pub trait Filter {
         repo: &git2::Repository,
         commit: &git2::Commit,
     ) -> super::JoshResult<git2::Oid> {
-        let forward_maps = super::filter_cache::new_downstream(
-            &super::filter_cache::forward(),
-        );
-
-        if forward_maps.has(&repo, &self.filter_spec(), commit.id()) {
-            return Ok(forward_maps.get(&self.filter_spec(), commit.id()));
+        if let Some(cached) = super::filter_cache::lookup_forward(
+            &repo,
+            &self.filter_spec(),
+            commit.id(),
+        ) {
+            return Ok(cached);
         }
         let filtered_tree = self.apply_to_tree(&repo, commit.tree()?)?;
 
@@ -400,11 +400,12 @@ impl Filter for FoldFilter {
         repo: &git2::Repository,
         commit: &git2::Commit,
     ) -> super::JoshResult<git2::Oid> {
-        let forward_maps = super::filter_cache::new_downstream(
-            &super::filter_cache::forward(),
-        );
-        if forward_maps.has(&repo, &self.filter_spec(), commit.id()) {
-            return Ok(forward_maps.get(&self.filter_spec(), commit.id()));
+        if let Some(cached) = super::filter_cache::lookup_forward(
+            &repo,
+            &self.filter_spec(),
+            commit.id(),
+        ) {
+            return Ok(cached);
         }
 
         let filtered_parent_ids: Vec<git2::Oid> = commit
@@ -918,11 +919,12 @@ impl Filter for WorkspaceFilter {
         repo: &git2::Repository,
         commit: &git2::Commit,
     ) -> super::JoshResult<git2::Oid> {
-        let forward_maps = super::filter_cache::new_downstream(
-            &super::filter_cache::forward(),
-        );
-        if forward_maps.has(repo, &self.filter_spec(), commit.id()) {
-            return Ok(forward_maps.get(&self.filter_spec(), commit.id()));
+        if let Some(cached) = super::filter_cache::lookup_forward(
+            &repo,
+            &self.filter_spec(),
+            commit.id(),
+        ) {
+            return Ok(cached);
         }
 
         let (filtered_tree, filtered_parent_ids) = self
@@ -1216,7 +1218,7 @@ fn apply_filter_cached(
         let original_commit = repo.find_commit(original_commit_id?)?;
 
         let filtered_commit =
-            ok_or!(filter.apply_to_commit(&repo, &original_commit,), {
+            ok_or!(filter.apply_to_commit(&repo, &original_commit), {
                 tracing::error!("cannot apply_to_commit");
                 git2::Oid::zero()
             });

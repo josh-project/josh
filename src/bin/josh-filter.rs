@@ -56,10 +56,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
 
     let repo = git2::Repository::open_from_env()?;
 
-    *(josh::filter_cache::forward().write().unwrap()) =
-        josh::filter_cache::try_load(&repo.path().join("josh_forward_maps"));
-    *(josh::filter_cache::backward().write().unwrap()) =
-        josh::filter_cache::try_load(&repo.path().join("josh_backward_maps"));
+    josh::filter_cache::load(&repo.path());
 
     let input_ref = args.value_of("input_ref").unwrap_or("");
     let specstr = args.value_of("spec").unwrap_or("");
@@ -200,16 +197,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         }
     }
 
-    josh::filter_cache::persist(
-        &*josh::filter_cache::backward().read().unwrap(),
-        &repo.path().join("josh_backward_maps"),
-    )
-    .ok();
-    josh::filter_cache::persist(
-        &josh::filter_cache::forward().read().unwrap(),
-        &repo.path().join("josh_forward_maps"),
-    )
-    .ok();
+    josh::filter_cache::persist(&repo.path());
 
     return Ok(0);
 }

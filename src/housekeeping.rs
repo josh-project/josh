@@ -188,9 +188,6 @@ pub fn get_info(
 ) -> JoshResult<String> {
     let _trace_s = span!(Level::TRACE, "get_info");
 
-    let mut bm = filter_cache::new_downstream(&super::filter_cache::backward());
-    let mut fm = filter_cache::new_downstream(&super::filter_cache::forward());
-
     let obj = repo.revparse_single(&format!(
         "refs/josh/upstream/{}/{}",
         &to_ns(&upstream_repo),
@@ -283,7 +280,7 @@ pub fn spawn_thread(
 ) -> std::thread::JoinHandle<()> {
     let mut gc_timer = std::time::Instant::now();
     let mut persist_timer =
-        std::time::Instant::now() - std::time::Duration::from_secs(60 * 5);
+        std::time::Instant::now() - std::time::Duration::from_secs(60 * 15);
     std::thread::spawn(move || {
         let mut total = 0;
         loop {
@@ -295,16 +292,7 @@ pub fn spawn_thread(
                 || persist_timer.elapsed()
                     > std::time::Duration::from_secs(60 * 15)
             {
-                filter_cache::persist(
-                    &*super::filter_cache::backward().read().unwrap(),
-                    &repo.path().join("josh_backward_maps"),
-                )
-                .ok();
-                filter_cache::persist(
-                    &*super::filter_cache::forward().read().unwrap(),
-                    &repo.path().join("josh_forward_maps"),
-                )
-                .ok();
+                filter_cache::persist(&repo.path());
                 total = 0;
                 persist_timer = std::time::Instant::now();
             }
