@@ -15,7 +15,7 @@ lazy_static! {
         Arc::new(RwLock::new(FilterCache::new("backward".to_owned())));
 }
 
-pub fn forward() -> Arc<RwLock<FilterCache>> {
+fn forward() -> Arc<RwLock<FilterCache>> {
     FORWARD_MAPS.clone()
 }
 
@@ -77,6 +77,19 @@ impl<'de> serde::de::Deserialize<'de> for JoshOid {
     {
         deserializer.deserialize_bytes(OidVisitor)
     }
+}
+
+pub fn lookup_forward(
+    repo: &git2::Repository,
+    spec: &str,
+    oid: git2::Oid,
+) -> Option<git2::Oid> {
+    if let Ok(f) = forward().read() {
+        if f.has(&repo, &spec, oid) {
+            return Some(f.get(&spec, oid));
+        }
+    }
+    return None;
 }
 
 impl FilterCache {
@@ -164,7 +177,7 @@ impl FilterCache {
 }
 
 #[tracing::instrument]
-pub fn try_load(path: &std::path::Path) -> FilterCache {
+fn try_load(path: &std::path::Path) -> FilterCache {
     let file_size = std::fs::metadata(&path)
         .map(|x| x.len() / (1024 * 1024))
         .unwrap_or(0);
@@ -184,8 +197,25 @@ pub fn try_load(path: &std::path::Path) -> FilterCache {
     FilterCache::new(path.file_name().unwrap().to_string_lossy().to_string())
 }
 
+pub fn load(path: &std::path::Path) {
+    *(forward().write().unwrap()) = try_load(&path.join("josh_forward_maps"));
+    *(backward().write().unwrap()) = try_load(&path.join("josh_backward_maps"));
+}
+
+pub fn persist(path: &std::path::Path) {
+    persist_file(
+        &*super::filter_cache::backward().read().unwrap(),
+        &path.join("josh_backward_maps"),
+    )
+    .ok();
+    persist_file(
+        &*super::filter_cache::forward().read().unwrap(),
+        &path.join("josh_forward_maps"),
+    )
+    .ok();
+}
 #[tracing::instrument(skip(m))]
-pub fn persist(
+fn persist_file(
     m: &FilterCache,
     path: &std::path::Path,
 ) -> crate::JoshResult<()> {
