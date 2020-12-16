@@ -20,7 +20,7 @@ Empty root commits from unrelated parts of the tree should not be included
   $ git add sub1
   $ git commit -m "add file3" 1> /dev/null
 
-  $ josh-filter master --update refs/josh/filter/master c=:/sub1
+  $ josh-filter c=:/sub1 master --update refs/josh/filter/master
 
   $ git log refs/josh/filter/master --graph --pretty=%s
   * add file3
@@ -85,7 +85,7 @@ Empty root commits from unrelated parts of the tree should not be included
   * add file1
 
 
-  $ josh-filter master c=:/sub1
+  $ josh-filter c=:/sub1 master
 
   $ git log JOSH_HEAD --graph --pretty=%s
   * add file3
@@ -97,7 +97,7 @@ Empty root commits from unrelated parts of the tree should not be included
   c/file2
   c/file3
 
-  $ josh-filter master c=:hide=sub1
+  $ josh-filter c=:hide=sub1 master
 
   $ git log JOSH_HEAD --graph --pretty=%s
   * add some_other_file
@@ -108,7 +108,7 @@ Empty root commits from unrelated parts of the tree should not be included
   c/some_file
   c/some_other_file
 
-  $ josh-filter JOSH_HEAD :prefix=x
+  $ josh-filter :prefix=x JOSH_HEAD
 
   $ git ls-tree --name-only -r JOSH_HEAD
   x/c/some_file

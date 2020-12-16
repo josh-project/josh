@@ -24,9 +24,9 @@
   * add libs
   * init
 
-  $ josh-filter master --update refs/josh/filter/master :/libs
+  $ josh-filter :/libs master --update refs/josh/filter/master
   $ git ls-tree --name-only -r refs/josh/filter/master 
-  $ josh-filter master --update refs/josh/filter/master c=:/libs
+  $ josh-filter c=:/libs master --update refs/josh/filter/master
   $ git ls-tree --name-only -r refs/josh/filter/master 
 
 $ git log refs/josh/filter/master --graph --pretty=%s

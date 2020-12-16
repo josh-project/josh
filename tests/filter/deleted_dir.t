@@ -17,7 +17,7 @@ in that subtree repo should have an empty tree
   $ git add sub1
   $ git commit -m "add file2" 1> /dev/null
 
-  $ josh-filter master --update refs/josh/filter/master c=:/sub1
+  $ josh-filter c=:/sub1 master --update refs/josh/filter/master
 
   $ git log refs/josh/filter/master --graph --pretty=%s
   * add file2
@@ -32,7 +32,7 @@ in that subtree repo should have an empty tree
   rm 'sub1/file2'
   $ git commit -m "rm sub1" 1> /dev/null
 
-  $ josh-filter master --update refs/josh/filter/master c=:/sub1
+  $ josh-filter c=:/sub1 master --update refs/josh/filter/master
 
   $ git log refs/josh/filter/master --graph --pretty=%s
   * rm sub1

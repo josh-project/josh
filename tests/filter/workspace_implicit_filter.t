@@ -23,7 +23,7 @@
   $ git add ws
   $ git commit -m "add ws" 1> /dev/null
 
-  $ josh-filter master --update refs/josh/master :workspace=ws
+  $ josh-filter :workspace=ws master --update refs/josh/master
 
   $ git log --graph --pretty=%s refs/josh/master
   * add ws
