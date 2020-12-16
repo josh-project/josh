@@ -219,8 +219,7 @@ fn persist_file(
     m: &FilterCache,
     path: &std::path::Path,
 ) -> crate::JoshResult<()> {
-    let af = atomicwrites::AtomicFile::new(path, atomicwrites::AllowOverwrite);
-    af.write(|f| bincode::serialize_into(f, &m))?;
+    bincode::serialize_into(std::fs::File::create(path)?, &m)?;
     let file_size = std::fs::metadata(&path)
         .map(|x| x.len() / (1024 * 1024))
         .unwrap_or(0);
