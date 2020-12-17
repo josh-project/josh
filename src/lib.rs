@@ -24,6 +24,9 @@ macro_rules! ok_or {
 }
 
 #[macro_use]
+extern crate rs_tracing;
+
+#[macro_use]
 extern crate handlebars;
 
 #[macro_use]

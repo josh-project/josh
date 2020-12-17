@@ -4,6 +4,9 @@
 #[macro_use]
 extern crate lazy_static;
 
+#[macro_use]
+extern crate rs_tracing;
+
 use std::fs::read_to_string;
 
 lazy_static! {
@@ -23,6 +26,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
                 .takes_value(true),
         )
         .arg(clap::Arg::with_name("squash").long("squash"))
+        .arg(clap::Arg::with_name("trace").short("t"))
         .arg(
             clap::Arg::with_name("query")
                 .long("query")
@@ -37,11 +41,6 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
                 .takes_value(true),
         )
         .arg(clap::Arg::with_name("version").long("version"))
-        .arg(
-            clap::Arg::with_name("trace")
-                .long("trace")
-                .takes_value(true),
-        )
         .get_matches_from(args);
 
     if args.is_present("version") {
@@ -49,6 +48,10 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
             .unwrap_or(std::env!("CARGO_PKG_VERSION"));
         println!("Version: {}", v);
         return Ok(0);
+    }
+
+    if args.is_present("trace") {
+        rs_tracing::open_trace_file!(".").unwrap();
     }
 
     let repo = git2::Repository::open_from_env()?;
@@ -202,6 +205,10 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
     }
 
     josh::filter_cache::persist(&repo.path());
+
+    if args.is_present("trace") {
+        rs_tracing::close_trace_file!();
+    }
 
     return Ok(0);
 }

@@ -95,19 +95,15 @@ pub trait Filter {
         &self,
         repo: &git2::Repository,
         commit: &git2::Commit,
+        transaction: &mut super::filter_cache::Transaction,
     ) -> super::JoshResult<git2::Oid> {
-        if let Some(cached) = super::filter_cache::lookup_forward(
-            &repo,
-            &self.filter_spec(),
-            commit.id(),
-        ) {
-            return Ok(cached);
-        }
         let filtered_tree = self.apply(&repo, commit.tree()?)?;
 
         let filtered_parent_ids = commit
             .parents()
-            .map(|x| apply_filter_cached(repo, self.get(), x.id()))
+            .map(|x| {
+                apply_filter_cached_impl(repo, self.get(), x.id(), transaction)
+            })
             .collect::<super::JoshResult<_>>()?;
 
         return create_filtered_commit(
@@ -399,18 +395,13 @@ impl Filter for FoldFilter {
         &self,
         repo: &git2::Repository,
         commit: &git2::Commit,
+        transaction: &mut super::filter_cache::Transaction,
     ) -> super::JoshResult<git2::Oid> {
-        if let Some(cached) = super::filter_cache::lookup_forward(
-            &repo,
-            &self.filter_spec(),
-            commit.id(),
-        ) {
-            return Ok(cached);
-        }
-
         let filtered_parent_ids: Vec<git2::Oid> = commit
             .parents()
-            .map(|x| apply_filter_cached(repo, self.get(), x.id()))
+            .map(|x| {
+                apply_filter_cached_impl(repo, self.get(), x.id(), transaction)
+            })
             .collect::<super::JoshResult<_>>()?;
 
         let mut trees = vec![];
@@ -456,6 +447,7 @@ impl Filter for SquashFilter {
         &self,
         repo: &git2::Repository,
         commit: &git2::Commit,
+        _transaction: &mut super::filter_cache::Transaction,
     ) -> super::JoshResult<git2::Oid> {
         return scratch::rewrite(&repo, &commit, &vec![], &commit.tree()?);
     }
@@ -486,13 +478,14 @@ impl Filter for ChainFilter {
         &self,
         repo: &git2::Repository,
         commit: &git2::Commit,
+        transaction: &mut super::filter_cache::Transaction,
     ) -> super::JoshResult<git2::Oid> {
-        let r = self.first.apply_to_commit(repo, commit)?;
+        let r = apply_filter_cached(repo, &*self.first, commit.id())?;
 
         let commit = ok_or!(repo.find_commit(r), {
             return Ok(git2::Oid::zero());
         });
-        return self.second.apply_to_commit(repo, &commit);
+        return apply_filter_cached(repo, &*self.second, commit.id());
     }
 
     fn apply<'a>(
@@ -850,6 +843,7 @@ impl WorkspaceFilter {
         &self,
         repo: &'a git2::Repository,
         tree_and_parents: (git2::Tree<'a>, Vec<git2::Oid>),
+        transaction: &mut super::filter_cache::Transaction,
     ) -> super::JoshResult<(git2::Tree<'a>, Vec<git2::Oid>)> {
         let (full_tree, parents) = tree_and_parents;
 
@@ -871,7 +865,7 @@ impl WorkspaceFilter {
 
         let mut filtered_parent_ids = vec![];
         for parent in parents.iter() {
-            let p = apply_filter_cached(repo, self, *parent)?;
+            let p = apply_filter_cached_impl(repo, self, *parent, transaction)?;
             if p != git2::Oid::zero() {
                 filtered_parent_ids.push(p);
             }
@@ -908,7 +902,7 @@ impl WorkspaceFilter {
             // TODO: maybe consider doing this for the parents individually
             // -> move this into the loop above
             if let Ok(parent) = repo.find_commit(parent) {
-                let p = pcw.apply_to_commit(&repo, &parent)?;
+                let p = apply_filter_cached(&*repo, &*pcw, parent.id())?;
                 if p != git2::Oid::zero() {
                     filtered_parent_ids.push(p);
                 }
@@ -928,19 +922,13 @@ impl Filter for WorkspaceFilter {
         &self,
         repo: &git2::Repository,
         commit: &git2::Commit,
+        transaction: &mut super::filter_cache::Transaction,
     ) -> super::JoshResult<git2::Oid> {
-        if let Some(cached) = super::filter_cache::lookup_forward(
-            &repo,
-            &self.filter_spec(),
-            commit.id(),
-        ) {
-            return Ok(cached);
-        }
-
         let (filtered_tree, filtered_parent_ids) = self
             .ws_apply_to_tree_and_parents(
                 repo,
                 (commit.tree()?, commit.parents().map(|x| x.id()).collect()),
+                transaction,
             )?;
 
         return create_filtered_commit(
@@ -1194,17 +1182,31 @@ pub fn replace_subtree<'a>(
 }
 
 #[tracing::instrument(skip(repo))]
-fn apply_filter_cached(
+pub fn apply_filter_cached(
     repo: &git2::Repository,
     filter: &dyn Filter,
     input: git2::Oid,
 ) -> super::JoshResult<git2::Oid> {
+    rs_tracing::trace_scoped!("apply_filter_cached","spec":filter.filter_spec());
+    apply_filter_cached_impl(
+        repo,
+        filter,
+        input,
+        &mut super::filter_cache::Transaction::new(filter.filter_spec()),
+    )
+}
+
+#[tracing::instrument(skip(repo, transaction))]
+fn apply_filter_cached_impl(
+    repo: &git2::Repository,
+    filter: &dyn Filter,
+    input: git2::Oid,
+    transaction: &mut super::filter_cache::Transaction,
+) -> super::JoshResult<git2::Oid> {
+    rs_tracing::trace_scoped!("apply_filter_cached_impl","spec":filter.filter_spec());
     if filter.filter_spec() == "" {
         return Ok(git2::Oid::zero());
     }
-
-    let mut transaction =
-        super::filter_cache::Transaction::new(filter.filter_spec());
 
     if transaction.has(repo, input) {
         return Ok(transaction.get(input));
@@ -1225,11 +1227,14 @@ fn apply_filter_cached(
 
         let original_commit = repo.find_commit(original_commit_id?)?;
 
-        let filtered_commit =
-            ok_or!(filter.apply_to_commit(&repo, &original_commit), {
+
+        let filtered_commit = ok_or!(
+            filter.apply_to_commit(&repo, &original_commit, transaction),
+            {
                 tracing::error!("cannot apply_to_commit");
                 git2::Oid::zero()
-            });
+            }
+        );
 
         if filtered_commit == git2::Oid::zero() {
             empty_tree_count += 1;

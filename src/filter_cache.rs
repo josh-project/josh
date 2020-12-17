@@ -228,6 +228,7 @@ fn persist_file(
 }
 
 fn try_merge_both(fm: &FilterCache, bm: &FilterCache) {
+    rs_tracing::trace_scoped!("merge");
     tracing::span!(tracing::Level::TRACE, "write_lock backward_maps").in_scope(
         || {
             backward()
