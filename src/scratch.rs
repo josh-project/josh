@@ -67,7 +67,7 @@ pub fn unapply_filter(
     };
 
     let mut bm = filter_cache::new_downstream(&backward_maps);
-    let mut ret = bm.get(&filterobj.filter_spec(), new);
+    let mut ret = bm.get(&filterobj.spec(), new);
     for rev in walk {
         let rev = rev?;
 
@@ -76,7 +76,7 @@ pub fn unapply_filter(
 
         let module_commit = repo.find_commit(rev)?;
 
-        if bm.has(&repo, &filterobj.filter_spec(), module_commit.id()) {
+        if bm.has(&repo, &filterobj.spec(), module_commit.id()) {
             continue;
         }
 
@@ -89,7 +89,7 @@ pub fn unapply_filter(
                     if *x == old {
                         unfiltered_old
                     } else {
-                        bm.get(&filterobj.filter_spec(), *x)
+                        bm.get(&filterobj.spec(), *x)
                     }
                 })
                 .map(|x| repo.find_commit(x))
@@ -158,7 +158,7 @@ pub fn unapply_filter(
 
         ret =
             rewrite(&repo, &module_commit, &original_parents_refs, &new_tree)?;
-        bm.set(&filterobj.filter_spec(), module_commit.id(), ret);
+        bm.set(&filterobj.spec(), module_commit.id(), ret);
     }
 
     tracing::trace!("done {:?}", ret);
@@ -183,7 +183,11 @@ fn transform_commit(
             original_commit.id(),
         )?;
 
-        transaction.insert(original_commit.id(), filter_commit);
+        transaction.insert(
+            &filterobj.spec(),
+            original_commit.id(),
+            filter_commit,
+        );
 
         let previous = repo
             .revparse_single(&to_refname)
@@ -197,7 +201,7 @@ fn transform_commit(
                 &from_refsname,
                 &to_refname,
                 filter_commit,
-                &filterobj.filter_spec()
+                &filterobj.spec()
             );
         }
 
@@ -216,7 +220,7 @@ fn transform_commit(
                         &from_refsname,
                         &to_refname,
                         filter_commit,
-                        &filterobj.filter_spec()
+                        &filterobj.spec()
                     );
                 }
             );
@@ -236,9 +240,8 @@ pub fn apply_filter_to_refs(
     filterobj: &dyn filters::Filter,
     refs: &[(String, String)],
 ) -> super::JoshResult<usize> {
-    rs_tracing::trace_scoped!("apply_filter_to_refs","spec":filterobj.filter_spec());
-    let mut transaction =
-        super::filter_cache::Transaction::new(filterobj.filter_spec());
+    rs_tracing::trace_scoped!("apply_filter_to_refs","spec":filterobj.spec());
+    let mut transaction = super::filter_cache::Transaction::new();
 
     let mut updated_count = 0;
     for (k, v) in refs {
