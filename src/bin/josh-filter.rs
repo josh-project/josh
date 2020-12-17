@@ -10,9 +10,6 @@ lazy_static! {
     static ref FILE_REGEX: regex::Regex =
         regex::Regex::new(r"\[(?P<src>.*)\](?P<spec>[^\[]*)")
             .expect("can't compile regex");
-    static ref STR_REGEX: regex::Regex =
-        regex::Regex::new(r"(?P<src>[^:]*)(?P<spec>:[^\[]*)")
-            .expect("can't compile regex");
 }
 
 fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
@@ -36,6 +33,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         .arg(
             clap::Arg::with_name("check-permission")
                 .long("check-permission")
+                .short("p")
                 .takes_value(true),
         )
         .arg(clap::Arg::with_name("version").long("version"))
@@ -88,10 +86,8 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         let check_permissions = args.is_present("check-permission");
 
         if args.is_present("squash") {
-            filterobj = josh::build_chain(
-                josh::filters::parse(&format!(":CUTOFF={}", &src))?,
-                filterobj,
-            );
+            filterobj =
+                josh::build_chain(josh::filters::parse(":SQUASH")?, filterobj);
         }
 
         if check_permissions {
@@ -148,15 +144,24 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
             }
         }
 
+        let dedup = all_dirs;
+
+        let options = glob::MatchOptions {
+            case_sensitive: true,
+            require_literal_separator: true,
+            require_literal_leading_dot: true,
+        };
+
         if let Some(cp) = args.value_of("check-permission") {
-            let permission_regex = regex::Regex::new(cp)?;
+            let pattern = glob::Pattern::new(cp)?;
 
             let mut allowed = dedup.len() != 0;
             for d in dedup.iter() {
-                let m = permission_regex.is_match(&d);
+                let d = std::path::PathBuf::from(d);
+                let m = pattern.matches_path_with(&d, options.clone());
                 if !m {
                     allowed = false;
-                    println!("missing permission for: {}", &d);
+                    println!("missing permission for: {:?}", &d);
                 }
             }
             println!("Allowed = {:?}", allowed);
