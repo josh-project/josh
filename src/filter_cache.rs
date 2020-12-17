@@ -265,31 +265,34 @@ pub fn new_downstream(u: &Arc<RwLock<FilterCache>>) -> FilterCache {
 pub struct Transaction {
     fm: FilterCache,
     bm: FilterCache,
-    spec: String,
 }
 
 impl Transaction {
-    pub fn new(spec: String) -> Transaction {
+    pub fn new() -> Transaction {
         Transaction {
             fm: new_downstream(&super::filter_cache::forward()),
             bm: new_downstream(&super::filter_cache::backward()),
-            spec: spec,
         }
     }
 
-    pub fn insert(&mut self, from: git2::Oid, to: git2::Oid) {
-        self.fm.set(&self.spec, from, to);
+    pub fn insert(&mut self, spec: &str, from: git2::Oid, to: git2::Oid) {
+        self.fm.set(spec, from, to);
         if to != git2::Oid::zero() {
-            self.bm.set(&self.spec, to, from);
+            self.bm.set(spec, to, from);
         }
     }
 
-    pub fn has(&self, repo: &git2::Repository, from: git2::Oid) -> bool {
-        self.fm.has(&repo, &self.spec, from)
+    pub fn has(
+        &self,
+        spec: &str,
+        repo: &git2::Repository,
+        from: git2::Oid,
+    ) -> bool {
+        self.fm.has(&repo, spec, from)
     }
 
-    pub fn get(&self, from: git2::Oid) -> git2::Oid {
-        self.fm.get(&self.spec, from)
+    pub fn get(&self, spec: &str, from: git2::Oid) -> git2::Oid {
+        self.fm.get(spec, from)
     }
 }
 
