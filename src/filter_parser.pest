@@ -1,21 +1,36 @@
-WHITESPACE = _{ " " | "\t" }
-CMD_START = _{(":"|"!")}
+WHITESPACE = _{ " " }
+CMD_START = _{ ":" }
 CMD_END = _{("="|"/")}
+CMD_SEP = _{("&"|NEWLINE)}
 
 
-filter_spec = { (filter | filter_noarg)+ }
+filter_spec = { ( filter_combine | filter_subdir | filter | filter_noarg )+ }
 
-filter = { CMD_START ~ cmd ~ CMD_END ~ (argument ~ ("," ~ argument)*)? }
-
+filter_combine = { CMD_START ~ "(" ~ combine ~ ")" }
+filter_subdir = { CMD_START ~ "/" ~ argument }
+filter = { CMD_START ~ cmd ~ "=" ~ (argument ~ ("," ~ argument)*)? }
 filter_noarg = { CMD_START ~ cmd }
 
-argument = { (!(CMD_START | NEWLINE | ",") ~ ANY)+ }
+argument = { (!(CMD_START | CMD_SEP | "," | "(" | ")") ~ ANY)+ }
 
-cmd = { (!(CMD_END | NEWLINE | CMD_START) ~ ANY)* }
+cmd = { (!(CMD_END | CMD_SEP | CMD_START | "(" | ")") ~ ANY)+ }
 
-workspace_file = { NEWLINE* ~ (filter_spec|file_entry)? ~ (NEWLINE+ ~ (filter_spec|file_entry))* ~ NEWLINE* ~ EOI }
+workspace_file = {
+    NEWLINE*
+    ~ (filter_spec|file_entry)? 
+    ~ (CMD_SEP+ ~ (filter_spec|file_entry))*
+    ~ NEWLINE*
+    ~ EOI
+}
+
+combine = {
+    NEWLINE*
+    ~ (filter_spec|file_entry)
+    ~ (CMD_SEP+ ~ (filter_spec|file_entry))*
+    ~ NEWLINE*
+}
 
 file_entry = { dst_path ~ ("=" ~ filter_spec)? }
 
 dst_path = @{ path ~ ("/" ~ path)* }
-path = @{ (!("=" | "/" | CMD_START | WHITESPACE | NEWLINE) ~ ANY)+ }
+path = @{ (!("=" | "/" | CMD_START | WHITESPACE | CMD_SEP | "(" | ")") ~ ANY)+ }
