@@ -519,12 +519,8 @@ impl Filter for ChainFilter {
     }
 
     fn spec(&self) -> String {
-        return format!(
-            "{}{}",
-            &self.first.spec(),
-            &self.second.spec()
-        )
-        .replacen(":nop", "", 1);
+        return format!("{}{}", &self.first.spec(), &self.second.spec())
+            .replacen(":nop", "", 1);
     }
 }
 
@@ -990,7 +986,7 @@ struct MyParser;
 
 fn make_filter(args: &[&str]) -> super::JoshResult<Box<dyn Filter>> {
     match args {
-        ["", arg] => Ok(SubdirFilter::new(&Path::new(arg))),
+        ["/", arg] => Ok(SubdirFilter::new(&Path::new(arg))),
         ["nop"] => Ok(Box::new(NopFilter)),
         ["prefix", arg] => Ok(Box::new(PrefixFilter {
             prefix: Path::new(arg).to_owned(),
@@ -1031,9 +1027,17 @@ fn parse_item(
             let v: Vec<_> = pair.into_inner().map(|x| x.as_str()).collect();
             make_filter(v.as_slice())
         }
+        Rule::filter_subdir => {
+            let mut inner = pair.into_inner();
+            make_filter(&["/", inner.next().unwrap().as_str()])
+        }
         Rule::filter_noarg => {
             let mut inner = pair.into_inner();
             make_filter(&[inner.next().unwrap().as_str()])
+        }
+        Rule::filter_combine => {
+            let v: Vec<_> = pair.into_inner().map(|x| x.as_str()).collect();
+            Ok(build_combine_filter(v[0], None)?)
         }
         _ => Err(super::josh_error("parse_item: no match")),
     }
@@ -1118,7 +1122,7 @@ pub fn parse(filter_spec: &str) -> super::JoshResult<Box<dyn Filter>> {
     if filter_spec == "" {
         return parse(":nop");
     }
-    if filter_spec.starts_with("!") || filter_spec.starts_with(":") {
+    if filter_spec.starts_with(":") {
         let mut chain: Option<Box<dyn Filter>> = None;
         if let Ok(r) = MyParser::parse(Rule::filter_spec, filter_spec) {
             let mut r = r;

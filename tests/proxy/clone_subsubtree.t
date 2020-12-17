@@ -65,7 +65,7 @@
   * add file1
 
   $ cd ${TESTTMP}
-  $ git clone -q http://localhost:8002/real_repo.git!/sub1/subsub.git
+  $ git clone -q http://localhost:8002/real_repo.git:/sub1/subsub.git
   $ cd subsub
   $ git branch
   * master
