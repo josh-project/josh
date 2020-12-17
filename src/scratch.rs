@@ -176,8 +176,12 @@ fn transform_commit(
     let mut updated_count = 0;
     if let Ok(reference) = repo.revparse_single(&from_refsname) {
         let original_commit = reference.peel_to_commit()?;
-        let filter_commit =
-            filterobj.apply_to_commit(&repo, &original_commit)?;
+
+        let filter_commit = super::filters::apply_filter_cached(
+            &repo,
+            &*filterobj,
+            original_commit.id(),
+        )?;
 
         transaction.insert(original_commit.id(), filter_commit);
 
@@ -232,6 +236,7 @@ pub fn apply_filter_to_refs(
     filterobj: &dyn filters::Filter,
     refs: &[(String, String)],
 ) -> super::JoshResult<usize> {
+    rs_tracing::trace_scoped!("apply_filter_to_refs","spec":filterobj.filter_spec());
     let mut transaction =
         super::filter_cache::Transaction::new(filterobj.filter_spec());
 

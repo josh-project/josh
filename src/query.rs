@@ -127,8 +127,11 @@ impl FilterHelper {
             repo.find_reference(&self.headref)?.peel_to_commit()?;
         let filterobj = super::filters::parse(&filter_spec)?;
 
-        let filter_commit =
-            filterobj.apply_to_commit(&repo, &original_commit)?;
+        let filter_commit = super::filters::apply_filter_cached(
+            &repo,
+            &*filterobj,
+            original_commit.id(),
+        )?;
 
         return Ok(json!({ "sha1": format!("{}", filter_commit) }));
     }

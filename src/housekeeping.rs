@@ -198,7 +198,8 @@ pub fn get_info(
 
     let mut meta = std::collections::HashMap::new();
     meta.insert("sha1".to_owned(), "".to_owned());
-    let filtered = filter.apply_to_commit(&repo, &commit)?;
+    let filtered =
+        super::filters::apply_filter_cached(&repo, &*filter, commit.id())?;
 
     let parent_ids = |commit: &git2::Commit| {
         let pids: Vec<_> = commit
