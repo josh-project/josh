@@ -42,6 +42,10 @@ pub mod scratch;
 pub mod shell;
 
 pub use crate::filters::build_chain;
+pub use crate::filters::overlay;
+pub use crate::filters::parse;
+pub use crate::filters::replace_subtree;
+pub use crate::filters::substract;
 pub use crate::scratch::apply_filter_to_refs;
 pub use crate::scratch::unapply_filter;
 
@@ -57,7 +61,7 @@ fn empty_tree_id() -> git2::Oid {
         .unwrap();
 }
 
-fn empty_tree(repo: &git2::Repository) -> git2::Tree {
+pub fn empty_tree(repo: &git2::Repository) -> git2::Tree {
     repo.find_tree(empty_tree_id()).unwrap()
 }
 

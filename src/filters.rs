@@ -103,7 +103,7 @@ pub trait Filter {
         ) {
             return Ok(cached);
         }
-        let filtered_tree = self.apply_to_tree(&repo, commit.tree()?)?;
+        let filtered_tree = self.apply(&repo, commit.tree()?)?;
 
         let filtered_parent_ids = commit
             .parents()
@@ -118,7 +118,7 @@ pub trait Filter {
         );
     }
 
-    fn apply_to_tree<'a>(
+    fn apply<'a>(
         &self,
         repo: &'a git2::Repository,
         tree: git2::Tree<'a>,
@@ -155,7 +155,7 @@ impl Filter for NopFilter {
         self
     }
 
-    fn apply_to_tree<'a>(
+    fn apply<'a>(
         &self,
         _repo: &'a git2::Repository,
         tree: git2::Tree<'a>,
@@ -326,7 +326,7 @@ impl Filter for DirsFilter {
     fn get(&self) -> &dyn Filter {
         self
     }
-    fn apply_to_tree<'a>(
+    fn apply<'a>(
         &self,
         repo: &'a git2::Repository,
         tree: git2::Tree<'a>,
@@ -339,7 +339,7 @@ impl Filter for DirsFilter {
     }
 }
 
-fn merged_tree(
+pub fn overlay(
     repo: &git2::Repository,
     input1: git2::Oid,
     input2: git2::Oid,
@@ -368,7 +368,7 @@ fn merged_tree(
                     &Path::new(
                         entry.name().ok_or(super::josh_error("no name"))?,
                     ),
-                    merged_tree(repo, entry.id(), e.id())?,
+                    overlay(repo, entry.id(), e.id())?,
                     &result_tree,
                 )?;
             } else {
@@ -421,7 +421,7 @@ impl Filter for FoldFilter {
         let mut filtered_tree = commit.tree_id();
 
         for t in trees {
-            filtered_tree = merged_tree(repo, filtered_tree, t)?;
+            filtered_tree = overlay(repo, filtered_tree, t)?;
         }
 
         return create_filtered_commit(
@@ -432,7 +432,7 @@ impl Filter for FoldFilter {
         );
     }
 
-    fn apply_to_tree<'a>(
+    fn apply<'a>(
         &self,
         repo: &'a git2::Repository,
         _tree: git2::Tree<'a>,
@@ -445,11 +445,9 @@ impl Filter for FoldFilter {
     }
 }
 
-struct CutoffFilter {
-    name: String,
-}
+struct SquashFilter;
 
-impl Filter for CutoffFilter {
+impl Filter for SquashFilter {
     fn get(&self) -> &dyn Filter {
         self
     }
@@ -462,7 +460,7 @@ impl Filter for CutoffFilter {
         return scratch::rewrite(&repo, &commit, &vec![], &commit.tree()?);
     }
 
-    fn apply_to_tree<'a>(
+    fn apply<'a>(
         &self,
         _repo: &'a git2::Repository,
         tree: git2::Tree<'a>,
@@ -471,7 +469,7 @@ impl Filter for CutoffFilter {
     }
 
     fn filter_spec(&self) -> String {
-        return format!(":CUTOFF={}", self.name);
+        "SQUASH".to_owned()
     }
 }
 
@@ -497,13 +495,13 @@ impl Filter for ChainFilter {
         return self.second.apply_to_commit(repo, &commit);
     }
 
-    fn apply_to_tree<'a>(
+    fn apply<'a>(
         &self,
         repo: &'a git2::Repository,
         tree: git2::Tree<'a>,
     ) -> super::JoshResult<git2::Tree<'a>> {
-        let t = self.first.apply_to_tree(&repo, tree)?;
-        return self.second.apply_to_tree(&repo, t);
+        let t = self.first.apply(&repo, tree)?;
+        return self.second.apply(&repo, t);
     }
 
     fn unapply<'a>(
@@ -512,7 +510,7 @@ impl Filter for ChainFilter {
         tree: git2::Tree<'a>,
         parent_tree: git2::Tree<'a>,
     ) -> super::JoshResult<git2::Tree<'a>> {
-        let p = self.first.apply_to_tree(&repo, parent_tree.clone())?;
+        let p = self.first.apply(&repo, parent_tree.clone())?;
         let a = self.second.unapply(&repo, tree, p)?;
         Ok(repo.find_tree(self.first.unapply(&repo, a, parent_tree)?.id())?)
     }
@@ -558,7 +556,7 @@ impl Filter for SubdirFilter {
     fn get(&self) -> &dyn Filter {
         self
     }
-    fn apply_to_tree<'a>(
+    fn apply<'a>(
         &self,
         repo: &'a git2::Repository,
         tree: git2::Tree<'a>,
@@ -591,7 +589,7 @@ impl Filter for PrefixFilter {
     fn get(&self) -> &dyn Filter {
         self
     }
-    fn apply_to_tree<'a>(
+    fn apply<'a>(
         &self,
         repo: &'a git2::Repository,
         tree: git2::Tree<'a>,
@@ -624,7 +622,7 @@ impl Filter for HideFilter {
     fn get(&self) -> &dyn Filter {
         self
     }
-    fn apply_to_tree<'a>(
+    fn apply<'a>(
         &self,
         repo: &'a git2::Repository,
         tree: git2::Tree<'a>,
@@ -662,7 +660,7 @@ impl Filter for GlobFilter {
     fn get(&self) -> &dyn Filter {
         self
     }
-    fn apply_to_tree<'a>(
+    fn apply<'a>(
         &self,
         repo: &'a git2::Repository,
         tree: git2::Tree<'a>,
@@ -709,7 +707,7 @@ impl Filter for GlobFilter {
             git2::Oid::zero(),
             &mut self.cache.borrow_mut(),
         )?;
-        Ok(repo.find_tree(merged_tree(
+        Ok(repo.find_tree(overlay(
             &repo,
             parent_tree.id(),
             substracted.id(),
@@ -732,12 +730,27 @@ struct CombineFilter {
     >,
 }
 
+pub fn substract<'a>(
+    repo: &'a git2::Repository,
+    a: git2::Tree<'a>,
+    b: git2::Tree<'a>,
+) -> super::JoshResult<git2::Tree<'a>> {
+    substract_tree(
+        &repo,
+        "",
+        a.id(),
+        &|path, _| !b.get_path(path).is_ok(),
+        b.id(),
+        &mut std::collections::HashMap::new(),
+    )
+}
+
 impl Filter for CombineFilter {
     fn get(&self) -> &dyn Filter {
         self
     }
 
-    fn apply_to_tree<'a>(
+    fn apply<'a>(
         &self,
         repo: &'a git2::Repository,
         tree: git2::Tree<'a>,
@@ -746,8 +759,8 @@ impl Filter for CombineFilter {
         let mut taken = empty_tree(&repo);
 
         for other in self.others.iter() {
-            let applied = other.apply_to_tree(&repo, tree.clone())?;
-            let taken_applied = other.apply_to_tree(&repo, taken.clone())?;
+            let applied = other.apply(&repo, tree.clone())?;
+            let taken_applied = other.apply(&repo, taken.clone())?;
 
             let substracted = substract_tree(
                 &repo,
@@ -759,11 +772,8 @@ impl Filter for CombineFilter {
             )?;
 
             taken = other.unapply(&repo, applied.clone(), taken.clone())?;
-            result = repo.find_tree(merged_tree(
-                &repo,
-                result.id(),
-                substracted.id(),
-            )?)?;
+            result =
+                repo.find_tree(overlay(&repo, result.id(), substracted.id())?)?;
         }
 
         return Ok(result);
@@ -785,7 +795,7 @@ impl Filter for CombineFilter {
                 continue;
             }
             result = other.unapply(&repo, remaining.clone(), result)?;
-            let reapply = other.apply_to_tree(&repo, from_empty.clone())?;
+            let reapply = other.apply(&repo, from_empty.clone())?;
             remaining = substract_tree(
                 &repo,
                 "",
@@ -906,7 +916,7 @@ impl WorkspaceFilter {
             break;
         }
 
-        return Ok((cw.apply_to_tree(repo, full_tree)?, filtered_parent_ids));
+        return Ok((cw.apply(repo, full_tree)?, filtered_parent_ids));
     }
 }
 
@@ -941,7 +951,7 @@ impl Filter for WorkspaceFilter {
         );
     }
 
-    fn apply_to_tree<'a>(
+    fn apply<'a>(
         &self,
         repo: &'a git2::Repository,
         tree: git2::Tree<'a>,
@@ -951,7 +961,7 @@ impl Filter for WorkspaceFilter {
         } else {
             build_combine_filter("", Some(SubdirFilter::new(&self.ws_path)))?
         }
-        .apply_to_tree(repo, tree)
+        .apply(repo, tree)
     }
 
     fn unapply<'a>(
@@ -1001,9 +1011,7 @@ fn make_filter(args: &[&str]) -> super::JoshResult<Box<dyn Filter>> {
         ["workspace", arg] => Ok(Box::new(WorkspaceFilter {
             ws_path: Path::new(arg).to_owned(),
         })),
-        ["CUTOFF", arg] => Ok(Box::new(CutoffFilter {
-            name: arg.to_owned().to_string(),
-        })),
+        ["SQUASH"] => Ok(Box::new(SquashFilter)),
         ["DIRS"] => Ok(Box::new(DirsFilter {
             cache: std::cell::RefCell::new(std::collections::HashMap::new()),
         })),
@@ -1134,7 +1142,7 @@ fn get_subtree(tree: &git2::Tree, path: &Path) -> Option<git2::Oid> {
     tree.get_path(path).map(|x| x.id()).ok()
 }
 
-fn replace_child<'a>(
+pub fn replace_child<'a>(
     repo: &'a git2::Repository,
     child: &Path,
     oid: git2::Oid,
@@ -1160,7 +1168,7 @@ fn replace_child<'a>(
     return Ok(repo.find_tree(full_tree_id)?);
 }
 
-fn replace_subtree<'a>(
+pub fn replace_subtree<'a>(
     repo: &'a git2::Repository,
     path: &Path,
     oid: git2::Oid,
