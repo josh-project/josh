@@ -1215,7 +1215,6 @@ pub fn apply_filter_cached(
     )
 }
 
-#[tracing::instrument(skip(repo, transaction))]
 fn apply_filter_cached_impl(
     repo: &git2::Repository,
     filter: &dyn Filter,
