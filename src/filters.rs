@@ -128,11 +128,11 @@ pub trait Filter {
     ) -> super::JoshResult<git2::Tree<'a>> {
         Err(super::josh_error(&format!(
             "filter not reversible: {:?}",
-            self.filter_spec()
+            self.spec()
         )))
     }
 
-    fn filter_spec(&self) -> String;
+    fn spec(&self) -> String;
 }
 
 impl std::fmt::Debug for &dyn Filter {
@@ -140,7 +140,7 @@ impl std::fmt::Debug for &dyn Filter {
         &self,
         f: &mut std::fmt::Formatter<'_>,
     ) -> std::result::Result<(), std::fmt::Error> {
-        write!(f, "{}", self.filter_spec())
+        write!(f, "{}", self.spec())
     }
 }
 
@@ -168,7 +168,7 @@ impl Filter for NopFilter {
         Ok(tree.clone())
     }
 
-    fn filter_spec(&self) -> String {
+    fn spec(&self) -> String {
         return ":nop".to_owned();
     }
 }
@@ -330,7 +330,7 @@ impl Filter for DirsFilter {
         dirtree(&repo, "", tree.id(), &mut self.cache.borrow_mut())
     }
 
-    fn filter_spec(&self) -> String {
+    fn spec(&self) -> String {
         return ":DIRS".to_owned();
     }
 }
@@ -431,7 +431,7 @@ impl Filter for FoldFilter {
         Ok(empty_tree(&repo))
     }
 
-    fn filter_spec(&self) -> String {
+    fn spec(&self) -> String {
         return ":FOLD".to_owned();
     }
 }
@@ -460,7 +460,7 @@ impl Filter for SquashFilter {
         Ok(tree)
     }
 
-    fn filter_spec(&self) -> String {
+    fn spec(&self) -> String {
         "SQUASH".to_owned()
     }
 }
@@ -480,12 +480,22 @@ impl Filter for ChainFilter {
         commit: &git2::Commit,
         transaction: &mut super::filter_cache::Transaction,
     ) -> super::JoshResult<git2::Oid> {
-        let r = apply_filter_cached(repo, &*self.first, commit.id())?;
+        let r = apply_filter_cached_impl(
+            repo,
+            &*self.first,
+            commit.id(),
+            transaction,
+        )?;
 
         let commit = ok_or!(repo.find_commit(r), {
             return Ok(git2::Oid::zero());
         });
-        return apply_filter_cached(repo, &*self.second, commit.id());
+        return apply_filter_cached_impl(
+            repo,
+            &*self.second,
+            commit.id(),
+            transaction,
+        );
     }
 
     fn apply<'a>(
@@ -508,13 +518,9 @@ impl Filter for ChainFilter {
         Ok(repo.find_tree(self.first.unapply(&repo, a, parent_tree)?.id())?)
     }
 
-    fn filter_spec(&self) -> String {
-        return format!(
-            "{}{}",
-            &self.first.filter_spec(),
-            &self.second.filter_spec()
-        )
-        .replacen(":nop", "", 1);
+    fn spec(&self) -> String {
+        return format!("{}{}", &self.first.spec(), &self.second.spec())
+            .replacen(":nop", "", 1);
     }
 }
 
@@ -569,7 +575,7 @@ impl Filter for SubdirFilter {
         replace_subtree(&repo, &self.path, tree.id(), &parent_tree)
     }
 
-    fn filter_spec(&self) -> String {
+    fn spec(&self) -> String {
         return format!(":/{}", &self.path.to_str().unwrap());
     }
 }
@@ -602,7 +608,7 @@ impl Filter for PrefixFilter {
             .unwrap_or(empty_tree(&repo)))
     }
 
-    fn filter_spec(&self) -> String {
+    fn spec(&self) -> String {
         return format!(":prefix={}", &self.prefix.to_str().unwrap());
     }
 }
@@ -636,7 +642,7 @@ impl Filter for HideFilter {
         replace_subtree(&repo, &self.path, hidden, &tree)
     }
 
-    fn filter_spec(&self) -> String {
+    fn spec(&self) -> String {
         return format!(":hide={}", &self.path.to_str().unwrap());
     }
 }
@@ -707,7 +713,7 @@ impl Filter for GlobFilter {
         )?)?)
     }
 
-    fn filter_spec(&self) -> String {
+    fn spec(&self) -> String {
         if self.invert {
             return format!(":~glob={}", &self.pattern.as_str());
         } else {
@@ -802,11 +808,11 @@ impl Filter for CombineFilter {
         return Ok(result);
     }
 
-    fn filter_spec(&self) -> String {
+    fn spec(&self) -> String {
         return self
             .others
             .iter()
-            .map(|x| x.filter_spec())
+            .map(|x| x.spec())
             .collect::<Vec<_>>()
             .join("\n");
     }
@@ -858,7 +864,7 @@ impl WorkspaceFilter {
         };
 
         for other in cw.others.iter() {
-            in_this.push(format!("{}", other.filter_spec()));
+            in_this.push(format!("{}", other.spec()));
         }
 
         let mut in_parents = std::collections::HashSet::new();
@@ -886,7 +892,7 @@ impl WorkspaceFilter {
             };
 
             for other in pcw.others.iter() {
-                in_parents.insert(format!("{}", other.filter_spec()));
+                in_parents.insert(format!("{}", other.spec()));
             }
         }
         in_this.retain(|x| !in_parents.contains(x));
@@ -902,7 +908,12 @@ impl WorkspaceFilter {
             // TODO: maybe consider doing this for the parents individually
             // -> move this into the loop above
             if let Ok(parent) = repo.find_commit(parent) {
-                let p = apply_filter_cached(&*repo, &*pcw, parent.id())?;
+                let p = apply_filter_cached_impl(
+                    &*repo,
+                    &*pcw,
+                    parent.id(),
+                    transaction,
+                )?;
                 if p != git2::Oid::zero() {
                     filtered_parent_ids.push(p);
                 }
@@ -964,7 +975,7 @@ impl Filter for WorkspaceFilter {
         return cw.unapply(repo, tree, parent_tree);
     }
 
-    fn filter_spec(&self) -> String {
+    fn spec(&self) -> String {
         return format!(":workspace={}", &self.ws_path.to_str().unwrap());
     }
 }
@@ -975,7 +986,7 @@ struct MyParser;
 
 fn make_filter(args: &[&str]) -> super::JoshResult<Box<dyn Filter>> {
     match args {
-        ["", arg] => Ok(SubdirFilter::new(&Path::new(arg))),
+        ["/", arg] => Ok(SubdirFilter::new(&Path::new(arg))),
         ["nop"] => Ok(Box::new(NopFilter)),
         ["prefix", arg] => Ok(Box::new(PrefixFilter {
             prefix: Path::new(arg).to_owned(),
@@ -1016,9 +1027,17 @@ fn parse_item(
             let v: Vec<_> = pair.into_inner().map(|x| x.as_str()).collect();
             make_filter(v.as_slice())
         }
+        Rule::filter_subdir => {
+            let mut inner = pair.into_inner();
+            make_filter(&["/", inner.next().unwrap().as_str()])
+        }
         Rule::filter_noarg => {
             let mut inner = pair.into_inner();
             make_filter(&[inner.next().unwrap().as_str()])
+        }
+        Rule::filter_combine => {
+            let v: Vec<_> = pair.into_inner().map(|x| x.as_str()).collect();
+            Ok(build_combine_filter(v[0], None)?)
         }
         _ => Err(super::josh_error("parse_item: no match")),
     }
@@ -1103,7 +1122,7 @@ pub fn parse(filter_spec: &str) -> super::JoshResult<Box<dyn Filter>> {
     if filter_spec == "" {
         return parse(":nop");
     }
-    if filter_spec.starts_with("!") || filter_spec.starts_with(":") {
+    if filter_spec.starts_with(":") {
         let mut chain: Option<Box<dyn Filter>> = None;
         if let Ok(r) = MyParser::parse(Rule::filter_spec, filter_spec) {
             let mut r = r;
@@ -1187,12 +1206,12 @@ pub fn apply_filter_cached(
     filter: &dyn Filter,
     input: git2::Oid,
 ) -> super::JoshResult<git2::Oid> {
-    rs_tracing::trace_scoped!("apply_filter_cached","spec":filter.filter_spec());
+    rs_tracing::trace_scoped!("apply_filter_cached","spec":filter.spec());
     apply_filter_cached_impl(
         repo,
         filter,
         input,
-        &mut super::filter_cache::Transaction::new(filter.filter_spec()),
+        &mut super::filter_cache::Transaction::new(),
     )
 }
 
@@ -1203,13 +1222,13 @@ fn apply_filter_cached_impl(
     input: git2::Oid,
     transaction: &mut super::filter_cache::Transaction,
 ) -> super::JoshResult<git2::Oid> {
-    rs_tracing::trace_scoped!("apply_filter_cached_impl","spec":filter.filter_spec());
-    if filter.filter_spec() == "" {
+    rs_tracing::trace_scoped!("apply_filter_cached_impl","spec":filter.spec());
+    if filter.spec() == "" {
         return Ok(git2::Oid::zero());
     }
 
-    if transaction.has(repo, input) {
-        return Ok(transaction.get(input));
+    if transaction.has(&filter.spec(), repo, input) {
+        return Ok(transaction.get(&filter.spec(), input));
     }
 
     let walk = {
@@ -1227,7 +1246,6 @@ fn apply_filter_cached_impl(
 
         let original_commit = repo.find_commit(original_commit_id?)?;
 
-
         let filtered_commit = ok_or!(
             filter.apply_to_commit(&repo, &original_commit, transaction),
             {
@@ -1239,14 +1257,18 @@ fn apply_filter_cached_impl(
         if filtered_commit == git2::Oid::zero() {
             empty_tree_count += 1;
         }
-        transaction.insert(original_commit.id(), filtered_commit);
+        transaction.insert(
+            &filter.spec(),
+            original_commit.id(),
+            filtered_commit,
+        );
         out_commit_count += 1;
     }
 
-    if !transaction.has(&repo, input) {
-        transaction.insert(input, git2::Oid::zero());
+    if !transaction.has(&filter.spec(), &repo, input) {
+        transaction.insert(&filter.spec(), input, git2::Oid::zero());
     }
-    let rewritten = transaction.get(input);
+    let rewritten = transaction.get(&filter.spec(), input);
     tracing::event!(
         tracing::Level::TRACE,
         ?in_commit_count,

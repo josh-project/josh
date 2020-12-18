@@ -294,7 +294,7 @@ async fn do_filter(
         tracing::trace!("in do_filter worker");
         let repo = git2::Repository::init_bare(&repo_path)?;
         let filter = josh::filters::parse(&filter_spec)?;
-        let filter_spec = filter.filter_spec();
+        let filter_spec = filter.spec();
         let mut from_to = josh::housekeeping::default_from_to(
             &repo,
             &temp_ns.name(),

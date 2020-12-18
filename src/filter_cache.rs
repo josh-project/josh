@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
-const FORMAT_VERSION: u64 = 5;
+const FORMAT_VERSION: u64 = 6;
 
 #[derive(Eq, PartialEq, PartialOrd, Hash, Clone, Copy)]
 pub struct JoshOid(git2::Oid);
@@ -11,16 +11,10 @@ pub type OidMap = HashMap<JoshOid, JoshOid>;
 lazy_static! {
     static ref FORWARD_MAPS: Arc<RwLock<FilterCache>> =
         Arc::new(RwLock::new(FilterCache::new("forward".to_owned())));
-    static ref BACKWARD_MAPS: Arc<RwLock<FilterCache>> =
-        Arc::new(RwLock::new(FilterCache::new("backward".to_owned())));
 }
 
 fn forward() -> Arc<RwLock<FilterCache>> {
     FORWARD_MAPS.clone()
-}
-
-pub fn backward() -> Arc<RwLock<FilterCache>> {
-    BACKWARD_MAPS.clone()
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -84,6 +78,9 @@ pub fn lookup_forward(
     spec: &str,
     oid: git2::Oid,
 ) -> Option<git2::Oid> {
+    if spec == ":nop" {
+        return Some(oid);
+    }
     if let Ok(f) = forward().read() {
         if f.has(&repo, &spec, oid) {
             return Some(f.get(&spec, oid));
@@ -199,15 +196,9 @@ fn try_load(path: &std::path::Path) -> FilterCache {
 
 pub fn load(path: &std::path::Path) {
     *(forward().write().unwrap()) = try_load(&path.join("josh_forward_maps"));
-    *(backward().write().unwrap()) = try_load(&path.join("josh_backward_maps"));
 }
 
 pub fn persist(path: &std::path::Path) {
-    persist_file(
-        &*super::filter_cache::backward().read().unwrap(),
-        &path.join("josh_backward_maps"),
-    )
-    .ok();
     persist_file(
         &*super::filter_cache::forward().read().unwrap(),
         &path.join("josh_forward_maps"),
@@ -227,32 +218,6 @@ fn persist_file(
     return Ok(());
 }
 
-fn try_merge_both(fm: &FilterCache, bm: &FilterCache) {
-    rs_tracing::trace_scoped!("merge");
-    tracing::span!(tracing::Level::TRACE, "write_lock backward_maps").in_scope(
-        || {
-            backward()
-                .try_write()
-                .map(|mut bm_locked| {
-                    tracing::span!(
-                        tracing::Level::TRACE,
-                        "write_lock forward_maps"
-                    )
-                    .in_scope(|| {
-                        forward()
-                            .try_write()
-                            .map(|mut fm_locked| {
-                                bm_locked.merge(&bm);
-                                fm_locked.merge(&fm);
-                            })
-                            .ok();
-                    });
-                })
-                .ok();
-        },
-    );
-}
-
 pub fn new_downstream(u: &Arc<RwLock<FilterCache>>) -> FilterCache {
     return FilterCache {
         maps: HashMap::new(),
@@ -264,37 +229,44 @@ pub fn new_downstream(u: &Arc<RwLock<FilterCache>>) -> FilterCache {
 
 pub struct Transaction {
     fm: FilterCache,
-    bm: FilterCache,
-    spec: String,
 }
 
 impl Transaction {
-    pub fn new(spec: String) -> Transaction {
+    pub fn new() -> Transaction {
         Transaction {
             fm: new_downstream(&super::filter_cache::forward()),
-            bm: new_downstream(&super::filter_cache::backward()),
-            spec: spec,
         }
     }
 
-    pub fn insert(&mut self, from: git2::Oid, to: git2::Oid) {
-        self.fm.set(&self.spec, from, to);
-        if to != git2::Oid::zero() {
-            self.bm.set(&self.spec, to, from);
-        }
+    pub fn insert(&mut self, spec: &str, from: git2::Oid, to: git2::Oid) {
+        self.fm.set(spec, from, to);
     }
 
-    pub fn has(&self, repo: &git2::Repository, from: git2::Oid) -> bool {
-        self.fm.has(&repo, &self.spec, from)
+    pub fn has(
+        &self,
+        spec: &str,
+        repo: &git2::Repository,
+        from: git2::Oid,
+    ) -> bool {
+        self.fm.has(&repo, spec, from)
     }
 
-    pub fn get(&self, from: git2::Oid) -> git2::Oid {
-        self.fm.get(&self.spec, from)
+    pub fn get(&self, spec: &str, from: git2::Oid) -> git2::Oid {
+        self.fm.get(spec, from)
     }
 }
 
 impl Drop for Transaction {
     fn drop(&mut self) {
-        try_merge_both(&self.fm, &self.bm);
+        rs_tracing::trace_scoped!("merge");
+        let s =
+            tracing::span!(tracing::Level::TRACE, "write_lock forward_maps");
+        let _e = s.enter();
+        forward()
+            .try_write()
+            .map(|mut fm_locked| {
+                fm_locked.merge(&self.fm);
+            })
+            .ok();
     }
 }
