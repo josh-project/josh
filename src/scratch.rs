@@ -45,6 +45,41 @@ pub fn rewrite(
     )?);
 }
 
+fn find_original(
+    repo: &git2::Repository,
+    bm: &mut std::collections::HashMap<git2::Oid, git2::Oid>,
+    spec: &str,
+    contained_in: git2::Oid,
+    filtered: git2::Oid,
+) -> super::JoshResult<git2::Oid> {
+    if contained_in == git2::Oid::zero() {
+        return Ok(git2::Oid::zero());
+    }
+    if let Some(original) = bm.get(&filtered) {
+        return Ok(*original);
+    }
+    if let Some(oid) =
+        super::filter_cache::lookup_forward(&repo, &spec, contained_in)
+    {
+        bm.insert(contained_in, oid);
+    }
+    let mut walk = repo.revwalk()?;
+    walk.set_sorting(git2::Sort::TOPOLOGICAL)?;
+    walk.push(contained_in)?;
+
+    for original in walk {
+        let original = original?;
+        if Some(filtered)
+            == super::filter_cache::lookup_forward(&repo, spec, original)
+        {
+            bm.insert(filtered, original);
+            return Ok(original);
+        }
+    }
+
+    return Ok(git2::Oid::zero());
+}
+
 #[tracing::instrument(skip(repo))]
 pub fn unapply_filter(
     repo: &git2::Repository,
@@ -53,7 +88,6 @@ pub fn unapply_filter(
     old: git2::Oid,
     new: git2::Oid,
 ) -> super::JoshResult<UnapplyFilter> {
-    let backward_maps = super::filter_cache::backward();
     let walk = {
         let mut walk = repo.revwalk()?;
         walk.set_sorting(git2::Sort::REVERSE | git2::Sort::TOPOLOGICAL)?;
@@ -66,8 +100,9 @@ pub fn unapply_filter(
         walk
     };
 
-    let mut bm = filter_cache::new_downstream(&backward_maps);
-    let mut ret = bm.get(&filterobj.spec(), new);
+    let mut bm = std::collections::HashMap::new();
+    let mut ret =
+        find_original(&repo, &mut bm, &filterobj.spec(), unfiltered_old, new)?;
     for rev in walk {
         let rev = rev?;
 
@@ -76,7 +111,7 @@ pub fn unapply_filter(
 
         let module_commit = repo.find_commit(rev)?;
 
-        if bm.has(&repo, &filterobj.spec(), module_commit.id()) {
+        if bm.contains_key(&module_commit.id()) {
             continue;
         }
 
@@ -85,19 +120,35 @@ pub fn unapply_filter(
         let original_parents: std::result::Result<Vec<_>, _> =
             filtered_parent_ids
                 .iter()
-                .map(|x| {
-                    if *x == old {
-                        unfiltered_old
+                .map(|x| -> super::JoshResult<_> {
+                    find_original(
+                        &repo,
+                        &mut bm,
+                        &filterobj.spec(),
+                        unfiltered_old,
+                        *x,
+                    )
+                })
+                .filter(|x| {
+                    if let Ok(i) = x {
+                        *i != git2::Oid::zero()
                     } else {
-                        bm.get(&filterobj.spec(), *x)
+                        true
                     }
                 })
-                .map(|x| repo.find_commit(x))
+                .map(|x| -> super::JoshResult<_> { Ok(repo.find_commit(x?)?) })
                 .collect();
+
+        tracing::info!(
+            "parents: {:?} -> {:?}",
+            original_parents,
+            filtered_parent_ids
+        );
 
         let original_parents = original_parents?;
 
-        let original_parents_refs: Vec<&_> = original_parents.iter().collect();
+        let original_parents_refs: Vec<&git2::Commit> =
+            original_parents.iter().collect();
 
         let tree = module_commit.tree()?;
 
@@ -158,7 +209,7 @@ pub fn unapply_filter(
 
         ret =
             rewrite(&repo, &module_commit, &original_parents_refs, &new_tree)?;
-        bm.set(&filterobj.spec(), module_commit.id(), ret);
+        bm.insert(module_commit.id(), ret);
     }
 
     tracing::trace!("done {:?}", ret);
