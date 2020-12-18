@@ -124,6 +124,9 @@ impl FilterCache {
         filter_spec: &str,
         from: git2::Oid,
     ) -> bool {
+        if filter_spec == ":nop" {
+            return true;
+        }
         if let Some(m) = self.maps.get(filter_spec) {
             if m.contains_key(&JoshOid(from)) {
                 // Only report an object as cached if it exists in the object database.
