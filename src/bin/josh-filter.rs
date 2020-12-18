@@ -1,10 +1,11 @@
-/* #![deny(warnings)] */
+#![deny(warnings)]
 #![warn(unused_extern_crates)]
 
 #[macro_use]
 extern crate lazy_static;
 
-use std::sync::{Arc, RwLock};
+#[macro_use]
+extern crate rs_tracing;
 
 use std::fs::read_to_string;
 
@@ -12,15 +13,12 @@ lazy_static! {
     static ref FILE_REGEX: regex::Regex =
         regex::Regex::new(r"\[(?P<src>.*)\](?P<spec>[^\[]*)")
             .expect("can't compile regex");
-    static ref STR_REGEX: regex::Regex =
-        regex::Regex::new(r"(?P<src>[^:]*)(?P<spec>:[^\[]*)")
-            .expect("can't compile regex");
 }
 
 fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
     let args = clap::App::new("josh-filter")
-        .arg(clap::Arg::with_name("input_ref").takes_value(true))
         .arg(clap::Arg::with_name("spec").takes_value(true))
+        .arg(clap::Arg::with_name("input_ref").takes_value(true))
         .arg(clap::Arg::with_name("file").long("file").takes_value(true))
         .arg(
             clap::Arg::with_name("update")
@@ -28,6 +26,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
                 .takes_value(true),
         )
         .arg(clap::Arg::with_name("squash").long("squash"))
+        .arg(clap::Arg::with_name("trace").short("t"))
         .arg(
             clap::Arg::with_name("query")
                 .long("query")
@@ -38,15 +37,10 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         .arg(
             clap::Arg::with_name("check-permission")
                 .long("check-permission")
+                .short("p")
                 .takes_value(true),
         )
-        .arg(clap::Arg::with_name("infofile").long("infofile"))
         .arg(clap::Arg::with_name("version").long("version"))
-        .arg(
-            clap::Arg::with_name("trace")
-                .long("trace")
-                .takes_value(true),
-        )
         .get_matches_from(args);
 
     if args.is_present("version") {
@@ -56,16 +50,16 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         return Ok(0);
     }
 
-    let repo = git2::Repository::open_from_env()?;
-    let forward_maps = Arc::new(RwLock::new(josh::filter_cache::try_load(
-        &repo.path().join("josh_forward_maps"),
-    )));
-    let backward_maps = Arc::new(RwLock::new(josh::filter_cache::try_load(
-        &repo.path().join("josh_backward_maps"),
-    )));
+    if args.is_present("trace") {
+        rs_tracing::open_trace_file!(".").unwrap();
+    }
 
-    let input_ref = args.value_of("input_ref").unwrap_or("");
-    let specstr = args.value_of("spec").unwrap_or("");
+    let repo = git2::Repository::open_from_env()?;
+
+    josh::filter_cache::load(&repo.path());
+
+    let input_ref = args.value_of("input_ref").unwrap_or("HEAD");
+    let specstr = args.value_of("spec").unwrap_or(":nop");
     let update_target = args.value_of("update").unwrap_or("refs/JOSH_HEAD");
     let srcstr = format!("{}:{}", input_ref, update_target);
 
@@ -89,39 +83,21 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
 
         let filter_spec = caps.name("spec").unwrap().as_str().trim().to_owned();
 
-        let mut filterobj = josh::filters::parse(&filter_spec);
-
-        let pres = filterobj.prefixes();
-
-        if args.is_present("infofile") {
-            for (p, v) in pres.iter() {
-                filterobj = josh::build_chain(
-                    filterobj,
-                    josh::filters::parse(&format!(
-                        ":info={},commit=#sha1,tree=#tree,src={},filter={}",
-                        p,
-                        &src,
-                        v.replace(":", "<colon>").replace(",", "<comma>")
-                    )),
-                );
-            }
-        }
+        let mut filterobj = josh::filters::parse(&filter_spec)?;
 
         let reverse = args.is_present("reverse");
         let check_permissions = args.is_present("check-permission");
 
         if args.is_present("squash") {
-            filterobj = josh::build_chain(
-                josh::filters::parse(&format!(":cutoff={}", &src)),
-                filterobj,
-            );
+            filterobj =
+                josh::build_chain(josh::filters::parse(":SQUASH")?, filterobj);
         }
 
         if check_permissions {
             filterobj =
-                josh::build_chain(josh::filters::parse(":DIRS"), filterobj);
+                josh::build_chain(josh::filters::parse(":DIRS")?, filterobj);
             filterobj =
-                josh::build_chain(filterobj, josh::filters::parse(":FOLD"));
+                josh::build_chain(filterobj, josh::filters::parse(":FOLD")?);
         }
 
         let t = if reverse {
@@ -141,8 +117,6 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
             &repo,
             &*filterobj,
             &[(src.clone(), t.clone())],
-            &mut forward_maps.write().unwrap(),
-            &mut backward_maps.write().unwrap(),
         )?;
 
         let mut all_dirs = vec![];
@@ -173,15 +147,24 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
             }
         }
 
+        let dedup = all_dirs;
+
+        let options = glob::MatchOptions {
+            case_sensitive: true,
+            require_literal_separator: true,
+            require_literal_leading_dot: true,
+        };
+
         if let Some(cp) = args.value_of("check-permission") {
-            let permission_regex = regex::Regex::new(cp)?;
+            let pattern = glob::Pattern::new(cp)?;
 
             let mut allowed = dedup.len() != 0;
             for d in dedup.iter() {
-                let m = permission_regex.is_match(&d);
+                let d = std::path::PathBuf::from(d);
+                let m = pattern.matches_path_with(&d, options.clone());
                 if !m {
                     allowed = false;
-                    println!("missing permission for: {}", &d);
+                    println!("missing permission for: {:?}", &d);
                 }
             }
             println!("Allowed = {:?}", allowed);
@@ -194,8 +177,6 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
                     git2::Repository::open_from_env()?,
                     &update_target.to_string(),
                     &query,
-                    josh::filter_cache::new_downstream(&forward_maps),
-                    josh::filter_cache::new_downstream(&backward_maps),
                 )?
                 .unwrap_or("File not found".to_string())
             );
@@ -208,7 +189,6 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
 
             match josh::unapply_filter(
                 &repo,
-                backward_maps.clone(),
                 &*filterobj,
                 unfiltered_old,
                 old,
@@ -218,22 +198,17 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
                     repo.reference(&src, rewritten, true, "unapply_filter")?;
                 }
                 _ => {
-                    /* debug!("rewritten ERROR"); */
                     return Ok(1);
                 }
             }
         }
     }
 
-    let bm = backward_maps.read().unwrap();
+    josh::filter_cache::persist(&repo.path());
 
-    josh::filter_cache::persist(&*bm, &repo.path().join("josh_backward_maps"))
-        .ok();
-    josh::filter_cache::persist(
-        &forward_maps.read().unwrap(),
-        &repo.path().join("josh_forward_maps"),
-    )
-    .ok();
+    if args.is_present("trace") {
+        rs_tracing::close_trace_file!();
+    }
 
     return Ok(0);
 }

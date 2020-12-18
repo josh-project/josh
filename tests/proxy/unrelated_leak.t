@@ -74,8 +74,6 @@
   * initial
   $ git log --graph --pretty=%s origin/from_filtered
   * add file4
-  * add file1
-  * initial
 
   $ . ${TESTDIR}/destroy_test_env.sh
   remote/scratch/refs

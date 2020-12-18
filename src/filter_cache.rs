@@ -1,12 +1,21 @@
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
-const FORMAT_VERSION: u64 = 4;
+const FORMAT_VERSION: u64 = 6;
 
 #[derive(Eq, PartialEq, PartialOrd, Hash, Clone, Copy)]
 pub struct JoshOid(git2::Oid);
 
 pub type OidMap = HashMap<JoshOid, JoshOid>;
+
+lazy_static! {
+    static ref FORWARD_MAPS: Arc<RwLock<FilterCache>> =
+        Arc::new(RwLock::new(FilterCache::new("forward".to_owned())));
+}
+
+fn forward() -> Arc<RwLock<FilterCache>> {
+    FORWARD_MAPS.clone()
+}
 
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct FilterCache {
@@ -64,6 +73,22 @@ impl<'de> serde::de::Deserialize<'de> for JoshOid {
     }
 }
 
+pub fn lookup_forward(
+    repo: &git2::Repository,
+    spec: &str,
+    oid: git2::Oid,
+) -> Option<git2::Oid> {
+    if spec == ":nop" {
+        return Some(oid);
+    }
+    if let Ok(f) = forward().read() {
+        if f.has(&repo, &spec, oid) {
+            return Some(f.get(&spec, oid));
+        }
+    }
+    return None;
+}
+
 impl FilterCache {
     pub fn set(&mut self, filter_spec: &str, from: git2::Oid, to: git2::Oid) {
         let prev = self.get(&filter_spec, from);
@@ -115,7 +140,7 @@ impl FilterCache {
         return false;
     }
 
-    pub fn new(name: String) -> FilterCache {
+    fn new(name: String) -> FilterCache {
         return FilterCache {
             name: name,
             maps: HashMap::new(),
@@ -124,7 +149,7 @@ impl FilterCache {
         };
     }
 
-    pub fn merge(&mut self, other: &FilterCache) {
+    fn merge(&mut self, other: &FilterCache) {
         for (filter_spec, om) in other.maps.iter() {
             let m = self
                 .maps
@@ -149,7 +174,7 @@ impl FilterCache {
 }
 
 #[tracing::instrument]
-pub fn try_load(path: &std::path::Path) -> FilterCache {
+fn try_load(path: &std::path::Path) -> FilterCache {
     let file_size = std::fs::metadata(&path)
         .map(|x| x.len() / (1024 * 1024))
         .unwrap_or(0);
@@ -169,48 +194,28 @@ pub fn try_load(path: &std::path::Path) -> FilterCache {
     FilterCache::new(path.file_name().unwrap().to_string_lossy().to_string())
 }
 
+pub fn load(path: &std::path::Path) {
+    *(forward().write().unwrap()) = try_load(&path.join("josh_forward_maps"));
+}
+
+pub fn persist(path: &std::path::Path) {
+    persist_file(
+        &*super::filter_cache::forward().read().unwrap(),
+        &path.join("josh_forward_maps"),
+    )
+    .ok();
+}
 #[tracing::instrument(skip(m))]
-pub fn persist(
+fn persist_file(
     m: &FilterCache,
     path: &std::path::Path,
 ) -> crate::JoshResult<()> {
-    let af = atomicwrites::AtomicFile::new(path, atomicwrites::AllowOverwrite);
-    af.write(|f| bincode::serialize_into(f, &m))?;
+    bincode::serialize_into(std::fs::File::create(path)?, &m)?;
     let file_size = std::fs::metadata(&path)
         .map(|x| x.len() / (1024 * 1024))
         .unwrap_or(0);
     tracing::info!("persisted: {:?}, file size: {} MiB", &path, file_size);
     return Ok(());
-}
-
-pub fn try_merge_both(
-    forward_maps: Arc<RwLock<FilterCache>>,
-    backward_maps: Arc<RwLock<FilterCache>>,
-    fm: &FilterCache,
-    bm: &FilterCache,
-) {
-    tracing::span!(tracing::Level::TRACE, "write_lock backward_maps").in_scope(
-        || {
-            backward_maps
-                .try_write()
-                .map(|mut bm_locked| {
-                    tracing::span!(
-                        tracing::Level::TRACE,
-                        "write_lock forward_maps"
-                    )
-                    .in_scope(|| {
-                        forward_maps
-                            .try_write()
-                            .map(|mut fm_locked| {
-                                bm_locked.merge(&bm);
-                                fm_locked.merge(&fm);
-                            })
-                            .ok();
-                    });
-                })
-                .ok();
-        },
-    );
 }
 
 pub fn new_downstream(u: &Arc<RwLock<FilterCache>>) -> FilterCache {
@@ -220,4 +225,48 @@ pub fn new_downstream(u: &Arc<RwLock<FilterCache>>) -> FilterCache {
         upsteam: Some(u.clone()),
         version: FORMAT_VERSION,
     };
+}
+
+pub struct Transaction {
+    fm: FilterCache,
+}
+
+impl Transaction {
+    pub fn new() -> Transaction {
+        Transaction {
+            fm: new_downstream(&super::filter_cache::forward()),
+        }
+    }
+
+    pub fn insert(&mut self, spec: &str, from: git2::Oid, to: git2::Oid) {
+        self.fm.set(spec, from, to);
+    }
+
+    pub fn has(
+        &self,
+        spec: &str,
+        repo: &git2::Repository,
+        from: git2::Oid,
+    ) -> bool {
+        self.fm.has(&repo, spec, from)
+    }
+
+    pub fn get(&self, spec: &str, from: git2::Oid) -> git2::Oid {
+        self.fm.get(spec, from)
+    }
+}
+
+impl Drop for Transaction {
+    fn drop(&mut self) {
+        rs_tracing::trace_scoped!("merge");
+        let s =
+            tracing::span!(tracing::Level::TRACE, "write_lock forward_maps");
+        let _e = s.enter();
+        forward()
+            .try_write()
+            .map(|mut fm_locked| {
+                fm_locked.merge(&self.fm);
+            })
+            .ok();
+    }
 }

@@ -3,7 +3,6 @@ use git2;
 use super::*;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
-use std::sync::{Arc, RwLock};
 use tracing::{info, span, Level};
 
 pub type KnownViews = BTreeMap<String, BTreeSet<String>>;
@@ -186,13 +185,8 @@ pub fn get_info(
     filter: &dyn filters::Filter,
     upstream_repo: &str,
     headref: &str,
-    forward_maps: Arc<RwLock<filter_cache::FilterCache>>,
-    backward_maps: Arc<RwLock<filter_cache::FilterCache>>,
 ) -> JoshResult<String> {
     let _trace_s = span!(Level::TRACE, "get_info");
-
-    let mut bm = filter_cache::new_downstream(&backward_maps);
-    let mut fm = filter_cache::new_downstream(&forward_maps);
 
     let obj = repo.revparse_single(&format!(
         "refs/josh/upstream/{}/{}",
@@ -205,7 +199,7 @@ pub fn get_info(
     let mut meta = std::collections::HashMap::new();
     meta.insert("sha1".to_owned(), "".to_owned());
     let filtered =
-        filter.apply_to_commit(&repo, &commit, &mut fm, &mut bm, &mut meta)?;
+        super::filters::apply_filter_cached(&repo, &*filter, commit.id())?;
 
     let parent_ids = |commit: &git2::Commit| {
         let pids: Vec<_> = commit
@@ -247,19 +241,13 @@ pub fn get_info(
     return Ok(serde_json::to_string(&s)?);
 }
 
-#[tracing::instrument(skip(repo, forward_maps, backward_maps))]
+#[tracing::instrument(skip(repo))]
 pub fn refresh_known_filters(
     repo: &git2::Repository,
     known_filters: &KnownViews,
-    forward_maps: Arc<RwLock<filter_cache::FilterCache>>,
-    backward_maps: Arc<RwLock<filter_cache::FilterCache>>,
 ) -> JoshResult<usize> {
-    let mut total = 0;
     for (upstream_repo, e) in known_filters.iter() {
         info!("background rebuild root: {:?}", upstream_repo);
-
-        let mut bm = filter_cache::new_downstream(&backward_maps);
-        let mut fm = filter_cache::new_downstream(&forward_maps);
 
         let mut updated_count = 0;
 
@@ -278,64 +266,34 @@ pub fn refresh_known_filters(
 
             updated_count += scratch::apply_filter_to_refs(
                 &repo,
-                &*filters::parse(&filter_spec),
+                &*filters::parse(&filter_spec)?,
                 &refs,
-                &mut fm,
-                &mut bm,
             )?;
         }
         info!("updated {} refs for {:?}", updated_count, upstream_repo);
-
-        total += fm.stats()["total"];
-        total += bm.stats()["total"];
-        span!(Level::TRACE, "write_lock bm").in_scope(|| {
-            let mut backward_maps = backward_maps.write().unwrap();
-            backward_maps.merge(&bm);
-        });
-        span!(Level::TRACE, "write_lock fm").in_scope(|| {
-            let mut forward_maps = forward_maps.write().unwrap();
-            forward_maps.merge(&fm);
-        });
     }
-    return Ok(total);
+    return Ok(0);
 }
 
 pub fn spawn_thread(
     repo_path: std::path::PathBuf,
-    forward_maps: Arc<RwLock<filter_cache::FilterCache>>,
-    backward_maps: Arc<RwLock<filter_cache::FilterCache>>,
     do_gc: bool,
 ) -> std::thread::JoinHandle<()> {
     let mut gc_timer = std::time::Instant::now();
     let mut persist_timer =
-        std::time::Instant::now() - std::time::Duration::from_secs(60 * 5);
+        std::time::Instant::now() - std::time::Duration::from_secs(60 * 15);
     std::thread::spawn(move || {
         let mut total = 0;
         loop {
             let repo = git2::Repository::init_bare(&repo_path).unwrap();
             let known_filters =
                 housekeeping::discover_filter_candidates(&repo).unwrap();
-            total += refresh_known_filters(
-                &repo,
-                &known_filters,
-                forward_maps.clone(),
-                backward_maps.clone(),
-            )
-            .unwrap_or(0);
+            total += refresh_known_filters(&repo, &known_filters).unwrap_or(0);
             if total > 1000
                 || persist_timer.elapsed()
                     > std::time::Duration::from_secs(60 * 15)
             {
-                filter_cache::persist(
-                    &*backward_maps.read().unwrap(),
-                    &repo.path().join("josh_backward_maps"),
-                )
-                .ok();
-                filter_cache::persist(
-                    &*forward_maps.read().unwrap(),
-                    &repo.path().join("josh_forward_maps"),
-                )
-                .ok();
+                filter_cache::persist(&repo.path());
                 total = 0;
                 persist_timer = std::time::Instant::now();
             }

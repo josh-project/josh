@@ -17,8 +17,8 @@
 
   $ mkdir ws
   $ cat > ws/workspace.josh <<EOF
+  > :/sub1:glob=file1
   > sub2/subsub
-  > sub1
   > EOF
   $ git add ws
   $ git commit -m "add ws" 1> /dev/null
@@ -33,11 +33,10 @@
   $ git checkout refs/josh/master 2> /dev/null
   $ tree
   .
-  |-- sub1
-  |   `-- file1
+  |-- file1
   |-- sub2
   |   `-- subsub
   |       `-- file2
   `-- workspace.josh
   
-  3 directories, 3 files
+  2 directories, 3 files

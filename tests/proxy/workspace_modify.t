@@ -87,8 +87,25 @@
   $ git pull --rebase
   From http://localhost:8002/real_repo.git:workspace=ws
    * [new branch]      master     -> origin/master
-  \r (no-eol) (esc)
-  \x1b[KSuccessfully rebased and updated refs/heads/master. (esc)
+  Updating *..* (glob)
+  Fast-forward
+   a/b/file2      | 1 +
+   c/subsub/file1 | 1 +
+   2 files changed, 2 insertions(+)
+   create mode 100644 a/b/file2
+   create mode 100644 c/subsub/file1
+
+  $ tree
+  .
+  |-- a
+  |   `-- b
+  |       `-- file2
+  |-- c
+  |   `-- subsub
+  |       `-- file1
+  `-- workspace.josh
+  
+  4 directories, 3 files
 
   $ git log --graph --pretty=%s
   * Merge from :workspace=ws

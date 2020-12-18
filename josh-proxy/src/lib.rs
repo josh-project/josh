@@ -21,16 +21,10 @@ fn baseref_and_options(
     return Ok((baseref, push_to, options));
 }
 
-#[tracing::instrument(skip(_forward_maps, backward_maps, credential_store))]
+#[tracing::instrument(skip(credential_store))]
 pub fn process_repo_update(
     credential_store: std::sync::Arc<std::sync::RwLock<CredentialStore>>,
     repo_update: std::collections::HashMap<String, String>,
-    _forward_maps: std::sync::Arc<
-        std::sync::RwLock<josh::filter_cache::FilterCache>,
-    >,
-    backward_maps: std::sync::Arc<
-        std::sync::RwLock<josh::filter_cache::FilterCache>,
-    >,
 ) -> Result<String, josh::JoshError> {
     let refname = repo_update.get("refname").ok_or(josh::josh_error(""))?;
     let filter_spec =
@@ -84,7 +78,7 @@ pub fn process_repo_update(
         oid
     };
 
-    let filterobj = josh::filters::parse(&filter_spec);
+    let filterobj = josh::filters::parse(&filter_spec)?;
     let new_oid = git2::Oid::from_str(&new)?;
     let backward_new_oid = {
         tracing::debug!("=== MORE");
@@ -93,7 +87,6 @@ pub fn process_repo_update(
 
         match josh::scratch::unapply_filter(
             &repo,
-            backward_maps,
             &*filterobj,
             unfiltered_old,
             old,
