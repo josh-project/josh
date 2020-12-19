@@ -257,6 +257,7 @@ fn substract_tree<'a>(
     key: git2::Oid,
     cache: &mut std::collections::HashMap<(git2::Oid, git2::Oid), git2::Oid>,
 ) -> super::JoshResult<git2::Tree<'a>> {
+    rs_tracing::trace_scoped!("substract_tree X", "root": root);
     if let Some(cached) = cache.get(&(input, key)) {
         return Ok(repo.find_tree(*cached)?);
     }
@@ -340,6 +341,7 @@ pub fn overlay(
     input1: git2::Oid,
     input2: git2::Oid,
 ) -> super::JoshResult<git2::Oid> {
+    rs_tracing::trace_scoped!("overlay");
     if input1 == input2 {
         return Ok(input1);
     }
@@ -383,6 +385,48 @@ pub fn overlay(
     }
 
     return Ok(input1);
+}
+
+pub fn substract_fast(
+    repo: &git2::Repository,
+    input1: git2::Oid,
+    input2: git2::Oid,
+) -> super::JoshResult<git2::Oid> {
+    rs_tracing::trace_scoped!("substract fast");
+    if input1 == input2 {
+        return Ok(empty_tree_id());
+    }
+    if input1 == empty_tree_id() {
+        return Ok(empty_tree_id());
+    }
+
+    if let (Ok(tree1), Ok(tree2)) =
+        (repo.find_tree(input1), repo.find_tree(input2))
+    {
+        if input2 == empty_tree_id() {
+            return Ok(input1);
+        }
+        let mut result_tree = tree1.clone();
+
+        for entry in tree2.iter() {
+            if let Some(e) = tree1
+                .get_name(entry.name().ok_or(super::josh_error("no name"))?)
+            {
+                result_tree = replace_child(
+                    &repo,
+                    &Path::new(
+                        entry.name().ok_or(super::josh_error("no name"))?,
+                    ),
+                    substract_fast(repo, e.id(), entry.id())?,
+                    &result_tree,
+                )?;
+            }
+        }
+
+        return Ok(result_tree.id());
+    }
+
+    return Ok(empty_tree_id());
 }
 
 struct FoldFilter;
@@ -521,6 +565,89 @@ impl Filter for ChainFilter {
     fn spec(&self) -> String {
         return format!("{}{}", &self.first.spec(), &self.second.spec())
             .replacen(":nop", "", 1);
+    }
+}
+
+struct SubstractFilter<'a> {
+    first: &'a CombineFilter,
+    second: &'a CombineFilter,
+}
+
+impl Filter for SubstractFilter<'_> {
+    fn get(&self) -> &dyn Filter {
+        self
+    }
+
+    fn apply_to_commit(
+        &self,
+        repo: &git2::Repository,
+        commit: &git2::Commit,
+        transaction: &mut super::filter_cache::Transaction,
+    ) -> super::JoshResult<git2::Oid> {
+        let a_c = {
+            rs_tracing::trace_scoped!("first");
+            repo.find_commit(apply_filter_cached_impl(
+                &repo,
+                self.first,
+                commit.id(),
+                transaction,
+            )?)
+            .map(|x| x.tree_id())
+            .unwrap_or(empty_tree_id())
+        };
+        let b_c = {
+            rs_tracing::trace_scoped!("second");
+            repo.find_commit(apply_filter_cached_impl(
+                &repo,
+                self.second,
+                commit.id(),
+                transaction,
+            )?)
+            .map(|x| x.tree_id())
+            .unwrap_or(empty_tree_id())
+        };
+        let filtered_tree = repo.find_tree(substract_fast(&repo, a_c, b_c)?)?;
+
+        let filtered_parent_ids = {
+            rs_tracing::trace_scoped!("parents");
+            commit
+                .parents()
+                .map(|x| {
+                    apply_filter_cached_impl(
+                        repo,
+                        self.get(),
+                        x.id(),
+                        transaction,
+                    )
+                })
+                .collect::<super::JoshResult<_>>()?
+        };
+
+        return create_filtered_commit(
+            repo,
+            commit,
+            filtered_parent_ids,
+            filtered_tree,
+        );
+    }
+
+    fn apply<'a>(
+        &self,
+        repo: &'a git2::Repository,
+        tree: git2::Tree<'a>,
+    ) -> super::JoshResult<git2::Tree<'a>> {
+        let a = rs_tracing::trace_expr!("first", self.first.apply(&repo, tree.clone())?, "id":tree.id().to_string());
+        let b =
+            rs_tracing::trace_expr!("second", self.second.apply(&repo, tree)?);
+        Ok(repo.find_tree(substract_fast(&repo, a.id(), b.id())?)?)
+    }
+
+    fn spec(&self) -> String {
+        return format!(
+            ":SUBSTRACT({} - {})",
+            &self.first.spec(),
+            &self.second.spec()
+        );
     }
 }
 
@@ -723,10 +850,7 @@ impl Filter for GlobFilter {
 }
 
 struct CombineFilter {
-    others: Vec<Box<dyn Filter>>,
-    substract_cache: std::cell::RefCell<
-        std::collections::HashMap<(git2::Oid, git2::Oid), git2::Oid>,
-    >,
+    filters: Vec<Box<dyn Filter>>,
 }
 
 pub fn substract<'a>(
@@ -734,19 +858,72 @@ pub fn substract<'a>(
     a: git2::Tree<'a>,
     b: git2::Tree<'a>,
 ) -> super::JoshResult<git2::Tree<'a>> {
-    substract_tree(
-        &repo,
-        "",
-        a.id(),
-        &|path, _| !b.get_path(path).is_ok(),
-        b.id(),
-        &mut std::collections::HashMap::new(),
-    )
+    Ok(repo.find_tree(substract_fast(&repo, a.id(), b.id())?)?)
 }
 
 impl Filter for CombineFilter {
     fn get(&self) -> &dyn Filter {
         self
+    }
+
+    fn apply_to_commit(
+        &self,
+        repo: &git2::Repository,
+        commit: &git2::Commit,
+        transaction: &mut super::filter_cache::Transaction,
+    ) -> super::JoshResult<git2::Oid> {
+        let commit_id = commit.id();
+
+        let filtered = self
+            .filters
+            .iter()
+            .map(|filter| {
+                Ok((
+                    filter,
+                    apply_filter_cached_impl(
+                        &repo,
+                        &*filter.get(),
+                        commit_id,
+                        transaction,
+                    )?,
+                ))
+            })
+            .collect::<super::JoshResult<Vec<_>>>()?;
+
+        let filtered =
+            filtered.iter().filter(|(_, id)| *id != git2::Oid::zero());
+
+        let mut result = empty_tree(&repo);
+        let mut taken = empty_tree(&repo);
+        for (filter, applied) in filtered {
+            let taken_applied = filter.apply(&repo, taken.clone())?;
+            let substracted = repo.find_tree(substract_fast(
+                &repo,
+                repo.find_commit(*applied)?.tree_id(),
+                taken_applied.id(),
+            )?)?;
+            taken = filter.unapply(
+                &repo,
+                repo.find_commit(*applied)?.tree()?,
+                taken.clone(),
+            )?;
+            result =
+                repo.find_tree(overlay(&repo, result.id(), substracted.id())?)?;
+        }
+
+        let filtered_parent_ids = commit
+            .parents()
+            .map(|x| {
+                apply_filter_cached_impl(repo, self.get(), x.id(), transaction)
+            })
+            .collect::<super::JoshResult<_>>()?;
+
+        return create_filtered_commit(
+            repo,
+            commit,
+            filtered_parent_ids,
+            result,
+        );
     }
 
     fn apply<'a>(
@@ -757,18 +934,15 @@ impl Filter for CombineFilter {
         let mut result = empty_tree(&repo);
         let mut taken = empty_tree(&repo);
 
-        for other in self.others.iter() {
+        for other in self.filters.iter() {
             let applied = other.apply(&repo, tree.clone())?;
             let taken_applied = other.apply(&repo, taken.clone())?;
 
-            let substracted = substract_tree(
+            let substracted = repo.find_tree(substract_fast(
                 &repo,
-                "",
                 applied.id(),
-                &|path, _| !taken_applied.get_path(path).is_ok(),
                 taken_applied.id(),
-                &mut self.substract_cache.borrow_mut(),
-            )?;
+            )?)?;
 
             taken = other.unapply(&repo, applied.clone(), taken.clone())?;
             result =
@@ -787,7 +961,7 @@ impl Filter for CombineFilter {
         let mut remaining = tree.clone();
         let mut result = parent_tree.clone();
 
-        for other in self.others.iter().rev() {
+        for other in self.filters.iter().rev() {
             let from_empty =
                 other.unapply(&repo, remaining.clone(), empty_tree(&repo))?;
             if empty_tree_id() == from_empty.id() {
@@ -795,14 +969,12 @@ impl Filter for CombineFilter {
             }
             result = other.unapply(&repo, remaining.clone(), result)?;
             let reapply = other.apply(&repo, from_empty.clone())?;
-            remaining = substract_tree(
+
+            remaining = repo.find_tree(substract_fast(
                 &repo,
-                "",
                 remaining.id(),
-                &|path, _| !reapply.get_path(path).is_ok(),
                 reapply.id(),
-                &mut std::collections::HashMap::new(),
-            )?;
+            )?)?;
         }
 
         return Ok(result);
@@ -810,7 +982,7 @@ impl Filter for CombineFilter {
 
     fn spec(&self) -> String {
         return self
-            .others
+            .filters
             .iter()
             .map(|x| x.spec())
             .collect::<Vec<_>>()
@@ -820,6 +992,18 @@ impl Filter for CombineFilter {
 
 struct WorkspaceFilter {
     ws_path: std::path::PathBuf,
+}
+
+fn combine_filter_from_ws_no_fail(
+    repo: &git2::Repository,
+    tree: &git2::Tree,
+    ws_path: &Path,
+) -> super::JoshResult<Box<CombineFilter>> {
+    if let Ok(cw) = combine_filter_from_ws(repo, &tree, &ws_path) {
+        Ok(cw)
+    } else {
+        build_combine_filter("", Some(SubdirFilter::new(&ws_path)))
+    }
 }
 
 fn combine_filter_from_ws(
@@ -844,87 +1028,6 @@ fn combine_filter_from_ws(
     return build_combine_filter(ws_content, Some(base));
 }
 
-impl WorkspaceFilter {
-    fn ws_apply_to_tree_and_parents<'a>(
-        &self,
-        repo: &'a git2::Repository,
-        tree_and_parents: (git2::Tree<'a>, Vec<git2::Oid>),
-        transaction: &mut super::filter_cache::Transaction,
-    ) -> super::JoshResult<(git2::Tree<'a>, Vec<git2::Oid>)> {
-        let (full_tree, parents) = tree_and_parents;
-
-        let mut in_this = vec![];
-
-        let cw = if let Ok(cw) =
-            combine_filter_from_ws(repo, &full_tree, &self.ws_path)
-        {
-            cw
-        } else {
-            build_combine_filter("", Some(SubdirFilter::new(&self.ws_path)))?
-        };
-
-        for other in cw.others.iter() {
-            in_this.push(format!("{}", other.spec()));
-        }
-
-        let mut in_parents = std::collections::HashSet::new();
-
-        let mut filtered_parent_ids = vec![];
-        for parent in parents.iter() {
-            let p = apply_filter_cached_impl(repo, self, *parent, transaction)?;
-            if p != git2::Oid::zero() {
-                filtered_parent_ids.push(p);
-            }
-
-            let parent_commit = repo.find_commit(*parent)?;
-
-            let pcw = if let Ok(pcw) = combine_filter_from_ws(
-                repo,
-                &parent_commit.tree()?,
-                &self.ws_path,
-            ) {
-                pcw
-            } else {
-                build_combine_filter(
-                    "",
-                    Some(SubdirFilter::new(&self.ws_path)),
-                )?
-            };
-
-            for other in pcw.others.iter() {
-                in_parents.insert(format!("{}", other.spec()));
-            }
-        }
-        in_this.retain(|x| !in_parents.contains(x));
-        let s = in_this.join("\n");
-
-        let pcw: Box<dyn Filter> = if in_this.len() == 1 {
-            parse(&in_this[0])?
-        } else {
-            build_combine_filter(&s, None)?
-        };
-
-        for parent in parents {
-            // TODO: maybe consider doing this for the parents individually
-            // -> move this into the loop above
-            if let Ok(parent) = repo.find_commit(parent) {
-                let p = apply_filter_cached_impl(
-                    &*repo,
-                    &*pcw,
-                    parent.id(),
-                    transaction,
-                )?;
-                if p != git2::Oid::zero() {
-                    filtered_parent_ids.push(p);
-                }
-            }
-            break;
-        }
-
-        return Ok((cw.apply(repo, full_tree)?, filtered_parent_ids));
-    }
-}
-
 impl Filter for WorkspaceFilter {
     fn get(&self) -> &dyn Filter {
         self
@@ -935,12 +1038,65 @@ impl Filter for WorkspaceFilter {
         commit: &git2::Commit,
         transaction: &mut super::filter_cache::Transaction,
     ) -> super::JoshResult<git2::Oid> {
-        let (filtered_tree, filtered_parent_ids) = self
-            .ws_apply_to_tree_and_parents(
-                repo,
-                (commit.tree()?, commit.parents().map(|x| x.id()).collect()),
-                transaction,
-            )?;
+        rs_tracing::trace_scoped!("ws_apply_to_tree_and_parents");
+
+        let normal_parents = commit
+            .parent_ids()
+            .map(|parent| {
+                apply_filter_cached_impl(repo, self, parent, transaction)
+            })
+            .collect::<super::JoshResult<Vec<git2::Oid>>>()?;
+
+        let cw = combine_filter_from_ws_no_fail(
+            repo,
+            &commit.tree()?,
+            &self.ws_path,
+        )?;
+
+        let extra_parents = commit
+            .parent_ids()
+            .map(|parent| {
+                let mut pcw = combine_filter_from_ws_no_fail(
+                    repo,
+                    &repo.find_commit(parent)?.tree()?,
+                    &self.ws_path,
+                )?;
+
+                if pcw.spec() == cw.spec() { return Ok(git2::Oid::zero()); }
+
+                let mut mcw = combine_filter_from_ws_no_fail(
+                    repo,
+                    &commit.tree()?,
+                    &self.ws_path,
+                )?;
+
+                mcw.filters.retain(|x| { for i in pcw.filters.iter() { if x.spec() == i.spec() { return false; } } return true; });
+                pcw.filters.retain(|x| { for i in cw.filters.iter() { if x.spec() == i.spec() { return false; } } return true; });
+
+                if mcw.filters.len() == 0 {
+                    return Ok(git2::Oid::zero());
+                }
+
+                rs_tracing::trace_scoped!("workspace diff","mcw":mcw.spec(), "pcw": pcw.spec());
+
+                apply_filter_cached_impl(
+                    repo,
+                    &SubstractFilter {
+                        first: &mcw,
+                        second: &pcw,
+                    },
+                    parent,
+                    transaction,
+                )
+            })
+            .collect::<super::JoshResult<Vec<git2::Oid>>>()?;
+
+        let filtered_parent_ids = normal_parents
+            .into_iter()
+            .chain(extra_parents.into_iter())
+            .collect();
+
+        let filtered_tree = cw.apply(repo, commit.tree()?)?;
 
         return create_filtered_commit(
             repo,
@@ -955,12 +1111,8 @@ impl Filter for WorkspaceFilter {
         repo: &'a git2::Repository,
         tree: git2::Tree<'a>,
     ) -> super::JoshResult<git2::Tree<'a>> {
-        if let Ok(cw) = combine_filter_from_ws(repo, &tree, &self.ws_path) {
-            cw
-        } else {
-            build_combine_filter("", Some(SubdirFilter::new(&self.ws_path)))?
-        }
-        .apply(repo, tree)
+        combine_filter_from_ws_no_fail(repo, &tree, &self.ws_path)?
+            .apply(repo, tree)
     }
 
     fn unapply<'a>(
@@ -971,7 +1123,7 @@ impl Filter for WorkspaceFilter {
     ) -> super::JoshResult<git2::Tree<'a>> {
         let mut cw =
             combine_filter_from_ws(repo, &tree, &std::path::PathBuf::from(""))?;
-        cw.others[0] = SubdirFilter::new(&self.ws_path);
+        cw.filters[0] = SubdirFilter::new(&self.ws_path);
         return cw.unapply(repo, tree, parent_tree);
     }
 
@@ -1062,13 +1214,13 @@ fn parse_file_entry(
                     prefix: Path::new(path).to_owned(),
                 }),
             );
-            combine_filter.others.push(filter);
+            combine_filter.filters.push(filter);
             Ok(())
         }
         Rule::filter_spec => {
             let filter = pair.as_str();
             let filter = parse(&filter)?;
-            combine_filter.others.push(filter);
+            combine_filter.filters.push(filter);
             Ok(())
         }
         Rule::EOI => Ok(()),
@@ -1083,15 +1235,13 @@ fn build_combine_filter(
     filter_spec: &str,
     base: Option<Box<dyn Filter>>,
 ) -> super::JoshResult<Box<CombineFilter>> {
+    rs_tracing::trace_scoped!("build_combine_filter");
     let mut combine_filter = Box::new(CombineFilter {
-        others: if let Some(base) = base {
+        filters: if let Some(base) = base {
             vec![base]
         } else {
             vec![]
         },
-        substract_cache: std::cell::RefCell::new(
-            std::collections::HashMap::new(),
-        ),
     });
 
     if let Ok(mut r) = MyParser::parse(Rule::workspace_file, filter_spec) {
@@ -1119,6 +1269,9 @@ pub fn build_chain(
 }
 
 pub fn parse(filter_spec: &str) -> super::JoshResult<Box<dyn Filter>> {
+    if filter_spec.contains("SUBSTRACT") {
+        assert!(false);
+    }
     if filter_spec == "" {
         return parse(":nop");
     }
@@ -1221,13 +1374,29 @@ fn apply_filter_cached_impl(
     input: git2::Oid,
     transaction: &mut super::filter_cache::Transaction,
 ) -> super::JoshResult<git2::Oid> {
-    rs_tracing::trace_scoped!("apply_filter_cached_impl","spec":filter.spec());
+    rs_tracing::trace_scoped!("apply_filter_cached_impl","spec":filter.spec(), "id": input.to_string());
     if filter.spec() == "" {
         return Ok(git2::Oid::zero());
     }
 
     if transaction.has(&filter.spec(), repo, input) {
         return Ok(transaction.get(&filter.spec(), input));
+    }
+
+    let mut doit = false;
+    let incom = repo.find_commit(input)?;
+
+    for p in incom.parent_ids() {
+        if !transaction.has(&filter.spec(), repo, p) {
+            doit = true;
+        }
+    }
+
+    if !doit {
+        let t = filter.apply_to_commit(&repo, &incom, transaction)?;
+
+        transaction.insert(&filter.spec(), input, t);
+        return Ok(t);
     }
 
     let walk = {
@@ -1237,44 +1406,37 @@ fn apply_filter_cached_impl(
         walk
     };
 
-    let mut in_commit_count = 0;
-    let mut out_commit_count = 0;
-    let mut empty_tree_count = 0;
-    for original_commit_id in walk {
-        in_commit_count += 1;
+    log::debug!("starting walk for {:?}", filter.spec());
 
-        let original_commit = repo.find_commit(original_commit_id?)?;
+    for original_commit_id in walk {
+        let original_commit_id = original_commit_id?;
+        if transaction.has(&filter.spec(), &repo, original_commit_id) {
+            continue;
+        }
+        let original_commit = repo.find_commit(original_commit_id)?;
 
         let filtered_commit = ok_or!(
-            filter.apply_to_commit(&repo, &original_commit, transaction),
+            rs_tracing::trace_expr!(
+                "apply_to_commit",
+                filter.apply_to_commit(&repo, &original_commit, transaction),
+                "spec" : filter.spec()
+            ),
             {
                 tracing::error!("cannot apply_to_commit");
                 git2::Oid::zero()
             }
         );
 
-        if filtered_commit == git2::Oid::zero() {
-            empty_tree_count += 1;
-        }
         transaction.insert(
             &filter.spec(),
             original_commit.id(),
             filtered_commit,
         );
-        out_commit_count += 1;
     }
 
     if !transaction.has(&filter.spec(), &repo, input) {
         transaction.insert(&filter.spec(), input, git2::Oid::zero());
     }
     let rewritten = transaction.get(&filter.spec(), input);
-    tracing::event!(
-        tracing::Level::TRACE,
-        ?in_commit_count,
-        ?out_commit_count,
-        ?empty_tree_count,
-        original = ?input,
-        rewritten = ?rewritten,
-    );
     return Ok(rewritten);
 }
