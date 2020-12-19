@@ -108,7 +108,10 @@
   4 directories, 3 files
 
   $ git log --graph --pretty=%s
-  * Merge from :workspace=ws
+  *   Merge from :workspace=ws
+  |\  
+  | * add file2
+  | * add file1
   * add workspace
 
   $ cd ${TESTTMP}/real_repo
@@ -199,7 +202,10 @@
   *   mod workspace
   |\  
   | * add file3
-  * Merge from :workspace=ws
+  *   Merge from :workspace=ws
+  |\  
+  | * add file2
+  | * add file1
   * add workspace
 
   $ git checkout HEAD~1 1> /dev/null
@@ -325,7 +331,10 @@ Note that d/ is still in the tree but now it is not overlayed
   *   mod workspace
   |\  
   | * add file3
-  * Merge from :workspace=ws
+  *   Merge from :workspace=ws
+  |\  
+  | * add file2
+  | * add file1
   * add workspace
 
 

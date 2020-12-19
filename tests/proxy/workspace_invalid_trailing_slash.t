@@ -69,7 +69,10 @@
   $ git pull -q --rebase
 
   $ git log --graph --pretty=%s
-  * Merge from :workspace=ws
+  *   Merge from :workspace=ws
+  |\  
+  | * add subsub2
+  | * add subsub1
   * add workspace
 
   $ cd ${TESTTMP}/real_repo
@@ -100,7 +103,10 @@
 
   $ git log --graph --pretty=%s
   * mod workspace
-  * Merge from :workspace=ws
+  *   Merge from :workspace=ws
+  |\  
+  | * add subsub2
+  | * add subsub1
   * add workspace
 
 
@@ -141,7 +147,10 @@
 
   $ git log --graph --pretty=%s
   * mod workspace
-  * Merge from :workspace=ws
+  *   Merge from :workspace=ws
+  |\  
+  | * add subsub2
+  | * add subsub1
   * add workspace
 
   $ bash ${TESTDIR}/destroy_test_env.sh

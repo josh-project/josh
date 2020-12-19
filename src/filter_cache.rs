@@ -4,13 +4,13 @@ use std::sync::{Arc, RwLock};
 const FORMAT_VERSION: u64 = 6;
 
 #[derive(Eq, PartialEq, PartialOrd, Hash, Clone, Copy)]
-pub struct JoshOid(git2::Oid);
+struct JoshOid(git2::Oid);
 
-pub type OidMap = HashMap<JoshOid, JoshOid>;
+type OidMap = HashMap<JoshOid, JoshOid>;
 
 lazy_static! {
     static ref FORWARD_MAPS: Arc<RwLock<FilterCache>> =
-        Arc::new(RwLock::new(FilterCache::new("forward".to_owned())));
+        Arc::new(RwLock::new(FilterCache::new()));
 }
 
 fn forward() -> Arc<RwLock<FilterCache>> {
@@ -18,16 +18,10 @@ fn forward() -> Arc<RwLock<FilterCache>> {
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
-pub struct FilterCache {
+struct FilterCache {
     maps: HashMap<String, OidMap>,
 
     version: u64,
-
-    #[serde(skip)]
-    name: String,
-
-    #[serde(skip)]
-    upsteam: Option<Arc<RwLock<FilterCache>>>,
 }
 
 impl serde::ser::Serialize for JoshOid {
@@ -73,35 +67,18 @@ impl<'de> serde::de::Deserialize<'de> for JoshOid {
     }
 }
 
-pub fn lookup_forward(
-    repo: &git2::Repository,
-    spec: &str,
-    oid: git2::Oid,
-) -> Option<git2::Oid> {
-    if spec == ":nop" {
-        return Some(oid);
-    }
-    if let Ok(f) = forward().read() {
-        if f.has(&repo, &spec, oid) {
-            return Some(f.get(&spec, oid));
-        }
-    }
-    return None;
-}
-
 impl FilterCache {
-    pub fn set(&mut self, filter_spec: &str, from: git2::Oid, to: git2::Oid) {
-        let prev = self.get(&filter_spec, from);
-        if prev != git2::Oid::zero() {
-            return;
-        }
+    fn set(&mut self, filter_spec: &str, from: git2::Oid, to: git2::Oid) {
         self.maps
             .entry(filter_spec.to_string())
-            .or_insert_with(OidMap::new)
+            .or_insert_with(|| {
+                log::debug!("new spec {:?}", filter_spec);
+                OidMap::new()
+            })
             .insert(JoshOid(from), JoshOid(to));
     }
 
-    pub fn get(&self, filter_spec: &str, from: git2::Oid) -> git2::Oid {
+    fn get(&self, filter_spec: &str, from: git2::Oid) -> git2::Oid {
         if let Some(m) = self.maps.get(filter_spec) {
             if let Some(JoshOid(oid)) = m.get(&JoshOid(from)).cloned() {
                 return oid;
@@ -110,15 +87,15 @@ impl FilterCache {
         if filter_spec == ":nop" {
             return from;
         }
-        if let Some(upsteam) = self.upsteam.clone() {
-            if let Ok(upsteam) = upsteam.read() {
-                return upsteam.get(filter_spec, from);
+        if self.version == 0 {
+            if let Ok(r) = forward().read() {
+                return r.get(filter_spec, from);
             }
         }
         return git2::Oid::zero();
     }
 
-    pub fn has(
+    fn has(
         &self,
         repo: &git2::Repository,
         filter_spec: &str,
@@ -136,18 +113,17 @@ impl FilterCache {
                     || repo.odb().unwrap().exists(oid);
             }
         }
-        if let Some(upsteam) = self.upsteam.clone() {
-            /* let _trace_s = span!(Level::TRACE,"read_lock: has",  ?filter_spec, from=?from.to_string()); */
-            return upsteam.read().unwrap().has(repo, filter_spec, from);
+        if self.version == 0 {
+            if let Ok(r) = forward().read() {
+                return r.has(repo, filter_spec, from);
+            }
         }
         return false;
     }
 
-    fn new(name: String) -> FilterCache {
+    fn new() -> FilterCache {
         return FilterCache {
-            name: name,
             maps: HashMap::new(),
-            upsteam: None,
             version: FORMAT_VERSION,
         };
     }
@@ -161,23 +137,11 @@ impl FilterCache {
             m.extend(om);
         }
     }
-
-    pub fn stats(&self) -> HashMap<String, usize> {
-        let mut count = 0;
-        let mut s = HashMap::new();
-        for (filter_spec, m) in self.maps.iter() {
-            if m.len() > 1 {
-                count += m.len();
-                s.insert(filter_spec.to_string(), m.len());
-            }
-        }
-        s.insert("total".to_string(), count);
-        return s;
-    }
 }
 
 #[tracing::instrument]
 fn try_load(path: &std::path::Path) -> FilterCache {
+    log::debug!("load file");
     let file_size = std::fs::metadata(&path)
         .map(|x| x.len() / (1024 * 1024))
         .unwrap_or(0);
@@ -186,15 +150,17 @@ fn try_load(path: &std::path::Path) -> FilterCache {
         if let Ok(m) = bincode::deserialize_from::<_, FilterCache>(f) {
             tracing::info!("mapfile loaded from: {:?}", &path);
             if m.version == FORMAT_VERSION {
+                log::debug!("version ok");
                 return m;
             } else {
+                log::debug!("version mismatch");
                 tracing::info!("mapfile version mismatch: {:?}", &path);
             }
         }
         tracing::error!("deserialize_from: {:?}", &path);
     }
     tracing::info!("no map file loaded from: {:?}", &path);
-    FilterCache::new(path.file_name().unwrap().to_string_lossy().to_string())
+    FilterCache::new()
 }
 
 pub fn load(path: &std::path::Path) {
@@ -213,6 +179,7 @@ fn persist_file(
     m: &FilterCache,
     path: &std::path::Path,
 ) -> crate::JoshResult<()> {
+    log::debug!("persist_file");
     bincode::serialize_into(std::fs::File::create(path)?, &m)?;
     let file_size = std::fs::metadata(&path)
         .map(|x| x.len() / (1024 * 1024))
@@ -221,28 +188,37 @@ fn persist_file(
     return Ok(());
 }
 
-pub fn new_downstream(u: &Arc<RwLock<FilterCache>>) -> FilterCache {
-    return FilterCache {
-        maps: HashMap::new(),
-        name: u.read().unwrap().name.clone(),
-        upsteam: Some(u.clone()),
-        version: FORMAT_VERSION,
-    };
+struct Stats {
+    missed: usize,
+    hit: usize,
+    insert: usize,
 }
 
 pub struct Transaction {
     fm: FilterCache,
+    stats: std::cell::RefCell<Stats>,
 }
 
 impl Transaction {
     pub fn new() -> Transaction {
+        log::debug!("new transaction");
         Transaction {
-            fm: new_downstream(&super::filter_cache::forward()),
+            fm: FilterCache {
+                maps: HashMap::new(),
+                version: 0,
+            },
+
+            stats: std::cell::RefCell::new(Stats {
+                missed: 0,
+                hit: 0,
+                insert: 0,
+            }),
         }
     }
 
     pub fn insert(&mut self, spec: &str, from: git2::Oid, to: git2::Oid) {
         self.fm.set(spec, from, to);
+        self.stats.borrow_mut().insert += 1;
     }
 
     pub fn has(
@@ -251,7 +227,13 @@ impl Transaction {
         repo: &git2::Repository,
         from: git2::Oid,
     ) -> bool {
-        self.fm.has(&repo, spec, from)
+        let r = self.fm.has(&repo, spec, from);
+        if r {
+            self.stats.borrow_mut().hit += 1;
+        } else {
+            self.stats.borrow_mut().missed += 1;
+        }
+        return r;
     }
 
     pub fn get(&self, spec: &str, from: git2::Oid) -> git2::Oid {
@@ -262,6 +244,13 @@ impl Transaction {
 impl Drop for Transaction {
     fn drop(&mut self) {
         rs_tracing::trace_scoped!("merge");
+        let stats = self.stats.borrow();
+        log::debug!(
+            "/Transaction hit: {}, miss: {}, insert: {}",
+            stats.hit,
+            stats.missed,
+            stats.insert
+        );
         let s =
             tracing::span!(tracing::Level::TRACE, "write_lock forward_maps");
         let _e = s.enter();

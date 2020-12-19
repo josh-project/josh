@@ -48,7 +48,7 @@ pub fn rewrite(
 fn find_original(
     repo: &git2::Repository,
     bm: &mut std::collections::HashMap<git2::Oid, git2::Oid>,
-    spec: &str,
+    filter: &dyn filters::Filter,
     contained_in: git2::Oid,
     filtered: git2::Oid,
 ) -> super::JoshResult<git2::Oid> {
@@ -58,9 +58,8 @@ fn find_original(
     if let Some(original) = bm.get(&filtered) {
         return Ok(*original);
     }
-    if let Some(oid) =
-        super::filter_cache::lookup_forward(&repo, &spec, contained_in)
-    {
+    let oid = filters::apply_filter_cached(&repo, filter, contained_in)?;
+    if oid != git2::Oid::zero() {
         bm.insert(contained_in, oid);
     }
     let mut walk = repo.revwalk()?;
@@ -69,9 +68,7 @@ fn find_original(
 
     for original in walk {
         let original = original?;
-        if Some(filtered)
-            == super::filter_cache::lookup_forward(&repo, spec, original)
-        {
+        if filtered == filters::apply_filter_cached(&repo, filter, original)? {
             bm.insert(filtered, original);
             return Ok(original);
         }
@@ -102,7 +99,7 @@ pub fn unapply_filter(
 
     let mut bm = std::collections::HashMap::new();
     let mut ret =
-        find_original(&repo, &mut bm, &filterobj.spec(), unfiltered_old, new)?;
+        find_original(&repo, &mut bm, filterobj, unfiltered_old, new)?;
     for rev in walk {
         let rev = rev?;
 
@@ -121,13 +118,7 @@ pub fn unapply_filter(
             filtered_parent_ids
                 .iter()
                 .map(|x| -> super::JoshResult<_> {
-                    find_original(
-                        &repo,
-                        &mut bm,
-                        &filterobj.spec(),
-                        unfiltered_old,
-                        *x,
-                    )
+                    find_original(&repo, &mut bm, filterobj, unfiltered_old, *x)
                 })
                 .filter(|x| {
                     if let Ok(i) = x {

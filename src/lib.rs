@@ -1,4 +1,4 @@
-/* #![deny(warnings)] */
+#![deny(warnings)]
 #![warn(unused_extern_crates)]
 
 #[macro_export]
@@ -120,6 +120,8 @@ where
 {
     fn from(item: T) -> Self {
         tracing::error!("JoshError: {:?}", item);
+        println!("JoshError: {:?}", item);
+        assert!(false);
         josh_error(&format!("converted {:?}", item))
     }
 }

@@ -55,6 +55,7 @@
   $ git log --graph --pretty=%s JOSH_HEAD
   * add ws
   * add file2
+  * add file1
 
   $ git checkout JOSH_HEAD 2> /dev/null
   $ tree
@@ -74,7 +75,9 @@
 
   $ git log --graph --pretty=%s JOSH_HEAD
   * add ws
+  * add sub_file
   * add file2
+  * add file1
 
   $ git checkout JOSH_HEAD 2> /dev/null
   $ tree
