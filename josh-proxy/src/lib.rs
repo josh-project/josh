@@ -87,7 +87,7 @@ pub fn process_repo_update(
 
         match josh::scratch::unapply_filter(
             &repo,
-            &*filterobj,
+            &filterobj,
             unfiltered_old,
             old,
             new_oid,

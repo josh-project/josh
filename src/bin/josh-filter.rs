@@ -115,7 +115,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
 
         josh::apply_filter_to_refs(
             &repo,
-            &*filterobj,
+            &filterobj,
             &[(src.clone(), t.clone())],
         )?;
 
@@ -189,7 +189,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
 
             match josh::unapply_filter(
                 &repo,
-                &*filterobj,
+                &filterobj,
                 unfiltered_old,
                 old,
                 new,
