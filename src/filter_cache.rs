@@ -71,10 +71,7 @@ impl FilterCache {
     fn set(&mut self, filter_spec: &str, from: git2::Oid, to: git2::Oid) {
         self.maps
             .entry(filter_spec.to_string())
-            .or_insert_with(|| {
-                log::debug!("new spec {:?}", filter_spec);
-                OidMap::new()
-            })
+            .or_insert_with(|| OidMap::new())
             .insert(JoshOid(from), JoshOid(to));
     }
 
@@ -188,15 +185,8 @@ fn persist_file(
     return Ok(());
 }
 
-struct Stats {
-    missed: usize,
-    hit: usize,
-    insert: usize,
-}
-
 pub struct Transaction {
     fm: FilterCache,
-    stats: std::cell::RefCell<Stats>,
 }
 
 impl Transaction {
@@ -207,18 +197,11 @@ impl Transaction {
                 maps: HashMap::new(),
                 version: 0,
             },
-
-            stats: std::cell::RefCell::new(Stats {
-                missed: 0,
-                hit: 0,
-                insert: 0,
-            }),
         }
     }
 
     pub fn insert(&mut self, spec: &str, from: git2::Oid, to: git2::Oid) {
         self.fm.set(spec, from, to);
-        self.stats.borrow_mut().insert += 1;
     }
 
     pub fn has(
@@ -228,11 +211,6 @@ impl Transaction {
         from: git2::Oid,
     ) -> bool {
         let r = self.fm.has(&repo, spec, from);
-        if r {
-            self.stats.borrow_mut().hit += 1;
-        } else {
-            self.stats.borrow_mut().missed += 1;
-        }
         return r;
     }
 
@@ -244,13 +222,6 @@ impl Transaction {
 impl Drop for Transaction {
     fn drop(&mut self) {
         rs_tracing::trace_scoped!("merge");
-        let stats = self.stats.borrow();
-        log::debug!(
-            "/Transaction hit: {}, miss: {}, insert: {}",
-            stats.hit,
-            stats.missed,
-            stats.insert
-        );
         let s =
             tracing::span!(tracing::Level::TRACE, "write_lock forward_maps");
         let _e = s.enter();

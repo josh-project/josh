@@ -26,7 +26,9 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
                 .takes_value(true),
         )
         .arg(clap::Arg::with_name("squash").long("squash"))
+        .arg(clap::Arg::with_name("discover").short("d"))
         .arg(clap::Arg::with_name("trace").short("t"))
+        .arg(clap::Arg::with_name("no-cache").short("n"))
         .arg(
             clap::Arg::with_name("query")
                 .long("query")
@@ -56,9 +58,35 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
 
     let repo = git2::Repository::open_from_env()?;
 
-    josh::filter_cache::load(&repo.path());
+    if !args.is_present("no-cache") {
+        josh::filter_cache::load(&repo.path());
+    }
 
+    let _d = defer::defer(|| {
+        if !args.is_present("no-cache") {
+            josh::filter_cache::persist(&repo.path());
+        }
+    });
     let input_ref = args.value_of("input_ref").unwrap_or("HEAD");
+
+    if args.is_present("d") {
+        let r = repo.revparse_single(&input_ref)?;
+        let hs = josh::housekeeping::find_all_workspaces_and_subdirectories(
+            &r.peel_to_tree()?,
+        )?;
+        for i in hs {
+            if i.contains("workspace") {
+                continue;
+            }
+            josh::apply_filter_to_refs(
+                &repo,
+                &josh::parse(&i)?,
+                &[(input_ref.to_string(), "refs/JOSH_TMP".to_string())],
+            )?;
+        }
+        return Ok(0);
+    }
+
     let specstr = args.value_of("spec").unwrap_or(":nop");
     let update_target = args.value_of("update").unwrap_or("refs/JOSH_HEAD");
     let srcstr = format!("{}:{}", input_ref, update_target);
@@ -204,8 +232,6 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         }
     }
 
-    josh::filter_cache::persist(&repo.path());
-
     if args.is_present("trace") {
         rs_tracing::close_trace_file!();
     }
@@ -214,6 +240,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
 }
 
 fn main() {
+    env_logger::init();
     let args = {
         let mut args = vec![];
         for arg in std::env::args() {

@@ -159,7 +159,7 @@ pub fn discover_filter_candidates(
     return Ok(known_filters);
 }
 
-fn find_all_workspaces_and_subdirectories(
+pub fn find_all_workspaces_and_subdirectories(
     tree: &git2::Tree,
 ) -> JoshResult<std::collections::HashSet<String>> {
     let mut hs = std::collections::HashSet::new();

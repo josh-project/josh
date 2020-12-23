@@ -61,15 +61,15 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
             head.tree()?,
             josh::empty_tree(&repo),
         )?;
-        let head_cleaned = josh::substract(
+        let head_cleaned = josh::scratch::substract_fast(
             &repo,
-            new_tree,
-            josh::filters::apply(&repo, &filter, state_in_head)?,
+            new_tree.id(),
+            josh::filters::apply(&repo, &filter, state_in_head)?.id(),
         )?;
 
         let merged = josh::overlay(
             &repo,
-            head_cleaned.id(),
+            head_cleaned,
             josh::filters::apply(&repo, &filter, src.tree()?)?.id(),
         )?;
         new_tree = repo.find_tree(merged)?;

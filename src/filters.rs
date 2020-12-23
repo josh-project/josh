@@ -55,24 +55,40 @@ pub fn apply_to_commit(
     repo: &git2::Repository,
     filter: &Filter,
     commit: &git2::Commit,
+) -> super::JoshResult<git2::Oid> {
+    apply_to_commit2(
+        repo,
+        filter,
+        commit,
+        &mut super::filter_cache::Transaction::new(),
+    )
+}
+
+pub fn apply_to_commit2(
+    repo: &git2::Repository,
+    filter: &Filter,
+    commit: &git2::Commit,
     transaction: &mut super::filter_cache::Transaction,
 ) -> super::JoshResult<git2::Oid> {
+    if transaction.has(&super::filters::spec(&filter), repo, commit.id()) {
+        return Ok(transaction.get(&super::filters::spec(&filter), commit.id()));
+    }
+
     let filtered_tree = match &filter.0 {
         Op::Nop => return Ok(commit.id()),
 
         Op::Chain(a, b) => {
-            let r = super::history::walk2(repo, &a, commit.id(), transaction)?;
-            let commit = ok_or!(repo.find_commit(r), {
+            let r = apply_to_commit2(repo, &a, &commit, transaction)?;
+            if let Ok(r) = repo.find_commit(r) {
+                return apply_to_commit2(repo, &b, &r, transaction);
+            } else {
                 return Ok(git2::Oid::zero());
-            });
-            return super::history::walk2(repo, &b, commit.id(), transaction);
+            }
         }
         Op::Compose(filters) => {
             let filtered = filters
                 .iter()
-                .map(|f| {
-                    super::history::walk2(&repo, &f, commit.id(), transaction)
-                })
+                .map(|f| apply_to_commit2(&repo, &f, &commit, transaction))
                 .collect::<super::JoshResult<Vec<_>>>()?;
 
             let filtered: Vec<_> =
@@ -90,8 +106,6 @@ pub fn apply_to_commit(
             super::scratch::compose(&repo, filtered)?
         }
         Op::Workspace(ws_path) => {
-            rs_tracing::trace_scoped!("ws_apply_to_tree_and_parents");
-
             let normal_parents = commit
                 .parent_ids()
                 .map(|parent| {
@@ -106,38 +120,39 @@ pub fn apply_to_commit(
             )?;
 
             let extra_parents = commit
-            .parent_ids()
-            .map(|parent| {
-                let mut pcw = compose_filter_from_ws_no_fail(
-                    repo,
-                    &repo.find_commit(parent)?.tree()?,
-                    &ws_path,
-                )?;
+                .parents()
+                .map(|parent| {
+                    rs_tracing::trace_scoped!("parent", "id": parent.id().to_string());
+                    let mut pcw = compose_filter_from_ws_no_fail(
+                        repo,
+                        &parent.tree()?,
+                        &ws_path,
+                    )?;
 
-                if pcw == cw { return Ok(git2::Oid::zero()); }
+                    if pcw == cw {
+                        return Ok(git2::Oid::zero());
+                    }
 
-                let mut mcw = cw.clone();
+                    let mut mcw = cw.clone();
 
-                mcw.retain(|x| !pcw.contains(x));
-                pcw.retain(|x| !cw.contains(x));
+                    mcw.retain(|x| !pcw.contains(x));
+                    pcw.retain(|x| !cw.contains(x));
 
-                if mcw.len() == 0 {
-                    return Ok(git2::Oid::zero());
-                }
+                    if mcw.len() == 0 {
+                        return Ok(git2::Oid::zero());
+                    }
 
-                /* rs_tracing::trace_scoped!("workspace diff","mcw":mcw.spec(), "pcw": pcw.spec()); */
-
-                super::history::walk2(
-                    repo,
-                    &Filter(Op::Substract (
-                        Box::new(Filter(Op::Compose(mcw))),
-                        Box::new(Filter(Op::Compose(pcw))),
-                    )),
-                    parent,
-                    transaction,
-                )
-            })
-            .collect::<super::JoshResult<Vec<git2::Oid>>>()?;
+                    apply_to_commit2(
+                        repo,
+                        &Filter(Op::Substract(
+                            Box::new(Filter(Op::Compose(mcw))),
+                            Box::new(Filter(Op::Compose(pcw))),
+                        )),
+                        &parent,
+                        transaction,
+                    )
+                })
+                .collect::<super::JoshResult<Vec<git2::Oid>>>()?;
 
             let filtered_parent_ids = normal_parents
                 .into_iter()
@@ -176,22 +191,20 @@ pub fn apply_to_commit(
         }
         Op::Substract(a, b) => {
             let a_c = {
-                rs_tracing::trace_scoped!("first");
-                repo.find_commit(super::history::walk2(
+                repo.find_commit(apply_to_commit2(
                     &repo,
                     &a,
-                    commit.id(),
+                    &commit,
                     transaction,
                 )?)
                 .map(|x| x.tree_id())
                 .unwrap_or(empty_tree_id())
             };
             let b_c = {
-                rs_tracing::trace_scoped!("second");
-                repo.find_commit(super::history::walk2(
+                repo.find_commit(apply_to_commit2(
                     &repo,
                     &b,
-                    commit.id(),
+                    &commit,
                     transaction,
                 )?)
                 .map(|x| x.tree_id())
@@ -205,10 +218,13 @@ pub fn apply_to_commit(
         _ => apply(&repo, &filter, commit.tree()?)?,
     };
 
-    let filtered_parent_ids = commit
-        .parents()
-        .map(|x| super::history::walk2(repo, &filter, x.id(), transaction))
-        .collect::<super::JoshResult<_>>()?;
+    let filtered_parent_ids = {
+        rs_tracing::trace_scoped!("filtered_parent_ids", "n": commit.parent_ids().len());
+        commit
+            .parents()
+            .map(|x| super::history::walk2(repo, &filter, x.id(), transaction))
+            .collect::<super::JoshResult<_>>()?
+    };
 
     return scratch::create_filtered_commit(
         repo,
@@ -314,15 +330,13 @@ pub fn unapply<'a>(
         Op::Chain(a, b) => {
             let p = apply(&repo, &a, parent_tree.clone())?;
             let x = unapply(&repo, &b, tree, p)?;
-            Ok(repo.find_tree(unapply(&repo, &a, x, parent_tree)?.id())?)
+            unapply(&repo, &a, x, parent_tree)
         }
         Op::Workspace(path) => {
-            let mut cw = compose_filter_from_ws(
-                repo,
-                &tree,
-                &std::path::PathBuf::from(""),
+            let cw = build_compose_filter(
+                &string_blob(&repo, &tree, &Path::new("workspace.josh")),
+                vec![subdir_to_chain(Op::Subdir(path.to_owned()))],
             )?;
-            cw[0] = subdir_to_chain(Op::Subdir(path.clone()));
             return unapply(repo, &Filter(Op::Compose(cw)), tree, parent_tree);
         }
         Op::Compose(filters) => {
@@ -413,49 +427,38 @@ fn subdir_to_chain(f: Op) -> Filter {
     return Filter(f);
 }
 
-pub fn substract<'a>(
-    repo: &'a git2::Repository,
-    a: git2::Tree<'a>,
-    b: git2::Tree<'a>,
-) -> super::JoshResult<git2::Tree<'a>> {
-    Ok(repo.find_tree(scratch::substract_fast(&repo, a.id(), b.id())?)?)
-}
-
 fn compose_filter_from_ws_no_fail(
     repo: &git2::Repository,
     tree: &git2::Tree,
     ws_path: &Path,
 ) -> super::JoshResult<Vec<Filter>> {
-    if let Ok(cw) = compose_filter_from_ws(repo, &tree, &ws_path) {
-        Ok(cw)
-    } else {
-        build_compose_filter(
-            "",
-            Some(subdir_to_chain(Op::Subdir(ws_path.to_owned()))),
-        )
-    }
+    let base = vec![subdir_to_chain(Op::Subdir(ws_path.to_owned()))];
+    let cw = build_compose_filter(
+        &string_blob(&repo, &tree, &ws_path.join("workspace.josh")),
+        base.clone(),
+    );
+
+    return Ok(cw.unwrap_or(base));
 }
 
-fn compose_filter_from_ws(
+fn string_blob(
     repo: &git2::Repository,
     tree: &git2::Tree,
-    ws_path: &Path,
-) -> super::JoshResult<Vec<Filter>> {
-    let base = subdir_to_chain(Op::Subdir(ws_path.to_owned()));
-    let wsp = ws_path.join("workspace.josh");
-    let ws_config_oid = ok_or!(tree.get_path(&wsp).map(|x| x.id()), {
-        return build_compose_filter("", Some(base));
+    path: &Path,
+) -> String {
+    let entry_oid = ok_or!(tree.get_path(&path).map(|x| x.id()), {
+        return "".to_owned();
     });
 
-    let ws_blob = ok_or!(repo.find_blob(ws_config_oid), {
-        return build_compose_filter("", Some(base));
+    let blob = ok_or!(repo.find_blob(entry_oid), {
+        return "".to_owned();
     });
 
-    let ws_content = ok_or!(std::str::from_utf8(ws_blob.content()), {
-        return build_compose_filter("", Some(base));
+    let content = ok_or!(std::str::from_utf8(blob.content()), {
+        return "".to_owned();
     });
 
-    return build_compose_filter(ws_content, Some(base));
+    return content.to_owned();
 }
 
 #[derive(Parser)]
@@ -496,7 +499,7 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> super::JoshResult<Op> {
         }
         Rule::filter_compose => {
             let v: Vec<_> = pair.into_inner().map(|x| x.as_str()).collect();
-            Ok(Op::Compose(build_compose_filter(v[0], None)?))
+            Ok(Op::Compose(build_compose_filter(v[0], vec![])?))
         }
         _ => Err(super::josh_error("parse_item: no match")),
     }
@@ -537,14 +540,10 @@ fn parse_file_entry(
 
 fn build_compose_filter(
     filter_spec: &str,
-    base: Option<Filter>,
+    base: Vec<Filter>,
 ) -> super::JoshResult<Vec<Filter>> {
     rs_tracing::trace_scoped!("build_compose_filter");
-    let mut filters = if let Some(base) = base {
-        vec![base]
-    } else {
-        vec![]
-    };
+    let mut filters = base;
 
     if let Ok(mut r) = MyParser::parse(Rule::workspace_file, filter_spec) {
         let r = r.next().unwrap();
@@ -590,6 +589,6 @@ pub fn parse(filter_spec: &str) -> super::JoshResult<Filter> {
 
     return Ok(Filter(Op::Compose(build_compose_filter(
         filter_spec,
-        None,
+        vec![],
     )?)));
 }
