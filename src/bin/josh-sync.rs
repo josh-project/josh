@@ -36,7 +36,11 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
     let head = repo.head()?.peel_to_commit()?;
     let mut new_tree = head.tree()?;
 
-    let mut msg = format!("{}\n", args.value_of("message").unwrap_or("sync"));
+    let mut msg = format!(
+        "{}\n\nSync-Config: {}",
+        args.value_of("message").unwrap_or("sync"),
+        filename
+    );
 
     for caps in FILE_REGEX.captures_iter(&filestr) {
         let remote = caps.name("remote").unwrap().as_str().trim().to_owned();
@@ -51,28 +55,27 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
             .0
             .peel_to_commit()?;
 
-        let state_in_head =
-            filter.unapply(&repo, head.tree()?, josh::empty_tree(&repo))?;
+        let state_in_head = josh::filters::unapply(
+            &repo,
+            &filter,
+            head.tree()?,
+            josh::empty_tree(&repo),
+        )?;
         let head_cleaned = josh::substract(
             &repo,
             new_tree,
-            filter.apply(&repo, state_in_head)?,
+            josh::filters::apply(&repo, &filter, state_in_head)?,
         )?;
 
         let merged = josh::overlay(
             &repo,
             head_cleaned.id(),
-            filter.apply(&repo, src.tree()?)?.id(),
+            josh::filters::apply(&repo, &filter, src.tree()?)?.id(),
         )?;
         new_tree = repo.find_tree(merged)?;
 
-        msg = format!(
-            "{}\nSynced: {}({}) rev: {}",
-            msg,
-            remote,
-            src_ref,
-            src.id()
-        );
+        msg =
+            format!("{}\nSynced: [{}({}) {}]", msg, remote, src_ref, src.id());
     }
 
     let new_tree = josh::replace_subtree(
@@ -82,7 +85,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         &new_tree,
     )?;
 
-    repo.commit(
+    let commit = repo.commit(
         Some("HEAD"),
         &repo.signature()?,
         &repo.signature()?,
@@ -91,8 +94,11 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         &[&head],
     )?;
 
-    repo.checkout_head(Some(git2::build::CheckoutBuilder::new().force()))?;
-
+    repo.reset(
+        &repo.find_object(commit, None)?,
+        git2::ResetType::Hard,
+        None,
+    )?;
     josh::filter_cache::persist(&repo.path());
 
     return Ok(0);
