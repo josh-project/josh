@@ -3,7 +3,6 @@ use tracing;
 
 use super::empty_tree;
 use super::empty_tree_id;
-use super::filter_cache;
 use super::filters;
 use super::UnapplyFilter;
 use std::collections::HashSet;
@@ -219,26 +218,22 @@ pub fn unapply_filter(
     return Ok(UnapplyFilter::Done(ret));
 }
 
-#[tracing::instrument(skip(repo, transaction))]
+#[tracing::instrument(skip(repo))]
 fn transform_commit(
     repo: &git2::Repository,
     filterobj: &filters::Filter,
     from_refsname: &str,
     to_refname: &str,
-    transaction: &mut filter_cache::Transaction,
 ) -> super::JoshResult<usize> {
     let mut updated_count = 0;
     if let Ok(reference) = repo.revparse_single(&from_refsname) {
         let original_commit = reference.peel_to_commit()?;
 
-        let filter_commit =
-            super::history::walk(&repo, &filterobj, original_commit.id())?;
-
-        transaction.insert(
-            &super::filters::spec(filterobj),
-            original_commit.id(),
-            filter_commit,
-        );
+        let filter_commit = super::filters::apply_to_commit(
+            &repo,
+            &filterobj,
+            &original_commit,
+        )?;
 
         let previous = repo
             .revparse_single(&to_refname)
@@ -295,12 +290,10 @@ pub fn apply_filter_to_refs(
         "apply_filter_to_refs",
         "spec": super::filters::spec(&filterobj)
     );
-    let mut transaction = super::filter_cache::Transaction::new();
 
     let mut updated_count = 0;
     for (k, v) in refs {
-        updated_count +=
-            transform_commit(&repo, &*filterobj, &k, &v, &mut transaction)?;
+        updated_count += transform_commit(&repo, &*filterobj, &k, &v)?;
     }
     return Ok(updated_count);
 }

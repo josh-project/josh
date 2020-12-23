@@ -20,30 +20,28 @@ pub fn walk2(
     transaction: &mut super::filter_cache::Transaction,
 ) -> super::JoshResult<git2::Oid> {
     rs_tracing::trace_scoped!("walk2","spec":super::filters::spec(&filter), "id": input.to_string());
-    if super::filters::spec(&filter) == "" {
+
+    let input_commit = ok_or!(repo.find_commit(input), {
         return Ok(git2::Oid::zero());
-    }
+    });
 
     if transaction.has(&super::filters::spec(&filter), repo, input) {
         return Ok(transaction.get(&super::filters::spec(&filter), input));
     }
 
     let mut doit = false;
-    let incom = repo.find_commit(input)?;
 
-    for p in incom.parent_ids() {
+    for p in input_commit.parent_ids() {
         if !transaction.has(&super::filters::spec(&filter), repo, p) {
             doit = true;
         }
     }
 
     if !doit {
-        /* let t = filter.apply_to_commit(&repo, &incom, transaction)?; */
-
-        let t = super::filters::apply_to_commit(
+        let t = super::filters::apply_to_commit2(
             &repo,
             &filter,
-            &incom,
+            &input_commit,
             transaction,
         )?;
 
@@ -58,7 +56,8 @@ pub fn walk2(
         walk
     };
 
-    log::debug!("starting walk for {:?}", super::filters::spec(&filter));
+    log::debug!("Walking history for {:?}", super::filters::spec(&filter));
+    let mut n_commits = 0;
 
     for original_commit_id in walk {
         let original_commit_id = original_commit_id?;
@@ -74,8 +73,7 @@ pub fn walk2(
         let filtered_commit = ok_or!(
             rs_tracing::trace_expr!(
                 "apply_to_commit",
-                /* filter.apply_to_commit(&repo, &original_commit, transaction), */
-                super::filters::apply_to_commit(
+                super::filters::apply_to_commit2(
                     &repo,
                     &filter,
                     &original_commit,
@@ -89,13 +87,18 @@ pub fn walk2(
             }
         );
 
+        n_commits += 1;
         transaction.insert(
             &super::filters::spec(&filter),
             original_commit.id(),
             filtered_commit,
         );
+        if n_commits % 1000 == 0 {
+            log::debug!("    -> {} commits filtered", n_commits);
+        }
     }
 
+    log::debug!("    -> {} commits filtered", n_commits);
     if !transaction.has(&super::filters::spec(&filter), &repo, input) {
         transaction.insert(
             &super::filters::spec(&filter),

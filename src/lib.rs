@@ -47,7 +47,6 @@ pub mod shell;
 
 pub use crate::filters::build_chain;
 pub use crate::filters::parse;
-pub use crate::filters::substract;
 pub use crate::scratch::apply_filter_to_refs;
 pub use crate::scratch::overlay;
 pub use crate::scratch::replace_subtree;
