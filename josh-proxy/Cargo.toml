@@ -15,7 +15,7 @@ version = "0.3.0"
 clap = "2"
 futures = "0.3"
 tokio = {version = "0.2", features = ["full"] }
-hyper = "0.13"
+hyper = "0.14"
 hyper_cgi = {version = "0.1"}
 toml = "*"
 git2 = {version = "*", default-features = false}
