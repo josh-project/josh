@@ -1,6 +1,4 @@
-use super::empty_tree;
-use super::empty_tree_id;
-use super::scratch;
+use super::*;
 use pest::Parser;
 use std::path::Path;
 
@@ -55,12 +53,12 @@ pub fn apply_to_commit(
     repo: &git2::Repository,
     filter: &Filter,
     commit: &git2::Commit,
-) -> super::JoshResult<git2::Oid> {
+) -> JoshResult<git2::Oid> {
     apply_to_commit2(
         repo,
         filter,
         commit,
-        &mut super::filter_cache::Transaction::new(),
+        &mut filter_cache::Transaction::new(),
     )
 }
 
@@ -68,10 +66,10 @@ pub fn apply_to_commit2(
     repo: &git2::Repository,
     filter: &Filter,
     commit: &git2::Commit,
-    transaction: &mut super::filter_cache::Transaction,
-) -> super::JoshResult<git2::Oid> {
-    if transaction.has(&super::filters::spec(&filter), repo, commit.id()) {
-        return Ok(transaction.get(&super::filters::spec(&filter), commit.id()));
+    transaction: &mut filter_cache::Transaction,
+) -> JoshResult<git2::Oid> {
+    if transaction.has(&filters::spec(&filter), repo, commit.id()) {
+        return Ok(transaction.get(&filters::spec(&filter), commit.id()));
     }
 
     let filtered_tree = match &filter.0 {
@@ -89,7 +87,7 @@ pub fn apply_to_commit2(
             let filtered = filters
                 .iter()
                 .map(|f| apply_to_commit2(&repo, &f, &commit, transaction))
-                .collect::<super::JoshResult<Vec<_>>>()?;
+                .collect::<JoshResult<Vec<_>>>()?;
 
             let filtered: Vec<_> =
                 filters.iter().zip(filtered.into_iter()).collect();
@@ -101,17 +99,17 @@ pub fn apply_to_commit2(
             let filtered = filtered
                 .into_iter()
                 .map(|(f, id)| Ok((f, repo.find_commit(id)?.tree()?)))
-                .collect::<super::JoshResult<Vec<_>>>()?;
+                .collect::<JoshResult<Vec<_>>>()?;
 
-            super::scratch::compose(&repo, filtered)?
+            treeops::compose(&repo, filtered)?
         }
         Op::Workspace(ws_path) => {
             let normal_parents = commit
                 .parent_ids()
                 .map(|parent| {
-                    super::history::walk2(repo, &filter, parent, transaction)
+                    history::walk2(repo, &filter, parent, transaction)
                 })
-                .collect::<super::JoshResult<Vec<git2::Oid>>>()?;
+                .collect::<JoshResult<Vec<git2::Oid>>>()?;
 
             let cw = compose_filter_from_ws_no_fail(
                 repo,
@@ -152,7 +150,7 @@ pub fn apply_to_commit2(
                         transaction,
                     )
                 })
-                .collect::<super::JoshResult<Vec<git2::Oid>>>()?;
+                .collect::<JoshResult<Vec<git2::Oid>>>()?;
 
             let filtered_parent_ids = normal_parents
                 .into_iter()
@@ -171,20 +169,18 @@ pub fn apply_to_commit2(
         Op::Fold => {
             let filtered_parent_ids: Vec<git2::Oid> = commit
                 .parents()
-                .map(|x| {
-                    super::history::walk2(repo, &filter, x.id(), transaction)
-                })
-                .collect::<super::JoshResult<_>>()?;
+                .map(|x| history::walk2(repo, &filter, x.id(), transaction))
+                .collect::<JoshResult<_>>()?;
 
             let trees: Vec<git2::Oid> = filtered_parent_ids
                 .iter()
                 .map(|x| Ok(repo.find_commit(*x)?.tree_id()))
-                .collect::<super::JoshResult<_>>()?;
+                .collect::<JoshResult<_>>()?;
 
             let mut filtered_tree = commit.tree_id();
 
             for t in trees {
-                filtered_tree = scratch::overlay(repo, filtered_tree, t)?;
+                filtered_tree = treeops::overlay(repo, filtered_tree, t)?;
             }
 
             repo.find_tree(filtered_tree)?
@@ -210,7 +206,7 @@ pub fn apply_to_commit2(
                 .map(|x| x.tree_id())
                 .unwrap_or(empty_tree_id())
             };
-            repo.find_tree(scratch::substract_fast(&repo, a_c, b_c)?)?
+            repo.find_tree(treeops::substract_fast(&repo, a_c, b_c)?)?
         }
         Op::Squash => {
             return scratch::rewrite(&repo, &commit, &vec![], &commit.tree()?)
@@ -222,8 +218,8 @@ pub fn apply_to_commit2(
         rs_tracing::trace_scoped!("filtered_parent_ids", "n": commit.parent_ids().len());
         commit
             .parents()
-            .map(|x| super::history::walk2(repo, &filter, x.id(), transaction))
-            .collect::<super::JoshResult<_>>()?
+            .map(|x| history::walk2(repo, &filter, x.id(), transaction))
+            .collect::<JoshResult<_>>()?
     };
 
     return scratch::create_filtered_commit(
@@ -238,7 +234,7 @@ pub fn apply<'a>(
     repo: &'a git2::Repository,
     filter: &Filter,
     tree: git2::Tree<'a>,
-) -> super::JoshResult<git2::Tree<'a>> {
+) -> JoshResult<git2::Tree<'a>> {
     match &filter.0 {
         Op::Nop => return Ok(tree),
         Op::Fold => return Ok(tree),
@@ -250,7 +246,7 @@ pub fn apply<'a>(
                 require_literal_separator: true,
                 require_literal_leading_dot: true,
             };
-            scratch::substract_tree(
+            treeops::substract_tree(
                 &repo,
                 "",
                 tree.id(),
@@ -270,7 +266,7 @@ pub fn apply<'a>(
                 .and_then(|x| repo.find_tree(x.id()))
                 .unwrap_or(empty_tree(&repo)));
         }
-        Op::Prefix(path) => scratch::replace_subtree(
+        Op::Prefix(path) => treeops::replace_subtree(
             &repo,
             &path,
             tree.id(),
@@ -278,16 +274,16 @@ pub fn apply<'a>(
         ),
 
         Op::Hide(path) => {
-            scratch::replace_subtree(&repo, &path, git2::Oid::zero(), &tree)
+            treeops::replace_subtree(&repo, &path, git2::Oid::zero(), &tree)
         }
 
-        Op::Substract(a, b) => Ok(repo.find_tree(scratch::substract_fast(
+        Op::Substract(a, b) => Ok(repo.find_tree(treeops::substract_fast(
             &repo,
             apply(&repo, &a, tree.clone())?.id(),
             apply(&repo, &b, tree.clone())?.id(),
         )?)?),
 
-        Op::Dirs => scratch::dirtree(
+        Op::Dirs => treeops::dirtree(
             &repo,
             "",
             tree.id(),
@@ -306,10 +302,10 @@ pub fn apply<'a>(
             let filtered: Vec<_> = filters
                 .iter()
                 .map(|f| Ok(apply(&repo, &f, tree.clone())?))
-                .collect::<super::JoshResult<_>>()?;
+                .collect::<JoshResult<_>>()?;
             let filtered: Vec<_> =
                 filters.iter().zip(filtered.into_iter()).collect();
-            return super::scratch::compose(&repo, filtered);
+            return treeops::compose(&repo, filtered);
         }
 
         Op::Chain(a, b) => {
@@ -323,7 +319,7 @@ pub fn unapply<'a>(
     filter: &Filter,
     tree: git2::Tree<'a>,
     parent_tree: git2::Tree<'a>,
-) -> super::JoshResult<git2::Tree<'a>> {
+) -> JoshResult<git2::Tree<'a>> {
     return match &filter.0 {
         Op::Nop => Ok(tree),
 
@@ -356,7 +352,7 @@ pub fn unapply<'a>(
                 result = unapply(&repo, &other, remaining.clone(), result)?;
                 let reapply = apply(&repo, &other, from_empty.clone())?;
 
-                remaining = repo.find_tree(scratch::substract_fast(
+                remaining = repo.find_tree(treeops::substract_fast(
                     &repo,
                     remaining.id(),
                     reapply.id(),
@@ -370,7 +366,7 @@ pub fn unapply<'a>(
                 .get_path(&path)
                 .map(|x| x.id())
                 .unwrap_or(git2::Oid::zero());
-            scratch::replace_subtree(&repo, &path, hidden, &tree)
+            treeops::replace_subtree(&repo, &path, hidden, &tree)
         }
         Op::Glob(pattern, invert) => {
             let options = glob::MatchOptions {
@@ -378,7 +374,7 @@ pub fn unapply<'a>(
                 require_literal_separator: true,
                 require_literal_leading_dot: true,
             };
-            let substracted = scratch::substract_tree(
+            let substracted = treeops::substract_tree(
                 &repo,
                 "",
                 tree.id(),
@@ -390,7 +386,7 @@ pub fn unapply<'a>(
                 git2::Oid::zero(),
                 &mut std::collections::HashMap::new(),
             )?;
-            Ok(repo.find_tree(scratch::overlay(
+            Ok(repo.find_tree(treeops::overlay(
                 &repo,
                 parent_tree.id(),
                 substracted.id(),
@@ -401,9 +397,9 @@ pub fn unapply<'a>(
             .and_then(|x| repo.find_tree(x.id()))
             .unwrap_or(empty_tree(&repo))),
         Op::Subdir(path) => {
-            scratch::replace_subtree(&repo, &path, tree.id(), &parent_tree)
+            treeops::replace_subtree(&repo, &path, tree.id(), &parent_tree)
         }
-        _ => return Err(super::josh_error("filter not reversible")),
+        _ => return Err(josh_error("filter not reversible")),
     };
 }
 
@@ -431,7 +427,7 @@ fn compose_filter_from_ws_no_fail(
     repo: &git2::Repository,
     tree: &git2::Tree,
     ws_path: &Path,
-) -> super::JoshResult<Vec<Filter>> {
+) -> JoshResult<Vec<Filter>> {
     let base = vec![subdir_to_chain(Op::Subdir(ws_path.to_owned()))];
     let cw = build_compose_filter(
         &string_blob(&repo, &tree, &ws_path.join("workspace.josh")),
@@ -465,7 +461,7 @@ fn string_blob(
 #[grammar = "filter_parser.pest"]
 struct MyParser;
 
-fn make_op(args: &[&str]) -> super::JoshResult<Op> {
+fn make_op(args: &[&str]) -> JoshResult<Op> {
     match args {
         ["/", arg] => {
             Ok(subdir_to_chain(Op::Subdir(Path::new(arg).to_owned())).0)
@@ -479,11 +475,11 @@ fn make_op(args: &[&str]) -> super::JoshResult<Op> {
         ["SQUASH"] => Ok(Op::Squash),
         ["DIRS"] => Ok(Op::Dirs),
         ["FOLD"] => Ok(Op::Fold),
-        _ => Err(super::josh_error("invalid filter")),
+        _ => Err(josh_error("invalid filter")),
     }
 }
 
-fn parse_item(pair: pest::iterators::Pair<Rule>) -> super::JoshResult<Op> {
+fn parse_item(pair: pest::iterators::Pair<Rule>) -> JoshResult<Op> {
     match pair.as_rule() {
         Rule::filter => {
             let v: Vec<_> = pair.into_inner().map(|x| x.as_str()).collect();
@@ -501,14 +497,14 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> super::JoshResult<Op> {
             let v: Vec<_> = pair.into_inner().map(|x| x.as_str()).collect();
             Ok(Op::Compose(build_compose_filter(v[0], vec![])?))
         }
-        _ => Err(super::josh_error("parse_item: no match")),
+        _ => Err(josh_error("parse_item: no match")),
     }
 }
 
 fn parse_file_entry(
     pair: pest::iterators::Pair<Rule>,
     filters: &mut Vec<Filter>,
-) -> super::JoshResult<()> {
+) -> JoshResult<()> {
     match pair.as_rule() {
         Rule::file_entry => {
             let mut inner = pair.into_inner();
@@ -531,17 +527,14 @@ fn parse_file_entry(
             Ok(())
         }
         Rule::EOI => Ok(()),
-        _ => Err(super::josh_error(&format!(
-            "invalid workspace file {:?}",
-            pair
-        ))),
+        _ => Err(josh_error(&format!("invalid workspace file {:?}", pair))),
     }
 }
 
 fn build_compose_filter(
     filter_spec: &str,
     base: Vec<Filter>,
-) -> super::JoshResult<Vec<Filter>> {
+) -> JoshResult<Vec<Filter>> {
     rs_tracing::trace_scoped!("build_compose_filter");
     let mut filters = base;
 
@@ -553,7 +546,7 @@ fn build_compose_filter(
 
         return Ok(filters);
     }
-    return Err(super::josh_error(&format!(
+    return Err(josh_error(&format!(
         "Invalid workspace:\n----\n{}\n----",
         filter_spec
     )));
@@ -563,7 +556,7 @@ pub fn build_chain(first: Filter, second: Filter) -> Filter {
     Filter(Op::Chain(Box::new(first), Box::new(second)))
 }
 
-pub fn parse(filter_spec: &str) -> super::JoshResult<Filter> {
+pub fn parse(filter_spec: &str) -> JoshResult<Filter> {
     if filter_spec.contains("SUBSTRACT") {
         assert!(false);
     }

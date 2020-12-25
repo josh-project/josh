@@ -44,12 +44,11 @@ pub mod housekeeping;
 pub mod query;
 pub mod scratch;
 pub mod shell;
+pub mod treeops;
 
 pub use crate::filters::build_chain;
 pub use crate::filters::parse;
 pub use crate::scratch::apply_filter_to_refs;
-pub use crate::scratch::overlay;
-pub use crate::scratch::replace_subtree;
 pub use crate::scratch::unapply_filter;
 
 #[derive(Clone)]
