@@ -80,13 +80,13 @@ fn run_command(path: &Path, cmd: &str) -> String {
     return output;
 }
 
-super::regex_parsed!(
+regex_parsed!(
     UpstreamRef,
     r"refs/josh/upstream/(?P<ns>.*[.]git)/refs/heads/.*",
     [ns]
 );
 
-super::regex_parsed!(
+regex_parsed!(
     FilteredRefRegex,
     r"josh/filtered/(?P<upstream_repo>[^/]*[.]git)/(?P<filter_spec>[^/]*)/.*",
     [upstream_repo, filter_spec]
@@ -105,7 +105,7 @@ pub fn discover_repos(repo: &git2::Repository) -> JoshResult<Vec<String>> {
         let name = UpstreamRef::from_str(name)
             .ok_or(josh_error("not a ns"))?
             .ns;
-        let name = super::from_ns(&name);
+        let name = from_ns(&name);
 
         repos.push(name);
     }
@@ -131,7 +131,7 @@ pub fn discover_filter_candidates(
         let name = UpstreamRef::from_str(name)
             .ok_or(josh_error("not a ns"))?
             .ns;
-        let name = super::from_ns(&name);
+        let name = from_ns(&name);
 
         let hs = find_all_workspaces_and_subdirectories(&r.peel_to_tree()?)?;
 
@@ -198,7 +198,7 @@ pub fn get_info(
 
     let mut meta = std::collections::HashMap::new();
     meta.insert("sha1".to_owned(), "".to_owned());
-    let filtered = super::history::walk(&repo, &filter, commit.id())?;
+    let filtered = history::walk(&repo, &filter, commit.id())?;
 
     let parent_ids = |commit: &git2::Commit| {
         let pids: Vec<_> = commit

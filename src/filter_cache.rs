@@ -1,3 +1,4 @@
+use super::*;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
@@ -166,7 +167,7 @@ pub fn load(path: &std::path::Path) {
 
 pub fn persist(path: &std::path::Path) {
     persist_file(
-        &*super::filter_cache::forward().read().unwrap(),
+        &*filter_cache::forward().read().unwrap(),
         &path.join("josh_forward_maps"),
     )
     .ok();

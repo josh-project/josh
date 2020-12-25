@@ -61,13 +61,13 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
             head.tree()?,
             josh::empty_tree(&repo),
         )?;
-        let head_cleaned = josh::scratch::substract_fast(
+        let head_cleaned = josh::treeops::substract_fast(
             &repo,
             new_tree.id(),
             josh::filters::apply(&repo, &filter, state_in_head)?.id(),
         )?;
 
-        let merged = josh::overlay(
+        let merged = josh::treeops::overlay(
             &repo,
             head_cleaned,
             josh::filters::apply(&repo, &filter, src.tree()?)?.id(),
@@ -78,7 +78,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
             format!("{}\nSynced: [{}({}) {}]", msg, remote, src_ref, src.id());
     }
 
-    let new_tree = josh::replace_subtree(
+    let new_tree = josh::treeops::replace_subtree(
         &repo,
         &std::path::PathBuf::from(filename),
         repo.blob(filestr.as_bytes())?,
