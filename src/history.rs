@@ -7,7 +7,12 @@ pub fn walk(
     input: git2::Oid,
 ) -> JoshResult<git2::Oid> {
     rs_tracing::trace_scoped!("walk", "spec": filters::spec(&filter));
-    walk2(repo, filter, input, &mut filter_cache::Transaction::new())
+    walk2(
+        repo,
+        filter,
+        input,
+        &mut filter_cache::Transaction::new(&repo),
+    )
 }
 
 pub fn walk2(
@@ -22,14 +27,14 @@ pub fn walk2(
         return Ok(git2::Oid::zero());
     });
 
-    if transaction.has(&filters::spec(&filter), repo, input) {
-        return Ok(transaction.get(&filters::spec(&filter), input));
+    if let Some(oid) = transaction.get(&filters::spec(&filter), input) {
+        return Ok(oid);
     }
 
     let mut doit = false;
 
     for p in input_commit.parent_ids() {
-        if !transaction.has(&filters::spec(&filter), repo, p) {
+        if transaction.get(&filters::spec(&filter), p) == None {
             doit = true;
         }
     }
@@ -58,7 +63,8 @@ pub fn walk2(
 
     for original_commit_id in walk {
         let original_commit_id = original_commit_id?;
-        if transaction.has(&filters::spec(&filter), &repo, original_commit_id) {
+        if transaction.get(&filters::spec(&filter), original_commit_id) != None
+        {
             continue;
         }
         let original_commit = repo.find_commit(original_commit_id)?;
@@ -92,9 +98,17 @@ pub fn walk2(
     }
 
     log::debug!("    -> {} commits filtered", n_commits);
-    if !transaction.has(&filters::spec(&filter), &repo, input) {
-        transaction.insert(&filters::spec(&filter), input, git2::Oid::zero());
-    }
-    let rewritten = transaction.get(&filters::spec(&filter), input);
-    return Ok(rewritten);
+
+    return Ok(
+        if let Some(oid) = transaction.get(&filters::spec(&filter), input) {
+            oid
+        } else {
+            transaction.insert(
+                &filters::spec(&filter),
+                input,
+                git2::Oid::zero(),
+            );
+            git2::Oid::zero()
+        },
+    );
 }
