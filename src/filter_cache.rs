@@ -76,47 +76,26 @@ impl FilterCache {
             .insert(JoshOid(from), JoshOid(to));
     }
 
-    fn get(&self, filter_spec: &str, from: git2::Oid) -> git2::Oid {
-        if let Some(m) = self.maps.get(filter_spec) {
-            if let Some(JoshOid(oid)) = m.get(&JoshOid(from)).cloned() {
-                return oid;
-            }
-        }
-        if filter_spec == ":nop" {
-            return from;
-        }
-        if self.version == 0 {
-            if let Ok(r) = forward().read() {
-                return r.get(filter_spec, from);
-            }
-        }
-        return git2::Oid::zero();
-    }
-
-    fn has(
+    fn get(
         &self,
         repo: &git2::Repository,
         filter_spec: &str,
         from: git2::Oid,
-    ) -> bool {
+    ) -> Option<git2::Oid> {
         if filter_spec == ":nop" {
-            return true;
+            return Some(from);
         }
         if let Some(m) = self.maps.get(filter_spec) {
-            if m.contains_key(&JoshOid(from)) {
-                // Only report an object as cached if it exists in the object database.
-                // This forces a rebuild in case the object was garbage collected.
-                let oid = self.get(filter_spec, from);
-                return oid == git2::Oid::zero()
-                    || repo.odb().unwrap().exists(oid);
+            if let Some(JoshOid(oid)) = m.get(&JoshOid(from)).cloned() {
+                return Some(oid);
             }
         }
         if self.version == 0 {
             if let Ok(r) = forward().read() {
-                return r.has(repo, filter_spec, from);
+                return r.get(&repo, filter_spec, from);
             }
         }
-        return false;
+        return None;
     }
 
     fn new() -> FilterCache {
@@ -186,18 +165,20 @@ fn persist_file(
     return Ok(());
 }
 
-pub struct Transaction {
+pub struct Transaction<'a> {
     fm: FilterCache,
+    repo: &'a git2::Repository,
 }
 
-impl Transaction {
-    pub fn new() -> Transaction {
+impl<'a> Transaction<'a> {
+    pub fn new(repo: &'a git2::Repository) -> Transaction<'a> {
         log::debug!("new transaction");
         Transaction {
             fm: FilterCache {
                 maps: HashMap::new(),
                 version: 0,
             },
+            repo: repo,
         }
     }
 
@@ -205,22 +186,19 @@ impl Transaction {
         self.fm.set(spec, from, to);
     }
 
-    pub fn has(
-        &self,
-        spec: &str,
-        repo: &git2::Repository,
-        from: git2::Oid,
-    ) -> bool {
-        let r = self.fm.has(&repo, spec, from);
-        return r;
-    }
-
-    pub fn get(&self, spec: &str, from: git2::Oid) -> git2::Oid {
-        self.fm.get(spec, from)
+    pub fn get(&self, spec: &str, from: git2::Oid) -> Option<git2::Oid> {
+        if let Some(oid) = self.fm.get(&self.repo, spec, from) {
+            if self.repo.odb().unwrap().exists(oid) {
+                // Only report an object as cached if it exists in the object database.
+                // This forces a rebuild in case the object was garbage collected.
+                return Some(oid);
+            }
+        }
+        return None;
     }
 }
 
-impl Drop for Transaction {
+impl<'a> Drop for Transaction<'a> {
     fn drop(&mut self) {
         rs_tracing::trace_scoped!("merge");
         let s =

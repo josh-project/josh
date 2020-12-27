@@ -58,7 +58,7 @@ pub fn apply_to_commit(
         repo,
         filter,
         commit,
-        &mut filter_cache::Transaction::new(),
+        &mut filter_cache::Transaction::new(&repo),
     )
 }
 
@@ -68,8 +68,8 @@ pub fn apply_to_commit2(
     commit: &git2::Commit,
     transaction: &mut filter_cache::Transaction,
 ) -> JoshResult<git2::Oid> {
-    if transaction.has(&filters::spec(&filter), repo, commit.id()) {
-        return Ok(transaction.get(&filters::spec(&filter), commit.id()));
+    if let Some(oid) = transaction.get(&filters::spec(&filter), commit.id()) {
+        return Ok(oid);
     }
 
     let filtered_tree = match &filter.0 {
