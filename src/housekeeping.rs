@@ -279,46 +279,32 @@ pub fn spawn_thread(
     do_gc: bool,
 ) -> std::thread::JoinHandle<()> {
     let mut gc_timer = std::time::Instant::now();
-    let mut persist_timer =
-        std::time::Instant::now() - std::time::Duration::from_secs(60 * 15);
-    std::thread::spawn(move || {
-        let mut total = 0;
-        loop {
-            let repo = git2::Repository::init_bare(&repo_path).unwrap();
-            let known_filters =
-                housekeeping::discover_filter_candidates(&repo).unwrap();
-            total += refresh_known_filters(&repo, &known_filters).unwrap_or(0);
-            if total > 1000
-                || persist_timer.elapsed()
-                    > std::time::Duration::from_secs(60 * 15)
-            {
-                filter_cache::persist(&repo.path());
-                total = 0;
-                persist_timer = std::time::Instant::now();
-            }
+    std::thread::spawn(move || loop {
+        let repo = git2::Repository::init_bare(&repo_path).unwrap();
+        let known_filters =
+            housekeeping::discover_filter_candidates(&repo).unwrap();
+        refresh_known_filters(&repo, &known_filters).unwrap_or(0);
+        info!(
+            "{}",
+            run_command(&repo.path(), &"git count-objects -v")
+                .replace("\n", "  ")
+        );
+        if do_gc && gc_timer.elapsed() > std::time::Duration::from_secs(60 * 60)
+        {
             info!(
-                "{}",
-                run_command(&repo.path(), &"git count-objects -v")
-                    .replace("\n", "  ")
+                "\n----------\n{}\n----------",
+                run_command(&repo.path(), &"git repack -adkbn")
             );
-            if do_gc
-                && gc_timer.elapsed() > std::time::Duration::from_secs(60 * 60)
-            {
-                info!(
-                    "\n----------\n{}\n----------",
-                    run_command(&repo.path(), &"git repack -adkbn")
-                );
-                info!(
-                    "\n----------\n{}\n----------",
-                    run_command(&repo.path(), &"git count-objects -vH")
-                );
-                info!(
-                    "\n----------\n{}\n----------",
-                    run_command(&repo.path(), &"git prune --expire=2w")
-                );
-                gc_timer = std::time::Instant::now();
-            }
-            std::thread::sleep(std::time::Duration::from_secs(60));
+            info!(
+                "\n----------\n{}\n----------",
+                run_command(&repo.path(), &"git count-objects -vH")
+            );
+            info!(
+                "\n----------\n{}\n----------",
+                run_command(&repo.path(), &"git prune --expire=2w")
+            );
+            gc_timer = std::time::Instant::now();
         }
+        std::thread::sleep(std::time::Duration::from_secs(60));
     })
 }
