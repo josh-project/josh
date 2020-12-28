@@ -1,3 +1,4 @@
+#![deny(warnings)]
 #[macro_use]
 extern crate lazy_static;
 use base64;
@@ -546,7 +547,7 @@ async fn run_proxy() -> josh::JoshResult<i32> {
     );
 
     josh_proxy::create_repo(&local)?;
-    josh::filter_cache::load(&local);
+    josh::filter_cache::load(&local)?;
 
     let proxy_service = Arc::new(JoshProxyService {
         port: port,
@@ -758,10 +759,10 @@ fn main() {
     if ARGS.is_present("m") {
         let repo =
             git2::Repository::init_bare(&local).expect("can't init_bare");
+        josh::filter_cache::load(&local).expect("can't open database");
         let known_filters =
             josh::housekeeping::discover_filter_candidates(&repo)
                 .expect("can't discover_filter_candidates");
-        josh::filter_cache::load(&local);
         josh::housekeeping::refresh_known_filters(&repo, &known_filters)
             .expect("can't refresh_known_filters");
         std::process::exit(0);

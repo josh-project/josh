@@ -59,17 +59,17 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
     let repo = git2::Repository::open_from_env()?;
 
     if !args.is_present("no-cache") {
-        josh::filter_cache::load(&repo.path());
+        josh::filter_cache::load(&repo.path())?;
     }
 
     let _d = defer::defer(|| {
-        if !args.is_present("no-cache") {
-            josh::filter_cache::persist(&repo.path());
+        if args.is_present("trace") {
+            rs_tracing::close_trace_file!();
         }
     });
     let input_ref = args.value_of("input_ref").unwrap_or("HEAD");
 
-    if args.is_present("d") {
+    if args.is_present("discover") {
         let r = repo.revparse_single(&input_ref)?;
         let hs = josh::housekeeping::find_all_workspaces_and_subdirectories(
             &r.peel_to_tree()?,
@@ -84,7 +84,6 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
                 &[(input_ref.to_string(), "refs/JOSH_TMP".to_string())],
             )?;
         }
-        return Ok(0);
     }
 
     let specstr = args.value_of("spec").unwrap_or(":nop");
@@ -230,10 +229,6 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
                 }
             }
         }
-    }
-
-    if args.is_present("trace") {
-        rs_tracing::close_trace_file!();
     }
 
     return Ok(0);

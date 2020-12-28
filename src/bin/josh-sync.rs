@@ -29,7 +29,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
 
     let repo = git2::Repository::open_from_env()?;
 
-    josh::filter_cache::load(&repo.path());
+    josh::filter_cache::load(&repo.path())?;
     let filename = args.value_of("file").unwrap_or("");
     let filestr = read_to_string(&filename)?;
 
@@ -99,7 +99,6 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         git2::ResetType::Hard,
         None,
     )?;
-    josh::filter_cache::persist(&repo.path());
 
     return Ok(0);
 }
