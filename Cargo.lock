@@ -702,7 +702,7 @@ dependencies = [
  "hyper_cgi",
  "josh",
  "lazy_static",
- "opentelemetry",
+ "opentelemetry 0.11.1",
  "opentelemetry-jaeger",
  "regex",
  "reqwest",
@@ -978,13 +978,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "opentelemetry"
+version = "0.11.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a5128a508e473b4e4465795c218ec8d9cafdd89e14bf2e9106ab487a41950cec"
+dependencies = [
+ "async-trait",
+ "futures",
+ "js-sys",
+ "lazy_static",
+ "percent-encoding",
+ "pin-project 0.4.27",
+ "rand 0.7.3",
+ "regex",
+ "thiserror",
+]
+
+[[package]]
 name = "opentelemetry-jaeger"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d1434625fc67118fa79088f260051cf9149ca0d8737aefb7e4b5c6a861c765ca"
 dependencies = [
  "async-trait",
- "opentelemetry",
+ "opentelemetry 0.10.0",
  "thrift",
 ]
 
@@ -1611,6 +1628,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "thiserror"
+version = "1.0.23"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "76cc616c6abf8c8928e2fdcc0dbfab37175edd8fb49a4641066ad1364fdab146"
+dependencies = [
+ "thiserror-impl",
+]
+
+[[package]]
+name = "thiserror-impl"
+version = "1.0.23"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9be73a2caec27583d0046ef3796c3794f868a5bc813db689eed00c7631275cd1"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "thread_local"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1830,7 +1867,7 @@ version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "08457d22f95dc05ff929afcdc3d57f3a2437f9377765bb6e20ffeb67d72b1719"
 dependencies = [
- "opentelemetry",
+ "opentelemetry 0.10.0",
  "tracing",
  "tracing-core",
  "tracing-log",
