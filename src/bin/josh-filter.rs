@@ -2,18 +2,9 @@
 #![warn(unused_extern_crates)]
 
 #[macro_use]
-extern crate lazy_static;
-
-#[macro_use]
 extern crate rs_tracing;
 
 use std::fs::read_to_string;
-
-lazy_static! {
-    static ref FILE_REGEX: regex::Regex =
-        regex::Regex::new(r"\[(?P<src>.*)\](?P<spec>[^\[]*)")
-            .expect("can't compile regex");
-}
 
 fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
     let args = clap::App::new("josh-filter")
@@ -28,6 +19,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         .arg(clap::Arg::with_name("squash").long("squash"))
         .arg(clap::Arg::with_name("discover").short("d"))
         .arg(clap::Arg::with_name("trace").short("t"))
+        .arg(clap::Arg::with_name("print").short("p"))
         .arg(clap::Arg::with_name("no-cache").short("n"))
         .arg(
             clap::Arg::with_name("query")
@@ -39,7 +31,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         .arg(
             clap::Arg::with_name("check-permission")
                 .long("check-permission")
-                .short("p")
+                .short("c")
                 .takes_value(true),
         )
         .arg(clap::Arg::with_name("version").long("version"))
@@ -88,37 +80,31 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
 
     let specstr = args.value_of("spec").unwrap_or(":nop");
     let update_target = args.value_of("update").unwrap_or("refs/JOSH_HEAD");
-    let srcstr = format!("{}:{}", input_ref, update_target);
 
-    let filestr = args
+    let specstr = args
         .value_of("file")
         .and_then(|f| read_to_string(f).ok())
-        .unwrap_or(format!("[{}]{}", srcstr, specstr));
+        .unwrap_or(specstr.to_string());
 
-    for caps in FILE_REGEX.captures_iter(&filestr) {
-        let from_to = caps.name("src").unwrap().as_str().trim().to_owned();
-        let mut splitted = from_to.splitn(2, ":");
+    {
+        let src = input_ref;
+        let target = update_target;
 
-        let src = splitted
-            .next()
-            .ok_or(josh::josh_error("from_to must contain \":\""))?
-            .to_owned();
-        let target = splitted
-            .next()
-            .ok_or(josh::josh_error("from_to must contain \":\""))?
-            .to_owned();
-
-        let filter_spec = caps.name("spec").unwrap().as_str().trim().to_owned();
+        let filter_spec = specstr;
 
         let mut filterobj = josh::filters::parse(&filter_spec)?;
-
-        let reverse = args.is_present("reverse");
-        let check_permissions = args.is_present("check-permission");
 
         if args.is_present("squash") {
             filterobj =
                 josh::build_chain(josh::filters::parse(":SQUASH")?, filterobj);
         }
+
+        if args.is_present("print") {
+            println!("{}", josh::filters::pretty(&filterobj, 4));
+        }
+
+        let reverse = args.is_present("reverse");
+        let check_permissions = args.is_present("check-permission");
 
         if check_permissions {
             filterobj =
@@ -130,7 +116,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         let t = if reverse {
             "refs/JOSH_TMP".to_owned()
         } else {
-            target.clone()
+            target.to_string()
         };
         let src = repo
             .revparse_ext(&src)?
