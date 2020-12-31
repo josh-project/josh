@@ -324,9 +324,7 @@ Note that d/ is still in the tree but now it is not overlayed
   w = :/sub3
 
   $ git log --graph --pretty=%s
-  *   try to modify ws
-  |\  
-  | * add file3
+  * try to modify ws
   * add in filter
   *   mod workspace
   |\  

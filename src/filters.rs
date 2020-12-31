@@ -2,12 +2,18 @@ use super::*;
 use pest::Parser;
 use std::path::Path;
 
+lazy_static! {
+    static ref FILTERS: std::sync::Mutex<std::collections::HashMap<Filter, Filter>> =
+        std::sync::Mutex::new(std::collections::HashMap::new());
+}
+
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct Filter(Op);
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 enum Op {
     Nop,
+    Empty,
     Fold,
     Squash,
     Dirs,
@@ -17,17 +23,49 @@ enum Op {
     Subdir(std::path::PathBuf),
     Workspace(std::path::PathBuf),
 
-    Glob(glob::Pattern, bool),
+    Glob(String),
 
     Compose(Vec<Filter>),
     Chain(Box<Filter>, Box<Filter>),
     Substract(Box<Filter>, Box<Filter>),
 }
 
+pub fn pretty(filter: &Filter, indent: usize) -> String {
+    let i = format!("\n{}", " ".repeat(indent));
+    let j = format!("\n{}", " ".repeat(indent - 4));
+    match &filter.0 {
+        Op::Compose(filters) => {
+            format!(
+                ":({}{}{})",
+                &i,
+                filters
+                    .iter()
+                    .map(|x| pretty(x, indent + 4))
+                    .collect::<Vec<_>>()
+                    .join(&i),
+                &j
+            )
+        }
+        Op::Substract(a, b) => {
+            format!(":SUBSTRACT(\n{}\n -{}\n)", spec(&a), spec(&b))
+        }
+        Op::Chain(a, b) => match (a.as_ref(), b.as_ref()) {
+            (Filter(Op::Subdir(p1)), Filter(Op::Prefix(p2))) if p1 == p2 => {
+                p1.to_string_lossy().to_string()
+            }
+            (a, b) => format!("{}{}", pretty(&a, indent), pretty(&b, indent)),
+        },
+        _ => spec(filter),
+    }
+}
+
 pub fn spec(filter: &Filter) -> String {
     match &filter.0 {
         Op::Compose(filters) => {
-            filters.iter().map(spec).collect::<Vec<_>>().join("\n")
+            format!(
+                ":({})",
+                filters.iter().map(spec).collect::<Vec<_>>().join("&")
+            )
         }
         Op::Substract(a, b) => {
             format!(":SUBSTRACT({} - {})", spec(&a), spec(&b))
@@ -37,6 +75,7 @@ pub fn spec(filter: &Filter) -> String {
         }
 
         Op::Nop => ":nop".to_string(),
+        Op::Empty => ":empty".to_string(),
         Op::Dirs => ":DIRS".to_string(),
         Op::Fold => ":FOLD".to_string(),
         Op::Squash => ":SQUASH".to_string(),
@@ -44,8 +83,7 @@ pub fn spec(filter: &Filter) -> String {
         Op::Subdir(path) => format!(":/{}", path.to_string_lossy()),
         Op::Prefix(path) => format!(":prefix={}", path.to_string_lossy()),
         Op::Hide(path) => format!(":hide={}", path.to_string_lossy()),
-        Op::Glob(pattern, false) => format!(":glob={}", pattern.as_str()),
-        Op::Glob(pattern, true) => format!(":~glob={}", pattern.as_str()),
+        Op::Glob(pattern) => format!(":glob={}", pattern),
     }
 }
 
@@ -68,12 +106,14 @@ pub fn apply_to_commit2(
     commit: &git2::Commit,
     transaction: &mut filter_cache::Transaction,
 ) -> JoshResult<git2::Oid> {
+    let filter = optimize(filter.clone());
     if let Some(oid) = transaction.get(&filters::spec(&filter), commit.id()) {
         return Ok(oid);
     }
 
     let filtered_tree = match &filter.0 {
         Op::Nop => return Ok(commit.id()),
+        Op::Empty => return Ok(git2::Oid::zero()),
 
         Op::Chain(a, b) => {
             let r = apply_to_commit2(repo, &a, &commit, transaction)?;
@@ -121,29 +161,16 @@ pub fn apply_to_commit2(
                 .parents()
                 .map(|parent| {
                     rs_tracing::trace_scoped!("parent", "id": parent.id().to_string());
-                    let mut pcw = compose_filter_from_ws_no_fail(
+                    let pcw = compose_filter_from_ws_no_fail(
                         repo,
                         &parent.tree()?,
                         &ws_path,
                     )?;
 
-                    if pcw == cw {
-                        return Ok(git2::Oid::zero());
-                    }
-
-                    let mut mcw = cw.clone();
-
-                    mcw.retain(|x| !pcw.contains(x));
-                    pcw.retain(|x| !cw.contains(x));
-
-                    if mcw.len() == 0 {
-                        return Ok(git2::Oid::zero());
-                    }
-
                     apply_to_commit2(
                         repo,
                         &Filter(Op::Substract(
-                            Box::new(Filter(Op::Compose(mcw))),
+                            Box::new(Filter(Op::Compose(cw.clone()))),
                             Box::new(Filter(Op::Compose(pcw))),
                         )),
                         &parent,
@@ -186,7 +213,7 @@ pub fn apply_to_commit2(
             repo.find_tree(filtered_tree)?
         }
         Op::Substract(a, b) => {
-            let a_c = {
+            let af = {
                 repo.find_commit(apply_to_commit2(
                     &repo,
                     &a,
@@ -196,7 +223,7 @@ pub fn apply_to_commit2(
                 .map(|x| x.tree_id())
                 .unwrap_or(empty_tree_id())
             };
-            let b_c = {
+            let bf = {
                 repo.find_commit(apply_to_commit2(
                     &repo,
                     &b,
@@ -206,7 +233,11 @@ pub fn apply_to_commit2(
                 .map(|x| x.tree_id())
                 .unwrap_or(empty_tree_id())
             };
-            repo.find_tree(treeops::substract_fast(&repo, a_c, b_c)?)?
+            let bf = repo.find_tree(bf)?;
+            let bu = unapply(&repo, &b, bf, empty_tree(&repo))?;
+            let ba = apply(&repo, &a, bu)?;
+
+            repo.find_tree(treeops::substract_fast(&repo, af, ba.id())?)?
         }
         Op::Squash => {
             return scratch::rewrite(&repo, &commit, &vec![], &commit.tree()?)
@@ -237,10 +268,12 @@ pub fn apply<'a>(
 ) -> JoshResult<git2::Tree<'a>> {
     match &filter.0 {
         Op::Nop => return Ok(tree),
+        Op::Empty => return Ok(empty_tree(&repo)),
         Op::Fold => return Ok(tree),
         Op::Squash => return Ok(tree),
 
-        Op::Glob(pattern, invert) => {
+        Op::Glob(pattern) => {
+            let pattern = glob::Pattern::new(pattern)?;
             let options = glob::MatchOptions {
                 case_sensitive: true,
                 require_literal_separator: true,
@@ -251,9 +284,7 @@ pub fn apply<'a>(
                 "",
                 tree.id(),
                 &|path, isblob| {
-                    isblob
-                        && (*invert
-                            != pattern.matches_path_with(&path, options))
+                    isblob && (pattern.matches_path_with(&path, options))
                 },
                 git2::Oid::zero(),
                 &mut std::collections::HashMap::new(),
@@ -277,11 +308,17 @@ pub fn apply<'a>(
             treeops::replace_subtree(&repo, &path, git2::Oid::zero(), &tree)
         }
 
-        Op::Substract(a, b) => Ok(repo.find_tree(treeops::substract_fast(
-            &repo,
-            apply(&repo, &a, tree.clone())?.id(),
-            apply(&repo, &b, tree.clone())?.id(),
-        )?)?),
+        Op::Substract(a, b) => {
+            let af = apply(&repo, &a, tree.clone())?;
+            let bf = apply(&repo, &b, tree.clone())?;
+            let bu = unapply(&repo, &b, bf, empty_tree(&repo))?;
+            let ba = apply(&repo, &a, bu)?;
+            Ok(repo.find_tree(treeops::substract_fast(
+                &repo,
+                af.id(),
+                ba.id(),
+            )?)?)
+        }
 
         Op::Dirs => treeops::dirtree(
             &repo,
@@ -331,7 +368,7 @@ pub fn unapply<'a>(
         Op::Workspace(path) => {
             let cw = build_compose_filter(
                 &string_blob(&repo, &tree, &Path::new("workspace.josh")),
-                vec![subdir_to_chain(Op::Subdir(path.to_owned()))],
+                vec![Filter(Op::Subdir(path.to_owned()))],
             )?;
             return unapply(repo, &Filter(Op::Compose(cw)), tree, parent_tree);
         }
@@ -368,7 +405,8 @@ pub fn unapply<'a>(
                 .unwrap_or(git2::Oid::zero());
             treeops::replace_subtree(&repo, &path, hidden, &tree)
         }
-        Op::Glob(pattern, invert) => {
+        Op::Glob(pattern) => {
+            let pattern = glob::Pattern::new(pattern)?;
             let options = glob::MatchOptions {
                 case_sensitive: true,
                 require_literal_separator: true,
@@ -379,9 +417,7 @@ pub fn unapply<'a>(
                 "",
                 tree.id(),
                 &|path, isblob| {
-                    isblob
-                        && (*invert
-                            != pattern.matches_path_with(&path, options))
+                    isblob && (pattern.matches_path_with(&path, options))
                 },
                 git2::Oid::zero(),
                 &mut std::collections::HashMap::new(),
@@ -403,24 +439,151 @@ pub fn unapply<'a>(
     };
 }
 
-fn subdir_to_chain(f: Op) -> Filter {
-    if let Op::Subdir(path) = f {
-        let mut components = path.iter();
-        let mut chain = if let Some(comp) = components.next() {
-            Op::Subdir(Path::new(comp).to_owned())
-        } else {
-            Op::Nop
-        };
-
-        for comp in components {
-            chain = Op::Chain(
-                Box::new(Filter(chain)),
-                Box::new(Filter(Op::Subdir(Path::new(comp).to_owned()))),
-            )
+fn group(filters: &Vec<Filter>) -> Vec<Vec<Filter>> {
+    let mut res: Vec<Vec<Filter>> = vec![];
+    for f in filters {
+        if res.len() == 0 {
+            res.push(vec![f.clone()]);
+            continue;
         }
-        return Filter(chain);
+
+        if let Filter(Op::Chain(a, _)) = f {
+            if let Filter(Op::Chain(x, _)) = &res[res.len() - 1][0] {
+                if a == x {
+                    let n = res.len();
+                    res[n - 1].push(f.clone());
+                    continue;
+                }
+            }
+        }
+        res.push(vec![f.clone()]);
     }
-    return Filter(f);
+    return res;
+}
+
+fn common_pre(filters: &Vec<Filter>) -> Option<(Filter, Vec<Filter>)> {
+    let mut rest = vec![];
+    let mut c: Option<Filter> = None;
+    for f in filters {
+        if let Filter(Op::Chain(a, b)) = f {
+            rest.push(b.as_ref().clone());
+            if c == None {
+                c = Some(a.as_ref().clone());
+            }
+            if c != Some(a.as_ref().clone()) {
+                return None;
+            }
+        } else {
+            return None;
+        }
+    }
+    if let Some(c) = c {
+        return Some((c, rest));
+    } else {
+        return None;
+    }
+}
+
+fn optimize(filter: Filter) -> Filter {
+    if let Some(f) = FILTERS.lock().unwrap().get(&filter) {
+        return f.clone();
+    }
+    let original = filter.clone();
+    let result = match filter.0 {
+        Op::Subdir(path) => {
+            if path.components().count() > 1 {
+                let mut components = path.components();
+                let a = components.next().unwrap();
+                Filter(Op::Chain(
+                    Box::new(Filter(Op::Subdir(std::path::PathBuf::from(&a)))),
+                    Box::new(Filter(Op::Subdir(
+                        components.as_path().to_owned(),
+                    ))),
+                ))
+            } else {
+                Filter(Op::Subdir(path))
+            }
+        }
+        Op::Prefix(path) => {
+            if path.components().count() > 1 {
+                let mut components = path.components();
+                let a = components.next().unwrap();
+                Filter(Op::Chain(
+                    Box::new(Filter(Op::Prefix(
+                        components.as_path().to_owned(),
+                    ))),
+                    Box::new(Filter(Op::Prefix(std::path::PathBuf::from(&a)))),
+                ))
+            } else {
+                Filter(Op::Prefix(path))
+            }
+        }
+        Op::Compose(filters) if filters.len() == 0 => Filter(Op::Empty),
+        Op::Compose(filters) if filters.len() == 1 => filters[0].clone(),
+        Op::Compose(mut filters) => {
+            let mut grouped = group(&filters);
+            if let Some((common, rest)) = common_pre(&filters) {
+                Filter(Op::Chain(
+                    Box::new(common),
+                    Box::new(Filter(Op::Compose(rest))),
+                ))
+            } else if grouped.len() != filters.len() {
+                Filter(Op::Compose(
+                    grouped.drain(..).map(|x| Filter(Op::Compose(x))).collect(),
+                ))
+            } else {
+                Filter(Op::Compose(filters.drain(..).map(optimize).collect()))
+            }
+        }
+        Op::Chain(a, b) => match (*a, *b) {
+            (Filter(Op::Chain(x, y)), b) => Filter(Op::Chain(
+                x,
+                Box::new(Filter(Op::Chain(y, Box::new(b)))),
+            )),
+            (a, b) => {
+                Filter(Op::Chain(Box::new(optimize(a)), Box::new(optimize(b))))
+            }
+        },
+        Op::Substract(a, b) => match (*a, *b) {
+            (Filter(Op::Empty), _) => Filter(Op::Empty),
+            (a, b) if a == b => Filter(Op::Empty),
+            (a, Filter(Op::Empty)) => a,
+            (a, b) => {
+                let (a, b) = if let (
+                    Filter(Op::Compose(mut av)),
+                    Filter(Op::Compose(mut bv)),
+                ) = (a.clone(), b.clone())
+                {
+                    let v = av.clone();
+                    av.retain(|x| !bv.contains(x));
+                    bv.retain(|x| !v.contains(x));
+                    (Filter(Op::Compose(av)), Filter(Op::Compose(bv)))
+                } else {
+                    (a, b)
+                };
+                Filter(Op::Substract(
+                    Box::new(optimize(a)),
+                    Box::new(optimize(b)),
+                ))
+            }
+        },
+        _ => filter,
+    }
+    .clone();
+
+    let r = if result == original {
+        result
+    } else {
+        log::debug!(
+            "optimized: \n    {}\n    ->\n{}",
+            pretty(&original, 4),
+            pretty(&result, 4)
+        );
+        optimize(result)
+    };
+
+    FILTERS.lock().unwrap().insert(original, r.clone());
+    return r;
 }
 
 fn compose_filter_from_ws_no_fail(
@@ -428,7 +591,7 @@ fn compose_filter_from_ws_no_fail(
     tree: &git2::Tree,
     ws_path: &Path,
 ) -> JoshResult<Vec<Filter>> {
-    let base = vec![subdir_to_chain(Op::Subdir(ws_path.to_owned()))];
+    let base = vec![Filter(Op::Subdir(ws_path.to_owned()))];
     let cw = build_compose_filter(
         &string_blob(&repo, &tree, &ws_path.join("workspace.josh")),
         base.clone(),
@@ -463,14 +626,12 @@ struct MyParser;
 
 fn make_op(args: &[&str]) -> JoshResult<Op> {
     match args {
-        ["/", arg] => {
-            Ok(subdir_to_chain(Op::Subdir(Path::new(arg).to_owned())).0)
-        }
+        ["/", arg] => Ok(Op::Subdir(Path::new(arg).to_owned())),
         ["nop"] => Ok(Op::Nop),
+        ["empty"] => Ok(Op::Empty),
         ["prefix", arg] => Ok(Op::Prefix(Path::new(arg).to_owned())),
         ["hide", arg] => Ok(Op::Hide(Path::new(arg).to_owned())),
-        ["~glob", arg] => Ok(Op::Glob(glob::Pattern::new(arg).unwrap(), true)),
-        ["glob", arg] => Ok(Op::Glob(glob::Pattern::new(arg).unwrap(), false)),
+        ["glob", arg] => Ok(Op::Glob(arg.to_string())),
         ["workspace", arg] => Ok(Op::Workspace(Path::new(arg).to_owned())),
         ["SQUASH"] => Ok(Op::Squash),
         ["DIRS"] => Ok(Op::Dirs),
@@ -576,7 +737,7 @@ pub fn parse(filter_spec: &str) -> JoshResult<Filter> {
                     v
                 });
             }
-            return Ok(Filter(chain.unwrap_or(Op::Nop)));
+            return Ok(optimize(Filter(chain.unwrap_or(Op::Nop))));
         };
     }
 
