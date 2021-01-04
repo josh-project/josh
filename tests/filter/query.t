@@ -44,14 +44,16 @@
   $ git add sub1
   $ git commit -m "add file2" 1> /dev/null
 
-  $ josh-filter :nop HEAD -q get=sub1/file1
+  $ josh-filter -s :nop HEAD -q get=sub1/file1
   contents1
-  $ josh-filter :nop HEAD -q get=sub1/file2
+  $ josh-filter -s :nop HEAD -q get=sub1/file2
   contents2
-  $ josh-filter :/sub1 HEAD -q get=file1
+  $ josh-filter -s :/sub1 HEAD -q get=file1
+  [2 -> 2] :/sub1
   contents1
 
-  $ josh-filter :/sub1
+  $ josh-filter -s :/sub1
+  [2 -> 2] :/sub1
 
   $ cat > .git/josh_kv.json <<EOF
   > { "$(git log -n1 --pretty="%H" JOSH_HEAD)" : "SUCCESS" }
@@ -60,9 +62,11 @@
   $ cat .git/josh_kv.json
   { "*" : "SUCCESS" } (glob)
 
-  $ josh-filter -q render=sub1/file1
+  $ josh-filter -s -q render=sub1/file1
+  [2 -> 2] :/sub1
   contents1
-  $ josh-filter -q "render=sub1/tmpl_file&tmpl_param1=tmpl_param_value1&tmpl_p2=val2"
+  $ josh-filter -s -q "render=sub1/tmpl_file&tmpl_param1=tmpl_param_value1&tmpl_p2=val2"
+  [2 -> 2] :/sub1
   tmpl_param1: tmpl_param_value1
   tmpl_p2: val2
   
@@ -99,5 +103,6 @@
   blob: contents3
   filtered: * (glob)
     
-  $ josh-filter :/sub1 -q render=file2
+  $ josh-filter -s :/sub1 -q render=file2
+  [2 -> 2] :/sub1
   contents2

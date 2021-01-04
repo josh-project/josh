@@ -303,6 +303,28 @@ fn select_parent_commits<'a>(
 
 pub fn create_filtered_commit<'a>(
     repo: &'a git2::Repository,
+    original_commit: &'a git2::Commit,
+    filtered_parent_ids: Vec<git2::Oid>,
+    filtered_tree: git2::Tree<'a>,
+    transaction: &mut filter_cache::Transaction,
+    spec: &str,
+) -> super::JoshResult<git2::Oid> {
+    let r = create_filtered_commit2(
+        repo,
+        original_commit,
+        filtered_parent_ids,
+        filtered_tree,
+    );
+
+    let i = r.clone().unwrap_or(git2::Oid::zero());
+
+    transaction.insert(spec, original_commit.id(), i);
+
+    return r;
+}
+
+fn create_filtered_commit2<'a>(
+    repo: &'a git2::Repository,
     original_commmit: &'a git2::Commit,
     filtered_parent_ids: Vec<git2::Oid>,
     filtered_tree: git2::Tree<'a>,

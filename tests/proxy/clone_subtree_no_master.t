@@ -75,7 +75,7 @@
   contents1
 
   $ bash ${TESTDIR}/destroy_test_env.sh
-  remote/scratch/refs
+  refs
   |-- heads
   |-- josh
   |   `-- upstream

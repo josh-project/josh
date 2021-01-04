@@ -98,10 +98,10 @@ pub fn substract_tree<'a>(
     key: git2::Oid,
     cache: &mut std::collections::HashMap<(git2::Oid, git2::Oid), git2::Oid>,
 ) -> super::JoshResult<git2::Tree<'a>> {
-    rs_tracing::trace_scoped!("substract_tree X", "root": root);
     if let Some(cached) = cache.get(&(input, key)) {
         return Ok(repo.find_tree(*cached)?);
     }
+    rs_tracing::trace_scoped!("substract_tree X", "root": root);
 
     let tree = repo.find_tree(input)?;
     let mut result = empty_tree(&repo);
@@ -165,7 +165,6 @@ pub fn substract_fast(
     input1: git2::Oid,
     input2: git2::Oid,
 ) -> super::JoshResult<git2::Oid> {
-    rs_tracing::trace_scoped!("substract fast");
     if input1 == input2 {
         return Ok(empty_tree_id());
     }
@@ -179,6 +178,7 @@ pub fn substract_fast(
         if input2 == empty_tree_id() {
             return Ok(input1);
         }
+        rs_tracing::trace_scoped!("substract fast");
         let mut result_tree = tree1.clone();
 
         for entry in tree2.iter() {
@@ -313,6 +313,7 @@ pub fn compose<'a>(
     repo: &'a git2::Repository,
     trees: Vec<(&super::filters::Filter, git2::Tree<'a>)>,
 ) -> super::JoshResult<git2::Tree<'a>> {
+    rs_tracing::trace_scoped!("compose");
     let mut result = empty_tree(&repo);
     let mut taken = empty_tree(&repo);
     for (f, applied) in trees {

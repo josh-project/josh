@@ -32,7 +32,8 @@
   * add file_cd2
   * add dirs
 
-  $ josh-filter :DIRS master --update refs/josh/filtered
+  $ josh-filter -s :DIRS master --update refs/josh/filtered
+  [3 -> 2] :DIRS
 
   $ git log --graph --pretty=%s refs/josh/filtered
   * add file_cd3
@@ -55,7 +56,9 @@
   
   5 directories, 6 files
 
-  $ josh-filter :DIRS:/c master --update refs/josh/filtered
+  $ josh-filter -s :DIRS:/c master --update refs/josh/filtered
+  [2 -> 2] :/c
+  [3 -> 2] :DIRS
 
   $ git log --graph --pretty=%s refs/josh/filtered
   * add file_cd3
@@ -73,7 +76,10 @@
   2 directories, 3 files
 
 
-  $ josh-filter :DIRS:/a master --update refs/josh/filtered
+  $ josh-filter -s :DIRS:/a master --update refs/josh/filtered
+  [2 -> 1] :/a
+  [2 -> 2] :/c
+  [3 -> 2] :DIRS
 
   $ git log --graph --pretty=%s refs/josh/filtered
   * add dirs
@@ -87,7 +93,12 @@
   0 directories, 2 files
 
 
-  $ josh-filter :DIRS:hide=c:prefix=x master --update refs/josh/filtered
+  $ josh-filter -s :DIRS:hide=c:prefix=x master --update refs/josh/filtered
+  [1 -> 1] :prefix=x
+  [2 -> 1] :/a
+  [2 -> 1] :hide=c
+  [2 -> 2] :/c
+  [3 -> 2] :DIRS
 
   $ git log --graph --pretty=%s refs/josh/filtered
   * add dirs
@@ -117,7 +128,12 @@
   $ git add a
   $ git commit -m "add newfile" 1> /dev/null
 
-  $ josh-filter :DIRS master --update refs/josh/filtered
+  $ josh-filter -s :DIRS master --update refs/josh/filtered
+  [1 -> 1] :prefix=x
+  [2 -> 1] :/a
+  [2 -> 1] :hide=c
+  [2 -> 2] :/c
+  [5 -> 3] :DIRS
 
   $ git log --graph --pretty=%s master
   * add newfile
@@ -143,7 +159,13 @@
   2 directories, 3 files
 
 
-  $ josh-filter :DIRS:FOLD master --update refs/josh/filtered
+  $ josh-filter -s :DIRS:FOLD master --update refs/josh/filtered
+  [1 -> 1] :prefix=x
+  [2 -> 1] :/a
+  [2 -> 1] :hide=c
+  [2 -> 2] :/c
+  [3 -> 2] :FOLD
+  [5 -> 3] :DIRS
 
   $ git log --graph --pretty=%s refs/josh/filtered
   * add file_cd3
@@ -167,7 +189,13 @@
   5 directories, 6 files
 
 
-  $ josh-filter :DIRS:/c:FOLD master --update refs/josh/filtered
+  $ josh-filter -s :DIRS:/c:FOLD master --update refs/josh/filtered
+  [1 -> 1] :prefix=x
+  [2 -> 1] :/a
+  [2 -> 1] :hide=c
+  [3 -> 3] :/c
+  [5 -> 3] :DIRS
+  [6 -> 4] :FOLD
 
   $ git log --graph --pretty=%s refs/josh/filtered
   * add file_cd3
@@ -185,7 +213,14 @@
   2 directories, 3 files
 
 
-  $ josh-filter :DIRS:workspace=a:FOLD master --update refs/josh/filtered
+  $ josh-filter -s :DIRS:workspace=a:FOLD master --update refs/josh/filtered
+  [1 -> 1] :prefix=x
+  [2 -> 1] :/a
+  [2 -> 1] :hide=c
+  [3 -> 3] :/c
+  [3 -> 3] :workspace=a
+  [5 -> 3] :DIRS
+  [9 -> 6] :FOLD
 
   $ git log --graph --pretty=%s refs/josh/filtered
   * add file_cd3

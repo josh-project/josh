@@ -10,7 +10,7 @@
   $ git add sub1
   $ git commit -m "add file1" &> /dev/null
 
-  $ josh-filter master:refs/heads/hidden :hide=sub2
+  $ josh-filter -s master:refs/heads/hidden :hide=sub2
   $ du .git/josh_backward_maps
   8\t.git/josh_backward_maps (esc)
   $ du .git/josh_forward_maps
@@ -21,7 +21,7 @@
   $ git add sub2
   $ git commit -m "add file2" &> /dev/null
 
-  $ josh-filter master:refs/heads/hidden :hide=sub2
+  $ josh-filter -s master:refs/heads/hidden :hide=sub2
   $ xxd .git/josh_backward_maps
   00000000: 0100 0000 0000 0000 0a00 0000 0000 0000  ................
   00000010: 3a68 6964 653d 7375 6232 0100 0000 0000  :hide=sub2......
@@ -46,7 +46,7 @@
   $ git add sub1/file3
   $ git commit -m "add sub1/file3" &> /dev/null
 
-  $ josh-filter --reverse master:refs/heads/hidden :hide=sub2
+  $ josh-filter -s --reverse master:refs/heads/hidden :hide=sub2
   $ xxd .git/josh_backward_maps
   00000000: 0100 0000 0000 0000 0a00 0000 0000 0000  ................
   00000010: 3a68 6964 653d 7375 6232 0100 0000 0000  :hide=sub2......

@@ -4,10 +4,11 @@ CMD_END = _{("="|"/")}
 CMD_SEP = _{("&"|NEWLINE)}
 
 
-filter_spec = { ( filter_compose | filter_subdir | filter | filter_noarg )+ }
+filter_spec = { ( filter_compose | filter_presub | filter_subdir | filter | filter_noarg )+ }
 
 filter_compose = { CMD_START ~ "(" ~ compose ~ ")" }
 filter_subdir = { CMD_START ~ "/" ~ argument }
+filter_presub = { CMD_START ~ ":" ~ argument }
 filter = { CMD_START ~ cmd ~ "=" ~ (argument ~ ("," ~ argument)*)? }
 filter_noarg = { CMD_START ~ cmd }
 
@@ -30,7 +31,7 @@ compose = {
     ~ NEWLINE*
 }
 
-file_entry = { dst_path ~ ("=" ~ filter_spec)? }
+file_entry = { dst_path ~ "=" ~ filter_spec }
 
 dst_path = @{ path ~ ("/" ~ path)* }
 path = @{ (!("=" | "/" | CMD_START | WHITESPACE | CMD_SEP | "(" | ")") ~ ANY)+ }
