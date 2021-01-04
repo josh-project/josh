@@ -32,26 +32,30 @@ enum Op {
 
 pub fn pretty(filter: &Filter, indent: usize) -> String {
     let i = format!("\n{}", " ".repeat(indent));
-    let j = format!("\n{}", " ".repeat(indent - 4));
     match &filter.0 {
         Op::Compose(filters) => {
-            format!(
-                ":({}{}{})",
-                &i,
-                filters
-                    .iter()
-                    .map(|x| pretty(x, indent + 4))
-                    .collect::<Vec<_>>()
-                    .join(&i),
-                &j
-            )
+            let joined = filters
+                .iter()
+                .map(|x| pretty(x, indent + 4))
+                .collect::<Vec<_>>()
+                .join(&i);
+            if indent == 0 {
+                joined
+            } else {
+                format!(
+                    ":({}{}{})",
+                    &i,
+                    joined,
+                    &format!("\n{}", " ".repeat(indent - 4))
+                )
+            }
         }
         Op::Substract(a, b) => {
             format!(":SUBSTRACT(\n{}\n -{}\n)", spec(&a), spec(&b))
         }
         Op::Chain(a, b) => match (a.as_ref(), b.as_ref()) {
             (Filter(Op::Subdir(p1)), Filter(Op::Prefix(p2))) if p1 == p2 => {
-                p1.to_string_lossy().to_string()
+                format!("::{}/", p1.to_string_lossy().to_string())
             }
             (a, b) => format!("{}{}", pretty(&a, indent), pretty(&b, indent)),
         },
@@ -107,11 +111,8 @@ pub fn apply_to_commit2(
     transaction: &mut filter_cache::Transaction,
 ) -> JoshResult<git2::Oid> {
     let filter = optimize(filter.clone());
-    if let Some(oid) = transaction.get(&filters::spec(&filter), commit.id()) {
-        return Ok(oid);
-    }
 
-    let filtered_tree = match &filter.0 {
+    match &filter.0 {
         Op::Nop => return Ok(commit.id()),
         Op::Empty => return Ok(git2::Oid::zero()),
 
@@ -123,6 +124,21 @@ pub fn apply_to_commit2(
                 return Ok(git2::Oid::zero());
             }
         }
+        Op::Squash => {
+            return scratch::rewrite(&repo, &commit, &vec![], &commit.tree()?)
+        }
+        _ => {
+            if let Some(oid) =
+                transaction.get(&filters::spec(&filter), commit.id())
+            {
+                return Ok(oid);
+            }
+        }
+    };
+
+    rs_tracing::trace_scoped!("apply_to_commit", "spec": spec(&filter), "commit": commit.id().to_string());
+
+    let filtered_tree = match &filter.0 {
         Op::Compose(filters) => {
             let filtered = filters
                 .iter()
@@ -191,6 +207,8 @@ pub fn apply_to_commit2(
                 commit,
                 filtered_parent_ids,
                 filtered_tree,
+                transaction,
+                &spec(&filter),
             );
         }
         Op::Fold => {
@@ -239,9 +257,6 @@ pub fn apply_to_commit2(
 
             repo.find_tree(treeops::substract_fast(&repo, af, ba.id())?)?
         }
-        Op::Squash => {
-            return scratch::rewrite(&repo, &commit, &vec![], &commit.tree()?)
-        }
         _ => apply(&repo, &filter, commit.tree()?)?,
     };
 
@@ -258,6 +273,8 @@ pub fn apply_to_commit2(
         commit,
         filtered_parent_ids,
         filtered_tree,
+        transaction,
+        &spec(&filter),
     );
 }
 
@@ -458,6 +475,31 @@ fn group(filters: &Vec<Filter>) -> Vec<Vec<Filter>> {
         }
         res.push(vec![f.clone()]);
     }
+    if res.len() != filters.len() {
+        return res;
+    }
+
+    let mut res: Vec<Vec<Filter>> = vec![];
+    for f in filters {
+        if res.len() == 0 {
+            res.push(vec![f.clone()]);
+            continue;
+        }
+
+        let (_, a) = last_chain(Filter(Op::Nop), f.clone());
+        {
+            let (_, x) =
+                last_chain(Filter(Op::Nop), res[res.len() - 1][0].clone());
+            {
+                if a == x {
+                    let n = res.len();
+                    res[n - 1].push(f.clone());
+                    continue;
+                }
+            }
+        }
+        res.push(vec![f.clone()]);
+    }
     return res;
 }
 
@@ -484,10 +526,42 @@ fn common_pre(filters: &Vec<Filter>) -> Option<(Filter, Vec<Filter>)> {
     }
 }
 
+fn common_post(filters: &Vec<Filter>) -> Option<(Filter, Vec<Filter>)> {
+    let mut rest = vec![];
+    let mut c: Option<Filter> = None;
+    for f in filters {
+        let (a, b) = last_chain(Filter(Op::Nop), f.clone());
+        {
+            rest.push(a.clone());
+            if c == None {
+                c = Some(b.clone());
+            }
+            if c != Some(b.clone()) {
+                return None;
+            }
+        }
+    }
+    if let Some(Filter(Op::Nop)) = c {
+        return None;
+    } else if let Some(c) = c {
+        return Some((c, rest));
+    } else {
+        return None;
+    }
+}
+
+fn last_chain(rest: Filter, filter: Filter) -> (Filter, Filter) {
+    match filter.0 {
+        Op::Chain(a, b) => last_chain(Filter(Op::Chain(Box::new(rest), a)), *b),
+        _ => (rest, filter),
+    }
+}
+
 fn optimize(filter: Filter) -> Filter {
     if let Some(f) = FILTERS.lock().unwrap().get(&filter) {
         return f.clone();
     }
+    rs_tracing::trace_scoped!("optimize", "spec": spec(&filter));
     let original = filter.clone();
     let result = match filter.0 {
         Op::Subdir(path) => {
@@ -527,6 +601,11 @@ fn optimize(filter: Filter) -> Filter {
                     Box::new(common),
                     Box::new(Filter(Op::Compose(rest))),
                 ))
+            } else if let Some((common, rest)) = common_post(&filters) {
+                Filter(Op::Chain(
+                    Box::new(Filter(Op::Compose(rest))),
+                    Box::new(common),
+                ))
             } else if grouped.len() != filters.len() {
                 Filter(Op::Compose(
                     grouped.drain(..).map(|x| Filter(Op::Compose(x))).collect(),
@@ -540,6 +619,8 @@ fn optimize(filter: Filter) -> Filter {
                 x,
                 Box::new(Filter(Op::Chain(y, Box::new(b)))),
             )),
+            (Filter(Op::Nop), b) => b,
+            (a, Filter(Op::Nop)) => a,
             (a, b) => {
                 Filter(Op::Chain(Box::new(optimize(a)), Box::new(optimize(b))))
             }
@@ -548,6 +629,9 @@ fn optimize(filter: Filter) -> Filter {
             (Filter(Op::Empty), _) => Filter(Op::Empty),
             (a, b) if a == b => Filter(Op::Empty),
             (a, Filter(Op::Empty)) => a,
+            (Filter(Op::Chain(a, b)), Filter(Op::Chain(c, d))) if a == c => {
+                Filter(Op::Chain(a, Box::new(Filter(Op::Substract(b, d)))))
+            }
             (a, b) => {
                 let (a, b) = if let (
                     Filter(Op::Compose(mut av)),
@@ -650,6 +734,19 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> JoshResult<Op> {
             let mut inner = pair.into_inner();
             make_op(&["/", inner.next().unwrap().as_str()])
         }
+        Rule::filter_presub => {
+            let mut inner = pair.into_inner();
+            let arg = inner.next().unwrap().as_str();
+            if arg.ends_with("/") {
+                let arg = arg.trim_end_matches("/");
+                Ok(Op::Chain(
+                    Box::new(Filter(make_op(&["/", arg])?)),
+                    Box::new(Filter(make_op(&["prefix", arg])?)),
+                ))
+            } else {
+                make_op(&["glob", arg])
+            }
+        }
         Rule::filter_noarg => {
             let mut inner = pair.into_inner();
             make_op(&[inner.next().unwrap().as_str()])
@@ -741,8 +838,8 @@ pub fn parse(filter_spec: &str) -> JoshResult<Filter> {
         };
     }
 
-    return Ok(Filter(Op::Compose(build_compose_filter(
+    return Ok(optimize(Filter(Op::Compose(build_compose_filter(
         filter_spec,
         vec![],
-    )?)));
+    )?))));
 }

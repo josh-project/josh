@@ -292,7 +292,7 @@ Empty roots should not be dropped -> sha1 equal guarantee for "nop"
   2 directories, 4 files
 
   $ bash ${TESTDIR}/destroy_test_env.sh
-  remote/scratch/refs
+  refs
   |-- heads
   |-- josh
   |   |-- filtered

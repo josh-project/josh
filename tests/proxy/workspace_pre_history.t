@@ -100,7 +100,7 @@ file was created
   0 directories, 2 files
 
   $ bash ${TESTDIR}/destroy_test_env.sh
-  remote/scratch/refs
+  refs
   |-- heads
   |-- josh
   |   |-- filtered

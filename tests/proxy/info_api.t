@@ -41,7 +41,7 @@
   {"commit":"*","filtered":{"commit":"0000000000000000000000000000000000000000","parents":[],"tree":"0000000000000000000000000000000000000000"},"parents":[{"commit":"*","tree":"*"}],"tree":"*"} (glob)
 
   $ bash ${TESTDIR}/destroy_test_env.sh
-  remote/scratch/refs
+  refs
   |-- heads
   |-- josh
   |   |-- filtered

@@ -83,8 +83,9 @@
   
       sync libraries
   
-      Synced: libs(master) rev: * (glob)
-      Synced: libs(foo) rev: * (glob)
+      Sync-Config: syncinfo
+      Synced: [libs(master) *] (glob)
+      Synced: [libs(foo) *] (glob)
   
   commit * (glob)
   Author: * (glob)
@@ -132,15 +133,7 @@
 
   $ git status
   On branch master
-  Changes to be committed:
-    (use "git restore --staged <file>..." to unstage)
-  \tmodified:   syncinfo (esc)
-  
-  Changes not staged for commit:
-    (use "git add <file>..." to update what will be committed)
-    (use "git restore <file>..." to discard changes in working directory)
-  \tmodified:   syncinfo (esc)
-  
+  nothing to commit, working tree clean
 
 
   $ git log | sed -e 's/[ ]*$//g'
@@ -150,8 +143,9 @@
   
       sync libraries
   
-      Synced: libs(master) rev: * (glob)
-      Synced: libs(foo) rev: * (glob)
+      Sync-Config: syncinfo
+      Synced: [libs(master) *] (glob)
+      Synced: [libs(foo) *] (glob)
   
   commit * (glob)
   Author: * (glob)
@@ -159,8 +153,9 @@
   
       sync libraries
   
-      Synced: libs(master) rev: * (glob)
-      Synced: libs(foo) rev: * (glob)
+      Sync-Config: syncinfo
+      Synced: [libs(master) *] (glob)
+      Synced: [libs(foo) *] (glob)
   
   commit * (glob)
   Author: * (glob)

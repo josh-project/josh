@@ -21,7 +21,7 @@
   $ git log --graph --pretty=%s
   * add files
 
-  $ josh-filter :nosuch=filter master --update refs/josh/filtered
+  $ josh-filter -s :nosuch=filter master --update refs/josh/filtered
   ERROR: JoshError("invalid filter")
   [1]
 

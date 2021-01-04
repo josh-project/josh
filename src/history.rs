@@ -47,7 +47,6 @@ pub fn walk2(
             transaction,
         )?;
 
-        transaction.insert(&filters::spec(&filter), input, t);
         return Ok(t);
     }
 
@@ -58,57 +57,49 @@ pub fn walk2(
         walk
     };
 
-    log::debug!("Walking history for {:?}", filters::spec(&filter));
+    log::debug!(
+        "Walking history for:\n{}\n{:?}",
+        filters::pretty(&filter, 4),
+        &filter
+    );
     let mut n_commits = 0;
+    let mut n_misses = transaction.misses;
+
+    transaction.walks += 1;
 
     for original_commit_id in walk {
-        let original_commit_id = original_commit_id?;
-        if transaction.get(&filters::spec(&filter), original_commit_id) != None
-        {
-            continue;
-        }
-        let original_commit = repo.find_commit(original_commit_id)?;
-
-        let filtered_commit = ok_or!(
-            rs_tracing::trace_expr!(
-                "apply_to_commit",
-                filters::apply_to_commit2(
-                    &repo,
-                    &filter,
-                    &original_commit,
-                    transaction
-                ),
-                "spec": filters::spec(&filter)
-            ),
-            {
-                tracing::error!("cannot apply_to_commit");
-                git2::Oid::zero()
-            }
-        );
+        filters::apply_to_commit2(
+            &repo,
+            &filter,
+            &repo.find_commit(original_commit_id?)?,
+            transaction,
+        )?;
 
         n_commits += 1;
-        transaction.insert(
-            &filters::spec(&filter),
-            original_commit.id(),
-            filtered_commit,
-        );
         if n_commits % 1000 == 0 {
-            log::debug!("    -> {} commits filtered", n_commits);
+            log::debug!(
+                "{} {} commits filtered, {} misses",
+                " ->".repeat(transaction.walks),
+                n_commits,
+                transaction.misses - n_misses,
+            );
+            n_misses = transaction.misses;
         }
     }
 
-    log::debug!("    -> {} commits filtered", n_commits);
+    log::debug!(
+        "{} {} commits filtered, {} misses",
+        " ->".repeat(transaction.walks),
+        n_commits,
+        transaction.misses - n_misses,
+    );
 
-    return Ok(
-        if let Some(oid) = transaction.get(&filters::spec(&filter), input) {
-            oid
-        } else {
-            transaction.insert(
-                &filters::spec(&filter),
-                input,
-                git2::Oid::zero(),
-            );
-            git2::Oid::zero()
-        },
+    transaction.walks -= 1;
+
+    return filters::apply_to_commit2(
+        &repo,
+        &filter,
+        &repo.find_commit(input)?,
+        transaction,
     );
 }

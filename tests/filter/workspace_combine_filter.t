@@ -22,12 +22,12 @@
 
   $ mkdir ws
   $ cat > ws/workspace.josh <<EOF
-  > x = :(sub2/subsub&sub1)
+  > x = :(::sub2/subsub/&::sub1/)
   > EOF
   $ mkdir ws2
   $ cat > ws2/workspace.josh <<EOF
   > :(
-  >   a = :(sub2/subsub&sub3)
+  >   a = :(::sub2/subsub/&::sub3/)
   >   :/sub1:prefix=blub
   > ):prefix=xyz
   > EOF
@@ -50,7 +50,19 @@
   
   6 directories, 5 files
 
-  $ josh-filter :workspace=ws
+  $ josh-filter -s :workspace=ws
+  [1 -> 1] :/subsub
+  [1 -> 1] :prefix=sub1
+  [1 -> 1] :prefix=sub2
+  [1 -> 1] :prefix=subsub
+  [2 -> 2] :prefix=x
+  [3 -> 1] :/sub1
+  [3 -> 2] :(
+      :/sub2:/subsub:prefix=subsub:prefix=sub2
+      ::sub1/
+  )
+  [3 -> 2] :/sub2
+  [4 -> 2] :workspace=ws
 
   $ git log --graph --pretty=%s JOSH_HEAD
   * add ws
@@ -71,7 +83,36 @@
   4 directories, 3 files
 
   $ git checkout master 2> /dev/null
-  $ josh-filter :workspace=ws2
+  $ josh-filter -s :workspace=ws2
+  [1 -> 1] :/subsub
+  [1 -> 1] :prefix=blub
+  [1 -> 1] :prefix=sub1
+  [1 -> 1] :prefix=sub2
+  [1 -> 1] :prefix=sub3
+  [1 -> 1] :prefix=subsub
+  [2 -> 2] :prefix=a
+  [2 -> 2] :prefix=x
+  [3 -> 1] :/sub1
+  [3 -> 2] :(
+      :/sub2:/subsub:prefix=subsub:prefix=sub2
+      ::sub1/
+  )
+  [3 -> 2] :/sub2
+  [3 -> 2] :/sub3
+  [3 -> 3] :(
+      :(
+          :/sub2:/subsub:prefix=subsub:prefix=sub2
+          ::sub3/
+      ):prefix=a
+      :/sub1:prefix=blub
+  )
+  [3 -> 3] :(
+      :/sub2:/subsub:prefix=subsub:prefix=sub2
+      ::sub3/
+  )
+  [3 -> 3] :prefix=xyz
+  [4 -> 2] :workspace=ws
+  [4 -> 2] :workspace=ws2
 
   $ git log --graph --pretty=%s JOSH_HEAD
   * add ws

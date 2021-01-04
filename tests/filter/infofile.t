@@ -23,17 +23,24 @@
   $ git add .
   $ git commit -m "unrelated" 1> /dev/null
 
-  $ josh-filter c=:/sub1 master --update refs/josh/filter/master
+  $ josh-filter -s c=:/sub1 master --update refs/josh/filter/master
+  [2 -> 2] :prefix=c
+  [4 -> 2] :/sub1
   $ git log --graph --pretty=%s josh/filter/master
   * add file2
   * add file1
 
-  $ josh-filter c=:/sub1 master --update refs/josh/filter/master
+  $ josh-filter -s c=:/sub1 master --update refs/josh/filter/master
+  [2 -> 2] :prefix=c
+  [4 -> 2] :/sub1
   $ git log --graph --pretty=%s josh/filter/master
   * add file2
   * add file1
 
-  $ josh-filter c=:/sub2 master --update refs/josh/filter/master
+  $ josh-filter -s c=:/sub2 master --update refs/josh/filter/master
+  [3 -> 3] :prefix=c
+  [4 -> 2] :/sub1
+  [4 -> 2] :/sub2
   $ git log --graph --pretty=%s josh/filter/master
   * add file3
 
@@ -41,6 +48,9 @@
   $ git add sub1
   $ git commit -m "add file5" 1> /dev/null
 
-  $ josh-filter c=:/sub2 master --update refs/josh/filter/master
+  $ josh-filter -s c=:/sub2 master --update refs/josh/filter/master
+  [3 -> 3] :prefix=c
+  [4 -> 2] :/sub1
+  [5 -> 2] :/sub2
   $ git log --graph --pretty=%s josh/filter/master
   * add file3
