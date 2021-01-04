@@ -9,6 +9,7 @@ before_script:
   - cargo install hyper_cgi --features=test-server
 script:
   - export CARGO_TARGET_DIR=`pwd`/target
+  - git config --global init.defaultBranch master
   - cargo build --all
   - cram tests/**/*.t
 notifications:
