@@ -10,11 +10,10 @@ Welcome to Josh's documentation!
    :maxdepth: 2
    :caption: Contents:
 
-   filters
-   cli
    proxy
+   filters
    workspace
-
+   cli
 
 
 Indices and tables
