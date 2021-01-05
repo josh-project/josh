@@ -103,3 +103,35 @@ pub fn walk2(
         transaction,
     );
 }
+
+pub fn find_original(
+    repo: &git2::Repository,
+    bm: &mut std::collections::HashMap<git2::Oid, git2::Oid>,
+    filter: &filters::Filter,
+    contained_in: git2::Oid,
+    filtered: git2::Oid,
+) -> super::JoshResult<git2::Oid> {
+    if contained_in == git2::Oid::zero() {
+        return Ok(git2::Oid::zero());
+    }
+    if let Some(original) = bm.get(&filtered) {
+        return Ok(*original);
+    }
+    let oid = super::history::walk(&repo, &filter, contained_in)?;
+    if oid != git2::Oid::zero() {
+        bm.insert(contained_in, oid);
+    }
+    let mut walk = repo.revwalk()?;
+    walk.set_sorting(git2::Sort::TOPOLOGICAL)?;
+    walk.push(contained_in)?;
+
+    for original in walk {
+        let original = repo.find_commit(original?)?;
+        if filtered == filters::apply_to_commit(&repo, &filter, &original)? {
+            bm.insert(filtered, original.id());
+            return Ok(original.id());
+        }
+    }
+
+    return Ok(git2::Oid::zero());
+}
