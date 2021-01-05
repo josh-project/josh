@@ -27,7 +27,7 @@ enum Op {
 
     Compose(Vec<Filter>),
     Chain(Box<Filter>, Box<Filter>),
-    Substract(Box<Filter>, Box<Filter>),
+    Subtract(Box<Filter>, Box<Filter>),
 }
 
 pub fn pretty(filter: &Filter, indent: usize) -> String {
@@ -50,8 +50,8 @@ pub fn pretty(filter: &Filter, indent: usize) -> String {
                 )
             }
         }
-        Op::Substract(a, b) => {
-            format!(":SUBSTRACT(\n{}\n -{}\n)", spec(&a), spec(&b))
+        Op::Subtract(a, b) => {
+            format!(":SUBTRACT(\n{}\n -{}\n)", spec(&a), spec(&b))
         }
         Op::Chain(a, b) => match (a.as_ref(), b.as_ref()) {
             (Filter(Op::Subdir(p1)), Filter(Op::Prefix(p2))) if p1 == p2 => {
@@ -71,8 +71,8 @@ pub fn spec(filter: &Filter) -> String {
                 filters.iter().map(spec).collect::<Vec<_>>().join("&")
             )
         }
-        Op::Substract(a, b) => {
-            format!(":SUBSTRACT({} - {})", spec(&a), spec(&b))
+        Op::Subtract(a, b) => {
+            format!(":SUBTRACT({} - {})", spec(&a), spec(&b))
         }
         Op::Workspace(path) => {
             format!(":workspace={}", path.to_string_lossy())
@@ -185,7 +185,7 @@ pub fn apply_to_commit2(
 
                     apply_to_commit2(
                         repo,
-                        &Filter(Op::Substract(
+                        &Filter(Op::Subtract(
                             Box::new(Filter(Op::Compose(cw.clone()))),
                             Box::new(Filter(Op::Compose(pcw))),
                         )),
@@ -230,7 +230,7 @@ pub fn apply_to_commit2(
 
             repo.find_tree(filtered_tree)?
         }
-        Op::Substract(a, b) => {
+        Op::Subtract(a, b) => {
             let af = {
                 repo.find_commit(apply_to_commit2(
                     &repo,
@@ -255,7 +255,7 @@ pub fn apply_to_commit2(
             let bu = unapply(&repo, &b, bf, empty_tree(&repo))?;
             let ba = apply(&repo, &a, bu)?;
 
-            repo.find_tree(treeops::substract_fast(&repo, af, ba.id())?)?
+            repo.find_tree(treeops::subtract_fast(&repo, af, ba.id())?)?
         }
         _ => apply(&repo, &filter, commit.tree()?)?,
     };
@@ -296,7 +296,7 @@ pub fn apply<'a>(
                 require_literal_separator: true,
                 require_literal_leading_dot: true,
             };
-            treeops::substract_tree(
+            treeops::subtract_tree(
                 &repo,
                 "",
                 tree.id(),
@@ -325,12 +325,12 @@ pub fn apply<'a>(
             treeops::replace_subtree(&repo, &path, git2::Oid::zero(), &tree)
         }
 
-        Op::Substract(a, b) => {
+        Op::Subtract(a, b) => {
             let af = apply(&repo, &a, tree.clone())?;
             let bf = apply(&repo, &b, tree.clone())?;
             let bu = unapply(&repo, &b, bf, empty_tree(&repo))?;
             let ba = apply(&repo, &a, bu)?;
-            Ok(repo.find_tree(treeops::substract_fast(
+            Ok(repo.find_tree(treeops::subtract_fast(
                 &repo,
                 af.id(),
                 ba.id(),
@@ -406,7 +406,7 @@ pub fn unapply<'a>(
                 result = unapply(&repo, &other, remaining.clone(), result)?;
                 let reapply = apply(&repo, &other, from_empty.clone())?;
 
-                remaining = repo.find_tree(treeops::substract_fast(
+                remaining = repo.find_tree(treeops::subtract_fast(
                     &repo,
                     remaining.id(),
                     reapply.id(),
@@ -429,7 +429,7 @@ pub fn unapply<'a>(
                 require_literal_separator: true,
                 require_literal_leading_dot: true,
             };
-            let substracted = treeops::substract_tree(
+            let subtracted = treeops::subtract_tree(
                 &repo,
                 "",
                 tree.id(),
@@ -442,7 +442,7 @@ pub fn unapply<'a>(
             Ok(repo.find_tree(treeops::overlay(
                 &repo,
                 parent_tree.id(),
-                substracted.id(),
+                subtracted.id(),
             )?)?)
         }
         Op::Prefix(path) => Ok(tree
@@ -625,12 +625,12 @@ fn optimize(filter: Filter) -> Filter {
                 Filter(Op::Chain(Box::new(optimize(a)), Box::new(optimize(b))))
             }
         },
-        Op::Substract(a, b) => match (*a, *b) {
+        Op::Subtract(a, b) => match (*a, *b) {
             (Filter(Op::Empty), _) => Filter(Op::Empty),
             (a, b) if a == b => Filter(Op::Empty),
             (a, Filter(Op::Empty)) => a,
             (Filter(Op::Chain(a, b)), Filter(Op::Chain(c, d))) if a == c => {
-                Filter(Op::Chain(a, Box::new(Filter(Op::Substract(b, d)))))
+                Filter(Op::Chain(a, Box::new(Filter(Op::Subtract(b, d)))))
             }
             (a, b) => {
                 let (a, b) = if let (
@@ -645,7 +645,7 @@ fn optimize(filter: Filter) -> Filter {
                 } else {
                     (a, b)
                 };
-                Filter(Op::Substract(
+                Filter(Op::Subtract(
                     Box::new(optimize(a)),
                     Box::new(optimize(b)),
                 ))
@@ -815,7 +815,7 @@ pub fn build_chain(first: Filter, second: Filter) -> Filter {
 }
 
 pub fn parse(filter_spec: &str) -> JoshResult<Filter> {
-    if filter_spec.contains("SUBSTRACT") {
+    if filter_spec.contains("SUBTRACT") {
         assert!(false);
     }
     if filter_spec == "" {

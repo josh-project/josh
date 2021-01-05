@@ -28,7 +28,7 @@ pub fn print_stats() {
         let name = String::from_utf8(name.to_vec()).unwrap();
         let t = db.open_tree(&name).unwrap();
         if t.len() != 0 {
-            let name = if name.contains("SUBSTRACT") {
+            let name = if name.contains("SUBTRACT") {
                 name.clone()
             } else {
                 super::filters::pretty(
