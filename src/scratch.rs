@@ -1,17 +1,13 @@
-use git2;
-use tracing;
-
 use super::*;
-use std::collections::HashSet;
 
 // takes everything from base except it's tree and replaces it with the tree
 // given
-pub fn rewrite(
+pub fn rewrite_commit(
     repo: &git2::Repository,
     base: &git2::Commit,
     parents: &[&git2::Commit],
     tree: &git2::Tree,
-) -> super::JoshResult<git2::Oid> {
+) -> JoshResult<git2::Oid> {
     if base.tree()?.id() == tree.id() && all_equal(base.parents(), parents) {
         // Looks like an optimization, but in fact serves to not change the commit in case
         // it was signed.
@@ -28,38 +24,6 @@ pub fn rewrite(
     )?);
 }
 
-fn find_original(
-    repo: &git2::Repository,
-    bm: &mut std::collections::HashMap<git2::Oid, git2::Oid>,
-    filter: &filters::Filter,
-    contained_in: git2::Oid,
-    filtered: git2::Oid,
-) -> super::JoshResult<git2::Oid> {
-    if contained_in == git2::Oid::zero() {
-        return Ok(git2::Oid::zero());
-    }
-    if let Some(original) = bm.get(&filtered) {
-        return Ok(*original);
-    }
-    let oid = super::history::walk(&repo, &filter, contained_in)?;
-    if oid != git2::Oid::zero() {
-        bm.insert(contained_in, oid);
-    }
-    let mut walk = repo.revwalk()?;
-    walk.set_sorting(git2::Sort::TOPOLOGICAL)?;
-    walk.push(contained_in)?;
-
-    for original in walk {
-        let original = original?;
-        if filtered == super::history::walk(&repo, &filter, original)? {
-            bm.insert(filtered, original);
-            return Ok(original);
-        }
-    }
-
-    return Ok(git2::Oid::zero());
-}
-
 #[tracing::instrument(skip(repo))]
 pub fn unapply_filter(
     repo: &git2::Repository,
@@ -67,7 +31,7 @@ pub fn unapply_filter(
     unfiltered_old: git2::Oid,
     old: git2::Oid,
     new: git2::Oid,
-) -> super::JoshResult<UnapplyFilter> {
+) -> JoshResult<UnapplyFilter> {
     let walk = {
         let mut walk = repo.revwalk()?;
         walk.set_sorting(git2::Sort::REVERSE | git2::Sort::TOPOLOGICAL)?;
@@ -82,7 +46,7 @@ pub fn unapply_filter(
 
     let mut bm = std::collections::HashMap::new();
     let mut ret =
-        find_original(&repo, &mut bm, filterobj, unfiltered_old, new)?;
+        history::find_original(&repo, &mut bm, filterobj, unfiltered_old, new)?;
     for rev in walk {
         let rev = rev?;
 
@@ -100,8 +64,14 @@ pub fn unapply_filter(
         let original_parents: std::result::Result<Vec<_>, _> =
             filtered_parent_ids
                 .iter()
-                .map(|x| -> super::JoshResult<_> {
-                    find_original(&repo, &mut bm, filterobj, unfiltered_old, *x)
+                .map(|x| -> JoshResult<_> {
+                    history::find_original(
+                        &repo,
+                        &mut bm,
+                        filterobj,
+                        unfiltered_old,
+                        *x,
+                    )
                 })
                 .filter(|x| {
                     if let Ok(i) = x {
@@ -110,7 +80,7 @@ pub fn unapply_filter(
                         true
                     }
                 })
-                .map(|x| -> super::JoshResult<_> { Ok(repo.find_commit(x?)?) })
+                .map(|x| -> JoshResult<_> { Ok(repo.find_commit(x?)?) })
                 .collect();
 
         tracing::info!(
@@ -129,7 +99,7 @@ pub fn unapply_filter(
         let commit_message =
             module_commit.summary().unwrap_or("NO COMMIT MESSAGE");
 
-        let new_trees: super::JoshResult<HashSet<_>> = {
+        let new_trees: JoshResult<std::collections::HashSet<_>> = {
             let s = tracing::span!(
                 tracing::Level::TRACE,
                 "unapply filter",
@@ -141,8 +111,8 @@ pub fn unapply_filter(
             let _e = s.enter();
             original_parents_refs
                 .iter()
-                .map(|x| -> super::JoshResult<_> {
-                    Ok(super::filters::unapply(
+                .map(|x| -> JoshResult<_> {
+                    Ok(filters::unapply(
                         &repo,
                         &filterobj,
                         tree.clone(),
@@ -155,8 +125,8 @@ pub fn unapply_filter(
 
         let new_trees = match new_trees {
             Ok(new_trees) => new_trees,
-            Err(super::JoshError(msg)) => {
-                return Err(super::josh_error(&format!(
+            Err(JoshError(msg)) => {
+                return Err(josh_error(&format!(
                     "\nCan't apply {:?} ({:?})\n{}",
                     commit_message,
                     module_commit.id(),
@@ -167,21 +137,13 @@ pub fn unapply_filter(
 
         let new_tree = match new_trees.len() {
             1 => repo.find_tree(
-                *new_trees
-                    .iter()
-                    .next()
-                    .ok_or(super::josh_error("iter.next"))?,
+                *new_trees.iter().next().ok_or(josh_error("iter.next"))?,
             )?,
             0 => {
                 tracing::debug!("unrelated history");
                 // 0 means the history is unrelated. Pushing it will fail if we are not
                 // dealing with either a force push or a push with the "josh-merge" option set.
-                super::filters::unapply(
-                    &repo,
-                    &filterobj,
-                    tree,
-                    empty_tree(&repo),
-                )?
+                filters::unapply(&repo, &filterobj, tree, empty_tree(&repo))?
             }
             parent_count => {
                 // This is a merge commit where the parents in the upstream repo
@@ -192,8 +154,12 @@ pub fn unapply_filter(
             }
         };
 
-        ret =
-            rewrite(&repo, &module_commit, &original_parents_refs, &new_tree)?;
+        ret = rewrite_commit(
+            &repo,
+            &module_commit,
+            &original_parents_refs,
+            &new_tree,
+        )?;
         bm.insert(module_commit.id(), ret);
     }
 
@@ -207,16 +173,13 @@ fn transform_commit(
     filterobj: &filters::Filter,
     from_refsname: &str,
     to_refname: &str,
-) -> super::JoshResult<usize> {
+) -> JoshResult<usize> {
     let mut updated_count = 0;
     if let Ok(reference) = repo.revparse_single(&from_refsname) {
         let original_commit = reference.peel_to_commit()?;
 
-        let filter_commit = super::filters::apply_to_commit(
-            &repo,
-            &filterobj,
-            &original_commit,
-        )?;
+        let filter_commit =
+            filters::apply_to_commit(&repo, &filterobj, &original_commit)?;
 
         let previous = repo
             .revparse_single(&to_refname)
@@ -230,7 +193,7 @@ fn transform_commit(
                 &from_refsname,
                 &to_refname,
                 filter_commit,
-                &super::filters::spec(&filterobj),
+                &filters::spec(&filterobj),
             );
         }
 
@@ -249,7 +212,7 @@ fn transform_commit(
                         &from_refsname,
                         &to_refname,
                         filter_commit,
-                        &super::filters::spec(&filterobj),
+                        &filters::spec(&filterobj),
                     );
                 }
             );
@@ -268,10 +231,10 @@ pub fn apply_filter_to_refs(
     repo: &git2::Repository,
     filterobj: &filters::Filter,
     refs: &[(String, String)],
-) -> super::JoshResult<usize> {
+) -> JoshResult<usize> {
     rs_tracing::trace_scoped!(
         "apply_filter_to_refs",
-        "spec": super::filters::spec(&filterobj)
+        "spec": filters::spec(&filterobj)
     );
 
     let mut updated_count = 0;
@@ -308,7 +271,7 @@ pub fn create_filtered_commit<'a>(
     filtered_tree: git2::Tree<'a>,
     transaction: &mut filter_cache::Transaction,
     spec: &str,
-) -> super::JoshResult<git2::Oid> {
+) -> JoshResult<git2::Oid> {
     let r = create_filtered_commit2(
         repo,
         original_commit,
@@ -328,7 +291,7 @@ fn create_filtered_commit2<'a>(
     original_commmit: &'a git2::Commit,
     filtered_parent_ids: Vec<git2::Oid>,
     filtered_tree: git2::Tree<'a>,
-) -> super::JoshResult<git2::Oid> {
+) -> JoshResult<git2::Oid> {
     let is_initial_merge = filtered_parent_ids.len() > 1
         && !repo.merge_base_many(&filtered_parent_ids).is_ok();
 
@@ -363,7 +326,7 @@ fn create_filtered_commit2<'a>(
         }
     }
 
-    return rewrite(
+    return rewrite_commit(
         &repo,
         &original_commmit,
         &selected_filtered_parent_commits,

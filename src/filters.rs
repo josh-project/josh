@@ -125,7 +125,12 @@ pub fn apply_to_commit2(
             }
         }
         Op::Squash => {
-            return scratch::rewrite(&repo, &commit, &vec![], &commit.tree()?)
+            return scratch::rewrite_commit(
+                &repo,
+                &commit,
+                &vec![],
+                &commit.tree()?,
+            )
         }
         _ => {
             if let Some(oid) =
