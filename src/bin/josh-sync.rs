@@ -61,7 +61,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
             head.tree()?,
             josh::empty_tree(&repo),
         )?;
-        let head_cleaned = josh::treeops::substract_fast(
+        let head_cleaned = josh::treeops::subtract_fast(
             &repo,
             new_tree.id(),
             josh::filters::apply(&repo, &filter, state_in_head)?.id(),

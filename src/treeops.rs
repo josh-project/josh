@@ -90,7 +90,7 @@ pub fn dirtree<'a>(
     return Ok(result);
 }
 
-pub fn substract_tree<'a>(
+pub fn subtract_tree<'a>(
     repo: &'a git2::Repository,
     root: &str,
     input: git2::Oid,
@@ -101,7 +101,7 @@ pub fn substract_tree<'a>(
     if let Some(cached) = cache.get(&(input, key)) {
         return Ok(repo.find_tree(*cached)?);
     }
-    rs_tracing::trace_scoped!("substract_tree X", "root": root);
+    rs_tracing::trace_scoped!("subtract_tree X", "root": root);
 
     let tree = repo.find_tree(input)?;
     let mut result = empty_tree(&repo);
@@ -127,7 +127,7 @@ pub fn substract_tree<'a>(
             let s = if (root != "") && pred(&path, false) {
                 entry.id()
             } else {
-                substract_tree(
+                subtract_tree(
                     &repo,
                     &format!(
                         "{}{}{}",
@@ -160,7 +160,7 @@ pub fn substract_tree<'a>(
     return Ok(result);
 }
 
-pub fn substract_fast(
+pub fn subtract_fast(
     repo: &git2::Repository,
     input1: git2::Oid,
     input2: git2::Oid,
@@ -178,7 +178,7 @@ pub fn substract_fast(
         if input2 == empty_tree_id() {
             return Ok(input1);
         }
-        rs_tracing::trace_scoped!("substract fast");
+        rs_tracing::trace_scoped!("subtract fast");
         let mut result_tree = tree1.clone();
 
         for entry in tree2.iter() {
@@ -190,7 +190,7 @@ pub fn substract_fast(
                     &std::path::Path::new(
                         entry.name().ok_or(super::josh_error("no name"))?,
                     ),
-                    substract_fast(repo, e.id(), entry.id())?,
+                    subtract_fast(repo, e.id(), entry.id())?,
                     &result_tree,
                 )?;
             }
@@ -318,14 +318,14 @@ pub fn compose<'a>(
     let mut taken = empty_tree(&repo);
     for (f, applied) in trees {
         let taken_applied = super::filters::apply(&repo, &f, taken.clone())?;
-        let substracted = repo.find_tree(substract_fast(
+        let subtracted = repo.find_tree(subtract_fast(
             &repo,
             applied.id(),
             taken_applied.id(),
         )?)?;
         taken = super::filters::unapply(&repo, &f, applied, taken.clone())?;
         result =
-            repo.find_tree(overlay(&repo, result.id(), substracted.id())?)?;
+            repo.find_tree(overlay(&repo, result.id(), subtracted.id())?)?;
     }
 
     Ok(result)

@@ -230,7 +230,6 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         );
     }
 
-
     return Ok(0);
 }
 
