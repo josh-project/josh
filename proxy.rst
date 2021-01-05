@@ -2,25 +2,39 @@
 josh-proxy
 ==========
 
-Josh provides a http proxy server that can be used with any git hosting service that supports
-the http transfer protocol.
+Josh provides an HTTP proxy server that can be used with any git hosting service which communicates
+via HTTP.
 
-It needs the url of the upstream server and a local directory to store it's data.
-Optionally a port to listen on can be specified::
+It needs the URL of the upstream server and a local directory to store its data.
+Optionally, a port to listen on can be specified. For example, running a local ``josh-proxy``
+instance for github.com on port 8000::
 
-    $ josh-proxy --local=/tmp/josh --remote=https://github.com& --port=8000
+    $ josh-proxy --local=/tmp/josh --remote=https://github.com --port=8000
 
-Will run a proxy for github.com.
-
-Url syntax
-----------
-
-Urls for filtered repositories are constructed by appending the filter specification to the
-original path on the upstream host::
+For a first example of how to make use of josh, just the josh documentation can be checked out as
+its own repository via this command::
 
     $ git clone http://localhost:8000/esrlabs/josh.git:/docs.git
 
-Will clone a repository with just the documentation of josh itself.
+.. note::
 
-Note that this url needs to contain the `.git` suffix two times:
-Once after the original path and once more after the filter spec.
+    This URL needs to contain the `.git` suffix twice: once after the original path and once more
+    after the filter spec.
+
+URL syntax and breakdown
+------------------------
+
+This is the URL of a ``josh-proxy`` instance::
+
+    http://localhost:8000
+
+This is the repository location on the upstream host on which to perform the filter operations::
+
+    /esrlabs/josh.git
+
+This is the set of filter operations to perform::
+
+    :/docs.git
+
+Much more information on the available filters and the syntax of all filters is covered in detail in
+the :doc:`filters` section.

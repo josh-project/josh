@@ -2,20 +2,20 @@
 Working with workspaces
 =======================
 
-For the sake of this examples we will assume a josh instance is running and serving a repo on
+For the sake of this example we will assume a josh instance is running and serving a repo on
 ``http://josh/world.git`` with some shared code in ``shared``.
 
 Create a new workspace
 ----------------------
 
-To create a new workspace in the path ``ws/hello`` simplily clone it as if it already exists::
+To create a new workspace in the path ``ws/hello`` simply clone it as if it already exists::
 
     $ git clone http://josh/world.git:workspace=ws/hello.git
 
 ``git`` will report that you appear to have cloned an empty repository if that path does not
-exist yet.
-If you don't get this message it means, that the path already exists in the repo but may
-not have configured any path mappings yet.
+yet exist.
+If you don't get this message it means that the path already exists in the repo but may
+not yet have configured any path mappings.
 
 The next step is to add some path mapping to the ``workspace.josh`` file in the root of the
 workspace::
