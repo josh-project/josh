@@ -23,7 +23,7 @@ pub fn walk2(
 ) -> JoshResult<git2::Oid> {
     rs_tracing::trace_scoped!("walk2","spec":filters::spec(&filter), "id": input.to_string());
 
-    let input_commit = ok_or!(repo.find_commit(input), {
+    ok_or!(repo.find_commit(input), {
         return Ok(git2::Oid::zero());
     });
 
@@ -31,36 +31,22 @@ pub fn walk2(
         return Ok(oid);
     }
 
-    let mut doit = false;
-
-    for p in input_commit.parent_ids() {
-        if transaction.get(&filters::spec(&filter), p) == None {
-            doit = true;
-        }
-    }
-
-    if !doit {
-        let t = filters::apply_to_commit2(
-            &repo,
-            &filter,
-            &input_commit,
-            transaction,
-        )?;
-
-        return Ok(t);
-    }
+    let (known, n_new) = find_known(&repo, &filter, input, transaction)?;
 
     let walk = {
         let mut walk = repo.revwalk()?;
         walk.set_sorting(git2::Sort::REVERSE | git2::Sort::TOPOLOGICAL)?;
         walk.push(input)?;
+        for k in known.iter() {
+            walk.hide(*k)?;
+        }
         walk
     };
 
     log::debug!(
-        "Walking history for:\n{}\n{:?}",
+        "Walking {} new commits for:\n{}\n",
+        n_new,
         filters::pretty(&filter, 4),
-        &filter
     );
     let mut n_commits = 0;
     let mut n_misses = transaction.misses;
@@ -134,4 +120,33 @@ pub fn find_original(
     }
 
     return Ok(git2::Oid::zero());
+}
+
+fn find_known(
+    repo: &git2::Repository,
+    filter: &filters::Filter,
+    input: git2::Oid,
+    transaction: &mut filter_cache::Transaction,
+) -> JoshResult<(Vec<git2::Oid>, usize)> {
+    let mut known = vec![];
+    'find_known: loop {
+        let mut walk = repo.revwalk()?;
+        walk.reset()?;
+        walk.set_sorting(git2::Sort::TOPOLOGICAL)?;
+        walk.push(input)?;
+        for k in known.iter() {
+            walk.hide(*k)?;
+        }
+
+        let mut n_new = 0;
+        for id in walk {
+            let id = id?;
+            if let Some(_) = transaction.get(&filters::spec(&filter), id) {
+                known.push(id);
+                continue 'find_known;
+            }
+            n_new += 1;
+        }
+        return Ok((known, n_new));
+    }
 }
