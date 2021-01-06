@@ -31,10 +31,7 @@ pub fn print_stats() {
             let name = if name.contains("SUBTRACT") {
                 name.clone()
             } else {
-                super::filters::pretty(
-                    &super::filters::parse(&name).unwrap(),
-                    4,
-                )
+                super::filters::pretty(super::filters::parse(&name).unwrap(), 4)
             };
             let out = t
                 .iter()
@@ -52,8 +49,8 @@ pub fn print_stats() {
 }
 
 pub struct Transaction<'a> {
-    maps: HashMap<String, HashMap<git2::Oid, git2::Oid>>,
-    trees: HashMap<String, sled::Tree>,
+    maps: HashMap<git2::Oid, HashMap<git2::Oid, git2::Oid>>,
+    trees: HashMap<git2::Oid, sled::Tree>,
     pub misses: usize,
     pub walks: usize,
 
@@ -74,23 +71,23 @@ impl<'a> Transaction<'a> {
 
     pub fn insert(
         &mut self,
-        spec: &str,
+        filter: filters::Filter,
         from: git2::Oid,
         to: git2::Oid,
         store: bool,
     ) {
         self.maps
-            .entry(spec.to_string())
+            .entry(filter.id())
             .or_insert_with(|| HashMap::new())
             .insert(from, to);
 
         if store {
-            let t = self.trees.entry(spec.to_string()).or_insert_with(|| {
+            let t = self.trees.entry(filter.id()).or_insert_with(|| {
                 DB.lock()
                     .unwrap()
                     .as_ref()
                     .unwrap()
-                    .open_tree(spec)
+                    .open_tree(filters::spec(filter))
                     .unwrap()
             });
 
@@ -98,21 +95,25 @@ impl<'a> Transaction<'a> {
         }
     }
 
-    pub fn get(&mut self, spec: &str, from: git2::Oid) -> Option<git2::Oid> {
-        if spec == ":nop" {
+    pub fn get(
+        &mut self,
+        filter: filters::Filter,
+        from: git2::Oid,
+    ) -> Option<git2::Oid> {
+        if filter.is_nop() {
             return Some(from);
         }
-        if let Some(m) = self.maps.get(spec) {
+        if let Some(m) = self.maps.get(&filter.id()) {
             if let Some(oid) = m.get(&from).cloned() {
                 return Some(oid);
             }
         }
-        let t = self.trees.entry(spec.to_string()).or_insert_with(|| {
+        let t = self.trees.entry(filter.id()).or_insert_with(|| {
             DB.lock()
                 .unwrap()
                 .as_ref()
                 .unwrap()
-                .open_tree(spec)
+                .open_tree(filters::spec(filter))
                 .unwrap()
         });
         if let Some(oid) = t.get(from.as_bytes()).unwrap() {
@@ -127,9 +128,7 @@ impl<'a> Transaction<'a> {
             }
         }
 
-        if !spec.starts_with(":(") {
-            self.misses += 1;
-        }
+        self.misses += 1;
 
         return None;
     }

@@ -182,7 +182,7 @@ pub fn find_all_workspaces_and_subdirectories(
 
 pub fn get_info(
     repo: &git2::Repository,
-    filter: &filters::Filter,
+    filter: filters::Filter,
     upstream_repo: &str,
     headref: &str,
 ) -> JoshResult<String> {
@@ -198,7 +198,7 @@ pub fn get_info(
 
     let mut meta = std::collections::HashMap::new();
     meta.insert("sha1".to_owned(), "".to_owned());
-    let filtered = history::walk(&repo, &filter, commit.id())?;
+    let filtered = history::walk(&repo, filter, commit.id())?;
 
     let parent_ids = |commit: &git2::Commit| {
         let pids: Vec<_> = commit
@@ -265,7 +265,7 @@ pub fn refresh_known_filters(
 
             updated_count += history::apply_filter_to_refs(
                 &repo,
-                &filters::parse(&filter_spec)?,
+                filters::parse(filter_spec)?,
                 &refs,
             )?;
         }

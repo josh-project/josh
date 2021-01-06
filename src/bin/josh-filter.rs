@@ -88,7 +88,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
             }
             josh::apply_filter_to_refs(
                 &repo,
-                &josh::parse(&i)?,
+                josh::parse(&i)?,
                 &[(input_ref.to_string(), "refs/JOSH_TMP".to_string())],
             )?;
         }
@@ -118,10 +118,11 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         println!(
             "{}",
             josh::filters::pretty(
-                &filterobj,
+                filterobj,
                 if args.is_present("file") { 0 } else { 4 }
             )
         );
+        return Ok(0);
     }
 
     let reverse = args.is_present("reverse");
@@ -147,7 +148,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         .unwrap()
         .to_string();
 
-    josh::apply_filter_to_refs(&repo, &filterobj, &[(src.clone(), t.clone())])?;
+    josh::apply_filter_to_refs(&repo, filterobj, &[(src.clone(), t.clone())])?;
 
     let mut all_dirs = vec![];
 
@@ -205,7 +206,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         let old = repo.revparse_single("JOSH_TMP").unwrap().id();
         let unfiltered_old = repo.revparse_single(&input_ref).unwrap().id();
 
-        match josh::unapply_filter(&repo, &filterobj, unfiltered_old, old, new)?
+        match josh::unapply_filter(&repo, filterobj, unfiltered_old, old, new)?
         {
             josh::UnapplyFilter::Done(rewritten) => {
                 repo.reference(&src, rewritten, true, "unapply_filter")?;

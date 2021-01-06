@@ -57,20 +57,20 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
 
         let state_in_head = josh::filters::unapply(
             &repo,
-            &filter,
+            filter,
             head.tree()?,
             josh::empty_tree(&repo),
         )?;
         let head_cleaned = josh::treeops::subtract_fast(
             &repo,
             new_tree.id(),
-            josh::filters::apply(&repo, &filter, state_in_head)?.id(),
+            josh::filters::apply(&repo, filter, state_in_head)?.id(),
         )?;
 
         let merged = josh::treeops::overlay(
             &repo,
             head_cleaned,
-            josh::filters::apply(&repo, &filter, src.tree()?)?.id(),
+            josh::filters::apply(&repo, filter, src.tree()?)?.id(),
         )?;
         new_tree = repo.find_tree(merged)?;
 

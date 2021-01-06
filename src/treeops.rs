@@ -317,13 +317,13 @@ pub fn compose<'a>(
     let mut result = empty_tree(&repo);
     let mut taken = empty_tree(&repo);
     for (f, applied) in trees {
-        let taken_applied = super::filters::apply(&repo, &f, taken.clone())?;
+        let taken_applied = super::filters::apply(&repo, *f, taken.clone())?;
         let subtracted = repo.find_tree(subtract_fast(
             &repo,
             applied.id(),
             taken_applied.id(),
         )?)?;
-        taken = super::filters::unapply(&repo, &f, applied, taken.clone())?;
+        taken = super::filters::unapply(&repo, *f, applied, taken.clone())?;
         result =
             repo.find_tree(overlay(&repo, result.id(), subtracted.id())?)?;
     }
