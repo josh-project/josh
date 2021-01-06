@@ -26,7 +26,7 @@
   * add sub2
 
   $ josh-filter -s :hide=sub2 branch1 --update refs/heads/hidden_branch1
-  [2 -> 2] :hide=sub2
+  [1] :hide=sub2
   $ git checkout hidden_branch1
   Switched to branch 'hidden_branch1'
   $ tree
@@ -40,7 +40,7 @@
   $ git commit -m "add file3" 1> /dev/null
 
   $ josh-filter -s :hide=sub2 master --update refs/heads/hidden_master
-  [3 -> 3] :hide=sub2
+  [2] :hide=sub2
   $ git checkout hidden_master
   Switched to branch 'hidden_master'
   $ tree
@@ -77,7 +77,7 @@
   * add file1
 
   $ josh-filter -s :hide=sub2 --reverse master --update refs/heads/hidden_master
-  [3 -> 3] :hide=sub2
+  [2] :hide=sub2
 
   $ git checkout master
   Switched to branch 'master'

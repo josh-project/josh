@@ -33,18 +33,14 @@ pub fn print_stats() {
             } else {
                 super::filters::pretty(super::filters::parse(&name).unwrap(), 4)
             };
-            let out = t
-                .iter()
-                .map(|x| x.unwrap().1)
-                .collect::<std::collections::HashSet<_>>();
-            v.push((t.len(), out.len(), name));
+            v.push((t.len(), name));
         }
     }
 
     v.sort();
 
-    for (len, out, name) in v.iter() {
-        println!("[{} -> {}] {}", len, out, name);
+    for (len, name) in v.iter() {
+        println!("[{}] {}", len, name);
     }
 }
 

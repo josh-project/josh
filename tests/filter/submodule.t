@@ -25,11 +25,11 @@
   * init
 
   $ josh-filter -s :/libs master --update refs/josh/filter/master
-  [2 -> 1] :/libs
+  [1] :/libs
   $ git ls-tree --name-only -r refs/josh/filter/master 
   $ josh-filter -s c=:/libs master --update refs/josh/filter/master
-  [1 -> 1] :prefix=c
-  [2 -> 1] :/libs
+  [1] :/libs
+  [1] :prefix=c
   $ git ls-tree --name-only -r refs/josh/filter/master 
 
 $ git log refs/josh/filter/master --graph --pretty=%s
