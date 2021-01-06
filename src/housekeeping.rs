@@ -263,7 +263,7 @@ pub fn refresh_known_filters(
                 &upstream_repo,
             );
 
-            updated_count += scratch::apply_filter_to_refs(
+            updated_count += history::apply_filter_to_refs(
                 &repo,
                 &filters::parse(&filter_spec)?,
                 &refs,

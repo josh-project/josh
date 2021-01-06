@@ -312,7 +312,7 @@ async fn do_filter(
             temp_ns.reference(&headref),
         ));
 
-        josh::scratch::apply_filter_to_refs(&repo, &filter, &from_to)?;
+        josh::history::apply_filter_to_refs(&repo, &filter, &from_to)?;
         repo.reference_symbolic(
             &temp_ns.reference("HEAD"),
             &temp_ns.reference(&headref),

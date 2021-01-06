@@ -85,7 +85,7 @@ pub fn process_repo_update(
 
         tracing::debug!("=== processed_old {:?}", old);
 
-        match josh::scratch::unapply_filter(
+        match josh::history::unapply_filter(
             &repo,
             &filterobj,
             unfiltered_old,
