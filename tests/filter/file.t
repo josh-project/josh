@@ -29,15 +29,13 @@
   $ git add file.josh
   $ git commit -m "initial" 1> /dev/null
 
-  $ josh-filter -s --file file.josh -p
-  :/sub1:prefix=c
-  :/sub2:prefix=b:prefix=a
-  [1 -> 1] :prefix=a
-  [1 -> 1] :prefix=b
-  [2 -> 2] :prefix=c
-  [4 -> 2] :/sub1
-  [4 -> 2] :/sub2
-  [4 -> 3] :(
+  $ josh-filter -s --file file.josh
+  [1] :/sub2
+  [1] :prefix=a
+  [1] :prefix=b
+  [2] :/sub1
+  [2] :prefix=c
+  [3] :(
       :/sub1:prefix=c
       :/sub2:prefix=b:prefix=a
   )
@@ -46,15 +44,13 @@
   * add file2
   * add file1
 
-  $ josh-filter -s --squash --file file.josh -p
-  :SQUASH:/sub1:prefix=c
-  :/sub2:prefix=b:prefix=a
-  [2 -> 2] :prefix=a
-  [2 -> 2] :prefix=b
-  [3 -> 3] :prefix=c
-  [5 -> 3] :/sub1
-  [5 -> 3] :/sub2
-  [5 -> 4] :(
+  $ josh-filter -s --squash --file file.josh
+  [2] :/sub2
+  [2] :prefix=a
+  [2] :prefix=b
+  [3] :/sub1
+  [3] :prefix=c
+  [4] :(
       :/sub1:prefix=c
       :/sub2:prefix=b:prefix=a
   )

@@ -450,14 +450,14 @@ pub fn create_filtered_commit<'a>(
     transaction: &mut filter_cache::Transaction,
     filter: filters::Filter,
 ) -> JoshResult<git2::Oid> {
-    let (r, _is_new) = create_filtered_commit2(
+    let (r, is_new) = create_filtered_commit2(
         repo,
         original_commit,
         filtered_parent_ids,
         filtered_tree,
     )?;
 
-    transaction.insert(spec, original_commit.id(), r, true);
+    transaction.insert(filter, original_commit.id(), r, is_new);
 
     return Ok(r);
 }

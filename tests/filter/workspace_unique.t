@@ -26,19 +26,19 @@
   $ git commit -m "add ws" 1> /dev/null
 
   $ josh-filter -s :workspace=ws master --update refs/josh/master
-  [1 -> 1] :/subsub
-  [1 -> 1] :glob=file1
-  [1 -> 1] :prefix=a
-  [1 -> 1] :prefix=sub2
-  [1 -> 1] :prefix=subsub
-  [2 -> 1] :/sub1
-  [2 -> 2] :(
+  [1] :/sub1
+  [1] :/sub2
+  [1] :/subsub
+  [1] :glob=file1
+  [1] :prefix=a
+  [1] :prefix=sub2
+  [1] :prefix=subsub
+  [1] :workspace=ws
+  [2] :(
       :/sub1:glob=file1
       :/sub2:/subsub:prefix=subsub:prefix=sub2
       :/sub1:prefix=a
   )
-  [2 -> 2] :/sub2
-  [3 -> 2] :workspace=ws
 
   $ git log --graph --pretty=%s refs/josh/master
   * add ws

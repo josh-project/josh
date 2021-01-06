@@ -24,16 +24,16 @@
   $ git commit -m "add ws" 1> /dev/null
 
   $ josh-filter -s :workspace=ws master --update refs/josh/master
-  [1 -> 1] :prefix=a
-  [1 -> 1] :prefix=b
-  [1 -> 1] :prefix=c
-  [2 -> 1] :/sub1
-  [2 -> 2] :(
+  [1] :/sub1
+  [1] :/sub2
+  [1] :prefix=a
+  [1] :prefix=b
+  [1] :prefix=c
+  [1] :workspace=ws
+  [2] :(
       :/sub2:prefix=b:prefix=a
       :/sub1:prefix=c
   )
-  [2 -> 2] :/sub2
-  [3 -> 2] :workspace=ws
 
   $ git log --graph --pretty=%s refs/josh/master
   * add ws
@@ -49,16 +49,16 @@
   $ git commit -m "add trailing slash" 1> /dev/null
 
   $ josh-filter -s :workspace=ws master --update refs/josh/master
-  [1 -> 1] :prefix=a
-  [1 -> 1] :prefix=b
-  [1 -> 1] :prefix=c
-  [2 -> 1] :/sub1
-  [2 -> 2] :(
+  [1] :/sub1
+  [1] :/sub2
+  [1] :prefix=a
+  [1] :prefix=b
+  [1] :prefix=c
+  [2] :(
       :/sub2:prefix=b:prefix=a
       :/sub1:prefix=c
   )
-  [2 -> 2] :/sub2
-  [4 -> 3] :workspace=ws
+  [2] :workspace=ws
 
   $ git log --graph --pretty=%s refs/josh/master
   * add trailing slash

@@ -18,8 +18,8 @@ in that subtree repo should have an empty tree
   $ git commit -m "add file2" 1> /dev/null
 
   $ josh-filter -s c=:/sub1 master --update refs/josh/filter/master
-  [2 -> 2] :/sub1
-  [2 -> 2] :prefix=c
+  [2] :/sub1
+  [2] :prefix=c
 
   $ git log refs/josh/filter/master --graph --pretty=%s
   * add file2
@@ -37,8 +37,8 @@ in that subtree repo should have an empty tree
   sub1_new/file2
 
   $ josh-filter -s c=:/sub1 master --update refs/josh/filter/master
-  [3 -> 3] :/sub1
-  [3 -> 3] :prefix=c
+  [3] :/sub1
+  [3] :prefix=c
 
   $ git log refs/josh/filter/master --graph --pretty=%s
   * mv sub1
@@ -51,8 +51,8 @@ in that subtree repo should have an empty tree
   $ git add unrelated_file
   $ git commit -m "add unrelated_file" 1> /dev/null
   $ josh-filter -s c=:/sub1 master --update refs/josh/filter/master2
-  [3 -> 3] :prefix=c
-  [4 -> 3] :/sub1
+  [3] :/sub1
+  [3] :prefix=c
   $ git log refs/josh/filter/master2 --graph --pretty=%s
   * mv sub1
   * add file2

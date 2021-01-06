@@ -49,11 +49,11 @@
   $ josh-filter -s :nop HEAD -q get=sub1/file2
   contents2
   $ josh-filter -s :/sub1 HEAD -q get=file1
-  [2 -> 2] :/sub1
+  [2] :/sub1
   contents1
 
   $ josh-filter -s :/sub1
-  [2 -> 2] :/sub1
+  [2] :/sub1
 
   $ cat > .git/josh_kv.json <<EOF
   > { "$(git log -n1 --pretty="%H" JOSH_HEAD)" : "SUCCESS" }
@@ -63,10 +63,10 @@
   { "*" : "SUCCESS" } (glob)
 
   $ josh-filter -s -q render=sub1/file1
-  [2 -> 2] :/sub1
+  [2] :/sub1
   contents1
   $ josh-filter -s -q "render=sub1/tmpl_file&tmpl_param1=tmpl_param_value1&tmpl_p2=val2"
-  [2 -> 2] :/sub1
+  [2] :/sub1
   tmpl_param1: tmpl_param_value1
   tmpl_p2: val2
   
@@ -104,5 +104,5 @@
   filtered: * (glob)
     
   $ josh-filter -s :/sub1 -q render=file2
-  [2 -> 2] :/sub1
+  [2] :/sub1
   contents2
