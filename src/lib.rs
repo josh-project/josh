@@ -42,14 +42,13 @@ pub mod filters;
 pub mod history;
 pub mod housekeeping;
 pub mod query;
-pub mod scratch;
 pub mod shell;
 pub mod treeops;
 
 pub use crate::filters::build_chain;
 pub use crate::filters::parse;
-pub use crate::scratch::apply_filter_to_refs;
-pub use crate::scratch::unapply_filter;
+pub use crate::history::apply_filter_to_refs;
+pub use crate::history::unapply_filter;
 
 #[derive(Clone)]
 pub enum UnapplyFilter {

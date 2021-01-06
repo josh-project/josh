@@ -72,22 +72,30 @@ impl<'a> Transaction<'a> {
         }
     }
 
-    pub fn insert(&mut self, spec: &str, from: git2::Oid, to: git2::Oid) {
+    pub fn insert(
+        &mut self,
+        spec: &str,
+        from: git2::Oid,
+        to: git2::Oid,
+        store: bool,
+    ) {
         self.maps
             .entry(spec.to_string())
             .or_insert_with(|| HashMap::new())
             .insert(from, to);
 
-        let t = self.trees.entry(spec.to_string()).or_insert_with(|| {
-            DB.lock()
-                .unwrap()
-                .as_ref()
-                .unwrap()
-                .open_tree(spec)
-                .unwrap()
-        });
+        if store {
+            let t = self.trees.entry(spec.to_string()).or_insert_with(|| {
+                DB.lock()
+                    .unwrap()
+                    .as_ref()
+                    .unwrap()
+                    .open_tree(spec)
+                    .unwrap()
+            });
 
-        t.insert(from.as_bytes(), to.as_bytes()).unwrap();
+            t.insert(from.as_bytes(), to.as_bytes()).unwrap();
+        }
     }
 
     pub fn get(&mut self, spec: &str, from: git2::Oid) -> Option<git2::Oid> {
