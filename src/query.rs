@@ -130,7 +130,7 @@ impl FilterHelper {
         let filterobj = filters::parse(&filter_spec)?;
 
         let filter_commit =
-            history::walk(&repo, &filterobj, original_commit.id())?;
+            history::walk(&repo, filterobj, original_commit.id())?;
 
         return Ok(json!({ "sha1": format!("{}", filter_commit) }));
     }

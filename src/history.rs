@@ -3,10 +3,10 @@ use super::*;
 #[tracing::instrument(skip(repo, filter))]
 pub fn walk(
     repo: &git2::Repository,
-    filter: &filters::Filter,
+    filter: filters::Filter,
     input: git2::Oid,
 ) -> JoshResult<git2::Oid> {
-    rs_tracing::trace_scoped!("walk", "spec": filters::spec(&filter));
+    rs_tracing::trace_scoped!("walk", "spec": filters::spec(filter));
     walk2(
         repo,
         filter,
@@ -17,21 +17,21 @@ pub fn walk(
 
 pub fn walk2(
     repo: &git2::Repository,
-    filter: &filters::Filter,
+    filter: filters::Filter,
     input: git2::Oid,
     transaction: &mut filter_cache::Transaction,
 ) -> JoshResult<git2::Oid> {
-    rs_tracing::trace_scoped!("walk2","spec":filters::spec(&filter), "id": input.to_string());
+    rs_tracing::trace_scoped!("walk2","spec":filters::spec(filter), "id": input.to_string());
 
     ok_or!(repo.find_commit(input), {
         return Ok(git2::Oid::zero());
     });
 
-    if let Some(oid) = transaction.get(&filters::spec(&filter), input) {
+    if let Some(oid) = transaction.get(filter, input) {
         return Ok(oid);
     }
 
-    let (known, n_new) = find_known(&repo, &filter, input, transaction)?;
+    let (known, n_new) = find_known(&repo, filter, input, transaction)?;
 
     let walk = {
         let mut walk = repo.revwalk()?;
@@ -46,7 +46,7 @@ pub fn walk2(
     log::info!(
         "Walking {} new commits for:\n{}\n",
         n_new,
-        filters::pretty(&filter, 4),
+        filters::pretty(filter, 4),
     );
     let mut n_commits = 0;
     let mut n_misses = transaction.misses;
@@ -56,7 +56,7 @@ pub fn walk2(
     for original_commit_id in walk {
         filters::apply_to_commit(
             &repo,
-            &filter,
+            filter,
             &repo.find_commit(original_commit_id?)?,
             transaction,
         )?;
@@ -84,7 +84,7 @@ pub fn walk2(
 
     return filters::apply_to_commit(
         &repo,
-        &filter,
+        filter,
         &repo.find_commit(input)?,
         transaction,
     );
@@ -93,7 +93,7 @@ pub fn walk2(
 pub fn find_original(
     repo: &git2::Repository,
     bm: &mut std::collections::HashMap<git2::Oid, git2::Oid>,
-    filter: &filters::Filter,
+    filter: filters::Filter,
     contained_in: git2::Oid,
     filtered: git2::Oid,
 ) -> super::JoshResult<git2::Oid> {
@@ -103,7 +103,7 @@ pub fn find_original(
     if let Some(original) = bm.get(&filtered) {
         return Ok(*original);
     }
-    let oid = super::history::walk(&repo, &filter, contained_in)?;
+    let oid = super::history::walk(&repo, filter, contained_in)?;
     if oid != git2::Oid::zero() {
         bm.insert(contained_in, oid);
     }
@@ -116,7 +116,7 @@ pub fn find_original(
         if filtered
             == filters::apply_to_commit(
                 &repo,
-                &filter,
+                filter,
                 &original,
                 &mut filter_cache::Transaction::new(&repo),
             )?
@@ -131,7 +131,7 @@ pub fn find_original(
 
 fn find_known(
     repo: &git2::Repository,
-    filter: &filters::Filter,
+    filter: filters::Filter,
     input: git2::Oid,
     transaction: &mut filter_cache::Transaction,
 ) -> JoshResult<(Vec<git2::Oid>, usize)> {
@@ -149,7 +149,7 @@ fn find_known(
         let mut n_new = 0;
         for id in walk {
             let id = id?;
-            if let Some(_) = transaction.get(&filters::spec(&filter), id) {
+            if let Some(_) = transaction.get(filter, id) {
                 known.push(id);
                 continue 'find_known;
             }
@@ -201,7 +201,7 @@ fn all_equal(a: git2::Parents, b: &[&git2::Commit]) -> bool {
 #[tracing::instrument(skip(repo))]
 pub fn unapply_filter(
     repo: &git2::Repository,
-    filterobj: &filters::Filter,
+    filterobj: filters::Filter,
     unfiltered_old: git2::Oid,
     old: git2::Oid,
     new: git2::Oid,
@@ -288,7 +288,7 @@ pub fn unapply_filter(
                 .map(|x| -> JoshResult<_> {
                     Ok(filters::unapply(
                         &repo,
-                        &filterobj,
+                        filterobj,
                         tree.clone(),
                         x.tree()?,
                     )?
@@ -317,7 +317,7 @@ pub fn unapply_filter(
                 tracing::debug!("unrelated history");
                 // 0 means the history is unrelated. Pushing it will fail if we are not
                 // dealing with either a force push or a push with the "josh-merge" option set.
-                filters::unapply(&repo, &filterobj, tree, empty_tree(&repo))?
+                filters::unapply(&repo, filterobj, tree, empty_tree(&repo))?
             }
             parent_count => {
                 // This is a merge commit where the parents in the upstream repo
@@ -344,7 +344,7 @@ pub fn unapply_filter(
 #[tracing::instrument(skip(repo))]
 fn transform_commit(
     repo: &git2::Repository,
-    filterobj: &filters::Filter,
+    filterobj: filters::Filter,
     from_refsname: &str,
     to_refname: &str,
 ) -> JoshResult<usize> {
@@ -354,7 +354,7 @@ fn transform_commit(
 
         let filter_commit = filters::apply_to_commit(
             &repo,
-            &filterobj,
+            filterobj,
             &original_commit,
             &mut filter_cache::Transaction::new(&repo),
         )?;
@@ -371,7 +371,7 @@ fn transform_commit(
                 &from_refsname,
                 &to_refname,
                 filter_commit,
-                &filters::spec(&filterobj),
+                &filters::spec(filterobj),
             );
         }
 
@@ -390,7 +390,7 @@ fn transform_commit(
                         &from_refsname,
                         &to_refname,
                         filter_commit,
-                        &filters::spec(&filterobj),
+                        &filters::spec(filterobj),
                     );
                 }
             );
@@ -407,17 +407,17 @@ fn transform_commit(
 #[tracing::instrument(skip(repo))]
 pub fn apply_filter_to_refs(
     repo: &git2::Repository,
-    filterobj: &filters::Filter,
+    filterobj: filters::Filter,
     refs: &[(String, String)],
 ) -> JoshResult<usize> {
     rs_tracing::trace_scoped!(
         "apply_filter_to_refs",
-        "spec": filters::spec(&filterobj)
+        "spec": filters::spec(filterobj)
     );
 
     let mut updated_count = 0;
     for (k, v) in refs {
-        updated_count += transform_commit(&repo, &*filterobj, &k, &v)?;
+        updated_count += transform_commit(&repo, filterobj, &k, &v)?;
     }
     return Ok(updated_count);
 }
@@ -448,7 +448,7 @@ pub fn create_filtered_commit<'a>(
     filtered_parent_ids: Vec<git2::Oid>,
     filtered_tree: git2::Tree<'a>,
     transaction: &mut filter_cache::Transaction,
-    spec: &str,
+    filter: filters::Filter,
 ) -> JoshResult<git2::Oid> {
     let (r, _is_new) = create_filtered_commit2(
         repo,

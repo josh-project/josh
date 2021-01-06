@@ -295,7 +295,7 @@ async fn do_filter(
         tracing::trace!("in do_filter worker");
         let repo = git2::Repository::init_bare(&repo_path)?;
         let filter = josh::filters::parse(&filter_spec)?;
-        let filter_spec = josh::filters::spec(&filter);
+        let filter_spec = josh::filters::spec(filter);
         let mut from_to = josh::housekeeping::default_from_to(
             &repo,
             &temp_ns.name(),
@@ -312,7 +312,7 @@ async fn do_filter(
             temp_ns.reference(&headref),
         ));
 
-        josh::history::apply_filter_to_refs(&repo, &filter, &from_to)?;
+        josh::history::apply_filter_to_refs(&repo, filter, &from_to)?;
         repo.reference_symbolic(
             &temp_ns.reference("HEAD"),
             &temp_ns.reference(&headref),
@@ -406,7 +406,7 @@ async fn call_service(
                 let repo = git2::Repository::init_bare(&serv.repo_path)?;
                 josh::housekeeping::get_info(
                     &repo,
-                    &josh::filters::parse(&parsed_url.filter)?,
+                    josh::filters::parse(&parsed_url.filter)?,
                     &parsed_url.upstream_repo,
                     &headref,
                 )
