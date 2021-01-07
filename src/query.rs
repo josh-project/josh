@@ -1,7 +1,7 @@
 use super::*;
 
 struct BlobHelper {
-    repo: std::sync::Arc<std::sync::Mutex<git2::Repository>>,
+    repo_path: std::path::PathBuf,
     headref: String,
 }
 
@@ -16,12 +16,15 @@ impl BlobHelper {
             return Err(josh_error("missing pattern"));
         };
 
-        let repo = self.repo.lock()?;
-        let tree = repo.find_reference(&self.headref)?.peel_to_tree()?;
+        let transaction = filter_cache::Transaction::open(&self.repo_path)?;
+        let tree = transaction
+            .repo()
+            .find_reference(&self.headref)?
+            .peel_to_tree()?;
 
         let blob = tree
             .get_path(&std::path::PathBuf::from(path))?
-            .to_object(&repo)?
+            .to_object(&transaction.repo())?
             .peel_to_blob()?;
         return Ok(json!(String::from_utf8(blob.content().to_vec())?));
     }
@@ -46,7 +49,7 @@ impl handlebars::HelperDef for BlobHelper {
 }
 
 struct FindFilesHelper {
-    repo: std::sync::Arc<std::sync::Mutex<git2::Repository>>,
+    repo_path: std::path::PathBuf,
     headref: String,
 }
 
@@ -60,8 +63,11 @@ impl FindFilesHelper {
         } else {
             return Err(josh_error("missing pattern"));
         };
-        let repo = self.repo.lock()?;
-        let tree = repo.find_reference(&self.headref)?.peel_to_tree()?;
+        let transaction = filter_cache::Transaction::open(&self.repo_path)?;
+        let tree = transaction
+            .repo()
+            .find_reference(&self.headref)?
+            .peel_to_tree()?;
 
         let mut names = vec![];
 
@@ -110,7 +116,7 @@ impl handlebars::HelperDef for FindFilesHelper {
 }
 
 struct FilterHelper {
-    repo: std::sync::Arc<std::sync::Mutex<git2::Repository>>,
+    repo_path: std::path::PathBuf,
     headref: String,
 }
 
@@ -124,13 +130,15 @@ impl FilterHelper {
         } else {
             return Err(josh_error("missing spec"));
         };
-        let repo = self.repo.lock()?;
-        let original_commit =
-            repo.find_reference(&self.headref)?.peel_to_commit()?;
+        let transaction = filter_cache::Transaction::open(&self.repo_path)?;
+        let original_commit = transaction
+            .repo()
+            .find_reference(&self.headref)?
+            .peel_to_commit()?;
         let filterobj = filters::parse(&filter_spec)?;
 
         let filter_commit =
-            history::walk(&repo, filterobj, original_commit.id())?;
+            history::walk2(filterobj, original_commit.id(), &transaction)?;
 
         return Ok(json!({ "sha1": format!("{}", filter_commit) }));
     }
@@ -201,8 +209,6 @@ pub fn render(
     std::mem::drop(obj);
     std::mem::drop(tree);
 
-    let repo = std::sync::Arc::new(std::sync::Mutex::new(repo));
-
     let mut handlebars = handlebars::Handlebars::new();
     handlebars.register_template_string("template", template)?;
     handlebars.register_helper("concat", Box::new(concat_helper));
@@ -210,21 +216,21 @@ pub fn render(
     handlebars.register_helper(
         "git-find",
         Box::new(FindFilesHelper {
-            repo: repo.clone(),
+            repo_path: repo.path().to_owned(),
             headref: headref.to_string(),
         }),
     );
     handlebars.register_helper(
         "git-blob",
         Box::new(BlobHelper {
-            repo: repo.clone(),
+            repo_path: repo.path().to_owned(),
             headref: headref.to_string(),
         }),
     );
     handlebars.register_helper(
         "josh-filter",
         Box::new(FilterHelper {
-            repo: repo.clone(),
+            repo_path: repo.path().to_owned(),
             headref: headref.to_string(),
         }),
     );

@@ -118,8 +118,9 @@ pub fn discover_repos(repo: &git2::Repository) -> JoshResult<Vec<String>> {
  * expensive to build from scratch using heuristics.
  */
 pub fn discover_filter_candidates(
-    repo: &git2::Repository,
+    transaction: &filter_cache::Transaction,
 ) -> JoshResult<KnownViews> {
+    let repo = transaction.repo();
     let mut known_filters = KnownViews::new();
     let _trace_s = span!(Level::TRACE, "discover_filter_candidates");
 
@@ -181,14 +182,14 @@ pub fn find_all_workspaces_and_subdirectories(
 }
 
 pub fn get_info(
-    repo: &git2::Repository,
+    transaction: &filter_cache::Transaction,
     filter: filters::Filter,
     upstream_repo: &str,
     headref: &str,
 ) -> JoshResult<String> {
     let _trace_s = span!(Level::TRACE, "get_info");
 
-    let obj = repo.revparse_single(&format!(
+    let obj = transaction.repo().revparse_single(&format!(
         "refs/josh/upstream/{}/{}",
         &to_ns(&upstream_repo),
         &headref
@@ -198,7 +199,7 @@ pub fn get_info(
 
     let mut meta = std::collections::HashMap::new();
     meta.insert("sha1".to_owned(), "".to_owned());
-    let filtered = history::walk(&repo, filter, commit.id())?;
+    let filtered = history::walk2(filter, commit.id(), &transaction)?;
 
     let parent_ids = |commit: &git2::Commit| {
         let pids: Vec<_> = commit
@@ -206,7 +207,7 @@ pub fn get_info(
             .map(|x| {
                 json!({
                     "commit": x.to_string(),
-                    "tree": repo.find_commit(x)
+                    "tree": transaction.repo().find_commit(x)
                         .map(|c| { c.tree_id() })
                         .unwrap_or(git2::Oid::zero())
                         .to_string(),
@@ -216,7 +217,7 @@ pub fn get_info(
         pids
     };
 
-    let t = if let Ok(filtered) = repo.find_commit(filtered) {
+    let t = if let Ok(filtered) = transaction.repo().find_commit(filtered) {
         json!({
             "commit": filtered.id().to_string(),
             "tree": filtered.tree_id().to_string(),
@@ -240,12 +241,13 @@ pub fn get_info(
     return Ok(serde_json::to_string(&s)?);
 }
 
-#[tracing::instrument(skip(repo))]
+#[tracing::instrument(skip(transaction))]
 pub fn refresh_known_filters(
-    repo: &git2::Repository,
+    transaction: &filter_cache::Transaction,
     known_filters: &KnownViews,
 ) -> JoshResult<usize> {
     for (upstream_repo, e) in known_filters.iter() {
+        let t = transaction.clone()?;
         info!("background rebuild root: {:?}", upstream_repo);
 
         let mut updated_count = 0;
@@ -258,13 +260,13 @@ pub fn refresh_known_filters(
             );
 
             let refs = memorize_from_to(
-                &repo,
+                &t.repo(),
                 &to_filtered_ref(&upstream_repo, &filter_spec),
                 &upstream_repo,
             );
 
             updated_count += history::apply_filter_to_refs(
-                &repo,
+                &t,
                 filters::parse(filter_spec)?,
                 &refs,
             )?;
@@ -281,27 +283,34 @@ pub fn spawn_thread(
     let mut gc_timer = std::time::Instant::now();
     std::thread::spawn(move || loop {
         let repo = git2::Repository::init_bare(&repo_path).unwrap();
+        let transaction = filter_cache::Transaction::new(repo);
         let known_filters =
-            housekeeping::discover_filter_candidates(&repo).unwrap();
-        refresh_known_filters(&repo, &known_filters).unwrap_or(0);
+            housekeeping::discover_filter_candidates(&transaction).unwrap();
+        refresh_known_filters(&transaction, &known_filters).unwrap_or(0);
         info!(
             "{}",
-            run_command(&repo.path(), &"git count-objects -v")
+            run_command(&transaction.repo().path(), &"git count-objects -v")
                 .replace("\n", "  ")
         );
         if do_gc && gc_timer.elapsed() > std::time::Duration::from_secs(60 * 60)
         {
             info!(
                 "\n----------\n{}\n----------",
-                run_command(&repo.path(), &"git repack -adkbn")
+                run_command(&transaction.repo().path(), &"git repack -adkbn")
             );
             info!(
                 "\n----------\n{}\n----------",
-                run_command(&repo.path(), &"git count-objects -vH")
+                run_command(
+                    &transaction.repo().path(),
+                    &"git count-objects -vH"
+                )
             );
             info!(
                 "\n----------\n{}\n----------",
-                run_command(&repo.path(), &"git prune --expire=2w")
+                run_command(
+                    &transaction.repo().path(),
+                    &"git prune --expire=2w"
+                )
             );
             gc_timer = std::time::Instant::now();
         }
