@@ -44,41 +44,86 @@ pub fn print_stats() {
     }
 }
 
-pub struct Transaction<'a> {
+struct Transaction2 {
     maps: HashMap<git2::Oid, HashMap<git2::Oid, git2::Oid>>,
     trees: HashMap<git2::Oid, sled::Tree>,
-    pub misses: usize,
-    pub walks: usize,
-
-    repo: &'a git2::Repository,
+    misses: usize,
+    walks: usize,
 }
 
-impl<'a> Transaction<'a> {
-    pub fn new(repo: &'a git2::Repository) -> Transaction<'a> {
+pub struct Transaction {
+    t2: std::cell::RefCell<Transaction2>,
+    repo: git2::Repository,
+}
+
+impl Transaction {
+    pub fn new(repo: git2::Repository) -> Transaction {
         log::debug!("new transaction");
         Transaction {
-            maps: HashMap::new(),
-            trees: HashMap::new(),
+            t2: std::cell::RefCell::new(Transaction2 {
+                maps: HashMap::new(),
+                trees: HashMap::new(),
+                misses: 0,
+                walks: 0,
+            }),
             repo: repo,
-            misses: 0,
-            walks: 0,
         }
     }
 
+    pub fn open(path: &std::path::Path) -> JoshResult<Transaction> {
+        log::debug!("open transaction");
+        Ok(Transaction {
+            t2: std::cell::RefCell::new(Transaction2 {
+                maps: HashMap::new(),
+                trees: HashMap::new(),
+                misses: 0,
+                walks: 0,
+            }),
+            repo: git2::Repository::open_ext(
+                path,
+                git2::RepositoryOpenFlags::NO_SEARCH,
+                &[] as &[&std::ffi::OsStr],
+            )?,
+        })
+    }
+
+    pub fn clone(&self) -> JoshResult<Transaction> {
+        Transaction::open(self.repo.path())
+    }
+
+    pub fn repo(&self) -> &git2::Repository {
+        &self.repo
+    }
+
+    pub fn misses(&self) -> usize {
+        self.t2.borrow().misses
+    }
+
+    pub fn new_walk(&self) -> usize {
+        let prev = self.t2.borrow().walks;
+        self.t2.borrow_mut().walks += 1;
+        return prev;
+    }
+
+    pub fn end_walk(&self) {
+        self.t2.borrow_mut().walks -= 1;
+    }
+
     pub fn insert(
-        &mut self,
+        &self,
         filter: filters::Filter,
         from: git2::Oid,
         to: git2::Oid,
         store: bool,
     ) {
-        self.maps
+        let mut t2 = self.t2.borrow_mut();
+        t2.maps
             .entry(filter.id())
             .or_insert_with(|| HashMap::new())
             .insert(from, to);
 
         if store {
-            let t = self.trees.entry(filter.id()).or_insert_with(|| {
+            let t = t2.trees.entry(filter.id()).or_insert_with(|| {
                 DB.lock()
                     .unwrap()
                     .as_ref()
@@ -92,19 +137,20 @@ impl<'a> Transaction<'a> {
     }
 
     pub fn get(
-        &mut self,
+        &self,
         filter: filters::Filter,
         from: git2::Oid,
     ) -> Option<git2::Oid> {
         if filter.is_nop() {
             return Some(from);
         }
-        if let Some(m) = self.maps.get(&filter.id()) {
+        let mut t2 = self.t2.borrow_mut();
+        if let Some(m) = t2.maps.get(&filter.id()) {
             if let Some(oid) = m.get(&from).cloned() {
                 return Some(oid);
             }
         }
-        let t = self.trees.entry(filter.id()).or_insert_with(|| {
+        let t = t2.trees.entry(filter.id()).or_insert_with(|| {
             DB.lock()
                 .unwrap()
                 .as_ref()
@@ -124,7 +170,7 @@ impl<'a> Transaction<'a> {
             }
         }
 
-        self.misses += 1;
+        t2.misses += 1;
 
         return None;
     }

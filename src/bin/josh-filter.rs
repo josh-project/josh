@@ -44,6 +44,8 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
     }
 
     let repo = git2::Repository::open_from_env()?;
+    let transaction = josh::filter_cache::Transaction::new(repo);
+    let repo = transaction.repo();
 
     let odb = repo.odb()?;
     let mempack = odb.add_new_mempack_backend(1000)?;
@@ -87,7 +89,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
                 continue;
             }
             josh::apply_filter_to_refs(
-                &repo,
+                &transaction,
                 josh::parse(&i)?,
                 &[(input_ref.to_string(), "refs/JOSH_TMP".to_string())],
             )?;
@@ -148,7 +150,11 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         .unwrap()
         .to_string();
 
-    josh::apply_filter_to_refs(&repo, filterobj, &[(src.clone(), t.clone())])?;
+    josh::apply_filter_to_refs(
+        &transaction,
+        filterobj,
+        &[(src.clone(), t.clone())],
+    )?;
 
     let mut all_dirs = vec![];
 
@@ -206,8 +212,13 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         let old = repo.revparse_single("JOSH_TMP").unwrap().id();
         let unfiltered_old = repo.revparse_single(&input_ref).unwrap().id();
 
-        match josh::unapply_filter(&repo, filterobj, unfiltered_old, old, new)?
-        {
+        match josh::unapply_filter(
+            &transaction,
+            filterobj,
+            unfiltered_old,
+            old,
+            new,
+        )? {
             josh::UnapplyFilter::Done(rewritten) => {
                 repo.reference(&src, rewritten, true, "unapply_filter")?;
             }

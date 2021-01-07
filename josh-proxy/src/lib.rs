@@ -48,6 +48,8 @@ pub fn process_repo_update(
     tracing::debug!("REPO_UPDATE env ok");
 
     let repo = git2::Repository::init_bare(&std::path::Path::new(&git_dir))?;
+    let transaction = josh::filter_cache::Transaction::new(repo);
+    let repo = &transaction.repo();
 
     let old = git2::Oid::from_str(old)?;
 
@@ -86,7 +88,7 @@ pub fn process_repo_update(
         tracing::debug!("=== processed_old {:?}", old);
 
         match josh::history::unapply_filter(
-            &repo,
+            &transaction,
             filterobj,
             unfiltered_old,
             old,
