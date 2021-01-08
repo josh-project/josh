@@ -595,11 +595,12 @@ impl Pattern {
                             });
                         };
 
-                        let tokens_len = tokens.len();
-
                         if is_valid {
                             // collapse consecutive AnyRecursiveSequence to a
                             // single one
+
+                            let tokens_len = tokens.len();
+
                             if !(tokens_len > 1 && tokens[tokens_len - 1] == AnyRecursiveSequence) {
                                 is_recursive = true;
                                 tokens.push(AnyRecursiveSequence);
