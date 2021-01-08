@@ -199,13 +199,14 @@
   $ git add .
   $ git commit -m "try to modify ws" 1> /dev/null
 
-  $ git push
-  remote: josh-proxy        
-  remote: response from upstream:        
-  remote:  To http://localhost:8001/real_repo.git        
+  $ git push 2>&1 >/dev/null | sed -e 's/[ ]*$//g'
+  remote: josh-proxy
+  remote: response from upstream:
+  remote:  To http://localhost:8001/real_repo.git
   remote:    *..*  JOSH_PUSH -> master* (glob)
-  remote: 
-  remote: 
+  remote: REWRITE(* -> *) (glob)
+  remote:
+  remote:
   To http://localhost:8002/real_repo.git:workspace=ws:prefix=pre:/pre.git
      *..*  master -> master* (glob)
   $ curl -s http://localhost:8002/flush
@@ -374,6 +375,9 @@ Note that ws/d/ is now present in the ws
   |   |       `-- %3Aworkspace=ws%3Aprefix=pre%3A%2Fpre
   |   |           `-- heads
   |   |               `-- master
+  |   |-- rewrites
+  |   |   `-- real_repo.git
+  |   |       `-- r_* (glob)
   |   `-- upstream
   |       `-- real_repo.git
   |           `-- refs
@@ -382,6 +386,6 @@ Note that ws/d/ is now present in the ws
   |-- namespaces
   `-- tags
   
-  26 directories, 9 files
+  28 directories, 10 files
 
 $ cat ${TESTTMP}/josh-proxy.out | grep VIEW

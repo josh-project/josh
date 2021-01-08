@@ -1,0 +1,61 @@
+#!/usr/bin/env python3
+
+import subprocess
+import sys
+import os
+import re
+
+refs = {}
+
+def get_refs(o):
+    for line in o.stdout.split("\n"):
+        s = line.split("\t")
+        if len(s) == 3:
+            (status, spec, msg) = s
+            (local, remote) = spec.split(":")
+
+            o = subprocess.run(["git", "rev-parse", local], capture_output=True, encoding="utf8")
+            refs[local] = o.stdout.strip("\n")
+
+    return refs
+
+def print_refs(o):
+    for line in o.stdout.split("\n"):
+        s = line.split("\t")
+        if len(s) == 3:
+            (status, spec, msg) = s
+            (local, remote) = spec.split(":")
+            local = local.strip("\n")
+            remote = remote.strip("\n")
+            print(status, local, "->", remote, file=sys.stderr)
+
+
+
+o = subprocess.run(
+    ["git", "push", "--porcelain", "-v"] + sys.argv[1:],
+    capture_output=True,
+    encoding="utf8")
+
+rewrites = re.findall(r"REWRITE\((.* -> .*)\)", o.stderr)
+
+print_refs(o)
+
+if not rewrites:
+    sys.exit(0)
+
+get_refs(o)
+remote = re.findall(r"Pushing to (.*)", o.stderr)[0]
+
+current = subprocess.run(["git","rev-parse", "--symbolic-full-name", "HEAD"], capture_output=True, encoding="utf8").stdout.strip("\n")
+
+for r in rewrites:
+    (orig, rewritten) = r.split(" -> ")
+
+    for (oref, sha) in refs.items():
+        if sha != orig: continue
+
+        if oref == "HEAD" or oref == current:
+            subprocess.run(["git", "fetch", remote, rewritten])
+            subprocess.run(["git", "reset", "--hard", rewritten])
+        else:
+            subprocess.run(["git", "fetch", remote, f"{rewritten}:{oref}"])

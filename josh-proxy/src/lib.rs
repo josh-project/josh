@@ -25,7 +25,7 @@ fn baseref_and_options(
 pub fn process_repo_update(
     credential_store: std::sync::Arc<std::sync::RwLock<CredentialStore>>,
     repo_update: std::collections::HashMap<String, String>,
-) -> Result<String, josh::JoshError> {
+) -> josh::JoshResult<String> {
     let refname = repo_update.get("refname").ok_or(josh::josh_error(""))?;
     let filter_spec =
         repo_update.get("filter_spec").ok_or(josh::josh_error(""))?;
@@ -154,7 +154,13 @@ pub fn process_repo_update(
         })
         .to_owned();
 
-    return push_head_url(
+    let reapply = josh::filters::apply_to_commit(
+        filterobj,
+        &repo.find_commit(oid_to_push)?,
+        &transaction,
+    )?;
+
+    let mut resp = push_head_url(
         &repo,
         oid_to_push,
         &push_with_options,
@@ -162,7 +168,19 @@ pub fn process_repo_update(
         &username,
         &password,
         &git_ns,
-    );
+    )?;
+
+    if new_oid != reapply {
+        repo.reference(
+            &format!("refs/josh/rewrites/{}/r_{}", base_ns, reapply),
+            reapply,
+            true,
+            "reapply",
+        )?;
+        resp = format!("{}\nREWRITE({} -> {})", resp, new_oid, reapply);
+    }
+
+    return Ok(resp);
 }
 
 fn push_head_url(

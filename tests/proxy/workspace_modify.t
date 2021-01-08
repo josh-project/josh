@@ -54,9 +54,8 @@
   $ git add sub2
   $ git commit -m "add file2" 1> /dev/null
 
-  $ git push
-  To http://localhost:8001/real_repo.git
-   * [new branch]      master -> master
+  $ git upload
+  * refs/heads/master -> refs/heads/master
 
   $ cd ${TESTTMP}
   $ curl -s http://localhost:8002/flush
@@ -71,29 +70,18 @@
 
   $ git add .
   $ git commit -m "add workspace" 1> /dev/null
-  $ git push origin HEAD:refs/heads/master%josh-merge
-  remote: warning: ignoring broken ref refs/namespaces/* (glob)
-  remote: josh-proxy        
-  remote: response from upstream:        
-  remote:  To http://localhost:8001/real_repo.git        
-  remote:    *..* JOSH_PUSH -> master* (glob)
-  remote: 
-  remote: 
-  To http://localhost:8002/real_repo.git:workspace=ws.git
-   * [new branch]      HEAD -> master%josh-merge
+  $ git upload origin HEAD:refs/heads/master%josh-merge
+  * HEAD -> refs/heads/master%josh-merge
+  From http://localhost:8002/real_repo.git:workspace=ws
+   * branch            * -> FETCH_HEAD (glob)
+  HEAD is now at * Merge from :workspace=ws (glob)
 
   $ curl -s http://localhost:8002/flush
   Flushed credential cache
   $ git pull --rebase
   From http://localhost:8002/real_repo.git:workspace=ws
    * [new branch]      master     -> origin/master
-  Updating *..* (glob)
-  Fast-forward
-   a/b/file2      | 1 +
-   c/subsub/file1 | 1 +
-   2 files changed, 2 insertions(+)
-   create mode 100644 a/b/file2
-   create mode 100644 c/subsub/file1
+  Already up to date.
 
   $ tree
   .
@@ -167,9 +155,8 @@
   * initial
 
 
-  $ git push
-  To http://localhost:8001/real_repo.git
-     *..*  master -> master* (glob)
+  $ git upload
+    refs/heads/master -> refs/heads/master
 
   $ cd ${TESTTMP}/ws
   $ curl -s http://localhost:8002/flush
@@ -262,15 +249,8 @@
 
   $ git commit -m "add in filter" 1> /dev/null
 
-  $ git push
-  remote: josh-proxy        
-  remote: response from upstream:        
-  remote:  To http://localhost:8001/real_repo.git        
-  remote:    *..*  JOSH_PUSH -> master* (glob)
-  remote: 
-  remote: 
-  To http://localhost:8002/real_repo.git:workspace=ws.git
-     *..*  master -> master* (glob)
+  $ git upload
+    refs/heads/master -> refs/heads/master
 
   $ cat > workspace.josh <<EOF
   > a/b = :/sub2
@@ -281,23 +261,18 @@
   $ git add .
   $ git commit -m "try to modify ws" 1> /dev/null
 
-  $ git push
-  remote: josh-proxy        
-  remote: response from upstream:        
-  remote:  To http://localhost:8001/real_repo.git        
-  remote:    *..* JOSH_PUSH -> master* (glob)
-  remote: 
-  remote: 
-  To http://localhost:8002/real_repo.git:workspace=ws.git
-     *..*  master -> master* (glob)
+  $ git upload
+    refs/heads/master -> refs/heads/master
+  From http://localhost:8002/real_repo.git:workspace=ws
+   * branch            * -> FETCH_HEAD (glob)
+  HEAD is now at * try to modify ws (glob)
 
   $ curl -s http://localhost:8002/flush
   Flushed credential cache
   $ git pull --rebase
   From http://localhost:8002/real_repo.git:workspace=ws
    + *...* master     -> origin/master  (forced update) (glob)
-  \r (no-eol) (esc)
-  \x1b[KSuccessfully rebased and updated refs/heads/master. (esc)
+  Already up to date.
 
 Note that d/ is still in the tree but now it is not overlayed
   $ tree
@@ -486,6 +461,10 @@ Note that ws/d/ is now present in the ws
   |   |       `-- %3Aworkspace=ws
   |   |           `-- heads
   |   |               `-- master
+  |   |-- rewrites
+  |   |   `-- real_repo.git
+  |   |       |-- r_* (glob)
+  |   |       `-- r_* (glob)
   |   `-- upstream
   |       `-- real_repo.git
   |           `-- refs
@@ -494,6 +473,6 @@ Note that ws/d/ is now present in the ws
   |-- namespaces
   `-- tags
   
-  24 directories, 8 files
+  26 directories, 10 files
 
 $ cat ${TESTTMP}/josh-proxy.out
