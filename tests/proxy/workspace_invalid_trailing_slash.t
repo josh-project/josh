@@ -53,14 +53,15 @@
 
   $ git add .
   $ git commit -m "add workspace" 1> /dev/null
-  $ git push origin HEAD:refs/heads/master%josh-merge
+  $ git push origin HEAD:refs/heads/master%josh-merge 2>&1 >/dev/null | sed -e 's/[ ]*$//g'
   remote: warning: ignoring broken ref refs/namespaces/* (glob)
-  remote: josh-proxy        
-  remote: response from upstream:        
-  remote:  To http://localhost:8001/real_repo.git        
+  remote: josh-proxy
+  remote: response from upstream:
+  remote:  To http://localhost:8001/real_repo.git
   remote:    *..* JOSH_PUSH -> master* (glob)
-  remote: 
-  remote: 
+  remote: REWRITE(* -> *) (glob)
+  remote:
+  remote:
   To http://localhost:8002/real_repo.git:workspace=ws.git
    * [new branch]      HEAD -> master%josh-merge
 
@@ -174,6 +175,9 @@
   |   |       `-- %3Aworkspace=ws
   |   |           `-- heads
   |   |               `-- master
+  |   |-- rewrites
+  |   |   `-- real_repo.git
+  |   |       `-- r_* (glob)
   |   `-- upstream
   |       `-- real_repo.git
   |           `-- refs
@@ -182,4 +186,4 @@
   |-- namespaces
   `-- tags
   
-  20 directories, 6 files
+  22 directories, 7 files

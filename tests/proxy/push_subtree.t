@@ -21,13 +21,14 @@
   $ echo contents2 > file2
   $ git add file2
   $ git commit -m "add file2" 1> /dev/null
-  $ git push origin HEAD:refs/heads/new_branch
-  remote: josh-proxy        
-  remote: response from upstream:        
-  remote:  To http://localhost:8001/real_repo.git        
-  remote:  * [new branch]      JOSH_PUSH -> new_branch        
-  remote: 
-  remote: 
+  $ git push origin HEAD:refs/heads/new_branch 2>&1 >/dev/null | sed -e 's/[ ]*$//g'
+  remote: josh-proxy
+  remote: response from upstream:
+  remote:  To http://localhost:8001/real_repo.git
+  remote:  * [new branch]      JOSH_PUSH -> new_branch
+  remote: REWRITE(* -> *) (glob)
+  remote:
+  remote:
   To http://localhost:8002/real_repo.git:/sub1.git
    * [new branch]      HEAD -> new_branch
 
@@ -78,6 +79,9 @@ Make sure all temporary namespace got removed
   |   |       `-- %3A%2Fsub1
   |   |           `-- heads
   |   |               `-- master
+  |   |-- rewrites
+  |   |   `-- real_repo.git
+  |   |       `-- r_* (glob)
   |   `-- upstream
   |       `-- real_repo.git
   |           `-- refs
@@ -87,6 +91,6 @@ Make sure all temporary namespace got removed
   |-- namespaces
   `-- tags
   
-  12 directories, 3 files
+  14 directories, 4 files
 
 $ cat ${TESTTMP}/josh-proxy.out

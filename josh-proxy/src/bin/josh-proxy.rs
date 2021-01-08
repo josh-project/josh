@@ -313,6 +313,18 @@ async fn do_filter(
             &filter_spec,
         );
 
+        let glob = format!("refs/josh/rewrites/{}/r_*", josh::to_ns(&upstream_repo));
+        for reference in transaction.repo().references_glob(&glob).unwrap() {
+            let reference = reference.unwrap();
+            let refname = reference.name().unwrap();
+            transaction.repo().reference(
+                &temp_ns.reference(&refname),
+                reference.target().unwrap(),
+                true,
+                "rewrite",
+            )?;
+        }
+
         from_to.push((
             format!(
                 "refs/josh/upstream/{}/{}",

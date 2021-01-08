@@ -46,6 +46,7 @@
   remote: response from upstream:
   remote:  To http://localhost:8001/real_repo.git
   remote:  * [new branch]      JOSH_PUSH -> from_filtered
+  remote: REWRITE(* -> *) (glob)
   remote:
   remote:
   To http://localhost:8002/real_repo.git:/sub1.git
@@ -87,6 +88,9 @@
   |   |       `-- %3A%2Fsub2
   |   |           `-- heads
   |   |               `-- master
+  |   |-- rewrites
+  |   |   `-- real_repo.git
+  |   |       `-- r_* (glob)
   |   `-- upstream
   |       `-- real_repo.git
   |           `-- refs
@@ -95,4 +99,4 @@
   |-- namespaces
   `-- tags
   
-  14 directories, 3 files
+  16 directories, 4 files
