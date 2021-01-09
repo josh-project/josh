@@ -77,6 +77,10 @@
   * add file4
 
   $ . ${TESTDIR}/destroy_test_env.sh
+  "real_repo.git" = [
+      ':/sub1',
+      ':/sub2',
+  ]
   refs
   |-- heads
   |-- josh

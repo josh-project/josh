@@ -1,6 +1,6 @@
 #!/bin/bash
+curl -s http://localhost:8002/filters/refresh
 killall -2 josh-proxy
-${TESTDIR}/../../target/debug/josh-proxy -m --local=${TESTTMP}/remote/scratch/ > /dev/null 2>&1
 cd ${TESTTMP}/remote/scratch
 #${TESTDIR}/../../target/debug/josh-filter -vs
 tree refs

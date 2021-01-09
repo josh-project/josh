@@ -292,6 +292,10 @@ Empty roots should not be dropped -> sha1 equal guarantee for "nop"
   2 directories, 4 files
 
   $ bash ${TESTDIR}/destroy_test_env.sh
+  "real_repo.git" = [
+      ':/repo1',
+      ':/repo2',
+  ]
   refs
   |-- heads
   |-- josh
