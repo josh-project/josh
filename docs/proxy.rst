@@ -38,3 +38,35 @@ This is the set of filter operations to perform::
 
 Much more information on the available filters and the syntax of all filters is covered in detail in
 the :doc:`filters` section.
+
+Repository naming
+-----------------
+
+By default, a git URL is used to point to the remote repository to download `and also` to dictate
+how the local repository shall be named.  It's important to learn that the last name in the URL is
+what the local git client will name the new, local repository. For example::
+
+    $ git clone http://localhost:8000/esrlabs/josh.git:/docs.git
+
+will create the new repository at directory ``docs``, as ``docs.git`` is the last name in the URL.
+
+By default, this leads to rather odd-looking repositories when the ``prefix`` filter is the final
+filter of a URL::
+
+    $ git clone http://localhost:8000/esrlabs/josh.git:/docs:prefix=josh-docs.git
+
+This will still clone just the josh documentation, but the final directory structure will look like
+this::
+
+    - prefix=josh-docs
+      - josh-docs
+        - <docs>
+
+Having the root repository directory name be the fully-specified filter is most likely not what was
+intended. This results from git's reuse and repurposing of the remote URL, as ``prefix=josh-docs``
+is the final name in the URL. With no other alternatives, this gets used for the repository name.
+
+To explicitly specify a repository name, provide the desired name after the URL when cloning a new
+repository::
+
+    $ git clone http://localhost:8000/esrlabs/josh.git:/docs:prefix=josh-docs.git my-repo
