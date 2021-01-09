@@ -93,6 +93,7 @@ pub fn process_repo_update(
             unfiltered_old,
             old,
             new_oid,
+            josh_merge,
         )? {
             josh::UnapplyFilter::Done(rewritten) => {
                 tracing::debug!("rewritten");
