@@ -2,8 +2,8 @@
 History filtering
 =================
 
-Josh transforms commits by applying one or more filters to them. As any
-commit in git represents not just a single point in time but also its entire
+Josh transforms commits by applying filters to them. As any
+commit in git represents not just a single state of the filesystem but also its entire
 history, applying a filter to a commit produces an entirely new history.
 The result of a filter is a normal git commit and therefore can be filtered again,
 making filters chainable.
@@ -11,64 +11,56 @@ making filters chainable.
 Syntax
 ------
 
-Filters are generally specified as::
+Filters always begin with a colon and can be chained::
 
-    :filter=parameter
+    :filter1:filter2
 
-And chained via colons::
-
-    :filter1=parameter1:filter2=parameter2
-
-The only exception is the subdirectory filter ``:/``. It does not have a written name
-in the syntax and also no ``=`` in front of its parameter. It can also be chained
-without the ``:``. Therefore ``:/a/b/c`` is exactly the same as ``:/a:/b:/c``.
+When used as part of an URL filters can not contain whitespace or newlines. When read from a file
+however whitespace can be inserted between filters (not after the leading colon).
+Additionally newlines can be used instead of ``&`` inside of composition filters.
 
 Available filters
 -----------------
 
-``:/a``
-    Take only the selected subdirectory from the commits tree and make it the root
-    of the filtered commit
+Subdirectory ``:/a``
+    Take only the selected subdirectory from the input and make it the root
+    of the filtered tree.
+    Note that ``:/a/b`` and ``:/a:/b`` are equivalent ways to get the same result.
 
-``:prefix=a``
-    Take the entire original tree and move it into subdirectory ``a``
+Prefix ``:prefix=a``
+    Take the input tree and place it into subdirectory ``a``.
+    Note that ``:prefix=a/b`` and ``:prefix=b:prefix=a`` are equivalent.
 
-``:workspace=a``
-    The same as ``:/a`` but also looks for a workspace file and adds extra
-    paths to the filtered tree.
+Directory ``::a/`` (with trailing ``/``)
+    A shorthand for the commonly occuring filter combination ``:/a:prefix=a``.
+
+File ``::a`` (without trailing ``/``)
+    Produces a tree with only the specified file in it's root.
+    Note that ``::a/b`` is equivalent to ``::a/::b``.
+
+Composition ``:(:filter1&:filter2&...&:filterN)``
+    Compose a tree by overlaying the outputs of ``filter1`` ... ``filterN`` on top of each other.
+    It is guaranteed that each file will only appear at most once in the output. The first filter
+    that consumes a file is the one deciding it's mapped location. Therefore the order in which
+    filters are composed matters.
+
+    Inside of a composition ``x=:filter`` can be used as an alternative spelling for
+    ``:filter:prefix=x``.
+
+Workspace ``:workspace=a``
+    Similar to ``:/a`` but also looks for a ``workspace.josh`` file inside the
+    specified directory (called the "workspace root").
+    The resulting tree will contain the contents of the
+    workspace root as well as additional files specifed in the ``workspace.josh`` file.
+
     (see :doc:`workspace`)
 
-Repository naming
------------------
 
-By default, a git URL is used to point to the remote repository to download `and also` to dictate
-how the local repository shall be named.  It's important to learn that the last name in the URL is
-what the local git client will name the new, local repository. For example::
 
-    $ git clone http://localhost:8000/esrlabs/josh.git:/docs.git
 
-will create the new repository at directory ``docs``, as ``docs.git`` is the last name in the URL.
 
-By default, this leads to rather odd-looking repositories when the ``prefix`` filter is the final
-filter of a URL::
 
-    $ git clone http://localhost:8000/esrlabs/josh.git:/docs:prefix=josh-docs.git
 
-This will still clone just the josh documentation, but the final directory structure will look like
-this::
-
-    - prefix=josh-docs
-      - josh-docs
-        - <docs>
-
-Having the root repository directory name be the fully-specified filter is most likely not what was
-intended. This results from git's reuse and repurposing of the remote URL, as ``prefix=josh-docs``
-is the final name in the URL. With no other alternatives, this gets used for the repository name.
-
-To explicitly specify a repository name, provide the desired name after the URL when cloning a new
-repository::
-
-    $ git clone http://localhost:8000/esrlabs/josh.git:/docs:prefix=josh-docs.git my-repo
 
 Filter order matters
 --------------------
