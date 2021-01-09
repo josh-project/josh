@@ -46,7 +46,8 @@ if not rewrites:
 get_refs(o)
 remote = re.findall(r"Pushing to (.*)", o.stderr)[0]
 
-current = subprocess.run(["git","rev-parse", "--symbolic-full-name", "HEAD"], capture_output=True, encoding="utf8").stdout.strip("\n")
+current = subprocess.run(
+    ["git","rev-parse", "--symbolic-full-name", "HEAD"], capture_output=True, encoding="utf8").stdout.strip("\n")
 
 for r in rewrites:
     (orig, rewritten) = r.split(" -> ")
@@ -55,7 +56,13 @@ for r in rewrites:
         if sha != orig: continue
 
         if oref == "HEAD" or oref == current:
-            subprocess.run(["git", "fetch", remote, rewritten])
-            subprocess.run(["git", "reset", "--hard", rewritten])
+            print(subprocess.run(
+                ["git", "fetch", remote, rewritten], capture_output=True, encoding="utf8").stderr,
+                file=sys.stderr, end="")
+            print(subprocess.run(
+                ["git", "reset", "--hard", rewritten], capture_output=True, encoding="utf8").stdout,
+                file=sys.stderr, end="")
         else:
-            subprocess.run(["git", "fetch", remote, f"{rewritten}:{oref}"])
+            print(subprocess.run(
+                ["git", "fetch", remote, f"{rewritten}:{oref}"], capture_output=True, encoding="utf8").stderr,
+                file=sys.stderr, end="")

@@ -136,6 +136,11 @@
   4 directories, 4 files
 
   $ bash ${TESTDIR}/destroy_test_env.sh
+  "real_repo.git" = [
+      ':/sub2',
+      ':/ws',
+      ':workspace=ws',
+  ]
   refs
   |-- heads
   |-- josh

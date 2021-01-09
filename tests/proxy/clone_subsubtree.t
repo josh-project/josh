@@ -80,6 +80,11 @@
 
 
   $ bash ${TESTDIR}/destroy_test_env.sh
+  "real_repo.git" = [
+      ':/sub1',
+      ':/sub1/subsub',
+      ':/sub2',
+  ]
   refs
   |-- heads
   |-- josh

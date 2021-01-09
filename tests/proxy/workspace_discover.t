@@ -96,6 +96,16 @@
   ]
 
   $ bash ${TESTDIR}/destroy_test_env.sh
+  "real/repo2.git" = [
+      ':/sub1',
+      ':/sub1/subsub',
+      ':/sub2',
+      ':/sub3',
+      ':/ws',
+      ':/ws2',
+      ':workspace=ws',
+      ':workspace=ws2',
+  ]
   refs
   |-- heads
   |-- josh

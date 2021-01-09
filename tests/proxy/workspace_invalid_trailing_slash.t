@@ -155,6 +155,13 @@
   * add workspace
 
   $ bash ${TESTDIR}/destroy_test_env.sh
+  "real_repo.git" = [
+      ':/sub1',
+      ':/sub1/subsub1',
+      ':/sub1/subsub2',
+      ':/ws',
+      ':workspace=ws',
+  ]
   refs
   |-- heads
   |-- josh

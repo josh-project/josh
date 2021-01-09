@@ -226,9 +226,10 @@ async fn static_paths(
                 .unwrap_or(Response::default()),
         ));
     }
-    if path == "/filters" {
+    if path == "/filters" || path == "/filters/refresh" {
         service.credential_cache.write()?.clear();
         let service = service.clone();
+        let refresh = path == "/filters/refresh";
 
         let body_str =
             tokio::task::spawn_blocking(move || -> josh::JoshResult<_> {
@@ -648,12 +649,6 @@ fn parse_args() -> clap::ArgMatches<'static> {
             clap::Arg::with_name("require-auth")
                 .long("require-auth")
                 .takes_value(false),
-        )
-        .arg(
-            clap::Arg::with_name("m")
-                .short("m")
-                .takes_value(false)
-                .help("Only run maintance and exit"),
         )
         .arg(
             clap::Arg::with_name("n").short("n").takes_value(true).help(

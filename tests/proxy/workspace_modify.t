@@ -54,7 +54,7 @@
   $ git add sub2
   $ git commit -m "add file2" 1> /dev/null
 
-  $ git upload
+  $ git sync
   * refs/heads/master -> refs/heads/master
 
   $ cd ${TESTTMP}
@@ -70,7 +70,7 @@
 
   $ git add .
   $ git commit -m "add workspace" 1> /dev/null
-  $ git upload origin HEAD:refs/heads/master%josh-merge
+  $ git sync origin HEAD:refs/heads/master%josh-merge
   * HEAD -> refs/heads/master%josh-merge
   From http://localhost:8002/real_repo.git:workspace=ws
    * branch            * -> FETCH_HEAD (glob)
@@ -155,7 +155,7 @@
   * initial
 
 
-  $ git upload
+  $ git sync
     refs/heads/master -> refs/heads/master
 
   $ cd ${TESTTMP}/ws
@@ -249,7 +249,7 @@
 
   $ git commit -m "add in filter" 1> /dev/null
 
-  $ git upload
+  $ git sync
     refs/heads/master -> refs/heads/master
 
   $ cat > workspace.josh <<EOF
@@ -261,7 +261,7 @@
   $ git add .
   $ git commit -m "try to modify ws" 1> /dev/null
 
-  $ git upload
+  $ git sync
     refs/heads/master -> refs/heads/master
   From http://localhost:8002/real_repo.git:workspace=ws
    * branch            * -> FETCH_HEAD (glob)
@@ -435,6 +435,15 @@ Note that ws/d/ is now present in the ws
   5 directories, 7 files
 
   $ bash ${TESTDIR}/destroy_test_env.sh
+  "real_repo.git" = [
+      ':/sub1',
+      ':/sub1/subsub',
+      ':/sub2',
+      ':/sub3',
+      ':/ws',
+      ':/ws/d',
+      ':workspace=ws',
+  ]
   refs
   |-- heads
   |-- josh
