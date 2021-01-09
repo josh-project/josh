@@ -73,7 +73,7 @@ pub fn walk2(
     );
 }
 
-pub fn find_original(
+fn find_original(
     transaction: &filter_cache::Transaction,
     bm: &mut std::collections::HashMap<git2::Oid, git2::Oid>,
     filter: filters::Filter,
@@ -183,6 +183,10 @@ pub fn unapply_filter(
     new: git2::Oid,
     keep_orphans: bool,
 ) -> JoshResult<UnapplyFilter> {
+    let mut bm = std::collections::HashMap::new();
+    let mut ret =
+        find_original(&transaction, &mut bm, filterobj, unfiltered_old, new)?;
+
     let walk = {
         let mut walk = transaction.repo().revwalk()?;
         walk.set_sorting(git2::Sort::REVERSE | git2::Sort::TOPOLOGICAL)?;
@@ -195,14 +199,6 @@ pub fn unapply_filter(
         walk
     };
 
-    let mut bm = std::collections::HashMap::new();
-    let mut ret = history::find_original(
-        &transaction,
-        &mut bm,
-        filterobj,
-        unfiltered_old,
-        new,
-    )?;
     for rev in walk {
         let rev = rev?;
 
@@ -226,7 +222,7 @@ pub fn unapply_filter(
             filtered_parent_ids
                 .iter()
                 .map(|x| -> JoshResult<_> {
-                    history::find_original(
+                    find_original(
                         &transaction,
                         &mut bm,
                         filterobj,
