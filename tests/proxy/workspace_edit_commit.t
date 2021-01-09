@@ -122,18 +122,19 @@
   > 
   > Change-Id: Id6ca199378bf7e543e5e0c20e64d448e4126e695
   > EOF
-  [master 81e217c] Add new folder
+  [master *] Add new folder (glob)
    1 file changed, 1 insertion(+)
 
-  $ git push origin HEAD:refs/for/master
-  remote: josh-proxy        
-  remote: response from upstream:        
-  remote:  To http://localhost:8001/real_repo.git        
-  remote:  * [new branch]      JOSH_PUSH -> refs/for/master        
-  remote: 
-  remote: 
+  $ git push origin HEAD:refs/for/master 2>&1 >/dev/null | sed -e 's/[ ]*$//g'
+  remote: josh-proxy
+  remote: response from upstream:
+  remote:  To http://localhost:8001/real_repo.git
+  remote:  * [new reference]   JOSH_PUSH -> refs/for/master
+  remote: REWRITE(* -> *) (glob)
+  remote:
+  remote:
   To http://localhost:8002/real_repo.git:workspace=ws.git
-   * [new branch]      HEAD -> refs/for/master
+   * [new reference]   HEAD -> refs/for/master
 
   $ cd ${TESTTMP}/remote/real_repo.git/
 
@@ -141,30 +142,9 @@
 
   $ git update-ref -d refs/for/master
 
-  $ cd -
-  /tmp/cramtests-uoql52lz/workspace_edit_commit.t/ws
+  $ cd ${TESTTMP}/ws
 
-  $ git fetch http://localhost:8002/real_repo.git@refs/changes/1/1:workspace=ws.git && git checkout FETCH_HEAD
-  From http://localhost:8002/real_repo.git@refs/changes/1/1:workspace=ws
-   * branch            HEAD       -> FETCH_HEAD
-  Note: switching to 'FETCH_HEAD'.
-  
-  You are in 'detached HEAD' state. You can look around, make experimental
-  changes and commit them, and you can discard any commits you make in this
-  state without impacting any branches by switching back to a branch.
-  
-  If you want to create a new branch to retain commits you create, you may
-  do so (now or later) by using -c with the switch command. Example:
-  
-    git switch -c <new-branch-name>
-  
-  Or undo this operation with:
-  
-    git switch -
-  
-  Turn off this advice by setting config variable advice.detachedHead to false
-  
-  HEAD is now at 2414e5e Add new folder
+  $ git fetch -q http://localhost:8002/real_repo.git@refs/changes/1/1:workspace=ws.git && git checkout -q FETCH_HEAD
 
   $ cat > workspace.josh <<EOF
   > a/b = :/sub2
@@ -173,25 +153,22 @@
   > e = :/sub4
   > EOF
 
-  $ git commit -a --amend -F - <<EOF
+  $ git commit -aq --amend -F - <<EOF
   > Add new folders
   > 
   > Change-Id: Id6ca199378bf7e543e5e0c20e64d448e4126e695
   > EOF
-  [detached HEAD a293e58] Add new folders
-   Date: Fri Jan 8 17:31:05 2021 +0000
 
-  $ git push origin HEAD:refs/for/master
-  remote: josh-proxy        
-  remote: response from upstream:        
-  remote:  rejecting merge with 2 parents        
-  remote: 
-  remote: 
-  remote: error: hook declined to update refs/for/master        
+  $ git push origin HEAD:refs/for/master 2>&1 >/dev/null | sed -e 's/[ ]*$//g'
+  remote: josh-proxy
+  remote: response from upstream:
+  remote:  To http://localhost:8001/real_repo.git
+  remote:  * [new reference]   JOSH_PUSH -> refs/for/master
+  remote: REWRITE(* -> *) (glob)
+  remote:
+  remote:
   To http://localhost:8002/real_repo.git:workspace=ws.git
-   ! [remote rejected] HEAD -> refs/for/master (hook declined)
-  error: failed to push some refs to 'http://localhost:8002/real_repo.git:workspace=ws.git'
-  [1]
+   * [new reference]   HEAD -> refs/for/master
 
   $ bash ${TESTDIR}/destroy_test_env.sh
   "real_repo.git" = [
@@ -229,6 +206,10 @@
   |   |       `-- %3Aworkspace=ws
   |   |           `-- heads
   |   |               `-- master
+  |   |-- rewrites
+  |   |   `-- real_repo.git
+  |   |       |-- r_* (glob)
+  |   |       `-- r_* (glob)
   |   `-- upstream
   |       `-- real_repo.git
   |           `-- refs
@@ -240,4 +221,4 @@
   |-- namespaces
   `-- tags
   
-  26 directories, 9 files
+  28 directories, 11 files

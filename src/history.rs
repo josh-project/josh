@@ -181,6 +181,7 @@ pub fn unapply_filter(
     unfiltered_old: git2::Oid,
     old: git2::Oid,
     new: git2::Oid,
+    keep_orphans: bool,
 ) -> JoshResult<UnapplyFilter> {
     let walk = {
         let mut walk = transaction.repo().revwalk()?;
@@ -215,6 +216,11 @@ pub fn unapply_filter(
         }
 
         let filtered_parent_ids: Vec<_> = module_commit.parent_ids().collect();
+
+        if !keep_orphans && filtered_parent_ids.len() == 0 {
+            bm.insert(module_commit.id(), git2::Oid::zero());
+            continue;
+        }
 
         let original_parents: std::result::Result<Vec<_>, _> =
             filtered_parent_ids

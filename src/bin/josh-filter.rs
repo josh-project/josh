@@ -218,6 +218,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
             unfiltered_old,
             old,
             new,
+            false,
         )? {
             josh::UnapplyFilter::Done(rewritten) => {
                 repo.reference(&src, rewritten, true, "unapply_filter")?;
