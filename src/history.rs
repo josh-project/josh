@@ -301,7 +301,7 @@ pub fn unapply_filter(
             0 => {
                 tracing::debug!("unrelated history");
                 // 0 means the history is unrelated. Pushing it will fail if we are not
-                // dealing with either a force push or a push with the "josh-merge" option set.
+                // dealing with either a force push or a push with the "merge" option set.
                 filters::unapply(
                     &transaction.repo(),
                     filterobj,

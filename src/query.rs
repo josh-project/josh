@@ -167,7 +167,7 @@ handlebars_helper!(concat_helper: |x: str, y: str| format!("{}{}", x, y) );
 handlebars_helper!(toml_helper: |x: str| toml::de::from_str::<serde_json::Value>(x).unwrap_or(json!({})) );
 
 pub fn render(
-    repo: git2::Repository,
+    repo: &git2::Repository,
     headref: &str,
     query_and_params: &str,
 ) -> JoshResult<Option<String>> {
