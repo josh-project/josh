@@ -63,10 +63,7 @@
   
   1 directory, 2 files
 
-  $ git rebase master
-  Rebasing (1/1)\r (no-eol) (esc)
-  \r (no-eol) (esc)
-  \x1b[KSuccessfully rebased and updated refs/heads/rfm. (esc)
+  $ git rebase master -q
   $ git log --graph --pretty=%s
   * add file3
   * add file2
