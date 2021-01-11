@@ -1,0 +1,36 @@
+name: Rust
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:    
+    - name: Set up Python 3.x
+      uses: actions/setup-python@v2
+      with:
+        # Semantic version range syntax or exact version of a Python version
+        python-version: '3.x'
+        # Optional - x64 or x86 architecture, defaults to x64
+        architecture: 'x64'
+    - name: Install dependencies
+      run: |
+        pip3 install --user 'cram'
+        cargo install hyper_cgi --features=test-server
+        sudo apt install git cmake libcurl4-openssl-dev libelf-dev libdw-dev tree
+    - uses: actions/checkout@v2
+    - name: Configure environment
+      run: |
+        export CARGO_TARGET_DIR=`pwd`/target
+        git config --global init.defaultBranch master
+        git config --global user.email "christian@schilling.de"
+        git config --global user.name "christian"
+    - name: Build and run tests
+      run: sh run-tests.sh

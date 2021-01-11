@@ -11,9 +11,6 @@ export RUST_LOG=debug
 export GIT_CONFIG_NOSYSTEM=1
 export JOSH_SERVICE_NAME="josh-proxy-test"
 
-PATH=${TESTDIR}/../../target/debug/:${PATH}
-PATH=${TESTDIR}/../../scripts/:${PATH}
-
 GIT_DIR=${TESTTMP}/remote/ GIT_PROJECT_ROOT=${TESTTMP}/remote/ GIT_HTTP_EXPORT_ALL=1 hyper-cgi-test-server\
     --port=8001\
     --dir=${TESTTMP}/remote/\
