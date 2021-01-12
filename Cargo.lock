@@ -768,6 +768,7 @@ dependencies = [
  "regex",
  "reqwest",
  "rust-crypto",
+ "serde",
  "serde_json",
  "tokio",
  "toml",

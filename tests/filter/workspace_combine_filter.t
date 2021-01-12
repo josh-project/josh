@@ -1,4 +1,3 @@
-  $ export PATH=${TESTDIR}/../../target/debug/:${PATH}
   $ export TERM=dumb
   $ export RUST_LOG_STYLE=never
 
@@ -22,14 +21,14 @@
 
   $ mkdir ws
   $ cat > ws/workspace.josh <<EOF
-  > x = :(::sub2/subsub/&::sub1/)
+  > x = :[::sub2/subsub/,::sub1/]
   > EOF
   $ mkdir ws2
   $ cat > ws2/workspace.josh <<EOF
-  > :(
-  >   a = :(::sub2/subsub/&::sub3/)
+  > :[
+  >   a = :[::sub2/subsub/,::sub3/]
   >   :/sub1:prefix=blub
-  > ):prefix=xyz
+  > ]:prefix=xyz
   > EOF
   $ git add .
   $ git commit -m "add ws" 1> /dev/null
@@ -58,10 +57,10 @@
   [1] :prefix=sub2
   [1] :prefix=subsub
   [1] :workspace=ws
-  [2] :(
+  [2] :[
       :/sub2:/subsub:prefix=subsub:prefix=sub2
       ::sub1/
-  )
+  ]
   [2] :prefix=x
 
   $ git log --graph --pretty=%s JOSH_HEAD
@@ -95,23 +94,23 @@
   [1] :prefix=subsub
   [1] :workspace=ws
   [1] :workspace=ws2
-  [2] :(
+  [2] :[
       :/sub2:/subsub:prefix=subsub:prefix=sub2
       ::sub1/
-  )
-  [2] :(
+  ]
+  [2] :[
       :/sub2:/subsub:prefix=subsub:prefix=sub2
       ::sub3/
-  )
+  ]
   [2] :prefix=a
   [2] :prefix=x
-  [3] :(
-      :(
+  [3] :[
+      :[
           :/sub2:/subsub:prefix=subsub:prefix=sub2
           ::sub3/
-      ):prefix=a
+      ]:prefix=a
       :/sub1:prefix=blub
-  )
+  ]
   [3] :prefix=xyz
 
   $ git log --graph --pretty=%s JOSH_HEAD

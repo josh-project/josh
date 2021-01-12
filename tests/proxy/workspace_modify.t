@@ -70,8 +70,8 @@
 
   $ git add .
   $ git commit -m "add workspace" 1> /dev/null
-  $ git sync origin HEAD:refs/heads/master%josh-merge
-  * HEAD -> refs/heads/master%josh-merge
+  $ git sync origin HEAD:refs/heads/master -o merge
+  * HEAD -> refs/heads/master
   From http://localhost:8002/real_repo.git:workspace=ws
    * branch            * -> FETCH_HEAD (glob)
   HEAD is now at * Merge from :workspace=ws (glob)
@@ -80,7 +80,7 @@
   Flushed credential cache
   $ git pull --rebase
   From http://localhost:8002/real_repo.git:workspace=ws
-   * [new branch]      master     -> origin/master
+     *..*  master     -> origin/master (glob)
   Already up to date.
 
   $ tree

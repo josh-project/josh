@@ -1,7 +1,6 @@
 Empty root commits from unrelated parts of the tree should not be included
 
   $ export TESTTMP=${PWD}
-  $ export PATH=${TESTDIR}/../../target/debug/:${PATH}
 
   $ cd ${TESTTMP}
   $ git init libs 1>/dev/null
@@ -101,8 +100,8 @@ Empty root commits from unrelated parts of the tree should not be included
   c/file2
   c/file3
 
-  $ josh-filter -s c=:hide=sub1 master
-  [3] :hide=sub1
+  $ josh-filter -s c=:exclude[:/sub1] master
+  [3] :SUBTRACT[:nop~:/sub1]
   [4] :/sub1
   [6] :prefix=c
 
@@ -116,7 +115,7 @@ Empty root commits from unrelated parts of the tree should not be included
   c/some_other_file
 
   $ josh-filter -s :prefix=x JOSH_HEAD
-  [3] :hide=sub1
+  [3] :SUBTRACT[:nop~:/sub1]
   [3] :prefix=x
   [4] :/sub1
   [6] :prefix=c

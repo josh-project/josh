@@ -21,164 +21,191 @@ fn baseref_and_options(
     return Ok((baseref, push_to, options));
 }
 
+#[derive(serde::Serialize, serde::Deserialize, Debug)]
+pub struct RepoUpdate {
+    pub refs: std::collections::HashMap<String, (String, String)>,
+    pub remote_url: String,
+    pub username: String,
+    pub password: HashedPassword,
+    pub port: String,
+    pub filter_spec: String,
+    pub base_ns: String,
+    pub git_ns: String,
+    pub git_dir: String,
+}
+
 #[tracing::instrument(skip(credential_store))]
 pub fn process_repo_update(
     credential_store: std::sync::Arc<std::sync::RwLock<CredentialStore>>,
-    repo_update: std::collections::HashMap<String, String>,
+    repo_update: RepoUpdate,
 ) -> josh::JoshResult<String> {
-    let refname = repo_update.get("refname").ok_or(josh::josh_error(""))?;
-    let filter_spec =
-        repo_update.get("filter_spec").ok_or(josh::josh_error(""))?;
-    let old = repo_update.get("old").ok_or(josh::josh_error(""))?;
-    let new = repo_update.get("new").ok_or(josh::josh_error(""))?;
-    let username = repo_update.get("username").ok_or(josh::josh_error(""))?;
-    let password = HashedPassword {
-        hash: repo_update
-            .get("password")
-            .ok_or(josh::josh_error(""))?
-            .to_string(),
-    };
-    let remote_url =
-        repo_update.get("remote_url").ok_or(josh::josh_error(""))?;
-    let base_ns = repo_update.get("base_ns").ok_or(josh::josh_error(""))?;
-    let git_dir = repo_update.get("GIT_DIR").ok_or(josh::josh_error(""))?;
-    let git_ns = repo_update
-        .get("GIT_NAMESPACE")
-        .ok_or(josh::josh_error(""))?;
-    tracing::debug!("REPO_UPDATE env ok");
+    let mut resp = String::new();
 
-    let repo = git2::Repository::init_bare(&std::path::Path::new(&git_dir))?;
-    let transaction = josh::filter_cache::Transaction::new(repo);
-    let repo = &transaction.repo();
+    let p = std::path::PathBuf::from(&repo_update.git_dir)
+        .join("refs/namespaces")
+        .join(&repo_update.git_ns)
+        .join("push_options");
 
-    let old = git2::Oid::from_str(old)?;
+    let push_options_string = std::fs::read_to_string(p)?;
+    let push_options: Vec<&str> = push_options_string.split("\n").collect();
 
-    let (baseref, push_to, options) = baseref_and_options(refname)?;
-    let josh_merge = options.contains(&"josh-merge".to_string());
+    for (refname, (old, new)) in repo_update.refs.iter() {
+        tracing::debug!("REPO_UPDATE env ok");
 
-    tracing::debug!("push options: {:?}", options);
-    tracing::debug!("josh-merge: {:?}", josh_merge);
+        let transaction = josh::filter_cache::Transaction::open(
+            &std::path::Path::new(&repo_update.git_dir),
+        )?;
 
-    let old = if old == git2::Oid::zero() {
-        let rev = format!("refs/namespaces/{}/{}", git_ns, &baseref);
-        let oid = if let Ok(x) = repo.revparse_single(&rev) {
-            x.id()
+        let old = git2::Oid::from_str(old)?;
+
+        let (baseref, push_to, options) = baseref_and_options(refname)?;
+        let josh_merge = push_options.contains(&"merge");
+
+        tracing::debug!("push options: {:?}", push_options);
+        tracing::debug!("josh-merge: {:?}", josh_merge);
+
+        let old = if old == git2::Oid::zero() {
+            let rev =
+                format!("refs/namespaces/{}/{}", repo_update.git_ns, &baseref);
+            let oid = if let Ok(x) = transaction.repo().revparse_single(&rev) {
+                x.id()
+            } else {
+                old
+            };
+            tracing::debug!("push: old oid: {:?}, rev: {:?}", oid, rev);
+            oid
         } else {
+            tracing::debug!("push: old oid: {:?}, refname: {:?}", old, refname);
             old
         };
-        tracing::debug!("push: old oid: {:?}, rev: {:?}", oid, rev);
-        oid
-    } else {
-        tracing::debug!("push: old oid: {:?}, refname: {:?}", old, refname);
-        old
-    };
 
-    let unfiltered_old = {
-        let rev = format!("refs/josh/upstream/{}/{}", base_ns, &baseref);
-        let oid = repo.refname_to_id(&rev).unwrap_or(git2::Oid::zero());
-        tracing::debug!("push: unfiltered_old oid: {:?}, rev: {:?}", oid, rev);
-        oid
-    };
+        let unfiltered_old = {
+            let rev = format!(
+                "refs/josh/upstream/{}/{}",
+                repo_update.base_ns, &baseref
+            );
+            let oid = transaction
+                .repo()
+                .refname_to_id(&rev)
+                .unwrap_or(git2::Oid::zero());
+            tracing::debug!(
+                "push: unfiltered_old oid: {:?}, rev: {:?}",
+                oid,
+                rev
+            );
+            oid
+        };
 
-    let filterobj = josh::filters::parse(&filter_spec)?;
-    let new_oid = git2::Oid::from_str(&new)?;
-    let backward_new_oid = {
-        tracing::debug!("=== MORE");
+        let filterobj = josh::filters::parse(&repo_update.filter_spec)?;
+        let new_oid = git2::Oid::from_str(&new)?;
+        let backward_new_oid = {
+            tracing::debug!("=== MORE");
 
-        tracing::debug!("=== processed_old {:?}", old);
+            tracing::debug!("=== processed_old {:?}", old);
 
-        match josh::history::unapply_filter(
-            &transaction,
-            filterobj,
-            unfiltered_old,
-            old,
-            new_oid,
-            josh_merge,
-        )? {
-            josh::UnapplyFilter::Done(rewritten) => {
-                tracing::debug!("rewritten");
-                rewritten
+            match josh::history::unapply_filter(
+                &transaction,
+                filterobj,
+                unfiltered_old,
+                old,
+                new_oid,
+                josh_merge,
+            )? {
+                josh::UnapplyFilter::Done(rewritten) => {
+                    tracing::debug!("rewritten");
+                    rewritten
+                }
+                josh::UnapplyFilter::BranchDoesNotExist => {
+                    return Err(josh::josh_error(
+                        "branch does not exist on remote",
+                    ));
+                }
+                josh::UnapplyFilter::RejectMerge(parent_count) => {
+                    return Err(josh::josh_error(&format!(
+                        "rejecting merge with {} parents",
+                        parent_count
+                    )));
+                }
             }
-            josh::UnapplyFilter::BranchDoesNotExist => {
-                return Err(josh::josh_error(
-                    "branch does not exist on remote",
-                ));
-            }
-            josh::UnapplyFilter::RejectMerge(parent_count) => {
-                return Err(josh::josh_error(&format!(
-                    "rejecting merge with {} parents",
-                    parent_count
-                )));
-            }
-        }
-    };
+        };
 
-    let oid_to_push = if josh_merge {
-        let rev = format!("refs/josh/upstream/{}/{}", &base_ns, &baseref);
-        let backward_commit = repo.find_commit(backward_new_oid)?;
-        if let Ok(Ok(base_commit)) =
-            repo.revparse_single(&rev).map(|x| x.peel_to_commit())
-        {
-            let merged_tree = repo
-                .merge_commits(&base_commit, &backward_commit, None)?
-                .write_tree_to(&repo)?;
-            repo.commit(
-                None,
-                &backward_commit.author(),
-                &backward_commit.committer(),
-                &format!("Merge from {}", &filter_spec),
-                &repo.find_tree(merged_tree)?,
-                &[&base_commit, &backward_commit],
-            )?
+        let oid_to_push = if josh_merge {
+            let rev = format!(
+                "refs/josh/upstream/{}/{}",
+                &repo_update.base_ns, &baseref
+            );
+            let backward_commit =
+                transaction.repo().find_commit(backward_new_oid)?;
+            if let Ok(Ok(base_commit)) = transaction
+                .repo()
+                .revparse_single(&rev)
+                .map(|x| x.peel_to_commit())
+            {
+                let merged_tree = transaction
+                    .repo()
+                    .merge_commits(&base_commit, &backward_commit, None)?
+                    .write_tree_to(&transaction.repo())?;
+                transaction.repo().commit(
+                    None,
+                    &backward_commit.author(),
+                    &backward_commit.committer(),
+                    &format!("Merge from {}", &repo_update.filter_spec),
+                    &transaction.repo().find_tree(merged_tree)?,
+                    &[&base_commit, &backward_commit],
+                )?
+            } else {
+                return Err(josh::josh_error("josh_merge failed"));
+            }
         } else {
-            return Err(josh::josh_error("josh_merge failed"));
-        }
-    } else {
-        backward_new_oid
-    };
+            backward_new_oid
+        };
 
-    let mut options = options;
-    options.retain(|x| !x.starts_with("josh-"));
-    let options = options;
+        let push_with_options = if options.len() != 0 {
+            push_to + "%" + &options.join(",")
+        } else {
+            push_to
+        };
 
-    let push_with_options = if options.len() != 0 {
-        push_to + "%" + &options.join(",")
-    } else {
-        push_to
-    };
+        let password = credential_store
+            .read()?
+            .get(&repo_update.password)
+            .unwrap_or(&Password {
+                value: "".to_owned(),
+            })
+            .to_owned();
 
-    let password = credential_store
-        .read()?
-        .get(&password)
-        .unwrap_or(&Password {
-            value: "".to_owned(),
-        })
-        .to_owned();
-
-    let reapply = josh::filters::apply_to_commit(
-        filterobj,
-        &repo.find_commit(oid_to_push)?,
-        &transaction,
-    )?;
-
-    let mut resp = push_head_url(
-        &repo,
-        oid_to_push,
-        &push_with_options,
-        &remote_url,
-        &username,
-        &password,
-        &git_ns,
-    )?;
-
-    if new_oid != reapply {
-        repo.reference(
-            &format!("refs/josh/rewrites/{}/r_{}", base_ns, reapply),
-            reapply,
-            true,
-            "reapply",
+        let reapply = josh::filters::apply_to_commit(
+            filterobj,
+            &transaction.repo().find_commit(oid_to_push)?,
+            &transaction,
         )?;
-        resp = format!("{}\nREWRITE({} -> {})", resp, new_oid, reapply);
+
+        resp = format!(
+            "{}{}",
+            resp,
+            push_head_url(
+                &transaction.repo(),
+                oid_to_push,
+                &push_with_options,
+                &repo_update.remote_url,
+                &repo_update.username,
+                &password,
+                &repo_update.git_ns,
+            )?
+        );
+
+        if new_oid != reapply {
+            transaction.repo().reference(
+                &format!(
+                    "refs/josh/rewrites/{}/r_{}",
+                    repo_update.base_ns, reapply
+                ),
+                reapply,
+                true,
+                "reapply",
+            )?;
+            resp = format!("{}\nREWRITE({} -> {})", resp, new_oid, reapply);
+        }
     }
 
     return Ok(resp);
@@ -229,11 +256,14 @@ pub fn create_repo(path: &std::path::Path) -> josh::JoshResult<()> {
         cwd: path.to_path_buf(),
     };
     shell.command("git config http.receivepack true");
+    shell.command("git config receive.advertisePushOptions true");
     let ce = std::env::current_exe().expect("can't find path to exe");
     shell.command("rm -Rf hooks");
     shell.command("mkdir hooks");
-    std::os::unix::fs::symlink(ce, path.join("hooks").join("update"))
+    std::os::unix::fs::symlink(ce.clone(), path.join("hooks").join("update"))
         .expect("can't symlink update hook");
+    std::os::unix::fs::symlink(ce, path.join("hooks").join("pre-receive"))
+        .expect("can't symlink pre-receive hook");
     shell.command(&format!(
         "git config credential.helper '!f() {{ echo \"password=\"$GIT_PASSWORD\"\"; }}; f'"
     ));
@@ -321,7 +351,7 @@ pub struct Password {
     pub value: String,
 }
 
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct HashedPassword {
     pub hash: String,
 }

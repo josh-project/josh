@@ -124,7 +124,6 @@ async fn fetch_upstream(
     remote_url: String,
     headref: &str,
 ) -> josh::JoshResult<bool> {
-    let repo = git2::Repository::init_bare(&service.repo_path)?;
     let username = username.to_owned();
     let credentials_hashed =
         hash_strings(&remote_url, &username, &password.hash);
@@ -160,13 +159,15 @@ async fn fetch_upstream(
 
     tracing::trace!("credentials_cached_ok {:?}", credentials_cached_ok);
 
+    let transaction =
+        josh::filter_cache::Transaction::open(&service.repo_path)?;
     if credentials_cached_ok {
         let refname = format!(
             "refs/josh/upstream/{}/{}",
             &josh::to_ns(&upstream_repo),
             headref
         );
-        let id = repo.refname_to_id(&refname);
+        let id = transaction.repo().refname_to_id(&refname);
         tracing::trace!("refname_to_id: {:?}", id);
         if id.is_ok() {
             return Ok(true);
@@ -233,8 +234,8 @@ async fn static_paths(
 
         let body_str =
             tokio::task::spawn_blocking(move || -> josh::JoshResult<_> {
-                let repo = git2::Repository::init_bare(&service.repo_path)?;
-                let transaction = josh::filter_cache::Transaction::new(repo);
+                let transaction =
+                    josh::filter_cache::Transaction::open(&service.repo_path)?;
                 let known_filters =
                     josh::housekeeping::discover_filter_candidates(
                         &transaction,
@@ -303,8 +304,7 @@ async fn do_filter(
     let r = tokio::task::spawn_blocking(move || {
         let _e = s.enter();
         tracing::trace!("in do_filter worker");
-        let repo = git2::Repository::init_bare(&repo_path)?;
-        let transaction = josh::filter_cache::Transaction::new(repo);
+        let transaction = josh::filter_cache::Transaction::open(&repo_path)?;
         let filter = josh::filters::parse(&filter_spec)?;
         let filter_spec = josh::filters::spec(filter);
         let mut from_to = josh::housekeeping::default_from_to(
@@ -427,8 +427,8 @@ async fn call_service(
     if req.uri().query() == Some("info") {
         let info_str =
             tokio::task::spawn_blocking(move || -> josh::JoshResult<_> {
-                let repo = git2::Repository::init_bare(&serv.repo_path)?;
-                let transaction = josh::filter_cache::Transaction::new(repo);
+                let transaction =
+                    josh::filter_cache::Transaction::open(&serv.repo_path)?;
                 josh::housekeeping::get_info(
                     &transaction,
                     josh::filters::parse(&parsed_url.filter)?,
@@ -454,8 +454,13 @@ async fn call_service(
             let res =
                 tokio::task::spawn_blocking(move || -> josh::JoshResult<_> {
                     let _e = s.enter();
-                    let repo = git2::Repository::init_bare(&serv.repo_path)?;
-                    josh::query::render(repo, &temp_ns.reference(&headref), &q)
+                    let transaction =
+                        josh::filter_cache::Transaction::open(&serv.repo_path)?;
+                    josh::query::render(
+                        transaction.repo(),
+                        &temp_ns.reference(&headref),
+                        &q,
+                    )
                 })
                 .await??;
             if let Some(res) = res {
@@ -470,6 +475,18 @@ async fn call_service(
         }
     }
 
+    let repo_update = josh_proxy::RepoUpdate {
+        refs: HashMap::new(),
+        remote_url: remote_url.clone(),
+        password: password.clone(),
+        username: username.clone(),
+        port: serv.port.clone(),
+        filter_spec: parsed_url.filter.clone(),
+        base_ns: josh::to_ns(&parsed_url.upstream_repo),
+        git_ns: temp_ns.name().to_string(),
+        git_dir: repo_path.to_string(),
+    };
+
     let mut cmd = Command::new("git");
     cmd.arg("http-backend");
     cmd.current_dir(&serv.repo_path);
@@ -477,12 +494,7 @@ async fn call_service(
     cmd.env("GIT_HTTP_EXPORT_ALL", "");
     cmd.env("GIT_NAMESPACE", temp_ns.name().clone());
     cmd.env("GIT_PROJECT_ROOT", repo_path);
-    cmd.env("JOSH_BASE_NS", josh::to_ns(&parsed_url.upstream_repo));
-    cmd.env("JOSH_PASSWORD", password.hash);
-    cmd.env("JOSH_PORT", serv.port.clone());
-    cmd.env("JOSH_REMOTE", remote_url);
-    cmd.env("JOSH_USERNAME", username);
-    cmd.env("JOSH_VIEWSTR", parsed_url.filter.clone());
+    cmd.env("JOSH_REPO_UPDATE", serde_json::to_string(&repo_update)?);
     cmd.env("PATH_INFO", parsed_url.pathinfo.clone());
 
     let cgires = hyper_cgi::do_cgi(req, cmd)
@@ -666,41 +678,41 @@ fn parse_args() -> clap::ArgMatches<'static> {
         .get_matches_from(args)
 }
 
-fn update_hook(refname: &str, old: &str, new: &str) -> josh::JoshResult<i32> {
-    let mut repo_update = HashMap::new();
-    repo_update.insert("new".to_owned(), new.to_owned());
-    repo_update.insert("old".to_owned(), old.to_owned());
-    repo_update.insert("refname".to_owned(), refname.to_owned());
+fn pre_receive_hook() -> josh::JoshResult<i32> {
+    let repo_update: josh_proxy::RepoUpdate =
+        serde_json::from_str(&std::env::var("JOSH_REPO_UPDATE")?)?;
 
-    for (env_name, name) in [
-        ("JOSH_USERNAME", "username"),
-        ("JOSH_PASSWORD", "password"),
-        ("JOSH_REMOTE", "remote_url"),
-        ("JOSH_BASE_NS", "base_ns"),
-        ("JOSH_VIEWSTR", "filter_spec"),
-        ("GIT_NAMESPACE", "GIT_NAMESPACE"),
-    ]
-    .iter()
-    {
-        repo_update.insert(name.to_string(), std::env::var(&env_name)?);
+    let p = std::path::PathBuf::from(repo_update.git_dir)
+        .join("refs/namespaces")
+        .join(repo_update.git_ns)
+        .join("push_options");
+
+    let n: usize = std::env::var("GIT_PUSH_OPTION_COUNT")?.parse()?;
+
+    let mut push_options = vec![];
+    for i in 0..n {
+        push_options.push(std::env::var(format!("GIT_PUSH_OPTION_{}", i))?);
     }
 
-    repo_update.insert(
-        "GIT_DIR".to_owned(),
-        git2::Repository::init_bare(&std::path::Path::new(&std::env::var(
-            "GIT_DIR",
-        )?))?
-        .path()
-        .to_str()
-        .ok_or(josh::josh_error("GIT_DIR not set"))?
-        .to_owned(),
-    );
+    std::fs::write(p, push_options.join("\n"))?;
 
-    let port = std::env::var("JOSH_PORT")?;
+    return Ok(0);
+}
+
+fn update_hook(refname: &str, old: &str, new: &str) -> josh::JoshResult<i32> {
+    let mut repo_update: josh_proxy::RepoUpdate =
+        serde_json::from_str(&std::env::var("JOSH_REPO_UPDATE")?)?;
+
+    repo_update
+        .refs
+        .insert(refname.to_owned(), (old.to_owned(), new.to_owned()));
 
     let client = reqwest::blocking::Client::builder().timeout(None).build()?;
     let resp = client
-        .post(&format!("http://localhost:{}/repo_update", port))
+        .post(&format!(
+            "http://localhost:{}/repo_update",
+            repo_update.port
+        ))
         .json(&repo_update)
         .send();
 
@@ -744,8 +756,14 @@ fn main() {
         &std::env::args().collect::<Vec<_>>().as_slice()
     {
         if a0.ends_with("/update") {
-            println!("josh-proxy");
             std::process::exit(update_hook(&a1, &a2, &a3).unwrap_or(1));
+        }
+    }
+
+    if let [a0, ..] = &std::env::args().collect::<Vec<_>>().as_slice() {
+        if a0.ends_with("/pre-receive") {
+            println!("josh-proxy");
+            std::process::exit(pre_receive_hook().unwrap_or(1));
         }
     }
 

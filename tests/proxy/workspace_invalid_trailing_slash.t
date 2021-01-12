@@ -53,7 +53,7 @@
 
   $ git add .
   $ git commit -m "add workspace" 1> /dev/null
-  $ git push origin HEAD:refs/heads/master%josh-merge 2>&1 >/dev/null | sed -e 's/[ ]*$//g'
+  $ git push origin HEAD:refs/heads/master -o merge 2>&1 >/dev/null | sed -e 's/[ ]*$//g'
   remote: warning: ignoring broken ref refs/namespaces/* (glob)
   remote: josh-proxy
   remote: response from upstream:
@@ -63,7 +63,7 @@
   remote:
   remote:
   To http://localhost:8002/real_repo.git:workspace=ws.git
-   * [new branch]      HEAD -> master%josh-merge
+   * [new branch]      HEAD -> master
 
   $ curl -s http://localhost:8002/flush
   Flushed credential cache

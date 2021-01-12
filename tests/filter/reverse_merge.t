@@ -1,5 +1,4 @@
   $ export TESTTMP=${PWD}
-  $ export PATH=${TESTDIR}/../../target/debug/:${PATH}
 
   $ cd ${TESTTMP}
   $ git init real_repo 1> /dev/null
@@ -25,8 +24,9 @@
   * add file1
   * add sub2
 
-  $ josh-filter -s :hide=sub2 branch1 --update refs/heads/hidden_branch1
-  [1] :hide=sub2
+  $ josh-filter -s :exclude[:/sub2] branch1 --update refs/heads/hidden_branch1
+  [1] :/sub2
+  [1] :SUBTRACT[:nop~:/sub2]
   $ git checkout hidden_branch1
   Switched to branch 'hidden_branch1'
   $ tree
@@ -39,8 +39,9 @@
   $ git add sub1/file3
   $ git commit -m "add file3" 1> /dev/null
 
-  $ josh-filter -s :hide=sub2 master --update refs/heads/hidden_master
-  [2] :hide=sub2
+  $ josh-filter -s :exclude[:/sub2] master --update refs/heads/hidden_master
+  [1] :/sub2
+  [2] :SUBTRACT[:nop~:/sub2]
   $ git checkout hidden_master
   Switched to branch 'hidden_master'
   $ tree
@@ -76,8 +77,9 @@
   |/  
   * add file1
 
-  $ josh-filter -s :hide=sub2 --reverse master --update refs/heads/hidden_master
-  [2] :hide=sub2
+  $ josh-filter -s :exclude[:/sub2] --reverse master --update refs/heads/hidden_master
+  [1] :/sub2
+  [2] :SUBTRACT[:nop~:/sub2]
 
   $ git checkout master
   Switched to branch 'master'

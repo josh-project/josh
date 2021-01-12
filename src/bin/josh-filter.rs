@@ -43,6 +43,36 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         rs_tracing::open_trace_file!(".").unwrap();
     }
 
+    if args.is_present("version") {
+        let v = option_env!("GIT_DESCRIBE")
+            .unwrap_or(std::env!("CARGO_PKG_VERSION"));
+        println!("Version: {}", v);
+        return Ok(0);
+    }
+    let specstr = args.value_of("spec").unwrap_or(":nop");
+    let specstr = args
+        .value_of("file")
+        .and_then(|f| read_to_string(f).ok())
+        .unwrap_or(specstr.to_string());
+
+    let mut filterobj = josh::filters::parse(&specstr)?;
+
+    if args.is_present("squash") {
+        filterobj =
+            josh::build_chain(josh::filters::parse(":SQUASH")?, filterobj);
+    }
+
+    if args.is_present("print-filter") {
+        println!(
+            "{}",
+            josh::filters::pretty(
+                filterobj,
+                if args.is_present("file") { 0 } else { 4 }
+            )
+        );
+        return Ok(0);
+    }
+
     let repo = git2::Repository::open_from_env()?;
     let transaction = josh::filter_cache::Transaction::new(repo);
     let repo = transaction.repo();
@@ -70,13 +100,6 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         }
     });
 
-    if args.is_present("version") {
-        let v = option_env!("GIT_DESCRIBE")
-            .unwrap_or(std::env!("CARGO_PKG_VERSION"));
-        println!("Version: {}", v);
-        return Ok(0);
-    }
-
     let input_ref = args.value_of("input_ref").unwrap_or("HEAD");
 
     if args.is_present("discover") {
@@ -96,36 +119,10 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         }
     }
 
-    let specstr = args.value_of("spec").unwrap_or(":nop");
     let update_target = args.value_of("update").unwrap_or("refs/JOSH_HEAD");
-
-    let specstr = args
-        .value_of("file")
-        .and_then(|f| read_to_string(f).ok())
-        .unwrap_or(specstr.to_string());
 
     let src = input_ref;
     let target = update_target;
-
-    let filter_spec = specstr;
-
-    let mut filterobj = josh::filters::parse(&filter_spec)?;
-
-    if args.is_present("squash") {
-        filterobj =
-            josh::build_chain(josh::filters::parse(":SQUASH")?, filterobj);
-    }
-
-    if args.is_present("print-filter") {
-        println!(
-            "{}",
-            josh::filters::pretty(
-                filterobj,
-                if args.is_present("file") { 0 } else { 4 }
-            )
-        );
-        return Ok(0);
-    }
 
     let reverse = args.is_present("reverse");
     let check_permissions = args.is_present("check-permission");
@@ -235,7 +232,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         print!(
             "{}",
             josh::query::render(
-                git2::Repository::open_from_env()?,
+                &git2::Repository::open_from_env()?,
                 &update_target.to_string(),
                 &query,
             )?

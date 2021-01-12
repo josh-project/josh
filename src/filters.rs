@@ -54,7 +54,7 @@ enum Op {
     Squash,
     Dirs,
 
-    Hide(std::path::PathBuf),
+    File(std::path::PathBuf),
     Prefix(std::path::PathBuf),
     Subdir(std::path::PathBuf),
     Workspace(std::path::PathBuf),
@@ -72,27 +72,32 @@ pub fn pretty(filter: Filter, indent: usize) -> String {
 
 fn pretty2(op: &Op, indent: usize) -> String {
     let i = format!("\n{}", " ".repeat(indent));
+
+    let ff = |filters: &Vec<_>, n| {
+        let joined = filters
+            .iter()
+            .map(|x| pretty(*x, indent + 4))
+            .collect::<Vec<_>>()
+            .join(&i);
+        if indent == 0 {
+            joined
+        } else {
+            format!(
+                ":{}[{}{}{}]",
+                n,
+                &i,
+                joined,
+                &format!("\n{}", " ".repeat(indent - 4))
+            )
+        }
+    };
     match op {
-        Op::Compose(filters) => {
-            let joined = filters
-                .iter()
-                .map(|x| pretty(*x, indent + 4))
-                .collect::<Vec<_>>()
-                .join(&i);
-            if indent == 0 {
-                joined
-            } else {
-                format!(
-                    ":({}{}{})",
-                    &i,
-                    joined,
-                    &format!("\n{}", " ".repeat(indent - 4))
-                )
-            }
-        }
-        Op::Subtract(a, b) => {
-            format!(":SUBTRACT(\n{}\n -{}\n)", spec(*a), spec(*b))
-        }
+        Op::Compose(filters) => ff(filters, ""),
+        Op::Subtract(a, b) => match (to_op(*a), to_op(*b)) {
+            (Op::Nop, Op::Compose(filters)) => ff(&filters, "exclude"),
+            (Op::Nop, b) => format!(":exclude[{}]", spec2(&b)),
+            (a, b) => format!(":SUBTRACT[\n{}\n ~{}\n]", spec2(&a), spec2(&b)),
+        },
         Op::Chain(a, b) => match (to_op(*a), to_op(*b)) {
             (Op::Subdir(p1), Op::Prefix(p2)) if p1 == p2 => {
                 format!("::{}/", p1.to_string_lossy().to_string())
@@ -111,16 +116,16 @@ fn spec2(op: &Op) -> String {
     match op {
         Op::Compose(filters) => {
             format!(
-                ":({})",
+                ":[{}]",
                 filters
                     .iter()
                     .map(|x| spec(*x))
                     .collect::<Vec<_>>()
-                    .join("&")
+                    .join(",")
             )
         }
         Op::Subtract(a, b) => {
-            format!(":SUBTRACT({} - {})", spec(*a), spec(*b))
+            format!(":SUBTRACT[{}~{}]", spec(*a), spec(*b))
         }
         Op::Workspace(path) => {
             format!(":workspace={}", path.to_string_lossy())
@@ -133,9 +138,9 @@ fn spec2(op: &Op) -> String {
         Op::Squash => ":SQUASH".to_string(),
         Op::Chain(a, b) => format!("{}{}", spec(*a), spec(*b)),
         Op::Subdir(path) => format!(":/{}", path.to_string_lossy()),
+        Op::File(path) => format!("::{}", path.to_string_lossy()),
         Op::Prefix(path) => format!(":prefix={}", path.to_string_lossy()),
-        Op::Hide(path) => format!(":hide={}", path.to_string_lossy()),
-        Op::Glob(pattern) => format!(":glob={}", pattern),
+        Op::Glob(pattern) => format!("::{}", pattern),
     }
 }
 
@@ -362,6 +367,17 @@ fn apply2<'a>(
                 &mut std::collections::HashMap::new(),
             )
         }
+        Op::File(path) => {
+            let file = tree
+                .get_path(&path)
+                .map(|x| x.id())
+                .unwrap_or(git2::Oid::zero());
+            if let Ok(_) = repo.find_blob(file) {
+                treeops::replace_subtree(&repo, &path, file, &empty_tree(&repo))
+            } else {
+                Ok(empty_tree(&repo))
+            }
+        }
 
         Op::Subdir(path) => {
             return Ok(tree
@@ -375,10 +391,6 @@ fn apply2<'a>(
             tree.id(),
             &empty_tree(&repo),
         ),
-
-        Op::Hide(path) => {
-            treeops::replace_subtree(&repo, &path, git2::Oid::zero(), &tree)
-        }
 
         Op::Subtract(a, b) => {
             let af = apply(&repo, *a, tree.clone())?;
@@ -477,13 +489,34 @@ fn unapply2<'a>(
 
             return Ok(result);
         }
-        Op::Hide(path) => {
-            let hidden = parent_tree
+
+        Op::File(path) => {
+            let file = tree
                 .get_path(&path)
                 .map(|x| x.id())
                 .unwrap_or(git2::Oid::zero());
-            treeops::replace_subtree(&repo, &path, hidden, &tree)
+            if let Ok(_) = repo.find_blob(file) {
+                treeops::replace_subtree(&repo, &path, file, &parent_tree)
+            } else {
+                Ok(empty_tree(&repo))
+            }
         }
+
+        Op::Subtract(a, b) => match (to_op(*a), to_op(*b)) {
+            (Op::Nop, b) => {
+                let subtracted = treeops::subtract_fast(
+                    &repo,
+                    tree.id(),
+                    unapply2(repo, &b, tree, empty_tree(&repo))?.id(),
+                )?;
+                Ok(repo.find_tree(treeops::overlay(
+                    &repo,
+                    parent_tree.id(),
+                    subtracted,
+                )?)?)
+            }
+            _ => return Err(josh_error("filter not reversible")),
+        },
         Op::Glob(pattern) => {
             let pattern = glob::Pattern::new(pattern)?;
             let options = glob::MatchOptions {
@@ -754,12 +787,9 @@ struct MyParser;
 
 fn make_op(args: &[&str]) -> JoshResult<Op> {
     match args {
-        ["/", arg] => Ok(Op::Subdir(Path::new(arg).to_owned())),
         ["nop"] => Ok(Op::Nop),
         ["empty"] => Ok(Op::Empty),
         ["prefix", arg] => Ok(Op::Prefix(Path::new(arg).to_owned())),
-        ["hide", arg] => Ok(Op::Hide(Path::new(arg).to_owned())),
-        ["glob", arg] => Ok(Op::Glob(arg.to_string())),
         ["workspace", arg] => Ok(Op::Workspace(Path::new(arg).to_owned())),
         ["SQUASH"] => Ok(Op::Squash),
         ["DIRS"] => Ok(Op::Dirs),
@@ -774,21 +804,22 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> JoshResult<Op> {
             let v: Vec<_> = pair.into_inner().map(|x| x.as_str()).collect();
             make_op(v.as_slice())
         }
-        Rule::filter_subdir => {
-            let mut inner = pair.into_inner();
-            make_op(&["/", inner.next().unwrap().as_str()])
-        }
+        Rule::filter_subdir => Ok(Op::Subdir(
+            Path::new(pair.into_inner().next().unwrap().as_str()).to_owned(),
+        )),
         Rule::filter_presub => {
             let mut inner = pair.into_inner();
             let arg = inner.next().unwrap().as_str();
             if arg.ends_with("/") {
                 let arg = arg.trim_end_matches("/");
                 Ok(Op::Chain(
-                    to_filter(make_op(&["/", arg])?),
+                    to_filter(Op::Subdir(std::path::PathBuf::from(arg))),
                     to_filter(make_op(&["prefix", arg])?),
                 ))
+            } else if arg.contains("*") {
+                Ok(Op::Glob(arg.to_string()))
             } else {
-                make_op(&["glob", arg])
+                Ok(Op::File(Path::new(arg).to_owned()))
             }
         }
         Rule::filter_noarg => {
@@ -798,6 +829,13 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> JoshResult<Op> {
         Rule::filter_compose => {
             let v: Vec<_> = pair.into_inner().map(|x| x.as_str()).collect();
             Ok(Op::Compose(build_compose_filter(v[0], vec![])?))
+        }
+        Rule::filter_exclude => {
+            let v: Vec<_> = pair.into_inner().map(|x| x.as_str()).collect();
+            Ok(Op::Subtract(
+                to_filter(Op::Nop),
+                to_filter(Op::Compose(build_compose_filter(v[0], vec![])?)),
+            ))
         }
         _ => Err(josh_error("parse_item: no match")),
     }
@@ -859,9 +897,6 @@ pub fn build_chain(first: Filter, second: Filter) -> Filter {
 }
 
 pub fn parse(filter_spec: &str) -> JoshResult<Filter> {
-    if filter_spec.contains("SUBTRACT") {
-        assert!(false);
-    }
     if filter_spec == "" {
         return parse(":nop");
     }

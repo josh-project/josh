@@ -1,4 +1,3 @@
-  $ export PATH=${TESTDIR}/../../target/debug/:${PATH}
   $ export TERM=dumb
   $ export RUST_LOG_STYLE=never
 
@@ -27,14 +26,14 @@
   [1] :/sub1
   [1] :/sub2
   [1] :/subsub
-  [1] :glob=file1
+  [1] ::file1
   [1] :prefix=sub2
   [1] :prefix=subsub
   [1] :workspace=ws
-  [2] :(
-      :/sub1:glob=file1
+  [2] :[
+      :/sub1::file1
       :/sub2:/subsub:prefix=subsub:prefix=sub2
-  )
+  ]
 
   $ git log --graph --pretty=%s refs/josh/master
   * add ws
