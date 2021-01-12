@@ -12,22 +12,22 @@ version = "0.3.0"
 
 
 [dependencies]
-clap = "2"
+clap = "2.33"
 futures = "0.3"
-tokio = {version = "0.2", features = ["full"] }
-hyper = "0.13"
-hyper_cgi = {version = "0.1"}
-toml = "*"
-git2 = {version = "*", default-features = false}
-tracing = { version = "*", features = ["max_level_trace", "release_max_level_trace"] }
-tracing-futures = "*"
-tracing-subscriber = "*"
-tracing-opentelemetry = "*"
-opentelemetry = "*"
-opentelemetry-jaeger = "*"
-reqwest= {version = "0.10", default-features = false, features = ["blocking", "json"]}
-uuid = {version = "0.8", features = ["v4"]}
-base64 = "0.12"
+tokio = { version = "1.0", features = ["full"] }
+hyper = { version = "0.14", features = ["stream"] }
+hyper_cgi = "0.1"
+toml = "0.5"
+git2 = { version = "0.13", default-features = false }
+tracing = { version = "0.1", features = ["max_level_trace", "release_max_level_trace"] }
+tracing-futures = "0.2"
+tracing-subscriber = "0.2"
+tracing-opentelemetry = "0.10"
+opentelemetry = "0.11"
+opentelemetry-jaeger = "0.10"
+reqwest= { version = "0.11", default-features = false, features = ["blocking", "json"] }
+uuid = { version = "0.8", features = ["v4"] }
+base64 = "0.13"
 regex = "1.4"
 lazy_static = "1.4"
 josh = {path = "../"}
