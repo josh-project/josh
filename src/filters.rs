@@ -83,7 +83,7 @@ fn pretty2(op: &Op, indent: usize) -> String {
             joined
         } else {
             format!(
-                ":{}({}{}{})",
+                ":{}[{}{}{}]",
                 n,
                 &i,
                 joined,
@@ -95,8 +95,8 @@ fn pretty2(op: &Op, indent: usize) -> String {
         Op::Compose(filters) => ff(filters, ""),
         Op::Subtract(a, b) => match (to_op(*a), to_op(*b)) {
             (Op::Nop, Op::Compose(filters)) => ff(&filters, "exclude"),
-            (Op::Nop, b) => format!(":exclude({})", spec2(&b)),
-            (a, b) => format!(":SUBTRACT(\n{}\n ~{}\n)", spec2(&a), spec2(&b)),
+            (Op::Nop, b) => format!(":exclude[{}]", spec2(&b)),
+            (a, b) => format!(":SUBTRACT[\n{}\n ~{}\n]", spec2(&a), spec2(&b)),
         },
         Op::Chain(a, b) => match (to_op(*a), to_op(*b)) {
             (Op::Subdir(p1), Op::Prefix(p2)) if p1 == p2 => {
@@ -116,16 +116,16 @@ fn spec2(op: &Op) -> String {
     match op {
         Op::Compose(filters) => {
             format!(
-                ":({})",
+                ":[{}]",
                 filters
                     .iter()
                     .map(|x| spec(*x))
                     .collect::<Vec<_>>()
-                    .join("&")
+                    .join(",")
             )
         }
         Op::Subtract(a, b) => {
-            format!(":SUBTRACT({}~{})", spec(*a), spec(*b))
+            format!(":SUBTRACT[{}~{}]", spec(*a), spec(*b))
         }
         Op::Workspace(path) => {
             format!(":workspace={}", path.to_string_lossy())

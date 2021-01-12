@@ -35,10 +35,10 @@
   [1] :prefix=b
   [2] :/sub1
   [2] :prefix=c
-  [3] :(
+  [3] :[
       :/sub1:prefix=c
       :/sub2:prefix=b:prefix=a
-  )
+  ]
   $ git log --graph --pretty=%s JOSH_HEAD
   * add file3
   * add file2
@@ -50,10 +50,10 @@
   [2] :prefix=b
   [3] :/sub1
   [3] :prefix=c
-  [4] :(
+  [4] :[
       :/sub1:prefix=c
       :/sub2:prefix=b:prefix=a
-  )
+  ]
   $ git log --graph --pretty=%s JOSH_HEAD
   * initial
 

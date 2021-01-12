@@ -5,17 +5,17 @@
   :/a
   $ josh-filter -p :/a:/b
   :/a:/b
-  $ josh-filter -p ":(:/a:/b)"
+  $ josh-filter -p :[:/a:/b]
   :/a:/b
-  $ josh-filter -p ":(:/a:/b:/d&:/a:/c:/d)"
-  :/a:(
+  $ josh-filter -p :[:/a:/b:/d,:/a:/c:/d]
+  :/a:[
       :/b
       :/c
-  ):/d
-  $ josh-filter -p ":exclude(:/a:/b)"
-  :exclude(:/a:/b)
-  $ josh-filter -p ":exclude(:/a&:/b)"
-  :exclude(
+  ]:/d
+  $ josh-filter -p :exclude[:/a:/b]
+  :exclude[:/a:/b]
+  $ josh-filter -p :exclude[:/a,:/b]
+  :exclude[
       :/a
       :/b
-  )
+  ]

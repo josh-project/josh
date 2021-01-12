@@ -34,11 +34,11 @@
   [1] :prefix=sub2
   [1] :prefix=subsub
   [1] :workspace=ws
-  [2] :(
+  [2] :[
       :/sub1::file1
       :/sub2:/subsub:prefix=subsub:prefix=sub2
       :/sub1:prefix=a
-  )
+  ]
 
   $ git log --graph --pretty=%s refs/josh/master
   * add ws

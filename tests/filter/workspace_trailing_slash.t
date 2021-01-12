@@ -30,10 +30,10 @@
   [1] :prefix=b
   [1] :prefix=c
   [1] :workspace=ws
-  [2] :(
+  [2] :[
       :/sub2:prefix=b:prefix=a
       :/sub1:prefix=c
-  )
+  ]
 
   $ git log --graph --pretty=%s refs/josh/master
   * add ws
@@ -54,10 +54,10 @@
   [1] :prefix=a
   [1] :prefix=b
   [1] :prefix=c
-  [2] :(
+  [2] :[
       :/sub2:prefix=b:prefix=a
       :/sub1:prefix=c
-  )
+  ]
   [2] :workspace=ws
 
   $ git log --graph --pretty=%s refs/josh/master

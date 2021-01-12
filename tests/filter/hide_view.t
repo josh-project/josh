@@ -34,8 +34,8 @@
   
   2 directories, 3 files
 
-  $ josh-filter -s "c=:exclude(:/sub1)" master --update refs/josh/filter/master
-  [1] :SUBTRACT(:nop~:/sub1)
+  $ josh-filter -s c=:exclude[:/sub1] master --update refs/josh/filter/master
+  [1] :SUBTRACT[:nop~:/sub1]
   [1] :prefix=c
   [2] :/sub1
   $ git checkout josh/filter/master 2> /dev/null
@@ -49,11 +49,11 @@
   
   2 directories, 1 file
 
-  $ josh-filter -s "c=:exclude(::sub1/file2)" master --update refs/josh/filter/master
+  $ josh-filter -s c=:exclude[::sub1/file2] master --update refs/josh/filter/master
   [1] ::sub1/file2
-  [1] :SUBTRACT(:nop~:/sub1)
+  [1] :SUBTRACT[:nop~:/sub1]
   [2] :/sub1
-  [2] :SUBTRACT(:nop~::sub1/file2)
+  [2] :SUBTRACT[:nop~::sub1/file2]
   [3] :prefix=c
   $ git checkout josh/filter/master 2> /dev/null
   $ git log --graph --pretty=%s
@@ -69,13 +69,13 @@
   
   3 directories, 2 files
 
-  $ josh-filter -s "c=:exclude(::sub2/file3)" master --update refs/josh/filter/master
+  $ josh-filter -s c=:exclude[::sub2/file3] master --update refs/josh/filter/master
   [1] ::sub1/file2
   [1] ::sub2/file3
-  [1] :SUBTRACT(:nop~:/sub1)
+  [1] :SUBTRACT[:nop~:/sub1]
   [2] :/sub1
-  [2] :SUBTRACT(:nop~::sub1/file2)
-  [2] :SUBTRACT(:nop~::sub2/file3)
+  [2] :SUBTRACT[:nop~::sub1/file2]
+  [2] :SUBTRACT[:nop~::sub2/file3]
   [4] :prefix=c
   $ git checkout josh/filter/master 2> /dev/null
   $ git log --graph --pretty=%s
