@@ -17,7 +17,7 @@ Filters always begin with a colon and can be chained::
 
 When used as part of an URL filters can not contain whitespace or newlines. When read from a file
 however whitespace can be inserted between filters (not after the leading colon).
-Additionally newlines can be used instead of ``&`` inside of composition filters.
+Additionally newlines can be used instead of ``,`` inside of composition filters.
 
 Available filters
 -----------------
@@ -38,14 +38,17 @@ File ``::a`` (without trailing ``/``)
     Produces a tree with only the specified file in it's root.
     Note that ``::a/b`` is equivalent to ``::a/::b``.
 
-Composition ``:(:filter1&:filter2&...&:filterN)``
-    Compose a tree by overlaying the outputs of ``filter1`` ... ``filterN`` on top of each other.
+Composition ``:[:filter1,:filter2,...,:filterN]``
+    Compose a tree by overlaying the outputs of ``:filter1`` ... ``:filterN`` on top of each other.
     It is guaranteed that each file will only appear at most once in the output. The first filter
     that consumes a file is the one deciding it's mapped location. Therefore the order in which
     filters are composed matters.
 
     Inside of a composition ``x=:filter`` can be used as an alternative spelling for
     ``:filter:prefix=x``.
+
+Exclusion ``:exclude[:filter]``
+    Remove all paths matching ``:filter`` from the input tree.
 
 Workspace ``:workspace=a``
     Similar to ``:/a`` but also looks for a ``workspace.josh`` file inside the

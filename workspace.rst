@@ -40,7 +40,7 @@ means it needs to be produced on the server side because we don't have the files
 
 To accomplish that push with the merge option::
 
-    $ git push origin HEAD:refs/heads/master%josh-merge
+    $ git push origin HEAD:refs/heads/master -o merge
 
 .. note::
 
