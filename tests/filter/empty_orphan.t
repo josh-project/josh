@@ -1,7 +1,6 @@
 Empty root commits from unrelated parts of the tree should not be included
 
   $ export TESTTMP=${PWD}
-  $ export PATH=${TESTDIR}/../../target/debug/:${PATH}
 
   $ cd ${TESTTMP}
   $ git init libs 1>/dev/null

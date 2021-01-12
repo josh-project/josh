@@ -33,4 +33,4 @@ jobs:
         git config --global user.email "christian@schilling.de"
         git config --global user.name "christian"
     - name: Build and run tests
-      run: sh run-tests.sh
+      run: sh run-tests.sh tests/*/*.t

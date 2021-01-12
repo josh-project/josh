@@ -787,12 +787,9 @@ struct MyParser;
 
 fn make_op(args: &[&str]) -> JoshResult<Op> {
     match args {
-        ["/", arg] => Ok(Op::Subdir(Path::new(arg).to_owned())),
         ["nop"] => Ok(Op::Nop),
         ["empty"] => Ok(Op::Empty),
         ["prefix", arg] => Ok(Op::Prefix(Path::new(arg).to_owned())),
-        ["glob", arg] => Ok(Op::Glob(arg.to_string())),
-        ["file", arg] => Ok(Op::File(Path::new(arg).to_owned())),
         ["workspace", arg] => Ok(Op::Workspace(Path::new(arg).to_owned())),
         ["SQUASH"] => Ok(Op::Squash),
         ["DIRS"] => Ok(Op::Dirs),
@@ -807,24 +804,22 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> JoshResult<Op> {
             let v: Vec<_> = pair.into_inner().map(|x| x.as_str()).collect();
             make_op(v.as_slice())
         }
-        Rule::filter_subdir => {
-            let mut inner = pair.into_inner();
-            make_op(&["/", inner.next().unwrap().as_str()])
-        }
+        Rule::filter_subdir => Ok(Op::Subdir(
+            Path::new(pair.into_inner().next().unwrap().as_str()).to_owned(),
+        )),
         Rule::filter_presub => {
             let mut inner = pair.into_inner();
             let arg = inner.next().unwrap().as_str();
             if arg.ends_with("/") {
                 let arg = arg.trim_end_matches("/");
                 Ok(Op::Chain(
-                    to_filter(make_op(&["/", arg])?),
+                    to_filter(Op::Subdir(std::path::PathBuf::from(arg))),
                     to_filter(make_op(&["prefix", arg])?),
                 ))
             } else if arg.contains("*") {
-                make_op(&["glob", arg])
+                Ok(Op::Glob(arg.to_string()))
             } else {
-                make_op(&["file", arg])
-
+                Ok(Op::File(Path::new(arg).to_owned()))
             }
         }
         Rule::filter_noarg => {

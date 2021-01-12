@@ -1,5 +1,4 @@
   $ export TESTTMP=${PWD}
-  $ export PATH=${TESTDIR}/../../target/debug/:${PATH}
 
   $ josh-filter -p :/a
   :/a

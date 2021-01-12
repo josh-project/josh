@@ -1,5 +1,4 @@
   $ export TESTTMP=${PWD}
-  $ export PATH=${TESTDIR}/../../target/debug/:${PATH}
 
   $ cd ${TESTTMP}
   $ git init 1> /dev/null

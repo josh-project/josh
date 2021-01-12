@@ -1,4 +1,3 @@
-  $ export PATH=${TESTDIR}/../../target/debug/:${PATH}
   $ export TERM=dumb
   $ export RUST_LOG_STYLE=never
 

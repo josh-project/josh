@@ -2,7 +2,6 @@ If a directory gets deleted then the last commit
 in that subtree repo should have an empty tree
 
   $ export TESTTMP=${PWD}
-  $ export PATH=${TESTDIR}/../../target/debug/:${PATH}
 
   $ cd ${TESTTMP}
   $ git init libs 1> /dev/null
