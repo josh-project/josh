@@ -22,7 +22,7 @@ GIT_DIR=${TESTTMP}/remote/ GIT_PROJECT_ROOT=${TESTTMP}/remote/ GIT_HTTP_EXPORT_A
     > ${TESTTMP}/hyper-cgi-test-server.out 2>&1 &
 echo $! > ${TESTTMP}/server_pid
 
-josh-proxy\
+${TESTDIR}/../../target/debug/josh-proxy\
     --port=8002\
     --local=${TESTTMP}/remote/scratch/\
     --remote=http://localhost:8001\
