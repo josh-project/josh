@@ -10,7 +10,7 @@ pub struct Shell {
 }
 
 impl Shell {
-    pub fn command(&self, cmd: &str) -> (String, String) {
+    pub fn command(&self, cmd: &str) -> (String, String, i32) {
         return self.command_env(cmd, &[], &[]);
     }
 
@@ -20,7 +20,7 @@ impl Shell {
         cmd: &str,
         env: &[(&str, &str)],
         env_notrace: &[(&str, &str)],
-    ) -> (String, String) {
+    ) -> (String, String, i32) {
         let git_dir = if self.cwd.join(".git").exists() {
             self.cwd.join(".git")
         } else {
@@ -55,6 +55,14 @@ impl Shell {
             .trim()
             .to_string();
         tracing::event!(Level::TRACE, ?stdout, ?stderr);
-        return (stdout, stderr);
+        return (
+            stdout,
+            stderr,
+            command
+                .status()
+                .map(|x| x.code())
+                .unwrap_or(Some(1))
+                .unwrap_or(1),
+        );
     }
 }

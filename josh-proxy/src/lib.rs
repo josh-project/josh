@@ -270,13 +270,17 @@ fn push_head_url(
     };
     let cmd = format!("git push {} '{}'", &nurl, &spec);
     let mut fakehead = repo.reference(&rn, oid, true, "push_head_url")?;
-    let (stdout, stderr) =
+    let (stdout, stderr, status) =
         shell.command_env(&cmd, &[], &[("GIT_PASSWORD", &password.value)]);
     fakehead.delete()?;
     tracing::debug!("{}", &stderr);
     tracing::debug!("{}", &stdout);
 
     let stderr = stderr.replace(&rn, "JOSH_PUSH");
+
+    if status != 0 {
+        return Err(josh::josh_error(&stderr));
+    }
 
     return Ok(stderr);
 }
@@ -357,7 +361,7 @@ pub fn fetch_refs_from_url(
         })
         .to_owned();
 
-    let (_stdout, stderr) =
+    let (_stdout, stderr, _) =
         shell.command_env(&cmd, &[], &[("GIT_PASSWORD", &password.value)]);
     tracing::debug!(
         "fetch_refs_from_url done {:?} {:?} {:?}",
