@@ -331,14 +331,19 @@ pub fn unapply_filter(
                 let mut merged_index = transaction.repo().merge_commits(
                     &transaction.repo().find_commit(*commit_id)?,
                     &transaction.repo().find_commit(ret)?,
-                    Some(git2::MergeOptions::new().file_favor(git2::FileFavor::Theirs)),
+                    Some(
+                        git2::MergeOptions::new()
+                            .file_favor(git2::FileFavor::Theirs),
+                    ),
                 )?;
 
                 if merged_index.has_conflicts() {
-                    return Ok(
-                        UnapplyFilter::RejectAmend(module_commit.summary().unwrap_or("<no message>")
-                        .to_string()
-                        ));
+                    return Ok(UnapplyFilter::RejectAmend(
+                        module_commit
+                            .summary()
+                            .unwrap_or("<no message>")
+                            .to_string(),
+                    ));
                 }
 
                 let merged_tree =
