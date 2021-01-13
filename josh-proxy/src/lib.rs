@@ -96,6 +96,32 @@ pub fn process_repo_update(
             oid
         };
 
+        let amends = {
+            let glob = format!(
+                "refs/josh/upstream/{}/refs/changes/*",
+                repo_update.base_ns,
+            );
+            let mut amends = std::collections::HashMap::new();
+            for reference in transaction.repo().references_glob(&glob)? {
+                let reference = reference.unwrap();
+                let refname = reference.name().unwrap_or("");
+                tracing::debug!("found change {:?}", refname);
+                if refname.ends_with("meta") {
+                    continue;
+                }
+                if refname.ends_with("robot-comments") {
+                    continue;
+                }
+                let commit = reference.peel_to_commit()?;
+                if let Some(id) =
+                    josh::get_change_id(&reference.peel_to_commit()?)
+                {
+                    amends.insert(id, commit.id());
+                }
+            }
+            amends
+        };
+
         let filterobj = josh::filters::parse(&repo_update.filter_spec)?;
         let new_oid = git2::Oid::from_str(&new)?;
         let backward_new_oid = {
@@ -110,6 +136,7 @@ pub fn process_repo_update(
                 old,
                 new_oid,
                 josh_merge,
+                &amends,
             )? {
                 josh::UnapplyFilter::Done(rewritten) => {
                     tracing::debug!("rewritten");
@@ -124,6 +151,12 @@ pub fn process_repo_update(
                     return Err(josh::josh_error(&format!(
                         "rejecting merge with {} parents",
                         parent_count
+                    )));
+                }
+                josh::UnapplyFilter::RejectAmend(msg) => {
+                    return Err(josh::josh_error(&format!(
+                        "rejecting to amend {:?} with conflicting changes",
+                        msg
                     )));
                 }
             }

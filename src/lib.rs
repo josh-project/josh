@@ -54,6 +54,7 @@ pub use crate::history::unapply_filter;
 pub enum UnapplyFilter {
     Done(git2::Oid),
     RejectMerge(usize),
+    RejectAmend(String),
     BranchDoesNotExist,
 }
 
@@ -162,4 +163,14 @@ lazy_static! {
     }
 }
     }
+}
+
+pub fn get_change_id(commit: &git2::Commit) -> Option<String> {
+    for line in commit.message().unwrap_or("").split("\n") {
+        if line.starts_with("Change-Id: ") {
+            let id = line.replace("Change-Id: ", "");
+            return Some(id);
+        }
+    }
+    return None;
 }

@@ -216,6 +216,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
             old,
             new,
             false,
+            &std::collections::HashMap::new(),
         )? {
             josh::UnapplyFilter::Done(rewritten) => {
                 repo.reference(&src, rewritten, true, "unapply_filter")?;
