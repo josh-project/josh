@@ -25,8 +25,10 @@ impl BlobHelper {
         let blob = tree
             .get_path(&std::path::PathBuf::from(path))?
             .to_object(&transaction.repo())?
-            .peel_to_blob()?;
-        return Ok(json!(String::from_utf8(blob.content().to_vec())?));
+            .peel_to_blob()
+            .map(|x| x.content().to_vec())
+            .unwrap_or(vec![]);
+        return Ok(json!(String::from_utf8(blob)?));
     }
 }
 
@@ -58,10 +60,10 @@ impl FindFilesHelper {
         &self,
         hash: &std::collections::BTreeMap<&str, handlebars::PathAndJson>,
     ) -> JoshResult<serde_json::Value> {
-        let filename = if let Some(f) = hash.get("glob") {
-            glob::Pattern::new(&f.render())?
+        let filterspec = if let Some(f) = hash.get("filter") {
+            f.render()
         } else {
-            return Err(josh_error("missing pattern"));
+            return Err(josh_error("missing filter"));
         };
         let transaction = filter_cache::Transaction::open(&self.repo_path)?;
         let tree = transaction
@@ -69,26 +71,27 @@ impl FindFilesHelper {
             .find_reference(&self.headref)?
             .peel_to_tree()?;
 
+        let tree = filters::apply(
+            transaction.repo(),
+            filters::parse(&filterspec)?,
+            tree,
+        )?;
+
         let mut names = vec![];
-
         tree.walk(
-
         git2::TreeWalkMode::PreOrder, |root, entry| {
             let name = entry.name().unwrap_or("INVALID_FILENAME");
             let path = std::path::PathBuf::from(root).join(name);
             let path_str = path.to_string_lossy();
 
-            if filename.matches_path_with(&path, glob::MatchOptions {
-                case_sensitive: true,
-                require_literal_separator: true,
-                require_literal_leading_dot: true
-            }){
-                names.push(json!({
-                "path": path_str,
-                "name": path.file_name().map(|x|x.to_str()).flatten().unwrap_or("INVALID_FILE_NAME"),
-                "base": path.parent().map(|x| x.to_str()).flatten().unwrap_or("NO PARENT"),
-                "sha1": format!("{}", entry.id()),
-                }));
+            if entry.kind() == Some(git2::ObjectType::Blob) {
+
+            names.push(json!({
+            "path": path_str,
+            "name": path.file_name().map(|x|x.to_str()).flatten().unwrap_or("INVALID_FILE_NAME"),
+            "base": path.parent().map(|x| x.to_str()).flatten().unwrap_or("NO PARENT"),
+            "sha1": format!("{}", entry.id()),
+            }));
             }
             git2::TreeWalkResult::Ok
         })?;
@@ -214,7 +217,7 @@ pub fn render(
     handlebars.register_helper("concat", Box::new(concat_helper));
     handlebars.register_helper("toml", Box::new(toml_helper));
     handlebars.register_helper(
-        "git-find",
+        "git-ls",
         Box::new(FindFilesHelper {
             repo_path: repo.path().to_owned(),
             headref: headref.to_string(),
