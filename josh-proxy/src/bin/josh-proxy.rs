@@ -137,9 +137,14 @@ async fn fetch_upstream(
 
     let refs_to_fetch = if headref != "" && !headref.starts_with("refs/heads/")
     {
-        vec!["refs/changes/*", "refs/heads/*", "refs/tags/*", headref]
+        vec![
+            "refs/gerrit_changes/*",
+            "refs/heads/*",
+            "refs/tags/*",
+            headref,
+        ]
     } else {
-        vec!["refs/changes/*", "refs/heads/*", "refs/tags/*"]
+        vec!["refs/gerrit_changes/*", "refs/heads/*", "refs/tags/*"]
     };
 
     let refs_to_fetch: Vec<_> =

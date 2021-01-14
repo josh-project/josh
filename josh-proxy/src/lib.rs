@@ -97,27 +97,27 @@ pub fn process_repo_update(
         };
 
         let amends = {
-            let glob = format!(
-                "refs/josh/upstream/{}/refs/changes/*",
+            let gerrit_changes = format!(
+                "refs/josh/upstream/{}/refs/gerrit_changes/all",
                 repo_update.base_ns,
             );
             let mut amends = std::collections::HashMap::new();
-            for reference in transaction.repo().references_glob(&glob)? {
-                let reference = reference.unwrap();
-                let refname = reference.name().unwrap_or("");
-                tracing::debug!("found change {:?}", refname);
-                if refname.ends_with("meta") {
-                    continue;
-                }
-                if refname.ends_with("robot-comments") {
-                    continue;
-                }
-                let commit = reference.peel_to_commit()?;
-                if let Some(id) =
-                    josh::get_change_id(&reference.peel_to_commit()?)
-                {
-                    amends.insert(id, commit.id());
-                }
+            if let Ok(tree) = transaction
+                .repo()
+                .find_reference(&gerrit_changes)
+                .and_then(|x| x.peel_to_commit())
+                .and_then(|x| x.tree())
+            {
+                tree.walk(git2::TreeWalkMode::PreOrder, |_, entry| {
+                    if let Ok(commit) =
+                        transaction.repo().find_commit(entry.id())
+                    {
+                        if let Some(id) = josh::get_change_id(&commit) {
+                            amends.insert(id, commit.id());
+                        }
+                    }
+                    git2::TreeWalkResult::Ok
+                });
             }
             amends
         };
