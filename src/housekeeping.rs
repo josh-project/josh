@@ -71,7 +71,7 @@ fn run_command(path: &Path, cmd: &str) -> String {
 
     let output = "";
 
-    let (stdout, stderr) = shell.command(cmd);
+    let (stdout, stderr, _) = shell.command(cmd);
     let output = format!(
         "{}\n\n{}:\nstdout:\n{}\n\nstderr:{}\n",
         output, cmd, stdout, stderr

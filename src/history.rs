@@ -182,6 +182,7 @@ pub fn unapply_filter(
     old: git2::Oid,
     new: git2::Oid,
     keep_orphans: bool,
+    amends: &std::collections::HashMap<String, git2::Oid>,
 ) -> JoshResult<UnapplyFilter> {
     let mut bm = std::collections::HashMap::new();
     let mut ret =
@@ -324,6 +325,39 @@ pub fn unapply_filter(
             &original_parents_refs,
             &new_tree,
         )?;
+
+        if let Some(id) = super::get_change_id(&module_commit) {
+            if let Some(commit_id) = amends.get(&id) {
+                let mut merged_index = transaction.repo().merge_commits(
+                    &transaction.repo().find_commit(*commit_id)?,
+                    &transaction.repo().find_commit(ret)?,
+                    Some(
+                        git2::MergeOptions::new()
+                            .file_favor(git2::FileFavor::Theirs),
+                    ),
+                )?;
+
+                if merged_index.has_conflicts() {
+                    return Ok(UnapplyFilter::RejectAmend(
+                        module_commit
+                            .summary()
+                            .unwrap_or("<no message>")
+                            .to_string(),
+                    ));
+                }
+
+                let merged_tree =
+                    merged_index.write_tree_to(&transaction.repo())?;
+
+                ret = rewrite_commit(
+                    &transaction.repo(),
+                    &module_commit,
+                    &original_parents_refs,
+                    &transaction.repo().find_tree(merged_tree)?,
+                )?;
+            }
+        }
+
         bm.insert(module_commit.id(), ret);
     }
 
