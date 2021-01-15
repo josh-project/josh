@@ -5,6 +5,8 @@ use std::path::Path;
 lazy_static! {
     static ref OPTIMIZED: std::sync::Mutex<std::collections::HashMap<Filter, Filter>> =
         std::sync::Mutex::new(std::collections::HashMap::new());
+    static ref PRETTIFYED: std::sync::Mutex<std::collections::HashMap<Filter, Filter>> =
+        std::sync::Mutex::new(std::collections::HashMap::new());
     static ref FILTERS: std::sync::Mutex<std::collections::HashMap<Filter, Op>> =
         std::sync::Mutex::new(std::collections::HashMap::new());
 }
@@ -67,10 +69,11 @@ enum Op {
 }
 
 pub fn pretty(filter: Filter, indent: usize) -> String {
-    pretty2(&to_op(filter), indent)
+    let filter = prettify(filter);
+    pretty2(&to_op(filter), indent, true)
 }
 
-fn pretty2(op: &Op, indent: usize) -> String {
+fn pretty2(op: &Op, indent: usize, compose: bool) -> String {
     let i = format!("\n{}", " ".repeat(indent));
 
     let ff = |filters: &Vec<_>, n| {
@@ -102,7 +105,18 @@ fn pretty2(op: &Op, indent: usize) -> String {
             (Op::Subdir(p1), Op::Prefix(p2)) if p1 == p2 => {
                 format!("::{}/", p1.to_string_lossy().to_string())
             }
-            (a, b) => format!("{}{}", pretty2(&a, indent), pretty2(&b, indent)),
+            (a, Op::Prefix(p)) if compose => {
+                format!(
+                    "{} = {}",
+                    p.to_string_lossy().to_string(),
+                    pretty2(&a, indent, false)
+                )
+            }
+            (a, b) => format!(
+                "{}{}",
+                pretty2(&a, indent, false),
+                pretty2(&b, indent, false)
+            ),
         },
         _ => spec2(op),
     }
@@ -744,6 +758,42 @@ fn optimize(filter: Filter) -> Filter {
     };
 
     OPTIMIZED.lock().unwrap().insert(original, r);
+    return r;
+}
+
+fn prettify(filter: Filter) -> Filter {
+    if let Some(f) = PRETTIFYED.lock().unwrap().get(&filter) {
+        return *f;
+    }
+    rs_tracing::trace_scoped!("prettify", "spec": spec(filter));
+    let original = filter;
+    let result = to_filter(match to_op(filter) {
+        Op::Compose(mut filters) => {
+            Op::Compose(filters.drain(..).map(prettify).collect())
+        }
+        Op::Chain(a, b) => match (to_op(a), to_op(b)) {
+            (a, Op::Chain(x, y)) => {
+                Op::Chain(to_filter(Op::Chain(to_filter(a), x)), y)
+            }
+            (Op::Prefix(x), Op::Prefix(y)) => Op::Prefix(y.join(x)),
+            (Op::Subdir(x), Op::Subdir(y)) => Op::Subdir(x.join(y)),
+            (a, b) => Op::Chain(prettify(to_filter(a)), prettify(to_filter(b))),
+        },
+        Op::Subtract(a, b) => match (to_op(a), to_op(b)) {
+            (a, b) => {
+                Op::Subtract(prettify(to_filter(a)), prettify(to_filter(b)))
+            }
+        },
+        _ => to_op(filter),
+    });
+
+    let r = if result == original {
+        result
+    } else {
+        prettify(result)
+    };
+
+    PRETTIFYED.lock().unwrap().insert(original, r);
     return r;
 }
 
