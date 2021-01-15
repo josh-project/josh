@@ -55,7 +55,7 @@
   [2] :/sub1
 
   $ cat > .git/josh_kv.json <<EOF
-  > { "$(git log -n1 --pretty="%H" JOSH_HEAD)" : "SUCCESS" }
+  > { "$(git log -n1 --pretty="%H" FILTERED_HEAD)" : "SUCCESS" }
   > EOF
 
   $ cat .git/josh_kv.json

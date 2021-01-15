@@ -341,7 +341,7 @@ async fn do_filter(
             temp_ns.reference(&headref),
         ));
 
-        josh::history::apply_filter_to_refs(&transaction, filter, &from_to)?;
+        josh::filter_refs(&transaction, filter, &from_to)?;
         transaction.repo().reference_symbolic(
             &temp_ns.reference("HEAD"),
             &temp_ns.reference(&headref),
@@ -673,12 +673,6 @@ fn parse_args() -> clap::ArgMatches<'static> {
                 "Number of concurrent upstream git fetch/push operations",
             ),
         )
-        /* .arg( */
-        /*     clap::Arg::with_name("g") */
-        /*         .short("g") */
-        /*         .takes_value(false) */
-        /*         .help("Enable gerrit integration"), */
-        /* ) */
         .arg(clap::Arg::with_name("port").long("port").takes_value(true))
         .get_matches_from(args)
 }

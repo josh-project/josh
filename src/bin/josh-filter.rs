@@ -59,7 +59,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
 
     if args.is_present("squash") {
         filterobj =
-            josh::build_chain(josh::filters::parse(":SQUASH")?, filterobj);
+            josh::filters::chain(josh::filters::parse(":SQUASH")?, filterobj);
     }
 
     if args.is_present("print-filter") {
@@ -111,15 +111,15 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
             if i.contains(":workspace=") {
                 continue;
             }
-            josh::apply_filter_to_refs(
+            josh::filter_refs(
                 &transaction,
-                josh::parse(&i)?,
+                josh::filters::parse(&i)?,
                 &[(input_ref.to_string(), "refs/JOSH_TMP".to_string())],
             )?;
         }
     }
 
-    let update_target = args.value_of("update").unwrap_or("refs/JOSH_HEAD");
+    let update_target = args.value_of("update").unwrap_or("refs/FILTERED_HEAD");
 
     let src = input_ref;
     let target = update_target;
@@ -129,9 +129,9 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
 
     if check_permissions {
         filterobj =
-            josh::build_chain(josh::filters::parse(":DIRS")?, filterobj);
+            josh::filters::chain(josh::filters::parse(":DIRS")?, filterobj);
         filterobj =
-            josh::build_chain(filterobj, josh::filters::parse(":FOLD")?);
+            josh::filters::chain(filterobj, josh::filters::parse(":FOLD")?);
     }
 
     let t = if reverse {
@@ -147,11 +147,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         .unwrap()
         .to_string();
 
-    josh::apply_filter_to_refs(
-        &transaction,
-        filterobj,
-        &[(src.clone(), t.clone())],
-    )?;
+    josh::filter_refs(&transaction, filterobj, &[(src.clone(), t.clone())])?;
 
     let mut all_dirs = vec![];
 
@@ -218,7 +214,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
             false,
             &std::collections::HashMap::new(),
         )? {
-            josh::UnapplyFilter::Done(rewritten) => {
+            josh::UnapplyResult::Done(rewritten) => {
                 repo.reference(&src, rewritten, true, "unapply_filter")?;
             }
             _ => {

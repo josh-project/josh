@@ -117,7 +117,7 @@ pub fn process_repo_update(
                         }
                     }
                     git2::TreeWalkResult::Ok
-                });
+                })?;
             }
             amends
         };
@@ -138,22 +138,22 @@ pub fn process_repo_update(
                 josh_merge,
                 &amends,
             )? {
-                josh::UnapplyFilter::Done(rewritten) => {
+                josh::UnapplyResult::Done(rewritten) => {
                     tracing::debug!("rewritten");
                     rewritten
                 }
-                josh::UnapplyFilter::BranchDoesNotExist => {
+                josh::UnapplyResult::BranchDoesNotExist => {
                     return Err(josh::josh_error(
                         "branch does not exist on remote",
                     ));
                 }
-                josh::UnapplyFilter::RejectMerge(parent_count) => {
+                josh::UnapplyResult::RejectMerge(parent_count) => {
                     return Err(josh::josh_error(&format!(
                         "rejecting merge with {} parents",
                         parent_count
                     )));
                 }
-                josh::UnapplyFilter::RejectAmend(msg) => {
+                josh::UnapplyResult::RejectAmend(msg) => {
                     return Err(josh::josh_error(&format!(
                         "rejecting to amend {:?} with conflicting changes",
                         msg

@@ -183,7 +183,7 @@ pub fn unapply_filter(
     new: git2::Oid,
     keep_orphans: bool,
     amends: &std::collections::HashMap<String, git2::Oid>,
-) -> JoshResult<UnapplyFilter> {
+) -> JoshResult<UnapplyResult> {
     let mut bm = std::collections::HashMap::new();
     let mut ret =
         find_original(&transaction, &mut bm, filterobj, unfiltered_old, new)?;
@@ -315,7 +315,7 @@ pub fn unapply_filter(
                 // have differences outside of the current filter.
                 // It is unclear what base tree to pick in this case.
                 tracing::warn!("rejecting merge");
-                return Ok(UnapplyFilter::RejectMerge(parent_count));
+                return Ok(UnapplyResult::RejectMerge(parent_count));
             }
         };
 
@@ -338,7 +338,7 @@ pub fn unapply_filter(
                 )?;
 
                 if merged_index.has_conflicts() {
-                    return Ok(UnapplyFilter::RejectAmend(
+                    return Ok(UnapplyResult::RejectAmend(
                         module_commit
                             .summary()
                             .unwrap_or("<no message>")
@@ -362,85 +362,7 @@ pub fn unapply_filter(
     }
 
     tracing::trace!("done {:?}", ret);
-    return Ok(UnapplyFilter::Done(ret));
-}
-
-#[tracing::instrument(skip(transaction))]
-fn transform_commit(
-    transaction: &filter_cache::Transaction,
-    filterobj: filters::Filter,
-    from_refsname: &str,
-    to_refname: &str,
-) -> JoshResult<usize> {
-    let mut updated_count = 0;
-    if let Ok(reference) = transaction.repo().revparse_single(&from_refsname) {
-        let original_commit = reference.peel_to_commit()?;
-
-        let filter_commit = filters::apply_to_commit(
-            filterobj,
-            &original_commit,
-            &transaction,
-        )?;
-
-        let previous = transaction
-            .repo()
-            .revparse_single(&to_refname)
-            .map(|x| x.id())
-            .unwrap_or(git2::Oid::zero());
-
-        if filter_commit != previous {
-            updated_count += 1;
-            tracing::trace!(
-                "transform_commit: update reference: {:?} -> {:?}, target: {:?}, filter: {:?}",
-                &from_refsname,
-                &to_refname,
-                filter_commit,
-                &filters::spec(filterobj),
-            );
-        }
-
-        if filter_commit != git2::Oid::zero() {
-            ok_or!(
-                transaction
-                    .repo()
-                    .reference(&to_refname, filter_commit, true, "apply_filter")
-                    .map(|_| ()),
-                {
-                    tracing::error!(
-                        "can't update reference: {:?} -> {:?}, target: {:?}, filter: {:?}",
-                        &from_refsname,
-                        &to_refname,
-                        filter_commit,
-                        &filters::spec(filterobj),
-                    );
-                }
-            );
-        }
-    } else {
-        tracing::warn!(
-            "transform_commit: Can't find reference {:?}",
-            &from_refsname
-        );
-    };
-    return Ok(updated_count);
-}
-
-#[tracing::instrument(skip(transaction))]
-pub fn apply_filter_to_refs(
-    transaction: &filter_cache::Transaction,
-    filterobj: filters::Filter,
-    refs: &[(String, String)],
-) -> JoshResult<usize> {
-    rs_tracing::trace_scoped!(
-        "apply_filter_to_refs",
-        "spec": filters::spec(filterobj)
-    );
-
-    let mut updated_count = 0;
-    for (k, v) in refs {
-        updated_count += transform_commit(&transaction, filterobj, &k, &v)?;
-    }
-    return Ok(updated_count);
+    return Ok(UnapplyResult::Done(ret));
 }
 
 fn select_parent_commits<'a>(
