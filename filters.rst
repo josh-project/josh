@@ -72,7 +72,7 @@ Filters are applied in the left-to-right order they are given in the filter spec
 and they are `not` commutative.
 
 For example, this command will filter out just the josh documentation, and store it in a
-ref named ``JOSH_HEAD``::
+ref named ``FILTERED_HEAD``::
 
     $ josh-filter :/docs:prefix=josh-docs
 
