@@ -68,25 +68,25 @@ Workspace ``:workspace=a``
 Filter order matters
 --------------------
 
-Filters are applied in the left-to-right order they are given in the URL, and they are `not`
-commutative.
+Filters are applied in the left-to-right order they are given in the filter specification,
+and they are `not` commutative.
 
-For example, this (familiar) command will check out just the josh documentation, and store it in a
-subdirectory named ``josh-docs``::
+For example, this command will filter out just the josh documentation, and store it in a
+ref named ``JOSH_HEAD``::
 
-    $ git clone http://localhost:8000/esrlabs/josh.git:/docs:prefix=josh-docs.git
+    $ josh-filter :/docs:prefix=josh-docs
 
-However, `this` command will exit with the error that an empty reply was received from the server::
+However, `this` command will produce an empty branch::
 
-    $ git clone http://localhost:8000/esrlabs/josh.git:prefix=josh-docs:/docs.git
+    $ josh-filter :prefix=josh-docs:/docs
 
 What's happening in the latter command is that because the prefix filter is applied first, the
-entire ``josh`` repository already lives within the ``josh-docs`` directory, as it was just
+entire ``josh`` history already lives within the ``josh-docs`` directory, as it was just
 transformed to exist there. Thus, to still get the docs, the command would need to be::
 
-    $ git clone http://localhost:8000/esrlabs/josh.git:prefix=josh-docs:/josh-docs/docs.git
+    $ josh-filter :prefix=josh-docs:/josh-docs/docs
 
-which will contain the josh documentation at the base of the repository. We've lost the prefix, what
+which will contain the josh documentation at the base of the tree. We've lost the prefix, what
 gives?? Because the original git tree was already transformed, and then the subdirectory filter
 was applied to pull documentation from ``josh-docs/docs``, the prefix is gone - it was filtered out
 again by the subdirectory filter. Thus, the order in which filters are provided is crucial, as each
