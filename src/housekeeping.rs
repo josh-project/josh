@@ -265,11 +265,8 @@ pub fn refresh_known_filters(
                 &upstream_repo,
             );
 
-            updated_count += history::apply_filter_to_refs(
-                &t,
-                filters::parse(filter_spec)?,
-                &refs,
-            )?;
+            updated_count +=
+                filter_refs(&t, filters::parse(filter_spec)?, &refs)?;
         }
         info!("updated {} refs for {:?}", updated_count, upstream_repo);
     }

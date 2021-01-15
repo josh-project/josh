@@ -90,12 +90,12 @@ Empty root commits from unrelated parts of the tree should not be included
   [3] :prefix=c
   [4] :/sub1
 
-  $ git log JOSH_HEAD --graph --pretty=%s
+  $ git log FILTERED_HEAD --graph --pretty=%s
   * add file3
   * add file2
   * add file1
 
-  $ git ls-tree --name-only -r JOSH_HEAD 
+  $ git ls-tree --name-only -r FILTERED_HEAD 
   c/file1
   c/file2
   c/file3
@@ -105,30 +105,30 @@ Empty root commits from unrelated parts of the tree should not be included
   [4] :/sub1
   [6] :prefix=c
 
-  $ git log JOSH_HEAD --graph --pretty=%s
+  $ git log FILTERED_HEAD --graph --pretty=%s
   * add some_other_file
   * add some_file
   * root
 
-  $ git ls-tree --name-only -r JOSH_HEAD 
+  $ git ls-tree --name-only -r FILTERED_HEAD 
   c/some_file
   c/some_other_file
 
-  $ josh-filter -s :prefix=x JOSH_HEAD
+  $ josh-filter -s :prefix=x FILTERED_HEAD
   [3] :SUBTRACT[:nop~:/sub1]
   [3] :prefix=x
   [4] :/sub1
   [6] :prefix=c
 
-  $ git ls-tree --name-only -r JOSH_HEAD
+  $ git ls-tree --name-only -r FILTERED_HEAD
   x/c/some_file
   x/c/some_other_file
 
-  $ git ls-tree --name-only -r JOSH_HEAD~1
+  $ git ls-tree --name-only -r FILTERED_HEAD~1
   x/c/some_file
 
-  $ git ls-tree --name-only -r JOSH_HEAD~2
+  $ git ls-tree --name-only -r FILTERED_HEAD~2
 
 Make sure that even with prefix applied we get a proper empty tree here
-  $ git show --format=raw JOSH_HEAD~2 | grep tree
+  $ git show --format=raw FILTERED_HEAD~2 | grep tree
   tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904

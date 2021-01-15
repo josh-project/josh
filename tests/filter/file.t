@@ -38,7 +38,7 @@
       :/sub1:prefix=c
       :/sub2:prefix=b:prefix=a
   ]
-  $ git log --graph --pretty=%s JOSH_HEAD
+  $ git log --graph --pretty=%s FILTERED_HEAD
   * add file3
   * add file2
   * add file1
@@ -53,12 +53,12 @@
       :/sub1:prefix=c
       :/sub2:prefix=b:prefix=a
   ]
-  $ git log --graph --pretty=%s JOSH_HEAD
+  $ git log --graph --pretty=%s FILTERED_HEAD
   * initial
 
   $ tree .git/refs/
   .git/refs/
-  |-- JOSH_HEAD
+  |-- FILTERED_HEAD
   |-- heads
   |   `-- master
   `-- tags

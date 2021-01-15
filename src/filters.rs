@@ -854,7 +854,7 @@ fn parse_file_entry(
                 .map(|x| x.as_str().to_owned())
                 .unwrap_or(format!(":/{}", path));
             let filter = parse(&filter)?;
-            let filter = build_chain(
+            let filter = chain(
                 filter,
                 to_filter(Op::Prefix(Path::new(path).to_owned())),
             );
@@ -892,7 +892,7 @@ fn build_compose_filter(
     )));
 }
 
-pub fn build_chain(first: Filter, second: Filter) -> Filter {
+pub fn chain(first: Filter, second: Filter) -> Filter {
     to_filter(Op::Chain(first, second))
 }
 

@@ -45,13 +45,10 @@ pub mod query;
 pub mod shell;
 pub mod treeops;
 
-pub use crate::filters::build_chain;
-pub use crate::filters::parse;
-pub use crate::history::apply_filter_to_refs;
 pub use crate::history::unapply_filter;
 
 #[derive(Clone)]
-pub enum UnapplyFilter {
+pub enum UnapplyResult {
     Done(git2::Oid),
     RejectMerge(usize),
     RejectAmend(String),
@@ -173,4 +170,76 @@ pub fn get_change_id(commit: &git2::Commit) -> Option<String> {
         }
     }
     return None;
+}
+
+#[tracing::instrument(skip(transaction))]
+fn filter_ref(
+    transaction: &filter_cache::Transaction,
+    filterobj: filters::Filter,
+    from_refsname: &str,
+    to_refname: &str,
+) -> JoshResult<usize> {
+    let mut updated_count = 0;
+    if let Ok(reference) = transaction.repo().revparse_single(&from_refsname) {
+        let original_commit = reference.peel_to_commit()?;
+
+        let filter_commit = filters::apply_to_commit(
+            filterobj,
+            &original_commit,
+            &transaction,
+        )?;
+
+        let previous = transaction
+            .repo()
+            .revparse_single(&to_refname)
+            .map(|x| x.id())
+            .unwrap_or(git2::Oid::zero());
+
+        if filter_commit != previous {
+            updated_count += 1;
+            tracing::trace!(
+                "filter_ref: update reference: {:?} -> {:?}, target: {:?}, filter: {:?}",
+                &from_refsname,
+                &to_refname,
+                filter_commit,
+                &filters::spec(filterobj),
+            );
+        }
+
+        if filter_commit != git2::Oid::zero() {
+            ok_or!(
+                transaction
+                    .repo()
+                    .reference(&to_refname, filter_commit, true, "apply_filter")
+                    .map(|_| ()),
+                {
+                    tracing::error!(
+                        "can't update reference: {:?} -> {:?}, target: {:?}, filter: {:?}",
+                        &from_refsname,
+                        &to_refname,
+                        filter_commit,
+                        &filters::spec(filterobj),
+                    );
+                }
+            );
+        }
+    } else {
+        tracing::warn!("filter_ref: Can't find reference {:?}", &from_refsname);
+    };
+    return Ok(updated_count);
+}
+
+#[tracing::instrument(skip(transaction))]
+pub fn filter_refs(
+    transaction: &filter_cache::Transaction,
+    filterobj: filters::Filter,
+    refs: &[(String, String)],
+) -> JoshResult<usize> {
+    rs_tracing::trace_scoped!("filter_refs", "spec": filters::spec(filterobj));
+
+    let mut updated_count = 0;
+    for (k, v) in refs {
+        updated_count += filter_ref(&transaction, filterobj, &k, &v)?;
+    }
+    return Ok(updated_count);
 }

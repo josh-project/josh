@@ -48,7 +48,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
 
         let filter_spec = caps.name("spec").unwrap().as_str().trim().to_owned();
 
-        let filter = josh::parse(&filter_spec)?;
+        let filter = josh::filters::parse(&filter_spec)?;
 
         let src = repo
             .revparse_ext(&format!("refs/remotes/{}/{}", remote, src_ref))?
