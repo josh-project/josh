@@ -21,6 +21,10 @@ its own repository via this command::
     This URL needs to contain the `.git` suffix twice: once after the original path and once more
     after the filter spec.
 
+`josh-proxy` supports read and write access to the repository, so when making changes
+to any files in the filtered repository, you can just commit and push them
+like you are used to.
+
 URL syntax and breakdown
 ------------------------
 

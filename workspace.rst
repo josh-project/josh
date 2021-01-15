@@ -2,8 +2,8 @@
 Working with workspaces
 =======================
 
-For the sake of this example we will assume a josh instance is running and serving a repo on
-``http://josh/world.git`` with some shared code in ``shared``.
+For the sake of this example we will assume a ``josh-proxy`` instance is running and serving a
+repo on ``http://josh/world.git`` with some shared code in ``shared``.
 
 Create a new workspace
 ----------------------
