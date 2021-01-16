@@ -58,8 +58,8 @@
   [1] :prefix=subsub
   [1] :workspace=ws
   [2] :[
-      :/sub2:/subsub:prefix=subsub:prefix=sub2
       ::sub1/
+      ::sub2/subsub/
   ]
   [2] :prefix=x
 
@@ -95,21 +95,21 @@
   [1] :workspace=ws
   [1] :workspace=ws2
   [2] :[
-      :/sub2:/subsub:prefix=subsub:prefix=sub2
       ::sub1/
+      ::sub2/subsub/
   ]
   [2] :[
-      :/sub2:/subsub:prefix=subsub:prefix=sub2
+      ::sub2/subsub/
       ::sub3/
   ]
   [2] :prefix=a
   [2] :prefix=x
   [3] :[
-      :[
-          :/sub2:/subsub:prefix=subsub:prefix=sub2
+      a = :[
+          ::sub2/subsub/
           ::sub3/
-      ]:prefix=a
-      :/sub1:prefix=blub
+      ]
+      blub = :/sub1
   ]
   [3] :prefix=xyz
 

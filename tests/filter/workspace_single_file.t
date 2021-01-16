@@ -32,7 +32,7 @@
   [1] :workspace=ws
   [2] :[
       :/sub1::file1
-      :/sub2:/subsub:prefix=subsub:prefix=sub2
+      ::sub2/subsub/
   ]
 
   $ git log --graph --pretty=%s refs/josh/master

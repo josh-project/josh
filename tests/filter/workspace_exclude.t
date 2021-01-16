@@ -33,7 +33,7 @@
   [1] :prefix=sub2
   [1] :prefix=subsub
   [1] :workspace=ws
-  [2] :[:/sub2:/subsub:prefix=subsub:prefix=sub2,:/sub1:SUBTRACT[:nop~::file1]:prefix=a]
+  [2] :[:/sub1:SUBTRACT[:nop~::file1]:prefix=a,:/sub2:/subsub:prefix=subsub:prefix=sub2]
 
   $ git log --graph --pretty=%s refs/heads/filtered
   * add ws
@@ -68,7 +68,7 @@
   [1] :prefix=sub2
   [1] :prefix=subsub
   [1] :workspace=ws
-  [2] :[:/sub2:/subsub:prefix=subsub:prefix=sub2,:/sub1:SUBTRACT[:nop~::file1]:prefix=a]
+  [2] :[:/sub1:SUBTRACT[:nop~::file1]:prefix=a,:/sub2:/subsub:prefix=subsub:prefix=sub2]
   $ git checkout master
   Switched to branch 'master'
 
