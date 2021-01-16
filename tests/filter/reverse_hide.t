@@ -16,7 +16,7 @@
 
   $ josh-filter -s :exclude[:/sub2] master --update refs/heads/hidden
   [1] :/sub2
-  [1] :SUBTRACT[:nop~:/sub2]
+  [1] :exclude[:/sub2]
   $ git checkout hidden 1> /dev/null
   Switched to branch 'hidden'
   $ tree
@@ -34,7 +34,7 @@
 
   $ josh-filter -s :exclude[:/sub2] --reverse master --update refs/heads/hidden
   [1] :/sub2
-  [1] :SUBTRACT[:nop~:/sub2]
+  [1] :exclude[:/sub2]
 
   $ git checkout master
   Switched to branch 'master'

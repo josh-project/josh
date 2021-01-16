@@ -1,22 +1,5 @@
 use super::*;
 
-pub fn is_empty_root(repo: &git2::Repository, tree: &git2::Tree) -> bool {
-    if tree.id() == empty_tree_id() {
-        return true;
-    }
-
-    let mut all_empty = true;
-
-    for e in tree.iter() {
-        if let Ok(Ok(t)) = e.to_object(&repo).map(|x| x.into_tree()) {
-            all_empty = all_empty && is_empty_root(&repo, &t);
-        } else {
-            return false;
-        }
-    }
-    return all_empty;
-}
-
 pub fn dirtree<'a>(
     repo: &'a git2::Repository,
     root: &str,
@@ -90,7 +73,7 @@ pub fn dirtree<'a>(
     return Ok(result);
 }
 
-pub fn subtract_tree<'a>(
+pub fn remove_pred<'a>(
     repo: &'a git2::Repository,
     root: &str,
     input: git2::Oid,
@@ -101,7 +84,7 @@ pub fn subtract_tree<'a>(
     if let Some(cached) = cache.get(&(input, key)) {
         return Ok(repo.find_tree(*cached)?);
     }
-    rs_tracing::trace_scoped!("subtract_tree X", "root": root);
+    rs_tracing::trace_scoped!("remove_pred X", "root": root);
 
     let tree = repo.find_tree(input)?;
     let mut result = empty_tree(&repo);
@@ -127,7 +110,7 @@ pub fn subtract_tree<'a>(
             let s = if (root != "") && pred(&path, false) {
                 entry.id()
             } else {
-                subtract_tree(
+                remove_pred(
                     &repo,
                     &format!(
                         "{}{}{}",
@@ -160,7 +143,7 @@ pub fn subtract_tree<'a>(
     return Ok(result);
 }
 
-pub fn subtract_fast(
+pub fn subtract(
     repo: &git2::Repository,
     input1: git2::Oid,
     input2: git2::Oid,
@@ -190,7 +173,7 @@ pub fn subtract_fast(
                     &std::path::Path::new(
                         entry.name().ok_or(super::josh_error("no name"))?,
                     ),
-                    subtract_fast(repo, e.id(), entry.id())?,
+                    subtract(repo, e.id(), entry.id())?,
                     &result_tree,
                 )?;
             }
@@ -202,7 +185,7 @@ pub fn subtract_fast(
     return Ok(empty_tree_id());
 }
 
-pub fn replace_child<'a>(
+fn replace_child<'a>(
     repo: &'a git2::Repository,
     child: &std::path::Path,
     oid: git2::Oid,
@@ -228,15 +211,11 @@ pub fn replace_child<'a>(
     return Ok(repo.find_tree(full_tree_id)?);
 }
 
-fn get_subtree(tree: &git2::Tree, path: &std::path::Path) -> Option<git2::Oid> {
-    tree.get_path(path).map(|x| x.id()).ok()
-}
-
-pub fn replace_subtree<'a>(
+pub fn insert<'a>(
     repo: &'a git2::Repository,
+    full_tree: &git2::Tree,
     path: &std::path::Path,
     oid: git2::Oid,
-    full_tree: &git2::Tree,
 ) -> super::JoshResult<git2::Tree<'a>> {
     if path.components().count() == 1 {
         return replace_child(&repo, path, oid, full_tree);
@@ -246,15 +225,15 @@ pub fn replace_subtree<'a>(
         );
         let path = path.parent().ok_or(super::josh_error("path.parent"))?;
 
-        let st = if let Some(st) = get_subtree(&full_tree, path) {
-            repo.find_tree(st).unwrap_or(empty_tree(&repo))
+        let st = if let Ok(st) = full_tree.get_path(path) {
+            repo.find_tree(st.id()).unwrap_or(empty_tree(&repo))
         } else {
             empty_tree(&repo)
         };
 
         let tree = replace_child(&repo, name, oid, &st)?;
 
-        return replace_subtree(&repo, path, tree.id(), full_tree);
+        return insert(&repo, full_tree, path, tree.id());
     }
 }
 
@@ -318,15 +297,32 @@ pub fn compose<'a>(
     let mut taken = empty_tree(&repo);
     for (f, applied) in trees {
         let taken_applied = super::filter::apply(&repo, *f, taken.clone())?;
-        let subtracted = repo.find_tree(subtract_fast(
-            &repo,
-            applied.id(),
-            taken_applied.id(),
-        )?)?;
+        let subtracted =
+            repo.find_tree(subtract(&repo, applied.id(), taken_applied.id())?)?;
         taken = super::filter::unapply(&repo, *f, applied, taken.clone())?;
         result =
             repo.find_tree(overlay(&repo, result.id(), subtracted.id())?)?;
     }
 
     Ok(result)
+}
+
+pub fn get_blob(
+    repo: &git2::Repository,
+    tree: &git2::Tree,
+    path: &Path,
+) -> String {
+    let entry_oid = ok_or!(tree.get_path(&path).map(|x| x.id()), {
+        return "".to_owned();
+    });
+
+    let blob = ok_or!(repo.find_blob(entry_oid), {
+        return "".to_owned();
+    });
+
+    let content = ok_or!(std::str::from_utf8(blob.content()), {
+        return "".to_owned();
+    });
+
+    return content.to_owned();
 }

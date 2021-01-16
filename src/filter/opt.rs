@@ -8,7 +8,7 @@ lazy_static! {
 }
 
 /*
- * Atempt to create an alternative representaion of a filter AST that is most
+ * Attempt to create an alternative representation of a filter AST that is most
  * suitable for fast evaluation and cache reuse.
  */
 pub fn optimize(filter: Filter) -> Filter {
@@ -25,9 +25,9 @@ pub fn optimize(filter: Filter) -> Filter {
 }
 
 /*
- * Attempt to create an equivalent representaion of a filter AST, that has fewer nodes than the
+ * Attempt to create an equivalent representation of a filter AST, that has fewer nodes than the
  * input, but still has a similar structure.
- * Usefull as a pre-processing step for pretty printing and also during filter optimization.
+ * Useful as a pre-processing step for pretty printing and also during filter optimization.
  */
 pub fn simplify(filter: Filter) -> Filter {
     if let Some(f) = SIMPLIFIED.lock().unwrap().get(&filter) {
@@ -210,7 +210,7 @@ fn iterate(filter: Filter) -> Filter {
 }
 
 /*
- * Atempt to apply one optimization rule to a filter. If no rule applies the input
+ * Attempt to apply one optimization rule to a filter. If no rule applies the input
  * is returned.
  */
 fn step(filter: Filter) -> Filter {
@@ -248,6 +248,7 @@ fn step(filter: Filter) -> Filter {
         Op::Compose(filters) if filters.len() == 1 => to_op(filters[0]),
         Op::Compose(mut filters) => {
             filters.dedup();
+            filters.retain(|x| *x != to_filter(Op::Empty));
             let mut grouped = group(&filters);
             if let Some((common, rest)) = common_pre(&filters) {
                 Op::Chain(common, to_filter(Op::Compose(rest)))
@@ -274,16 +275,24 @@ fn step(filter: Filter) -> Filter {
             (a, b) => Op::Chain(step(to_filter(a)), step(to_filter(b))),
         },
         Op::Subtract(a, b) if a == b => Op::Empty,
-        Op::Subtract(a, b) => match (to_op(a), to_op(b)) {
+        Op::Subtract(af, bf) => match (to_op(af), to_op(bf)) {
             (Op::Empty, _) => Op::Empty,
             (a, Op::Empty) => a,
             (Op::Chain(a, b), Op::Chain(c, d)) if a == c => {
                 Op::Chain(a, to_filter(Op::Subtract(b, d)))
             }
+            (Op::Compose(mut av), _) if av.contains(&bf) => {
+                av.retain(|x| *x != bf);
+                to_op(step(to_filter(Op::Compose(av))))
+            }
+            (_, Op::Compose(bv)) if bv.contains(&af) => {
+                to_op(step(to_filter(Op::Empty)))
+            }
             (Op::Compose(mut av), Op::Compose(mut bv)) => {
                 let v = av.clone();
                 av.retain(|x| !bv.contains(x));
                 bv.retain(|x| !v.contains(x));
+
                 Op::Subtract(
                     step(to_filter(Op::Compose(av))),
                     step(to_filter(Op::Compose(bv))),
