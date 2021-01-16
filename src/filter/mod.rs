@@ -1,12 +1,9 @@
 use super::*;
 use pest::Parser;
 use std::path::Path;
+mod opt;
 
 lazy_static! {
-    static ref OPTIMIZED: std::sync::Mutex<std::collections::HashMap<Filter, Filter>> =
-        std::sync::Mutex::new(std::collections::HashMap::new());
-    static ref PRETTIFYED: std::sync::Mutex<std::collections::HashMap<Filter, Filter>> =
-        std::sync::Mutex::new(std::collections::HashMap::new());
     static ref FILTERS: std::sync::Mutex<std::collections::HashMap<Filter, Op>> =
         std::sync::Mutex::new(std::collections::HashMap::new());
 }
@@ -69,7 +66,7 @@ enum Op {
 }
 
 pub fn pretty(filter: Filter, indent: usize) -> String {
-    let filter = simplify(filter);
+    let filter = opt::simplify(filter);
     pretty2(&to_op(filter), indent, true)
 }
 
@@ -161,7 +158,7 @@ fn spec2(op: &Op) -> String {
 pub fn apply_to_commit(
     filter: Filter,
     commit: &git2::Commit,
-    transaction: &filter_cache::Transaction,
+    transaction: &cache::Transaction,
 ) -> JoshResult<git2::Oid> {
     apply_to_commit2(&to_op(filter), commit, transaction)
 }
@@ -169,9 +166,9 @@ pub fn apply_to_commit(
 fn apply_to_commit2(
     op: &Op,
     commit: &git2::Commit,
-    transaction: &filter_cache::Transaction,
+    transaction: &cache::Transaction,
 ) -> JoshResult<git2::Oid> {
-    let filter = optimize(to_filter(op.clone()));
+    let filter = opt::optimize(to_filter(op.clone()));
 
     match &to_op(filter) {
         Op::Nop => return Ok(commit.id()),
@@ -567,303 +564,6 @@ fn unapply2<'a>(
     };
 }
 
-fn group(filters: &Vec<Filter>) -> Vec<Vec<Filter>> {
-    let mut res: Vec<Vec<Filter>> = vec![];
-    for f in filters {
-        if res.len() == 0 {
-            res.push(vec![*f]);
-            continue;
-        }
-
-        if let Op::Chain(a, _) = to_op(*f) {
-            if let Op::Chain(x, _) = to_op(res[res.len() - 1][0]) {
-                if a == x {
-                    let n = res.len();
-                    res[n - 1].push(*f);
-                    continue;
-                }
-            }
-        }
-        res.push(vec![f.clone()]);
-    }
-    if res.len() != filters.len() {
-        return res;
-    }
-
-    let mut res: Vec<Vec<Filter>> = vec![];
-    for f in filters {
-        if res.len() == 0 {
-            res.push(vec![f.clone()]);
-            continue;
-        }
-
-        let (_, a) = last_chain(to_filter(Op::Nop), *f);
-        {
-            let (_, x) = last_chain(to_filter(Op::Nop), res[res.len() - 1][0]);
-            {
-                if a == x {
-                    let n = res.len();
-                    res[n - 1].push(*f);
-                    continue;
-                }
-            }
-        }
-        res.push(vec![*f]);
-    }
-    return res;
-}
-
-fn prefix_sort(filters: &Vec<Filter>) -> Vec<Filter> {
-    let mut sorted = filters.clone();
-    let mut ok = true;
-    sorted.sort_by(|a, b| {
-        if let (Op::Chain(a, _), Op::Chain(b, _)) = (to_op(*a), to_op(*b)) {
-            if let (Op::Subdir(a), Op::Subdir(b)) = (to_op(a), to_op(b)) {
-                return a.partial_cmp(&b).unwrap();
-            }
-        }
-        ok = false;
-        std::cmp::Ordering::Equal
-    });
-    return if ok { sorted } else { filters.clone() };
-}
-
-fn common_pre(filters: &Vec<Filter>) -> Option<(Filter, Vec<Filter>)> {
-    let mut rest = vec![];
-    let mut c: Option<Filter> = None;
-    for f in filters {
-        if let Op::Chain(a, b) = to_op(*f) {
-            rest.push(b);
-            if c == None {
-                c = Some(a);
-            }
-            if c != Some(a) {
-                return None;
-            }
-        } else {
-            return None;
-        }
-    }
-    if let Some(c) = c {
-        return Some((c, rest));
-    } else {
-        return None;
-    }
-}
-
-fn common_post(filters: &Vec<Filter>) -> Option<(Filter, Vec<Filter>)> {
-    let mut rest = vec![];
-    let mut c: Option<Filter> = None;
-    for f in filters {
-        let (a, b) = last_chain(to_filter(Op::Nop), *f);
-        {
-            rest.push(a);
-            if c == None {
-                c = Some(b);
-            }
-            if c != Some(b) {
-                return None;
-            }
-        }
-    }
-    if Some(to_filter(Op::Nop)) == c {
-        return None;
-    } else if let Some(c) = c {
-        return Some((c, rest));
-    } else {
-        return None;
-    }
-}
-
-fn last_chain(rest: Filter, filter: Filter) -> (Filter, Filter) {
-    match to_op(filter) {
-        Op::Chain(a, b) => last_chain(to_filter(Op::Chain(rest, a)), b),
-        _ => (rest, filter),
-    }
-}
-
-/*
- * Atempt to create an alternative representaion of a filter AST that is most
- * suitable for fast evaluation and cache reuse.
- */
-fn optimize(filter: Filter) -> Filter {
-    let mut filter = filter;
-    loop {
-        let pretty = simplify(filter);
-        let optimized = optimization_iterate(filter);
-        filter = simplify(optimized);
-
-        if filter == pretty {
-            return optimization_iterate(filter);
-        }
-    }
-}
-
-/*
- * Apply optimization steps to a filter until it converges (no rules apply anymore)
- */
-fn optimization_iterate(filter: Filter) -> Filter {
-    let mut filter = filter;
-    loop {
-        let optimized = optimization_step(filter);
-        if filter == optimized {
-            return optimized;
-        }
-        filter = optimized;
-    }
-}
-
-/*
- * Atempt to apply one optimization rule to a filter. If no rule applies the input
- * is returned.
- */
-fn optimization_step(filter: Filter) -> Filter {
-    if let Some(f) = OPTIMIZED.lock().unwrap().get(&filter) {
-        return *f;
-    }
-    rs_tracing::trace_scoped!("optimization_step", "spec": spec(filter));
-    let original = filter;
-    let result = to_filter(match to_op(filter) {
-        Op::Subdir(path) => {
-            if path.components().count() > 1 {
-                let mut components = path.components();
-                let a = components.next().unwrap();
-                Op::Chain(
-                    to_filter(Op::Subdir(std::path::PathBuf::from(&a))),
-                    to_filter(Op::Subdir(components.as_path().to_owned())),
-                )
-            } else {
-                Op::Subdir(path)
-            }
-        }
-        Op::Prefix(path) => {
-            if path.components().count() > 1 {
-                let mut components = path.components();
-                let a = components.next().unwrap();
-                Op::Chain(
-                    to_filter(Op::Prefix(components.as_path().to_owned())),
-                    to_filter(Op::Prefix(std::path::PathBuf::from(&a))),
-                )
-            } else {
-                Op::Prefix(path)
-            }
-        }
-        Op::Compose(filters) if filters.len() == 0 => Op::Empty,
-        Op::Compose(filters) if filters.len() == 1 => to_op(filters[0]),
-        Op::Compose(mut filters) => {
-            filters.dedup();
-            let mut grouped = group(&filters);
-            if let Some((common, rest)) = common_pre(&filters) {
-                Op::Chain(common, to_filter(Op::Compose(rest)))
-            } else if let Some((common, rest)) = common_post(&filters) {
-                Op::Chain(to_filter(Op::Compose(rest)), common)
-            } else if grouped.len() != filters.len() {
-                Op::Compose(
-                    grouped
-                        .drain(..)
-                        .map(|x| to_filter(Op::Compose(x)))
-                        .collect(),
-                )
-            } else {
-                let mut filters = prefix_sort(&filters);
-                Op::Compose(filters.drain(..).map(optimization_step).collect())
-            }
-        }
-        Op::Chain(a, b) => match (to_op(a), to_op(b)) {
-            (Op::Chain(x, y), b) => {
-                Op::Chain(x, to_filter(Op::Chain(y, to_filter(b))))
-            }
-            (Op::Nop, b) => b,
-            (a, Op::Nop) => a,
-            (a, b) => Op::Chain(
-                optimization_step(to_filter(a)),
-                optimization_step(to_filter(b)),
-            ),
-        },
-        Op::Subtract(a, b) if a == b => Op::Empty,
-        Op::Subtract(a, b) => match (to_op(a), to_op(b)) {
-            (Op::Empty, _) => Op::Empty,
-            (a, Op::Empty) => a,
-            (Op::Chain(a, b), Op::Chain(c, d)) if a == c => {
-                Op::Chain(a, to_filter(Op::Subtract(b, d)))
-            }
-            (Op::Compose(mut av), Op::Compose(mut bv)) => {
-                let v = av.clone();
-                av.retain(|x| !bv.contains(x));
-                bv.retain(|x| !v.contains(x));
-                Op::Subtract(
-                    optimization_step(to_filter(Op::Compose(av))),
-                    optimization_step(to_filter(Op::Compose(bv))),
-                )
-            }
-            (a, b) => Op::Subtract(
-                optimization_step(to_filter(a)),
-                optimization_step(to_filter(b)),
-            ),
-        },
-        _ => to_op(filter),
-    });
-
-    OPTIMIZED.lock().unwrap().insert(original, result);
-    return result;
-}
-
-/*
- * Attempt to create an equivalent representaion of a filter AST, that has fewer nodes than the
- * input, but still has a similar structure.
- * Usefull as a pre-processing step for pretty printing and also during filter optimization.
- */
-fn simplify(filter: Filter) -> Filter {
-    if let Some(f) = PRETTIFYED.lock().unwrap().get(&filter) {
-        return *f;
-    }
-    rs_tracing::trace_scoped!("simplify", "spec": spec(filter));
-    let original = filter;
-    let result = to_filter(match to_op(filter) {
-        Op::Compose(filters) => {
-            let mut out = vec![];
-            for f in filters {
-                if let Op::Compose(mut v) = to_op(f) {
-                    out.append(&mut v);
-                } else {
-                    out.push(f);
-                }
-            }
-            Op::Compose(out.drain(..).map(simplify).collect())
-        }
-        Op::Chain(a, b) => match (to_op(a), to_op(b)) {
-            (a, Op::Chain(x, y)) => {
-                Op::Chain(to_filter(Op::Chain(to_filter(a), x)), y)
-            }
-            (Op::Prefix(x), Op::Prefix(y)) => Op::Prefix(y.join(x)),
-            (Op::Subdir(x), Op::Subdir(y)) => Op::Subdir(x.join(y)),
-            (Op::Chain(x, y), b) => match (to_op(x), to_op(y), b.clone()) {
-                (x, Op::Prefix(p1), Op::Prefix(p2)) => Op::Chain(
-                    simplify(to_filter(x)),
-                    to_filter(Op::Prefix(p2.join(p1))),
-                ),
-                _ => Op::Chain(simplify(a), simplify(to_filter(b))),
-            },
-            (a, b) => Op::Chain(simplify(to_filter(a)), simplify(to_filter(b))),
-        },
-        Op::Subtract(a, b) => match (to_op(a), to_op(b)) {
-            (a, b) => {
-                Op::Subtract(simplify(to_filter(a)), simplify(to_filter(b)))
-            }
-        },
-        _ => to_op(filter),
-    });
-
-    let r = if result == original {
-        result
-    } else {
-        simplify(result)
-    };
-
-    PRETTIFYED.lock().unwrap().insert(original, r);
-    return r;
-}
-
 fn compose_filter_from_ws_no_fail(
     repo: &git2::Repository,
     tree: &git2::Tree,
@@ -1028,10 +728,10 @@ pub fn parse(filter_spec: &str) -> JoshResult<Filter> {
                 v
             });
         }
-        return Ok(optimize(to_filter(chain.unwrap_or(Op::Nop))));
+        return Ok(opt::optimize(to_filter(chain.unwrap_or(Op::Nop))));
     };
 
-    return Ok(optimize(to_filter(Op::Compose(build_compose_filter(
+    return Ok(opt::optimize(to_filter(Op::Compose(build_compose_filter(
         filter_spec,
     )?))));
 }

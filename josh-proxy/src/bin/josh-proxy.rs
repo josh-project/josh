@@ -164,8 +164,7 @@ async fn fetch_upstream(
 
     tracing::trace!("credentials_cached_ok {:?}", credentials_cached_ok);
 
-    let transaction =
-        josh::filter_cache::Transaction::open(&service.repo_path)?;
+    let transaction = josh::cache::Transaction::open(&service.repo_path)?;
     if credentials_cached_ok {
         let refname = format!(
             "refs/josh/upstream/{}/{}",
@@ -240,7 +239,7 @@ async fn static_paths(
         let body_str =
             tokio::task::spawn_blocking(move || -> josh::JoshResult<_> {
                 let transaction =
-                    josh::filter_cache::Transaction::open(&service.repo_path)?;
+                    josh::cache::Transaction::open(&service.repo_path)?;
                 let known_filters =
                     josh::housekeeping::discover_filter_candidates(
                         &transaction,
@@ -302,16 +301,16 @@ async fn do_filter(
     temp_ns: Arc<josh_proxy::TmpGitNamespace>,
     filter_spec: String,
     headref: String,
-) -> josh::JoshResult<josh::filter_cache::Transaction> {
+) -> josh::JoshResult<josh::cache::Transaction> {
     let permit = service.filter_permits.acquire().await;
 
     let s = tracing::span!(tracing::Level::TRACE, "do_filter worker");
     let r = tokio::task::spawn_blocking(move || {
         let _e = s.enter();
         tracing::trace!("in do_filter worker");
-        let transaction = josh::filter_cache::Transaction::open(&repo_path)?;
-        let filter = josh::filters::parse(&filter_spec)?;
-        let filter_spec = josh::filters::spec(filter);
+        let transaction = josh::cache::Transaction::open(&repo_path)?;
+        let filter = josh::filter::parse(&filter_spec)?;
+        let filter_spec = josh::filter::spec(filter);
         let mut from_to = josh::housekeeping::default_from_to(
             &transaction.repo(),
             &temp_ns.name(),
@@ -433,10 +432,10 @@ async fn call_service(
         let info_str =
             tokio::task::spawn_blocking(move || -> josh::JoshResult<_> {
                 let transaction =
-                    josh::filter_cache::Transaction::open(&serv.repo_path)?;
+                    josh::cache::Transaction::open(&serv.repo_path)?;
                 josh::housekeeping::get_info(
                     &transaction,
-                    josh::filters::parse(&parsed_url.filter)?,
+                    josh::filter::parse(&parsed_url.filter)?,
                     &parsed_url.upstream_repo,
                     &headref,
                 )
@@ -460,7 +459,7 @@ async fn call_service(
                 tokio::task::spawn_blocking(move || -> josh::JoshResult<_> {
                     let _e = s.enter();
                     let transaction =
-                        josh::filter_cache::Transaction::open(&serv.repo_path)?;
+                        josh::cache::Transaction::open(&serv.repo_path)?;
                     josh::query::render(
                         transaction.repo(),
                         &temp_ns.reference(&headref),
@@ -589,7 +588,7 @@ async fn run_proxy() -> josh::JoshResult<i32> {
     );
 
     josh_proxy::create_repo(&local)?;
-    josh::filter_cache::load(&local)?;
+    josh::cache::load(&local)?;
 
     let proxy_service = Arc::new(JoshProxyService {
         port: port,

@@ -16,7 +16,7 @@ impl BlobHelper {
             return Err(josh_error("missing pattern"));
         };
 
-        let transaction = filter_cache::Transaction::open(&self.repo_path)?;
+        let transaction = cache::Transaction::open(&self.repo_path)?;
         let tree = transaction
             .repo()
             .find_reference(&self.headref)?
@@ -65,15 +65,15 @@ impl FindFilesHelper {
         } else {
             return Err(josh_error("missing filter"));
         };
-        let transaction = filter_cache::Transaction::open(&self.repo_path)?;
+        let transaction = cache::Transaction::open(&self.repo_path)?;
         let tree = transaction
             .repo()
             .find_reference(&self.headref)?
             .peel_to_tree()?;
 
-        let tree = filters::apply(
+        let tree = filter::apply(
             transaction.repo(),
-            filters::parse(&filterspec)?,
+            filter::parse(&filterspec)?,
             tree,
         )?;
 
@@ -133,12 +133,12 @@ impl FilterHelper {
         } else {
             return Err(josh_error("missing spec"));
         };
-        let transaction = filter_cache::Transaction::open(&self.repo_path)?;
+        let transaction = cache::Transaction::open(&self.repo_path)?;
         let original_commit = transaction
             .repo()
             .find_reference(&self.headref)?
             .peel_to_commit()?;
-        let filterobj = filters::parse(&filter_spec)?;
+        let filterobj = filter::parse(&filter_spec)?;
 
         let filter_commit =
             history::walk2(filterobj, original_commit.id(), &transaction)?;

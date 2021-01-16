@@ -29,7 +29,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
 
     let repo = git2::Repository::open_from_env()?;
 
-    josh::filter_cache::load(&repo.path())?;
+    josh::cache::load(&repo.path())?;
     let filename = args.value_of("file").unwrap_or("");
     let filestr = read_to_string(&filename)?;
 
@@ -48,14 +48,14 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
 
         let filter_spec = caps.name("spec").unwrap().as_str().trim().to_owned();
 
-        let filter = josh::filters::parse(&filter_spec)?;
+        let filter = josh::filter::parse(&filter_spec)?;
 
         let src = repo
             .revparse_ext(&format!("refs/remotes/{}/{}", remote, src_ref))?
             .0
             .peel_to_commit()?;
 
-        let state_in_head = josh::filters::unapply(
+        let state_in_head = josh::filter::unapply(
             &repo,
             filter,
             head.tree()?,
@@ -64,13 +64,13 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         let head_cleaned = josh::treeops::subtract_fast(
             &repo,
             new_tree.id(),
-            josh::filters::apply(&repo, filter, state_in_head)?.id(),
+            josh::filter::apply(&repo, filter, state_in_head)?.id(),
         )?;
 
         let merged = josh::treeops::overlay(
             &repo,
             head_cleaned,
-            josh::filters::apply(&repo, filter, src.tree()?)?.id(),
+            josh::filter::apply(&repo, filter, src.tree()?)?.id(),
         )?;
         new_tree = repo.find_tree(merged)?;
 

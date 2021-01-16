@@ -52,7 +52,7 @@ pub fn process_repo_update(
     for (refname, (old, new)) in repo_update.refs.iter() {
         tracing::debug!("REPO_UPDATE env ok");
 
-        let transaction = josh::filter_cache::Transaction::open(
+        let transaction = josh::cache::Transaction::open(
             &std::path::Path::new(&repo_update.git_dir),
         )?;
 
@@ -122,7 +122,7 @@ pub fn process_repo_update(
             amends
         };
 
-        let filterobj = josh::filters::parse(&repo_update.filter_spec)?;
+        let filterobj = josh::filter::parse(&repo_update.filter_spec)?;
         let new_oid = git2::Oid::from_str(&new)?;
         let backward_new_oid = {
             tracing::debug!("=== MORE");
@@ -207,7 +207,7 @@ pub fn process_repo_update(
             })
             .to_owned();
 
-        let reapply = josh::filters::apply_to_commit(
+        let reapply = josh::filter::apply_to_commit(
             filterobj,
             &transaction.repo().find_commit(oid_to_push)?,
             &transaction,
