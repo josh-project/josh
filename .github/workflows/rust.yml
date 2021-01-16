@@ -23,6 +23,7 @@ jobs:
     - name: Install dependencies
       run: |
         pip3 install --user 'cram'
+        pip3 install --user 'pygit2'
         cargo install hyper_cgi --features=test-server
         sudo apt install git cmake libcurl4-openssl-dev libelf-dev libdw-dev tree
     - uses: actions/checkout@v2

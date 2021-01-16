@@ -72,6 +72,9 @@
   $ cd ${TESTTMP}/remote/real_repo.git/
   $ git update-ref refs/changes/1/1 refs/for/master
   $ git update-ref -d refs/for/master
+  $ git collect-refs "refs/changes/*" refs/gerrit_changes/all
+  1 updated refs
+  * (glob)
 
   $ cd ${TESTTMP}
 
@@ -139,9 +142,11 @@
   |               |       `-- 1
   |               |-- for
   |               |   `-- master
+  |               |-- gerrit_changes
+  |               |   `-- all
   |               `-- heads
   |                   `-- master
   |-- namespaces
   `-- tags
   
-  17 directories, 5 files
+  18 directories, 6 files
