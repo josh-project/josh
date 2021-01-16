@@ -37,8 +37,8 @@ extern crate serde_json;
 
 use tracing;
 
-pub mod filter_cache;
-pub mod filters;
+pub mod cache;
+pub mod filter;
 pub mod history;
 pub mod housekeeping;
 pub mod query;
@@ -174,8 +174,8 @@ pub fn get_change_id(commit: &git2::Commit) -> Option<String> {
 
 #[tracing::instrument(skip(transaction))]
 fn filter_ref(
-    transaction: &filter_cache::Transaction,
-    filterobj: filters::Filter,
+    transaction: &cache::Transaction,
+    filterobj: filter::Filter,
     from_refsname: &str,
     to_refname: &str,
 ) -> JoshResult<usize> {
@@ -183,11 +183,8 @@ fn filter_ref(
     if let Ok(reference) = transaction.repo().revparse_single(&from_refsname) {
         let original_commit = reference.peel_to_commit()?;
 
-        let filter_commit = filters::apply_to_commit(
-            filterobj,
-            &original_commit,
-            &transaction,
-        )?;
+        let filter_commit =
+            filter::apply_to_commit(filterobj, &original_commit, &transaction)?;
 
         let previous = transaction
             .repo()
@@ -202,7 +199,7 @@ fn filter_ref(
                 &from_refsname,
                 &to_refname,
                 filter_commit,
-                &filters::spec(filterobj),
+                &filter::spec(filterobj),
             );
         }
 
@@ -218,7 +215,7 @@ fn filter_ref(
                         &from_refsname,
                         &to_refname,
                         filter_commit,
-                        &filters::spec(filterobj),
+                        &filter::spec(filterobj),
                     );
                 }
             );
@@ -231,11 +228,11 @@ fn filter_ref(
 
 #[tracing::instrument(skip(transaction))]
 pub fn filter_refs(
-    transaction: &filter_cache::Transaction,
-    filterobj: filters::Filter,
+    transaction: &cache::Transaction,
+    filterobj: filter::Filter,
     refs: &[(String, String)],
 ) -> JoshResult<usize> {
-    rs_tracing::trace_scoped!("filter_refs", "spec": filters::spec(filterobj));
+    rs_tracing::trace_scoped!("filter_refs", "spec": filter::spec(filterobj));
 
     let mut updated_count = 0;
     for (k, v) in refs {

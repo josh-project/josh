@@ -31,7 +31,7 @@ pub fn print_stats() {
             let name = if name.contains("SUBTRACT") {
                 name.clone()
             } else {
-                super::filters::pretty(super::filters::parse(&name).unwrap(), 4)
+                super::filter::pretty(super::filter::parse(&name).unwrap(), 4)
             };
             v.push((t.len(), name));
         }
@@ -111,7 +111,7 @@ impl Transaction {
 
     pub fn insert(
         &self,
-        filter: filters::Filter,
+        filter: filter::Filter,
         from: git2::Oid,
         to: git2::Oid,
         store: bool,
@@ -128,7 +128,7 @@ impl Transaction {
                     .unwrap()
                     .as_ref()
                     .unwrap()
-                    .open_tree(filters::spec(filter))
+                    .open_tree(filter::spec(filter))
                     .unwrap()
             });
 
@@ -138,7 +138,7 @@ impl Transaction {
 
     pub fn get(
         &self,
-        filter: filters::Filter,
+        filter: filter::Filter,
         from: git2::Oid,
     ) -> Option<git2::Oid> {
         if filter.is_nop() {
@@ -155,7 +155,7 @@ impl Transaction {
                 .unwrap()
                 .as_ref()
                 .unwrap()
-                .open_tree(filters::spec(filter))
+                .open_tree(filter::spec(filter))
                 .unwrap()
         });
         if let Some(oid) = t.get(from.as_bytes()).unwrap() {

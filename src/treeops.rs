@@ -311,19 +311,19 @@ pub fn overlay(
 
 pub fn compose<'a>(
     repo: &'a git2::Repository,
-    trees: Vec<(&super::filters::Filter, git2::Tree<'a>)>,
+    trees: Vec<(&super::filter::Filter, git2::Tree<'a>)>,
 ) -> super::JoshResult<git2::Tree<'a>> {
     rs_tracing::trace_scoped!("compose");
     let mut result = empty_tree(&repo);
     let mut taken = empty_tree(&repo);
     for (f, applied) in trees {
-        let taken_applied = super::filters::apply(&repo, *f, taken.clone())?;
+        let taken_applied = super::filter::apply(&repo, *f, taken.clone())?;
         let subtracted = repo.find_tree(subtract_fast(
             &repo,
             applied.id(),
             taken_applied.id(),
         )?)?;
-        taken = super::filters::unapply(&repo, *f, applied, taken.clone())?;
+        taken = super::filter::unapply(&repo, *f, applied, taken.clone())?;
         result =
             repo.find_tree(overlay(&repo, result.id(), subtracted.id())?)?;
     }

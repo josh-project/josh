@@ -55,17 +55,17 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         .and_then(|f| read_to_string(f).ok())
         .unwrap_or(specstr.to_string());
 
-    let mut filterobj = josh::filters::parse(&specstr)?;
+    let mut filterobj = josh::filter::parse(&specstr)?;
 
     if args.is_present("squash") {
         filterobj =
-            josh::filters::chain(josh::filters::parse(":SQUASH")?, filterobj);
+            josh::filter::chain(josh::filter::parse(":SQUASH")?, filterobj);
     }
 
     if args.is_present("print-filter") {
         println!(
             "{}",
-            josh::filters::pretty(
+            josh::filter::pretty(
                 filterobj,
                 if args.is_present("file") { 0 } else { 4 }
             )
@@ -74,14 +74,14 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
     }
 
     let repo = git2::Repository::open_from_env()?;
-    let transaction = josh::filter_cache::Transaction::new(repo);
+    let transaction = josh::cache::Transaction::new(repo);
     let repo = transaction.repo();
 
     let odb = repo.odb()?;
     let mempack = odb.add_new_mempack_backend(1000)?;
 
     if !args.is_present("no-cache") {
-        josh::filter_cache::load(&repo.path())?;
+        josh::cache::load(&repo.path())?;
     }
 
     let finish = defer::defer(|| {
@@ -89,7 +89,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
             rs_tracing::close_trace_file!();
         }
         if args.is_present("cache-stats") {
-            josh::filter_cache::print_stats();
+            josh::cache::print_stats();
         }
         let mut buf = git2::Buf::new();
         mempack.dump(&repo, &mut buf).unwrap();
@@ -113,7 +113,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
             }
             josh::filter_refs(
                 &transaction,
-                josh::filters::parse(&i)?,
+                josh::filter::parse(&i)?,
                 &[(input_ref.to_string(), "refs/JOSH_TMP".to_string())],
             )?;
         }
@@ -129,9 +129,9 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
 
     if check_permissions {
         filterobj =
-            josh::filters::chain(josh::filters::parse(":DIRS")?, filterobj);
+            josh::filter::chain(josh::filter::parse(":DIRS")?, filterobj);
         filterobj =
-            josh::filters::chain(filterobj, josh::filters::parse(":FOLD")?);
+            josh::filter::chain(filterobj, josh::filter::parse(":FOLD")?);
     }
 
     let t = if reverse {

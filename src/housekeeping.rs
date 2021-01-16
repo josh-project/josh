@@ -118,7 +118,7 @@ pub fn discover_repos(repo: &git2::Repository) -> JoshResult<Vec<String>> {
  * expensive to build from scratch using heuristics.
  */
 pub fn discover_filter_candidates(
-    transaction: &filter_cache::Transaction,
+    transaction: &cache::Transaction,
 ) -> JoshResult<KnownViews> {
     let repo = transaction.repo();
     let mut known_filters = KnownViews::new();
@@ -182,8 +182,8 @@ pub fn find_all_workspaces_and_subdirectories(
 }
 
 pub fn get_info(
-    transaction: &filter_cache::Transaction,
-    filter: filters::Filter,
+    transaction: &cache::Transaction,
+    filter: filter::Filter,
     upstream_repo: &str,
     headref: &str,
 ) -> JoshResult<String> {
@@ -243,7 +243,7 @@ pub fn get_info(
 
 #[tracing::instrument(skip(transaction))]
 pub fn refresh_known_filters(
-    transaction: &filter_cache::Transaction,
+    transaction: &cache::Transaction,
     known_filters: &KnownViews,
 ) -> JoshResult<usize> {
     for (upstream_repo, e) in known_filters.iter() {
@@ -266,7 +266,7 @@ pub fn refresh_known_filters(
             );
 
             updated_count +=
-                filter_refs(&t, filters::parse(filter_spec)?, &refs)?;
+                filter_refs(&t, filter::parse(filter_spec)?, &refs)?;
         }
         info!("updated {} refs for {:?}", updated_count, upstream_repo);
     }
@@ -280,7 +280,7 @@ pub fn spawn_thread(
     let mut gc_timer = std::time::Instant::now();
     std::thread::spawn(move || loop {
         let repo = git2::Repository::init_bare(&repo_path).unwrap();
-        let transaction = filter_cache::Transaction::new(repo);
+        let transaction = cache::Transaction::new(repo);
         let known_filters =
             housekeeping::discover_filter_candidates(&transaction).unwrap();
         refresh_known_filters(&transaction, &known_filters).unwrap_or(0);
