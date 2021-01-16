@@ -150,14 +150,15 @@ pub fn rewrite_commit(
         return Ok(base.id());
     }
 
-    return Ok(repo.commit(
-        None,
+    let b = repo.commit_create_buffer(
         &base.author(),
         &base.committer(),
         &base.message_raw().unwrap_or("no message"),
         tree,
         parents,
-    )?);
+    )?;
+
+    return Ok(repo.odb()?.write(git2::ObjectType::Commit, &b)?);
 }
 
 fn all_equal(a: git2::Parents, b: &[&git2::Commit]) -> bool {
