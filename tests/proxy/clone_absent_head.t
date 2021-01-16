@@ -48,15 +48,6 @@
   > ref: refs/does/not/exist
   > EOF
 
-  $ ls
-  HEAD
-  branches
-  config
-  description
-  hooks
-  info
-  objects
-  refs
 
   $ cat HEAD
   ref: refs/does/not/exist

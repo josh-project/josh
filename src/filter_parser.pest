@@ -2,7 +2,7 @@ WHITESPACE = _{ " " }
 CMD_START = _{ ":" }
 CMD_END = _{("="|"/")}
 CMD_SEP = _{(","|NEWLINE)}
-ALNUM = _{( ASCII_ALPHANUMERIC | "_" | "-" | "." | "*" )}
+ALNUM = _{( ASCII_ALPHANUMERIC | "_" | "-" | "+" | "." | "*" )}
 GROUP_START = _{ "[" }
 GROUP_END = _{ "]" }
 
@@ -33,6 +33,8 @@ workspace_file = {
     ~ NEWLINE*
     ~ EOI
 }
+
+filter_chain = _{ filter_spec ~ EOI }
 
 compose = {
     NEWLINE*

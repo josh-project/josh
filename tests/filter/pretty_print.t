@@ -4,7 +4,7 @@
   :/a
   $ josh-filter -p :/a:/b
   :/a/b
-  $ josh-filter -p :[:/a:/b]
+  $ josh-filter -p :[:/a:/b,:/a/b]
   :/a/b
   $ josh-filter -p :[x=:/a:/b:/d,y=:/a:/c:/d]
   :/a:[
@@ -20,3 +20,37 @@
   ]
   $ josh-filter -p :prefix=a/b:prefix=c
   :prefix=c/a/b
+
+  $ cat > f <<EOF
+  > a/b = :/a/b
+  > a/j = :/a/j
+  > x/gg = :/a/x/gg
+  > x/c++666 = :/a/x/c++666
+  > x/g = :/a/x/g
+  > p/au/bs/i1 = :/m/bs/m2/i/tc/i1
+  > p/au/bs/i2 = :/m/bs/m2/i/tc/i2
+  > x/u = :/a/x/u
+  > p/au/bs/gt = :/m/bs/m2/i/tgt
+  > x/d = :/a/x/d
+  > EOF
+  $ josh-filter -p --file f
+  :/a:[
+      a = :[
+          ::b/
+          ::j/
+      ]
+      x = :/x:[
+          ::c++666/
+          ::d/
+          ::g/
+          ::gg/
+          ::u/
+      ]
+  ]
+  p/au/bs = :/m/bs/m2/i:[
+      :/tc:[
+          ::i1/
+          ::i2/
+      ]
+      gt = :/tgt
+  ]

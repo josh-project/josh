@@ -35,8 +35,8 @@
   [2] :/sub1
   [2] :prefix=c
   [3] :[
-      :/sub1:prefix=c
-      :/sub2:prefix=b:prefix=a
+      c = :/sub1
+      a/b = :/sub2
   ]
   $ git log --graph --pretty=%s FILTERED_HEAD
   * add file3
@@ -50,8 +50,8 @@
   [3] :/sub1
   [3] :prefix=c
   [4] :[
-      :/sub1:prefix=c
-      :/sub2:prefix=b:prefix=a
+      c = :/sub1
+      a/b = :/sub2
   ]
   $ git log --graph --pretty=%s FILTERED_HEAD
   * initial
