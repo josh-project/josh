@@ -94,7 +94,7 @@
 
   $ josh-filter -s :DIRS:exclude[:/c]:prefix=x master --update refs/josh/filtered
   [1] :/a
-  [1] :SUBTRACT[:nop~:/c]
+  [1] :exclude[:/c]
   [1] :prefix=x
   [2] :/c
   [2] :DIRS
@@ -129,7 +129,7 @@
 
   $ josh-filter -s :DIRS master --update refs/josh/filtered
   [1] :/a
-  [1] :SUBTRACT[:nop~:/c]
+  [1] :exclude[:/c]
   [1] :prefix=x
   [2] :/c
   [3] :DIRS
@@ -160,7 +160,7 @@
 
   $ josh-filter -s :DIRS:FOLD master --update refs/josh/filtered
   [1] :/a
-  [1] :SUBTRACT[:nop~:/c]
+  [1] :exclude[:/c]
   [1] :prefix=x
   [2] :/c
   [2] :FOLD
@@ -190,7 +190,7 @@
 
   $ josh-filter -s :DIRS:/c:FOLD master --update refs/josh/filtered
   [1] :/a
-  [1] :SUBTRACT[:nop~:/c]
+  [1] :exclude[:/c]
   [1] :prefix=x
   [3] :/c
   [3] :DIRS
@@ -214,7 +214,7 @@
 
   $ josh-filter -s :DIRS:workspace=a:FOLD master --update refs/josh/filtered
   [1] :/a
-  [1] :SUBTRACT[:nop~:/c]
+  [1] :exclude[:/c]
   [1] :prefix=x
   [3] :/c
   [3] :DIRS

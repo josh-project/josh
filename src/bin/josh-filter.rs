@@ -205,7 +205,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         let old = repo.revparse_single("JOSH_TMP").unwrap().id();
         let unfiltered_old = repo.revparse_single(&input_ref).unwrap().id();
 
-        match josh::unapply_filter(
+        match josh::history::unapply_filter(
             &transaction,
             filterobj,
             unfiltered_old,

@@ -43,9 +43,6 @@ pub mod history;
 pub mod housekeeping;
 pub mod query;
 pub mod shell;
-pub mod treeops;
-
-pub use crate::history::unapply_filter;
 
 #[derive(Clone)]
 pub enum UnapplyResult {

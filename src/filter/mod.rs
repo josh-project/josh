@@ -2,6 +2,10 @@ use super::*;
 use pest::Parser;
 use std::path::Path;
 mod opt;
+mod parse;
+mod tree;
+
+pub use parse::parse;
 
 lazy_static! {
     static ref FILTERS: std::sync::Mutex<std::collections::HashMap<Filter, Op>> =
@@ -93,10 +97,10 @@ fn pretty2(op: &Op, indent: usize, compose: bool) -> String {
     };
     match op {
         Op::Compose(filters) => ff(filters, ""),
-        Op::Subtract(a, b) => match (to_op(*a), to_op(*b)) {
+        Op::Subtract(af, bf) => match (to_op(*af), to_op(*bf)) {
             (Op::Nop, Op::Compose(filters)) => ff(&filters, "exclude"),
             (Op::Nop, b) => format!(":exclude[{}]", spec2(&b)),
-            (a, b) => format!(":SUBTRACT[\n{}\n ~{}\n]", spec2(&a), spec2(&b)),
+            _ => ff(&vec![*af, *bf], "subtract"),
         },
         Op::Chain(a, b) => match (to_op(*a), to_op(*b)) {
             (Op::Subdir(p1), Op::Prefix(p2)) if p1 == p2 => {
@@ -136,7 +140,7 @@ fn spec2(op: &Op) -> String {
             )
         }
         Op::Subtract(a, b) => {
-            format!(":SUBTRACT[{}~{}]", spec(*a), spec(*b))
+            format!(":subtract[{},{}]", spec(*a), spec(*b))
         }
         Op::Workspace(path) => {
             format!(":workspace={}", path.to_string_lossy())
@@ -220,7 +224,7 @@ fn apply_to_commit2(
                 })
                 .collect::<JoshResult<Vec<_>>>()?;
 
-            treeops::compose(&transaction.repo(), filtered)?
+            tree::compose(&transaction.repo(), filtered)?
         }
         Op::Workspace(ws_path) => {
             let normal_parents = commit
@@ -228,27 +232,25 @@ fn apply_to_commit2(
                 .map(|parent| history::walk2(filter, parent, transaction))
                 .collect::<JoshResult<Vec<git2::Oid>>>()?;
 
-            let cw = compose_filter_from_ws_no_fail(
+            let cw = parse::parse(&tree::get_blob(
                 &transaction.repo(),
                 &commit.tree()?,
-                &ws_path,
-            )?;
+                &ws_path.join("workspace.josh"),
+            ))
+            .unwrap_or(to_filter(Op::Empty));
 
             let extra_parents = commit
                 .parents()
                 .map(|parent| {
                     rs_tracing::trace_scoped!("parent", "id": parent.id().to_string());
-                    let pcw = compose_filter_from_ws_no_fail(
+                    let pcw = parse::parse(&tree::get_blob(
                         &transaction.repo(),
                         &parent.tree()?,
-                        &ws_path,
-                    )?;
+                        &ws_path.join("workspace.josh"),
+                    )).unwrap_or(to_filter(Op::Empty));
 
                     apply_to_commit2(
-                        &Op::Subtract(
-                            to_filter(Op::Compose(cw.clone())),
-                            to_filter(Op::Compose(pcw)),
-                            ),
+                        &Op::Subtract(cw, pcw),
                         &parent,
                         transaction,
                     )
@@ -286,7 +288,7 @@ fn apply_to_commit2(
 
             for t in trees {
                 filtered_tree =
-                    treeops::overlay(&transaction.repo(), filtered_tree, t)?;
+                    tree::overlay(&transaction.repo(), filtered_tree, t)?;
             }
 
             transaction.repo().find_tree(filtered_tree)?
@@ -315,7 +317,7 @@ fn apply_to_commit2(
             )?;
             let ba = apply(&transaction.repo(), *a, bu)?;
 
-            transaction.repo().find_tree(treeops::subtract_fast(
+            transaction.repo().find_tree(tree::subtract(
                 &transaction.repo(),
                 af,
                 ba.id(),
@@ -367,7 +369,7 @@ fn apply2<'a>(
                 require_literal_separator: true,
                 require_literal_leading_dot: true,
             };
-            treeops::subtract_tree(
+            tree::remove_pred(
                 &repo,
                 "",
                 tree.id(),
@@ -384,7 +386,7 @@ fn apply2<'a>(
                 .map(|x| x.id())
                 .unwrap_or(git2::Oid::zero());
             if let Ok(_) = repo.find_blob(file) {
-                treeops::replace_subtree(&repo, &path, file, &empty_tree(&repo))
+                tree::insert(&repo, &empty_tree(&repo), &path, file)
             } else {
                 Ok(empty_tree(&repo))
             }
@@ -396,37 +398,37 @@ fn apply2<'a>(
                 .and_then(|x| repo.find_tree(x.id()))
                 .unwrap_or(empty_tree(&repo)));
         }
-        Op::Prefix(path) => treeops::replace_subtree(
-            &repo,
-            &path,
-            tree.id(),
-            &empty_tree(&repo),
-        ),
+        Op::Prefix(path) => {
+            tree::insert(&repo, &empty_tree(&repo), &path, tree.id())
+        }
 
         Op::Subtract(a, b) => {
             let af = apply(&repo, *a, tree.clone())?;
             let bf = apply(&repo, *b, tree.clone())?;
             let bu = unapply(&repo, *b, bf, empty_tree(&repo))?;
             let ba = apply(&repo, *a, bu)?;
-            Ok(repo.find_tree(treeops::subtract_fast(
-                &repo,
-                af.id(),
-                ba.id(),
-            )?)?)
+            Ok(repo.find_tree(tree::subtract(&repo, af.id(), ba.id())?)?)
         }
 
-        Op::Dirs => treeops::dirtree(
+        Op::Dirs => tree::dirtree(
             &repo,
             "",
             tree.id(),
             &mut std::collections::HashMap::new(),
         ),
 
-        Op::Workspace(path) => apply2(
-            repo,
-            &Op::Compose(compose_filter_from_ws_no_fail(repo, &tree, &path)?),
-            tree,
-        ),
+        Op::Workspace(path) => {
+            let base = to_filter(Op::Subdir(path.to_owned()));
+            if let Ok(cw) = parse::parse(&tree::get_blob(
+                &repo,
+                &tree,
+                &path.join("workspace.josh"),
+            )) {
+                apply(repo, compose(base, cw), tree)
+            } else {
+                apply(repo, base, tree)
+            }
+        }
 
         Op::Compose(filters) => {
             let filtered: Vec<_> = filters
@@ -435,7 +437,7 @@ fn apply2<'a>(
                 .collect::<JoshResult<_>>()?;
             let filtered: Vec<_> =
                 filters.iter().zip(filtered.into_iter()).collect();
-            return treeops::compose(&repo, filtered);
+            return tree::compose(&repo, filtered);
         }
 
         Op::Chain(a, b) => {
@@ -461,6 +463,7 @@ fn unapply2<'a>(
 ) -> JoshResult<git2::Tree<'a>> {
     return match op {
         Op::Nop => Ok(tree),
+        Op::Empty => Ok(parent_tree),
 
         Op::Chain(a, b) => {
             let p = apply(&repo, *a, parent_tree.clone())?;
@@ -468,13 +471,14 @@ fn unapply2<'a>(
             unapply(&repo, *a, x, parent_tree)
         }
         Op::Workspace(path) => {
-            let mut cw = build_compose_filter(&string_blob(
+            let root = to_filter(Op::Subdir(path.to_owned()));
+            let mapped = parse(&tree::get_blob(
                 &repo,
                 &tree,
                 &Path::new("workspace.josh"),
             ))?;
-            cw.insert(0, to_filter(Op::Subdir(path.to_owned())));
-            return unapply2(repo, &Op::Compose(cw), tree, parent_tree);
+
+            return unapply(repo, compose(root, mapped), tree, parent_tree);
         }
         Op::Compose(filters) => {
             let mut remaining = tree.clone();
@@ -493,7 +497,7 @@ fn unapply2<'a>(
                 result = unapply(&repo, *other, remaining.clone(), result)?;
                 let reapply = apply(&repo, *other, from_empty.clone())?;
 
-                remaining = repo.find_tree(treeops::subtract_fast(
+                remaining = repo.find_tree(tree::subtract(
                     &repo,
                     remaining.id(),
                     reapply.id(),
@@ -509,7 +513,7 @@ fn unapply2<'a>(
                 .map(|x| x.id())
                 .unwrap_or(git2::Oid::zero());
             if let Ok(_) = repo.find_blob(file) {
-                treeops::replace_subtree(&repo, &path, file, &parent_tree)
+                tree::insert(&repo, &parent_tree, &path, file)
             } else {
                 Ok(empty_tree(&repo))
             }
@@ -517,12 +521,12 @@ fn unapply2<'a>(
 
         Op::Subtract(a, b) => match (to_op(*a), to_op(*b)) {
             (Op::Nop, b) => {
-                let subtracted = treeops::subtract_fast(
+                let subtracted = tree::subtract(
                     &repo,
                     tree.id(),
                     unapply2(repo, &b, tree, empty_tree(&repo))?.id(),
                 )?;
-                Ok(repo.find_tree(treeops::overlay(
+                Ok(repo.find_tree(tree::overlay(
                     &repo,
                     parent_tree.id(),
                     subtracted,
@@ -537,7 +541,7 @@ fn unapply2<'a>(
                 require_literal_separator: true,
                 require_literal_leading_dot: true,
             };
-            let subtracted = treeops::subtract_tree(
+            let subtracted = tree::remove_pred(
                 &repo,
                 "",
                 tree.id(),
@@ -547,7 +551,7 @@ fn unapply2<'a>(
                 git2::Oid::zero(),
                 &mut std::collections::HashMap::new(),
             )?;
-            Ok(repo.find_tree(treeops::overlay(
+            Ok(repo.find_tree(tree::overlay(
                 &repo,
                 parent_tree.id(),
                 subtracted.id(),
@@ -557,181 +561,15 @@ fn unapply2<'a>(
             .get_path(&path)
             .and_then(|x| repo.find_tree(x.id()))
             .unwrap_or(empty_tree(&repo))),
-        Op::Subdir(path) => {
-            treeops::replace_subtree(&repo, &path, tree.id(), &parent_tree)
-        }
+        Op::Subdir(path) => tree::insert(&repo, &parent_tree, &path, tree.id()),
         _ => return Err(josh_error("filter not reversible")),
     };
-}
-
-fn compose_filter_from_ws_no_fail(
-    repo: &git2::Repository,
-    tree: &git2::Tree,
-    ws_path: &Path,
-) -> JoshResult<Vec<Filter>> {
-    let mut cw = build_compose_filter(&string_blob(
-        &repo,
-        &tree,
-        &ws_path.join("workspace.josh"),
-    ))
-    .unwrap_or(vec![]);
-    cw.insert(0, to_filter(Op::Subdir(ws_path.to_owned())));
-
-    return Ok(cw);
-}
-
-fn string_blob(
-    repo: &git2::Repository,
-    tree: &git2::Tree,
-    path: &Path,
-) -> String {
-    let entry_oid = ok_or!(tree.get_path(&path).map(|x| x.id()), {
-        return "".to_owned();
-    });
-
-    let blob = ok_or!(repo.find_blob(entry_oid), {
-        return "".to_owned();
-    });
-
-    let content = ok_or!(std::str::from_utf8(blob.content()), {
-        return "".to_owned();
-    });
-
-    return content.to_owned();
-}
-
-#[derive(Parser)]
-#[grammar = "filter_parser.pest"]
-struct MyParser;
-
-fn make_op(args: &[&str]) -> JoshResult<Op> {
-    match args {
-        ["nop"] => Ok(Op::Nop),
-        ["empty"] => Ok(Op::Empty),
-        ["prefix", arg] => Ok(Op::Prefix(Path::new(arg).to_owned())),
-        ["workspace", arg] => Ok(Op::Workspace(Path::new(arg).to_owned())),
-        ["SQUASH"] => Ok(Op::Squash),
-        ["DIRS"] => Ok(Op::Dirs),
-        ["FOLD"] => Ok(Op::Fold),
-        _ => Err(josh_error("invalid filter")),
-    }
-}
-
-fn parse_item(pair: pest::iterators::Pair<Rule>) -> JoshResult<Op> {
-    match pair.as_rule() {
-        Rule::filter => {
-            let v: Vec<_> = pair.into_inner().map(|x| x.as_str()).collect();
-            make_op(v.as_slice())
-        }
-        Rule::filter_subdir => Ok(Op::Subdir(
-            Path::new(pair.into_inner().next().unwrap().as_str()).to_owned(),
-        )),
-        Rule::filter_presub => {
-            let mut inner = pair.into_inner();
-            let arg = inner.next().unwrap().as_str();
-            if arg.ends_with("/") {
-                let arg = arg.trim_end_matches("/");
-                Ok(Op::Chain(
-                    to_filter(Op::Subdir(std::path::PathBuf::from(arg))),
-                    to_filter(make_op(&["prefix", arg])?),
-                ))
-            } else if arg.contains("*") {
-                Ok(Op::Glob(arg.to_string()))
-            } else {
-                Ok(Op::File(Path::new(arg).to_owned()))
-            }
-        }
-        Rule::filter_noarg => {
-            let mut inner = pair.into_inner();
-            make_op(&[inner.next().unwrap().as_str()])
-        }
-        Rule::filter_compose => {
-            let v: Vec<_> = pair.into_inner().map(|x| x.as_str()).collect();
-            Ok(Op::Compose(build_compose_filter(v[0])?))
-        }
-        Rule::filter_exclude => {
-            let v: Vec<_> = pair.into_inner().map(|x| x.as_str()).collect();
-            Ok(Op::Subtract(
-                to_filter(Op::Nop),
-                to_filter(Op::Compose(build_compose_filter(v[0])?)),
-            ))
-        }
-        _ => Err(josh_error("parse_item: no match")),
-    }
-}
-
-fn parse_file_entry(
-    pair: pest::iterators::Pair<Rule>,
-    filters: &mut Vec<Filter>,
-) -> JoshResult<()> {
-    match pair.as_rule() {
-        Rule::file_entry => {
-            let mut inner = pair.into_inner();
-            let path = inner.next().unwrap().as_str();
-            let filter = inner
-                .next()
-                .map(|x| x.as_str().to_owned())
-                .unwrap_or(format!(":/{}", path));
-            let filter = parse(&filter)?;
-            let filter = chain(
-                filter,
-                to_filter(Op::Prefix(Path::new(path).to_owned())),
-            );
-            filters.push(filter);
-            Ok(())
-        }
-        Rule::filter_spec => {
-            let filter = pair.as_str();
-            filters.push(parse(&filter)?);
-            Ok(())
-        }
-        Rule::EOI => Ok(()),
-        _ => Err(josh_error(&format!("invalid workspace file {:?}", pair))),
-    }
-}
-
-fn build_compose_filter(filter_spec: &str) -> JoshResult<Vec<Filter>> {
-    rs_tracing::trace_scoped!("build_compose_filter");
-    let mut filters = vec![];
-
-    if let Ok(mut r) = MyParser::parse(Rule::workspace_file, filter_spec) {
-        let r = r.next().unwrap();
-        for pair in r.into_inner() {
-            parse_file_entry(pair, &mut filters)?;
-        }
-
-        return Ok(filters);
-    }
-    return Err(josh_error(&format!(
-        "Invalid workspace:\n----\n{}\n----",
-        filter_spec
-    )));
 }
 
 pub fn chain(first: Filter, second: Filter) -> Filter {
     to_filter(Op::Chain(first, second))
 }
 
-pub fn parse(filter_spec: &str) -> JoshResult<Filter> {
-    if filter_spec == "" {
-        return parse(":nop");
-    }
-    let mut chain: Option<Op> = None;
-    if let Ok(r) = MyParser::parse(Rule::filter_chain, filter_spec) {
-        let mut r = r;
-        let r = r.next().unwrap();
-        for pair in r.into_inner() {
-            let v = parse_item(pair)?;
-            chain = Some(if let Some(c) = chain {
-                Op::Chain(to_filter(c), to_filter(v))
-            } else {
-                v
-            });
-        }
-        return Ok(opt::optimize(to_filter(chain.unwrap_or(Op::Nop))));
-    };
-
-    return Ok(opt::optimize(to_filter(Op::Compose(build_compose_filter(
-        filter_spec,
-    )?))));
+pub fn compose(first: Filter, second: Filter) -> Filter {
+    to_filter(Op::Compose(vec![first, second]))
 }

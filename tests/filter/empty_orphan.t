@@ -101,7 +101,7 @@ Empty root commits from unrelated parts of the tree should not be included
   c/file3
 
   $ josh-filter -s c=:exclude[:/sub1] master
-  [3] :SUBTRACT[:nop~:/sub1]
+  [3] :exclude[:/sub1]
   [4] :/sub1
   [6] :prefix=c
 
@@ -115,7 +115,7 @@ Empty root commits from unrelated parts of the tree should not be included
   c/some_other_file
 
   $ josh-filter -s :prefix=x FILTERED_HEAD
-  [3] :SUBTRACT[:nop~:/sub1]
+  [3] :exclude[:/sub1]
   [3] :prefix=x
   [4] :/sub1
   [6] :prefix=c

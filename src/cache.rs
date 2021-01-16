@@ -31,7 +31,7 @@ pub fn print_stats() {
             let name = if name.contains("SUBTRACT") {
                 name.clone()
             } else {
-                super::filter::pretty(super::filter::parse(&name).unwrap(), 4)
+                filter::pretty(filter::parse(&name).unwrap(), 4)
             };
             v.push((t.len(), name));
         }

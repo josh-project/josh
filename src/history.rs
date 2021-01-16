@@ -435,7 +435,7 @@ fn create_filtered_commit2<'a>(
 
     if selected_filtered_parent_commits.len() == 0
         && !(original_commmit.parents().len() == 0
-            && treeops::is_empty_root(&repo, &original_commmit.tree()?))
+            && is_empty_root(&repo, &original_commmit.tree()?))
     {
         if filtered_parent_commits.len() != 0 {
             return Ok((filtered_parent_commits[0].id(), false));
@@ -454,4 +454,21 @@ fn create_filtered_commit2<'a>(
         )?,
         true,
     ));
+}
+
+fn is_empty_root(repo: &git2::Repository, tree: &git2::Tree) -> bool {
+    if tree.id() == empty_tree_id() {
+        return true;
+    }
+
+    let mut all_empty = true;
+
+    for e in tree.iter() {
+        if let Ok(Ok(t)) = e.to_object(&repo).map(|x| x.into_tree()) {
+            all_empty = all_empty && is_empty_root(&repo, &t);
+        } else {
+            return false;
+        }
+    }
+    return all_empty;
 }
