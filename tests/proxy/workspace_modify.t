@@ -80,7 +80,7 @@
   Flushed credential cache
   $ git pull --rebase
   From http://localhost:8002/real_repo.git:workspace=ws
-     *..*  master     -> origin/master (glob)
+   + *...* master     -> origin/master  (forced update) (glob)
   Already up to date.
 
   $ tree
@@ -167,8 +167,8 @@
   Updating *..* (glob)
   Fast-forward
    d/file3        | 1 +
-   workspace.josh | 1 +
-   2 files changed, 2 insertions(+)
+   workspace.josh | 3 ++-
+   2 files changed, 3 insertions(+), 1 deletion(-)
    create mode 100644 d/file3
 
   $ tree
@@ -251,6 +251,9 @@
 
   $ git sync
     refs/heads/master -> refs/heads/master
+  From http://localhost:8002/real_repo.git:workspace=ws
+   * branch            * -> FETCH_HEAD (glob)
+  HEAD is now at * add in filter (glob)
 
   $ cat > workspace.josh <<EOF
   > a/b = :/sub2
@@ -294,8 +297,8 @@ Note that d/ is still in the tree but now it is not overlayed
   6 directories, 7 files
 
   $ cat workspace.josh
-  a/b = :/sub2
   c = :/sub1
+  a/b = :/sub2
   w = :/sub3
 
   $ git log --graph --pretty=%s
@@ -324,9 +327,9 @@ Note that d/ is still in the tree but now it is not overlayed
    sub1/subsub/newfile_1 | 1 +
    sub2/newfile_2        | 1 +
    ws/d/file3            | 1 +
-   ws/workspace.josh     | 2 +-
+   ws/workspace.josh     | 4 ++--
    ws/ws_file            | 1 +
-   6 files changed, 5 insertions(+), 2 deletions(-)
+   6 files changed, 6 insertions(+), 3 deletions(-)
    delete mode 100644 sub1/subsub/file1
    create mode 100644 sub1/subsub/newfile_1
    create mode 100644 sub2/newfile_2
@@ -473,6 +476,7 @@ Note that ws/d/ is now present in the ws
   |   |-- rewrites
   |   |   `-- real_repo.git
   |   |       |-- r_* (glob)
+  |   |       |-- r_* (glob)
   |   |       `-- r_* (glob)
   |   `-- upstream
   |       `-- real_repo.git
@@ -482,6 +486,6 @@ Note that ws/d/ is now present in the ws
   |-- namespaces
   `-- tags
   
-  26 directories, 10 files
+  26 directories, 11 files
 
 $ cat ${TESTTMP}/josh-proxy.out

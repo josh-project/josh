@@ -76,14 +76,30 @@
   | * add subsub1
   * add workspace
 
+  $ tree
+  .
+  |-- a
+  |   |-- subsub1
+  |   |   `-- file1
+  |   `-- subsub2
+  |       `-- file1
+  `-- workspace.josh
+  
+  3 directories, 3 files
+  $ cat workspace.josh
+  a = :/sub1:[
+      ::subsub1/
+      ::subsub2/
+  ]
+
   $ cd ${TESTTMP}/real_repo
   $ git pull --rebase
   From http://localhost:8001/real_repo
      *..*  master     -> origin/master* (glob)
   Updating *..* (glob)
   Fast-forward
-   ws/workspace.josh | 2 ++
-   1 file changed, 2 insertions(+)
+   ws/workspace.josh | 4 ++++
+   1 file changed, 4 insertions(+)
    create mode 100644 ws/workspace.josh
 
   $ git log --graph --pretty=%s

@@ -180,13 +180,14 @@
 
   $ git commit -m "add in filter" 1> /dev/null
 
-  $ git push
-  remote: josh-proxy        
-  remote: response from upstream:        
-  remote:  To http://localhost:8001/real_repo.git        
-  remote:    *..*  JOSH_PUSH -> master         (glob)
-  remote: 
-  remote: 
+  $ git push 2>&1 >/dev/null | sed -e 's/[ ]*$//g'
+  remote: josh-proxy
+  remote: response from upstream:
+  remote:  To http://localhost:8001/real_repo.git
+  remote:    *..*  JOSH_PUSH -> master (glob)
+  remote: REWRITE(* -> *) (glob)
+  remote:
+  remote:
   To http://localhost:8002/real_repo.git:workspace=ws:prefix=pre:/pre.git
      *..*  master -> master (glob)
 
@@ -386,6 +387,7 @@ Note that ws/d/ is now present in the ws
   |   |               `-- master
   |   |-- rewrites
   |   |   `-- real_repo.git
+  |   |       |-- r_* (glob)
   |   |       `-- r_* (glob)
   |   `-- upstream
   |       `-- real_repo.git
@@ -395,6 +397,6 @@ Note that ws/d/ is now present in the ws
   |-- namespaces
   `-- tags
   
-  28 directories, 10 files
+  28 directories, 11 files
 
 $ cat ${TESTTMP}/josh-proxy.out | grep VIEW
