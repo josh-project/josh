@@ -75,15 +75,15 @@ pub fn pretty(filter: Filter, indent: usize) -> String {
 }
 
 fn pretty2(op: &Op, indent: usize, compose: bool) -> String {
-    let i = format!("\n{}", " ".repeat(indent));
-
-    let ff = |filters: &Vec<_>, n| {
+    let ff = |filters: &Vec<_>, n, ind| {
+        let i = format!("\n{}", " ".repeat(ind));
         let joined = filters
             .iter()
-            .map(|x| pretty(*x, indent + 4))
+            .map(|x| pretty(*x, ind + 4))
             .collect::<Vec<_>>()
             .join(&i);
-        if indent == 0 {
+
+        if ind == 0 {
             joined
         } else {
             format!(
@@ -91,16 +91,18 @@ fn pretty2(op: &Op, indent: usize, compose: bool) -> String {
                 n,
                 &i,
                 joined,
-                &format!("\n{}", " ".repeat(indent - 4))
+                &format!("\n{}", " ".repeat(ind - 4))
             )
         }
     };
     match op {
-        Op::Compose(filters) => ff(filters, ""),
+        Op::Compose(filters) => ff(filters, "", indent),
         Op::Subtract(af, bf) => match (to_op(*af), to_op(*bf)) {
-            (Op::Nop, Op::Compose(filters)) => ff(&filters, "exclude"),
-            (Op::Nop, b) => format!(":exclude[{}]", spec2(&b)),
-            _ => ff(&vec![*af, *bf], "subtract"),
+            (Op::Nop, Op::Compose(filters)) => {
+                ff(&filters, "exclude", indent)
+            }
+            (Op::Nop, b) => format!(":exclude[{}]", pretty2(&b, indent, false)),
+            _ => ff(&vec![*af, *bf], "subtract", indent + 4),
         },
         Op::Chain(a, b) => match (to_op(*a), to_op(*b)) {
             (Op::Subdir(p1), Op::Prefix(p2)) if p1 == p2 => {

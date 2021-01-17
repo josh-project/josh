@@ -7,16 +7,14 @@ GROUP_START = _{ "[" }
 GROUP_END = _{ "]" }
 
 filter_spec = { (
-    filter_compose
-  | filter_exclude
+    filter_group
   | filter_presub
   | filter_subdir
   | filter
   | filter_noarg
 )+ }
 
-filter_compose = { CMD_START ~ GROUP_START ~ compose ~ GROUP_END }
-filter_exclude = { CMD_START ~ "exclude" ~ GROUP_START ~ compose ~ GROUP_END }
+filter_group = { CMD_START ~ cmd? ~ GROUP_START ~ compose ~ GROUP_END }
 filter_subdir = { CMD_START ~ "/" ~ argument }
 filter_presub = { CMD_START ~ ":" ~ argument }
 filter = { CMD_START ~ cmd ~ "=" ~ (argument ~ ("," ~ argument)*)? }

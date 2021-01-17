@@ -1,3 +1,8 @@
+/*
+ * Filter optimization and transformation functions.
+ * All those functions convert filters from one equivalent representation into another.
+ */
+
 use super::*;
 
 lazy_static! {
@@ -12,16 +17,24 @@ lazy_static! {
  * suitable for fast evaluation and cache reuse.
  */
 pub fn optimize(filter: Filter) -> Filter {
-    let mut filter = filter;
-    loop {
+    if let Some(f) = OPTIMIZED.lock().unwrap().get(&filter) {
+        return *f;
+    }
+    let original = filter;
+
+    let mut filter = flatten(filter);
+    let result = loop {
         let pretty = opt::simplify(filter);
         let optimized = opt::iterate(filter);
         filter = opt::simplify(optimized);
 
         if filter == pretty {
-            return opt::iterate(filter);
+            break opt::iterate(filter);
         }
-    }
+    };
+
+    OPTIMIZED.lock().unwrap().insert(original, result);
+    return result;
 }
 
 /*
@@ -77,6 +90,59 @@ pub fn simplify(filter: Filter) -> Filter {
     };
 
     SIMPLIFIED.lock().unwrap().insert(original, r);
+    return r;
+}
+
+/*
+ * Remove nesting from a filter.
+ * This "flat" representation of the filter is more suitable calculate
+ * the difference between two complex filters.
+ */
+fn flatten(filter: Filter) -> Filter {
+    rs_tracing::trace_scoped!("flatten", "spec": spec(filter));
+    let original = filter;
+    let result = to_filter(match to_op(filter) {
+        Op::Compose(filters) => {
+            let mut out = vec![];
+            for f in filters {
+                if let Op::Compose(mut v) = to_op(f) {
+                    out.append(&mut v);
+                } else {
+                    out.push(f);
+                }
+            }
+            Op::Compose(out.drain(..).map(flatten).collect())
+        }
+        Op::Chain(af, bf) => match (to_op(af), to_op(bf)) {
+            (_, Op::Compose(filters)) => {
+                let mut out = vec![];
+                for f in filters {
+                    out.push(to_filter(Op::Chain(af, f)));
+                }
+                Op::Compose(out)
+            }
+            (Op::Compose(filters), _) => {
+                let mut out = vec![];
+                for f in filters {
+                    out.push(to_filter(Op::Chain(f, bf)));
+                }
+                Op::Compose(out)
+            }
+            _ => Op::Chain(flatten(af), flatten(bf)),
+        },
+        Op::Subtract(a, b) => match (to_op(a), to_op(b)) {
+            (a, b) => {
+                Op::Subtract(flatten(to_filter(a)), flatten(to_filter(b)))
+            }
+        },
+        _ => to_op(filter),
+    });
+
+    let r = if result == original {
+        result
+    } else {
+        flatten(result)
+    };
     return r;
 }
 
@@ -205,6 +271,11 @@ fn iterate(filter: Filter) -> Filter {
         if filter == optimized {
             return optimized;
         }
+        log::debug!(
+            "OPTIMIZED:\n{}\n->\n{}\n",
+            pretty(filter, 0),
+            pretty(optimized, 0)
+        );
         filter = optimized;
     }
 }
@@ -280,6 +351,10 @@ fn step(filter: Filter) -> Filter {
             (a, Op::Empty) => a,
             (Op::Chain(a, b), Op::Chain(c, d)) if a == c => {
                 Op::Chain(a, to_filter(Op::Subtract(b, d)))
+            }
+            _ if common_post(&vec![af, bf]).is_some() => {
+                let (cp, rest) = common_post(&vec![af, bf]).unwrap();
+                Op::Chain(to_filter(Op::Subtract(rest[0], rest[1])), cp)
             }
             (Op::Compose(mut av), _) if av.contains(&bf) => {
                 av.retain(|x| *x != bf);

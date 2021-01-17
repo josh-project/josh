@@ -133,7 +133,9 @@ pub fn parse(filter_spec: &str) -> JoshResult<Filter> {
         return Ok(opt::optimize(to_filter(chain.unwrap_or(Op::Nop))));
     };
 
-    return Ok(opt::optimize(to_filter(Op::Compose(parse_group(filter_spec)?))));
+    return Ok(opt::optimize(to_filter(Op::Compose(parse_group(
+        filter_spec,
+    )?))));
 }
 
 #[derive(Parser)]
