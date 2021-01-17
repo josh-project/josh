@@ -411,9 +411,6 @@ fn create_filtered_commit2<'a>(
     filtered_parent_ids: Vec<git2::Oid>,
     filtered_tree: git2::Tree<'a>,
 ) -> JoshResult<(git2::Oid, bool)> {
-    let is_initial_merge = filtered_parent_ids.len() > 1
-        && !repo.merge_base_many(&filtered_parent_ids).is_ok();
-
     let filtered_parent_commits: std::result::Result<Vec<_>, _> =
         filtered_parent_ids
             .iter()
@@ -423,9 +420,17 @@ fn create_filtered_commit2<'a>(
 
     let mut filtered_parent_commits = filtered_parent_commits?;
 
-    if is_initial_merge {
-        filtered_parent_commits
-            .retain(|x| x.tree_id() != filter::tree::empty_id());
+    if filtered_parent_commits
+        .iter()
+        .any(|x| x.tree_id() == filter::tree::empty_id())
+    {
+        let is_initial_merge = filtered_parent_ids.len() > 1
+            && !repo.merge_base_many(&filtered_parent_ids).is_ok();
+
+        if is_initial_merge {
+            filtered_parent_commits
+                .retain(|x| x.tree_id() != filter::tree::empty_id());
+        }
     }
 
     let selected_filtered_parent_commits: Vec<&_> = select_parent_commits(
