@@ -54,3 +54,120 @@
       ]
       gt = :/tgt
   ]
+
+  $ cat > f <<EOF
+  > :subtract[:[
+  >     ::a/
+  >     ::b/
+  > ],:[
+  >     ::a/
+  >     ::c/
+  > ]]
+  > EOF
+  $ josh-filter -p --file f
+  :subtract[
+      ::b/
+      ::c/
+  ]
+
+  $ cat > f <<EOF
+  > :subtract[
+  >     :[
+  >         :/a:[
+  >             a = :[
+  >                 ::b/
+  >                 ::j/
+  >             ]
+  >             x = :/x:[
+  >                 ::c++666/
+  >                 ::d/
+  >                 ::g/
+  >                 ::gg/
+  >                 ::u/
+  >             ]
+  >         ]
+  >         p/au/bs = :/m/bs/m2/i:[
+  >             :/tc:[
+  >                 ::i1/
+  >                 ::i2/
+  >             ]
+  >             gt = :/tgt
+  >         ]
+  >    ],:[
+  >         :/a:[
+  >             a = :[
+  >                 ::b/
+  >                 ::j/
+  >             ]
+  >             x = :/x:[
+  >                 ::c++666/
+  >                 ::d/
+  >                 ::gg/
+  >                 ::u/
+  >             ]
+  >         ]
+  >         p/au/bs = :/m/bs/m2/i:[
+  >             :/tc:[
+  >                 ::i1/
+  >                 ::i2/
+  >             ]
+  >             gt = :/tgt
+  >         ]
+  >    ]
+  > ]
+  > EOF
+
+  $ josh-filter -p --file f
+  x/g = :/a/x/g
+
+  $ cat > f <<EOF
+  > :subtract[
+  >     :[
+  >         :/a:[
+  >             a = :[
+  >                 ::b/
+  >                 ::j/
+  >             ]
+  >             x = :/x:[
+  >                 ::c++666/
+  >                 ::d/
+  >                 ::g/
+  >                 ::gg/
+  >                 ::u/
+  >             ]
+  >         ]
+  >         p/au/bs = :/m/bs/m2/i:[
+  >             :/tc:[
+  >                 ::i2/
+  >             ]
+  >             gt = :/tgt
+  >         ]
+  >    ],:[
+  >         :/a:[
+  >             a = :[
+  >                 ::b/
+  >                 ::j/
+  >             ]
+  >             x = :/x:[
+  >                 ::c++666/
+  >                 ::d/
+  >                 ::gg/
+  >                 ::u/
+  >             ]
+  >         ]
+  >         p/au/bs = :/m/bs/m2/i:[
+  >             :/tc:[
+  >                 ::i1/
+  >                 ::i2/
+  >             ]
+  >             gt = :/tgt
+  >         ]
+  >    ]
+  > ]
+  > EOF
+
+  $ josh-filter -p --file f
+  :subtract[
+      x/g = :/a/x/g
+      p/au/bs/i1 = :/m/bs/m2/i/tc/i1
+  ]
