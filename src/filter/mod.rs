@@ -71,29 +71,37 @@ enum Op {
 
 pub fn pretty(filter: Filter, indent: usize) -> String {
     let filter = opt::simplify(filter);
-    pretty2(&to_op(filter), indent, true)
+
+    if let Op::Compose(filters) = to_op(filter) {
+        if indent == 0 {
+        let i = format!("\n{}", " ".repeat(indent));
+        return filters
+            .iter()
+            .map(|x| pretty2(&to_op(*x), indent + 4, true))
+            .collect::<Vec<_>>()
+            .join(&i);
+        }
+    }
+    return pretty2(&to_op(filter), indent, true);
 }
 
 fn pretty2(op: &Op, indent: usize, compose: bool) -> String {
     let ff = |filters: &Vec<_>, n, ind| {
-        let i = format!("\n{}", " ".repeat(ind));
+        let ind2 = std::cmp::max(ind, 4);
+        let i = format!("\n{}", " ".repeat(ind2));
         let joined = filters
             .iter()
-            .map(|x| pretty(*x, ind + 4))
+            .map(|x| pretty2(&to_op(*x), ind + 4, true))
             .collect::<Vec<_>>()
             .join(&i);
 
-        if ind == 0 {
-            joined
-        } else {
-            format!(
-                ":{}[{}{}{}]",
-                n,
-                &i,
-                joined,
-                &format!("\n{}", " ".repeat(ind - 4))
-            )
-        }
+        format!(
+            ":{}[{}{}{}]",
+            n,
+            &i,
+            joined,
+            &format!("\n{}", " ".repeat(ind2 - 4))
+        )
     };
     match op {
         Op::Compose(filters) => ff(filters, "", indent),
@@ -479,6 +487,13 @@ fn unapply2<'a>(
                 &tree,
                 &Path::new("workspace.josh"),
             ))?;
+
+            let tree = tree::insert(
+                &repo,
+                &tree,
+                &Path::new("workspace.josh"),
+                repo.blob(&format!("{}\n", pretty(mapped, 0)).as_bytes())?,
+            )?;
 
             return unapply(repo, compose(root, mapped), tree, parent_tree);
         }

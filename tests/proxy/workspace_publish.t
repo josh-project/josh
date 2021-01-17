@@ -155,6 +155,9 @@
   |   |       `-- %3Aworkspace=ws
   |   |           `-- heads
   |   |               `-- master
+  |   |-- rewrites
+  |   |   `-- real_repo.git
+  |   |       `-- r_* (glob)
   |   `-- upstream
   |       `-- real_repo.git
   |           `-- refs
@@ -163,6 +166,6 @@
   |-- namespaces
   `-- tags
   
-  16 directories, 4 files
+  18 directories, 5 files
 
 $ cat ${TESTTMP}/josh-proxy.out | grep VIEW

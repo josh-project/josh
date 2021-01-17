@@ -171,3 +171,14 @@
       x/g = :/a/x/g
       p/au/bs/i1 = :/m/bs/m2/i/tc/i1
   ]
+
+  $ cat > f <<EOF
+  > a/subsub1 = :/sub1/subsub1
+  > a/subsub2 = :/sub1/subsub2
+  > EOF
+
+  $ josh-filter -p --file f
+  a = :/sub1:[
+      ::subsub1/
+      ::subsub2/
+  ]

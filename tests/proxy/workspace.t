@@ -145,13 +145,14 @@
 
   $ git commit -m "add in filter" 1> /dev/null
 
-  $ git push 1> /dev/null
-  remote: josh-proxy        
-  remote: response from upstream:        
-  remote:  To http://localhost:8001/real_repo.git        
-  remote:    *..*  JOSH_PUSH -> master * (glob)
-  remote: 
-  remote: 
+  $ git push 2>&1 >/dev/null | sed -e 's/[ ]*$//g'
+  remote: josh-proxy
+  remote: response from upstream:
+  remote:  To http://localhost:8001/real_repo.git
+  remote:    *..*  JOSH_PUSH -> master (glob)
+  remote: REWRITE(* -> *) (glob)
+  remote:
+  remote:
   To http://localhost:8002/real_repo.git:workspace=ws.git
      *..*  master -> master (glob)
 
@@ -263,6 +264,9 @@
   |   |       `-- %3Aworkspace=ws
   |   |           `-- heads
   |   |               `-- master
+  |   |-- rewrites
+  |   |   `-- real_repo.git
+  |   |       `-- r_* (glob)
   |   `-- upstream
   |       `-- real_repo.git
   |           `-- refs
@@ -271,6 +275,6 @@
   |-- namespaces
   `-- tags
   
-  22 directories, 7 files
+  24 directories, 8 files
 
 $ cat ${TESTTMP}/josh-proxy.out | grep VIEW
