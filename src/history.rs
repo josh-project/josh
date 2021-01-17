@@ -308,7 +308,7 @@ pub fn unapply_filter(
                     &transaction.repo(),
                     filterobj,
                     tree,
-                    empty_tree(&transaction.repo()),
+                    filter::tree::empty(&transaction.repo()),
                 )?
             }
             parent_count => {
@@ -424,7 +424,8 @@ fn create_filtered_commit2<'a>(
     let mut filtered_parent_commits = filtered_parent_commits?;
 
     if is_initial_merge {
-        filtered_parent_commits.retain(|x| x.tree_id() != empty_tree_id());
+        filtered_parent_commits
+            .retain(|x| x.tree_id() != filter::tree::empty_id());
     }
 
     let selected_filtered_parent_commits: Vec<&_> = select_parent_commits(
@@ -440,7 +441,7 @@ fn create_filtered_commit2<'a>(
         if filtered_parent_commits.len() != 0 {
             return Ok((filtered_parent_commits[0].id(), false));
         }
-        if filtered_tree.id() == empty_tree_id() {
+        if filtered_tree.id() == filter::tree::empty_id() {
             return Ok((git2::Oid::zero(), false));
         }
     }
@@ -457,7 +458,7 @@ fn create_filtered_commit2<'a>(
 }
 
 fn is_empty_root(repo: &git2::Repository, tree: &git2::Tree) -> bool {
-    if tree.id() == empty_tree_id() {
+    if tree.id() == filter::tree::empty_id() {
         return true;
     }
 

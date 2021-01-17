@@ -3,7 +3,7 @@ use pest::Parser;
 use std::path::Path;
 mod opt;
 mod parse;
-mod tree;
+pub mod tree;
 
 pub use parse::parse;
 
@@ -12,6 +12,8 @@ lazy_static! {
         std::sync::Mutex::new(std::collections::HashMap::new());
 }
 
+/// Filters are represented as `git2::Oid`, however they are not ever stored
+/// inside the repo.
 #[derive(Clone, Hash, PartialEq, Eq, Debug, Copy)]
 pub struct Filter(git2::Oid);
 
@@ -69,17 +71,19 @@ enum Op {
     Subtract(Filter, Filter),
 }
 
+/// Pretty print the filter on multiple lines with initial indentation level.
+/// Nested filters will be indented with additional 4 spaces per nesting level.
 pub fn pretty(filter: Filter, indent: usize) -> String {
     let filter = opt::simplify(filter);
 
     if let Op::Compose(filters) = to_op(filter) {
         if indent == 0 {
-        let i = format!("\n{}", " ".repeat(indent));
-        return filters
-            .iter()
-            .map(|x| pretty2(&to_op(*x), indent + 4, true))
-            .collect::<Vec<_>>()
-            .join(&i);
+            let i = format!("\n{}", " ".repeat(indent));
+            return filters
+                .iter()
+                .map(|x| pretty2(&to_op(*x), indent + 4, true))
+                .collect::<Vec<_>>()
+                .join(&i);
         }
     }
     return pretty2(&to_op(filter), indent, true);
@@ -106,9 +110,7 @@ fn pretty2(op: &Op, indent: usize, compose: bool) -> String {
     match op {
         Op::Compose(filters) => ff(filters, "", indent),
         Op::Subtract(af, bf) => match (to_op(*af), to_op(*bf)) {
-            (Op::Nop, Op::Compose(filters)) => {
-                ff(&filters, "exclude", indent)
-            }
+            (Op::Nop, Op::Compose(filters)) => ff(&filters, "exclude", indent),
             (Op::Nop, b) => format!(":exclude[{}]", pretty2(&b, indent, false)),
             _ => ff(&vec![*af, *bf], "subtract", indent + 4),
         },
@@ -133,6 +135,8 @@ fn pretty2(op: &Op, indent: usize, compose: bool) -> String {
     }
 }
 
+/// Compact, single line string representation of a filter so that `parse(spec(F)) == F`
+/// Note that this is will not be the best human readable representation. For that see `pretty(...)`
 pub fn spec(filter: Filter) -> String {
     spec2(&to_op(filter))
 }
@@ -169,6 +173,8 @@ fn spec2(op: &Op) -> String {
     }
 }
 
+/// Calculate the filtered commit for `commit`. This can take some time if done
+/// for the first time and thus should generally be done asynchronously.
 pub fn apply_to_commit(
     filter: Filter,
     commit: &git2::Commit,
@@ -309,21 +315,21 @@ fn apply_to_commit2(
                     .repo()
                     .find_commit(apply_to_commit(*a, &commit, transaction)?)
                     .map(|x| x.tree_id())
-                    .unwrap_or(empty_tree_id())
+                    .unwrap_or(tree::empty_id())
             };
             let bf = {
                 transaction
                     .repo()
                     .find_commit(apply_to_commit(*b, &commit, transaction)?)
                     .map(|x| x.tree_id())
-                    .unwrap_or(empty_tree_id())
+                    .unwrap_or(tree::empty_id())
             };
             let bf = transaction.repo().find_tree(bf)?;
             let bu = unapply(
                 &transaction.repo(),
                 *b,
                 bf,
-                empty_tree(&transaction.repo()),
+                tree::empty(&transaction.repo()),
             )?;
             let ba = apply(&transaction.repo(), *a, bu)?;
 
@@ -353,6 +359,7 @@ fn apply_to_commit2(
     );
 }
 
+/// Filter a single tree. This does not involve walking history and is thus fast in most cases.
 pub fn apply<'a>(
     repo: &'a git2::Repository,
     filter: Filter,
@@ -368,7 +375,7 @@ fn apply2<'a>(
 ) -> JoshResult<git2::Tree<'a>> {
     match op {
         Op::Nop => return Ok(tree),
-        Op::Empty => return Ok(empty_tree(&repo)),
+        Op::Empty => return Ok(tree::empty(&repo)),
         Op::Fold => return Ok(tree),
         Op::Squash => return Ok(tree),
 
@@ -396,9 +403,9 @@ fn apply2<'a>(
                 .map(|x| x.id())
                 .unwrap_or(git2::Oid::zero());
             if let Ok(_) = repo.find_blob(file) {
-                tree::insert(&repo, &empty_tree(&repo), &path, file)
+                tree::insert(&repo, &tree::empty(&repo), &path, file)
             } else {
-                Ok(empty_tree(&repo))
+                Ok(tree::empty(&repo))
             }
         }
 
@@ -406,16 +413,16 @@ fn apply2<'a>(
             return Ok(tree
                 .get_path(&path)
                 .and_then(|x| repo.find_tree(x.id()))
-                .unwrap_or(empty_tree(&repo)));
+                .unwrap_or(tree::empty(&repo)));
         }
         Op::Prefix(path) => {
-            tree::insert(&repo, &empty_tree(&repo), &path, tree.id())
+            tree::insert(&repo, &tree::empty(&repo), &path, tree.id())
         }
 
         Op::Subtract(a, b) => {
             let af = apply(&repo, *a, tree.clone())?;
             let bf = apply(&repo, *b, tree.clone())?;
-            let bu = unapply(&repo, *b, bf, empty_tree(&repo))?;
+            let bu = unapply(&repo, *b, bf, tree::empty(&repo))?;
             let ba = apply(&repo, *a, bu)?;
             Ok(repo.find_tree(tree::subtract(&repo, af.id(), ba.id())?)?)
         }
@@ -456,6 +463,8 @@ fn apply2<'a>(
     }
 }
 
+/// Calculate a tree with minimal differences from `parent_tree`
+/// such that `apply(unapply(tree, parent_tree)) == tree`
 pub fn unapply<'a>(
     repo: &'a git2::Repository,
     filter: Filter,
@@ -506,9 +515,9 @@ fn unapply2<'a>(
                     &repo,
                     *other,
                     remaining.clone(),
-                    empty_tree(&repo),
+                    tree::empty(&repo),
                 )?;
-                if empty_tree_id() == from_empty.id() {
+                if tree::empty_id() == from_empty.id() {
                     continue;
                 }
                 result = unapply(&repo, *other, remaining.clone(), result)?;
@@ -532,7 +541,7 @@ fn unapply2<'a>(
             if let Ok(_) = repo.find_blob(file) {
                 tree::insert(&repo, &parent_tree, &path, file)
             } else {
-                Ok(empty_tree(&repo))
+                Ok(tree::empty(&repo))
             }
         }
 
@@ -541,7 +550,7 @@ fn unapply2<'a>(
                 let subtracted = tree::subtract(
                     &repo,
                     tree.id(),
-                    unapply2(repo, &b, tree, empty_tree(&repo))?.id(),
+                    unapply2(repo, &b, tree, tree::empty(&repo))?.id(),
                 )?;
                 Ok(repo.find_tree(tree::overlay(
                     &repo,
@@ -577,16 +586,18 @@ fn unapply2<'a>(
         Op::Prefix(path) => Ok(tree
             .get_path(&path)
             .and_then(|x| repo.find_tree(x.id()))
-            .unwrap_or(empty_tree(&repo))),
+            .unwrap_or(tree::empty(&repo))),
         Op::Subdir(path) => tree::insert(&repo, &parent_tree, &path, tree.id()),
         _ => return Err(josh_error("filter not reversible")),
     };
 }
 
+/// Create a filter that is the result of feeding the output of `first` into `second`
 pub fn chain(first: Filter, second: Filter) -> Filter {
     to_filter(Op::Chain(first, second))
 }
 
+/// Create a filter that is the result of overlaying the output of `first` onto `second`
 pub fn compose(first: Filter, second: Filter) -> Filter {
     to_filter(Op::Compose(vec![first, second]))
 }

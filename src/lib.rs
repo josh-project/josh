@@ -52,15 +52,6 @@ pub enum UnapplyResult {
     BranchDoesNotExist,
 }
 
-fn empty_tree_id() -> git2::Oid {
-    return git2::Oid::from_str("4b825dc642cb6eb9a060e54bf8d69288fbee4904")
-        .unwrap();
-}
-
-pub fn empty_tree(repo: &git2::Repository) -> git2::Tree {
-    repo.find_tree(empty_tree_id()).unwrap()
-}
-
 const FRAGMENT: &percent_encoding::AsciiSet = &percent_encoding::CONTROLS
     .add(b'/')
     .add(b'*')

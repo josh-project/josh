@@ -114,6 +114,7 @@ fn parse_group(filter_spec: &str) -> JoshResult<Vec<Filter>> {
     )));
 }
 
+/// Create a `Filter` from a string representation
 pub fn parse(filter_spec: &str) -> JoshResult<Filter> {
     if filter_spec == "" {
         return Ok(to_filter(Op::Empty));

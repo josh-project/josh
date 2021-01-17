@@ -11,7 +11,7 @@ pub fn dirtree<'a>(
     }
 
     let tree = repo.find_tree(input)?;
-    let mut result = empty_tree(&repo);
+    let mut result = tree::empty(&repo);
 
     for entry in tree.iter() {
         let name = entry.name().ok_or(super::josh_error("INVALID_FILENAME"))?;
@@ -43,7 +43,7 @@ pub fn dirtree<'a>(
             )?
             .id();
 
-            if s != empty_tree_id() {
+            if s != tree::empty_id() {
                 result = replace_child(
                     &repo,
                     &std::path::Path::new(
@@ -87,7 +87,7 @@ pub fn remove_pred<'a>(
     rs_tracing::trace_scoped!("remove_pred X", "root": root);
 
     let tree = repo.find_tree(input)?;
-    let mut result = empty_tree(&repo);
+    let mut result = tree::empty(&repo);
 
     for entry in tree.iter() {
         let name = entry.name().ok_or(super::josh_error("INVALID_FILENAME"))?;
@@ -126,7 +126,7 @@ pub fn remove_pred<'a>(
                 .id()
             };
 
-            if s != empty_tree_id() {
+            if s != tree::empty_id() {
                 result = replace_child(
                     &repo,
                     &std::path::Path::new(
@@ -149,16 +149,16 @@ pub fn subtract(
     input2: git2::Oid,
 ) -> super::JoshResult<git2::Oid> {
     if input1 == input2 {
-        return Ok(empty_tree_id());
+        return Ok(tree::empty_id());
     }
-    if input1 == empty_tree_id() {
-        return Ok(empty_tree_id());
+    if input1 == tree::empty_id() {
+        return Ok(tree::empty_id());
     }
 
     if let (Ok(tree1), Ok(tree2)) =
         (repo.find_tree(input1), repo.find_tree(input2))
     {
-        if input2 == empty_tree_id() {
+        if input2 == tree::empty_id() {
             return Ok(input1);
         }
         rs_tracing::trace_scoped!("subtract fast");
@@ -182,7 +182,7 @@ pub fn subtract(
         return Ok(result_tree.id());
     }
 
-    return Ok(empty_tree_id());
+    return Ok(tree::empty_id());
 }
 
 fn replace_child<'a>(
@@ -201,7 +201,7 @@ fn replace_child<'a>(
         let mut builder = repo.treebuilder(Some(&full_tree))?;
         if oid == git2::Oid::zero() {
             builder.remove(child).ok();
-        } else if oid == empty_tree_id() {
+        } else if oid == tree::empty_id() {
             builder.remove(child).ok();
         } else {
             builder.insert(child, oid, mode).ok();
@@ -226,9 +226,9 @@ pub fn insert<'a>(
         let path = path.parent().ok_or(super::josh_error("path.parent"))?;
 
         let st = if let Ok(st) = full_tree.get_path(path) {
-            repo.find_tree(st.id()).unwrap_or(empty_tree(&repo))
+            repo.find_tree(st.id()).unwrap_or(tree::empty(&repo))
         } else {
-            empty_tree(&repo)
+            tree::empty(&repo)
         };
 
         let tree = replace_child(&repo, name, oid, &st)?;
@@ -246,10 +246,10 @@ pub fn overlay(
     if input1 == input2 {
         return Ok(input1);
     }
-    if input1 == empty_tree_id() {
+    if input1 == tree::empty_id() {
         return Ok(input2);
     }
-    if input2 == empty_tree_id() {
+    if input2 == tree::empty_id() {
         return Ok(input1);
     }
 
@@ -293,8 +293,8 @@ pub fn compose<'a>(
     trees: Vec<(&super::filter::Filter, git2::Tree<'a>)>,
 ) -> super::JoshResult<git2::Tree<'a>> {
     rs_tracing::trace_scoped!("compose");
-    let mut result = empty_tree(&repo);
-    let mut taken = empty_tree(&repo);
+    let mut result = tree::empty(&repo);
+    let mut taken = tree::empty(&repo);
     for (f, applied) in trees {
         let taken_applied = super::filter::apply(&repo, *f, taken.clone())?;
         let subtracted =
@@ -325,4 +325,13 @@ pub fn get_blob(
     });
 
     return content.to_owned();
+}
+
+pub fn empty_id() -> git2::Oid {
+    return git2::Oid::from_str("4b825dc642cb6eb9a060e54bf8d69288fbee4904")
+        .unwrap();
+}
+
+pub fn empty(repo: &git2::Repository) -> git2::Tree {
+    repo.find_tree(empty_id()).unwrap()
 }

@@ -165,9 +165,10 @@ impl handlebars::HelperDef for FilterHelper {
     }
 }
 
-handlebars_helper!(concat_helper: |x: str, y: str| format!("{}{}", x, y) );
-
-handlebars_helper!(toml_helper: |x: str| toml::de::from_str::<serde_json::Value>(x).unwrap_or(json!({})) );
+mod helpers {
+    handlebars_helper!(concat_helper: |x: str, y: str| format!("{}{}", x, y) );
+    handlebars_helper!(toml_helper: |x: str| toml::de::from_str::<serde_json::Value>(x).unwrap_or(json!({})) );
+}
 
 pub fn render(
     repo: &git2::Repository,
@@ -214,8 +215,8 @@ pub fn render(
 
     let mut handlebars = handlebars::Handlebars::new();
     handlebars.register_template_string("template", template)?;
-    handlebars.register_helper("concat", Box::new(concat_helper));
-    handlebars.register_helper("toml", Box::new(toml_helper));
+    handlebars.register_helper("concat", Box::new(helpers::concat_helper));
+    handlebars.register_helper("toml", Box::new(helpers::toml_helper));
     handlebars.register_helper(
         "git-ls",
         Box::new(FindFilesHelper {
