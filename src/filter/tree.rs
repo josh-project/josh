@@ -1,5 +1,12 @@
 use super::*;
 
+lazy_static! {
+    static ref UNAPPLY: std::sync::Mutex<std::collections::HashMap<(Filter, git2::Oid), git2::Oid>> =
+        std::sync::Mutex::new(std::collections::HashMap::new());
+    static ref APPLY: std::sync::Mutex<std::collections::HashMap<(Filter, git2::Oid), git2::Oid>> =
+        std::sync::Mutex::new(std::collections::HashMap::new());
+}
+
 pub fn dirtree<'a>(
     repo: &'a git2::Repository,
     root: &str,
@@ -296,10 +303,27 @@ pub fn compose<'a>(
     let mut result = tree::empty(&repo);
     let mut taken = tree::empty(&repo);
     for (f, applied) in trees {
-        let taken_applied = super::filter::apply(&repo, *f, taken.clone())?;
+        let tid = taken.id();
+        let cached = APPLY.lock().unwrap().get(&(*f, tid)).cloned();
+        let taken_applied = if let Some(cached) = cached {
+            cached
+        } else {
+            filter::apply(&repo, *f, taken.clone())?.id()
+        };
+        APPLY.lock().unwrap().insert((*f, tid), taken_applied);
+
         let subtracted =
-            repo.find_tree(subtract(&repo, applied.id(), taken_applied.id())?)?;
-        taken = super::filter::unapply(&repo, *f, applied, taken.clone())?;
+            repo.find_tree(subtract(&repo, applied.id(), taken_applied)?)?;
+
+        let aid = applied.id();
+        let cached = UNAPPLY.lock().unwrap().get(&(*f, aid)).cloned();
+        let unapplied = if let Some(cached) = cached {
+            cached
+        } else {
+            filter::unapply(&repo, *f, applied, empty(&repo))?.id()
+        };
+        UNAPPLY.lock().unwrap().insert((*f, aid), unapplied);
+        taken = repo.find_tree(overlay(&repo, taken.id(), unapplied)?)?;
         result =
             repo.find_tree(overlay(&repo, result.id(), subtracted.id())?)?;
     }
