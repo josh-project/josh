@@ -240,7 +240,7 @@ fn apply_to_commit2(
                 })
                 .collect::<JoshResult<Vec<_>>>()?;
 
-            tree::compose(&transaction.repo(), filtered)?
+            tree::compose(&transaction, filtered)?
         }
         Op::Workspace(ws_path) => {
             let normal_parents = commit
@@ -278,8 +278,7 @@ fn apply_to_commit2(
                 .chain(extra_parents.into_iter())
                 .collect();
 
-            let filtered_tree =
-                apply(&transaction.repo(), filter, commit.tree()?)?;
+            let filtered_tree = apply(transaction, filter, commit.tree()?)?;
 
             return history::create_filtered_commit(
                 commit,
@@ -326,12 +325,12 @@ fn apply_to_commit2(
             };
             let bf = transaction.repo().find_tree(bf)?;
             let bu = unapply(
-                &transaction.repo(),
+                &transaction,
                 *b,
                 bf,
                 tree::empty(&transaction.repo()),
             )?;
-            let ba = apply(&transaction.repo(), *a, bu)?;
+            let ba = apply(transaction, *a, bu)?;
 
             transaction.repo().find_tree(tree::subtract(
                 &transaction.repo(),
@@ -339,7 +338,7 @@ fn apply_to_commit2(
                 ba.id(),
             )?)?
         }
-        _ => apply(&transaction.repo(), filter, commit.tree()?)?,
+        _ => apply(transaction, filter, commit.tree()?)?,
     };
 
     let filtered_parent_ids = {
@@ -361,18 +360,19 @@ fn apply_to_commit2(
 
 /// Filter a single tree. This does not involve walking history and is thus fast in most cases.
 pub fn apply<'a>(
-    repo: &'a git2::Repository,
+    transaction: &'a cache::Transaction,
     filter: Filter,
     tree: git2::Tree<'a>,
 ) -> JoshResult<git2::Tree<'a>> {
-    apply2(repo, &to_op(filter), tree)
+    apply2(transaction, &to_op(filter), tree)
 }
 
 fn apply2<'a>(
-    repo: &'a git2::Repository,
+    transaction: &'a cache::Transaction,
     op: &Op,
     tree: git2::Tree<'a>,
 ) -> JoshResult<git2::Tree<'a>> {
+    let repo = transaction.repo();
     match op {
         Op::Nop => return Ok(tree),
         Op::Empty => return Ok(tree::empty(&repo)),
@@ -420,10 +420,10 @@ fn apply2<'a>(
         }
 
         Op::Subtract(a, b) => {
-            let af = apply(&repo, *a, tree.clone())?;
-            let bf = apply(&repo, *b, tree.clone())?;
-            let bu = unapply(&repo, *b, bf, tree::empty(&repo))?;
-            let ba = apply(&repo, *a, bu)?;
+            let af = apply(transaction, *a, tree.clone())?;
+            let bf = apply(transaction, *b, tree.clone())?;
+            let bu = unapply(transaction, *b, bf, tree::empty(&repo))?;
+            let ba = apply(transaction, *a, bu)?;
             Ok(repo.find_tree(tree::subtract(&repo, af.id(), ba.id())?)?)
         }
 
@@ -441,24 +441,24 @@ fn apply2<'a>(
                 &tree,
                 &path.join("workspace.josh"),
             )) {
-                apply(repo, compose(base, cw), tree)
+                apply(transaction, compose(base, cw), tree)
             } else {
-                apply(repo, base, tree)
+                apply(transaction, base, tree)
             }
         }
 
         Op::Compose(filters) => {
             let filtered: Vec<_> = filters
                 .iter()
-                .map(|f| Ok(apply(&repo, *f, tree.clone())?))
+                .map(|f| Ok(apply(transaction, *f, tree.clone())?))
                 .collect::<JoshResult<_>>()?;
             let filtered: Vec<_> =
                 filters.iter().zip(filtered.into_iter()).collect();
-            return tree::compose(&repo, filtered);
+            return tree::compose(transaction, filtered);
         }
 
         Op::Chain(a, b) => {
-            return apply(&repo, *b, apply(&repo, *a, tree)?);
+            return apply(transaction, *b, apply(transaction, *a, tree)?);
         }
     }
 }
@@ -466,16 +466,16 @@ fn apply2<'a>(
 /// Calculate a tree with minimal differences from `parent_tree`
 /// such that `apply(unapply(tree, parent_tree)) == tree`
 pub fn unapply<'a>(
-    repo: &'a git2::Repository,
+    transaction: &'a cache::Transaction,
     filter: Filter,
     tree: git2::Tree<'a>,
     parent_tree: git2::Tree<'a>,
 ) -> JoshResult<git2::Tree<'a>> {
-    unapply2(repo, &to_op(filter), tree, parent_tree)
+    unapply2(transaction, &to_op(filter), tree, parent_tree)
 }
 
 fn unapply2<'a>(
-    repo: &'a git2::Repository,
+    transaction: &'a cache::Transaction,
     op: &Op,
     tree: git2::Tree<'a>,
     parent_tree: git2::Tree<'a>,
@@ -485,26 +485,33 @@ fn unapply2<'a>(
         Op::Empty => Ok(parent_tree),
 
         Op::Chain(a, b) => {
-            let p = apply(&repo, *a, parent_tree.clone())?;
-            let x = unapply(&repo, *b, tree, p)?;
-            unapply(&repo, *a, x, parent_tree)
+            let p = apply(transaction, *a, parent_tree.clone())?;
+            let x = unapply(transaction, *b, tree, p)?;
+            unapply(transaction, *a, x, parent_tree)
         }
         Op::Workspace(path) => {
             let root = to_filter(Op::Subdir(path.to_owned()));
             let mapped = parse(&tree::get_blob(
-                &repo,
+                &transaction.repo(),
                 &tree,
                 &Path::new("workspace.josh"),
             ))?;
 
             let tree = tree::insert(
-                &repo,
+                &transaction.repo(),
                 &tree,
                 &Path::new("workspace.josh"),
-                repo.blob(&format!("{}\n", pretty(mapped, 0)).as_bytes())?,
+                transaction
+                    .repo()
+                    .blob(&format!("{}\n", pretty(mapped, 0)).as_bytes())?,
             )?;
 
-            return unapply(repo, compose(root, mapped), tree, parent_tree);
+            return unapply(
+                transaction,
+                compose(root, mapped),
+                tree,
+                parent_tree,
+            );
         }
         Op::Compose(filters) => {
             let mut remaining = tree.clone();
@@ -512,19 +519,20 @@ fn unapply2<'a>(
 
             for other in filters.iter().rev() {
                 let from_empty = unapply(
-                    &repo,
+                    transaction,
                     *other,
                     remaining.clone(),
-                    tree::empty(&repo),
+                    tree::empty(&transaction.repo()),
                 )?;
                 if tree::empty_id() == from_empty.id() {
                     continue;
                 }
-                result = unapply(&repo, *other, remaining.clone(), result)?;
-                let reapply = apply(&repo, *other, from_empty.clone())?;
+                result =
+                    unapply(transaction, *other, remaining.clone(), result)?;
+                let reapply = apply(transaction, *other, from_empty.clone())?;
 
-                remaining = repo.find_tree(tree::subtract(
-                    &repo,
+                remaining = transaction.repo().find_tree(tree::subtract(
+                    &transaction.repo(),
                     remaining.id(),
                     reapply.id(),
                 )?)?;
@@ -538,22 +546,28 @@ fn unapply2<'a>(
                 .get_path(&path)
                 .map(|x| x.id())
                 .unwrap_or(git2::Oid::zero());
-            if let Ok(_) = repo.find_blob(file) {
-                tree::insert(&repo, &parent_tree, &path, file)
+            if let Ok(_) = transaction.repo().find_blob(file) {
+                tree::insert(&transaction.repo(), &parent_tree, &path, file)
             } else {
-                Ok(tree::empty(&repo))
+                Ok(tree::empty(&transaction.repo()))
             }
         }
 
         Op::Subtract(a, b) => match (to_op(*a), to_op(*b)) {
             (Op::Nop, b) => {
                 let subtracted = tree::subtract(
-                    &repo,
+                    &transaction.repo(),
                     tree.id(),
-                    unapply2(repo, &b, tree, tree::empty(&repo))?.id(),
+                    unapply2(
+                        transaction,
+                        &b,
+                        tree,
+                        tree::empty(&transaction.repo()),
+                    )?
+                    .id(),
                 )?;
-                Ok(repo.find_tree(tree::overlay(
-                    &repo,
+                Ok(transaction.repo().find_tree(tree::overlay(
+                    &transaction.repo(),
                     parent_tree.id(),
                     subtracted,
                 )?)?)
@@ -568,7 +582,7 @@ fn unapply2<'a>(
                 require_literal_leading_dot: true,
             };
             let subtracted = tree::remove_pred(
-                &repo,
+                &transaction.repo(),
                 "",
                 tree.id(),
                 &|path, isblob| {
@@ -577,17 +591,19 @@ fn unapply2<'a>(
                 git2::Oid::zero(),
                 &mut std::collections::HashMap::new(),
             )?;
-            Ok(repo.find_tree(tree::overlay(
-                &repo,
+            Ok(transaction.repo().find_tree(tree::overlay(
+                &transaction.repo(),
                 parent_tree.id(),
                 subtracted.id(),
             )?)?)
         }
         Op::Prefix(path) => Ok(tree
             .get_path(&path)
-            .and_then(|x| repo.find_tree(x.id()))
-            .unwrap_or(tree::empty(&repo))),
-        Op::Subdir(path) => tree::insert(&repo, &parent_tree, &path, tree.id()),
+            .and_then(|x| transaction.repo().find_tree(x.id()))
+            .unwrap_or(tree::empty(&transaction.repo()))),
+        Op::Subdir(path) => {
+            tree::insert(&transaction.repo(), &parent_tree, &path, tree.id())
+        }
         _ => return Err(josh_error("filter not reversible")),
     };
 }

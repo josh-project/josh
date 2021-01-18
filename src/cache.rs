@@ -45,8 +45,10 @@ pub fn print_stats() {
 }
 
 struct Transaction2 {
-    maps: HashMap<git2::Oid, HashMap<git2::Oid, git2::Oid>>,
-    trees: HashMap<git2::Oid, sled::Tree>,
+    commit_map: HashMap<git2::Oid, HashMap<git2::Oid, git2::Oid>>,
+    apply_map: HashMap<git2::Oid, HashMap<git2::Oid, git2::Oid>>,
+    unapply_map: HashMap<git2::Oid, HashMap<git2::Oid, git2::Oid>>,
+    sled_trees: HashMap<git2::Oid, sled::Tree>,
     misses: usize,
     walks: usize,
 }
@@ -61,8 +63,10 @@ impl Transaction {
         log::debug!("new transaction");
         Transaction {
             t2: std::cell::RefCell::new(Transaction2 {
-                maps: HashMap::new(),
-                trees: HashMap::new(),
+                commit_map: HashMap::new(),
+                apply_map: HashMap::new(),
+                unapply_map: HashMap::new(),
+                sled_trees: HashMap::new(),
                 misses: 0,
                 walks: 0,
             }),
@@ -74,8 +78,10 @@ impl Transaction {
         log::debug!("open transaction");
         Ok(Transaction {
             t2: std::cell::RefCell::new(Transaction2 {
-                maps: HashMap::new(),
-                trees: HashMap::new(),
+                commit_map: HashMap::new(),
+                apply_map: HashMap::new(),
+                unapply_map: HashMap::new(),
+                sled_trees: HashMap::new(),
                 misses: 0,
                 walks: 0,
             }),
@@ -109,6 +115,56 @@ impl Transaction {
         self.t2.borrow_mut().walks -= 1;
     }
 
+    pub fn insert_apply(
+        &self,
+        filter: filter::Filter,
+        from: git2::Oid,
+        to: git2::Oid,
+    ) {
+        let mut t2 = self.t2.borrow_mut();
+        t2.apply_map
+            .entry(filter.id())
+            .or_insert_with(|| HashMap::new())
+            .insert(from, to);
+    }
+
+    pub fn get_apply(
+        &self,
+        filter: filter::Filter,
+        from: git2::Oid,
+    ) -> Option<git2::Oid> {
+        let t2 = self.t2.borrow_mut();
+        if let Some(m) = t2.apply_map.get(&filter.id()) {
+            return m.get(&from).cloned();
+        }
+        return None;
+    }
+
+    pub fn insert_unapply(
+        &self,
+        filter: filter::Filter,
+        from: git2::Oid,
+        to: git2::Oid,
+    ) {
+        let mut t2 = self.t2.borrow_mut();
+        t2.unapply_map
+            .entry(filter.id())
+            .or_insert_with(|| HashMap::new())
+            .insert(from, to);
+    }
+
+    pub fn get_unapply(
+        &self,
+        filter: filter::Filter,
+        from: git2::Oid,
+    ) -> Option<git2::Oid> {
+        let t2 = self.t2.borrow_mut();
+        if let Some(m) = t2.unapply_map.get(&filter.id()) {
+            return m.get(&from).cloned();
+        }
+        return None;
+    }
+
     pub fn insert(
         &self,
         filter: filter::Filter,
@@ -117,13 +173,13 @@ impl Transaction {
         store: bool,
     ) {
         let mut t2 = self.t2.borrow_mut();
-        t2.maps
+        t2.commit_map
             .entry(filter.id())
             .or_insert_with(|| HashMap::new())
             .insert(from, to);
 
         if store {
-            let t = t2.trees.entry(filter.id()).or_insert_with(|| {
+            let t = t2.sled_trees.entry(filter.id()).or_insert_with(|| {
                 DB.lock()
                     .unwrap()
                     .as_ref()
@@ -145,12 +201,12 @@ impl Transaction {
             return Some(from);
         }
         let mut t2 = self.t2.borrow_mut();
-        if let Some(m) = t2.maps.get(&filter.id()) {
+        if let Some(m) = t2.commit_map.get(&filter.id()) {
             if let Some(oid) = m.get(&from).cloned() {
                 return Some(oid);
             }
         }
-        let t = t2.trees.entry(filter.id()).or_insert_with(|| {
+        let t = t2.sled_trees.entry(filter.id()).or_insert_with(|| {
             DB.lock()
                 .unwrap()
                 .as_ref()
