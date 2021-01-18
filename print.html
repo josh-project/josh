@@ -165,52 +165,83 @@
 
                 <div id="content" class="content">
                     <main>
-                        <p><a href="https://github.com/esrlabs/josh/actions"><img src="https://github.com/esrlabs/josh/workflows/Rust/badge.svg?branch=master" alt="Build Status" /></a>
-<a href="https://josh.readthedocs.io/en/latest/?badge=latest"><img src="https://readthedocs.org/projects/josh/badge/?version=latest" alt="Documentation Status" /></a></p>
+                        <p><a href="https://github.com/esrlabs/josh/actions"><img src="https://github.com/esrlabs/josh/workflows/Rust/badge.svg?branch=master" alt="Build Status" /></a></p>
 <h1><a class="header" href="#just-one-single-history" id="just-one-single-history">Just One Single History</a></h1>
-<p>Josh combines the advantages of mono-repo with those of many-repos by leveraging a blazingly-fast, incremental and reversible implementation of git history filtering.</p>
-<p>The <a href="https://josh.readthedocs.io/en/latest/index.html">documentation</a> describes the filtering mechanism, as well as the tools provided by Josh: the josh library, <code>josh-proxy</code> and <code>josh-filter</code>.</p>
+<p>Josh combines the advantages of mono-repo with those of many-repos by leveraging a blazingly-fast,
+incremental and reversible implementation of git history filtering.</p>
+<p>The <a href="https://esrlabs.github.io/josh/">documentation</a> describes the filtering mechanism, as well as
+the tools provided by Josh: the josh library, <code>josh-proxy</code> and <code>josh-filter</code>.</p>
 <h2><a class="header" href="#concept" id="concept">Concept</a></h2>
-<p>Traditionally history filtering has been viewed as an expensive operation that should only be done as a means to fix issues with a repository or as part of a migration to a different repository structure, like switching from many-repos to mono-repo or vice versa, purging big binary files or removing accidentally committed secrets.</p>
-<p>The implementation shipped with git (<code>git-filter branch</code>) is only usable as a once in a lifetime last resort for anything but tiny repositories.</p>
-<p>Faster versions of history filtering have been implemented (like <a href="https://github.com/newren/git-filter-repo">git-filter-repo</a> or the <a href="https://rtyley.github.io/bfg-repo-cleaner/">BFG repo cleaner</a>) but those, while much faster, are also designed as tools for doing occasional, destructive maintenance tasks. Usually with the idea already in mind that once the filtering is complete the old history should be discarded.</p>
-<p>The idea behind <code>josh</code> starts with two questions: 
-What if history filtering could be so fast that it can be part of a normal everyday workflow, running on every single push and fetch in milliseconds time without the user even noticing?
-And what if history filtering was a non-destructive, reversible operation?</p>
-<p>Under those two premises a filter operation stops being a maintenance task. It seamlessly relates histories between repos, which can be used by developers and CI systems interchangeably in whatever way is most suitable to the task at hand.</p>
+<p>Traditionally history filtering has been viewed as an expensive operation that should only be done
+as a means to fix issues with a repository or as part of a migration to a different repository
+structure, like switching from many-repos to mono-repo or vice versa, purging big binary files or
+removing accidentally committed secrets.</p>
+<p>The implementation shipped with git (<code>git-filter branch</code>) is only usable as a once in a lifetime
+last resort for anything but tiny repositories.</p>
+<p>Faster versions of history filtering have been implemented (like
+<a href="https://github.com/newren/git-filter-repo">git-filter-repo</a> or the
+<a href="https://rtyley.github.io/bfg-repo-cleaner/">BFG repo cleaner</a>) but those, while much faster,
+are also designed as tools for doing occasional, destructive maintenance tasks. Usually with the
+idea already in mind that once the filtering is complete the old history should be discarded.</p>
+<p>The idea behind <code>josh</code> starts with two questions: What if history filtering could be so fast that it
+can be part of a normal everyday workflow, running on every single push and fetch in milliseconds
+time without the user even noticing?  And what if history filtering was a non-destructive,
+reversible operation?</p>
+<p>Under those two premises a filter operation stops being a maintenance task. It seamlessly relates
+histories between repos, which can be used by developers and CI systems interchangeably in whatever
+way is most suitable to the task at hand.</p>
 <p>How is this possible?</p>
-<p>Filtering history is a highly predictable task: The set of filters that tend to be used for any given repository is limited. The input to the filter, a git branch, only gets modified in an incremental way.
-So by keeping a persistent cache between filter runs, the work needed to re-run a filter on a new commit (and its history) becomes proportional to the number of changes since the last run.
-Thus, it no longer depends on the total length of the history. And for most filters, also not on the size of the trees.</p>
-<p>So what has long been known to be true for performing merges also applies to history filtering: The more often it is done the less work it takes each time.</p>
-<p>To guarantee filters to be reversible we have to restrict the kind of filter that can be used. So it is not possible to write arbitrary filters using a scripting language like it is allowed in other tools.
-To still be able to cover a wide range of use cases we introduce a domain specific language to express more complex filters as a combination of simpler ones. Apart from guaranteeing reversibility, the use of a DSL also enables pre-optimization of filter expressions to minimize both the amount of work to be done to execute the filter as well as the on-disk size of the persistent cache.</p>
-<h2><a class="header" href="#use-cases" id="use-cases">Use cases</a></h2>
-<h4><a class="header" href="#workspaces-in-a-mono-repo" id="workspaces-in-a-mono-repo">Workspaces in a mono-repo</a></h4>
-<p>Multiple projects, depending on a shared set of libraries, can live together in a single repository. This approach is commonly referred to as “monorepo”, and was popularized by <a href="https://people.engr.ncsu.edu/ermurph3/papers/seip18.pdf">Google</a>, Facebook or Twitter to name a few.</p>
+<p>Filtering history is a highly predictable task: The set of filters that tend to be used for any
+given repository is limited. The input to the filter, a git branch, only gets modified in an
+incremental way.  So by keeping a persistent cache between filter runs, the work needed to re-run a
+filter on a new commit (and its history) becomes proportional to the number of changes since the
+last run.  Thus, it no longer depends on the total length of the history. And for most filters, also
+not on the size of the trees.</p>
+<p>So what has long been known to be true for performing merges also applies to history filtering: The
+more often it is done the less work it takes each time.</p>
+<p>To guarantee filters to be reversible we have to restrict the kind of filter that can be used. So it
+is not possible to write arbitrary filters using a scripting language like it is allowed in other
+tools.
+To still be able to cover a wide range of use cases we introduce a domain specific language to
+express more complex filters as a combination of simpler ones. Apart from guaranteeing
+reversibility, the use of a DSL also enables pre-optimization of filter expressions to minimize both
+the amount of work to be done to execute the filter as well as the on-disk size of the persistent
+cache.</p>
+<h1><a class="header" href="#use-cases" id="use-cases">Use cases</a></h1>
+<h2><a class="header" href="#workspaces-in-a-mono-repo" id="workspaces-in-a-mono-repo">Workspaces in a mono-repo</a></h2>
+<p>Multiple projects, depending on a shared set of libraries, can live together in a single repository.
+This approach is commonly referred to as “monorepo”, and was popularized by
+<a href="https://people.engr.ncsu.edu/ermurph3/papers/seip18.pdf">Google</a>, Facebook or Twitter to name a
+few.</p>
 <p>In this example, two projects (<code>project1</code> and <code>project2</code>) coexist in the <code>central</code> monorepo.</p>
 <table>
     <thead>
         <tr>
             <th>Central monorepo</th>
             <th>Project workspaces</th>
-            <th>workspace.josh files</th>
+            <th>workspace.josh file</th>
         </tr>
     </thead>
     <tbody>
         <tr>
-            <td rowspan=2><img src="docs/img/central.svg?sanitize=true" alt="Folders and files in central.git" /></td>
-            <td><img src="docs/img/project1.svg?sanitize=true" alt="Folders and files in project1.git" /></td>
-            <td><tt>dependencies/tools = :/modules/tools</tt>
-            <br /> <tt>dependencies/library1 = :/modules/library1</tt></td>
+            <td rowspan=2><img src="./img/central.svg?sanitize=true" alt="Folders and files in central.git" /></td>
+            <td><img src="./img/project1.svg?sanitize=true" alt="Folders and files in project1.git" /></td>
+            <td>
+<pre>
+dependencies = :/modules:[
+    ::tools/
+    ::library1/
+]
+</pre>
         </tr>
         <tr>
-            <td><img src="docs/img/project2.svg?sanitize=true" alt="Folders and files in project2.git" /></td>
-            <td><tt>libs/library1 = :/modules/library1</tt></td>
+            <td><img src="./img/project2.svg?sanitize=true" alt="Folders and files in project2.git" /></td>
+            <td>
+<pre>libs/library1 = :/modules/library1</pre></td>
         </tr>
     </tbody>
 </table>
-<p>Each of the subprojects defines a workspace.josh file, defining the mapping between the original central.git repository and the hierarchy in use inside of the project.</p>
+<p>Each of the subprojects defines a <code>workspace.josh</code> file, defining the mapping between the original central.git repository and the hierarchy in use inside of the project.</p>
 <p>In this setup, project1 and project2 can seemlessly depend on the latest version of library1, while only checking out the part of the central monorepo that's needed for their purpose.
 What's more, any changes to a shared module will be synced in both directions.</p>
 <p>If a developper of the library1 pushed a new update, both projects will get the new version, and the developper will be able to check if they broke any test.
@@ -231,7 +262,7 @@ history, applying a filter to a commit produces an entirely new history.
 The result of a filter is a normal git commit and therefore can be filtered again,
 making filters chainable.</p>
 <h2><a class="header" href="#syntax" id="syntax">Syntax</a></h2>
-<p>Filters always begin with a colon and can be chained::</p>
+<p>Filters always begin with a colon and can be chained:</p>
 <pre><code>:filter1:filter2
 </code></pre>
 <p>When used as part of an URL filters can not contain whitespace or newlines. When read from a file
@@ -265,18 +296,25 @@ specified directory (called the &quot;workspace root&quot;).
 The resulting tree will contain the contents of the
 workspace root as well as additional files specifed in the <code>workspace.josh</code> file.
 (see <a href="./workspace.html">Workspaces</a>)</p>
-<h2><a class="header" href="#pattern-filters" id="pattern-filters">Pattern filters</a></h2>
-<p>The following filters accept a glob like pattern <code>X</code> that can contain <code>*</code> to
-match any number of characters. Note that two or more consecutive wildcards (<code>**</code>) are not
-allowed.</p>
-<h3><a class="header" href="#match-directories-x" id="match-directories-x">Match directories <strong><code>::X/</code></strong></a></h3>
-<p>All matching subdirectories in the input root</p>
-<h3><a class="header" href="#match-files-x" id="match-files-x">Match files <strong><code>::X</code></strong></a></h3>
-<p>All matching files in the input root</p>
-<h3><a class="header" href="#match-nested-directories-x" id="match-nested-directories-x">Match nested directories <strong><code>::**/X/</code></strong></a></h3>
-<p>All subdirectories matching the pattern in arbitarily deep subdirectories of the input</p>
-<h3><a class="header" href="#match-nested-files-x" id="match-nested-files-x">Match nested files <strong><code>::**/X</code></strong></a></h3>
-<p>All files matching the pattern in arbitarily deep subdirectories of the input</p>
+<!--
+## Pattern filters
+
+The following filters accept a glob like pattern ``X`` that can contain ``*`` to
+match any number of characters. Note that two or more consecutive wildcards (``**``) are not
+allowed.
+
+### Match directories **`::X/`**
+All matching subdirectories in the input root
+
+### Match files **`::X`**
+All matching files in the input root
+
+### Match nested directories **`::**/X/`**
+All subdirectories matching the pattern in arbitarily deep subdirectories of the input
+
+### Match nested files **`::**/X`**
+All files matching the pattern in arbitarily deep subdirectories of the input
+-->
 <h2><a class="header" href="#filter-order-matters" id="filter-order-matters">Filter order matters</a></h2>
 <p>Filters are applied in the left-to-right order they are given in the filter specification,
 and they are <code>not</code> commutative.</p>
@@ -344,7 +382,7 @@ the :doc:<code>filters</code> section.</p>
 <h2><a class="header" href="#repository-naming" id="repository-naming">Repository naming</a></h2>
 <p>By default, a git URL is used to point to the remote repository to download <em>and also</em> to dictate
 how the local repository shall be named.  It's important to learn that the last name in the URL is
-what the local git client will name the new, local repository. For example::</p>
+what the local git client will name the new, local repository. For example:</p>
 <pre><code>$ git clone http://localhost:8000/esrlabs/josh.git:/docs.git
 </code></pre>
 <p>will create the new repository at directory <code>docs</code>, as <code>docs.git</code> is the last name in the URL.</p>
@@ -362,14 +400,14 @@ this:</p>
 intended. This results from git's reuse and repurposing of the remote URL, as <code>prefix=josh-docs</code>
 is the final name in the URL. With no other alternatives, this gets used for the repository name.</p>
 <p>To explicitly specify a repository name, provide the desired name after the URL when cloning a new
-repository::</p>
+repository:</p>
 <pre><code>$ git clone http://localhost:8000/esrlabs/josh.git:/docs:prefix=josh-docs.git my-repo
 </code></pre>
 <h1><a class="header" href="#working-with-workspaces" id="working-with-workspaces">Working with workspaces</a></h1>
 <p>For the sake of this example we will assume a <code>josh-proxy</code> instance is running and serving a
 repo on <code>http://josh/world.git</code> with some shared code in <code>shared</code>.</p>
 <h2><a class="header" href="#create-a-new-workspace" id="create-a-new-workspace">Create a new workspace</a></h2>
-<p>To create a new workspace in the path <code>ws/hello</code> simply clone it as if it already exists::</p>
+<p>To create a new workspace in the path <code>ws/hello</code> simply clone it as if it already exists:</p>
 <pre><code>$ git clone http://josh/world.git:workspace=ws/hello.git
 </code></pre>
 <p><code>git</code> will report that you appear to have cloned an empty repository if that path does not

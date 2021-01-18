@@ -197,7 +197,7 @@ the :doc:<code>filters</code> section.</p>
 <h2><a class="header" href="#repository-naming" id="repository-naming">Repository naming</a></h2>
 <p>By default, a git URL is used to point to the remote repository to download <em>and also</em> to dictate
 how the local repository shall be named.  It's important to learn that the last name in the URL is
-what the local git client will name the new, local repository. For example::</p>
+what the local git client will name the new, local repository. For example:</p>
 <pre><code>$ git clone http://localhost:8000/esrlabs/josh.git:/docs.git
 </code></pre>
 <p>will create the new repository at directory <code>docs</code>, as <code>docs.git</code> is the last name in the URL.</p>
@@ -215,7 +215,7 @@ this:</p>
 intended. This results from git's reuse and repurposing of the remote URL, as <code>prefix=josh-docs</code>
 is the final name in the URL. With no other alternatives, this gets used for the repository name.</p>
 <p>To explicitly specify a repository name, provide the desired name after the URL when cloning a new
-repository::</p>
+repository:</p>
 <pre><code>$ git clone http://localhost:8000/esrlabs/josh.git:/docs:prefix=josh-docs.git my-repo
 </code></pre>
 
