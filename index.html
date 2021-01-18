@@ -1,0 +1,285 @@
+<!DOCTYPE HTML>
+<html lang="en" class="sidebar-visible no-js light">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Intro - Just One Single History</title>
+        
+        
+
+
+        <!-- Custom HTML head -->
+        
+
+
+        <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+        <meta name="description" content="">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff" />
+
+        
+        <link rel="icon" href="favicon.svg">
+        
+        
+        <link rel="shortcut icon" href="favicon.png">
+        
+        <link rel="stylesheet" href="css/variables.css">
+        <link rel="stylesheet" href="css/general.css">
+        <link rel="stylesheet" href="css/chrome.css">
+        
+        <link rel="stylesheet" href="css/print.css" media="print">
+        
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="FontAwesome/css/font-awesome.css">
+        
+        <link rel="stylesheet" href="fonts/fonts.css">
+        
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" href="highlight.css">
+        <link rel="stylesheet" href="tomorrow-night.css">
+        <link rel="stylesheet" href="ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+        
+
+        
+    </head>
+    <body>
+        <!-- Provide site root to javascript -->
+        <script type="text/javascript">
+            var path_to_root = "";
+            var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "light";
+        </script>
+
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script type="text/javascript">
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script type="text/javascript">
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            var html = document.querySelector('html');
+            html.classList.remove('no-js')
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add('js');
+        </script>
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script type="text/javascript">
+            var html = document.querySelector('html');
+            var sidebar = 'hidden';
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            }
+            html.classList.remove('sidebar-visible');
+            html.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <div class="sidebar-scrollbox">
+                <ol class="chapter"><li class="chapter-item expanded "><a href="../../index.html"><strong aria-hidden="true">1.</strong> Intro</a></li><li class="chapter-item expanded "><a href="filters.html"><strong aria-hidden="true">2.</strong> Filter syntax</a></li><li class="chapter-item expanded "><a href="cli.html"><strong aria-hidden="true">3.</strong> Command Line usage</a></li><li class="chapter-item expanded "><a href="proxy.html"><strong aria-hidden="true">4.</strong> Proxy</a></li><li class="chapter-item expanded "><a href="workspace.html"><strong aria-hidden="true">5.</strong> Workspaces</a></li></ol>
+            </div>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
+        </nav>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                
+                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky bordered">
+                    <div class="left-buttons">
+                        <button id="sidebar-toggle" class="icon-button" type="button" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </button>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light (default)</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        
+                        <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                        
+                    </div>
+
+                    <h1 class="menu-title">Just One Single History</h1>
+
+                    <div class="right-buttons">
+                        
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                        
+                        
+                    </div>
+                </div>
+
+                
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" name="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+                
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script type="text/javascript">
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <p><a href="https://github.com/esrlabs/josh/actions"><img src="https://github.com/esrlabs/josh/workflows/Rust/badge.svg?branch=master" alt="Build Status" /></a>
+<a href="https://josh.readthedocs.io/en/latest/?badge=latest"><img src="https://readthedocs.org/projects/josh/badge/?version=latest" alt="Documentation Status" /></a></p>
+<h1><a class="header" href="#just-one-single-history" id="just-one-single-history">Just One Single History</a></h1>
+<p>Josh combines the advantages of mono-repo with those of many-repos by leveraging a blazingly-fast, incremental and reversible implementation of git history filtering.</p>
+<p>The <a href="https://josh.readthedocs.io/en/latest/index.html">documentation</a> describes the filtering mechanism, as well as the tools provided by Josh: the josh library, <code>josh-proxy</code> and <code>josh-filter</code>.</p>
+<h2><a class="header" href="#concept" id="concept">Concept</a></h2>
+<p>Traditionally history filtering has been viewed as an expensive operation that should only be done as a means to fix issues with a repository or as part of a migration to a different repository structure, like switching from many-repos to mono-repo or vice versa, purging big binary files or removing accidentally committed secrets.</p>
+<p>The implementation shipped with git (<code>git-filter branch</code>) is only usable as a once in a lifetime last resort for anything but tiny repositories.</p>
+<p>Faster versions of history filtering have been implemented (like <a href="https://github.com/newren/git-filter-repo">git-filter-repo</a> or the <a href="https://rtyley.github.io/bfg-repo-cleaner/">BFG repo cleaner</a>) but those, while much faster, are also designed as tools for doing occasional, destructive maintenance tasks. Usually with the idea already in mind that once the filtering is complete the old history should be discarded.</p>
+<p>The idea behind <code>josh</code> starts with two questions: 
+What if history filtering could be so fast that it can be part of a normal everyday workflow, running on every single push and fetch in milliseconds time without the user even noticing?
+And what if history filtering was a non-destructive, reversible operation?</p>
+<p>Under those two premises a filter operation stops being a maintenance task. It seamlessly relates histories between repos, which can be used by developers and CI systems interchangeably in whatever way is most suitable to the task at hand.</p>
+<p>How is this possible?</p>
+<p>Filtering history is a highly predictable task: The set of filters that tend to be used for any given repository is limited. The input to the filter, a git branch, only gets modified in an incremental way.
+So by keeping a persistent cache between filter runs, the work needed to re-run a filter on a new commit (and its history) becomes proportional to the number of changes since the last run.
+Thus, it no longer depends on the total length of the history. And for most filters, also not on the size of the trees.</p>
+<p>So what has long been known to be true for performing merges also applies to history filtering: The more often it is done the less work it takes each time.</p>
+<p>To guarantee filters to be reversible we have to restrict the kind of filter that can be used. So it is not possible to write arbitrary filters using a scripting language like it is allowed in other tools.
+To still be able to cover a wide range of use cases we introduce a domain specific language to express more complex filters as a combination of simpler ones. Apart from guaranteeing reversibility, the use of a DSL also enables pre-optimization of filter expressions to minimize both the amount of work to be done to execute the filter as well as the on-disk size of the persistent cache.</p>
+<h2><a class="header" href="#use-cases" id="use-cases">Use cases</a></h2>
+<h4><a class="header" href="#workspaces-in-a-mono-repo" id="workspaces-in-a-mono-repo">Workspaces in a mono-repo</a></h4>
+<p>Multiple projects, depending on a shared set of libraries, can live together in a single repository. This approach is commonly referred to as “monorepo”, and was popularized by <a href="https://people.engr.ncsu.edu/ermurph3/papers/seip18.pdf">Google</a>, Facebook or Twitter to name a few.</p>
+<p>In this example, two projects (<code>project1</code> and <code>project2</code>) coexist in the <code>central</code> monorepo.</p>
+<table>
+    <thead>
+        <tr>
+            <th>Central monorepo</th>
+            <th>Project workspaces</th>
+            <th>workspace.josh files</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td rowspan=2><img src="docs/img/central.svg?sanitize=true" alt="Folders and files in central.git" /></td>
+            <td><img src="docs/img/project1.svg?sanitize=true" alt="Folders and files in project1.git" /></td>
+            <td><tt>dependencies/tools = :/modules/tools</tt>
+            <br /> <tt>dependencies/library1 = :/modules/library1</tt></td>
+        </tr>
+        <tr>
+            <td><img src="docs/img/project2.svg?sanitize=true" alt="Folders and files in project2.git" /></td>
+            <td><tt>libs/library1 = :/modules/library1</tt></td>
+        </tr>
+    </tbody>
+</table>
+<p>Each of the subprojects defines a workspace.josh file, defining the mapping between the original central.git repository and the hierarchy in use inside of the project.</p>
+<p>In this setup, project1 and project2 can seemlessly depend on the latest version of library1, while only checking out the part of the central monorepo that's needed for their purpose.
+What's more, any changes to a shared module will be synced in both directions.</p>
+<p>If a developper of the library1 pushed a new update, both projects will get the new version, and the developper will be able to check if they broke any test.
+If a developper of project1 needs to update the library, the changes will be automatically shared back into central, and project2.</p>
+<blockquote>
+<p><em><em>From Linus Torvalds 2007 talk at Google about git:</em></em></p>
+<p><strong>Audience:</strong></p>
+<p>Can you have just a part of files pulled out of a repository, not the entire repository?</p>
+<p><strong>Linus:</strong></p>
+<p>You can export things as tarballs, you can export things as individual files, you can rewrite the whole history to say &quot;I want a new version of that repository that only contains that part&quot;, you can do that, it is a fairly expensive operation it's something you would do for example when you import an old repository into a one huge git repository and then you can split it later on to be multiple smaller ones, you can do it, what I am trying to say is that you should generally try to avoid it. It's not that git can not handle huge projects, git would not perform as well as it would otherwise. And you will have issues that you wish you didn't not have.</p>
+<p>So I am skipping this issue and going back to the performance issue. One of the things I want to say about performance is that a lot of people seem to think that performance is about doing the same thing, just doing it faster, and that is not true.</p>
+<p>That is not what performance is all about. If you can do something really fast, really well, people will start using it differently.</p>
+</blockquote>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                        
+
+                        
+                            <a rel="next" href="filters.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+                        
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                
+
+                
+                    <a rel="next" href="filters.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+                
+            </nav>
+
+        </div>
+
+        
+
+        
+
+        
+
+        
+        <script type="text/javascript">
+            window.playground_copyable = true;
+        </script>
+        
+
+        
+
+        
+        <script src="elasticlunr.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="mark.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="searcher.js" type="text/javascript" charset="utf-8"></script>
+        
+
+        <script src="clipboard.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="highlight.js" type="text/javascript" charset="utf-8"></script>
+        <script src="book.js" type="text/javascript" charset="utf-8"></script>
+
+        <!-- Custom JS scripts -->
+        
+
+        
+
+    </body>
+</html>
