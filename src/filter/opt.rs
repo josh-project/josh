@@ -266,18 +266,24 @@ fn common_post(filters: &Vec<Filter>) -> Option<(Filter, Vec<Filter>)> {
  */
 fn iterate(filter: Filter) -> Filter {
     let mut filter = filter;
-    loop {
+    log::debug!("opt::iterate:\n{}\n", pretty(filter, 0));
+    for i in 0..1000 {
         let optimized = step(filter);
         if filter == optimized {
-            return optimized;
+            break;
         }
-        log::debug!(
-            "OPTIMIZED:\n{}\n->\n{}\n",
-            pretty(filter, 0),
-            pretty(optimized, 0)
-        );
+
+        if log::log_enabled!(log::Level::Debug) {
+            let a = pretty(filter, 0);
+            let b = pretty(optimized, 0);
+
+            if a != b {
+                log::debug!("STEP {}:\n{}\n", i, b);
+            }
+        }
         filter = optimized;
     }
+    return filter;
 }
 
 /*
