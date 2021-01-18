@@ -1,0 +1,6 @@
+[book]
+authors = ["Christian Schilling"]
+language = "en"
+multilingual = false
+src = "src"
+title = "Just One Single History"
