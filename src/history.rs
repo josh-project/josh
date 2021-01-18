@@ -274,7 +274,7 @@ pub fn unapply_filter(
                 .iter()
                 .map(|x| -> JoshResult<_> {
                     Ok(filter::unapply(
-                        &transaction.repo(),
+                        transaction,
                         filterobj,
                         tree.clone(),
                         x.tree()?,
@@ -305,7 +305,7 @@ pub fn unapply_filter(
                 // 0 means the history is unrelated. Pushing it will fail if we are not
                 // dealing with either a force push or a push with the "merge" option set.
                 filter::unapply(
-                    &transaction.repo(),
+                    transaction,
                     filterobj,
                     tree,
                     filter::tree::empty(&transaction.repo()),

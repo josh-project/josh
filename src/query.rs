@@ -71,11 +71,8 @@ impl FindFilesHelper {
             .find_reference(&self.headref)?
             .peel_to_tree()?;
 
-        let tree = filter::apply(
-            transaction.repo(),
-            filter::parse(&filterspec)?,
-            tree,
-        )?;
+        let tree =
+            filter::apply(&transaction, filter::parse(&filterspec)?, tree)?;
 
         let mut names = vec![];
         tree.walk(
