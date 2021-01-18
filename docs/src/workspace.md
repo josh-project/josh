@@ -8,7 +8,7 @@ repo on ``http://josh/world.git`` with some shared code in ``shared``.
 Create a new workspace
 ----------------------
 
-To create a new workspace in the path ``ws/hello`` simply clone it as if it already exists::
+To create a new workspace in the path ``ws/hello`` simply clone it as if it already exists:
 
     $ git clone http://josh/world.git:workspace=ws/hello.git
 
@@ -18,12 +18,12 @@ If you don't get this message it means that the path already exists in the repo 
 not yet have configured any path mappings.
 
 The next step is to add some path mapping to the ``workspace.josh`` file in the root of the
-workspace::
+workspace:
 
     $ cd hello
     $ echo "mod/a = :/shared/a" > workspace.josh
 
-And and commit the changes::
+And and commit the changes:
 
     $ git add workspace.josh
     $ git commit -m "add workspace"
@@ -38,17 +38,16 @@ There is however no way to do this merge locally, because we don't have the data
 Also, the resulting tree should contain the contents of ``shared/a`` mapped to ``mod/a`` which
 means it needs to be produced on the server side because we don't have the files to put there.
 
-To accomplish that push with the merge option::
+To accomplish that push with the merge option:
 
-    $ git push origin HEAD:refs/heads/master -o merge
+    $ git push -o merge origin master
 
-.. note::
 
-    While it is perfectly possible to use Josh without a code review system,
-    it is strongly recommended to use some form of code review to be able to inspect commits
-    created by Josh before they get into the immutable history of your main repository.
+>**Note**: While it is perfectly possible to use Josh without a code review system,
+>it is strongly recommended to use some form of code review to be able to inspect commits
+>created by Josh before they get into the immutable history of your main repository.
 
-As the resulting commit is created on the server side we need to get it from the server::
+As the resulting commit is created on the server side we need to get it from the server:
 
     $ git pull --rebase
 
