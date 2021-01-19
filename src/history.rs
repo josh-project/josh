@@ -113,6 +113,7 @@ fn find_known(
 ) -> JoshResult<(Vec<git2::Oid>, usize)> {
     log::debug!("find_known");
     let mut known = vec![];
+    let any = transaction.len(filter) != 0;
     'find_known: loop {
         let mut walk = transaction.repo().revwalk()?;
         walk.reset()?;
@@ -125,9 +126,11 @@ fn find_known(
         let mut n_new = 0;
         for id in walk {
             let id = id?;
-            if let Some(_) = transaction.get(filter, id) {
-                known.push(id);
-                continue 'find_known;
+            if any {
+                if let Some(_) = transaction.get(filter, id) {
+                    known.push(id);
+                    continue 'find_known;
+                }
             }
             n_new += 1;
         }
