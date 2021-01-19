@@ -26,8 +26,8 @@
   $ cd ${TESTTMP}/real_repo
   $ git pull --rebase
   From http://localhost:8001/real_repo
-     *..*  master     -> origin/master (glob)
-  Updating *..* (glob)
+     bb282e9..81b10fb  master     -> origin/master
+  Updating bb282e9..81b10fb
   Fast-forward
    sub1/file2 | 1 +
    1 file changed, 1 insertion(+)

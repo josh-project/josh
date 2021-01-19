@@ -6,7 +6,7 @@
   warning: You appear to have cloned an empty repository.
 
   $ curl -s http://localhost:8002/version
-  Version: * (glob)
+  Version: 0.3.0
 
   $ cd real_repo
 
@@ -21,7 +21,7 @@
   $ echo contents1 > sub1/subsub/file1
   $ git add .
   $ git commit -m "add file1"
-  [master (root-commit) *] add file1 (glob)
+  [master (root-commit) 03dfdf5] add file1
    1 file changed, 1 insertion(+)
    create mode 100644 sub1/subsub/file1
 
@@ -29,7 +29,7 @@
   $ echo contents1 > sub2/file2
   $ git add sub2
   $ git commit -m "add file2"
-  [master *] add file2 (glob)
+  [master 79e0ba4] add file2
    1 file changed, 1 insertion(+)
    create mode 100644 sub2/file2
 

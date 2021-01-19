@@ -8,7 +8,7 @@
   $ echo foo > bla
   $ git add .
   $ git commit -m "initial"
-  [master (root-commit) *] initial (glob)
+  [master (root-commit) 66472b8] initial
    1 file changed, 1 insertion(+)
    create mode 100644 bla
 
@@ -31,7 +31,7 @@
   $ git commit -m "unrelated on master" 1> /dev/null
   $ git push origin HEAD:refs/heads/master 1> /dev/null
   To http://localhost:8001/real_repo.git
-     *..*  HEAD -> master (glob)
+     a11885e..db0fd21  HEAD -> master
 
   $ cd ${TESTTMP}/sub1
   $ curl -s http://localhost:8002/flush
@@ -46,7 +46,7 @@
   remote: response from upstream:
   remote:  To http://localhost:8001/real_repo.git
   remote:  * [new branch]      JOSH_PUSH -> from_filtered
-  remote: REWRITE(* -> *) (glob)
+  remote: REWRITE(37fad4aaffb0ee24ab0ad6767701409bfbc52330 -> aaf57148485a64c3c102cf868772e216ab984c6a)
   remote:
   remote:
   To http://localhost:8002/real_repo.git:/sub1.git
@@ -56,16 +56,16 @@
   remote: josh-proxy
   remote: response from upstream:
   remote:  To http://localhost:8001/real_repo.git
-  remote:    *..*  JOSH_PUSH -> master (glob)
+  remote:    db0fd21..3f7ab67  JOSH_PUSH -> master
   remote:
   remote:
   To http://localhost:8002/real_repo.git:/sub1.git
-     *..*  master -> master (glob)
+     0b4cf6c..37fad4a  master -> master
 
   $ cd ${TESTTMP}/real_repo
   $ git fetch
   From http://localhost:8001/real_repo
-     *..*  master        -> origin/master (glob)
+     db0fd21..3f7ab67  master        -> origin/master
    * [new branch]      from_filtered -> origin/from_filtered
 
   $ git log --graph --pretty=%s origin/master
@@ -94,7 +94,7 @@
   |   |               `-- master
   |   |-- rewrites
   |   |   `-- real_repo.git
-  |   |       `-- r_* (glob)
+  |   |       `-- r_aaf57148485a64c3c102cf868772e216ab984c6a
   |   `-- upstream
   |       `-- real_repo.git
   |           `-- refs

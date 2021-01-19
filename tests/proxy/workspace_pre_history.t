@@ -10,7 +10,7 @@ file was created
   warning: You appear to have cloned an empty repository.
 
   $ curl -s http://localhost:8002/version
-  Version: * (glob)
+  Version: 0.3.0
 
   $ cd real_repo
 
@@ -90,7 +90,7 @@ file was created
   
   Turn off this advice by setting config variable advice.detachedHead to false
   
-  HEAD is now at * add workspace (glob)
+  HEAD is now at 06f56dd add workspace
 
   $ tree
   .

@@ -6,7 +6,7 @@
   warning: You appear to have cloned an empty repository.
  
   $ curl -s http://localhost:8002/version
-  Version: * (glob)
+  Version: 0.3.0
  
   $ cd real_repo
  
@@ -137,7 +137,7 @@
   
   Turn off this advice by setting config variable advice.detachedHead to false
   
-  HEAD is now at * add file2 (glob)
+  HEAD is now at 2a03ad0 add file2
   $ tree
   .
   |-- a
@@ -150,8 +150,8 @@
   4 directories, 2 files
  
   $ git checkout HEAD~1 1> /dev/null
-  Previous HEAD position was * add file2 (glob)
-  HEAD is now at * add file1 (glob)
+  Previous HEAD position was 2a03ad0 add file2
+  HEAD is now at 02668d7 add file1
   $ tree
   .
   `-- c
@@ -161,7 +161,7 @@
   2 directories, 1 file
  
   $ git checkout master 1> /dev/null
-  Previous HEAD position was * add file1 (glob)
+  Previous HEAD position was 02668d7 add file1
   Switched to branch 'master'
  
   $ echo newfile_1_contents > c/subsub/newfile_1
@@ -180,7 +180,7 @@
  
   $ git pull --rebase 1> /dev/null
   From http://localhost:8001/real_repo
-     *..*  master     -> origin/master (glob)
+     2b7018e..005d8d5  master     -> origin/master
  
   $ git clean -ffdx 1> /dev/null
  
@@ -236,7 +236,7 @@
   
   Turn off this advice by setting config variable advice.detachedHead to false
   
-  HEAD is now at * mod workspace (glob)
+  HEAD is now at 2b7018e mod workspace
   $ git clean -ffdx 1> /dev/null
   $ tree
   .
@@ -258,8 +258,8 @@
   contents1
  
   $ git checkout HEAD~1 1> /dev/null
-  Previous HEAD position was * mod workspace (glob)
-  HEAD is now at * add file3 (glob)
+  Previous HEAD position was 2b7018e mod workspace
+  HEAD is now at d038198 add file3
   $ git clean -ffdx 1> /dev/null
   $ tree
   .

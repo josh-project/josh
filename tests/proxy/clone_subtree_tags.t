@@ -17,7 +17,7 @@
   $ echo contents1 > sub1/file1
   $ git add sub1
   $ git commit -m "add file1"
-  [master (root-commit) *] add file1 (glob)
+  [master (root-commit) bb282e9] add file1
    1 file changed, 1 insertion(+)
    create mode 100644 sub1/file1
 
@@ -26,7 +26,7 @@
   $ echo contents1 > sub1/file12
   $ git add sub1
   $ git commit -m "add file12"
-  [master *] add file12 (glob)
+  [master fa432ae] add file12
    1 file changed, 1 insertion(+)
    create mode 100644 sub1/file12
 
@@ -35,12 +35,12 @@
   $ echo contents1 > sub2/file2
   $ git add sub2
   $ git commit -m "add file2"
-  [master *] add file2 (glob)
+  [master bbc3f80] add file2
    1 file changed, 1 insertion(+)
    create mode 100644 sub2/file2
 
   $ git describe --tags
-  a_tag-2-* (glob)
+  a_tag-2-gbbc3f80
 
   $ tree
   .
@@ -84,7 +84,7 @@
   * add file1
 
   $ git describe --tags
-  a_tag-1-* (glob)
+  a_tag-1-g6e99e1e
 
   $ cat file1
   contents1

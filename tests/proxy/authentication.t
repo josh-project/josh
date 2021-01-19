@@ -18,7 +18,7 @@
   $ echo contents1 > sub1/file1
   $ git add sub1
   $ git commit -m "add file1"
-  [master (root-commit) *] add file1 (glob)
+  [master (root-commit) bb282e9] add file1
    1 file changed, 1 insertion(+)
    create mode 100644 sub1/file1
 
@@ -59,18 +59,18 @@
   $ echo contents1 > file2
   $ git add .
   $ git commit -m "push test"
-  [master *] push test (glob)
+  [master f23daa6] push test
    1 file changed, 1 insertion(+)
    create mode 100644 file2
   $ git push
   remote: josh-proxy        
   remote: response from upstream:        
   remote:  To http://localhost:8001/real_repo.git        
-  remote:  * (glob)
+  remote:    bb282e9..f23daa6  JOSH_PUSH -> master        
   remote: 
   remote: 
   To http://localhost:8002/real_repo.git
-     *..*  master -> master (glob)
+     bb282e9..f23daa6  master -> master
 
   $ rm -Rf full_repo
   $ git clone -q http://x\':bla@localhost:8002/real_repo.git full_repo
@@ -87,7 +87,7 @@
   $ cd ${TESTTMP}/real_repo
   $ curl -s http://localhost:8001/_noauth
   $ git pull --rebase 2> /dev/null
-  Updating *..* (glob)
+  Updating bb282e9..f23daa6
   Fast-forward
    file2 | 1 +
    1 file changed, 1 insertion(+)

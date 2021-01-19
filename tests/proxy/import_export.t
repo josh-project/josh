@@ -126,7 +126,7 @@
   $ git commit -m "add new_file2" 1> /dev/null
   $ git push
   To http://localhost:8001/repo1.git
-     *..*  master -> master (glob)
+     e189830..8acb3f4  master -> master
 
   $ cd ${TESTTMP}/real_repo
   $ git checkout master 1> /dev/null
@@ -171,7 +171,7 @@
   $ curl -s http://localhost:8002/flush
   Flushed credential cache
   $ git pull --rebase 2> /dev/null
-  Updating *..* (glob)
+  Updating 85c3ce1..6fe45a9
   Fast-forward
    new_file2 | 0
    1 file changed, 0 insertions(+), 0 deletions(-)
@@ -195,7 +195,7 @@
   $ git commit --amend -m "add great new_file2" 1> /dev/null
   $ git push --force
   To http://localhost:8001/repo1.git
-   + *...* master -> master (forced update) (glob)
+   + 8acb3f4...33b9ecd master -> master (forced update)
 
   $ cd ${TESTTMP}/real_repo
   $ git checkout master 1> /dev/null
@@ -234,7 +234,7 @@
   $ curl -s http://localhost:8002/flush
   Flushed credential cache
   $ git pull --rebase 2> /dev/null
-  Updating *..* (glob)
+  Updating 6fe45a9..8047211
   Fast-forward
   $ tree
   .

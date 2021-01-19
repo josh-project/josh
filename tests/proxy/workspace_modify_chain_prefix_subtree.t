@@ -6,7 +6,7 @@
   warning: You appear to have cloned an empty repository.
 
   $ curl -s http://localhost:8002/version
-  Version: * (glob)
+  Version: 0.3.0
 
   $ cd real_repo
 
@@ -139,7 +139,7 @@
   
   Turn off this advice by setting config variable advice.detachedHead to false
   
-  HEAD is now at * add workspace (glob)
+  HEAD is now at a4b6822 add workspace
   $ tree
   .
   |-- a
@@ -153,8 +153,8 @@
   4 directories, 3 files
 
   $ git checkout HEAD~1 1> /dev/null
-  Previous HEAD position was * add workspace (glob)
-  HEAD is now at * add file2 (glob)
+  Previous HEAD position was a4b6822 add workspace
+  HEAD is now at 2a03ad0 add file2
   $ tree
   .
   |-- a
@@ -167,7 +167,7 @@
   4 directories, 2 files
 
   $ git checkout master 1> /dev/null
-  Previous HEAD position was * add file2 (glob)
+  Previous HEAD position was 2a03ad0 add file2
   Switched to branch 'master'
 
   $ echo newfile_1_contents > c/subsub/newfile_1
@@ -184,12 +184,12 @@
   remote: josh-proxy
   remote: response from upstream:
   remote:  To http://localhost:8001/real_repo.git
-  remote:    *..*  JOSH_PUSH -> master (glob)
-  remote: REWRITE(* -> *) (glob)
+  remote:    aaec05d..edefd7d  JOSH_PUSH -> master
+  remote: REWRITE(7de033196d3f74f40139647122f499286a97498b -> 44edc62d506b9805a3edfc74db15b1cc0bfc6871)
   remote:
   remote:
   To http://localhost:8002/real_repo.git:workspace=ws:prefix=pre:/pre.git
-     *..*  master -> master (glob)
+     6712cb1..7de0331  master -> master
 
   $ cat > workspace.josh <<EOF
   > a/b = :/sub2
@@ -204,12 +204,12 @@
   remote: josh-proxy
   remote: response from upstream:
   remote:  To http://localhost:8001/real_repo.git
-  remote:    *..*  JOSH_PUSH -> master* (glob)
-  remote: REWRITE(* -> *) (glob)
+  remote:    edefd7d..18aaa0c  JOSH_PUSH -> master
+  remote: REWRITE(94b02b6b15cb5b8864e8754354cd256ec7ebd341 -> 9d72b88b11aed97d3313f0a6d80894ee2ffdf3e9)
   remote:
   remote:
   To http://localhost:8002/real_repo.git:workspace=ws:prefix=pre:/pre.git
-     *..*  master -> master* (glob)
+     6712cb1..94b02b6  master -> master
   $ curl -s http://localhost:8002/flush
   Flushed credential cache
   $ git pull --rebase 2> /dev/null
@@ -241,7 +241,7 @@ Note that d/ is still in the tree but now it is not overlayed
   Flushed credential cache
   $ git pull --rebase 1> /dev/null
   From http://localhost:8001/real_repo
-     *..*  master     -> origin/master (glob)
+     aaec05d..18aaa0c  master     -> origin/master
 
   $ git clean -ffdx 1> /dev/null
 
@@ -303,7 +303,7 @@ Note that ws/d/ is now present in the ws
   
   Turn off this advice by setting config variable advice.detachedHead to false
   
-  HEAD is now at * add in filter (glob)
+  HEAD is now at edefd7d add in filter
   $ git clean -ffdx 1> /dev/null
   $ tree
   .
@@ -325,8 +325,8 @@ Note that ws/d/ is now present in the ws
   5 directories, 9 files
 
   $ git checkout HEAD~1 1> /dev/null
-  Previous HEAD position was * add in filter (glob)
-  HEAD is now at * mod workspace (glob)
+  Previous HEAD position was edefd7d add in filter
+  HEAD is now at aaec05d mod workspace
   $ git clean -ffdx 1> /dev/null
   $ tree
   .
@@ -387,8 +387,8 @@ Note that ws/d/ is now present in the ws
   |   |               `-- master
   |   |-- rewrites
   |   |   `-- real_repo.git
-  |   |       |-- r_* (glob)
-  |   |       `-- r_* (glob)
+  |   |       |-- r_44edc62d506b9805a3edfc74db15b1cc0bfc6871
+  |   |       `-- r_9d72b88b11aed97d3313f0a6d80894ee2ffdf3e9
   |   `-- upstream
   |       `-- real_repo.git
   |           `-- refs

@@ -25,17 +25,17 @@
   remote: josh-proxy        
   remote: response from upstream:        
   remote:  To http://localhost:8001/real_repo.git        
-  remote:    *..*  JOSH_PUSH -> master         (glob)
+  remote:    bb282e9..b7cf821  JOSH_PUSH -> master        
   remote: 
   remote: 
   To http://localhost:8002/real_repo.git:prefix=pre.git
-     *..*  master -> master (glob)
+     1f0b9d8..f99a2dd  master -> master
 
   $ cd ${TESTTMP}/real_repo
   $ git pull --rebase
   From http://localhost:8001/real_repo
-     *..*  master     -> origin/master (glob)
-  Updating *..* (glob)
+     bb282e9..b7cf821  master     -> origin/master
+  Updating bb282e9..b7cf821
   Fast-forward
    file2 | 1 +
    1 file changed, 1 insertion(+)

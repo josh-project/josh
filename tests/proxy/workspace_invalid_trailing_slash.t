@@ -6,7 +6,7 @@
   warning: You appear to have cloned an empty repository.
 
   $ curl -s http://localhost:8002/version
-  Version: * (glob)
+  Version: 0.3.0
 
   $ cd real_repo
 
@@ -58,8 +58,8 @@
   remote: josh-proxy
   remote: response from upstream:
   remote:  To http://localhost:8001/real_repo.git
-  remote:    *..* JOSH_PUSH -> master* (glob)
-  remote: REWRITE(* -> *) (glob)
+  remote:    81c59c0..ae64c76  JOSH_PUSH -> master
+  remote: REWRITE(85ee20960c56619305e098b301d8253888b6ce5b -> c255706f564f629eed1756b789d761048cfe060a)
   remote:
   remote:
   To http://localhost:8002/real_repo.git:workspace=ws.git
@@ -95,8 +95,8 @@
   $ cd ${TESTTMP}/real_repo
   $ git pull --rebase
   From http://localhost:8001/real_repo
-     *..*  master     -> origin/master* (glob)
-  Updating *..* (glob)
+     81c59c0..ae64c76  master     -> origin/master
+  Updating 81c59c0..ae64c76
   Fast-forward
    ws/workspace.josh | 4 ++++
    1 file changed, 4 insertions(+)
@@ -131,7 +131,7 @@
   remote: josh-proxy
   remote: response from upstream:
   remote:
-  remote: Can't apply "mod workspace" (*) (glob)
+  remote: Can't apply "mod workspace" (4e531443c5533e6d1b2503d0fad238cfc8491807)
   remote: Invalid workspace:
   remote: ----
   remote: a/ = :/sub1
@@ -200,7 +200,7 @@
   |   |               `-- master
   |   |-- rewrites
   |   |   `-- real_repo.git
-  |   |       `-- r_* (glob)
+  |   |       `-- r_c255706f564f629eed1756b789d761048cfe060a
   |   `-- upstream
   |       `-- real_repo.git
   |           `-- refs

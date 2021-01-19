@@ -6,7 +6,7 @@
   warning: You appear to have cloned an empty repository.
 
   $ curl -s http://localhost:8002/version
-  Version: * (glob)
+  Version: 0.3.0
 
   $ cd real_repo
 
@@ -73,14 +73,14 @@
   $ git sync origin HEAD:refs/heads/master -o merge
   * HEAD -> refs/heads/master
   From http://localhost:8002/real_repo.git:workspace=ws
-   * branch            * -> FETCH_HEAD (glob)
-  HEAD is now at * Merge from :workspace=ws (glob)
+   * branch            4a199f3a19a292e6639dede0f8602afc19a82dfc -> FETCH_HEAD
+  HEAD is now at 4a199f3 Merge from :workspace=ws
 
   $ curl -s http://localhost:8002/flush
   Flushed credential cache
   $ git pull --rebase
   From http://localhost:8002/real_repo.git:workspace=ws
-   + *...* master     -> origin/master  (forced update) (glob)
+   + 1b46698...4a199f3 master     -> origin/master  (forced update)
   Already up to date.
 
   $ tree
@@ -105,8 +105,8 @@
   $ cd ${TESTTMP}/real_repo
   $ git pull --rebase
   From http://localhost:8001/real_repo
-     *..*  master     -> origin/master* (glob)
-  Updating *..* (glob)
+     5d605ce..98c996c  master     -> origin/master
+  Updating 5d605ce..98c996c
   Fast-forward
    ws/workspace.josh | 2 ++
    1 file changed, 2 insertions(+)
@@ -163,8 +163,8 @@
   Flushed credential cache
   $ git pull --rebase
   From http://localhost:8002/real_repo.git:workspace=ws
-     *..*  master     -> origin/master* (glob)
-  Updating *..* (glob)
+     4a199f3..4972ae1  master     -> origin/master
+  Updating 4a199f3..4972ae1
   Fast-forward
    d/file3        | 1 +
    workspace.josh | 3 ++-
@@ -213,7 +213,7 @@
   
   Turn off this advice by setting config variable advice.detachedHead to false
   
-  HEAD is now at * Merge from :workspace=ws (glob)
+  HEAD is now at 4a199f3 Merge from :workspace=ws
   $ tree
   .
   |-- a
@@ -227,8 +227,8 @@
   4 directories, 3 files
 
   $ git checkout HEAD~1 1> /dev/null
-  Previous HEAD position was * Merge from :workspace=ws (glob)
-  HEAD is now at * add workspace (glob)
+  Previous HEAD position was 4a199f3 Merge from :workspace=ws
+  HEAD is now at 9441c1b add workspace
   $ tree
   .
   `-- workspace.josh
@@ -236,7 +236,7 @@
   0 directories, 1 file
 
   $ git checkout master 1> /dev/null
-  Previous HEAD position was * add workspace (glob)
+  Previous HEAD position was 9441c1b add workspace
   Switched to branch 'master'
 
   $ echo newfile_1_contents > c/subsub/newfile_1
@@ -252,8 +252,8 @@
   $ git sync
     refs/heads/master -> refs/heads/master
   From http://localhost:8002/real_repo.git:workspace=ws
-   * branch            * -> FETCH_HEAD (glob)
-  HEAD is now at * add in filter (glob)
+   * branch            3136fff7280627623bf4d71191d1aea783579be0 -> FETCH_HEAD
+  HEAD is now at 3136fff add in filter
 
   $ cat > workspace.josh <<EOF
   > a/b = :/sub2
@@ -267,14 +267,14 @@
   $ git sync
     refs/heads/master -> refs/heads/master
   From http://localhost:8002/real_repo.git:workspace=ws
-   * branch            * -> FETCH_HEAD (glob)
-  HEAD is now at * try to modify ws (glob)
+   * branch            1a909d6e8ba43c6eaf211ef04440984d38bc26e6 -> FETCH_HEAD
+  HEAD is now at 1a909d6 try to modify ws
 
   $ curl -s http://localhost:8002/flush
   Flushed credential cache
   $ git pull --rebase
   From http://localhost:8002/real_repo.git:workspace=ws
-   + *...* master     -> origin/master  (forced update) (glob)
+   + 7f85f11...1a909d6 master     -> origin/master  (forced update)
   Already up to date.
 
 Note that d/ is still in the tree but now it is not overlayed
@@ -320,8 +320,8 @@ Note that d/ is still in the tree but now it is not overlayed
   Flushed credential cache
   $ git pull --rebase
   From http://localhost:8001/real_repo
-     *..*  master     -> origin/master* (glob)
-  Updating *..* (glob)
+     e41565c..2c7e462  master     -> origin/master
+  Updating e41565c..2c7e462
   Fast-forward
    sub1/subsub/file1     | 1 -
    sub1/subsub/newfile_1 | 1 +
@@ -395,7 +395,7 @@ Note that ws/d/ is now present in the ws
   
   Turn off this advice by setting config variable advice.detachedHead to false
   
-  HEAD is now at * add in filter (glob)
+  HEAD is now at 9c41f84 add in filter
   $ git clean -ffdx 1> /dev/null
   $ tree
   .
@@ -417,8 +417,8 @@ Note that ws/d/ is now present in the ws
   5 directories, 9 files
 
   $ git checkout HEAD~1 1> /dev/null
-  Previous HEAD position was * add in filter (glob)
-  HEAD is now at * mod workspace (glob)
+  Previous HEAD position was 9c41f84 add in filter
+  HEAD is now at e41565c mod workspace
   $ git clean -ffdx 1> /dev/null
   $ tree
   .
@@ -475,9 +475,9 @@ Note that ws/d/ is now present in the ws
   |   |               `-- master
   |   |-- rewrites
   |   |   `-- real_repo.git
-  |   |       |-- r_* (glob)
-  |   |       |-- r_* (glob)
-  |   |       `-- r_* (glob)
+  |   |       |-- r_1a909d6e8ba43c6eaf211ef04440984d38bc26e6
+  |   |       |-- r_3136fff7280627623bf4d71191d1aea783579be0
+  |   |       `-- r_4a199f3a19a292e6639dede0f8602afc19a82dfc
   |   `-- upstream
   |       `-- real_repo.git
   |           `-- refs

@@ -6,7 +6,7 @@
   warning: You appear to have cloned an empty repository.
 
   $ curl -s http://localhost:8002/version
-  Version: * (glob)
+  Version: 0.3.0
 
   $ cd real_repo
 
@@ -123,7 +123,7 @@
   
   Turn off this advice by setting config variable advice.detachedHead to false
   
-  HEAD is now at * add file1 (glob)
+  HEAD is now at 833812f add file1
 
   $ tree
   .
@@ -135,7 +135,7 @@
   2 directories, 2 files
 
   $ git checkout master 1> /dev/null
-  Previous HEAD position was * add file1 (glob)
+  Previous HEAD position was 833812f add file1
   Switched to branch 'master'
 
   $ echo newfile_1_contents > c/subsub/newfile_1
@@ -149,18 +149,18 @@
   remote: josh-proxy
   remote: response from upstream:
   remote:  To http://localhost:8001/real_repo.git
-  remote:    *..*  JOSH_PUSH -> master (glob)
-  remote: REWRITE(* -> *) (glob)
+  remote:    176e8e0..11e2559  JOSH_PUSH -> master
+  remote: REWRITE(5fa942ed9d35f280b35df2c4ef7acd23319271a5 -> 2cbcd105ead63a4fecf486b949db7f44710300e5)
   remote:
   remote:
   To http://localhost:8002/real_repo.git:workspace=ws.git
-     *..*  master -> master (glob)
+     6be0d68..5fa942e  master -> master
 
   $ cd ${TESTTMP}/real_repo
 
   $ git pull --rebase 1> /dev/null
   From http://localhost:8001/real_repo
-     *..*  master     -> origin/master (glob)
+     176e8e0..11e2559  master     -> origin/master
 
   $ git clean -ffdx 1> /dev/null
 
@@ -213,7 +213,7 @@
   
   Turn off this advice by setting config variable advice.detachedHead to false
   
-  HEAD is now at * add file2 (glob)
+  HEAD is now at 176e8e0 add file2
   $ git clean -ffdx 1> /dev/null
   $ tree
   .
@@ -266,7 +266,7 @@
   |   |               `-- master
   |   |-- rewrites
   |   |   `-- real_repo.git
-  |   |       `-- r_* (glob)
+  |   |       `-- r_2cbcd105ead63a4fecf486b949db7f44710300e5
   |   `-- upstream
   |       `-- real_repo.git
   |           `-- refs

@@ -26,7 +26,7 @@
   remote: response from upstream:
   remote:  To http://localhost:8001/real_repo.git
   remote:  * [new branch]      JOSH_PUSH -> new_branch
-  remote: REWRITE(* -> *) (glob)
+  remote: REWRITE(d8388f5880393d255b371f1ed9b801d35620017e -> 07c68616a04d2f94b5c2c4e3471647f72933cfd9)
   remote:
   remote:
   To http://localhost:8002/real_repo.git:/sub1.git
@@ -38,18 +38,18 @@
   remote: josh-proxy        
   remote: response from upstream:        
   remote:  To http://localhost:8001/real_repo.git        
-  remote:    *..*  JOSH_PUSH -> master* (glob)
+  remote:    bb282e9..81b10fb  JOSH_PUSH -> master        
   remote: 
   remote: 
   To http://localhost:8002/real_repo.git:/sub1.git
-     *..*  master -> master (glob)
+     0b4cf6c..d8388f5  master -> master
 
   $ cd ${TESTTMP}/real_repo
   $ git pull --rebase
   From http://localhost:8001/real_repo
-     *..*  master     -> origin/master (glob)
+     bb282e9..81b10fb  master     -> origin/master
    * [new branch]      new_branch -> origin/new_branch
-  Updating *..* (glob)
+  Updating bb282e9..81b10fb
   Fast-forward
    sub1/file2 | 1 +
    1 file changed, 1 insertion(+)
@@ -82,7 +82,7 @@ Make sure all temporary namespace got removed
   |   |               `-- master
   |   |-- rewrites
   |   |   `-- real_repo.git
-  |   |       `-- r_* (glob)
+  |   |       `-- r_07c68616a04d2f94b5c2c4e3471647f72933cfd9
   |   `-- upstream
   |       `-- real_repo.git
   |           `-- refs
