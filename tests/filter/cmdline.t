@@ -77,13 +77,20 @@
 
   $ git read-tree HEAD josh/filter/libs/master josh/filter/libs/foo
   $ git commit -m "sync"
-  [master *] sync (glob)
+  [master fbd00b3] sync
    3 files changed, 3 insertions(+)
    create mode 100644 a/b/file3
    create mode 100644 c/file1
    create mode 100644 c/file2
+  $ git cat-file -p HEAD
+  tree 747919949c8631d37398891815dda049afaddc8f
+  parent 58d391109744bf61f6e0118a15bcb0e720a73edc
+  author Josh <josh@example.com> 1112911993 +0000
+  committer Josh <josh@example.com> 1112911993 +0000
+  
+  sync
   $ git reset --hard
-  HEAD is now at * sync (glob)
+  HEAD is now at fbd00b3 sync
 
   $ tree
   .
@@ -108,7 +115,5 @@
   [1]
 
 $ git show libs/master | grep $(cat c/.joshinfo | grep commit | sed 's/commit: //')
-commit * (glob)
 $ git show libs/foo | grep $(cat a/b/.joshinfo | grep commit | sed 's/commit: //')
-commit * (glob)
 

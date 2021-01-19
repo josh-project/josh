@@ -81,7 +81,7 @@
 
   $ git pull --rebase 1> /dev/null
   From http://localhost:8001/real_repo
-     *..*  master     -> origin/master (glob)
+     7ac8997..842d478  master     -> origin/master
 
   $ git clean -ffdx 1> /dev/null
 
@@ -121,7 +121,7 @@
   
   Turn off this advice by setting config variable advice.detachedHead to false
   
-  HEAD is now at * add in filter (glob)
+  HEAD is now at 3eade03 add in filter
   $ tree
   .
   |-- sub2
@@ -157,7 +157,7 @@
   |   |               `-- master
   |   |-- rewrites
   |   |   `-- real_repo.git
-  |   |       `-- r_* (glob)
+  |   |       `-- r_9db51080a4d148b32bd4c4e0b39eae8d0b3df763
   |   `-- upstream
   |       `-- real_repo.git
   |           `-- refs

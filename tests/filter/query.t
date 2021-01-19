@@ -59,7 +59,7 @@
   > EOF
 
   $ cat .git/josh_kv.json
-  { "*" : "SUCCESS" } (glob)
+  { "6818b278a7218c052915e067f6f7d7890e8748ba" : "SUCCESS" }
 
   $ josh-filter -s -q render=sub1/file1
   [2] :/sub1
@@ -75,32 +75,32 @@
   name: file0
   path: file0
   base: 
-  sha1: * (glob)
+  sha1: f25320b9e3f1dd09d15e6e13796402768d6d62cf
   blob: contents0
   -----
   1:
   name: file1
   path: sub1/file1
   base: sub1
-  sha1: * (glob)
+  sha1: a024003ee1acc6bf70318a46e7b6df651b9dc246
   blob: contents1
-  filtered: * (glob)
+  filtered: 6818b278a7218c052915e067f6f7d7890e8748ba
     -----
   2:
   name: file2
   path: sub1/file2
   base: sub1
-  sha1: * (glob)
+  sha1: 6b46faacade805991bcaea19382c9d941828ce80
   blob: contents2
-  filtered: * (glob)
+  filtered: 6818b278a7218c052915e067f6f7d7890e8748ba
     -----
   3:
   name: file3
   path: sub2/file3
   base: sub2
-  sha1: * (glob)
+  sha1: 1cb5d64cdb55e3db2a8d6f00d596572b4cfa9d5c
   blob: contents3
-  filtered: * (glob)
+  filtered: d05ad19276daffb2c8cff4078c72c339346e19c4
     
   $ josh-filter -s :/sub1 -q render=file2
   [2] :/sub1

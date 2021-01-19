@@ -34,11 +34,11 @@
   remote: josh-proxy        
   remote: response from upstream:        
   remote:  To http://localhost:8001/real_repo.git        
-  remote:    *..*  JOSH_PUSH -> master * (glob)
+  remote:    bb282e9..81b10fb  JOSH_PUSH -> master        
   remote: 
   remote: 
   To http://localhost:8002/real_repo.git:/sub1.git
-     *..*  master -> master (glob)
+     0b4cf6c..d8388f5  master -> master
 
 This uses a repo that has a path with more than one element, causing nested namespaces.
   $ cd ${TESTTMP}
@@ -59,17 +59,17 @@ Put a double slash in the URL to see that it also works
   remote: josh-proxy        
   remote: response from upstream:        
   remote:  To http://localhost:8001/real/repo2.git        
-  remote:    *..*  JOSH_PUSH -> master * (glob)
+  remote:    bcd5520..dcd1fcd  JOSH_PUSH -> master        
   remote: 
   remote: 
   To http://localhost:8002/real/repo2.git:/sub1.git
-     *..*  master -> master (glob)
+     e31c696..5c1144a  master -> master
 
   $ cd ${TESTTMP}/real_repo
   $ git pull --rebase
   From http://localhost:8001/real_repo
-     *..*  master     -> origin/master (glob)
-  Updating *..* (glob)
+     bb282e9..81b10fb  master     -> origin/master
+  Updating bb282e9..81b10fb
   Fast-forward
    sub1/file2 | 1 +
    1 file changed, 1 insertion(+)
@@ -89,8 +89,8 @@ Put a double slash in the URL to see that it also works
   $ cd ${TESTTMP}/real_repo2
   $ git pull --rebase
   From http://localhost:8001/real/repo2
-     *..*  master     -> origin/master (glob)
-  Updating *..* (glob)
+     bcd5520..dcd1fcd  master     -> origin/master
+  Updating bcd5520..dcd1fcd
   Fast-forward
    sub1/file2 | 1 +
    1 file changed, 1 insertion(+)

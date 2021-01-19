@@ -15,7 +15,7 @@
   $ git commit -m "init" --allow-empty 1> /dev/null
   $ git submodule add ../libs 2> /dev/null
   $ git submodule status
-   * libs (heads/master) (glob)
+   bb282e9cdc1b972fffd08fd21eead43bc0c83cb8 libs (heads/master)
 
   $ git commit -m "add libs" 1> /dev/null
 

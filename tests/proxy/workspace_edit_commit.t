@@ -6,7 +6,7 @@
   warning: You appear to have cloned an empty repository.
 
   $ curl -s http://localhost:8002/version
-  Version: * (glob)
+  Version: 0.3.0
 
   $ cd real_repo
 
@@ -122,7 +122,7 @@
   > 
   > Change-Id: Id6ca199378bf7e543e5e0c20e64d448e4126e695
   > EOF
-  [master *] Add new folder (glob)
+  [master 47a4447] Add new folder
    1 file changed, 1 insertion(+)
 
   $ git push origin HEAD:refs/for/master 2>&1 >/dev/null | sed -e 's/[ ]*$//g'
@@ -130,7 +130,7 @@
   remote: response from upstream:
   remote:  To http://localhost:8001/real_repo.git
   remote:  * [new reference]   JOSH_PUSH -> refs/for/master
-  remote: REWRITE(* -> *) (glob)
+  remote: REWRITE(47a44473cfa06e213dd7b178b86c0ed03f71e2bf -> deb37ff512d2a0374ec09fad893171631985bc93)
   remote:
   remote:
   To http://localhost:8002/real_repo.git:workspace=ws.git
@@ -164,7 +164,7 @@
   remote: response from upstream:
   remote:  To http://localhost:8001/real_repo.git
   remote:  * [new reference]   JOSH_PUSH -> refs/for/master
-  remote: REWRITE(* -> *) (glob)
+  remote: REWRITE(f8c037fec9ba2a828e96fbd6ac979ea8605340a0 -> 09f5bd0c1a8927ab1f4ba38756c4d3f266fd24cf)
   remote:
   remote:
   To http://localhost:8002/real_repo.git:workspace=ws.git
@@ -208,8 +208,8 @@
   |   |               `-- master
   |   |-- rewrites
   |   |   `-- real_repo.git
-  |   |       |-- r_* (glob)
-  |   |       `-- r_* (glob)
+  |   |       |-- r_09f5bd0c1a8927ab1f4ba38756c4d3f266fd24cf
+  |   |       `-- r_deb37ff512d2a0374ec09fad893171631985bc93
   |   `-- upstream
   |       `-- real_repo.git
   |           `-- refs
