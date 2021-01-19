@@ -191,7 +191,19 @@ impl Transaction {
             t.insert(from.as_bytes(), to.as_bytes()).unwrap();
         }
     }
+    pub fn len(&self, filter: filter::Filter) -> usize {
+        let mut t2 = self.t2.borrow_mut();
+        let t = t2.sled_trees.entry(filter.id()).or_insert_with(|| {
+            DB.lock()
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .open_tree(filter::spec(filter))
+                .unwrap()
+        });
 
+        return t.len();
+    }
     pub fn get(
         &self,
         filter: filter::Filter,
