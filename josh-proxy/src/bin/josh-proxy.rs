@@ -164,8 +164,8 @@ async fn fetch_upstream(
 
     tracing::trace!("credentials_cached_ok {:?}", credentials_cached_ok);
 
-    let transaction = josh::cache::Transaction::open(&service.repo_path)?;
     if credentials_cached_ok {
+        let transaction = josh::cache::Transaction::open(&service.repo_path)?;
         let refname = format!(
             "refs/josh/upstream/{}/{}",
             &josh::to_ns(&upstream_repo),
@@ -301,7 +301,7 @@ async fn do_filter(
     temp_ns: Arc<josh_proxy::TmpGitNamespace>,
     filter_spec: String,
     headref: String,
-) -> josh::JoshResult<josh::cache::Transaction> {
+) -> josh::JoshResult<()> {
     let permit = service.filter_permits.acquire().await;
 
     let s = tracing::span!(tracing::Level::TRACE, "do_filter worker");
@@ -347,7 +347,7 @@ async fn do_filter(
             true,
             "",
         )?;
-        return Ok(transaction);
+        return Ok(());
     })
     .await?;
 

@@ -56,10 +56,42 @@ struct Transaction2 {
 pub struct Transaction {
     t2: std::cell::RefCell<Transaction2>,
     repo: git2::Repository,
+    pub out: Box<dyn std::io::Write>,
 }
 
 impl Transaction {
+    pub fn open(path: &std::path::Path) -> JoshResult<Transaction> {
+        Transaction::open2(
+            path,
+            Box::new(std::io::BufWriter::new(std::io::stderr())),
+        )
+    }
+
     pub fn new(repo: git2::Repository) -> Transaction {
+        Transaction::new2(
+            repo,
+            Box::new(std::io::BufWriter::new(std::io::stderr())),
+        )
+    }
+
+    pub fn open2(
+        path: &std::path::Path,
+        out: Box<dyn std::io::Write>,
+    ) -> JoshResult<Transaction> {
+        Ok(Transaction::new2(
+            git2::Repository::open_ext(
+                path,
+                git2::RepositoryOpenFlags::NO_SEARCH,
+                &[] as &[&std::ffi::OsStr],
+            )?,
+            out,
+        ))
+    }
+
+    pub fn new2(
+        repo: git2::Repository,
+        out: Box<dyn std::io::Write>,
+    ) -> Transaction {
         log::debug!("new transaction");
         Transaction {
             t2: std::cell::RefCell::new(Transaction2 {
@@ -71,26 +103,8 @@ impl Transaction {
                 walks: 0,
             }),
             repo: repo,
+            out: out,
         }
-    }
-
-    pub fn open(path: &std::path::Path) -> JoshResult<Transaction> {
-        log::debug!("open transaction");
-        Ok(Transaction {
-            t2: std::cell::RefCell::new(Transaction2 {
-                commit_map: HashMap::new(),
-                apply_map: HashMap::new(),
-                unapply_map: HashMap::new(),
-                sled_trees: HashMap::new(),
-                misses: 0,
-                walks: 0,
-            }),
-            repo: git2::Repository::open_ext(
-                path,
-                git2::RepositoryOpenFlags::NO_SEARCH,
-                &[] as &[&std::ffi::OsStr],
-            )?,
-        })
     }
 
     pub fn clone(&self) -> JoshResult<Transaction> {
