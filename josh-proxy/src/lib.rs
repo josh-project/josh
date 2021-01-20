@@ -293,6 +293,7 @@ pub fn create_repo(path: &std::path::Path) -> josh::JoshResult<()> {
         cwd: path.to_path_buf(),
     };
     shell.command("git config http.receivepack true");
+    shell.command("git config uploadpack.allowsidebandall true");
     shell.command("git config receive.advertisePushOptions true");
     let ce = std::env::current_exe().expect("can't find path to exe");
     shell.command("rm -Rf hooks");
