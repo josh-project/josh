@@ -96,9 +96,6 @@
   |   |       |-- %3A%2Fsub1%2Fsubsub
   |   |       |   `-- heads
   |   |       |       `-- master
-  |   |       |-- %3A%2Fsub1%3A%2Fsubsub
-  |   |       |   `-- heads
-  |   |       |       `-- master
   |   |       `-- %3A%2Fsub2
   |   |           `-- heads
   |   |               `-- master
@@ -110,4 +107,4 @@
   |-- namespaces
   `-- tags
   
-  18 directories, 5 files
+  16 directories, 4 files

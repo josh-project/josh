@@ -138,6 +138,7 @@ fn pretty2(op: &Op, indent: usize, compose: bool) -> String {
 /// Compact, single line string representation of a filter so that `parse(spec(F)) == F`
 /// Note that this is will not be the best human readable representation. For that see `pretty(...)`
 pub fn spec(filter: Filter) -> String {
+    let filter = opt::simplify(filter);
     spec2(&to_op(filter))
 }
 
