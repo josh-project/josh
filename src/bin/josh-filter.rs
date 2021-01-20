@@ -9,20 +9,61 @@ use std::io::Write;
 
 fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
     let args = clap::App::new("josh-filter")
-        .arg(clap::Arg::with_name("spec").takes_value(true))
-        .arg(clap::Arg::with_name("input_ref").takes_value(true))
-        .arg(clap::Arg::with_name("file").long("file").takes_value(true))
+        .arg(
+            clap::Arg::with_name("filter")
+                .help("Filter to apply")
+                .default_value(":nop")
+                .takes_value(true),
+        )
+        .arg(
+            clap::Arg::with_name("input")
+                .help("Ref to apply filter to")
+                .default_value("HEAD")
+                .takes_value(true),
+        )
+        .arg(
+            clap::Arg::with_name("file")
+                .long("file")
+                .help("Read filter spec from file")
+                .takes_value(true),
+        )
         .arg(
             clap::Arg::with_name("update")
                 .long("update")
+                .help("reference to update with the result")
+                .default_value("FILTERED_HEAD")
                 .takes_value(true),
         )
-        .arg(clap::Arg::with_name("squash").long("squash"))
-        .arg(clap::Arg::with_name("discover").short("d"))
-        .arg(clap::Arg::with_name("trace").short("t"))
-        .arg(clap::Arg::with_name("print-filter").short("p"))
-        .arg(clap::Arg::with_name("cache-stats").short("s"))
-        .arg(clap::Arg::with_name("no-cache").short("n"))
+        .arg(
+            clap::Arg::with_name("squash")
+                .help("Only output one commit, without history")
+                .long("squash"),
+        )
+        .arg(
+            clap::Arg::with_name("discover")
+                .help("Populate the cache with probable filters")
+                .short("d"),
+        )
+        .arg(
+            clap::Arg::with_name("trace")
+                .help("Write a trace in chrome tracing format")
+                .short("t"),
+        )
+        .arg(
+            clap::Arg::with_name("print-filter")
+                .help("Pretty print the filter and exit")
+                .short("p"),
+        )
+        .arg(
+            clap::Arg::with_name("cache-stats")
+                .help("Show stats about cache content")
+                .short("s"),
+        )
+        .arg(
+            clap::Arg::with_name("no-cache")
+                .help("Don't load cache")
+                .short("n"),
+        )
         .arg(
             clap::Arg::with_name("query")
                 .long("query")
@@ -49,7 +90,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         println!("Version: {}", v);
         return Ok(0);
     }
-    let specstr = args.value_of("spec").unwrap_or(":nop");
+    let specstr = args.value_of("filter").unwrap();
     let specstr = args
         .value_of("file")
         .and_then(|f| read_to_string(f).ok())
@@ -100,7 +141,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         }
     });
 
-    let input_ref = args.value_of("input_ref").unwrap_or("HEAD");
+    let input_ref = args.value_of("input").unwrap();
 
     if args.is_present("discover") {
         let r = repo.revparse_single(&input_ref)?;
@@ -119,7 +160,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         }
     }
 
-    let update_target = args.value_of("update").unwrap_or("refs/FILTERED_HEAD");
+    let update_target = args.value_of("update").unwrap();
 
     let src = input_ref;
     let target = update_target;

@@ -160,12 +160,18 @@ fn spec2(op: &Op) -> String {
             format!(":workspace={}", path.to_string_lossy())
         }
 
+        Op::Chain(a, b) => match (to_op(*a), to_op(*b)) {
+            (Op::Subdir(p1), Op::Prefix(p2)) if p1 == p2 => {
+                format!("::{}/", p1.to_string_lossy().to_string())
+            }
+            (a, b) => format!("{}{}", spec2(&a), spec2(&b)),
+        },
+
         Op::Nop => ":nop".to_string(),
         Op::Empty => ":empty".to_string(),
         Op::Dirs => ":DIRS".to_string(),
         Op::Fold => ":FOLD".to_string(),
         Op::Squash => ":SQUASH".to_string(),
-        Op::Chain(a, b) => format!("{}{}", spec(*a), spec(*b)),
         Op::Subdir(path) => format!(":/{}", path.to_string_lossy()),
         Op::File(path) => format!("::{}", path.to_string_lossy()),
         Op::Prefix(path) => format!(":prefix={}", path.to_string_lossy()),
