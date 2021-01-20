@@ -97,7 +97,7 @@
 
         <nav id="sidebar" class="sidebar" aria-label="Table of contents">
             <div class="sidebar-scrollbox">
-                <ol class="chapter"><li class="chapter-item expanded "><a href="intro.html"><strong aria-hidden="true">1.</strong> Intro</a></li><li class="chapter-item expanded "><a href="filters.html"><strong aria-hidden="true">2.</strong> Filter syntax</a></li><li class="chapter-item expanded "><a href="cli.html"><strong aria-hidden="true">3.</strong> Command Line usage</a></li><li class="chapter-item expanded "><a href="proxy.html"><strong aria-hidden="true">4.</strong> Proxy</a></li><li class="chapter-item expanded "><a href="workspace.html"><strong aria-hidden="true">5.</strong> Workspaces</a></li></ol>
+                <ol class="chapter"><li class="chapter-item expanded "><a href="intro.html"><strong aria-hidden="true">1.</strong> Intro</a></li><li class="chapter-item expanded "><a href="usecases.html"><strong aria-hidden="true">2.</strong> Use cases</a></li><li class="chapter-item expanded "><a href="filters.html"><strong aria-hidden="true">3.</strong> Filter syntax</a></li><li class="chapter-item expanded "><a href="cli.html"><strong aria-hidden="true">4.</strong> Command Line usage</a></li><li class="chapter-item expanded "><a href="proxy.html"><strong aria-hidden="true">5.</strong> Proxy</a></li><li class="chapter-item expanded "><a href="workspace.html"><strong aria-hidden="true">6.</strong> Workspaces</a></li></ol>
             </div>
             <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
         </nav>
@@ -207,6 +207,15 @@ express more complex filters as a combination of simpler ones. Apart from guaran
 reversibility, the use of a DSL also enables pre-optimization of filter expressions to minimize both
 the amount of work to be done to execute the filter as well as the on-disk size of the persistent
 cache.</p>
+<blockquote>
+<p><em><em>From Linus Torvalds 2007 talk at Google about git:</em></em></p>
+<p><strong>Audience:</strong></p>
+<p>Can you have just a part of files pulled out of a repository, not the entire repository?</p>
+<p><strong>Linus:</strong></p>
+<p>You can export things as tarballs, you can export things as individual files, you can rewrite the whole history to say &quot;I want a new version of that repository that only contains that part&quot;, you can do that, it is a fairly expensive operation it's something you would do for example when you import an old repository into a one huge git repository and then you can split it later on to be multiple smaller ones, you can do it, what I am trying to say is that you should generally try to avoid it. It's not that git can not handle huge projects, git would not perform as well as it would otherwise. And you will have issues that you wish you didn't not have.</p>
+<p>So I am skipping this issue and going back to the performance issue. One of the things I want to say about performance is that a lot of people seem to think that performance is about doing the same thing, just doing it faster, and that is not true.</p>
+<p>That is not what performance is all about. If you can do something really fast, really well, people will start using it differently.</p>
+</blockquote>
 <h1><a class="header" href="#use-cases" id="use-cases">Use cases</a></h1>
 <h2><a class="header" href="#workspaces-in-a-mono-repo" id="workspaces-in-a-mono-repo">Workspaces in a mono-repo</a></h2>
 <p>Multiple projects, depending on a shared set of libraries, can live together in a single repository.
@@ -246,15 +255,6 @@ dependencies = :/modules:[
 What's more, any changes to a shared module will be synced in both directions.</p>
 <p>If a developper of the library1 pushed a new update, both projects will get the new version, and the developper will be able to check if they broke any test.
 If a developper of project1 needs to update the library, the changes will be automatically shared back into central, and project2.</p>
-<blockquote>
-<p><em><em>From Linus Torvalds 2007 talk at Google about git:</em></em></p>
-<p><strong>Audience:</strong></p>
-<p>Can you have just a part of files pulled out of a repository, not the entire repository?</p>
-<p><strong>Linus:</strong></p>
-<p>You can export things as tarballs, you can export things as individual files, you can rewrite the whole history to say &quot;I want a new version of that repository that only contains that part&quot;, you can do that, it is a fairly expensive operation it's something you would do for example when you import an old repository into a one huge git repository and then you can split it later on to be multiple smaller ones, you can do it, what I am trying to say is that you should generally try to avoid it. It's not that git can not handle huge projects, git would not perform as well as it would otherwise. And you will have issues that you wish you didn't not have.</p>
-<p>So I am skipping this issue and going back to the performance issue. One of the things I want to say about performance is that a lot of people seem to think that performance is about doing the same thing, just doing it faster, and that is not true.</p>
-<p>That is not what performance is all about. If you can do something really fast, really well, people will start using it differently.</p>
-</blockquote>
 <h1><a class="header" href="#history-filtering" id="history-filtering">History filtering</a></h1>
 <p>Josh transforms commits by applying filters to them. As any
 commit in git represents not just a single state of the filesystem but also its entire

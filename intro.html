@@ -95,7 +95,7 @@
 
         <nav id="sidebar" class="sidebar" aria-label="Table of contents">
             <div class="sidebar-scrollbox">
-                <ol class="chapter"><li class="chapter-item expanded "><a href="intro.html" class="active"><strong aria-hidden="true">1.</strong> Intro</a></li><li class="chapter-item expanded "><a href="filters.html"><strong aria-hidden="true">2.</strong> Filter syntax</a></li><li class="chapter-item expanded "><a href="cli.html"><strong aria-hidden="true">3.</strong> Command Line usage</a></li><li class="chapter-item expanded "><a href="proxy.html"><strong aria-hidden="true">4.</strong> Proxy</a></li><li class="chapter-item expanded "><a href="workspace.html"><strong aria-hidden="true">5.</strong> Workspaces</a></li></ol>
+                <ol class="chapter"><li class="chapter-item expanded "><a href="intro.html" class="active"><strong aria-hidden="true">1.</strong> Intro</a></li><li class="chapter-item expanded "><a href="usecases.html"><strong aria-hidden="true">2.</strong> Use cases</a></li><li class="chapter-item expanded "><a href="filters.html"><strong aria-hidden="true">3.</strong> Filter syntax</a></li><li class="chapter-item expanded "><a href="cli.html"><strong aria-hidden="true">4.</strong> Command Line usage</a></li><li class="chapter-item expanded "><a href="proxy.html"><strong aria-hidden="true">5.</strong> Proxy</a></li><li class="chapter-item expanded "><a href="workspace.html"><strong aria-hidden="true">6.</strong> Workspaces</a></li></ol>
             </div>
             <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
         </nav>
@@ -205,45 +205,6 @@ express more complex filters as a combination of simpler ones. Apart from guaran
 reversibility, the use of a DSL also enables pre-optimization of filter expressions to minimize both
 the amount of work to be done to execute the filter as well as the on-disk size of the persistent
 cache.</p>
-<h1><a class="header" href="#use-cases" id="use-cases">Use cases</a></h1>
-<h2><a class="header" href="#workspaces-in-a-mono-repo" id="workspaces-in-a-mono-repo">Workspaces in a mono-repo</a></h2>
-<p>Multiple projects, depending on a shared set of libraries, can live together in a single repository.
-This approach is commonly referred to as “monorepo”, and was popularized by
-<a href="https://people.engr.ncsu.edu/ermurph3/papers/seip18.pdf">Google</a>, Facebook or Twitter to name a
-few.</p>
-<p>In this example, two projects (<code>project1</code> and <code>project2</code>) coexist in the <code>central</code> monorepo.</p>
-<table>
-    <thead>
-        <tr>
-            <th>Central monorepo</th>
-            <th>Project workspaces</th>
-            <th>workspace.josh file</th>
-        </tr>
-    </thead>
-    <tbody>
-        <tr>
-            <td rowspan=2><img src="./img/central.svg?sanitize=true" alt="Folders and files in central.git" /></td>
-            <td><img src="./img/project1.svg?sanitize=true" alt="Folders and files in project1.git" /></td>
-            <td>
-<pre>
-dependencies = :/modules:[
-    ::tools/
-    ::library1/
-]
-</pre>
-        </tr>
-        <tr>
-            <td><img src="./img/project2.svg?sanitize=true" alt="Folders and files in project2.git" /></td>
-            <td>
-<pre>libs/library1 = :/modules/library1</pre></td>
-        </tr>
-    </tbody>
-</table>
-<p>Each of the subprojects defines a <code>workspace.josh</code> file, defining the mapping between the original central.git repository and the hierarchy in use inside of the project.</p>
-<p>In this setup, project1 and project2 can seemlessly depend on the latest version of library1, while only checking out the part of the central monorepo that's needed for their purpose.
-What's more, any changes to a shared module will be synced in both directions.</p>
-<p>If a developper of the library1 pushed a new update, both projects will get the new version, and the developper will be able to check if they broke any test.
-If a developper of project1 needs to update the library, the changes will be automatically shared back into central, and project2.</p>
 <blockquote>
 <p><em><em>From Linus Torvalds 2007 talk at Google about git:</em></em></p>
 <p><strong>Audience:</strong></p>
@@ -261,7 +222,7 @@ If a developper of project1 needs to update the library, the changes will be aut
                         
 
                         
-                            <a rel="next" href="filters.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next" href="usecases.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <i class="fa fa-angle-right"></i>
                             </a>
                         
@@ -275,7 +236,7 @@ If a developper of project1 needs to update the library, the changes will be aut
                 
 
                 
-                    <a rel="next" href="filters.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next" href="usecases.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <i class="fa fa-angle-right"></i>
                     </a>
                 
