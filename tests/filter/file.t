@@ -58,10 +58,9 @@
 
   $ tree .git/refs/
   .git/refs/
-  |-- FILTERED_HEAD
   |-- heads
   |   `-- master
   `-- tags
   
-  2 directories, 2 files
+  2 directories, 1 file
 
