@@ -95,7 +95,7 @@ regex_parsed!(
 pub fn discover_repos(repo: &git2::Repository) -> JoshResult<Vec<String>> {
     let _trace_s = span!(Level::TRACE, "discover_repos");
 
-    let refname = format!("refs/josh/upstream/*.git/refs/heads/master");
+    let refname = format!("refs/josh/upstream/*.git/refs/heads/*");
 
     let mut repos = vec![];
 
@@ -109,6 +109,8 @@ pub fn discover_repos(repo: &git2::Repository) -> JoshResult<Vec<String>> {
 
         repos.push(name);
     }
+
+    repos.dedup();
 
     return Ok(repos);
 }
@@ -124,7 +126,7 @@ pub fn discover_filter_candidates(
     let mut known_filters = KnownViews::new();
     let _trace_s = span!(Level::TRACE, "discover_filter_candidates");
 
-    let refname = format!("refs/josh/upstream/*.git/refs/heads/master");
+    let refname = format!("refs/josh/upstream/*.git/refs/heads/*");
 
     for reference in repo.references_glob(&refname)? {
         let r = reference?;
@@ -144,7 +146,7 @@ pub fn discover_filter_candidates(
         }
     }
 
-    let refname = format!("josh/filtered/*.git/*/refs/heads/master");
+    let refname = format!("josh/filtered/*.git/*/refs/heads/*");
     for reference in repo.references_glob(&refname)? {
         let r = reference?;
         let name = r.name().ok_or(josh_error("reference without name"))?;
