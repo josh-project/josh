@@ -88,10 +88,10 @@ impl Transaction {
         ))
     }
 
-    pub fn status(&self, msg: &str) {
-        let mut t2 = self.t2.borrow_mut();
-        write!(t2.out, "{}", msg).ok();
-        t2.out.flush().ok();
+    pub fn status(&self, _msg: &str) {
+        /* let mut t2 = self.t2.borrow_mut(); */
+        /* write!(t2.out, "{}", msg).ok(); */
+        /* t2.out.flush().ok(); */
     }
 
     pub fn new2(
