@@ -1,6 +1,5 @@
 use super::*;
 
-#[tracing::instrument(skip(transaction))]
 pub fn walk2(
     filter: filter::Filter,
     input: git2::Oid,
