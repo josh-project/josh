@@ -199,7 +199,11 @@ impl Transaction {
             .or_insert_with(|| HashMap::new())
             .insert(from, to);
 
-        if store {
+        // In addition to commits that are explicitly requested to be stored, also store
+        // random extra commits (probability 1/256) to avoid long searches for filters that reduce
+        // the history length by a very large factor.
+        if store || from.as_bytes()[0] == 0
+        {
             let t = t2.sled_trees.entry(filter.id()).or_insert_with(|| {
                 DB.lock()
                     .unwrap()
