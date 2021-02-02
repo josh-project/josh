@@ -112,30 +112,19 @@ fn find_known(
 ) -> JoshResult<(Vec<git2::Oid>, usize)> {
     log::debug!("find_known");
     let mut known = vec![];
-    let any = transaction.len(filter) != 0;
-    'find_known: loop {
-        let mut walk = transaction.repo().revwalk()?;
-        walk.reset()?;
-        walk.set_sorting(git2::Sort::TOPOLOGICAL)?;
-        walk.push(input)?;
-        for k in known.iter() {
-            walk.hide(*k)?;
-        }
+    let mut walk = transaction.repo().revwalk()?;
+    walk.push(input)?;
 
-        let mut n_new = 0;
-        for id in walk {
-            let id = id?;
-            if any {
-                if let Some(_) = transaction.get(filter, id) {
-                    known.push(id);
-                    continue 'find_known;
-                }
-            }
-            n_new += 1;
-        }
-        log::debug!("/find_known {}", n_new);
-        return Ok((known, n_new));
-    }
+    let n_new = walk
+        .with_hide_callback(&|id| {
+            transaction
+                .get(filter, id)
+                .map(|_| known.push(id))
+                .is_some()
+        })?
+        .count();
+    log::debug!("/find_known {}", n_new);
+    return Ok((known, n_new));
 }
 
 // takes everything from base except it's tree and replaces it with the tree
