@@ -629,11 +629,29 @@ async fn run_proxy() -> josh::JoshResult<i32> {
 
     let server = Server::bind(&addr).serve(make_service);
 
-    let _jh = josh::housekeeping::spawn_thread(local, ARGS.is_present("gc"));
     println!("Now listening on {}", addr);
 
-    server.with_graceful_shutdown(shutdown_signal()).await?;
+    tokio::select!(
+        _ = run_housekeeping(local) => println!("run_housekeeping exited"),
+        _ = server.with_graceful_shutdown(shutdown_signal()) => println!("http server exited"),
+    );
     Ok(0)
+}
+
+async fn run_housekeeping(local: std::path::PathBuf) -> josh::JoshResult<()> {
+    let mut i: usize = 0;
+    loop {
+        let local = local.clone();
+        tokio::task::spawn_blocking(move || {
+            josh::housekeeping::run(
+                &local,
+                (i % 60 == 0) && ARGS.is_present("gc"),
+            )
+        })
+        .await??;
+        tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
+        i += 1;
+    }
 }
 
 fn parse_args() -> clap::ArgMatches<'static> {

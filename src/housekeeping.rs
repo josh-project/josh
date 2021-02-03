@@ -275,51 +275,28 @@ pub fn refresh_known_filters(
     return Ok(0);
 }
 
-pub fn spawn_thread(
-    repo_path: std::path::PathBuf,
-    do_gc: bool,
-) -> std::thread::JoinHandle<()> {
-    let mut gc_timer = std::time::Instant::now();
-    std::thread::spawn(move || loop {
-        if let Ok(transaction) = cache::Transaction::open(&repo_path) {
-            let known_filters =
-                housekeeping::discover_filter_candidates(&transaction).unwrap();
-            refresh_known_filters(&transaction, &known_filters).unwrap_or(0);
-            info!(
-                "{}",
-                run_command(
-                    &transaction.repo().path(),
-                    &"git count-objects -v"
-                )
-                .replace("\n", "  ")
-            );
-            if do_gc
-                && gc_timer.elapsed() > std::time::Duration::from_secs(60 * 60)
-            {
-                info!(
-                    "\n----------\n{}\n----------",
-                    run_command(
-                        &transaction.repo().path(),
-                        &"git repack -adkbn"
-                    )
-                );
-                info!(
-                    "\n----------\n{}\n----------",
-                    run_command(
-                        &transaction.repo().path(),
-                        &"git count-objects -vH"
-                    )
-                );
-                info!(
-                    "\n----------\n{}\n----------",
-                    run_command(
-                        &transaction.repo().path(),
-                        &"git prune --expire=2w"
-                    )
-                );
-                gc_timer = std::time::Instant::now();
-            }
-        }
-        std::thread::sleep(std::time::Duration::from_secs(60));
-    })
+pub fn run(repo_path: &std::path::Path, do_gc: bool) -> JoshResult<()> {
+    let transaction = cache::Transaction::open(&repo_path)?;
+    let known_filters = housekeeping::discover_filter_candidates(&transaction)?;
+    refresh_known_filters(&transaction, &known_filters)?;
+    info!(
+        "{}",
+        run_command(&transaction.repo().path(), &"git count-objects -v")
+            .replace("\n", "  ")
+    );
+    if do_gc {
+        info!(
+            "\n----------\n{}\n----------",
+            run_command(&transaction.repo().path(), &"git repack -adkbn")
+        );
+        info!(
+            "\n----------\n{}\n----------",
+            run_command(&transaction.repo().path(), &"git count-objects -vH")
+        );
+        info!(
+            "\n----------\n{}\n----------",
+            run_command(&transaction.repo().path(), &"git prune --expire=2w")
+        );
+    }
+    Ok(())
 }
