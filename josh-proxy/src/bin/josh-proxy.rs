@@ -783,7 +783,7 @@ fn main() {
         }
     }
 
-    /* let fmt_layer = tracing_subscriber::fmt::layer().with_ansi(false); */
+    let fmt_layer = tracing_subscriber::fmt::layer().compact().with_ansi(false);
 
     let (tracer, _uninstall) = opentelemetry_jaeger::new_pipeline()
         .with_service_name(
@@ -799,9 +799,9 @@ fn main() {
 
     let telemetry_layer = tracing_opentelemetry::layer().with_tracer(tracer);
 
-    let subscriber =
-        tracing_subscriber::Registry::default().with(telemetry_layer);
-    /* .with(fmt_layer); */
+    let subscriber = tracing_subscriber::Registry::default()
+        .with(telemetry_layer)
+        .with(fmt_layer);
 
     tracing::subscriber::set_global_default(subscriber)
         .expect("can't set_global_default");
