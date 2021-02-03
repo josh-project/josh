@@ -201,7 +201,7 @@ pub fn get_info(
 
     let mut meta = std::collections::HashMap::new();
     meta.insert("sha1".to_owned(), "".to_owned());
-    let filtered = history::walk2(filter, commit.id(), &transaction)?;
+    let filtered = filter::apply_to_commit(filter, &commit, &transaction)?;
 
     let parent_ids = |commit: &git2::Commit| {
         let pids: Vec<_> = commit

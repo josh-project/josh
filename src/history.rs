@@ -85,7 +85,9 @@ fn find_original(
     if let Some(original) = bm.get(&filtered) {
         return Ok(*original);
     }
-    let oid = history::walk2(filter, contained_in, transaction)?;
+    let contained_in_commit = transaction.repo().find_commit(contained_in)?;
+    let oid =
+        filter::apply_to_commit(filter, &contained_in_commit, transaction)?;
     if oid != git2::Oid::zero() {
         bm.insert(contained_in, oid);
     }
