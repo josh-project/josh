@@ -4,15 +4,15 @@ pub fn walk2(
     filter: filter::Filter,
     input: git2::Oid,
     transaction: &cache::Transaction,
-) -> JoshResult<git2::Oid> {
+) -> JoshResult<()> {
     rs_tracing::trace_scoped!("walk2","spec":filter::spec(filter), "id": input.to_string());
 
     ok_or!(transaction.repo().find_commit(input), {
-        return Ok(git2::Oid::zero());
+        return Ok(());
     });
 
-    if let Some(oid) = transaction.get(filter, input) {
-        return Ok(oid);
+    if transaction.known(filter, input) {
+        return Ok(());
     }
 
     let (known, n_new) = find_known(filter, input, transaction)?;
@@ -38,11 +38,13 @@ pub fn walk2(
     let walks = transaction.new_walk();
 
     for original_commit_id in walk {
-        filter::apply_to_commit(
+        if !filter::apply_to_commit3(
             filter,
             &transaction.repo().find_commit(original_commit_id?)?,
             transaction,
-        )?;
+        )? {
+            break;
+        }
 
         n_commits += 1;
         if n_commits % 1000 == 0 {
@@ -65,11 +67,7 @@ pub fn walk2(
 
     transaction.end_walk();
 
-    return filter::apply_to_commit(
-        filter,
-        &transaction.repo().find_commit(input)?,
-        transaction,
-    );
+    return Ok(());
 }
 
 fn find_original(
@@ -119,10 +117,11 @@ fn find_known(
 
     let n_new = walk
         .with_hide_callback(&|id| {
-            transaction
-                .get(filter, id)
-                .map(|_| known.push(id))
-                .is_some()
+            let k = transaction.known(filter, id);
+            if k {
+                known.push(id)
+            }
+            k
         })?
         .count();
     log::debug!("/find_known {}", n_new);
