@@ -50,6 +50,7 @@ struct Transaction2 {
     apply_map: HashMap<git2::Oid, HashMap<git2::Oid, git2::Oid>>,
     unapply_map: HashMap<git2::Oid, HashMap<git2::Oid, git2::Oid>>,
     sled_trees: HashMap<git2::Oid, sled::Tree>,
+    missing: Vec<(filter::Filter, git2::Oid)>,
     misses: usize,
     walks: usize,
     out: Box<dyn std::io::Write>,
@@ -106,6 +107,7 @@ impl Transaction {
                 apply_map: HashMap::new(),
                 unapply_map: HashMap::new(),
                 sled_trees: HashMap::new(),
+                missing: vec![],
                 misses: 0,
                 walks: 0,
                 out: out,
@@ -228,7 +230,36 @@ impl Transaction {
 
         return t.len();
     }
+
+    pub fn get_missing(&self) -> Vec<(filter::Filter, git2::Oid)> {
+        let mut missing = self.t2.borrow().missing.clone();
+        missing.sort();
+        missing.dedup();
+        missing.retain(|(f, i)| !self.known(*f, *i));
+        self.t2.borrow_mut().missing = missing.clone();
+        return missing;
+    }
+
+    pub fn known(&self, filter: filter::Filter, from: git2::Oid) -> bool {
+        self.get2(filter, from).is_some()
+    }
+
     pub fn get(
+        &self,
+        filter: filter::Filter,
+        from: git2::Oid,
+    ) -> Option<git2::Oid> {
+        if let Some(x) = self.get2(filter, from) {
+            return Some(x);
+        } else {
+            let mut t2 = self.t2.borrow_mut();
+            t2.misses += 1;
+            t2.missing.push((filter, from));
+            return None;
+        }
+    }
+
+    fn get2(
         &self,
         filter: filter::Filter,
         from: git2::Oid,
@@ -261,8 +292,6 @@ impl Transaction {
                 return Some(oid);
             }
         }
-
-        t2.misses += 1;
 
         return None;
     }

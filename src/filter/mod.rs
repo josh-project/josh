@@ -14,7 +14,7 @@ lazy_static! {
 
 /// Filters are represented as `git2::Oid`, however they are not ever stored
 /// inside the repo.
-#[derive(Clone, Hash, PartialEq, Eq, Debug, Copy)]
+#[derive(Clone, Hash, PartialEq, Eq, Debug, Copy, PartialOrd, Ord)]
 pub struct Filter(git2::Oid);
 
 impl Filter {
@@ -187,41 +187,62 @@ pub fn apply_to_commit(
     commit: &git2::Commit,
     transaction: &cache::Transaction,
 ) -> JoshResult<git2::Oid> {
-    apply_to_commit2(&to_op(filter), commit, transaction)
+    for _ in 0..10000 {
+        let filtered = apply_to_commit2(&to_op(filter), commit, transaction)?;
+
+        if let Some(id) = filtered {
+            return Ok(id);
+        }
+
+        for (f, i) in transaction.get_missing() {
+            history::walk2(f, i, transaction)?;
+        }
+    }
+
+    Err(josh_error("apply_to_commit did not finish"))
+}
+
+pub fn apply_to_commit3(
+    filter: Filter,
+    commit: &git2::Commit,
+    transaction: &cache::Transaction,
+) -> JoshResult<bool> {
+    Ok(apply_to_commit2(&to_op(filter), commit, transaction)?.is_some())
 }
 
 fn apply_to_commit2(
     op: &Op,
     commit: &git2::Commit,
     transaction: &cache::Transaction,
-) -> JoshResult<git2::Oid> {
+) -> JoshResult<Option<git2::Oid>> {
     let filter = opt::optimize(to_filter(op.clone()));
+    let repo = transaction.repo();
 
     match &to_op(filter) {
-        Op::Nop => return Ok(commit.id()),
-        Op::Empty => return Ok(git2::Oid::zero()),
+        Op::Nop => return Ok(Some(commit.id())),
+        Op::Empty => return Ok(Some(git2::Oid::zero())),
 
         Op::Chain(a, b) => {
-            let r = apply_to_commit(*a, &commit, transaction)?;
-            if let Ok(r) = transaction.repo().find_commit(r) {
-                return apply_to_commit(*b, &r, transaction);
+            let r = some_or!(
+                apply_to_commit2(&to_op(*a), &commit, transaction)?,
+                { return Ok(None) }
+            );
+            if let Ok(r) = repo.find_commit(r) {
+                return apply_to_commit2(&to_op(*b), &r, transaction);
             } else {
-                return Ok(git2::Oid::zero());
+                return Ok(Some(git2::Oid::zero()));
             }
         }
         Op::Squash => {
-            return history::rewrite_commit(
-                &transaction.repo(),
+            return Some(history::rewrite_commit(
+                &repo,
                 &commit,
                 &vec![],
                 &commit.tree()?,
-            )
+            ))
+            .transpose()
         }
-        _ => {
-            if let Some(oid) = transaction.get(filter, commit.id()) {
-                return Ok(oid);
-            }
-        }
+        _ => {}
     };
 
     rs_tracing::trace_scoped!("apply_to_commit", "spec": spec(filter), "commit": commit.id().to_string());
@@ -230,8 +251,12 @@ fn apply_to_commit2(
         Op::Compose(filters) => {
             let filtered = filters
                 .iter()
-                .map(|f| apply_to_commit(*f, &commit, transaction))
-                .collect::<JoshResult<Vec<_>>>()?;
+                .map(|f| apply_to_commit2(&to_op(*f), &commit, transaction))
+                .collect::<JoshResult<Vec<_>>>()?
+                .into_iter()
+                .collect::<Option<Vec<_>>>();
+
+            let filtered = some_or!(filtered, { return Ok(None) });
 
             let filtered: Vec<_> =
                 filters.iter().zip(filtered.into_iter()).collect();
@@ -242,9 +267,7 @@ fn apply_to_commit2(
 
             let filtered = filtered
                 .into_iter()
-                .map(|(f, id)| {
-                    Ok((f, transaction.repo().find_commit(id)?.tree()?))
-                })
+                .map(|(f, id)| Ok((f, repo.find_commit(id)?.tree()?)))
                 .collect::<JoshResult<Vec<_>>>()?;
 
             tree::compose(&transaction, filtered)?
@@ -252,11 +275,13 @@ fn apply_to_commit2(
         Op::Workspace(ws_path) => {
             let normal_parents = commit
                 .parent_ids()
-                .map(|parent| history::walk2(filter, parent, transaction))
-                .collect::<JoshResult<Vec<git2::Oid>>>()?;
+                .map(|parent| transaction.get(filter, parent))
+                .collect::<Option<Vec<git2::Oid>>>();
+
+            let normal_parents = some_or!(normal_parents, { return Ok(None) });
 
             let cw = parse::parse(&tree::get_blob(
-                &transaction.repo(),
+                &repo,
                 &commit.tree()?,
                 &ws_path.join("workspace.josh"),
             ))
@@ -267,8 +292,8 @@ fn apply_to_commit2(
                 .map(|parent| {
                     rs_tracing::trace_scoped!("parent", "id": parent.id().to_string());
                     let pcw = parse::parse(&tree::get_blob(
-                        &transaction.repo(),
-                        &parent.tree()?,
+                        &repo,
+                        &parent.tree().unwrap_or(tree::empty(&repo)),
                         &ws_path.join("workspace.josh"),
                     )).unwrap_or(to_filter(Op::Empty));
 
@@ -278,7 +303,10 @@ fn apply_to_commit2(
                         transaction,
                     )
                 })
-                .collect::<JoshResult<Vec<git2::Oid>>>()?;
+                .collect::<JoshResult<Vec<_>>>()?.into_iter()
+                .collect::<Option<Vec<_>>>();
+
+            let extra_parents = some_or!(extra_parents, { return Ok(None) });
 
             let filtered_parent_ids = normal_parents
                 .into_iter()
@@ -287,63 +315,63 @@ fn apply_to_commit2(
 
             let filtered_tree = apply(transaction, filter, commit.tree()?)?;
 
-            return history::create_filtered_commit(
+            return Some(history::create_filtered_commit(
                 commit,
                 filtered_parent_ids,
                 filtered_tree,
                 transaction,
                 filter,
-            );
+            ))
+            .transpose();
         }
         Op::Fold => {
-            let filtered_parent_ids: Vec<git2::Oid> = commit
+            let filtered_parent_ids = commit
                 .parents()
-                .map(|x| history::walk2(filter, x.id(), transaction))
-                .collect::<JoshResult<_>>()?;
+                .map(|x| transaction.get(filter, x.id()))
+                .collect::<Option<Vec<_>>>();
+
+            let filtered_parent_ids =
+                some_or!(filtered_parent_ids, { return Ok(None) });
 
             let trees: Vec<git2::Oid> = filtered_parent_ids
                 .iter()
-                .map(|x| Ok(transaction.repo().find_commit(*x)?.tree_id()))
+                .map(|x| Ok(repo.find_commit(*x)?.tree_id()))
                 .collect::<JoshResult<_>>()?;
 
             let mut filtered_tree = commit.tree_id();
 
             for t in trees {
-                filtered_tree =
-                    tree::overlay(&transaction.repo(), filtered_tree, t)?;
+                filtered_tree = tree::overlay(&repo, filtered_tree, t)?;
             }
 
-            transaction.repo().find_tree(filtered_tree)?
+            repo.find_tree(filtered_tree)?
         }
         Op::Subtract(a, b) => {
             let af = {
                 transaction
                     .repo()
-                    .find_commit(apply_to_commit(*a, &commit, transaction)?)
+                    .find_commit(some_or!(
+                        apply_to_commit2(&to_op(*a), &commit, transaction)?,
+                        { return Ok(None) }
+                    ))
                     .map(|x| x.tree_id())
                     .unwrap_or(tree::empty_id())
             };
             let bf = {
                 transaction
                     .repo()
-                    .find_commit(apply_to_commit(*b, &commit, transaction)?)
+                    .find_commit(some_or!(
+                        apply_to_commit2(&to_op(*b), &commit, transaction)?,
+                        { return Ok(None) }
+                    ))
                     .map(|x| x.tree_id())
                     .unwrap_or(tree::empty_id())
             };
-            let bf = transaction.repo().find_tree(bf)?;
-            let bu = unapply(
-                &transaction,
-                *b,
-                bf,
-                tree::empty(&transaction.repo()),
-            )?;
+            let bf = repo.find_tree(bf)?;
+            let bu = unapply(&transaction, *b, bf, tree::empty(&repo))?;
             let ba = apply(transaction, *a, bu)?;
 
-            transaction.repo().find_tree(tree::subtract(
-                &transaction.repo(),
-                af,
-                ba.id(),
-            )?)?
+            repo.find_tree(tree::subtract(&repo, af, ba.id())?)?
         }
         _ => apply(transaction, filter, commit.tree()?)?,
     };
@@ -352,17 +380,21 @@ fn apply_to_commit2(
         rs_tracing::trace_scoped!("filtered_parent_ids", "n": commit.parent_ids().len());
         commit
             .parents()
-            .map(|x| history::walk2(filter, x.id(), transaction))
-            .collect::<JoshResult<_>>()?
+            .map(|x| transaction.get(filter, x.id()))
+            .collect::<Option<_>>()
     };
 
-    return history::create_filtered_commit(
+    let filtered_parent_ids =
+        some_or!(filtered_parent_ids, { return Ok(None) });
+
+    return Some(history::create_filtered_commit(
         commit,
         filtered_parent_ids,
         filtered_tree,
         transaction,
         filter,
-    );
+    ))
+    .transpose();
 }
 
 /// Filter a single tree. This does not involve walking history and is thus fast in most cases.
