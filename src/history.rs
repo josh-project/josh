@@ -171,7 +171,7 @@ fn all_equal(a: git2::Parents, b: &[&git2::Commit]) -> bool {
 pub fn unapply_filter(
     transaction: &cache::Transaction,
     filterobj: filter::Filter,
-    unfiltered_old: git2::Oid,
+    original_target: git2::Oid,
     old: git2::Oid,
     new: git2::Oid,
     keep_orphans: bool,
@@ -179,7 +179,7 @@ pub fn unapply_filter(
 ) -> JoshResult<UnapplyResult> {
     let mut bm = std::collections::HashMap::new();
     let mut ret =
-        find_original(&transaction, &mut bm, filterobj, unfiltered_old, new)?;
+        find_original(&transaction, &mut bm, filterobj, original_target, new)?;
 
     let walk = {
         let mut walk = transaction.repo().revwalk()?;
@@ -220,7 +220,7 @@ pub fn unapply_filter(
                         &transaction,
                         &mut bm,
                         filterobj,
-                        unfiltered_old,
+                        original_target,
                         *x,
                     )
                 })
