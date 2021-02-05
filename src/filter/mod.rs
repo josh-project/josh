@@ -242,7 +242,11 @@ fn apply_to_commit2(
             ))
             .transpose()
         }
-        _ => {}
+        _ => {
+            if let Some(oid) = transaction.get(filter, commit.id()) {
+                return Ok(Some(oid));
+            }
+        }
     };
 
     rs_tracing::trace_scoped!("apply_to_commit", "spec": spec(filter), "commit": commit.id().to_string());
