@@ -178,8 +178,7 @@ pub fn unapply_filter(
     amends: &std::collections::HashMap<String, git2::Oid>,
 ) -> JoshResult<UnapplyResult> {
     let mut bm = std::collections::HashMap::new();
-    let mut ret =
-        find_original(&transaction, &mut bm, filterobj, original_target, new)?;
+    let mut ret = original_target;
 
     let walk = {
         let mut walk = transaction.repo().revwalk()?;
