@@ -65,6 +65,11 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
                 .short("n"),
         )
         .arg(
+            clap::Arg::with_name("pack")
+                .help("Write a packfile instead of loose objects")
+                .long("pack"),
+        )
+        .arg(
             clap::Arg::with_name("query")
                 .long("query")
                 .short("q")
@@ -119,7 +124,11 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
     let repo = transaction.repo();
 
     let odb = repo.odb()?;
-    let mempack = odb.add_new_mempack_backend(1000)?;
+    let mp = if args.is_present("pack") {
+        let mempack = odb.add_new_mempack_backend(1000)?;
+        Some(mempack)
+    }
+    else { None };
 
     if !args.is_present("no-cache") {
         josh::cache::load(&repo.path())?;
@@ -132,12 +141,14 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         if args.is_present("cache-stats") {
             josh::cache::print_stats();
         }
-        let mut buf = git2::Buf::new();
-        mempack.dump(&repo, &mut buf).unwrap();
-        if buf.len() > 32 {
-            let mut w = odb.packwriter().unwrap();
-            w.write(&buf).unwrap();
-            w.commit().unwrap();
+        if let Some(mempack) = mp {
+            let mut buf = git2::Buf::new();
+            mempack.dump(&repo, &mut buf).unwrap();
+            if buf.len() > 32 {
+                let mut w = odb.packwriter().unwrap();
+                w.write(&buf).unwrap();
+                w.commit().unwrap();
+            }
         }
     });
 
