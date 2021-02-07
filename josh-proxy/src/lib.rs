@@ -213,19 +213,17 @@ pub fn process_repo_update(
             &transaction,
         )?;
 
-        resp = format!(
-            "{}{}",
-            resp,
-            push_head_url(
-                &transaction.repo(),
-                oid_to_push,
-                &push_with_options,
-                &repo_update.remote_url,
-                &repo_update.username,
-                &password,
-                &repo_update.git_ns,
-            )?
-        );
+        let (text, status) = push_head_url(
+            &transaction.repo(),
+            oid_to_push,
+            &push_with_options,
+            &repo_update.remote_url,
+            &repo_update.username,
+            &password,
+            &repo_update.git_ns,
+        )?;
+
+        resp = format!("{}{}", resp, text);
 
         if new_oid != reapply {
             transaction.repo().reference(
@@ -238,10 +236,16 @@ pub fn process_repo_update(
                 "reapply",
             )?;
             resp = format!("{}\nREWRITE({} -> {})", resp, new_oid, reapply);
+            tracing::debug!("REWRITE({} -> {})", new_oid, reapply);
         }
+
+        if status == 0 {
+            return Ok(resp);
+        }
+        return Err(josh::josh_error(&resp));
     }
 
-    return Ok(resp);
+    return Ok("".to_string());
 }
 
 fn push_head_url(
@@ -252,7 +256,7 @@ fn push_head_url(
     username: &str,
     password: &Password,
     namespace: &str,
-) -> josh::JoshResult<String> {
+) -> josh::JoshResult<(String, i32)> {
     let rn = format!("refs/{}", &namespace);
 
     let spec = format!("{}:{}", &rn, &refname);
@@ -278,11 +282,7 @@ fn push_head_url(
 
     let stderr = stderr.replace(&rn, "JOSH_PUSH");
 
-    if status != 0 {
-        return Err(josh::josh_error(&stderr));
-    }
-
-    return Ok(stderr);
+    return Ok((stderr, status));
 }
 
 pub fn create_repo(path: &std::path::Path) -> josh::JoshResult<()> {
