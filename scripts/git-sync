@@ -38,6 +38,7 @@ o = subprocess.run(
 
 rewrites = re.findall(r"REWRITE\((.* -> .*)\)", o.stderr)
 
+print(o.stderr)
 print_refs(o)
 
 if not rewrites:

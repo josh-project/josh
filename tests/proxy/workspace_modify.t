@@ -56,6 +56,10 @@
 
   $ git sync
   * refs/heads/master -> refs/heads/master
+  Pushing to http://localhost:8001/real_repo.git
+  POST git-receive-pack (1457 bytes)
+  updating local tracking ref 'refs/remotes/origin/master'
+  
 
   $ cd ${TESTTMP}
   $ curl -s http://localhost:8002/flush
@@ -75,6 +79,18 @@
   From http://localhost:8002/real_repo.git:workspace=ws
    * branch            4a199f3a19a292e6639dede0f8602afc19a82dfc -> FETCH_HEAD
   HEAD is now at 4a199f3 Merge from :workspace=ws
+  Pushing to http://localhost:8002/real_repo.git:workspace=ws.git
+  POST git-receive-pack (439 bytes)
+  remote: warning: ignoring broken ref refs/namespaces/* (glob)
+  remote: josh-proxy        
+  remote: response from upstream:        
+  remote:  To http://localhost:8001/real_repo.git        
+  remote:    5d605ce..98c996c  JOSH_PUSH -> master        
+  remote: REWRITE(1b46698f32d1d1db1eaeb34f8c9037778d65f3a9 -> 4a199f3a19a292e6639dede0f8602afc19a82dfc)        
+  remote: 
+  remote: 
+  updating local tracking ref 'refs/remotes/origin/master'
+  
 
   $ curl -s http://localhost:8002/flush
   Flushed credential cache
@@ -157,6 +173,10 @@
 
   $ git sync
     refs/heads/master -> refs/heads/master
+  Pushing to http://localhost:8001/real_repo.git
+  POST git-receive-pack (790 bytes)
+  updating local tracking ref 'refs/remotes/origin/master'
+  
 
   $ cd ${TESTTMP}/ws
   $ curl -s http://localhost:8002/flush
@@ -254,6 +274,17 @@
   From http://localhost:8002/real_repo.git:workspace=ws
    * branch            3136fff7280627623bf4d71191d1aea783579be0 -> FETCH_HEAD
   HEAD is now at 3136fff add in filter
+  Pushing to http://localhost:8002/real_repo.git:workspace=ws.git
+  POST git-receive-pack (808 bytes)
+  remote: josh-proxy        
+  remote: response from upstream:        
+  remote:  To http://localhost:8001/real_repo.git        
+  remote:    e41565c..9c41f84  JOSH_PUSH -> master        
+  remote: REWRITE(6f33ff469334600e2a53433208efc1cd734b49b3 -> 3136fff7280627623bf4d71191d1aea783579be0)        
+  remote: 
+  remote: 
+  updating local tracking ref 'refs/remotes/origin/master'
+  
 
   $ cat > workspace.josh <<EOF
   > a/b = :/sub2
@@ -269,6 +300,17 @@
   From http://localhost:8002/real_repo.git:workspace=ws
    * branch            1a909d6e8ba43c6eaf211ef04440984d38bc26e6 -> FETCH_HEAD
   HEAD is now at 1a909d6 try to modify ws
+  Pushing to http://localhost:8002/real_repo.git:workspace=ws.git
+  POST git-receive-pack (460 bytes)
+  remote: josh-proxy        
+  remote: response from upstream:        
+  remote:  To http://localhost:8001/real_repo.git        
+  remote:    9c41f84..2c7e462  JOSH_PUSH -> master        
+  remote: REWRITE(7f85f1156c6a01fcf3ab67dc35597ae520f75496 -> 1a909d6e8ba43c6eaf211ef04440984d38bc26e6)        
+  remote: 
+  remote: 
+  updating local tracking ref 'refs/remotes/origin/master'
+  
 
   $ curl -s http://localhost:8002/flush
   Flushed credential cache
