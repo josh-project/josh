@@ -204,11 +204,18 @@ pub fn unapply_filter(
             continue;
         }
 
-        let filtered_parent_ids: Vec<_> = module_commit.parent_ids().collect();
+        let mut filtered_parent_ids: Vec<_> =
+            module_commit.parent_ids().collect();
 
-        if !keep_orphans && filtered_parent_ids.len() == 0 {
-            bm.insert(module_commit.id(), git2::Oid::zero());
-            continue;
+
+        let is_initial_merge = filtered_parent_ids.len() == 2
+            && !transaction
+                .repo()
+                .merge_base_many(&filtered_parent_ids)
+                .is_ok();
+
+        if !keep_orphans && is_initial_merge {
+            filtered_parent_ids.pop();
         }
 
         let original_parents: std::result::Result<Vec<_>, _> =
