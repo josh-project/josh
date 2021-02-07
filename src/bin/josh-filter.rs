@@ -127,8 +127,9 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
     let mp = if args.is_present("pack") {
         let mempack = odb.add_new_mempack_backend(1000)?;
         Some(mempack)
-    }
-    else { None };
+    } else {
+        None
+    };
 
     if !args.is_present("no-cache") {
         josh::cache::load(&repo.path())?;
