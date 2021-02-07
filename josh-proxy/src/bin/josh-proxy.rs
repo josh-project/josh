@@ -631,10 +631,18 @@ async fn run_proxy() -> josh::JoshResult<i32> {
 
     println!("Now listening on {}", addr);
 
-    tokio::select!(
-        _ = run_housekeeping(local) => println!("run_housekeeping exited"),
-        _ = server.with_graceful_shutdown(shutdown_signal()) => println!("http server exited"),
-    );
+    let server_future = server.with_graceful_shutdown(shutdown_signal());
+
+    if ARGS.is_present("no-background") {
+        tokio::select!(
+            _ = server_future => println!("http server exited"),
+        );
+    } else {
+        tokio::select!(
+            _ = run_housekeeping(local) => println!("run_housekeeping exited"),
+            _ = server_future => println!("http server exited"),
+        );
+    }
     Ok(0)
 }
 
@@ -683,6 +691,11 @@ fn parse_args() -> clap::ArgMatches<'static> {
         .arg(
             clap::Arg::with_name("require-auth")
                 .long("require-auth")
+                .takes_value(false),
+        )
+        .arg(
+            clap::Arg::with_name("no-background")
+                .long("no-background")
                 .takes_value(false),
         )
         .arg(
