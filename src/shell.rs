@@ -55,14 +55,6 @@ impl Shell {
             .trim()
             .to_string();
         tracing::event!(Level::TRACE, ?stdout, ?stderr);
-        return (
-            stdout,
-            stderr,
-            command
-                .status()
-                .map(|x| x.code())
-                .unwrap_or(Some(1))
-                .unwrap_or(1),
-        );
+        return (stdout, stderr, output.status.code().unwrap_or(1));
     }
 }
