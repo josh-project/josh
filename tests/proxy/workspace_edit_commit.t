@@ -60,6 +60,8 @@
   $ echo contents4 > sub4/file4
   $ git add sub4
   $ git commit -m "add file4" 1> /dev/null
+  $ git commit -m "one extra commit" --allow-empty
+  [master fb0eb97] one extra commit
 
   $ mkdir -p sub1/subsub
   $ echo contents1 > sub1/subsub/file1
@@ -75,6 +77,7 @@
   $ git log --graph --pretty=%s
   * add file2
   * add file1
+  * one extra commit
   * add file4
   * add file3
   *   Merge branch 'new1'
@@ -109,6 +112,7 @@
   $ git log --graph --pretty=%s
   * add file2
   * add file1
+  * one extra commit
   * add workspace
 
   $ cat > workspace.josh <<EOF
@@ -122,7 +126,7 @@
   > 
   > Change-Id: Id6ca199378bf7e543e5e0c20e64d448e4126e695
   > EOF
-  [master 47a4447] Add new folder
+  [master e63efb2] Add new folder
    1 file changed, 1 insertion(+)
 
   $ git push origin HEAD:refs/for/master 2>&1 >/dev/null | sed -e 's/[ ]*$//g'
@@ -130,7 +134,7 @@
   remote: response from upstream:
   remote:  To http://localhost:8001/real_repo.git
   remote:  * [new reference]   JOSH_PUSH -> refs/for/master
-  remote: REWRITE(47a44473cfa06e213dd7b178b86c0ed03f71e2bf -> deb37ff512d2a0374ec09fad893171631985bc93)
+  remote: REWRITE(e63efb2615e1c17f0d0b6e610da85da09438cd29 -> 9bd58f891b4f17736c1b51903837de717fce13a5)
   remote:
   remote:
   To http://localhost:8002/real_repo.git:workspace=ws.git
@@ -164,11 +168,12 @@
   remote: response from upstream:
   remote:  To http://localhost:8001/real_repo.git
   remote:  * [new reference]   JOSH_PUSH -> refs/for/master
-  remote: REWRITE(f8c037fec9ba2a828e96fbd6ac979ea8605340a0 -> 09f5bd0c1a8927ab1f4ba38756c4d3f266fd24cf)
+  remote: REWRITE(5645805dcc75cfe4922b9cb301c40a4a4b35a59d -> 9a28fa82a736714d831348bbf62b951be65331b7)
   remote:
   remote:
   To http://localhost:8002/real_repo.git:workspace=ws.git
    * [new reference]   HEAD -> refs/for/master
+
 
   $ bash ${TESTDIR}/destroy_test_env.sh
   "real_repo.git" = [
@@ -208,8 +213,8 @@
   |   |               `-- master
   |   |-- rewrites
   |   |   `-- real_repo.git
-  |   |       |-- r_09f5bd0c1a8927ab1f4ba38756c4d3f266fd24cf
-  |   |       `-- r_deb37ff512d2a0374ec09fad893171631985bc93
+  |   |       |-- r_9a28fa82a736714d831348bbf62b951be65331b7
+  |   |       `-- r_9bd58f891b4f17736c1b51903837de717fce13a5
   |   `-- upstream
   |       `-- real_repo.git
   |           `-- refs
