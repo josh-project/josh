@@ -214,6 +214,7 @@ async fn static_paths(
     service: &JoshProxyService,
     path: &str,
 ) -> josh::JoshResult<Option<Response<hyper::Body>>> {
+    tracing::debug!("static_path {:?}", path);
     if path == "/version" {
         return Ok(Some(
             Response::builder()
@@ -232,7 +233,9 @@ async fn static_paths(
         ));
     }
     if path == "/clear_cache" {
-        josh::cache::clear()?;
+        tokio::task::spawn_blocking(move || -> josh::JoshResult<_> {
+            Ok(josh::cache::clear()?)
+        }).await??;
         return Ok(Some(
             Response::builder()
                 .status(hyper::StatusCode::OK)
