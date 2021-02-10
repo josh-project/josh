@@ -45,7 +45,7 @@ if not rewrites:
     sys.exit(0)
 
 get_refs(o)
-remote = re.findall(r"Pushing to (.*)", o.stderr)[0]
+remote = re.findall(r"(http.*)", o.stderr)[0]
 
 current = subprocess.run(
     ["git","rev-parse", "--symbolic-full-name", "HEAD"], capture_output=True, encoding="utf8").stdout.strip("\n")
