@@ -44,8 +44,8 @@
 
 
   $ josh-filter -s c=:/pre master --update refs/josh/filter/master
-  [2] :/pre
   [2] :prefix=c
+  [5] :/pre
 
   $ git log josh/filter/master --graph --pretty=%s
   * change on other 2
@@ -92,8 +92,8 @@
 
 
   $ josh-filter -s c=:/pre master --update refs/josh/filter/master
-  [5] :/pre
   [5] :prefix=c
+  [9] :/pre
 
   $ git log josh/filter/master --graph --pretty=%s
   *   Merge branch 'other_branch'

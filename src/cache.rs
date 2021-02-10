@@ -44,6 +44,19 @@ pub fn print_stats() {
     }
 }
 
+pub fn clear() -> JoshResult<()> {
+    let d = DB.lock().unwrap();
+    let db = d.as_ref().unwrap();
+    db.flush().unwrap();
+    log::debug!("Trees:");
+    for name in db.tree_names() {
+        let name = String::from_utf8(name.to_vec()).unwrap();
+        let t = db.open_tree(&name).unwrap();
+        t.clear()?;
+    }
+    Ok(())
+}
+
 #[allow(unused)]
 struct Transaction2 {
     commit_map: HashMap<git2::Oid, HashMap<git2::Oid, git2::Oid>>,
@@ -193,7 +206,7 @@ impl Transaction {
         filter: filter::Filter,
         from: git2::Oid,
         to: git2::Oid,
-        store: bool,
+        _store: bool,
     ) {
         let mut t2 = self.t2.borrow_mut();
         t2.commit_map
@@ -204,7 +217,11 @@ impl Transaction {
         // In addition to commits that are explicitly requested to be stored, also store
         // random extra commits (probability 1/256) to avoid long searches for filters that reduce
         // the history length by a very large factor.
-        if store || from.as_bytes()[0] == 0 {
+        /* if store || from.as_bytes()[0] == 0 { */
+        // TODO: Temporarily store all commits because the sparse storage leads to
+        // performance problems when filtering branches that have many merges and
+        // the filter causes a very high reduction in history length.
+        if true {
             let t = t2.sled_trees.entry(filter.id()).or_insert_with(|| {
                 DB.lock()
                     .unwrap()
