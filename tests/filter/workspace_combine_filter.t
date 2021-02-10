@@ -50,18 +50,18 @@
   6 directories, 5 files
 
   $ josh-filter -s :workspace=ws
-  [1] :/sub1
-  [1] :/sub2
   [1] :/subsub
   [1] :prefix=sub1
   [1] :prefix=sub2
   [1] :prefix=subsub
-  [1] :workspace=ws
-  [2] :[
+  [2] :prefix=x
+  [3] :/sub1
+  [3] :/sub2
+  [3] :[
       ::sub1/
       ::sub2/subsub/
   ]
-  [2] :prefix=x
+  [4] :workspace=ws
 
   $ git log --graph --pretty=%s FILTERED_HEAD
   * add ws
@@ -83,27 +83,25 @@
 
   $ git checkout master 2> /dev/null
   $ josh-filter -s :workspace=ws2
-  [1] :/sub1
-  [1] :/sub2
-  [1] :/sub3
   [1] :/subsub
   [1] :prefix=blub
   [1] :prefix=sub1
   [1] :prefix=sub2
   [1] :prefix=sub3
   [1] :prefix=subsub
-  [1] :workspace=ws
-  [1] :workspace=ws2
-  [2] :[
+  [2] :prefix=a
+  [2] :prefix=x
+  [3] :/sub1
+  [3] :/sub2
+  [3] :/sub3
+  [3] :[
       ::sub1/
       ::sub2/subsub/
   ]
-  [2] :[
+  [3] :[
       ::sub2/subsub/
       ::sub3/
   ]
-  [2] :prefix=a
-  [2] :prefix=x
   [3] :[
       a = :[
           ::sub2/subsub/
@@ -112,6 +110,8 @@
       blub = :/sub1
   ]
   [3] :prefix=xyz
+  [4] :workspace=ws
+  [4] :workspace=ws2
 
   $ git log --graph --pretty=%s FILTERED_HEAD
   * add ws

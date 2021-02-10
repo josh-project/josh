@@ -50,8 +50,8 @@ in that subtree repo should have an empty tree
   $ git add unrelated_file
   $ git commit -m "add unrelated_file" 1> /dev/null
   $ josh-filter -s c=:/sub1 master --update refs/josh/filter/master2
-  [3] :/sub1
   [3] :prefix=c
+  [4] :/sub1
   $ git log refs/josh/filter/master2 --graph --pretty=%s
   * mv sub1
   * add file2

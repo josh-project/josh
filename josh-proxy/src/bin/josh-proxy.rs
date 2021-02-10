@@ -231,6 +231,15 @@ async fn static_paths(
                 .unwrap_or(Response::default()),
         ));
     }
+    if path == "/clear_cache" {
+        josh::cache::clear()?;
+        return Ok(Some(
+            Response::builder()
+                .status(hyper::StatusCode::OK)
+                .body(hyper::Body::from("Cleared\n"))
+                .unwrap_or(Response::default()),
+        ));
+    }
     if path == "/filters" || path == "/filters/refresh" {
         service.credential_cache.write()?.clear();
         let service = service.clone();
