@@ -45,15 +45,20 @@ pub fn print_stats() {
 }
 
 pub fn clear() -> JoshResult<()> {
-    let d = DB.lock().unwrap();
-    let db = d.as_ref().unwrap();
-    db.flush().unwrap();
-    log::debug!("Trees:");
-    for name in db.tree_names() {
-        let name = String::from_utf8(name.to_vec()).unwrap();
-        let t = db.open_tree(&name).unwrap();
-        t.clear()?;
+    tracing::debug!("clearing cache");
+    let names: Vec<_> = {
+        let d = DB.lock().unwrap();
+        let db = d.as_ref().unwrap();
+        db.tree_names().iter().map(|x|x.to_vec()).collect()
+    };
+    for name in names {
+        let d = DB.lock().unwrap();
+        let db = d.as_ref().unwrap();
+        let name = String::from_utf8(name).unwrap();
+        tracing::debug!("dropping tree {:?}", name);
+        db.drop_tree(&name).unwrap();
     }
+    tracing::debug!("cleared cache");
     Ok(())
 }
 
