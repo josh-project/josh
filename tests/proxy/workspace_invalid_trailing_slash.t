@@ -57,7 +57,7 @@
   remote: warning: ignoring broken ref refs/namespaces/* (glob)
   remote: josh-proxy
   remote: response from upstream:
-  remote:  To http://localhost:8001/real_repo.git
+  remote: To http://localhost:8001/real_repo.git
   remote:    81c59c0..ae64c76  JOSH_PUSH -> master
   remote: REWRITE(85ee20960c56619305e098b301d8253888b6ce5b -> c255706f564f629eed1756b789d761048cfe060a)
   remote:

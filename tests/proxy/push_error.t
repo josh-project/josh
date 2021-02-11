@@ -31,7 +31,7 @@
   $ git push -q
   remote: josh-proxy        
   remote: response from upstream:        
-  remote:  To http://localhost:8001/real_repo.git        
+  remote: To http://localhost:8001/real_repo.git        
   remote:  ! [rejected]        JOSH_PUSH -> master (fetch first)        
   remote: error: failed to push some refs to 'http://localhost:8001/real_repo.git'        
   remote: hint: Updates were rejected because the remote contains work that you do        

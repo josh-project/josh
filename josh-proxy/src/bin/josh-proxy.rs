@@ -719,12 +719,19 @@ fn pre_receive_hook() -> josh::JoshResult<i32> {
 
     let n: usize = std::env::var("GIT_PUSH_OPTION_COUNT")?.parse()?;
 
-    let mut push_options = vec![];
+    let mut push_options = std::collections::HashMap::<String, String>::new();
     for i in 0..n {
-        push_options.push(std::env::var(format!("GIT_PUSH_OPTION_{}", i))?);
+        let s = std::env::var(format!("GIT_PUSH_OPTION_{}", i))?;
+        if let [key, value] =
+            s.as_str().split('=').collect::<Vec<_>>().as_slice()
+        {
+            push_options.insert(key.to_string(), value.to_string());
+        } else {
+            push_options.insert(s, "".to_string());
+        }
     }
 
-    std::fs::write(p, push_options.join("\n"))?;
+    std::fs::write(p, serde_json::to_string(&push_options)?)?;
 
     return Ok(0);
 }
@@ -750,7 +757,7 @@ fn update_hook(refname: &str, old: &str, new: &str) -> josh::JoshResult<i32> {
         Ok(r) => {
             let success = r.status().is_success();
             if let Ok(body) = r.text() {
-                println!("response from upstream:\n {}\n\n", body);
+                println!("response from upstream:\n{}\n\n", body);
             } else {
                 println!("no upstream response");
             }

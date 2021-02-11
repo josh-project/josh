@@ -183,7 +183,7 @@
   $ git push 2>&1 >/dev/null | sed -e 's/[ ]*$//g'
   remote: josh-proxy
   remote: response from upstream:
-  remote:  To http://localhost:8001/real_repo.git
+  remote: To http://localhost:8001/real_repo.git
   remote:    aaec05d..edefd7d  JOSH_PUSH -> master
   remote: REWRITE(7de033196d3f74f40139647122f499286a97498b -> 44edc62d506b9805a3edfc74db15b1cc0bfc6871)
   remote:
@@ -203,7 +203,7 @@
   $ git push 2>&1 >/dev/null | sed -e 's/[ ]*$//g'
   remote: josh-proxy
   remote: response from upstream:
-  remote:  To http://localhost:8001/real_repo.git
+  remote: To http://localhost:8001/real_repo.git
   remote:    edefd7d..18aaa0c  JOSH_PUSH -> master
   remote: REWRITE(94b02b6b15cb5b8864e8754354cd256ec7ebd341 -> 9d72b88b11aed97d3313f0a6d80894ee2ffdf3e9)
   remote:

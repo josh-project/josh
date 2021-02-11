@@ -24,9 +24,22 @@
   $ git push origin HEAD:refs/heads/new_branch 2>&1 >/dev/null | sed -e 's/[ ]*$//g'
   remote: josh-proxy
   remote: response from upstream:
-  remote:  To http://localhost:8001/real_repo.git
+  remote: Branch "refs/heads/new_branch" does not exist on remote.
+  remote: If you want to create it, pass "-o base=<branchname>"
+  remote: to specify a base branch.
+  remote:
+  remote:
+  remote:
+  remote: error: hook declined to update refs/heads/new_branch
+  To http://localhost:8002/real_repo.git:/sub1.git
+   ! [remote rejected] HEAD -> new_branch (hook declined)
+  error: failed to push some refs to 'http://localhost:8002/real_repo.git:/sub1.git'
+
+  $ git push -o base=refs/heads/master origin HEAD:refs/heads/new_branch 2>&1 >/dev/null | sed -e 's/[ ]*$//g'
+  remote: josh-proxy
+  remote: response from upstream:
+  remote: To http://localhost:8001/real_repo.git
   remote:  * [new branch]      JOSH_PUSH -> new_branch
-  remote: REWRITE(d8388f5880393d255b371f1ed9b801d35620017e -> 07c68616a04d2f94b5c2c4e3471647f72933cfd9)
   remote:
   remote:
   To http://localhost:8002/real_repo.git:/sub1.git
@@ -37,7 +50,7 @@
   $ git push
   remote: josh-proxy        
   remote: response from upstream:        
-  remote:  To http://localhost:8001/real_repo.git        
+  remote: To http://localhost:8001/real_repo.git        
   remote:    bb282e9..81b10fb  JOSH_PUSH -> master        
   remote: 
   remote: 
@@ -80,9 +93,6 @@ Make sure all temporary namespace got removed
   |   |       `-- %3A%2Fsub1
   |   |           `-- heads
   |   |               `-- master
-  |   |-- rewrites
-  |   |   `-- real_repo.git
-  |   |       `-- r_07c68616a04d2f94b5c2c4e3471647f72933cfd9
   |   `-- upstream
   |       `-- real_repo.git
   |           `-- refs
@@ -92,6 +102,6 @@ Make sure all temporary namespace got removed
   |-- namespaces
   `-- tags
   
-  14 directories, 4 files
+  12 directories, 3 files
 
 $ cat ${TESTTMP}/josh-proxy.out
