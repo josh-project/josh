@@ -62,7 +62,7 @@
   $ git push origin HEAD:refs/for/master 2>&1 >/dev/null | sed -e 's/[ ]*$//g'
   remote: josh-proxy
   remote: response from upstream:
-  remote:  To http://localhost:8001/real_repo.git
+  remote: To http://localhost:8001/real_repo.git
   remote:  * [new reference]   JOSH_PUSH -> refs/for/master
   remote:
   remote:
@@ -97,7 +97,7 @@
   $ git push origin HEAD:refs/for/master 2>&1 >/dev/null | sed -e 's/[ ]*$//g'
   remote: josh-proxy
   remote: response from upstream:
-  remote:  To http://localhost:8001/real_repo.git
+  remote: To http://localhost:8001/real_repo.git
   remote:  * [new reference]   JOSH_PUSH -> refs/for/master
   remote:
   remote:

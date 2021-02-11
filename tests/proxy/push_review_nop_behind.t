@@ -35,7 +35,7 @@ This is a regression test for that problem.
   $ git push origin HEAD:refs/for/master
   remote: josh-proxy        
   remote: response from upstream:        
-  remote:  To http://localhost:8001/real_repo.git        
+  remote: To http://localhost:8001/real_repo.git        
   remote:  * [new reference]   JOSH_PUSH -> refs/for/master        
   remote: 
   remote: 

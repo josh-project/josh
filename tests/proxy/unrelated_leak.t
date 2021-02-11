@@ -41,12 +41,11 @@
   $ echo contents2 > file4
   $ git add .
   $ git commit -m "add file4" 1> /dev/null
-  $ git push origin master:refs/heads/from_filtered 2>&1 >/dev/null | sed -e 's/[ ]*$//g'
+  $ git push -o base=refs/heads/master origin master:refs/heads/from_filtered 2>&1 >/dev/null | sed -e 's/[ ]*$//g'
   remote: josh-proxy
   remote: response from upstream:
-  remote:  To http://localhost:8001/real_repo.git
+  remote: To http://localhost:8001/real_repo.git
   remote:  * [new branch]      JOSH_PUSH -> from_filtered
-  remote: REWRITE(37fad4aaffb0ee24ab0ad6767701409bfbc52330 -> aaf57148485a64c3c102cf868772e216ab984c6a)
   remote:
   remote:
   To http://localhost:8002/real_repo.git:/sub1.git
@@ -55,7 +54,7 @@
   $ git push origin master:refs/heads/master 2>&1 >/dev/null | sed -e 's/[ ]*$//g'
   remote: josh-proxy
   remote: response from upstream:
-  remote:  To http://localhost:8001/real_repo.git
+  remote: To http://localhost:8001/real_repo.git
   remote:    db0fd21..3f7ab67  JOSH_PUSH -> master
   remote:
   remote:
@@ -75,6 +74,7 @@
   * initial
   $ git log --graph --pretty=%s origin/from_filtered
   * add file4
+  * add file1
 
   $ . ${TESTDIR}/destroy_test_env.sh
   "real_repo.git" = [
@@ -92,9 +92,6 @@
   |   |       `-- %3A%2Fsub2
   |   |           `-- heads
   |   |               `-- master
-  |   |-- rewrites
-  |   |   `-- real_repo.git
-  |   |       `-- r_aaf57148485a64c3c102cf868772e216ab984c6a
   |   `-- upstream
   |       `-- real_repo.git
   |           `-- refs
@@ -103,4 +100,4 @@
   |-- namespaces
   `-- tags
   
-  16 directories, 4 files
+  14 directories, 3 files

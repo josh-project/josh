@@ -84,7 +84,7 @@
   remote: warning: ignoring broken ref refs/namespaces/* (glob)
   remote: josh-proxy        
   remote: response from upstream:        
-  remote:  To http://localhost:8001/real_repo.git        
+  remote: To http://localhost:8001/real_repo.git        
   remote:    5d605ce..98c996c  JOSH_PUSH -> master        
   remote: REWRITE(1b46698f32d1d1db1eaeb34f8c9037778d65f3a9 -> 4a199f3a19a292e6639dede0f8602afc19a82dfc)        
   remote: 
@@ -278,7 +278,7 @@
   POST git-receive-pack (808 bytes)
   remote: josh-proxy        
   remote: response from upstream:        
-  remote:  To http://localhost:8001/real_repo.git        
+  remote: To http://localhost:8001/real_repo.git        
   remote:    e41565c..9c41f84  JOSH_PUSH -> master        
   remote: REWRITE(6f33ff469334600e2a53433208efc1cd734b49b3 -> 3136fff7280627623bf4d71191d1aea783579be0)        
   remote: 
@@ -304,7 +304,7 @@
   POST git-receive-pack (460 bytes)
   remote: josh-proxy        
   remote: response from upstream:        
-  remote:  To http://localhost:8001/real_repo.git        
+  remote: To http://localhost:8001/real_repo.git        
   remote:    9c41f84..2c7e462  JOSH_PUSH -> master        
   remote: REWRITE(7f85f1156c6a01fcf3ab67dc35597ae520f75496 -> 1a909d6e8ba43c6eaf211ef04440984d38bc26e6)        
   remote: 

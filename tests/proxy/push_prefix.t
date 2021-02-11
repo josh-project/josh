@@ -24,7 +24,7 @@
   $ git push
   remote: josh-proxy        
   remote: response from upstream:        
-  remote:  To http://localhost:8001/real_repo.git        
+  remote: To http://localhost:8001/real_repo.git        
   remote:    bb282e9..b7cf821  JOSH_PUSH -> master        
   remote: 
   remote: 

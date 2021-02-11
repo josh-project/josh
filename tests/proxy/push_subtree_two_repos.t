@@ -33,7 +33,7 @@
   $ git push 1> /dev/null
   remote: josh-proxy        
   remote: response from upstream:        
-  remote:  To http://localhost:8001/real_repo.git        
+  remote: To http://localhost:8001/real_repo.git        
   remote:    bb282e9..81b10fb  JOSH_PUSH -> master        
   remote: 
   remote: 
@@ -58,7 +58,7 @@ Put a double slash in the URL to see that it also works
   $ git push 1> /dev/null
   remote: josh-proxy        
   remote: response from upstream:        
-  remote:  To http://localhost:8001/real/repo2.git        
+  remote: To http://localhost:8001/real/repo2.git        
   remote:    bcd5520..dcd1fcd  JOSH_PUSH -> master        
   remote: 
   remote: 

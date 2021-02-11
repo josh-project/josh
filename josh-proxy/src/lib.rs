@@ -47,7 +47,8 @@ pub fn process_repo_update(
         .join("push_options");
 
     let push_options_string = std::fs::read_to_string(p)?;
-    let push_options: Vec<&str> = push_options_string.split("\n").collect();
+    let push_options: std::collections::HashMap<String, String> =
+        serde_json::from_str(&push_options_string)?;
 
     for (refname, (old, new)) in repo_update.refs.iter() {
         tracing::debug!("REPO_UPDATE env ok");
@@ -59,7 +60,7 @@ pub fn process_repo_update(
         let old = git2::Oid::from_str(old)?;
 
         let (baseref, push_to, options) = baseref_and_options(refname)?;
-        let josh_merge = push_options.contains(&"merge");
+        let josh_merge = push_options.contains_key("merge");
 
         tracing::debug!("push options: {:?}", push_options);
         tracing::debug!("josh-merge: {:?}", josh_merge);
@@ -79,21 +80,31 @@ pub fn process_repo_update(
             old
         };
 
-        let unfiltered_old = {
-            let rev = format!(
-                "refs/josh/upstream/{}/{}",
-                repo_update.base_ns, &baseref
-            );
-            let oid = transaction
-                .repo()
-                .refname_to_id(&rev)
-                .unwrap_or(git2::Oid::zero());
+        let original_target_ref = if let Some(base) = push_options.get("base") {
+            format!("refs/josh/upstream/{}/{}", repo_update.base_ns, &base)
+        }
+        else {
+            format!("refs/josh/upstream/{}/{}", repo_update.base_ns, &baseref)
+        };
+
+        let original_target = if let Ok(oid) =
+            transaction.repo().refname_to_id(&original_target_ref)
+        {
             tracing::debug!(
-                "push: unfiltered_old oid: {:?}, rev: {:?}",
+                "push: original_target oid: {:?}, original_target_ref: {:?}",
                 oid,
-                rev
+                original_target_ref
             );
             oid
+        } else {
+            return Err(josh::josh_error(&unindent::unindent(&format!(
+                r###"
+                Branch {:?} does not exist on remote.
+                If you want to create it, pass "-o base=<branchname>"
+                to specify a base branch.
+                "###,
+                baseref
+            ))));
         };
 
         let amends = {
@@ -132,7 +143,7 @@ pub fn process_repo_update(
             match josh::history::unapply_filter(
                 &transaction,
                 filterobj,
-                unfiltered_old,
+                original_target,
                 old,
                 new_oid,
                 josh_merge,
@@ -163,15 +174,11 @@ pub fn process_repo_update(
         };
 
         let oid_to_push = if josh_merge {
-            let rev = format!(
-                "refs/josh/upstream/{}/{}",
-                &repo_update.base_ns, &baseref
-            );
             let backward_commit =
                 transaction.repo().find_commit(backward_new_oid)?;
             if let Ok(Ok(base_commit)) = transaction
                 .repo()
-                .revparse_single(&rev)
+                .revparse_single(&original_target_ref)
                 .map(|x| x.peel_to_commit())
             {
                 let merged_tree = transaction
