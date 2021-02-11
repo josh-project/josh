@@ -165,42 +165,43 @@
                     <main>
                         <p><a href="https://github.com/esrlabs/josh/actions"><img src="https://github.com/esrlabs/josh/workflows/Rust/badge.svg?branch=master" alt="Build Status" /></a></p>
 <h1><a class="header" href="#just-one-single-history" id="just-one-single-history">Just One Single History</a></h1>
-<p>Josh combines the advantages of mono-repo with those of many-repos by leveraging a blazingly-fast,
-incremental and reversible implementation of git history filtering.</p>
-<p>The <a href="https://esrlabs.github.io/josh/">documentation</a> describes the filtering mechanism, as well as
+<p>Josh combines the advantages of monorepos with those of multirepos by leveraging a blazingly-fast,
+incremental, and reversible implementation of git history filtering.</p>
+<p>This documentation describes the filtering mechanism, as well as
 the tools provided by Josh: the josh library, <code>josh-proxy</code> and <code>josh-filter</code>.</p>
 <h2><a class="header" href="#concept" id="concept">Concept</a></h2>
-<p>Traditionally history filtering has been viewed as an expensive operation that should only be done
-as a means to fix issues with a repository or as part of a migration to a different repository
-structure, like switching from many-repos to mono-repo or vice versa, purging big binary files or
-removing accidentally committed secrets.</p>
-<p>The implementation shipped with git (<code>git-filter branch</code>) is only usable as a once in a lifetime
+<p>Traditionally, history filtering has been viewed as an expensive operation that should only be
+performed to fix issues with a repository, such as purging big binary files or removing
+accidentally-committed secrets, or as part of a migration to a different repository structure, like
+switching from multirepo to monorepo (or vice versa).</p>
+<p>The implementation shipped with git (<code>git-filter branch</code>) is only usable as a once-in-a-lifetime
 last resort for anything but tiny repositories.</p>
-<p>Faster versions of history filtering have been implemented (like
+<p>Faster versions of history filtering have been implemented, such as
 <a href="https://github.com/newren/git-filter-repo">git-filter-repo</a> or the
-<a href="https://rtyley.github.io/bfg-repo-cleaner/">BFG repo cleaner</a>) but those, while much faster,
-are also designed as tools for doing occasional, destructive maintenance tasks. Usually with the
-idea already in mind that once the filtering is complete the old history should be discarded.</p>
-<p>The idea behind <code>josh</code> starts with two questions: What if history filtering could be so fast that it
-can be part of a normal everyday workflow, running on every single push and fetch in milliseconds
-time without the user even noticing?  And what if history filtering was a non-destructive,
-reversible operation?</p>
+<a href="https://rtyley.github.io/bfg-repo-cleaner/">BFG repo cleaner</a>. Those, while much faster, are
+designed for doing occasional, destructive maintenance tasks, usually with the idea already in mind
+that once the filtering is complete the old history should be discarded.</p>
+<p>The idea behind <code>josh</code> started with two questions:</p>
+<ol>
+<li>What if history filtering could be so fast that it can be part of a normal, everyday workflow,
+running on every single push and fetch without the user even noticing?</li>
+<li>What if history filtering was a non-destructive, reversible operation?</li>
+</ol>
 <p>Under those two premises a filter operation stops being a maintenance task. It seamlessly relates
 histories between repos, which can be used by developers and CI systems interchangeably in whatever
 way is most suitable to the task at hand.</p>
 <p>How is this possible?</p>
 <p>Filtering history is a highly predictable task: The set of filters that tend to be used for any
-given repository is limited. The input to the filter, a git branch, only gets modified in an
-incremental way.  So by keeping a persistent cache between filter runs, the work needed to re-run a
-filter on a new commit (and its history) becomes proportional to the number of changes since the
-last run.  Thus, it no longer depends on the total length of the history. And for most filters, also
-not on the size of the trees.</p>
-<p>So what has long been known to be true for performing merges also applies to history filtering: The
+given repository is limited, such that the input to the filter (a git branch) only gets modified in
+an incremental way. Thus, by keeping a persistent cache between filter runs, the work needed to
+re-run a filter on a new commit (and its history) becomes proportional to the number of changes
+since the last run; The work to filter no longer depends on the total length of the history.
+Additionally, most filters also do not depend on the size of the trees.</p>
+<p>What has long been known to be true for performing merges also applies to history filtering: The
 more often it is done the less work it takes each time.</p>
-<p>To guarantee filters to be reversible we have to restrict the kind of filter that can be used. So it
-is not possible to write arbitrary filters using a scripting language like it is allowed in other
-tools.
-To still be able to cover a wide range of use cases we introduce a domain specific language to
+<p>To guarantee filters are reversible we have to restrict the kind of filter that can be used; It is
+not possible to write arbitrary filters using a scripting language like is allowed in other tools.
+To still be able to cover a wide range of use cases we have introduced a domain-specific language to
 express more complex filters as a combination of simpler ones. Apart from guaranteeing
 reversibility, the use of a DSL also enables pre-optimization of filter expressions to minimize both
 the amount of work to be done to execute the filter as well as the on-disk size of the persistent
@@ -210,9 +211,18 @@ cache.</p>
 <p><strong>Audience:</strong></p>
 <p>Can you have just a part of files pulled out of a repository, not the entire repository?</p>
 <p><strong>Linus:</strong></p>
-<p>You can export things as tarballs, you can export things as individual files, you can rewrite the whole history to say &quot;I want a new version of that repository that only contains that part&quot;, you can do that, it is a fairly expensive operation it's something you would do for example when you import an old repository into a one huge git repository and then you can split it later on to be multiple smaller ones, you can do it, what I am trying to say is that you should generally try to avoid it. It's not that git can not handle huge projects, git would not perform as well as it would otherwise. And you will have issues that you wish you didn't not have.</p>
-<p>So I am skipping this issue and going back to the performance issue. One of the things I want to say about performance is that a lot of people seem to think that performance is about doing the same thing, just doing it faster, and that is not true.</p>
-<p>That is not what performance is all about. If you can do something really fast, really well, people will start using it differently.</p>
+<p>You can export things as tarballs, you can export things as individual files, you can rewrite the
+whole history to say &quot;I want a new version of that repository that only contains that part&quot;, you
+can do that, it is a fairly expensive operation it's something you would do for example when you
+import an old repository into a one huge git repository and then you can split it later on to be
+multiple smaller ones, you can do it, what I am trying to say is that you should generally try to
+avoid it. It's not that git can not handle huge projects, git would not perform as well as it would
+otherwise. And you will have issues that you wish you didn't not have.</p>
+<p>So I am skipping this issue and going back to the performance issue. One of the things I want to
+say about performance is that a lot of people seem to think that performance is about doing the
+same thing, just doing it faster, and that is not true.</p>
+<p>That is not what performance is all about. If you can do something really fast, really well, people
+will start using it differently.</p>
 </blockquote>
 
                     </main>
