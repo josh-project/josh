@@ -207,7 +207,6 @@ pub fn unapply_filter(
         let mut filtered_parent_ids: Vec<_> =
             module_commit.parent_ids().collect();
 
-
         let is_initial_merge = filtered_parent_ids.len() == 2
             && !transaction
                 .repo()
@@ -398,7 +397,9 @@ pub fn create_filtered_commit<'a>(
         filtered_tree,
     )?;
 
-    transaction.insert(filter, original_commit.id(), r, is_new);
+    let store = is_new || original_commit.parent_ids().len() != 1;
+
+    transaction.insert(filter, original_commit.id(), r, store);
 
     return Ok(r);
 }

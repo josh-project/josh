@@ -1,7 +1,7 @@
 use super::*;
 use std::collections::HashMap;
 
-const VERSION: u64 = 2;
+const VERSION: u64 = 3;
 
 lazy_static! {
     static ref DB: std::sync::Mutex<Option<sled::Db>> =
@@ -42,24 +42,6 @@ pub fn print_stats() {
     for (len, name) in v.iter() {
         println!("[{}] {}", len, name);
     }
-}
-
-pub fn clear() -> JoshResult<()> {
-    tracing::debug!("clearing cache");
-    let names: Vec<_> = {
-        let d = DB.lock().unwrap();
-        let db = d.as_ref().unwrap();
-        db.tree_names().iter().map(|x|x.to_vec()).collect()
-    };
-    for name in names {
-        let d = DB.lock().unwrap();
-        let db = d.as_ref().unwrap();
-        let name = String::from_utf8(name).unwrap();
-        tracing::debug!("dropping tree {:?}", name);
-        db.drop_tree(&name).unwrap();
-    }
-    tracing::debug!("cleared cache");
-    Ok(())
 }
 
 #[allow(unused)]
@@ -211,7 +193,7 @@ impl Transaction {
         filter: filter::Filter,
         from: git2::Oid,
         to: git2::Oid,
-        _store: bool,
+        store: bool,
     ) {
         let mut t2 = self.t2.borrow_mut();
         t2.commit_map
@@ -222,11 +204,7 @@ impl Transaction {
         // In addition to commits that are explicitly requested to be stored, also store
         // random extra commits (probability 1/256) to avoid long searches for filters that reduce
         // the history length by a very large factor.
-        /* if store || from.as_bytes()[0] == 0 { */
-        // TODO: Temporarily store all commits because the sparse storage leads to
-        // performance problems when filtering branches that have many merges and
-        // the filter causes a very high reduction in history length.
-        if true {
+        if store || from.as_bytes()[0] == 0 {
             let t = t2.sled_trees.entry(filter.id()).or_insert_with(|| {
                 DB.lock()
                     .unwrap()

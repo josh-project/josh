@@ -232,17 +232,6 @@ async fn static_paths(
                 .unwrap_or(Response::default()),
         ));
     }
-    if path == "/clear_cache" {
-        tokio::task::spawn_blocking(move || -> josh::JoshResult<_> {
-            Ok(josh::cache::clear()?)
-        }).await??;
-        return Ok(Some(
-            Response::builder()
-                .status(hyper::StatusCode::OK)
-                .body(hyper::Body::from("Cleared\n"))
-                .unwrap_or(Response::default()),
-        ));
-    }
     if path == "/filters" || path == "/filters/refresh" {
         service.credential_cache.write()?.clear();
         let service = service.clone();

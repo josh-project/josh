@@ -44,8 +44,8 @@
   [1] :prefix=a
   [1] :prefix=b
   [2] :/sub1
+  [2] :/sub2
   [2] :prefix=c
-  [3] :/sub2
   $ git log --graph --pretty=%s josh/filter/libs/foo
   * add file3
 

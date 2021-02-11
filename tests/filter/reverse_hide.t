@@ -15,8 +15,8 @@
   $ git commit -m "add file2" 1> /dev/null
 
   $ josh-filter -s :exclude[:/sub2] master --update refs/heads/hidden
+  [1] :exclude[:/sub2]
   [2] :/sub2
-  [2] :exclude[:/sub2]
   $ git checkout hidden 1> /dev/null
   Switched to branch 'hidden'
   $ tree
@@ -33,8 +33,8 @@
   $ git commit -m "add sub1/file3" 1> /dev/null
 
   $ josh-filter -s :exclude[:/sub2] --reverse master --update refs/heads/hidden
+  [1] :exclude[:/sub2]
   [2] :/sub2
-  [2] :exclude[:/sub2]
 
   $ git checkout master
   Switched to branch 'master'

@@ -35,8 +35,8 @@
 
   $ josh-filter -s c=:exclude[:/sub1] master --update refs/josh/filter/master
   [1] :prefix=c
-  [3] :/sub1
-  [3] :exclude[:/sub1]
+  [2] :/sub1
+  [2] :exclude[:/sub1]
   $ git checkout josh/filter/master 2> /dev/null
   $ git log --graph --pretty=%s
   * add file3
@@ -49,10 +49,10 @@
   2 directories, 1 file
 
   $ josh-filter -s c=:exclude[::sub1/file2] master --update refs/josh/filter/master
-  [3] :/sub1
-  [3] ::sub1/file2
-  [3] :exclude[:/sub1]
-  [3] :exclude[::sub1/file2]
+  [2] :/sub1
+  [2] ::sub1/file2
+  [2] :exclude[:/sub1]
+  [2] :exclude[::sub1/file2]
   [3] :prefix=c
   $ git checkout josh/filter/master 2> /dev/null
   $ git log --graph --pretty=%s
@@ -69,12 +69,12 @@
   3 directories, 2 files
 
   $ josh-filter -s c=:exclude[::sub2/file3] master --update refs/josh/filter/master
-  [3] :/sub1
-  [3] ::sub1/file2
-  [3] ::sub2/file3
-  [3] :exclude[:/sub1]
-  [3] :exclude[::sub1/file2]
-  [3] :exclude[::sub2/file3]
+  [2] :/sub1
+  [2] ::sub1/file2
+  [2] ::sub2/file3
+  [2] :exclude[:/sub1]
+  [2] :exclude[::sub1/file2]
+  [2] :exclude[::sub2/file3]
   [4] :prefix=c
   $ git checkout josh/filter/master 2> /dev/null
   $ git log --graph --pretty=%s
