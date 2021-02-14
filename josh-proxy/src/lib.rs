@@ -1,3 +1,5 @@
+pub mod juniper_hyper;
+
 fn baseref_and_options(
     refname: &str,
 ) -> josh::JoshResult<(String, String, Vec<String>)> {
@@ -82,8 +84,7 @@ pub fn process_repo_update(
 
         let original_target_ref = if let Some(base) = push_options.get("base") {
             format!("refs/josh/upstream/{}/{}", repo_update.base_ns, &base)
-        }
-        else {
+        } else {
             format!("refs/josh/upstream/{}/{}", repo_update.base_ns, &baseref)
         };
 

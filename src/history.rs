@@ -70,7 +70,7 @@ pub fn walk2(
     return Ok(());
 }
 
-fn find_original(
+fn find_unapply_base(
     transaction: &cache::Transaction,
     bm: &mut std::collections::HashMap<git2::Oid, git2::Oid>,
     filter: filter::Filter,
@@ -98,6 +98,41 @@ fn find_original(
         if filtered == filter::apply_to_commit(filter, &original, transaction)?
         {
             bm.insert(filtered, original.id());
+            return Ok(original.id());
+        }
+    }
+
+    return Ok(git2::Oid::zero());
+}
+
+pub fn find_original(
+    transaction: &cache::Transaction,
+    filter: filter::Filter,
+    contained_in: git2::Oid,
+    filtered: git2::Oid,
+) -> super::JoshResult<git2::Oid> {
+    if contained_in == git2::Oid::zero() {
+        return Ok(git2::Oid::zero());
+    }
+    let mut walk = transaction.repo().revwalk()?;
+    walk.set_sorting(git2::Sort::TOPOLOGICAL)?;
+    walk.push(contained_in)?;
+
+    for original in walk {
+        let original = transaction.repo().find_commit(original?)?;
+        if filtered == filter::apply_to_commit(filter, &original, transaction)?
+        {
+            if original.parent_ids().count() == 1 {
+                let fp = filter::apply_to_commit(
+                    filter,
+                    &original.parents().next().unwrap(),
+                    transaction,
+                )?;
+
+                if fp == filtered {
+                    continue;
+                }
+            }
             return Ok(original.id());
         }
     }
@@ -221,7 +256,7 @@ pub fn unapply_filter(
             filtered_parent_ids
                 .iter()
                 .map(|x| -> JoshResult<_> {
-                    find_original(
+                    find_unapply_base(
                         &transaction,
                         &mut bm,
                         filterobj,

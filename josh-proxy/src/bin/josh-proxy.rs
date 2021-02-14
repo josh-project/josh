@@ -379,6 +379,25 @@ async fn call_service(
         path
     };
 
+    if ARGS.is_present("graphql") {
+        if path == "/~/" {
+            return Ok(josh_proxy::juniper_hyper::playground(
+                "/~/graphql",
+                None,
+            )
+            .await?);
+        }
+
+        if path == "/~/graphql" {
+            let ctx =
+                std::sync::Arc::new(josh::graphql::context(&serv.repo_path));
+            let root_node = std::sync::Arc::new(josh::graphql::schema());
+            return Ok(
+                josh_proxy::juniper_hyper::graphql(root_node, ctx, req).await?
+            );
+        }
+    }
+
     if let Some(r) = static_paths(&serv, &path).await? {
         return Ok(r);
     }
@@ -697,6 +716,11 @@ fn parse_args() -> clap::ArgMatches<'static> {
         .arg(
             clap::Arg::with_name("no-background")
                 .long("no-background")
+                .takes_value(false),
+        )
+        .arg(
+            clap::Arg::with_name("graphql")
+                .long("graphql")
                 .takes_value(false),
         )
         .arg(

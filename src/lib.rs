@@ -39,6 +39,7 @@ use tracing;
 
 pub mod cache;
 pub mod filter;
+pub mod graphql;
 pub mod history;
 pub mod housekeeping;
 pub mod query;
@@ -94,6 +95,12 @@ pub struct JoshError(pub String);
 
 pub fn josh_error(s: &str) -> JoshError {
     JoshError(s.to_owned())
+}
+
+impl std::fmt::Display for JoshError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "JoshError({})", self.0)
+    }
 }
 
 pub type JoshResult<T> = std::result::Result<T, JoshError>;
