@@ -92,29 +92,6 @@ regex_parsed!(
     [upstream_repo, filter_spec]
 );
 
-pub fn discover_repos(repo: &git2::Repository) -> JoshResult<Vec<String>> {
-    let _trace_s = span!(Level::TRACE, "discover_repos");
-
-    let refname = format!("refs/josh/upstream/*.git/refs/heads/*");
-
-    let mut repos = vec![];
-
-    for reference in repo.references_glob(&refname)? {
-        let r = reference?;
-        let name = r.name().ok_or(josh_error("reference without name"))?;
-        let name = UpstreamRef::from_str(name)
-            .ok_or(josh_error("not a ns"))?
-            .ns;
-        let name = from_ns(&name);
-
-        repos.push(name);
-    }
-
-    repos.dedup();
-
-    return Ok(repos);
-}
-
 /**
  * Determine filter specs that are either likely to be requested and/or
  * expensive to build from scratch using heuristics.

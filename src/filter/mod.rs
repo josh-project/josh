@@ -653,10 +653,10 @@ fn unapply2<'a>(
 
 /// Create a filter that is the result of feeding the output of `first` into `second`
 pub fn chain(first: Filter, second: Filter) -> Filter {
-    to_filter(Op::Chain(first, second))
+    opt::optimize(to_filter(Op::Chain(first, second)))
 }
 
 /// Create a filter that is the result of overlaying the output of `first` onto `second`
 pub fn compose(first: Filter, second: Filter) -> Filter {
-    to_filter(Op::Compose(vec![first, second]))
+    opt::optimize(to_filter(Op::Compose(vec![first, second])))
 }
