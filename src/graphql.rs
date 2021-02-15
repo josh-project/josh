@@ -33,9 +33,9 @@ impl Commit {
         Ok(filter_commit.summary().unwrap_or("").to_owned())
     }
 
-    fn apply(&self, filter: String) -> FieldResult<Commit> {
+    fn commit(&self, filter: Option<String>) -> FieldResult<Commit> {
         Ok(Commit {
-            filter: filter::chain(self.filter, filter::parse(&filter)?),
+            filter: filter::parse(&filter.unwrap_or(":nop".to_string()))?,
             rev: self.rev,
         })
     }
@@ -82,42 +82,19 @@ impl Commit {
         Ok(parents)
     }
 
-    fn files(&self, context: &Context) -> FieldResult<Vec<File>> {
+    fn files(&self, context: &Context) -> FieldResult<Vec<Path>> {
         let transaction = cache::Transaction::open(&context.path)?;
         let commit = transaction.repo().find_commit(self.rev)?;
 
         let tree = filter::apply(&transaction, self.filter, commit.tree()?)?;
 
-        /* let tree = transaction.repo().find_commit(filter_commit)?.tree()?; */
         let mut ws = vec![];
         tree.walk(git2::TreeWalkMode::PreOrder, |root, entry| {
             if let Some(git2::ObjectType::Blob) = entry.kind() {
                 if let Some(name) = entry.name() {
-                    ws.push(File {
-                        name: format!("{}{}", root, name),
-                        id: entry.id(),
-                    });
-                }
-            }
-            0
-        })?;
-        return Ok(ws);
-    }
-
-    fn workspaces(&self, context: &Context) -> FieldResult<Vec<Commit>> {
-        let transaction = cache::Transaction::open(&context.path)?;
-        let tree = transaction.repo().find_commit(self.rev)?.tree()?;
-
-        let mut ws = vec![];
-        tree.walk(git2::TreeWalkMode::PreOrder, |root, entry| {
-            if entry.name() == Some(&"workspace.josh") {
-                if let Ok(filter) = filter::parse(&format!(
-                    ":workspace={}",
-                    root.trim_matches('/').to_owned()
-                )) {
-                    ws.push(Commit {
+                    ws.push(Path {
+                        path: std::path::Path::new(root).join(name),
                         rev: self.rev,
-                        filter: filter,
                     });
                 }
             }
@@ -127,26 +104,117 @@ impl Commit {
     }
 }
 
-pub struct File {
-    name: String,
-    id: git2::Oid,
+pub struct Path {
+    path: std::path::PathBuf,
+    rev: git2::Oid,
 }
 
 #[graphql_object(context = Context)]
-impl File {
-    fn name(&self) -> String {
-        self.name.clone()
+impl Path {
+    fn path(&self) -> String {
+        self.path.to_string_lossy().to_string()
     }
 
-    fn id(&self) -> String {
-        format!("{}", self.id)
+    fn parent(&self) -> FieldResult<Path> {
+        Ok(Path {
+            path: self
+                .path
+                .parent()
+                .ok_or(josh_error("no parent"))?
+                .to_owned(),
+            rev: self.rev,
+        })
     }
 
-    fn content(&self, context: &Context) -> FieldResult<String> {
+    fn commit(&self, filter: String) -> FieldResult<Commit> {
+        let reg = handlebars::Handlebars::new();
+        Ok(Commit {
+            filter: filter::parse(&reg.render_template(&filter, &json!({"path": self.path}))?)?,
+            rev: self.rev,
+        })
+    }
+
+    fn id(&self, context: &Context) -> FieldResult<String> {
         let transaction = cache::Transaction::open(&context.path)?;
-        let blob = transaction.repo().find_blob(self.id)?;
+        let id = transaction
+            .repo()
+            .find_commit(self.rev)?
+            .tree()?
+            .get_path(&self.path)?
+            .id();
+        Ok(format!("{}", id))
+    }
+
+    fn text(&self, context: &Context) -> FieldResult<String> {
+        let transaction = cache::Transaction::open(&context.path)?;
+        let id = transaction
+            .repo()
+            .find_commit(self.rev)?
+            .tree()?
+            .get_path(&self.path)?
+            .id();
+        let blob = transaction.repo().find_blob(id)?;
 
         Ok(std::str::from_utf8(blob.content())?.to_string())
+    }
+
+    fn toml(&self, context: &Context) -> FieldResult<Object> {
+        let transaction = cache::Transaction::open(&context.path)?;
+        let id = transaction
+            .repo()
+            .find_commit(self.rev)?
+            .tree()?
+            .get_path(&self.path)?
+            .id();
+        let blob = transaction.repo().find_blob(id)?;
+        let value = toml::de::from_str::<serde_json::Value>(
+            std::str::from_utf8(blob.content())?,
+        )?;
+
+        Ok(Object { value: value })
+    }
+}
+
+pub struct Object {
+    value: serde_json::Value,
+}
+
+impl Object {
+
+
+    fn pointer(&self, pointer: Option<String>) -> serde_json::Value {
+        if let Some(pointer) =pointer {
+            return self.value.pointer(&pointer).unwrap_or(&json!({})).to_owned()
+        } else {
+            self.value.clone()
+        }
+    }
+}
+
+#[graphql_object(context = Context)]
+impl Object {
+    fn string(&self, at: Option<String>) -> String {
+        if let serde_json::Value::String(s) = &self.pointer(at)
+        {
+            s.clone()
+        } else {
+            "".to_string()
+        }
+    }
+
+    fn array(&self, at: Option<String>) -> Vec<Object> {
+        let mut v = vec![];
+        if let serde_json::Value::Array(a) = &self.pointer(at)
+        {
+            for x in a.iter() {
+                v.push(Object{value: x.clone()});
+            }
+        } 
+        return v;
+    }
+
+    fn value(&self, at: String) -> Object {
+        Object{value: self.pointer(Some(at))}
     }
 }
 
@@ -200,13 +268,13 @@ impl Repository {
     fn refs(
         &self,
         context: &Context,
-        name: Option<String>,
+        spec: Option<String>,
     ) -> FieldResult<Vec<Reference>> {
         let transaction = cache::Transaction::open(&context.path)?;
         let refname = format!(
             "refs/josh/upstream/{}.git/{}",
             to_ns(&self.name),
-            name.unwrap_or("refs/heads/*".to_string())
+            spec.unwrap_or("refs/heads/*".to_string())
         );
 
         log::debug!("refname: {:?}", refname);
