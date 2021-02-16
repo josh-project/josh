@@ -189,7 +189,40 @@ impl Path {
         let blob = transaction.repo().find_blob(id)?;
         let value = toml::de::from_str::<serde_json::Value>(
             std::str::from_utf8(blob.content())?,
-        )?;
+        )
+        .unwrap_or(json!({}));
+
+        Ok(Document { value: value })
+    }
+
+    fn json(&self, context: &Context) -> FieldResult<Document> {
+        let transaction = context.transaction.lock()?;
+        let id = transaction
+            .repo()
+            .find_tree(self.tree)?
+            .get_path(&self.path)?
+            .id();
+        let blob = transaction.repo().find_blob(id)?;
+        let value = serde_json::from_str::<serde_json::Value>(
+            std::str::from_utf8(blob.content())?,
+        )
+        .unwrap_or(json!({}));
+
+        Ok(Document { value: value })
+    }
+
+    fn yaml(&self, context: &Context) -> FieldResult<Document> {
+        let transaction = context.transaction.lock()?;
+        let id = transaction
+            .repo()
+            .find_tree(self.tree)?
+            .get_path(&self.path)?
+            .id();
+        let blob = transaction.repo().find_blob(id)?;
+        let value = serde_yaml::from_str::<serde_json::Value>(
+            std::str::from_utf8(blob.content())?,
+        )
+        .unwrap_or(json!({}));
 
         Ok(Document { value: value })
     }
@@ -215,22 +248,44 @@ impl Document {
 
 #[graphql_object(context = Context)]
 impl Document {
-    fn string(&self, at: Option<String>) -> String {
+    fn string(
+        &self,
+        at: Option<String>,
+        default: Option<String>,
+    ) -> Option<String> {
         if let serde_json::Value::String(s) = &self.pointer(at) {
-            s.clone()
+            Some(s.clone())
         } else {
-            "".to_string()
+            default
         }
     }
 
-    fn array(&self, at: Option<String>) -> Vec<Document> {
+    fn bool(&self, at: Option<String>, default: Option<bool>) -> Option<bool> {
+        if let serde_json::Value::Bool(s) = &self.pointer(at) {
+            Some(*s)
+        } else {
+            default
+        }
+    }
+
+    fn int(&self, at: Option<String>, default: Option<i32>) -> Option<i32> {
+        if let serde_json::Value::Number(s) = &self.pointer(at) {
+            s.as_i64().map(|x| x as i32)
+        } else {
+            default
+        }
+    }
+
+    fn list(&self, at: Option<String>) -> Option<Vec<Document>> {
         let mut v = vec![];
         if let serde_json::Value::Array(a) = &self.pointer(at) {
             for x in a.iter() {
                 v.push(Document { value: x.clone() });
             }
+        } else {
+            return None;
         }
-        return v;
+        return Some(v);
     }
 
     fn value(&self, at: String) -> Document {

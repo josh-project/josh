@@ -383,7 +383,8 @@ async fn call_service(
         if path == "/~/graphiql" {
             return Ok(tokio::task::spawn_blocking(move || {
                 josh_proxy::juniper_hyper::graphiql("/~/graphql", None)
-            }).await??);
+            })
+            .await??);
         }
 
         if path == "/~/graphql" {
