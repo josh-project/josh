@@ -381,9 +381,9 @@ async fn call_service(
 
     if ARGS.is_present("graphql-root") {
         if path == "/~/graphiql" {
-            return Ok(
-                josh_proxy::juniper_hyper::graphiql("/~/graphql", None).await?
-            );
+            return Ok(tokio::task::spawn_blocking(move || {
+                josh_proxy::juniper_hyper::graphiql("/~/graphql", None)
+            }).await??);
         }
 
         if path == "/~/graphql" {
@@ -448,11 +448,11 @@ async fn call_service(
     };
 
     if parsed_url.api == "/~/graphiql" {
-        return Ok(josh_proxy::juniper_hyper::graphiql(
-            &format!("/~/graphql{}", parsed_url.upstream_repo),
-            None,
-        )
-        .await?);
+        let addr = format!("/~/graphql{}", parsed_url.upstream_repo);
+        return Ok(tokio::task::spawn_blocking(move || {
+            josh_proxy::juniper_hyper::graphiql(&addr, None)
+        })
+        .await??);
     }
 
     if parsed_url.api == "/~/graphql" {
