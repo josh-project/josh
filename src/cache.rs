@@ -53,7 +53,6 @@ struct Transaction2 {
     missing: Vec<(filter::Filter, git2::Oid)>,
     misses: usize,
     walks: usize,
-    out: Box<dyn std::io::Write>,
 }
 
 pub struct Transaction {
@@ -63,31 +62,11 @@ pub struct Transaction {
 
 impl Transaction {
     pub fn open(path: &std::path::Path) -> JoshResult<Transaction> {
-        Transaction::open2(
+        Ok(Transaction::new(git2::Repository::open_ext(
             path,
-            Box::new(std::io::BufWriter::new(std::io::stderr())),
-        )
-    }
-
-    pub fn new(repo: git2::Repository) -> Transaction {
-        Transaction::new2(
-            repo,
-            Box::new(std::io::BufWriter::new(std::io::stderr())),
-        )
-    }
-
-    pub fn open2(
-        path: &std::path::Path,
-        out: Box<dyn std::io::Write>,
-    ) -> JoshResult<Transaction> {
-        Ok(Transaction::new2(
-            git2::Repository::open_ext(
-                path,
-                git2::RepositoryOpenFlags::NO_SEARCH,
-                &[] as &[&std::ffi::OsStr],
-            )?,
-            out,
-        ))
+            git2::RepositoryOpenFlags::NO_SEARCH,
+            &[] as &[&std::ffi::OsStr],
+        )?))
     }
 
     pub fn status(&self, _msg: &str) {
@@ -96,10 +75,7 @@ impl Transaction {
         /* t2.out.flush().ok(); */
     }
 
-    pub fn new2(
-        repo: git2::Repository,
-        out: Box<dyn std::io::Write>,
-    ) -> Transaction {
+    pub fn new(repo: git2::Repository) -> Transaction {
         log::debug!("new transaction");
         Transaction {
             t2: std::cell::RefCell::new(Transaction2 {
@@ -110,7 +86,6 @@ impl Transaction {
                 missing: vec![],
                 misses: 0,
                 walks: 0,
-                out: out,
             }),
             repo: repo,
         }
@@ -264,7 +239,7 @@ impl Transaction {
         filter: filter::Filter,
         from: git2::Oid,
     ) -> Option<git2::Oid> {
-        if filter.is_nop() {
+        if filter == filter::nop() {
             return Some(from);
         }
         let mut t2 = self.t2.borrow_mut();

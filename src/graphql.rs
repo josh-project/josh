@@ -5,7 +5,7 @@ use juniper::{graphql_object, EmptyMutation, EmptySubscription, FieldResult};
 
 pub struct Commit {
     filter: filter::Filter,
-    rev: git2::Oid,
+    id: git2::Oid,
 }
 
 #[graphql_object(context = Context)]
@@ -15,18 +15,18 @@ impl Commit {
     }
 
     fn id(&self, context: &Context) -> FieldResult<String> {
-        let transaction = cache::Transaction::open(&context.path)?;
-        let commit = transaction.repo().find_commit(self.rev)?;
-        tracing::trace!("Commit::rev: {:?}", self.filter);
+        let transaction = context.transaction.lock()?;
+        let commit = transaction.repo().find_commit(self.id)?;
+        tracing::trace!("Commit::id: {:?}", self.filter);
         let filter_commit =
             filter::apply_to_commit(self.filter, &commit, &transaction)?;
         Ok(format!("{}", filter_commit))
     }
 
     fn summary(&self, context: &Context) -> FieldResult<String> {
-        let transaction = cache::Transaction::open(&context.path)?;
-        let commit = transaction.repo().find_commit(self.rev)?;
-        tracing::trace!("Commit::rev: {:?}", self.filter);
+        let transaction = context.transaction.lock()?;
+        let commit = transaction.repo().find_commit(self.id)?;
+        tracing::trace!("Commit::id: {:?}", self.filter);
         let filter_commit = transaction.repo().find_commit(
             filter::apply_to_commit(self.filter, &commit, &transaction)?,
         )?;
@@ -36,22 +36,22 @@ impl Commit {
     fn commit(&self, filter: Option<String>) -> FieldResult<Commit> {
         Ok(Commit {
             filter: filter::parse(&filter.unwrap_or(":nop".to_string()))?,
-            rev: self.rev,
+            id: self.id,
         })
     }
 
     fn original(&self, context: &Context) -> FieldResult<Commit> {
-        let transaction = cache::Transaction::open(&context.path)?;
-        let commit = transaction.repo().find_commit(self.rev)?;
+        let transaction = context.transaction.lock()?;
+        let commit = transaction.repo().find_commit(self.id)?;
         let filter_commit = transaction.repo().find_commit(
             filter::apply_to_commit(self.filter, &commit, &transaction)?,
         )?;
         Ok(Commit {
-            filter: filter::parse(":nop")?,
-            rev: history::find_original(
+            filter: filter::nop(),
+            id: history::find_original(
                 &transaction,
                 self.filter,
-                self.rev,
+                self.id,
                 filter_commit.id(),
             )
             .unwrap_or(git2::Oid::zero()),
@@ -59,8 +59,8 @@ impl Commit {
     }
 
     fn parents(&self, context: &Context) -> FieldResult<Vec<Commit>> {
-        let transaction = cache::Transaction::open(&context.path)?;
-        let commit = transaction.repo().find_commit(self.rev)?;
+        let transaction = context.transaction.lock()?;
+        let commit = transaction.repo().find_commit(self.id)?;
         let filter_commit = transaction.repo().find_commit(
             filter::apply_to_commit(self.filter, &commit, &transaction)?,
         )?;
@@ -69,10 +69,10 @@ impl Commit {
             .parent_ids()
             .map(|id| Commit {
                 filter: self.filter,
-                rev: history::find_original(
+                id: history::find_original(
                     &transaction,
                     self.filter,
-                    self.rev,
+                    self.id,
                     id,
                 )
                 .unwrap_or(git2::Oid::zero()),
@@ -83,8 +83,8 @@ impl Commit {
     }
 
     fn files(&self, context: &Context) -> FieldResult<Vec<Path>> {
-        let transaction = cache::Transaction::open(&context.path)?;
-        let commit = transaction.repo().find_commit(self.rev)?;
+        let transaction = context.transaction.lock()?;
+        let commit = transaction.repo().find_commit(self.id)?;
 
         let tree = filter::apply(&transaction, self.filter, commit.tree()?)?;
 
@@ -94,7 +94,7 @@ impl Commit {
                 if let Some(name) = entry.name() {
                     ws.push(Path {
                         path: std::path::Path::new(root).join(name),
-                        rev: self.rev,
+                        id: self.id,
                     });
                 }
             }
@@ -102,11 +102,26 @@ impl Commit {
         })?;
         return Ok(ws);
     }
+
+    fn file(&self, path: String, context: &Context) -> FieldResult<Path> {
+        let transaction = context.transaction.lock()?;
+        let path = std::path::Path::new(&path).to_owned();
+        let tree = transaction.repo().find_commit(self.id)?.tree()?;
+
+        if let Some(git2::ObjectType::Blob) = tree.get_path(&path)?.kind() {
+            Ok(Path {
+                path: path,
+                id: self.id,
+            })
+        } else {
+            Err(josh_error("not a blob"))?
+        }
+    }
 }
 
 pub struct Path {
     path: std::path::PathBuf,
-    rev: git2::Oid,
+    id: git2::Oid,
 }
 
 #[graphql_object(context = Context)]
@@ -122,23 +137,25 @@ impl Path {
                 .parent()
                 .ok_or(josh_error("no parent"))?
                 .to_owned(),
-            rev: self.rev,
+            id: self.id,
         })
     }
 
     fn commit(&self, filter: String) -> FieldResult<Commit> {
         let reg = handlebars::Handlebars::new();
         Ok(Commit {
-            filter: filter::parse(&reg.render_template(&filter, &json!({"path": self.path}))?)?,
-            rev: self.rev,
+            filter: filter::parse(
+                &reg.render_template(&filter, &json!({"path": self.path}))?,
+            )?,
+            id: self.id,
         })
     }
 
     fn id(&self, context: &Context) -> FieldResult<String> {
-        let transaction = cache::Transaction::open(&context.path)?;
+        let transaction = context.transaction.lock()?;
         let id = transaction
             .repo()
-            .find_commit(self.rev)?
+            .find_commit(self.id)?
             .tree()?
             .get_path(&self.path)?
             .id();
@@ -146,10 +163,10 @@ impl Path {
     }
 
     fn text(&self, context: &Context) -> FieldResult<String> {
-        let transaction = cache::Transaction::open(&context.path)?;
+        let transaction = context.transaction.lock()?;
         let id = transaction
             .repo()
-            .find_commit(self.rev)?
+            .find_commit(self.id)?
             .tree()?
             .get_path(&self.path)?
             .id();
@@ -158,11 +175,11 @@ impl Path {
         Ok(std::str::from_utf8(blob.content())?.to_string())
     }
 
-    fn toml(&self, context: &Context) -> FieldResult<Object> {
-        let transaction = cache::Transaction::open(&context.path)?;
+    fn toml(&self, context: &Context) -> FieldResult<Document> {
+        let transaction = context.transaction.lock()?;
         let id = transaction
             .repo()
-            .find_commit(self.rev)?
+            .find_commit(self.id)?
             .tree()?
             .get_path(&self.path)?
             .id();
@@ -171,20 +188,22 @@ impl Path {
             std::str::from_utf8(blob.content())?,
         )?;
 
-        Ok(Object { value: value })
+        Ok(Document { value: value })
     }
 }
 
-pub struct Object {
+pub struct Document {
     value: serde_json::Value,
 }
 
-impl Object {
-
-
+impl Document {
     fn pointer(&self, pointer: Option<String>) -> serde_json::Value {
-        if let Some(pointer) =pointer {
-            return self.value.pointer(&pointer).unwrap_or(&json!({})).to_owned()
+        if let Some(pointer) = pointer {
+            return self
+                .value
+                .pointer(&pointer)
+                .unwrap_or(&json!({}))
+                .to_owned();
         } else {
             self.value.clone()
         }
@@ -192,29 +211,29 @@ impl Object {
 }
 
 #[graphql_object(context = Context)]
-impl Object {
+impl Document {
     fn string(&self, at: Option<String>) -> String {
-        if let serde_json::Value::String(s) = &self.pointer(at)
-        {
+        if let serde_json::Value::String(s) = &self.pointer(at) {
             s.clone()
         } else {
             "".to_string()
         }
     }
 
-    fn array(&self, at: Option<String>) -> Vec<Object> {
+    fn array(&self, at: Option<String>) -> Vec<Document> {
         let mut v = vec![];
-        if let serde_json::Value::Array(a) = &self.pointer(at)
-        {
+        if let serde_json::Value::Array(a) = &self.pointer(at) {
             for x in a.iter() {
-                v.push(Object{value: x.clone()});
+                v.push(Document { value: x.clone() });
             }
-        } 
+        }
         return v;
     }
 
-    fn value(&self, at: String) -> Object {
-        Object{value: self.pointer(Some(at))}
+    fn value(&self, at: String) -> Document {
+        Document {
+            value: self.pointer(Some(at)),
+        }
     }
 }
 
@@ -235,8 +254,8 @@ impl Reference {
         context: &Context,
         filter: Option<String>,
     ) -> FieldResult<Commit> {
-        let transaction = cache::Transaction::open(&context.path)?;
-        let rev = transaction
+        let transaction = context.transaction.lock()?;
+        let id = transaction
             .repo()
             .find_reference(&self.refname)?
             .target()
@@ -244,13 +263,13 @@ impl Reference {
 
         Ok(Commit {
             filter: filter::parse(&filter.unwrap_or(":nop".to_string()))?,
-            rev: rev,
+            id: id,
         })
     }
 }
 
 pub struct Context {
-    path: std::path::PathBuf,
+    transaction: std::sync::Arc<std::sync::Mutex<cache::Transaction>>,
 }
 
 impl juniper::Context for Context {}
@@ -268,13 +287,13 @@ impl Repository {
     fn refs(
         &self,
         context: &Context,
-        spec: Option<String>,
+        pattern: Option<String>,
     ) -> FieldResult<Vec<Reference>> {
-        let transaction = cache::Transaction::open(&context.path)?;
+        let transaction = context.transaction.lock()?;
         let refname = format!(
             "refs/josh/upstream/{}.git/{}",
             to_ns(&self.name),
-            spec.unwrap_or("refs/heads/*".to_string())
+            pattern.unwrap_or("refs/heads/*".to_string())
         );
 
         log::debug!("refname: {:?}", refname);
@@ -292,6 +311,24 @@ impl Repository {
 
         Ok(refs)
     }
+
+    fn commit(
+        &self,
+        context: &Context,
+        rev: String,
+        filter: Option<String>,
+    ) -> FieldResult<Commit> {
+        let rev =
+            format!("refs/josh/upstream/{}.git/{}", to_ns(&self.name), rev);
+
+        let transaction = context.transaction.lock()?;
+        let id = transaction.repo().revparse_single(&rev)?.id();
+
+        Ok(Commit {
+            filter: filter::parse(&filter.unwrap_or(":nop".to_string()))?,
+            id: id,
+        })
+    }
 }
 
 pub struct Query;
@@ -306,7 +343,7 @@ impl Query {
         context: &Context,
         name: Option<String>,
     ) -> FieldResult<Vec<Repository>> {
-        let transaction = cache::Transaction::open(&context.path)?;
+        let transaction = context.transaction.lock()?;
 
         let refname = format!("refs/josh/upstream/*.git/refs/heads/*");
 
@@ -346,12 +383,47 @@ pub type Schema = juniper::RootNode<
     EmptySubscription<Context>,
 >;
 
-pub fn context(path: &std::path::Path) -> Context {
+pub fn context(transaction: cache::Transaction) -> Context {
     Context {
-        path: path.to_owned(),
+        transaction: std::sync::Arc::new(std::sync::Mutex::new(transaction)),
     }
 }
 
 pub fn schema() -> Schema {
     Schema::new(Query, EmptyMutation::new(), EmptySubscription::new())
+}
+
+pub type CommitSchema = juniper::RootNode<
+    'static,
+    Commit,
+    EmptyMutation<Context>,
+    EmptySubscription<Context>,
+>;
+
+pub fn commit_schema(id: git2::Oid) -> CommitSchema {
+    CommitSchema::new(
+        Commit {
+            id: id,
+            filter: filter::nop(),
+        },
+        EmptyMutation::new(),
+        EmptySubscription::new(),
+    )
+}
+
+pub type RepoSchema = juniper::RootNode<
+    'static,
+    Repository,
+    EmptyMutation<Context>,
+    EmptySubscription<Context>,
+>;
+
+pub fn repo_schema(name: &str) -> RepoSchema {
+    RepoSchema::new(
+        Repository {
+            name: name.to_string(),
+        },
+        EmptyMutation::new(),
+        EmptySubscription::new(),
+    )
 }
