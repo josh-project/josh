@@ -95,6 +95,7 @@ impl Commit {
                     ws.push(Path {
                         path: std::path::Path::new(root).join(name),
                         id: self.id,
+                        tree: tree.id(),
                     });
                 }
             }
@@ -108,10 +109,13 @@ impl Commit {
         let path = std::path::Path::new(&path).to_owned();
         let tree = transaction.repo().find_commit(self.id)?.tree()?;
 
+        let tree = filter::apply(&transaction, self.filter, tree)?;
+
         if let Some(git2::ObjectType::Blob) = tree.get_path(&path)?.kind() {
             Ok(Path {
                 path: path,
                 id: self.id,
+                tree: tree.id(),
             })
         } else {
             Err(josh_error("not a blob"))?
@@ -122,6 +126,7 @@ impl Commit {
 pub struct Path {
     path: std::path::PathBuf,
     id: git2::Oid,
+    tree: git2::Oid,
 }
 
 #[graphql_object(context = Context)]
@@ -138,6 +143,7 @@ impl Path {
                 .ok_or(josh_error("no parent"))?
                 .to_owned(),
             id: self.id,
+            tree: self.tree,
         })
     }
 
@@ -155,8 +161,7 @@ impl Path {
         let transaction = context.transaction.lock()?;
         let id = transaction
             .repo()
-            .find_commit(self.id)?
-            .tree()?
+            .find_tree(self.tree)?
             .get_path(&self.path)?
             .id();
         Ok(format!("{}", id))
@@ -166,8 +171,7 @@ impl Path {
         let transaction = context.transaction.lock()?;
         let id = transaction
             .repo()
-            .find_commit(self.id)?
-            .tree()?
+            .find_tree(self.tree)?
             .get_path(&self.path)?
             .id();
         let blob = transaction.repo().find_blob(id)?;
@@ -179,8 +183,7 @@ impl Path {
         let transaction = context.transaction.lock()?;
         let id = transaction
             .repo()
-            .find_commit(self.id)?
-            .tree()?
+            .find_tree(self.tree)?
             .get_path(&self.path)?
             .id();
         let blob = transaction.repo().find_blob(id)?;
