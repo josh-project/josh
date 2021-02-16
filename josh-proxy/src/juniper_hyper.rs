@@ -124,7 +124,7 @@ async fn parse_post_graphql_req<S: ScalarValue>(
     )))
 }
 
-pub async fn graphiql(
+pub fn graphiql(
     graphql_endpoint: &str,
     subscriptions_endpoint: Option<&str>,
 ) -> Result<Response<Body>, hyper::Error> {
