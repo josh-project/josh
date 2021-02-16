@@ -21,15 +21,10 @@ impl Filter {
     pub fn id(&self) -> git2::Oid {
         self.0
     }
+}
 
-    pub fn is_nop(&self) -> bool {
-        let s = format!("{:?}", Op::Nop);
-        let nop_id =
-            git2::Oid::hash_object(git2::ObjectType::Blob, s.as_bytes())
-                .expect("hash_object filter");
-
-        return self.0 == nop_id;
-    }
+pub fn nop() -> Filter {
+    to_filter(Op::Nop)
 }
 
 fn to_filter(op: Op) -> Filter {

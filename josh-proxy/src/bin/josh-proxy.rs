@@ -27,8 +27,8 @@ lazy_static! {
 
 josh::regex_parsed!(
     FilteredRepoUrl,
-    r"(?P<upstream_repo>/[^:!]*[.]git)(?P<headref>@[^:!]*)?((?P<filter>[:!].*)[.]git)?(?P<pathinfo>/.*)?",
-    [upstream_repo, filter, pathinfo, headref]
+    r"(?P<api>/~/\w+)?(?P<upstream_repo>/[^:!]*[.]git)(?P<headref>@[^:!]*)?((?P<filter>[:!].*)[.]git)?(?P<pathinfo>/.*)?",
+    [api, upstream_repo, filter, pathinfo, headref]
 );
 
 type CredentialCache = HashMap<String, std::time::Instant>;
@@ -379,18 +379,17 @@ async fn call_service(
         path
     };
 
-    if ARGS.is_present("graphql") {
-        if path == "/~/" {
-            return Ok(josh_proxy::juniper_hyper::playground(
-                "/~/graphql",
-                None,
-            )
-            .await?);
+    if ARGS.is_present("graphql-root") {
+        if path == "/~/graphiql" {
+            return Ok(
+                josh_proxy::juniper_hyper::graphiql("/~/graphql", None).await?
+            );
         }
 
         if path == "/~/graphql" {
-            let ctx =
-                std::sync::Arc::new(josh::graphql::context(&serv.repo_path));
+            let ctx = std::sync::Arc::new(josh::graphql::context(
+                josh::cache::Transaction::open(&serv.repo_path)?,
+            ));
             let root_node = std::sync::Arc::new(josh::graphql::schema());
             return Ok(
                 josh_proxy::juniper_hyper::graphql(root_node, ctx, req).await?
@@ -447,6 +446,29 @@ async fn call_service(
         PrepareNsResult::Ns(temp_ns) => temp_ns,
         PrepareNsResult::Resp(resp) => return Ok(resp),
     };
+
+    if parsed_url.api == "/~/graphiql" {
+        return Ok(josh_proxy::juniper_hyper::graphiql(
+            &format!("/~/graphql{}", parsed_url.upstream_repo),
+            None,
+        )
+        .await?);
+    }
+
+    if parsed_url.api == "/~/graphql" {
+        let ctx = std::sync::Arc::new(josh::graphql::context(
+            josh::cache::Transaction::open(&serv.repo_path)?,
+        ));
+        let root_node = std::sync::Arc::new(josh::graphql::repo_schema(
+            parsed_url
+                .upstream_repo
+                .strip_suffix(".git")
+                .unwrap_or(&parsed_url.upstream_repo),
+        ));
+        return Ok(
+            josh_proxy::juniper_hyper::graphql(root_node, ctx, req).await?
+        );
+    }
 
     if req.uri().query() == Some("info") {
         let info_str =
@@ -719,8 +741,9 @@ fn parse_args() -> clap::ArgMatches<'static> {
                 .takes_value(false),
         )
         .arg(
-            clap::Arg::with_name("graphql")
+            clap::Arg::with_name("graphql-root")
                 .long("graphql")
+                .help("Enable graphql root endpoint (caution: This bypasses authentication!)")
                 .takes_value(false),
         )
         .arg(
