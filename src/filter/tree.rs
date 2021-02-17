@@ -24,6 +24,7 @@ pub fn dirtree<'a>(
                         entry.name().ok_or(super::josh_error("no name"))?,
                     ),
                     entry.id(),
+                    0o0100644,
                     &result,
                 )?;
             }
@@ -50,6 +51,7 @@ pub fn dirtree<'a>(
                         entry.name().ok_or(super::josh_error("no name"))?,
                     ),
                     s,
+                    0o0040000,
                     &result,
                 )?;
             }
@@ -66,6 +68,7 @@ pub fn dirtree<'a>(
                 super::to_ns(&root)
             )),
             empty_blob,
+            0o0100644,
             &result,
         )?;
     }
@@ -101,6 +104,7 @@ pub fn remove_pred<'a>(
                         entry.name().ok_or(super::josh_error("no name"))?,
                     ),
                     entry.id(),
+                    entry.filemode(),
                     &result,
                 )?;
             }
@@ -133,6 +137,7 @@ pub fn remove_pred<'a>(
                         entry.name().ok_or(super::josh_error("no name"))?,
                     ),
                     s,
+                    0o0040000,
                     &result,
                 )?;
             }
@@ -174,6 +179,7 @@ pub fn subtract(
                         entry.name().ok_or(super::josh_error("no name"))?,
                     ),
                     subtract(repo, e.id(), entry.id())?,
+                    e.filemode(),
                     &result_tree,
                 )?;
             }
@@ -189,14 +195,9 @@ fn replace_child<'a>(
     repo: &'a git2::Repository,
     child: &std::path::Path,
     oid: git2::Oid,
+    mode: i32,
     full_tree: &git2::Tree,
 ) -> super::JoshResult<git2::Tree<'a>> {
-    let mode = if let Ok(_) = repo.find_tree(oid) {
-        0o0040000 // GIT_FILEMODE_TREE
-    } else {
-        0o0100644
-    };
-
     let full_tree_id = {
         let mut builder = repo.treebuilder(Some(&full_tree))?;
         if oid == git2::Oid::zero() {
@@ -216,9 +217,10 @@ pub fn insert<'a>(
     full_tree: &git2::Tree,
     path: &std::path::Path,
     oid: git2::Oid,
+    mode: i32,
 ) -> super::JoshResult<git2::Tree<'a>> {
     if path.components().count() == 1 {
-        return replace_child(&repo, path, oid, full_tree);
+        return replace_child(&repo, path, oid, mode, full_tree);
     } else {
         let name = std::path::Path::new(
             path.file_name().ok_or(super::josh_error("file_name"))?,
@@ -231,9 +233,9 @@ pub fn insert<'a>(
             tree::empty(&repo)
         };
 
-        let tree = replace_child(&repo, name, oid, &st)?;
+        let tree = replace_child(&repo, name, oid, mode, &st)?;
 
-        return insert(&repo, full_tree, path, tree.id());
+        return insert(&repo, full_tree, path, tree.id(), 0o0040000);
     }
 }
 
@@ -268,6 +270,7 @@ pub fn overlay(
                         entry.name().ok_or(super::josh_error("no name"))?,
                     ),
                     overlay(repo, entry.id(), e.id())?,
+                    e.filemode(),
                     &result_tree,
                 )?;
             } else {
@@ -277,6 +280,7 @@ pub fn overlay(
                         entry.name().ok_or(super::josh_error("no name"))?,
                     ),
                     entry.id(),
+                    entry.filemode(),
                     &result_tree,
                 )?;
             }
