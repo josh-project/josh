@@ -757,6 +757,7 @@ dependencies = [
  "lazy_static",
  "opentelemetry",
  "opentelemetry-jaeger",
+ "percent-encoding",
  "regex",
  "reqwest",
  "rust-crypto",

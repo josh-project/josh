@@ -74,7 +74,7 @@
 
   $ rm -Rf full_repo
   $ git clone -q http://x\':bla@localhost:8002/real_repo.git full_repo
-  fatal: unable to access 'http://localhost:8002/real_repo.git/': The requested URL returned error: 500
+  fatal: Authentication failed for 'http://localhost:8002/real_repo.git/'
   [128]
   $ tree
   .
