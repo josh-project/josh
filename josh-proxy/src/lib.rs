@@ -351,6 +351,11 @@ pub fn fetch_refs_from_url(
         let splitted: Vec<&str> = url.splitn(2, "://").collect();
         let proto = splitted[0];
         let rest = splitted[1];
+        let username = percent_encoding::utf8_percent_encode(
+            &username,
+            percent_encoding::NON_ALPHANUMERIC,
+        )
+        .to_string();
         format!("{}://{}@{}", &proto, &username, &rest)
     } else {
         let splitted: Vec<&str> = url.splitn(2, "://").collect();
