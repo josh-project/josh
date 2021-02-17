@@ -436,12 +436,12 @@ fn apply2<'a>(
             )
         }
         Op::File(path) => {
-            let file = tree
+            let (file, mode) = tree
                 .get_path(&path)
-                .map(|x| x.id())
-                .unwrap_or(git2::Oid::zero());
+                .map(|x| (x.id(), x.filemode()))
+                .unwrap_or((git2::Oid::zero(), 0o0100644));
             if let Ok(_) = repo.find_blob(file) {
-                tree::insert(&repo, &tree::empty(&repo), &path, file)
+                tree::insert(&repo, &tree::empty(&repo), &path, file, mode)
             } else {
                 Ok(tree::empty(&repo))
             }
@@ -453,9 +453,13 @@ fn apply2<'a>(
                 .and_then(|x| repo.find_tree(x.id()))
                 .unwrap_or(tree::empty(&repo)));
         }
-        Op::Prefix(path) => {
-            tree::insert(&repo, &tree::empty(&repo), &path, tree.id())
-        }
+        Op::Prefix(path) => tree::insert(
+            &repo,
+            &tree::empty(&repo),
+            &path,
+            tree.id(),
+            0o0040000,
+        ),
 
         Op::Subtract(a, b) => {
             let af = apply(transaction, *a, tree.clone())?;
@@ -542,6 +546,7 @@ fn unapply2<'a>(
                 transaction
                     .repo()
                     .blob(&format!("{}\n", pretty(mapped, 0)).as_bytes())?,
+                0o0100644, // Should this handle filemode?
             )?;
 
             return unapply(
@@ -580,12 +585,18 @@ fn unapply2<'a>(
         }
 
         Op::File(path) => {
-            let file = tree
+            let (file, mode) = tree
                 .get_path(&path)
-                .map(|x| x.id())
-                .unwrap_or(git2::Oid::zero());
+                .map(|x| (x.id(), x.filemode()))
+                .unwrap_or((git2::Oid::zero(), 0o0100644));
             if let Ok(_) = transaction.repo().find_blob(file) {
-                tree::insert(&transaction.repo(), &parent_tree, &path, file)
+                tree::insert(
+                    &transaction.repo(),
+                    &parent_tree,
+                    &path,
+                    file,
+                    mode,
+                )
             } else {
                 Ok(tree::empty(&transaction.repo()))
             }
@@ -639,9 +650,13 @@ fn unapply2<'a>(
             .get_path(&path)
             .and_then(|x| transaction.repo().find_tree(x.id()))
             .unwrap_or(tree::empty(&transaction.repo()))),
-        Op::Subdir(path) => {
-            tree::insert(&transaction.repo(), &parent_tree, &path, tree.id())
-        }
+        Op::Subdir(path) => tree::insert(
+            &transaction.repo(),
+            &parent_tree,
+            &path,
+            tree.id(),
+            0o0040000,
+        ),
         _ => return Err(josh_error("filter not reversible")),
     };
 }
