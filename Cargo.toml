@@ -32,6 +32,7 @@ glob = "*"
 sled = "*"
 log = "*"
 env_logger = "*"
+strfmt = "*"
 serde_json= "1.0"
 serde_yaml = "*"
 rs_tracing= { version = "1", features = ["rs_tracing"]}

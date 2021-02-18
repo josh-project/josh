@@ -33,29 +33,33 @@ impl Commit {
         Ok(filter_commit.summary().unwrap_or("").to_owned())
     }
 
-    fn commit(&self, filter: Option<String>) -> FieldResult<Commit> {
-        Ok(Commit {
-            filter: filter::parse(&filter.unwrap_or(":nop".to_string()))?,
-            id: self.id,
-        })
-    }
+    fn commit(
+        &self,
+        filter: Option<String>,
+        original: Option<bool>,
+        context: &Context,
+    ) -> FieldResult<Option<Commit>> {
+        let id = if let Some(true) = original {
+            let transaction = context.transaction.lock()?;
+            let commit = transaction.repo().find_commit(self.id)?;
+            let filter_commit = transaction.repo().find_commit(
+                filter::apply_to_commit(self.filter, &commit, &transaction)?,
+            )?;
 
-    fn original(&self, context: &Context) -> FieldResult<Commit> {
-        let transaction = context.transaction.lock()?;
-        let commit = transaction.repo().find_commit(self.id)?;
-        let filter_commit = transaction.repo().find_commit(
-            filter::apply_to_commit(self.filter, &commit, &transaction)?,
-        )?;
-        Ok(Commit {
-            filter: filter::nop(),
-            id: history::find_original(
+            history::find_original(
                 &transaction,
                 self.filter,
                 self.id,
                 filter_commit.id(),
-            )
-            .unwrap_or(git2::Oid::zero()),
-        })
+            )?
+        } else {
+            self.id
+        };
+
+        Ok(Some(Commit {
+            filter: filter::parse(&filter.unwrap_or(":nop".to_string()))?,
+            id: id,
+        }))
     }
 
     fn parents(&self, context: &Context) -> FieldResult<Vec<Commit>> {
@@ -135,24 +139,22 @@ impl Path {
         self.path.to_string_lossy().to_string()
     }
 
-    fn parent(&self) -> FieldResult<Path> {
+    fn dir(&self, relative: String) -> FieldResult<Path> {
         Ok(Path {
-            path: self
-                .path
-                .parent()
-                .ok_or(josh_error("no parent"))?
-                .to_owned(),
+            path: normalize_path(&self.path.join(&relative)),
             id: self.id,
             tree: self.tree,
         })
     }
 
     fn commit(&self, filter: String) -> FieldResult<Commit> {
-        let reg = handlebars::Handlebars::new();
+        let hm: std::collections::HashMap<String, String> =
+            [("path".to_string(), self.path.to_string_lossy().to_string())]
+                .iter()
+                .cloned()
+                .collect();
         Ok(Commit {
-            filter: filter::parse(
-                &reg.render_template(&filter, &json!({"path": self.path}))?,
-            )?,
+            filter: filter::parse(&strfmt::strfmt(&filter, &hm)?)?,
             id: self.id,
         })
     }
@@ -288,10 +290,10 @@ impl Document {
         return Some(v);
     }
 
-    fn value(&self, at: String) -> Document {
-        Document {
-            value: self.pointer(Some(at)),
-        }
+    fn value(&self, at: String) -> Option<Document> {
+        self.value.pointer(&at).map(|x| Document {
+            value: x.to_owned(),
+        })
     }
 }
 

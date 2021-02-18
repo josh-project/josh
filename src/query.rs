@@ -9,6 +9,7 @@ impl GraphQLHelper {
     fn josh_helper(
         &self,
         hash: &std::collections::BTreeMap<&str, handlebars::PathAndJson>,
+        template_name: &str,
     ) -> JoshResult<serde_json::Value> {
         let path = if let Some(f) = hash.get("file") {
             f.render()
@@ -16,13 +17,18 @@ impl GraphQLHelper {
             return Err(josh_error("missing pattern"));
         };
 
+        let path = std::path::PathBuf::from(template_name)
+            .join("..")
+            .join(path);
+        let path = normalize_path(&path);
+
         let transaction = cache::Transaction::open(&self.repo_path)?;
 
         let reference = transaction.repo().find_reference(&self.headref)?;
         let tree = reference.peel_to_tree()?;
 
         let blob = tree
-            .get_path(&std::path::PathBuf::from(path))?
+            .get_path(&path)?
             .to_object(&transaction.repo())?
             .peel_to_blob()
             .map(|x| x.content().to_vec())
@@ -41,7 +47,13 @@ impl GraphQLHelper {
         )?;
 
         let j = serde_json::to_string(&res)?;
-        let j = serde_json::from_str(&j)?;
+        let j: serde_json::Value = serde_json::from_str(&j)?;
+
+        let j = if let Some(at) = hash.get("at") {
+            j.pointer(&at.render()).unwrap_or(&json!({})).to_owned()
+        } else {
+            j
+        };
 
         return Ok(j);
     }
@@ -53,14 +65,17 @@ impl handlebars::HelperDef for GraphQLHelper {
         h: &handlebars::Helper,
         _: &handlebars::Handlebars,
         _: &handlebars::Context,
-        _rc: &mut handlebars::RenderContext,
+        rc: &mut handlebars::RenderContext,
     ) -> Result<
         Option<handlebars::ScopedJson<'reg, 'rc>>,
         handlebars::RenderError,
     > {
         return Ok(Some(handlebars::ScopedJson::Derived(
-            self.josh_helper(h.hash())
-                .map_err(|_| handlebars::RenderError::new("josh"))?,
+            self.josh_helper(
+                h.hash(),
+                &rc.get_current_template_name().unwrap_or(&"/".to_owned()),
+            )
+            .map_err(|_| handlebars::RenderError::new("josh"))?,
         )));
     }
 }
@@ -113,7 +128,7 @@ pub fn render(
     std::mem::drop(tree);
 
     let mut handlebars = handlebars::Handlebars::new();
-    handlebars.register_template_string("template", template)?;
+    handlebars.register_template_string(&path, template)?;
     handlebars.register_helper("concat", Box::new(helpers::concat_helper));
     handlebars.register_helper(
         "graphql",
@@ -139,6 +154,6 @@ pub fn render(
 
     return Ok(Some(format!(
         "{}",
-        handlebars.render("template", &json!(params))?
+        handlebars.render(&path, &json!(params))?
     )));
 }
