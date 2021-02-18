@@ -30,6 +30,9 @@
   >   files {
   >    id
   >    path
+  >    parent: dir(relative: "..") {
+  >      path
+  >    }
   >   }
   > }
   > }
@@ -38,12 +41,13 @@
   $ cat > sub1/tmpl_file <<EOF
   > tmpl_param1: {{ tmpl_param1 }}
   > tmpl_p2: {{ tmpl_p2 }}
-  > {{ #with (graphql file="sub1/x.graphql") as |commit| }}
+  > {{ #with (graphql file="x.graphql") as |commit| }}
   > ID: {{ commit.id }}
   > Summary: {{ commit.summary }}
   > From TOML: {{ commit.config.data.b }}
   > {{ #each commit.glob.files }}
   > path: {{ this.path }}
+  > parent: {{ this.parent.path }}
   > sha1: {{ this.id }}
   > {{ /each~}}
   > {{ /with }}
@@ -70,20 +74,24 @@
   tmpl_param1: tmpl_param_value1
   tmpl_p2: val2
   
-  ID: e3246a806cad8160da2ff6afe1a5cf2e21aac592
+  ID: 4b86208c9d0a2851dd2476ec747a07929007e9f8
   Summary: add file2
   From TOML: my_value
   
   path: file0
+  parent: 
   sha1: f25320b9e3f1dd09d15e6e13796402768d6d62cf
   
   path: sub1/file1
+  parent: sub1
   sha1: a024003ee1acc6bf70318a46e7b6df651b9dc246
   
   path: sub1/file2
+  parent: sub1
   sha1: 6b46faacade805991bcaea19382c9d941828ce80
   
   path: sub2/file3
+  parent: sub2
   sha1: 1cb5d64cdb55e3db2a8d6f00d596572b4cfa9d5c
   
   $ josh-filter -s :/sub1 -q render=file2

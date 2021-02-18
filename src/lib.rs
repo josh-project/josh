@@ -234,3 +234,32 @@ pub fn filter_refs(
     }
     return Ok(updated_count);
 }
+
+pub fn normalize_path(path: &std::path::Path) -> std::path::PathBuf {
+    let mut components = path.components().peekable();
+    let mut ret = if let Some(c @ std::path::Component::Prefix(..)) =
+        components.peek().cloned()
+    {
+        components.next();
+        std::path::PathBuf::from(c.as_os_str())
+    } else {
+        std::path::PathBuf::new()
+    };
+
+    for component in components {
+        match component {
+            std::path::Component::Prefix(..) => unreachable!(),
+            std::path::Component::RootDir => {
+                ret.push(component.as_os_str());
+            }
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                ret.pop();
+            }
+            std::path::Component::Normal(c) => {
+                ret.push(c);
+            }
+        }
+    }
+    ret
+}
