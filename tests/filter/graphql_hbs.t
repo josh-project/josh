@@ -24,6 +24,7 @@
   >  config: file(path: "config_file.toml") {
   >   data: toml {
   >    b: string(at: "/a/b")
+  >    x: string(at: "/a/x")
   >   }
   >  }
   >  glob: commit(filter: "::**/file*") {
@@ -45,6 +46,7 @@
   > ID: {{ commit.id }}
   > Summary: {{ commit.summary }}
   > From TOML: {{ commit.config.data.b }}
+  > From TOML: {{ commit.config.data.x }}
   > {{ #each commit.glob.files }}
   > path: {{ this.path }}
   > parent: {{ this.parent.path }}
@@ -74,9 +76,10 @@
   tmpl_param1: tmpl_param_value1
   tmpl_p2: val2
   
-  ID: 4b86208c9d0a2851dd2476ec747a07929007e9f8
+  ID: cb658a86acfdb09eaa0b68ef57ebf9da5e2c5b5e
   Summary: add file2
   From TOML: my_value
+  From TOML: 
   
   path: file0
   parent: 

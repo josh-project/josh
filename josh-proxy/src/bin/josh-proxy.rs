@@ -743,7 +743,7 @@ fn parse_args() -> clap::ArgMatches<'static> {
         )
         .arg(
             clap::Arg::with_name("graphql-root")
-                .long("graphql")
+                .long("graphql-root")
                 .help("Enable graphql root endpoint (caution: This bypasses authentication!)")
                 .takes_value(false),
         )
