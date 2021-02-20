@@ -1,7 +1,6 @@
 #![deny(warnings)]
 #[macro_use]
 extern crate lazy_static;
-use base64;
 
 use tracing_subscriber::layer::SubscriberExt;
 
@@ -31,18 +30,22 @@ josh::regex_parsed!(
     [api, upstream_repo, filter, pathinfo, headref]
 );
 
-type CredentialCache = HashMap<String, std::time::Instant>;
+type FetchTimers = HashMap<String, std::time::Instant>;
+type Polls = Arc<
+    std::sync::Mutex<
+        std::collections::HashSet<(String, josh_proxy::auth::Handle, String)>,
+    >,
+>;
 
 #[derive(Clone)]
 struct JoshProxyService {
     port: String,
     repo_path: std::path::PathBuf,
-    /* gerrit: Arc<josh_proxy::gerrit::Gerrit>, */
     upstream_url: String,
-    credential_cache: Arc<RwLock<CredentialCache>>,
+    fetch_timers: Arc<RwLock<FetchTimers>>,
     fetch_permits: Arc<tokio::sync::Semaphore>,
     filter_permits: Arc<tokio::sync::Semaphore>,
-    credential_store: Arc<RwLock<josh_proxy::CredentialStore>>,
+    poll: Polls,
 }
 
 impl std::fmt::Debug for JoshProxyService {
@@ -54,106 +57,30 @@ impl std::fmt::Debug for JoshProxyService {
     }
 }
 
-pub fn parse_auth(
-    credential_store: Arc<RwLock<josh_proxy::CredentialStore>>,
-    req: hyper::Request<hyper::Body>,
-) -> josh::JoshResult<(
-    (String, josh_proxy::HashedPassword),
-    hyper::Request<hyper::Body>,
-)> {
-    let blank = |r| {
-        Ok((
-            (
-                "".to_owned(),
-                josh_proxy::HashedPassword {
-                    hash: "".to_owned(),
-                },
-            ),
-            r,
-        ))
-    };
-    let mut req = req;
-    let line = josh::some_or!(
-        req.headers_mut()
-            .remove("authorization")
-            .and_then(|h| Some(h.as_bytes().to_owned())),
-        {
-            return blank(req);
-        }
-    );
-    let u = josh::ok_or!(String::from_utf8(line[6..].to_vec()), {
-        return blank(req);
-    });
-    let decoded = josh::ok_or!(base64::decode(&u), {
-        return blank(req);
-    });
-    let s = josh::ok_or!(String::from_utf8(decoded), {
-        return blank(req);
-    });
-    if let [username, password] =
-        s.as_str().split(':').collect::<Vec<_>>().as_slice()
-    {
-        use crypto::digest::Digest;
-        let mut d = crypto::sha1::Sha1::new();
-        d.input_str(&format!("{}:{}", &username, &password));
-        let hp = josh_proxy::HashedPassword {
-            hash: d.result_str().to_owned(),
-        };
-        let p = josh_proxy::Password {
-            value: password.to_string(),
-        };
-        credential_store.write()?.insert(hp.clone(), p);
-        return Ok(((username.to_string(), hp), req));
-    }
-    return blank(req);
-}
-
-fn hash_strings(url: &str, username: &str, password: &str) -> String {
-    use crypto::digest::Digest;
-    let mut d = crypto::sha1::Sha1::new();
-    d.input_str(&format!("{}:{}:{}", &url, &username, &password));
-    d.result_str().to_owned()
-}
-
 #[tracing::instrument]
 async fn fetch_upstream(
     service: Arc<JoshProxyService>,
     upstream_repo: String,
-    username: &str,
-    password: josh_proxy::HashedPassword,
+    auth: &josh_proxy::auth::Handle,
     remote_url: String,
     headref: &str,
+    force: bool,
 ) -> josh::JoshResult<bool> {
-    let username = username.to_owned();
-    let credentials_hashed =
-        hash_strings(&remote_url, &username, &password.hash);
-
-    tracing::debug!(
-        "credentials_hashed {:?}, {:?}, {:?}",
-        &remote_url,
-        &username,
-        &credentials_hashed
-    );
+    let auth = auth.clone();
+    let key = remote_url.clone();
 
     let refs_to_fetch = if headref != "" && !headref.starts_with("refs/heads/")
     {
-        vec![
-            "refs/gerrit_changes/*",
-            "refs/heads/*",
-            "refs/tags/*",
-            headref,
-        ]
+        vec!["refs/changes/*", "refs/heads/*", "refs/tags/*", headref]
     } else {
-        vec!["refs/gerrit_changes/*", "refs/heads/*", "refs/tags/*"]
+        vec!["refs/changes/*", "refs/heads/*", "refs/tags/*"]
     };
 
     let refs_to_fetch: Vec<_> =
         refs_to_fetch.iter().map(|x| x.to_string()).collect();
 
-    let credentials_cached_ok = {
-        if let Some(last) =
-            service.credential_cache.read()?.get(&credentials_hashed)
-        {
+    let fetch_cached_ok = {
+        if let Some(last) = service.fetch_timers.read()?.get(&key) {
             let since = std::time::Instant::now().duration_since(*last);
             tracing::trace!("last: {:?}, since: {:?}", last, since);
             since < std::time::Duration::from_secs(60)
@@ -162,9 +89,15 @@ async fn fetch_upstream(
         }
     };
 
-    tracing::trace!("credentials_cached_ok {:?}", credentials_cached_ok);
+    let fetch_cached_ok = fetch_cached_ok && !force;
 
-    if credentials_cached_ok {
+    tracing::trace!("fetch_cached_ok {:?}", fetch_cached_ok);
+
+    if fetch_cached_ok && headref == "" {
+        return Ok(true);
+    }
+
+    if fetch_cached_ok && headref != "" {
         let transaction = josh::cache::Transaction::open(&service.repo_path)?;
         let refname = format!(
             "refs/josh/upstream/{}/{}",
@@ -178,33 +111,31 @@ async fn fetch_upstream(
         }
     }
 
-    let credential_cache = service.credential_cache.clone();
-    let credential_store = service.credential_store.clone();
+    let fetch_timers = service.fetch_timers.clone();
     let br_path = service.repo_path.clone();
 
-    let permit = service.fetch_permits.acquire().await;
-
     let s = tracing::span!(tracing::Level::TRACE, "fetch worker");
+    let us = upstream_repo.clone();
+    let a = auth.clone();
+    let ru = remote_url.clone();
+    let permit = service.fetch_permits.acquire().await;
     let res = tokio::task::spawn_blocking(move || {
         let _e = s.enter();
-        josh_proxy::fetch_refs_from_url(
-            &br_path,
-            &upstream_repo,
-            &remote_url,
-            &refs_to_fetch,
-            &username,
-            &password,
-            credential_store,
-        )
+        josh_proxy::fetch_refs_from_url(&br_path, &us, &ru, &refs_to_fetch, &a)
     })
     .await??;
 
     std::mem::drop(permit);
 
     if res {
-        credential_cache
-            .write()?
-            .insert(credentials_hashed, std::time::Instant::now());
+        fetch_timers.write()?.insert(key, std::time::Instant::now());
+
+        if ARGS.value_of("poll") == Some(&auth.parse()?.0) {
+            service
+                .poll
+                .lock()?
+                .insert((upstream_repo, auth, remote_url));
+        }
     }
 
     return Ok(res);
@@ -224,7 +155,7 @@ async fn static_paths(
         ));
     }
     if path == "/flush" {
-        service.credential_cache.write()?.clear();
+        service.fetch_timers.write()?.clear();
         return Ok(Some(
             Response::builder()
                 .status(hyper::StatusCode::OK)
@@ -233,7 +164,7 @@ async fn static_paths(
         ));
     }
     if path == "/filters" || path == "/filters/refresh" {
-        service.credential_cache.write()?.clear();
+        service.fetch_timers.write()?.clear();
         let service = service.clone();
         let refresh = path == "/filters/refresh";
 
@@ -277,10 +208,7 @@ async fn repo_update_fn(
         let _e = s.enter();
         let body = body?;
         let buffer = std::str::from_utf8(&body)?;
-        josh_proxy::process_repo_update(
-            serv.credential_store.clone(),
-            serde_json::from_str(&buffer)?,
-        )
+        josh_proxy::process_repo_update(serde_json::from_str(&buffer)?)
     })
     .await?;
 
@@ -367,7 +295,7 @@ async fn error_response() -> Response<hyper::Body> {
 #[tracing::instrument]
 async fn call_service(
     serv: Arc<JoshProxyService>,
-    req_auth: ((String, josh_proxy::HashedPassword), Request<hyper::Body>),
+    req_auth: (josh_proxy::auth::Handle, Request<hyper::Body>),
 ) -> josh::JoshResult<Response<hyper::Body>> {
     let (auth, req) = req_auth;
 
@@ -431,28 +359,53 @@ async fn call_service(
     ]
     .join("");
 
-    let (username, password) = auth;
-
-    let temp_ns = match prepare_namespace(
-        serv.clone(),
-        &parsed_url.upstream_repo,
+    if !josh_proxy::auth::check_auth(
         &remote_url,
-        &parsed_url.filter,
-        &headref,
-        (username.clone(), password.clone()),
+        &auth,
+        ARGS.is_present("require-auth"),
     )
     .in_current_span()
     .await?
     {
-        PrepareNsResult::Ns(temp_ns) => temp_ns,
-        PrepareNsResult::Resp(resp) => return Ok(resp),
-    };
+        tracing::trace!("require-auth");
+        let builder = Response::builder()
+            .header("WWW-Authenticate", "Basic realm=User Visible Realm")
+            .status(hyper::StatusCode::UNAUTHORIZED);
+        return Ok(builder.body(hyper::Body::empty())?);
+    }
+
+    if !fetch_upstream(
+        serv.clone(),
+        parsed_url.upstream_repo.to_owned(),
+        &auth,
+        remote_url.to_owned(),
+        &headref,
+        false,
+    )
+    .in_current_span()
+    .await?
+    {
+        let builder = Response::builder()
+            .header("WWW-Authenticate", "Basic realm=User Visible Realm")
+            .status(hyper::StatusCode::UNAUTHORIZED);
+        return Ok(builder.body(hyper::Body::empty())?);
+    }
+
+    let temp_ns = prepare_namespace(
+        serv.clone(),
+        &parsed_url.upstream_repo,
+        &parsed_url.filter,
+        &headref,
+    )
+    .in_current_span()
+    .await?;
 
     if parsed_url.api == "/~/graphiql" {
         let addr = format!("/~/graphql{}", parsed_url.upstream_repo);
         return Ok(tokio::task::spawn_blocking(move || {
             josh_proxy::juniper_hyper::graphiql(&addr, None)
         })
+        .in_current_span()
         .await??);
     }
 
@@ -466,9 +419,9 @@ async fn call_service(
                 .strip_suffix(".git")
                 .unwrap_or(&parsed_url.upstream_repo),
         ));
-        return Ok(
-            josh_proxy::juniper_hyper::graphql(root_node, ctx, req).await?
-        );
+        return Ok(josh_proxy::juniper_hyper::graphql(root_node, ctx, req)
+            .in_current_span()
+            .await?);
     }
 
     if req.uri().query() == Some("info") {
@@ -483,6 +436,7 @@ async fn call_service(
                     &headref,
                 )
             })
+            .in_current_span()
             .await??;
 
         return Ok(Response::builder()
@@ -509,6 +463,7 @@ async fn call_service(
                         &q,
                     )
                 })
+                .in_current_span()
                 .await??;
             if let Some(res) = res {
                 return Ok(Response::builder()
@@ -525,8 +480,7 @@ async fn call_service(
     let repo_update = josh_proxy::RepoUpdate {
         refs: HashMap::new(),
         remote_url: remote_url.clone(),
-        password: password.clone(),
-        username: username.clone(),
+        auth: auth,
         port: serv.port.clone(),
         filter_spec: parsed_url.filter.clone(),
         base_ns: josh::to_ns(&parsed_url.upstream_repo),
@@ -556,47 +510,13 @@ async fn call_service(
     return Ok(cgires);
 }
 
-enum PrepareNsResult {
-    Ns(std::sync::Arc<josh_proxy::TmpGitNamespace>),
-    Resp(hyper::Response<hyper::Body>),
-}
-
 #[tracing::instrument]
 async fn prepare_namespace(
     serv: Arc<JoshProxyService>,
     upstream_repo: &str,
-    remote_url: &str,
     filter_spec: &str,
     headref: &str,
-    auth: (String, josh_proxy::HashedPassword),
-) -> josh::JoshResult<PrepareNsResult> {
-    let (username, password) = auth;
-
-    if ARGS.is_present("require-auth") && username == "" {
-        tracing::trace!("require-auth");
-        let builder = Response::builder()
-            .header("WWW-Authenticate", "Basic realm=User Visible Realm")
-            .status(hyper::StatusCode::UNAUTHORIZED);
-        return Ok(PrepareNsResult::Resp(builder.body(hyper::Body::empty())?));
-    }
-
-    let authorized = fetch_upstream(
-        serv.clone(),
-        upstream_repo.to_owned(),
-        &username,
-        password.clone(),
-        remote_url.to_owned(),
-        &headref,
-    )
-    .await?;
-
-    if !authorized {
-        let builder = Response::builder()
-            .header("WWW-Authenticate", "Basic realm=User Visible Realm")
-            .status(hyper::StatusCode::UNAUTHORIZED);
-        return Ok(PrepareNsResult::Resp(builder.body(hyper::Body::empty())?));
-    }
-
+) -> josh::JoshResult<std::sync::Arc<josh_proxy::TmpGitNamespace>> {
     let temp_ns = Arc::new(josh_proxy::TmpGitNamespace::new(
         &serv.repo_path,
         tracing::Span::current(),
@@ -614,7 +534,7 @@ async fn prepare_namespace(
     )
     .await?;
 
-    return Ok(PrepareNsResult::Ns(temp_ns));
+    return Ok(temp_ns);
 }
 
 #[tokio::main]
@@ -637,13 +557,15 @@ async fn run_proxy() -> josh::JoshResult<i32> {
         port: port,
         repo_path: local.to_owned(),
         upstream_url: remote.to_owned(),
-        credential_cache: Arc::new(RwLock::new(CredentialCache::new())),
+        fetch_timers: Arc::new(RwLock::new(FetchTimers::new())),
+        poll: Arc::new(std::sync::Mutex::new(std::collections::HashSet::new())),
         fetch_permits: Arc::new(tokio::sync::Semaphore::new(
             ARGS.value_of("n").unwrap_or("1").parse()?,
         )),
         filter_permits: Arc::new(tokio::sync::Semaphore::new(10)),
-        credential_store: Arc::new(RwLock::new(HashMap::new())),
     });
+
+    let ps = proxy_service.clone();
 
     let make_service = make_service_fn(move |_| {
         let proxy_service = proxy_service.clone();
@@ -652,9 +574,7 @@ async fn run_proxy() -> josh::JoshResult<i32> {
             let proxy_service = proxy_service.clone();
 
             async {
-                if let Ok(req_auth) =
-                    parse_auth(proxy_service.credential_store.clone(), _req)
-                {
+                if let Ok(req_auth) = josh_proxy::auth::strip_auth(_req) {
                     if let Ok(r) = call_service(proxy_service, req_auth).await {
                         r
                     } else {
@@ -683,10 +603,31 @@ async fn run_proxy() -> josh::JoshResult<i32> {
     } else {
         tokio::select!(
             _ = run_housekeeping(local) => println!("run_housekeeping exited"),
+            _ = run_polling(ps.clone()) => println!("run_polling exited"),
             _ = server_future => println!("http server exited"),
         );
     }
     Ok(0)
+}
+
+async fn run_polling(serv: Arc<JoshProxyService>) -> josh::JoshResult<()> {
+    loop {
+        let polls = serv.poll.lock()?.clone();
+
+        for (upstream_repo, auth, url) in polls {
+            fetch_upstream(
+                serv.clone(),
+                upstream_repo.clone(),
+                &auth,
+                url.clone(),
+                &"",
+                true,
+            )
+            .in_current_span()
+            .await?;
+        }
+        tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
+    }
 }
 
 async fn run_housekeeping(local: std::path::PathBuf) -> josh::JoshResult<()> {
@@ -723,6 +664,11 @@ fn parse_args() -> clap::ArgMatches<'static> {
         .arg(
             clap::Arg::with_name("local")
                 .long("local")
+                .takes_value(true),
+        )
+        .arg(
+            clap::Arg::with_name("poll")
+                .long("poll")
                 .takes_value(true),
         )
         .arg(
