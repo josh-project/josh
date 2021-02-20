@@ -1,4 +1,8 @@
+pub mod auth;
 pub mod juniper_hyper;
+
+#[macro_use]
+extern crate lazy_static;
 
 fn baseref_and_options(
     refname: &str,
@@ -27,8 +31,7 @@ fn baseref_and_options(
 pub struct RepoUpdate {
     pub refs: std::collections::HashMap<String, (String, String)>,
     pub remote_url: String,
-    pub username: String,
-    pub password: HashedPassword,
+    pub auth: auth::Handle,
     pub port: String,
     pub filter_spec: String,
     pub base_ns: String,
@@ -36,9 +39,7 @@ pub struct RepoUpdate {
     pub git_dir: String,
 }
 
-#[tracing::instrument(skip(credential_store))]
 pub fn process_repo_update(
-    credential_store: std::sync::Arc<std::sync::RwLock<CredentialStore>>,
     repo_update: RepoUpdate,
 ) -> josh::JoshResult<String> {
     let mut resp = String::new();
@@ -110,26 +111,18 @@ pub fn process_repo_update(
 
         let amends = {
             let gerrit_changes = format!(
-                "refs/josh/upstream/{}/refs/gerrit_changes/all",
+                "refs/josh/upstream/{}/refs/changes/*",
                 repo_update.base_ns,
             );
             let mut amends = std::collections::HashMap::new();
-            if let Ok(tree) = transaction
-                .repo()
-                .find_reference(&gerrit_changes)
-                .and_then(|x| x.peel_to_commit())
-                .and_then(|x| x.tree())
-            {
-                tree.walk(git2::TreeWalkMode::PreOrder, |_, entry| {
-                    if let Ok(commit) =
-                        transaction.repo().find_commit(entry.id())
-                    {
-                        if let Some(id) = josh::get_change_id(&commit) {
-                            amends.insert(id, commit.id());
-                        }
+            for reference in transaction.repo().references_glob(&gerrit_changes)? {
+                if let Ok(commit) =
+                    transaction.repo().find_commit(reference?.target().unwrap_or(git2::Oid::zero()))
+                {
+                    if let Some(id) = josh::get_change_id(&commit) {
+                        amends.insert(id, commit.id());
                     }
-                    git2::TreeWalkResult::Ok
-                })?;
+                }
             }
             amends
         };
@@ -207,14 +200,6 @@ pub fn process_repo_update(
             push_to
         };
 
-        let password = credential_store
-            .read()?
-            .get(&repo_update.password)
-            .unwrap_or(&Password {
-                value: "".to_owned(),
-            })
-            .to_owned();
-
         let reapply = josh::filter::apply_to_commit(
             filterobj,
             &transaction.repo().find_commit(oid_to_push)?,
@@ -226,8 +211,7 @@ pub fn process_repo_update(
             oid_to_push,
             &push_with_options,
             &repo_update.remote_url,
-            &repo_update.username,
-            &password,
+            &repo_update.auth,
             &repo_update.git_ns,
         )?;
 
@@ -261,8 +245,7 @@ fn push_head_url(
     oid: git2::Oid,
     refname: &str,
     url: &str,
-    username: &str,
-    password: &Password,
+    auth: &auth::Handle,
     namespace: &str,
 ) -> josh::JoshResult<(String, i32)> {
     let rn = format!("refs/{}", &namespace);
@@ -272,18 +255,12 @@ fn push_head_url(
     let shell = josh::shell::Shell {
         cwd: repo.path().to_owned(),
     };
-    let nurl = if username != "" {
-        let splitted: Vec<&str> = url.splitn(2, "://").collect();
-        let proto = splitted[0];
-        let rest = splitted[1];
-        format!("{}://{}@{}", &proto, &username, &rest)
-    } else {
-        url.to_owned()
-    };
+    let (username, password) = auth.parse()?;
+    let nurl = url_with_auth(&url, &username);
     let cmd = format!("git push {} '{}'", &nurl, &spec);
     let mut fakehead = repo.reference(&rn, oid, true, "push_head_url")?;
     let (stdout, stderr, status) =
-        shell.command_env(&cmd, &[], &[("GIT_PASSWORD", &password.value)]);
+        shell.command_env(&cmd, &[], &[("GIT_PASSWORD", &password)]);
     fakehead.delete()?;
     tracing::debug!("{}", &stderr);
     tracing::debug!("{}", &stdout);
@@ -322,15 +299,31 @@ pub fn create_repo(path: &std::path::Path) -> josh::JoshResult<()> {
     return Ok(());
 }
 
-#[tracing::instrument(skip(credential_store))]
+fn url_with_auth(url: &str, username: &str) -> String {
+    if username != "" {
+        let splitted: Vec<&str> = url.splitn(2, "://").collect();
+        let proto = splitted[0];
+        let rest = splitted[1];
+        let username = percent_encoding::utf8_percent_encode(
+            &username,
+            percent_encoding::NON_ALPHANUMERIC,
+        )
+        .to_string();
+        format!("{}://{}@{}", &proto, &username, &rest)
+    } else {
+        let splitted: Vec<&str> = url.splitn(2, "://").collect();
+        let proto = splitted[0];
+        let rest = splitted[1];
+        format!("{}://{}@{}", &proto, "annonymous", &rest)
+    }
+}
+
 pub fn fetch_refs_from_url(
     path: &std::path::Path,
     upstream_repo: &str,
     url: &str,
     refs_prefixes: &[String],
-    username: &str,
-    password: &HashedPassword,
-    credential_store: std::sync::Arc<std::sync::RwLock<CredentialStore>>,
+    auth: &auth::Handle,
 ) -> josh::JoshResult<bool> {
     let specs: Vec<_> = refs_prefixes
         .iter()
@@ -347,36 +340,14 @@ pub fn fetch_refs_from_url(
     let shell = josh::shell::Shell {
         cwd: path.to_owned(),
     };
-    let nurl = if username != "" {
-        let splitted: Vec<&str> = url.splitn(2, "://").collect();
-        let proto = splitted[0];
-        let rest = splitted[1];
-        let username = percent_encoding::utf8_percent_encode(
-            &username,
-            percent_encoding::NON_ALPHANUMERIC,
-        )
-        .to_string();
-        format!("{}://{}@{}", &proto, &username, &rest)
-    } else {
-        let splitted: Vec<&str> = url.splitn(2, "://").collect();
-        let proto = splitted[0];
-        let rest = splitted[1];
-        format!("{}://{}@{}", &proto, "annonymous", &rest)
-    };
+    let (username, password) = auth.parse()?;
+    let nurl = url_with_auth(&url, &username);
 
     let cmd = format!("git fetch --no-tags {} {}", &nurl, &specs.join(" "));
     tracing::info!("fetch_refs_from_url {:?} {:?} {:?}", cmd, path, "");
 
-    let password = credential_store
-        .read()?
-        .get(&password)
-        .unwrap_or(&Password {
-            value: "".to_owned(),
-        })
-        .to_owned();
-
     let (_stdout, stderr, _) =
-        shell.command_env(&cmd, &[], &[("GIT_PASSWORD", &password.value)]);
+        shell.command_env(&cmd, &[], &[("GIT_PASSWORD", &password)]);
     tracing::debug!(
         "fetch_refs_from_url done {:?} {:?} {:?}",
         cmd,
@@ -393,28 +364,6 @@ pub fn fetch_refs_from_url(
         return Err(josh::josh_error(&format!("git error: {:?}", stderr)));
     }
     return Ok(true);
-}
-
-// Wrapper struct for storing passwords to avoid having
-// them output to traces by accident
-#[derive(Clone)]
-pub struct Password {
-    pub value: String,
-}
-
-#[derive(Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-pub struct HashedPassword {
-    pub hash: String,
-}
-
-pub type CredentialStore = std::collections::HashMap<HashedPassword, Password>;
-
-impl std::fmt::Debug for HashedPassword {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("HashedPassword")
-            .field("value", &self.hash)
-            .finish()
-    }
 }
 
 pub struct TmpGitNamespace {
