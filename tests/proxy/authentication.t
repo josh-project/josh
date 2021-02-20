@@ -37,6 +37,30 @@
 
   $ export TESTPASS=$(curl -s http://localhost:8001/_make_user/testuser)
 
+  $ curl -s "http://localhost:8002/~/graphql/real_repo.git?query=\{name\}"
+  $ curl -s "http://testuser:wrongpass@localhost:8002/~/graphql/real_repo.git?query=\{name\}"
+  $ curl -s "http://testuser:${TESTPASS}@localhost:8002/~/graphql/real_repo.git?query=\{name\}"
+  {
+    "data": {
+      "name": "/real_repo"
+    }
+  } (no-eol)
+
+  $ export URL=http://testuser:wrongpass@localhost:8002/~/graphql/real_repo.git
+  $ curl -s -H "Content-Type: application/json" -X POST --data-binary @- ${URL} << EOF
+  > {"query": "{ name }"}
+  > EOF
+
+  $ export URL=http://testuser:${TESTPASS}@localhost:8002/~/graphql/real_repo.git
+  $ curl -s -H "Content-Type: application/json" -X POST --data-binary @- ${URL} << EOF
+  > {"query": "{ name }"}
+  > EOF
+  {
+    "data": {
+      "name": "/real_repo"
+    }
+  } (no-eol)
+
   $ git clone -q http://testuser:wrongpass@localhost:8002/real_repo.git full_repo
   fatal: Authentication failed for 'http://localhost:8002/real_repo.git/'
   [128]

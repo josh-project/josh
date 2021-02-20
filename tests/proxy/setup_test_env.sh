@@ -21,6 +21,7 @@ echo $! > ${TESTTMP}/server_pid
 
 ${TESTDIR}/../../target/debug/josh-proxy\
     --port=8002\
+    --graphql-root\
     --local=${TESTTMP}/remote/scratch/\
     --remote=http://localhost:8001\
     > ${TESTTMP}/josh-proxy.out 2>&1 &
