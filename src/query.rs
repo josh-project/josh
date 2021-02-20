@@ -100,7 +100,8 @@ pub fn render(
     let path = split
         .next()
         .ok_or(josh_error(&format!("invalid query {:?}", query_and_params)))?;
-    let tree = repo.find_reference(&headref)?.peel_to_tree()?;
+    let reference = repo.find_reference(&headref)?;
+    let tree = reference.peel_to_tree()?;
 
     let obj = ok_or!(
         tree.get_path(&std::path::PathBuf::from(path))?
@@ -114,6 +115,21 @@ pub fn render(
         let template = std::str::from_utf8(blob.content())?;
         if cmd == "get" {
             return Ok(Some(template.to_string()));
+        }
+        if cmd == "graphql" {
+            let transaction = cache::Transaction::open(&repo.path())?;
+            let (res, _errors) = juniper::execute_sync(
+                &template.to_string(),
+                None,
+                &graphql::commit_schema(
+                    reference.target().ok_or(josh_error("missing target"))?,
+                ),
+                &juniper::Variables::new(),
+                &graphql::context(transaction),
+            )?;
+
+            let j = serde_json::to_string_pretty(&res)?;
+            return Ok(Some(j));
         }
         if cmd == "render" {
             template.to_string()

@@ -57,22 +57,61 @@
   $ git add sub1
   $ git commit -m "add file2" 1> /dev/null
 
-  $ josh-filter -s :nop HEAD -q get=sub1/file1
+  $ josh-filter :nop HEAD -q get=sub1/file1
   contents1
-  $ josh-filter -s :nop HEAD -q get=sub1/file2
+  $ josh-filter :nop HEAD -q get=sub1/file2
   contents2
-  $ josh-filter -s :/sub1 HEAD -q get=file1
-  [2] :/sub1
+  $ josh-filter :/sub1 HEAD -q get=file1
   contents1
 
-  $ josh-filter -s :/sub1
-  [2] :/sub1
+  $ josh-filter :/sub1
 
-  $ josh-filter -s -q render=sub1/file1
-  [2] :/sub1
+  $ josh-filter -q render=sub1/file1
   contents1
-  $ josh-filter -s -q "render=sub1/tmpl_file&tmpl_param1=tmpl_param_value1&tmpl_p2=val2"
-  [2] :/sub1
+  $ josh-filter -q "graphql=sub1/x.graphql"
+  {
+    "id": "cb658a86acfdb09eaa0b68ef57ebf9da5e2c5b5e",
+    "summary": "add file2",
+    "config": {
+      "data": {
+        "b": "my_value",
+        "x": null
+      }
+    },
+    "glob": {
+      "files": [
+        {
+          "id": "f25320b9e3f1dd09d15e6e13796402768d6d62cf",
+          "path": "file0",
+          "parent": {
+            "path": ""
+          }
+        },
+        {
+          "id": "a024003ee1acc6bf70318a46e7b6df651b9dc246",
+          "path": "sub1/file1",
+          "parent": {
+            "path": "sub1"
+          }
+        },
+        {
+          "id": "6b46faacade805991bcaea19382c9d941828ce80",
+          "path": "sub1/file2",
+          "parent": {
+            "path": "sub1"
+          }
+        },
+        {
+          "id": "1cb5d64cdb55e3db2a8d6f00d596572b4cfa9d5c",
+          "path": "sub2/file3",
+          "parent": {
+            "path": "sub2"
+          }
+        }
+      ]
+    }
+  } (no-eol)
+  $ josh-filter -q "render=sub1/tmpl_file&tmpl_param1=tmpl_param_value1&tmpl_p2=val2"
   tmpl_param1: tmpl_param_value1
   tmpl_p2: val2
   
@@ -97,6 +136,5 @@
   parent: sub2
   sha1: 1cb5d64cdb55e3db2a8d6f00d596572b4cfa9d5c
   
-  $ josh-filter -s :/sub1 -q render=file2
-  [2] :/sub1
+  $ josh-filter :/sub1 -q render=file2
   contents2
