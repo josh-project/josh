@@ -3,21 +3,20 @@
 use super::*;
 use juniper::{graphql_object, EmptyMutation, EmptySubscription, FieldResult};
 
-pub struct Commit {
+pub struct Revision {
     filter: filter::Filter,
     id: git2::Oid,
 }
 
 #[graphql_object(context = Context)]
-impl Commit {
+impl Revision {
     fn filter(&self) -> String {
         filter::spec(self.filter)
     }
 
-    fn id(&self, context: &Context) -> FieldResult<String> {
+    fn hash(&self, context: &Context) -> FieldResult<String> {
         let transaction = context.transaction.lock()?;
         let commit = transaction.repo().find_commit(self.id)?;
-        tracing::trace!("Commit::id: {:?}", self.filter);
         let filter_commit =
             filter::apply_to_commit(self.filter, &commit, &transaction)?;
         Ok(format!("{}", filter_commit))
@@ -26,19 +25,18 @@ impl Commit {
     fn summary(&self, context: &Context) -> FieldResult<String> {
         let transaction = context.transaction.lock()?;
         let commit = transaction.repo().find_commit(self.id)?;
-        tracing::trace!("Commit::id: {:?}", self.filter);
         let filter_commit = transaction.repo().find_commit(
             filter::apply_to_commit(self.filter, &commit, &transaction)?,
         )?;
         Ok(filter_commit.summary().unwrap_or("").to_owned())
     }
 
-    fn commit(
+    fn rev(
         &self,
         filter: Option<String>,
         original: Option<bool>,
         context: &Context,
-    ) -> FieldResult<Option<Commit>> {
+    ) -> FieldResult<Option<Revision>> {
         let id = if let Some(true) = original {
             let transaction = context.transaction.lock()?;
             let commit = transaction.repo().find_commit(self.id)?;
@@ -56,13 +54,13 @@ impl Commit {
             self.id
         };
 
-        Ok(Some(Commit {
+        Ok(Some(Revision {
             filter: filter::parse(&filter.unwrap_or(":nop".to_string()))?,
             id: id,
         }))
     }
 
-    fn parents(&self, context: &Context) -> FieldResult<Vec<Commit>> {
+    fn parents(&self, context: &Context) -> FieldResult<Vec<Revision>> {
         let transaction = context.transaction.lock()?;
         let commit = transaction.repo().find_commit(self.id)?;
         let filter_commit = transaction.repo().find_commit(
@@ -71,7 +69,7 @@ impl Commit {
 
         let parents = filter_commit
             .parent_ids()
-            .map(|id| Commit {
+            .map(|id| Revision {
                 filter: self.filter,
                 id: history::find_original(
                     &transaction,
@@ -147,19 +145,19 @@ impl Path {
         })
     }
 
-    fn commit(&self, filter: String) -> FieldResult<Commit> {
+    fn rev(&self, filter: String) -> FieldResult<Revision> {
         let hm: std::collections::HashMap<String, String> =
             [("path".to_string(), self.path.to_string_lossy().to_string())]
                 .iter()
                 .cloned()
                 .collect();
-        Ok(Commit {
+        Ok(Revision {
             filter: filter::parse(&strfmt::strfmt(&filter, &hm)?)?,
             id: self.id,
         })
     }
 
-    fn id(&self, context: &Context) -> FieldResult<String> {
+    fn hash(&self, context: &Context) -> FieldResult<String> {
         let transaction = context.transaction.lock()?;
         let id = transaction
             .repo()
@@ -168,8 +166,7 @@ impl Path {
             .id();
         Ok(format!("{}", id))
     }
-
-    fn text(&self, context: &Context) -> FieldResult<String> {
+    fn text(&self, context: &Context) -> FieldResult<Option<String>> {
         let transaction = context.transaction.lock()?;
         let id = transaction
             .repo()
@@ -178,7 +175,7 @@ impl Path {
             .id();
         let blob = transaction.repo().find_blob(id)?;
 
-        Ok(std::str::from_utf8(blob.content())?.to_string())
+        Ok(Some(std::str::from_utf8(blob.content())?.to_string()))
     }
 
     fn toml(&self, context: &Context) -> FieldResult<Document> {
@@ -309,11 +306,11 @@ impl Reference {
             .reference)
     }
 
-    fn commit(
+    fn rev(
         &self,
         context: &Context,
         filter: Option<String>,
-    ) -> FieldResult<Commit> {
+    ) -> FieldResult<Revision> {
         let transaction = context.transaction.lock()?;
         let id = transaction
             .repo()
@@ -321,7 +318,7 @@ impl Reference {
             .target()
             .unwrap_or(git2::Oid::zero());
 
-        Ok(Commit {
+        Ok(Revision {
             filter: filter::parse(&filter.unwrap_or(":nop".to_string()))?,
             id: id,
         })
@@ -372,19 +369,19 @@ impl Repository {
         Ok(refs)
     }
 
-    fn commit(
+    fn rev(
         &self,
         context: &Context,
-        rev: String,
+        at: String,
         filter: Option<String>,
-    ) -> FieldResult<Commit> {
+    ) -> FieldResult<Revision> {
         let rev =
-            format!("refs/josh/upstream/{}.git/{}", to_ns(&self.name), rev);
+            format!("refs/josh/upstream/{}.git/{}", to_ns(&self.name), at);
 
         let transaction = context.transaction.lock()?;
         let id = transaction.repo().revparse_single(&rev)?.id();
 
-        Ok(Commit {
+        Ok(Revision {
             filter: filter::parse(&filter.unwrap_or(":nop".to_string()))?,
             id: id,
         })
@@ -455,14 +452,14 @@ pub fn schema() -> Schema {
 
 pub type CommitSchema = juniper::RootNode<
     'static,
-    Commit,
+    Revision,
     EmptyMutation<Context>,
     EmptySubscription<Context>,
 >;
 
 pub fn commit_schema(id: git2::Oid) -> CommitSchema {
     CommitSchema::new(
-        Commit {
+        Revision {
             id: id,
             filter: filter::nop(),
         },
