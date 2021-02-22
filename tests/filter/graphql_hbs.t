@@ -19,7 +19,7 @@
 
   $ cat > sub1/x.graphql <<EOF
   > query {
-  >  id
+  >  hash
   >  summary
   >  config: file(path: "config_file.toml") {
   >   data: toml {
@@ -27,10 +27,10 @@
   >    x: string(at: "/a/x")
   >   }
   >  }
-  >  glob: commit(filter: "::**/file*") {
+  >  glob: rev(filter: "::**/file*") {
   >   files {
-  >    id
   >    path
+  >    hash
   >    parent: dir(relative: "..") {
   >      path
   >    }
@@ -43,14 +43,14 @@
   > tmpl_param1: {{ tmpl_param1 }}
   > tmpl_p2: {{ tmpl_p2 }}
   > {{ #with (graphql file="x.graphql") as |commit| }}
-  > ID: {{ commit.id }}
+  > ID: {{ commit.hash }}
   > Summary: {{ commit.summary }}
   > From TOML: {{ commit.config.data.b }}
   > From TOML: {{ commit.config.data.x }}
   > {{ #each commit.glob.files }}
   > path: {{ this.path }}
   > parent: {{ this.parent.path }}
-  > sha1: {{ this.id }}
+  > sha1: {{ this.hash }}
   > {{ /each~}}
   > {{ /with }}
   > EOF
@@ -70,7 +70,7 @@
   contents1
   $ josh-filter -q "graphql=sub1/x.graphql"
   {
-    "id": "cb658a86acfdb09eaa0b68ef57ebf9da5e2c5b5e",
+    "hash": "1b8451b26ecb80f3441f506bd1f5d0abd062eed8",
     "summary": "add file2",
     "config": {
       "data": {
@@ -81,29 +81,29 @@
     "glob": {
       "files": [
         {
-          "id": "f25320b9e3f1dd09d15e6e13796402768d6d62cf",
           "path": "file0",
+          "hash": "f25320b9e3f1dd09d15e6e13796402768d6d62cf",
           "parent": {
             "path": ""
           }
         },
         {
-          "id": "a024003ee1acc6bf70318a46e7b6df651b9dc246",
           "path": "sub1/file1",
+          "hash": "a024003ee1acc6bf70318a46e7b6df651b9dc246",
           "parent": {
             "path": "sub1"
           }
         },
         {
-          "id": "6b46faacade805991bcaea19382c9d941828ce80",
           "path": "sub1/file2",
+          "hash": "6b46faacade805991bcaea19382c9d941828ce80",
           "parent": {
             "path": "sub1"
           }
         },
         {
-          "id": "1cb5d64cdb55e3db2a8d6f00d596572b4cfa9d5c",
           "path": "sub2/file3",
+          "hash": "1cb5d64cdb55e3db2a8d6f00d596572b4cfa9d5c",
           "parent": {
             "path": "sub2"
           }
@@ -115,7 +115,7 @@
   tmpl_param1: tmpl_param_value1
   tmpl_p2: val2
   
-  ID: cb658a86acfdb09eaa0b68ef57ebf9da5e2c5b5e
+  ID: 1b8451b26ecb80f3441f506bd1f5d0abd062eed8
   Summary: add file2
   From TOML: my_value
   From TOML: 
