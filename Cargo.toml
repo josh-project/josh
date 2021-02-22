@@ -38,7 +38,7 @@ serde_yaml = "*"
 rs_tracing= { version = "1", features = ["rs_tracing"]}
 tracing-log = "*"
 juniper = "*"
-tracing-subscriber = "0.2.15"
+tracing-subscriber = "0.2.16"
 
 [profile.release]
 lto = true
