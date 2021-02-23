@@ -31,7 +31,7 @@ impl Revision {
         Ok(filter_commit.summary().unwrap_or("").to_owned())
     }
 
-    fn time(&self, format: String, context: &Context) -> FieldResult<String> {
+    fn date(&self, format: String, context: &Context) -> FieldResult<String> {
         let transaction = context.transaction.lock()?;
         let commit = transaction.repo().find_commit(self.id)?;
 
