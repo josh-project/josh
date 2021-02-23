@@ -21,6 +21,7 @@
   > query {
   >  hash
   >  summary
+  >  time(format: "%d.%m.%Y %H:%M:%S")
   >  config: file(path: "config_file.toml") {
   >   data: toml {
   >    b: string(at: "/a/b")
@@ -70,8 +71,9 @@
   contents1
   $ josh-filter -q "graphql=sub1/x.graphql"
   {
-    "hash": "1b8451b26ecb80f3441f506bd1f5d0abd062eed8",
+    "hash": "48978e3f17e990317c68a7cce629082f81bd3b9d",
     "summary": "add file2",
+    "time": "07.04.2005 22:13:13",
     "config": {
       "data": {
         "b": "my_value",
@@ -115,7 +117,7 @@
   tmpl_param1: tmpl_param_value1
   tmpl_p2: val2
   
-  ID: 1b8451b26ecb80f3441f506bd1f5d0abd062eed8
+  ID: 48978e3f17e990317c68a7cce629082f81bd3b9d
   Summary: add file2
   From TOML: my_value
   From TOML: 
