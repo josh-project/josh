@@ -31,6 +31,16 @@ impl Revision {
         Ok(filter_commit.summary().unwrap_or("").to_owned())
     }
 
+    fn time(&self, format: String, context: &Context) -> FieldResult<String> {
+        let transaction = context.transaction.lock()?;
+        let commit = transaction.repo().find_commit(self.id)?;
+
+        let ts = commit.time().seconds();
+
+        let ndt = chrono::NaiveDateTime::from_timestamp(ts, 0);
+        Ok(ndt.format(&format).to_string())
+    }
+
     fn rev(
         &self,
         filter: Option<String>,
