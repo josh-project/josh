@@ -2,7 +2,7 @@
 #[macro_use]
 extern crate lazy_static;
 
-use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::Layer;
 
 use futures::future;
 use futures::FutureExt;
@@ -814,9 +814,15 @@ fn main() {
 
     let telemetry_layer = tracing_opentelemetry::layer().with_tracer(tracer);
 
-    let subscriber = tracing_subscriber::Registry::default()
-        .with(telemetry_layer)
-        .with(fmt_layer);
+    let filter = match std::env::var("RUST_LOG") {
+        Ok(_) => tracing_subscriber::EnvFilter::from_default_env(),
+        _ => tracing_subscriber::EnvFilter::new("josh=trace,josh_proxy=trace"),
+    };
+
+    let subscriber = filter
+        .and_then(fmt_layer)
+        .and_then(telemetry_layer)
+        .with_subscriber(tracing_subscriber::Registry::default());
 
     tracing::subscriber::set_global_default(subscriber)
         .expect("can't set_global_default");
