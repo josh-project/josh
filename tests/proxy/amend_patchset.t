@@ -110,13 +110,12 @@
   $ tree
   .
   |-- file1
-  |-- file_outside
   `-- sub3
       |-- file2x
       |-- file3
       `-- file_new
   
-  1 directory, 5 files
+  1 directory, 4 files
 
   $ bash ${TESTDIR}/destroy_test_env.sh
   "real_repo.git" = [':/sub3']

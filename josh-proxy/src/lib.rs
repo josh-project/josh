@@ -115,17 +115,17 @@ pub fn process_repo_update(
                 repo_update.base_ns,
             );
             let mut amends = std::collections::HashMap::new();
-            for reference in
-                transaction.repo().references_glob(&gerrit_changes)?
-            {
-                if let Ok(commit) = transaction.repo().find_commit(
-                    reference?.target().unwrap_or(git2::Oid::zero()),
-                ) {
-                    if let Some(id) = josh::get_change_id(&commit) {
-                        amends.insert(id, commit.id());
-                    }
-                }
-            }
+            /* for reference in */
+            /*     transaction.repo().references_glob(&gerrit_changes)? */
+            /* { */
+            /*     if let Ok(commit) = transaction.repo().find_commit( */
+            /*         reference?.target().unwrap_or(git2::Oid::zero()), */
+            /*     ) { */
+            /*         if let Some(id) = josh::get_change_id(&commit) { */
+            /*             amends.insert(id, commit.id()); */
+            /*         } */
+            /*     } */
+            /* } */
             amends
         };
 
