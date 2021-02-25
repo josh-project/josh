@@ -248,7 +248,7 @@ async fn do_filter(
         );
 
         let glob =
-            format!("refs/josh/rewrites/{}/r_*", josh::to_ns(&upstream_repo));
+            format!("refs/josh/rewrites/{}/{:?}/r_*", josh::to_ns(&upstream_repo), filter.id());
         for reference in transaction.repo().references_glob(&glob).unwrap() {
             let reference = reference.unwrap();
             let refname = reference.name().unwrap();

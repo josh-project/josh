@@ -266,7 +266,8 @@
   |   |               `-- master
   |   |-- rewrites
   |   |   `-- real_repo.git
-  |   |       `-- r_2cbcd105ead63a4fecf486b949db7f44710300e5
+  |   |       `-- 7bd92d97e96693ea7fd7eb5757b3580002889948
+  |   |           `-- r_2cbcd105ead63a4fecf486b949db7f44710300e5
   |   `-- upstream
   |       `-- real_repo.git
   |           `-- refs
@@ -275,6 +276,6 @@
   |-- namespaces
   `-- tags
   
-  24 directories, 8 files
+  25 directories, 8 files
 
 $ cat ${TESTTMP}/josh-proxy.out | grep VIEW
