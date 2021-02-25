@@ -6,6 +6,8 @@ const VERSION: u64 = 4;
 lazy_static! {
     static ref DB: std::sync::Mutex<Option<sled::Db>> =
         std::sync::Mutex::new(None);
+    static ref REF_CACHE: std::sync::Mutex<HashMap<git2::Oid, HashMap<git2::Oid, git2::Oid>>> =
+        std::sync::Mutex::new(HashMap::new());
 }
 
 pub fn load(path: &std::path::Path) -> JoshResult<()> {
@@ -149,6 +151,35 @@ impl Transaction {
             .entry(filter.id())
             .or_insert_with(|| HashMap::new())
             .insert(from, to);
+    }
+
+    pub fn insert_ref(
+        &self,
+        filter: filter::Filter,
+        from: git2::Oid,
+        to: git2::Oid,
+    ) {
+        REF_CACHE
+            .lock()
+            .unwrap()
+            .entry(filter.id())
+            .or_insert_with(|| HashMap::new())
+            .insert(from, to);
+    }
+
+    pub fn get_ref(
+        &self,
+        filter: filter::Filter,
+        from: git2::Oid,
+    ) -> Option<git2::Oid> {
+        if let Some(m) = REF_CACHE.lock().unwrap().get(&filter.id()) {
+            if let Some(oid) = m.get(&from) {
+                if self.repo.odb().unwrap().exists(*oid) {
+                    return Some(*oid);
+                }
+            }
+        }
+        return None;
     }
 
     pub fn get_unapply(
