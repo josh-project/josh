@@ -175,10 +175,17 @@ fn filter_ref(
 ) -> JoshResult<usize> {
     let mut updated_count = 0;
     if let Ok(reference) = transaction.repo().revparse_single(&from_refsname) {
-        let original_commit = reference.peel_to_commit()?;
+        let oid = reference.id();
+        let original_commit = transaction.repo().find_commit(oid)?;
 
-        let filter_commit =
-            filter::apply_to_commit(filterobj, &original_commit, &transaction)?;
+        let filter_commit = if let Some(s) = transaction.get_ref(filterobj, oid)
+        {
+            s
+        } else {
+            tracing::trace!("apply_to_commit");
+
+            filter::apply_to_commit(filterobj, &original_commit, &transaction)?
+        };
 
         let previous = transaction
             .repo()
@@ -196,6 +203,8 @@ fn filter_ref(
                 &filter::spec(filterobj),
             );
         }
+
+        transaction.insert_ref(filterobj, oid, filter_commit);
 
         if filter_commit != git2::Oid::zero() {
             ok_or!(
