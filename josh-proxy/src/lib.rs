@@ -222,8 +222,8 @@ pub fn process_repo_update(
         if new_oid != reapply {
             transaction.repo().reference(
                 &format!(
-                    "refs/josh/rewrites/{}/r_{}",
-                    repo_update.base_ns, reapply
+                    "refs/josh/rewrites/{}/{:?}/r_{}",
+                    repo_update.base_ns, filterobj.id(), reapply
                 ),
                 reapply,
                 true,
@@ -281,6 +281,9 @@ pub fn create_repo(path: &std::path::Path) -> josh::JoshResult<()> {
     };
     shell.command("git config http.receivepack true");
     shell.command("git config uploadpack.allowsidebandall true");
+    shell.command("git config uploadpack.allowAnySHA1InWant true");
+    shell.command("git config uploadpack.allowReachableSHA1InWant true");
+    shell.command("git config uploadpack.allowTipSha1InWant true");
     shell.command("git config receive.advertisePushOptions true");
     let ce = std::env::current_exe().expect("can't find path to exe");
     shell.command("rm -Rf hooks");
