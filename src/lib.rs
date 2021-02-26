@@ -239,7 +239,16 @@ pub fn filter_refs(
 
     let mut updated_count = 0;
     for (k, v) in refs {
-        updated_count += filter_ref(&transaction, filterobj, &k, &v)?;
+        updated_count += ok_or!(filter_ref(&transaction, filterobj, &k, &v), {
+            tracing::event!(
+                tracing::Level::WARN,
+                msg = "filter_refs: Can't filter reference",
+                warn = true,
+                from = k.as_str(),
+                to = v.as_str()
+            );
+            0
+        });
     }
     return Ok(updated_count);
 }
