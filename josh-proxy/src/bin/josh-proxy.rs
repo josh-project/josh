@@ -247,8 +247,11 @@ async fn do_filter(
             &filter_spec,
         );
 
-        let glob =
-            format!("refs/josh/rewrites/{}/{:?}/r_*", josh::to_ns(&upstream_repo), filter.id());
+        let glob = format!(
+            "refs/josh/rewrites/{}/{:?}/r_*",
+            josh::to_ns(&upstream_repo),
+            filter.id()
+        );
         for reference in transaction.repo().references_glob(&glob).unwrap() {
             let reference = reference.unwrap();
             let refname = reference.name().unwrap();
@@ -298,6 +301,9 @@ async fn call_service(
     req_auth: (josh_proxy::auth::Handle, Request<hyper::Body>),
 ) -> josh::JoshResult<Response<hyper::Body>> {
     let (auth, req) = req_auth;
+    let (username, _) = auth.parse()?;
+
+    tracing::event!(tracing::Level::TRACE, username = username.as_str());
 
     let path = {
         let mut path = req.uri().path().to_owned();

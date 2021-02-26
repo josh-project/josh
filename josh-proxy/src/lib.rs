@@ -223,7 +223,9 @@ pub fn process_repo_update(
             transaction.repo().reference(
                 &format!(
                     "refs/josh/rewrites/{}/{:?}/r_{}",
-                    repo_update.base_ns, filterobj.id(), reapply
+                    repo_update.base_ns,
+                    filterobj.id(),
+                    reapply
                 ),
                 reapply,
                 true,
