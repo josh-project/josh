@@ -12,7 +12,9 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
-    steps:    
+    steps:
+    - name: Check format
+      run: cargo fmt -- --check
     - name: Set up Python 3.x
       uses: actions/setup-python@v2
       with:
