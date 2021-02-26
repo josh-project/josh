@@ -72,3 +72,5 @@ To explicitly specify a repository name, provide the desired name after the URL 
 repository:
 
     $ git clone http://localhost:8000/esrlabs/josh.git:/docs:prefix=josh-docs.git my-repo
+   
+
