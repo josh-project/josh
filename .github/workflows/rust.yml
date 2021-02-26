@@ -13,8 +13,6 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-    - name: Check format
-      run: cargo fmt -- --check
     - name: Set up Python 3.x
       uses: actions/setup-python@v2
       with:
@@ -29,6 +27,8 @@ jobs:
         cargo install hyper_cgi --features=test-server
         sudo apt install git cmake libcurl4-openssl-dev libelf-dev libdw-dev tree
     - uses: actions/checkout@v2
+    - name: Check format
+      run: cargo fmt -- --check
     - name: Configure environment
       run: |
         export CARGO_TARGET_DIR=`pwd`/target
