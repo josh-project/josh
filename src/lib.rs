@@ -175,8 +175,8 @@ fn filter_ref(
 ) -> JoshResult<usize> {
     let mut updated_count = 0;
     if let Ok(reference) = transaction.repo().revparse_single(&from_refsname) {
-        let oid = reference.id();
-        let original_commit = transaction.repo().find_commit(oid)?;
+        let original_commit = reference.peel_to_commit()?;
+        let oid = original_commit.id();
 
         let filter_commit = if let Some(s) = transaction.get_ref(filterobj, oid)
         {
