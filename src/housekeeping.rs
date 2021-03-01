@@ -269,7 +269,10 @@ pub fn run(repo_path: &std::path::Path, do_gc: bool) -> JoshResult<()> {
     if do_gc {
         info!(
             "\n----------\n{}\n----------",
-            run_command(&transaction.repo().path(), &"git repack -adkbn")
+            run_command(
+                &transaction.repo().path(),
+                &"git repack -adkbn --threads=1"
+            )
         );
         info!(
             "\n----------\n{}\n----------",
