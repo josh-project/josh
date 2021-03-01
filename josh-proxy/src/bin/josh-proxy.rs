@@ -579,16 +579,34 @@ async fn run_proxy() -> josh::JoshResult<i32> {
         let service = service_fn(move |_req| {
             let proxy_service = proxy_service.clone();
 
-            async {
-                if let Ok(req_auth) = josh_proxy::auth::strip_auth(_req) {
-                    if let Ok(r) = call_service(proxy_service, req_auth).await {
+            let _s = tracing::span!(
+                tracing::Level::TRACE,
+                "http_request",
+                path = _req.uri().path()
+            );
+            let s = _s.clone();
+
+            async move {
+                let r = if let Ok(req_auth) = josh_proxy::auth::strip_auth(_req)
+                {
+                    if let Ok(r) = call_service(proxy_service, req_auth)
+                        .instrument(s.clone())
+                        .await
+                    {
                         r
                     } else {
                         error_response().await
                     }
                 } else {
                     error_response().await
-                }
+                };
+                let _e = s.enter();
+                tracing::event!(
+                    parent: s.clone(),
+                    tracing::Level::TRACE,
+                    http_status = r.status().as_u16()
+                );
+                r
             }
             .map(Ok::<_, hyper::http::Error>)
         });

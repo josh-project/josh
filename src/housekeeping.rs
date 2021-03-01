@@ -101,7 +101,8 @@ pub fn discover_filter_candidates(
 ) -> JoshResult<KnownViews> {
     let repo = transaction.repo();
     let mut known_filters = KnownViews::new();
-    let _trace_s = span!(Level::TRACE, "discover_filter_candidates");
+    let trace_s = span!(Level::TRACE, "discover_filter_candidates");
+    let _e = trace_s.enter();
 
     let refname = format!("refs/josh/upstream/*.git/refs/heads/*");
 
@@ -112,6 +113,7 @@ pub fn discover_filter_candidates(
             .ok_or(josh_error("not a ns"))?
             .ns;
         let name = from_ns(&name);
+        tracing::trace!("find: {}", name);
 
         let hs = find_all_workspaces_and_subdirectories(&r.peel_to_tree()?)?;
 
@@ -127,6 +129,7 @@ pub fn discover_filter_candidates(
     for reference in repo.references_glob(&refname)? {
         let r = reference?;
         let name = r.name().ok_or(josh_error("reference without name"))?;
+        tracing::trace!("known: {}", name);
         let filtered =
             FilteredRefRegex::from_str(name).ok_or(josh_error("not a ns"))?;
 
@@ -142,6 +145,8 @@ pub fn discover_filter_candidates(
 pub fn find_all_workspaces_and_subdirectories(
     tree: &git2::Tree,
 ) -> JoshResult<std::collections::HashSet<String>> {
+
+    let _trace_s = span!(Level::TRACE, "find_all_workspaces_and_subdirectories");
     let mut hs = std::collections::HashSet::new();
     tree.walk(git2::TreeWalkMode::PreOrder, |root, entry| {
         if entry.name() == Some(&"workspace.josh") {

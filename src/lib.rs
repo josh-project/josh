@@ -110,7 +110,7 @@ where
     T: std::error::Error,
 {
     fn from(item: T) -> Self {
-        tracing::error!("JoshError: {:?}", item);
+        tracing::event!(tracing::Level::ERROR, item = ?item, error = true);
         log::error!("JoshError: {:?}", item);
         josh_error(&format!("converted {:?}", item))
     }
@@ -229,13 +229,16 @@ fn filter_ref(
     return Ok(updated_count);
 }
 
-#[tracing::instrument(skip(transaction))]
 pub fn filter_refs(
     transaction: &cache::Transaction,
     filterobj: filter::Filter,
     refs: &[(String, String)],
 ) -> JoshResult<usize> {
     rs_tracing::trace_scoped!("filter_refs", "spec": filter::spec(filterobj));
+    let s = tracing::Span::current();
+    let _e = s.enter();
+
+    tracing::trace!("filter_refs");
 
     let mut updated_count = 0;
     for (k, v) in refs {
