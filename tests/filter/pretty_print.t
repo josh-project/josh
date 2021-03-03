@@ -182,3 +182,22 @@
       ::subsub1/
       ::subsub2/
   ]
+
+Subdir only filters should not reorder filters that share a prefix
+  $ cat > f <<EOF
+  > a/subsub1 = :/sub1/subsub1
+  > :/x/subsub2
+  > EOF
+
+  $ josh-filter -p --file f
+  a/subsub1 = :/sub1/subsub1
+  :/x/subsub2
+
+  $ cat > f <<EOF
+  > :/x/subsub2
+  > a/subsub1 = :/sub1/subsub1
+  > EOF
+
+  $ josh-filter -p --file f
+  :/x/subsub2
+  a/subsub1 = :/sub1/subsub1

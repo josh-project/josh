@@ -201,17 +201,19 @@ fn last_chain(rest: Filter, filter: Filter) -> (Filter, Filter) {
 
 fn prefix_sort(filters: &Vec<Filter>) -> Vec<Filter> {
     let mut sorted = filters.clone();
-    let mut ok = true;
     sorted.sort_by(|a, b| {
-        if let (Op::Chain(a, _), Op::Chain(b, _)) = (to_op(*a), to_op(*b)) {
-            if let (Op::Subdir(a), Op::Subdir(b)) = (to_op(a), to_op(b)) {
-                return a.partial_cmp(&b).unwrap();
-            }
+        let (src_a, src_b) = (src_path(*a), src_path(*b));
+        if src_a.starts_with(&src_b) || src_b.starts_with(&src_a) {
+            return std::cmp::Ordering::Equal;
         }
-        ok = false;
-        std::cmp::Ordering::Equal
+        let (dst_a, dst_b) = (dst_path(*a), dst_path(*b));
+        if dst_a.starts_with(&dst_b) || dst_b.starts_with(&dst_a) {
+            return std::cmp::Ordering::Equal;
+        }
+
+        return (&src_a, &dst_a).partial_cmp(&(&src_b, &dst_b)).unwrap();
     });
-    return if ok { sorted } else { filters.clone() };
+    return sorted;
 }
 
 fn common_pre(filters: &Vec<Filter>) -> Option<(Filter, Vec<Filter>)> {
