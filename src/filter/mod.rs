@@ -175,6 +175,34 @@ fn spec2(op: &Op) -> String {
     }
 }
 
+pub fn src_path(filter: Filter) -> std::path::PathBuf {
+    src_path2(&to_op(filter))
+}
+
+fn src_path2(op: &Op) -> std::path::PathBuf {
+    normalize_path(&match op {
+        Op::Subdir(path) => path.to_owned(),
+        Op::File(path) => path.to_owned(),
+        Op::Chain(a, b) => src_path(*a).join(src_path(*b)),
+        _ => std::path::PathBuf::new(),
+    })
+    .to_owned()
+}
+
+pub fn dst_path(filter: Filter) -> std::path::PathBuf {
+    dst_path2(&to_op(filter))
+}
+
+fn dst_path2(op: &Op) -> std::path::PathBuf {
+    normalize_path(&match op {
+        Op::Prefix(path) => path.to_owned(),
+        Op::File(path) => path.to_owned(),
+        Op::Chain(a, b) => dst_path(*b).join(dst_path(*a)),
+        _ => std::path::PathBuf::new(),
+    })
+    .to_owned()
+}
+
 /// Calculate the filtered commit for `commit`. This can take some time if done
 /// for the first time and thus should generally be done asynchronously.
 pub fn apply_to_commit(
@@ -669,4 +697,33 @@ pub fn chain(first: Filter, second: Filter) -> Filter {
 /// Create a filter that is the result of overlaying the output of `first` onto `second`
 pub fn compose(first: Filter, second: Filter) -> Filter {
     opt::optimize(to_filter(Op::Compose(vec![first, second])))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[test]
+    fn src_path_test() {
+        assert_eq!(PathBuf::from("x"), src_path(parse(":/x").unwrap()));
+        assert_eq!(PathBuf::from("x/y"), src_path(parse(":/x/y").unwrap()));
+        assert_eq!(PathBuf::from("x/y"), src_path(parse(":/x::y").unwrap()));
+    }
+
+    #[test]
+    fn dst_path_test() {
+        assert_eq!(PathBuf::from(""), dst_path(parse(":/x").unwrap()));
+        assert_eq!(PathBuf::from(""), dst_path(parse(":/x/y").unwrap()));
+        assert_eq!(PathBuf::from("y"), dst_path(parse(":/x::y").unwrap()));
+        assert_eq!(
+            PathBuf::from("a/y"),
+            dst_path(parse(":[a=:/x::y/]").unwrap())
+        );
+
+        assert_eq!(
+            PathBuf::from("c/a"),
+            dst_path(parse(":[a=:/x::y/,a/b=:/i]:prefix=c").unwrap())
+        );
+    }
 }

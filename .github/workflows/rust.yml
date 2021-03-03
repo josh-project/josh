@@ -30,6 +30,8 @@ jobs:
     - uses: actions/checkout@v2
     - name: Check format
       run: cargo fmt -- --check
+    - name: Run Rust tests
+      run: cargo test
     - name: Configure environment
       run: |
         export CARGO_TARGET_DIR=`pwd`/target
