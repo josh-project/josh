@@ -46,7 +46,7 @@ pub fn simplify(filter: Filter) -> Filter {
     if let Some(f) = SIMPLIFIED.lock().unwrap().get(&filter) {
         return *f;
     }
-    rs_tracing::trace_scoped!("simplify", "spec": spec(filter));
+    rs_tracing::trace_scoped!("simplify", "spec": spec2(&to_op(filter)));
     let original = filter;
     let result = to_filter(match to_op(filter) {
         Op::Compose(filters) => {
