@@ -1,13 +1,13 @@
 use super::*;
 
 pub fn dirtree<'a>(
-    repo: &'a git2::Repository,
     root: &str,
     input: git2::Oid,
-    cache: &mut std::collections::HashMap<(git2::Oid, String), git2::Oid>,
+    transaction: &'a cache::Transaction,
 ) -> super::JoshResult<git2::Tree<'a>> {
-    if let Some(cached) = cache.get(&(input, root.to_string())) {
-        return Ok(repo.find_tree(*cached)?);
+    let repo = transaction.repo();
+    if let Some(cached) = transaction.get_dir((input, root.to_string())) {
+        return Ok(repo.find_tree(cached)?);
     }
 
     let tree = repo.find_tree(input)?;
@@ -32,7 +32,6 @@ pub fn dirtree<'a>(
 
         if entry.kind() == Some(git2::ObjectType::Tree) {
             let s = dirtree(
-                &repo,
                 &format!(
                     "{}{}{}",
                     root,
@@ -40,7 +39,7 @@ pub fn dirtree<'a>(
                     entry.name().ok_or(super::josh_error("no name"))?
                 ),
                 entry.id(),
-                cache,
+                transaction,
             )?
             .id();
 
@@ -72,7 +71,7 @@ pub fn dirtree<'a>(
             &result,
         )?;
     }
-    cache.insert((input, root.to_string()), result.id());
+    transaction.insert_dir((input, root.to_string()), result.id());
     return Ok(result);
 }
 

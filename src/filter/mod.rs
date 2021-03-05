@@ -497,12 +497,7 @@ fn apply2<'a>(
             Ok(repo.find_tree(tree::subtract(&repo, af.id(), ba.id())?)?)
         }
 
-        Op::Dirs => tree::dirtree(
-            &repo,
-            "",
-            tree.id(),
-            &mut std::collections::HashMap::new(),
-        ),
+        Op::Dirs => tree::dirtree("", tree.id(), transaction),
 
         Op::Workspace(path) => {
             let base = to_filter(Op::Subdir(path.to_owned()));
