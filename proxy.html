@@ -169,7 +169,7 @@ via HTTP.</p>
 <p>It needs the URL of the upstream server and a local directory to store its data.
 Optionally, a port to listen on can be specified. For example, running a local <code>josh-proxy</code>
 instance for github.com on port 8000:</p>
-<pre><code>$ josh-proxy --local=/tmp/josh --remote=https://github.com --port=8000
+<pre><code>$ docker run -p 8000:8000 -e JOSH_REMOTE=https://github.com -v josh-vol:/data/git esrlabs/josh-proxy:r21.03.08
 </code></pre>
 <p>For a first example of how to make use of josh, just the josh documentation can be checked out as
 its own repository via this command:</p>
