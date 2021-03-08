@@ -298,6 +298,7 @@ pub fn create_repo(path: &std::path::Path) -> josh::JoshResult<()> {
         "git config credential.helper '!f() {{ echo \"password=\"$GIT_PASSWORD\"\"; }}; f'"
     ));
     shell.command(&"git config gc.auto 0");
+    shell.command(&"git pack-refs --all");
 
     if std::env::var_os("JOSH_KEEP_NS") == None {
         std::fs::remove_dir_all(path.join("refs/namespaces")).ok();
