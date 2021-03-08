@@ -351,7 +351,8 @@ pub fn fetch_refs_from_url(
     let (username, password) = auth.parse()?;
     let nurl = url_with_auth(&url, &username);
 
-    let cmd = format!("git fetch --no-tags {} {}", &nurl, &specs.join(" "));
+    let cmd =
+        format!("git fetch --prune --no-tags {} {}", &nurl, &specs.join(" "));
     tracing::info!("fetch_refs_from_url {:?} {:?} {:?}", cmd, path, "");
 
     let (_stdout, stderr, _) =
