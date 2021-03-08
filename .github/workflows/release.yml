@@ -13,9 +13,8 @@ jobs:
       - name: Push to GitHub Packages
         uses: docker/build-push-action@v1
         with:
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-          registry: docker.pkg.github.com
-          repository: esrlabs/josh/josh-proxy
+          username: esrlabs
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: esrlabs/josh-proxy
           tag_with_ref: true
 
