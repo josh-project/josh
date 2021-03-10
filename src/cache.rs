@@ -51,7 +51,7 @@ struct Transaction2 {
     commit_map: HashMap<git2::Oid, HashMap<git2::Oid, git2::Oid>>,
     apply_map: HashMap<git2::Oid, HashMap<git2::Oid, git2::Oid>>,
     unapply_map: HashMap<git2::Oid, HashMap<git2::Oid, git2::Oid>>,
-    dir_map: HashMap<(git2::Oid, String), git2::Oid>,
+    paths_map: HashMap<(git2::Oid, String), git2::Oid>,
     sled_trees: HashMap<git2::Oid, sled::Tree>,
     missing: Vec<(filter::Filter, git2::Oid)>,
     misses: usize,
@@ -85,7 +85,7 @@ impl Transaction {
                 commit_map: HashMap::new(),
                 apply_map: HashMap::new(),
                 unapply_map: HashMap::new(),
-                dir_map: HashMap::new(),
+                paths_map: HashMap::new(),
                 sled_trees: HashMap::new(),
                 missing: vec![],
                 misses: 0,
@@ -155,9 +155,9 @@ impl Transaction {
             .insert(from, to);
     }
 
-    pub fn insert_dir(&self, tree: (git2::Oid, String), result: git2::Oid) {
+    pub fn insert_paths(&self, tree: (git2::Oid, String), result: git2::Oid) {
         let mut t2 = self.t2.borrow_mut();
-        t2.dir_map.entry(tree).or_insert(result);
+        t2.paths_map.entry(tree).or_insert(result);
     }
 
     pub fn insert_ref(
@@ -201,9 +201,9 @@ impl Transaction {
         return None;
     }
 
-    pub fn get_dir(&self, tree: (git2::Oid, String)) -> Option<git2::Oid> {
+    pub fn get_paths(&self, tree: (git2::Oid, String)) -> Option<git2::Oid> {
         let t2 = self.t2.borrow_mut();
-        return t2.dir_map.get(&tree).cloned();
+        return t2.paths_map.get(&tree).cloned();
     }
 
     pub fn insert(

@@ -1,12 +1,12 @@
 use super::*;
 
-pub fn dirtree<'a>(
+pub fn pathstree<'a>(
     root: &str,
     input: git2::Oid,
     transaction: &'a cache::Transaction,
 ) -> super::JoshResult<git2::Tree<'a>> {
     let repo = transaction.repo();
-    if let Some(cached) = transaction.get_dir((input, root.to_string())) {
+    if let Some(cached) = transaction.get_paths((input, root.to_string())) {
         return Ok(repo.find_tree(cached)?);
     }
 
@@ -14,24 +14,30 @@ pub fn dirtree<'a>(
     let mut result = tree::empty(&repo);
 
     for entry in tree.iter() {
-        let name = entry.name().ok_or(super::josh_error("INVALID_FILENAME"))?;
-
         if entry.kind() == Some(git2::ObjectType::Blob) {
-            if name == "workspace.josh" {
-                result = replace_child(
-                    &repo,
-                    &std::path::Path::new(
-                        entry.name().ok_or(super::josh_error("no name"))?,
-                    ),
-                    entry.id(),
-                    0o0100644,
-                    &result,
-                )?;
-            }
+            let file_blob = repo.blob(
+                &std::path::Path::new(
+                    &(if root.len() > 0 {root.to_owned()
+                        + "/" } else { "".to_string()}
+                        + entry.name().ok_or(super::josh_error("no name"))?),
+                )
+                .to_str()
+                .ok_or(super::josh_error("no name"))?
+                .as_bytes(),
+            )?;
+            result = replace_child(
+                &repo,
+                &std::path::Path::new(
+                    entry.name().ok_or(super::josh_error("no name"))?,
+                ),
+                file_blob,
+                0o0100644,
+                &result,
+            )?;
         }
 
         if entry.kind() == Some(git2::ObjectType::Tree) {
-            let s = dirtree(
+            let s = pathstree(
                 &format!(
                     "{}{}{}",
                     root,
@@ -56,22 +62,7 @@ pub fn dirtree<'a>(
             }
         }
     }
-
-    if root != "" {
-        let empty_blob = repo.blob("".as_bytes())?;
-
-        result = replace_child(
-            &repo,
-            &std::path::Path::new(&format!(
-                "JOSH_ORIG_PATH_{}",
-                super::to_ns(&root)
-            )),
-            empty_blob,
-            0o0100644,
-            &result,
-        )?;
-    }
-    transaction.insert_dir((input, root.to_string()), result.id());
+    transaction.insert_paths((input, root.to_string()), result.id());
     return Ok(result);
 }
 

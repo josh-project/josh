@@ -7,7 +7,7 @@ fn make_op(args: &[&str]) -> JoshResult<Op> {
         ["prefix", arg] => Ok(Op::Prefix(Path::new(arg).to_owned())),
         ["workspace", arg] => Ok(Op::Workspace(Path::new(arg).to_owned())),
         ["SQUASH"] => Ok(Op::Squash),
-        ["DIRS"] => Ok(Op::Dirs),
+        ["PATHS"] => Ok(Op::Paths),
         ["FOLD"] => Ok(Op::Fold),
         _ => Err(josh_error("invalid filter")),
     }
