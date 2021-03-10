@@ -182,7 +182,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
 
     if check_permissions {
         filterobj =
-            josh::filter::chain(josh::filter::parse(":DIRS")?, filterobj);
+            josh::filter::chain(josh::filter::parse(":PATHS")?, filterobj);
         filterobj =
             josh::filter::chain(filterobj, josh::filter::parse(":FOLD")?);
     }
@@ -202,7 +202,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
 
     josh::filter_refs(&transaction, filterobj, &[(src.clone(), t.clone())])?;
 
-    let mut all_dirs = vec![];
+    let mut all_paths = vec![];
 
     if check_permissions {
         let result_tree = repo.find_reference(&t)?.peel_to_tree()?;
@@ -210,11 +210,11 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         result_tree.walk(git2::TreeWalkMode::PreOrder, |_, entry| {
             let name = entry.name().unwrap();
             if name.starts_with("JOSH_ORIG_PATH_") {
-                let dirname = format!(
+                let pathname = format!(
                     "{}",
                     josh::from_ns(&name.replacen("JOSH_ORIG_PATH_", "", 1))
                 );
-                all_dirs.push(dirname);
+                all_paths.push(pathname);
             }
             git2::TreeWalkResult::Ok
         })?;
@@ -222,7 +222,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
 
     let mut dedup = vec![];
 
-    for w in all_dirs.as_slice().windows(2) {
+    for w in all_paths.as_slice().windows(2) {
         if let [a, b, ..] = w {
             if !b.starts_with(a) {
                 dedup.push(a.to_owned());
@@ -230,7 +230,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         }
     }
 
-    let dedup = all_dirs;
+    let dedup = all_paths;
 
     let options = glob::MatchOptions {
         case_sensitive: true,
