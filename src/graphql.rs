@@ -94,7 +94,11 @@ impl Revision {
         Ok(parents)
     }
 
-    fn files(&self, context: &Context) -> FieldResult<Vec<Path>> {
+    fn files(
+        &self,
+        depth: Option<i32>,
+        context: &Context,
+    ) -> FieldResult<Vec<Path>> {
         let transaction = context.transaction.lock()?;
         let commit = transaction.repo().find_commit(self.id)?;
 
@@ -104,8 +108,46 @@ impl Revision {
         tree.walk(git2::TreeWalkMode::PreOrder, |root, entry| {
             if let Some(git2::ObjectType::Blob) = entry.kind() {
                 if let Some(name) = entry.name() {
+                    let path = std::path::Path::new(root).join(name);
+                    if let Some(limit) = depth {
+                        if path.components().count() as i32 > limit {
+                            return 1;
+                        }
+                    }
                     ws.push(Path {
-                        path: std::path::Path::new(root).join(name),
+                        path: path,
+                        id: self.id,
+                        tree: tree.id(),
+                    });
+                }
+            }
+            0
+        })?;
+        return Ok(ws);
+    }
+
+    fn dirs(
+        &self,
+        depth: Option<i32>,
+        context: &Context,
+    ) -> FieldResult<Vec<Path>> {
+        let transaction = context.transaction.lock()?;
+        let commit = transaction.repo().find_commit(self.id)?;
+
+        let tree = filter::apply(&transaction, self.filter, commit.tree()?)?;
+
+        let mut ws = vec![];
+        tree.walk(git2::TreeWalkMode::PreOrder, |root, entry| {
+            if let Some(git2::ObjectType::Tree) = entry.kind() {
+                if let Some(name) = entry.name() {
+                    let path = std::path::Path::new(root).join(name);
+                    if let Some(limit) = depth {
+                        if path.components().count() as i32 > limit {
+                            return 1;
+                        }
+                    }
+                    ws.push(Path {
+                        path: path,
                         id: self.id,
                         tree: tree.id(),
                     });
