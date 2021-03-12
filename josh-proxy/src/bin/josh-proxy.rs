@@ -332,6 +332,11 @@ async fn call_service(
         }
     }
 
+    if path.starts_with("/:") {
+        let static_files = hyper_staticfile::Static::new("static");
+        return Ok(static_files.serve(req).await?);
+    }
+
     if let Some(r) = static_paths(&serv, &path).await? {
         return Ok(r);
     }
