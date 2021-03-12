@@ -22,5 +22,6 @@ FROM rust:1.50
 
 COPY --from=builder /usr/src/josh/target/debug/josh-proxy /usr/bin/josh-proxy
 COPY --from=builder /usr/src/josh/run-josh.sh /usr/bin/run-josh.sh
+COPY --from=builder /usr/src/josh/static/ /josh/static/
 
 CMD sh /usr/bin/run-josh.sh
