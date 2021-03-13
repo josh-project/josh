@@ -61,15 +61,22 @@ struct Transaction2 {
 pub struct Transaction {
     t2: std::cell::RefCell<Transaction2>,
     repo: git2::Repository,
+    ref_prefix: String,
 }
 
 impl Transaction {
-    pub fn open(path: &std::path::Path) -> JoshResult<Transaction> {
-        Ok(Transaction::new(git2::Repository::open_ext(
-            path,
-            git2::RepositoryOpenFlags::NO_SEARCH,
-            &[] as &[&std::ffi::OsStr],
-        )?))
+    pub fn open(
+        path: &std::path::Path,
+        ref_prefix: Option<&str>,
+    ) -> JoshResult<Transaction> {
+        Ok(Transaction::new(
+            git2::Repository::open_ext(
+                path,
+                git2::RepositoryOpenFlags::NO_SEARCH,
+                &[] as &[&std::ffi::OsStr],
+            )?,
+            ref_prefix,
+        ))
     }
 
     pub fn status(&self, _msg: &str) {
@@ -78,7 +85,10 @@ impl Transaction {
         /* t2.out.flush().ok(); */
     }
 
-    pub fn new(repo: git2::Repository) -> Transaction {
+    pub fn new(
+        repo: git2::Repository,
+        ref_prefix: Option<&str>,
+    ) -> Transaction {
         log::debug!("new transaction");
         Transaction {
             t2: std::cell::RefCell::new(Transaction2 {
@@ -92,15 +102,20 @@ impl Transaction {
                 walks: 0,
             }),
             repo: repo,
+            ref_prefix: ref_prefix.unwrap_or("").to_string(),
         }
     }
 
     pub fn clone(&self) -> JoshResult<Transaction> {
-        Transaction::open(self.repo.path())
+        Transaction::open(self.repo.path(), Some(&self.ref_prefix))
     }
 
     pub fn repo(&self) -> &git2::Repository {
         &self.repo
+    }
+
+    pub fn refname(&self, r: &str) -> String {
+        format!("{}{}", self.ref_prefix, r)
     }
 
     pub fn misses(&self) -> usize {

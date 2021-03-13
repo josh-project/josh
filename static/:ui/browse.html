@@ -44,6 +44,11 @@
         width: 100%;
     }
 
+    .marker {
+        background-color: #ffc800;
+        padding:2px;
+    }
+
     </style>
 
     <script>
@@ -67,29 +72,52 @@
                   contentType: "application/json",type:'POST',
                   data: JSON.stringify({ query:`{ 
                       rev(at:"${ref}", filter:"${filter}") {
-                          file(path:"${filename}") { text }
-                          dirs(at:"${filename}",depth: 1) { path }
-                          files(at:"${filename}",depth: 1) { path }
+                          file(path:"${filename}") {
+                            text
+                            comments(topic: "review") {
+                              position
+                              text
+                            }
+                          }
+                          dirs(at:"${filename}",depth: 1) { path, commentsCount(topic:"review") }
+                          files(at:"${filename}",depth: 1) { path, commentsCount(topic:"review") }
                       }
                   }`}),
                   success: function(result) {
+                      if(!result.data) {
+                        $("#filename").val("");
+                        return;
+                      }
                       if(result.data.rev.file) {
                         $(".dirmode").hide();
                         $(".filemode").show();
                         editor.setSize("100%", "100%");
                         editor.getDoc().setValue(result.data.rev.file.text);
+
+                        console.log(result.data.rev.file);
+                        var r = result.data.rev.file.comments;
+                        for (var i = 0; i < r.length; i++) {
+                            console.log(r);
+                            var msg = document.createElement("div");
+                            msg.innerHTML = r[i].text;
+                            msg.className = "marker";
+                            editor.addLineWidget(parseInt(r[i].position)-1, msg, {coverGutter: false, noHScroll: true});
+                        }
+
                         return;
                       }
                         $(".filemode").hide();
                         $(".dirmode").show();
-                      if(!result.data) {
-                        $("#filename").val("");
-                      }
                       if(result.data.rev.dirs) {
                         var paths = [];
                         var r = result.data.rev.dirs;
                         for (var i = 0; i < r.length; i++) {
-                            paths.push(`<li>${r[i].path}</li>`);
+                            if (r[i].commentsCount) {
+                                paths.push(`<li><span class="path">${r[i].path}</span><span class="marker">${r[i].commentsCount}</span></li>`);
+                            }
+                            else {
+                                paths.push(`<li><span class="path">${r[i].path}</span></li>`);
+                            }
                         }
                         $("#dirs").html(paths.join(''));
                       }
@@ -97,7 +125,12 @@
                         var paths = [];
                         var r = result.data.rev.files;
                         for (var i = 0; i < r.length; i++) {
-                            paths.push(`<li>${r[i].path}</li>`);
+                            if (r[i].commentsCount) {
+                                paths.push(`<li><span class="path">${r[i].path}</span><span class="marker">${r[i].commentsCount}</span></li>`);
+                            }
+                            else {
+                                paths.push(`<li><span class="path">${r[i].path}</span></li>`);
+                            }
                         }
                         $("#files").html(paths.join(''));
                       }
@@ -111,25 +144,15 @@
                });
             };
 
-            $("#dirs").on("click", "li", function() {
+            $("#dirs").on("click", "span.path", function() {
                var filename = $('#filename').val();
-               if (filename) {
-                $('#filename').val([filename, $(this).html()].join("/"));
-               }
-               else {
                 $('#filename').val($(this).html());
-               }
                update_file();
             });
 
-            $("#files").on("click", "li", function() {
+            $("#files").on("click", "span.path", function() {
                var filename = $('#filename').val();
-               if (filename) {
-                $('#filename').val([filename, $(this).html()].join("/"));
-               }
-               else {
                 $('#filename').val($(this).html());
-               }
                update_file();
             });
 

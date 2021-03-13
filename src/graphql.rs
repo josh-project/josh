@@ -8,6 +8,45 @@ pub struct Revision {
     id: git2::Oid,
 }
 
+fn find_paths(
+    transaction: &cache::Transaction,
+    tree: git2::Tree,
+    at: Option<String>,
+    depth: Option<i32>,
+    kind: git2::ObjectType,
+) -> JoshResult<Vec<std::path::PathBuf>> {
+    let tree = if let Some(at) = at.as_ref() {
+        if at == "" {
+            tree
+        } else {
+            let path = std::path::Path::new(&at).to_owned();
+            transaction.repo().find_tree(tree.get_path(&path)?.id())?
+        }
+    } else {
+        tree
+    };
+
+    let base = std::path::Path::new(&at.as_ref().unwrap_or(&"".to_string()))
+        .to_owned();
+
+    let mut ws = vec![];
+    tree.walk(git2::TreeWalkMode::PreOrder, |root, entry| {
+        if Some(kind) == entry.kind() {
+            if let Some(name) = entry.name() {
+                let path = std::path::Path::new(root).join(name);
+                if let Some(limit) = depth {
+                    if path.components().count() as i32 > limit {
+                        return 1;
+                    }
+                }
+                ws.push(base.join(path));
+            }
+        }
+        0
+    })?;
+    return Ok(ws);
+}
+
 #[graphql_object(context = Context)]
 impl Revision {
     fn filter(&self) -> String {
@@ -34,8 +73,11 @@ impl Revision {
     fn date(&self, format: String, context: &Context) -> FieldResult<String> {
         let transaction = context.transaction.lock()?;
         let commit = transaction.repo().find_commit(self.id)?;
+        let filter_commit = transaction.repo().find_commit(
+            filter::apply_to_commit(self.filter, &commit, &transaction)?,
+        )?;
 
-        let ts = commit.time().seconds();
+        let ts = filter_commit.time().seconds();
 
         let ndt = chrono::NaiveDateTime::from_timestamp(ts, 0);
         Ok(ndt.format(&format).to_string())
@@ -102,39 +144,20 @@ impl Revision {
     ) -> FieldResult<Option<Vec<Path>>> {
         let transaction = context.transaction.lock()?;
         let commit = transaction.repo().find_commit(self.id)?;
-
         let tree = filter::apply(&transaction, self.filter, commit.tree()?)?;
+        let tree_id = tree.id();
 
-        let tree = if let Some(at) = at {
-            if at == "" {
-                tree
-            } else {
-                let path = std::path::Path::new(&at).to_owned();
-                transaction.repo().find_tree(tree.get_path(&path)?.id())?
-            }
-        } else {
-            tree
-        };
+        let paths =
+            find_paths(&transaction, tree, at, depth, git2::ObjectType::Blob)?;
 
         let mut ws = vec![];
-        tree.walk(git2::TreeWalkMode::PreOrder, |root, entry| {
-            if let Some(git2::ObjectType::Blob) = entry.kind() {
-                if let Some(name) = entry.name() {
-                    let path = std::path::Path::new(root).join(name);
-                    if let Some(limit) = depth {
-                        if path.components().count() as i32 > limit {
-                            return 1;
-                        }
-                    }
-                    ws.push(Path {
-                        path: path,
-                        id: self.id,
-                        tree: tree.id(),
-                    });
-                }
-            }
-            0
-        })?;
+        for p in paths {
+            ws.push(Path {
+                path: p,
+                id: self.id,
+                tree: tree_id,
+            });
+        }
         return Ok(Some(ws));
     }
 
@@ -146,39 +169,20 @@ impl Revision {
     ) -> FieldResult<Option<Vec<Path>>> {
         let transaction = context.transaction.lock()?;
         let commit = transaction.repo().find_commit(self.id)?;
-
         let tree = filter::apply(&transaction, self.filter, commit.tree()?)?;
+        let tree_id = tree.id();
 
-        let tree = if let Some(at) = at {
-            if at == "" {
-                tree
-            } else {
-                let path = std::path::Path::new(&at).to_owned();
-                transaction.repo().find_tree(tree.get_path(&path)?.id())?
-            }
-        } else {
-            tree
-        };
+        let paths =
+            find_paths(&transaction, tree, at, depth, git2::ObjectType::Tree)?;
 
         let mut ws = vec![];
-        tree.walk(git2::TreeWalkMode::PreOrder, |root, entry| {
-            if let Some(git2::ObjectType::Tree) = entry.kind() {
-                if let Some(name) = entry.name() {
-                    let path = std::path::Path::new(root).join(name);
-                    if let Some(limit) = depth {
-                        if path.components().count() as i32 > limit {
-                            return 1;
-                        }
-                    }
-                    ws.push(Path {
-                        path: path,
-                        id: self.id,
-                        tree: tree.id(),
-                    });
-                }
-            }
-            0
-        })?;
+        for p in paths {
+            ws.push(Path {
+                path: p,
+                id: self.id,
+                tree: tree_id,
+            });
+        }
         return Ok(Some(ws));
     }
 
@@ -211,6 +215,22 @@ pub struct Path {
     tree: git2::Oid,
 }
 
+pub fn linecount(repo: &git2::Repository, id: git2::Oid) -> usize {
+    if let Ok(blob) = repo.find_blob(id) {
+        return blob.content().iter().filter(|x| **x == '\n' as u8).count()
+            + if blob.content().len() == 0 { 0 } else { 1 };
+    }
+
+    if let Ok(tree) = repo.find_tree(id) {
+        let mut c = 0;
+        for i in tree.iter() {
+            c += linecount(repo, i.id());
+        }
+        return c;
+    }
+    return 0;
+}
+
 #[graphql_object(context = Context)]
 impl Path {
     fn path(&self) -> String {
@@ -235,6 +255,72 @@ impl Path {
             filter: filter::parse(&strfmt::strfmt(&filter, &hm)?)?,
             id: self.id,
         })
+    }
+
+    fn comments(
+        &self,
+        context: &Context,
+        topic: String,
+    ) -> FieldResult<Vec<Marker>> {
+        let transaction = context.transaction.lock()?;
+
+        let refname = transaction.refname(&format!("refs/metadata/{}", &topic));
+
+        let r = transaction.repo().revparse_single(&refname);
+        let tree = if let Ok(r) = r {
+            let commit = transaction.repo().find_commit(r.id())?;
+            commit.tree()?
+        } else {
+            filter::tree::empty(&transaction.repo())
+        };
+
+        let commit = self.id.to_string();
+
+        let prev = if let Ok(e) =
+            tree.get_path(&marker_path(&commit).join(&self.path))
+        {
+            let blob = transaction.repo().find_blob(e.id())?;
+            std::str::from_utf8(blob.content())?.to_owned()
+        } else {
+            "".to_owned()
+        };
+
+        let lines = prev
+            .split("\n")
+            .filter(|x| *x != "")
+            .map(|x| {
+                let mut s = x.splitn(2, ": ");
+                Marker {
+                    position: s.next().unwrap_or("").to_owned(),
+                    text: s.next().unwrap_or("").to_owned(),
+                }
+            })
+            .collect::<Vec<_>>();
+
+        Ok(lines)
+    }
+
+    fn comments_count(
+        &self,
+        context: &Context,
+        topic: String,
+    ) -> FieldResult<i32> {
+        let transaction = context.transaction.lock()?;
+
+        let refname = transaction.refname(&format!("refs/metadata/{}", &topic));
+
+        let r = transaction.repo().revparse_single(&refname);
+        let tree = if let Ok(r) = r {
+            let commit = transaction.repo().find_commit(r.id())?;
+            commit.tree()?
+        } else {
+            filter::tree::empty(&transaction.repo())
+        };
+        let commit = self.id.to_string();
+        if let Ok(p) = tree.get_path(&marker_path(&commit).join(&self.path)) {
+            return Ok(linecount(transaction.repo(), p.id()) as i32);
+        }
+        return Ok(0);
     }
 
     fn hash(&self, context: &Context) -> FieldResult<String> {
@@ -415,6 +501,128 @@ pub struct Repository {
     name: String,
 }
 
+pub struct RepositoryMut {}
+
+fn marker_path(commit: &str) -> std::path::PathBuf {
+    std::path::Path::new(&commit[..1])
+        .join(&commit[1..2])
+        .join(&commit)
+}
+
+#[derive(juniper::GraphQLInputObject)]
+struct Markers {
+    path: String,
+    markers: Vec<MarkerInput>,
+}
+
+#[derive(juniper::GraphQLInputObject)]
+struct MarkerInput {
+    position: String,
+    text: String,
+}
+
+#[derive(juniper::GraphQLObject)]
+struct Marker {
+    position: String,
+    text: String,
+}
+
+pub struct MarkersMut {
+    commit: String,
+    topic: String,
+}
+
+#[graphql_object(context = Context)]
+impl MarkersMut {
+    fn add(
+        &self,
+        context: &Context,
+        comments: Vec<Markers>,
+    ) -> FieldResult<bool> {
+        let transaction = context.transaction.lock()?;
+        let rev = transaction.refname(&format!("refs/metadata/{}", self.topic));
+
+        transaction
+            .repo()
+            .find_commit(git2::Oid::from_str(&self.commit)?)?;
+
+        let r = transaction.repo().revparse_single(&rev);
+        let (tree, parent) = if let Ok(r) = r {
+            let commit = transaction.repo().find_commit(r.id())?;
+            let tree = commit.tree()?;
+            (tree, Some(commit))
+        } else {
+            (filter::tree::empty(&transaction.repo()), None)
+        };
+
+        let mut tree = tree;
+
+        for mm in comments {
+            let path = mm.path;
+            let path = &marker_path(&self.commit).join(&path);
+            let prev = if let Ok(e) = tree.get_path(&path) {
+                let blob = transaction.repo().find_blob(e.id())?;
+                std::str::from_utf8(blob.content())?.to_owned()
+            } else {
+                "".to_owned()
+            };
+
+            let mm = mm
+                .markers
+                .iter()
+                .map(|x| format!("{}: {}", &x.position, &x.text))
+                .collect::<Vec<String>>();
+
+            let mut lines =
+                prev.split("\n").filter(|x| *x != "").collect::<Vec<_>>();
+            for marker in mm.iter() {
+                lines.push(marker);
+            }
+            lines.sort();
+            lines.dedup();
+
+            let blob = transaction.repo().blob(&lines.join("\n").as_bytes())?;
+
+            tree = filter::tree::insert(
+                transaction.repo(),
+                &tree,
+                &path,
+                blob,
+                0o0100644,
+            )?;
+        }
+
+        transaction.repo().commit(
+            Some(&rev),
+            &transaction.repo().signature()?,
+            &transaction.repo().signature()?,
+            "marker",
+            &tree,
+            &if let Some(parent) = parent.as_ref() {
+                vec![parent]
+            } else {
+                vec![]
+            },
+        )?;
+
+        Ok(true)
+    }
+}
+
+#[graphql_object(context = Context)]
+impl RepositoryMut {
+    fn metadata(
+        &self,
+        commit: String,
+        topic: String,
+    ) -> FieldResult<MarkersMut> {
+        Ok(MarkersMut {
+            commit: commit,
+            topic: topic,
+        })
+    }
+}
+
 #[graphql_object(context = Context)]
 impl Repository {
     fn name(&self) -> &str {
@@ -551,7 +759,7 @@ pub fn commit_schema(id: git2::Oid) -> CommitSchema {
 pub type RepoSchema = juniper::RootNode<
     'static,
     Repository,
-    EmptyMutation<Context>,
+    RepositoryMut,
     EmptySubscription<Context>,
 >;
 
@@ -560,7 +768,7 @@ pub fn repo_schema(name: &str) -> RepoSchema {
         Repository {
             name: name.to_string(),
         },
-        EmptyMutation::new(),
+        RepositoryMut {},
         EmptySubscription::new(),
     )
 }

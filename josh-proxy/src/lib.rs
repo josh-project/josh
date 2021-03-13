@@ -58,6 +58,7 @@ pub fn process_repo_update(
 
         let transaction = josh::cache::Transaction::open(
             &std::path::Path::new(&repo_update.git_dir),
+            Some(&format!("refs/josh/upstream/{}/", repo_update.base_ns)),
         )?;
 
         let old = git2::Oid::from_str(old)?;
@@ -84,9 +85,9 @@ pub fn process_repo_update(
         };
 
         let original_target_ref = if let Some(base) = push_options.get("base") {
-            format!("refs/josh/upstream/{}/{}", repo_update.base_ns, &base)
+            transaction.refname(&base)
         } else {
-            format!("refs/josh/upstream/{}/{}", repo_update.base_ns, &baseref)
+            transaction.refname(&baseref)
         };
 
         let original_target = if let Ok(oid) =
@@ -108,8 +109,6 @@ pub fn process_repo_update(
                 baseref
             ))));
         };
-
-
 
         let amends = std::collections::HashMap::new();
         //let amends = {

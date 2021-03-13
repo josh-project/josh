@@ -98,13 +98,16 @@ async fn fetch_upstream(
     }
 
     if fetch_cached_ok && headref != "" {
-        let transaction = josh::cache::Transaction::open(&service.repo_path)?;
-        let refname = format!(
-            "refs/josh/upstream/{}/{}",
-            &josh::to_ns(&upstream_repo),
-            headref
-        );
-        let id = transaction.repo().refname_to_id(&refname);
+        let transaction = josh::cache::Transaction::open(
+            &service.repo_path,
+            Some(&format!(
+                "refs/josh/upstream/{}/",
+                &josh::to_ns(&upstream_repo),
+            )),
+        )?;
+        let id = transaction
+            .repo()
+            .refname_to_id(&transaction.refname(&headref));
         tracing::trace!("refname_to_id: {:?}", id);
         if id.is_ok() {
             return Ok(true);
@@ -171,7 +174,7 @@ async fn static_paths(
         let body_str =
             tokio::task::spawn_blocking(move || -> josh::JoshResult<_> {
                 let transaction =
-                    josh::cache::Transaction::open(&service.repo_path)?;
+                    josh::cache::Transaction::open(&service.repo_path, None)?;
                 let known_filters =
                     josh::housekeeping::discover_filter_candidates(
                         &transaction,
@@ -237,7 +240,13 @@ async fn do_filter(
     let r = tokio::task::spawn_blocking(move || {
         let _e = s.enter();
         tracing::trace!("in do_filter worker");
-        let transaction = josh::cache::Transaction::open(&repo_path)?;
+        let transaction = josh::cache::Transaction::open(
+            &repo_path,
+            Some(&format!(
+                "refs/josh/upstream/{}/",
+                &josh::to_ns(&upstream_repo),
+            )),
+        )?;
         let filter = josh::filter::parse(&filter_spec)?;
         let filter_spec = josh::filter::spec(filter);
         let mut from_to = josh::housekeeping::default_from_to(
@@ -323,7 +332,7 @@ async fn call_service(
 
         if path == "/~/graphql" {
             let ctx = std::sync::Arc::new(josh::graphql::context(
-                josh::cache::Transaction::open(&serv.repo_path)?,
+                josh::cache::Transaction::open(&serv.repo_path, None)?,
             ));
             let root_node = std::sync::Arc::new(josh::graphql::schema());
             return Ok(
@@ -422,7 +431,13 @@ async fn call_service(
 
     if parsed_url.api == "/~/graphql" {
         let ctx = std::sync::Arc::new(josh::graphql::context(
-            josh::cache::Transaction::open(&serv.repo_path)?,
+            josh::cache::Transaction::open(
+                &serv.repo_path,
+                Some(&format!(
+                    "refs/josh/upstream/{}/",
+                    &josh::to_ns(&parsed_url.upstream_repo),
+                )),
+            )?,
         ));
         let root_node = std::sync::Arc::new(josh::graphql::repo_schema(
             parsed_url
@@ -438,12 +453,16 @@ async fn call_service(
     if req.uri().query() == Some("info") {
         let info_str =
             tokio::task::spawn_blocking(move || -> josh::JoshResult<_> {
-                let transaction =
-                    josh::cache::Transaction::open(&serv.repo_path)?;
+                let transaction = josh::cache::Transaction::open(
+                    &serv.repo_path,
+                    Some(&format!(
+                        "refs/josh/upstream/{}/",
+                        &josh::to_ns(&parsed_url.upstream_repo),
+                    )),
+                )?;
                 josh::housekeeping::get_info(
                     &transaction,
                     josh::filter::parse(&parsed_url.filter)?,
-                    &parsed_url.upstream_repo,
                     &headref,
                 )
             })
@@ -466,10 +485,17 @@ async fn call_service(
             let res =
                 tokio::task::spawn_blocking(move || -> josh::JoshResult<_> {
                     let _e = s.enter();
-                    let transaction =
-                        josh::cache::Transaction::open(&serv.repo_path)?;
+                    let transaction = josh::cache::Transaction::open(
+                        &serv.repo_path,
+                        Some(&format!(
+                            "refs/josh/upstream/{}/",
+                            &josh::to_ns(&parsed_url.upstream_repo),
+                        )),
+                    )?;
+
                     josh::query::render(
                         transaction.repo(),
+                        "",
                         &temp_ns.reference(&headref),
                         &q,
                     )
