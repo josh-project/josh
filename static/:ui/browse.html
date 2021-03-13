@@ -8,15 +8,40 @@
 
     <style>
     #filename {
-        width:90%;
+        width:70%;
     }
 
     #codeview {
         z-index: -1;
+        left: 0px;
+        top: 0px;
+        bottom: 0px;
+        right: 0px;
     }
 
     .CodeMirror pre {
       z-index: -1;
+    }
+
+    tr.h {
+        height: 3em;
+        margin-top:0px;
+    }
+
+    tr.filemode {
+        left: 0px;
+        top: 0px;
+        bottom: 0px;
+        right: 0px;
+    }
+
+    td {
+        vertical-align: top;
+    }
+
+    #layouttable {
+        height: 100%;
+        width: 100%;
     }
 
     </style>
@@ -24,21 +49,109 @@
     <script>
         $(document).ready(function() {
 
-            var update_file = function() {
+            var codeview = document.getElementById('codeview');
+            var editor = CodeMirror(codeview, {
+                mode:  "clike",
+                lineNumbers: true,
+                readOnly: true
+            });
+            $(".filemode").hide();
+            $(".dirmode").hide();
 
-                var repo = $('#repo').val();
-                var ref = $('#ref').val();
-                var filter = $('#filter').val();
-                var filename = $('#filename').val();
-                var url = `/${repo}.git@${ref}${filter}.git?get=${filename}`;
-                console.log(url);
-                editor.getDoc().setValue("");
-                $.get(url, function(data) {
-                    editor.setSize("100%", "100%");
-                    editor.getDoc().setValue(data);
-                });
+            var update_file = function() {
+               var repo = $('#repo').val();
+               var ref = $('#ref').val();
+               var filter = $('#filter').val();
+               var filename = $('#filename').val();
+               $.ajax({url: `/~/graphql/${repo}.git`,
+                  contentType: "application/json",type:'POST',
+                  data: JSON.stringify({ query:`{ 
+                      rev(at:"${ref}", filter:"${filter}") {
+                          file(path:"${filename}") { text }
+                          dirs(at:"${filename}",depth: 1) { path }
+                          files(at:"${filename}",depth: 1) { path }
+                      }
+                  }`}),
+                  success: function(result) {
+                      if(result.data.rev.file) {
+                        $(".dirmode").hide();
+                        $(".filemode").show();
+                        editor.setSize("100%", "100%");
+                        editor.getDoc().setValue(result.data.rev.file.text);
+                        return;
+                      }
+                        $(".filemode").hide();
+                        $(".dirmode").show();
+                      if(!result.data) {
+                        $("#filename").val("");
+                      }
+                      if(result.data.rev.dirs) {
+                        var paths = [];
+                        var r = result.data.rev.dirs;
+                        for (var i = 0; i < r.length; i++) {
+                            paths.push(`<li>${r[i].path}</li>`);
+                        }
+                        $("#dirs").html(paths.join(''));
+                      }
+                      if(result.data.rev.files) {
+                        var paths = [];
+                        var r = result.data.rev.files;
+                        for (var i = 0; i < r.length; i++) {
+                            paths.push(`<li>${r[i].path}</li>`);
+                        }
+                        $("#files").html(paths.join(''));
+                      }
+
+                      if(!result.data.rev.dirs && !result.data.rev.files) {
+                          $("#filename").val("");
+                          update_file();
+                      }
+
+                  }
+               });
             };
 
+            $("#dirs").on("click", "li", function() {
+               var filename = $('#filename').val();
+               if (filename) {
+                $('#filename').val([filename, $(this).html()].join("/"));
+               }
+               else {
+                $('#filename').val($(this).html());
+               }
+               update_file();
+            });
+
+            $("#files").on("click", "li", function() {
+               var filename = $('#filename').val();
+               if (filename) {
+                $('#filename').val([filename, $(this).html()].join("/"));
+               }
+               else {
+                $('#filename').val($(this).html());
+               }
+               update_file();
+            });
+
+            $("#up").click(function() {
+               var filename = $('#filename').val();
+               var f = filename.split("/");
+               f.pop();
+                $('#filename').val(f.join("/"));
+                update_file();
+            });
+
+            $("#ws").click(function() {
+               var filename = $('#filename').val();
+                $('#filter').val(`:workspace=${filename}`);
+                update_file();
+            });
+
+            $("#nop").click(function() {
+               var filename = $('#filename').val();
+                $('#filter').val(":nop");
+                update_file();
+            });
 
             $( "#fileform" ).submit(function( event ) {
                 update_file();
@@ -56,9 +169,7 @@
                   success: function(result) {
                         var options = [];
                         var r = result.data.refs;
-                        console.log(r);
                         for (var i = 0; i < r.length; i++) {
-                            console.log(r[i]);
                             options.push(`<option value="${r[i].name}">${r[i].name}</option>`);
                         }
                         $("#ref").html(options.join(''));
@@ -74,36 +185,44 @@
                 event.preventDefault();
             });
 
-            var codeview = document.getElementById('codeview');
-            var editor = CodeMirror(codeview, {
-                mode:  "clike",
-                lineNumbers: true,
-                readOnly: true
-            });
         });
 
     </script>
 </head>
 
 <body>
-<form id="revform">
-    <input id="repo" value="" readonly/>
-    <select id="ref" value="refs/heads/master"/>
-    <input id="filter" value=":nop"/>
-    <input type="submit"/>
-</form>
-<form id="fileform">
-    <input id="filename" value="README.md"/>
-    <input type="submit"/>
-</form>
 
-<table>
-    <tr>
+<table id="layouttable">
+    <tr class="h">
         <td>
-            <div id="listview"></div>
+            <form id="revform">
+                <input id="repo" value="" readonly/>
+                <select id="ref" value="refs/heads/master"/>
+                <input id="filter" value=":nop"/>
+                <input type="button" id="ws" value="ws"/>
+                <input type="button" id="nop" value="nop"/>
+                <input type="submit"/>
+            </form>
+            <form id="fileform">
+                <input type="button" id="up" value="Up"/>
+                <input id="filename" value="README.md"/>
+                <input type="submit"/>
+            </form>
         </td>
+    </tr>
+
+    <tr class="dirmode">
         <td>
-            <div id="codeview"></div>
+            <ul id="dirs"></ul>
+        </td>
+    </tr>
+    <tr class="dirmode">
+        <td>
+            <ul id="files"></ul>
+        </td>
+    </tr>
+    <tr class="filemode">
+        <td id="codeview">
         </td>
     </tr>
 </table>

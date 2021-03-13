@@ -96,13 +96,25 @@ impl Revision {
 
     fn files(
         &self,
+        at: Option<String>,
         depth: Option<i32>,
         context: &Context,
-    ) -> FieldResult<Vec<Path>> {
+    ) -> FieldResult<Option<Vec<Path>>> {
         let transaction = context.transaction.lock()?;
         let commit = transaction.repo().find_commit(self.id)?;
 
         let tree = filter::apply(&transaction, self.filter, commit.tree()?)?;
+
+        let tree = if let Some(at) = at {
+            if at == "" {
+                tree
+            } else {
+                let path = std::path::Path::new(&at).to_owned();
+                transaction.repo().find_tree(tree.get_path(&path)?.id())?
+            }
+        } else {
+            tree
+        };
 
         let mut ws = vec![];
         tree.walk(git2::TreeWalkMode::PreOrder, |root, entry| {
@@ -123,18 +135,30 @@ impl Revision {
             }
             0
         })?;
-        return Ok(ws);
+        return Ok(Some(ws));
     }
 
     fn dirs(
         &self,
+        at: Option<String>,
         depth: Option<i32>,
         context: &Context,
-    ) -> FieldResult<Vec<Path>> {
+    ) -> FieldResult<Option<Vec<Path>>> {
         let transaction = context.transaction.lock()?;
         let commit = transaction.repo().find_commit(self.id)?;
 
         let tree = filter::apply(&transaction, self.filter, commit.tree()?)?;
+
+        let tree = if let Some(at) = at {
+            if at == "" {
+                tree
+            } else {
+                let path = std::path::Path::new(&at).to_owned();
+                transaction.repo().find_tree(tree.get_path(&path)?.id())?
+            }
+        } else {
+            tree
+        };
 
         let mut ws = vec![];
         tree.walk(git2::TreeWalkMode::PreOrder, |root, entry| {
@@ -155,10 +179,14 @@ impl Revision {
             }
             0
         })?;
-        return Ok(ws);
+        return Ok(Some(ws));
     }
 
-    fn file(&self, path: String, context: &Context) -> FieldResult<Path> {
+    fn file(
+        &self,
+        path: String,
+        context: &Context,
+    ) -> FieldResult<Option<Path>> {
         let transaction = context.transaction.lock()?;
         let path = std::path::Path::new(&path).to_owned();
         let tree = transaction.repo().find_commit(self.id)?.tree()?;
@@ -166,11 +194,11 @@ impl Revision {
         let tree = filter::apply(&transaction, self.filter, tree)?;
 
         if let Some(git2::ObjectType::Blob) = tree.get_path(&path)?.kind() {
-            Ok(Path {
+            Ok(Some(Path {
                 path: path,
                 id: self.id,
                 tree: tree.id(),
-            })
+            }))
         } else {
             Err(josh_error("not a blob"))?
         }
