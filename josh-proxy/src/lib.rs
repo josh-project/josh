@@ -109,25 +109,28 @@ pub fn process_repo_update(
             ))));
         };
 
-        let amends = {
-            let gerrit_changes = format!(
-                "refs/josh/upstream/{}/refs/changes/*",
-                repo_update.base_ns,
-            );
-            let mut amends = std::collections::HashMap::new();
-            /* for reference in */
-            /*     transaction.repo().references_glob(&gerrit_changes)? */
-            /* { */
-            /*     if let Ok(commit) = transaction.repo().find_commit( */
-            /*         reference?.target().unwrap_or(git2::Oid::zero()), */
-            /*     ) { */
-            /*         if let Some(id) = josh::get_change_id(&commit) { */
-            /*             amends.insert(id, commit.id()); */
-            /*         } */
-            /*     } */
-            /* } */
-            amends
-        };
+
+
+        let amends = std::collections::HashMap::new();
+        //let amends = {
+        //    let gerrit_changes = format!(
+        //        "refs/josh/upstream/{}/refs/changes/*",
+        //        repo_update.base_ns,
+        //    );
+        //    let mut amends = std::collections::HashMap::new();
+        //    for reference in
+        //        transaction.repo().references_glob(&gerrit_changes)?
+        //    {
+        //        if let Ok(commit) = transaction.repo().find_commit(
+        //            reference?.target().unwrap_or(git2::Oid::zero()),
+        //        ) {
+        //            if let Some(id) = josh::get_change_id(&commit) {
+        //                amends.insert(id, commit.id());
+        //            }
+        //        }
+        //    }
+        //    amends
+        //};
 
         let filterobj = josh::filter::parse(&repo_update.filter_spec)?;
         let new_oid = git2::Oid::from_str(&new)?;
