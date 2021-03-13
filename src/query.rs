@@ -2,6 +2,7 @@ use super::*;
 
 struct GraphQLHelper {
     repo_path: std::path::PathBuf,
+    ref_prefix: String,
     headref: String,
 }
 
@@ -22,7 +23,8 @@ impl GraphQLHelper {
             .join(path);
         let path = normalize_path(&path);
 
-        let transaction = cache::Transaction::open(&self.repo_path)?;
+        let transaction =
+            cache::Transaction::open(&self.repo_path, Some(&self.ref_prefix))?;
 
         let reference = transaction.repo().find_reference(&self.headref)?;
         let tree = reference.peel_to_tree()?;
@@ -35,7 +37,7 @@ impl GraphQLHelper {
             .unwrap_or(vec![]);
         let query = String::from_utf8(blob)?;
 
-        let transaction = cache::Transaction::open(&self.repo_path)?;
+        let transaction = cache::Transaction::open(&self.repo_path, None)?;
         let (res, _errors) = juniper::execute_sync(
             &query,
             None,
@@ -86,6 +88,7 @@ mod helpers {
 
 pub fn render(
     repo: &git2::Repository,
+    ref_prefix: &str,
     headref: &str,
     query_and_params: &str,
 ) -> JoshResult<Option<String>> {
@@ -117,7 +120,7 @@ pub fn render(
             return Ok(Some(template.to_string()));
         }
         if cmd == "graphql" {
-            let transaction = cache::Transaction::open(&repo.path())?;
+            let transaction = cache::Transaction::open(&repo.path(), None)?;
             let (res, _errors) = juniper::execute_sync(
                 &template.to_string(),
                 None,
@@ -150,6 +153,7 @@ pub fn render(
         "graphql",
         Box::new(GraphQLHelper {
             repo_path: repo.path().to_owned(),
+            ref_prefix: ref_prefix.to_owned(),
             headref: headref.to_string(),
         }),
     );

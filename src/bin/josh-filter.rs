@@ -120,7 +120,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
     }
 
     let repo = git2::Repository::open_from_env()?;
-    let transaction = josh::cache::Transaction::new(repo);
+    let transaction = josh::cache::Transaction::new(repo, None);
     let repo = transaction.repo();
 
     let odb = repo.odb()?;
@@ -283,6 +283,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
             "{}",
             josh::query::render(
                 &git2::Repository::open_from_env()?,
+                "",
                 &update_target.to_string(),
                 &query,
             )?

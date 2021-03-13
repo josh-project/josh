@@ -168,16 +168,13 @@ pub fn find_all_workspaces_and_subdirectories(
 pub fn get_info(
     transaction: &cache::Transaction,
     filter: filter::Filter,
-    upstream_repo: &str,
     headref: &str,
 ) -> JoshResult<String> {
     let _trace_s = span!(Level::TRACE, "get_info");
 
-    let obj = transaction.repo().revparse_single(&format!(
-        "refs/josh/upstream/{}/{}",
-        &to_ns(&upstream_repo),
-        &headref
-    ))?;
+    let obj = transaction
+        .repo()
+        .revparse_single(&transaction.refname(&headref))?;
 
     let commit = obj.peel_to_commit()?;
 
@@ -258,7 +255,7 @@ pub fn refresh_known_filters(
 }
 
 pub fn run(repo_path: &std::path::Path, do_gc: bool) -> JoshResult<()> {
-    let transaction = cache::Transaction::open(&repo_path)?;
+    let transaction = cache::Transaction::open(&repo_path, None)?;
     let known_filters = housekeeping::discover_filter_candidates(&transaction)?;
     refresh_known_filters(&transaction, &known_filters)?;
     info!(
