@@ -1,1 +1,3 @@
-**/*.t -linguist-detectable
+*.t -linguist-detectable
+jquery-*.js linguist-vendored
+codemirror.js linguist-vendored
