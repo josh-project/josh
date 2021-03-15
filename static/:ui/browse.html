@@ -1,0 +1,113 @@
+<html>
+
+<head>
+    <script src="jquery-3.6.0.js"></script>
+    <script src="codemirror.js"></script>
+    <link rel="stylesheet" href="codemirror.css">
+    <script src="clike/clike.js"></script>
+
+    <style>
+    #filename {
+        width:90%;
+    }
+
+    #codeview {
+        z-index: -1;
+    }
+
+    .CodeMirror pre {
+      z-index: -1;
+    }
+
+    </style>
+
+    <script>
+        $(document).ready(function() {
+
+            var update_file = function() {
+
+                var repo = $('#repo').val();
+                var ref = $('#ref').val();
+                var filter = $('#filter').val();
+                var filename = $('#filename').val();
+                var url = `/${repo}.git@${ref}${filter}.git?get=${filename}`;
+                console.log(url);
+                editor.getDoc().setValue("");
+                $.get(url, function(data) {
+                    editor.setSize("100%", "100%");
+                    editor.getDoc().setValue(data);
+                });
+            };
+
+
+            $( "#fileform" ).submit(function( event ) {
+                update_file();
+
+                event.preventDefault();
+            });
+
+            $("#repo").val(window.location.hash.substr(1));
+
+            var update_refs = function() {
+               var repo = $('#repo').val();
+               $.ajax({url: `/~/graphql/${repo}.git`,
+                  contentType: "application/json",type:'POST',
+                  data: JSON.stringify({ query:`{ refs { name } }`}),
+                  success: function(result) {
+                        var options = [];
+                        var r = result.data.refs;
+                        console.log(r);
+                        for (var i = 0; i < r.length; i++) {
+                            console.log(r[i]);
+                            options.push(`<option value="${r[i].name}">${r[i].name}</option>`);
+                        }
+                        $("#ref").html(options.join(''));
+                        $("#ref").val("refs/heads/master");
+                        update_file();
+                  }
+               });
+            };
+            update_refs();
+
+            $( "#revform" ).submit(function( event ) {
+                update_file();
+                event.preventDefault();
+            });
+
+            var codeview = document.getElementById('codeview');
+            var editor = CodeMirror(codeview, {
+                mode:  "clike",
+                lineNumbers: true,
+                readOnly: true
+            });
+        });
+
+    </script>
+</head>
+
+<body>
+<form id="revform">
+    <input id="repo" value="" readonly/>
+    <select id="ref" value="refs/heads/master"/>
+    <input id="filter" value=":nop"/>
+    <input type="submit"/>
+</form>
+<form id="fileform">
+    <input id="filename" value="README.md"/>
+    <input type="submit"/>
+</form>
+
+<table>
+    <tr>
+        <td>
+            <div id="listview"></div>
+        </td>
+        <td>
+            <div id="codeview"></div>
+        </td>
+    </tr>
+</table>
+
+</body>
+
+</html>
