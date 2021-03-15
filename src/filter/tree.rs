@@ -17,9 +17,11 @@ pub fn pathstree<'a>(
         if entry.kind() == Some(git2::ObjectType::Blob) {
             let file_blob = repo.blob(
                 &std::path::Path::new(
-                    &(if root.len() > 0 {root.to_owned()
-                        + "/" } else { "".to_string()}
-                        + entry.name().ok_or(super::josh_error("no name"))?),
+                    &(if root.len() > 0 {
+                        root.to_owned() + "/"
+                    } else {
+                        "".to_string()
+                    } + entry.name().ok_or(super::josh_error("no name"))?),
                 )
                 .to_str()
                 .ok_or(super::josh_error("no name"))?
