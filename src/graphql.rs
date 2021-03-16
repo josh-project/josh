@@ -471,7 +471,8 @@ pub struct RepositoryMut {}
 
 fn marker_path(commit: &str) -> std::path::PathBuf {
     std::path::Path::new(&commit[..1])
-        .join(&commit[1..2])
+        .join(&commit[1..3])
+        .join(&commit[3..6])
         .join(&commit)
 }
 
