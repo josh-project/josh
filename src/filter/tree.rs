@@ -14,24 +14,17 @@ pub fn pathstree<'a>(
     let mut result = tree::empty(&repo);
 
     for entry in tree.iter() {
+        let name = entry.name().ok_or(super::josh_error("no name"))?;
         if entry.kind() == Some(git2::ObjectType::Blob) {
             let file_blob = repo.blob(
-                &std::path::Path::new(
-                    &(if root.len() > 0 {
-                        root.to_owned() + "/"
-                    } else {
-                        "".to_string()
-                    } + entry.name().ok_or(super::josh_error("no name"))?),
-                )
-                .to_str()
-                .ok_or(super::josh_error("no name"))?
-                .as_bytes(),
+                normalize_path(&std::path::Path::new(root).join(name))
+                    .to_str()
+                    .ok_or(super::josh_error("no name"))?
+                    .as_bytes(),
             )?;
             result = replace_child(
                 &repo,
-                &std::path::Path::new(
-                    entry.name().ok_or(super::josh_error("no name"))?,
-                ),
+                &std::path::Path::new(name),
                 file_blob,
                 0o0100644,
                 &result,
@@ -44,7 +37,7 @@ pub fn pathstree<'a>(
                     "{}{}{}",
                     root,
                     if root == "" { "" } else { "/" },
-                    entry.name().ok_or(super::josh_error("no name"))?
+                    name
                 ),
                 entry.id(),
                 transaction,
@@ -54,9 +47,7 @@ pub fn pathstree<'a>(
             if s != tree::empty_id() {
                 result = replace_child(
                     &repo,
-                    &std::path::Path::new(
-                        entry.name().ok_or(super::josh_error("no name"))?,
-                    ),
+                    &std::path::Path::new(name),
                     s,
                     0o0040000,
                     &result,
