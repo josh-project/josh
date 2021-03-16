@@ -100,20 +100,21 @@
   * marker
 
   $ git ls-tree FETCH_HEAD
-  040000 tree 9ad9517bbaed76439520e262ad9659465725abb1\t1 (esc)
+  040000 tree cdbd6c96689b4c14ba07b41273cfbd24de9e2c4f\t1 (esc)
 
   $ git checkout -q FETCH_HEAD
 
   $ tree
   .
   `-- 1
-      `-- e
-          `-- 1e64dc7136eae9c6b88e4ab831322f3c72a5c0e4
-              `-- a
-                  `-- b
-                      `-- c
+      `-- e6
+          `-- 4dc
+              `-- 1e64dc7136eae9c6b88e4ab831322f3c72a5c0e4
+                  `-- a
+                      `-- b
+                          `-- c
   
-  5 directories, 1 file
+  6 directories, 1 file
 
   $ cat > ../query <<EOF
   > {"query":"mutation {
@@ -143,21 +144,22 @@
   * marker
 
   $ git ls-tree FETCH_HEAD
-  040000 tree adcef29db5c8fbf0012d0adbefdf40c6ccde3b4b\t1 (esc)
+  040000 tree 8e2f931abcf2dc6058db4c81e97817b8e4b5ce6b\t1 (esc)
 
   $ git checkout -q FETCH_HEAD
 
   $ tree
   .
   `-- 1
-      `-- e
-          `-- 1e64dc7136eae9c6b88e4ab831322f3c72a5c0e4
-              `-- a
-                  `-- b
-                      |-- c
-                      `-- d
+      `-- e6
+          `-- 4dc
+              `-- 1e64dc7136eae9c6b88e4ab831322f3c72a5c0e4
+                  `-- a
+                      `-- b
+                          |-- c
+                          `-- d
   
-  5 directories, 2 files
+  6 directories, 2 files
 
 
   $ cat > ../query <<EOF
@@ -192,21 +194,22 @@
   * marker
 
   $ git ls-tree FETCH_HEAD
-  040000 tree b1d3c356e5d73df38c8cf9538b643176182ad2af\t1 (esc)
+  040000 tree bc163abfb381f8f347805b4353a29e6ca11ec6ae\t1 (esc)
 
   $ git checkout -q FETCH_HEAD
 
   $ tree
   .
   `-- 1
-      `-- e
-          `-- 1e64dc7136eae9c6b88e4ab831322f3c72a5c0e4
-              `-- a
-                  `-- b
-                      |-- c
-                      `-- d
+      `-- e6
+          `-- 4dc
+              `-- 1e64dc7136eae9c6b88e4ab831322f3c72a5c0e4
+                  `-- a
+                      `-- b
+                          |-- c
+                          `-- d
   
-  5 directories, 2 files
+  6 directories, 2 files
 
   $ cat > ../query <<EOF
   > {"query":"{ rev(at:\"refs/heads/master\") { files { path, text, comments(topic:\"foo\") {
