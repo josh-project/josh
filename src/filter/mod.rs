@@ -30,8 +30,7 @@ pub fn nop() -> Filter {
 fn to_filter(op: Op) -> Filter {
     let s = format!("{:?}", op);
     let f = Filter(
-        git2::Oid::hash_object(git2::ObjectType::Blob, s.as_bytes())
-            .expect("hash_object filter"),
+        git2::Oid::hash_object(git2::ObjectType::Blob, s.as_bytes()).expect("hash_object filter"),
     );
     FILTERS.lock().unwrap().insert(f, op);
     return f;
@@ -246,10 +245,9 @@ fn apply_to_commit2(
         Op::Empty => return Ok(Some(git2::Oid::zero())),
 
         Op::Chain(a, b) => {
-            let r = some_or!(
-                apply_to_commit2(&to_op(*a), &commit, transaction)?,
-                { return Ok(None) }
-            );
+            let r = some_or!(apply_to_commit2(&to_op(*a), &commit, transaction)?, {
+                return Ok(None);
+            });
             if let Ok(r) = repo.find_commit(r) {
                 return apply_to_commit2(&to_op(*b), &r, transaction);
             } else {
@@ -285,8 +283,7 @@ fn apply_to_commit2(
 
             let filtered = some_or!(filtered, { return Ok(None) });
 
-            let filtered: Vec<_> =
-                filters.iter().zip(filtered.into_iter()).collect();
+            let filtered: Vec<_> = filters.iter().zip(filtered.into_iter()).collect();
 
             let filtered = filtered
                 .into_iter()
@@ -322,15 +319,13 @@ fn apply_to_commit2(
                         &repo,
                         &parent.tree().unwrap_or(tree::empty(&repo)),
                         &ws_path.join("workspace.josh"),
-                    )).unwrap_or(to_filter(Op::Empty));
+                    ))
+                    .unwrap_or(to_filter(Op::Empty));
 
-                    apply_to_commit2(
-                        &Op::Subtract(cw, pcw),
-                        &parent,
-                        transaction,
-                    )
+                    apply_to_commit2(&Op::Subtract(cw, pcw), &parent, transaction)
                 })
-                .collect::<JoshResult<Vec<_>>>()?.into_iter()
+                .collect::<JoshResult<Vec<_>>>()?
+                .into_iter()
                 .collect::<Option<Vec<_>>>();
 
             let extra_parents = some_or!(extra_parents, { return Ok(None) });
@@ -357,8 +352,7 @@ fn apply_to_commit2(
                 .map(|x| transaction.get(filter, x.id()))
                 .collect::<Option<Vec<_>>>();
 
-            let filtered_parent_ids =
-                some_or!(filtered_parent_ids, { return Ok(None) });
+            let filtered_parent_ids = some_or!(filtered_parent_ids, { return Ok(None) });
 
             let trees: Vec<git2::Oid> = filtered_parent_ids
                 .iter()
@@ -411,8 +405,7 @@ fn apply_to_commit2(
             .collect::<Option<_>>()
     };
 
-    let filtered_parent_ids =
-        some_or!(filtered_parent_ids, { return Ok(None) });
+    let filtered_parent_ids = some_or!(filtered_parent_ids, { return Ok(None) });
 
     return Some(history::create_filtered_commit(
         commit,
@@ -456,9 +449,7 @@ fn apply2<'a>(
                 &repo,
                 "",
                 tree.id(),
-                &|path, isblob| {
-                    isblob && (pattern.matches_path_with(&path, options))
-                },
+                &|path, isblob| isblob && (pattern.matches_path_with(&path, options)),
                 git2::Oid::zero(),
                 &mut std::collections::HashMap::new(),
             )
@@ -481,13 +472,7 @@ fn apply2<'a>(
                 .and_then(|x| repo.find_tree(x.id()))
                 .unwrap_or(tree::empty(&repo)));
         }
-        Op::Prefix(path) => tree::insert(
-            &repo,
-            &tree::empty(&repo),
-            &path,
-            tree.id(),
-            0o0040000,
-        ),
+        Op::Prefix(path) => tree::insert(&repo, &tree::empty(&repo), &path, tree.id(), 0o0040000),
 
         Op::Subtract(a, b) => {
             let af = apply(transaction, *a, tree.clone())?;
@@ -501,11 +486,9 @@ fn apply2<'a>(
 
         Op::Workspace(path) => {
             let base = to_filter(Op::Subdir(path.to_owned()));
-            if let Ok(cw) = parse::parse(&tree::get_blob(
-                &repo,
-                &tree,
-                &path.join("workspace.josh"),
-            )) {
+            if let Ok(cw) =
+                parse::parse(&tree::get_blob(&repo, &tree, &path.join("workspace.josh")))
+            {
                 apply(transaction, compose(base, cw), tree)
             } else {
                 apply(transaction, base, tree)
@@ -517,8 +500,7 @@ fn apply2<'a>(
                 .iter()
                 .map(|f| Ok(apply(transaction, *f, tree.clone())?))
                 .collect::<JoshResult<_>>()?;
-            let filtered: Vec<_> =
-                filters.iter().zip(filtered.into_iter()).collect();
+            let filtered: Vec<_> = filters.iter().zip(filtered.into_iter()).collect();
             return tree::compose(transaction, filtered);
         }
 
@@ -572,12 +554,7 @@ fn unapply2<'a>(
                 0o0100644, // Should this handle filemode?
             )?;
 
-            return unapply(
-                transaction,
-                compose(root, mapped),
-                tree,
-                parent_tree,
-            );
+            return unapply(transaction, compose(root, mapped), tree, parent_tree);
         }
         Op::Compose(filters) => {
             let mut remaining = tree.clone();
@@ -593,8 +570,7 @@ fn unapply2<'a>(
                 if tree::empty_id() == from_empty.id() {
                     continue;
                 }
-                result =
-                    unapply(transaction, *other, remaining.clone(), result)?;
+                result = unapply(transaction, *other, remaining.clone(), result)?;
                 let reapply = apply(transaction, *other, from_empty.clone())?;
 
                 remaining = transaction.repo().find_tree(tree::subtract(
@@ -613,13 +589,7 @@ fn unapply2<'a>(
                 .map(|x| (x.id(), x.filemode()))
                 .unwrap_or((git2::Oid::zero(), 0o0100644));
             if let Ok(_) = transaction.repo().find_blob(file) {
-                tree::insert(
-                    &transaction.repo(),
-                    &parent_tree,
-                    &path,
-                    file,
-                    mode,
-                )
+                tree::insert(&transaction.repo(), &parent_tree, &path, file, mode)
             } else {
                 Ok(tree::empty(&transaction.repo()))
             }
@@ -630,13 +600,7 @@ fn unapply2<'a>(
                 let subtracted = tree::subtract(
                     &transaction.repo(),
                     tree.id(),
-                    unapply2(
-                        transaction,
-                        &b,
-                        tree,
-                        tree::empty(&transaction.repo()),
-                    )?
-                    .id(),
+                    unapply2(transaction, &b, tree, tree::empty(&transaction.repo()))?.id(),
                 )?;
                 Ok(transaction.repo().find_tree(tree::overlay(
                     &transaction.repo(),
@@ -657,9 +621,7 @@ fn unapply2<'a>(
                 &transaction.repo(),
                 "",
                 tree.id(),
-                &|path, isblob| {
-                    isblob && (pattern.matches_path_with(&path, options))
-                },
+                &|path, isblob| isblob && (pattern.matches_path_with(&path, options)),
                 git2::Oid::zero(),
                 &mut std::collections::HashMap::new(),
             )?;

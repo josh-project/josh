@@ -4,9 +4,7 @@ pub mod juniper_hyper;
 #[macro_use]
 extern crate lazy_static;
 
-fn baseref_and_options(
-    refname: &str,
-) -> josh::JoshResult<(String, String, Vec<String>)> {
+fn baseref_and_options(refname: &str) -> josh::JoshResult<(String, String, Vec<String>)> {
     let mut split = refname.splitn(2, '%');
     let push_to = split.next().ok_or(josh::josh_error("no next"))?.to_owned();
 
@@ -39,9 +37,7 @@ pub struct RepoUpdate {
     pub git_dir: String,
 }
 
-pub fn process_repo_update(
-    repo_update: RepoUpdate,
-) -> josh::JoshResult<String> {
+pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> {
     let mut resp = String::new();
 
     let p = std::path::PathBuf::from(&repo_update.git_dir)
@@ -70,8 +66,7 @@ pub fn process_repo_update(
         tracing::debug!("josh-merge: {:?}", josh_merge);
 
         let old = if old == git2::Oid::zero() {
-            let rev =
-                format!("refs/namespaces/{}/{}", repo_update.git_ns, &baseref);
+            let rev = format!("refs/namespaces/{}/{}", repo_update.git_ns, &baseref);
             let oid = if let Ok(x) = transaction.repo().revparse_single(&rev) {
                 x.id()
             } else {
@@ -90,25 +85,24 @@ pub fn process_repo_update(
             transaction.refname(&baseref)
         };
 
-        let original_target = if let Ok(oid) =
-            transaction.repo().refname_to_id(&original_target_ref)
-        {
-            tracing::debug!(
-                "push: original_target oid: {:?}, original_target_ref: {:?}",
-                oid,
-                original_target_ref
-            );
-            oid
-        } else {
-            return Err(josh::josh_error(&unindent::unindent(&format!(
-                r###"
-                Branch {:?} does not exist on remote.
-                If you want to create it, pass "-o base=<branchname>"
-                to specify a base branch.
-                "###,
-                baseref
-            ))));
-        };
+        let original_target =
+            if let Ok(oid) = transaction.repo().refname_to_id(&original_target_ref) {
+                tracing::debug!(
+                    "push: original_target oid: {:?}, original_target_ref: {:?}",
+                    oid,
+                    original_target_ref
+                );
+                oid
+            } else {
+                return Err(josh::josh_error(&unindent::unindent(&format!(
+                    r###"
+                    Branch {:?} does not exist on remote.
+                    If you want to create it, pass "-o base=<branchname>"
+                    to specify a base branch.
+                    "###,
+                    baseref
+                ))));
+            };
 
         let amends = std::collections::HashMap::new();
         //let amends = {
@@ -152,9 +146,7 @@ pub fn process_repo_update(
                     rewritten
                 }
                 josh::UnapplyResult::BranchDoesNotExist => {
-                    return Err(josh::josh_error(
-                        "branch does not exist on remote",
-                    ));
+                    return Err(josh::josh_error("branch does not exist on remote"));
                 }
                 josh::UnapplyResult::RejectMerge(parent_count) => {
                     return Err(josh::josh_error(&format!(
@@ -172,8 +164,7 @@ pub fn process_repo_update(
         };
 
         let oid_to_push = if josh_merge {
-            let backward_commit =
-                transaction.repo().find_commit(backward_new_oid)?;
+            let backward_commit = transaction.repo().find_commit(backward_new_oid)?;
             if let Ok(Ok(base_commit)) = transaction
                 .repo()
                 .revparse_single(&original_target_ref)
@@ -265,8 +256,7 @@ fn push_head_url(
     let nurl = url_with_auth(&url, &username);
     let cmd = format!("git push {} '{}'", &nurl, &spec);
     let mut fakehead = repo.reference(&rn, oid, true, "push_head_url")?;
-    let (stdout, stderr, status) =
-        shell.command_env(&cmd, &[], &[("GIT_PASSWORD", &password)]);
+    let (stdout, stderr, status) = shell.command_env(&cmd, &[], &[("GIT_PASSWORD", &password)]);
     fakehead.delete()?;
     tracing::debug!("{}", &stderr);
     tracing::debug!("{}", &stdout);
@@ -314,11 +304,9 @@ fn url_with_auth(url: &str, username: &str) -> String {
         let splitted: Vec<&str> = url.splitn(2, "://").collect();
         let proto = splitted[0];
         let rest = splitted[1];
-        let username = percent_encoding::utf8_percent_encode(
-            &username,
-            percent_encoding::NON_ALPHANUMERIC,
-        )
-        .to_string();
+        let username =
+            percent_encoding::utf8_percent_encode(&username, percent_encoding::NON_ALPHANUMERIC)
+                .to_string();
         format!("{}://{}@{}", &proto, &username, &rest)
     } else {
         let splitted: Vec<&str> = url.splitn(2, "://").collect();
@@ -353,18 +341,11 @@ pub fn fetch_refs_from_url(
     let (username, password) = auth.parse()?;
     let nurl = url_with_auth(&url, &username);
 
-    let cmd =
-        format!("git fetch --prune --no-tags {} {}", &nurl, &specs.join(" "));
+    let cmd = format!("git fetch --prune --no-tags {} {}", &nurl, &specs.join(" "));
     tracing::info!("fetch_refs_from_url {:?} {:?} {:?}", cmd, path, "");
 
-    let (_stdout, stderr, _) =
-        shell.command_env(&cmd, &[], &[("GIT_PASSWORD", &password)]);
-    tracing::debug!(
-        "fetch_refs_from_url done {:?} {:?} {:?}",
-        cmd,
-        path,
-        stderr
-    );
+    let (_stdout, stderr, _) = shell.command_env(&cmd, &[], &[("GIT_PASSWORD", &password)]);
+    tracing::debug!("fetch_refs_from_url done {:?} {:?} {:?}", cmd, path, stderr);
     if stderr.contains("fatal: Authentication failed") {
         return Ok(false);
     }
@@ -384,10 +365,7 @@ pub struct TmpGitNamespace {
 }
 
 impl TmpGitNamespace {
-    pub fn new(
-        repo_path: &std::path::Path,
-        span: tracing::Span,
-    ) -> TmpGitNamespace {
+    pub fn new(repo_path: &std::path::Path, span: tracing::Span) -> TmpGitNamespace {
         let n = format!("request_{}", uuid::Uuid::new_v4());
         let n2 = n.clone();
         TmpGitNamespace {
@@ -424,8 +402,7 @@ impl Drop for TmpGitNamespace {
         if std::env::var_os("JOSH_KEEP_NS") != None {
             return;
         }
-        let request_tmp_namespace =
-            self.repo_path.join("refs/namespaces").join(&self.name);
+        let request_tmp_namespace = self.repo_path.join("refs/namespaces").join(&self.name);
         std::fs::remove_dir_all(&request_tmp_namespace).unwrap_or_else(|e| {
             tracing::error!(
                 "remove_dir_all {:?} failed, error:{:?}",

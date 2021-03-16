@@ -23,8 +23,7 @@ impl GraphQLHelper {
             .join(path);
         let path = normalize_path(&path);
 
-        let transaction =
-            cache::Transaction::open(&self.repo_path, Some(&self.ref_prefix))?;
+        let transaction = cache::Transaction::open(&self.repo_path, Some(&self.ref_prefix))?;
 
         let reference = transaction.repo().find_reference(&self.headref)?;
         let tree = reference.peel_to_tree()?;
@@ -41,9 +40,7 @@ impl GraphQLHelper {
         let (res, _errors) = juniper::execute_sync(
             &query,
             None,
-            &graphql::commit_schema(
-                reference.target().ok_or(josh_error("missing target"))?,
-            ),
+            &graphql::commit_schema(reference.target().ok_or(josh_error("missing target"))?),
             &juniper::Variables::new(),
             &graphql::context(transaction),
         )?;
@@ -68,10 +65,7 @@ impl handlebars::HelperDef for GraphQLHelper {
         _: &handlebars::Handlebars,
         _: &handlebars::Context,
         rc: &mut handlebars::RenderContext,
-    ) -> Result<
-        Option<handlebars::ScopedJson<'reg, 'rc>>,
-        handlebars::RenderError,
-    > {
+    ) -> Result<Option<handlebars::ScopedJson<'reg, 'rc>>, handlebars::RenderError> {
         return Ok(Some(handlebars::ScopedJson::Derived(
             self.josh_helper(
                 h.hash(),
@@ -124,9 +118,7 @@ pub fn render(
             let (res, _errors) = juniper::execute_sync(
                 &template.to_string(),
                 None,
-                &graphql::commit_schema(
-                    reference.target().ok_or(josh_error("missing target"))?,
-                ),
+                &graphql::commit_schema(reference.target().ok_or(josh_error("missing target"))?),
                 &juniper::Variables::new(),
                 &graphql::context(transaction),
             )?;
@@ -161,14 +153,12 @@ pub fn render(
     let mut params = std::collections::BTreeMap::new();
     for p in parameters {
         let mut split = p.splitn(2, "=");
-        let name = split.next().ok_or(josh_error(&format!(
-            "invalid query {:?}",
-            query_and_params
-        )))?;
-        let value = split.next().ok_or(josh_error(&format!(
-            "invalid query {:?}",
-            query_and_params
-        )))?;
+        let name = split
+            .next()
+            .ok_or(josh_error(&format!("invalid query {:?}", query_and_params)))?;
+        let value = split
+            .next()
+            .ok_or(josh_error(&format!("invalid query {:?}", query_and_params)))?;
         params.insert(name.to_string(), value.to_string());
     }
 

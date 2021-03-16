@@ -69,11 +69,7 @@ const FRAGMENT: &percent_encoding::AsciiSet = &percent_encoding::CONTROLS
     .add(b'\\');
 
 pub fn to_ns(path: &str) -> String {
-    return percent_encoding::utf8_percent_encode(
-        path.trim_matches('/'),
-        FRAGMENT,
-    )
-    .to_string();
+    return percent_encoding::utf8_percent_encode(path.trim_matches('/'), FRAGMENT).to_string();
 }
 
 pub fn from_ns(path: &str) -> String {
@@ -178,8 +174,7 @@ fn filter_ref(
         let original_commit = reference.peel_to_commit()?;
         let oid = original_commit.id();
 
-        let filter_commit = if let Some(s) = transaction.get_ref(filterobj, oid)
-        {
+        let filter_commit = if let Some(s) = transaction.get_ref(filterobj, oid) {
             s
         } else {
             tracing::trace!("apply_to_commit");
@@ -258,9 +253,7 @@ pub fn filter_refs(
 
 pub fn normalize_path(path: &std::path::Path) -> std::path::PathBuf {
     let mut components = path.components().peekable();
-    let mut ret = if let Some(c @ std::path::Component::Prefix(..)) =
-        components.peek().cloned()
-    {
+    let mut ret = if let Some(c @ std::path::Component::Prefix(..)) = components.peek().cloned() {
         components.next();
         std::path::PathBuf::from(c.as_os_str())
     } else {

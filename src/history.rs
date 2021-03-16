@@ -84,8 +84,7 @@ fn find_unapply_base(
         return Ok(*original);
     }
     let contained_in_commit = transaction.repo().find_commit(contained_in)?;
-    let oid =
-        filter::apply_to_commit(filter, &contained_in_commit, transaction)?;
+    let oid = filter::apply_to_commit(filter, &contained_in_commit, transaction)?;
     if oid != git2::Oid::zero() {
         bm.insert(contained_in, oid);
     }
@@ -95,8 +94,7 @@ fn find_unapply_base(
 
     for original in walk {
         let original = transaction.repo().find_commit(original?)?;
-        if filtered == filter::apply_to_commit(filter, &original, transaction)?
-        {
+        if filtered == filter::apply_to_commit(filter, &original, transaction)? {
             bm.insert(filtered, original.id());
             return Ok(original.id());
         }
@@ -120,8 +118,7 @@ pub fn find_original(
 
     for original in walk {
         let original = transaction.repo().find_commit(original?)?;
-        if filtered == filter::apply_to_commit(filter, &original, transaction)?
-        {
+        if filtered == filter::apply_to_commit(filter, &original, transaction)? {
             if original.parent_ids().count() == 1 {
                 let fp = filter::apply_to_commit(
                     filter,
@@ -239,8 +236,7 @@ pub fn unapply_filter(
             continue;
         }
 
-        let mut filtered_parent_ids: Vec<_> =
-            module_commit.parent_ids().collect();
+        let mut filtered_parent_ids: Vec<_> = module_commit.parent_ids().collect();
 
         let is_initial_merge = filtered_parent_ids.len() == 2
             && !transaction
@@ -252,29 +248,20 @@ pub fn unapply_filter(
             filtered_parent_ids.pop();
         }
 
-        let original_parents: std::result::Result<Vec<_>, _> =
-            filtered_parent_ids
-                .iter()
-                .map(|x| -> JoshResult<_> {
-                    find_unapply_base(
-                        &transaction,
-                        &mut bm,
-                        filterobj,
-                        original_target,
-                        *x,
-                    )
-                })
-                .filter(|x| {
-                    if let Ok(i) = x {
-                        *i != git2::Oid::zero()
-                    } else {
-                        true
-                    }
-                })
-                .map(|x| -> JoshResult<_> {
-                    Ok(transaction.repo().find_commit(x?)?)
-                })
-                .collect();
+        let original_parents: std::result::Result<Vec<_>, _> = filtered_parent_ids
+            .iter()
+            .map(|x| -> JoshResult<_> {
+                find_unapply_base(&transaction, &mut bm, filterobj, original_target, *x)
+            })
+            .filter(|x| {
+                if let Ok(i) = x {
+                    *i != git2::Oid::zero()
+                } else {
+                    true
+                }
+            })
+            .map(|x| -> JoshResult<_> { Ok(transaction.repo().find_commit(x?)?) })
+            .collect();
 
         tracing::info!(
             "parents: {:?} -> {:?}",
@@ -284,13 +271,11 @@ pub fn unapply_filter(
 
         let original_parents = original_parents?;
 
-        let original_parents_refs: Vec<&git2::Commit> =
-            original_parents.iter().collect();
+        let original_parents_refs: Vec<&git2::Commit> = original_parents.iter().collect();
 
         let tree = module_commit.tree()?;
 
-        let commit_message =
-            module_commit.summary().unwrap_or("NO COMMIT MESSAGE");
+        let commit_message = module_commit.summary().unwrap_or("NO COMMIT MESSAGE");
 
         let new_trees: JoshResult<std::collections::HashSet<_>> = {
             let s = tracing::span!(
@@ -305,13 +290,7 @@ pub fn unapply_filter(
             original_parents_refs
                 .iter()
                 .map(|x| -> JoshResult<_> {
-                    Ok(filter::unapply(
-                        transaction,
-                        filterobj,
-                        tree.clone(),
-                        x.tree()?,
-                    )?
-                    .id())
+                    Ok(filter::unapply(transaction, filterobj, tree.clone(), x.tree()?)?.id())
                 })
                 .collect()
         };
@@ -329,9 +308,9 @@ pub fn unapply_filter(
         };
 
         let new_tree = match new_trees.len() {
-            1 => transaction.repo().find_tree(
-                *new_trees.iter().next().ok_or(josh_error("iter.next"))?,
-            )?,
+            1 => transaction
+                .repo()
+                .find_tree(*new_trees.iter().next().ok_or(josh_error("iter.next"))?)?,
             0 => {
                 tracing::debug!("unrelated history");
                 // 0 means the history is unrelated. Pushing it will fail if we are not
@@ -364,10 +343,7 @@ pub fn unapply_filter(
                 let mut merged_index = transaction.repo().merge_commits(
                     &transaction.repo().find_commit(*commit_id)?,
                     &transaction.repo().find_commit(ret)?,
-                    Some(
-                        git2::MergeOptions::new()
-                            .file_favor(git2::FileFavor::Theirs),
-                    ),
+                    Some(git2::MergeOptions::new().file_favor(git2::FileFavor::Theirs)),
                 )?;
 
                 if merged_index.has_conflicts() {
@@ -379,8 +355,7 @@ pub fn unapply_filter(
                     ));
                 }
 
-                let merged_tree =
-                    merged_index.write_tree_to(&transaction.repo())?;
+                let merged_tree = merged_index.write_tree_to(&transaction.repo())?;
 
                 ret = rewrite_commit(
                     &transaction.repo(),
@@ -445,12 +420,11 @@ fn create_filtered_commit2<'a>(
     filtered_parent_ids: Vec<git2::Oid>,
     filtered_tree: git2::Tree<'a>,
 ) -> JoshResult<(git2::Oid, bool)> {
-    let filtered_parent_commits: std::result::Result<Vec<_>, _> =
-        filtered_parent_ids
-            .iter()
-            .filter(|x| **x != git2::Oid::zero())
-            .map(|x| repo.find_commit(*x))
-            .collect();
+    let filtered_parent_commits: std::result::Result<Vec<_>, _> = filtered_parent_ids
+        .iter()
+        .filter(|x| **x != git2::Oid::zero())
+        .map(|x| repo.find_commit(*x))
+        .collect();
 
     let mut filtered_parent_commits = filtered_parent_commits?;
 
@@ -458,12 +432,11 @@ fn create_filtered_commit2<'a>(
         .iter()
         .any(|x| x.tree_id() == filter::tree::empty_id())
     {
-        let is_initial_merge = filtered_parent_ids.len() > 1
-            && !repo.merge_base_many(&filtered_parent_ids).is_ok();
+        let is_initial_merge =
+            filtered_parent_ids.len() > 1 && !repo.merge_base_many(&filtered_parent_ids).is_ok();
 
         if is_initial_merge {
-            filtered_parent_commits
-                .retain(|x| x.tree_id() != filter::tree::empty_id());
+            filtered_parent_commits.retain(|x| x.tree_id() != filter::tree::empty_id());
         }
     }
 
