@@ -15,22 +15,18 @@ pub fn default_from_to(
 ) -> Vec<(String, String)> {
     let mut refs = vec![];
 
-    let glob =
-        format!("refs/josh/upstream/{}/refs/heads/*", &to_ns(upstream_repo));
+    let glob = format!("refs/josh/upstream/{}/refs/heads/*", &to_ns(upstream_repo));
     for refname in repo.references_glob(&glob).unwrap().names() {
         let refname = refname.unwrap();
-        let to_ref =
-            refname.replacen("refs/josh/upstream", "refs/namespaces", 1);
+        let to_ref = refname.replacen("refs/josh/upstream", "refs/namespaces", 1);
         let to_ref = to_ref.replacen(&to_ns(upstream_repo), &namespace, 1);
         refs.push((refname.to_owned(), to_ref.clone()));
     }
 
-    let glob =
-        format!("refs/josh/upstream/{}/refs/tags/*", &to_ns(upstream_repo));
+    let glob = format!("refs/josh/upstream/{}/refs/tags/*", &to_ns(upstream_repo));
     for refname in repo.references_glob(&glob).unwrap().names() {
         let refname = refname.unwrap();
-        let to_ref =
-            refname.replacen("refs/josh/upstream", "refs/namespaces", 1);
+        let to_ref = refname.replacen("refs/josh/upstream", "refs/namespaces", 1);
         let to_ref = to_ref.replacen(&to_ns(upstream_repo), &namespace, 1);
         refs.push((refname.to_owned(), to_ref.clone()));
     }
@@ -96,9 +92,7 @@ regex_parsed!(
  * Determine filter specs that are either likely to be requested and/or
  * expensive to build from scratch using heuristics.
  */
-pub fn discover_filter_candidates(
-    transaction: &cache::Transaction,
-) -> JoshResult<KnownViews> {
+pub fn discover_filter_candidates(transaction: &cache::Transaction) -> JoshResult<KnownViews> {
     let repo = transaction.repo();
     let mut known_filters = KnownViews::new();
     let trace_s = span!(Level::TRACE, "discover_filter_candidates");
@@ -130,8 +124,7 @@ pub fn discover_filter_candidates(
         let r = reference?;
         let name = r.name().ok_or(josh_error("reference without name"))?;
         tracing::trace!("known: {}", name);
-        let filtered =
-            FilteredRefRegex::from_str(name).ok_or(josh_error("not a ns"))?;
+        let filtered = FilteredRefRegex::from_str(name).ok_or(josh_error("not a ns"))?;
 
         known_filters
             .entry(from_ns(&filtered.upstream_repo))
@@ -145,8 +138,7 @@ pub fn discover_filter_candidates(
 pub fn find_all_workspaces_and_subdirectories(
     tree: &git2::Tree,
 ) -> JoshResult<std::collections::HashSet<String>> {
-    let _trace_s =
-        span!(Level::TRACE, "find_all_workspaces_and_subdirectories");
+    let _trace_s = span!(Level::TRACE, "find_all_workspaces_and_subdirectories");
     let mut hs = std::collections::HashSet::new();
     tree.walk(git2::TreeWalkMode::PreOrder, |root, entry| {
         if entry.name() == Some(&"workspace.josh") {
@@ -234,11 +226,7 @@ pub fn refresh_known_filters(
         let mut updated_count = 0;
 
         for filter_spec in e.iter() {
-            tracing::trace!(
-                "background rebuild: {:?} {:?}",
-                upstream_repo,
-                filter_spec
-            );
+            tracing::trace!("background rebuild: {:?} {:?}", upstream_repo, filter_spec);
 
             let refs = memorize_from_to(
                 &t.repo(),
@@ -246,8 +234,7 @@ pub fn refresh_known_filters(
                 &upstream_repo,
             );
 
-            updated_count +=
-                filter_refs(&t, filter::parse(filter_spec)?, &refs)?;
+            updated_count += filter_refs(&t, filter::parse(filter_spec)?, &refs)?;
         }
         info!("updated {} refs for {:?}", updated_count, upstream_repo);
     }
@@ -260,16 +247,12 @@ pub fn run(repo_path: &std::path::Path, do_gc: bool) -> JoshResult<()> {
     refresh_known_filters(&transaction, &known_filters)?;
     info!(
         "{}",
-        run_command(&transaction.repo().path(), &"git count-objects -v")
-            .replace("\n", "  ")
+        run_command(&transaction.repo().path(), &"git count-objects -v").replace("\n", "  ")
     );
     if do_gc {
         info!(
             "\n----------\n{}\n----------",
-            run_command(
-                &transaction.repo().path(),
-                &"git repack -adkbn --threads=1"
-            )
+            run_command(&transaction.repo().path(), &"git repack -adkbn --threads=1")
         );
         info!(
             "\n----------\n{}\n----------",

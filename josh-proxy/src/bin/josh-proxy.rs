@@ -31,11 +31,8 @@ josh::regex_parsed!(
 );
 
 type FetchTimers = HashMap<String, std::time::Instant>;
-type Polls = Arc<
-    std::sync::Mutex<
-        std::collections::HashSet<(String, josh_proxy::auth::Handle, String)>,
-    >,
->;
+type Polls =
+    Arc<std::sync::Mutex<std::collections::HashSet<(String, josh_proxy::auth::Handle, String)>>>;
 
 #[derive(Clone)]
 struct JoshProxyService {
@@ -69,15 +66,13 @@ async fn fetch_upstream(
     let auth = auth.clone();
     let key = remote_url.clone();
 
-    let refs_to_fetch = if headref != "" && !headref.starts_with("refs/heads/")
-    {
+    let refs_to_fetch = if headref != "" && !headref.starts_with("refs/heads/") {
         vec!["refs/heads/*", "refs/tags/*", headref]
     } else {
         vec!["refs/heads/*", "refs/tags/*"]
     };
 
-    let refs_to_fetch: Vec<_> =
-        refs_to_fetch.iter().map(|x| x.to_string()).collect();
+    let refs_to_fetch: Vec<_> = refs_to_fetch.iter().map(|x| x.to_string()).collect();
 
     let fetch_cached_ok = {
         if let Some(last) = service.fetch_timers.read()?.get(&key) {
@@ -171,23 +166,15 @@ async fn static_paths(
         let service = service.clone();
         let refresh = path == "/filters/refresh";
 
-        let body_str =
-            tokio::task::spawn_blocking(move || -> josh::JoshResult<_> {
-                let transaction =
-                    josh::cache::Transaction::open(&service.repo_path, None)?;
-                let known_filters =
-                    josh::housekeeping::discover_filter_candidates(
-                        &transaction,
-                    )?;
-                if refresh {
-                    josh::housekeeping::refresh_known_filters(
-                        &transaction,
-                        &known_filters,
-                    )?;
-                }
-                Ok(toml::to_string_pretty(&known_filters)?)
-            })
-            .await??;
+        let body_str = tokio::task::spawn_blocking(move || -> josh::JoshResult<_> {
+            let transaction = josh::cache::Transaction::open(&service.repo_path, None)?;
+            let known_filters = josh::housekeeping::discover_filter_candidates(&transaction)?;
+            if refresh {
+                josh::housekeeping::refresh_known_filters(&transaction, &known_filters)?;
+            }
+            Ok(toml::to_string_pretty(&known_filters)?)
+        })
+        .await??;
 
         return Ok(Some(
             Response::builder()
@@ -331,13 +318,12 @@ async fn call_service(
         }
 
         if path == "/~/graphql" {
-            let ctx = std::sync::Arc::new(josh::graphql::context(
-                josh::cache::Transaction::open(&serv.repo_path, None)?,
-            ));
+            let ctx = std::sync::Arc::new(josh::graphql::context(josh::cache::Transaction::open(
+                &serv.repo_path,
+                None,
+            )?));
             let root_node = std::sync::Arc::new(josh::graphql::schema());
-            return Ok(
-                josh_proxy::juniper_hyper::graphql(root_node, ctx, req).await?
-            );
+            return Ok(josh_proxy::juniper_hyper::graphql(root_node, ctx, req).await?);
         }
     }
 
@@ -379,13 +365,9 @@ async fn call_service(
     ]
     .join("");
 
-    if !josh_proxy::auth::check_auth(
-        &remote_url,
-        &auth,
-        ARGS.is_present("require-auth"),
-    )
-    .in_current_span()
-    .await?
+    if !josh_proxy::auth::check_auth(&remote_url, &auth, ARGS.is_present("require-auth"))
+        .in_current_span()
+        .await?
     {
         tracing::trace!("require-auth");
         let builder = Response::builder()
@@ -430,15 +412,13 @@ async fn call_service(
     }
 
     if parsed_url.api == "/~/graphql" {
-        let ctx = std::sync::Arc::new(josh::graphql::context(
-            josh::cache::Transaction::open(
-                &serv.repo_path,
-                Some(&format!(
-                    "refs/josh/upstream/{}/",
-                    &josh::to_ns(&parsed_url.upstream_repo),
-                )),
-            )?,
-        ));
+        let ctx = std::sync::Arc::new(josh::graphql::context(josh::cache::Transaction::open(
+            &serv.repo_path,
+            Some(&format!(
+                "refs/josh/upstream/{}/",
+                &josh::to_ns(&parsed_url.upstream_repo),
+            )),
+        )?));
         let root_node = std::sync::Arc::new(josh::graphql::repo_schema(
             parsed_url
                 .upstream_repo
@@ -451,23 +431,22 @@ async fn call_service(
     }
 
     if req.uri().query() == Some("info") {
-        let info_str =
-            tokio::task::spawn_blocking(move || -> josh::JoshResult<_> {
-                let transaction = josh::cache::Transaction::open(
-                    &serv.repo_path,
-                    Some(&format!(
-                        "refs/josh/upstream/{}/",
-                        &josh::to_ns(&parsed_url.upstream_repo),
-                    )),
-                )?;
-                josh::housekeeping::get_info(
-                    &transaction,
-                    josh::filter::parse(&parsed_url.filter)?,
-                    &headref,
-                )
-            })
-            .in_current_span()
-            .await??;
+        let info_str = tokio::task::spawn_blocking(move || -> josh::JoshResult<_> {
+            let transaction = josh::cache::Transaction::open(
+                &serv.repo_path,
+                Some(&format!(
+                    "refs/josh/upstream/{}/",
+                    &josh::to_ns(&parsed_url.upstream_repo),
+                )),
+            )?;
+            josh::housekeeping::get_info(
+                &transaction,
+                josh::filter::parse(&parsed_url.filter)?,
+                &headref,
+            )
+        })
+        .in_current_span()
+        .await??;
 
         return Ok(Response::builder()
             .status(hyper::StatusCode::OK)
@@ -482,26 +461,20 @@ async fn call_service(
     if let Some(q) = req.uri().query().map(|x| x.to_string()) {
         if parsed_url.pathinfo == "" {
             let s = tracing::span!(tracing::Level::TRACE, "render worker");
-            let res =
-                tokio::task::spawn_blocking(move || -> josh::JoshResult<_> {
-                    let _e = s.enter();
-                    let transaction = josh::cache::Transaction::open(
-                        &serv.repo_path,
-                        Some(&format!(
-                            "refs/josh/upstream/{}/",
-                            &josh::to_ns(&parsed_url.upstream_repo),
-                        )),
-                    )?;
+            let res = tokio::task::spawn_blocking(move || -> josh::JoshResult<_> {
+                let _e = s.enter();
+                let transaction = josh::cache::Transaction::open(
+                    &serv.repo_path,
+                    Some(&format!(
+                        "refs/josh/upstream/{}/",
+                        &josh::to_ns(&parsed_url.upstream_repo),
+                    )),
+                )?;
 
-                    josh::query::render(
-                        transaction.repo(),
-                        "",
-                        &temp_ns.reference(&headref),
-                        &q,
-                    )
-                })
-                .in_current_span()
-                .await??;
+                josh::query::render(transaction.repo(), "", &temp_ns.reference(&headref), &q)
+            })
+            .in_current_span()
+            .await??;
             if let Some(res) = res {
                 return Ok(Response::builder()
                     .status(hyper::StatusCode::OK)
@@ -618,8 +591,7 @@ async fn run_proxy() -> josh::JoshResult<i32> {
             let s = _s.clone();
 
             async move {
-                let r = if let Ok(req_auth) = josh_proxy::auth::strip_auth(_req)
-                {
+                let r = if let Ok(req_auth) = josh_proxy::auth::strip_auth(_req) {
                     if let Ok(r) = call_service(proxy_service, req_auth)
                         .instrument(s.clone())
                         .await
@@ -690,10 +662,7 @@ async fn run_housekeeping(local: std::path::PathBuf) -> josh::JoshResult<()> {
     loop {
         let local = local.clone();
         tokio::task::spawn_blocking(move || {
-            josh::housekeeping::run(
-                &local,
-                (i % 60 == 0) && ARGS.is_present("gc"),
-            )
+            josh::housekeeping::run(&local, (i % 60 == 0) && ARGS.is_present("gc"))
         })
         .await??;
         tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
@@ -721,11 +690,7 @@ fn parse_args() -> clap::ArgMatches<'static> {
                 .long("local")
                 .takes_value(true),
         )
-        .arg(
-            clap::Arg::with_name("poll")
-                .long("poll")
-                .takes_value(true),
-        )
+        .arg(clap::Arg::with_name("poll").long("poll").takes_value(true))
         .arg(
             clap::Arg::with_name("gc")
                 .long("gc")
@@ -749,9 +714,10 @@ fn parse_args() -> clap::ArgMatches<'static> {
                 .takes_value(false),
         )
         .arg(
-            clap::Arg::with_name("n").short("n").takes_value(true).help(
-                "Number of concurrent upstream git fetch/push operations",
-            ),
+            clap::Arg::with_name("n")
+                .short("n")
+                .takes_value(true)
+                .help("Number of concurrent upstream git fetch/push operations"),
         )
         .arg(clap::Arg::with_name("port").long("port").takes_value(true))
         .get_matches_from(args)
@@ -771,9 +737,7 @@ fn pre_receive_hook() -> josh::JoshResult<i32> {
     let mut push_options = std::collections::HashMap::<String, String>::new();
     for i in 0..n {
         let s = std::env::var(format!("GIT_PUSH_OPTION_{}", i))?;
-        if let [key, value] =
-            s.as_str().split('=').collect::<Vec<_>>().as_slice()
-        {
+        if let [key, value] = s.as_str().split('=').collect::<Vec<_>>().as_slice() {
             push_options.insert(key.to_string(), value.to_string());
         } else {
             push_options.insert(s, "".to_string());
@@ -838,9 +802,7 @@ fn main() {
     // The update hook will then make a http request back to the main
     // process to do the actual computation while taking advantage of the
     // cached data already loaded into the main processe's memory.
-    if let [a0, a1, a2, a3, ..] =
-        &std::env::args().collect::<Vec<_>>().as_slice()
-    {
+    if let [a0, a1, a2, a3, ..] = &std::env::args().collect::<Vec<_>>().as_slice() {
         if a0.ends_with("/update") {
             std::process::exit(update_hook(&a1, &a2, &a3).unwrap_or(1));
         }
@@ -856,13 +818,9 @@ fn main() {
     let fmt_layer = tracing_subscriber::fmt::layer().compact().with_ansi(false);
 
     let (tracer, _uninstall) = opentelemetry_jaeger::new_pipeline()
-        .with_service_name(
-            std::env::var("JOSH_SERVICE_NAME")
-                .unwrap_or("josh-proxy".to_owned()),
-        )
+        .with_service_name(std::env::var("JOSH_SERVICE_NAME").unwrap_or("josh-proxy".to_owned()))
         .with_agent_endpoint(
-            std::env::var("JOSH_JAEGER_ENDPOINT")
-                .unwrap_or("localhost:6831".to_owned()),
+            std::env::var("JOSH_JAEGER_ENDPOINT").unwrap_or("localhost:6831".to_owned()),
         )
         .install()
         .expect("can't install opentelemetry pipeline");
@@ -879,8 +837,7 @@ fn main() {
         .and_then(telemetry_layer)
         .with_subscriber(tracing_subscriber::Registry::default());
 
-    tracing::subscriber::set_global_default(subscriber)
-        .expect("can't set_global_default");
+    tracing::subscriber::set_global_default(subscriber).expect("can't set_global_default");
 
     std::process::exit(run_proxy().unwrap_or(1));
 }

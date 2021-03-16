@@ -5,12 +5,8 @@ use hyper::{
     Body, Method, Request, Response, StatusCode,
 };
 use juniper::{
-    http::{
-        GraphQLBatchRequest, GraphQLRequest as JuniperGraphQLRequest,
-        GraphQLRequest,
-    },
-    GraphQLSubscriptionType, GraphQLType, GraphQLTypeAsync, InputValue,
-    RootNode, ScalarValue,
+    http::{GraphQLBatchRequest, GraphQLRequest as JuniperGraphQLRequest, GraphQLRequest},
+    GraphQLSubscriptionType, GraphQLType, GraphQLTypeAsync, InputValue, RootNode, ScalarValue,
 };
 use serde_json::error::Error as SerdeError;
 use url::form_urlencoded;
@@ -68,12 +64,8 @@ async fn parse_req<S: ScalarValue>(
                 .get(header::CONTENT_TYPE)
                 .map(HeaderValue::to_str);
             match content_type {
-                Some(Ok("application/json")) => {
-                    parse_post_json_req(req.into_body()).await
-                }
-                Some(Ok("application/graphql")) => {
-                    parse_post_graphql_req(req.into_body()).await
-                }
+                Some(Ok("application/json")) => parse_post_json_req(req.into_body()).await,
+                Some(Ok("application/graphql")) => parse_post_graphql_req(req.into_body()).await,
                 _ => return Err(new_response(StatusCode::BAD_REQUEST)),
             }
         }
@@ -142,11 +134,10 @@ pub async fn playground(
     subscriptions_endpoint: Option<&str>,
 ) -> Result<Response<Body>, hyper::Error> {
     let mut resp = new_html_response(StatusCode::OK);
-    *resp.body_mut() =
-        Body::from(juniper::http::playground::playground_source(
-            graphql_endpoint,
-            subscriptions_endpoint,
-        ));
+    *resp.body_mut() = Body::from(juniper::http::playground::playground_source(
+        graphql_endpoint,
+        subscriptions_endpoint,
+    ));
     Ok(resp)
 }
 
@@ -219,9 +210,7 @@ where
     resp
 }
 
-fn gql_request_from_get<S>(
-    input: &str,
-) -> Result<JuniperGraphQLRequest<S>, GraphQLRequestError>
+fn gql_request_from_get<S>(input: &str) -> Result<JuniperGraphQLRequest<S>, GraphQLRequestError>
 where
     S: ScalarValue,
 {
@@ -256,9 +245,7 @@ where
         }
     }
     match query {
-        Some(query) => {
-            Ok(JuniperGraphQLRequest::new(query, operation_name, variables))
-        }
+        Some(query) => Ok(JuniperGraphQLRequest::new(query, operation_name, variables)),
         None => Err(GraphQLRequestError::Invalid(
             "'query' parameter is missing".to_string(),
         )),
@@ -299,21 +286,11 @@ enum GraphQLRequestError {
 impl fmt::Display for GraphQLRequestError {
     fn fmt(&self, mut f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            GraphQLRequestError::BodyHyper(ref err) => {
-                fmt::Display::fmt(err, &mut f)
-            }
-            GraphQLRequestError::BodyUtf8(ref err) => {
-                fmt::Display::fmt(err, &mut f)
-            }
-            GraphQLRequestError::BodyJSONError(ref err) => {
-                fmt::Display::fmt(err, &mut f)
-            }
-            GraphQLRequestError::Variables(ref err) => {
-                fmt::Display::fmt(err, &mut f)
-            }
-            GraphQLRequestError::Invalid(ref err) => {
-                fmt::Display::fmt(err, &mut f)
-            }
+            GraphQLRequestError::BodyHyper(ref err) => fmt::Display::fmt(err, &mut f),
+            GraphQLRequestError::BodyUtf8(ref err) => fmt::Display::fmt(err, &mut f),
+            GraphQLRequestError::BodyJSONError(ref err) => fmt::Display::fmt(err, &mut f),
+            GraphQLRequestError::Variables(ref err) => fmt::Display::fmt(err, &mut f),
+            GraphQLRequestError::Invalid(ref err) => fmt::Display::fmt(err, &mut f),
         }
     }
 }
@@ -351,10 +328,7 @@ mod tests {
     impl http_tests::HttpIntegration for TestHyperIntegration {
         fn get(&self, url: &str) -> http_tests::TestResponse {
             let url = format!("http://127.0.0.1:{}/graphql{}", self.port, url);
-            make_test_response(
-                reqwest::blocking::get(&url)
-                    .expect(&format!("failed GET {}", url)),
-            )
+            make_test_response(reqwest::blocking::get(&url).expect(&format!("failed GET {}", url)))
         }
 
         fn post_json(&self, url: &str, body: &str) -> http_tests::TestResponse {
@@ -369,11 +343,7 @@ mod tests {
             make_test_response(res)
         }
 
-        fn post_graphql(
-            &self,
-            url: &str,
-            body: &str,
-        ) -> http_tests::TestResponse {
+        fn post_graphql(&self, url: &str, body: &str) -> http_tests::TestResponse {
             let url = format!("http://127.0.0.1:{}/graphql{}", self.port, url);
             let client = reqwest::blocking::Client::new();
             let res = client
@@ -386,12 +356,9 @@ mod tests {
         }
     }
 
-    fn make_test_response(
-        response: ReqwestResponse,
-    ) -> http_tests::TestResponse {
+    fn make_test_response(response: ReqwestResponse) -> http_tests::TestResponse {
         let status_code = response.status().as_u16() as i32;
-        let content_type_header =
-            response.headers().get(reqwest::header::CONTENT_TYPE);
+        let content_type_header = response.headers().get(reqwest::header::CONTENT_TYPE);
         let content_type = if let Some(ct) = content_type_header {
             format!("{}", ct.to_str().unwrap())
         } else {

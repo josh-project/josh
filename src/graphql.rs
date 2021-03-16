@@ -26,8 +26,7 @@ fn find_paths(
         tree
     };
 
-    let base = std::path::Path::new(&at.as_ref().unwrap_or(&"".to_string()))
-        .to_owned();
+    let base = std::path::Path::new(&at.as_ref().unwrap_or(&"".to_string())).to_owned();
 
     let mut ws = vec![];
     tree.walk(git2::TreeWalkMode::PreOrder, |root, entry| {
@@ -56,26 +55,29 @@ impl Revision {
     fn hash(&self, context: &Context) -> FieldResult<String> {
         let transaction = context.transaction.lock()?;
         let commit = transaction.repo().find_commit(self.id)?;
-        let filter_commit =
-            filter::apply_to_commit(self.filter, &commit, &transaction)?;
+        let filter_commit = filter::apply_to_commit(self.filter, &commit, &transaction)?;
         Ok(format!("{}", filter_commit))
     }
 
     fn summary(&self, context: &Context) -> FieldResult<String> {
         let transaction = context.transaction.lock()?;
         let commit = transaction.repo().find_commit(self.id)?;
-        let filter_commit = transaction.repo().find_commit(
-            filter::apply_to_commit(self.filter, &commit, &transaction)?,
-        )?;
+        let filter_commit = transaction.repo().find_commit(filter::apply_to_commit(
+            self.filter,
+            &commit,
+            &transaction,
+        )?)?;
         Ok(filter_commit.summary().unwrap_or("").to_owned())
     }
 
     fn date(&self, format: String, context: &Context) -> FieldResult<String> {
         let transaction = context.transaction.lock()?;
         let commit = transaction.repo().find_commit(self.id)?;
-        let filter_commit = transaction.repo().find_commit(
-            filter::apply_to_commit(self.filter, &commit, &transaction)?,
-        )?;
+        let filter_commit = transaction.repo().find_commit(filter::apply_to_commit(
+            self.filter,
+            &commit,
+            &transaction,
+        )?)?;
 
         let ts = filter_commit.time().seconds();
 
@@ -92,16 +94,13 @@ impl Revision {
         let id = if let Some(true) = original {
             let transaction = context.transaction.lock()?;
             let commit = transaction.repo().find_commit(self.id)?;
-            let filter_commit = transaction.repo().find_commit(
-                filter::apply_to_commit(self.filter, &commit, &transaction)?,
-            )?;
-
-            history::find_original(
-                &transaction,
+            let filter_commit = transaction.repo().find_commit(filter::apply_to_commit(
                 self.filter,
-                self.id,
-                filter_commit.id(),
-            )?
+                &commit,
+                &transaction,
+            )?)?;
+
+            history::find_original(&transaction, self.filter, self.id, filter_commit.id())?
         } else {
             self.id
         };
@@ -115,21 +114,18 @@ impl Revision {
     fn parents(&self, context: &Context) -> FieldResult<Vec<Revision>> {
         let transaction = context.transaction.lock()?;
         let commit = transaction.repo().find_commit(self.id)?;
-        let filter_commit = transaction.repo().find_commit(
-            filter::apply_to_commit(self.filter, &commit, &transaction)?,
-        )?;
+        let filter_commit = transaction.repo().find_commit(filter::apply_to_commit(
+            self.filter,
+            &commit,
+            &transaction,
+        )?)?;
 
         let parents = filter_commit
             .parent_ids()
             .map(|id| Revision {
                 filter: self.filter,
-                id: history::find_original(
-                    &transaction,
-                    self.filter,
-                    self.id,
-                    id,
-                )
-                .unwrap_or(git2::Oid::zero()),
+                id: history::find_original(&transaction, self.filter, self.id, id)
+                    .unwrap_or(git2::Oid::zero()),
             })
             .collect();
 
@@ -147,8 +143,7 @@ impl Revision {
         let tree = filter::apply(&transaction, self.filter, commit.tree()?)?;
         let tree_id = tree.id();
 
-        let paths =
-            find_paths(&transaction, tree, at, depth, git2::ObjectType::Blob)?;
+        let paths = find_paths(&transaction, tree, at, depth, git2::ObjectType::Blob)?;
 
         let mut ws = vec![];
         for p in paths {
@@ -172,8 +167,7 @@ impl Revision {
         let tree = filter::apply(&transaction, self.filter, commit.tree()?)?;
         let tree_id = tree.id();
 
-        let paths =
-            find_paths(&transaction, tree, at, depth, git2::ObjectType::Tree)?;
+        let paths = find_paths(&transaction, tree, at, depth, git2::ObjectType::Tree)?;
 
         let mut ws = vec![];
         for p in paths {
@@ -186,11 +180,7 @@ impl Revision {
         return Ok(Some(ws));
     }
 
-    fn file(
-        &self,
-        path: String,
-        context: &Context,
-    ) -> FieldResult<Option<Path>> {
+    fn file(&self, path: String, context: &Context) -> FieldResult<Option<Path>> {
         let transaction = context.transaction.lock()?;
         let path = std::path::Path::new(&path).to_owned();
         let tree = transaction.repo().find_commit(self.id)?.tree()?;
@@ -257,11 +247,7 @@ impl Path {
         })
     }
 
-    fn comments(
-        &self,
-        context: &Context,
-        topic: String,
-    ) -> FieldResult<Vec<Marker>> {
+    fn comments(&self, context: &Context, topic: String) -> FieldResult<Vec<Marker>> {
         let transaction = context.transaction.lock()?;
 
         let refname = transaction.refname(&format!("refs/metadata/{}", &topic));
@@ -276,9 +262,7 @@ impl Path {
 
         let commit = self.id.to_string();
 
-        let prev = if let Ok(e) =
-            tree.get_path(&marker_path(&commit).join(&self.path))
-        {
+        let prev = if let Ok(e) = tree.get_path(&marker_path(&commit).join(&self.path)) {
             let blob = transaction.repo().find_blob(e.id())?;
             std::str::from_utf8(blob.content())?.to_owned()
         } else {
@@ -300,11 +284,7 @@ impl Path {
         Ok(lines)
     }
 
-    fn comments_count(
-        &self,
-        context: &Context,
-        topic: String,
-    ) -> FieldResult<i32> {
+    fn comments_count(&self, context: &Context, topic: String) -> FieldResult<i32> {
         let transaction = context.transaction.lock()?;
 
         let refname = transaction.refname(&format!("refs/metadata/{}", &topic));
@@ -352,10 +332,8 @@ impl Path {
             .get_path(&self.path)?
             .id();
         let blob = transaction.repo().find_blob(id)?;
-        let value = toml::de::from_str::<serde_json::Value>(
-            std::str::from_utf8(blob.content())?,
-        )
-        .unwrap_or(json!({}));
+        let value = toml::de::from_str::<serde_json::Value>(std::str::from_utf8(blob.content())?)
+            .unwrap_or(json!({}));
 
         Ok(Document { value: value })
     }
@@ -368,10 +346,8 @@ impl Path {
             .get_path(&self.path)?
             .id();
         let blob = transaction.repo().find_blob(id)?;
-        let value = serde_json::from_str::<serde_json::Value>(
-            std::str::from_utf8(blob.content())?,
-        )
-        .unwrap_or(json!({}));
+        let value = serde_json::from_str::<serde_json::Value>(std::str::from_utf8(blob.content())?)
+            .unwrap_or(json!({}));
 
         Ok(Document { value: value })
     }
@@ -384,10 +360,8 @@ impl Path {
             .get_path(&self.path)?
             .id();
         let blob = transaction.repo().find_blob(id)?;
-        let value = serde_yaml::from_str::<serde_json::Value>(
-            std::str::from_utf8(blob.content())?,
-        )
-        .unwrap_or(json!({}));
+        let value = serde_yaml::from_str::<serde_json::Value>(std::str::from_utf8(blob.content())?)
+            .unwrap_or(json!({}));
 
         Ok(Document { value: value })
     }
@@ -413,11 +387,7 @@ impl Document {
 
 #[graphql_object(context = Context)]
 impl Document {
-    fn string(
-        &self,
-        at: Option<String>,
-        default: Option<String>,
-    ) -> Option<String> {
+    fn string(&self, at: Option<String>, default: Option<String>) -> Option<String> {
         if let serde_json::Value::String(s) = &self.pointer(at) {
             Some(s.clone())
         } else {
@@ -472,11 +442,7 @@ impl Reference {
             .reference)
     }
 
-    fn rev(
-        &self,
-        context: &Context,
-        filter: Option<String>,
-    ) -> FieldResult<Revision> {
+    fn rev(&self, context: &Context, filter: Option<String>) -> FieldResult<Revision> {
         let transaction = context.transaction.lock()?;
         let id = transaction
             .repo()
@@ -534,11 +500,7 @@ pub struct MarkersMut {
 
 #[graphql_object(context = Context)]
 impl MarkersMut {
-    fn add(
-        &self,
-        context: &Context,
-        comments: Vec<Markers>,
-    ) -> FieldResult<bool> {
+    fn add(&self, context: &Context, comments: Vec<Markers>) -> FieldResult<bool> {
         let transaction = context.transaction.lock()?;
         let rev = transaction.refname(&format!("refs/metadata/{}", self.topic));
 
@@ -573,8 +535,7 @@ impl MarkersMut {
                 .map(|x| format!("{}: {}", &x.position, &x.text))
                 .collect::<Vec<String>>();
 
-            let mut lines =
-                prev.split("\n").filter(|x| *x != "").collect::<Vec<_>>();
+            let mut lines = prev.split("\n").filter(|x| *x != "").collect::<Vec<_>>();
             for marker in mm.iter() {
                 lines.push(marker);
             }
@@ -583,13 +544,7 @@ impl MarkersMut {
 
             let blob = transaction.repo().blob(&lines.join("\n").as_bytes())?;
 
-            tree = filter::tree::insert(
-                transaction.repo(),
-                &tree,
-                &path,
-                blob,
-                0o0100644,
-            )?;
+            tree = filter::tree::insert(transaction.repo(), &tree, &path, blob, 0o0100644)?;
         }
 
         transaction.repo().commit(
@@ -611,11 +566,7 @@ impl MarkersMut {
 
 #[graphql_object(context = Context)]
 impl RepositoryMut {
-    fn metadata(
-        &self,
-        commit: String,
-        topic: String,
-    ) -> FieldResult<MarkersMut> {
+    fn metadata(&self, commit: String, topic: String) -> FieldResult<MarkersMut> {
         Ok(MarkersMut {
             commit: commit,
             topic: topic,
@@ -629,11 +580,7 @@ impl Repository {
         &self.name
     }
 
-    fn refs(
-        &self,
-        context: &Context,
-        pattern: Option<String>,
-    ) -> FieldResult<Vec<Reference>> {
+    fn refs(&self, context: &Context, pattern: Option<String>) -> FieldResult<Vec<Reference>> {
         let transaction = context.transaction.lock()?;
         let refname = format!(
             "refs/josh/upstream/{}.git/{}",
@@ -657,14 +604,8 @@ impl Repository {
         Ok(refs)
     }
 
-    fn rev(
-        &self,
-        context: &Context,
-        at: String,
-        filter: Option<String>,
-    ) -> FieldResult<Revision> {
-        let rev =
-            format!("refs/josh/upstream/{}.git/{}", to_ns(&self.name), at);
+    fn rev(&self, context: &Context, at: String, filter: Option<String>) -> FieldResult<Revision> {
+        let rev = format!("refs/josh/upstream/{}.git/{}", to_ns(&self.name), at);
 
         let transaction = context.transaction.lock()?;
         let id = transaction.repo().revparse_single(&rev)?.id();
@@ -684,10 +625,7 @@ impl Query {
         option_env!("GIT_DESCRIBE").unwrap_or(std::env!("CARGO_PKG_VERSION"))
     }
 
-    fn repos(
-        context: &Context,
-        name: Option<String>,
-    ) -> FieldResult<Vec<Repository>> {
+    fn repos(context: &Context, name: Option<String>) -> FieldResult<Vec<Repository>> {
         let transaction = context.transaction.lock()?;
 
         let refname = format!("refs/josh/upstream/*.git/refs/heads/*");
@@ -721,12 +659,8 @@ regex_parsed!(
     [ns, reference]
 );
 
-pub type Schema = juniper::RootNode<
-    'static,
-    Query,
-    EmptyMutation<Context>,
-    EmptySubscription<Context>,
->;
+pub type Schema =
+    juniper::RootNode<'static, Query, EmptyMutation<Context>, EmptySubscription<Context>>;
 
 pub fn context(transaction: cache::Transaction) -> Context {
     Context {
@@ -738,12 +672,8 @@ pub fn schema() -> Schema {
     Schema::new(Query, EmptyMutation::new(), EmptySubscription::new())
 }
 
-pub type CommitSchema = juniper::RootNode<
-    'static,
-    Revision,
-    EmptyMutation<Context>,
-    EmptySubscription<Context>,
->;
+pub type CommitSchema =
+    juniper::RootNode<'static, Revision, EmptyMutation<Context>, EmptySubscription<Context>>;
 
 pub fn commit_schema(id: git2::Oid) -> CommitSchema {
     CommitSchema::new(
@@ -756,12 +686,8 @@ pub fn commit_schema(id: git2::Oid) -> CommitSchema {
     )
 }
 
-pub type RepoSchema = juniper::RootNode<
-    'static,
-    Repository,
-    RepositoryMut,
-    EmptySubscription<Context>,
->;
+pub type RepoSchema =
+    juniper::RootNode<'static, Repository, RepositoryMut, EmptySubscription<Context>>;
 
 pub fn repo_schema(name: &str) -> RepoSchema {
     RepoSchema::new(

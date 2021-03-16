@@ -5,8 +5,7 @@ lazy_static! {
         std::sync::Mutex::new(std::collections::HashMap::new());
 }
 
-type AuthTimers =
-    std::collections::HashMap<(String, Handle), std::time::Instant>;
+type AuthTimers = std::collections::HashMap<(String, Handle), std::time::Instant>;
 
 // Wrapper struct for storing passwords to avoid having
 // them output to traces by accident
@@ -48,27 +47,19 @@ impl Handle {
         let s = josh::ok_or!(String::from_utf8(decoded), {
             return Ok(("".to_string(), "".to_string()));
         });
-        if let [username, password] =
-            s.as_str().split(':').collect::<Vec<_>>().as_slice()
-        {
+        if let [username, password] = s.as_str().split(':').collect::<Vec<_>>().as_slice() {
             return Ok((username.to_string(), password.to_string()));
         }
         return Ok(("".to_string(), "".to_string()));
     }
 }
 
-pub async fn check_auth(
-    url: &str,
-    auth: &Handle,
-    required: bool,
-) -> josh::JoshResult<bool> {
+pub async fn check_auth(url: &str, auth: &Handle, required: bool) -> josh::JoshResult<bool> {
     if required && auth.hash == "" {
         return Ok(false);
     }
 
-    if let Some(last) =
-        AUTH_TIMERS.lock()?.get(&(url.to_string(), auth.clone()))
-    {
+    if let Some(last) = AUTH_TIMERS.lock()?.get(&(url.to_string(), auth.clone())) {
         let since = std::time::Instant::now().duration_since(*last);
         tracing::trace!("last: {:?}, since: {:?}", last, since);
         if since < std::time::Duration::from_secs(60 * 30) {
@@ -120,8 +111,7 @@ pub fn strip_auth(
     req: hyper::Request<hyper::Body>,
 ) -> josh::JoshResult<(Handle, hyper::Request<hyper::Body>)> {
     let mut req = req;
-    let header: Option<hyper::header::HeaderValue> =
-        req.headers_mut().remove("authorization");
+    let header: Option<hyper::header::HeaderValue> = req.headers_mut().remove("authorization");
 
     if let Some(header) = header {
         use crypto::digest::Digest;

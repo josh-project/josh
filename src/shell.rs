@@ -42,9 +42,9 @@ impl Shell {
             command.env(&k, &v);
         }
 
-        let output = command.output().unwrap_or_else(|e| {
-            panic!("failed to execute process: {}\n{}", cmd, e)
-        });
+        let output = command
+            .output()
+            .unwrap_or_else(|e| panic!("failed to execute process: {}\n{}", cmd, e));
 
         let stdout = String::from_utf8(output.stdout)
             .expect("failed to decode utf8")

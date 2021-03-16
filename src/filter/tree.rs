@@ -33,25 +33,14 @@ pub fn pathstree<'a>(
 
         if entry.kind() == Some(git2::ObjectType::Tree) {
             let s = pathstree(
-                &format!(
-                    "{}{}{}",
-                    root,
-                    if root == "" { "" } else { "/" },
-                    name
-                ),
+                &format!("{}{}{}", root, if root == "" { "" } else { "/" }, name),
                 entry.id(),
                 transaction,
             )?
             .id();
 
             if s != tree::empty_id() {
-                result = replace_child(
-                    &repo,
-                    &std::path::Path::new(name),
-                    s,
-                    0o0040000,
-                    &result,
-                )?;
+                result = replace_child(&repo, &std::path::Path::new(name), s, 0o0040000, &result)?;
             }
         }
     }
@@ -83,9 +72,7 @@ pub fn remove_pred<'a>(
             if pred(&path, true) {
                 result = replace_child(
                     &repo,
-                    &std::path::Path::new(
-                        entry.name().ok_or(super::josh_error("no name"))?,
-                    ),
+                    &std::path::Path::new(entry.name().ok_or(super::josh_error("no name"))?),
                     entry.id(),
                     entry.filemode(),
                     &result,
@@ -116,9 +103,7 @@ pub fn remove_pred<'a>(
             if s != tree::empty_id() {
                 result = replace_child(
                     &repo,
-                    &std::path::Path::new(
-                        entry.name().ok_or(super::josh_error("no name"))?,
-                    ),
+                    &std::path::Path::new(entry.name().ok_or(super::josh_error("no name"))?),
                     s,
                     0o0040000,
                     &result,
@@ -143,9 +128,7 @@ pub fn subtract(
         return Ok(tree::empty_id());
     }
 
-    if let (Ok(tree1), Ok(tree2)) =
-        (repo.find_tree(input1), repo.find_tree(input2))
-    {
+    if let (Ok(tree1), Ok(tree2)) = (repo.find_tree(input1), repo.find_tree(input2)) {
         if input2 == tree::empty_id() {
             return Ok(input1);
         }
@@ -153,14 +136,10 @@ pub fn subtract(
         let mut result_tree = tree1.clone();
 
         for entry in tree2.iter() {
-            if let Some(e) = tree1
-                .get_name(entry.name().ok_or(super::josh_error("no name"))?)
-            {
+            if let Some(e) = tree1.get_name(entry.name().ok_or(super::josh_error("no name"))?) {
                 result_tree = replace_child(
                     &repo,
-                    &std::path::Path::new(
-                        entry.name().ok_or(super::josh_error("no name"))?,
-                    ),
+                    &std::path::Path::new(entry.name().ok_or(super::josh_error("no name"))?),
                     subtract(repo, e.id(), entry.id())?,
                     e.filemode(),
                     &result_tree,
@@ -205,9 +184,7 @@ pub fn insert<'a>(
     if path.components().count() == 1 {
         return replace_child(&repo, path, oid, mode, full_tree);
     } else {
-        let name = std::path::Path::new(
-            path.file_name().ok_or(super::josh_error("file_name"))?,
-        );
+        let name = std::path::Path::new(path.file_name().ok_or(super::josh_error("file_name"))?);
         let path = path.parent().ok_or(super::josh_error("path.parent"))?;
 
         let st = if let Ok(st) = full_tree.get_path(path) {
@@ -238,20 +215,14 @@ pub fn overlay(
         return Ok(input1);
     }
 
-    if let (Ok(tree1), Ok(tree2)) =
-        (repo.find_tree(input1), repo.find_tree(input2))
-    {
+    if let (Ok(tree1), Ok(tree2)) = (repo.find_tree(input1), repo.find_tree(input2)) {
         let mut result_tree = tree1.clone();
 
         for entry in tree2.iter() {
-            if let Some(e) = tree1
-                .get_name(entry.name().ok_or(super::josh_error("no name"))?)
-            {
+            if let Some(e) = tree1.get_name(entry.name().ok_or(super::josh_error("no name"))?) {
                 result_tree = replace_child(
                     &repo,
-                    &std::path::Path::new(
-                        entry.name().ok_or(super::josh_error("no name"))?,
-                    ),
+                    &std::path::Path::new(entry.name().ok_or(super::josh_error("no name"))?),
                     overlay(repo, entry.id(), e.id())?,
                     e.filemode(),
                     &result_tree,
@@ -259,9 +230,7 @@ pub fn overlay(
             } else {
                 result_tree = replace_child(
                     &repo,
-                    &std::path::Path::new(
-                        entry.name().ok_or(super::josh_error("no name"))?,
-                    ),
+                    &std::path::Path::new(entry.name().ok_or(super::josh_error("no name"))?),
                     entry.id(),
                     entry.filemode(),
                     &result_tree,
@@ -285,16 +254,14 @@ pub fn compose<'a>(
     let mut taken = tree::empty(&repo);
     for (f, applied) in trees {
         let tid = taken.id();
-        let taken_applied = if let Some(cached) = transaction.get_apply(*f, tid)
-        {
+        let taken_applied = if let Some(cached) = transaction.get_apply(*f, tid) {
             cached
         } else {
             filter::apply(transaction, *f, taken.clone())?.id()
         };
         transaction.insert_apply(*f, tid, taken_applied);
 
-        let subtracted =
-            repo.find_tree(subtract(&repo, applied.id(), taken_applied)?)?;
+        let subtracted = repo.find_tree(subtract(&repo, applied.id(), taken_applied)?)?;
 
         let aid = applied.id();
         let unapplied = if let Some(cached) = transaction.get_unapply(*f, aid) {
@@ -304,18 +271,13 @@ pub fn compose<'a>(
         };
         transaction.insert_unapply(*f, aid, unapplied);
         taken = repo.find_tree(overlay(&repo, taken.id(), unapplied)?)?;
-        result =
-            repo.find_tree(overlay(&repo, result.id(), subtracted.id())?)?;
+        result = repo.find_tree(overlay(&repo, result.id(), subtracted.id())?)?;
     }
 
     Ok(result)
 }
 
-pub fn get_blob(
-    repo: &git2::Repository,
-    tree: &git2::Tree,
-    path: &Path,
-) -> String {
+pub fn get_blob(repo: &git2::Repository, tree: &git2::Tree, path: &Path) -> String {
     let entry_oid = ok_or!(tree.get_path(&path).map(|x| x.id()), {
         return "".to_owned();
     });
@@ -332,8 +294,7 @@ pub fn get_blob(
 }
 
 pub fn empty_id() -> git2::Oid {
-    return git2::Oid::from_str("4b825dc642cb6eb9a060e54bf8d69288fbee4904")
-        .unwrap();
+    return git2::Oid::from_str("4b825dc642cb6eb9a060e54bf8d69288fbee4904").unwrap();
 }
 
 pub fn empty(repo: &git2::Repository) -> git2::Tree {

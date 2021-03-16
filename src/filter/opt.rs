@@ -61,24 +61,19 @@ pub fn simplify(filter: Filter) -> Filter {
             Op::Compose(out.drain(..).map(simplify).collect())
         }
         Op::Chain(a, b) => match (to_op(a), to_op(b)) {
-            (a, Op::Chain(x, y)) => {
-                Op::Chain(to_filter(Op::Chain(to_filter(a), x)), y)
-            }
+            (a, Op::Chain(x, y)) => Op::Chain(to_filter(Op::Chain(to_filter(a), x)), y),
             (Op::Prefix(x), Op::Prefix(y)) => Op::Prefix(y.join(x)),
             (Op::Subdir(x), Op::Subdir(y)) => Op::Subdir(x.join(y)),
             (Op::Chain(x, y), b) => match (to_op(x), to_op(y), b.clone()) {
-                (x, Op::Prefix(p1), Op::Prefix(p2)) => Op::Chain(
-                    simplify(to_filter(x)),
-                    to_filter(Op::Prefix(p2.join(p1))),
-                ),
+                (x, Op::Prefix(p1), Op::Prefix(p2)) => {
+                    Op::Chain(simplify(to_filter(x)), to_filter(Op::Prefix(p2.join(p1))))
+                }
                 _ => Op::Chain(simplify(a), simplify(to_filter(b))),
             },
             (a, b) => Op::Chain(simplify(to_filter(a)), simplify(to_filter(b))),
         },
         Op::Subtract(a, b) => match (to_op(a), to_op(b)) {
-            (a, b) => {
-                Op::Subtract(simplify(to_filter(a)), simplify(to_filter(b)))
-            }
+            (a, b) => Op::Subtract(simplify(to_filter(a)), simplify(to_filter(b))),
         },
         _ => to_op(filter),
     });
@@ -131,9 +126,7 @@ fn flatten(filter: Filter) -> Filter {
             _ => Op::Chain(flatten(af), flatten(bf)),
         },
         Op::Subtract(a, b) => match (to_op(a), to_op(b)) {
-            (a, b) => {
-                Op::Subtract(flatten(to_filter(a)), flatten(to_filter(b)))
-            }
+            (a, b) => Op::Subtract(flatten(to_filter(a)), flatten(to_filter(b))),
         },
         _ => to_op(filter),
     });
@@ -346,9 +339,7 @@ fn step(filter: Filter) -> Filter {
             }
         }
         Op::Chain(a, b) => match (to_op(a), to_op(b)) {
-            (Op::Chain(x, y), b) => {
-                Op::Chain(x, to_filter(Op::Chain(y, to_filter(b))))
-            }
+            (Op::Chain(x, y), b) => Op::Chain(x, to_filter(Op::Chain(y, to_filter(b)))),
             (Op::Nop, b) => b,
             (a, Op::Nop) => a,
             (a, b) => Op::Chain(step(to_filter(a)), step(to_filter(b))),
@@ -368,9 +359,7 @@ fn step(filter: Filter) -> Filter {
                 av.retain(|x| *x != bf);
                 to_op(step(to_filter(Op::Compose(av))))
             }
-            (_, Op::Compose(bv)) if bv.contains(&af) => {
-                to_op(step(to_filter(Op::Empty)))
-            }
+            (_, Op::Compose(bv)) if bv.contains(&af) => to_op(step(to_filter(Op::Empty))),
             (Op::Compose(mut av), Op::Compose(mut bv)) => {
                 let v = av.clone();
                 av.retain(|x| !bv.contains(x));

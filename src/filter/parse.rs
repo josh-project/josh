@@ -49,13 +49,10 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> JoshResult<Op> {
                 [cmd, args] => {
                     let g = parse_group(args)?;
                     match *cmd {
-                        "exclude" => Ok(Op::Subtract(
-                            to_filter(Op::Nop),
-                            to_filter(Op::Compose(g)),
-                        )),
-                        "subtract" if g.len() == 2 => {
-                            Ok(Op::Subtract(g[0], g[1]))
+                        "exclude" => {
+                            Ok(Op::Subtract(to_filter(Op::Nop), to_filter(Op::Compose(g))))
                         }
+                        "subtract" if g.len() == 2 => Ok(Op::Subtract(g[0], g[1])),
                         _ => Err(josh_error("parse_item: no match")),
                     }
                 }
@@ -79,10 +76,7 @@ fn parse_file_entry(
                 .map(|x| x.as_str().to_owned())
                 .unwrap_or(format!(":/{}", path));
             let filter = parse(&filter)?;
-            let filter = chain(
-                filter,
-                to_filter(Op::Prefix(Path::new(path).to_owned())),
-            );
+            let filter = chain(filter, to_filter(Op::Prefix(Path::new(path).to_owned())));
             filters.push(filter);
             Ok(())
         }

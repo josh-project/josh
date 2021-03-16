@@ -4,8 +4,7 @@ use std::collections::HashMap;
 const VERSION: u64 = 5;
 
 lazy_static! {
-    static ref DB: std::sync::Mutex<Option<sled::Db>> =
-        std::sync::Mutex::new(None);
+    static ref DB: std::sync::Mutex<Option<sled::Db>> = std::sync::Mutex::new(None);
     static ref REF_CACHE: std::sync::Mutex<HashMap<git2::Oid, HashMap<git2::Oid, git2::Oid>>> =
         std::sync::Mutex::new(HashMap::new());
 }
@@ -65,10 +64,7 @@ pub struct Transaction {
 }
 
 impl Transaction {
-    pub fn open(
-        path: &std::path::Path,
-        ref_prefix: Option<&str>,
-    ) -> JoshResult<Transaction> {
+    pub fn open(path: &std::path::Path, ref_prefix: Option<&str>) -> JoshResult<Transaction> {
         Ok(Transaction::new(
             git2::Repository::open_ext(
                 path,
@@ -85,10 +81,7 @@ impl Transaction {
         /* t2.out.flush().ok(); */
     }
 
-    pub fn new(
-        repo: git2::Repository,
-        ref_prefix: Option<&str>,
-    ) -> Transaction {
+    pub fn new(repo: git2::Repository, ref_prefix: Option<&str>) -> Transaction {
         log::debug!("new transaction");
         Transaction {
             t2: std::cell::RefCell::new(Transaction2 {
@@ -132,12 +125,7 @@ impl Transaction {
         self.t2.borrow_mut().walks -= 1;
     }
 
-    pub fn insert_apply(
-        &self,
-        filter: filter::Filter,
-        from: git2::Oid,
-        to: git2::Oid,
-    ) {
+    pub fn insert_apply(&self, filter: filter::Filter, from: git2::Oid, to: git2::Oid) {
         let mut t2 = self.t2.borrow_mut();
         t2.apply_map
             .entry(filter.id())
@@ -145,11 +133,7 @@ impl Transaction {
             .insert(from, to);
     }
 
-    pub fn get_apply(
-        &self,
-        filter: filter::Filter,
-        from: git2::Oid,
-    ) -> Option<git2::Oid> {
+    pub fn get_apply(&self, filter: filter::Filter, from: git2::Oid) -> Option<git2::Oid> {
         let t2 = self.t2.borrow_mut();
         if let Some(m) = t2.apply_map.get(&filter.id()) {
             return m.get(&from).cloned();
@@ -157,12 +141,7 @@ impl Transaction {
         return None;
     }
 
-    pub fn insert_unapply(
-        &self,
-        filter: filter::Filter,
-        from: git2::Oid,
-        to: git2::Oid,
-    ) {
+    pub fn insert_unapply(&self, filter: filter::Filter, from: git2::Oid, to: git2::Oid) {
         let mut t2 = self.t2.borrow_mut();
         t2.unapply_map
             .entry(filter.id())
@@ -175,12 +154,7 @@ impl Transaction {
         t2.paths_map.entry(tree).or_insert(result);
     }
 
-    pub fn insert_ref(
-        &self,
-        filter: filter::Filter,
-        from: git2::Oid,
-        to: git2::Oid,
-    ) {
+    pub fn insert_ref(&self, filter: filter::Filter, from: git2::Oid, to: git2::Oid) {
         REF_CACHE
             .lock()
             .unwrap()
@@ -189,11 +163,7 @@ impl Transaction {
             .insert(from, to);
     }
 
-    pub fn get_ref(
-        &self,
-        filter: filter::Filter,
-        from: git2::Oid,
-    ) -> Option<git2::Oid> {
+    pub fn get_ref(&self, filter: filter::Filter, from: git2::Oid) -> Option<git2::Oid> {
         if let Some(m) = REF_CACHE.lock().unwrap().get(&filter.id()) {
             if let Some(oid) = m.get(&from) {
                 if self.repo.odb().unwrap().exists(*oid) {
@@ -204,11 +174,7 @@ impl Transaction {
         return None;
     }
 
-    pub fn get_unapply(
-        &self,
-        filter: filter::Filter,
-        from: git2::Oid,
-    ) -> Option<git2::Oid> {
+    pub fn get_unapply(&self, filter: filter::Filter, from: git2::Oid) -> Option<git2::Oid> {
         let t2 = self.t2.borrow_mut();
         if let Some(m) = t2.unapply_map.get(&filter.id()) {
             return m.get(&from).cloned();
@@ -221,13 +187,7 @@ impl Transaction {
         return t2.paths_map.get(&tree).cloned();
     }
 
-    pub fn insert(
-        &self,
-        filter: filter::Filter,
-        from: git2::Oid,
-        to: git2::Oid,
-        store: bool,
-    ) {
+    pub fn insert(&self, filter: filter::Filter, from: git2::Oid, to: git2::Oid, store: bool) {
         let mut t2 = self.t2.borrow_mut();
         t2.commit_map
             .entry(filter.id())
@@ -277,11 +237,7 @@ impl Transaction {
         self.get2(filter, from).is_some()
     }
 
-    pub fn get(
-        &self,
-        filter: filter::Filter,
-        from: git2::Oid,
-    ) -> Option<git2::Oid> {
+    pub fn get(&self, filter: filter::Filter, from: git2::Oid) -> Option<git2::Oid> {
         if let Some(x) = self.get2(filter, from) {
             return Some(x);
         } else {
@@ -292,11 +248,7 @@ impl Transaction {
         }
     }
 
-    fn get2(
-        &self,
-        filter: filter::Filter,
-        from: git2::Oid,
-    ) -> Option<git2::Oid> {
+    fn get2(&self, filter: filter::Filter, from: git2::Oid) -> Option<git2::Oid> {
         if filter == filter::nop() {
             return Some(from);
         }

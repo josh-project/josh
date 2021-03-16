@@ -90,8 +90,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
     }
 
     if args.is_present("version") {
-        let v = option_env!("GIT_DESCRIBE")
-            .unwrap_or(std::env!("CARGO_PKG_VERSION"));
+        let v = option_env!("GIT_DESCRIBE").unwrap_or(std::env!("CARGO_PKG_VERSION"));
         println!("Version: {}", v);
         return Ok(0);
     }
@@ -104,17 +103,13 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
     let mut filterobj = josh::filter::parse(&specstr)?;
 
     if args.is_present("squash") {
-        filterobj =
-            josh::filter::chain(josh::filter::parse(":SQUASH")?, filterobj);
+        filterobj = josh::filter::chain(josh::filter::parse(":SQUASH")?, filterobj);
     }
 
     if args.is_present("print-filter") {
         println!(
             "{}",
-            josh::filter::pretty(
-                filterobj,
-                if args.is_present("file") { 0 } else { 4 }
-            )
+            josh::filter::pretty(filterobj, if args.is_present("file") { 0 } else { 4 })
         );
         return Ok(0);
     }
@@ -157,9 +152,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
 
     if args.is_present("discover") {
         let r = repo.revparse_single(&input_ref)?;
-        let hs = josh::housekeeping::find_all_workspaces_and_subdirectories(
-            &r.peel_to_tree()?,
-        )?;
+        let hs = josh::housekeeping::find_all_workspaces_and_subdirectories(&r.peel_to_tree()?)?;
         for i in hs {
             if i.contains(":workspace=") {
                 continue;
@@ -181,10 +174,8 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
     let check_permissions = args.is_present("check-permission");
 
     if check_permissions {
-        filterobj =
-            josh::filter::chain(josh::filter::parse(":PATHS")?, filterobj);
-        filterobj =
-            josh::filter::chain(filterobj, josh::filter::parse(":FOLD")?);
+        filterobj = josh::filter::chain(josh::filter::parse(":PATHS")?, filterobj);
+        filterobj = josh::filter::chain(filterobj, josh::filter::parse(":FOLD")?);
     }
 
     let t = if reverse {
