@@ -9,5 +9,6 @@ export GIT_AUTHOR_DATE="2005-04-07T22:13:13"
 export GIT_COMMITTER_NAME=Josh
 export GIT_COMMITTER_EMAIL=josh@example.com
 export GIT_COMMITTER_DATE="2005-04-07T22:13:13"
+export EMPTY_TREE="4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 
 python3 -m cram "$@"
