@@ -221,36 +221,18 @@ pub fn linecount(repo: &git2::Repository, id: git2::Oid) -> usize {
     return 0;
 }
 
+struct Markers {
+    path: std::path::PathBuf,
+    id: git2::Oid,
+    topic: String,
+}
+
 #[graphql_object(context = Context)]
-impl Path {
-    fn path(&self) -> String {
-        self.path.to_string_lossy().to_string()
-    }
-
-    fn dir(&self, relative: String) -> FieldResult<Path> {
-        Ok(Path {
-            path: normalize_path(&self.path.join(&relative)),
-            id: self.id,
-            tree: self.tree,
-        })
-    }
-
-    fn rev(&self, filter: String) -> FieldResult<Revision> {
-        let hm: std::collections::HashMap<String, String> =
-            [("path".to_string(), self.path.to_string_lossy().to_string())]
-                .iter()
-                .cloned()
-                .collect();
-        Ok(Revision {
-            filter: filter::parse(&strfmt::strfmt(&filter, &hm)?)?,
-            id: self.id,
-        })
-    }
-
-    fn comments(&self, context: &Context, topic: String) -> FieldResult<Vec<Marker>> {
+impl Markers {
+    fn list(&self, context: &Context) -> FieldResult<Vec<Marker>> {
         let transaction = context.transaction.lock()?;
 
-        let refname = transaction.refname(&format!("refs/metadata/{}", &topic));
+        let refname = transaction.refname(&format!("refs/josh/meta/{}", &self.topic));
 
         let r = transaction.repo().revparse_single(&refname);
         let tree = if let Ok(r) = r {
@@ -284,10 +266,10 @@ impl Path {
         Ok(lines)
     }
 
-    fn comments_count(&self, context: &Context, topic: String) -> FieldResult<i32> {
+    fn count(&self, context: &Context) -> FieldResult<i32> {
         let transaction = context.transaction.lock()?;
 
-        let refname = transaction.refname(&format!("refs/metadata/{}", &topic));
+        let refname = transaction.refname(&format!("refs/josh/meta/{}", &self.topic));
 
         let r = transaction.repo().revparse_single(&refname);
         let tree = if let Ok(r) = r {
@@ -301,6 +283,41 @@ impl Path {
             return Ok(linecount(transaction.repo(), p.id()) as i32);
         }
         return Ok(0);
+    }
+}
+
+#[graphql_object(context = Context)]
+impl Path {
+    fn path(&self) -> String {
+        self.path.to_string_lossy().to_string()
+    }
+
+    fn dir(&self, relative: String) -> FieldResult<Path> {
+        Ok(Path {
+            path: normalize_path(&self.path.join(&relative)),
+            id: self.id,
+            tree: self.tree,
+        })
+    }
+
+    fn markers(&self, topic: String) -> Markers {
+        Markers {
+            path: self.path.clone(),
+            id: self.id,
+            topic: topic,
+        }
+    }
+
+    fn rev(&self, filter: String) -> FieldResult<Revision> {
+        let hm: std::collections::HashMap<String, String> =
+            [("path".to_string(), self.path.to_string_lossy().to_string())]
+                .iter()
+                .cloned()
+                .collect();
+        Ok(Revision {
+            filter: filter::parse(&strfmt::strfmt(&filter, &hm)?)?,
+            id: self.id,
+        })
     }
 
     fn hash(&self, context: &Context) -> FieldResult<String> {
@@ -474,12 +491,13 @@ fn marker_path(commit: &str) -> std::path::PathBuf {
         .join(&commit[1..3])
         .join(&commit[3..6])
         .join(&commit)
+        .join("markers")
 }
 
 #[derive(juniper::GraphQLInputObject)]
-struct Markers {
+struct MarkersInput {
     path: String,
-    markers: Vec<MarkerInput>,
+    list: Vec<MarkerInput>,
 }
 
 #[derive(juniper::GraphQLInputObject)]
@@ -501,9 +519,9 @@ pub struct MarkersMut {
 
 #[graphql_object(context = Context)]
 impl MarkersMut {
-    fn add(&self, context: &Context, comments: Vec<Markers>) -> FieldResult<bool> {
+    fn add(&self, context: &Context, markers: Vec<MarkersInput>) -> FieldResult<bool> {
         let transaction = context.transaction.lock()?;
-        let rev = transaction.refname(&format!("refs/metadata/{}", self.topic));
+        let rev = transaction.refname(&format!("refs/josh/meta/{}", self.topic));
 
         transaction
             .repo()
@@ -520,7 +538,7 @@ impl MarkersMut {
 
         let mut tree = tree;
 
-        for mm in comments {
+        for mm in markers {
             let path = mm.path;
             let path = &marker_path(&self.commit).join(&path);
             let prev = if let Ok(e) = tree.get_path(&path) {
@@ -531,7 +549,7 @@ impl MarkersMut {
             };
 
             let mm = mm
-                .markers
+                .list
                 .iter()
                 .map(|x| format!("{}: {}", &x.position, &x.text))
                 .collect::<Vec<String>>();
@@ -567,7 +585,7 @@ impl MarkersMut {
 
 #[graphql_object(context = Context)]
 impl RepositoryMut {
-    fn metadata(&self, commit: String, topic: String) -> FieldResult<MarkersMut> {
+    fn meta(&self, commit: String, topic: String) -> FieldResult<MarkersMut> {
         Ok(MarkersMut {
             commit: commit,
             topic: topic,
