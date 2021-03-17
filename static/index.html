@@ -74,13 +74,15 @@
                       rev(at:"${ref}", filter:"${filter}") {
                           file(path:"${filename}") {
                             text
-                            comments(topic: "review") {
-                              position
-                              text
+                            markers(topic: "review") {
+                              list {
+                                position
+                                text
+                              }
                             }
                           }
-                          dirs(at:"${filename}",depth: 1) { path, commentsCount(topic:"review") }
-                          files(at:"${filename}",depth: 1) { path, commentsCount(topic:"review") }
+                          dirs(at:"${filename}",depth: 1) { path, markers(topic:"review") { count } }
+                          files(at:"${filename}",depth: 1) { path, markers(topic:"review") { count } }
                       }
                   }`}),
                   success: function(result) {
@@ -95,7 +97,7 @@
                         editor.getDoc().setValue(result.data.rev.file.text);
 
                         console.log(result.data.rev.file);
-                        var r = result.data.rev.file.comments;
+                        var r = result.data.rev.file.markers.list;
                         for (var i = 0; i < r.length; i++) {
                             console.log(r);
                             var msg = document.createElement("div");
@@ -112,8 +114,8 @@
                         var paths = [];
                         var r = result.data.rev.dirs;
                         for (var i = 0; i < r.length; i++) {
-                            if (r[i].commentsCount) {
-                                paths.push(`<li><span class="path">${r[i].path}</span><span class="marker">${r[i].commentsCount}</span></li>`);
+                            if (r[i].markers.count) {
+                                paths.push(`<li><span class="path">${r[i].path}</span><span class="marker">${r[i].markers.count}</span></li>`);
                             }
                             else {
                                 paths.push(`<li><span class="path">${r[i].path}</span></li>`);
@@ -125,8 +127,8 @@
                         var paths = [];
                         var r = result.data.rev.files;
                         for (var i = 0; i < r.length; i++) {
-                            if (r[i].commentsCount) {
-                                paths.push(`<li><span class="path">${r[i].path}</span><span class="marker">${r[i].commentsCount}</span></li>`);
+                            if (r[i].markers.count) {
+                                paths.push(`<li><span class="path">${r[i].path}</span><span class="marker">${r[i].markers.count}</span></li>`);
                             }
                             else {
                                 paths.push(`<li><span class="path">${r[i].path}</span></li>`);

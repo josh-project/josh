@@ -327,9 +327,20 @@ async fn call_service(
         }
     }
 
-    if path.starts_with("/:") {
-        let static_files = hyper_staticfile::Static::new("static");
-        return Ok(static_files.serve(req).await?);
+    if path.starts_with("/~/browse") {
+        let p = if path == "/~/browse" {
+            "index.html"
+        } else {
+            &path[9..]
+        };
+
+        let result = hyper_staticfile::resolve_path("static", &p).await?;
+
+        let r = hyper_staticfile::ResponseBuilder::new()
+            .request(&req)
+            .build(result)?;
+
+        return Ok(r);
     }
 
     if let Some(r) = static_paths(&serv, &path).await? {

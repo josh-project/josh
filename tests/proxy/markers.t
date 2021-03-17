@@ -75,9 +75,9 @@
 
   $ cat > ../query <<EOF
   > {"query":"mutation {
-  >   metadata(commit: \"1e64dc7136eae9c6b88e4ab831322f3c72a5c0e4\", topic:\"foo\") {
-  >     add(comments: [
-  >      { path:\"a/b/c\", markers: [{position:\"1234\",text:\"m1\"}]}
+  >   meta(commit: \"1e64dc7136eae9c6b88e4ab831322f3c72a5c0e4\", topic:\"foo\") {
+  >     add(markers: [
+  >      { path:\"a/b/c\", list: [{position:\"1234\",text:\"m1\"}]}
   >     ])
   >   }
   > }"}
@@ -86,21 +86,21 @@
   $ cat ../query | curl -s -X POST -H "content-type: application/json" --data @- "http://localhost:8002/~/graphql/real_repo.git"
   {
     "data": {
-      "metadata": {
+      "meta": {
         "add": true
       }
     }
   } (no-eol)
 
-  $ git fetch http://localhost:8002/real_repo.git@refs/metadata/foo:nop.git
-  From http://localhost:8002/real_repo.git@refs/metadata/foo:nop
+  $ git fetch http://localhost:8002/real_repo.git@refs/josh/meta/foo:nop.git
+  From http://localhost:8002/real_repo.git@refs/josh/meta/foo:nop
    * branch            HEAD       -> FETCH_HEAD
 
   $ git log --graph --pretty=%s FETCH_HEAD
   * marker
 
   $ git ls-tree FETCH_HEAD
-  040000 tree cdbd6c96689b4c14ba07b41273cfbd24de9e2c4f\t1 (esc)
+  040000 tree 3a2db85a05033dc4667f118580ca301c95be164a\t1 (esc)
 
   $ git checkout -q FETCH_HEAD
 
@@ -110,17 +110,18 @@
       `-- e6
           `-- 4dc
               `-- 1e64dc7136eae9c6b88e4ab831322f3c72a5c0e4
-                  `-- a
-                      `-- b
-                          `-- c
+                  `-- markers
+                      `-- a
+                          `-- b
+                              `-- c
   
-  6 directories, 1 file
+  7 directories, 1 file
 
   $ cat > ../query <<EOF
   > {"query":"mutation {
-  >   metadata(commit: \"1e64dc7136eae9c6b88e4ab831322f3c72a5c0e4\", topic:\"foo\") {
-  >     add(comments: [
-  >      { path:\"a/b/d\", markers: [{position:\"1235\",text:\"foobar\"}]}
+  >   meta(commit: \"1e64dc7136eae9c6b88e4ab831322f3c72a5c0e4\", topic:\"foo\") {
+  >     add(markers: [
+  >      { path:\"a/b/d\", list: [{position:\"1235\",text:\"foobar\"}]}
   >     ])
   >   }
   > }"}
@@ -129,14 +130,14 @@
   $ cat ../query | curl -s -X POST -H "content-type: application/json" --data @- "http://localhost:8002/~/graphql/real_repo.git"
   {
     "data": {
-      "metadata": {
+      "meta": {
         "add": true
       }
     }
   } (no-eol)
 
-  $ git fetch http://localhost:8002/real_repo.git@refs/metadata/foo:nop.git
-  From http://localhost:8002/real_repo.git@refs/metadata/foo:nop
+  $ git fetch http://localhost:8002/real_repo.git@refs/josh/meta/foo:nop.git
+  From http://localhost:8002/real_repo.git@refs/josh/meta/foo:nop
    * branch            HEAD       -> FETCH_HEAD
 
   $ git log --graph --pretty=%s FETCH_HEAD
@@ -144,7 +145,7 @@
   * marker
 
   $ git ls-tree FETCH_HEAD
-  040000 tree 8e2f931abcf2dc6058db4c81e97817b8e4b5ce6b\t1 (esc)
+  040000 tree 527de5a876f9fbe2d9ed410c5f52da0854d47386\t1 (esc)
 
   $ git checkout -q FETCH_HEAD
 
@@ -154,19 +155,20 @@
       `-- e6
           `-- 4dc
               `-- 1e64dc7136eae9c6b88e4ab831322f3c72a5c0e4
-                  `-- a
-                      `-- b
-                          |-- c
-                          `-- d
+                  `-- markers
+                      `-- a
+                          `-- b
+                              |-- c
+                              `-- d
   
-  6 directories, 2 files
+  7 directories, 2 files
 
 
   $ cat > ../query <<EOF
   > {"query":"mutation {
-  >   metadata(commit: \"1e64dc7136eae9c6b88e4ab831322f3c72a5c0e4\", topic:\"foo\") {
-  >     add(comments: [
-  >      { path:\"a/b/d\", markers: [
+  >   meta(commit: \"1e64dc7136eae9c6b88e4ab831322f3c72a5c0e4\", topic:\"foo\") {
+  >     add(markers: [
+  >      { path:\"a/b/d\", list: [
   >       {position:\"1235\",text:\"foobar\"},
   >       {position:\"1236\",text:\"foobar\"}
   >      ]}
@@ -178,14 +180,14 @@
   $ cat ../query | curl -s -X POST -H "content-type: application/json" --data @- "http://localhost:8002/~/graphql/real_repo.git"
   {
     "data": {
-      "metadata": {
+      "meta": {
         "add": true
       }
     }
   } (no-eol)
 
-  $ git fetch http://localhost:8002/real_repo.git@refs/metadata/foo:nop.git
-  From http://localhost:8002/real_repo.git@refs/metadata/foo:nop
+  $ git fetch http://localhost:8002/real_repo.git@refs/josh/meta/foo:nop.git
+  From http://localhost:8002/real_repo.git@refs/josh/meta/foo:nop
    * branch            HEAD       -> FETCH_HEAD
 
   $ git log --graph --pretty=%s FETCH_HEAD
@@ -194,7 +196,7 @@
   * marker
 
   $ git ls-tree FETCH_HEAD
-  040000 tree bc163abfb381f8f347805b4353a29e6ca11ec6ae\t1 (esc)
+  040000 tree 0d733c8f9fd482a75d99887e87e0a57344e903bb\t1 (esc)
 
   $ git checkout -q FETCH_HEAD
 
@@ -204,16 +206,22 @@
       `-- e6
           `-- 4dc
               `-- 1e64dc7136eae9c6b88e4ab831322f3c72a5c0e4
-                  `-- a
-                      `-- b
-                          |-- c
-                          `-- d
+                  `-- markers
+                      `-- a
+                          `-- b
+                              |-- c
+                              `-- d
   
-  6 directories, 2 files
+  7 directories, 2 files
 
   $ cat > ../query <<EOF
-  > {"query":"{ rev(at:\"refs/heads/master\") { files { path, text, comments(topic:\"foo\") {
-  > position, text } } } }"}
+  > {"query":"{ rev(at:\"refs/heads/master\") {
+  >  files {
+  >   path, text, markers(topic:\"foo\") { list {
+  >     position, text
+  >   }}
+  >  }
+  > }}"}
   > EOF
 
   $ cat ../query | curl -s -X POST -H "content-type: application/json" --data @- "http://localhost:8002/~/graphql/real_repo.git"
@@ -224,21 +232,25 @@
           {
             "path": "a/b/d",
             "text": "abdcontent\n",
-            "comments": [
-              {
-                "position": "1235",
-                "text": "foobar"
-              },
-              {
-                "position": "1236",
-                "text": "foobar"
-              }
-            ]
+            "markers": {
+              "list": [
+                {
+                  "position": "1235",
+                  "text": "foobar"
+                },
+                {
+                  "position": "1236",
+                  "text": "foobar"
+                }
+              ]
+            }
           },
           {
             "path": "sub1/file1",
             "text": "contents\n",
-            "comments": []
+            "markers": {
+              "list": []
+            }
           }
         ]
       }
@@ -274,9 +286,10 @@
   |           `-- refs
   |               |-- heads
   |               |   `-- master
-  |               `-- metadata
-  |                   `-- foo
+  |               `-- josh
+  |                   `-- meta
+  |                       `-- foo
   |-- namespaces
   `-- tags
   
-  19 directories, 6 files
+  20 directories, 6 files
