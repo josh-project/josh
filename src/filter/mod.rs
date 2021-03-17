@@ -162,7 +162,7 @@ fn spec2(op: &Op) -> String {
             (a, b) => format!("{}{}", spec2(&a), spec2(&b)),
         },
 
-        Op::Nop => ":nop".to_string(),
+        Op::Nop => ":/".to_string(),
         Op::Empty => ":empty".to_string(),
         Op::Paths => ":PATHS".to_string(),
         Op::Fold => ":FOLD".to_string(),

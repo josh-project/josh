@@ -269,16 +269,16 @@
   |-- josh
   |   |-- filtered
   |   |   `-- real_repo.git
+  |   |       |-- %3A
+  |   |       |   `-- heads
+  |   |       |       `-- master
   |   |       |-- %3A%2Fa
   |   |       |   `-- heads
   |   |       |       `-- master
   |   |       |-- %3A%2Fa%2Fb
   |   |       |   `-- heads
   |   |       |       `-- master
-  |   |       |-- %3A%2Fsub1
-  |   |       |   `-- heads
-  |   |       |       `-- master
-  |   |       `-- %3Anop
+  |   |       `-- %3A%2Fsub1
   |   |           `-- heads
   |   |               `-- master
   |   `-- upstream

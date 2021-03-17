@@ -301,13 +301,13 @@ Empty roots should not be dropped -> sha1 equal guarantee for "nop"
   |-- josh
   |   |-- filtered
   |   |   |-- real_repo.git
+  |   |   |   |-- %3A
+  |   |   |   |   `-- heads
+  |   |   |   |       `-- master
   |   |   |   |-- %3A%2Frepo1
   |   |   |   |   `-- heads
   |   |   |   |       `-- master
-  |   |   |   |-- %3A%2Frepo2
-  |   |   |   |   `-- heads
-  |   |   |   |       `-- master
-  |   |   |   `-- %3Anop
+  |   |   |   `-- %3A%2Frepo2
   |   |   |       `-- heads
   |   |   |           `-- master
   |   |   |-- repo1.git

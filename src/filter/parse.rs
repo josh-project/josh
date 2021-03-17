@@ -19,6 +19,7 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> JoshResult<Op> {
             let v: Vec<_> = pair.into_inner().map(|x| x.as_str()).collect();
             make_op(v.as_slice())
         }
+        Rule::filter_nop => Ok(Op::Nop),
         Rule::filter_subdir => Ok(Op::Subdir(
             Path::new(pair.into_inner().next().unwrap().as_str()).to_owned(),
         )),

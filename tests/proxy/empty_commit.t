@@ -86,10 +86,10 @@ should still be included.
   |-- josh
   |   |-- filtered
   |   |   `-- real_repo.git
-  |   |       |-- %3A%2Fsub1
+  |   |       |-- %3A
   |   |       |   `-- heads
   |   |       |       `-- master
-  |   |       `-- %3Anop
+  |   |       `-- %3A%2Fsub1
   |   |           `-- heads
   |   |               `-- master
   |   `-- upstream

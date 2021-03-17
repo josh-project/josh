@@ -124,10 +124,10 @@
   |-- josh
   |   |-- filtered
   |   |   `-- real_repo.git
-  |   |       |-- %3A%2Fsub3
+  |   |       |-- %3A
   |   |       |   `-- heads
   |   |       |       `-- master
-  |   |       `-- %3Anop
+  |   |       `-- %3A%2Fsub3
   |   |           `-- heads
   |   |               `-- master
   |   `-- upstream

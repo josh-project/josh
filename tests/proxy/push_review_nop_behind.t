@@ -57,7 +57,7 @@ This is a regression test for that problem.
   |-- josh
   |   |-- filtered
   |   |   `-- real_repo.git
-  |   |       `-- %3Anop
+  |   |       `-- %3A
   |   |           `-- heads
   |   |               `-- master
   |   `-- upstream

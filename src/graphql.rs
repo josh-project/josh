@@ -106,7 +106,7 @@ impl Revision {
         };
 
         Ok(Some(Revision {
-            filter: filter::parse(&filter.unwrap_or(":nop".to_string()))?,
+            filter: filter::parse(&filter.unwrap_or(":/".to_string()))?,
             id: id,
         }))
     }
@@ -468,7 +468,7 @@ impl Reference {
             .unwrap_or(git2::Oid::zero());
 
         Ok(Revision {
-            filter: filter::parse(&filter.unwrap_or(":nop".to_string()))?,
+            filter: filter::parse(&filter.unwrap_or(":/".to_string()))?,
             id: id,
         })
     }
@@ -630,7 +630,7 @@ impl Repository {
         let id = transaction.repo().revparse_single(&rev)?.id();
 
         Ok(Revision {
-            filter: filter::parse(&filter.unwrap_or(":nop".to_string()))?,
+            filter: filter::parse(&filter.unwrap_or(":/".to_string()))?,
             id: id,
         })
     }

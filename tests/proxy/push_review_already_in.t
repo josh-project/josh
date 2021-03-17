@@ -50,7 +50,7 @@ test for that.
   |-- josh
   |   |-- filtered
   |   |   `-- real_repo.git
-  |   |       `-- %3Anop
+  |   |       `-- %3A
   |   |           `-- heads
   |   |               `-- master
   |   `-- upstream
