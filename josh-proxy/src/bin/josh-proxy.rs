@@ -355,7 +355,7 @@ async fn call_service(
         if let Some(parsed_url) = FilteredRepoUrl::from_str(&path) {
             let mut pu = parsed_url;
             if pu.filter == "" {
-                pu.filter = ":nop".to_string();
+                pu.filter = ":/".to_string();
             }
             pu
         } else {

@@ -88,7 +88,7 @@
   $ git add sub1
   $ git commit -m "add file2" 1> /dev/null
 
-  $ josh-filter :nop HEAD -q get=sub1/file1
+  $ josh-filter :/ HEAD -q get=sub1/file1
   contents1
   $ josh-filter :nop HEAD -q get=sub1/file2
   contents2

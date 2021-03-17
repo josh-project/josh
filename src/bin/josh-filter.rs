@@ -12,7 +12,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         .arg(
             clap::Arg::with_name("filter")
                 .help("Filter to apply")
-                .default_value(":nop")
+                .default_value(":/")
                 .takes_value(true),
         )
         .arg(
