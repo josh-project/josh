@@ -134,6 +134,13 @@
   remote: Can't apply "mod workspace" (4e531443c5533e6d1b2503d0fad238cfc8491807)
   remote: Invalid workspace:
   remote: ----
+  remote:  --> 1:1
+  remote:   |
+  remote: 1 | a/ = :/sub1\xe2\x90\x8a (esc)
+  remote:   | ^---
+  remote:   |
+  remote:   = expected workspace_file
+  remote:
   remote: a/ = :/sub1
   remote:
   remote: ----
