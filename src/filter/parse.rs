@@ -119,7 +119,7 @@ fn parse_workspace(filter_spec: &str) -> JoshResult<Vec<Filter>> {
                 Rule::compose => {
                     let filters = parse_group(pair.as_str())?;
                     Ok(filters)
-                },
+                }
                 _ => Err(josh_error(&format!("invalid workspace file {:?}", pair))),
             };
         }
