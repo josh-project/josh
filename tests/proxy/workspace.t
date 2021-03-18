@@ -23,8 +23,10 @@
   $ mkdir ws
   $ cat > ws/workspace.josh <<EOF
   > # comment
-  > # second line
-  >
+  > #
+  > 
+  > # comment 2
+  > 
   > a/b = :/sub2
   > c = :/sub1
   > EOF
@@ -103,6 +105,15 @@
   
   4 directories, 3 files
 
+  $ cat workspace.josh
+  # comment
+  #
+  
+  # comment 2
+  
+  a/b = :/sub2
+  c = :/sub1
+
   $ git log --graph --pretty=%s
   * add file2
   * add file1
@@ -126,7 +137,7 @@
   
   Turn off this advice by setting config variable advice.detachedHead to false
   
-  HEAD is now at 833812f add file1
+  HEAD is now at e27e2ee add file1
 
   $ tree
   .
@@ -138,7 +149,7 @@
   2 directories, 2 files
 
   $ git checkout master 1> /dev/null
-  Previous HEAD position was 833812f add file1
+  Previous HEAD position was e27e2ee add file1
   Switched to branch 'master'
 
   $ echo newfile_1_contents > c/subsub/newfile_1
@@ -152,18 +163,18 @@
   remote: josh-proxy
   remote: response from upstream:
   remote: To http://localhost:8001/real_repo.git
-  remote:    176e8e0..11e2559  JOSH_PUSH -> master
-  remote: REWRITE(5fa942ed9d35f280b35df2c4ef7acd23319271a5 -> 2cbcd105ead63a4fecf486b949db7f44710300e5)
+  remote:    dc5f7e8..bb76696  JOSH_PUSH -> master
+  remote: REWRITE(b176252014d4a10d3ec078667ecf45dd9a140951 -> fa3b9622c1bcc8363c27d4eb05d1ae8dae15e871)
   remote:
   remote:
   To http://localhost:8002/real_repo.git:workspace=ws.git
-     6be0d68..5fa942e  master -> master
+     be06ec3..b176252  master -> master
 
   $ cd ${TESTTMP}/real_repo
 
   $ git pull --rebase 1> /dev/null
   From http://localhost:8001/real_repo
-     176e8e0..11e2559  master     -> origin/master
+     dc5f7e8..bb76696  master     -> origin/master
 
   $ git clean -ffdx 1> /dev/null
 
@@ -185,6 +196,16 @@
       `-- workspace.josh
   
   5 directories, 9 files
+
+  $ cat ws/workspace.josh
+  # comment
+  #
+  
+  # comment 2
+  
+  c = :/sub1
+  a/b = :/sub2
+
   $ git log --graph --pretty=%s
   * add in filter
   * add file2
@@ -216,7 +237,7 @@
   
   Turn off this advice by setting config variable advice.detachedHead to false
   
-  HEAD is now at 176e8e0 add file2
+  HEAD is now at dc5f7e8 add file2
   $ git clean -ffdx 1> /dev/null
   $ tree
   .
@@ -270,7 +291,7 @@
   |   |-- rewrites
   |   |   `-- real_repo.git
   |   |       `-- 7bd92d97e96693ea7fd7eb5757b3580002889948
-  |   |           `-- r_2cbcd105ead63a4fecf486b949db7f44710300e5
+  |   |           `-- r_fa3b9622c1bcc8363c27d4eb05d1ae8dae15e871
   |   `-- upstream
   |       `-- real_repo.git
   |           `-- refs
@@ -281,4 +302,4 @@
   
   25 directories, 8 files
 
-$ cat ${TESTTMP}/josh-proxy.out | grep VIEW
+$ cat ${TESTTMP}/josh-proxy.out

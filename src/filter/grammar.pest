@@ -38,8 +38,8 @@ compose = {
 
 workspace_comments = { 
     NEWLINE*
-    ~ (CMT_START ~ ALNUM*)+
-    ~ NEWLINE*
+    ~ ( (CMT_START ~ (!NEWLINE ~ ANY)*)
+        ~ NEWLINE*)+
 }
 
 workspace_file = {
