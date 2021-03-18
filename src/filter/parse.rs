@@ -115,15 +115,19 @@ fn parse_workspace(filter_spec: &str) -> JoshResult<Vec<Filter>> {
     if let Ok(mut r) = Grammar::parse(Rule::workspace_file, filter_spec) {
         let r = r.next().unwrap();
         for pair in r.into_inner() {
-            return match pair.as_rule() {
+            match pair.as_rule() {
                 Rule::compose => {
                     let filters = parse_group(pair.as_str())?;
-                    Ok(filters)
+                    return Ok(filters);
                 }
-                _ => Err(josh_error(&format!("invalid workspace file {:?}", pair))),
+                Rule::workspace_comments => {
+                    continue;
+                }
+                _ => return Err(josh_error(&format!("invalid workspace file {:?}", pair))),
             };
         }
     }
+    tracing::debug!("err");
     return Err(josh_error(&format!(
         "Invalid workspace:\n----\n{}\n----",
         filter_spec
@@ -153,6 +157,29 @@ pub fn parse(filter_spec: &str) -> JoshResult<Filter> {
     return Ok(opt::optimize(to_filter(Op::Compose(parse_workspace(
         filter_spec,
     )?))));
+}
+
+/// Get the potential leading comments from a workspace.josh as a string
+pub fn get_comments(filter_spec: &str) -> JoshResult<String> {
+    if let Ok(r) = Grammar::parse(Rule::workspace_file, filter_spec) {
+        let mut r = r;
+        let r = r.next().unwrap();
+        for pair in r.into_inner() {
+            return match pair.as_rule() {
+                Rule::workspace_comments => Ok(pair.as_str().to_string()),
+                Rule::compose => Ok("".to_string()),
+                _ => Err(josh_error(&format!(
+                    "Invalid workspace:\n----\n{}\n----",
+                    filter_spec
+                ))),
+            };
+        }
+    }
+
+    return Err(josh_error(&format!(
+        "Invalid workspace:\n----\n{}\n----",
+        filter_spec
+    )));
 }
 
 #[derive(Parser)]

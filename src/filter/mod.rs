@@ -5,6 +5,7 @@ mod opt;
 mod parse;
 pub mod tree;
 
+pub use parse::get_comments;
 pub use parse::parse;
 
 lazy_static! {
@@ -538,23 +539,26 @@ fn unapply2<'a>(
         }
         Op::Workspace(path) => {
             let root = to_filter(Op::Subdir(path.to_owned()));
-            let mapped = parse(&tree::get_blob(
-                &transaction.repo(),
-                &tree,
-                &Path::new("workspace.josh"),
-            ))?;
+            let mapped = &tree::get_blob(&transaction.repo(), &tree, &Path::new("workspace.josh"));
+            let parsed = parse(mapped)?;
+
+            let mut blob = String::new();
+            if let Ok(c) = get_comments(mapped) {
+                if c.len() > 0 {
+                    blob = format!("{}", c);
+                }
+            }
+            let blob = &format!("{}{}\n", &blob, pretty(parsed, 0));
 
             let tree = tree::insert(
                 &transaction.repo(),
                 &tree,
                 &Path::new("workspace.josh"),
-                transaction
-                    .repo()
-                    .blob(&format!("{}\n", pretty(mapped, 0)).as_bytes())?,
+                transaction.repo().blob(blob.as_bytes())?,
                 0o0100644, // Should this handle filemode?
             )?;
 
-            return unapply(transaction, compose(root, mapped), tree, parent_tree);
+            return unapply(transaction, compose(root, parsed), tree, parent_tree);
         }
         Op::Compose(filters) => {
             let mut remaining = tree.clone();
