@@ -95,13 +95,34 @@ fn parse_group(filter_spec: &str) -> JoshResult<Vec<Filter>> {
     rs_tracing::trace_scoped!("parse_group");
     let mut filters = vec![];
 
-    if let Ok(mut r) = Grammar::parse(Rule::workspace_file, filter_spec) {
+    if let Ok(mut r) = Grammar::parse(Rule::compose, filter_spec) {
         let r = r.next().unwrap();
         for pair in r.into_inner() {
             parse_file_entry(pair, &mut filters)?;
         }
 
         return Ok(filters);
+    }
+    return Err(josh_error(&format!(
+        "Invalid compose filter:\n----\n{}\n----",
+        filter_spec
+    )));
+}
+
+fn parse_workspace(filter_spec: &str) -> JoshResult<Vec<Filter>> {
+    rs_tracing::trace_scoped!("parse_workspace");
+
+    if let Ok(mut r) = Grammar::parse(Rule::workspace_file, filter_spec) {
+        let r = r.next().unwrap();
+        for pair in r.into_inner() {
+            return match pair.as_rule() {
+                Rule::compose => {
+                    let filters = parse_group(pair.as_str())?;
+                    Ok(filters)
+                },
+                _ => Err(josh_error(&format!("invalid workspace file {:?}", pair))),
+            };
+        }
     }
     return Err(josh_error(&format!(
         "Invalid workspace:\n----\n{}\n----",
@@ -129,7 +150,7 @@ pub fn parse(filter_spec: &str) -> JoshResult<Filter> {
         return Ok(opt::optimize(to_filter(chain.unwrap_or(Op::Nop))));
     };
 
-    return Ok(opt::optimize(to_filter(Op::Compose(parse_group(
+    return Ok(opt::optimize(to_filter(Op::Compose(parse_workspace(
         filter_spec,
     )?))));
 }

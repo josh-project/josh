@@ -22,6 +22,9 @@
 
   $ mkdir ws
   $ cat > ws/workspace.josh <<EOF
+  > # comment
+  > # second line
+  >
   > a/b = :/sub2
   > c = :/sub1
   > EOF
