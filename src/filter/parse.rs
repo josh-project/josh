@@ -95,43 +95,51 @@ fn parse_group(filter_spec: &str) -> JoshResult<Vec<Filter>> {
     rs_tracing::trace_scoped!("parse_group");
     let mut filters = vec![];
 
-    if let Ok(mut r) = Grammar::parse(Rule::compose, filter_spec) {
-        let r = r.next().unwrap();
-        for pair in r.into_inner() {
-            parse_file_entry(pair, &mut filters)?;
-        }
+    match Grammar::parse(Rule::compose, filter_spec) {
+        Ok(mut r) => {
+            let r = r.next().unwrap();
+            for pair in r.into_inner() {
+                parse_file_entry(pair, &mut filters)?;
+            }
 
-        return Ok(filters);
+            return Ok(filters);
+        }
+        Err(r) => {
+            return Err(josh_error(&format!(
+                "Invalid workspace:\n----\n{}\n\n{}\n----",
+                r, filter_spec
+            )));
+        }
     }
-    return Err(josh_error(&format!(
-        "Invalid compose filter:\n----\n{}\n----",
-        filter_spec
-    )));
 }
 
 fn parse_workspace(filter_spec: &str) -> JoshResult<Vec<Filter>> {
     rs_tracing::trace_scoped!("parse_workspace");
 
-    if let Ok(mut r) = Grammar::parse(Rule::workspace_file, filter_spec) {
-        let r = r.next().unwrap();
-        for pair in r.into_inner() {
-            match pair.as_rule() {
-                Rule::compose => {
-                    let filters = parse_group(pair.as_str())?;
-                    return Ok(filters);
-                }
-                Rule::workspace_comments => {
-                    continue;
-                }
-                _ => return Err(josh_error(&format!("invalid workspace file {:?}", pair))),
-            };
+    match Grammar::parse(Rule::workspace_file, filter_spec) {
+        Ok(mut r) => {
+            let r = r.next().unwrap();
+            for pair in r.into_inner() {
+                match pair.as_rule() {
+                    Rule::compose => {
+                        let filters = parse_group(pair.as_str())?;
+                        return Ok(filters);
+                    }
+                    Rule::workspace_comments => {
+                        continue;
+                    }
+                    _ => return Err(josh_error(&format!("invalid workspace file {:?}", pair))),
+                };
+            }
+            return Err(josh_error(&format!("invalid workspace file")));
+        }
+        Err(r) => {
+            return Err(josh_error(&format!(
+                "Invalid workspace:\n----\n{}\n\n{}\n----",
+                r, filter_spec
+            )));
         }
     }
-    tracing::debug!("err");
-    return Err(josh_error(&format!(
-        "Invalid workspace:\n----\n{}\n----",
-        filter_spec
-    )));
 }
 
 /// Create a `Filter` from a string representation
