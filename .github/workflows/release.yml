@@ -17,5 +17,5 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
           repository: esrlabs/josh-proxy
           tag_with_ref: true
-          tags: esrlabs/josh-proxy:latest
+          tags: latest
 
