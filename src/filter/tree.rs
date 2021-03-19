@@ -16,16 +16,19 @@ pub fn pathstree<'a>(
     for entry in tree.iter() {
         let name = entry.name().ok_or(super::josh_error("no name"))?;
         if entry.kind() == Some(git2::ObjectType::Blob) {
-            let file_blob = repo.blob(
-                normalize_path(&std::path::Path::new(root).join(name))
-                    .to_str()
-                    .ok_or(super::josh_error("no name"))?
-                    .as_bytes(),
-            )?;
+            let file_contents;
+            let path = normalize_path(&std::path::Path::new(root).join(name));
+            let path_string = path.to_str()
+                .ok_or(super::josh_error("no name"))?.to_string();
+            if name == "workspace.josh" {
+                file_contents = format!("#{}\n{}", &path_string, get_blob(repo, &tree, &std::path::Path::new(&name))).to_string();
+            } else {
+                file_contents = path_string;
+            }
             result = replace_child(
                 &repo,
                 &std::path::Path::new(name),
-                file_blob,
+                repo.blob(file_contents.as_bytes())?,
                 0o0100644,
                 &result,
             )?;
