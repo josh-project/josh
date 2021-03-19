@@ -26,6 +26,7 @@ jobs:
         pip3 install --user 'cram'
         pip3 install --user 'pygit2'
         cargo install hyper_cgi --features=test-server
+        cargo install graphql_client_cli
         sudo apt install git cmake libcurl4-openssl-dev libelf-dev libdw-dev tree
     - uses: actions/checkout@v2
     - name: Check format
