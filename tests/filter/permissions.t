@@ -72,12 +72,12 @@
   \ No newline at end of file
   diff --git a/a/workspace.josh b/a/workspace.josh
   new file mode 100644
-  index 0000000..b5fbe37
+  index 0000000..c9acb10
   --- /dev/null
   +++ b/a/workspace.josh
-  @@ -0,0 +1 @@
-  +a/workspace.josh
-  \ No newline at end of file
+  @@ -0,0 +1,2 @@
+  +#a/workspace.josh
+  +cws = :/c
   diff --git a/b/file_b1 b/b/file_b1
   new file mode 100644
   index 0000000..413b4ca
@@ -211,12 +211,12 @@
   \ No newline at end of file
   diff --git a/x/a/workspace.josh b/x/a/workspace.josh
   new file mode 100644
-  index 0000000..b5fbe37
+  index 0000000..c9acb10
   --- /dev/null
   +++ b/x/a/workspace.josh
-  @@ -0,0 +1 @@
-  +a/workspace.josh
-  \ No newline at end of file
+  @@ -0,0 +1,2 @@
+  +#a/workspace.josh
+  +cws = :/c
   diff --git a/x/b/file_b1 b/x/b/file_b1
   new file mode 100644
   index 0000000..413b4ca
@@ -291,12 +291,12 @@
   \ No newline at end of file
   diff --git a/a/workspace.josh b/a/workspace.josh
   new file mode 100644
-  index 0000000..b5fbe37
+  index 0000000..c9acb10
   --- /dev/null
   +++ b/a/workspace.josh
-  @@ -0,0 +1 @@
-  +a/workspace.josh
-  \ No newline at end of file
+  @@ -0,0 +1,2 @@
+  +#a/workspace.josh
+  +cws = :/c
   diff --git a/b/file_b1 b/b/file_b1
   new file mode 100644
   index 0000000..413b4ca
@@ -360,12 +360,12 @@
   \ No newline at end of file
   diff --git a/a/workspace.josh b/a/workspace.josh
   new file mode 100644
-  index 0000000..b5fbe37
+  index 0000000..c9acb10
   --- /dev/null
   +++ b/a/workspace.josh
-  @@ -0,0 +1 @@
-  +a/workspace.josh
-  \ No newline at end of file
+  @@ -0,0 +1,2 @@
+  +#a/workspace.josh
+  +cws = :/c
   diff --git a/b/file_b1 b/b/file_b1
   new file mode 100644
   index 0000000..413b4ca
@@ -457,25 +457,57 @@
   [1] :/a
   [1] :exclude[:/c]
   [1] :prefix=x
-  [2] :workspace=a
   [4] :/c
   [5] :PATHS
-  [9] :FOLD
+  [5] :workspace=a
+  [11] :FOLD
 
   $ git log --graph --pretty=%s refs/josh/filtered
   * add newfile
+  * add file_cd3
+  * add file_cd2
   * add dirs
 
   $ git checkout refs/josh/filtered 2> /dev/null
   $ tree
   .
+  |-- cws
+  |   `-- d
+  |       |-- e
+  |       |   `-- file_cd3
+  |       |-- file_cd
+  |       `-- file_cd2
   |-- file_a2
   |-- newfile
   `-- workspace.josh
   
-  0 directories, 3 files
+  3 directories, 6 files
 
   $ git diff $EMPTY_TREE HEAD
+  diff --git a/cws/d/e/file_cd3 b/cws/d/e/file_cd3
+  new file mode 100644
+  index 0000000..8719808
+  --- /dev/null
+  +++ b/cws/d/e/file_cd3
+  @@ -0,0 +1 @@
+  +c/d/e/file_cd3
+  \ No newline at end of file
+  diff --git a/cws/d/file_cd b/cws/d/file_cd
+  new file mode 100644
+  index 0000000..bb36c67
+  --- /dev/null
+  +++ b/cws/d/file_cd
+  @@ -0,0 +1 @@
+  +c/d/file_cd
+  \ No newline at end of file
+  diff --git a/cws/d/file_cd2 b/cws/d/file_cd2
+  new file mode 100644
+  index 0000000..26318eb
+  --- /dev/null
+  +++ b/cws/d/file_cd2
+  @@ -0,0 +1 @@
+  +c/d/file_cd2
+  \ No newline at end of file
   diff --git a/file_a2 b/file_a2
   new file mode 100644
   index 0000000..4b2f88e
@@ -494,10 +526,10 @@
   \ No newline at end of file
   diff --git a/workspace.josh b/workspace.josh
   new file mode 100644
-  index 0000000..b5fbe37
+  index 0000000..c9acb10
   --- /dev/null
   +++ b/workspace.josh
-  @@ -0,0 +1 @@
-  +a/workspace.josh
-  \ No newline at end of file
+  @@ -0,0 +1,2 @@
+  +#a/workspace.josh
+  +cws = :/c
 
