@@ -69,6 +69,11 @@
         box-shadow: none;
     }
 
+    .column {
+        width: 45%;
+        max-width: 450px;
+        float: left;
+    }
 
     #repo {
         margin: 15px;
@@ -283,33 +288,46 @@
                       }
                         $(".loading").hide();
                         $(".dirmode").show();
+                      $("#pathlist").html("");
                       if(result.data.rev.dirs) {
                         var paths = [];
                         var r = result.data.rev.dirs;
-                        for (var i = 0; i < r.length; i++) {
-                            var p = r[i].path.split("/");
-                            if (r[i].markers.count) {
-                                paths.push(`<tr data-path="${r[i].path}"><td><span class="path">${p[p.length-1]}/</span><span class="marker">${r[i].markers.count}</span></td></tr>`);
+
+                        var title = "Directories";
+                        if (r.length) {
+                            paths.push(`<div class="column"><h2>${title}:</h2><table class="pathlist">`);
+                            for (var i = 0; i < r.length; i++) {
+                                var p = r[i].path.split("/");
+                                if (r[i].markers.count) {
+                                    paths.push(`<tr data-path="${r[i].path}"><td><span class="path">${p[p.length-1]}/</span><span class="marker">${r[i].markers.count}</span></td></tr>`);
+                                }
+                                else {
+                                    paths.push(`<tr data-path="${r[i].path}"><td><span class="path">${p[p.length-1]}/</span></td></tr>`);
+                                }
                             }
-                            else {
-                                paths.push(`<tr data-path="${r[i].path}"><td><span class="path">${p[p.length-1]}/</span></tr></td>`);
-                            }
+                            paths.push(`</table></div>`);
+                            $("#pathlist").append(paths.join(''));
                         }
-                        $("#dirs").html(paths.join(''));
                       }
                       if(result.data.rev.files) {
                         var paths = [];
                         var r = result.data.rev.files;
-                        for (var i = 0; i < r.length; i++) {
-                            var p = r[i].path.split("/");
-                            if (r[i].markers.count) {
-                                paths.push(`<tr data-path="${r[i].path}"><td><span class="path">${p[p.length-1]}</span><span class="marker">${r[i].markers.count}</span></td></tr>`);
+
+                        var title = "Files";
+                        if (r.length) {
+                            paths.push(`<div class="column"><h2>${title}:</h2><table class="pathlist">`);
+                            for (var i = 0; i < r.length; i++) {
+                                var p = r[i].path.split("/");
+                                if (r[i].markers.count) {
+                                    paths.push(`<tr data-path="${r[i].path}"><td><span class="path">${p[p.length-1]}</span><span class="marker">${r[i].markers.count}</span></td></tr>`);
+                                }
+                                else {
+                                    paths.push(`<tr data-path="${r[i].path}"><td><span class="path">${p[p.length-1]}</span></td></tr>`);
+                                }
                             }
-                            else {
-                                paths.push(`<tr data-path="${r[i].path}"><td><span class="path">${p[p.length-1]}</span></td></tr>`);
-                            }
+                            paths.push(`</table></div>`);
+                            $("#pathlist").append(paths.join(''));
                         }
-                        $("#files").html(paths.join(''));
                       }
 
                       if(!result.data.rev.dirs && !result.data.rev.files) {
@@ -321,13 +339,7 @@
                });
             };
 
-            $("#dirs").on("click", "tr", function() {
-               var filename = $('#filename').val();
-                $('#filename').val($(this).data("path"));
-               update_file();
-            });
-
-            $("#files").on("click", "tr", function() {
+            $("#pathlist").on("click", "tr", function() {
                var filename = $('#filename').val();
                 $('#filename').val($(this).data("path"));
                update_file();
@@ -419,10 +431,10 @@
 </div>
 
     <div id="pathlist" class="dirmode loaded">
+    <div class="column">
         <h2>Directories:</h2>
         <table class="pathlist" id="dirs"></table>
-        <h2>Files:</h2>
-        <table class="pathlist" id="files"></table>
+    </div>
     </div>
     <div class="filemode loaded" id="codeview">
     </div>
