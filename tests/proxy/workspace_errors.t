@@ -64,7 +64,7 @@ Error: comment in the middle
   remote: ----        
   remote:  --> 6:1        
   remote:   |        
-  remote: 6 | # comment 2\xe2\x90\x8a         (esc)
+  remote: 6 | # comment 2        
   remote:   | ^---        
   remote:   |        
   remote:   = expected EOI, filter_spec, or dst_path        
@@ -103,7 +103,7 @@ Error in filter
   remote: ----        
   remote:  --> 1:9        
   remote:   |        
-  remote: 1 | a/b = :b/sub2\xe2\x90\x8a         (esc)
+  remote: 1 | a/b = :b/sub2        
   remote:   |         ^---        
   remote:   |        
   remote:   = expected EOI, filter_group, filter_subdir, filter_nop, filter_presub, filter, or filter_noarg        

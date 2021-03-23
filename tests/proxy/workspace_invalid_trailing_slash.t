@@ -136,7 +136,7 @@
   remote: ----
   remote:  --> 1:1
   remote:   |
-  remote: 1 | a/ = :/sub1\xe2\x90\x8a (esc)
+  remote: 1 | a/ = :/sub1
   remote:   | ^---
   remote:   |
   remote:   = expected workspace_file
