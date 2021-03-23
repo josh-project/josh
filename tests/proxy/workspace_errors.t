@@ -119,3 +119,5 @@ Error in filter
    ! [remote rejected] master -> master (hook declined)
   error: failed to push some refs to 'http://localhost:8002/real_repo.git:workspace=ws.git'
   [1]
+
+$ cat ${TESTTMP}/josh-proxy.out
