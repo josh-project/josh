@@ -328,13 +328,14 @@ async fn call_service(
     }
 
     if path.starts_with("/~/browse") {
-        let p = if path == "/~/browse" {
-            "index.html"
-        } else {
-            &path[9..]
-        };
+        let p = &path[9..];
 
         let result = hyper_staticfile::resolve_path("static", &p).await?;
+        let result = if let hyper_staticfile::ResolveResult::NotFound = result {
+            hyper_staticfile::resolve_path("static", "index.html").await?
+        } else {
+            result
+        };
 
         let r = hyper_staticfile::ResponseBuilder::new()
             .request(&req)

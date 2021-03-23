@@ -91,11 +91,22 @@
         font-size: 16px;
         margin: 1em;
     }
-    #up {
-        color: #ff5151;
+    #breadcrumbs {
         margin: 1em;
-        margin-right: 1.5em;
-        float: right;
+        width:80%;
+    }
+    #breadcrumbs a {
+        color: #aaaaaa;;
+        text-decoration: none;
+    }
+    #breadcrumbs a:hover {
+        background-color: #272727;
+        color: #ffffaa;
+        text-decoration: none;
+    }
+    #breadcrumbs a:last-child {
+        color: #eeeeee;;
+        text-decoration: none;
     }
 
     h2 {
@@ -160,6 +171,11 @@
         padding: 3px;
         display: block;
         cursor: pointer;
+    }
+
+    table.pathlist a {
+        text-decoration: none;
+        color: #dddddd;;
     }
 
     table.pathlist tr:hover {
