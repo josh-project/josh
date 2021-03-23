@@ -1,8 +1,14 @@
 use super::*;
 
+use graphql_client::GraphQLQuery;
+
+#[derive(GraphQLQuery)]
+#[graphql(schema_path = "josh_api.json", query_path = "nav_query.graphql")]
+pub struct NavQuery;
+
 pub enum Msg {
     CallServer,
-    ReceiveResponse(Result<BrowseData, anyhow::Error>),
+    ReceiveResponse(Result<nav_query::ResponseData, anyhow::Error>),
     ChangeFilter(yew::events::ChangeData),
     ChangeRef(yew::events::ChangeData),
     ChangePath(yew::events::ChangeData),
@@ -10,10 +16,7 @@ pub enum Msg {
 
 #[derive(Properties, Clone, PartialEq)]
 pub struct Props {
-    pub repo: String,
-    pub rev: String,
-    pub filter: String,
-    pub file: String,
+    pub route: route::AppRoute,
 }
 
 pub struct Nav {
@@ -21,7 +24,7 @@ pub struct Nav {
     router: RouteAgentDispatcher,
     props: Props,
     fetch_task: Option<FetchTask>,
-    data: BrowseData,
+    data: nav_query::ResponseData,
     error: Option<String>,
 }
 
@@ -33,18 +36,16 @@ impl Component for Nav {
         link.send_message(Self::Message::CallServer);
         Self {
             link: link,
-            data: BrowseData {
-                data: References {
-                    refs: vec![Reference {
-                        name: props.rev.clone(),
-                    }],
-                    workspaces: Workspaces {
-                        paths: vec![Path {
-                            dir: Dir {
-                                path: props.filter.clone(),
-                            },
-                        }],
-                    },
+            data: nav_query::ResponseData {
+                refs: vec![nav_query::NavQueryRefs {
+                    name: props.route.rev(),
+                }],
+                workspaces: nav_query::NavQueryWorkspaces {
+                    paths: Some(vec![nav_query::NavQueryWorkspacesPaths {
+                        dir: nav_query::NavQueryWorkspacesPathsDir {
+                            path: props.route.filter(),
+                        },
+                    }]),
                 },
             },
             props: props,
@@ -57,26 +58,24 @@ impl Component for Nav {
     fn update(&mut self, msg: Self::Message) -> ShouldRender {
         match msg {
             Self::Message::CallServer => {
-                let query = format!(
-                    r#"{{
-                      refs {{ name }}
-                      workspaces: rev(at: "{}", filter: "::**/workspace.josh") {{
-                        paths: files {{
-                          dir(relative: "..") {{ path }}
-                        }}
-                      }}
-                }}"#,
-                    self.props.rev
-                );
-                let body = serde_json::json!({ "query": query });
-                let request = Request::post("/~/graphql/bsw/central.git")
+                let query = NavQuery::build_query(nav_query::Variables {
+                    rev: self.props.route.rev(),
+                });
+                let request = Request::post(format!("/~/graphql/{}.git", self.props.route.repo()))
                     .header("Content-Type", "application/json")
-                    .body(Json(&body))
+                    .body(Json(&query))
                     .expect("Could not build request.");
                 let callback = self.link.callback(
-                    |response: Response<Json<Result<BrowseData, anyhow::Error>>>| {
+                    |response: Response<
+                        Json<
+                            Result<
+                                graphql_client::Response<nav_query::ResponseData>,
+                                anyhow::Error,
+                            >,
+                        >,
+                    >| {
                         let Json(data) = response.into_body();
-                        Self::Message::ReceiveResponse(data)
+                        Self::Message::ReceiveResponse(data.map(|x| x.data.unwrap()))
                     },
                 );
                 let task = FetchService::fetch(request, callback).expect("failed to start request");
@@ -98,34 +97,19 @@ impl Component for Nav {
             }
             Self::Message::ChangeFilter(yew::events::ChangeData::Select(val)) => {
                 self.router.send(RouteRequest::ChangeRoute(Route::from(
-                    route::AppRoute::Browse(
-                        self.props.repo.clone(),
-                        self.props.rev.clone(),
-                        val.value(),
-                        self.props.file.clone(),
-                    ),
+                    self.props.route.with_filter(&val.value()),
                 )));
                 true
             }
             Self::Message::ChangeRef(yew::events::ChangeData::Select(val)) => {
                 self.router.send(RouteRequest::ChangeRoute(Route::from(
-                    route::AppRoute::Browse(
-                        self.props.repo.clone(),
-                        val.value(),
-                        self.props.filter.clone(),
-                        self.props.file.clone(),
-                    ),
+                    self.props.route.with_rev(&val.value()),
                 )));
                 true
             }
             Self::Message::ChangePath(yew::events::ChangeData::Value(val)) => {
                 self.router.send(RouteRequest::ChangeRoute(Route::from(
-                    route::AppRoute::Browse(
-                        self.props.repo.clone(),
-                        self.props.rev.clone(),
-                        self.props.filter.clone(),
-                        val,
-                    ),
+                    self.props.route.with_path(&val),
                 )));
                 true
             }
@@ -152,32 +136,40 @@ impl Component for Nav {
         let r_cb = self
             .link
             .callback(|val: yew::events::ChangeData| Self::Message::ChangeRef(val));
-        let p_cb = self
-            .link
-            .callback(|val: yew::events::ChangeData| Self::Message::ChangePath(val));
         html! {
             <div class="h">
-                <form spellcheck="false" autocomplete="off" id="revform">
-                    <span id="repo">{ &props.repo }</span>
-                    <select id="filter" onchange=f_cb>
-                        <option value=":/"> { ":/" } </option>
-                        {
-                            self.data.data.workspaces.paths.iter().map(|x| html! {
-                                <option selected=ws(&x.dir.path) == props.filter> { ws(&x.dir.path) } </option>
-                            }).collect::<Html>()
+                <span id="repo">{ &props.route.repo() }</span>
+                <select id="filter" onchange=f_cb>
+                    <option value=":/"> { ":/" } </option>
+                    {
+                        for self.data.workspaces.paths.as_ref().unwrap().iter().map(|x| html! {
+                            <option selected=ws(&x.dir.path) == props.route.filter()> { ws(&x.dir.path) } </option>
+                        })
+                    }
+                </select>
+                <br/>
+                <span class="branch">
+                <select id="ref" onchange=r_cb>
+                    {
+                        for self.data.refs.iter().map(|x| html! {
+                            <option selected=&x.name == &props.route.rev() value=&x.name>
+                            { &x.name } </option>
+                        })
+                    }
+                </select>
+                </span>
+                <br/>
+                <div id="breadcrumbs">
+                <route::AppAnchor classes="up" route=props.route.with_path("")><b>{"<>/"}</b></route::AppAnchor>
+                {
+                    for props.route.breadcrumbs().iter().rev().enumerate().map(|(i, b)| {
+                        html! {
+                            <>{ if i != 0 {"/"} else {""} }<route::AppAnchor classes="up" route=b>{ b.filename() }</route::AppAnchor></>
                         }
-                    </select>
-                    <br/>
-                    <select id="ref" onchange=r_cb>
-                        {
-                            self.data.data.refs.iter().map(|x| html! {
-                                <option selected=&x.name == &props.rev value=&x.name> { &x.name } </option>
-                            }).collect::<Html>()
-                        }
-                    </select>
-                    <input id="filename" value=&props.file onchange=p_cb/>
-                    <span id="up"> { "../" }</span>
-                </form>
+                    })
+                }
+                </div>
+                /* <route::AppAnchor classes="up" route=props.route.path_up()>{ "../" }</route::AppAnchor> */
             </div>
         }
     }
@@ -188,35 +180,4 @@ fn ws(path: &str) -> String {
         return path.to_string();
     }
     format!(":workspace={}", path)
-}
-
-#[derive(serde::Deserialize)]
-pub struct Reference {
-    name: String,
-}
-
-#[derive(serde::Deserialize)]
-pub struct Dir {
-    path: String,
-}
-
-#[derive(serde::Deserialize)]
-pub struct Path {
-    dir: Dir,
-}
-
-#[derive(serde::Deserialize)]
-pub struct Workspaces {
-    paths: Vec<Path>,
-}
-
-#[derive(serde::Deserialize)]
-pub struct References {
-    refs: Vec<Reference>,
-    workspaces: Workspaces,
-}
-
-#[derive(serde::Deserialize)]
-pub struct BrowseData {
-    data: References,
 }
