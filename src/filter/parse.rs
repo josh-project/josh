@@ -107,7 +107,8 @@ fn parse_group(filter_spec: &str) -> JoshResult<Vec<Filter>> {
         Err(r) => {
             return Err(josh_error(&format!(
                 "Invalid workspace:\n----\n{}\n\n{}\n----",
-                r.to_string().replace("␊", ""), filter_spec
+                r.to_string().replace("␊", ""),
+                filter_spec
             )));
         }
     }
@@ -136,7 +137,8 @@ fn parse_workspace(filter_spec: &str) -> JoshResult<Vec<Filter>> {
         Err(r) => {
             return Err(josh_error(&format!(
                 "Invalid workspace:\n----\n{}\n\n{}\n----",
-                r.to_string().replace("␊", ""), filter_spec
+                r.to_string().replace("␊", ""),
+                filter_spec
             )));
         }
     }
