@@ -828,12 +828,12 @@ fn main() {
 
     let fmt_layer = tracing_subscriber::fmt::layer().compact().with_ansi(false);
 
-    let (tracer, _uninstall) = opentelemetry_jaeger::new_pipeline()
+    let tracer = opentelemetry_jaeger::new_pipeline()
         .with_service_name(std::env::var("JOSH_SERVICE_NAME").unwrap_or("josh-proxy".to_owned()))
         .with_agent_endpoint(
             std::env::var("JOSH_JAEGER_ENDPOINT").unwrap_or("localhost:6831".to_owned()),
         )
-        .install()
+        .install_simple()
         .expect("can't install opentelemetry pipeline");
 
     let telemetry_layer = tracing_opentelemetry::layer().with_tracer(tracer);
