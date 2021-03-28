@@ -1,6 +1,7 @@
 [build]
 target = "index.html"
-dist = "dist"
+dist = "../static"
+public_url = "/~/browse/"
 
 [[proxy]]
 backend = "http://localhost:8000/~/"
