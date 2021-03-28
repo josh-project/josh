@@ -627,7 +627,11 @@ impl Repository {
         let rev = format!("refs/josh/upstream/{}.git/{}", to_ns(&self.name), at);
 
         let transaction = context.transaction.lock()?;
-        let id = transaction.repo().revparse_single(&rev)?.id();
+        let id = if let Ok(id) = git2::Oid::from_str(&at) {
+            id
+        } else {
+            transaction.repo().revparse_single(&rev)?.id()
+        };
 
         Ok(Revision {
             filter: filter::parse(&filter.unwrap_or(":/".to_string()))?,
