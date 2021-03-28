@@ -160,7 +160,7 @@ impl Component for Nav {
                 </span>
                 <br/>
                 <div id="breadcrumbs">
-                <route::AppAnchor classes="up" route=props.route.with_path("")><b>{"<>/"}</b></route::AppAnchor>
+                <route::AppAnchor classes="up" route=props.route.with_path("")><b>{"$ /"}</b></route::AppAnchor>
                 {
                     for props.route.breadcrumbs().iter().rev().enumerate().map(|(i, b)| {
                         html! {
