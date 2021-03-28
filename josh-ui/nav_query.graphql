@@ -12,14 +12,14 @@ query PathQuery($rev: String!, $filter: String!, $path: String!) {
   rev(at:$rev, filter:$filter) {
     file(path:$path) {
       text
-      markers(topic: "review") {
+      markers(topic: "findings") {
         list {
           position
           text
         }
       }
     }
-    dirs(at:$path,depth: 1) { path, markers(topic:"review") { count } }
-    files(at:$path,depth: 1) { path, markers(topic:"review") { count } }
+    dirs(at:$path,depth: 1) { path, markers(topic:"findings") { count } }
+    files(at:$path,depth: 1) { path, markers(topic:"findings") { count } }
   }
 }

@@ -107,12 +107,6 @@ impl Component for Nav {
                 )));
                 true
             }
-            Self::Message::ChangePath(yew::events::ChangeData::Value(val)) => {
-                self.router.send(RouteRequest::ChangeRoute(Route::from(
-                    self.props.route.with_path(&val),
-                )));
-                true
-            }
             _ => {
                 ConsoleService::log("???");
                 false
@@ -155,6 +149,12 @@ impl Component for Nav {
                             <option selected=&x.name == &props.route.rev() value=&x.name>
                             { &x.name } </option>
                         })
+                    }{
+                        if !props.route.rev().starts_with("ref") { html! {
+                            <option selected=true value=&props.route.rev()>
+                                { &props.route.rev() }
+                            </option>
+                        }} else { html!{} }
                     }
                 </select>
                 </span>
@@ -169,7 +169,6 @@ impl Component for Nav {
                     })
                 }
                 </div>
-                /* <route::AppAnchor classes="up" route=props.route.path_up()>{ "../" }</route::AppAnchor> */
             </div>
         }
     }
