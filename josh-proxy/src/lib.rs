@@ -275,6 +275,8 @@ pub fn create_repo(path: &std::path::Path) -> josh::JoshResult<()> {
     };
     shell.command("git config http.receivepack true");
     shell.command("git config uploadpack.allowsidebandall true");
+    shell.command("git config user.name josh");
+    shell.command("git config user.email josh@localhost");
     shell.command("git config uploadpack.allowAnySHA1InWant true");
     shell.command("git config uploadpack.allowReachableSHA1InWant true");
     shell.command("git config uploadpack.allowTipSha1InWant true");
