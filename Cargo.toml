@@ -10,7 +10,7 @@ readme = "README.md"
 edition = "2018"
 
 [workspace]
-members = ["josh-proxy"]
+members = ["josh-proxy", "josh-ui"]
 
 [dependencies]
 handlebars = "3.5"

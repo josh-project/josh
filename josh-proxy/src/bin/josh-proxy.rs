@@ -328,13 +328,14 @@ async fn call_service(
     }
 
     if path.starts_with("/~/browse") {
-        let p = if path == "/~/browse" {
-            "index.html"
-        } else {
-            &path[9..]
-        };
+        let p = &path[9..];
 
         let result = hyper_staticfile::resolve_path("static", &p).await?;
+        let result = if let hyper_staticfile::ResolveResult::NotFound = result {
+            hyper_staticfile::resolve_path("static", "index.html").await?
+        } else {
+            result
+        };
 
         let r = hyper_staticfile::ResponseBuilder::new()
             .request(&req)
@@ -404,15 +405,6 @@ async fn call_service(
         return Ok(builder.body(hyper::Body::empty())?);
     }
 
-    let temp_ns = prepare_namespace(
-        serv.clone(),
-        &parsed_url.upstream_repo,
-        &parsed_url.filter,
-        &headref,
-    )
-    .in_current_span()
-    .await?;
-
     if parsed_url.api == "/~/graphiql" {
         let addr = format!("/~/graphql{}", parsed_url.upstream_repo);
         return Ok(tokio::task::spawn_blocking(move || {
@@ -468,6 +460,15 @@ async fn call_service(
         .repo_path
         .to_str()
         .ok_or(josh::josh_error("repo_path.to_str"))?;
+
+    let temp_ns = prepare_namespace(
+        serv.clone(),
+        &parsed_url.upstream_repo,
+        &parsed_url.filter,
+        &headref,
+    )
+    .in_current_span()
+    .await?;
 
     if let Some(q) = req.uri().query().map(|x| x.to_string()) {
         if parsed_url.pathinfo == "" {

@@ -16,6 +16,10 @@ WORKDIR /usr/src/josh
 COPY . .
 
 # RUN rm ./target/release/deps/josh* && cargo build --release
+RUN rustup target add wasm32-unknown-unknown
+RUN cargo install wasm-bindgen-cli
+RUN cargo install trunk
+RUN trunk --config=josh-ui/Trunk.toml build
 RUN cargo build -p josh-proxy
 
 FROM rust:1.50
