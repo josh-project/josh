@@ -19,7 +19,7 @@ pub struct Props {
 
 pub struct Nav {
     link: ComponentLink<Self>,
-    router: RouteAgentDispatcher,
+    _router: RouteAgentDispatcher,
     props: Props,
     fetch_task: Option<FetchTask>,
     data: path_query::ResponseData,
@@ -44,7 +44,7 @@ impl Component for Nav {
             props: props,
             error: None,
             fetch_task: None,
-            router: RouteAgentDispatcher::new(),
+            _router: RouteAgentDispatcher::new(),
         }
     }
 

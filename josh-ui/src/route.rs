@@ -31,7 +31,7 @@ impl AppRoute {
 
     pub fn filename(&self) -> String {
         match self.clone() {
-            Self::Browse(repo, rev, filter, path) => {
+            Self::Browse(_, _, _, path) => {
                 let p = std::path::PathBuf::from(path);
                 p.file_name()
                     .map(|x| x.to_string_lossy().to_string())
