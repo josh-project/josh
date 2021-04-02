@@ -5,7 +5,7 @@ use juniper::{graphql_object, EmptyMutation, EmptySubscription, FieldResult};
 
 pub struct Revision {
     filter: filter::Filter,
-    id: git2::Oid,
+    commit_id: git2::Oid,
 }
 
 fn find_paths(
@@ -54,14 +54,14 @@ impl Revision {
 
     fn hash(&self, context: &Context) -> FieldResult<String> {
         let transaction = context.transaction.lock()?;
-        let commit = transaction.repo().find_commit(self.id)?;
+        let commit = transaction.repo().find_commit(self.commit_id)?;
         let filter_commit = filter::apply_to_commit(self.filter, &commit, &transaction)?;
         Ok(format!("{}", filter_commit))
     }
 
     fn summary(&self, context: &Context) -> FieldResult<String> {
         let transaction = context.transaction.lock()?;
-        let commit = transaction.repo().find_commit(self.id)?;
+        let commit = transaction.repo().find_commit(self.commit_id)?;
         let filter_commit = transaction.repo().find_commit(filter::apply_to_commit(
             self.filter,
             &commit,
@@ -72,7 +72,7 @@ impl Revision {
 
     fn date(&self, format: String, context: &Context) -> FieldResult<String> {
         let transaction = context.transaction.lock()?;
-        let commit = transaction.repo().find_commit(self.id)?;
+        let commit = transaction.repo().find_commit(self.commit_id)?;
         let filter_commit = transaction.repo().find_commit(filter::apply_to_commit(
             self.filter,
             &commit,
@@ -93,27 +93,32 @@ impl Revision {
     ) -> FieldResult<Option<Revision>> {
         let id = if let Some(true) = original {
             let transaction = context.transaction.lock()?;
-            let commit = transaction.repo().find_commit(self.id)?;
+            let commit = transaction.repo().find_commit(self.commit_id)?;
             let filter_commit = transaction.repo().find_commit(filter::apply_to_commit(
                 self.filter,
                 &commit,
                 &transaction,
             )?)?;
 
-            history::find_original(&transaction, self.filter, self.id, filter_commit.id())?
+            history::find_original(
+                &transaction,
+                self.filter,
+                self.commit_id,
+                filter_commit.id(),
+            )?
         } else {
-            self.id
+            self.commit_id
         };
 
         Ok(Some(Revision {
             filter: filter::parse(&filter.unwrap_or(":/".to_string()))?,
-            id: id,
+            commit_id: id,
         }))
     }
 
     fn parents(&self, context: &Context) -> FieldResult<Vec<Revision>> {
         let transaction = context.transaction.lock()?;
-        let commit = transaction.repo().find_commit(self.id)?;
+        let commit = transaction.repo().find_commit(self.commit_id)?;
         let filter_commit = transaction.repo().find_commit(filter::apply_to_commit(
             self.filter,
             &commit,
@@ -124,7 +129,7 @@ impl Revision {
             .parent_ids()
             .map(|id| Revision {
                 filter: self.filter,
-                id: history::find_original(&transaction, self.filter, self.id, id)
+                commit_id: history::find_original(&transaction, self.filter, self.commit_id, id)
                     .unwrap_or(git2::Oid::zero()),
             })
             .collect();
@@ -139,7 +144,7 @@ impl Revision {
         context: &Context,
     ) -> FieldResult<Option<Vec<Path>>> {
         let transaction = context.transaction.lock()?;
-        let commit = transaction.repo().find_commit(self.id)?;
+        let commit = transaction.repo().find_commit(self.commit_id)?;
         let tree = filter::apply(&transaction, self.filter, commit.tree()?)?;
         let tree_id = tree.id();
 
@@ -149,7 +154,8 @@ impl Revision {
         for p in paths {
             ws.push(Path {
                 path: p,
-                id: self.id,
+                commit_id: self.commit_id,
+                filter: self.filter,
                 tree: tree_id,
             });
         }
@@ -163,7 +169,7 @@ impl Revision {
         context: &Context,
     ) -> FieldResult<Option<Vec<Path>>> {
         let transaction = context.transaction.lock()?;
-        let commit = transaction.repo().find_commit(self.id)?;
+        let commit = transaction.repo().find_commit(self.commit_id)?;
         let tree = filter::apply(&transaction, self.filter, commit.tree()?)?;
         let tree_id = tree.id();
 
@@ -173,7 +179,8 @@ impl Revision {
         for p in paths {
             ws.push(Path {
                 path: p,
-                id: self.id,
+                commit_id: self.commit_id,
+                filter: self.filter,
                 tree: tree_id,
             });
         }
@@ -183,14 +190,15 @@ impl Revision {
     fn file(&self, path: String, context: &Context) -> FieldResult<Option<Path>> {
         let transaction = context.transaction.lock()?;
         let path = std::path::Path::new(&path).to_owned();
-        let tree = transaction.repo().find_commit(self.id)?.tree()?;
+        let tree = transaction.repo().find_commit(self.commit_id)?.tree()?;
 
         let tree = filter::apply(&transaction, self.filter, tree)?;
 
         if let Some(git2::ObjectType::Blob) = tree.get_path(&path)?.kind() {
             Ok(Some(Path {
                 path: path,
-                id: self.id,
+                commit_id: self.commit_id,
+                filter: self.filter,
                 tree: tree.id(),
             }))
         } else {
@@ -201,7 +209,8 @@ impl Revision {
 
 pub struct Path {
     path: std::path::PathBuf,
-    id: git2::Oid,
+    commit_id: git2::Oid,
+    filter: filter::Filter,
     tree: git2::Oid,
 }
 
@@ -223,7 +232,8 @@ pub fn linecount(repo: &git2::Repository, id: git2::Oid) -> usize {
 
 struct Markers {
     path: std::path::PathBuf,
-    id: git2::Oid,
+    commit_id: git2::Oid,
+    filter: filter::Filter,
     topic: String,
 }
 
@@ -242,9 +252,17 @@ impl Markers {
             filter::tree::empty(&transaction.repo())
         };
 
-        let commit = self.id.to_string();
+        let commit = self.commit_id.to_string();
 
-        let prev = if let Ok(e) = tree.get_path(&marker_path(&commit).join(&self.path)) {
+        let path = if self.filter == filter::nop() {
+            marker_path(&commit).join(&self.path)
+        } else {
+            let t = transaction.repo().find_commit(self.commit_id)?.tree()?;
+            let o = filter::tree::original_path(&transaction, self.filter, t, &self.path)?;
+            marker_path(&commit).join(&o)
+        };
+
+        let prev = if let Ok(e) = tree.get_path(&path) {
             let blob = transaction.repo().find_blob(e.id())?;
             std::str::from_utf8(blob.content())?.to_owned()
         } else {
@@ -272,14 +290,34 @@ impl Markers {
         let refname = transaction.refname(&format!("refs/josh/meta/{}", &self.topic));
 
         let r = transaction.repo().revparse_single(&refname);
-        let tree = if let Ok(r) = r {
+        let mtree = if let Ok(r) = r {
             let commit = transaction.repo().find_commit(r.id())?;
             commit.tree()?
         } else {
             filter::tree::empty(&transaction.repo())
         };
-        let commit = self.id.to_string();
-        if let Ok(p) = tree.get_path(&marker_path(&commit).join(&self.path)) {
+
+        let commit = self.commit_id.to_string();
+        let mtree = mtree
+            .get_path(&marker_path(&commit))
+            .map(|p| transaction.repo().find_tree(p.id()).ok())
+            .ok()
+            .flatten()
+            .unwrap_or(filter::tree::empty(transaction.repo()));
+
+        let mtree = if self.filter == filter::nop() {
+            mtree
+        } else {
+            transaction
+                .repo()
+                .find_tree(filter::tree::repopulated_tree(
+                    &transaction,
+                    self.filter,
+                    transaction.repo().find_commit(self.commit_id)?.tree()?,
+                    mtree,
+                )?)?
+        };
+        if let Ok(p) = mtree.get_path(&self.path) {
             return Ok(linecount(transaction.repo(), p.id()) as i32);
         }
         return Ok(0);
@@ -295,7 +333,8 @@ impl Path {
     fn dir(&self, relative: String) -> FieldResult<Path> {
         Ok(Path {
             path: normalize_path(&self.path.join(&relative)),
-            id: self.id,
+            commit_id: self.commit_id,
+            filter: self.filter,
             tree: self.tree,
         })
     }
@@ -303,7 +342,8 @@ impl Path {
     fn markers(&self, topic: String) -> Markers {
         Markers {
             path: self.path.clone(),
-            id: self.id,
+            commit_id: self.commit_id,
+            filter: self.filter,
             topic: topic,
         }
     }
@@ -316,7 +356,7 @@ impl Path {
                 .collect();
         Ok(Revision {
             filter: filter::parse(&strfmt::strfmt(&filter, &hm)?)?,
-            id: self.id,
+            commit_id: self.commit_id,
         })
     }
 
@@ -469,7 +509,7 @@ impl Reference {
 
         Ok(Revision {
             filter: filter::parse(&filter.unwrap_or(":/".to_string()))?,
-            id: id,
+            commit_id: id,
         })
     }
 }
@@ -635,7 +675,7 @@ impl Repository {
 
         Ok(Revision {
             filter: filter::parse(&filter.unwrap_or(":/".to_string()))?,
-            id: id,
+            commit_id: id,
         })
     }
 }
@@ -701,7 +741,7 @@ pub type CommitSchema =
 pub fn commit_schema(id: git2::Oid) -> CommitSchema {
     CommitSchema::new(
         Revision {
-            id: id,
+            commit_id: id,
             filter: filter::nop(),
         },
         EmptyMutation::new(),

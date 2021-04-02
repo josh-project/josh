@@ -254,6 +254,73 @@ pub fn overlay(
     return Ok(input1);
 }
 
+pub fn pathline(b: &str) -> JoshResult<String> {
+    for line in b.split("\n") {
+        let l = line.trim_start_matches("#");
+        if l == "" {
+            break;
+        }
+        return Ok(l.to_string());
+    }
+    return Err(josh_error("pathline"));
+}
+
+pub fn original_path(
+    transaction: &cache::Transaction,
+    filter: Filter,
+    tree: git2::Tree,
+    path: &std::path::Path,
+) -> JoshResult<String> {
+    let paths_tree = apply(transaction, chain(to_filter(Op::Paths), filter), tree)?;
+    let b = tree::get_blob(transaction.repo(), &paths_tree, path);
+    return pathline(&b);
+}
+
+pub fn repopulated_tree(
+    transaction: &cache::Transaction,
+    filter: Filter,
+    full_tree: git2::Tree,
+    partial_tree: git2::Tree,
+) -> JoshResult<git2::Oid> {
+    let paths_tree = apply(transaction, chain(to_filter(Op::Paths), filter), full_tree)?;
+
+    populate(transaction.repo(), paths_tree.id(), partial_tree.id())
+}
+
+pub fn populate(
+    repo: &git2::Repository,
+    paths: git2::Oid,
+    content: git2::Oid,
+) -> super::JoshResult<git2::Oid> {
+    rs_tracing::trace_scoped!("repopulate");
+
+    if let (Ok(paths), Ok(content)) = (repo.find_tree(paths), repo.find_tree(content)) {
+        let mut result_tree = empty(&repo);
+
+        paths.walk(git2::TreeWalkMode::PreOrder, |root, entry| {
+            if entry.kind() != Some(git2::ObjectType::Blob) {
+                return git2::TreeWalkResult::Ok;
+            }
+
+            let name = entry.name().unwrap();
+            let path = std::path::Path::new(root).join(name);
+
+            let blob = repo.find_blob(entry.id()).unwrap();
+
+            let opath = std::str::from_utf8(blob.content()).unwrap();
+
+            if let Ok(e) = content.get_path(&std::path::Path::new(&pathline(&opath).unwrap())) {
+                result_tree = insert(&repo, &result_tree, &path, e.id(), e.filemode()).unwrap();
+            };
+
+            git2::TreeWalkResult::Ok
+        })?;
+        return Ok(result_tree.id());
+    }
+
+    return Ok(tree::empty_id());
+}
+
 pub fn compose<'a>(
     transaction: &'a cache::Transaction,
     trees: Vec<(&super::filter::Filter, git2::Tree<'a>)>,
