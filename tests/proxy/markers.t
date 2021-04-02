@@ -217,9 +217,17 @@
   $ cat > ../query <<EOF
   > {"query":"{ rev(at:\"refs/heads/master\") {
   >  files {
-  >   path, text, markers(topic:\"foo\") { list {
-  >     position, text
-  >   }}
+  >   path, text, markers(topic:\"foo\") {
+  >     list {
+  >       position, text
+  >     }
+  >     count
+  >   }
+  >  }
+  >  dirs {
+  >   path,markers(topic:\"foo\") {
+  >     count
+  >   }
   >  }
   > }}"}
   > EOF
@@ -242,14 +250,89 @@
                   "position": "1236",
                   "text": "foobar"
                 }
-              ]
+              ],
+              "count": 2
             }
           },
           {
             "path": "sub1/file1",
             "text": "contents\n",
             "markers": {
-              "list": []
+              "list": [],
+              "count": 0
+            }
+          }
+        ],
+        "dirs": [
+          {
+            "path": "a",
+            "markers": {
+              "count": 3
+            }
+          },
+          {
+            "path": "a/b",
+            "markers": {
+              "count": 3
+            }
+          },
+          {
+            "path": "sub1",
+            "markers": {
+              "count": 0
+            }
+          }
+        ]
+      }
+    }
+  } (no-eol)
+
+  $ cat > ../query <<EOF
+  > {"query":"{ rev(at:\"refs/heads/master\", filter:\":/a\") {
+  >  files {
+  >   path, text, markers(topic:\"foo\") {
+  >     list {
+  >       position, text
+  >     }
+  >     count
+  >   }
+  >  }
+  >  dirs {
+  >   path,markers(topic:\"foo\") {
+  >     count
+  >   }
+  >  }
+  > }}"}
+  > EOF
+
+  $ cat ../query | curl -s -X POST -H "content-type: application/json" --data @- "http://localhost:8002/~/graphql/real_repo.git"
+  {
+    "data": {
+      "rev": {
+        "files": [
+          {
+            "path": "b/d",
+            "text": "abdcontent\n",
+            "markers": {
+              "list": [
+                {
+                  "position": "1235",
+                  "text": "foobar"
+                },
+                {
+                  "position": "1236",
+                  "text": "foobar"
+                }
+              ],
+              "count": 2
+            }
+          }
+        ],
+        "dirs": [
+          {
+            "path": "b",
+            "markers": {
+              "count": 2
             }
           }
         ]
