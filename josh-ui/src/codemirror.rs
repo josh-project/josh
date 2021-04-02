@@ -8,7 +8,7 @@ pub struct Props {
 }
 
 pub struct Codemirror {
-    link: ComponentLink<Self>,
+    _link: ComponentLink<Self>,
     props: Props,
 }
 
@@ -18,7 +18,7 @@ impl Component for Codemirror {
 
     fn create(props: Self::Properties, link: ComponentLink<Self>) -> Self {
         Self {
-            link: link,
+            _link: link,
             props: props,
         }
     }

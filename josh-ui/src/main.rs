@@ -21,7 +21,7 @@ mod nav;
 mod route;
 
 pub struct App {
-    link: ComponentLink<Self>,
+    _link: ComponentLink<Self>,
 }
 
 impl Component for App {
@@ -30,7 +30,7 @@ impl Component for App {
 
     fn create(_props: Self::Properties, link: ComponentLink<Self>) -> Self {
         link.send_message(Self::Message::CallServer);
-        Self { link }
+        Self { _link: link }
     }
 
     fn update(&mut self, _msg: Self::Message) -> ShouldRender {
