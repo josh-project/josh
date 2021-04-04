@@ -342,35 +342,38 @@ fn populate(
 ) -> super::JoshResult<git2::Oid> {
     rs_tracing::trace_scoped!("repopulate");
 
+    if let Some(cached) = transaction.get_populate((paths, content)) {
+        return Ok(cached);
+    }
+
     let repo = transaction.repo();
 
-    let mut result_tree = empty(&repo);
-    if let (Ok(paths), Ok(content)) = (repo.find_tree(paths), repo.find_tree(content)) {
-        content.walk(git2::TreeWalkMode::PostOrder, |root, entry| {
-            if entry.kind() != Some(git2::ObjectType::Blob) {
-                return git2::TreeWalkResult::Ok;
-            }
-
-            let name = entry.name().unwrap();
-            let path = std::path::Path::new(root).join(name);
-
-            if let Ok(e) = paths.get_path(&path) {
-                let blob = repo.find_blob(e.id()).unwrap();
-                let ipath = pathline(&std::str::from_utf8(blob.content()).unwrap()).unwrap();
-                result_tree = insert(
+    let mut result_tree = empty_id();
+    if let (Ok(paths), Ok(content)) = (repo.find_blob(paths), repo.find_blob(content)) {
+        let ipath = pathline(&std::str::from_utf8(paths.content())?)?;
+        result_tree = insert(
+            &repo,
+            &repo.find_tree(result_tree)?,
+            &std::path::Path::new(&ipath),
+            content.id(),
+            0o0100644,
+        )?
+        .id();
+    } else if let (Ok(paths), Ok(content)) = (repo.find_tree(paths), repo.find_tree(content)) {
+        for entry in content.iter() {
+            if let Some(e) = paths.get_name(entry.name().ok_or(super::josh_error("no name"))?) {
+                result_tree = overlay(
                     &repo,
-                    &result_tree,
-                    &std::path::Path::new(&ipath),
-                    entry.id(),
-                    entry.filemode(),
-                )
-                .unwrap();
+                    result_tree,
+                    populate(transaction, e.id(), entry.id())?,
+                )?;
             }
-
-            git2::TreeWalkResult::Ok
-        })?;
+        }
     }
-    return Ok(result_tree.id());
+
+    transaction.insert_populate((paths, content), result_tree);
+
+    return Ok(result_tree);
 }
 
 pub fn compose<'a>(
