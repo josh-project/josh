@@ -7,10 +7,6 @@ lazy_static! {
     static ref DB: std::sync::Mutex<Option<sled::Db>> = std::sync::Mutex::new(None);
     static ref REF_CACHE: std::sync::Mutex<HashMap<git2::Oid, HashMap<git2::Oid, git2::Oid>>> =
         std::sync::Mutex::new(HashMap::new());
-    static ref PATHS_MAP: std::sync::Mutex<HashMap<(git2::Oid, String), git2::Oid>> =
-        std::sync::Mutex::new(HashMap::new());
-    static ref INVERT_MAP: std::sync::Mutex<HashMap<(git2::Oid, String), git2::Oid>> =
-        std::sync::Mutex::new(HashMap::new());
     static ref POPULATE_MAP: std::sync::Mutex<HashMap<(git2::Oid, git2::Oid), git2::Oid>> =
         std::sync::Mutex::new(HashMap::new());
 }
@@ -37,6 +33,8 @@ pub fn print_stats() {
         if t.len() != 0 {
             let name = if name.contains("SUBTRACT") {
                 name.clone()
+            } else if name.starts_with("_") {
+                name.clone()
             } else {
                 filter::pretty(filter::parse(&name).unwrap(), 4)
             };
@@ -57,6 +55,8 @@ struct Transaction2 {
     apply_map: HashMap<git2::Oid, HashMap<git2::Oid, git2::Oid>>,
     unapply_map: HashMap<git2::Oid, HashMap<git2::Oid, git2::Oid>>,
     sled_trees: HashMap<git2::Oid, sled::Tree>,
+    path_tree: sled::Tree,
+    invert_tree: sled::Tree,
     missing: Vec<(filter::Filter, git2::Oid)>,
     misses: usize,
     walks: usize,
@@ -88,12 +88,28 @@ impl Transaction {
 
     pub fn new(repo: git2::Repository, ref_prefix: Option<&str>) -> Transaction {
         log::debug!("new transaction");
+        let path_tree = DB
+            .lock()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .open_tree("_paths")
+            .unwrap();
+        let invert_tree = DB
+            .lock()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .open_tree("_invert")
+            .unwrap();
         Transaction {
             t2: std::cell::RefCell::new(Transaction2 {
                 commit_map: HashMap::new(),
                 apply_map: HashMap::new(),
                 unapply_map: HashMap::new(),
                 sled_trees: HashMap::new(),
+                path_tree: path_tree,
+                invert_tree: invert_tree,
                 missing: vec![],
                 misses: 0,
                 walks: 0,
@@ -154,11 +170,43 @@ impl Transaction {
     }
 
     pub fn insert_paths(&self, tree: (git2::Oid, String), result: git2::Oid) {
-        PATHS_MAP.lock().unwrap().entry(tree).or_insert(result);
+        let t2 = self.t2.borrow();
+        let s = format!("{:?}", tree);
+        let x = git2::Oid::hash_object(git2::ObjectType::Blob, s.as_bytes()).expect("hash_object");
+        t2.path_tree
+            .insert(x.as_bytes(), result.as_bytes())
+            .unwrap();
+    }
+
+    pub fn get_paths(&self, tree: (git2::Oid, String)) -> Option<git2::Oid> {
+        let t2 = self.t2.borrow();
+        let s = format!("{:?}", tree);
+        let x = git2::Oid::hash_object(git2::ObjectType::Blob, s.as_bytes()).expect("hash_object");
+
+        if let Some(oid) = t2.path_tree.get(x.as_bytes()).unwrap() {
+            return Some(git2::Oid::from_bytes(&oid).unwrap());
+        }
+        return None;
     }
 
     pub fn insert_invert(&self, tree: (git2::Oid, String), result: git2::Oid) {
-        INVERT_MAP.lock().unwrap().entry(tree).or_insert(result);
+        let t2 = self.t2.borrow();
+        let s = format!("{:?}", tree);
+        let x = git2::Oid::hash_object(git2::ObjectType::Blob, s.as_bytes()).expect("hash_object");
+        t2.invert_tree
+            .insert(x.as_bytes(), result.as_bytes())
+            .unwrap();
+    }
+
+    pub fn get_invert(&self, tree: (git2::Oid, String)) -> Option<git2::Oid> {
+        let t2 = self.t2.borrow();
+        let s = format!("{:?}", tree);
+        let x = git2::Oid::hash_object(git2::ObjectType::Blob, s.as_bytes()).expect("hash_object");
+
+        if let Some(oid) = t2.invert_tree.get(x.as_bytes()).unwrap() {
+            return Some(git2::Oid::from_bytes(&oid).unwrap());
+        }
+        return None;
     }
 
     pub fn insert_populate(&self, tree: (git2::Oid, git2::Oid), result: git2::Oid) {
@@ -191,14 +239,6 @@ impl Transaction {
             return m.get(&from).cloned();
         }
         return None;
-    }
-
-    pub fn get_paths(&self, tree: (git2::Oid, String)) -> Option<git2::Oid> {
-        return PATHS_MAP.lock().unwrap().get(&tree).cloned();
-    }
-
-    pub fn get_invert(&self, tree: (git2::Oid, String)) -> Option<git2::Oid> {
-        return INVERT_MAP.lock().unwrap().get(&tree).cloned();
     }
 
     pub fn get_populate(&self, tree: (git2::Oid, git2::Oid)) -> Option<git2::Oid> {
