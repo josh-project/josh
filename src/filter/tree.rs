@@ -265,6 +265,53 @@ pub fn pathline(b: &str) -> JoshResult<String> {
     return Err(josh_error("pathline"));
 }
 
+pub fn invert_paths<'a>(
+    transaction: &'a cache::Transaction,
+    root: &str,
+    tree: git2::Tree<'a>,
+) -> JoshResult<git2::Tree<'a>> {
+    let repo = transaction.repo();
+    if let Some(cached) = transaction.get_invert((tree.id(), root.to_string())) {
+        return Ok(repo.find_tree(cached)?);
+    }
+
+    let mut result = tree::empty(&repo);
+
+    for entry in tree.iter() {
+        let name = entry.name().ok_or(super::josh_error("no name"))?;
+
+        if entry.kind() == Some(git2::ObjectType::Blob) {
+            let mpath = normalize_path(&std::path::Path::new(root).join(name))
+                .to_string_lossy()
+                .to_string();
+            let b = tree::get_blob(&repo, &tree, &std::path::Path::new(name));
+            let opath = pathline(&b)?;
+
+            result = insert(
+                &repo,
+                &result,
+                &std::path::Path::new(&opath),
+                repo.blob(mpath.as_bytes())?,
+                0o0100644,
+            )
+            .unwrap();
+        }
+
+        if entry.kind() == Some(git2::ObjectType::Tree) {
+            let s = invert_paths(
+                &transaction,
+                &format!("{}{}{}", root, if root == "" { "" } else { "/" }, name),
+                repo.find_tree(entry.id())?,
+            )?;
+            result = repo.find_tree(overlay(&repo, result.id(), s.id())?)?;
+        }
+    }
+
+    transaction.insert_invert((tree.id(), root.to_string()), result.id());
+
+    return Ok(result);
+}
+
 pub fn original_path(
     transaction: &cache::Transaction,
     filter: Filter,
@@ -284,20 +331,22 @@ pub fn repopulated_tree(
 ) -> JoshResult<git2::Oid> {
     let paths_tree = apply(transaction, chain(to_filter(Op::Paths), filter), full_tree)?;
 
-    populate(transaction.repo(), paths_tree.id(), partial_tree.id())
+    let ipaths = invert_paths(transaction, "", paths_tree)?;
+    populate(transaction, ipaths.id(), partial_tree.id())
 }
 
-pub fn populate(
-    repo: &git2::Repository,
+fn populate(
+    transaction: &cache::Transaction,
     paths: git2::Oid,
     content: git2::Oid,
 ) -> super::JoshResult<git2::Oid> {
     rs_tracing::trace_scoped!("repopulate");
 
-    if let (Ok(paths), Ok(content)) = (repo.find_tree(paths), repo.find_tree(content)) {
-        let mut result_tree = empty(&repo);
+    let repo = transaction.repo();
 
-        paths.walk(git2::TreeWalkMode::PreOrder, |root, entry| {
+    let mut result_tree = empty(&repo);
+    if let (Ok(paths), Ok(content)) = (repo.find_tree(paths), repo.find_tree(content)) {
+        content.walk(git2::TreeWalkMode::PostOrder, |root, entry| {
             if entry.kind() != Some(git2::ObjectType::Blob) {
                 return git2::TreeWalkResult::Ok;
             }
@@ -305,20 +354,23 @@ pub fn populate(
             let name = entry.name().unwrap();
             let path = std::path::Path::new(root).join(name);
 
-            let blob = repo.find_blob(entry.id()).unwrap();
-
-            let opath = std::str::from_utf8(blob.content()).unwrap();
-
-            if let Ok(e) = content.get_path(&std::path::Path::new(&pathline(&opath).unwrap())) {
-                result_tree = insert(&repo, &result_tree, &path, e.id(), e.filemode()).unwrap();
-            };
+            if let Ok(e) = paths.get_path(&path) {
+                let blob = repo.find_blob(e.id()).unwrap();
+                let ipath = pathline(&std::str::from_utf8(blob.content()).unwrap()).unwrap();
+                result_tree = insert(
+                    &repo,
+                    &result_tree,
+                    &std::path::Path::new(&ipath),
+                    entry.id(),
+                    entry.filemode(),
+                )
+                .unwrap();
+            }
 
             git2::TreeWalkResult::Ok
         })?;
-        return Ok(result_tree.id());
     }
-
-    return Ok(tree::empty_id());
+    return Ok(result_tree.id());
 }
 
 pub fn compose<'a>(
