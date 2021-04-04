@@ -9,6 +9,8 @@ lazy_static! {
         std::sync::Mutex::new(HashMap::new());
     static ref PATHS_MAP: std::sync::Mutex<HashMap<(git2::Oid, String), git2::Oid>> =
         std::sync::Mutex::new(HashMap::new());
+    static ref INVERT_MAP: std::sync::Mutex<HashMap<(git2::Oid, String), git2::Oid>> =
+        std::sync::Mutex::new(HashMap::new());
 }
 
 pub fn load(path: &std::path::Path) -> JoshResult<()> {
@@ -153,6 +155,10 @@ impl Transaction {
         PATHS_MAP.lock().unwrap().entry(tree).or_insert(result);
     }
 
+    pub fn insert_invert(&self, tree: (git2::Oid, String), result: git2::Oid) {
+        INVERT_MAP.lock().unwrap().entry(tree).or_insert(result);
+    }
+
     pub fn insert_ref(&self, filter: filter::Filter, from: git2::Oid, to: git2::Oid) {
         REF_CACHE
             .lock()
@@ -183,6 +189,10 @@ impl Transaction {
 
     pub fn get_paths(&self, tree: (git2::Oid, String)) -> Option<git2::Oid> {
         return PATHS_MAP.lock().unwrap().get(&tree).cloned();
+    }
+
+    pub fn get_invert(&self, tree: (git2::Oid, String)) -> Option<git2::Oid> {
+        return INVERT_MAP.lock().unwrap().get(&tree).cloned();
     }
 
     pub fn insert(&self, filter: filter::Filter, from: git2::Oid, to: git2::Oid, store: bool) {
