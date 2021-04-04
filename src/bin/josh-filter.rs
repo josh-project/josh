@@ -115,6 +115,9 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
     }
 
     let repo = git2::Repository::open_from_env()?;
+    if !args.is_present("no-cache") {
+        josh::cache::load(&repo.path())?;
+    }
     let transaction = josh::cache::Transaction::new(repo, None);
     let repo = transaction.repo();
 
@@ -125,10 +128,6 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
     } else {
         None
     };
-
-    if !args.is_present("no-cache") {
-        josh::cache::load(&repo.path())?;
-    }
 
     let finish = defer::defer(|| {
         if args.is_present("trace") {

@@ -38,6 +38,7 @@
 
   $ josh-filter -s :PATHS master --update refs/josh/filtered
   [3] :PATHS
+  [16] _paths
 
   $ git log --graph --pretty=%s refs/josh/filtered
   * add file_cd3
@@ -116,6 +117,7 @@
   $ josh-filter -s :PATHS:/c master --update refs/josh/filtered
   [3] :/c
   [3] :PATHS
+  [16] _paths
 
   $ git log --graph --pretty=%s refs/josh/filtered
   * add file_cd3
@@ -165,6 +167,7 @@
   [1] :/a
   [3] :/c
   [3] :PATHS
+  [16] _paths
 
   $ git log --graph --pretty=%s refs/josh/filtered
   * add dirs
@@ -184,6 +187,7 @@
   [1] :prefix=x
   [3] :/c
   [3] :PATHS
+  [16] _paths
 
   $ git log --graph --pretty=%s refs/josh/filtered
   * add dirs
@@ -244,6 +248,7 @@
   [1] :prefix=x
   [3] :/c
   [5] :PATHS
+  [19] _paths
 
   $ git log --graph --pretty=%s master
   * add newfile
@@ -316,6 +321,7 @@
   [3] :/c
   [4] :FOLD
   [5] :PATHS
+  [19] _paths
 
   $ git log --graph --pretty=%s refs/josh/filtered
   * add newfile
@@ -408,6 +414,7 @@
   [4] :/c
   [5] :PATHS
   [7] :FOLD
+  [19] _paths
 
   $ git log --graph --pretty=%s refs/josh/filtered
   * add file_cd3
@@ -461,6 +468,7 @@
   [5] :PATHS
   [5] :workspace=a
   [11] :FOLD
+  [19] _paths
 
   $ git log --graph --pretty=%s refs/josh/filtered
   * add newfile
