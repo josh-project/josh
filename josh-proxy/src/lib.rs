@@ -190,7 +190,7 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
         };
 
         let push_with_options = if options.len() != 0 {
-            push_to + "%" + &options.join(",")
+            format!("{}{}{}", push_to, "%", options.join(","))
         } else {
             push_to
         };
