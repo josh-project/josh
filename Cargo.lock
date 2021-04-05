@@ -1094,9 +1094,9 @@ dependencies = [
 
 [[package]]
 name = "juniper"
-version = "0.15.3"
+version = "0.15.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9ce9122e520b17ce7593f628d2b440318a5fd77b8923b1918e59ec28cf2c2815"
+checksum = "4e1330b4b3b2fe7de256fd08738f7fba28ffa574109c834988c28972f0760dbd"
 dependencies = [
  "async-trait",
  "bson",
@@ -1108,6 +1108,7 @@ dependencies = [
  "indexmap",
  "juniper_codegen",
  "serde",
+ "smartstring",
  "static_assertions",
  "url",
  "uuid",
@@ -1115,9 +1116,9 @@ dependencies = [
 
 [[package]]
 name = "juniper_codegen"
-version = "0.15.3"
+version = "0.15.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2aad9bb6febeb76eeb97aa39b1ec4e640ee0eb37db98379f89972b2d0da85d18"
+checksum = "3faf2a1e2e86cadc6bcc6082d63c73e8eafe6b703a0c5723e585b3d4afcec9cd"
 dependencies = [
  "proc-macro-error",
  "proc-macro2",
@@ -2021,6 +2022,15 @@ name = "smallvec"
 version = "1.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fe0f37c9e8f3c5a4a66ad655a93c74daac4ad00c441533bf5c6e7990bb42604e"
+
+[[package]]
+name = "smartstring"
+version = "0.2.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1ada87540bf8ef4cf8a1789deb175626829bb59b1fefd816cf7f7f55efcdbae9"
+dependencies = [
+ "static_assertions",
+]
 
 [[package]]
 name = "socket2"
