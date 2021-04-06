@@ -19,7 +19,7 @@ Reduce load on the network and client machines by cloning subdirectories of the 
 as individual repositories.
 
 ```
-$ git clone http://josh/monorepo.git/path/to/library.git
+$ git clone http://josh/monorepo.git:/path/to/library.git
 ```
 
 The partial repo will act as a normal git repository but only contain the files
@@ -65,7 +65,7 @@ dependencies = :/modules:[
 Workspaces act as normal git repos:
 
 ```
-$ git clone http://josh/monorepo.git:workspace=workspaces/project1.git
+$ git clone http://josh/central.git:workspace=workspaces/project1.git
 ```
 
 
