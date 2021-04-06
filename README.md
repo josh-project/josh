@@ -2,79 +2,64 @@
 
 [![Build Status](https://github.com/esrlabs/josh/workflows/Rust/badge.svg?branch=master)](https://github.com/esrlabs/josh/actions)
 
-Josh combines the advantages of monorepos with those of multirepos by leveraging a blazingly-fast,
-incremental, and reversible implementation of git history filtering.
+Combine the advantages of a monorepo with those of multirepo setups by leveraging a
+blazingly-fast, incremental, and reversible implementation of git history filtering.
 
-This documentation describes the filtering mechanism, as well as
-the tools provided by Josh: the josh library, `josh-proxy` and `josh-filter`.
+It acts as a proxy and can be integrated with any http based git host.
 
-## Concept
+## Use cases
 
-Traditionally, history filtering has been viewed as an expensive operation that should only be
-performed to fix issues with a repository, such as purging big binary files or removing
-accidentally-committed secrets, or as part of a migration to a different repository structure, like
-switching from multirepo to monorepo (or vice versa).
+### Partial cloning
 
-The implementation shipped with git (`git-filter branch`) is only usable as a once-in-a-lifetime
-last resort for anything but tiny repositories.
+Reduce load on the network and client machines by cloning subdirectories of the monorepo
+as individual repositories.
 
-Faster versions of history filtering have been implemented, such as
-[git-filter-repo](https://github.com/newren/git-filter-repo) or the
-[BFG repo cleaner](https://rtyley.github.io/bfg-repo-cleaner/). Those, while much faster, are
-designed for doing occasional, destructive maintenance tasks, usually with the idea already in mind
-that once the filtering is complete the old history should be discarded.
+```
+$ git clone http://josh/monorepo.git/path/to/library.git
+```
 
-The idea behind `josh` started with two questions:
+The partial repo will act as a normal git repository but only contain the files
+found in the subdirectory and only commits affecting those files.
+The partial repo supports both fetch as well as push operation.
 
-1. What if history filtering could be so fast that it can be part of a normal, everyday workflow,
-   running on every single push and fetch without the user even noticing?
-2. What if history filtering was a non-destructive, reversible operation?
+### Caching proxy
 
-Under those two premises a filter operation stops being a maintenance task. It seamlessly relates
-histories between repos, which can be used by developers and CI systems interchangeably in whatever
-way is most suitable to the task at hand.
+Even without using the more advanced features like partial cloning `josh-proxy` can
+act as a cache to reduce traffic between locations or keep your CI from
+doing lot's of requests to the main git host.
 
-How is this possible?
+### Project composition / Workspaces
 
-Filtering history is a highly predictable task: The set of filters that tend to be used for any
-given repository is limited, such that the input to the filter (a git branch) only gets modified in
-an incremental way. Thus, by keeping a persistent cache between filter runs, the work needed to
-re-run a filter on a new commit (and its history) becomes proportional to the number of changes
-since the last run; The work to filter no longer depends on the total length of the history.
-Additionally, most filters also do not depend on the size of the trees.
+<table>
+    <thead>
+        <tr>
+            <th>Central monorepo</th>
+            <th>Project workspaces</th>
+            <th>workspace.josh file</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td rowspan=2><img src="docs/src/img/central.svg?sanitize=true" alt="Folders and files in central.git" /></td>
+            <td><img src="docs/src/img/project1.svg?sanitize=true" alt="Folders and files in project1.git" /></td>
+            <td>
+<pre>
+dependencies = :/modules:[
+    ::tools/
+    ::library1/
+]
+</pre>
+        </tr>
+        <tr>
+            <td><img src="docs/src/img/project2.svg?sanitize=true" alt="Folders and files in project2.git" /></td>
+            <td>
+<pre>libs/library1 = :/modules/library1</pre></td>
+        </tr>
+    </tbody>
+</table>
 
-What has long been known to be true for performing merges also applies to history filtering: The
-more often it is done the less work it takes each time.
-
-To guarantee filters are reversible we have to restrict the kind of filter that can be used; It is
-not possible to write arbitrary filters using a scripting language like is allowed in other tools.
-To still be able to cover a wide range of use cases we have introduced a domain-specific language to
-express more complex filters as a combination of simpler ones. Apart from guaranteeing
-reversibility, the use of a DSL also enables pre-optimization of filter expressions to minimize both
-the amount of work to be done to execute the filter as well as the on-disk size of the persistent
-cache.
+```
+$ git clone http://josh/monorepo.git:workspace=workspaces/project1.git
+```
 
 
->*_From Linus Torvalds 2007 talk at Google about git:_*
->
->**Audience:**
->
->Can you have just a part of files pulled out of a repository, not the entire repository?
->
->**Linus:**
->
->You can export things as tarballs, you can export things as individual files, you can rewrite the
->whole history to say "I want a new version of that repository that only contains that part", you
->can do that, it is a fairly expensive operation it's something you would do for example when you
->import an old repository into a one huge git repository and then you can split it later on to be
->multiple smaller ones, you can do it, what I am trying to say is that you should generally try to
->avoid it. It's not that git can not handle huge projects, git would not perform as well as it would
->otherwise. And you will have issues that you wish you didn't not have.
->
->So I am skipping this issue and going back to the performance issue. One of the things I want to
->say about performance is that a lot of people seem to think that performance is about doing the
->same thing, just doing it faster, and that is not true.
->
->That is not what performance is all about. If you can do something really fast, really well, people
->will start using it differently.
-> 
