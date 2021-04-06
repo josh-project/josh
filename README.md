@@ -1,5 +1,6 @@
+![Just One Single History](/banner.png)
+
 [![Build Status](https://github.com/esrlabs/josh/workflows/Rust/badge.svg?branch=master)](https://github.com/esrlabs/josh/actions)
-# Just One Single History
 
 Josh combines the advantages of monorepos with those of multirepos by leveraging a blazingly-fast,
 incremental, and reversible implementation of git history filtering.
