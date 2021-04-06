@@ -5,7 +5,11 @@
 Combine the advantages of a monorepo with those of multirepo setups by leveraging a
 blazingly-fast, incremental, and reversible implementation of git history filtering.
 
-It acts as a proxy and can be integrated with any http based git host.
+`josh-proxy` can be integrated with any http based git host:
+
+```
+$ docker run -p 8000:8000 -e JOSH_REMOTE=https://github.com -v josh-vol:/data/git esrlabs/josh-proxy:latest
+```
 
 ## Use cases
 
@@ -57,6 +61,8 @@ dependencies = :/modules:[
         </tr>
     </tbody>
 </table>
+
+Workspaces act as normal git repos:
 
 ```
 $ git clone http://josh/monorepo.git:workspace=workspaces/project1.git
