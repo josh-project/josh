@@ -31,7 +31,7 @@ the tree.
 It also enables collaboration on parts of the monorepo with other parties
 utilizing git's normal distributed development features.
 For example this makes it every easy to mirror just selected parts of your
-repo to public github or specific customers.
+repo to public github repositories or specific customers.
 
 ### Project composition / Workspaces
 
