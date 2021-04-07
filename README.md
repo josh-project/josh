@@ -39,7 +39,7 @@ Simplify code sharing and dependency management. Beyond just subdirectories,
 Josh supports selecting, re-mapping and compsing of arbitary virtual repositories
 from the content found in the monorepo.
 
-The mapping itself is also stored in the repository and there versioned alongside
+The mapping itself is also stored in the repository and therefore versioned alongside
 the code.
 
 <table>
@@ -80,8 +80,8 @@ $ git clone http://josh/central.git:workspace=workspaces/project1.git
 
 With everything stored in one repo, CI/CD system only need to look into one source for each particular
 deliverable.
-However building multiple deliverables from from one big tree, introduces a new complexity
-into the build system. Now build tools or package managers, typically taylored to specfic languages
+However, building multiple deliverables from from one big tree, introduces a new complexity
+into the build system: Now build tools or package managers, typically taylored to specfic languages
 or toolchains, need to be used to answer the question: "What deliverables are affected by a given commit
 and need to be rebuild?".
 
@@ -90,8 +90,25 @@ file. This means answering above question becomes as simple as comparing commit 
 Furthermore due to the tree filtering each build is guaranteed to be perfectly sandboxed
 and only sees those parts of the monorepo that have actually been mapped.
 
-This also means the deliverables to be re-build can be determined without cloning any repos like
+This also means the deliverables to be re-build can be selected without cloning any repos like
 typically necessary with normal build tools.
+
+### GraphQL API
+
+It is often desireable to access content stored in git without requireing a clone of the repository.
+This is usefull for CI/CD systems or web frontends like dashboards.
+
+Josh exposes a GraphQL API for that purpose. For example it can be used to find all workspaces currently
+present in the tree:
+
+```
+query {
+  rev(at:"refs/heads/master", filter:"::**/workspace.josh") {
+    files { path }
+  }
+}
+```
+
 
 ### Caching proxy
 
