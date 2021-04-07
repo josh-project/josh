@@ -36,7 +36,7 @@ repo to public github or specific customers.
 ### Project composition / Workspaces
 
 Simplify code sharing and dependency management. Beyond just subdirectories,
-Josh supports selecting, re-mapping and compsing of arbitary virtual repositories
+Josh supports filtering, re-mapping and composition of arbitary virtual repositories
 from the content found in the monorepo.
 
 The mapping itself is also stored in the repository and therefore versioned alongside
