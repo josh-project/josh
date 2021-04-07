@@ -76,7 +76,7 @@ Workspaces act as normal git repos:
 $ git clone http://josh/central.git:workspace=workspaces/project1.git
 ```
 
-### Simplfied CI/CD
+### Simplified CI/CD
 
 With everything stored in one repo, CI/CD systems only need to look into one source for each particular
 deliverable.
@@ -87,7 +87,7 @@ So the question:
 
 > "What deliverables are affected by a given commit and need to be rebuild?"
 
-Cannot be answered without cloning the entire repository and understanding how the languages
+cannot be answered without cloning the entire repository and understanding how the languages
 used handle dependencies.
 
 In particular when using C familiy languages, hidden dependencies on header files are easy to miss.
