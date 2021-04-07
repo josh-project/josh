@@ -92,7 +92,7 @@ used handle dependencies.
 
 In particular when using C familiy languages, hidden dependencies on header files are easy to miss.
 For this reason limiting the visibility of files to the compiler by sandboxing is pretty much a requirement
-for reproduceable builds.
+for reproducible builds.
 
 With Josh, each deliverable gets it's own virtual git repository with dependencies declared in the `workspace.josh`
 file. This means answering the above question becomes as simple as comparing commit ids.
