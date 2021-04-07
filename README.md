@@ -26,17 +26,17 @@ The partial repo will act as a normal git repository but only contain the files
 found in the subdirectory and only commits affecting those files.
 The partial repo supports both fetch as well as push operation.
 
-This helps not just to improve performace on the client due to less files in
-the tree.
-It also enables collaboration on parts of the monorepo with other parties
+This helps not just to improve performace on the client due to having fever files in
+the tree,
+it also enables collaboration on parts of the monorepo with other parties
 utilizing git's normal distributed development features.
-For example this makes it every easy to mirror just selected parts of your
+For example, this makes it easy to mirror just selected parts of your
 repo to public github repositories or specific customers.
 
 ### Project composition / Workspaces
 
 Simplify code sharing and dependency management. Beyond just subdirectories,
-Josh supports filtering, re-mapping and composition of arbitary virtual repositories
+Josh supports filtering, re-mapping and composition of arbitrary virtual repositories
 from the content found in the monorepo.
 
 The mapping itself is also stored in the repository and therefore versioned alongside
@@ -105,9 +105,9 @@ typically necessary with normal build tools.
 ### GraphQL API
 
 It is often desireable to access content stored in git without requiring a clone of the repository.
-This is usefull for CI/CD systems or web frontends like dashboards.
+This is usefull for CI/CD systems or web frontends such as dashboards.
 
-Josh exposes a GraphQL API for that purpose. For example it can be used to find all workspaces currently
+Josh exposes a GraphQL API for that purpose. For example, it can be used to find all workspaces currently
 present in the tree:
 
 ```
@@ -121,8 +121,8 @@ query {
 
 ### Caching proxy
 
-Even without using the more advanced features like partial cloning or workspace,
+Even without using the more advanced features like partial cloning or workspaces,
 `josh-proxy` can act as a cache to reduce traffic between locations or keep your CI from
-doing lots of requests to the main git host.
+performing many requests to the main git host.
 
 
