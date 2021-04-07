@@ -15,7 +15,7 @@ $ docker run -p 8000:8000 -e JOSH_REMOTE=https://github.com -v josh-vol:/data/gi
 
 ### Partial cloning
 
-Reduce load on the network and client machines by cloning subdirectories of the monorepo
+Reduce scope and size of clones by treating subdirectories of the monorepo
 as individual repositories.
 
 ```
@@ -26,13 +26,21 @@ The partial repo will act as a normal git repository but only contain the files
 found in the subdirectory and only commits affecting those files.
 The partial repo supports both fetch as well as push operation.
 
-### Caching proxy
-
-Even without using the more advanced features like partial cloning `josh-proxy` can
-act as a cache to reduce traffic between locations or keep your CI from
-doing lot's of requests to the main git host.
+This helps not just to improve performace on the client due to less files in
+the tree.
+It also enables collaboration on parts of the monorepo with other parties
+utilizing git's normal distributed development features.
+For example this makes it every easy to mirror just selected parts of your
+repo to public github or specific customers.
 
 ### Project composition / Workspaces
+
+Simplify code sharing and dependency management. Beyond just subdirectories,
+Josh supports selecting, re-mapping and compsing of arbitary virtual repositories
+from the content found in the monorepo.
+
+The mapping itself is also stored in the repository and there versioned alongside
+the code.
 
 <table>
     <thead>
@@ -67,5 +75,28 @@ Workspaces act as normal git repos:
 ```
 $ git clone http://josh/central.git:workspace=workspaces/project1.git
 ```
+
+### Simplfied CI/CD
+
+With everything stored in one repo, CI/CD system only need to look into one source for each particular
+deliverable.
+However building multiple deliverables from from one big tree, introduces a new complexity
+into the build system. Now build tools or package managers, typically taylored to specfic languages
+or toolchains, need to be used to answer the question: "What deliverables are affected by a given commit
+and need to be rebuild?".
+
+With Josh, each deliverable gets it's own virtual git repository with dependencies declared in the `workspace.josh`
+file. This means answering above question becomes as simple as comparing commit ids.
+Furthermore due to the tree filtering each build is guaranteed to be perfectly sandboxed
+and only sees those parts of the monorepo that have actually been mapped.
+
+This also means the deliverables to be re-build can be determined without cloning any repos like
+typically necessary with normal build tools.
+
+### Caching proxy
+
+Even without using the more advanced features like partial cloning or workspace,
+`josh-proxy` can act as a cache to reduce traffic between locations or keep your CI from
+doing lot's of requests to the main git host.
 
 
