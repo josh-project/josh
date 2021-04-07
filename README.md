@@ -78,24 +78,33 @@ $ git clone http://josh/central.git:workspace=workspaces/project1.git
 
 ### Simplfied CI/CD
 
-With everything stored in one repo, CI/CD system only need to look into one source for each particular
+With everything stored in one repo, CI/CD systems only need to look into one source for each particular
 deliverable.
-However, building multiple deliverables from from one big tree, introduces a new complexity
-into the build system: Now build tools or package managers, typically taylored to specfic languages
-or toolchains, need to be used to answer the question: "What deliverables are affected by a given commit
-and need to be rebuild?".
+However in traditional monorepo environments dependency mangement is handled by the build system.
+Build systems are usually taylored to specific languages and need their input already checked
+out on the filesystem.
+So the question:
+
+> "What deliverables are affected by a given commit and need to be rebuild?"
+
+Cannot be answered without cloning the entire repository and understanding how the languages
+used handle dependencies.
+
+In particular when using C familiy languages, hidden dependencies on header files are easy to miss.
+For this reason limiting the visibility of files to the compiler by sandboxing is pretty much a requirement
+for reproduceable builds.
 
 With Josh, each deliverable gets it's own virtual git repository with dependencies declared in the `workspace.josh`
-file. This means answering above question becomes as simple as comparing commit ids.
+file. This means answering the above question becomes as simple as comparing commit ids.
 Furthermore due to the tree filtering each build is guaranteed to be perfectly sandboxed
 and only sees those parts of the monorepo that have actually been mapped.
 
-This also means the deliverables to be re-build can be selected without cloning any repos like
+This also means the deliverables to be re-build can be determined without cloning any repos like
 typically necessary with normal build tools.
 
 ### GraphQL API
 
-It is often desireable to access content stored in git without requireing a clone of the repository.
+It is often desireable to access content stored in git without requiring a clone of the repository.
 This is usefull for CI/CD systems or web frontends like dashboards.
 
 Josh exposes a GraphQL API for that purpose. For example it can be used to find all workspaces currently
@@ -114,6 +123,6 @@ query {
 
 Even without using the more advanced features like partial cloning or workspace,
 `josh-proxy` can act as a cache to reduce traffic between locations or keep your CI from
-doing lot's of requests to the main git host.
+doing lots of requests to the main git host.
 
 
