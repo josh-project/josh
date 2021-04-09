@@ -210,7 +210,24 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
             &repo_update.git_ns,
         )?;
 
-        resp = format!("{}{}", resp, text);
+        let warnings = josh::filter::compute_warnings(
+            &transaction,
+            filterobj,
+            transaction.repo().find_commit(oid_to_push)?.tree()?,
+        );
+
+        let mut warning_str = "".to_owned();
+        if warnings.len() > 0 {
+            let warnings = warnings.iter();
+
+            warning_str += "\nwarnings:";
+            for warn in warnings {
+                warning_str += "\n";
+                warning_str.push_str(&warn);
+            }
+        }
+
+        resp = format!("{}{}{}", resp, text, warning_str);
 
         if new_oid != reapply {
             transaction.repo().reference(

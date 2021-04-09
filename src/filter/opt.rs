@@ -93,7 +93,7 @@ pub fn simplify(filter: Filter) -> Filter {
  * This "flat" representation of the filter is more suitable calculate
  * the difference between two complex filters.
  */
-fn flatten(filter: Filter) -> Filter {
+pub fn flatten(filter: Filter) -> Filter {
     rs_tracing::trace_scoped!("flatten", "spec": spec(filter));
     let original = filter;
     let result = to_filter(match to_op(filter) {

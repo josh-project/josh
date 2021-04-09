@@ -120,4 +120,40 @@ Error in filter
   error: failed to push some refs to 'http://localhost:8002/real_repo.git:workspace=ws.git'
   [1]
 
+No match for filters
+  $ cat > workspace.josh <<EOF
+  > ::abc
+  > a/b = :/b/c/*
+  > c = ::sub/
+  > test = :[
+  >   ::test
+  >   ::sub/
+  >   test = :/test
+  >   :/test:[
+  >     ::test/
+  >   ]
+  > ]
+  > EOF
+
+  $ git add workspace.josh
+  $ git commit -m "add workspace file" --amend 1> /dev/null
+  $ git push origin master --force
+  remote: josh-proxy        
+  remote: response from upstream:        
+  remote: To http://localhost:8001/real_repo.git        
+  remote:    5119a73..25943be  JOSH_PUSH -> master        
+  remote: warnings:        
+  remote: No match for "::abc"        
+  remote: No match for "a/b = :/b/c/*"        
+  remote: No match for "c/sub = :/sub"        
+  remote: No match for "test/sub = :/sub"        
+  remote: No match for "test = ::test"        
+  remote: No match for "test/test = :/test:/"        
+  remote: No match for "::test/test/"        
+  remote: REWRITE(064643c5fdf5295695d383a511e4335ea3262fce -> 9cbc5874da793480ee59207ca72d9f0523b8b127)        
+  remote: 
+  remote: 
+  To http://localhost:8002/real_repo.git:workspace=ws.git
+     66a8b5e..064643c  master -> master
+
 $ cat ${TESTTMP}/josh-proxy.out
