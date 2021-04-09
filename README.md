@@ -2,79 +2,127 @@
 
 [![Build Status](https://github.com/esrlabs/josh/workflows/Rust/badge.svg?branch=master)](https://github.com/esrlabs/josh/actions)
 
-Josh combines the advantages of monorepos with those of multirepos by leveraging a blazingly-fast,
-incremental, and reversible implementation of git history filtering.
+Combine the advantages of a monorepo with those of multirepo setups by leveraging a
+blazingly-fast, incremental, and reversible implementation of git history filtering.
 
-This documentation describes the filtering mechanism, as well as
-the tools provided by Josh: the josh library, `josh-proxy` and `josh-filter`.
+`josh-proxy` can be integrated with any http based git host:
 
-## Concept
+```
+$ docker run -p 8000:8000 -e JOSH_REMOTE=https://github.com -v josh-vol:/data/git esrlabs/josh-proxy:latest
+```
 
-Traditionally, history filtering has been viewed as an expensive operation that should only be
-performed to fix issues with a repository, such as purging big binary files or removing
-accidentally-committed secrets, or as part of a migration to a different repository structure, like
-switching from multirepo to monorepo (or vice versa).
+## Use cases
 
-The implementation shipped with git (`git-filter branch`) is only usable as a once-in-a-lifetime
-last resort for anything but tiny repositories.
+### Partial cloning
 
-Faster versions of history filtering have been implemented, such as
-[git-filter-repo](https://github.com/newren/git-filter-repo) or the
-[BFG repo cleaner](https://rtyley.github.io/bfg-repo-cleaner/). Those, while much faster, are
-designed for doing occasional, destructive maintenance tasks, usually with the idea already in mind
-that once the filtering is complete the old history should be discarded.
+Reduce scope and size of clones by treating subdirectories of the monorepo
+as individual repositories.
 
-The idea behind `josh` started with two questions:
+```
+$ git clone http://josh/monorepo.git:/path/to/library.git
+```
 
-1. What if history filtering could be so fast that it can be part of a normal, everyday workflow,
-   running on every single push and fetch without the user even noticing?
-2. What if history filtering was a non-destructive, reversible operation?
+The partial repo will act as a normal git repository but only contain the files
+found in the subdirectory and only commits affecting those files.
+The partial repo supports both fetch as well as push operation.
 
-Under those two premises a filter operation stops being a maintenance task. It seamlessly relates
-histories between repos, which can be used by developers and CI systems interchangeably in whatever
-way is most suitable to the task at hand.
+This helps not just to improve performace on the client due to having fever files in
+the tree,
+it also enables collaboration on parts of the monorepo with other parties
+utilizing git's normal distributed development features.
+For example, this makes it easy to mirror just selected parts of your
+repo to public github repositories or specific customers.
 
-How is this possible?
+### Project composition / Workspaces
 
-Filtering history is a highly predictable task: The set of filters that tend to be used for any
-given repository is limited, such that the input to the filter (a git branch) only gets modified in
-an incremental way. Thus, by keeping a persistent cache between filter runs, the work needed to
-re-run a filter on a new commit (and its history) becomes proportional to the number of changes
-since the last run; The work to filter no longer depends on the total length of the history.
-Additionally, most filters also do not depend on the size of the trees.
+Simplify code sharing and dependency management. Beyond just subdirectories,
+Josh supports filtering, re-mapping and composition of arbitrary virtual repositories
+from the content found in the monorepo.
 
-What has long been known to be true for performing merges also applies to history filtering: The
-more often it is done the less work it takes each time.
+The mapping itself is also stored in the repository and therefore versioned alongside
+the code.
 
-To guarantee filters are reversible we have to restrict the kind of filter that can be used; It is
-not possible to write arbitrary filters using a scripting language like is allowed in other tools.
-To still be able to cover a wide range of use cases we have introduced a domain-specific language to
-express more complex filters as a combination of simpler ones. Apart from guaranteeing
-reversibility, the use of a DSL also enables pre-optimization of filter expressions to minimize both
-the amount of work to be done to execute the filter as well as the on-disk size of the persistent
-cache.
+<table>
+    <thead>
+        <tr>
+            <th>Central monorepo</th>
+            <th>Project workspaces</th>
+            <th>workspace.josh file</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td rowspan=2><img src="docs/src/img/central.svg?sanitize=true" alt="Folders and files in central.git" /></td>
+            <td><img src="docs/src/img/project1.svg?sanitize=true" alt="Folders and files in project1.git" /></td>
+            <td>
+<pre>
+dependencies = :/modules:[
+    ::tools/
+    ::library1/
+]
+</pre>
+        </tr>
+        <tr>
+            <td><img src="docs/src/img/project2.svg?sanitize=true" alt="Folders and files in project2.git" /></td>
+            <td>
+<pre>libs/library1 = :/modules/library1</pre></td>
+        </tr>
+    </tbody>
+</table>
+
+Workspaces act as normal git repos:
+
+```
+$ git clone http://josh/central.git:workspace=workspaces/project1.git
+```
+
+### Simplified CI/CD
+
+With everything stored in one repo, CI/CD systems only need to look into one source for each particular
+deliverable.
+However in traditional monorepo environments dependency mangement is handled by the build system.
+Build systems are usually taylored to specific languages and need their input already checked
+out on the filesystem.
+So the question:
+
+> "What deliverables are affected by a given commit and need to be rebuild?"
+
+cannot be answered without cloning the entire repository and understanding how the languages
+used handle dependencies.
+
+In particular when using C familiy languages, hidden dependencies on header files are easy to miss.
+For this reason limiting the visibility of files to the compiler by sandboxing is pretty much a requirement
+for reproducible builds.
+
+With Josh, each deliverable gets it's own virtual git repository with dependencies declared in the `workspace.josh`
+file. This means answering the above question becomes as simple as comparing commit ids.
+Furthermore due to the tree filtering each build is guaranteed to be perfectly sandboxed
+and only sees those parts of the monorepo that have actually been mapped.
+
+This also means the deliverables to be re-build can be determined without cloning any repos like
+typically necessary with normal build tools.
+
+### GraphQL API
+
+It is often desireable to access content stored in git without requiring a clone of the repository.
+This is usefull for CI/CD systems or web frontends such as dashboards.
+
+Josh exposes a GraphQL API for that purpose. For example, it can be used to find all workspaces currently
+present in the tree:
+
+```
+query {
+  rev(at:"refs/heads/master", filter:"::**/workspace.josh") {
+    files { path }
+  }
+}
+```
 
 
->*_From Linus Torvalds 2007 talk at Google about git:_*
->
->**Audience:**
->
->Can you have just a part of files pulled out of a repository, not the entire repository?
->
->**Linus:**
->
->You can export things as tarballs, you can export things as individual files, you can rewrite the
->whole history to say "I want a new version of that repository that only contains that part", you
->can do that, it is a fairly expensive operation it's something you would do for example when you
->import an old repository into a one huge git repository and then you can split it later on to be
->multiple smaller ones, you can do it, what I am trying to say is that you should generally try to
->avoid it. It's not that git can not handle huge projects, git would not perform as well as it would
->otherwise. And you will have issues that you wish you didn't not have.
->
->So I am skipping this issue and going back to the performance issue. One of the things I want to
->say about performance is that a lot of people seem to think that performance is about doing the
->same thing, just doing it faster, and that is not true.
->
->That is not what performance is all about. If you can do something really fast, really well, people
->will start using it differently.
-> 
+### Caching proxy
+
+Even without using the more advanced features like partial cloning or workspaces,
+`josh-proxy` can act as a cache to reduce traffic between locations or keep your CI from
+performing many requests to the main git host.
+
+
