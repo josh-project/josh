@@ -660,6 +660,59 @@ pub fn compose(first: Filter, second: Filter) -> Filter {
     opt::optimize(to_filter(Op::Compose(vec![first, second])))
 }
 
+/// Compute the warnings (filters not matching anything) for the filter applied to the tree
+pub fn compute_warnings<'a>(
+    transaction: &'a cache::Transaction,
+    filter: Filter,
+    tree: git2::Tree<'a>,
+) -> Vec<String> {
+    let mut warnings = Vec::new();
+    let mut filter = filter;
+
+    if let Op::Workspace(path) = to_op(filter) {
+        let workspace_filter = &tree::get_blob(
+            &transaction.repo(),
+            &tree,
+            &path.join(&Path::new("workspace.josh")),
+        );
+        if let Ok(res) = parse(workspace_filter) {
+            filter = res;
+        } else {
+            warnings.push("couldn't parse workspace\n".to_string());
+            return warnings;
+        }
+    }
+
+    let filter = opt::flatten(filter);
+    if let Op::Compose(filters) = to_op(filter) {
+        for f in filters {
+            let tree = transaction.repo().find_tree(tree.id());
+            if let Ok(tree) = tree {
+                warnings.append(&mut compute_warnings2(transaction, f, tree));
+            }
+        }
+    } else {
+        warnings.append(&mut compute_warnings2(transaction, filter, tree));
+    }
+    return warnings;
+}
+
+fn compute_warnings2<'a>(
+    transaction: &'a cache::Transaction,
+    filter: Filter,
+    tree: git2::Tree<'a>,
+) -> Vec<String> {
+    let mut warnings = Vec::new();
+
+    let tree = apply(&transaction, filter, tree);
+    if let Ok(tree) = tree {
+        if tree.is_empty() {
+            warnings.push(format!("No match for \"{}\"", pretty(filter, 2)));
+        }
+    }
+    return warnings;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
