@@ -935,9 +935,9 @@ dependencies = [
 
 [[package]]
 name = "hyper_cgi"
-version = "0.1.8"
+version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "204477174044c4fb2093baa07176eeca96f4147d30ae9f7ff053a9f9cbbbc539"
+checksum = "2af44adb5191416bacb56424126eee0c94b6477534d98efd101925ea79aaad91"
 dependencies = [
  "futures",
  "hyper",
