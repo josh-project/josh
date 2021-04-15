@@ -92,30 +92,31 @@
     }
   } (no-eol)
 
-  $ git fetch http://localhost:8002/real_repo.git@refs/josh/meta/foo:nop.git
-  From http://localhost:8002/real_repo.git@refs/josh/meta/foo:nop
+  $ git fetch http://localhost:8002/real_repo.git@refs/josh/meta:nop.git
+  From http://localhost:8002/real_repo.git@refs/josh/meta:nop
    * branch            HEAD       -> FETCH_HEAD
 
   $ git log --graph --pretty=%s FETCH_HEAD
   * marker
 
   $ git ls-tree FETCH_HEAD
-  040000 tree 3a2db85a05033dc4667f118580ca301c95be164a\t1 (esc)
+  040000 tree f09b08b53a7f52de51c5cf6bba3da1c5e52f366d\tfoo (esc)
 
   $ git checkout -q FETCH_HEAD
 
   $ tree
   .
-  `-- 1
-      `-- e6
-          `-- 4dc
-              `-- 1e64dc7136eae9c6b88e4ab831322f3c72a5c0e4
-                  `-- markers
-                      `-- a
-                          `-- b
-                              `-- c
+  `-- foo
+      `-- markers
+          `-- 1
+              `-- e6
+                  `-- 4dc
+                      `-- 1e64dc7136eae9c6b88e4ab831322f3c72a5c0e4
+                          `-- a
+                              `-- b
+                                  `-- c
   
-  7 directories, 1 file
+  8 directories, 1 file
 
   $ cat > ../query <<EOF
   > {"query":"mutation {
@@ -136,8 +137,8 @@
     }
   } (no-eol)
 
-  $ git fetch http://localhost:8002/real_repo.git@refs/josh/meta/foo:nop.git
-  From http://localhost:8002/real_repo.git@refs/josh/meta/foo:nop
+  $ git fetch http://localhost:8002/real_repo.git@refs/josh/meta:nop.git
+  From http://localhost:8002/real_repo.git@refs/josh/meta:nop
    * branch            HEAD       -> FETCH_HEAD
 
   $ git log --graph --pretty=%s FETCH_HEAD
@@ -145,23 +146,24 @@
   * marker
 
   $ git ls-tree FETCH_HEAD
-  040000 tree 527de5a876f9fbe2d9ed410c5f52da0854d47386\t1 (esc)
+  040000 tree 626ccbfb5e3d317cc36be6627be099ed7103379b\tfoo (esc)
 
   $ git checkout -q FETCH_HEAD
 
   $ tree
   .
-  `-- 1
-      `-- e6
-          `-- 4dc
-              `-- 1e64dc7136eae9c6b88e4ab831322f3c72a5c0e4
-                  `-- markers
-                      `-- a
-                          `-- b
-                              |-- c
-                              `-- d
+  `-- foo
+      `-- markers
+          `-- 1
+              `-- e6
+                  `-- 4dc
+                      `-- 1e64dc7136eae9c6b88e4ab831322f3c72a5c0e4
+                          `-- a
+                              `-- b
+                                  |-- c
+                                  `-- d
   
-  7 directories, 2 files
+  8 directories, 2 files
 
 
   $ cat > ../query <<EOF
@@ -186,8 +188,8 @@
     }
   } (no-eol)
 
-  $ git fetch http://localhost:8002/real_repo.git@refs/josh/meta/foo:nop.git
-  From http://localhost:8002/real_repo.git@refs/josh/meta/foo:nop
+  $ git fetch http://localhost:8002/real_repo.git@refs/josh/meta:nop.git
+  From http://localhost:8002/real_repo.git@refs/josh/meta:nop
    * branch            HEAD       -> FETCH_HEAD
 
   $ git log --graph --pretty=%s FETCH_HEAD
@@ -196,23 +198,24 @@
   * marker
 
   $ git ls-tree FETCH_HEAD
-  040000 tree 0d733c8f9fd482a75d99887e87e0a57344e903bb\t1 (esc)
+  040000 tree 1338bf3dceb3295bc7338da4ddad03464aaedb83\tfoo (esc)
 
   $ git checkout -q FETCH_HEAD
 
   $ tree
   .
-  `-- 1
-      `-- e6
-          `-- 4dc
-              `-- 1e64dc7136eae9c6b88e4ab831322f3c72a5c0e4
-                  `-- markers
-                      `-- a
-                          `-- b
-                              |-- c
-                              `-- d
+  `-- foo
+      `-- markers
+          `-- 1
+              `-- e6
+                  `-- 4dc
+                      `-- 1e64dc7136eae9c6b88e4ab831322f3c72a5c0e4
+                          `-- a
+                              `-- b
+                                  |-- c
+                                  `-- d
   
-  7 directories, 2 files
+  8 directories, 2 files
 
   $ cat > ../query <<EOF
   > {"query":"{ rev(at:\"refs/heads/master\") {
@@ -371,8 +374,7 @@
   |               |   `-- master
   |               `-- josh
   |                   `-- meta
-  |                       `-- foo
   |-- namespaces
   `-- tags
   
-  20 directories, 6 files
+  19 directories, 6 files
