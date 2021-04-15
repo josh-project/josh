@@ -242,7 +242,7 @@ impl Markers {
     fn list(&self, context: &Context) -> FieldResult<Vec<Marker>> {
         let transaction = context.transaction.lock()?;
 
-        let refname = transaction.refname(&format!("refs/josh/meta/{}", &self.topic));
+        let refname = transaction.refname("refs/josh/meta");
 
         let r = transaction.repo().revparse_single(&refname);
         let tree = if let Ok(r) = r {
@@ -255,11 +255,11 @@ impl Markers {
         let commit = self.commit_id.to_string();
 
         let path = if self.filter == filter::nop() {
-            marker_path(&commit).join(&self.path)
+            marker_path(&commit, &self.topic).join(&self.path)
         } else {
             let t = transaction.repo().find_commit(self.commit_id)?.tree()?;
             let o = filter::tree::original_path(&transaction, self.filter, t, &self.path)?;
-            marker_path(&commit).join(&o)
+            marker_path(&commit, &self.topic).join(&o)
         };
 
         let prev = if let Ok(e) = tree.get_path(&path) {
@@ -287,7 +287,7 @@ impl Markers {
     fn count(&self, context: &Context) -> FieldResult<i32> {
         let transaction = context.transaction.lock()?;
 
-        let refname = transaction.refname(&format!("refs/josh/meta/{}", &self.topic));
+        let refname = transaction.refname("refs/josh/meta");
 
         let r = transaction.repo().revparse_single(&refname);
         let mtree = if let Ok(r) = r {
@@ -299,7 +299,7 @@ impl Markers {
 
         let commit = self.commit_id.to_string();
         let mtree = mtree
-            .get_path(&marker_path(&commit))
+            .get_path(&marker_path(&commit, &self.topic))
             .map(|p| transaction.repo().find_tree(p.id()).ok())
             .ok()
             .flatten()
@@ -526,12 +526,13 @@ pub struct Repository {
 
 pub struct RepositoryMut {}
 
-fn marker_path(commit: &str) -> std::path::PathBuf {
-    std::path::Path::new(&commit[..1])
+fn marker_path(commit: &str, topic: &str) -> std::path::PathBuf {
+    std::path::Path::new(topic)
+        .join("markers")
+        .join(&commit[..1])
         .join(&commit[1..3])
         .join(&commit[3..6])
         .join(&commit)
-        .join("markers")
 }
 
 #[derive(juniper::GraphQLInputObject)]
@@ -561,7 +562,7 @@ pub struct MarkersMut {
 impl MarkersMut {
     fn add(&self, context: &Context, markers: Vec<MarkersInput>) -> FieldResult<bool> {
         let transaction = context.transaction.lock()?;
-        let rev = transaction.refname(&format!("refs/josh/meta/{}", self.topic));
+        let rev = transaction.refname("refs/josh/meta");
 
         transaction
             .repo()
@@ -580,7 +581,7 @@ impl MarkersMut {
 
         for mm in markers {
             let path = mm.path;
-            let path = &marker_path(&self.commit).join(&path);
+            let path = &marker_path(&self.commit, &self.topic).join(&path);
             let prev = if let Ok(e) = tree.get_path(&path) {
                 let blob = transaction.repo().find_blob(e.id())?;
                 std::str::from_utf8(blob.content())?.to_owned()

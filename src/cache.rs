@@ -9,6 +9,8 @@ lazy_static! {
         std::sync::Mutex::new(HashMap::new());
     static ref POPULATE_MAP: std::sync::Mutex<HashMap<(git2::Oid, git2::Oid), git2::Oid>> =
         std::sync::Mutex::new(HashMap::new());
+    static ref GLOB_MAP: std::sync::Mutex<HashMap<(git2::Oid, git2::Oid), git2::Oid>> =
+        std::sync::Mutex::new(HashMap::new());
 }
 
 pub fn load(path: &std::path::Path) -> JoshResult<()> {
@@ -213,6 +215,18 @@ impl Transaction {
         POPULATE_MAP.lock().unwrap().entry(tree).or_insert(result);
     }
 
+    pub fn get_populate(&self, tree: (git2::Oid, git2::Oid)) -> Option<git2::Oid> {
+        return POPULATE_MAP.lock().unwrap().get(&tree).cloned();
+    }
+
+    pub fn insert_glob(&self, tree: (git2::Oid, git2::Oid), result: git2::Oid) {
+        GLOB_MAP.lock().unwrap().entry(tree).or_insert(result);
+    }
+
+    pub fn get_glob(&self, tree: (git2::Oid, git2::Oid)) -> Option<git2::Oid> {
+        return GLOB_MAP.lock().unwrap().get(&tree).cloned();
+    }
+
     pub fn insert_ref(&self, filter: filter::Filter, from: git2::Oid, to: git2::Oid) {
         REF_CACHE
             .lock()
@@ -239,10 +253,6 @@ impl Transaction {
             return m.get(&from).cloned();
         }
         return None;
-    }
-
-    pub fn get_populate(&self, tree: (git2::Oid, git2::Oid)) -> Option<git2::Oid> {
-        return POPULATE_MAP.lock().unwrap().get(&tree).cloned();
     }
 
     pub fn insert(&self, filter: filter::Filter, from: git2::Oid, to: git2::Oid, store: bool) {

@@ -447,12 +447,11 @@ fn apply2<'a>(
                 require_literal_leading_dot: true,
             };
             tree::remove_pred(
-                &repo,
+                transaction,
                 "",
                 tree.id(),
                 &|path, isblob| isblob && (pattern.matches_path_with(&path, options)),
                 git2::Oid::zero(),
-                &mut std::collections::HashMap::new(),
             )
         }
         Op::File(path) => {
@@ -622,12 +621,11 @@ fn unapply2<'a>(
                 require_literal_leading_dot: true,
             };
             let subtracted = tree::remove_pred(
-                &transaction.repo(),
+                transaction,
                 "",
                 tree.id(),
                 &|path, isblob| isblob && (pattern.matches_path_with(&path, options)),
                 git2::Oid::zero(),
-                &mut std::collections::HashMap::new(),
             )?;
             Ok(transaction.repo().find_tree(tree::overlay(
                 &transaction.repo(),

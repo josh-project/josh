@@ -59,15 +59,15 @@ pub fn pathstree<'a>(
 }
 
 pub fn remove_pred<'a>(
-    repo: &'a git2::Repository,
+    transaction: &'a cache::Transaction,
     root: &str,
     input: git2::Oid,
     pred: &dyn Fn(&std::path::Path, bool) -> bool,
     key: git2::Oid,
-    cache: &mut std::collections::HashMap<(git2::Oid, git2::Oid), git2::Oid>,
 ) -> super::JoshResult<git2::Tree<'a>> {
-    if let Some(cached) = cache.get(&(input, key)) {
-        return Ok(repo.find_tree(*cached)?);
+    let repo = transaction.repo();
+    if let Some(cached) = transaction.get_glob((input, key)) {
+        return Ok(repo.find_tree(cached)?);
     }
     rs_tracing::trace_scoped!("remove_pred X", "root": root);
 
@@ -95,7 +95,7 @@ pub fn remove_pred<'a>(
                 entry.id()
             } else {
                 remove_pred(
-                    &repo,
+                    transaction,
                     &format!(
                         "{}{}{}",
                         root,
@@ -105,7 +105,6 @@ pub fn remove_pred<'a>(
                     entry.id(),
                     &pred,
                     key,
-                    cache,
                 )?
                 .id()
             };
@@ -122,7 +121,7 @@ pub fn remove_pred<'a>(
         }
     }
 
-    cache.insert((input, key), result.id());
+    transaction.insert_glob((input, key), result.id());
     return Ok(result);
 }
 
