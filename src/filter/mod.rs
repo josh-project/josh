@@ -451,7 +451,7 @@ fn apply2<'a>(
                 "",
                 tree.id(),
                 &|path, isblob| isblob && (pattern.matches_path_with(&path, options)),
-                git2::Oid::zero(),
+                to_filter(op.clone()).id(),
             )
         }
         Op::File(path) => {
@@ -625,7 +625,7 @@ fn unapply2<'a>(
                 "",
                 tree.id(),
                 &|path, isblob| isblob && (pattern.matches_path_with(&path, options)),
-                git2::Oid::zero(),
+                to_filter(op.clone()).id(),
             )?;
             Ok(transaction.repo().find_tree(tree::overlay(
                 &transaction.repo(),
