@@ -8,6 +8,7 @@ fn make_op(args: &[&str]) -> JoshResult<Op> {
         ["workspace", arg] => Ok(Op::Workspace(Path::new(arg).to_owned())),
         ["SQUASH"] => Ok(Op::Squash),
         ["PATHS"] => Ok(Op::Paths),
+        ["INDEX"] => Ok(Op::Index),
         ["INVERT"] => Ok(Op::Invert),
         ["FOLD"] => Ok(Op::Fold),
         _ => Err(josh_error("invalid filter")),

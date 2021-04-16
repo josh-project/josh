@@ -54,6 +54,7 @@ enum Op {
     Squash,
     Paths,
     Invert,
+    Index,
 
     File(std::path::PathBuf),
     Prefix(std::path::PathBuf),
@@ -164,6 +165,7 @@ fn spec2(op: &Op) -> String {
         Op::Empty => ":empty".to_string(),
         Op::Paths => ":PATHS".to_string(),
         Op::Invert => ":INVERT".to_string(),
+        Op::Index => ":INDEX".to_string(),
         Op::Fold => ":FOLD".to_string(),
         Op::Squash => ":SQUASH".to_string(),
         Op::Subdir(path) => format!(":/{}", path.to_string_lossy()),
@@ -474,6 +476,7 @@ fn apply2<'a>(
         }
 
         Op::Paths => tree::pathstree("", tree.id(), transaction),
+        Op::Index => tree::trigram_index(transaction, tree),
 
         Op::Invert => tree::invert_paths(transaction, "", tree),
 

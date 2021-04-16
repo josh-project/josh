@@ -16,6 +16,11 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
                 .takes_value(true),
         )
         .arg(
+            clap::Arg::with_name("search")
+                .long("search")
+                .takes_value(true),
+        )
+        .arg(
             clap::Arg::with_name("input")
                 .help("Ref to apply filter to")
                 .default_value("HEAD")
@@ -208,6 +213,28 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
             }
             git2::TreeWalkResult::Ok
         })?;
+    }
+
+    if let Some(searchstring) = args.value_of("search") {
+        let ifilterobj = josh::filter::chain(filterobj, josh::filter::parse(":SQUASH:INDEX")?);
+
+        josh::filter_refs(
+            &transaction,
+            ifilterobj,
+            &[(src.clone(), "refs/JOSH_TMP".to_string())],
+        )?;
+        let index_tree = repo.find_reference(&"refs/JOSH_TMP")?.peel_to_tree()?;
+
+        let mut results = vec![];
+
+        let start = std::time::Instant::now();
+        josh::filter::tree::search(&transaction, index_tree, &searchstring, &mut results)?;
+        let duration = start.elapsed();
+
+        for r in results {
+            println!("{}", r);
+        }
+        println!("\n Search took {:?}", duration);
     }
 
     let mut dedup = vec![];
