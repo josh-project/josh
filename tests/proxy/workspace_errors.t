@@ -137,7 +137,7 @@ No match for filters
 
   $ git add workspace.josh
   $ git commit -m "add workspace file" --amend 1> /dev/null
-  $ git push origin master --force
+  $ git push origin HEAD:master
   remote: josh-proxy        
   remote: response from upstream:        
   remote: To http://localhost:8001/real_repo.git        
@@ -154,6 +154,34 @@ No match for filters
   remote: 
   remote: 
   To http://localhost:8002/real_repo.git:workspace=ws.git
-     66a8b5e..064643c  master -> master
+     66a8b5e..064643c  HEAD -> master
 
+warnings with graphql
+  $ curl -s http://localhost:8002/flush
+  Flushed credential cache
+
+  $ cat > ../query << EOF
+  > {"query": "{
+  >  rev(at:\"refs/heads/master\", filter:\":workspace=ws\") {
+  >    warnings
+  >  }
+  > }"}
+  > EOF
+
+  $ cat ../query | curl -s -X POST -H "content-type: application/json" --data @- "http://localhost:8002/~/graphql/real_repo.git"
+  {
+    "data": {
+      "rev": {
+        "warnings": [
+          "No match for \"::abc\"",
+          "No match for \"a/b = :/b/c/*\"",
+          "No match for \"c/sub = :/sub\"",
+          "No match for \"test/sub = :/sub\"",
+          "No match for \"test = ::test\"",
+          "No match for \"test/test = :/test:/\"",
+          "No match for \"::test/test/\""
+        ]
+      }
+    }
+  } (no-eol)
 $ cat ${TESTTMP}/josh-proxy.out
