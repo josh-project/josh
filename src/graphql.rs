@@ -205,6 +205,17 @@ impl Revision {
             Err(josh_error("not a blob"))?
         }
     }
+
+    fn warnings(&self, context: &Context) -> FieldResult<Option<Vec<String>>> {
+        let transaction = context.transaction.lock()?;
+        let commit = transaction.repo().find_commit(self.commit_id)?;
+
+        return Ok(Some(filter::compute_warnings(
+            &transaction,
+            self.filter,
+            commit.tree()?,
+        )));
+    }
 }
 
 pub struct Path {
