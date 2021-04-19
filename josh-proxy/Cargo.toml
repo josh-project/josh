@@ -20,7 +20,7 @@ hyper_cgi = "0.1"
 hyper-staticfile = "*"
 hyper-tls = "*"
 toml = "0.5"
-git2 = { git = "https://github.com/initcrash/git2-rs.git", default-features = false}
+git2 = {version = "0.13"}
 tracing = { version = "0.1", features = ["max_level_trace", "release_max_level_trace"] }
 tracing-futures = "0.2"
 tracing-subscriber = "0.2"
