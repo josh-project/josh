@@ -36,6 +36,7 @@ impl Component for Nav {
             link: link,
             data: path_query::ResponseData {
                 rev: path_query::PathQueryRev {
+                    warnings: None,
                     file: None,
                     dirs: None,
                     files: None,
@@ -109,62 +110,87 @@ impl Component for Nav {
                     html! { <div class="loader"> { "Loading..." } </div> }
                 }
                 else if let Some(file) = &self.data.rev.file {
-                    html! { <codemirror::Codemirror
+                    html! {<codemirror::Codemirror
                         text=file.text.as_ref().unwrap_or(&"".to_string())
                         marker_pos=file.markers.list.iter().map(|x| x.position.clone()).collect::<Vec<String>>()
                         marker_text=file.markers.list.iter().map(|x| x.text.clone()).collect::<Vec<String>>()
-                    /> }
+                    />}
                 } else {
-                    html! { <div id="pathlist" class="dirmode loaded"> {
-                        if let Some(dirs) = &self.data.rev.dirs { if dirs.len() != 0 {
-                            html!{<div class="column">
-                                <h2> { "Directories" } </h2>
-                                <table class="pathlist"> { for dirs.iter().map(|d| { html! {
-                                    <AppAnchor classes="path" route=props.route.with_path(&d.path)> <tr> <td>
-                                    {
-                                        if let Some(d) = std::path::Path::new(&d.path).file_name() {
-                                            d.to_string_lossy().to_string()
-                                        } else {
-                                            d.path.clone()
-                                        }
-                                    }{ "/" }
-                                    {
-                                        if d.markers.count != 0 {
-                                            html!{ <span class="marker"> { d.markers.count } </span> }
-                                        }
-                                        else { html!{} }
-                                    }
-                                    </td> </tr> </AppAnchor>
-                                }})} </table>
+                    html! { <>
+                        {
+                            html! { <div id="pathlist" class="dirmode loaded"> {
+                                if let Some(dirs) = &self.data.rev.dirs { if dirs.len() != 0 {
+                                    html!{<div class="column">
+                                        <h2> { "Directories" } </h2>
+                                        <table class="pathlist"> { for dirs.iter().map(|d| { html! {
+                                            <AppAnchor classes="path" route=props.route.with_path(&d.path)> <tr> <td>
+                                            {
+                                                if let Some(d) = std::path::Path::new(&d.path).file_name() {
+                                                    d.to_string_lossy().to_string()
+                                                } else {
+                                                    d.path.clone()
+                                                }
+                                            }{ "/" }
+                                            {
+                                                if d.markers.count != 0 {
+                                                    html!{ <span class="marker"> { d.markers.count } </span> }
+                                                }
+                                                else { html!{} }
+                                            }
+                                            </td> </tr> </AppAnchor>
+                                        }})} </table>
+                                    </div>}
+                                } else { html!{} }
+                                } else { html!{} }
+                            }{
+                                if let Some(files) = &self.data.rev.files { if files.len() != 0 {
+                                    html!{<div class="column">
+                                        <h2> { "Files" } </h2>
+                                        <table class="pathlist"> { for files.iter().map(|f| { html! {
+                                            <AppAnchor classes="path" route=props.route.with_path(&f.path)> <tr><td>
+                                            {
+                                                if let Some(f) = std::path::Path::new(&f.path).file_name() {
+                                                    f.to_string_lossy().to_string()
+                                                } else {
+                                                    f.path.clone()
+                                                }
+                                            }
+                                            {
+                                                if f.markers.count != 0 {
+                                                    html!{ <span class="marker"> { f.markers.count } </span> }
+                                                }
+                                                else { html!{} }
+                                            }
+                                            </td></tr> </AppAnchor>
+                                        }})} </table>
+                                    </div>}
+                                } else { html!{} }
+                                } else { html!{} }
+                            }
                             </div>}
-                        } else { html!{} }
-                        } else { html!{} }
-                    }{
-                        if let Some(files) = &self.data.rev.files { if files.len() != 0 {
-                            html!{<div class="column">
-                                <h2> { "Files" } </h2>
-                                <table class="pathlist"> { for files.iter().map(|f| { html! {
-                                    <AppAnchor classes="path" route=props.route.with_path(&f.path)> <tr><td>
+                        }
+                        {
+                            if let Some(warnings) = &self.data.rev.warnings {
+                                if warnings.len() > 0 {
+                                html! { <>
+                                    <h2> { "Warnings" } </h2>
+                                    <ul>
                                     {
-                                        if let Some(f) = std::path::Path::new(&f.path).file_name() {
-                                            f.to_string_lossy().to_string()
-                                        } else {
-                                            f.path.clone()
-                                        }
+                                        for warnings.iter().map( |warn| {
+                                            html! {
+                                                <li> { warn } </li>
+                                            }
+                                        })
                                     }
-                                    {
-                                        if f.markers.count != 0 {
-                                            html!{ <span class="marker"> { f.markers.count } </span> }
-                                        }
-                                        else { html!{} }
-                                    }
-                                    </td></tr> </AppAnchor>
-                                }})} </table>
-                            </div>}
-                        } else { html!{} }
-                        } else { html!{} }
-                    }
-                    </div>}
+                                    </ul>
+                                    </>
+                                }
+                                }
+                                else { html! {} }
+                            }
+                            else { html! {} }
+                        }
+                        </> }
                 }
             }</>
         }
