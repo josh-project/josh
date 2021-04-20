@@ -1,4 +1,5 @@
 use super::*;
+use rayon::prelude::*;
 
 pub fn pathstree<'a>(
     root: &str,
@@ -260,15 +261,25 @@ pub fn pathline(b: &str) -> JoshResult<String> {
 
 const FILE_FILTER_SIZE: usize = 64;
 
-fn hash_bits(s: &str) -> [usize; 3] {
+fn hash_bits(s: &str, size: usize) -> [usize; 3] {
+    let size = size * 8;
+    let size = size / 2;
     use std::collections::hash_map::DefaultHasher;
     use std::hash::Hasher;
     let mut hasher = DefaultHasher::new();
     hasher.write(s.as_bytes());
     let r = hasher.finish() as usize;
     let n = 8 * usize::pow(4, 10);
-    let r = [r, r / n, (r / n) / n];
-    return r;
+
+    let (a, b, c) = (r % size, (r / n) % size, ((r / n) / n) % size);
+
+    if s.chars().any(|x| !char::is_alphabetic(x)) {
+        let r = [a + size, b + size, c + size];
+        return r;
+    } else {
+        let r = [a, b, c];
+        return r;
+    }
 }
 
 pub fn make_dir_trigram_filter(searchstring: &str, size: usize, bits: &[usize]) -> Vec<u8> {
@@ -282,7 +293,7 @@ pub fn make_dir_trigram_filter(searchstring: &str, size: usize, bits: &[usize]) 
         .filter_map(|x| std::str::from_utf8(x).ok())
     {
         for bit in bits {
-            abf.set(hash_bits(&t)[*bit] % (size * 8), true);
+            abf.set(hash_bits(&t, size)[*bit], true);
         }
     }
 
@@ -348,7 +359,7 @@ pub fn trigram_index<'a>(
                 //if hbf[hash_bits(trigram)[2] % (FILE_FILTER_SIZE * 8)] {
                 //    continue;
                 //}
-                bf.set(hash_bits(trigram)[2] % (FILE_FILTER_SIZE * 8), true);
+                bf.set(hash_bits(trigram, FILE_FILTER_SIZE)[2], true);
 
                 if bf.count_ones() > FILE_FILTER_SIZE * 4 {
                     let filefilter = hex::encode(bf.as_buffer());
@@ -367,7 +378,7 @@ pub fn trigram_index<'a>(
 
             'arrsub: for a in 0..arrs_sub.len() {
                 let dir_filter_size = usize::pow(4, 3 + a as u32);
-                let dtf = make_dir_trigram_filter(&b, dir_filter_size, &[0, 1]);
+                let dtf = make_dir_trigram_filter(&b, dir_filter_size, &[0, 1, 2]);
                 let abf = bitvec::slice::BitSlice::<bitvec::order::Msb0, _>::from_slice(&dtf)?;
 
                 if abf.count_ones() > dir_filter_size / 2 {
@@ -478,7 +489,7 @@ pub fn search(
 
     for ord in 0..6 {
         let dir_filter_size = usize::pow(4, 3 + ord as u32);
-        let df = make_dir_trigram_filter(&searchstring, dir_filter_size, &[0, 1]);
+        let df = make_dir_trigram_filter(&searchstring, dir_filter_size, &[0, 1, 2]);
         trigram_search(&transaction, tree.clone(), "", &df, &ff, results, ord)?;
     }
     Ok(())
@@ -493,12 +504,27 @@ pub fn trigram_search<'a>(
     results: &mut Vec<String>,
     ord: usize,
 ) -> super::JoshResult<()> {
+    rs_tracing::trace_scoped!("trigram_search", "ord": ord, "root": root);
     let repo = transaction.repo();
 
-    let b = tree::get_blob(&repo, &tree, &std::path::Path::new(&format!("OWN{}", ord)));
-    let hd = hex::decode(b.lines().collect::<Vec<_>>().join(""))?;
+    let hd = {
+        rs_tracing::trace_scoped!("get blob own");
+
+        if let Some(blob) = tree
+            .get_name(&format!("OWN{}", ord))
+            .map(|x| repo.find_blob(x.id()))
+        {
+            let blob = blob?;
+            let b = unsafe { std::str::from_utf8_unchecked(blob.content()) };
+            rs_tracing::trace_scoped!("hex decode own");
+            hex::decode(b.lines().collect::<Vec<_>>().join(""))?
+        } else {
+            vec![]
+        }
+    };
 
     let dmatch = if hd.len() != 0 {
+        rs_tracing::trace_scoped!("dmatch own");
         let mut dmatch = true;
         for (a, b) in dir_filter.iter().zip(hd.iter()) {
             if a & b != *a {
@@ -512,7 +538,7 @@ pub fn trigram_search<'a>(
     };
 
     if dmatch {
-        println!("searching in: {} {:?}", ord, root);
+        rs_tracing::trace_scoped!("search blobs");
         let b = tree::get_blob(
             &repo,
             &tree,
@@ -554,35 +580,73 @@ pub fn trigram_search<'a>(
         }
     }
 
-    let b = tree::get_blob(&repo, &tree, &std::path::Path::new(&format!("SUB{}", ord)));
-    let hd = hex::decode(b.lines().collect::<Vec<_>>().join(""))?;
+    let hd = {
+        rs_tracing::trace_scoped!("get blob sub");
 
-    if hd.len() == 0 {
-        return Ok(());
-    }
-
-    for (a, b) in dir_filter.iter().zip(hd.iter()) {
-        if a & b != *a {
+        if let Some(blob) = tree
+            .get_name(&format!("SUB{}", ord))
+            .map(|x| repo.find_blob(x.id()))
+        {
+            let blob = blob?;
+            let b = unsafe { std::str::from_utf8_unchecked(blob.content()) };
+            rs_tracing::trace_scoped!("hex decode sub");
+            hex::decode(b.lines().collect::<Vec<_>>().join(""))?
+        } else {
             return Ok(());
         }
-    }
+    };
 
-    for entry in tree.iter() {
-        let name = entry.name().ok_or(super::josh_error("no name"))?;
-        if entry.kind() == Some(git2::ObjectType::Tree) {
-            let s = transaction.repo().find_tree(entry.id())?;
+    {
+        rs_tracing::trace_scoped!("dmatch sub");
 
-            trigram_search(
-                transaction,
-                s,
-                &format!("{}{}{}", root, if root == "" { "" } else { "/" }, name),
-                dir_filter,
-                file_filter,
-                results,
-                ord,
-            )?;
+        for (a, b) in dir_filter.iter().zip(hd.iter()) {
+            if a & b != *a {
+                return Ok(());
+            }
         }
     }
+
+    rs_tracing::trace_scoped!("down par_iter");
+
+    let rpath = transaction.repo().path();
+
+    let trees = tree
+        .iter()
+        .filter(|x| x.kind() == Some(git2::ObjectType::Tree))
+        .filter(|x| x.name().is_some())
+        .map(|x| (x.id(), x.name().unwrap().to_string()))
+        .collect::<Vec<_>>();
+
+    let mut r = trees
+        .par_iter()
+        .map_init(
+            || cache::Transaction::open(rpath, None).unwrap(),
+            |transaction, (id, name)| {
+                let s = transaction.repo().find_tree(*id).unwrap();
+
+                let mut results = vec![];
+
+                trigram_search(
+                    &transaction,
+                    s,
+                    &format!("{}{}{}", root, if root == "" { "" } else { "/" }, name),
+                    dir_filter,
+                    file_filter,
+                    &mut results,
+                    ord,
+                )
+                .unwrap();
+                results
+            },
+        )
+        .reduce(
+            || vec![],
+            |mut r, mut b| {
+                r.append(&mut b);
+                r
+            },
+        );
+    results.append(&mut r);
     Ok(())
 }
 

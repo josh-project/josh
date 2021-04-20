@@ -227,14 +227,14 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
 
         let mut results = vec![];
 
-        let start = std::time::Instant::now();
+        /* let start = std::time::Instant::now(); */
         josh::filter::tree::search(&transaction, index_tree, &searchstring, &mut results)?;
-        let duration = start.elapsed();
+        /* let duration = start.elapsed(); */
 
         for r in results {
             println!("{}", r);
         }
-        println!("\n Search took {:?}", duration);
+        /* println!("\n Search took {:?}", duration); */
     }
 
     let mut dedup = vec![];
