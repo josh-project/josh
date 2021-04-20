@@ -1,4 +1,4 @@
-FROM rust:1.50 as builder
+FROM rust:1.51 as builder
 
 RUN apt-get update \
  && apt-get install -y cmake \
@@ -22,7 +22,7 @@ RUN cargo install trunk
 RUN trunk --config=josh-ui/Trunk.toml build
 RUN cargo build -p josh-proxy
 
-FROM rust:1.50
+FROM rust:1.51
 
 COPY --from=builder /usr/src/josh/target/debug/josh-proxy /usr/bin/josh-proxy
 COPY --from=builder /usr/src/josh/run-josh.sh /usr/bin/run-josh.sh
