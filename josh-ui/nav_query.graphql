@@ -10,7 +10,9 @@ query NavQuery($rev: String!) {
 
 query PathQuery($rev: String!, $filter: String!, $path: String!) {
   rev(at:$rev, filter:$filter) {
-    warnings
+    warnings {
+      message
+    }
     file(path:$path) {
       text
       markers(topic: "findings") {
