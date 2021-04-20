@@ -206,15 +206,29 @@ impl Revision {
         }
     }
 
-    fn warnings(&self, context: &Context) -> FieldResult<Option<Vec<String>>> {
+    fn warnings(&self, context: &Context) -> FieldResult<Option<Vec<Warning>>> {
         let transaction = context.transaction.lock()?;
         let commit = transaction.repo().find_commit(self.commit_id)?;
 
-        return Ok(Some(filter::compute_warnings(
-            &transaction,
-            self.filter,
-            commit.tree()?,
-        )));
+        let warnings = filter::compute_warnings(&transaction, self.filter, commit.tree()?)
+            .iter()
+            .map(|warn| Warning {
+                text: warn.to_string(),
+            })
+            .collect();
+
+        Ok(Some(warnings))
+    }
+}
+
+pub struct Warning {
+    text: String,
+}
+
+#[graphql_object(context = Context)]
+impl Warning {
+    fn message(&self) -> &str {
+        &self.text
     }
 }
 

@@ -163,7 +163,9 @@ warnings with graphql
   $ cat > ../query << EOF
   > {"query": "{
   >  rev(at:\"refs/heads/master\", filter:\":workspace=ws\") {
-  >    warnings
+  >    warnings {
+  >      message
+  >    }
   >  }
   > }"}
   > EOF
@@ -173,13 +175,27 @@ warnings with graphql
     "data": {
       "rev": {
         "warnings": [
-          "No match for \"::abc\"",
-          "No match for \"a/b = :/b/c/*\"",
-          "No match for \"c/sub = :/sub\"",
-          "No match for \"test/sub = :/sub\"",
-          "No match for \"test = ::test\"",
-          "No match for \"test/test = :/test:/\"",
-          "No match for \"::test/test/\""
+          {
+            "message": "No match for \"::abc\""
+          },
+          {
+            "message": "No match for \"a/b = :/b/c/*\""
+          },
+          {
+            "message": "No match for \"c/sub = :/sub\""
+          },
+          {
+            "message": "No match for \"test/sub = :/sub\""
+          },
+          {
+            "message": "No match for \"test = ::test\""
+          },
+          {
+            "message": "No match for \"test/test = :/test:/\""
+          },
+          {
+            "message": "No match for \"::test/test/\""
+          }
         ]
       }
     }

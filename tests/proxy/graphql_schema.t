@@ -78,13 +78,12 @@
           {
             "description": null,
             "enumValues": null,
-            "fields": [
+            "fields": null,
+            "inputFields": [
               {
-                "args": [],
-                "deprecationReason": null,
+                "defaultValue": null,
                 "description": null,
-                "isDeprecated": false,
-                "name": "name",
+                "name": "position",
                 "type": {
                   "kind": "NON_NULL",
                   "name": null,
@@ -96,37 +95,23 @@
                 }
               },
               {
-                "args": [
-                  {
-                    "defaultValue": null,
-                    "description": null,
-                    "name": "filter",
-                    "type": {
-                      "kind": "SCALAR",
-                      "name": "String",
-                      "ofType": null
-                    }
-                  }
-                ],
-                "deprecationReason": null,
+                "defaultValue": null,
                 "description": null,
-                "isDeprecated": false,
-                "name": "rev",
+                "name": "text",
                 "type": {
                   "kind": "NON_NULL",
                   "name": null,
                   "ofType": {
-                    "kind": "OBJECT",
-                    "name": "Revision",
+                    "kind": "SCALAR",
+                    "name": "String",
                     "ofType": null
                   }
                 }
               }
             ],
-            "inputFields": null,
-            "interfaces": [],
-            "kind": "OBJECT",
-            "name": "Reference",
+            "interfaces": null,
+            "kind": "INPUT_OBJECT",
+            "name": "MarkerInput",
             "possibleTypes": null
           },
           {
@@ -514,8 +499,8 @@
                     "kind": "NON_NULL",
                     "name": null,
                     "ofType": {
-                      "kind": "SCALAR",
-                      "name": "String",
+                      "kind": "OBJECT",
+                      "name": "Warning",
                       "ofType": null
                     }
                   }
@@ -1188,6 +1173,33 @@
             "enumValues": null,
             "fields": [
               {
+                "args": [],
+                "deprecationReason": null,
+                "description": null,
+                "isDeprecated": false,
+                "name": "message",
+                "type": {
+                  "kind": "NON_NULL",
+                  "name": null,
+                  "ofType": {
+                    "kind": "SCALAR",
+                    "name": "String",
+                    "ofType": null
+                  }
+                }
+              }
+            ],
+            "inputFields": null,
+            "interfaces": [],
+            "kind": "OBJECT",
+            "name": "Warning",
+            "possibleTypes": null
+          },
+          {
+            "description": null,
+            "enumValues": null,
+            "fields": [
+              {
                 "args": [
                   {
                     "defaultValue": null,
@@ -1811,45 +1823,6 @@
           {
             "description": null,
             "enumValues": null,
-            "fields": null,
-            "inputFields": [
-              {
-                "defaultValue": null,
-                "description": null,
-                "name": "position",
-                "type": {
-                  "kind": "NON_NULL",
-                  "name": null,
-                  "ofType": {
-                    "kind": "SCALAR",
-                    "name": "String",
-                    "ofType": null
-                  }
-                }
-              },
-              {
-                "defaultValue": null,
-                "description": null,
-                "name": "text",
-                "type": {
-                  "kind": "NON_NULL",
-                  "name": null,
-                  "ofType": {
-                    "kind": "SCALAR",
-                    "name": "String",
-                    "ofType": null
-                  }
-                }
-              }
-            ],
-            "interfaces": null,
-            "kind": "INPUT_OBJECT",
-            "name": "MarkerInput",
-            "possibleTypes": null
-          },
-          {
-            "description": null,
-            "enumValues": null,
             "fields": [
               {
                 "args": [],
@@ -1948,6 +1921,60 @@
             "interfaces": [],
             "kind": "OBJECT",
             "name": "Repository",
+            "possibleTypes": null
+          },
+          {
+            "description": null,
+            "enumValues": null,
+            "fields": [
+              {
+                "args": [],
+                "deprecationReason": null,
+                "description": null,
+                "isDeprecated": false,
+                "name": "name",
+                "type": {
+                  "kind": "NON_NULL",
+                  "name": null,
+                  "ofType": {
+                    "kind": "SCALAR",
+                    "name": "String",
+                    "ofType": null
+                  }
+                }
+              },
+              {
+                "args": [
+                  {
+                    "defaultValue": null,
+                    "description": null,
+                    "name": "filter",
+                    "type": {
+                      "kind": "SCALAR",
+                      "name": "String",
+                      "ofType": null
+                    }
+                  }
+                ],
+                "deprecationReason": null,
+                "description": null,
+                "isDeprecated": false,
+                "name": "rev",
+                "type": {
+                  "kind": "NON_NULL",
+                  "name": null,
+                  "ofType": {
+                    "kind": "OBJECT",
+                    "name": "Revision",
+                    "ofType": null
+                  }
+                }
+              }
+            ],
+            "inputFields": null,
+            "interfaces": [],
+            "kind": "OBJECT",
+            "name": "Reference",
             "possibleTypes": null
           }
         ]

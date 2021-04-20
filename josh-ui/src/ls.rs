@@ -178,7 +178,7 @@ impl Component for Nav {
                                     {
                                         for warnings.iter().map( |warn| {
                                             html! {
-                                                <li> { warn } </li>
+                                                <li> { &warn.message } </li>
                                             }
                                         })
                                     }
