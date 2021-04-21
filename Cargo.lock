@@ -1087,6 +1087,7 @@ version = "0.15.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4e1330b4b3b2fe7de256fd08738f7fba28ffa574109c834988c28972f0760dbd"
 dependencies = [
+ "anyhow",
  "async-trait",
  "bson",
  "chrono",
@@ -1097,6 +1098,7 @@ dependencies = [
  "indexmap",
  "juniper_codegen",
  "serde",
+ "serde_json",
  "smartstring",
  "static_assertions",
  "url",
