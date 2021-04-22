@@ -78,6 +78,11 @@
         margin: 0.2em;
         font-size: 2em;
         font-weight: bold;
+        color: #cc7f3d;
+    }
+    #filter a {
+        color: #aaaaaa;;
+        text-decoration: none;
     }
     #ref {
         margin-left: 15px;

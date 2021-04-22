@@ -3,7 +3,12 @@ query NavQuery($rev: String!) {
   refs { name }
   workspaces: rev(at: $rev, filter: "::**/workspace.josh") {
     paths: files {
-      dir(relative: "..") { path }
+      dir(relative: "..") {
+        path 
+        rev(filter: ":workspace={path}") { 
+          warnings { message }
+        }
+      }
     }
   }
 }
