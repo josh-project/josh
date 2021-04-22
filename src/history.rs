@@ -207,6 +207,7 @@ pub fn unapply_filter(
     old: git2::Oid,
     new: git2::Oid,
     keep_orphans: bool,
+    reparent_orphans: Option<git2::Oid>,
     amends: &std::collections::HashMap<String, git2::Oid>,
 ) -> JoshResult<UnapplyResult> {
     let mut bm = std::collections::HashMap::new();
@@ -263,13 +264,16 @@ pub fn unapply_filter(
             .map(|x| -> JoshResult<_> { Ok(transaction.repo().find_commit(x?)?) })
             .collect();
 
+        let mut original_parents = original_parents?;
+
+        if let (0, Some(reparent)) = (original_parents.len(), reparent_orphans) {
+            original_parents = vec![transaction.repo().find_commit(reparent)?];
+        }
         tracing::info!(
             "parents: {:?} -> {:?}",
             original_parents,
             filtered_parent_ids
         );
-
-        let original_parents = original_parents?;
 
         let original_parents_refs: Vec<&git2::Commit> = original_parents.iter().collect();
 

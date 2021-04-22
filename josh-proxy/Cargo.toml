@@ -37,6 +37,6 @@ serde_json= "1.0"
 serde= "*"
 rust-crypto = "0.2"
 unindent = "*"
-juniper = "*"
+juniper = {version = "*", features =["expose-test-schema"] }
 url = "*"
 percent-encoding = "*"

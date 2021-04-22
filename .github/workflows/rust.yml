@@ -32,13 +32,15 @@ jobs:
     - uses: actions/checkout@v2
     - name: Check format
       run: cargo fmt -- --check
-    - name: Run Rust tests
-      run: cargo test
+    - name: Run all unit tests
+      run: cargo test --workspace --all
+    - name: Build all targets (libs, binaries, examples, ..)
+      run: cargo build --workspace --all-targets
     - name: Configure environment
       run: |
         export CARGO_TARGET_DIR=`pwd`/target
         git config --global init.defaultBranch master
         git config --global user.email "christian@schilling.de"
         git config --global user.name "christian"
-    - name: Build and run tests
+    - name: Run integration tests
       run: sh run-tests.sh tests/*/*.t
