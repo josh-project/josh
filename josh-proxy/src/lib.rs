@@ -104,6 +104,12 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
                 ))));
             };
 
+        let reparent_orphans = if push_options.contains_key("create") {
+            Some(original_target)
+        } else {
+            None
+        };
+
         let amends = std::collections::HashMap::new();
         //let amends = {
         //    let gerrit_changes = format!(
@@ -139,6 +145,7 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
                 old,
                 new_oid,
                 josh_merge,
+                reparent_orphans,
                 &amends,
             )? {
                 josh::UnapplyResult::Done(rewritten) => {

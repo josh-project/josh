@@ -32,15 +32,14 @@ If the path did not exist previously, the resulting commit will be a root commit
 any history with the ``world.git`` repo.
 This means a normal ``git push`` will be rejected at this point.
 To get correct history, the
-resulting commit needs to be a merge of our newly created workspace history with the history that
-already exists in ``world.git``.
-There is however no way to do this merge locally, because we don't have the data required for this.
+resulting commit needs to be a based on the history that already exists in ``world.git``.
+There is however no way to do this locally, because we don't have the data required for this.
 Also, the resulting tree should contain the contents of ``shared/a`` mapped to ``mod/a`` which
 means it needs to be produced on the server side because we don't have the files to put there.
 
-To accomplish that push with the merge option:
+To accomplish that push with the create option:
 
-    $ git push -o merge origin master
+    $ git push -o create origin master
 
 
 >**Note**: While it is perfectly possible to use Josh without a code review system,

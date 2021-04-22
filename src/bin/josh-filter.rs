@@ -255,6 +255,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
             old,
             new,
             false,
+            None,
             &std::collections::HashMap::new(),
         )? {
             josh::UnapplyResult::Done(rewritten) => {
