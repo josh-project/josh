@@ -436,13 +436,12 @@ $ git commit -m &quot;add workspace&quot;
 any history with the <code>world.git</code> repo.
 This means a normal <code>git push</code> will be rejected at this point.
 To get correct history, the
-resulting commit needs to be a merge of our newly created workspace history with the history that
-already exists in <code>world.git</code>.
-There is however no way to do this merge locally, because we don't have the data required for this.
+resulting commit needs to be a based on the history that already exists in <code>world.git</code>.
+There is however no way to do this locally, because we don't have the data required for this.
 Also, the resulting tree should contain the contents of <code>shared/a</code> mapped to <code>mod/a</code> which
 means it needs to be produced on the server side because we don't have the files to put there.</p>
-<p>To accomplish that push with the merge option:</p>
-<pre><code>$ git push -o merge origin master
+<p>To accomplish that push with the create option:</p>
+<pre><code>$ git push -o create origin master
 </code></pre>
 <blockquote>
 <p><strong>Note</strong>: While it is perfectly possible to use Josh without a code review system,
