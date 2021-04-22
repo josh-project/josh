@@ -16,6 +16,7 @@ use yew_router::{
 };
 
 mod codemirror;
+mod filter;
 mod ls;
 mod nav;
 mod route;
@@ -45,13 +46,19 @@ impl Component for App {
         html! {
             <Router<route::AppRoute>
                 render = Router::render(|switch: route::AppRoute| {
-                    match &switch {
-                        route::AppRoute::Browse(repo, r, f, p) => html!{
-                            <>
-                            <nav::Nav route=switch.clone()/>
-                            <ls::Nav route=switch.clone()/>
-                            </>
+                    html!{<>
+                        <nav::Nav route=switch.clone()/>
+                        {
+                            match &switch {
+                                route::AppRoute::Browse(repo, r, f, p) => html!{
+                                    <ls::Nav route=switch.clone()/>
+                                },
+                                route::AppRoute::Filter(repo, r, f) => html!{
+                                    <filter::Nav route=switch.clone()/>
+                                },
+                            }
                         }
+                        </>
                     }
                 })
             />

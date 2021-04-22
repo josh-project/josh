@@ -10,8 +10,6 @@ pub struct NavQuery;
 pub enum Msg {
     CallServer,
     ReceiveResponse(Result<nav_query::ResponseData, anyhow::Error>),
-    ChangeRef(yew::events::ChangeData),
-    ChangePath(yew::events::ChangeData),
 }
 
 #[derive(Properties, Clone, PartialEq)]
@@ -21,7 +19,7 @@ pub struct Props {
 
 pub struct Nav {
     link: ComponentLink<Self>,
-    router: RouteAgentDispatcher,
+    _router: RouteAgentDispatcher,
     props: Props,
     fetch_task: Option<FetchTask>,
     data: nav_query::ResponseData,
@@ -52,7 +50,7 @@ impl Component for Nav {
             props: props,
             error: None,
             fetch_task: None,
-            router: RouteAgentDispatcher::new(),
+            _router: RouteAgentDispatcher::new(),
         }
     }
 
@@ -96,16 +94,6 @@ impl Component for Nav {
                 self.fetch_task = None;
                 true
             }
-            Self::Message::ChangeRef(yew::events::ChangeData::Select(val)) => {
-                self.router.send(RouteRequest::ChangeRoute(Route::from(
-                    self.props.route.with_rev(&val.value()),
-                )));
-                true
-            }
-            _ => {
-                ConsoleService::log("???");
-                false
-            }
         }
     }
 
@@ -119,60 +107,28 @@ impl Component for Nav {
 
     fn view(&self) -> Html {
         let props = &self.props;
-        let r_cb = self
-            .link
-            .callback(|val: yew::events::ChangeData| Self::Message::ChangeRef(val));
-        html! {
-            <div class="h">
-                <span id="repo">{ &props.route.repo() }</span>
-                <span id="filter">
-                <AppAnchor route=props.route.edit_filter()>
-                {props.route.filter()}
-                </AppAnchor>
-                </span>
-                <br/>
-                <span class="branch">
-                <select id="ref" onchange=r_cb>
-                    {
-                        for self.data.refs.iter().map(|x| html! {
-                            <option selected=&x.name == &props.route.rev() value=&x.name>
-                            { &x.name } </option>
-                        })
-                    }{
-                        if !props.route.rev().starts_with("ref") { html! {
-                            <option selected=true value=&props.route.rev()>
-                                { &props.route.rev() }
-                            </option>
-                        }} else { html!{} }
-                    }
-                </select>
-                </span>
-                <br/>
-                {
-                    if let route::AppRoute::Browse(_,_,_,_) = props.route {
-                        html!{
-                <div id="breadcrumbs">
-                <route::AppAnchor route=props.route.with_path("")><b>{"$ /"}</b></route::AppAnchor>
-                {
-                    for props.route.breadcrumbs().iter().rev().enumerate().map(|(i, b)| {
-                        html! {
-                            <>{ if i != 0 {"/"} else {""} }<route::AppAnchor route=b>{ b.filename() }</route::AppAnchor></>
-                        }
-                    })
-                }
-                </div>
-                        }
-                    }
-                    else { html!{}}
-                }
+        if self.fetch_task.is_some() {
+            html! { <div class="loader"> { "Loading..." } </div> }
+        } else {
+            html! { <div id="pathlist" class="dirmode loaded"> {
+                if let Some(workspaces) = &self.data.workspaces.paths { if workspaces.len() != 0 {
+                    html!{<div class="column">
+                        <h2> { "Workspaces" } </h2>
+                        <table class="pathlist">
+                            <tr><td><AppAnchor classes="path" route=props.route.with_filter(":/")>{":/"}</AppAnchor></td></tr>
+                        { for workspaces.iter().map(|w| { html! {
+                            <AppAnchor classes="path" route=props.route.with_filter(&(":workspace=".to_string() + &w.dir.path))> <tr> <td>
+                            {
+                                    w.dir.path.clone()
+                            }
+                            </td> </tr> </AppAnchor>
+                        }})} </table>
+                    </div>}
+                } else { html!{} }
+                } else { html!{} }
+            }
             </div>
+            }
         }
     }
-}
-
-fn ws(path: &str) -> String {
-    if path.starts_with(":") {
-        return path.to_string();
-    }
-    format!(":workspace={}", path)
 }
