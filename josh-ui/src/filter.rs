@@ -1,7 +1,6 @@
 use super::*;
 
 use graphql_client::GraphQLQuery;
-use route::AppAnchor;
 
 #[derive(GraphQLQuery)]
 #[graphql(schema_path = "josh_api.json", query_path = "nav_query.graphql")]
@@ -110,25 +109,20 @@ impl Component for Nav {
         if self.fetch_task.is_some() {
             html! { <div class="loader"> { "Loading..." } </div> }
         } else {
-            html! { <div id="pathlist" class="dirmode loaded"> {
-                if let Some(workspaces) = &self.data.workspaces.paths { if workspaces.len() != 0 {
-                    html!{<div class="column">
-                        <h2> { "Workspaces" } </h2>
-                        <table class="pathlist">
-                            <tr><td><AppAnchor classes="path" route=props.route.with_filter(":/")>{":/"}</AppAnchor></td></tr>
-                        { for workspaces.iter().map(|w| { html! {
-                            <AppAnchor classes="path" route=props.route.with_filter(&(":workspace=".to_string() + &w.dir.path))> <tr> <td>
-                            {
-                                    w.dir.path.clone()
-                            }
-                            </td> </tr> </AppAnchor>
-                        }})} </table>
-                    </div>}
-                } else { html!{} }
-                } else { html!{} }
-            }
-            </div>
-            }
+            let mut l = vec![(props.route.with_filter(":/"), html! {{":/"}})];
+            if let Some(workspaces) = &self.data.workspaces.paths {
+                if workspaces.len() != 0 {
+                    l.extend(workspaces.iter().map(|w| {
+                        (
+                            props
+                                .route
+                                .with_filter(&(":workspace=".to_string() + &w.dir.path)),
+                            html! {{w.dir.path.as_str()}},
+                        )
+                    }));
+                }
+            };
+            patterns::list(l)
         }
     }
 }
