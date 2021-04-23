@@ -19,6 +19,7 @@ mod codemirror;
 mod filter;
 mod ls;
 mod nav;
+mod patterns;
 mod route;
 
 pub struct App {

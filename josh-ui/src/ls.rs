@@ -1,7 +1,6 @@
 use super::*;
 
 use graphql_client::GraphQLQuery;
-use route::AppAnchor;
 
 #[derive(GraphQLQuery)]
 #[graphql(schema_path = "josh_api.json", query_path = "nav_query.graphql")]
@@ -120,50 +119,27 @@ impl Component for Nav {
                     html! { <>
                         {
                             html! { <div id="pathlist" class="dirmode loaded"> {
-                                if let Some(dirs) = &self.data.rev.dirs { if dirs.len() != 0 {
+                                html_if_let!(Some(dirs), &self.data.rev.dirs, { html_if!(dirs.len() != 0, {
                                     html!{<div class="column">
                                         <h2> { "Directories" } </h2>
-                                        <table class="pathlist"> { for dirs.iter().map(|d| { html! {
-                                            <AppAnchor classes="path" route=props.route.with_path(&d.path)> <tr> <td>
-                                            {
-                                                if let Some(d) = std::path::Path::new(&d.path).file_name() {
-                                                    d.to_string_lossy().to_string()
-                                                } else {
-                                                    d.path.clone()
-                                                }
-                                            }{ "/" }
-                                            {
-                                                if d.meta.count != 0 {
-                                                    html!{ <span class="marker"> { d.meta.count } </span> }
-                                                }
-                                                else { html!{} }
-                                            }
-                                            </td> </tr> </AppAnchor>
-                                        }})} </table>
+                                        {
+                                            patterns::list(dirs.iter().map(|d| {
+                                                (props.route.with_path(&d.path),
+                                                patterns::path_with_note(&(d.path.to_string()), d.meta.count,Some("/")))
+                                            }).collect())
+                                        }
                                     </div>}
-                                } else { html!{} }
-                                } else { html!{} }
+                                })})
                             }{
                                 if let Some(files) = &self.data.rev.files { if files.len() != 0 {
                                     html!{<div class="column">
                                         <h2> { "Files" } </h2>
-                                        <table class="pathlist"> { for files.iter().map(|f| { html! {
-                                            <AppAnchor classes="path" route=props.route.with_path(&f.path)> <tr><td>
-                                            {
-                                                if let Some(f) = std::path::Path::new(&f.path).file_name() {
-                                                    f.to_string_lossy().to_string()
-                                                } else {
-                                                    f.path.clone()
-                                                }
-                                            }
-                                            {
-                                                if f.meta.count != 0 {
-                                                    html!{ <span class="marker"> { f.meta.count } </span> }
-                                                }
-                                                else { html!{} }
-                                            }
-                                            </td></tr> </AppAnchor>
-                                        }})} </table>
+                                        {
+                                            patterns::list(files.iter().map(|f| {
+                                                (props.route.with_path(&f.path),
+                                                patterns::path_with_note(&f.path, f.meta.count,None))
+                                            }).collect())
+                                        }
                                     </div>}
                                 } else { html!{} }
                                 } else { html!{} }
