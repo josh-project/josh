@@ -78,45 +78,6 @@
           {
             "description": null,
             "enumValues": null,
-            "fields": null,
-            "inputFields": [
-              {
-                "defaultValue": null,
-                "description": null,
-                "name": "position",
-                "type": {
-                  "kind": "NON_NULL",
-                  "name": null,
-                  "ofType": {
-                    "kind": "SCALAR",
-                    "name": "String",
-                    "ofType": null
-                  }
-                }
-              },
-              {
-                "defaultValue": null,
-                "description": null,
-                "name": "text",
-                "type": {
-                  "kind": "NON_NULL",
-                  "name": null,
-                  "ofType": {
-                    "kind": "SCALAR",
-                    "name": "String",
-                    "ofType": null
-                  }
-                }
-              }
-            ],
-            "interfaces": null,
-            "kind": "INPUT_OBJECT",
-            "name": "MarkerInput",
-            "possibleTypes": null
-          },
-          {
-            "description": null,
-            "enumValues": null,
             "fields": [
               {
                 "args": [
@@ -147,6 +108,28 @@
                         "ofType": null
                       }
                     }
+                  },
+                  {
+                    "defaultValue": null,
+                    "description": null,
+                    "name": "add",
+                    "type": {
+                      "kind": "NON_NULL",
+                      "name": null,
+                      "ofType": {
+                        "kind": "LIST",
+                        "name": null,
+                        "ofType": {
+                          "kind": "NON_NULL",
+                          "name": null,
+                          "ofType": {
+                            "kind": "INPUT_OBJECT",
+                            "name": "MarkersInput",
+                            "ofType": null
+                          }
+                        }
+                      }
+                    }
                   }
                 ],
                 "deprecationReason": null,
@@ -157,8 +140,8 @@
                   "kind": "NON_NULL",
                   "name": null,
                   "ofType": {
-                    "kind": "OBJECT",
-                    "name": "MarkersMut",
+                    "kind": "SCALAR",
+                    "name": "Boolean",
                     "ofType": null
                   }
                 }
@@ -639,7 +622,7 @@
                 "deprecationReason": null,
                 "description": null,
                 "isDeprecated": false,
-                "name": "list",
+                "name": "data",
                 "type": {
                   "kind": "NON_NULL",
                   "name": null,
@@ -651,7 +634,7 @@
                       "name": null,
                       "ofType": {
                         "kind": "OBJECT",
-                        "name": "Marker",
+                        "name": "Document",
                         "ofType": null
                       }
                     }
@@ -811,7 +794,7 @@
                 "deprecationReason": null,
                 "description": null,
                 "isDeprecated": false,
-                "name": "markers",
+                "name": "meta",
                 "type": {
                   "kind": "NON_NULL",
                   "name": null,
@@ -1143,7 +1126,7 @@
               {
                 "defaultValue": null,
                 "description": null,
-                "name": "list",
+                "name": "data",
                 "type": {
                   "kind": "NON_NULL",
                   "name": null,
@@ -1154,8 +1137,8 @@
                       "kind": "NON_NULL",
                       "name": null,
                       "ofType": {
-                        "kind": "INPUT_OBJECT",
-                        "name": "MarkerInput",
+                        "kind": "SCALAR",
+                        "name": "String",
                         "ofType": null
                       }
                     }
@@ -1355,6 +1338,22 @@
                   "name": "Document",
                   "ofType": null
                 }
+              },
+              {
+                "args": [],
+                "deprecationReason": null,
+                "description": null,
+                "isDeprecated": false,
+                "name": "id",
+                "type": {
+                  "kind": "NON_NULL",
+                  "name": null,
+                  "ofType": {
+                    "kind": "SCALAR",
+                    "name": "String",
+                    "ofType": null
+                  }
+                }
               }
             ],
             "inputFields": null,
@@ -1537,99 +1536,6 @@
             "interfaces": [],
             "kind": "OBJECT",
             "name": "__EnumValue",
-            "possibleTypes": null
-          },
-          {
-            "description": null,
-            "enumValues": null,
-            "fields": [
-              {
-                "args": [
-                  {
-                    "defaultValue": null,
-                    "description": null,
-                    "name": "markers",
-                    "type": {
-                      "kind": "NON_NULL",
-                      "name": null,
-                      "ofType": {
-                        "kind": "LIST",
-                        "name": null,
-                        "ofType": {
-                          "kind": "NON_NULL",
-                          "name": null,
-                          "ofType": {
-                            "kind": "INPUT_OBJECT",
-                            "name": "MarkersInput",
-                            "ofType": null
-                          }
-                        }
-                      }
-                    }
-                  }
-                ],
-                "deprecationReason": null,
-                "description": null,
-                "isDeprecated": false,
-                "name": "add",
-                "type": {
-                  "kind": "NON_NULL",
-                  "name": null,
-                  "ofType": {
-                    "kind": "SCALAR",
-                    "name": "Boolean",
-                    "ofType": null
-                  }
-                }
-              }
-            ],
-            "inputFields": null,
-            "interfaces": [],
-            "kind": "OBJECT",
-            "name": "MarkersMut",
-            "possibleTypes": null
-          },
-          {
-            "description": null,
-            "enumValues": null,
-            "fields": [
-              {
-                "args": [],
-                "deprecationReason": null,
-                "description": null,
-                "isDeprecated": false,
-                "name": "position",
-                "type": {
-                  "kind": "NON_NULL",
-                  "name": null,
-                  "ofType": {
-                    "kind": "SCALAR",
-                    "name": "String",
-                    "ofType": null
-                  }
-                }
-              },
-              {
-                "args": [],
-                "deprecationReason": null,
-                "description": null,
-                "isDeprecated": false,
-                "name": "text",
-                "type": {
-                  "kind": "NON_NULL",
-                  "name": null,
-                  "ofType": {
-                    "kind": "SCALAR",
-                    "name": "String",
-                    "ofType": null
-                  }
-                }
-              }
-            ],
-            "inputFields": null,
-            "interfaces": [],
-            "kind": "OBJECT",
-            "name": "Marker",
             "possibleTypes": null
           },
           {
