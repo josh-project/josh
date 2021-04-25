@@ -112,8 +112,8 @@ impl Component for Nav {
                 else if let Some(file) = &self.data.rev.file {
                     html! {<codemirror::Codemirror
                         text=file.text.as_ref().unwrap_or(&"".to_string())
-                        marker_pos=file.markers.list.iter().map(|x| x.position.clone()).collect::<Vec<String>>()
-                        marker_text=file.markers.list.iter().map(|x| x.text.clone()).collect::<Vec<String>>()
+                        marker_pos=file.meta.data.iter().map(|x| x.position.clone().unwrap_or_default()).collect::<Vec<String>>()
+                        marker_text=file.meta.data.iter().map(|x| x.text.clone().unwrap_or_default()).collect::<Vec<String>>()
                     />}
                 } else {
                     html! { <>
@@ -132,8 +132,8 @@ impl Component for Nav {
                                                 }
                                             }{ "/" }
                                             {
-                                                if d.markers.count != 0 {
-                                                    html!{ <span class="marker"> { d.markers.count } </span> }
+                                                if d.meta.count != 0 {
+                                                    html!{ <span class="marker"> { d.meta.count } </span> }
                                                 }
                                                 else { html!{} }
                                             }
@@ -156,8 +156,8 @@ impl Component for Nav {
                                                 }
                                             }
                                             {
-                                                if f.markers.count != 0 {
-                                                    html!{ <span class="marker"> { f.markers.count } </span> }
+                                                if f.meta.count != 0 {
+                                                    html!{ <span class="marker"> { f.meta.count } </span> }
                                                 }
                                                 else { html!{} }
                                             }

@@ -264,7 +264,7 @@ struct Markers {
 
 #[graphql_object(context = Context)]
 impl Markers {
-    fn list(&self, context: &Context) -> FieldResult<Vec<Marker>> {
+    fn data(&self, context: &Context) -> FieldResult<Vec<Document>> {
         let transaction = context.transaction.lock()?;
 
         let refname = transaction.refname("refs/josh/meta");
@@ -298,10 +298,17 @@ impl Markers {
             .split("\n")
             .filter(|x| *x != "")
             .map(|x| {
-                let mut s = x.splitn(2, ": ");
-                Marker {
-                    position: s.next().unwrap_or("").to_owned(),
-                    text: s.next().unwrap_or("").to_owned(),
+                let mut s = x.splitn(2, ":");
+                Document {
+                    id: s
+                        .next()
+                        .and_then(|x| git2::Oid::from_str(x).ok())
+                        .unwrap_or(git2::Oid::zero()),
+                    value: s
+                        .next()
+                        .and_then(|x| serde_json::from_str::<serde_json::Value>(x).ok())
+                        .unwrap_or_default()
+                        .to_owned(),
                 }
             })
             .collect::<Vec<_>>();
@@ -364,7 +371,7 @@ impl Path {
         })
     }
 
-    fn markers(&self, topic: String) -> Markers {
+    fn meta(&self, topic: String) -> Markers {
         Markers {
             path: self.path.clone(),
             commit_id: self.commit_id,
@@ -417,7 +424,10 @@ impl Path {
         let value = toml::de::from_str::<serde_json::Value>(std::str::from_utf8(blob.content())?)
             .unwrap_or(json!({}));
 
-        Ok(Document { value: value })
+        Ok(Document {
+            id: id,
+            value: value,
+        })
     }
 
     fn json(&self, context: &Context) -> FieldResult<Document> {
@@ -431,7 +441,10 @@ impl Path {
         let value = serde_json::from_str::<serde_json::Value>(std::str::from_utf8(blob.content())?)
             .unwrap_or(json!({}));
 
-        Ok(Document { value: value })
+        Ok(Document {
+            id: id,
+            value: value,
+        })
     }
 
     fn yaml(&self, context: &Context) -> FieldResult<Document> {
@@ -445,11 +458,15 @@ impl Path {
         let value = serde_yaml::from_str::<serde_json::Value>(std::str::from_utf8(blob.content())?)
             .unwrap_or(json!({}));
 
-        Ok(Document { value: value })
+        Ok(Document {
+            id: id,
+            value: value,
+        })
     }
 }
 
 pub struct Document {
+    id: git2::Oid,
     value: serde_json::Value,
 }
 
@@ -497,7 +514,10 @@ impl Document {
         let mut v = vec![];
         if let serde_json::Value::Array(a) = &self.pointer(at) {
             for x in a.iter() {
-                v.push(Document { value: x.clone() });
+                v.push(Document {
+                    id: git2::Oid::zero(),
+                    value: x.clone(),
+                });
             }
         } else {
             return None;
@@ -507,8 +527,13 @@ impl Document {
 
     fn value(&self, at: String) -> Option<Document> {
         self.value.pointer(&at).map(|x| Document {
+            id: git2::Oid::zero(),
             value: x.to_owned(),
         })
+    }
+
+    fn id() -> String {
+        self.id.to_string()
     }
 }
 
@@ -553,17 +578,17 @@ pub struct RepositoryMut {}
 
 fn marker_path(commit: &str, topic: &str) -> std::path::PathBuf {
     std::path::Path::new(topic)
-        .join("markers")
-        .join(&commit[..1])
-        .join(&commit[1..3])
-        .join(&commit[3..6])
+        .join("~")
+        .join(&commit[..2])
+        .join(&commit[2..5])
+        .join(&commit[5..9])
         .join(&commit)
 }
 
 #[derive(juniper::GraphQLInputObject)]
 struct MarkersInput {
     path: String,
-    list: Vec<MarkerInput>,
+    data: Vec<String>,
 }
 
 #[derive(juniper::GraphQLInputObject)]
@@ -572,26 +597,28 @@ struct MarkerInput {
     text: String,
 }
 
-#[derive(juniper::GraphQLObject)]
-struct Marker {
-    position: String,
-    text: String,
-}
-
-pub struct MarkersMut {
-    commit: String,
-    topic: String,
+fn format_marker(input: &String) -> JoshResult<String> {
+    let value = serde_json::from_str::<serde_json::Value>(&input)?;
+    let line = serde_json::to_string(&value)?;
+    let hash = git2::Oid::hash_object(git2::ObjectType::Blob, line.as_bytes())?;
+    Ok(format!("{}:{}", &hash, &line))
 }
 
 #[graphql_object(context = Context)]
-impl MarkersMut {
-    fn add(&self, context: &Context, markers: Vec<MarkersInput>) -> FieldResult<bool> {
+impl RepositoryMut {
+    fn meta(
+        &self,
+        commit: String,
+        topic: String,
+        add: Vec<MarkersInput>,
+        context: &Context,
+    ) -> FieldResult<bool> {
         let transaction = context.transaction.lock()?;
         let rev = transaction.refname("refs/josh/meta");
 
         transaction
             .repo()
-            .find_commit(git2::Oid::from_str(&self.commit)?)?;
+            .find_commit(git2::Oid::from_str(&commit)?)?;
 
         let r = transaction.repo().revparse_single(&rev);
         let (tree, parent) = if let Ok(r) = r {
@@ -604,9 +631,9 @@ impl MarkersMut {
 
         let mut tree = tree;
 
-        for mm in markers {
+        for mm in add {
             let path = mm.path;
-            let path = &marker_path(&self.commit, &self.topic).join(&path);
+            let path = &marker_path(&commit, &topic).join(&path);
             let prev = if let Ok(e) = tree.get_path(&path) {
                 let blob = transaction.repo().find_blob(e.id())?;
                 std::str::from_utf8(blob.content())?.to_owned()
@@ -615,10 +642,10 @@ impl MarkersMut {
             };
 
             let mm = mm
-                .list
+                .data
                 .iter()
-                .map(|x| format!("{}: {}", &x.position, &x.text))
-                .collect::<Vec<String>>();
+                .map(format_marker)
+                .collect::<JoshResult<Vec<_>>>()?;
 
             let mut lines = prev.split("\n").filter(|x| *x != "").collect::<Vec<_>>();
             for marker in mm.iter() {
@@ -646,16 +673,6 @@ impl MarkersMut {
         )?;
 
         Ok(true)
-    }
-}
-
-#[graphql_object(context = Context)]
-impl RepositoryMut {
-    fn meta(&self, commit: String, topic: String) -> FieldResult<MarkersMut> {
-        Ok(MarkersMut {
-            commit: commit,
-            topic: topic,
-        })
     }
 }
 

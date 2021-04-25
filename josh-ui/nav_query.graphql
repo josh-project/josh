@@ -20,14 +20,14 @@ query PathQuery($rev: String!, $filter: String!, $path: String!) {
     }
     file(path:$path) {
       text
-      markers(topic: "findings") {
-        list {
-          position
-          text
+      meta(topic: "findings") {
+        data {
+          position: string(at: "/location")
+          text: string(at: "/message")
         }
       }
     }
-    dirs(at:$path,depth: 1) { path, markers(topic:"findings") { count } }
-    files(at:$path,depth: 1) { path, markers(topic:"findings") { count } }
+    dirs(at:$path,depth: 1) { path, meta(topic:"findings") { count } }
+    files(at:$path,depth: 1) { path, meta(topic:"findings") { count } }
   }
 }

@@ -169,10 +169,3 @@ impl Component for Nav {
         }
     }
 }
-
-fn ws(path: &str) -> String {
-    if path.starts_with(":") {
-        return path.to_string();
-    }
-    format!(":workspace={}", path)
-}
