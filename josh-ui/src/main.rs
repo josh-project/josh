@@ -49,13 +49,14 @@ impl Component for App {
                     html!{<>
                         <nav::Nav route=switch.clone()/>
                         {
-                            match &switch {
-                                route::AppRoute::Browse(repo, r, f, p, m) => html!{
+                            match switch.mode() {
+                                "browse" => html!{
                                     <ls::Nav route=switch.clone()/>
                                 },
-                                route::AppRoute::Filter(repo, r, f) => html!{
+                                "filter" => html!{
                                     <filter::Nav route=switch.clone()/>
                                 },
+                                _ => html!{}
                             }
                         }
                         </>
