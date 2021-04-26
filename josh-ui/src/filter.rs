@@ -113,11 +113,15 @@ impl Component for Nav {
             if let Some(workspaces) = &self.data.workspaces.paths {
                 if workspaces.len() != 0 {
                     l.extend(workspaces.iter().map(|w| {
+                        let mut num_warns = 0;
+                        if let Some(warnings) =  &w.dir.rev.warnings {
+                            num_warns = warnings.len() as i64;
+                        }
                         (
                             props
                                 .route
                                 .with_filter(&(":workspace=".to_string() + &w.dir.path)),
-                            html! {{w.dir.path.as_str()}},
+                            patterns::path_with_note(&w.dir.path.as_str(),num_warns, None)
                         )
                     }));
                 }
