@@ -1,5 +1,6 @@
 use super::*;
 
+use crate::route::AppRoute;
 use graphql_client::GraphQLQuery;
 
 #[derive(GraphQLQuery)]
@@ -122,24 +123,26 @@ impl Component for Nav {
                                 html_if_let!(Some(dirs), &self.data.rev.dirs, { html_if!(dirs.len() != 0, {
                                     html!{<div class="column">
                                         <h2> { "Directories" } </h2>
-                                        {
-                                            patterns::list(dirs.iter().map(|d| {
+                                        <patterns::List route=self.props.route.clone() list={
+                                            dirs.iter().map(|d| {
                                                 (props.route.with_path(&d.path),
-                                                patterns::path_with_note(&(d.path.to_string()), d.meta.count,Some("/")))
-                                            }).collect())
-                                        }
+                                                d.path.to_string(),
+                                                patterns::Warnings { josh: 0, misra:d.meta.count})
+                                            }).collect::<Vec<(AppRoute, String, patterns::Warnings)>>()
+                                        }/>
                                     </div>}
                                 })})
                             }{
                                 if let Some(files) = &self.data.rev.files { if files.len() != 0 {
                                     html!{<div class="column">
                                         <h2> { "Files" } </h2>
-                                        {
-                                            patterns::list(files.iter().map(|f| {
+                                        <patterns::List route=self.props.route.clone() list={
+                                            files.iter().map(|f| {
                                                 (props.route.with_path(&f.path),
-                                                patterns::path_with_note(&f.path, f.meta.count,None))
-                                            }).collect())
-                                        }
+                                                f.path.to_string(),
+                                                patterns::Warnings { josh: 0, misra:f.meta.count})
+                                            }).collect::<Vec<(AppRoute, String, patterns::Warnings)>>()
+                                        }/>
                                     </div>}
                                 } else { html!{} }
                                 } else { html!{} }

@@ -155,7 +155,8 @@
         width: 100%;
     }
 
-    .marker {
+    .marker,
+    .josh_marker {
         background-color: #f7ff7d;
         color: black;
         padding: 3px;
@@ -164,6 +165,10 @@
         font-weight: bold;
         margin: 7px;
         border-radius: 6px;
+    }
+
+    .josh_marker {
+        color: green;
     }
 
     table.pathlist {
