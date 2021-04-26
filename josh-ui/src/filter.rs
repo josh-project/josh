@@ -109,24 +109,32 @@ impl Component for Nav {
         if self.fetch_task.is_some() {
             html! { <div class="loader"> { "Loading..." } </div> }
         } else {
-            let mut l = vec![(props.route.with_filter(":/"), html! {{":/"}})];
+            let mut l = vec![(
+                props.route.with_filter(":/"),
+                ":/".to_string(),
+                patterns::Warnings { misra: 0, josh: 0 },
+            )];
             if let Some(workspaces) = &self.data.workspaces.paths {
                 if workspaces.len() != 0 {
                     l.extend(workspaces.iter().map(|w| {
                         let mut num_warns = 0;
-                        if let Some(warnings) =  &w.dir.rev.warnings {
+                        if let Some(warnings) = &w.dir.rev.warnings {
                             num_warns = warnings.len() as i64;
                         }
                         (
                             props
                                 .route
                                 .with_filter(&(":workspace=".to_string() + &w.dir.path)),
-                            patterns::path_with_note(&w.dir.path.as_str(),num_warns, None)
+                            w.dir.path.to_string(),
+                            patterns::Warnings {
+                                misra: 0,
+                                josh: num_warns,
+                            },
                         )
                     }));
                 }
             };
-            patterns::list(l)
+            html! {<patterns::List route=self.props.route.clone() list=l />}
         }
     }
 }
