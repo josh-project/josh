@@ -1,5 +1,5 @@
 
-query NavQuery($rev: String!) {
+query NavQuery($rev: String!, $meta: String!) {
   refs { name }
   workspaces: rev(at: $rev, filter: "::**/workspace.josh") {
     paths: files {
@@ -7,6 +7,9 @@ query NavQuery($rev: String!) {
         path
         rev(filter: ":workspace={path}") { 
           warnings { message }
+          dir {
+            meta(topic:$meta) { count }
+          }
         }
       }
     }

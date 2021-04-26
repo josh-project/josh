@@ -41,7 +41,10 @@ impl Component for Nav {
                     paths: Some(vec![nav_query::NavQueryWorkspacesPaths {
                         dir: nav_query::NavQueryWorkspacesPathsDir {
                             path: props.route.filter(),
-                            rev: nav_query::NavQueryWorkspacesPathsDirRev { warnings: None },
+                            rev: nav_query::NavQueryWorkspacesPathsDirRev {
+                                warnings: None,
+                                dir: None,
+                            },
                         },
                     }]),
                 },
@@ -58,6 +61,7 @@ impl Component for Nav {
             Self::Message::CallServer => {
                 let query = NavQuery::build_query(nav_query::Variables {
                     rev: self.props.route.rev(),
+                    meta: self.props.route.meta(),
                 });
                 let request = Request::post(format!("/~/graphql/{}.git", self.props.route.repo()))
                     .header("Content-Type", "application/json")
@@ -118,8 +122,12 @@ impl Component for Nav {
                 if workspaces.len() != 0 {
                     l.extend(workspaces.iter().map(|w| {
                         let mut num_warns = 0;
+                        let mut num_misra = 0;
                         if let Some(warnings) = &w.dir.rev.warnings {
                             num_warns = warnings.len() as i64;
+                        }
+                        if let Some(misra) = &w.dir.rev.dir {
+                            num_misra = misra.meta.count;
                         }
                         (
                             props
@@ -127,7 +135,7 @@ impl Component for Nav {
                                 .with_filter(&(":workspace=".to_string() + &w.dir.path)),
                             w.dir.path.to_string(),
                             patterns::Warnings {
-                                misra: 0,
+                                misra: num_misra,
                                 josh: num_warns,
                             },
                         )
