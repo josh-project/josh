@@ -466,6 +466,29 @@
                 }
               },
               {
+                "args": [
+                  {
+                    "defaultValue": null,
+                    "description": null,
+                    "name": "path",
+                    "type": {
+                      "kind": "SCALAR",
+                      "name": "String",
+                      "ofType": null
+                    }
+                  }
+                ],
+                "deprecationReason": null,
+                "description": null,
+                "isDeprecated": false,
+                "name": "dir",
+                "type": {
+                  "kind": "OBJECT",
+                  "name": "Path",
+                  "ofType": null
+                }
+              },
+              {
                 "args": [],
                 "deprecationReason": null,
                 "description": null,
