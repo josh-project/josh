@@ -44,7 +44,10 @@ impl Component for Nav {
                     paths: Some(vec![nav_query::NavQueryWorkspacesPaths {
                         dir: nav_query::NavQueryWorkspacesPathsDir {
                             path: props.route.filter(),
-                            rev: nav_query::NavQueryWorkspacesPathsDirRev { warnings: None },
+                            rev: nav_query::NavQueryWorkspacesPathsDirRev {
+                                warnings: None,
+                                dir: None,
+                            },
                         },
                     }]),
                 },
@@ -61,6 +64,7 @@ impl Component for Nav {
             Self::Message::CallServer => {
                 let query = NavQuery::build_query(nav_query::Variables {
                     rev: self.props.route.rev(),
+                    meta: self.props.route.meta(),
                 });
                 let request = Request::post(format!("/~/graphql/{}.git", self.props.route.repo()))
                     .header("Content-Type", "application/json")
