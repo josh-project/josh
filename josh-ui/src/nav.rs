@@ -149,7 +149,7 @@ impl Component for Nav {
                 </span>
                 <br/>
                 {
-                    if let route::AppRoute::Browse(_,_,_,_) = props.route {
+                    if let route::AppRoute::Browse(_,_,_,_,_) = props.route {
                         html!{
                 <div id="breadcrumbs">
                 <route::AppAnchor route=props.route.with_path("")><b>{"$ /"}</b></route::AppAnchor>

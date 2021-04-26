@@ -50,7 +50,7 @@ impl Component for App {
                         <nav::Nav route=switch.clone()/>
                         {
                             match &switch {
-                                route::AppRoute::Browse(repo, r, f, p) => html!{
+                                route::AppRoute::Browse(repo, r, f, p, m) => html!{
                                     <ls::Nav route=switch.clone()/>
                                 },
                                 route::AppRoute::Filter(repo, r, f) => html!{

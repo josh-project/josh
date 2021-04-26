@@ -56,6 +56,7 @@ impl Component for Nav {
                     rev: self.props.route.rev(),
                     filter: self.props.route.filter(),
                     path: self.props.route.path(),
+                    meta: self.props.route.meta(),
                 });
                 let request = Request::post(format!("/~/graphql/{}.git", self.props.route.repo()))
                     .header("Content-Type", "application/json")
@@ -112,7 +113,7 @@ impl Component for Nav {
                 else if let Some(file) = &self.data.rev.file {
                     html! {<codemirror::Codemirror
                         text=file.text.as_ref().unwrap_or(&"".to_string())
-                        marker_pos=file.meta.data.iter().map(|x| x.position.clone().unwrap_or_default()).collect::<Vec<String>>()
+                        marker_pos=file.meta.data.iter().map(|x| x.position.clone().unwrap_or_default()).collect::<Vec<_>>()
                         marker_text=file.meta.data.iter().map(|x| x.text.clone().unwrap_or_default()).collect::<Vec<String>>()
                     />}
                 } else {
