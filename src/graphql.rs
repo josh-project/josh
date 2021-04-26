@@ -206,6 +206,36 @@ impl Revision {
         }
     }
 
+    fn dir(&self, path: Option<String>, context: &Context) -> FieldResult<Option<Path>> {
+        let path = path.unwrap_or_default();
+        let transaction = context.transaction.lock()?;
+        let tree = transaction.repo().find_commit(self.commit_id)?.tree()?;
+
+        let tree = filter::apply(&transaction, self.filter, tree)?;
+
+        let path = std::path::Path::new(&path).to_owned();
+
+        if path == std::path::Path::new("") {
+            return Ok(Some(Path {
+                path: path,
+                commit_id: self.commit_id,
+                filter: self.filter,
+                tree: tree.id(),
+            }));
+        }
+
+        if let Some(git2::ObjectType::Tree) = tree.get_path(&path)?.kind() {
+            Ok(Some(Path {
+                path: path,
+                commit_id: self.commit_id,
+                filter: self.filter,
+                tree: tree.id(),
+            }))
+        } else {
+            Err(josh_error("not a tree"))?
+        }
+    }
+
     fn warnings(&self, context: &Context) -> FieldResult<Option<Vec<Warning>>> {
         let transaction = context.transaction.lock()?;
         let commit = transaction.repo().find_commit(self.commit_id)?;
@@ -351,6 +381,8 @@ impl Markers {
         };
         if let Ok(p) = mtree.get_path(&self.path) {
             return Ok(linecount(transaction.repo(), p.id()) as i32);
+        } else if self.path == std::path::Path::new("") {
+            return Ok(linecount(transaction.repo(), mtree.id()) as i32);
         }
         return Ok(0);
     }

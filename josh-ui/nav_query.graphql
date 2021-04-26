@@ -4,7 +4,7 @@ query NavQuery($rev: String!) {
   workspaces: rev(at: $rev, filter: "::**/workspace.josh") {
     paths: files {
       dir(relative: "..") {
-        path 
+        path
         rev(filter: ":workspace={path}") { 
           warnings { message }
         }
