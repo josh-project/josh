@@ -3,7 +3,7 @@ use super::*;
 #[derive(Properties, Clone, PartialEq)]
 pub struct Props {
     pub text: String,
-    pub marker_pos: Vec<String>,
+    pub marker_pos: Vec<i64>,
     pub marker_text: Vec<String>,
 }
 
@@ -35,7 +35,7 @@ impl Component for Codemirror {
             .iter()
             .zip(self.props.marker_text.iter())
         {
-            set_marker(&pos, &text);
+            set_marker(*pos, &text);
         }
     }
 
@@ -64,5 +64,5 @@ extern "C" {
     pub fn set_codemirror(text: &str);
 
     #[wasm_bindgen(js_name = "setMarker")]
-    pub fn set_marker(position: &str, text: &str);
+    pub fn set_marker(position: i64, text: &str);
 }
