@@ -129,7 +129,7 @@ impl Component for Nav {
                                                 d.path.to_string(),
                                                 patterns::Warnings { josh: 0, misra:d.meta.count})
                                             }).collect::<Vec<(AppRoute, String, patterns::Warnings)>>()
-                                        }/>
+                                        } suffix="/"/>
                                     </div>}
                                 })})
                             }{
@@ -138,9 +138,17 @@ impl Component for Nav {
                                         <h2> { "Files" } </h2>
                                         <patterns::List route=self.props.route.clone() list={
                                             files.iter().map(|f| {
+                                                let mut num_josh = 0;
+                                                if let Some(filename) = std::path::Path::new(&f.path).file_name() {
+                                                    if filename == "workspace.josh" {
+                                                        if let Some(w) = &f.dir.rev.warnings {
+                                                            num_josh = w.len() as i64;
+                                                        }
+                                                    }
+                                                }
                                                 (props.route.with_path(&f.path),
                                                 f.path.to_string(),
-                                                patterns::Warnings { josh: 0, misra:f.meta.count})
+                                                patterns::Warnings { josh: num_josh, misra:f.meta.count})
                                             }).collect::<Vec<(AppRoute, String, patterns::Warnings)>>()
                                         }/>
                                     </div>}

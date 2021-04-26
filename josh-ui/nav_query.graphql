@@ -31,6 +31,18 @@ query PathQuery($rev: String!, $filter: String!, $path: String!, $meta: String!)
       }
     }
     dirs(at:$path,depth: 1) { path, meta(topic:$meta) { count } }
-    files(at:$path,depth: 1) { path, meta(topic:$meta) { count } }
+    files(at:$path,depth: 1) { 
+      path, 
+      meta(topic:$meta) { count } 
+      dir(relative: "..") {
+        path
+        rev(filter: ":workspace={path}") { 
+          warnings { message }
+          dir {
+            meta(topic:$meta) { count }
+          }
+        }
+      }
+    }
   }
 }

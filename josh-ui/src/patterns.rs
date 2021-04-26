@@ -30,6 +30,8 @@ pub struct Warnings {
 pub struct Props {
     pub route: route::AppRoute,
     pub list: Vec<(AppRoute, String, Warnings)>,
+    #[prop_or("".to_string())]
+    pub suffix: String,
 }
 
 pub struct List {
@@ -61,8 +63,15 @@ impl Component for List {
                         <AppAnchor route={elt.0.clone()}>
                         <tr><td>
                         {
-                          elt.1.clone()
+                          if let Some(filename) = std::path::Path::new(&elt.1).file_name() {
+                              filename.to_string_lossy().to_string()
+                          }
+                          else
+                          {
+                              elt.1.clone()
+                          }
                         }
+                        { &self.props.suffix }
                         {
                           html_if!(elt.2.misra > 0,
                             { html!{ <span class="marker"> { elt.2.misra } </span>  }}
