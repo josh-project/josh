@@ -57,7 +57,7 @@
   $ git sync
   * refs/heads/master -> refs/heads/master
   Pushing to http://localhost:8001/real_repo.git
-  POST git-receive-pack (1457 bytes)
+  POST git-receive-pack * (glob)
   updating local tracking ref 'refs/remotes/origin/master'
   
 
@@ -80,8 +80,8 @@
    * branch            003a2970e4c23b64f915025e9adc2e6ed04bc63a -> FETCH_HEAD
   HEAD is now at 003a297 add workspace
   Pushing to http://localhost:8002/real_repo.git:workspace=ws.git
-  POST git-receive-pack (440 bytes)
-  remote: warning: ignoring broken ref refs/namespaces/* (glob)
+  POST git-receive-pack (*)(glob)
+  remote: warning: ignoring broken ref refs/namespaces/*/HEAD (glob)
   remote: josh-proxy        
   remote: response from upstream:        
   remote: To http://localhost:8001/real_repo.git        
@@ -168,7 +168,7 @@
   $ git sync
     refs/heads/master -> refs/heads/master
   Pushing to http://localhost:8001/real_repo.git
-  POST git-receive-pack (789 bytes)
+  POST git-receive-pack (*)* (glob)
   updating local tracking ref 'refs/remotes/origin/master'
   
 
@@ -272,7 +272,7 @@
    * branch            2a6aa2a100b34d0d56e4b5f19e9bfdc2cd6f7d54 -> FETCH_HEAD
   HEAD is now at 2a6aa2a add in filter
   Pushing to http://localhost:8002/real_repo.git:workspace=ws.git
-  POST git-receive-pack (808 bytes)
+  POST git-receive-pack (*)* (glob)
   remote: josh-proxy        
   remote: response from upstream:        
   remote: To http://localhost:8001/real_repo.git        
@@ -298,7 +298,7 @@
    * branch            60bd0e180735e169b5c853545d8b1272ed0fc319 -> FETCH_HEAD
   HEAD is now at 60bd0e1 try to modify ws
   Pushing to http://localhost:8002/real_repo.git:workspace=ws.git
-  POST git-receive-pack (460 bytes)
+  POST git-receive-pack (*)* (glob)
   remote: josh-proxy        
   remote: response from upstream:        
   remote: To http://localhost:8001/real_repo.git        

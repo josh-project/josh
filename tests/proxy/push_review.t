@@ -25,20 +25,20 @@
   remote: josh-proxy        
   remote: response from upstream:        
   remote: To http://localhost:8001/real_repo.git        
-  remote:  * [new reference]   JOSH_PUSH -> refs/for/master        
+  remote:  \* [new *]*JOSH_PUSH -> refs/for/master* (glob)
   remote: 
   remote: 
   To http://localhost:8002/real_repo.git:/sub1.git
-   * [new reference]   master -> refs/for/master
+   \* [new *]*master -> refs/for/master* (glob)
   $ git push origin master:refs/drafts/master
   remote: josh-proxy        
   remote: response from upstream:        
   remote: To http://localhost:8001/real_repo.git        
-  remote:  * [new reference]   JOSH_PUSH -> refs/drafts/master        
+  remote:  \* [new *]*JOSH_PUSH -> refs/drafts/master* (glob)
   remote: 
   remote: 
   To http://localhost:8002/real_repo.git:/sub1.git
-   * [new reference]   master -> refs/drafts/master
+   \* [new *]*master -> refs/drafts/master* (glob)
 
   $ cd ${TESTTMP}/real_repo
   $ git fetch origin refs/for/master:rfm

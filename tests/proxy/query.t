@@ -33,7 +33,7 @@
 
   $ git push origin HEAD:refs/changes/123/2
   To http://localhost:8001/real_repo.git
-   * [new reference]   HEAD -> refs/changes/123/2
+   \* [new *]*HEAD -> refs/changes/123/2 (glob)
 
   $ cd ${TESTTMP}
 

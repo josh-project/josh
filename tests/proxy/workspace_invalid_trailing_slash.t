@@ -54,7 +54,7 @@
   $ git add .
   $ git commit -m "add workspace" 1> /dev/null
   $ git push origin HEAD:refs/heads/master -o merge 2>&1 >/dev/null | sed -e 's/[ ]*$//g'
-  remote: warning: ignoring broken ref refs/namespaces/* (glob)
+  remote: warning: ignoring broken ref refs/namespaces/*/HEAD (glob)
   remote: josh-proxy
   remote: response from upstream:
   remote: To http://localhost:8001/real_repo.git
@@ -101,6 +101,7 @@
    ws/workspace.josh | 4 ++++
    1 file changed, 4 insertions(+)
    create mode 100644 ws/workspace.josh
+  * (glob)
 
   $ git log --graph --pretty=%s
   *   Merge from :workspace=ws
@@ -156,7 +157,7 @@
   $ curl -s http://localhost:8002/flush
   Flushed credential cache
   $ git pull --rebase
-  Current branch master is up to date.
+  * (glob)
 
   $ tree
   .

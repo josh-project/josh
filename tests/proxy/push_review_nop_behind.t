@@ -36,11 +36,11 @@ This is a regression test for that problem.
   remote: josh-proxy        
   remote: response from upstream:        
   remote: To http://localhost:8001/real_repo.git        
-  remote:  * [new reference]   JOSH_PUSH -> refs/for/master        
+  remote:  \* [new *]*JOSH_PUSH -> refs/for/master* (glob)
   remote: 
   remote: 
   To http://localhost:8002/real_repo.git
-   * [new reference]   HEAD -> refs/for/master
+   \* [new *]*HEAD -> refs/for/master* (glob)
 
   $ cd ${TESTTMP}/real_repo
   $ git fetch origin refs/for/master:rfm

@@ -133,12 +133,12 @@
   remote: josh-proxy
   remote: response from upstream:
   remote: To http://localhost:8001/real_repo.git
-  remote:  * [new reference]   JOSH_PUSH -> refs/for/master
+  remote:  \* [new *]*JOSH_PUSH -> refs/for/master* (glob)
   remote: REWRITE(e63efb2615e1c17f0d0b6e610da85da09438cd29 -> 9bd58f891b4f17736c1b51903837de717fce13a5)
   remote:
   remote:
   To http://localhost:8002/real_repo.git:workspace=ws.git
-   * [new reference]   HEAD -> refs/for/master
+   \* [new *]*HEAD -> refs/for/master* (glob)
 
   $ cd ${TESTTMP}/remote/real_repo.git/
 
@@ -167,12 +167,12 @@
   remote: josh-proxy
   remote: response from upstream:
   remote: To http://localhost:8001/real_repo.git
-  remote:  * [new reference]   JOSH_PUSH -> refs/for/master
+  remote:  \* [new *]*JOSH_PUSH -> refs/for/master* (glob)
   remote: REWRITE(5645805dcc75cfe4922b9cb301c40a4a4b35a59d -> 9a28fa82a736714d831348bbf62b951be65331b7)
   remote:
   remote:
   To http://localhost:8002/real_repo.git:workspace=ws.git
-   * [new reference]   HEAD -> refs/for/master
+   \* [new *]*HEAD -> refs/for/master* (glob)
 
 
   $ bash ${TESTDIR}/destroy_test_env.sh

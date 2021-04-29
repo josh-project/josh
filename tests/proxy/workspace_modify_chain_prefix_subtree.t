@@ -213,6 +213,7 @@
   $ curl -s http://localhost:8002/flush
   Flushed credential cache
   $ git pull --rebase 2> /dev/null
+  * (glob)
 
 Note that d/ is still in the tree but now it is not overlayed
   $ tree

@@ -32,6 +32,7 @@
    sub1/file2 | 1 +
    1 file changed, 1 insertion(+)
    create mode 100644 sub1/file2
+  * (glob)
 
   $ tree
   .

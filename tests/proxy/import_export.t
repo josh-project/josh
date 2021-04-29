@@ -176,6 +176,7 @@
    new_file2 | 0
    1 file changed, 0 insertions(+), 0 deletions(-)
    create mode 100644 new_file2
+  * (glob)
   $ tree
   .
   |-- file1
@@ -236,6 +237,7 @@
   $ git pull --rebase 2> /dev/null
   Updating 6fe45a9..8047211
   Fast-forward
+  * (glob)
   $ tree
   .
   |-- file1

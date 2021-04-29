@@ -33,7 +33,7 @@
   remote: response from upstream:        
   remote: To http://localhost:8001/real_repo.git        
   remote:  ! [rejected]        JOSH_PUSH -> master (fetch first)        
-  remote: error: failed to push some refs to 'http://localhost:8001/real_repo.git'        
+  remote: error: failed to push some refs to 'http://*localhost:8001/real_repo.git'* (glob)
   remote: hint: Updates were rejected because the remote contains work that you do        
   remote: hint: not have locally. This is usually caused by another repository pushing        
   remote: hint: to the same ref. You may want to first integrate the remote changes        

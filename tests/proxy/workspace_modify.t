@@ -57,7 +57,7 @@
   $ git sync
   * refs/heads/master -> refs/heads/master
   Pushing to http://localhost:8001/real_repo.git
-  POST git-receive-pack (1457 bytes)
+  POST git-receive-pack * (glob)
   updating local tracking ref 'refs/remotes/origin/master'
   
 
@@ -80,8 +80,8 @@
    * branch            4a199f3a19a292e6639dede0f8602afc19a82dfc -> FETCH_HEAD
   HEAD is now at 4a199f3 Merge from :workspace=ws
   Pushing to http://localhost:8002/real_repo.git:workspace=ws.git
-  POST git-receive-pack (439 bytes)
-  remote: warning: ignoring broken ref refs/namespaces/* (glob)
+  POST git-receive-pack (* bytes)* (glob)
+  remote: warning: ignoring broken ref refs/namespaces/*/HEAD (glob)
   remote: josh-proxy        
   remote: response from upstream:        
   remote: To http://localhost:8001/real_repo.git        
@@ -98,6 +98,7 @@
   From http://localhost:8002/real_repo.git:workspace=ws
    + 1b46698...4a199f3 master     -> origin/master  (forced update)
   Already up to date.
+  * (glob)
 
   $ tree
   .
@@ -127,6 +128,7 @@
    ws/workspace.josh | 2 ++
    1 file changed, 2 insertions(+)
    create mode 100644 ws/workspace.josh
+  * (glob)
 
   $ git log --graph --pretty=%s
   *   Merge from :workspace=ws
@@ -174,7 +176,7 @@
   $ git sync
     refs/heads/master -> refs/heads/master
   Pushing to http://localhost:8001/real_repo.git
-  POST git-receive-pack (790 bytes)
+  POST git-receive-pack (* bytes)* (glob)
   updating local tracking ref 'refs/remotes/origin/master'
   
 
@@ -190,6 +192,7 @@
    workspace.josh | 3 ++-
    2 files changed, 3 insertions(+), 1 deletion(-)
    create mode 100644 d/file3
+  * (glob)
 
   $ tree
   .
@@ -275,7 +278,7 @@
    * branch            3136fff7280627623bf4d71191d1aea783579be0 -> FETCH_HEAD
   HEAD is now at 3136fff add in filter
   Pushing to http://localhost:8002/real_repo.git:workspace=ws.git
-  POST git-receive-pack (808 bytes)
+  POST git-receive-pack (* bytes)* (glob)
   remote: josh-proxy        
   remote: response from upstream:        
   remote: To http://localhost:8001/real_repo.git        
@@ -301,7 +304,7 @@
    * branch            1a909d6e8ba43c6eaf211ef04440984d38bc26e6 -> FETCH_HEAD
   HEAD is now at 1a909d6 try to modify ws
   Pushing to http://localhost:8002/real_repo.git:workspace=ws.git
-  POST git-receive-pack (460 bytes)
+  POST git-receive-pack (* bytes)* (glob)
   remote: josh-proxy        
   remote: response from upstream:        
   remote: To http://localhost:8001/real_repo.git        
@@ -318,6 +321,7 @@
   From http://localhost:8002/real_repo.git:workspace=ws
    + 7f85f11...1a909d6 master     -> origin/master  (forced update)
   Already up to date.
+  * (glob)
 
 Note that d/ is still in the tree but now it is not overlayed
   $ tree
@@ -377,6 +381,7 @@ Note that d/ is still in the tree but now it is not overlayed
    create mode 100644 sub2/newfile_2
    create mode 100644 ws/d/file3
    create mode 100644 ws/ws_file
+  * (glob)
 
   $ git clean -ffdx 1> /dev/null
 

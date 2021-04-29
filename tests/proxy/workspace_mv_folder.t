@@ -57,7 +57,7 @@
   $ git sync
   * refs/heads/master -> refs/heads/master
   Pushing to http://localhost:8001/real_repo.git
-  POST git-receive-pack (1457 bytes)
+  POST git-receive-pack * (glob)
   updating local tracking ref 'refs/remotes/origin/master'
   
 
@@ -81,8 +81,8 @@
   HEAD is now at 4a199f3 Merge from :workspace=ws
   Pushing to http://localhost:8002/real_repo.git:workspace=ws.git
   POST git-receive-pack (439 bytes)
-  remote: warning: ignoring broken ref refs/namespaces/request_*/HEAD         (glob)
-  remote: josh-proxy        
+  remote: warning: ignoring broken ref refs/namespaces/request_55537ba7-5df9-40cd-948e-560b854c819b/HEAD
+  remote: josh-proxy
   remote: response from upstream:        
   remote: To http://localhost:8001/real_repo.git        
   remote:    5d605ce..98c996c  JOSH_PUSH -> master        
