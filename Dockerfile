@@ -4,18 +4,9 @@ RUN apt-get update \
  && apt-get install -y cmake \
  && rm -rf /var/lib/apt/lists/*
 
-# RUN USER=root cargo new --bin /usr/src/josh
 WORKDIR /usr/src/josh
-
-# COPY ./Cargo.lock ./Cargo.lock
-# COPY ./Cargo.toml ./Cargo.toml
-# COPY ./prebuild.rs ./build.rs
-#
-# RUN cargo build --release && rm src/*.rs 
-
 COPY . .
 
-# RUN rm ./target/release/deps/josh* && cargo build --release
 RUN rustup target add wasm32-unknown-unknown
 RUN cargo install wasm-bindgen-cli
 RUN cargo install trunk

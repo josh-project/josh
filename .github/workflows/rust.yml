@@ -23,12 +23,19 @@ jobs:
         architecture: 'x64'
     - name: Install dependencies
       run: |
+        rustup target add wasm32-unknown-unknown
         pip3 install --user 'cram'
         pip3 install --user 'pygit2'
         cargo install hyper_cgi --features=test-server
         cargo install graphql_client_cli
         sudo apt update
         sudo apt install git cmake libcurl4-openssl-dev libelf-dev libdw-dev tree
+        cargo install trunk
+        cargo install wasm-bindgen-cli
+        pip3 install -U selenium
+        wget https://github.com/mozilla/geckodriver/releases/download/v0.29.1/geckodriver-v0.29.1-linux64.tar.gz
+        tar -xf geckodriver*.tar.gz
+        export PATH=$PATH:`pwd`
     - uses: actions/checkout@v2
     - name: Check format
       run: cargo fmt -- --check
@@ -43,4 +50,6 @@ jobs:
         git config --global user.email "christian@schilling.de"
         git config --global user.name "christian"
     - name: Run integration tests
-      run: sh run-tests.sh tests/*/*.t
+      run: |
+        trunk --config=josh-ui/Trunk.toml build
+        sh run-tests.sh tests/*/*.t
