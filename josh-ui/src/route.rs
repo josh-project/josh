@@ -69,7 +69,7 @@ impl AppRoute {
 
     pub fn with_filter(&self, filter: &str) -> Self {
         match self.clone() {
-            Self::Browse(mode, repo, rev, _, path, meta) => Self::Browse(
+            Self::Browse(_mode, repo, rev, _, path, meta) => Self::Browse(
                 "browse".to_string(),
                 repo,
                 rev,
