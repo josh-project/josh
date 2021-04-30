@@ -66,6 +66,12 @@
         float: left;
     }
 
+    .warnings {
+        width: 45%;
+        max-width: 450px;
+        float: left;
+    }
+
     #repo {
         margin: 15px;
         margin-bottom: 0px;

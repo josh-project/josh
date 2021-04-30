@@ -119,58 +119,45 @@ impl Component for Nav {
                 } else {
                     html! { <>
                         {
-                            html! { <div id="pathlist" class="dirmode loaded"> {
-                                html_if_let!(Some(dirs), &self.data.rev.dirs, { html_if!(dirs.len() != 0, {
-                                    html!{<div class="column">
-                                        <h2> { "Directories" } </h2>
-                                        <patterns::List route=self.props.route.clone() list={
-                                            dirs.iter().map(|d| {
-                                                (props.route.with_path(&d.path),
-                                                d.path.to_string(),
-                                                patterns::Warnings { josh: 0, misra:d.meta.count})
-                                            }).collect::<Vec<(AppRoute, String, patterns::Warnings)>>()
-                                        } suffix="/"/>
-                                    </div>}
-                                })})
-                            }{
-                                if let Some(files) = &self.data.rev.files { if files.len() != 0 {
-                                    html!{<div class="column">
-                                        <h2> { "Files" } </h2>
-                                        <patterns::List route=self.props.route.clone() list={
-                                            files.iter().map(|f| {
-                                                let mut num_josh = 0;
-                                                if let Some(filename) = std::path::Path::new(&f.path).file_name() {
-                                                    if filename == "workspace.josh" {
-                                                        if let Some(w) = &f.dir.rev.warnings {
-                                                            num_josh = w.len() as i64;
-                                                        }
-                                                    }
-                                                }
-                                                (props.route.with_path(&f.path),
-                                                f.path.to_string(),
-                                                patterns::Warnings { josh: num_josh, misra:f.meta.count})
-                                            }).collect::<Vec<(AppRoute, String, patterns::Warnings)>>()
-                                        }/>
-                                    </div>}
-                                } else { html!{} }
-                                } else { html!{} }
-                            }
-                            </div>}
+                            if let Some(dirs) = &self.data.rev.dirs { html!{
+                                <patterns::List name="Directories" route=self.props.route.clone() list={
+                                    dirs.iter().map(|d| {
+                                        (props.route.with_path(&d.path),
+                                        d.path.to_string(),
+                                        patterns::Warnings { josh: 0, misra:d.meta.count})
+                                    }).collect::<Vec<(AppRoute, String, patterns::Warnings)>>()
+                                } suffix="/"/>
+                            }} else { html!{} }
+                        }
+                        {
+                            if let Some(files) = &self.data.rev.files { html!{
+                                <patterns::List name="Files" route=self.props.route.clone() list={
+                                    files.iter().map(|f| {
+                                        (props.route.with_path(&f.path),
+                                        f.path.to_string(),
+                                        patterns::Warnings { josh: 0, misra:f.meta.count})
+                                    }).collect::<Vec<(AppRoute, String, patterns::Warnings)>>()
+                                }/>
+                            }} else { html!{} }
                         }
                         {
                             if let Some(warnings) = &self.data.rev.warnings {
                                 if warnings.len() > 0 {
                                 html! { <>
+                                    <div class="warnings">
                                     <h2> { "Warnings" } </h2>
-                                    <ul>
+                                    <table>
                                     {
                                         for warnings.iter().map( |warn| {
                                             html! {
-                                                <li> { &warn.message } </li>
+                                                <tr><td>
+                                                 { &warn.message }
+                                                </td></tr>
                                             }
                                         })
                                     }
-                                    </ul>
+                                    </table>
+                                    </div>
                                     </>
                                 }
                                 }
@@ -178,7 +165,7 @@ impl Component for Nav {
                             }
                             else { html! {} }
                         }
-                        </> }
+                    </> }
                 }
             }</>
         }
