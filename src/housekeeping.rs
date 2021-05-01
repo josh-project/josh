@@ -242,25 +242,25 @@ pub fn refresh_known_filters(
 }
 
 pub fn run(repo_path: &std::path::Path, do_gc: bool) -> JoshResult<()> {
-    let transaction = cache::Transaction::open(&repo_path, None)?;
+    let transaction = cache::Transaction::open(repo_path, None)?;
     let known_filters = housekeeping::discover_filter_candidates(&transaction)?;
     refresh_known_filters(&transaction, &known_filters)?;
     info!(
         "{}",
-        run_command(&transaction.repo().path(), &"git count-objects -v").replace("\n", "  ")
+        run_command(transaction.repo().path(), &"git count-objects -v").replace("\n", "  ")
     );
     if do_gc {
         info!(
             "\n----------\n{}\n----------",
-            run_command(&transaction.repo().path(), &"git repack -adkbn --threads=1")
+            run_command(transaction.repo().path(), &"git repack -adkbn --threads=1")
         );
         info!(
             "\n----------\n{}\n----------",
-            run_command(&transaction.repo().path(), &"git count-objects -vH")
+            run_command(transaction.repo().path(), &"git count-objects -vH")
         );
         info!(
             "\n----------\n{}\n----------",
-            run_command(&transaction.repo().path(), &"git prune --expire=2w")
+            run_command(transaction.repo().path(), &"git prune --expire=2w")
         );
     }
     Ok(())
