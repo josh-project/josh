@@ -111,12 +111,12 @@ fn pretty2(op: &Op, indent: usize, compose: bool) -> String {
         },
         Op::Chain(a, b) => match (to_op(*a), to_op(*b)) {
             (Op::Subdir(p1), Op::Prefix(p2)) if p1 == p2 => {
-                format!("::{}/", p1.to_string_lossy().to_string())
+                format!("::{}/", p1.to_string_lossy())
             }
             (a, Op::Prefix(p)) if compose => {
                 format!(
                     "{} = {}",
-                    p.to_string_lossy().to_string(),
+                    p.to_string_lossy(),
                     pretty2(&a, indent, false)
                 )
             }
@@ -158,7 +158,7 @@ fn spec2(op: &Op) -> String {
 
         Op::Chain(a, b) => match (to_op(*a), to_op(*b)) {
             (Op::Subdir(p1), Op::Prefix(p2)) if p1 == p2 => {
-                format!("::{}/", p1.to_string_lossy().to_string())
+                format!("::{}/", p1.to_string_lossy())
             }
             (a, b) => format!("{}{}", spec2(&a), spec2(&b)),
         },

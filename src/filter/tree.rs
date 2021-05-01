@@ -26,8 +26,7 @@ pub fn pathstree<'a>(
                     "#{}\n{}",
                     path_string,
                     get_blob(repo, &tree, &std::path::Path::new(&name))
-                )
-                .to_string();
+                );
             } else {
                 file_contents = path_string.to_string();
             }
