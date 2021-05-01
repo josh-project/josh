@@ -38,12 +38,12 @@ impl Component for Nav {
             link: link,
             data: nav_query::ResponseData {
                 refs: vec![nav_query::NavQueryRefs {
-                    name: props.route.rev(),
+                    name: props.route.rev.clone(),
                 }],
                 workspaces: nav_query::NavQueryWorkspaces {
                     paths: Some(vec![nav_query::NavQueryWorkspacesPaths {
                         dir: nav_query::NavQueryWorkspacesPathsDir {
-                            path: props.route.filter(),
+                            path: props.route.filter.clone(),
                             rev: nav_query::NavQueryWorkspacesPathsDirRev {
                                 warnings: None,
                                 dir: None,
@@ -63,10 +63,10 @@ impl Component for Nav {
         match msg {
             Self::Message::CallServer => {
                 let query = NavQuery::build_query(nav_query::Variables {
-                    rev: self.props.route.rev(),
-                    meta: self.props.route.meta(),
+                    rev: self.props.route.rev.clone(),
+                    meta: self.props.route.meta.clone(),
                 });
-                let request = Request::post(format!("/~/graphql/{}.git", self.props.route.repo()))
+                let request = Request::post(format!("/~/graphql/{}.git", self.props.route.repo))
                     .header("Content-Type", "application/json")
                     .body(Json(&query))
                     .expect("Could not build request.");
@@ -128,10 +128,10 @@ impl Component for Nav {
             .callback(|val: yew::events::ChangeData| Self::Message::ChangeRef(val));
         html! {
             <div class="h">
-                <span id="repo">{ &props.route.repo() }</span>
+                <span id="repo">{ &props.route.repo }</span>
                 <span id="filter">
                 <AppAnchor route=props.route.edit_filter()>
-                {props.route.filter()}
+                {props.route.filter.clone()}
                 </AppAnchor>
                 </span>
                 <br/>
@@ -139,13 +139,13 @@ impl Component for Nav {
                 <select id="ref" onchange=r_cb>
                     {
                         for self.data.refs.iter().map(|x| html! {
-                            <option selected=&x.name == &props.route.rev() value=&x.name>
+                            <option selected=&x.name == &props.route.rev value=&x.name>
                             { &x.name } </option>
                         })
                     }{
-                        if !props.route.rev().starts_with("ref") { html! {
-                            <option selected=true value=&props.route.rev()>
-                                { &props.route.rev() }
+                        if !props.route.rev.starts_with("ref") { html! {
+                            <option selected=true value=&props.route.rev>
+                                { &props.route.rev }
                             </option>
                         }} else { html!{} }
                     }
@@ -153,7 +153,7 @@ impl Component for Nav {
                 </span>
                 <br/>
                 {
-                    if "browse" == props.route.mode() {
+                    if "browse" == props.route.mode {
                         html!{
                 <div id="breadcrumbs">
                 <route::AppAnchor route=props.route.with_path("")><b>{"$ /"}</b></route::AppAnchor>
