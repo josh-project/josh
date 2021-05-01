@@ -697,11 +697,7 @@ impl RepositoryMut {
             &transaction.repo().signature()?,
             "marker",
             &tree,
-            &if let Some(parent) = parent.as_ref() {
-                vec![parent]
-            } else {
-                vec![]
-            },
+            &parent.as_ref().into_iter().collect::<Vec<_>>(),
         )?;
 
         Ok(true)
