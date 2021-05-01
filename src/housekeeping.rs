@@ -15,22 +15,17 @@ pub fn default_from_to(
 ) -> Vec<(String, String)> {
     let mut refs = vec![];
 
-    let glob = format!("refs/josh/upstream/{}/refs/heads/*", &to_ns(upstream_repo));
-    for refname in repo.references_glob(&glob).unwrap().names() {
-        let refname = refname.unwrap();
-        let to_ref = refname.replacen("refs/josh/upstream", "refs/namespaces", 1);
-        let to_ref = to_ref.replacen(&to_ns(upstream_repo), &namespace, 1);
-        refs.push((refname.to_owned(), to_ref.clone()));
+    for glob in [
+        format!("refs/josh/upstream/{}/refs/heads/*", &to_ns(upstream_repo)),
+        format!("refs/josh/upstream/{}/refs/tags/*", &to_ns(upstream_repo)),
+    ].iter() {
+        for refname in repo.references_glob(glob).unwrap().names() {
+            let refname = refname.unwrap();
+            let to_ref = refname.replacen("refs/josh/upstream", "refs/namespaces", 1);
+            let to_ref = to_ref.replacen(&to_ns(upstream_repo), &namespace, 1);
+            refs.push((refname.to_owned(), to_ref.clone()));
+        }
     }
-
-    let glob = format!("refs/josh/upstream/{}/refs/tags/*", &to_ns(upstream_repo));
-    for refname in repo.references_glob(&glob).unwrap().names() {
-        let refname = refname.unwrap();
-        let to_ref = refname.replacen("refs/josh/upstream", "refs/namespaces", 1);
-        let to_ref = to_ref.replacen(&to_ns(upstream_repo), &namespace, 1);
-        refs.push((refname.to_owned(), to_ref.clone()));
-    }
-
     refs.append(&mut memorize_from_to(
         &repo,
         &crate::to_filtered_ref(&upstream_repo, &filter_spec),
