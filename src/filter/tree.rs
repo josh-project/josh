@@ -20,17 +20,16 @@ pub fn pathstree<'a>(
             let path = normalize_path(&std::path::Path::new(root).join(name));
             let path_string = path
                 .to_str()
-                .ok_or(super::josh_error("no name"))?
-                .to_string();
+                .ok_or(super::josh_error("no name"))?;
             if name == "workspace.josh" {
                 file_contents = format!(
                     "#{}\n{}",
-                    &path_string,
+                    path_string,
                     get_blob(repo, &tree, &std::path::Path::new(&name))
                 )
                 .to_string();
             } else {
-                file_contents = path_string;
+                file_contents = path_string.to_string();
             }
             result = replace_child(
                 &repo,
