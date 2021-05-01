@@ -427,7 +427,8 @@ async fn call_service(
             parsed_url
                 .upstream_repo
                 .strip_suffix(".git")
-                .unwrap_or(&parsed_url.upstream_repo),
+                .unwrap_or(&parsed_url.upstream_repo)
+                .to_string(),
         ));
         return Ok(josh_proxy::juniper_hyper::graphql(root_node, ctx, req)
             .in_current_span()

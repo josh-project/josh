@@ -823,10 +823,10 @@ pub fn commit_schema(commit_id: git2::Oid) -> CommitSchema {
 pub type RepoSchema =
     juniper::RootNode<'static, Repository, RepositoryMut, EmptySubscription<Context>>;
 
-pub fn repo_schema(name: &str) -> RepoSchema {
+pub fn repo_schema(name: String) -> RepoSchema {
     RepoSchema::new(
         Repository {
-            name: name.to_string(),
+            name,
         },
         RepositoryMut {},
         EmptySubscription::new(),
