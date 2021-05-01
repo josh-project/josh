@@ -388,6 +388,25 @@ impl Markers {
     }
 }
 
+impl Path {
+    fn serialize_to_serde_value<E>(&self, context: &Context, str_to_value: impl FnOnce(&str)->Result<serde_json::Value, E>) -> FieldResult<Document> {
+        let transaction = context.transaction.lock()?;
+        let id = transaction
+            .repo()
+            .find_tree(self.tree)?
+            .get_path(&self.path)?
+            .id();
+        let blob = transaction.repo().find_blob(id)?;
+        let value = str_to_value(std::str::from_utf8(blob.content())?)
+            .unwrap_or(json!({}));
+        Ok(Document {
+            id,
+            value,
+        })
+    }
+
+}
+
 #[graphql_object(context = Context)]
 impl Path {
     fn path(&self) -> String {
@@ -446,54 +465,15 @@ impl Path {
     }
 
     fn toml(&self, context: &Context) -> FieldResult<Document> {
-        let transaction = context.transaction.lock()?;
-        let id = transaction
-            .repo()
-            .find_tree(self.tree)?
-            .get_path(&self.path)?
-            .id();
-        let blob = transaction.repo().find_blob(id)?;
-        let value = toml::de::from_str::<serde_json::Value>(std::str::from_utf8(blob.content())?)
-            .unwrap_or(json!({}));
-
-        Ok(Document {
-            id,
-            value,
-        })
+        self.serialize_to_serde_value(context, |blob| toml::de::from_str::<serde_json::Value>(blob))
     }
 
     fn json(&self, context: &Context) -> FieldResult<Document> {
-        let transaction = context.transaction.lock()?;
-        let id = transaction
-            .repo()
-            .find_tree(self.tree)?
-            .get_path(&self.path)?
-            .id();
-        let blob = transaction.repo().find_blob(id)?;
-        let value = serde_json::from_str::<serde_json::Value>(std::str::from_utf8(blob.content())?)
-            .unwrap_or(json!({}));
-
-        Ok(Document {
-            id,
-            value,
-        })
+        self.serialize_to_serde_value(context, |blob| serde_json::from_str::<serde_json::Value>(blob))
     }
 
     fn yaml(&self, context: &Context) -> FieldResult<Document> {
-        let transaction = context.transaction.lock()?;
-        let id = transaction
-            .repo()
-            .find_tree(self.tree)?
-            .get_path(&self.path)?
-            .id();
-        let blob = transaction.repo().find_blob(id)?;
-        let value = serde_yaml::from_str::<serde_json::Value>(std::str::from_utf8(blob.content())?)
-            .unwrap_or(json!({}));
-
-        Ok(Document {
-            id,
-            value,
-        })
+        self.serialize_to_serde_value(context, |blob| serde_yaml::from_str::<serde_json::Value>(blob))
     }
 }
 
