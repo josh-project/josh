@@ -175,7 +175,7 @@ pub fn get_info(
     let filtered = filter::apply_to_commit(filter, &commit, &transaction)?;
 
     let parent_ids = |commit: &git2::Commit| {
-        let pids: Vec<_> = commit
+        commit
             .parent_ids()
             .map(|x| {
                 json!({
@@ -186,8 +186,7 @@ pub fn get_info(
                         .to_string(),
                 })
             })
-            .collect();
-        pids
+            .collect::<Vec<_>>()
     };
 
     let t = if let Ok(filtered) = transaction.repo().find_commit(filtered) {
