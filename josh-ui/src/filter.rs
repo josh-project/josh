@@ -35,12 +35,12 @@ impl Component for Nav {
             link: link,
             data: nav_query::ResponseData {
                 refs: vec![nav_query::NavQueryRefs {
-                    name: props.route.rev(),
+                    name: props.route.rev.clone(),
                 }],
                 workspaces: nav_query::NavQueryWorkspaces {
                     paths: Some(vec![nav_query::NavQueryWorkspacesPaths {
                         dir: nav_query::NavQueryWorkspacesPathsDir {
-                            path: props.route.filter(),
+                            path: props.route.filter.clone(),
                             rev: nav_query::NavQueryWorkspacesPathsDirRev {
                                 warnings: None,
                                 dir: None,
@@ -60,10 +60,10 @@ impl Component for Nav {
         match msg {
             Self::Message::CallServer => {
                 let query = NavQuery::build_query(nav_query::Variables {
-                    rev: self.props.route.rev(),
-                    meta: self.props.route.meta(),
+                    rev: self.props.route.rev.clone(),
+                    meta: self.props.route.meta.clone(),
                 });
-                let request = Request::post(format!("/~/graphql/{}.git", self.props.route.repo()))
+                let request = Request::post(format!("/~/graphql/{}.git", self.props.route.repo))
                     .header("Content-Type", "application/json")
                     .body(Json(&query))
                     .expect("Could not build request.");

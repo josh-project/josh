@@ -53,12 +53,12 @@ impl Component for Nav {
         match msg {
             Self::Message::CallServer => {
                 let query = PathQuery::build_query(path_query::Variables {
-                    rev: self.props.route.rev(),
-                    filter: self.props.route.filter(),
-                    path: self.props.route.path(),
-                    meta: self.props.route.meta(),
+                    rev: self.props.route.rev.clone(),
+                    filter: self.props.route.filter.clone(),
+                    path: self.props.route.path.clone(),
+                    meta: self.props.route.meta.clone(),
                 });
-                let request = Request::post(format!("/~/graphql/{}.git", self.props.route.repo()))
+                let request = Request::post(format!("/~/graphql/{}.git", self.props.route.repo))
                     .header("Content-Type", "application/json")
                     .body(Json(&query))
                     .expect("Could not build request.");

@@ -50,7 +50,7 @@ impl Component for App {
                     html!{<>
                         <nav::Nav route=switch.clone()/>
                         {
-                            match switch.mode() {
+                            match switch.mode.as_str() {
                                 "browse" => html!{
                                     <ls::Nav route=switch.clone()/>
                                 },
