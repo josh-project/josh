@@ -389,22 +389,27 @@ impl Markers {
 }
 
 impl Path {
-    fn serialize_to_serde_value<E>(&self, context: &Context, str_to_value: impl FnOnce(&str)->Result<serde_json::Value, E>) -> FieldResult<Document> {
+    fn internal_serialize<R>(&self, context: &Context, to_result: impl FnOnce(&cache::Transaction, git2::Oid)->FieldResult<R>) -> FieldResult<R> {
         let transaction = context.transaction.lock()?;
         let id = transaction
             .repo()
             .find_tree(self.tree)?
             .get_path(&self.path)?
             .id();
-        let blob = transaction.repo().find_blob(id)?;
-        let value = str_to_value(std::str::from_utf8(blob.content())?)
-            .unwrap_or(json!({}));
-        Ok(Document {
-            id,
-            value,
-        })
+        to_result(&transaction, id)
     }
 
+    fn serialize_to_serde_value<E>(&self, context: &Context, str_to_value: impl FnOnce(&str)->Result<serde_json::Value, E>) -> FieldResult<Document> {
+        self.internal_serialize(context, |transaction, id| {
+            let blob = transaction.repo().find_blob(id)?;
+            let value = str_to_value(std::str::from_utf8(blob.content())?)
+                .unwrap_or(json!({}));
+            Ok(Document {
+                id,
+                value,
+            })
+        })
+    }
 }
 
 #[graphql_object(context = Context)]
@@ -444,24 +449,15 @@ impl Path {
     }
 
     fn hash(&self, context: &Context) -> FieldResult<String> {
-        let transaction = context.transaction.lock()?;
-        let id = transaction
-            .repo()
-            .find_tree(self.tree)?
-            .get_path(&self.path)?
-            .id();
-        Ok(format!("{}", id))
+        self.internal_serialize(context, |_transaction, id| {
+            Ok(format!("{}", id))
+        })
     }
     fn text(&self, context: &Context) -> FieldResult<Option<String>> {
-        let transaction = context.transaction.lock()?;
-        let id = transaction
-            .repo()
-            .find_tree(self.tree)?
-            .get_path(&self.path)?
-            .id();
-        let blob = transaction.repo().find_blob(id)?;
-
-        Ok(Some(std::str::from_utf8(blob.content())?.to_string()))
+        self.internal_serialize(context, |transaction, id| {
+            let blob = transaction.repo().find_blob(id)?;
+            Ok(Some(std::str::from_utf8(blob.content())?.to_string()))
+        })
     }
 
     fn toml(&self, context: &Context) -> FieldResult<Document> {
