@@ -46,6 +46,33 @@ fn find_paths(
     return Ok(ws);
 }
 
+impl Revision {
+    fn files_or_dirs(
+        &self,
+        at: Option<String>,
+        depth: Option<i32>,
+        context: &Context,
+        kind: git2::ObjectType,
+    ) -> FieldResult<Option<Vec<Path>>> {
+        let transaction = context.transaction.lock()?;
+        let commit = transaction.repo().find_commit(self.commit_id)?;
+        let tree = filter::apply(&transaction, self.filter, commit.tree()?)?;
+        let tree_id = tree.id();
+        let paths = find_paths(&transaction, tree, at, depth, kind)?;
+        let mut ws = vec![];
+        for path in paths {
+            ws.push(Path {
+                path,
+                commit_id: self.commit_id,
+                filter: self.filter,
+                tree: tree_id,
+            });
+        }
+        return Ok(Some(ws));
+    }
+
+}
+
 #[graphql_object(context = Context)]
 impl Revision {
     fn filter(&self) -> String {
@@ -143,23 +170,7 @@ impl Revision {
         depth: Option<i32>,
         context: &Context,
     ) -> FieldResult<Option<Vec<Path>>> {
-        let transaction = context.transaction.lock()?;
-        let commit = transaction.repo().find_commit(self.commit_id)?;
-        let tree = filter::apply(&transaction, self.filter, commit.tree()?)?;
-        let tree_id = tree.id();
-
-        let paths = find_paths(&transaction, tree, at, depth, git2::ObjectType::Blob)?;
-
-        let mut ws = vec![];
-        for path in paths {
-            ws.push(Path {
-                path,
-                commit_id: self.commit_id,
-                filter: self.filter,
-                tree: tree_id,
-            });
-        }
-        return Ok(Some(ws));
+        self.files_or_dirs(at, depth, context, git2::ObjectType::Blob)
     }
 
     fn dirs(
@@ -168,23 +179,7 @@ impl Revision {
         depth: Option<i32>,
         context: &Context,
     ) -> FieldResult<Option<Vec<Path>>> {
-        let transaction = context.transaction.lock()?;
-        let commit = transaction.repo().find_commit(self.commit_id)?;
-        let tree = filter::apply(&transaction, self.filter, commit.tree()?)?;
-        let tree_id = tree.id();
-
-        let paths = find_paths(&transaction, tree, at, depth, git2::ObjectType::Tree)?;
-
-        let mut ws = vec![];
-        for path in paths {
-            ws.push(Path {
-                path,
-                commit_id: self.commit_id,
-                filter: self.filter,
-                tree: tree_id,
-            });
-        }
-        return Ok(Some(ws));
+        self.files_or_dirs(at, depth, context, git2::ObjectType::Tree)
     }
 
     fn file(&self, path: String, context: &Context) -> FieldResult<Option<Path>> {
