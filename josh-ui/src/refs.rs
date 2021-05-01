@@ -32,13 +32,13 @@ impl Component for Nav {
     fn create(props: Self::Properties, link: ComponentLink<Self>) -> Self {
         link.send_message(Self::Message::CallServer);
         Self {
-            link: link,
+            link,
             data: refs_query::ResponseData {
                 refs: vec![refs_query::RefsQueryRefs {
                     name: props.route.rev.clone(),
                 }],
             },
-            props: props,
+            props,
             error: None,
             fetch_task: None,
             _router: RouteAgentDispatcher::new(),

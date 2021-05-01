@@ -19,7 +19,7 @@ impl Component for Codemirror {
     fn create(props: Self::Properties, link: ComponentLink<Self>) -> Self {
         Self {
             _link: link,
-            props: props,
+            props
         }
     }
 

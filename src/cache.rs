@@ -110,13 +110,13 @@ impl Transaction {
                 apply_map: HashMap::new(),
                 unapply_map: HashMap::new(),
                 sled_trees: HashMap::new(),
-                path_tree: path_tree,
-                invert_tree: invert_tree,
+                path_tree,
+                invert_tree,
                 missing: vec![],
                 misses: 0,
                 walks: 0,
             }),
-            repo: repo,
+            repo,
             ref_prefix: ref_prefix.unwrap_or("").to_string(),
         }
     }

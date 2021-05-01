@@ -32,7 +32,7 @@ impl Component for Nav {
     fn create(props: Self::Properties, link: ComponentLink<Self>) -> Self {
         link.send_message(Self::Message::CallServer);
         Self {
-            link: link,
+            link,
             data: nav_query::ResponseData {
                 workspaces: nav_query::NavQueryWorkspaces {
                     paths: Some(vec![nav_query::NavQueryWorkspacesPaths {
@@ -46,7 +46,7 @@ impl Component for Nav {
                     }]),
                 },
             },
-            props: props,
+            props,
             error: None,
             fetch_task: None,
         }

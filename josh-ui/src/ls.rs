@@ -33,7 +33,7 @@ impl Component for Nav {
     fn create(props: Self::Properties, link: ComponentLink<Self>) -> Self {
         link.send_message(Self::Message::CallServer);
         Self {
-            link: link,
+            link,
             data: path_query::ResponseData {
                 rev: path_query::PathQueryRev {
                     warnings: None,
@@ -42,7 +42,7 @@ impl Component for Nav {
                     files: None,
                 },
             },
-            props: props,
+            props,
             error: None,
             fetch_task: None,
             _router: RouteAgentDispatcher::new(),
