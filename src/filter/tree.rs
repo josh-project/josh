@@ -76,16 +76,14 @@ pub fn remove_pred<'a>(
         let name = entry.name().ok_or(super::josh_error("INVALID_FILENAME"))?;
         let path = std::path::PathBuf::from(root).join(name);
 
-        if entry.kind() == Some(git2::ObjectType::Blob) {
-            if pred(&path, true) {
-                result = replace_child(
-                    &repo,
-                    &std::path::Path::new(entry.name().ok_or(super::josh_error("no name"))?),
-                    entry.id(),
-                    entry.filemode(),
-                    &result,
-                )?;
-            }
+        if entry.kind() == Some(git2::ObjectType::Blob) && pred(&path, true) {
+            result = replace_child(
+                &repo,
+                &std::path::Path::new(entry.name().ok_or(super::josh_error("no name"))?),
+                entry.id(),
+                entry.filemode(),
+                &result,
+            )?;
         }
 
         if entry.kind() == Some(git2::ObjectType::Tree) {
