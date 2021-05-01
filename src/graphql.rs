@@ -241,9 +241,9 @@ impl Revision {
         let commit = transaction.repo().find_commit(self.commit_id)?;
 
         let warnings = filter::compute_warnings(&transaction, self.filter, commit.tree()?)
-            .iter()
-            .map(|warn| Warning {
-                text: warn.to_string(),
+            .into_iter()
+            .map(|text| Warning {
+                text
             })
             .collect();
 
