@@ -89,11 +89,9 @@
   To http://localhost:8001/real_repo.git
    * [new branch]      master -> master
 
-  $ trunk --config=${TESTDIR}/Trunk.toml serve 1>/dev/null 2>/dev/null &
   $ python3 ${TESTDIR}/test.py
   real_repo
   success
-  $ pkill -9 trunk
 $ cat ${TESTDIR}/geckodriver.log
   $ bash ${TESTDIR}/../proxy/destroy_test_env.sh
   "real_repo.git" = [

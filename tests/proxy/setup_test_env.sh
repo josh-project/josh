@@ -19,6 +19,8 @@ GIT_DIR=${TESTTMP}/remote/ GIT_PROJECT_ROOT=${TESTTMP}/remote/ GIT_HTTP_EXPORT_A
     > ${TESTTMP}/hyper-cgi-test-server.out 2>&1 &
 echo $! > ${TESTTMP}/server_pid
 
+cp -R ${TESTDIR}/../../static/ static
+
 ${TESTDIR}/../../target/debug/josh-proxy\
     --port=8002\
     --graphql-root\
