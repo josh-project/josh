@@ -91,7 +91,7 @@ impl Revision {
         original: Option<bool>,
         context: &Context,
     ) -> FieldResult<Option<Revision>> {
-        let id = if let Some(true) = original {
+        let commit_id = if let Some(true) = original {
             let transaction = context.transaction.lock()?;
             let commit = transaction.repo().find_commit(self.commit_id)?;
             let filter_commit = transaction.repo().find_commit(filter::apply_to_commit(
@@ -112,7 +112,7 @@ impl Revision {
 
         Ok(Some(Revision {
             filter: filter::parse(&filter.unwrap_or(":/".to_string()))?,
-            commit_id: id,
+            commit_id,
         }))
     }
 
@@ -151,9 +151,9 @@ impl Revision {
         let paths = find_paths(&transaction, tree, at, depth, git2::ObjectType::Blob)?;
 
         let mut ws = vec![];
-        for p in paths {
+        for path in paths {
             ws.push(Path {
-                path: p,
+                path,
                 commit_id: self.commit_id,
                 filter: self.filter,
                 tree: tree_id,
@@ -176,9 +176,9 @@ impl Revision {
         let paths = find_paths(&transaction, tree, at, depth, git2::ObjectType::Tree)?;
 
         let mut ws = vec![];
-        for p in paths {
+        for path in paths {
             ws.push(Path {
-                path: p,
+                path,
                 commit_id: self.commit_id,
                 filter: self.filter,
                 tree: tree_id,
@@ -583,7 +583,7 @@ impl Reference {
 
     fn rev(&self, context: &Context, filter: Option<String>) -> FieldResult<Revision> {
         let transaction = context.transaction.lock()?;
-        let id = transaction
+        let commit_id = transaction
             .repo()
             .find_reference(&self.refname)?
             .target()
@@ -591,7 +591,7 @@ impl Reference {
 
         Ok(Revision {
             filter: filter::parse(&filter.unwrap_or(":/".to_string()))?,
-            commit_id: id,
+            commit_id,
         })
     }
 }
@@ -738,7 +738,7 @@ impl Repository {
         let rev = format!("refs/josh/upstream/{}.git/{}", to_ns(&self.name), at);
 
         let transaction = context.transaction.lock()?;
-        let id = if let Ok(id) = git2::Oid::from_str(&at) {
+        let commit_id = if let Ok(id) = git2::Oid::from_str(&at) {
             id
         } else {
             transaction.repo().revparse_single(&rev)?.id()
@@ -746,7 +746,7 @@ impl Repository {
 
         Ok(Revision {
             filter: filter::parse(&filter.unwrap_or(":/".to_string()))?,
-            commit_id: id,
+            commit_id,
         })
     }
 }
@@ -783,7 +783,7 @@ impl Query {
 
         repos.dedup();
 
-        return Ok(repos.into_iter().map(|x| Repository { name: x }).collect());
+        return Ok(repos.into_iter().map(|name| Repository { name }).collect());
     }
 }
 
@@ -809,10 +809,10 @@ pub fn schema() -> Schema {
 pub type CommitSchema =
     juniper::RootNode<'static, Revision, EmptyMutation<Context>, EmptySubscription<Context>>;
 
-pub fn commit_schema(id: git2::Oid) -> CommitSchema {
+pub fn commit_schema(commit_id: git2::Oid) -> CommitSchema {
     CommitSchema::new(
         Revision {
-            commit_id: id,
+            commit_id,
             filter: filter::nop(),
         },
         EmptyMutation::new(),
