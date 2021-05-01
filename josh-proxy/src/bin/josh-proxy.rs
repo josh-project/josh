@@ -503,7 +503,7 @@ async fn call_service(
     let repo_update = josh_proxy::RepoUpdate {
         refs: HashMap::new(),
         remote_url: remote_url.clone(),
-        auth: auth,
+        auth,
         port: serv.port.clone(),
         filter_spec: parsed_url.filter.clone(),
         base_ns: josh::to_ns(&parsed_url.upstream_repo),
@@ -577,7 +577,7 @@ async fn run_proxy() -> josh::JoshResult<i32> {
     josh::cache::load(&local)?;
 
     let proxy_service = Arc::new(JoshProxyService {
-        port: port,
+        port,
         repo_path: local.to_owned(),
         upstream_url: remote.to_owned(),
         fetch_timers: Arc::new(RwLock::new(FetchTimers::new())),

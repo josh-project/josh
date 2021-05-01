@@ -196,7 +196,7 @@ impl Revision {
 
         if let Some(git2::ObjectType::Blob) = tree.get_path(&path)?.kind() {
             Ok(Some(Path {
-                path: path,
+                path,
                 commit_id: self.commit_id,
                 filter: self.filter,
                 tree: tree.id(),
@@ -217,7 +217,7 @@ impl Revision {
 
         if path == std::path::Path::new("") {
             return Ok(Some(Path {
-                path: path,
+                path,
                 commit_id: self.commit_id,
                 filter: self.filter,
                 tree: tree.id(),
@@ -226,7 +226,7 @@ impl Revision {
 
         if let Some(git2::ObjectType::Tree) = tree.get_path(&path)?.kind() {
             Ok(Some(Path {
-                path: path,
+                path,
                 commit_id: self.commit_id,
                 filter: self.filter,
                 tree: tree.id(),
@@ -408,7 +408,7 @@ impl Path {
             path: self.path.clone(),
             commit_id: self.commit_id,
             filter: self.filter,
-            topic: topic,
+            topic,
         }
     }
 
@@ -457,8 +457,8 @@ impl Path {
             .unwrap_or(json!({}));
 
         Ok(Document {
-            id: id,
-            value: value,
+            id,
+            value,
         })
     }
 
@@ -474,8 +474,8 @@ impl Path {
             .unwrap_or(json!({}));
 
         Ok(Document {
-            id: id,
-            value: value,
+            id,
+            value,
         })
     }
 
@@ -491,8 +491,8 @@ impl Path {
             .unwrap_or(json!({}));
 
         Ok(Document {
-            id: id,
-            value: value,
+            id,
+            value,
         })
     }
 }
