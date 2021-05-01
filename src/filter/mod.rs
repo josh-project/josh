@@ -284,13 +284,8 @@ fn apply_to_commit2(
 
             let filtered = some_or!(filtered, { return Ok(None) });
 
-            let filtered: Vec<_> = filters.iter().zip(filtered.into_iter()).collect();
-
-            let filtered = filtered
-                .into_iter()
-                .filter(|(_, id)| *id != git2::Oid::zero());
-
-            let filtered = filtered
+            let filtered = filters.iter().zip(filtered.into_iter())
+                .filter(|(_, id)| *id != git2::Oid::zero())
                 .into_iter()
                 .map(|(f, id)| Ok((f, repo.find_commit(id)?.tree()?)))
                 .collect::<JoshResult<Vec<_>>>()?;
