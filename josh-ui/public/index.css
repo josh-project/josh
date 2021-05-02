@@ -65,6 +65,7 @@
         width: 45%;
         max-width: 450px;
         float: left;
+        margin-left: 15px;
     }
 
     .warnings {
@@ -91,7 +92,7 @@
         color: #aaaaaa;;
         text-decoration: none;
     }
-    #ref {
+    .branch a {
         margin-left: 15px;
         font-size: 1em;
         font-weight: bold;
@@ -134,7 +135,7 @@
     }
 
     #pathlist {
-        margin: 1em;
+        margin: 0px;
     }
 
     .CodeMirror pre {
