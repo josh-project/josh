@@ -11,7 +11,6 @@ pub enum Msg {
     CallServer,
     ReceiveResponse(Result<nav_query::ResponseData, anyhow::Error>),
     ChangeRef(yew::events::ChangeData),
-    ChangePath(yew::events::ChangeData),
 }
 
 #[derive(Properties, Clone, PartialEq)]
