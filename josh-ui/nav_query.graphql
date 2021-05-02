@@ -1,4 +1,8 @@
 
+query RefsQuery {
+  refs { name }
+}
+
 query NavQuery($rev: String!, $meta: String!) {
   refs { name }
   workspaces: rev(at: $rev, filter: "::**/workspace.josh") {

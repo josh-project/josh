@@ -20,6 +20,7 @@ mod filter;
 mod ls;
 mod nav;
 mod patterns;
+mod refs;
 mod route;
 
 pub struct App {
@@ -56,6 +57,9 @@ impl Component for App {
                                 },
                                 "filter" => html!{
                                     <filter::Nav route=switch.clone()/>
+                                },
+                                "refs" => html!{
+                                    <refs::Nav route=switch.clone()/>
                                 },
                                 _ => html!{}
                             }

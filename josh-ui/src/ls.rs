@@ -123,7 +123,7 @@ impl Component for Nav {
                                 <patterns::List name="Directories"  list={
                                     dirs.iter().map(|d| {
                                         (props.route.with_path(&d.path),
-                                        d.path.to_string(),
+                                        filename(&d.path),
                                         patterns::Warnings { josh: 0, misra:d.meta.count})
                                     }).collect::<Vec<(AppRoute, String, patterns::Warnings)>>()
                                 } suffix="/"/>
@@ -134,7 +134,7 @@ impl Component for Nav {
                                 <patterns::List name="Files"  list={
                                     files.iter().map(|f| {
                                         (props.route.with_path(&f.path),
-                                        f.path.to_string(),
+                                        filename(&f.path),
                                         patterns::Warnings { josh: 0, misra:f.meta.count})
                                     }).collect::<Vec<(AppRoute, String, patterns::Warnings)>>()
                                 }/>
@@ -169,5 +169,13 @@ impl Component for Nav {
                 }
             }</>
         }
+    }
+}
+
+fn filename(p: &str) -> String {
+    if let Some(filename) = std::path::Path::new(p).file_name() {
+        filename.to_string_lossy().to_string()
+    } else {
+        p.to_string()
     }
 }
