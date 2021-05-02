@@ -9,7 +9,7 @@
     form {
         margin: 0px;
     }
-    select {
+    a {
          font-family: Consolas, Menlo, Monaco, 'Lucida Console', 'Liberation Mono', 'DejaVu Sans Mono', 'Bitstream Vera Sans Mono', 'Courier New', monospace, serif;
          background-color: #222222;
          color: #aaaaaa;
@@ -17,6 +17,7 @@
          background: none;
          box-shadow: none;
          border-radius: 0px;
+         text-decoration: none;
 
          -webkit-appearance: none;
         -moz-appearance: none;

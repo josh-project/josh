@@ -35,6 +35,12 @@ impl AppRoute {
         return s;
     }
 
+    pub fn edit_rev(&self) -> Self {
+        let mut s = self.clone();
+        s.mode = "refs".to_string();
+        return s;
+    }
+
     pub fn filename(&self) -> String {
         let p = std::path::PathBuf::from(self.path.clone());
         p.file_name()
@@ -66,6 +72,7 @@ impl AppRoute {
 
     pub fn with_rev(&self, rev: &str) -> Self {
         let mut s = self.clone();
+        s.mode = "browse".to_string();
         s.rev = rev.to_string();
         return s;
     }

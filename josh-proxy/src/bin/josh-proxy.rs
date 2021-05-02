@@ -327,7 +327,8 @@ async fn call_service(
         }
     }
 
-    if path.starts_with("/~/browse") {
+    if path.starts_with("/~/browse") || path.starts_with("/~/filter") || path.starts_with("/~/refs")
+    {
         let p = &path[9..];
 
         let result = hyper_staticfile::resolve_path("static", &p).await?;

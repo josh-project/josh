@@ -142,7 +142,7 @@ impl Component for Nav {
                     }));
                 }
             };
-            html! {<patterns::List  list=l />}
+            html! {<patterns::List name="Workspaces"  list=l />}
         }
     }
 }

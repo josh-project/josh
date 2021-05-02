@@ -1,15 +1,14 @@
 use super::*;
 
 use graphql_client::GraphQLQuery;
-use route::AppAnchor;
 
 #[derive(GraphQLQuery)]
 #[graphql(schema_path = "josh_api.json", query_path = "nav_query.graphql")]
-pub struct NavQuery;
+pub struct RefsQuery;
 
 pub enum Msg {
     CallServer,
-    ReceiveResponse(Result<nav_query::ResponseData, anyhow::Error>),
+    ReceiveResponse(Result<refs_query::ResponseData, anyhow::Error>),
 }
 
 #[derive(Properties, Clone, PartialEq)]
@@ -19,10 +18,10 @@ pub struct Props {
 
 pub struct Nav {
     link: ComponentLink<Self>,
-    router: RouteAgentDispatcher,
+    _router: RouteAgentDispatcher,
     props: Props,
     fetch_task: Option<FetchTask>,
-    data: nav_query::ResponseData,
+    data: refs_query::ResponseData,
     error: Option<String>,
 }
 
@@ -34,36 +33,22 @@ impl Component for Nav {
         link.send_message(Self::Message::CallServer);
         Self {
             link: link,
-            data: nav_query::ResponseData {
-                refs: vec![nav_query::NavQueryRefs {
+            data: refs_query::ResponseData {
+                refs: vec![refs_query::RefsQueryRefs {
                     name: props.route.rev.clone(),
                 }],
-                workspaces: nav_query::NavQueryWorkspaces {
-                    paths: Some(vec![nav_query::NavQueryWorkspacesPaths {
-                        dir: nav_query::NavQueryWorkspacesPathsDir {
-                            path: props.route.filter.clone(),
-                            rev: nav_query::NavQueryWorkspacesPathsDirRev {
-                                warnings: None,
-                                dir: None,
-                            },
-                        },
-                    }]),
-                },
             },
             props: props,
             error: None,
             fetch_task: None,
-            router: RouteAgentDispatcher::new(),
+            _router: RouteAgentDispatcher::new(),
         }
     }
 
     fn update(&mut self, msg: Self::Message) -> ShouldRender {
         match msg {
             Self::Message::CallServer => {
-                let query = NavQuery::build_query(nav_query::Variables {
-                    rev: self.props.route.rev.clone(),
-                    meta: self.props.route.meta.clone(),
-                });
+                let query = RefsQuery::build_query(refs_query::Variables {});
                 let request = Request::post(format!("/~/graphql/{}.git", self.props.route.repo))
                     .header("Content-Type", "application/json")
                     .body(Json(&query))
@@ -72,7 +57,7 @@ impl Component for Nav {
                     |response: Response<
                         Json<
                             Result<
-                                graphql_client::Response<nav_query::ResponseData>,
+                                graphql_client::Response<refs_query::ResponseData>,
                                 anyhow::Error,
                             >,
                         >,
@@ -98,10 +83,6 @@ impl Component for Nav {
                 self.fetch_task = None;
                 true
             }
-            _ => {
-                ConsoleService::log("???");
-                false
-            }
         }
     }
 
@@ -115,39 +96,25 @@ impl Component for Nav {
 
     fn view(&self) -> Html {
         let props = &self.props;
-        html! {
-            <div class="h">
-                <span id="repo">{ &props.route.repo }</span>
-                <span id="filter">
-                <AppAnchor route=props.route.edit_filter()>
-                {props.route.filter.clone()}
-                </AppAnchor>
-                </span>
-                <br/>
-                <span class="branch">
-                <AppAnchor route=props.route.edit_rev()>
-                {props.route.rev.clone()}
-                </AppAnchor>
-                </span>
-                <br/>
-                {
-                    if "browse" == props.route.mode {
-                        html!{
-                <div id="breadcrumbs">
-                <route::AppAnchor route=props.route.with_path("")><b>{"$ /"}</b></route::AppAnchor>
-                {
-                    for props.route.breadcrumbs().iter().rev().enumerate().map(|(i, b)| {
-                        html! {
-                            <>{ if i != 0 {"/"} else {""} }<route::AppAnchor route=b>{ b.filename() }</route::AppAnchor></>
-                        }
-                    })
+        if self.fetch_task.is_some() {
+            html! { <div class="loader"> { "Loading..." } </div> }
+        } else {
+            let mut l = vec![];
+            let refs = &self.data.refs;
+            {
+                if refs.len() != 0 {
+                    l.extend(refs.iter().map(|w| {
+                        let mut num_warns = 0;
+                        let mut num_misra = 0;
+                        (
+                            props.route.with_rev(&w.name),
+                            w.name.clone(),
+                            patterns::Warnings { misra: 0, josh: 0 },
+                        )
+                    }));
                 }
-                </div>
-                        }
-                    }
-                    else { html!{}}
-                }
-            </div>
+            };
+            html! {<patterns::List name="Branches"  list=l />}
         }
     }
 }

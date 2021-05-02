@@ -51,13 +51,7 @@ impl Component for List {
                             <AppAnchor route={elt.0.clone()}>
                             <tr><td>
                             {
-                              if let Some(filename) = std::path::Path::new(&elt.1).file_name() {
-                                  filename.to_string_lossy().to_string()
-                              }
-                              else
-                              {
-                                  elt.1.clone()
-                              }
+                              elt.1.clone()
                             }
                             { &self.props.suffix }
                             {
