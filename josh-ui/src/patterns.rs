@@ -12,7 +12,6 @@ pub struct Warnings {
 
 #[derive(Properties, Clone, PartialEq)]
 pub struct Props {
-    pub route: route::AppRoute,
     pub list: Vec<(AppRoute, String, Warnings)>,
     #[prop_or("".to_string())]
     pub name: String,
