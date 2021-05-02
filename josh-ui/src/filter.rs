@@ -142,7 +142,7 @@ impl Component for Nav {
                     }));
                 }
             };
-            html! {<patterns::List route=self.props.route.clone() list=l />}
+            html! {<patterns::List  list=l />}
         }
     }
 }

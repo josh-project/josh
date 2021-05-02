@@ -120,7 +120,7 @@ impl Component for Nav {
                     html! { <>
                         {
                             if let Some(dirs) = &self.data.rev.dirs { html!{
-                                <patterns::List name="Directories" route=self.props.route.clone() list={
+                                <patterns::List name="Directories"  list={
                                     dirs.iter().map(|d| {
                                         (props.route.with_path(&d.path),
                                         d.path.to_string(),
@@ -131,7 +131,7 @@ impl Component for Nav {
                         }
                         {
                             if let Some(files) = &self.data.rev.files { html!{
-                                <patterns::List name="Files" route=self.props.route.clone() list={
+                                <patterns::List name="Files"  list={
                                     files.iter().map(|f| {
                                         (props.route.with_path(&f.path),
                                         f.path.to_string(),
