@@ -165,7 +165,7 @@
 
     .marker,
     .josh_marker {
-        background-color: #f7ff7d;
+        background-color: #cc7f3d;
         color: black;
         padding: 3px;
         padding-left: 8px;
@@ -176,7 +176,7 @@
     }
 
     .josh_marker {
-        color: green;
+        color: #ffffffad;
     }
 
     table.pathlist {
