@@ -92,6 +92,7 @@
   $ python3 ${TESTDIR}/test.py
   real_repo
   success
+  $ sh ${TESTDIR}/compare_screenshots.sh . ${TESTDIR}/screenshots
 $ cat ${TESTDIR}/geckodriver.log
   $ bash ${TESTDIR}/../proxy/destroy_test_env.sh
   "real_repo.git" = [
