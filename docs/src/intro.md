@@ -1,10 +1,7 @@
-# Just One Single History
+![Just One Single History](../banner.png)
 
 Josh combines the advantages of monorepos with those of multirepos by leveraging a blazingly-fast,
 incremental, and reversible implementation of git history filtering.
-
-This documentation describes the filtering mechanism, as well as
-the tools provided by Josh: the josh library, `josh-proxy` and `josh-filter`.
 
 ## Concept
 
