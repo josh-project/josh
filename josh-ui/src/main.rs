@@ -11,9 +11,7 @@ use yew::services::fetch::{FetchService, FetchTask, Request, Response};
 use yew::services::ConsoleService;
 use yew::{html, Component, ComponentLink, Html, Properties, ShouldRender};
 
-use yew_router::{
-    agent::RouteAgentDispatcher, agent::RouteRequest, route::Route, router::Router, Switch,
-};
+use yew_router::{agent::RouteAgentDispatcher, router::Router, Switch};
 
 mod codemirror;
 mod filter;
