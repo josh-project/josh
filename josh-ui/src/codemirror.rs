@@ -17,10 +17,7 @@ impl Component for Codemirror {
     type Properties = Props;
 
     fn create(props: Self::Properties, link: ComponentLink<Self>) -> Self {
-        Self {
-            _link: link,
-            props
-        }
+        Self { _link: link, props }
     }
 
     fn rendered(&mut self, first_render: bool) {

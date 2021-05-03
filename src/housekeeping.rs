@@ -18,7 +18,9 @@ pub fn default_from_to(
     for glob in [
         format!("refs/josh/upstream/{}/refs/heads/*", &to_ns(upstream_repo)),
         format!("refs/josh/upstream/{}/refs/tags/*", &to_ns(upstream_repo)),
-    ].iter() {
+    ]
+    .iter()
+    {
         for refname in repo.references_glob(glob).unwrap().names() {
             let refname = refname.unwrap();
             let to_ref = refname.replacen("refs/josh/upstream", "refs/namespaces", 1);
