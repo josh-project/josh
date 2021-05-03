@@ -20,7 +20,7 @@ tracing = "*"
 bincode = "*"
 percent-encoding = "2.1"
 serde = {version = "*", features = ["derive"]}
-regex = "1.4"
+regex = "1.5"
 lazy_static = "1.4"
 pest_derive = "2.1"
 pest= "2.1"
