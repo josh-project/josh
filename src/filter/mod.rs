@@ -114,11 +114,7 @@ fn pretty2(op: &Op, indent: usize, compose: bool) -> String {
                 format!("::{}/", p1.to_string_lossy())
             }
             (a, Op::Prefix(p)) if compose => {
-                format!(
-                    "{} = {}",
-                    p.to_string_lossy(),
-                    pretty2(&a, indent, false)
-                )
+                format!("{} = {}", p.to_string_lossy(), pretty2(&a, indent, false))
             }
             (a, b) => format!(
                 "{}{}",
@@ -284,7 +280,9 @@ fn apply_to_commit2(
 
             let filtered = some_or!(filtered, { return Ok(None) });
 
-            let filtered = filters.iter().zip(filtered.into_iter())
+            let filtered = filters
+                .iter()
+                .zip(filtered.into_iter())
                 .filter(|(_, id)| *id != git2::Oid::zero())
                 .into_iter()
                 .map(|(f, id)| Ok((f, repo.find_commit(id)?.tree()?)))

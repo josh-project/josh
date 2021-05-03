@@ -70,7 +70,6 @@ impl Revision {
         }
         return Ok(Some(ws));
     }
-
 }
 
 #[graphql_object(context = Context)]
@@ -237,9 +236,7 @@ impl Revision {
 
         let warnings = filter::compute_warnings(&transaction, self.filter, commit.tree()?)
             .into_iter()
-            .map(|text| Warning {
-                text
-            })
+            .map(|text| Warning { text })
             .collect();
 
         Ok(Some(warnings))
@@ -384,7 +381,11 @@ impl Markers {
 }
 
 impl Path {
-    fn internal_serialize<R>(&self, context: &Context, to_result: impl FnOnce(&cache::Transaction, git2::Oid)->FieldResult<R>) -> FieldResult<R> {
+    fn internal_serialize<R>(
+        &self,
+        context: &Context,
+        to_result: impl FnOnce(&cache::Transaction, git2::Oid) -> FieldResult<R>,
+    ) -> FieldResult<R> {
         let transaction = context.transaction.lock()?;
         let id = transaction
             .repo()
@@ -394,15 +395,15 @@ impl Path {
         to_result(&transaction, id)
     }
 
-    fn serialize_to_serde_value<E>(&self, context: &Context, str_to_value: impl FnOnce(&str)->Result<serde_json::Value, E>) -> FieldResult<Document> {
+    fn serialize_to_serde_value<E>(
+        &self,
+        context: &Context,
+        str_to_value: impl FnOnce(&str) -> Result<serde_json::Value, E>,
+    ) -> FieldResult<Document> {
         self.internal_serialize(context, |transaction, id| {
             let blob = transaction.repo().find_blob(id)?;
-            let value = str_to_value(std::str::from_utf8(blob.content())?)
-                .unwrap_or(json!({}));
-            Ok(Document {
-                id,
-                value,
-            })
+            let value = str_to_value(std::str::from_utf8(blob.content())?).unwrap_or(json!({}));
+            Ok(Document { id, value })
         })
     }
 }
@@ -444,9 +445,7 @@ impl Path {
     }
 
     fn hash(&self, context: &Context) -> FieldResult<String> {
-        self.internal_serialize(context, |_transaction, id| {
-            Ok(format!("{}", id))
-        })
+        self.internal_serialize(context, |_transaction, id| Ok(format!("{}", id)))
     }
     fn text(&self, context: &Context) -> FieldResult<Option<String>> {
         self.internal_serialize(context, |transaction, id| {
@@ -456,15 +455,21 @@ impl Path {
     }
 
     fn toml(&self, context: &Context) -> FieldResult<Document> {
-        self.serialize_to_serde_value(context, |blob| toml::de::from_str::<serde_json::Value>(blob))
+        self.serialize_to_serde_value(context, |blob| {
+            toml::de::from_str::<serde_json::Value>(blob)
+        })
     }
 
     fn json(&self, context: &Context) -> FieldResult<Document> {
-        self.serialize_to_serde_value(context, |blob| serde_json::from_str::<serde_json::Value>(blob))
+        self.serialize_to_serde_value(context, |blob| {
+            serde_json::from_str::<serde_json::Value>(blob)
+        })
     }
 
     fn yaml(&self, context: &Context) -> FieldResult<Document> {
-        self.serialize_to_serde_value(context, |blob| serde_yaml::from_str::<serde_json::Value>(blob))
+        self.serialize_to_serde_value(context, |blob| {
+            serde_yaml::from_str::<serde_json::Value>(blob)
+        })
     }
 }
 
@@ -796,9 +801,7 @@ pub type RepoSchema =
 
 pub fn repo_schema(name: String) -> RepoSchema {
     RepoSchema::new(
-        Repository {
-            name,
-        },
+        Repository { name },
         RepositoryMut {},
         EmptySubscription::new(),
     )

@@ -18,9 +18,7 @@ pub fn pathstree<'a>(
         if entry.kind() == Some(git2::ObjectType::Blob) {
             let file_contents;
             let path = normalize_path(&std::path::Path::new(root).join(name));
-            let path_string = path
-                .to_str()
-                .ok_or(super::josh_error("no name"))?;
+            let path_string = path.to_str().ok_or(super::josh_error("no name"))?;
             if name == "workspace.josh" {
                 file_contents = format!(
                     "#{}\n{}",
