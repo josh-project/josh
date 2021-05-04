@@ -19,7 +19,6 @@ pub struct Props {
 
 pub struct Nav {
     link: ComponentLink<Self>,
-    router: RouteAgentDispatcher,
     props: Props,
     fetch_task: Option<FetchTask>,
     data: nav_query::ResponseData,
@@ -35,9 +34,6 @@ impl Component for Nav {
         Self {
             link: link,
             data: nav_query::ResponseData {
-                refs: vec![nav_query::NavQueryRefs {
-                    name: props.route.rev.clone(),
-                }],
                 workspaces: nav_query::NavQueryWorkspaces {
                     paths: Some(vec![nav_query::NavQueryWorkspacesPaths {
                         dir: nav_query::NavQueryWorkspacesPathsDir {
@@ -53,7 +49,6 @@ impl Component for Nav {
             props: props,
             error: None,
             fetch_task: None,
-            router: RouteAgentDispatcher::new(),
         }
     }
 
@@ -97,10 +92,6 @@ impl Component for Nav {
                 }
                 self.fetch_task = None;
                 true
-            }
-            _ => {
-                ConsoleService::log("???");
-                false
             }
         }
     }
