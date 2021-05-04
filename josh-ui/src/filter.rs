@@ -34,9 +34,6 @@ impl Component for Nav {
         Self {
             link: link,
             data: nav_query::ResponseData {
-                refs: vec![nav_query::NavQueryRefs {
-                    name: props.route.rev.clone(),
-                }],
                 workspaces: nav_query::NavQueryWorkspaces {
                     paths: Some(vec![nav_query::NavQueryWorkspacesPaths {
                         dir: nav_query::NavQueryWorkspacesPathsDir {

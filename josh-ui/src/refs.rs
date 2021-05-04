@@ -104,8 +104,6 @@ impl Component for Nav {
             {
                 if refs.len() != 0 {
                     l.extend(refs.iter().map(|w| {
-                        let mut num_warns = 0;
-                        let mut num_misra = 0;
                         (
                             props.route.with_rev(&w.name),
                             w.name.clone(),

@@ -4,7 +4,6 @@ query RefsQuery {
 }
 
 query NavQuery($rev: String!, $meta: String!) {
-  refs { name }
   workspaces: rev(at: $rev, filter: "::**/workspace.josh") {
     paths: files {
       dir(relative: "..") {
