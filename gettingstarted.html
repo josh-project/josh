@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Intro - Just One Single History</title>
+        <title>Getting started - Just One Single History</title>
         
         
 
@@ -95,7 +95,7 @@
 
         <nav id="sidebar" class="sidebar" aria-label="Table of contents">
             <div class="sidebar-scrollbox">
-                <ol class="chapter"><li class="chapter-item expanded "><a href="intro.html" class="active"><strong aria-hidden="true">1.</strong> Intro</a></li><li class="chapter-item expanded "><a href="usecases.html"><strong aria-hidden="true">2.</strong> Use cases</a></li><li class="chapter-item expanded affix "><li class="part-title">Guide</li><li class="chapter-item expanded "><a href="gettingstarted.html"><strong aria-hidden="true">3.</strong> Getting started</a></li><li class="chapter-item expanded "><div><strong aria-hidden="true">4.</strong> Working with workspaces</div></li><li class="chapter-item expanded "><div><strong aria-hidden="true">5.</strong> Importing projects</div></li><li class="chapter-item expanded "><div><strong aria-hidden="true">6.</strong> Integrating with CI</div></li><li class="chapter-item expanded affix "><li class="part-title">Reference</li><li class="chapter-item expanded "><a href="filters.html"><strong aria-hidden="true">7.</strong> Filter syntax</a></li><li class="chapter-item expanded "><a href="proxy.html"><strong aria-hidden="true">8.</strong> Proxy</a></li><li class="chapter-item expanded "><a href="workspace.html"><strong aria-hidden="true">9.</strong> Workspaces</a></li><li class="chapter-item expanded "><a href="cli.html"><strong aria-hidden="true">10.</strong> Command line tools</a></li><li class="chapter-item expanded "><div><strong aria-hidden="true">11.</strong> Graphql API</div></li><li class="chapter-item expanded "><div><strong aria-hidden="true">12.</strong> Handlebar generator</div></li><li class="chapter-item expanded "><div><strong aria-hidden="true">13.</strong> The josh UI</div></li><li class="chapter-item expanded affix "><li class="part-title">Contributing</li><li class="chapter-item expanded "><div><strong aria-hidden="true">14.</strong> Development tools</div></li><li class="chapter-item expanded "><div><strong aria-hidden="true">15.</strong> Tracing</div></li></ol>
+                <ol class="chapter"><li class="chapter-item expanded "><a href="intro.html"><strong aria-hidden="true">1.</strong> Intro</a></li><li class="chapter-item expanded "><a href="usecases.html"><strong aria-hidden="true">2.</strong> Use cases</a></li><li class="chapter-item expanded affix "><li class="part-title">Guide</li><li class="chapter-item expanded "><a href="gettingstarted.html" class="active"><strong aria-hidden="true">3.</strong> Getting started</a></li><li class="chapter-item expanded "><div><strong aria-hidden="true">4.</strong> Working with workspaces</div></li><li class="chapter-item expanded "><div><strong aria-hidden="true">5.</strong> Importing projects</div></li><li class="chapter-item expanded "><div><strong aria-hidden="true">6.</strong> Integrating with CI</div></li><li class="chapter-item expanded affix "><li class="part-title">Reference</li><li class="chapter-item expanded "><a href="filters.html"><strong aria-hidden="true">7.</strong> Filter syntax</a></li><li class="chapter-item expanded "><a href="proxy.html"><strong aria-hidden="true">8.</strong> Proxy</a></li><li class="chapter-item expanded "><a href="workspace.html"><strong aria-hidden="true">9.</strong> Workspaces</a></li><li class="chapter-item expanded "><a href="cli.html"><strong aria-hidden="true">10.</strong> Command line tools</a></li><li class="chapter-item expanded "><div><strong aria-hidden="true">11.</strong> Graphql API</div></li><li class="chapter-item expanded "><div><strong aria-hidden="true">12.</strong> Handlebar generator</div></li><li class="chapter-item expanded "><div><strong aria-hidden="true">13.</strong> The josh UI</div></li><li class="chapter-item expanded affix "><li class="part-title">Contributing</li><li class="chapter-item expanded "><div><strong aria-hidden="true">14.</strong> Development tools</div></li><li class="chapter-item expanded "><div><strong aria-hidden="true">15.</strong> Tracing</div></li></ol>
             </div>
             <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
         </nav>
@@ -163,73 +163,106 @@
 
                 <div id="content" class="content">
                     <main>
-                        <p><img src="../banner.png" alt="Just One Single History" /></p>
-<p>Josh combines the advantages of monorepos with those of multirepos by leveraging a blazingly-fast,
-incremental, and reversible implementation of git history filtering.</p>
-<h2 id="concept"><a class="header" href="#concept">Concept</a></h2>
-<p>Traditionally, history filtering has been viewed as an expensive operation that should only be
-performed to fix issues with a repository, such as purging big binary files or removing
-accidentally-committed secrets, or as part of a migration to a different repository structure, like
-switching from multirepo to monorepo (or vice versa).</p>
-<p>The implementation shipped with git (<code>git-filter branch</code>) is only usable as a once-in-a-lifetime
-last resort for anything but tiny repositories.</p>
-<p>Faster versions of history filtering have been implemented, such as
-<a href="https://github.com/newren/git-filter-repo">git-filter-repo</a> or the
-<a href="https://rtyley.github.io/bfg-repo-cleaner/">BFG repo cleaner</a>. Those, while much faster, are
-designed for doing occasional, destructive maintenance tasks, usually with the idea already in mind
-that once the filtering is complete the old history should be discarded.</p>
-<p>The idea behind <code>josh</code> started with two questions:</p>
-<ol>
-<li>What if history filtering could be so fast that it can be part of a normal, everyday workflow,
-running on every single push and fetch without the user even noticing?</li>
-<li>What if history filtering was a non-destructive, reversible operation?</li>
-</ol>
-<p>Under those two premises a filter operation stops being a maintenance task. It seamlessly relates
-histories between repos, which can be used by developers and CI systems interchangeably in whatever
-way is most suitable to the task at hand.</p>
-<p>How is this possible?</p>
-<p>Filtering history is a highly predictable task: The set of filters that tend to be used for any
-given repository is limited, such that the input to the filter (a git branch) only gets modified in
-an incremental way. Thus, by keeping a persistent cache between filter runs, the work needed to
-re-run a filter on a new commit (and its history) becomes proportional to the number of changes
-since the last run; The work to filter no longer depends on the total length of the history.
-Additionally, most filters also do not depend on the size of the trees.</p>
-<p>What has long been known to be true for performing merges also applies to history filtering: The
-more often it is done the less work it takes each time.</p>
-<p>To guarantee filters are reversible we have to restrict the kind of filter that can be used; It is
-not possible to write arbitrary filters using a scripting language like is allowed in other tools.
-To still be able to cover a wide range of use cases we have introduced a domain-specific language to
-express more complex filters as a combination of simpler ones. Apart from guaranteeing
-reversibility, the use of a DSL also enables pre-optimization of filter expressions to minimize both
-the amount of work to be done to execute the filter as well as the on-disk size of the persistent
-cache.</p>
-<blockquote>
-<p><em><em>From Linus Torvalds 2007 talk at Google about git:</em></em></p>
-<p><strong>Audience:</strong></p>
-<p>Can you have just a part of files pulled out of a repository, not the entire repository?</p>
-<p><strong>Linus:</strong></p>
-<p>You can export things as tarballs, you can export things as individual files, you can rewrite the
-whole history to say &quot;I want a new version of that repository that only contains that part&quot;, you
-can do that, it is a fairly expensive operation it's something you would do for example when you
-import an old repository into a one huge git repository and then you can split it later on to be
-multiple smaller ones, you can do it, what I am trying to say is that you should generally try to
-avoid it. It's not that git can not handle huge projects, git would not perform as well as it would
-otherwise. And you will have issues that you wish you didn't not have.</p>
-<p>So I am skipping this issue and going back to the performance issue. One of the things I want to
-say about performance is that a lot of people seem to think that performance is about doing the
-same thing, just doing it faster, and that is not true.</p>
-<p>That is not what performance is all about. If you can do something really fast, really well, people
-will start using it differently.</p>
-</blockquote>
+                        <h1 id="getting-started"><a class="header" href="#getting-started">Getting Started</a></h1>
+<p>This book will guide you into setting up the josh
+proxy to serve your own git repository.</p>
+<hr />
+<p><em><strong>NOTE</strong></em></p>
+<p>All the commands in this book are included from the file <code>tutorial.t</code>
+which can be run with <code>cram tutorial.t</code>.</p>
+<hr />
+<h2 id="setting-up-the-proxy"><a class="header" href="#setting-up-the-proxy">Setting up the proxy</a></h2>
+<p>Josh is distributed via <a href="https://hub.docker.com/r/esrlabs/josh-proxy">docker hub</a>,
+and is installed and started with the following command:</p>
+<pre><code class="language-shell">  $ docker run -d -p 8000:8000 -e JOSH_REMOTE=https://github.com -v josh-vol:$(pwd)/git_data esrlabs/josh-proxy:latest &gt; josh.out
+</code></pre>
+<p>This starts josh as a proxy to github.com, in a docker container, 
+mounting the ./git_data folder to the image for use by josh.</p>
+<h2 id="cloning-a-repository"><a class="header" href="#cloning-a-repository">Cloning a repository</a></h2>
+<p>Once josh is running, we can clone a repository through it.
+For example, let's clone josh:</p>
+<pre><code class="language-shell">  $ git clone http://localhost:8000/esrlabs/josh.git
+  Cloning into 'josh'...
+  $ cd josh
+</code></pre>
+<p>As we can see, this repository is simply the normal josh one:</p>
+<pre><code class="language-shell">  $ ls
+  Cargo.lock
+  Cargo.toml
+  Dockerfile
+  Dockerfile.tests
+  LICENSE
+  Makefile
+  README.md
+  docs
+  josh-proxy
+  run-josh.sh
+  run-tests.sh
+  rustfmt.toml
+  scripts
+  src
+  static
+  tests
+  $ git log -2
+  commit fc6af1e10c865f790bff7135d02b1fa82ddebe29
+  Author: Christian Schilling &lt;christian.schilling@esrlabs.com&gt;
+  Date:   Fri Mar 19 11:15:57 2021 +0100
+  
+      Update release.yml
+  
+  commit 975581064fa21b3a3d6871a4e888fd6dc1129a13
+  Author: Christian Schilling &lt;christian.schilling@esrlabs.com&gt;
+  Date:   Fri Mar 19 11:11:45 2021 +0100
+  
+      Update release.yml
+</code></pre>
+<h2 id="extracting-a-module"><a class="header" href="#extracting-a-module">Extracting a module</a></h2>
+<p>Josh becomes interesting when we want to extract a module.
+Let's check out the josh repository again, but this time let's filter
+only the documentation out:</p>
+<pre><code class="language-shell">  $ cd ..
+  $ git clone http://localhost:8000/esrlabs/josh.git:/docs.git
+  Cloning into 'docs'...
+  $ cd docs
+</code></pre>
+<p>Note the addition of <code>:/docs</code> at the end of the url.
+This is called a filter, and it instructs josh to only check out the
+given folder.</p>
+<p>Looking inside the repository, we now see that the history is quite
+different. Indeed, it contains only the commits pertaining to the 
+subfolder that we checked out.</p>
+<pre><code class="language-shell">  $ ls
+  book.toml
+  src
+  $ git log -2
+  commit dd26c506f6d6a218903b9f42a4869184fbbeb940
+  Author: Christian Schilling &lt;christian.schilling@esrlabs.com&gt;
+  Date:   Mon Mar 8 09:22:21 2021 +0100
+  
+      Update docs to use docker for default setup
+  
+  commit ee6abba0fed9b99c9426f5224ff93cfee2813edc
+  Author: Louis-Marie Givel &lt;louis-marie.givel@esrlabs.com&gt;
+  Date:   Fri Feb 26 11:41:37 2021 +0100
+  
+      Update proxy.md
+</code></pre>
+<p>This repository is a real repository in which we can pull, commit, push,
+as with a regular one. Josh will take care of synchronizing it with
+the main one in a transparent fashion.</p>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
                         
+                            <a rel="prev" href="usecases.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+                        
 
                         
-                            <a rel="next" href="usecases.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next" href="filters.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <i class="fa fa-angle-right"></i>
                             </a>
                         
@@ -241,9 +274,13 @@ will start using it differently.</p>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
                 
+                    <a rel="prev" href="usecases.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+                
 
                 
-                    <a rel="next" href="usecases.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next" href="filters.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <i class="fa fa-angle-right"></i>
                     </a>
                 
