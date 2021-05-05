@@ -164,32 +164,32 @@
                 <div id="content" class="content">
                     <main>
                         <h1 id="working-with-workspaces"><a class="header" href="#working-with-workspaces">Working with workspaces</a></h1>
-<hr />
+<blockquote>
 <p><em><strong>NOTE</strong></em></p>
 <p>All the commands are included from the file <code>workspaces.t</code>
 which can be run with <a href="https://bitheap.org/cram/">cram</a>.</p>
-<hr />
+</blockquote>
 <p>Josh really starts to shine when using workspaces.</p>
 <p>Simply put, they are a list of files and folders, remapped from the central repository
 to a new repository.
-For example, a shared library could be used by various workspaces, each mapping it to 
+For example, a shared library could be used by various workspaces, each mapping it to
 their appropriate subdirectory.</p>
 <p>In this chapter, we're going to set up a new git repository with a couple of libraries,
 and then use it to demonstrate the use of workspaces.</p>
 <h2 id="test-set-up"><a class="header" href="#test-set-up">Test set-up</a></h2>
-<hr />
+<blockquote>
 <p><em><strong>NOTE</strong></em></p>
 <p>The following section describes how to set-up a local git server with made-up content
 for the sake of this tutorial.
 You're free to follow it, or to use your own existing repository, in which case you
 can skip to the next section</p>
-<hr />
+</blockquote>
 <p>To host the repository for this test, we need a git server.
-We're going to run git as a <a href="https://en.wikipedia.org/wiki/Common_Gateway_Interface">cgi</a> 
-program using its provided http backend, served with the test server included in 
+We're going to run git as a <a href="https://en.wikipedia.org/wiki/Common_Gateway_Interface">cgi</a>
+program using its provided http backend, served with the test server included in
 the <a href="https://crates.io/crates/hyper_cgi">hyper_cgi</a> crate.</p>
 <h3 id="serving-the-git-repo"><a class="header" href="#serving-the-git-repo">Serving the git repo</a></h3>
-<p>First, we create a <em>bare</em> repository, which will be served by hyper_cgi. We enable 
+<p>First, we create a <em>bare</em> repository, which will be served by hyper_cgi. We enable
 the option <code>http.receivepack</code> to allow the use of <code>git push</code> from the clients.</p>
 <pre><code class="language-shell">  $ git init --bare ./remote/real_repo.git/
   Initialized empty Git repository in */real_repo.git/ (glob)
@@ -212,99 +212,16 @@ http.</p>
 </code></pre>
 <h3 id="adding-some-content"><a class="header" href="#adding-some-content">Adding some content</a></h3>
 <p>Of course, the repository is for now empty, and we need to populate it.
-The following script creates a couple of libraries, as well as two applications that use 
+The <a href="populate.sh">populate.sh</a> script creates a couple of libraries, as well as two applications that use
 them.</p>
 <pre><code class="language-shell">  $ cd real_repo
-  $ mkdir library1 library2 application1 application2 doc
-
-  $ cd library1
-  $ cat &gt; lib1.h &lt;&lt;EOF
-  &gt; int life()
-  &gt; {
-  &gt;   return 41;
-  &gt; }
-  &gt; EOF
-
-  $ git add .
-  $ git commit -m &quot;Add library1&quot;
-  [master (root-commit) 6476861] Add library1
-   1 file changed, 4 insertions(+)
-   create mode 100644 library1/lib1.h
-
-  $ cd ../application1
-  $ cat &gt; app.c &lt;&lt;EOF
-  &gt; #include &quot;lib1.h&quot;
-  &gt; void main(void)
-  &gt; {
-  &gt;   printf(&quot;Answer to life: %d\n&quot;, life());
-  &gt; }
-  &gt; EOF
-
-  $ git add .
-  $ git commit -m &quot;Add application1&quot;
-  [master 1079ef1] Add application1
-   1 file changed, 5 insertions(+)
-   create mode 100644 application1/app.c
-
-  $ cd ../library2
-  $ cat &gt; lib2.h &lt;&lt;EOF
-  &gt; int universe()
-  &gt; {
-  &gt;   return 42;
-  &gt; }
-  &gt; int everything()
-  &gt; {
-  &gt;   return 42;
-  &gt; }
-  &gt; EOF
-
-  $ git add .
-  $ git commit -m &quot;Add library2&quot;
-  [master 0a7f473] Add library2
-   1 file changed, 8 insertions(+)
-   create mode 100644 library2/lib2.h
-
-  $ cd ../application2
-  $ cat &gt; guide.c &lt;&lt;EOF
-  &gt; #include &quot;lib1.h&quot;
-  &gt; #include &quot;lib2.h&quot;
-  &gt; void main(void)
-  &gt; {
-  &gt;   printf(&quot;Answer to life, the universe, and everyting: %d, %d, %d\n&quot;, life(), universe(), everything());
-  &gt; }
-  &gt; EOF
-
-  $ git add .
-  $ git commit -m &quot;Add application2&quot;
-  [master f240612] Add application2
-   1 file changed, 6 insertions(+)
-   create mode 100644 application2/guide.c
-
-  $ cd ../doc
-  $ cat &gt; library1.md &lt;&lt;EOF
-  &gt; Library1 provides the answer to life in an easily digestible packaging
-  &gt; to include in all your projects
-  &gt; EOF
-  $ cat &gt; library2.md &lt;&lt;EOF
-  &gt; Library2 provides the answer to the universe and everything
-  &gt; EOF
-  $ cat &gt; guide.md &lt;&lt;EOF
-  &gt; The guide project aimes to adress matters of life, universe, and everything.
-  &gt; EOF
-
-  $ git add .
-  $ git commit -m &quot;Add documentation&quot;
-  [master f65e94b] Add documentation
-   3 files changed, 4 insertions(+)
-   create mode 100644 doc/guide.md
-   create mode 100644 doc/library1.md
-   create mode 100644 doc/library2.md
+  $ sh ${TESTDIR}/populate.sh &gt; ../populate.out
 
   $ git push origin HEAD
   To http://localhost:8001/real_repo.git
    * [new branch]      HEAD -&gt; master
 
-  $ cd .. &amp;&amp; tree
+  $ tree
   .
   |-- application1
   |   `-- app.c
@@ -320,28 +237,22 @@ them.</p>
       `-- lib2.h
   
   5 directories, 7 files
-  $ git log -2
-  commit f65e94b37599defeaaa33a38d45897eb8ba2e30e
-  Author: Josh &lt;josh@example.com&gt;
-  Date:   Thu Apr 7 22:13:13 2005 +0000
-  
-      Add documentation
-  
-  commit f240612ddaf8e3d793423080fc56856dfd677ff9
-  Author: Josh &lt;josh@example.com&gt;
-  Date:   Thu Apr 7 22:13:13 2005 +0000
-  
-      Add application2
+  $ git log --oneline --graph
+  * f65e94b Add documentation
+  * f240612 Add application2
+  * 0a7f473 Add library2
+  * 1079ef1 Add application1
+  * 6476861 Add library1
 </code></pre>
 <h2 id="creating-our-first-workspace"><a class="header" href="#creating-our-first-workspace">Creating our first workspace</a></h2>
 <p>Now that we have a git repo populated with content, let's serve it through josh:</p>
 <pre><code class="language-shell">  $ docker run -d --network=&quot;host&quot; -e JOSH_REMOTE=http://127.0.0.1:8001 -v josh-vol:$(pwd)/git_data esrlabs/josh-proxy:latest &gt; josh.out
 </code></pre>
-<hr />
-<p><strong>NOTE</strong></p>
+<blockquote>
+<p><em><strong>NOTE</strong></em></p>
 <p>For the sake of this example, we run docker with --network=&quot;host&quot; instead of publishing the port.
 This is so that docker can access localhost, where our ad-hoc git repository is served.</p>
-<hr />
+</blockquote>
 <p>To facilitate developement on applications 1 and 2, we want to create workspaces for them.
 Creating a new workspace looks very similar to checking out a subfolder through josh, as explain
 in &quot;Getting Started&quot;.</p>
@@ -361,28 +272,28 @@ in &quot;Getting Started&quot;.</p>
   
       Add application1
 </code></pre>
-<p>Looking into the newly cloned workspace, we see our expected files and the history containing the 
+<p>Looking into the newly cloned workspace, we see our expected files and the history containing the
 only relevant commit.</p>
-<hr />
-<p><strong>NOTE</strong></p>
+<blockquote>
+<p><em><strong>NOTE</strong></em></p>
 <p>Josh allows us to create a workspace out of any directory, even one that doesn't exist yet.</p>
-<hr />
+</blockquote>
 <h3 id="adding-workspacejosh"><a class="header" href="#adding-workspacejosh">Adding workspace.josh</a></h3>
 <p>The workspace.josh file describes how folders from the central repository (real_repo.git)
 should be mapped to the workspace repository.</p>
-<p>Let's create one with the relevant components.
-First, the library we depend on:</p>
-<pre><code class="language-shell">  $ cat &gt; workspace.josh &lt;&lt; EOF
-  &gt; modules/lib1 = :/library1
-  &gt; EOF
+<p>Since we depend on library1, let's add it to the workspace file.</p>
+<pre><code class="language-shell">  $ echo &quot;modules/lib1 = :/library1&quot; &gt;&gt; workspace.josh
 
   $ git add workspace.josh
+
   $ git commit -m &quot;Map library1 to the application1 workspace&quot;
   [master 06361ee] Map library1 to the application1 workspace
    1 file changed, 1 insertion(+)
    create mode 100644 workspace.josh
-
-  $ git sync origin HEAD
+</code></pre>
+<p>We decided to map library1 to modules/lib1 in the workspace.
+We can now sync up with the server, and observe the result</p>
+<pre><code class="language-shell">  $ git sync origin HEAD
     HEAD -&gt; refs/heads/master
   From http://127.0.0.1:8000/real_repo.git:workspace=application1
    * branch            753d62ca1af960a3d071bb3b40722471228abbf6 -&gt; FETCH_HEAD
@@ -412,19 +323,17 @@ First, the library we depend on:</p>
   |\  
   | * 366adba Add library1
   * 50cd611 Add application1
-
 </code></pre>
-<p>We decided to map library1 to modules/lib1 in the workspace.
-After pushing and fetching the result, we se that it has been succesfully mapped by josh.</p>
+<p>After pushing and fetching the result, we se that it has been succesfully mapped by josh.</p>
 <p>One suprising thing is the history: our &quot;mapping&quot; commit became a merge commit!
-This is because josh needs to merge the history of the module we want to map into the 
+This is because josh needs to merge the history of the module we want to map into the
 repository of the workspace.
 After this is done, all commit will be present in both of the histories.</p>
-<hr />
-<p><strong>NOTE</strong></p>
-<p><code>git sync</code> is a utility provided with josh which will push contents, and, if josh tells 
+<blockquote>
+<p><em><strong>NOTE</strong></em></p>
+<p><code>git sync</code> is a utility provided with josh which will push contents, and, if josh tells
 it to, fetch the transformed result. Otherwise, it works like git push.</p>
-<hr />
+</blockquote>
 <p>By the way, what does the history look like on the real_repo ?</p>
 <pre><code class="language-shell">  $ cd ../real_repo
   $ git pull origin master
