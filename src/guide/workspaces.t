@@ -37,96 +37,13 @@ ANCHOR_END: clone
 
 ANCHOR: populate
   $ cd real_repo
-  $ mkdir library1 library2 application1 application2 doc
-
-  $ cd library1
-  $ cat > lib1.h <<EOF
-  > int life()
-  > {
-  >   return 41;
-  > }
-  > EOF
-
-  $ git add .
-  $ git commit -m "Add library1"
-  [master (root-commit) 6476861] Add library1
-   1 file changed, 4 insertions(+)
-   create mode 100644 library1/lib1.h
-
-  $ cd ../application1
-  $ cat > app.c <<EOF
-  > #include "lib1.h"
-  > void main(void)
-  > {
-  >   printf("Answer to life: %d\n", life());
-  > }
-  > EOF
-
-  $ git add .
-  $ git commit -m "Add application1"
-  [master 1079ef1] Add application1
-   1 file changed, 5 insertions(+)
-   create mode 100644 application1/app.c
-
-  $ cd ../library2
-  $ cat > lib2.h <<EOF
-  > int universe()
-  > {
-  >   return 42;
-  > }
-  > int everything()
-  > {
-  >   return 42;
-  > }
-  > EOF
-
-  $ git add .
-  $ git commit -m "Add library2"
-  [master 0a7f473] Add library2
-   1 file changed, 8 insertions(+)
-   create mode 100644 library2/lib2.h
-
-  $ cd ../application2
-  $ cat > guide.c <<EOF
-  > #include "lib1.h"
-  > #include "lib2.h"
-  > void main(void)
-  > {
-  >   printf("Answer to life, the universe, and everyting: %d, %d, %d\n", life(), universe(), everything());
-  > }
-  > EOF
-
-  $ git add .
-  $ git commit -m "Add application2"
-  [master f240612] Add application2
-   1 file changed, 6 insertions(+)
-   create mode 100644 application2/guide.c
-
-  $ cd ../doc
-  $ cat > library1.md <<EOF
-  > Library1 provides the answer to life in an easily digestible packaging
-  > to include in all your projects
-  > EOF
-  $ cat > library2.md <<EOF
-  > Library2 provides the answer to the universe and everything
-  > EOF
-  $ cat > guide.md <<EOF
-  > The guide project aimes to adress matters of life, universe, and everything.
-  > EOF
-
-  $ git add .
-  $ git commit -m "Add documentation"
-  [master f65e94b] Add documentation
-   3 files changed, 4 insertions(+)
-   create mode 100644 doc/guide.md
-   create mode 100644 doc/library1.md
-   create mode 100644 doc/library2.md
+  $ sh ${TESTDIR}/populate.sh > ../populate.out
 
   $ git push origin HEAD
   To http://localhost:8001/real_repo.git
    * [new branch]      HEAD -> master
 
-  $ cd .. && tree
+  $ tree
   .
   |-- application1
   |   `-- app.c
@@ -142,18 +59,12 @@ ANCHOR: populate
       `-- lib2.h
   
   5 directories, 7 files
-  $ git log -2
-  commit f65e94b37599defeaaa33a38d45897eb8ba2e30e
-  Author: Josh <josh@example.com>
-  Date:   Thu Apr 7 22:13:13 2005 +0000
-  
-      Add documentation
-  
-  commit f240612ddaf8e3d793423080fc56856dfd677ff9
-  Author: Josh <josh@example.com>
-  Date:   Thu Apr 7 22:13:13 2005 +0000
-  
-      Add application2
+  $ git log --oneline --graph
+  * f65e94b Add documentation
+  * f240612 Add application2
+  * 0a7f473 Add library2
+  * 1079ef1 Add application1
+  * 6476861 Add library1
 ANCHOR_END: populate
 
   $ cd ${TESTTMP}
@@ -188,17 +99,18 @@ ANCHOR: clone_workspace
       Add application1
 ANCHOR_END: clone_workspace
 
-ANCHOR: library
-  $ cat > workspace.josh << EOF
-  > modules/lib1 = :/library1
-  > EOF
+ANCHOR: library_ws
+  $ echo "modules/lib1 = :/library1" >> workspace.josh
 
   $ git add workspace.josh
+
   $ git commit -m "Map library1 to the application1 workspace"
   [master 06361ee] Map library1 to the application1 workspace
    1 file changed, 1 insertion(+)
    create mode 100644 workspace.josh
+ANCHOR_END: library_ws
 
+ANCHOR: library_sync
   $ git sync origin HEAD
     HEAD -> refs/heads/master
   From http://127.0.0.1:8000/real_repo.git:workspace=application1
@@ -229,8 +141,8 @@ ANCHOR: library
   |\  
   | * 366adba Add library1
   * 50cd611 Add application1
+ANCHOR_END: library_sync
 
-ANCHOR_END: library
 
 ANCHOR: real_repo
   $ cd ../real_repo

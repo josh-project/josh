@@ -3,13 +3,10 @@
 This book will guide you into setting up the josh
 proxy to serve your own git repository.
 
----
-***NOTE***
-
-All the commands are included from the file `gettingstarted.t`
-which can be run with [cram](https://bitheap.org/cram/).
-
----
+> ***NOTE***
+> 
+> All the commands are included from the file `gettingstarted.t`
+> which can be run with [cram](https://bitheap.org/cram/).
 
 ## Setting up the proxy
 
