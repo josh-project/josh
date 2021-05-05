@@ -1,0 +1,537 @@
+<!DOCTYPE HTML>
+<html lang="en" class="sidebar-visible no-js light">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Working with workspaces - Just One Single History</title>
+        
+        
+
+
+        <!-- Custom HTML head -->
+        
+
+
+        <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+        <meta name="description" content="">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff" />
+
+        
+        <link rel="icon" href="../favicon.svg">
+        
+        
+        <link rel="shortcut icon" href="../favicon.png">
+        
+        <link rel="stylesheet" href="../css/variables.css">
+        <link rel="stylesheet" href="../css/general.css">
+        <link rel="stylesheet" href="../css/chrome.css">
+        
+        <link rel="stylesheet" href="../css/print.css" media="print">
+        
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../FontAwesome/css/font-awesome.css">
+        
+        <link rel="stylesheet" href="../fonts/fonts.css">
+        
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" href="../highlight.css">
+        <link rel="stylesheet" href="../tomorrow-night.css">
+        <link rel="stylesheet" href="../ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+        
+
+        
+    </head>
+    <body>
+        <!-- Provide site root to javascript -->
+        <script type="text/javascript">
+            var path_to_root = "../";
+            var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "light";
+        </script>
+
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script type="text/javascript">
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script type="text/javascript">
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            var html = document.querySelector('html');
+            html.classList.remove('no-js')
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add('js');
+        </script>
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script type="text/javascript">
+            var html = document.querySelector('html');
+            var sidebar = 'hidden';
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            }
+            html.classList.remove('sidebar-visible');
+            html.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <div class="sidebar-scrollbox">
+                <ol class="chapter"><li class="chapter-item expanded "><a href="../intro.html"><strong aria-hidden="true">1.</strong> Intro</a></li><li class="chapter-item expanded "><a href="../usecases.html"><strong aria-hidden="true">2.</strong> Use cases</a></li><li class="chapter-item expanded affix "><li class="part-title">Guide</li><li class="chapter-item expanded "><a href="../guide/gettingstarted.html"><strong aria-hidden="true">3.</strong> Getting started</a></li><li class="chapter-item expanded "><a href="../guide/workspaces.html" class="active"><strong aria-hidden="true">4.</strong> Working with workspaces</a></li><li class="chapter-item expanded "><div><strong aria-hidden="true">5.</strong> Importing projects</div></li><li class="chapter-item expanded "><div><strong aria-hidden="true">6.</strong> Integrating with CI</div></li><li class="chapter-item expanded affix "><li class="part-title">Reference</li><li class="chapter-item expanded "><a href="../reference/filters.html"><strong aria-hidden="true">7.</strong> Filter syntax</a></li><li class="chapter-item expanded "><a href="../reference/proxy.html"><strong aria-hidden="true">8.</strong> Proxy</a></li><li class="chapter-item expanded "><a href="../reference/workspace.html"><strong aria-hidden="true">9.</strong> Workspaces</a></li><li class="chapter-item expanded "><a href="../reference/cli.html"><strong aria-hidden="true">10.</strong> Command line tools</a></li><li class="chapter-item expanded "><div><strong aria-hidden="true">11.</strong> Graphql API</div></li><li class="chapter-item expanded "><div><strong aria-hidden="true">12.</strong> Handlebar generator</div></li><li class="chapter-item expanded "><div><strong aria-hidden="true">13.</strong> The josh UI</div></li><li class="chapter-item expanded affix "><li class="part-title">Contributing</li><li class="chapter-item expanded "><div><strong aria-hidden="true">14.</strong> Development tools</div></li><li class="chapter-item expanded "><div><strong aria-hidden="true">15.</strong> Tracing</div></li></ol>
+            </div>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
+        </nav>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                
+                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky bordered">
+                    <div class="left-buttons">
+                        <button id="sidebar-toggle" class="icon-button" type="button" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </button>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light (default)</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        
+                        <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                        
+                    </div>
+
+                    <h1 class="menu-title">Just One Single History</h1>
+
+                    <div class="right-buttons">
+                        
+                        <a href="../print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                        
+                        
+                    </div>
+                </div>
+
+                
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" name="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+                
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script type="text/javascript">
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="working-with-workspaces"><a class="header" href="#working-with-workspaces">Working with workspaces</a></h1>
+<hr />
+<p><em><strong>NOTE</strong></em></p>
+<p>All the commands are included from the file <code>workspaces.t</code>
+which can be run with <a href="https://bitheap.org/cram/">cram</a>.</p>
+<hr />
+<p>Josh really starts to shine when using workspaces.</p>
+<p>Simply put, they are a list of files and folders, remapped from the central repository
+to a new repository.
+For example, a shared library could be used by various workspaces, each mapping it to 
+their appropriate subdirectory.</p>
+<p>In this chapter, we're going to set up a new git repository with a couple of libraries,
+and then use it to demonstrate the use of workspaces.</p>
+<h2 id="test-set-up"><a class="header" href="#test-set-up">Test set-up</a></h2>
+<hr />
+<p><em><strong>NOTE</strong></em></p>
+<p>The following section describes how to set-up a local git server with made-up content
+for the sake of this tutorial.
+You're free to follow it, or to use your own existing repository, in which case you
+can skip to the next section</p>
+<hr />
+<p>To host the repository for this test, we need a git server.
+We're going to run git as a <a href="https://en.wikipedia.org/wiki/Common_Gateway_Interface">cgi</a> 
+program using its provided http backend, served with the test server included in 
+the <a href="https://crates.io/crates/hyper_cgi">hyper_cgi</a> crate.</p>
+<h3 id="serving-the-git-repo"><a class="header" href="#serving-the-git-repo">Serving the git repo</a></h3>
+<p>First, we create a <em>bare</em> repository, which will be served by hyper_cgi. We enable 
+the option <code>http.receivepack</code> to allow the use of <code>git push</code> from the clients.</p>
+<pre><code class="language-shell">  $ git init --bare ./remote/real_repo.git/
+  Initialized empty Git repository in */real_repo.git/ (glob)
+  $ git config -f ./remote/real_repo.git/config http.receivepack true
+</code></pre>
+<p>Then we start the server which will allow clients to access the repository through
+http.</p>
+<pre><code class="language-shell">  $ GIT_DIR=./remote/ GIT_PROJECT_ROOT=${TESTTMP}/remote/ GIT_HTTP_EXPORT_ALL=1 hyper-cgi-test-server\
+  &gt;  --port=8001\
+  &gt;  --dir=./remote/\
+  &gt;  --cmd=git\
+  &gt;  --args=http-backend\
+  &gt;  &gt; ./hyper-cgi-test-server.out 2&gt;&amp;1 &amp;
+  $ echo $! &gt; ./server_pid
+</code></pre>
+<p>Our server is ready, serving all the repos in the <code>remote</code> folder on port <code>8001</code>.</p>
+<pre><code class="language-shell">  $ git clone http://localhost:8001/real_repo.git
+  Cloning into 'real_repo'...
+  warning: You appear to have cloned an empty repository.
+</code></pre>
+<h3 id="adding-some-content"><a class="header" href="#adding-some-content">Adding some content</a></h3>
+<p>Of course, the repository is for now empty, and we need to populate it.
+The following script creates a couple of libraries, as well as two applications that use 
+them.</p>
+<pre><code class="language-shell">  $ cd real_repo
+  $ mkdir library1 library2 application1 application2 doc
+
+  $ cd library1
+  $ cat &gt; lib1.h &lt;&lt;EOF
+  &gt; int life()
+  &gt; {
+  &gt;   return 41;
+  &gt; }
+  &gt; EOF
+
+  $ git add .
+  $ git commit -m &quot;Add library1&quot;
+  [master (root-commit) 6476861] Add library1
+   1 file changed, 4 insertions(+)
+   create mode 100644 library1/lib1.h
+
+  $ cd ../application1
+  $ cat &gt; app.c &lt;&lt;EOF
+  &gt; #include &quot;lib1.h&quot;
+  &gt; void main(void)
+  &gt; {
+  &gt;   printf(&quot;Answer to life: %d\n&quot;, life());
+  &gt; }
+  &gt; EOF
+
+  $ git add .
+  $ git commit -m &quot;Add application1&quot;
+  [master 1079ef1] Add application1
+   1 file changed, 5 insertions(+)
+   create mode 100644 application1/app.c
+
+  $ cd ../library2
+  $ cat &gt; lib2.h &lt;&lt;EOF
+  &gt; int universe()
+  &gt; {
+  &gt;   return 42;
+  &gt; }
+  &gt; int everything()
+  &gt; {
+  &gt;   return 42;
+  &gt; }
+  &gt; EOF
+
+  $ git add .
+  $ git commit -m &quot;Add library2&quot;
+  [master 0a7f473] Add library2
+   1 file changed, 8 insertions(+)
+   create mode 100644 library2/lib2.h
+
+  $ cd ../application2
+  $ cat &gt; guide.c &lt;&lt;EOF
+  &gt; #include &quot;lib1.h&quot;
+  &gt; #include &quot;lib2.h&quot;
+  &gt; void main(void)
+  &gt; {
+  &gt;   printf(&quot;Answer to life, the universe, and everyting: %d, %d, %d\n&quot;, life(), universe(), everything());
+  &gt; }
+  &gt; EOF
+
+  $ git add .
+  $ git commit -m &quot;Add application2&quot;
+  [master f240612] Add application2
+   1 file changed, 6 insertions(+)
+   create mode 100644 application2/guide.c
+
+  $ cd ../doc
+  $ cat &gt; library1.md &lt;&lt;EOF
+  &gt; Library1 provides the answer to life in an easily digestible packaging
+  &gt; to include in all your projects
+  &gt; EOF
+  $ cat &gt; library2.md &lt;&lt;EOF
+  &gt; Library2 provides the answer to the universe and everything
+  &gt; EOF
+  $ cat &gt; guide.md &lt;&lt;EOF
+  &gt; The guide project aimes to adress matters of life, universe, and everything.
+  &gt; EOF
+
+  $ git add .
+  $ git commit -m &quot;Add documentation&quot;
+  [master f65e94b] Add documentation
+   3 files changed, 4 insertions(+)
+   create mode 100644 doc/guide.md
+   create mode 100644 doc/library1.md
+   create mode 100644 doc/library2.md
+
+  $ git push origin HEAD
+  To http://localhost:8001/real_repo.git
+   * [new branch]      HEAD -&gt; master
+
+  $ cd .. &amp;&amp; tree
+  .
+  |-- application1
+  |   `-- app.c
+  |-- application2
+  |   `-- guide.c
+  |-- doc
+  |   |-- guide.md
+  |   |-- library1.md
+  |   `-- library2.md
+  |-- library1
+  |   `-- lib1.h
+  `-- library2
+      `-- lib2.h
+  
+  5 directories, 7 files
+  $ git log -2
+  commit f65e94b37599defeaaa33a38d45897eb8ba2e30e
+  Author: Josh &lt;josh@example.com&gt;
+  Date:   Thu Apr 7 22:13:13 2005 +0000
+  
+      Add documentation
+  
+  commit f240612ddaf8e3d793423080fc56856dfd677ff9
+  Author: Josh &lt;josh@example.com&gt;
+  Date:   Thu Apr 7 22:13:13 2005 +0000
+  
+      Add application2
+</code></pre>
+<h2 id="creating-our-first-workspace"><a class="header" href="#creating-our-first-workspace">Creating our first workspace</a></h2>
+<p>Now that we have a git repo populated with content, let's serve it through josh:</p>
+<pre><code class="language-shell">  $ docker run -d --network=&quot;host&quot; -e JOSH_REMOTE=http://127.0.0.1:8001 -v josh-vol:$(pwd)/git_data esrlabs/josh-proxy:latest &gt; josh.out
+</code></pre>
+<hr />
+<p><strong>NOTE</strong></p>
+<p>For the sake of this example, we run docker with --network=&quot;host&quot; instead of publishing the port.
+This is so that docker can access localhost, where our ad-hoc git repository is served.</p>
+<hr />
+<p>To facilitate developement on applications 1 and 2, we want to create workspaces for them.
+Creating a new workspace looks very similar to checking out a subfolder through josh, as explain
+in &quot;Getting Started&quot;.</p>
+<p>Instead of just the name of the subfolder, though, we also use the <code>:workspace=</code> filter:</p>
+<pre><code class="language-shell">  $ git clone http://127.0.0.1:8000/real_repo.git:workspace=application1.git application1
+  Cloning into 'application1'...
+  $ cd application1
+  $ tree
+  .
+  `-- app.c
+  
+  0 directories, 1 file
+  $ git log -2
+  commit 50cd6112e173df4cac1aca9cb88b5c2a180bc526
+  Author: Josh &lt;josh@example.com&gt;
+  Date:   Thu Apr 7 22:13:13 2005 +0000
+  
+      Add application1
+</code></pre>
+<p>Looking into the newly cloned workspace, we see our expected files and the history containing the 
+only relevant commit.</p>
+<hr />
+<p><strong>NOTE</strong></p>
+<p>Josh allows us to create a workspace out of any directory, even one that doesn't exist yet.</p>
+<hr />
+<h3 id="adding-workspacejosh"><a class="header" href="#adding-workspacejosh">Adding workspace.josh</a></h3>
+<p>The workspace.josh file describes how folders from the central repository (real_repo.git)
+should be mapped to the workspace repository.</p>
+<p>Let's create one with the relevant components.
+First, the library we depend on:</p>
+<pre><code class="language-shell">  $ cat &gt; workspace.josh &lt;&lt; EOF
+  &gt; modules/lib1 = :/library1
+  &gt; EOF
+
+  $ git add workspace.josh
+  $ git commit -m &quot;Map library1 to the application1 workspace&quot;
+  [master 06361ee] Map library1 to the application1 workspace
+   1 file changed, 1 insertion(+)
+   create mode 100644 workspace.josh
+
+  $ git sync origin HEAD
+    HEAD -&gt; refs/heads/master
+  From http://127.0.0.1:8000/real_repo.git:workspace=application1
+   * branch            753d62ca1af960a3d071bb3b40722471228abbf6 -&gt; FETCH_HEAD
+  HEAD is now at 753d62c Map library1 to the application1 workspace
+  Pushing to http://127.0.0.1:8000/real_repo.git:workspace=application1.git
+  POST git-receive-pack (477 bytes)
+  remote: josh-proxy        
+  remote: response from upstream:        
+  remote: To http://127.0.0.1:8001/real_repo.git        
+  remote:    f65e94b..37184cc  JOSH_PUSH -&gt; master        
+  remote: REWRITE(06361eedf6d6f6d7ada6000481a47363b0f0c3de -&gt; 753d62ca1af960a3d071bb3b40722471228abbf6)        
+  remote: 
+  remote: 
+  updating local tracking ref 'refs/remotes/origin/master'
+  
+  $ tree
+  .
+  |-- app.c
+  |-- modules
+  |   `-- lib1
+  |       `-- lib1.h
+  `-- workspace.josh
+  
+  2 directories, 3 files
+  $ git log --graph --oneline
+  *   753d62c Map library1 to the application1 workspace
+  |\  
+  | * 366adba Add library1
+  * 50cd611 Add application1
+
+</code></pre>
+<p>We decided to map library1 to modules/lib1 in the workspace.
+After pushing and fetching the result, we se that it has been succesfully mapped by josh.</p>
+<p>One suprising thing is the history: our &quot;mapping&quot; commit became a merge commit!
+This is because josh needs to merge the history of the module we want to map into the 
+repository of the workspace.
+After this is done, all commit will be present in both of the histories.</p>
+<hr />
+<p><strong>NOTE</strong></p>
+<p><code>git sync</code> is a utility provided with josh which will push contents, and, if josh tells 
+it to, fetch the transformed result. Otherwise, it works like git push.</p>
+<hr />
+<p>By the way, what does the history look like on the real_repo ?</p>
+<pre><code class="language-shell">  $ cd ../real_repo
+  $ git pull origin master
+  From http://localhost:8001/real_repo
+   * branch            master     -&gt; FETCH_HEAD
+     f65e94b..37184cc  master     -&gt; origin/master
+  Updating f65e94b..37184cc
+  Fast-forward
+   application1/workspace.josh | 1 +
+   1 file changed, 1 insertion(+)
+   create mode 100644 application1/workspace.josh
+  Current branch master is up to date.
+
+  $ tree
+  .
+  |-- application1
+  |   |-- app.c
+  |   `-- workspace.josh
+  |-- application2
+  |   `-- guide.c
+  |-- doc
+  |   |-- guide.md
+  |   |-- library1.md
+  |   `-- library2.md
+  |-- library1
+  |   `-- lib1.h
+  `-- library2
+      `-- lib2.h
+  
+  5 directories, 8 files
+  $ git log --graph --oneline
+  * 37184cc Map library1 to the application1 workspace
+  * f65e94b Add documentation
+  * f240612 Add application2
+  * 0a7f473 Add library2
+  * 1079ef1 Add application1
+  * 6476861 Add library1
+
+</code></pre>
+<p>We can see the newly added commit for workspace.josh in application1, and as expected,
+no merge here.</p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                        
+                            <a rel="prev" href="../guide/gettingstarted.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+                        
+
+                        
+                            <a rel="next" href="../reference/filters.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+                        
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                
+                    <a rel="prev" href="../guide/gettingstarted.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+                
+
+                
+                    <a rel="next" href="../reference/filters.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+                
+            </nav>
+
+        </div>
+
+        
+
+        
+
+        
+
+        
+        <script type="text/javascript">
+            window.playground_copyable = true;
+        </script>
+        
+
+        
+
+        
+        <script src="../elasticlunr.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="../mark.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="../searcher.js" type="text/javascript" charset="utf-8"></script>
+        
+
+        <script src="../clipboard.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="../highlight.js" type="text/javascript" charset="utf-8"></script>
+        <script src="../book.js" type="text/javascript" charset="utf-8"></script>
+
+        <!-- Custom JS scripts -->
+        
+
+        
+
+    </body>
+</html>
