@@ -6,8 +6,8 @@ proxy to serve your own git repository.
 ---
 ***NOTE***
 
-All the commands in this book are included from the file `tutorial.t`
-which can be run with `cram tutorial.t`.
+All the commands are included from the file `gettingstarted.t`
+which can be run with [cram](https://bitheap.org/cram/).
 
 ---
 
@@ -17,7 +17,7 @@ Josh is distributed via [docker hub](https://hub.docker.com/r/esrlabs/josh-proxy
 and is installed and started with the following command:
 
 ```shell
-{{#include tutorial.t:docker_github}}
+{{#include gettingstarted.t:docker_github}}
 ```
 
 This starts josh as a proxy to github.com, in a docker container, 
@@ -29,13 +29,13 @@ Once josh is running, we can clone a repository through it.
 For example, let's clone josh:
 
 ```shell
-{{#include tutorial.t:clone_full}}
+{{#include gettingstarted.t:clone_full}}
 ```
 
 As we can see, this repository is simply the normal josh one:
 
 ```shell
-{{#include tutorial.t:ls_full}}
+{{#include gettingstarted.t:ls_full}}
 ```
 
 ## Extracting a module
@@ -45,7 +45,7 @@ Let's check out the josh repository again, but this time let's filter
 only the documentation out:
 
 ```shell
-{{#include tutorial.t:clone_doc}}
+{{#include gettingstarted.t:clone_doc}}
 ```
 
 Note the addition of `:/docs` at the end of the url.
@@ -57,7 +57,7 @@ different. Indeed, it contains only the commits pertaining to the
 subfolder that we checked out.
 
 ```shell
-{{#include tutorial.t:ls_doc}}
+{{#include gettingstarted.t:ls_doc}}
 ```
 
 This repository is a real repository in which we can pull, commit, push,
