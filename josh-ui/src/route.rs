@@ -1,7 +1,7 @@
 use super::*;
 
 #[derive(Switch, Clone, PartialEq)]
-#[to = "/~/{*:mode}/{*:repo}@{*:rev}({*:filter})/{*:path}[{*:meta}]"]
+#[to = "/~/{*:mode}/{*:repo}@{*:rev}({*:filter})/{*:path}({*:meta})"]
 pub struct AppRoute {
     pub mode: String,
     pub repo: String,
