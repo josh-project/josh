@@ -16,7 +16,7 @@ options.log.level = "trace"
 
 with webdriver.Firefox(options=options) as driver:
     wait = WebDriverWait(driver, 60)
-    driver.get("http://localhost:8002/~/browse/real_repo@refs/heads/master(:/)/[]")
+    driver.get("http://localhost:8002/~/browse/real_repo@refs/heads/master(:/)/()")
     driver.set_window_size(800,600)
     wait.until(presence_of_element_located((By.CSS_SELECTOR, "#repo")))
     print(driver.find_element(By.CSS_SELECTOR, "#repo").text)
