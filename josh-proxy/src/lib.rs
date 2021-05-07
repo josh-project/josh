@@ -376,9 +376,11 @@ pub fn fetch_refs_from_url(
         return Ok(false);
     }
     if stderr.contains("fatal:") {
+        tracing::error!("{:?}", stderr);
         return Err(josh::josh_error(&format!("git error: {:?}", stderr)));
     }
     if stderr.contains("error:") {
+        tracing::error!("{:?}", stderr);
         return Err(josh::josh_error(&format!("git error: {:?}", stderr)));
     }
     return Ok(true);

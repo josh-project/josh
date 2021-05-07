@@ -41,8 +41,8 @@
    * [new branch]      master -> master
 
   $ cd ${TESTTMP}
-  $ curl -s http://localhost:8002/flush
-  Flushed credential cache
+$ curl -s http://localhost:8002/flush
+Flushed credential cache
   $ git clone -q http://localhost:8002/real_repo.git:workspace=ws.git ws
   warning: You appear to have cloned an empty repository.
   $ cd ${TESTTMP}/ws
@@ -65,8 +65,8 @@
   To http://localhost:8002/real_repo.git:workspace=ws.git
    * [new branch]      HEAD -> master
 
-  $ curl -s http://localhost:8002/flush
-  Flushed credential cache
+$ curl -s http://localhost:8002/flush
+Flushed credential cache
   $ git pull -q --rebase
 
   $ git log --graph --pretty=%s
@@ -153,8 +153,8 @@
 
 
   $ cd ${TESTTMP}/ws
-  $ curl -s http://localhost:8002/flush
-  Flushed credential cache
+$ curl -s http://localhost:8002/flush
+Flushed credential cache
   $ git pull --rebase
   Current branch master is up to date.
 

@@ -78,7 +78,10 @@ async fn fetch_upstream(
         if let Some(last) = service.fetch_timers.read()?.get(&key) {
             let since = std::time::Instant::now().duration_since(*last);
             tracing::trace!("last: {:?}, since: {:?}", last, since);
-            since < std::time::Duration::from_secs(60)
+            since
+                < std::time::Duration::from_secs(
+                    ARGS.value_of("cache_duration").unwrap_or("0").parse()?,
+                )
         } else {
             false
         }
@@ -121,22 +124,24 @@ async fn fetch_upstream(
         let _e = s.enter();
         josh_proxy::fetch_refs_from_url(&br_path, &us, &ru, &refs_to_fetch, &a)
     })
-    .await??;
+    .await?;
 
     std::mem::drop(permit);
 
-    if res {
-        fetch_timers.write()?.insert(key, std::time::Instant::now());
+    if let Ok(res) = res {
+        if res {
+            fetch_timers.write()?.insert(key, std::time::Instant::now());
 
-        if ARGS.value_of("poll") == Some(&auth.parse()?.0) {
-            service
-                .poll
-                .lock()?
-                .insert((upstream_repo, auth, remote_url));
+            if ARGS.value_of("poll") == Some(&auth.parse()?.0) {
+                service
+                    .poll
+                    .lock()?
+                    .insert((upstream_repo, auth, remote_url));
+            }
         }
+        return Ok(res);
     }
-
-    return Ok(res);
+    return res;
 }
 
 async fn static_paths(
@@ -389,7 +394,7 @@ async fn call_service(
         return Ok(builder.body(hyper::Body::empty())?);
     }
 
-    if !fetch_upstream(
+    match fetch_upstream(
         serv.clone(),
         parsed_url.upstream_repo.to_owned(),
         &auth,
@@ -398,12 +403,22 @@ async fn call_service(
         false,
     )
     .in_current_span()
-    .await?
+    .await
     {
-        let builder = Response::builder()
-            .header("WWW-Authenticate", "Basic realm=User Visible Realm")
-            .status(hyper::StatusCode::UNAUTHORIZED);
-        return Ok(builder.body(hyper::Body::empty())?);
+        Ok(res) => {
+            if !res {
+                let builder = Response::builder()
+                    .header("WWW-Authenticate", "Basic realm=User Visible Realm")
+                    .status(hyper::StatusCode::UNAUTHORIZED);
+                return Ok(builder.body(hyper::Body::empty())?);
+            }
+        }
+        Err(res) => {
+            let builder = Response::builder()
+                .header("WWW-Authenticate", "Basic realm=User Visible Realm")
+                .status(hyper::StatusCode::INTERNAL_SERVER_ERROR);
+            return Ok(builder.body(hyper::Body::from(res.0))?);
+        }
     }
 
     if parsed_url.api == "/~/graphiql" {
@@ -734,6 +749,13 @@ fn parse_args() -> clap::ArgMatches<'static> {
                 .help("Number of concurrent upstream git fetch/push operations"),
         )
         .arg(clap::Arg::with_name("port").long("port").takes_value(true))
+        .arg(
+            clap::Arg::with_name("cache-duration")
+                .short("c")
+                .takes_value(true)
+                .help("Duration between forced cache refresh")
+                .takes_value(true),
+        )
         .get_matches_from(args)
 }
 

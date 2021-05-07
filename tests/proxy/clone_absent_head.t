@@ -82,27 +82,19 @@
 
   $ git clone http://localhost:8002/real_repo.git full_repo_no_master
   Cloning into 'full_repo_no_master'...
+  warning: You appear to have cloned an empty repository.
 
   $ bash ${TESTDIR}/destroy_test_env.sh
-  "real_repo.git" = [':/sub1']
   refs
   |-- heads
   |-- josh
-  |   |-- filtered
-  |   |   `-- real_repo.git
-  |   |       |-- %3A
-  |   |       |   `-- heads
-  |   |       |       `-- master
-  |   |       `-- %3A%2Fsub1
-  |   |           `-- heads
-  |   |               `-- master
-  |   `-- upstream
+  |   `-- filtered
   |       `-- real_repo.git
-  |           `-- refs
+  |           `-- %3A
   |               `-- heads
   |                   `-- master
   |-- namespaces
   `-- tags
   
-  14 directories, 3 files
+  8 directories, 1 file
 

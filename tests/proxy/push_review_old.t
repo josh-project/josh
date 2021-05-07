@@ -20,8 +20,8 @@
   $ git add sub1
   $ git commit -m "add file2" 1> /dev/null
   $ git push 2> /dev/null
-  $ curl -s http://localhost:8002/flush
-  Flushed credential cache
+$ curl -s http://localhost:8002/flush
+Flushed credential cache
 
   $ cd ${TESTTMP}/sub1
 

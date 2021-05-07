@@ -34,8 +34,8 @@
      a11885e..db0fd21  HEAD -> master
 
   $ cd ${TESTTMP}/sub1
-  $ curl -s http://localhost:8002/flush
-  Flushed credential cache
+$ curl -s http://localhost:8002/flush
+Flushed credential cache
   $ git fetch
 
   $ echo contents2 > file4
@@ -96,8 +96,9 @@
   |       `-- real_repo.git
   |           `-- refs
   |               `-- heads
+  |                   |-- from_filtered
   |                   `-- master
   |-- namespaces
   `-- tags
   
-  14 directories, 3 files
+  14 directories, 4 files

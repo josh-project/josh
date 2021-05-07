@@ -62,8 +62,8 @@
   
 
   $ cd ${TESTTMP}
-  $ curl -s http://localhost:8002/flush
-  Flushed credential cache
+$ curl -s http://localhost:8002/flush
+Flushed credential cache
   $ git clone -q http://localhost:8002/real_repo.git:workspace=ws.git ws
   warning: You appear to have cloned an empty repository.
   $ cd ${TESTTMP}/ws
@@ -173,8 +173,8 @@
   
 
   $ cd ${TESTTMP}/ws
-  $ curl -s http://localhost:8002/flush
-  Flushed credential cache
+$ curl -s http://localhost:8002/flush
+Flushed credential cache
   $ git pull --rebase
   From http://localhost:8002/real_repo.git:workspace=ws
      003a297..f1f2c1b  master     -> origin/master
@@ -309,8 +309,8 @@
   updating local tracking ref 'refs/remotes/origin/master'
   
 
-  $ curl -s http://localhost:8002/flush
-  Flushed credential cache
+$ curl -s http://localhost:8002/flush
+Flushed credential cache
   $ git pull --rebase
   From http://localhost:8002/real_repo.git:workspace=ws
    + 67b3bc0...60bd0e1 master     -> origin/master  (forced update)
@@ -353,8 +353,8 @@ Note that d/ is still in the tree but now it is not overlayed
 
   $ cd ${TESTTMP}/real_repo
 
-  $ curl -s http://localhost:8002/flush
-  Flushed credential cache
+$ curl -s http://localhost:8002/flush
+Flushed credential cache
   $ git pull --rebase
   From http://localhost:8001/real_repo
      f021d4b..108eb9a  master     -> origin/master
