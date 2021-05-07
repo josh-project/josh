@@ -62,8 +62,8 @@
   
 
   $ cd ${TESTTMP}
-  $ curl -s http://localhost:8002/flush
-  Flushed credential cache
+$ curl -s http://localhost:8002/flush
+Flushed credential cache
   $ git clone -q http://localhost:8002/real_repo.git:workspace=ws.git ws
   warning: You appear to have cloned an empty repository.
   $ cd ${TESTTMP}/ws
@@ -92,8 +92,8 @@
   updating local tracking ref 'refs/remotes/origin/master'
   
 
-  $ curl -s http://localhost:8002/flush
-  Flushed credential cache
+$ curl -s http://localhost:8002/flush
+Flushed credential cache
   $ git pull --rebase
   From http://localhost:8002/real_repo.git:workspace=ws
    + 1b46698...4a199f3 master     -> origin/master  (forced update)
@@ -177,8 +177,8 @@
   updating local tracking ref 'refs/remotes/origin/master'
   
 
-  $ curl -s http://localhost:8002/flush
-  Flushed credential cache
+$ curl -s http://localhost:8002/flush
+Flushed credential cache
   $ git pull --rebase
   From http://localhost:8002/real_repo.git:workspace=ws
    + 06230e6...891a8d3 master     -> origin/master  (forced update)
@@ -208,8 +208,8 @@
 
   $ cd ${TESTTMP}/real_repo
 
-  $ curl -s http://localhost:8002/flush
-  Flushed credential cache
+$ curl -s http://localhost:8002/flush
+Flushed credential cache
   $ git pull --rebase
   From http://localhost:8001/real_repo
      98c996c..6fde6f1  master     -> origin/master
@@ -250,4 +250,3 @@
   * | newfile master
   |/  
   * initial
-

@@ -191,6 +191,14 @@
   To http://localhost:8002/real_repo.git:workspace=ws:prefix=pre:/pre.git
      6712cb1..7de0331  master -> master
 
+  $ git pull origin master --rebase 1>/dev/null
+  From http://localhost:8002/real_repo.git:workspace=ws:prefix=pre:/pre
+   * branch            master     -> FETCH_HEAD
+   + 7de0331...44edc62 master     -> origin/master  (forced update)
+  \r (no-eol) (esc)
+                                                                                  \r (no-eol) (esc)
+  Successfully rebased and updated refs/heads/master.
+
   $ cat > workspace.josh <<EOF
   > a/b = :/sub2
   > c = :/sub1
@@ -205,13 +213,13 @@
   remote: response from upstream:
   remote: To http://localhost:8001/real_repo.git
   remote:    edefd7d..18aaa0c  JOSH_PUSH -> master
-  remote: REWRITE(94b02b6b15cb5b8864e8754354cd256ec7ebd341 -> 9d72b88b11aed97d3313f0a6d80894ee2ffdf3e9)
+  remote: REWRITE(5eedfbadb706c633671935d425d19b76d2374d34 -> 9d72b88b11aed97d3313f0a6d80894ee2ffdf3e9)
   remote:
   remote:
   To http://localhost:8002/real_repo.git:workspace=ws:prefix=pre:/pre.git
-     6712cb1..94b02b6  master -> master
-  $ curl -s http://localhost:8002/flush
-  Flushed credential cache
+     44edc62..5eedfba  master -> master
+$ curl -s http://localhost:8002/flush
+Flushed credential cache
   $ git pull --rebase 2> /dev/null
 
 Note that d/ is still in the tree but now it is not overlayed
@@ -237,8 +245,8 @@ Note that d/ is still in the tree but now it is not overlayed
 
   $ cd ${TESTTMP}/real_repo
 
-  $ curl -s http://localhost:8002/flush
-  Flushed credential cache
+$ curl -s http://localhost:8002/flush
+Flushed credential cache
   $ git pull --rebase 1> /dev/null
   From http://localhost:8001/real_repo
      aaec05d..18aaa0c  master     -> origin/master

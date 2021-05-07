@@ -45,8 +45,8 @@
   To http://localhost:8002/real_repo.git:/sub1.git
    * [new branch]      HEAD -> new_branch
 
-  $ curl -s http://localhost:8002/flush
-  Flushed credential cache
+$ curl -s http://localhost:8002/flush
+Flushed credential cache
   $ git push
   remote: josh-proxy        
   remote: response from upstream:        

@@ -36,8 +36,8 @@
   To http://localhost:8001/real_repo.git
    * [new branch]      master -> master
 
-  $ curl -s http://localhost:8002/flush
-  Flushed credential cache
+$ curl -s http://localhost:8002/flush
+Flushed credential cache
   $ git fetch --force http://localhost:8002/repo1.git:prefix=repo1.git master:repo1_in_subdir 1> /dev/null
   warning: no common commits
   From http://localhost:8002/repo1.git:prefix=repo1
@@ -53,8 +53,8 @@
   
   1 directory, 1 file
 
-  $ curl -s http://localhost:8002/flush
-  Flushed credential cache
+$ curl -s http://localhost:8002/flush
+Flushed credential cache
   $ git fetch --force http://localhost:8002/repo2.git:prefix=repo2.git master:repo2_in_subdir 1> /dev/null
   From http://localhost:8002/repo2.git:prefix=repo2
    * [new branch]      master     -> repo2_in_subdir
@@ -131,8 +131,8 @@
   $ cd ${TESTTMP}/real_repo
   $ git checkout master 1> /dev/null
   Already on 'master'
-  $ curl -s http://localhost:8002/flush
-  Flushed credential cache
+$ curl -s http://localhost:8002/flush
+Flushed credential cache
   $ git fetch --force http://localhost:8002/repo1.git:prefix=repo1.git master:repo1_in_subdir 2> /dev/null
   $ git log --graph --pretty=%s repo1_in_subdir
   * add new_file2
@@ -200,8 +200,8 @@
   $ cd ${TESTTMP}/real_repo
   $ git checkout master 1> /dev/null
   Already on 'master'
-  $ curl -s http://localhost:8002/flush
-  Flushed credential cache
+$ curl -s http://localhost:8002/flush
+Flushed credential cache
   $ git fetch --force http://localhost:8002/repo1.git:prefix=repo1.git master:repo1_in_subdir 2> /dev/null
   $ git log --graph --pretty=%s repo1_in_subdir
   * add great new_file2
@@ -231,8 +231,8 @@
   $ git push 2> /dev/null
 
   $ cd ${TESTTMP}/r1
-  $ curl -s http://localhost:8002/flush
-  Flushed credential cache
+$ curl -s http://localhost:8002/flush
+Flushed credential cache
   $ git pull --rebase 2> /dev/null
   Updating 6fe45a9..8047211
   Fast-forward
@@ -258,8 +258,8 @@
 
 Empty roots should not be dropped -> sha1 equal guarantee for "nop"
   $ cd ${TESTTMP}
-  $ curl -s http://localhost:8002/flush
-  Flushed credential cache
+$ curl -s http://localhost:8002/flush
+Flushed credential cache
   $ git clone -q http://localhost:8002/real_repo.git rr 1> /dev/null
   $ cd rr
   $ git log --graph --pretty=%s

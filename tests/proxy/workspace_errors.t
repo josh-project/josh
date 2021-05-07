@@ -157,8 +157,8 @@ No match for filters
      66a8b5e..064643c  HEAD -> master
 
 warnings with graphql
-  $ curl -s http://localhost:8002/flush
-  Flushed credential cache
+$ curl -s http://localhost:8002/flush
+Flushed credential cache
 
   $ cat > ../query << EOF
   > {"query": "{
