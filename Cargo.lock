@@ -1455,13 +1455,13 @@ dependencies = [
 
 [[package]]
 name = "opentelemetry-jaeger"
-version = "0.12.1"
+version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ddd4984441954f9ebbe3eebdfc6fd4fa95be6400d403171228779b949f3cd918"
+checksum = "97fd9ed34f208e0394bfb17522ba0d890925685dfd883147670ed474339d4647"
 dependencies = [
  "async-trait",
  "lazy_static",
- "opentelemetry 0.13.0",
+ "opentelemetry 0.14.0",
  "thiserror",
  "thrift",
 ]
