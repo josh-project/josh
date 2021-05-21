@@ -100,10 +100,16 @@ Since we depend on library1, let's add it to the workspace file.
 ```
 
 We decided to map library1 to modules/lib1 in the workspace.
-We can now sync up with the server, and observe the result
+We can now sync up with the server:
 
 ```shell
 {{#include workspaces.t:library_sync}}
+```
+
+let's observe the result:
+
+```shell
+{{#include workspaces.t:library_sync2}}
 ```
 
 After pushing and fetching the result, we se that it has been succesfully mapped by josh.
@@ -126,3 +132,61 @@ By the way, what does the history look like on the real\_repo ?
 
 We can see the newly added commit for workspace.josh in application1, and as expected,
 no merge here.
+
+### Interacting with workspaces
+
+Let's now create a second workspce, this time for application2.
+It depends on library1 and library2.
+
+```shell
+{{#include workspaces.t:application2}}
+```
+
+Syncing as before:
+
+```shell
+{{#include workspaces.t:app2_sync}}
+```
+
+And our local folder now contains all the files requested:
+
+```shell
+{{#include workspaces.t:app2_files}}
+```
+
+And the history includes the history of both of the libraries:
+
+```shell
+{{#include workspaces.t:app2_hist}}
+```
+
+Note that since we created the workspace and added the dependencies in one single commit,
+the history just contains this one single merge commit.
+
+#### Pushing a change from a workspace
+
+While testing application2, we noticed a typo in the `library1` dependency.
+Let's go ahead a fix it!
+
+```shell
+{{#include workspaces.t:fix_typo}}
+```
+
+We can push this change like any normal git change:
+
+```shell
+{{#include workspaces.t:push_change}}
+```
+
+Since the change was merged in the central repository, 
+a developper can now pull from the application1 workspace.
+
+```shell
+{{#include workspaces.t:app1_pull}}
+```
+
+The change has been propagated!
+
+```shell
+{{#include workspaces.t:app1_log}}
+```
