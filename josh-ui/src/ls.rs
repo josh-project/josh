@@ -112,7 +112,7 @@ impl Component for Nav {
                 }
                 else if let Some(file) = &self.data.rev.file {
                     html! {<codemirror::Codemirror
-                        text=file.text.as_ref().unwrap_or(&"".to_string())
+                        text=file.text.as_ref().unwrap_or(&"".to_string()).clone()
                         marker_pos=file.meta.data.iter().map(|x| x.position.clone().unwrap_or_default()).collect::<Vec<_>>()
                         marker_text=file.meta.data.iter().map(|x| x.text.clone().unwrap_or_default()).collect::<Vec<String>>()
                     />}
