@@ -129,7 +129,7 @@ impl Component for Nav {
                 {
                     for props.route.breadcrumbs().iter().rev().enumerate().map(|(i, b)| {
                         html! {
-                            <>{ if i != 0 {"/"} else {""} }<route::AppAnchor route=b>{ b.filename() }</route::AppAnchor></>
+                            <>{ if i != 0 {"/"} else {""} }<route::AppAnchor route=b.clone()>{ b.filename() }</route::AppAnchor></>
                         }
                     })
                 }
