@@ -136,13 +136,15 @@
                         </a>
                         
                         
+                        
+
                     </div>
                 </div>
 
                 
                 <div id="search-wrapper" class="hidden">
                     <form id="searchbar-outer" class="searchbar-outer">
-                        <input type="search" name="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
                     </form>
                     <div id="searchresults-outer" class="searchresults-outer hidden">
                         <div id="searchresults-header" class="searchresults-header"></div>
@@ -246,7 +248,7 @@ them.</p>
 </code></pre>
 <h2 id="creating-our-first-workspace"><a class="header" href="#creating-our-first-workspace">Creating our first workspace</a></h2>
 <p>Now that we have a git repo populated with content, let's serve it through josh:</p>
-<pre><code class="language-shell">  $ docker run -d --network=&quot;host&quot; -e JOSH_REMOTE=http://127.0.0.1:8001 -v josh-vol:$(pwd)/git_data esrlabs/josh-proxy:latest &gt; josh.out
+<pre><code class="language-shell">$ docker run -d --network=&quot;host&quot; -e JOSH_REMOTE=http://127.0.0.1:8001 -v josh-vol:$(pwd)/git_data esrlabs/josh-proxy:latest &gt; josh.out
 </code></pre>
 <blockquote>
 <p><em><strong>NOTE</strong></em></p>
@@ -292,7 +294,7 @@ should be mapped to the workspace repository.</p>
    create mode 100644 workspace.josh
 </code></pre>
 <p>We decided to map library1 to modules/lib1 in the workspace.
-We can now sync up with the server, and observe the result</p>
+We can now sync up with the server:</p>
 <pre><code class="language-shell">  $ git sync origin HEAD
     HEAD -&gt; refs/heads/master
   From http://127.0.0.1:8000/real_repo.git:workspace=application1
@@ -302,14 +304,16 @@ We can now sync up with the server, and observe the result</p>
   POST git-receive-pack (477 bytes)
   remote: josh-proxy        
   remote: response from upstream:        
-  remote: To http://127.0.0.1:8001/real_repo.git        
+  remote: To http://localhost:8001/real_repo.git        
   remote:    f65e94b..37184cc  JOSH_PUSH -&gt; master        
   remote: REWRITE(06361eedf6d6f6d7ada6000481a47363b0f0c3de -&gt; 753d62ca1af960a3d071bb3b40722471228abbf6)        
   remote: 
   remote: 
   updating local tracking ref 'refs/remotes/origin/master'
   
-  $ tree
+</code></pre>
+<p>let's observe the result:</p>
+<pre><code class="language-shell">  $ tree
   .
   |-- app.c
   |-- modules
@@ -375,6 +379,99 @@ it to, fetch the transformed result. Otherwise, it works like git push.</p>
 </code></pre>
 <p>We can see the newly added commit for workspace.josh in application1, and as expected,
 no merge here.</p>
+<h3 id="interacting-with-workspaces"><a class="header" href="#interacting-with-workspaces">Interacting with workspaces</a></h3>
+<p>Let's now create a second workspce, this time for application2.
+It depends on library1 and library2.</p>
+<pre><code class="language-shell">  $ git clone http://127.0.0.1:8000/real_repo.git:workspace=application2.git application2
+  Cloning into 'application2'...
+  $ cd application2
+  $ echo &quot;libs/lib1 = :/library1&quot; &gt;&gt; workspace.josh
+  $ echo &quot;libs/lib2 = :/library2&quot; &gt;&gt; workspace.josh
+  $ git add workspace.josh &amp;&amp; git commit -m &quot;Create workspace for application2&quot;
+  [master 566a489] Create workspace for application2
+   1 file changed, 2 insertions(+)
+   create mode 100644 workspace.josh
+</code></pre>
+<p>Syncing as before:</p>
+<pre><code class="language-shell">  $ git sync origin HEAD
+    HEAD -&gt; refs/heads/master
+  From http://127.0.0.1:8000/real_repo.git:workspace=application2
+   * branch            5115fd2a5374cbc799da61a228f7fece3039250b -&gt; FETCH_HEAD
+  HEAD is now at 5115fd2 Create workspace for application2
+  Pushing to http://127.0.0.1:8000/real_repo.git:workspace=application2.git
+  POST git-receive-pack (478 bytes)
+  remote: josh-proxy        
+  remote: response from upstream:        
+  remote: To http://localhost:8001/real_repo.git        
+  remote:    37184cc..feb3a5b  JOSH_PUSH -&gt; master        
+  remote: REWRITE(566a4899f0697d0bde1ba064ed81f0654a316332 -&gt; 5115fd2a5374cbc799da61a228f7fece3039250b)        
+  remote: 
+  remote: 
+  updating local tracking ref 'refs/remotes/origin/master'
+  
+</code></pre>
+<p>And our local folder now contains all the files requested:</p>
+<pre><code class="language-shell">  $ tree
+  .
+  |-- guide.c
+  |-- libs
+  |   |-- lib1
+  |   |   `-- lib1.h
+  |   `-- lib2
+  |       `-- lib2.h
+  `-- workspace.josh
+  
+  3 directories, 4 files
+</code></pre>
+<p>And the history includes the history of both of the libraries:</p>
+<pre><code class="language-shell">  $ git log --oneline --graph
+  *   5115fd2 Create workspace for application2
+  |\  
+  | * ffaf58d Add library2
+  | * f4e4e40 Add library1
+  * ee8a5d7 Add application2
+</code></pre>
+<p>Note that since we created the workspace and added the dependencies in one single commit,
+the history just contains this one single merge commit.</p>
+<h4 id="pushing-a-change-from-a-workspace"><a class="header" href="#pushing-a-change-from-a-workspace">Pushing a change from a workspace</a></h4>
+<p>While testing application2, we noticed a typo in the <code>library1</code> dependency.
+Let's go ahead a fix it!</p>
+<pre><code class="language-shell">  $ sed -i 's/41/42/' libs/lib1/lib1.h
+  $ git commit -a -m &quot;fix lib1 typo&quot;
+  [master 82238bf] fix lib1 typo
+   1 file changed, 1 insertion(+), 1 deletion(-)
+</code></pre>
+<p>We can push this change like any normal git change:</p>
+<pre><code class="language-shell">  $ git push origin master
+  remote: josh-proxy        
+  remote: response from upstream:        
+  remote: To http://localhost:8001/real_repo.git        
+  remote:    feb3a5b..31e8fab  JOSH_PUSH -&gt; master        
+  remote: 
+  remote: 
+  To http://127.0.0.1:8000/real_repo.git:workspace=application2.git
+     5115fd2..82238bf  master -&gt; master
+</code></pre>
+<p>Since the change was merged in the central repository, 
+a developper can now pull from the application1 workspace.</p>
+<pre><code class="language-shell">  $ cd ../application1
+  $ git pull
+  From http://127.0.0.1:8000/real_repo.git:workspace=application1
+   + 06361ee...c64b765 master     -&gt; origin/master  (forced update)
+  Updating 753d62c..c64b765
+  Fast-forward
+   modules/lib1/lib1.h | 2 +-
+   1 file changed, 1 insertion(+), 1 deletion(-)
+  Current branch master is up to date.
+</code></pre>
+<p>The change has been propagated!</p>
+<pre><code class="language-shell">  $ git log --oneline --graph
+  * c64b765 fix lib1 typo
+  *   753d62c Map library1 to the application1 workspace
+  |\  
+  | * 366adba Add library1
+  * 50cd611 Add application1
+</code></pre>
 
                     </main>
 
