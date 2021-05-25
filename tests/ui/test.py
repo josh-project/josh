@@ -25,5 +25,6 @@ with webdriver.Firefox(options=options) as driver:
     wait.until(presence_of_element_located((By.CSS_SELECTOR, "td")))
     driver.save_screenshot("filters.png")
     driver.find_element(By.CSS_SELECTOR, "a:nth-child(2) td").click()
+    wait.until(presence_of_element_located((By.CSS_SELECTOR, "td")))
     driver.save_screenshot("done.png")
     print("success")
