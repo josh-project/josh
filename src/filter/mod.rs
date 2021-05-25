@@ -274,9 +274,7 @@ fn apply_to_commit2(
             let filtered = filters
                 .iter()
                 .map(|f| apply_to_commit2(&to_op(*f), &commit, transaction))
-                .collect::<JoshResult<Vec<_>>>()?
-                .into_iter()
-                .collect::<Option<Vec<_>>>();
+                .collect::<JoshResult<Option<Vec<_>>>>()?;
 
             let filtered = some_or!(filtered, { return Ok(None) });
 
@@ -318,9 +316,7 @@ fn apply_to_commit2(
 
                     apply_to_commit2(&Op::Subtract(cw, pcw), &parent, transaction)
                 })
-                .collect::<JoshResult<Vec<_>>>()?
-                .into_iter()
-                .collect::<Option<Vec<_>>>();
+                .collect::<JoshResult<Option<Vec<_>>>>()?;
 
             let extra_parents = some_or!(extra_parents, { return Ok(None) });
 
