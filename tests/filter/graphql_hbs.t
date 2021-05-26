@@ -245,31 +245,24 @@
   $ josh-filter -q "render=sub1/tmpl_file&tmpl_param1=tmpl_param_value1&tmpl_p2=val2"
   tmpl_param1: tmpl_param_value1
   tmpl_p2: val2
-  
   ID: 9bf2c7be81ce7114a0af32c8dfe3667a7c5b37ce
   Summary: add file2
   From TOML: my_value
   From TOML: 
-  
   path: file0
   parent: 
   sha1: f25320b9e3f1dd09d15e6e13796402768d6d62cf
-  
   path: sub1/file1
   parent: sub1
   sha1: a024003ee1acc6bf70318a46e7b6df651b9dc246
-  
   path: sub1/file2
   parent: sub1
   sha1: 6b46faacade805991bcaea19382c9d941828ce80
-  
   path: sub2/file3
   parent: sub2
   sha1: 1cb5d64cdb55e3db2a8d6f00d596572b4cfa9d5c
-  
   path: sub3/sub4/file4
   parent: sub3/sub4
   sha1: 288746e9035732a1fe600ee331de94e70f9639cb
-  
   $ josh-filter :/sub1 -q render=file2
   contents2

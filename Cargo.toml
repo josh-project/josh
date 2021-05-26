@@ -13,7 +13,7 @@ edition = "2018"
 members = ["josh-proxy", "josh-ui", "."]
 
 [dependencies]
-handlebars = "3.5"
+handlebars = "4.0"
 git2 = {version = "0.13", default-features = false}
 clap = "2"
 tracing = "*"
