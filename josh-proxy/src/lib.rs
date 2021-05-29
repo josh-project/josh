@@ -338,7 +338,7 @@ fn url_with_auth(url: &str, username: &str) -> String {
         let splitted: Vec<&str> = url.splitn(2, "://").collect();
         let proto = splitted[0];
         let rest = splitted[1];
-        format!("{}://{}@{}", &proto, "annonymous", &rest)
+        format!("{}://{}@{}", &proto, "anonymous", &rest)
     }
 }
 
