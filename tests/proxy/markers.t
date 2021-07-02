@@ -89,7 +89,7 @@
   } (no-eol)
 
   $ git fetch ${TESTTMP}/remote/scratch refs/josh/upstream/real_repo.git/refs/josh/meta
-  From /tmp/cramtests-*/markers.t/remote/scratch (glob)
+  From /*/cramtests-*/markers.t/remote/scratch (glob)
    * branch            refs/josh/upstream/real_repo.git/refs/josh/meta -> FETCH_HEAD
 
   $ git log --graph --pretty=%s FETCH_HEAD
@@ -121,7 +121,7 @@
   } (no-eol)
 
   $ git fetch ${TESTTMP}/remote/scratch refs/josh/upstream/real_repo.git/refs/josh/meta
-  From /tmp/cramtests-*/markers.t/remote/scratch (glob)
+  From /*/cramtests-*/markers.t/remote/scratch (glob)
    * branch            refs/josh/upstream/real_repo.git/refs/josh/meta -> FETCH_HEAD
 
   $ git log --graph --pretty=%s FETCH_HEAD
@@ -161,7 +161,7 @@
   } (no-eol)
 
   $ git fetch ${TESTTMP}/remote/scratch refs/josh/upstream/real_repo.git/refs/josh/meta
-  From /tmp/cramtests-*/markers.t/remote/scratch (glob)
+  From /*/cramtests-*/markers.t/remote/scratch (glob)
    * branch            refs/josh/upstream/real_repo.git/refs/josh/meta -> FETCH_HEAD
 
   $ git log --graph --pretty=%s FETCH_HEAD
