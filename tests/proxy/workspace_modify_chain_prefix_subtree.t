@@ -191,13 +191,7 @@
   To http://localhost:8002/real_repo.git:workspace=ws:prefix=pre:/pre.git
      6712cb1..7de0331  master -> master
 
-  $ git pull origin master --rebase 1>/dev/null
-  From http://localhost:8002/real_repo.git:workspace=ws:prefix=pre:/pre
-   * branch            master     -> FETCH_HEAD
-   + 7de0331...44edc62 master     -> origin/master  (forced update)
-  \r (no-eol) (esc)
-                                                                                  \r (no-eol) (esc)
-  Successfully rebased and updated refs/heads/master.
+  $ git pull -q origin master --rebase 1>/dev/null
 
   $ cat > workspace.josh <<EOF
   > a/b = :/sub2
