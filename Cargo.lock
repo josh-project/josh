@@ -1052,7 +1052,7 @@ dependencies = [
  "josh",
  "juniper",
  "lazy_static",
- "opentelemetry",
+ "opentelemetry 0.15.0",
  "opentelemetry-jaeger",
  "percent-encoding",
  "regex",
@@ -1439,6 +1439,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "opentelemetry"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ff27b33e30432e7b9854936693ca103d8591b0501f7ae9f633de48cda3bf2a67"
+dependencies = [
+ "async-trait",
+ "crossbeam-channel",
+ "futures",
+ "js-sys",
+ "lazy_static",
+ "percent-encoding",
+ "pin-project",
+ "rand 0.8.3",
+ "thiserror",
+]
+
+[[package]]
 name = "opentelemetry-jaeger"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1446,7 +1463,7 @@ checksum = "97fd9ed34f208e0394bfb17522ba0d890925685dfd883147670ed474339d4647"
 dependencies = [
  "async-trait",
  "lazy_static",
- "opentelemetry",
+ "opentelemetry 0.14.0",
  "thiserror",
  "thrift",
 ]
@@ -2336,7 +2353,7 @@ version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e2f4cb277b92a8ba1170b3b911056428ce2ef9993351baf5965bb0359a2e5963"
 dependencies = [
- "opentelemetry",
+ "opentelemetry 0.14.0",
  "tracing",
  "tracing-core",
  "tracing-log",
