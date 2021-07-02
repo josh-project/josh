@@ -36,12 +36,18 @@ impl GraphQLHelper {
             .unwrap_or(vec![]);
         let query = String::from_utf8(blob)?;
 
+        let mut variables = juniper::Variables::new();
+
+        for (k, v) in hash.iter() {
+            variables.insert(k.to_string(), juniper::InputValue::scalar(v.render()));
+        }
+
         let transaction = cache::Transaction::open(&self.repo_path, None)?;
         let (res, _errors) = juniper::execute_sync(
             &query,
             None,
             &graphql::commit_schema(reference.target().ok_or(josh_error("missing target"))?),
-            &juniper::Variables::new(),
+            &variables,
             &graphql::context(transaction),
         )?;
 
@@ -108,18 +114,35 @@ pub fn render(
         }
     );
 
+    let mut params = std::collections::BTreeMap::new();
+    for p in parameters {
+        let mut split = p.splitn(2, "=");
+        let name = split
+            .next()
+            .ok_or(josh_error(&format!("invalid query {:?}", query_and_params)))?;
+        let value = split
+            .next()
+            .ok_or(josh_error(&format!("invalid query {:?}", query_and_params)))?;
+        params.insert(name.to_string(), value.to_string());
+    }
+
     let template = if let Ok(blob) = obj.peel_to_blob() {
         let template = std::str::from_utf8(blob.content())?;
         if cmd == "get" {
             return Ok(Some(template.to_string()));
         }
         if cmd == "graphql" {
+            let mut variables = juniper::Variables::new();
+
+            for (k, v) in params {
+                variables.insert(k.to_string(), juniper::InputValue::scalar(v));
+            }
             let transaction = cache::Transaction::open(&repo.path(), None)?;
             let (res, _errors) = juniper::execute_sync(
                 &template.to_string(),
                 None,
                 &graphql::commit_schema(reference.target().ok_or(josh_error("missing target"))?),
-                &juniper::Variables::new(),
+                &variables,
                 &graphql::context(transaction),
             )?;
 
@@ -149,18 +172,6 @@ pub fn render(
             headref: headref.to_string(),
         }),
     );
-
-    let mut params = std::collections::BTreeMap::new();
-    for p in parameters {
-        let mut split = p.splitn(2, "=");
-        let name = split
-            .next()
-            .ok_or(josh_error(&format!("invalid query {:?}", query_and_params)))?;
-        let value = split
-            .next()
-            .ok_or(josh_error(&format!("invalid query {:?}", query_and_params)))?;
-        params.insert(name.to_string(), value.to_string());
-    }
 
     return Ok(Some(format!(
         "{}",

@@ -20,11 +20,11 @@
   $ git commit -m "add file1" 1> /dev/null
 
   $ cat > sub1/x.graphql <<EOF
-  > query {
+  > query(\$name: String!) {
   >  hash
   >  summary
   >  date(format: "%d.%m.%Y %H:%M:%S")
-  >  config: file(path: "config_file.toml") {
+  >  config: file(path: \$name) {
   >   data: toml {
   >    b: string(at: "/a/b")
   >    x: string(at: "/a/x")
@@ -73,7 +73,7 @@
   $ cat > sub1/tmpl_file <<EOF
   > tmpl_param1: {{ tmpl_param1 }}
   > tmpl_p2: {{ tmpl_p2 }}
-  > {{ #with (graphql file="x.graphql") as |commit| }}
+  > {{ #with (graphql file="x.graphql" name="config_file.toml") as |commit| }}
   > ID: {{ commit.hash }}
   > Summary: {{ commit.summary }}
   > From TOML: {{ commit.config.data.b }}
@@ -99,9 +99,9 @@
 
   $ josh-filter -q render=sub1/file1
   contents1
-  $ josh-filter -q "graphql=sub1/x.graphql"
+  $ josh-filter -q "graphql=sub1/x.graphql&name=config_file.toml"
   {
-    "hash": "9bf2c7be81ce7114a0af32c8dfe3667a7c5b37ce",
+    "hash": "06869a808bf918c4ac0b33a5222136f7829cdda9",
     "summary": "add file2",
     "date": "07.04.2005 22:13:13",
     "config": {
@@ -245,7 +245,7 @@
   $ josh-filter -q "render=sub1/tmpl_file&tmpl_param1=tmpl_param_value1&tmpl_p2=val2"
   tmpl_param1: tmpl_param_value1
   tmpl_p2: val2
-  ID: 9bf2c7be81ce7114a0af32c8dfe3667a7c5b37ce
+  ID: 06869a808bf918c4ac0b33a5222136f7829cdda9
   Summary: add file2
   From TOML: my_value
   From TOML: 
