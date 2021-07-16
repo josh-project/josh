@@ -1,4 +1,4 @@
-![Just One Single History](../banner.png)
+![Just One Single History](../../banner.png)
 
 Josh combines the advantages of monorepos with those of multirepos by leveraging a blazingly-fast,
 incremental, and reversible implementation of git history filtering.
