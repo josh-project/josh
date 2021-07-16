@@ -125,4 +125,6 @@ Even without using the more advanced features like partial cloning or workspaces
 `josh-proxy` can act as a cache to reduce traffic between locations or keep your CI from
 performing many requests to the main git host.
 
+## FAQ
 
+See [here](https://esrlabs.github.io/josh/faq.html)
