@@ -2,6 +2,7 @@
 
 - [Intro](./intro.md)
 - [Use cases](./usecases.md)
+- [FAQ](./faq.md)
 # Guide
 - [Getting started](./guide/gettingstarted.md)
 - [Working with workspaces](./guide/workspaces.md)
