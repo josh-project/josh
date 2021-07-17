@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Intro - Just One Single History</title>
+        <title>FAQ - Just One Single History</title>
                 
 
         <!-- Custom HTML head -->
@@ -82,7 +82,7 @@
 
         <nav id="sidebar" class="sidebar" aria-label="Table of contents">
             <div class="sidebar-scrollbox">
-                <ol class="chapter"><li class="chapter-item expanded "><a href="intro.html" class="active"><strong aria-hidden="true">1.</strong> Intro</a></li><li class="chapter-item expanded "><a href="usecases.html"><strong aria-hidden="true">2.</strong> Use cases</a></li><li class="chapter-item expanded "><a href="faq.html"><strong aria-hidden="true">3.</strong> FAQ</a></li><li class="chapter-item expanded affix "><li class="part-title">Guide</li><li class="chapter-item expanded "><a href="guide/gettingstarted.html"><strong aria-hidden="true">4.</strong> Getting started</a></li><li class="chapter-item expanded "><a href="guide/workspaces.html"><strong aria-hidden="true">5.</strong> Working with workspaces</a></li><li class="chapter-item expanded "><div><strong aria-hidden="true">6.</strong> Importing projects</div></li><li class="chapter-item expanded "><div><strong aria-hidden="true">7.</strong> Integrating with CI</div></li><li class="chapter-item expanded affix "><li class="part-title">Reference</li><li class="chapter-item expanded "><a href="reference/filters.html"><strong aria-hidden="true">8.</strong> Filter syntax</a></li><li class="chapter-item expanded "><a href="reference/proxy.html"><strong aria-hidden="true">9.</strong> Proxy</a></li><li class="chapter-item expanded "><a href="reference/workspace.html"><strong aria-hidden="true">10.</strong> Workspaces</a></li><li class="chapter-item expanded "><a href="reference/cli.html"><strong aria-hidden="true">11.</strong> Command line tools</a></li><li class="chapter-item expanded "><div><strong aria-hidden="true">12.</strong> Graphql API</div></li><li class="chapter-item expanded "><div><strong aria-hidden="true">13.</strong> Handlebar generator</div></li><li class="chapter-item expanded "><div><strong aria-hidden="true">14.</strong> The josh UI</div></li><li class="chapter-item expanded affix "><li class="part-title">Contributing</li><li class="chapter-item expanded "><div><strong aria-hidden="true">15.</strong> Development tools</div></li><li class="chapter-item expanded "><div><strong aria-hidden="true">16.</strong> Tracing</div></li></ol>            </div>
+                <ol class="chapter"><li class="chapter-item expanded "><a href="intro.html"><strong aria-hidden="true">1.</strong> Intro</a></li><li class="chapter-item expanded "><a href="usecases.html"><strong aria-hidden="true">2.</strong> Use cases</a></li><li class="chapter-item expanded "><a href="faq.html" class="active"><strong aria-hidden="true">3.</strong> FAQ</a></li><li class="chapter-item expanded affix "><li class="part-title">Guide</li><li class="chapter-item expanded "><a href="guide/gettingstarted.html"><strong aria-hidden="true">4.</strong> Getting started</a></li><li class="chapter-item expanded "><a href="guide/workspaces.html"><strong aria-hidden="true">5.</strong> Working with workspaces</a></li><li class="chapter-item expanded "><div><strong aria-hidden="true">6.</strong> Importing projects</div></li><li class="chapter-item expanded "><div><strong aria-hidden="true">7.</strong> Integrating with CI</div></li><li class="chapter-item expanded affix "><li class="part-title">Reference</li><li class="chapter-item expanded "><a href="reference/filters.html"><strong aria-hidden="true">8.</strong> Filter syntax</a></li><li class="chapter-item expanded "><a href="reference/proxy.html"><strong aria-hidden="true">9.</strong> Proxy</a></li><li class="chapter-item expanded "><a href="reference/workspace.html"><strong aria-hidden="true">10.</strong> Workspaces</a></li><li class="chapter-item expanded "><a href="reference/cli.html"><strong aria-hidden="true">11.</strong> Command line tools</a></li><li class="chapter-item expanded "><div><strong aria-hidden="true">12.</strong> Graphql API</div></li><li class="chapter-item expanded "><div><strong aria-hidden="true">13.</strong> Handlebar generator</div></li><li class="chapter-item expanded "><div><strong aria-hidden="true">14.</strong> The josh UI</div></li><li class="chapter-item expanded affix "><li class="part-title">Contributing</li><li class="chapter-item expanded "><div><strong aria-hidden="true">15.</strong> Development tools</div></li><li class="chapter-item expanded "><div><strong aria-hidden="true">16.</strong> Tracing</div></li></ol>            </div>
             <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
         </nav>
 
@@ -143,71 +143,28 @@
 
                 <div id="content" class="content">
                     <main>
-                        <p><img src="../../banner.png" alt="Just One Single History" /></p>
-<p>Josh combines the advantages of monorepos with those of multirepos by leveraging a blazingly-fast,
-incremental, and reversible implementation of git history filtering.</p>
-<h2 id="concept"><a class="header" href="#concept">Concept</a></h2>
-<p>Traditionally, history filtering has been viewed as an expensive operation that should only be
-performed to fix issues with a repository, such as purging big binary files or removing
-accidentally-committed secrets, or as part of a migration to a different repository structure, like
-switching from multirepo to monorepo (or vice versa).</p>
-<p>The implementation shipped with git (<code>git-filter branch</code>) is only usable as a once-in-a-lifetime
-last resort for anything but tiny repositories.</p>
-<p>Faster versions of history filtering have been implemented, such as
-<a href="https://github.com/newren/git-filter-repo">git-filter-repo</a> or the
-<a href="https://rtyley.github.io/bfg-repo-cleaner/">BFG repo cleaner</a>. Those, while much faster, are
-designed for doing occasional, destructive maintenance tasks, usually with the idea already in mind
-that once the filtering is complete the old history should be discarded.</p>
-<p>The idea behind <code>josh</code> started with two questions:</p>
-<ol>
-<li>What if history filtering could be so fast that it can be part of a normal, everyday workflow,
-running on every single push and fetch without the user even noticing?</li>
-<li>What if history filtering was a non-destructive, reversible operation?</li>
-</ol>
-<p>Under those two premises a filter operation stops being a maintenance task. It seamlessly relates
-histories between repos, which can be used by developers and CI systems interchangeably in whatever
-way is most suitable to the task at hand.</p>
-<p>How is this possible?</p>
-<p>Filtering history is a highly predictable task: The set of filters that tend to be used for any
-given repository is limited, such that the input to the filter (a git branch) only gets modified in
-an incremental way. Thus, by keeping a persistent cache between filter runs, the work needed to
-re-run a filter on a new commit (and its history) becomes proportional to the number of changes
-since the last run; The work to filter no longer depends on the total length of the history.
-Additionally, most filters also do not depend on the size of the trees.</p>
-<p>What has long been known to be true for performing merges also applies to history filtering: The
-more often it is done the less work it takes each time.</p>
-<p>To guarantee filters are reversible we have to restrict the kind of filter that can be used; It is
-not possible to write arbitrary filters using a scripting language like is allowed in other tools.
-To still be able to cover a wide range of use cases we have introduced a domain-specific language to
-express more complex filters as a combination of simpler ones. Apart from guaranteeing
-reversibility, the use of a DSL also enables pre-optimization of filter expressions to minimize both
-the amount of work to be done to execute the filter as well as the on-disk size of the persistent
-cache.</p>
-<blockquote>
-<p><em><em>From Linus Torvalds 2007 talk at Google about git:</em></em></p>
-<p><strong>Audience:</strong></p>
-<p>Can you have just a part of files pulled out of a repository, not the entire repository?</p>
-<p><strong>Linus:</strong></p>
-<p>You can export things as tarballs, you can export things as individual files, you can rewrite the
-whole history to say &quot;I want a new version of that repository that only contains that part&quot;, you
-can do that, it is a fairly expensive operation it's something you would do for example when you
-import an old repository into a one huge git repository and then you can split it later on to be
-multiple smaller ones, you can do it, what I am trying to say is that you should generally try to
-avoid it. It's not that git can not handle huge projects, git would not perform as well as it would
-otherwise. And you will have issues that you wish you didn't not have.</p>
-<p>So I am skipping this issue and going back to the performance issue. One of the things I want to
-say about performance is that a lot of people seem to think that performance is about doing the
-same thing, just doing it faster, and that is not true.</p>
-<p>That is not what performance is all about. If you can do something really fast, really well, people
-will start using it differently.</p>
-</blockquote>
+                        <h1 id="frequently-asked-questions"><a class="header" href="#frequently-asked-questions">Frequently Asked Questions</a></h1>
+<h2 id="how-is-josh-different-from-git-sparse-checkout"><a class="header" href="#how-is-josh-different-from-git-sparse-checkout">How is josh different from git sparse-checkout?</a></h2>
+<p>Josh operates on the git object graph and is unrelated to checking out files and the working tree on the filesystem, which is the only thing sparse-checkout is concerned with. A sparse checkout does not influence the contents of the object database and also not what gets downloaded over the network.
+Both can certainly be used together if needed.</p>
+<h2 id="how-is-josh-different-from-partial-clone"><a class="header" href="#how-is-josh-different-from-partial-clone">How is josh different from partial clone?</a></h2>
+<p>A partial clone will cause git to download only parts of an object database according to some predicate. It is still the same object database with the history having the same commits and sha1s. It still allows loading skipped parts of the object database at a later point.
+Josh creates an alternate history that has no reference to the skipped parts. It is as such very similar to git filter-branch just faster, with added features and a different user interface.</p>
+<h2 id="how-is-it-different-from-submodules"><a class="header" href="#how-is-it-different-from-submodules">How is it different from submodules?</a></h2>
+<p>Where git submodules are multiple, independant repos, referencing each other with SHAs, josh supports the monorepo approach.
+All of the code is in one single repo which can easily be kept in sync, and josh provides any sub folder (or in the case of workspaces, more complicated recombination of folders) as their own git repository.
+These repos are transparently synchronised both ways with the main monorepo.
+Josh can thus do more than submodules can, and is easier and faster to use.</p>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
+                                                    <a rel="prev" href="usecases.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
                         
-                                                    <a rel="next" href="usecases.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                                    <a rel="next" href="guide/gettingstarted.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <i class="fa fa-angle-right"></i>
                             </a>
                         
@@ -217,8 +174,11 @@ will start using it differently.</p>
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                                    <a rel="prev" href="usecases.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
                 
-                                    <a rel="next" href="usecases.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                    <a rel="next" href="guide/gettingstarted.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <i class="fa fa-angle-right"></i>
                     </a>
                             </nav>
