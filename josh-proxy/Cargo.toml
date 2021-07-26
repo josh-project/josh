@@ -13,7 +13,7 @@ version = "0.3.0"
 
 [dependencies]
 clap = "2.33.3"
-futures = "0.3.15"
+futures = "0.3.16"
 tokio = { version = "1.8.1", features = ["full"] }
 hyper = { version = "0.14.11", features = ["stream"] }
 hyper_cgi = "0.1.10"
