@@ -12,31 +12,31 @@ version = "0.3.0"
 
 
 [dependencies]
-clap = "2.33"
-futures = "0.3"
-tokio = { version = "1.5", features = ["full"] }
-hyper = { version = "0.14", features = ["stream"] }
-hyper_cgi = "0.1"
-hyper-staticfile = "*"
-hyper-tls = "*"
-toml = "0.5"
-git2 = {version = "0.13"}
-tracing = { version = "0.1", features = ["max_level_trace", "release_max_level_trace"] }
-tracing-futures = "0.2"
-tracing-subscriber = "0.2"
-tracing-opentelemetry = "0.13"
-opentelemetry = "0.14"
-opentelemetry-jaeger = "0.13"
-reqwest= { version = "0.11", default-features = false, features = ["blocking", "json"] }
-uuid = { version = "0.8", features = ["v4"] }
-base64 = "0.13"
-regex = "1.5"
-lazy_static = "1.4"
+clap = "2.33.3"
+futures = "0.3.16"
+tokio = { version = "1.8.1", features = ["full"] }
+hyper = { version = "0.14.11", features = ["stream"] }
+hyper_cgi = "0.1.10"
+hyper-staticfile = "0.6.0"
+hyper-tls = "0.5.0"
+toml = "0.5.8"
+git2 = "0.13.20"
+tracing = { version = "0.1.26", features = ["max_level_trace", "release_max_level_trace"] }
+tracing-futures = "0.2.5"
+tracing-subscriber = "0.2.19"
+tracing-opentelemetry = "0.14.0"
+opentelemetry = "0.15.0"
+opentelemetry-jaeger = "0.14.0"
+reqwest= { version = "0.11.4", default-features = false, features = ["blocking", "json"] }
+uuid = { version = "0.8.2", features = ["v4"] }
+base64 = "0.13.0"
+regex = "1.5.4"
+lazy_static = "1.4.0"
 josh = {path = "../"}
-serde_json= "1.0"
-serde= "*"
-rust-crypto = "0.2"
-unindent = "*"
-juniper = {version = "*", features =["expose-test-schema"] }
-url = "*"
-percent-encoding = "*"
+serde_json= "1.0.66"
+serde= "1.0.127"
+rust-crypto = "0.2.36"
+unindent = "0.1.7"
+juniper = { version = "0.15.7", features = ["expose-test-schema"] }
+url = "2.2.2"
+percent-encoding = "2.1.0"

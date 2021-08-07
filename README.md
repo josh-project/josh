@@ -26,7 +26,7 @@ The partial repo will act as a normal git repository but only contain the files
 found in the subdirectory and only commits affecting those files.
 The partial repo supports both fetch as well as push operation.
 
-This helps not just to improve performance on the client due to having fever files in
+This helps not just to improve performance on the client due to having fewer files in
 the tree,
 it also enables collaboration on parts of the monorepo with other parties
 utilizing git's normal distributed development features.
@@ -81,7 +81,7 @@ $ git clone http://josh/central.git:workspace=workspaces/project1.git
 With everything stored in one repo, CI/CD systems only need to look into one source for each particular
 deliverable.
 However in traditional monorepo environments dependency mangement is handled by the build system.
-Build systems are usually taylored to specific languages and need their input already checked
+Build systems are usually tailored to specific languages and need their input already checked
 out on the filesystem.
 So the question:
 
@@ -125,4 +125,6 @@ Even without using the more advanced features like partial cloning or workspaces
 `josh-proxy` can act as a cache to reduce traffic between locations or keep your CI from
 performing many requests to the main git host.
 
+## FAQ
 
+See [here](https://esrlabs.github.io/josh/faq.html)
