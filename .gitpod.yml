@@ -1,9 +1,11 @@
 # List the start up tasks. Learn more https://www.gitpod.io/docs/config-start-tasks/
 tasks:
-  - init: 'pip install cram'
-  - init: 'rustup target add wasm32-unknown-unknown'
-  - init: 'cargo install trunk'
-  - init: 'cargo install hyper_cgi --features=test-server'
+  - name: Dependencies
+    init: |
+      pip install cram
+      rustup target add wasm32-unknown-unknown
+      cargo install trunk
+      cargo install hyper_cgi --features=test-server
 
 # List the ports to expose. Learn more https://www.gitpod.io/docs/config-ports/
 # ports:
