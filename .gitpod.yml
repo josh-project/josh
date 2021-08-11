@@ -2,6 +2,7 @@
 tasks:
   - name: Dependencies
     init: |
+      sudo apt-get install tree
       pip install cram
       rustup target add wasm32-unknown-unknown
       cargo install trunk
