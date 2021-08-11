@@ -6,6 +6,7 @@
 # :make  f
 
 t: c
+	sh run-tests.sh tests/filter/*.t
 
 c:
 	cargo build --workspace --message-format=json | python3 ./scripts/rerr.py
