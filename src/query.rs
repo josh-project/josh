@@ -172,9 +172,10 @@ pub fn render(
             headref: headref.to_string(),
         }),
     );
+    handlebars.set_strict_mode(true);
 
-    return Ok(Some(format!(
-        "{}",
-        handlebars.render(&path, &json!(params))?
-    )));
+    match handlebars.render(&path, &json!(params)) {
+        Ok(res) => return Ok(Some(format!("{}", res))),
+        Err(res) => return Err(josh_error(&format!("{}", res))),
+    }
 }

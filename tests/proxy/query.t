@@ -39,6 +39,12 @@
 
   $ curl -s http://localhost:8002/real_repo.git:/sub1.git?get=file1
   contents1
+  $ curl -i -s http://localhost:8002/real_repo.git?render=tmpl_file
+  HTTP/1.1 422 Unprocessable Entity\r (esc)
+  content-length: 100\r (esc)
+  date: *\r (esc) (glob)
+  \r (esc)
+  JoshError(Error rendering "tmpl_file" line 1, col 8: Variable "param_val" not found in strict mode.) (no-eol)
   $ curl -s http://localhost:8002/real_repo.git?render=tmpl_file\&param_val=12345
   param: 12345
   $ curl -s http://localhost:8002/real_repo.git?get=sub1/file1

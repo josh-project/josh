@@ -85,6 +85,21 @@
   > {{ /each~}}
   > {{ /with }}
   > EOF
+  $ cat > sub1/tmpl_file_err <<EOF
+  > tmpl_param1: {{ tmpl_param12 }}
+  > tmpl_p2: {{ tmpl_p22 }}
+  > {{ #with (graphql file="x.graphql" name="config_file.toml") as |commit| }}
+  > ID: {{ commit.hash }}
+  > Summary: {{ commit.summary }}
+  > From TOML: {{ commit.config.data.b }}
+  > From TOML: {{ commit.config.data.x }}
+  > {{ #each commit.glob.files }}
+  > path: {{ this.path }}
+  > parent: {{ this.parent.path }}
+  > sha1: {{ this.hash }}
+  > {{ /each~}}
+  > {{ /with }}
+  > EOF
   $ git add sub1
   $ git commit -m "add file2" 1> /dev/null
 
@@ -101,7 +116,7 @@
   contents1
   $ josh-filter -q "graphql=sub1/x.graphql&name=config_file.toml"
   {
-    "hash": "06869a808bf918c4ac0b33a5222136f7829cdda9",
+    "hash": "6623aa9875e14cad59387d64d449f3417bbd7f96",
     "summary": "add file2",
     "date": "07.04.2005 22:13:13",
     "config": {
@@ -245,7 +260,7 @@
   $ josh-filter -q "render=sub1/tmpl_file&tmpl_param1=tmpl_param_value1&tmpl_p2=val2"
   tmpl_param1: tmpl_param_value1
   tmpl_p2: val2
-  ID: 06869a808bf918c4ac0b33a5222136f7829cdda9
+  ID: 6623aa9875e14cad59387d64d449f3417bbd7f96
   Summary: add file2
   From TOML: my_value
   From TOML: 
@@ -264,5 +279,8 @@
   path: sub3/sub4/file4
   parent: sub3/sub4
   sha1: 288746e9035732a1fe600ee331de94e70f9639cb
+  $ josh-filter -q "render=sub1/tmpl_file_err&tmpl_param1=tmpl_param_value1&tmpl_p2=val2"
+  ERROR: JoshError("Error rendering \"sub1/tmpl_file_err\" line 1, col 14: Variable \"tmpl_param12\" not found in strict mode.")
+  [1]
   $ josh-filter :/sub1 -q render=file2
   contents2
