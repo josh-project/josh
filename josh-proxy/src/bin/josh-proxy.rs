@@ -503,15 +503,24 @@ async fn call_service(
                 josh::query::render(transaction.repo(), "", &temp_ns.reference(&headref), &q)
             })
             .in_current_span()
-            .await??;
-            if let Some(res) = res {
-                return Ok(Response::builder()
-                    .status(hyper::StatusCode::OK)
-                    .body(hyper::Body::from(res))?);
-            } else {
-                return Ok(Response::builder()
-                    .status(hyper::StatusCode::NOT_FOUND)
-                    .body(hyper::Body::from("File not found".to_string()))?);
+            .await?;
+            match res {
+                Ok(res) => {
+                    if let Some(res) = res {
+                        return Ok(Response::builder()
+                            .status(hyper::StatusCode::OK)
+                            .body(hyper::Body::from(res))?);
+                    } else {
+                        return Ok(Response::builder()
+                            .status(hyper::StatusCode::NOT_FOUND)
+                            .body(hyper::Body::from("File not found".to_string()))?);
+                    }
+                }
+                Err(res) => {
+                    return Ok(Response::builder()
+                        .status(hyper::StatusCode::UNPROCESSABLE_ENTITY)
+                        .body(hyper::Body::from(res.to_string()))?)
+                }
             }
         }
     }
