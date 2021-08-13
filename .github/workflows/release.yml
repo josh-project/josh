@@ -13,9 +13,9 @@ jobs:
       - name: Push to Dockerhub
         uses: docker/build-push-action@v1
         with:
-          username: esrlabs
+          username: initcrash
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-          repository: esrlabs/josh-proxy
+          repository: joshproject/josh-proxy
           tag_with_ref: true
           tags: latest
 
