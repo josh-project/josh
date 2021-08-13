@@ -1,6 +1,6 @@
 ![Just One Single History](/banner.png)
 
-[![Build Status](https://github.com/esrlabs/josh/workflows/Rust/badge.svg?branch=master)](https://github.com/esrlabs/josh/actions)
+[![Build Status](https://github.com/josh-project/josh/workflows/Rust/badge.svg?branch=master)](https://github.com/josh-project/josh/actions)
 
 Combine the advantages of a monorepo with those of multirepo setups by leveraging a
 blazingly-fast, incremental, and reversible implementation of git history filtering.
@@ -8,7 +8,7 @@ blazingly-fast, incremental, and reversible implementation of git history filter
 `josh-proxy` can be integrated with any http based git host:
 
 ```
-$ docker run -p 8000:8000 -e JOSH_REMOTE=https://github.com -v josh-vol:/data/git esrlabs/josh-proxy:latest
+$ docker run -p 8000:8000 -e JOSH_REMOTE=https://github.com -v josh-vol:/data/git joshproject/josh-proxy:latest
 ```
 
 ## Use cases
