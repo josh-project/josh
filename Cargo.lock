@@ -1450,15 +1450,25 @@ dependencies = [
 
 [[package]]
 name = "opentelemetry-jaeger"
-version = "0.14.0"
+version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "09a9fc8192722e7daa0c56e59e2336b797122fb8598383dcb11c8852733b435c"
+checksum = "db22f492873ea037bc267b35a0e8e4fb846340058cb7c864efe3d0bf23684593"
 dependencies = [
  "async-trait",
  "lazy_static",
- "opentelemetry 0.15.0",
+ "opentelemetry 0.16.0",
+ "opentelemetry-semantic-conventions",
  "thiserror",
  "thrift",
+]
+
+[[package]]
+name = "opentelemetry-semantic-conventions"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ffeac823339e8b0f27b961f4385057bf9f97f2863bc745bd015fd6091f2270e9"
+dependencies = [
+ "opentelemetry 0.16.0",
 ]
 
 [[package]]
