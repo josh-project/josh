@@ -1,8 +1,8 @@
 [package]
 name = "josh"
 version = "0.3.0"
-repository = "https://github.com/esrlabs/josh"
-authors = ["Christian Schilling <christian.schilling@esrlabs.com>"]
+repository = "https://github.com/josh-project/josh"
+authors = ["Christian Schilling <initcrash@gmail.com>"]
 license-file = "LICENSE"
 description = "GIT virtualization proxy"
 keywords = ["git", "monorepo", "workflow", "scm"]
