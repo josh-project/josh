@@ -155,6 +155,10 @@ Josh creates an alternate history that has no reference to the skipped parts. It
 All of the code is in one single repo which can easily be kept in sync, and josh provides any sub folder (or in the case of workspaces, more complicated recombination of folders) as their own git repository.
 These repos are transparently synchronised both ways with the main monorepo.
 Josh can thus do more than submodules can, and is easier and faster to use.</p>
+<h2 id="how-is-it-different-from-git-subtree"><a class="header" href="#how-is-it-different-from-git-subtree">How is it different from <code>git subtree</code>?</a></h2>
+<p>The basic idea behind Josh is quite similar to <code>git subtree</code>. However <code>git subtree</code>, just like <code>git filter-branch</code>, is way too slow for everyday use, even on medium sized repos.
+<code>git subtree</code> can only achieve acceptable performance when squashing commits and therefore losing history. One core part of Josh is essentially a much faster implementation
+of <code>git subtree split</code> which has been specifically optimized for being run frequently inside the same repository.</p>
 
                     </main>
 
