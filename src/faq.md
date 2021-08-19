@@ -19,7 +19,7 @@ Josh can thus do more than submodules can, and is easier and faster to use.
 
 ## How is it different from `git subtree`?
 
-The basic idea behind Josh is quite similar to `git subtree`. However `git subtree`, just like `git filter-branch`, is way to slow for everyday use, even on medium sized repos.
-`git subtree` can only archieve acceptable performance when squashing commits and therefore loosing history. One core part of Josh is essentially a much faster implementation
+The basic idea behind Josh is quite similar to `git subtree`. However `git subtree`, just like `git filter-branch`, is way too slow for everyday use, even on medium sized repos.
+`git subtree` can only achieve acceptable performance when squashing commits and therefore losing history. One core part of Josh is essentially a much faster implementation
 of `git subtree split` which has been specifically optimized for being run frequently inside the same repository.
 
