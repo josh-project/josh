@@ -16,3 +16,10 @@ Where git submodules are multiple, independant repos, referencing each other wit
 All of the code is in one single repo which can easily be kept in sync, and josh provides any sub folder (or in the case of workspaces, more complicated recombination of folders) as their own git repository.
 These repos are transparently synchronised both ways with the main monorepo.
 Josh can thus do more than submodules can, and is easier and faster to use.
+
+## How is it different from `git subtree`?
+
+The basic idea behind Josh is quite similar to `git subtree`. However `git subtree`, just like `git filter-branch`, is way to slow for everyday use, even on medium sized repos.
+`git subtree` can only archieve acceptable performance when squashing commits and therefore loosing history. One core part of Josh is essentially a much faster implementation
+of `git subtree split` which has been specifically optimized for being run frequently inside the same repository.
+
