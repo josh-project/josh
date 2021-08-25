@@ -15,7 +15,7 @@ version = "0.3.0"
 clap = "2.33.3"
 futures = "0.3.16"
 tokio = { version = "1.8.1", features = ["full"] }
-hyper = { version = "0.14.11", features = ["stream"] }
+hyper = { version = "0.14.12", features = ["stream"] }
 hyper_cgi = "0.2.1"
 hyper-staticfile = "0.6.0"
 hyper-tls = "0.5.0"
