@@ -1,5 +1,5 @@
   $ export TESTTMP=${PWD}
-  $ export PATH=${TESTDIR}/../../target/debug/:${PATH}
+  $ export "PATH=${TESTDIR}/../../target/debug/:${PATH}"
 
   $ cd ${TESTTMP}
   $ git init real_repo 1> /dev/null

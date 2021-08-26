@@ -1,6 +1,6 @@
 set -e
-export PATH=$(pwd)/target/debug/:${PATH}
-export PATH=$(pwd)/scripts/:${PATH}
+export PATH="$(pwd)/target/debug/:${PATH}"
+export PATH="$(pwd)/scripts/:${PATH}"
 
 export GIT_AUTHOR_NAME=Josh
 export GIT_AUTHOR_EMAIL=josh@example.com
