@@ -96,9 +96,9 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
             } else {
                 return Err(josh::josh_error(&unindent::unindent(&format!(
                     r###"
-                    Branch {:?} does not exist on remote.
-                    If you want to create it, pass "-o base=<branchname>"
-                    to specify a base branch.
+                    Reference {:?} does not exist on remote.
+                    If you want to create it, pass "-o base=refs/heads/<branchname>"
+                    to specify a base branch/reference.
                     "###,
                     baseref
                 ))));

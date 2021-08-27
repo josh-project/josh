@@ -24,9 +24,9 @@
   $ git push origin HEAD:refs/heads/new_branch 2>&1 >/dev/null | sed -e 's/[ ]*$//g'
   remote: josh-proxy
   remote: response from upstream:
-  remote: Branch "refs/heads/new_branch" does not exist on remote.
-  remote: If you want to create it, pass "-o base=<branchname>"
-  remote: to specify a base branch.
+  remote: Reference "refs/heads/new_branch" does not exist on remote.
+  remote: If you want to create it, pass "-o base=refs/heads/<branchname>"
+  remote: to specify a base branch/reference.
   remote:
   remote:
   remote:
