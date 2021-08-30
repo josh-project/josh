@@ -14,7 +14,7 @@ ANCHOR_END: docker_github
 
 # cloning josh
 ANCHOR: clone_full
-  $ git clone http://localhost:8000/esrlabs/josh.git
+  $ git clone http://localhost:8000/josh-project/josh.git
   Cloning into 'josh'...
   $ cd josh
 ANCHOR_END: clone_full
@@ -56,7 +56,7 @@ ANCHOR_END: ls_full
 # cloning doc
 ANCHOR: clone_doc
   $ cd ..
-  $ git clone http://localhost:8000/esrlabs/josh.git:/docs.git
+  $ git clone http://localhost:8000/josh-project/josh.git:/docs.git
   Cloning into 'docs'...
   $ cd docs
 ANCHOR_END: clone_doc
