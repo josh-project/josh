@@ -153,7 +153,7 @@ instance for github.com on port 8000:</p>
 </code></pre>
 <p>For a first example of how to make use of josh, just the josh documentation can be checked out as
 its own repository via this command:</p>
-<pre><code>$ git clone http://localhost:8000/esrlabs/josh.git:/docs.git
+<pre><code>$ git clone http://localhost:8000/josh-project/josh.git:/docs.git
 </code></pre>
 <blockquote>
 <p><strong>Note</strong>: This URL needs to contain the <code>.git</code> suffix twice: once after the original path
@@ -167,7 +167,7 @@ like you are used to.</p>
 <pre><code>http://localhost:8000
 </code></pre>
 <p>This is the repository location on the upstream host on which to perform the filter operations:</p>
-<pre><code>/esrlabs/josh.git
+<pre><code>/josh-project/josh.git
 </code></pre>
 <p>This is the set of filter operations to perform:</p>
 <pre><code>:/docs.git
@@ -178,12 +178,12 @@ the <a href="./filters.html">filters</a> section.</p>
 <p>By default, a git URL is used to point to the remote repository to download <em>and also</em> to dictate
 how the local repository shall be named.  It's important to learn that the last name in the URL is
 what the local git client will name the new, local repository. For example:</p>
-<pre><code>$ git clone http://localhost:8000/esrlabs/josh.git:/docs.git
+<pre><code>$ git clone http://localhost:8000/josh-project/josh.git:/docs.git
 </code></pre>
 <p>will create the new repository at directory <code>docs</code>, as <code>docs.git</code> is the last name in the URL.</p>
 <p>By default, this leads to rather odd-looking repositories when the <code>prefix</code> filter is the final
 filter of a URL:</p>
-<pre><code>$ git clone http://localhost:8000/esrlabs/josh.git:/docs:prefix=josh-docs.git
+<pre><code>$ git clone http://localhost:8000/josh-project/josh.git:/docs:prefix=josh-docs.git
 </code></pre>
 <p>This will still clone just the josh documentation, but the final directory structure will look like
 this:</p>
@@ -196,7 +196,7 @@ intended. This results from git's reuse and repurposing of the remote URL, as <c
 is the final name in the URL. With no other alternatives, this gets used for the repository name.</p>
 <p>To explicitly specify a repository name, provide the desired name after the URL when cloning a new
 repository:</p>
-<pre><code>$ git clone http://localhost:8000/esrlabs/josh.git:/docs:prefix=josh-docs.git my-repo
+<pre><code>$ git clone http://localhost:8000/josh-project/josh.git:/docs:prefix=josh-docs.git my-repo
 </code></pre>
 
                     </main>
