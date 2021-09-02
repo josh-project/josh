@@ -223,16 +223,20 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
             ifilterobj,
             &[(src.clone(), "refs/JOSH_TMP".to_string())],
         )?;
+        let tree = repo.find_reference(&src)?.peel_to_tree()?;
         let index_tree = repo.find_reference(&"refs/JOSH_TMP")?.peel_to_tree()?;
 
-        let mut results = vec![];
-
         /* let start = std::time::Instant::now(); */
-        josh::filter::tree::search(&transaction, index_tree, &searchstring, &mut results)?;
+        let candidates =
+            josh::filter::tree::search_candidates(&transaction, &index_tree, &searchstring)?;
+        let matches =
+            josh::filter::tree::search_matches(&transaction, &tree, &searchstring, &candidates)?;
         /* let duration = start.elapsed(); */
 
-        for r in results {
-            println!("{}", r);
+        for r in matches {
+            for l in r.1 {
+                println!("{}:{}: {}", r.0, l.0, l.1);
+            }
         }
         /* println!("\n Search took {:?}", duration); */
     }

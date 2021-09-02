@@ -23,18 +23,22 @@
   [6] _trigram_index
 
   $ josh-filter :/ --search "Another"
-  sub1/file2
+  sub1/file2:1: Another document with more 
   $ josh-filter :/ --search "happens"
-  sub2/file3
+  sub2/file3:1: One more to see what happens
   $ josh-filter :/ --search "Test"
-  sub1/file1
+  sub1/file1:1: First Test document
   $ josh-filter :/ --search "document"
-  sub1/file1
-  sub1/file2
+  sub1/file1:1: First Test document
+  sub1/file2:1: Another document with more 
   $ josh-filter :/ --search "x"
-  sub1/file1
-  sub1/file2
-  sub2/file3
+  $ josh-filter :/ --search "e"
+  sub1/file1:1: First Test document
+  sub1/file2:1: Another document with more 
+  sub1/file2:3:  one line
+  sub2/file3:1: One more to see what happens
+  $ josh-filter :/ --search "line"
+  sub1/file2:3:  one line
 
   $ git diff ${EMPTY_TREE}..refs/heads/index
   diff --git a/SUB1 b/SUB1

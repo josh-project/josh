@@ -479,20 +479,48 @@ pub fn trigram_index<'a>(
     return Ok(result);
 }
 
-pub fn search(
+pub fn search_candidates(
     transaction: &cache::Transaction,
-    tree: git2::Tree,
+    tree: &git2::Tree,
     searchstring: &str,
-    results: &mut Vec<String>,
-) -> super::JoshResult<()> {
+) -> super::JoshResult<Vec<String>> {
     let ff = make_dir_trigram_filter(&searchstring, FILE_FILTER_SIZE, &[2]);
+
+    let mut results = vec![];
 
     for ord in 0..6 {
         let dir_filter_size = usize::pow(4, 3 + ord as u32);
         let df = make_dir_trigram_filter(&searchstring, dir_filter_size, &[0, 1, 2]);
-        trigram_search(&transaction, tree.clone(), "", &df, &ff, results, ord)?;
+        trigram_search(&transaction, tree.clone(), "", &df, &ff, &mut results, ord)?;
     }
-    Ok(())
+    Ok(results)
+}
+
+pub fn search_matches(
+    transaction: &cache::Transaction,
+    tree: &git2::Tree,
+    searchstring: &str,
+    candidates: &Vec<String>,
+) -> super::JoshResult<Vec<(String, Vec<(usize, String)>)>> {
+    let mut results = vec![];
+
+    for c in candidates {
+        let b = get_blob(transaction.repo(), tree, &std::path::Path::new(&c));
+
+        let mut bresults = vec![];
+
+        for (linenr, l) in b.lines().enumerate() {
+            if l.contains(searchstring) {
+                bresults.push((linenr + 1, l.to_owned()));
+            }
+        }
+
+        if bresults.len() != 0 {
+            results.push((c.to_owned(), bresults));
+        }
+    }
+
+    Ok(results)
 }
 
 pub fn trigram_search<'a>(
