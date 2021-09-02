@@ -10,7 +10,7 @@ proxy to serve your own git repository.
 
 ## Setting up the proxy
 
-Josh is distributed via [docker hub](https://hub.docker.com/r/esrlabs/josh-proxy),
+Josh is distributed via [docker hub](https://hub.docker.com/r/joshproject/josh-proxy),
 and is installed and started with the following command:
 
 ```shell
