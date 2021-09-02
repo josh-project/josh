@@ -72,7 +72,7 @@ ANCHOR_END: populate
 
 # starting josh
 ANCHOR: docker_josh
-$ docker run -d --network="host" -e JOSH_REMOTE=http://127.0.0.1:8001 -v josh-vol:$(pwd)/git_data esrlabs/josh-proxy:latest > josh.out
+$ docker run -d --network="host" -e JOSH_REMOTE=http://127.0.0.1:8001 -v josh-vol:$(pwd)/git_data joshproject/josh-proxy:latest > josh.out
 ANCHOR_END: docker_josh
 
 # For simplicity sake, this test actually uses a locally build josh instance 
