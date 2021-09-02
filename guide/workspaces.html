@@ -226,7 +226,7 @@ them.</p>
 </code></pre>
 <h2 id="creating-our-first-workspace"><a class="header" href="#creating-our-first-workspace">Creating our first workspace</a></h2>
 <p>Now that we have a git repo populated with content, let's serve it through josh:</p>
-<pre><code class="language-shell">$ docker run -d --network=&quot;host&quot; -e JOSH_REMOTE=http://127.0.0.1:8001 -v josh-vol:$(pwd)/git_data esrlabs/josh-proxy:latest &gt; josh.out
+<pre><code class="language-shell">$ docker run -d --network=&quot;host&quot; -e JOSH_REMOTE=http://127.0.0.1:8001 -v josh-vol:$(pwd)/git_data joshproject/josh-proxy:latest &gt; josh.out
 </code></pre>
 <blockquote>
 <p><em><strong>NOTE</strong></em></p>

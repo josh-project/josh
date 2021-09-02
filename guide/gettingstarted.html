@@ -152,7 +152,7 @@ proxy to serve your own git repository.</p>
 which can be run with <a href="https://bitheap.org/cram/">cram</a>.</p>
 </blockquote>
 <h2 id="setting-up-the-proxy"><a class="header" href="#setting-up-the-proxy">Setting up the proxy</a></h2>
-<p>Josh is distributed via <a href="https://hub.docker.com/r/esrlabs/josh-proxy">docker hub</a>,
+<p>Josh is distributed via <a href="https://hub.docker.com/r/joshproject/josh-proxy">docker hub</a>,
 and is installed and started with the following command:</p>
 <pre><code class="language-shell">  $ docker run -d -p 8000:8000 -e JOSH_REMOTE=https://github.com -v josh-vol:$(pwd)/git_data joshproject/josh-proxy:latest &gt; josh.out
 </code></pre>
