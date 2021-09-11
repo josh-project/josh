@@ -80,6 +80,12 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
                 .short("q")
                 .takes_value(true),
         )
+        .arg(
+            clap::Arg::with_name("graphql")
+                .long("graphql")
+                .short("g")
+                .takes_value(true),
+        )
         .arg(clap::Arg::with_name("reverse").long("reverse"))
         .arg(
             clap::Arg::with_name("check-permission")
@@ -296,6 +302,19 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
                 return Ok(1);
             }
         }
+    }
+
+    if let Some(gql_query) = args.value_of("graphql") {
+        let (res, _errors) = juniper::execute_sync(
+            &gql_query,
+            None,
+            &josh::graphql::repo_schema(".".to_string(), true),
+            &std::collections::HashMap::new(),
+            &josh::graphql::context(transaction.clone()?),
+        )?;
+
+        let j = serde_json::to_string(&res)?;
+        println!("{}", j);
     }
 
     std::mem::drop(finish);

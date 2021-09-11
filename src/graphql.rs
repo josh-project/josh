@@ -172,6 +172,40 @@ impl Revision {
         self.files_or_dirs(at, depth, context, git2::ObjectType::Blob)
     }
 
+    fn search(&self, string: String, context: &Context) -> FieldResult<Option<Vec<SearchResult>>> {
+        let transaction = context.transaction.lock()?;
+        let ifilterobj = filter::chain(self.filter, filter::parse(":SQUASH:INDEX")?);
+        let tree = transaction.repo().find_commit(self.commit_id)?.tree()?;
+
+        let tree = filter::apply(&transaction, self.filter, tree)?;
+        let index_tree = filter::apply(&transaction, ifilterobj, tree.clone())?;
+
+        /* let start = std::time::Instant::now(); */
+        let candidates = filter::tree::search_candidates(&transaction, &index_tree, &string)?;
+        let results = filter::tree::search_matches(&transaction, &tree, &string, &candidates)?;
+        /* let duration = start.elapsed(); */
+
+        let mut r = vec![];
+        for m in results {
+            let mut matches = vec![];
+            for l in m.1 {
+                matches.push(SearchMatch {
+                    line: l.0 as i32,
+                    text: l.1,
+                });
+            }
+            let path = Path {
+                path: std::path::PathBuf::from(m.0),
+                commit_id: self.commit_id,
+                filter: self.filter,
+                tree: tree.id(),
+            };
+            r.push(SearchResult { path, matches });
+        }
+        return Ok(Some(r));
+        /* println!("\n Search took {:?}", duration); */
+    }
+
     fn dirs(
         &self,
         at: Option<String>,
@@ -254,11 +288,43 @@ impl Warning {
     }
 }
 
+#[derive(Clone)]
 pub struct Path {
     path: std::path::PathBuf,
     commit_id: git2::Oid,
     filter: filter::Filter,
     tree: git2::Oid,
+}
+
+#[derive(Clone)]
+pub struct SearchMatch {
+    line: i32,
+    text: String,
+}
+
+#[graphql_object(context = Context)]
+impl SearchMatch {
+    pub fn line(&self) -> i32 {
+        self.line
+    }
+    pub fn text(&self) -> String {
+        self.text.clone()
+    }
+}
+
+pub struct SearchResult {
+    path: Path,
+    matches: Vec<SearchMatch>,
+}
+
+#[graphql_object(context = Context)]
+impl SearchResult {
+    pub fn path(&self) -> Path {
+        self.path.clone()
+    }
+    pub fn matches(&self) -> Vec<SearchMatch> {
+        self.matches.clone()
+    }
 }
 
 pub fn linecount(repo: &git2::Repository, id: git2::Oid) -> usize {
@@ -552,9 +618,11 @@ pub struct Reference {
 #[graphql_object(context = Context)]
 impl Reference {
     fn name(&self) -> FieldResult<String> {
-        Ok(UpstreamRef::from_str(&self.refname)
-            .ok_or(josh_error("not a ns"))?
-            .reference)
+        Ok(if let Some(r) = UpstreamRef::from_str(&self.refname) {
+            r.reference
+        } else {
+            self.refname.clone()
+        })
     }
 
     fn rev(&self, context: &Context, filter: Option<String>) -> FieldResult<Revision> {
@@ -580,6 +648,7 @@ impl juniper::Context for Context {}
 
 pub struct Repository {
     name: String,
+    ns: String,
 }
 
 pub struct RepositoryMut {}
@@ -689,8 +758,8 @@ impl Repository {
     fn refs(&self, context: &Context, pattern: Option<String>) -> FieldResult<Vec<Reference>> {
         let transaction = context.transaction.lock()?;
         let refname = format!(
-            "refs/josh/upstream/{}.git/{}",
-            to_ns(&self.name),
+            "{}{}",
+            self.ns,
             pattern.unwrap_or("refs/heads/*".to_string())
         );
 
@@ -711,7 +780,7 @@ impl Repository {
     }
 
     fn rev(&self, context: &Context, at: String, filter: Option<String>) -> FieldResult<Revision> {
-        let rev = format!("refs/josh/upstream/{}.git/{}", to_ns(&self.name), at);
+        let rev = format!("{}{}", self.ns, at);
 
         let transaction = context.transaction.lock()?;
         let commit_id = if let Ok(id) = git2::Oid::from_str(&at) {
@@ -759,7 +828,13 @@ impl Query {
 
         repos.dedup();
 
-        return Ok(repos.into_iter().map(|name| Repository { name }).collect());
+        return Ok(repos
+            .into_iter()
+            .map(|name| {
+                let ns = format!("refs/josh/upstream/{}.git/", to_ns(&name));
+                Repository { name, ns }
+            })
+            .collect());
     }
 }
 
@@ -799,9 +874,14 @@ pub fn commit_schema(commit_id: git2::Oid) -> CommitSchema {
 pub type RepoSchema =
     juniper::RootNode<'static, Repository, RepositoryMut, EmptySubscription<Context>>;
 
-pub fn repo_schema(name: String) -> RepoSchema {
+pub fn repo_schema(name: String, local: bool) -> RepoSchema {
+    let ns = if local {
+        "".to_string()
+    } else {
+        format!("refs/josh/upstream/{}.git/", to_ns(&name))
+    };
     RepoSchema::new(
-        Repository { name },
+        Repository { name, ns },
         RepositoryMut {},
         EmptySubscription::new(),
     )
