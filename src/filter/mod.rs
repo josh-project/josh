@@ -538,19 +538,56 @@ fn unapply2<'a>(
             }
             let blob = &format!("{}{}\n", &blob, pretty(parsed, 0));
 
-            let tree = if mapped != "" {
+            // Remove workspace.josh from the tree to prevent it from being parsed again
+            // further down the callstack leading to endless recursion.
+            let tree = tree::insert(
+                &transaction.repo(),
+                &tree,
+                &Path::new("workspace.josh"),
+                git2::Oid::zero(),
+                0o0100644,
+            )?;
+
+            // Insert a dummy file to prevent the directory from dissappearing through becoming
+            // empty.
+            let tree = tree::insert(
+                &transaction.repo(),
+                &tree,
+                &Path::new("DUMMY-df97a89d-b11f-4e1c-8400-345f895f0d40"),
+                transaction.repo().blob("".as_bytes())?,
+                0o0100644,
+            )?;
+
+            let r = unapply(
+                transaction,
+                compose(root, parsed),
+                tree.clone(),
+                parent_tree,
+            )?;
+
+            // Remove the dummy file inserted above
+            let r = tree::insert(
+                &transaction.repo(),
+                &r,
+                &path.join("DUMMY-df97a89d-b11f-4e1c-8400-345f895f0d40"),
+                git2::Oid::zero(),
+                0o0100644,
+            )?;
+
+            // Put the workspace.josh file back to it's target location.
+            let r = if mapped != "" {
                 tree::insert(
                     &transaction.repo(),
-                    &tree,
-                    &Path::new("workspace.josh"),
+                    &r,
+                    &path.join("workspace.josh"),
                     transaction.repo().blob(blob.as_bytes())?,
                     0o0100644, // Should this handle filemode?
                 )?
             } else {
-                tree
+                r
             };
 
-            return unapply(transaction, compose(root, parsed), tree, parent_tree);
+            return Ok(r);
         }
         Op::Compose(filters) => {
             let mut remaining = tree.clone();

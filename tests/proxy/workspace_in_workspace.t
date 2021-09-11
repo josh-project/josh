@@ -221,8 +221,8 @@
    * branch            b3be5ad252e0f493a404a8785653065d7e677f21 -> FETCH_HEAD
   HEAD is now at b3be5ad add ws2
   Pushing to http://localhost:8002/real_repo.git:workspace=ws2.git
-  POST git-receive-pack (402 bytes)
-  remote: warning: ignoring broken ref refs/namespaces/request_1d2dd6d4-2013-46b4-b64f-d14f72ba153a/HEAD        
+  POST git-receive-pack (424 bytes)
+  remote: warning: ignoring broken ref refs/namespaces/request_* (glob)
   remote: josh-proxy        
   remote: response from upstream:        
   remote: To http://localhost:8001/real_repo.git        
@@ -238,37 +238,60 @@
   [master e2532f1] add workspace filter
    1 file changed, 1 insertion(+)
   $ git sync
+    refs/heads/master -> refs/heads/master
+  From http://localhost:8002/real_repo.git:workspace=ws2
+   * branch            08f121078f080eadf2af895fb572d47b0cd79240 -> FETCH_HEAD
+  HEAD is now at 08f1210 add workspace filter
   Pushing to http://localhost:8002/real_repo.git:workspace=ws2.git
-  POST git-receive-pack (459 bytes)
-  error: RPC failed; curl 7 Failed to connect to localhost port 8002: Connection refused
-  fatal: the remote end hung up unexpectedly
-  fatal: the remote end hung up unexpectedly
+  POST git-receive-pack (481 bytes)
+  remote: josh-proxy        
+  remote: response from upstream:        
+  remote: To http://localhost:8001/real_repo.git        
+  remote:    517813c..6aaea65  JOSH_PUSH -> master        
+  remote: REWRITE(e2532f1207290ed9a961f9fc377a6b7afe415312 -> 08f121078f080eadf2af895fb572d47b0cd79240)        
+  remote: 
+  remote: 
+  updating local tracking ref 'refs/remotes/origin/master'
   
 
-  $ git reset --hard HEAD~1
-  HEAD is now at b3be5ad add ws2
-  $ echo ":workspace=sub1" >> workspace.josh
-  $ git commit -a -m "sub1 as workspace in workspace"
-  [master 1e246a6] sub1 as workspace in workspace
-   1 file changed, 1 insertion(+)
-  $ git sync
-  Pushing to http://localhost:8002/real_repo.git:workspace=ws2.git
-  fatal: unable to access 'http://localhost:8002/real_repo.git:workspace=ws2.git/': Failed to connect to localhost port 8002: Connection refused
-  
-  $ tree
-  .
-  |-- file1
-  `-- workspace.josh
-  
-  0 directories, 2 files
+  $ git ls-tree -r HEAD
+  100644 blob e69de29bb2d1d6434b8b29ae775ad8c2e48c5391\tfile1 (esc)
+  100644 blob 2fa28dd621122cd858cf13f53f88dfe37eef5424\tworkspace.josh (esc)
+
 
   $ bash ${TESTDIR}/destroy_test_env.sh
-  josh-proxy: no process found
+  "real_repo.git" = [
+      ':/sub1',
+      ':/sub1/subsub',
+      ':/sub2',
+      ':/sub3',
+      ':/ws',
+      ':/ws2',
+      ':workspace=ws2',
+  ]
   refs
   |-- heads
   |-- josh
   |   |-- filtered
   |   |   `-- real_repo.git
+  |   |       |-- %3A%2Fsub1
+  |   |       |   `-- heads
+  |   |       |       `-- master
+  |   |       |-- %3A%2Fsub1%2Fsubsub
+  |   |       |   `-- heads
+  |   |       |       `-- master
+  |   |       |-- %3A%2Fsub2
+  |   |       |   `-- heads
+  |   |       |       `-- master
+  |   |       |-- %3A%2Fsub3
+  |   |       |   `-- heads
+  |   |       |       `-- master
+  |   |       |-- %3A%2Fws
+  |   |       |   `-- heads
+  |   |       |       `-- master
+  |   |       |-- %3A%2Fws2
+  |   |       |   `-- heads
+  |   |       |       `-- master
   |   |       |-- %3Aworkspace=ws
   |   |       |   `-- heads
   |   |       |       `-- master
@@ -278,6 +301,7 @@
   |   |-- rewrites
   |   |   `-- real_repo.git
   |   |       |-- 191ead67feb541c237317e25b2c66c5d8f3e33fa
+  |   |       |   |-- r_08f121078f080eadf2af895fb572d47b0cd79240
   |   |       |   `-- r_b3be5ad252e0f493a404a8785653065d7e677f21
   |   |       `-- 7bd92d97e96693ea7fd7eb5757b3580002889948
   |   |           `-- r_2cbcd105ead63a4fecf486b949db7f44710300e5
@@ -287,19 +311,7 @@
   |               `-- heads
   |                   `-- master
   |-- namespaces
-  |   `-- request_7621f2a1-b72b-4e66-9d47-460ec408a67e
-  |       |-- HEAD
-  |       |-- push_options
-  |       `-- refs
-  |           |-- heads
-  |           |   `-- master
-  |           `-- josh
-  |               `-- rewrites
-  |                   `-- real_repo.git
-  |                       `-- 191ead67feb541c237317e25b2c66c5d8f3e33fa
-  |                           `-- r_b3be5ad252e0f493a404a8785653065d7e677f21
   `-- tags
   
-  25 directories, 9 files
+  30 directories, 12 files
 
-$ cat ${TESTTMP}/josh-proxy.out
