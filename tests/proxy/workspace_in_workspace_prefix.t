@@ -222,7 +222,7 @@
   HEAD is now at b3be5ad add ws2
   Pushing to http://localhost:8002/real_repo.git:workspace=ws2.git
   POST git-receive-pack (424 bytes)
-  remote: warning: ignoring broken ref refs/namespaces/request_032b0c01-ebc2-4adb-8e74-3ee9cf7d8d2e/HEAD        
+  remote: warning: ignoring broken ref refs/namespaces/request_* (glob)
   remote: josh-proxy        
   remote: response from upstream:        
   remote: To http://localhost:8001/real_repo.git        
@@ -253,7 +253,6 @@
   remote: 
   updating local tracking ref 'refs/remotes/origin/master'
   
-
   $ git ls-tree -r HEAD
   100644 blob e69de29bb2d1d6434b8b29ae775ad8c2e48c5391\tfile1 (esc)
   100644 blob a024003ee1acc6bf70318a46e7b6df651b9dc246\tfoo/a/b/file2 (esc)
