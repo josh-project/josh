@@ -9,12 +9,12 @@ It needs the URL of the upstream server and a local directory to store its data.
 Optionally, a port to listen on can be specified. For example, running a local ``josh-proxy``
 instance for github.com on port 8000:
 
-    $ docker run -p 8000:8000 -e JOSH_REMOTE=https://github.com -v josh-vol:/data/git esrlabs/josh-proxy:r21.03.08
+    $ docker run -p 8000:8000 -e JOSH_REMOTE=https://github.com -v josh-vol:/data/git joshproject/josh-proxy:latest
 
 For a first example of how to make use of josh, just the josh documentation can be checked out as
 its own repository via this command:
 
-    $ git clone http://localhost:8000/esrlabs/josh.git:/docs.git
+    $ git clone http://localhost:8000/josh-project/josh.git:/docs.git
 
 >**Note**: This URL needs to contain the `.git` suffix twice: once after the original path
 > and once more after the filter spec.
@@ -32,7 +32,7 @@ This is the URL of a ``josh-proxy`` instance:
 
 This is the repository location on the upstream host on which to perform the filter operations:
 
-    /esrlabs/josh.git
+    /josh-project/josh.git
 
 This is the set of filter operations to perform:
 
@@ -48,14 +48,14 @@ By default, a git URL is used to point to the remote repository to download _and
 how the local repository shall be named.  It's important to learn that the last name in the URL is
 what the local git client will name the new, local repository. For example:
 
-    $ git clone http://localhost:8000/esrlabs/josh.git:/docs.git
+    $ git clone http://localhost:8000/josh-project/josh.git:/docs.git
 
 will create the new repository at directory ``docs``, as ``docs.git`` is the last name in the URL.
 
 By default, this leads to rather odd-looking repositories when the ``prefix`` filter is the final
 filter of a URL:
 
-    $ git clone http://localhost:8000/esrlabs/josh.git:/docs:prefix=josh-docs.git
+    $ git clone http://localhost:8000/josh-project/josh.git:/docs:prefix=josh-docs.git
 
 This will still clone just the josh documentation, but the final directory structure will look like
 this:
@@ -71,4 +71,4 @@ is the final name in the URL. With no other alternatives, this gets used for the
 To explicitly specify a repository name, provide the desired name after the URL when cloning a new
 repository:
 
-    $ git clone http://localhost:8000/esrlabs/josh.git:/docs:prefix=josh-docs.git my-repo
+    $ git clone http://localhost:8000/josh-project/josh.git:/docs:prefix=josh-docs.git my-repo
