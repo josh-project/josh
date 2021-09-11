@@ -538,13 +538,17 @@ fn unapply2<'a>(
             }
             let blob = &format!("{}{}\n", &blob, pretty(parsed, 0));
 
-            let tree = tree::insert(
-                &transaction.repo(),
-                &tree,
-                &Path::new("workspace.josh"),
-                transaction.repo().blob(blob.as_bytes())?,
-                0o0100644, // Should this handle filemode?
-            )?;
+            let tree = if mapped != "" {
+                tree::insert(
+                    &transaction.repo(),
+                    &tree,
+                    &Path::new("workspace.josh"),
+                    transaction.repo().blob(blob.as_bytes())?,
+                    0o0100644, // Should this handle filemode?
+                )?
+            } else {
+                tree
+            };
 
             return unapply(transaction, compose(root, parsed), tree, parent_tree);
         }
