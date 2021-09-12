@@ -862,27 +862,32 @@ fn main() {
 
     let fmt_layer = tracing_subscriber::fmt::layer().compact().with_ansi(false);
 
-    let tracer = opentelemetry_jaeger::new_pipeline()
-        .with_service_name(std::env::var("JOSH_SERVICE_NAME").unwrap_or("josh-proxy".to_owned()))
-        .with_agent_endpoint(
-            std::env::var("JOSH_JAEGER_ENDPOINT").unwrap_or("localhost:6831".to_owned()),
-        )
-        .install_simple()
-        .expect("can't install opentelemetry pipeline");
-
-    let telemetry_layer = tracing_opentelemetry::layer().with_tracer(tracer);
-
     let filter = match std::env::var("RUST_LOG") {
         Ok(_) => tracing_subscriber::EnvFilter::from_default_env(),
         _ => tracing_subscriber::EnvFilter::new("josh=trace,josh_proxy=trace"),
     };
 
-    let subscriber = filter
-        .and_then(fmt_layer)
-        .and_then(telemetry_layer)
-        .with_subscriber(tracing_subscriber::Registry::default());
+    if let Ok(endpoint) = std::env::var("JOSH_JAEGER_ENDPOINT") {
+        let tracer = opentelemetry_jaeger::new_pipeline()
+            .with_service_name(
+                std::env::var("JOSH_SERVICE_NAME").unwrap_or("josh-proxy".to_owned()),
+            )
+            .with_agent_endpoint(endpoint)
+            .install_simple()
+            .expect("can't install opentelemetry pipeline");
 
-    tracing::subscriber::set_global_default(subscriber).expect("can't set_global_default");
+        let telemetry_layer = tracing_opentelemetry::layer().with_tracer(tracer);
+        let subscriber = filter
+            .and_then(fmt_layer)
+            .and_then(telemetry_layer)
+            .with_subscriber(tracing_subscriber::Registry::default());
+        tracing::subscriber::set_global_default(subscriber).expect("can't set_global_default");
+    } else {
+        let subscriber = filter
+            .and_then(fmt_layer)
+            .with_subscriber(tracing_subscriber::Registry::default());
+        tracing::subscriber::set_global_default(subscriber).expect("can't set_global_default");
+    };
 
     std::process::exit(run_proxy().unwrap_or(1));
 }
