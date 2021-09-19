@@ -11,6 +11,12 @@ instance for github.com on port 8000:
 
     $ docker run -p 8000:8000 -e JOSH_REMOTE=https://github.com -v josh-vol:/data/git joshproject/josh-proxy:latest
 
+>**Note**: The proxy is semantically stateless. The data inside the docker volume is only persisted across
+>runs for performance reasons. This has two important implications for deployment:
+> 1) The data does not need to be backed up unless working with very large repos where rebuilding would
+> be very expensive. And 2) Multiple instances of josh-proxy can be used interchangeably for availability
+> or load balancing purposes.
+
 For a first example of how to make use of josh, just the josh documentation can be checked out as
 its own repository via this command:
 
