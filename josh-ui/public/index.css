@@ -221,6 +221,7 @@
   transform: translateZ(0);
   -webkit-animation: load8 1.1s infinite linear;
   animation: load8 1.1s infinite linear;
+  overflow: clip;
 }
 @-webkit-keyframes load8 {
   0% {
