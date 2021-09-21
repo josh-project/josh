@@ -24,7 +24,9 @@
   $ cd ${TESTTMP}
 
   $ git clone -q http://localhost:8002/xxx full_repo
-  fatal: repository 'http://localhost:8002/xxx/' not found
+  fatal: unable to update url base from redirection:
+    asked for: http://localhost:8002/xxx/info/refs?service=git-upload-pack
+     redirect: http://localhost:8002/~/browse/xxx/info/refs@refs/heads/master(:/)/()
   [128]
 
 
