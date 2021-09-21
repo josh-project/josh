@@ -42,6 +42,7 @@ struct JoshProxyService {
     fetch_timers: Arc<RwLock<FetchTimers>>,
     fetch_permits: Arc<tokio::sync::Semaphore>,
     filter_permits: Arc<tokio::sync::Semaphore>,
+    validator: josh_proxy::acl::Validator,
     poll: Polls,
 }
 
@@ -398,6 +399,14 @@ async fn call_service(
         return Ok(builder.body(hyper::Body::empty())?);
     }
 
+    if !serv.validator.is_accessible(&username, &remote_url) {
+        tracing::trace!("acl-validator");
+        let builder = Response::builder()
+            .header("WWW-Authenticate", "Basic realm=User Visible Realm")
+            .status(hyper::StatusCode::UNAUTHORIZED);
+        return Ok(builder.body(hyper::Body::empty())?);
+    }
+
     match fetch_upstream(
         serv.clone(),
         parsed_url.upstream_repo.to_owned(),
@@ -605,6 +614,13 @@ async fn run_proxy() -> josh::JoshResult<i32> {
     josh_proxy::create_repo(&local)?;
     josh::cache::load(&local)?;
 
+    let validator = match ARGS.value_of("acl") {
+        Some(p) => std::fs::read_to_string(p).map_err(|_| josh::josh_error("failed to read acl file"))?,
+        None    => "".to_string(),
+    };
+    let validator = josh_proxy::acl::Validator::from_toml(validator.as_str())
+        .map_err(|_| josh::josh_error("errors in acl file"))?;
+
     let proxy_service = Arc::new(JoshProxyService {
         port,
         repo_path: local.to_owned(),
@@ -615,6 +631,7 @@ async fn run_proxy() -> josh::JoshResult<i32> {
             ARGS.value_of("n").unwrap_or("1").parse()?,
         )),
         filter_permits: Arc::new(tokio::sync::Semaphore::new(10)),
+        validator: validator,
     });
 
     let ps = proxy_service.clone();
@@ -768,6 +785,12 @@ fn parse_args() -> clap::ArgMatches<'static> {
                 .takes_value(true)
                 .help("Duration between forced cache refresh")
                 .takes_value(true),
+        )
+        .arg(
+            clap::Arg::with_name("acl")
+                .long("acl")
+                .help("Specify a config file to control user access")
+                .takes_value(true)
         )
         .get_matches_from(args)
 }
