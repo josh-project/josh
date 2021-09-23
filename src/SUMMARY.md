@@ -13,7 +13,7 @@
 - [Proxy](./reference/proxy.md)
 - [Workspaces](./reference/workspace.md)
 - [Command line tools](./reference/cli.md)
-- [Graphql API]()
+- [Graphql API](./reference/graphql.md)
 - [Handlebar generator]()
 - [The josh UI]()
 # Contributing
