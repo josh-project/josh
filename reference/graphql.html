@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Proxy - Just One Single History</title>
+        <title>Graphql API - Just One Single History</title>
                 
 
         <!-- Custom HTML head -->
@@ -82,7 +82,7 @@
 
         <nav id="sidebar" class="sidebar" aria-label="Table of contents">
             <div class="sidebar-scrollbox">
-                <ol class="chapter"><li class="chapter-item expanded "><a href="../intro.html"><strong aria-hidden="true">1.</strong> Intro</a></li><li class="chapter-item expanded "><a href="../usecases.html"><strong aria-hidden="true">2.</strong> Use cases</a></li><li class="chapter-item expanded "><a href="../faq.html"><strong aria-hidden="true">3.</strong> FAQ</a></li><li class="chapter-item expanded affix "><li class="part-title">Guide</li><li class="chapter-item expanded "><a href="../guide/gettingstarted.html"><strong aria-hidden="true">4.</strong> Getting started</a></li><li class="chapter-item expanded "><a href="../guide/workspaces.html"><strong aria-hidden="true">5.</strong> Working with workspaces</a></li><li class="chapter-item expanded "><div><strong aria-hidden="true">6.</strong> Importing projects</div></li><li class="chapter-item expanded "><div><strong aria-hidden="true">7.</strong> Integrating with CI</div></li><li class="chapter-item expanded affix "><li class="part-title">Reference</li><li class="chapter-item expanded "><a href="../reference/filters.html"><strong aria-hidden="true">8.</strong> Filter syntax</a></li><li class="chapter-item expanded "><a href="../reference/proxy.html" class="active"><strong aria-hidden="true">9.</strong> Proxy</a></li><li class="chapter-item expanded "><a href="../reference/workspace.html"><strong aria-hidden="true">10.</strong> Workspaces</a></li><li class="chapter-item expanded "><a href="../reference/cli.html"><strong aria-hidden="true">11.</strong> Command line tools</a></li><li class="chapter-item expanded "><a href="../reference/graphql.html"><strong aria-hidden="true">12.</strong> Graphql API</a></li><li class="chapter-item expanded "><div><strong aria-hidden="true">13.</strong> Handlebar generator</div></li><li class="chapter-item expanded "><div><strong aria-hidden="true">14.</strong> The josh UI</div></li><li class="chapter-item expanded affix "><li class="part-title">Contributing</li><li class="chapter-item expanded "><div><strong aria-hidden="true">15.</strong> Development tools</div></li><li class="chapter-item expanded "><div><strong aria-hidden="true">16.</strong> Tracing</div></li></ol>            </div>
+                <ol class="chapter"><li class="chapter-item expanded "><a href="../intro.html"><strong aria-hidden="true">1.</strong> Intro</a></li><li class="chapter-item expanded "><a href="../usecases.html"><strong aria-hidden="true">2.</strong> Use cases</a></li><li class="chapter-item expanded "><a href="../faq.html"><strong aria-hidden="true">3.</strong> FAQ</a></li><li class="chapter-item expanded affix "><li class="part-title">Guide</li><li class="chapter-item expanded "><a href="../guide/gettingstarted.html"><strong aria-hidden="true">4.</strong> Getting started</a></li><li class="chapter-item expanded "><a href="../guide/workspaces.html"><strong aria-hidden="true">5.</strong> Working with workspaces</a></li><li class="chapter-item expanded "><div><strong aria-hidden="true">6.</strong> Importing projects</div></li><li class="chapter-item expanded "><div><strong aria-hidden="true">7.</strong> Integrating with CI</div></li><li class="chapter-item expanded affix "><li class="part-title">Reference</li><li class="chapter-item expanded "><a href="../reference/filters.html"><strong aria-hidden="true">8.</strong> Filter syntax</a></li><li class="chapter-item expanded "><a href="../reference/proxy.html"><strong aria-hidden="true">9.</strong> Proxy</a></li><li class="chapter-item expanded "><a href="../reference/workspace.html"><strong aria-hidden="true">10.</strong> Workspaces</a></li><li class="chapter-item expanded "><a href="../reference/cli.html"><strong aria-hidden="true">11.</strong> Command line tools</a></li><li class="chapter-item expanded "><a href="../reference/graphql.html" class="active"><strong aria-hidden="true">12.</strong> Graphql API</a></li><li class="chapter-item expanded "><div><strong aria-hidden="true">13.</strong> Handlebar generator</div></li><li class="chapter-item expanded "><div><strong aria-hidden="true">14.</strong> The josh UI</div></li><li class="chapter-item expanded affix "><li class="part-title">Contributing</li><li class="chapter-item expanded "><div><strong aria-hidden="true">15.</strong> Development tools</div></li><li class="chapter-item expanded "><div><strong aria-hidden="true">16.</strong> Tracing</div></li></ol>            </div>
             <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
         </nav>
 
@@ -143,82 +143,24 @@
 
                 <div id="content" class="content">
                     <main>
-                        <h1 id="josh-proxy"><a class="header" href="#josh-proxy">josh-proxy</a></h1>
-<p>Josh provides an HTTP proxy server that can be used with any git hosting service which communicates
-via HTTP.</p>
-<p>It needs the URL of the upstream server and a local directory to store its data.
-Optionally, a port to listen on can be specified. For example, running a local <code>josh-proxy</code>
-instance for github.com on port 8000:</p>
-<pre><code>$ docker run -p 8000:8000 -e JOSH_REMOTE=https://github.com -v josh-vol:/data/git joshproject/josh-proxy:latest
+                        <h1 id="graphql-api"><a class="header" href="#graphql-api">GraphQL API</a></h1>
+<p>Josh implements a GraphQL API to query the content of repositories without a need to clone
+them via a git client.</p>
+<p>The API is exposed at:</p>
+<pre><code>http://hostname/~/graphql/name_of_repo.git
 </code></pre>
-<blockquote>
-<p><strong>Note</strong>: The proxy is semantically stateless. The data inside the docker volume is only persisted across
-runs for performance reasons. This has two important implications for deployment:</p>
-<ol>
-<li>The data does not need to be backed up unless working with very large repos where rebuilding would
-be very expensive. And 2) Multiple instances of josh-proxy can be used interchangeably for availability
-or load balancing purposes.</li>
-</ol>
-</blockquote>
-<p>For a first example of how to make use of josh, just the josh documentation can be checked out as
-its own repository via this command:</p>
-<pre><code>$ git clone http://localhost:8000/josh-project/josh.git:/docs.git
-</code></pre>
-<blockquote>
-<p><strong>Note</strong>: This URL needs to contain the <code>.git</code> suffix twice: once after the original path
-and once more after the filter spec.</p>
-</blockquote>
-<p><code>josh-proxy</code> supports read and write access to the repository, so when making changes
-to any files in the filtered repository, you can just commit and push them
-like you are used to.</p>
-<h2 id="url-syntax-and-breakdown"><a class="header" href="#url-syntax-and-breakdown">URL syntax and breakdown</a></h2>
-<p>This is the URL of a <code>josh-proxy</code> instance:</p>
-<pre><code>http://localhost:8000
-</code></pre>
-<p>This is the repository location on the upstream host on which to perform the filter operations:</p>
-<pre><code>/josh-project/josh.git
-</code></pre>
-<p>This is the set of filter operations to perform:</p>
-<pre><code>:/docs.git
-</code></pre>
-<p>Much more information on the available filters and the syntax of all filters is covered in detail in
-the <a href="./filters.html">filters</a> section.</p>
-<h2 id="repository-naming"><a class="header" href="#repository-naming">Repository naming</a></h2>
-<p>By default, a git URL is used to point to the remote repository to download <em>and also</em> to dictate
-how the local repository shall be named.  It's important to learn that the last name in the URL is
-what the local git client will name the new, local repository. For example:</p>
-<pre><code>$ git clone http://localhost:8000/josh-project/josh.git:/docs.git
-</code></pre>
-<p>will create the new repository at directory <code>docs</code>, as <code>docs.git</code> is the last name in the URL.</p>
-<p>By default, this leads to rather odd-looking repositories when the <code>prefix</code> filter is the final
-filter of a URL:</p>
-<pre><code>$ git clone http://localhost:8000/josh-project/josh.git:/docs:prefix=josh-docs.git
-</code></pre>
-<p>This will still clone just the josh documentation, but the final directory structure will look like
-this:</p>
-<pre><code>- prefix=josh-docs
-  - josh-docs
-    - &lt;docs&gt;
-</code></pre>
-<p>Having the root repository directory name be the fully-specified filter is most likely not what was
-intended. This results from git's reuse and repurposing of the remote URL, as <code>prefix=josh-docs</code>
-is the final name in the URL. With no other alternatives, this gets used for the repository name.</p>
-<p>To explicitly specify a repository name, provide the desired name after the URL when cloning a new
-repository:</p>
-<pre><code>$ git clone http://localhost:8000/josh-project/josh.git:/docs:prefix=josh-docs.git my-repo
+<p>To explore the API and generated documentation, an interactive GraphQL shell can be found at:</p>
+<pre><code>http://hostname/~/graphiql/name_of_repo.git
 </code></pre>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                                                    <a rel="prev" href="../reference/filters.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                                    <a rel="prev" href="../reference/cli.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <i class="fa fa-angle-left"></i>
                             </a>
                         
-                                                    <a rel="next" href="../reference/workspace.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
-                                <i class="fa fa-angle-right"></i>
-                            </a>
                         
                         <div style="clear: both"></div>
                     </nav>
@@ -226,13 +168,10 @@ repository:</p>
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                                    <a rel="prev" href="../reference/filters.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                    <a rel="prev" href="../reference/cli.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <i class="fa fa-angle-left"></i>
                     </a>
                 
-                                    <a rel="next" href="../reference/workspace.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
-                        <i class="fa fa-angle-right"></i>
-                    </a>
                             </nav>
 
         </div>
