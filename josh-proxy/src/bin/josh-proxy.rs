@@ -399,7 +399,8 @@ async fn call_service(
         return Ok(builder.body(hyper::Body::empty())?);
     }
 
-    if !serv.validator.is_accessible(&username, &remote_url) {
+    // e.g. "http://localhost:port/a/b.git:/c/d.git" will become "a/b.git" ":/c/d"
+    if !serv.validator.is_accessible(&username, &parsed_url.upstream_repo, &parsed_url.filter) {
         tracing::trace!("acl-validator");
         let builder = Response::builder()
             .header("WWW-Authenticate", "Basic realm=User Visible Realm")
