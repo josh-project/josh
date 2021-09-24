@@ -5,8 +5,8 @@ use std::{collections::HashMap, result::Result};
 
 #[derive(Debug, Clone)]
 pub struct Validator {
-    // note:       repo            user        paths
-    rules: HashMap<String, HashMap<String, Vec<Regex>>>,
+    // note:              repo            user        paths
+    rules: Option<HashMap<String, HashMap<String, Vec<Regex>>>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -16,6 +16,10 @@ pub enum Error {
 }
 
 impl Validator {
+
+    pub fn new() -> Validator {
+        Validator{rules: None}
+    }
 
     pub fn from_toml(src: &str) -> std::result::Result<Validator, Error> {
         // parse Rule from text
@@ -43,18 +47,22 @@ impl Validator {
             ?;
 
         // return value
-        Ok(Validator{rules: dst})
+        Ok(Validator{rules: Some(dst)})
     }
 
     pub fn is_accessible(self: &Validator, user: &str, repo: &str, path: &str) -> bool {
-        // e.g. if "we" want to access "http://localhost:8080/a/b.git:/c/d.git"
-        //      then user = we, repo = a/b, path = c/d
-        let repo = repo.trim_end_matches(".git");
-        let path = path.trim_start_matches(":/");
-        self.rules
-            .get(repo)
-            .and_then(|r| r.get(user).map(|x| x.iter().any(|r| r.is_match(path))))
-            .unwrap_or(false)
+        match &self.rules {
+            None       => true,
+            Some(rule) => {
+                // e.g. if "we" want to access "http://localhost:8080/a/b.git:/c/d.git"
+                //      then user = we, repo = a/b, path = c/d
+                let repo = repo.trim_end_matches(".git");
+                let path = path.trim_start_matches(":/");
+                rule.get(repo)
+                    .and_then(|r| r.get(user).map(|x| x.iter().any(|r| r.is_match(path))))
+                    .unwrap_or(false)
+            }
+        }
     }
 }
 

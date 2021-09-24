@@ -616,11 +616,14 @@ async fn run_proxy() -> josh::JoshResult<i32> {
     josh::cache::load(&local)?;
 
     let validator = match ARGS.value_of("acl") {
-        Some(p) => std::fs::read_to_string(p).map_err(|_| josh::josh_error("failed to read acl file"))?,
-        None    => "".to_string(),
+        None       => josh_proxy::acl::Validator::new(),
+        Some(path) => {
+            let text = std::fs::read_to_string(path)
+                .map_err(|_| josh::josh_error("failed to read acl file"))?;
+            josh_proxy::acl::Validator::from_toml(text.as_str())
+                .map_err(|_| josh::josh_error("errors in acl file"))?
+        }
     };
-    let validator = josh_proxy::acl::Validator::from_toml(validator.as_str())
-        .map_err(|_| josh::josh_error("errors in acl file"))?;
 
     let proxy_service = Arc::new(JoshProxyService {
         port,
