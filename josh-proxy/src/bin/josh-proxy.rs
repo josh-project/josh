@@ -367,7 +367,11 @@ async fn call_service(
             pu
         } else {
             return Ok(Response::builder()
-                .status(hyper::StatusCode::NOT_FOUND)
+                .status(302)
+                .header(
+                    "Location",
+                    format!("/~/browse{}@refs/heads/master(:/)/()", path),
+                )
                 .body(hyper::Body::empty())?);
         }
     };
