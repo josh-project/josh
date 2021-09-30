@@ -56,6 +56,7 @@ impl Validator {
             Some(rule) => {
                 // e.g. if "we" want to access "http://localhost:8080/a/b.git:/c/d.git"
                 //      then user = we, repo = a/b, path = c/d
+                let repo = repo.trim_start_matches("/");
                 let repo = repo.trim_end_matches(".git");
                 let path = path.trim_start_matches(":/");
                 rule.get(repo)
