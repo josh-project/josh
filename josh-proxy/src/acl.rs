@@ -1,7 +1,7 @@
-use toml;
 use regex::Regex;
 use serde::Deserialize;
 use std::{collections::HashMap, result::Result};
+use toml;
 
 #[derive(Debug, Clone)]
 pub struct Validator {
@@ -16,9 +16,8 @@ pub enum Error {
 }
 
 impl Validator {
-
     pub fn new() -> Validator {
-        Validator{rules: None}
+        Validator { rules: None }
     }
 
     pub fn from_toml(src: &str) -> std::result::Result<Validator, Error> {
@@ -26,33 +25,33 @@ impl Validator {
         let raw: Doc = toml::from_str(&src).map_err(Error::Toml)?;
 
         // map Rule into HashMap<String, HashMap<String, Vec<Regex>>>
-        let dst = |x: Vec<String>| x
-            .into_iter()
-            .map(|v| Regex::new(v.as_str()).map_err(Error::Regex))
-            .collect::<Result<Vec<Regex>, Error>>()
-            ;
-        let dst = |x: Option<Vec<Match>>| x
-            .unwrap_or(Vec::new())
-            .into_iter()
-            .map(|m| (m.user, dst(m.path)))
-            .map(|(s, r)| r.map(|v| (s, v)))
-            .collect::<Result<HashMap<String, Vec<Regex>>, Error>>()
-            ;
-        let dst = raw.repo
+        let dst = |x: Vec<String>| {
+            x.into_iter()
+                .map(|v| Regex::new(v.as_str()).map_err(Error::Regex))
+                .collect::<Result<Vec<Regex>, Error>>()
+        };
+        let dst = |x: Option<Vec<Match>>| {
+            x.unwrap_or(Vec::new())
+                .into_iter()
+                .map(|m| (m.user, dst(m.path)))
+                .map(|(s, r)| r.map(|v| (s, v)))
+                .collect::<Result<HashMap<String, Vec<Regex>>, Error>>()
+        };
+        let dst = raw
+            .repo
             .unwrap_or(Vec::new())
             .into_iter()
             .map(|r| (r.name, dst(r.rule)))
             .map(|(s, r)| r.map(|v| (s, v)))
-            .collect::<Result<HashMap<String, _>, Error>>()
-            ?;
+            .collect::<Result<HashMap<String, _>, Error>>()?;
 
         // return value
-        Ok(Validator{rules: Some(dst)})
+        Ok(Validator { rules: Some(dst) })
     }
 
     pub fn is_accessible(self: &Validator, user: &str, repo: &str, path: &str) -> bool {
         match &self.rules {
-            None       => true,
+            None => true,
             Some(rule) => {
                 // e.g. if "we" want to access "http://localhost:8080/a/b.git:/c/d.git"
                 //      then user = we, repo = a/b, path = c/d

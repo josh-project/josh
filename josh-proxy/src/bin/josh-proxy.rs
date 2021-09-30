@@ -400,7 +400,10 @@ async fn call_service(
     }
 
     // e.g. "http://localhost:port/a/b.git:/c/d.git" will become "a/b.git" ":/c/d"
-    if !serv.validator.is_accessible(&username, &parsed_url.upstream_repo, &parsed_url.filter) {
+    if !serv
+        .validator
+        .is_accessible(&username, &parsed_url.upstream_repo, &parsed_url.filter)
+    {
         tracing::trace!("acl-validator");
         let builder = Response::builder()
             .header("WWW-Authenticate", "Basic realm=User Visible Realm")
@@ -616,7 +619,7 @@ async fn run_proxy() -> josh::JoshResult<i32> {
     josh::cache::load(&local)?;
 
     let validator = match ARGS.value_of("acl") {
-        None       => josh_proxy::acl::Validator::new(),
+        None => josh_proxy::acl::Validator::new(),
         Some(path) => {
             let text = std::fs::read_to_string(path)
                 .map_err(|_| josh::josh_error("failed to read acl file"))?;
@@ -794,7 +797,7 @@ fn parse_args() -> clap::ArgMatches<'static> {
             clap::Arg::with_name("acl")
                 .long("acl")
                 .help("Specify a config file to control user access")
-                .takes_value(true)
+                .takes_value(true),
         )
         .get_matches_from(args)
 }
