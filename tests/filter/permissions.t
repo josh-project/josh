@@ -231,6 +231,166 @@
   \ No newline at end of file
 
 
+  $ josh-filter -s :PATHS:INVERT master --update refs/josh/filtered
+  [1] :/a
+  [1] :exclude[:/c]
+  [1] :prefix=x
+  [3] :/c
+  [3] :INVERT
+  [3] :PATHS
+  [12] _invert
+  [16] _paths
+
+  $ git checkout refs/josh/filtered 2> /dev/null
+  $ tree
+  .
+  |-- a
+  |   |-- file_a2
+  |   `-- workspace.josh
+  |-- b
+  |   `-- file_b1
+  `-- c
+      `-- d
+          |-- e
+          |   `-- file_cd3
+          |-- file_cd
+          `-- file_cd2
+  
+  5 directories, 6 files
+
+  $ git diff $EMPTY_TREE HEAD
+  diff --git a/a/file_a2 b/a/file_a2
+  new file mode 100644
+  index 0000000..4b2f88e
+  --- /dev/null
+  +++ b/a/file_a2
+  @@ -0,0 +1 @@
+  +a/file_a2
+  \ No newline at end of file
+  diff --git a/a/workspace.josh b/a/workspace.josh
+  new file mode 100644
+  index 0000000..b5fbe37
+  --- /dev/null
+  +++ b/a/workspace.josh
+  @@ -0,0 +1 @@
+  +a/workspace.josh
+  \ No newline at end of file
+  diff --git a/b/file_b1 b/b/file_b1
+  new file mode 100644
+  index 0000000..413b4ca
+  --- /dev/null
+  +++ b/b/file_b1
+  @@ -0,0 +1 @@
+  +b/file_b1
+  \ No newline at end of file
+  diff --git a/c/d/e/file_cd3 b/c/d/e/file_cd3
+  new file mode 100644
+  index 0000000..8719808
+  --- /dev/null
+  +++ b/c/d/e/file_cd3
+  @@ -0,0 +1 @@
+  +c/d/e/file_cd3
+  \ No newline at end of file
+  diff --git a/c/d/file_cd b/c/d/file_cd
+  new file mode 100644
+  index 0000000..bb36c67
+  --- /dev/null
+  +++ b/c/d/file_cd
+  @@ -0,0 +1 @@
+  +c/d/file_cd
+  \ No newline at end of file
+  diff --git a/c/d/file_cd2 b/c/d/file_cd2
+  new file mode 100644
+  index 0000000..26318eb
+  --- /dev/null
+  +++ b/c/d/file_cd2
+  @@ -0,0 +1 @@
+  +c/d/file_cd2
+  \ No newline at end of file
+
+
+  $ josh-filter -s :PATHS:workspace=a:INVERT master --update refs/josh/filtered
+  [1] :/a
+  [1] :exclude[:/c]
+  [1] :prefix=x
+  [3] :/c
+  [3] :PATHS
+  [3] :workspace=a
+  [6] :INVERT
+  [16] _paths
+  [22] _invert
+
+  $ git checkout refs/josh/filtered 2> /dev/null
+  $ tree
+  .
+  |-- a
+  |   |-- file_a2
+  |   `-- workspace.josh
+  `-- c
+      `-- d
+          |-- e
+          |   `-- file_cd3
+          |-- file_cd
+          `-- file_cd2
+  
+  4 directories, 5 files
+
+  $ git diff $EMPTY_TREE HEAD
+  diff --git a/a/file_a2 b/a/file_a2
+  new file mode 100644
+  index 0000000..ee73843
+  --- /dev/null
+  +++ b/a/file_a2
+  @@ -0,0 +1 @@
+  +file_a2
+  \ No newline at end of file
+  diff --git a/a/workspace.josh b/a/workspace.josh
+  new file mode 100644
+  index 0000000..0ab7ce1
+  --- /dev/null
+  +++ b/a/workspace.josh
+  @@ -0,0 +1 @@
+  +workspace.josh
+  \ No newline at end of file
+  diff --git a/c/d/e/file_cd3 b/c/d/e/file_cd3
+  new file mode 100644
+  index 0000000..ed74419
+  --- /dev/null
+  +++ b/c/d/e/file_cd3
+  @@ -0,0 +1 @@
+  +cws/d/e/file_cd3
+  \ No newline at end of file
+  diff --git a/c/d/file_cd b/c/d/file_cd
+  new file mode 100644
+  index 0000000..7afa8f7
+  --- /dev/null
+  +++ b/c/d/file_cd
+  @@ -0,0 +1 @@
+  +cws/d/file_cd
+  \ No newline at end of file
+  diff --git a/c/d/file_cd2 b/c/d/file_cd2
+  new file mode 100644
+  index 0000000..4fbc84d
+  --- /dev/null
+  +++ b/c/d/file_cd2
+  @@ -0,0 +1 @@
+  +cws/d/file_cd2
+  \ No newline at end of file
+
+  $ josh-filter -s :PATHS:FOLD master --update refs/josh/filtered
+  [1] :/a
+  [1] :exclude[:/c]
+  [1] :prefix=x
+  [3] :/c
+  [3] :FOLD
+  [3] :PATHS
+  [3] :workspace=a
+  [6] :INVERT
+  [16] _paths
+  [22] _invert
+
+
+
   $ git checkout master 2> /dev/null
   $ git rm -r c/d
   rm 'c/d/e/file_cd3'
@@ -247,8 +407,12 @@
   [1] :exclude[:/c]
   [1] :prefix=x
   [3] :/c
+  [3] :FOLD
+  [3] :workspace=a
   [5] :PATHS
+  [6] :INVERT
   [19] _paths
+  [22] _invert
 
   $ git log --graph --pretty=%s master
   * add newfile
@@ -312,19 +476,9 @@
   \ No newline at end of file
 
 
-
-
-  $ josh-filter -s :PATHS:FOLD master --update refs/josh/filtered
-  [1] :/a
-  [1] :exclude[:/c]
-  [1] :prefix=x
-  [3] :/c
-  [4] :FOLD
-  [5] :PATHS
-  [19] _paths
-
   $ git log --graph --pretty=%s refs/josh/filtered
   * add newfile
+  * rm
   * add file_cd3
   * add file_cd2
   * add dirs
@@ -336,16 +490,10 @@
   |   |-- file_a2
   |   |-- newfile
   |   `-- workspace.josh
-  |-- b
-  |   `-- file_b1
-  `-- c
-      `-- d
-          |-- e
-          |   `-- file_cd3
-          |-- file_cd
-          `-- file_cd2
+  `-- b
+      `-- file_b1
   
-  5 directories, 7 files
+  2 directories, 4 files
 
   $ git diff $EMPTY_TREE HEAD
   diff --git a/a/file_a2 b/a/file_a2
@@ -380,30 +528,6 @@
   @@ -0,0 +1 @@
   +b/file_b1
   \ No newline at end of file
-  diff --git a/c/d/e/file_cd3 b/c/d/e/file_cd3
-  new file mode 100644
-  index 0000000..8719808
-  --- /dev/null
-  +++ b/c/d/e/file_cd3
-  @@ -0,0 +1 @@
-  +c/d/e/file_cd3
-  \ No newline at end of file
-  diff --git a/c/d/file_cd b/c/d/file_cd
-  new file mode 100644
-  index 0000000..bb36c67
-  --- /dev/null
-  +++ b/c/d/file_cd
-  @@ -0,0 +1 @@
-  +c/d/file_cd
-  \ No newline at end of file
-  diff --git a/c/d/file_cd2 b/c/d/file_cd2
-  new file mode 100644
-  index 0000000..26318eb
-  --- /dev/null
-  +++ b/c/d/file_cd2
-  @@ -0,0 +1 @@
-  +c/d/file_cd2
-  \ No newline at end of file
 
 
 
@@ -411,10 +535,13 @@
   [1] :/a
   [1] :exclude[:/c]
   [1] :prefix=x
+  [3] :workspace=a
   [4] :/c
   [5] :PATHS
-  [7] :FOLD
+  [6] :FOLD
+  [6] :INVERT
   [19] _paths
+  [22] _invert
 
   $ git log --graph --pretty=%s refs/josh/filtered
   * add file_cd3
@@ -467,8 +594,10 @@
   [4] :/c
   [5] :PATHS
   [5] :workspace=a
-  [11] :FOLD
+  [6] :INVERT
+  [10] :FOLD
   [19] _paths
+  [22] _invert
 
   $ git log --graph --pretty=%s refs/josh/filtered
   * add newfile

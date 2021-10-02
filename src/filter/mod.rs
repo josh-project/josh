@@ -53,6 +53,7 @@ enum Op {
     Fold,
     Squash,
     Paths,
+    Invert,
 
     File(std::path::PathBuf),
     Prefix(std::path::PathBuf),
@@ -162,6 +163,7 @@ fn spec2(op: &Op) -> String {
         Op::Nop => ":/".to_string(),
         Op::Empty => ":empty".to_string(),
         Op::Paths => ":PATHS".to_string(),
+        Op::Invert => ":INVERT".to_string(),
         Op::Fold => ":FOLD".to_string(),
         Op::Squash => ":SQUASH".to_string(),
         Op::Subdir(path) => format!(":/{}", path.to_string_lossy()),
@@ -472,6 +474,8 @@ fn apply2<'a>(
         }
 
         Op::Paths => tree::pathstree("", tree.id(), transaction),
+
+        Op::Invert => tree::invert_paths(transaction, "", tree),
 
         Op::Workspace(path) => {
             let base = to_filter(Op::Subdir(path.to_owned()));
