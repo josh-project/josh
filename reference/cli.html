@@ -150,7 +150,10 @@ history, taking a filter specification as argument.</p>
 <h1 id="git-sync"><a class="header" href="#git-sync">git-sync</a></h1>
 <p>A utility to make working with server side rewritten commits easier.
 Those commits frequently get produced when making changes to <code>workspace.josh</code> files.</p>
-<p>The command should be put into <code>PATH</code> and can be used as a drop-in replacement for <code>git push</code>.
+<p>The command is available <a href="https://raw.githubusercontent.com/josh-project/josh/master/scripts/git-sync">in the script
+directory</a>.
+It should be put downloaded and added to the <code>PATH</code>.
+It can then be used as a drop-in replacement for <code>git push</code>.
 It enables the server to <em>return</em> commits back to the client after a push. This is done by parsing
 the messages sent back by the server for announcements of rewritten commits and then fetching
 those to update the local references.
