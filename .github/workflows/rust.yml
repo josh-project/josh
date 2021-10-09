@@ -60,4 +60,5 @@ jobs:
     - name: Run integration tests
       run: |
         trunk --config=josh-ui/Trunk.toml build
-        sh run-tests.sh tests/*/*.t
+        sh run-tests.sh tests/filter/*.t
+        sh run-tests.sh tests/proxy/*.t

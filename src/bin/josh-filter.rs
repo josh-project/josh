@@ -8,16 +8,21 @@ use std::fs::read_to_string;
 use std::io::Write;
 
 fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
-    let args = clap::App::new("josh-filter")
+    let app = clap::App::new("josh-filter");
+
+    #[cfg(feature = "search")]
+    let app = {
+        app.arg(
+            clap::Arg::with_name("search")
+                .long("search")
+                .takes_value(true),
+        )
+    };
+    let args = app
         .arg(
             clap::Arg::with_name("filter")
                 .help("Filter to apply")
                 .default_value(":/")
-                .takes_value(true),
-        )
-        .arg(
-            clap::Arg::with_name("search")
-                .long("search")
                 .takes_value(true),
         )
         .arg(
@@ -84,6 +89,12 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
             clap::Arg::with_name("graphql")
                 .long("graphql")
                 .short("g")
+                .takes_value(true),
+        )
+        .arg(
+            clap::Arg::with_name("max_comp")
+                .long("max_comp")
+                .short("m")
                 .takes_value(true),
         )
         .arg(clap::Arg::with_name("reverse").long("reverse"))
@@ -221,8 +232,11 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         })?;
     }
 
+    #[cfg(feature = "search")]
     if let Some(searchstring) = args.value_of("search") {
         let ifilterobj = josh::filter::chain(filterobj, josh::filter::parse(":SQUASH:INDEX")?);
+
+        let max_complexity: usize = args.value_of("max_comp").unwrap_or("6").parse()?;
 
         josh::filter_refs(
             &transaction,
@@ -233,8 +247,12 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         let index_tree = repo.find_reference(&"refs/JOSH_TMP")?.peel_to_tree()?;
 
         /* let start = std::time::Instant::now(); */
-        let candidates =
-            josh::filter::tree::search_candidates(&transaction, &index_tree, &searchstring)?;
+        let candidates = josh::filter::tree::search_candidates(
+            &transaction,
+            &index_tree,
+            &searchstring,
+            max_complexity,
+        )?;
         let matches =
             josh::filter::tree::search_matches(&transaction, &tree, &searchstring, &candidates)?;
         /* let duration = start.elapsed(); */

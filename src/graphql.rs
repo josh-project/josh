@@ -172,40 +172,6 @@ impl Revision {
         self.files_or_dirs(at, depth, context, git2::ObjectType::Blob)
     }
 
-    fn search(&self, string: String, context: &Context) -> FieldResult<Option<Vec<SearchResult>>> {
-        let transaction = context.transaction.lock()?;
-        let ifilterobj = filter::chain(self.filter, filter::parse(":SQUASH:INDEX")?);
-        let tree = transaction.repo().find_commit(self.commit_id)?.tree()?;
-
-        let tree = filter::apply(&transaction, self.filter, tree)?;
-        let index_tree = filter::apply(&transaction, ifilterobj, tree.clone())?;
-
-        /* let start = std::time::Instant::now(); */
-        let candidates = filter::tree::search_candidates(&transaction, &index_tree, &string)?;
-        let results = filter::tree::search_matches(&transaction, &tree, &string, &candidates)?;
-        /* let duration = start.elapsed(); */
-
-        let mut r = vec![];
-        for m in results {
-            let mut matches = vec![];
-            for l in m.1 {
-                matches.push(SearchMatch {
-                    line: l.0 as i32,
-                    text: l.1,
-                });
-            }
-            let path = Path {
-                path: std::path::PathBuf::from(m.0),
-                commit_id: self.commit_id,
-                filter: self.filter,
-                tree: tree.id(),
-            };
-            r.push(SearchResult { path, matches });
-        }
-        return Ok(Some(r));
-        /* println!("\n Search took {:?}", duration); */
-    }
-
     fn dirs(
         &self,
         at: Option<String>,
@@ -274,6 +240,51 @@ impl Revision {
             .collect();
 
         Ok(Some(warnings))
+    }
+}
+
+#[cfg(feature = "search")]
+#[graphql_object(context = Context)]
+impl Revision {
+    fn search(
+        &self,
+        string: String,
+        max_complexity: Option<i32>,
+        context: &Context,
+    ) -> FieldResult<Option<Vec<SearchResult>>> {
+        let max_complexity = max_complexity.unwrap_or(6) as usize;
+        let transaction = context.transaction.lock()?;
+        let ifilterobj = filter::chain(self.filter, filter::parse(":SQUASH:INDEX")?);
+        let tree = transaction.repo().find_commit(self.commit_id)?.tree()?;
+
+        let tree = filter::apply(&transaction, self.filter, tree)?;
+        let index_tree = filter::apply(&transaction, ifilterobj, tree.clone())?;
+
+        /* let start = std::time::Instant::now(); */
+        let candidates =
+            filter::tree::search_candidates(&transaction, &index_tree, &string, max_complexity)?;
+        let results = filter::tree::search_matches(&transaction, &tree, &string, &candidates)?;
+        /* let duration = start.elapsed(); */
+
+        let mut r = vec![];
+        for m in results {
+            let mut matches = vec![];
+            for l in m.1 {
+                matches.push(SearchMatch {
+                    line: l.0 as i32,
+                    text: l.1,
+                });
+            }
+            let path = Path {
+                path: std::path::PathBuf::from(m.0),
+                commit_id: self.commit_id,
+                filter: self.filter,
+                tree: tree.id(),
+            };
+            r.push(SearchResult { path, matches });
+        }
+        return Ok(Some(r));
+        /* println!("\n Search took {:?}", duration); */
     }
 }
 

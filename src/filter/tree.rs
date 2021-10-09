@@ -1,4 +1,6 @@
 use super::*;
+
+#[cfg(feature = "search")]
 use rayon::prelude::*;
 
 pub fn pathstree<'a>(
@@ -479,16 +481,18 @@ pub fn trigram_index<'a>(
     return Ok(result);
 }
 
+#[cfg(feature = "search")]
 pub fn search_candidates(
     transaction: &cache::Transaction,
     tree: &git2::Tree,
     searchstring: &str,
+    max_ord: usize,
 ) -> super::JoshResult<Vec<String>> {
     let ff = make_dir_trigram_filter(&searchstring, FILE_FILTER_SIZE, &[2]);
 
     let mut results = vec![];
 
-    for ord in 0..6 {
+    for ord in 0..max_ord {
         let dir_filter_size = usize::pow(4, 3 + ord as u32);
         let df = make_dir_trigram_filter(&searchstring, dir_filter_size, &[0, 1, 2]);
         trigram_search(&transaction, tree.clone(), "", &df, &ff, &mut results, ord)?;
@@ -496,6 +500,7 @@ pub fn search_candidates(
     Ok(results)
 }
 
+#[cfg(feature = "search")]
 pub fn search_matches(
     transaction: &cache::Transaction,
     tree: &git2::Tree,
@@ -523,6 +528,7 @@ pub fn search_matches(
     Ok(results)
 }
 
+#[cfg(feature = "search")]
 pub fn trigram_search<'a>(
     transaction: &'a cache::Transaction,
     tree: git2::Tree<'a>,
@@ -544,7 +550,6 @@ pub fn trigram_search<'a>(
         {
             let blob = blob?;
             let b = unsafe { std::str::from_utf8_unchecked(blob.content()) };
-            rs_tracing::trace_scoped!("hex decode own");
             hex::decode(b.lines().collect::<Vec<_>>().join(""))?
         } else {
             vec![]

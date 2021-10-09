@@ -9,6 +9,10 @@ keywords = ["git", "monorepo", "workflow", "scm"]
 readme = "README.md"
 edition = "2018"
 
+[features]
+search = []
+experimental = ["search"]
+
 [workspace]
 members = ["josh-proxy", "josh-ui", "."]
 
