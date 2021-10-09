@@ -59,6 +59,7 @@ struct Transaction2 {
     sled_trees: HashMap<git2::Oid, sled::Tree>,
     path_tree: sled::Tree,
     invert_tree: sled::Tree,
+    trigram_index_tree: sled::Tree,
     missing: Vec<(filter::Filter, git2::Oid)>,
     misses: usize,
     walks: usize,
@@ -104,6 +105,13 @@ impl Transaction {
             .unwrap()
             .open_tree("_invert")
             .unwrap();
+        let trigram_index_tree = DB
+            .lock()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .open_tree("_trigram_index")
+            .unwrap();
         Transaction {
             t2: std::cell::RefCell::new(Transaction2 {
                 commit_map: HashMap::new(),
@@ -112,6 +120,7 @@ impl Transaction {
                 sled_trees: HashMap::new(),
                 path_tree,
                 invert_tree,
+                trigram_index_tree,
                 missing: vec![],
                 misses: 0,
                 walks: 0,
@@ -206,6 +215,22 @@ impl Transaction {
         let x = git2::Oid::hash_object(git2::ObjectType::Blob, s.as_bytes()).expect("hash_object");
 
         if let Some(oid) = t2.invert_tree.get(x.as_bytes()).unwrap() {
+            return Some(git2::Oid::from_bytes(&oid).unwrap());
+        }
+        return None;
+    }
+
+    pub fn insert_trigram_index(&self, tree: git2::Oid, result: git2::Oid) {
+        let t2 = self.t2.borrow();
+        t2.trigram_index_tree
+            .insert(tree.as_bytes(), result.as_bytes())
+            .unwrap();
+    }
+
+    pub fn get_trigram_index(&self, tree: git2::Oid) -> Option<git2::Oid> {
+        let t2 = self.t2.borrow();
+
+        if let Some(oid) = t2.trigram_index_tree.get(tree.as_bytes()).unwrap() {
             return Some(git2::Oid::from_bytes(&oid).unwrap());
         }
         return None;

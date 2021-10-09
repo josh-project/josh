@@ -8,7 +8,17 @@ use std::fs::read_to_string;
 use std::io::Write;
 
 fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
-    let args = clap::App::new("josh-filter")
+    let app = clap::App::new("josh-filter");
+
+    #[cfg(feature = "search")]
+    let app = {
+        app.arg(
+            clap::Arg::with_name("search")
+                .long("search")
+                .takes_value(true),
+        )
+    };
+    let args = app
         .arg(
             clap::Arg::with_name("filter")
                 .help("Filter to apply")
@@ -73,6 +83,18 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
             clap::Arg::with_name("query")
                 .long("query")
                 .short("q")
+                .takes_value(true),
+        )
+        .arg(
+            clap::Arg::with_name("graphql")
+                .long("graphql")
+                .short("g")
+                .takes_value(true),
+        )
+        .arg(
+            clap::Arg::with_name("max_comp")
+                .long("max_comp")
+                .short("m")
                 .takes_value(true),
         )
         .arg(clap::Arg::with_name("reverse").long("reverse"))
@@ -210,6 +232,39 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         })?;
     }
 
+    #[cfg(feature = "search")]
+    if let Some(searchstring) = args.value_of("search") {
+        let ifilterobj = josh::filter::chain(filterobj, josh::filter::parse(":SQUASH:INDEX")?);
+
+        let max_complexity: usize = args.value_of("max_comp").unwrap_or("6").parse()?;
+
+        josh::filter_refs(
+            &transaction,
+            ifilterobj,
+            &[(src.clone(), "refs/JOSH_TMP".to_string())],
+        )?;
+        let tree = repo.find_reference(&src)?.peel_to_tree()?;
+        let index_tree = repo.find_reference(&"refs/JOSH_TMP")?.peel_to_tree()?;
+
+        /* let start = std::time::Instant::now(); */
+        let candidates = josh::filter::tree::search_candidates(
+            &transaction,
+            &index_tree,
+            &searchstring,
+            max_complexity,
+        )?;
+        let matches =
+            josh::filter::tree::search_matches(&transaction, &tree, &searchstring, &candidates)?;
+        /* let duration = start.elapsed(); */
+
+        for r in matches {
+            for l in r.1 {
+                println!("{}:{}: {}", r.0, l.0, l.1);
+            }
+        }
+        /* println!("\n Search took {:?}", duration); */
+    }
+
     let mut dedup = vec![];
 
     for w in all_paths.as_slice().windows(2) {
@@ -265,6 +320,19 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
                 return Ok(1);
             }
         }
+    }
+
+    if let Some(gql_query) = args.value_of("graphql") {
+        let (res, _errors) = juniper::execute_sync(
+            &gql_query,
+            None,
+            &josh::graphql::repo_schema(".".to_string(), true),
+            &std::collections::HashMap::new(),
+            &josh::graphql::context(transaction.clone()?),
+        )?;
+
+        let j = serde_json::to_string(&res)?;
+        println!("{}", j);
     }
 
     std::mem::drop(finish);
