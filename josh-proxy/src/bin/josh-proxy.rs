@@ -295,7 +295,7 @@ async fn do_filter(
 
         let mut headref = headref;
 
-        josh::filter_refs(&transaction, filter, &from_to)?;
+        josh::filter_refs(&transaction, filter, &from_to, josh::filter::empty())?;
         if headref == "HEAD" {
             headref = heads_map
                 .read()?

@@ -30,6 +30,7 @@
   * add file1
 
   $ josh-filter -s c=:/sub1 master --update refs/josh/filter/master
+  Warning: reference refs/josh/filter/master wasn't updated
   [2] :/sub1
   [2] :prefix=c
   $ git log --graph --pretty=%s josh/filter/master
@@ -48,6 +49,7 @@
   $ git commit -m "add file5" 1> /dev/null
 
   $ josh-filter -s c=:/sub2 master --update refs/josh/filter/master
+  Warning: reference refs/josh/filter/master wasn't updated
   [2] :/sub1
   [2] :/sub2
   [3] :prefix=c

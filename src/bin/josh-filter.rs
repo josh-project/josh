@@ -101,7 +101,18 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         .arg(
             clap::Arg::with_name("check-permission")
                 .long("check-permission")
-                .short("c")
+                .short("c"),
+        )
+        .arg(
+            clap::Arg::with_name("whitelist")
+                .long("whitelist")
+                .short("w")
+                .takes_value(true),
+        )
+        .arg(
+            clap::Arg::with_name("blacklist")
+                .long("blacklist")
+                .short("b")
                 .takes_value(true),
         )
         .arg(clap::Arg::with_name("version").long("version").short("v"))
@@ -183,6 +194,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
                 josh::filter::parse(&i)?,
                 input_ref,
                 "refs/JOSH_TMP",
+                josh::filter::empty(),
             )?;
         }
     }
@@ -193,12 +205,6 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
     let target = update_target;
 
     let reverse = args.is_present("reverse");
-    let check_permissions = args.is_present("check-permission");
-
-    if check_permissions {
-        filterobj = josh::filter::chain(josh::filter::parse(":PATHS")?, filterobj);
-        filterobj = josh::filter::chain(filterobj, josh::filter::parse(":FOLD")?);
-    }
 
     let t = if reverse {
         "refs/JOSH_TMP".to_owned()
@@ -213,21 +219,32 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         .unwrap()
         .to_string();
 
-    josh::filter_ref(&transaction, filterobj, &src, &t)?;
-
-    let mut all_paths = vec![];
-
+    let check_permissions = args.is_present("check-permission");
+    let mut permissions_filter = josh::filter::empty();
     if check_permissions {
-        let result_tree = repo.find_reference(&t)?.peel_to_tree()?;
+        let whitelist = match args.value_of("whitelist") {
+            Some(s) => josh::filter::parse(s)?,
+            _ => josh::filter::nop(),
+        };
+        let blacklist = match args.value_of("blacklist") {
+            Some(s) => josh::filter::parse(s)?,
+            _ => josh::filter::empty(),
+        };
+        permissions_filter = josh::filter::make_permissions_filter(filterobj, whitelist, blacklist)
+    }
 
-        result_tree.walk(git2::TreeWalkMode::PreOrder, |_, entry| {
-            let name = entry.name().unwrap();
-            if name.starts_with("JOSH_ORIG_PATH_") {
-                let pathname = josh::from_ns(&name.replacen("JOSH_ORIG_PATH_", "", 1));
-                all_paths.push(pathname);
-            }
-            git2::TreeWalkResult::Ok
-        })?;
+    let updated_refs = josh::filter_ref(
+        &transaction,
+        filterobj,
+        &src,
+        &t,
+        permissions_filter,
+    )?;
+    if args.value_of("update") != Some("FILTERED_HEAD") && updated_refs == 0 {
+        println!(
+            "Warning: reference {} wasn't updated",
+            args.value_of("update").unwrap()
+        );
     }
 
     #[cfg(feature = "search")]
@@ -262,39 +279,6 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
             }
         }
         /* println!("\n Search took {:?}", duration); */
-    }
-
-    let mut dedup = vec![];
-
-    for w in all_paths.as_slice().windows(2) {
-        if let [a, b, ..] = w {
-            if !b.starts_with(a) {
-                dedup.push(a.to_owned());
-            }
-        }
-    }
-
-    let dedup = all_paths;
-
-    let options = glob::MatchOptions {
-        case_sensitive: true,
-        require_literal_separator: true,
-        require_literal_leading_dot: true,
-    };
-
-    if let Some(cp) = args.value_of("check-permission") {
-        let pattern = glob::Pattern::new(cp)?;
-
-        let mut allowed = !dedup.is_empty();
-        for d in dedup.iter() {
-            let d = std::path::PathBuf::from(d);
-            let m = pattern.matches_path_with(&d, options);
-            if !m {
-                allowed = false;
-                println!("missing permission for: {:?}", &d);
-            }
-        }
-        println!("Allowed = {:?}", allowed);
     }
 
     if reverse {

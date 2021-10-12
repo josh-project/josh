@@ -166,11 +166,33 @@ pub fn filter_ref(
     filterobj: filter::Filter,
     from_refsname: &str,
     to_refname: &str,
+    permissions: filter::Filter,
 ) -> JoshResult<usize> {
     let mut updated_count = 0;
     if let Ok(reference) = transaction.repo().revparse_single(from_refsname) {
         let original_commit = reference.peel_to_commit()?;
         let oid = original_commit.id();
+
+        let perms_commit = if let Some(s) = transaction.get_ref(permissions, oid) {
+            s
+        } else {
+            tracing::trace!("apply_to_commit (permissions)");
+
+            filter::apply_to_commit(permissions, &original_commit, &transaction)?
+        };
+
+        if perms_commit != git2::Oid::zero() {
+            let perms_commit = transaction.repo().find_commit(perms_commit)?;
+            if !perms_commit.tree()?.is_empty() || perms_commit.parents().len() > 0 {
+                tracing::event!(
+                    tracing::Level::WARN,
+                    msg = "filter_refs: missing permissions for ref",
+                    warn = true,
+                    reference = from_refsname,
+                );
+                return Err(josh_error("missing permissions for ref"));
+            }
+        }
 
         let filter_commit = if let Some(s) = transaction.get_ref(filterobj, oid) {
             s
@@ -226,6 +248,7 @@ pub fn filter_refs(
     transaction: &cache::Transaction,
     filterobj: filter::Filter,
     refs: &[(String, String)],
+    permissions: filter::Filter,
 ) -> JoshResult<usize> {
     rs_tracing::trace_scoped!("filter_refs", "spec": filter::spec(filterobj));
     let s = tracing::Span::current();
@@ -235,7 +258,7 @@ pub fn filter_refs(
 
     let mut updated_count = 0;
     for (k, v) in refs {
-        updated_count += ok_or!(filter_ref(transaction, filterobj, k, v), {
+        updated_count += ok_or!(filter_ref(&transaction, filterobj, &k, &v, permissions), {
             tracing::event!(
                 tracing::Level::WARN,
                 msg = "filter_refs: Can't filter reference",
