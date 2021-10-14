@@ -402,6 +402,50 @@
   [13] _invert
   [16] _paths
 
+# acl
+  $ cat << EOF > acl.toml
+  > [[repo]]
+  > name = "test"
+  > [[repo.user]]
+  > name = "LMG"
+  > whitelist = ":/"
+  > blacklist = ":empty"
+  > 
+  > EOF
+  $ josh-filter -s :/ master --check-permission -a acl.toml -u bob -r test --update refs/josh/filtered
+  Warning: reference refs/josh/filtered wasn't updated
+  [1] :[
+      :/b
+      :exclude[:/b]
+  ]
+  [1] :exclude[:/a]
+  [1] :exclude[:/b]
+  [1] :exclude[:/c]
+  [1] :prefix=x
+  [2] :/a
+  [3] :/b
+  [3] :/c
+  [3] :PATHS
+  [4] :INVERT
+  [13] _invert
+  [16] _paths
+  $ josh-filter -s :/ master --check-permission -a acl.toml -u LMG -r test --update refs/josh/filtered
+  [1] :[
+      :/b
+      :exclude[:/b]
+  ]
+  [1] :exclude[:/a]
+  [1] :exclude[:/b]
+  [1] :exclude[:/c]
+  [1] :prefix=x
+  [2] :/a
+  [3] :/b
+  [3] :/c
+  [3] :PATHS
+  [4] :INVERT
+  [13] _invert
+  [16] _paths
+
   $ git diff $EMPTY_TREE HEAD
   diff --git a/a/file_a2 b/a/file_a2
   new file mode 100644
@@ -482,6 +526,7 @@
   |-- a
   |   |-- file_a2
   |   `-- workspace.josh
+  |-- acl.toml
   `-- c
       `-- d
           |-- e
@@ -489,7 +534,7 @@
           |-- file_cd
           `-- file_cd2
   
-  4 directories, 5 files
+  4 directories, 6 files
 
   $ git diff $EMPTY_TREE HEAD
   diff --git a/a/file_a2 b/a/file_a2
@@ -626,10 +671,11 @@
   |   |-- file_a2
   |   |-- newfile
   |   `-- workspace.josh
+  |-- acl.toml
   `-- b
       `-- file_b1
   
-  2 directories, 4 files
+  2 directories, 5 files
 
   $ git diff $EMPTY_TREE HEAD
   diff --git a/a/file_a2 b/a/file_a2
@@ -680,10 +726,11 @@
   |   |-- file_a2
   |   |-- newfile
   |   `-- workspace.josh
+  |-- acl.toml
   `-- b
       `-- file_b1
   
-  2 directories, 4 files
+  2 directories, 5 files
 
   $ git diff $EMPTY_TREE HEAD
   diff --git a/a/file_a2 b/a/file_a2
@@ -758,13 +805,14 @@
   $ git checkout refs/josh/filtered 2> /dev/null
   $ tree
   .
+  |-- acl.toml
   `-- d
       |-- e
       |   `-- file_cd3
       |-- file_cd
       `-- file_cd2
   
-  2 directories, 3 files
+  2 directories, 4 files
 
   $ git diff $EMPTY_TREE HEAD
   diff --git a/d/e/file_cd3 b/d/e/file_cd3
@@ -832,6 +880,7 @@
   $ git checkout refs/josh/filtered 2> /dev/null
   $ tree
   .
+  |-- acl.toml
   |-- cws
   |   `-- d
   |       |-- e
@@ -842,7 +891,7 @@
   |-- newfile
   `-- workspace.josh
   
-  3 directories, 6 files
+  3 directories, 7 files
 
   $ git diff $EMPTY_TREE HEAD
   diff --git a/cws/d/e/file_cd3 b/cws/d/e/file_cd3

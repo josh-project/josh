@@ -115,6 +115,24 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
                 .short("b")
                 .takes_value(true),
         )
+        .arg(
+            clap::Arg::with_name("acl")
+                .long("acl")
+                .short("a")
+                .takes_value(true),
+        )
+        .arg(
+            clap::Arg::with_name("user")
+                .long("user")
+                .short("u")
+                .takes_value(true),
+        )
+        .arg(
+            clap::Arg::with_name("repo")
+                .long("repo")
+                .short("r")
+                .takes_value(true),
+        )
         .arg(clap::Arg::with_name("version").long("version").short("v"))
         .get_matches_from(args);
 
@@ -222,14 +240,25 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
     let check_permissions = args.is_present("check-permission");
     let mut permissions_filter = josh::filter::empty();
     if check_permissions {
-        let whitelist = match args.value_of("whitelist") {
-            Some(s) => josh::filter::parse(s)?,
-            _ => josh::filter::nop(),
-        };
-        let blacklist = match args.value_of("blacklist") {
-            Some(s) => josh::filter::parse(s)?,
-            _ => josh::filter::empty(),
-        };
+        let whitelist;
+        let blacklist;
+        if args.is_present("acl") && args.is_present("user") && args.is_present("repo") {
+            let acl = args.value_of("acl").unwrap();
+            let user = args.value_of("user").unwrap();
+            let repo = args.value_of("repo").unwrap();
+
+            whitelist = josh::get_whitelist(acl, user, repo)?;
+            blacklist = josh::get_blacklist(acl, user, repo)?;
+        } else {
+            whitelist = match args.value_of("whitelist") {
+                Some(s) => josh::filter::parse(s)?,
+                _ => josh::filter::nop(),
+            };
+            blacklist = match args.value_of("blacklist") {
+                Some(s) => josh::filter::parse(s)?,
+                _ => josh::filter::empty(),
+            };
+        }
         permissions_filter = josh::filter::make_permissions_filter(filterobj, whitelist, blacklist)
     }
 
