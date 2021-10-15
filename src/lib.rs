@@ -35,6 +35,9 @@ extern crate pest_derive;
 #[macro_use]
 extern crate serde_json;
 
+use std::collections::HashMap;
+use tracing;
+
 pub mod cache;
 pub mod filter;
 pub mod graphql;
@@ -299,20 +302,10 @@ pub fn normalize_path(path: &std::path::Path) -> std::path::PathBuf {
     ret
 }
 
-#[derive(Debug, serde::Deserialize)]
-struct Acl {
-    pub repo: Vec<Repo>,
-}
-
-#[derive(Debug, serde::Deserialize)]
-struct Repo {
-    pub name: String,
-    pub user: Vec<User>,
-}
+type Acl = HashMap<String, HashMap<String, User>>;
 
 #[derive(Debug, serde::Deserialize)]
 struct User {
-    pub name: String,
     pub whitelist: Option<String>,
     pub blacklist: Option<String>,
 }
@@ -321,44 +314,30 @@ pub fn get_whitelist(acl: &str, user: &str, repo: &str) -> JoshResult<filter::Fi
     let acl = std::fs::read_to_string(acl).map_err(|_| josh_error("failed to read acl file"))?;
     let acl: Acl = toml::from_str(&acl)
         .map_err(|err| josh_error(format!("failed to parse acl file: {}", err).as_str()))?;
-    for r in acl.repo {
-        if r.name == repo {
-            for u in r.user {
-                if u.name == user {
-                    match u.whitelist {
-                        Some(w) => {
-                            let filter = filter::parse(&w)?;
-                            return Ok(filter);
-                        }
-                        _ => return Ok(filter::empty()),
-                    }
-                }
-            }
-        }
-    }
-
-    return Ok(filter::empty());
+    return Ok(match acl.get(repo) {
+        Some(r) => match r.get(user) {
+            Some(u) => match &u.whitelist {
+                Some(w) => filter::parse(&w)?,
+                _ => filter::nop(),
+            },
+            _ => filter::empty(),
+        },
+        _ => filter::empty(),
+    });
 }
 
 pub fn get_blacklist(acl: &str, user: &str, repo: &str) -> JoshResult<filter::Filter> {
     let acl = std::fs::read_to_string(acl).map_err(|_| josh_error("failed to read acl file"))?;
     let acl: Acl = toml::from_str(&acl)
         .map_err(|err| josh_error(format!("failed to parse acl file: {}", err).as_str()))?;
-    for r in acl.repo {
-        if r.name == repo {
-            for u in r.user {
-                if u.name == user {
-                    match u.blacklist {
-                        Some(b) => {
-                            let filter = filter::parse(&b)?;
-                            return Ok(filter);
-                        }
-                        _ => return Ok(filter::nop()),
-                    }
-                }
-            }
-        }
-    }
-
-    return Ok(filter::nop());
+    return Ok(match acl.get(repo) {
+        Some(r) => match r.get(user) {
+            Some(u) => match &u.blacklist {
+                Some(b) => filter::parse(&b)?,
+                _ => filter::empty(),
+            },
+            _ => filter::nop(),
+        },
+        _ => filter::nop(),
+    });
 }

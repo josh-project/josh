@@ -404,14 +404,13 @@
 
 # acl
   $ cat << EOF > acl.toml
-  > [[repo]]
-  > name = "test"
-  > [[repo.user]]
-  > name = "LMG"
+  > [test]
+  > [test.LMG]
   > whitelist = ":/"
   > blacklist = ":empty"
   > 
   > EOF
+# doesn't work
   $ josh-filter -s :/ master --check-permission -a acl.toml -u bob -r test --update refs/josh/filtered
   Warning: reference refs/josh/filtered wasn't updated
   [1] :[
@@ -429,6 +428,7 @@
   [4] :INVERT
   [13] _invert
   [16] _paths
+# works
   $ josh-filter -s :/ master --check-permission -a acl.toml -u LMG -r test --update refs/josh/filtered
   [1] :[
       :/b
