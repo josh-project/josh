@@ -138,7 +138,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
 
     let repo = git2::Repository::open_from_env()?;
     if !args.is_present("no-cache") {
-        josh::cache::load(&repo.path())?;
+        josh::cache::load(repo.path())?;
     }
     let transaction = josh::cache::Transaction::new(repo, None);
     let repo = transaction.repo();
@@ -160,7 +160,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         }
         if let Some(mempack) = mp {
             let mut buf = git2::Buf::new();
-            mempack.dump(&repo, &mut buf).unwrap();
+            mempack.dump(repo, &mut buf).unwrap();
             if buf.len() > 32 {
                 let mut w = odb.packwriter().unwrap();
                 w.write(&buf).unwrap();
@@ -172,7 +172,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
     let input_ref = args.value_of("input").unwrap();
 
     if args.is_present("discover") {
-        let r = repo.revparse_single(&input_ref)?;
+        let r = repo.revparse_single(input_ref)?;
         let hs = josh::housekeeping::find_all_workspaces_and_subdirectories(&r.peel_to_tree()?)?;
         for i in hs {
             if i.contains(":workspace=") {
@@ -205,7 +205,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         target.to_string()
     };
     let src = repo
-        .revparse_ext(&src)?
+        .revparse_ext(src)?
         .1
         .ok_or(josh::josh_error("reference not found"))?
         .name()
@@ -222,10 +222,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         result_tree.walk(git2::TreeWalkMode::PreOrder, |_, entry| {
             let name = entry.name().unwrap();
             if name.starts_with("JOSH_ORIG_PATH_") {
-                let pathname = format!(
-                    "{}",
-                    josh::from_ns(&name.replacen("JOSH_ORIG_PATH_", "", 1))
-                );
+                let pathname = josh::from_ns(&name.replacen("JOSH_ORIG_PATH_", "", 1));
                 all_paths.push(pathname);
             }
             git2::TreeWalkResult::Ok
@@ -286,10 +283,10 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
     if let Some(cp) = args.value_of("check-permission") {
         let pattern = glob::Pattern::new(cp)?;
 
-        let mut allowed = dedup.len() != 0;
+        let mut allowed = !dedup.is_empty();
         for d in dedup.iter() {
             let d = std::path::PathBuf::from(d);
-            let m = pattern.matches_path_with(&d, options.clone());
+            let m = pattern.matches_path_with(&d, options);
             if !m {
                 allowed = false;
                 println!("missing permission for: {:?}", &d);
@@ -299,9 +296,9 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
     }
 
     if reverse {
-        let new = repo.revparse_single(&target).unwrap().id();
+        let new = repo.revparse_single(target).unwrap().id();
         let old = repo.revparse_single("JOSH_TMP").unwrap().id();
-        let unfiltered_old = repo.revparse_single(&input_ref).unwrap().id();
+        let unfiltered_old = repo.revparse_single(input_ref).unwrap().id();
 
         match josh::history::unapply_filter(
             &transaction,
@@ -324,7 +321,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
 
     if let Some(gql_query) = args.value_of("graphql") {
         let (res, _errors) = juniper::execute_sync(
-            &gql_query,
+            gql_query,
             None,
             &josh::graphql::repo_schema(".".to_string(), true),
             &std::collections::HashMap::new(),
@@ -344,13 +341,13 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
                 &git2::Repository::open_from_env()?,
                 "",
                 &update_target.to_string(),
-                &query,
+                query,
             )?
             .unwrap_or("File not found".to_string())
         );
     }
 
-    return Ok(0);
+    Ok(0)
 }
 
 fn main() {
