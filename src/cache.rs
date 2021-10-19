@@ -32,10 +32,8 @@ pub fn print_stats() {
     for name in db.tree_names() {
         let name = String::from_utf8(name.to_vec()).unwrap();
         let t = db.open_tree(&name).unwrap();
-        if t.len() != 0 {
-            let name = if name.contains("SUBTRACT") {
-                name.clone()
-            } else if name.starts_with("_") {
+        if !t.is_empty() {
+            let name = if name.contains("SUBTRACT") || name.starts_with('_') {
                 name.clone()
             } else {
                 filter::pretty(filter::parse(&name).unwrap(), 4)
