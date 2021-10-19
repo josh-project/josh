@@ -302,42 +302,62 @@ pub fn normalize_path(path: &std::path::Path) -> std::path::PathBuf {
     ret
 }
 
-type Acl = HashMap<String, HashMap<String, User>>;
+type Users = HashMap<String, User>;
 
 #[derive(Debug, serde::Deserialize)]
 struct User {
-    pub whitelist: Option<String>,
-    pub blacklist: Option<String>,
+    pub groups: toml::value::Array,
 }
 
-pub fn get_whitelist(acl: &str, user: &str, repo: &str) -> JoshResult<filter::Filter> {
-    let acl = std::fs::read_to_string(acl).map_err(|_| josh_error("failed to read acl file"))?;
-    let acl: Acl = toml::from_str(&acl)
-        .map_err(|err| josh_error(format!("failed to parse acl file: {}", err).as_str()))?;
-    return Ok(match acl.get(repo) {
-        Some(r) => match r.get(user) {
-            Some(u) => match &u.whitelist {
-                Some(w) => filter::parse(&w)?,
-                _ => filter::nop(),
-            },
-            _ => filter::empty(),
-        },
-        _ => filter::empty(),
-    });
+type Groups = HashMap<String, HashMap<String, Group>>;
+#[derive(Debug, serde::Deserialize)]
+struct Group {
+    pub whitelist: String,
+    pub blacklist: String,
 }
 
-pub fn get_blacklist(acl: &str, user: &str, repo: &str) -> JoshResult<filter::Filter> {
-    let acl = std::fs::read_to_string(acl).map_err(|_| josh_error("failed to read acl file"))?;
-    let acl: Acl = toml::from_str(&acl)
-        .map_err(|err| josh_error(format!("failed to parse acl file: {}", err).as_str()))?;
-    return Ok(match acl.get(repo) {
-        Some(r) => match r.get(user) {
-            Some(u) => match &u.blacklist {
-                Some(b) => filter::parse(&b)?,
-                _ => filter::empty(),
-            },
-            _ => filter::nop(),
-        },
-        _ => filter::nop(),
-    });
+pub fn get_acl(
+    users: &str,
+    groups: &str,
+    user: &str,
+    repo: &str,
+) -> JoshResult<(filter::Filter, filter::Filter)> {
+    let users =
+        std::fs::read_to_string(users).map_err(|_| josh_error("failed to read users file"))?;
+    let users: Users = toml::from_str(&users)
+        .map_err(|err| josh_error(format!("failed to parse users file: {}", err).as_str()))?;
+    let groups =
+        std::fs::read_to_string(groups).map_err(|_| josh_error("failed to read groups file"))?;
+    let groups: Groups = toml::from_str(&groups)
+        .map_err(|err| josh_error(format!("failed to parse groups file: {}", err).as_str()))?;
+
+    return users
+        .get(user)
+        .and_then(|u| {
+            let mut whitelist = filter::nop();
+            let mut blacklist = filter::empty();
+            for g in &u.groups {
+                let group_lists = groups.get(g.as_str()?).and_then(|group| {
+                    group.get(repo).and_then(|repo| {
+                        let w = filter::parse(&repo.whitelist);
+                        let b = filter::parse(&repo.blacklist);
+                        Some((w, b))
+                    })
+                })?;
+                if let Err(e) = group_lists.0 {
+                    return Some(Err(JoshError(format!("Error parsing whitelist: {}", e))));
+                }
+                if let Err(e) = group_lists.1 {
+                    return Some(Err(JoshError(format!("Error parsing blacklist: {}", e))));
+                }
+                if let Ok(w) = group_lists.0 {
+                    whitelist = filter::compose(whitelist, w);
+                }
+                if let Ok(b) = group_lists.1 {
+                    blacklist = filter::compose(blacklist, b);
+                }
+            }
+            Some(Ok((whitelist, blacklist)))
+        })
+        .unwrap_or(Ok((filter::empty(), filter::nop())));
 }

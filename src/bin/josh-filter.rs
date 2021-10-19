@@ -116,9 +116,13 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
                 .takes_value(true),
         )
         .arg(
-            clap::Arg::with_name("acl")
-                .long("acl")
-                .short("a")
+            clap::Arg::with_name("users")
+                .long("users")
+                .takes_value(true),
+        )
+        .arg(
+            clap::Arg::with_name("groups")
+                .long("groups")
                 .takes_value(true),
         )
         .arg(
@@ -242,13 +246,19 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
     if check_permissions {
         let whitelist;
         let blacklist;
-        if args.is_present("acl") && args.is_present("user") && args.is_present("repo") {
-            let acl = args.value_of("acl").unwrap();
+        if args.is_present("users")
+            && args.is_present("groups")
+            && args.is_present("user")
+            && args.is_present("repo")
+        {
+            let users = args.value_of("users").unwrap();
+            let groups = args.value_of("groups").unwrap();
             let user = args.value_of("user").unwrap();
             let repo = args.value_of("repo").unwrap();
 
-            whitelist = josh::get_whitelist(acl, user, repo)?;
-            blacklist = josh::get_blacklist(acl, user, repo)?;
+            let acl = josh::get_acl(users, groups, user, repo)?;
+            whitelist = acl.0;
+            blacklist = acl.1;
         } else {
             whitelist = match args.value_of("whitelist") {
                 Some(s) => josh::filter::parse(s)?,

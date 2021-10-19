@@ -403,15 +403,18 @@
   [16] _paths
 
 # acl
-  $ cat << EOF > acl.toml
-  > [test]
-  > [test.LMG]
+  $ cat << EOF > users.toml
+  > [LMG]
+  > groups = ["dev"]
+  > EOF
+  $ cat << EOF > groups.toml
+  > [dev]
+  > [dev.test]
   > whitelist = ":/"
   > blacklist = ":empty"
-  > 
   > EOF
 # doesn't work
-  $ josh-filter -s :/ master --check-permission -a acl.toml -u bob -r test --update refs/josh/filtered
+  $ josh-filter -s :/ master --check-permission --users users.toml --groups groups.toml -u bob -r test --update refs/josh/filtered
   Warning: reference refs/josh/filtered wasn't updated
   [1] :[
       :/b
@@ -429,7 +432,7 @@
   [13] _invert
   [16] _paths
 # works
-  $ josh-filter -s :/ master --check-permission -a acl.toml -u LMG -r test --update refs/josh/filtered
+  $ josh-filter -s :/ master --check-permission --users users.toml --groups groups.toml -u LMG -r test --update refs/josh/filtered
   [1] :[
       :/b
       :exclude[:/b]
@@ -526,15 +529,16 @@
   |-- a
   |   |-- file_a2
   |   `-- workspace.josh
-  |-- acl.toml
-  `-- c
-      `-- d
-          |-- e
-          |   `-- file_cd3
-          |-- file_cd
-          `-- file_cd2
+  |-- c
+  |   `-- d
+  |       |-- e
+  |       |   `-- file_cd3
+  |       |-- file_cd
+  |       `-- file_cd2
+  |-- groups.toml
+  `-- users.toml
   
-  4 directories, 6 files
+  4 directories, 7 files
 
   $ git diff $EMPTY_TREE HEAD
   diff --git a/a/file_a2 b/a/file_a2
@@ -671,11 +675,12 @@
   |   |-- file_a2
   |   |-- newfile
   |   `-- workspace.josh
-  |-- acl.toml
-  `-- b
-      `-- file_b1
+  |-- b
+  |   `-- file_b1
+  |-- groups.toml
+  `-- users.toml
   
-  2 directories, 5 files
+  2 directories, 6 files
 
   $ git diff $EMPTY_TREE HEAD
   diff --git a/a/file_a2 b/a/file_a2
@@ -726,11 +731,12 @@
   |   |-- file_a2
   |   |-- newfile
   |   `-- workspace.josh
-  |-- acl.toml
-  `-- b
-      `-- file_b1
+  |-- b
+  |   `-- file_b1
+  |-- groups.toml
+  `-- users.toml
   
-  2 directories, 5 files
+  2 directories, 6 files
 
   $ git diff $EMPTY_TREE HEAD
   diff --git a/a/file_a2 b/a/file_a2
@@ -805,14 +811,15 @@
   $ git checkout refs/josh/filtered 2> /dev/null
   $ tree
   .
-  |-- acl.toml
-  `-- d
-      |-- e
-      |   `-- file_cd3
-      |-- file_cd
-      `-- file_cd2
+  |-- d
+  |   |-- e
+  |   |   `-- file_cd3
+  |   |-- file_cd
+  |   `-- file_cd2
+  |-- groups.toml
+  `-- users.toml
   
-  2 directories, 4 files
+  2 directories, 5 files
 
   $ git diff $EMPTY_TREE HEAD
   diff --git a/d/e/file_cd3 b/d/e/file_cd3
@@ -880,7 +887,6 @@
   $ git checkout refs/josh/filtered 2> /dev/null
   $ tree
   .
-  |-- acl.toml
   |-- cws
   |   `-- d
   |       |-- e
@@ -888,10 +894,12 @@
   |       |-- file_cd
   |       `-- file_cd2
   |-- file_a2
+  |-- groups.toml
   |-- newfile
+  |-- users.toml
   `-- workspace.josh
   
-  3 directories, 7 files
+  3 directories, 8 files
 
   $ git diff $EMPTY_TREE HEAD
   diff --git a/cws/d/e/file_cd3 b/cws/d/e/file_cd3
