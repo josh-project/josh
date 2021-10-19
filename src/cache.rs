@@ -130,7 +130,7 @@ impl Transaction {
         }
     }
 
-    pub fn clone(&self) -> JoshResult<Transaction> {
+    pub fn try_clone(&self) -> JoshResult<Transaction> {
         Transaction::open(self.repo.path(), Some(&self.ref_prefix))
     }
 

@@ -216,7 +216,7 @@ pub fn refresh_known_filters(
     known_filters: &KnownViews,
 ) -> JoshResult<usize> {
     for (upstream_repo, e) in known_filters.iter() {
-        let t = transaction.clone()?;
+        let t = transaction.try_clone()?;
         info!("background rebuild root: {:?}", upstream_repo);
 
         let mut updated_count = 0;
