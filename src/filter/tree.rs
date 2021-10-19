@@ -263,6 +263,7 @@ pub fn pathline(b: &str) -> JoshResult<String> {
 
 const FILE_FILTER_SIZE: usize = 64;
 
+#[allow(clippy::many_single_char_names)]
 fn hash_bits(s: &str, size: usize) -> [usize; 3] {
     let size = size * 8;
     let size = size / 2;
