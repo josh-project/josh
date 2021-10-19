@@ -35,8 +35,6 @@ extern crate pest_derive;
 #[macro_use]
 extern crate serde_json;
 
-use tracing;
-
 pub mod cache;
 pub mod filter;
 pub mod graphql;
