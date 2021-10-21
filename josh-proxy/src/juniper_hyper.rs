@@ -328,7 +328,9 @@ mod tests {
     impl http_tests::HttpIntegration for TestHyperIntegration {
         fn get(&self, url: &str) -> http_tests::TestResponse {
             let url = format!("http://127.0.0.1:{}/graphql{}", self.port, url);
-            make_test_response(reqwest::blocking::get(&url).expect(&format!("failed GET {}", url)))
+            make_test_response(
+                reqwest::blocking::get(&url).unwrap_or_else(|_| panic!("failed GET {}", url)),
+            )
         }
 
         fn post_json(&self, url: &str, body: &str) -> http_tests::TestResponse {
@@ -339,7 +341,7 @@ mod tests {
                 .header(reqwest::header::CONTENT_TYPE, "application/json")
                 .body(body.to_string())
                 .send()
-                .expect(&format!("failed POST {}", url));
+                .unwrap_or_else(|_| panic!("failed POST {}", url));
             make_test_response(res)
         }
 
@@ -351,7 +353,7 @@ mod tests {
                 .header(reqwest::header::CONTENT_TYPE, "application/graphql")
                 .body(body.to_string())
                 .send()
-                .expect(&format!("failed POST {}", url));
+                .unwrap_or_else(|_| panic!("failed POST {}", url));
             make_test_response(res)
         }
     }
@@ -360,7 +362,7 @@ mod tests {
         let status_code = response.status().as_u16() as i32;
         let content_type_header = response.headers().get(reqwest::header::CONTENT_TYPE);
         let content_type = if let Some(ct) = content_type_header {
-            format!("{}", ct.to_str().unwrap())
+            ct.to_str().unwrap().to_string()
         } else {
             String::default()
         };

@@ -50,12 +50,12 @@ impl Handle {
         if let [username, password] = s.as_str().split(':').collect::<Vec<_>>().as_slice() {
             return Ok((username.to_string(), password.to_string()));
         }
-        return Ok(("".to_string(), "".to_string()));
+        Ok(("".to_string(), "".to_string()))
     }
 }
 
 pub async fn check_auth(url: &str, auth: &Handle, required: bool) -> josh::JoshResult<bool> {
-    if required && auth.hash == "" {
+    if required && auth.hash.is_empty() {
         return Ok(false);
     }
 
@@ -75,7 +75,7 @@ pub async fn check_auth(url: &str, auth: &Handle, required: bool) -> josh::JoshR
 
     let password = AUTH
         .lock()?
-        .get(&auth)
+        .get(auth)
         .unwrap_or(&Header { header: None })
         .to_owned();
     let nurl = format!("{}/info/refs?service=git-upload-pack", url);
@@ -95,9 +95,9 @@ pub async fn check_auth(url: &str, auth: &Handle, required: bool) -> josh::JoshR
         AUTH_TIMERS
             .lock()?
             .insert((url.to_string(), auth.clone()), std::time::Instant::now());
-        return Ok(true);
+        Ok(true)
     } else if resp.status() == 401 {
-        return Ok(false);
+        Ok(false)
     } else {
         return Err(josh::josh_error(&format!(
             "got http status: {} {}",
@@ -118,7 +118,7 @@ pub fn strip_auth(
         let mut d = crypto::sha1::Sha1::new();
         d.input(header.as_bytes());
         let hp = Handle {
-            hash: d.result_str().to_owned(),
+            hash: d.result_str(),
         };
         let p = Header {
             header: Some(header),
@@ -127,10 +127,10 @@ pub fn strip_auth(
         return Ok((hp, req));
     }
 
-    return Ok((
+    Ok((
         Handle {
             hash: "".to_owned(),
         },
         req,
-    ));
+    ))
 }

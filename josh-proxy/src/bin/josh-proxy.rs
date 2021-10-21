@@ -66,7 +66,7 @@ async fn fetch_upstream(
     let auth = auth.clone();
     let key = remote_url.clone();
 
-    let refs_to_fetch = if headref != "" && !headref.starts_with("refs/heads/") {
+    let refs_to_fetch = if !headref.is_empty() && !headref.starts_with("refs/heads/") {
         vec!["refs/heads/*", "refs/tags/*", headref]
     } else {
         vec!["refs/heads/*", "refs/tags/*"]
@@ -91,11 +91,11 @@ async fn fetch_upstream(
 
     tracing::trace!("fetch_cached_ok {:?}", fetch_cached_ok);
 
-    if fetch_cached_ok && headref == "" {
+    if fetch_cached_ok && headref.is_empty() {
         return Ok(true);
     }
 
-    if fetch_cached_ok && headref != "" {
+    if fetch_cached_ok && !headref.is_empty() {
         let transaction = josh::cache::Transaction::open(
             &service.repo_path,
             Some(&format!(
@@ -105,7 +105,7 @@ async fn fetch_upstream(
         )?;
         let id = transaction
             .repo()
-            .refname_to_id(&transaction.refname(&headref));
+            .refname_to_id(&transaction.refname(headref));
         tracing::trace!("refname_to_id: {:?}", id);
         if id.is_ok() {
             return Ok(true);
@@ -141,7 +141,7 @@ async fn fetch_upstream(
         }
         return Ok(res);
     }
-    return res;
+    res
 }
 
 async fn static_paths(
@@ -154,7 +154,7 @@ async fn static_paths(
             Response::builder()
                 .status(hyper::StatusCode::OK)
                 .body(hyper::Body::from(version_str()))
-                .unwrap_or(Response::default()),
+                .unwrap_or_default(),
         ));
     }
     if path == "/flush" {
@@ -163,7 +163,7 @@ async fn static_paths(
             Response::builder()
                 .status(hyper::StatusCode::OK)
                 .body(hyper::Body::from("Flushed credential cache\n"))
-                .unwrap_or(Response::default()),
+                .unwrap_or_default(),
         ));
     }
     if path == "/filters" || path == "/filters/refresh" {
@@ -185,10 +185,10 @@ async fn static_paths(
             Response::builder()
                 .status(hyper::StatusCode::OK)
                 .body(hyper::Body::from(body_str))
-                .unwrap_or(Response::default()),
+                .unwrap_or_default(),
         ));
     }
-    return Ok(None);
+    Ok(None)
 }
 
 #[tracing::instrument]
@@ -203,18 +203,18 @@ async fn repo_update_fn(
         let _e = s.enter();
         let body = body?;
         let buffer = std::str::from_utf8(&body)?;
-        josh_proxy::process_repo_update(serde_json::from_str(&buffer)?)
+        josh_proxy::process_repo_update(serde_json::from_str(buffer)?)
     })
     .await?;
 
-    return Ok(match result {
+    Ok(match result {
         Ok(stderr) => Response::builder()
             .status(hyper::StatusCode::OK)
             .body(hyper::Body::from(stderr)),
         Err(josh::JoshError(stderr)) => Response::builder()
             .status(hyper::StatusCode::INTERNAL_SERVER_ERROR)
             .body(hyper::Body::from(stderr)),
-    }?);
+    }?)
 }
 
 #[tracing::instrument]
@@ -242,8 +242,8 @@ async fn do_filter(
         let filter = josh::filter::parse(&filter_spec)?;
         let filter_spec = josh::filter::spec(filter);
         let mut from_to = josh::housekeeping::default_from_to(
-            &transaction.repo(),
-            &temp_ns.name(),
+            transaction.repo(),
+            temp_ns.name(),
             &upstream_repo,
             &filter_spec,
         );
@@ -257,7 +257,7 @@ async fn do_filter(
             let reference = reference.unwrap();
             let refname = reference.name().unwrap();
             transaction.repo().reference(
-                &temp_ns.reference(&refname),
+                &temp_ns.reference(refname),
                 reference.target().unwrap(),
                 true,
                 "rewrite",
@@ -280,13 +280,13 @@ async fn do_filter(
             true,
             "",
         )?;
-        return Ok(());
+        Ok(())
     })
     .await?;
 
     std::mem::drop(permit);
 
-    return r;
+    r
 }
 
 async fn error_response() -> Response<hyper::Body> {
@@ -336,7 +336,7 @@ async fn call_service(
     {
         let p = &path[9..];
 
-        let result = hyper_staticfile::resolve_path("static", &p).await?;
+        let result = hyper_staticfile::resolve_path("static", p).await?;
         let result = if let hyper_staticfile::ResolveResult::NotFound = result {
             hyper_staticfile::resolve_path("static", "index.html").await?
         } else {
@@ -361,7 +361,7 @@ async fn call_service(
     let parsed_url = {
         if let Some(parsed_url) = FilteredRepoUrl::from_str(&path) {
             let mut pu = parsed_url;
-            if pu.filter == "" {
+            if pu.filter.is_empty() {
                 pu.filter = ":/".to_string();
             }
             pu
@@ -376,8 +376,8 @@ async fn call_service(
         }
     };
 
-    let mut headref = parsed_url.headref.trim_start_matches("@").to_owned();
-    if headref == "" {
+    let mut headref = parsed_url.headref.trim_start_matches('@').to_owned();
+    if headref.is_empty() {
         headref = "refs/heads/master".to_string();
     }
 
@@ -493,7 +493,7 @@ async fn call_service(
     .await?;
 
     if let Some(q) = req.uri().query().map(|x| x.to_string()) {
-        if parsed_url.pathinfo == "" {
+        if parsed_url.pathinfo.is_empty() {
             let s = tracing::span!(tracing::Level::TRACE, "render worker");
             let res = tokio::task::spawn_blocking(move || -> josh::JoshResult<_> {
                 let _e = s.enter();
@@ -560,7 +560,7 @@ async fn call_service(
     // it is executed in all cases.
     std::mem::drop(temp_ns);
 
-    return Ok(cgires);
+    Ok(cgires)
 }
 
 #[tracing::instrument]
@@ -587,7 +587,7 @@ async fn prepare_namespace(
     )
     .await?;
 
-    return Ok(temp_ns);
+    Ok(temp_ns)
 }
 
 #[tokio::main]
@@ -631,7 +631,7 @@ async fn run_proxy() -> josh::JoshResult<i32> {
                 "http_request",
                 path = _req.uri().path()
             );
-            let s = _s.clone();
+            let s = _s;
 
             async move {
                 let r = if let Ok(req_auth) = josh_proxy::auth::strip_auth(_req) {
@@ -690,7 +690,7 @@ async fn run_polling(serv: Arc<JoshProxyService>) -> josh::JoshResult<()> {
                 upstream_repo.clone(),
                 &auth,
                 url.clone(),
-                &"",
+                "",
                 true,
             )
             .in_current_span()
@@ -796,7 +796,7 @@ fn pre_receive_hook() -> josh::JoshResult<i32> {
 
     std::fs::write(p, serde_json::to_string(&push_options)?)?;
 
-    return Ok(0);
+    Ok(0)
 }
 
 fn update_hook(refname: &str, old: &str, new: &str) -> josh::JoshResult<i32> {
@@ -834,7 +834,7 @@ fn update_hook(refname: &str, old: &str, new: &str) -> josh::JoshResult<i32> {
             tracing::warn!("/repo_update request failed {:?}", err);
         }
     };
-    return Ok(1);
+    Ok(1)
 }
 
 async fn shutdown_signal() {
@@ -854,7 +854,7 @@ fn main() {
     // cached data already loaded into the main processe's memory.
     if let [a0, a1, a2, a3, ..] = &std::env::args().collect::<Vec<_>>().as_slice() {
         if a0.ends_with("/update") {
-            std::process::exit(update_hook(&a1, &a2, &a3).unwrap_or(1));
+            std::process::exit(update_hook(a1, a2, a3).unwrap_or(1));
         }
     }
 

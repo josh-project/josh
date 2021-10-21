@@ -34,7 +34,7 @@ pub fn optimize(filter: Filter) -> Filter {
     };
 
     OPTIMIZED.lock().unwrap().insert(original, result);
-    return result;
+    result
 }
 
 /*
@@ -85,7 +85,7 @@ pub fn simplify(filter: Filter) -> Filter {
     };
 
     SIMPLIFIED.lock().unwrap().insert(original, r);
-    return r;
+    r
 }
 
 /*
@@ -131,18 +131,17 @@ pub fn flatten(filter: Filter) -> Filter {
         _ => to_op(filter),
     });
 
-    let r = if result == original {
+    if result == original {
         result
     } else {
         flatten(result)
-    };
-    return r;
+    }
 }
 
 fn group(filters: &Vec<Filter>) -> Vec<Vec<Filter>> {
     let mut res: Vec<Vec<Filter>> = vec![];
     for f in filters {
-        if res.len() == 0 {
+        if res.is_empty() {
             res.push(vec![*f]);
             continue;
         }
@@ -156,7 +155,7 @@ fn group(filters: &Vec<Filter>) -> Vec<Vec<Filter>> {
                 }
             }
         }
-        res.push(vec![f.clone()]);
+        res.push(vec![*f]);
     }
     if res.len() != filters.len() {
         return res;
@@ -164,8 +163,8 @@ fn group(filters: &Vec<Filter>) -> Vec<Vec<Filter>> {
 
     let mut res: Vec<Vec<Filter>> = vec![];
     for f in filters {
-        if res.len() == 0 {
-            res.push(vec![f.clone()]);
+        if res.is_empty() {
+            res.push(vec![*f]);
             continue;
         }
 
@@ -182,7 +181,7 @@ fn group(filters: &Vec<Filter>) -> Vec<Vec<Filter>> {
         }
         res.push(vec![*f]);
     }
-    return res;
+    res
 }
 
 fn last_chain(rest: Filter, filter: Filter) -> (Filter, Filter) {
@@ -204,9 +203,9 @@ fn prefix_sort(filters: &Vec<Filter>) -> Vec<Filter> {
             return std::cmp::Ordering::Equal;
         }
 
-        return (&src_a, &dst_a).partial_cmp(&(&src_b, &dst_b)).unwrap();
+        (&src_a, &dst_a).partial_cmp(&(&src_b, &dst_b)).unwrap()
     });
-    return sorted;
+    sorted
 }
 
 fn common_pre(filters: &Vec<Filter>) -> Option<(Filter, Vec<Filter>)> {
@@ -225,11 +224,7 @@ fn common_pre(filters: &Vec<Filter>) -> Option<(Filter, Vec<Filter>)> {
             return None;
         }
     }
-    if let Some(c) = c {
-        return Some((c, rest));
-    } else {
-        return None;
-    }
+    c.map(|c| (c, rest))
 }
 
 fn common_post(filters: &Vec<Filter>) -> Option<(Filter, Vec<Filter>)> {
@@ -248,11 +243,9 @@ fn common_post(filters: &Vec<Filter>) -> Option<(Filter, Vec<Filter>)> {
         }
     }
     if Some(to_filter(Op::Nop)) == c {
-        return None;
-    } else if let Some(c) = c {
-        return Some((c, rest));
+        None
     } else {
-        return None;
+        c.map(|c| (c, rest))
     }
 }
 
@@ -278,7 +271,7 @@ fn iterate(filter: Filter) -> Filter {
         }
         filter = optimized;
     }
-    return filter;
+    filter
 }
 
 /*
@@ -316,7 +309,7 @@ fn step(filter: Filter) -> Filter {
                 Op::Prefix(path)
             }
         }
-        Op::Compose(filters) if filters.len() == 0 => Op::Empty,
+        Op::Compose(filters) if filters.is_empty() => Op::Empty,
         Op::Compose(filters) if filters.len() == 1 => to_op(filters[0]),
         Op::Compose(mut filters) => {
             filters.dedup();
@@ -376,5 +369,5 @@ fn step(filter: Filter) -> Filter {
     });
 
     OPTIMIZED.lock().unwrap().insert(original, result);
-    return result;
+    result
 }

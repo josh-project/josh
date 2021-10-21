@@ -24,17 +24,17 @@ pub fn default_from_to(
         for refname in repo.references_glob(glob).unwrap().names() {
             let refname = refname.unwrap();
             let to_ref = refname.replacen("refs/josh/upstream", "refs/namespaces", 1);
-            let to_ref = to_ref.replacen(&to_ns(upstream_repo), &namespace, 1);
+            let to_ref = to_ref.replacen(&to_ns(upstream_repo), namespace, 1);
             refs.push((refname.to_owned(), to_ref.clone()));
         }
     }
     refs.append(&mut memorize_from_to(
-        &repo,
-        &crate::to_filtered_ref(&upstream_repo, &filter_spec),
-        &upstream_repo,
+        repo,
+        &crate::to_filtered_ref(upstream_repo, filter_spec),
+        upstream_repo,
     ));
 
-    return refs;
+    refs
 }
 
 pub fn memorize_from_to(
@@ -54,7 +54,7 @@ pub fn memorize_from_to(
         refs.push((refname.to_owned(), to_ref.clone()));
     }
 
-    return refs;
+    refs
 }
 
 fn run_command(path: &Path, cmd: &str) -> String {
@@ -70,7 +70,7 @@ fn run_command(path: &Path, cmd: &str) -> String {
         output, cmd, stdout, stderr
     );
 
-    return output;
+    output
 }
 
 regex_parsed!(
@@ -95,7 +95,7 @@ pub fn discover_filter_candidates(transaction: &cache::Transaction) -> JoshResul
     let trace_s = span!(Level::TRACE, "discover_filter_candidates");
     let _e = trace_s.enter();
 
-    let refname = format!("refs/josh/upstream/*.git/refs/heads/*");
+    let refname = "refs/josh/upstream/*.git/refs/heads/*".to_string();
 
     for reference in repo.references_glob(&refname)? {
         let r = reference?;
@@ -116,7 +116,7 @@ pub fn discover_filter_candidates(transaction: &cache::Transaction) -> JoshResul
         }
     }
 
-    let refname = format!("josh/filtered/*.git/*/refs/heads/*");
+    let refname = "josh/filtered/*.git/*/refs/heads/*".to_string();
     for reference in repo.references_glob(&refname)? {
         let r = reference?;
         let name = r.name().ok_or(josh_error("reference without name"))?;
@@ -129,7 +129,7 @@ pub fn discover_filter_candidates(transaction: &cache::Transaction) -> JoshResul
             .insert(from_ns(&filtered.filter_spec));
     }
 
-    return Ok(known_filters);
+    Ok(known_filters)
 }
 
 pub fn find_all_workspaces_and_subdirectories(
@@ -138,10 +138,10 @@ pub fn find_all_workspaces_and_subdirectories(
     let _trace_s = span!(Level::TRACE, "find_all_workspaces_and_subdirectories");
     let mut hs = std::collections::HashSet::new();
     tree.walk(git2::TreeWalkMode::PreOrder, |root, entry| {
-        if entry.name() == Some(&"workspace.josh") {
+        if entry.name() == Some("workspace.josh") {
             hs.insert(format!(":workspace={}", root.trim_matches('/')));
         }
-        if root == "" {
+        if root.is_empty() {
             return 0;
         }
         let v = format!(":/{}", root.trim_matches('/'));
@@ -151,7 +151,7 @@ pub fn find_all_workspaces_and_subdirectories(
 
         0
     })?;
-    return Ok(hs);
+    Ok(hs)
 }
 
 pub fn get_info(
@@ -163,13 +163,13 @@ pub fn get_info(
 
     let obj = transaction
         .repo()
-        .revparse_single(&transaction.refname(&headref))?;
+        .revparse_single(&transaction.refname(headref))?;
 
     let commit = obj.peel_to_commit()?;
 
     let mut meta = std::collections::HashMap::new();
     meta.insert("sha1".to_owned(), "".to_owned());
-    let filtered = filter::apply_to_commit(filter, &commit, &transaction)?;
+    let filtered = filter::apply_to_commit(filter, &commit, transaction)?;
 
     let parent_ids = |commit: &git2::Commit| {
         commit
@@ -207,7 +207,7 @@ pub fn get_info(
         "filtered": t,
     });
 
-    return Ok(serde_json::to_string(&s)?);
+    Ok(serde_json::to_string(&s)?)
 }
 
 #[tracing::instrument(skip(transaction))]
@@ -225,16 +225,16 @@ pub fn refresh_known_filters(
             tracing::trace!("background rebuild: {:?} {:?}", upstream_repo, filter_spec);
 
             let refs = memorize_from_to(
-                &t.repo(),
-                &to_filtered_ref(&upstream_repo, &filter_spec),
-                &upstream_repo,
+                t.repo(),
+                &to_filtered_ref(upstream_repo, filter_spec),
+                upstream_repo,
             );
 
             updated_count += filter_refs(&t, filter::parse(filter_spec)?, &refs)?;
         }
         info!("updated {} refs for {:?}", updated_count, upstream_repo);
     }
-    return Ok(0);
+    Ok(0)
 }
 
 pub fn run(repo_path: &std::path::Path, do_gc: bool) -> JoshResult<()> {
@@ -243,20 +243,20 @@ pub fn run(repo_path: &std::path::Path, do_gc: bool) -> JoshResult<()> {
     refresh_known_filters(&transaction, &known_filters)?;
     info!(
         "{}",
-        run_command(transaction.repo().path(), &"git count-objects -v").replace("\n", "  ")
+        run_command(transaction.repo().path(), "git count-objects -v").replace("\n", "  ")
     );
     if do_gc {
         info!(
             "\n----------\n{}\n----------",
-            run_command(transaction.repo().path(), &"git repack -adkbn --threads=1")
+            run_command(transaction.repo().path(), "git repack -adkbn --threads=1")
         );
         info!(
             "\n----------\n{}\n----------",
-            run_command(transaction.repo().path(), &"git count-objects -vH")
+            run_command(transaction.repo().path(), "git count-objects -vH")
         );
         info!(
             "\n----------\n{}\n----------",
-            run_command(transaction.repo().path(), &"git prune --expire=2w")
+            run_command(transaction.repo().path(), "git prune --expire=2w")
         );
     }
     Ok(())

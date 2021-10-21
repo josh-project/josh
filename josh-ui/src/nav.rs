@@ -101,7 +101,7 @@ impl Component for Nav {
             self.props = props;
             self.link.send_message(Self::Message::CallServer);
         }
-        return true;
+        true
     }
 
     fn view(&self) -> Html {

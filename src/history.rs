@@ -67,7 +67,7 @@ pub fn walk2(
 
     transaction.end_walk();
 
-    return Ok(());
+    Ok(())
 }
 
 fn find_unapply_base(
@@ -100,7 +100,7 @@ fn find_unapply_base(
         }
     }
 
-    return Ok(git2::Oid::zero());
+    Ok(git2::Oid::zero())
 }
 
 pub fn find_original(
@@ -134,7 +134,7 @@ pub fn find_original(
         }
     }
 
-    return Ok(git2::Oid::zero());
+    Ok(git2::Oid::zero())
 }
 
 fn find_known(
@@ -157,7 +157,7 @@ fn find_known(
         })?
         .count();
     log::debug!("/find_known {}", n_new);
-    return Ok((known, n_new));
+    Ok((known, n_new))
 }
 
 // takes everything from base except it's tree and replaces it with the tree
@@ -177,7 +177,7 @@ pub fn rewrite_commit(
     let b = repo.commit_create_buffer(
         &base.author(),
         &base.committer(),
-        &base.message_raw().unwrap_or("no message"),
+        base.message_raw().unwrap_or("no message"),
         tree,
         parents,
     )?;
@@ -196,7 +196,7 @@ fn all_equal(a: git2::Parents, b: &[&git2::Commit]) -> bool {
             return false;
         }
     }
-    return true;
+    true
 }
 
 #[tracing::instrument(skip(transaction))]
@@ -217,7 +217,7 @@ pub fn unapply_filter(
         let mut walk = transaction.repo().revwalk()?;
         walk.set_sorting(git2::Sort::REVERSE | git2::Sort::TOPOLOGICAL)?;
         walk.push(new)?;
-        if let Ok(_) = walk.hide(old) {
+        if walk.hide(old).is_ok() {
             tracing::trace!("walk: hidden {}", old);
         } else {
             tracing::warn!("walk: can't hide");
@@ -252,7 +252,7 @@ pub fn unapply_filter(
         let original_parents: std::result::Result<Vec<_>, _> = filtered_parent_ids
             .iter()
             .map(|x| -> JoshResult<_> {
-                find_unapply_base(&transaction, &mut bm, filterobj, original_target, *x)
+                find_unapply_base(transaction, &mut bm, filterobj, original_target, *x)
             })
             .filter(|x| {
                 if let Ok(i) = x {
@@ -323,7 +323,7 @@ pub fn unapply_filter(
                     transaction,
                     filterobj,
                     tree,
-                    filter::tree::empty(&transaction.repo()),
+                    filter::tree::empty(transaction.repo()),
                 )?
             }
             parent_count => {
@@ -336,7 +336,7 @@ pub fn unapply_filter(
         };
 
         ret = rewrite_commit(
-            &transaction.repo(),
+            transaction.repo(),
             &module_commit,
             &original_parents_refs,
             &new_tree,
@@ -359,10 +359,10 @@ pub fn unapply_filter(
                     ));
                 }
 
-                let merged_tree = merged_index.write_tree_to(&transaction.repo())?;
+                let merged_tree = merged_index.write_tree_to(transaction.repo())?;
 
                 ret = rewrite_commit(
-                    &transaction.repo(),
+                    transaction.repo(),
                     &module_commit,
                     &original_parents_refs,
                     &transaction.repo().find_tree(merged_tree)?,
@@ -374,7 +374,7 @@ pub fn unapply_filter(
     }
 
     tracing::trace!("done {:?}", ret);
-    return Ok(UnapplyResult::Done(ret));
+    Ok(UnapplyResult::Done(ret))
 }
 
 fn select_parent_commits<'a>(
@@ -390,11 +390,11 @@ fn select_parent_commits<'a>(
         .parents()
         .all(|x| x.tree_id() == original_commit.tree_id());
 
-    return if affects_filtered || all_diffs_empty {
+    if affects_filtered || all_diffs_empty {
         filtered_parent_commits
     } else {
         vec![]
-    };
+    }
 }
 
 pub fn create_filtered_commit<'a>(
@@ -405,7 +405,7 @@ pub fn create_filtered_commit<'a>(
     filter: filter::Filter,
 ) -> JoshResult<git2::Oid> {
     let (r, is_new) = create_filtered_commit2(
-        &transaction.repo(),
+        transaction.repo(),
         original_commit,
         filtered_parent_ids,
         filtered_tree,
@@ -415,7 +415,7 @@ pub fn create_filtered_commit<'a>(
 
     transaction.insert(filter, original_commit.id(), r, store);
 
-    return Ok(r);
+    Ok(r)
 }
 
 fn create_filtered_commit2<'a>(
@@ -437,7 +437,7 @@ fn create_filtered_commit2<'a>(
         .any(|x| x.tree_id() == filter::tree::empty_id())
     {
         let is_initial_merge =
-            filtered_parent_ids.len() > 1 && !repo.merge_base_many(&filtered_parent_ids).is_ok();
+            filtered_parent_ids.len() > 1 && repo.merge_base_many(&filtered_parent_ids).is_err();
 
         if is_initial_merge {
             filtered_parent_commits.retain(|x| x.tree_id() != filter::tree::empty_id());
@@ -445,16 +445,16 @@ fn create_filtered_commit2<'a>(
     }
 
     let selected_filtered_parent_commits: Vec<&_> = select_parent_commits(
-        &original_commmit,
+        original_commmit,
         filtered_tree.id(),
         filtered_parent_commits.iter().collect(),
     );
 
-    if selected_filtered_parent_commits.len() == 0
+    if selected_filtered_parent_commits.is_empty()
         && !(original_commmit.parents().len() == 0
-            && is_empty_root(&repo, &original_commmit.tree()?))
+            && is_empty_root(repo, &original_commmit.tree()?))
     {
-        if filtered_parent_commits.len() != 0 {
+        if !filtered_parent_commits.is_empty() {
             return Ok((filtered_parent_commits[0].id(), false));
         }
         if filtered_tree.id() == filter::tree::empty_id() {
@@ -462,15 +462,15 @@ fn create_filtered_commit2<'a>(
         }
     }
 
-    return Ok((
+    Ok((
         rewrite_commit(
-            &repo,
-            &original_commmit,
+            repo,
+            original_commmit,
             &selected_filtered_parent_commits,
             &filtered_tree,
         )?,
         true,
-    ));
+    ))
 }
 
 fn is_empty_root(repo: &git2::Repository, tree: &git2::Tree) -> bool {
@@ -481,11 +481,11 @@ fn is_empty_root(repo: &git2::Repository, tree: &git2::Tree) -> bool {
     let mut all_empty = true;
 
     for e in tree.iter() {
-        if let Ok(Ok(t)) = e.to_object(&repo).map(|x| x.into_tree()) {
-            all_empty = all_empty && is_empty_root(&repo, &t);
+        if let Ok(Ok(t)) = e.to_object(repo).map(|x| x.into_tree()) {
+            all_empty = all_empty && is_empty_root(repo, &t);
         } else {
             return false;
         }
     }
-    return all_empty;
+    all_empty
 }

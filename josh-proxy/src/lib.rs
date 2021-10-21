@@ -22,7 +22,7 @@ fn baseref_and_options(refname: &str) -> josh::JoshResult<(String, String, Vec<S
     if baseref.starts_with("refs/drafts") {
         baseref = baseref.replacen("refs/drafts", "refs/heads", 1)
     }
-    return Ok((baseref, push_to, options));
+    Ok((baseref, push_to, options))
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
@@ -53,7 +53,7 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
         tracing::debug!("REPO_UPDATE env ok");
 
         let transaction = josh::cache::Transaction::open(
-            &std::path::Path::new(&repo_update.git_dir),
+            std::path::Path::new(&repo_update.git_dir),
             Some(&format!("refs/josh/upstream/{}/", repo_update.base_ns)),
         )?;
 
@@ -80,7 +80,7 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
         };
 
         let original_target_ref = if let Some(base) = push_options.get("base") {
-            transaction.refname(&base)
+            transaction.refname(base)
         } else {
             transaction.refname(&baseref)
         };
@@ -132,7 +132,7 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
         //};
 
         let filterobj = josh::filter::parse(&repo_update.filter_spec)?;
-        let new_oid = git2::Oid::from_str(&new)?;
+        let new_oid = git2::Oid::from_str(new)?;
         let backward_new_oid = {
             tracing::debug!("=== MORE");
 
@@ -180,7 +180,7 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
                 let merged_tree = transaction
                     .repo()
                     .merge_commits(&base_commit, &backward_commit, None)?
-                    .write_tree_to(&transaction.repo())?;
+                    .write_tree_to(transaction.repo())?;
                 transaction.repo().commit(
                     None,
                     &backward_commit.author(),
@@ -196,7 +196,7 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
             backward_new_oid
         };
 
-        let push_with_options = if options.len() != 0 {
+        let push_with_options = if !options.is_empty() {
             format!("{}{}{}", push_to, "%", options.join(","))
         } else {
             push_to
@@ -209,7 +209,7 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
         )?;
 
         let (text, status) = push_head_url(
-            &transaction.repo(),
+            transaction.repo(),
             oid_to_push,
             &push_with_options,
             &repo_update.remote_url,
@@ -224,13 +224,13 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
         );
 
         let mut warning_str = "".to_owned();
-        if warnings.len() > 0 {
+        if !warnings.is_empty() {
             let warnings = warnings.iter();
 
             warning_str += "\nwarnings:";
             for warn in warnings {
                 warning_str += "\n";
-                warning_str.push_str(&warn);
+                warning_str.push_str(warn);
             }
         }
 
@@ -258,7 +258,7 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
         return Err(josh::josh_error(&resp));
     }
 
-    return Ok("".to_string());
+    Ok("".to_string())
 }
 
 fn push_head_url(
@@ -277,7 +277,7 @@ fn push_head_url(
         cwd: repo.path().to_owned(),
     };
     let (username, password) = auth.parse()?;
-    let nurl = url_with_auth(&url, &username);
+    let nurl = url_with_auth(url, &username);
     let cmd = format!("git push {} '{}'", &nurl, &spec);
     let mut fakehead = repo.reference(&rn, oid, true, "push_head_url")?;
     let (stdout, stderr, status) = shell.command_env(&cmd, &[], &[("GIT_PASSWORD", &password)]);
@@ -287,7 +287,7 @@ fn push_head_url(
 
     let stderr = stderr.replace(&rn, "JOSH_PUSH");
 
-    return Ok((stderr, status));
+    Ok((stderr, status))
 }
 
 pub fn create_repo(path: &std::path::Path) -> josh::JoshResult<()> {
@@ -312,26 +312,27 @@ pub fn create_repo(path: &std::path::Path) -> josh::JoshResult<()> {
         .expect("can't symlink update hook");
     std::os::unix::fs::symlink(ce, path.join("hooks").join("pre-receive"))
         .expect("can't symlink pre-receive hook");
-    shell.command(&format!(
-        "git config credential.helper '!f() {{ echo \"password=\"$GIT_PASSWORD\"\"; }}; f'"
-    ));
-    shell.command(&"git config gc.auto 0");
-    shell.command(&"git pack-refs --all");
+    shell.command(
+        &"git config credential.helper '!f() { echo \"password=\"$GIT_PASSWORD\"\"; }; f'"
+            .to_string(),
+    );
+    shell.command("git config gc.auto 0");
+    shell.command("git pack-refs --all");
 
     if std::env::var_os("JOSH_KEEP_NS") == None {
         std::fs::remove_dir_all(path.join("refs/namespaces")).ok();
     }
     tracing::info!("repo initialized");
-    return Ok(());
+    Ok(())
 }
 
 fn url_with_auth(url: &str, username: &str) -> String {
-    if username != "" {
+    if !username.is_empty() {
         let splitted: Vec<&str> = url.splitn(2, "://").collect();
         let proto = splitted[0];
         let rest = splitted[1];
         let username =
-            percent_encoding::utf8_percent_encode(&username, percent_encoding::NON_ALPHANUMERIC)
+            percent_encoding::utf8_percent_encode(username, percent_encoding::NON_ALPHANUMERIC)
                 .to_string();
         format!("{}://{}@{}", &proto, &username, &rest)
     } else {
@@ -365,7 +366,7 @@ pub fn fetch_refs_from_url(
         cwd: path.to_owned(),
     };
     let (username, password) = auth.parse()?;
-    let nurl = url_with_auth(&url, &username);
+    let nurl = url_with_auth(url, &username);
 
     let cmd = format!("git fetch --prune --no-tags {} {}", &nurl, &specs.join(" "));
     tracing::info!("fetch_refs_from_url {:?} {:?} {:?}", cmd, path, "");
@@ -383,7 +384,7 @@ pub fn fetch_refs_from_url(
         tracing::error!("{:?}", stderr);
         return Err(josh::josh_error(&format!("git error: {:?}", stderr)));
     }
-    return Ok(true);
+    Ok(true)
 }
 
 pub struct TmpGitNamespace {
@@ -409,7 +410,7 @@ impl TmpGitNamespace {
     }
 
     pub fn name(&self) -> &str {
-        return &self.name;
+        &self.name
     }
     pub fn reference(&self, refname: &str) -> String {
         return format!("refs/namespaces/{}/{}", &self.name, refname);

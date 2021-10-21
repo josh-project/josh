@@ -147,7 +147,7 @@ impl Transaction {
     pub fn new_walk(&self) -> usize {
         let prev = self.t2.borrow().walks;
         self.t2.borrow_mut().walks += 1;
-        return prev;
+        prev
     }
 
     pub fn end_walk(&self) {
@@ -158,7 +158,7 @@ impl Transaction {
         let mut t2 = self.t2.borrow_mut();
         t2.apply_map
             .entry(filter.id())
-            .or_insert_with(|| HashMap::new())
+            .or_insert_with(HashMap::new)
             .insert(from, to);
     }
 
@@ -167,14 +167,14 @@ impl Transaction {
         if let Some(m) = t2.apply_map.get(&filter.id()) {
             return m.get(&from).cloned();
         }
-        return None;
+        None
     }
 
     pub fn insert_unapply(&self, filter: filter::Filter, from: git2::Oid, to: git2::Oid) {
         let mut t2 = self.t2.borrow_mut();
         t2.unapply_map
             .entry(filter.id())
-            .or_insert_with(|| HashMap::new())
+            .or_insert_with(HashMap::new)
             .insert(from, to);
     }
 
@@ -195,7 +195,7 @@ impl Transaction {
         if let Some(oid) = t2.path_tree.get(x.as_bytes()).unwrap() {
             return Some(git2::Oid::from_bytes(&oid).unwrap());
         }
-        return None;
+        None
     }
 
     pub fn insert_invert(&self, tree: (git2::Oid, String), result: git2::Oid) {
@@ -215,7 +215,7 @@ impl Transaction {
         if let Some(oid) = t2.invert_tree.get(x.as_bytes()).unwrap() {
             return Some(git2::Oid::from_bytes(&oid).unwrap());
         }
-        return None;
+        None
     }
 
     pub fn insert_trigram_index(&self, tree: git2::Oid, result: git2::Oid) {
@@ -231,7 +231,7 @@ impl Transaction {
         if let Some(oid) = t2.trigram_index_tree.get(tree.as_bytes()).unwrap() {
             return Some(git2::Oid::from_bytes(&oid).unwrap());
         }
-        return None;
+        None
     }
 
     pub fn insert_populate(&self, tree: (git2::Oid, git2::Oid), result: git2::Oid) {
@@ -255,7 +255,7 @@ impl Transaction {
             .lock()
             .unwrap()
             .entry(filter.id())
-            .or_insert_with(|| HashMap::new())
+            .or_insert_with(HashMap::new)
             .insert(from, to);
     }
 
@@ -267,7 +267,7 @@ impl Transaction {
                 }
             }
         }
-        return None;
+        None
     }
 
     pub fn get_unapply(&self, filter: filter::Filter, from: git2::Oid) -> Option<git2::Oid> {
@@ -275,14 +275,14 @@ impl Transaction {
         if let Some(m) = t2.unapply_map.get(&filter.id()) {
             return m.get(&from).cloned();
         }
-        return None;
+        None
     }
 
     pub fn insert(&self, filter: filter::Filter, from: git2::Oid, to: git2::Oid, store: bool) {
         let mut t2 = self.t2.borrow_mut();
         t2.commit_map
             .entry(filter.id())
-            .or_insert_with(|| HashMap::new())
+            .or_insert_with(HashMap::new)
             .insert(from, to);
 
         // In addition to commits that are explicitly requested to be stored, also store
@@ -312,7 +312,7 @@ impl Transaction {
                 .unwrap()
         });
 
-        return t.len();
+        t.len()
     }
 
     pub fn get_missing(&self) -> Vec<(filter::Filter, git2::Oid)> {
@@ -321,7 +321,7 @@ impl Transaction {
         missing.dedup();
         missing.retain(|(f, i)| !self.known(*f, *i));
         self.t2.borrow_mut().missing = missing.clone();
-        return missing;
+        missing
     }
 
     pub fn known(&self, filter: filter::Filter, from: git2::Oid) -> bool {
@@ -330,12 +330,12 @@ impl Transaction {
 
     pub fn get(&self, filter: filter::Filter, from: git2::Oid) -> Option<git2::Oid> {
         if let Some(x) = self.get2(filter, from) {
-            return Some(x);
+            Some(x)
         } else {
             let mut t2 = self.t2.borrow_mut();
             t2.misses += 1;
             t2.missing.push((filter, from));
-            return None;
+            None
         }
     }
 
@@ -369,6 +369,6 @@ impl Transaction {
             }
         }
 
-        return None;
+        None
     }
 }

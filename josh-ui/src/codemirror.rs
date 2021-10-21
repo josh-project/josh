@@ -32,7 +32,7 @@ impl Component for Codemirror {
             .iter()
             .zip(self.props.marker_text.iter())
         {
-            set_marker(*pos, &text);
+            set_marker(*pos, text);
         }
     }
 
@@ -44,7 +44,7 @@ impl Component for Codemirror {
         if self.props != props {
             self.props = props;
         }
-        return true;
+        true
     }
 
     fn view(&self) -> Html {
