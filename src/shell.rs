@@ -11,7 +11,7 @@ pub struct Shell {
 
 impl Shell {
     pub fn command(&self, cmd: &str) -> (String, String, i32) {
-        return self.command_env(cmd, &[], &[]);
+        self.command_env(cmd, &[], &[])
     }
 
     #[tracing::instrument(skip(self, env_notrace))]
@@ -55,6 +55,6 @@ impl Shell {
             .trim()
             .to_string();
         tracing::event!(Level::TRACE, ?stdout, ?stderr);
-        return (stdout, stderr, output.status.code().unwrap_or(1));
+        (stdout, stderr, output.status.code().unwrap_or(1))
     }
 }

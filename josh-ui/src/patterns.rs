@@ -39,10 +39,10 @@ impl Component for List {
     }
 
     fn view(&self) -> Html {
-        if self.props.list.len() > 0 {
+        if !self.props.list.is_empty() {
             html! {
                 <div class="column">
-                { if self.props.name.len() > 0 {html!(<h2> { self.props.name.clone() } </h2>)} else{html!()} }
+                { if !self.props.name.is_empty() {html!(<h2> { self.props.name.clone() } </h2>)} else{html!()} }
                 <div id="pathlist" class="dirmode loaded">
                 <table class="pathlist">
                 {

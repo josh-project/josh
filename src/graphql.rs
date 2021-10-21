@@ -16,7 +16,7 @@ fn find_paths(
     kind: git2::ObjectType,
 ) -> JoshResult<Vec<std::path::PathBuf>> {
     let tree = if let Some(at) = at.as_ref() {
-        if at == "" {
+        if at.is_empty() {
             tree
         } else {
             let path = std::path::Path::new(&at).to_owned();
@@ -43,7 +43,7 @@ fn find_paths(
         }
         0
     })?;
-    return Ok(ws);
+    Ok(ws)
 }
 
 impl Revision {
@@ -68,7 +68,7 @@ impl Revision {
                 tree: tree_id,
             });
         }
-        return Ok(Some(ws));
+        Ok(Some(ws))
     }
 }
 
@@ -196,7 +196,7 @@ impl Revision {
                 tree: tree.id(),
             }))
         } else {
-            Err(josh_error("not a blob"))?
+            Err(josh_error("not a blob").into())
         }
     }
 
@@ -226,7 +226,7 @@ impl Revision {
                 tree: tree.id(),
             }))
         } else {
-            Err(josh_error("not a tree"))?
+            Err(josh_error("not a tree").into())
         }
     }
 
@@ -340,8 +340,8 @@ impl SearchResult {
 
 pub fn linecount(repo: &git2::Repository, id: git2::Oid) -> usize {
     if let Ok(blob) = repo.find_blob(id) {
-        return blob.content().iter().filter(|x| **x == '\n' as u8).count()
-            + if blob.content().len() == 0 { 0 } else { 1 };
+        return blob.content().iter().filter(|x| **x == b'\n').count()
+            + if blob.content().is_empty() { 0 } else { 1 };
     }
 
     if let Ok(tree) = repo.find_tree(id) {
@@ -351,7 +351,7 @@ pub fn linecount(repo: &git2::Repository, id: git2::Oid) -> usize {
         }
         return c;
     }
-    return 0;
+    0
 }
 
 struct Markers {
@@ -373,7 +373,7 @@ impl Markers {
             let commit = transaction.repo().find_commit(r.id())?;
             commit.tree()?
         } else {
-            filter::tree::empty(&transaction.repo())
+            filter::tree::empty(transaction.repo())
         };
 
         let commit = self.commit_id.to_string();
@@ -394,10 +394,10 @@ impl Markers {
         };
 
         let lines = prev
-            .split("\n")
-            .filter(|x| *x != "")
+            .split('\n')
+            .filter(|x| !(*x).is_empty())
             .map(|x| {
-                let mut s = x.splitn(2, ":");
+                let mut s = x.splitn(2, ':');
                 Document {
                     id: s
                         .next()
@@ -406,8 +406,7 @@ impl Markers {
                     value: s
                         .next()
                         .and_then(|x| serde_json::from_str::<serde_json::Value>(x).ok())
-                        .unwrap_or_default()
-                        .to_owned(),
+                        .unwrap_or_default(),
                 }
             })
             .collect::<Vec<_>>();
@@ -425,7 +424,7 @@ impl Markers {
             let commit = transaction.repo().find_commit(r.id())?;
             commit.tree()?
         } else {
-            filter::tree::empty(&transaction.repo())
+            filter::tree::empty(transaction.repo())
         };
 
         let commit = self.commit_id.to_string();
@@ -453,7 +452,7 @@ impl Markers {
         } else if self.path == std::path::Path::new("") {
             return Ok(linecount(transaction.repo(), mtree.id()) as i32);
         }
-        return Ok(0);
+        Ok(0)
     }
 }
 
@@ -607,7 +606,7 @@ impl Document {
         } else {
             return None;
         }
-        return Some(v);
+        Some(v)
     }
 
     fn value(&self, at: String) -> Option<Document> {
@@ -686,7 +685,7 @@ struct MarkerInput {
 }
 
 fn format_marker(input: &String) -> JoshResult<String> {
-    let value = serde_json::from_str::<serde_json::Value>(&input)?;
+    let value = serde_json::from_str::<serde_json::Value>(input)?;
     let line = serde_json::to_string(&value)?;
     let hash = git2::Oid::hash_object(git2::ObjectType::Blob, line.as_bytes())?;
     Ok(format!("{}:{}", &hash, &line))
@@ -714,7 +713,7 @@ impl RepositoryMut {
             let tree = commit.tree()?;
             (tree, Some(commit))
         } else {
-            (filter::tree::empty(&transaction.repo()), None)
+            (filter::tree::empty(transaction.repo()), None)
         };
 
         let mut tree = tree;
@@ -722,7 +721,7 @@ impl RepositoryMut {
         for mm in add {
             let path = mm.path;
             let path = &marker_path(&commit, &topic).join(&path);
-            let prev = if let Ok(e) = tree.get_path(&path) {
+            let prev = if let Ok(e) = tree.get_path(path) {
                 let blob = transaction.repo().find_blob(e.id())?;
                 std::str::from_utf8(blob.content())?.to_owned()
             } else {
@@ -735,16 +734,19 @@ impl RepositoryMut {
                 .map(format_marker)
                 .collect::<JoshResult<Vec<_>>>()?;
 
-            let mut lines = prev.split("\n").filter(|x| *x != "").collect::<Vec<_>>();
+            let mut lines = prev
+                .split('\n')
+                .filter(|x| !(*x).is_empty())
+                .collect::<Vec<_>>();
             for marker in mm.iter() {
                 lines.push(marker);
             }
-            lines.sort();
+            lines.sort_unstable();
             lines.dedup();
 
-            let blob = transaction.repo().blob(&lines.join("\n").as_bytes())?;
+            let blob = transaction.repo().blob(lines.join("\n").as_bytes())?;
 
-            tree = filter::tree::insert(transaction.repo(), &tree, &path, blob, 0o0100644)?;
+            tree = filter::tree::insert(transaction.repo(), &tree, path, blob, 0o0100644)?;
         }
 
         transaction.repo().commit(
@@ -818,7 +820,7 @@ impl Query {
     fn repos(context: &Context, name: Option<String>) -> FieldResult<Vec<Repository>> {
         let transaction = context.transaction.lock()?;
 
-        let refname = format!("refs/josh/upstream/*.git/refs/heads/*");
+        let refname = "refs/josh/upstream/*.git/refs/heads/*".to_string();
 
         let mut repos = vec![];
 
@@ -839,13 +841,13 @@ impl Query {
 
         repos.dedup();
 
-        return Ok(repos
+        Ok(repos
             .into_iter()
             .map(|name| {
                 let ns = format!("refs/josh/upstream/{}.git/", to_ns(&name));
                 Repository { name, ns }
             })
-            .collect());
+            .collect())
     }
 }
 

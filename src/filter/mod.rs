@@ -34,7 +34,7 @@ fn to_filter(op: Op) -> Filter {
         git2::Oid::hash_object(git2::ObjectType::Blob, s.as_bytes()).expect("hash_object filter"),
     );
     FILTERS.lock().unwrap().insert(f, op);
-    return f;
+    f
 }
 
 fn to_op(filter: Filter) -> Op {
@@ -85,7 +85,7 @@ pub fn pretty(filter: Filter, indent: usize) -> String {
                 .join(&i);
         }
     }
-    return pretty2(&to_op(filter), indent, true);
+    pretty2(&to_op(filter), indent, true)
 }
 
 fn pretty2(op: &Op, indent: usize, compose: bool) -> String {
@@ -189,7 +189,6 @@ fn src_path2(op: &Op) -> std::path::PathBuf {
         Op::Chain(a, b) => src_path(*a).join(src_path(*b)),
         _ => std::path::PathBuf::new(),
     })
-    .to_owned()
 }
 
 pub fn dst_path(filter: Filter) -> std::path::PathBuf {
@@ -203,7 +202,6 @@ fn dst_path2(op: &Op) -> std::path::PathBuf {
         Op::Chain(a, b) => dst_path(*b).join(dst_path(*a)),
         _ => std::path::PathBuf::new(),
     })
-    .to_owned()
 }
 
 /// Calculate the filtered commit for `commit`. This can take some time if done
@@ -249,7 +247,7 @@ fn apply_to_commit2(
         Op::Empty => return Ok(Some(git2::Oid::zero())),
 
         Op::Chain(a, b) => {
-            let r = some_or!(apply_to_commit2(&to_op(*a), &commit, transaction)?, {
+            let r = some_or!(apply_to_commit2(&to_op(*a), commit, transaction)?, {
                 return Ok(None);
             });
             if let Ok(r) = repo.find_commit(r) {
@@ -259,13 +257,7 @@ fn apply_to_commit2(
             }
         }
         Op::Squash => {
-            return Some(history::rewrite_commit(
-                &repo,
-                &commit,
-                &vec![],
-                &commit.tree()?,
-            ))
-            .transpose()
+            return Some(history::rewrite_commit(repo, commit, &[], &commit.tree()?)).transpose()
         }
         _ => {
             if let Some(oid) = transaction.get(filter, commit.id()) {
@@ -280,7 +272,7 @@ fn apply_to_commit2(
         Op::Compose(filters) => {
             let filtered = filters
                 .iter()
-                .map(|f| apply_to_commit2(&to_op(*f), &commit, transaction))
+                .map(|f| apply_to_commit2(&to_op(*f), commit, transaction))
                 .collect::<JoshResult<Option<Vec<_>>>>()?;
 
             let filtered = some_or!(filtered, { return Ok(None) });
@@ -293,7 +285,7 @@ fn apply_to_commit2(
                 .map(|(f, id)| Ok((f, repo.find_commit(id)?.tree()?)))
                 .collect::<JoshResult<Vec<_>>>()?;
 
-            tree::compose(&transaction, filtered)?
+            tree::compose(transaction, filtered)?
         }
         Op::Workspace(ws_path) => {
             let normal_parents = commit
@@ -304,7 +296,7 @@ fn apply_to_commit2(
             let normal_parents = some_or!(normal_parents, { return Ok(None) });
 
             let cw = parse::parse(&tree::get_blob(
-                &repo,
+                repo,
                 &commit.tree()?,
                 &ws_path.join("workspace.josh"),
             ))
@@ -315,8 +307,8 @@ fn apply_to_commit2(
                 .map(|parent| {
                     rs_tracing::trace_scoped!("parent", "id": parent.id().to_string());
                     let pcw = parse::parse(&tree::get_blob(
-                        &repo,
-                        &parent.tree().unwrap_or(tree::empty(&repo)),
+                        repo,
+                        &parent.tree().unwrap_or(tree::empty(repo)),
                         &ws_path.join("workspace.josh"),
                     ))
                     .unwrap_or(to_filter(Op::Empty));
@@ -359,7 +351,7 @@ fn apply_to_commit2(
             let mut filtered_tree = commit.tree_id();
 
             for t in trees {
-                filtered_tree = tree::overlay(&repo, filtered_tree, t)?;
+                filtered_tree = tree::overlay(repo, filtered_tree, t)?;
             }
 
             repo.find_tree(filtered_tree)?
@@ -369,7 +361,7 @@ fn apply_to_commit2(
                 transaction
                     .repo()
                     .find_commit(some_or!(
-                        apply_to_commit2(&to_op(*a), &commit, transaction)?,
+                        apply_to_commit2(&to_op(*a), commit, transaction)?,
                         { return Ok(None) }
                     ))
                     .map(|x| x.tree_id())
@@ -379,17 +371,17 @@ fn apply_to_commit2(
                 transaction
                     .repo()
                     .find_commit(some_or!(
-                        apply_to_commit2(&to_op(*b), &commit, transaction)?,
+                        apply_to_commit2(&to_op(*b), commit, transaction)?,
                         { return Ok(None) }
                     ))
                     .map(|x| x.tree_id())
                     .unwrap_or(tree::empty_id())
             };
             let bf = repo.find_tree(bf)?;
-            let bu = unapply(&transaction, *b, bf, tree::empty(&repo))?;
+            let bu = unapply(transaction, *b, bf, tree::empty(repo))?;
             let ba = apply(transaction, *a, bu)?;
 
-            repo.find_tree(tree::subtract(&repo, af, ba.id())?)?
+            repo.find_tree(tree::subtract(repo, af, ba.id())?)?
         }
         _ => apply(transaction, filter, commit.tree()?)?,
     };
@@ -404,14 +396,14 @@ fn apply_to_commit2(
 
     let filtered_parent_ids = some_or!(filtered_parent_ids, { return Ok(None) });
 
-    return Some(history::create_filtered_commit(
+    Some(history::create_filtered_commit(
         commit,
         filtered_parent_ids,
         filtered_tree,
         transaction,
         filter,
     ))
-    .transpose();
+    .transpose()
 }
 
 /// Filter a single tree. This does not involve walking history and is thus fast in most cases.
@@ -430,10 +422,10 @@ fn apply2<'a>(
 ) -> JoshResult<git2::Tree<'a>> {
     let repo = transaction.repo();
     match op {
-        Op::Nop => return Ok(tree),
-        Op::Empty => return Ok(tree::empty(&repo)),
-        Op::Fold => return Ok(tree),
-        Op::Squash => return Ok(tree),
+        Op::Nop => Ok(tree),
+        Op::Empty => return Ok(tree::empty(repo)),
+        Op::Fold => Ok(tree),
+        Op::Squash => Ok(tree),
 
         Op::Glob(pattern) => {
             let pattern = glob::Pattern::new(pattern)?;
@@ -446,36 +438,36 @@ fn apply2<'a>(
                 transaction,
                 "",
                 tree.id(),
-                &|path, isblob| isblob && (pattern.matches_path_with(&path, options)),
+                &|path, isblob| isblob && (pattern.matches_path_with(path, options)),
                 to_filter(op.clone()).id(),
             )
         }
         Op::File(path) => {
             let (file, mode) = tree
-                .get_path(&path)
+                .get_path(path)
                 .map(|x| (x.id(), x.filemode()))
                 .unwrap_or((git2::Oid::zero(), 0o0100644));
             if let Ok(_) = repo.find_blob(file) {
-                tree::insert(&repo, &tree::empty(&repo), &path, file, mode)
+                tree::insert(repo, &tree::empty(repo), path, file, mode)
             } else {
-                Ok(tree::empty(&repo))
+                Ok(tree::empty(repo))
             }
         }
 
         Op::Subdir(path) => {
             return Ok(tree
-                .get_path(&path)
+                .get_path(path)
                 .and_then(|x| repo.find_tree(x.id()))
-                .unwrap_or(tree::empty(&repo)));
+                .unwrap_or(tree::empty(repo)));
         }
-        Op::Prefix(path) => tree::insert(&repo, &tree::empty(&repo), &path, tree.id(), 0o0040000),
+        Op::Prefix(path) => tree::insert(repo, &tree::empty(repo), path, tree.id(), 0o0040000),
 
         Op::Subtract(a, b) => {
             let af = apply(transaction, *a, tree.clone())?;
             let bf = apply(transaction, *b, tree.clone())?;
-            let bu = unapply(transaction, *b, bf, tree::empty(&repo))?;
+            let bu = unapply(transaction, *b, bf, tree::empty(repo))?;
             let ba = apply(transaction, *a, bu)?;
-            Ok(repo.find_tree(tree::subtract(&repo, af.id(), ba.id())?)?)
+            Ok(repo.find_tree(tree::subtract(repo, af.id(), ba.id())?)?)
         }
 
         Op::Paths => tree::pathstree("", tree.id(), transaction),
@@ -486,8 +478,7 @@ fn apply2<'a>(
 
         Op::Workspace(path) => {
             let base = to_filter(Op::Subdir(path.to_owned()));
-            if let Ok(cw) =
-                parse::parse(&tree::get_blob(&repo, &tree, &path.join("workspace.josh")))
+            if let Ok(cw) = parse::parse(&tree::get_blob(repo, &tree, &path.join("workspace.josh")))
             {
                 apply(transaction, compose(base, cw), tree)
             } else {
@@ -498,10 +489,10 @@ fn apply2<'a>(
         Op::Compose(filters) => {
             let filtered: Vec<_> = filters
                 .iter()
-                .map(|f| Ok(apply(transaction, *f, tree.clone())?))
+                .map(|f| apply(transaction, *f, tree.clone()))
                 .collect::<JoshResult<_>>()?;
             let filtered: Vec<_> = filters.iter().zip(filtered.into_iter()).collect();
-            return tree::compose(transaction, filtered);
+            tree::compose(transaction, filtered)
         }
 
         Op::Chain(a, b) => {
@@ -538,13 +529,13 @@ fn unapply2<'a>(
         }
         Op::Workspace(path) => {
             let root = to_filter(Op::Subdir(path.to_owned()));
-            let mapped = &tree::get_blob(&transaction.repo(), &tree, &Path::new("workspace.josh"));
+            let mapped = &tree::get_blob(transaction.repo(), &tree, Path::new("workspace.josh"));
             let parsed = parse(mapped)?;
 
             let mut blob = String::new();
             if let Ok(c) = get_comments(mapped) {
-                if c.len() > 0 {
-                    blob = format!("{}", c);
+                if !c.is_empty() {
+                    blob = c;
                 }
             }
             let blob = &format!("{}{}\n", &blob, pretty(parsed, 0));
@@ -552,9 +543,9 @@ fn unapply2<'a>(
             // Remove workspace.josh from the tree to prevent it from being parsed again
             // further down the callstack leading to endless recursion.
             let tree = tree::insert(
-                &transaction.repo(),
+                transaction.repo(),
                 &tree,
-                &Path::new("workspace.josh"),
+                Path::new("workspace.josh"),
                 git2::Oid::zero(),
                 0o0100644,
             )?;
@@ -562,9 +553,9 @@ fn unapply2<'a>(
             // Insert a dummy file to prevent the directory from dissappearing through becoming
             // empty.
             let tree = tree::insert(
-                &transaction.repo(),
+                transaction.repo(),
                 &tree,
-                &Path::new("DUMMY-df97a89d-b11f-4e1c-8400-345f895f0d40"),
+                Path::new("DUMMY-df97a89d-b11f-4e1c-8400-345f895f0d40"),
                 transaction.repo().blob("".as_bytes())?,
                 0o0100644,
             )?;
@@ -578,7 +569,7 @@ fn unapply2<'a>(
 
             // Remove the dummy file inserted above
             let r = tree::insert(
-                &transaction.repo(),
+                transaction.repo(),
                 &r,
                 &path.join("DUMMY-df97a89d-b11f-4e1c-8400-345f895f0d40"),
                 git2::Oid::zero(),
@@ -586,9 +577,9 @@ fn unapply2<'a>(
             )?;
 
             // Put the workspace.josh file back to it's target location.
-            let r = if mapped != "" {
+            let r = if !mapped.is_empty() {
                 tree::insert(
-                    &transaction.repo(),
+                    transaction.repo(),
                     &r,
                     &path.join("workspace.josh"),
                     transaction.repo().blob(blob.as_bytes())?,
@@ -609,7 +600,7 @@ fn unapply2<'a>(
                     transaction,
                     *other,
                     remaining.clone(),
-                    tree::empty(&transaction.repo()),
+                    tree::empty(transaction.repo()),
                 )?;
                 if tree::empty_id() == from_empty.id() {
                     continue;
@@ -618,7 +609,7 @@ fn unapply2<'a>(
                 let reapply = apply(transaction, *other, from_empty.clone())?;
 
                 remaining = transaction.repo().find_tree(tree::subtract(
-                    &transaction.repo(),
+                    transaction.repo(),
                     remaining.id(),
                     reapply.id(),
                 )?)?;
@@ -629,25 +620,25 @@ fn unapply2<'a>(
 
         Op::File(path) => {
             let (file, mode) = tree
-                .get_path(&path)
+                .get_path(path)
                 .map(|x| (x.id(), x.filemode()))
                 .unwrap_or((git2::Oid::zero(), 0o0100644));
             if let Ok(_) = transaction.repo().find_blob(file) {
-                tree::insert(&transaction.repo(), &parent_tree, &path, file, mode)
+                tree::insert(transaction.repo(), &parent_tree, path, file, mode)
             } else {
-                Ok(tree::empty(&transaction.repo()))
+                Ok(tree::empty(transaction.repo()))
             }
         }
 
         Op::Subtract(a, b) => match (to_op(*a), to_op(*b)) {
             (Op::Nop, b) => {
                 let subtracted = tree::subtract(
-                    &transaction.repo(),
+                    transaction.repo(),
                     tree.id(),
-                    unapply2(transaction, &b, tree, tree::empty(&transaction.repo()))?.id(),
+                    unapply2(transaction, &b, tree, tree::empty(transaction.repo()))?.id(),
                 )?;
                 Ok(transaction.repo().find_tree(tree::overlay(
-                    &transaction.repo(),
+                    transaction.repo(),
                     parent_tree.id(),
                     subtracted,
                 )?)?)
@@ -665,26 +656,22 @@ fn unapply2<'a>(
                 transaction,
                 "",
                 tree.id(),
-                &|path, isblob| isblob && (pattern.matches_path_with(&path, options)),
+                &|path, isblob| isblob && (pattern.matches_path_with(path, options)),
                 to_filter(op.clone()).id(),
             )?;
             Ok(transaction.repo().find_tree(tree::overlay(
-                &transaction.repo(),
+                transaction.repo(),
                 parent_tree.id(),
                 subtracted.id(),
             )?)?)
         }
         Op::Prefix(path) => Ok(tree
-            .get_path(&path)
+            .get_path(path)
             .and_then(|x| transaction.repo().find_tree(x.id()))
-            .unwrap_or(tree::empty(&transaction.repo()))),
-        Op::Subdir(path) => tree::insert(
-            &transaction.repo(),
-            &parent_tree,
-            &path,
-            tree.id(),
-            0o0040000,
-        ),
+            .unwrap_or(tree::empty(transaction.repo()))),
+        Op::Subdir(path) => {
+            tree::insert(transaction.repo(), &parent_tree, path, tree.id(), 0o0040000)
+        }
         _ => return Err(josh_error("filter not reversible")),
     };
 }
@@ -710,7 +697,7 @@ pub fn compute_warnings<'a>(
 
     if let Op::Workspace(path) = to_op(filter) {
         let workspace_filter = &tree::get_blob(
-            &transaction.repo(),
+            transaction.repo(),
             &tree,
             &path.join(&Path::new("workspace.josh")),
         );
@@ -733,7 +720,7 @@ pub fn compute_warnings<'a>(
     } else {
         warnings.append(&mut compute_warnings2(transaction, filter, tree));
     }
-    return warnings;
+    warnings
 }
 
 fn compute_warnings2<'a>(
@@ -743,13 +730,13 @@ fn compute_warnings2<'a>(
 ) -> Vec<String> {
     let mut warnings = Vec::new();
 
-    let tree = apply(&transaction, filter, tree);
+    let tree = apply(transaction, filter, tree);
     if let Ok(tree) = tree {
         if tree.is_empty() {
             warnings.push(format!("No match for \"{}\"", pretty(filter, 2)));
         }
     }
-    return warnings;
+    warnings
 }
 
 #[cfg(test)]

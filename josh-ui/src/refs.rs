@@ -91,7 +91,7 @@ impl Component for Nav {
             self.props = props;
             self.link.send_message(Self::Message::CallServer);
         }
-        return true;
+        true
     }
 
     fn view(&self) -> Html {
@@ -101,16 +101,14 @@ impl Component for Nav {
         } else {
             let mut l = vec![];
             let refs = &self.data.refs;
-            {
-                if refs.len() != 0 {
-                    l.extend(refs.iter().map(|w| {
-                        (
-                            props.route.with_rev(&w.name),
-                            w.name.clone(),
-                            patterns::Warnings { misra: 0, josh: 0 },
-                        )
-                    }));
-                }
+            if !refs.is_empty() {
+                l.extend(refs.iter().map(|w| {
+                    (
+                        props.route.with_rev(&w.name),
+                        w.name.clone(),
+                        patterns::Warnings { misra: 0, josh: 0 },
+                    )
+                }));
             };
             html! {<patterns::List name="Branches"  list=l />}
         }

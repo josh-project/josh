@@ -100,7 +100,7 @@ impl Component for Nav {
             self.props = props;
             self.link.send_message(Self::Message::CallServer);
         }
-        return true;
+        true
     }
 
     fn view(&self) -> Html {
@@ -113,7 +113,7 @@ impl Component for Nav {
                 else if let Some(file) = &self.data.rev.file {
                     html! {<codemirror::Codemirror
                         text=file.text.as_ref().unwrap_or(&"".to_string()).clone()
-                        marker_pos=file.meta.data.iter().map(|x| x.position.clone().unwrap_or_default()).collect::<Vec<_>>()
+                        marker_pos=file.meta.data.iter().map(|x| x.position.unwrap_or_default()).collect::<Vec<_>>()
                         marker_text=file.meta.data.iter().map(|x| x.text.clone().unwrap_or_default()).collect::<Vec<String>>()
                     />}
                 } else {
@@ -142,7 +142,7 @@ impl Component for Nav {
                         }
                         {
                             if let Some(warnings) = &self.data.rev.warnings {
-                                if warnings.len() > 0 {
+                                if !warnings.is_empty() {
                                 html! { <>
                                     <div class="warnings">
                                     <h2> { "Warnings" } </h2>

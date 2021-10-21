@@ -29,13 +29,13 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> JoshResult<Op> {
         Rule::filter_presub => {
             let mut inner = pair.into_inner();
             let arg = inner.next().unwrap().as_str();
-            if arg.ends_with("/") {
-                let arg = arg.trim_end_matches("/");
+            if arg.ends_with('/') {
+                let arg = arg.trim_end_matches('/');
                 Ok(Op::Chain(
                     to_filter(Op::Subdir(std::path::PathBuf::from(arg))),
                     to_filter(make_op(&["prefix", arg])?),
                 ))
-            } else if arg.contains("*") {
+            } else if arg.contains('*') {
                 Ok(Op::Glob(arg.to_string()))
             } else {
                 Ok(Op::File(Path::new(arg).to_owned()))
@@ -86,7 +86,7 @@ fn parse_file_entry(
         }
         Rule::filter_spec => {
             let filter = pair.as_str();
-            filters.push(parse(&filter)?);
+            filters.push(parse(filter)?);
             Ok(())
         }
         Rule::EOI => Ok(()),
@@ -105,7 +105,7 @@ fn parse_group(filter_spec: &str) -> JoshResult<Vec<Filter>> {
                 parse_file_entry(pair, &mut filters)?;
             }
 
-            return Ok(filters);
+            Ok(filters)
         }
         Err(r) => {
             return Err(josh_error(&format!(
@@ -135,7 +135,7 @@ fn parse_workspace(filter_spec: &str) -> JoshResult<Vec<Filter>> {
                     _ => return Err(josh_error(&format!("invalid workspace file {:?}", pair))),
                 };
             }
-            return Err(josh_error(&format!("invalid workspace file")));
+            Err(josh_error(&"invalid workspace file".to_string()))
         }
         Err(r) => {
             return Err(josh_error(&format!(
@@ -149,7 +149,7 @@ fn parse_workspace(filter_spec: &str) -> JoshResult<Vec<Filter>> {
 
 /// Create a `Filter` from a string representation
 pub fn parse(filter_spec: &str) -> JoshResult<Filter> {
-    if filter_spec == "" {
+    if filter_spec.is_empty() {
         return Ok(to_filter(Op::Empty));
     }
     let mut chain: Option<Op> = None;
@@ -167,9 +167,9 @@ pub fn parse(filter_spec: &str) -> JoshResult<Filter> {
         return Ok(opt::optimize(to_filter(chain.unwrap_or(Op::Nop))));
     };
 
-    return Ok(opt::optimize(to_filter(Op::Compose(parse_workspace(
+    Ok(opt::optimize(to_filter(Op::Compose(parse_workspace(
         filter_spec,
-    )?))));
+    )?))))
 }
 
 /// Get the potential leading comments from a workspace.josh as a string

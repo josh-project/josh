@@ -79,8 +79,8 @@ pub fn from_ns(path: &str) -> String {
 pub fn to_filtered_ref(upstream_repo: &str, filter_spec: &str) -> String {
     return format!(
         "josh/filtered/{}/{}",
-        to_ns(&upstream_repo),
-        to_ns(&filter_spec)
+        to_ns(upstream_repo),
+        to_ns(filter_spec)
     );
 }
 
@@ -151,13 +151,13 @@ lazy_static! {
 }
 
 pub fn get_change_id(commit: &git2::Commit) -> Option<String> {
-    for line in commit.message().unwrap_or("").split("\n") {
+    for line in commit.message().unwrap_or("").split('\n') {
         if line.starts_with("Change-Id: ") {
             let id = line.replace("Change-Id: ", "");
             return Some(id);
         }
     }
-    return None;
+    None
 }
 
 #[tracing::instrument(skip(transaction))]
@@ -168,7 +168,7 @@ fn filter_ref(
     to_refname: &str,
 ) -> JoshResult<usize> {
     let mut updated_count = 0;
-    if let Ok(reference) = transaction.repo().revparse_single(&from_refsname) {
+    if let Ok(reference) = transaction.repo().revparse_single(from_refsname) {
         let original_commit = reference.peel_to_commit()?;
         let oid = original_commit.id();
 
@@ -177,12 +177,12 @@ fn filter_ref(
         } else {
             tracing::trace!("apply_to_commit");
 
-            filter::apply_to_commit(filterobj, &original_commit, &transaction)?
+            filter::apply_to_commit(filterobj, &original_commit, transaction)?
         };
 
         let previous = transaction
             .repo()
-            .revparse_single(&to_refname)
+            .revparse_single(to_refname)
             .map(|x| x.id())
             .unwrap_or(git2::Oid::zero());
 
@@ -203,7 +203,7 @@ fn filter_ref(
             ok_or!(
                 transaction
                     .repo()
-                    .reference(&to_refname, filter_commit, true, "apply_filter")
+                    .reference(to_refname, filter_commit, true, "apply_filter")
                     .map(|_| ()),
                 {
                     tracing::error!(
@@ -219,7 +219,7 @@ fn filter_ref(
     } else {
         tracing::warn!("filter_ref: Can't find reference {:?}", &from_refsname);
     };
-    return Ok(updated_count);
+    Ok(updated_count)
 }
 
 pub fn filter_refs(
@@ -235,7 +235,7 @@ pub fn filter_refs(
 
     let mut updated_count = 0;
     for (k, v) in refs {
-        updated_count += ok_or!(filter_ref(&transaction, filterobj, &k, &v), {
+        updated_count += ok_or!(filter_ref(transaction, filterobj, k, v), {
             tracing::event!(
                 tracing::Level::WARN,
                 msg = "filter_refs: Can't filter reference",
@@ -246,7 +246,7 @@ pub fn filter_refs(
             0
         });
     }
-    return Ok(updated_count);
+    Ok(updated_count)
 }
 
 pub fn normalize_path(path: &std::path::Path) -> std::path::PathBuf {

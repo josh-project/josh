@@ -30,10 +30,10 @@ impl GraphQLHelper {
 
         let blob = tree
             .get_path(&path)?
-            .to_object(&transaction.repo())?
+            .to_object(transaction.repo())?
             .peel_to_blob()
             .map(|x| x.content().to_vec())
-            .unwrap_or(vec![]);
+            .unwrap_or_default();
         let query = String::from_utf8(blob)?;
 
         let mut variables = juniper::Variables::new();
@@ -60,7 +60,7 @@ impl GraphQLHelper {
             j
         };
 
-        return Ok(j);
+        Ok(j)
     }
 }
 
@@ -75,7 +75,7 @@ impl handlebars::HelperDef for GraphQLHelper {
         return Ok(handlebars::ScopedJson::Derived(
             self.josh_helper(
                 h.hash(),
-                &rc.get_current_template_name().unwrap_or(&"/".to_owned()),
+                rc.get_current_template_name().unwrap_or(&"/".to_owned()),
             )
             .map_err(|_| handlebars::RenderError::new("josh"))?,
         ));
@@ -92,23 +92,23 @@ pub fn render(
     headref: &str,
     query_and_params: &str,
 ) -> JoshResult<Option<String>> {
-    let mut parameters = query_and_params.split("&");
+    let mut parameters = query_and_params.split('&');
     let query = parameters
         .next()
         .ok_or(josh_error(&format!("invalid query {:?}", query_and_params)))?;
-    let mut split = query.splitn(2, "=");
+    let mut split = query.splitn(2, '=');
     let cmd = split
         .next()
         .ok_or(josh_error(&format!("invalid query {:?}", query_and_params)))?;
     let path = split
         .next()
         .ok_or(josh_error(&format!("invalid query {:?}", query_and_params)))?;
-    let reference = repo.find_reference(&headref)?;
+    let reference = repo.find_reference(headref)?;
     let tree = reference.peel_to_tree()?;
 
     let obj = ok_or!(
         tree.get_path(&std::path::PathBuf::from(path))?
-            .to_object(&repo),
+            .to_object(repo),
         {
             return Ok(None);
         }
@@ -116,7 +116,7 @@ pub fn render(
 
     let mut params = std::collections::BTreeMap::new();
     for p in parameters {
-        let mut split = p.splitn(2, "=");
+        let mut split = p.splitn(2, '=');
         let name = split
             .next()
             .ok_or(josh_error(&format!("invalid query {:?}", query_and_params)))?;
@@ -137,7 +137,7 @@ pub fn render(
             for (k, v) in params {
                 variables.insert(k.to_string(), juniper::InputValue::scalar(v));
             }
-            let transaction = cache::Transaction::open(&repo.path(), None)?;
+            let transaction = cache::Transaction::open(repo.path(), None)?;
             let (res, _errors) = juniper::execute_sync(
                 &template.to_string(),
                 None,
@@ -162,7 +162,7 @@ pub fn render(
     std::mem::drop(tree);
 
     let mut handlebars = handlebars::Handlebars::new();
-    handlebars.register_template_string(&path, template)?;
+    handlebars.register_template_string(path, template)?;
     handlebars.register_helper("concat", Box::new(helpers::concat_helper));
     handlebars.register_helper(
         "graphql",
@@ -174,8 +174,8 @@ pub fn render(
     );
     handlebars.set_strict_mode(true);
 
-    match handlebars.render(&path, &json!(params)) {
-        Ok(res) => return Ok(Some(format!("{}", res))),
+    match handlebars.render(path, &json!(params)) {
+        Ok(res) => Ok(Some(res)),
         Err(res) => return Err(josh_error(&format!("{}", res))),
     }
 }

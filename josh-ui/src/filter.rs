@@ -102,7 +102,7 @@ impl Component for Nav {
             self.props = props;
             self.link.send_message(Self::Message::CallServer);
         }
-        return true;
+        true
     }
 
     fn view(&self) -> Html {
@@ -116,7 +116,7 @@ impl Component for Nav {
                 patterns::Warnings { misra: 0, josh: 0 },
             )];
             if let Some(workspaces) = &self.data.workspaces.paths {
-                if workspaces.len() != 0 {
+                if !workspaces.is_empty() {
                     l.extend(workspaces.iter().map(|w| {
                         let mut num_warns = 0;
                         let mut num_misra = 0;

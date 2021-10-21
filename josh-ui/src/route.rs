@@ -15,7 +15,7 @@ impl AppRoute {
     pub fn with_path(&self, path: &str) -> Self {
         let mut s = self.clone();
         s.path = path.to_string();
-        return s;
+        s
     }
 
     pub fn path_up(&self) -> Self {
@@ -26,19 +26,19 @@ impl AppRoute {
             .map(|x| x.to_string_lossy().to_string())
             .unwrap_or_default();
 
-        return s;
+        s
     }
 
     pub fn edit_filter(&self) -> Self {
         let mut s = self.clone();
         s.mode = "filter".to_string();
-        return s;
+        s
     }
 
     pub fn edit_rev(&self) -> Self {
         let mut s = self.clone();
         s.mode = "refs".to_string();
-        return s;
+        s
     }
 
     pub fn filename(&self) -> String {
@@ -53,28 +53,28 @@ impl AppRoute {
         let mut x = self.clone();
 
         loop {
-            if x.path != "" {
+            if !x.path.is_empty() {
                 r.push(x.clone());
             } else {
                 break;
             }
             x = x.path_up();
         }
-        return r;
+        r
     }
 
     pub fn with_filter(&self, filter: &str) -> Self {
         let mut s = self.clone();
         s.mode = "browse".to_string();
         s.filter = filter.to_string();
-        return s;
+        s
     }
 
     pub fn with_rev(&self, rev: &str) -> Self {
         let mut s = self.clone();
         s.mode = "browse".to_string();
         s.rev = rev.to_string();
-        return s;
+        s
     }
 }
 
