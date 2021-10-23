@@ -15,7 +15,7 @@ lazy_static! {
 
 /// Filters are represented as `git2::Oid`, however they are not ever stored
 /// inside the repo.
-#[derive(Clone, Hash, PartialEq, Eq, Debug, Copy, PartialOrd, Ord)]
+#[derive(Clone, Hash, PartialEq, Eq, Copy, PartialOrd, Ord)]
 pub struct Filter(git2::Oid);
 
 impl Filter {
@@ -24,6 +24,11 @@ impl Filter {
     }
 }
 
+impl std::fmt::Debug for Filter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        return to_op(*self).fmt(f);
+    }
+}
 pub fn nop() -> Filter {
     to_filter(Op::Nop)
 }
