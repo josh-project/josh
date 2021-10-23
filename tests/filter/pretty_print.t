@@ -21,6 +21,12 @@
   $ josh-filter -p :prefix=a/b:prefix=c
   :prefix=c/a/b
 
+  $ josh-filter -p :[:/a,:/b]:[:empty,:/]
+  :[
+      :/a
+      :/b
+  ]
+
   $ cat > f <<EOF
   > a/b = :/a/b
   > a/j = :/a/j

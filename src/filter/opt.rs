@@ -262,12 +262,12 @@ fn iterate(filter: Filter) -> Filter {
         }
 
         if log::log_enabled!(log::Level::Debug) {
-            let a = pretty(filter, 0);
-            let b = pretty(optimized, 0);
-
-            if a != b {
-                log::debug!("STEP {}:\n{}\n", i, b);
-            }
+            log::debug!(
+                "stepop {}:\n{:?}\n->\n{:?}\n",
+                i,
+                to_op(filter),
+                to_op(optimized)
+            );
         }
         filter = optimized;
     }
@@ -319,7 +319,7 @@ fn step(filter: Filter) -> Filter {
                 Op::Chain(common, to_filter(Op::Compose(rest)))
             } else if let Some((common, rest)) = common_post(&filters) {
                 Op::Chain(to_filter(Op::Compose(rest)), common)
-            } else if grouped.len() != filters.len() {
+            } else if grouped.len() != 1 && grouped.len() != filters.len() {
                 Op::Compose(
                     grouped
                         .drain(..)
@@ -335,6 +335,8 @@ fn step(filter: Filter) -> Filter {
             (Op::Chain(x, y), b) => Op::Chain(x, to_filter(Op::Chain(y, to_filter(b)))),
             (Op::Nop, b) => b,
             (a, Op::Nop) => a,
+            (Op::Empty, _) => Op::Empty,
+            (_, Op::Empty) => Op::Empty,
             (a, b) => Op::Chain(step(to_filter(a)), step(to_filter(b))),
         },
         Op::Subtract(a, b) if a == b => Op::Empty,
