@@ -29,6 +29,7 @@ impl std::fmt::Debug for Filter {
         return to_op(*self).fmt(f);
     }
 }
+
 pub fn nop() -> Filter {
     to_filter(Op::Nop)
 }

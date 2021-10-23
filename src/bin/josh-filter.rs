@@ -103,6 +103,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
                 .long("check-permission")
                 .short("c"),
         )
+        .arg(clap::Arg::with_name("missing-permission").long("missing-permission"))
         .arg(
             clap::Arg::with_name("whitelist")
                 .long("whitelist")
@@ -272,13 +273,13 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         permissions_filter = josh::filter::make_permissions_filter(filterobj, whitelist, blacklist)
     }
 
-    let updated_refs = josh::filter_ref(
-        &transaction,
-        filterobj,
-        &src,
-        &t,
-        permissions_filter,
-    )?;
+    let missing_permissions = args.is_present("missing-permission");
+    if missing_permissions {
+        filterobj = permissions_filter;
+        permissions_filter = josh::filter::empty();
+    }
+
+    let updated_refs = josh::filter_ref(&transaction, filterobj, &src, &t, permissions_filter)?;
     if args.value_of("update") != Some("FILTERED_HEAD") && updated_refs == 0 {
         println!(
             "Warning: reference {} wasn't updated",
