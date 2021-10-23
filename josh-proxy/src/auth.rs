@@ -59,6 +59,13 @@ pub async fn check_auth(url: &str, auth: &Handle, required: bool) -> josh::JoshR
         return Ok(false);
     }
 
+    // If the upsteam is ssh we don't really handle authentication here.
+    // All we need is a username, the private key is expected to available localy.
+    // This is really not secure at all and should never be used in a production deployment.
+    if url.starts_with("ssh") {
+        return Ok(auth.hash != "");
+    }
+
     if let Some(last) = AUTH_TIMERS.lock()?.get(&(url.to_string(), auth.clone())) {
         let since = std::time::Instant::now().duration_since(*last);
         tracing::trace!("last: {:?}, since: {:?}", last, since);
