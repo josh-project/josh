@@ -36,7 +36,11 @@
   $ josh-filter -s c=:exclude[:/sub1] master --update refs/josh/filter/master
   [1] :prefix=c
   [2] :/sub1
+  [2] :INVERT
   [2] :exclude[:/sub1]
+  [2] _invert
+  [3] :PATHS
+  [6] _paths
   $ git checkout josh/filter/master 2> /dev/null
   $ git log --graph --pretty=%s
   * add file3
@@ -53,7 +57,11 @@
   [2] ::sub1/file2
   [2] :exclude[:/sub1]
   [2] :exclude[::sub1/file2]
+  [3] :INVERT
+  [3] :PATHS
   [3] :prefix=c
+  [4] _invert
+  [6] _paths
   $ git checkout josh/filter/master 2> /dev/null
   $ git log --graph --pretty=%s
   * add file3
@@ -75,7 +83,11 @@
   [2] :exclude[:/sub1]
   [2] :exclude[::sub1/file2]
   [2] :exclude[::sub2/file3]
+  [3] :PATHS
+  [4] :INVERT
   [4] :prefix=c
+  [6] _invert
+  [6] _paths
   $ git checkout josh/filter/master 2> /dev/null
   $ git log --graph --pretty=%s
   * add file2

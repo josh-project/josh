@@ -26,7 +26,11 @@
 
   $ josh-filter -s :exclude[:/sub2] branch1 --update refs/heads/hidden_branch1
   [1] :/sub2
+  [1] :INVERT
+  [1] _invert
+  [2] :PATHS
   [2] :exclude[:/sub2]
+  [4] _paths
   $ git checkout hidden_branch1
   Switched to branch 'hidden_branch1'
   $ tree
@@ -41,7 +45,11 @@
 
   $ josh-filter -s :exclude[:/sub2] master --update refs/heads/hidden_master
   [1] :/sub2
+  [1] :INVERT
+  [1] _invert
+  [3] :PATHS
   [3] :exclude[:/sub2]
+  [6] _paths
   $ git checkout hidden_master
   Switched to branch 'hidden_master'
   $ tree
@@ -79,7 +87,11 @@
 
   $ josh-filter -s :exclude[:/sub2] --reverse master --update refs/heads/hidden_master
   [1] :/sub2
+  [1] :INVERT
+  [1] _invert
+  [3] :PATHS
   [3] :exclude[:/sub2]
+  [6] _paths
 
   $ git checkout master
   Switched to branch 'master'

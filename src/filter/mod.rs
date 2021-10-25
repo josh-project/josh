@@ -372,18 +372,23 @@ fn apply_to_commit2(
                     .map(|x| x.tree_id())
                     .unwrap_or(tree::empty_id())
             };
-            let bf = {
+            let bu = {
                 transaction
                     .repo()
                     .find_commit(some_or!(
-                        apply_to_commit2(&to_op(*b), commit, transaction)?,
+                        apply_to_commit2(
+                            &Op::Chain(
+                                to_filter(Op::Paths),
+                                to_filter(Op::Chain(*b, to_filter(Op::Invert))),
+                            ),
+                            commit,
+                            transaction,
+                        )?,
                         { return Ok(None) }
                     ))
-                    .map(|x| x.tree_id())
-                    .unwrap_or(tree::empty_id())
-            };
-            let bf = repo.find_tree(bf)?;
-            let bu = unapply(transaction, *b, bf, tree::empty(repo))?;
+                    .map(|x| x.tree())
+                    .unwrap_or(Ok(tree::empty(repo)))
+            }?;
             let ba = apply(transaction, *a, bu)?;
 
             repo.find_tree(tree::subtract(repo, af, ba.id())?)?
@@ -469,8 +474,14 @@ fn apply2<'a>(
 
         Op::Subtract(a, b) => {
             let af = apply(transaction, *a, tree.clone())?;
-            let bf = apply(transaction, *b, tree.clone())?;
-            let bu = unapply(transaction, *b, bf, tree::empty(repo))?;
+            let bu = apply(
+                transaction,
+                to_filter(Op::Chain(
+                    to_filter(Op::Paths),
+                    to_filter(Op::Chain(*b, to_filter(Op::Invert))),
+                )),
+                tree.clone(),
+            )?;
             let ba = apply(transaction, *a, bu)?;
             Ok(repo.find_tree(tree::subtract(repo, af.id(), ba.id())?)?)
         }
