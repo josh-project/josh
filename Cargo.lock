@@ -886,6 +886,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "http-range"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eee9694f83d9b7c09682fdb32213682939507884e5bcf227be9aff5d644b90dc"
+
+[[package]]
 name = "httparse"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -929,16 +935,18 @@ dependencies = [
 
 [[package]]
 name = "hyper-staticfile"
-version = "0.7.0"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3a244ca2999dd477ab5284849fadd6b1d9d32f16cb47c205c1ff126f7602a1e7"
+checksum = "0d5ff45ea721e295c400e4c65b1c855d43d329b8ae8ec12520ab1860a240debf"
 dependencies = [
  "futures-util",
  "http",
+ "http-range",
  "httpdate",
  "hyper",
  "mime_guess",
  "percent-encoding",
+ "rand 0.8.4",
  "tokio",
  "url",
  "winapi",

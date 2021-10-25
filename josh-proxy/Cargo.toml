@@ -17,7 +17,7 @@ futures = "0.3.17"
 tokio = { version = "1.8.1", features = ["full"] }
 hyper = { version = "0.14.13", features = ["stream"] }
 hyper_cgi = "0.2.1"
-hyper-staticfile = "0.7.0"
+hyper-staticfile = "0.8.0"
 hyper-tls = "0.5.0"
 toml = "0.5.8"
 git2 = "0.13.23"
