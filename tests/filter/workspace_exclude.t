@@ -27,6 +27,8 @@
   [1] :/sub1
   [1] :/subsub
   [1] ::file1
+  [1] :INVERT
+  [1] :PATHS
   [1] :exclude[::file1]
   [1] :prefix=a
   [1] :prefix=sub2
@@ -37,6 +39,8 @@
       ::sub2/subsub/
   ]
   [2] :workspace=ws
+  [2] _invert
+  [2] _paths
 
   $ git log --graph --pretty=%s refs/heads/filtered
   * add ws
@@ -65,6 +69,8 @@
   [1] :/sub1
   [1] :/subsub
   [1] ::file1
+  [1] :INVERT
+  [1] :PATHS
   [1] :exclude[::file1]
   [1] :prefix=a
   [1] :prefix=sub2
@@ -75,6 +81,8 @@
       ::sub2/subsub/
   ]
   [2] :workspace=ws
+  [2] _invert
+  [3] _paths
   $ git checkout master
   Switched to branch 'master'
 
