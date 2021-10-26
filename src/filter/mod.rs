@@ -597,27 +597,33 @@ fn unapply2<'a>(
             return Ok(r);
         }
         Op::Compose(filters) => {
-            let mut remaining = tree.clone();
+            // let mut remaining = tree.clone();
             let mut result = parent_tree.clone();
 
             for other in filters.iter().rev() {
-                let from_empty = unapply(
-                    transaction,
-                    *other,
-                    remaining.clone(),
-                    tree::empty(transaction.repo()),
-                )?;
-                if tree::empty_id() == from_empty.id() {
-                    continue;
-                }
-                result = unapply(transaction, *other, remaining.clone(), result)?;
-                let reapply = apply(transaction, *other, from_empty.clone())?;
-
-                remaining = transaction.repo().find_tree(tree::subtract(
+                let temp_res = unapply(transaction, *other, tree.clone(), parent_tree.clone())?;
+                result = transaction.repo().find_tree(tree::overlay(
                     transaction.repo(),
-                    remaining.id(),
-                    reapply.id(),
+                    result.id(),
+                    temp_res.id(),
                 )?)?;
+                //                let from_empty = unapply(
+                //                    transaction,
+                //                    *other,
+                //                    remaining.clone(),
+                //                    tree::empty(transaction.repo()),
+                //                )?;
+                //                if tree::empty_id() == from_empty.id() {
+                //                    continue;
+                //                }
+                //                result = unapply(transaction, *other, remaining.clone(), result)?;
+                //                let reapply = apply(transaction, *other, from_empty.clone())?;
+                //
+                //                remaining = transaction.repo().find_tree(tree::subtract(
+                //                    transaction.repo(),
+                //                    remaining.id(),
+                //                    reapply.id(),
+                //                )?)?;
             }
 
             return Ok(result);

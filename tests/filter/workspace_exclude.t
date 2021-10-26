@@ -87,11 +87,16 @@
   |   `-- subsub
   |       `-- file2
   `-- ws
+      |-- a
+      |   `-- file4
       |-- file1
       |-- fileX
+      |-- sub2
+      |   `-- subsub
+      |       `-- file2
       `-- workspace.josh
   
-  4 directories, 6 files
+  7 directories, 8 files
 
   $ cat ws/file1
   ws_content

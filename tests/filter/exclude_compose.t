@@ -14,18 +14,26 @@
   $ git add sub2
   $ git commit -m "add file2" 1> /dev/null
 
+  $ mkdir sub3
+  $ echo contents1 > sub3/file3
+  $ git add sub3
+  $ git commit -m "add file3" 1> /dev/null
+
   $ josh-filter -s :exclude[:/sub2] master --update refs/heads/hidden
-  [1] :exclude[:/sub2]
   [2] :/sub2
+  [2] :exclude[:/sub2]
   $ git checkout hidden 1> /dev/null
   Switched to branch 'hidden'
   $ tree
   .
-  `-- sub1
-      `-- file1
+  |-- sub1
+  |   `-- file1
+  `-- sub3
+      `-- file3
   
-  1 directory, 1 file
+  2 directories, 2 files
   $ git log --graph --pretty=%s
+  * add file3
   * add file1
 
   $ echo contents3 > sub1/file3
@@ -34,16 +42,16 @@
 
   $ josh-filter -s :exclude[:/sub1,:/sub2] master --update refs/josh/filtered
   [1] :/sub1
-  [1] :exclude[
-      :/sub1
-      :/sub2
-  ]
-  [1] :exclude[:/sub2]
   [2] :/sub2
   [2] :[
       :/sub1
       :/sub2
   ]
+  [2] :exclude[
+      :/sub1
+      :/sub2
+  ]
+  [2] :exclude[:/sub2]
 
   $ git checkout refs/josh/filtered
   Note: switching to 'refs/josh/filtered'.
@@ -63,10 +71,10 @@
   
   Turn off this advice by setting config variable advice.detachedHead to false
   
-  HEAD is now at bb282e9 add file1
+  HEAD is now at 9085ae2 add file3
   $ tree
   .
-  `-- sub1
-      `-- file1
+  `-- sub3
+      `-- file3
   
   1 directory, 1 file

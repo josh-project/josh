@@ -84,13 +84,18 @@
   |-- sub2
   |   `-- file2
   `-- ws
+      |-- a
+      |   `-- b
+      |       `-- file2
+      |-- c
+      |   `-- file1
       |-- workspace.josh
       `-- ws_created_file
   
-  3 directories, 4 files
+  6 directories, 6 files
 
   $ cat sub1/file1
-  ws_content
+  contents1
 
   $ git log --graph --pretty=%s
   * add ws_created_file
