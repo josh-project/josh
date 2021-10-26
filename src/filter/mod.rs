@@ -216,6 +216,7 @@ pub fn apply_to_commit(
     commit: &git2::Commit,
     transaction: &cache::Transaction,
 ) -> JoshResult<git2::Oid> {
+    let filter = opt::optimize(filter);
     for _ in 0..10000 {
         let filtered = apply_to_commit2(&to_op(filter), commit, transaction)?;
 
@@ -244,10 +245,10 @@ fn apply_to_commit2(
     commit: &git2::Commit,
     transaction: &cache::Transaction,
 ) -> JoshResult<Option<git2::Oid>> {
-    let filter = opt::optimize(to_filter(op.clone()));
     let repo = transaction.repo();
+    let filter = to_filter(op.clone());
 
-    match &to_op(filter) {
+    match &op {
         Op::Nop => return Ok(Some(commit.id())),
         Op::Empty => return Ok(Some(git2::Oid::zero())),
 
@@ -318,7 +319,11 @@ fn apply_to_commit2(
                     ))
                     .unwrap_or(to_filter(Op::Empty));
 
-                    apply_to_commit2(&Op::Subtract(cw, pcw), &parent, transaction)
+                    apply_to_commit2(
+                        &to_op(opt::optimize(to_filter(Op::Subtract(cw, pcw)))),
+                        &parent,
+                        transaction,
+                    )
                 })
                 .collect::<JoshResult<Option<Vec<_>>>>()?;
 

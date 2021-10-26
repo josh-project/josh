@@ -886,6 +886,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "http-range"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eee9694f83d9b7c09682fdb32213682939507884e5bcf227be9aff5d644b90dc"
+
+[[package]]
 name = "httparse"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -905,9 +911,9 @@ checksum = "9a3a5bfb195931eeb336b2a7b4d761daec841b97f947d34394601737a7bba5e4"
 
 [[package]]
 name = "hyper"
-version = "0.14.13"
+version = "0.14.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "15d1cfb9e4f68655fa04c01f59edb405b6074a0f7118ea881e5026e4a1cd8593"
+checksum = "2b91bb1f221b6ea1f1e4371216b70f40748774c2fb5971b450c07773fb92d26b"
 dependencies = [
  "bytes",
  "futures-channel",
@@ -929,16 +935,18 @@ dependencies = [
 
 [[package]]
 name = "hyper-staticfile"
-version = "0.7.0"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3a244ca2999dd477ab5284849fadd6b1d9d32f16cb47c205c1ff126f7602a1e7"
+checksum = "0d5ff45ea721e295c400e4c65b1c855d43d329b8ae8ec12520ab1860a240debf"
 dependencies = [
  "futures-util",
  "http",
+ "http-range",
  "httpdate",
  "hyper",
  "mime_guess",
  "percent-encoding",
+ "rand 0.8.4",
  "tokio",
  "url",
  "winapi",
@@ -1251,9 +1259,9 @@ checksum = "3e2e65a1a2e43cfcb47a895c4c8b10d1f4a61097f9f254f183aee60cad9c651d"
 
 [[package]]
 name = "matchers"
-version = "0.0.1"
+version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f099785f7595cc4b4553a174ce30dd7589ef93391ff414dbb67f62392b9e0ce1"
+checksum = "8263075bb86c5a1b1427b5ae862e8889656f126e9f77c484496e8b47cf5c5558"
 dependencies = [
  "regex-automata",
 ]
@@ -2405,9 +2413,9 @@ dependencies = [
 
 [[package]]
 name = "tracing-opentelemetry"
-version = "0.15.0"
+version = "0.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "599f388ecb26b28d9c1b2e4437ae019a7b336018b45ed911458cd9ebf91129f6"
+checksum = "3ffbf13a0f8b054a4e59df3a173b818e9c6177c02789871f2073977fd0062076"
 dependencies = [
  "opentelemetry",
  "tracing",
@@ -2417,35 +2425,21 @@ dependencies = [
 ]
 
 [[package]]
-name = "tracing-serde"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fb65ea441fbb84f9f6748fd496cf7f63ec9af5bca94dd86456978d055e8eb28b"
-dependencies = [
- "serde",
- "tracing-core",
-]
-
-[[package]]
 name = "tracing-subscriber"
-version = "0.2.25"
+version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0e0d2eaa99c3c2e41547cfa109e910a68ea03823cccad4a0525dcbc9b01e8c71"
+checksum = "80a4ddde70311d8da398062ecf6fc2c309337de6b0f77d6c27aff8d53f6fca52"
 dependencies = [
  "ansi_term 0.12.1",
- "chrono",
  "lazy_static",
  "matchers",
  "regex",
- "serde",
- "serde_json",
  "sharded-slab",
  "smallvec",
  "thread_local",
  "tracing",
  "tracing-core",
  "tracing-log",
- "tracing-serde",
 ]
 
 [[package]]
