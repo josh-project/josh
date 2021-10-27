@@ -45,7 +45,9 @@ Inside of a composition ``x=:filter`` can be used as an alternative spelling for
 ``:filter:prefix=x``.
 
 ### Exclusion **`:exclude[:filter]`**
-Remove all paths matching ``:filter`` from the input tree.
+Remove all paths present in the *output* of ``:filter`` from the input tree.
+It should generally be avoided to use any filters that change paths and instead only
+use filters that select paths without altering them.
 
 ### Workspace **`:workspace=a`**
 Similar to ``:/a`` but also looks for a ``workspace.josh`` file inside the
