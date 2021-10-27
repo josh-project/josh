@@ -75,6 +75,7 @@ pub fn simplify(filter: Filter) -> Filter {
         Op::Subtract(a, b) => match (to_op(a), to_op(b)) {
             (a, b) => Op::Subtract(simplify(to_filter(a)), simplify(to_filter(b))),
         },
+        Op::Exclude(b) => Op::Exclude(simplify(b)),
         _ => to_op(filter),
     });
 
@@ -128,6 +129,7 @@ pub fn flatten(filter: Filter) -> Filter {
         Op::Subtract(a, b) => match (to_op(a), to_op(b)) {
             (a, b) => Op::Subtract(flatten(to_filter(a)), flatten(to_filter(b))),
         },
+        Op::Exclude(b) => Op::Exclude(flatten(b)),
         _ => to_op(filter),
     });
 
@@ -339,6 +341,9 @@ fn step(filter: Filter) -> Filter {
             (_, Op::Empty) => Op::Empty,
             (a, b) => Op::Chain(step(to_filter(a)), step(to_filter(b))),
         },
+        Op::Exclude(b) if b == to_filter(Op::Nop) => Op::Empty,
+        Op::Exclude(b) if b == to_filter(Op::Empty) => Op::Nop,
+        Op::Exclude(b) => Op::Exclude(step(b)),
         Op::Subtract(a, b) if a == b => Op::Empty,
         Op::Subtract(af, bf) => match (to_op(af), to_op(bf)) {
             (Op::Empty, _) => Op::Empty,
