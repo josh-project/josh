@@ -185,11 +185,9 @@
   [1] :/a
   [1] :exclude[:/c]
   [1] :prefix=x
-  [3] :INVERT
-  [6] :/c
-  [6] :PATHS
-  [7] _invert
-  [28] _paths
+  [3] :/c
+  [3] :PATHS
+  [16] _paths
 
   $ git log --graph --pretty=%s refs/josh/filtered
   * add dirs
@@ -237,11 +235,11 @@
   [1] :/a
   [1] :exclude[:/c]
   [1] :prefix=x
-  [6] :/c
-  [6] :INVERT
-  [6] :PATHS
-  [19] _invert
-  [28] _paths
+  [3] :/c
+  [3] :INVERT
+  [3] :PATHS
+  [12] _invert
+  [16] _paths
 
   $ git checkout refs/josh/filtered 2> /dev/null
   $ tree
@@ -315,12 +313,12 @@
   [1] :/a
   [1] :exclude[:/c]
   [1] :prefix=x
+  [3] :/c
+  [3] :PATHS
   [3] :workspace=a
-  [6] :/c
-  [6] :PATHS
-  [9] :INVERT
-  [28] _paths
-  [29] _invert
+  [6] :INVERT
+  [16] _paths
+  [22] _invert
 
   $ git checkout refs/josh/filtered 2> /dev/null
   $ tree
@@ -383,13 +381,13 @@
   [1] :/a
   [1] :exclude[:/c]
   [1] :prefix=x
+  [3] :/c
   [3] :FOLD
+  [3] :PATHS
   [3] :workspace=a
-  [6] :/c
-  [6] :PATHS
-  [9] :INVERT
-  [28] _paths
-  [29] _invert
+  [6] :INVERT
+  [16] _paths
+  [22] _invert
 
 
 
@@ -408,13 +406,13 @@
   [1] :/a
   [1] :exclude[:/c]
   [1] :prefix=x
+  [3] :/c
   [3] :FOLD
   [3] :workspace=a
-  [6] :/c
-  [8] :PATHS
-  [9] :INVERT
-  [29] _invert
-  [31] _paths
+  [5] :PATHS
+  [6] :INVERT
+  [19] _paths
+  [22] _invert
 
   $ git log --graph --pretty=%s master
   * add newfile
@@ -538,12 +536,12 @@
   [1] :exclude[:/c]
   [1] :prefix=x
   [3] :workspace=a
+  [4] :/c
+  [5] :PATHS
   [6] :FOLD
-  [7] :/c
-  [8] :PATHS
-  [9] :INVERT
-  [29] _invert
-  [31] _paths
+  [6] :INVERT
+  [19] _paths
+  [22] _invert
 
   $ git log --graph --pretty=%s refs/josh/filtered
   * add file_cd3
@@ -593,13 +591,13 @@
   [1] :/a
   [1] :exclude[:/c]
   [1] :prefix=x
+  [4] :/c
+  [5] :PATHS
   [5] :workspace=a
-  [7] :/c
-  [8] :PATHS
-  [9] :INVERT
+  [6] :INVERT
   [10] :FOLD
-  [29] _invert
-  [31] _paths
+  [19] _paths
+  [22] _invert
 
   $ git log --graph --pretty=%s refs/josh/filtered
   * add newfile
