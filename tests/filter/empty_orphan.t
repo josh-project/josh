@@ -100,9 +100,10 @@ Empty root commits from unrelated parts of the tree should not be included
   c/file2
   c/file3
 
-  $ josh-filter -s c=:exclude[:/sub1] master
+  $ josh-filter -s c=:exclude[::sub1/] master
+  [4] :prefix=sub1
   [5] :/sub1
-  [5] :exclude[:/sub1]
+  [5] :exclude[::sub1/]
   [6] :prefix=c
 
   $ git log FILTERED_HEAD --graph --pretty=%s
@@ -116,8 +117,9 @@ Empty root commits from unrelated parts of the tree should not be included
 
   $ josh-filter -s :prefix=x FILTERED_HEAD
   [3] :prefix=x
+  [4] :prefix=sub1
   [5] :/sub1
-  [5] :exclude[:/sub1]
+  [5] :exclude[::sub1/]
   [6] :prefix=c
 
   $ git ls-tree --name-only -r FILTERED_HEAD

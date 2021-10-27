@@ -73,6 +73,7 @@ enum Op {
     Compose(Vec<Filter>),
     Chain(Filter, Filter),
     Subtract(Filter, Filter),
+    Exclude(Filter),
 }
 
 /// Pretty print the filter on multiple lines with initial indentation level.
@@ -113,10 +114,10 @@ fn pretty2(op: &Op, indent: usize, compose: bool) -> String {
     };
     match op {
         Op::Compose(filters) => ff(filters, "", indent),
-        Op::Subtract(af, bf) => match (to_op(*af), to_op(*bf)) {
-            (Op::Nop, Op::Compose(filters)) => ff(&filters, "exclude", indent),
-            (Op::Nop, b) => format!(":exclude[{}]", pretty2(&b, indent, false)),
-            _ => ff(&vec![*af, *bf], "subtract", indent + 4),
+        Op::Subtract(af, bf) => ff(&vec![*af, *bf], "subtract", indent + 4),
+        Op::Exclude(bf) => match to_op(*bf) {
+            Op::Compose(filters) => ff(&filters, "exclude", indent),
+            b => format!(":exclude[{}]", pretty2(&b, indent, false)),
         },
         Op::Chain(a, b) => match (to_op(*a), to_op(*b)) {
             (Op::Subdir(p1), Op::Prefix(p2)) if p1 == p2 => {
@@ -156,6 +157,9 @@ fn spec2(op: &Op) -> String {
         }
         Op::Subtract(a, b) => {
             format!(":subtract[{},{}]", spec(*a), spec(*b))
+        }
+        Op::Exclude(b) => {
+            format!(":exclude[{}]", spec(*b))
         }
         Op::Workspace(path) => {
             format!(":workspace={}", path.to_string_lossy())
@@ -389,9 +393,21 @@ fn apply_to_commit2(
             };
             let bf = repo.find_tree(bf)?;
             let bu = unapply(transaction, *b, bf, tree::empty(repo))?;
-            let ba = apply(transaction, *a, bu)?;
-
-            repo.find_tree(tree::subtract(repo, af, ba.id())?)?
+            let ba = apply(transaction, *a, bu)?.id();
+            repo.find_tree(tree::subtract(repo, af, ba)?)?
+        }
+        Op::Exclude(b) => {
+            let bf = {
+                transaction
+                    .repo()
+                    .find_commit(some_or!(
+                        apply_to_commit2(&to_op(*b), commit, transaction)?,
+                        { return Ok(None) }
+                    ))
+                    .map(|x| x.tree_id())
+                    .unwrap_or(tree::empty_id())
+            };
+            repo.find_tree(tree::subtract(repo, commit.tree_id(), bf)?)?
         }
         _ => apply(transaction, filter, commit.tree()?)?,
     };
@@ -476,8 +492,12 @@ fn apply2<'a>(
             let af = apply(transaction, *a, tree.clone())?;
             let bf = apply(transaction, *b, tree.clone())?;
             let bu = unapply(transaction, *b, bf, tree::empty(repo))?;
-            let ba = apply(transaction, *a, bu)?;
-            Ok(repo.find_tree(tree::subtract(repo, af.id(), ba.id())?)?)
+            let ba = apply(transaction, *a, bu)?.id();
+            Ok(repo.find_tree(tree::subtract(repo, af.id(), ba)?)?)
+        }
+        Op::Exclude(b) => {
+            let bf = apply(transaction, *b, tree.clone())?.id();
+            Ok(repo.find_tree(tree::subtract(repo, tree.id(), bf)?)?)
         }
 
         Op::Paths => tree::pathstree("", tree.id(), transaction),
@@ -640,21 +660,19 @@ fn unapply2<'a>(
             }
         }
 
-        Op::Subtract(a, b) => match (to_op(*a), to_op(*b)) {
-            (Op::Nop, b) => {
-                let subtracted = tree::subtract(
-                    transaction.repo(),
-                    tree.id(),
-                    unapply2(transaction, &b, tree, tree::empty(transaction.repo()))?.id(),
-                )?;
-                Ok(transaction.repo().find_tree(tree::overlay(
-                    transaction.repo(),
-                    parent_tree.id(),
-                    subtracted,
-                )?)?)
-            }
-            _ => return Err(josh_error("filter not reversible")),
-        },
+        Op::Subtract(_, _) => return Err(josh_error("filter not reversible")),
+        Op::Exclude(b) => {
+            let subtracted = tree::subtract(
+                transaction.repo(),
+                tree.id(),
+                unapply(transaction, *b, tree, tree::empty(transaction.repo()))?.id(),
+            )?;
+            Ok(transaction.repo().find_tree(tree::overlay(
+                transaction.repo(),
+                parent_tree.id(),
+                subtracted,
+            )?)?)
+        }
         Op::Glob(pattern) => {
             let pattern = glob::Pattern::new(pattern)?;
             let options = glob::MatchOptions {

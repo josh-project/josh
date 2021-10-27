@@ -181,12 +181,13 @@
   0 directories, 2 files
 
 
-  $ josh-filter -s :PATHS:exclude[:/c]:prefix=x master --update refs/josh/filtered
+  $ josh-filter -s :PATHS:exclude[::c/]:prefix=x master --update refs/josh/filtered
   [1] :/a
-  [1] :exclude[:/c]
+  [1] :exclude[::c/]
   [1] :prefix=x
   [3] :/c
   [3] :PATHS
+  [3] :prefix=c
   [16] _paths
 
   $ git log --graph --pretty=%s refs/josh/filtered
@@ -233,11 +234,12 @@
 
   $ josh-filter -s :PATHS:INVERT master --update refs/josh/filtered
   [1] :/a
-  [1] :exclude[:/c]
+  [1] :exclude[::c/]
   [1] :prefix=x
   [3] :/c
   [3] :INVERT
   [3] :PATHS
+  [3] :prefix=c
   [12] _invert
   [16] _paths
 
@@ -311,10 +313,11 @@
 
   $ josh-filter -s :PATHS:workspace=a:INVERT master --update refs/josh/filtered
   [1] :/a
-  [1] :exclude[:/c]
+  [1] :exclude[::c/]
   [1] :prefix=x
   [3] :/c
   [3] :PATHS
+  [3] :prefix=c
   [3] :workspace=a
   [6] :INVERT
   [16] _paths
@@ -379,11 +382,12 @@
 
   $ josh-filter -s :PATHS:FOLD master --update refs/josh/filtered
   [1] :/a
-  [1] :exclude[:/c]
+  [1] :exclude[::c/]
   [1] :prefix=x
   [3] :/c
   [3] :FOLD
   [3] :PATHS
+  [3] :prefix=c
   [3] :workspace=a
   [6] :INVERT
   [16] _paths
@@ -404,10 +408,11 @@
 
   $ josh-filter -s :PATHS master --update refs/josh/filtered
   [1] :/a
-  [1] :exclude[:/c]
+  [1] :exclude[::c/]
   [1] :prefix=x
   [3] :/c
   [3] :FOLD
+  [3] :prefix=c
   [3] :workspace=a
   [5] :PATHS
   [6] :INVERT
@@ -533,8 +538,9 @@
 
   $ josh-filter -s :PATHS:/c:FOLD master --update refs/josh/filtered
   [1] :/a
-  [1] :exclude[:/c]
+  [1] :exclude[::c/]
   [1] :prefix=x
+  [3] :prefix=c
   [3] :workspace=a
   [4] :/c
   [5] :PATHS
@@ -589,8 +595,9 @@
 
   $ josh-filter -s :PATHS:workspace=a:FOLD master --update refs/josh/filtered
   [1] :/a
-  [1] :exclude[:/c]
+  [1] :exclude[::c/]
   [1] :prefix=x
+  [3] :prefix=c
   [4] :/c
   [5] :PATHS
   [5] :workspace=a
