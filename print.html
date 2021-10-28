@@ -76,7 +76,7 @@
 
         <nav id="sidebar" class="sidebar" aria-label="Table of contents">
             <div class="sidebar-scrollbox">
-                <ol class="chapter"><li class="chapter-item expanded "><a href="intro.html"><strong aria-hidden="true">1.</strong> Intro</a></li><li class="chapter-item expanded "><a href="usecases.html"><strong aria-hidden="true">2.</strong> Use cases</a></li><li class="chapter-item expanded "><a href="faq.html"><strong aria-hidden="true">3.</strong> FAQ</a></li><li class="chapter-item expanded affix "><li class="part-title">Guide</li><li class="chapter-item expanded "><a href="guide/gettingstarted.html"><strong aria-hidden="true">4.</strong> Getting started</a></li><li class="chapter-item expanded "><a href="guide/workspaces.html"><strong aria-hidden="true">5.</strong> Working with workspaces</a></li><li class="chapter-item expanded "><div><strong aria-hidden="true">6.</strong> Importing projects</div></li><li class="chapter-item expanded "><div><strong aria-hidden="true">7.</strong> Integrating with CI</div></li><li class="chapter-item expanded affix "><li class="part-title">Reference</li><li class="chapter-item expanded "><a href="reference/filters.html"><strong aria-hidden="true">8.</strong> Filter syntax</a></li><li class="chapter-item expanded "><a href="reference/proxy.html"><strong aria-hidden="true">9.</strong> Proxy</a></li><li class="chapter-item expanded "><a href="reference/workspace.html"><strong aria-hidden="true">10.</strong> Workspaces</a></li><li class="chapter-item expanded "><a href="reference/cli.html"><strong aria-hidden="true">11.</strong> Command line tools</a></li><li class="chapter-item expanded "><a href="reference/graphql.html"><strong aria-hidden="true">12.</strong> Graphql API</a></li><li class="chapter-item expanded "><div><strong aria-hidden="true">13.</strong> Handlebar generator</div></li><li class="chapter-item expanded "><div><strong aria-hidden="true">14.</strong> The josh UI</div></li><li class="chapter-item expanded affix "><li class="part-title">Contributing</li><li class="chapter-item expanded "><div><strong aria-hidden="true">15.</strong> Development tools</div></li><li class="chapter-item expanded "><div><strong aria-hidden="true">16.</strong> Tracing</div></li></ol>
+                <ol class="chapter"><li class="chapter-item expanded "><a href="intro.html"><strong aria-hidden="true">1.</strong> Intro</a></li><li class="chapter-item expanded "><a href="usecases.html"><strong aria-hidden="true">2.</strong> Use cases</a></li><li class="chapter-item expanded "><a href="faq.html"><strong aria-hidden="true">3.</strong> FAQ</a></li><li class="chapter-item expanded affix "><li class="part-title">Guide</li><li class="chapter-item expanded "><a href="guide/gettingstarted.html"><strong aria-hidden="true">4.</strong> Getting started</a></li><li class="chapter-item expanded "><a href="guide/workspaces.html"><strong aria-hidden="true">5.</strong> Working with workspaces</a></li><li class="chapter-item expanded "><div><strong aria-hidden="true">6.</strong> Importing projects</div></li><li class="chapter-item expanded "><div><strong aria-hidden="true">7.</strong> Integrating with CI</div></li><li class="chapter-item expanded affix "><li class="part-title">Reference</li><li class="chapter-item expanded "><a href="reference/filters.html"><strong aria-hidden="true">8.</strong> Filter syntax</a></li><li class="chapter-item expanded "><a href="reference/proxy.html"><strong aria-hidden="true">9.</strong> Proxy</a></li><li class="chapter-item expanded "><a href="reference/workspace.html"><strong aria-hidden="true">10.</strong> Workspaces</a></li><li class="chapter-item expanded "><a href="reference/cli.html"><strong aria-hidden="true">11.</strong> Command line tools</a></li><li class="chapter-item expanded "><a href="reference/graphql.html"><strong aria-hidden="true">12.</strong> Graphql API</a></li><li class="chapter-item expanded "><div><strong aria-hidden="true">13.</strong> Handlebar generator</div></li><li class="chapter-item expanded "><div><strong aria-hidden="true">14.</strong> The josh UI</div></li><li class="chapter-item expanded affix "><li class="part-title">Contributing</li><li class="chapter-item expanded "><a href="contributing/testing.html"><strong aria-hidden="true">15.</strong> Testing</a></li><li class="chapter-item expanded "><a href="contributing/dev-tools.html"><strong aria-hidden="true">16.</strong> Development tools</a></li><li class="chapter-item expanded "><div><strong aria-hidden="true">17.</strong> Tracing</div></li></ol>
             </div>
             <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
         </nav>
@@ -933,6 +933,62 @@ them via a git client.</p>
 <p>To explore the API and generated documentation, an interactive GraphQL shell can be found at:</p>
 <pre><code>http://hostname/~/graphiql/name_of_repo.git
 </code></pre>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="testing"><a class="header" href="#testing">Testing</a></h1>
+<p>Currently the Josh project mainly uses integration tests for it's verification, so make sure you will be able
+to run and check them.</p>
+<p>The following sections will describe how to run the different kind's of tests used for the verification
+of the Josh project.</p>
+<h2 id="unittests--doctests"><a class="header" href="#unittests--doctests">UnitTests &amp; DocTests</a></h2>
+<pre><code class="language-shell">cargo test --all
+</code></pre>
+<h2 id="integration-tests"><a class="header" href="#integration-tests">Integration Tests</a></h2>
+<h3 id="1-setup-the-test-environment"><a class="header" href="#1-setup-the-test-environment">1. Setup the test environment</a></h3>
+<p>Due to the fact that the integration tests need additional tools and a more complex
+environment and due to the fact that the integration test are done using <a href="https://pypi.org/project/cram/">cram</a>.
+you will need to crate an extra environment to run these tests. To simplify the
+setup of the integration testing we have setup a <a href="https://nixos.org/manual/nix/stable/#chap-installation">Nix Shell</a> environment which
+you can start by using the following command if you have installed the <a href="https://nixos.org/manual/nix/stable/#chap-installation">Nix Shell</a>.</p>
+<p><strong>Attention:</strong>
+Currently it is still necessary to install the following tools in your host system.</p>
+<ul>
+<li>curl</li>
+<li>hyper_cgi
+<pre><code class="language-shell">cargo install hyper_cgi --features=test-server
+</code></pre>
+</li>
+</ul>
+<h4 id="setup-the-nix-shell"><a class="header" href="#setup-the-nix-shell">Setup the Nix Shell</a></h4>
+<p><strong>Attention:</strong>
+When running this command the first time, this command will take quite a bit to
+finish. You also will need internet access while executing this command.
+Depending on performance of your connection the command will take more or less time.</p>
+<pre><code class="language-shell">nix-shell shell.nix
+</code></pre>
+<p>Once the command is finished you will be prompted with the nix-shell which will
+provide the needed shell environment to execute the integration tests.</p>
+<h3 id="2-verify-you-have-built-all-necessary-binaries"><a class="header" href="#2-verify-you-have-built-all-necessary-binaries">2. Verify you have built all necessary binaries</a></h3>
+<pre><code class="language-shell">cargo build
+cargo build --bin josh-filter
+cargo build --manifest-path josh-proxy/Cargo.toml
+cargo build --manifest-path josh-ui/Cargo.toml
+</code></pre>
+<h3 id="3-setup-static-files-for-the-josh-ui"><a class="header" href="#3-setup-static-files-for-the-josh-ui">3. Setup static files for the josh-ui</a></h3>
+<pre><code class="language-shell">cd josh-ui 
+trunk build 
+cd ..
+</code></pre>
+<h3 id="4-run-the-integration-tests"><a class="header" href="#4-run-the-integration-tests">4. Run the integration tests</a></h3>
+<p><strong>Attention:</strong> Be aware that all tests except the once in experimental should be green.</p>
+<pre><code class="language-shell">sh run-tests.sh -v tests/
+</code></pre>
+<h2 id="ui-tests"><a class="header" href="#ui-tests">UI Tests</a></h2>
+<p>TBD: Currently disabled, stabilize, enable and document process.</p>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="dev-tools"><a class="header" href="#dev-tools">Dev-Tools</a></h1>
+<ul>
+<li><a href="https://nixos.org/manual/nix/unstable/command-ref/nix-shell.html">Nix Shell</a></li>
+<li><a href="https://rustup.rs/">Rust</a></li>
+<li><a href="https://rustup.rs/">Cargo</a></li>
+</ul>
 
                     </main>
 

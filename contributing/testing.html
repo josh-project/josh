@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Proxy - Just One Single History</title>
+        <title>Testing - Just One Single History</title>
         <!-- Custom HTML head -->
         <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
         <meta name="description" content="">
@@ -75,7 +75,7 @@
 
         <nav id="sidebar" class="sidebar" aria-label="Table of contents">
             <div class="sidebar-scrollbox">
-                <ol class="chapter"><li class="chapter-item expanded "><a href="../intro.html"><strong aria-hidden="true">1.</strong> Intro</a></li><li class="chapter-item expanded "><a href="../usecases.html"><strong aria-hidden="true">2.</strong> Use cases</a></li><li class="chapter-item expanded "><a href="../faq.html"><strong aria-hidden="true">3.</strong> FAQ</a></li><li class="chapter-item expanded affix "><li class="part-title">Guide</li><li class="chapter-item expanded "><a href="../guide/gettingstarted.html"><strong aria-hidden="true">4.</strong> Getting started</a></li><li class="chapter-item expanded "><a href="../guide/workspaces.html"><strong aria-hidden="true">5.</strong> Working with workspaces</a></li><li class="chapter-item expanded "><div><strong aria-hidden="true">6.</strong> Importing projects</div></li><li class="chapter-item expanded "><div><strong aria-hidden="true">7.</strong> Integrating with CI</div></li><li class="chapter-item expanded affix "><li class="part-title">Reference</li><li class="chapter-item expanded "><a href="../reference/filters.html"><strong aria-hidden="true">8.</strong> Filter syntax</a></li><li class="chapter-item expanded "><a href="../reference/proxy.html" class="active"><strong aria-hidden="true">9.</strong> Proxy</a></li><li class="chapter-item expanded "><a href="../reference/workspace.html"><strong aria-hidden="true">10.</strong> Workspaces</a></li><li class="chapter-item expanded "><a href="../reference/cli.html"><strong aria-hidden="true">11.</strong> Command line tools</a></li><li class="chapter-item expanded "><a href="../reference/graphql.html"><strong aria-hidden="true">12.</strong> Graphql API</a></li><li class="chapter-item expanded "><div><strong aria-hidden="true">13.</strong> Handlebar generator</div></li><li class="chapter-item expanded "><div><strong aria-hidden="true">14.</strong> The josh UI</div></li><li class="chapter-item expanded affix "><li class="part-title">Contributing</li><li class="chapter-item expanded "><a href="../contributing/testing.html"><strong aria-hidden="true">15.</strong> Testing</a></li><li class="chapter-item expanded "><a href="../contributing/dev-tools.html"><strong aria-hidden="true">16.</strong> Development tools</a></li><li class="chapter-item expanded "><div><strong aria-hidden="true">17.</strong> Tracing</div></li></ol>
+                <ol class="chapter"><li class="chapter-item expanded "><a href="../intro.html"><strong aria-hidden="true">1.</strong> Intro</a></li><li class="chapter-item expanded "><a href="../usecases.html"><strong aria-hidden="true">2.</strong> Use cases</a></li><li class="chapter-item expanded "><a href="../faq.html"><strong aria-hidden="true">3.</strong> FAQ</a></li><li class="chapter-item expanded affix "><li class="part-title">Guide</li><li class="chapter-item expanded "><a href="../guide/gettingstarted.html"><strong aria-hidden="true">4.</strong> Getting started</a></li><li class="chapter-item expanded "><a href="../guide/workspaces.html"><strong aria-hidden="true">5.</strong> Working with workspaces</a></li><li class="chapter-item expanded "><div><strong aria-hidden="true">6.</strong> Importing projects</div></li><li class="chapter-item expanded "><div><strong aria-hidden="true">7.</strong> Integrating with CI</div></li><li class="chapter-item expanded affix "><li class="part-title">Reference</li><li class="chapter-item expanded "><a href="../reference/filters.html"><strong aria-hidden="true">8.</strong> Filter syntax</a></li><li class="chapter-item expanded "><a href="../reference/proxy.html"><strong aria-hidden="true">9.</strong> Proxy</a></li><li class="chapter-item expanded "><a href="../reference/workspace.html"><strong aria-hidden="true">10.</strong> Workspaces</a></li><li class="chapter-item expanded "><a href="../reference/cli.html"><strong aria-hidden="true">11.</strong> Command line tools</a></li><li class="chapter-item expanded "><a href="../reference/graphql.html"><strong aria-hidden="true">12.</strong> Graphql API</a></li><li class="chapter-item expanded "><div><strong aria-hidden="true">13.</strong> Handlebar generator</div></li><li class="chapter-item expanded "><div><strong aria-hidden="true">14.</strong> The josh UI</div></li><li class="chapter-item expanded affix "><li class="part-title">Contributing</li><li class="chapter-item expanded "><a href="../contributing/testing.html" class="active"><strong aria-hidden="true">15.</strong> Testing</a></li><li class="chapter-item expanded "><a href="../contributing/dev-tools.html"><strong aria-hidden="true">16.</strong> Development tools</a></li><li class="chapter-item expanded "><div><strong aria-hidden="true">17.</strong> Tracing</div></li></ol>
             </div>
             <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
         </nav>
@@ -134,87 +134,65 @@
 
                 <div id="content" class="content">
                     <main>
-                        <h1 id="josh-proxy"><a class="header" href="#josh-proxy">josh-proxy</a></h1>
-<p>Josh provides an HTTP proxy server that can be used with any git hosting service which communicates
-via HTTP.</p>
-<p>It needs the URL of the upstream server and a local directory to store its data.
-Optionally, a port to listen on can be specified. For example, running a local <code>josh-proxy</code>
-instance for github.com on port 8000:</p>
-<pre><code>$ docker run -p 8000:8000 -e JOSH_REMOTE=https://github.com -v josh-vol:/data/git joshproject/josh-proxy:latest
+                        <h1 id="testing"><a class="header" href="#testing">Testing</a></h1>
+<p>Currently the Josh project mainly uses integration tests for it's verification, so make sure you will be able
+to run and check them.</p>
+<p>The following sections will describe how to run the different kind's of tests used for the verification
+of the Josh project.</p>
+<h2 id="unittests--doctests"><a class="header" href="#unittests--doctests">UnitTests &amp; DocTests</a></h2>
+<pre><code class="language-shell">cargo test --all
 </code></pre>
-<blockquote>
-<p><strong>Note</strong>: While <code>josh-proxy</code> is intended to be used with a http upstream it can also proxy for
-an ssh upstream when <code>ssh</code> is used instead of <code>http</code> in the url.
-In that case it will use the ssh private key of the current user (just like
-git would) and take the username from the downstream http request.
-This mode of operation can be useful for evaluation or local use by individual developers but
-should never be used on a normal server deployment.</p>
-</blockquote>
-<p>For a first example of how to make use of josh, just the josh documentation can be checked out as
-its own repository via this command:</p>
-<pre><code>$ git clone http://localhost:8000/josh-project/josh.git:/docs.git
+<h2 id="integration-tests"><a class="header" href="#integration-tests">Integration Tests</a></h2>
+<h3 id="1-setup-the-test-environment"><a class="header" href="#1-setup-the-test-environment">1. Setup the test environment</a></h3>
+<p>Due to the fact that the integration tests need additional tools and a more complex
+environment and due to the fact that the integration test are done using <a href="https://pypi.org/project/cram/">cram</a>.
+you will need to crate an extra environment to run these tests. To simplify the
+setup of the integration testing we have setup a <a href="https://nixos.org/manual/nix/stable/#chap-installation">Nix Shell</a> environment which
+you can start by using the following command if you have installed the <a href="https://nixos.org/manual/nix/stable/#chap-installation">Nix Shell</a>.</p>
+<p><strong>Attention:</strong>
+Currently it is still necessary to install the following tools in your host system.</p>
+<ul>
+<li>curl</li>
+<li>hyper_cgi
+<pre><code class="language-shell">cargo install hyper_cgi --features=test-server
 </code></pre>
-<blockquote>
-<p><strong>Note</strong>: This URL needs to contain the <code>.git</code> suffix twice: once after the original path
-and once more after the filter spec.</p>
-</blockquote>
-<p><code>josh-proxy</code> supports read and write access to the repository, so when making changes
-to any files in the filtered repository, you can just commit and push them
-like you are used to.</p>
-<blockquote>
-<p><strong>Note</strong>: The proxy is semantically stateless. The data inside the docker volume is only persisted across
-runs for performance reasons. This has two important implications for deployment:</p>
-<ol>
-<li>The data does not need to be backed up unless working with very large repos where rebuilding would
-be very expensive. And 2) Multiple instances of josh-proxy can be used interchangeably for availability
-or load balancing purposes.</li>
-</ol>
-</blockquote>
-<h2 id="url-syntax-and-breakdown"><a class="header" href="#url-syntax-and-breakdown">URL syntax and breakdown</a></h2>
-<p>This is the URL of a <code>josh-proxy</code> instance:</p>
-<pre><code>http://localhost:8000
+</li>
+</ul>
+<h4 id="setup-the-nix-shell"><a class="header" href="#setup-the-nix-shell">Setup the Nix Shell</a></h4>
+<p><strong>Attention:</strong>
+When running this command the first time, this command will take quite a bit to
+finish. You also will need internet access while executing this command.
+Depending on performance of your connection the command will take more or less time.</p>
+<pre><code class="language-shell">nix-shell shell.nix
 </code></pre>
-<p>This is the repository location on the upstream host on which to perform the filter operations:</p>
-<pre><code>/josh-project/josh.git
+<p>Once the command is finished you will be prompted with the nix-shell which will
+provide the needed shell environment to execute the integration tests.</p>
+<h3 id="2-verify-you-have-built-all-necessary-binaries"><a class="header" href="#2-verify-you-have-built-all-necessary-binaries">2. Verify you have built all necessary binaries</a></h3>
+<pre><code class="language-shell">cargo build
+cargo build --bin josh-filter
+cargo build --manifest-path josh-proxy/Cargo.toml
+cargo build --manifest-path josh-ui/Cargo.toml
 </code></pre>
-<p>This is the set of filter operations to perform:</p>
-<pre><code>:/docs.git
+<h3 id="3-setup-static-files-for-the-josh-ui"><a class="header" href="#3-setup-static-files-for-the-josh-ui">3. Setup static files for the josh-ui</a></h3>
+<pre><code class="language-shell">cd josh-ui 
+trunk build 
+cd ..
 </code></pre>
-<p>Much more information on the available filters and the syntax of all filters is covered in detail in
-the <a href="./filters.html">filters</a> section.</p>
-<h2 id="repository-naming"><a class="header" href="#repository-naming">Repository naming</a></h2>
-<p>By default, a git URL is used to point to the remote repository to download <em>and also</em> to dictate
-how the local repository shall be named.  It's important to learn that the last name in the URL is
-what the local git client will name the new, local repository. For example:</p>
-<pre><code>$ git clone http://localhost:8000/josh-project/josh.git:/docs.git
+<h3 id="4-run-the-integration-tests"><a class="header" href="#4-run-the-integration-tests">4. Run the integration tests</a></h3>
+<p><strong>Attention:</strong> Be aware that all tests except the once in experimental should be green.</p>
+<pre><code class="language-shell">sh run-tests.sh -v tests/
 </code></pre>
-<p>will create the new repository at directory <code>docs</code>, as <code>docs.git</code> is the last name in the URL.</p>
-<p>By default, this leads to rather odd-looking repositories when the <code>prefix</code> filter is the final
-filter of a URL:</p>
-<pre><code>$ git clone http://localhost:8000/josh-project/josh.git:/docs:prefix=josh-docs.git
-</code></pre>
-<p>This will still clone just the josh documentation, but the final directory structure will look like
-this:</p>
-<pre><code>- prefix=josh-docs
-  - josh-docs
-    - &lt;docs&gt;
-</code></pre>
-<p>Having the root repository directory name be the fully-specified filter is most likely not what was
-intended. This results from git's reuse and repurposing of the remote URL, as <code>prefix=josh-docs</code>
-is the final name in the URL. With no other alternatives, this gets used for the repository name.</p>
-<p>To explicitly specify a repository name, provide the desired name after the URL when cloning a new
-repository:</p>
-<pre><code>$ git clone http://localhost:8000/josh-project/josh.git:/docs:prefix=josh-docs.git my-repo
-</code></pre>
+<h2 id="ui-tests"><a class="header" href="#ui-tests">UI Tests</a></h2>
+<p>TBD: Currently disabled, stabilize, enable and document process.</p>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="../reference/filters.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="../reference/graphql.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <i class="fa fa-angle-left"></i>
                             </a>
-                            <a rel="next" href="../reference/workspace.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next" href="../contributing/dev-tools.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <i class="fa fa-angle-right"></i>
                             </a>
                         <div style="clear: both"></div>
@@ -223,10 +201,10 @@ repository:</p>
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="../reference/filters.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="../reference/graphql.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <i class="fa fa-angle-left"></i>
                     </a>
-                    <a rel="next" href="../reference/workspace.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next" href="../contributing/dev-tools.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <i class="fa fa-angle-right"></i>
                     </a>
             </nav>
