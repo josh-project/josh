@@ -29,7 +29,14 @@ ${TESTDIR}/../../target/debug/josh-proxy\
     > ${TESTTMP}/josh-proxy.out 2>&1 &
 echo $! > ${TESTTMP}/proxy_pid
 
+COUNTER=0
 until curl -s http://localhost:8002/
 do
     sleep 0.1
+    COUNTER=$((COUNTER + 1))
+    if [ $COUNTER -ge 10 ];
+    then
+        >& echo "Starting josh proxy timed out"
+        exit 1
+    fi
 done
