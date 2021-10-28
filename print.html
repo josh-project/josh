@@ -734,7 +734,9 @@ filters are composed matters.</p>
 <p>Inside of a composition <code>x=:filter</code> can be used as an alternative spelling for
 <code>:filter:prefix=x</code>.</p>
 <h3 id="exclusion-excludefilter"><a class="header" href="#exclusion-excludefilter">Exclusion <strong><code>:exclude[:filter]</code></strong></a></h3>
-<p>Remove all paths matching <code>:filter</code> from the input tree.</p>
+<p>Remove all paths present in the <em>output</em> of <code>:filter</code> from the input tree.
+It should generally be avoided to use any filters that change paths and instead only
+use filters that select paths without altering them.</p>
 <h3 id="workspace-workspacea"><a class="header" href="#workspace-workspacea">Workspace <strong><code>:workspace=a</code></strong></a></h3>
 <p>Similar to <code>:/a</code> but also looks for a <code>workspace.josh</code> file inside the
 specified directory (called the &quot;workspace root&quot;).
