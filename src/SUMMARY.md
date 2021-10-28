@@ -17,5 +17,6 @@
 - [Handlebar generator]()
 - [The josh UI]()
 # Contributing
+- [Testing](./contributing/testing.md)
 - [Development tools]()
 - [Tracing]()
