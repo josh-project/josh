@@ -18,6 +18,7 @@ in
        pkgs.tree
        pkgs.cargo
        pkgs.rustc
+       pkgs.trunk
        pkgs.rustfmt
        pkgs.libiconv
        pkgs.openssl.dev
@@ -26,3 +27,4 @@ in
      ] ++ extra_deps;
      RUST_BACKTRACE = 1;
    }
+
