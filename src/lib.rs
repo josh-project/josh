@@ -46,7 +46,7 @@ pub mod shell;
 #[derive(Clone)]
 pub enum UnapplyResult {
     Done(git2::Oid),
-    RejectMerge(usize),
+    RejectMerge(String),
     RejectAmend(String),
     BranchDoesNotExist,
 }

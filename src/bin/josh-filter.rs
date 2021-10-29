@@ -313,6 +313,10 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
             josh::UnapplyResult::Done(rewritten) => {
                 repo.reference(&src, rewritten, true, "unapply_filter")?;
             }
+            josh::UnapplyResult::RejectMerge(msg) => {
+                println!("{}", msg);
+                return Ok(1);
+            }
             _ => {
                 return Ok(1);
             }
