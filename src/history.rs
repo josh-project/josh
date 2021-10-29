@@ -281,7 +281,7 @@ pub fn unapply_filter(
 
         let commit_message = module_commit.summary().unwrap_or("NO COMMIT MESSAGE");
 
-        let new_trees: JoshResult<std::collections::HashSet<_>> = {
+        let new_trees: JoshResult<Vec<_>> = {
             let s = tracing::span!(
                 tracing::Level::TRACE,
                 "unapply filter",
@@ -311,14 +311,20 @@ pub fn unapply_filter(
             }
         };
 
-        let new_tree = match new_trees.len() {
-            1 => transaction
-                .repo()
-                .find_tree(*new_trees.iter().next().ok_or(josh_error("iter.next"))?)?,
+        let mut dedup = new_trees.clone();
+        dedup.sort();
+        dedup.dedup();
+
+        let new_tree = match dedup.len() {
+            // The normal case: Either there was only one parent or all of them where the same
+            // outside of the current filter in which case they collapse into one tree and that
+            // is the one we pick
+            1 => transaction.repo().find_tree(new_trees[0])?,
+
+            // 0 means the history is unrelated. Pushing it will fail if we are not
+            // dealing with either a force push or a push with the "merge" option set.
             0 => {
                 tracing::debug!("unrelated history");
-                // 0 means the history is unrelated. Pushing it will fail if we are not
-                // dealing with either a force push or a push with the "merge" option set.
                 filter::unapply(
                     transaction,
                     filterobj,
@@ -326,12 +332,36 @@ pub fn unapply_filter(
                     filter::tree::empty(transaction.repo()),
                 )?
             }
+
+            // This will typically be parent_count == 2 and mean we are dealing with a merge
+            // where the parents have differences outside of the filter. This is only possible
+            // if one of the parents is a descendant of the target branch and the other is not.
+            // In that case pick the tree of the one that is a descendant.
             parent_count => {
-                // This is a merge commit where the parents in the upstream repo
-                // have differences outside of the current filter.
-                // It is unclear what base tree to pick in this case.
-                tracing::warn!("rejecting merge");
-                return Ok(UnapplyResult::RejectMerge(parent_count));
+                let mut tid = git2::Oid::zero();
+                for i in 0..parent_count {
+                    if transaction
+                        .repo()
+                        .graph_descendant_of(original_parents_refs[i].id(), original_target)?
+                    {
+                        tid = new_trees[i];
+                        break;
+                    }
+                }
+
+                if tid != git2::Oid::zero() {
+                    transaction.repo().find_tree(tid)?
+                } else {
+                    // This used to be our only fallback for the parent_count > 1 case.
+                    // It should never happen anymore.
+                    tracing::warn!("rejecting merge");
+                    let msg = format!(
+                        "rejecting merge with {} parents:\n{:?}",
+                        parent_count,
+                        module_commit.summary().unwrap_or_default()
+                    );
+                    return Ok(UnapplyResult::RejectMerge(msg));
+                }
             }
         };
 

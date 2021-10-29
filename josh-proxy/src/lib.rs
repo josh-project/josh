@@ -155,11 +155,8 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
                 josh::UnapplyResult::BranchDoesNotExist => {
                     return Err(josh::josh_error("branch does not exist on remote"));
                 }
-                josh::UnapplyResult::RejectMerge(parent_count) => {
-                    return Err(josh::josh_error(&format!(
-                        "rejecting merge with {} parents",
-                        parent_count
-                    )));
+                josh::UnapplyResult::RejectMerge(msg) => {
+                    return Err(josh::josh_error(&msg));
                 }
                 josh::UnapplyResult::RejectAmend(msg) => {
                     return Err(josh::josh_error(&format!(
