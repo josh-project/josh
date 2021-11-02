@@ -340,9 +340,10 @@ pub fn unapply_filter(
             parent_count => {
                 let mut tid = git2::Oid::zero();
                 for i in 0..parent_count {
-                    if transaction
-                        .repo()
-                        .graph_descendant_of(original_parents_refs[i].id(), original_target)?
+                    if (original_parents_refs[i].id() == original_target)
+                        || transaction
+                            .repo()
+                            .graph_descendant_of(original_parents_refs[i].id(), original_target)?
                     {
                         tid = new_trees[i];
                         break;
