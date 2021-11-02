@@ -463,11 +463,16 @@ impl Path {
         to_result: impl FnOnce(&cache::Transaction, git2::Oid) -> FieldResult<R>,
     ) -> FieldResult<R> {
         let transaction = context.transaction.lock()?;
-        let id = transaction
-            .repo()
-            .find_tree(self.tree)?
-            .get_path(&self.path)?
-            .id();
+
+        let id = if self.path == std::path::Path::new("") {
+            self.tree
+        } else {
+            transaction
+                .repo()
+                .find_tree(self.tree)?
+                .get_path(&self.path)?
+                .id()
+        };
         to_result(&transaction, id)
     }
 
