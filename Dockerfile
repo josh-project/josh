@@ -8,8 +8,8 @@ WORKDIR /usr/src/josh
 COPY . .
 
 RUN rustup target add wasm32-unknown-unknown
-RUN cargo install wasm-bindgen-cli
-RUN cargo install trunk
+RUN cargo install --version 0.2.78 wasm-bindgen-cli
+RUN cargo install --version 0.14.0 trunk
 RUN trunk --config=josh-ui/Trunk.toml build
 RUN cargo build -p josh-proxy
 
