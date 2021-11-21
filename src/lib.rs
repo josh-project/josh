@@ -161,7 +161,7 @@ pub fn get_change_id(commit: &git2::Commit) -> Option<String> {
 }
 
 #[tracing::instrument(skip(transaction))]
-fn filter_ref(
+pub fn filter_ref(
     transaction: &cache::Transaction,
     filterobj: filter::Filter,
     from_refsname: &str,
