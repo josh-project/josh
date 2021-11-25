@@ -88,13 +88,9 @@
   refs
   |-- heads
   |-- josh
-  |   `-- filtered
-  |       `-- real_repo.git
-  |           `-- %3A
-  |               `-- heads
-  |                   `-- master
   |-- namespaces
   `-- tags
   
-  8 directories, 1 file
+  4 directories, 0 files
 
+$ cat ${TESTTMP}/josh-proxy.out

@@ -118,13 +118,12 @@
   |   |-- filtered
   |   |   `-- real_repo.git
   |   |       |-- %3A%2Fsub1
-  |   |       |   `-- heads
-  |   |       |       `-- master
+  |   |       |   `-- HEAD
   |   |       `-- %3A%2Fsub2
-  |   |           `-- heads
-  |   |               `-- master
+  |   |           `-- HEAD
   |   `-- upstream
   |       `-- real_repo.git
+  |           |-- HEAD
   |           `-- refs
   |               |-- heads
   |               |   `-- master
@@ -133,5 +132,5 @@
   |-- namespaces
   `-- tags
   
-  15 directories, 4 files
+  13 directories, 5 files
 $ cat ${TESTTMP}/josh-proxy.out | grep TAGS

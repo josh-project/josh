@@ -275,29 +275,21 @@
   |   |-- filtered
   |   |   `-- real_repo.git
   |   |       |-- %3A%2Fsub1
-  |   |       |   `-- heads
-  |   |       |       `-- master
+  |   |       |   `-- HEAD
   |   |       |-- %3A%2Fsub1%2Fsubsub
-  |   |       |   `-- heads
-  |   |       |       `-- master
+  |   |       |   `-- HEAD
   |   |       |-- %3A%2Fsub2
-  |   |       |   `-- heads
-  |   |       |       `-- master
+  |   |       |   `-- HEAD
   |   |       |-- %3A%2Fsub3
-  |   |       |   `-- heads
-  |   |       |       `-- master
+  |   |       |   `-- HEAD
   |   |       |-- %3A%2Fws
-  |   |       |   `-- heads
-  |   |       |       `-- master
+  |   |       |   `-- HEAD
   |   |       |-- %3A%2Fws2
-  |   |       |   `-- heads
-  |   |       |       `-- master
+  |   |       |   `-- HEAD
   |   |       |-- %3Aworkspace=ws
-  |   |       |   `-- heads
-  |   |       |       `-- master
+  |   |       |   `-- HEAD
   |   |       `-- %3Aworkspace=ws2
-  |   |           `-- heads
-  |   |               `-- master
+  |   |           `-- HEAD
   |   |-- rewrites
   |   |   `-- real_repo.git
   |   |       |-- 191ead67feb541c237317e25b2c66c5d8f3e33fa
@@ -307,11 +299,12 @@
   |   |           `-- r_2cbcd105ead63a4fecf486b949db7f44710300e5
   |   `-- upstream
   |       `-- real_repo.git
+  |           |-- HEAD
   |           `-- refs
   |               `-- heads
   |                   `-- master
   |-- namespaces
   `-- tags
   
-  30 directories, 12 files
+  22 directories, 13 files
 

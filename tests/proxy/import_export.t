@@ -302,36 +302,34 @@ Flushed credential cache
   |   |-- filtered
   |   |   |-- real_repo.git
   |   |   |   |-- %3A
-  |   |   |   |   `-- heads
-  |   |   |   |       `-- master
+  |   |   |   |   `-- HEAD
   |   |   |   |-- %3A%2Frepo1
-  |   |   |   |   `-- heads
-  |   |   |   |       `-- master
+  |   |   |   |   `-- HEAD
   |   |   |   `-- %3A%2Frepo2
-  |   |   |       `-- heads
-  |   |   |           `-- master
+  |   |   |       `-- HEAD
   |   |   |-- repo1.git
   |   |   |   `-- %3Aprefix=repo1
-  |   |   |       `-- heads
-  |   |   |           `-- master
+  |   |   |       `-- HEAD
   |   |   `-- repo2.git
   |   |       `-- %3Aprefix=repo2
-  |   |           `-- heads
-  |   |               `-- master
+  |   |           `-- HEAD
   |   `-- upstream
   |       |-- real_repo.git
+  |       |   |-- HEAD
   |       |   `-- refs
   |       |       `-- heads
   |       |           `-- master
   |       |-- repo1.git
+  |       |   |-- HEAD
   |       |   `-- refs
   |       |       `-- heads
   |       |           `-- master
   |       `-- repo2.git
+  |           |-- HEAD
   |           `-- refs
   |               `-- heads
   |                   `-- master
   |-- namespaces
   `-- tags
   
-  28 directories, 8 files
+  23 directories, 11 files

@@ -116,23 +116,23 @@ Put a double slash in the URL to see that it also works
   |   |-- filtered
   |   |   |-- real%2Frepo2.git
   |   |   |   `-- %3A%2Fsub1
-  |   |   |       `-- heads
-  |   |   |           `-- master
+  |   |   |       `-- HEAD
   |   |   `-- real_repo.git
   |   |       `-- %3A%2Fsub1
-  |   |           `-- heads
-  |   |               `-- master
+  |   |           `-- HEAD
   |   `-- upstream
   |       |-- real%2Frepo2.git
+  |       |   |-- HEAD
   |       |   `-- refs
   |       |       `-- heads
   |       |           `-- master
   |       `-- real_repo.git
+  |           |-- HEAD
   |           `-- refs
   |               `-- heads
   |                   `-- master
   |-- namespaces
   `-- tags
   
-  18 directories, 4 files
+  16 directories, 6 files
 

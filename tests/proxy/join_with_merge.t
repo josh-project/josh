@@ -66,14 +66,14 @@
   |   |-- filtered
   |   |   `-- real_repo.git
   |   |       `-- %3Aprefix=sub1
-  |   |           `-- heads
-  |   |               `-- master
+  |   |           `-- HEAD
   |   `-- upstream
   |       `-- real_repo.git
+  |           |-- HEAD
   |           `-- refs
   |               `-- heads
   |                   `-- master
   |-- namespaces
   `-- tags
   
-  12 directories, 2 files
+  11 directories, 3 files

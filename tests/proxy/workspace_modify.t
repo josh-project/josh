@@ -495,26 +495,19 @@ Note that ws/d/ is now present in the ws
   |   |-- filtered
   |   |   `-- real_repo.git
   |   |       |-- %3A%2Fsub1
-  |   |       |   `-- heads
-  |   |       |       `-- master
+  |   |       |   `-- HEAD
   |   |       |-- %3A%2Fsub1%2Fsubsub
-  |   |       |   `-- heads
-  |   |       |       `-- master
+  |   |       |   `-- HEAD
   |   |       |-- %3A%2Fsub2
-  |   |       |   `-- heads
-  |   |       |       `-- master
+  |   |       |   `-- HEAD
   |   |       |-- %3A%2Fsub3
-  |   |       |   `-- heads
-  |   |       |       `-- master
+  |   |       |   `-- HEAD
   |   |       |-- %3A%2Fws
-  |   |       |   `-- heads
-  |   |       |       `-- master
+  |   |       |   `-- HEAD
   |   |       |-- %3A%2Fws%2Fd
-  |   |       |   `-- heads
-  |   |       |       `-- master
+  |   |       |   `-- HEAD
   |   |       `-- %3Aworkspace=ws
-  |   |           `-- heads
-  |   |               `-- master
+  |   |           `-- HEAD
   |   |-- rewrites
   |   |   `-- real_repo.git
   |   |       `-- 7bd92d97e96693ea7fd7eb5757b3580002889948
@@ -523,12 +516,13 @@ Note that ws/d/ is now present in the ws
   |   |           `-- r_4a199f3a19a292e6639dede0f8602afc19a82dfc
   |   `-- upstream
   |       `-- real_repo.git
+  |           |-- HEAD
   |           `-- refs
   |               `-- heads
   |                   `-- master
   |-- namespaces
   `-- tags
   
-  27 directories, 11 files
+  20 directories, 12 files
 
 $ cat ${TESTTMP}/josh-proxy.out
