@@ -52,11 +52,7 @@
   $ git add .
   $ git commit -m "newfile master" 1> /dev/null
 
-  $ git merge new1 --no-ff
-  Merge made by the 'recursive' strategy.
-   newfile1 | 0
-   1 file changed, 0 insertions(+), 0 deletions(-)
-   create mode 100644 newfile1
+  $ git merge -q new1 --no-ff
 
   $ mkdir sub3
   $ echo contents3 > sub3/file3

@@ -56,13 +56,7 @@ Empty root commits from unrelated parts of the tree should not be included
 
   $ git checkout master
   Switched to branch 'master'
-  $ git merge other --no-ff --allow-unrelated
-  Merge made by the 'recursive' strategy.
-   some_file       | 1 +
-   some_other_file | 1 +
-   2 files changed, 2 insertions(+)
-   create mode 100644 some_file
-   create mode 100644 some_other_file
+  $ git merge -q other --no-ff --allow-unrelated
 
   $ tree
   .
