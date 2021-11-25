@@ -218,7 +218,6 @@
   HEAD is now at b3be5ad add ws2
   Pushing to http://localhost:8002/real_repo.git:workspace=ws2.git
   POST git-receive-pack (424 bytes)
-  remote: warning: ignoring broken ref refs/namespaces/request_* (glob)
   remote: josh-proxy        
   remote: response from upstream:        
   remote: To http://localhost:8001/real_repo.git        

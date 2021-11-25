@@ -77,7 +77,6 @@ Flushed credential cache
   HEAD is now at 4a199f3 Merge from :workspace=ws
   Pushing to http://localhost:8002/real_repo.git:workspace=ws.git
   POST git-receive-pack (439 bytes)
-  remote: warning: ignoring broken ref refs/namespaces/* (glob)
   remote: josh-proxy        
   remote: response from upstream:        
   remote: To http://localhost:8001/real_repo.git        
