@@ -46,11 +46,22 @@
   To http://localhost:8001/real_repo.git
    * [new branch]      master -> master
 
+  $ git ls-remote --symref
+  From http://localhost:8001/real_repo.git
+  ref: refs/heads/master\tHEAD (esc)
+  ffe8d082c1034053534ea8068f4205ac72a1098e\tHEAD (esc)
+  ffe8d082c1034053534ea8068f4205ac72a1098e\trefs/heads/master (esc)
+
   $ cd ${TESTTMP}
 
   $ git clone -q http://localhost:8002/real_repo.git:/sub1.git sub1
 
   $ cd sub1
+  $ git ls-remote --symref
+  From http://localhost:8002/real_repo.git:/sub1.git
+  ref: refs/heads/master\tHEAD (esc)
+  0b4cf6c9efbbda1eada39fa9c1d21d2525b027bb\tHEAD (esc)
+  0b4cf6c9efbbda1eada39fa9c1d21d2525b027bb\trefs/heads/master (esc)
   $ cat .git/refs/remotes/origin/HEAD
   ref: refs/remotes/origin/master
 
@@ -77,17 +88,16 @@
   |   |-- filtered
   |   |   `-- real_repo.git
   |   |       |-- %3A%2Fsub1
-  |   |       |   `-- heads
-  |   |       |       `-- master
+  |   |       |   `-- HEAD
   |   |       `-- %3A%2Fsub2
-  |   |           `-- heads
-  |   |               `-- master
+  |   |           `-- HEAD
   |   `-- upstream
   |       `-- real_repo.git
+  |           |-- HEAD
   |           `-- refs
   |               `-- heads
   |                   `-- master
   |-- namespaces
   `-- tags
   
-  14 directories, 3 files
+  12 directories, 4 files

@@ -65,11 +65,7 @@
   * add file3
   * add file1
 
-  $ git merge hidden_branch1 --no-ff
-  Merge made by the 'recursive' strategy.
-   sub1/file3 | 1 +
-   1 file changed, 1 insertion(+)
-   create mode 100644 sub1/file3
+  $ git merge -q hidden_branch1 --no-ff
   $ git log --graph --pretty=%s
   *   Merge branch 'hidden_branch1' into hidden_master
   |\  

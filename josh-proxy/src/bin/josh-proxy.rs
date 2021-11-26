@@ -34,12 +34,15 @@ type FetchTimers = HashMap<String, std::time::Instant>;
 type Polls =
     Arc<std::sync::Mutex<std::collections::HashSet<(String, josh_proxy::auth::Handle, String)>>>;
 
+type HeadsMap = Arc<std::sync::RwLock<std::collections::HashMap<String, String>>>;
+
 #[derive(Clone)]
 struct JoshProxyService {
     port: String,
     repo_path: std::path::PathBuf,
     upstream_url: String,
     fetch_timers: Arc<RwLock<FetchTimers>>,
+    heads_map: HeadsMap,
     fetch_permits: Arc<tokio::sync::Semaphore>,
     filter_permits: Arc<tokio::sync::Semaphore>,
     poll: Polls,
@@ -66,10 +69,10 @@ async fn fetch_upstream(
     let auth = auth.clone();
     let key = remote_url.clone();
 
-    let refs_to_fetch = if !headref.is_empty() && !headref.starts_with("refs/heads/") {
-        vec!["refs/heads/*", "refs/tags/*", headref]
+    let refs_to_fetch = if headref != "HEAD" && !headref.starts_with("refs/heads/") {
+        vec!["HEAD*", "refs/heads/*", "refs/tags/*", headref]
     } else {
-        vec!["refs/heads/*", "refs/tags/*"]
+        vec!["HEAD*", "refs/heads/*", "refs/tags/*"]
     };
 
     let refs_to_fetch: Vec<_> = refs_to_fetch.iter().map(|x| x.to_string()).collect();
@@ -113,6 +116,7 @@ async fn fetch_upstream(
     }
 
     let fetch_timers = service.fetch_timers.clone();
+    let heads_map = service.heads_map.clone();
     let br_path = service.repo_path.clone();
 
     let s = tracing::span!(tracing::Level::TRACE, "fetch worker");
@@ -125,6 +129,21 @@ async fn fetch_upstream(
         josh_proxy::fetch_refs_from_url(&br_path, &us, &ru, &refs_to_fetch, &a)
     })
     .await?;
+
+    let us = upstream_repo.clone();
+    let s = tracing::span!(tracing::Level::TRACE, "get_head worker");
+    let br_path = service.repo_path.clone();
+    let ru = remote_url.clone();
+    let a = auth.clone();
+    let hres = tokio::task::spawn_blocking(move || {
+        let _e = s.enter();
+        josh_proxy::get_head(&br_path, &ru, &a)
+    })
+    .await?;
+
+    if let Ok(hres) = hres {
+        heads_map.write()?.insert(us, hres);
+    }
 
     std::mem::drop(permit);
 
@@ -227,6 +246,7 @@ async fn do_filter(
     headref: String,
 ) -> josh::JoshResult<()> {
     let permit = service.filter_permits.acquire().await;
+    let heads_map = service.heads_map.clone();
 
     let s = tracing::span!(tracing::Level::TRACE, "do_filter worker");
     let r = tokio::task::spawn_blocking(move || {
@@ -273,13 +293,25 @@ async fn do_filter(
             temp_ns.reference(&headref),
         ));
 
+        let mut headref = headref;
+
         josh::filter_refs(&transaction, filter, &from_to)?;
-        transaction.repo().reference_symbolic(
-            &temp_ns.reference("HEAD"),
-            &temp_ns.reference(&headref),
-            true,
-            "",
-        )?;
+        if headref == "HEAD" {
+            headref = heads_map
+                .read()?
+                .get(&upstream_repo)
+                .unwrap_or(&"invalid".to_string())
+                .clone();
+        }
+        transaction
+            .repo()
+            .reference_symbolic(
+                &temp_ns.reference("HEAD"),
+                &temp_ns.reference(&headref),
+                true,
+                "",
+            )
+            .ok();
         Ok(())
     })
     .await?;
@@ -368,17 +400,14 @@ async fn call_service(
         } else {
             return Ok(Response::builder()
                 .status(302)
-                .header(
-                    "Location",
-                    format!("/~/browse{}@refs/heads/master(:/)/()", path),
-                )
+                .header("Location", format!("/~/browse{}@HEAD(:/)/()", path))
                 .body(hyper::Body::empty())?);
         }
     };
 
     let mut headref = parsed_url.headref.trim_start_matches('@').to_owned();
     if headref.is_empty() {
-        headref = "refs/heads/master".to_string();
+        headref = "HEAD".to_string();
     }
 
     let remote_url = [
@@ -611,6 +640,7 @@ async fn run_proxy() -> josh::JoshResult<i32> {
         repo_path: local.to_owned(),
         upstream_url: remote.to_owned(),
         fetch_timers: Arc::new(RwLock::new(FetchTimers::new())),
+        heads_map: Arc::new(RwLock::new(std::collections::HashMap::new())),
         poll: Arc::new(std::sync::Mutex::new(std::collections::HashSet::new())),
         fetch_permits: Arc::new(tokio::sync::Semaphore::new(
             ARGS.value_of("n").unwrap_or("1").parse()?,

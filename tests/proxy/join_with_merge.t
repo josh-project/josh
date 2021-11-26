@@ -24,11 +24,7 @@
   $ git add .
   $ git commit -m "newfile master" 1> /dev/null
 
-  $ git merge new1 --no-ff
-  Merge made by the 'recursive' strategy.
-   newfile1 | 0
-   1 file changed, 0 insertions(+), 0 deletions(-)
-   create mode 100644 newfile1
+  $ git merge -q new1 --no-ff
 
   $ git push 1> /dev/null
   To http://localhost:8001/real_repo.git
@@ -66,14 +62,14 @@
   |   |-- filtered
   |   |   `-- real_repo.git
   |   |       `-- %3Aprefix=sub1
-  |   |           `-- heads
-  |   |               `-- master
+  |   |           `-- HEAD
   |   `-- upstream
   |       `-- real_repo.git
+  |           |-- HEAD
   |           `-- refs
   |               `-- heads
   |                   `-- master
   |-- namespaces
   `-- tags
   
-  12 directories, 2 files
+  11 directories, 3 files

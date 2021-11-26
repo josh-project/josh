@@ -332,19 +332,16 @@
   |   |-- filtered
   |   |   `-- real_repo.git
   |   |       |-- %3A
-  |   |       |   `-- heads
-  |   |       |       `-- master
+  |   |       |   `-- HEAD
   |   |       |-- %3A%2Fa
-  |   |       |   `-- heads
-  |   |       |       `-- master
+  |   |       |   `-- HEAD
   |   |       |-- %3A%2Fa%2Fb
-  |   |       |   `-- heads
-  |   |       |       `-- master
+  |   |       |   `-- HEAD
   |   |       `-- %3A%2Fsub1
-  |   |           `-- heads
-  |   |               `-- master
+  |   |           `-- HEAD
   |   `-- upstream
   |       `-- real_repo.git
+  |           |-- HEAD
   |           `-- refs
   |               |-- heads
   |               |   `-- master
@@ -353,4 +350,4 @@
   |-- namespaces
   `-- tags
   
-  19 directories, 6 files
+  15 directories, 7 files
