@@ -128,17 +128,16 @@
   |   |-- filtered
   |   |   `-- real_repo.git
   |   |       |-- %3A
-  |   |       |   `-- heads
-  |   |       |       `-- master
+  |   |       |   `-- HEAD
   |   |       `-- %3A%2Fsub1
-  |   |           `-- heads
-  |   |               `-- master
+  |   |           `-- HEAD
   |   `-- upstream
   |       `-- real_repo.git
+  |           |-- HEAD
   |           `-- refs
   |               `-- heads
   |                   `-- master
   |-- namespaces
   `-- tags
   
-  14 directories, 3 files
+  12 directories, 4 files

@@ -30,7 +30,7 @@ pub fn default_from_to(
     }
     refs.append(&mut memorize_from_to(
         repo,
-        &crate::to_filtered_ref(upstream_repo, filter_spec),
+        &to_filtered_ref(upstream_repo, filter_spec),
         upstream_repo,
     ));
 
@@ -43,13 +43,10 @@ pub fn memorize_from_to(
     upstream_repo: &str,
 ) -> Vec<(String, String)> {
     let mut refs = vec![];
-    let glob = format!(
-        "refs/josh/upstream/{}/refs/heads/master",
-        &to_ns(upstream_repo)
-    );
+    let glob = format!("refs/josh/upstream/{}/HEAD", &to_ns(upstream_repo));
     for refname in repo.references_glob(&glob).unwrap().names() {
         let refname = refname.unwrap();
-        let to_ref = format!("refs/{}/heads/master", &namespace);
+        let to_ref = format!("refs/{}/HEAD", &namespace);
 
         refs.push((refname.to_owned(), to_ref.clone()));
     }

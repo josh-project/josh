@@ -54,7 +54,6 @@ Flushed credential cache
   $ git add .
   $ git commit -m "add workspace" 1> /dev/null
   $ git push origin HEAD:refs/heads/master -o merge 2>&1 >/dev/null | sed -e 's/[ ]*$//g'
-  remote: warning: ignoring broken ref refs/namespaces/* (glob)
   remote: josh-proxy
   remote: response from upstream:
   remote: To http://localhost:8001/real_repo.git
@@ -191,30 +190,26 @@ Flushed credential cache
   |   |-- filtered
   |   |   `-- real_repo.git
   |   |       |-- %3A%2Fsub1
-  |   |       |   `-- heads
-  |   |       |       `-- master
+  |   |       |   `-- HEAD
   |   |       |-- %3A%2Fsub1%2Fsubsub1
-  |   |       |   `-- heads
-  |   |       |       `-- master
+  |   |       |   `-- HEAD
   |   |       |-- %3A%2Fsub1%2Fsubsub2
-  |   |       |   `-- heads
-  |   |       |       `-- master
+  |   |       |   `-- HEAD
   |   |       |-- %3A%2Fws
-  |   |       |   `-- heads
-  |   |       |       `-- master
+  |   |       |   `-- HEAD
   |   |       `-- %3Aworkspace=ws
-  |   |           `-- heads
-  |   |               `-- master
+  |   |           `-- HEAD
   |   |-- rewrites
   |   |   `-- real_repo.git
   |   |       `-- 7bd92d97e96693ea7fd7eb5757b3580002889948
   |   |           `-- r_c255706f564f629eed1756b789d761048cfe060a
   |   `-- upstream
   |       `-- real_repo.git
+  |           |-- HEAD
   |           `-- refs
   |               `-- heads
   |                   `-- master
   |-- namespaces
   `-- tags
   
-  23 directories, 7 files
+  18 directories, 8 files

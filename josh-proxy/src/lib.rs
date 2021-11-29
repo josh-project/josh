@@ -340,6 +340,34 @@ fn url_with_auth(url: &str, username: &str) -> String {
     }
 }
 
+pub fn get_head(
+    path: &std::path::Path,
+    url: &str,
+    auth: &auth::Handle,
+) -> josh::JoshResult<String> {
+    let shell = josh::shell::Shell {
+        cwd: path.to_owned(),
+    };
+    let (username, password) = auth.parse()?;
+    let nurl = url_with_auth(url, &username);
+
+    let cmd = format!("git ls-remote --symref {} {}", &nurl, "HEAD");
+    tracing::info!("get_head {:?} {:?} {:?}", cmd, path, "");
+
+    let (stdout, _stderr, _) = shell.command_env(&cmd, &[], &[("GIT_PASSWORD", &password)]);
+
+    let head = stdout
+        .lines()
+        .next()
+        .unwrap_or("refs/heads/master")
+        .to_string();
+
+    let head = head.replacen("ref: ", "", 1);
+    let head = head.replacen("\tHEAD", "", 1);
+
+    Ok(head)
+}
+
 pub fn fetch_refs_from_url(
     path: &std::path::Path,
     upstream_repo: &str,
