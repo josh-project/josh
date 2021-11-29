@@ -854,7 +854,11 @@ fn fill_todo(
             } else {
                 path.join(&s)
             };
-            if (special && is_dir) || (!special && fs::metadata(&next_path).is_ok()) {
+            if (special && is_dir)
+                || (!special
+                    && (fs::metadata(&next_path).is_ok()
+                        || fs::symlink_metadata(&next_path).is_ok()))
+            {
                 add(todo, next_path);
             }
         }
@@ -1091,15 +1095,13 @@ mod test {
             // check windows absolute paths with host/device components
             let root_with_device = current_dir()
                 .ok()
-                .and_then(|p| {
-                    match p.components().next().unwrap() {
-                        Component::Prefix(prefix_component) => {
-                            let path = Path::new(prefix_component.as_os_str());
-                            path.join("*");
-                            Some(path.to_path_buf())
-                        }
-                        _ => panic!("no prefix in this path"),
+                .and_then(|p| match p.components().next().unwrap() {
+                    Component::Prefix(prefix_component) => {
+                        let path = Path::new(prefix_component.as_os_str());
+                        path.join("*");
+                        Some(path.to_path_buf())
                     }
+                    _ => panic!("no prefix in this path"),
                 })
                 .unwrap();
             // FIXME (#9639): This needs to handle non-utf8 paths
