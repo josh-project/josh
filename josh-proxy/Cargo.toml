@@ -20,7 +20,7 @@ hyper_cgi = "0.2.1"
 hyper-staticfile = "0.8.0"
 hyper-tls = "0.5.0"
 toml = "0.5.8"
-git2 = "0.13.24"
+git2 = "0.13.25"
 tracing = { version = "0.1.29", features = ["max_level_trace", "release_max_level_trace"] }
 tracing-futures = "0.2.5"
 tracing-subscriber = { version = "0.3.3", features = ["env-filter"]}
