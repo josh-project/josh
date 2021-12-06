@@ -56,14 +56,12 @@ Create a new branch and push it
   remote: 
   To http://localhost:8002/real_repo.git:/sub.git
    * [new branch]      new-branch -> new-branch
-
 Check the branch pushed
-
   $ cd ${TESTTMP}/real_repo
   $ git fetch
   From http://localhost:8001/real_repo
    * [new branch]      new-branch -> origin/new-branch
-  $ [[ "${SHA1}" == "$(git log --max-count=1 --format='%H' origin/new-branch)" ]] || echo "SHA1 differs after push!"
+  $ [ "${SHA1}" = "$(git log --max-count=1 --format='%H' origin/new-branch)" ] || echo "SHA1 differs after push!"
 
 Add one more commit in the workspace
 
@@ -74,11 +72,11 @@ Add one more commit in the workspace
   [new-branch 751ef45] test commit
    1 file changed, 1 insertion(+)
    create mode 100644 test.txt
-  $ git push origin new-branch
+  $ git push origin new-branch -o base=refs/heads/master
   remote: josh-proxy        
   remote: response from upstream:        
   remote: To http://localhost:8001/real_repo.git        
-  remote:    e2ab1a5..a639871  JOSH_PUSH -> new-branch        
+  remote:    37c3f9a..56dc1f7  JOSH_PUSH -> new-branch        
   remote: 
   remote: 
   To http://localhost:8002/real_repo.git:/sub.git
@@ -89,5 +87,26 @@ Check the branch again
   $ cd ${TESTTMP}/real_repo
   $ git fetch
   From http://localhost:8001/real_repo
-     e2ab1a5..a639871  new-branch -> origin/new-branch
-  $ [[ "${SHA1}" == "$(git log --max-count=1 --skip=1 --format='%H' origin/new-branch)" ]] || echo "SHA1 differs after push!"
+     37c3f9a..56dc1f7  new-branch -> origin/new-branch
+  $ [ "${SHA1}" = "$(git log --max-count=1 --skip=1 --format='%H' origin/new-branch)" ] || echo "SHA1 differs after push!"
+
+  $ bash ${TESTDIR}/destroy_test_env.sh
+  "real_repo.git" = [':/sub']
+  refs
+  |-- heads
+  |-- josh
+  |   |-- filtered
+  |   |   `-- real_repo.git
+  |   |       `-- %3A%2Fsub
+  |   |           `-- HEAD
+  |   `-- upstream
+  |       `-- real_repo.git
+  |           |-- HEAD
+  |           `-- refs
+  |               `-- heads
+  |                   |-- master
+  |                   `-- new-branch
+  |-- namespaces
+  `-- tags
+  
+  11 directories, 4 files
