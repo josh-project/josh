@@ -78,9 +78,11 @@ fn find_unapply_base(
     filtered: git2::Oid,
 ) -> super::JoshResult<git2::Oid> {
     if contained_in == git2::Oid::zero() {
+        tracing::info!("contained in zero",);
         return Ok(git2::Oid::zero());
     }
     if let Some(original) = bm.get(&filtered) {
+        tracing::info!("Found in bm",);
         return Ok(*original);
     }
     let contained_in_commit = transaction.repo().find_commit(contained_in)?;
@@ -96,10 +98,12 @@ fn find_unapply_base(
         let original = transaction.repo().find_commit(original?)?;
         if filtered == filter::apply_to_commit(filter, &original, transaction)? {
             bm.insert(filtered, original.id());
+            tracing::info!("found original properly",);
             return Ok(original.id());
         }
     }
 
+    tracing::info!("Didn't find original",);
     Ok(git2::Oid::zero())
 }
 
@@ -199,6 +203,71 @@ fn all_equal(a: git2::Parents, b: &[&git2::Commit]) -> bool {
     true
 }
 
+fn find_oldest_similar_commit(
+    transaction: &cache::Transaction,
+    filter: filter::Filter,
+    unfiltered: git2::Oid,
+) -> super::JoshResult<git2::Oid> {
+    let walk = {
+        let mut walk = transaction.repo().revwalk()?;
+        walk.set_sorting(git2::Sort::TOPOLOGICAL)?;
+        walk.push(unfiltered)?;
+        walk
+    };
+    tracing::info!("oldest similar?");
+    let unfiltered_commit = transaction.repo().find_commit(unfiltered)?;
+    let filtered = filter::apply_to_commit(filter, &unfiltered_commit, transaction)?;
+    let mut prev_rev = unfiltered;
+    for rev in walk {
+        let rev = rev?;
+        tracing::info!("next");
+        let rev_commit = transaction.repo().find_commit(rev)?;
+        if filtered != filter::apply_to_commit(filter, &rev_commit, transaction)? {
+            tracing::info!("diff! {}", prev_rev);
+            return Ok(prev_rev);
+        }
+        prev_rev = rev;
+    }
+    tracing::info!("bottom");
+    return Ok(unfiltered);
+}
+
+fn find_new_branch_base(
+    transaction: &cache::Transaction,
+    bm: &mut std::collections::HashMap<git2::Oid, git2::Oid>,
+    filter: filter::Filter,
+    contained_in: git2::Oid,
+    filtered: git2::Oid,
+) -> super::JoshResult<git2::Oid> {
+    let walk = {
+        let mut walk = transaction.repo().revwalk()?;
+        walk.set_sorting(git2::Sort::TOPOLOGICAL)?;
+        walk.push(filtered)?;
+        walk
+    };
+    tracing::info!("new branch base?");
+
+    for rev in walk {
+        let rev = rev?;
+        if let Ok(base) = find_unapply_base(transaction, bm, filter, contained_in, rev) {
+            if base != git2::Oid::zero() {
+                tracing::info!("new branch base: {:?}", base);
+                let base =
+                    if let Ok(new_base) = find_oldest_similar_commit(transaction, filter, base) {
+                        new_base
+                    } else {
+                        base
+                    };
+                tracing::info!("inserting in bm {}, {}", rev, base);
+                bm.insert(rev, base);
+                return Ok(rev);
+            }
+        }
+    }
+    tracing::info!("new branch base not found");
+    return Ok(git2::Oid::zero());
+}
+
 #[tracing::instrument(skip(transaction))]
 pub fn unapply_filter(
     transaction: &cache::Transaction,
@@ -213,12 +282,30 @@ pub fn unapply_filter(
     let mut bm = std::collections::HashMap::new();
     let mut ret = original_target;
 
+    let old = if old == git2::Oid::zero() {
+        match find_new_branch_base(transaction, &mut bm, filterobj, original_target, new) {
+            Ok(res) => {
+                tracing::info!("No error, branch base {} ", res);
+                res
+            }
+            Err(_) => {
+                tracing::info!("Error in new branch base");
+                old
+            }
+        }
+    } else {
+        tracing::info!("Old not zero");
+        old
+    };
+
+    tracing::info!("before walk");
+
     let walk = {
         let mut walk = transaction.repo().revwalk()?;
         walk.set_sorting(git2::Sort::REVERSE | git2::Sort::TOPOLOGICAL)?;
         walk.push(new)?;
         if walk.hide(old).is_ok() {
-            tracing::trace!("walk: hidden {}", old);
+            tracing::info!("walk: hidden {}", old);
         } else {
             tracing::warn!("walk: can't hide");
         }
@@ -230,6 +317,7 @@ pub fn unapply_filter(
 
         let s = tracing::span!(tracing::Level::TRACE, "walk commit", ?rev);
         let _e = s.enter();
+        tracing::info!("walk commit: {:?}", rev);
 
         let module_commit = transaction.repo().find_commit(rev)?;
 

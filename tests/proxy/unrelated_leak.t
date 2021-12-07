@@ -41,6 +41,10 @@ Flushed credential cache
   $ echo contents2 > file4
   $ git add .
   $ git commit -m "add file4" 1> /dev/null
+
+  $ echo contents3 > file4
+  $ git add .
+  $ git commit -m "edit file4" 1> /dev/null
   $ git push -o base=refs/heads/master origin master:refs/heads/from_filtered 2>&1 >/dev/null | sed -e 's/[ ]*$//g'
   remote: josh-proxy
   remote: response from upstream:
@@ -55,27 +59,72 @@ Flushed credential cache
   remote: josh-proxy
   remote: response from upstream:
   remote: To http://localhost:8001/real_repo.git
-  remote:    db0fd21..3f7ab67  JOSH_PUSH -> master
+  remote:    db0fd21..e170e96  JOSH_PUSH -> master
   remote:
   remote:
   To http://localhost:8002/real_repo.git:/sub1.git
-     0b4cf6c..37fad4a  master -> master
+     0b4cf6c..da0d1f3  master -> master
 
   $ cd ${TESTTMP}/real_repo
   $ git fetch
   From http://localhost:8001/real_repo
-     db0fd21..3f7ab67  master        -> origin/master
+     db0fd21..e170e96  master        -> origin/master
    * [new branch]      from_filtered -> origin/from_filtered
 
-  $ git log --graph --pretty=%s origin/master
-  * add file4
-  * unrelated on master
-  * add file1
-  * initial
-  $ git log --graph --pretty=%s origin/from_filtered
-  * add file4
-  * add file1
-
+  $ git log  origin/master
+  commit e170e962d0fb4b94a491a176a7f39a6207ada3e8
+  Author: Josh <josh@example.com>
+  Date:   Thu Apr 7 22:13:13 2005 +0000
+  
+      edit file4
+  
+  commit 3f7ab67d01db03914916161b51dbda1a4635f8d2
+  Author: Josh <josh@example.com>
+  Date:   Thu Apr 7 22:13:13 2005 +0000
+  
+      add file4
+  
+  commit db0fd21be0dea377057285e6119361753587f667
+  Author: Josh <josh@example.com>
+  Date:   Thu Apr 7 22:13:13 2005 +0000
+  
+      unrelated on master
+  
+  commit a11885ec53fe483199d9515bf4662e5cf94d9a9e
+  Author: Josh <josh@example.com>
+  Date:   Thu Apr 7 22:13:13 2005 +0000
+  
+      add file1
+  
+  commit 66472b80301b889cf27a92d43fc2c2d8fbf4729d
+  Author: Josh <josh@example.com>
+  Date:   Thu Apr 7 22:13:13 2005 +0000
+  
+      initial
+  $ git log origin/from_filtered
+  commit 865c34e9a2c40198324cdc2fc796827653cb11df
+  Author: Josh <josh@example.com>
+  Date:   Thu Apr 7 22:13:13 2005 +0000
+  
+      edit file4
+  
+  commit 42e0161c1ad82c05895e0f2caeae95925ac5ae6a
+  Author: Josh <josh@example.com>
+  Date:   Thu Apr 7 22:13:13 2005 +0000
+  
+      add file4
+  
+  commit a11885ec53fe483199d9515bf4662e5cf94d9a9e
+  Author: Josh <josh@example.com>
+  Date:   Thu Apr 7 22:13:13 2005 +0000
+  
+      add file1
+  
+  commit 66472b80301b889cf27a92d43fc2c2d8fbf4729d
+  Author: Josh <josh@example.com>
+  Date:   Thu Apr 7 22:13:13 2005 +0000
+  
+      initial
   $ . ${TESTDIR}/destroy_test_env.sh
   "real_repo.git" = [
       ':/sub1',
