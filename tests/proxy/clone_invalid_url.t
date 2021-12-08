@@ -26,7 +26,7 @@
   $ git clone -q http://localhost:8002/xxx full_repo
   fatal: unable to update url base from redirection:
     asked for: http://localhost:8002/xxx/info/refs?service=git-upload-pack
-     redirect: http://localhost:8002/~/browse/xxx/info/refs@refs/heads/master(:/)/()
+     redirect: http://localhost:8002/~/browse/xxx/info/refs@HEAD(:/)/()
   [128]
 
 

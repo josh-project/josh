@@ -26,13 +26,7 @@
   $ git add .
   $ git commit -m "unrelated change on this" 1> /dev/null
 
-  $ git merge other_branch
-  Merge made by the 'recursive' strategy.
-   pre/testfile2 | 1 +
-   pre/testfile4 | 1 +
-   2 files changed, 2 insertions(+)
-   create mode 100644 pre/testfile2
-   create mode 100644 pre/testfile4
+  $ git merge -q other_branch
   $ git log --graph --pretty=%s
   *   Merge branch 'other_branch'
   |\  
@@ -68,13 +62,7 @@
   $ echo content > testfile7
   $ git add .
   $ git commit -m "more unrelated change on this" 1> /dev/null
-  $ git merge other_branch
-  Merge made by the 'recursive' strategy.
-   pre/blafile1 | 1 +
-   pre/blefile2 | 1 +
-   2 files changed, 2 insertions(+)
-   create mode 100644 pre/blafile1
-   create mode 100644 pre/blefile2
+  $ git merge -q other_branch
 
   $ git log --graph --pretty=%s
   *   Merge branch 'other_branch'

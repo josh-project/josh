@@ -178,10 +178,11 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
             if i.contains(":workspace=") {
                 continue;
             }
-            josh::filter_refs(
+            josh::filter_ref(
                 &transaction,
                 josh::filter::parse(&i)?,
-                &[(input_ref.to_string(), "refs/JOSH_TMP".to_string())],
+                input_ref,
+                "refs/JOSH_TMP",
             )?;
         }
     }
@@ -212,7 +213,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         .unwrap()
         .to_string();
 
-    josh::filter_refs(&transaction, filterobj, &[(src.clone(), t.clone())])?;
+    josh::filter_ref(&transaction, filterobj, &src, &t)?;
 
     let mut all_paths = vec![];
 
@@ -235,10 +236,11 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
 
         let max_complexity: usize = args.value_of("max_comp").unwrap_or("6").parse()?;
 
-        josh::filter_refs(
+        josh::filter_ref(
             &transaction,
             ifilterobj,
-            &[(src.clone(), "refs/JOSH_TMP".to_string())],
+            src.clone(),
+            "refs/JOSH_TMP".to_string(),
         )?;
         let tree = repo.find_reference(&src)?.peel_to_tree()?;
         let index_tree = repo.find_reference(&"refs/JOSH_TMP")?.peel_to_tree()?;

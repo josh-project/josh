@@ -37,12 +37,7 @@
   $ git add .
   $ git commit -m "newfile master" 1> /dev/null
 
-  $ git merge new1 --no-ff
-  Merge made by the 'recursive' strategy.
-   newfile1 | 0
-   1 file changed, 0 insertions(+), 0 deletions(-)
-   create mode 100644 newfile1
-
+  $ git merge -q new1 --no-ff
 
   $ mkdir -p sub1/subsub
   $ echo contents1 > sub1/subsub/file1
@@ -364,29 +359,21 @@ Note that ws/d/ is now present in the ws
   |   |-- filtered
   |   |   `-- real_repo.git
   |   |       |-- %3A%2Fsub1
-  |   |       |   `-- heads
-  |   |       |       `-- master
+  |   |       |   `-- HEAD
   |   |       |-- %3A%2Fsub1%2Fsubsub
-  |   |       |   `-- heads
-  |   |       |       `-- master
+  |   |       |   `-- HEAD
   |   |       |-- %3A%2Fsub2
-  |   |       |   `-- heads
-  |   |       |       `-- master
+  |   |       |   `-- HEAD
   |   |       |-- %3A%2Fsub3
-  |   |       |   `-- heads
-  |   |       |       `-- master
+  |   |       |   `-- HEAD
   |   |       |-- %3A%2Fws
-  |   |       |   `-- heads
-  |   |       |       `-- master
+  |   |       |   `-- HEAD
   |   |       |-- %3A%2Fws%2Fd
-  |   |       |   `-- heads
-  |   |       |       `-- master
+  |   |       |   `-- HEAD
   |   |       |-- %3Aworkspace=ws
-  |   |       |   `-- heads
-  |   |       |       `-- master
+  |   |       |   `-- HEAD
   |   |       `-- %3Aworkspace=ws%3Aprefix=pre%3A%2Fpre
-  |   |           `-- heads
-  |   |               `-- master
+  |   |           `-- HEAD
   |   |-- rewrites
   |   |   `-- real_repo.git
   |   |       `-- 010e03f34d3497fc1e309e7c8bd06a95e399677b
@@ -394,12 +381,13 @@ Note that ws/d/ is now present in the ws
   |   |           `-- r_9d72b88b11aed97d3313f0a6d80894ee2ffdf3e9
   |   `-- upstream
   |       `-- real_repo.git
+  |           |-- HEAD
   |           `-- refs
   |               `-- heads
   |                   `-- master
   |-- namespaces
   `-- tags
   
-  29 directories, 11 files
+  21 directories, 12 files
 
 $ cat ${TESTTMP}/josh-proxy.out | grep VIEW

@@ -147,26 +147,24 @@
   |   |-- filtered
   |   |   `-- real_repo.git
   |   |       |-- %3A%2Fsub2
-  |   |       |   `-- heads
-  |   |       |       `-- master
+  |   |       |   `-- HEAD
   |   |       |-- %3A%2Fws
-  |   |       |   `-- heads
-  |   |       |       `-- master
+  |   |       |   `-- HEAD
   |   |       `-- %3Aworkspace=ws
-  |   |           `-- heads
-  |   |               `-- master
+  |   |           `-- HEAD
   |   |-- rewrites
   |   |   `-- real_repo.git
   |   |       `-- 7bd92d97e96693ea7fd7eb5757b3580002889948
   |   |           `-- r_9db51080a4d148b32bd4c4e0b39eae8d0b3df763
   |   `-- upstream
   |       `-- real_repo.git
+  |           |-- HEAD
   |           `-- refs
   |               `-- heads
   |                   `-- master
   |-- namespaces
   `-- tags
   
-  19 directories, 5 files
+  16 directories, 6 files
 
 $ cat ${TESTTMP}/josh-proxy.out | grep VIEW

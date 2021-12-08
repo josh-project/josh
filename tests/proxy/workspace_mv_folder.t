@@ -37,11 +37,7 @@
   $ git add .
   $ git commit -m "newfile master" 1> /dev/null
 
-  $ git merge new1 --no-ff
-  Merge made by the 'recursive' strategy.
-   newfile1 | 0
-   1 file changed, 0 insertions(+), 0 deletions(-)
-   create mode 100644 newfile1
+  $ git merge -q new1 --no-ff
 
 
   $ mkdir -p sub1/subsub
@@ -81,7 +77,6 @@ Flushed credential cache
   HEAD is now at 4a199f3 Merge from :workspace=ws
   Pushing to http://localhost:8002/real_repo.git:workspace=ws.git
   POST git-receive-pack (439 bytes)
-  remote: warning: ignoring broken ref refs/namespaces/request_*/HEAD         (glob)
   remote: josh-proxy        
   remote: response from upstream:        
   remote: To http://localhost:8001/real_repo.git        

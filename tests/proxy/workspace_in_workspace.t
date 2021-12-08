@@ -45,11 +45,7 @@
   $ git add .
   $ git commit -m "newfile master" 1> /dev/null
 
-  $ git merge new1 --no-ff
-  Merge made by the 'recursive' strategy.
-   newfile1 | 0
-   1 file changed, 0 insertions(+), 0 deletions(-)
-   create mode 100644 newfile1
+  $ git merge -q new1 --no-ff
 
   $ mkdir sub3
   $ echo contents3 > sub3/file3
@@ -222,7 +218,6 @@
   HEAD is now at b3be5ad add ws2
   Pushing to http://localhost:8002/real_repo.git:workspace=ws2.git
   POST git-receive-pack (424 bytes)
-  remote: warning: ignoring broken ref refs/namespaces/request_* (glob)
   remote: josh-proxy        
   remote: response from upstream:        
   remote: To http://localhost:8001/real_repo.git        
@@ -275,29 +270,21 @@
   |   |-- filtered
   |   |   `-- real_repo.git
   |   |       |-- %3A%2Fsub1
-  |   |       |   `-- heads
-  |   |       |       `-- master
+  |   |       |   `-- HEAD
   |   |       |-- %3A%2Fsub1%2Fsubsub
-  |   |       |   `-- heads
-  |   |       |       `-- master
+  |   |       |   `-- HEAD
   |   |       |-- %3A%2Fsub2
-  |   |       |   `-- heads
-  |   |       |       `-- master
+  |   |       |   `-- HEAD
   |   |       |-- %3A%2Fsub3
-  |   |       |   `-- heads
-  |   |       |       `-- master
+  |   |       |   `-- HEAD
   |   |       |-- %3A%2Fws
-  |   |       |   `-- heads
-  |   |       |       `-- master
+  |   |       |   `-- HEAD
   |   |       |-- %3A%2Fws2
-  |   |       |   `-- heads
-  |   |       |       `-- master
+  |   |       |   `-- HEAD
   |   |       |-- %3Aworkspace=ws
-  |   |       |   `-- heads
-  |   |       |       `-- master
+  |   |       |   `-- HEAD
   |   |       `-- %3Aworkspace=ws2
-  |   |           `-- heads
-  |   |               `-- master
+  |   |           `-- HEAD
   |   |-- rewrites
   |   |   `-- real_repo.git
   |   |       |-- 191ead67feb541c237317e25b2c66c5d8f3e33fa
@@ -307,11 +294,12 @@
   |   |           `-- r_2cbcd105ead63a4fecf486b949db7f44710300e5
   |   `-- upstream
   |       `-- real_repo.git
+  |           |-- HEAD
   |           `-- refs
   |               `-- heads
   |                   `-- master
   |-- namespaces
   `-- tags
   
-  30 directories, 12 files
+  22 directories, 13 files
 

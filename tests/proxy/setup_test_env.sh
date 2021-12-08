@@ -1,6 +1,7 @@
 export TESTTMP=${PWD}
-killall josh-proxy >/dev/null 2>&1
-killall hyper-cgi-test-server >/dev/null 2>&1
+
+killall josh-proxy >/dev/null 2>&1 || true
+killall hyper-cgi-test-server >/dev/null 2>&1 || true
 
 git init --bare ${TESTTMP}/remote/real_repo.git/ 1> /dev/null
 git config -f ${TESTTMP}/remote/real_repo.git/config http.receivepack true

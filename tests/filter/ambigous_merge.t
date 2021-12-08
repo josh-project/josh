@@ -72,13 +72,7 @@
   * 81a8353 add sub_/fileY
   * 7671c2a add sub1/file1
 
-  $ git merge hidden_branch1 --no-ff
-  Merge made by the 'recursive' strategy.
-   sub1/file3 | 1 +
-   sub1/fileY | 1 +
-   2 files changed, 2 insertions(+)
-   create mode 100644 sub1/file3
-   create mode 100644 sub1/fileY
+  $ git merge -q hidden_branch1 --no-ff
   $ git log --graph --oneline
   *   2fcb6a4 Merge branch 'hidden_branch1' into hidden_master
   |\  
