@@ -88,7 +88,7 @@ fn find_unapply_base(
     let contained_in_commit = transaction.repo().find_commit(contained_in)?;
     let oid = filter::apply_to_commit(filter, &contained_in_commit, transaction)?;
     if oid != git2::Oid::zero() {
-        bm.insert(contained_in, oid);
+        bm.insert(oid, contained_in);
     }
     let mut walk = transaction.repo().revwalk()?;
     walk.set_sorting(git2::Sort::TOPOLOGICAL)?;
@@ -98,7 +98,7 @@ fn find_unapply_base(
         let original = transaction.repo().find_commit(original?)?;
         if filtered == filter::apply_to_commit(filter, &original, transaction)? {
             bm.insert(filtered, original.id());
-            tracing::info!("found original properly",);
+            tracing::info!("found original properly {}", original.id());
             return Ok(original.id());
         }
     }
@@ -229,7 +229,7 @@ fn find_oldest_similar_commit(
         prev_rev = rev;
     }
     tracing::info!("bottom");
-    return Ok(unfiltered);
+    return Ok(prev_rev);
 }
 
 fn find_new_branch_base(
@@ -251,7 +251,7 @@ fn find_new_branch_base(
         let rev = rev?;
         if let Ok(base) = find_unapply_base(transaction, bm, filter, contained_in, rev) {
             if base != git2::Oid::zero() {
-                tracing::info!("new branch base: {:?}", base);
+                tracing::info!("new branch base: {:?} mapping to {:?}", base, rev);
                 let base =
                     if let Ok(new_base) = find_oldest_similar_commit(transaction, filter, base) {
                         new_base
@@ -297,6 +297,18 @@ pub fn unapply_filter(
         tracing::info!("Old not zero");
         old
     };
+
+    if new == old {
+        tracing::info!("New == old. Pushing a new branch?");
+        let ret = if let Some(original) = bm.get(&new) {
+            tracing::info!("Found in bm {}", original);
+            *original
+        } else {
+            tracing::info!("Had to go through the whole thing",);
+            find_original(transaction, filterobj, original_target, new)?
+        };
+        return Ok(UnapplyResult::Done(ret));
+    }
 
     tracing::info!("before walk");
 
