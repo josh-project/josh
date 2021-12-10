@@ -180,7 +180,6 @@ pub fn filter_ref(
             s
         } else {
             tracing::trace!("apply_to_commit (permissions)");
-            println!("perm {:?}", permissions);
 
             filter::apply_to_commit(permissions, &original_commit, &transaction)?
         };
@@ -198,7 +197,6 @@ pub fn filter_ref(
             }
         }
 
-        println!("filter {:?}", filterobj);
         let filter_commit = if let Some(s) = transaction.get_ref(filterobj, oid) {
             s
         } else {
