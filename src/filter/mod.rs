@@ -29,8 +29,13 @@ impl std::fmt::Debug for Filter {
         return to_op(*self).fmt(f);
     }
 }
+
 pub fn nop() -> Filter {
     to_filter(Op::Nop)
+}
+
+pub fn empty() -> Filter {
+    to_filter(Op::Empty)
 }
 
 fn to_filter(op: Op) -> Filter {
@@ -765,6 +770,20 @@ fn compute_warnings2<'a>(
         }
     }
     warnings
+}
+
+pub fn make_permissions_filter(filter: Filter, whitelist: Filter, blacklist: Filter) -> Filter {
+    rs_tracing::trace_scoped!("make_permissions_filter");
+
+    let filter = chain(to_filter(Op::Paths), filter);
+    let filter = chain(filter, to_filter(Op::Invert));
+    let filter = chain(
+        filter,
+        compose(blacklist, to_filter(Op::Subtract(nop(), whitelist))),
+    );
+    let filter = opt::optimize(filter);
+
+    return filter;
 }
 
 #[cfg(test)]

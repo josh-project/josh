@@ -1,40 +1,6 @@
   $ export TESTTMP=${PWD}
 
-  $ cd ${TESTTMP}
-  $ git init 1> /dev/null
-
-  $ mkdir a
-  $ echo "cws = :/c" > a/workspace.josh
-  $ echo contents1 > a/file_a2
-  $ git add a
-
-  $ mkdir b
-  $ echo contents1 > b/file_b1
-  $ git add b
-
-  $ mkdir -p c/d
-  $ echo contents1 > c/d/file_cd
-  $ git add c
-  $ git commit -m "add dirs" 1> /dev/null
-
-  $ echo contents2 > c/d/file_cd2
-  $ git add c
-  $ git commit -m "add file_cd2" 1> /dev/null
-
-  $ mkdir -p c/d/e
-  $ echo contents2 > c/d/e/file_cd3
-  $ git add c
-  $ git commit -m "add file_cd3" 1> /dev/null
-
-  $ echo contents3 >> c/d/e/file_cd3
-  $ git add c
-  $ git commit -m "edit file_cd3" 1> /dev/null
-
-  $ git log --graph --pretty=%s
-  * edit file_cd3
-  * add file_cd3
-  * add file_cd2
-  * add dirs
+  $ . ${TESTDIR}/setup_repo.sh
 
   $ josh-filter -s :PATHS master --update refs/josh/filtered
   [3] :PATHS
@@ -259,56 +225,10 @@
           `-- file_cd2
   
   5 directories, 6 files
-
-  $ git diff $EMPTY_TREE HEAD
-  diff --git a/a/file_a2 b/a/file_a2
-  new file mode 100644
-  index 0000000..4b2f88e
-  --- /dev/null
-  +++ b/a/file_a2
-  @@ -0,0 +1 @@
-  +a/file_a2
-  \ No newline at end of file
-  diff --git a/a/workspace.josh b/a/workspace.josh
-  new file mode 100644
-  index 0000000..b5fbe37
-  --- /dev/null
-  +++ b/a/workspace.josh
-  @@ -0,0 +1 @@
-  +a/workspace.josh
-  \ No newline at end of file
-  diff --git a/b/file_b1 b/b/file_b1
-  new file mode 100644
-  index 0000000..413b4ca
-  --- /dev/null
-  +++ b/b/file_b1
-  @@ -0,0 +1 @@
-  +b/file_b1
-  \ No newline at end of file
-  diff --git a/c/d/e/file_cd3 b/c/d/e/file_cd3
-  new file mode 100644
-  index 0000000..8719808
-  --- /dev/null
-  +++ b/c/d/e/file_cd3
-  @@ -0,0 +1 @@
-  +c/d/e/file_cd3
-  \ No newline at end of file
-  diff --git a/c/d/file_cd b/c/d/file_cd
-  new file mode 100644
-  index 0000000..bb36c67
-  --- /dev/null
-  +++ b/c/d/file_cd
-  @@ -0,0 +1 @@
-  +c/d/file_cd
-  \ No newline at end of file
-  diff --git a/c/d/file_cd2 b/c/d/file_cd2
-  new file mode 100644
-  index 0000000..26318eb
-  --- /dev/null
-  +++ b/c/d/file_cd2
-  @@ -0,0 +1 @@
-  +c/d/file_cd2
-  \ No newline at end of file
+  $ cat a/file_a2
+  a/file_a2 (no-eol)
+  $ cat b/file_b1
+  b/file_b1 (no-eol)
 
 
   $ josh-filter -s :PATHS:workspace=a:INVERT master --update refs/josh/filtered

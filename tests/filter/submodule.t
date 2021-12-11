@@ -27,6 +27,7 @@
   [1] :/libs
   $ git ls-tree --name-only -r refs/josh/filter/master 
   $ josh-filter -s c=:/libs master --update refs/josh/filter/master
+  Warning: reference refs/josh/filter/master wasn't updated
   [1] :/libs
   [1] :prefix=c
   $ git ls-tree --name-only -r refs/josh/filter/master 
