@@ -46,6 +46,7 @@ struct JoshProxyService {
     fetch_permits: Arc<tokio::sync::Semaphore>,
     filter_permits: Arc<tokio::sync::Semaphore>,
     poll: Polls,
+    acl: Option<(String, String)>,
 }
 
 impl std::fmt::Debug for JoshProxyService {
@@ -244,9 +245,11 @@ async fn do_filter(
     temp_ns: Arc<josh_proxy::TmpGitNamespace>,
     filter_spec: String,
     headref: String,
+    user: String,
 ) -> josh::JoshResult<()> {
     let permit = service.filter_permits.acquire().await;
     let heads_map = service.heads_map.clone();
+    let acl = service.acl.clone();
 
     let s = tracing::span!(tracing::Level::TRACE, "do_filter worker");
     let r = tokio::task::spawn_blocking(move || {
@@ -295,7 +298,28 @@ async fn do_filter(
 
         let mut headref = headref;
 
-        josh::filter_refs(&transaction, filter, &from_to, josh::filter::empty())?;
+        let permissions_filter = if let Some(acl) = acl {
+            let users = &acl.0;
+            let groups = &acl.1;
+            tracing::info!("User: {:?}, Repo: {:?}", user, upstream_repo);
+            let acl = match josh::get_acl(&users, &groups, &user, &upstream_repo) {
+                Ok(acl) => acl,
+                Err(e) => {
+                    tracing::error!("Failed to read ACL file: {:?}", e);
+                    (josh::filter::empty(), josh::filter::nop())
+                }
+            };
+            let whitelist = acl.0;
+            let blacklist = acl.1;
+            tracing::info!("Whitelist: {:?}, Blacklist: {:?}", whitelist, blacklist);
+            josh::filter::make_permissions_filter(filter, whitelist, blacklist)
+        } else {
+            josh::filter::empty()
+        };
+
+        tracing::info!("Permissions: {:?}", permissions_filter);
+
+        josh::filter_refs(&transaction, filter, &from_to, permissions_filter)?;
         if headref == "HEAD" {
             headref = heads_map
                 .read()?
@@ -517,6 +541,7 @@ async fn call_service(
         &parsed_url.upstream_repo,
         &parsed_url.filter,
         &headref,
+        &username,
     )
     .in_current_span()
     .await?;
@@ -598,6 +623,7 @@ async fn prepare_namespace(
     upstream_repo: &str,
     filter_spec: &str,
     headref: &str,
+    user: &str,
 ) -> josh::JoshResult<std::sync::Arc<josh_proxy::TmpGitNamespace>> {
     let temp_ns = Arc::new(josh_proxy::TmpGitNamespace::new(
         &serv.repo_path,
@@ -606,6 +632,8 @@ async fn prepare_namespace(
 
     let serv = serv.clone();
 
+    let user = if user == "" { "anonymous" } else { user };
+
     do_filter(
         serv.repo_path.clone(),
         serv.clone(),
@@ -613,6 +641,7 @@ async fn prepare_namespace(
         temp_ns.to_owned(),
         filter_spec.to_owned(),
         headref.to_string(),
+        user.to_string(),
     )
     .await?;
 
@@ -635,6 +664,20 @@ async fn run_proxy() -> josh::JoshResult<i32> {
     josh_proxy::create_repo(&local)?;
     josh::cache::load(&local)?;
 
+    let acl = if ARGS.is_present("users") && ARGS.is_present("groups") {
+        println!(
+            "{}, {}",
+            ARGS.value_of("users").unwrap().to_string(),
+            ARGS.value_of("groups").unwrap().to_string()
+        );
+        Some((
+            ARGS.value_of("users").unwrap().to_string(),
+            ARGS.value_of("groups").unwrap().to_string(),
+        ))
+    } else {
+        None
+    };
+
     let proxy_service = Arc::new(JoshProxyService {
         port,
         repo_path: local.to_owned(),
@@ -646,6 +689,7 @@ async fn run_proxy() -> josh::JoshResult<i32> {
             ARGS.value_of("n").unwrap_or("1").parse()?,
         )),
         filter_permits: Arc::new(tokio::sync::Semaphore::new(10)),
+        acl,
     });
 
     let ps = proxy_service.clone();
@@ -799,6 +843,18 @@ fn parse_args() -> clap::ArgMatches<'static> {
                 .takes_value(true)
                 .help("Duration between forced cache refresh")
                 .takes_value(true),
+        )
+        .arg(
+            clap::Arg::with_name("users")
+                .long("users")
+                .takes_value(true)
+                .help("YAML file listing the groups of the users"),
+        )
+        .arg(
+            clap::Arg::with_name("groups")
+                .long("groups")
+                .takes_value(true)
+                .help("YAML file listing the access rights of the groups"),
         )
         .get_matches_from(args)
 }

@@ -331,34 +331,42 @@ pub fn get_acl(
     let groups: Groups = serde_yaml::from_str(&groups)
         .map_err(|err| josh_error(format!("failed to parse groups file: {}", err).as_str()))?;
 
-    return users
-        .get(user)
-        .and_then(|u| {
-            let mut whitelist = filter::empty();
-            let mut blacklist = filter::empty();
-            for g in &u.groups {
-                let lists = groups.get(repo).and_then(|repo| {
-                    repo.get(g.as_str()?).and_then(|group| {
-                        let w = filter::parse(&group.whitelist);
-                        let b = filter::parse(&group.blacklist);
-                        Some((w, b))
-                    })
-                })?;
-                if let Err(e) = lists.0 {
-                    return Some(Err(JoshError(format!("Error parsing whitelist: {}", e))));
-                }
-                if let Err(e) = lists.1 {
-                    return Some(Err(JoshError(format!("Error parsing blacklist: {}", e))));
-                }
-                if let Ok(w) = lists.0 {
-                    whitelist = filter::compose(whitelist, w);
-                }
-                if let Ok(b) = lists.1 {
-                    blacklist = filter::compose(blacklist, b);
-                }
+    let res = users.get(user).and_then(|u| {
+        let mut whitelist = filter::empty();
+        let mut blacklist = filter::empty();
+        for g in &u.groups {
+            let lists = groups.get(repo).and_then(|repo| {
+                repo.get(g.as_str()?).and_then(|group| {
+                    let w = filter::parse(&group.whitelist);
+                    let b = filter::parse(&group.blacklist);
+                    Some((w, b))
+                })
+            })?;
+            if let Err(e) = lists.0 {
+                return Some(Err(JoshError(format!("Error parsing whitelist: {}", e))));
             }
-            println!("w: {:?}, b: {:?}", whitelist, blacklist);
-            Some(Ok((whitelist, blacklist)))
-        })
-        .unwrap_or(Ok((filter::empty(), filter::nop())));
+            if let Err(e) = lists.1 {
+                return Some(Err(JoshError(format!("Error parsing blacklist: {}", e))));
+            }
+            if let Ok(w) = lists.0 {
+                whitelist = filter::compose(whitelist, w);
+            }
+            if let Ok(b) = lists.1 {
+                blacklist = filter::compose(blacklist, b);
+            }
+        }
+        println!("w: {:?}, b: {:?}", whitelist, blacklist);
+        Some(Ok((whitelist, blacklist)))
+    });
+    return match res {
+        Some(Ok(res)) => Ok(res),
+        Some(Err(e)) => {
+            tracing::warn!("ACL error: {:?}", e);
+            Ok((filter::empty(), filter::nop()))
+        }
+        None => {
+            tracing::warn!("ACL: none");
+            Ok((filter::empty(), filter::nop()))
+        }
+    };
 }

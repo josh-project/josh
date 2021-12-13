@@ -422,6 +422,7 @@ impl TmpGitNamespace {
     pub fn new(repo_path: &std::path::Path, span: tracing::Span) -> TmpGitNamespace {
         let n = format!("request_{}", uuid::Uuid::new_v4());
         let n2 = n.clone();
+
         TmpGitNamespace {
             name: n,
             repo_path: repo_path.to_owned(),

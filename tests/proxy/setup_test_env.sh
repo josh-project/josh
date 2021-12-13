@@ -22,11 +22,17 @@ echo $! > ${TESTTMP}/server_pid
 
 cp -R ${TESTDIR}/../../static/ static
 
+ACL_OPT=""
+if [ "$JOSH_USERS" -a "$JOSH_GROUPS" ]; then
+    ACL_OPT="--users=${JOSH_USERS} --groups=${JOSH_GROUPS}"
+fi
+
 ${TESTDIR}/../../target/debug/josh-proxy\
     --port=8002\
     --graphql-root\
     --local=${TESTTMP}/remote/scratch/\
     --remote=http://localhost:8001\
+    ${ACL_OPT}\
     > ${TESTTMP}/josh-proxy.out 2>&1 &
 echo $! > ${TESTTMP}/proxy_pid
 
@@ -37,7 +43,7 @@ do
     COUNTER=$((COUNTER + 1))
     if [ $COUNTER -ge 10 ];
     then
-        >& echo "Starting josh proxy timed out"
+        echo "Starting josh proxy timed out"
         exit 1
     fi
 done
