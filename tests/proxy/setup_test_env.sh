@@ -7,7 +7,7 @@ git init --bare ${TESTTMP}/remote/real_repo.git/ 1> /dev/null
 git config -f ${TESTTMP}/remote/real_repo.git/config http.receivepack true
 git init --bare ${TESTTMP}/remote/real/repo2.git/ 1> /dev/null
 git config -f ${TESTTMP}/remote/real/repo2.git/config http.receivepack true
-export RUST_LOG=debug
+export RUST_LOG=trace
 
 export GIT_CONFIG_NOSYSTEM=1
 export JOSH_SERVICE_NAME="josh-proxy-test"
@@ -27,6 +27,7 @@ ${TESTDIR}/../../target/debug/josh-proxy\
     --graphql-root\
     --local=${TESTTMP}/remote/scratch/\
     --remote=http://localhost:8001\
+    ${EXTRA_OPTS}\
     > ${TESTTMP}/josh-proxy.out 2>&1 &
 echo $! > ${TESTTMP}/proxy_pid
 

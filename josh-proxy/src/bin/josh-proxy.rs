@@ -80,11 +80,12 @@ async fn fetch_upstream(
     let fetch_cached_ok = {
         if let Some(last) = service.fetch_timers.read()?.get(&key) {
             let since = std::time::Instant::now().duration_since(*last);
-            tracing::trace!("last: {:?}, since: {:?}", last, since);
-            since
-                < std::time::Duration::from_secs(
-                    ARGS.value_of("cache_duration").unwrap_or("0").parse()?,
-                )
+            let max = std::time::Duration::from_secs(
+                ARGS.value_of("cache-duration").unwrap_or("0").parse()?,
+            );
+
+            tracing::trace!("last: {:?}, since: {:?}, max: {:?}", last, since, max);
+            since < max
         } else {
             false
         }
@@ -795,10 +796,10 @@ fn parse_args() -> clap::ArgMatches<'static> {
         .arg(clap::Arg::with_name("port").long("port").takes_value(true))
         .arg(
             clap::Arg::with_name("cache-duration")
+                .long("cache-duration")
                 .short("c")
                 .takes_value(true)
-                .help("Duration between forced cache refresh")
-                .takes_value(true),
+                .help("Duration between forced cache refresh"),
         )
         .get_matches_from(args)
 }
