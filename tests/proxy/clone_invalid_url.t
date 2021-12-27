@@ -29,7 +29,6 @@
      redirect: http://localhost:8002/~/browse/xxx/info/refs@HEAD(:/)/()
   [128]
 
-
   $ bash ${TESTDIR}/destroy_test_env.sh
   refs
   |-- heads

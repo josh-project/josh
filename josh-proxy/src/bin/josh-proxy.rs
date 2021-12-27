@@ -69,11 +69,12 @@ async fn fetch_upstream(
     let auth = auth.clone();
     let key = remote_url.clone();
 
-    let refs_to_fetch = if headref != "HEAD" && !headref.starts_with("refs/heads/") {
-        vec!["HEAD*", "refs/heads/*", "refs/tags/*", headref]
-    } else {
-        vec!["HEAD*", "refs/heads/*", "refs/tags/*"]
-    };
+    let refs_to_fetch =
+        if !headref.is_empty() && headref != "HEAD" && !headref.starts_with("refs/heads/") {
+            vec!["HEAD*", "refs/heads/*", "refs/tags/*", headref]
+        } else {
+            vec!["HEAD*", "refs/heads/*", "refs/tags/*"]
+        };
 
     let refs_to_fetch: Vec<_> = refs_to_fetch.iter().map(|x| x.to_string()).collect();
 
