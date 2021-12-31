@@ -323,10 +323,11 @@ async fn do_filter(
     r
 }
 
-async fn error_response() -> Response<hyper::Body> {
+async fn error_response(body: hyper::Body) -> Response<hyper::Body> {
     Response::builder()
         .status(hyper::StatusCode::INTERNAL_SERVER_ERROR)
-        .body(hyper::Body::empty())
+        .header("Content-Type", "text/plain")
+        .body(body)
         .expect("Can't build response")
 }
 
@@ -685,16 +686,15 @@ async fn run_proxy() -> josh::JoshResult<i32> {
 
             async move {
                 let r = if let Ok(req_auth) = josh_proxy::auth::strip_auth(_req) {
-                    if let Ok(r) = call_service(proxy_service, req_auth)
+                    match call_service(proxy_service, req_auth)
                         .instrument(s.clone())
                         .await
                     {
-                        r
-                    } else {
-                        error_response().await
+                        Ok(r) => r,
+                        Err(e) => error_response(hyper::Body::from(format!("{}", e))).await,
                     }
                 } else {
-                    error_response().await
+                    error_response(hyper::Body::from("JoshError(strip_auth)")).await
                 };
                 let _e = s.enter();
                 trace_http_response_code(s.clone(), r.status());
