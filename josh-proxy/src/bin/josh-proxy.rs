@@ -7,10 +7,11 @@ use tracing_subscriber::Layer;
 use futures::future;
 use futures::FutureExt;
 use hyper::service::{make_service_fn, service_fn};
-use hyper::{Request, Response, Server};
+use hyper::{Request, Response, Server, StatusCode};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use tokio::process::Command;
+use tracing::Span;
 use tracing_futures::Instrument;
 
 fn version_str() -> String {
@@ -621,6 +622,24 @@ async fn prepare_namespace(
     Ok(temp_ns)
 }
 
+fn trace_http_response_code(trace_span: Span, http_status: StatusCode) {
+    macro_rules! trace {
+        ($level:expr) => {{
+            tracing::event!(
+                parent: trace_span,
+                $level,
+                http_status = http_status.as_u16()
+            );
+        }};
+    }
+
+    match http_status.as_u16() {
+        s if s < 400 => trace!(tracing::Level::TRACE),
+        s if s < 500 => trace!(tracing::Level::WARN),
+        _ => trace!(tracing::Level::ERROR),
+    };
+}
+
 #[tokio::main]
 async fn run_proxy() -> josh::JoshResult<i32> {
     let port = ARGS.value_of("port").unwrap_or("8000").to_owned();
@@ -678,11 +697,7 @@ async fn run_proxy() -> josh::JoshResult<i32> {
                     error_response(hyper::Body::from("JoshError(strip_auth)")).await
                 };
                 let _e = s.enter();
-                tracing::event!(
-                    parent: s.clone(),
-                    tracing::Level::TRACE,
-                    http_status = r.status().as_u16()
-                );
+                trace_http_response_code(s.clone(), r.status());
                 r
             }
             .map(Ok::<_, hyper::http::Error>)
