@@ -19,7 +19,7 @@ members = ["josh-proxy", "josh-ui", "."]
 [dependencies]
 handlebars = "4.1"
 git2 = {version = "0.13", default-features = false}
-clap = "2"
+clap = "3"
 tracing = "0.1"
 bincode = "1.3"
 bitvec = "*"
