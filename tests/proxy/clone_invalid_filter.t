@@ -53,6 +53,11 @@
 
   $ cd ${TESTTMP}
   $ git clone -q http://localhost:8002/real_repo.git:sub1.git
-  remote: JoshError(invalid filter)
+  remote: Invalid filter: ":sub1"
+  remote: 
+  remote: Note: use forward slash at the start of the filter if you're
+  remote: trying to select a subdirectory:
+  remote: 
+  remote: :/sub1
   fatal: unable to access 'http://localhost:8002/real_repo.git:sub1.git/': The requested URL returned error: 500
   [128]
