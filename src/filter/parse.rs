@@ -1,4 +1,5 @@
 use super::*;
+use indoc::formatdoc;
 
 fn make_op(args: &[&str]) -> JoshResult<Op> {
     match args {
@@ -12,7 +13,20 @@ fn make_op(args: &[&str]) -> JoshResult<Op> {
         ["INDEX"] => Ok(Op::Index),
         ["INVERT"] => Ok(Op::Invert),
         ["FOLD"] => Ok(Op::Fold),
-        _ => Err(josh_error("invalid filter")),
+        _ => {
+            let message = formatdoc!(
+                r#"
+                Invalid filter: ":{0}"
+
+                Note: use forward slash at the start of the filter if you're
+                trying to select a subdirectory:
+
+                :/{0}
+            "#,
+                args[0]
+            );
+            Err(josh_error(message.as_str()))
+        }
     }
 }
 

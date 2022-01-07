@@ -8,6 +8,7 @@ use futures::future;
 use futures::FutureExt;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Request, Response, Server, StatusCode};
+use josh::JoshError;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use tokio::process::Command;
@@ -691,7 +692,12 @@ async fn run_proxy() -> josh::JoshResult<i32> {
                         .await
                     {
                         Ok(r) => r,
-                        Err(e) => error_response(hyper::Body::from(format!("{}", e))).await,
+                        Err(e) => {
+                            error_response(hyper::Body::from(match e {
+                                JoshError(s) => s,
+                            }))
+                            .await
+                        }
                     }
                 } else {
                     error_response(hyper::Body::from("JoshError(strip_auth)")).await
