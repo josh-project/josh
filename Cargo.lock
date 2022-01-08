@@ -1077,6 +1077,7 @@ dependencies = [
  "hyper-staticfile",
  "hyper-tls",
  "hyper_cgi",
+ "indoc",
  "josh",
  "juniper",
  "lazy_static",
