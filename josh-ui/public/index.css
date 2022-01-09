@@ -1,9 +1,15 @@
+:root {
+    --font-family: Consolas, Menlo, Monaco, 'Lucida Console', 'Liberation Mono', 'DejaVu Sans Mono', 'Bitstream Vera Sans Mono', 'Courier New', monospace, serif;
+    --color-background: #222222;
+    --color-highlight: #cc7f3d;
+}
+
 body {
-    background-color: #222222;
+    background-color: var(--color-background);
     color: #dddddd;
     margin: 0;
 
-    font-family: Consolas, Menlo, Monaco, 'Lucida Console', 'Liberation Mono', 'DejaVu Sans Mono', 'Bitstream Vera Sans Mono', 'Courier New', monospace, serif;
+    font-family: var(--font-family);
 }
 
 form {
@@ -11,10 +17,10 @@ form {
 }
 
 a {
-    font-family: Consolas, Menlo, Monaco, 'Lucida Console', 'Liberation Mono', 'DejaVu Sans Mono', 'Bitstream Vera Sans Mono', 'Courier New', monospace, serif;
+    font-family: var(--font-family);
     color: #aaaaaa;
     border: 0;
-    background: #222222;
+    background: var(--color-background);
     box-shadow: none;
     border-radius: 0;
     text-decoration: none;
@@ -26,10 +32,10 @@ a {
 }
 
 input {
-    font-family: Consolas, Menlo, Monaco, 'Lucida Console', 'Liberation Mono', 'DejaVu Sans Mono', 'Bitstream Vera Sans Mono', 'Courier New', monospace, serif;
+    font-family: var(--font-family);
     color: #aaaaaa;
     border: 0;
-    background: #222222;
+    background: var(--color-background);
     box-shadow: none;
     border-radius: 0;
 }
@@ -79,14 +85,14 @@ select:hover {
     font-size: 2em;
     font-weight: bold;
     display: inline;
-    color: #cc7f3d;
+    color: var(--color-highlight);
 }
 
 #filter {
     margin: 0.2em;
     font-size: 2em;
     font-weight: bold;
-    color: #cc7f3d;
+    color: var(--color-highlight);
 }
 
 #filter a {
@@ -172,7 +178,7 @@ td {
 
 .marker,
 .josh_marker {
-    background-color: #cc7f3d;
+    background-color: var(--color-highlight);
     color: black;
     padding: 3px;
     padding-left: 8px;
