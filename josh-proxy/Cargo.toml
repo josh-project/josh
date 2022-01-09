@@ -12,7 +12,7 @@ version = "0.3.0"
 
 
 [dependencies]
-clap = "2.34.0"
+clap = "3.0.5"
 futures = "0.3.19"
 tokio = { version = "1.8.1", features = ["full"] }
 hyper = { version = "0.14.16", features = ["stream"] }
