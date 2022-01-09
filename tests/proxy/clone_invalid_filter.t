@@ -58,6 +58,37 @@
   remote: Note: use forward slash at the start of the filter if you're
   remote: trying to select a subdirectory:
   remote: 
-  remote: :/sub1
+  remote:   :/sub1
   fatal: unable to access 'http://localhost:8002/real_repo.git:sub1.git/': The requested URL returned error: 500
+  [128]
+
+  $ git clone -q http://localhost:8002/real_repo.git:workspace.git
+  remote: Filter ":workspace" requires an argument.
+  remote: 
+  remote: Note: use "=" to provide the argument value:
+  remote: 
+  remote:   :workspace=path
+  remote: 
+  remote: Where `path` is path to the directory where workspace.josh file is located
+  fatal: unable to access 'http://localhost:8002/real_repo.git:workspace.git/': The requested URL returned error: 500
+  [128]
+
+  $ git clone -q http://localhost:8002/real_repo.git:prefix.git
+  remote: Filter ":prefix" requires an argument.
+  remote: 
+  remote: Note: use "=" to provide the argument value:
+  remote: 
+  remote:   :prefix=path
+  remote: 
+  remote: Where `path` is path to be used as a prefix
+  fatal: unable to access 'http://localhost:8002/real_repo.git:prefix.git/': The requested URL returned error: 500
+  [128]
+
+  $ git clone -q http://localhost:8002/real_repo.git:/subfolder
+  remote: Invalid URL: "/real_repo.git:/subfolder"
+  remote: 
+  remote: Note: repository URLs should end with ".git":
+  remote: 
+  remote:   /real_repo.git:/subfolder.git
+  fatal: unable to access 'http://localhost:8002/real_repo.git:/subfolder/': The requested URL returned error: 422
   [128]

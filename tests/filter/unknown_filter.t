@@ -23,7 +23,7 @@
   Note: use forward slash at the start of the filter if you're
   trying to select a subdirectory:
   
-  :/nosuch
+    :/nosuch
   
   [1]
 
