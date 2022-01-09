@@ -173,21 +173,23 @@ async fn static_paths(
 ) -> josh::JoshResult<Option<Response<hyper::Body>>> {
     tracing::debug!("static_path {:?}", path);
     if path == "/version" {
-        return Ok(Some(
-            Response::builder()
-                .status(hyper::StatusCode::OK)
-                .body(hyper::Body::from(version_str()))
-                .unwrap_or_default(),
-        ));
+        return Ok(Some(make_response(
+            hyper::Body::from(version_str()),
+            hyper::StatusCode::OK,
+        )));
+    }
+    if path == "/remote" {
+        return Ok(Some(make_response(
+            hyper::Body::from(service.upstream_url.clone()),
+            hyper::StatusCode::OK,
+        )));
     }
     if path == "/flush" {
         service.fetch_timers.write()?.clear();
-        return Ok(Some(
-            Response::builder()
-                .status(hyper::StatusCode::OK)
-                .body(hyper::Body::from("Flushed credential cache\n"))
-                .unwrap_or_default(),
-        ));
+        return Ok(Some(make_response(
+            hyper::Body::from("Flushed credential cache\n"),
+            hyper::StatusCode::OK,
+        )));
     }
     if path == "/filters" || path == "/filters/refresh" {
         service.fetch_timers.write()?.clear();
@@ -204,12 +206,10 @@ async fn static_paths(
         })
         .await??;
 
-        return Ok(Some(
-            Response::builder()
-                .status(hyper::StatusCode::OK)
-                .body(hyper::Body::from(body_str))
-                .unwrap_or_default(),
-        ));
+        return Ok(Some(make_response(
+            hyper::Body::from(body_str),
+            hyper::StatusCode::OK,
+        )));
     }
     Ok(None)
 }
@@ -325,10 +325,10 @@ async fn do_filter(
     r
 }
 
-async fn error_response(body: hyper::Body, code: hyper::StatusCode) -> Response<hyper::Body> {
+fn make_response(body: hyper::Body, code: hyper::StatusCode) -> Response<hyper::Body> {
     Response::builder()
         .status(code)
-        .header("Content-Type", "text/plain")
+        .header(hyper::header::CONTENT_TYPE, "text/plain")
         .body(body)
         .expect("Can't build response")
 }
@@ -401,7 +401,7 @@ async fn call_service(
 
             if pu.rest.starts_with(":") {
                 let guessed_url = path.trim_end_matches("/info/refs");
-                return Ok(error_response(
+                return Ok(make_response(
                     hyper::Body::from(formatdoc!(
                         r#"
                         Invalid URL: "{0}"
@@ -413,8 +413,7 @@ async fn call_service(
                         guessed_url
                     )),
                     hyper::StatusCode::UNPROCESSABLE_ENTITY,
-                )
-                .await);
+                ));
             }
 
             if pu.filter.is_empty() {
@@ -712,22 +711,18 @@ async fn run_proxy() -> josh::JoshResult<i32> {
                         .await
                     {
                         Ok(r) => r,
-                        Err(e) => {
-                            error_response(
-                                hyper::Body::from(match e {
-                                    JoshError(s) => s,
-                                }),
-                                hyper::StatusCode::INTERNAL_SERVER_ERROR,
-                            )
-                            .await
-                        }
+                        Err(e) => make_response(
+                            hyper::Body::from(match e {
+                                JoshError(s) => s,
+                            }),
+                            hyper::StatusCode::INTERNAL_SERVER_ERROR,
+                        ),
                     }
                 } else {
-                    error_response(
+                    make_response(
                         hyper::Body::from("JoshError(strip_auth)"),
                         hyper::StatusCode::INTERNAL_SERVER_ERROR,
                     )
-                    .await
                 };
                 let _e = s.enter();
                 trace_http_response_code(s.clone(), r.status());
