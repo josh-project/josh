@@ -17,7 +17,7 @@ experimental = ["search"]
 members = ["josh-proxy", "josh-ui", "."]
 
 [dependencies]
-handlebars = "4.1"
+handlebars = "4.2"
 git2 = {version = "0.13", default-features = false}
 clap = "2"
 tracing = "0.1"
