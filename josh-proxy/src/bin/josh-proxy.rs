@@ -8,6 +8,7 @@ use futures::future;
 use futures::FutureExt;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Request, Response, Server, StatusCode};
+use indoc::formatdoc;
 use josh::JoshError;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
@@ -28,8 +29,8 @@ lazy_static! {
 
 josh::regex_parsed!(
     FilteredRepoUrl,
-    r"(?P<api>/~/\w+)?(?P<upstream_repo>/[^:!]*[.]git)(?P<headref>@[^:!]*)?((?P<filter>[:!].*)[.]git)?(?P<pathinfo>/.*)?",
-    [api, upstream_repo, filter, pathinfo, headref]
+    r"(?P<api>/~/\w+)?(?P<upstream_repo>/[^:!]*[.]git)(?P<headref>@[^:!]*)?((?P<filter>[:!].*)[.]git)?(?P<pathinfo>/.*)?(?P<rest>.*)",
+    [api, upstream_repo, filter, pathinfo, headref, rest]
 );
 
 type FetchTimers = HashMap<String, std::time::Instant>;
@@ -324,9 +325,9 @@ async fn do_filter(
     r
 }
 
-async fn error_response(body: hyper::Body) -> Response<hyper::Body> {
+async fn error_response(body: hyper::Body, code: hyper::StatusCode) -> Response<hyper::Body> {
     Response::builder()
-        .status(hyper::StatusCode::INTERNAL_SERVER_ERROR)
+        .status(code)
         .header("Content-Type", "text/plain")
         .body(body)
         .expect("Can't build response")
@@ -397,13 +398,32 @@ async fn call_service(
     let parsed_url = {
         if let Some(parsed_url) = FilteredRepoUrl::from_str(&path) {
             let mut pu = parsed_url;
+
+            if pu.rest.starts_with(":") {
+                let guessed_url = path.trim_end_matches("/info/refs");
+                return Ok(error_response(
+                    hyper::Body::from(formatdoc!(
+                        r#"
+                        Invalid URL: "{0}"
+
+                        Note: repository URLs should end with ".git":
+
+                          {0}.git
+                        "#,
+                        guessed_url
+                    )),
+                    hyper::StatusCode::UNPROCESSABLE_ENTITY,
+                )
+                .await);
+            }
+
             if pu.filter.is_empty() {
                 pu.filter = ":/".to_string();
             }
             pu
         } else {
             return Ok(Response::builder()
-                .status(302)
+                .status(hyper::StatusCode::FOUND)
                 .header("Location", format!("/~/browse{}@HEAD(:/)/()", path))
                 .body(hyper::Body::empty())?);
         }
@@ -693,14 +713,21 @@ async fn run_proxy() -> josh::JoshResult<i32> {
                     {
                         Ok(r) => r,
                         Err(e) => {
-                            error_response(hyper::Body::from(match e {
-                                JoshError(s) => s,
-                            }))
+                            error_response(
+                                hyper::Body::from(match e {
+                                    JoshError(s) => s,
+                                }),
+                                hyper::StatusCode::INTERNAL_SERVER_ERROR,
+                            )
                             .await
                         }
                     }
                 } else {
-                    error_response(hyper::Body::from("JoshError(strip_auth)")).await
+                    error_response(
+                        hyper::Body::from("JoshError(strip_auth)"),
+                        hyper::StatusCode::INTERNAL_SERVER_ERROR,
+                    )
+                    .await
                 };
                 let _e = s.enter();
                 trace_http_response_code(s.clone(), r.status());
