@@ -45,7 +45,7 @@
       ]
   [12] _invert
   [16] _paths
-  ERROR: JoshError("missing permissions for ref")
+  ERROR: missing permissions for ref
   [1]
 
   $ josh-filter -s :/ master --check-permission --missing-permission --users users.yaml --groups groups.yaml -u CSchilling -r test --update refs/josh/filtered
@@ -234,7 +234,7 @@
       ]
   [13] _invert
   [16] _paths
-  ERROR: JoshError("missing permissions for ref")
+  ERROR: missing permissions for ref
   [1]
 # works
   $ josh-filter -s :/ master --check-permission --users users.yaml --groups groups.yaml -u LMG -r test --update refs/josh/filtered

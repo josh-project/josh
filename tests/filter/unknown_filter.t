@@ -18,7 +18,13 @@
   * add files
 
   $ josh-filter -s :nosuch=filter master --update refs/josh/filtered
-  ERROR: JoshError("invalid filter")
+  ERROR: Invalid filter: ":nosuch"
+  
+  Note: use forward slash at the start of the filter if you're
+  trying to select a subdirectory:
+  
+    :/nosuch
+  
   [1]
 
   $ git ls-tree --name-only -r refs/josh/filtered

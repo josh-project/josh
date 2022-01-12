@@ -280,7 +280,7 @@
   parent: sub3/sub4
   sha1: 288746e9035732a1fe600ee331de94e70f9639cb
   $ josh-filter -q "render=sub1/tmpl_file_err&tmpl_param1=tmpl_param_value1&tmpl_p2=val2"
-  ERROR: JoshError("Error rendering \"sub1/tmpl_file_err\" line 1, col 14: Variable \"tmpl_param12\" not found in strict mode.")
+  ERROR: Error rendering "sub1/tmpl_file_err" line 1, col 14: Variable "tmpl_param12" not found in strict mode.
   [1]
   $ josh-filter :/sub1 -q render=file2
   contents2
