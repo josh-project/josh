@@ -59,9 +59,19 @@ Map a shared path into a workspace
 To add shared path to a location in the workspace that does not exist yet, first add an
 entry to the ``workspace.josh`` file and commit that.
 
-At this point the path is of course empty to the commit needs to be pushed to the server.
+You can add the mapping at the end of the file using a simple syntax, and rely on josh to rewrite
+it for you in a canonical way.
+
+    ...
+    new/mapping/location/in/workspace = :/new/mapping/location/in/monorepo
+
+At this point the path is of course empty, so the commit needs to be pushed to the server.
 When the same commit is then fetched back it will have the mapped path populated with the
 shared content.
+
+When the commit is pushed, josh will notify you about the rewrite. You can fetch the rewritten 
+commit using the advertised SHA.
+Alternatively, you can use [git sync](./cli.md#git-sync) which will do it for you.
 
 Publish a non-shared path into a shared location
 ------------------------------------------------
