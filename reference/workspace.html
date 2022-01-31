@@ -177,9 +177,17 @@ created by Josh before they get into the immutable history of your main reposito
 <h2 id="map-a-shared-path-into-a-workspace"><a class="header" href="#map-a-shared-path-into-a-workspace">Map a shared path into a workspace</a></h2>
 <p>To add shared path to a location in the workspace that does not exist yet, first add an
 entry to the <code>workspace.josh</code> file and commit that.</p>
-<p>At this point the path is of course empty to the commit needs to be pushed to the server.
+<p>You can add the mapping at the end of the file using a simple syntax, and rely on josh to rewrite
+it for you in a canonical way.</p>
+<pre><code>...
+new/mapping/location/in/workspace = :/new/mapping/location/in/monorepo
+</code></pre>
+<p>At this point the path is of course empty, so the commit needs to be pushed to the server.
 When the same commit is then fetched back it will have the mapped path populated with the
 shared content.</p>
+<p>When the commit is pushed, josh will notify you about the rewrite. You can fetch the rewritten 
+commit using the advertised SHA.
+Alternatively, you can use <a href="./cli.html#git-sync">git sync</a> which will do it for you.</p>
 <h2 id="publish-a-non-shared-path-into-a-shared-location"><a class="header" href="#publish-a-non-shared-path-into-a-shared-location">Publish a non-shared path into a shared location</a></h2>
 <p>The steps here are exactly the same as for the mapping example above. The only difference being
 that the path already exists in the workspace but not in the shared location.</p>
