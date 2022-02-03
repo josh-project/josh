@@ -50,7 +50,7 @@
   [3] :PATHS
   [12] _invert
   [16] _paths
-  ERROR: JoshError("missing permissions for ref")
+  ERROR: missing permissions for ref
   [1]
   $ josh-filter -s :/b master --check-permission -w ::a/ --update refs/josh/filtered
   [1] :/a
@@ -63,7 +63,7 @@
   [4] :INVERT
   [13] _invert
   [16] _paths
-  ERROR: JoshError("missing permissions for ref")
+  ERROR: missing permissions for ref
   [1]
 
 
@@ -90,7 +90,7 @@
   [4] :INVERT
   [13] _invert
   [16] _paths
-  ERROR: JoshError("missing permissions for ref")
+  ERROR: missing permissions for ref
   [1]
 
 

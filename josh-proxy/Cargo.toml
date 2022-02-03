@@ -23,20 +23,21 @@ toml = "0.5.8"
 git2 = "0.13.25"
 tracing = { version = "0.1.29", features = ["max_level_trace", "release_max_level_trace"] }
 tracing-futures = "0.2.5"
-tracing-subscriber = { version = "0.3.4", features = ["env-filter"]}
+tracing-subscriber = { version = "0.3.7", features = ["env-filter"]}
 tracing-opentelemetry = "0.16.0"
-opentelemetry = "0.16.0"
+opentelemetry = "0.17.0"
 opentelemetry-jaeger = "0.15.0"
-reqwest= { version = "0.11.8", default-features = false, features = ["blocking", "json"] }
+reqwest= { version = "0.11.9", default-features = false, features = ["blocking", "json"] }
 uuid = { version = "0.8.2", features = ["v4"] }
 base64 = "0.13.0"
 regex = "1.5.4"
 lazy_static = "1.4.0"
 josh = {path = "../"}
-serde_json= "1.0.73"
-serde= "1.0.132"
+serde_json= "1.0.78"
+serde= "1.0.136"
 rust-crypto = "0.2.36"
 unindent = "0.1.7"
 juniper = { version = "0.15.7", features = ["expose-test-schema"] }
 url = "2.2.2"
 percent-encoding = "2.1.0"
+indoc = "1.0.3"

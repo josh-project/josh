@@ -4,6 +4,7 @@
 #[macro_use]
 extern crate rs_tracing;
 
+use josh::JoshError;
 use std::fs::read_to_string;
 use std::io::Write;
 
@@ -391,7 +392,12 @@ fn main() {
     };
 
     std::process::exit(if let Err(e) = run_filter(args) {
-        println!("ERROR: {:?}", e);
+        println!(
+            "ERROR: {}",
+            match e {
+                JoshError(s) => s,
+            }
+        );
         1
     } else {
         0

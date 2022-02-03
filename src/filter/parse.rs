@@ -1,4 +1,5 @@
 use super::*;
+use indoc::{formatdoc, indoc};
 
 fn make_op(args: &[&str]) -> JoshResult<Op> {
     match args {
@@ -6,13 +7,48 @@ fn make_op(args: &[&str]) -> JoshResult<Op> {
         ["empty"] => Ok(Op::Empty),
         ["prefix", arg] => Ok(Op::Prefix(Path::new(arg).to_owned())),
         ["workspace", arg] => Ok(Op::Workspace(Path::new(arg).to_owned())),
+        ["prefix"] => Err(josh_error(indoc!(
+            r#"
+            Filter ":prefix" requires an argument.
+
+            Note: use "=" to provide the argument value:
+
+              :prefix=path
+
+            Where `path` is path to be used as a prefix
+            "#
+        ))),
+        ["workspace"] => Err(josh_error(indoc!(
+            r#"
+            Filter ":workspace" requires an argument.
+
+            Note: use "=" to provide the argument value:
+
+              :workspace=path
+
+            Where `path` is path to the directory where workspace.josh file is located
+            "#
+        ))),
         ["SQUASH"] => Ok(Op::Squash),
         ["PATHS"] => Ok(Op::Paths),
         #[cfg(feature = "search")]
         ["INDEX"] => Ok(Op::Index),
         ["INVERT"] => Ok(Op::Invert),
         ["FOLD"] => Ok(Op::Fold),
-        _ => Err(josh_error("invalid filter")),
+        _ => Err(josh_error(
+            formatdoc!(
+                r#"
+                Invalid filter: ":{0}"
+
+                Note: use forward slash at the start of the filter if you're
+                trying to select a subdirectory:
+
+                  :/{0}
+                "#,
+                args[0]
+            )
+            .as_str(),
+        )),
     }
 }
 

@@ -7,10 +7,13 @@ use tracing_subscriber::Layer;
 use futures::future;
 use futures::FutureExt;
 use hyper::service::{make_service_fn, service_fn};
-use hyper::{Request, Response, Server};
+use hyper::{Request, Response, Server, StatusCode};
+use indoc::formatdoc;
+use josh::JoshError;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use tokio::process::Command;
+use tracing::Span;
 use tracing_futures::Instrument;
 
 fn version_str() -> String {
@@ -26,8 +29,8 @@ lazy_static! {
 
 josh::regex_parsed!(
     FilteredRepoUrl,
-    r"(?P<api>/~/\w+)?(?P<upstream_repo>/[^:!]*[.]git)(?P<headref>@[^:!]*)?((?P<filter>[:!].*)[.]git)?(?P<pathinfo>/.*)?",
-    [api, upstream_repo, filter, pathinfo, headref]
+    r"(?P<api>/~/\w+)?(?P<upstream_repo>/[^:!]*[.]git)(?P<headref>@[^:!]*)?((?P<filter>[:!].*)[.]git)?(?P<pathinfo>/.*)?(?P<rest>.*)",
+    [api, upstream_repo, filter, pathinfo, headref, rest]
 );
 
 type FetchTimers = HashMap<String, std::time::Instant>;
@@ -171,21 +174,23 @@ async fn static_paths(
 ) -> josh::JoshResult<Option<Response<hyper::Body>>> {
     tracing::debug!("static_path {:?}", path);
     if path == "/version" {
-        return Ok(Some(
-            Response::builder()
-                .status(hyper::StatusCode::OK)
-                .body(hyper::Body::from(version_str()))
-                .unwrap_or_default(),
-        ));
+        return Ok(Some(make_response(
+            hyper::Body::from(version_str()),
+            hyper::StatusCode::OK,
+        )));
+    }
+    if path == "/remote" {
+        return Ok(Some(make_response(
+            hyper::Body::from(service.upstream_url.clone()),
+            hyper::StatusCode::OK,
+        )));
     }
     if path == "/flush" {
         service.fetch_timers.write()?.clear();
-        return Ok(Some(
-            Response::builder()
-                .status(hyper::StatusCode::OK)
-                .body(hyper::Body::from("Flushed credential cache\n"))
-                .unwrap_or_default(),
-        ));
+        return Ok(Some(make_response(
+            hyper::Body::from("Flushed credential cache\n"),
+            hyper::StatusCode::OK,
+        )));
     }
     if path == "/filters" || path == "/filters/refresh" {
         service.fetch_timers.write()?.clear();
@@ -202,12 +207,10 @@ async fn static_paths(
         })
         .await??;
 
-        return Ok(Some(
-            Response::builder()
-                .status(hyper::StatusCode::OK)
-                .body(hyper::Body::from(body_str))
-                .unwrap_or_default(),
-        ));
+        return Ok(Some(make_response(
+            hyper::Body::from(body_str),
+            hyper::StatusCode::OK,
+        )));
     }
     Ok(None)
 }
@@ -323,10 +326,11 @@ async fn do_filter(
     r
 }
 
-async fn error_response() -> Response<hyper::Body> {
+fn make_response(body: hyper::Body, code: hyper::StatusCode) -> Response<hyper::Body> {
     Response::builder()
-        .status(hyper::StatusCode::INTERNAL_SERVER_ERROR)
-        .body(hyper::Body::empty())
+        .status(code)
+        .header(hyper::header::CONTENT_TYPE, "text/plain")
+        .body(body)
         .expect("Can't build response")
 }
 
@@ -395,13 +399,31 @@ async fn call_service(
     let parsed_url = {
         if let Some(parsed_url) = FilteredRepoUrl::from_str(&path) {
             let mut pu = parsed_url;
+
+            if pu.rest.starts_with(":") {
+                let guessed_url = path.trim_end_matches("/info/refs");
+                return Ok(make_response(
+                    hyper::Body::from(formatdoc!(
+                        r#"
+                        Invalid URL: "{0}"
+
+                        Note: repository URLs should end with ".git":
+
+                          {0}.git
+                        "#,
+                        guessed_url
+                    )),
+                    hyper::StatusCode::UNPROCESSABLE_ENTITY,
+                ));
+            }
+
             if pu.filter.is_empty() {
                 pu.filter = ":/".to_string();
             }
             pu
         } else {
             return Ok(Response::builder()
-                .status(302)
+                .status(hyper::StatusCode::FOUND)
                 .header("Location", format!("/~/browse{}@HEAD(:/)/()", path))
                 .body(hyper::Body::empty())?);
         }
@@ -621,6 +643,24 @@ async fn prepare_namespace(
     Ok(temp_ns)
 }
 
+fn trace_http_response_code(trace_span: Span, http_status: StatusCode) {
+    macro_rules! trace {
+        ($level:expr) => {{
+            tracing::event!(
+                parent: trace_span,
+                $level,
+                http_status = http_status.as_u16()
+            );
+        }};
+    }
+
+    match http_status.as_u16() {
+        s if s < 400 => trace!(tracing::Level::TRACE),
+        s if s < 500 => trace!(tracing::Level::WARN),
+        _ => trace!(tracing::Level::ERROR),
+    };
+}
+
 #[tokio::main]
 async fn run_proxy() -> josh::JoshResult<i32> {
     let port = ARGS.value_of("port").unwrap_or("8000").to_owned();
@@ -667,23 +707,26 @@ async fn run_proxy() -> josh::JoshResult<i32> {
 
             async move {
                 let r = if let Ok(req_auth) = josh_proxy::auth::strip_auth(_req) {
-                    if let Ok(r) = call_service(proxy_service, req_auth)
+                    match call_service(proxy_service, req_auth)
                         .instrument(s.clone())
                         .await
                     {
-                        r
-                    } else {
-                        error_response().await
+                        Ok(r) => r,
+                        Err(e) => make_response(
+                            hyper::Body::from(match e {
+                                JoshError(s) => s,
+                            }),
+                            hyper::StatusCode::INTERNAL_SERVER_ERROR,
+                        ),
                     }
                 } else {
-                    error_response().await
+                    make_response(
+                        hyper::Body::from("JoshError(strip_auth)"),
+                        hyper::StatusCode::INTERNAL_SERVER_ERROR,
+                    )
                 };
                 let _e = s.enter();
-                tracing::event!(
-                    parent: s.clone(),
-                    tracing::Level::TRACE,
-                    http_status = r.status().as_u16()
-                );
+                trace_http_response_code(s.clone(), r.status());
                 r
             }
             .map(Ok::<_, hyper::http::Error>)

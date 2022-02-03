@@ -1,4 +1,4 @@
-![Just One Single History](/banner.png)
+![Just One Single History](/splash.png)
 
 [![Build Status](https://github.com/josh-project/josh/workflows/Rust/badge.svg?branch=master)](https://github.com/josh-project/josh/actions)
 
