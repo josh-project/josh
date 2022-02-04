@@ -54,9 +54,7 @@
 
   $ cd sub1
 
-  $ git checkout main
-  Switched to a new branch 'main'
-  Branch 'main' set up to track remote branch 'main' from 'origin'.
+  $ git checkout -q main
 
   $ cat .git/refs/remotes/origin/HEAD
   cat: .git/refs/remotes/origin/HEAD: No such file or directory
