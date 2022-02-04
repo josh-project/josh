@@ -276,6 +276,22 @@ fn iterate(filter: Filter) -> Filter {
     filter
 }
 
+fn is_prefix(op: Op) -> bool {
+    match op {
+        Op::Prefix(_) => true,
+        _ => false,
+    }
+}
+
+fn prefix_of(op: Op) -> Filter {
+    let last = to_op(last_chain(to_filter(Op::Nop), to_filter(op.clone())).1);
+    to_filter(if is_prefix(last.clone()) {
+        last
+    } else {
+        Op::Nop
+    })
+}
+
 /*
  * Attempt to apply one optimization rule to a filter. If no rule applies the input
  * is returned.
@@ -335,6 +351,8 @@ fn step(filter: Filter) -> Filter {
         }
         Op::Chain(a, b) => match (to_op(a), to_op(b)) {
             (Op::Chain(x, y), b) => Op::Chain(x, to_filter(Op::Chain(y, to_filter(b)))),
+            (Op::Prefix(a), Op::Subdir(b)) if a == b => Op::Nop,
+            (Op::Prefix(a), Op::Subdir(b)) if a != b => Op::Empty,
             (Op::Nop, b) => b,
             (a, Op::Nop) => a,
             (Op::Empty, _) => Op::Empty,
@@ -347,10 +365,22 @@ fn step(filter: Filter) -> Filter {
         Op::Subtract(a, b) if a == b => Op::Empty,
         Op::Subtract(af, bf) => match (to_op(af), to_op(bf)) {
             (Op::Empty, _) => Op::Empty,
+            (_, Op::Nop) => Op::Empty,
             (a, Op::Empty) => a,
             (Op::Chain(a, b), Op::Chain(c, d)) if a == c => {
                 Op::Chain(a, to_filter(Op::Subtract(b, d)))
             }
+            (_, b) if prefix_of(b.clone()) != to_filter(Op::Nop) => {
+                Op::Subtract(af, last_chain(to_filter(Op::Nop), to_filter(b.clone())).0)
+            }
+            (a, _) if prefix_of(a.clone()) != to_filter(Op::Nop) => Op::Chain(
+                to_filter(Op::Subtract(
+                    last_chain(to_filter(Op::Nop), to_filter(a.clone())).0,
+                    bf,
+                )),
+                prefix_of(a),
+            ),
+            (_, b) if is_prefix(b.clone()) => Op::Subtract(af, to_filter(Op::Nop)),
             _ if common_post(&vec![af, bf]).is_some() => {
                 let (cp, rest) = common_post(&vec![af, bf]).unwrap();
                 Op::Chain(to_filter(Op::Subtract(rest[0], rest[1])), cp)

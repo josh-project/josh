@@ -20,6 +20,7 @@ mod nav;
 mod patterns;
 mod refs;
 mod route;
+mod select;
 
 pub struct App {
     _link: ComponentLink<Self>,
@@ -50,6 +51,9 @@ impl Component for App {
                         <nav::Nav route=switch.clone()/>
                         {
                             match switch.mode.as_str() {
+                                "select" => html!{
+                                    <select::RepoSelector/>
+                                },
                                 "browse" => html!{
                                     <ls::Nav route=switch.clone()/>
                                 },
