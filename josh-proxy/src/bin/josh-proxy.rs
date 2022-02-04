@@ -369,7 +369,10 @@ async fn call_service(
         }
     }
 
-    if path.starts_with("/~/browse") || path.starts_with("/~/filter") || path.starts_with("/~/refs")
+    if path.starts_with("/~/select")
+        || path.starts_with("/~/browse")
+        || path.starts_with("/~/filter")
+        || path.starts_with("/~/refs")
     {
         let p = &path[9..];
 
@@ -421,9 +424,15 @@ async fn call_service(
             }
             pu
         } else {
+            let redirect_path = if path == "/" {
+                "/~/select/@()/()".to_string()
+            } else {
+                format!("/~/browse{}@HEAD(:/)/()", path)
+            };
+
             return Ok(Response::builder()
                 .status(hyper::StatusCode::FOUND)
-                .header("Location", format!("/~/browse{}@HEAD(:/)/()", path))
+                .header("Location", redirect_path)
                 .body(hyper::Body::empty())?);
         }
     };
