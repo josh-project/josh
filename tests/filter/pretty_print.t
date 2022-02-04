@@ -27,6 +27,15 @@
       :/b
   ]
 
+  $ josh-filter -p :subtract[a=:[::x/,::y/,::z/],b=:[::x/,::y/]]
+  a/z = :/z
+  $ josh-filter -p :subtract[a=:[::x/,::y/,::z/],a=:[::x/,::y/]]
+  a/z = :/z
+  $ josh-filter -p :subtract[a=:[::x/,::y/],a=:[::x/,::y/]]
+  :empty
+  $ josh-filter -p :subtract[a=:[::x/,::y/],b=:[::x/,::y/]]
+  :empty
+
   $ cat > f <<EOF
   > a/b = :/a/b
   > a/j = :/a/j
@@ -71,9 +80,9 @@
   > ]]
   > EOF
   $ josh-filter -p --file f
-  :subtract[
-      ::b/
-      ::c/
+  b = :subtract[
+      :/b
+      :/c
   ]
 
   $ cat > f <<EOF
@@ -173,9 +182,9 @@
   > EOF
 
   $ josh-filter -p --file f
-  :subtract[
-      x/g = :/a/x/g
-      p/au/bs/i1 = :/m/bs/m2/i/tc/i1
+  x/g = :subtract[
+      :/a/x/g
+      :/m/bs/m2/i/tc/i1
   ]
 
   $ cat > f <<EOF
