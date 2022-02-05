@@ -28,13 +28,74 @@
   ]
 
   $ josh-filter -p :subtract[a=:[::x/,::y/,::z/],b=:[::x/,::y/]]
-  a/z = :/z
+  a = :[
+      y = :subtract[
+              :subtract[
+                      :/y
+                      :/x
+                  ]
+              :/y
+          ]
+      z = :subtract[
+              :subtract[
+                      :/z
+                      :/x
+                  ]
+              :/y
+          ]
+  ]
   $ josh-filter -p :subtract[a=:[::x/,::y/,::z/],a=:[::x/,::y/]]
-  a/z = :/z
+  a = :[
+      y = :subtract[
+              :subtract[
+                      :/y
+                      :/x
+                  ]
+              :/y
+          ]
+      z = :subtract[
+              :subtract[
+                      :/z
+                      :/x
+                  ]
+              :/y
+          ]
+  ]
   $ josh-filter -p :subtract[a=:[::x/,::y/],a=:[::x/,::y/]]
   :empty
   $ josh-filter -p :subtract[a=:[::x/,::y/],b=:[::x/,::y/]]
-  :empty
+  a/y = :subtract[
+          :subtract[
+                  :/y
+                  :/x
+              ]
+          :/y
+      ]
+  $ josh-filter -p :subtract[:/a,:[:/b,:/c,:/d,:/e]]
+  :subtract[
+          :subtract[
+                  :subtract[
+                          :subtract[
+                                  :/a
+                                  :/b
+                              ]
+                          :/c
+                      ]
+                  :/d
+              ]
+          :/e
+      ]
+  $ josh-filter -p :subtract[:[:/a,:/b,:/c],:/c]
+  :[
+      :subtract[
+              :/a
+              :/c
+          ]
+      :subtract[
+              :/b
+              :/c
+          ]
+  ]
 
   $ cat > f <<EOF
   > a/b = :/a/b
@@ -81,7 +142,10 @@
   > EOF
   $ josh-filter -p --file f
   b = :subtract[
-      :/b
+      :subtract[
+              :/b
+              :/a
+          ]
       :/c
   ]
 
@@ -133,7 +197,262 @@
   > EOF
 
   $ josh-filter -p --file f
-  x/g = :/a/x/g
+  a/j = :subtract[
+          :subtract[
+                  :subtract[
+                          :/a:subtract[
+                                  :subtract[
+                                          :subtract[
+                                                  :subtract[
+                                                          :subtract[
+                                                                  :subtract[
+                                                                          :/j
+                                                                          :/b
+                                                                      ]
+                                                                  :/j
+                                                              ]
+                                                          :/x/c++666
+                                                      ]
+                                                  :/x/d
+                                              ]
+                                          :/x/gg
+                                      ]
+                                  :/x/u
+                              ]
+                          :/m/bs/m2/i/tc/i1
+                      ]
+                  :/m/bs/m2/i/tc/i2
+              ]
+          :/m/bs/m2/i/tgt
+      ]
+  x = :[
+      c++666 = :subtract[
+              :subtract[
+                      :subtract[
+                              :/a:subtract[
+                                      :subtract[
+                                              :subtract[
+                                                      :subtract[
+                                                              :subtract[
+                                                                      :subtract[
+                                                                              :/x/c++666
+                                                                              :/b
+                                                                          ]
+                                                                      :/j
+                                                                  ]
+                                                              :/x/c++666
+                                                          ]
+                                                      :/x/d
+                                                  ]
+                                              :/x/gg
+                                          ]
+                                      :/x/u
+                                  ]
+                              :/m/bs/m2/i/tc/i1
+                          ]
+                      :/m/bs/m2/i/tc/i2
+                  ]
+              :/m/bs/m2/i/tgt
+          ]
+      d = :subtract[
+              :subtract[
+                      :subtract[
+                              :/a:subtract[
+                                      :subtract[
+                                              :subtract[
+                                                      :subtract[
+                                                              :subtract[
+                                                                      :subtract[
+                                                                              :/x/d
+                                                                              :/b
+                                                                          ]
+                                                                      :/j
+                                                                  ]
+                                                              :/x/c++666
+                                                          ]
+                                                      :/x/d
+                                                  ]
+                                              :/x/gg
+                                          ]
+                                      :/x/u
+                                  ]
+                              :/m/bs/m2/i/tc/i1
+                          ]
+                      :/m/bs/m2/i/tc/i2
+                  ]
+              :/m/bs/m2/i/tgt
+          ]
+      g = :subtract[
+              :subtract[
+                      :subtract[
+                              :/a:subtract[
+                                      :subtract[
+                                              :subtract[
+                                                      :subtract[
+                                                              :subtract[
+                                                                      :subtract[
+                                                                              :/x/g
+                                                                              :/b
+                                                                          ]
+                                                                      :/j
+                                                                  ]
+                                                              :/x/c++666
+                                                          ]
+                                                      :/x/d
+                                                  ]
+                                              :/x/gg
+                                          ]
+                                      :/x/u
+                                  ]
+                              :/m/bs/m2/i/tc/i1
+                          ]
+                      :/m/bs/m2/i/tc/i2
+                  ]
+              :/m/bs/m2/i/tgt
+          ]
+      gg = :subtract[
+              :subtract[
+                      :subtract[
+                              :/a:subtract[
+                                      :subtract[
+                                              :subtract[
+                                                      :subtract[
+                                                              :subtract[
+                                                                      :subtract[
+                                                                              :/x/gg
+                                                                              :/b
+                                                                          ]
+                                                                      :/j
+                                                                  ]
+                                                              :/x/c++666
+                                                          ]
+                                                      :/x/d
+                                                  ]
+                                              :/x/gg
+                                          ]
+                                      :/x/u
+                                  ]
+                              :/m/bs/m2/i/tc/i1
+                          ]
+                      :/m/bs/m2/i/tc/i2
+                  ]
+              :/m/bs/m2/i/tgt
+          ]
+      u = :subtract[
+              :subtract[
+                      :subtract[
+                              :/a:subtract[
+                                      :subtract[
+                                              :subtract[
+                                                      :subtract[
+                                                              :subtract[
+                                                                      :subtract[
+                                                                              :/x/u
+                                                                              :/b
+                                                                          ]
+                                                                      :/j
+                                                                  ]
+                                                              :/x/c++666
+                                                          ]
+                                                      :/x/d
+                                                  ]
+                                              :/x/gg
+                                          ]
+                                      :/x/u
+                                  ]
+                              :/m/bs/m2/i/tc/i1
+                          ]
+                      :/m/bs/m2/i/tc/i2
+                  ]
+              :/m/bs/m2/i/tgt
+          ]
+  ]
+  p/au/bs = :[
+      i1 = :subtract[
+              :subtract[
+                      :subtract[
+                              :subtract[
+                                      :subtract[
+                                              :subtract[
+                                                      :subtract[
+                                                              :subtract[
+                                                                      :subtract[
+                                                                              :/m/bs/m2/i/tc/i1
+                                                                              :/a/b
+                                                                          ]
+                                                                      :/a/j
+                                                                  ]
+                                                              :/a/x/c++666
+                                                          ]
+                                                      :/a/x/d
+                                                  ]
+                                              :/a/x/gg
+                                          ]
+                                      :/a/x/u
+                                  ]
+                              :/m/bs/m2/i/tc/i1
+                          ]
+                      :/m/bs/m2/i/tc/i2
+                  ]
+              :/m/bs/m2/i/tgt
+          ]
+      i2 = :subtract[
+              :subtract[
+                      :subtract[
+                              :subtract[
+                                      :subtract[
+                                              :subtract[
+                                                      :subtract[
+                                                              :subtract[
+                                                                      :subtract[
+                                                                              :/m/bs/m2/i/tc/i2
+                                                                              :/a/b
+                                                                          ]
+                                                                      :/a/j
+                                                                  ]
+                                                              :/a/x/c++666
+                                                          ]
+                                                      :/a/x/d
+                                                  ]
+                                              :/a/x/gg
+                                          ]
+                                      :/a/x/u
+                                  ]
+                              :/m/bs/m2/i/tc/i1
+                          ]
+                      :/m/bs/m2/i/tc/i2
+                  ]
+              :/m/bs/m2/i/tgt
+          ]
+      gt = :subtract[
+              :subtract[
+                      :subtract[
+                              :subtract[
+                                      :subtract[
+                                              :subtract[
+                                                      :subtract[
+                                                              :subtract[
+                                                                      :subtract[
+                                                                              :/m/bs/m2/i/tgt
+                                                                              :/a/b
+                                                                          ]
+                                                                      :/a/j
+                                                                  ]
+                                                              :/a/x/c++666
+                                                          ]
+                                                      :/a/x/d
+                                                  ]
+                                              :/a/x/gg
+                                          ]
+                                      :/a/x/u
+                                  ]
+                              :/m/bs/m2/i/tc/i1
+                          ]
+                      :/m/bs/m2/i/tc/i2
+                  ]
+              :/m/bs/m2/i/tgt
+          ]
+  ]
 
   $ cat > f <<EOF
   > :subtract[
@@ -182,9 +501,233 @@
   > EOF
 
   $ josh-filter -p --file f
-  x/g = :subtract[
-      :/a/x/g
-      :/m/bs/m2/i/tc/i1
+  a/j = :subtract[
+          :subtract[
+                  :subtract[
+                          :/a:subtract[
+                                  :subtract[
+                                          :subtract[
+                                                  :subtract[
+                                                          :subtract[
+                                                                  :subtract[
+                                                                          :/j
+                                                                          :/b
+                                                                      ]
+                                                                  :/j
+                                                              ]
+                                                          :/x/c++666
+                                                      ]
+                                                  :/x/d
+                                              ]
+                                          :/x/gg
+                                      ]
+                                  :/x/u
+                              ]
+                          :/m/bs/m2/i/tc/i1
+                      ]
+                  :/m/bs/m2/i/tc/i2
+              ]
+          :/m/bs/m2/i/tgt
+      ]
+  x = :[
+      c++666 = :subtract[
+              :subtract[
+                      :subtract[
+                              :/a:subtract[
+                                      :subtract[
+                                              :subtract[
+                                                      :subtract[
+                                                              :subtract[
+                                                                      :subtract[
+                                                                              :/x/c++666
+                                                                              :/b
+                                                                          ]
+                                                                      :/j
+                                                                  ]
+                                                              :/x/c++666
+                                                          ]
+                                                      :/x/d
+                                                  ]
+                                              :/x/gg
+                                          ]
+                                      :/x/u
+                                  ]
+                              :/m/bs/m2/i/tc/i1
+                          ]
+                      :/m/bs/m2/i/tc/i2
+                  ]
+              :/m/bs/m2/i/tgt
+          ]
+      d = :subtract[
+              :subtract[
+                      :subtract[
+                              :/a:subtract[
+                                      :subtract[
+                                              :subtract[
+                                                      :subtract[
+                                                              :subtract[
+                                                                      :subtract[
+                                                                              :/x/d
+                                                                              :/b
+                                                                          ]
+                                                                      :/j
+                                                                  ]
+                                                              :/x/c++666
+                                                          ]
+                                                      :/x/d
+                                                  ]
+                                              :/x/gg
+                                          ]
+                                      :/x/u
+                                  ]
+                              :/m/bs/m2/i/tc/i1
+                          ]
+                      :/m/bs/m2/i/tc/i2
+                  ]
+              :/m/bs/m2/i/tgt
+          ]
+      g = :subtract[
+              :subtract[
+                      :subtract[
+                              :/a:subtract[
+                                      :subtract[
+                                              :subtract[
+                                                      :subtract[
+                                                              :subtract[
+                                                                      :subtract[
+                                                                              :/x/g
+                                                                              :/b
+                                                                          ]
+                                                                      :/j
+                                                                  ]
+                                                              :/x/c++666
+                                                          ]
+                                                      :/x/d
+                                                  ]
+                                              :/x/gg
+                                          ]
+                                      :/x/u
+                                  ]
+                              :/m/bs/m2/i/tc/i1
+                          ]
+                      :/m/bs/m2/i/tc/i2
+                  ]
+              :/m/bs/m2/i/tgt
+          ]
+      gg = :subtract[
+              :subtract[
+                      :subtract[
+                              :/a:subtract[
+                                      :subtract[
+                                              :subtract[
+                                                      :subtract[
+                                                              :subtract[
+                                                                      :subtract[
+                                                                              :/x/gg
+                                                                              :/b
+                                                                          ]
+                                                                      :/j
+                                                                  ]
+                                                              :/x/c++666
+                                                          ]
+                                                      :/x/d
+                                                  ]
+                                              :/x/gg
+                                          ]
+                                      :/x/u
+                                  ]
+                              :/m/bs/m2/i/tc/i1
+                          ]
+                      :/m/bs/m2/i/tc/i2
+                  ]
+              :/m/bs/m2/i/tgt
+          ]
+      u = :subtract[
+              :subtract[
+                      :subtract[
+                              :/a:subtract[
+                                      :subtract[
+                                              :subtract[
+                                                      :subtract[
+                                                              :subtract[
+                                                                      :subtract[
+                                                                              :/x/u
+                                                                              :/b
+                                                                          ]
+                                                                      :/j
+                                                                  ]
+                                                              :/x/c++666
+                                                          ]
+                                                      :/x/d
+                                                  ]
+                                              :/x/gg
+                                          ]
+                                      :/x/u
+                                  ]
+                              :/m/bs/m2/i/tc/i1
+                          ]
+                      :/m/bs/m2/i/tc/i2
+                  ]
+              :/m/bs/m2/i/tgt
+          ]
+  ]
+  p/au/bs = :[
+      i2 = :subtract[
+              :subtract[
+                      :subtract[
+                              :subtract[
+                                      :subtract[
+                                              :subtract[
+                                                      :subtract[
+                                                              :subtract[
+                                                                      :subtract[
+                                                                              :/m/bs/m2/i/tc/i2
+                                                                              :/a/b
+                                                                          ]
+                                                                      :/a/j
+                                                                  ]
+                                                              :/a/x/c++666
+                                                          ]
+                                                      :/a/x/d
+                                                  ]
+                                              :/a/x/gg
+                                          ]
+                                      :/a/x/u
+                                  ]
+                              :/m/bs/m2/i/tc/i1
+                          ]
+                      :/m/bs/m2/i/tc/i2
+                  ]
+              :/m/bs/m2/i/tgt
+          ]
+      gt = :subtract[
+              :subtract[
+                      :subtract[
+                              :subtract[
+                                      :subtract[
+                                              :subtract[
+                                                      :subtract[
+                                                              :subtract[
+                                                                      :subtract[
+                                                                              :/m/bs/m2/i/tgt
+                                                                              :/a/b
+                                                                          ]
+                                                                      :/a/j
+                                                                  ]
+                                                              :/a/x/c++666
+                                                          ]
+                                                      :/a/x/d
+                                                  ]
+                                              :/a/x/gg
+                                          ]
+                                      :/a/x/u
+                                  ]
+                              :/m/bs/m2/i/tc/i1
+                          ]
+                      :/m/bs/m2/i/tc/i2
+                  ]
+              :/m/bs/m2/i/tgt
+          ]
   ]
 
   $ cat > f <<EOF

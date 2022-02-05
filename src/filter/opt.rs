@@ -385,21 +385,34 @@ fn step(filter: Filter) -> Filter {
                 let (cp, rest) = common_post(&vec![af, bf]).unwrap();
                 Op::Chain(to_filter(Op::Subtract(rest[0], rest[1])), cp)
             }
-            (Op::Compose(mut av), _) if av.contains(&bf) => {
-                av.retain(|x| *x != bf);
-                to_op(step(to_filter(Op::Compose(av))))
+            (Op::Compose(av), b) => Op::Compose(
+                av.iter()
+                    .map(|af| to_filter(Op::Subtract(*af, to_filter(b.clone()))))
+                    .collect(),
+            ),
+            (a, Op::Compose(bv)) => {
+                let mut bi = bv.iter();
+                let mut res = Op::Subtract(to_filter(a), *bi.next().unwrap());
+                for bf in bi {
+                    res = Op::Subtract(to_filter(res), *bf);
+                }
+                res
             }
-            (_, Op::Compose(bv)) if bv.contains(&af) => to_op(step(to_filter(Op::Empty))),
-            (Op::Compose(mut av), Op::Compose(mut bv)) => {
-                let v = av.clone();
-                av.retain(|x| !bv.contains(x));
-                bv.retain(|x| !v.contains(x));
+            //(Op::Compose(mut av), _) if av.contains(&bf) => {
+            //    av.retain(|x| *x != bf);
+            //    to_op(step(to_filter(Op::Compose(av))))
+            //}
+            //(_, Op::Compose(bv)) if bv.contains(&af) => to_op(step(to_filter(Op::Empty))),
+            //(Op::Compose(mut av), Op::Compose(mut bv)) => {
+            //    let v = av.clone();
+            //    av.retain(|x| !bv.contains(x));
+            //    bv.retain(|x| !v.contains(x));
 
-                Op::Subtract(
-                    step(to_filter(Op::Compose(av))),
-                    step(to_filter(Op::Compose(bv))),
-                )
-            }
+            //    Op::Subtract(
+            //        step(to_filter(Op::Compose(av))),
+            //        step(to_filter(Op::Compose(bv))),
+            //    )
+            //}
             (a, b) => Op::Subtract(step(to_filter(a)), step(to_filter(b))),
         },
         _ => to_op(filter),
