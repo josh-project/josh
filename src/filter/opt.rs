@@ -289,6 +289,8 @@ fn are_disjunct(a: &Op, b: &Op) -> bool {
         (Op::File(x), Op::File(y)) if x != y => true,
         (Op::Subdir(x), Op::File(y)) if x != y => true,
         (Op::File(x), Op::Subdir(y)) if x != y => true,
+        (Op::Chain(x, _), z) => are_disjunct(&to_op(*x), z),
+        (z, Op::Chain(x, _)) => are_disjunct(&to_op(*x), z),
         _ => false,
     }
 }
@@ -401,6 +403,9 @@ fn step(filter: Filter) -> Filter {
             (a, b) if are_disjunct(&a, &b) => a,
             (Op::Chain(a, b), Op::Chain(c, d)) if a == c => {
                 Op::Chain(a, to_filter(Op::Subtract(b, d)))
+            }
+            (_, Op::Glob(_)) => {
+                Op::Chain(to_filter(Op::Exclude(bf)), af)
             }
             (_, b) if prefix_of(b.clone()) != to_filter(Op::Nop) => {
                 Op::Subtract(af, last_chain(to_filter(Op::Nop), to_filter(b.clone())).0)
