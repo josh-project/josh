@@ -495,9 +495,9 @@ fn apply2<'a>(
 
         Op::Subtract(a, b) => {
             let af = apply(transaction, *a, tree.clone())?;
-            let bf = apply(transaction, *b, tree.clone())?;
-            let bu = unapply(transaction, *b, bf, tree::empty(repo))?;
-            let ba = apply(transaction, *a, bu)?.id();
+            let p = apply2(transaction, &Op::Paths, tree.clone())?;
+            let bp = apply(transaction, *b, p)?;
+            let ba = apply2(transaction, &Op::Invert, bp)?.id();
             Ok(repo.find_tree(tree::subtract(transaction, af.id(), ba)?)?)
         }
         Op::Exclude(b) => {
