@@ -392,9 +392,18 @@ fn step(filter: Filter) -> Filter {
             (_, Op::Empty) => Op::Empty,
             (a, b) => Op::Chain(step(to_filter(a)), step(to_filter(b))),
         },
-        Op::Exclude(b) if b == to_filter(Op::Nop) => Op::Empty,
-        Op::Exclude(b) if b == to_filter(Op::Empty) => Op::Nop,
-        Op::Exclude(b) => Op::Exclude(step(b)),
+        Op::Exclude(e) => match to_op(e) {
+            Op::Nop => Op::Empty,
+            Op::Empty => Op::Nop,
+            Op::Compose(v) => {
+                let mut res = Op::Nop;
+                for f in v {
+                    res = Op::Chain(to_filter(res), to_filter(Op::Exclude(f)));
+                }
+                res
+            }
+            _ => Op::Exclude(step(e)),
+        },
         Op::Subtract(a, b) if a == b => Op::Empty,
         Op::Subtract(af, bf) => match (to_op(af), to_op(bf)) {
             (Op::Empty, _) => Op::Empty,
@@ -404,9 +413,8 @@ fn step(filter: Filter) -> Filter {
             (Op::Chain(a, b), Op::Chain(c, d)) if a == c => {
                 Op::Chain(a, to_filter(Op::Subtract(b, d)))
             }
-            (_, Op::Glob(_)) => {
-                Op::Chain(to_filter(Op::Exclude(bf)), af)
-            }
+            (Op::Chain(a, _), c) if a == to_filter(c.clone()) => Op::Empty,
+            (_, Op::Glob(_)) => Op::Chain(to_filter(Op::Exclude(bf)), af),
             (_, b) if prefix_of(b.clone()) != to_filter(Op::Nop) => {
                 Op::Subtract(af, last_chain(to_filter(Op::Nop), to_filter(b.clone())).0)
             }
