@@ -23,7 +23,7 @@ toml = "0.5.8"
 git2 = "0.13.25"
 tracing = { version = "0.1.29", features = ["max_level_trace", "release_max_level_trace"] }
 tracing-futures = "0.2.5"
-tracing-subscriber = { version = "0.3.7", features = ["env-filter"]}
+tracing-subscriber = { version = "0.3.8", features = ["env-filter"]}
 tracing-opentelemetry = "0.16.0"
 opentelemetry = "0.17.0"
 opentelemetry-jaeger = "0.15.0"
