@@ -5,17 +5,17 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /usr/src/josh
-COPY . .
-
 RUN rustup target add wasm32-unknown-unknown
 RUN cargo install --version 0.2.78 wasm-bindgen-cli
 RUN cargo install --version 0.14.0 trunk
+
+COPY . .
 RUN trunk --config=josh-ui/Trunk.toml build
-RUN cargo build -p josh-proxy
+RUN cargo build -p josh-proxy --release
 
 FROM rust:1.54
 
-COPY --from=builder /usr/src/josh/target/debug/josh-proxy /usr/bin/josh-proxy
+COPY --from=builder /usr/src/josh/target/release/josh-proxy /usr/bin/josh-proxy
 COPY --from=builder /usr/src/josh/run-josh.sh /usr/bin/run-josh.sh
 COPY --from=builder /usr/src/josh/static/ /josh/static/
 
