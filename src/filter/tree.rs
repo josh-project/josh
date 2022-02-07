@@ -256,7 +256,7 @@ pub fn overlay(
         return Ok(result_tree.id());
     }
 
-    Ok(input1)
+    Ok(input2)
 }
 
 pub fn pathline(b: &str) -> JoshResult<String> {

@@ -661,7 +661,13 @@ fn unapply2<'a>(
             if let Ok(_) = transaction.repo().find_blob(file) {
                 tree::insert(transaction.repo(), &parent_tree, path, file, mode)
             } else {
-                Ok(tree::empty(transaction.repo()))
+                tree::insert(
+                    transaction.repo(),
+                    &parent_tree,
+                    path,
+                    git2::Oid::zero(),
+                    0o0100644,
+                )
             }
         }
 
