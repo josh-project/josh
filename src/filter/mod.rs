@@ -399,7 +399,7 @@ fn apply_to_commit2(
             let bf = repo.find_tree(bf)?;
             let bu = unapply(transaction, *b, bf, tree::empty(repo))?;
             let ba = apply(transaction, *a, bu)?.id();
-            repo.find_tree(tree::subtract(repo, af, ba)?)?
+            repo.find_tree(tree::subtract(transaction, af, ba)?)?
         }
         Op::Exclude(b) => {
             let bf = {
@@ -412,7 +412,7 @@ fn apply_to_commit2(
                     .map(|x| x.tree_id())
                     .unwrap_or(tree::empty_id())
             };
-            repo.find_tree(tree::subtract(repo, commit.tree_id(), bf)?)?
+            repo.find_tree(tree::subtract(transaction, commit.tree_id(), bf)?)?
         }
         _ => apply(transaction, filter, commit.tree()?)?,
     };
@@ -498,11 +498,11 @@ fn apply2<'a>(
             let bf = apply(transaction, *b, tree.clone())?;
             let bu = unapply(transaction, *b, bf, tree::empty(repo))?;
             let ba = apply(transaction, *a, bu)?.id();
-            Ok(repo.find_tree(tree::subtract(repo, af.id(), ba)?)?)
+            Ok(repo.find_tree(tree::subtract(transaction, af.id(), ba)?)?)
         }
         Op::Exclude(b) => {
             let bf = apply(transaction, *b, tree.clone())?.id();
-            Ok(repo.find_tree(tree::subtract(repo, tree.id(), bf)?)?)
+            Ok(repo.find_tree(tree::subtract(transaction, tree.id(), bf)?)?)
         }
 
         Op::Paths => tree::pathstree("", tree.id(), transaction),
@@ -644,7 +644,7 @@ fn unapply2<'a>(
                 let reapply = apply(transaction, *other, from_empty.clone())?;
 
                 remaining = transaction.repo().find_tree(tree::subtract(
-                    transaction.repo(),
+                    transaction,
                     remaining.id(),
                     reapply.id(),
                 )?)?;
@@ -661,14 +661,20 @@ fn unapply2<'a>(
             if let Ok(_) = transaction.repo().find_blob(file) {
                 tree::insert(transaction.repo(), &parent_tree, path, file, mode)
             } else {
-                Ok(tree::empty(transaction.repo()))
+                tree::insert(
+                    transaction.repo(),
+                    &parent_tree,
+                    path,
+                    git2::Oid::zero(),
+                    0o0100644,
+                )
             }
         }
 
         Op::Subtract(_, _) => return Err(josh_error("filter not reversible")),
         Op::Exclude(b) => {
             let subtracted = tree::subtract(
-                transaction.repo(),
+                transaction,
                 tree.id(),
                 unapply(transaction, *b, tree, tree::empty(transaction.repo()))?.id(),
             )?;

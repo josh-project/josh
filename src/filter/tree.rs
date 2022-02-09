@@ -122,16 +122,21 @@ pub fn remove_pred<'a>(
     Ok(result)
 }
 
-pub fn subtract(
-    repo: &git2::Repository,
+pub fn subtract<'a>(
+    transaction: &'a cache::Transaction,
     input1: git2::Oid,
     input2: git2::Oid,
 ) -> super::JoshResult<git2::Oid> {
+    let repo = transaction.repo();
     if input1 == input2 {
         return Ok(tree::empty_id());
     }
     if input1 == tree::empty_id() {
         return Ok(tree::empty_id());
+    }
+
+    if let Some(cached) = transaction.get_subtract((input1, input2)) {
+        return Ok(cached);
     }
 
     if let (Ok(tree1), Ok(tree2)) = (repo.find_tree(input1), repo.find_tree(input2)) {
@@ -146,15 +151,19 @@ pub fn subtract(
                 result_tree = replace_child(
                     repo,
                     std::path::Path::new(entry.name().ok_or(super::josh_error("no name"))?),
-                    subtract(repo, e.id(), entry.id())?,
+                    subtract(transaction, e.id(), entry.id())?,
                     e.filemode(),
                     &result_tree,
                 )?;
             }
         }
 
+        transaction.insert_subtract((input1, input2), result_tree.id());
+
         return Ok(result_tree.id());
     }
+
+    transaction.insert_subtract((input1, input2), tree::empty_id());
 
     Ok(tree::empty_id())
 }
@@ -247,7 +256,7 @@ pub fn overlay(
         return Ok(result_tree.id());
     }
 
-    Ok(input1)
+    Ok(input2)
 }
 
 pub fn pathline(b: &str) -> JoshResult<String> {
@@ -805,7 +814,7 @@ pub fn compose<'a>(
         };
         transaction.insert_apply(*f, tid, taken_applied);
 
-        let subtracted = repo.find_tree(subtract(repo, applied.id(), taken_applied)?)?;
+        let subtracted = repo.find_tree(subtract(transaction, applied.id(), taken_applied)?)?;
 
         let aid = applied.id();
         let unapplied = if let Some(cached) = transaction.get_unapply(*f, aid) {
