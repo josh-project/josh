@@ -5,10 +5,10 @@ let
     darwin.apple_sdk.frameworks.Security
   ] else [];
   pkgs = import ( fetchTarball {
-      name = "nixos-21.05";
-      url =  "https://github.com/NixOS/nixpkgs/archive/refs/tags/21.05.tar.gz";
+      name = "nixos-21.11";
+      url =  "https://github.com/NixOS/nixpkgs/archive/refs/tags/21.11.tar.gz";
       # Hash obtained using `nix-prefetch-url --unpack <url>`
-      sha256 = "1ckzhh24mgz6jd1xhfgx0i9mijk6xjqxwsshnvq789xsavrmsc36";
+      sha256 = "162dywda2dvfj1248afxc45kcrg83appjd0nmdb541hl7rnncf02";
   }) {};
   rust_channel = nixpkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain;
 in

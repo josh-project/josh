@@ -12,134 +12,120 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
     let app = clap::App::new("josh-filter");
 
     #[cfg(feature = "search")]
-    let app = {
-        app.arg(
-            clap::Arg::with_name("search")
-                .long("search")
-                .takes_value(true),
-        )
-    };
+    let app = { app.arg(clap::Arg::new("search").long("search").takes_value(true)) };
     let args = app
         .arg(
-            clap::Arg::with_name("filter")
+            clap::Arg::new("filter")
                 .help("Filter to apply")
                 .default_value(":/")
                 .takes_value(true),
         )
         .arg(
-            clap::Arg::with_name("input")
+            clap::Arg::new("input")
                 .help("Ref to apply filter to")
                 .default_value("HEAD")
                 .takes_value(true),
         )
         .arg(
-            clap::Arg::with_name("file")
+            clap::Arg::new("file")
                 .long("file")
                 .help("Read filter spec from file")
                 .takes_value(true),
         )
         .arg(
-            clap::Arg::with_name("update")
+            clap::Arg::new("update")
                 .long("update")
                 .help("reference to update with the result")
                 .default_value("FILTERED_HEAD")
                 .takes_value(true),
         )
         .arg(
-            clap::Arg::with_name("squash")
+            clap::Arg::new("squash")
                 .help("Only output one commit, without history")
                 .long("squash"),
         )
         .arg(
-            clap::Arg::with_name("discover")
+            clap::Arg::new("discover")
                 .help("Populate the cache with probable filters")
-                .short("d"),
+                .short('d'),
         )
         .arg(
-            clap::Arg::with_name("trace")
+            clap::Arg::new("trace")
                 .help("Write a trace in chrome tracing format")
-                .short("t"),
+                .short('t'),
         )
         .arg(
-            clap::Arg::with_name("print-filter")
+            clap::Arg::new("print-filter")
                 .help("Pretty print the filter and exit")
-                .short("p"),
+                .short('p'),
         )
         .arg(
-            clap::Arg::with_name("cache-stats")
+            clap::Arg::new("cache-stats")
                 .help("Show stats about cache content")
-                .short("s"),
+                .short('s'),
         )
         .arg(
-            clap::Arg::with_name("no-cache")
+            clap::Arg::new("no-cache")
                 .help("Don't load cache")
-                .short("n"),
+                .short('n'),
         )
         .arg(
-            clap::Arg::with_name("pack")
+            clap::Arg::new("pack")
                 .help("Write a packfile instead of loose objects")
                 .long("pack"),
         )
         .arg(
-            clap::Arg::with_name("query")
+            clap::Arg::new("query")
                 .long("query")
-                .short("q")
+                .short('q')
                 .takes_value(true),
         )
         .arg(
-            clap::Arg::with_name("graphql")
+            clap::Arg::new("graphql")
                 .long("graphql")
-                .short("g")
+                .short('g')
                 .takes_value(true),
         )
         .arg(
-            clap::Arg::with_name("max_comp")
+            clap::Arg::new("max_comp")
                 .long("max_comp")
-                .short("m")
+                .short('m')
                 .takes_value(true),
         )
-        .arg(clap::Arg::with_name("reverse").long("reverse"))
+        .arg(clap::Arg::new("reverse").long("reverse"))
         .arg(
-            clap::Arg::with_name("check-permission")
+            clap::Arg::new("check-permission")
                 .long("check-permission")
-                .short("c"),
+                .short('c'),
         )
-        .arg(clap::Arg::with_name("missing-permission").long("missing-permission"))
+        .arg(clap::Arg::new("missing-permission").long("missing-permission"))
         .arg(
-            clap::Arg::with_name("whitelist")
+            clap::Arg::new("whitelist")
                 .long("whitelist")
-                .short("w")
+                .short('w')
                 .takes_value(true),
         )
         .arg(
-            clap::Arg::with_name("blacklist")
+            clap::Arg::new("blacklist")
                 .long("blacklist")
-                .short("b")
+                .short('b')
                 .takes_value(true),
         )
+        .arg(clap::Arg::new("users").long("users").takes_value(true))
+        .arg(clap::Arg::new("groups").long("groups").takes_value(true))
         .arg(
-            clap::Arg::with_name("users")
-                .long("users")
-                .takes_value(true),
-        )
-        .arg(
-            clap::Arg::with_name("groups")
-                .long("groups")
-                .takes_value(true),
-        )
-        .arg(
-            clap::Arg::with_name("user")
+            clap::Arg::new("user")
                 .long("user")
-                .short("u")
+                .short('u')
                 .takes_value(true),
         )
         .arg(
-            clap::Arg::with_name("repo")
+            clap::Arg::new("repo")
                 .long("repo")
-                .short("r")
+                .short('r')
                 .takes_value(true),
         )
-        .arg(clap::Arg::with_name("version").long("version").short("v"))
+        .arg(clap::Arg::new("version").long("version").short('v'))
         .get_matches_from(args);
 
     if args.is_present("trace") {

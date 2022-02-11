@@ -24,7 +24,7 @@ fn version_str() -> String {
 }
 
 lazy_static! {
-    static ref ARGS: clap::ArgMatches<'static> = parse_args();
+    static ref ARGS: clap::ArgMatches = parse_args();
 }
 
 josh::regex_parsed!(
@@ -797,7 +797,7 @@ async fn run_housekeeping(local: std::path::PathBuf) -> josh::JoshResult<()> {
     }
 }
 
-fn parse_args() -> clap::ArgMatches<'static> {
+fn parse_args() -> clap::ArgMatches {
     let args = {
         let mut args = vec![];
         for arg in std::env::args() {
@@ -807,50 +807,42 @@ fn parse_args() -> clap::ArgMatches<'static> {
     };
 
     clap::App::new("josh-proxy")
+        .arg(clap::Arg::new("remote").long("remote").takes_value(true))
+        .arg(clap::Arg::new("local").long("local").takes_value(true))
+        .arg(clap::Arg::new("poll").long("poll").takes_value(true))
         .arg(
-            clap::Arg::with_name("remote")
-                .long("remote")
-                .takes_value(true),
-        )
-        .arg(
-            clap::Arg::with_name("local")
-                .long("local")
-                .takes_value(true),
-        )
-        .arg(clap::Arg::with_name("poll").long("poll").takes_value(true))
-        .arg(
-            clap::Arg::with_name("gc")
+            clap::Arg::new("gc")
                 .long("gc")
                 .takes_value(false)
                 .help("Run git gc in maintanance"),
         )
         .arg(
-            clap::Arg::with_name("require-auth")
+            clap::Arg::new("require-auth")
                 .long("require-auth")
                 .takes_value(false),
         )
         .arg(
-            clap::Arg::with_name("no-background")
+            clap::Arg::new("no-background")
                 .long("no-background")
                 .takes_value(false),
         )
         .arg(
-            clap::Arg::with_name("graphql-root")
+            clap::Arg::new("graphql-root")
                 .long("graphql-root")
                 .help("Enable graphql root endpoint (caution: This bypasses authentication!)")
                 .takes_value(false),
         )
         .arg(
-            clap::Arg::with_name("n")
-                .short("n")
+            clap::Arg::new("n")
+                .short('n')
                 .takes_value(true)
                 .help("Number of concurrent upstream git fetch/push operations"),
         )
-        .arg(clap::Arg::with_name("port").long("port").takes_value(true))
+        .arg(clap::Arg::new("port").long("port").takes_value(true))
         .arg(
-            clap::Arg::with_name("cache-duration")
+            clap::Arg::new("cache-duration")
                 .long("cache-duration")
-                .short("c")
+                .short('c')
                 .takes_value(true)
                 .help("Duration between forced cache refresh"),
         )
