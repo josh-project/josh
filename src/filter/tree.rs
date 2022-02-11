@@ -294,8 +294,7 @@ fn hash_bits(s: &str, size: usize) -> [usize; 3] {
 
 pub fn make_dir_trigram_filter(searchstring: &str, size: usize, bits: &[usize]) -> Vec<u8> {
     let mut arr_own = vec![0u8; size];
-    let abf =
-        bitvec::slice::BitSlice::<bitvec::order::Msb0, _>::from_slice_mut(&mut arr_own).unwrap();
+    let abf = bitvec::slice::BitSlice::<_, bitvec::order::Msb0>::from_slice_mut(&mut arr_own);
 
     for t in searchstring
         .as_bytes()
@@ -363,7 +362,7 @@ pub fn trigram_index<'a>(
             //file_chunks.push(format!("{}", filefilter));
 
             let mut bf =
-                bitvec::array::BitArray::<bitvec::order::Msb0, _>::new([0u8; FILE_FILTER_SIZE]);
+                bitvec::array::BitArray::<_, bitvec::order::Msb0>::new([0u8; FILE_FILTER_SIZE]);
             let mut i = 0;
             for trigram in trigrams {
                 //if hbf[hash_bits(trigram)[2] % (FILE_FILTER_SIZE * 8)] {
@@ -372,16 +371,16 @@ pub fn trigram_index<'a>(
                 bf.set(hash_bits(trigram, FILE_FILTER_SIZE)[2], true);
 
                 if bf.count_ones() > FILE_FILTER_SIZE * 4 {
-                    let filefilter = hex::encode(bf.as_buffer());
+                    let filefilter = hex::encode(bf.into_inner());
                     file_chunks.push(format!("{} {:04x}", filefilter, i));
                     i = 0;
-                    bf.set_all(false);
+                    bf.fill(false);
                 }
                 i += 1;
             }
 
             //if bf.count_ones() > 0 {
-            let filefilter = hex::encode(bf.as_buffer());
+            let filefilter = hex::encode(bf.into_inner());
             file_chunks.push(format!("{} {:04x}", filefilter, i));
             //}
             file_chunks.push("".to_string());
@@ -389,7 +388,7 @@ pub fn trigram_index<'a>(
             'arrsub: for a in 0..arrs_sub.len() {
                 let dir_filter_size = usize::pow(4, 3 + a as u32);
                 let dtf = make_dir_trigram_filter(&b, dir_filter_size, &[0, 1, 2]);
-                let abf = bitvec::slice::BitSlice::<bitvec::order::Msb0, _>::from_slice(&dtf)?;
+                let abf = bitvec::slice::BitSlice::<_, bitvec::order::Msb0>::from_slice(&dtf);
 
                 if abf.count_ones() > dir_filter_size / 2 {
                     continue 'arrsub;
