@@ -13,7 +13,7 @@ COPY . .
 RUN trunk --config=josh-ui/Trunk.toml build
 RUN cargo build -p josh-proxy --release
 
-FROM rust:1.54
+FROM rust:1.58.1
 
 COPY --from=builder /usr/src/josh/target/release/josh-proxy /usr/bin/josh-proxy
 COPY --from=builder /usr/src/josh/run-josh.sh /usr/bin/run-josh.sh
