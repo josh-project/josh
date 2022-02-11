@@ -797,15 +797,7 @@ async fn run_housekeeping(local: std::path::PathBuf) -> josh::JoshResult<()> {
     }
 }
 
-fn parse_args() -> clap::ArgMatches {
-    let args = {
-        let mut args = vec![];
-        for arg in std::env::args() {
-            args.push(arg);
-        }
-        args
-    };
-
+fn make_app() -> clap::App<'static> {
     clap::App::new("josh-proxy")
         .arg(clap::Arg::new("remote").long("remote").takes_value(true))
         .arg(clap::Arg::new("local").long("local").takes_value(true))
@@ -846,7 +838,18 @@ fn parse_args() -> clap::ArgMatches {
                 .takes_value(true)
                 .help("Duration between forced cache refresh"),
         )
-        .get_matches_from(args)
+}
+
+fn parse_args() -> clap::ArgMatches {
+    let args = {
+        let mut args = vec![];
+        for arg in std::env::args() {
+            args.push(arg);
+        }
+        args
+    };
+
+    make_app().get_matches_from(args)
 }
 
 fn pre_receive_hook() -> josh::JoshResult<i32> {
@@ -971,4 +974,9 @@ fn main() {
     };
 
     std::process::exit(run_proxy().unwrap_or(1));
+}
+
+#[test]
+fn verify_app() {
+    make_app().debug_assert();
 }

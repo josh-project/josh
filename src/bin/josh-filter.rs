@@ -8,12 +8,12 @@ use josh::JoshError;
 use std::fs::read_to_string;
 use std::io::Write;
 
-fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
+fn make_app() -> clap::App<'static> {
     let app = clap::App::new("josh-filter");
 
     #[cfg(feature = "search")]
     let app = { app.arg(clap::Arg::new("search").long("search").takes_value(true)) };
-    let args = app
+    let app = app
         .arg(
             clap::Arg::new("filter")
                 .help("Filter to apply")
@@ -125,8 +125,12 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
                 .short('r')
                 .takes_value(true),
         )
-        .arg(clap::Arg::new("version").long("version").short('v'))
-        .get_matches_from(args);
+        .arg(clap::Arg::new("version").long("version").short('v'));
+    return app;
+}
+
+fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
+    let args = make_app().get_matches_from(args);
 
     if args.is_present("trace") {
         rs_tracing::open_trace_file!(".").unwrap();
@@ -388,4 +392,9 @@ fn main() {
     } else {
         0
     })
+}
+
+#[test]
+fn verify_app() {
+    make_app().debug_assert();
 }
