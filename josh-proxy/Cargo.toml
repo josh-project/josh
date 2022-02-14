@@ -24,7 +24,7 @@ git2 = "0.13.25"
 tracing = { version = "0.1.30", features = ["max_level_trace", "release_max_level_trace"] }
 tracing-futures = "0.2.5"
 tracing-subscriber = { version = "0.3.8", features = ["env-filter"]}
-tracing-opentelemetry = "0.17.0"
+tracing-opentelemetry = "0.17.1"
 opentelemetry = "0.17.0"
 opentelemetry-jaeger = "0.16.0"
 reqwest= { version = "0.11.9", default-features = false, features = ["blocking", "json"] }
