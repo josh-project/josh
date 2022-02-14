@@ -62,3 +62,10 @@ jobs:
         trunk --config=josh-ui/Trunk.toml build
         sh run-tests.sh tests/filter/*.t
         sh run-tests.sh tests/proxy/*.t
+  build-dockerfile:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+    - uses: satackey/action-docker-layer-caching@v0.0.11
+    - name: Build docker file
+      run: docker build .
