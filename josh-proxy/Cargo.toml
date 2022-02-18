@@ -40,4 +40,4 @@ unindent = "0.1.7"
 juniper = { version = "0.15.7", features = ["expose-test-schema"] }
 url = "2.2.2"
 percent-encoding = "2.1.0"
-indoc = "1.0.3"
+indoc = "1.0.4"
