@@ -45,7 +45,7 @@ rs_tracing= { version = "1", features = ["rs_tracing"]}
 tracing-log = "0.1"
 juniper = "0.15"
 tracing-subscriber = "0.3.8"
-indoc = "1.0.3"
+indoc = "1.0.4"
 
 [profile.release]
 lto = true
