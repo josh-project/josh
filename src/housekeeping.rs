@@ -207,7 +207,7 @@ pub fn get_info(
     Ok(serde_json::to_string(&s)?)
 }
 
-#[tracing::instrument(skip(transaction))]
+#[tracing::instrument(skip(transaction, known_filters))]
 pub fn refresh_known_filters(
     transaction: &cache::Transaction,
     known_filters: &KnownViews,
