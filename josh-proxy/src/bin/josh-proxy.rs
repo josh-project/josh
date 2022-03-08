@@ -438,16 +438,23 @@ async fn call_service(
         }
     };
 
-    let mut headref = parsed_url.headref.trim_start_matches('@').to_owned();
-    if headref.is_empty() {
-        headref = "HEAD".to_string();
-    }
-
     let remote_url = [
         serv.upstream_url.as_str(),
         parsed_url.upstream_repo.as_str(),
     ]
     .join("");
+
+    if parsed_url.pathinfo.starts_with("/info/lfs") {
+        return Ok(Response::builder()
+            .status(307)
+            .header("Location", format!("{}{}", remote_url, parsed_url.pathinfo))
+            .body(hyper::Body::empty())?);
+    }
+
+    let mut headref = parsed_url.headref.trim_start_matches('@').to_owned();
+    if headref.is_empty() {
+        headref = "HEAD".to_string();
+    }
 
     if !josh_proxy::auth::check_auth(&remote_url, &auth, ARGS.is_present("require-auth"))
         .in_current_span()
