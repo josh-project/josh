@@ -72,7 +72,7 @@ Now that we have a git repo populated with content, let's serve it through josh:
 > This is so that docker can access localhost, where our ad-hoc git repository is served.
 
 To facilitate developement on applications 1 and 2, we want to create workspaces for them.
-Creating a new workspace looks very similar to checking out a subfolder through josh, as explain
+Creating a new workspace looks very similar to checking out a subfolder through josh, as explained
 in "Getting Started".
 
 Instead of just the name of the subfolder, though, we also use the `:workspace=` filter:
@@ -112,12 +112,12 @@ let's observe the result:
 {{#include workspaces.t:library_sync2}}
 ```
 
-After pushing and fetching the result, we se that it has been succesfully mapped by josh.
+After pushing and fetching the result, we see that it has been succesfully mapped by josh.
 
 One suprising thing is the history: our "mapping" commit became a merge commit!
 This is because josh needs to merge the history of the module we want to map into the
 repository of the workspace.
-After this is done, all commit will be present in both of the histories.
+After this is done, all commits will be present in both of the histories.
 
 > ***NOTE***
 >
