@@ -484,7 +484,7 @@ them.</p>
 This is so that docker can access localhost, where our ad-hoc git repository is served.</p>
 </blockquote>
 <p>To facilitate developement on applications 1 and 2, we want to create workspaces for them.
-Creating a new workspace looks very similar to checking out a subfolder through josh, as explain
+Creating a new workspace looks very similar to checking out a subfolder through josh, as explained
 in &quot;Getting Started&quot;.</p>
 <p>Instead of just the name of the subfolder, though, we also use the <code>:workspace=</code> filter:</p>
 <pre><code class="language-shell">  $ git clone http://127.0.0.1:8000/real_repo.git:workspace=application1.git application1
@@ -556,11 +556,11 @@ We can now sync up with the server:</p>
   | * 366adba Add library1
   * 50cd611 Add application1
 </code></pre>
-<p>After pushing and fetching the result, we se that it has been succesfully mapped by josh.</p>
+<p>After pushing and fetching the result, we see that it has been succesfully mapped by josh.</p>
 <p>One suprising thing is the history: our &quot;mapping&quot; commit became a merge commit!
 This is because josh needs to merge the history of the module we want to map into the
 repository of the workspace.
-After this is done, all commit will be present in both of the histories.</p>
+After this is done, all commits will be present in both of the histories.</p>
 <blockquote>
 <p><em><strong>NOTE</strong></em></p>
 <p><code>git sync</code> is a utility provided with josh which will push contents, and, if josh tells
