@@ -63,7 +63,7 @@ Check the branch pushed
    * [new branch]      new-branch -> origin/new-branch
   $ [ "${SHA1}" = "$(git log --max-count=1 --format='%H' origin/new-branch)" ] || echo "SHA1 differs after push!"
 
-Add one more commit in the workspace
+Add one more commit in the workspace and push using implicit prefix in base
 
   $ cd ${TESTTMP}/sub
   $ echo test > test.txt
@@ -72,7 +72,7 @@ Add one more commit in the workspace
   [new-branch 751ef45] test commit
    1 file changed, 1 insertion(+)
    create mode 100644 test.txt
-  $ git push origin new-branch -o base=refs/heads/master
+  $ git push origin new-branch -o base=master
   remote: josh-proxy        
   remote: response from upstream:        
   remote: To http://localhost:8001/real_repo.git        
