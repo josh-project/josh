@@ -80,7 +80,13 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
         };
 
         let original_target_ref = if let Some(base) = push_options.get("base") {
-            transaction.refname(base)
+            // Allow user to use just the branchname as the base:
+            let full_path_base_refname = transaction.refname(&format!("refs/heads/{}", base));
+            if transaction.repo().refname_to_id(&full_path_base_refname).is_ok() {
+                full_path_base_refname
+            } else {
+                transaction.refname(base)
+            }
         } else {
             transaction.refname(&baseref)
         };
@@ -97,7 +103,7 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
                 return Err(josh::josh_error(&unindent::unindent(&format!(
                     r###"
                     Reference {:?} does not exist on remote.
-                    If you want to create it, pass "-o base=refs/heads/<branchname>"
+                    If you want to create it, pass "-o base=<basebranch>" or "-o base=path/to/ref"
                     to specify a base branch/reference.
                     "###,
                     baseref
