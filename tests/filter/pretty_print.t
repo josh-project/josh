@@ -2,6 +2,8 @@
 
   $ josh-filter -p :/a
   :/a
+  $ josh-filter -p :/a~
+  :/a~
   $ josh-filter -p :/a:/b
   :/a/b
   $ josh-filter -p :[:/a:/b,:/a/b]
