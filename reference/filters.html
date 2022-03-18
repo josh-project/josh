@@ -177,25 +177,18 @@ specified directory (called the &quot;workspace root&quot;).
 The resulting tree will contain the contents of the
 workspace root as well as additional files specifed in the <code>workspace.josh</code> file.
 (see <a href="./workspace.html">Workspaces</a>)</p>
-<!--
-## Pattern filters
-
-The following filters accept a glob like pattern ``X`` that can contain ``*`` to
-match any number of characters. Note that two or more consecutive wildcards (``**``) are not
-allowed.
-
-### Match directories **`::X/`**
-All matching subdirectories in the input root
-
-### Match files **`::X`**
-All matching files in the input root
-
-### Match nested directories **`::**/X/`**
-All subdirectories matching the pattern in arbitarily deep subdirectories of the input
-
-### Match nested files **`::**/X`**
-All files matching the pattern in arbitarily deep subdirectories of the input
--->
+<h2 id="pattern-filters"><a class="header" href="#pattern-filters">Pattern filters</a></h2>
+<p>The following filters accept a glob like pattern <code>X</code> that can contain <code>*</code> to
+match any number of characters. Note that two or more consecutive wildcards (<code>**</code>) are not
+allowed.</p>
+<h3 id="match-directories-x"><a class="header" href="#match-directories-x">Match directories <strong><code>::X/</code></strong></a></h3>
+<p>All matching subdirectories in the input root</p>
+<h3 id="match-files-x"><a class="header" href="#match-files-x">Match files <strong><code>::X</code></strong></a></h3>
+<p>All matching files in the input root</p>
+<h3 id="match-nested-directories-x"><a class="header" href="#match-nested-directories-x">Match nested directories <strong><code>::**/X/</code></strong></a></h3>
+<p>All subdirectories matching the pattern in arbitarily deep subdirectories of the input</p>
+<h3 id="match-nested-files-x"><a class="header" href="#match-nested-files-x">Match nested files <strong><code>::**/X</code></strong></a></h3>
+<p>All files matching the pattern in arbitarily deep subdirectories of the input</p>
 <h2 id="filter-order-matters"><a class="header" href="#filter-order-matters">Filter order matters</a></h2>
 <p>Filters are applied in the left-to-right order they are given in the filter specification,
 and they are <code>not</code> commutative.</p>
