@@ -56,7 +56,6 @@ The resulting tree will contain the contents of the
 workspace root as well as additional files specifed in the ``workspace.josh`` file.
 (see [Workspaces](./workspace.md))
 
-<!--
 ## Pattern filters
 
 The following filters accept a glob like pattern ``X`` that can contain ``*`` to
@@ -74,7 +73,6 @@ All subdirectories matching the pattern in arbitarily deep subdirectories of the
 
 ### Match nested files **`::**/X`**
 All files matching the pattern in arbitarily deep subdirectories of the input
--->
 
 Filter order matters
 --------------------
