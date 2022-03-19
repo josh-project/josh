@@ -7,6 +7,7 @@ fn make_op(args: &[&str]) -> JoshResult<Op> {
         ["empty"] => Ok(Op::Empty),
         ["prefix", arg] => Ok(Op::Prefix(Path::new(arg).to_owned())),
         ["workspace", arg] => Ok(Op::Workspace(Path::new(arg).to_owned())),
+        ["include", arg] => Ok(Op::Include(Path::new(arg).to_owned())),
         ["prefix"] => Err(josh_error(indoc!(
             r#"
             Filter ":prefix" requires an argument.
@@ -15,7 +16,7 @@ fn make_op(args: &[&str]) -> JoshResult<Op> {
 
               :prefix=path
 
-            Where `path` is path to be used as a prefix
+            Where `path` is the path to be used as a prefix
             "#
         ))),
         ["workspace"] => Err(josh_error(indoc!(
@@ -26,7 +27,18 @@ fn make_op(args: &[&str]) -> JoshResult<Op> {
 
               :workspace=path
 
-            Where `path` is path to the directory where workspace.josh file is located
+            Where `path` is the path to the directory where workspace.josh file is located
+            "#
+        ))),
+        ["include"] => Err(josh_error(indoc!(
+            r#"
+            Filter ":include" requires an argument.
+
+            Note: use "=" to provide the argument value:
+
+              :include=path/to/include.josh
+
+            Where `path/to/include.josh` is the path to the include file
             "#
         ))),
         ["SQUASH"] => Ok(Op::Squash),
