@@ -467,6 +467,22 @@ async fn call_service(
         return Ok(builder.body(hyper::Body::empty())?);
     }
 
+    let block = std::env::var("JOSH_REPO_BLOCK").unwrap_or("".to_owned());
+    let block = block.split(";").collect::<Vec<_>>();
+
+    for b in block {
+        if b == parsed_url.upstream_repo {
+            return Ok(make_response(
+                hyper::Body::from(formatdoc!(
+                    r#"
+                    Access to this repo is blocked via JOSH_REPO_BLOCK
+                    "#
+                )),
+                hyper::StatusCode::UNPROCESSABLE_ENTITY,
+            ));
+        }
+    }
+
     match fetch_upstream(
         serv.clone(),
         parsed_url.upstream_repo.to_owned(),
