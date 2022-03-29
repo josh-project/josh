@@ -38,6 +38,7 @@ pub struct RepoUpdate {
     pub git_ns: String,
     pub git_dir: String,
     pub stacked_changes: bool,
+    pub context_propagator: std::collections::HashMap<String, String>,
 }
 
 pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> {
