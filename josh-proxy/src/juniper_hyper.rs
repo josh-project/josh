@@ -62,10 +62,13 @@ async fn parse_req<S: ScalarValue>(
             let content_type = req
                 .headers()
                 .get(header::CONTENT_TYPE)
-                .map(HeaderValue::to_str);
+                .map(|x| HeaderValue::to_str(x).ok())
+                .flatten()
+                .map(|x| x.split(";").next())
+                .flatten();
             match content_type {
-                Some(Ok("application/json")) => parse_post_json_req(req.into_body()).await,
-                Some(Ok("application/graphql")) => parse_post_graphql_req(req.into_body()).await,
+                Some("application/json") => parse_post_json_req(req.into_body()).await,
+                Some("application/graphql") => parse_post_graphql_req(req.into_body()).await,
                 _ => return Err(new_response(StatusCode::BAD_REQUEST)),
             }
         }

@@ -61,4 +61,16 @@
     }
   } (no-eol)
 
+  $ cat ../query | curl -s -X POST -H "content-type: application/json; charset=utf-8" --data @- "http://localhost:8002/~/graphql/real_repo.git"
+  {
+    "data": {
+      "rev": {
+        "dir": {
+          "path": "",
+          "hash": "fcd9aba1ef0c6d812452bdcb04ac155f5d7f42d6"
+        }
+      }
+    }
+  } (no-eol)
+
 $ cat ${TESTTMP}/josh-proxy.out
