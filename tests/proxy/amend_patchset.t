@@ -63,11 +63,11 @@
   remote: josh-proxy
   remote: response from upstream:
   remote: To http://localhost:8001/real_repo.git
-  remote:  * [new reference]   JOSH_PUSH -> refs/for/master
+  remote:  * [new branch]      JOSH_PUSH -> refs/for/master
   remote:
   remote:
   To http://localhost:8002/real_repo.git
-   * [new reference]   HEAD -> refs/for/master
+   * [new branch]      HEAD -> refs/for/master
 
   $ cd ${TESTTMP}/remote/real_repo.git/
   $ git update-ref refs/changes/1/1 refs/for/master
@@ -95,11 +95,11 @@
   remote: josh-proxy
   remote: response from upstream:
   remote: To http://localhost:8001/real_repo.git
-  remote:  * [new reference]   JOSH_PUSH -> refs/for/master
+  remote:  * [new branch]      JOSH_PUSH -> refs/for/master
   remote:
   remote:
   To http://localhost:8002/real_repo.git:/sub3.git
-   * [new reference]   HEAD -> refs/for/master
+   * [new branch]      HEAD -> refs/for/master
 
   $ cd ${TESTTMP}/real_repo
   $ git fetch -q http://localhost:8002/real_repo.git@refs/for/master:nop.git && git checkout -q FETCH_HEAD

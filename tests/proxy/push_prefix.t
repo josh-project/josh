@@ -40,6 +40,7 @@
    file2 | 1 +
    1 file changed, 1 insertion(+)
    create mode 100644 file2
+  Current branch master is up to date.
 
   $ tree
   .

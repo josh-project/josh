@@ -100,6 +100,7 @@ Flushed credential cache
    ws/workspace.josh | 4 ++++
    1 file changed, 4 insertions(+)
    create mode 100644 ws/workspace.josh
+  Current branch master is up to date.
 
   $ git log --graph --pretty=%s
   *   Merge from :workspace=ws
