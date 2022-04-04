@@ -59,7 +59,6 @@
   $ cd sub1
   $ git ls-remote --symref
   From http://localhost:8002/real_repo.git:/sub1.git
-  ref: refs/heads/master\tHEAD (esc)
   0b4cf6c9efbbda1eada39fa9c1d21d2525b027bb\tHEAD (esc)
   0b4cf6c9efbbda1eada39fa9c1d21d2525b027bb\trefs/heads/master (esc)
   $ cat .git/refs/remotes/origin/HEAD

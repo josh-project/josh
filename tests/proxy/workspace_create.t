@@ -53,7 +53,7 @@
   $ git sync
   * refs/heads/master -> refs/heads/master
   Pushing to http://localhost:8001/real_repo.git
-  POST git-receive-pack (1457 bytes)
+  POST git-receive-pack (1435 bytes)
   updating local tracking ref 'refs/remotes/origin/master'
   
 
@@ -76,7 +76,7 @@ Flushed credential cache
    * branch            003a2970e4c23b64f915025e9adc2e6ed04bc63a -> FETCH_HEAD
   HEAD is now at 003a297 add workspace
   Pushing to http://localhost:8002/real_repo.git:workspace=ws.git
-  POST git-receive-pack (440 bytes)
+  POST git-receive-pack (418 bytes)
   remote: josh-proxy        
   remote: response from upstream:        
   remote: To http://localhost:8001/real_repo.git        
@@ -93,6 +93,7 @@ Flushed credential cache
   From http://localhost:8002/real_repo.git:workspace=ws
    + 1b46698...003a297 master     -> origin/master  (forced update)
   Already up to date.
+  Current branch master is up to date.
 
   $ tree
   .
@@ -120,6 +121,7 @@ Flushed credential cache
    ws/workspace.josh | 2 ++
    1 file changed, 2 insertions(+)
    create mode 100644 ws/workspace.josh
+  Current branch master is up to date.
 
   $ git log --graph --pretty=%s
   * add workspace
@@ -163,7 +165,7 @@ Flushed credential cache
   $ git sync
     refs/heads/master -> refs/heads/master
   Pushing to http://localhost:8001/real_repo.git
-  POST git-receive-pack (789 bytes)
+  POST git-receive-pack (767 bytes)
   updating local tracking ref 'refs/remotes/origin/master'
   
 
@@ -179,6 +181,7 @@ Flushed credential cache
    workspace.josh | 3 ++-
    2 files changed, 3 insertions(+), 1 deletion(-)
    create mode 100644 d/file3
+  Current branch master is up to date.
 
   $ tree
   .
@@ -203,22 +206,16 @@ Flushed credential cache
   * add file1
 
   $ git checkout HEAD~1 1> /dev/null
-  Note: switching to 'HEAD~1'.
+  Note: checking out 'HEAD~1'.
   
   You are in 'detached HEAD' state. You can look around, make experimental
   changes and commit them, and you can discard any commits you make in this
-  state without impacting any branches by switching back to a branch.
+  state without impacting any branches by performing another checkout.
   
   If you want to create a new branch to retain commits you create, you may
-  do so (now or later) by using -c with the switch command. Example:
+  do so (now or later) by using -b with the checkout command again. Example:
   
-    git switch -c <new-branch-name>
-  
-  Or undo this operation with:
-  
-    git switch -
-  
-  Turn off this advice by setting config variable advice.detachedHead to false
+    git checkout -b <new-branch-name>
   
   HEAD is now at 003a297 add workspace
   $ tree
@@ -267,7 +264,7 @@ Flushed credential cache
    * branch            2a6aa2a100b34d0d56e4b5f19e9bfdc2cd6f7d54 -> FETCH_HEAD
   HEAD is now at 2a6aa2a add in filter
   Pushing to http://localhost:8002/real_repo.git:workspace=ws.git
-  POST git-receive-pack (808 bytes)
+  POST git-receive-pack (786 bytes)
   remote: josh-proxy        
   remote: response from upstream:        
   remote: To http://localhost:8001/real_repo.git        
@@ -293,7 +290,7 @@ Flushed credential cache
    * branch            60bd0e180735e169b5c853545d8b1272ed0fc319 -> FETCH_HEAD
   HEAD is now at 60bd0e1 try to modify ws
   Pushing to http://localhost:8002/real_repo.git:workspace=ws.git
-  POST git-receive-pack (460 bytes)
+  POST git-receive-pack (438 bytes)
   remote: josh-proxy        
   remote: response from upstream:        
   remote: To http://localhost:8001/real_repo.git        
@@ -310,6 +307,7 @@ Flushed credential cache
   From http://localhost:8002/real_repo.git:workspace=ws
    + 67b3bc0...60bd0e1 master     -> origin/master  (forced update)
   Already up to date.
+  Current branch master is up to date.
 
 Note that d/ is still in the tree but now it is not overlayed
   $ tree
@@ -367,6 +365,7 @@ Flushed credential cache
    create mode 100644 sub2/newfile_2
    create mode 100644 ws/d/file3
    create mode 100644 ws/ws_file
+  Current branch master is up to date.
 
   $ git clean -ffdx 1> /dev/null
 
@@ -408,22 +407,16 @@ Note that ws/d/ is now present in the ws
 
 
   $ git checkout HEAD~1 1> /dev/null
-  Note: switching to 'HEAD~1'.
+  Note: checking out 'HEAD~1'.
   
   You are in 'detached HEAD' state. You can look around, make experimental
   changes and commit them, and you can discard any commits you make in this
-  state without impacting any branches by switching back to a branch.
+  state without impacting any branches by performing another checkout.
   
   If you want to create a new branch to retain commits you create, you may
-  do so (now or later) by using -c with the switch command. Example:
+  do so (now or later) by using -b with the checkout command again. Example:
   
-    git switch -c <new-branch-name>
-  
-  Or undo this operation with:
-  
-    git switch -
-  
-  Turn off this advice by setting config variable advice.detachedHead to false
+    git checkout -b <new-branch-name>
   
   HEAD is now at a1a7760 add in filter
   $ git clean -ffdx 1> /dev/null
