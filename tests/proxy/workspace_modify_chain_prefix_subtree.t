@@ -185,6 +185,7 @@
 $ curl -s http://localhost:8002/flush
 Flushed credential cache
   $ git pull --rebase 2> /dev/null
+  First, rewinding head to replay your work on top of it...
 
 Note that d/ is still in the tree but now it is not overlayed
   $ tree

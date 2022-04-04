@@ -1,4 +1,4 @@
-name: Rust
+name: rust
 
 on:
   push:
@@ -13,59 +13,39 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
-    # might or might not be required
-    - uses: actions-rs/toolchain@v1
+    - name: Setup BuildX
+      uses: docker/setup-buildx-action@v1
+    - name: Checkout
+      uses: actions/checkout@v3
+    - name: Build dev image
+      uses: docker/build-push-action@v2
       with:
-        profile: minimal
-        toolchain: stable
-    - name: Set up Python 3.x
-      uses: actions/setup-python@v2
+        context: .
+        file: Dockerfile
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        target: dev-ci
+        tags: josh-ci-dev:latest
+        push: false
+        load: true
+    - name: Run tests
+      uses: addnab/docker-run-action@v3
       with:
-        # Semantic version range syntax or exact version of a Python version
-        python-version: '3.x'
-        # Optional - x64 or x86 architecture, defaults to x64
-        architecture: 'x64'
-    #rustup needs to have been called before the cache action, and the cache action before the cargo commands
-    - name: Finish rust setup
-      run:  rustup target add wasm32-unknown-unknown
-    - uses: Swatinem/rust-cache@v1
-    - name: Install dependencies
-      run: |
-        rustup target add wasm32-unknown-unknown
-        pip3 install --user 'cram'
-        pip3 install --user 'pygit2'
-        cargo install hyper_cgi --features=test-server
-        cargo install graphql_client_cli
-        sudo apt update
-        sudo apt install git cmake libcurl4-openssl-dev libelf-dev libdw-dev tree
-        cargo install trunk
-        cargo install wasm-bindgen-cli
-        pip3 install -U selenium
-        wget https://github.com/mozilla/geckodriver/releases/download/v0.29.1/geckodriver-v0.29.1-linux64.tar.gz
-        tar -xf geckodriver*.tar.gz
-        export PATH=$PATH:`pwd`
-    - name: Check format
-      run: cargo fmt -- --check
-    - name: Run all unit tests
-      run: cargo test --workspace --all
-    - name: Build all targets (libs, binaries, examples, ..)
-      run: cargo build --workspace --all-targets
-    - name: Configure environment
-      run: |
-        export CARGO_TARGET_DIR=`pwd`/target
-        git config --global init.defaultBranch master
-        git config --global user.email "christian@schilling.de"
-        git config --global user.name "christian"
-    - name: Run integration tests
-      run: |
-        trunk --config=josh-ui/Trunk.toml build
-        sh run-tests.sh tests/filter/*.t
-        sh run-tests.sh tests/proxy/*.t
-  build-dockerfile:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v2
-    - uses: satackey/action-docker-layer-caching@v0.0.11
-    - name: Build docker file
-      run: docker build .
+        image: josh-ci-dev:latest
+        options: -v ${{ github.workspace }}:/github/workspace -w /github/workspace
+        run: |
+          set -x
+
+          # Formatting
+          cargo fmt -- --check
+
+          # Unit tests
+          cargo test --workspace --all
+
+          # UI build
+          trunk --config=josh-ui/Trunk.toml build
+
+          # Integration tests
+          cargo build --workspace --all-targets
+          sh run-tests.sh tests/filter/*.t
+          sh run-tests.sh tests/proxy/*.t

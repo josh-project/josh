@@ -53,7 +53,7 @@
   $ git sync
   * refs/heads/master -> refs/heads/master
   Pushing to http://localhost:8001/real_repo.git
-  POST git-receive-pack (1457 bytes)
+  POST git-receive-pack (1435 bytes)
   updating local tracking ref 'refs/remotes/origin/master'
   
 
@@ -76,7 +76,7 @@ Flushed credential cache
    * branch            4a199f3a19a292e6639dede0f8602afc19a82dfc -> FETCH_HEAD
   HEAD is now at 4a199f3 Merge from :workspace=ws
   Pushing to http://localhost:8002/real_repo.git:workspace=ws.git
-  POST git-receive-pack (439 bytes)
+  POST git-receive-pack (417 bytes)
   remote: josh-proxy        
   remote: response from upstream:        
   remote: To http://localhost:8001/real_repo.git        
@@ -93,6 +93,7 @@ Flushed credential cache
   From http://localhost:8002/real_repo.git:workspace=ws
    + 1b46698...4a199f3 master     -> origin/master  (forced update)
   Already up to date.
+  Current branch master is up to date.
 
   $ tree
   .
@@ -122,6 +123,7 @@ Flushed credential cache
    ws/workspace.josh | 2 ++
    1 file changed, 2 insertions(+)
    create mode 100644 ws/workspace.josh
+  Current branch master is up to date.
 
   $ git log --graph --pretty=%s
   *   Merge from :workspace=ws
@@ -161,7 +163,7 @@ Flushed credential cache
    * branch            891a8d3448a28a6c04405ca4dcf585dd0825cebd -> FETCH_HEAD
   HEAD is now at 891a8d3 mod workspace
   Pushing to http://localhost:8002/real_repo.git:workspace=ws.git
-  POST git-receive-pack (443 bytes)
+  POST git-receive-pack (421 bytes)
   remote: josh-proxy        
   remote: response from upstream:        
   remote: To http://localhost:8001/real_repo.git        
@@ -178,6 +180,7 @@ Flushed credential cache
   From http://localhost:8002/real_repo.git:workspace=ws
    + 06230e6...891a8d3 master     -> origin/master  (forced update)
   Already up to date.
+  Current branch master is up to date.
 
   $ tree
   .
@@ -214,6 +217,7 @@ Flushed credential cache
    ws/workspace.josh | 2 +-
    2 files changed, 2 insertions(+), 1 deletion(-)
    create mode 100644 ws/a/b/file2
+  Current branch master is up to date.
 
   $ tree
   .
