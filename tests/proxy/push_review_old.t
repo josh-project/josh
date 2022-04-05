@@ -35,11 +35,11 @@ Flushed credential cache
   remote: josh-proxy        
   remote: response from upstream:        
   remote: To http://localhost:8001/real_repo.git        
-  remote:  * [new reference]   JOSH_PUSH -> refs/for/master        
+  remote:  * [new branch]      JOSH_PUSH -> refs/for/master        
   remote: 
   remote: 
   To http://localhost:8002/real_repo.git:/sub1.git
-   * [new reference]   master -> refs/for/master
+   * [new branch]      master -> refs/for/master
 
   $ cd ${TESTTMP}/real_repo
   $ git fetch origin refs/for/master:rfm

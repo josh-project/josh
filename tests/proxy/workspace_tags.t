@@ -46,7 +46,7 @@
   $ git commit -m "newfile master" 1> /dev/null
 
   $ git merge new1 --no-ff
-  Merge made by the 'ort' strategy.
+  Merge made by the 'recursive' strategy.
    newfile1 | 0
    1 file changed, 0 insertions(+), 0 deletions(-)
    create mode 100644 newfile1

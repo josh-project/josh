@@ -116,22 +116,16 @@
   * add file1
  
   $ git checkout HEAD~1 1> /dev/null
-  Note: switching to 'HEAD~1'.
+  Note: checking out 'HEAD~1'.
   
   You are in 'detached HEAD' state. You can look around, make experimental
   changes and commit them, and you can discard any commits you make in this
-  state without impacting any branches by switching back to a branch.
+  state without impacting any branches by performing another checkout.
   
   If you want to create a new branch to retain commits you create, you may
-  do so (now or later) by using -c with the switch command. Example:
+  do so (now or later) by using -b with the checkout command again. Example:
   
-    git switch -c <new-branch-name>
-  
-  Or undo this operation with:
-  
-    git switch -
-  
-  Turn off this advice by setting config variable advice.detachedHead to false
+    git checkout -b <new-branch-name>
   
   HEAD is now at 2a03ad0 add file2
   $ tree
@@ -215,22 +209,16 @@
  
  
   $ git checkout HEAD~1 1> /dev/null
-  Note: switching to 'HEAD~1'.
+  Note: checking out 'HEAD~1'.
   
   You are in 'detached HEAD' state. You can look around, make experimental
   changes and commit them, and you can discard any commits you make in this
-  state without impacting any branches by switching back to a branch.
+  state without impacting any branches by performing another checkout.
   
   If you want to create a new branch to retain commits you create, you may
-  do so (now or later) by using -c with the switch command. Example:
+  do so (now or later) by using -b with the checkout command again. Example:
   
-    git switch -c <new-branch-name>
-  
-  Or undo this operation with:
-  
-    git switch -
-  
-  Turn off this advice by setting config variable advice.detachedHead to false
+    git checkout -b <new-branch-name>
   
   HEAD is now at 2b7018e mod workspace
   $ git clean -ffdx 1> /dev/null

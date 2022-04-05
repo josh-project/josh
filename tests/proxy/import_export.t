@@ -176,6 +176,7 @@ Flushed credential cache
    new_file2 | 0
    1 file changed, 0 insertions(+), 0 deletions(-)
    create mode 100644 new_file2
+  Current branch master is up to date.
   $ tree
   .
   |-- file1
@@ -236,6 +237,7 @@ Flushed credential cache
   $ git pull --rebase 2> /dev/null
   Updating 6fe45a9..8047211
   Fast-forward
+  Current branch master is up to date.
   $ tree
   .
   |-- file1
@@ -251,7 +253,7 @@ Flushed credential cache
   |\ \  
   | * | add new_file2
   | |/  
-  * / add new_file1
+  * | add new_file1
   |/  
   * initial1
 

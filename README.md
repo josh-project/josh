@@ -1,7 +1,5 @@
 ![Just One Single History](/splash.png)
 
-[![Build Status](https://github.com/josh-project/josh/workflows/Rust/badge.svg?branch=master)](https://github.com/josh-project/josh/actions)
-
 Combine the advantages of a monorepo with those of multirepo setups by leveraging a
 blazingly-fast, incremental, and reversible implementation of git history filtering.
 
