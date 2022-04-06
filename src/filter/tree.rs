@@ -238,7 +238,7 @@ pub fn overlay(
                 result_tree = replace_child(
                     repo,
                     std::path::Path::new(entry.name().ok_or(super::josh_error("no name"))?),
-                    overlay(repo, entry.id(), e.id())?,
+                    overlay(repo, e.id(), entry.id())?,
                     e.filemode(),
                     &result_tree,
                 )?;
