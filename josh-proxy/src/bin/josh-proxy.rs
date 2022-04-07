@@ -203,7 +203,13 @@ async fn static_paths(
             if refresh {
                 josh::housekeeping::refresh_known_filters(&transaction, &known_filters)?;
             }
-            Ok(toml::to_string_pretty(&known_filters)?)
+            let mut kf = std::collections::BTreeMap::new();
+            for (k, v) in &known_filters {
+                if v.1.len() != 0 {
+                    kf.insert(k, v.1.clone());
+                }
+            }
+            Ok(toml::to_string_pretty(&kf)?)
         })
         .await??;
 

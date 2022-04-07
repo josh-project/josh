@@ -1,11 +1,11 @@
 use git2;
 
 use super::*;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
 use tracing::{info, span, Level};
 
-pub type KnownViews = BTreeMap<String, BTreeSet<String>>;
+pub type KnownViews = HashMap<String, (git2::Oid, BTreeSet<String>)>;
 
 pub fn default_from_to(
     repo: &git2::Repository,
@@ -103,13 +103,18 @@ pub fn discover_filter_candidates(transaction: &cache::Transaction) -> JoshResul
         let name = from_ns(&name);
         tracing::trace!("find: {}", name);
 
-        let hs = find_all_workspaces_and_subdirectories(&r.peel_to_tree()?)?;
+        let known_f = &mut known_filters
+            .entry(name.clone())
+            .or_insert_with(|| (git2::Oid::zero(), BTreeSet::new()));
 
-        for i in hs {
-            known_filters
-                .entry(name.clone())
-                .or_insert_with(BTreeSet::new)
-                .insert(i);
+        if let Some(target) = r.target() {
+            if known_f.0 != target {
+                let hs = find_all_workspaces_and_subdirectories(&r.peel_to_tree()?)?;
+                known_f.0 = target;
+                for i in hs {
+                    known_f.1.insert(i);
+                }
+            }
         }
     }
 
@@ -122,7 +127,8 @@ pub fn discover_filter_candidates(transaction: &cache::Transaction) -> JoshResul
 
         known_filters
             .entry(from_ns(&filtered.upstream_repo))
-            .or_insert_with(BTreeSet::new)
+            .or_insert_with(|| (git2::Oid::zero(), BTreeSet::new()))
+            .1
             .insert(from_ns(&filtered.filter_spec));
     }
 
@@ -218,7 +224,7 @@ pub fn refresh_known_filters(
 
         let mut updated_count = 0;
 
-        for filter_spec in e.iter() {
+        for filter_spec in e.1.iter() {
             tracing::trace!("background rebuild: {:?} {:?}", upstream_repo, filter_spec);
 
             let refs = memorize_from_to(
