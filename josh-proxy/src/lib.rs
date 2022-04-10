@@ -284,10 +284,13 @@ fn push_head_url(
         cwd: repo.path().to_owned(),
     };
     let (username, password) = auth.parse()?;
-    let nurl = url_with_auth(url, &username);
-    let cmd = format!("git push {} '{}'", &nurl, &spec);
+    let cmd = format!("git push {} '{}'", &url, &spec);
     let mut fakehead = repo.reference(&rn, oid, true, "push_head_url")?;
-    let (stdout, stderr, status) = shell.command_env(&cmd, &[], &[("GIT_PASSWORD", &password)]);
+    let (stdout, stderr, status) = shell.command_env(
+        &cmd,
+        &[],
+        &[("GIT_PASSWORD", &password), ("GIT_USER", &username)],
+    );
     fakehead.delete()?;
     tracing::debug!("{}", &stderr);
     tracing::debug!("{}", &stdout);
@@ -320,7 +323,7 @@ pub fn create_repo(path: &std::path::Path) -> josh::JoshResult<()> {
     std::os::unix::fs::symlink(ce, path.join("hooks").join("pre-receive"))
         .expect("can't symlink pre-receive hook");
     shell.command(
-        &"git config credential.helper '!f() { echo \"password=\"$GIT_PASSWORD\"\"; }; f'"
+        &"git config credential.helper '!f() { echo \"username=\"$GIT_USER\"\npassword=\"$GIT_PASSWORD\"\"; }; f'"
             .to_string(),
     );
     shell.command("git config gc.auto 0");
@@ -333,23 +336,6 @@ pub fn create_repo(path: &std::path::Path) -> josh::JoshResult<()> {
     Ok(())
 }
 
-fn url_with_auth(url: &str, username: &str) -> String {
-    if !username.is_empty() {
-        let splitted: Vec<&str> = url.splitn(2, "://").collect();
-        let proto = splitted[0];
-        let rest = splitted[1];
-        let username =
-            percent_encoding::utf8_percent_encode(username, percent_encoding::NON_ALPHANUMERIC)
-                .to_string();
-        format!("{}://{}@{}", &proto, &username, &rest)
-    } else {
-        let splitted: Vec<&str> = url.splitn(2, "://").collect();
-        let proto = splitted[0];
-        let rest = splitted[1];
-        format!("{}://{}@{}", &proto, "anonymous", &rest)
-    }
-}
-
 pub fn get_head(
     path: &std::path::Path,
     url: &str,
@@ -359,12 +345,15 @@ pub fn get_head(
         cwd: path.to_owned(),
     };
     let (username, password) = auth.parse()?;
-    let nurl = url_with_auth(url, &username);
 
-    let cmd = format!("git ls-remote --symref {} {}", &nurl, "HEAD");
+    let cmd = format!("git ls-remote --symref {} {}", &url, "HEAD");
     tracing::info!("get_head {:?} {:?} {:?}", cmd, path, "");
 
-    let (stdout, _stderr, _) = shell.command_env(&cmd, &[], &[("GIT_PASSWORD", &password)]);
+    let (stdout, _stderr, _) = shell.command_env(
+        &cmd,
+        &[],
+        &[("GIT_PASSWORD", &password), ("GIT_USER", &username)],
+    );
 
     let head = stdout
         .lines()
@@ -400,13 +389,16 @@ pub fn fetch_refs_from_url(
     let shell = josh::shell::Shell {
         cwd: path.to_owned(),
     };
-    let (username, password) = auth.parse()?;
-    let nurl = url_with_auth(url, &username);
 
-    let cmd = format!("git fetch --prune --no-tags {} {}", &nurl, &specs.join(" "));
+    let cmd = format!("git fetch --prune --no-tags {} {}", &url, &specs.join(" "));
     tracing::info!("fetch_refs_from_url {:?} {:?} {:?}", cmd, path, "");
 
-    let (_stdout, stderr, _) = shell.command_env(&cmd, &[], &[("GIT_PASSWORD", &password)]);
+    let (username, password) = auth.parse()?;
+    let (_stdout, stderr, _) = shell.command_env(
+        &cmd,
+        &[],
+        &[("GIT_PASSWORD", &password), ("GIT_USER", &username)],
+    );
     tracing::debug!("fetch_refs_from_url done {:?} {:?} {:?}", cmd, path, stderr);
     if stderr.contains("fatal: Authentication failed") {
         return Ok(false);
