@@ -346,9 +346,6 @@ async fn call_service(
     req_auth: (josh_proxy::auth::Handle, Request<hyper::Body>),
 ) -> josh::JoshResult<Response<hyper::Body>> {
     let (auth, req) = req_auth;
-    let (username, _) = auth.parse()?;
-
-    tracing::event!(tracing::Level::TRACE, username = username.as_str());
 
     let path = {
         let mut path = req.uri().path().to_owned();
