@@ -62,7 +62,7 @@
   } (no-eol)
 
   $ git clone -q http://testuser:wrongpass@localhost:8002/real_repo.git full_repo
-  fatal: Authentication failed for 'http://testuser:wrongpass@localhost:8002/real_repo.git/'
+  fatal: Authentication failed for 'http://localhost:8002/real_repo.git/'
   [128]
 
   $ rm -Rf full_repo
@@ -98,7 +98,7 @@
 
   $ rm -Rf full_repo
   $ git clone -q http://x\':bla@localhost:8002/real_repo.git full_repo
-  fatal: Authentication failed for 'http://x':bla@localhost:8002/real_repo.git/'
+  fatal: Authentication failed for 'http://localhost:8002/real_repo.git/'
   [128]
   $ tree
   .
@@ -116,7 +116,6 @@
    file2 | 1 +
    1 file changed, 1 insertion(+)
    create mode 100644 file2
-  Current branch master is up to date.
   $ git log --graph --pretty=%s
   * push test
   * add file1

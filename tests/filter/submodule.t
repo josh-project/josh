@@ -1,7 +1,7 @@
   $ export TESTTMP=${PWD}
 
   $ cd ${TESTTMP}
-  $ git init libs 1> /dev/null
+  $ git init -q libs 1> /dev/null
   $ cd libs
 
   $ mkdir sub1
@@ -10,7 +10,7 @@
   $ git commit -m "add file1" 1> /dev/null
 
   $ cd ${TESTTMP}
-  $ git init app 1> /dev/null
+  $ git init -q app 1> /dev/null
   $ cd app
   $ git commit -m "init" --allow-empty 1> /dev/null
   $ git submodule add ../libs 2> /dev/null

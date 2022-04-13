@@ -1,8 +1,8 @@
   $ . ${TESTDIR}/setup_test_env.sh
 
-  $ git init --bare ${TESTTMP}/remote/repo1.git/ 1> /dev/null
+  $ git init --bare -q ${TESTTMP}/remote/repo1.git/ 1> /dev/null
   $ git config -f ${TESTTMP}/remote/repo1.git/config http.receivepack true
-  $ git init --bare ${TESTTMP}/remote/repo2.git/ 1> /dev/null
+  $ git init --bare -q ${TESTTMP}/remote/repo2.git/ 1> /dev/null
   $ git config -f ${TESTTMP}/remote/repo2.git/config http.receivepack true
 
   $ cd ${TESTTMP}
@@ -176,7 +176,6 @@ Flushed credential cache
    new_file2 | 0
    1 file changed, 0 insertions(+), 0 deletions(-)
    create mode 100644 new_file2
-  Current branch master is up to date.
   $ tree
   .
   |-- file1
@@ -237,7 +236,6 @@ Flushed credential cache
   $ git pull --rebase 2> /dev/null
   Updating 6fe45a9..8047211
   Fast-forward
-  Current branch master is up to date.
   $ tree
   .
   |-- file1
@@ -253,7 +251,7 @@ Flushed credential cache
   |\ \  
   | * | add new_file2
   | |/  
-  * | add new_file1
+  * / add new_file1
   |/  
   * initial1
 

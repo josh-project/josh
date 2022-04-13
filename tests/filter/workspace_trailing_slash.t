@@ -1,7 +1,7 @@
   $ export TERM=dumb
   $ export RUST_LOG_STYLE=never
 
-  $ git init real_repo 1> /dev/null
+  $ git init -q real_repo 1> /dev/null
   $ cd real_repo
 
   $ mkdir sub1

@@ -53,7 +53,7 @@
   $ git sync
   * refs/heads/master -> refs/heads/master
   Pushing to http://localhost:8001/real_repo.git
-  POST git-receive-pack (1435 bytes)
+  POST git-receive-pack (1457 bytes)
   updating local tracking ref 'refs/remotes/origin/master'
   
 
@@ -76,7 +76,7 @@ Flushed credential cache
    * branch            4a199f3a19a292e6639dede0f8602afc19a82dfc -> FETCH_HEAD
   HEAD is now at 4a199f3 Merge from :workspace=ws
   Pushing to http://localhost:8002/real_repo.git:workspace=ws.git
-  POST git-receive-pack (417 bytes)
+  POST git-receive-pack (439 bytes)
   remote: josh-proxy        
   remote: response from upstream:        
   remote: To http://localhost:8001/real_repo.git        
@@ -93,7 +93,6 @@ Flushed credential cache
   From http://localhost:8002/real_repo.git:workspace=ws
    + 1b46698...4a199f3 master     -> origin/master  (forced update)
   Already up to date.
-  Current branch master is up to date.
 
   $ tree
   .
@@ -123,7 +122,6 @@ Flushed credential cache
    ws/workspace.josh | 2 ++
    1 file changed, 2 insertions(+)
    create mode 100644 ws/workspace.josh
-  Current branch master is up to date.
 
   $ git log --graph --pretty=%s
   *   Merge from :workspace=ws
@@ -171,7 +169,7 @@ Flushed credential cache
   $ git sync
     refs/heads/master -> refs/heads/master
   Pushing to http://localhost:8001/real_repo.git
-  POST git-receive-pack (768 bytes)
+  POST git-receive-pack (790 bytes)
   updating local tracking ref 'refs/remotes/origin/master'
   
 
@@ -187,7 +185,6 @@ Flushed credential cache
    workspace.josh | 3 ++-
    2 files changed, 3 insertions(+), 1 deletion(-)
    create mode 100644 d/file3
-  Current branch master is up to date.
 
   $ tree
   .
@@ -213,19 +210,7 @@ Flushed credential cache
   | * add file1
   * add workspace
 
-  $ git checkout HEAD~1 1> /dev/null
-  Note: checking out 'HEAD~1'.
-  
-  You are in 'detached HEAD' state. You can look around, make experimental
-  changes and commit them, and you can discard any commits you make in this
-  state without impacting any branches by performing another checkout.
-  
-  If you want to create a new branch to retain commits you create, you may
-  do so (now or later) by using -b with the checkout command again. Example:
-  
-    git checkout -b <new-branch-name>
-  
-  HEAD is now at 4a199f3 Merge from :workspace=ws
+  $ git checkout -q HEAD~1 1> /dev/null
   $ tree
   .
   |-- a
@@ -267,7 +252,7 @@ Flushed credential cache
    * branch            3136fff7280627623bf4d71191d1aea783579be0 -> FETCH_HEAD
   HEAD is now at 3136fff add in filter
   Pushing to http://localhost:8002/real_repo.git:workspace=ws.git
-  POST git-receive-pack (786 bytes)
+  POST git-receive-pack (808 bytes)
   remote: josh-proxy        
   remote: response from upstream:        
   remote: To http://localhost:8001/real_repo.git        
@@ -293,7 +278,7 @@ Flushed credential cache
    * branch            1a909d6e8ba43c6eaf211ef04440984d38bc26e6 -> FETCH_HEAD
   HEAD is now at 1a909d6 try to modify ws
   Pushing to http://localhost:8002/real_repo.git:workspace=ws.git
-  POST git-receive-pack (438 bytes)
+  POST git-receive-pack (460 bytes)
   remote: josh-proxy        
   remote: response from upstream:        
   remote: To http://localhost:8001/real_repo.git        
@@ -310,7 +295,6 @@ Flushed credential cache
   From http://localhost:8002/real_repo.git:workspace=ws
    + 7f85f11...1a909d6 master     -> origin/master  (forced update)
   Already up to date.
-  Current branch master is up to date.
 
 Note that d/ is still in the tree but now it is not overlayed
   $ tree
@@ -370,7 +354,6 @@ Flushed credential cache
    create mode 100644 sub2/newfile_2
    create mode 100644 ws/d/file3
    create mode 100644 ws/ws_file
-  Current branch master is up to date.
 
   $ git clean -ffdx 1> /dev/null
 
@@ -413,19 +396,7 @@ Note that ws/d/ is now present in the ws
   * initial
 
 
-  $ git checkout HEAD~1 1> /dev/null
-  Note: checking out 'HEAD~1'.
-  
-  You are in 'detached HEAD' state. You can look around, make experimental
-  changes and commit them, and you can discard any commits you make in this
-  state without impacting any branches by performing another checkout.
-  
-  If you want to create a new branch to retain commits you create, you may
-  do so (now or later) by using -b with the checkout command again. Example:
-  
-    git checkout -b <new-branch-name>
-  
-  HEAD is now at 9c41f84 add in filter
+  $ git checkout -q HEAD~1 1> /dev/null
   $ git clean -ffdx 1> /dev/null
   $ tree
   .
