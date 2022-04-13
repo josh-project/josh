@@ -295,16 +295,22 @@ async fn do_filter(
             )?;
         }
 
-        from_to.push((
-            format!(
-                "refs/josh/upstream/{}/{}",
-                &josh::to_ns(&upstream_repo),
-                headref
-            ),
-            temp_ns.reference(&headref),
-        ));
-
         let mut headref = headref;
+
+        if headref.starts_with("refs/") || headref == "HEAD" {
+            from_to.push((
+                format!(
+                    "refs/josh/upstream/{}/{}",
+                    &josh::to_ns(&upstream_repo),
+                    headref
+                ),
+                temp_ns.reference(&headref),
+            ));
+        } else {
+            let headsha = headref.clone();
+            headref = format!("refs/heads/_{}", &headref);
+            from_to.push((headsha, temp_ns.reference(&headref)));
+        }
 
         josh::filter_refs(&transaction, filter, &from_to, josh::filter::empty())?;
         if headref == "HEAD" {
