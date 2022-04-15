@@ -22,7 +22,7 @@ jobs:
       - name: Login to DockerHub
         uses: docker/login-action@v1
         with:
-          username: ${{ initcrash }}
+          username: initcrash
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       - name: Build docker image
         uses: docker/build-push-action@v2
