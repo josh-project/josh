@@ -325,7 +325,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
             new,
             false,
             None,
-            &std::collections::HashMap::new(),
+            &mut None,
         )? {
             josh::UnapplyResult::Done(rewritten) => {
                 repo.reference(&src, rewritten, true, "unapply_filter")?;
