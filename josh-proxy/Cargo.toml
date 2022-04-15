@@ -8,7 +8,7 @@ license-file = "LICENSE"
 name = "josh-proxy"
 readme = "README.md"
 repository = "https://github.com/josh-project/josh"
-version = "0.3.0"
+version = "22.4.15"
 
 
 [dependencies]
