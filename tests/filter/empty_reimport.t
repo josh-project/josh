@@ -1,7 +1,7 @@
   $ export TESTTMP=${PWD}
 
   $ cd ${TESTTMP}
-  $ git init testrepo 1> /dev/null
+  $ git init -q testrepo 1> /dev/null
   $ cd testrepo
 
   $ echo contents1 > testfile
@@ -70,9 +70,8 @@
   | * more change on other 2
   | * more change on other
   * | more unrelated change on this
-  * |   Merge branch 'other_branch'
-  |\ \  
-  | |/  
+  * | Merge branch 'other_branch'
+  |\| 
   | * change on other 2
   | * change on other
   * | unrelated change on this

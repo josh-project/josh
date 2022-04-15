@@ -105,19 +105,7 @@
   * add file1
   * add workspace
 
-  $ git checkout HEAD~1 1> /dev/null
-  Note: checking out 'HEAD~1'.
-  
-  You are in 'detached HEAD' state. You can look around, make experimental
-  changes and commit them, and you can discard any commits you make in this
-  state without impacting any branches by performing another checkout.
-  
-  If you want to create a new branch to retain commits you create, you may
-  do so (now or later) by using -b with the checkout command again. Example:
-  
-    git checkout -b <new-branch-name>
-  
-  HEAD is now at 833812f add file1
+  $ git checkout -q HEAD~1 1> /dev/null
 
   $ tree
   .
@@ -211,7 +199,7 @@
    * branch            b3be5ad252e0f493a404a8785653065d7e677f21 -> FETCH_HEAD
   HEAD is now at b3be5ad add ws2
   Pushing to http://localhost:8002/real_repo.git:workspace=ws2.git
-  POST git-receive-pack (402 bytes)
+  POST git-receive-pack (424 bytes)
   remote: josh-proxy        
   remote: response from upstream:        
   remote: To http://localhost:8001/real_repo.git        
@@ -232,7 +220,7 @@
    * branch            949f79b5a685bbcd531584ddfe51a55f86195f6b -> FETCH_HEAD
   HEAD is now at 949f79b add workspace filter
   Pushing to http://localhost:8002/real_repo.git:workspace=ws2.git
-  POST git-receive-pack (465 bytes)
+  POST git-receive-pack (487 bytes)
   remote: josh-proxy        
   remote: response from upstream:        
   remote: To http://localhost:8001/real_repo.git        

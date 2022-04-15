@@ -46,20 +46,22 @@ Check workspace contents
 Create a new branch and push it
 
   $ git switch -c new-branch
-  git: 'switch' is not a git command. See 'git --help'.
-  [1]
+  Switched to a new branch 'new-branch'
   $ git push origin new-branch -o base=refs/heads/master 1> /dev/null
-  error: src refspec new-branch does not match any.
-  error: failed to push some refs to 'http://localhost:8002/real_repo.git:/sub.git'
-  [1]
+  remote: josh-proxy        
+  remote: response from upstream:        
+  remote: To http://localhost:8001/real_repo.git        
+  remote:  * [new branch]      JOSH_PUSH -> new-branch        
+  remote: 
+  remote: 
+  To http://localhost:8002/real_repo.git:/sub.git
+   * [new branch]      new-branch -> new-branch
 Check the branch pushed
   $ cd ${TESTTMP}/real_repo
   $ git fetch
+  From http://localhost:8001/real_repo
+   * [new branch]      new-branch -> origin/new-branch
   $ [ "${SHA1}" = "$(git log --max-count=1 --format='%H' origin/new-branch)" ] || echo "SHA1 differs after push!"
-  fatal: ambiguous argument 'origin/new-branch': unknown revision or path not in the working tree.
-  Use '--' to separate paths from revisions, like this:
-  'git <command> [<revision>...] -- [<file>...]'
-  SHA1 differs after push!
 
 Add one more commit in the workspace and push using implicit prefix in base
 
@@ -67,23 +69,26 @@ Add one more commit in the workspace and push using implicit prefix in base
   $ echo test > test.txt
   $ git add test.txt
   $ git commit -m "test commit"
-  [master 751ef45] test commit
+  [new-branch 751ef45] test commit
    1 file changed, 1 insertion(+)
    create mode 100644 test.txt
   $ git push origin new-branch -o base=master
-  error: src refspec new-branch does not match any.
-  error: failed to push some refs to 'http://localhost:8002/real_repo.git:/sub.git'
-  [1]
+  remote: josh-proxy        
+  remote: response from upstream:        
+  remote: To http://localhost:8001/real_repo.git        
+  remote:    37c3f9a..56dc1f7  JOSH_PUSH -> new-branch        
+  remote: 
+  remote: 
+  To http://localhost:8002/real_repo.git:/sub.git
+     28d2085..751ef45  new-branch -> new-branch
 
 Check the branch again
 
   $ cd ${TESTTMP}/real_repo
   $ git fetch
+  From http://localhost:8001/real_repo
+     37c3f9a..56dc1f7  new-branch -> origin/new-branch
   $ [ "${SHA1}" = "$(git log --max-count=1 --skip=1 --format='%H' origin/new-branch)" ] || echo "SHA1 differs after push!"
-  fatal: ambiguous argument 'origin/new-branch': unknown revision or path not in the working tree.
-  Use '--' to separate paths from revisions, like this:
-  'git <command> [<revision>...] -- [<file>...]'
-  SHA1 differs after push!
 
   $ bash ${TESTDIR}/destroy_test_env.sh
   "real_repo.git" = [':/sub']
@@ -99,8 +104,9 @@ Check the branch again
   |           |-- HEAD
   |           `-- refs
   |               `-- heads
-  |                   `-- master
+  |                   |-- master
+  |                   `-- new-branch
   |-- namespaces
   `-- tags
   
-  11 directories, 3 files
+  11 directories, 4 files

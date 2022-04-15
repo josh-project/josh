@@ -3,7 +3,7 @@ Empty root commits from unrelated parts of the tree should not be included
   $ export TESTTMP=${PWD}
 
   $ cd ${TESTTMP}
-  $ git init libs 1>/dev/null
+  $ git init -q libs 1>/dev/null
   $ cd libs
 
   $ mkdir sub1

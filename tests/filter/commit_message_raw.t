@@ -1,7 +1,7 @@
   $ export TESTTMP=${PWD}
 
   $ cd ${TESTTMP}
-  $ git init testrepo 1> /dev/null
+  $ git init -q testrepo 1> /dev/null
   $ cd testrepo
 
   $ echo contents1 > testfile

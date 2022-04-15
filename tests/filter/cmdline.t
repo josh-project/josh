@@ -1,7 +1,7 @@
   $ export TESTTMP=${PWD}
 
   $ cd ${TESTTMP}
-  $ git init libs 1> /dev/null
+  $ git init -q libs 1> /dev/null
   $ cd libs
 
   $ mkdir sub1
@@ -22,7 +22,7 @@
   $ git commit -m "add file3" 1> /dev/null
 
   $ cd ${TESTTMP}
-  $ git init apps 1> /dev/null
+  $ git init -q apps 1> /dev/null
   $ cd apps
 
   $ git remote add libs ${TESTTMP}/libs

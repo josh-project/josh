@@ -25,11 +25,11 @@
   remote: josh-proxy        
   remote: response from upstream:        
   remote: To http://localhost:8001/real_repo.git        
-  remote:  * [new branch]      JOSH_PUSH -> refs/for/master%topic=mytopic        
+  remote:  * [new reference]   JOSH_PUSH -> refs/for/master%topic=mytopic        
   remote: 
   remote: 
   To http://localhost:8002/real_repo.git:/sub1.git
-   * [new branch]      master -> refs/for/master%topic=mytopic
+   * [new reference]   master -> refs/for/master%topic=mytopic
 
 Make sure all temporary namespace got removed
   $ tree ${TESTTMP}/remote/scratch/real_repo.git/refs/ | grep request_

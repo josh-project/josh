@@ -1,4 +1,4 @@
-  $ git init 1> /dev/null
+  $ git init -q 1> /dev/null
 
   $ mkdir a
   $ echo contents1 > a/file1

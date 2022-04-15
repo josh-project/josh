@@ -4,7 +4,7 @@ in that subtree repo should have an empty tree
   $ export TESTTMP=${PWD}
 
   $ cd ${TESTTMP}
-  $ git init libs 1>/dev/null
+  $ git init -q libs 1>/dev/null
   $ cd libs
 
   $ mkdir sub1
