@@ -6,7 +6,7 @@
   warning: You appear to have cloned an empty repository.
  
   $ curl -s http://localhost:8002/version
-  Version: 0.3.0
+  Version: 22.4.15
  
   $ cd real_repo
  
