@@ -153,14 +153,14 @@ lazy_static! {
     }
 }
 
-pub fn get_change_id(commit: &git2::Commit) -> Option<String> {
+pub fn get_change_id(commit: &git2::Commit) -> (String, Option<String>) {
     for line in commit.message().unwrap_or("").split('\n') {
         if line.starts_with("Change-Id: ") {
             let id = line.replace("Change-Id: ", "");
-            return Some(id);
+            return (commit.author().email().unwrap_or("").to_string(), Some(id));
         }
     }
-    None
+    return (commit.author().email().unwrap_or("").to_string(), None);
 }
 
 #[tracing::instrument(skip(transaction))]

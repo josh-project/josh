@@ -277,7 +277,7 @@ pub fn unapply_filter(
     new: git2::Oid,
     keep_orphans: bool,
     reparent_orphans: Option<git2::Oid>,
-    amends: &std::collections::HashMap<String, git2::Oid>,
+    change_ids: &mut Option<Vec<((String, Option<String>), git2::Oid)>>,
 ) -> JoshResult<UnapplyResult> {
     let mut bm = std::collections::HashMap::new();
     let mut ret = original_target;
@@ -473,32 +473,8 @@ pub fn unapply_filter(
             &new_tree,
         )?;
 
-        if let Some(id) = super::get_change_id(&module_commit) {
-            if let Some(commit_id) = amends.get(&id) {
-                let mut merged_index = transaction.repo().merge_commits(
-                    &transaction.repo().find_commit(*commit_id)?,
-                    &transaction.repo().find_commit(ret)?,
-                    Some(git2::MergeOptions::new().file_favor(git2::FileFavor::Theirs)),
-                )?;
-
-                if merged_index.has_conflicts() {
-                    return Ok(UnapplyResult::RejectAmend(
-                        module_commit
-                            .summary()
-                            .unwrap_or("<no message>")
-                            .to_string(),
-                    ));
-                }
-
-                let merged_tree = merged_index.write_tree_to(transaction.repo())?;
-
-                ret = rewrite_commit(
-                    transaction.repo(),
-                    &module_commit,
-                    &original_parents_refs,
-                    &transaction.repo().find_tree(merged_tree)?,
-                )?;
-            }
+        if let Some(ref mut change_ids) = change_ids {
+            change_ids.push((super::get_change_id(&module_commit), ret));
         }
 
         bm.insert(module_commit.id(), ret);
