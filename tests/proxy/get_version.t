@@ -2,13 +2,13 @@
   $ cd ${TESTTMP}
 
   $ curl -s http://localhost:8002/version
-  Version: 0.3.0
+  Version: 22.4.15
 
 
   $ curl -s "http://localhost:8002/~/graphql?query=\{version\}"
   {
     "data": {
-      "version": "0.3.0"
+      "version": "22.4.15"
     }
   } (no-eol)
 

@@ -1,6 +1,6 @@
 [package]
 name = "josh"
-version = "0.3.0"
+version = "22.4.15"
 repository = "https://github.com/josh-project/josh"
 authors = ["Christian Schilling <initcrash@gmail.com>"]
 license-file = "LICENSE"
