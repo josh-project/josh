@@ -273,7 +273,7 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
     Ok("".to_string())
 }
 
-fn push_head_url(
+pub fn push_head_url(
     repo: &git2::Repository,
     oid: git2::Oid,
     refname: &str,

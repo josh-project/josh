@@ -74,9 +74,15 @@ async fn fetch_upstream(
 
     let refs_to_fetch =
         if !headref.is_empty() && headref != "HEAD" && !headref.starts_with("refs/heads/") {
-            vec!["HEAD*", "refs/heads/*", "refs/tags/*", headref]
+            vec![
+                "HEAD*",
+                "refs/josh/*",
+                "refs/heads/*",
+                "refs/tags/*",
+                headref,
+            ]
         } else {
-            vec!["HEAD*", "refs/heads/*", "refs/tags/*"]
+            vec!["HEAD*", "refs/josh/*", "refs/heads/*", "refs/tags/*"]
         };
 
     let refs_to_fetch: Vec<_> = refs_to_fetch.iter().map(|x| x.to_string()).collect();
@@ -513,7 +519,7 @@ async fn call_service(
     }
 
     if parsed_url.api == "/~/graphql" {
-        let ctx = std::sync::Arc::new(josh::graphql::context(josh::cache::Transaction::open(
+        let context = std::sync::Arc::new(josh::graphql::context(josh::cache::Transaction::open(
             &serv.repo_path,
             Some(&format!(
                 "refs/josh/upstream/{}/",
@@ -528,9 +534,31 @@ async fn call_service(
                 .to_string(),
             false,
         ));
-        return Ok(josh_proxy::juniper_hyper::graphql(root_node, ctx, req)
+        let gql_result = josh_proxy::juniper_hyper::graphql(root_node, context.clone(), req)
             .in_current_span()
-            .await?);
+            .await?;
+        tokio::task::spawn_blocking(move || -> josh::JoshResult<_> {
+            let temp_ns = Arc::new(josh_proxy::TmpGitNamespace::new(
+                &serv.repo_path,
+                tracing::Span::current(),
+            ));
+
+            for (reference, oid) in context.to_push.lock()?.iter() {
+                josh_proxy::push_head_url(
+                    context.transaction.lock()?.repo(),
+                    *oid,
+                    &reference,
+                    &remote_url,
+                    &auth,
+                    &temp_ns.name(),
+                    false,
+                )?;
+            }
+            Ok(())
+        })
+        .in_current_span()
+        .await??;
+        return Ok(gql_result);
     }
 
     if req.uri().query() == Some("info") {

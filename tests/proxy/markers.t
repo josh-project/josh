@@ -88,9 +88,9 @@
     }
   } (no-eol)
 
-  $ git fetch ${TESTTMP}/remote/scratch refs/josh/upstream/real_repo.git/refs/josh/meta
-  From /*/cramtests-*/markers.t/remote/scratch (glob)
-   * branch            refs/josh/upstream/real_repo.git/refs/josh/meta -> FETCH_HEAD
+  $ git fetch http://localhost:8001/real_repo.git refs/josh/meta
+  From http://localhost:8001/real_repo
+   * branch            refs/josh/meta -> FETCH_HEAD
 
   $ git log --graph --pretty=%s FETCH_HEAD
   * marker
@@ -120,9 +120,9 @@
     }
   } (no-eol)
 
-  $ git fetch ${TESTTMP}/remote/scratch refs/josh/upstream/real_repo.git/refs/josh/meta
-  From /*/cramtests-*/markers.t/remote/scratch (glob)
-   * branch            refs/josh/upstream/real_repo.git/refs/josh/meta -> FETCH_HEAD
+  $ git fetch http://localhost:8001/real_repo.git refs/josh/meta
+  From http://localhost:8001/real_repo
+   * branch            refs/josh/meta -> FETCH_HEAD
 
   $ git log --graph --pretty=%s FETCH_HEAD
   * marker
@@ -160,9 +160,9 @@
     }
   } (no-eol)
 
-  $ git fetch ${TESTTMP}/remote/scratch refs/josh/upstream/real_repo.git/refs/josh/meta
-  From /*/cramtests-*/markers.t/remote/scratch (glob)
-   * branch            refs/josh/upstream/real_repo.git/refs/josh/meta -> FETCH_HEAD
+  $ git fetch http://localhost:8001/real_repo.git refs/josh/meta
+  From http://localhost:8001/real_repo
+   * branch            refs/josh/meta -> FETCH_HEAD
 
   $ git log --graph --pretty=%s FETCH_HEAD
   * marker
