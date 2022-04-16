@@ -178,14 +178,13 @@ pub fn get_change_id(commit: &git2::Commit, sha: git2::Oid) -> Change {
 }
 
 #[tracing::instrument(skip(transaction))]
-pub fn filter_ref(
+fn filter_ref(
     transaction: &cache::Transaction,
     filterobj: filter::Filter,
     from_refsname: &str,
     to_refname: &str,
     permissions: filter::Filter,
-) -> JoshResult<usize> {
-    let mut updated_count = 0;
+) -> JoshResult<git2::Oid> {
     if let Ok(reference) = transaction.repo().revparse_single(from_refsname) {
         let original_commit = reference.peel_to_commit()?;
         let oid = original_commit.id();
@@ -219,46 +218,13 @@ pub fn filter_ref(
             filter::apply_to_commit(filterobj, &original_commit, transaction)?
         };
 
-        let previous = transaction
-            .repo()
-            .revparse_single(to_refname)
-            .map(|x| x.id())
-            .unwrap_or(git2::Oid::zero());
-
-        if filter_commit != previous {
-            updated_count += 1;
-            tracing::trace!(
-                "filter_ref: update reference: {:?} -> {:?}, target: {:?}, filter: {:?}",
-                &from_refsname,
-                &to_refname,
-                filter_commit,
-                &filter::spec(filterobj),
-            );
-        }
-
         transaction.insert_ref(filterobj, oid, filter_commit);
 
-        if filter_commit != git2::Oid::zero() {
-            ok_or!(
-                transaction
-                    .repo()
-                    .reference(to_refname, filter_commit, true, "apply_filter")
-                    .map(|_| ()),
-                {
-                    tracing::error!(
-                        "can't update reference: {:?} -> {:?}, target: {:?}, filter: {:?}",
-                        &from_refsname,
-                        &to_refname,
-                        filter_commit,
-                        &filter::spec(filterobj),
-                    );
-                }
-            );
-        }
+        return Ok(filter_commit);
     } else {
         tracing::warn!("filter_ref: Can't find reference {:?}", &from_refsname);
+        return Ok(git2::Oid::zero());
     };
-    Ok(updated_count)
 }
 
 pub fn filter_refs(
@@ -266,16 +232,19 @@ pub fn filter_refs(
     filterobj: filter::Filter,
     refs: &[(String, String)],
     permissions: filter::Filter,
-) -> JoshResult<usize> {
+    headref: &str,
+) -> JoshResult<Vec<(String, git2::Oid)>> {
     rs_tracing::trace_scoped!("filter_refs", "spec": filter::spec(filterobj));
     let s = tracing::Span::current();
     let _e = s.enter();
+    let mut updated = vec![];
 
     tracing::trace!("filter_refs");
 
-    let mut updated_count = 0;
+    let mut head_oid = git2::Oid::zero();
+
     for (k, v) in refs {
-        updated_count += ok_or!(filter_ref(&transaction, filterobj, &k, &v, permissions), {
+        let oid = ok_or!(filter_ref(&transaction, filterobj, &k, &v, permissions), {
             tracing::event!(
                 tracing::Level::WARN,
                 msg = "filter_refs: Can't filter reference",
@@ -283,10 +252,40 @@ pub fn filter_refs(
                 from = k.as_str(),
                 to = v.as_str()
             );
-            0
+            git2::Oid::zero()
         });
+        updated.push((v.to_string(), oid));
+        if v == headref {
+            head_oid = oid;
+        }
     }
-    Ok(updated_count)
+
+    if headref != "" {
+        if head_oid == git2::Oid::zero() {
+            updated.clear();
+        }
+        updated.retain(|(r, oid)| r == headref || *oid != head_oid || r.ends_with("/HEAD"));
+    }
+
+    for (to_refname, filter_commit) in updated.iter() {
+        if *filter_commit != git2::Oid::zero() {
+            ok_or!(
+                transaction
+                    .repo()
+                    .reference(&to_refname, *filter_commit, true, "apply_filter")
+                    .map(|_| ()),
+                {
+                    tracing::error!(
+                        "can't update reference: {:?}, target: {:?}, filter: {:?}",
+                        &to_refname,
+                        filter_commit,
+                        &filter::spec(filterobj),
+                    );
+                }
+            );
+        }
+    }
+    Ok(updated)
 }
 
 pub fn normalize_path(path: &std::path::Path) -> std::path::PathBuf {

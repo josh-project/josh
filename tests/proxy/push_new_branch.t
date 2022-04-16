@@ -80,7 +80,7 @@ Add one more commit in the workspace and push using implicit prefix in base
   remote: 
   remote: 
   To http://localhost:8002/real_repo.git:/sub.git
-     28d2085..751ef45  new-branch -> new-branch
+   * [new branch]      new-branch -> new-branch
 
 Check the branch again
 

@@ -49,12 +49,13 @@
   $ cd ${TESTTMP}
 
   $ git clone -q http://localhost:8002/real_repo.git:/sub1.git sub1
-  warning: remote HEAD refers to nonexistent ref, unable to checkout.
-  
+  warning: You appear to have cloned an empty repository.
 
   $ cd sub1
 
   $ git checkout -q main
+  error: pathspec 'main' did not match any file(s) known to git
+  [1]
 
   $ cat .git/refs/remotes/origin/HEAD
   cat: .git/refs/remotes/origin/HEAD: No such file or directory
@@ -62,15 +63,16 @@
 
   $ tree
   .
-  `-- file1
   
-  0 directories, 1 file
+  0 directories, 0 files
 
   $ git log --graph --pretty=%s
-  * add file1
+  fatal: your current branch 'master' does not have any commits yet
+  [128]
 
   $ cat file1
-  contents1
+  cat: file1: No such file or directory
+  [1]
 
   $ bash ${TESTDIR}/destroy_test_env.sh
   "real_repo.git" = [

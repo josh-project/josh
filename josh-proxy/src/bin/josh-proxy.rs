@@ -312,7 +312,6 @@ async fn do_filter(
             from_to.push((headsha, temp_ns.reference(&headref)));
         }
 
-        josh::filter_refs(&transaction, filter, &from_to, josh::filter::empty())?;
         if headref == "HEAD" {
             headref = heads_map
                 .read()?
@@ -320,6 +319,13 @@ async fn do_filter(
                 .unwrap_or(&"invalid".to_string())
                 .clone();
         }
+        josh::filter_refs(
+            &transaction,
+            filter,
+            &from_to,
+            josh::filter::empty(),
+            &temp_ns.reference(&headref),
+        )?;
         transaction
             .repo()
             .reference_symbolic(

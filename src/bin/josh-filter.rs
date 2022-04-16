@@ -203,12 +203,12 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
             if i.contains(":workspace=") {
                 continue;
             }
-            josh::filter_ref(
+            josh::filter_refs(
                 &transaction,
                 josh::filter::parse(&i)?,
-                input_ref,
-                "refs/JOSH_TMP",
+                &[(input_ref.to_string(), "refs/JOSH_TMP".to_string())],
                 josh::filter::empty(),
+                "",
             )?;
         }
     }
@@ -270,8 +270,14 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         permissions_filter = josh::filter::empty();
     }
 
-    let updated_refs = josh::filter_ref(&transaction, filterobj, &src, &t, permissions_filter)?;
-    if args.value_of("update") != Some("FILTERED_HEAD") && updated_refs == 0 {
+    let updated_refs = josh::filter_refs(
+        &transaction,
+        filterobj,
+        &[(src.clone(), t)],
+        permissions_filter,
+        "",
+    )?;
+    if args.value_of("update") != Some("FILTERED_HEAD") && updated_refs.len() == 0 {
         println!(
             "Warning: reference {} wasn't updated",
             args.value_of("update").unwrap()

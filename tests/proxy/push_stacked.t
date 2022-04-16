@@ -7,7 +7,8 @@
 
   $ mkdir sub1
   $ echo contents1 > sub1/file1
-  $ git add sub1
+  $ echo before > file7
+  $ git add .
   $ git commit -m "add file1" 1> /dev/null
   $ git push 1> /dev/null
   To http://localhost:8001/real_repo.git
@@ -56,7 +57,7 @@
   $ git push -o author=josh@example.com origin master:refs/for/master
   remote: josh-proxy        
   remote: response from upstream:        
-  remote: rejecting to push b739883c1e5f388b0a5f715fc3beace7bf845bf2 without Change-Id        
+  remote: rejecting to push 3ad32b3bd3bb778441e7eae43930d8dc6293eddc without Change-Id        
   remote: 
   remote: 
   remote: error: hook declined to update refs/for/master        
@@ -68,7 +69,7 @@
   remote: josh-proxy        
   remote: response from upstream:        
   remote: To http://localhost:8001/real_repo.git        
-  remote:    c35c443..b739883  JOSH_PUSH -> @heads/master/foo@example.com        
+  remote:    ec41aad..3ad32b3  JOSH_PUSH -> @heads/master/foo@example.com        
   remote: 
   remote: 
   To http://localhost:8002/real_repo.git
@@ -104,10 +105,33 @@
 
   $ tree
   .
+  |-- file7
   `-- sub1
       `-- file1
   
-  1 directory, 1 file
+  1 directory, 2 files
+
+To avoid stacked changes to cause excessive amounts of refs, refs get filtered to only
+get listed if they differ from HEAD
+
+  $ git ls-remote http://localhost:8002/real_repo.git
+  4950fa502f51b7bfda0d7975dbff9b0f9a9481ca\tHEAD (esc)
+  3b0e3dbefd779ec54d92286047f32d3129161c0d\trefs/heads/@changes/master/josh@example.com/1234 (esc)
+  ec41aad70b4b898baf48efeb795a7753d9674152\trefs/heads/@changes/master/josh@example.com/foo7 (esc)
+  3ad32b3bd3bb778441e7eae43930d8dc6293eddc\trefs/heads/@heads/master/foo@example.com (esc)
+  ec41aad70b4b898baf48efeb795a7753d9674152\trefs/heads/@heads/master/josh@example.com (esc)
+  4950fa502f51b7bfda0d7975dbff9b0f9a9481ca\trefs/heads/master (esc)
+
+  $ git ls-remote http://localhost:8002/real_repo.git:/sub1.git
+  0b4cf6c9efbbda1eada39fa9c1d21d2525b027bb\tHEAD (esc)
+  0b4cf6c9efbbda1eada39fa9c1d21d2525b027bb\trefs/heads/master (esc)
+  $ git ls-remote http://localhost:8002/real_repo.git::file2.git
+  $ git ls-remote http://localhost:8002/real_repo.git::file7.git
+  23b2396b6521abcd906f16d8492c5aeacaee06ed\tHEAD (esc)
+  08c82a20e92d548ff32f86d634b82da6756e1f5f\trefs/heads/@changes/master/josh@example.com/foo7 (esc)
+  08c82a20e92d548ff32f86d634b82da6756e1f5f\trefs/heads/@heads/master/foo@example.com (esc)
+  08c82a20e92d548ff32f86d634b82da6756e1f5f\trefs/heads/@heads/master/josh@example.com (esc)
+  23b2396b6521abcd906f16d8492c5aeacaee06ed\trefs/heads/master (esc)
 
 Make sure all temporary namespace got removed
   $ tree ${TESTTMP}/remote/scratch/real_repo.git/refs/ | grep request_
@@ -122,7 +146,9 @@ Make sure all temporary namespace got removed
   |   |   `-- real_repo.git
   |   |       |-- %3A
   |   |       |   `-- HEAD
-  |   |       `-- %3A%2Fsub1
+  |   |       |-- %3A%2Fsub1
+  |   |       |   `-- HEAD
+  |   |       `-- %3A%3Afile7
   |   |           `-- HEAD
   |   `-- upstream
   |       `-- real_repo.git
@@ -142,7 +168,7 @@ Make sure all temporary namespace got removed
   |-- namespaces
   `-- tags
   
-  17 directories, 8 files
+  18 directories, 9 files
 
 $ cat ${TESTTMP}/josh-proxy.out
 $ cat ${TESTTMP}/josh-proxy.out | grep REPO_UPDATE

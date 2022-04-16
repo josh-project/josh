@@ -222,8 +222,6 @@ pub fn refresh_known_filters(
         let t = transaction.try_clone()?;
         info!("background rebuild root: {:?}", upstream_repo);
 
-        let mut updated_count = 0;
-
         for filter_spec in e.1.iter() {
             tracing::trace!("background rebuild: {:?} {:?}", upstream_repo, filter_spec);
 
@@ -233,9 +231,8 @@ pub fn refresh_known_filters(
                 upstream_repo,
             );
 
-            updated_count += filter_refs(&t, filter::parse(filter_spec)?, &refs, filter::empty())?;
+            filter_refs(&t, filter::parse(filter_spec)?, &refs, filter::empty(), "")?;
         }
-        info!("updated {} refs for {:?}", updated_count, upstream_repo);
     }
     Ok(0)
 }
