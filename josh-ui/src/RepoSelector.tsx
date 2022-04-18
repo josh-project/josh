@@ -36,6 +36,7 @@ type State = {
     remote: Remote
     hint: Option<string>
     repo: Option<string>
+    input: string,
 }
 
 export class RepoSelector extends React.Component<RepoSelectorProps, State> {
@@ -43,6 +44,7 @@ export class RepoSelector extends React.Component<RepoSelectorProps, State> {
         remote: { type: 'None' },
         hint: new None(),
         repo: new None(),
+        input: '',
     };
 
     componentDidMount () {
@@ -62,6 +64,12 @@ export class RepoSelector extends React.Component<RepoSelectorProps, State> {
             .with({ type: 'Error', error: select() }, (e) => `error: ${e.message}` )
             .with({ type: 'Some', value: select() }, (v) => `${v}/` )
             .exhaustive()
+    }
+
+    isLabelVisible = () => {
+        return match(this.state.remote)
+            .with({ type: 'Some', value: when((v) => this.state.input.startsWith(v)) }, () => false )
+            .otherwise(() => true)
     }
 
     getHint = () => {
@@ -106,6 +114,7 @@ export class RepoSelector extends React.Component<RepoSelectorProps, State> {
                 this.setState({
                     hint: hint,
                     repo: repo,
+                    input: e.target.value,
                 })
             })
             .with({ type: 'None' }, () => {
@@ -133,9 +142,11 @@ export class RepoSelector extends React.Component<RepoSelectorProps, State> {
         return <div>
             <h3>Select repo</h3>
             <div className={'repo-selector-repo'}>
-                <span className={'repo-selector-status-label'}>
-                    {this.getStatus()}
-                </span>
+                { this.isLabelVisible() &&
+                    <span className={'repo-selector-status-label'}>
+                        {this.getStatus()}
+                    </span>
+                }
                 <input
                     type={'text'}
                     className={'repo-selector-input ui-input'}
