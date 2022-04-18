@@ -34,7 +34,6 @@ fi
 # shellcheck disable=SC2086
 "${TARGET_DIR}/debug/josh-proxy" \
     --port=8002\
-    --graphql-root\
     --local="${TESTTMP}/remote/scratch/"\
     --remote=http://localhost:8001\
     ${EXTRA_OPTS}\

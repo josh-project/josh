@@ -814,65 +814,16 @@ impl Repository {
     }
 }
 
-pub struct Query;
-
-#[graphql_object(context = Context)]
-impl Query {
-    fn version() -> &str {
-        option_env!("GIT_DESCRIBE").unwrap_or(std::env!("CARGO_PKG_VERSION"))
-    }
-
-    fn repos(context: &Context, name: Option<String>) -> FieldResult<Vec<Repository>> {
-        let transaction = context.transaction.lock()?;
-
-        let refname = "refs/josh/upstream/*.git/refs/heads/*".to_string();
-
-        let mut repos = vec![];
-
-        for reference in transaction.repo().references_glob(&refname)? {
-            let r = reference?;
-            let n = r.name().ok_or(josh_error("reference without name"))?;
-            let n = UpstreamRef::from_str(n).ok_or(josh_error("not a ns"))?.ns;
-            let n = from_ns(&n);
-
-            if let Some(nn) = &name {
-                if nn == &n {
-                    repos.push(n);
-                }
-            } else {
-                repos.push(n);
-            }
-        }
-
-        repos.dedup();
-
-        Ok(repos
-            .into_iter()
-            .map(|name| {
-                let ns = format!("refs/josh/upstream/{}.git/", to_ns(&name));
-                Repository { name, ns }
-            })
-            .collect())
-    }
-}
-
 regex_parsed!(
     UpstreamRef,
-    r"refs/josh/upstream/(?P<ns>.*)[.]git/(?P<reference>refs/heads/.*)",
-    [ns, reference]
+    r"refs/josh/upstream/.*[.]git/(?P<reference>refs/heads/.*)",
+    [reference]
 );
-
-pub type Schema =
-    juniper::RootNode<'static, Query, EmptyMutation<Context>, EmptySubscription<Context>>;
 
 pub fn context(transaction: cache::Transaction) -> Context {
     Context {
         transaction: std::sync::Arc::new(std::sync::Mutex::new(transaction)),
     }
-}
-
-pub fn schema() -> Schema {
-    Schema::new(Query, EmptyMutation::new(), EmptySubscription::new())
 }
 
 pub type CommitSchema =
