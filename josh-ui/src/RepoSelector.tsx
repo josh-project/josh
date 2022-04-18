@@ -36,7 +36,7 @@ type State = {
     remote: Remote
     hint: Option<string>
     repo: Option<string>
-    input: string,
+    label: boolean,
 }
 
 export class RepoSelector extends React.Component<RepoSelectorProps, State> {
@@ -44,7 +44,7 @@ export class RepoSelector extends React.Component<RepoSelectorProps, State> {
         remote: { type: 'None' },
         hint: new None(),
         repo: new None(),
-        input: '',
+        label: true,
     };
 
     componentDidMount () {
@@ -64,12 +64,6 @@ export class RepoSelector extends React.Component<RepoSelectorProps, State> {
             .with({ type: 'Error', error: select() }, (e) => `error: ${e.message}` )
             .with({ type: 'Some', value: select() }, (v) => `${v}/` )
             .exhaustive()
-    }
-
-    isLabelVisible = () => {
-        return match(this.state.remote)
-            .with({ type: 'Some', value: when((v) => this.state.input.startsWith(v)) }, () => false )
-            .otherwise(() => true)
     }
 
     getHint = () => {
@@ -110,16 +104,18 @@ export class RepoSelector extends React.Component<RepoSelectorProps, State> {
 
                 const expectedPath = remote + '/'
                 const [hint, repo] = getHint(expectedPath)
+                const label = !e.target.value.startsWith(remote)
 
                 this.setState({
                     hint: hint,
                     repo: repo,
-                    input: e.target.value,
+                    label: label,
                 })
             })
             .with({ type: 'None' }, () => {
                 this.setState({
-                    repo: new None()
+                    repo: new None(),
+                    label: true,
                 })
             })
             .run()
@@ -142,7 +138,7 @@ export class RepoSelector extends React.Component<RepoSelectorProps, State> {
         return <div>
             <h3>Select repo</h3>
             <div className={'repo-selector-repo'}>
-                { this.isLabelVisible() &&
+                { this.state.label &&
                     <span className={'repo-selector-status-label'}>
                         {this.getStatus()}
                     </span>
