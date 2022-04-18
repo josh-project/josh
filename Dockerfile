@@ -53,12 +53,15 @@ RUN pip3 install \
   git+https://github.com/brodie/cram.git@${CRAM_VERSION} \
   pygit2==${PYGIT2_VERSION}
 
+RUN <<EOF
+curl --fail --show-error --silent --location https://deb.nodesource.com/setup_17.x | bash - && \
+apt-get install --yes nodejs
+EOF
+
 WORKDIR /usr/src/josh
 RUN rustup component add rustfmt
 RUN rustup target add wasm32-unknown-unknown
 RUN cargo install --version 0.1.35 cargo-chef
-RUN cargo install --version 0.2.78 wasm-bindgen-cli
-RUN cargo install --version 0.14.0 trunk
 RUN cargo install --version 0.2.1 hyper_cgi --features=test-server
 RUN cargo install --version 0.10.0 graphql_client_cli
 
@@ -70,11 +73,16 @@ COPY --from=dev-planner /usr/src/josh/recipe.json .
 ENV CARGO_TARGET_DIR=/opt/cargo-target
 RUN cargo chef cook --recipe-path recipe.json
 
+RUN mkdir -p josh-ui
+COPY josh-ui/package.json josh-ui/package-lock.json josh-ui/
+RUN cd josh-ui && npm install
+
 FROM dev as build
 
 COPY . .
-RUN trunk --config=josh-ui/Trunk.toml build
-RUN cargo build -p josh-proxy --release
+RUN \
+  cargo build -p josh-proxy --release && \
+  cargo build -p josh-ui --release
 
 FROM debian:bullseye as run
 
