@@ -23,6 +23,8 @@ function checkUrl(url: string, expectedPath: string): UrlCheckResult {
             () => ({ type: 'NotAGitRepo' } as UrlCheckResult))
         .with(when((v: string) => v.startsWith(expectedPath)),
             (v) => ({ type: 'RemoteFound', path: v.replace(expectedPath, '') } as UrlCheckResult))
+        .with(when((v: string) => !(v.startsWith('http://') || v.startsWith('https://'))),
+            (v) => ({ type: 'RemoteFound', path: v }) as UrlCheckResult)
         .otherwise(() => ({ type: 'RemoteMismatch' } as UrlCheckResult))
 }
 
@@ -54,15 +56,11 @@ export class RepoSelector extends React.Component<RepoSelectorProps, State> {
             }))
     }
 
-    getRemote = (r: string) => {
-        return `Repository URL, starting with ${r}`
-    }
-
     getStatus = () => {
         return match(this.state.remote)
-            .with({ type: 'None' }, () => 'Loading...' )
-            .with({ type: 'Error', error: select() }, (e) => `Error: ${e.message}` )
-            .with({ type: 'Some', value: select() }, (v) => this.getRemote(v) )
+            .with({ type: 'None' }, () => 'loading...' )
+            .with({ type: 'Error', error: select() }, (e) => `error: ${e.message}` )
+            .with({ type: 'Some', value: select() }, (v) => `${v}/` )
             .exhaustive()
     }
 
@@ -134,12 +132,20 @@ export class RepoSelector extends React.Component<RepoSelectorProps, State> {
     render() {
         return <div>
             <h3>Select repo</h3>
-            <div className={'repo-selector-status-label'}>
-                {this.getStatus()}
+            <div className={'repo-selector-repo'}>
+                <span className={'repo-selector-status-label'}>
+                    {this.getStatus()}
+                </span>
+                <input
+                    type={'text'}
+                    className={'repo-selector-input ui-input'}
+                    onChange={this.inputChanged}
+                />
             </div>
-            <input type={'text'} onChange={this.inputChanged} />
             {this.getHint()}
-            <button onClick={this.buttonPressed} className={'ui-button'}>Open</button>
+            <button onClick={this.buttonPressed} className={'ui-button repo-selector-button'}>
+                Browse
+            </button>
         </div>
     }
 }

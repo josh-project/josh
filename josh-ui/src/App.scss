@@ -36,7 +36,8 @@ body {
   background: $color-background;
   font-family: $font-main;
   color: $color-font-normal;
-  padding: 0 1em;
+  padding: 0;
+  margin: 0;
 }
 
 section.file-browser-list {
@@ -140,41 +141,83 @@ nav {
   box-shadow: none;
 }
 
-.select-repo-header h3 {
-  margin: 0 0 0.7em 0;
-}
-
-.select-repo-hint {
-  font-size: 0.8em;
-  font-style: italic;
-  margin-bottom: 0.7em;
-}
-
-.select-repo-hint-icon {
-  font-style: normal;
-  font-family: $font-emoji;
-  margin-right: 0.3em;
-  display: inline-block;
-  position: relative;
-  top: -0.05em;
-}
-
-.select-repo-input {
-  width: 100%;
+.ui-modal {
+  width: 80%;
+  max-width: 800px;
   display: block;
   box-sizing: border-box;
-  border: 1px solid #555;
-  margin-bottom: 0.7em;
+  padding: 1em;
+  border: 2px solid $color-highlight-complimentary;
+  background-color: #333;
+
+  @media(max-width: 700px) {
+    & {
+      --width: calc(100% - 20px);
+      width: var(--width);
+      max-width: var(--width);
+    }
+  }
+
+  &-container {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    top: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  & h1, h2, h3, h4 {
+    margin-top: 0.4em;
+  }
 }
 
-.select-repo-input:hover {
+.ui-input {
+  box-sizing: border-box;
+  font-family: $font-main;
+  background: $color-background;
+  color: #aaaaaa;
   border: 1px solid #555;
+  outline: none;
+  box-shadow: none;
+
+  &:focus {
+    background: none;
+    border: 1px solid #555;
+  }
+
+  &:hover {
+    background: none;
+    border: 1px solid #555;
+  }
 }
 
-.select-repo-input:focus {
-  border: 1px solid #555;
-}
+.repo-selector  {
+  &-hint {
+    font-size: 0.8em;
+    font-style: italic;
+    margin: 0.7em 0;
+  }
 
-.select-repo-button {
-  float: right;
+  &-button {
+    float: right;
+  }
+
+  $font-size: 0.8em;
+
+  &-status-label {
+    font-size: $font-size;
+  }
+
+  &-input {
+    flex-grow: 1;
+    font-size: $font-size;
+  }
+
+  &-repo {
+    margin-bottom: 0.7em;
+    display: flex;
+    align-items: baseline;
+  }
 }
