@@ -54,7 +54,11 @@ function useGetSearchParam() {
 }
 
 function Select() {
-    return <RepoSelector navigateCallback={useNavigateCallback()}/>
+    return <div className={'ui-modal-container'}>
+        <div className={'ui-modal'}>
+            <RepoSelector navigateCallback={useNavigateCallback()}/>
+        </div>
+    </div>
 }
 
 function TopNav(props: { repo: string }) {
