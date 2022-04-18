@@ -42,7 +42,10 @@
   1 directory, 2 files
 
   $ bash ${TESTDIR}/destroy_test_env.sh
-  "real_repo.git" = [':/sub1']
+  "real_repo.git" = [
+      ':/sub1',
+      ':/sub1:prefix=pre',
+  ]
   refs
   |-- heads
   |-- josh

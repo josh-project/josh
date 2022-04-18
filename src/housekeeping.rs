@@ -7,6 +7,11 @@ use tracing::{info, span, Level};
 
 pub type KnownViews = HashMap<String, (git2::Oid, BTreeSet<String>)>;
 
+lazy_static! {
+    static ref KNOWN_FILTERS: std::sync::Mutex<KnownViews> =
+        std::sync::Mutex::new(std::collections::HashMap::new());
+}
+
 pub fn default_from_to(
     repo: &git2::Repository,
     namespace: &str,
@@ -28,11 +33,18 @@ pub fn default_from_to(
             refs.push((refname.to_owned(), to_ref.clone()));
         }
     }
-    refs.append(&mut memorize_from_to(
-        repo,
-        &to_filtered_ref(upstream_repo, filter_spec),
-        upstream_repo,
-    ));
+
+    // no need to rember the nop filter since we already keep a reference to
+    // the unfiltered branch in refs/josh/upstream
+    if filter_spec != ":/" {
+        if let Ok(mut known_filters) = KNOWN_FILTERS.try_lock() {
+            let known_f = &mut known_filters
+                .entry(upstream_repo.trim_start_matches('/').to_string())
+                .or_insert_with(|| (git2::Oid::zero(), BTreeSet::new()));
+
+            known_f.1.insert(filter_spec.to_string());
+        }
+    }
 
     refs
 }
@@ -86,9 +98,9 @@ regex_parsed!(
  * Determine filter specs that are either likely to be requested and/or
  * expensive to build from scratch using heuristics.
  */
-pub fn discover_filter_candidates(transaction: &cache::Transaction) -> JoshResult<KnownViews> {
+pub fn discover_filter_candidates(transaction: &cache::Transaction) -> JoshResult<()> {
     let repo = transaction.repo();
-    let mut known_filters = KnownViews::new();
+    let mut known_filters = KNOWN_FILTERS.lock()?;
     let trace_s = span!(Level::TRACE, "discover_filter_candidates");
     let _e = trace_s.enter();
 
@@ -132,7 +144,7 @@ pub fn discover_filter_candidates(transaction: &cache::Transaction) -> JoshResul
             .insert(from_ns(&filtered.filter_spec));
     }
 
-    Ok(known_filters)
+    Ok(())
 }
 
 pub fn find_all_workspaces_and_subdirectories(
@@ -213,11 +225,9 @@ pub fn get_info(
     Ok(serde_json::to_string(&s)?)
 }
 
-#[tracing::instrument(skip(transaction, known_filters))]
-pub fn refresh_known_filters(
-    transaction: &cache::Transaction,
-    known_filters: &KnownViews,
-) -> JoshResult<usize> {
+#[tracing::instrument(skip(transaction))]
+pub fn refresh_known_filters(transaction: &cache::Transaction) -> JoshResult<usize> {
+    let known_filters = KNOWN_FILTERS.lock()?;
     for (upstream_repo, e) in known_filters.iter() {
         let t = transaction.try_clone()?;
         info!("background rebuild root: {:?}", upstream_repo);
@@ -237,10 +247,19 @@ pub fn refresh_known_filters(
     Ok(0)
 }
 
+pub fn get_known_filters(
+) -> JoshResult<std::collections::BTreeMap<String, std::collections::BTreeSet<String>>> {
+    Ok(KNOWN_FILTERS
+        .lock()?
+        .iter()
+        .map(|(repo, (_, filters))| (repo.clone(), filters.clone()))
+        .collect())
+}
+
 pub fn run(repo_path: &std::path::Path, do_gc: bool) -> JoshResult<()> {
     let transaction = cache::Transaction::open(repo_path, None)?;
-    let known_filters = housekeeping::discover_filter_candidates(&transaction)?;
-    refresh_known_filters(&transaction, &known_filters)?;
+    housekeeping::discover_filter_candidates(&transaction)?;
+    refresh_known_filters(&transaction)?;
     info!(
         "{}",
         run_command(transaction.repo().path(), "git count-objects -v").replace("\n", "  ")

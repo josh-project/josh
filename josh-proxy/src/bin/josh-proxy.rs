@@ -199,17 +199,13 @@ async fn static_paths(
 
         let body_str = tokio::task::spawn_blocking(move || -> josh::JoshResult<_> {
             let transaction = josh::cache::Transaction::open(&service.repo_path, None)?;
-            let known_filters = josh::housekeeping::discover_filter_candidates(&transaction)?;
+            josh::housekeeping::discover_filter_candidates(&transaction)?;
             if refresh {
-                josh::housekeeping::refresh_known_filters(&transaction, &known_filters)?;
+                josh::housekeeping::refresh_known_filters(&transaction)?;
             }
-            let mut kf = std::collections::BTreeMap::new();
-            for (k, v) in &known_filters {
-                if v.1.len() != 0 {
-                    kf.insert(k, v.1.clone());
-                }
-            }
-            Ok(toml::to_string_pretty(&kf)?)
+            Ok(toml::to_string_pretty(
+                &josh::housekeeping::get_known_filters()?,
+            )?)
         })
         .await??;
 

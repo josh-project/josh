@@ -247,6 +247,7 @@
       ':/sub3',
       ':/ws',
       ':workspace=ws',
+      ':workspace=ws:/pre',
   ]
   refs
   |-- heads
