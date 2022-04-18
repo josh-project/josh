@@ -26,7 +26,7 @@
   $ git clone -q http://localhost:8002/xxx full_repo
   fatal: unable to update url base from redirection:
     asked for: http://localhost:8002/xxx/info/refs?service=git-upload-pack
-     redirect: http://localhost:8002/~/browse/xxx/info/refs@HEAD(:/)/()
+     redirect: http://localhost:8002/~/ui/browse?repo=/xxx/info/refs.git&path=&filter=%3A%2F&rev=HEAD
   [128]
 
   $ bash ${TESTDIR}/destroy_test_env.sh

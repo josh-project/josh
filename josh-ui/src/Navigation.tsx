@@ -1,24 +1,20 @@
+import { gql } from 'graphql-request'
 
-query RefsQuery {
-  refs { name }
+export enum NavigateTargetType {
+  File,
+  Directory
 }
 
-query NavQuery($rev: String!, $meta: String!) {
-  workspaces: rev(at: $rev, filter: "::**/workspace.josh") {
-    paths: files {
-      dir(relative: "..") {
-        path
-        rev(filter: ":workspace={path}") { 
-          warnings { message }
-          dir {
-            meta(topic:$meta) { count }
-          }
-        }
-      }
-    }
-  }
+export type NavigateTarget = {
+  repo: string
+  path: string
+  filter: string
+  rev: string
 }
 
+export type NavigateCallback = (targetType: NavigateTargetType, target: NavigateTarget) => void
+
+export const QUERY_PATH = gql`
 query PathQuery($rev: String!, $filter: String!, $path: String!, $meta: String!) {
   rev(at:$rev, filter:$filter) {
     warnings {
@@ -40,3 +36,4 @@ query PathQuery($rev: String!, $filter: String!, $path: String!, $meta: String!)
     }
   }
 }
+`

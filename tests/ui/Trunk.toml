@@ -1,7 +1,0 @@
-[build]
-target = "../../josh-ui/index.html"
-dist = "../../static"
-public_url = "/~/browse/"
-
-[[proxy]]
-backend = "http://localhost:8002/~/"

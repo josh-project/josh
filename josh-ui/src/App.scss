@@ -1,0 +1,180 @@
+$font-main: Consolas, Menlo, Monaco, 'Lucida Console', 'Liberation Mono', 'DejaVu Sans Mono',
+            'Bitstream Vera Sans Mono', 'Courier New', monospace, serif;
+$font-emoji: 'Apple Color Emoji', 'Android Emoji', 'Segoe UI Emoji', 'Open Sans';
+
+$color-background: #222222;
+$color-background-highlight: #272727;
+$color-font-normal: #dddddd;
+$color-font-shadowed: #aaaaaa;
+$color-font-highlight: #eeeeee;
+$color-highlight: #88c5c5;
+$color-highlight-complimentary: #cc7f3d;
+$color-link: $color-font-normal;
+$color-link-hover: #ffffaa;
+$color-link-visited: $color-font-normal;
+$color-link-visited-hover: #ffffaa;
+
+@mixin ui-link-clickable {
+  color: $color-link;
+  cursor: pointer;
+
+  &:hover {
+    color: $color-link-hover;
+    text-decoration: underline;
+  }
+
+  &:visited {
+    color: $color-link-visited;
+  }
+
+  &:visited:hover {
+    color: $color-link-visited-hover;
+  }
+}
+
+body {
+  background: $color-background;
+  font-family: $font-main;
+  color: $color-font-normal;
+  padding: 0 1em;
+}
+
+section.file-browser-list {
+  margin: 0;
+}
+
+nav {
+  &.breadcrumbs {
+    padding: .2em .5em;
+    margin-bottom: 0.7em;
+  }
+
+  &> .breadcrumbs-entry {
+    @include ui-link-clickable;
+    color: $color-font-shadowed;
+
+    &:last-child {
+      color: $color-font-highlight;
+    }
+  }
+}
+
+.logo {
+  img {
+    display: inline-block;
+    height: 40px;
+  }
+
+  margin: .3em 0 .7em;
+  display: flex;
+  flex-direction: row;
+
+  span {
+    align-self: center;
+    font-size: 1.44em;
+    height: 1em;
+  }
+
+  font-weight: bold;
+  color: $color-highlight;
+  text-transform: lowercase;
+}
+
+.now-browsing {
+  display: flex;
+  justify-content: space-between;
+  padding: .2em .5em;
+  margin-bottom: 0.7em;
+
+  &-select {
+    a {
+      color: $color-font-shadowed;
+      text-decoration: none;
+
+      &:hover {
+        color: $color-font-highlight;
+      }
+    }
+
+    &:before {
+      content: '// ';
+      color: $color-font-shadowed;
+    }
+  }
+}
+
+.file-browser-list-entry {
+  @include ui-link-clickable;
+  padding: .4em .4em;
+
+  &:hover {
+    background: $color-background-highlight;
+  }
+}
+
+.ui-button {
+  $shadow-depth: 0.1em;
+
+  padding: 0.4em 1em 0.3em;
+  box-sizing: border-box;
+  margin-top: $shadow-depth;
+
+  text-transform: uppercase;
+  font-family: $font-main;
+  cursor: pointer;
+
+  border: 1px solid $color-highlight-complimentary;
+  box-shadow: $shadow-depth $shadow-depth 0 0 #94643b;
+  transform: translate(-1 * $shadow-depth, -1 * $shadow-depth);
+
+  background: #222;
+  color: #e1e1e1;
+}
+
+.ui-button:hover {
+  background: #333;
+}
+
+.ui-button:active {
+  transform: none;
+  box-shadow: none;
+}
+
+.select-repo-header h3 {
+  margin: 0 0 0.7em 0;
+}
+
+.select-repo-hint {
+  font-size: 0.8em;
+  font-style: italic;
+  margin-bottom: 0.7em;
+}
+
+.select-repo-hint-icon {
+  font-style: normal;
+  font-family: $font-emoji;
+  margin-right: 0.3em;
+  display: inline-block;
+  position: relative;
+  top: -0.05em;
+}
+
+.select-repo-input {
+  width: 100%;
+  display: block;
+  box-sizing: border-box;
+  border: 1px solid #555;
+  margin-bottom: 0.7em;
+}
+
+.select-repo-input:hover {
+  border: 1px solid #555;
+}
+
+.select-repo-input:focus {
+  border: 1px solid #555;
+}
+
+.select-repo-button {
+  float: right;
+}

@@ -1,0 +1,6 @@
+**
+
+!public
+!src
+!*.rs
+!*.json

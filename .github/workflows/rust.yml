@@ -42,9 +42,6 @@ jobs:
           # Unit tests
           cargo test --workspace --all
 
-          # UI build
-          trunk --config=josh-ui/Trunk.toml build
-
           # Integration tests
           cargo build --workspace --all-targets
           sh run-tests.sh tests/filter/**.t

@@ -46,6 +46,7 @@ tracing-log = "0.1"
 juniper = "0.15"
 tracing-subscriber = "0.3.11"
 indoc = "1.0.4"
+hyper-reverse-proxy = "0.5.1"
 
 [profile.release]
 lto = true

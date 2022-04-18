@@ -12,9 +12,12 @@ use futures::future;
 use futures::FutureExt;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Request, Response, Server, StatusCode};
+use hyper_reverse_proxy;
 use indoc::formatdoc;
 use josh::JoshError;
 use std::collections::HashMap;
+use std::net::IpAddr;
+use std::str::FromStr;
 use std::sync::{Arc, RwLock};
 use tokio::process::Command;
 use tracing::Span;
@@ -366,6 +369,40 @@ fn make_response(body: hyper::Body, code: hyper::StatusCode) -> Response<hyper::
         .expect("Can't build response")
 }
 
+async fn handle_ui_request(
+    req: Request<hyper::Body>,
+    resource_path: &str,
+) -> josh::JoshResult<Response<hyper::Body>> {
+    // Proxy: can be used for UI development or to serve a different UI
+    if let Some(proxy) = ARGS.value_of("static-resource-proxy-target") {
+        let client_ip = IpAddr::from_str("127.0.0.1").unwrap();
+        return match hyper_reverse_proxy::call(client_ip, proxy, req).await {
+            Ok(response) => Ok(response),
+            Err(error) => Ok(Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .body(hyper::Body::from(format!("Proxy error: {:?}", error)))
+                .unwrap()),
+        };
+    }
+
+    // Serve prebuilt UI from static resources dir
+    let is_app_route =
+        resource_path == "/" || resource_path == "/select" || resource_path == "/browse";
+
+    let resolve_path = if is_app_route {
+        "index.html"
+    } else {
+        resource_path
+    };
+
+    let result = hyper_staticfile::resolve_path("static", resolve_path).await?;
+    let response = hyper_staticfile::ResponseBuilder::new()
+        .request(&req)
+        .build(result)?;
+
+    return Ok(response);
+}
+
 #[tracing::instrument]
 async fn call_service(
     serv: Arc<JoshProxyService>,
@@ -381,29 +418,12 @@ async fn call_service(
         path
     };
 
-    if path.starts_with("/~/select")
-        || path.starts_with("/~/browse")
-        || path.starts_with("/~/filter")
-        || path.starts_with("/~/refs")
-    {
-        let p = &path[9..];
-
-        let result = hyper_staticfile::resolve_path("static", p).await?;
-        let result = if let hyper_staticfile::ResolveResult::NotFound = result {
-            hyper_staticfile::resolve_path("static", "index.html").await?
-        } else {
-            result
-        };
-
-        let r = hyper_staticfile::ResponseBuilder::new()
-            .request(&req)
-            .build(result)?;
-
-        return Ok(r);
+    if let Some(resource_path) = path.strip_prefix("/~/ui") {
+        return handle_ui_request(req, resource_path).await;
     }
 
-    if let Some(r) = static_paths(&serv, &path).await? {
-        return Ok(r);
+    if let Some(response) = static_paths(&serv, &path).await? {
+        return Ok(response);
     }
 
     if path == "/repo_update" {
@@ -437,9 +457,12 @@ async fn call_service(
             pu
         } else {
             let redirect_path = if path == "/" {
-                "/~/select/@()/()".to_string()
+                "/~/ui/".to_string()
             } else {
-                format!("/~/browse{}@HEAD(:/)/()", path)
+                format!(
+                    "/~/ui/browse?repo={}.git&path=&filter=%3A%2F&rev=HEAD",
+                    path
+                )
             };
 
             return Ok(Response::builder()
@@ -907,6 +930,12 @@ fn make_app() -> clap::Command<'static> {
                 .short('c')
                 .takes_value(true)
                 .help("Duration between forced cache refresh"),
+        )
+        .arg(
+            clap::Arg::new("static-resource-proxy-target")
+                .long("static-resource-proxy-target")
+                .takes_value(true)
+                .help("Proxy static resource requests to a different URL"),
         )
 }
 
