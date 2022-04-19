@@ -54,6 +54,12 @@ pub enum UnapplyResult {
     BranchDoesNotExist,
 }
 
+pub struct Change {
+    pub author: String,
+    pub id: Option<String>,
+    pub commit: git2::Oid,
+}
+
 const FRAGMENT: &percent_encoding::AsciiSet = &percent_encoding::CONTROLS
     .add(b'/')
     .add(b'*')
@@ -153,14 +159,22 @@ lazy_static! {
     }
 }
 
-pub fn get_change_id(commit: &git2::Commit) -> Option<String> {
+pub fn get_change_id(commit: &git2::Commit, sha: git2::Oid) -> Change {
     for line in commit.message().unwrap_or("").split('\n') {
         if line.starts_with("Change-Id: ") {
             let id = line.replace("Change-Id: ", "");
-            return Some(id);
+            return Change {
+                author: commit.author().email().unwrap_or("").to_string(),
+                id: Some(id),
+                commit: sha,
+            };
         }
     }
-    None
+    return Change {
+        author: commit.author().email().unwrap_or("").to_string(),
+        id: None,
+        commit: sha,
+    };
 }
 
 #[tracing::instrument(skip(transaction))]

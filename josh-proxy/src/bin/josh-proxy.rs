@@ -633,6 +633,7 @@ async fn call_service(
         base_ns: josh::to_ns(&parsed_url.upstream_repo),
         git_ns: temp_ns.name().to_string(),
         git_dir: repo_path.to_string(),
+        stacked_changes: ARGS.is_present("stacked-changes"),
     };
 
     let mut cmd = Command::new("git");
@@ -848,6 +849,11 @@ fn make_app() -> clap::App<'static> {
         .arg(
             clap::Arg::new("no-background")
                 .long("no-background")
+                .takes_value(false),
+        )
+        .arg(
+            clap::Arg::new("stacked-changes")
+                .long("stacked-changes")
                 .takes_value(false),
         )
         .arg(

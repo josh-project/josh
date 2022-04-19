@@ -4,7 +4,7 @@ pub mod juniper_hyper;
 #[macro_use]
 extern crate lazy_static;
 
-fn baseref_and_options(refname: &str) -> josh::JoshResult<(String, String, Vec<String>)> {
+fn baseref_and_options(refname: &str) -> josh::JoshResult<(String, String, Vec<String>, bool)> {
     let mut split = refname.splitn(2, '%');
     let push_to = split.next().ok_or(josh::josh_error("no next"))?.to_owned();
 
@@ -15,14 +15,16 @@ fn baseref_and_options(refname: &str) -> josh::JoshResult<(String, String, Vec<S
     };
 
     let mut baseref = push_to.to_owned();
+    let mut for_review = false;
 
     if baseref.starts_with("refs/for") {
+        for_review = true;
         baseref = baseref.replacen("refs/for", "refs/heads", 1)
     }
     if baseref.starts_with("refs/drafts") {
         baseref = baseref.replacen("refs/drafts", "refs/heads", 1)
     }
-    Ok((baseref, push_to, options))
+    Ok((baseref, push_to, options, for_review))
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
@@ -35,11 +37,10 @@ pub struct RepoUpdate {
     pub base_ns: String,
     pub git_ns: String,
     pub git_dir: String,
+    pub stacked_changes: bool,
 }
 
 pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> {
-    let mut resp = String::new();
-
     let p = std::path::PathBuf::from(&repo_update.git_dir)
         .join("refs/namespaces")
         .join(&repo_update.git_ns)
@@ -59,7 +60,7 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
 
         let old = git2::Oid::from_str(old)?;
 
-        let (baseref, push_to, options) = baseref_and_options(refname)?;
+        let (baseref, push_to, options, for_review) = baseref_and_options(refname)?;
         let josh_merge = push_options.contains_key("merge");
 
         tracing::debug!("push options: {:?}", push_options);
@@ -120,26 +121,9 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
             None
         };
 
-        let amends = std::collections::HashMap::new();
-        //let amends = {
-        //    let gerrit_changes = format!(
-        //        "refs/josh/upstream/{}/refs/changes/*",
-        //        repo_update.base_ns,
-        //    );
-        //    let mut amends = std::collections::HashMap::new();
-        //    for reference in
-        //        transaction.repo().references_glob(&gerrit_changes)?
-        //    {
-        //        if let Ok(commit) = transaction.repo().find_commit(
-        //            reference?.target().unwrap_or(git2::Oid::zero()),
-        //        ) {
-        //            if let Some(id) = josh::get_change_id(&commit) {
-        //                amends.insert(id, commit.id());
-        //            }
-        //        }
-        //    }
-        //    amends
-        //};
+        let stacked_changes = repo_update.stacked_changes && for_review;
+
+        let mut change_ids = if stacked_changes { Some(vec![]) } else { None };
 
         let filterobj = josh::filter::parse(&repo_update.filter_spec)?;
         let new_oid = git2::Oid::from_str(new)?;
@@ -156,7 +140,7 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
                 new_oid,
                 josh_merge,
                 reparent_orphans,
-                &amends,
+                &mut change_ids,
             )? {
                 josh::UnapplyResult::Done(rewritten) => {
                     tracing::debug!("rewritten");
@@ -203,45 +187,68 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
             backward_new_oid
         };
 
-        let push_with_options = if !options.is_empty() {
+        let ref_with_options = if !options.is_empty() {
             format!("{}{}{}", push_to, "%", options.join(","))
         } else {
             push_to
         };
+
+        let author = if let Some(p) = push_options.get("author") {
+            p.to_string()
+        } else {
+            "".to_string()
+        };
+
+        let to_push = if let Some(change_ids) = change_ids {
+            let mut v = vec![(
+                format!(
+                    "refs/heads/@heads/{}/{}",
+                    baseref.replacen("refs/heads/", "", 1),
+                    author,
+                ),
+                oid_to_push,
+            )];
+            v.append(&mut change_ids_to_refs(baseref, author, change_ids)?);
+            v
+        } else {
+            vec![(ref_with_options, oid_to_push)]
+        };
+
+        let mut resp = vec![];
+
+        for (reference, oid) in to_push {
+            let (text, status) = push_head_url(
+                transaction.repo(),
+                oid,
+                &reference,
+                &repo_update.remote_url,
+                &repo_update.auth,
+                &repo_update.git_ns,
+                stacked_changes,
+            )?;
+            if status != 0 {
+                return Err(josh::josh_error(&text));
+            }
+
+            resp.push(text.to_string());
+
+            let mut warnings = josh::filter::compute_warnings(
+                &transaction,
+                filterobj,
+                transaction.repo().find_commit(oid)?.tree()?,
+            );
+
+            if !warnings.is_empty() {
+                resp.push("warnings:".to_string());
+                resp.append(&mut warnings);
+            }
+        }
 
         let reapply = josh::filter::apply_to_commit(
             filterobj,
             &transaction.repo().find_commit(oid_to_push)?,
             &transaction,
         )?;
-
-        let (text, status) = push_head_url(
-            transaction.repo(),
-            oid_to_push,
-            &push_with_options,
-            &repo_update.remote_url,
-            &repo_update.auth,
-            &repo_update.git_ns,
-        )?;
-
-        let warnings = josh::filter::compute_warnings(
-            &transaction,
-            filterobj,
-            transaction.repo().find_commit(oid_to_push)?.tree()?,
-        );
-
-        let mut warning_str = "".to_owned();
-        if !warnings.is_empty() {
-            let warnings = warnings.iter();
-
-            warning_str += "\nwarnings:";
-            for warn in warnings {
-                warning_str += "\n";
-                warning_str.push_str(warn);
-            }
-        }
-
-        resp = format!("{}{}{}", resp, text, warning_str);
 
         if new_oid != reapply {
             transaction.repo().reference(
@@ -255,14 +262,12 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
                 true,
                 "reapply",
             )?;
-            resp = format!("{}\nREWRITE({} -> {})", resp, new_oid, reapply);
-            tracing::debug!("REWRITE({} -> {})", new_oid, reapply);
+            let text = format!("REWRITE({} -> {})", new_oid, reapply);
+            tracing::debug!("{}", text);
+            resp.push(text);
         }
 
-        if status == 0 {
-            return Ok(resp);
-        }
-        return Err(josh::josh_error(&resp));
+        return Ok(resp.join("\n"));
     }
 
     Ok("".to_string())
@@ -275,6 +280,7 @@ fn push_head_url(
     url: &str,
     auth: &auth::Handle,
     namespace: &str,
+    force: bool,
 ) -> josh::JoshResult<(String, i32)> {
     let rn = format!("refs/{}", &namespace);
 
@@ -284,7 +290,12 @@ fn push_head_url(
         cwd: repo.path().to_owned(),
     };
     let (username, password) = auth.parse()?;
-    let cmd = format!("git push {} '{}'", &url, &spec);
+    let cmd = format!(
+        "git push {} {} '{}'",
+        if force { "-f" } else { "" },
+        &url,
+        &spec
+    );
     let mut fakehead = repo.reference(&rn, oid, true, "push_head_url")?;
     let (stdout, stderr, status) = shell.command_env(
         &cmd,
@@ -467,4 +478,54 @@ impl Drop for TmpGitNamespace {
             )
         });
     }
+}
+
+fn change_ids_to_refs(
+    baseref: String,
+    change_author: String,
+    change_ids: Vec<josh::Change>,
+) -> josh::JoshResult<Vec<(String, git2::Oid)>> {
+    let mut seen = vec![];
+    let mut change_ids = change_ids;
+    change_ids.retain(|change| change.author == change_author);
+    if !change_author.contains('@') {
+        return Err(josh::josh_error(
+            "Push option 'author' needs to be set to a valid email address",
+        ));
+    };
+
+    for change in change_ids.iter() {
+        if let Some(id) = &change.id {
+            if id.contains('@') {
+                return Err(josh::josh_error("Change-Id must not contain '@'"));
+            }
+            if seen.contains(&id) {
+                return Err(josh::josh_error(&format!(
+                    "rejecting to push {:?} with duplicate Change-Id",
+                    change.commit
+                )));
+            }
+            seen.push(&id);
+        } else {
+            return Err(josh::josh_error(&format!(
+                "rejecting to push {:?} without Change-Id",
+                change.commit
+            )));
+        }
+    }
+
+    Ok(change_ids
+        .iter()
+        .map(|change| {
+            (
+                format!(
+                    "refs/heads/@changes/{}/{}/{}",
+                    baseref.replacen("refs/heads/", "", 1),
+                    change.author,
+                    change.id.as_ref().unwrap_or(&"".to_string()),
+                ),
+                change.commit,
+            )
+        })
+        .collect())
 }
