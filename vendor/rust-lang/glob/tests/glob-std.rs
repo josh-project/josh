@@ -91,6 +91,25 @@ fn main() {
         )
     );
 
+    // std-canonicalized windows verbatim disk paths should work
+    if env::consts::FAMILY == "windows" {
+        let r_verbatim = PathBuf::from("r").canonicalize().unwrap();
+        assert_eq!(
+            glob_vec(&format!("{}\\**", r_verbatim.display().to_string()))
+                .into_iter()
+                .map(|p| p.strip_prefix(&r_verbatim).unwrap().to_owned())
+                .collect::<Vec<_>>(),
+            vec!(
+                PathBuf::from("another"),
+                PathBuf::from("one"),
+                PathBuf::from("one\\another"),
+                PathBuf::from("one\\another\\deep"),
+                PathBuf::from("three"),
+                PathBuf::from("two")
+            )
+        );
+    }
+
     // collapse consecutive recursive patterns
     assert_eq!(
         glob_vec("r/**/**"),
