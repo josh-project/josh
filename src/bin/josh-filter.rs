@@ -8,8 +8,8 @@ use josh::JoshError;
 use std::fs::read_to_string;
 use std::io::Write;
 
-fn make_app() -> clap::App<'static> {
-    let app = clap::App::new("josh-filter");
+fn make_app() -> clap::Command<'static> {
+    let app = clap::Command::new("josh-filter");
 
     #[cfg(feature = "search")]
     let app = { app.arg(clap::Arg::new("search").long("search").takes_value(true)) };

@@ -830,8 +830,8 @@ async fn run_housekeeping(local: std::path::PathBuf) -> josh::JoshResult<()> {
     }
 }
 
-fn make_app() -> clap::App<'static> {
-    clap::App::new("josh-proxy")
+fn make_app() -> clap::Command<'static> {
+    clap::Command::new("josh-proxy")
         .arg(clap::Arg::new("remote").long("remote").takes_value(true))
         .arg(clap::Arg::new("local").long("local").takes_value(true))
         .arg(clap::Arg::new("poll").long("poll").takes_value(true))
