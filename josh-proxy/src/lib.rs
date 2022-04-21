@@ -207,16 +207,17 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
                     author,
                 ),
                 oid_to_push,
+                baseref.replacen("refs/heads/", "", 1),
             )];
             v.append(&mut change_ids_to_refs(baseref, author, change_ids)?);
             v
         } else {
-            vec![(ref_with_options, oid_to_push)]
+            vec![(ref_with_options, oid_to_push, "JOSH_PUSH".to_string())]
         };
 
         let mut resp = vec![];
 
-        for (reference, oid) in to_push {
+        for (reference, oid, display_name) in to_push {
             let (text, status) = push_head_url(
                 transaction.repo(),
                 oid,
@@ -224,6 +225,7 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
                 &repo_update.remote_url,
                 &repo_update.auth,
                 &repo_update.git_ns,
+                &display_name,
                 stacked_changes,
             )?;
             if status != 0 {
@@ -280,6 +282,7 @@ pub fn push_head_url(
     url: &str,
     auth: &auth::Handle,
     namespace: &str,
+    display_name: &str,
     force: bool,
 ) -> josh::JoshResult<(String, i32)> {
     let rn = format!("refs/{}", &namespace);
@@ -306,7 +309,7 @@ pub fn push_head_url(
     tracing::debug!("{}", &stderr);
     tracing::debug!("{}", &stdout);
 
-    let stderr = stderr.replace(&rn, "JOSH_PUSH");
+    let stderr = stderr.replace(&rn, display_name);
 
     Ok((stderr, status))
 }
@@ -484,7 +487,7 @@ fn change_ids_to_refs(
     baseref: String,
     change_author: String,
     change_ids: Vec<josh::Change>,
-) -> josh::JoshResult<Vec<(String, git2::Oid)>> {
+) -> josh::JoshResult<Vec<(String, git2::Oid, String)>> {
     let mut seen = vec![];
     let mut change_ids = change_ids;
     change_ids.retain(|change| change.author == change_author);
@@ -525,6 +528,7 @@ fn change_ids_to_refs(
                     change.id.as_ref().unwrap_or(&"".to_string()),
                 ),
                 change.commit,
+                change.id.as_ref().unwrap_or(&"JOSH_PUSH".to_string()).to_string(),
             )
         })
         .collect())

@@ -551,6 +551,7 @@ async fn call_service(
                     &remote_url,
                     &auth,
                     &temp_ns.name(),
+                    "META_PUSH",
                     false,
                 )?;
             }

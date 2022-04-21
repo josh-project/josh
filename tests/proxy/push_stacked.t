@@ -33,7 +33,7 @@
   remote: josh-proxy        
   remote: response from upstream:        
   remote: To http://localhost:8001/real_repo.git        
-  remote:  * [new branch]      JOSH_PUSH -> @heads/master/foo@example.com        
+  remote:  * [new branch]      master -> @heads/master/foo@example.com        
   remote: 
   remote: 
   To http://localhost:8002/real_repo.git
@@ -42,11 +42,11 @@
   remote: josh-proxy        
   remote: response from upstream:        
   remote: To http://localhost:8001/real_repo.git        
-  remote:  * [new branch]      JOSH_PUSH -> @heads/master/josh@example.com        
+  remote:  * [new branch]      master -> @heads/master/josh@example.com        
   remote: To http://localhost:8001/real_repo.git        
-  remote:  * [new branch]      JOSH_PUSH -> @changes/master/josh@example.com/1234        
+  remote:  * [new branch]      1234 -> @changes/master/josh@example.com/1234        
   remote: To http://localhost:8001/real_repo.git        
-  remote:  * [new branch]      JOSH_PUSH -> @changes/master/josh@example.com/foo7        
+  remote:  * [new branch]      foo7 -> @changes/master/josh@example.com/foo7        
   remote: 
   remote: 
   To http://localhost:8002/real_repo.git
@@ -69,7 +69,7 @@
   remote: josh-proxy        
   remote: response from upstream:        
   remote: To http://localhost:8001/real_repo.git        
-  remote:    ec41aad..3ad32b3  JOSH_PUSH -> @heads/master/foo@example.com        
+  remote:    ec41aad..3ad32b3  master -> @heads/master/foo@example.com        
   remote: 
   remote: 
   To http://localhost:8002/real_repo.git
