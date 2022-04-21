@@ -656,7 +656,8 @@ impl Reference {
 }
 
 pub struct Context {
-    transaction: std::sync::Arc<std::sync::Mutex<cache::Transaction>>,
+    pub transaction: std::sync::Arc<std::sync::Mutex<cache::Transaction>>,
+    pub to_push: std::sync::Arc<std::sync::Mutex<Vec<(String, git2::Oid)>>>,
 }
 
 impl juniper::Context for Context {}
@@ -754,14 +755,19 @@ impl RepositoryMut {
             tree = filter::tree::insert(transaction.repo(), &tree, path, blob, 0o0100644)?;
         }
 
-        transaction.repo().commit(
-            Some(&rev),
+        let oid = transaction.repo().commit(
+            None,
             &transaction.repo().signature()?,
             &transaction.repo().signature()?,
             "marker",
             &tree,
             &parent.as_ref().into_iter().collect::<Vec<_>>(),
         )?;
+
+        context
+            .to_push
+            .lock()?
+            .push(("refs/josh/meta".to_string(), oid));
 
         Ok(true)
     }
@@ -823,6 +829,7 @@ regex_parsed!(
 pub fn context(transaction: cache::Transaction) -> Context {
     Context {
         transaction: std::sync::Arc::new(std::sync::Mutex::new(transaction)),
+        to_push: std::sync::Arc::new(std::sync::Mutex::new(vec![])),
     }
 }
 
