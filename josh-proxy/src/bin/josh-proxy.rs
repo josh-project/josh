@@ -367,24 +367,6 @@ async fn call_service(
         path
     };
 
-    if ARGS.is_present("graphql-root") {
-        if path == "/~/graphiql" {
-            return Ok(tokio::task::spawn_blocking(move || {
-                josh_proxy::juniper_hyper::graphiql("/~/graphql", None)
-            })
-            .await??);
-        }
-
-        if path == "/~/graphql" {
-            let ctx = std::sync::Arc::new(josh::graphql::context(josh::cache::Transaction::open(
-                &serv.repo_path,
-                None,
-            )?));
-            let root_node = std::sync::Arc::new(josh::graphql::schema());
-            return Ok(josh_proxy::juniper_hyper::graphql(root_node, ctx, req).await?);
-        }
-    }
-
     if path.starts_with("/~/select")
         || path.starts_with("/~/browse")
         || path.starts_with("/~/filter")
@@ -860,12 +842,6 @@ fn make_app() -> clap::Command<'static> {
         .arg(
             clap::Arg::new("stacked-changes")
                 .long("stacked-changes")
-                .takes_value(false),
-        )
-        .arg(
-            clap::Arg::new("graphql-root")
-                .long("graphql-root")
-                .help("Enable graphql root endpoint (caution: This bypasses authentication!)")
                 .takes_value(false),
         )
         .arg(
