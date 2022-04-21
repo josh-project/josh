@@ -138,14 +138,16 @@ Make sure all temporary namespace got removed
   [1]
 
   $ bash ${TESTDIR}/destroy_test_env.sh
-  "real_repo.git" = [':/sub1']
+  "real_repo.git" = [
+      ':/sub1',
+      '::file2',
+      '::file7',
+  ]
   refs
   |-- heads
   |-- josh
   |   |-- filtered
   |   |   `-- real_repo.git
-  |   |       |-- %3A
-  |   |       |   `-- HEAD
   |   |       |-- %3A%2Fsub1
   |   |       |   `-- HEAD
   |   |       `-- %3A%3Afile7
@@ -168,7 +170,7 @@ Make sure all temporary namespace got removed
   |-- namespaces
   `-- tags
   
-  18 directories, 9 files
+  17 directories, 8 files
 
 $ cat ${TESTTMP}/josh-proxy.out
 $ cat ${TESTTMP}/josh-proxy.out | grep REPO_UPDATE

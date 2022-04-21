@@ -244,6 +244,7 @@
       ':/sub3',
       ':/ws',
       ':/ws2',
+      ':workspace=ws',
       ':workspace=ws2',
   ]
   refs

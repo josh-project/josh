@@ -70,6 +70,7 @@
   "real_repo.git" = [
       ':/sub1',
       ':/sub2',
+      ':prefix=pre',
   ]
   refs
   |-- heads

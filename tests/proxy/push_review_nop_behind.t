@@ -52,13 +52,10 @@ This is a regression test for that problem.
   * add file1
 
   $ bash ${TESTDIR}/destroy_test_env.sh
+  "real_repo.git" = []
   refs
   |-- heads
   |-- josh
-  |   |-- filtered
-  |   |   `-- real_repo.git
-  |   |       `-- %3A
-  |   |           `-- HEAD
   |   `-- upstream
   |       `-- real_repo.git
   |           |-- HEAD
@@ -68,4 +65,4 @@ This is a regression test for that problem.
   |-- namespaces
   `-- tags
   
-  11 directories, 3 files
+  8 directories, 2 files

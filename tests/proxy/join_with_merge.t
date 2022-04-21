@@ -56,6 +56,7 @@
 
 
   $ bash ${TESTDIR}/destroy_test_env.sh
+  "real_repo.git" = [':prefix=sub1']
   refs
   |-- heads
   |-- josh

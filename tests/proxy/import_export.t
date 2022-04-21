@@ -296,13 +296,13 @@ Flushed credential cache
       ':/repo1',
       ':/repo2',
   ]
+  "repo1.git" = [':prefix=repo1']
+  "repo2.git" = [':prefix=repo2']
   refs
   |-- heads
   |-- josh
   |   |-- filtered
   |   |   |-- real_repo.git
-  |   |   |   |-- %3A
-  |   |   |   |   `-- HEAD
   |   |   |   |-- %3A%2Frepo1
   |   |   |   |   `-- HEAD
   |   |   |   `-- %3A%2Frepo2
@@ -332,4 +332,4 @@ Flushed credential cache
   |-- namespaces
   `-- tags
   
-  23 directories, 11 files
+  22 directories, 10 files
