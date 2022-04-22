@@ -34,7 +34,7 @@ jobs:
         image: josh-ci-dev:latest
         options: -v ${{ github.workspace }}:/github/workspace -w /github/workspace
         run: |
-          set -x
+          set -e -x
 
           # Formatting
           cargo fmt -- --check
@@ -47,5 +47,5 @@ jobs:
 
           # Integration tests
           cargo build --workspace --all-targets
-          sh run-tests.sh tests/filter/*.t
-          sh run-tests.sh tests/proxy/*.t
+          sh run-tests.sh tests/filter/**.t
+          sh run-tests.sh tests/proxy/**.t

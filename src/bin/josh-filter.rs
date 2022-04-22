@@ -270,6 +270,11 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         permissions_filter = josh::filter::empty();
     }
 
+    let old_oid = if let Ok(id) = transaction.repo().refname_to_id(&t) {
+        id
+    } else {
+        git2::Oid::zero()
+    };
     let updated_refs = josh::filter_refs(
         &transaction,
         filterobj,
@@ -277,7 +282,10 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         permissions_filter,
         "",
     )?;
-    if args.value_of("update") != Some("FILTERED_HEAD") && updated_refs.len() == 0 {
+    if args.value_of("update") != Some("FILTERED_HEAD")
+        && updated_refs.len() == 1
+        && updated_refs[0].1 == old_oid
+    {
         println!(
             "Warning: reference {} wasn't updated",
             args.value_of("update").unwrap()

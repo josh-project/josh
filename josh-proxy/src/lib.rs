@@ -528,7 +528,11 @@ fn change_ids_to_refs(
                     change.id.as_ref().unwrap_or(&"".to_string()),
                 ),
                 change.commit,
-                change.id.as_ref().unwrap_or(&"JOSH_PUSH".to_string()).to_string(),
+                change
+                    .id
+                    .as_ref()
+                    .unwrap_or(&"JOSH_PUSH".to_string())
+                    .to_string(),
             )
         })
         .collect())
