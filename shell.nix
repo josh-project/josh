@@ -24,6 +24,7 @@ in
        pkgs.openssl.dev
        pkgs.pkgconfig
        pkgs.python39Packages.cram
+       pkgs.nodejs-17_x
      ] ++ extra_deps;
      RUST_BACKTRACE = 1;
    }
