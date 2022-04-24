@@ -102,6 +102,12 @@ nav {
       color: $color-font-shadowed;
     }
   }
+
+  &-name {
+    &-filter {
+      font-weight: bold
+    }
+  }
 }
 
 .file-browser-list-entry {
@@ -210,14 +216,15 @@ nav {
     font-size: $font-size;
   }
 
-  &-input {
-    flex-grow: 1;
-    font-size: $font-size;
-  }
 
-  &-repo {
+  &-repo, &-filter {
     margin-bottom: 0.7em;
     display: flex;
     align-items: baseline;
+
+    &-input {
+      flex-grow: 1;
+      font-size: $font-size;
+    }
   }
 }

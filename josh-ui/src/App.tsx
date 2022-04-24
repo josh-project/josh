@@ -61,10 +61,15 @@ function Select() {
     </div>
 }
 
-function TopNav(props: { repo: string }) {
+function TopNav(props: { repo: string, filter: string}) {
     return <div className={'now-browsing'}>
-        <span className={'now-browsing-repo'}>
-            now browsing: {props.repo}
+        <span className={'now-browsing-name'}>
+            <span className={'now-browsing-name-repo'}>
+                now browsing: {props.repo} 
+            </span>
+            {props.filter !== ':/' && <span className={'now-browsing-name-filter'}>
+                {props.filter}
+            </span>}
         </span>
         <span className={'now-browsing-select'}>
             <Link to='/select'>select repo</Link>
@@ -76,7 +81,9 @@ function Browse() {
     const param = useGetSearchParam()
 
     return <div>
-        <TopNav repo={param('repo')} />
+        <TopNav
+            repo={param('repo')} 
+            filter={param('filter')} />
 
         <Breadcrumbs
             repo={param('repo')}
@@ -100,7 +107,9 @@ function View() {
 
     return (
         <div>
-            <TopNav repo={param('repo')} />
+            <TopNav
+                repo={param('repo')} 
+                filter={param('filter')} />
 
             <Breadcrumbs
                 repo={param('repo')}
