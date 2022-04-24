@@ -76,10 +76,9 @@ export class RepoSelector extends React.Component<RepoSelectorProps, State> {
     }
 
     formatHint = (repo: string): string => {
-        const filter = this.state.filter.isEmpty() ? '' : this.state.filter.getOrElse('') + '.git'
+        const filter = this.state.filter.map(v => v +  '.git').getOrElse('')
         return `Checkout URL: ${getServer()}/${repo}.git${filter}`
     }
-
 
     filterChanged = (e: React.ChangeEvent<HTMLInputElement>) => {
         const filter = e.target.value === '' ? new None<string>() : Option.of(e.target.value)
