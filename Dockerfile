@@ -71,7 +71,7 @@ FROM dev as dev-ci
 
 COPY --from=dev-planner /usr/src/josh/recipe.json .
 ENV CARGO_TARGET_DIR=/opt/cargo-target
-RUN cargo chef cook --recipe-path recipe.json
+RUN cargo chef cook --workspace --recipe-path recipe.json
 
 RUN mkdir -p josh-ui
 COPY josh-ui/package.json josh-ui/package-lock.json josh-ui/
