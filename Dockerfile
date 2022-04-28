@@ -33,7 +33,7 @@ apt-get install --yes --no-install-recommends \
 rm -rf /var/lib/apt/lists/*
 EOF
 
-ARG GIT_VERSION=2.35.2
+ARG GIT_VERSION=2.36.0
 WORKDIR /usr/src/git
 RUN <<EOF
 wget https://mirrors.edge.kernel.org/pub/software/scm/git/git-${GIT_VERSION}.tar.gz
