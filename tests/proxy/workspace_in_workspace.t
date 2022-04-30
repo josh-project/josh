@@ -215,20 +215,18 @@
   [master e2532f1] add workspace filter
    1 file changed, 1 insertion(+)
   $ git sync
-    refs/heads/master -> refs/heads/master
-  From http://localhost:8002/real_repo.git:workspace=ws2
-   * branch            08f121078f080eadf2af895fb572d47b0cd79240 -> FETCH_HEAD
-  HEAD is now at 08f1210 add workspace filter
+  ! refs/heads/master -> refs/heads/master
   Pushing to http://localhost:8002/real_repo.git:workspace=ws2.git
   POST git-receive-pack (481 bytes)
   remote: josh-proxy        
   remote: response from upstream:        
-  remote: To http://localhost:8001/real_repo.git        
-  remote:    517813c..6aaea65  JOSH_PUSH -> master        
-  remote: REWRITE(e2532f1207290ed9a961f9fc377a6b7afe415312 -> 08f121078f080eadf2af895fb572d47b0cd79240)        
+  remote: 
+  remote: Can't apply "add workspace filter" (e2532f1207290ed9a961f9fc377a6b7afe415312)        
+  remote: Invalid workspace: not reversible        
   remote: 
   remote: 
-  updating local tracking ref 'refs/remotes/origin/master'
+  remote: error: hook declined to update refs/heads/master        
+  error: failed to push some refs to 'http://localhost:8002/real_repo.git:workspace=ws2.git'
   
 
   $ git ls-tree -r HEAD
@@ -271,7 +269,6 @@
   |   |-- rewrites
   |   |   `-- real_repo.git
   |   |       |-- 191ead67feb541c237317e25b2c66c5d8f3e33fa
-  |   |       |   |-- r_08f121078f080eadf2af895fb572d47b0cd79240
   |   |       |   `-- r_b3be5ad252e0f493a404a8785653065d7e677f21
   |   |       `-- 7bd92d97e96693ea7fd7eb5757b3580002889948
   |   |           `-- r_2cbcd105ead63a4fecf486b949db7f44710300e5
@@ -284,5 +281,5 @@
   |-- namespaces
   `-- tags
   
-  22 directories, 13 files
+  22 directories, 12 files
 

@@ -143,6 +143,7 @@ Flushed credential cache
   > c = :/sub1
   > EOF
 
+  $ git mv a/b a/c
   $ git add workspace.josh
   $ git commit -m "mod workspace" 1> /dev/null
 
@@ -158,15 +159,15 @@ Flushed credential cache
   $ git sync
     refs/heads/master -> refs/heads/master
   From http://localhost:8002/real_repo.git:workspace=ws
-   * branch            891a8d3448a28a6c04405ca4dcf585dd0825cebd -> FETCH_HEAD
-  HEAD is now at 891a8d3 mod workspace
+   * branch            972d4a71028801672fec931fdceb43ab0eb9e9d8 -> FETCH_HEAD
+  HEAD is now at 972d4a7 mod workspace
   Pushing to http://localhost:8002/real_repo.git:workspace=ws.git
-  POST git-receive-pack (443 bytes)
+  POST git-receive-pack (529 bytes)
   remote: josh-proxy        
   remote: response from upstream:        
   remote: To http://localhost:8001/real_repo.git        
-  remote:    98c996c..6fde6f1  JOSH_PUSH -> master        
-  remote: REWRITE(06230e638c617eeac83330c8c3ff980ba7b7d838 -> 891a8d3448a28a6c04405ca4dcf585dd0825cebd)        
+  remote:    98c996c..3493173  JOSH_PUSH -> master        
+  remote: REWRITE(9b7be1961f489739b9f94ff6df1b48132d57b649 -> 972d4a71028801672fec931fdceb43ab0eb9e9d8)        
   remote: 
   remote: 
   updating local tracking ref 'refs/remotes/origin/master'
@@ -176,14 +177,12 @@ $ curl -s http://localhost:8002/flush
 Flushed credential cache
   $ git pull --rebase
   From http://localhost:8002/real_repo.git:workspace=ws
-   + 06230e6...891a8d3 master     -> origin/master  (forced update)
+   + 9b7be19...972d4a7 master     -> origin/master  (forced update)
   Already up to date.
 
   $ tree
   .
   |-- a
-  |   |-- b
-  |   |   `-- file2
   |   `-- c
   |       `-- file2
   |-- c
@@ -191,7 +190,7 @@ Flushed credential cache
   |       `-- file1
   `-- workspace.josh
   
-  5 directories, 4 files
+  4 directories, 3 files
 
   $ git log --graph --pretty=%s
   * mod workspace
@@ -207,13 +206,11 @@ $ curl -s http://localhost:8002/flush
 Flushed credential cache
   $ git pull --rebase
   From http://localhost:8001/real_repo
-     98c996c..6fde6f1  master     -> origin/master
-  Updating 98c996c..6fde6f1
+     98c996c..3493173  master     -> origin/master
+  Updating 98c996c..3493173
   Fast-forward
-   ws/a/b/file2      | 1 +
    ws/workspace.josh | 2 +-
-   2 files changed, 2 insertions(+), 1 deletion(-)
-   create mode 100644 ws/a/b/file2
+   1 file changed, 1 insertion(+), 1 deletion(-)
 
   $ tree
   .
@@ -226,12 +223,9 @@ Flushed credential cache
   |-- sub2
   |   `-- file2
   `-- ws
-      |-- a
-      |   `-- b
-      |       `-- file2
       `-- workspace.josh
   
-  6 directories, 7 files
+  4 directories, 6 files
   $ git log --graph --pretty=%s
   * mod workspace
   *   Merge from :workspace=ws

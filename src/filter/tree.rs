@@ -256,7 +256,7 @@ pub fn overlay(
         return Ok(result_tree.id());
     }
 
-    Ok(input2)
+    Ok(input1)
 }
 
 pub fn pathline(b: &str) -> JoshResult<String> {
@@ -819,11 +819,11 @@ pub fn compose<'a>(
         let unapplied = if let Some(cached) = transaction.get_unapply(*f, aid) {
             cached
         } else {
-            filter::unapply(transaction, *f, applied, empty(repo))?.id()
+            filter::apply(transaction, opt::invert(*f)?, applied)?.id()
         };
         transaction.insert_unapply(*f, aid, unapplied);
         taken = repo.find_tree(overlay(repo, taken.id(), unapplied)?)?;
-        result = repo.find_tree(overlay(repo, result.id(), subtracted.id())?)?;
+        result = repo.find_tree(overlay(repo, subtracted.id(), result.id())?)?;
     }
 
     Ok(result)

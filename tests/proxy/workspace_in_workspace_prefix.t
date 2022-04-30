@@ -215,30 +215,23 @@
   [master a5a685f] add workspace filter
    1 file changed, 1 insertion(+)
   $ git sync
-    refs/heads/master -> refs/heads/master
-  From http://localhost:8002/real_repo.git:workspace=ws2
-   * branch            949f79b5a685bbcd531584ddfe51a55f86195f6b -> FETCH_HEAD
-  HEAD is now at 949f79b add workspace filter
+  ! refs/heads/master -> refs/heads/master
   Pushing to http://localhost:8002/real_repo.git:workspace=ws2.git
   POST git-receive-pack (487 bytes)
   remote: josh-proxy        
   remote: response from upstream:        
-  remote: To http://localhost:8001/real_repo.git        
-  remote:    517813c..fe9d2e7  JOSH_PUSH -> master        
-  remote: REWRITE(a5a685ff773c9d3e2d4535a7c0b71b8752dc8b45 -> 949f79b5a685bbcd531584ddfe51a55f86195f6b)        
+  remote: 
+  remote: Can't apply "add workspace filter" (a5a685ff773c9d3e2d4535a7c0b71b8752dc8b45)        
+  remote: Invalid workspace: not reversible        
   remote: 
   remote: 
-  updating local tracking ref 'refs/remotes/origin/master'
+  remote: error: hook declined to update refs/heads/master        
+  error: failed to push some refs to 'http://localhost:8002/real_repo.git:workspace=ws2.git'
   
   $ git ls-tree -r HEAD
   100644 blob e69de29bb2d1d6434b8b29ae775ad8c2e48c5391\tfile1 (esc)
-  100644 blob a024003ee1acc6bf70318a46e7b6df651b9dc246\tfoo/a/b/file2 (esc)
-  100644 blob d7330ea337031af43ba1cf6982a873a40b9170ac\tfoo/a/b/newfile_2 (esc)
-  100644 blob a024003ee1acc6bf70318a46e7b6df651b9dc246\tfoo/c/subsub/file1 (esc)
-  100644 blob bc665856e841c4ae4a956483dc57b2ea4cc20116\tfoo/c/subsub/newfile_1 (esc)
-  100644 blob 2d1906dd31141f2fbab6485ccd34bbd1ea440464\tfoo/workspace.josh (esc)
   100644 blob 63c4399dfb47e109da4e7d6c01751b5171b9aa38\tworkspace.josh (esc)
 
   $ cat foo/workspace.josh
-  c = :/sub1
-  a/b = :/sub2
+  cat: foo/workspace.josh: No such file or directory
+  [1]

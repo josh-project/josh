@@ -8,6 +8,8 @@ use super::*;
 lazy_static! {
     static ref OPTIMIZED: std::sync::Mutex<std::collections::HashMap<Filter, Filter>> =
         std::sync::Mutex::new(std::collections::HashMap::new());
+    static ref INVERTED: std::sync::Mutex<std::collections::HashMap<Filter, Filter>> =
+        std::sync::Mutex::new(std::collections::HashMap::new());
     static ref SIMPLIFIED: std::sync::Mutex<std::collections::HashMap<Filter, Filter>> =
         std::sync::Mutex::new(std::collections::HashMap::new());
 }
@@ -407,4 +409,42 @@ fn step(filter: Filter) -> Filter {
 
     OPTIMIZED.lock().unwrap().insert(original, result);
     result
+}
+
+pub fn invert(filter: Filter) -> JoshResult<Filter> {
+    let result = match to_op(filter) {
+        Op::Nop => Some(Op::Nop),
+        Op::Linear => Some(Op::Nop),
+        Op::Empty => Some(Op::Empty),
+        Op::Subdir(path) => Some(Op::Prefix(path)),
+        Op::File(path) => Some(Op::File(path)),
+        Op::Prefix(path) => Some(Op::Subdir(path)),
+        Op::Glob(pattern) => Some(Op::Glob(pattern)),
+        _ => None,
+    };
+
+    if let Some(result) = result {
+        return Ok(to_filter(result));
+    }
+
+    let original = filter;
+    if let Some(f) = INVERTED.lock().unwrap().get(&filter) {
+        return Ok(*f);
+    }
+    rs_tracing::trace_scoped!("invert", "spec": spec(filter));
+
+    let result = to_filter(match to_op(filter) {
+        Op::Chain(a, b) => Op::Chain(invert(b)?, invert(a)?),
+        Op::Compose(filters) => Op::Compose(
+            filters
+                .into_iter()
+                .map(invert)
+                .collect::<JoshResult<Vec<_>>>()?,
+        ),
+        Op::Exclude(filter) => Op::Exclude(invert(filter)?),
+        _ => return Err(josh_error("no invert")),
+    });
+
+    INVERTED.lock().unwrap().insert(original, result);
+    Ok(result)
 }

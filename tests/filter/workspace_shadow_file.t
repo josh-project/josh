@@ -66,7 +66,7 @@
   3 directories, 3 files
 
   $ cat c/file1
-  contents1
+  ws_content
 
   $ echo contents3 > ws_created_file
   $ git add ws_created_file
@@ -84,13 +84,15 @@
   |-- sub2
   |   `-- file2
   `-- ws
+      |-- c
+      |   `-- file1
       |-- workspace.josh
       `-- ws_created_file
   
-  3 directories, 4 files
+  4 directories, 5 files
 
   $ cat sub1/file1
-  contents1
+  ws_content
 
   $ git log --graph --pretty=%s
   * add ws_created_file
