@@ -3,7 +3,7 @@ use super::*;
 struct GraphQLHelper {
     repo_path: std::path::PathBuf,
     ref_prefix: String,
-    headref: String,
+    commit_id: git2::Oid,
 }
 
 impl GraphQLHelper {
@@ -25,8 +25,7 @@ impl GraphQLHelper {
 
         let transaction = cache::Transaction::open(&self.repo_path, Some(&self.ref_prefix))?;
 
-        let reference = transaction.repo().find_reference(&self.headref)?;
-        let tree = reference.peel_to_tree()?;
+        let tree = transaction.repo().find_commit(self.commit_id)?.tree()?;
 
         let blob = tree
             .get_path(&path)?
@@ -46,7 +45,7 @@ impl GraphQLHelper {
         let (res, _errors) = juniper::execute_sync(
             &query,
             None,
-            &graphql::commit_schema(reference.target().ok_or(josh_error("missing target"))?),
+            &graphql::commit_schema(self.commit_id),
             &variables,
             &graphql::context(transaction),
         )?;
@@ -103,8 +102,11 @@ pub fn render(
     let path = split
         .next()
         .ok_or(josh_error(&format!("invalid query {:?}", query_and_params)))?;
+
     let reference = repo.find_reference(headref)?;
-    let tree = reference.peel_to_tree()?;
+    let commit_id = reference.peel_to_commit()?.id();
+
+    let tree = repo.find_commit(commit_id)?.tree()?;
 
     let obj = ok_or!(
         tree.get_path(&std::path::PathBuf::from(path))?
@@ -141,7 +143,7 @@ pub fn render(
             let (res, _errors) = juniper::execute_sync(
                 &template.to_string(),
                 None,
-                &graphql::commit_schema(reference.target().ok_or(josh_error("missing target"))?),
+                &graphql::commit_schema(commit_id),
                 &variables,
                 &graphql::context(transaction),
             )?;
@@ -169,7 +171,7 @@ pub fn render(
         Box::new(GraphQLHelper {
             repo_path: repo.path().to_owned(),
             ref_prefix: ref_prefix.to_owned(),
-            headref: headref.to_string(),
+            commit_id: commit_id,
         }),
     );
     handlebars.set_strict_mode(true);
