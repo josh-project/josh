@@ -12,7 +12,7 @@ version = "22.4.15"
 
 
 [dependencies]
-clap = "3.1.14"
+clap = "3.1.17"
 futures = "0.3.21"
 tokio = { version = "1.8.1", features = ["full"] }
 hyper = { version = "0.14.18", features = ["stream"] }
@@ -36,9 +36,9 @@ josh = {path = "../"}
 serde_json= "1.0.81"
 serde= "1.0.137"
 rust-crypto = "0.2.36"
-unindent = "0.1.7"
+unindent = "0.1.9"
 juniper = { version = "0.15.7", features = ["expose-test-schema"] }
 url = "2.2.2"
 percent-encoding = "2.1.0"
-indoc = "1.0.4"
+indoc = "1.0.6"
 hyper-reverse-proxy = "0.5.1"
