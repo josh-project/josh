@@ -82,10 +82,7 @@
   > ]]
   > EOF
   $ josh-filter -p --file f
-  b = :subtract[
-      :/b
-      :/c
-  ]
+  ::b/
 
   $ cat > f <<EOF
   > :subtract[
@@ -184,10 +181,7 @@
   > EOF
 
   $ josh-filter -p --file f
-  x/g = :subtract[
-      :/a/x/g
-      :/m/bs/m2/i/tc/i1
-  ]
+  x/g = :/a/x/g
 
   $ cat > f <<EOF
   > a/subsub1 = :/sub1/subsub1

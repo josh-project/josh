@@ -283,6 +283,18 @@ fn is_prefix(op: Op) -> bool {
     }
 }
 
+fn are_disjunct(a: &Op, b: &Op) -> bool {
+    match (a, b) {
+        (Op::Subdir(x), Op::Subdir(y)) if x != y => true,
+        (Op::File(x), Op::File(y)) if x != y => true,
+        (Op::Subdir(x), Op::File(y)) if x != y => true,
+        (Op::File(x), Op::Subdir(y)) if x != y => true,
+        (Op::Chain(x, _), z) => are_disjunct(&to_op(*x), z),
+        (z, Op::Chain(x, _)) => are_disjunct(&to_op(*x), z),
+        _ => false,
+    }
+}
+
 fn prefix_of(op: Op) -> Filter {
     let last = to_op(last_chain(to_filter(Op::Nop), to_filter(op.clone())).1);
     to_filter(if is_prefix(last.clone()) {
@@ -302,7 +314,28 @@ fn step(filter: Filter) -> Filter {
     }
     rs_tracing::trace_scoped!("step", "spec": spec(filter));
     let original = filter;
+
+    // This first pre-pass removes same filters from :subtract[...]
+    // The later rules would also do this, but requiring much more work
+    // to do so.
     let result = to_filter(match to_op(filter) {
+        Op::Subtract(af, bf) => match (to_op(af), to_op(bf)) {
+            (Op::Compose(mut av), Op::Compose(mut bv)) => {
+                let v = av.clone();
+                av.retain(|x| !bv.contains(x));
+                bv.retain(|x| !v.contains(x));
+
+                Op::Subtract(
+                    step(to_filter(Op::Compose(av))),
+                    step(to_filter(Op::Compose(bv))),
+                )
+            }
+            _ => to_op(filter),
+        },
+        _ => to_op(filter),
+    });
+
+    let result = to_filter(match to_op(result) {
         Op::Subdir(path) => {
             if path.components().count() > 1 {
                 let mut components = path.components();
@@ -359,17 +392,29 @@ fn step(filter: Filter) -> Filter {
             (_, Op::Empty) => Op::Empty,
             (a, b) => Op::Chain(step(to_filter(a)), step(to_filter(b))),
         },
-        Op::Exclude(b) if b == to_filter(Op::Nop) => Op::Empty,
-        Op::Exclude(b) if b == to_filter(Op::Empty) => Op::Nop,
-        Op::Exclude(b) => Op::Exclude(step(b)),
+        Op::Exclude(e) => match to_op(e) {
+            Op::Nop => Op::Empty,
+            Op::Empty => Op::Nop,
+            Op::Compose(v) => {
+                let mut res = Op::Nop;
+                for f in v {
+                    res = Op::Chain(to_filter(res), to_filter(Op::Exclude(f)));
+                }
+                res
+            }
+            _ => Op::Exclude(step(e)),
+        },
         Op::Subtract(a, b) if a == b => Op::Empty,
         Op::Subtract(af, bf) => match (to_op(af), to_op(bf)) {
             (Op::Empty, _) => Op::Empty,
             (_, Op::Nop) => Op::Empty,
             (a, Op::Empty) => a,
+            (a, b) if are_disjunct(&a, &b) => a,
             (Op::Chain(a, b), Op::Chain(c, d)) if a == c => {
                 Op::Chain(a, to_filter(Op::Subtract(b, d)))
             }
+            (Op::Chain(a, _), c) if a == to_filter(c.clone()) => Op::Empty,
+            (_, Op::Glob(_)) => Op::Chain(to_filter(Op::Exclude(bf)), af),
             (_, b) if prefix_of(b.clone()) != to_filter(Op::Nop) => {
                 Op::Subtract(af, last_chain(to_filter(Op::Nop), to_filter(b.clone())).0)
             }
@@ -390,19 +435,19 @@ fn step(filter: Filter) -> Filter {
                 to_op(step(to_filter(Op::Compose(av))))
             }
             (_, Op::Compose(bv)) if bv.contains(&af) => to_op(step(to_filter(Op::Empty))),
-            (Op::Compose(mut av), Op::Compose(mut bv)) => {
-                let v = av.clone();
-                av.retain(|x| !bv.contains(x));
-                bv.retain(|x| !v.contains(x));
-
-                Op::Subtract(
-                    step(to_filter(Op::Compose(av))),
-                    step(to_filter(Op::Compose(bv))),
-                )
+            (Op::Compose(av), _) => {
+                Op::Compose(av.iter().map(|f| to_filter(Op::Subtract(*f, bf))).collect())
+            }
+            (a, Op::Compose(bv)) => {
+                let mut res = a;
+                for bf in bv {
+                    res = Op::Subtract(to_filter(res), bf);
+                }
+                res
             }
             (a, b) => Op::Subtract(step(to_filter(a)), step(to_filter(b))),
         },
-        _ => to_op(filter),
+        _ => to_op(result),
     });
 
     OPTIMIZED.lock().unwrap().insert(original, result);
