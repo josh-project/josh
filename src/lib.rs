@@ -46,14 +46,6 @@ pub mod housekeeping;
 pub mod query;
 pub mod shell;
 
-#[derive(Clone)]
-pub enum UnapplyResult {
-    Done(git2::Oid),
-    RejectMerge(String),
-    RejectAmend(String),
-    BranchDoesNotExist,
-}
-
 pub struct Change {
     pub author: String,
     pub id: Option<String>,

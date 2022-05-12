@@ -133,7 +133,7 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
 
             tracing::debug!("=== processed_old {:?}", old);
 
-            match josh::history::unapply_filter(
+            josh::history::unapply_filter(
                 &transaction,
                 filterobj,
                 original_target,
@@ -142,24 +142,7 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
                 josh_merge,
                 reparent_orphans,
                 &mut change_ids,
-            )? {
-                josh::UnapplyResult::Done(rewritten) => {
-                    tracing::debug!("rewritten");
-                    rewritten
-                }
-                josh::UnapplyResult::BranchDoesNotExist => {
-                    return Err(josh::josh_error("branch does not exist on remote"));
-                }
-                josh::UnapplyResult::RejectMerge(msg) => {
-                    return Err(josh::josh_error(&msg));
-                }
-                josh::UnapplyResult::RejectAmend(msg) => {
-                    return Err(josh::josh_error(&format!(
-                        "rejecting to amend {:?} with conflicting changes",
-                        msg
-                    )));
-                }
-            }
+            )?
         };
 
         let oid_to_push = if josh_merge {

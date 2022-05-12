@@ -278,7 +278,7 @@ pub fn unapply_filter(
     keep_orphans: bool,
     reparent_orphans: Option<git2::Oid>,
     change_ids: &mut Option<Vec<Change>>,
-) -> JoshResult<UnapplyResult> {
+) -> JoshResult<git2::Oid> {
     let mut bm = std::collections::HashMap::new();
     let mut ret = original_target;
 
@@ -307,7 +307,7 @@ pub fn unapply_filter(
             tracing::info!("Had to go through the whole thing",);
             find_original(transaction, filterobj, original_target, new)?
         };
-        return Ok(UnapplyResult::Done(ret));
+        return Ok(ret);
     }
 
     tracing::info!("before walk");
@@ -461,7 +461,7 @@ pub fn unapply_filter(
                         parent_count,
                         module_commit.summary().unwrap_or_default()
                     );
-                    return Ok(UnapplyResult::RejectMerge(msg));
+                    return Err(josh_error(&msg));
                 }
             }
         };
@@ -481,7 +481,7 @@ pub fn unapply_filter(
     }
 
     tracing::trace!("done {:?}", ret);
-    Ok(UnapplyResult::Done(ret))
+    Ok(ret)
 }
 
 fn select_parent_commits<'a>(
