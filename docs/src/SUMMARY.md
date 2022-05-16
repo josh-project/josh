@@ -6,7 +6,7 @@
 # Guide
 - [Getting started](./guide/gettingstarted.md)
 - [Working with workspaces](./guide/workspaces.md)
-- [Importing projects]()
+- [Importing projects](./guide/importing.md)
 - [Integrating with CI]()
 # Reference
 - [Filter syntax](./reference/filters.md)
