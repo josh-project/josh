@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Graphql API - Just One Single History</title>
+        <title>Importing projects - Just One Single History</title>
                 
 
         <!-- Custom HTML head -->
@@ -82,7 +82,7 @@
 
         <nav id="sidebar" class="sidebar" aria-label="Table of contents">
             <div class="sidebar-scrollbox">
-                <ol class="chapter"><li class="chapter-item expanded "><a href="../intro.html"><strong aria-hidden="true">1.</strong> Intro</a></li><li class="chapter-item expanded "><a href="../usecases.html"><strong aria-hidden="true">2.</strong> Use cases</a></li><li class="chapter-item expanded "><a href="../faq.html"><strong aria-hidden="true">3.</strong> FAQ</a></li><li class="chapter-item expanded affix "><li class="part-title">Guide</li><li class="chapter-item expanded "><a href="../guide/gettingstarted.html"><strong aria-hidden="true">4.</strong> Getting started</a></li><li class="chapter-item expanded "><a href="../guide/workspaces.html"><strong aria-hidden="true">5.</strong> Working with workspaces</a></li><li class="chapter-item expanded "><a href="../guide/importing.html"><strong aria-hidden="true">6.</strong> Importing projects</a></li><li class="chapter-item expanded "><div><strong aria-hidden="true">7.</strong> Integrating with CI</div></li><li class="chapter-item expanded affix "><li class="part-title">Reference</li><li class="chapter-item expanded "><a href="../reference/filters.html"><strong aria-hidden="true">8.</strong> Filter syntax</a></li><li class="chapter-item expanded "><a href="../reference/proxy.html"><strong aria-hidden="true">9.</strong> Proxy</a></li><li class="chapter-item expanded "><a href="../reference/workspace.html"><strong aria-hidden="true">10.</strong> Workspaces</a></li><li class="chapter-item expanded "><a href="../reference/cli.html"><strong aria-hidden="true">11.</strong> Command line tools</a></li><li class="chapter-item expanded "><a href="../reference/graphql.html" class="active"><strong aria-hidden="true">12.</strong> Graphql API</a></li><li class="chapter-item expanded "><div><strong aria-hidden="true">13.</strong> Handlebar generator</div></li><li class="chapter-item expanded "><div><strong aria-hidden="true">14.</strong> The josh UI</div></li><li class="chapter-item expanded affix "><li class="part-title">Contributing</li><li class="chapter-item expanded "><a href="../contributing/testing.html"><strong aria-hidden="true">15.</strong> Testing</a></li><li class="chapter-item expanded "><a href="../contributing/dev-tools.html"><strong aria-hidden="true">16.</strong> Development tools</a></li><li class="chapter-item expanded "><div><strong aria-hidden="true">17.</strong> Tracing</div></li></ol>            </div>
+                <ol class="chapter"><li class="chapter-item expanded "><a href="../intro.html"><strong aria-hidden="true">1.</strong> Intro</a></li><li class="chapter-item expanded "><a href="../usecases.html"><strong aria-hidden="true">2.</strong> Use cases</a></li><li class="chapter-item expanded "><a href="../faq.html"><strong aria-hidden="true">3.</strong> FAQ</a></li><li class="chapter-item expanded affix "><li class="part-title">Guide</li><li class="chapter-item expanded "><a href="../guide/gettingstarted.html"><strong aria-hidden="true">4.</strong> Getting started</a></li><li class="chapter-item expanded "><a href="../guide/workspaces.html"><strong aria-hidden="true">5.</strong> Working with workspaces</a></li><li class="chapter-item expanded "><a href="../guide/importing.html" class="active"><strong aria-hidden="true">6.</strong> Importing projects</a></li><li class="chapter-item expanded "><div><strong aria-hidden="true">7.</strong> Integrating with CI</div></li><li class="chapter-item expanded affix "><li class="part-title">Reference</li><li class="chapter-item expanded "><a href="../reference/filters.html"><strong aria-hidden="true">8.</strong> Filter syntax</a></li><li class="chapter-item expanded "><a href="../reference/proxy.html"><strong aria-hidden="true">9.</strong> Proxy</a></li><li class="chapter-item expanded "><a href="../reference/workspace.html"><strong aria-hidden="true">10.</strong> Workspaces</a></li><li class="chapter-item expanded "><a href="../reference/cli.html"><strong aria-hidden="true">11.</strong> Command line tools</a></li><li class="chapter-item expanded "><a href="../reference/graphql.html"><strong aria-hidden="true">12.</strong> Graphql API</a></li><li class="chapter-item expanded "><div><strong aria-hidden="true">13.</strong> Handlebar generator</div></li><li class="chapter-item expanded "><div><strong aria-hidden="true">14.</strong> The josh UI</div></li><li class="chapter-item expanded affix "><li class="part-title">Contributing</li><li class="chapter-item expanded "><a href="../contributing/testing.html"><strong aria-hidden="true">15.</strong> Testing</a></li><li class="chapter-item expanded "><a href="../contributing/dev-tools.html"><strong aria-hidden="true">16.</strong> Development tools</a></li><li class="chapter-item expanded "><div><strong aria-hidden="true">17.</strong> Tracing</div></li></ol>            </div>
             <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
         </nav>
 
@@ -143,25 +143,120 @@
 
                 <div id="content" class="content">
                     <main>
-                        <h1 id="graphql-api"><a class="header" href="#graphql-api">GraphQL API</a></h1>
-<p>Josh implements a GraphQL API to query the content of repositories without a need to clone
-them via a git client.</p>
-<p>The API is exposed at:</p>
-<pre><code>http://hostname/~/graphql/name_of_repo.git
+                        <h1 id="importing-projects"><a class="header" href="#importing-projects">Importing projects</a></h1>
+<p>When moving to a monorepo setup, especially in existing organisations,
+it is common that the need to consolidate existing project
+repositories arises.</p>
+<p>The simplest possible case is one where the previous history of a
+project does not need to be retained. In this case, the projects files
+can simply be copied into the monoreop at the appropriate location and
+committed.</p>
+<p>If history should be retained, josh can be used for importing a
+project as an alternative to built-in git commands like <a href="https://manpages.debian.org/testing/git-man/git-subtree.1.en.html"><code>git subtree</code></a>.</p>
+<p>Josh's <a href="../reference/filters.html">filter capability</a> lets you perform
+transformations on the history of a git repository to arbitrarily
+(re-)compose paths inside of a repository.</p>
+<p>A key aspect of this functionality is that all transformations are
+<em>reversible</em>. This means that if you apply a transformation moving
+files from the root of a repository to, say, <code>tools/project-b</code>,
+followed by an <em>inverse</em> transformation moving files from
+<code>tools/project-b</code> back to the root, you receive the same commit hashes
+you put in.</p>
+<p>We can use this feature to import a project into our monorepo while
+allowing external users to keep pulling on top of the same git history
+they already have, just with a new git remote.</p>
+<p>There are multiple ways of doing this, with the most common ones
+outlined below. You can look at <a href="https://github.com/josh-project/josh/issues/596"><code>josh#596</code></a> for a
+discussion of several other methods.</p>
+<h3 id="import-with-josh-filter"><a class="header" href="#import-with-josh-filter">Import with <code>josh-filter</code></a></h3>
+<p>Currently, the easiest way to do this is by using the <code>josh-filter</code>
+binary which is a command-line frontend to josh's filter capabilities.</p>
+<p>Inside of our target repository, it would work like this:</p>
+<ol>
+<li>
+<p>Fetch the repository we want to import (say, &quot;Project B&quot;, from
+<code>$REPO_URL</code>).</p>
+<pre><code class="language-sh">$ git fetch $REPO_URL master
 </code></pre>
-<p>To explore the API and generated documentation, an interactive GraphQL shell can be found at:</p>
-<pre><code>http://hostname/~/graphiql/name_of_repo.git
+<p>This will set the <code>FETCH_HEAD</code> reference to the fetched repository.</p>
+</li>
+<li>
+<p>Rewrite the history of that repository through josh to make it look
+as if the project had always been developed at our target path
+(say, <code>tools/project-b</code>).</p>
+<pre><code class="language-sh">$ josh-filter ':prefix=tools/project-b' FETCH_HEAD
 </code></pre>
+<p>This will set the <code>FILTERED_HEAD</code> reference to the rewritten
+history.</p>
+</li>
+<li>
+<p>Merge the rewritten history into our target repository.</p>
+<pre><code class="language-sh">$ git merge --allow-unrelated FILTERED_HEAD
+</code></pre>
+<p>After this merge commit, the previously external project now lives
+at <code>tools/project-b</code> as expected.</p>
+</li>
+<li>
+<p>Any external users can now use the <code>:/tools/project-b</code> josh filter
+to retrieve changes made in the new project location - without the
+git hashes of their existing commits changing (that is to say,
+without conflicting).</p>
+</li>
+</ol>
+<h3 id="import-by-pushing-to-josh"><a class="header" href="#import-by-pushing-to-josh">Import by pushing to josh</a></h3>
+<p>If your monorepo is already running a <code>josh-proxy</code> in front of it, you
+can also import a project by pushing a project merge to josh.</p>
+<p>This has the benefit of not needing to clone the entire monorepo
+locally to do a merge, but the drawback of using a different, slightly
+slower filter mechanism when exporting the tree back out. For projects
+with very large history, consider using the <code>josh-filter</code> mechanism
+outlined above.</p>
+<p>Pushing a project merge to josh works like this:</p>
+<ol>
+<li>
+<p>Assume we have a local checkout of &quot;Project B&quot;, and we want to
+merge this into our monorepo. There is a <code>josh-proxy</code> running at
+<code>https://git.company.name/monorepo.git</code>. We want to merge this
+project into <code>/tools/project-b</code> in the monorepo.</p>
+</li>
+<li>
+<p>In the checkout of &quot;Project B&quot;, add the josh remote:</p>
+<pre><code class="language-sh">git remote add josh https://git.company.name/monorepo.git:/tools/project-b.git
+</code></pre>
+<p>Note the use of the <code>/tools/project-b.git</code> josh filter, which
+points to a path that should not yet exist in the monorepo.</p>
+</li>
+<li>
+<p>Push the repository to josh with the <code>-o merge</code> option, creating a
+merge commit introducing the project history at that location,
+while retaining its history:</p>
+<pre><code class="language-sh">git push josh $ref -o merge
+</code></pre>
+</li>
+</ol>
+<h3 id="note-for-gerrit-users"><a class="header" href="#note-for-gerrit-users">Note for Gerrit users</a></h3>
+<p>With either method, when merging a set of new commits into a Gerrit
+repository and going through the standard code-review process, Gerrit
+might complain about missing Change-IDs in the imported commits.</p>
+<p>To work around this, the commits need to first be made &quot;known&quot; to
+Gerrit. This can be achieved by pushing the new parent of the merge
+commit to a separate branch in Gerrit directly (without going through
+the review mechanism). After this Gerrit will accept merge commits
+referencing that parent, as long as the merge commit itself has a
+Change-ID.</p>
+<p>Some monorepo setups on Gerrit use a special unrestricted branch like
+<code>merge-staging</code> for this, to which users with permission to import
+projects can force-push unrelated histories.</p>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                                                    <a rel="prev" href="../reference/cli.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                                    <a rel="prev" href="../guide/workspaces.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <i class="fa fa-angle-left"></i>
                             </a>
                         
-                                                    <a rel="next" href="../contributing/testing.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                                    <a rel="next" href="../reference/filters.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <i class="fa fa-angle-right"></i>
                             </a>
                         
@@ -171,11 +266,11 @@ them via a git client.</p>
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                                    <a rel="prev" href="../reference/cli.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                    <a rel="prev" href="../guide/workspaces.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <i class="fa fa-angle-left"></i>
                     </a>
                 
-                                    <a rel="next" href="../contributing/testing.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                    <a rel="next" href="../reference/filters.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <i class="fa fa-angle-right"></i>
                     </a>
                             </nav>
