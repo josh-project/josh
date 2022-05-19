@@ -198,6 +198,11 @@ allowed.</p>
 <p>All subdirectories matching the pattern in arbitarily deep subdirectories of the input</p>
 <h3 id="match-nested-files-x"><a class="header" href="#match-nested-files-x">Match nested files <strong><code>::**/X</code></strong></a></h3>
 <p>All files matching the pattern in arbitarily deep subdirectories of the input</p>
+<h2 id="history-filters"><a class="header" href="#history-filters">History filters</a></h2>
+<p>These filter do not modify git trees, but instead only operate on the commit graph.</p>
+<h3 id="linearize-history-linear"><a class="header" href="#linearize-history-linear">Linearize history <strong>:linear</strong></a></h3>
+<p>Produce a filtered history that does not contain any merge commits. This is done by
+simply dropping all parents except the first on every commit.</p>
 <h2 id="filter-order-matters"><a class="header" href="#filter-order-matters">Filter order matters</a></h2>
 <p>Filters are applied in the left-to-right order they are given in the filter specification,
 and they are <code>not</code> commutative.</p>
