@@ -74,6 +74,14 @@ All subdirectories matching the pattern in arbitarily deep subdirectories of the
 ### Match nested files **`::**/X`**
 All files matching the pattern in arbitarily deep subdirectories of the input
 
+## History filters
+
+These filter do not modify git trees, but instead only operate on the commit graph.
+
+### Linearize history **:linear**
+Produce a filtered history that does not contain any merge commits. This is done by
+simply dropping all parents except the first on every commit.
+
 Filter order matters
 --------------------
 

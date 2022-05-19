@@ -30,6 +30,7 @@ fn make_op(args: &[&str]) -> JoshResult<Op> {
             "#
         ))),
         ["SQUASH"] => Ok(Op::Squash),
+        ["linear"] => Ok(Op::Linear),
         ["PATHS"] => Ok(Op::Paths),
         #[cfg(feature = "search")]
         ["INDEX"] => Ok(Op::Index),

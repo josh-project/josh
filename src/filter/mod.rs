@@ -61,8 +61,9 @@ enum Op {
     Nop,
     Empty,
     Fold,
-    Squash,
     Paths,
+    Squash,
+    Linear,
 
     #[cfg(feature = "search")]
     Index,
@@ -185,6 +186,7 @@ fn spec2(op: &Op) -> String {
         Op::Index => ":INDEX".to_string(),
         Op::Fold => ":FOLD".to_string(),
         Op::Squash => ":SQUASH".to_string(),
+        Op::Linear => ":linear".to_string(),
         Op::Subdir(path) => format!(":/{}", path.to_string_lossy()),
         Op::File(path) => format!("::{}", path.to_string_lossy()),
         Op::Prefix(path) => format!(":prefix={}", path.to_string_lossy()),
@@ -273,6 +275,24 @@ fn apply_to_commit2(
         }
         Op::Squash => {
             return Some(history::rewrite_commit(repo, commit, &[], &commit.tree()?)).transpose()
+        }
+        Op::Linear => {
+            let p: Vec<_> = commit.parents().collect();
+            if p.len() == 0 {
+                return Ok(Some(commit.id()));
+            }
+            let parent = some_or!(apply_to_commit2(op, &p[0], transaction)?, {
+                return Ok(None);
+            });
+
+            let parent_commit = repo.find_commit(parent)?;
+            return Some(history::rewrite_commit(
+                repo,
+                commit,
+                &[&parent_commit],
+                &commit.tree()?,
+            ))
+            .transpose();
         }
         _ => {
             if let Some(oid) = transaction.get(filter, commit.id()) {
@@ -457,6 +477,7 @@ fn apply2<'a>(
         Op::Empty => return Ok(tree::empty(repo)),
         Op::Fold => Ok(tree),
         Op::Squash => Ok(tree),
+        Op::Linear => Ok(tree),
 
         Op::Glob(pattern) => {
             let pattern = glob::Pattern::new(pattern)?;
@@ -555,6 +576,7 @@ fn unapply2<'a>(
 ) -> JoshResult<git2::Tree<'a>> {
     return match op {
         Op::Nop => Ok(tree),
+        Op::Linear => Ok(tree),
         Op::Empty => Ok(parent_tree),
 
         Op::Chain(a, b) => {
