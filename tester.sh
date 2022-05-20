@@ -24,5 +24,5 @@ docker run -it --rm\
     --volume cache:/opt/cache\
     --user "$(id -u)":"$(id -g)"\
     josh-dev-local\
-    bash -c "cargo build --workspace --all && sh run-tests.sh $tests"
+    bash -c "cargo build --workspace --exclude josh-ui && sh run-tests.sh $tests"
 
