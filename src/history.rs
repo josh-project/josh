@@ -19,6 +19,9 @@ pub fn walk2(
 
     let walk = {
         let mut walk = transaction.repo().revwalk()?;
+        if filter::is_linear(filter) {
+            walk.simplify_first_parent()?;
+        }
         walk.set_sorting(git2::Sort::REVERSE | git2::Sort::TOPOLOGICAL)?;
         walk.push(input)?;
         for k in known.iter() {
