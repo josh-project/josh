@@ -60,12 +60,20 @@ EOF
 
 WORKDIR /usr/src/josh
 RUN rustup component add rustfmt
-RUN rustup target add wasm32-unknown-unknown
 RUN cargo install --version 0.1.35 cargo-chef
 RUN cargo install --version 0.2.1 hyper_cgi --features=test-server
 RUN cargo install --version 0.10.0 graphql_client_cli
 
 FROM dev as dev-local
+
+RUN mkdir -p /opt/cache && \
+    chmod 777 /opt/cache
+
+VOLUME /opt/cache
+
+ENV CARGO_TARGET_DIR=/opt/cache/cargo-target
+ENV CARGO_HOME=/opt/cache/cargo-cache
+RUN npm config set cache /opt/cache/npm-cache --global
 
 FROM dev as dev-ci
 
@@ -96,11 +104,11 @@ apt-get install --yes --no-install-recommends \
 rm -rf /var/lib/apt/lists/*
 EOF
 
-COPY --from=dev /opt/git-install /opt/git-install
+COPY --from=dev --link=false /opt/git-install /opt/git-install
 ENV PATH=${PATH}:/opt/git-install/bin
 
-COPY --from=build /usr/src/josh/target/release/josh-proxy /usr/bin/
-COPY --from=build /usr/src/josh/run-josh.sh /usr/bin/
-COPY --from=build /usr/src/josh/static/ /josh/static/
+COPY --from=build --link=false /usr/src/josh/target/release/josh-proxy /usr/bin/
+COPY --from=build --link=false /usr/src/josh/run-josh.sh /usr/bin/
+COPY --from=build --link=false /usr/src/josh/static/ /josh/static/
 
 CMD sh /usr/bin/run-josh.sh
