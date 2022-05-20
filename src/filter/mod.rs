@@ -228,7 +228,7 @@ pub fn apply_to_commit(
     transaction: &cache::Transaction,
 ) -> JoshResult<git2::Oid> {
     let filter = opt::optimize(filter);
-    for _ in 0..10000 {
+    loop {
         let filtered = apply_to_commit2(&to_op(filter), commit, transaction)?;
 
         if let Some(id) = filtered {
@@ -239,8 +239,6 @@ pub fn apply_to_commit(
             history::walk2(f, i, transaction)?;
         }
     }
-
-    Err(josh_error("apply_to_commit did not finish"))
 }
 
 pub fn apply_to_commit3(
