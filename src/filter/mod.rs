@@ -840,3 +840,11 @@ mod tests {
         );
     }
 }
+
+pub fn is_linear(filter: Filter) -> bool {
+    return match to_op(filter) {
+        Op::Linear => true,
+        Op::Chain(a, b) => is_linear(a) || is_linear(b),
+        _ => false,
+    };
+}
