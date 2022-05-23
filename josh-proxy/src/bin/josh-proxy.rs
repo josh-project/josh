@@ -490,9 +490,13 @@ async fn call_service(
         headref = "HEAD".to_string();
     }
 
-    if !josh_proxy::auth::check_auth(&remote_url, &auth, ARGS.is_present("require-auth"))
-        .in_current_span()
-        .await?
+    if !josh_proxy::auth::check_auth(
+        &remote_url,
+        &auth,
+        ARGS.is_present("require-auth") && parsed_url.pathinfo == "/git-receive-pack",
+    )
+    .in_current_span()
+    .await?
     {
         tracing::trace!("require-auth");
         let builder = Response::builder()
