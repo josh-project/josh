@@ -796,6 +796,20 @@ fn populate(
     Ok(result_tree)
 }
 
+pub fn compose_fast<'a>(
+    transaction: &'a cache::Transaction,
+    trees: Vec<git2::Oid>,
+) -> super::JoshResult<git2::Tree<'a>> {
+    rs_tracing::trace_scoped!("compose_fast");
+    let repo = transaction.repo();
+    let mut result = tree::empty_id();
+    for tree in trees {
+        result = overlay(repo, tree, result)?;
+    }
+
+    Ok(repo.find_tree(result)?)
+}
+
 pub fn compose<'a>(
     transaction: &'a cache::Transaction,
     trees: Vec<(&super::filter::Filter, git2::Tree<'a>)>,

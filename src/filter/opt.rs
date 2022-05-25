@@ -445,6 +445,8 @@ pub fn invert(filter: Filter) -> JoshResult<Filter> {
         _ => return Err(josh_error("no invert")),
     });
 
+    let result = optimize(result);
+
     INVERTED.lock().unwrap().insert(original, result);
     Ok(result)
 }

@@ -322,15 +322,30 @@ fn apply_to_commit2(
 
             let filtered = some_or!(filtered, { return Ok(None) });
 
-            let filtered = filters
-                .iter()
-                .zip(filtered.into_iter())
-                .filter(|(_, id)| *id != git2::Oid::zero())
-                .into_iter()
-                .map(|(f, id)| Ok((f, repo.find_commit(id)?.tree()?)))
-                .collect::<JoshResult<Vec<_>>>()?;
+            let inverted = filter::invert(filter)?;
 
-            tree::compose(transaction, filtered)?
+            if filter == inverted {
+                // If the filter is symetric it does not change any paths and uniqueness of
+                // mappings is already guaranteed.
+                let filtered = filtered
+                    .into_iter()
+                    .filter(|id| *id != git2::Oid::zero())
+                    .into_iter()
+                    .map(|id| Ok(repo.find_commit(id)?.tree_id()))
+                    .collect::<JoshResult<Vec<_>>>()?;
+
+                tree::compose_fast(transaction, filtered)?
+            } else {
+                let filtered = filters
+                    .iter()
+                    .zip(filtered.into_iter())
+                    .filter(|(_, id)| *id != git2::Oid::zero())
+                    .into_iter()
+                    .map(|(f, id)| Ok((f, repo.find_commit(id)?.tree()?)))
+                    .collect::<JoshResult<Vec<_>>>()?;
+
+                tree::compose(transaction, filtered)?
+            }
         }
         Op::Workspace(ws_path) => {
             let normal_parents = commit
