@@ -286,6 +286,16 @@ fn apply_to_commit2(
         Op::Squash => {
             return Some(history::rewrite_commit(repo, commit, &[], &commit.tree()?)).transpose()
         }
+        _ => {
+            if let Some(oid) = transaction.get(filter, commit.id()) {
+                return Ok(Some(oid));
+            }
+        }
+    };
+
+    rs_tracing::trace_scoped!("apply_to_commit", "spec": spec(filter), "commit": commit.id().to_string());
+
+    let filtered_tree = match &to_op(filter) {
         Op::Linear => {
             let p: Vec<_> = commit.parents().collect();
             if p.len() == 0 {
@@ -304,16 +314,6 @@ fn apply_to_commit2(
             ))
             .transpose();
         }
-        _ => {
-            if let Some(oid) = transaction.get(filter, commit.id()) {
-                return Ok(Some(oid));
-            }
-        }
-    };
-
-    rs_tracing::trace_scoped!("apply_to_commit", "spec": spec(filter), "commit": commit.id().to_string());
-
-    let filtered_tree = match &to_op(filter) {
         Op::Compose(filters) => {
             let filtered = filters
                 .iter()
