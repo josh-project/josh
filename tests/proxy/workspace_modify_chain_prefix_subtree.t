@@ -163,6 +163,7 @@
 
   $ git pull -q origin master --rebase 1>/dev/null
 
+  $ git mv d w
   $ cat > workspace.josh <<EOF
   > a/b = :/sub2
   > c = :/sub1
@@ -176,12 +177,12 @@
   remote: josh-proxy
   remote: response from upstream:
   remote: To http://localhost:8001/real_repo.git
-  remote:    edefd7d..18aaa0c  JOSH_PUSH -> master
-  remote: REWRITE(5eedfbadb706c633671935d425d19b76d2374d34 -> 9d72b88b11aed97d3313f0a6d80894ee2ffdf3e9)
+  remote:    edefd7d..0c66ddc  JOSH_PUSH -> master
+  remote: REWRITE(9f7fe44ebf4b96d3fc03aa7bffff6baa4a84eb63 -> 707a20731ff94c2dee063a8b274665b1cc730e26)
   remote:
   remote:
   To http://localhost:8002/real_repo.git:workspace=ws:prefix=pre:/pre.git
-     44edc62..5eedfba  master -> master
+     44edc62..9f7fe44  master -> master
 $ curl -s http://localhost:8002/flush
 Flushed credential cache
   $ git pull --rebase 2> /dev/null
@@ -196,14 +197,12 @@ Note that d/ is still in the tree but now it is not overlayed
   |-- c
   |   `-- subsub
   |       `-- newfile_1
-  |-- d
-  |   `-- file3
   |-- w
   |   `-- file3
   |-- workspace.josh
   `-- ws_file
   
-  6 directories, 7 files
+  5 directories, 6 files
 
 
 
@@ -213,7 +212,7 @@ $ curl -s http://localhost:8002/flush
 Flushed credential cache
   $ git pull --rebase 1> /dev/null
   From http://localhost:8001/real_repo
-     aaec05d..18aaa0c  master     -> origin/master
+     aaec05d..0c66ddc  master     -> origin/master
 
   $ git clean -ffdx 1> /dev/null
 
@@ -232,12 +231,10 @@ Note that ws/d/ is now present in the ws
   |-- sub3
   |   `-- file3
   `-- ws
-      |-- d
-      |   `-- file3
       |-- workspace.josh
       `-- ws_file
   
-  6 directories, 10 files
+  5 directories, 9 files
   $ git log --graph --pretty=%s
   * try to modify ws
   * add in filter
@@ -305,7 +302,6 @@ Note that ws/d/ is now present in the ws
       ':/sub2',
       ':/sub3',
       ':/ws',
-      ':/ws/d',
       ':workspace=ws',
   ]
   refs
@@ -323,15 +319,13 @@ Note that ws/d/ is now present in the ws
   |   |       |   `-- HEAD
   |   |       |-- %3A%2Fws
   |   |       |   `-- HEAD
-  |   |       |-- %3A%2Fws%2Fd
-  |   |       |   `-- HEAD
   |   |       `-- %3Aworkspace=ws
   |   |           `-- HEAD
   |   |-- rewrites
   |   |   `-- real_repo.git
   |   |       `-- 7bd92d97e96693ea7fd7eb5757b3580002889948
   |   |           |-- r_44edc62d506b9805a3edfc74db15b1cc0bfc6871
-  |   |           `-- r_9d72b88b11aed97d3313f0a6d80894ee2ffdf3e9
+  |   |           `-- r_707a20731ff94c2dee063a8b274665b1cc730e26
   |   `-- upstream
   |       `-- real_repo.git
   |           |-- HEAD
@@ -341,6 +335,6 @@ Note that ws/d/ is now present in the ws
   |-- namespaces
   `-- tags
   
-  20 directories, 11 files
+  19 directories, 10 files
 
 $ cat ${TESTTMP}/josh-proxy.out | grep VIEW

@@ -154,6 +154,11 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
     }
 
     if args.is_present("print-filter") {
+        let filterobj = if args.is_present("reverse") {
+            josh::filter::invert(filterobj)?
+        } else {
+            filterobj
+        };
         println!(
             "{}",
             josh::filter::pretty(filterobj, if args.is_present("file") { 0 } else { 4 })

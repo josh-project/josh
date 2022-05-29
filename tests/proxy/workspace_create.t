@@ -266,6 +266,7 @@ Flushed credential cache
   > w = :/sub3
   > EOF
 
+  $ cp -r d w
   $ git add .
   $ git commit -m "try to modify ws" 1> /dev/null
 
@@ -275,12 +276,12 @@ Flushed credential cache
    * branch            60bd0e180735e169b5c853545d8b1272ed0fc319 -> FETCH_HEAD
   HEAD is now at 60bd0e1 try to modify ws
   Pushing to http://localhost:8002/real_repo.git:workspace=ws.git
-  POST git-receive-pack (460 bytes)
+  POST git-receive-pack (466 bytes)
   remote: josh-proxy        
   remote: response from upstream:        
   remote: To http://localhost:8001/real_repo.git        
   remote:    a1a7760..108eb9a  JOSH_PUSH -> master        
-  remote: REWRITE(67b3bc013be6d0333037ca520094c9e0e50fd70b -> 60bd0e180735e169b5c853545d8b1272ed0fc319)        
+  remote: REWRITE(b8012aab20a6c6a0c2dc3b428d3578aadc9c527f -> 60bd0e180735e169b5c853545d8b1272ed0fc319)        
   remote: 
   remote: 
   updating local tracking ref 'refs/remotes/origin/master'
@@ -290,7 +291,7 @@ $ curl -s http://localhost:8002/flush
 Flushed credential cache
   $ git pull --rebase
   From http://localhost:8002/real_repo.git:workspace=ws
-   + 67b3bc0...60bd0e1 master     -> origin/master  (forced update)
+   + b8012aa...60bd0e1 master     -> origin/master  (forced update)
   Already up to date.
 
 Note that d/ is still in the tree but now it is not overlayed

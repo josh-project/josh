@@ -2,16 +2,27 @@
 
   $ josh-filter -p :/a
   :/a
+  $ josh-filter --reverse -p :/a
+  :prefix=a
   $ josh-filter -p :/a~
   :/a~
   $ josh-filter -p :/a:/b
   :/a/b
   $ josh-filter -p :[:/a:/b,:/a/b]
   :/a/b
+  $ josh-filter -p :[:empty,:/a]
+  :/a
+  $ josh-filter --reverse -p :[:empty,:/a]
+  :prefix=a
   $ josh-filter -p :[x=:/a:/b:/d,y=:/a:/c:/d]
   :/a:[
       x = :/b/d
       y = :/c/d
+  ]
+  $ josh-filter --reverse -p :[x=:/a:/b:/d,y=:/a:/c:/d]
+  a = :[
+      b/d = :/x
+      c/d = :/y
   ]
   $ josh-filter -p :exclude[:/a:/b]
   :exclude[:/a/b]
@@ -20,8 +31,25 @@
       :/a
       :/b
   ]
+  $ josh-filter --reverse -p :exclude[:/a,:/b]
+  :exclude[
+      :prefix=a
+      :prefix=b
+  ]
+  $ josh-filter -p :exclude[::a/,::b/]
+  :exclude[
+      ::a/
+      ::b/
+  ]
+  $ josh-filter --reverse -p :exclude[::a/,::b/]
+  :exclude[
+      ::a/
+      ::b/
+  ]
   $ josh-filter -p :prefix=a/b:prefix=c
   :prefix=c/a/b
+  $ josh-filter --reverse -p :prefix=a/b:prefix=c
+  :/c/a/b
 
   $ josh-filter -p :[:/a,:/b]:[:empty,:/]
   :[
@@ -34,6 +62,8 @@
   $ josh-filter -p :subtract[a=:[::x/,::y/,::z/],a=:[::x/,::y/]]
   a/z = :/z
   $ josh-filter -p :subtract[a=:[::x/,::y/],a=:[::x/,::y/]]
+  :empty
+  $ josh-filter --reverse -p :subtract[a=:[::x/,::y/],a=:[::x/,::y/]]
   :empty
   $ josh-filter -p :subtract[a=:[::x/,::y/],b=:[::x/,::y/]]
   :empty

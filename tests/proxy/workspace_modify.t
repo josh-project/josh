@@ -269,21 +269,22 @@ Flushed credential cache
   > w = :/sub3
   > EOF
 
+  $ git mv d w
   $ git add .
   $ git commit -m "try to modify ws" 1> /dev/null
 
   $ git sync
     refs/heads/master -> refs/heads/master
   From http://localhost:8002/real_repo.git:workspace=ws
-   * branch            1a909d6e8ba43c6eaf211ef04440984d38bc26e6 -> FETCH_HEAD
-  HEAD is now at 1a909d6 try to modify ws
+   * branch            91e1e8645d3439b195f3866664092ebc20e63bb5 -> FETCH_HEAD
+  HEAD is now at 91e1e86 try to modify ws
   Pushing to http://localhost:8002/real_repo.git:workspace=ws.git
-  POST git-receive-pack (460 bytes)
+  POST git-receive-pack (464 bytes)
   remote: josh-proxy        
   remote: response from upstream:        
   remote: To http://localhost:8001/real_repo.git        
-  remote:    9c41f84..2c7e462  JOSH_PUSH -> master        
-  remote: REWRITE(7f85f1156c6a01fcf3ab67dc35597ae520f75496 -> 1a909d6e8ba43c6eaf211ef04440984d38bc26e6)        
+  remote:    9c41f84..21cd34c  JOSH_PUSH -> master        
+  remote: REWRITE(9f8d9c0adcbc65e17dfb359c6e3dee7520649c88 -> 91e1e8645d3439b195f3866664092ebc20e63bb5)        
   remote: 
   remote: 
   updating local tracking ref 'refs/remotes/origin/master'
@@ -293,10 +294,9 @@ $ curl -s http://localhost:8002/flush
 Flushed credential cache
   $ git pull --rebase
   From http://localhost:8002/real_repo.git:workspace=ws
-   + 7f85f11...1a909d6 master     -> origin/master  (forced update)
+   + 9f8d9c0...91e1e86 master     -> origin/master  (forced update)
   Already up to date.
 
-Note that d/ is still in the tree but now it is not overlayed
   $ tree
   .
   |-- a
@@ -306,14 +306,12 @@ Note that d/ is still in the tree but now it is not overlayed
   |-- c
   |   `-- subsub
   |       `-- newfile_1
-  |-- d
-  |   `-- file3
   |-- w
   |   `-- file3
   |-- workspace.josh
   `-- ws_file
   
-  6 directories, 7 files
+  5 directories, 6 files
 
   $ cat workspace.josh
   c = :/sub1
@@ -339,20 +337,18 @@ $ curl -s http://localhost:8002/flush
 Flushed credential cache
   $ git pull --rebase
   From http://localhost:8001/real_repo
-     e41565c..2c7e462  master     -> origin/master
-  Updating e41565c..2c7e462
+     e41565c..21cd34c  master     -> origin/master
+  Updating e41565c..21cd34c
   Fast-forward
    sub1/subsub/file1     | 1 -
    sub1/subsub/newfile_1 | 1 +
    sub2/newfile_2        | 1 +
-   ws/d/file3            | 1 +
    ws/workspace.josh     | 4 ++--
    ws/ws_file            | 1 +
-   6 files changed, 6 insertions(+), 3 deletions(-)
+   5 files changed, 5 insertions(+), 3 deletions(-)
    delete mode 100644 sub1/subsub/file1
    create mode 100644 sub1/subsub/newfile_1
    create mode 100644 sub2/newfile_2
-   create mode 100644 ws/d/file3
    create mode 100644 ws/ws_file
 
   $ git clean -ffdx 1> /dev/null
@@ -372,12 +368,10 @@ Note that ws/d/ is now present in the ws
   |-- sub3
   |   `-- file3
   `-- ws
-      |-- d
-      |   `-- file3
       |-- workspace.josh
       `-- ws_file
   
-  6 directories, 10 files
+  5 directories, 9 files
   $ git log --graph --pretty=%s
   * try to modify ws
   * add in filter
@@ -445,7 +439,6 @@ Note that ws/d/ is now present in the ws
       ':/sub2',
       ':/sub3',
       ':/ws',
-      ':/ws/d',
       ':workspace=ws',
   ]
   refs
@@ -463,16 +456,14 @@ Note that ws/d/ is now present in the ws
   |   |       |   `-- HEAD
   |   |       |-- %3A%2Fws
   |   |       |   `-- HEAD
-  |   |       |-- %3A%2Fws%2Fd
-  |   |       |   `-- HEAD
   |   |       `-- %3Aworkspace=ws
   |   |           `-- HEAD
   |   |-- rewrites
   |   |   `-- real_repo.git
   |   |       `-- 7bd92d97e96693ea7fd7eb5757b3580002889948
-  |   |           |-- r_1a909d6e8ba43c6eaf211ef04440984d38bc26e6
   |   |           |-- r_3136fff7280627623bf4d71191d1aea783579be0
-  |   |           `-- r_4a199f3a19a292e6639dede0f8602afc19a82dfc
+  |   |           |-- r_4a199f3a19a292e6639dede0f8602afc19a82dfc
+  |   |           `-- r_91e1e8645d3439b195f3866664092ebc20e63bb5
   |   `-- upstream
   |       `-- real_repo.git
   |           |-- HEAD
@@ -482,6 +473,6 @@ Note that ws/d/ is now present in the ws
   |-- namespaces
   `-- tags
   
-  20 directories, 12 files
+  19 directories, 11 files
 
 $ cat ${TESTTMP}/josh-proxy.out

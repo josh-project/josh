@@ -5,6 +5,7 @@ mod opt;
 mod parse;
 pub mod tree;
 
+pub use opt::invert;
 pub use parse::get_comments;
 pub use parse::parse;
 
@@ -241,6 +242,17 @@ pub fn apply_to_commit(
     }
 }
 
+fn get_workspace<'a>(repo: &'a git2::Repository, tree: &'a git2::Tree<'a>, path: &Path) -> Filter {
+    let f = parse::parse(&tree::get_blob(repo, &tree, &path.join("workspace.josh")))
+        .unwrap_or(to_filter(Op::Empty));
+
+    if invert(f).is_ok() {
+        f
+    } else {
+        to_filter(Op::Empty)
+    }
+}
+
 pub fn apply_to_commit3(
     filter: Filter,
     commit: &git2::Commit,
@@ -328,23 +340,15 @@ fn apply_to_commit2(
 
             let normal_parents = some_or!(normal_parents, { return Ok(None) });
 
-            let cw = parse::parse(&tree::get_blob(
-                repo,
-                &commit.tree()?,
-                &ws_path.join("workspace.josh"),
-            ))
-            .unwrap_or(to_filter(Op::Empty));
+            let cw = get_workspace(repo, &commit.tree()?, &ws_path);
 
             let extra_parents = commit
                 .parents()
                 .map(|parent| {
                     rs_tracing::trace_scoped!("parent", "id": parent.id().to_string());
-                    let pcw = parse::parse(&tree::get_blob(
-                        repo,
-                        &parent.tree().unwrap_or(tree::empty(repo)),
-                        &ws_path.join("workspace.josh"),
-                    ))
-                    .unwrap_or(to_filter(Op::Empty));
+
+                    let pcw =
+                        get_workspace(repo, &parent.tree().unwrap_or(tree::empty(repo)), &ws_path);
 
                     apply_to_commit2(
                         &to_op(opt::optimize(to_filter(Op::Subtract(cw, pcw)))),
@@ -415,7 +419,7 @@ fn apply_to_commit2(
                     .unwrap_or(tree::empty_id())
             };
             let bf = repo.find_tree(bf)?;
-            let bu = unapply(transaction, *b, bf, tree::empty(repo))?;
+            let bu = apply(transaction, opt::invert(*b)?, bf)?;
             let ba = apply(transaction, *a, bu)?.id();
             repo.find_tree(tree::subtract(transaction, af, ba)?)?
         }
@@ -515,7 +519,7 @@ fn apply2<'a>(
         Op::Subtract(a, b) => {
             let af = apply(transaction, *a, tree.clone())?;
             let bf = apply(transaction, *b, tree.clone())?;
-            let bu = unapply(transaction, *b, bf, tree::empty(repo))?;
+            let bu = apply(transaction, opt::invert(*b)?, bf)?;
             let ba = apply(transaction, *a, bu)?.id();
             Ok(repo.find_tree(tree::subtract(transaction, af.id(), ba)?)?)
         }
@@ -532,12 +536,11 @@ fn apply2<'a>(
 
         Op::Workspace(path) => {
             let base = to_filter(Op::Subdir(path.to_owned()));
-            if let Ok(cw) = parse::parse(&tree::get_blob(repo, &tree, &path.join("workspace.josh")))
-            {
-                apply(transaction, compose(base, cw), tree)
-            } else {
-                apply(transaction, base, tree)
-            }
+            apply(
+                transaction,
+                compose(get_workspace(repo, &tree, &path), base),
+                tree,
+            )
         }
 
         Op::Compose(filters) => {
@@ -563,176 +566,104 @@ pub fn unapply<'a>(
     tree: git2::Tree<'a>,
     parent_tree: git2::Tree<'a>,
 ) -> JoshResult<git2::Tree<'a>> {
-    unapply2(transaction, &to_op(filter), tree, parent_tree)
+    if let Ok(inverted) = opt::invert(filter) {
+        let matching = apply(transaction, chain(filter, inverted), parent_tree.clone())?;
+        let stripped = tree::subtract(transaction, parent_tree.id(), matching.id())?;
+        let new_tree = apply(transaction, inverted, tree)?;
+
+        return Ok(transaction.repo().find_tree(tree::overlay(
+            transaction.repo(),
+            new_tree.id(),
+            stripped,
+        )?)?);
+    }
+
+    if let Some(ws) = unapply_workspace(
+        transaction,
+        &to_op(filter),
+        tree.clone(),
+        parent_tree.clone(),
+    )? {
+        return Ok(ws);
+    }
+
+    if let Op::Chain(a, b) = to_op(filter) {
+        let p = apply(transaction, a, parent_tree.clone())?;
+        return unapply(
+            transaction,
+            a,
+            unapply(transaction, b, tree, p)?,
+            parent_tree,
+        );
+    }
+
+    return Err(josh_error("filter cannot be unapplied"));
 }
 
-fn unapply2<'a>(
+fn unapply_workspace<'a>(
     transaction: &'a cache::Transaction,
     op: &Op,
     tree: git2::Tree<'a>,
     parent_tree: git2::Tree<'a>,
-) -> JoshResult<git2::Tree<'a>> {
+) -> JoshResult<Option<git2::Tree<'a>>> {
     return match op {
-        Op::Nop => Ok(tree),
-        Op::Linear => Ok(tree),
-        Op::Empty => Ok(parent_tree),
-
-        Op::Chain(a, b) => {
-            let p = apply(transaction, *a, parent_tree.clone())?;
-            let x = unapply(transaction, *b, tree, p)?;
-            unapply(transaction, *a, x, parent_tree)
-        }
         Op::Workspace(path) => {
+            let tree = pre_process_tree(transaction.repo(), tree)?;
+            let workspace = get_workspace(transaction.repo(), &tree, &Path::new(""));
+            let original_workspace = get_workspace(transaction.repo(), &parent_tree, &path);
+
             let root = to_filter(Op::Subdir(path.to_owned()));
-            let mapped = &tree::get_blob(transaction.repo(), &tree, Path::new("workspace.josh"));
-            let parsed = parse(mapped)?;
-
-            let mut blob = String::new();
-            if let Ok(c) = get_comments(mapped) {
-                if !c.is_empty() {
-                    blob = c;
-                }
-            }
-            let blob = &format!("{}{}\n", &blob, pretty(parsed, 0));
-
-            // Remove workspace.josh from the tree to prevent it from being parsed again
-            // further down the callstack leading to endless recursion.
-            let tree = tree::insert(
-                transaction.repo(),
-                &tree,
-                Path::new("workspace.josh"),
-                git2::Oid::zero(),
-                0o0100644,
-            )?;
-
-            // Insert a dummy file to prevent the directory from dissappearing through becoming
-            // empty.
-            let tree = tree::insert(
-                transaction.repo(),
-                &tree,
-                Path::new("DUMMY-df97a89d-b11f-4e1c-8400-345f895f0d40"),
-                transaction.repo().blob("".as_bytes())?,
-                0o0100644,
-            )?;
-
-            let r = unapply(
+            let filter = compose(workspace, root);
+            let original_filter = compose(original_workspace, root);
+            let matching = apply(
                 transaction,
-                compose(root, parsed),
-                tree.clone(),
-                parent_tree,
+                chain(original_filter, opt::invert(original_filter)?),
+                parent_tree.clone(),
             )?;
+            let stripped = tree::subtract(transaction, parent_tree.id(), matching.id())?;
+            let new_tree = apply(transaction, opt::invert(filter)?, tree)?;
 
-            // Remove the dummy file inserted above
-            let r = tree::insert(
+            let result = transaction.repo().find_tree(tree::overlay(
                 transaction.repo(),
-                &r,
-                &path.join("DUMMY-df97a89d-b11f-4e1c-8400-345f895f0d40"),
-                git2::Oid::zero(),
-                0o0100644,
-            )?;
+                new_tree.id(),
+                stripped,
+            )?)?;
 
-            // Put the workspace.josh file back to it's target location.
-            let r = if !mapped.is_empty() {
-                tree::insert(
-                    transaction.repo(),
-                    &r,
-                    &path.join("workspace.josh"),
-                    transaction.repo().blob(blob.as_bytes())?,
-                    0o0100644, // Should this handle filemode?
-                )?
-            } else {
-                r
-            };
-
-            return Ok(r);
+            return Ok(Some(result));
         }
-        Op::Compose(filters) => {
-            let mut remaining = tree.clone();
-            let mut result = parent_tree.clone();
-
-            for other in filters.iter().rev() {
-                let from_empty = unapply(
-                    transaction,
-                    *other,
-                    remaining.clone(),
-                    tree::empty(transaction.repo()),
-                )?;
-                if tree::empty_id() == from_empty.id() {
-                    continue;
-                }
-                result = unapply(transaction, *other, remaining.clone(), result)?;
-                let reapply = apply(transaction, *other, from_empty.clone())?;
-
-                remaining = transaction.repo().find_tree(tree::subtract(
-                    transaction,
-                    remaining.id(),
-                    reapply.id(),
-                )?)?;
-            }
-
-            return Ok(result);
-        }
-
-        Op::File(path) => {
-            let (file, mode) = tree
-                .get_path(path)
-                .map(|x| (x.id(), x.filemode()))
-                .unwrap_or((git2::Oid::zero(), 0o0100644));
-            if let Ok(_) = transaction.repo().find_blob(file) {
-                tree::insert(transaction.repo(), &parent_tree, path, file, mode)
-            } else {
-                tree::insert(
-                    transaction.repo(),
-                    &parent_tree,
-                    path,
-                    git2::Oid::zero(),
-                    0o0100644,
-                )
-            }
-        }
-
-        Op::Subtract(_, _) => return Err(josh_error("filter not reversible")),
-        Op::Exclude(b) => {
-            let subtracted = tree::subtract(
-                transaction,
-                tree.id(),
-                unapply(transaction, *b, tree, tree::empty(transaction.repo()))?.id(),
-            )?;
-            Ok(transaction.repo().find_tree(tree::overlay(
-                transaction.repo(),
-                parent_tree.id(),
-                subtracted,
-            )?)?)
-        }
-        Op::Glob(pattern) => {
-            let pattern = glob::Pattern::new(pattern)?;
-            let options = glob::MatchOptions {
-                case_sensitive: true,
-                require_literal_separator: true,
-                require_literal_leading_dot: true,
-            };
-            let subtracted = tree::remove_pred(
-                transaction,
-                "",
-                tree.id(),
-                &|path, isblob| isblob && (pattern.matches_path_with(path, options)),
-                to_filter(op.clone()).id(),
-            )?;
-            Ok(transaction.repo().find_tree(tree::overlay(
-                transaction.repo(),
-                parent_tree.id(),
-                subtracted.id(),
-            )?)?)
-        }
-        Op::Prefix(path) => Ok(tree
-            .get_path(path)
-            .and_then(|x| transaction.repo().find_tree(x.id()))
-            .unwrap_or(tree::empty(transaction.repo()))),
-        Op::Subdir(path) => {
-            tree::insert(transaction.repo(), &parent_tree, path, tree.id(), 0o0040000)
-        }
-        _ => return Err(josh_error("filter not reversible")),
+        _ => Ok(None),
     };
+}
+
+fn pre_process_tree<'a>(
+    repo: &'a git2::Repository,
+    tree: git2::Tree<'a>,
+) -> JoshResult<git2::Tree<'a>> {
+    let path = std::path::Path::new("workspace.josh");
+    let ws_file = filter::tree::get_blob(repo, &tree, &path);
+    let parsed = filter::parse(&ws_file)?;
+
+    if !invert(parsed).is_ok() {
+        return Err(josh_error("Invalid workspace: not reversible"));
+    }
+
+    let mut blob = String::new();
+    if let Ok(c) = filter::get_comments(&ws_file) {
+        if !c.is_empty() {
+            blob = c;
+        }
+    }
+    let blob = &format!("{}{}\n", &blob, filter::pretty(parsed, 0));
+
+    let tree = filter::tree::insert(
+        repo,
+        &tree,
+        &path,
+        repo.blob(blob.as_bytes())?,
+        0o0100644, // Should this handle filemode?
+    )?;
+
+    Ok(tree)
 }
 
 /// Create a filter that is the result of feeding the output of `first` into `second`
