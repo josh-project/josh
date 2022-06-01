@@ -297,20 +297,21 @@ fn apply_to_commit2(
 
     let filtered_tree = match &to_op(filter) {
         Op::Linear => {
-            let p: Vec<_> = commit.parents().collect();
+            let p: Vec<_> = commit.parent_ids().collect();
             if p.len() == 0 {
+                transaction.insert(filter, commit.id(), commit.id(), true);
                 return Ok(Some(commit.id()));
             }
-            let parent = some_or!(apply_to_commit2(op, &p[0], transaction)?, {
+            let parent = some_or!(transaction.get(filter, p[0]), {
                 return Ok(None);
             });
 
-            let parent_commit = repo.find_commit(parent)?;
-            return Some(history::rewrite_commit(
-                repo,
+            return Some(history::create_filtered_commit(
                 commit,
-                &[&parent_commit],
-                &commit.tree()?,
+                vec![parent],
+                commit.tree()?,
+                transaction,
+                filter,
             ))
             .transpose();
         }
