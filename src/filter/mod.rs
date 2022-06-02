@@ -143,6 +143,21 @@ fn pretty2(op: &Op, indent: usize, compose: bool) -> String {
     }
 }
 
+pub fn nesting(filter: Filter) -> usize {
+    nesting2(&to_op(filter))
+}
+
+fn nesting2(op: &Op) -> usize {
+    match op {
+        Op::Compose(filters) => 1 + filters.iter().map(|f| nesting(*f)).fold(0, |a, b| a.max(b)),
+        Op::Exclude(filter) => 1 + nesting(*filter),
+        Op::Workspace(_) => usize::MAX,
+        Op::Chain(a, b) => 1 + nesting(*a).max(nesting(*b)),
+        Op::Subtract(a, b) => 1 + nesting(*a).max(nesting(*b)),
+        _ => 0,
+    }
+}
+
 /// Compact, single line string representation of a filter so that `parse(spec(F)) == F`
 /// Note that this is will not be the best human readable representation. For that see `pretty(...)`
 pub fn spec(filter: Filter) -> String {
@@ -236,7 +251,15 @@ pub fn apply_to_commit(
             return Ok(id);
         }
 
-        for (f, i) in transaction.get_missing() {
+        let missing = transaction.get_missing();
+
+        // Since 'missing' is sorted by nesting, the first is always the minimal
+        let minimal_nesting = missing.get(0).map(|(f, _)| nesting(*f)).unwrap_or(0);
+
+        for (f, i) in missing {
+            if nesting(f) != minimal_nesting {
+                break;
+            }
             history::walk2(f, i, transaction)?;
         }
     }
@@ -319,6 +342,8 @@ fn apply_to_commit2(
             let filtered = filters
                 .iter()
                 .map(|f| apply_to_commit2(&to_op(*f), commit, transaction))
+                .collect::<Vec<_>>()
+                .into_iter()
                 .collect::<JoshResult<Option<Vec<_>>>>()?;
 
             let filtered = some_or!(filtered, { return Ok(None) });
