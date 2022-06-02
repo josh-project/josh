@@ -329,7 +329,7 @@ impl Transaction {
 
     pub fn get_missing(&self) -> Vec<(filter::Filter, git2::Oid)> {
         let mut missing = self.t2.borrow().missing.clone();
-        missing.sort();
+        missing.sort_by_key(|(f, i)| (filter::nesting(*f), *f, *i));
         missing.dedup();
         missing.retain(|(f, i)| !self.known(*f, *i));
         self.t2.borrow_mut().missing = missing.clone();
