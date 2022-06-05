@@ -3,8 +3,7 @@ glob
 
 Support for matching file paths against Unix shell style patterns.
 
-[![Build Status](https://dev.azure.com/rust-lang/glob/_apis/build/status/rust-lang-nursery.glob?branchName=master)](https://dev.azure.com/rust-lang/glob/_build/latest?definitionId=20&branchName=master)
-
+[![Continuous integration](https://github.com/rust-lang-nursery/glob/actions/workflows/rust.yml/badge.svg)](https://github.com/rust-lang-nursery/glob/actions/workflows/rust.yml)
 [Documentation](https://docs.rs/glob)
 
 ## Usage
