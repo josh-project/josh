@@ -315,6 +315,8 @@ pub fn create_repo(path: &std::path::Path) -> josh::JoshResult<()> {
     shell.command("git config receive.advertisePushOptions true");
     let ce = std::env::current_exe().expect("can't find path to exe");
     shell.command("rm -Rf hooks");
+    shell.command("rm -Rf *.lock");
+    shell.command("rm -Rf packed-refs");
     shell.command("mkdir hooks");
     std::os::unix::fs::symlink(ce.clone(), path.join("hooks").join("update"))
         .expect("can't symlink update hook");
@@ -325,7 +327,6 @@ pub fn create_repo(path: &std::path::Path) -> josh::JoshResult<()> {
             .to_string(),
     );
     shell.command("git config gc.auto 0");
-    shell.command("git pack-refs --all");
 
     if std::env::var_os("JOSH_KEEP_NS") == None {
         std::fs::remove_dir_all(path.join("refs/namespaces")).ok();
