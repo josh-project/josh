@@ -199,10 +199,6 @@ Flushed credential cache
   |   |       |   `-- HEAD
   |   |       `-- %3Aworkspace=ws
   |   |           `-- HEAD
-  |   |-- rewrites
-  |   |   `-- real_repo.git
-  |   |       `-- 7bd92d97e96693ea7fd7eb5757b3580002889948
-  |   |           `-- r_c255706f564f629eed1756b789d761048cfe060a
   |   `-- upstream
   |       `-- real_repo.git
   |           |-- HEAD
@@ -212,4 +208,4 @@ Flushed credential cache
   |-- namespaces
   `-- tags
   
-  18 directories, 8 files
+  15 directories, 7 files

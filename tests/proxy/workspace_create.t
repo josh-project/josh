@@ -461,12 +461,6 @@ Note that ws/d/ is now present in the ws
   |   |       |   `-- HEAD
   |   |       `-- %3Aworkspace=ws
   |   |           `-- HEAD
-  |   |-- rewrites
-  |   |   `-- real_repo.git
-  |   |       `-- 7bd92d97e96693ea7fd7eb5757b3580002889948
-  |   |           |-- r_003a2970e4c23b64f915025e9adc2e6ed04bc63a
-  |   |           |-- r_2a6aa2a100b34d0d56e4b5f19e9bfdc2cd6f7d54
-  |   |           `-- r_60bd0e180735e169b5c853545d8b1272ed0fc319
   |   `-- upstream
   |       `-- real_repo.git
   |           |-- HEAD
@@ -476,6 +470,6 @@ Note that ws/d/ is now present in the ws
   |-- namespaces
   `-- tags
   
-  20 directories, 12 files
+  17 directories, 9 files
 
 $ cat ${TESTTMP}/josh-proxy.out

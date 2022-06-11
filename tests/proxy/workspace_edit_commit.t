@@ -200,11 +200,6 @@
   |   |       |   `-- HEAD
   |   |       `-- %3Aworkspace=ws
   |   |           `-- HEAD
-  |   |-- rewrites
-  |   |   `-- real_repo.git
-  |   |       `-- 7bd92d97e96693ea7fd7eb5757b3580002889948
-  |   |           |-- r_9a28fa82a736714d831348bbf62b951be65331b7
-  |   |           `-- r_9bd58f891b4f17736c1b51903837de717fce13a5
   |   `-- upstream
   |       `-- real_repo.git
   |           |-- HEAD
@@ -217,4 +212,4 @@
   |-- namespaces
   `-- tags
   
-  22 directories, 12 files
+  19 directories, 10 files
