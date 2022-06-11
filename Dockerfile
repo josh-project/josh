@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.4-labs
 
-ARG RUST_VERSION=1.58.1
+ARG RUST_VERSION=1.61.0
 
 FROM rust:${RUST_VERSION} as dev-planner
 

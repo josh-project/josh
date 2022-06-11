@@ -143,6 +143,21 @@ fn pretty2(op: &Op, indent: usize, compose: bool) -> String {
     }
 }
 
+pub fn nesting(filter: Filter) -> usize {
+    nesting2(&to_op(filter))
+}
+
+fn nesting2(op: &Op) -> usize {
+    match op {
+        Op::Compose(filters) => 1 + filters.iter().map(|f| nesting(*f)).fold(0, |a, b| a.max(b)),
+        Op::Exclude(filter) => 1 + nesting(*filter),
+        Op::Workspace(_) => usize::MAX,
+        Op::Chain(a, b) => 1 + nesting(*a).max(nesting(*b)),
+        Op::Subtract(a, b) => 1 + nesting(*a).max(nesting(*b)),
+        _ => 0,
+    }
+}
+
 /// Compact, single line string representation of a filter so that `parse(spec(F)) == F`
 /// Note that this is will not be the best human readable representation. For that see `pretty(...)`
 pub fn spec(filter: Filter) -> String {
@@ -236,7 +251,15 @@ pub fn apply_to_commit(
             return Ok(id);
         }
 
-        for (f, i) in transaction.get_missing() {
+        let missing = transaction.get_missing();
+
+        // Since 'missing' is sorted by nesting, the first is always the minimal
+        let minimal_nesting = missing.get(0).map(|(f, _)| nesting(*f)).unwrap_or(0);
+
+        for (f, i) in missing {
+            if nesting(f) != minimal_nesting {
+                break;
+            }
             history::walk2(f, i, transaction)?;
         }
     }
@@ -286,24 +309,6 @@ fn apply_to_commit2(
         Op::Squash => {
             return Some(history::rewrite_commit(repo, commit, &[], &commit.tree()?)).transpose()
         }
-        Op::Linear => {
-            let p: Vec<_> = commit.parents().collect();
-            if p.len() == 0 {
-                return Ok(Some(commit.id()));
-            }
-            let parent = some_or!(apply_to_commit2(op, &p[0], transaction)?, {
-                return Ok(None);
-            });
-
-            let parent_commit = repo.find_commit(parent)?;
-            return Some(history::rewrite_commit(
-                repo,
-                commit,
-                &[&parent_commit],
-                &commit.tree()?,
-            ))
-            .transpose();
-        }
         _ => {
             if let Some(oid) = transaction.get(filter, commit.id()) {
                 return Ok(Some(oid));
@@ -314,10 +319,31 @@ fn apply_to_commit2(
     rs_tracing::trace_scoped!("apply_to_commit", "spec": spec(filter), "commit": commit.id().to_string());
 
     let filtered_tree = match &to_op(filter) {
+        Op::Linear => {
+            let p: Vec<_> = commit.parent_ids().collect();
+            if p.len() == 0 {
+                transaction.insert(filter, commit.id(), commit.id(), true);
+                return Ok(Some(commit.id()));
+            }
+            let parent = some_or!(transaction.get(filter, p[0]), {
+                return Ok(None);
+            });
+
+            return Some(history::create_filtered_commit(
+                commit,
+                vec![parent],
+                commit.tree()?,
+                transaction,
+                filter,
+            ))
+            .transpose();
+        }
         Op::Compose(filters) => {
             let filtered = filters
                 .iter()
                 .map(|f| apply_to_commit2(&to_op(*f), commit, transaction))
+                .collect::<Vec<_>>()
+                .into_iter()
                 .collect::<JoshResult<Option<Vec<_>>>>()?;
 
             let filtered = some_or!(filtered, { return Ok(None) });
