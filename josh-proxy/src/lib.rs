@@ -237,17 +237,19 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
         )?;
 
         if new_oid != reapply {
-            transaction.repo().reference(
-                &format!(
-                    "refs/josh/rewrites/{}/{:?}/r_{}",
-                    repo_update.base_ns,
-                    filterobj.id(),
-                    reapply
-                ),
-                reapply,
-                true,
-                "reapply",
-            )?;
+            if let Ok(_) = std::env::var("JOSH_REWRITE_REFS") {
+                transaction.repo().reference(
+                    &format!(
+                        "refs/josh/rewrites/{}/{:?}/r_{}",
+                        repo_update.base_ns,
+                        filterobj.id(),
+                        reapply
+                    ),
+                    reapply,
+                    true,
+                    "reapply",
+                )?;
+            }
             let text = format!("REWRITE({} -> {})", new_oid, reapply);
             tracing::debug!("{}", text);
             resp.push(text);

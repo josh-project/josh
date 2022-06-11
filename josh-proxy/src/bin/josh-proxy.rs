@@ -296,20 +296,22 @@ async fn do_filter(
             &filter_spec,
         );
 
-        let glob = format!(
-            "refs/josh/rewrites/{}/{:?}/r_*",
-            josh::to_ns(&upstream_repo),
-            filter.id()
-        );
-        for reference in transaction.repo().references_glob(&glob).unwrap() {
-            let reference = reference.unwrap();
-            let refname = reference.name().unwrap();
-            transaction.repo().reference(
-                &temp_ns.reference(refname),
-                reference.target().unwrap(),
-                true,
-                "rewrite",
-            )?;
+        if let Ok(_) = std::env::var("JOSH_REWRITE_REFS") {
+            let glob = format!(
+                "refs/josh/rewrites/{}/{:?}/r_*",
+                josh::to_ns(&upstream_repo),
+                filter.id()
+            );
+            for reference in transaction.repo().references_glob(&glob).unwrap() {
+                let reference = reference.unwrap();
+                let refname = reference.name().unwrap();
+                transaction.repo().reference(
+                    &temp_ns.reference(refname),
+                    reference.target().unwrap(),
+                    true,
+                    "rewrite",
+                )?;
+            }
         }
 
         let mut headref = headref;

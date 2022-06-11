@@ -242,10 +242,6 @@
   |   |       |   `-- HEAD
   |   |       `-- %3Aworkspace=ws
   |   |           `-- HEAD
-  |   |-- rewrites
-  |   |   `-- real_repo.git
-  |   |       `-- 7bd92d97e96693ea7fd7eb5757b3580002889948
-  |   |           `-- r_fa3b9622c1bcc8363c27d4eb05d1ae8dae15e871
   |   `-- upstream
   |       `-- real_repo.git
   |           |-- HEAD
@@ -255,6 +251,6 @@
   |-- namespaces
   `-- tags
   
-  19 directories, 9 files
+  16 directories, 8 files
 
 $ cat ${TESTTMP}/josh-proxy.out
