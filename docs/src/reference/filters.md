@@ -17,6 +17,12 @@ When used as part of an URL filters can not contain whitespace or newlines. When
 however whitespace can be inserted between filters (not after the leading colon).
 Additionally newlines can be used instead of ``,`` inside of composition filters.
 
+Some filters take arguments, and arguments can optionally be quoted using double quotes,
+if special characters used by the filter language need to be used (like `:` or space):
+
+    :filter=argument1,"argument2"
+
+
 ## Available filters
 
 ### Subdirectory **`:/a`**

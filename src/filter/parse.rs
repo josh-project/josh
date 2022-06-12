@@ -56,16 +56,16 @@ fn make_op(args: &[&str]) -> JoshResult<Op> {
 fn parse_item(pair: pest::iterators::Pair<Rule>) -> JoshResult<Op> {
     match pair.as_rule() {
         Rule::filter => {
-            let v: Vec<_> = pair.into_inner().map(|x| x.as_str()).collect();
+            let v: Vec<_> = pair.into_inner().map(|x| unquote(x.as_str())).collect();
             make_op(v.as_slice())
         }
         Rule::filter_nop => Ok(Op::Nop),
         Rule::filter_subdir => Ok(Op::Subdir(
-            Path::new(pair.into_inner().next().unwrap().as_str()).to_owned(),
+            Path::new(unquote(pair.into_inner().next().unwrap().as_str())).to_owned(),
         )),
         Rule::filter_presub => {
             let mut inner = pair.into_inner();
-            let arg = inner.next().unwrap().as_str();
+            let arg = unquote(inner.next().unwrap().as_str());
             if arg.ends_with('/') {
                 let arg = arg.trim_end_matches('/');
                 Ok(Op::Chain(
@@ -83,7 +83,7 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> JoshResult<Op> {
             make_op(&[inner.next().unwrap().as_str()])
         }
         Rule::filter_group => {
-            let v: Vec<_> = pair.into_inner().map(|x| x.as_str()).collect();
+            let v: Vec<_> = pair.into_inner().map(|x| unquote(x.as_str())).collect();
 
             match v.as_slice() {
                 [args] => Ok(Op::Compose(parse_group(args)?)),
@@ -180,6 +180,33 @@ fn parse_workspace(filter_spec: &str) -> JoshResult<Vec<Filter>> {
             )));
         }
     }
+}
+
+// Remove double quotes from a string if present.
+fn unquote(s: &str) -> &str {
+    if s.len() < 2 {
+        return s;
+    }
+
+    // We only need to check for a quote at the beginning,
+    // because not properly quoted string will be rejected
+    // by the grammar before we even get here
+    if s.starts_with("\"") {
+        return &s[1..s.len() - 1];
+    }
+
+    return s;
+}
+
+// Add quotes to a string if if contains any chars reserved
+// by the filter language
+pub fn quote(s: &str) -> String {
+    if let Ok(r) = Grammar::parse(Rule::filter_path, s) {
+        if r.as_str() == s {
+            return s.to_string();
+        }
+    }
+    return format!("\"{}\"", s);
 }
 
 /// Create a `Filter` from a string representation
