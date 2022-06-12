@@ -128,10 +128,14 @@ fn pretty2(op: &Op, indent: usize, compose: bool) -> String {
         },
         Op::Chain(a, b) => match (to_op(*a), to_op(*b)) {
             (Op::Subdir(p1), Op::Prefix(p2)) if p1 == p2 => {
-                format!("::{}/", p1.to_string_lossy())
+                format!("::{}/", parse::quote(&p1.to_string_lossy()))
             }
             (a, Op::Prefix(p)) if compose => {
-                format!("{} = {}", p.to_string_lossy(), pretty2(&a, indent, false))
+                format!(
+                    "{} = {}",
+                    parse::quote(&p.to_string_lossy()),
+                    pretty2(&a, indent, false)
+                )
             }
             (a, b) => format!(
                 "{}{}",
@@ -184,12 +188,12 @@ fn spec2(op: &Op) -> String {
             format!(":exclude[{}]", spec(*b))
         }
         Op::Workspace(path) => {
-            format!(":workspace={}", path.to_string_lossy())
+            format!(":workspace={}", parse::quote(&path.to_string_lossy()))
         }
 
         Op::Chain(a, b) => match (to_op(*a), to_op(*b)) {
             (Op::Subdir(p1), Op::Prefix(p2)) if p1 == p2 => {
-                format!("::{}/", p1.to_string_lossy())
+                format!("::{}/", parse::quote(&p1.to_string_lossy()))
             }
             (a, b) => format!("{}{}", spec2(&a), spec2(&b)),
         },
@@ -203,10 +207,10 @@ fn spec2(op: &Op) -> String {
         Op::Fold => ":FOLD".to_string(),
         Op::Squash => ":SQUASH".to_string(),
         Op::Linear => ":linear".to_string(),
-        Op::Subdir(path) => format!(":/{}", path.to_string_lossy()),
-        Op::File(path) => format!("::{}", path.to_string_lossy()),
-        Op::Prefix(path) => format!(":prefix={}", path.to_string_lossy()),
-        Op::Glob(pattern) => format!("::{}", pattern),
+        Op::Subdir(path) => format!(":/{}", parse::quote(&path.to_string_lossy())),
+        Op::File(path) => format!("::{}", parse::quote(&path.to_string_lossy())),
+        Op::Prefix(path) => format!(":prefix={}", parse::quote(&path.to_string_lossy())),
+        Op::Glob(pattern) => format!("::{}", parse::quote(&pattern)),
     }
 }
 
