@@ -3,7 +3,7 @@
 name = "glob"
 version = "0.3.0"
 authors = ["The Rust Project Developers"]
-license = "MIT/Apache-2.0"
+license = "MIT OR Apache-2.0"
 homepage = "https://github.com/rust-lang/glob"
 repository = "https://github.com/rust-lang/glob"
 documentation = "https://docs.rs/glob/0.3.0"
