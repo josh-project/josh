@@ -66,6 +66,8 @@ enum Op {
     Squash,
     Linear,
 
+    RegexReplace(regex::Regex, String),
+
     #[cfg(feature = "search")]
     Index,
     Invert,
@@ -189,6 +191,13 @@ fn spec2(op: &Op) -> String {
         }
         Op::Workspace(path) => {
             format!(":workspace={}", parse::quote(&path.to_string_lossy()))
+        }
+        Op::RegexReplace(regex, replacement) => {
+            format!(
+                ":replace={},{}",
+                parse::quote(&regex.to_string()),
+                parse::quote(&replacement)
+            )
         }
 
         Op::Chain(a, b) => match (to_op(*a), to_op(*b)) {
@@ -528,6 +537,10 @@ fn apply2<'a>(
         Op::Fold => Ok(tree),
         Op::Squash => Ok(tree),
         Op::Linear => Ok(tree),
+
+        Op::RegexReplace(regex, replacement) => {
+            tree::regex_replace(tree.id(), &regex, &replacement, transaction)
+        }
 
         Op::Glob(pattern) => {
             let pattern = glob::Pattern::new(pattern)?;

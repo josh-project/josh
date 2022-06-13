@@ -56,6 +56,43 @@ pub fn pathstree<'a>(
     Ok(result)
 }
 
+pub fn regex_replace<'a>(
+    input: git2::Oid,
+    regex: &regex::Regex,
+    replacement: &str,
+    transaction: &'a cache::Transaction,
+) -> super::JoshResult<git2::Tree<'a>> {
+    let repo = transaction.repo();
+
+    let tree = repo.find_tree(input)?;
+    let mut result = tree::empty(repo);
+
+    for entry in tree.iter() {
+        let name = entry.name().ok_or(super::josh_error("no name"))?;
+        if entry.kind() == Some(git2::ObjectType::Blob) {
+            let file_contents = get_blob(repo, &tree, std::path::Path::new(&name));
+            let replaced = regex.replacen(&file_contents, 0, replacement);
+
+            result = replace_child(
+                repo,
+                std::path::Path::new(name),
+                repo.blob(replaced.as_bytes())?,
+                entry.filemode(),
+                &result,
+            )?;
+        }
+
+        if entry.kind() == Some(git2::ObjectType::Tree) {
+            let s = regex_replace(entry.id(), regex, replacement, transaction)?.id();
+
+            if s != tree::empty_id() {
+                result = replace_child(repo, std::path::Path::new(name), s, 0o0040000, &result)?;
+            }
+        }
+    }
+    Ok(result)
+}
+
 pub fn remove_pred<'a>(
     transaction: &'a cache::Transaction,
     root: &str,
