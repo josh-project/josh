@@ -62,6 +62,9 @@ The resulting tree will contain the contents of the
 workspace root as well as additional files specifed in the ``workspace.josh`` file.
 (see [Workspaces](./workspace.md))
 
+### Text replacement **`:replace="regex","replacement"`
+Applies the supplied regular expression to every file in the input tree.
+
 ## Pattern filters
 
 The following filters accept a glob like pattern ``X`` that can contain ``*`` to
