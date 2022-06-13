@@ -420,6 +420,7 @@ pub fn invert(filter: Filter) -> JoshResult<Filter> {
         Op::File(path) => Some(Op::File(path)),
         Op::Prefix(path) => Some(Op::Subdir(path)),
         Op::Glob(pattern) => Some(Op::Glob(pattern)),
+        Op::RegexReplace(_, _) => Some(Op::Nop),
         _ => None,
     };
 

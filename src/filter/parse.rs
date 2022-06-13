@@ -6,6 +6,10 @@ fn make_op(args: &[&str]) -> JoshResult<Op> {
         ["nop"] => Ok(Op::Nop),
         ["empty"] => Ok(Op::Empty),
         ["prefix", arg] => Ok(Op::Prefix(Path::new(arg).to_owned())),
+        ["replace", regex, replacement] => Ok(Op::RegexReplace(
+            regex::Regex::new(regex)?,
+            replacement.to_string(),
+        )),
         ["workspace", arg] => Ok(Op::Workspace(Path::new(arg).to_owned())),
         ["prefix"] => Err(josh_error(indoc!(
             r#"
