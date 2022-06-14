@@ -258,8 +258,12 @@ pub fn get_known_filters(
 
 pub fn run(repo_path: &std::path::Path, do_gc: bool) -> JoshResult<()> {
     let transaction = cache::Transaction::open(repo_path, None)?;
-    housekeeping::discover_filter_candidates(&transaction)?;
-    refresh_known_filters(&transaction)?;
+    if !std::env::var("JOSH_NO_DISCOVER").is_ok() {
+        housekeeping::discover_filter_candidates(&transaction)?;
+    }
+    if !std::env::var("JOSH_NO_REFRESH").is_ok() {
+        refresh_known_filters(&transaction)?;
+    }
     info!(
         "{}",
         run_command(transaction.repo().path(), "git count-objects -v").replace("\n", "  ")
