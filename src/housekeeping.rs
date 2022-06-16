@@ -82,11 +82,7 @@ fn run_command(path: &Path, cmd: &str) -> String {
     output
 }
 
-regex_parsed!(
-    UpstreamRef,
-    r"refs/josh/upstream/(?P<ns>.*[.]git)/refs/heads/.*",
-    [ns]
-);
+regex_parsed!(UpstreamRef, r"refs/josh/upstream/(?P<ns>.*[.]git)/.*", [ns]);
 
 regex_parsed!(
     FilteredRefRegex,
@@ -104,16 +100,17 @@ pub fn discover_filter_candidates(transaction: &cache::Transaction) -> JoshResul
     let trace_s = span!(Level::TRACE, "discover_filter_candidates");
     let _e = trace_s.enter();
 
-    let refname = "refs/josh/upstream/*.git/refs/heads/*".to_string();
+    let refname = "refs/josh/upstream/*.git/HEAD".to_string();
 
     for reference in repo.references_glob(&refname)? {
         let r = reference?;
         let name = r.name().ok_or(josh_error("reference without name"))?;
+        tracing::trace!("find: {}", name);
         let name = UpstreamRef::from_str(name)
             .ok_or(josh_error("not a ns"))?
             .ns;
+
         let name = from_ns(&name);
-        tracing::trace!("find: {}", name);
 
         let known_f = &mut known_filters
             .entry(name.clone())
@@ -130,7 +127,7 @@ pub fn discover_filter_candidates(transaction: &cache::Transaction) -> JoshResul
         }
     }
 
-    let refname = "josh/filtered/*.git/*/refs/heads/*".to_string();
+    let refname = "josh/filtered/*.git/*/HEAD".to_string();
     for reference in repo.references_glob(&refname)? {
         let r = reference?;
         let name = r.name().ok_or(josh_error("reference without name"))?;
