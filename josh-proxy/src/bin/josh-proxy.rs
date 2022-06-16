@@ -850,13 +850,13 @@ async fn run_proxy() -> josh::JoshResult<i32> {
 
     if ARGS.is_present("no-background") {
         tokio::select!(
-            _ = server_future => println!("http server exited"),
+            r = server_future => println!("http server exited: {:?}", r),
         );
     } else {
         tokio::select!(
-            _ = run_housekeeping(local) => println!("run_housekeeping exited"),
-            _ = run_polling(ps.clone()) => println!("run_polling exited"),
-            _ = server_future => println!("http server exited"),
+            r = run_housekeeping(local) => println!("run_housekeeping exited: {:?}", r),
+            r = run_polling(ps.clone()) => println!("run_polling exited: {:?}", r),
+            r = server_future => println!("http server exited: {:?}", r),
         );
     }
     Ok(0)
