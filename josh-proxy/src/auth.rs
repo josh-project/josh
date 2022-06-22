@@ -121,11 +121,11 @@ pub fn strip_auth(
     let header: Option<hyper::header::HeaderValue> = req.headers_mut().remove("authorization");
 
     if let Some(header) = header {
-        use crypto::digest::Digest;
-        let mut d = crypto::sha1::Sha1::new();
-        d.input(header.as_bytes());
         let hp = Handle {
-            hash: d.result_str(),
+            hash: format!(
+                "{:?}",
+                git2::Oid::hash_object(git2::ObjectType::Blob, header.as_bytes())?
+            ),
         };
         let p = Header {
             header: Some(header),
