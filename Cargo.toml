@@ -17,36 +17,36 @@ experimental = ["search"]
 members = ["josh-proxy", "josh-ui", "."]
 
 [dependencies]
-handlebars = "4.3"
-git2 = {version = "0.14", default-features = false}
-clap = "3"
-tracing = "0.1"
 bincode = "1.3"
 bitvec = "1.0"
-percent-encoding = "2.1"
-serde = {version = "1.0", features = ["derive"]}
-regex = "1.5"
-lazy_static = "1.4"
-pest_derive = "2.1"
-pest= "2.1"
-hex = "0.4"
-rayon = "1.5"
-toml= "0.5"
-defer= "0.1"
-glob = "0.3"
-sled = "0.34"
-log = "0.4"
 chrono = "0.4"
+clap = "3"
+defer= "0.1"
 env_logger = "0.9"
-strfmt = "0.1"
+git2 = {version = "0.14", default-features = false}
+glob = "0.3"
+handlebars = "4.3"
+hex = "0.4"
+hyper-reverse-proxy = "0.5.1"
+indoc = "1.0.6"
+juniper = "0.15"
+lazy_static = "1.4"
+log = "0.4"
+percent-encoding = "2.1"
+pest= "2.1"
+pest_derive = "2.1"
+rayon = "1.5"
+regex = "1.5"
+rs_tracing= { version = "1", features = ["rs_tracing"]}
+serde = {version = "1.0", features = ["derive"]}
 serde_json= "1.0"
 serde_yaml = "0.8"
-rs_tracing= { version = "1", features = ["rs_tracing"]}
+sled = "0.34"
+strfmt = "0.1"
+toml= "0.5"
+tracing = "0.1"
 tracing-log = "0.1"
-juniper = "0.15"
 tracing-subscriber = "0.3.11"
-indoc = "1.0.6"
-hyper-reverse-proxy = "0.5.1"
 
 [profile.release]
 lto = true
