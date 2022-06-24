@@ -107,6 +107,8 @@ where
     fn from(item: T) -> Self {
         tracing::event!(tracing::Level::ERROR, item = ?item, error = true);
         log::error!("JoshError: {:?}", item);
+        let bt = backtrace::Backtrace::new();
+        log::error!("Backtrace: {:?}", bt);
         josh_error(&format!("converted {:?}", item))
     }
 }
