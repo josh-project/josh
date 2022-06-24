@@ -274,10 +274,6 @@ pub fn run(repo_path: &std::path::Path, do_gc: bool) -> JoshResult<()> {
             "\n----------\n{}\n----------",
             run_command(transaction.repo().path(), "git count-objects -vH")
         );
-        info!(
-            "\n----------\n{}\n----------",
-            run_command(transaction.repo().path(), "git prune --expire=2w")
-        );
     }
     Ok(())
 }
