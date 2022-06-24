@@ -107,9 +107,8 @@ pub async fn check_auth(url: &str, auth: &Handle, required: bool) -> josh::JoshR
         Ok(false)
     } else {
         return Err(josh::josh_error(&format!(
-            "got http status: {} {}",
-            nurl,
-            resp.status()
+            "got http response: {} {:?}",
+            nurl, resp
         )));
     }
 }
