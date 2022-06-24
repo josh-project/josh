@@ -1,7 +1,7 @@
 use super::*;
 use std::collections::HashMap;
 
-const VERSION: u64 = 11;
+const CACHE_VERSION: u64 = 11;
 
 lazy_static! {
     static ref DB: std::sync::Mutex<Option<sled::Db>> = std::sync::Mutex::new(None);
@@ -16,7 +16,7 @@ lazy_static! {
 pub fn load(path: &std::path::Path) -> JoshResult<()> {
     *DB.lock()? = Some(
         sled::Config::default()
-            .path(path.join(format!("josh/{}/sled/", VERSION)))
+            .path(path.join(format!("josh/{}/sled/", CACHE_VERSION)))
             .flush_every_ms(Some(200))
             .open()?,
     );

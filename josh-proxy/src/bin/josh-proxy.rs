@@ -24,10 +24,7 @@ use tracing::Span;
 use tracing_futures::Instrument;
 
 fn version_str() -> String {
-    format!(
-        "Version: {}\n",
-        option_env!("GIT_DESCRIBE").unwrap_or(std::env!("CARGO_PKG_VERSION"))
-    )
+    format!("Version: {}\n", josh::VERSION,)
 }
 
 lazy_static! {
