@@ -52,6 +52,9 @@ pub struct Change {
     pub commit: git2::Oid,
 }
 
+pub const VERSION: &str =
+    git_version::git_version!(args = ["--tags", "--always", "--dirty=-modified"]);
+
 const FRAGMENT: &percent_encoding::AsciiSet = &percent_encoding::CONTROLS
     .add(b'/')
     .add(b'*')

@@ -2,7 +2,7 @@
   $ cd ${TESTTMP}
 
   $ curl -s http://localhost:8002/version
-  Version: 22.4.15
+  Version: r*.*.* (glob)
 
   $ bash ${TESTDIR}/destroy_test_env.sh
   refs

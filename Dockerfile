@@ -45,7 +45,10 @@ make -j$(nproc)
 make install
 EOF
 
+RUN mkdir /opt/git-install/etc
+
 ENV PATH=${PATH}:/opt/git-install/bin
+RUN git config -f /opt/git-install/etc/gitconfig --add safe.directory "*"
 
 ARG CRAM_VERSION=d245cca
 ARG PYGIT2_VERSION=1.9.1
@@ -63,6 +66,7 @@ RUN rustup component add rustfmt
 RUN cargo install --version 0.1.35 cargo-chef
 RUN cargo install --version 0.2.1 hyper_cgi --features=test-server
 RUN cargo install --version 0.10.0 graphql_client_cli
+
 
 FROM dev as dev-local
 
@@ -86,6 +90,7 @@ COPY josh-ui/package.json josh-ui/package-lock.json josh-ui/
 RUN cd josh-ui && npm install
 
 FROM dev as build
+
 
 COPY . .
 RUN \

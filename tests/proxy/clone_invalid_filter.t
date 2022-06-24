@@ -5,8 +5,6 @@
   $ git clone -q http://localhost:8001/real_repo.git
   warning: You appear to have cloned an empty repository.
 
-  $ curl -s http://localhost:8002/version
-  Version: 22.4.15
 
   $ cd real_repo
 

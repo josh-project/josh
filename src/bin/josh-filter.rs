@@ -137,8 +137,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
     }
 
     if args.is_present("version") {
-        let v = option_env!("GIT_DESCRIBE").unwrap_or(std::env!("CARGO_PKG_VERSION"));
-        println!("Version: {}", v);
+        println!("Version: {}", josh::VERSION);
         return Ok(0);
     }
     let specstr = args.value_of("filter").unwrap();
