@@ -46,7 +46,7 @@ strfmt = "0.1"
 toml= "0.5"
 tracing = "0.1"
 tracing-log = "0.1"
-tracing-subscriber = "0.3.11"
+tracing-subscriber = "0.3.12"
 
 [profile.release]
 lto = true
