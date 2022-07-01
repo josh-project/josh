@@ -335,13 +335,15 @@ async fn do_filter(
                 .unwrap_or(&"invalid".to_string())
                 .clone();
         }
-        josh::filter_refs(
+        let updated_refs = josh::filter_refs(
             &transaction,
             filter,
             &from_to,
             josh::filter::empty(),
             &temp_ns.reference(&headref),
         )?;
+        josh::update_refs(&transaction, &updated_refs);
+
         transaction
             .repo()
             .reference_symbolic(
@@ -598,29 +600,6 @@ async fn call_service(
         .in_current_span()
         .await??;
         return Ok(gql_result);
-    }
-
-    if req.uri().query() == Some("info") {
-        let info_str = tokio::task::spawn_blocking(move || -> josh::JoshResult<_> {
-            let transaction = josh::cache::Transaction::open(
-                &serv.repo_path,
-                Some(&format!(
-                    "refs/josh/upstream/{}/",
-                    &josh::to_ns(&parsed_url.upstream_repo),
-                )),
-            )?;
-            josh::housekeeping::get_info(
-                &transaction,
-                josh::filter::parse(&parsed_url.filter)?,
-                &headref,
-            )
-        })
-        .in_current_span()
-        .await??;
-
-        return Ok(Response::builder()
-            .status(hyper::StatusCode::OK)
-            .body(hyper::Body::from(format!("{}\n", info_str)))?);
     }
 
     let repo_path = serv
