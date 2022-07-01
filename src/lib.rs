@@ -264,6 +264,10 @@ pub fn filter_refs(
         updated.retain(|(r, oid)| r == headref || *oid != head_oid || r.ends_with("/HEAD"));
     }
 
+    Ok(updated)
+}
+
+pub fn update_refs(transaction: &cache::Transaction, updated: &[(String, git2::Oid)]) {
     for (to_refname, filter_commit) in updated.iter() {
         if *filter_commit != git2::Oid::zero() {
             ok_or!(
@@ -273,16 +277,14 @@ pub fn filter_refs(
                     .map(|_| ()),
                 {
                     tracing::error!(
-                        "can't update reference: {:?}, target: {:?}, filter: {:?}",
+                        "can't update reference: {:?}, target: {:?}",
                         &to_refname,
                         filter_commit,
-                        &filter::spec(filterobj),
                     );
                 }
             );
         }
     }
-    Ok(updated)
 }
 
 pub fn normalize_path(path: &std::path::Path) -> std::path::PathBuf {

@@ -238,7 +238,9 @@ pub fn refresh_known_filters(transaction: &cache::Transaction) -> JoshResult<usi
                 upstream_repo,
             );
 
-            filter_refs(&t, filter::parse(filter_spec)?, &refs, filter::empty(), "")?;
+            let updated_refs =
+                filter_refs(&t, filter::parse(filter_spec)?, &refs, filter::empty(), "")?;
+            update_refs(&t, &updated_refs);
         }
     }
     Ok(0)

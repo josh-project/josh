@@ -335,13 +335,15 @@ async fn do_filter(
                 .unwrap_or(&"invalid".to_string())
                 .clone();
         }
-        josh::filter_refs(
+        let updated_refs = josh::filter_refs(
             &transaction,
             filter,
             &from_to,
             josh::filter::empty(),
             &temp_ns.reference(&headref),
         )?;
+        josh::update_refs(&transaction, &updated_refs);
+
         transaction
             .repo()
             .reference_symbolic(
