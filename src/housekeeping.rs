@@ -226,21 +226,25 @@ pub fn get_info(
 pub fn refresh_known_filters(transaction: &cache::Transaction) -> JoshResult<usize> {
     let known_filters = KNOWN_FILTERS.lock()?;
     for (upstream_repo, e) in known_filters.iter() {
-        let t = transaction.try_clone()?;
         info!("background rebuild root: {:?}", upstream_repo);
 
         for filter_spec in e.1.iter() {
             tracing::trace!("background rebuild: {:?} {:?}", upstream_repo, filter_spec);
 
             let refs = memorize_from_to(
-                t.repo(),
+                transaction.repo(),
                 &to_filtered_ref(upstream_repo, filter_spec),
                 upstream_repo,
             );
 
-            let updated_refs =
-                filter_refs(&t, filter::parse(filter_spec)?, &refs, filter::empty(), "")?;
-            update_refs(&t, &updated_refs);
+            let updated_refs = filter_refs(
+                &transaction,
+                filter::parse(filter_spec)?,
+                &refs,
+                filter::empty(),
+                "",
+            )?;
+            update_refs(&transaction, &updated_refs);
         }
     }
     Ok(0)
