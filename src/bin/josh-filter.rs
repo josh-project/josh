@@ -207,13 +207,14 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
             if i.contains(":workspace=") {
                 continue;
             }
-            josh::filter_refs(
+            let updated_refs = josh::filter_refs(
                 &transaction,
                 josh::filter::parse(&i)?,
                 &[(input_ref.to_string(), "refs/JOSH_TMP".to_string())],
                 josh::filter::empty(),
                 "",
             )?;
+            josh::update_refs(&transaction, &updated_refs);
         }
     }
 
@@ -286,6 +287,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         permissions_filter,
         "",
     )?;
+    josh::update_refs(&transaction, &updated_refs);
     if args.value_of("update") != Some("FILTERED_HEAD")
         && updated_refs.len() == 1
         && updated_refs[0].1 == old_oid
