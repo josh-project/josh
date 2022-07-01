@@ -179,7 +179,6 @@ fn filter_ref(
     transaction: &cache::Transaction,
     filterobj: filter::Filter,
     from_refsname: &str,
-    to_refname: &str,
     permissions: filter::Filter,
 ) -> JoshResult<git2::Oid> {
     if let Ok(reference) = transaction.repo().revparse_single(from_refsname) {
@@ -241,7 +240,7 @@ pub fn filter_refs(
     let mut head_oid = git2::Oid::zero();
 
     for (k, v) in refs {
-        let oid = ok_or!(filter_ref(&transaction, filterobj, &k, &v, permissions), {
+        let oid = ok_or!(filter_ref(&transaction, filterobj, &k, permissions), {
             tracing::event!(
                 tracing::Level::WARN,
                 msg = "filter_refs: Can't filter reference",
