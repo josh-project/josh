@@ -600,29 +600,6 @@ async fn call_service(
         return Ok(gql_result);
     }
 
-    if req.uri().query() == Some("info") {
-        let info_str = tokio::task::spawn_blocking(move || -> josh::JoshResult<_> {
-            let transaction = josh::cache::Transaction::open(
-                &serv.repo_path,
-                Some(&format!(
-                    "refs/josh/upstream/{}/",
-                    &josh::to_ns(&parsed_url.upstream_repo),
-                )),
-            )?;
-            josh::housekeeping::get_info(
-                &transaction,
-                josh::filter::parse(&parsed_url.filter)?,
-                &headref,
-            )
-        })
-        .in_current_span()
-        .await??;
-
-        return Ok(Response::builder()
-            .status(hyper::StatusCode::OK)
-            .body(hyper::Body::from(format!("{}\n", info_str)))?);
-    }
-
     let repo_path = serv
         .repo_path
         .to_str()
