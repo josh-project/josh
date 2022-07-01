@@ -207,14 +207,14 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
             if i.contains(":workspace=") {
                 continue;
             }
-            let updated_refs = josh::filter_refs(
+            let mut updated_refs = josh::filter_refs(
                 &transaction,
                 josh::filter::parse(&i)?,
-                &[(input_ref.to_string(), "refs/JOSH_TMP".to_string())],
+                &[(input_ref.to_string(), r.id())],
                 josh::filter::empty(),
-                "",
             )?;
-            josh::update_refs(&transaction, &updated_refs);
+            updated_refs[0].0 = "refs/JOSH_TMP".to_string();
+            josh::update_refs(&transaction, &mut updated_refs, "");
         }
     }
 
@@ -230,13 +230,12 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
     } else {
         target.to_string()
     };
-    let src = repo
+    let src_r = repo
         .revparse_ext(src)?
         .1
-        .ok_or(josh::josh_error("reference not found"))?
-        .name()
-        .unwrap()
-        .to_string();
+        .ok_or(josh::josh_error("reference not found"))?;
+
+    let src = src_r.name().unwrap().to_string();
 
     let check_permissions = args.is_present("check-permission");
     let mut permissions_filter = josh::filter::empty();
@@ -280,14 +279,14 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
     } else {
         git2::Oid::zero()
     };
-    let updated_refs = josh::filter_refs(
+    let mut updated_refs = josh::filter_refs(
         &transaction,
         filterobj,
-        &[(src.clone(), t)],
+        &[(src.clone(), src_r.target().unwrap())],
         permissions_filter,
-        "",
     )?;
-    josh::update_refs(&transaction, &updated_refs);
+    updated_refs[0].0 = t;
+    josh::update_refs(&transaction, &mut updated_refs, "");
     if args.value_of("update") != Some("FILTERED_HEAD")
         && updated_refs.len() == 1
         && updated_refs[0].1 == old_oid
