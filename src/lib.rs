@@ -178,57 +178,51 @@ pub fn get_change_id(commit: &git2::Commit, sha: git2::Oid) -> Change {
 fn filter_ref(
     transaction: &cache::Transaction,
     filterobj: filter::Filter,
-    from_refsname: &str,
+    from_refsname: &(String, git2::Oid),
     permissions: filter::Filter,
 ) -> JoshResult<git2::Oid> {
-    if let Ok(reference) = transaction.repo().revparse_single(from_refsname) {
-        let original_commit = reference.peel_to_commit()?;
-        let oid = original_commit.id();
+    let oid = from_refsname.1;
+    let original_commit = transaction.repo().find_commit(oid)?;
 
-        let perms_commit = if let Some(s) = transaction.get_ref(permissions, oid) {
-            s
-        } else {
-            tracing::trace!("apply_to_commit (permissions)");
-
-            filter::apply_to_commit(permissions, &original_commit, &transaction)?
-        };
-
-        if perms_commit != git2::Oid::zero() {
-            let perms_commit = transaction.repo().find_commit(perms_commit)?;
-            if !perms_commit.tree()?.is_empty() || perms_commit.parents().len() > 0 {
-                tracing::event!(
-                    tracing::Level::WARN,
-                    msg = "filter_refs: missing permissions for ref",
-                    warn = true,
-                    reference = from_refsname,
-                );
-                return Err(josh_error("missing permissions for ref"));
-            }
-        }
-
-        let filter_commit = if let Some(s) = transaction.get_ref(filterobj, oid) {
-            s
-        } else {
-            tracing::trace!("apply_to_commit");
-
-            filter::apply_to_commit(filterobj, &original_commit, transaction)?
-        };
-
-        transaction.insert_ref(filterobj, oid, filter_commit);
-
-        return Ok(filter_commit);
+    let perms_commit = if let Some(s) = transaction.get_ref(permissions, oid) {
+        s
     } else {
-        tracing::warn!("filter_ref: Can't find reference {:?}", &from_refsname);
-        return Ok(git2::Oid::zero());
+        tracing::trace!("apply_to_commit (permissions)");
+
+        filter::apply_to_commit(permissions, &original_commit, &transaction)?
     };
+
+    if perms_commit != git2::Oid::zero() {
+        let perms_commit = transaction.repo().find_commit(perms_commit)?;
+        if !perms_commit.tree()?.is_empty() || perms_commit.parents().len() > 0 {
+            tracing::event!(
+                tracing::Level::WARN,
+                msg = "filter_refs: missing permissions for ref",
+                warn = true,
+                reference = from_refsname.0,
+            );
+            return Err(josh_error("missing permissions for ref"));
+        }
+    }
+
+    let filter_commit = if let Some(s) = transaction.get_ref(filterobj, oid) {
+        s
+    } else {
+        tracing::trace!("apply_to_commit");
+
+        filter::apply_to_commit(filterobj, &original_commit, transaction)?
+    };
+
+    transaction.insert_ref(filterobj, oid, filter_commit);
+
+    return Ok(filter_commit);
 }
 
 pub fn filter_refs(
     transaction: &cache::Transaction,
     filterobj: filter::Filter,
-    refs: &[(String, String)],
+    refs: &[(String, git2::Oid)],
     permissions: filter::Filter,
-    headref: &str,
 ) -> JoshResult<Vec<(String, git2::Oid)>> {
     rs_tracing::trace_scoped!("filter_refs", "spec": filter::spec(filterobj));
     let s = tracing::Span::current();
@@ -237,22 +231,31 @@ pub fn filter_refs(
 
     tracing::trace!("filter_refs");
 
-    let mut head_oid = git2::Oid::zero();
-
-    for (k, v) in refs {
+    for k in refs {
         let oid = ok_or!(filter_ref(&transaction, filterobj, &k, permissions), {
             tracing::event!(
                 tracing::Level::WARN,
                 msg = "filter_refs: Can't filter reference",
                 warn = true,
-                from = k.as_str(),
-                to = v.as_str()
+                from = k.0.as_str(),
             );
             git2::Oid::zero()
         });
-        updated.push((v.to_string(), oid));
-        if v == headref {
-            head_oid = oid;
+        updated.push((k.0.to_string(), oid));
+    }
+
+    Ok(updated)
+}
+
+pub fn update_refs(
+    transaction: &cache::Transaction,
+    updated: &mut Vec<(String, git2::Oid)>,
+    headref: &str,
+) {
+    let mut head_oid = git2::Oid::zero();
+    for (refname, oid) in updated.iter() {
+        if refname == headref {
+            head_oid = *oid;
         }
     }
 
@@ -262,11 +265,6 @@ pub fn filter_refs(
         }
         updated.retain(|(r, oid)| r == headref || *oid != head_oid || r.ends_with("/HEAD"));
     }
-
-    Ok(updated)
-}
-
-pub fn update_refs(transaction: &cache::Transaction, updated: &[(String, git2::Oid)]) {
     for (to_refname, filter_commit) in updated.iter() {
         if *filter_commit != git2::Oid::zero() {
             ok_or!(

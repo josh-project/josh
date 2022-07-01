@@ -211,7 +211,8 @@ async fn static_paths(
             let transaction = josh::cache::Transaction::open(&service.repo_path, None)?;
             josh::housekeeping::discover_filter_candidates(&transaction)?;
             if refresh {
-                josh::housekeeping::refresh_known_filters(&transaction)?;
+                let mut updated_refs = josh::housekeeping::refresh_known_filters(&transaction)?;
+                josh::update_refs(&transaction, &mut updated_refs, "");
             }
             Ok(toml::to_string_pretty(
                 &josh::housekeeping::get_known_filters()?,
@@ -277,6 +278,10 @@ async fn do_filter(
     let r = tokio::task::spawn_blocking(move || {
         let _e = s.enter();
         tracing::trace!("in do_filter worker");
+        let filter = josh::filter::parse(&filter_spec)?;
+        let filter_spec = josh::filter::spec(filter);
+        josh::housekeeping::remember_filter(&upstream_repo, &filter_spec);
+
         let transaction = josh::cache::Transaction::open(
             &repo_path,
             Some(&format!(
@@ -284,14 +289,7 @@ async fn do_filter(
                 &josh::to_ns(&upstream_repo),
             )),
         )?;
-        let filter = josh::filter::parse(&filter_spec)?;
-        let filter_spec = josh::filter::spec(filter);
-        let mut from_to = josh::housekeeping::default_from_to(
-            transaction.repo(),
-            temp_ns.name(),
-            &upstream_repo,
-            &filter_spec,
-        );
+        let mut refslist = josh::housekeeping::list_refs(transaction.repo(), &upstream_repo)?;
 
         if let Ok(_) = std::env::var("JOSH_REWRITE_REFS") {
             let glob = format!(
@@ -314,18 +312,18 @@ async fn do_filter(
         let mut headref = headref;
 
         if headref.starts_with("refs/") || headref == "HEAD" {
-            from_to.push((
-                format!(
-                    "refs/josh/upstream/{}/{}",
-                    &josh::to_ns(&upstream_repo),
-                    headref
-                ),
-                temp_ns.reference(&headref),
-            ));
+            let name = format!(
+                "refs/josh/upstream/{}/{}",
+                &josh::to_ns(&upstream_repo),
+                headref
+            );
+            if let Ok(r) = transaction.repo().revparse_single(&name) {
+                refslist.push((name, r.id()));
+            }
         } else {
-            let headsha = headref.clone();
-            headref = format!("refs/heads/_{}", &headref);
-            from_to.push((headsha, temp_ns.reference(&headref)));
+            // @sha case
+            refslist.push((headref.clone(), git2::Oid::from_str(&headref)?));
+            headref = format!("refs/heads/_{}", headref);
         }
 
         if headref == "HEAD" {
@@ -335,14 +333,14 @@ async fn do_filter(
                 .unwrap_or(&"invalid".to_string())
                 .clone();
         }
-        let updated_refs = josh::filter_refs(
+        let mut updated_refs =
+            josh::filter_refs(&transaction, filter, &refslist, josh::filter::empty())?;
+        josh::housekeeping::namespace_refs(&mut updated_refs, &temp_ns.name(), &upstream_repo);
+        josh::update_refs(
             &transaction,
-            filter,
-            &from_to,
-            josh::filter::empty(),
+            &mut updated_refs,
             &temp_ns.reference(&headref),
-        )?;
-        josh::update_refs(&transaction, &updated_refs);
+        );
 
         transaction
             .repo()

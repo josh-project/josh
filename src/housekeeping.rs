@@ -12,6 +12,55 @@ lazy_static! {
         std::sync::Mutex::new(std::collections::HashMap::new());
 }
 
+pub fn list_refs(
+    repo: &git2::Repository,
+    upstream_repo: &str,
+) -> JoshResult<Vec<(String, git2::Oid)>> {
+    let mut refs = vec![];
+
+    for glob in [
+        format!("refs/josh/upstream/{}/refs/heads/*", &to_ns(upstream_repo)),
+        format!("refs/josh/upstream/{}/refs/tags/*", &to_ns(upstream_repo)),
+    ]
+    .iter()
+    {
+        for r in repo.references_glob(glob)? {
+            let r = r?;
+            if let (Some(name), Some(target)) = (r.name(), r.target()) {
+                refs.push((name.to_string(), target));
+            }
+        }
+    }
+
+    Ok(refs)
+}
+
+pub fn remember_filter(upstream_repo: &str, filter_spec: &str) {
+    // no need to rember the nop filter since we already keep a reference to
+    // the unfiltered branch in refs/josh/upstream
+    if filter_spec != ":/" {
+        if let Ok(mut known_filters) = KNOWN_FILTERS.try_lock() {
+            let known_f = &mut known_filters
+                .entry(upstream_repo.trim_start_matches('/').to_string())
+                .or_insert_with(|| (git2::Oid::zero(), BTreeSet::new()));
+
+            known_f.1.insert(filter_spec.to_string());
+        }
+    }
+}
+
+pub fn namespace_refs(refs: &mut [(String, git2::Oid)], namespace: &str, upstream_repo: &str) {
+    for (refn, _) in refs {
+        if refn.starts_with("refs/") {
+            let to_ref = refn.replacen("refs/josh/upstream", "refs/namespaces", 1);
+            let to_ref = to_ref.replacen(&to_ns(upstream_repo), namespace, 1);
+            *refn = to_ref;
+        } else {
+            *refn = format!("refs/namespaces/{}/refs/heads/_{}", namespace, refn);
+        };
+    }
+}
+
 pub fn default_from_to(
     repo: &git2::Repository,
     namespace: &str,
@@ -53,17 +102,12 @@ pub fn memorize_from_to(
     repo: &git2::Repository,
     namespace: &str,
     upstream_repo: &str,
-) -> Vec<(String, String)> {
-    let mut refs = vec![];
-    let glob = format!("refs/josh/upstream/{}/HEAD", &to_ns(upstream_repo));
-    for refname in repo.references_glob(&glob).unwrap().names() {
-        let refname = refname.unwrap();
-        let to_ref = format!("refs/{}/HEAD", &namespace);
+) -> JoshResult<((String, git2::Oid), String)> {
+    let from = format!("refs/josh/upstream/{}/HEAD", &to_ns(upstream_repo));
+    let to_ref = format!("refs/{}/HEAD", &namespace);
 
-        refs.push((refname.to_owned(), to_ref.clone()));
-    }
-
-    refs
+    let oid = repo.revparse_single(&from)?.id();
+    Ok(((from, oid), to_ref))
 }
 
 fn run_command(path: &Path, cmd: &str) -> String {
@@ -223,31 +267,34 @@ pub fn get_info(
 }
 
 #[tracing::instrument(skip(transaction))]
-pub fn refresh_known_filters(transaction: &cache::Transaction) -> JoshResult<usize> {
+pub fn refresh_known_filters(
+    transaction: &cache::Transaction,
+) -> JoshResult<Vec<(String, git2::Oid)>> {
     let known_filters = KNOWN_FILTERS.lock()?;
+    let mut updated_refs = vec![];
     for (upstream_repo, e) in known_filters.iter() {
         info!("background rebuild root: {:?}", upstream_repo);
 
         for filter_spec in e.1.iter() {
             tracing::trace!("background rebuild: {:?} {:?}", upstream_repo, filter_spec);
 
-            let refs = memorize_from_to(
+            if let Ok((from, to_ref)) = memorize_from_to(
                 transaction.repo(),
                 &to_filtered_ref(upstream_repo, filter_spec),
                 upstream_repo,
-            );
-
-            let updated_refs = filter_refs(
-                &transaction,
-                filter::parse(filter_spec)?,
-                &refs,
-                filter::empty(),
-                "",
-            )?;
-            update_refs(&transaction, &updated_refs);
+            ) {
+                let mut u = filter_refs(
+                    &transaction,
+                    filter::parse(filter_spec)?,
+                    &[from],
+                    filter::empty(),
+                )?;
+                u[0].0 = to_ref;
+                updated_refs.append(&mut u);
+            }
         }
     }
-    Ok(0)
+    Ok(updated_refs)
 }
 
 pub fn get_known_filters(
@@ -265,7 +312,8 @@ pub fn run(repo_path: &std::path::Path, do_gc: bool) -> JoshResult<()> {
         housekeeping::discover_filter_candidates(&transaction)?;
     }
     if !std::env::var("JOSH_NO_REFRESH").is_ok() {
-        refresh_known_filters(&transaction)?;
+        let mut updated_refs = refresh_known_filters(&transaction)?;
+        update_refs(&transaction, &mut updated_refs, "");
     }
     info!(
         "{}",
