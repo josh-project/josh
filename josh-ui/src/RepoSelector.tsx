@@ -19,6 +19,7 @@ function checkUrl(url: string, expectedPath: string): UrlCheckResult {
     let trimSuffix = (repo: string) => {
         return repo.replace(/\.git$/, '')
     }
+
     return match(url)
         .with(when((v: string) => v.startsWith('git@')),
             () => ({ type: 'ProtocolNotSupported' } as UrlCheckResult))
@@ -29,25 +30,43 @@ function checkUrl(url: string, expectedPath: string): UrlCheckResult {
         .otherwise(() => ({ type: 'RemoteMismatch' } as UrlCheckResult))
 }
 
+function formatHint(checkResult: UrlCheckResult, filter: Option<string>): string {
+    const makeCheckoutHint = (repo: string): string => {
+        const formattedFilter = filter.map(v => v +  '.git').getOrElse('')
+        return `Checkout URL: ${getServer()}/${repo}.git${formattedFilter}`
+    }
+
+    return match(checkResult)
+        .with({ type: 'ProtocolNotSupported' },
+            () => 'Only HTTPS access is currently supported')
+        .with({ type: 'NotAGitRepo' },
+            () => 'Repository URL should end in .git')
+        .with({ type: 'RemoteFound', path: select() },
+            (path) => makeCheckoutHint(path))
+        .otherwise(() => 'Repository is not located on the current remote')
+}
+
 type RepoSelectorProps = {
     navigateCallback: NavigateCallback
 }
 
 type State = {
     remote: Remote
-    hint: Option<string>
     repo: Option<string>
     filter: Option<string>
-    label: boolean,
+}
+
+type ParsedInput = {
+    hint: Option<string>
+    target: [Option<string>, Option<string>]
+    label: boolean
 }
 
 export class RepoSelector extends React.Component<RepoSelectorProps, State> {
     state: State = {
         remote: { type: 'None' },
-        hint: new None(),
         repo: new None(),
         filter: new None(),
-        label: true,
     };
 
     componentDidMount () {
@@ -69,87 +88,81 @@ export class RepoSelector extends React.Component<RepoSelectorProps, State> {
             .exhaustive()
     }
 
-    getHint = () => {
-        return this.state.hint.isEmpty() ? false : <div className={'repo-selector-hint'}>
-            {this.state.hint.getOrElse('')}
-        </div>
-    }
+    parseUserInput = (): ParsedInput => {
+        const parseWithRepo = (remote: string, repo: string): ParsedInput => {
+            const expectedPath = remote + '/'
+            const checkResult = checkUrl(repo, expectedPath)
 
-    formatHint = (repo: string): string => {
-        const filter = this.state.filter.map(v => v +  '.git').getOrElse('')
-        return `Checkout URL: ${getServer()}/${repo}.git${filter}`
-    }
-
-    filterChanged = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const filter = e.target.value === '' ? new None<string>() : Option.of(e.target.value)
-        this.setState({
-            filter: filter,
-        })
-    }
-
-    repoChanged = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const getHint = (expectedPath: string) => {
-            const checkResult = checkUrl(e.target.value, expectedPath)
-            const hint = match(checkResult)
-                .with({ type: 'ProtocolNotSupported' },
-                    () => Option.of('Only HTTPS access is currently supported'))
-                .with({ type: 'NotAGitRepo' },
-                    () => Option.of('Repository URL should end in .git'))
-                .with({ type: 'RemoteFound', path: select() },
-                    (path) => Option.of(this.formatHint(path)))
-                .otherwise(() => Option.of('Repository is not located on the current remote'))
-
-            const repo = match(checkResult)
+            const maybeFilter = this.state.filter
+            const maybeRepo = match(checkResult)
                 .with({ type: 'RemoteFound', path: select() },
                     (path) => Option.of(path))
-                    .otherwise(() => new None<string>())
+                .otherwise(() => new None<string>())
 
-            return [hint, repo]
+            const hint = formatHint(checkResult, maybeFilter)
+            const label = !repo.startsWith(remote)
+
+            return {
+                hint: Option.of(hint),
+                target: [maybeRepo, maybeFilter],
+                label: label,
+            }
         }
 
-        match(this.state.remote)
-            .with({ type: 'Some', value: select() }, (remote) => {
-                if (e.target.value === '') {
-                    return
-                }
-
-                const expectedPath = remote + '/'
-                const [hint, repo] = getHint(expectedPath)
-                const label = !e.target.value.startsWith(remote)
-
-                this.setState({
-                    hint: hint,
-                    repo: repo,
-                    label: label,
-                })
+        const parseWithRemote = (remote: string): ParsedInput => {
+            return this.state.repo.map((repo: string) => {
+                return parseWithRepo(remote, repo)
+            }).getOrElse({
+                hint: new None(),
+                target: [new None(), new None()],
+                label: true,
             })
-            .with({ type: 'None' }, () => {
-                this.setState({
-                    repo: new None(),
+        }
+
+        return match(this.state.remote)
+            .with({ type: 'Some', value: select() }, (remote): ParsedInput => {
+                return parseWithRemote(remote)
+            })
+            .with({ type: 'None' }, (): ParsedInput => {
+                return {
+                    hint: new None(),
+                    target: [new None(), new None()],
                     label: true,
-                })
+                }
             })
             .run()
     }
 
     buttonPressed = (e: React.MouseEvent<HTMLButtonElement>) => {
-        if (this.state.repo.isEmpty()) {
+        const parsedInput = this.parseUserInput()
+
+        if (parsedInput.target[0].isEmpty()) {
             return
         }
 
         this.props.navigateCallback(NavigateTargetType.Directory, {
-            repo:   this.state.repo.getOrElse('') + '.git',
+            repo:   parsedInput.target[0].getOrElse('') + '.git',
             path:   '',
-            filter: this.state.filter.getOrElse(':/'),
+            filter: parsedInput.target[1].getOrElse(':/'),
             rev:    'HEAD',
         })
     }
 
     render() {
+        const fieldChanged = (setCallable: (_: Option<string>) => void, e: React.ChangeEvent<HTMLInputElement>) => {
+            const value = e.target.value === '' ? new None<string>() : Option.of(e.target.value)
+            setCallable(value)
+        }
+
+        const repoChanged = fieldChanged.bind(this, (v) => this.setState({ repo: v }))
+        const filterChanged = fieldChanged.bind(this, (v) => this.setState({ filter: v }))
+
+        const parsedInput = this.parseUserInput()
+
         return <div>
             <h3>Select repo</h3>
             <div className={'repo-selector-repo'}>
-                { this.state.label &&
+                { parsedInput.label &&
                     <span className={'repo-selector-status-label'}>
                         {this.getStatus()}
                     </span>
@@ -158,7 +171,7 @@ export class RepoSelector extends React.Component<RepoSelectorProps, State> {
                     type={'text'}
                     className={'repo-selector-repo-input ui-input'}
                     placeholder={'repo.git'}
-                    onChange={this.repoChanged}
+                    onChange={repoChanged}
                 />
             </div>
             <div className={'repo-selector-filter'}>
@@ -166,10 +179,14 @@ export class RepoSelector extends React.Component<RepoSelectorProps, State> {
                     type={'text'}
                     className={'repo-selector-filter-input ui-input'}
                     placeholder={':filter'}
-                    onChange={this.filterChanged}
+                    onChange={filterChanged}
                 />
             </div>
-            {this.getHint()}
+            { parsedInput.hint.nonEmpty() &&
+                <div className={'repo-selector-hint'}>
+                    {parsedInput.hint.getOrElse('')}
+                </div>
+            }
             <button onClick={this.buttonPressed} className={'ui-button repo-selector-button'}>
                 Browse
             </button>

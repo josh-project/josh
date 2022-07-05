@@ -23,8 +23,8 @@ toml = "0.5.9"
 git2 = "0.14.4"
 tracing = { version = "0.1.35", features = ["max_level_trace", "release_max_level_trace"] }
 tracing-futures = "0.2.5"
-tracing-subscriber = { version = "0.3.11", features = ["env-filter"]}
-tracing-opentelemetry = "0.17.3"
+tracing-subscriber = { version = "0.3.14", features = ["env-filter"]}
+tracing-opentelemetry = "0.17.4"
 opentelemetry = "0.17.0"
 opentelemetry-jaeger = "0.16.0"
 reqwest= { version = "0.11.11", default-features = false, features = ["blocking", "json"] }
@@ -34,7 +34,7 @@ regex = "1.5.6"
 lazy_static = "1.4.0"
 josh = {path = "../"}
 serde_json= "1.0.82"
-serde= "1.0.137"
+serde= "1.0.138"
 unindent = "0.1.9"
 juniper = { version = "0.15.7", features = ["expose-test-schema"] }
 url = "2.2.2"
