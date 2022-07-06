@@ -362,7 +362,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
             None,
             &josh::graphql::repo_schema(".".to_string(), true),
             &std::collections::HashMap::new(),
-            &josh::graphql::context(transaction.try_clone()?),
+            &josh::graphql::context(transaction.try_clone()?, transaction.try_clone()?),
         )?;
 
         let j = serde_json::to_string(&res)?;

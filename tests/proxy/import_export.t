@@ -298,26 +298,126 @@ Flushed credential cache
   ]
   "repo1.git" = [':prefix=repo1']
   "repo2.git" = [':prefix=repo2']
-  refs
-  |-- heads
+  .
   |-- josh
-  |   `-- upstream
-  |       |-- real_repo.git
-  |       |   |-- HEAD
-  |       |   `-- refs
-  |       |       `-- heads
-  |       |           `-- master
-  |       |-- repo1.git
-  |       |   |-- HEAD
-  |       |   `-- refs
-  |       |       `-- heads
-  |       |           `-- master
-  |       `-- repo2.git
-  |           |-- HEAD
-  |           `-- refs
-  |               `-- heads
-  |                   `-- master
-  |-- namespaces
-  `-- tags
+  |   `-- 11
+  |       `-- sled
+  |           |-- blobs
+  |           |-- conf
+  |           `-- db
+  |-- mirror
+  |   |-- FETCH_HEAD
+  |   |-- HEAD
+  |   |-- config
+  |   |-- description
+  |   |-- info
+  |   |   `-- exclude
+  |   |-- objects
+  |   |   |-- 05
+  |   |   |   `-- f817563be151d278c6021ef1c8cd643d2b6051
+  |   |   |-- 20
+  |   |   |   `-- d8b46606bc5a0982127be06396bcc250aa37c2
+  |   |   |-- 33
+  |   |   |   `-- b9ecdf50077ab1f3e99ba58deedccf7a874e9a
+  |   |   |-- 4b
+  |   |   |   `-- 825dc642cb6eb9a060e54bf8d69288fbee4904
+  |   |   |-- 58
+  |   |   |   `-- d391109744bf61f6e0118a15bcb0e720a73edc
+  |   |   |-- 5d
+  |   |   |   |-- 98d297b3b16d5946dada2496accc9f99dc7056
+  |   |   |   `-- ebb339446b2a1070687359250e906e45493c37
+  |   |   |-- 5e
+  |   |   |   `-- c1a6d7931801b54c885942b687c8eb948c189e
+  |   |   |-- 60
+  |   |   |   `-- bbf7e0d9cbc75bbc27f6c48a2000259ef0dbb1
+  |   |   |-- 66
+  |   |   |   `-- 35d16da81e6c791e209053e835e5d1fe4295e6
+  |   |   |-- 6e
+  |   |   |   `-- 9a62b40f85b0952ea06023a8ee1fb99685e6f7
+  |   |   |-- 71
+  |   |   |   `-- 28ce7713fc45163e65c7ac4a9057ed1913a569
+  |   |   |-- 8a
+  |   |   |   `-- cb3f4e4afe9db19fa0ed69097535b733874d36
+  |   |   |-- 9c
+  |   |   |   `-- b7c3c14c5c084f6a6897b6e6bab231fae98ae5
+  |   |   |-- a1
+  |   |   |   `-- 21124629c3abdc05b28746b5f5890bd9fb5672
+  |   |   |-- ad
+  |   |   |   `-- 24149d789e59d4b5f9ce41cda90110ca0f98b7
+  |   |   |-- bb
+  |   |   |   `-- da8cbc6403022ce120659bb957505fc14e9dc1
+  |   |   |-- c4
+  |   |   |   |-- 8a5acfa23bd6192d897a1c5ca80a0f1d1b4a62
+  |   |   |   `-- df336cf6578b6dac651a33fd265d92308c0e39
+  |   |   |-- cd
+  |   |   |   `-- 9183f60c957365409843269ecefa3ba30a6dad
+  |   |   |-- e1
+  |   |   |   `-- 898301e7be2b3450a7b0578bc0dd9abd4f51b1
+  |   |   |-- e4
+  |   |   |   `-- af7700f8c091d18cc15f39c184490125fb0d17
+  |   |   |-- e5
+  |   |   |   `-- 2c4e8d6c1f4960b92676424944ff3951f472aa
+  |   |   |-- e6
+  |   |   |   |-- 7656b1f8854bcc258b9dddddc469d7e6d0b139
+  |   |   |   `-- 9de29bb2d1d6434b8b29ae775ad8c2e48c5391
+  |   |   |-- f9
+  |   |   |   `-- 97320406328b16277aca038db747cf60232267
+  |   |   |-- fa
+  |   |   |   `-- 84d25825561f0e21863ad0e93b58517bcdccfe
+  |   |   |-- info
+  |   |   `-- pack
+  |   `-- refs
+  |       |-- heads
+  |       |-- josh
+  |       |   `-- upstream
+  |       |       |-- real_repo.git
+  |       |       |   |-- HEAD
+  |       |       |   `-- refs
+  |       |       |       `-- heads
+  |       |       |           `-- master
+  |       |       |-- repo1.git
+  |       |       |   |-- HEAD
+  |       |       |   `-- refs
+  |       |       |       `-- heads
+  |       |       |           `-- master
+  |       |       `-- repo2.git
+  |       |           |-- HEAD
+  |       |           `-- refs
+  |       |               `-- heads
+  |       |                   `-- master
+  |       `-- tags
+  `-- overlay
+      |-- HEAD
+      |-- config
+      |-- description
+      |-- info
+      |   `-- exclude
+      |-- objects
+      |   |-- 5d
+      |   |   `-- 98d297b3b16d5946dada2496accc9f99dc7056
+      |   |-- 6e
+      |   |   `-- 9a62b40f85b0952ea06023a8ee1fb99685e6f7
+      |   |-- 6f
+      |   |   `-- e45a9254eb9dd78951a804fa94a035a937ef0b
+      |   |-- 71
+      |   |   `-- 28ce7713fc45163e65c7ac4a9057ed1913a569
+      |   |-- 80
+      |   |   `-- 472110df082d0a921ecdcd6f0dd0021f48e019
+      |   |-- 85
+      |   |   `-- c3ce1926696ef4bdf2eff358bd83b079dcc8d4
+      |   |-- 9c
+      |   |   `-- b7c3c14c5c084f6a6897b6e6bab231fae98ae5
+      |   |-- c4
+      |   |   `-- df336cf6578b6dac651a33fd265d92308c0e39
+      |   |-- e5
+      |   |   `-- 2c4e8d6c1f4960b92676424944ff3951f472aa
+      |   |-- f9
+      |   |   `-- 97320406328b16277aca038db747cf60232267
+      |   |-- info
+      |   `-- pack
+      `-- refs
+          |-- heads
+          |-- namespaces
+          `-- tags
   
-  14 directories, 6 files
+  66 directories, 54 files

@@ -127,33 +127,110 @@ Make sure all temporary namespace got removed
 
   $ bash ${TESTDIR}/destroy_test_env.sh
   "real_repo.git" = [':/sub1']
-  refs
-  |-- heads
+  .
   |-- josh
-  |   `-- upstream
-  |       `-- real_repo.git
-  |           |-- HEAD
-  |           `-- refs
-  |               `-- heads
-  |                   |-- @changes
-  |                   |   |-- master
-  |                   |   |   `-- josh@example.com
-  |                   |   |       |-- 1234
-  |                   |   |       `-- foo7
-  |                   |   `-- other_branch
-  |                   |       `-- josh@example.com
-  |                   |           |-- 1234
-  |                   |           `-- foo7
-  |                   |-- @heads
-  |                   |   |-- master
-  |                   |   |   `-- josh@example.com
-  |                   |   `-- other_branch
-  |                   |       `-- josh@example.com
-  |                   `-- master
-  |-- namespaces
-  `-- tags
+  |   `-- 11
+  |       `-- sled
+  |           |-- blobs
+  |           |-- conf
+  |           `-- db
+  |-- mirror
+  |   |-- FETCH_HEAD
+  |   |-- HEAD
+  |   |-- config
+  |   |-- description
+  |   |-- info
+  |   |   `-- exclude
+  |   |-- objects
+  |   |   |-- 2b
+  |   |   |   `-- b94719cad2e76eb5dbcae874a2b0e44521e802
+  |   |   |-- 3d
+  |   |   |   `-- 77ff51363c9825cc2a221fc0ba5a883a1a2c72
+  |   |   |-- 6b
+  |   |   |   `-- 46faacade805991bcaea19382c9d941828ce80
+  |   |   |-- a0
+  |   |   |   `-- 24003ee1acc6bf70318a46e7b6df651b9dc246
+  |   |   |-- b2
+  |   |   |   `-- ea883bc5df63565960a38cad7a57f73ac66eaa
+  |   |   |-- ba
+  |   |   |   |-- 7e17233d9f79c96cb694959eb065302acd96a6
+  |   |   |   `-- c8af20b53d712874a32944874c66a21afa91f9
+  |   |   |-- bb
+  |   |   |   `-- 282e9cdc1b972fffd08fd21eead43bc0c83cb8
+  |   |   |-- c6
+  |   |   |   `-- 27a2e3a6bfbb7307f522ad94fdfc8c20b92967
+  |   |   |-- c8
+  |   |   |   `-- 2fc150c43f13cc56c0e9caeba01b58ec612022
+  |   |   |-- e3
+  |   |   |   `-- a269743538338b0d059eda2f72976ec29220a8
+  |   |   |-- info
+  |   |   `-- pack
+  |   `-- refs
+  |       |-- heads
+  |       |-- josh
+  |       |   `-- upstream
+  |       |       `-- real_repo.git
+  |       |           |-- HEAD
+  |       |           `-- refs
+  |       |               `-- heads
+  |       |                   |-- @changes
+  |       |                   |   |-- master
+  |       |                   |   |   `-- josh@example.com
+  |       |                   |   |       |-- 1234
+  |       |                   |   |       `-- foo7
+  |       |                   |   `-- other_branch
+  |       |                   |       `-- josh@example.com
+  |       |                   |           |-- 1234
+  |       |                   |           `-- foo7
+  |       |                   |-- @heads
+  |       |                   |   |-- master
+  |       |                   |   |   `-- josh@example.com
+  |       |                   |   `-- other_branch
+  |       |                   |       `-- josh@example.com
+  |       |                   `-- master
+  |       `-- tags
+  `-- overlay
+      |-- HEAD
+      |-- config
+      |-- description
+      |-- info
+      |   `-- exclude
+      |-- objects
+      |   |-- 0b
+      |   |   `-- 4cf6c9efbbda1eada39fa9c1d21d2525b027bb
+      |   |-- 11
+      |   |   `-- 06a6f09b169109f5ebd17428219142c67e84b9
+      |   |-- 2b
+      |   |   `-- b94719cad2e76eb5dbcae874a2b0e44521e802
+      |   |-- 40
+      |   |   `-- 3e13a101fd75090369ffc317afafcfb646c576
+      |   |-- 4b
+      |   |   `-- 5ffb79a1f3852443bd747a6b213bf1e4abe168
+      |   |-- 6b
+      |   |   `-- 46faacade805991bcaea19382c9d941828ce80
+      |   |-- 88
+      |   |   `-- 2b84c5d3241087bc41982a744b72b7a174c49e
+      |   |-- a3
+      |   |   `-- 065162ecee0fecc977ec04a275e10b5e15a39c
+      |   |-- b2
+      |   |   `-- ea883bc5df63565960a38cad7a57f73ac66eaa
+      |   |-- ba
+      |   |   |-- 7e17233d9f79c96cb694959eb065302acd96a6
+      |   |   `-- c8af20b53d712874a32944874c66a21afa91f9
+      |   |-- be
+      |   |   `-- 33ab805ad4ef7ddda5b51e4a78ec0fac6b699a
+      |   |-- c6
+      |   |   `-- 27a2e3a6bfbb7307f522ad94fdfc8c20b92967
+      |   |-- e3
+      |   |   `-- a269743538338b0d059eda2f72976ec29220a8
+      |   |-- info
+      |   `-- pack
+      `-- refs
+          |-- heads
+          |-- namespaces
+          `-- tags
   
-  16 directories, 8 files
+  57 directories, 44 files
 
 $ cat ${TESTTMP}/josh-proxy.out
 $ cat ${TESTTMP}/josh-proxy.out | grep REPO_UPDATE

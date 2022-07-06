@@ -85,12 +85,50 @@
   warning: You appear to have cloned an empty repository.
 
   $ bash ${TESTDIR}/destroy_test_env.sh
-  refs
-  |-- heads
+  .
   |-- josh
-  |-- namespaces
-  `-- tags
+  |   `-- 11
+  |       `-- sled
+  |           |-- blobs
+  |           |-- conf
+  |           `-- db
+  |-- mirror
+  |   |-- FETCH_HEAD
+  |   |-- HEAD
+  |   |-- config
+  |   |-- description
+  |   |-- info
+  |   |   `-- exclude
+  |   |-- objects
+  |   |   |-- 3d
+  |   |   |   `-- 77ff51363c9825cc2a221fc0ba5a883a1a2c72
+  |   |   |-- a0
+  |   |   |   `-- 24003ee1acc6bf70318a46e7b6df651b9dc246
+  |   |   |-- bb
+  |   |   |   `-- 282e9cdc1b972fffd08fd21eead43bc0c83cb8
+  |   |   |-- c8
+  |   |   |   `-- 2fc150c43f13cc56c0e9caeba01b58ec612022
+  |   |   |-- info
+  |   |   `-- pack
+  |   |-- packed-refs
+  |   `-- refs
+  |       |-- heads
+  |       |-- josh
+  |       `-- tags
+  `-- overlay
+      |-- HEAD
+      |-- config
+      |-- description
+      |-- info
+      |   `-- exclude
+      |-- objects
+      |   |-- info
+      |   `-- pack
+      `-- refs
+          |-- heads
+          |-- namespaces
+          `-- tags
   
-  4 directories, 0 files
+  26 directories, 16 files
 
 $ cat ${TESTTMP}/josh-proxy.out

@@ -9,6 +9,7 @@ fi
 export PATH="${TARGET_DIR}/debug/:${PATH}"
 export PATH="$(pwd)/scripts/:${PATH}"
 
+export JOSH_COMMIT_TIME=0
 export GIT_AUTHOR_NAME=Josh
 export GIT_AUTHOR_EMAIL=josh@example.com
 export GIT_AUTHOR_DATE="2005-04-07T22:13:13"

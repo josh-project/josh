@@ -42,12 +42,13 @@ impl GraphQLHelper {
         }
 
         let transaction = cache::Transaction::open(&self.repo_path, None)?;
+        let transaction_overlay = cache::Transaction::open(&self.repo_path, None)?;
         let (res, _errors) = juniper::execute_sync(
             &query,
             None,
             &graphql::commit_schema(self.commit_id),
             &variables,
-            &graphql::context(transaction),
+            &graphql::context(transaction, transaction_overlay),
         )?;
 
         let j = serde_json::to_string(&res)?;
@@ -140,12 +141,13 @@ pub fn render(
                 variables.insert(k.to_string(), juniper::InputValue::scalar(v));
             }
             let transaction = cache::Transaction::open(repo.path(), None)?;
+            let transaction_overlay = cache::Transaction::open(repo.path(), None)?;
             let (res, _errors) = juniper::execute_sync(
                 template,
                 None,
                 &graphql::commit_schema(commit_id),
                 &variables,
-                &graphql::context(transaction),
+                &graphql::context(transaction, transaction_overlay),
             )?;
 
             let j = serde_json::to_string_pretty(&res)?;

@@ -122,16 +122,57 @@
 
   $ bash ${TESTDIR}/destroy_test_env.sh
   "real_repo.git" = [':/sub1']
-  refs
-  |-- heads
+  .
   |-- josh
-  |   `-- upstream
-  |       `-- real_repo.git
-  |           |-- HEAD
-  |           `-- refs
-  |               `-- heads
-  |                   `-- master
-  |-- namespaces
-  `-- tags
+  |   `-- 11
+  |       `-- sled
+  |           |-- blobs
+  |           |-- conf
+  |           `-- db
+  |-- mirror
+  |   |-- FETCH_HEAD
+  |   |-- HEAD
+  |   |-- config
+  |   |-- description
+  |   |-- info
+  |   |   `-- exclude
+  |   |-- objects
+  |   |   |-- 3d
+  |   |   |   `-- 77ff51363c9825cc2a221fc0ba5a883a1a2c72
+  |   |   |-- a0
+  |   |   |   `-- 24003ee1acc6bf70318a46e7b6df651b9dc246
+  |   |   |-- bb
+  |   |   |   `-- 282e9cdc1b972fffd08fd21eead43bc0c83cb8
+  |   |   |-- c8
+  |   |   |   `-- 2fc150c43f13cc56c0e9caeba01b58ec612022
+  |   |   |-- info
+  |   |   `-- pack
+  |   `-- refs
+  |       |-- heads
+  |       |-- josh
+  |       |   `-- upstream
+  |       |       `-- real_repo.git
+  |       |           |-- HEAD
+  |       |           `-- refs
+  |       |               `-- heads
+  |       |                   `-- master
+  |       `-- tags
+  `-- overlay
+      |-- HEAD
+      |-- config
+      |-- description
+      |-- info
+      |   `-- exclude
+      |-- objects
+      |   |-- 91
+      |   |   `-- 0a3d87d1a2d548fdb3d188ffb65bb9c6bd1679
+      |   |-- f2
+      |   |   `-- 3daa65f7acedf146f24dd04c1d2704dde25f4f
+      |   |-- info
+      |   `-- pack
+      `-- refs
+          |-- heads
+          |-- namespaces
+          `-- tags
   
-  8 directories, 2 files
+  32 directories, 19 files

@@ -83,16 +83,65 @@
       ':/sub1/subsub',
       ':/sub2',
   ]
-  refs
-  |-- heads
+  .
   |-- josh
-  |   `-- upstream
-  |       `-- real_repo.git
-  |           |-- HEAD
-  |           `-- refs
-  |               `-- heads
-  |                   `-- master
-  |-- namespaces
-  `-- tags
+  |   `-- 11
+  |       `-- sled
+  |           |-- blobs
+  |           |-- conf
+  |           `-- db
+  |-- mirror
+  |   |-- FETCH_HEAD
+  |   |-- HEAD
+  |   |-- config
+  |   |-- description
+  |   |-- info
+  |   |   `-- exclude
+  |   |-- objects
+  |   |   |-- 03
+  |   |   |   `-- dfdf502bbb4622e74f4e5794dbc1ea91b3617c
+  |   |   |-- 3d
+  |   |   |   `-- 77ff51363c9825cc2a221fc0ba5a883a1a2c72
+  |   |   |-- 43
+  |   |   |   `-- 52611a9e7c56dfdfeadec043ced6d6ef7a5c33
+  |   |   |-- 78
+  |   |   |   `-- 2f6261fa32f8bfec7b89f77bb5cce40c4611cb
+  |   |   |-- 79
+  |   |   |   `-- e0ba46b1d4838b2b50e4b05c2e420e4dca0fd7
+  |   |   |-- 85
+  |   |   |   `-- 837e6104d0a81b944c067e16ddc83c7a38739f
+  |   |   |-- a0
+  |   |   |   `-- 24003ee1acc6bf70318a46e7b6df651b9dc246
+  |   |   |-- f5
+  |   |   |   `-- 386e2d5fba005c1589dcbd9735fa1896af637c
+  |   |   |-- info
+  |   |   `-- pack
+  |   `-- refs
+  |       |-- heads
+  |       |-- josh
+  |       |   `-- upstream
+  |       |       `-- real_repo.git
+  |       |           |-- HEAD
+  |       |           `-- refs
+  |       |               `-- heads
+  |       |                   `-- master
+  |       `-- tags
+  `-- overlay
+      |-- HEAD
+      |-- config
+      |-- description
+      |-- info
+      |   `-- exclude
+      |-- objects
+      |   |-- 0b
+      |   |   `-- 4cf6c9efbbda1eada39fa9c1d21d2525b027bb
+      |   |-- ea
+      |   |   `-- 7beb7786b5dbadf54412f90d4e729f41f26c00
+      |   |-- info
+      |   `-- pack
+      `-- refs
+          |-- heads
+          |-- namespaces
+          `-- tags
   
-  8 directories, 2 files
+  36 directories, 23 files

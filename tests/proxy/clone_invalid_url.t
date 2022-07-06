@@ -30,9 +30,37 @@
   [128]
 
   $ bash ${TESTDIR}/destroy_test_env.sh
-  refs
-  |-- heads
-  `-- tags
+  .
+  |-- josh
+  |   `-- 11
+  |       `-- sled
+  |           |-- blobs
+  |           |-- conf
+  |           `-- db
+  |-- mirror
+  |   |-- HEAD
+  |   |-- config
+  |   |-- description
+  |   |-- info
+  |   |   `-- exclude
+  |   |-- objects
+  |   |   |-- info
+  |   |   `-- pack
+  |   `-- refs
+  |       |-- heads
+  |       `-- tags
+  `-- overlay
+      |-- HEAD
+      |-- config
+      |-- description
+      |-- info
+      |   `-- exclude
+      |-- objects
+      |   |-- info
+      |   `-- pack
+      `-- refs
+          |-- heads
+          `-- tags
   
-  2 directories, 0 files
+  20 directories, 10 files
 
