@@ -401,11 +401,12 @@ struct Markers {
 #[graphql_object(context = Context)]
 impl Markers {
     fn data(&self, context: &Context) -> FieldResult<Vec<Document>> {
+        let transaction_mirror = context.transaction_mirror.lock()?;
         let transaction = context.transaction.lock()?;
 
-        let refname = transaction.refname("refs/josh/meta");
+        let refname = transaction_mirror.refname("refs/josh/meta");
 
-        let r = transaction.repo().revparse_single(&refname);
+        let r = transaction_mirror.repo().revparse_single(&refname);
         let tree = if let Ok(r) = r {
             let commit = transaction.repo().find_commit(r.id())?;
             commit.tree()?
@@ -452,11 +453,12 @@ impl Markers {
     }
 
     fn count(&self, context: &Context) -> FieldResult<i32> {
+        let transaction_mirror = context.transaction_mirror.lock()?;
         let transaction = context.transaction.lock()?;
 
-        let refname = transaction.refname("refs/josh/meta");
+        let refname = transaction_mirror.refname("refs/josh/meta");
 
-        let r = transaction.repo().revparse_single(&refname);
+        let r = transaction_mirror.repo().revparse_single(&refname);
         let mtree = if let Ok(r) = r {
             let commit = transaction.repo().find_commit(r.id())?;
             commit.tree()?
@@ -678,8 +680,8 @@ impl Reference {
     }
 
     fn rev(&self, context: &Context, filter: Option<String>) -> FieldResult<Revision> {
-        let transaction = context.transaction.lock()?;
-        let commit_id = transaction
+        let transaction_mirror = context.transaction_mirror.lock()?;
+        let commit_id = transaction_mirror
             .repo()
             .find_reference(&self.refname)?
             .target()
@@ -694,6 +696,7 @@ impl Reference {
 
 pub struct Context {
     pub transaction: std::sync::Arc<std::sync::Mutex<cache::Transaction>>,
+    pub transaction_mirror: std::sync::Arc<std::sync::Mutex<cache::Transaction>>,
     pub to_push: std::sync::Arc<std::sync::Mutex<Vec<(String, git2::Oid)>>>,
 }
 
@@ -744,13 +747,15 @@ impl RepositoryMut {
         context: &Context,
     ) -> FieldResult<bool> {
         let transaction = context.transaction.lock()?;
-        let rev = transaction.refname("refs/josh/meta");
+        let transaction_mirror = context.transaction_mirror.lock()?;
 
-        transaction
+        let rev = transaction_mirror.refname("refs/josh/meta");
+
+        transaction_mirror
             .repo()
             .find_commit(git2::Oid::from_str(&commit)?)?;
 
-        let r = transaction.repo().revparse_single(&rev);
+        let r = transaction_mirror.repo().revparse_single(&rev);
         let (tree, parent) = if let Ok(r) = r {
             let commit = transaction.repo().find_commit(r.id())?;
             let tree = commit.tree()?;
@@ -792,10 +797,20 @@ impl RepositoryMut {
             tree = filter::tree::insert(transaction.repo(), &tree, path, blob, 0o0100644)?;
         }
 
+        let signature = if let Ok(time) = std::env::var("JOSH_COMMIT_TIME") {
+            git2::Signature::new(
+                "josh",
+                "josh@josh-project.dev",
+                &git2::Time::new(time.parse()?, 0),
+            )
+        } else {
+            git2::Signature::now("josh", "josh@josh-project.dev")
+        }?;
+
         let oid = transaction.repo().commit(
             None,
-            &transaction.repo().signature()?,
-            &transaction.repo().signature()?,
+            &signature,
+            &signature,
             "marker",
             &tree,
             &parent.as_ref().into_iter().collect::<Vec<_>>(),
@@ -817,7 +832,7 @@ impl Repository {
     }
 
     fn refs(&self, context: &Context, pattern: Option<String>) -> FieldResult<Vec<Reference>> {
-        let transaction = context.transaction.lock()?;
+        let transaction_mirror = context.transaction_mirror.lock()?;
         let refname = format!(
             "{}{}",
             self.ns,
@@ -828,7 +843,7 @@ impl Repository {
 
         let mut refs = vec![];
 
-        for reference in transaction.repo().references_glob(&refname)? {
+        for reference in transaction_mirror.repo().references_glob(&refname)? {
             let r = reference?;
             let name = r.name().ok_or(josh_error("reference without name"))?;
 
@@ -843,11 +858,11 @@ impl Repository {
     fn rev(&self, context: &Context, at: String, filter: Option<String>) -> FieldResult<Revision> {
         let rev = format!("{}{}", self.ns, at);
 
-        let transaction = context.transaction.lock()?;
+        let transaction_mirror = context.transaction_mirror.lock()?;
         let commit_id = if let Ok(id) = git2::Oid::from_str(&at) {
             id
         } else {
-            transaction.repo().revparse_single(&rev)?.id()
+            transaction_mirror.repo().revparse_single(&rev)?.id()
         };
 
         Ok(Revision {
@@ -863,8 +878,9 @@ regex_parsed!(
     [reference]
 );
 
-pub fn context(transaction: cache::Transaction) -> Context {
+pub fn context(transaction: cache::Transaction, transaction_mirror: cache::Transaction) -> Context {
     Context {
+        transaction_mirror: std::sync::Arc::new(std::sync::Mutex::new(transaction_mirror)),
         transaction: std::sync::Arc::new(std::sync::Mutex::new(transaction)),
         to_push: std::sync::Arc::new(std::sync::Mutex::new(vec![])),
     }

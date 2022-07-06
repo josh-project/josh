@@ -266,9 +266,10 @@ pub fn get_info(
     Ok(serde_json::to_string(&s)?)
 }
 
-#[tracing::instrument(skip(transaction))]
+#[tracing::instrument(skip(transaction_mirror, transaction_overlay))]
 pub fn refresh_known_filters(
-    transaction: &cache::Transaction,
+    transaction_mirror: &cache::Transaction,
+    transaction_overlay: &cache::Transaction,
 ) -> JoshResult<Vec<(String, git2::Oid)>> {
     let known_filters = KNOWN_FILTERS.lock()?;
     let mut updated_refs = vec![];
@@ -279,12 +280,12 @@ pub fn refresh_known_filters(
             tracing::trace!("background rebuild: {:?} {:?}", upstream_repo, filter_spec);
 
             if let Ok((from, to_ref)) = memorize_from_to(
-                transaction.repo(),
+                transaction_mirror.repo(),
                 &to_filtered_ref(upstream_repo, filter_spec),
                 upstream_repo,
             ) {
                 let mut u = filter_refs(
-                    &transaction,
+                    &transaction_overlay,
                     filter::parse(filter_spec)?,
                     &[from],
                     filter::empty(),
@@ -307,25 +308,60 @@ pub fn get_known_filters(
 }
 
 pub fn run(repo_path: &std::path::Path, do_gc: bool) -> JoshResult<()> {
-    let transaction = cache::Transaction::open(repo_path, None)?;
-    if !std::env::var("JOSH_NO_DISCOVER").is_ok() {
-        housekeeping::discover_filter_candidates(&transaction)?;
-    }
-    if !std::env::var("JOSH_NO_REFRESH").is_ok() {
-        refresh_known_filters(&transaction)?;
-    }
+    let transaction_mirror = cache::Transaction::open(&repo_path.join("mirror"), None)?;
+    let transaction_overlay = cache::Transaction::open(&repo_path.join("overlay"), None)?;
+
+    transaction_overlay
+        .repo()
+        .odb()?
+        .add_disk_alternate(&repo_path.join("mirror").join("objects").to_str().unwrap())?;
+
     info!(
         "{}",
-        run_command(transaction.repo().path(), "git count-objects -v").replace("\n", "  ")
+        run_command(transaction_mirror.repo().path(), "git count-objects -v").replace("\n", "  ")
     );
+    info!(
+        "{}",
+        run_command(transaction_overlay.repo().path(), "git count-objects -v").replace("\n", "  ")
+    );
+    if !std::env::var("JOSH_NO_DISCOVER").is_ok() {
+        housekeeping::discover_filter_candidates(&transaction_mirror)?;
+    }
+    if !std::env::var("JOSH_NO_REFRESH").is_ok() {
+        refresh_known_filters(&transaction_mirror, &transaction_overlay)?;
+    }
     if do_gc {
         info!(
             "\n----------\n{}\n----------",
-            run_command(transaction.repo().path(), "git repack -adkbn --threads=1")
+            run_command(
+                transaction_mirror.repo().path(),
+                "git repack -dkbn --no-write-bitmap-index --threads=4"
+            )
         );
         info!(
             "\n----------\n{}\n----------",
-            run_command(transaction.repo().path(), "git count-objects -vH")
+            run_command(
+                transaction_mirror.repo().path(),
+                "git multi-pack-index write --bitmap"
+            )
+        );
+        info!(
+            "\n----------\n{}\n----------",
+            run_command(
+                transaction_overlay.repo().path(),
+                "git repack -dkbn --no-write-bitmap-index --threads=4"
+            )
+        );
+        info!(
+            "\n----------\n{}\n----------",
+            run_command(
+                transaction_overlay.repo().path(),
+                "git multi-pack-index write --bitmap"
+            )
+        );
+        info!(
+            "\n----------\n{}\n----------",
+            run_command(transaction_mirror.repo().path(), "git count-objects -vH")
         );
     }
     Ok(())

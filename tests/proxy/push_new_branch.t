@@ -92,17 +92,76 @@ Check the branch again
 
   $ bash ${TESTDIR}/destroy_test_env.sh
   "real_repo.git" = [':/sub']
-  refs
-  |-- heads
+  .
   |-- josh
-  |   `-- upstream
-  |       `-- real_repo.git
-  |           |-- HEAD
-  |           `-- refs
-  |               `-- heads
-  |                   |-- master
-  |                   `-- new-branch
-  |-- namespaces
-  `-- tags
+  |   `-- 11
+  |       `-- sled
+  |           |-- blobs
+  |           |-- conf
+  |           `-- db
+  |-- mirror
+  |   |-- FETCH_HEAD
+  |   |-- HEAD
+  |   |-- config
+  |   |-- description
+  |   |-- info
+  |   |   `-- exclude
+  |   |-- objects
+  |   |   |-- 0b
+  |   |   |   `-- 4cf6c9efbbda1eada39fa9c1d21d2525b027bb
+  |   |   |-- 37
+  |   |   |   `-- c3f9a18f21fe53e0be9ea657220ba4537dbca7
+  |   |   |-- 3d
+  |   |   |   `-- 77ff51363c9825cc2a221fc0ba5a883a1a2c72
+  |   |   |-- 5f
+  |   |   |   `-- 2752aa0d3b643a6e95d754c3fd272318a02434
+  |   |   |-- 6b
+  |   |   |   `-- 46faacade805991bcaea19382c9d941828ce80
+  |   |   |-- a0
+  |   |   |   `-- 24003ee1acc6bf70318a46e7b6df651b9dc246
+  |   |   |-- ae
+  |   |   |   `-- a557394ce29f000108607abd97f19fed4d1b7c
+  |   |   |-- info
+  |   |   `-- pack
+  |   `-- refs
+  |       |-- heads
+  |       |-- josh
+  |       |   `-- upstream
+  |       |       `-- real_repo.git
+  |       |           |-- HEAD
+  |       |           `-- refs
+  |       |               `-- heads
+  |       |                   |-- master
+  |       |                   `-- new-branch
+  |       `-- tags
+  `-- overlay
+      |-- HEAD
+      |-- config
+      |-- description
+      |-- info
+      |   `-- exclude
+      |-- objects
+      |   |-- 28
+      |   |   `-- d20855c7b65b5a9948283516ae62739360544d
+      |   |-- 49
+      |   |   `-- b12216dab2cefdb1cc0fcda7ab6bc9f8b882ab
+      |   |-- 56
+      |   |   `-- dc1f749ea31f735f981a42bc6c23e92baf2085
+      |   |-- 75
+      |   |   `-- 1ef4576e133fc6279ccf882cb812a9b4dcf5dd
+      |   |-- 9d
+      |   |   `-- aeafb9864cf43055ae93beb0afd6c7d144bfa4
+      |   |-- a5
+      |   |   `-- 5a119d24890de3a3e470f941217479629e50c6
+      |   |-- b5
+      |   |   `-- afbb444fd22857e78ee11ddd92b7dd2f5c7d11
+      |   |-- de
+      |   |   `-- 7cba2eb70af5ce3555c3670e7641f2f547db74
+      |   |-- info
+      |   `-- pack
+      `-- refs
+          |-- heads
+          |-- namespaces
+          `-- tags
   
-  8 directories, 3 files
+  41 directories, 29 files

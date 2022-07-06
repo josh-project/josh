@@ -110,22 +110,91 @@ Put a double slash in the URL to see that it also works
   $ bash ${TESTDIR}/destroy_test_env.sh
   "real/repo2.git" = [':/sub1']
   "real_repo.git" = [':/sub1']
-  refs
-  |-- heads
+  .
   |-- josh
-  |   `-- upstream
-  |       |-- real%2Frepo2.git
-  |       |   |-- HEAD
-  |       |   `-- refs
-  |       |       `-- heads
-  |       |           `-- master
-  |       `-- real_repo.git
-  |           |-- HEAD
-  |           `-- refs
-  |               `-- heads
-  |                   `-- master
-  |-- namespaces
-  `-- tags
+  |   `-- 11
+  |       `-- sled
+  |           |-- blobs
+  |           |-- conf
+  |           `-- db
+  |-- mirror
+  |   |-- FETCH_HEAD
+  |   |-- HEAD
+  |   |-- config
+  |   |-- description
+  |   |-- info
+  |   |   `-- exclude
+  |   |-- objects
+  |   |   |-- 3d
+  |   |   |   `-- 77ff51363c9825cc2a221fc0ba5a883a1a2c72
+  |   |   |-- 4d
+  |   |   |   `-- ac9298952aef560bf9691199f53e2b4ff08e3a
+  |   |   |-- 92
+  |   |   |   `-- 2907f7780152deee70dab1a14810d985391e90
+  |   |   |-- a0
+  |   |   |   `-- 24003ee1acc6bf70318a46e7b6df651b9dc246
+  |   |   |-- bb
+  |   |   |   `-- 282e9cdc1b972fffd08fd21eead43bc0c83cb8
+  |   |   |-- bc
+  |   |   |   `-- d5520aa5122136789528261b56f05d317a0841
+  |   |   |-- c8
+  |   |   |   `-- 2fc150c43f13cc56c0e9caeba01b58ec612022
+  |   |   |-- cf
+  |   |   |   `-- 1e357468e54c4b6234558e00a8fb75c60942a9
+  |   |   |-- info
+  |   |   `-- pack
+  |   `-- refs
+  |       |-- heads
+  |       |-- josh
+  |       |   `-- upstream
+  |       |       |-- real%2Frepo2.git
+  |       |       |   |-- HEAD
+  |       |       |   `-- refs
+  |       |       |       `-- heads
+  |       |       |           `-- master
+  |       |       `-- real_repo.git
+  |       |           |-- HEAD
+  |       |           `-- refs
+  |       |               `-- heads
+  |       |                   `-- master
+  |       `-- tags
+  `-- overlay
+      |-- HEAD
+      |-- config
+      |-- description
+      |-- info
+      |   `-- exclude
+      |-- objects
+      |   |-- 0b
+      |   |   `-- 4cf6c9efbbda1eada39fa9c1d21d2525b027bb
+      |   |-- 3c
+      |   |   `-- cd09de42d21f7e5318bc5eaf258bf82e4103e6
+      |   |-- 5c
+      |   |   `-- 1144a1e71fe21014b2afec1ed3a3298bd46200
+      |   |-- 6b
+      |   |   `-- 46faacade805991bcaea19382c9d941828ce80
+      |   |-- 81
+      |   |   `-- b10fb4984d20142cd275b89c91c346e536876a
+      |   |-- 8d
+      |   |   `-- 08b32a321a9d226e3b22d01793f62a6c9b22e2
+      |   |-- b1
+      |   |   `-- 0b7acda365c0c0ed8f7482ccaf201ebbc6dd12
+      |   |-- ba
+      |   |   `-- 7e17233d9f79c96cb694959eb065302acd96a6
+      |   |-- c6
+      |   |   `-- 27a2e3a6bfbb7307f522ad94fdfc8c20b92967
+      |   |-- d8
+      |   |   `-- 388f5880393d255b371f1ed9b801d35620017e
+      |   |-- dc
+      |   |   `-- d1fcde90e4a52777feaf5d7e608f33e5eda53f
+      |   |-- e3
+      |   |   `-- 1c69658259e37ed5ad682c49a53ec5dc066aec
+      |   |-- info
+      |   `-- pack
+      `-- refs
+          |-- heads
+          |-- namespaces
+          `-- tags
   
-  11 directories, 4 files
+  49 directories, 35 files
 

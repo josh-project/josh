@@ -115,7 +115,7 @@ async fn fetch_upstream(
 
     if fetch_cached_ok && !headref.is_empty() {
         let transaction = josh::cache::Transaction::open(
-            &service.repo_path,
+            &service.repo_path.join("mirror"),
             Some(&format!(
                 "refs/josh/upstream/{}/",
                 &josh::to_ns(&upstream_repo),
@@ -132,7 +132,7 @@ async fn fetch_upstream(
 
     let fetch_timers = service.fetch_timers.clone();
     let heads_map = service.heads_map.clone();
-    let br_path = service.repo_path.clone();
+    let br_path = service.repo_path.join("mirror");
 
     let s = tracing::span!(tracing::Level::TRACE, "fetch worker");
     let us = upstream_repo.clone();
@@ -147,7 +147,7 @@ async fn fetch_upstream(
 
     let us = upstream_repo.clone();
     let s = tracing::span!(tracing::Level::TRACE, "get_head worker");
-    let br_path = service.repo_path.clone();
+    let br_path = service.repo_path.join("mirror");
     let ru = remote_url.clone();
     let a = auth.clone();
     let hres = tokio::task::spawn_blocking(move || {
@@ -208,10 +208,16 @@ async fn static_paths(
         let refresh = path == "/filters/refresh";
 
         let body_str = tokio::task::spawn_blocking(move || -> josh::JoshResult<_> {
-            let transaction = josh::cache::Transaction::open(&service.repo_path, None)?;
-            josh::housekeeping::discover_filter_candidates(&transaction)?;
+            let transaction_mirror =
+                josh::cache::Transaction::open(&service.repo_path.join("mirror"), None)?;
+            josh::housekeeping::discover_filter_candidates(&transaction_mirror)?;
             if refresh {
-                josh::housekeeping::refresh_known_filters(&transaction)?;
+                let transaction_overlay =
+                    josh::cache::Transaction::open(&service.repo_path.join("overlay"), None)?;
+                josh::housekeeping::refresh_known_filters(
+                    &transaction_mirror,
+                    &transaction_overlay,
+                )?;
             }
             Ok(toml::to_string_pretty(
                 &josh::housekeeping::get_known_filters()?,
@@ -282,31 +288,13 @@ async fn do_filter(
         josh::housekeeping::remember_filter(&upstream_repo, &filter_spec);
 
         let transaction = josh::cache::Transaction::open(
-            &repo_path,
+            &repo_path.join("mirror"),
             Some(&format!(
                 "refs/josh/upstream/{}/",
                 &josh::to_ns(&upstream_repo),
             )),
         )?;
         let mut refslist = josh::housekeeping::list_refs(transaction.repo(), &upstream_repo)?;
-
-        if let Ok(_) = std::env::var("JOSH_REWRITE_REFS") {
-            let glob = format!(
-                "refs/josh/rewrites/{}/{:?}/r_*",
-                josh::to_ns(&upstream_repo),
-                filter.id()
-            );
-            for reference in transaction.repo().references_glob(&glob).unwrap() {
-                let reference = reference.unwrap();
-                let refname = reference.name().unwrap();
-                transaction.repo().reference(
-                    &temp_ns.reference(refname),
-                    reference.target().unwrap(),
-                    true,
-                    "rewrite",
-                )?;
-            }
-        }
 
         let mut headref = headref;
 
@@ -332,24 +320,25 @@ async fn do_filter(
                 .unwrap_or(&"invalid".to_string())
                 .clone();
         }
-        let mut updated_refs =
-            josh::filter_refs(&transaction, filter, &refslist, josh::filter::empty())?;
-        josh::housekeeping::namespace_refs(&mut updated_refs, &temp_ns.name(), &upstream_repo);
-        josh::update_refs(
-            &transaction,
-            &mut updated_refs,
-            &temp_ns.reference(&headref),
-        );
+        {
+            let t2 = josh::cache::Transaction::open(&repo_path.join("overlay"), None)?;
+            t2.repo()
+                .odb()?
+                .add_disk_alternate(&repo_path.join("mirror").join("objects").to_str().unwrap())?;
+            let mut updated_refs =
+                josh::filter_refs(&t2, filter, &refslist, josh::filter::empty())?;
+            josh::housekeeping::namespace_refs(&mut updated_refs, &temp_ns.name(), &upstream_repo);
+            josh::update_refs(&t2, &mut updated_refs, &temp_ns.reference(&headref));
+            t2.repo()
+                .reference_symbolic(
+                    &temp_ns.reference("HEAD"),
+                    &temp_ns.reference(&headref),
+                    true,
+                    "",
+                )
+                .ok();
+        }
 
-        transaction
-            .repo()
-            .reference_symbolic(
-                &temp_ns.reference("HEAD"),
-                &temp_ns.reference(&headref),
-                true,
-                "",
-            )
-            .ok();
         Ok(())
     })
     .await?;
@@ -554,13 +543,23 @@ async fn call_service(
     }
 
     if parsed_url.api == "/~/graphql" {
-        let context = std::sync::Arc::new(josh::graphql::context(josh::cache::Transaction::open(
-            &serv.repo_path,
+        let transaction_mirror = josh::cache::Transaction::open(
+            &serv.repo_path.join("mirror"),
             Some(&format!(
                 "refs/josh/upstream/{}/",
                 &josh::to_ns(&parsed_url.upstream_repo),
             )),
-        )?));
+        )?;
+        let transaction = josh::cache::Transaction::open(&serv.repo_path.join("overlay"), None)?;
+        transaction.repo().odb()?.add_disk_alternate(
+            &serv
+                .repo_path
+                .join("mirror")
+                .join("objects")
+                .to_str()
+                .unwrap(),
+        )?;
+        let context = std::sync::Arc::new(josh::graphql::context(transaction, transaction_mirror));
         let root_node = std::sync::Arc::new(josh::graphql::repo_schema(
             parsed_url
                 .upstream_repo
@@ -574,13 +573,19 @@ async fn call_service(
             .await?;
         tokio::task::spawn_blocking(move || -> josh::JoshResult<_> {
             let temp_ns = Arc::new(josh_proxy::TmpGitNamespace::new(
-                &serv.repo_path,
+                &serv.repo_path.join("overlay"),
                 tracing::Span::current(),
             ));
 
             for (reference, oid) in context.to_push.lock()?.iter() {
                 josh_proxy::push_head_url(
                     context.transaction.lock()?.repo(),
+                    &serv
+                        .repo_path
+                        .join("mirror")
+                        .join("objects")
+                        .to_str()
+                        .unwrap(),
                     *oid,
                     &reference,
                     &remote_url,
@@ -597,11 +602,6 @@ async fn call_service(
         return Ok(gql_result);
     }
 
-    let repo_path = serv
-        .repo_path
-        .to_str()
-        .ok_or(josh::josh_error("repo_path.to_str"))?;
-
     let temp_ns = prepare_namespace(
         serv.clone(),
         &parsed_url.upstream_repo,
@@ -617,11 +617,20 @@ async fn call_service(
             let res = tokio::task::spawn_blocking(move || -> josh::JoshResult<_> {
                 let _e = s.enter();
                 let transaction = josh::cache::Transaction::open(
-                    &serv.repo_path,
+                    &serv.repo_path.join("overlay"),
                     Some(&format!(
                         "refs/josh/upstream/{}/",
                         &josh::to_ns(&parsed_url.upstream_repo),
                     )),
+                )?;
+
+                transaction.repo().odb()?.add_disk_alternate(
+                    &serv
+                        .repo_path
+                        .join("mirror")
+                        .join("objects")
+                        .to_str()
+                        .unwrap(),
                 )?;
 
                 josh::query::render(transaction.repo(), "", &temp_ns.reference(&headref), &q)
@@ -649,6 +658,20 @@ async fn call_service(
         }
     }
 
+    let repo_path = serv
+        .repo_path
+        .join("overlay")
+        .to_str()
+        .ok_or(josh::josh_error("repo_path.to_str"))?
+        .to_string();
+
+    let mirror_repo_path = serv
+        .repo_path
+        .join("mirror")
+        .to_str()
+        .ok_or(josh::josh_error("repo_path.to_str"))?
+        .to_string();
+
     let span = tracing::span!(tracing::Level::TRACE, "hyper_cgi");
     let _enter = span.enter();
     let mut context_propagator = HashMap::<String, String>::default();
@@ -666,16 +689,25 @@ async fn call_service(
         filter_spec: parsed_url.filter.clone(),
         base_ns: josh::to_ns(&parsed_url.upstream_repo),
         git_ns: temp_ns.name().to_string(),
-        git_dir: repo_path.to_string(),
+        git_dir: repo_path.clone(),
+        mirror_git_dir: mirror_repo_path.clone(),
         stacked_changes: ARGS.is_present("stacked-changes"),
         context_propagator: context_propagator,
     };
 
     let mut cmd = Command::new("git");
     cmd.arg("http-backend");
-    cmd.current_dir(&serv.repo_path);
-    cmd.env("GIT_DIR", repo_path);
+    cmd.current_dir(&serv.repo_path.join("overlay"));
+    cmd.env("GIT_DIR", &repo_path);
     cmd.env("GIT_HTTP_EXPORT_ALL", "");
+    cmd.env(
+        "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+        serv.repo_path
+            .join("mirror")
+            .join("objects")
+            .to_str()
+            .ok_or(josh::josh_error("repo_path.to_str"))?,
+    );
     cmd.env("GIT_NAMESPACE", temp_ns.name().clone());
     cmd.env("GIT_PROJECT_ROOT", repo_path);
     cmd.env("JOSH_REPO_UPDATE", serde_json::to_string(&repo_update)?);
@@ -704,7 +736,7 @@ async fn prepare_namespace(
     headref: &str,
 ) -> josh::JoshResult<std::sync::Arc<josh_proxy::TmpGitNamespace>> {
     let temp_ns = Arc::new(josh_proxy::TmpGitNamespace::new(
-        &serv.repo_path,
+        &serv.repo_path.join("overlay"),
         tracing::Span::current(),
     ));
 

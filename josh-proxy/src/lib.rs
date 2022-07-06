@@ -37,6 +37,7 @@ pub struct RepoUpdate {
     pub base_ns: String,
     pub git_ns: String,
     pub git_dir: String,
+    pub mirror_git_dir: String,
     pub stacked_changes: bool,
     pub context_propagator: std::collections::HashMap<String, String>,
 }
@@ -57,6 +58,20 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
         let transaction = josh::cache::Transaction::open(
             std::path::Path::new(&repo_update.git_dir),
             Some(&format!("refs/josh/upstream/{}/", repo_update.base_ns)),
+        )?;
+
+        let transaction_mirror = josh::cache::Transaction::open(
+            std::path::Path::new(&repo_update.mirror_git_dir),
+            Some(&format!("refs/josh/upstream/{}/", repo_update.base_ns)),
+        )?;
+
+        transaction.repo().odb()?.add_disk_alternate(
+            &transaction_mirror
+                .repo()
+                .path()
+                .join("objects")
+                .to_str()
+                .unwrap(),
         )?;
 
         let old = git2::Oid::from_str(old)?;
@@ -83,38 +98,41 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
 
         let original_target_ref = if let Some(base) = push_options.get("base") {
             // Allow user to use just the branchname as the base:
-            let full_path_base_refname = transaction.refname(&format!("refs/heads/{}", base));
-            if transaction
+            let full_path_base_refname =
+                transaction_mirror.refname(&format!("refs/heads/{}", base));
+            if transaction_mirror
                 .repo()
                 .refname_to_id(&full_path_base_refname)
                 .is_ok()
             {
                 full_path_base_refname
             } else {
-                transaction.refname(base)
+                transaction_mirror.refname(base)
             }
         } else {
-            transaction.refname(&baseref)
+            transaction_mirror.refname(&baseref)
         };
 
-        let original_target =
-            if let Ok(oid) = transaction.repo().refname_to_id(&original_target_ref) {
-                tracing::debug!(
-                    "push: original_target oid: {:?}, original_target_ref: {:?}",
-                    oid,
-                    original_target_ref
-                );
-                oid
-            } else {
-                return Err(josh::josh_error(&unindent::unindent(&format!(
-                    r###"
+        let original_target = if let Ok(oid) = transaction_mirror
+            .repo()
+            .refname_to_id(&original_target_ref)
+        {
+            tracing::debug!(
+                "push: original_target oid: {:?}, original_target_ref: {:?}",
+                oid,
+                original_target_ref
+            );
+            oid
+        } else {
+            return Err(josh::josh_error(&unindent::unindent(&format!(
+                r###"
                     Reference {:?} does not exist on remote.
                     If you want to create it, pass "-o base=<basebranch>" or "-o base=path/to/ref"
                     to specify a base branch/reference.
                     "###,
-                    baseref
-                ))));
-            };
+                baseref
+            ))));
+        };
 
         let reparent_orphans = if push_options.contains_key("create") {
             Some(original_target)
@@ -147,11 +165,12 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
 
         let oid_to_push = if josh_merge {
             let backward_commit = transaction.repo().find_commit(backward_new_oid)?;
-            if let Ok(Ok(base_commit)) = transaction
+            if let Ok(base_commit_id) = transaction_mirror
                 .repo()
                 .revparse_single(&original_target_ref)
-                .map(|x| x.peel_to_commit())
+                .map(|x| x.id())
             {
+                let base_commit = transaction.repo().find_commit(base_commit_id)?;
                 let merged_tree = transaction
                     .repo()
                     .merge_commits(&base_commit, &backward_commit, None)?
@@ -205,6 +224,7 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
         for (reference, oid, display_name) in to_push {
             let (text, status) = push_head_url(
                 transaction.repo(),
+                &format!("{}/objects", repo_update.mirror_git_dir),
                 oid,
                 &reference,
                 &repo_update.remote_url,
@@ -264,6 +284,7 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
 
 pub fn push_head_url(
     repo: &git2::Repository,
+    alternate: &str,
     oid: git2::Oid,
     refname: &str,
     url: &str,
@@ -290,7 +311,11 @@ pub fn push_head_url(
     let (stdout, stderr, status) = shell.command_env(
         &cmd,
         &[],
-        &[("GIT_PASSWORD", &password), ("GIT_USER", &username)],
+        &[
+            ("GIT_PASSWORD", &password),
+            ("GIT_USER", &username),
+            ("GIT_ALTERNATE_OBJECT_DIRECTORIES", &alternate),
+        ],
     );
     fakehead.delete()?;
     tracing::debug!("{}", &stderr);
@@ -302,16 +327,41 @@ pub fn push_head_url(
 }
 
 pub fn create_repo(path: &std::path::Path) -> josh::JoshResult<()> {
-    tracing::debug!("init base repo: {:?}", path);
-    std::fs::create_dir_all(path).expect("can't create_dir_all");
-    git2::Repository::init_bare(path)?;
+    let mirror_path = path.join("mirror");
+    tracing::debug!("init mirror repo: {:?}", mirror_path);
+    std::fs::create_dir_all(&mirror_path).expect("can't create_dir_all");
+    git2::Repository::init_bare(&mirror_path)?;
     let shell = josh::shell::Shell {
-        cwd: path.to_path_buf(),
+        cwd: mirror_path.to_path_buf(),
+    };
+    shell.command("git config http.receivepack true");
+    shell.command("git config user.name josh");
+    shell.command("git config user.email josh@josh-project.dev");
+    shell.command("git config uploadpack.allowAnySHA1InWant true");
+    shell.command("git config uploadpack.allowReachableSHA1InWant true");
+    shell.command("git config uploadpack.allowTipSha1InWant true");
+    shell.command("git config receive.advertisePushOptions true");
+    shell.command("rm -Rf hooks");
+    shell.command("rm -Rf *.lock");
+    shell.command("rm -Rf packed-refs");
+    shell.command(
+        &"git config credential.helper '!f() { echo \"username=\"$GIT_USER\"\npassword=\"$GIT_PASSWORD\"\"; }; f'"
+            .to_string(),
+    );
+    shell.command("git config gc.auto 0");
+
+    let overlay_path = path.join("overlay");
+
+    tracing::debug!("init overlay repo: {:?}", overlay_path);
+    std::fs::create_dir_all(&overlay_path).expect("can't create_dir_all");
+    git2::Repository::init_bare(&overlay_path)?;
+    let shell = josh::shell::Shell {
+        cwd: overlay_path.to_path_buf(),
     };
     shell.command("git config http.receivepack true");
     shell.command("git config uploadpack.allowsidebandall true");
     shell.command("git config user.name josh");
-    shell.command("git config user.email josh@localhost");
+    shell.command("git config user.email josh@josh-project.dev");
     shell.command("git config uploadpack.allowAnySHA1InWant true");
     shell.command("git config uploadpack.allowReachableSHA1InWant true");
     shell.command("git config uploadpack.allowTipSha1InWant true");
@@ -321,9 +371,9 @@ pub fn create_repo(path: &std::path::Path) -> josh::JoshResult<()> {
     shell.command("rm -Rf *.lock");
     shell.command("rm -Rf packed-refs");
     shell.command("mkdir hooks");
-    std::os::unix::fs::symlink(ce.clone(), path.join("hooks").join("update"))
+    std::os::unix::fs::symlink(ce.clone(), overlay_path.join("hooks").join("update"))
         .expect("can't symlink update hook");
-    std::os::unix::fs::symlink(ce, path.join("hooks").join("pre-receive"))
+    std::os::unix::fs::symlink(ce, overlay_path.join("hooks").join("pre-receive"))
         .expect("can't symlink pre-receive hook");
     shell.command(
         &"git config credential.helper '!f() { echo \"username=\"$GIT_USER\"\npassword=\"$GIT_PASSWORD\"\"; }; f'"
@@ -332,7 +382,7 @@ pub fn create_repo(path: &std::path::Path) -> josh::JoshResult<()> {
     shell.command("git config gc.auto 0");
 
     if std::env::var_os("JOSH_KEEP_NS") == None {
-        std::fs::remove_dir_all(path.join("refs/namespaces")).ok();
+        std::fs::remove_dir_all(overlay_path.join("refs/namespaces")).ok();
     }
     tracing::info!("repo initialized");
     Ok(())
