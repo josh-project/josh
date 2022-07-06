@@ -38,7 +38,7 @@ percent-encoding = "2.1"
 pest= "2.1"
 pest_derive = "2.1"
 rayon = "1.5"
-regex = "1.5"
+regex = "1.6"
 rs_tracing= { version = "1", features = ["rs_tracing"]}
 serde = {version = "1.0", features = ["derive"]}
 serde_json= "1.0"
