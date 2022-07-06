@@ -122,10 +122,6 @@
   refs
   |-- heads
   |-- josh
-  |   |-- filtered
-  |   |   `-- real_repo.git
-  |   |       `-- %3A%2Fsub3
-  |   |           `-- HEAD
   |   `-- upstream
   |       `-- real_repo.git
   |           |-- HEAD
@@ -140,4 +136,4 @@
   |-- namespaces
   `-- tags
   
-  14 directories, 5 files
+  11 directories, 4 files

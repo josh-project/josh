@@ -211,8 +211,7 @@ async fn static_paths(
             let transaction = josh::cache::Transaction::open(&service.repo_path, None)?;
             josh::housekeeping::discover_filter_candidates(&transaction)?;
             if refresh {
-                let mut updated_refs = josh::housekeeping::refresh_known_filters(&transaction)?;
-                josh::update_refs(&transaction, &mut updated_refs, "");
+                josh::housekeeping::refresh_known_filters(&transaction)?;
             }
             Ok(toml::to_string_pretty(
                 &josh::housekeeping::get_known_filters()?,

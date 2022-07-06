@@ -60,10 +60,6 @@
   refs
   |-- heads
   |-- josh
-  |   |-- filtered
-  |   |   `-- real_repo.git
-  |   |       `-- %3Aprefix=sub1
-  |   |           `-- HEAD
   |   `-- upstream
   |       `-- real_repo.git
   |           |-- HEAD
@@ -73,4 +69,4 @@
   |-- namespaces
   `-- tags
   
-  11 directories, 3 files
+  8 directories, 2 files

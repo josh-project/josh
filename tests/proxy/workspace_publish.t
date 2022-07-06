@@ -126,14 +126,6 @@
   refs
   |-- heads
   |-- josh
-  |   |-- filtered
-  |   |   `-- real_repo.git
-  |   |       |-- %3A%2Fsub2
-  |   |       |   `-- HEAD
-  |   |       |-- %3A%2Fws
-  |   |       |   `-- HEAD
-  |   |       `-- %3Aworkspace=ws
-  |   |           `-- HEAD
   |   `-- upstream
   |       `-- real_repo.git
   |           |-- HEAD
@@ -143,6 +135,6 @@
   |-- namespaces
   `-- tags
   
-  13 directories, 5 files
+  8 directories, 2 files
 
 $ cat ${TESTTMP}/josh-proxy.out | grep VIEW

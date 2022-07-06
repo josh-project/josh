@@ -312,8 +312,7 @@ pub fn run(repo_path: &std::path::Path, do_gc: bool) -> JoshResult<()> {
         housekeeping::discover_filter_candidates(&transaction)?;
     }
     if !std::env::var("JOSH_NO_REFRESH").is_ok() {
-        let mut updated_refs = refresh_known_filters(&transaction)?;
-        update_refs(&transaction, &mut updated_refs, "");
+        refresh_known_filters(&transaction)?;
     }
     info!(
         "{}",

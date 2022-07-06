@@ -130,10 +130,6 @@ Make sure all temporary namespace got removed
   refs
   |-- heads
   |-- josh
-  |   |-- filtered
-  |   |   `-- real_repo.git
-  |   |       `-- %3A%2Fsub1
-  |   |           `-- HEAD
   |   `-- upstream
   |       `-- real_repo.git
   |           |-- HEAD
@@ -157,7 +153,7 @@ Make sure all temporary namespace got removed
   |-- namespaces
   `-- tags
   
-  19 directories, 9 files
+  16 directories, 8 files
 
 $ cat ${TESTTMP}/josh-proxy.out
 $ cat ${TESTTMP}/josh-proxy.out | grep REPO_UPDATE
