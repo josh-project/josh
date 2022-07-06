@@ -103,24 +103,6 @@
   refs
   |-- heads
   |-- josh
-  |   |-- filtered
-  |   |   `-- real%2Frepo2.git
-  |   |       |-- %3A%2Fsub1
-  |   |       |   `-- HEAD
-  |   |       |-- %3A%2Fsub1%2Fsubsub
-  |   |       |   `-- HEAD
-  |   |       |-- %3A%2Fsub2
-  |   |       |   `-- HEAD
-  |   |       |-- %3A%2Fsub3
-  |   |       |   `-- HEAD
-  |   |       |-- %3A%2Fws
-  |   |       |   `-- HEAD
-  |   |       |-- %3A%2Fws2
-  |   |       |   `-- HEAD
-  |   |       |-- %3Aworkspace=ws
-  |   |       |   `-- HEAD
-  |   |       `-- %3Aworkspace=ws2
-  |   |           `-- HEAD
   |   `-- upstream
   |       `-- real%2Frepo2.git
   |           |-- HEAD
@@ -130,6 +112,6 @@
   |-- namespaces
   `-- tags
   
-  18 directories, 10 files
+  8 directories, 2 files
 
 $ cat ${TESTTMP}/josh-proxy.out

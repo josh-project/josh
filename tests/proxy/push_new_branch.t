@@ -95,10 +95,6 @@ Check the branch again
   refs
   |-- heads
   |-- josh
-  |   |-- filtered
-  |   |   `-- real_repo.git
-  |   |       `-- %3A%2Fsub
-  |   |           `-- HEAD
   |   `-- upstream
   |       `-- real_repo.git
   |           |-- HEAD
@@ -109,4 +105,4 @@ Check the branch again
   |-- namespaces
   `-- tags
   
-  11 directories, 4 files
+  8 directories, 3 files

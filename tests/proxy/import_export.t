@@ -301,18 +301,6 @@ Flushed credential cache
   refs
   |-- heads
   |-- josh
-  |   |-- filtered
-  |   |   |-- real_repo.git
-  |   |   |   |-- %3A%2Frepo1
-  |   |   |   |   `-- HEAD
-  |   |   |   `-- %3A%2Frepo2
-  |   |   |       `-- HEAD
-  |   |   |-- repo1.git
-  |   |   |   `-- %3Aprefix=repo1
-  |   |   |       `-- HEAD
-  |   |   `-- repo2.git
-  |   |       `-- %3Aprefix=repo2
-  |   |           `-- HEAD
   |   `-- upstream
   |       |-- real_repo.git
   |       |   |-- HEAD
@@ -332,4 +320,4 @@ Flushed credential cache
   |-- namespaces
   `-- tags
   
-  22 directories, 10 files
+  14 directories, 6 files

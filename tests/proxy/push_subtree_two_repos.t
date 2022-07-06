@@ -113,13 +113,6 @@ Put a double slash in the URL to see that it also works
   refs
   |-- heads
   |-- josh
-  |   |-- filtered
-  |   |   |-- real%2Frepo2.git
-  |   |   |   `-- %3A%2Fsub1
-  |   |   |       `-- HEAD
-  |   |   `-- real_repo.git
-  |   |       `-- %3A%2Fsub1
-  |   |           `-- HEAD
   |   `-- upstream
   |       |-- real%2Frepo2.git
   |       |   |-- HEAD
@@ -134,5 +127,5 @@ Put a double slash in the URL to see that it also works
   |-- namespaces
   `-- tags
   
-  16 directories, 6 files
+  11 directories, 4 files
 
