@@ -76,15 +76,60 @@
 
   $ bash ${TESTDIR}/destroy_test_env.sh
   "real_repo.git" = [':/sub1']
-  refs
-  |-- heads
+  .
   |-- josh
-  |   `-- upstream
-  |       `-- real_repo.git
-  |           `-- refs
-  |               `-- heads
-  |                   `-- main
-  |-- namespaces
-  `-- tags
+  |   `-- 11
+  |       `-- sled
+  |           |-- blobs
+  |           |-- conf
+  |           `-- db
+  |-- mirror
+  |   |-- FETCH_HEAD
+  |   |-- HEAD
+  |   |-- config
+  |   |-- description
+  |   |-- info
+  |   |   `-- exclude
+  |   |-- objects
+  |   |   |-- 23
+  |   |   |   `-- 87c32648eefdee78386575672ac091da849b08
+  |   |   |-- 3d
+  |   |   |   `-- 77ff51363c9825cc2a221fc0ba5a883a1a2c72
+  |   |   |-- 85
+  |   |   |   `-- 837e6104d0a81b944c067e16ddc83c7a38739f
+  |   |   |-- a0
+  |   |   |   `-- 24003ee1acc6bf70318a46e7b6df651b9dc246
+  |   |   |-- bb
+  |   |   |   `-- 282e9cdc1b972fffd08fd21eead43bc0c83cb8
+  |   |   |-- c8
+  |   |   |   `-- 2fc150c43f13cc56c0e9caeba01b58ec612022
+  |   |   |-- ff
+  |   |   |   `-- e8d082c1034053534ea8068f4205ac72a1098e
+  |   |   |-- info
+  |   |   `-- pack
+  |   `-- refs
+  |       |-- heads
+  |       |-- josh
+  |       |   `-- upstream
+  |       |       `-- real_repo.git
+  |       |           `-- refs
+  |       |               `-- heads
+  |       |                   `-- main
+  |       `-- tags
+  `-- overlay
+      |-- HEAD
+      |-- config
+      |-- description
+      |-- info
+      |   `-- exclude
+      |-- objects
+      |   |-- 0b
+      |   |   `-- 4cf6c9efbbda1eada39fa9c1d21d2525b027bb
+      |   |-- info
+      |   `-- pack
+      `-- refs
+          |-- heads
+          |-- namespaces
+          `-- tags
   
-  8 directories, 1 file
+  34 directories, 20 files

@@ -53,16 +53,59 @@ This is a regression test for that problem.
 
   $ bash ${TESTDIR}/destroy_test_env.sh
   "real_repo.git" = []
-  refs
-  |-- heads
+  .
   |-- josh
-  |   `-- upstream
-  |       `-- real_repo.git
-  |           |-- HEAD
-  |           `-- refs
-  |               `-- heads
-  |                   `-- master
-  |-- namespaces
-  `-- tags
+  |   `-- 11
+  |       `-- sled
+  |           |-- blobs
+  |           |-- conf
+  |           `-- db
+  |-- mirror
+  |   |-- FETCH_HEAD
+  |   |-- HEAD
+  |   |-- config
+  |   |-- description
+  |   |-- info
+  |   |   `-- exclude
+  |   |-- objects
+  |   |   |-- 12
+  |   |   |   `-- f00e90b6ef79117ce6e650416b8cf517099b78
+  |   |   |-- 3e
+  |   |   |   `-- 4d66668e6f1dbadc079f36a84768a916bcb8f9
+  |   |   |-- 60
+  |   |   |   `-- 599f2548a694cee8452bda9c0516027bbbb148
+  |   |   |-- 74
+  |   |   |   `-- 3f7c56e1cdebc5452c558fea593d48abf45b05
+  |   |   |-- 9a
+  |   |   |   `-- cea2cd36eb8d8d45cd5399c782d6348a3c8e35
+  |   |   |-- info
+  |   |   `-- pack
+  |   `-- refs
+  |       |-- heads
+  |       |-- josh
+  |       |   `-- upstream
+  |       |       `-- real_repo.git
+  |       |           |-- HEAD
+  |       |           `-- refs
+  |       |               `-- heads
+  |       |                   `-- master
+  |       `-- tags
+  `-- overlay
+      |-- HEAD
+      |-- config
+      |-- description
+      |-- info
+      |   `-- exclude
+      |-- objects
+      |   |-- 06
+      |   |   `-- a050bd4a0d471e6f410bd76252cd6d215899ed
+      |   |-- f5
+      |   |   `-- 01f09caa6b247b64793a9d8cf1db76a9e92442
+      |   |-- info
+      |   `-- pack
+      `-- refs
+          |-- heads
+          |-- namespaces
+          `-- tags
   
-  8 directories, 2 files
+  33 directories, 20 files

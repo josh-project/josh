@@ -112,19 +112,70 @@
       ':/sub1',
       ':/sub2',
   ]
-  refs
-  |-- heads
+  .
   |-- josh
-  |   `-- upstream
-  |       `-- real_repo.git
-  |           |-- HEAD
-  |           `-- refs
-  |               |-- heads
-  |               |   `-- master
-  |               `-- tags
-  |                   `-- a_tag
-  |-- namespaces
-  `-- tags
+  |   `-- 11
+  |       `-- sled
+  |           |-- blobs
+  |           |-- conf
+  |           `-- db
+  |-- mirror
+  |   |-- FETCH_HEAD
+  |   |-- HEAD
+  |   |-- config
+  |   |-- description
+  |   |-- info
+  |   |   `-- exclude
+  |   |-- objects
+  |   |   |-- 17
+  |   |   |   `-- 27e7d219402e1ce54587731575e941130d09ac
+  |   |   |-- 3d
+  |   |   |   `-- 77ff51363c9825cc2a221fc0ba5a883a1a2c72
+  |   |   |-- 56
+  |   |   |   `-- e190237f1fa5d07f52fc7de0e4b7d04128c79d
+  |   |   |-- 85
+  |   |   |   `-- 837e6104d0a81b944c067e16ddc83c7a38739f
+  |   |   |-- a0
+  |   |   |   `-- 24003ee1acc6bf70318a46e7b6df651b9dc246
+  |   |   |-- bb
+  |   |   |   |-- 282e9cdc1b972fffd08fd21eead43bc0c83cb8
+  |   |   |   |-- c3f8026800792a43ffbc932153f4864509378e
+  |   |   |   `-- f54cff926d013ce65a3b1cf4e8d239c43beb4b
+  |   |   |-- c8
+  |   |   |   `-- 2fc150c43f13cc56c0e9caeba01b58ec612022
+  |   |   |-- fa
+  |   |   |   `-- 432ae56bb033f625197b126825c347ff557661
+  |   |   |-- info
+  |   |   `-- pack
+  |   `-- refs
+  |       |-- heads
+  |       |-- josh
+  |       |   `-- upstream
+  |       |       `-- real_repo.git
+  |       |           |-- HEAD
+  |       |           `-- refs
+  |       |               |-- heads
+  |       |               |   `-- master
+  |       |               `-- tags
+  |       |                   `-- a_tag
+  |       `-- tags
+  `-- overlay
+      |-- HEAD
+      |-- config
+      |-- description
+      |-- info
+      |   `-- exclude
+      |-- objects
+      |   |-- 0b
+      |   |   `-- 4cf6c9efbbda1eada39fa9c1d21d2525b027bb
+      |   |-- 6e
+      |   |   `-- 99e1e5ba1de7225f0d09a0b91d2e29ae15569c
+      |   |-- info
+      |   `-- pack
+      `-- refs
+          |-- heads
+          |-- namespaces
+          `-- tags
   
-  9 directories, 3 files
+  37 directories, 26 files
 $ cat ${TESTTMP}/josh-proxy.out | grep TAGS
