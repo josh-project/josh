@@ -163,6 +163,43 @@ impl Revision {
         Ok(parents)
     }
 
+    fn history(
+        &self,
+        limit: Option<i32>,
+        offset: Option<i32>,
+        context: &Context,
+    ) -> FieldResult<Vec<Revision>> {
+        let limit = limit.unwrap_or(1) as usize;
+        let offset = offset.unwrap_or(0) as usize;
+        let transaction = context.transaction.lock()?;
+        let commit = transaction.repo().find_commit(self.commit_id)?;
+        let filter_commit = transaction.repo().find_commit(filter::apply_to_commit(
+            self.filter,
+            &commit,
+            &transaction,
+        )?)?;
+
+        let mut walk = transaction.repo().revwalk()?;
+        walk.simplify_first_parent()?;
+        walk.set_sorting(git2::Sort::TOPOLOGICAL)?;
+        walk.push(filter_commit.id())?;
+
+        Ok(walk
+            .skip(offset)
+            .take(limit)
+            .map(|id| Revision {
+                filter: self.filter,
+                commit_id: history::find_original(
+                    &transaction,
+                    self.filter,
+                    self.commit_id,
+                    id.unwrap_or(git2::Oid::zero()),
+                )
+                .unwrap_or(git2::Oid::zero()),
+            })
+            .collect())
+    }
+
     fn files(
         &self,
         at: Option<String>,
