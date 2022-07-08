@@ -543,63 +543,14 @@ async fn call_service(
     }
 
     if parsed_url.api == "/~/graphql" {
-        let transaction_mirror = josh::cache::Transaction::open(
-            &serv.repo_path.join("mirror"),
-            Some(&format!(
-                "refs/josh/upstream/{}/",
-                &josh::to_ns(&parsed_url.upstream_repo),
-            )),
-        )?;
-        let transaction = josh::cache::Transaction::open(&serv.repo_path.join("overlay"), None)?;
-        transaction.repo().odb()?.add_disk_alternate(
-            &serv
-                .repo_path
-                .join("mirror")
-                .join("objects")
-                .to_str()
-                .unwrap(),
-        )?;
-        let context = std::sync::Arc::new(josh::graphql::context(transaction, transaction_mirror));
-        let root_node = std::sync::Arc::new(josh::graphql::repo_schema(
-            parsed_url
-                .upstream_repo
-                .strip_suffix(".git")
-                .unwrap_or(&parsed_url.upstream_repo)
-                .to_string(),
-            false,
-        ));
-        let gql_result = josh_proxy::juniper_hyper::graphql(root_node, context.clone(), req)
-            .in_current_span()
-            .await?;
-        tokio::task::spawn_blocking(move || -> josh::JoshResult<_> {
-            let temp_ns = Arc::new(josh_proxy::TmpGitNamespace::new(
-                &serv.repo_path.join("overlay"),
-                tracing::Span::current(),
-            ));
-
-            for (reference, oid) in context.to_push.lock()?.iter() {
-                josh_proxy::push_head_url(
-                    context.transaction.lock()?.repo(),
-                    &serv
-                        .repo_path
-                        .join("mirror")
-                        .join("objects")
-                        .to_str()
-                        .unwrap(),
-                    *oid,
-                    &reference,
-                    &remote_url,
-                    &auth,
-                    &temp_ns.name(),
-                    "META_PUSH",
-                    false,
-                )?;
-            }
-            Ok(())
-        })
-        .in_current_span()
-        .await??;
-        return Ok(gql_result);
+        return serve_graphql(
+            serv,
+            req,
+            parsed_url.upstream_repo.to_owned(),
+            remote_url,
+            auth,
+        )
+        .await;
     }
 
     let temp_ns = prepare_namespace(
@@ -1022,6 +973,71 @@ fn update_hook(refname: &str, old: &str, new: &str) -> josh::JoshResult<i32> {
         }
     };
     Ok(1)
+}
+
+async fn serve_graphql(
+    serv: Arc<JoshProxyService>,
+    req: Request<hyper::Body>,
+    upstream_repo: String,
+    remote_url: String,
+    auth: josh_proxy::auth::Handle,
+) -> josh::JoshResult<Response<hyper::Body>> {
+    let transaction_mirror = josh::cache::Transaction::open(
+        &serv.repo_path.join("mirror"),
+        Some(&format!(
+            "refs/josh/upstream/{}/",
+            &josh::to_ns(&upstream_repo),
+        )),
+    )?;
+    let transaction = josh::cache::Transaction::open(&serv.repo_path.join("overlay"), None)?;
+    transaction.repo().odb()?.add_disk_alternate(
+        &serv
+            .repo_path
+            .join("mirror")
+            .join("objects")
+            .to_str()
+            .unwrap(),
+    )?;
+    let context = std::sync::Arc::new(josh::graphql::context(transaction, transaction_mirror));
+    let root_node = std::sync::Arc::new(josh::graphql::repo_schema(
+        upstream_repo
+            .strip_suffix(".git")
+            .unwrap_or(&upstream_repo)
+            .to_string(),
+        false,
+    ));
+    let gql_result = josh_proxy::juniper_hyper::graphql(root_node, context.clone(), req)
+        .in_current_span()
+        .await?;
+    tokio::task::spawn_blocking(move || -> josh::JoshResult<_> {
+        let temp_ns = Arc::new(josh_proxy::TmpGitNamespace::new(
+            &serv.repo_path.join("overlay"),
+            tracing::Span::current(),
+        ));
+
+        for (reference, oid) in context.to_push.lock()?.iter() {
+            josh_proxy::push_head_url(
+                context.transaction.lock()?.repo(),
+                &serv
+                    .repo_path
+                    .join("mirror")
+                    .join("objects")
+                    .to_str()
+                    .unwrap(),
+                *oid,
+                &reference,
+                &remote_url,
+                &auth,
+                &temp_ns.name(),
+                "META_PUSH",
+                false,
+            )?;
+        }
+        Ok(())
+    })
+    .in_current_span()
+    .await??;
+    return Ok(gql_result);
 }
 
 async fn shutdown_signal() {
