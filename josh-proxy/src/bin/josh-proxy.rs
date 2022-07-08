@@ -555,15 +555,6 @@ async fn call_service(
         .await;
     }
 
-    let temp_ns = prepare_namespace(
-        serv.clone(),
-        &parsed_url.upstream_repo,
-        &parsed_url.filter,
-        &headref,
-    )
-    .in_current_span()
-    .await?;
-
     if let (Some(q), true) = (
         req.uri().query().map(|x| x.to_string()),
         parsed_url.pathinfo.is_empty(),
@@ -571,14 +562,17 @@ async fn call_service(
         let s = tracing::span!(tracing::Level::TRACE, "render worker");
         let res = tokio::task::spawn_blocking(move || -> josh::JoshResult<_> {
             let _e = s.enter();
-            let transaction = josh::cache::Transaction::open(
-                &serv.repo_path.join("overlay"),
+
+            let transaction_mirror = josh::cache::Transaction::open(
+                &serv.repo_path.join("mirror"),
                 Some(&format!(
                     "refs/josh/upstream/{}/",
                     &josh::to_ns(&parsed_url.upstream_repo),
                 )),
             )?;
 
+            let transaction =
+                josh::cache::Transaction::open(&serv.repo_path.join("overlay"), None)?;
             transaction.repo().odb()?.add_disk_alternate(
                 &serv
                     .repo_path
@@ -588,7 +582,14 @@ async fn call_service(
                     .unwrap(),
             )?;
 
-            josh::query::render(transaction.repo(), "", &temp_ns.reference(&headref), &q)
+            let filter = josh::filter::parse(&parsed_url.filter)?;
+            let commit_id = transaction_mirror
+                .repo()
+                .refname_to_id(&transaction_mirror.refname(&headref))?;
+            let commit_id =
+                josh::filter_commit(&transaction, filter, commit_id, josh::filter::empty())?;
+
+            josh::query::render(&transaction, "", commit_id, &q)
         })
         .in_current_span()
         .await?;
@@ -607,6 +608,15 @@ async fn call_service(
                 .body(hyper::Body::from(res.to_string()))?,
         });
     }
+
+    let temp_ns = prepare_namespace(
+        serv.clone(),
+        &parsed_url.upstream_repo,
+        &parsed_url.filter,
+        &headref,
+    )
+    .in_current_span()
+    .await?;
 
     let repo_path = serv
         .repo_path

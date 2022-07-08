@@ -87,9 +87,9 @@ mod helpers {
 }
 
 pub fn render(
-    repo: &git2::Repository,
+    transaction: &cache::Transaction,
     ref_prefix: &str,
-    headref: &str,
+    commit_id: git2::Oid,
     query_and_params: &str,
 ) -> JoshResult<Option<String>> {
     let mut parameters = query_and_params.split('&');
@@ -104,14 +104,11 @@ pub fn render(
         .next()
         .ok_or_else(|| josh_error(&format!("invalid query {:?}", query_and_params)))?;
 
-    let reference = repo.find_reference(headref)?;
-    let commit_id = reference.peel_to_commit()?.id();
-
-    let tree = repo.find_commit(commit_id)?.tree()?;
+    let tree = transaction.repo().find_commit(commit_id)?.tree()?;
 
     let obj = ok_or!(
         tree.get_path(&std::path::PathBuf::from(path))?
-            .to_object(repo),
+            .to_object(transaction.repo()),
         {
             return Ok(None);
         }
@@ -140,8 +137,8 @@ pub fn render(
             for (k, v) in params {
                 variables.insert(k.to_string(), juniper::InputValue::scalar(v));
             }
-            let transaction = cache::Transaction::open(repo.path(), None)?;
-            let transaction_overlay = cache::Transaction::open(repo.path(), None)?;
+            let transaction = cache::Transaction::open(transaction.repo().path(), None)?;
+            let transaction_overlay = cache::Transaction::open(transaction.repo().path(), None)?;
             let (res, _errors) = juniper::execute_sync(
                 template,
                 None,
@@ -171,7 +168,7 @@ pub fn render(
     handlebars.register_helper(
         "graphql",
         Box::new(GraphQLHelper {
-            repo_path: repo.path().to_owned(),
+            repo_path: transaction.repo().path().to_owned(),
             ref_prefix: ref_prefix.to_owned(),
             commit_id,
         }),
