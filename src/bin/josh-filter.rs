@@ -372,15 +372,13 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
     std::mem::drop(finish);
 
     if let Some(query) = args.value_of("query") {
+        let repo = git2::Repository::open_from_env()?;
+        let transaction = josh::cache::Transaction::new(repo, None);
+        let commit_id = transaction.repo().refname_to_id(&update_target)?;
         print!(
             "{}",
-            josh::query::render(
-                &git2::Repository::open_from_env()?,
-                "",
-                &update_target.to_string(),
-                query,
-            )?
-            .unwrap_or("File not found".to_string())
+            josh::query::render(&transaction, "", commit_id, query,)?
+                .unwrap_or("File not found".to_string())
         );
     }
 
