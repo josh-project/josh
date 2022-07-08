@@ -562,51 +562,48 @@ async fn call_service(
     .in_current_span()
     .await?;
 
-    if let Some(q) = req.uri().query().map(|x| x.to_string()) {
-        if parsed_url.pathinfo.is_empty() {
-            let s = tracing::span!(tracing::Level::TRACE, "render worker");
-            let res = tokio::task::spawn_blocking(move || -> josh::JoshResult<_> {
-                let _e = s.enter();
-                let transaction = josh::cache::Transaction::open(
-                    &serv.repo_path.join("overlay"),
-                    Some(&format!(
-                        "refs/josh/upstream/{}/",
-                        &josh::to_ns(&parsed_url.upstream_repo),
-                    )),
-                )?;
+    if let (Some(q), true) = (
+        req.uri().query().map(|x| x.to_string()),
+        parsed_url.pathinfo.is_empty(),
+    ) {
+        let s = tracing::span!(tracing::Level::TRACE, "render worker");
+        let res = tokio::task::spawn_blocking(move || -> josh::JoshResult<_> {
+            let _e = s.enter();
+            let transaction = josh::cache::Transaction::open(
+                &serv.repo_path.join("overlay"),
+                Some(&format!(
+                    "refs/josh/upstream/{}/",
+                    &josh::to_ns(&parsed_url.upstream_repo),
+                )),
+            )?;
 
-                transaction.repo().odb()?.add_disk_alternate(
-                    &serv
-                        .repo_path
-                        .join("mirror")
-                        .join("objects")
-                        .to_str()
-                        .unwrap(),
-                )?;
+            transaction.repo().odb()?.add_disk_alternate(
+                &serv
+                    .repo_path
+                    .join("mirror")
+                    .join("objects")
+                    .to_str()
+                    .unwrap(),
+            )?;
 
-                josh::query::render(transaction.repo(), "", &temp_ns.reference(&headref), &q)
-            })
-            .in_current_span()
-            .await?;
-            match res {
-                Ok(res) => {
-                    if let Some(res) = res {
-                        return Ok(Response::builder()
-                            .status(hyper::StatusCode::OK)
-                            .body(hyper::Body::from(res))?);
-                    } else {
-                        return Ok(Response::builder()
-                            .status(hyper::StatusCode::NOT_FOUND)
-                            .body(hyper::Body::from("File not found".to_string()))?);
-                    }
-                }
-                Err(res) => {
-                    return Ok(Response::builder()
-                        .status(hyper::StatusCode::UNPROCESSABLE_ENTITY)
-                        .body(hyper::Body::from(res.to_string()))?)
-                }
-            }
-        }
+            josh::query::render(transaction.repo(), "", &temp_ns.reference(&headref), &q)
+        })
+        .in_current_span()
+        .await?;
+
+        return Ok(match res {
+            Ok(Some(res)) => Response::builder()
+                .status(hyper::StatusCode::OK)
+                .body(hyper::Body::from(res))?,
+
+            Ok(None) => Response::builder()
+                .status(hyper::StatusCode::NOT_FOUND)
+                .body(hyper::Body::from("File not found".to_string()))?,
+
+            Err(res) => Response::builder()
+                .status(hyper::StatusCode::UNPROCESSABLE_ENTITY)
+                .body(hyper::Body::from(res.to_string()))?,
+        });
     }
 
     let repo_path = serv
