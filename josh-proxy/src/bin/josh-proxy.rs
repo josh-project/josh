@@ -530,9 +530,7 @@ async fn call_service(
             }
         }
         Err(res) => {
-            let builder = Response::builder()
-                .header("WWW-Authenticate", "Basic realm=User Visible Realm")
-                .status(hyper::StatusCode::INTERNAL_SERVER_ERROR);
+            let builder = Response::builder().status(hyper::StatusCode::INTERNAL_SERVER_ERROR);
             return Ok(builder.body(hyper::Body::from(res.0))?);
         }
     }
