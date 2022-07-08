@@ -175,13 +175,12 @@ pub fn get_change_id(commit: &git2::Commit, sha: git2::Oid) -> Change {
 }
 
 #[tracing::instrument(skip(transaction))]
-fn filter_ref(
+pub fn filter_commit(
     transaction: &cache::Transaction,
     filterobj: filter::Filter,
-    from_refsname: &(String, git2::Oid),
+    oid: git2::Oid,
     permissions: filter::Filter,
 ) -> JoshResult<git2::Oid> {
-    let oid = from_refsname.1;
     let original_commit = transaction.repo().find_commit(oid)?;
 
     let perms_commit = if let Some(s) = transaction.get_ref(permissions, oid) {
@@ -197,11 +196,11 @@ fn filter_ref(
         if !perms_commit.tree()?.is_empty() || perms_commit.parents().len() > 0 {
             tracing::event!(
                 tracing::Level::WARN,
-                msg = "filter_refs: missing permissions for ref",
+                msg = "filter_commit: missing permissions for commit",
                 warn = true,
-                reference = from_refsname.0,
+                oid = format!("{:?}", oid),
             );
-            return Err(josh_error("missing permissions for ref"));
+            return Err(josh_error("missing permissions for commit"));
         }
     }
 
@@ -232,7 +231,7 @@ pub fn filter_refs(
     tracing::trace!("filter_refs");
 
     for k in refs {
-        let oid = ok_or!(filter_ref(&transaction, filterobj, &k, permissions), {
+        let oid = ok_or!(filter_commit(&transaction, filterobj, k.1, permissions), {
             tracing::event!(
                 tracing::Level::WARN,
                 msg = "filter_refs: Can't filter reference",
