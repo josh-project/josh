@@ -184,7 +184,9 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
         };
 
         let to_push = if let Some(change_ids) = change_ids {
-            let mut v = vec![(
+            let mut v = vec![];
+            v.append(&mut change_ids_to_refs(&baseref, &author, change_ids)?);
+            v.push((
                 format!(
                     "refs/heads/@heads/{}/{}",
                     baseref.replacen("refs/heads/", "", 1),
@@ -192,8 +194,7 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
                 ),
                 oid_to_push,
                 baseref.replacen("refs/heads/", "", 1),
-            )];
-            v.append(&mut change_ids_to_refs(baseref, author, change_ids)?);
+            ));
             v
         } else {
             vec![(ref_with_options, oid_to_push, "JOSH_PUSH".to_string())]
@@ -471,8 +472,8 @@ impl Drop for TmpGitNamespace {
 }
 
 fn change_ids_to_refs(
-    baseref: String,
-    change_author: String,
+    baseref: &str,
+    change_author: &str,
     change_ids: Vec<josh::Change>,
 ) -> josh::JoshResult<Vec<(String, git2::Oid, String)>> {
     let mut seen = vec![];
