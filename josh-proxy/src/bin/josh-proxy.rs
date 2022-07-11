@@ -559,54 +559,14 @@ async fn call_service(
         req.uri().query().map(|x| x.to_string()),
         parsed_url.pathinfo.is_empty(),
     ) {
-        let s = tracing::span!(tracing::Level::TRACE, "render worker");
-        let res = tokio::task::spawn_blocking(move || -> josh::JoshResult<_> {
-            let _e = s.enter();
-
-            let transaction_mirror = josh::cache::Transaction::open(
-                &serv.repo_path.join("mirror"),
-                Some(&format!(
-                    "refs/josh/upstream/{}/",
-                    &josh::to_ns(&parsed_url.upstream_repo),
-                )),
-            )?;
-
-            let transaction =
-                josh::cache::Transaction::open(&serv.repo_path.join("overlay"), None)?;
-            transaction.repo().odb()?.add_disk_alternate(
-                &serv
-                    .repo_path
-                    .join("mirror")
-                    .join("objects")
-                    .to_str()
-                    .unwrap(),
-            )?;
-
-            let filter = josh::filter::parse(&parsed_url.filter)?;
-            let commit_id = transaction_mirror
-                .repo()
-                .refname_to_id(&transaction_mirror.refname(&headref))?;
-            let commit_id =
-                josh::filter_commit(&transaction, filter, commit_id, josh::filter::empty())?;
-
-            josh::query::render(&transaction, "", commit_id, &q)
-        })
-        .in_current_span()
-        .await?;
-
-        return Ok(match res {
-            Ok(Some(res)) => Response::builder()
-                .status(hyper::StatusCode::OK)
-                .body(hyper::Body::from(res))?,
-
-            Ok(None) => Response::builder()
-                .status(hyper::StatusCode::NOT_FOUND)
-                .body(hyper::Body::from("File not found".to_string()))?,
-
-            Err(res) => Response::builder()
-                .status(hyper::StatusCode::UNPROCESSABLE_ENTITY)
-                .body(hyper::Body::from(res.to_string()))?,
-        });
+        return serve_query(
+            serv,
+            q,
+            parsed_url.upstream_repo,
+            parsed_url.filter,
+            headref,
+        )
+        .await;
     }
 
     let temp_ns = prepare_namespace(
@@ -686,6 +646,62 @@ async fn call_service(
     std::mem::drop(temp_ns);
 
     Ok(cgires.0)
+}
+
+async fn serve_query(
+    serv: Arc<JoshProxyService>,
+    q: String,
+    upstream_repo: String,
+    filter_spec: String,
+    headref: String,
+) -> josh::JoshResult<Response<hyper::Body>> {
+    let s = tracing::span!(tracing::Level::TRACE, "render worker");
+    let res = tokio::task::spawn_blocking(move || -> josh::JoshResult<_> {
+        let _e = s.enter();
+
+        let transaction_mirror = josh::cache::Transaction::open(
+            &serv.repo_path.join("mirror"),
+            Some(&format!(
+                "refs/josh/upstream/{}/",
+                &josh::to_ns(&upstream_repo),
+            )),
+        )?;
+
+        let transaction = josh::cache::Transaction::open(&serv.repo_path.join("overlay"), None)?;
+        transaction.repo().odb()?.add_disk_alternate(
+            &serv
+                .repo_path
+                .join("mirror")
+                .join("objects")
+                .to_str()
+                .unwrap(),
+        )?;
+
+        let filter = josh::filter::parse(&filter_spec)?;
+        let commit_id = transaction_mirror
+            .repo()
+            .refname_to_id(&transaction_mirror.refname(&headref))?;
+        let commit_id =
+            josh::filter_commit(&transaction, filter, commit_id, josh::filter::empty())?;
+
+        josh::query::render(&transaction, "", commit_id, &q)
+    })
+    .in_current_span()
+    .await?;
+
+    return Ok(match res {
+        Ok(Some(res)) => Response::builder()
+            .status(hyper::StatusCode::OK)
+            .body(hyper::Body::from(res))?,
+
+        Ok(None) => Response::builder()
+            .status(hyper::StatusCode::NOT_FOUND)
+            .body(hyper::Body::from("File not found".to_string()))?,
+
+        Err(res) => Response::builder()
+            .status(hyper::StatusCode::UNPROCESSABLE_ENTITY)
+            .body(hyper::Body::from(res.to_string()))?,
+    });
 }
 
 #[tracing::instrument]
