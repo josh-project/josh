@@ -140,7 +140,7 @@ export class RepoSelector extends React.Component<RepoSelectorProps, State> {
             return
         }
 
-        this.props.navigateCallback(NavigateTargetType.Directory, {
+        this.props.navigateCallback(NavigateTargetType.History, {
             repo:   parsedInput.target[0].getOrElse('') + '.git',
             path:   '',
             filter: parsedInput.target[1].getOrElse(':/'),
