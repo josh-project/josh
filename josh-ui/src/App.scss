@@ -119,6 +119,15 @@ nav {
   }
 }
 
+.commit-list-entry {
+  @include ui-link-clickable;
+  padding: .4em .4em;
+
+  &:hover {
+    background: $color-background-highlight;
+  }
+}
+
 .ui-button {
   $shadow-depth: 0.1em;
 
