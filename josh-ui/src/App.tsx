@@ -16,6 +16,7 @@ import {RepoSelector} from './RepoSelector';
 import {NavigateCallback, NavigateTarget, NavigateTargetType} from "./Navigation";
 import {match} from "ts-pattern";
 import {FileViewer} from "./FileViewer";
+import {HistoryList} from "./History";
 import {Breadcrumbs} from "./Breadcrumbs";
 
 function useNavigateCallback(): NavigateCallback {
@@ -29,6 +30,7 @@ function useNavigateCallback(): NavigateCallback {
         }
 
         const pathname = match(targetType)
+            .with(NavigateTargetType.History, () => '/history')
             .with(NavigateTargetType.Directory, () => '/browse')
             .with(NavigateTargetType.File, () => '/view')
             .run()
@@ -102,6 +104,24 @@ function Browse() {
     </div>
 }
 
+function History() {
+    const param = useGetSearchParam()
+
+    return <div>
+        <TopNav
+            repo={param('repo')} 
+            filter={param('filter')} />
+
+        <HistoryList
+            repo={param('repo')}
+            filter={param('filter')}
+            rev={param('rev')}
+            navigateCallback={useNavigateCallback()}
+        />
+    </div>
+}
+
+
 function View() {
     const param = useGetSearchParam()
 
@@ -136,6 +156,7 @@ function App() {
                 <Route index element={<Navigate to="/select" />} />
                 <Route path='/select' element={<Select />} />
                 <Route path='/browse' element={<Browse />} />
+                <Route path='/history' element={<History />} />
                 <Route path='/view' element={<View />} />
             </Routes>
         </BrowserRouter>

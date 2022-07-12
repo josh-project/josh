@@ -1,6 +1,7 @@
 import { gql } from 'graphql-request'
 
 export enum NavigateTargetType {
+  History,
   File,
   Directory
 }
@@ -33,6 +34,16 @@ query PathQuery($rev: String!, $filter: String!, $path: String!, $meta: String!)
     files(at:$path,depth: 1) { 
       path, 
       meta(topic:$meta) { count } 
+    }
+  }
+}
+`
+export const QUERY_HISTORY = gql`
+query HistoryQuery($rev: String!, $filter: String!, $limit: Number) {
+  rev(at:$rev, filter:$filter) {
+    history(limit: $limit) {
+      summary
+      hash
     }
   }
 }
