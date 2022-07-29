@@ -1972,9 +1972,9 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
 name = "strfmt"
-version = "0.1.6"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b278b244ef7aa5852b277f52dd0c6cac3a109919e1f6d699adde63251227a30f"
+checksum = "205a0184fcaffdec072904ae8bdc2f42b6ffe315c7d38e47cba75ec55809b3ad"
 
 [[package]]
 name = "strsim"
