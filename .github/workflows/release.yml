@@ -35,6 +35,8 @@ jobs:
           file: Dockerfile
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          build-contexts: |
+            'git=.git'
           target: run
           push: true
           tags: ${{ steps.meta.outputs.tags }}

@@ -57,7 +57,7 @@ RUN pip3 install \
   pygit2==${PYGIT2_VERSION}
 
 RUN <<EOF
-curl --fail --show-error --silent --location https://deb.nodesource.com/setup_17.x | bash - && \
+curl --fail --show-error --silent --location https://deb.nodesource.com/setup_18.x | bash - && \
 apt-get install --yes nodejs
 EOF
 
@@ -91,11 +91,10 @@ RUN cd josh-ui && npm install
 
 FROM dev as build
 
-
 COPY . .
-RUN \
-  cargo build -p josh-proxy --release && \
-  cargo build -p josh-ui --release
+RUN cargo build -p josh-ui --release
+RUN --mount=target=.git,from=git \
+  cargo build -p josh-proxy --release
 
 FROM debian:bullseye as run
 
