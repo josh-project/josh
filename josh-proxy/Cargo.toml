@@ -21,7 +21,7 @@ hyper-staticfile = "0.9.1"
 hyper-tls = "0.5.0"
 toml = "0.5.9"
 git2 = "0.15.0"
-tracing = { version = "0.1.35", features = ["max_level_trace", "release_max_level_trace"] }
+tracing = { version = "0.1.36", features = ["max_level_trace", "release_max_level_trace"] }
 tracing-futures = "0.2.5"
 tracing-subscriber = { version = "0.3.15", features = ["env-filter"]}
 tracing-opentelemetry = "0.17.4"
