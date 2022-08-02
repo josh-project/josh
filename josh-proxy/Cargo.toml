@@ -35,7 +35,7 @@ lazy_static = "1.4.0"
 josh = {path = "../"}
 serde_json= "1.0.82"
 serde= "1.0.141"
-unindent = "0.1.9"
+unindent = "0.1.10"
 juniper = { version = "0.15.7", features = ["expose-test-schema"] }
 url = "2.2.2"
 percent-encoding = "2.1.0"
