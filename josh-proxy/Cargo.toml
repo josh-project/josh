@@ -39,5 +39,5 @@ unindent = "0.1.9"
 juniper = { version = "0.15.7", features = ["expose-test-schema"] }
 url = "2.2.2"
 percent-encoding = "2.1.0"
-indoc = "1.0.6"
+indoc = "1.0.7"
 hyper-reverse-proxy = "0.5.1"
