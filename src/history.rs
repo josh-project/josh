@@ -75,11 +75,11 @@ pub fn walk2(
 
 fn find_unapply_base(
     transaction: &cache::Transaction,
-    bm: &mut std::collections::HashMap<git2::Oid, git2::Oid>,
+    bm: &mut HashMap<git2::Oid, git2::Oid>,
     filter: filter::Filter,
     contained_in: git2::Oid,
     filtered: git2::Oid,
-) -> super::JoshResult<git2::Oid> {
+) -> JoshResult<git2::Oid> {
     if contained_in == git2::Oid::zero() {
         tracing::info!("contained in zero",);
         return Ok(git2::Oid::zero());
@@ -115,7 +115,7 @@ pub fn find_original(
     filter: filter::Filter,
     contained_in: git2::Oid,
     filtered: git2::Oid,
-) -> super::JoshResult<git2::Oid> {
+) -> JoshResult<git2::Oid> {
     if contained_in == git2::Oid::zero() {
         return Ok(git2::Oid::zero());
     }
@@ -210,7 +210,7 @@ fn find_oldest_similar_commit(
     transaction: &cache::Transaction,
     filter: filter::Filter,
     unfiltered: git2::Oid,
-) -> super::JoshResult<git2::Oid> {
+) -> JoshResult<git2::Oid> {
     let walk = {
         let mut walk = transaction.repo().revwalk()?;
         walk.set_sorting(git2::Sort::TOPOLOGICAL)?;
@@ -232,16 +232,16 @@ fn find_oldest_similar_commit(
         prev_rev = rev;
     }
     tracing::info!("bottom");
-    return Ok(prev_rev);
+    Ok(prev_rev)
 }
 
 fn find_new_branch_base(
     transaction: &cache::Transaction,
-    bm: &mut std::collections::HashMap<git2::Oid, git2::Oid>,
+    bm: &mut HashMap<git2::Oid, git2::Oid>,
     filter: filter::Filter,
     contained_in: git2::Oid,
     filtered: git2::Oid,
-) -> super::JoshResult<git2::Oid> {
+) -> JoshResult<git2::Oid> {
     let walk = {
         let mut walk = transaction.repo().revwalk()?;
         walk.set_sorting(git2::Sort::TOPOLOGICAL)?;
@@ -268,7 +268,7 @@ fn find_new_branch_base(
         }
     }
     tracing::info!("new branch base not found");
-    return Ok(git2::Oid::zero());
+    Ok(git2::Oid::zero())
 }
 
 #[tracing::instrument(skip(transaction, change_ids))]
@@ -282,7 +282,7 @@ pub fn unapply_filter(
     reparent_orphans: Option<git2::Oid>,
     change_ids: &mut Option<Vec<Change>>,
 ) -> JoshResult<git2::Oid> {
-    let mut bm = std::collections::HashMap::new();
+    let mut bm = HashMap::new();
     let mut ret = original_target;
 
     let old = if old == git2::Oid::zero() {
@@ -343,16 +343,16 @@ pub fn unapply_filter(
         let mut filtered_parent_ids: Vec<_> = module_commit.parent_ids().collect();
 
         let is_initial_merge = filtered_parent_ids.len() == 2
-            && !transaction
+            && transaction
                 .repo()
                 .merge_base_many(&filtered_parent_ids)
-                .is_ok();
+                .is_err();
 
         if !keep_orphans && is_initial_merge {
             filtered_parent_ids.pop();
         }
 
-        let original_parents: std::result::Result<Vec<_>, _> = filtered_parent_ids
+        let original_parents: Result<Vec<_>, _> = filtered_parent_ids
             .iter()
             .map(|x| -> JoshResult<_> {
                 find_unapply_base(transaction, &mut bm, filterobj, original_target, *x)
@@ -477,7 +477,7 @@ pub fn unapply_filter(
         )?;
 
         if let Some(ref mut change_ids) = change_ids {
-            change_ids.push(super::get_change_id(&module_commit, ret));
+            change_ids.push(get_change_id(&module_commit, ret));
         }
 
         bm.insert(module_commit.id(), ret);
@@ -530,11 +530,11 @@ pub fn create_filtered_commit<'a>(
 
 fn create_filtered_commit2<'a>(
     repo: &'a git2::Repository,
-    original_commmit: &'a git2::Commit,
+    original_commit: &'a git2::Commit,
     filtered_parent_ids: Vec<git2::Oid>,
     filtered_tree: git2::Tree<'a>,
 ) -> JoshResult<(git2::Oid, bool)> {
-    let filtered_parent_commits: std::result::Result<Vec<_>, _> = filtered_parent_ids
+    let filtered_parent_commits: Result<Vec<_>, _> = filtered_parent_ids
         .iter()
         .filter(|x| **x != git2::Oid::zero())
         .map(|x| repo.find_commit(*x))
@@ -555,14 +555,13 @@ fn create_filtered_commit2<'a>(
     }
 
     let selected_filtered_parent_commits: Vec<&_> = select_parent_commits(
-        original_commmit,
+        original_commit,
         filtered_tree.id(),
         filtered_parent_commits.iter().collect(),
     );
 
     if selected_filtered_parent_commits.is_empty()
-        && !(original_commmit.parents().len() == 0
-            && is_empty_root(repo, &original_commmit.tree()?))
+        && !(original_commit.parents().len() == 0 && is_empty_root(repo, &original_commit.tree()?))
     {
         if !filtered_parent_commits.is_empty() {
             return Ok((filtered_parent_commits[0].id(), false));
@@ -575,7 +574,7 @@ fn create_filtered_commit2<'a>(
     Ok((
         rewrite_commit(
             repo,
-            original_commmit,
+            original_commit,
             &selected_filtered_parent_commits,
             &filtered_tree,
         )?,

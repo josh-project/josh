@@ -137,7 +137,7 @@ impl Revision {
         };
 
         Ok(Some(Revision {
-            filter: filter::parse(&filter.unwrap_or(":/".to_string()))?,
+            filter: filter::parse(&filter.unwrap_or_else(|| ":/".to_string()))?,
             commit_id,
         }))
     }
@@ -156,7 +156,7 @@ impl Revision {
             .map(|id| Revision {
                 filter: self.filter,
                 commit_id: history::find_original(&transaction, self.filter, self.commit_id, id)
-                    .unwrap_or(git2::Oid::zero()),
+                    .unwrap_or_else(|_| git2::Oid::zero()),
             })
             .collect();
 
@@ -402,7 +402,7 @@ impl Markers {
                     id: s
                         .next()
                         .and_then(|x| git2::Oid::from_str(x).ok())
-                        .unwrap_or(git2::Oid::zero()),
+                        .unwrap_or_else(git2::Oid::zero),
                     value: s
                         .next()
                         .and_then(|x| serde_json::from_str::<serde_json::Value>(x).ok())
@@ -433,7 +433,7 @@ impl Markers {
             .map(|p| transaction.repo().find_tree(p.id()).ok())
             .ok()
             .flatten()
-            .unwrap_or(filter::tree::empty(transaction.repo()));
+            .unwrap_or_else(|| filter::tree::empty(transaction.repo()));
 
         let mtree = if self.filter == filter::nop() {
             mtree
@@ -483,7 +483,8 @@ impl Path {
     ) -> FieldResult<Document> {
         self.internal_serialize(context, |transaction, id| {
             let blob = transaction.repo().find_blob(id)?;
-            let value = str_to_value(std::str::from_utf8(blob.content())?).unwrap_or(json!({}));
+            let value =
+                str_to_value(std::str::from_utf8(blob.content())?).unwrap_or_else(|_| json!({}));
             Ok(Document { id, value })
         })
     }
@@ -646,10 +647,10 @@ impl Reference {
             .repo()
             .find_reference(&self.refname)?
             .target()
-            .unwrap_or(git2::Oid::zero());
+            .unwrap_or_else(git2::Oid::zero);
 
         Ok(Revision {
-            filter: filter::parse(&filter.unwrap_or(":/".to_string()))?,
+            filter: filter::parse(&filter.unwrap_or_else(|| ":/".to_string()))?,
             commit_id,
         })
     }
@@ -690,7 +691,7 @@ struct MarkerInput {
     text: String,
 }
 
-fn format_marker(input: &String) -> JoshResult<String> {
+fn format_marker(input: &str) -> JoshResult<String> {
     let value = serde_json::from_str::<serde_json::Value>(input)?;
     let line = serde_json::to_string(&value)?;
     let hash = git2::Oid::hash_object(git2::ObjectType::Blob, line.as_bytes())?;
@@ -737,6 +738,7 @@ impl RepositoryMut {
             let mm = mm
                 .data
                 .iter()
+                .map(String::as_str)
                 .map(format_marker)
                 .collect::<JoshResult<Vec<_>>>()?;
 
@@ -784,7 +786,7 @@ impl Repository {
         let refname = format!(
             "{}{}",
             self.ns,
-            pattern.unwrap_or("refs/heads/*".to_string())
+            pattern.unwrap_or_else(|| "refs/heads/*".to_string())
         );
 
         log::debug!("refname: {:?}", refname);
@@ -793,7 +795,9 @@ impl Repository {
 
         for reference in transaction.repo().references_glob(&refname)? {
             let r = reference?;
-            let name = r.name().ok_or(josh_error("reference without name"))?;
+            let name = r
+                .name()
+                .ok_or_else(|| josh_error("reference without name"))?;
 
             refs.push(Reference {
                 refname: name.to_string(),
@@ -814,7 +818,7 @@ impl Repository {
         };
 
         Ok(Revision {
-            filter: filter::parse(&filter.unwrap_or(":/".to_string()))?,
+            filter: filter::parse(&filter.unwrap_or_else(|| ":/".to_string()))?,
             commit_id,
         })
     }

@@ -26,12 +26,12 @@ pub fn optimize(filter: Filter) -> Filter {
 
     let mut filter = flatten(filter);
     let result = loop {
-        let pretty = opt::simplify(filter);
-        let optimized = opt::iterate(filter);
-        filter = opt::simplify(optimized);
+        let pretty = simplify(filter);
+        let optimized = iterate(filter);
+        filter = simplify(optimized);
 
         if filter == pretty {
-            break opt::iterate(filter);
+            break iterate(filter);
         }
     };
 
@@ -74,9 +74,10 @@ pub fn simplify(filter: Filter) -> Filter {
             },
             (a, b) => Op::Chain(simplify(to_filter(a)), simplify(to_filter(b))),
         },
-        Op::Subtract(a, b) => match (to_op(a), to_op(b)) {
-            (a, b) => Op::Subtract(simplify(to_filter(a)), simplify(to_filter(b))),
-        },
+        Op::Subtract(a, b) => {
+            let (a, b) = (to_op(a), to_op(b));
+            Op::Subtract(simplify(to_filter(a)), simplify(to_filter(b)))
+        }
         Op::Exclude(b) => Op::Exclude(simplify(b)),
         _ => to_op(filter),
     });
@@ -128,9 +129,10 @@ pub fn flatten(filter: Filter) -> Filter {
             }
             _ => Op::Chain(flatten(af), flatten(bf)),
         },
-        Op::Subtract(a, b) => match (to_op(a), to_op(b)) {
-            (a, b) => Op::Subtract(flatten(to_filter(a)), flatten(to_filter(b))),
-        },
+        Op::Subtract(a, b) => {
+            let (a, b) = (to_op(a), to_op(b));
+            Op::Subtract(flatten(to_filter(a)), flatten(to_filter(b)))
+        }
         Op::Exclude(b) => Op::Exclude(flatten(b)),
         _ => to_op(filter),
     });
@@ -195,8 +197,8 @@ fn last_chain(rest: Filter, filter: Filter) -> (Filter, Filter) {
     }
 }
 
-fn prefix_sort(filters: &Vec<Filter>) -> Vec<Filter> {
-    let mut sorted = filters.clone();
+fn prefix_sort(filters: &[Filter]) -> Vec<Filter> {
+    let mut sorted = filters.to_owned();
     sorted.sort_by(|a, b| {
         let (src_a, src_b) = (src_path(*a), src_path(*b));
         if src_a.starts_with(&src_b) || src_b.starts_with(&src_a) {
@@ -279,14 +281,11 @@ fn iterate(filter: Filter) -> Filter {
 }
 
 fn is_prefix(op: Op) -> bool {
-    match op {
-        Op::Prefix(_) => true,
-        _ => false,
-    }
+    matches!(op, Op::Prefix(_))
 }
 
 fn prefix_of(op: Op) -> Filter {
-    let last = to_op(last_chain(to_filter(Op::Nop), to_filter(op.clone())).1);
+    let last = to_op(last_chain(to_filter(Op::Nop), to_filter(op)).1);
     to_filter(if is_prefix(last.clone()) {
         last
     } else {
@@ -373,7 +372,7 @@ fn step(filter: Filter) -> Filter {
                 Op::Chain(a, to_filter(Op::Subtract(b, d)))
             }
             (_, b) if prefix_of(b.clone()) != to_filter(Op::Nop) => {
-                Op::Subtract(af, last_chain(to_filter(Op::Nop), to_filter(b.clone())).0)
+                Op::Subtract(af, last_chain(to_filter(Op::Nop), to_filter(b)).0)
             }
             (a, _) if prefix_of(a.clone()) != to_filter(Op::Nop) => Op::Chain(
                 to_filter(Op::Subtract(

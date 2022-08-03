@@ -94,14 +94,14 @@ pub fn render(
     let mut parameters = query_and_params.split('&');
     let query = parameters
         .next()
-        .ok_or(josh_error(&format!("invalid query {:?}", query_and_params)))?;
+        .ok_or_else(|| josh_error(&format!("invalid query {:?}", query_and_params)))?;
     let mut split = query.splitn(2, '=');
     let cmd = split
         .next()
-        .ok_or(josh_error(&format!("invalid query {:?}", query_and_params)))?;
+        .ok_or_else(|| josh_error(&format!("invalid query {:?}", query_and_params)))?;
     let path = split
         .next()
-        .ok_or(josh_error(&format!("invalid query {:?}", query_and_params)))?;
+        .ok_or_else(|| josh_error(&format!("invalid query {:?}", query_and_params)))?;
 
     let reference = repo.find_reference(headref)?;
     let commit_id = reference.peel_to_commit()?.id();
@@ -121,10 +121,10 @@ pub fn render(
         let mut split = p.splitn(2, '=');
         let name = split
             .next()
-            .ok_or(josh_error(&format!("invalid query {:?}", query_and_params)))?;
+            .ok_or_else(|| josh_error(&format!("invalid query {:?}", query_and_params)))?;
         let value = split
             .next()
-            .ok_or(josh_error(&format!("invalid query {:?}", query_and_params)))?;
+            .ok_or_else(|| josh_error(&format!("invalid query {:?}", query_and_params)))?;
         params.insert(name.to_string(), value.to_string());
     }
 
@@ -141,7 +141,7 @@ pub fn render(
             }
             let transaction = cache::Transaction::open(repo.path(), None)?;
             let (res, _errors) = juniper::execute_sync(
-                &template.to_string(),
+                template,
                 None,
                 &graphql::commit_schema(commit_id),
                 &variables,
@@ -160,8 +160,8 @@ pub fn render(
         return Ok(Some("".to_string()));
     };
 
-    std::mem::drop(obj);
-    std::mem::drop(tree);
+    drop(obj);
+    drop(tree);
 
     let mut handlebars = handlebars::Handlebars::new();
     handlebars.register_template_string(path, template)?;
@@ -171,7 +171,7 @@ pub fn render(
         Box::new(GraphQLHelper {
             repo_path: repo.path().to_owned(),
             ref_prefix: ref_prefix.to_owned(),
-            commit_id: commit_id,
+            commit_id,
         }),
     );
     handlebars.set_strict_mode(true);
