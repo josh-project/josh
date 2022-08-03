@@ -7,33 +7,32 @@ pub fn pathstree<'a>(
     root: &str,
     input: git2::Oid,
     transaction: &'a cache::Transaction,
-) -> super::JoshResult<git2::Tree<'a>> {
+) -> JoshResult<git2::Tree<'a>> {
     let repo = transaction.repo();
     if let Some(cached) = transaction.get_paths((input, root.to_string())) {
         return Ok(repo.find_tree(cached)?);
     }
 
     let tree = repo.find_tree(input)?;
-    let mut result = tree::empty(repo);
+    let mut result = empty(repo);
 
     for entry in tree.iter() {
-        let name = entry.name().ok_or(super::josh_error("no name"))?;
+        let name = entry.name().ok_or_else(|| josh_error("no name"))?;
         if entry.kind() == Some(git2::ObjectType::Blob) {
-            let file_contents;
-            let path = normalize_path(&std::path::Path::new(root).join(name));
-            let path_string = path.to_str().ok_or(super::josh_error("no name"))?;
-            if name == "workspace.josh" {
-                file_contents = format!(
+            let path = normalize_path(&Path::new(root).join(name));
+            let path_string = path.to_str().ok_or_else(|| josh_error("no name"))?;
+            let file_contents = if name == "workspace.josh" {
+                format!(
                     "#{}\n{}",
                     path_string,
-                    get_blob(repo, &tree, std::path::Path::new(&name))
-                );
+                    get_blob(repo, &tree, Path::new(&name))
+                )
             } else {
-                file_contents = path_string.to_string();
-            }
+                path_string.to_string()
+            };
             result = replace_child(
                 repo,
-                std::path::Path::new(name),
+                Path::new(name),
                 repo.blob(file_contents.as_bytes())?,
                 0o0100644,
                 &result,
@@ -48,8 +47,8 @@ pub fn pathstree<'a>(
             )?
             .id();
 
-            if s != tree::empty_id() {
-                result = replace_child(repo, std::path::Path::new(name), s, 0o0040000, &result)?;
+            if s != empty_id() {
+                result = replace_child(repo, Path::new(name), s, 0o0040000, &result)?;
             }
         }
     }
@@ -61,9 +60,9 @@ pub fn remove_pred<'a>(
     transaction: &'a cache::Transaction,
     root: &str,
     input: git2::Oid,
-    pred: &dyn Fn(&std::path::Path, bool) -> bool,
+    pred: &dyn Fn(&Path, bool) -> bool,
     key: git2::Oid,
-) -> super::JoshResult<git2::Tree<'a>> {
+) -> JoshResult<git2::Tree<'a>> {
     let repo = transaction.repo();
     if let Some(cached) = transaction.get_glob((input, key)) {
         return Ok(repo.find_tree(cached)?);
@@ -71,16 +70,16 @@ pub fn remove_pred<'a>(
     rs_tracing::trace_scoped!("remove_pred X", "root": root);
 
     let tree = repo.find_tree(input)?;
-    let mut result = tree::empty(repo);
+    let mut result = empty(repo);
 
     for entry in tree.iter() {
-        let name = entry.name().ok_or(super::josh_error("INVALID_FILENAME"))?;
+        let name = entry.name().ok_or_else(|| josh_error("INVALID_FILENAME"))?;
         let path = std::path::PathBuf::from(root).join(name);
 
         if entry.kind() == Some(git2::ObjectType::Blob) && pred(&path, true) {
             result = replace_child(
                 repo,
-                std::path::Path::new(entry.name().ok_or(super::josh_error("no name"))?),
+                Path::new(entry.name().ok_or_else(|| josh_error("no name"))?),
                 entry.id(),
                 entry.filemode(),
                 &result,
@@ -97,7 +96,7 @@ pub fn remove_pred<'a>(
                         "{}{}{}",
                         root,
                         if root.is_empty() { "" } else { "/" },
-                        entry.name().ok_or(super::josh_error("no name"))?
+                        entry.name().ok_or_else(|| josh_error("no name"))?
                     ),
                     entry.id(),
                     &pred,
@@ -106,10 +105,10 @@ pub fn remove_pred<'a>(
                 .id()
             };
 
-            if s != tree::empty_id() {
+            if s != empty_id() {
                 result = replace_child(
                     repo,
-                    std::path::Path::new(entry.name().ok_or(super::josh_error("no name"))?),
+                    Path::new(entry.name().ok_or_else(|| josh_error("no name"))?),
                     s,
                     0o0040000,
                     &result,
@@ -122,17 +121,17 @@ pub fn remove_pred<'a>(
     Ok(result)
 }
 
-pub fn subtract<'a>(
-    transaction: &'a cache::Transaction,
+pub fn subtract(
+    transaction: &cache::Transaction,
     input1: git2::Oid,
     input2: git2::Oid,
-) -> super::JoshResult<git2::Oid> {
+) -> JoshResult<git2::Oid> {
     let repo = transaction.repo();
     if input1 == input2 {
-        return Ok(tree::empty_id());
+        return Ok(empty_id());
     }
-    if input1 == tree::empty_id() {
-        return Ok(tree::empty_id());
+    if input1 == empty_id() {
+        return Ok(empty_id());
     }
 
     if let Some(cached) = transaction.get_subtract((input1, input2)) {
@@ -140,17 +139,17 @@ pub fn subtract<'a>(
     }
 
     if let (Ok(tree1), Ok(tree2)) = (repo.find_tree(input1), repo.find_tree(input2)) {
-        if input2 == tree::empty_id() {
+        if input2 == empty_id() {
             return Ok(input1);
         }
         rs_tracing::trace_scoped!("subtract fast");
         let mut result_tree = tree1.clone();
 
         for entry in tree2.iter() {
-            if let Some(e) = tree1.get_name(entry.name().ok_or(super::josh_error("no name"))?) {
+            if let Some(e) = tree1.get_name(entry.name().ok_or_else(|| josh_error("no name"))?) {
                 result_tree = replace_child(
                     repo,
-                    std::path::Path::new(entry.name().ok_or(super::josh_error("no name"))?),
+                    Path::new(entry.name().ok_or_else(|| josh_error("no name"))?),
                     subtract(transaction, e.id(), entry.id())?,
                     e.filemode(),
                     &result_tree,
@@ -163,23 +162,23 @@ pub fn subtract<'a>(
         return Ok(result_tree.id());
     }
 
-    transaction.insert_subtract((input1, input2), tree::empty_id());
+    transaction.insert_subtract((input1, input2), empty_id());
 
-    Ok(tree::empty_id())
+    Ok(empty_id())
 }
 
 fn replace_child<'a>(
     repo: &'a git2::Repository,
-    child: &std::path::Path,
+    child: &Path,
     oid: git2::Oid,
     mode: i32,
     full_tree: &git2::Tree,
-) -> super::JoshResult<git2::Tree<'a>> {
+) -> JoshResult<git2::Tree<'a>> {
     let full_tree_id = {
         let mut builder = repo.treebuilder(Some(full_tree))?;
         if oid == git2::Oid::zero() {
             builder.remove(child).ok();
-        } else if oid == tree::empty_id() {
+        } else if oid == empty_id() {
             builder.remove(child).ok();
         } else {
             builder.insert(child, oid, mode).ok();
@@ -192,20 +191,20 @@ fn replace_child<'a>(
 pub fn insert<'a>(
     repo: &'a git2::Repository,
     full_tree: &git2::Tree,
-    path: &std::path::Path,
+    path: &Path,
     oid: git2::Oid,
     mode: i32,
-) -> super::JoshResult<git2::Tree<'a>> {
+) -> JoshResult<git2::Tree<'a>> {
     if path.components().count() == 1 {
         replace_child(repo, path, oid, mode, full_tree)
     } else {
-        let name = std::path::Path::new(path.file_name().ok_or(super::josh_error("file_name"))?);
-        let path = path.parent().ok_or(super::josh_error("path.parent"))?;
+        let name = Path::new(path.file_name().ok_or_else(|| josh_error("file_name"))?);
+        let path = path.parent().ok_or_else(|| josh_error("path.parent"))?;
 
         let st = if let Ok(st) = full_tree.get_path(path) {
-            repo.find_tree(st.id()).unwrap_or(tree::empty(repo))
+            repo.find_tree(st.id()).unwrap_or(empty(repo))
         } else {
-            tree::empty(repo)
+            empty(repo)
         };
 
         let tree = replace_child(repo, name, oid, mode, &st)?;
@@ -218,15 +217,15 @@ pub fn overlay(
     repo: &git2::Repository,
     input1: git2::Oid,
     input2: git2::Oid,
-) -> super::JoshResult<git2::Oid> {
+) -> JoshResult<git2::Oid> {
     rs_tracing::trace_scoped!("overlay");
     if input1 == input2 {
         return Ok(input1);
     }
-    if input1 == tree::empty_id() {
+    if input1 == empty_id() {
         return Ok(input2);
     }
-    if input2 == tree::empty_id() {
+    if input2 == empty_id() {
         return Ok(input1);
     }
 
@@ -234,10 +233,10 @@ pub fn overlay(
         let mut result_tree = tree1.clone();
 
         for entry in tree2.iter() {
-            if let Some(e) = tree1.get_name(entry.name().ok_or(super::josh_error("no name"))?) {
+            if let Some(e) = tree1.get_name(entry.name().ok_or_else(|| josh_error("no name"))?) {
                 result_tree = replace_child(
                     repo,
-                    std::path::Path::new(entry.name().ok_or(super::josh_error("no name"))?),
+                    Path::new(entry.name().ok_or_else(|| josh_error("no name"))?),
                     overlay(repo, e.id(), entry.id())?,
                     e.filemode(),
                     &result_tree,
@@ -245,7 +244,7 @@ pub fn overlay(
             } else {
                 result_tree = replace_child(
                     repo,
-                    std::path::Path::new(entry.name().ok_or(super::josh_error("no name"))?),
+                    Path::new(entry.name().ok_or_else(|| josh_error("no name"))?),
                     entry.id(),
                     entry.filemode(),
                     &result_tree,
@@ -312,7 +311,7 @@ pub fn make_dir_trigram_filter(searchstring: &str, size: usize, bits: &[usize]) 
 pub fn trigram_index<'a>(
     transaction: &'a cache::Transaction,
     tree: git2::Tree<'a>,
-) -> super::JoshResult<git2::Tree<'a>> {
+) -> JoshResult<git2::Tree<'a>> {
     let repo = transaction.repo();
     if let Some(cached) = transaction.get_trigram_index(tree.id()) {
         return Ok(repo.find_tree(cached)?);
@@ -323,13 +322,13 @@ pub fn trigram_index<'a>(
 
     let mut files = vec![vec![]; 8];
 
-    let mut result = tree::empty(repo);
+    let mut result = empty(repo);
 
     /* 'entry: */
     for entry in tree.iter() {
-        let name = entry.name().ok_or(super::josh_error("no name"))?;
+        let name = entry.name().ok_or_else(|| josh_error("no name"))?;
         if entry.kind() == Some(git2::ObjectType::Blob) {
-            let b = tree::get_blob(repo, &tree, std::path::Path::new(name));
+            let b = get_blob(repo, &tree, Path::new(name));
 
             let mut file_chunks = vec![name.to_string()];
 
@@ -409,7 +408,7 @@ pub fn trigram_index<'a>(
             let s = trigram_index(transaction, transaction.repo().find_tree(entry.id())?)?;
 
             for a in 0..arrs_sub.len() {
-                let b = tree::get_blob(repo, &s, std::path::Path::new(&format!("OWN{}", a)));
+                let b = get_blob(repo, &s, Path::new(&format!("OWN{}", a)));
                 let hd = hex::decode(b.lines().collect::<Vec<_>>().join(""))?;
                 let new_size = std::cmp::max(hd.len(), arrs_sub[a].len());
                 arrs_sub[a].resize(new_size, 0);
@@ -417,7 +416,7 @@ pub fn trigram_index<'a>(
                     *a |= b;
                 }
 
-                let b = tree::get_blob(repo, &s, std::path::Path::new(&format!("SUB{}", a)));
+                let b = get_blob(repo, &s, Path::new(&format!("SUB{}", a)));
                 let hd = hex::decode(b.lines().collect::<Vec<_>>().join(""))?;
                 let new_size = std::cmp::max(hd.len(), arrs_sub[a].len());
                 arrs_sub[a].resize(new_size, 0);
@@ -426,9 +425,8 @@ pub fn trigram_index<'a>(
                 }
             }
 
-            if s.id() != tree::empty_id() {
-                result =
-                    replace_child(repo, std::path::Path::new(name), s.id(), 0o0040000, &result)?;
+            if s.id() != empty_id() {
+                result = replace_child(repo, Path::new(name), s.id(), 0o0040000, &result)?;
             }
         }
     }
@@ -438,7 +436,7 @@ pub fn trigram_index<'a>(
             result = insert(
                 repo,
                 &result,
-                std::path::Path::new(&format!("OWN{}", a)),
+                Path::new(&format!("OWN{}", a)),
                 repo.blob(
                     arrs_own[a]
                         .chunks(64)
@@ -455,7 +453,7 @@ pub fn trigram_index<'a>(
             result = insert(
                 repo,
                 &result,
-                std::path::Path::new(&format!("SUB{}", a)),
+                Path::new(&format!("SUB{}", a)),
                 repo.blob(
                     arrs_sub[a]
                         .chunks(64)
@@ -472,7 +470,7 @@ pub fn trigram_index<'a>(
             result = insert(
                 repo,
                 &result,
-                std::path::Path::new(&format!("BLOBS{}", a)),
+                Path::new(&format!("BLOBS{}", a)),
                 repo.blob(files[a].join("\n").as_bytes())?,
                 0o0100644,
             )
@@ -489,7 +487,7 @@ pub fn search_candidates(
     tree: &git2::Tree,
     searchstring: &str,
     max_ord: usize,
-) -> super::JoshResult<Vec<String>> {
+) -> JoshResult<Vec<String>> {
     let ff = make_dir_trigram_filter(&searchstring, FILE_FILTER_SIZE, &[2]);
 
     let mut results = vec![];
@@ -508,11 +506,11 @@ pub fn search_matches(
     tree: &git2::Tree,
     searchstring: &str,
     candidates: &Vec<String>,
-) -> super::JoshResult<Vec<(String, Vec<(usize, String)>)>> {
+) -> JoshResult<Vec<(String, Vec<(usize, String)>)>> {
     let mut results = vec![];
 
     for c in candidates {
-        let b = get_blob(transaction.repo(), tree, &std::path::Path::new(&c));
+        let b = get_blob(transaction.repo(), tree, &Path::new(&c));
 
         let mut bresults = vec![];
 
@@ -539,7 +537,7 @@ pub fn trigram_search<'a>(
     file_filter: &[u8],
     results: &mut Vec<String>,
     ord: usize,
-) -> super::JoshResult<()> {
+) -> JoshResult<()> {
     rs_tracing::trace_scoped!("trigram_search", "ord": ord, "root": root);
     let repo = transaction.repo();
 
@@ -574,11 +572,7 @@ pub fn trigram_search<'a>(
 
     if dmatch {
         rs_tracing::trace_scoped!("search blobs");
-        let b = tree::get_blob(
-            &repo,
-            &tree,
-            &std::path::Path::new(&format!("BLOBS{}", ord)),
-        );
+        let b = get_blob(&repo, &tree, &Path::new(&format!("BLOBS{}", ord)));
 
         let mut filename = None;
         let mut skip = false;
@@ -695,22 +689,22 @@ pub fn invert_paths<'a>(
         return Ok(repo.find_tree(cached)?);
     }
 
-    let mut result = tree::empty(repo);
+    let mut result = empty(repo);
 
     for entry in tree.iter() {
-        let name = entry.name().ok_or(super::josh_error("no name"))?;
+        let name = entry.name().ok_or_else(|| josh_error("no name"))?;
 
         if entry.kind() == Some(git2::ObjectType::Blob) {
-            let mpath = normalize_path(&std::path::Path::new(root).join(name))
+            let mpath = normalize_path(&Path::new(root).join(name))
                 .to_string_lossy()
                 .to_string();
-            let b = tree::get_blob(repo, &tree, std::path::Path::new(name));
+            let b = get_blob(repo, &tree, Path::new(name));
             let opath = pathline(&b)?;
 
             result = insert(
                 repo,
                 &result,
-                std::path::Path::new(&opath),
+                Path::new(&opath),
                 repo.blob(mpath.as_bytes())?,
                 0o0100644,
             )
@@ -736,10 +730,10 @@ pub fn original_path(
     transaction: &cache::Transaction,
     filter: Filter,
     tree: git2::Tree,
-    path: &std::path::Path,
+    path: &Path,
 ) -> JoshResult<String> {
     let paths_tree = apply(transaction, chain(to_filter(Op::Paths), filter), tree)?;
-    let b = tree::get_blob(transaction.repo(), &paths_tree, path);
+    let b = get_blob(transaction.repo(), &paths_tree, path);
     pathline(&b)
 }
 
@@ -759,7 +753,7 @@ fn populate(
     transaction: &cache::Transaction,
     paths: git2::Oid,
     content: git2::Oid,
-) -> super::JoshResult<git2::Oid> {
+) -> JoshResult<git2::Oid> {
     rs_tracing::trace_scoped!("repopulate");
 
     if let Some(cached) = transaction.get_populate((paths, content)) {
@@ -774,14 +768,14 @@ fn populate(
         result_tree = insert(
             repo,
             &repo.find_tree(result_tree)?,
-            std::path::Path::new(&ipath),
+            Path::new(&ipath),
             content.id(),
             0o0100644,
         )?
         .id();
     } else if let (Ok(paths), Ok(content)) = (repo.find_tree(paths), repo.find_tree(content)) {
         for entry in content.iter() {
-            if let Some(e) = paths.get_name(entry.name().ok_or(super::josh_error("no name"))?) {
+            if let Some(e) = paths.get_name(entry.name().ok_or_else(|| josh_error("no name"))?) {
                 result_tree = overlay(
                     repo,
                     result_tree,
@@ -796,13 +790,13 @@ fn populate(
     Ok(result_tree)
 }
 
-pub fn compose_fast<'a>(
-    transaction: &'a cache::Transaction,
+pub fn compose_fast(
+    transaction: &cache::Transaction,
     trees: Vec<git2::Oid>,
-) -> super::JoshResult<git2::Tree<'a>> {
+) -> JoshResult<git2::Tree> {
     rs_tracing::trace_scoped!("compose_fast");
     let repo = transaction.repo();
-    let mut result = tree::empty_id();
+    let mut result = empty_id();
     for tree in trees {
         result = overlay(repo, tree, result)?;
     }
@@ -812,18 +806,18 @@ pub fn compose_fast<'a>(
 
 pub fn compose<'a>(
     transaction: &'a cache::Transaction,
-    trees: Vec<(&super::filter::Filter, git2::Tree<'a>)>,
-) -> super::JoshResult<git2::Tree<'a>> {
+    trees: Vec<(&Filter, git2::Tree<'a>)>,
+) -> JoshResult<git2::Tree<'a>> {
     rs_tracing::trace_scoped!("compose");
     let repo = transaction.repo();
-    let mut result = tree::empty(repo);
-    let mut taken = tree::empty(repo);
+    let mut result = empty(repo);
+    let mut taken = empty(repo);
     for (f, applied) in trees {
         let tid = taken.id();
         let taken_applied = if let Some(cached) = transaction.get_apply(*f, tid) {
             cached
         } else {
-            filter::apply(transaction, *f, taken.clone())?.id()
+            apply(transaction, *f, taken.clone())?.id()
         };
         transaction.insert_apply(*f, tid, taken_applied);
 
@@ -833,7 +827,7 @@ pub fn compose<'a>(
         let unapplied = if let Some(cached) = transaction.get_unapply(*f, aid) {
             cached
         } else {
-            filter::apply(transaction, opt::invert(*f)?, applied)?.id()
+            apply(transaction, invert(*f)?, applied)?.id()
         };
         transaction.insert_unapply(*f, aid, unapplied);
         taken = repo.find_tree(overlay(repo, taken.id(), unapplied)?)?;

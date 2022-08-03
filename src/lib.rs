@@ -36,7 +36,6 @@ extern crate pest_derive;
 extern crate serde_json;
 
 use std::collections::HashMap;
-use tracing;
 
 pub mod cache;
 pub mod filter;
@@ -101,9 +100,9 @@ impl std::fmt::Display for JoshError {
     }
 }
 
-pub type JoshResult<T> = std::result::Result<T, JoshError>;
+pub type JoshResult<T> = Result<T, JoshError>;
 
-impl<T> std::convert::From<T> for JoshError
+impl<T> From<T> for JoshError
 where
     T: std::error::Error,
 {
@@ -137,13 +136,7 @@ lazy_static! {
         regex::Regex::new($re)
             .expect("can't compile regex");
 }
-
-        let caps = if let Some(caps) = REGEX.captures(&path) {
-            caps
-        } else {
-            return None;
-        };
-
+        let caps = REGEX.captures(&path)?;
         let as_str = |x: regex::Match| x.as_str().to_owned();
 
         return Some($name {
@@ -189,7 +182,7 @@ fn filter_ref(
     } else {
         tracing::trace!("apply_to_commit (permissions)");
 
-        filter::apply_to_commit(permissions, &original_commit, &transaction)?
+        filter::apply_to_commit(permissions, &original_commit, transaction)?
     };
 
     if perms_commit != git2::Oid::zero() {
@@ -215,7 +208,7 @@ fn filter_ref(
 
     transaction.insert_ref(filterobj, oid, filter_commit);
 
-    return Ok(filter_commit);
+    Ok(filter_commit)
 }
 
 pub fn filter_refs(
@@ -232,7 +225,7 @@ pub fn filter_refs(
     tracing::trace!("filter_refs");
 
     for k in refs {
-        let oid = ok_or!(filter_ref(&transaction, filterobj, &k, permissions), {
+        let oid = ok_or!(filter_ref(transaction, filterobj, k, permissions), {
             tracing::event!(
                 tracing::Level::WARN,
                 msg = "filter_refs: Can't filter reference",
@@ -259,7 +252,7 @@ pub fn update_refs(
         }
     }
 
-    if headref != "" {
+    if !headref.is_empty() {
         if head_oid == git2::Oid::zero() {
             updated.clear();
         }
@@ -270,7 +263,7 @@ pub fn update_refs(
             ok_or!(
                 transaction
                     .repo()
-                    .reference(&to_refname, *filter_commit, true, "apply_filter")
+                    .reference(to_refname, *filter_commit, true, "apply_filter")
                     .map(|_| ()),
                 {
                     tracing::error!(
@@ -347,10 +340,10 @@ pub fn get_acl(
             let mut blacklist = filter::empty();
             for g in &u.groups {
                 let lists = groups.get(repo).and_then(|repo| {
-                    repo.get(g.as_str()?).and_then(|group| {
+                    repo.get(g.as_str()?).map(|group| {
                         let w = filter::parse(&group.whitelist);
                         let b = filter::parse(&group.blacklist);
-                        Some((w, b))
+                        (w, b)
                     })
                 })?;
                 if let Err(e) = lists.0 {
@@ -369,5 +362,5 @@ pub fn get_acl(
             println!("w: {:?}, b: {:?}", whitelist, blacklist);
             Some(Ok((whitelist, blacklist)))
         })
-        .unwrap_or(Ok((filter::empty(), filter::nop())));
+        .unwrap_or_else(|| Ok((filter::empty(), filter::nop())));
 }

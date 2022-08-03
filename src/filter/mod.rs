@@ -27,7 +27,7 @@ impl Filter {
 
 impl std::fmt::Debug for Filter {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        return to_op(*self).fmt(f);
+        to_op(*self).fmt(f)
     }
 }
 
@@ -210,7 +210,7 @@ fn spec2(op: &Op) -> String {
         Op::Subdir(path) => format!(":/{}", parse::quote(&path.to_string_lossy())),
         Op::File(path) => format!("::{}", parse::quote(&path.to_string_lossy())),
         Op::Prefix(path) => format!(":prefix={}", parse::quote(&path.to_string_lossy())),
-        Op::Glob(pattern) => format!("::{}", parse::quote(&pattern)),
+        Op::Glob(pattern) => format!("::{}", parse::quote(pattern)),
     }
 }
 
@@ -270,8 +270,8 @@ pub fn apply_to_commit(
 }
 
 fn get_workspace<'a>(repo: &'a git2::Repository, tree: &'a git2::Tree<'a>, path: &Path) -> Filter {
-    let f = parse::parse(&tree::get_blob(repo, &tree, &path.join("workspace.josh")))
-        .unwrap_or(to_filter(Op::Empty));
+    let f = parse::parse(&tree::get_blob(repo, tree, &path.join("workspace.josh")))
+        .unwrap_or_else(|_| to_filter(Op::Empty));
 
     if invert(f).is_ok() {
         f
@@ -304,11 +304,11 @@ fn apply_to_commit2(
             let r = some_or!(apply_to_commit2(&to_op(*a), commit, transaction)?, {
                 return Ok(None);
             });
-            if let Ok(r) = repo.find_commit(r) {
-                return apply_to_commit2(&to_op(*b), &r, transaction);
+            return if let Ok(r) = repo.find_commit(r) {
+                apply_to_commit2(&to_op(*b), &r, transaction)
             } else {
-                return Ok(Some(git2::Oid::zero()));
-            }
+                Ok(Some(git2::Oid::zero()))
+            };
         }
         Op::Squash => {
             return Some(history::rewrite_commit(repo, commit, &[], &commit.tree()?)).transpose()
@@ -325,7 +325,7 @@ fn apply_to_commit2(
     let filtered_tree = match &to_op(filter) {
         Op::Linear => {
             let p: Vec<_> = commit.parent_ids().collect();
-            if p.len() == 0 {
+            if p.is_empty() {
                 transaction.insert(filter, commit.id(), commit.id(), true);
                 return Ok(Some(commit.id()));
             }
@@ -352,7 +352,7 @@ fn apply_to_commit2(
 
             let filtered = some_or!(filtered, { return Ok(None) });
 
-            let inverted = filter::invert(filter)?;
+            let inverted = invert(filter)?;
 
             if filter == inverted {
                 // If the filter is symetric it does not change any paths and uniqueness of
@@ -385,15 +385,18 @@ fn apply_to_commit2(
 
             let normal_parents = some_or!(normal_parents, { return Ok(None) });
 
-            let cw = get_workspace(repo, &commit.tree()?, &ws_path);
+            let cw = get_workspace(repo, &commit.tree()?, ws_path);
 
             let extra_parents = commit
                 .parents()
                 .map(|parent| {
                     rs_tracing::trace_scoped!("parent", "id": parent.id().to_string());
 
-                    let pcw =
-                        get_workspace(repo, &parent.tree().unwrap_or(tree::empty(repo)), &ws_path);
+                    let pcw = get_workspace(
+                        repo,
+                        &parent.tree().unwrap_or_else(|_| tree::empty(repo)),
+                        ws_path,
+                    );
 
                     apply_to_commit2(
                         &to_op(opt::optimize(to_filter(Op::Subtract(cw, pcw)))),
@@ -451,7 +454,7 @@ fn apply_to_commit2(
                         { return Ok(None) }
                     ))
                     .map(|x| x.tree_id())
-                    .unwrap_or(tree::empty_id())
+                    .unwrap_or_else(|_| tree::empty_id())
             };
             let bf = {
                 transaction
@@ -461,10 +464,10 @@ fn apply_to_commit2(
                         { return Ok(None) }
                     ))
                     .map(|x| x.tree_id())
-                    .unwrap_or(tree::empty_id())
+                    .unwrap_or_else(|_| tree::empty_id())
             };
             let bf = repo.find_tree(bf)?;
-            let bu = apply(transaction, opt::invert(*b)?, bf)?;
+            let bu = apply(transaction, invert(*b)?, bf)?;
             let ba = apply(transaction, *a, bu)?.id();
             repo.find_tree(tree::subtract(transaction, af, ba)?)?
         }
@@ -477,7 +480,7 @@ fn apply_to_commit2(
                         { return Ok(None) }
                     ))
                     .map(|x| x.tree_id())
-                    .unwrap_or(tree::empty_id())
+                    .unwrap_or_else(|_| tree::empty_id())
             };
             repo.find_tree(tree::subtract(transaction, commit.tree_id(), bf)?)?
         }
@@ -546,7 +549,7 @@ fn apply2<'a>(
                 .get_path(path)
                 .map(|x| (x.id(), x.filemode()))
                 .unwrap_or((git2::Oid::zero(), 0o0100644));
-            if let Ok(_) = repo.find_blob(file) {
+            if repo.find_blob(file).is_ok() {
                 tree::insert(repo, &tree::empty(repo), path, file, mode)
             } else {
                 Ok(tree::empty(repo))
@@ -557,14 +560,14 @@ fn apply2<'a>(
             return Ok(tree
                 .get_path(path)
                 .and_then(|x| repo.find_tree(x.id()))
-                .unwrap_or(tree::empty(repo)));
+                .unwrap_or_else(|_| tree::empty(repo)));
         }
         Op::Prefix(path) => tree::insert(repo, &tree::empty(repo), path, tree.id(), 0o0040000),
 
         Op::Subtract(a, b) => {
             let af = apply(transaction, *a, tree.clone())?;
             let bf = apply(transaction, *b, tree.clone())?;
-            let bu = apply(transaction, opt::invert(*b)?, bf)?;
+            let bu = apply(transaction, invert(*b)?, bf)?;
             let ba = apply(transaction, *a, bu)?.id();
             Ok(repo.find_tree(tree::subtract(transaction, af.id(), ba)?)?)
         }
@@ -583,7 +586,7 @@ fn apply2<'a>(
             let base = to_filter(Op::Subdir(path.to_owned()));
             apply(
                 transaction,
-                compose(get_workspace(repo, &tree, &path), base),
+                compose(get_workspace(repo, &tree, path), base),
                 tree,
             )
         }
@@ -611,7 +614,7 @@ pub fn unapply<'a>(
     tree: git2::Tree<'a>,
     parent_tree: git2::Tree<'a>,
 ) -> JoshResult<git2::Tree<'a>> {
-    if let Ok(inverted) = opt::invert(filter) {
+    if let Ok(inverted) = invert(filter) {
         let matching = apply(transaction, chain(filter, inverted), parent_tree.clone())?;
         let stripped = tree::subtract(transaction, parent_tree.id(), matching.id())?;
         let new_tree = apply(transaction, inverted, tree)?;
@@ -642,7 +645,7 @@ pub fn unapply<'a>(
         );
     }
 
-    return Err(josh_error("filter cannot be unapplied"));
+    Err(josh_error("filter cannot be unapplied"))
 }
 
 fn unapply_workspace<'a>(
@@ -654,19 +657,19 @@ fn unapply_workspace<'a>(
     return match op {
         Op::Workspace(path) => {
             let tree = pre_process_tree(transaction.repo(), tree)?;
-            let workspace = get_workspace(transaction.repo(), &tree, &Path::new(""));
-            let original_workspace = get_workspace(transaction.repo(), &parent_tree, &path);
+            let workspace = get_workspace(transaction.repo(), &tree, Path::new(""));
+            let original_workspace = get_workspace(transaction.repo(), &parent_tree, path);
 
             let root = to_filter(Op::Subdir(path.to_owned()));
             let filter = compose(workspace, root);
             let original_filter = compose(original_workspace, root);
             let matching = apply(
                 transaction,
-                chain(original_filter, opt::invert(original_filter)?),
+                chain(original_filter, invert(original_filter)?),
                 parent_tree.clone(),
             )?;
             let stripped = tree::subtract(transaction, parent_tree.id(), matching.id())?;
-            let new_tree = apply(transaction, opt::invert(filter)?, tree)?;
+            let new_tree = apply(transaction, invert(filter)?, tree)?;
 
             let result = transaction.repo().find_tree(tree::overlay(
                 transaction.repo(),
@@ -684,26 +687,26 @@ fn pre_process_tree<'a>(
     repo: &'a git2::Repository,
     tree: git2::Tree<'a>,
 ) -> JoshResult<git2::Tree<'a>> {
-    let path = std::path::Path::new("workspace.josh");
-    let ws_file = filter::tree::get_blob(repo, &tree, &path);
+    let path = Path::new("workspace.josh");
+    let ws_file = tree::get_blob(repo, &tree, path);
     let parsed = filter::parse(&ws_file)?;
 
-    if !invert(parsed).is_ok() {
+    if invert(parsed).is_err() {
         return Err(josh_error("Invalid workspace: not reversible"));
     }
 
     let mut blob = String::new();
-    if let Ok(c) = filter::get_comments(&ws_file) {
+    if let Ok(c) = get_comments(&ws_file) {
         if !c.is_empty() {
             blob = c;
         }
     }
-    let blob = &format!("{}{}\n", &blob, filter::pretty(parsed, 0));
+    let blob = &format!("{}{}\n", &blob, pretty(parsed, 0));
 
-    let tree = filter::tree::insert(
+    let tree = tree::insert(
         repo,
         &tree,
-        &path,
+        path,
         repo.blob(blob.as_bytes())?,
         0o0100644, // Should this handle filemode?
     )?;
@@ -783,9 +786,7 @@ pub fn make_permissions_filter(filter: Filter, whitelist: Filter, blacklist: Fil
         filter,
         compose(blacklist, to_filter(Op::Subtract(nop(), whitelist))),
     );
-    let filter = opt::optimize(filter);
-
-    return filter;
+    opt::optimize(filter)
 }
 
 #[cfg(test)]
@@ -818,9 +819,9 @@ mod tests {
 }
 
 pub fn is_linear(filter: Filter) -> bool {
-    return match to_op(filter) {
+    match to_op(filter) {
         Op::Linear => true,
         Op::Chain(a, b) => is_linear(a) || is_linear(b),
         _ => false,
-    };
+    }
 }
