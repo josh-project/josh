@@ -47,7 +47,7 @@ impl Handle {
         let s = josh::ok_or!(String::from_utf8(decoded), {
             return Ok(("".to_string(), "".to_string()));
         });
-        if let [username, password] = s.as_str().split(':').collect::<Vec<_>>().as_slice() {
+        if let [username, password] = s.as_str().split_once(':').collect::<Vec<_>>().as_slice() {
             return Ok((username.to_string(), password.to_string()));
         }
         Ok(("".to_string(), "".to_string()))
