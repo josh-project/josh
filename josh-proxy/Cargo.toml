@@ -33,7 +33,7 @@ base64 = "0.13.0"
 regex = "1.6.0"
 lazy_static = "1.4.0"
 josh = {path = "../"}
-serde_json= "1.0.82"
+serde_json= "1.0.83"
 serde= "1.0.142"
 unindent = "0.1.10"
 juniper = { version = "0.15.7", features = ["expose-test-schema"] }
