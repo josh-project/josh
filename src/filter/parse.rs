@@ -145,7 +145,7 @@ fn parse_group(filter_spec: &str) -> JoshResult<Vec<Filter>> {
         Err(r) => {
             return Err(josh_error(&format!(
                 "Invalid workspace:\n----\n{}\n\n{}\n----",
-                r.to_string().replace("␊", ""),
+                r.to_string().replace('␊', ""),
                 filter_spec
             )));
         }
@@ -170,12 +170,12 @@ fn parse_workspace(filter_spec: &str) -> JoshResult<Vec<Filter>> {
                     _ => return Err(josh_error(&format!("invalid workspace file {:?}", pair))),
                 };
             }
-            Err(josh_error(&"invalid workspace file".to_string()))
+            Err(josh_error("invalid workspace file"))
         }
         Err(r) => {
             return Err(josh_error(&format!(
                 "Invalid workspace:\n----\n{}\n\n{}\n----",
-                r.to_string().replace("␊", ""),
+                r.to_string().replace('␊', ""),
                 filter_spec
             )));
         }
@@ -191,11 +191,10 @@ fn unquote(s: &str) -> &str {
     // We only need to check for a quote at the beginning,
     // because not properly quoted string will be rejected
     // by the grammar before we even get here
-    if s.starts_with("\"") {
+    if s.starts_with('\"') {
         return &s[1..s.len() - 1];
     }
-
-    return s;
+    s
 }
 
 // Add quotes to a string if if contains any chars reserved

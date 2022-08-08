@@ -148,10 +148,12 @@ pub fn discover_filter_candidates(transaction: &cache::Transaction) -> JoshResul
 
     for reference in repo.references_glob(&refname)? {
         let r = reference?;
-        let name = r.name().ok_or(josh_error("reference without name"))?;
+        let name = r
+            .name()
+            .ok_or_else(|| josh_error("reference without name"))?;
         tracing::trace!("find: {}", name);
         let name = UpstreamRef::from_str(name)
-            .ok_or(josh_error("not a ns"))?
+            .ok_or_else(|| josh_error("not a ns"))?
             .ns;
 
         let name = from_ns(&name);
@@ -174,9 +176,11 @@ pub fn discover_filter_candidates(transaction: &cache::Transaction) -> JoshResul
     let refname = "josh/filtered/*.git/*/HEAD".to_string();
     for reference in repo.references_glob(&refname)? {
         let r = reference?;
-        let name = r.name().ok_or(josh_error("reference without name"))?;
+        let name = r
+            .name()
+            .ok_or_else(|| josh_error("reference without name"))?;
         tracing::trace!("known: {}", name);
-        let filtered = FilteredRefRegex::from_str(name).ok_or(josh_error("not a ns"))?;
+        let filtered = FilteredRefRegex::from_str(name).ok_or_else(|| josh_error("not a ns"))?;
 
         known_filters
             .entry(from_ns(&filtered.upstream_repo))
@@ -223,7 +227,7 @@ pub fn get_info(
 
     let commit = obj.peel_to_commit()?;
 
-    let mut meta = std::collections::HashMap::new();
+    let mut meta = HashMap::new();
     meta.insert("sha1".to_owned(), "".to_owned());
     let filtered = filter::apply_to_commit(filter, &commit, transaction)?;
 
@@ -235,7 +239,7 @@ pub fn get_info(
                     "commit": x.to_string(),
                     "tree": transaction.repo().find_commit(x)
                         .map(|c| { c.tree_id() })
-                        .unwrap_or(git2::Oid::zero())
+                        .unwrap_or_else(|_| git2::Oid::zero())
                         .to_string(),
                 })
             })
@@ -284,7 +288,7 @@ pub fn refresh_known_filters(
                 upstream_repo,
             ) {
                 let mut u = filter_refs(
-                    &transaction,
+                    transaction,
                     filter::parse(filter_spec)?,
                     &[from],
                     filter::empty(),
@@ -297,8 +301,7 @@ pub fn refresh_known_filters(
     Ok(updated_refs)
 }
 
-pub fn get_known_filters(
-) -> JoshResult<std::collections::BTreeMap<String, std::collections::BTreeSet<String>>> {
+pub fn get_known_filters() -> JoshResult<std::collections::BTreeMap<String, BTreeSet<String>>> {
     Ok(KNOWN_FILTERS
         .lock()?
         .iter()
@@ -306,17 +309,17 @@ pub fn get_known_filters(
         .collect())
 }
 
-pub fn run(repo_path: &std::path::Path, do_gc: bool) -> JoshResult<()> {
+pub fn run(repo_path: &Path, do_gc: bool) -> JoshResult<()> {
     let transaction = cache::Transaction::open(repo_path, None)?;
-    if !std::env::var("JOSH_NO_DISCOVER").is_ok() {
-        housekeeping::discover_filter_candidates(&transaction)?;
+    if std::env::var("JOSH_NO_DISCOVER").is_err() {
+        discover_filter_candidates(&transaction)?;
     }
-    if !std::env::var("JOSH_NO_REFRESH").is_ok() {
+    if std::env::var("JOSH_NO_REFRESH").is_err() {
         refresh_known_filters(&transaction)?;
     }
     info!(
         "{}",
-        run_command(transaction.repo().path(), "git count-objects -v").replace("\n", "  ")
+        run_command(transaction.repo().path(), "git count-objects -v").replace('\n', "  ")
     );
     if do_gc {
         info!(
