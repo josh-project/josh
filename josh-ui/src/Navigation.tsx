@@ -39,7 +39,7 @@ query PathQuery($rev: String!, $filter: String!, $path: String!, $meta: String!)
 }
 `
 export const QUERY_HISTORY = gql`
-query HistoryQuery($rev: String!, $filter: String!, $limit: Number) {
+query HistoryQuery($rev: String!, $filter: String!, $limit: Int) {
   rev(at:$rev, filter:$filter) {
     history(limit: $limit) {
       summary

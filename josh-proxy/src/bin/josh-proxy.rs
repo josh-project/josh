@@ -373,8 +373,10 @@ async fn handle_ui_request(
     }
 
     // Serve prebuilt UI from static resources dir
-    let is_app_route =
-        resource_path == "/" || resource_path == "/select" || resource_path == "/browse";
+    let is_app_route = resource_path == "/"
+        || resource_path == "/select"
+        || resource_path == "/browse"
+        || resource_path == "/history";
 
     let resolve_path = if is_app_route {
         "index.html"
