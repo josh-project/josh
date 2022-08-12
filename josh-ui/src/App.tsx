@@ -1,6 +1,8 @@
 import './App.scss';
 import {FileList} from './FileBrowser';
 
+import {useEffect} from 'react';
+
 import {
     BrowserRouter,
     createSearchParams,
@@ -56,6 +58,10 @@ function useGetSearchParam() {
 }
 
 function Select() {
+    useEffect(() => {
+        document.title = `Select repo - Josh`
+    });
+
     return <div className={'ui-modal-container'}>
         <div className={'ui-modal'}>
             <RepoSelector navigateCallback={useNavigateCallback()}/>
@@ -82,6 +88,10 @@ function TopNav(props: { repo: string, filter: string}) {
 function Browse() {
     const param = useGetSearchParam()
 
+    useEffect(() => {
+        document.title = `/${param('path')} - ${param('repo')} - Josh`
+    });
+
     return <div>
         <TopNav
             repo={param('repo')} 
@@ -107,6 +117,10 @@ function Browse() {
 function History() {
     const param = useGetSearchParam()
 
+    useEffect(() => {
+        document.title = `History - ${param('repo')} - Josh`
+    });
+
     return <div>
         <TopNav
             repo={param('repo')} 
@@ -124,6 +138,10 @@ function History() {
 
 function View() {
     const param = useGetSearchParam()
+
+    useEffect(() => {
+        document.title = `${param('path')} - ${param('repo')} - Josh`
+    });
 
     return (
         <div>
