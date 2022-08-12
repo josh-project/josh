@@ -11,9 +11,14 @@ export type HistoryBrowserProps = {
     navigateCallback: NavigateCallback
 }
 
+type Original = {
+    hash: string
+}
+
 type Commit = {
     summary: string
     hash: string
+    original: Original
 }
 
 
@@ -75,7 +80,10 @@ export class HistoryList extends React.Component<HistoryBrowserProps, State> {
 
         return values.map((entry) => {
             const className = `commit-list-entry commit-list-entry-dir`
-            return <div className={className} key={entry.hash} onClick={navigate.bind(this, entry.hash)}>
+            return <div
+                className={className}
+                key={entry.hash}
+                onClick={navigate.bind(this, entry.original.hash)}>
                 <span className="hash">{entry.hash.slice(0,8)}</span>
                 <span className="summary">{entry.summary}</span>
             </div>

@@ -44,6 +44,7 @@ query HistoryQuery($rev: String!, $filter: String!, $limit: Int) {
     history(limit: $limit) {
       summary
       hash
+      original: rev(original: true) { hash }
     }
   }
 }
