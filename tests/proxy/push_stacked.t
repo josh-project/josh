@@ -1,4 +1,4 @@
-  $ EXTRA_OPTS=--stacked-changes . ${TESTDIR}/setup_test_env.sh
+  $ . ${TESTDIR}/setup_test_env.sh
   $ cd ${TESTTMP}
 
   $ git clone -q http://localhost:8001/real_repo.git 1> /dev/null
@@ -29,7 +29,7 @@
   * Change-Id: foo7  (HEAD -> master)
   * Change-Id: 1234 
   * add file1  (origin/master, origin/HEAD)
-  $ git push -o author=foo@example.com origin master:refs/for/master
+  $ git push -o author=foo@example.com origin master:refs/stack/master
   remote: josh-proxy        
   remote: response from upstream:        
   remote: To http://localhost:8001/real_repo.git        
@@ -37,8 +37,8 @@
   remote: 
   remote: 
   To http://localhost:8002/real_repo.git
-   * [new reference]   master -> refs/for/master
-  $ git push -o author=josh@example.com origin master:refs/for/master
+   * [new reference]   master -> refs/stack/master
+  $ git push -o author=josh@example.com origin master:refs/stack/master
   remote: josh-proxy        
   remote: response from upstream:        
   remote: To http://localhost:8001/real_repo.git        
@@ -50,22 +50,22 @@
   remote: 
   remote: 
   To http://localhost:8002/real_repo.git
-   * [new reference]   master -> refs/for/master
+   * [new reference]   master -> refs/stack/master
   $ echo contents2 > file3
   $ git add file3
   $ git commit -m "add file3" 1> /dev/null
-  $ git push -o author=josh@example.com origin master:refs/for/master
+  $ git push -o author=josh@example.com origin master:refs/stack/master
   remote: josh-proxy        
   remote: response from upstream:        
   remote: rejecting to push 3ad32b3bd3bb778441e7eae43930d8dc6293eddc without Change-Id        
   remote: 
   remote: 
-  remote: error: hook declined to update refs/for/master        
+  remote: error: hook declined to update refs/stack/master        
   To http://localhost:8002/real_repo.git
-   ! [remote rejected] master -> refs/for/master (hook declined)
+   ! [remote rejected] master -> refs/stack/master (hook declined)
   error: failed to push some refs to 'http://localhost:8002/real_repo.git'
   [1]
-  $ git push -o author=foo@example.com origin master:refs/for/master
+  $ git push -o author=foo@example.com origin master:refs/stack/master
   remote: josh-proxy        
   remote: response from upstream:        
   remote: To http://localhost:8001/real_repo.git        
@@ -73,7 +73,7 @@
   remote: 
   remote: 
   To http://localhost:8002/real_repo.git
-   * [new reference]   master -> refs/for/master
+   * [new reference]   master -> refs/stack/master
 
   $ curl -s http://localhost:8002/flush
   Flushed credential cache

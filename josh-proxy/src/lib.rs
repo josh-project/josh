@@ -4,7 +4,15 @@ pub mod juniper_hyper;
 #[macro_use]
 extern crate lazy_static;
 
-fn baseref_and_options(refname: &str) -> josh::JoshResult<(String, String, Vec<String>, bool)> {
+#[derive(PartialEq)]
+enum PushMode {
+    Normal,
+    Review,
+    Stack,
+    Split,
+}
+
+fn baseref_and_options(refname: &str) -> josh::JoshResult<(String, String, Vec<String>, PushMode)> {
     let mut split = refname.splitn(2, '%');
     let push_to = split.next().ok_or(josh::josh_error("no next"))?.to_owned();
 
@@ -15,16 +23,25 @@ fn baseref_and_options(refname: &str) -> josh::JoshResult<(String, String, Vec<S
     };
 
     let mut baseref = push_to.to_owned();
-    let mut for_review = false;
+    let mut push_mode = PushMode::Normal;
 
     if baseref.starts_with("refs/for") {
-        for_review = true;
+        push_mode = PushMode::Review;
         baseref = baseref.replacen("refs/for", "refs/heads", 1)
     }
     if baseref.starts_with("refs/drafts") {
+        push_mode = PushMode::Review;
         baseref = baseref.replacen("refs/drafts", "refs/heads", 1)
     }
-    Ok((baseref, push_to, options, for_review))
+    if baseref.starts_with("refs/stack") {
+        push_mode = PushMode::Stack;
+        baseref = baseref.replacen("refs/stack", "refs/heads", 1)
+    }
+    if baseref.starts_with("refs/split") {
+        push_mode = PushMode::Split;
+        baseref = baseref.replacen("refs/split", "refs/heads", 1)
+    }
+    Ok((baseref, push_to, options, push_mode))
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
@@ -38,7 +55,6 @@ pub struct RepoUpdate {
     pub git_ns: String,
     pub git_dir: String,
     pub mirror_git_dir: String,
-    pub stacked_changes: bool,
     pub context_propagator: std::collections::HashMap<String, String>,
 }
 
@@ -76,7 +92,7 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
 
         let old = git2::Oid::from_str(old)?;
 
-        let (baseref, push_to, options, for_review) = baseref_and_options(refname)?;
+        let (baseref, push_to, options, push_mode) = baseref_and_options(refname)?;
         let josh_merge = push_options.contains_key("merge");
 
         tracing::debug!("push options: {:?}", push_options);
@@ -140,9 +156,11 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
             None
         };
 
-        let stacked_changes = repo_update.stacked_changes && for_review;
-
-        let mut change_ids = if stacked_changes { Some(vec![]) } else { None };
+        let mut change_ids = if (push_mode == PushMode::Stack || push_mode == PushMode::Split) {
+            Some(vec![])
+        } else {
+            None
+        };
 
         let filterobj = josh::filter::parse(&repo_update.filter_spec)?;
         let new_oid = git2::Oid::from_str(new)?;
@@ -205,6 +223,11 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
         let to_push = if let Some(change_ids) = change_ids {
             let mut v = vec![];
             v.append(&mut change_ids_to_refs(&baseref, &author, change_ids)?);
+
+            if push_mode == PushMode::Split {
+                split_changes(transaction.repo(), &mut v, old)?;
+            }
+
             v.push((
                 format!(
                     "refs/heads/@heads/{}/{}",
@@ -231,7 +254,7 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
                 &repo_update.auth,
                 &repo_update.git_ns,
                 &display_name,
-                stacked_changes,
+                push_mode != PushMode::Normal,
             )?;
             if status != 0 {
                 return Err(josh::josh_error(&text));
@@ -280,6 +303,68 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
     }
 
     Ok("".to_string())
+}
+
+fn split_changes(
+    repo: &git2::Repository,
+    changes: &mut Vec<(String, git2::Oid, String)>,
+    base: git2::Oid,
+) -> josh::JoshResult<()> {
+    if base == git2::Oid::zero() {
+        return Ok(());
+    }
+
+    let commits: Vec<git2::Commit> = changes
+        .iter()
+        .map(|(_, commit, _)| repo.find_commit(*commit).unwrap())
+        .collect();
+
+    let mut trees: Vec<git2::Tree> = commits
+        .iter()
+        .map(|commit| commit.tree().unwrap())
+        .collect();
+
+    trees.insert(0, repo.find_commit(base)?.tree()?);
+
+    let diffs: Vec<git2::Diff> = (1..trees.len())
+        .map(|i| {
+            repo.diff_tree_to_tree(Some(&trees[i - 1]), Some(&trees[i]), None)
+                .unwrap()
+        })
+        .collect();
+
+    let mut moved = std::collections::HashSet::new();
+    let mut bases = vec![base];
+    for _ in 0..changes.len() {
+        let mut new_bases = vec![];
+        for base in bases.iter() {
+            for i in 0..diffs.len() {
+                if moved.contains(&i) {
+                    continue;
+                }
+                let diff = &diffs[i];
+                let parent = repo.find_commit(*base)?;
+                if let Ok(mut index) = repo.apply_to_tree(&parent.tree()?, &diff, None) {
+                    moved.insert(i);
+                    let new_tree = repo.find_tree(index.write_tree_to(repo)?)?;
+                    let new_commit = josh::history::rewrite_commit(
+                        repo,
+                        &repo.find_commit(changes[i].1)?,
+                        &vec![&parent],
+                        &new_tree,
+                    )?;
+                    changes[i].1 = new_commit;
+                    new_bases.push(new_commit);
+                }
+                if moved.len() == changes.len() {
+                    return Ok(());
+                }
+            }
+        }
+        bases = new_bases;
+    }
+
+    return Ok(());
 }
 
 pub fn push_head_url(
