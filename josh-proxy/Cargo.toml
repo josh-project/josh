@@ -14,7 +14,7 @@ version = "22.4.15"
 [dependencies]
 clap = "3.2.16"
 futures = "0.3.21"
-tokio = { version = "1.8.1", features = ["full"] }
+tokio = { version = "1.20.1", features = ["full"] }
 hyper = { version = "0.14.20", features = ["stream"] }
 hyper_cgi = "22.4.15"
 hyper-staticfile = "0.9.1"
@@ -23,7 +23,7 @@ toml = "0.5.9"
 git2 = "0.15.0"
 tracing = { version = "0.1.36", features = ["max_level_trace", "release_max_level_trace"] }
 tracing-futures = "0.2.5"
-tracing-subscriber = { version = "0.3.15", features = ["env-filter"]}
+tracing-subscriber = { version = "0.3.15", features = ["env-filter"] }
 tracing-opentelemetry = "0.17.4"
 opentelemetry = "0.17.0"
 opentelemetry-jaeger = "0.16.0"
@@ -36,7 +36,7 @@ josh = {path = "../"}
 serde_json= "1.0.83"
 serde= "1.0.143"
 unindent = "0.1.10"
-juniper = { version = "0.15.7", features = ["expose-test-schema"] }
+juniper = { version = "0.15.10", features = ["expose-test-schema"] }
 url = "2.2.2"
 percent-encoding = "2.1.0"
 indoc = "1.0.7"
