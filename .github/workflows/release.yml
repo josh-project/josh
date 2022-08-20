@@ -3,9 +3,12 @@ name: Publish Docker image
 on:
   release:
     types: [published]
+  pull_request:
+    types: [labeled]
 jobs:
   build:
     runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'release' || (github.event_name == 'pull_request' && github.event.label.name == 'build-release-container') }}
     steps:
       - name: Setup BuildX
         uses: docker/setup-buildx-action@v1
@@ -36,8 +39,8 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-contexts: |
-            'git=.git'
+            git=.git
           target: run
-          push: true
+          push: ${{ github.event_name == 'release' && 'true' || 'false' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
