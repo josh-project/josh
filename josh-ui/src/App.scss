@@ -126,6 +126,12 @@ nav {
   &:hover {
     background: $color-background-highlight;
   }
+
+  span.hash {
+    margin: 0 0.7em 0 0;
+    color: $color-highlight;
+    font-weight: bolder;
+  }
 }
 
 .ui-button {
