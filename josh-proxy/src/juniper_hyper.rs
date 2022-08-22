@@ -53,7 +53,7 @@ where
     })
 }
 
-async fn parse_req<S: ScalarValue>(
+pub async fn parse_req<S: ScalarValue>(
     req: Request<Body>,
 ) -> Result<GraphQLBatchRequest<S>, Response<Body>> {
     match *req.method() {
@@ -182,7 +182,7 @@ where
     resp
 }
 
-async fn execute_request<CtxT, QueryT, MutationT, SubscriptionT, S>(
+pub async fn execute_request<CtxT, QueryT, MutationT, SubscriptionT, S>(
     root_node: Arc<RootNode<'static, QueryT, MutationT, SubscriptionT, S>>,
     context: Arc<CtxT>,
     request: GraphQLBatchRequest<S>,

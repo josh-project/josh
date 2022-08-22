@@ -699,6 +699,7 @@ pub struct Context {
     pub transaction: std::sync::Arc<std::sync::Mutex<cache::Transaction>>,
     pub transaction_mirror: std::sync::Arc<std::sync::Mutex<cache::Transaction>>,
     pub to_push: std::sync::Arc<std::sync::Mutex<Vec<(String, git2::Oid)>>>,
+    pub allow_refs: std::sync::Mutex<bool>,
 }
 
 impl juniper::Context for Context {}
@@ -747,6 +748,13 @@ impl RepositoryMut {
         add: Vec<MarkersInput>,
         context: &Context,
     ) -> FieldResult<bool> {
+        {
+            let mut allow_refs = context.allow_refs.lock()?;
+            if !*allow_refs {
+                *allow_refs = true;
+                return Err(josh_error("ref query not allowed").into());
+            };
+        }
         let transaction = context.transaction.lock()?;
         let transaction_mirror = context.transaction_mirror.lock()?;
 
@@ -834,6 +842,13 @@ impl Repository {
     }
 
     fn refs(&self, context: &Context, pattern: Option<String>) -> FieldResult<Vec<Reference>> {
+        {
+            let mut allow_refs = context.allow_refs.lock()?;
+            if !*allow_refs {
+                *allow_refs = true;
+                return Err(josh_error("ref query not allowed").into());
+            };
+        }
         let transaction_mirror = context.transaction_mirror.lock()?;
         let refname = format!(
             "{}{}",
@@ -863,10 +878,21 @@ impl Repository {
         let rev = format!("{}{}", self.ns, at);
 
         let transaction_mirror = context.transaction_mirror.lock()?;
-        let commit_id = if let Ok(id) = git2::Oid::from_str(&at) {
+        let commit_id = {
+            let mut allow_refs = context.allow_refs.lock()?;
+            let id = if let Ok(id) = git2::Oid::from_str(&at) {
+                id
+            } else if *allow_refs {
+                transaction_mirror.repo().revparse_single(&rev)?.id()
+            } else {
+                git2::Oid::zero()
+            };
+
+            if !transaction_mirror.repo().odb()?.exists(id) {
+                *allow_refs = true;
+                return Err(josh_error("ref query not allowed").into());
+            }
             id
-        } else {
-            transaction_mirror.repo().revparse_single(&rev)?.id()
         };
 
         Ok(Revision {
@@ -887,6 +913,7 @@ pub fn context(transaction: cache::Transaction, transaction_mirror: cache::Trans
         transaction_mirror: std::sync::Arc::new(std::sync::Mutex::new(transaction_mirror)),
         transaction: std::sync::Arc::new(std::sync::Mutex::new(transaction)),
         to_push: std::sync::Arc::new(std::sync::Mutex::new(vec![])),
+        allow_refs: std::sync::Mutex::new(false),
     }
 }
 
