@@ -461,11 +461,10 @@ async fn call_service(
         }
     };
 
-    let remote_url = [
-        serv.upstream_url.as_str(),
-        parsed_url.upstream_repo.as_str(),
-    ]
-    .join("");
+    let upstream_repo = parsed_url.upstream_repo;
+    let filter = parsed_url.filter;
+
+    let remote_url = [serv.upstream_url.as_str(), upstream_repo.as_str()].join("");
 
     if parsed_url.pathinfo.starts_with("/info/lfs") {
         return Ok(Response::builder()
@@ -498,7 +497,7 @@ async fn call_service(
     let block = block.split(";").collect::<Vec<_>>();
 
     for b in block {
-        if b == parsed_url.upstream_repo {
+        if b == upstream_repo {
             return Ok(make_response(
                 hyper::Body::from(formatdoc!(
                     r#"
@@ -510,9 +509,22 @@ async fn call_service(
         }
     }
 
+    if parsed_url.api == "/~/graphql" {
+        return serve_graphql(serv, req, upstream_repo.to_owned(), remote_url, auth).await;
+    }
+
+    if parsed_url.api == "/~/graphiql" {
+        let addr = format!("/~/graphql{}", upstream_repo);
+        return Ok(tokio::task::spawn_blocking(move || {
+            josh_proxy::juniper_hyper::graphiql(&addr, None)
+        })
+        .in_current_span()
+        .await??);
+    }
+
     match fetch_upstream(
         serv.clone(),
-        parsed_url.upstream_repo.to_owned(),
+        upstream_repo.to_owned(),
         &auth,
         remote_url.to_owned(),
         &headref,
@@ -535,48 +547,16 @@ async fn call_service(
         }
     }
 
-    if parsed_url.api == "/~/graphiql" {
-        let addr = format!("/~/graphql{}", parsed_url.upstream_repo);
-        return Ok(tokio::task::spawn_blocking(move || {
-            josh_proxy::juniper_hyper::graphiql(&addr, None)
-        })
-        .in_current_span()
-        .await??);
-    }
-
-    if parsed_url.api == "/~/graphql" {
-        return serve_graphql(
-            serv,
-            req,
-            parsed_url.upstream_repo.to_owned(),
-            remote_url,
-            auth,
-        )
-        .await;
-    }
-
     if let (Some(q), true) = (
         req.uri().query().map(|x| x.to_string()),
         parsed_url.pathinfo.is_empty(),
     ) {
-        return serve_query(
-            serv,
-            q,
-            parsed_url.upstream_repo,
-            parsed_url.filter,
-            headref,
-        )
-        .await;
+        return serve_query(serv, q, upstream_repo, filter, headref).await;
     }
 
-    let temp_ns = prepare_namespace(
-        serv.clone(),
-        &parsed_url.upstream_repo,
-        &parsed_url.filter,
-        &headref,
-    )
-    .in_current_span()
-    .await?;
+    let temp_ns = prepare_namespace(serv.clone(), &upstream_repo, &filter, &headref)
+        .in_current_span()
+        .await?;
 
     let repo_path = serv
         .repo_path
@@ -606,8 +586,8 @@ async fn call_service(
         remote_url: remote_url.clone(),
         auth,
         port: serv.port.clone(),
-        filter_spec: parsed_url.filter.clone(),
-        base_ns: josh::to_ns(&parsed_url.upstream_repo),
+        filter_spec: filter.clone(),
+        base_ns: josh::to_ns(&upstream_repo),
         git_ns: temp_ns.name().to_string(),
         git_dir: repo_path.clone(),
         mirror_git_dir: mirror_repo_path.clone(),
@@ -1007,6 +987,11 @@ async fn serve_graphql(
     remote_url: String,
     auth: josh_proxy::auth::Handle,
 ) -> josh::JoshResult<Response<hyper::Body>> {
+    let parsed = match josh_proxy::juniper_hyper::parse_req(req).await {
+        Ok(r) => r,
+        Err(resp) => return Ok(resp),
+    };
+
     let transaction_mirror = josh::cache::Transaction::open(
         &serv.repo_path.join("mirror"),
         Some(&format!(
@@ -1031,9 +1016,64 @@ async fn serve_graphql(
             .to_string(),
         false,
     ));
-    let gql_result = josh_proxy::juniper_hyper::graphql(root_node, context.clone(), req)
-        .in_current_span()
-        .await?;
+
+    let res = {
+        // First attempt to serve GraphQL query. If we can serve it
+        // that means all requested revisions were specified by SHA and we could find
+        // all of them locally, so no need to fetch.
+        let res = parsed.execute(&root_node, &context).await;
+
+        // The "allow_refs" flag will be set by the query handler if we need to do a fetch
+        // to complete the query.
+        if !*context.allow_refs.lock().unwrap() {
+            res
+        } else {
+            match fetch_upstream(
+                serv.clone(),
+                upstream_repo.to_owned(),
+                &auth,
+                remote_url.to_owned(),
+                &"HEAD",
+                false,
+            )
+            .in_current_span()
+            .await
+            {
+                Ok(res) => {
+                    if !res {
+                        let builder = Response::builder()
+                            .header("WWW-Authenticate", "Basic realm=User Visible Realm")
+                            .status(hyper::StatusCode::UNAUTHORIZED);
+                        return Ok(builder.body(hyper::Body::empty())?);
+                    }
+                }
+                Err(res) => {
+                    let builder =
+                        Response::builder().status(hyper::StatusCode::INTERNAL_SERVER_ERROR);
+                    return Ok(builder.body(hyper::Body::from(res.0))?);
+                }
+            };
+
+            parsed.execute(&root_node, &context).await
+        }
+    };
+
+    let code = if res.is_ok() {
+        hyper::StatusCode::OK
+    } else {
+        hyper::StatusCode::BAD_REQUEST
+    };
+
+    let body = hyper::Body::from(serde_json::to_string_pretty(&res).unwrap());
+    let mut resp = Response::new(hyper::Body::empty());
+    *resp.status_mut() = code;
+    resp.headers_mut().insert(
+        hyper::header::CONTENT_TYPE,
+        hyper::header::HeaderValue::from_static("application/json"),
+    );
+    *resp.body_mut() = body;
+    let gql_result = resp;
+
     tokio::task::spawn_blocking(move || -> josh::JoshResult<_> {
         let temp_ns = Arc::new(josh_proxy::TmpGitNamespace::new(
             &serv.repo_path.join("overlay"),
