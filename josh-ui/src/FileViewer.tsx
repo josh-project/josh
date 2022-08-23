@@ -45,7 +45,6 @@ export class FileViewer extends React.Component<FileViewerProps, State> {
             rev: this.props.rev,
             filter: this.props.filter,
             path: this.props.path,
-            meta: '',
         }).catch((reason) => {
             const data = reason.response.data.rev
 
