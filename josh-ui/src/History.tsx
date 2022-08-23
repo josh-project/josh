@@ -39,7 +39,7 @@ export class HistoryList extends React.Component<HistoryBrowserProps, State> {
         this.state.client.rawRequest(QUERY_HISTORY, {
             rev: this.props.rev,
             filter: this.props.filter,
-            limit: 100,
+            limit: 10,
         }).then((d) => {
             const data = d.data.rev
 
