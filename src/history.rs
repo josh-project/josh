@@ -119,6 +119,9 @@ pub fn find_original(
     if contained_in == git2::Oid::zero() {
         return Ok(git2::Oid::zero());
     }
+    if filter == filter::nop() {
+        return Ok(filtered);
+    }
     let mut walk = transaction.repo().revwalk()?;
     walk.set_sorting(git2::Sort::TOPOLOGICAL)?;
     walk.push(contained_in)?;
