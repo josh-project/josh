@@ -36,7 +36,6 @@ export class FileList extends React.Component<FileBrowserProps, State> {
             rev: this.props.rev,
             filter: this.props.filter,
             path: this.props.path,
-            meta: '',
         }).catch((reason) => {
             const data = reason.response.data.rev
 
