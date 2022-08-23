@@ -79,6 +79,7 @@ impl Revision {
     }
 
     fn hash(&self, context: &Context) -> FieldResult<String> {
+        rs_tracing::trace_scoped!("hash");
         let transaction = context.transaction.lock()?;
         let commit = transaction.repo().find_commit(self.commit_id)?;
         let filter_commit = filter::apply_to_commit(self.filter, &commit, &transaction)?;
@@ -169,6 +170,7 @@ impl Revision {
         offset: Option<i32>,
         context: &Context,
     ) -> FieldResult<Vec<Revision>> {
+        rs_tracing::trace_scoped!("history");
         let limit = limit.unwrap_or(1) as usize;
         let offset = offset.unwrap_or(0) as usize;
         let transaction = context.transaction.lock()?;
@@ -184,18 +186,33 @@ impl Revision {
         walk.set_sorting(git2::Sort::TOPOLOGICAL)?;
         walk.push(filter_commit.id())?;
 
-        Ok(walk
-            .skip(offset)
-            .take(limit)
+        let mut contained_in = self.commit_id;
+        let mut ids = {
+            rs_tracing::trace_scoped!("walk");
+            walk.skip(offset)
+                .take(limit)
+                .map(|id| id.unwrap_or(git2::Oid::zero()))
+                .collect::<Vec<git2::Oid>>()
+        };
+
+        {
+            rs_tracing::trace_scoped!("walk");
+            for i in 0..ids.len() {
+                ids[i] = history::find_original(&transaction, self.filter, contained_in, ids[i])?;
+                contained_in = transaction
+                    .repo()
+                    .find_commit(ids[i])?
+                    .parent_ids()
+                    .next()
+                    .unwrap_or(ids[i]);
+            }
+        }
+
+        Ok(ids
+            .into_iter()
             .map(|id| Revision {
                 filter: self.filter,
-                commit_id: history::find_original(
-                    &transaction,
-                    self.filter,
-                    self.commit_id,
-                    id.unwrap_or(git2::Oid::zero()),
-                )
-                .unwrap_or(git2::Oid::zero()),
+                commit_id: id,
             })
             .collect())
     }
