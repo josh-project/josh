@@ -357,12 +357,14 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
     }
 
     if let Some(gql_query) = args.value_of("graphql") {
+        let context = josh::graphql::context(transaction.try_clone()?, transaction.try_clone()?);
+        *context.allow_refs.lock()? = true;
         let (res, _errors) = juniper::execute_sync(
             gql_query,
             None,
             &josh::graphql::repo_schema(".".to_string(), true),
             &std::collections::HashMap::new(),
-            &josh::graphql::context(transaction.try_clone()?, transaction.try_clone()?),
+            &context,
         )?;
 
         let j = serde_json::to_string(&res)?;
