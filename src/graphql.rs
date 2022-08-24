@@ -205,14 +205,21 @@ impl Revision {
         {
             rs_tracing::trace_scoped!("walk");
             for i in 0..ids.len() {
-                ids[i] =
+                let orig =
                     history::find_original(&transaction, self.filter, contained_in, ids[i], true)?;
-                contained_in = transaction
-                    .repo()
-                    .find_commit(ids[i])?
-                    .parent_ids()
-                    .next()
-                    .unwrap_or(ids[i]);
+
+                if orig != git2::Oid::zero() {
+                    ids[i] = orig;
+                    contained_in = transaction
+                        .repo()
+                        .find_commit(ids[i])?
+                        .parent_ids()
+                        .next()
+                        .unwrap_or(ids[i]);
+                } else {
+                    ids.truncate(i);
+                    break;
+                }
             }
         }
 
