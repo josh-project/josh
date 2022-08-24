@@ -41,4 +41,4 @@
   > EOF
 
   $ josh-filter -g "$(cat query2)"
-  null
+  {"rev":{"history":[{"summary":"add ws"}]}}
