@@ -132,6 +132,7 @@ impl Revision {
                 self.filter,
                 self.commit_id,
                 filter_commit.id(),
+                false,
             )?
         } else {
             self.commit_id
@@ -156,8 +157,14 @@ impl Revision {
             .parent_ids()
             .map(|id| Revision {
                 filter: self.filter,
-                commit_id: history::find_original(&transaction, self.filter, self.commit_id, id)
-                    .unwrap_or_else(|_| git2::Oid::zero()),
+                commit_id: history::find_original(
+                    &transaction,
+                    self.filter,
+                    self.commit_id,
+                    id,
+                    false,
+                )
+                .unwrap_or_else(|_| git2::Oid::zero()),
             })
             .collect();
 
@@ -198,7 +205,8 @@ impl Revision {
         {
             rs_tracing::trace_scoped!("walk");
             for i in 0..ids.len() {
-                ids[i] = history::find_original(&transaction, self.filter, contained_in, ids[i])?;
+                ids[i] =
+                    history::find_original(&transaction, self.filter, contained_in, ids[i], true)?;
                 contained_in = transaction
                     .repo()
                     .find_commit(ids[i])?

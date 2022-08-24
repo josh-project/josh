@@ -115,6 +115,7 @@ pub fn find_original(
     filter: filter::Filter,
     contained_in: git2::Oid,
     filtered: git2::Oid,
+    linear: bool,
 ) -> JoshResult<git2::Oid> {
     if contained_in == git2::Oid::zero() {
         return Ok(git2::Oid::zero());
@@ -124,6 +125,9 @@ pub fn find_original(
     }
     let mut walk = transaction.repo().revwalk()?;
     walk.set_sorting(git2::Sort::TOPOLOGICAL)?;
+    if linear {
+        walk.simplify_first_parent()?;
+    }
     walk.push(contained_in)?;
 
     for original in walk {
@@ -311,7 +315,7 @@ pub fn unapply_filter(
             *original
         } else {
             tracing::info!("Had to go through the whole thing",);
-            find_original(transaction, filterobj, original_target, new)?
+            find_original(transaction, filterobj, original_target, new, false)?
         };
         return Ok(ret);
     }
