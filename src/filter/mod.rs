@@ -583,10 +583,12 @@ fn apply2<'a>(
         Op::Invert => tree::invert_paths(transaction, "", tree),
 
         Op::Workspace(path) => {
+            let wsj_file = to_filter(Op::File(Path::new("workspace.josh").to_owned()));
             let base = to_filter(Op::Subdir(path.to_owned()));
+            let wsj_file = chain(base, wsj_file);
             apply(
                 transaction,
-                compose(get_workspace(repo, &tree, path), base),
+                compose(wsj_file, compose(get_workspace(repo, &tree, path), base)),
                 tree,
             )
         }
@@ -661,8 +663,10 @@ fn unapply_workspace<'a>(
             let original_workspace = get_workspace(transaction.repo(), &parent_tree, path);
 
             let root = to_filter(Op::Subdir(path.to_owned()));
-            let filter = compose(workspace, root);
-            let original_filter = compose(original_workspace, root);
+            let wsj_file = to_filter(Op::File(Path::new("workspace.josh").to_owned()));
+            let wsj_file = chain(root, wsj_file);
+            let filter = compose(wsj_file, compose(workspace, root));
+            let original_filter = compose(wsj_file, compose(original_workspace, root));
             let matching = apply(
                 transaction,
                 chain(original_filter, invert(original_filter)?),

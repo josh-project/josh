@@ -112,7 +112,7 @@ Put a double slash in the URL to see that it also works
   "real_repo.git" = [':/sub1']
   .
   |-- josh
-  |   `-- 11
+  |   `-- 12
   |       `-- sled
   |           |-- blobs
   |           |-- conf

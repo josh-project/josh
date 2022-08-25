@@ -125,7 +125,7 @@
   ]
   .
   |-- josh
-  |   `-- 11
+  |   `-- 12
   |       `-- sled
   |           |-- blobs
   |           |-- conf
@@ -257,6 +257,8 @@
       |   |   `-- 489fc8fd6ae9ac08c0168d7cabaf5645b922fa
       |   |-- c2
       |   |   `-- d86319b61f31a7f4f1bc89b8ea4356b60c4658
+      |   |-- c4
+      |   |   `-- c85b2c5c47af364fa064bd2b6523fe98ed3852
       |   |-- d3
       |   |   `-- d2a4d6db7addc2b087dcdb3e63785d3315c00e
       |   |-- d7
@@ -269,7 +271,8 @@
       |   |-- f5
       |   |   `-- d0c4d5fe3173ba8ca39fc198658487eaab8014
       |   |-- f6
-      |   |   `-- 3dd93419493d22aeaf6bcb5c0bec4c2701b049
+      |   |   |-- 3dd93419493d22aeaf6bcb5c0bec4c2701b049
+      |   |   `-- e8ded2e63ba78ef5e9c02679331383cc4b2203
       |   |-- info
       |   `-- pack
       `-- refs
@@ -277,6 +280,6 @@
           |-- namespaces
           `-- tags
   
-  81 directories, 71 files
+  82 directories, 73 files
 
 $ cat ${TESTTMP}/josh-proxy.out | grep VIEW

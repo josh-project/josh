@@ -32,7 +32,7 @@
   $ bash ${TESTDIR}/destroy_test_env.sh
   .
   |-- josh
-  |   `-- 11
+  |   `-- 12
   |       `-- sled
   |           |-- blobs
   |           |-- conf
