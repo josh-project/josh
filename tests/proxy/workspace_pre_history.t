@@ -88,7 +88,7 @@ file was created
   ]
   .
   |-- josh
-  |   `-- 11
+  |   `-- 12
   |       `-- sled
   |           |-- blobs
   |           |-- conf
@@ -148,6 +148,8 @@ file was created
       |-- objects
       |   |-- 06
       |   |   `-- f56dd7e7b5abf977267595ccfc3f1a5f1eea28
+      |   |-- 27
+      |   |   `-- 5b45aec0a1c944c3a4c71cc71ee08d0c9ea347
       |   |-- 4b
       |   |   `-- 825dc642cb6eb9a060e54bf8d69288fbee4904
       |   |-- 4f
@@ -156,10 +158,18 @@ file was created
       |   |   `-- 2f6261fa32f8bfec7b89f77bb5cce40c4611cb
       |   |-- 98
       |   |   `-- 84cc2efe368ea0aa9d912fa596b26c5d75dbee
+      |   |-- 9c
+      |   |   `-- f258b407cd9cdba97e16a293582b29d302b796
       |   |-- a8
       |   |   `-- 6544ef29b946481d26cb4cfb55844342069c0e
+      |   |-- b6
+      |   |   `-- c8440fe2cd36638ddb6b3505c1e8f2202f6191
+      |   |-- b8
+      |   |   `-- c113355111088cf7e591a20df6dabe2db24c92
       |   |-- eb
       |   |   `-- 6a31166c5bf0dbb65c82f89130976a12533ce6
+      |   |-- f8
+      |   |   `-- 5eaa207c7aba64f4deb19a9acd060c254fb239
       |   |-- info
       |   `-- pack
       `-- refs
@@ -167,6 +177,6 @@ file was created
           |-- namespaces
           `-- tags
   
-  46 directories, 33 files
+  51 directories, 38 files
 
 $ cat ${TESTTMP}/josh-proxy.out | grep VIEW

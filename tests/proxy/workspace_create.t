@@ -442,7 +442,7 @@ Note that ws/d/ is now present in the ws
   ]
   .
   |-- josh
-  |   `-- 11
+  |   `-- 12
   |       `-- sled
   |           |-- blobs
   |           |-- conf
@@ -560,9 +560,9 @@ Note that ws/d/ is now present in the ws
       |   `-- exclude
       |-- objects
       |   |-- 00
-      |   |   `-- 3a2970e4c23b64f915025e9adc2e6ed04bc63a
+      |   |   |-- 3a2970e4c23b64f915025e9adc2e6ed04bc63a
+      |   |   `-- b49a990c4dc10c67d8b98761c402436627e716
       |   |-- 02
-      |   |   |-- 634a53b8e05b0a9a8f09db835ab4f35ad0e2e6
       |   |   `-- 668d7af968c8eed910db7539a57b18dd62a50e
       |   |-- 04
       |   |   `-- 28323b9901ac5959af01b8686b2524c671adc1
@@ -573,8 +573,7 @@ Note that ws/d/ is now present in the ws
       |   |-- 0b
       |   |   `-- 976ee9223f2a23c5339d6cb3bda2196dbae6b1
       |   |-- 0c
-      |   |   |-- d4309cc22b5903503a7196f49c24cf358a578a
-      |   |   `-- ee64f3b2f9f9dd40a2b36afdccb728b753659c
+      |   |   `-- d4309cc22b5903503a7196f49c24cf358a578a
       |   |-- 0d
       |   |   |-- c2a5964e4ec35013dac4b0537f1116ea91341c
       |   |   `-- d8698200c1dae7c92c6550607e6affcd91df29
@@ -588,6 +587,8 @@ Note that ws/d/ is now present in the ws
       |   |-- 14
       |   |   |-- 1a3bdf0a2739ded6e233ababff0cd490fd0c56
       |   |   `-- da1560586adda328cca1fbf58c026d6730444f
+      |   |-- 15
+      |   |   `-- e7cf6606c3018b91c26914674c7f5bdb28cc38
       |   |-- 17
       |   |   |-- 039634b139f6fba381ff8bc55b9c5de210f87f
       |   |   `-- ac72002199728c133087acfa6b23009e00a52a
@@ -595,8 +596,15 @@ Note that ws/d/ is now present in the ws
       |   |   `-- b9637ac9437ea11d42632cd65ca2313952c32f
       |   |-- 1b
       |   |   `-- 46698f32d1d1db1eaeb34f8c9037778d65f3a9
+      |   |-- 20
+      |   |   |-- 189c97a0ef53368b7ec335baa7a1b86bd76f8e
+      |   |   `-- a9def92c54ae0f7adcaa32e144e5ac1f182571
       |   |-- 22
       |   |   `-- 0f8fb06cc7988cb683eba1c007b8e8aa1c9474
+      |   |-- 23
+      |   |   `-- d20398ffe09015ada5794763b97c750b61bdc4
+      |   |-- 27
+      |   |   `-- d0eee16bdbe4a1ade0ebf877f97467de3b218e
       |   |-- 28
       |   |   `-- a3e71d163a9eb30c3639b16a16f57077abf29b
       |   |-- 2a
@@ -611,18 +619,28 @@ Note that ws/d/ is now present in the ws
       |   |-- 2f
       |   |   |-- 10c52e8ac3117e818b2b8a527c03d9345104c3
       |   |   `-- 888ca5fb8487446a5718b64ddbd9e644d46b00
+      |   |-- 30
+      |   |   `-- 48804b01e298df4a6e1bc60a1e3b2ca0b016bd
       |   |-- 31
       |   |   `-- efdeb5de300e7a344ebb5b006c0380f2223d45
+      |   |-- 34
+      |   |   `-- 351ebb911446708a5a548ff74365f781980294
       |   |-- 36
       |   |   `-- 52f9baa44258d0f505314830ad37d16eafc981
+      |   |-- 38
+      |   |   `-- b8a2ae02de9bdb715894896a3442d2bc54bc09
       |   |-- 39
       |   |   `-- abfc68c47fd430cd9775fc18c9f93bc391052e
+      |   |-- 3a
+      |   |   `-- 748f0be2a5670c0c282196d3a66620e8599ee5
       |   |-- 40
       |   |   `-- c389b6b248e13f3cb88dcd79467d7396a4489e
       |   |-- 41
       |   |   `-- a263629db0fc09dcc5299c3a2eb3025ece9ea0
       |   |-- 43
       |   |   `-- 52611a9e7c56dfdfeadec043ced6d6ef7a5c33
+      |   |-- 46
+      |   |   `-- bc1eabe4b2029b9fcb661f0d447d8389d17337
       |   |-- 47
       |   |   `-- 8644b35118f1d733b14cafb04c51e5b6579243
       |   |-- 4b
@@ -639,14 +657,15 @@ Note that ws/d/ is now present in the ws
       |   |   `-- 8dd30d5f721bf061d079d3f4375c1621716bb0
       |   |-- 60
       |   |   `-- bd0e180735e169b5c853545d8b1272ed0fc319
-      |   |-- 63
-      |   |   `-- 66535ea7764245934ee9568d0780ba3872b33c
       |   |-- 64
+      |   |   |-- 6fd2c5bfe156d57ba03f62f2fe735ddbb74e22
+      |   |   |-- c3f31fdc78ed998bacd4d6b4fe03b1ace028d1
       |   |   `-- d1f8d32b274d8c1eeb69891931f52b6ade9417
       |   |-- 6a
       |   |   `-- 80a5b3af9023d11cb7f37bc1f80d1d1805bfdb
       |   |-- 6c
-      |   |   `-- 68dd37602c8e2036362ab81b12829c4d6c0867
+      |   |   |-- 68dd37602c8e2036362ab81b12829c4d6c0867
+      |   |   `-- cf5cb2f16bdf3e6967bd4c0c4a3571b6668e97
       |   |-- 6d
       |   |   `-- 4b5c23a94a89c7f26266ccf635647fd4002b19
       |   |-- 70
@@ -694,6 +713,8 @@ Note that ws/d/ is now present in the ws
       |   |   `-- acd82fe2a9b89022d1aee5a580c123a8161f4a
       |   |-- 9c
       |   |   `-- 78c532d93505a2a24430635b342b91db22fee0
+      |   |-- 9d
+      |   |   `-- e3bbb26e2b40f02ca8de195933eb620bbf0b6a
       |   |-- 9e
       |   |   `-- 4d2bcaee240904058a6160e84311667b409b08
       |   |-- 9f
@@ -705,6 +726,8 @@ Note that ws/d/ is now present in the ws
       |   |   `-- c31372c5de4fb705ffdcbf5a4ec5c5103231d9
       |   |-- a8
       |   |   `-- 2dc4c2496b446840754c9dc9f1393b08592b26
+      |   |-- ac
+      |   |   `-- f2103d2724dcae1b16af24901a9abb657a9e32
       |   |-- af
       |   |   `-- 410d4293058c26007526cc7798cfc56472c7f8
       |   |-- b1
@@ -718,6 +741,7 @@ Note that ws/d/ is now present in the ws
       |   |-- b9
       |   |   `-- 90567474f1f8af9784478614483684e88ccf4f
       |   |-- ba
+      |   |   |-- 7e71e9f4937922f7993824e136827d1beac1ed
       |   |   `-- f9dcf1394d5152de67b115f55f25e4dc0a2398
       |   |-- bb
       |   |   `-- 9f40f82fbc8cabcb1aee561cf488412e5f2415
@@ -742,14 +766,16 @@ Note that ws/d/ is now present in the ws
       |   |   `-- e36a04a3c59c966815fae6db6fe5d518a3456a
       |   |-- da
       |   |   `-- af0560e4e779353311a9039b31ea4f0f1dec37
+      |   |-- dc
+      |   |   `-- ffb9b655a4a1d6b9b152917199457d2ddd57cd
       |   |-- e1
+      |   |   |-- 0bf0281a70e6b19939ad6e26e10252bbebe300
       |   |   `-- 25e6d9f8f9acca5ffd25ee3c97d09748ad2a8b
-      |   |-- e2
-      |   |   `-- 4b99efdd25fce896ef9fd0e9614163504c59cd
       |   |-- e7
       |   |   `-- cee3592aaac624fd48c258daa5d62d17352043
       |   |-- e9
-      |   |   `-- 8909530f1ecc7b6438c268e3d6870107450eba
+      |   |   |-- 8909530f1ecc7b6438c268e3d6870107450eba
+      |   |   `-- 9a2c69c0fb10af8dd1524e7f976df3d898f6ac
       |   |-- ea
       |   |   |-- 1ae75547e348b07cb28a721a06ef6580ff67f0
       |   |   `-- 7beb7786b5dbadf54412f90d4e729f41f26c00
@@ -780,6 +806,6 @@ Note that ws/d/ is now present in the ws
           |-- namespaces
           `-- tags
   
-  162 directories, 176 files
+  172 directories, 192 files
 
 $ cat ${TESTTMP}/josh-proxy.out

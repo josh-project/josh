@@ -16,10 +16,14 @@
   $ git commit -m "add file2" 1> /dev/null
 
   $ mkdir ws
+
+Note that we are trying to relocate the workspace.josh file, which is not possible
+so the workspace.josh will still appear in the root of the workspace
   $ cat > ws/workspace.josh <<EOF
   > :/sub1::file1
   > ::sub2/subsub/
   > a = :/sub1
+  > b = ::ws/workspace.josh
   > EOF
   $ git add ws
   $ git commit -m "add ws" 1> /dev/null
@@ -28,6 +32,7 @@
   [1] :/sub1
   [1] :/subsub
   [1] ::file1
+  [1] ::ws/workspace.josh
   [1] :[
       ::file1
       :prefix=a
@@ -42,6 +47,7 @@
           :prefix=a
       ]
       ::sub2/subsub/
+      b = ::ws/workspace.josh
   ]
   [2] :workspace=ws
 
