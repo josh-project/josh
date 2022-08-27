@@ -2,6 +2,7 @@ import './App.scss';
 import {FileList} from './FileBrowser';
 
 import {useEffect} from 'react';
+import {None, Option} from 'tsoption';
 
 import {
     BrowserRouter,
@@ -20,6 +21,7 @@ import {match} from "ts-pattern";
 import {FileViewer} from "./FileViewer";
 import {HistoryList} from "./History";
 import {Breadcrumbs} from "./Breadcrumbs";
+import {DEFAULT_FILTER} from "./Josh";
 
 function useNavigateCallback(): NavigateCallback {
     const navigate = useNavigate()
@@ -47,46 +49,80 @@ function useNavigateCallback(): NavigateCallback {
 function useGetSearchParam() {
     let [ searchParams ] = useSearchParams()
 
-    return (key: string): string => {
+    return (key: string): Option<string> => {
         let value = searchParams.get(key)
+
         if (value === null) {
-            throw new Error(`Search param ${key} was not provided`)
+            return new None()
         }
 
-        return value
+        return Option.of(value)
+    }
+}
+
+function useStrictGetSearchParam() {
+    const param = useGetSearchParam()
+
+    return (key: string): string => {
+        const value = param(key)
+
+        if (value.isEmpty()) {
+            throw new Error(`Search param ${key} was not provided`)
+        } else {
+            return value.getOrElse('')
+        }
     }
 }
 
 function Select() {
+    const param = useGetSearchParam()
+
     useEffect(() => {
         document.title = `Select repo - Josh`
     });
 
+    const filter = param('filter').flatMap(value => {
+        if (value === DEFAULT_FILTER) {
+            return new None<string>()
+        } else {
+            return Option.of(value)
+        }
+    })
+
     return <div className={'ui-modal-container'}>
         <div className={'ui-modal'}>
-            <RepoSelector navigateCallback={useNavigateCallback()}/>
+            <RepoSelector
+                repo={param('repo')}
+                filter={filter}
+                navigateCallback={useNavigateCallback()}
+            />
         </div>
     </div>
 }
 
-function TopNav(props: { repo: string, filter: string}) {
+function TopNav(props: { repo: string, filter: string }) {
+    const selectParams = {
+        repo: props.repo,
+        filter: props.filter,
+    }
+
     return <div className={'now-browsing'}>
         <span className={'now-browsing-name'}>
             <span className={'now-browsing-name-repo'}>
-                now browsing: {props.repo} 
+                now browsing: {props.repo}
             </span>
-            {props.filter !== ':/' && <span className={'now-browsing-name-filter'}>
+            {props.filter !== DEFAULT_FILTER && <span className={'now-browsing-name-filter'}>
                 {props.filter}
             </span>}
         </span>
         <span className={'now-browsing-select'}>
-            <Link to='/select'>select repo</Link>
+            <Link to={`/select?${createSearchParams(selectParams)}`}>select repo</Link>
         </span>
     </div>
 }
 
 function Browse() {
-    const param = useGetSearchParam()
+    const param = useStrictGetSearchParam()
 
     useEffect(() => {
         document.title = `/${param('path')} - ${param('repo')} - Josh`
@@ -115,7 +151,7 @@ function Browse() {
 }
 
 function History() {
-    const param = useGetSearchParam()
+    const param = useStrictGetSearchParam()
 
     useEffect(() => {
         document.title = `History - ${param('repo')} - Josh`
@@ -137,7 +173,7 @@ function History() {
 
 
 function View() {
-    const param = useGetSearchParam()
+    const param = useStrictGetSearchParam()
 
     useEffect(() => {
         document.title = `${param('path')} - ${param('repo')} - Josh`
