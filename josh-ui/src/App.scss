@@ -40,8 +40,30 @@ body {
   margin: 0;
 }
 
-section.file-browser-list {
+.file-browser-list {
   margin: 0;
+
+  &-entry {
+    @include ui-link-clickable;
+    padding: .4em .4em;
+
+    &:hover {
+      background: $color-background-highlight;
+    }
+  }
+
+  &-loading &-entry {
+    animation: file-browser-list-fade 120ms steps(1, end) both;
+  }
+}
+
+@keyframes file-browser-list-fade {
+  0% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.2;
+  }
 }
 
 nav {
@@ -107,15 +129,6 @@ nav {
     &-filter {
       font-weight: bold
     }
-  }
-}
-
-.file-browser-list-entry {
-  @include ui-link-clickable;
-  padding: .4em .4em;
-
-  &:hover {
-    background: $color-background-highlight;
   }
 }
 

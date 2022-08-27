@@ -16,6 +16,8 @@ type State = {
     dirs: string[]
     files: string[]
     client: GraphQLClient
+    loading: boolean
+    path: string,
 }
 
 type FileOrDir = {
@@ -29,6 +31,8 @@ export class FileList extends React.Component<FileBrowserProps, State> {
         client: new GraphQLClient(`${getServer()}/~/graphql/${this.props.repo}`, {
             mode: 'cors'
         }),
+        loading: true,
+        path: this.props.path,
     };
 
     startRequest() {
@@ -42,6 +46,8 @@ export class FileList extends React.Component<FileBrowserProps, State> {
             this.setState({
                 dirs: data.dirs.map((v: FileOrDir) => v.path),
                 files: data.files.map((v: FileOrDir) => v.path),
+                path: this.props.path,
+                loading: false,
             })
         })
     }
@@ -53,8 +59,7 @@ export class FileList extends React.Component<FileBrowserProps, State> {
     componentDidUpdate(prevProps: Readonly<FileBrowserProps>, prevState: Readonly<State>, snapshot?: any) {
         if (prevProps !== this.props) {
             this.setState({
-                dirs: [],
-                files: [],
+                loading: true,
             })
 
             this.startRequest()
@@ -81,8 +86,8 @@ export class FileList extends React.Component<FileBrowserProps, State> {
         }
 
         const formatName = (path: string) => {
-            const baseName = path.indexOf(this.props.path + '/') !== -1 ?
-                path.slice(this.props.path.length + 1) :
+            const baseName = path.indexOf(this.state.path + '/') !== -1 ?
+                path.slice(this.state.path.length + 1) :
                 path
 
             return match(target)
@@ -93,7 +98,8 @@ export class FileList extends React.Component<FileBrowserProps, State> {
 
         return values.map((entry) => {
             const className = `file-browser-list-entry file-browser-list-entry-${classNameSuffix}`
-            return <div className={className} key={entry} onClick={navigate.bind(this, entry)}>
+            const onClick = this.state.loading ? undefined : navigate.bind(this, entry)
+            return <div className={className} key={entry} onClick={onClick}>
                 {formatName(entry)}
             </div>
         })
@@ -103,7 +109,8 @@ export class FileList extends React.Component<FileBrowserProps, State> {
         if (this.state.dirs.length === 0 && this.state.files.length === 0) {
             return <div className={'file-browser-loading'}>Loading...</div>
         } else {
-            return <div className={'file-browser-list'}>
+            const maybeLoadingClass = this.state.loading ? 'file-browser-list-loading' : ''
+            return <div className={`file-browser-list ${maybeLoadingClass}`}>
                 {this.renderList(this.state.dirs, NavigateTargetType.Directory)}
                 {this.renderList(this.state.files, NavigateTargetType.File)}
             </div>

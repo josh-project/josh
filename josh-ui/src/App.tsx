@@ -23,6 +23,12 @@ import {HistoryList} from "./History";
 import {Breadcrumbs} from "./Breadcrumbs";
 import {DEFAULT_FILTER} from "./Josh";
 
+function useTitleEffect(title: string) {
+    useEffect(() => {
+        document.title = title
+    });
+}
+
 function useNavigateCallback(): NavigateCallback {
     const navigate = useNavigate()
     return (targetType: NavigateTargetType, target: NavigateTarget) => {
@@ -77,9 +83,7 @@ function useStrictGetSearchParam() {
 function Select() {
     const param = useGetSearchParam()
 
-    useEffect(() => {
-        document.title = `Select repo - Josh`
-    });
+    useTitleEffect(`Select repo - Josh`)
 
     const filter = param('filter').flatMap(value => {
         if (value === DEFAULT_FILTER) {
@@ -124,9 +128,7 @@ function TopNav(props: { repo: string, filter: string }) {
 function Browse() {
     const param = useStrictGetSearchParam()
 
-    useEffect(() => {
-        document.title = `/${param('path')} - ${param('repo')} - Josh`
-    });
+    useTitleEffect(`/${param('path')} - ${param('repo')} - Josh`)
 
     return <div>
         <TopNav
@@ -153,9 +155,7 @@ function Browse() {
 function History() {
     const param = useStrictGetSearchParam()
 
-    useEffect(() => {
-        document.title = `History - ${param('repo')} - Josh`
-    });
+    useTitleEffect(`History - ${param('repo')} - Josh`)
 
     return <div>
         <TopNav
@@ -175,9 +175,7 @@ function History() {
 function View() {
     const param = useStrictGetSearchParam()
 
-    useEffect(() => {
-        document.title = `${param('path')} - ${param('repo')} - Josh`
-    });
+    useTitleEffect(`${param('path')} - ${param('repo')} - Josh`)
 
     return (
         <div>
