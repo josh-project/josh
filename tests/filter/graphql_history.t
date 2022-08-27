@@ -43,6 +43,7 @@
   >   rev(at: "HEAD", filter: ":workspace=ws") {
   >     history(limit: 2) {
   >       summary
+  >       authorEmail
   >     }
   >   }
   > }
@@ -53,7 +54,8 @@
     "rev": {
       "history": [
         {
-          "summary": "add ws"
+          "summary": "add ws",
+          "authorEmail": "josh@example.com"
         }
       ]
     }

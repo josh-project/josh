@@ -86,6 +86,18 @@ impl Revision {
         Ok(format!("{}", filter_commit))
     }
 
+    fn author_email(&self, context: &Context) -> FieldResult<String> {
+        let transaction = context.transaction.lock()?;
+        let commit = transaction.repo().find_commit(self.commit_id)?;
+        let filter_commit = transaction.repo().find_commit(filter::apply_to_commit(
+            self.filter,
+            &commit,
+            &transaction,
+        )?)?;
+        let a = filter_commit.author();
+        Ok(a.email().unwrap_or("").to_owned())
+    }
+
     fn summary(&self, context: &Context) -> FieldResult<String> {
         let transaction = context.transaction.lock()?;
         let commit = transaction.repo().find_commit(self.commit_id)?;
