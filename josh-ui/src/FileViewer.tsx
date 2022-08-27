@@ -1,6 +1,6 @@
 import React from "react";
 import Editor from "@monaco-editor/react";
-import {NavigateCallback, QUERY_PATH} from "./Navigation";
+import {NavigateCallback, QUERY_FILE} from "./Navigation";
 import {GraphQLClient} from "graphql-request";
 import {getServer} from "./Server";
 import {match} from "ts-pattern";
@@ -41,12 +41,12 @@ export class FileViewer extends React.Component<FileViewerProps, State> {
     }
 
     componentDidMount() {
-        this.state.client.rawRequest(QUERY_PATH, {
+        this.state.client.rawRequest(QUERY_FILE, {
             rev: this.props.rev,
             filter: this.props.filter,
             path: this.props.path,
-        }).catch((reason) => {
-            const data = reason.response.data.rev
+        }).then((d) => {
+            const data = d.data.rev
 
             this.setState({
                 content: data.file.text

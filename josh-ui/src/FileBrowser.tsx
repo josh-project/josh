@@ -1,7 +1,7 @@
 import React from "react";
 import {GraphQLClient} from 'graphql-request'
 import {getServer} from "./Server";
-import {NavigateCallback, NavigateTargetType, QUERY_PATH} from "./Navigation";
+import {NavigateCallback, NavigateTargetType, QUERY_DIR} from "./Navigation";
 import {match} from "ts-pattern";
 
 export type FileBrowserProps = {
@@ -36,12 +36,12 @@ export class FileList extends React.Component<FileBrowserProps, State> {
     };
 
     startRequest() {
-        this.state.client.rawRequest(QUERY_PATH, {
+        this.state.client.rawRequest(QUERY_DIR, {
             rev: this.props.rev,
             filter: this.props.filter,
             path: this.props.path,
-        }).catch((reason) => {
-            const data = reason.response.data.rev
+        }).then((d) => {
+            const data = d.data.rev
 
             this.setState({
                 dirs: data.dirs.map((v: FileOrDir) => v.path),
