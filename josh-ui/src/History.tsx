@@ -17,6 +17,7 @@ type Original = {
 
 type Commit = {
     summary: string
+    authorEmail: string
     hash: string
     original: Original
 }
@@ -69,7 +70,7 @@ export class HistoryList extends React.Component<HistoryBrowserProps, State> {
 
     renderList(values: Commit[]) {
 
-        const navigate = (rev: string, e: React.MouseEvent<HTMLDivElement>) => {
+        const navigateBrowse = (rev: string, e: React.MouseEvent<HTMLDivElement>) => {
             this.props.navigateCallback(NavigateTargetType.Directory, {
                 repo:   this.props.repo,
                 path:   '',
@@ -78,15 +79,31 @@ export class HistoryList extends React.Component<HistoryBrowserProps, State> {
             })
         }
 
+        const navigateChange = (rev: string, e: React.MouseEvent<HTMLDivElement>) => {
+            this.props.navigateCallback(NavigateTargetType.Change, {
+                repo:   this.props.repo,
+                path:   '',
+                filter: this.props.filter,
+                rev:    rev,
+            })
+        }
+
+
         return values.map((entry) => {
-            const className = `commit-list-entry commit-list-entry-dir`
-            return <div
-                className={className}
-                key={entry.hash}
-                onClick={navigate.bind(this, entry.original.hash)}>
-                <span className="hash">{entry.hash.slice(0,8)}</span>
+            return <div key={entry.hash} className="commit-list-entry">
+            <div
+                className="commit-list-entry-dir"
+                onClick={navigateChange.bind(this, entry.original.hash)}>
                 <span className="summary">{entry.summary}</span>
+                <span className="authorEmail">{entry.authorEmail}</span>
             </div>
+            <div
+                className="commit-list-entry-browse"
+                onClick={navigateBrowse.bind(this, entry.original.hash)}>
+                Browse
+            </div>
+            </div>
+
         })
     }
 

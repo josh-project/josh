@@ -3,7 +3,9 @@ import { gql } from 'graphql-request'
 export enum NavigateTargetType {
   History,
   File,
-  Directory
+  Directory,
+  Change,
+  Diff
 }
 
 export type NavigateTarget = {
@@ -39,13 +41,45 @@ query($rev: String!, $filter: String!, $path: String!) {
 }
 `
 
+export const QUERY_FILE_DIFF = gql`
+query($rev: String!, $filter: String!, $path: String!) {
+  rev(at:$rev, filter:$filter) {
+    history(limit: 2) {
+      file(path:$path) {
+        text
+      }
+    }
+  }
+}
+`
+
 export const QUERY_HISTORY = gql`
 query($rev: String!, $filter: String!, $limit: Int) {
   rev(at:$rev, filter:$filter) {
     history(limit: $limit) {
       summary
+      authorEmail
       hash
       original: rev { hash }
+    }
+  }
+}
+`
+
+export const QUERY_CHANGE = gql`
+query($rev: String!, $filter: String!) {
+  rev(at:$rev, filter:$filter) {
+    summary
+    authorEmail
+    hash
+    rev { hash }
+    changedFiles {
+      from {
+        path
+      }
+      to {
+        path
+      }
     }
   }
 }

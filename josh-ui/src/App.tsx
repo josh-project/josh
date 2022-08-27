@@ -19,6 +19,8 @@ import {RepoSelector} from './RepoSelector';
 import {NavigateCallback, NavigateTarget, NavigateTargetType} from "./Navigation";
 import {match} from "ts-pattern";
 import {FileViewer} from "./FileViewer";
+import {DiffViewer} from "./DiffViewer";
+import {ChangeViewer} from "./ChangeViewer";
 import {HistoryList} from "./History";
 import {Breadcrumbs} from "./Breadcrumbs";
 import {DEFAULT_FILTER} from "./Josh";
@@ -42,7 +44,9 @@ function useNavigateCallback(): NavigateCallback {
         const pathname = match(targetType)
             .with(NavigateTargetType.History, () => '/history')
             .with(NavigateTargetType.Directory, () => '/browse')
+            .with(NavigateTargetType.Change, () => '/change')
             .with(NavigateTargetType.File, () => '/view')
+            .with(NavigateTargetType.Diff, () => '/diff')
             .run()
 
         navigate({
@@ -152,6 +156,27 @@ function Browse() {
     </div>
 }
 
+function ChangeView() {
+    const param = useStrictGetSearchParam()
+
+    useEffect(() => {
+        document.title = `/${param('path')} - ${param('repo')} - Josh`
+    });
+
+    return <div>
+        <TopNav
+            repo={param('repo')} 
+            filter={param('filter')} />
+
+        <ChangeViewer
+            repo={param('repo')}
+            filter={param('filter')}
+            rev={param('rev')}
+            navigateCallback={useNavigateCallback()}
+        />
+    </div>
+}
+
 function History() {
     const param = useStrictGetSearchParam()
 
@@ -201,6 +226,38 @@ function View() {
     )
 }
 
+function DiffView() {
+    const param = useStrictGetSearchParam()
+
+    useEffect(() => {
+        document.title = `${param('path')} - ${param('repo')} - Josh`
+    });
+
+    return (
+        <div>
+            <TopNav
+                repo={param('repo')} 
+                filter={param('filter')} />
+
+            <Breadcrumbs
+                repo={param('repo')}
+                path={param('path')}
+                filter={param('filter')}
+                rev={param('rev')}
+                navigateCallback={useNavigateCallback()} />
+
+            <DiffViewer
+                repo={param('repo')}
+                path={param('path')}
+                filter={param('filter')}
+                rev={param('rev')}
+                navigateCallback={useNavigateCallback()}
+            />
+        </div>
+    )
+}
+
+
 function App() {
     return (
         <BrowserRouter basename={'/~/ui'}>
@@ -210,6 +267,8 @@ function App() {
                 <Route path='/browse' element={<Browse />} />
                 <Route path='/history' element={<History />} />
                 <Route path='/view' element={<View />} />
+                <Route path='/diff' element={<DiffView />} />
+                <Route path='/change' element={<ChangeView />} />
             </Routes>
         </BrowserRouter>
     );

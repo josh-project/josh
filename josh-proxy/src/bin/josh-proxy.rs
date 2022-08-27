@@ -377,6 +377,8 @@ async fn handle_ui_request(
         || resource_path == "/select"
         || resource_path == "/browse"
         || resource_path == "/view"
+        || resource_path == "/diff"
+        || resource_path == "/change"
         || resource_path == "/history";
 
     let resolve_path = if is_app_route {
