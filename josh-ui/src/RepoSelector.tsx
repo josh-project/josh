@@ -3,6 +3,7 @@ import {match, select, when} from 'ts-pattern';
 import {None, Option} from 'tsoption';
 import {getServer} from './Server';
 import {NavigateCallback, NavigateTargetType} from "./Navigation";
+import {DEFAULT_FILTER} from "./Josh";
 
 type Remote =
     | { type: 'None' }
@@ -48,6 +49,8 @@ function formatHint(checkResult: UrlCheckResult, filter: Option<string>): string
 
 type RepoSelectorProps = {
     navigateCallback: NavigateCallback
+    repo: Option<string>
+    filter: Option<string>
 }
 
 type State = {
@@ -65,8 +68,8 @@ type ParsedInput = {
 export class RepoSelector extends React.Component<RepoSelectorProps, State> {
     state: State = {
         remote: { type: 'None' },
-        repo: new None(),
-        filter: new None(),
+        repo: this.props.repo,
+        filter: this.props.filter,
     };
 
     componentDidMount () {
@@ -143,7 +146,7 @@ export class RepoSelector extends React.Component<RepoSelectorProps, State> {
         this.props.navigateCallback(NavigateTargetType.History, {
             repo:   parsedInput.target[0].getOrElse('') + '.git',
             path:   '',
-            filter: parsedInput.target[1].getOrElse(':/'),
+            filter: parsedInput.target[1].getOrElse(DEFAULT_FILTER),
             rev:    'HEAD',
         })
     }
@@ -169,6 +172,7 @@ export class RepoSelector extends React.Component<RepoSelectorProps, State> {
                 }
                 <input
                     type={'text'}
+                    value={this.state.repo.getOrElse('')}
                     className={'repo-selector-repo-input ui-input'}
                     placeholder={'repo.git'}
                     onChange={repoChanged}
@@ -177,6 +181,7 @@ export class RepoSelector extends React.Component<RepoSelectorProps, State> {
             <div className={'repo-selector-filter'}>
                 <input
                     type={'text'}
+                    value={this.state.filter.getOrElse('')}
                     className={'repo-selector-filter-input ui-input'}
                     placeholder={':filter'}
                     onChange={filterChanged}
