@@ -20,7 +20,6 @@ $color-link-visited-hover: #ffffaa;
 
   &:hover {
     color: $color-link-hover;
-    text-decoration: underline;
   }
 
   &:visited {
@@ -132,17 +131,46 @@ nav {
   }
 }
 
-.commit-list-entry {
+.file-browser-list-entry {
   @include ui-link-clickable;
   padding: .4em .4em;
 
   &:hover {
     background: $color-background-highlight;
   }
+}
+
+.commit-list-entry-dir {
+  @include ui-link-clickable;
+  &:hover {
+    background: $color-background-highlight;
+  }
+}
+
+.commit-list-entry-browse {
+  @include ui-link-clickable;
+  &:hover {
+    background: $color-background-highlight;
+  }
+}
+
+
+.commit-list-entry {
+  padding: .4em .4em;
 
   span.hash {
     margin: 0 0.7em 0 0;
     color: $color-highlight;
+    font-weight: bolder;
+  }
+  span.authorEmail {
+    margin: 0 0.7em 0 0;
+    color: $color-highlight;
+    font-weight: bolder;
+  }
+  span.summary {
+    display: block;
+    margin: 0 0.7em 0 0;
     font-weight: bolder;
   }
 }
