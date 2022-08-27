@@ -46,6 +46,22 @@ fn find_paths(
     Ok(ws)
 }
 
+pub struct DiffPath {
+    a: Option<Path>,
+    b: Option<Path>,
+}
+
+#[graphql_object(context = Context)]
+impl DiffPath {
+    fn from(&self) -> FieldResult<Option<Path>> {
+        Ok(self.a.clone())
+    }
+
+    fn to(&self) -> FieldResult<Option<Path>> {
+        Ok(self.b.clone())
+    }
+}
+
 impl Revision {
     fn files_or_dirs(
         &self,
@@ -260,6 +276,74 @@ impl Revision {
         context: &Context,
     ) -> FieldResult<Option<Vec<Path>>> {
         self.files_or_dirs(at, depth, context, git2::ObjectType::Tree)
+    }
+
+    fn changed_files(
+        &self,
+        at: Option<String>,
+        depth: Option<i32>,
+        context: &Context,
+    ) -> FieldResult<Option<Vec<DiffPath>>> {
+        let transaction = context.transaction.lock()?;
+        let commit = transaction.repo().find_commit(self.commit_id)?;
+        let filter_commit = transaction.repo().find_commit(filter::apply_to_commit(
+            self.filter,
+            &commit,
+            &transaction,
+        )?)?;
+
+        let (parent_id, parent_tree_id) = filter_commit
+            .parents()
+            .next()
+            .map(|p| (p.id(), p.tree_id()))
+            .unwrap_or((git2::Oid::zero(), git2::Oid::zero()));
+
+        let d = filter::tree::diff_paths(
+            transaction.repo(),
+            parent_tree_id,
+            filter_commit.tree_id(),
+            "",
+        )?;
+
+        let df = d
+            .into_iter()
+            .map(|(path, n)| match n {
+                1 => DiffPath {
+                    a: None,
+                    b: Some(Path {
+                        path: std::path::Path::new(&path).to_owned(),
+                        commit_id: self.commit_id,
+                        filter: self.filter,
+                        tree: filter_commit.tree_id(),
+                    }),
+                },
+                -1 => DiffPath {
+                    a: Some(Path {
+                        path: std::path::Path::new(&path).to_owned(),
+                        commit_id: parent_id,
+                        filter: self.filter,
+                        tree: parent_tree_id,
+                    }),
+                    b: None,
+                },
+                _ => DiffPath {
+                    a: Some(Path {
+                        path: std::path::Path::new(&path).to_owned(),
+                        commit_id: parent_id,
+                        filter: self.filter,
+                        tree: parent_tree_id,
+                    }),
+                    b: Some(Path {
+                        path: std::path::Path::new(&path).to_owned(),
+                        commit_id: self.commit_id,
+                        filter: self.filter,
+                        tree: filter_commit.tree_id(),
+                    }),
+                },
+            })
+            .collect();
+
+        return Ok(Some(df));
     }
 
     fn file(&self, path: String, context: &Context) -> FieldResult<Option<Path>> {
