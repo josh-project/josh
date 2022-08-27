@@ -15,14 +15,11 @@ export type NavigateTarget = {
 
 export type NavigateCallback = (targetType: NavigateTargetType, target: NavigateTarget) => void
 
-export const QUERY_PATH = gql`
-query PathQuery($rev: String!, $filter: String!, $path: String!) {
+export const QUERY_DIR = gql`
+query($rev: String!, $filter: String!, $path: String!) {
   rev(at:$rev, filter:$filter) {
     warnings {
       message
-    }
-    file(path:$path) {
-      text
     }
     dirs(at:$path,depth: 1) { path }
     files(at:$path,depth: 1) { 
@@ -31,8 +28,19 @@ query PathQuery($rev: String!, $filter: String!, $path: String!) {
   }
 }
 `
+
+export const QUERY_FILE = gql`
+query($rev: String!, $filter: String!, $path: String!) {
+  rev(at:$rev, filter:$filter) {
+    file(path:$path) {
+      text
+    }
+  }
+}
+`
+
 export const QUERY_HISTORY = gql`
-query HistoryQuery($rev: String!, $filter: String!, $limit: Int) {
+query($rev: String!, $filter: String!, $limit: Int) {
   rev(at:$rev, filter:$filter) {
     history(limit: $limit) {
       summary
