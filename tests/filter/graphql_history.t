@@ -28,7 +28,15 @@
   > EOF
 
   $ josh-filter -g "$(cat query)"
-  {"rev":{"history":[{"summary":"add ws"}]}}
+  {
+    "rev": {
+      "history": [
+        {
+          "summary": "add ws"
+        }
+      ]
+    }
+  }
 
   $ cat > query2 <<EOF
   > query {
@@ -41,4 +49,12 @@
   > EOF
 
   $ josh-filter -g "$(cat query2)"
-  {"rev":{"history":[{"summary":"add ws"}]}}
+  {
+    "rev": {
+      "history": [
+        {
+          "summary": "add ws"
+        }
+      ]
+    }
+  }

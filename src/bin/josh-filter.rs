@@ -367,7 +367,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
             &context,
         )?;
 
-        let j = serde_json::to_string(&res)?;
+        let j = serde_json::to_string_pretty(&res)?;
         println!("{}", j);
     }
 
