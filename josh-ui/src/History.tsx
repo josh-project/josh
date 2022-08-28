@@ -91,16 +91,18 @@ export class HistoryList extends React.Component<HistoryBrowserProps, State> {
 
         return values.map((entry) => {
             return <div key={entry.hash} className="commit-list-entry">
-            <div
-                className="commit-list-entry-dir"
-                onClick={navigateChange.bind(this, entry.original.hash)}>
-                <span className="summary">{entry.summary}</span>
+            <div className="history-list-entry" >
+                <span
+                    className="hash"
+                    onClick={navigateBrowse.bind(this, entry.original.hash)}>
+                    {entry.hash.slice(0,8)}
+                </span>
+                <span
+                    className="summary"
+                    onClick={navigateChange.bind(this, entry.original.hash)}>
+                    {entry.summary}
+                </span>
                 <span className="authorEmail">{entry.authorEmail}</span>
-            </div>
-            <div
-                className="commit-list-entry-browse"
-                onClick={navigateBrowse.bind(this, entry.original.hash)}>
-                Browse
             </div>
             </div>
 

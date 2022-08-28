@@ -147,6 +147,20 @@ nav {
   }
 }
 
+.history-list-entry .summary {
+  @include ui-link-clickable;
+  &:hover {
+    background: $color-background-highlight;
+  }
+}
+
+.history-list-entry .hash {
+  @include ui-link-clickable;
+  &:hover {
+    background: $color-background-highlight;
+  }
+}
+
 .commit-list-entry-browse {
   @include ui-link-clickable;
   &:hover {
@@ -157,6 +171,11 @@ nav {
 
 .commit-list-entry {
   padding: .4em .4em;
+  display: block;
+
+  &:hover {
+    background: $color-background-highlight;
+  }
 
   span.hash {
     margin: 0 0.7em 0 0;
@@ -164,12 +183,12 @@ nav {
     font-weight: bolder;
   }
   span.authorEmail {
+    float: right;
     margin: 0 0.7em 0 0;
-    color: $color-highlight;
+    color: $color-font-shadowed;
     font-weight: bolder;
   }
   span.summary {
-    display: block;
     margin: 0 0.7em 0 0;
     font-weight: bolder;
   }
