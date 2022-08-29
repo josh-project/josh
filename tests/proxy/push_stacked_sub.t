@@ -1,4 +1,4 @@
-  $ EXTRA_OPTS=--stacked-changes . ${TESTDIR}/setup_test_env.sh
+  $ . ${TESTDIR}/setup_test_env.sh
   $ cd ${TESTTMP}
 
   $ git clone -q http://localhost:8001/real_repo.git 1> /dev/null
@@ -28,7 +28,7 @@
   * Change-Id: foo7  (HEAD -> master)
   * Change-Id: 1234 
   * add file1  (origin/master, origin/HEAD)
-  $ git push -o author=josh@example.com origin master:refs/for/master
+  $ git push -o author=josh@example.com origin master:refs/stack/master
   remote: josh-proxy        
   remote: response from upstream:        
   remote: To http://localhost:8001/real_repo.git        
@@ -40,8 +40,8 @@
   remote: 
   remote: 
   To http://localhost:8002/real_repo.git:/sub1.git
-   * [new reference]   master -> refs/for/master
-  $ git push -o author=josh@example.com origin master:refs/for/other_branch
+   * [new reference]   master -> refs/stack/master
+  $ git push -o author=josh@example.com origin master:refs/stack/other_branch
   remote: josh-proxy        
   remote: response from upstream:        
   remote: Reference "refs/heads/other_branch" does not exist on remote.        
@@ -50,12 +50,12 @@
   remote: 
   remote: 
   remote: 
-  remote: error: hook declined to update refs/for/other_branch        
+  remote: error: hook declined to update refs/stack/other_branch        
   To http://localhost:8002/real_repo.git:/sub1.git
-   ! [remote rejected] master -> refs/for/other_branch (hook declined)
+   ! [remote rejected] master -> refs/stack/other_branch (hook declined)
   error: failed to push some refs to 'http://localhost:8002/real_repo.git:/sub1.git'
   [1]
-  $ git push -o base=master -o author=josh@example.com origin master:refs/for/other_branch
+  $ git push -o base=master -o author=josh@example.com origin master:refs/stack/other_branch
   remote: josh-proxy        
   remote: response from upstream:        
   remote: To http://localhost:8001/real_repo.git        
@@ -67,19 +67,19 @@
   remote: 
   remote: 
   To http://localhost:8002/real_repo.git:/sub1.git
-   * [new reference]   master -> refs/for/other_branch
+   * [new reference]   master -> refs/stack/other_branch
   $ echo contents2 > file3
   $ git add file3
   $ git commit -m "add file3" 1> /dev/null
-  $ git push -o author=josh@example.com origin master:refs/for/master
+  $ git push -o author=josh@example.com origin master:refs/stack/master
   remote: josh-proxy        
   remote: response from upstream:        
   remote: rejecting to push a3065162ecee0fecc977ec04a275e10b5e15a39c without Change-Id        
   remote: 
   remote: 
-  remote: error: hook declined to update refs/for/master        
+  remote: error: hook declined to update refs/stack/master        
   To http://localhost:8002/real_repo.git:/sub1.git
-   ! [remote rejected] master -> refs/for/master (hook declined)
+   ! [remote rejected] master -> refs/stack/master (hook declined)
   error: failed to push some refs to 'http://localhost:8002/real_repo.git:/sub1.git'
   [1]
 

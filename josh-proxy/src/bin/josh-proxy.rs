@@ -592,7 +592,6 @@ async fn call_service(
         git_ns: temp_ns.name().to_string(),
         git_dir: repo_path.clone(),
         mirror_git_dir: mirror_repo_path.clone(),
-        stacked_changes: ARGS.is_present("stacked-changes"),
         context_propagator: context_propagator,
     };
 
@@ -876,11 +875,6 @@ fn make_app() -> clap::Command<'static> {
         .arg(
             clap::Arg::new("no-background")
                 .long("no-background")
-                .takes_value(false),
-        )
-        .arg(
-            clap::Arg::new("stacked-changes")
-                .long("stacked-changes")
                 .takes_value(false),
         )
         .arg(
