@@ -80,6 +80,41 @@
             "enumValues": null,
             "fields": [
               {
+                "args": [],
+                "deprecationReason": null,
+                "description": null,
+                "isDeprecated": false,
+                "name": "from",
+                "type": {
+                  "kind": "OBJECT",
+                  "name": "Path",
+                  "ofType": null
+                }
+              },
+              {
+                "args": [],
+                "deprecationReason": null,
+                "description": null,
+                "isDeprecated": false,
+                "name": "to",
+                "type": {
+                  "kind": "OBJECT",
+                  "name": "Path",
+                  "ofType": null
+                }
+              }
+            ],
+            "inputFields": null,
+            "interfaces": [],
+            "kind": "OBJECT",
+            "name": "DiffPath",
+            "possibleTypes": null
+          },
+          {
+            "description": null,
+            "enumValues": null,
+            "fields": [
+              {
                 "args": [
                   {
                     "defaultValue": null,
@@ -498,6 +533,47 @@
                     "ofType": {
                       "kind": "OBJECT",
                       "name": "Path",
+                      "ofType": null
+                    }
+                  }
+                }
+              },
+              {
+                "args": [
+                  {
+                    "defaultValue": null,
+                    "description": null,
+                    "name": "at",
+                    "type": {
+                      "kind": "SCALAR",
+                      "name": "String",
+                      "ofType": null
+                    }
+                  },
+                  {
+                    "defaultValue": null,
+                    "description": null,
+                    "name": "depth",
+                    "type": {
+                      "kind": "SCALAR",
+                      "name": "Int",
+                      "ofType": null
+                    }
+                  }
+                ],
+                "deprecationReason": null,
+                "description": null,
+                "isDeprecated": false,
+                "name": "changedFiles",
+                "type": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "OBJECT",
+                      "name": "DiffPath",
                       "ofType": null
                     }
                   }

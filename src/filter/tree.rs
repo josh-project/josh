@@ -213,6 +213,96 @@ pub fn insert<'a>(
     }
 }
 
+pub fn diff_paths(
+    repo: &git2::Repository,
+    input1: git2::Oid,
+    input2: git2::Oid,
+    root: &str,
+) -> JoshResult<Vec<(String, i32)>> {
+    rs_tracing::trace_scoped!("diff_paths");
+    if input1 == input2 {
+        return Ok(vec![]);
+    }
+
+    if let (Ok(_), Ok(_)) = (repo.find_blob(input1), repo.find_blob(input2)) {
+        return Ok(vec![(root.to_string(), 0)]);
+    }
+
+    if let (Ok(_), Err(_)) = (repo.find_blob(input1), repo.find_blob(input2)) {
+        return Ok(vec![(root.to_string(), -1)]);
+    }
+
+    if let (Err(_), Ok(_)) = (repo.find_blob(input1), repo.find_blob(input2)) {
+        return Ok(vec![(root.to_string(), 1)]);
+    }
+
+    let mut r = vec![];
+
+    if let (Ok(tree1), Ok(tree2)) = (repo.find_tree(input1), repo.find_tree(input2)) {
+        for entry in tree2.iter() {
+            let name = entry.name().ok_or_else(|| josh_error("no name"))?;
+            if let Some(e) = tree1.get_name(entry.name().ok_or_else(|| josh_error("no name"))?) {
+                r.append(&mut diff_paths(
+                    repo,
+                    e.id(),
+                    entry.id(),
+                    &format!("{}{}{}", root, if root.is_empty() { "" } else { "/" }, name),
+                )?);
+            } else {
+                r.append(&mut diff_paths(
+                    repo,
+                    git2::Oid::zero(),
+                    entry.id(),
+                    &format!("{}{}{}", root, if root.is_empty() { "" } else { "/" }, name),
+                )?);
+            }
+        }
+
+        for entry in tree1.iter() {
+            let name = entry.name().ok_or_else(|| josh_error("no name"))?;
+            if let Some(_) = tree2.get_name(entry.name().ok_or_else(|| josh_error("no name"))?) {
+            } else {
+                r.append(&mut diff_paths(
+                    repo,
+                    entry.id(),
+                    git2::Oid::zero(),
+                    &format!("{}{}{}", root, if root.is_empty() { "" } else { "/" }, name),
+                )?);
+            }
+        }
+
+        return Ok(r);
+    }
+
+    if let Ok(tree2) = repo.find_tree(input2) {
+        for entry in tree2.iter() {
+            let name = entry.name().ok_or_else(|| josh_error("no name"))?;
+            r.append(&mut diff_paths(
+                repo,
+                git2::Oid::zero(),
+                entry.id(),
+                &format!("{}{}{}", root, if root.is_empty() { "" } else { "/" }, name),
+            )?);
+        }
+        return Ok(r);
+    }
+
+    if let Ok(tree1) = repo.find_tree(input2) {
+        for entry in tree1.iter() {
+            let name = entry.name().ok_or_else(|| josh_error("no name"))?;
+            r.append(&mut diff_paths(
+                repo,
+                entry.id(),
+                git2::Oid::zero(),
+                &format!("{}{}{}", root, if root.is_empty() { "" } else { "/" }, name),
+            )?);
+        }
+        return Ok(r);
+    }
+
+    Ok(r)
+}
+
 pub fn overlay(
     repo: &git2::Repository,
     input1: git2::Oid,
