@@ -33,7 +33,7 @@
   * Change-Id: foo7 
   * Change-Id: 1234 
   * add file1  (origin/master, origin/HEAD)
-  $ git push -o split -o author=josh@example.com origin master:refs/split/master
+  $ git push -o split -o author=josh@example.com origin master:refs/split/for/master
   remote: josh-proxy        
   remote: response from upstream:        
   remote: To http://localhost:8001/real_repo.git        
@@ -47,7 +47,7 @@
   remote: 
   remote: 
   To http://localhost:8002/real_repo.git
-   * [new reference]   master -> refs/split/master
+   * [new reference]   master -> refs/split/for/master
 
   $ curl -s http://localhost:8002/flush
   Flushed credential cache
