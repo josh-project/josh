@@ -33,13 +33,13 @@ fn baseref_and_options(refname: &str) -> josh::JoshResult<(String, String, Vec<S
         push_mode = PushMode::Review;
         baseref = baseref.replacen("refs/drafts", "refs/heads", 1)
     }
-    if baseref.starts_with("refs/stack") {
+    if baseref.starts_with("refs/stack/for") {
         push_mode = PushMode::Stack;
-        baseref = baseref.replacen("refs/stack", "refs/heads", 1)
+        baseref = baseref.replacen("refs/stack/for", "refs/heads", 1)
     }
-    if baseref.starts_with("refs/split") {
+    if baseref.starts_with("refs/split/for") {
         push_mode = PushMode::Split;
-        baseref = baseref.replacen("refs/split", "refs/heads", 1)
+        baseref = baseref.replacen("refs/split/for", "refs/heads", 1)
     }
     Ok((baseref, push_to, options, push_mode))
 }
