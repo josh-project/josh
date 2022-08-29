@@ -156,7 +156,7 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
             None
         };
 
-        let mut change_ids = if (push_mode == PushMode::Stack || push_mode == PushMode::Split) {
+        let mut change_ids = if push_mode == PushMode::Stack || push_mode == PushMode::Split {
             Some(vec![])
         } else {
             None
