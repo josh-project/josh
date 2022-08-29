@@ -261,6 +261,22 @@
                 "deprecationReason": null,
                 "description": null,
                 "isDeprecated": false,
+                "name": "authorEmail",
+                "type": {
+                  "kind": "NON_NULL",
+                  "name": null,
+                  "ofType": {
+                    "kind": "SCALAR",
+                    "name": "String",
+                    "ofType": null
+                  }
+                }
+              },
+              {
+                "args": [],
+                "deprecationReason": null,
+                "description": null,
+                "isDeprecated": false,
                 "name": "summary",
                 "type": {
                   "kind": "NON_NULL",
