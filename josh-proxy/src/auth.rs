@@ -96,18 +96,26 @@ pub async fn check_auth(url: &str, auth: &Handle, required: bool) -> josh::JoshR
     let r = builder.body(hyper::Body::empty())?;
     let resp = client.request(r).await?;
 
-    if resp.status() == 200 {
+    let status = resp.status();
+
+    tracing::trace!("http resp.status {:?}", resp.status());
+
+    let msg = format!("got http response: {} {:?}", nurl, resp);
+
+    if status == 200 {
         AUTH_TIMERS
             .lock()?
             .insert((url.to_string(), auth.clone()), std::time::Instant::now());
         Ok(true)
-    } else if resp.status() == 401 {
+    } else if status == 401 {
+        tracing::warn!("resp.status == 401: {:?}", &msg);
+        tracing::trace!(
+            "body: {:?}",
+            std::str::from_utf8(&hyper::body::to_bytes(resp.into_body()).await?)
+        );
         Ok(false)
     } else {
-        return Err(josh::josh_error(&format!(
-            "got http response: {} {:?}",
-            nurl, resp
-        )));
+        return Err(josh::josh_error(&msg));
     }
 }
 
