@@ -44,6 +44,7 @@ query($rev: String!, $filter: String!, $path: String!) {
 export const QUERY_FILE_DIFF = gql`
 query($rev: String!, $filter: String!, $path: String!) {
   rev(at:$rev, filter:$filter) {
+    summary
     history(limit: 2) {
       file(path:$path) {
         text
