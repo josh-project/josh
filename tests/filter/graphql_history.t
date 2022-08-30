@@ -22,6 +22,7 @@
   >   rev(at: "HEAD", filter: ":workspace=ws") {
   >     history(limit: 1) {
   >       summary
+  >       message
   >     }
   >   }
   > }
@@ -32,7 +33,8 @@
     "rev": {
       "history": [
         {
-          "summary": "add ws"
+          "summary": "add ws",
+          "message": "add ws\n"
         }
       ]
     }

@@ -125,6 +125,17 @@ impl Revision {
         Ok(filter_commit.summary().unwrap_or("").to_owned())
     }
 
+    fn message(&self, context: &Context) -> FieldResult<String> {
+        let transaction = context.transaction.lock()?;
+        let commit = transaction.repo().find_commit(self.commit_id)?;
+        let filter_commit = transaction.repo().find_commit(filter::apply_to_commit(
+            self.filter,
+            &commit,
+            &transaction,
+        )?)?;
+        Ok(filter_commit.message().unwrap_or("").to_owned())
+    }
+
     fn date(&self, format: String, context: &Context) -> FieldResult<String> {
         let transaction = context.transaction.lock()?;
         let commit = transaction.repo().find_commit(self.commit_id)?;
