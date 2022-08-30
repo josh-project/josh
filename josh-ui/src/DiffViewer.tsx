@@ -16,6 +16,7 @@ export type DiffViewerProps = {
 type State = {
     content_a?: string
     content_b?: string
+    summary: string
     client: GraphQLClient
 }
 
@@ -37,6 +38,7 @@ export class DiffViewer extends React.Component<DiffViewerProps, State> {
     state = {
         content_a: undefined,
         content_b: undefined,
+        summary: "",
         client: new GraphQLClient(`${getServer()}/~/graphql/${this.props.repo}`, {
             mode: 'cors',
             errorPolicy: 'all'
@@ -64,7 +66,8 @@ export class DiffViewer extends React.Component<DiffViewerProps, State> {
 
             this.setState({
                 content_a: content_a,
-                content_b: content_b
+                content_b: content_b,
+                summary: data.summary,
             })
         })
     }
@@ -72,18 +75,22 @@ export class DiffViewer extends React.Component<DiffViewerProps, State> {
     render() {
         if (this.state.content_a !== undefined 
         &&  this.state.content_b !== undefined) {
-            return <DiffEditor
-                modified={this.state.content_b}
-                original={this.state.content_a}
-                language={mapLanguage(this.props.path)}
-                height='80vh'
-                theme='vs-dark'
-                options={{
-                    readOnly: true,
-                    domReadOnly: true,
-                    cursorBlinking: 'solid',
-                }}
-            />
+            return <div>
+                <div>{this.state.summary}</div>
+                <div>{this.props.path}</div>
+                <DiffEditor
+                    modified={this.state.content_b}
+                    original={this.state.content_a}
+                    language={mapLanguage(this.props.path)}
+                    height='80vh'
+                    theme='vs-dark'
+                    options={{
+                        readOnly: true,
+                        domReadOnly: true,
+                        cursorBlinking: 'solid',
+                    }}
+                />
+            </div>
         } else
         {
             return <div>Loading...</div>
