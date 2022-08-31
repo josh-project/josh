@@ -52,6 +52,21 @@ impl Handle {
     }
 }
 
+pub fn add_auth(token: &str) -> josh::JoshResult<Handle> {
+    let header = hyper::header::HeaderValue::from_str(&format!("Basic {}", base64::encode(token)))?;
+    let hp = Handle {
+        hash: format!(
+            "{:?}",
+            git2::Oid::hash_object(git2::ObjectType::Blob, header.as_bytes())?
+        ),
+    };
+    let p = Header {
+        header: Some(header),
+    };
+    AUTH.lock()?.insert(hp.clone(), p);
+    return Ok(hp);
+}
+
 pub async fn check_auth(url: &str, auth: &Handle, required: bool) -> josh::JoshResult<bool> {
     if required && auth.hash.is_empty() {
         return Ok(false);
