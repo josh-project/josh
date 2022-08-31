@@ -12,32 +12,33 @@ version = "22.4.15"
 
 
 [dependencies]
+base64 = "0.13.0"
 clap = "3.2.17"
 futures = "0.3.23"
-tokio = { version = "1.20.1", features = ["full"] }
+git2 = "0.15.0"
 hyper = { version = "0.14.20", features = ["stream"] }
-hyper_cgi = "22.4.15"
+hyper-reverse-proxy = "0.5.1"
 hyper-staticfile = "0.9.1"
 hyper-tls = "0.5.0"
-toml = "0.5.9"
-git2 = "0.15.0"
-tracing = { version = "0.1.36", features = ["max_level_trace", "release_max_level_trace"] }
-tracing-futures = "0.2.5"
-tracing-subscriber = { version = "0.3.15", features = ["env-filter"] }
-tracing-opentelemetry = "0.17.4"
+hyper_cgi = "22.4.15"
+indoc = "1.0.7"
+josh = {path = "../"}
+juniper = { version = "0.15.10", features = ["expose-test-schema"] }
+lazy_static = "1.4.0"
 opentelemetry = "0.17.0"
 opentelemetry-jaeger = "0.16.0"
-reqwest= { version = "0.11.11", default-features = false, features = ["blocking", "json"] }
-uuid = { version = "1.1.2", features = ["v4"] }
-base64 = "0.13.0"
-regex = "1.6.0"
-lazy_static = "1.4.0"
-josh = {path = "../"}
-serde_json= "1.0.85"
-serde= "1.0.144"
-unindent = "0.1.10"
-juniper = { version = "0.15.10", features = ["expose-test-schema"] }
-url = "2.2.2"
 percent-encoding = "2.1.0"
-indoc = "1.0.7"
-hyper-reverse-proxy = "0.5.1"
+regex = "1.6.0"
+reqwest= { version = "0.11.11", default-features = false, features = ["blocking", "json"] }
+serde= "1.0.144"
+serde_json= "1.0.85"
+serde_yaml = "0.9.10"
+tokio = { version = "1.20.1", features = ["full"] }
+toml = "0.5.9"
+tracing = { version = "0.1.36", features = ["max_level_trace", "release_max_level_trace"] }
+tracing-futures = "0.2.5"
+tracing-opentelemetry = "0.17.4"
+tracing-subscriber = { version = "0.3.15", features = ["env-filter"] }
+unindent = "0.1.10"
+url = "2.2.2"
+uuid = { version = "1.1.2", features = ["v4"] }

@@ -393,6 +393,58 @@ async fn handle_ui_request(
     return Ok(response);
 }
 
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, Default)]
+struct RepoConfig {
+    repo: String,
+}
+
+async fn query_meta_repo(
+    serv: Arc<JoshProxyService>,
+    meta_repo: &str,
+    upstream_repo: &str,
+    auth: &josh_proxy::auth::Handle,
+) -> josh::JoshResult<RepoConfig> {
+    let remote_url = [serv.upstream_url.as_str(), meta_repo].join("");
+    match fetch_upstream(
+        serv.clone(),
+        meta_repo.to_owned(),
+        &auth,
+        remote_url.to_owned(),
+        &"HEAD",
+        false,
+    )
+    .in_current_span()
+    .await
+    {
+        Ok(true) => {}
+        _ => return Err(josh::josh_error("meta fetch failed")),
+    }
+
+    let transaction = josh::cache::Transaction::open(
+        &serv.repo_path.join("mirror"),
+        Some(&format!("refs/josh/upstream/{}/", &josh::to_ns(&meta_repo),)),
+    )?;
+
+    let meta_tree = transaction
+        .repo()
+        .find_reference(&transaction.refname("HEAD"))?
+        .peel_to_tree()?;
+
+    let meta_blob = josh::filter::tree::get_blob(
+        transaction.repo(),
+        &meta_tree,
+        &std::path::Path::new(&upstream_repo.trim_start_matches("/")).join("repo.yml"),
+    );
+
+    if meta_blob == "" {
+        return Err(josh::josh_error(&"meta repo entry not found"));
+    }
+
+    let config: RepoConfig = serde_yaml::from_str(&meta_blob)?;
+
+    return Ok(config);
+}
+
 #[tracing::instrument]
 async fn call_service(
     serv: Arc<JoshProxyService>,
@@ -462,10 +514,22 @@ async fn call_service(
         }
     };
 
-    let upstream_repo = parsed_url.upstream_repo;
+    let mut config = RepoConfig::default();
     let filter = parsed_url.filter;
 
-    let remote_url = [serv.upstream_url.as_str(), upstream_repo.as_str()].join("");
+    if let Ok(meta_repo) = std::env::var("JOSH_META_REPO") {
+        let auth = if let Ok(token) = std::env::var("JOSH_META_AUTH_TOKEN") {
+            josh_proxy::auth::add_auth(&token)?
+        } else {
+            auth.clone()
+        };
+        config =
+            query_meta_repo(serv.clone(), &meta_repo, &parsed_url.upstream_repo, &auth).await?;
+    } else {
+        config.repo = parsed_url.upstream_repo;
+    }
+
+    let remote_url = [serv.upstream_url.as_str(), config.repo.as_str()].join("");
 
     if parsed_url.pathinfo.starts_with("/info/lfs") {
         return Ok(Response::builder()
@@ -498,7 +562,7 @@ async fn call_service(
     let block = block.split(";").collect::<Vec<_>>();
 
     for b in block {
-        if b == upstream_repo {
+        if b == config.repo {
             return Ok(make_response(
                 hyper::Body::from(formatdoc!(
                     r#"
@@ -511,11 +575,11 @@ async fn call_service(
     }
 
     if parsed_url.api == "/~/graphql" {
-        return serve_graphql(serv, req, upstream_repo.to_owned(), remote_url, auth).await;
+        return serve_graphql(serv, req, config.repo.to_owned(), remote_url, auth).await;
     }
 
     if parsed_url.api == "/~/graphiql" {
-        let addr = format!("/~/graphql{}", upstream_repo);
+        let addr = format!("/~/graphql{}", config.repo);
         return Ok(tokio::task::spawn_blocking(move || {
             josh_proxy::juniper_hyper::graphiql(&addr, None)
         })
@@ -525,7 +589,7 @@ async fn call_service(
 
     match fetch_upstream(
         serv.clone(),
-        upstream_repo.to_owned(),
+        config.repo.to_owned(),
         &auth,
         remote_url.to_owned(),
         &headref,
@@ -552,10 +616,10 @@ async fn call_service(
         req.uri().query().map(|x| x.to_string()),
         parsed_url.pathinfo.is_empty(),
     ) {
-        return serve_query(serv, q, upstream_repo, filter, headref).await;
+        return serve_query(serv, q, config.repo, filter, headref).await;
     }
 
-    let temp_ns = prepare_namespace(serv.clone(), &upstream_repo, &filter, &headref)
+    let temp_ns = prepare_namespace(serv.clone(), &config.repo, &filter, &headref)
         .in_current_span()
         .await?;
 
@@ -588,7 +652,7 @@ async fn call_service(
         auth,
         port: serv.port.clone(),
         filter_spec: filter.clone(),
-        base_ns: josh::to_ns(&upstream_repo),
+        base_ns: josh::to_ns(&config.repo),
         git_ns: temp_ns.name().to_string(),
         git_dir: repo_path.clone(),
         mirror_git_dir: mirror_repo_path.clone(),

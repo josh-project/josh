@@ -9,6 +9,8 @@ git init -q --bare "${TESTTMP}/remote/blocked_repo.git/" 1> /dev/null
 git config -f "${TESTTMP}/remote/blocked_repo.git/config" http.receivepack true
 git init -q --bare "${TESTTMP}/remote/real/repo2.git/" 1> /dev/null
 git config -f "${TESTTMP}/remote/real/repo2.git/config" http.receivepack true
+git init -q --bare "${TESTTMP}/remote/meta_repo.git/" 1> /dev/null
+git config -f "${TESTTMP}/remote/meta_repo.git/config" http.receivepack true
 export RUST_LOG=trace
 
 export GIT_CONFIG_NOSYSTEM=1
