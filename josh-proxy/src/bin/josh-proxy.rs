@@ -33,8 +33,8 @@ lazy_static! {
 
 josh::regex_parsed!(
     FilteredRepoUrl,
-    r"(?P<api>/~/\w+)?(?P<upstream_repo>/[^:!]*[.]git)(?P<headref>@[^:!]*)?((?P<filter>[:!].*)[.]git)?(?P<pathinfo>/.*)?(?P<rest>.*)",
-    [api, upstream_repo, filter, pathinfo, headref, rest]
+    r"(?P<api>/~/\w+)?(?P<upstream_repo>/[^:!]*[.]git)(?P<headref>@[^:!]*)?((?P<filter_spec>[:!].*)[.]git)?(?P<pathinfo>/.*)?(?P<rest>.*)",
+    [api, upstream_repo, filter_spec, pathinfo, headref, rest]
 );
 
 type FetchTimers = HashMap<String, std::time::Instant>;
@@ -273,7 +273,7 @@ async fn do_filter(
     service: Arc<JoshProxyService>,
     upstream_repo: String,
     temp_ns: Arc<josh_proxy::TmpGitNamespace>,
-    filter_spec: String,
+    filter: josh::filter::Filter,
     headref: String,
 ) -> josh::JoshResult<()> {
     let permit = service.filter_permits.acquire().await;
@@ -283,7 +283,6 @@ async fn do_filter(
     let r = tokio::task::spawn_blocking(move || {
         let _e = s.enter();
         tracing::trace!("in do_filter worker");
-        let filter = josh::filter::parse(&filter_spec)?;
         let filter_spec = josh::filter::spec(filter);
         josh::housekeeping::remember_filter(&upstream_repo, &filter_spec);
 
@@ -396,6 +395,9 @@ async fn handle_ui_request(
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone, Default)]
 struct RepoConfig {
     repo: String,
+
+    #[serde(default)]
+    filter: josh::filter::Filter,
 }
 
 async fn query_meta_repo(
@@ -493,8 +495,8 @@ async fn call_service(
                 ));
             }
 
-            if pu.filter.is_empty() {
-                pu.filter = ":/".to_string();
+            if pu.filter_spec.is_empty() {
+                pu.filter_spec = ":/".to_string();
             }
             pu
         } else {
@@ -515,7 +517,6 @@ async fn call_service(
     };
 
     let mut config = RepoConfig::default();
-    let filter = parsed_url.filter;
 
     if let Ok(meta_repo) = std::env::var("JOSH_META_REPO") {
         let auth = if let Ok(token) = std::env::var("JOSH_META_AUTH_TOKEN") {
@@ -529,6 +530,7 @@ async fn call_service(
         config.repo = parsed_url.upstream_repo;
     }
 
+    let filter = josh::filter::chain(config.filter, josh::filter::parse(&parsed_url.filter_spec)?);
     let remote_url = [serv.upstream_url.as_str(), config.repo.as_str()].join("");
 
     if parsed_url.pathinfo.starts_with("/info/lfs") {
@@ -619,7 +621,7 @@ async fn call_service(
         return serve_query(serv, q, config.repo, filter, headref).await;
     }
 
-    let temp_ns = prepare_namespace(serv.clone(), &config.repo, &filter, &headref)
+    let temp_ns = prepare_namespace(serv.clone(), &config.repo, filter, &headref)
         .in_current_span()
         .await?;
 
@@ -651,7 +653,7 @@ async fn call_service(
         remote_url: remote_url.clone(),
         auth,
         port: serv.port.clone(),
-        filter_spec: filter.clone(),
+        filter_spec: josh::filter::spec(filter),
         base_ns: josh::to_ns(&config.repo),
         git_ns: temp_ns.name().to_string(),
         git_dir: repo_path.clone(),
@@ -696,7 +698,7 @@ async fn serve_query(
     serv: Arc<JoshProxyService>,
     q: String,
     upstream_repo: String,
-    filter_spec: String,
+    filter: josh::filter::Filter,
     headref: String,
 ) -> josh::JoshResult<Response<hyper::Body>> {
     let s = tracing::span!(tracing::Level::TRACE, "render worker");
@@ -721,7 +723,6 @@ async fn serve_query(
                 .unwrap(),
         )?;
 
-        let filter = josh::filter::parse(&filter_spec)?;
         let commit_id = transaction_mirror
             .repo()
             .refname_to_id(&transaction_mirror.refname(&headref))?;
@@ -752,7 +753,7 @@ async fn serve_query(
 async fn prepare_namespace(
     serv: Arc<JoshProxyService>,
     upstream_repo: &str,
-    filter_spec: &str,
+    filter: josh::filter::Filter,
     headref: &str,
 ) -> josh::JoshResult<std::sync::Arc<josh_proxy::TmpGitNamespace>> {
     let temp_ns = Arc::new(josh_proxy::TmpGitNamespace::new(
@@ -767,7 +768,7 @@ async fn prepare_namespace(
         serv.clone(),
         upstream_repo.to_owned(),
         temp_ns.to_owned(),
-        filter_spec.to_owned(),
+        filter,
         headref.to_string(),
     )
     .await?;

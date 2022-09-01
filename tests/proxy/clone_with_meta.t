@@ -8,16 +8,23 @@
 
   $ cd meta_repo
   $ mkdir -p path/to/my_repo.git
+  $ mkdir -p with_prefix.git
 
   $ cat > path/to/my_repo.git/repo.yml <<EOF
   > repo: /real_repo.git
   > EOF
 
+  $ cat > with_prefix.git/repo.yml <<EOF
+  > repo: /real_repo.git
+  > filter: :prefix=my_prefix
+  > EOF
+
   $ git add .
   $ git commit -m "add my_repo"
-  [master (root-commit) fc1c140] add my_repo
-   1 file changed, 1 insertion(+)
+  [master (root-commit) f2c0a9f] add my_repo
+   2 files changed, 3 insertions(+)
    create mode 100644 path/to/my_repo.git/repo.yml
+   create mode 100644 with_prefix.git/repo.yml
   $ git push
   To http://localhost:8001/meta_repo.git
    * [new branch]      master -> master
@@ -85,15 +92,40 @@
   * add file2
   * add file1
 
+  $ cd ${TESTTMP}
+  $ git clone -q http://localhost:8002/with_prefix.git
+  $ cd with_prefix
+  $ tree
+  .
+  `-- my_prefix
+      |-- sub1
+      |   `-- file1
+      `-- sub2
+          `-- file2
+  
+  3 directories, 2 files
+
+  $ cd ${TESTTMP}
+  $ git clone -q http://localhost:8002/with_prefix.git:/my_prefix/sub1.git
+  $ cd sub1
+  $ tree
+  .
+  `-- file1
+  
+  0 directories, 1 file
+
 
   $ bash ${TESTDIR}/destroy_test_env.sh
   "meta_repo.git" = [
       ':/path',
       ':/path/to',
+      ':/with_prefix.git',
   ]
   "real_repo.git" = [
       ':/sub1',
       ':/sub2',
+      ':prefix=my_prefix',
+      ':prefix=my_prefix:/my_prefix:/sub1',
   ]
   .
   |-- josh
@@ -110,14 +142,20 @@
   |   |-- info
   |   |   `-- exclude
   |   |-- objects
+  |   |   |-- 0d
+  |   |   |   `-- d0327bf3dda29d1ca87d64b4913431f1557110
   |   |   |-- 0e
   |   |   |   `-- 573a1bd81cc9aefaf932187b9e68a1052a4ff6
+  |   |   |-- 13
+  |   |   |   `-- 4ff4ce0dbe71fa65140a86b05e236fa740c5c8
   |   |   |-- 1d
   |   |   |   `-- ffbbd63f1d894f194cf0bd16a3f19b82269b53
   |   |   |-- 23
   |   |   |   `-- 87c32648eefdee78386575672ac091da849b08
   |   |   |-- 3d
   |   |   |   `-- 77ff51363c9825cc2a221fc0ba5a883a1a2c72
+  |   |   |-- 57
+  |   |   |   `-- ccdd050a48432c64e7c24c2390929a720f5da2
   |   |   |-- 85
   |   |   |   `-- 837e6104d0a81b944c067e16ddc83c7a38739f
   |   |   |-- a0
@@ -126,14 +164,12 @@
   |   |   |   `-- 282e9cdc1b972fffd08fd21eead43bc0c83cb8
   |   |   |-- c8
   |   |   |   `-- 2fc150c43f13cc56c0e9caeba01b58ec612022
-  |   |   |-- c9
-  |   |   |   `-- e952f9beba7da8de8ae3b350f15e3774645a54
   |   |   |-- de
   |   |   |   `-- 47e9b40111cce1577ab928e7c1ac57b41ee9b7
   |   |   |-- ec
   |   |   |   `-- 6006d85ed823a63d900cc7a0ed534ce3b8b5c4
-  |   |   |-- fc
-  |   |   |   `-- 1c140115774c6181f8c8d336e1714590f53230
+  |   |   |-- f2
+  |   |   |   `-- c0a9f9ff0bc665193fa203a8e89fb7e58d5113
   |   |   |-- ff
   |   |   |   `-- e8d082c1034053534ea8068f4205ac72a1098e
   |   |   |-- info
@@ -160,6 +196,16 @@
       |-- info
       |   `-- exclude
       |-- objects
+      |   |-- 0b
+      |   |   `-- 4cf6c9efbbda1eada39fa9c1d21d2525b027bb
+      |   |-- 5f
+      |   |   `-- d3fa6f1f9fae3965027f948f68c7c1919bab22
+      |   |-- a8
+      |   |   `-- 53d3b05291c3f530657aa935b51d11369479ae
+      |   |-- b5
+      |   |   `-- ec4ca5a3d90abd48a9ee076b8bf195362f6327
+      |   |-- fb
+      |   |   `-- 5c5f4ad703335fd5d27b1bd51dc4a4c1f7211a
       |   |-- info
       |   `-- pack
       `-- refs
@@ -167,4 +213,4 @@
           |-- namespaces
           `-- tags
   
-  42 directories, 28 files
+  49 directories, 35 files
