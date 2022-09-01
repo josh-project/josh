@@ -16,8 +16,30 @@ lazy_static! {
 
 /// Filters are represented as `git2::Oid`, however they are not ever stored
 /// inside the repo.
-#[derive(Clone, Hash, PartialEq, Eq, Copy, PartialOrd, Ord)]
+#[derive(
+    Clone, Hash, PartialEq, Eq, Copy, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
+#[serde(try_from = "String", into = "String")]
 pub struct Filter(git2::Oid);
+
+impl std::convert::TryFrom<String> for Filter {
+    type Error = JoshError;
+    fn try_from(s: String) -> JoshResult<Filter> {
+        parse(&s)
+    }
+}
+
+impl Into<String> for Filter {
+    fn into(self) -> String {
+        spec(self)
+    }
+}
+
+impl Default for Filter {
+    fn default() -> Filter {
+        nop()
+    }
+}
 
 impl Filter {
     pub fn id(&self) -> git2::Oid {
