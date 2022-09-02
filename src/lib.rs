@@ -48,7 +48,19 @@ pub mod shell;
 pub struct Change {
     pub author: String,
     pub id: Option<String>,
+    pub label: Option<String>,
     pub commit: git2::Oid,
+}
+
+impl Change {
+    fn new(commit: git2::Oid) -> Self {
+        Self {
+            author: Default::default(),
+            label: Default::default(),
+            id: Default::default(),
+            commit: commit,
+        }
+    }
 }
 
 pub const VERSION: &str =
@@ -150,21 +162,18 @@ lazy_static! {
 }
 
 pub fn get_change_id(commit: &git2::Commit, sha: git2::Oid) -> Change {
+    let mut change = Change::new(sha);
+    change.author = commit.author().email().unwrap_or("").to_string();
+
     for line in commit.message().unwrap_or("").split('\n') {
         if line.starts_with("Change-Id: ") {
-            let id = line.replace("Change-Id: ", "");
-            return Change {
-                author: commit.author().email().unwrap_or("").to_string(),
-                id: Some(id),
-                commit: sha,
-            };
+            change.id = Some(line.replacen("Change-Id: ", "", 1));
+        }
+        if line.starts_with("Change: ") {
+            change.label = Some(line.replacen("Change: ", "", 1));
         }
     }
-    return Change {
-        author: commit.author().email().unwrap_or("").to_string(),
-        id: None,
-        commit: sha,
-    };
+    return change;
 }
 
 #[tracing::instrument(skip(transaction))]
