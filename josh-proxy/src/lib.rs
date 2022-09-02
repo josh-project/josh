@@ -158,7 +158,7 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
             None
         };
 
-        let mut change_ids = if push_mode == PushMode::Stack || push_mode == PushMode::Split {
+        let mut changes = if push_mode == PushMode::Stack || push_mode == PushMode::Split {
             Some(vec![])
         } else {
             None
@@ -179,7 +179,7 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
                 new_oid,
                 josh_merge,
                 reparent_orphans,
-                &mut change_ids,
+                &mut changes,
             )?
         };
 
@@ -222,9 +222,9 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
             "".to_string()
         };
 
-        let to_push = if let Some(change_ids) = change_ids {
+        let to_push = if let Some(changes) = changes {
             let mut v = vec![];
-            v.append(&mut change_ids_to_refs(&baseref, &author, change_ids)?);
+            v.append(&mut changes_to_refs(&baseref, &author, changes)?);
 
             if push_mode == PushMode::Split {
                 split_changes(transaction.repo(), &mut v, old)?;
@@ -608,41 +608,41 @@ impl Drop for TmpGitNamespace {
     }
 }
 
-fn change_ids_to_refs(
+fn changes_to_refs(
     baseref: &str,
     change_author: &str,
-    change_ids: Vec<josh::Change>,
+    changes: Vec<josh::Change>,
 ) -> josh::JoshResult<Vec<(String, git2::Oid, String)>> {
     let mut seen = vec![];
-    let mut change_ids = change_ids;
-    change_ids.retain(|change| change.author == change_author);
+    let mut changes = changes;
+    changes.retain(|change| change.author == change_author);
     if !change_author.contains('@') {
         return Err(josh::josh_error(
             "Push option 'author' needs to be set to a valid email address",
         ));
     };
 
-    for change in change_ids.iter() {
-        if let Some(id) = &change.id {
-            if id.contains('@') {
-                return Err(josh::josh_error("Change-Id must not contain '@'"));
+    for change in changes.iter() {
+        if let Some(label) = &change.label {
+            if label.contains('@') {
+                return Err(josh::josh_error("Change label must not contain '@'"));
             }
-            if seen.contains(&id) {
+            if seen.contains(&label) {
                 return Err(josh::josh_error(&format!(
-                    "rejecting to push {:?} with duplicate Change-Id",
+                    "rejecting to push {:?} with duplicate label",
                     change.commit
                 )));
             }
-            seen.push(&id);
+            seen.push(&label);
         } else {
             return Err(josh::josh_error(&format!(
-                "rejecting to push {:?} without Change-Id",
+                "rejecting to push {:?} without label",
                 change.commit
             )));
         }
     }
 
-    Ok(change_ids
+    Ok(changes
         .iter()
         .map(|change| {
             (
@@ -650,11 +650,11 @@ fn change_ids_to_refs(
                     "refs/heads/@changes/{}/{}/{}",
                     baseref.replacen("refs/heads/", "", 1),
                     change.author,
-                    change.id.as_ref().unwrap_or(&"".to_string()),
+                    change.label.as_ref().unwrap_or(&"".to_string()),
                 ),
                 change.commit,
                 change
-                    .id
+                    .label
                     .as_ref()
                     .unwrap_or(&"JOSH_PUSH".to_string())
                     .to_string(),

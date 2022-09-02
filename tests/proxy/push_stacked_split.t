@@ -21,17 +21,17 @@
 
   $ echo contents2 > file2
   $ git add file2
-  $ git commit -m "Change-Id: 1234" 1> /dev/null
+  $ git commit -m "Change: 1234" 1> /dev/null
   $ echo contents2 > file7
   $ git add file7
-  $ git commit -m "Change-Id: foo7" 1> /dev/null
+  $ git commit -m "Change: foo7" 1> /dev/null
   $ echo contents3 > file2
   $ git add file2
-  $ git commit -m "Change-Id: 1235" 1> /dev/null
+  $ git commit -m "Change: 1235" 1> /dev/null
   $ git log --decorate --graph --pretty="%s %d"
-  * Change-Id: 1235  (HEAD -> master)
-  * Change-Id: foo7 
-  * Change-Id: 1234 
+  * Change: 1235  (HEAD -> master)
+  * Change: foo7 
+  * Change: 1234 
   * add file1  (origin/master, origin/HEAD)
   $ git push -o split -o author=josh@example.com origin master:refs/split/for/master
   remote: josh-proxy        
@@ -59,12 +59,12 @@
    * [new branch]      @heads/master/josh@example.com -> origin/@heads/master/josh@example.com
 
   $ git log --all --decorate --graph --pretty="%s %d"
-  * Change-Id: 1235  (HEAD -> master, origin/@heads/master/josh@example.com)
-  * Change-Id: foo7 
-  | * Change-Id: 1235  (origin/@changes/master/josh@example.com/1235)
+  * Change: 1235  (HEAD -> master, origin/@heads/master/josh@example.com)
+  * Change: foo7 
+  | * Change: 1235  (origin/@changes/master/josh@example.com/1235)
   |/  
-  * Change-Id: 1234  (origin/@changes/master/josh@example.com/1234)
-  | * Change-Id: foo7  (origin/@changes/master/josh@example.com/foo7)
+  * Change: 1234  (origin/@changes/master/josh@example.com/1234)
+  | * Change: foo7  (origin/@changes/master/josh@example.com/foo7)
   |/  
   * add file1  (origin/master, origin/HEAD)
 
@@ -89,22 +89,27 @@ Make sure all temporary namespace got removed
   |   |-- info
   |   |   `-- exclude
   |   |-- objects
+  |   |   |-- 0e
+  |   |   |   `-- 7970a3dec1b5bbba1dce0450d7a7dfc56a9797
   |   |   |-- 14
   |   |   |   `-- 20ebc1972205ad0fe84c31eec84a8a7a334882
   |   |   |-- 1c
   |   |   |   `-- b5d64cdb55e3db2a8d6f00d596572b4cfa9d5c
-  |   |   |-- 3b
-  |   |   |   `-- 0e3dbefd779ec54d92286047f32d3129161c0d
+  |   |   |-- 36
+  |   |   |   `-- c2216dd9dc554e35d4ae37794eb72392ae2591
   |   |   |-- 3d
   |   |   |   `-- 77ff51363c9825cc2a221fc0ba5a883a1a2c72
   |   |   |-- 49
+  |   |   |   |-- 03654ec80c5cff86ab37a0b9d7bcf8332e8c54
   |   |   |   `-- 50fa502f51b7bfda0d7975dbff9b0f9a9481ca
   |   |   |-- 6b
   |   |   |   `-- 46faacade805991bcaea19382c9d941828ce80
   |   |   |-- 72
   |   |   |   `-- 7902c81346e29c4f75e0913bd62d7b85d7033f
-  |   |   |-- 7e
-  |   |   |   `-- 693682dba1d7af1cb1eca7c3dcc5128e3ec9c6
+  |   |   |-- 80
+  |   |   |   `-- b41c2bfde183168405cb8707032a8150184f6f
+  |   |   |-- 82
+  |   |   |   `-- 599da2054669a020103a7bd8aa456540a0c5ee
   |   |   |-- 85
   |   |   |   `-- 90a3b0b3086ab857b91581c320e377dc9780ea
   |   |   |-- 8a
@@ -115,14 +120,8 @@ Make sure all temporary namespace got removed
   |   |   |   `-- 24003ee1acc6bf70318a46e7b6df651b9dc246
   |   |   |-- b2
   |   |   |   `-- dd517c55420a48cb543e0195b4751bf514b941
-  |   |   |-- b7
-  |   |   |   `-- 8fc0fe9f3bd35c8dc8aeff5189ebda0750e974
-  |   |   |-- ec
-  |   |   |   `-- 41aad70b4b898baf48efeb795a7753d9674152
   |   |   |-- ed
   |   |   |   `-- b2a5b9c65fae1d20c1b1fb777d1ea025456faa
-  |   |   |-- fd
-  |   |   |   `-- b894f9431a237930c7a034f3ecc16dd686b19e
   |   |   |-- info
   |   |   `-- pack
   |   `-- refs
@@ -151,30 +150,30 @@ Make sure all temporary namespace got removed
       |-- info
       |   `-- exclude
       |-- objects
+      |   |-- 0e
+      |   |   `-- 7970a3dec1b5bbba1dce0450d7a7dfc56a9797
       |   |-- 14
       |   |   `-- 20ebc1972205ad0fe84c31eec84a8a7a334882
       |   |-- 1c
       |   |   `-- b5d64cdb55e3db2a8d6f00d596572b4cfa9d5c
-      |   |-- 3b
-      |   |   `-- 0e3dbefd779ec54d92286047f32d3129161c0d
+      |   |-- 36
+      |   |   `-- c2216dd9dc554e35d4ae37794eb72392ae2591
+      |   |-- 49
+      |   |   `-- 03654ec80c5cff86ab37a0b9d7bcf8332e8c54
       |   |-- 6b
       |   |   `-- 46faacade805991bcaea19382c9d941828ce80
       |   |-- 72
       |   |   `-- 7902c81346e29c4f75e0913bd62d7b85d7033f
-      |   |-- 7e
-      |   |   `-- 693682dba1d7af1cb1eca7c3dcc5128e3ec9c6
+      |   |-- 80
+      |   |   `-- b41c2bfde183168405cb8707032a8150184f6f
+      |   |-- 82
+      |   |   `-- 599da2054669a020103a7bd8aa456540a0c5ee
       |   |-- 8a
       |   |   `-- 778416d88308bf017cf54f0247e4780765361f
       |   |-- b2
       |   |   `-- dd517c55420a48cb543e0195b4751bf514b941
-      |   |-- b7
-      |   |   `-- 8fc0fe9f3bd35c8dc8aeff5189ebda0750e974
-      |   |-- ec
-      |   |   `-- 41aad70b4b898baf48efeb795a7753d9674152
       |   |-- ed
       |   |   `-- b2a5b9c65fae1d20c1b1fb777d1ea025456faa
-      |   |-- fd
-      |   |   `-- b894f9431a237930c7a034f3ecc16dd686b19e
       |   |-- info
       |   `-- pack
       `-- refs
@@ -182,7 +181,7 @@ Make sure all temporary namespace got removed
           |-- namespaces
           `-- tags
   
-  60 directories, 46 files
+  59 directories, 46 files
 
 $ cat ${TESTTMP}/josh-proxy.out
 $ cat ${TESTTMP}/josh-proxy.out | grep REPO_UPDATE
