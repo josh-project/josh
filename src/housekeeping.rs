@@ -18,15 +18,18 @@ pub fn list_refs(
 ) -> JoshResult<Vec<(String, git2::Oid)>> {
     let mut refs = vec![];
 
+    let prefix = format!("refs/josh/upstream/{}/", &to_ns(upstream_repo));
+
     for glob in [
-        format!("refs/josh/upstream/{}/refs/heads/*", &to_ns(upstream_repo)),
-        format!("refs/josh/upstream/{}/refs/tags/*", &to_ns(upstream_repo)),
+        format!("{}refs/heads/*", &prefix),
+        format!("{}refs/tags/*", &prefix),
     ]
     .iter()
     {
         for r in repo.references_glob(glob)? {
             let r = r?;
             if let (Some(name), Some(target)) = (r.name(), r.target()) {
+                let name = name.replacen(&prefix, "", 1);
                 refs.push((name.to_string(), target));
             }
         }
@@ -49,12 +52,10 @@ pub fn remember_filter(upstream_repo: &str, filter_spec: &str) {
     }
 }
 
-pub fn namespace_refs(refs: &mut [(String, git2::Oid)], namespace: &str, upstream_repo: &str) {
+pub fn namespace_refs(refs: &mut [(String, git2::Oid)], namespace: &str) {
     for (refn, _) in refs {
         if refn.starts_with("refs/") {
-            let to_ref = refn.replacen("refs/josh/upstream", "refs/namespaces", 1);
-            let to_ref = to_ref.replacen(&to_ns(upstream_repo), namespace, 1);
-            *refn = to_ref;
+            *refn = format!("refs/namespaces/{}/{}", &namespace, refn);
         } else {
             *refn = format!("refs/namespaces/{}/refs/heads/_{}", namespace, refn);
         };

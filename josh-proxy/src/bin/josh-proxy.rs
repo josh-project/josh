@@ -302,10 +302,10 @@ async fn do_filter(
             let name = format!(
                 "refs/josh/upstream/{}/{}",
                 &josh::to_ns(&upstream_repo),
-                headref
+                headref.clone()
             );
             if let Ok(r) = transaction.repo().revparse_single(&name) {
-                refslist.push((name, r.id()));
+                refslist.push((headref.clone(), r.id()));
             }
         } else {
             // @sha case
@@ -327,7 +327,7 @@ async fn do_filter(
                 .add_disk_alternate(&repo_path.join("mirror").join("objects").to_str().unwrap())?;
             let mut updated_refs =
                 josh::filter_refs(&t2, filter, &refslist, josh::filter::empty())?;
-            josh::housekeeping::namespace_refs(&mut updated_refs, &temp_ns.name(), &upstream_repo);
+            josh::housekeeping::namespace_refs(&mut updated_refs, &temp_ns.name());
             josh::update_refs(&t2, &mut updated_refs, &temp_ns.reference(&headref));
             t2.repo()
                 .reference_symbolic(
