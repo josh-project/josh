@@ -320,24 +320,22 @@ async fn do_filter(
                 .unwrap_or(&"invalid".to_string())
                 .clone();
         }
-        {
-            let t2 = josh::cache::Transaction::open(&repo_path.join("overlay"), None)?;
-            t2.repo()
-                .odb()?
-                .add_disk_alternate(&repo_path.join("mirror").join("objects").to_str().unwrap())?;
-            let mut updated_refs =
-                josh::filter_refs(&t2, filter, &refslist, josh::filter::empty())?;
-            josh::housekeeping::namespace_refs(&mut updated_refs, &temp_ns.name());
-            josh::update_refs(&t2, &mut updated_refs, &temp_ns.reference(&headref));
-            t2.repo()
-                .reference_symbolic(
-                    &temp_ns.reference("HEAD"),
-                    &temp_ns.reference(&headref),
-                    true,
-                    "",
-                )
-                .ok();
-        }
+
+        let t2 = josh::cache::Transaction::open(&repo_path.join("overlay"), None)?;
+        t2.repo()
+            .odb()?
+            .add_disk_alternate(&repo_path.join("mirror").join("objects").to_str().unwrap())?;
+        let mut updated_refs = josh::filter_refs(&t2, filter, &refslist, josh::filter::empty())?;
+        josh::housekeeping::namespace_refs(&mut updated_refs, &temp_ns.name());
+        josh::update_refs(&t2, &mut updated_refs, &temp_ns.reference(&headref));
+        t2.repo()
+            .reference_symbolic(
+                &temp_ns.reference("HEAD"),
+                &temp_ns.reference(&headref),
+                true,
+                "",
+            )
+            .ok();
 
         Ok(())
     })
