@@ -428,7 +428,7 @@ async fn query_meta_repo(
     let meta_blob = josh::filter::tree::get_blob(
         transaction.repo(),
         &meta_tree,
-        &std::path::Path::new(&upstream_repo.trim_start_matches("/")).join("repo.yml"),
+        &std::path::Path::new(&upstream_repo.trim_start_matches("/")).join("config.yml"),
     );
 
     if meta_blob == "" {
@@ -443,7 +443,7 @@ async fn query_meta_repo(
         let meta_blob = josh::filter::tree::get_blob(
             transaction.repo(),
             &meta_tree,
-            &std::path::Path::new(&upstream_repo.trim_start_matches("/")).join("refs.yml"),
+            &std::path::Path::new(&upstream_repo.trim_start_matches("/")).join("lock.yml"),
         );
 
         if meta_blob == "" {

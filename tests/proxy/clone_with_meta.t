@@ -10,21 +10,21 @@
   $ mkdir -p path/to/my_repo.git
   $ mkdir -p with_prefix.git
 
-  $ cat > path/to/my_repo.git/repo.yml <<EOF
+  $ cat > path/to/my_repo.git/config.yml <<EOF
   > repo: /real_repo.git
   > EOF
 
-  $ cat > with_prefix.git/repo.yml <<EOF
+  $ cat > with_prefix.git/config.yml <<EOF
   > repo: /real_repo.git
   > filter: :prefix=my_prefix
   > EOF
 
   $ git add .
   $ git commit -m "add my_repo"
-  [master (root-commit) f2c0a9f] add my_repo
+  [master (root-commit) 488d229] add my_repo
    2 files changed, 3 insertions(+)
-   create mode 100644 path/to/my_repo.git/repo.yml
-   create mode 100644 with_prefix.git/repo.yml
+   create mode 100644 path/to/my_repo.git/config.yml
+   create mode 100644 with_prefix.git/config.yml
   $ git push
   To http://localhost:8001/meta_repo.git
    * [new branch]      master -> master
@@ -146,30 +146,30 @@
   |   |   |   `-- d0327bf3dda29d1ca87d64b4913431f1557110
   |   |   |-- 0e
   |   |   |   `-- 573a1bd81cc9aefaf932187b9e68a1052a4ff6
-  |   |   |-- 13
-  |   |   |   `-- 4ff4ce0dbe71fa65140a86b05e236fa740c5c8
-  |   |   |-- 1d
-  |   |   |   `-- ffbbd63f1d894f194cf0bd16a3f19b82269b53
   |   |   |-- 23
   |   |   |   `-- 87c32648eefdee78386575672ac091da849b08
   |   |   |-- 3d
   |   |   |   `-- 77ff51363c9825cc2a221fc0ba5a883a1a2c72
-  |   |   |-- 57
-  |   |   |   `-- ccdd050a48432c64e7c24c2390929a720f5da2
+  |   |   |-- 48
+  |   |   |   `-- 8d229fd9dfaadbc6b9e2d91000513653c1ec65
+  |   |   |-- 51
+  |   |   |   `-- 5bd921f427d8fa60385d5922743f299c360aaf
+  |   |   |-- 61
+  |   |   |   `-- a7852c0c4aacc0c0a1bcf81454b6ca64cff497
+  |   |   |-- 6b
+  |   |   |   `-- ae79b931ab8c5822e07f48793068eb748e2a13
   |   |   |-- 85
   |   |   |   `-- 837e6104d0a81b944c067e16ddc83c7a38739f
   |   |   |-- a0
   |   |   |   `-- 24003ee1acc6bf70318a46e7b6df651b9dc246
+  |   |   |-- a6
+  |   |   |   `-- b38a805ee48896f37a9eb5b0a1bac52c2a8009
   |   |   |-- bb
   |   |   |   `-- 282e9cdc1b972fffd08fd21eead43bc0c83cb8
   |   |   |-- c8
   |   |   |   `-- 2fc150c43f13cc56c0e9caeba01b58ec612022
-  |   |   |-- de
-  |   |   |   `-- 47e9b40111cce1577ab928e7c1ac57b41ee9b7
-  |   |   |-- ec
-  |   |   |   `-- 6006d85ed823a63d900cc7a0ed534ce3b8b5c4
-  |   |   |-- f2
-  |   |   |   `-- c0a9f9ff0bc665193fa203a8e89fb7e58d5113
+  |   |   |-- e3
+  |   |   |   `-- b357df20c48de2f49ad7d125e8a564e19fe4d6
   |   |   |-- ff
   |   |   |   `-- e8d082c1034053534ea8068f4205ac72a1098e
   |   |   |-- info
