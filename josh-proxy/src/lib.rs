@@ -38,17 +38,13 @@ pub struct MetaConfig {
     pub refs_lock: RefsLock,
 }
 
-pub fn refs_locking(
-    repo: &git2::Repository,
-    refs: Vec<(String, git2::Oid)>,
-    meta: &MetaConfig,
-) -> Vec<(String, git2::Oid)> {
+pub fn refs_locking(refs: Vec<(String, git2::Oid)>, meta: &MetaConfig) -> Vec<(String, git2::Oid)> {
     if !meta.config.lock_refs {
         return refs;
     }
     let mut output = vec![];
 
-    for (n, id) in refs.into_iter() {
+    for (n, _) in refs.into_iter() {
         if let Some(lid) = meta.refs_lock.get(&n) {
             output.push((n, (*lid).into()));
         }

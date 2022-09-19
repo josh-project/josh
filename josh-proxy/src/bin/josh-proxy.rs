@@ -325,7 +325,7 @@ async fn do_filter(
             .odb()?
             .add_disk_alternate(&repo_path.join("mirror").join("objects").to_str().unwrap())?;
         let updated_refs = josh::filter_refs(&t2, filter, &refslist, josh::filter::empty())?;
-        let mut updated_refs = josh_proxy::refs_locking(&transaction.repo(), updated_refs, &meta);
+        let mut updated_refs = josh_proxy::refs_locking(updated_refs, &meta);
         josh::housekeeping::namespace_refs(&mut updated_refs, &temp_ns.name());
         josh::update_refs(&t2, &mut updated_refs, &temp_ns.reference(&headref));
         t2.repo()
