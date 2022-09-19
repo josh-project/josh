@@ -61,6 +61,16 @@ pub fn empty() -> Filter {
     to_filter(Op::Empty)
 }
 
+pub fn squash(ids: Option<&[(git2::Oid, String)]>) -> Filter {
+    if let Some(ids) = ids {
+        to_filter(Op::Squash(Some(
+            ids.iter().map(|(x, y)| (*x, y.clone())).collect(),
+        )))
+    } else {
+        to_filter(Op::Squash(None))
+    }
+}
+
 fn to_filter(op: Op) -> Filter {
     let s = format!("{:?}", op);
     let f = Filter(
@@ -85,7 +95,7 @@ enum Op {
     Empty,
     Fold,
     Paths,
-    Squash,
+    Squash(Option<std::collections::HashMap<git2::Oid, String>>),
     Linear,
 
     RegexReplace(regex::Regex, String),
@@ -236,7 +246,18 @@ fn spec2(op: &Op) -> String {
         #[cfg(feature = "search")]
         Op::Index => ":INDEX".to_string(),
         Op::Fold => ":FOLD".to_string(),
-        Op::Squash => ":SQUASH".to_string(),
+        Op::Squash(None) => ":SQUASH".to_string(),
+        Op::Squash(Some(hs)) => {
+            let mut v = hs
+                .iter()
+                .map(|(x, y)| format!("{}:{}", x, y))
+                .collect::<Vec<String>>();
+            v.sort();
+            let s = v.join(",");
+            let s = git2::Oid::hash_object(git2::ObjectType::Blob, s.as_bytes())
+                .expect("hash_object filter");
+            format!(":SQUASH={}", s)
+        }
         Op::Linear => ":linear".to_string(),
         Op::Subdir(path) => format!(":/{}", parse::quote(&path.to_string_lossy())),
         Op::File(path) => format!("::{}", parse::quote(&path.to_string_lossy())),
@@ -341,8 +362,15 @@ fn apply_to_commit2(
                 Ok(Some(git2::Oid::zero()))
             };
         }
-        Op::Squash => {
-            return Some(history::rewrite_commit(repo, commit, &[], &commit.tree()?)).transpose()
+        Op::Squash(None) => {
+            return Some(history::rewrite_commit(
+                repo,
+                commit,
+                &[],
+                &commit.tree()?,
+                None,
+            ))
+            .transpose()
         }
         _ => {
             if let Some(oid) = transaction.get(filter, commit.id()) {
@@ -354,6 +382,27 @@ fn apply_to_commit2(
     rs_tracing::trace_scoped!("apply_to_commit", "spec": spec(filter), "commit": commit.id().to_string());
 
     let filtered_tree = match &to_op(filter) {
+        Op::Squash(Some(ids)) => {
+            if let Some(_) = ids.get(&commit.id()) {
+                commit.tree()?
+            } else {
+                for parent in commit.parents() {
+                    return Ok(
+                        if let Some(fparent) = transaction.get(filter, parent.id()) {
+                            Some(history::drop_commit(
+                                commit,
+                                vec![fparent],
+                                transaction,
+                                filter,
+                            )?)
+                        } else {
+                            None
+                        },
+                    );
+                }
+                tree::empty(repo)
+            }
+        }
         Op::Linear => {
             let p: Vec<_> = commit.parent_ids().collect();
             if p.is_empty() {
@@ -370,6 +419,7 @@ fn apply_to_commit2(
                 commit.tree()?,
                 transaction,
                 filter,
+                None,
             ))
             .transpose();
         }
@@ -452,6 +502,7 @@ fn apply_to_commit2(
                 filtered_tree,
                 transaction,
                 filter,
+                None,
             ))
             .transpose();
         }
@@ -528,12 +579,18 @@ fn apply_to_commit2(
 
     let filtered_parent_ids = some_or!(filtered_parent_ids, { return Ok(None) });
 
+    let message = match to_op(filter) {
+        Op::Squash(Some(ids)) => ids.get(&commit.id()).map(|x| x.clone()),
+        _ => None,
+    };
+
     Some(history::create_filtered_commit(
         commit,
         filtered_parent_ids,
         filtered_tree,
         transaction,
         filter,
+        message,
     ))
     .transpose()
 }
@@ -557,7 +614,8 @@ fn apply2<'a>(
         Op::Nop => Ok(tree),
         Op::Empty => return Ok(tree::empty(repo)),
         Op::Fold => Ok(tree),
-        Op::Squash => Ok(tree),
+        Op::Squash(None) => Ok(tree),
+        Op::Squash(Some(_)) => Err(josh_error("not applicable to tree")),
         Op::Linear => Ok(tree),
 
         Op::RegexReplace(regex, replacement) => {

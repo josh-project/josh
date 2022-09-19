@@ -181,8 +181,9 @@ pub fn rewrite_commit(
     base: &git2::Commit,
     parents: &[&git2::Commit],
     tree: &git2::Tree,
+    message: Option<String>,
 ) -> JoshResult<git2::Oid> {
-    if base.tree()?.id() == tree.id() && all_equal(base.parents(), parents) {
+    if message == None && base.tree()?.id() == tree.id() && all_equal(base.parents(), parents) {
         // Looks like an optimization, but in fact serves to not change the commit in case
         // it was signed.
         return Ok(base.id());
@@ -191,7 +192,7 @@ pub fn rewrite_commit(
     let b = repo.commit_create_buffer(
         &base.author(),
         &base.committer(),
-        base.message_raw().unwrap_or("no message"),
+        &message.unwrap_or(base.message_raw().unwrap_or("no message").to_string()),
         tree,
         parents,
     )?;
@@ -493,6 +494,7 @@ pub fn unapply_filter(
             &module_commit,
             &original_parents_refs,
             &new_tree,
+            None,
         )?;
 
         if let Some(ref mut change_ids) = change_ids {
@@ -526,18 +528,37 @@ fn select_parent_commits<'a>(
     }
 }
 
+pub fn drop_commit<'a>(
+    original_commit: &'a git2::Commit,
+    filtered_parent_ids: Vec<git2::Oid>,
+    transaction: &cache::Transaction,
+    filter: filter::Filter,
+) -> JoshResult<git2::Oid> {
+    let r = if let Some(id) = filtered_parent_ids.iter().next() {
+        *id
+    } else {
+        git2::Oid::zero()
+    };
+
+    transaction.insert(filter, original_commit.id(), r, false);
+
+    Ok(r)
+}
+
 pub fn create_filtered_commit<'a>(
     original_commit: &'a git2::Commit,
     filtered_parent_ids: Vec<git2::Oid>,
     filtered_tree: git2::Tree<'a>,
     transaction: &cache::Transaction,
     filter: filter::Filter,
+    message: Option<String>,
 ) -> JoshResult<git2::Oid> {
     let (r, is_new) = create_filtered_commit2(
         transaction.repo(),
         original_commit,
         filtered_parent_ids,
         filtered_tree,
+        message,
     )?;
 
     let store = is_new || original_commit.parent_ids().len() != 1;
@@ -552,6 +573,7 @@ fn create_filtered_commit2<'a>(
     original_commit: &'a git2::Commit,
     filtered_parent_ids: Vec<git2::Oid>,
     filtered_tree: git2::Tree<'a>,
+    message: Option<String>,
 ) -> JoshResult<(git2::Oid, bool)> {
     let filtered_parent_commits: Result<Vec<_>, _> = filtered_parent_ids
         .iter()
@@ -596,6 +618,7 @@ fn create_filtered_commit2<'a>(
             original_commit,
             &selected_filtered_parent_commits,
             &filtered_tree,
+            message,
         )?,
         true,
     ))

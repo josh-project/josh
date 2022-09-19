@@ -33,7 +33,8 @@ fn make_op(args: &[&str]) -> JoshResult<Op> {
             Where `path` is path to the directory where workspace.josh file is located
             "#
         ))),
-        ["SQUASH"] => Ok(Op::Squash),
+        ["SQUASH"] => Ok(Op::Squash(None)),
+        ["SQUASH", _ids @ ..] => Err(josh_error("SQUASH with ids can't be parsed")),
         ["linear"] => Ok(Op::Linear),
         ["PATHS"] => Ok(Op::Paths),
         #[cfg(feature = "search")]

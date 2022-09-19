@@ -37,9 +37,14 @@ fn make_app() -> clap::Command {
         )
         .arg(
             clap::Arg::new("squash")
-                .action(clap::ArgAction::SetTrue)
-                .help("Only output one commit, without history")
-                .long("squash"),
+                .help("Produce a history that contains only commits pointed to by references matching the given pattern")
+                .long("squash")
+                .takes_value(true),
+        )
+        .arg(
+            clap::Arg::new("single")
+                .help("Produce a history that contains only one single commit")
+                .long("single"),
         )
         .arg(
             clap::Arg::new("discover")
@@ -138,12 +143,8 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
 
     let mut filterobj = josh::filter::parse(&specstr)?;
 
-    if args.get_flag("squash") {
-        filterobj = josh::filter::chain(josh::filter::parse(":SQUASH")?, filterobj);
-    }
-
-    if args.get_flag("print-filter") {
-        let filterobj = if args.get_flag("reverse") {
+    if args.is_present("print-filter") {
+        let filterobj = if args.is_present("reverse") {
             josh::filter::invert(filterobj)?
         } else {
             filterobj
@@ -161,6 +162,31 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
     }
     let transaction = josh::cache::Transaction::new(repo, None);
     let repo = transaction.repo();
+
+    let input_ref = args.value_of("input").unwrap();
+
+    let mut refs = vec![];
+    let mut ids = vec![];
+
+    let reference = repo.resolve_reference_from_short_name(input_ref).unwrap();
+    let input_ref = reference.name().unwrap().to_string();
+    refs.push((input_ref.clone(), reference.target().unwrap()));
+
+    if args.is_present("single") {
+        filterobj = josh::filter::chain(josh::filter::squash(None), filterobj);
+    }
+
+    if let Some(pattern) = args.value_of("squash") {
+        let pattern = pattern.to_string();
+        for reference in repo.references_glob(&pattern).unwrap() {
+            let reference = reference?;
+            if let Some(target) = reference.target() {
+                ids.push((target, reference.name().unwrap().to_string()));
+                refs.push((reference.name().unwrap().to_string(), target));
+            }
+        }
+        filterobj = josh::filter::chain(josh::filter::squash(Some(&ids)), filterobj);
+    };
 
     let odb = repo.odb()?;
     let mp = if args.get_flag("pack") {
@@ -188,10 +214,8 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         }
     });
 
-    let input_ref = args.get_one::<String>("input").unwrap();
-
-    if args.get_flag("discover") {
-        let r = repo.revparse_single(input_ref)?;
+    if args.is_present("discover") {
+        let r = repo.revparse_single(&input_ref)?;
         let hs = josh::housekeeping::find_all_workspaces_and_subdirectories(&r.peel_to_tree()?)?;
         for i in hs {
             if i.contains(":workspace=") {
@@ -210,24 +234,11 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
 
     let update_target = args.get_one::<String>("update").unwrap();
 
-    let src = input_ref;
     let target = update_target;
 
     let reverse = args.get_flag("reverse");
 
-    let t = if reverse {
-        "refs/JOSH_TMP".to_owned()
-    } else {
-        target.to_string()
-    };
-    let src_r = repo
-        .revparse_ext(src)?
-        .1
-        .ok_or(josh::josh_error("reference not found"))?;
-
-    let src = src_r.name().unwrap().to_string();
-
-    let check_permissions = args.get_flag("check-permission");
+    let check_permissions = args.is_present("check-permission");
     let mut permissions_filter = josh::filter::empty();
     if check_permissions {
         let whitelist;
@@ -264,28 +275,31 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         permissions_filter = josh::filter::empty();
     }
 
-    let old_oid = if let Ok(id) = transaction.repo().refname_to_id(&t) {
+    let old_oid = if let Ok(id) = transaction.repo().refname_to_id(&target) {
         id
     } else {
         git2::Oid::zero()
     };
-    let mut updated_refs = josh::filter_refs(
-        &transaction,
-        filterobj,
-        &[(src.clone(), src_r.target().unwrap())],
-        permissions_filter,
-    )?;
-    updated_refs[0].0 = t;
-    josh::update_refs(&transaction, &mut updated_refs, "");
-    if args.get_one::<String>("update").map(|v| v.as_str()) != Some("FILTERED_HEAD")
-        && updated_refs.len() == 1
-        && updated_refs[0].1 == old_oid
-    {
-        println!(
-            "Warning: reference {} wasn't updated",
-            args.get_one::<String>("update").unwrap()
-        );
+
+    let mut updated_refs = josh::filter_refs(&transaction, filterobj, &refs, permissions_filter)?;
+    for i in 0..updated_refs.len() {
+        if updated_refs[i].0 == input_ref {
+            if reverse {
+                updated_refs[i].0 = "refs/JOSH_TMP".to_string();
+            } else {
+                updated_refs[i].0 = target.to_string();
+            }
+        } else {
+            updated_refs[i].0 =
+                updated_refs[i]
+                    .0
+                    .replacen("refs/heads/", "refs/heads/filtered/", 1);
+            updated_refs[i].0 = updated_refs[i]
+                .0
+                .replacen("refs/tags/", "refs/tags/filtered/", 1);
+        }
     }
+    josh::update_refs(&transaction, &mut updated_refs, "");
 
     #[cfg(feature = "search")]
     if let Some(searchstring) = args.get_one::<String>("search") {
@@ -324,7 +338,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
     if reverse {
         let new = repo.revparse_single(target).unwrap().id();
         let old = repo.revparse_single("JOSH_TMP").unwrap().id();
-        let unfiltered_old = repo.revparse_single(input_ref).unwrap().id();
+        let unfiltered_old = repo.revparse_single(&input_ref).unwrap().id();
 
         match josh::history::unapply_filter(
             &transaction,
@@ -337,7 +351,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
             &mut None,
         ) {
             Ok(rewritten) => {
-                repo.reference(&src, rewritten, true, "unapply_filter")?;
+                repo.reference(&input_ref, rewritten, true, "unapply_filter")?;
             }
             Err(JoshError(msg)) => {
                 println!("{}", msg);
@@ -346,7 +360,18 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         }
     }
 
-    if let Some(gql_query) = args.get_one::<String>("graphql") {
+    if !reverse
+        && args.value_of("update") != Some("FILTERED_HEAD")
+        && updated_refs.len() == 1
+        && updated_refs[0].1 == old_oid
+    {
+        println!(
+            "Warning: reference {} wasn't updated",
+            args.value_of("update").unwrap()
+        );
+    }
+
+    if let Some(gql_query) = args.value_of("graphql") {
         let context = josh::graphql::context(transaction.try_clone()?, transaction.try_clone()?);
         *context.allow_refs.lock()? = true;
         let (res, _errors) = juniper::execute_sync(

@@ -393,6 +393,7 @@ fn split_changes(
                         &repo.find_commit(changes[i].1)?,
                         &vec![&parent],
                         &new_tree,
+                        None,
                     )?;
                     changes[i].1 = new_commit;
                     new_bases.push(new_commit);
