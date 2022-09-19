@@ -4,6 +4,8 @@ pub mod juniper_hyper;
 #[macro_use]
 extern crate lazy_static;
 
+use std::path::PathBuf;
+
 #[derive(PartialEq)]
 enum PushMode {
     Normal,
@@ -411,64 +413,64 @@ pub fn push_head_url(
     Ok((stderr, status))
 }
 
+fn create_repo_base(path: &PathBuf) -> josh::JoshResult<josh::shell::Shell> {
+    std::fs::create_dir_all(&path).expect("can't create_dir_all");
+    git2::Repository::init_bare(&path)?;
+
+    let credential_helper =
+        "'!f() { echo \"username=\"$GIT_USER\"\npassword=\"$GIT_PASSWORD\"\"; }; f'";
+    let config_options = [
+        ("http.receivepack", "true"),
+        ("user.name", "josh"),
+        ("user.email", "josh@josh-project.dev"),
+        ("uploadpack.allowAnySHA1InWant", "true"),
+        ("uploadpack.allowReachableSHA1InWant", "true"),
+        ("uploadpack.allowTipSha1InWant", "true"),
+        ("receive.advertisePushOptions", "true"),
+        ("gc.auto", "0"),
+        ("credential.helper", &credential_helper),
+    ];
+
+    let shell = josh::shell::Shell {
+        cwd: path.to_path_buf(),
+    };
+
+    config_options
+        .map(|(key, value)| shell.command(format!("git config {} {}", key, value).as_str()));
+
+    shell.command("rm -Rf hooks");
+    shell.command("rm -Rf *.lock");
+    shell.command("rm -Rf packed-refs");
+
+    Ok(shell)
+}
+
 pub fn create_repo(path: &std::path::Path) -> josh::JoshResult<()> {
     let mirror_path = path.join("mirror");
     tracing::debug!("init mirror repo: {:?}", mirror_path);
-    std::fs::create_dir_all(&mirror_path).expect("can't create_dir_all");
-    git2::Repository::init_bare(&mirror_path)?;
-    let shell = josh::shell::Shell {
-        cwd: mirror_path.to_path_buf(),
-    };
-    shell.command("git config http.receivepack true");
-    shell.command("git config user.name josh");
-    shell.command("git config user.email josh@josh-project.dev");
-    shell.command("git config uploadpack.allowAnySHA1InWant true");
-    shell.command("git config uploadpack.allowReachableSHA1InWant true");
-    shell.command("git config uploadpack.allowTipSha1InWant true");
-    shell.command("git config receive.advertisePushOptions true");
-    shell.command("rm -Rf hooks");
-    shell.command("rm -Rf *.lock");
-    shell.command("rm -Rf packed-refs");
-    shell.command(
-        &"git config credential.helper '!f() { echo \"username=\"$GIT_USER\"\npassword=\"$GIT_PASSWORD\"\"; }; f'"
-            .to_string(),
-    );
-    shell.command("git config gc.auto 0");
+    create_repo_base(&mirror_path)?;
 
     let overlay_path = path.join("overlay");
-
     tracing::debug!("init overlay repo: {:?}", overlay_path);
-    std::fs::create_dir_all(&overlay_path).expect("can't create_dir_all");
-    git2::Repository::init_bare(&overlay_path)?;
-    let shell = josh::shell::Shell {
-        cwd: overlay_path.to_path_buf(),
-    };
-    shell.command("git config http.receivepack true");
-    shell.command("git config uploadpack.allowsidebandall true");
-    shell.command("git config user.name josh");
-    shell.command("git config user.email josh@josh-project.dev");
-    shell.command("git config uploadpack.allowAnySHA1InWant true");
-    shell.command("git config uploadpack.allowReachableSHA1InWant true");
-    shell.command("git config uploadpack.allowTipSha1InWant true");
-    shell.command("git config receive.advertisePushOptions true");
-    let ce = std::env::current_exe().expect("can't find path to exe");
-    shell.command("rm -Rf hooks");
-    shell.command("rm -Rf *.lock");
-    shell.command("rm -Rf packed-refs");
-    shell.command("mkdir hooks");
-    std::os::unix::fs::symlink(ce.clone(), overlay_path.join("hooks").join("update"))
-        .expect("can't symlink update hook");
-    std::os::unix::fs::symlink(ce, overlay_path.join("hooks").join("pre-receive"))
-        .expect("can't symlink pre-receive hook");
-    shell.command(
-        &"git config credential.helper '!f() { echo \"username=\"$GIT_USER\"\npassword=\"$GIT_PASSWORD\"\"; }; f'"
-            .to_string(),
-    );
-    shell.command("git config gc.auto 0");
+    let overlay_shell = create_repo_base(&overlay_path)?;
+    overlay_shell.command("mkdir hooks");
+
+    let josh_executable = std::env::current_exe().expect("can't find path to exe");
+    std::os::unix::fs::symlink(
+        josh_executable.clone(),
+        overlay_path.join("hooks").join("update"),
+    )
+    .expect("can't symlink update hook");
+    std::os::unix::fs::symlink(
+        josh_executable,
+        overlay_path.join("hooks").join("pre-receive"),
+    )
+    .expect("can't symlink pre-receive hook");
 
     if std::env::var_os("JOSH_KEEP_NS") == None {
         std::fs::remove_dir_all(overlay_path.join("refs/namespaces")).ok();
     }
+
     tracing::info!("repo initialized");
     Ok(())
 }
