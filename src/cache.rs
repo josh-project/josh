@@ -33,10 +33,10 @@ pub fn print_stats() {
         let name = String::from_utf8(name.to_vec()).unwrap();
         let t = db.open_tree(&name).unwrap();
         if !t.is_empty() {
-            let name = if name.contains("SUBTRACT") || name.starts_with('_') {
-                name.clone()
+            let name = if let Ok(filter) = filter::parse(&name) {
+                filter::pretty(filter, 4)
             } else {
-                filter::pretty(filter::parse(&name).unwrap(), 4)
+                name.clone()
             };
             v.push((t.len(), name));
         }
