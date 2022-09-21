@@ -14,7 +14,7 @@ version = "22.4.15"
 [dependencies]
 base64 = "0.13.0"
 clap = "3.2.17"
-futures = "0.3.23"
+futures = "0.3.24"
 git2 = "0.15.0"
 hyper = { version = "0.14.20", features = ["stream"] }
 hyper-reverse-proxy = "0.5.1"
