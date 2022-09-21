@@ -40,5 +40,5 @@ tracing-futures = "0.2.5"
 tracing-opentelemetry = "0.17.4"
 tracing-subscriber = { version = "0.3.15", features = ["env-filter"] }
 unindent = "0.1.10"
-url = "2.2.2"
+url = "2.3.0"
 uuid = { version = "1.1.2", features = ["v4"] }
