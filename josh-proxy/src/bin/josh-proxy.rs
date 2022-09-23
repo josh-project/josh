@@ -1204,11 +1204,11 @@ fn main() {
     };
 
     if let Ok(endpoint) = std::env::var("JOSH_JAEGER_ENDPOINT") {
-        let tracer = opentelemetry_jaeger::new_pipeline()
+        let tracer = opentelemetry_jaeger::new_agent_pipeline()
             .with_service_name(
                 std::env::var("JOSH_SERVICE_NAME").unwrap_or("josh-proxy".to_owned()),
             )
-            .with_agent_endpoint(endpoint)
+            .with_endpoint(endpoint)
             .install_simple()
             .expect("can't install opentelemetry pipeline");
 
