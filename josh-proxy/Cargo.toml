@@ -37,7 +37,7 @@ tokio = { version = "1.20.1", features = ["full"] }
 toml = "0.5.9"
 tracing = { version = "0.1.36", features = ["max_level_trace", "release_max_level_trace"] }
 tracing-futures = "0.2.5"
-tracing-opentelemetry = "0.17.4"
+tracing-opentelemetry = "0.18.0"
 tracing-subscriber = { version = "0.3.15", features = ["env-filter"] }
 unindent = "0.1.10"
 url = "2.2.2"
