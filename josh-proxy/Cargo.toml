@@ -13,8 +13,8 @@ version = "22.4.15"
 
 [dependencies]
 base64 = "0.13.0"
-clap = "3.2.17"
-futures = "0.3.23"
+clap = "3.2.22"
+futures = "0.3.24"
 git2 = "0.15.0"
 hyper = { version = "0.14.20", features = ["stream"] }
 hyper-reverse-proxy = "0.5.1"
@@ -25,20 +25,20 @@ indoc = "1.0.7"
 josh = {path = "../"}
 juniper = { version = "0.15.10", features = ["expose-test-schema"] }
 lazy_static = "1.4.0"
-opentelemetry = "0.17.0"
-opentelemetry-jaeger = "0.16.0"
-percent-encoding = "2.1.0"
+opentelemetry = "0.18.0"
+opentelemetry-jaeger = "0.17.0"
+percent-encoding = "2.2.0"
 regex = "1.6.0"
-reqwest= { version = "0.11.11", default-features = false, features = ["blocking", "json"] }
-serde= "1.0.144"
+reqwest= { version = "0.11.12", default-features = false, features = ["blocking", "json"] }
+serde= "1.0.145"
 serde_json= "1.0.85"
-serde_yaml = "0.9.10"
-tokio = { version = "1.20.1", features = ["full"] }
+serde_yaml = "0.9.13"
+tokio = { version = "1.21.1", features = ["full"] }
 toml = "0.5.9"
 tracing = { version = "0.1.36", features = ["max_level_trace", "release_max_level_trace"] }
 tracing-futures = "0.2.5"
-tracing-opentelemetry = "0.17.4"
+tracing-opentelemetry = "0.18.0"
 tracing-subscriber = { version = "0.3.15", features = ["env-filter"] }
 unindent = "0.1.10"
-url = "2.2.2"
+url = "2.3.1"
 uuid = { version = "1.1.2", features = ["v4"] }
