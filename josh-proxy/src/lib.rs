@@ -14,6 +14,49 @@ enum PushMode {
     Split,
 }
 
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, Default)]
+pub struct Ref {
+    pub target: josh::Oid,
+}
+
+type RefsLock = std::collections::HashMap<String, josh::Oid>;
+
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, Default)]
+pub struct RepoConfig {
+    pub repo: String,
+
+    #[serde(default)]
+    pub filter: josh::filter::Filter,
+
+    #[serde(default)]
+    pub lock_refs: bool,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct MetaConfig {
+    pub config: RepoConfig,
+    pub refs_lock: RefsLock,
+}
+
+pub fn refs_locking(
+    repo: &git2::Repository,
+    refs: Vec<(String, git2::Oid)>,
+    meta: &MetaConfig,
+) -> Vec<(String, git2::Oid)> {
+    if !meta.config.lock_refs {
+        return refs;
+    }
+    let mut output = vec![];
+
+    for (n, id) in refs.into_iter() {
+        if let Some(lid) = meta.refs_lock.get(&n) {
+            output.push((n, (*lid).into()));
+        }
+    }
+
+    output
+}
+
 fn baseref_and_options(refname: &str) -> josh::JoshResult<(String, String, Vec<String>, PushMode)> {
     let mut split = refname.splitn(2, '%');
     let push_to = split.next().ok_or(josh::josh_error("no next"))?.to_owned();

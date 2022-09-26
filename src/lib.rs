@@ -63,6 +63,43 @@ impl Change {
     }
 }
 
+#[derive(
+    Clone, Hash, PartialEq, Eq, Copy, PartialOrd, Ord, Debug, serde::Serialize, serde::Deserialize,
+)]
+#[serde(try_from = "String", into = "String")]
+pub struct Oid(git2::Oid);
+
+impl Default for Oid {
+    fn default() -> Self {
+        Oid(git2::Oid::zero())
+    }
+}
+
+impl std::convert::TryFrom<String> for Oid {
+    type Error = JoshError;
+    fn try_from(s: String) -> JoshResult<Oid> {
+        Ok(Oid(git2::Oid::from_str(&s)?))
+    }
+}
+
+impl Into<String> for Oid {
+    fn into(self) -> String {
+        self.0.to_string()
+    }
+}
+
+impl Into<git2::Oid> for Oid {
+    fn into(self) -> git2::Oid {
+        self.0
+    }
+}
+
+impl From<git2::Oid> for Oid {
+    fn from(oid: git2::Oid) -> Self {
+        Self(oid)
+    }
+}
+
 pub const VERSION: &str =
     git_version::git_version!(args = ["--tags", "--always", "--dirty=-modified"]);
 

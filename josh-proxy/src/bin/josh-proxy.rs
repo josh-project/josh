@@ -271,7 +271,7 @@ async fn repo_update_fn(
 async fn do_filter(
     repo_path: std::path::PathBuf,
     service: Arc<JoshProxyService>,
-    upstream_repo: String,
+    meta: josh_proxy::MetaConfig,
     temp_ns: Arc<josh_proxy::TmpGitNamespace>,
     filter: josh::filter::Filter,
     headref: String,
@@ -284,23 +284,23 @@ async fn do_filter(
         let _e = s.enter();
         tracing::trace!("in do_filter worker");
         let filter_spec = josh::filter::spec(filter);
-        josh::housekeeping::remember_filter(&upstream_repo, &filter_spec);
+        josh::housekeeping::remember_filter(&meta.config.repo, &filter_spec);
 
         let transaction = josh::cache::Transaction::open(
             &repo_path.join("mirror"),
             Some(&format!(
                 "refs/josh/upstream/{}/",
-                &josh::to_ns(&upstream_repo),
+                &josh::to_ns(&meta.config.repo),
             )),
         )?;
-        let mut refslist = josh::housekeeping::list_refs(transaction.repo(), &upstream_repo)?;
+        let mut refslist = josh::housekeeping::list_refs(transaction.repo(), &meta.config.repo)?;
 
         let mut headref = headref;
 
         if headref.starts_with("refs/") || headref == "HEAD" {
             let name = format!(
                 "refs/josh/upstream/{}/{}",
-                &josh::to_ns(&upstream_repo),
+                &josh::to_ns(&meta.config.repo),
                 headref.clone()
             );
             if let Ok(r) = transaction.repo().revparse_single(&name) {
@@ -315,7 +315,7 @@ async fn do_filter(
         if headref == "HEAD" {
             headref = heads_map
                 .read()?
-                .get(&upstream_repo)
+                .get(&meta.config.repo)
                 .unwrap_or(&"invalid".to_string())
                 .clone();
         }
@@ -324,7 +324,8 @@ async fn do_filter(
         t2.repo()
             .odb()?
             .add_disk_alternate(&repo_path.join("mirror").join("objects").to_str().unwrap())?;
-        let mut updated_refs = josh::filter_refs(&t2, filter, &refslist, josh::filter::empty())?;
+        let updated_refs = josh::filter_refs(&t2, filter, &refslist, josh::filter::empty())?;
+        let mut updated_refs = josh_proxy::refs_locking(&transaction.repo(), updated_refs, &meta);
         josh::housekeeping::namespace_refs(&mut updated_refs, &temp_ns.name());
         josh::update_refs(&t2, &mut updated_refs, &temp_ns.reference(&headref));
         t2.repo()
@@ -392,20 +393,12 @@ async fn handle_ui_request(
     return Ok(response);
 }
 
-#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, Default)]
-struct RepoConfig {
-    repo: String,
-
-    #[serde(default)]
-    filter: josh::filter::Filter,
-}
-
 async fn query_meta_repo(
     serv: Arc<JoshProxyService>,
     meta_repo: &str,
     upstream_repo: &str,
     auth: &josh_proxy::auth::Handle,
-) -> josh::JoshResult<RepoConfig> {
+) -> josh::JoshResult<josh_proxy::MetaConfig> {
     let remote_url = [serv.upstream_url.as_str(), meta_repo].join("");
     match fetch_upstream(
         serv.clone(),
@@ -442,9 +435,24 @@ async fn query_meta_repo(
         return Err(josh::josh_error(&"meta repo entry not found"));
     }
 
-    let config: RepoConfig = serde_yaml::from_str(&meta_blob)?;
+    let mut meta: josh_proxy::MetaConfig = Default::default();
 
-    return Ok(config);
+    meta.config = serde_yaml::from_str(&meta_blob)?;
+
+    if meta.config.lock_refs {
+        let meta_blob = josh::filter::tree::get_blob(
+            transaction.repo(),
+            &meta_tree,
+            &std::path::Path::new(&upstream_repo.trim_start_matches("/")).join("refs.yml"),
+        );
+
+        if meta_blob == "" {
+            return Err(josh::josh_error(&"locked refs not found"));
+        }
+        meta.refs_lock = serde_yaml::from_str(&meta_blob)?;
+    }
+
+    return Ok(meta);
 }
 
 #[tracing::instrument]
@@ -516,7 +524,7 @@ async fn call_service(
         }
     };
 
-    let mut config = RepoConfig::default();
+    let mut meta = Default::default();
 
     if let Ok(meta_repo) = std::env::var("JOSH_META_REPO") {
         let auth = if let Ok(token) = std::env::var("JOSH_META_AUTH_TOKEN") {
@@ -524,14 +532,16 @@ async fn call_service(
         } else {
             auth.clone()
         };
-        config =
-            query_meta_repo(serv.clone(), &meta_repo, &parsed_url.upstream_repo, &auth).await?;
+        meta = query_meta_repo(serv.clone(), &meta_repo, &parsed_url.upstream_repo, &auth).await?;
     } else {
-        config.repo = parsed_url.upstream_repo;
+        meta.config.repo = parsed_url.upstream_repo;
     }
 
-    let filter = josh::filter::chain(config.filter, josh::filter::parse(&parsed_url.filter_spec)?);
-    let remote_url = [serv.upstream_url.as_str(), config.repo.as_str()].join("");
+    let filter = josh::filter::chain(
+        meta.config.filter,
+        josh::filter::parse(&parsed_url.filter_spec)?,
+    );
+    let remote_url = [serv.upstream_url.as_str(), meta.config.repo.as_str()].join("");
 
     if parsed_url.pathinfo.starts_with("/info/lfs") {
         return Ok(Response::builder()
@@ -564,7 +574,7 @@ async fn call_service(
     let block = block.split(";").collect::<Vec<_>>();
 
     for b in block {
-        if b == config.repo {
+        if b == meta.config.repo {
             return Ok(make_response(
                 hyper::Body::from(formatdoc!(
                     r#"
@@ -577,11 +587,11 @@ async fn call_service(
     }
 
     if parsed_url.api == "/~/graphql" {
-        return serve_graphql(serv, req, config.repo.to_owned(), remote_url, auth).await;
+        return serve_graphql(serv, req, meta.config.repo.to_owned(), remote_url, auth).await;
     }
 
     if parsed_url.api == "/~/graphiql" {
-        let addr = format!("/~/graphql{}", config.repo);
+        let addr = format!("/~/graphql{}", meta.config.repo);
         return Ok(tokio::task::spawn_blocking(move || {
             josh_proxy::juniper_hyper::graphiql(&addr, None)
         })
@@ -591,7 +601,7 @@ async fn call_service(
 
     match fetch_upstream(
         serv.clone(),
-        config.repo.to_owned(),
+        meta.config.repo.to_owned(),
         &auth,
         remote_url.to_owned(),
         &headref,
@@ -618,10 +628,10 @@ async fn call_service(
         req.uri().query().map(|x| x.to_string()),
         parsed_url.pathinfo.is_empty(),
     ) {
-        return serve_query(serv, q, config.repo, filter, headref).await;
+        return serve_query(serv, q, meta.config.repo, filter, headref).await;
     }
 
-    let temp_ns = prepare_namespace(serv.clone(), &config.repo, filter, &headref)
+    let temp_ns = prepare_namespace(serv.clone(), &meta, filter, &headref)
         .in_current_span()
         .await?;
 
@@ -654,7 +664,7 @@ async fn call_service(
         auth,
         port: serv.port.clone(),
         filter_spec: josh::filter::spec(filter),
-        base_ns: josh::to_ns(&config.repo),
+        base_ns: josh::to_ns(&meta.config.repo),
         git_ns: temp_ns.name().to_string(),
         git_dir: repo_path.clone(),
         mirror_git_dir: mirror_repo_path.clone(),
@@ -752,7 +762,7 @@ async fn serve_query(
 #[tracing::instrument]
 async fn prepare_namespace(
     serv: Arc<JoshProxyService>,
-    upstream_repo: &str,
+    meta: &josh_proxy::MetaConfig,
     filter: josh::filter::Filter,
     headref: &str,
 ) -> josh::JoshResult<std::sync::Arc<josh_proxy::TmpGitNamespace>> {
@@ -766,7 +776,7 @@ async fn prepare_namespace(
     do_filter(
         serv.repo_path.clone(),
         serv.clone(),
-        upstream_repo.to_owned(),
+        meta.clone(),
         temp_ns.to_owned(),
         filter,
         headref.to_string(),
