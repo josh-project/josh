@@ -181,7 +181,7 @@ pub fn rewrite_commit(
     base: &git2::Commit,
     parents: &[&git2::Commit],
     tree: &git2::Tree,
-    message: Option<String>,
+    message: Option<(String, String, String)>,
 ) -> JoshResult<git2::Oid> {
     if message == None && base.tree()?.id() == tree.id() && all_equal(base.parents(), parents) {
         // Looks like an optimization, but in fact serves to not change the commit in case
@@ -189,13 +189,21 @@ pub fn rewrite_commit(
         return Ok(base.id());
     }
 
-    let b = repo.commit_create_buffer(
-        &base.author(),
-        &base.committer(),
-        &message.unwrap_or(base.message_raw().unwrap_or("no message").to_string()),
-        tree,
-        parents,
-    )?;
+    let b = if let Some((message, author, email)) = message {
+        let a = base.author();
+        let new_a = git2::Signature::new(&author, &email, &a.when())?;
+        let c = base.committer();
+        let new_c = git2::Signature::new(&author, &email, &c.when())?;
+        repo.commit_create_buffer(&new_a, &new_c, &message, tree, parents)?
+    } else {
+        repo.commit_create_buffer(
+            &base.author(),
+            &base.committer(),
+            &base.message_raw().unwrap_or("no message"),
+            tree,
+            parents,
+        )?
+    };
 
     if let Ok((sig, _)) = repo.extract_signature(&base.id(), None) {
         // Re-create the object with the original signature (which of course does not match any
@@ -551,7 +559,7 @@ pub fn create_filtered_commit<'a>(
     filtered_tree: git2::Tree<'a>,
     transaction: &cache::Transaction,
     filter: filter::Filter,
-    message: Option<String>,
+    message: Option<(String, String, String)>,
 ) -> JoshResult<git2::Oid> {
     let (r, is_new) = create_filtered_commit2(
         transaction.repo(),
@@ -573,7 +581,7 @@ fn create_filtered_commit2<'a>(
     original_commit: &'a git2::Commit,
     filtered_parent_ids: Vec<git2::Oid>,
     filtered_tree: git2::Tree<'a>,
-    message: Option<String>,
+    message: Option<(String, String, String)>,
 ) -> JoshResult<(git2::Oid, bool)> {
     let filtered_parent_commits: Result<Vec<_>, _> = filtered_parent_ids
         .iter()

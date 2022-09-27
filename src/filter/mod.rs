@@ -61,10 +61,12 @@ pub fn empty() -> Filter {
     to_filter(Op::Empty)
 }
 
-pub fn squash(ids: Option<&[(git2::Oid, String)]>) -> Filter {
-    if let Some(ids) = ids {
+pub fn squash(ids: Option<(&str, &str, &[(git2::Oid, String)])>) -> Filter {
+    if let Some((author, email, ids)) = ids {
         to_filter(Op::Squash(Some(
-            ids.iter().map(|(x, y)| (*x, y.clone())).collect(),
+            ids.iter()
+                .map(|(x, y)| (*x, (y.clone(), author.to_string(), email.to_string())))
+                .collect(),
         )))
     } else {
         to_filter(Op::Squash(None))
@@ -95,7 +97,7 @@ enum Op {
     Empty,
     Fold,
     Paths,
-    Squash(Option<std::collections::HashMap<git2::Oid, String>>),
+    Squash(Option<std::collections::HashMap<git2::Oid, (String, String, String)>>),
     Linear,
 
     RegexReplace(regex::Regex, String),
@@ -250,7 +252,7 @@ fn spec2(op: &Op) -> String {
         Op::Squash(Some(hs)) => {
             let mut v = hs
                 .iter()
-                .map(|(x, y)| format!("{}:{}", x, y))
+                .map(|(x, y)| format!("{}:{}:{}:{}", x, y.0, y.1, y.2))
                 .collect::<Vec<String>>();
             v.sort();
             let s = v.join(",");

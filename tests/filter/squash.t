@@ -28,7 +28,7 @@
 
   $ git merge -q branch2 --no-ff
 
-  $ josh-filter -s --squash "refs/tags/*" --update refs/heads/filtered
+  $ josh-filter -s --squash "refs/tags/*" --author "New Author" --email "new@e.mail" --update refs/heads/filtered
   Warning: reference refs/heads/filtered wasn't updated
   [1] :SQUASH=e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
 
@@ -38,13 +38,14 @@
   'git <command> [<revision>...] -- [<file>...]'
   [128]
   $ git tag tag_a 1d69b7d
-  $ josh-filter -s --squash "refs/tags/*" --update refs/heads/filtered
+  $ josh-filter -s --squash "refs/tags/*" --author "New Author" --email "new@e.mail" --update refs/heads/filtered
   [1] :SQUASH=e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
-  [2] :SQUASH=10d465cdf297e8062eed54204414414faa63671e
+  [2] :SQUASH=e8e83b9c5d2f779f0cea83a6cad68b710a399c96
 
   $ git log --graph --decorate --pretty=oneline refs/heads/filtered
-  * 97a9ff7bd4dad25b9dacdfdaeb861e74e7b4aef8 (tag: filtered/tag_a, filtered) refs/tags/tag_a
+  * d8aa5a9937f4f0bd645dbc0b591bae5cd6b6d91b (tag: filtered/tag_a, filtered) refs/tags/tag_a
   $ git tag tag_b 0b4cf6c
+
 
   $ git log --graph --decorate --pretty=oneline
   *   1d69b7d2651f744be3416f2ad526aeccefb99310 (HEAD -> master, tag: tag_a) Merge branch 'branch2'
@@ -55,28 +56,41 @@
   |/  
   * 0b4cf6c9efbbda1eada39fa9c1d21d2525b027bb (tag: tag_b) add file1
 
-  $ josh-filter -s --squash "refs/tags/*" --update refs/heads/filtered
+  $ josh-filter -s --squash "refs/tags/*" --author "New Author" --email "new@e.mail" --update refs/heads/filtered
   [1] :SQUASH=e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
-  [2] :SQUASH=10d465cdf297e8062eed54204414414faa63671e
-  [3] :SQUASH=1683a7fc84387b56a1a5de8e9fcf720166951949
+  [2] :SQUASH=e8e83b9c5d2f779f0cea83a6cad68b710a399c96
+  [3] :SQUASH=3953063f3dc58661e9db16f9014aab1e8ec50bf8
 
   $ git log --graph --decorate --pretty=oneline refs/heads/filtered
-  * fa3bd3f0d90d5894c6ac402ef5f764b75335ec01 (tag: filtered/tag_a, filtered) refs/tags/tag_a
+  * 5b1a753860ca124024f6dfb4fd018fe7df8beae4 (tag: filtered/tag_a, filtered) refs/tags/tag_a
   |\
-  * 077b2cad7b3fbc393b6320b90c9c0be1255ac309 (tag: filtered/tag_b) refs/tags/tag_b
+  * 96a731a4d64a8928e6af7abb2d425df3812b4197 (tag: filtered/tag_b) refs/tags/tag_b
+
+  $ git log --graph --pretty=%an:%ae refs/heads/master
+  *   Josh:josh@example.com
+  |\  
+  | * Josh:josh@example.com
+  | * Josh:josh@example.com
+  * | Josh:josh@example.com
+  |/  
+  * Josh:josh@example.com
+  $ git log --graph --pretty=%an:%ae refs/heads/filtered
+  * New Author:new@e.mail
+  |\
+  * New Author:new@e.mail
 
   $ git tag tag_c 975d4c4
 
-  $ josh-filter -s --squash "refs/tags/*" --update refs/heads/filtered
+  $ josh-filter -s --squash "refs/tags/*" --author "New Author" --email "new@e.mail" --update refs/heads/filtered
   [1] :SQUASH=e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
-  [2] :SQUASH=10d465cdf297e8062eed54204414414faa63671e
-  [3] :SQUASH=1683a7fc84387b56a1a5de8e9fcf720166951949
-  [6] :SQUASH=06a82cb9d2d3abb0ac59f8c782fd7edecc8e8d28
+  [2] :SQUASH=e8e83b9c5d2f779f0cea83a6cad68b710a399c96
+  [3] :SQUASH=3953063f3dc58661e9db16f9014aab1e8ec50bf8
+  [6] :SQUASH=6a132477d438779dbaeb0d68b9aab55786e28dd9
 
   $ git log --graph --decorate --pretty=oneline refs/heads/filtered
-  *   dc1dc0211db7a1aea1234af950b4946afa5a6f14 (tag: filtered/tag_a, filtered) refs/tags/tag_a
+  *   9fe45cb2bead844630852ab338ecd8e073f8ba50 (tag: filtered/tag_a, filtered) refs/tags/tag_a
   |\  
-  | * 500760f4e4f3d4ba6e73af7ce0a98d91a25a503a (tag: filtered/tag_c) refs/tags/tag_c
+  | * d6b88d4c1cc566b7f4d9b51353ec6f3204a93b81 (tag: filtered/tag_c) refs/tags/tag_c
   |/  
-  * 077b2cad7b3fbc393b6320b90c9c0be1255ac309 (tag: filtered/tag_b) refs/tags/tag_b
+  * 96a731a4d64a8928e6af7abb2d425df3812b4197 (tag: filtered/tag_b) refs/tags/tag_b
 
