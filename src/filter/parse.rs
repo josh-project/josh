@@ -6,9 +6,9 @@ fn make_op(args: &[&str]) -> JoshResult<Op> {
         ["nop"] => Ok(Op::Nop),
         ["empty"] => Ok(Op::Empty),
         ["prefix", arg] => Ok(Op::Prefix(Path::new(arg).to_owned())),
-        ["subtree_prefix", subtree_tip, prefix] => Ok(Op::SubtreePrefix {
-            subtree_tip: subtree_tip.to_string(),
-            prefix: Path::new(prefix).to_owned(),
+        ["subtree_prefix", subtree_tip, path] => Ok(Op::SubtreePrefix {
+            subtree_tip: git2::Oid::from_str(subtree_tip)?,
+            path: Path::new(path).to_owned(),
         }),
         ["replace", regex, replacement] => Ok(Op::RegexReplace(
             regex::Regex::new(regex)?,

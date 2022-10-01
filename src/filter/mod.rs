@@ -1,5 +1,6 @@
 use super::*;
 use pest::Parser;
+use std::iter::FromIterator;
 use std::path::Path;
 mod opt;
 mod parse;
@@ -11,6 +12,8 @@ pub use parse::parse;
 
 lazy_static! {
     static ref FILTERS: std::sync::Mutex<std::collections::HashMap<Filter, Op>> =
+        std::sync::Mutex::new(std::collections::HashMap::new());
+    static ref ANCESTORS: std::sync::Mutex<std::collections::HashMap<git2::Oid, std::collections::HashSet<git2::Oid>>> =
         std::sync::Mutex::new(std::collections::HashMap::new());
 }
 
@@ -108,8 +111,11 @@ enum Op {
 
     /// Acts like `Prefix(prefix)` but only for `subtree_tip` and its transitive parents.
     SubtreePrefix {
-        subtree_tip: String,
-        prefix: std::path::PathBuf,
+        // FIXME(RalfJung): I tried using the josh `Oid` type but converting that to/from strings
+        // did not work very well (probably because of the `Into` instances; as the docs say, one
+        // should always implement `From). So `git2::Oid` it is.
+        subtree_tip: git2::Oid,
+        path: std::path::PathBuf,
     },
 }
 
@@ -247,13 +253,10 @@ fn spec2(op: &Op) -> String {
         Op::Subdir(path) => format!(":/{}", parse::quote(&path.to_string_lossy())),
         Op::File(path) => format!("::{}", parse::quote(&path.to_string_lossy())),
         Op::Prefix(path) => format!(":prefix={}", parse::quote(&path.to_string_lossy())),
-        Op::SubtreePrefix {
-            subtree_tip,
-            prefix,
-        } => format!(
+        Op::SubtreePrefix { subtree_tip, path } => format!(
             ":subtree_prefix={},{}",
-            parse::quote(subtree_tip),
-            parse::quote(&prefix.to_string_lossy())
+            parse::quote(&subtree_tip.to_string()),
+            parse::quote(&path.to_string_lossy())
         ),
         Op::Glob(pattern) => format!("::{}", parse::quote(pattern)),
     }
@@ -615,11 +618,13 @@ fn apply2<'a>(
                 .unwrap_or_else(|_| tree::empty(repo)));
         }
         Op::Prefix(path) => tree::insert(repo, &tree::empty(repo), path, tree.id(), 0o0040000),
-        Op::SubtreePrefix {
-            subtree_tip,
-            prefix,
-        } => {
-            todo!("Op::SubtreePrefix: subtree_tip={subtree_tip:?}, prefix={prefix:?}")
+        Op::SubtreePrefix { subtree_tip, path } => {
+            if is_ancestor_of(repo, commit.id(), *subtree_tip)? {
+                tree::insert(repo, &tree::empty(repo), path, tree.id(), 0o0040000)
+            } else {
+                // Just leave it unchanged.
+                Ok(tree)
+            }
         }
 
         Op::Subtract(a, b) => {
@@ -662,9 +667,41 @@ fn apply2<'a>(
         }
 
         Op::Chain(a, b) => {
-            return apply(transaction, commit, *b, apply(transaction, commit, *a, tree)?);
+            return apply(
+                transaction,
+                commit,
+                *b,
+                apply(transaction, commit, *a, tree)?,
+            );
         }
     }
+}
+
+/// Check if `commit` is an ancestor of `tip`.
+///
+/// Creates a cache for a given `tip` so repeated queries with the same `tip` are more efficient.
+fn is_ancestor_of(repo: &git2::Repository, commit: git2::Oid, tip: git2::Oid) -> JoshResult<bool> {
+    let mut ancestor_cache = ANCESTORS.lock().unwrap();
+    let ancestors = match ancestor_cache.entry(tip) {
+        std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
+        std::collections::hash_map::Entry::Vacant(entry) => {
+            tracing::trace!("is_ancestor_of tip={tip}");
+            // Recursively compute all ancestors of `tip`.
+            // Invariant: Everything in `todo` is also in `ancestors`.
+            let mut todo = vec![tip];
+            let mut ancestors = std::collections::HashSet::from_iter(todo.iter().copied());
+            while let Some(commit) = todo.pop() {
+                for parent in repo.find_commit(commit)?.parent_ids() {
+                    if ancestors.insert(parent) {
+                        // Newly inserted! Also handle its parents.
+                        todo.push(parent);
+                    }
+                }
+            }
+            entry.insert(ancestors)
+        }
+    };
+    Ok(ancestors.contains(&commit))
 }
 
 /// Calculate a tree with minimal differences from `parent_tree`
@@ -677,7 +714,12 @@ pub fn unapply<'a>(
     parent_tree: git2::Tree<'a>,
 ) -> JoshResult<git2::Tree<'a>> {
     if let Ok(inverted) = invert(filter) {
-        let matching = apply(transaction, commit, chain(filter, inverted), parent_tree.clone())?;
+        let matching = apply(
+            transaction,
+            commit,
+            chain(filter, inverted),
+            parent_tree.clone(),
+        )?;
         let stripped = tree::subtract(transaction, parent_tree.id(), matching.id())?;
         let new_tree = apply(transaction, commit, inverted, tree)?;
 

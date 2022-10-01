@@ -304,12 +304,8 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
             resp.push(text.to_string());
 
             let commit = transaction.repo().find_commit(oid)?;
-            let mut warnings = josh::filter::compute_warnings(
-                &transaction,
-                &commit,
-                filterobj,
-                commit.tree()?,
-            );
+            let mut warnings =
+                josh::filter::compute_warnings(&transaction, &commit, filterobj, commit.tree()?);
 
             if !warnings.is_empty() {
                 resp.push("warnings:".to_string());

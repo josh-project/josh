@@ -32,6 +32,7 @@
   [1] :prefix=c
   $ git ls-tree --name-only -r refs/josh/filter/master 
 
+(note, the rest of the file consists of comments)
 $ git log refs/josh/filter/master --graph --pretty=%s
 * add file2
 * add file1

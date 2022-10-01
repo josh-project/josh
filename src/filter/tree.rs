@@ -860,7 +860,12 @@ pub fn original_path(
     tree: git2::Tree,
     path: &Path,
 ) -> JoshResult<String> {
-    let paths_tree = apply(transaction, commit, chain(to_filter(Op::Paths), filter), tree)?;
+    let paths_tree = apply(
+        transaction,
+        commit,
+        chain(to_filter(Op::Paths), filter),
+        tree,
+    )?;
     let b = get_blob(transaction.repo(), &paths_tree, path);
     pathline(&b)
 }
@@ -872,7 +877,12 @@ pub fn repopulated_tree(
     full_tree: git2::Tree,
     partial_tree: git2::Tree,
 ) -> JoshResult<git2::Oid> {
-    let paths_tree = apply(transaction, commit, chain(to_filter(Op::Paths), filter), full_tree)?;
+    let paths_tree = apply(
+        transaction,
+        commit,
+        chain(to_filter(Op::Paths), filter),
+        full_tree,
+    )?;
 
     let ipaths = invert_paths(transaction, "", paths_tree)?;
     populate(transaction, ipaths.id(), partial_tree.id())
