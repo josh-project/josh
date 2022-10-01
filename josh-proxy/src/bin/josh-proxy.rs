@@ -816,6 +816,11 @@ async fn run_proxy() -> josh::JoshResult<i32> {
         ARGS.value_of("local")
             .ok_or(josh::josh_error("missing local directory"))?,
     );
+    let local = if local.is_absolute() {
+        local
+    } else {
+        std::env::current_dir()?.join(local)
+    };
 
     josh_proxy::create_repo(&local)?;
     josh::cache::load(&local)?;
