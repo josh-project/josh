@@ -855,22 +855,24 @@ pub fn invert_paths<'a>(
 
 pub fn original_path(
     transaction: &cache::Transaction,
+    commit: &git2::Commit<'_>,
     filter: Filter,
     tree: git2::Tree,
     path: &Path,
 ) -> JoshResult<String> {
-    let paths_tree = apply(transaction, chain(to_filter(Op::Paths), filter), tree)?;
+    let paths_tree = apply(transaction, commit, chain(to_filter(Op::Paths), filter), tree)?;
     let b = get_blob(transaction.repo(), &paths_tree, path);
     pathline(&b)
 }
 
 pub fn repopulated_tree(
     transaction: &cache::Transaction,
+    commit: &git2::Commit<'_>,
     filter: Filter,
     full_tree: git2::Tree,
     partial_tree: git2::Tree,
 ) -> JoshResult<git2::Oid> {
-    let paths_tree = apply(transaction, chain(to_filter(Op::Paths), filter), full_tree)?;
+    let paths_tree = apply(transaction, commit, chain(to_filter(Op::Paths), filter), full_tree)?;
 
     let ipaths = invert_paths(transaction, "", paths_tree)?;
     populate(transaction, ipaths.id(), partial_tree.id())
@@ -933,6 +935,7 @@ pub fn compose_fast(
 
 pub fn compose<'a>(
     transaction: &'a cache::Transaction,
+    commit: &git2::Commit<'a>,
     trees: Vec<(&Filter, git2::Tree<'a>)>,
 ) -> JoshResult<git2::Tree<'a>> {
     rs_tracing::trace_scoped!("compose");
@@ -944,7 +947,7 @@ pub fn compose<'a>(
         let taken_applied = if let Some(cached) = transaction.get_apply(*f, tid) {
             cached
         } else {
-            apply(transaction, *f, taken.clone())?.id()
+            apply(transaction, commit, *f, taken.clone())?.id()
         };
         transaction.insert_apply(*f, tid, taken_applied);
 
@@ -954,7 +957,7 @@ pub fn compose<'a>(
         let unapplied = if let Some(cached) = transaction.get_unapply(*f, aid) {
             cached
         } else {
-            apply(transaction, invert(*f)?, applied)?.id()
+            apply(transaction, commit, invert(*f)?, applied)?.id()
         };
         transaction.insert_unapply(*f, aid, unapplied);
         taken = repo.find_tree(overlay(repo, taken.id(), unapplied)?)?;

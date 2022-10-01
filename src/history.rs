@@ -416,7 +416,7 @@ pub fn unapply_filter(
             original_parents_refs
                 .iter()
                 .map(|x| -> JoshResult<_> {
-                    Ok(filter::unapply(transaction, filterobj, tree.clone(), x.tree()?)?.id())
+                    Ok(filter::unapply(transaction, &module_commit, filterobj, tree.clone(), x.tree()?)?.id())
                 })
                 .collect()
         };
@@ -449,6 +449,7 @@ pub fn unapply_filter(
                 tracing::debug!("unrelated history");
                 filter::unapply(
                     transaction,
+                    &module_commit,
                     filterobj,
                     tree,
                     filter::tree::empty(transaction.repo()),

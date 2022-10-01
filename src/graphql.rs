@@ -72,7 +72,7 @@ impl Revision {
     ) -> FieldResult<Option<Vec<Path>>> {
         let transaction = context.transaction.lock()?;
         let commit = transaction.repo().find_commit(self.commit_id)?;
-        let tree = filter::apply(&transaction, self.filter, commit.tree()?)?;
+        let tree = filter::apply(&transaction, &commit, self.filter, commit.tree()?)?;
         let tree_id = tree.id();
         let paths = find_paths(&transaction, tree, at, depth, kind)?;
         let mut ws = vec![];
@@ -360,9 +360,10 @@ impl Revision {
     fn file(&self, path: String, context: &Context) -> FieldResult<Option<Path>> {
         let transaction = context.transaction.lock()?;
         let path = std::path::Path::new(&path).to_owned();
-        let tree = transaction.repo().find_commit(self.commit_id)?.tree()?;
+        let commit = transaction.repo().find_commit(self.commit_id)?;
+        let tree = commit.tree()?;
 
-        let tree = filter::apply(&transaction, self.filter, tree)?;
+        let tree = filter::apply(&transaction, &commit, self.filter, tree)?;
 
         if let Some(git2::ObjectType::Blob) = tree.get_path(&path)?.kind() {
             Ok(Some(Path {
@@ -379,9 +380,10 @@ impl Revision {
     fn dir(&self, path: Option<String>, context: &Context) -> FieldResult<Option<Path>> {
         let path = path.unwrap_or_default();
         let transaction = context.transaction.lock()?;
-        let tree = transaction.repo().find_commit(self.commit_id)?.tree()?;
+        let commit = transaction.repo().find_commit(self.commit_id)?;
+        let tree = commit.tree()?;
 
-        let tree = filter::apply(&transaction, self.filter, tree)?;
+        let tree = filter::apply(&transaction, &commit, self.filter, tree)?;
 
         let path = std::path::Path::new(&path).to_owned();
 
@@ -410,7 +412,7 @@ impl Revision {
         let transaction = context.transaction.lock()?;
         let commit = transaction.repo().find_commit(self.commit_id)?;
 
-        let warnings = filter::compute_warnings(&transaction, self.filter, commit.tree()?)
+        let warnings = filter::compute_warnings(&transaction, &commit, self.filter, commit.tree()?)
             .into_iter()
             .map(|text| Warning { text })
             .collect();
@@ -558,8 +560,9 @@ impl Markers {
         let path = if self.filter == filter::nop() {
             marker_path(&commit, &self.topic).join(&self.path)
         } else {
-            let t = transaction.repo().find_commit(self.commit_id)?.tree()?;
-            let o = filter::tree::original_path(&transaction, self.filter, t, &self.path)?;
+            let c = transaction.repo().find_commit(self.commit_id)?;
+            let t = c.tree()?;
+            let o = filter::tree::original_path(&transaction, &c, self.filter, t, &self.path)?;
             marker_path(&commit, &self.topic).join(&o)
         };
 
@@ -616,12 +619,14 @@ impl Markers {
         let mtree = if self.filter == filter::nop() {
             mtree
         } else {
+            let commit = transaction.repo().find_commit(self.commit_id)?;
             transaction
                 .repo()
                 .find_tree(filter::tree::repopulated_tree(
                     &transaction,
+                    &commit,
                     self.filter,
-                    transaction.repo().find_commit(self.commit_id)?.tree()?,
+                    commit.tree()?,
                     mtree,
                 )?)?
         };

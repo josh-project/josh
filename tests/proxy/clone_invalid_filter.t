@@ -67,7 +67,7 @@
   remote: 
   remote:   :workspace=path
   remote: 
-  remote: Where `path` is path to the directory where workspace.josh file is located
+  remote: Where `path` is the path to the directory where workspace.josh file is located
   fatal: unable to access 'http://localhost:8002/real_repo.git:workspace.git/': The requested URL returned error: 500
   [128]
 
@@ -78,7 +78,7 @@
   remote: 
   remote:   :prefix=path
   remote: 
-  remote: Where `path` is path to be used as a prefix
+  remote: Where `path` is the path to be used as a prefix
   fatal: unable to access 'http://localhost:8002/real_repo.git:prefix.git/': The requested URL returned error: 500
   [128]
 

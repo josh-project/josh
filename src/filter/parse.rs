@@ -6,6 +6,10 @@ fn make_op(args: &[&str]) -> JoshResult<Op> {
         ["nop"] => Ok(Op::Nop),
         ["empty"] => Ok(Op::Empty),
         ["prefix", arg] => Ok(Op::Prefix(Path::new(arg).to_owned())),
+        ["subtree_prefix", subtree_tip, prefix] => Ok(Op::SubtreePrefix {
+            subtree_tip: subtree_tip.to_string(),
+            prefix: Path::new(prefix).to_owned(),
+        }),
         ["replace", regex, replacement] => Ok(Op::RegexReplace(
             regex::Regex::new(regex)?,
             replacement.to_string(),
@@ -19,7 +23,18 @@ fn make_op(args: &[&str]) -> JoshResult<Op> {
 
               :prefix=path
 
-            Where `path` is path to be used as a prefix
+            Where `path` is the path to be used as a prefix
+            "#
+        ))),
+        ["subtree_prefix"] | ["subtree_prefix", _] => Err(josh_error(indoc!(
+            r#"
+            Filter ":prefix" requires two arguments.
+
+            Note: use "=" to provide the argument values and "," to separate the arguments:
+
+              :subtree_prefix=commit,path
+
+            Where `commit` is the tip of the subtree and `path` is the path to be used as a prefix
             "#
         ))),
         ["workspace"] => Err(josh_error(indoc!(
@@ -30,7 +45,7 @@ fn make_op(args: &[&str]) -> JoshResult<Op> {
 
               :workspace=path
 
-            Where `path` is path to the directory where workspace.josh file is located
+            Where `path` is the path to the directory where workspace.josh file is located
             "#
         ))),
         ["SQUASH"] => Ok(Op::Squash),
