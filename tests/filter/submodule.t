@@ -31,25 +31,3 @@
   [1] :/libs
   [1] :prefix=c
   $ git ls-tree --name-only -r refs/josh/filter/master 
-
-$ git log refs/josh/filter/master --graph --pretty=%s
-* add file2
-* add file1
-
-$ git ls-tree --name-only -r refs/josh/filter/master 
-c/file1
-c/file2
-
-$ git rm -r sub1
-rm 'sub1/file1'
-rm 'sub1/file2'
-$ git commit -m "rm sub1" 1> /dev/null
-
-$ josh-filter -s master --update refs/josh/filter/master c=:/sub1
-
-$ git log refs/josh/filter/master --graph --pretty=%s
-* rm sub1
-* add file2
-* add file1
-
-$ git ls-tree --name-only -r refs/josh/filter/master 
