@@ -28,9 +28,9 @@ echo $! > "${TESTTMP}/server_pid"
 cp -R "${TESTDIR}/../../static/" static
 
 if [ -z "${CARGO_TARGET_DIR}" ]; then
-    TARGET_DIR=${TESTDIR}/../../target
+    export TARGET_DIR=${TESTDIR}/../../target
 else
-    TARGET_DIR=${CARGO_TARGET_DIR}
+    export TARGET_DIR=${CARGO_TARGET_DIR}
 fi
 
 # shellcheck disable=SC2086
@@ -50,6 +50,7 @@ do
     if [ $COUNTER -ge 20 ];
     then
         >&2 echo "Starting josh proxy timed out"
+        cat ${TESTTMP}/josh-proxy.out >&2
         exit 1
     fi
 done
