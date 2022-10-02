@@ -18,6 +18,7 @@ char = {
 
 filter_spec = { (
     filter_group
+  | filter_rev
   | filter_presub
   | filter_subdir
   | filter_nop
@@ -31,6 +32,15 @@ filter_nop = { CMD_START ~ "/" }
 filter_presub = { CMD_START ~ ":" ~ argument }
 filter = { CMD_START ~ cmd ~ "=" ~ (argument ~ ("," ~ argument)*)? }
 filter_noarg = { CMD_START ~ cmd }
+
+filter_rev = {
+    CMD_START ~ "rev" ~ "("
+    ~ NEWLINE*
+    ~ (argument ~ filter_spec)?
+    ~ (CMD_SEP+ ~ (argument ~ filter_spec))*
+    ~ NEWLINE*
+    ~ ")"
+}
 
 argument = { string | PATH }
 
