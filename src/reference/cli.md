@@ -5,6 +5,7 @@ josh-filter
 Command to rewrite history using ``josh`` filter specs.
 By default it will use ``HEAD`` as input and update ``FILTERED_HEAD`` with the filtered
 history, taking a filter specification as argument.
+(Note that input and output are swapped with `--reverse`.)
 
 git-sync
 ========
