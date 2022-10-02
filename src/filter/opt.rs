@@ -328,6 +328,7 @@ fn step(filter: Filter) -> Filter {
                 Op::Prefix(path)
             }
         }
+        Op::Rev(filters) => Op::Rev(filters.into_iter().map(|(i, f)| (i, step(f))).collect()),
         Op::Compose(filters) if filters.is_empty() => Op::Empty,
         Op::Compose(filters) if filters.len() == 1 => to_op(filters[0]),
         Op::Compose(mut filters) => {
@@ -426,6 +427,7 @@ pub fn invert(filter: Filter) -> JoshResult<Filter> {
         Op::File(path) => Some(Op::File(path)),
         Op::Prefix(path) => Some(Op::Subdir(path)),
         Op::Glob(pattern) => Some(Op::Glob(pattern)),
+        Op::Rev(_) => Some(Op::Nop),
         _ => None,
     };
 

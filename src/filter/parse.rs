@@ -1,5 +1,6 @@
 use super::*;
 use indoc::{formatdoc, indoc};
+use itertools::Itertools;
 
 fn make_op(args: &[&str]) -> JoshResult<Op> {
     match args {
@@ -102,6 +103,17 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> JoshResult<Op> {
                 }
                 _ => Err(josh_error("parse_item: no match {:?}")),
             }
+        }
+        Rule::filter_rev => {
+            let v: Vec<_> = pair.into_inner().map(|x| unquote(x.as_str())).collect();
+
+            let hm = v
+                .iter()
+                .tuples()
+                .map(|(oid, filter)| Ok((git2::Oid::from_str(oid)?, parse(filter)?)))
+                .collect::<JoshResult<_>>()?;
+
+            Ok(Op::Rev(hm))
         }
         _ => Err(josh_error("parse_item: no match")),
     }

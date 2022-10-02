@@ -91,6 +91,17 @@ These filter do not modify git trees, but instead only operate on the commit gra
 Produce a filtered history that does not contain any merge commits. This is done by
 simply dropping all parents except the first on every commit.
 
+### Filter specific parts of the history **:rev(<sha_0>:filter_0,...,<sha_N>:filter_N)**
+Produce a history where the commits specified by `<sha_N>` are replaced by the result of applying
+`:filter_N` to it.
+
+It will appear like all *ancestors* of `<sha_N>` are also filtered with `<filter_N>`. If an
+ancestor also has a matching entry in the `:rev(...)` it's filter will *replace* `<filter_N>`
+for all further ancestors (and so on).
+
+This special value `0000000000000000000000000000000000000000` can be used as a `<sha_n>` to filter
+commits that don't match any of the other shas.
+
 Filter order matters
 --------------------
 
