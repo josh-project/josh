@@ -92,7 +92,11 @@ fn make_app() -> clap::Command<'static> {
                 .short('m')
                 .takes_value(true),
         )
-        .arg(clap::Arg::new("reverse").long("reverse"))
+        .arg(
+            clap::Arg::new("reverse").long("reverse").help(
+                "reverse-apply the filter to the output reference to update the input referebce",
+            ),
+        )
         .arg(
             clap::Arg::new("check-permission")
                 .long("check-permission")
