@@ -104,7 +104,7 @@ Error in filter
   remote: 1 | a/b = :b/sub2        
   remote:   |         ^---        
   remote:   |        
-  remote:   = expected EOI, filter_group, filter_subdir, filter_nop, filter_presub, filter, or filter_noarg        
+  remote:   = expected EOI, filter_group, filter_group_arg, filter_subdir, filter_nop, filter_presub, filter, or filter_noarg        
   remote: 
   remote: a/b = :b/sub2        
   remote: c = :/sub1        

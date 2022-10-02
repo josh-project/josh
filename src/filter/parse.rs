@@ -103,6 +103,23 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> JoshResult<Op> {
                 _ => Err(josh_error("parse_item: no match {:?}")),
             }
         }
+        Rule::filter_group_arg => {
+            let v: Vec<_> = pair.into_inner().map(|x| unquote(x.as_str())).collect();
+
+            match v.as_slice() {
+                [cmd, arg, args] => {
+                    let g = parse_group(args)?;
+                    match *cmd {
+                        "at_commit" => Ok(Op::AtCommit(
+                            git2::Oid::from_str(arg)?,
+                            to_filter(Op::Compose(g)),
+                        )),
+                        _ => Err(josh_error("parse_item: no match")),
+                    }
+                }
+                _ => Err(josh_error("parse_item: no match {:?}")),
+            }
+        }
         _ => Err(josh_error("parse_item: no match")),
     }
 }

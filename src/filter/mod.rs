@@ -98,6 +98,7 @@ enum Op {
     Fold,
     Paths,
     Squash(Option<std::collections::HashMap<git2::Oid, (String, String, String)>>),
+    AtCommit(git2::Oid, Filter),
     Linear,
 
     RegexReplace(regex::Regex, String),
@@ -194,6 +195,7 @@ fn nesting2(op: &Op) -> usize {
         Op::Workspace(_) => usize::MAX,
         Op::Chain(a, b) => 1 + nesting(*a).max(nesting(*b)),
         Op::Subtract(a, b) => 1 + nesting(*a).max(nesting(*b)),
+        Op::AtCommit(_, filter) => 1 + nesting(*filter),
         _ => 0,
     }
 }
@@ -222,6 +224,9 @@ fn spec2(op: &Op) -> String {
         }
         Op::Exclude(b) => {
             format!(":exclude[{}]", spec(*b))
+        }
+        Op::AtCommit(id, b) => {
+            format!(":at_commit={}[{}]", id, spec(*b))
         }
         Op::Workspace(path) => {
             format!(":workspace={}", parse::quote(&path.to_string_lossy()))
@@ -384,6 +389,18 @@ fn apply_to_commit2(
     rs_tracing::trace_scoped!("apply_to_commit", "spec": spec(filter), "commit": commit.id().to_string());
 
     let filtered_tree = match &to_op(filter) {
+        Op::AtCommit(id, startfilter) => {
+            if *id == commit.id() {
+                if let Some(start) = apply_to_commit2(&to_op(*startfilter), &commit, transaction)? {
+                    transaction.insert(filter, commit.id(), start, true);
+                    return Ok(Some(start));
+                } else {
+                    return Ok(None);
+                }
+            } else {
+                commit.tree()?
+            }
+        }
         Op::Squash(Some(ids)) => {
             if let Some(_) = ids.get(&commit.id()) {
                 commit.tree()?
@@ -619,6 +636,7 @@ fn apply2<'a>(
         Op::Squash(None) => Ok(tree),
         Op::Squash(Some(_)) => Err(josh_error("not applicable to tree")),
         Op::Linear => Ok(tree),
+        Op::AtCommit(_, _) => Err(josh_error("not applicable to tree")),
 
         Op::RegexReplace(regex, replacement) => {
             tree::regex_replace(tree.id(), &regex, &replacement, transaction)
@@ -712,7 +730,11 @@ pub fn unapply<'a>(
     parent_tree: git2::Tree<'a>,
 ) -> JoshResult<git2::Tree<'a>> {
     if let Ok(inverted) = invert(filter) {
-        let matching = apply(transaction, chain(filter, inverted), parent_tree.clone())?;
+        let matching = apply(
+            transaction,
+            chain(invert(inverted)?, inverted),
+            parent_tree.clone(),
+        )?;
         let stripped = tree::subtract(transaction, parent_tree.id(), matching.id())?;
         let new_tree = apply(transaction, inverted, tree)?;
 
@@ -733,7 +755,8 @@ pub fn unapply<'a>(
     }
 
     if let Op::Chain(a, b) = to_op(filter) {
-        let p = apply(transaction, a, parent_tree.clone())?;
+        let i = if let Ok(i) = invert(a) { invert(i)? } else { a };
+        let p = apply(transaction, i, parent_tree.clone())?;
         return unapply(
             transaction,
             a,

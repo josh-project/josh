@@ -91,6 +91,13 @@ These filter do not modify git trees, but instead only operate on the commit gra
 Produce a filtered history that does not contain any merge commits. This is done by
 simply dropping all parents except the first on every commit.
 
+### Filter specific part of the history **:at_commit=<sha>[:filter]**
+Produce a history where the commit specified by `<sha>` is replaced by the result of applying
+`:filter` to it.
+This means also all parents of this specific commit appear filtered with `:filter` and all
+descendent commits will be left unchanged. However all commits hashes will still be different
+due to the filtered parents.
+
 Filter order matters
 --------------------
 
