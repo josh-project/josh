@@ -1047,7 +1047,8 @@ repo will have two copies of that path from that point on. Effectivly creating a
 <div style="break-before: page; page-break-before: always;"></div><h1 id="josh-filter"><a class="header" href="#josh-filter">josh-filter</a></h1>
 <p>Command to rewrite history using <code>josh</code> filter specs.
 By default it will use <code>HEAD</code> as input and update <code>FILTERED_HEAD</code> with the filtered
-history, taking a filter specification as argument.</p>
+history, taking a filter specification as argument.
+(Note that input and output are swapped with <code>--reverse</code>.)</p>
 <h1 id="git-sync"><a class="header" href="#git-sync">git-sync</a></h1>
 <p>A utility to make working with server side rewritten commits easier.
 Those commits frequently get produced when making changes to <code>workspace.josh</code> files.</p>
