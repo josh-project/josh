@@ -1,9 +1,9 @@
-  $ git init -q 1> /dev/null
+  $ git init -q 1>/dev/null
 
 Initial commit of main branch
   $ echo contents1 > file1
   $ git add .
-  $ git commit -m "add file1" 1> /dev/null
+  $ git commit -m "add file1" 1>/dev/null
 
 Initial commit of subtree branch
   $ git checkout --orphan subtree
@@ -11,17 +11,18 @@ Initial commit of subtree branch
   $ rm file*
   $ echo contents2 > file2
   $ git add .
-  $ git commit -m "add file2 (in subtree)" 1> /dev/null
+  $ git commit -m "add file2 (in subtree)" 1>/dev/null
+  $ export SUBTREE_TIP=$(git rev-parse HEAD)
 
 Articially create a subtree merge
 (merge commit has subtree files in subfolder but has subtree commit as a parent)
   $ git checkout master
   Switched to branch 'master'
-  $ git merge subtree --allow-unrelated-histories 1> /dev/null
+  $ git merge subtree --allow-unrelated-histories 1>/dev/null
   $ mkdir subtree
   $ git mv file2 subtree/
   $ git add subtree
-  $ git commit -a --amend -m "subtree merge" 1> /dev/null
+  $ git commit -a --amend -m "subtree merge" 1>/dev/null
   $ tree
   .
   |-- file1
@@ -37,11 +38,11 @@ Articially create a subtree merge
 
 Change subtree file
   $ echo more contents >> subtree/file2
-  $ git commit -a -m "subtree edit from main repo" 1> /dev/null
+  $ git commit -a -m "subtree edit from main repo" 1>/dev/null
 
 Rewrite the subtree part of the history
 FIXME(RalfJung): if I use /subtree or subtree/, the command still succeeds, but produces completely wrong output
-  $ josh-filter -s :subtree_prefix=$(git rev-parse subtree),subtree refs/heads/master --update refs/heads/filtered
+  $ josh-filter -s :subtree_prefix=$SUBTREE_TIP,subtree refs/heads/master --update refs/heads/filtered
   \[4\] :subtree_prefix=.*,subtree (re)
 
   $ git log --graph --pretty=%s refs/heads/filtered
@@ -63,3 +64,42 @@ Compare input and result. ^^2 is the 2nd parent of the first parent, i.e., the '
   similarity index 100%
   rename from file2
   rename to subtree/file2
+
+Extract the subtree history
+  $ josh-filter -s :subtree_prefix=$SUBTREE_TIP,subtree:/subtree refs/heads/master --update refs/heads/subtree
+  \[[0-9]\] :/subtree (re)
+  \[[0-9]\] :subtree_prefix=.*,subtree (re)
+  $ git checkout subtree
+  Switched to branch 'subtree'
+  $ cat file2
+  contents2
+  more contents
+
+Work in the subtree, and sync that back.
+  $ echo even more contents >> file2
+  $ git commit -am "add even more content" 1>/dev/null
+  $ josh-filter -s :subtree_prefix=$SUBTREE_TIP,subtree:/subtree refs/heads/master --update refs/heads/subtree --reverse
+  \[[0-9]\] :/subtree (re)
+  \[[0-9]\] :subtree_prefix=.*,subtree (re)
+  $ git log --graph --pretty=%s  refs/heads/master
+  * add even more content
+  * subtree edit from main repo
+  *   subtree merge
+  |\  
+  | * add file2 (in subtree)
+  * add file1
+  $ git ls-tree --name-only -r refs/heads/master
+  file1
+  subtree/file2
+  $ git checkout master
+  Switched to branch 'master'
+  $ cat subtree/file2
+  contents2
+  more contents
+  even more contents
+
+And then re-extract, which should re-construct the same subtree.
+  $ josh-filter -s :subtree_prefix=$SUBTREE_TIP,subtree:/subtree refs/heads/master --update refs/heads/subtree2
+  \[[0-9]\] :/subtree (re)
+  \[[0-9]\] :subtree_prefix=.*,subtree (re)
+  $ test $(git rev-parse subtree) = $(git rev-parse subtree2)

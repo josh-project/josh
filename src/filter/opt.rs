@@ -418,6 +418,14 @@ pub fn invert(filter: Filter) -> JoshResult<Filter> {
         Op::Subdir(path) => Some(Op::Prefix(path)),
         Op::File(path) => Some(Op::File(path)),
         Op::Prefix(path) => Some(Op::Subdir(path)),
+        Op::SubtreePrefix {
+            subtree_tip: _,
+            path: _,
+        } => {
+            // We assume that new commits being added don't need the prefix fixup any more.
+            // FIXME(RalfJung): does that make sense?
+            Some(Op::Nop)
+        }
         Op::Glob(pattern) => Some(Op::Glob(pattern)),
         _ => None,
     };
