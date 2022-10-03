@@ -196,6 +196,18 @@ pub fn rewrite_commit(
         parents,
     )?;
 
+    if let Ok((sig, _)) = repo.extract_signature(&base.id(), None) {
+        // Re-create the object with the original signature (which of course does not match any
+        // more, but this is needed to guarantee perfect round-trips).
+        let b = b
+            .as_str()
+            .ok_or_else(|| josh_error("non-UTF-8 signed commit"))?;
+        let sig = sig
+            .as_str()
+            .ok_or_else(|| josh_error("non-UTF-8 signature"))?;
+        return Ok(repo.commit_signed(b, sig, None)?);
+    }
+
     return Ok(repo.odb()?.write(git2::ObjectType::Commit, &b)?);
 }
 
