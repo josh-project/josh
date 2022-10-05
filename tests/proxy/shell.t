@@ -1,44 +1,31 @@
   $ . ${TESTDIR}/setup_test_env.sh
   $ kill -9 $(cat ${TESTTMP}/proxy_pid)
   $ ${TARGET_DIR}/debug/josh-proxy --help
-  josh-proxy 
+  Usage: josh-proxy [OPTIONS]
   
-  USAGE:
-      josh-proxy [OPTIONS]
-  
-  OPTIONS:
-      -c, --cache-duration <cache-duration>
-              Duration between forced cache refresh
-  
-          --gc
-              Run git gc in maintanance
-  
-      -h, --help
-              Print help information
-  
-          --local <local>
-              
-  
-      -n <n>
-              Number of concurrent upstream git fetch/push operations
-  
-          --no-background
-              
-  
-          --poll <poll>
-              
-  
-          --port <port>
-              
-  
-          --remote <remote>
-              
-  
-          --require-auth
-              
-  
-          --static-resource-proxy-target <static-resource-proxy-target>
-              Proxy static resource requests to a different URL
+  Options:
+        --remote <remote>
+            
+        --local <local>
+            
+        --poll <poll>
+            
+        --gc
+            Run git gc in maintanance
+        --require-auth
+            
+        --no-background
+            
+    -n <n>
+            Number of concurrent upstream git fetch/push operations
+        --port <port>
+            
+    -c, --cache-duration <cache-duration>
+            Duration between forced cache refresh
+        --static-resource-proxy-target <static-resource-proxy-target>
+            Proxy static resource requests to a different URL
+    -h, --help
+            Print help information
 
   $ ${TARGET_DIR}/debug/josh-proxy --port=8002 --local=../../tmp --remote=http://localhost:8001 2>&1 > proxy.out &
   $ sleep 1

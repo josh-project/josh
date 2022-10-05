@@ -95,7 +95,10 @@ async fn fetch_upstream(
         if let Some(last) = service.fetch_timers.read()?.get(&key) {
             let since = std::time::Instant::now().duration_since(*last);
             let max = std::time::Duration::from_secs(
-                ARGS.value_of("cache-duration").unwrap_or("0").parse()?,
+                ARGS.get_one::<String>("cache-duration")
+                    .map(|v| v.as_str())
+                    .unwrap_or("0")
+                    .parse()?,
             );
 
             tracing::trace!("last: {:?}, since: {:?}, max: {:?}", last, since, max);
@@ -166,7 +169,7 @@ async fn fetch_upstream(
         if res {
             fetch_timers.write()?.insert(key, std::time::Instant::now());
 
-            if ARGS.value_of("poll") == Some(&auth.parse()?.0) {
+            if ARGS.get_one::<String>("poll").map(|v| v.as_str()) == Some(&auth.parse()?.0) {
                 service
                     .poll
                     .lock()?
@@ -359,7 +362,10 @@ async fn handle_ui_request(
     resource_path: &str,
 ) -> josh::JoshResult<Response<hyper::Body>> {
     // Proxy: can be used for UI development or to serve a different UI
-    if let Some(proxy) = ARGS.value_of("static-resource-proxy-target") {
+    if let Some(proxy) = ARGS
+        .get_one::<String>("static-resource-proxy-target")
+        .map(|v| v.as_str())
+    {
         let client_ip = IpAddr::from_str("127.0.0.1").unwrap();
         return match hyper_reverse_proxy::call(client_ip, proxy, req).await {
             Ok(response) => Ok(response),
@@ -558,7 +564,7 @@ async fn call_service(
     if !josh_proxy::auth::check_auth(
         &remote_url,
         &auth,
-        ARGS.is_present("require-auth") && parsed_url.pathinfo == "/git-receive-pack",
+        ARGS.get_flag("require-auth") && parsed_url.pathinfo == "/git-receive-pack",
     )
     .in_current_span()
     .await?
@@ -806,14 +812,20 @@ fn trace_http_response_code(trace_span: Span, http_status: StatusCode) {
 
 #[tokio::main]
 async fn run_proxy() -> josh::JoshResult<i32> {
-    let port = ARGS.value_of("port").unwrap_or("8000").to_owned();
+    let port = ARGS
+        .get_one::<String>("port")
+        .map(|v| v.as_str())
+        .unwrap_or("8000")
+        .to_owned();
     let addr = format!("0.0.0.0:{}", port).parse()?;
 
     let remote = ARGS
-        .value_of("remote")
+        .get_one::<String>("remote")
+        .map(|v| v.as_str())
         .ok_or(josh::josh_error("missing remote host url"))?;
     let local = std::path::PathBuf::from(
-        ARGS.value_of("local")
+        ARGS.get_one::<String>("local")
+            .map(|v| v.as_str())
             .ok_or(josh::josh_error("missing local directory"))?,
     );
     let local = if local.is_absolute() {
@@ -833,7 +845,10 @@ async fn run_proxy() -> josh::JoshResult<i32> {
         heads_map: Arc::new(RwLock::new(std::collections::HashMap::new())),
         poll: Arc::new(std::sync::Mutex::new(std::collections::HashSet::new())),
         fetch_permits: Arc::new(tokio::sync::Semaphore::new(
-            ARGS.value_of("n").unwrap_or("1").parse()?,
+            ARGS.get_one::<String>("n")
+                .map(|v| v.as_str())
+                .unwrap_or("1")
+                .parse()?,
         )),
         filter_permits: Arc::new(tokio::sync::Semaphore::new(10)),
     });
@@ -889,7 +904,7 @@ async fn run_proxy() -> josh::JoshResult<i32> {
 
     let server_future = server.with_graceful_shutdown(shutdown_signal());
 
-    if ARGS.is_present("no-background") {
+    if ARGS.get_flag("no-background") {
         tokio::select!(
             r = server_future => println!("http server exited: {:?}", r),
         );
@@ -928,7 +943,7 @@ async fn run_housekeeping(local: std::path::PathBuf) -> josh::JoshResult<()> {
     loop {
         let local = local.clone();
         tokio::task::spawn_blocking(move || {
-            josh::housekeeping::run(&local, (i % 60 == 0) && ARGS.is_present("gc"))
+            josh::housekeeping::run(&local, (i % 60 == 0) && ARGS.get_flag("gc"))
         })
         .await??;
         tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
@@ -936,45 +951,42 @@ async fn run_housekeeping(local: std::path::PathBuf) -> josh::JoshResult<()> {
     }
 }
 
-fn make_app() -> clap::Command<'static> {
+fn make_app() -> clap::Command {
     clap::Command::new("josh-proxy")
-        .arg(clap::Arg::new("remote").long("remote").takes_value(true))
-        .arg(clap::Arg::new("local").long("local").takes_value(true))
-        .arg(clap::Arg::new("poll").long("poll").takes_value(true))
+        .arg(clap::Arg::new("remote").long("remote"))
+        .arg(clap::Arg::new("local").long("local"))
+        .arg(clap::Arg::new("poll").long("poll"))
         .arg(
             clap::Arg::new("gc")
                 .long("gc")
-                .takes_value(false)
+                .action(clap::ArgAction::SetTrue)
                 .help("Run git gc in maintanance"),
         )
         .arg(
             clap::Arg::new("require-auth")
                 .long("require-auth")
-                .takes_value(false),
+                .action(clap::ArgAction::SetTrue),
         )
         .arg(
             clap::Arg::new("no-background")
                 .long("no-background")
-                .takes_value(false),
+                .action(clap::ArgAction::SetTrue),
         )
         .arg(
             clap::Arg::new("n")
                 .short('n')
-                .takes_value(true)
                 .help("Number of concurrent upstream git fetch/push operations"),
         )
-        .arg(clap::Arg::new("port").long("port").takes_value(true))
+        .arg(clap::Arg::new("port").long("port").num_args(1))
         .arg(
             clap::Arg::new("cache-duration")
                 .long("cache-duration")
                 .short('c')
-                .takes_value(true)
                 .help("Duration between forced cache refresh"),
         )
         .arg(
             clap::Arg::new("static-resource-proxy-target")
                 .long("static-resource-proxy-target")
-                .takes_value(true)
                 .help("Proxy static resource requests to a different URL"),
         )
 }
