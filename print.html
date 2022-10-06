@@ -824,7 +824,7 @@ Change-ID.</p>
 projects can force-push unrelated histories.</p>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="history-filtering"><a class="header" href="#history-filtering">History filtering</a></h1>
 <p>Josh transforms commits by applying filters to them. As any
-commit in git represents not just a single state of the filesystem but also its entire
+commit in git represents not just a single state of the file system but also its entire
 history, applying a filter to a commit produces an entirely new history.
 The result of a filter is a normal git commit and therefore can be filtered again,
 making filters chainable.</p>
@@ -832,8 +832,8 @@ making filters chainable.</p>
 <p>Filters always begin with a colon and can be chained:</p>
 <pre><code>:filter1:filter2
 </code></pre>
-<p>When used as part of an URL filters can not contain whitespace or newlines. When read from a file
-however whitespace can be inserted between filters (not after the leading colon).
+<p>When used as part of an URL filters can not contain white space or newlines. When read from a file
+however white space can be inserted between filters (not after the leading colon).
 Additionally newlines can be used instead of <code>,</code> inside of composition filters.</p>
 <p>Some filters take arguments, and arguments can optionally be quoted using double quotes,
 if special characters used by the filter language need to be used (like <code>:</code> or space):</p>
@@ -845,7 +845,7 @@ if special characters used by the filter language need to be used (like <code>:<
 of the filtered tree.
 Note that <code>:/a/b</code> and <code>:/a:/b</code> are equivalent ways to get the same result.</p>
 <h3 id="directory-a"><a class="header" href="#directory-a">Directory <strong><code>::a/</code></strong></a></h3>
-<p>A shorthand for the commonly occuring filter combination <code>:/a:prefix=a</code>.</p>
+<p>A shorthand for the commonly occurring filter combination <code>:/a:prefix=a</code>.</p>
 <h3 id="file-a"><a class="header" href="#file-a">File <strong><code>::a</code></strong></a></h3>
 <p>Produces a tree with only the specified file in it's root.
 Note that <code>::a/b</code> is equivalent to <code>::a/::b</code>.</p>
@@ -867,7 +867,7 @@ use filters that select paths without altering them.</p>
 <p>Similar to <code>:/a</code> but also looks for a <code>workspace.josh</code> file inside the
 specified directory (called the &quot;workspace root&quot;).
 The resulting tree will contain the contents of the
-workspace root as well as additional files specifed in the <code>workspace.josh</code> file.
+workspace root as well as additional files specified in the <code>workspace.josh</code> file.
 (see <a href="reference/./workspace.html">Workspaces</a>)</p>
 <h3 id="text-replacement-replaceregexreplacement"><a class="header" href="#text-replacement-replaceregexreplacement">Text replacement **<code>:replace=&quot;regex&quot;,&quot;replacement&quot;</code></a></h3>
 <p>Applies the supplied regular expression to every file in the input tree.</p>
@@ -880,12 +880,12 @@ allowed.</p>
 <h3 id="match-files-x"><a class="header" href="#match-files-x">Match files <strong><code>::X</code></strong></a></h3>
 <p>All matching files in the input root</p>
 <h3 id="match-nested-directories-x"><a class="header" href="#match-nested-directories-x">Match nested directories <strong><code>::**/X/</code></strong></a></h3>
-<p>All subdirectories matching the pattern in arbitarily deep subdirectories of the input</p>
+<p>All subdirectories matching the pattern in arbitrarily deep subdirectories of the input</p>
 <h3 id="match-nested-files-x"><a class="header" href="#match-nested-files-x">Match nested files <strong><code>::**/X</code></strong></a></h3>
-<p>All files matching the pattern in arbitarily deep subdirectories of the input</p>
+<p>All files matching the pattern in arbitrarily deep subdirectories of the input</p>
 <h2 id="history-filters"><a class="header" href="#history-filters">History filters</a></h2>
 <p>These filter do not modify git trees, but instead only operate on the commit graph.</p>
-<h3 id="linearize-history-linear"><a class="header" href="#linearize-history-linear">Linearize history <strong>:linear</strong></a></h3>
+<h3 id="linearise-history-linear"><a class="header" href="#linearise-history-linear">Linearise history <strong>:linear</strong></a></h3>
 <p>Produce a filtered history that does not contain any merge commits. This is done by
 simply dropping all parents except the first on every commit.</p>
 <h2 id="filter-order-matters"><a class="header" href="#filter-order-matters">Filter order matters</a></h2>
