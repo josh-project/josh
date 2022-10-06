@@ -2,7 +2,7 @@
 # History filtering
 
 Josh transforms commits by applying filters to them. As any
-commit in git represents not just a single state of the filesystem but also its entire
+commit in git represents not just a single state of the file system but also its entire
 history, applying a filter to a commit produces an entirely new history.
 The result of a filter is a normal git commit and therefore can be filtered again,
 making filters chainable.
@@ -13,8 +13,8 @@ Filters always begin with a colon and can be chained:
 
     :filter1:filter2
 
-When used as part of an URL filters can not contain whitespace or newlines. When read from a file
-however whitespace can be inserted between filters (not after the leading colon).
+When used as part of an URL filters can not contain white space or newlines. When read from a file
+however white space can be inserted between filters (not after the leading colon).
 Additionally newlines can be used instead of ``,`` inside of composition filters.
 
 Some filters take arguments, and arguments can optionally be quoted using double quotes,
@@ -31,7 +31,7 @@ of the filtered tree.
 Note that ``:/a/b`` and ``:/a:/b`` are equivalent ways to get the same result.
 
 ### Directory **`::a/`**
-A shorthand for the commonly occuring filter combination ``:/a:prefix=a``.
+A shorthand for the commonly occurring filter combination ``:/a:prefix=a``.
 
 ### File **`::a`**
 Produces a tree with only the specified file in it's root.
@@ -59,7 +59,7 @@ use filters that select paths without altering them.
 Similar to ``:/a`` but also looks for a ``workspace.josh`` file inside the
 specified directory (called the "workspace root").
 The resulting tree will contain the contents of the
-workspace root as well as additional files specifed in the ``workspace.josh`` file.
+workspace root as well as additional files specified in the ``workspace.josh`` file.
 (see [Workspaces](./workspace.md))
 
 ### Text replacement **`:replace="regex","replacement"`
@@ -78,16 +78,16 @@ All matching subdirectories in the input root
 All matching files in the input root
 
 ### Match nested directories **`::**/X/`**
-All subdirectories matching the pattern in arbitarily deep subdirectories of the input
+All subdirectories matching the pattern in arbitrarily deep subdirectories of the input
 
 ### Match nested files **`::**/X`**
-All files matching the pattern in arbitarily deep subdirectories of the input
+All files matching the pattern in arbitrarily deep subdirectories of the input
 
 ## History filters
 
 These filter do not modify git trees, but instead only operate on the commit graph.
 
-### Linearize history **:linear**
+### Linearise history **:linear**
 Produce a filtered history that does not contain any merge commits. This is done by
 simply dropping all parents except the first on every commit.
 
