@@ -14,7 +14,7 @@ search = []
 experimental = ["search"]
 
 [workspace]
-members = ["josh-proxy", "josh-ui", ".", "hyper_cgi"]
+members = ["josh-proxy", "josh-ui", "josh-ssh", ".", "hyper_cgi"]
 
 [dependencies]
 backtrace = "0.3.66"
