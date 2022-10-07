@@ -2,7 +2,7 @@
 #[macro_use]
 extern crate lazy_static;
 
-use josh_proxy::RepoUpdate;
+use josh_proxy::{MetaConfig, RepoUpdate};
 use opentelemetry::global;
 use opentelemetry::sdk::propagation::TraceContextPropagator;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
@@ -10,17 +10,22 @@ use tracing_subscriber::Layer;
 
 use futures::future;
 use futures::FutureExt;
+use hyper::body::HttpBody;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Request, Response, Server, StatusCode};
 use hyper_reverse_proxy;
 use indoc::formatdoc;
-use josh::JoshError;
+use josh::{josh_error, JoshError};
+use josh_rpc::calls::RequestedCommand;
+use josh_rpc::tokio_fd::IntoAsyncFd;
 use std::collections::HashMap;
 use std::net::IpAddr;
+use std::process::Stdio;
 use std::str::FromStr;
 use std::sync::{Arc, RwLock};
+use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
-use tracing::Span;
+use tracing::{trace, Span};
 use tracing_futures::Instrument;
 
 fn version_str() -> String {
@@ -461,6 +466,231 @@ async fn query_meta_repo(
     return Ok(meta);
 }
 
+async fn make_meta_config(
+    serv: Arc<JoshProxyService>,
+    auth: &josh_proxy::auth::Handle,
+    parsed_url: &FilteredRepoUrl,
+) -> josh::JoshResult<MetaConfig> {
+    let mut meta = Default::default();
+
+    if let Ok(meta_repo) = std::env::var("JOSH_META_REPO") {
+        let auth = if let Ok(token) = std::env::var("JOSH_META_AUTH_TOKEN") {
+            josh_proxy::auth::add_auth(&token)?
+        } else {
+            auth.clone()
+        };
+
+        meta = query_meta_repo(serv.clone(), &meta_repo, &parsed_url.upstream_repo, &auth).await?;
+    } else {
+        meta.config.repo = parsed_url.upstream_repo.clone();
+    }
+
+    Ok(meta)
+}
+
+async fn serve_namespace(params: josh_rpc::calls::ServeNamespace) -> josh::JoshResult<()> {
+    const SERVE_TIMEOUT: u64 = 60;
+
+    tracing::trace!("serve_namespace: {:?}", params);
+
+    enum ServeError {
+        FifoError(std::io::Error),
+        SubprocessError(std::io::Error),
+        SubprocessTimeout(tokio::time::error::Elapsed),
+        SubprocessExited(i32),
+    }
+
+    let command = match params.command {
+        RequestedCommand::GitUploadPack => "git-upload-pack",
+        RequestedCommand::GitUploadArchive => "git-upload-archive",
+        RequestedCommand::GitReceivePack => "git-receive-pack",
+    };
+
+    let mut process = tokio::process::Command::new(command)
+        .arg("")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()?;
+
+    let stdout = process.stdout.take().ok_or(josh_error("no stdout"))?;
+    let stdin = process.stdin.take().ok_or(josh_error("no stdin"))?;
+
+    let stdin_cancel_token = tokio_util::sync::CancellationToken::new();
+    let stdin_cancel_token_stdout = stdin_cancel_token.clone();
+
+    let read_stdout = async {
+        // If stdout stream was closed, cancel stdin copy future
+        let _guard_stdin = stdin_cancel_token_stdout.drop_guard();
+
+        let copy_future = async {
+            // Move stdout here because it should be closed after copy,
+            // and to be closed it needs to be dropped
+            let mut stdout = stdout;
+
+            // Dropping the handle at the end of this block will generate EOF at the other end
+            let mut stdout_pipe_handle = std::fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(&params.stdout_pipe)?
+                .into_async_fd()?;
+
+            tokio::io::copy(&mut stdout, &mut stdout_pipe_handle).await?;
+            stdout_pipe_handle.flush().await
+        };
+
+        copy_future.await.map_err(|e| ServeError::FifoError(e))
+    };
+
+    let write_stdin = async {
+        // When stdout copying was finished (subprocess closed their
+        // stdout due to termination), we need to cancel this future.
+        // Future cancelling is implemented via token.
+        let copy_future = async {
+            // See comment about stdout above
+            let mut stdin = stdin;
+
+            let mut stdin_pipe_handle = std::fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(&params.stdin_pipe)?
+                .into_async_fd()?;
+
+            tokio::io::copy(&mut stdin_pipe_handle, &mut stdin).await?;
+
+            // Flushing is necessary to ensure file handle is closed when
+            // it goes out of scope / dropped
+            stdin.flush().await
+        };
+
+        tokio::select! {
+            copy_result = copy_future => {
+                copy_result
+                    .map(|_| ())
+                    .map_err(|e| ServeError::FifoError(e))
+            }
+            _ = stdin_cancel_token.cancelled() => {
+                Ok(())
+            }
+        }
+    };
+
+    let maybe_process_completion = async {
+        let max_duration = tokio::time::Duration::from_secs(SERVE_TIMEOUT);
+        match tokio::time::timeout(max_duration, process.wait()).await {
+            Ok(status) => match status {
+                Ok(status) => match status.code() {
+                    Some(code) if code == 0 => Ok(()),
+                    Some(code) => Err(ServeError::SubprocessExited(code)),
+                    None => {
+                        let io_error = std::io::Error::from(std::io::ErrorKind::Other);
+                        Err(ServeError::SubprocessError(io_error))
+                    }
+                },
+                Err(io_error) => Err(ServeError::SubprocessError(io_error)),
+            },
+            Err(elapsed) => Err(ServeError::SubprocessTimeout(elapsed)),
+        }
+    };
+
+    let subprocess_result = tokio::try_join!(read_stdout, write_stdin, maybe_process_completion);
+
+    match subprocess_result {
+        Ok(_) => Ok(()),
+        Err(e) => match e {
+            ServeError::SubprocessExited(code) => Err(josh_error(&format!(
+                "git subprocess exited with code {}",
+                code
+            ))),
+            ServeError::SubprocessError(io_error) => Err(josh_error(&format!(
+                "could not start git subprocess: {}",
+                io_error
+            ))),
+            ServeError::SubprocessTimeout(elapsed) => {
+                let _ = process.kill().await;
+                Err(josh_error(&format!(
+                    "git subprocess timed out after {}",
+                    elapsed
+                )))
+            }
+            ServeError::FifoError(io_error) => {
+                let _ = process.kill().await;
+                Err(josh_error(&format!(
+                    "git subprocess communication error: {}",
+                    io_error
+                )))
+            }
+        },
+    }
+}
+
+fn is_repo_blocked(meta: &MetaConfig) -> bool {
+    let block = std::env::var("JOSH_REPO_BLOCK").unwrap_or("".to_owned());
+    let block = block.split(";").collect::<Vec<_>>();
+
+    for b in block {
+        if b == meta.config.repo {
+            return true;
+        }
+    }
+
+    false
+}
+
+async fn handle_serve_namespace_request(
+    req: Request<hyper::Body>,
+) -> josh::JoshResult<Response<hyper::Body>> {
+    let error_response = |status: StatusCode| Ok(make_response(hyper::Body::empty(), status));
+
+    if req.method() != hyper::Method::POST {
+        return error_response(StatusCode::METHOD_NOT_ALLOWED);
+    }
+
+    match req.headers().get(hyper::header::CONTENT_TYPE) {
+        Some(value) if value == "application/json" => (),
+        _ => return error_response(StatusCode::BAD_REQUEST),
+    }
+
+    let body = match req.into_body().data().await {
+        None => return error_response(StatusCode::BAD_REQUEST),
+        Some(result) => match result {
+            Ok(bytes) => bytes,
+            Err(_) => return error_response(StatusCode::IM_A_TEAPOT),
+        },
+    };
+
+    let params = match serde_json::from_slice::<josh_rpc::calls::ServeNamespace>(&body) {
+        Err(error) => {
+            return Ok(make_response(
+                hyper::Body::from(error.to_string()),
+                StatusCode::BAD_REQUEST,
+            ))
+        }
+        Ok(parsed) => parsed,
+    };
+
+    let _parsed_url = if let Some(mut parsed_url) = FilteredRepoUrl::from_str(&params.query) {
+        if parsed_url.filter_spec.is_empty() {
+            parsed_url.filter_spec = ":/".to_string();
+        }
+
+        parsed_url
+    } else {
+        return Ok(make_response(
+            hyper::Body::from("unable to parse query"),
+            StatusCode::BAD_REQUEST,
+        ));
+    };
+
+    let serve_result = serve_namespace(params).await;
+    tracing::trace!("serve_result: {:?}", serve_result);
+
+    return Ok(make_response(
+        hyper::Body::from("handled serve_namespace request"),
+        StatusCode::OK,
+    ));
+}
+
+// Entry point for fake git-upload-pack, git-receive-pack
 #[tracing::instrument]
 async fn call_service(
     serv: Arc<JoshProxyService>,
@@ -484,10 +714,16 @@ async fn call_service(
         return Ok(response);
     }
 
+    // When exposed to internet, should be blocked
     if path == "/repo_update" {
         return repo_update_fn(serv, req).await;
     }
 
+    if path == "/serve_namespace" {
+        return handle_serve_namespace_request(req).await;
+    }
+
+    // Need to have some way of passing the filter (via remote path like what github does?)
     let parsed_url = {
         if let Some(parsed_url) = FilteredRepoUrl::from_str(&path) {
             let mut pu = parsed_url;
@@ -530,24 +766,14 @@ async fn call_service(
         }
     };
 
-    let mut meta = Default::default();
-
-    if let Ok(meta_repo) = std::env::var("JOSH_META_REPO") {
-        let auth = if let Ok(token) = std::env::var("JOSH_META_AUTH_TOKEN") {
-            josh_proxy::auth::add_auth(&token)?
-        } else {
-            auth.clone()
-        };
-        meta = query_meta_repo(serv.clone(), &meta_repo, &parsed_url.upstream_repo, &auth).await?;
-    } else {
-        meta.config.repo = parsed_url.upstream_repo;
-    }
+    let meta = make_meta_config(serv.clone(), &auth, &parsed_url).await?;
 
     let mut filter = josh::filter::chain(
         meta.config.filter,
         josh::filter::parse(&parsed_url.filter_spec)?,
     );
-    let remote_url = [serv.upstream_url.as_str(), meta.config.repo.as_str()].join("");
+
+    let remote_url = serv.upstream_url.clone() + meta.config.repo.as_str();
 
     if let Some(filter_prefix) = ARGS.get_one::<String>("filter-prefix").map(|v| v.as_str()) {
         filter = josh::filter::chain(josh::filter::parse(filter_prefix)?, filter);
@@ -555,7 +781,7 @@ async fn call_service(
 
     if parsed_url.pathinfo.starts_with("/info/lfs") {
         return Ok(Response::builder()
-            .status(307)
+            .status(hyper::StatusCode::TEMPORARY_REDIRECT)
             .header("Location", format!("{}{}", remote_url, parsed_url.pathinfo))
             .body(hyper::Body::empty())?);
     }
@@ -565,35 +791,32 @@ async fn call_service(
         headref = "HEAD".to_string();
     }
 
-    if !josh_proxy::auth::check_auth(
-        &remote_url,
-        &auth,
-        ARGS.get_flag("require-auth") && parsed_url.pathinfo == "/git-receive-pack",
-    )
-    .in_current_span()
-    .await?
+    let http_auth_required =
+        ARGS.get_flag("require-auth") && parsed_url.pathinfo == "/git-receive-pack";
+
+    if !josh_proxy::auth::check_auth(&remote_url, &auth, http_auth_required)
+        .in_current_span()
+        .await?
     {
         tracing::trace!("require-auth");
         let builder = Response::builder()
-            .header("WWW-Authenticate", "Basic realm=User Visible Realm")
+            .header(
+                hyper::header::WWW_AUTHENTICATE,
+                "Basic realm=User Visible Realm",
+            )
             .status(hyper::StatusCode::UNAUTHORIZED);
         return Ok(builder.body(hyper::Body::empty())?);
     }
 
-    let block = std::env::var("JOSH_REPO_BLOCK").unwrap_or("".to_owned());
-    let block = block.split(";").collect::<Vec<_>>();
-
-    for b in block {
-        if b == meta.config.repo {
-            return Ok(make_response(
-                hyper::Body::from(formatdoc!(
-                    r#"
+    if is_repo_blocked(&meta) {
+        return Ok(make_response(
+            hyper::Body::from(formatdoc!(
+                r#"
                     Access to this repo is blocked via JOSH_REPO_BLOCK
                     "#
-                )),
-                hyper::StatusCode::UNPROCESSABLE_ENTITY,
-            ));
-        }
+            )),
+            hyper::StatusCode::UNPROCESSABLE_ENTITY,
+        ));
     }
 
     if parsed_url.api == "/~/graphql" {
@@ -609,6 +832,7 @@ async fn call_service(
         .await??);
     }
 
+    // fetch upstream happened when we checked for auth
     match fetch_upstream(
         serv.clone(),
         meta.config.repo.to_owned(),
@@ -623,7 +847,10 @@ async fn call_service(
         Ok(res) => {
             if !res {
                 let builder = Response::builder()
-                    .header("WWW-Authenticate", "Basic realm=User Visible Realm")
+                    .header(
+                        hyper::header::WWW_AUTHENTICATE,
+                        "Basic realm=User Visible Realm",
+                    )
                     .status(hyper::StatusCode::UNAUTHORIZED);
                 return Ok(builder.body(hyper::Body::empty())?);
             }
@@ -1138,7 +1365,10 @@ async fn serve_graphql(
                 Ok(res) => {
                     if !res {
                         let builder = Response::builder()
-                            .header("WWW-Authenticate", "Basic realm=User Visible Realm")
+                            .header(
+                                hyper::header::WWW_AUTHENTICATE,
+                                "Basic realm=User Visible Realm",
+                            )
                             .status(hyper::StatusCode::UNAUTHORIZED);
                         return Ok(builder.body(hyper::Body::empty())?);
                     }
