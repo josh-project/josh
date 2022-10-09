@@ -5,7 +5,7 @@ extern crate shell_words;
 use clap::Parser;
 use std::os::unix::fs::FileTypeExt;
 use std::{env, fs, process};
-use RequestedCommand::{GitReceivePack, GitUploadArchive, GitUploadPack};
+use josh_ssh_shell::named_pipe;
 
 #[derive(Parser, Debug)]
 #[command(about = "Josh SSH shell")]
@@ -28,6 +28,10 @@ enum RequestedCommand {
     GitUploadPack,
     GitUploadArchive,
     GitReceivePack,
+}
+
+fn handle_command(command: RequestedCommand, query: &str) {
+
 }
 
 fn main() {
@@ -57,15 +61,25 @@ fn main() {
     let command_words: Vec<_> = command_words.iter().map(String::as_str).collect();
 
     let (command, args) = match command_words.as_slice() {
-        ["git-upload-pack", rest @ ..] | ["git", "upload-pack", rest @ ..] => (GitUploadPack, rest),
+        ["git-upload-pack", rest @ ..] | ["git", "upload-pack", rest @ ..] => {
+            (RequestedCommand::GitUploadPack, rest)
+        }
         ["git-upload-archive", rest @ ..] | ["git", "upload-archive", rest @ ..] => {
-            (GitUploadArchive, rest)
+            (RequestedCommand::GitUploadArchive, rest)
         }
         ["git-receive-pack", rest @ ..] | ["git", "receive-pack", rest @ ..] => {
-            (GitReceivePack, rest)
+            (RequestedCommand::GitReceivePack, rest)
         }
         _ => die("unknown command"),
     };
 
     eprintln!("{:?} {:?}", command, args);
+
+    // For now ignore all the extra options those commands can take
+    if args.len() != 1 {
+        die("invalid arguments supplied for git command")
+    }
+
+    let query = args.first().unwrap();
+    handle_command(command, query);
 }
