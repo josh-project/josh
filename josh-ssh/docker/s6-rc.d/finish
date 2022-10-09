@@ -1,0 +1,13 @@
+#!/command/execlineb -S0
+
+# If one of our services dies unexpectedly, the whole container should die.
+# If we exited with a nonzero code
+if { s6-test $# -ne 0 }
+# 256 means we were killed by a signal, eg from s6-svc
+if { s6-test ${1} -ne 256 }
+# Exit all other services, kill the container
+foreground
+{
+  echo "Service terminated: exiting container"
+}
+/run/s6/basedir/bin/halt
