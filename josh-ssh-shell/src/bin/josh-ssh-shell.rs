@@ -1,11 +1,13 @@
 extern crate clap;
 extern crate libc;
 extern crate shell_words;
+extern crate josh_ssh_shell;
 
 use clap::Parser;
 use std::os::unix::fs::FileTypeExt;
 use std::{env, fs, process};
 use josh_ssh_shell::named_pipe;
+use named_pipe::NamedPipe;
 
 #[derive(Parser, Debug)]
 #[command(about = "Josh SSH shell")]
