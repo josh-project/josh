@@ -114,6 +114,10 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> JoshResult<Op> {
                             git2::Oid::from_str(arg)?,
                             to_filter(Op::Compose(g)),
                         )),
+                        "at_tree" => Ok(Op::AtTree(
+                            git2::Oid::from_str(arg)?,
+                            to_filter(Op::Compose(g)),
+                        )),
                         _ => Err(josh_error("parse_item: no match")),
                     }
                 }

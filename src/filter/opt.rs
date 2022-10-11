@@ -329,6 +329,7 @@ fn step(filter: Filter) -> Filter {
             }
         }
         Op::AtCommit(id, filter) => Op::AtCommit(id, step(filter)),
+        Op::AtTree(id, filter) => Op::AtTree(id, step(filter)),
         Op::Compose(filters) if filters.is_empty() => Op::Empty,
         Op::Compose(filters) if filters.len() == 1 => to_op(filters[0]),
         Op::Compose(mut filters) => {
@@ -421,6 +422,7 @@ pub fn invert(filter: Filter) -> JoshResult<Filter> {
         Op::Prefix(path) => Some(Op::Subdir(path)),
         Op::Glob(pattern) => Some(Op::Glob(pattern)),
         Op::AtCommit(_, _) => Some(Op::Nop),
+        Op::AtTree(_, _) => Some(Op::Nop),
         _ => None,
     };
 

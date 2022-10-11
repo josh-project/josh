@@ -99,6 +99,7 @@ enum Op {
     Paths,
     Squash(Option<std::collections::HashMap<git2::Oid, (String, String, String)>>),
     AtCommit(git2::Oid, Filter),
+    AtTree(git2::Oid, Filter),
     Linear,
 
     RegexReplace(regex::Regex, String),
@@ -196,6 +197,7 @@ fn nesting2(op: &Op) -> usize {
         Op::Chain(a, b) => 1 + nesting(*a).max(nesting(*b)),
         Op::Subtract(a, b) => 1 + nesting(*a).max(nesting(*b)),
         Op::AtCommit(_, filter) => 1 + nesting(*filter),
+        Op::AtTree(_, filter) => 1 + nesting(*filter),
         _ => 0,
     }
 }
@@ -227,6 +229,9 @@ fn spec2(op: &Op) -> String {
         }
         Op::AtCommit(id, b) => {
             format!(":at_commit={}[{}]", id, spec(*b))
+        }
+        Op::AtTree(id, b) => {
+            format!(":at_tree={}[{}]", id, spec(*b))
         }
         Op::Workspace(path) => {
             format!(":workspace={}", parse::quote(&path.to_string_lossy()))
@@ -637,6 +642,13 @@ fn apply2<'a>(
         Op::Squash(Some(_)) => Err(josh_error("not applicable to tree")),
         Op::Linear => Ok(tree),
         Op::AtCommit(_, _) => Err(josh_error("not applicable to tree")),
+        Op::AtTree(id, treefilter) => {
+            if tree.id() == *id {
+                apply2(transaction, &to_op(*treefilter), tree)
+            } else {
+                Ok(tree)
+            }
+        }
 
         Op::RegexReplace(regex, replacement) => {
             tree::regex_replace(tree.id(), &regex, &replacement, transaction)
