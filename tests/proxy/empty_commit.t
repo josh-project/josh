@@ -83,7 +83,7 @@ should still be included.
   "real_repo.git" = [':/sub1']
   .
   |-- josh
-  |   `-- 12
+  |   `-- 13
   |       `-- sled
   |           |-- blobs
   |           |-- conf
