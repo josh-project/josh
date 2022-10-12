@@ -6,6 +6,7 @@ extern crate josh_ssh_shell;
 use clap::Parser;
 use std::os::unix::fs::FileTypeExt;
 use std::{env, fs, process};
+use std::process::ExitCode;
 use josh_ssh_shell::named_pipe;
 use named_pipe::NamedPipe;
 
@@ -32,11 +33,43 @@ enum RequestedCommand {
     GitReceivePack,
 }
 
-fn handle_command(command: RequestedCommand, query: &str) {
+async fn handle_command(_command: RequestedCommand, _query: &str) -> Result<(), std::io::Error> {
+    let stdout_pipe = NamedPipe::new("josh-stdout")?;
+    let stdin_pipe = NamedPipe::new("josh-stdin")?;
 
+    eprintln!("stdout {:?}", stdout_pipe.path);
+    eprintln!("stdin {:?}", stdin_pipe.path);
+
+    let mut stdin = tokio::io::stdin();
+    let mut stdout = tokio::io::stdout();
+
+    let read_stdout = async {
+        let mut stdout_pipe_handle = tokio::fs::OpenOptions::new()
+            .read(true)
+            .write(false)
+            .create(false)
+            .open(stdout_pipe.path.as_path()).await?;
+
+        tokio::io::copy(&mut stdout_pipe_handle, &mut stdout).await
+    };
+
+    let write_stdin = async {
+        let mut stdin_pipe_handle = tokio::fs::OpenOptions::new()
+            .read(false)
+            .write(true)
+            .create(false)
+            .open(stdin_pipe.path.as_path()).await?;
+
+        tokio::io::copy(&mut stdin, &mut stdin_pipe_handle).await
+    };
+
+    tokio::try_join!(read_stdout, write_stdin);
+
+    todo!()
 }
 
-fn main() {
+#[tokio::main]
+async fn main() -> ExitCode {
     let args = Args::parse();
 
     if isatty(libc::STDIN_FILENO) || isatty(libc::STDOUT_FILENO) {
@@ -83,5 +116,12 @@ fn main() {
     }
 
     let query = args.first().unwrap();
-    handle_command(command, query);
+
+    match handle_command(command, query).await {
+        Ok(_) => ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("josh-ssh-shell: error: {}", e);
+            ExitCode::FAILURE
+        }
+    }
 }

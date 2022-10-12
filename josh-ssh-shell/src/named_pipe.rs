@@ -3,32 +3,45 @@ extern crate libc;
 
 use std::{env, io};
 use std::ffi::CString;
+use std::path::{Path, PathBuf};
 use rand::{thread_rng, Rng};
 use rand::distributions::Alphanumeric;
 
 const TEMP_SUFFIX_LENGTH: usize = 32;
+const PIPE_CREATE_ATTEMPTS: usize = 10;
+const PIPE_FILEMODE: libc::mode_t = 0o660;
 
 pub struct NamedPipe {
-    path: String
+    pub path: PathBuf
 }
 
 impl Drop for NamedPipe {
     fn drop(&mut self) {
-        todo!()
+        std::fs::remove_file(&self.path).unwrap();
     }
 }
 
-fn mkfifo(path: &str) -> Result<(), io::Error> {
-    let path = CString::new(path).unwrap();
-
-    unsafe {
-        libc::mkfifo(path.as_ptr(), 0o660);
+impl NamedPipe {
+    pub fn new(prefix: &str) -> Result<NamedPipe, io::Error> {
+        let created_pipe = try_make_pipe(prefix)?;
+        Ok(NamedPipe { path: created_pipe })
     }
-
-    Ok(())
 }
 
-pub fn make_named_pipe() -> NamedPipe {
+fn make_fifo(path: &Path) -> Result<(), io::Error> {
+    let path_str = path.to_str().unwrap();
+    let path = CString::new(path_str).unwrap();
+    let return_code = unsafe {
+        libc::mkfifo(path.as_ptr(), PIPE_FILEMODE)
+    };
+
+    match return_code {
+        0 => Ok(()),
+        _ => Err(io::Error::from_raw_os_error(return_code))
+    }
+}
+
+fn make_random_path(prefix: &str) -> PathBuf {
     let temp_path = env::temp_dir();
     let rand_string: String = thread_rng()
         .sample_iter(&Alphanumeric)
@@ -36,5 +49,21 @@ pub fn make_named_pipe() -> NamedPipe {
         .map(char::from)
         .collect();
 
-    todo!()
+    let fifo_name = format!("{}-{}", prefix, rand_string);
+    temp_path.join(fifo_name)
+}
+
+fn try_make_pipe(prefix: &str) -> Result<PathBuf, io::Error> {
+    for _ in 0..PIPE_CREATE_ATTEMPTS {
+        let pipe_path = make_random_path(prefix);
+        match make_fifo(pipe_path.as_path()) {
+            Ok(_) => return Ok(pipe_path),
+            Err(e) => match e.kind() {
+                io::ErrorKind::AlreadyExists => continue,
+                _ => ()
+            },
+        }
+    };
+
+    Err(io::Error::from(io::ErrorKind::AlreadyExists))
 }
