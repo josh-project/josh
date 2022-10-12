@@ -1073,6 +1073,7 @@ dependencies = [
  "hyper_cgi",
  "indoc",
  "josh",
+ "josh-rpc",
  "juniper",
  "lazy_static",
  "opentelemetry",
@@ -1095,13 +1096,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "josh-rpc"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "josh-ssh-shell"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "josh-rpc",
  "libc",
  "rand 0.8.5",
  "shell-words",
+ "tokio",
 ]
 
 [[package]]

@@ -63,7 +63,7 @@ async fn handle_command(_command: RequestedCommand, _query: &str) -> Result<(), 
         tokio::io::copy(&mut stdin, &mut stdin_pipe_handle).await
     };
 
-    tokio::try_join!(read_stdout, write_stdin);
+    tokio::try_join!(read_stdout, write_stdin)?;
 
     todo!()
 }
@@ -72,9 +72,9 @@ async fn handle_command(_command: RequestedCommand, _query: &str) -> Result<(), 
 async fn main() -> ExitCode {
     let args = Args::parse();
 
-    if isatty(libc::STDIN_FILENO) || isatty(libc::STDOUT_FILENO) {
-        die("cannot be run interactively; exiting")
-    }
+    // if isatty(libc::STDIN_FILENO) || isatty(libc::STDOUT_FILENO) {
+    //     die("cannot be run interactively; exiting")
+    // }
 
     let command_words = shell_words::split(&args.command).unwrap_or_else(|_| {
         die("parse error; exiting");

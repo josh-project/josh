@@ -9,3 +9,4 @@ libc = "0.2.134"
 rand = "0.8.5"
 shell-words = "1.1.0"
 tokio = { version = "1.21.2", features = ["fs", "rt-multi-thread", "macros", "io-std", "io-util", "net"] }
+josh-rpc = { path = "../josh-rpc" }

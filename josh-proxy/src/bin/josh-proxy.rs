@@ -1,4 +1,4 @@
-#![deny(warnings)]
+// #![deny(warnings)]
 #[macro_use]
 extern crate lazy_static;
 
@@ -14,14 +14,20 @@ use hyper::service::{make_service_fn, service_fn};
 use hyper::{Request, Response, Server, StatusCode};
 use hyper_reverse_proxy;
 use indoc::formatdoc;
-use josh::JoshError;
+use josh::{josh_error, JoshError};
 use std::collections::HashMap;
+use std::ffi::c_int;
 use std::net::IpAddr;
+use std::process::Stdio;
 use std::str::FromStr;
 use std::sync::{Arc, RwLock};
+use hyper::body::HttpBody;
+use reqwest::header::{ACCESS_CONTROL_ALLOW_HEADERS, CONTENT_TYPE};
+use reqwest::Method;
 use tokio::process::Command;
-use tracing::Span;
+use tracing::{error, Span};
 use tracing_futures::Instrument;
+use josh::graphql::Path;
 
 fn version_str() -> String {
     format!("Version: {}\n", josh::VERSION,)
@@ -461,6 +467,73 @@ async fn query_meta_repo(
     return Ok(meta);
 }
 
+async fn serve_namespace(params: josh_rpc::calls::ServeNamespace) -> josh::JoshResult<()> {
+    let process = tokio::process::Command::new("ls")
+        .arg("/")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()?;
+
+    let mut stdout = process.stdout.ok_or(josh_error("no stdout"))?;
+    let mut stdin = process.stdin.ok_or(josh_error("no stdin"))?;
+
+    let read_stdout = async {
+        let mut stdout_pipe_handle = tokio::fs::OpenOptions::new()
+            .read(false)
+            .write(true)
+            .create(false)
+            .open(&params.stdout_pipe).await?;
+
+        tokio::io::copy(&mut stdout, &mut stdout_pipe_handle).await
+    };
+
+    let write_stdin = async {
+        let mut stdin_pipe_handle = tokio::fs::OpenOptions::new()
+            .read(true)
+            .write(false)
+            .create(false)
+            .open(&params.stdin_pipe).await?;
+
+        tokio::io::copy(&mut stdin_pipe_handle, &mut stdin).await
+    };
+
+    tokio::try_join!(read_stdout, write_stdin)?;
+
+    Ok(())
+}
+
+async fn handle_serve_namespace_request(req: Request<hyper::Body>) -> josh::JoshResult<Response<hyper::Body>> {
+    let error_response = |status: StatusCode| {
+        Ok(make_response(hyper::Body::empty(), status))
+    };
+
+    if req.method() != Method::POST {
+        return error_response(StatusCode::METHOD_NOT_ALLOWED);
+    }
+
+    match req.headers().get(CONTENT_TYPE) {
+        Some(value) if value == "application/json" => (),
+        _ => return error_response(StatusCode::BAD_REQUEST),
+    }
+
+    let body = match req.into_body().data().await {
+        None => return error_response(StatusCode::BAD_REQUEST),
+        Some(result) => match result {
+            Ok(bytes) => bytes,
+            Err(_) => return error_response(StatusCode::IM_A_TEAPOT)
+        }
+    };
+
+    let params = match serde_json::from_slice::<josh_rpc::calls::ServeNamespace>(&body) {
+        Err(error) => return Ok(make_response(hyper::Body::from(error.to_string()), StatusCode::BAD_REQUEST)),
+        Ok(parsed) => parsed,
+    };
+
+    serve_namespace(params);
+
+    return Ok(make_response(hyper::Body::from("handled serve_namespace request"), StatusCode::OK));
+}
+
 // Entry point for fake git-upload-pack, git-receive-pack
 #[tracing::instrument]
 async fn call_service(
@@ -488,6 +561,10 @@ async fn call_service(
     // When exposed to internet, should be blocked
     if path == "/repo_update" {
         return repo_update_fn(serv, req).await;
+    }
+
+    if path == "/serve_namespace" {
+        return handle_serve_namespace_request(req).await;
     }
 
     // Need to have some way of passing the filter (via remote path like what github does?)
