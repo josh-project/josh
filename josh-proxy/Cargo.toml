@@ -13,7 +13,7 @@ version = "22.4.15"
 
 [dependencies]
 base64 = "0.13.0"
-clap = "4.0.9"
+clap = "4.0.14"
 futures = "0.3.24"
 git2 = "0.15.0"
 hyper = { version = "0.14.20", features = ["stream"] }
