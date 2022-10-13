@@ -468,36 +468,51 @@ async fn query_meta_repo(
 }
 
 async fn serve_namespace(params: josh_rpc::calls::ServeNamespace) -> josh::JoshResult<()> {
-    let process = tokio::process::Command::new("ls")
-        .arg("/")
+    let mut process = tokio::process::Command::new("cat")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()?;
 
-    let mut stdout = process.stdout.ok_or(josh_error("no stdout"))?;
-    let mut stdin = process.stdin.ok_or(josh_error("no stdin"))?;
+    let process_completion = process.wait();
+
+    let mut stdin = process.stdin.take().unwrap();
+    let mut stdout = process.stdout.take().unwrap();
 
     let read_stdout = async {
+        eprintln!("copy: subprocess stdout -> fifo");
+
         let mut stdout_pipe_handle = tokio::fs::OpenOptions::new()
             .read(false)
             .write(true)
             .create(false)
             .open(&params.stdout_pipe).await?;
 
-        tokio::io::copy(&mut stdout, &mut stdout_pipe_handle).await
+        let result = tokio::io::copy(&mut stdout, &mut stdout_pipe_handle).await;
+        std::mem::drop(stdout);
+
+        eprintln!("copy: subprocess stdout -> fifo finish");
+
+        result
     };
 
-    let write_stdin = async {
+    let write_stdin = async move {
+        eprintln!("copy: fifo -> subprocess stdin");
+
         let mut stdin_pipe_handle = tokio::fs::OpenOptions::new()
             .read(true)
             .write(false)
             .create(false)
             .open(&params.stdin_pipe).await?;
 
-        tokio::io::copy(&mut stdin_pipe_handle, &mut stdin).await
+        let result = tokio::io::copy(&mut stdin_pipe_handle, &mut stdin).await;
+        std::mem::drop(stdin);
+
+        eprintln!("copy: fifo -> subprocess stdin finish");
+
+        result
     };
 
-    tokio::try_join!(read_stdout, write_stdin)?;
+    tokio::try_join!(read_stdout, write_stdin, process_completion)?;
 
     Ok(())
 }
@@ -529,7 +544,7 @@ async fn handle_serve_namespace_request(req: Request<hyper::Body>) -> josh::Josh
         Ok(parsed) => parsed,
     };
 
-    serve_namespace(params);
+    serve_namespace(params).await;
 
     return Ok(make_response(hyper::Body::from("handled serve_namespace request"), StatusCode::OK));
 }

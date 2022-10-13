@@ -1,6 +1,13 @@
 use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
+#[derive(Serialize, Deserialize, Debug)]
+pub enum RequestedCommand {
+    GitUploadPack,
+    GitUploadArchive,
+    GitReceivePack,
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct ServeNamespace {
     pub stdin_pipe: PathBuf,
