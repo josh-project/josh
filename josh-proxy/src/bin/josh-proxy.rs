@@ -468,53 +468,89 @@ async fn query_meta_repo(
 }
 
 async fn serve_namespace(params: josh_rpc::calls::ServeNamespace) -> josh::JoshResult<()> {
+    const SERVE_TIMEOUT: u64 = 60;
+
+    enum ServeError {
+        FifoError(std::io::Error),
+        SubprocessError(std::io::Error),
+        SubprocessTimeout(tokio::time::error::Elapsed),
+        SubprocessExited(i32),
+    };
+
     let mut process = tokio::process::Command::new("cat")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()?;
 
-    let process_completion = process.wait();
-
-    let mut stdin = process.stdin.take().unwrap();
-    let mut stdout = process.stdout.take().unwrap();
+    let mut stdout = process.stdout.take().ok_or(josh_error("no stdout"))?;
+    let mut stdin = process.stdin.take().ok_or(josh_error("no stdin"))?;
 
     let read_stdout = async {
-        eprintln!("copy: subprocess stdout -> fifo");
+        // Move stdout here because it should be closed after copy,
+        // and to be closed it needs to be dropped
+        let mut stdout = stdout;
 
         let mut stdout_pipe_handle = tokio::fs::OpenOptions::new()
             .read(false)
             .write(true)
             .create(false)
-            .open(&params.stdout_pipe).await?;
+            .open(&params.stdout_pipe)
+            .await
+            .map_err(|e| ServeError::FifoError(e))?;
 
-        let result = tokio::io::copy(&mut stdout, &mut stdout_pipe_handle).await;
-        std::mem::drop(stdout);
-
-        eprintln!("copy: subprocess stdout -> fifo finish");
-
-        result
+        tokio::io::copy(&mut stdout, &mut stdout_pipe_handle).await
+            .map_err(|e| ServeError::FifoError(e))
     };
 
-    let write_stdin = async move {
-        eprintln!("copy: fifo -> subprocess stdin");
+    let write_stdin = async {
+        // See comment about stdout above
+        let mut stdin = stdin;
 
         let mut stdin_pipe_handle = tokio::fs::OpenOptions::new()
             .read(true)
             .write(false)
             .create(false)
-            .open(&params.stdin_pipe).await?;
+            .open(&params.stdin_pipe)
+            .await
+            .map_err(|e| ServeError::FifoError(e))?;
 
-        let result = tokio::io::copy(&mut stdin_pipe_handle, &mut stdin).await;
-        std::mem::drop(stdin);
-
-        eprintln!("copy: fifo -> subprocess stdin finish");
-
-        result
+        tokio::io::copy(&mut stdin_pipe_handle, &mut stdin).await
+            .map_err(|e| ServeError::FifoError(e))
     };
 
-    tokio::try_join!(read_stdout, write_stdin, process_completion)?;
+    let maybe_process_completion = async {
+        let max_duration = tokio::time::Duration::from_secs(SERVE_TIMEOUT);
 
-    Ok(())
+        match tokio::time::timeout(max_duration, process.wait()).await {
+            Ok(status) => match status {
+                Ok(status) => match status.code() {
+                    Some(code) if code == 0 => Ok(()),
+                    Some(code) => Err(ServeError::SubprocessExited(code)),
+                    None => {
+                        let io_error = std::io::Error::from(std::io::ErrorKind::Other);
+                        Err(ServeError::SubprocessError(io_error))
+                    }
+                },
+                Err(io_error) => Err(ServeError::SubprocessError(io_error)),
+            }
+            Err(elapsed) => {
+                Err(ServeError::SubprocessTimeout(elapsed))
+            }
+        }
+    };
+
+    // TODO kill process
+    match tokio::try_join!(read_stdout, write_stdin, maybe_process_completion) {
+        Ok(_) => Ok(()),
+        Err(e) => match e {
+            ServeError::SubprocessExited(code) => {
+                Err(josh_error(&format!("Subprocess exited with code {}", code)))
+            },
+            ServeError::SubprocessError(_) => { todo!() },
+            ServeError::FifoError(_) => { todo!() },
+            ServeError::SubprocessTimeout(_) => { todo!() },
+        }
+    }
 }
 
 async fn handle_serve_namespace_request(req: Request<hyper::Body>) -> josh::JoshResult<Response<hyper::Body>> {
