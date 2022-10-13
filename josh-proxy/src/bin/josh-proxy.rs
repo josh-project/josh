@@ -544,11 +544,17 @@ async fn serve_namespace(params: josh_rpc::calls::ServeNamespace) -> josh::JoshR
         Ok(_) => Ok(()),
         Err(e) => match e {
             ServeError::SubprocessExited(code) => {
-                Err(josh_error(&format!("Subprocess exited with code {}", code)))
+                Err(josh_error(&format!("git subprocess exited with code {}", code)))
             },
-            ServeError::SubprocessError(_) => { todo!() },
-            ServeError::FifoError(_) => { todo!() },
-            ServeError::SubprocessTimeout(_) => { todo!() },
+            ServeError::SubprocessError(io_error) => {
+                Err(josh_error(&format!("could not start git subprocess: {}", io_error)))
+            },
+            ServeError::SubprocessTimeout(elapsed) => {
+                Err(josh_error(&format!("git subprocess timed out after {}", elapsed)))
+            },
+            ServeError::FifoError(io_error) => {
+                Err(josh_error(&format!("git subprocess communication error: {}", io_error)))
+            },
         }
     }
 }
