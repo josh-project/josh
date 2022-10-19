@@ -65,6 +65,13 @@ workspace root as well as additional files specified in the ``workspace.josh`` f
 ### Text replacement **`:replace="regex","replacement"`**
 Applies the supplied regular expression to every file in the input tree.
 
+### Signature removal **`:unsign`
+The default behaviour of Josh is to copy, if it exsists, the signature of the original commit in
+the filtered commit. This makes the signature invalid, but allows a perfect round-trip: josh will be
+able to recreate the original commit from the filtered one.
+
+This behaviour might not be desirable, and this filter drops the signatures from the history.
+
 ## Pattern filters
 
 The following filters accept a glob like pattern ``X`` that can contain ``*`` to
