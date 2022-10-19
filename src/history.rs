@@ -182,13 +182,8 @@ pub fn rewrite_commit(
     parents: &[&git2::Commit],
     tree: &git2::Tree,
     message: Option<(String, String, String)>,
+    unsign: bool,
 ) -> JoshResult<git2::Oid> {
-    if message == None && base.tree()?.id() == tree.id() && all_equal(base.parents(), parents) {
-        // Looks like an optimization, but in fact serves to not change the commit in case
-        // it was signed.
-        return Ok(base.id());
-    }
-
     let b = if let Some((message, author, email)) = message {
         let a = base.author();
         let new_a = git2::Signature::new(&author, &email, &a.when())?;
@@ -205,7 +200,7 @@ pub fn rewrite_commit(
         )?
     };
 
-    if let Ok((sig, _)) = repo.extract_signature(&base.id(), None) {
+    if let (false, Ok((sig, _))) = (unsign, repo.extract_signature(&base.id(), None)) {
         // Re-create the object with the original signature (which of course does not match any
         // more, but this is needed to guarantee perfect round-trips).
         let b = b
@@ -218,20 +213,6 @@ pub fn rewrite_commit(
     }
 
     return Ok(repo.odb()?.write(git2::ObjectType::Commit, &b)?);
-}
-
-fn all_equal(a: git2::Parents, b: &[&git2::Commit]) -> bool {
-    let a: Vec<_> = a.collect();
-    if a.len() != b.len() {
-        return false;
-    }
-
-    for (x, y) in b.iter().zip(a.iter()) {
-        if x.id() != y.id() {
-            return false;
-        }
-    }
-    true
 }
 
 fn find_oldest_similar_commit(
@@ -527,6 +508,7 @@ pub fn unapply_filter(
             &original_parents_refs,
             &new_tree,
             None,
+            false,
         )?;
 
         if let Some(ref mut change_ids) = change_ids {
@@ -560,6 +542,30 @@ fn select_parent_commits<'a>(
     }
 }
 
+pub fn remove_commit_signature<'a>(
+    original_commit: &'a git2::Commit,
+    filtered_parent_ids: Vec<git2::Oid>,
+    filtered_tree: git2::Tree<'a>,
+    transaction: &cache::Transaction,
+    filter: filter::Filter,
+    message: Option<(String, String, String)>,
+) -> JoshResult<git2::Oid> {
+    let (r, is_new) = create_filtered_commit2(
+        transaction.repo(),
+        original_commit,
+        filtered_parent_ids,
+        filtered_tree,
+        message,
+        true,
+    )?;
+
+    let store = is_new || original_commit.parent_ids().len() != 1;
+
+    transaction.insert(filter, original_commit.id(), r, store);
+
+    Ok(r)
+}
+
 pub fn drop_commit<'a>(
     original_commit: &'a git2::Commit,
     filtered_parent_ids: Vec<git2::Oid>,
@@ -591,6 +597,7 @@ pub fn create_filtered_commit<'a>(
         filtered_parent_ids,
         filtered_tree,
         message,
+        false,
     )?;
 
     let store = is_new || original_commit.parent_ids().len() != 1;
@@ -606,6 +613,7 @@ fn create_filtered_commit2<'a>(
     filtered_parent_ids: Vec<git2::Oid>,
     filtered_tree: git2::Tree<'a>,
     message: Option<(String, String, String)>,
+    unsign: bool,
 ) -> JoshResult<(git2::Oid, bool)> {
     let filtered_parent_commits: Result<Vec<_>, _> = filtered_parent_ids
         .iter()
@@ -651,6 +659,7 @@ fn create_filtered_commit2<'a>(
             &selected_filtered_parent_commits,
             &filtered_tree,
             message,
+            unsign,
         )?,
         true,
     ))
