@@ -403,6 +403,7 @@ fn split_changes(
                         &vec![&parent],
                         &new_tree,
                         None,
+                        false,
                     )?;
                     changes[i].1 = new_commit;
                     new_bases.push(new_commit);

@@ -100,6 +100,7 @@ enum Op {
     Squash(Option<std::collections::HashMap<git2::Oid, (String, String, String)>>),
     Rev(std::collections::HashMap<git2::Oid, Filter>),
     Linear,
+    Unsign,
 
     RegexReplace(regex::Regex, String),
 
@@ -277,6 +278,7 @@ fn spec2(op: &Op) -> String {
             format!(":SQUASH={}", s)
         }
         Op::Linear => ":linear".to_string(),
+        Op::Unsign => ":unsign".to_string(),
         Op::Subdir(path) => format!(":/{}", parse::quote(&path.to_string_lossy())),
         Op::File(path) => format!("::{}", parse::quote(&path.to_string_lossy())),
         Op::Prefix(path) => format!(":prefix={}", parse::quote(&path.to_string_lossy())),
@@ -387,6 +389,7 @@ fn apply_to_commit2(
                 &[],
                 &commit.tree()?,
                 None,
+                true,
             ))
             .transpose()
         }
@@ -460,6 +463,28 @@ fn apply_to_commit2(
             return Some(history::create_filtered_commit(
                 commit,
                 vec![parent],
+                commit.tree()?,
+                transaction,
+                filter,
+                None,
+            ))
+            .transpose();
+        }
+        Op::Unsign => {
+            let parents: Vec<_> = commit.parent_ids().collect();
+
+            let filtered_parents: Vec<_> = parents
+                .iter()
+                .map(|p| transaction.get(filter, *p))
+                .collect();
+            if filtered_parents.iter().any(|p| p.is_none()) {
+                return Ok(None);
+            }
+            let filtered_parents = filtered_parents.iter().map(|p| p.unwrap()).collect();
+
+            return Some(history::remove_commit_signature(
+                commit,
+                filtered_parents,
                 commit.tree()?,
                 transaction,
                 filter,
@@ -661,6 +686,7 @@ fn apply2<'a>(
         Op::Squash(None) => Ok(tree),
         Op::Squash(Some(_)) => Err(josh_error("not applicable to tree")),
         Op::Linear => Ok(tree),
+        Op::Unsign => Ok(tree),
         Op::Rev(_) => Err(josh_error("not applicable to tree")),
         Op::RegexReplace(regex, replacement) => {
             tree::regex_replace(tree.id(), &regex, &replacement, transaction)

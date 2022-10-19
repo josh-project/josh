@@ -422,6 +422,7 @@ pub fn invert(filter: Filter) -> JoshResult<Filter> {
     let result = match to_op(filter) {
         Op::Nop => Some(Op::Nop),
         Op::Linear => Some(Op::Nop),
+        Op::Unsign => Some(Op::Unsign),
         Op::Empty => Some(Op::Empty),
         Op::Subdir(path) => Some(Op::Prefix(path)),
         Op::File(path) => Some(Op::File(path)),

@@ -35,3 +35,25 @@ If 0b4cf6c9efbbda1eada39fa9c1d21d2525b027bb shows up then the signature was lost
   $ git rev-parse master double-filtered
   cb22ebb8e47b109f7add68b1043e561e0db09802
   cb22ebb8e47b109f7add68b1043e561e0db09802
+
+Remove the signature, the shas are different.
+  $ josh-filter :unsign refs/heads/master --update refs/heads/filtered -s
+  [1] :unsign
+  $ git rev-parse master filtered
+  cb22ebb8e47b109f7add68b1043e561e0db09802
+  0b4cf6c9efbbda1eada39fa9c1d21d2525b027bb
+  $ josh-filter --reverse :unsign refs/heads/double-filtered --update refs/heads/filtered -s
+  [1] :unsign
+  $ git rev-parse master double-filtered
+  cb22ebb8e47b109f7add68b1043e561e0db09802
+  cb22ebb8e47b109f7add68b1043e561e0db09802
+
+Round trip does not work but reversed works since the commit exists
+  $ josh-filter :prefix=extra:unsign refs/heads/master --update refs/heads/filtered
+  $ josh-filter :/extra refs/heads/filtered --update refs/heads/double-filtered
+  $ git branch reversed
+  $ josh-filter --reverse :prefix=extra:unsign refs/heads/reversed --update refs/heads/filtered
+  $ git rev-parse master double-filtered reversed
+  cb22ebb8e47b109f7add68b1043e561e0db09802
+  0b4cf6c9efbbda1eada39fa9c1d21d2525b027bb
+  cb22ebb8e47b109f7add68b1043e561e0db09802
