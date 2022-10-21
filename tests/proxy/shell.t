@@ -24,6 +24,8 @@
             Duration between forced cache refresh
         --static-resource-proxy-target <static-resource-proxy-target>
             Proxy static resource requests to a different URL
+        --filter-prefix <filter-prefix>
+            Filter to be prefixed to all queries of this instance
     -h, --help
             Print help information
 
