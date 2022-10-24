@@ -22,6 +22,7 @@ import {FileViewer} from "./FileViewer";
 import {DiffViewer} from "./DiffViewer";
 import {ChangeViewer} from "./ChangeViewer";
 import {HistoryList} from "./History";
+import {ChangesList} from "./Changes";
 import {Breadcrumbs} from "./Breadcrumbs";
 import {DEFAULT_FILTER} from "./Josh";
 
@@ -108,24 +109,24 @@ function Select() {
     </div>
 }
 
-function TopNav(props: { repo: string, filter: string }) {
+function TopNav(props: { repo: string, filter: string, page: string }) {
     const selectParams = {
         repo: props.repo,
         filter: props.filter,
     }
 
     return <div className={'now-browsing'}>
-        <span className={'now-browsing-name'}>
-            <span className={'now-browsing-name-repo'}>
-                now browsing: {props.repo}
-            </span>
-            {props.filter !== DEFAULT_FILTER && <span className={'now-browsing-name-filter'}>
-                {props.filter}
-            </span>}
-        </span>
-        <span className={'now-browsing-select'}>
-            <Link to={`/select?${createSearchParams(selectParams)}`}>select repo</Link>
-        </span>
+        <div className="logo">
+            <img src={process.env.PUBLIC_URL.concat("/logo.png")} alt="Josh logo"/>
+                <span className="now-browsing-name">
+                    <Link to={`/select?${createSearchParams(selectParams)}`}>
+                        {props.repo}{props.filter !== DEFAULT_FILTER && props.filter}
+                    </Link>
+                </span>
+        </div>
+        <div className="current-page">
+            <span>{props.page}</span>
+        </div>
     </div>
 }
 
@@ -137,6 +138,7 @@ function Browse() {
     return <div>
         <TopNav
             repo={param('repo')} 
+            page={param('rev')}
             filter={param('filter')} />
 
         <Breadcrumbs
@@ -166,6 +168,7 @@ function ChangeView() {
     return <div>
         <TopNav
             repo={param('repo')} 
+            page="change"
             filter={param('filter')} />
 
         <ChangeViewer
@@ -185,12 +188,32 @@ function History() {
     return <div>
         <TopNav
             repo={param('repo')} 
+            page={param('rev')}
             filter={param('filter')} />
 
         <HistoryList
             repo={param('repo')}
             filter={param('filter')}
             rev={param('rev')}
+            navigateCallback={useNavigateCallback()}
+        />
+    </div>
+}
+
+function Changes() {
+    const param = useStrictGetSearchParam()
+
+    useTitleEffect(`Changes - ${param('repo')} - Josh`)
+
+    return <div>
+        <TopNav
+            repo={param('repo')} 
+            page="changes"
+            filter={param('filter')} />
+
+        <ChangesList
+            repo={param('repo')}
+            filter={param('filter')}
             navigateCallback={useNavigateCallback()}
         />
     </div>
@@ -206,6 +229,7 @@ function View() {
         <div>
             <TopNav
                 repo={param('repo')} 
+                page="file"
                 filter={param('filter')} />
 
             <Breadcrumbs
@@ -237,14 +261,8 @@ function DiffView() {
         <div>
             <TopNav
                 repo={param('repo')} 
+                page="diff"
                 filter={param('filter')} />
-
-            <Breadcrumbs
-                repo={param('repo')}
-                path={param('path')}
-                filter={param('filter')}
-                rev={param('rev')}
-                navigateCallback={useNavigateCallback()} />
 
             <DiffViewer
                 repo={param('repo')}
@@ -266,6 +284,7 @@ function App() {
                 <Route path='/select' element={<Select />} />
                 <Route path='/browse' element={<Browse />} />
                 <Route path='/history' element={<History />} />
+                <Route path='/changes' element={<Changes />} />
                 <Route path='/view' element={<View />} />
                 <Route path='/diff' element={<DiffView />} />
                 <Route path='/change' element={<ChangeView />} />

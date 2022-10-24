@@ -1,13 +1,12 @@
 import React from "react";
 import {GraphQLClient} from 'graphql-request'
 import {getServer} from "./Server";
-import {NavigateCallback, NavigateTargetType, QUERY_HISTORY} from "./Navigation";
+import {NavigateCallback, NavigateTargetType, QUERY_CHANGES} from "./Navigation";
 import {match} from "ts-pattern";
 
-export type HistoryBrowserProps = {
+export type ChangesBrowserProps = {
     repo: string
     filter: string
-    rev: string
     navigateCallback: NavigateCallback
 }
 
@@ -22,30 +21,33 @@ type Commit = {
     original: Original
 }
 
+type Ref = {
+    name: string,
+    commit: Commit,
+}
+
 
 type State = {
-    commits: Commit[]
+    refs: Ref[]
     client: GraphQLClient
 }
 
-export class HistoryList extends React.Component<HistoryBrowserProps, State> {
+export class ChangesList extends React.Component<ChangesBrowserProps, State> {
     state: State = {
-        commits: [],
+        refs: [],
         client: new GraphQLClient(`${getServer()}/~/graphql/${this.props.repo}`, {
             mode: 'cors'
         }),
     };
 
     startRequest() {
-        this.state.client.rawRequest(QUERY_HISTORY, {
-            rev: this.props.rev,
+        this.state.client.rawRequest(QUERY_CHANGES, {
             filter: this.props.filter,
-            limit: 10,
         }).then((d) => {
-            const data = d.data.rev
+            const data = d.data
 
             this.setState({
-                commits: data.history
+                refs: data.refs
             })
         })
     }
@@ -54,10 +56,10 @@ export class HistoryList extends React.Component<HistoryBrowserProps, State> {
         this.startRequest()
     }
 
-    componentDidUpdate(prevProps: Readonly<HistoryBrowserProps>, prevState: Readonly<State>, snapshot?: any) {
+    componentDidUpdate(prevProps: Readonly<ChangesBrowserProps>, prevState: Readonly<State>, snapshot?: any) {
         if (prevProps !== this.props) {
             this.setState({
-                commits: [],
+                refs: [],
             })
 
             this.startRequest()
@@ -68,7 +70,7 @@ export class HistoryList extends React.Component<HistoryBrowserProps, State> {
         // TODO cancel request?
     }
 
-    renderList(values: Commit[]) {
+    renderList(values: Ref[]) {
 
         const navigateBrowse = (rev: string, e: React.MouseEvent<HTMLDivElement>) => {
             this.props.navigateCallback(NavigateTargetType.Directory, {
@@ -89,20 +91,24 @@ export class HistoryList extends React.Component<HistoryBrowserProps, State> {
         }
 
 
-        return values.map((entry) => {
+        return values.map((ee) => {
+            let entry = ee.commit;
             return <div key={entry.hash} className="commit-list-entry">
-            <div className="history-list-entry" >
+            <div className="changes-list-entry" >
                 <span
-                    className="hash"
-                    onClick={navigateBrowse.bind(this, entry.original.hash)}>
-                    {entry.hash.slice(0,6)}
-                </span>
-                <span
-                    className="summary"
+                    className="change-summary"
                     onClick={navigateChange.bind(this, entry.original.hash)}>
                     {entry.summary}
                 </span>
-                <span className="authorEmail">{entry.authorEmail}</span>
+                <span
+                    className="name"
+                    onClick={navigateChange.bind(this, entry.original.hash)}>
+                    {ee.name.replace("refs/heads/","")}
+                </span>
+                <span className="change-hash"
+                    onClick={navigateBrowse.bind(this, entry.original.hash)}>
+
+                {entry.hash.slice(0,6)}</span>
             </div>
             </div>
 
@@ -110,11 +116,11 @@ export class HistoryList extends React.Component<HistoryBrowserProps, State> {
     }
 
     render() {
-        if (this.state.commits.length === 0) {
+        if (this.state.refs.length === 0) {
             return <div className={'history-browser-loading'}>Loading...</div>
         } else {
-            return <div className={'history-browser-list'}>
-                {this.renderList(this.state.commits)}
+            return <div className={'changes-browser-list'}>
+                {this.renderList(this.state.refs)}
             </div>
         }
     }

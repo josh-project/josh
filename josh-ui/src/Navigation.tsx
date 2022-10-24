@@ -67,10 +67,24 @@ query($rev: String!, $filter: String!, $limit: Int) {
 }
 `
 
+export const QUERY_CHANGES = gql`
+query($filter: String!) {
+  refs(pattern:"refs/heads/@changes/*") {
+    name
+    commit: rev(filter: $filter) {
+      summary
+      authorEmail
+      hash
+      original: rev { hash }
+    }
+  }
+}
+`
+
 export const QUERY_CHANGE = gql`
 query($rev: String!, $filter: String!) {
   rev(at:$rev, filter:$filter) {
-    summary
+    summary: message
     authorEmail
     hash
     rev { hash }

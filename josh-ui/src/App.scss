@@ -13,6 +13,10 @@ $color-link: $color-font-normal;
 $color-link-hover: #ffffaa;
 $color-link-visited: $color-font-normal;
 $color-link-visited-hover: #ffffaa;
+$color-file-added: #123212;
+$color-file-deleted: #321212;
+$color-file-added-hover: #324232;
+$color-file-deleted-hover: #423232;
 
 @mixin ui-link-clickable {
   color: $color-link;
@@ -40,7 +44,7 @@ body {
 }
 
 .file-browser-list {
-  margin: 0;
+  margin: 1.5em;
 
   &-entry {
     @include ui-link-clickable;
@@ -67,7 +71,7 @@ body {
 
 nav {
   &.breadcrumbs {
-    padding: .2em .5em;
+    padding: .2em 1.8em;
     margin-bottom: 0.7em;
   }
 
@@ -81,10 +85,17 @@ nav {
   }
 }
 
+pre.commit-message {
+  padding: 2em;
+  font-family: $font-main;
+  background: #111111;
+}
+
 .logo {
   img {
     display: inline-block;
     height: 40px;
+    padding: 0em 0.8em;
   }
 
   margin: .3em 0 .7em;
@@ -97,10 +108,30 @@ nav {
     height: 1em;
   }
 
+ a {
   font-weight: bold;
   color: $color-highlight;
-  text-transform: lowercase;
+  text-decoration: none;
+ }
 }
+
+.current-page {
+  margin: .3em 0 0.7em;
+  display: flex;
+  flex-direction: row;
+  padding-right: 1.5em;
+
+  span {
+    align-self: center;
+    font-size: 1.44em;
+    height: 1em;
+    font-weight: bold;
+    color: $color-font-shadowed;
+    text-decoration: none;
+  }
+
+}
+
 
 .now-browsing {
   display: flex;
@@ -138,6 +169,21 @@ nav {
   &:hover {
     background: $color-background-highlight;
   }
+
+  &.deleted {
+      background: $color-file-deleted;
+      &:hover {
+        background: $color-file-deleted-hover;
+      }
+  }
+
+  &.added {
+      background: $color-file-added;
+      &:hover {
+        background: $color-file-added-hover;
+      }
+  }
+
 }
 
 .commit-list-entry-dir {
@@ -161,6 +207,22 @@ nav {
   }
 }
 
+.changes-list-entry .summary {
+  @include ui-link-clickable;
+  &:hover {
+    background: $color-background-highlight;
+  }
+}
+
+.changes-list-entry .hame {
+  display: block;
+  @include ui-link-clickable;
+  &:hover {
+    background: $color-background-highlight;
+  }
+}
+
+
 .commit-list-entry-browse {
   @include ui-link-clickable;
   &:hover {
@@ -182,13 +244,29 @@ nav {
     color: $color-highlight;
     font-weight: bolder;
   }
+  span.name {
+    margin: 0 0.7em 0 0;
+    font-weight: bolder;
+    color: $color-font-shadowed;
+  }
   span.authorEmail {
     float: right;
     margin: 0 0.7em 0 0;
     color: $color-font-shadowed;
     font-weight: bolder;
   }
+  span.change-hash {
+    float: right;
+    margin: 0 0.7em 0 0;
+    font-weight: bolder;
+  }
   span.summary {
+    margin: 0 0.7em 0 0;
+    font-weight: bolder;
+  }
+  span.change-summary {
+    color: $color-highlight;
+    display:block;
     margin: 0 0.7em 0 0;
     font-weight: bolder;
   }
