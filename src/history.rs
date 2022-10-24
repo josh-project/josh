@@ -465,12 +465,12 @@ pub fn unapply_filter(
             }
 
             // This will typically be parent_count == 2 and mean we are dealing with a merge
-            // where the parents have differences outside of the filter. This is only possible
-            // if one of the parents is a descendant of the target branch and the other is not.
-            // In that case pick the tree of the one that is a descendant.
+            // where the parents have differences outside of the filter.
             parent_count => {
                 let mut tid = git2::Oid::zero();
                 for i in 0..parent_count {
+                    // If one of the parents is a descendant of the target branch and the other is
+                    // not, pick the tree of the one that is a descendant.
                     if (original_parents_refs[i].id() == original_target)
                         || transaction
                             .repo()
@@ -481,19 +481,36 @@ pub fn unapply_filter(
                     }
                 }
 
-                if tid != git2::Oid::zero() {
-                    transaction.repo().find_tree(tid)?
-                } else {
-                    // This used to be our only fallback for the parent_count > 1 case.
-                    // It should never happen anymore.
+                if tid == git2::Oid::zero() && parent_count == 2 {
+                    // If we could not select one of the parents, try to merge them.
+
+                    if let Ok(mut merged_index) = transaction.repo().merge_commits(
+                        original_parents_refs[0],
+                        original_parents_refs[1],
+                        None,
+                    ) {
+                        // If we can auto merge without conflicts, take the result.
+                        if !merged_index.has_conflicts() {
+                            tid = merged_index.write_tree_to(transaction.repo())?;
+                        }
+                    }
+                }
+
+                if tid == git2::Oid::zero() {
+                    // We give up. If we see this message again we need to investigate once
+                    // more and maybe consider allowing a manual override as last resort.
                     tracing::warn!("rejecting merge");
                     let msg = format!(
-                        "rejecting merge with {} parents:\n{:?}",
+                        "rejecting merge with {} parents:\n{:?}\n1) {:?}\n2) {:?}",
                         parent_count,
-                        module_commit.summary().unwrap_or_default()
+                        module_commit.summary().unwrap_or_default(),
+                        original_parents_refs[0].summary().unwrap_or_default(),
+                        original_parents_refs[1].summary().unwrap_or_default(),
                     );
                     return Err(josh_error(&msg));
                 }
+
+                transaction.repo().find_tree(tid)?
             }
         };
 
