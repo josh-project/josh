@@ -47,6 +47,6 @@ jobs:
           cargo test --workspace --all
 
           # Integration tests
-          cargo build --workspace --all-targets
+          cargo build --workspace --all-targets --features hyper_cgi/test-server
           sh run-tests.sh tests/filter/**.t
           sh run-tests.sh tests/proxy/**.t

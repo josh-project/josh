@@ -31,7 +31,7 @@ macro_rules! ok_or {
 }
 
 lazy_static! {
-    static ref ARGS: clap::ArgMatches<'static> = parse_args();
+    static ref ARGS: clap::ArgMatches = parse_args();
 }
 
 pub struct ServerState {
@@ -185,7 +185,7 @@ async fn main() {
     }
 }
 
-fn parse_args() -> clap::ArgMatches<'static> {
+fn parse_args() -> clap::ArgMatches {
     let args = {
         let mut args = vec![];
         for arg in std::env::args() {
@@ -199,16 +199,16 @@ fn parse_args() -> clap::ArgMatches<'static> {
     println!("args: {:?}", args);
 
     let app = clap::App::new("hyper-cgi-test-server")
-        .arg(clap::Arg::with_name("dir").long("dir").takes_value(true))
-        .arg(clap::Arg::with_name("cmd").long("cmd").takes_value(true))
+        .arg(clap::Arg::new("dir").long("dir").takes_value(true))
+        .arg(clap::Arg::new("cmd").long("cmd").takes_value(true))
         .arg(
-            clap::Arg::with_name("args")
+            clap::Arg::new("args")
                 .long("args")
-                .short("a")
+                .short('a')
                 .takes_value(true)
                 .multiple(true),
         )
-        .arg(clap::Arg::with_name("port").long("port").takes_value(true));
+        .arg(clap::Arg::new("port").long("port").takes_value(true));
 
     app.get_matches_from(args)
 }
