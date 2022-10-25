@@ -64,8 +64,7 @@ EOF
 WORKDIR /usr/src/josh
 RUN rustup component add rustfmt
 RUN cargo install --version 0.1.35 cargo-chef
-RUN cargo install --version 0.2.1 hyper_cgi --features=test-server
-RUN cargo install --version 0.10.0 graphql_client_cli
+RUN cargo install --verbose --version 0.10.0 graphql_client_cli
 
 
 FROM dev as dev-local
