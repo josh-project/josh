@@ -12,9 +12,9 @@ version = "22.4.15"
 
 
 [dependencies]
-base64 = "0.13.0"
-clap = "4.0.17"
-futures = "0.3.24"
+base64 = "0.13.1"
+clap = "4.0.18"
+futures = "0.3.25"
 git2 = "0.15.0"
 hyper = { version = "0.14.20", features = ["stream"] }
 hyper-reverse-proxy = "0.5.1"
@@ -30,9 +30,9 @@ opentelemetry-jaeger = "0.17.0"
 percent-encoding = "2.2.0"
 regex = "1.6.0"
 reqwest= { version = "0.11.12", default-features = false, features = ["blocking", "json"] }
-serde= "1.0.145"
-serde_json= "1.0.86"
-serde_yaml = "0.9.13"
+serde= "1.0.147"
+serde_json= "1.0.87"
+serde_yaml = "0.9.14"
 tokio = { version = "1.21.2", features = ["full"] }
 toml = "0.5.9"
 tracing = { version = "0.1.37", features = ["max_level_trace", "release_max_level_trace"] }

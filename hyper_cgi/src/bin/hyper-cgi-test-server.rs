@@ -141,12 +141,14 @@ async fn call(
         return response;
     }
 
-    let workdir =
-        std::path::PathBuf::from(ARGS.value_of("dir").expect("missing working directory"));
+    let workdir = std::path::PathBuf::from(
+        ARGS.get_one::<String>("dir")
+            .expect("missing working directory"),
+    );
 
-    let mut cmd = tokio::process::Command::new(ARGS.value_of("cmd").expect("missing cmd"));
+    let mut cmd = tokio::process::Command::new(ARGS.get_one::<String>("cmd").expect("missing cmd"));
 
-    for arg in ARGS.values_of("args").unwrap() {
+    for arg in ARGS.get_many::<String>("args").unwrap() {
         cmd.arg(&arg);
     }
     cmd.current_dir(&workdir);
@@ -173,7 +175,9 @@ async fn main() {
 
     let addr = format!(
         "0.0.0.0:{}",
-        ARGS.value_of("port").unwrap_or("8000").to_owned()
+        ARGS.get_one::<String>("port")
+            .unwrap_or(&"8000".to_owned())
+            .to_owned()
     )
     .parse()
     .unwrap();
@@ -198,17 +202,11 @@ fn parse_args() -> clap::ArgMatches {
 
     println!("args: {:?}", args);
 
-    let app = clap::App::new("hyper-cgi-test-server")
-        .arg(clap::Arg::new("dir").long("dir").takes_value(true))
-        .arg(clap::Arg::new("cmd").long("cmd").takes_value(true))
-        .arg(
-            clap::Arg::new("args")
-                .long("args")
-                .short('a')
-                .takes_value(true)
-                .multiple(true),
-        )
-        .arg(clap::Arg::new("port").long("port").takes_value(true));
+    let app = clap::Command::new("hyper-cgi-test-server")
+        .arg(clap::Arg::new("dir").long("dir"))
+        .arg(clap::Arg::new("cmd").long("cmd"))
+        .arg(clap::Arg::new("args").long("args").short('a').num_args(1..))
+        .arg(clap::Arg::new("port").long("port"));
 
     app.get_matches_from(args)
 }
