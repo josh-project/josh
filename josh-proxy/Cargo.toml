@@ -12,7 +12,7 @@ version = "22.4.15"
 
 
 [dependencies]
-base64 = "0.13.0"
+base64 = "0.13.1"
 clap = "4.0.17"
 futures = "0.3.24"
 git2 = "0.15.0"
