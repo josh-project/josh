@@ -85,3 +85,19 @@ To explicitly specify a repository name, provide the desired name after the URL 
 repository:
 
     $ git clone http://localhost:8000/josh-project/josh.git:/docs:prefix=josh-docs.git my-repo
+
+Serving a github repo
+---------------------
+
+To prompt for authentication, Josh relies on the server requesting it on fetch. When using a server
+which doesn't need authentication for fetching, Josh will not automatically prompt for
+authentication when pushing, and it will be impossible to provide credentials for pushing.
+
+To solve this, you need to pass the ``--require-auth`` option to josh-proxy.
+This can be done with ``JOSH_EXTRA_OPTS`` when using the docker image like so:
+
+``docker run -d -p 8000:8000 -e JOSH_EXTRA_OPTS="--require-auth" -e JOSH_REMOTE=https://github.com/josh-project -v josh-vol:$(pwd)/git_data joshproject/josh-proxy:latest ``
+
+In this example, we serve only the josh-project repositories. Be aware that if you don't add the
+organisation or repo URL, your instance will be able to serve all of github. You can (and should)
+restrict it to your repository or organisation by making it part of the URL.
