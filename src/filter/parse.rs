@@ -63,15 +63,15 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> JoshResult<Op> {
     match pair.as_rule() {
         Rule::filter => {
             let v: Vec<_> = pair.into_inner().map(|x| unquote(x.as_str())).collect();
-            make_op(v.as_slice())
+            make_op(v.iter().map(String::as_str).collect::<Vec<_>>().as_slice())
         }
         Rule::filter_nop => Ok(Op::Nop),
         Rule::filter_subdir => Ok(Op::Subdir(
-            Path::new(unquote(pair.into_inner().next().unwrap().as_str())).to_owned(),
+            Path::new(&unquote(&pair.into_inner().next().unwrap().as_str())).to_owned(),
         )),
         Rule::filter_presub => {
             let mut inner = pair.into_inner();
-            let arg = unquote(inner.next().unwrap().as_str());
+            let arg = &unquote(inner.next().unwrap().as_str());
             if arg.ends_with('/') {
                 let arg = arg.trim_end_matches('/');
                 Ok(Op::Chain(
@@ -91,14 +91,14 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> JoshResult<Op> {
         Rule::filter_group => {
             let v: Vec<_> = pair.into_inner().map(|x| unquote(x.as_str())).collect();
 
-            match v.as_slice() {
+            match v.iter().map(String::as_str).collect::<Vec<_>>().as_slice() {
                 [args] => Ok(Op::Compose(parse_group(args)?)),
                 [cmd, args] => {
                     let g = parse_group(args)?;
                     match *cmd {
                         "exclude" => Ok(Op::Exclude(to_filter(Op::Compose(g)))),
                         "subtract" if g.len() == 2 => Ok(Op::Subtract(g[0], g[1])),
-                        _ => Err(josh_error("parse_item: no match")),
+                        _ => Err(josh_error(&format!("parse_item: no match {:?}", cmd))),
                     }
                 }
                 _ => Err(josh_error("parse_item: no match {:?}")),
@@ -199,22 +199,15 @@ fn parse_workspace(filter_spec: &str) -> JoshResult<Vec<Filter>> {
     }
 }
 
-// Remove double quotes from a string if present.
-fn unquote(s: &str) -> &str {
-    if s.len() < 2 {
+// Parse json string if neccessary
+fn unquote(s: &str) -> String {
+    if let Ok(serde_json::Value::String(s)) = serde_json::from_str(s) {
         return s;
     }
-
-    // We only need to check for a quote at the beginning,
-    // because not properly quoted string will be rejected
-    // by the grammar before we even get here
-    if s.starts_with('\"') {
-        return &s[1..s.len() - 1];
-    }
-    s
+    return s.to_string();
 }
 
-// Add quotes to a string if if contains any chars reserved
+// Encode string as json if it contains any chars reserved
 // by the filter language
 pub fn quote(s: &str) -> String {
     if let Ok(r) = Grammar::parse(Rule::filter_path, s) {
@@ -222,7 +215,8 @@ pub fn quote(s: &str) -> String {
             return s.to_string();
         }
     }
-    return format!("\"{}\"", s);
+    serde_json::to_string(&serde_json::Value::String(s.to_string()))
+        .unwrap_or("<invalid string>".to_string())
 }
 
 /// Create a `Filter` from a string representation
