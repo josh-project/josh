@@ -3,7 +3,7 @@ glob
 
 Support for matching file paths against Unix shell style patterns.
 
-[![Continuous integration](https://github.com/rust-lang-nursery/glob/actions/workflows/rust.yml/badge.svg)](https://github.com/rust-lang-nursery/glob/actions/workflows/rust.yml)
+[![Continuous integration](https://github.com/rust-lang/glob/actions/workflows/rust.yml/badge.svg)](https://github.com/rust-lang/glob/actions/workflows/rust.yml)
 [Documentation](https://docs.rs/glob)
 
 ## Usage
