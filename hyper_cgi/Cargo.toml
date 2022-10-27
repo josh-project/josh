@@ -1,6 +1,6 @@
 [package]
 name = "hyper_cgi"
-version = "22.4.15"
+version = "22.10.25"
 authors = ["Christian Schilling <initcrash@gmail.com>", "Louis-Marie Givel <louis-marie.givel@esrlabs.com>"]
 edition = "2018"
 license-file = "LICENSE"
@@ -11,15 +11,15 @@ readme = "README.md"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-futures = "0.3"
-tokio = { version = "1.16", features = ["full"] }
-tokio-util = { version = "0.7", features = ["compat"] }
-hyper = { version = "0.14", features = ["stream", "tcp", "server", "http1"] }
+futures = "0.3.25"
+tokio = { version = "1.21.2", features = ["full"] }
+tokio-util = { version = "0.7.4", features = ["compat"] }
+hyper = { version = "0.14.20", features = ["stream", "tcp", "server", "http1"] }
 
-clap = { version = "3.2", optional = true }
-base64 = { version = "0.13", optional = true }
-rand = { version = "0.8", optional = true, features = ["std"] }
-lazy_static = { version = "1.4", optional = true }
+clap = { version = "4.0.18", optional = true }
+base64 = { version = "0.13.1", optional = true }
+rand = { version = "0.8.5", optional = true, features = ["std"] }
+lazy_static = { version = "1.4.0", optional = true }
 
 [lib]
 name = "hyper_cgi"
