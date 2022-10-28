@@ -543,11 +543,15 @@ async fn call_service(
         meta.config.repo = parsed_url.upstream_repo;
     }
 
-    let filter = josh::filter::chain(
+    let mut filter = josh::filter::chain(
         meta.config.filter,
         josh::filter::parse(&parsed_url.filter_spec)?,
     );
     let remote_url = [serv.upstream_url.as_str(), meta.config.repo.as_str()].join("");
+
+    if let Some(filter_prefix) = ARGS.get_one::<String>("filter-prefix").map(|v| v.as_str()) {
+        filter = josh::filter::chain(josh::filter::parse(filter_prefix)?, filter);
+    }
 
     if parsed_url.pathinfo.starts_with("/info/lfs") {
         return Ok(Response::builder()
@@ -977,7 +981,7 @@ fn make_app() -> clap::Command {
                 .short('n')
                 .help("Number of concurrent upstream git fetch/push operations"),
         )
-        .arg(clap::Arg::new("port").long("port").num_args(1))
+        .arg(clap::Arg::new("port").long("port"))
         .arg(
             clap::Arg::new("cache-duration")
                 .long("cache-duration")
@@ -988,6 +992,11 @@ fn make_app() -> clap::Command {
             clap::Arg::new("static-resource-proxy-target")
                 .long("static-resource-proxy-target")
                 .help("Proxy static resource requests to a different URL"),
+        )
+        .arg(
+            clap::Arg::new("filter-prefix")
+                .long("filter-prefix")
+                .help("Filter to be prefixed to all queries of this instance"),
         )
 }
 
