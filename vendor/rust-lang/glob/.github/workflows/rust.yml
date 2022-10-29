@@ -18,7 +18,9 @@ jobs:
         - nightly
         - 1.23.0
         os:
-        - macos-12
+        # FIXME: compiling with 1.23 on macOS 12 fails to linL
+        # archive member 'rust.metadata.bin' with length 40821 is not mach-o or llvm bitcode file
+        - macos-11
         - windows-2022
         - ubuntu-22.04
 
