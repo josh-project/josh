@@ -43,7 +43,7 @@
   * add file2
   * add file1
 
-  $ josh-filter -s --squash --file file.josh
+  $ josh-filter -s --single --file file.josh
   [2] :prefix=a
   [2] :prefix=b
   [3] :/sub1
