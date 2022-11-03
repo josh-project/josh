@@ -105,7 +105,7 @@ fn make_app() -> clap::Command {
         )
         .arg(
             clap::Arg::new("reverse").action(clap::ArgAction::SetTrue).long("reverse").help(
-                "reverse-apply the filter to the output reference to update the input referebce",
+                "reverse-apply the filter to the output reference to update the input reference",
             ),
         )
         .arg(
