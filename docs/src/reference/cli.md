@@ -7,6 +7,11 @@ By default it will use ``HEAD`` as input and update ``FILTERED_HEAD`` with the f
 history, taking a filter specification as argument.
 (Note that input and output are swapped with `--reverse`.)
 
+It can be installed with the following Cargo command, assuming Rust is installed:
+```shell
+cargo install josh --git https://github.com/josh-project/josh.git
+```
+
 git-sync
 ========
 
