@@ -1005,6 +1005,11 @@ impl MatchOptions {
     ///     require_literal_leading_dot: false
     /// }
     /// ```
+    ///
+    /// # Note
+    /// The behavior of this method doesn't match `default()`'s. This returns
+    /// `case_sensitive` as `true` while `default()` does it as `false`.
+    // FIXME: Consider unity the behavior with `default()` in a next major release.
     pub fn new() -> Self {
         Self {
             case_sensitive: true,
