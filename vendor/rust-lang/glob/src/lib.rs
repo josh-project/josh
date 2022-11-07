@@ -293,6 +293,7 @@ impl GlobError {
 }
 
 impl Error for GlobError {
+    #[allow(deprecated)]
     fn description(&self) -> &str {
         self.error.description()
     }
