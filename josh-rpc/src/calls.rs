@@ -8,7 +8,7 @@ pub enum RequestedCommand {
     GitReceivePack,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct ServeNamespace {
     pub stdin_pipe: PathBuf,
     pub stdout_pipe: PathBuf,

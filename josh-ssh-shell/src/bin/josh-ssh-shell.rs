@@ -6,13 +6,17 @@ extern crate josh_ssh_shell;
 use clap::Parser;
 use std::os::unix::fs::FileTypeExt;
 use std::{env, fs, process};
+use std::convert::TryFrom;
+use std::fmt::{Display, Formatter};
 use std::path::{PathBuf, Path};
 use std::process::ExitCode;
+use std::time::Duration;
 use reqwest::header::CONTENT_TYPE;
+use reqwest::StatusCode;
+use tokio::io::AsyncWriteExt;
 use tracing_subscriber::Layer;
-use josh_ssh_shell::named_pipe;
-use named_pipe::NamedPipe;
 use josh_rpc::calls::{RequestedCommand, ServeNamespace};
+use josh_rpc::named_pipe::NamedPipe;
 
 #[derive(Parser, Debug)]
 #[command(about = "Josh SSH shell")]
@@ -20,6 +24,9 @@ struct Args {
     #[arg(short)]
     command: String,
 }
+
+const HTTP_REQUEST_TIMEOUT: u64 = 120;
+const HTTP_JOSH_SERVER: &str = "http://localhost:8000";
 
 fn isatty(stream: libc::c_int) -> bool {
     unsafe { libc::isatty(stream) != 0 }
@@ -30,47 +37,65 @@ fn die(message: &str) -> ! {
     process::exit(1);
 }
 
-async fn handle_command(command: RequestedCommand, ssh_socket: &Path, query: &str) -> Result<(), std::io::Error> {
+// async fn stdin_thread_test() {
+//     std::thread::spawn(move || {
+//         logging::info!("Capturing STDIN.");
+//
+//         loop {
+//             let (buffer, len) = match stdin.fill_buf() {
+//                 Ok(buffer) if buffer.is_empty() => break, // EOF.
+//                 Ok(buffer) => (Ok(Bytes::copy_from_slice(buffer)), buffer.len()),
+//                 Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+//                 Err(error) => (Err(error), 0),
+//             };
+//
+//             stdin.consume(len);
+//
+//             if executor::block_on(sender.send(buffer)).is_err() {
+//                 // Receiver has closed so we should shutdown.
+//                 break;
+//             }
+//         }
+//     });
+// }
+
+#[derive(thiserror::Error, Debug)]
+enum CallError {
+    FifoError(#[from] std::io::Error),
+    RequestError(#[from] reqwest::Error),
+    RemoteError {
+        status: StatusCode,
+        body: Vec<u8>,
+    },
+}
+
+impl Display for CallError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CallError::FifoError(e) => {
+                writeln!(f, "{:?}", e)
+            },
+            CallError::RequestError(e) => {
+                writeln!(f, "{:?}", e)
+            },
+            CallError::RemoteError { status, body } => {
+                write!(f, "Remote backend returned error: ")?;
+                write!(f, "status code: {}, ", status)?;
+                writeln!(f, "body: {}", String::from_utf8_lossy(body).into_owned())
+            }
+        }
+    }
+}
+
+async fn handle_command(command: RequestedCommand, ssh_socket: &Path, query: &str) -> Result<(), CallError> {
     let stdout_pipe = NamedPipe::new("josh-stdout")?;
     let stdin_pipe = NamedPipe::new("josh-stdin")?;
 
-    // eprintln!("stdout {:?}", stdout_pipe.path);
-    // eprintln!("stdin {:?}", stdin_pipe.path);
+    eprintln!("stdout {:?}", stdout_pipe.path);
+    eprintln!("stdin {:?}", stdin_pipe.path);
 
-    let mut stdin = tokio::io::stdin();
-    let mut stdout = tokio::io::stdout();
-
-    let read_stdout = async {
-        eprintln!("copy: fifo -> own stdout");
-
-        let mut stdout_pipe_handle = tokio::fs::OpenOptions::new()
-            .read(true)
-            .write(false)
-            .create(false)
-            .open(stdout_pipe.path.as_path()).await?;
-
-        let result = tokio::io::copy(&mut stdout_pipe_handle, &mut stdout).await;
-
-        eprintln!("copy: fifo -> own stdout finish");
-
-        result
-    };
-
-    let write_stdin = async {
-        eprintln!("copy: own stdin -> fifo");
-
-        let mut stdin_pipe_handle = tokio::fs::OpenOptions::new()
-            .read(false)
-            .write(true)
-            .create(false)
-            .open(stdin_pipe.path.as_path()).await?;
-
-        let result = tokio::io::copy(&mut stdin, &mut stdin_pipe_handle).await;
-
-        eprintln!("copy: own stdin -> fifo finish");
-
-        result
-    };
+    let stdin_cancel_token = tokio_util::sync::CancellationToken::new();
+    let stdin_cancel_token_stdout = stdin_cancel_token.clone();
 
     let rpc_payload = ServeNamespace {
         stdout_pipe: stdout_pipe.path.clone(),
@@ -79,28 +104,93 @@ async fn handle_command(command: RequestedCommand, ssh_socket: &Path, query: &st
         query: query.to_string(),
     };
 
-    let make_request = async {
+    let read_stdout = async move {
+        eprintln!("copy: fifo -> own stdout");
+
+        let mut stdout = tokio::io::stdout();
+
+        let mut stdout_pipe_handle = tokio::fs::OpenOptions::new()
+            .read(true)
+            .write(false)
+            .create(false)
+            .open(stdout_pipe.path.as_path()).await?;
+
+        tokio::io::copy(&mut stdout_pipe_handle, &mut stdout).await?;
+
+        stdin_cancel_token_stdout.cancel();
+        eprintln!("copy: fifo -> own stdout finish");
+
+        Ok(())
+    };
+
+    let write_stdin = async move {
+        eprintln!("copy: own stdin -> fifo");
+
+        let copy_future = async {
+            let mut stdin = josh_rpc::tokio_fd::AsyncFd::try_from(libc::STDIN_FILENO)?;
+
+            // When the remote end sends EOF over the stdout_pipe,
+            // we should stop copying stuff here
+            let mut stdin_pipe_handle = tokio::fs::OpenOptions::new()
+                .read(false)
+                .write(true)
+                .create(false)
+                .open(stdin_pipe.path.as_path()).await?;
+
+            tokio::io::copy(&mut stdin, &mut stdin_pipe_handle).await?;
+            stdin_pipe_handle.flush().await?;
+
+            Ok(())
+        };
+
+        let result = tokio::select! {
+            copy_result = copy_future => {
+                copy_result.map(|_| ())
+            }
+            _ = stdin_cancel_token.cancelled() => {
+                Ok(())
+            }
+        };
+
+        eprintln!("copy: own stdin -> fifo finish");
+
+        result
+    };
+
+    let make_request = async move {
         eprintln!("http request");
 
         let client = reqwest::Client::new();
-        let response = client.post("http://localhost:8000/serve_namespace")
+        let response = client.post(format!("{}/serve_namespace", HTTP_JOSH_SERVER))
             .header(CONTENT_TYPE, "application/json")
             .body(serde_json::to_string(&rpc_payload).unwrap())
+            .timeout(Duration::from_secs(HTTP_REQUEST_TIMEOUT))
             .send()
-            .await;
+            .await?;
 
-        let result = response.or(Err(std::io::Error::from(std::io::ErrorKind::ConnectionAborted)));
+        let status = response.status();
+        let bytes = response
+            .bytes()
+            .await?;
+
+        let result = match status {
+            StatusCode::OK | StatusCode::NO_CONTENT => Ok(()),
+            code => Err(CallError::RemoteError {
+                status: code,
+                body: bytes.to_vec(),
+            }),
+        };
 
         eprintln!("http request finish");
 
         result
     };
 
-    let (_, _, response) = tokio::try_join!(read_stdout, write_stdin, make_request)?;
+    eprintln!("before try_join");
+    let request_result = tokio::try_join!(read_stdout, write_stdin, make_request);
+    eprintln!("after try_join");
 
-    eprintln!("{:?}", response);
-
-    Ok(())
+    request_result.map(|_| ())
 }
 
 fn setup_tracing() {

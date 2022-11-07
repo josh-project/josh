@@ -15,11 +15,13 @@ ARG GIT_GID_UID=2001
 RUN addgroup -g ${GIT_GID_UID} git
 RUN adduser \
     -h /home/git \
-    -s /usr/bin/git-shell \
+    -s josh-ssh-shell \
     -G git \
     -D \
     -u ${GIT_GID_UID} \
     git
+
+# sshd will call josh-ssh-shell -c "git command"
 
 # https://unix.stackexchange.com/a/193131/336647
 RUN usermod -p '*' git

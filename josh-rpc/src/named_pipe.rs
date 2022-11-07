@@ -3,6 +3,7 @@ extern crate libc;
 
 use std::{env, io};
 use std::ffi::CString;
+use std::io::Error;
 use std::path::{Path, PathBuf};
 use rand::{thread_rng, Rng};
 use rand::distributions::Alphanumeric;
@@ -37,7 +38,7 @@ fn make_fifo(path: &Path) -> Result<(), io::Error> {
 
     match return_code {
         0 => Ok(()),
-        _ => Err(io::Error::from_raw_os_error(return_code))
+        _ => Err(Error::last_os_error())
     }
 }
 

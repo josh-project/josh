@@ -1,0 +1,22 @@
+version: 3
+
+tasks:
+  create-target-dir:
+    run: once
+    status:
+      - test -d target
+    cmds:
+      - mkdir target
+
+  build:
+    deps:
+      - create-target-dir
+    sources:
+      - main.go
+    generates:
+      - target/josh-ssh-dev-server
+    cmds:
+      - go build -o target/josh-ssh-dev-server
+
+  default:
+    - task: build

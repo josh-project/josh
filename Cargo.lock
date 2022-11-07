@@ -1052,6 +1052,7 @@ dependencies = [
  "serde_yaml",
  "sled",
  "strfmt",
+ "tokio-util",
  "toml",
  "tracing",
  "tracing-log",
@@ -1085,6 +1086,7 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "tokio",
+ "tokio-util",
  "toml",
  "tracing",
  "tracing-futures",
@@ -1099,7 +1101,10 @@ dependencies = [
 name = "josh-rpc"
 version = "0.1.0"
 dependencies = [
+ "libc",
+ "rand 0.8.5",
  "serde",
+ "tokio",
 ]
 
 [[package]]
@@ -1113,7 +1118,9 @@ dependencies = [
  "reqwest",
  "serde_json",
  "shell-words",
+ "thiserror",
  "tokio",
+ "tokio-util",
  "tracing",
  "tracing-futures",
  "tracing-opentelemetry",
