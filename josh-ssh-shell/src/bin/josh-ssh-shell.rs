@@ -73,15 +73,15 @@ impl Display for CallError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             CallError::FifoError(e) => {
-                writeln!(f, "{:?}", e)
+                write!(f, "{:?}", e)
             },
             CallError::RequestError(e) => {
-                writeln!(f, "{:?}", e)
+                write!(f, "{:?}", e)
             },
             CallError::RemoteError { status, body } => {
                 write!(f, "Remote backend returned error: ")?;
                 write!(f, "status code: {}, ", status)?;
-                writeln!(f, "body: {}", String::from_utf8_lossy(body).into_owned())
+                write!(f, "body: {}", String::from_utf8_lossy(body).into_owned())
             }
         }
     }
@@ -97,6 +97,9 @@ async fn handle_command(command: RequestedCommand, ssh_socket: &Path, query: &st
     let stdin_cancel_token = tokio_util::sync::CancellationToken::new();
     let stdin_cancel_token_stdout = stdin_cancel_token.clone();
 
+    let stdout_cancel_token = tokio_util::sync::CancellationToken::new();
+    let stdout_cancel_token_http = stdout_cancel_token.clone();
+
     let rpc_payload = ServeNamespace {
         stdout_pipe: stdout_pipe.path.clone(),
         stdin_pipe: stdin_pipe.path.clone(),
@@ -107,35 +110,39 @@ async fn handle_command(command: RequestedCommand, ssh_socket: &Path, query: &st
     let read_stdout = async move {
         eprintln!("copy: fifo -> own stdout");
 
-        let mut stdout = tokio::io::stdout();
+        let copy_future = async {
+            let mut stdout = tokio::io::stdout();
+            let mut stdout_pipe_handle = tokio::net::UnixStream::connect(stdout_pipe.path.as_path()).await?;
 
-        let mut stdout_pipe_handle = tokio::fs::OpenOptions::new()
-            .read(true)
-            .write(false)
-            .create(false)
-            .open(stdout_pipe.path.as_path()).await?;
+            tokio::io::copy(&mut stdout_pipe_handle, &mut stdout).await?;
 
-        tokio::io::copy(&mut stdout_pipe_handle, &mut stdout).await?;
+            Ok(())
+        };
+
+        let result = tokio::select! {
+            copy_result = copy_future => {
+                copy_result.map(|_| ())
+            }
+            _ = stdout_cancel_token.cancelled() => {
+                Ok(())
+            }
+        };
 
         stdin_cancel_token_stdout.cancel();
+
         eprintln!("copy: fifo -> own stdout finish");
 
-        Ok(())
+        result
     };
 
     let write_stdin = async move {
         eprintln!("copy: own stdin -> fifo");
 
         let copy_future = async {
-            let mut stdin = josh_rpc::tokio_fd::AsyncFd::try_from(libc::STDIN_FILENO)?;
-
             // When the remote end sends EOF over the stdout_pipe,
             // we should stop copying stuff here
-            let mut stdin_pipe_handle = tokio::fs::OpenOptions::new()
-                .read(false)
-                .write(true)
-                .create(false)
-                .open(stdin_pipe.path.as_path()).await?;
+            let mut stdin = josh_rpc::tokio_fd::AsyncFd::try_from(libc::STDIN_FILENO)?;
+            let mut stdin_pipe_handle = tokio::net::UnixStream::connect(stdin_pipe.path.as_path()).await?;
 
             tokio::io::copy(&mut stdin, &mut stdin_pipe_handle).await?;
             stdin_pipe_handle.flush().await?;
@@ -159,6 +166,8 @@ async fn handle_command(command: RequestedCommand, ssh_socket: &Path, query: &st
 
     let make_request = async move {
         eprintln!("http request");
+
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
 
         let client = reqwest::Client::new();
         let response = client.post(format!("{}/serve_namespace", HTTP_JOSH_SERVER))
@@ -210,6 +219,8 @@ fn setup_tracing() {
 
 #[tokio::main]
 async fn main() -> ExitCode {
+    console_subscriber::init();
+
     let args = Args::parse();
 
     // if isatty(libc::STDIN_FILENO) || isatty(libc::STDOUT_FILENO) {
@@ -253,7 +264,7 @@ async fn main() -> ExitCode {
         die("invalid arguments supplied for git command")
     }
 
-    setup_tracing();
+    // setup_tracing();
 
     let query = args.first().unwrap();
 
