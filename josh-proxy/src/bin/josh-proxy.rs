@@ -792,23 +792,6 @@ async fn call_service(
         headref = "HEAD".to_string();
     }
 
-    // if this was a git command (git-upload-pack)
-    // we have been called from some sort of shell in an SSH session
-    // credentials are available via a socket defined in an env variable
-    //
-    // before we can prepare the repo for serving using native git commands,
-    // we have to fetch and transform
-    //
-    // we have to fetch to verify that the user has at least one key that remote accepts
-    //
-    // we have to check auth from the main process because acceptance of SSH key does not
-    // imply access to a specific repo is granted
-    //
-    // Option 1. to check auth from the git-upload-pack, we make an HTTP request to the main Josh process
-    // before we make a request, we create a "forwarding" socket that josh user has access to.
-    // we pass the path to that socket together with HTTP request
-    // Option 2. we get the fetch parameters from the main josh process via an HTTP request, this has
-    // difficulties related to locking during ref update
     let http_auth_required =
         ARGS.get_flag("require-auth") && parsed_url.pathinfo == "/git-receive-pack";
 
@@ -883,16 +866,6 @@ async fn call_service(
         return serve_query(serv, q, meta.config.repo, filter, headref).await;
     }
 
-    // we don't serve all refs to all connecting users when connecting over http,
-    // we intend to only provide requested filtered refs
-    //
-    // option 1. to make it work with ssh (and http) we can implement git protocol and detect command to discover refs
-    // we can then answer the command without actually running the real implementation
-    // option 2. run the http command and pipe the output to the stdout stream as if it was served by native command
-    // check: does this actually apply to ssh??
-    //
-    // we call the main process through HTTP which creates the namespace and filters, then we set the namespace
-    // with an environment variable and run real git-receive/upload-pack
     let temp_ns = prepare_namespace(serv.clone(), &meta, filter, &headref)
         .in_current_span()
         .await?;
