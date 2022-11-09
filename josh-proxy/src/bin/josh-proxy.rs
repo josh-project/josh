@@ -2,7 +2,7 @@
 #[macro_use]
 extern crate lazy_static;
 
-use josh_proxy::RepoUpdate;
+use josh_proxy::{MetaConfig, RepoUpdate};
 use opentelemetry::global;
 use opentelemetry::sdk::propagation::TraceContextPropagator;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
@@ -467,6 +467,24 @@ async fn query_meta_repo(
     return Ok(meta);
 }
 
+async fn make_meta_config(serv: Arc<JoshProxyService>, auth: &josh_proxy::auth::Handle, parsed_url: &FilteredRepoUrl) -> josh::JoshResult<MetaConfig> {
+    let mut meta = Default::default();
+
+    if let Ok(meta_repo) = std::env::var("JOSH_META_REPO") {
+        let auth = if let Ok(token) = std::env::var("JOSH_META_AUTH_TOKEN") {
+            josh_proxy::auth::add_auth(&token)?
+        } else {
+            auth.clone()
+        };
+
+        meta = query_meta_repo(serv.clone(), &meta_repo, &parsed_url.upstream_repo, &auth).await?;
+    } else {
+        meta.config.repo = parsed_url.upstream_repo.clone();
+    }
+
+    Ok(meta)
+}
+
 async fn serve_namespace(params: josh_rpc::calls::ServeNamespace) -> josh::JoshResult<()> {
     const SERVE_TIMEOUT: u64 = 60;
 
@@ -602,6 +620,19 @@ async fn serve_namespace(params: josh_rpc::calls::ServeNamespace) -> josh::JoshR
     }
 }
 
+fn is_repo_blocked(meta: &MetaConfig) -> bool {
+    let block = std::env::var("JOSH_REPO_BLOCK").unwrap_or("".to_owned());
+    let block = block.split(";").collect::<Vec<_>>();
+
+    for b in block {
+        if b == meta.config.repo {
+            return true;
+        }
+    }
+
+    false
+}
+
 async fn handle_serve_namespace_request(
     req: Request<hyper::Body>,
 ) -> josh::JoshResult<Response<hyper::Body>> {
@@ -634,15 +665,18 @@ async fn handle_serve_namespace_request(
         Ok(parsed) => parsed,
     };
 
-    // let parsed_url = if let Some(mut parsed_url) = FilteredRepoUrl::from_str(&params.query) {
-    //     if parsed_url.filter_spec.is_empty() {
-    //         parsed_url.filter_spec = ":/".to_string();
-    //     }
-    //
-    //     parsed_url
-    // } else {
-    //     return Ok(make_response(hyper::Body::from("unable to parse query"), StatusCode::BAD_REQUEST))
-    // };
+    let _parsed_url = if let Some(mut parsed_url) = FilteredRepoUrl::from_str(&params.query) {
+        if parsed_url.filter_spec.is_empty() {
+            parsed_url.filter_spec = ":/".to_string();
+        }
+
+        parsed_url
+    } else {
+        return Ok(make_response(
+            hyper::Body::from("unable to parse query"),
+            StatusCode::BAD_REQUEST,
+        ));
+    };
 
     let serve_result = serve_namespace(params).await;
     tracing::trace!("serve_result: {:?}", serve_result);
@@ -729,24 +763,14 @@ async fn call_service(
         }
     };
 
-    let mut meta = Default::default();
-
-    if let Ok(meta_repo) = std::env::var("JOSH_META_REPO") {
-        let auth = if let Ok(token) = std::env::var("JOSH_META_AUTH_TOKEN") {
-            josh_proxy::auth::add_auth(&token)?
-        } else {
-            auth.clone()
-        };
-        meta = query_meta_repo(serv.clone(), &meta_repo, &parsed_url.upstream_repo, &auth).await?;
-    } else {
-        meta.config.repo = parsed_url.upstream_repo;
-    }
+    let meta = make_meta_config(serv.clone(), &auth, &parsed_url).await?;
 
     let mut filter = josh::filter::chain(
         meta.config.filter,
         josh::filter::parse(&parsed_url.filter_spec)?,
     );
-    let remote_url = [serv.upstream_url.as_str(), meta.config.repo.as_str()].join("");
+
+    let remote_url = serv.upstream_url.clone() + meta.config.repo.as_str();
 
     if let Some(filter_prefix) = ARGS.get_one::<String>("filter-prefix").map(|v| v.as_str()) {
         filter = josh::filter::chain(josh::filter::parse(filter_prefix)?, filter);
@@ -754,7 +778,7 @@ async fn call_service(
 
     if parsed_url.pathinfo.starts_with("/info/lfs") {
         return Ok(Response::builder()
-            .status(307)
+            .status(hyper::StatusCode::TEMPORARY_REDIRECT)
             .header("Location", format!("{}{}", remote_url, parsed_url.pathinfo))
             .body(hyper::Body::empty())?);
     }
@@ -781,36 +805,32 @@ async fn call_service(
     // we pass the path to that socket together with HTTP request
     // Option 2. we get the fetch parameters from the main josh process via an HTTP request, this has
     // difficulties related to locking during ref update
-    if !josh_proxy::auth::check_auth(
-        &remote_url,
-        &auth,
-        ARGS.get_flag("require-auth") && parsed_url.pathinfo == "/git-receive-pack",
-    )
-    .in_current_span()
-    .await?
+    let http_auth_required =
+        ARGS.get_flag("require-auth") && parsed_url.pathinfo == "/git-receive-pack";
+
+    if !josh_proxy::auth::check_auth(&remote_url, &auth, http_auth_required)
+        .in_current_span()
+        .await?
     {
         tracing::trace!("require-auth");
         let builder = Response::builder()
-            .header("WWW-Authenticate", "Basic realm=User Visible Realm")
+            .header(
+                reqwest::header::WWW_AUTHENTICATE,
+                "Basic realm=User Visible Realm",
+            )
             .status(hyper::StatusCode::UNAUTHORIZED);
         return Ok(builder.body(hyper::Body::empty())?);
     }
 
-    let block = std::env::var("JOSH_REPO_BLOCK").unwrap_or("".to_owned());
-    let block = block.split(";").collect::<Vec<_>>();
-
-    // repo blocking would move up with ssh
-    for b in block {
-        if b == meta.config.repo {
-            return Ok(make_response(
-                hyper::Body::from(formatdoc!(
-                    r#"
+    if is_repo_blocked(&meta) {
+        return Ok(make_response(
+            hyper::Body::from(formatdoc!(
+                r#"
                     Access to this repo is blocked via JOSH_REPO_BLOCK
                     "#
-                )),
-                hyper::StatusCode::UNPROCESSABLE_ENTITY,
-            ));
-        }
+            )),
+            hyper::StatusCode::UNPROCESSABLE_ENTITY,
+        ));
     }
 
     if parsed_url.api == "/~/graphql" {
