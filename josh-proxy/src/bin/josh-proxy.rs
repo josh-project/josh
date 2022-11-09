@@ -508,7 +508,7 @@ async fn serve_namespace(params: josh_rpc::calls::ServeNamespace) -> josh::JoshR
     };
 
     let mut process = tokio::process::Command::new(command)
-        .arg("/Users/vladislavivanov/Projects/pre-commit")
+        .arg("")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()?;
