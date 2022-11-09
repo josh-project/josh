@@ -6,4 +6,6 @@
 !src
 !josh-ui
 !josh-proxy
+!josh-rpc
+!josh-ssh-shell
 !hyper_cgi
