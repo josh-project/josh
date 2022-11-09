@@ -467,7 +467,11 @@ async fn query_meta_repo(
     return Ok(meta);
 }
 
-async fn make_meta_config(serv: Arc<JoshProxyService>, auth: &josh_proxy::auth::Handle, parsed_url: &FilteredRepoUrl) -> josh::JoshResult<MetaConfig> {
+async fn make_meta_config(
+    serv: Arc<JoshProxyService>,
+    auth: &josh_proxy::auth::Handle,
+    parsed_url: &FilteredRepoUrl,
+) -> josh::JoshResult<MetaConfig> {
     let mut meta = Default::default();
 
     if let Ok(meta_repo) = std::env::var("JOSH_META_REPO") {
