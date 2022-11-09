@@ -1,22 +1,23 @@
 extern crate clap;
+extern crate josh_ssh_shell;
 extern crate libc;
 extern crate shell_words;
-extern crate josh_ssh_shell;
 
 use clap::Parser;
-use std::os::unix::fs::FileTypeExt;
-use std::{env, fs, process};
-use std::convert::TryFrom;
-use std::fmt::{Display, Formatter};
-use std::path::{PathBuf, Path};
-use std::process::ExitCode;
-use std::time::Duration;
-use reqwest::header::CONTENT_TYPE;
-use reqwest::StatusCode;
-use tokio::io::AsyncWriteExt;
-use tracing_subscriber::Layer;
 use josh_rpc::calls::{RequestedCommand, ServeNamespace};
 use josh_rpc::named_pipe::NamedPipe;
+use josh_rpc::tokio_fd::IntoAsyncFd;
+use reqwest::header::CONTENT_TYPE;
+use reqwest::StatusCode;
+use std::convert::TryFrom;
+use std::fmt::{Display, Formatter};
+use std::os::unix::fs::FileTypeExt;
+use std::path::Path;
+use std::process::ExitCode;
+use std::time::Duration;
+use std::{env, fs, process};
+use tokio::io::AsyncWriteExt;
+use tracing_subscriber::Layer;
 
 #[derive(Parser, Debug)]
 #[command(about = "Josh SSH shell")]
@@ -28,45 +29,16 @@ struct Args {
 const HTTP_REQUEST_TIMEOUT: u64 = 120;
 const HTTP_JOSH_SERVER: &str = "http://localhost:8000";
 
-fn isatty(stream: libc::c_int) -> bool {
-    unsafe { libc::isatty(stream) != 0 }
-}
-
 fn die(message: &str) -> ! {
     eprintln!("josh-ssh-shell: {}", message);
     process::exit(1);
 }
 
-// async fn stdin_thread_test() {
-//     std::thread::spawn(move || {
-//         logging::info!("Capturing STDIN.");
-//
-//         loop {
-//             let (buffer, len) = match stdin.fill_buf() {
-//                 Ok(buffer) if buffer.is_empty() => break, // EOF.
-//                 Ok(buffer) => (Ok(Bytes::copy_from_slice(buffer)), buffer.len()),
-//                 Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
-//                 Err(error) => (Err(error), 0),
-//             };
-//
-//             stdin.consume(len);
-//
-//             if executor::block_on(sender.send(buffer)).is_err() {
-//                 // Receiver has closed so we should shutdown.
-//                 break;
-//             }
-//         }
-//     });
-// }
-
 #[derive(thiserror::Error, Debug)]
 enum CallError {
     FifoError(#[from] std::io::Error),
     RequestError(#[from] reqwest::Error),
-    RemoteError {
-        status: StatusCode,
-        body: Vec<u8>,
-    },
+    RemoteError { status: StatusCode, body: Vec<u8> },
 }
 
 impl Display for CallError {
@@ -74,10 +46,10 @@ impl Display for CallError {
         match self {
             CallError::FifoError(e) => {
                 write!(f, "{:?}", e)
-            },
+            }
             CallError::RequestError(e) => {
                 write!(f, "{:?}", e)
-            },
+            }
             CallError::RemoteError { status, body } => {
                 write!(f, "Remote backend returned error: ")?;
                 write!(f, "status code: {}, ", status)?;
@@ -87,20 +59,23 @@ impl Display for CallError {
     }
 }
 
-async fn handle_command(command: RequestedCommand, ssh_socket: &Path, query: &str) -> Result<(), CallError> {
+async fn handle_command(
+    command: RequestedCommand,
+    ssh_socket: &Path,
+    query: &str,
+) -> Result<(), CallError> {
     let stdout_pipe = NamedPipe::new("josh-stdout")?;
     let stdin_pipe = NamedPipe::new("josh-stdin")?;
 
-    eprintln!("stdout {:?}", stdout_pipe.path);
-    eprintln!("stdin {:?}", stdin_pipe.path);
-
     let stdin_cancel_token = tokio_util::sync::CancellationToken::new();
     let stdin_cancel_token_stdout = stdin_cancel_token.clone();
+    let stdin_cancel_token_http = stdin_cancel_token.clone();
 
     let stdout_cancel_token = tokio_util::sync::CancellationToken::new();
     let stdout_cancel_token_http = stdout_cancel_token.clone();
 
     let rpc_payload = ServeNamespace {
+        command,
         stdout_pipe: stdout_pipe.path.clone(),
         stdin_pipe: stdin_pipe.path.clone(),
         ssh_socket: ssh_socket.to_path_buf(),
@@ -108,41 +83,41 @@ async fn handle_command(command: RequestedCommand, ssh_socket: &Path, query: &st
     };
 
     let read_stdout = async move {
-        eprintln!("copy: fifo -> own stdout");
+        let _guard_stdin = stdin_cancel_token_stdout.drop_guard();
 
         let copy_future = async {
             let mut stdout = tokio::io::stdout();
-            let mut stdout_pipe_handle = tokio::net::UnixStream::connect(stdout_pipe.path.as_path()).await?;
+            let mut stdout_pipe_handle = std::fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(stdout_pipe.path.as_path())?
+                .into_async_fd()?;
 
             tokio::io::copy(&mut stdout_pipe_handle, &mut stdout).await?;
 
             Ok(())
         };
 
-        let result = tokio::select! {
+        tokio::select! {
             copy_result = copy_future => {
                 copy_result.map(|_| ())
             }
             _ = stdout_cancel_token.cancelled() => {
                 Ok(())
             }
-        };
-
-        stdin_cancel_token_stdout.cancel();
-
-        eprintln!("copy: fifo -> own stdout finish");
-
-        result
+        }
     };
 
     let write_stdin = async move {
-        eprintln!("copy: own stdin -> fifo");
-
         let copy_future = async {
             // When the remote end sends EOF over the stdout_pipe,
             // we should stop copying stuff here
             let mut stdin = josh_rpc::tokio_fd::AsyncFd::try_from(libc::STDIN_FILENO)?;
-            let mut stdin_pipe_handle = tokio::net::UnixStream::connect(stdin_pipe.path.as_path()).await?;
+            let mut stdin_pipe_handle = std::fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(stdin_pipe.path.as_path())?
+                .into_async_fd()?;
 
             tokio::io::copy(&mut stdin, &mut stdin_pipe_handle).await?;
             stdin_pipe_handle.flush().await?;
@@ -150,27 +125,23 @@ async fn handle_command(command: RequestedCommand, ssh_socket: &Path, query: &st
             Ok(())
         };
 
-        let result = tokio::select! {
+        tokio::select! {
             copy_result = copy_future => {
                 copy_result.map(|_| ())
             }
             _ = stdin_cancel_token.cancelled() => {
                 Ok(())
             }
-        };
-
-        eprintln!("copy: own stdin -> fifo finish");
-
-        result
+        }
     };
 
     let make_request = async move {
-        eprintln!("http request");
-
-        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        let _guard_stdin = stdin_cancel_token_http.drop_guard();
+        let _guard_stdout = stdout_cancel_token_http.drop_guard();
 
         let client = reqwest::Client::new();
-        let response = client.post(format!("{}/serve_namespace", HTTP_JOSH_SERVER))
+        let response = client
+            .post(format!("{}/serve_namespace", HTTP_JOSH_SERVER))
             .header(CONTENT_TYPE, "application/json")
             .body(serde_json::to_string(&rpc_payload).unwrap())
             .timeout(Duration::from_secs(HTTP_REQUEST_TIMEOUT))
@@ -178,28 +149,18 @@ async fn handle_command(command: RequestedCommand, ssh_socket: &Path, query: &st
             .await?;
 
         let status = response.status();
-        let bytes = response
-            .bytes()
-            .await?;
+        let bytes = response.bytes().await?;
 
-        let result = match status {
+        match status {
             StatusCode::OK | StatusCode::NO_CONTENT => Ok(()),
             code => Err(CallError::RemoteError {
                 status: code,
                 body: bytes.to_vec(),
             }),
-        };
-
-        eprintln!("http request finish");
-
-        result
+        }
     };
 
-    eprintln!("before try_join");
-    let request_result = tokio::try_join!(read_stdout, write_stdin, make_request);
-    eprintln!("after try_join");
-
-    request_result.map(|_| ())
+    tokio::try_join!(read_stdout, write_stdin, make_request).map(|_| ())
 }
 
 fn setup_tracing() {
@@ -219,13 +180,21 @@ fn setup_tracing() {
 
 #[tokio::main]
 async fn main() -> ExitCode {
-    console_subscriber::init();
-
     let args = Args::parse();
 
-    // if isatty(libc::STDIN_FILENO) || isatty(libc::STDOUT_FILENO) {
-    //     die("cannot be run interactively; exiting")
-    // }
+    #[cfg(debug_assertions)]
+    fn check_isatty() {}
+
+    #[cfg(not(debug_assertions))]
+    fn check_isatty() {
+        fn isatty(stream: libc::c_int) -> bool {
+            unsafe { libc::isatty(stream) != 0 }
+        }
+
+        if isatty(libc::STDIN_FILENO) || isatty(libc::STDOUT_FILENO) {
+            die("cannot be run interactively; exiting")
+        }
+    }
 
     let command_words = shell_words::split(&args.command).unwrap_or_else(|_| {
         die("parse error; exiting");
@@ -264,7 +233,7 @@ async fn main() -> ExitCode {
         die("invalid arguments supplied for git command")
     }
 
-    // setup_tracing();
+    setup_tracing();
 
     let query = args.first().unwrap();
 

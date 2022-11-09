@@ -3,15 +3,20 @@
 // (Apache 2.0, MIT)
 
 use std::convert::TryFrom;
+use std::fs::File;
+use std::os::unix::io::{AsRawFd, IntoRawFd};
 use std::pin::Pin;
 use std::task::{Context, Poll, Poll::*};
-use std::os::unix::io::AsRawFd;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
 type UnixRawFd = std::os::unix::io::RawFd;
 
 pub struct AsyncFd {
-    raw_fd: tokio::io::unix::AsyncFd<UnixRawFd>
+    raw_fd: tokio::io::unix::AsyncFd<UnixRawFd>,
+}
+
+pub trait IntoAsyncFd {
+    fn into_async_fd(self) -> std::io::Result<AsyncFd>;
 }
 
 impl TryFrom<UnixRawFd> for AsyncFd {
@@ -21,8 +26,14 @@ impl TryFrom<UnixRawFd> for AsyncFd {
         fd_set_nonblock(fd)?;
 
         Ok(Self {
-            raw_fd: tokio::io::unix::AsyncFd::new(fd)?
+            raw_fd: tokio::io::unix::AsyncFd::new(fd)?,
         })
+    }
+}
+
+impl IntoAsyncFd for File {
+    fn into_async_fd(self) -> std::io::Result<AsyncFd> {
+        AsyncFd::try_from(self.into_raw_fd())
     }
 }
 
@@ -74,7 +85,7 @@ impl AsyncWrite for AsyncFd {
     fn poll_write(
         self: Pin<&mut Self>,
         ctx: &mut Context<'_>,
-        buf: &[u8]
+        buf: &[u8],
     ) -> Poll<std::io::Result<usize>> {
         loop {
             let mut ready = match self.raw_fd.poll_write_ready(ctx) {
@@ -82,21 +93,17 @@ impl AsyncWrite for AsyncFd {
                 Pending => return Pending,
             };
 
-            let ret = unsafe {
-                libc::write(self.as_raw_fd(), buf.as_ptr() as _, buf.len())
-            };
+            let ret = unsafe { libc::write(self.as_raw_fd(), buf.as_ptr() as _, buf.len()) };
 
             match ret {
-                _ if ret < 0 => {
-                    match std::io::Error::last_os_error() {
-                        e if e.kind() == std::io::ErrorKind::WouldBlock => {
-                            ready.clear_ready();
-                            continue
-                        }
-                        e => return Ready(Err(e))
+                _ if ret < 0 => match std::io::Error::last_os_error() {
+                    e if e.kind() == std::io::ErrorKind::WouldBlock => {
+                        ready.clear_ready();
+                        continue;
                     }
+                    e => return Ready(Err(e)),
                 },
-                _ => return Ready(Ok(ret as usize))
+                _ => return Ready(Ok(ret as usize)),
             }
         }
     }
@@ -111,16 +118,12 @@ impl AsyncWrite for AsyncFd {
 }
 
 fn fd_set_nonblock(fd: UnixRawFd) -> std::io::Result<()> {
-    let flags = unsafe {
-        libc::fcntl(fd, libc::F_GETFL)
-    };
+    let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
 
     match flags {
         error if error < 0 => Err(std::io::Error::last_os_error()),
         flags => {
-            let set_result = unsafe {
-                libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK)
-            };
+            let set_result = unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) };
 
             match set_result {
                 0 => Ok(()),

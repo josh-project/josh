@@ -10,25 +10,24 @@ use tracing_subscriber::Layer;
 
 use futures::future;
 use futures::FutureExt;
+use hyper::body::HttpBody;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Request, Response, Server, StatusCode};
 use hyper_reverse_proxy;
 use indoc::formatdoc;
 use josh::{josh_error, JoshError};
+use josh_rpc::calls::RequestedCommand;
+use josh_rpc::tokio_fd::IntoAsyncFd;
+use reqwest::Method;
 use std::collections::HashMap;
-use std::ffi::c_int;
 use std::net::IpAddr;
 use std::process::Stdio;
 use std::str::FromStr;
 use std::sync::{Arc, RwLock};
-use hyper::body::HttpBody;
-use reqwest::header::{ACCESS_CONTROL_ALLOW_HEADERS, CONTENT_TYPE};
-use reqwest::Method;
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
-use tracing::{error, Span, trace};
+use tracing::{trace, Span};
 use tracing_futures::Instrument;
-use josh::graphql::Path;
 
 fn version_str() -> String {
     format!("Version: {}\n", josh::VERSION,)
@@ -359,7 +358,7 @@ async fn do_filter(
 fn make_response(body: hyper::Body, code: hyper::StatusCode) -> Response<hyper::Body> {
     Response::builder()
         .status(code)
-        .header(hyper::header::CONTENT_TYPE, "text/plain")
+        .header(reqwest::header::CONTENT_TYPE, "text/plain")
         .body(body)
         .expect("Can't build response")
 }
@@ -478,52 +477,50 @@ async fn serve_namespace(params: josh_rpc::calls::ServeNamespace) -> josh::JoshR
         SubprocessError(std::io::Error),
         SubprocessTimeout(tokio::time::error::Elapsed),
         SubprocessExited(i32),
+    }
+
+    let command = match params.command {
+        RequestedCommand::GitUploadPack => "git-upload-pack",
+        RequestedCommand::GitUploadArchive => "git-upload-archive",
+        RequestedCommand::GitReceivePack => "git-receive-pack",
     };
 
-    let mut process = tokio::process::Command::new("ls")
-        .arg("/asdasd")
+    let mut process = tokio::process::Command::new(command)
+        .arg("/Users/vladislavivanov/Projects/pre-commit")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()?;
 
-    let mut stdout = process.stdout.take().ok_or(josh_error("no stdout"))?;
-    let mut stdin = process.stdin.take().ok_or(josh_error("no stdin"))?;
+    let stdout = process.stdout.take().ok_or(josh_error("no stdout"))?;
+    let stdin = process.stdin.take().ok_or(josh_error("no stdin"))?;
 
     let stdin_cancel_token = tokio_util::sync::CancellationToken::new();
     let stdin_cancel_token_stdout = stdin_cancel_token.clone();
 
     let read_stdout = async {
-        eprintln!("read_stdout start");
-
-        // Move stdout here because it should be closed after copy,
-        // and to be closed it needs to be dropped
-        let mut stdout = stdout;
-
-        // Dropping the handle at the end of this block will generate EOF at the other end
-        let mut stdout_pipe_handle = tokio::fs::OpenOptions::new()
-            .read(false)
-            .write(true)
-            .create(false)
-            .open(&params.stdout_pipe)
-            .await
-            .map_err(|e| ServeError::FifoError(e))?;
-
-        tokio::io::copy(&mut stdout, &mut stdout_pipe_handle).await
-            .map(|_| ())
-            .map_err(|e| ServeError::FifoError(e))?;
-
-        stdout_pipe_handle.flush().await
-            .map_err(|e| ServeError::FifoError(e))?;
-
         // If stdout stream was closed, cancel stdin copy future
-        stdin_cancel_token_stdout.cancel();
-        eprintln!("read_stdout end");
-        Ok(())
+        let _guard_stdin = stdin_cancel_token_stdout.drop_guard();
+
+        let copy_future = async {
+            // Move stdout here because it should be closed after copy,
+            // and to be closed it needs to be dropped
+            let mut stdout = stdout;
+
+            // Dropping the handle at the end of this block will generate EOF at the other end
+            let mut stdout_pipe_handle = std::fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(&params.stdout_pipe)?
+                .into_async_fd()?;
+
+            tokio::io::copy(&mut stdout, &mut stdout_pipe_handle).await?;
+            stdout_pipe_handle.flush().await
+        };
+
+        copy_future.await.map_err(|e| ServeError::FifoError(e))
     };
 
     let write_stdin = async {
-        eprintln!("write_stdin start");
-
         // When stdout copying was finished (subprocess closed their
         // stdout due to termination), we need to cancel this future.
         // Future cancelling is implemented via token.
@@ -531,22 +528,20 @@ async fn serve_namespace(params: josh_rpc::calls::ServeNamespace) -> josh::JoshR
             // See comment about stdout above
             let mut stdin = stdin;
 
-            let mut stdin_pipe_handle = tokio::fs::OpenOptions::new()
+            let mut stdin_pipe_handle = std::fs::OpenOptions::new()
                 .read(true)
-                .write(false)
-                .create(false)
-                .open(&params.stdin_pipe).await?;
+                .write(true)
+                .open(&params.stdin_pipe)?
+                .into_async_fd()?;
 
             tokio::io::copy(&mut stdin_pipe_handle, &mut stdin).await?;
 
             // Flushing is necessary to ensure file handle is closed when
             // it goes out of scope / dropped
-            stdin.flush().await?;
-
-            Ok(())
+            stdin.flush().await
         };
 
-        let result = tokio::select! {
+        tokio::select! {
             copy_result = copy_future => {
                 copy_result
                     .map(|_| ())
@@ -555,19 +550,12 @@ async fn serve_namespace(params: josh_rpc::calls::ServeNamespace) -> josh::JoshR
             _ = stdin_cancel_token.cancelled() => {
                 Ok(())
             }
-        };
-
-        eprintln!("write_stdin end");
-
-        result
+        }
     };
 
     let maybe_process_completion = async {
-        let max_duration = tokio::time::Duration::from_secs(5);
-
-        eprintln!("process_completion start");
-
-        let result = match tokio::time::timeout(max_duration, process.wait()).await {
+        let max_duration = tokio::time::Duration::from_secs(60);
+        match tokio::time::timeout(max_duration, process.wait()).await {
             Ok(status) => match status {
                 Ok(status) => match status.code() {
                     Some(code) if code == 0 => Ok(()),
@@ -578,52 +566,52 @@ async fn serve_namespace(params: josh_rpc::calls::ServeNamespace) -> josh::JoshR
                     }
                 },
                 Err(io_error) => Err(ServeError::SubprocessError(io_error)),
-            }
-            Err(elapsed) => {
-                Err(ServeError::SubprocessTimeout(elapsed))
-            }
-        };
-
-        eprintln!("process_completion end");
-
-        result
+            },
+            Err(elapsed) => Err(ServeError::SubprocessTimeout(elapsed)),
+        }
     };
 
-    eprintln!("before try_join");
     let subprocess_result = tokio::try_join!(read_stdout, write_stdin, maybe_process_completion);
-    eprintln!("after try_join");
 
     match subprocess_result {
         Ok(_) => Ok(()),
         Err(e) => match e {
-            ServeError::SubprocessExited(code) => {
-                Err(josh_error(&format!("git subprocess exited with code {}", code)))
-            },
-            ServeError::SubprocessError(io_error) => {
-                Err(josh_error(&format!("could not start git subprocess: {}", io_error)))
-            },
+            ServeError::SubprocessExited(code) => Err(josh_error(&format!(
+                "git subprocess exited with code {}",
+                code
+            ))),
+            ServeError::SubprocessError(io_error) => Err(josh_error(&format!(
+                "could not start git subprocess: {}",
+                io_error
+            ))),
             ServeError::SubprocessTimeout(elapsed) => {
                 let _ = process.kill().await;
-                Err(josh_error(&format!("git subprocess timed out after {}", elapsed)))
-            },
+                Err(josh_error(&format!(
+                    "git subprocess timed out after {}",
+                    elapsed
+                )))
+            }
             ServeError::FifoError(io_error) => {
                 let _ = process.kill().await;
-                Err(josh_error(&format!("git subprocess communication error: {}", io_error)))
-            },
-        }
+                Err(josh_error(&format!(
+                    "git subprocess communication error: {}",
+                    io_error
+                )))
+            }
+        },
     }
 }
 
-async fn handle_serve_namespace_request(req: Request<hyper::Body>) -> josh::JoshResult<Response<hyper::Body>> {
-    let error_response = |status: StatusCode| {
-        Ok(make_response(hyper::Body::empty(), status))
-    };
+async fn handle_serve_namespace_request(
+    req: Request<hyper::Body>,
+) -> josh::JoshResult<Response<hyper::Body>> {
+    let error_response = |status: StatusCode| Ok(make_response(hyper::Body::empty(), status));
 
     if req.method() != Method::POST {
         return error_response(StatusCode::METHOD_NOT_ALLOWED);
     }
 
-    match req.headers().get(CONTENT_TYPE) {
+    match req.headers().get(reqwest::header::CONTENT_TYPE) {
         Some(value) if value == "application/json" => (),
         _ => return error_response(StatusCode::BAD_REQUEST),
     }
@@ -632,12 +620,17 @@ async fn handle_serve_namespace_request(req: Request<hyper::Body>) -> josh::Josh
         None => return error_response(StatusCode::BAD_REQUEST),
         Some(result) => match result {
             Ok(bytes) => bytes,
-            Err(_) => return error_response(StatusCode::IM_A_TEAPOT)
-        }
+            Err(_) => return error_response(StatusCode::IM_A_TEAPOT),
+        },
     };
 
     let params = match serde_json::from_slice::<josh_rpc::calls::ServeNamespace>(&body) {
-        Err(error) => return Ok(make_response(hyper::Body::from(error.to_string()), StatusCode::BAD_REQUEST)),
+        Err(error) => {
+            return Ok(make_response(
+                hyper::Body::from(error.to_string()),
+                StatusCode::BAD_REQUEST,
+            ))
+        }
         Ok(parsed) => parsed,
     };
 
@@ -654,7 +647,10 @@ async fn handle_serve_namespace_request(req: Request<hyper::Body>) -> josh::Josh
     let serve_result = serve_namespace(params).await;
     tracing::trace!("serve_result: {:?}", serve_result);
 
-    return Ok(make_response(hyper::Body::from("handled serve_namespace request"), StatusCode::OK));
+    return Ok(make_response(
+        hyper::Body::from("handled serve_namespace request"),
+        StatusCode::OK,
+    ));
 }
 
 // Entry point for fake git-upload-pack, git-receive-pack

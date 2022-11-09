@@ -1,19 +1,19 @@
-extern crate rand;
 extern crate libc;
+extern crate rand;
 
-use std::{env, io};
+use rand::distributions::Alphanumeric;
+use rand::{thread_rng, Rng};
 use std::ffi::CString;
 use std::io::Error;
 use std::path::{Path, PathBuf};
-use rand::{thread_rng, Rng};
-use rand::distributions::Alphanumeric;
+use std::{env, io};
 
 const TEMP_SUFFIX_LENGTH: usize = 32;
 const PIPE_CREATE_ATTEMPTS: usize = 10;
 const PIPE_FILEMODE: libc::mode_t = 0o660;
 
 pub struct NamedPipe {
-    pub path: PathBuf
+    pub path: PathBuf,
 }
 
 impl Drop for NamedPipe {
@@ -32,13 +32,11 @@ impl NamedPipe {
 fn make_fifo(path: &Path) -> Result<(), io::Error> {
     let path_str = path.to_str().unwrap();
     let path = CString::new(path_str).unwrap();
-    let return_code = unsafe {
-        libc::mkfifo(path.as_ptr(), PIPE_FILEMODE)
-    };
+    let return_code = unsafe { libc::mkfifo(path.as_ptr(), PIPE_FILEMODE) };
 
     match return_code {
         0 => Ok(()),
-        _ => Err(Error::last_os_error())
+        _ => Err(Error::last_os_error()),
     }
 }
 
@@ -61,10 +59,10 @@ fn try_make_pipe(prefix: &str) -> Result<PathBuf, io::Error> {
             Ok(_) => return Ok(pipe_path),
             Err(e) => match e.kind() {
                 io::ErrorKind::AlreadyExists => continue,
-                _ => ()
+                _ => (),
             },
         }
-    };
+    }
 
     Err(io::Error::from(io::ErrorKind::AlreadyExists))
 }

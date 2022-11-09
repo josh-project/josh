@@ -1,5 +1,5 @@
-use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum RequestedCommand {
@@ -10,6 +10,7 @@ pub enum RequestedCommand {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ServeNamespace {
+    pub command: RequestedCommand,
     pub stdin_pipe: PathBuf,
     pub stdout_pipe: PathBuf,
     pub ssh_socket: PathBuf,
