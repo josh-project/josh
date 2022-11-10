@@ -2,7 +2,7 @@
 #[macro_use]
 extern crate lazy_static;
 
-use josh_proxy::{MetaConfig, RepoUpdate};
+use josh_proxy::{MetaConfig, RepoConfig, RepoUpdate};
 use opentelemetry::global;
 use opentelemetry::sdk::propagation::TraceContextPropagator;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
@@ -469,24 +469,30 @@ async fn query_meta_repo(
 
 async fn make_meta_config(
     serv: Arc<JoshProxyService>,
-    auth: &josh_proxy::auth::Handle,
+    auth: Option<&josh_proxy::auth::Handle>,
     parsed_url: &FilteredRepoUrl,
 ) -> josh::JoshResult<MetaConfig> {
-    let mut meta = Default::default();
+    let meta_repo = std::env::var("JOSH_META_REPO");
+    let auth_token = std::env::var("JOSH_META_AUTH_TOKEN");
 
-    if let Ok(meta_repo) = std::env::var("JOSH_META_REPO") {
-        let auth = if let Ok(token) = std::env::var("JOSH_META_AUTH_TOKEN") {
-            josh_proxy::auth::add_auth(&token)?
-        } else {
-            auth.clone()
-        };
+    match (auth, meta_repo) {
+        (None, _) | (_, Err(_)) => Ok(MetaConfig {
+            config: RepoConfig {
+                repo: parsed_url.upstream_repo.clone(),
+                ..Default::default()
+            },
+            ..Default::default()
+        }),
+        (Some(auth), Ok(meta_repo)) => {
+            let auth = if let Ok(token) = auth_token {
+                josh_proxy::auth::add_auth(&token)?
+            } else {
+                auth.clone()
+            };
 
-        meta = query_meta_repo(serv.clone(), &meta_repo, &parsed_url.upstream_repo, &auth).await?;
-    } else {
-        meta.config.repo = parsed_url.upstream_repo.clone();
+            query_meta_repo(serv.clone(), &meta_repo, &parsed_url.upstream_repo, &auth).await
+        }
     }
-
-    Ok(meta)
 }
 
 async fn serve_namespace(params: josh_rpc::calls::ServeNamespace) -> josh::JoshResult<()> {
@@ -767,7 +773,7 @@ async fn call_service(
         }
     };
 
-    let meta = make_meta_config(serv.clone(), &auth, &parsed_url).await?;
+    let meta = make_meta_config(serv.clone(), Some(&auth), &parsed_url).await?;
 
     let mut filter = josh::filter::chain(
         meta.config.filter,
