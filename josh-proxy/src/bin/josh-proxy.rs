@@ -576,7 +576,7 @@ async fn serve_namespace(params: josh_rpc::calls::ServeNamespace) -> josh::JoshR
     };
 
     let maybe_process_completion = async {
-        let max_duration = tokio::time::Duration::from_secs(60);
+        let max_duration = tokio::time::Duration::from_secs(SERVE_TIMEOUT);
         match tokio::time::timeout(max_duration, process.wait()).await {
             Ok(status) => match status {
                 Ok(status) => match status.code() {
