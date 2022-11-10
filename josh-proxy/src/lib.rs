@@ -4,6 +4,7 @@ pub mod juniper_hyper;
 #[macro_use]
 extern crate lazy_static;
 
+use josh::JoshError;
 use std::path::PathBuf;
 
 #[derive(PartialEq)]
@@ -546,13 +547,33 @@ pub fn get_head(
     Ok(head)
 }
 
+pub enum FetchError {
+    AuthRequired,
+    Other(JoshError),
+}
+
+impl<T> From<T> for FetchError
+where
+    T: std::error::Error,
+{
+    fn from(e: T) -> Self {
+        FetchError::Other(JoshError::from(e))
+    }
+}
+
+impl FetchError {
+    pub fn from_josh_error(e: JoshError) -> Self {
+        FetchError::Other(e)
+    }
+}
+
 pub fn fetch_refs_from_url(
     path: &std::path::Path,
     upstream_repo: &str,
     url: &str,
     refs_prefixes: &[String],
     auth: &auth::Handle,
-) -> josh::JoshResult<bool> {
+) -> Result<(), FetchError> {
     let specs: Vec<_> = refs_prefixes
         .iter()
         .map(|r| {
@@ -572,7 +593,7 @@ pub fn fetch_refs_from_url(
     let cmd = format!("git fetch --prune --no-tags {} {}", &url, &specs.join(" "));
     tracing::info!("fetch_refs_from_url {:?} {:?} {:?}", cmd, path, "");
 
-    let (username, password) = auth.parse()?;
+    let (username, password) = auth.parse().map_err(FetchError::from_josh_error)?;
     let (_stdout, stderr, _) = shell.command_env(
         &cmd,
         &[],
@@ -580,17 +601,23 @@ pub fn fetch_refs_from_url(
     );
     tracing::debug!("fetch_refs_from_url done {:?} {:?} {:?}", cmd, path, stderr);
     if stderr.contains("fatal: Authentication failed") {
-        return Ok(false);
+        return Err(FetchError::AuthRequired);
     }
     if stderr.contains("fatal:") {
         tracing::error!("{:?}", stderr);
-        return Err(josh::josh_error(&format!("git error: {:?}", stderr)));
+        return Err(FetchError::Other(josh::josh_error(&format!(
+            "git error: {:?}",
+            stderr
+        ))));
     }
     if stderr.contains("error:") {
         tracing::error!("{:?}", stderr);
-        return Err(josh::josh_error(&format!("git error: {:?}", stderr)));
+        return Err(FetchError::Other(
+            josh::josh_error(&format!("git error: {:?}", stderr)).into(),
+        ));
     }
-    Ok(true)
+
+    Ok(())
 }
 
 pub struct TmpGitNamespace {

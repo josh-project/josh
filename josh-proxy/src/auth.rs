@@ -26,6 +26,7 @@ impl std::fmt::Debug for Handle {
 }
 
 impl Handle {
+    // Returns a pair: (username, password)
     pub fn parse(&self) -> josh::JoshResult<(String, String)> {
         let line = josh::some_or!(
             AUTH.lock()
