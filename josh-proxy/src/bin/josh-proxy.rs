@@ -644,6 +644,7 @@ fn is_repo_blocked(meta: &MetaConfig) -> bool {
 }
 
 async fn handle_serve_namespace_request(
+    serv: Arc<JoshProxyService>,
     req: Request<hyper::Body>,
 ) -> josh::JoshResult<Response<hyper::Body>> {
     let error_response = |status: StatusCode| Ok(make_response(hyper::Body::empty(), status));
@@ -675,7 +676,7 @@ async fn handle_serve_namespace_request(
         Ok(parsed) => parsed,
     };
 
-    let _parsed_url = if let Some(mut parsed_url) = FilteredRepoUrl::from_str(&params.query) {
+    let parsed_url = if let Some(mut parsed_url) = FilteredRepoUrl::from_str(&params.query) {
         if parsed_url.filter_spec.is_empty() {
             parsed_url.filter_spec = ":/".to_string();
         }
@@ -683,18 +684,32 @@ async fn handle_serve_namespace_request(
         parsed_url
     } else {
         return Ok(make_response(
-            hyper::Body::from("unable to parse query"),
+            hyper::Body::from("Unable to parse query"),
             StatusCode::BAD_REQUEST,
         ));
     };
 
+    let meta_config = match make_meta_config(serv.clone(), None, &parsed_url).await {
+        Ok(meta) => meta,
+        Err(e) => {
+            return Ok(make_response(
+                hyper::Body::from(format!("Error fetching meta repo: {}", e)),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ));
+        }
+    };
+
+    if is_repo_blocked(&meta_config) {
+        return Ok(make_response(
+            hyper::Body::from("Access to this repo is blocked via JOSH_REPO_BLOCK"),
+            StatusCode::UNPROCESSABLE_ENTITY,
+        ));
+    }
+
     let serve_result = serve_namespace(params).await;
     tracing::trace!("serve_result: {:?}", serve_result);
 
-    return Ok(make_response(
-        hyper::Body::from("handled serve_namespace request"),
-        StatusCode::OK,
-    ));
+    return Ok(make_response(hyper::Body::empty(), StatusCode::NO_CONTENT));
 }
 
 // Entry point for fake git-upload-pack, git-receive-pack
@@ -727,7 +742,7 @@ async fn call_service(
     }
 
     if path == "/serve_namespace" {
-        return handle_serve_namespace_request(req).await;
+        return handle_serve_namespace_request(serv.clone(), req).await;
     }
 
     // Need to have some way of passing the filter (via remote path like what github does?)
