@@ -2,7 +2,7 @@
 #[macro_use]
 extern crate lazy_static;
 
-use josh_proxy::{MetaConfig, RepoConfig, RepoUpdate};
+use josh_proxy::{FetchError, MetaConfig, RepoConfig, RepoUpdate};
 use opentelemetry::global;
 use opentelemetry::sdk::propagation::TraceContextPropagator;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
@@ -77,7 +77,7 @@ async fn fetch_upstream(
     remote_url: String,
     headref: &str,
     force: bool,
-) -> josh::JoshResult<bool> {
+) -> Result<(), FetchError> {
     let auth = auth.clone();
     let key = remote_url.clone();
 
@@ -118,7 +118,7 @@ async fn fetch_upstream(
     tracing::trace!("fetch_cached_ok {:?}", fetch_cached_ok);
 
     if fetch_cached_ok && headref.is_empty() {
-        return Ok(true);
+        return Ok(());
     }
 
     if fetch_cached_ok && !headref.is_empty() {
@@ -128,13 +128,14 @@ async fn fetch_upstream(
                 "refs/josh/upstream/{}/",
                 &josh::to_ns(&upstream_repo),
             )),
-        )?;
+        )
+        .map_err(FetchError::from_josh_error)?;
         let id = transaction
             .repo()
             .refname_to_id(&transaction.refname(headref));
         tracing::trace!("refname_to_id: {:?}", id);
         if id.is_ok() {
-            return Ok(true);
+            return Ok(());
         }
     }
 
@@ -142,13 +143,13 @@ async fn fetch_upstream(
     let heads_map = service.heads_map.clone();
     let br_path = service.repo_path.join("mirror");
 
-    let s = tracing::span!(tracing::Level::TRACE, "fetch worker");
+    let span = tracing::span!(tracing::Level::TRACE, "fetch worker");
     let us = upstream_repo.clone();
     let a = auth.clone();
     let ru = remote_url.clone();
     let permit = service.fetch_permits.acquire().await;
-    let res = tokio::task::spawn_blocking(move || {
-        let _e = s.enter();
+    let fetch_result = tokio::task::spawn_blocking(move || {
+        let _span_guard = span.enter();
         josh_proxy::fetch_refs_from_url(&br_path, &us, &ru, &refs_to_fetch, &a)
     })
     .await?;
@@ -170,20 +171,24 @@ async fn fetch_upstream(
 
     std::mem::drop(permit);
 
-    if let Ok(res) = res {
-        if res {
+    match fetch_result {
+        Ok(_) => {
             fetch_timers.write()?.insert(key, std::time::Instant::now());
 
-            if ARGS.get_one::<String>("poll").map(|v| v.as_str()) == Some(&auth.parse()?.0) {
+            let poll_user = ARGS.get_one::<String>("poll");
+            let (auth_user, _) = auth.parse().map_err(FetchError::from_josh_error)?;
+
+            if matches!(poll_user, Some(user) if auth_user == user.as_str()) {
                 service
                     .poll
                     .lock()?
                     .insert((upstream_repo, auth, remote_url));
             }
+
+            Ok(())
         }
-        return Ok(res);
+        Err(_) => fetch_result,
     }
-    res
 }
 
 async fn static_paths(
@@ -422,8 +427,9 @@ async fn query_meta_repo(
     .in_current_span()
     .await
     {
-        Ok(true) => {}
-        _ => return Err(josh::josh_error("meta fetch failed")),
+        Ok(_) => {}
+        Err(FetchError::AuthRequired) => return Err(josh_error("meta fetch: auth failed")),
+        Err(FetchError::Other(e)) => return Err(josh_error(&format!("meta fetch failed: {}", e))),
     }
 
     let transaction = josh::cache::Transaction::open(
@@ -865,20 +871,19 @@ async fn call_service(
     .in_current_span()
     .await
     {
-        Ok(res) => {
-            if !res {
-                let builder = Response::builder()
-                    .header(
-                        hyper::header::WWW_AUTHENTICATE,
-                        "Basic realm=User Visible Realm",
-                    )
-                    .status(hyper::StatusCode::UNAUTHORIZED);
-                return Ok(builder.body(hyper::Body::empty())?);
-            }
+        Ok(_) => {}
+        Err(FetchError::AuthRequired) => {
+            let builder = Response::builder()
+                .header(
+                    hyper::header::WWW_AUTHENTICATE,
+                    "Basic realm=User Visible Realm",
+                )
+                .status(hyper::StatusCode::UNAUTHORIZED);
+            return Ok(builder.body(hyper::Body::empty())?);
         }
-        Err(res) => {
+        Err(FetchError::Other(e)) => {
             let builder = Response::builder().status(hyper::StatusCode::INTERNAL_SERVER_ERROR);
-            return Ok(builder.body(hyper::Body::from(res.0))?);
+            return Ok(builder.body(hyper::Body::from(e.0))?);
         }
     }
 
@@ -1175,7 +1180,7 @@ async fn run_polling(serv: Arc<JoshProxyService>) -> josh::JoshResult<()> {
         let polls = serv.poll.lock()?.clone();
 
         for (upstream_repo, auth, url) in polls {
-            fetch_upstream(
+            let fetch_result = fetch_upstream(
                 serv.clone(),
                 upstream_repo.clone(),
                 &auth,
@@ -1184,7 +1189,15 @@ async fn run_polling(serv: Arc<JoshProxyService>) -> josh::JoshResult<()> {
                 true,
             )
             .in_current_span()
-            .await?;
+            .await;
+
+            match fetch_result {
+                Ok(()) => {}
+                Err(FetchError::Other(e)) => return Err(e),
+                Err(FetchError::AuthRequired) => {
+                    return Err(josh_error("auth: access denied while polling"))
+                }
+            }
         }
         tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
     }
@@ -1383,21 +1396,20 @@ async fn serve_graphql(
             .in_current_span()
             .await
             {
-                Ok(res) => {
-                    if !res {
-                        let builder = Response::builder()
-                            .header(
-                                hyper::header::WWW_AUTHENTICATE,
-                                "Basic realm=User Visible Realm",
-                            )
-                            .status(hyper::StatusCode::UNAUTHORIZED);
-                        return Ok(builder.body(hyper::Body::empty())?);
-                    }
+                Ok(_) => {}
+                Err(FetchError::AuthRequired) => {
+                    let builder = Response::builder()
+                        .header(
+                            hyper::header::WWW_AUTHENTICATE,
+                            "Basic realm=User Visible Realm",
+                        )
+                        .status(hyper::StatusCode::UNAUTHORIZED);
+                    return Ok(builder.body(hyper::Body::empty())?);
                 }
-                Err(res) => {
+                Err(FetchError::Other(e)) => {
                     let builder =
                         Response::builder().status(hyper::StatusCode::INTERNAL_SERVER_ERROR);
-                    return Ok(builder.body(hyper::Body::from(res.0))?);
+                    return Ok(builder.body(hyper::Body::from(e.0))?);
                 }
             };
 
