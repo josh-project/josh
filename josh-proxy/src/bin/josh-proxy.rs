@@ -792,6 +792,17 @@ async fn call_service(
         headref = "HEAD".to_string();
     }
 
+    if is_repo_blocked(&meta) {
+        return Ok(make_response(
+            hyper::Body::from(formatdoc!(
+                r#"
+                    Access to this repo is blocked via JOSH_REPO_BLOCK
+                    "#
+            )),
+            hyper::StatusCode::UNPROCESSABLE_ENTITY,
+        ));
+    }
+
     let http_auth_required =
         ARGS.get_flag("require-auth") && parsed_url.pathinfo == "/git-receive-pack";
 
@@ -807,17 +818,6 @@ async fn call_service(
             )
             .status(hyper::StatusCode::UNAUTHORIZED);
         return Ok(builder.body(hyper::Body::empty())?);
-    }
-
-    if is_repo_blocked(&meta) {
-        return Ok(make_response(
-            hyper::Body::from(formatdoc!(
-                r#"
-                    Access to this repo is blocked via JOSH_REPO_BLOCK
-                    "#
-            )),
-            hyper::StatusCode::UNPROCESSABLE_ENTITY,
-        ));
     }
 
     if parsed_url.api == "/~/graphql" {
