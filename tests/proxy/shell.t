@@ -11,7 +11,7 @@
         --poll <poll>
             
         --gc
-            Run git gc in maintanance
+            Run git gc during maintenance
         --require-auth
             
         --no-background
