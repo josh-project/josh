@@ -353,7 +353,14 @@ fn step(filter: Filter) -> Filter {
         Op::Chain(a, b) => match (to_op(a), to_op(b)) {
             (Op::Chain(x, y), b) => Op::Chain(x, to_filter(Op::Chain(y, to_filter(b)))),
             (Op::Prefix(a), Op::Subdir(b)) if a == b => Op::Nop,
-            (Op::Prefix(a), Op::Subdir(b)) if a != b => Op::Empty,
+            (Op::Prefix(a), Op::Subdir(b))
+                if a != b && a.components().count() == b.components().count() =>
+            {
+                Op::Empty
+            }
+            (Op::Prefix(a), Op::Subdir(b)) if a != b => {
+                Op::Prefix(a.strip_prefix(&b).unwrap_or(&a).to_owned())
+            }
             (Op::Nop, b) => b,
             (a, Op::Nop) => a,
             (Op::Empty, _) => Op::Empty,
