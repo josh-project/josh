@@ -7,10 +7,6 @@ fn make_op(args: &[&str]) -> JoshResult<Op> {
         ["nop"] => Ok(Op::Nop),
         ["empty"] => Ok(Op::Empty),
         ["prefix", arg] => Ok(Op::Prefix(Path::new(arg).to_owned())),
-        ["replace", regex, replacement] => Ok(Op::RegexReplace(
-            regex::Regex::new(regex)?,
-            replacement.to_string(),
-        )),
         ["workspace", arg] => Ok(Op::Workspace(Path::new(arg).to_owned())),
         ["prefix"] => Err(josh_error(indoc!(
             r#"
@@ -116,6 +112,19 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> JoshResult<Op> {
 
             Ok(Op::Rev(hm))
         }
+        Rule::filter_replace => {
+            let replacements = pair
+                .into_inner()
+                .map(|x| unquote(x.as_str()))
+                .tuples()
+                .map(|(regex, replacement)| {
+                    Ok((regex::Regex::new(&regex)?, replacement.to_string()))
+                })
+                .collect::<JoshResult<_>>()?;
+
+            Ok(Op::RegexReplace(replacements))
+        }
+
         _ => Err(josh_error("parse_item: no match")),
     }
 }
@@ -210,12 +219,16 @@ fn unquote(s: &str) -> String {
 
 // Encode string as json if it contains any chars reserved
 // by the filter language
-pub fn quote(s: &str) -> String {
+pub fn quote_if(s: &str) -> String {
     if let Ok(r) = Grammar::parse(Rule::filter_path, s) {
         if r.as_str() == s {
             return s.to_string();
         }
     }
+    quote(s)
+}
+
+pub fn quote(s: &str) -> String {
     serde_json::to_string(&serde_json::Value::String(s.to_string()))
         .unwrap_or("<invalid string>".to_string())
 }

@@ -62,8 +62,8 @@ The resulting tree will contain the contents of the
 workspace root as well as additional files specified in the ``workspace.josh`` file.
 (see [Workspaces](./workspace.md))
 
-### Text replacement **`:replace="regex","replacement"`**
-Applies the supplied regular expression to every file in the input tree.
+### Text replacement **`:replace("regex_0":"replacement_0",...,"regex_N":"replacement_N")`**
+Applies the supplied regular expressions to every file in the input tree.
 
 ### Signature removal **`:unsign`
 The default behaviour of Josh is to copy, if it exsists, the signature of the original commit in

@@ -32,9 +32,12 @@
   @@ -0,0 +1 @@
   +hello moon
 
-  $ josh-filter -p ':replace="hello","bye":replace="^(?P<l>.*(?m))$","$l!"'
-  :replace=hello,bye:replace="^(?P<l>.*(?m))$","$l!"
-  $ josh-filter --update refs/heads/filtered ':replace="hello","bye":replace="(?m)^(?P<l>.+)$","$l!"'
+  $ josh-filter -p ':replace("hello":"bye","^(?P<l>.*(?m))$":"$l!")'
+  :replace(
+      "hello":"bye"
+      "^(?P<l>.*(?m))$":"$l!"
+  )
+  $ josh-filter --update refs/heads/filtered ':replace("hello":"bye","(?m)^(?P<l>.+)$":"$l!")'
 
   $ git diff ${EMPTY_TREE}..refs/heads/filtered
   diff --git a/hw.txt b/hw.txt
@@ -52,7 +55,7 @@
   @@ -0,0 +1 @@
   +bye moon!
 
-  $ josh-filter --update refs/heads/filtered --reverse ':replace="hello","bye":replace="(?m)^(?P<l>.+)$","$l!"'
+  $ josh-filter --update refs/heads/filtered --reverse ':replace("hello":"bye","(?m)^(?P<l>.+)$":"$l!")'
 
   $ git diff ${EMPTY_TREE}..refs/heads/master
   diff --git a/hw.txt b/hw.txt

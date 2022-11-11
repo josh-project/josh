@@ -102,7 +102,7 @@ enum Op {
     Linear,
     Unsign,
 
-    RegexReplace(regex::Regex, String),
+    RegexReplace(Vec<(regex::Regex, String)>),
 
     #[cfg(feature = "search")]
     Index,
@@ -166,12 +166,12 @@ fn pretty2(op: &Op, indent: usize, compose: bool) -> String {
         },
         Op::Chain(a, b) => match (to_op(*a), to_op(*b)) {
             (Op::Subdir(p1), Op::Prefix(p2)) if p1 == p2 => {
-                format!("::{}/", parse::quote(&p1.to_string_lossy()))
+                format!("::{}/", parse::quote_if(&p1.to_string_lossy()))
             }
             (a, Op::Prefix(p)) if compose => {
                 format!(
                     "{} = {}",
-                    parse::quote(&p.to_string_lossy()),
+                    parse::quote_if(&p.to_string_lossy()),
                     pretty2(&a, indent, false)
                 )
             }
@@ -181,6 +181,20 @@ fn pretty2(op: &Op, indent: usize, compose: bool) -> String {
                 pretty2(&b, indent, false)
             ),
         },
+        Op::RegexReplace(replacements) => {
+            let v = replacements
+                .iter()
+                .map(|(regex, r)| {
+                    format!(
+                        "{}{}:{}",
+                        " ".repeat(indent),
+                        parse::quote(&regex.to_string()),
+                        parse::quote(r)
+                    )
+                })
+                .collect::<Vec<_>>();
+            format!(":replace(\n{}\n)", v.join("\n"))
+        }
         _ => spec2(op),
     }
 }
@@ -241,19 +255,21 @@ fn spec2(op: &Op) -> String {
             format!(":rev({})", v.join(","))
         }
         Op::Workspace(path) => {
-            format!(":workspace={}", parse::quote(&path.to_string_lossy()))
+            format!(":workspace={}", parse::quote_if(&path.to_string_lossy()))
         }
-        Op::RegexReplace(regex, replacement) => {
-            format!(
-                ":replace={},{}",
-                parse::quote(&regex.to_string()),
-                parse::quote(&replacement)
-            )
+        Op::RegexReplace(replacements) => {
+            let v = replacements
+                .iter()
+                .map(|(regex, r)| {
+                    format!("{}:{}", parse::quote(&regex.to_string()), parse::quote(r))
+                })
+                .collect::<Vec<_>>();
+            format!(":replace({})", v.join(","))
         }
 
         Op::Chain(a, b) => match (to_op(*a), to_op(*b)) {
             (Op::Subdir(p1), Op::Prefix(p2)) if p1 == p2 => {
-                format!("::{}/", parse::quote(&p1.to_string_lossy()))
+                format!("::{}/", parse::quote_if(&p1.to_string_lossy()))
             }
             (a, b) => format!("{}{}", spec2(&a), spec2(&b)),
         },
@@ -279,10 +295,10 @@ fn spec2(op: &Op) -> String {
         }
         Op::Linear => ":linear".to_string(),
         Op::Unsign => ":unsign".to_string(),
-        Op::Subdir(path) => format!(":/{}", parse::quote(&path.to_string_lossy())),
-        Op::File(path) => format!("::{}", parse::quote(&path.to_string_lossy())),
-        Op::Prefix(path) => format!(":prefix={}", parse::quote(&path.to_string_lossy())),
-        Op::Glob(pattern) => format!("::{}", parse::quote(pattern)),
+        Op::Subdir(path) => format!(":/{}", parse::quote_if(&path.to_string_lossy())),
+        Op::File(path) => format!("::{}", parse::quote_if(&path.to_string_lossy())),
+        Op::Prefix(path) => format!(":prefix={}", parse::quote_if(&path.to_string_lossy())),
+        Op::Glob(pattern) => format!("::{}", parse::quote_if(pattern)),
     }
 }
 
@@ -688,8 +704,12 @@ fn apply2<'a>(
         Op::Linear => Ok(tree),
         Op::Unsign => Ok(tree),
         Op::Rev(_) => Err(josh_error("not applicable to tree")),
-        Op::RegexReplace(regex, replacement) => {
-            tree::regex_replace(tree.id(), &regex, &replacement, transaction)
+        Op::RegexReplace(replacements) => {
+            let mut t = tree;
+            for (regex, replacement) in replacements {
+                t = tree::regex_replace(t.id(), &regex, &replacement, transaction)?;
+            }
+            Ok(t)
         }
 
         Op::Glob(pattern) => {
