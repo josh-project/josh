@@ -12,6 +12,8 @@
   :/"a%\"$"
   $ josh-filter -p :/a:/b
   :/a/b
+  $ josh-filter -p :prefix=x/y:/x
+  :prefix=y
   $ josh-filter -p :[:/a:/b,:/a/b]
   :/a/b
   $ josh-filter -p :[:empty,:/a]
