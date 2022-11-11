@@ -33,7 +33,7 @@ fn version_str() -> String {
 }
 
 lazy_static! {
-    static ref ARGS: clap::ArgMatches = parse_args();
+    static ref ARGS: josh_proxy::cli::Args = josh_proxy::cli::parse_args_or_exit(1);
 }
 
 josh::regex_parsed!(
@@ -99,12 +99,7 @@ async fn fetch_upstream(
     let fetch_cached_ok = {
         if let Some(last) = service.fetch_timers.read()?.get(&key) {
             let since = std::time::Instant::now().duration_since(*last);
-            let max = std::time::Duration::from_secs(
-                ARGS.get_one::<String>("cache-duration")
-                    .map(|v| v.as_str())
-                    .unwrap_or("0")
-                    .parse()?,
-            );
+            let max = std::time::Duration::from_secs(ARGS.cache_duration);
 
             tracing::trace!("last: {:?}, since: {:?}, max: {:?}", last, since, max);
             since < max
@@ -175,10 +170,9 @@ async fn fetch_upstream(
         Ok(_) => {
             fetch_timers.write()?.insert(key, std::time::Instant::now());
 
-            let poll_user = ARGS.get_one::<String>("poll");
             let (auth_user, _) = auth.parse().map_err(FetchError::from_josh_error)?;
 
-            if matches!(poll_user, Some(user) if auth_user == user.as_str()) {
+            if matches!(&ARGS.poll_user, Some(user) if auth_user == user.as_str()) {
                 service
                     .poll
                     .lock()?
@@ -372,10 +366,7 @@ async fn handle_ui_request(
     resource_path: &str,
 ) -> josh::JoshResult<Response<hyper::Body>> {
     // Proxy: can be used for UI development or to serve a different UI
-    if let Some(proxy) = ARGS
-        .get_one::<String>("static-resource-proxy-target")
-        .map(|v| v.as_str())
-    {
+    if let Some(proxy) = &ARGS.static_resource_proxy_target {
         let client_ip = IpAddr::from_str("127.0.0.1").unwrap();
         return match hyper_reverse_proxy::call(client_ip, proxy, req).await {
             Ok(response) => Ok(response),
@@ -802,7 +793,7 @@ async fn call_service(
 
     let remote_url = serv.upstream_url.clone() + meta.config.repo.as_str();
 
-    if let Some(filter_prefix) = ARGS.get_one::<String>("filter-prefix").map(|v| v.as_str()) {
+    if let Some(filter_prefix) = &ARGS.filter_prefix {
         filter = josh::filter::chain(josh::filter::parse(filter_prefix)?, filter);
     }
 
@@ -829,8 +820,7 @@ async fn call_service(
         ));
     }
 
-    let http_auth_required =
-        ARGS.get_flag("require-auth") && parsed_url.pathinfo == "/git-receive-pack";
+    let http_auth_required = ARGS.require_auth && parsed_url.pathinfo == "/git-receive-pack";
 
     if !josh_proxy::auth::check_auth(&remote_url, &auth, http_auth_required)
         .in_current_span()
@@ -1069,22 +1059,14 @@ fn trace_http_response_code(trace_span: Span, http_status: StatusCode) {
 
 #[tokio::main]
 async fn run_proxy() -> josh::JoshResult<i32> {
-    let port = ARGS
-        .get_one::<String>("port")
-        .map(|v| v.as_str())
-        .unwrap_or("8000")
-        .to_owned();
-    let addr = format!("0.0.0.0:{}", port).parse()?;
-
+    let addr = format!("0.0.0.0:{}", ARGS.port).parse()?;
     let remote = ARGS
-        .get_one::<String>("remote")
-        .map(|v| v.as_str())
-        .ok_or(josh::josh_error("missing remote host url"))?;
-    let local = std::path::PathBuf::from(
-        ARGS.get_one::<String>("local")
-            .map(|v| v.as_str())
-            .ok_or(josh::josh_error("missing local directory"))?,
-    );
+        .remote
+        .http
+        .as_ref()
+        .ok_or(josh_error("missing remote host url"))?;
+    let local = std::path::PathBuf::from(&ARGS.local);
+
     let local = if local.is_absolute() {
         local
     } else {
@@ -1095,18 +1077,13 @@ async fn run_proxy() -> josh::JoshResult<i32> {
     josh::cache::load(&local)?;
 
     let proxy_service = Arc::new(JoshProxyService {
-        port,
+        port: ARGS.port.to_string(),
         repo_path: local.to_owned(),
         upstream_url: remote.to_owned(),
         fetch_timers: Arc::new(RwLock::new(FetchTimers::new())),
         heads_map: Arc::new(RwLock::new(std::collections::HashMap::new())),
         poll: Arc::new(std::sync::Mutex::new(std::collections::HashSet::new())),
-        fetch_permits: Arc::new(tokio::sync::Semaphore::new(
-            ARGS.get_one::<String>("n")
-                .map(|v| v.as_str())
-                .unwrap_or("1")
-                .parse()?,
-        )),
+        fetch_permits: Arc::new(tokio::sync::Semaphore::new(ARGS.concurrent_n)),
         filter_permits: Arc::new(tokio::sync::Semaphore::new(10)),
     });
 
@@ -1161,7 +1138,7 @@ async fn run_proxy() -> josh::JoshResult<i32> {
 
     let server_future = server.with_graceful_shutdown(shutdown_signal());
 
-    if ARGS.get_flag("no-background") {
+    if ARGS.no_background {
         tokio::select!(
             r = server_future => println!("http server exited: {:?}", r),
         );
@@ -1208,69 +1185,12 @@ async fn run_housekeeping(local: std::path::PathBuf) -> josh::JoshResult<()> {
     loop {
         let local = local.clone();
         tokio::task::spawn_blocking(move || {
-            josh::housekeeping::run(&local, (i % 60 == 0) && ARGS.get_flag("gc"))
+            josh::housekeeping::run(&local, (i % 60 == 0) && ARGS.gc)
         })
         .await??;
         tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
         i += 1;
     }
-}
-
-fn make_app() -> clap::Command {
-    clap::Command::new("josh-proxy")
-        .arg(clap::Arg::new("remote").long("remote"))
-        .arg(clap::Arg::new("local").long("local"))
-        .arg(clap::Arg::new("poll").long("poll"))
-        .arg(
-            clap::Arg::new("gc")
-                .long("gc")
-                .action(clap::ArgAction::SetTrue)
-                .help("Run git gc in maintanance"),
-        )
-        .arg(
-            clap::Arg::new("require-auth")
-                .long("require-auth")
-                .action(clap::ArgAction::SetTrue),
-        )
-        .arg(
-            clap::Arg::new("no-background")
-                .long("no-background")
-                .action(clap::ArgAction::SetTrue),
-        )
-        .arg(
-            clap::Arg::new("n")
-                .short('n')
-                .help("Number of concurrent upstream git fetch/push operations"),
-        )
-        .arg(clap::Arg::new("port").long("port"))
-        .arg(
-            clap::Arg::new("cache-duration")
-                .long("cache-duration")
-                .short('c')
-                .help("Duration between forced cache refresh"),
-        )
-        .arg(
-            clap::Arg::new("static-resource-proxy-target")
-                .long("static-resource-proxy-target")
-                .help("Proxy static resource requests to a different URL"),
-        )
-        .arg(
-            clap::Arg::new("filter-prefix")
-                .long("filter-prefix")
-                .help("Filter to be prefixed to all queries of this instance"),
-        )
-}
-
-fn parse_args() -> clap::ArgMatches {
-    let args = {
-        let mut args = vec![];
-        for arg in std::env::args() {
-            args.push(arg);
-        }
-        args
-    };
-
-    make_app().get_matches_from(args)
 }
 
 fn pre_receive_hook() -> josh::JoshResult<i32> {
@@ -1526,9 +1446,4 @@ fn main() {
     };
 
     std::process::exit(run_proxy().unwrap_or(1));
-}
-
-#[test]
-fn verify_app() {
-    make_app().debug_assert();
 }
