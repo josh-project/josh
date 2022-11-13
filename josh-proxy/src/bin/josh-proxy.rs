@@ -18,6 +18,7 @@ use indoc::formatdoc;
 use josh::{josh_error, JoshError};
 use josh_rpc::calls::RequestedCommand;
 use josh_rpc::tokio_fd::IntoAsyncFd;
+use serde::Serialize;
 use std::collections::HashMap;
 use std::net::IpAddr;
 use std::process::Stdio;
@@ -48,11 +49,38 @@ type Polls =
 
 type HeadsMap = Arc<std::sync::RwLock<std::collections::HashMap<String, String>>>;
 
+#[derive(Serialize, Clone, Debug)]
+enum JoshProxyUpstream {
+    Http(String),
+    Ssh(String),
+    Both { http: String, ssh: String },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum UpstreamProtocol {
+    Http,
+    Ssh,
+}
+
+impl JoshProxyUpstream {
+    fn get(&self, protocol: UpstreamProtocol) -> Option<String> {
+        match (self, protocol) {
+            (JoshProxyUpstream::Http(http), UpstreamProtocol::Http)
+            | (JoshProxyUpstream::Both { http, .. }, UpstreamProtocol::Http) => Some(http.clone()),
+            (JoshProxyUpstream::Ssh(ssh), UpstreamProtocol::Ssh)
+            | (JoshProxyUpstream::Both { http: _, ssh }, UpstreamProtocol::Ssh) => {
+                Some(ssh.clone())
+            }
+            _ => None,
+        }
+    }
+}
+
 #[derive(Clone)]
 struct JoshProxyService {
     port: String,
     repo_path: std::path::PathBuf,
-    upstream_url: String,
+    upstream: JoshProxyUpstream,
     fetch_timers: Arc<RwLock<FetchTimers>>,
     heads_map: HeadsMap,
     fetch_permits: Arc<tokio::sync::Semaphore>,
@@ -64,7 +92,7 @@ impl std::fmt::Debug for JoshProxyService {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("JoshProxyService")
             .field("repo_path", &self.repo_path)
-            .field("upstream_url", &self.upstream_url)
+            .field("upstream", &self.upstream)
             .finish()
     }
 }
@@ -72,6 +100,7 @@ impl std::fmt::Debug for JoshProxyService {
 #[tracing::instrument]
 async fn fetch_upstream(
     service: Arc<JoshProxyService>,
+    upstream_protocol: UpstreamProtocol,
     upstream_repo: String,
     auth: &josh_proxy::auth::Handle,
     remote_url: String,
@@ -80,6 +109,10 @@ async fn fetch_upstream(
 ) -> Result<(), FetchError> {
     let auth = auth.clone();
     let key = remote_url.clone();
+
+    if upstream_protocol == UpstreamProtocol::Ssh {
+        return Err(FetchError::Other(josh_error(&"Protocol not supported")));
+    }
 
     let refs_to_fetch =
         if !headref.is_empty() && headref != "HEAD" && !headref.starts_with("refs/heads/") {
@@ -197,10 +230,16 @@ async fn static_paths(
         )));
     }
     if path == "/remote" {
-        return Ok(Some(make_response(
-            hyper::Body::from(service.upstream_url.clone()),
-            hyper::StatusCode::OK,
-        )));
+        return match service.upstream.get(UpstreamProtocol::Http) {
+            None => Ok(Some(make_response(
+                hyper::Body::from("HTTP remote is not configured"),
+                hyper::StatusCode::SERVICE_UNAVAILABLE,
+            ))),
+            Some(remote) => Ok(Some(make_response(
+                hyper::Body::from(remote),
+                hyper::StatusCode::OK,
+            ))),
+        };
     }
     if path == "/flush" {
         service.fetch_timers.write()?.clear();
@@ -403,12 +442,18 @@ async fn handle_ui_request(
 async fn query_meta_repo(
     serv: Arc<JoshProxyService>,
     meta_repo: &str,
+    upstream_protocol: UpstreamProtocol,
     upstream_repo: &str,
     auth: &josh_proxy::auth::Handle,
 ) -> josh::JoshResult<josh_proxy::MetaConfig> {
-    let remote_url = [serv.upstream_url.as_str(), meta_repo].join("");
+    let upstream = serv
+        .upstream
+        .get(upstream_protocol)
+        .ok_or(josh_error("no remote specified for the requested protocol"))?;
+    let remote_url = [upstream.as_str(), meta_repo].join("");
     match fetch_upstream(
         serv.clone(),
+        upstream_protocol,
         meta_repo.to_owned(),
         &auth,
         remote_url.to_owned(),
@@ -466,6 +511,7 @@ async fn query_meta_repo(
 async fn make_meta_config(
     serv: Arc<JoshProxyService>,
     auth: Option<&josh_proxy::auth::Handle>,
+    upstream_protocol: UpstreamProtocol,
     parsed_url: &FilteredRepoUrl,
 ) -> josh::JoshResult<MetaConfig> {
     let meta_repo = std::env::var("JOSH_META_REPO");
@@ -486,7 +532,14 @@ async fn make_meta_config(
                 auth.clone()
             };
 
-            query_meta_repo(serv.clone(), &meta_repo, &parsed_url.upstream_repo, &auth).await
+            query_meta_repo(
+                serv.clone(),
+                &meta_repo,
+                upstream_protocol,
+                &parsed_url.upstream_repo,
+                &auth,
+            )
+            .await
         }
     }
 }
@@ -639,6 +692,16 @@ fn is_repo_blocked(meta: &MetaConfig) -> bool {
     false
 }
 
+fn headref_or_default(headref: &str) -> String {
+    let result = headref.trim_start_matches('@').to_owned();
+
+    if result.is_empty() {
+        "HEAD".to_string()
+    } else {
+        result
+    }
+}
+
 async fn handle_serve_namespace_request(
     serv: Arc<JoshProxyService>,
     req: Request<hyper::Body>,
@@ -685,15 +748,16 @@ async fn handle_serve_namespace_request(
         ));
     };
 
-    let meta_config = match make_meta_config(serv.clone(), None, &parsed_url).await {
-        Ok(meta) => meta,
-        Err(e) => {
-            return Ok(make_response(
-                hyper::Body::from(format!("Error fetching meta repo: {}", e)),
-                StatusCode::INTERNAL_SERVER_ERROR,
-            ));
-        }
-    };
+    let meta_config =
+        match make_meta_config(serv.clone(), None, UpstreamProtocol::Ssh, &parsed_url).await {
+            Ok(meta) => meta,
+            Err(e) => {
+                return Ok(make_response(
+                    hyper::Body::from(format!("Error fetching meta repo: {}", e)),
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                ));
+            }
+        };
 
     if is_repo_blocked(&meta_config) {
         return Ok(make_response(
@@ -708,7 +772,6 @@ async fn handle_serve_namespace_request(
     return Ok(make_response(hyper::Body::empty(), StatusCode::NO_CONTENT));
 }
 
-// Entry point for fake git-upload-pack, git-receive-pack
 #[tracing::instrument]
 async fn call_service(
     serv: Arc<JoshProxyService>,
@@ -784,14 +847,30 @@ async fn call_service(
         }
     };
 
-    let meta = make_meta_config(serv.clone(), Some(&auth), &parsed_url).await?;
+    let meta = make_meta_config(
+        serv.clone(),
+        Some(&auth),
+        UpstreamProtocol::Http,
+        &parsed_url,
+    )
+    .await?;
 
     let mut filter = josh::filter::chain(
         meta.config.filter,
         josh::filter::parse(&parsed_url.filter_spec)?,
     );
 
-    let remote_url = serv.upstream_url.clone() + meta.config.repo.as_str();
+    let upstream = match serv.upstream.get(UpstreamProtocol::Http) {
+        Some(upstream) => upstream,
+        None => {
+            return Ok(make_response(
+                hyper::Body::from("HTTP remote is not configured"),
+                hyper::StatusCode::SERVICE_UNAVAILABLE,
+            ))
+        }
+    };
+
+    let remote_url = upstream + meta.config.repo.as_str();
 
     if let Some(filter_prefix) = &ARGS.filter_prefix {
         filter = josh::filter::chain(josh::filter::parse(filter_prefix)?, filter);
@@ -802,11 +881,6 @@ async fn call_service(
             .status(hyper::StatusCode::TEMPORARY_REDIRECT)
             .header("Location", format!("{}{}", remote_url, parsed_url.pathinfo))
             .body(hyper::Body::empty())?);
-    }
-
-    let mut headref = parsed_url.headref.trim_start_matches('@').to_owned();
-    if headref.is_empty() {
-        headref = "HEAD".to_string();
     }
 
     if is_repo_blocked(&meta) {
@@ -849,9 +923,10 @@ async fn call_service(
         .await??);
     }
 
-    // fetch upstream happened when we checked for auth
+    let headref = headref_or_default(&parsed_url.headref);
     match fetch_upstream(
         serv.clone(),
+        UpstreamProtocol::Http,
         meta.config.repo.to_owned(),
         &auth,
         remote_url.to_owned(),
@@ -1060,13 +1135,17 @@ fn trace_http_response_code(trace_span: Span, http_status: StatusCode) {
 #[tokio::main]
 async fn run_proxy() -> josh::JoshResult<i32> {
     let addr = format!("0.0.0.0:{}", ARGS.port).parse()?;
-    let remote = ARGS
-        .remote
-        .http
-        .as_ref()
-        .ok_or(josh_error("missing remote host url"))?;
-    let local = std::path::PathBuf::from(&ARGS.local);
+    let upstream = match (&ARGS.remote.http, &ARGS.remote.ssh) {
+        (Some(http), None) => JoshProxyUpstream::Http(http.clone()),
+        (None, Some(ssh)) => JoshProxyUpstream::Ssh(ssh.clone()),
+        (Some(http), Some(ssh)) => JoshProxyUpstream::Both {
+            http: http.clone(),
+            ssh: ssh.clone(),
+        },
+        (None, None) => return Err(josh_error("missing remote host url")),
+    };
 
+    let local = std::path::PathBuf::from(&ARGS.local);
     let local = if local.is_absolute() {
         local
     } else {
@@ -1079,7 +1158,7 @@ async fn run_proxy() -> josh::JoshResult<i32> {
     let proxy_service = Arc::new(JoshProxyService {
         port: ARGS.port.to_string(),
         repo_path: local.to_owned(),
-        upstream_url: remote.to_owned(),
+        upstream,
         fetch_timers: Arc::new(RwLock::new(FetchTimers::new())),
         heads_map: Arc::new(RwLock::new(std::collections::HashMap::new())),
         poll: Arc::new(std::sync::Mutex::new(std::collections::HashSet::new())),
@@ -1159,6 +1238,7 @@ async fn run_polling(serv: Arc<JoshProxyService>) -> josh::JoshResult<()> {
         for (upstream_repo, auth, url) in polls {
             let fetch_result = fetch_upstream(
                 serv.clone(),
+                UpstreamProtocol::Http,
                 upstream_repo.clone(),
                 &auth,
                 url.clone(),
@@ -1307,6 +1387,7 @@ async fn serve_graphql(
         } else {
             match fetch_upstream(
                 serv.clone(),
+                UpstreamProtocol::Http,
                 upstream_repo.to_owned(),
                 &auth,
                 remote_url.to_owned(),
