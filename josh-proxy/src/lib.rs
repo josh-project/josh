@@ -5,7 +5,8 @@ pub mod juniper_hyper;
 #[macro_use]
 extern crate lazy_static;
 
-use josh::JoshError;
+use josh::{josh_error, JoshError};
+use std::fs;
 use std::path::PathBuf;
 
 #[derive(PartialEq)]
@@ -429,13 +430,16 @@ pub fn push_head_url(
     let shell = josh::shell::Shell {
         cwd: repo.path().to_owned(),
     };
+
     let (username, password) = auth.parse()?;
-    let cmd = format!(
-        "git push {} {} '{}'",
-        if force { "-f" } else { "" },
-        &url,
-        &spec
-    );
+
+    let mut cmd = vec!["git", "push"];
+    if force {
+        cmd.push("--force")
+    }
+    cmd.push(&url);
+    cmd.push(&spec);
+
     let mut fakehead = repo.reference(&rn, oid, true, "push_head_url")?;
     let (stdout, stderr, status) = shell.command_env(
         &cmd,
@@ -460,7 +464,8 @@ fn create_repo_base(path: &PathBuf) -> josh::JoshResult<josh::shell::Shell> {
     git2::Repository::init_bare(&path)?;
 
     let credential_helper =
-        "'!f() { echo \"username=\"$GIT_USER\"\npassword=\"$GIT_PASSWORD\"\"; }; f'";
+        r#"!f() { echo username="${GIT_USER}"; echo password="${GIT_PASSWORD}"; }; f"#;
+
     let config_options = [
         ("http.receivepack", "true"),
         ("user.name", "josh"),
@@ -478,11 +483,29 @@ fn create_repo_base(path: &PathBuf) -> josh::JoshResult<josh::shell::Shell> {
     };
 
     config_options
-        .map(|(key, value)| shell.command(format!("git config {} {}", key, value).as_str()));
+        .iter()
+        .map(
+            |(key, value)| match shell.command(&["git", "config", key, value]) {
+                (_, _, code) if code != 0 => Err(josh_error("failed to set git config value")),
+                _ => Ok(()),
+            },
+        )
+        .collect::<Result<Vec<_>, _>>()?;
 
-    shell.command("rm -Rf hooks");
-    shell.command("rm -Rf *.lock");
-    shell.command("rm -Rf packed-refs");
+    [path.join("hooks"), path.join("packed-refs")]
+        .iter()
+        .filter(|p| p.exists())
+        .map(|p| fs::remove_dir_all(p))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    // Delete all files ending with ".lock"
+    fs::read_dir(path)?
+        .filter_map(|entry| match entry {
+            Ok(entry) if entry.path().ends_with(".lock") => Some(path),
+            _ => None,
+        })
+        .map(|file| fs::remove_file(file))
+        .collect::<Result<Vec<_>, _>>()?;
 
     Ok(shell)
 }
@@ -495,7 +518,7 @@ pub fn create_repo(path: &std::path::Path) -> josh::JoshResult<()> {
     let overlay_path = path.join("overlay");
     tracing::debug!("init overlay repo: {:?}", overlay_path);
     let overlay_shell = create_repo_base(&overlay_path)?;
-    overlay_shell.command("mkdir hooks");
+    overlay_shell.command(&["mkdir", "hooks"]);
 
     let josh_executable = std::env::current_exe().expect("can't find path to exe");
     std::os::unix::fs::symlink(
@@ -525,13 +548,14 @@ pub fn get_head(
     let shell = josh::shell::Shell {
         cwd: path.to_owned(),
     };
+
     let (username, password) = auth.parse()?;
 
-    let cmd = format!("git ls-remote --symref {} {}", &url, "HEAD");
+    let cmd = &["git", "ls-remote", "--symref", &url, "HEAD"];
     tracing::info!("get_head {:?} {:?} {:?}", cmd, path, "");
 
     let (stdout, _stderr, _) = shell.command_env(
-        &cmd,
+        cmd,
         &[],
         &[("GIT_PASSWORD", &password), ("GIT_USER", &username)],
     );
@@ -579,7 +603,7 @@ pub fn fetch_refs_from_url(
         .iter()
         .map(|r| {
             format!(
-                "'+{}:refs/josh/upstream/{}/{}'",
+                "+{}:refs/josh/upstream/{}/{}",
                 &r,
                 josh::to_ns(upstream_repo),
                 &r
@@ -591,7 +615,12 @@ pub fn fetch_refs_from_url(
         cwd: path.to_owned(),
     };
 
-    let cmd = format!("git fetch --prune --no-tags {} {}", &url, &specs.join(" "));
+    let cmd = ["git", "fetch", "--prune", "--no-tags", &url]
+        .map(str::to_owned)
+        .to_vec();
+    let cmd = cmd.into_iter().chain(specs.into_iter()).collect::<Vec<_>>();
+    let cmd = cmd.iter().map(|s| s as &str).collect::<Vec<&str>>();
+
     tracing::info!("fetch_refs_from_url {:?} {:?} {:?}", cmd, path, "");
 
     let (username, password) = auth.parse().map_err(FetchError::from_josh_error)?;
