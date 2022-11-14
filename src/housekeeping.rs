@@ -111,17 +111,20 @@ pub fn memorize_from_to(
     Ok(((from, oid), to_ref))
 }
 
-fn run_command(path: &Path, cmd: &str) -> String {
+fn run_command(path: &Path, cmd: &[&str]) -> String {
     let shell = shell::Shell {
         cwd: path.to_owned(),
     };
 
     let output = "";
 
-    let (stdout, stderr, _) = shell.command(cmd);
+    let (stdout, stderr, _) = shell.command(&cmd);
     let output = format!(
         "{}\n\n{}:\nstdout:\n{}\n\nstderr:{}\n",
-        output, cmd, stdout, stderr
+        output,
+        cmd.join(" "),
+        stdout,
+        stderr
     );
 
     output
@@ -322,11 +325,19 @@ pub fn run(repo_path: &std::path::Path, do_gc: bool) -> JoshResult<()> {
 
     info!(
         "{}",
-        run_command(transaction_mirror.repo().path(), "git count-objects -v").replace("\n", "  ")
+        run_command(
+            transaction_mirror.repo().path(),
+            &["git", "count-objects", "-v"]
+        )
+        .replace("\n", "  ")
     );
     info!(
         "{}",
-        run_command(transaction_overlay.repo().path(), "git count-objects -v").replace("\n", "  ")
+        run_command(
+            transaction_overlay.repo().path(),
+            &["git", "count-objects", "-v"]
+        )
+        .replace("\n", "  ")
     );
     if !std::env::var("JOSH_NO_DISCOVER").is_ok() {
         housekeeping::discover_filter_candidates(&transaction_mirror)?;
@@ -339,33 +350,50 @@ pub fn run(repo_path: &std::path::Path, do_gc: bool) -> JoshResult<()> {
             "\n----------\n{}\n----------",
             run_command(
                 transaction_mirror.repo().path(),
-                "git repack -dkbn --no-write-bitmap-index --threads=4"
+                &[
+                    "git",
+                    "repack",
+                    "-dn",
+                    "--keep-unreachable",
+                    "--no-write-bitmap-index",
+                    "--threads=4"
+                ]
             )
         );
         info!(
             "\n----------\n{}\n----------",
             run_command(
                 transaction_mirror.repo().path(),
-                "git multi-pack-index write --bitmap"
+                &["git", "multi-pack-index", "write", "--bitmap"]
             )
         );
         info!(
             "\n----------\n{}\n----------",
             run_command(
                 transaction_overlay.repo().path(),
-                "git repack -dkbn --no-write-bitmap-index --threads=4"
+                &[
+                    "git",
+                    "repack",
+                    "-dn",
+                    "--keep-unreachable",
+                    "--no-write-bitmap-index",
+                    "--threads=4"
+                ]
             )
         );
         info!(
             "\n----------\n{}\n----------",
             run_command(
                 transaction_overlay.repo().path(),
-                "git multi-pack-index write --bitmap"
+                &["git", "multi-pack-index", "write", "--bitmap"]
             )
         );
         info!(
             "\n----------\n{}\n----------",
-            run_command(transaction_mirror.repo().path(), "git count-objects -vH")
+            run_command(
+                transaction_mirror.repo().path(),
+                &["git", "count-objects", "-vH"]
+            )
         );
     }
     Ok(())

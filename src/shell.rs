@@ -10,14 +10,14 @@ pub struct Shell {
 }
 
 impl Shell {
-    pub fn command(&self, cmd: &str) -> (String, String, i32) {
+    pub fn command(&self, cmd: &[&str]) -> (String, String, i32) {
         self.command_env(cmd, &[], &[])
     }
 
     #[tracing::instrument(skip(self, env_notrace))]
     pub fn command_env(
         &self,
-        cmd: &str,
+        cmd: &[&str],
         env: &[(&str, &str)],
         env_notrace: &[(&str, &str)],
     ) -> (String, String, i32) {
@@ -27,20 +27,24 @@ impl Shell {
             self.cwd.to_path_buf()
         };
 
-        let mut command = Command::new("sh");
+        let env = env.to_owned();
+        let env_notrace = env_notrace.to_owned();
+
+        let (cmd, args) = {
+            if let [cmd, args @ ..] = cmd {
+                (cmd, args)
+            } else {
+                panic!("No command provided")
+            }
+        };
+
+        let mut command = Command::new(cmd);
         command
             .current_dir(&self.cwd)
-            .arg("-c")
-            .arg(&cmd)
+            .args(args)
+            .envs(env)
+            .envs(env_notrace)
             .env("GIT_DIR", &git_dir);
-
-        for (k, v) in env.iter() {
-            command.env(&k, &v);
-        }
-
-        for (k, v) in env_notrace.iter() {
-            command.env(&k, &v);
-        }
 
         let output = command
             .output()
@@ -50,10 +54,12 @@ impl Shell {
             .expect("failed to decode utf8")
             .trim()
             .to_string();
+
         let stderr = String::from_utf8(output.stderr)
             .expect("failed to decode utf8")
             .trim()
             .to_string();
+
         tracing::event!(Level::TRACE, ?stdout, ?stderr);
         (stdout, stderr, output.status.code().unwrap_or(1))
     }
