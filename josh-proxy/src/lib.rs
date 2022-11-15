@@ -88,11 +88,17 @@ fn baseref_and_options(refname: &str) -> josh::JoshResult<(String, String, Vec<S
     Ok((baseref, push_to, options, push_mode))
 }
 
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
+pub enum RemoteAuth {
+    Http { auth: auth::Handle },
+    Ssh { auth_socket: String },
+}
+
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
 pub struct RepoUpdate {
     pub refs: std::collections::HashMap<String, (String, String)>,
     pub remote_url: String,
-    pub auth: auth::Handle,
+    pub remote_auth: RemoteAuth,
     pub port: String,
     pub filter_spec: String,
     pub base_ns: String,
@@ -295,7 +301,7 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
                 oid,
                 &reference,
                 &repo_update.remote_url,
-                &repo_update.auth,
+                &repo_update.remote_auth,
                 &repo_update.git_ns,
                 &display_name,
                 push_mode != PushMode::Normal,
@@ -418,7 +424,7 @@ pub fn push_head_url(
     oid: git2::Oid,
     refname: &str,
     url: &str,
-    auth: &auth::Handle,
+    remote_auth: &RemoteAuth,
     namespace: &str,
     display_name: &str,
     force: bool,
@@ -426,12 +432,6 @@ pub fn push_head_url(
     let rn = format!("refs/{}", &namespace);
 
     let spec = format!("{}:{}", &rn, &refname);
-
-    let shell = josh::shell::Shell {
-        cwd: repo.path().to_owned(),
-    };
-
-    let (username, password) = auth.parse()?;
 
     let mut cmd = vec!["git", "push"];
     if force {
@@ -441,16 +441,10 @@ pub fn push_head_url(
     cmd.push(&spec);
 
     let mut fakehead = repo.reference(&rn, oid, true, "push_head_url")?;
-    let (stdout, stderr, status) = shell.command_env(
-        &cmd,
-        &[],
-        &[
-            ("GIT_PASSWORD", &password),
-            ("GIT_USER", &username),
-            ("GIT_ALTERNATE_OBJECT_DIRECTORIES", &alternate),
-        ],
-    );
+    let (stdout, stderr, status) =
+        run_git_with_auth(&repo.path(), &cmd, &remote_auth, Some(alternate.to_owned()))?;
     fakehead.delete()?;
+
     tracing::debug!("{}", &stderr);
     tracing::debug!("{}", &stdout);
 
@@ -545,25 +539,84 @@ pub fn create_repo(path: &std::path::Path) -> josh::JoshResult<()> {
     Ok(())
 }
 
+fn make_ssh_command() -> String {
+    let ssh_options = [
+        "IdentitiesOnly=yes",
+        "LogLevel=ERROR",
+        "UserKnownHostsFile=/dev/null",
+        "StrictHostKeyChecking=no",
+        "PreferredAuthentications=publickey",
+        "ForwardX11=no",
+        "ForwardAgent=no",
+    ];
+
+    let ssh_options = ssh_options.map(|o| format!("-o {}", o));
+    format!("ssh {}", ssh_options.join(" "))
+}
+
+fn run_git_with_auth(
+    cwd: &std::path::Path,
+    cmd: &[&str],
+    remote_auth: &RemoteAuth,
+    alt_object_dir: Option<String>,
+) -> josh::JoshResult<(String, String, i32)> {
+    let shell = josh::shell::Shell {
+        cwd: cwd.to_owned(),
+    };
+
+    let maybe_object_dir = match &alt_object_dir {
+        Some(dir) => {
+            vec![("GIT_ALTERNATE_OBJECT_DIRECTORIES", dir.as_str())]
+        }
+        None => vec![],
+    };
+
+    match remote_auth {
+        RemoteAuth::Ssh { auth_socket } => {
+            let ssh_command = make_ssh_command();
+
+            let env = [("GIT_SSH_COMMAND", ssh_command.as_str())];
+            let env_notrace = [
+                [("SSH_AUTH_SOCK", auth_socket.as_str())].as_slice(),
+                maybe_object_dir.as_slice(),
+            ]
+            .concat();
+
+            Ok(shell.command_env(&cmd, &env, &env_notrace))
+        }
+        RemoteAuth::Http { auth } => {
+            let (username, password) = auth.parse()?;
+            let env_notrace = [
+                [
+                    ("GIT_PASSWORD", password.as_str()),
+                    ("GIT_USER", username.as_str()),
+                ]
+                .as_slice(),
+                maybe_object_dir.as_slice(),
+            ]
+            .concat();
+
+            Ok(shell.command_env(&cmd, &[], &env_notrace))
+        }
+    }
+}
+
 pub fn get_head(
     path: &std::path::Path,
     url: &str,
-    auth: &auth::Handle,
+    remote_auth: &RemoteAuth,
 ) -> josh::JoshResult<String> {
-    let shell = josh::shell::Shell {
-        cwd: path.to_owned(),
-    };
-
-    let (username, password) = auth.parse()?;
-
     let cmd = &["git", "ls-remote", "--symref", &url, "HEAD"];
-    tracing::info!("get_head {:?} {:?} {:?}", cmd, path, "");
 
-    let (stdout, _stderr, _) = shell.command_env(
-        cmd,
-        &[],
-        &[("GIT_PASSWORD", &password), ("GIT_USER", &username)],
-    );
+    tracing::info!("get_head {:?} {:?} {:?}", cmd, path, "");
+    let (stdout, _, code) = run_git_with_auth(&path, cmd, &remote_auth, None)?;
+
+    if code != 0 {
+        return Err(josh_error(&format!(
+            "git subprocess exited with code {}",
+            code
+        )));
+    }
 
     let head = stdout
         .lines()
@@ -602,7 +655,7 @@ pub fn fetch_refs_from_url(
     upstream_repo: &str,
     url: &str,
     refs_prefixes: &[String],
-    auth: &auth::Handle,
+    remote_auth: &RemoteAuth,
 ) -> Result<(), FetchError> {
     let specs: Vec<_> = refs_prefixes
         .iter()
@@ -616,10 +669,6 @@ pub fn fetch_refs_from_url(
         })
         .collect();
 
-    let shell = josh::shell::Shell {
-        cwd: path.to_owned(),
-    };
-
     let cmd = ["git", "fetch", "--prune", "--no-tags", &url]
         .map(str::to_owned)
         .to_vec();
@@ -628,23 +677,26 @@ pub fn fetch_refs_from_url(
 
     tracing::info!("fetch_refs_from_url {:?} {:?} {:?}", cmd, path, "");
 
-    let (username, password) = auth.parse().map_err(FetchError::from_josh_error)?;
-    let (_stdout, stderr, _) = shell.command_env(
-        &cmd,
-        &[],
-        &[("GIT_PASSWORD", &password), ("GIT_USER", &username)],
-    );
+    let (_, stderr, code) =
+        run_git_with_auth(&path, &cmd, &remote_auth, None).map_err(|e| FetchError::Other(e))?;
+
     tracing::debug!("fetch_refs_from_url done {:?} {:?} {:?}", cmd, path, stderr);
-    if stderr.contains("fatal: Authentication failed") {
+
+    if stderr.contains("fatal: Authentication failed")
+        || stderr.contains("fatal: Could not read")
+        || stderr.contains(": Permission denied")
+    {
         return Err(FetchError::AuthRequired);
     }
-    if stderr.contains("fatal:") {
+
+    if stderr.contains("fatal:") || code != 0 {
         tracing::error!("{:?}", stderr);
-        return Err(FetchError::Other(josh::josh_error(&format!(
-            "git error: {:?}",
-            stderr
+        return Err(FetchError::Other(josh_error(&format!(
+            "git process exited with code {}: {:?}",
+            code, stderr
         ))));
     }
+
     if stderr.contains("error:") {
         tracing::error!("{:?}", stderr);
         return Err(FetchError::Other(
