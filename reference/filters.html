@@ -209,6 +209,14 @@ allowed.</p>
 <h3 id="linearise-history-linear"><a class="header" href="#linearise-history-linear">Linearise history <strong>:linear</strong></a></h3>
 <p>Produce a filtered history that does not contain any merge commits. This is done by
 simply dropping all parents except the first on every commit.</p>
+<h3 id="filter-specific-parts-of-the-history-revsha_0filter_0sha_nfilter_n"><a class="header" href="#filter-specific-parts-of-the-history-revsha_0filter_0sha_nfilter_n">Filter specific parts of the history <strong>:rev(&lt;sha_0&gt;:filter_0,...,&lt;sha_N&gt;:filter_N)</strong></a></h3>
+<p>Produce a history where the commits specified by <code>&lt;sha_N&gt;</code> are replaced by the result of applying
+<code>:filter_N</code> to it.</p>
+<p>It will appear like all <em>ancestors</em> of <code>&lt;sha_N&gt;</code> are also filtered with <code>&lt;filter_N&gt;</code>. If an
+ancestor also has a matching entry in the <code>:rev(...)</code> it's filter will <em>replace</em> <code>&lt;filter_N&gt;</code>
+for all further ancestors (and so on).</p>
+<p>This special value <code>0000000000000000000000000000000000000000</code> can be used as a <code>&lt;sha_n&gt;</code> to filter
+commits that don't match any of the other shas.</p>
 <h2 id="filter-order-matters"><a class="header" href="#filter-order-matters">Filter order matters</a></h2>
 <p>Filters are applied in the left-to-right order they are given in the filter specification,
 and they are <code>not</code> commutative.</p>
