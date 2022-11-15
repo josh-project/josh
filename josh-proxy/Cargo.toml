@@ -41,6 +41,6 @@ tracing-opentelemetry = "0.18.0"
 tracing-subscriber = { version = "0.3.16", features = ["env-filter"] }
 unindent = "0.1.10"
 url = "2.3.1"
-uuid = { version = "1.2.1", features = ["v4"] }
+uuid = { version = "1.2.2", features = ["v4"] }
 josh-rpc = { path = "../josh-rpc" }
 tokio-util = "0.7.4"
