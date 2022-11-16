@@ -492,11 +492,16 @@ fn create_repo_base(path: &PathBuf) -> josh::JoshResult<josh::shell::Shell> {
         )
         .collect::<Result<Vec<_>, _>>()?;
 
-    [path.join("hooks"), path.join("packed-refs")]
-        .iter()
-        .filter(|p| p.exists())
-        .map(|p| fs::remove_dir_all(p))
-        .collect::<Result<Vec<_>, _>>()?;
+    let hooks = path.join("hooks");
+    let packed_refs = path.join("packed-refs");
+
+    if hooks.exists() {
+        fs::remove_dir_all(hooks)?;
+    }
+
+    if packed_refs.exists() {
+        fs::remove_file(packed_refs)?;
+    }
 
     // Delete all files ending with ".lock"
     fs::read_dir(path)?
