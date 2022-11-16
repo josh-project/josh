@@ -15,6 +15,7 @@ RUN cargo chef prepare --recipe-path recipe.json
 FROM rust:${RUST_VERSION} as dev
 
 RUN <<EOF
+set -e
 apt-get update
 apt-get remove --yes git
 apt-get install --yes --no-install-recommends \
@@ -28,19 +29,30 @@ apt-get install --yes --no-install-recommends \
     gettext \
     python3 \
     python3-pip \
+    gettext \
     tree \
     psmisc
 rm -rf /var/lib/apt/lists/*
 EOF
 
+ARG GO_VERSION=1.19.3
+WORKDIR /opt
+RUN <<EOF
+set -e
+wget https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz
+tar -C /usr/local -xzf go${GO_VERSION}.linux-amd64.tar.gz
+EOF
+ENV PATH=${PATH}:/usr/local/go/bin
+
 ARG GIT_VERSION=2.36.1
 WORKDIR /usr/src/git
 RUN <<EOF
+set -e
 wget https://mirrors.edge.kernel.org/pub/software/scm/git/git-${GIT_VERSION}.tar.gz
 tar --extract --gzip --file git-${GIT_VERSION}.tar.gz
 cd git-${GIT_VERSION}
 make configure
-./configure --prefix=/opt/git-install --exec-prefix=/opt/git-install
+./configure --without-tcltk --prefix=/opt/git-install --exec-prefix=/opt/git-install
 make -j$(nproc)
 make install
 EOF
@@ -76,7 +88,25 @@ VOLUME /opt/cache
 
 ENV CARGO_TARGET_DIR=/opt/cache/cargo-target
 ENV CARGO_HOME=/opt/cache/cargo-cache
+ENV GOCACHE=/opt/cache/go-cache
+ENV GOPATH=/opt/cache/go-path
 RUN npm config set cache /opt/cache/npm-cache --global
+
+ARG USER_GID
+ARG USER_UID
+
+RUN \
+  if [ ! $(getent group ${USER_GID}) ] ; then \
+    addgroup \
+      --gid ${USER_GID} dev ; \
+  fi
+
+RUN adduser \
+      --uid ${USER_UID} \
+      --gid ${USER_GID} \
+      --disabled-login \
+      --gecos '' \
+      dev
 
 FROM dev as dev-ci
 

@@ -15,7 +15,7 @@ use std::os::unix::fs::FileTypeExt;
 use std::path::Path;
 use std::process::ExitCode;
 use std::time::Duration;
-use std::{env, fs, process};
+use std::{env, fs, io, process};
 use tokio::io::AsyncWriteExt;
 use tracing_subscriber::Layer;
 
@@ -27,7 +27,7 @@ struct Args {
 }
 
 const HTTP_REQUEST_TIMEOUT: u64 = 120;
-const HTTP_JOSH_SERVER: &str = "http://localhost:8000";
+const HTTP_JOSH_SERVER_PORT: &str = "8000";
 
 fn die(message: &str) -> ! {
     eprintln!("josh-ssh-shell: {}", message);
@@ -57,6 +57,12 @@ impl Display for CallError {
             }
         }
     }
+}
+
+fn get_endpoint() -> String {
+    let port =
+        std::env::var("JOSH_SSH_SHELL_ENDPOINT_PORT").unwrap_or(HTTP_JOSH_SERVER_PORT.to_string());
+    format!("http://localhost:{}", port)
 }
 
 async fn handle_command(
@@ -141,7 +147,7 @@ async fn handle_command(
 
         let client = reqwest::Client::new();
         let response = client
-            .post(format!("{}/serve_namespace", HTTP_JOSH_SERVER))
+            .post(format!("{}/serve_namespace", get_endpoint()))
             .header(CONTENT_TYPE, "application/json")
             .body(serde_json::to_string(&rpc_payload).unwrap())
             .timeout(Duration::from_secs(HTTP_REQUEST_TIMEOUT))
@@ -164,7 +170,10 @@ async fn handle_command(
 }
 
 fn setup_tracing() {
-    let fmt_layer = tracing_subscriber::fmt::layer().compact().with_ansi(false);
+    let fmt_layer = tracing_subscriber::fmt::layer()
+        .compact()
+        .with_ansi(false)
+        .with_writer(io::stderr);
 
     let filter = match env::var("RUST_LOG") {
         Ok(_) => tracing_subscriber::EnvFilter::from_default_env(),
@@ -195,6 +204,8 @@ async fn main() -> ExitCode {
             die("cannot be run interactively; exiting")
         }
     }
+
+    check_isatty();
 
     let command_words = shell_words::split(&args.command).unwrap_or_else(|_| {
         die("parse error; exiting");

@@ -20,6 +20,7 @@ use josh_rpc::calls::RequestedCommand;
 use josh_rpc::tokio_fd::IntoAsyncFd;
 use serde::Serialize;
 use std::collections::HashMap;
+use std::io;
 use std::net::IpAddr;
 use std::process::Stdio;
 use std::str::FromStr;
@@ -100,7 +101,6 @@ impl std::fmt::Debug for JoshProxyService {
 #[tracing::instrument]
 async fn fetch_upstream(
     service: Arc<JoshProxyService>,
-    upstream_protocol: UpstreamProtocol,
     upstream_repo: String,
     remote_auth: &RemoteAuth,
     remote_url: String,
@@ -108,10 +108,6 @@ async fn fetch_upstream(
     force: bool,
 ) -> Result<(), FetchError> {
     let key = remote_url.clone();
-
-    if upstream_protocol == UpstreamProtocol::Ssh {
-        return Err(FetchError::Other(josh_error(&"Protocol not supported")));
-    }
 
     let refs_to_fetch =
         if !headref.is_empty() && headref != "HEAD" && !headref.starts_with("refs/heads/") {
@@ -450,10 +446,10 @@ async fn query_meta_repo(
         .upstream
         .get(upstream_protocol)
         .ok_or(josh_error("no remote specified for the requested protocol"))?;
+
     let remote_url = [upstream.as_str(), meta_repo].join("");
     match fetch_upstream(
         serv.clone(),
-        upstream_protocol,
         meta_repo.to_owned(),
         &remote_auth,
         remote_url.to_owned(),
@@ -510,22 +506,22 @@ async fn query_meta_repo(
 
 async fn make_meta_config(
     serv: Arc<JoshProxyService>,
-    remote_auth: Option<&RemoteAuth>,
+    remote_auth: &RemoteAuth,
     upstream_protocol: UpstreamProtocol,
     parsed_url: &FilteredRepoUrl,
 ) -> josh::JoshResult<MetaConfig> {
     let meta_repo = std::env::var("JOSH_META_REPO");
     let auth_token = std::env::var("JOSH_META_AUTH_TOKEN");
 
-    match (remote_auth, meta_repo) {
-        (None, _) | (_, Err(_)) => Ok(MetaConfig {
+    match meta_repo {
+        Err(_) => Ok(MetaConfig {
             config: RepoConfig {
                 repo: parsed_url.upstream_repo.clone(),
                 ..Default::default()
             },
             ..Default::default()
         }),
-        (Some(remote_auth), Ok(meta_repo)) => {
+        Ok(meta_repo) => {
             let auth = match remote_auth {
                 RemoteAuth::Ssh { auth_socket } => RemoteAuth::Ssh {
                     auth_socket: auth_socket.clone(),
@@ -553,16 +549,29 @@ async fn make_meta_config(
     }
 }
 
-async fn serve_namespace(params: josh_rpc::calls::ServeNamespace) -> josh::JoshResult<()> {
+async fn serve_namespace(
+    params: &josh_rpc::calls::ServeNamespace,
+    repo_path: std::path::PathBuf,
+    namespace: &str,
+) -> josh::JoshResult<()> {
     const SERVE_TIMEOUT: u64 = 60;
 
-    tracing::trace!("serve_namespace: {:?}", params);
+    tracing::trace!(
+        "serve_namespace: command: {:?}, query: {}, namespace: {}",
+        params.command,
+        params.query,
+        namespace
+    );
 
     enum ServeError {
         FifoError(std::io::Error),
         SubprocessError(std::io::Error),
         SubprocessTimeout(tokio::time::error::Elapsed),
         SubprocessExited(i32),
+    }
+
+    if params.command == RequestedCommand::GitReceivePack {
+        return Err(josh_error("Push over SSH is not supported"));
     }
 
     let command = match params.command {
@@ -572,7 +581,14 @@ async fn serve_namespace(params: josh_rpc::calls::ServeNamespace) -> josh::JoshR
     };
 
     let mut process = tokio::process::Command::new(command)
-        .arg("")
+        .arg(repo_path.join("overlay"))
+        .current_dir(repo_path.join("overlay"))
+        .env("GIT_DIR", &repo_path)
+        .env("GIT_NAMESPACE", namespace)
+        .env(
+            "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+            repo_path.join("mirror").join("objects"),
+        )
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()?;
@@ -757,16 +773,26 @@ async fn handle_serve_namespace_request(
         ));
     };
 
-    let meta_config =
-        match make_meta_config(serv.clone(), None, UpstreamProtocol::Ssh, &parsed_url).await {
-            Ok(meta) => meta,
-            Err(e) => {
-                return Ok(make_response(
-                    hyper::Body::from(format!("Error fetching meta repo: {}", e)),
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                ));
-            }
-        };
+    let remote_auth = RemoteAuth::Ssh {
+        auth_socket: params.ssh_socket.clone(),
+    };
+
+    let meta_config = match make_meta_config(
+        serv.clone(),
+        &remote_auth,
+        UpstreamProtocol::Ssh,
+        &parsed_url,
+    )
+    .await
+    {
+        Ok(meta) => meta,
+        Err(e) => {
+            return Ok(make_response(
+                hyper::Body::from(format!("Error fetching meta repo: {}", e)),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ));
+        }
+    };
 
     if is_repo_blocked(&meta_config) {
         return Ok(make_response(
@@ -775,10 +801,102 @@ async fn handle_serve_namespace_request(
         ));
     }
 
-    let serve_result = serve_namespace(params).await;
-    tracing::trace!("serve_result: {:?}", serve_result);
+    let upstream = match serv.upstream.get(UpstreamProtocol::Ssh) {
+        Some(upstream) => upstream,
+        None => {
+            return Ok(make_response(
+                hyper::Body::from("SSH remote is not configured"),
+                hyper::StatusCode::SERVICE_UNAVAILABLE,
+            ))
+        }
+    };
 
-    return Ok(make_response(hyper::Body::empty(), StatusCode::NO_CONTENT));
+    let remote_url = upstream + meta_config.config.repo.as_str();
+    let headref = headref_or_default(&parsed_url.headref);
+
+    match fetch_upstream(
+        serv.clone(),
+        meta_config.config.repo.to_owned(),
+        &remote_auth,
+        remote_url.to_owned(),
+        &headref,
+        false,
+    )
+    .await
+    {
+        Ok(_) => {}
+        Err(FetchError::AuthRequired) => {
+            return Ok(make_response(
+                hyper::Body::from("Access to upstream repo denied"),
+                StatusCode::FORBIDDEN,
+            ))
+        }
+        Err(FetchError::Other(e)) => {
+            return Ok(make_response(
+                hyper::Body::from(e.to_string()),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ))
+        }
+    }
+
+    trace!(
+        "handle_serve_namespace_request: filter_spec: {}",
+        parsed_url.filter_spec
+    );
+
+    let query_filter = match josh::filter::parse(&parsed_url.filter_spec) {
+        Ok(filter) => filter,
+        Err(e) => {
+            return Ok(make_response(
+                hyper::Body::from(format!("Failed to parse filter: {}", e.to_string())),
+                StatusCode::BAD_REQUEST,
+            ))
+        }
+    };
+
+    let filter = josh::filter::chain(
+        query_filter,
+        match &ARGS.filter_prefix {
+            Some(filter_prefix) => {
+                let filter_prefix = match josh::filter::parse(&filter_prefix) {
+                    Ok(filter) => filter,
+                    Err(e) => {
+                        return Ok(make_response(
+                            hyper::Body::from(format!(
+                                "Failed to parse prefix filter passed as command line argument: {}",
+                                e.to_string()
+                            )),
+                            StatusCode::SERVICE_UNAVAILABLE,
+                        ))
+                    }
+                };
+
+                josh::filter::chain(meta_config.config.filter, filter_prefix)
+            }
+            None => meta_config.config.filter,
+        },
+    );
+
+    let temp_ns = match prepare_namespace(serv.clone(), &meta_config, filter, &headref).await {
+        Ok(ns) => ns,
+        Err(e) => {
+            return Ok(make_response(
+                hyper::Body::from(e.to_string()),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ))
+        }
+    };
+
+    let serve_result = serve_namespace(&params, serv.repo_path.clone(), temp_ns.name()).await;
+    std::mem::drop(temp_ns);
+
+    match serve_result {
+        Ok(_) => Ok(make_response(hyper::Body::empty(), StatusCode::NO_CONTENT)),
+        Err(e) => Ok(make_response(
+            hyper::Body::from(e.to_string()),
+            StatusCode::INTERNAL_SERVER_ERROR,
+        )),
+    }
 }
 
 #[tracing::instrument]
@@ -859,7 +977,7 @@ async fn call_service(
     let remote_auth = RemoteAuth::Http { auth: auth.clone() };
     let meta = make_meta_config(
         serv.clone(),
-        Some(&remote_auth),
+        &remote_auth,
         UpstreamProtocol::Http,
         &parsed_url,
     )
@@ -936,7 +1054,6 @@ async fn call_service(
     let headref = headref_or_default(&parsed_url.headref);
     match fetch_upstream(
         serv.clone(),
-        UpstreamProtocol::Http,
         meta.config.repo.to_owned(),
         &remote_auth,
         remote_url.to_owned(),
@@ -1249,7 +1366,6 @@ async fn run_polling(serv: Arc<JoshProxyService>) -> josh::JoshResult<()> {
             let remote_auth = RemoteAuth::Http { auth };
             let fetch_result = fetch_upstream(
                 serv.clone(),
-                UpstreamProtocol::Http,
                 upstream_repo.clone(),
                 &remote_auth,
                 url.clone(),
@@ -1399,7 +1515,6 @@ async fn serve_graphql(
         } else {
             match fetch_upstream(
                 serv.clone(),
-                UpstreamProtocol::Http,
                 upstream_repo.to_owned(),
                 &remote_auth,
                 remote_url.to_owned(),
@@ -1509,7 +1624,10 @@ fn main() {
     // of josh to the next
     global::set_text_map_propagator(TraceContextPropagator::new());
 
-    let fmt_layer = tracing_subscriber::fmt::layer().compact().with_ansi(false);
+    let fmt_layer = tracing_subscriber::fmt::layer()
+        .compact()
+        .with_ansi(false)
+        .with_writer(io::stderr);
 
     let filter = match std::env::var("RUST_LOG") {
         Ok(_) => tracing_subscriber::EnvFilter::from_default_env(),

@@ -107,7 +107,7 @@ fn parse_remotes(values: &[String]) -> JoshResult<Remote> {
                 };
             }
             v if v.starts_with("ssh://") => {
-                result.http = match result.http {
+                result.ssh = match result.ssh {
                     None => Some(v.clone()),
                     Some(v) => return Err(josh_error(&format!("SSH remote already set: {}", v))),
                 };

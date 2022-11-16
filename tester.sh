@@ -9,20 +9,47 @@ set -e
 shopt -s extglob
 shopt -s inherit_errexit
 
-if (( $# == 0 )); then
-    tests="tests/{filter{**/,},proxy}/*.t"
+if (( $# > 1 )) && [[ "${1}" == "--no-build-container" ]]; then
+    NO_BUILD_CONTAINER=1
+    shift
 else
-    tests="$*"
+    NO_BUILD_CONTAINER=0
 fi
 
-echo "running: $tests"
+if (( $# == 0 )); then
+    TESTS="tests/{filter{**/,},proxy}/*.t"
+else
+    TESTS="$*"
+fi
 
-docker buildx build --target=dev-local -t josh-dev-local .
-docker run -it --rm\
-    --workdir "$(pwd)"\
-    --volume "$(pwd)":"$(pwd)"\
-    --volume cache:/opt/cache\
-    --user "$(id -u)":"$(id -g)"\
-    josh-dev-local\
-    bash -c "cargo build --workspace --exclude josh-ui --features hyper_cgi/test-server && sh run-tests.sh $tests"
+echo "running: ${TESTS}"
 
+if (( ! NO_BUILD_CONTAINER )); then
+    docker buildx build \
+        --target=dev-local \
+        --tag=josh-dev-local \
+        --build-arg USER_UID="$(id -u)" \
+        --build-arg USER_GID="$(id -g)" \
+        .
+fi
+
+mapfile -d '' TEST_SCRIPT << EOF
+set -e
+
+if [[ ! -v CARGO_TARGET_DIR ]]; then
+    echo "CARGO_TARGET_DIR not set"
+    exit 1
+fi
+
+cargo build --workspace --exclude josh-ui --features hyper_cgi/test-server
+( cd josh-ssh-dev-server ; go build -o "\${CARGO_TARGET_DIR}/josh-ssh-dev-server" )
+sh run-tests.sh ${TESTS}
+EOF
+
+docker run -it --rm \
+    --workdir "$(pwd)" \
+    --volume "$(pwd)":"$(pwd)" \
+    --volume cache:/opt/cache \
+    --user "$(id -u)":"$(id -g)" \
+    josh-dev-local \
+    bash -c "${TEST_SCRIPT}"

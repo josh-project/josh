@@ -91,7 +91,7 @@ fn baseref_and_options(refname: &str) -> josh::JoshResult<(String, String, Vec<S
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 pub enum RemoteAuth {
     Http { auth: auth::Handle },
-    Ssh { auth_socket: String },
+    Ssh { auth_socket: PathBuf },
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
@@ -574,10 +574,14 @@ fn run_git_with_auth(
     match remote_auth {
         RemoteAuth::Ssh { auth_socket } => {
             let ssh_command = make_ssh_command();
+            let auth_socket = auth_socket.clone().into_os_string();
+            let auth_socket = auth_socket
+                .to_str()
+                .ok_or(josh_error("failed to convert path"))?;
 
             let env = [("GIT_SSH_COMMAND", ssh_command.as_str())];
             let env_notrace = [
-                [("SSH_AUTH_SOCK", auth_socket.as_str())].as_slice(),
+                [("SSH_AUTH_SOCK", auth_socket)].as_slice(),
                 maybe_object_dir.as_slice(),
             ]
             .concat();
