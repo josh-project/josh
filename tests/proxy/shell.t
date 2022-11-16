@@ -29,9 +29,9 @@
     -h, --help
             Print help information
 
-  $ ${TARGET_DIR}/debug/josh-proxy --port=8002 --local=../../tmp --remote=http://localhost:8001 2>&1 > proxy.out &
+  $ ${TARGET_DIR}/debug/josh-proxy --port=8002 --local=../../tmp --remote=http://localhost:8001 > proxy.out 2>&1 &
   $ sleep 1
   $ kill -9 $!
   $ grep "init mirror repo" proxy.out
-  * DEBUG josh_proxy: init mirror repo: "/tmp/cramtests-*/shell.t/../../tmp/mirror" (glob)
+  * DEBUG josh_proxy: init mirror repo: "*/cramtests-*/shell.t/../../tmp/mirror" (glob)
   $ rm -Rf ../../tmp
