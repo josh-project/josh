@@ -207,3 +207,51 @@ And finally, sync first from main to sub and then back.
   file1
   subtree/file2
   subtree/subfeature1
+
+  $ git checkout subtree
+  Already on 'subtree'
+
+Create an extra file and amend the merge commit to include it, then check it is also
+taken back into the main history.
+  $ echo "random stuff" > a_file
+  $ git add a_file
+  $ git commit --amend --no-edit
+  [subtree bab52d5] Merge branch 'subtree-sync' into subtree
+   Date: Thu Apr 7 22:13:13 2005 +0000
+  $ git checkout master
+  Switched to branch 'master'
+
+  $ josh-filter -s ":rev($SUBTREE_TIP:prefix=subtree):/subtree" refs/heads/master --update refs/heads/subtree --reverse
+  [1] :prefix=subtree
+  [13] :/subtree
+  [13] :rev(c036f944faafb865e0585e4fa5e005afa0aeea3f:prefix=subtree)
+  $ git ls-tree --name-only -r refs/heads/master
+  feature1
+  feature2
+  file1
+  subtree/a_file
+  subtree/file2
+  subtree/subfeature1
+  subtree/subfeature2
+
+  $ git log --graph --pretty=%H:%s refs/heads/master
+  *   f814033dd0148da19a3199cd3cb2d21464ce85a3:Merge branch 'subtree-sync' into subtree
+  |\  
+  | *   38a6d753c8b17b4c6721050befbccff012dfde85:Merge branch 'feature2'
+  | |\  
+  | | * 221f5ceab31209c3d3b16d5b2485ea54c465eca6:feature2
+  * | | 75e90f7f1b54cc343f2f75dcdee33650654a52a6:subfeature2
+  * | | 3fa497039e5b384cb44b704e6e96f52e0ae599c9:Merge branch 'subtree-sync' into subtree
+  |\| | 
+  | * |   2739fb8f0b3f6d5a264fb89ea20674fe34790321:Merge branch 'feature1'
+  | |\ \  
+  | | * | dbfaf5dd32fc39ce3c0ebe61864406bb7e2ad113:feature1
+  | | |/  
+  * | / 59b5c1623da3f89229c6dd36f8baf2e5868d0288:subfeature1
+  |/ /  
+  * | 103bfec17c47adbe70a95fca90caefb989b6cda6:add even more content
+  * | 41130c5d66736545562212f820cdbfbb3d3779c4:subtree edit from main repo
+  * | 0642c36d6b53f7e829531aed848e3ceff0762c64:subtree merge
+  |\| 
+  | * c036f944faafb865e0585e4fa5e005afa0aeea3f:add file2 (in subtree)
+  * 0b4cf6c9efbbda1eada39fa9c1d21d2525b027bb:add file1
