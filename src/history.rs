@@ -491,7 +491,14 @@ pub fn unapply_filter(
                     ) {
                         // If we can auto merge without conflicts, take the result.
                         if !merged_index.has_conflicts() {
-                            tid = merged_index.write_tree_to(transaction.repo())?;
+                            let base_tree = merged_index.write_tree_to(transaction.repo())?;
+                            tid = filter::unapply(
+                                transaction,
+                                filterobj,
+                                tree,
+                                transaction.repo().find_tree(base_tree)?,
+                            )?
+                            .id();
                         }
                     }
                 }
