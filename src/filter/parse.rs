@@ -35,7 +35,6 @@ fn make_op(args: &[&str]) -> JoshResult<Op> {
         ["linear"] => Ok(Op::Linear),
         ["unsign"] => Ok(Op::Unsign),
         ["PATHS"] => Ok(Op::Paths),
-        #[cfg(feature = "search")]
         ["INDEX"] => Ok(Op::Index),
         ["INVERT"] => Ok(Op::Invert),
         ["FOLD"] => Ok(Op::Fold),

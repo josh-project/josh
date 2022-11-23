@@ -1,7 +1,7 @@
   $ export TESTTMP=${PWD}
 
   $ cd ${TESTTMP}
-  $ git init testrepo 1> /dev/null
+  $ git init -q testrepo 1> /dev/null
   $ cd testrepo
 
   $ mkdir sub1
@@ -41,7 +41,49 @@
   sub1/file2:3:  one line
 
   $ josh-filter :/ -g 'query { rev(at: "refs/heads/master") { results: search(string: "e") { path { path }, matches { line, text }} }}'
-  {"rev":{"results":[{"path":{"path":"sub1/file1"},"matches":[{"line":1,"text":"First Test document"}]},{"path":{"path":"sub1/file2"},"matches":[{"line":1,"text":"Another document with more "},{"line":3,"text":" one line"}]},{"path":{"path":"sub2/file3"},"matches":[{"line":1,"text":"One more to see what happens"}]}]}}
+  {
+    "rev": {
+      "results": [
+        {
+          "path": {
+            "path": "sub1/file1"
+          },
+          "matches": [
+            {
+              "line": 1,
+              "text": "First Test document"
+            }
+          ]
+        },
+        {
+          "path": {
+            "path": "sub1/file2"
+          },
+          "matches": [
+            {
+              "line": 1,
+              "text": "Another document with more "
+            },
+            {
+              "line": 3,
+              "text": " one line"
+            }
+          ]
+        },
+        {
+          "path": {
+            "path": "sub2/file3"
+          },
+          "matches": [
+            {
+              "line": 1,
+              "text": "One more to see what happens"
+            }
+          ]
+        }
+      ]
+    }
+  }
 
   $ git diff ${EMPTY_TREE}..refs/heads/index
   diff --git a/SUB1 b/SUB1

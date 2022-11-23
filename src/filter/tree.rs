@@ -1,6 +1,5 @@
 use super::*;
 
-#[cfg(feature = "search")]
 use rayon::prelude::*;
 
 pub fn pathstree<'a>(
@@ -608,7 +607,6 @@ pub fn trigram_index<'a>(
     Ok(result)
 }
 
-#[cfg(feature = "search")]
 pub fn search_candidates(
     transaction: &cache::Transaction,
     tree: &git2::Tree,
@@ -627,7 +625,6 @@ pub fn search_candidates(
     Ok(results)
 }
 
-#[cfg(feature = "search")]
 pub fn search_matches(
     transaction: &cache::Transaction,
     tree: &git2::Tree,
@@ -655,7 +652,6 @@ pub fn search_matches(
     Ok(results)
 }
 
-#[cfg(feature = "search")]
 pub fn trigram_search<'a>(
     transaction: &'a cache::Transaction,
     tree: git2::Tree<'a>,

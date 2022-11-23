@@ -11,7 +11,6 @@ use std::io::Write;
 fn make_app() -> clap::Command {
     let app = clap::Command::new("josh-filter");
 
-    #[cfg(feature = "search")]
     let app = { app.arg(clap::Arg::new("search").long("search")) };
     let app = app
         .arg(
@@ -318,20 +317,27 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
     }
     josh::update_refs(&transaction, &mut updated_refs, "");
 
-    #[cfg(feature = "search")]
     if let Some(searchstring) = args.get_one::<String>("search") {
         let ifilterobj = josh::filter::chain(filterobj, josh::filter::parse(":SQUASH:INDEX")?);
 
-        let max_complexity: usize = args.get_one::<String>("max_comp").unwrap_or("6").parse()?;
+        let max_complexity: usize = args
+            .get_one::<String>("max_comp")
+            .unwrap_or(&"6".to_string())
+            .parse()?;
 
-        josh::filter_ref(
-            &transaction,
-            ifilterobj,
-            src.clone(),
-            "refs/JOSH_TMP".to_string(),
-        )?;
-        let tree = repo.find_reference(&src)?.peel_to_tree()?;
-        let index_tree = repo.find_reference(&"refs/JOSH_TMP")?.peel_to_tree()?;
+        let commit = repo.find_reference(&input_ref)?.peel_to_commit()?;
+
+        let index_commit =
+            josh::filter_commit(&transaction, ifilterobj, commit.id(), permissions_filter)?;
+        let tree = repo
+            .find_commit(josh::filter_commit(
+                &transaction,
+                filterobj,
+                commit.id(),
+                permissions_filter,
+            )?)?
+            .tree()?;
+        let index_tree = repo.find_commit(index_commit)?.tree()?;
 
         /* let start = std::time::Instant::now(); */
         let candidates = josh::filter::tree::search_candidates(
