@@ -113,12 +113,10 @@ func runServer(port uint, shell string) {
 			}
 		}()
 
-		go func() {
-			_, err = io.Copy(session, stdout)
-			if err != nil {
-				return
-			}
-		}()
+		_, err = io.Copy(session, stdout)
+		if err != nil {
+			return
+		}
 
 		_ = cmd.Wait()
 		log.Printf("subprocess with task_id %d exited\n", taskId)
