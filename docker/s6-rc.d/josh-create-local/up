@@ -1,0 +1,7 @@
+#!/command/execlineb
+
+define data_dir /data/git
+
+josh-ensure-dir -p ${data_dir}
+josh-ensure-owner -p ${data_dir} -o git:git
+josh-ensure-mode -p ${data_dir} -m 640

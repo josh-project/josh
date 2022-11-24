@@ -1,0 +1,21 @@
+#!/command/execlineb
+
+# Usage: josh-ensure-owner -p path -o owner program
+# Ensures that `path` is owned by `owner`, and then executes `program`
+# `owner` should be specified as `user:group`
+
+elgetopt "p:o:"
+multisubstitute
+{
+  importas -i path ELGETOPT_p
+  importas -i owner ELGETOPT_o
+  elgetpositionals
+}
+backtick CURRENT_OWNER { stat -c "%G:%U" ${path} }
+importas current_owner CURRENT_OWNER
+foreground
+{
+  if { s6-test ${owner} != ${current_owner} }
+  chown ${owner} ${path}
+}
+$@

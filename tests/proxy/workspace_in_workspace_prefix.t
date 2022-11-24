@@ -231,5 +231,5 @@
   100644 blob 63c4399dfb47e109da4e7d6c01751b5171b9aa38\tworkspace.josh (esc)
 
   $ cat foo/workspace.josh
-  cat: foo/workspace.josh: No such file or directory
+  *: No such file or directory (glob)
   [1]
