@@ -1,0 +1,3 @@
+#!/command/execlineb -P
+
+/usr/sbin/sshd -e -D -h /data/keys/.ssh/id_ed25519

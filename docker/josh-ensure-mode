@@ -1,0 +1,21 @@
+#!/command/execlineb
+
+# Usage: josh-ensure-mode -p path -m mode program
+# Ensures that `path` permissions equal `mode`, and then executes `program`
+# Permissions should be in `NNN` format where N is an octal literal
+
+elgetopt "p:m:"
+multisubstitute
+{
+  importas -i path ELGETOPT_p
+  importas -i mode ELGETOPT_m
+  elgetpositionals
+}
+backtick CURRENT_MODE { stat -c "%a" ${path} }
+importas current_mode CURRENT_MODE
+foreground
+{
+  if { s6-test ${mode} != ${current_mode} }
+  chmod ${mode} ${path}
+}
+$@
