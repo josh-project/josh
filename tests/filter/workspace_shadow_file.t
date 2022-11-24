@@ -1,5 +1,10 @@
   $ export TESTTMP=${PWD}
-  $ export "PATH=${TESTDIR}/../../target/debug/:${PATH}"
+  $ if [ -n "${CARGO_TARGET_DIR+x}" ]; then
+  >     export TARGET_DIR=${CARGO_TARGET_DIR}
+  > else
+  >     export TARGET_DIR=${TESTDIR}/../../target
+  > fi
+  $ export "PATH=${TARGET_DIR}/debug:${PATH}"
 
   $ cd ${TESTTMP}
   $ git init -q real_repo 1> /dev/null

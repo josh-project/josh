@@ -249,7 +249,7 @@ Note that ws/d/ is now present in the ws
   * initial
 
   $ cat sub1/subsub/file1
-  cat: sub1/subsub/file1: No such file or directory
+  *: No such file or directory (glob)
   [1]
 
   $ git checkout -q HEAD~1 1> /dev/null

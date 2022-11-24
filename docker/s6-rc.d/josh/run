@@ -1,0 +1,23 @@
+#!/command/execlineb -S0
+
+importas josh_http_port JOSH_HTTP_PORT
+importas josh_remote_http JOSH_REMOTE
+importas josh_remote_ssh JOSH_REMOTE_SSH
+importas -D "" -s -C -d " " josh_extra_opts JOSH_EXTRA_OPTS
+s6-setuidgid git
+backtick RUST_BACKTRACE { echo 1 }
+backtick HOME { homeof git }
+foreground
+{
+  # importas returns "no word" when the variable isn't set,
+  # and if it's used in the middle of a word during expansion,
+  # the whole word will be deleted. Therefore it's okay to use
+  # potentially empty variables with arguments
+  josh-proxy \
+    --gc \
+    --local=/data/git/ \
+    --port=${josh_http_port} \
+    --remote=${josh_remote_http} \
+    --remote=${josh_remote_ssh} \
+    ${josh_extra_opts}
+}

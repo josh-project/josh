@@ -1,6 +1,6 @@
 # Base server parameters
 
-Port 23186
+Port ${JOSH_SSH_PORT}
 AddressFamily any
 ListenAddress 0.0.0.0
 ListenAddress ::
@@ -43,5 +43,5 @@ AllowUsers git
 PubkeyAuthentication yes
 AuthorizedKeysFile none
 
-AuthorizedKeysCommand /opt/scripts/josh-auth-key.sh %t %k
+AuthorizedKeysCommand /opt/josh-scripts/josh-auth-key %t %k
 AuthorizedKeysCommandUser nobody

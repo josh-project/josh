@@ -58,7 +58,7 @@
   [1]
 
   $ cat .git/refs/remotes/origin/HEAD
-  cat: .git/refs/remotes/origin/HEAD: No such file or directory
+  *: No such file or directory (glob)
   [1]
 
   $ tree
@@ -71,7 +71,7 @@
   [128]
 
   $ cat file1
-  cat: file1: No such file or directory
+  *: No such file or directory (glob)
   [1]
 
   $ bash ${TESTDIR}/destroy_test_env.sh
