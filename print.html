@@ -871,6 +871,11 @@ workspace root as well as additional files specified in the <code>workspace.josh
 (see <a href="reference/./workspace.html">Workspaces</a>)</p>
 <h3 id="text-replacement-replaceregexreplacement"><a class="header" href="#text-replacement-replaceregexreplacement">Text replacement <strong><code>:replace=&quot;regex&quot;,&quot;replacement&quot;</code></strong></a></h3>
 <p>Applies the supplied regular expression to every file in the input tree.</p>
+<h3 id="signature-removal-unsign"><a class="header" href="#signature-removal-unsign">Signature removal **<code>:unsign</code></a></h3>
+<p>The default behaviour of Josh is to copy, if it exsists, the signature of the original commit in
+the filtered commit. This makes the signature invalid, but allows a perfect round-trip: josh will be
+able to recreate the original commit from the filtered one.</p>
+<p>This behaviour might not be desirable, and this filter drops the signatures from the history.</p>
 <h2 id="pattern-filters"><a class="header" href="#pattern-filters">Pattern filters</a></h2>
 <p>The following filters accept a glob like pattern <code>X</code> that can contain <code>*</code> to
 match any number of characters. Note that two or more consecutive wildcards (<code>**</code>) are not
