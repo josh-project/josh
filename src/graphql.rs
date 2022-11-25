@@ -834,7 +834,9 @@ impl Reference {
 pub struct Context {
     pub transaction: std::sync::Arc<std::sync::Mutex<cache::Transaction>>,
     pub transaction_mirror: std::sync::Arc<std::sync::Mutex<cache::Transaction>>,
-    pub to_push: std::sync::Arc<std::sync::Mutex<Vec<(String, git2::Oid)>>>,
+    pub meta_add: std::sync::Arc<
+        std::sync::Mutex<std::collections::HashMap<std::path::PathBuf, Vec<String>>>,
+    >,
     pub allow_refs: std::sync::Mutex<bool>,
 }
 
@@ -862,12 +864,6 @@ struct MarkersInput {
     data: Vec<String>,
 }
 
-#[derive(juniper::GraphQLInputObject)]
-struct MarkerInput {
-    position: String,
-    text: String,
-}
-
 fn format_marker(input: &str) -> JoshResult<String> {
     let value = serde_json::from_str::<serde_json::Value>(input)?;
     let line = serde_json::to_string(&value)?;
@@ -891,81 +887,33 @@ impl RepositoryMut {
                 return Err(josh_error("ref query not allowed").into());
             };
         }
-        let transaction = context.transaction.lock()?;
         let transaction_mirror = context.transaction_mirror.lock()?;
 
-        let rev = transaction_mirror.refname("refs/josh/meta");
-
+        // Just check that the commit exists
         transaction_mirror
             .repo()
             .find_commit(git2::Oid::from_str(&commit)?)?;
 
-        let r = transaction_mirror.repo().revparse_single(&rev);
-        let (tree, parent) = if let Ok(r) = r {
-            let commit = transaction.repo().find_commit(r.id())?;
-            let tree = commit.tree()?;
-            (tree, Some(commit))
-        } else {
-            (filter::tree::empty(transaction.repo()), None)
-        };
+        if let Ok(mut meta_add) = context.meta_add.lock() {
+            for mm in add {
+                let path = mm.path;
+                let path = &marker_path(&commit, &topic).join(&path);
+                let mut lines = meta_add.get(path).unwrap_or(&vec![]).clone();
 
-        let mut tree = tree;
+                let mm = mm
+                    .data
+                    .iter()
+                    .map(String::as_str)
+                    .map(format_marker)
+                    .collect::<JoshResult<Vec<_>>>()?;
 
-        for mm in add {
-            let path = mm.path;
-            let path = &marker_path(&commit, &topic).join(&path);
-            let prev = if let Ok(e) = tree.get_path(path) {
-                let blob = transaction.repo().find_blob(e.id())?;
-                std::str::from_utf8(blob.content())?.to_owned()
-            } else {
-                "".to_owned()
-            };
+                for marker in mm.into_iter() {
+                    lines.push(marker);
+                }
 
-            let mm = mm
-                .data
-                .iter()
-                .map(String::as_str)
-                .map(format_marker)
-                .collect::<JoshResult<Vec<_>>>()?;
-
-            let mut lines = prev
-                .split('\n')
-                .filter(|x| !(*x).is_empty())
-                .collect::<Vec<_>>();
-            for marker in mm.iter() {
-                lines.push(marker);
+                meta_add.insert(path.clone(), lines);
             }
-            lines.sort_unstable();
-            lines.dedup();
-
-            let blob = transaction.repo().blob(lines.join("\n").as_bytes())?;
-
-            tree = filter::tree::insert(transaction.repo(), &tree, path, blob, 0o0100644)?;
         }
-
-        let signature = if let Ok(time) = std::env::var("JOSH_COMMIT_TIME") {
-            git2::Signature::new(
-                "josh",
-                "josh@josh-project.dev",
-                &git2::Time::new(time.parse()?, 0),
-            )
-        } else {
-            git2::Signature::now("josh", "josh@josh-project.dev")
-        }?;
-
-        let oid = transaction.repo().commit(
-            None,
-            &signature,
-            &signature,
-            "marker",
-            &tree,
-            &parent.as_ref().into_iter().collect::<Vec<_>>(),
-        )?;
-
-        context
-            .to_push
-            .lock()?
-            .push(("refs/josh/meta".to_string(), oid));
 
         Ok(true)
     }
@@ -1048,7 +996,7 @@ pub fn context(transaction: cache::Transaction, transaction_mirror: cache::Trans
     Context {
         transaction_mirror: std::sync::Arc::new(std::sync::Mutex::new(transaction_mirror)),
         transaction: std::sync::Arc::new(std::sync::Mutex::new(transaction)),
-        to_push: std::sync::Arc::new(std::sync::Mutex::new(vec![])),
+        meta_add: std::sync::Arc::new(std::sync::Mutex::new(Default::default())),
         allow_refs: std::sync::Mutex::new(false),
     }
 }

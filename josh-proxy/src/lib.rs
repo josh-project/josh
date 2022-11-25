@@ -821,3 +821,66 @@ fn changes_to_refs(
         })
         .collect())
 }
+
+pub fn merge_meta(
+    transaction: &josh::cache::Transaction,
+    transaction_mirror: &josh::cache::Transaction,
+    meta_add: &std::collections::HashMap<std::path::PathBuf, Vec<String>>,
+) -> josh::JoshResult<(String, git2::Oid)> {
+    let rev = transaction_mirror.refname("refs/josh/meta");
+
+    let r = transaction_mirror.repo().revparse_single(&rev);
+    let (tree, parent) = if let Ok(r) = r {
+        let meta_commit = transaction.repo().find_commit(r.id())?;
+        let tree = meta_commit.tree()?;
+        (tree, Some(meta_commit))
+    } else {
+        (josh::filter::tree::empty(transaction.repo()), None)
+    };
+
+    let mut tree = tree;
+
+    for (path, add_lines) in meta_add.iter() {
+        let prev = if let Ok(e) = tree.get_path(path) {
+            let blob = transaction.repo().find_blob(e.id())?;
+            std::str::from_utf8(blob.content())?.to_owned()
+        } else {
+            "".to_owned()
+        };
+
+        let mut lines = prev
+            .split('\n')
+            .filter(|x| !(*x).is_empty())
+            .collect::<Vec<_>>();
+        for marker in add_lines {
+            lines.push(marker);
+        }
+        lines.sort_unstable();
+        lines.dedup();
+
+        let blob = transaction.repo().blob(lines.join("\n").as_bytes())?;
+
+        tree = josh::filter::tree::insert(transaction.repo(), &tree, path, blob, 0o0100644)?;
+    }
+
+    let signature = if let Ok(time) = std::env::var("JOSH_COMMIT_TIME") {
+        git2::Signature::new(
+            "josh",
+            "josh@josh-project.dev",
+            &git2::Time::new(time.parse()?, 0),
+        )
+    } else {
+        git2::Signature::now("josh", "josh@josh-project.dev")
+    }?;
+
+    let oid = transaction.repo().commit(
+        None,
+        &signature,
+        &signature,
+        "marker",
+        &tree,
+        &parent.as_ref().into_iter().collect::<Vec<_>>(),
+    )?;
+
+    Ok(("refs/josh/meta".to_string(), oid))
+}
