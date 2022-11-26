@@ -3,11 +3,13 @@
 Combine the advantages of a monorepo with those of multirepo setups by leveraging a
 blazingly-fast, incremental, and reversible implementation of git history filtering.
 
-`josh-proxy` can be integrated with any http based git host:
+`josh-proxy` can be integrated with any git host:
 
 ```
 $ docker run -p 8000:8000 -e JOSH_REMOTE=https://github.com -v josh-vol:/data/git joshproject/josh-proxy:latest
 ```
+
+See [Container options](#container-options) for full list of environment variables.
 
 ## Use cases
 
@@ -126,3 +128,115 @@ performing many requests to the main git host.
 ## FAQ
 
 See [here](https://josh-project.github.io/josh/faq.html)
+
+## Configuration
+
+### Container options
+
+<table>
+    <tr>
+        <th>
+            Variable
+        </th>
+        <th>
+            Meaning
+        </th>
+    </tr>
+    <tr>
+        <td>
+            <code>JOSH_REMOTE</code>
+        </td>
+        <td>
+            HTTP remote, including protocol.
+            Example: <code>https://github.com</code>
+        </td>
+    </tr>
+    <tr>
+        <td>
+            <code>JOSH_REMOTE_SSH</code>
+        </td>
+        <td>
+            SSH remote, including protocol.
+            Example: <code>ssh://git@github.com</code>
+        </td>
+    </tr>
+    <tr>
+        <td>
+            <code>JOSH_HTTP_PORT</code>
+        </td>
+        <td>
+            HTTP port to listen on.
+            Default: 8000
+        </td>
+    </tr>
+    <tr>
+        <td>
+            <code>JOSH_SSH_PORT</code>
+        </td>
+        <td>
+            SSH port to listen on.
+            Default: 8022
+        </td>
+    </tr>
+    <tr>
+        <td>
+            <code>JOSH_EXTRA_OPTS</code>
+        </td>
+        <td>
+            Extra options passed directly to
+            <code>josh-proxy</code> process
+        </td>
+    </tr>
+</table>
+
+### Container volumes
+
+<table>
+    <tr>
+        <th>
+            Volume
+        </th>
+        <th>
+            Purpose
+        </th>
+    </tr>
+    <tr>
+        <td>
+            <code>/data/git</code>
+        </td>
+        <td>
+            Git cache volume. If this volume is not
+            mounted, the cache will be lost every time
+            the container is shut down.
+        </td>
+    </tr>
+    <tr>
+        <td>
+            <code>/data/keys</code>
+        </td>
+        <td>
+            SSH server keys. If this volume is not
+            mounted, a new key will be generated on
+            each container startup
+        </td>
+    </tr>
+</table>
+
+### Configuring SSH access
+
+Josh supports SSH access (just pull without pushing, for now).
+To use SSH, you need to add the following lines to your `~/.ssh/config`:
+
+```
+Host your-josh-instance.com
+    ForwardAgent yes
+    PreferredAuthentications publickey
+```
+
+Alternatively, you can pass those options via `GIT_SSH_COMMAND`:
+
+```
+GIT_SSH_COMMAND="ssh -o PreferredAuthentications=publickey -o ForwardAgent=yes" git clone ssh://git@your-josh-instance.com/...
+```
+
+In other words, you need to ensure SSH agent forwarding is enabled.
