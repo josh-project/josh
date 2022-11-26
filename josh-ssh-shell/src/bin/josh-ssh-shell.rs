@@ -92,7 +92,7 @@ async fn handle_command(
         let _guard_stdin = stdin_cancel_token_stdout.drop_guard();
 
         let copy_future = async {
-            let mut stdout = tokio::io::stdout();
+            let mut stdout = josh_rpc::tokio_fd::AsyncFd::try_from(libc::STDOUT_FILENO)?;
             let mut stdout_pipe_handle = std::fs::OpenOptions::new()
                 .read(true)
                 .write(true)
@@ -100,6 +100,7 @@ async fn handle_command(
                 .into_async_fd()?;
 
             tokio::io::copy(&mut stdout_pipe_handle, &mut stdout).await?;
+            stdout.flush().await?;
 
             Ok(())
         };

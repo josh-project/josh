@@ -31,6 +31,15 @@ impl TryFrom<UnixRawFd> for AsyncFd {
     }
 }
 
+impl Drop for AsyncFd {
+    fn drop(&mut self) {
+        let unix_fd = self.as_raw_fd();
+        unsafe {
+            libc::close(unix_fd);
+        }
+    }
+}
+
 impl IntoAsyncFd for File {
     fn into_async_fd(self) -> std::io::Result<AsyncFd> {
         AsyncFd::try_from(self.into_raw_fd())
