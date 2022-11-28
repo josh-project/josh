@@ -28,7 +28,7 @@ pub async fn do_cgi(
             )
         }
     };
-    let mut stdin = match child.stdin.as_mut() {
+    let stdin = match child.stdin.take() {
         Some(i) => i,
         None => {
             return (
@@ -37,7 +37,7 @@ pub async fn do_cgi(
             )
         }
     };
-    let stdout = match child.stdout.as_mut() {
+    let stdout = match child.stdout.take() {
         Some(o) => o,
         None => {
             return (
@@ -46,7 +46,7 @@ pub async fn do_cgi(
             )
         }
     };
-    let stderr = match child.stderr.as_mut() {
+    let stderr = match child.stderr.take() {
         Some(e) => e,
         None => {
             return (
@@ -69,8 +69,16 @@ pub async fn do_cgi(
     let mut stdout = BufReader::new(stdout);
 
     let mut data = vec![];
-    let write_stdin = async { tokio::io::copy(&mut req_body, &mut stdin).await };
-    let read_stderr = async { stderr.read_to_end(&mut err_output).await };
+    let write_stdin = async {
+        let mut stdin = stdin;
+        tokio::io::copy(&mut req_body, &mut stdin).await
+    };
+
+    let read_stderr = async {
+        let mut stderr = stderr;
+        stderr.read_to_end(&mut err_output).await
+    };
+
     let read_stdout = async {
         let mut response = Response::builder();
         let mut line = String::new();
@@ -99,7 +107,12 @@ pub async fn do_cgi(
         stdout.read_to_end(&mut data).await?;
         convert_error_io_hyper(response.body(hyper::Body::from(data)))
     };
-    if let Ok((_, _, response)) = tokio::try_join!(write_stdin, read_stderr, read_stdout) {
+
+    let wait_process = async { child.wait().await };
+
+    if let Ok((_, _, response, _)) =
+        tokio::try_join!(write_stdin, read_stderr, read_stdout, wait_process)
+    {
         return (response, err_output);
     }
 
@@ -167,7 +180,7 @@ fn convert_error_io_hyper<T>(res: Result<T, hyper::http::Error>) -> Result<T, st
 
 #[cfg(test)]
 mod tests {
-    use futures::TryStreamExt;
+    use hyper::body::HttpBody;
 
     #[tokio::test]
     async fn run_cmd() {
@@ -183,23 +196,20 @@ mod tests {
             .header("Accept-Encoding", "deflate, gzip, br")
             .header("Accept-Language", "en-US, *;q=0.9")
             .header("Pragma", "no-cache")
-            .body(hyper::Body::from(body_content))
+            .body(hyper::Body::from("\r\na body"))
             .unwrap();
 
-        let mut cmd = tokio::process::Command::new("echo");
-        cmd.arg("-n");
-        cmd.arg("blabl:bl\r\na body");
+        let mut cmd = tokio::process::Command::new("cat");
+        cmd.arg("-");
 
-        let (rep, stderr) = super::do_cgi(req, cmd).await;
-        let output = rep
-            .into_body()
-            .try_fold(String::new(), |mut acc, elt| async move {
-                acc.push_str(std::str::from_utf8(&elt).unwrap());
-                Ok(acc)
-            })
-            .await
-            .unwrap();
+        let (resp, stderr) = super::do_cgi(req, cmd).await;
+
+        assert_eq!(resp.status(), hyper::StatusCode::OK);
+
+        let resp_string = resp.into_body().data().await.unwrap().unwrap().to_vec();
+        let resp_string = String::from_utf8_lossy(&resp_string);
+
         assert_eq!("", std::str::from_utf8(&stderr).unwrap());
-        assert_eq!(body_content, output);
+        assert_eq!(body_content, resp_string);
     }
 }
