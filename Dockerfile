@@ -62,7 +62,7 @@ RUN apk add --no-cache \
     libgit2-dev \
     psmisc
 
-ARG GIT_VERSION=2.36.1
+ARG GIT_VERSION=2.38.1
 WORKDIR /usr/src/git
 RUN <<EOF
 set -e
@@ -80,7 +80,8 @@ EOF
 
 ENV PATH=${PATH}:/opt/git-install/bin
 RUN mkdir /opt/git-install/etc
-RUN git config -f /opt/git-install/etc/gitconfig --add safe.directory "*"
+RUN git config -f /opt/git-install/etc/gitconfig --add safe.directory "*" && \
+    git config -f /opt/git-install/etc/gitconfig protocol.file.allow "always"
 
 ARG CRAM_VERSION=d245cca
 ARG PYGIT2_VERSION=1.11.1
