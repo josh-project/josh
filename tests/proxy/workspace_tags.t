@@ -159,7 +159,6 @@
    * [new tag]         tag_from_ws_1 -> tag_from_ws_1
 
   $ git fetch --all
-  Fetching origin
   From http://localhost:8002/real_repo.git:workspace=ws
    + 5fa942e...2cbcd10 master     -> origin/master  (forced update)
 

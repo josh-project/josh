@@ -27,7 +27,6 @@
 
   $ git remote add libs ${TESTTMP}/libs
   $ git fetch --all
-  Fetching libs
   From * (glob)
    * [new branch]      foo        -> libs/foo
    * [new branch]      master     -> libs/master
