@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2018"
 
 [dependencies]
-clap = { version = "4.0.9", features = ["derive", "help", "std", "usage"], default-features = false }
+clap = { version = "4.0.29", features = ["derive", "help", "std", "usage"], default-features = false }
 libc = "0.2.134"
 rand = "0.8.5"
 shell-words = "1.1.0"
