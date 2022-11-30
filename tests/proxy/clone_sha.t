@@ -52,6 +52,7 @@
   $ git ls-remote http://localhost:8002/real_repo.git@bb282e9cdc1b972fffd08fd21eead43bc0c83cb8:/.git 
   bb282e9cdc1b972fffd08fd21eead43bc0c83cb8\tHEAD (esc)
   bb282e9cdc1b972fffd08fd21eead43bc0c83cb8\trefs/heads/_bb282e9cdc1b972fffd08fd21eead43bc0c83cb8 (esc)
+  bb282e9cdc1b972fffd08fd21eead43bc0c83cb8\trefs/heads/master (esc)
 
   $ git clone -q http://localhost:8002/real_repo.git@bb282e9cdc1b972fffd08fd21eead43bc0c83cb8:/.git full_repo
 

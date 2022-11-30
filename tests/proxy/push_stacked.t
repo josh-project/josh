@@ -124,10 +124,15 @@ get listed if they differ from HEAD
 
   $ git ls-remote http://localhost:8002/real_repo.git:/sub1.git
   0b4cf6c9efbbda1eada39fa9c1d21d2525b027bb\tHEAD (esc)
+  0b4cf6c9efbbda1eada39fa9c1d21d2525b027bb\trefs/heads/@changes/master/josh@example.com/1234 (esc)
+  0b4cf6c9efbbda1eada39fa9c1d21d2525b027bb\trefs/heads/@changes/master/josh@example.com/foo7 (esc)
+  0b4cf6c9efbbda1eada39fa9c1d21d2525b027bb\trefs/heads/@heads/master/foo@example.com (esc)
+  0b4cf6c9efbbda1eada39fa9c1d21d2525b027bb\trefs/heads/@heads/master/josh@example.com (esc)
   0b4cf6c9efbbda1eada39fa9c1d21d2525b027bb\trefs/heads/master (esc)
   $ git ls-remote http://localhost:8002/real_repo.git::file2.git
   $ git ls-remote http://localhost:8002/real_repo.git::file7.git
   23b2396b6521abcd906f16d8492c5aeacaee06ed\tHEAD (esc)
+  23b2396b6521abcd906f16d8492c5aeacaee06ed\trefs/heads/@changes/master/josh@example.com/1234 (esc)
   57a39cc050b1493cf6313822f0de3cee3ca4f39a\trefs/heads/@changes/master/josh@example.com/foo7 (esc)
   57a39cc050b1493cf6313822f0de3cee3ca4f39a\trefs/heads/@heads/master/foo@example.com (esc)
   57a39cc050b1493cf6313822f0de3cee3ca4f39a\trefs/heads/@heads/master/josh@example.com (esc)

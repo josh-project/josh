@@ -54,7 +54,7 @@ pub fn remember_filter(upstream_repo: &str, filter_spec: &str) {
 
 pub fn namespace_refs(refs: &mut [(String, git2::Oid)], namespace: &str) {
     for (refn, _) in refs {
-        if refn.starts_with("refs/") {
+        if refn.starts_with("refs/") || refn == "HEAD" {
             *refn = format!("refs/namespaces/{}/{}", &namespace, refn);
         } else {
             *refn = format!("refs/namespaces/{}/refs/heads/_{}", namespace, refn);
