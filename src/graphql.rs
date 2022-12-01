@@ -418,11 +418,7 @@ impl Revision {
 
         Ok(Some(warnings))
     }
-}
 
-#[cfg(feature = "search")]
-#[graphql_object(context = Context)]
-impl Revision {
     fn search(
         &self,
         string: String,

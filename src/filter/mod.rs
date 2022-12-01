@@ -104,7 +104,6 @@ enum Op {
 
     RegexReplace(Vec<(regex::Regex, String)>),
 
-    #[cfg(feature = "search")]
     Index,
     Invert,
 
@@ -278,7 +277,6 @@ fn spec2(op: &Op) -> String {
         Op::Empty => ":empty".to_string(),
         Op::Paths => ":PATHS".to_string(),
         Op::Invert => ":INVERT".to_string(),
-        #[cfg(feature = "search")]
         Op::Index => ":INDEX".to_string(),
         Op::Fold => ":FOLD".to_string(),
         Op::Squash(None) => ":SQUASH".to_string(),
@@ -760,7 +758,6 @@ fn apply2<'a>(
         }
 
         Op::Paths => tree::pathstree("", tree.id(), transaction),
-        #[cfg(feature = "search")]
         Op::Index => tree::trigram_index(transaction, tree),
 
         Op::Invert => tree::invert_paths(transaction, "", tree),
