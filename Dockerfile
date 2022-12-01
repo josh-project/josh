@@ -89,7 +89,7 @@ RUN pip3 install \
   git+https://github.com/brodie/cram.git@${CRAM_VERSION} \
   pygit2==${PYGIT2_VERSION}
 
-RUN apk add --no-cache go nodejs npm openssh-client
+RUN apk add --no-cache go nodejs npm openssh-client patch
 
 FROM dev as dev-local
 
