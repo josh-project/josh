@@ -9,7 +9,7 @@ set -e
 shopt -s extglob
 shopt -s inherit_errexit
 
-if (( $# > 1 )) && [[ "${1}" == "--no-build-container" ]]; then
+if (( $# >= 1 )) && [[ "${1}" == "--no-build-container" ]]; then
     NO_BUILD_CONTAINER=1
     shift
 else

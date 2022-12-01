@@ -542,7 +542,6 @@ pub fn create_repo(path: &std::path::Path) -> josh::JoshResult<()> {
 
 fn make_ssh_command() -> String {
     let ssh_options = [
-        "IdentitiesOnly=yes",
         "LogLevel=ERROR",
         "UserKnownHostsFile=/dev/null",
         "StrictHostKeyChecking=no",

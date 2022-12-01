@@ -72,7 +72,7 @@
   4 directories, 6 files
 
   $ cat ws/file1
-  cat: ws/file1: No such file or directory
+  *: No such file or directory (glob)
   [1]
   $ cat sub1/file1
   contents1

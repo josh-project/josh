@@ -27,7 +27,6 @@
 
   $ git remote add libs ${TESTTMP}/libs
   $ git fetch --all
-  Fetching libs
   From * (glob)
    * [new branch]      foo        -> libs/foo
    * [new branch]      master     -> libs/master
@@ -107,11 +106,11 @@
   * initial
 
   $ cat c/.joshinfo
-  cat: c/.joshinfo: No such file or directory
+  *: No such file or directory (glob)
   [1]
 
   $ cat a/b/.joshinfo
-  cat: a/b/.joshinfo: No such file or directory
+  *: No such file or directory (glob)
   [1]
 
 $ git show libs/master | grep $(cat c/.joshinfo | grep commit | sed 's/commit: //')

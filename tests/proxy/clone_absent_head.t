@@ -56,8 +56,6 @@
 
   $ git clone http://localhost:8001/real_repo.git warning_clone
   Cloning into 'warning_clone'...
-  warning: remote HEAD refers to nonexistent ref, unable to checkout.
-  
 
   $ git clone http://localhost:8002/real_repo.git full_repo
   Cloning into 'full_repo'...
