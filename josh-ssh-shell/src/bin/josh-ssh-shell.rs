@@ -26,8 +26,8 @@ struct Args {
     command: String,
 }
 
-const HTTP_REQUEST_TIMEOUT: u64 = 120;
-const HTTP_JOSH_SERVER_PORT: &str = "8000";
+const HTTP_REQUEST_TIMEOUT: u64 = 300;
+const HTTP_JOSH_SERVER_PORT: u16 = 8000;
 
 fn die(message: &str) -> ! {
     eprintln!("josh-ssh-shell: {}", message);
@@ -59,10 +59,28 @@ impl Display for CallError {
     }
 }
 
+fn get_env_int<T: std::str::FromStr>(env_var: &str, default: T) -> T
+where
+    <T as std::str::FromStr>::Err: Display,
+{
+    let message = format!(
+        "Invalid {} value of env var {}",
+        std::any::type_name::<T>(),
+        env_var
+    );
+
+    env::var(env_var)
+        .map(|v| v.parse::<T>().unwrap_or_else(|_| die(&message)))
+        .unwrap_or(default)
+}
+
 fn get_endpoint() -> String {
-    let port =
-        std::env::var("JOSH_SSH_SHELL_ENDPOINT_PORT").unwrap_or(HTTP_JOSH_SERVER_PORT.to_string());
+    let port = get_env_int("JOSH_SSH_SHELL_ENDPOINT_PORT", HTTP_JOSH_SERVER_PORT);
     format!("http://localhost:{}", port)
+}
+
+fn get_timeout() -> u64 {
+    get_env_int("JOSH_SSH_SHELL_TIMEOUT", HTTP_REQUEST_TIMEOUT)
 }
 
 async fn handle_command(
@@ -151,7 +169,7 @@ async fn handle_command(
             .post(format!("{}/serve_namespace", get_endpoint()))
             .header(CONTENT_TYPE, "application/json")
             .body(serde_json::to_string(&rpc_payload).unwrap())
-            .timeout(Duration::from_secs(HTTP_REQUEST_TIMEOUT))
+            .timeout(Duration::from_secs(get_timeout()))
             .send()
             .await?;
 

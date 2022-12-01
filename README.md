@@ -180,6 +180,24 @@ See [here](https://josh-project.github.io/josh/faq.html)
     </tr>
     <tr>
         <td>
+            <code>JOSH_SSH_MAX_STARTUPS</code>
+        </td>
+        <td>
+            Maximum number of concurrent SSH authentication attempts. Default: 16
+        </td>
+    </tr>
+    <tr>
+        <td>
+            <code>JOSH_SSH_TIMEOUT</code>
+        </td>
+        <td>
+            Timeout, in seconds, for a single request when serving repos over SSH.
+            This time should cover fetch from upstream repo, filtering, and serving
+            repo to client. Default: 300
+        </td>
+    </tr>
+    <tr>
+        <td>
             <code>JOSH_EXTRA_OPTS</code>
         </td>
         <td>
