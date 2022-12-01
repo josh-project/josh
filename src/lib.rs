@@ -301,7 +301,6 @@ pub fn update_refs(
         if head_oid == git2::Oid::zero() {
             updated.clear();
         }
-        updated.retain(|(r, oid)| r == headref || *oid != head_oid || r.ends_with("/HEAD"));
     }
     for (to_refname, filter_commit) in updated.iter() {
         if *filter_commit != git2::Oid::zero() {
