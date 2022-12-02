@@ -511,9 +511,17 @@ pub fn unapply_filter(
             false,
         )?;
 
-        if let Some(ref mut change_ids) = change_ids {
-            change_ids.push(get_change_id(&module_commit, ret));
-        }
+        ret = if original_parents_refs.len() == 1
+            && new_tree.id() == original_parents_refs[0].tree_id()
+            && Some(module_commit.tree_id()) != module_commit.parents().next().map(|x| x.tree_id())
+        {
+            original_parents_refs[0].id()
+        } else {
+            if let Some(ref mut change_ids) = change_ids {
+                change_ids.push(get_change_id(&module_commit, ret));
+            }
+            ret
+        };
 
         bm.insert(module_commit.id(), ret);
     }
