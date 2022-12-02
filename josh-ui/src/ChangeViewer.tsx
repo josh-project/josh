@@ -82,15 +82,14 @@ export class ChangeViewer extends React.Component<ChangeViewProps, State> {
         }
 
         return values.map((entry) => {
-            const className = `file-browser-list-entry file-browser-list-entry-${classNameSuffix}`
+            let className = `file-browser-list-entry file-browser-list-entry-${classNameSuffix}`
             let path = "";
-            let prefix = "M";
             if (!entry.from) {
-                prefix = "A";
+                className = className.concat(" added");
                 path = entry.to.path;
             }
             else if (!entry.to) {
-                prefix = "D";
+                className = className.concat(" deleted");
                 path = entry.from.path;
             }
             else {
@@ -98,7 +97,7 @@ export class ChangeViewer extends React.Component<ChangeViewProps, State> {
             }
 
             return <div className={className} key={path} onClick={navigate.bind(this,path)}>
-                <span>{prefix}</span>{path}
+                {path}
             </div>
         })
     }
@@ -108,9 +107,9 @@ export class ChangeViewer extends React.Component<ChangeViewProps, State> {
             return <div className={'file-browser-loading'}>Loading...</div>
         } else {
             return <div>
-                <div>
+                <pre className="commit-message">
                     {this.state.summary}
-                </div>
+                </pre>
                 <div className={'file-browser-list'}>
                     {this.renderList(this.state.files, NavigateTargetType.Diff)}
                 </div>
