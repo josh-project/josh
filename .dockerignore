@@ -4,7 +4,11 @@
 !Cargo.toml
 !run-josh.sh
 !src
-!josh-ui
+!josh-ui/public
+!josh-ui/src
+!josh-ui/*.toml
+!josh-ui/*.rs
+!josh-ui/*.json
 !josh-proxy
 !josh-rpc
 !josh-ssh-shell
