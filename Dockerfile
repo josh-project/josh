@@ -98,6 +98,9 @@ FROM dev as dev-local
 RUN mkdir -p /opt/cache && \
     chmod 777 /opt/cache
 
+RUN mkdir -p /josh/static && \
+    chmod 777 /josh/static
+
 VOLUME /opt/cache
 
 ENV CARGO_TARGET_DIR=/opt/cache/cargo-target
@@ -129,6 +132,9 @@ COPY --from=dev-planner /usr/src/josh/recipe.json .
 ENV CARGO_TARGET_DIR=/opt/cargo-target
 
 FROM dev-cache as dev-ci
+
+RUN mkdir -p /josh/static && \
+    chmod 777 /josh/static
 
 RUN cargo chef cook --workspace --recipe-path recipe.json
 
