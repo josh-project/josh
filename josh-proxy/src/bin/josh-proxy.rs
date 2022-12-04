@@ -427,7 +427,7 @@ async fn handle_ui_request(
         resource_path
     };
 
-    let result = hyper_staticfile::resolve_path("static", resolve_path).await?;
+    let result = hyper_staticfile::resolve_path("/josh/static", resolve_path).await?;
     let response = hyper_staticfile::ResponseBuilder::new()
         .request(&req)
         .build(result)?;
