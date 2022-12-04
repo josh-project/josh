@@ -91,6 +91,8 @@ RUN pip3 install \
 
 RUN apk add --no-cache go nodejs npm openssh-client patch
 
+WORKDIR /usr/src/josh
+
 FROM dev as dev-local
 
 RUN mkdir -p /opt/cache && \
@@ -121,21 +123,26 @@ RUN adduser \
       -g '' \
       dev
 
-FROM dev as dev-ci
+FROM dev as dev-cache
 
 COPY --from=dev-planner /usr/src/josh/recipe.json .
 ENV CARGO_TARGET_DIR=/opt/cargo-target
+
+FROM dev-cache as dev-ci
+
 RUN cargo chef cook --workspace --recipe-path recipe.json
 
 RUN mkdir -p josh-ui
 COPY josh-ui/package.json josh-ui/package-lock.json josh-ui/
 RUN cd josh-ui && npm install
 
-FROM dev as build
+FROM dev-cache as build
 
-WORKDIR /usr/src/josh
-COPY . .
+RUN cargo chef cook --release --workspace --recipe-path recipe.json
+
+COPY Cargo.toml Cargo.lock josh-ui josh-ui/
 RUN cargo build -p josh-ui --release
+COPY . .
 RUN --mount=target=.git,from=git \
   cargo build -p josh-proxy -p josh-ssh-shell --release
 
@@ -159,8 +166,8 @@ RUN apk add --no-cache \
 COPY --from=dev --link=false /opt/git-install /opt/git-install
 ENV PATH=${PATH}:/opt/git-install/bin
 
-COPY --from=build --link=false /usr/src/josh/target/release/josh-proxy /usr/bin/
-COPY --from=build --link=false /usr/src/josh/target/release/josh-ssh-shell /usr/bin/
+COPY --from=build --link=false /opt/cargo-target/release/josh-proxy /usr/bin/
+COPY --from=build --link=false /opt/cargo-target/release/josh-ssh-shell /usr/bin/
 COPY --from=build --link=false /usr/src/josh/static/ /josh/static/
 
 ARG S6_OVERLAY_VERSION=3.1.2.1
