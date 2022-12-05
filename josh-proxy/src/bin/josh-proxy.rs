@@ -40,7 +40,7 @@ lazy_static! {
 
 josh::regex_parsed!(
     FilteredRepoUrl,
-    r"(?P<api>/~/\w+)?(?P<upstream_repo>/[^:!]*[.]git)(?P<headref>@[^:!]*)?((?P<filter_spec>[:!].*)[.]git)?(?P<pathinfo>/.*)?(?P<rest>.*)",
+    r"(?P<api>/~/\w+)?(?P<upstream_repo>/[^:!]*[.]git)(?P<headref>[\^@][^:!]*)?((?P<filter_spec>[:!].*)[.]git)?(?P<pathinfo>/.*)?(?P<rest>.*)",
     [api, upstream_repo, filter_spec, pathinfo, headref, rest]
 );
 
@@ -718,7 +718,9 @@ fn is_repo_blocked(meta: &MetaConfig) -> bool {
 }
 
 fn headref_or_default(headref: &str) -> String {
-    let result = headref.trim_start_matches('@').to_owned();
+    let result = headref
+        .trim_start_matches(|char| char == '@' || char == '^')
+        .to_owned();
 
     if result.is_empty() {
         "HEAD".to_string()
