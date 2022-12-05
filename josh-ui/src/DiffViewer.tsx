@@ -76,8 +76,8 @@ export class DiffViewer extends React.Component<DiffViewerProps, State> {
         if (this.state.content_a !== undefined 
         &&  this.state.content_b !== undefined) {
             return <div>
-                <div>{this.state.summary}</div>
-                <div>{this.props.path}</div>
+                <pre className="commit-message">{this.state.summary}</pre>
+                <div className="diff-view-filename">{this.props.path}</div>
                 <DiffEditor
                     modified={this.state.content_b}
                     original={this.state.content_a}

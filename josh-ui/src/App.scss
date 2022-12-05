@@ -86,7 +86,8 @@ nav {
 }
 
 pre.commit-message {
-  padding: 2em;
+  padding: 1em 2em;
+  margin:0em;
   font-family: $font-main;
   background: #111111;
 }
@@ -137,7 +138,8 @@ pre.commit-message {
   display: flex;
   justify-content: space-between;
   padding: .2em .5em;
-  margin-bottom: 0.7em;
+  margin-bottom: 0em;
+  margin-top: 0.2em;
 
   &-select {
     a {
@@ -184,6 +186,11 @@ pre.commit-message {
       }
   }
 
+}
+
+.diff-view-filename {
+  padding: 0.5em 2em;
+  font-family: $font-main;
 }
 
 .commit-list-entry-dir {
