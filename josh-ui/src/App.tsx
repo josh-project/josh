@@ -3,6 +3,12 @@ import {FileList} from './FileBrowser';
 
 import {useEffect} from 'react';
 import {None, Option} from 'tsoption';
+import {
+    LibraryOutline,
+    GitCommitOutline,
+    GitPullRequestOutline,
+    SearchOutline
+} from 'react-ionicons'
 
 import {
     BrowserRouter,
@@ -110,19 +116,15 @@ function Select() {
 }
 
 function TopNav(props: { repo: string, filter: string, page: string }) {
-    const selectParams = {
-        repo: props.repo,
-        filter: props.filter,
-    }
+    const [params, _] = useSearchParams()
 
     return <div className={'now-browsing'}>
         <div className="logo">
-            <img src={process.env.PUBLIC_URL.concat("/logo.png")} alt="Josh logo"/>
-                <span className="now-browsing-name">
-                    <Link to={`/select?${createSearchParams(selectParams)}`}>
-                        {props.repo}{props.filter !== DEFAULT_FILTER && props.filter}
-                    </Link>
-                </span>
+          <span className="now-browsing-name">
+              <Link to={`/history?${createSearchParams(params)}`}>
+                  {props.repo}{props.filter !== DEFAULT_FILTER && props.filter}
+              </Link>
+          </span>
         </div>
         <div className="current-page">
             <span>{props.page}</span>
@@ -275,10 +277,44 @@ function DiffView() {
     )
 }
 
+function Sidebar() {
+    const [params, _] = useSearchParams()
+
+    return <div className="sidebar">
+      <Link to={`/select?${createSearchParams(params)}`}>
+        <img src={process.env.PUBLIC_URL.concat("/logo.png")} alt="Josh logo"/>
+      </Link>
+      <Link to={`/history?${createSearchParams(params)}`}>
+        <GitCommitOutline
+          color={'#aaaaaa'} 
+          title="history"
+          height="32px"
+          width="32px"
+        />
+      </Link>
+      <Link to={`/changes?${createSearchParams(params)}`}>
+      <GitPullRequestOutline
+        color={'#aaaaaa'} 
+        title="changes"
+        height="32px"
+        width="32px"
+      />
+      </Link>
+      <SearchOutline
+        color={'#555555'} 
+        title="search"
+        height="32px"
+        width="32px"
+      />
+    </div>;
+}
+
 
 function App() {
     return (
+        <div>
         <BrowserRouter basename={'/~/ui'}>
+            <Sidebar/>
             <Routes>
                 <Route index element={<Navigate to="/select" />} />
                 <Route path='/select' element={<Select />} />
@@ -290,6 +326,7 @@ function App() {
                 <Route path='/change' element={<ChangeView />} />
             </Routes>
         </BrowserRouter>
+        </div>
     );
 }
 

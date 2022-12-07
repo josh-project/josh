@@ -120,7 +120,6 @@ pre.commit-message {
   margin: .3em 0 0.7em;
   display: flex;
   flex-direction: row;
-  padding-right: 1.5em;
 
   span {
     align-self: center;
@@ -137,7 +136,7 @@ pre.commit-message {
 .now-browsing {
   display: flex;
   justify-content: space-between;
-  padding: .2em .5em;
+  padding: .6em 1.7em;
   margin-bottom: 0em;
   margin-top: 0.2em;
 
@@ -212,6 +211,14 @@ pre.commit-message {
   &:hover {
     background: $color-background-highlight;
   }
+}
+
+.changes-browser-list {
+  margin-left: 21px;
+}
+
+.history-browser-list {
+  margin-left: 21px;
 }
 
 .changes-list-entry .summary {
@@ -357,6 +364,30 @@ pre.commit-message {
     background: none;
     border: 1px solid #555;
   }
+}
+
+.sidebar {
+  img {
+    display: inline-block;
+    height: 40px;
+    padding: 0em 0.8em;
+    margin-bottom: 0.7em;
+  }
+    display: block;
+    position: fixed;
+    width: 60px;
+    height: 100%;
+    padding-top: 0.5em;
+    margin-left: -60px;
+    background-color: #000000;
+}
+
+.sidebar svg {
+    margin: 5px 14px;
+}
+
+#root {
+    margin-left: 60px;
 }
 
 .repo-selector  {
