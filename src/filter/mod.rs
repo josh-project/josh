@@ -206,7 +206,7 @@ fn nesting2(op: &Op) -> usize {
     match op {
         Op::Compose(filters) => 1 + filters.iter().map(|f| nesting(*f)).fold(0, |a, b| a.max(b)),
         Op::Exclude(filter) => 1 + nesting(*filter),
-        Op::Workspace(_) => usize::MAX,
+        Op::Workspace(_) => usize::MAX / 2, // divide by 2 to make sure there is enough headroom to avoid overflows
         Op::Chain(a, b) => 1 + nesting(*a).max(nesting(*b)),
         Op::Subtract(a, b) => 1 + nesting(*a).max(nesting(*b)),
         Op::Rev(filters) => {
