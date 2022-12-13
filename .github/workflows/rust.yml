@@ -49,5 +49,5 @@ jobs:
           # Integration tests
           cargo build --workspace --all-targets --features hyper_cgi/test-server
           ( cd josh-ssh-dev-server ; go build -o "${CARGO_TARGET_DIR}/josh-ssh-dev-server" )
-          sh run-tests.sh tests/filter/**.t
-          sh run-tests.sh tests/proxy/**.t
+          sh run-tests.sh --verbose tests/filter/**.t
+          sh run-tests.sh --verbose tests/proxy/**.t
