@@ -208,7 +208,7 @@ pub fn find_all_workspaces_and_subdirectories(
         if root.is_empty() {
             return 0;
         }
-        let v = format!(":/{}", root.trim_matches('/'));
+        let v = format!("::{}/", root.trim_matches('/'));
         if v.chars().filter(|x| *x == '/').count() < 3 {
             hs.insert(v);
         }

@@ -121,7 +121,7 @@
   * add file1
 
   $ bash ${TESTDIR}/destroy_test_env.sh
-  "real_repo.git" = [':/sub1']
+  "real_repo.git" = ['::sub1/']
   .
   |-- josh
   |   `-- 14

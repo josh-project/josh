@@ -294,7 +294,8 @@ Flushed credential cache
   $ bash ${TESTDIR}/destroy_test_env.sh
   "real_repo.git" = [
       ':/repo1',
-      ':/repo2',
+      '::repo1/',
+      '::repo2/',
   ]
   "repo1.git" = [':prefix=repo1']
   "repo2.git" = [':prefix=repo2']
