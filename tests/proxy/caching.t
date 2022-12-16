@@ -45,7 +45,10 @@
   fetch_cached_ok true
 
   $ bash ${TESTDIR}/destroy_test_env.sh
-  "real_repo.git" = [':/sub1']
+  "real_repo.git" = [
+      ':/sub1',
+      '::sub1/',
+  ]
   .
   |-- josh
   |   `-- 14
@@ -153,7 +156,10 @@
   $ grep -o "fetch_cached_ok true" ${TESTTMP}/josh-proxy.out | uniq
 
   $ bash ${TESTDIR}/destroy_test_env.sh
-  "real_repo.git" = [':/sub1']
+  "real_repo.git" = [
+      ':/sub1',
+      '::sub1/',
+  ]
   .
   |-- josh
   |   `-- 14

@@ -79,7 +79,10 @@ Flushed credential cache
   1 directory, 3 files
 
   $ bash ${TESTDIR}/destroy_test_env.sh
-  "real_repo.git" = [':/sub1']
+  "real_repo.git" = [
+      ':/sub1',
+      '::sub1/',
+  ]
   .
   |-- josh
   |   `-- 14

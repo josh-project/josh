@@ -119,8 +119,8 @@
 
   $ bash ${TESTDIR}/destroy_test_env.sh
   "real_repo.git" = [
-      ':/sub2',
-      ':/ws',
+      '::sub2/',
+      '::ws/',
       ':workspace=ws',
   ]
   .

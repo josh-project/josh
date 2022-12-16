@@ -222,11 +222,11 @@
 
   $ bash ${TESTDIR}/destroy_test_env.sh
   "real_repo.git" = [
-      ':/sub1',
-      ':/sub1/subsub',
-      ':/sub2',
-      ':/sub3',
-      ':/ws',
+      '::sub1/',
+      '::sub1/subsub/',
+      '::sub2/',
+      '::sub3/',
+      '::ws/',
       ':workspace=ws',
   ]
   .
@@ -343,6 +343,8 @@
       |   |   `-- 2a35c53f4e5901c9cc083a94b417c15837cad8
       |   |-- 22
       |   |   `-- b3eaf7b374287220ac787fd2bce5958b69115c
+      |   |-- 23
+      |   |   `-- f7e90462b3fc5db0a26335139e1fe83d04d2cd
       |   |-- 26
       |   |   `-- 6864a895cac573b04a44bd40ee3bd8fe458a5f
       |   |-- 2c
@@ -397,7 +399,8 @@
       |   |-- a3
       |   |   `-- d19dcb2f51fa1efd55250f60df559c2b8270b8
       |   |-- a4
-      |   |   `-- 1772e0c7cdad1a13b7a7bc38c0d382a5a827ce
+      |   |   |-- 1772e0c7cdad1a13b7a7bc38c0d382a5a827ce
+      |   |   `-- 8223bf4fc7801a0322b4ecaa5ed6a2c5dce7f1
       |   |-- ae
       |   |   `-- 3b5ae2be9441da66ee2a69926b45d0e3a5adb2
       |   |-- b0
@@ -422,6 +425,8 @@
       |   |   `-- d2a4d6db7addc2b087dcdb3e63785d3315c00e
       |   |-- d7
       |   |   `-- 330ea337031af43ba1cf6982a873a40b9170ac
+      |   |-- e2
+      |   |   `-- 5d071c2db414f24473e3768c063dbcf8c55d04
       |   |-- ea
       |   |   `-- 1ae75547e348b07cb28a721a06ef6580ff67f0
       |   |-- ed
@@ -442,6 +447,6 @@
           |-- namespaces
           `-- tags
   
-  109 directories, 102 files
+  111 directories, 105 files
 
 $ cat ${TESTTMP}/josh-proxy.out

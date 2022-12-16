@@ -99,14 +99,14 @@
 
   $ bash ${TESTDIR}/destroy_test_env.sh
   "meta_repo.git" = [
-      ':/locked.git',
-      ':/path',
-      ':/path/to',
+      '::locked.git/',
+      '::path/',
+      '::path/to/',
   ]
   "real_repo.git" = [
-      ':/sub1',
-      ':/sub2',
-      ':/sub3',
+      '::sub1/',
+      '::sub2/',
+      '::sub3/',
       ':prefix=my_prefix',
   ]
   .

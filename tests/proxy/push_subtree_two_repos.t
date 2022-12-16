@@ -108,8 +108,14 @@ Put a double slash in the URL to see that it also works
   contents2_repo2
 
   $ bash ${TESTDIR}/destroy_test_env.sh
-  "real/repo2.git" = [':/sub1']
-  "real_repo.git" = [':/sub1']
+  "real/repo2.git" = [
+      ':/sub1',
+      '::sub1/',
+  ]
+  "real_repo.git" = [
+      ':/sub1',
+      '::sub1/',
+  ]
   .
   |-- josh
   |   `-- 14

@@ -81,9 +81,9 @@ file was created
 
   $ bash ${TESTDIR}/destroy_test_env.sh
   "real_repo.git" = [
-      ':/sub1',
-      ':/sub1/subsub',
-      ':/ws',
+      '::sub1/',
+      '::sub1/subsub/',
+      '::ws/',
       ':workspace=ws',
   ]
   .

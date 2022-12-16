@@ -147,6 +147,7 @@ Make sure all temporary namespace got removed
       ':/sub1',
       '::file2',
       '::file7',
+      '::sub1/',
   ]
   .
   |-- josh

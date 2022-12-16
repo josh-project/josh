@@ -91,7 +91,10 @@ Check the branch again
   $ [ "${SHA1}" = "$(git log --max-count=1 --skip=1 --format='%H' origin/new-branch)" ] || echo "SHA1 differs after push!"
 
   $ bash ${TESTDIR}/destroy_test_env.sh
-  "real_repo.git" = [':/sub']
+  "real_repo.git" = [
+      ':/sub',
+      '::sub/',
+  ]
   .
   |-- josh
   |   `-- 14

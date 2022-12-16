@@ -81,7 +81,9 @@
   "real_repo.git" = [
       ':/sub1',
       ':/sub1/subsub',
-      ':/sub2',
+      '::sub1/',
+      '::sub1/subsub/',
+      '::sub2/',
   ]
   .
   |-- josh

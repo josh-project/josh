@@ -118,7 +118,10 @@
   1 directory, 4 files
 
   $ bash ${TESTDIR}/destroy_test_env.sh
-  "real_repo.git" = [':/sub3']
+  "real_repo.git" = [
+      ':/sub3',
+      '::sub3/',
+  ]
   .
   |-- josh
   |   `-- 14

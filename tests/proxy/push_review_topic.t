@@ -36,7 +36,10 @@ Make sure all temporary namespace got removed
   [1]
 
   $ bash ${TESTDIR}/destroy_test_env.sh
-  "real_repo.git" = [':/sub1']
+  "real_repo.git" = [
+      ':/sub1',
+      '::sub1/',
+  ]
   .
   |-- josh
   |   `-- 14

@@ -176,10 +176,10 @@ Flushed credential cache
 
   $ bash ${TESTDIR}/destroy_test_env.sh
   "real_repo.git" = [
-      ':/sub1',
-      ':/sub1/subsub1',
-      ':/sub1/subsub2',
-      ':/ws',
+      '::sub1/',
+      '::sub1/subsub1/',
+      '::sub1/subsub2/',
+      '::ws/',
       ':workspace=ws',
   ]
   .
@@ -298,6 +298,8 @@ Flushed credential cache
       |   |   `-- 64c764b19ab4cb9c8d4ad32ae9dc04a30eb42a
       |   |-- c2
       |   |   `-- 55706f564f629eed1756b789d761048cfe060a
+      |   |-- cc
+      |   |   `-- c413520301cf92e055b007c3810e6239e43939
       |   |-- db
       |   |   `-- 9120ba624b0afe79d37a5a262d8deb14e13707
       |   |-- df
@@ -315,4 +317,4 @@ Flushed credential cache
           |-- namespaces
           `-- tags
   
-  71 directories, 60 files
+  72 directories, 61 files
