@@ -1175,6 +1175,7 @@ dependencies = [
  "reqwest",
  "serde_json",
  "shell-words",
+ "tempfile",
  "thiserror",
  "tokio",
  "tokio-util",

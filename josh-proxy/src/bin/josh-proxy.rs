@@ -17,7 +17,6 @@ use hyper_reverse_proxy;
 use indoc::formatdoc;
 use josh::{josh_error, JoshError};
 use josh_rpc::calls::RequestedCommand;
-use josh_rpc::tokio_fd::IntoAsyncFd;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::io;
@@ -26,6 +25,7 @@ use std::process::Stdio;
 use std::str::FromStr;
 use std::sync::{Arc, RwLock};
 use tokio::io::AsyncWriteExt;
+use tokio::net::UnixStream;
 use tokio::process::Command;
 use tracing::{trace, Span};
 use tracing_futures::Instrument;
@@ -609,14 +609,10 @@ async fn serve_namespace(
             let mut stdout = stdout;
 
             // Dropping the handle at the end of this block will generate EOF at the other end
-            let mut stdout_pipe_handle = std::fs::OpenOptions::new()
-                .read(true)
-                .write(true)
-                .open(&params.stdout_pipe)?
-                .into_async_fd()?;
+            let mut stdout_stream = UnixStream::connect(&params.stdout_sock).await?;
 
-            tokio::io::copy(&mut stdout, &mut stdout_pipe_handle).await?;
-            stdout_pipe_handle.flush().await
+            tokio::io::copy(&mut stdout, &mut stdout_stream).await?;
+            stdout_stream.flush().await
         };
 
         copy_future.await.map_err(|e| ServeError::FifoError(e))
@@ -629,14 +625,9 @@ async fn serve_namespace(
         let copy_future = async {
             // See comment about stdout above
             let mut stdin = stdin;
+            let mut stdin_stream = UnixStream::connect(&params.stdin_sock).await?;
 
-            let mut stdin_pipe_handle = std::fs::OpenOptions::new()
-                .read(true)
-                .write(true)
-                .open(&params.stdin_pipe)?
-                .into_async_fd()?;
-
-            tokio::io::copy(&mut stdin_pipe_handle, &mut stdin).await?;
+            tokio::io::copy(&mut stdin_stream, &mut stdin).await?;
 
             // Flushing is necessary to ensure file handle is closed when
             // it goes out of scope / dropped
