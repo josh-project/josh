@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [build-dependencies]
-npm_rs = "0.2.1"
+npm_rs = "1.0.0"
 dircpy = "0.3.13"
 
 [lib]
