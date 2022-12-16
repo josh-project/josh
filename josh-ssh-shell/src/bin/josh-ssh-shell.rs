@@ -5,8 +5,6 @@ extern crate shell_words;
 
 use clap::Parser;
 use josh_rpc::calls::{RequestedCommand, ServeNamespace};
-use josh_rpc::named_pipe::NamedPipe;
-use josh_rpc::tokio_fd::IntoAsyncFd;
 use reqwest::header::CONTENT_TYPE;
 use reqwest::StatusCode;
 use std::convert::TryFrom;
@@ -17,6 +15,7 @@ use std::process::ExitCode;
 use std::time::Duration;
 use std::{env, fs, io, process};
 use tokio::io::AsyncWriteExt;
+use tokio::net::UnixListener;
 use tracing_subscriber::Layer;
 
 #[derive(Parser, Debug)]
@@ -88,20 +87,21 @@ async fn handle_command(
     ssh_socket: &Path,
     query: &str,
 ) -> Result<(), CallError> {
-    let stdout_pipe = NamedPipe::new("josh-stdout")?;
-    let stdin_pipe = NamedPipe::new("josh-stdin")?;
+    let sock_path = tempfile::Builder::new().prefix("josh").tempdir()?;
+
+    // Has a drop guard, so we don't replace the variable yet
+    let sock_path_buf = sock_path.path().to_path_buf();
+
+    let stdout_sock = sock_path_buf.join("stdout");
+    let stdin_sock = sock_path_buf.join("stdin");
 
     let stdin_cancel_token = tokio_util::sync::CancellationToken::new();
     let stdin_cancel_token_stdout = stdin_cancel_token.clone();
-    let stdin_cancel_token_http = stdin_cancel_token.clone();
-
-    let stdout_cancel_token = tokio_util::sync::CancellationToken::new();
-    let stdout_cancel_token_http = stdout_cancel_token.clone();
 
     let rpc_payload = ServeNamespace {
         command,
-        stdout_pipe: stdout_pipe.path.clone(),
-        stdin_pipe: stdin_pipe.path.clone(),
+        stdout_sock: stdout_sock.clone(),
+        stdin_sock: stdin_sock.clone(),
         ssh_socket: ssh_socket.to_path_buf(),
         query: query.to_string(),
     };
@@ -109,43 +109,26 @@ async fn handle_command(
     let read_stdout = async move {
         let _guard_stdin = stdin_cancel_token_stdout.drop_guard();
 
-        let copy_future = async {
-            let mut stdout = josh_rpc::tokio_fd::AsyncFd::try_from(libc::STDOUT_FILENO)?;
-            let mut stdout_pipe_handle = std::fs::OpenOptions::new()
-                .read(true)
-                .write(true)
-                .open(stdout_pipe.path.as_path())?
-                .into_async_fd()?;
+        let mut stdout = josh_rpc::tokio_fd::AsyncFd::try_from(libc::STDOUT_FILENO)?;
+        let stdout_sock_handle = UnixListener::bind(&stdout_sock).unwrap();
+        let (mut stdout_stream, _) = stdout_sock_handle.accept().await?;
 
-            tokio::io::copy(&mut stdout_pipe_handle, &mut stdout).await?;
-            stdout.flush().await?;
+        tokio::io::copy(&mut stdout_stream, &mut stdout).await?;
+        stdout.flush().await?;
 
-            Ok(())
-        };
-
-        tokio::select! {
-            copy_result = copy_future => {
-                copy_result.map(|_| ())
-            }
-            _ = stdout_cancel_token.cancelled() => {
-                Ok(())
-            }
-        }
+        Ok(())
     };
 
     let write_stdin = async move {
         let copy_future = async {
-            // When the remote end sends EOF over the stdout_pipe,
+            // When the remote end sends EOF over the stdout_sock,
             // we should stop copying stuff here
             let mut stdin = josh_rpc::tokio_fd::AsyncFd::try_from(libc::STDIN_FILENO)?;
-            let mut stdin_pipe_handle = std::fs::OpenOptions::new()
-                .read(true)
-                .write(true)
-                .open(stdin_pipe.path.as_path())?
-                .into_async_fd()?;
+            let stdin_sock_handle = UnixListener::bind(&stdin_sock)?;
+            let (mut stdin_stream, _) = stdin_sock_handle.accept().await?;
 
-            tokio::io::copy(&mut stdin, &mut stdin_pipe_handle).await?;
-            stdin_pipe_handle.flush().await?;
+            tokio::io::copy(&mut stdin, &mut stdin_stream).await?;
+            stdin_stream.flush().await?;
 
             Ok(())
         };
@@ -161,9 +144,6 @@ async fn handle_command(
     };
 
     let make_request = async move {
-        let _guard_stdin = stdin_cancel_token_http.drop_guard();
-        let _guard_stdout = stdout_cancel_token_http.drop_guard();
-
         let client = reqwest::Client::new();
         let response = client
             .post(format!("{}/serve_namespace", get_endpoint()))

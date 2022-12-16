@@ -11,8 +11,8 @@ pub enum RequestedCommand {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ServeNamespace {
     pub command: RequestedCommand,
-    pub stdin_pipe: PathBuf,
-    pub stdout_pipe: PathBuf,
+    pub stdin_sock: PathBuf,
+    pub stdout_sock: PathBuf,
     pub ssh_socket: PathBuf,
     pub query: String,
 }
