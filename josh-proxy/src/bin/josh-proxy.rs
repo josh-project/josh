@@ -84,7 +84,7 @@ struct JoshProxyService {
     upstream: JoshProxyUpstream,
     fetch_timers: Arc<RwLock<FetchTimers>>,
     heads_map: HeadsMap,
-    fetch_permits: Arc<tokio::sync::Semaphore>,
+    fetch_permits: Arc<std::sync::Mutex<HashMap<String, Arc<tokio::sync::Semaphore>>>>,
     filter_permits: Arc<tokio::sync::Semaphore>,
     poll: Polls,
 }
@@ -169,7 +169,13 @@ async fn fetch_upstream(
     let span = tracing::span!(tracing::Level::TRACE, "fetch worker");
     let us = upstream_repo.clone();
     let ru = remote_url.clone();
-    let permit = service.fetch_permits.acquire().await;
+    let semaphore = service
+        .fetch_permits
+        .lock()?
+        .entry(us.clone())
+        .or_insert(Arc::new(tokio::sync::Semaphore::new(1)))
+        .clone();
+    let permit = semaphore.acquire().await;
     let task_remote_auth = remote_auth.clone();
     let fetch_result = tokio::task::spawn_blocking(move || {
         let _span_guard = span.enter();
@@ -1282,7 +1288,7 @@ async fn run_proxy() -> josh::JoshResult<i32> {
         fetch_timers: Arc::new(RwLock::new(FetchTimers::new())),
         heads_map: Arc::new(RwLock::new(std::collections::HashMap::new())),
         poll: Arc::new(std::sync::Mutex::new(std::collections::HashSet::new())),
-        fetch_permits: Arc::new(tokio::sync::Semaphore::new(ARGS.concurrent_n)),
+        fetch_permits: Default::default(),
         filter_permits: Arc::new(tokio::sync::Semaphore::new(10)),
     });
 

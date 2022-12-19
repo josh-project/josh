@@ -12,7 +12,6 @@ pub struct Args {
     pub gc: bool,
     pub require_auth: bool,
     pub no_background: bool,
-    pub concurrent_n: usize,
     pub port: u16,
     pub cache_duration: u64,
     pub static_resource_proxy_target: Option<String>,
@@ -68,11 +67,9 @@ fn make_command() -> clap::Command {
                 .long("no-background")
                 .action(clap::ArgAction::SetTrue),
         )
-        .arg(
-            clap::Arg::new("n")
-                .short('n')
-                .help("Number of concurrent upstream git fetch/push operations"),
-        )
+        .arg(clap::Arg::new("n").short('n').help(
+            "DEPRECATED - no effect! Number of concurrent upstream git fetch/push operations",
+        ))
         .arg(clap::Arg::new("port").long("port"))
         .arg(
             clap::Arg::new("cache-duration")
@@ -140,7 +137,6 @@ pub fn parse_args() -> josh::JoshResult<Args> {
         .clone();
 
     let poll_user = args.get_one::<String>("poll").map(String::clone);
-    let concurrent_n = parse_int::<usize>(&args, "n", Some(1))?;
     let port = parse_int::<u16>(&args, "port", Some(8000))?;
     let cache_duration = parse_int::<u64>(&args, "cache-duration", Some(0))?;
     let static_resource_proxy_target = args
@@ -156,7 +152,6 @@ pub fn parse_args() -> josh::JoshResult<Args> {
         gc: args.get_flag("gc"),
         require_auth: args.get_flag("require-auth"),
         no_background: args.get_flag("no-background"),
-        concurrent_n,
         port,
         cache_duration,
         static_resource_proxy_target,
