@@ -39,7 +39,7 @@ tracing = { version = "0.1.37", features = ["max_level_trace", "release_max_leve
 tracing-futures = "0.2.5"
 tracing-opentelemetry = "0.18.0"
 tracing-subscriber = { version = "0.3.16", features = ["env-filter"] }
-unindent = "0.1.10"
+unindent = "0.1.11"
 url = "2.3.1"
 uuid = { version = "1.2.2", features = ["v4"] }
 josh-rpc = { path = "../josh-rpc" }
