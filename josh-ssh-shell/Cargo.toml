@@ -17,5 +17,5 @@ tracing-futures = "0.2.5"
 tracing-opentelemetry = "0.18.0"
 tracing-subscriber = { version = "0.3.16", features = ["env-filter"] }
 tokio-util = "0.7.4"
-thiserror = "1.0.37"
+thiserror = "1.0.38"
 tempfile = "3.3.0"
