@@ -23,7 +23,7 @@ env_logger = "0.10.0"
 git-version = "0.3.5"
 git2 = { version = "0.15.0", default-features = false }
 glob = "0.3.0"
-handlebars = "4.3.5"
+handlebars = "4.3.6"
 hex = "0.4.3"
 hyper-reverse-proxy = "0.5.1"
 indoc = "1.0.7"
