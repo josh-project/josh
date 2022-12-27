@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2018"
 
 [dependencies]
-serde = { version = "1.0.150", features = ["std", "derive"] }
+serde = { version = "1.0.152", features = ["std", "derive"] }
 tokio = { version = "1.23.0", features = ["fs", "io-std"] }
 libc = "0.2.138"
 rand = "0.8.5"
