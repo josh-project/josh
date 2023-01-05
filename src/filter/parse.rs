@@ -124,6 +124,20 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> JoshResult<Op> {
 
             Ok(Op::RegexReplace(replacements))
         }
+        Rule::filter_squash => {
+            let ids = pair
+                .into_inner()
+                .tuples()
+                .map(|(oid, message)| {
+                    Ok((
+                        git2::Oid::from_str(oid.as_str())?,
+                        unquote(message.as_str()),
+                    ))
+                })
+                .collect::<JoshResult<_>>()?;
+
+            Ok(Op::Squash(Some(ids)))
+        }
 
         _ => Err(josh_error("parse_item: no match")),
     }

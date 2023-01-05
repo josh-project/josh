@@ -152,19 +152,6 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
 
     let mut filterobj = josh::filter::parse(&specstr)?;
 
-    if args.get_flag("print-filter") {
-        let filterobj = if args.get_flag("reverse") {
-            josh::filter::invert(filterobj)?
-        } else {
-            filterobj
-        };
-        println!(
-            "{}",
-            josh::filter::pretty(filterobj, if args.contains_id("file") { 0 } else { 4 })
-        );
-        return Ok(0);
-    }
-
     let repo = git2::Repository::open_from_env()?;
     if !args.get_flag("no-cache") {
         josh::cache::load(repo.path())?;
@@ -196,6 +183,19 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         }
         filterobj = josh::filter::chain(josh::filter::squash(Some(&ids)), filterobj);
     };
+
+    if args.get_flag("print-filter") {
+        let filterobj = if args.get_flag("reverse") {
+            josh::filter::invert(filterobj)?
+        } else {
+            filterobj
+        };
+        println!(
+            "{}",
+            josh::filter::pretty(filterobj, if args.contains_id("file") { 0 } else { 4 })
+        );
+        return Ok(0);
+    }
 
     let odb = repo.odb()?;
     let mp = if args.get_flag("pack") {
