@@ -555,7 +555,7 @@ fn make_ssh_command() -> String {
     format!("ssh {}", ssh_options.join(" "))
 }
 
-fn run_git_with_auth(
+pub fn run_git_with_auth(
     cwd: &std::path::Path,
     cmd: &[&str],
     remote_auth: &RemoteAuth,

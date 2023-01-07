@@ -2,7 +2,7 @@
 #[macro_use]
 extern crate lazy_static;
 
-use josh_proxy::{FetchError, MetaConfig, RemoteAuth, RepoConfig, RepoUpdate};
+use josh_proxy::{run_git_with_auth, FetchError, MetaConfig, RemoteAuth, RepoConfig, RepoUpdate};
 use opentelemetry::global;
 use opentelemetry::sdk::propagation::TraceContextPropagator;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
@@ -15,7 +15,7 @@ use hyper::service::{make_service_fn, service_fn};
 use hyper::{Request, Response, Server, StatusCode};
 use hyper_reverse_proxy;
 use indoc::formatdoc;
-use josh::{josh_error, JoshError};
+use josh::{josh_error, JoshError, JoshResult};
 use josh_rpc::calls::RequestedCommand;
 use serde::Serialize;
 use std::collections::HashMap;
@@ -104,27 +104,30 @@ async fn fetch_upstream(
     upstream_repo: String,
     remote_auth: &RemoteAuth,
     remote_url: String,
-    headref: &str,
+    head_ref: Option<&str>,
+    head_ref_resolved: Option<&str>,
     force: bool,
 ) -> Result<(), FetchError> {
     let key = remote_url.clone();
 
-    let refs_to_fetch =
-        if !headref.is_empty() && headref != "HEAD" && !headref.starts_with("refs/heads/") {
+    let refs_to_fetch = match head_ref {
+        Some(head_ref) if head_ref != "HEAD" && !head_ref.starts_with("refs/heads/") => {
             vec![
                 "HEAD*",
                 "refs/josh/*",
                 "refs/heads/*",
                 "refs/tags/*",
-                headref,
+                head_ref,
             ]
-        } else {
+        }
+        _ => {
             vec!["HEAD*", "refs/josh/*", "refs/heads/*", "refs/tags/*"]
-        };
+        }
+    };
 
     let refs_to_fetch: Vec<_> = refs_to_fetch.iter().map(|x| x.to_string()).collect();
 
-    let fetch_cached_ok = {
+    let fetch_timer_ok = {
         if let Some(last) = service.fetch_timers.read()?.get(&key) {
             let since = std::time::Instant::now().duration_since(*last);
             let max = std::time::Duration::from_secs(ARGS.cache_duration);
@@ -136,31 +139,42 @@ async fn fetch_upstream(
         }
     };
 
-    let fetch_cached_ok = fetch_cached_ok && !force;
-
-    tracing::trace!("fetch_cached_ok {:?}", fetch_cached_ok);
-
-    if fetch_cached_ok && headref.is_empty() {
-        return Ok(());
-    }
-
-    if fetch_cached_ok && !headref.is_empty() {
+    let resolve_cache_ref = |cache_ref: &str| -> JoshResult<Option<git2::Oid>> {
         let transaction = josh::cache::Transaction::open(
             &service.repo_path.join("mirror"),
             Some(&format!(
                 "refs/josh/upstream/{}/",
                 &josh::to_ns(&upstream_repo),
             )),
-        )
-        .map_err(FetchError::from_josh_error)?;
-        let id = transaction
+        )?;
+
+        match transaction
             .repo()
-            .refname_to_id(&transaction.refname(headref));
-        tracing::trace!("refname_to_id: {:?}", id);
-        if id.is_ok() {
-            return Ok(());
+            .refname_to_id(&transaction.refname(cache_ref))
+        {
+            Ok(oid) => Ok(Some(oid)),
+            Err(_) => Ok(None),
         }
-    }
+    };
+
+    match (force, fetch_timer_ok, head_ref, head_ref_resolved) {
+        (false, true, None, _) => return Ok(()),
+        (false, true, Some(head_ref), _) => {
+            if let Some(_) = resolve_cache_ref(head_ref).map_err(FetchError::from_josh_error)? {
+                trace!("cache ref resolved");
+                return Ok(());
+            }
+        }
+        (false, false, Some(head_ref), Some(head_ref_resolved)) => {
+            if let Some(oid) = resolve_cache_ref(head_ref).map_err(FetchError::from_josh_error)? {
+                if oid.to_string() == head_ref_resolved {
+                    trace!("cache ref resolved and matches");
+                    return Ok(());
+                }
+            }
+        }
+        _ => (),
+    };
 
     let fetch_timers = service.fetch_timers.clone();
     let heads_map = service.heads_map.clone();
@@ -200,10 +214,12 @@ async fn fetch_upstream(
 
     std::mem::drop(permit);
 
+    if let Ok(_) = fetch_result {
+        fetch_timers.write()?.insert(key, std::time::Instant::now());
+    }
+
     match (fetch_result, remote_auth) {
         (Ok(_), RemoteAuth::Http { auth }) => {
-            fetch_timers.write()?.insert(key, std::time::Instant::now());
-
             let (auth_user, _) = auth.parse().map_err(FetchError::from_josh_error)?;
 
             if matches!(&ARGS.poll_user, Some(user) if auth_user == user.as_str()) {
@@ -459,7 +475,8 @@ async fn query_meta_repo(
         meta_repo.to_owned(),
         &remote_auth,
         remote_url.to_owned(),
-        &"HEAD",
+        Some("HEAD"),
+        None,
         false,
     )
     .in_current_span()
@@ -553,6 +570,67 @@ async fn make_meta_config(
             .await
         }
     }
+}
+
+async fn ssh_list_refs(
+    url: &str,
+    auth_socket: std::path::PathBuf,
+    refs: Option<&[&str]>,
+) -> JoshResult<HashMap<String, String>> {
+    let temp_dir = tempdir::TempDir::new("josh")?;
+    let refs = match refs {
+        Some(refs) => refs.to_vec(),
+        None => vec!["HEAD"],
+    };
+
+    let ls_remote = vec!["git", "ls-remote", url];
+    let command = ls_remote
+        .iter()
+        .chain(refs.iter())
+        .map(|s| s.to_string())
+        .collect::<Vec<_>>();
+
+    let result = tokio::task::spawn_blocking(move || -> JoshResult<(String, String, i32)> {
+        let command = command.iter().map(String::as_str).collect::<Vec<_>>();
+
+        let (stdout, stderr, code) = run_git_with_auth(
+            temp_dir.path(),
+            &command,
+            &RemoteAuth::Ssh { auth_socket },
+            None,
+        )?;
+
+        Ok((stdout, stderr, code))
+    })
+    .await?;
+
+    let stdout = match result {
+        Ok((stdout, _, 0)) => stdout,
+        Ok((_, stderr, code)) => {
+            return Err(josh_error(&format!(
+                "auth check: git exited with code {}: {}",
+                code, stderr
+            )))
+        }
+        Err(e) => return Err(e),
+    };
+
+    let refs = stdout
+        .lines()
+        .map(|line| {
+            match line
+                .split('\t')
+                .map(str::to_owned)
+                .collect::<Vec<_>>()
+                .as_slice()
+            {
+                [sha1, git_ref] => Ok((git_ref.to_owned(), sha1.to_owned())),
+                _ => Err(josh_error("could not parse result of ls-remote")),
+            }
+        })
+        .collect::<JoshResult<HashMap<_, _>>>()?;
+
+    Ok(refs)
 }
 
 async fn serve_namespace(
@@ -772,8 +850,9 @@ async fn handle_serve_namespace_request(
         ));
     };
 
+    let auth_socket = params.ssh_socket.clone();
     let remote_auth = RemoteAuth::Ssh {
-        auth_socket: params.ssh_socket.clone(),
+        auth_socket: auth_socket.clone(),
     };
 
     let meta_config = match make_meta_config(
@@ -813,13 +892,35 @@ async fn handle_serve_namespace_request(
     let remote_url = upstream + meta_config.config.repo.as_str();
     let headref = headref_or_default(&parsed_url.headref);
 
+    let remote_refs = [headref.as_str()];
+    let remote_refs = match ssh_list_refs(&remote_url, auth_socket, Some(&remote_refs)).await {
+        Ok(remote_refs) => remote_refs,
+        Err(e) => {
+            return Ok(make_response(
+                hyper::Body::from(e.to_string()),
+                hyper::StatusCode::FORBIDDEN,
+            ))
+        }
+    };
+
+    let resolved_ref = match remote_refs.get(&headref) {
+        Some(resolved_ref) => resolved_ref,
+        None => {
+            return Ok(make_response(
+                hyper::Body::from("Could not resolve remote ref"),
+                hyper::StatusCode::INTERNAL_SERVER_ERROR,
+            ))
+        }
+    };
+
     match fetch_upstream(
         serv.clone(),
         meta_config.config.repo.to_owned(),
         &remote_auth,
         remote_url.to_owned(),
-        &headref,
-        true,
+        Some(&headref),
+        Some(resolved_ref),
+        false,
     )
     .await
     {
@@ -1056,7 +1157,8 @@ async fn call_service(
         meta.config.repo.to_owned(),
         &remote_auth,
         remote_url.to_owned(),
-        &headref,
+        Some(&headref),
+        None,
         false,
     )
     .in_current_span()
@@ -1368,7 +1470,8 @@ async fn run_polling(serv: Arc<JoshProxyService>) -> josh::JoshResult<()> {
                 upstream_repo.clone(),
                 &remote_auth,
                 url.clone(),
-                "",
+                None,
+                None,
                 true,
             )
             .in_current_span()
@@ -1517,7 +1620,8 @@ async fn serve_graphql(
                 upstream_repo.to_owned(),
                 &remote_auth,
                 remote_url.to_owned(),
-                &"HEAD",
+                Some("HEAD"),
+                None,
                 false,
             )
             .in_current_span()
