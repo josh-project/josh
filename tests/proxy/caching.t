@@ -41,8 +41,8 @@
   From http://localhost:8002/real_repo.git:/sub1
    + bdc926c...eb6a311 master     -> origin/master  (forced update)
   $ git fetch
-  $ grep -o "fetch_cached_ok true" ${TESTTMP}/josh-proxy.out | uniq
-  fetch_cached_ok true
+  $ grep -o "cache ref resolved" ${TESTTMP}/josh-proxy.out | uniq
+  cache ref resolved
 
   $ bash ${TESTDIR}/destroy_test_env.sh
   "real_repo.git" = [

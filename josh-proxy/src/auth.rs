@@ -73,13 +73,6 @@ pub async fn check_auth(url: &str, auth: &Handle, required: bool) -> josh::JoshR
         return Ok(false);
     }
 
-    // If the upsteam is ssh we don't really handle authentication here.
-    // All we need is a username, the private key is expected to available localy.
-    // This is really not secure at all and should never be used in a production deployment.
-    if url.starts_with("ssh") {
-        return Ok(auth.hash != "");
-    }
-
     if let Some(last) = AUTH_TIMERS.lock()?.get(&(url.to_string(), auth.clone())) {
         let since = std::time::Instant::now().duration_since(*last);
         tracing::trace!("last: {:?}, since: {:?}", last, since);
@@ -99,39 +92,41 @@ pub async fn check_auth(url: &str, auth: &Handle, required: bool) -> josh::JoshR
         .get(auth)
         .unwrap_or(&Header { header: None })
         .to_owned();
-    let nurl = format!("{}/info/refs?service=git-upload-pack", url);
+    let refs_url = format!("{}/info/refs?service=git-upload-pack", url);
 
-    let builder = hyper::Request::builder().method("GET").uri(&nurl);
+    let builder = hyper::Request::builder()
+        .method(hyper::Method::GET)
+        .uri(&refs_url);
 
-    let builder = if let Some(h) = password.header {
-        builder.header("authorization", h)
+    let builder = if let Some(value) = password.header {
+        builder.header(hyper::header::AUTHORIZATION, value)
     } else {
         builder
     };
 
-    let r = builder.body(hyper::Body::empty())?;
-    let resp = client.request(r).await?;
+    let request = builder.body(hyper::Body::empty())?;
+    let resp = client.request(request).await?;
 
     let status = resp.status();
 
     tracing::trace!("http resp.status {:?}", resp.status());
 
-    let msg = format!("got http response: {} {:?}", nurl, resp);
+    let err_msg = format!("got http response: {} {:?}", refs_url, resp);
 
-    if status == 200 {
+    if status == hyper::StatusCode::OK {
         AUTH_TIMERS
             .lock()?
             .insert((url.to_string(), auth.clone()), std::time::Instant::now());
         Ok(true)
-    } else if status == 401 {
-        tracing::warn!("resp.status == 401: {:?}", &msg);
+    } else if status == hyper::StatusCode::UNAUTHORIZED {
+        tracing::warn!("resp.status == 401: {:?}", &err_msg);
         tracing::trace!(
             "body: {:?}",
             std::str::from_utf8(&hyper::body::to_bytes(resp.into_body()).await?)
         );
         Ok(false)
     } else {
-        return Err(josh::josh_error(&msg));
+        return Err(josh::josh_error(&err_msg));
     }
 }
 
@@ -139,7 +134,8 @@ pub fn strip_auth(
     req: hyper::Request<hyper::Body>,
 ) -> josh::JoshResult<(Handle, hyper::Request<hyper::Body>)> {
     let mut req = req;
-    let header: Option<hyper::header::HeaderValue> = req.headers_mut().remove("authorization");
+    let header: Option<hyper::header::HeaderValue> =
+        req.headers_mut().remove(hyper::header::AUTHORIZATION);
 
     if let Some(header) = header {
         let hp = Handle {
