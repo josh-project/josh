@@ -819,7 +819,7 @@ async fn handle_serve_namespace_request(
         &remote_auth,
         remote_url.to_owned(),
         &headref,
-        false,
+        true,
     )
     .await
     {
