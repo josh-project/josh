@@ -11,7 +11,7 @@ ENV CARGO_HOME=/usr/local/cargo
 ENV PATH=/usr/local/cargo/bin:${PATH}
 
 ARG RUSTUP_VERSION=1.25.1
-ARG RUST_VERSION=1.61.0
+ARG RUST_VERSION=1.66.0
 ARG RUST_ARCH=x86_64-unknown-linux-musl
 
 # https://github.com/sfackler/rust-openssl/issues/1462
@@ -27,7 +27,7 @@ RUN /tmp/rustup-init \
 
 FROM rust-base as dev-planner
 
-RUN cargo install --version 0.1.35 cargo-chef
+RUN cargo install --version 0.1.51 cargo-chef
 
 WORKDIR /usr/src/josh
 COPY . .
@@ -44,7 +44,7 @@ RUN apk add --no-cache \
 
 WORKDIR /usr/src/josh
 RUN rustup component add rustfmt
-RUN cargo install --version 0.1.35 cargo-chef
+RUN cargo install --version 0.1.51 cargo-chef
 RUN cargo install --verbose --version 0.10.0 graphql_client_cli
 
 RUN apk add --no-cache \
