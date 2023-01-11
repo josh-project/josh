@@ -31,6 +31,19 @@ fn main() {
         }
     }
 
+    fn mk_symlink_file(original: &str, link: &str) {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::symlink;
+            symlink(original, link).unwrap();
+        }
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::symlink_file;
+            symlink_file(original, link).unwrap();
+        }
+    }
+
     fn glob_vec(pattern: &str) -> Vec<PathBuf> {
         glob(pattern).unwrap().map(|r| r.unwrap()).collect()
     }
@@ -48,6 +61,10 @@ fn main() {
     mk_file("bbb", true);
     mk_file("bbb/specials", true);
     mk_file("bbb/specials/!", false);
+    // a valid symlink
+    mk_symlink_file("aaa/apple", "aaa/green_apple");
+    // a broken symlink
+    mk_symlink_file("aaa/setsuna", "aaa/kazusa");
 
     // windows does not allow `*` or `?` characters to exist in filenames
     if env::consts::FAMILY != "windows" {
@@ -223,8 +240,10 @@ fn main() {
         glob_vec("aaa/*"),
         vec!(
             PathBuf::from("aaa/apple"),
+            PathBuf::from("aaa/green_apple"),
+            PathBuf::from("aaa/kazusa"),
             PathBuf::from("aaa/orange"),
-            PathBuf::from("aaa/tomato")
+            PathBuf::from("aaa/tomato"),
         )
     );
 
@@ -232,6 +251,8 @@ fn main() {
         glob_vec("aaa/*a*"),
         vec!(
             PathBuf::from("aaa/apple"),
+            PathBuf::from("aaa/green_apple"),
+            PathBuf::from("aaa/kazusa"),
             PathBuf::from("aaa/orange"),
             PathBuf::from("aaa/tomato")
         )
@@ -261,6 +282,9 @@ fn main() {
     assert_eq!(glob_vec("aaa/tomato/tomato.txt/.."), Vec::<PathBuf>::new());
 
     assert_eq!(glob_vec("aaa/tomato/tomato.txt/"), Vec::<PathBuf>::new());
+
+    // Ensure to find a broken symlink.
+    assert_eq!(glob_vec("aaa/kazusa"), vec!(PathBuf::from("aaa/kazusa")));
 
     assert_eq!(glob_vec("aa[a]"), vec!(PathBuf::from("aaa")));
     assert_eq!(glob_vec("aa[abc]"), vec!(PathBuf::from("aaa")));
