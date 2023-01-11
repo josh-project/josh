@@ -13,5 +13,6 @@ Support for matching file paths against Unix shell style patterns.
 categories = ["filesystem"]
 
 [dev-dependencies]
+# FIXME: Replace it with `tempfile` once we bump up MSRV.
 tempdir = "0.3"
 doc-comment = "0.3"
