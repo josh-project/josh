@@ -181,23 +181,20 @@ pub fn rewrite_commit(
     base: &git2::Commit,
     parents: &[&git2::Commit],
     tree: &git2::Tree,
-    message: Option<(String, String, String)>,
+    author: Option<(String, String)>,
+    message: Option<String>,
     unsign: bool,
 ) -> JoshResult<git2::Oid> {
-    let b = if let Some((message, author, email)) = message {
+    let message = message.unwrap_or(base.message_raw().unwrap_or("no message").to_string());
+
+    let b = if let Some((author, email)) = author {
         let a = base.author();
         let new_a = git2::Signature::new(&author, &email, &a.when())?;
         let c = base.committer();
         let new_c = git2::Signature::new(&author, &email, &c.when())?;
         repo.commit_create_buffer(&new_a, &new_c, &message, tree, parents)?
     } else {
-        repo.commit_create_buffer(
-            &base.author(),
-            &base.committer(),
-            &base.message_raw().unwrap_or("no message"),
-            tree,
-            parents,
-        )?
+        repo.commit_create_buffer(&base.author(), &base.committer(), &message, tree, parents)?
     };
 
     if let (false, Ok((sig, _))) = (unsign, repo.extract_signature(&base.id(), None)) {
@@ -508,6 +505,7 @@ pub fn unapply_filter(
             &original_parents_refs,
             &new_tree,
             None,
+            None,
             false,
         )?;
 
@@ -556,14 +554,14 @@ pub fn remove_commit_signature<'a>(
     filtered_tree: git2::Tree<'a>,
     transaction: &cache::Transaction,
     filter: filter::Filter,
-    message: Option<(String, String, String)>,
 ) -> JoshResult<git2::Oid> {
     let (r, is_new) = create_filtered_commit2(
         transaction.repo(),
         original_commit,
         filtered_parent_ids,
         filtered_tree,
-        message,
+        None,
+        None,
         true,
     )?;
 
@@ -597,13 +595,15 @@ pub fn create_filtered_commit<'a>(
     filtered_tree: git2::Tree<'a>,
     transaction: &cache::Transaction,
     filter: filter::Filter,
-    message: Option<(String, String, String)>,
+    author: Option<(String, String)>,
+    message: Option<String>,
 ) -> JoshResult<git2::Oid> {
     let (r, is_new) = create_filtered_commit2(
         transaction.repo(),
         original_commit,
         filtered_parent_ids,
         filtered_tree,
+        author,
         message,
         false,
     )?;
@@ -620,7 +620,8 @@ fn create_filtered_commit2<'a>(
     original_commit: &'a git2::Commit,
     filtered_parent_ids: Vec<git2::Oid>,
     filtered_tree: git2::Tree<'a>,
-    message: Option<(String, String, String)>,
+    author: Option<(String, String)>,
+    message: Option<String>,
     unsign: bool,
 ) -> JoshResult<(git2::Oid, bool)> {
     let filtered_parent_commits: Result<Vec<_>, _> = filtered_parent_ids
@@ -666,6 +667,7 @@ fn create_filtered_commit2<'a>(
             original_commit,
             &selected_filtered_parent_commits,
             &filtered_tree,
+            author,
             message,
             unsign,
         )?,

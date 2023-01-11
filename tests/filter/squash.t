@@ -38,9 +38,10 @@
   'git <command> [<revision>...] -- [<file>...]'
   [128]
   $ git tag tag_a 1d69b7d
-  $ josh-filter -s --squash "refs/tags/*" --author "New Author" --email "new@e.mail" --update refs/heads/filtered
+  $ josh-filter -s --squash "refs/tags/*" :author=\"New\ Author\"\;\"new@e.mail\" --update refs/heads/filtered
   [1] :SQUASH=e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
-  [2] :SQUASH=e8e83b9c5d2f779f0cea83a6cad68b710a399c96
+  [1] :author="New Author";"new@e.mail"
+  [2] :SQUASH=10d465cdf297e8062eed54204414414faa63671e
 
   $ git log --graph --decorate --pretty=oneline refs/heads/filtered
   * d8aa5a9937f4f0bd645dbc0b591bae5cd6b6d91b (tag: filtered/tag_a, filtered) refs/tags/tag_a
@@ -56,10 +57,11 @@
   |/  
   * 0b4cf6c9efbbda1eada39fa9c1d21d2525b027bb (tag: tag_b) add file1
 
-  $ josh-filter -s --squash "refs/tags/*" --author "New Author" --email "new@e.mail" --update refs/heads/filtered
+  $ josh-filter -s --squash "refs/tags/*" :author=\"New\ Author\"\;\"new@e.mail\" --update refs/heads/filtered
   [1] :SQUASH=e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
-  [2] :SQUASH=e8e83b9c5d2f779f0cea83a6cad68b710a399c96
-  [3] :SQUASH=3953063f3dc58661e9db16f9014aab1e8ec50bf8
+  [2] :SQUASH=10d465cdf297e8062eed54204414414faa63671e
+  [3] :SQUASH=dd8bdf1d78a6cb9ffc9e2a0644a8bf41de56ad36
+  [4] :author="New Author";"new@e.mail"
 
   $ git log --graph --decorate --pretty=oneline refs/heads/filtered
   * 5b1a753860ca124024f6dfb4fd018fe7df8beae4 (tag: filtered/tag_a, filtered) refs/tags/tag_a
@@ -81,11 +83,12 @@
 
   $ git tag tag_c 975d4c4
 
-  $ josh-filter -s --squash "refs/tags/*" --author "New Author" --email "new@e.mail" --update refs/heads/filtered
+  $ josh-filter -s --squash "refs/tags/*" :author=\"New\ Author\"\;\"new@e.mail\" --update refs/heads/filtered
   [1] :SQUASH=e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
-  [2] :SQUASH=e8e83b9c5d2f779f0cea83a6cad68b710a399c96
-  [3] :SQUASH=3953063f3dc58661e9db16f9014aab1e8ec50bf8
-  [6] :SQUASH=6a132477d438779dbaeb0d68b9aab55786e28dd9
+  [2] :SQUASH=10d465cdf297e8062eed54204414414faa63671e
+  [3] :SQUASH=dd8bdf1d78a6cb9ffc9e2a0644a8bf41de56ad36
+  [6] :SQUASH=b2a9a51df03600d3b5858fa7fca044741f88e521
+  [9] :author="New Author";"new@e.mail"
 
   $ git log --graph --decorate --pretty=oneline refs/heads/filtered
   *   9fe45cb2bead844630852ab338ecd8e073f8ba50 (tag: filtered/tag_a, filtered) refs/tags/tag_a

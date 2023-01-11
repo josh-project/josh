@@ -194,14 +194,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
                 refs.push((reference.name().unwrap().to_string(), target));
             }
         }
-        filterobj = josh::filter::chain(
-            josh::filter::squash(Some((
-                args.get_one::<String>("author").unwrap(),
-                args.get_one::<String>("email").unwrap(),
-                &ids,
-            ))),
-            filterobj,
-        );
+        filterobj = josh::filter::chain(josh::filter::squash(Some(&ids)), filterobj);
     };
 
     let odb = repo.odb()?;

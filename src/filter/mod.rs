@@ -61,12 +61,10 @@ pub fn empty() -> Filter {
     to_filter(Op::Empty)
 }
 
-pub fn squash(ids: Option<(&str, &str, &[(git2::Oid, String)])>) -> Filter {
-    if let Some((author, email, ids)) = ids {
+pub fn squash(ids: Option<&[(git2::Oid, String)]>) -> Filter {
+    if let Some(ids) = ids {
         to_filter(Op::Squash(Some(
-            ids.iter()
-                .map(|(x, y)| (*x, (y.clone(), author.to_string(), email.to_string())))
-                .collect(),
+            ids.iter().map(|(x, y)| (*x, y.clone())).collect(),
         )))
     } else {
         to_filter(Op::Squash(None))
@@ -97,7 +95,8 @@ enum Op {
     Empty,
     Fold,
     Paths,
-    Squash(Option<std::collections::HashMap<git2::Oid, (String, String, String)>>),
+    Squash(Option<std::collections::HashMap<git2::Oid, String>>),
+    Author(String, String),
     Rev(std::collections::HashMap<git2::Oid, Filter>),
     Linear,
     Unsign,
@@ -283,7 +282,7 @@ fn spec2(op: &Op) -> String {
         Op::Squash(Some(hs)) => {
             let mut v = hs
                 .iter()
-                .map(|(x, y)| format!("{}:{}:{}:{}", x, y.0, y.1, y.2))
+                .map(|(x, y)| format!("{}:{}", x, y))
                 .collect::<Vec<String>>();
             v.sort();
             let s = v.join(",");
@@ -297,6 +296,9 @@ fn spec2(op: &Op) -> String {
         Op::File(path) => format!("::{}", parse::quote_if(&path.to_string_lossy())),
         Op::Prefix(path) => format!(":prefix={}", parse::quote_if(&path.to_string_lossy())),
         Op::Glob(pattern) => format!("::{}", parse::quote_if(pattern)),
+        Op::Author(author, email) => {
+            format!(":author={};{}", parse::quote(author), parse::quote(email))
+        }
     }
 }
 
@@ -403,6 +405,7 @@ fn apply_to_commit2(
                 &[],
                 &commit.tree()?,
                 None,
+                None,
                 true,
             ))
             .transpose()
@@ -481,6 +484,7 @@ fn apply_to_commit2(
                 transaction,
                 filter,
                 None,
+                None,
             ))
             .transpose();
         }
@@ -502,7 +506,6 @@ fn apply_to_commit2(
                 commit.tree()?,
                 transaction,
                 filter,
-                None,
             ))
             .transpose();
         }
@@ -586,6 +589,7 @@ fn apply_to_commit2(
                 transaction,
                 filter,
                 None,
+                None,
             ))
             .transpose();
         }
@@ -662,6 +666,11 @@ fn apply_to_commit2(
 
     let filtered_parent_ids = some_or!(filtered_parent_ids, { return Ok(None) });
 
+    let author = match to_op(filter) {
+        Op::Author(author, email) => Some((author.clone(), email.clone())),
+        _ => None,
+    };
+
     let message = match to_op(filter) {
         Op::Squash(Some(ids)) => ids.get(&commit.id()).map(|x| x.clone()),
         _ => None,
@@ -673,6 +682,7 @@ fn apply_to_commit2(
         filtered_tree,
         transaction,
         filter,
+        author,
         message,
     ))
     .transpose()
@@ -698,6 +708,7 @@ fn apply2<'a>(
         Op::Empty => return Ok(tree::empty(repo)),
         Op::Fold => Ok(tree),
         Op::Squash(None) => Ok(tree),
+        Op::Author(_, _) => Ok(tree),
         Op::Squash(Some(_)) => Err(josh_error("not applicable to tree")),
         Op::Linear => Ok(tree),
         Op::Unsign => Ok(tree),
