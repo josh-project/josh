@@ -35,7 +35,7 @@ fn main() {
         glob(pattern).unwrap().map(|r| r.unwrap()).collect()
     }
 
-    fn glob_with_vec(pattern: &str, options: &glob::MatchOptions) -> Vec<PathBuf> {
+    fn glob_with_vec(pattern: &str, options: glob::MatchOptions) -> Vec<PathBuf> {
         glob_with(pattern, options).unwrap().map(|r| r.unwrap()).collect()
     }
 
@@ -305,12 +305,13 @@ fn main() {
         require_literal_separator: true,
         require_literal_leading_dot: true,
     };
-    assert_eq!(glob_with_vec("i/**/*a*", &options), Vec::<PathBuf>::new());
-    assert_eq!(glob_with_vec("i/**/*c*", &options), Vec::<PathBuf>::new());
-    assert_eq!(glob_with_vec("i/**/*d*", &options), Vec::<PathBuf>::new());
-    assert_eq!(glob_with_vec("i/**/*e*", &options), vec!(
-        PathBuf::from("i/qwe"),
-        PathBuf::from("i/qwe/eee")));
+    assert_eq!(glob_with_vec("i/**/*a*", options), Vec::<PathBuf>::new());
+    assert_eq!(glob_with_vec("i/**/*c*", options), Vec::<PathBuf>::new());
+    assert_eq!(glob_with_vec("i/**/*d*", options), Vec::<PathBuf>::new());
+    assert_eq!(
+        glob_with_vec("i/**/*e*", options),
+        vec!(PathBuf::from("i/qwe"), PathBuf::from("i/qwe/eee"))
+    );
 
     if env::consts::FAMILY != "windows" {
         assert_eq!(
