@@ -30,7 +30,9 @@
 
   $ josh-filter -s --squash "refs/tags/*" --author "New Author" --email "new@e.mail" --update refs/heads/filtered
   Warning: reference refs/heads/filtered wasn't updated
-  [1] :SQUASH=e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+  [1] :squash(
+  
+  )
 
   $ git log --graph --decorate --pretty=oneline refs/heads/filtered
   fatal: ambiguous argument 'refs/heads/filtered': unknown revision or path not in the working tree.
@@ -39,9 +41,13 @@
   [128]
   $ git tag tag_a 1d69b7d
   $ josh-filter -s --squash "refs/tags/*" :author=\"New\ Author\"\;\"new@e.mail\" --update refs/heads/filtered
-  [1] :SQUASH=e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
   [1] :author="New Author";"new@e.mail"
-  [2] :SQUASH=10d465cdf297e8062eed54204414414faa63671e
+  [1] :squash(
+  
+  )
+  [2] :squash(
+      1d69b7d2651f744be3416f2ad526aeccefb99310:"refs/tags/tag_a"
+  )
 
   $ git log --graph --decorate --pretty=oneline refs/heads/filtered
   * d8aa5a9937f4f0bd645dbc0b591bae5cd6b6d91b (tag: filtered/tag_a, filtered) refs/tags/tag_a
@@ -58,9 +64,17 @@
   * 0b4cf6c9efbbda1eada39fa9c1d21d2525b027bb (tag: tag_b) add file1
 
   $ josh-filter -s --squash "refs/tags/*" :author=\"New\ Author\"\;\"new@e.mail\" --update refs/heads/filtered
-  [1] :SQUASH=e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
-  [2] :SQUASH=10d465cdf297e8062eed54204414414faa63671e
-  [3] :SQUASH=dd8bdf1d78a6cb9ffc9e2a0644a8bf41de56ad36
+  [1] :squash(
+  
+  )
+  [2] :squash(
+      1d69b7d2651f744be3416f2ad526aeccefb99310:"refs/tags/tag_a"
+  )
+  [3] :squash(
+      0b4cf6c9efbbda1eada39fa9c1d21d2525b027bb:"refs/tags/tag_b"
+      1d69b7d2651f744be3416f2ad526aeccefb99310:"refs/tags/tag_a"
+      d8aa5a9937f4f0bd645dbc0b591bae5cd6b6d91b:"refs/tags/filtered/tag_a"
+  )
   [4] :author="New Author";"new@e.mail"
 
   $ git log --graph --decorate --pretty=oneline refs/heads/filtered
@@ -83,17 +97,42 @@
 
   $ git tag tag_c 975d4c4
 
-  $ josh-filter -s --squash "refs/tags/*" :author=\"New\ Author\"\;\"new@e.mail\" --update refs/heads/filtered
-  [1] :SQUASH=e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
-  [2] :SQUASH=10d465cdf297e8062eed54204414414faa63671e
-  [3] :SQUASH=dd8bdf1d78a6cb9ffc9e2a0644a8bf41de56ad36
-  [6] :SQUASH=b2a9a51df03600d3b5858fa7fca044741f88e521
-  [9] :author="New Author";"new@e.mail"
+  $ josh-filter -s --squash "refs/tags/*" :author=\"New\ Author\"\;\"new@e.mail\" --update refs/heads/filtered -p > filter.josh
+  $ cat filter.josh
+  :squash(
+      0b4cf6c9efbbda1eada39fa9c1d21d2525b027bb:"refs/tags/tag_b"
+      1d69b7d2651f744be3416f2ad526aeccefb99310:"refs/tags/tag_a"
+      5b1a753860ca124024f6dfb4fd018fe7df8beae4:"refs/tags/filtered/tag_a"
+      68dc45079334d83e5b61d2ceeda035b96da4c838:"refs/tags/filtered/filtered/tag_a"
+      96a731a4d64a8928e6af7abb2d425df3812b4197:"refs/tags/filtered/tag_b"
+      975d4c4975912729482cc864d321c5196a969271:"refs/tags/tag_c"
+  ):author="New Author";"new@e.mail"
+  $ josh-filter -s --file filter.josh --update refs/heads/filtered
+  [1] :squash(
+  
+  )
+  [2] :squash(
+      1d69b7d2651f744be3416f2ad526aeccefb99310:"refs/tags/tag_a"
+  )
+  [3] :squash(
+      0b4cf6c9efbbda1eada39fa9c1d21d2525b027bb:"refs/tags/tag_b"
+      1d69b7d2651f744be3416f2ad526aeccefb99310:"refs/tags/tag_a"
+      5b1a753860ca124024f6dfb4fd018fe7df8beae4:"refs/tags/filtered/tag_a"
+      68dc45079334d83e5b61d2ceeda035b96da4c838:"refs/tags/filtered/filtered/tag_a"
+      96a731a4d64a8928e6af7abb2d425df3812b4197:"refs/tags/filtered/tag_b"
+      975d4c4975912729482cc864d321c5196a969271:"refs/tags/tag_c"
+  )
+  [3] :squash(
+      0b4cf6c9efbbda1eada39fa9c1d21d2525b027bb:"refs/tags/tag_b"
+      1d69b7d2651f744be3416f2ad526aeccefb99310:"refs/tags/tag_a"
+      d8aa5a9937f4f0bd645dbc0b591bae5cd6b6d91b:"refs/tags/filtered/tag_a"
+  )
+  [6] :author="New Author";"new@e.mail"
 
   $ git log --graph --decorate --pretty=oneline refs/heads/filtered
-  *   9fe45cb2bead844630852ab338ecd8e073f8ba50 (tag: filtered/tag_a, filtered) refs/tags/tag_a
+  *   9fe45cb2bead844630852ab338ecd8e073f8ba50 (filtered) refs/tags/tag_a
   |\  
-  | * d6b88d4c1cc566b7f4d9b51353ec6f3204a93b81 (tag: filtered/tag_c) refs/tags/tag_c
+  | * d6b88d4c1cc566b7f4d9b51353ec6f3204a93b81 refs/tags/tag_c
   |/  
   * 96a731a4d64a8928e6af7abb2d425df3812b4197 (tag: filtered/tag_b) refs/tags/tag_b
 

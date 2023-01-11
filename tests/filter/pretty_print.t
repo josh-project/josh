@@ -1,5 +1,8 @@
   $ export TESTTMP=${PWD}
 
+  $ git init -q
+  $ git commit -q --allow-empty -m "empty"
+
   $ josh-filter -p :/a
   :/a
   $ josh-filter -p :/"a"

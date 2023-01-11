@@ -193,6 +193,21 @@ fn pretty2(op: &Op, indent: usize, compose: bool) -> String {
                 .collect::<Vec<_>>();
             format!(":replace(\n{}\n)", v.join("\n"))
         }
+        Op::Squash(Some(ids)) => {
+            let mut v = ids
+                .iter()
+                .map(|(oid, msg)| {
+                    format!(
+                        "{}{}:{}",
+                        " ".repeat(indent),
+                        &oid.to_string(),
+                        parse::quote(msg)
+                    )
+                })
+                .collect::<Vec<_>>();
+            v.sort();
+            format!(":squash(\n{}\n)", v.join("\n"))
+        }
         _ => spec2(op),
     }
 }
@@ -279,16 +294,13 @@ fn spec2(op: &Op) -> String {
         Op::Index => ":INDEX".to_string(),
         Op::Fold => ":FOLD".to_string(),
         Op::Squash(None) => ":SQUASH".to_string(),
-        Op::Squash(Some(hs)) => {
-            let mut v = hs
+        Op::Squash(Some(ids)) => {
+            let mut v = ids
                 .iter()
-                .map(|(x, y)| format!("{}:{}", x, y))
-                .collect::<Vec<String>>();
+                .map(|(oid, msg)| format!("{}:{}", oid, parse::quote(msg)))
+                .collect::<Vec<_>>();
             v.sort();
-            let s = v.join(",");
-            let s = git2::Oid::hash_object(git2::ObjectType::Blob, s.as_bytes())
-                .expect("hash_object filter");
-            format!(":SQUASH={}", s)
+            format!(":squash({})", v.join(","))
         }
         Op::Linear => ":linear".to_string(),
         Op::Unsign => ":unsign".to_string(),
