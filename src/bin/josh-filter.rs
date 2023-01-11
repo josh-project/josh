@@ -176,10 +176,9 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         let pattern = pattern.to_string();
         for reference in repo.references_glob(&pattern).unwrap() {
             let reference = reference?;
-            if let Some(target) = reference.target() {
-                ids.push((target, reference.name().unwrap().to_string()));
-                refs.push((reference.name().unwrap().to_string(), target));
-            }
+            let target = reference.peel_to_commit()?.id();
+            ids.push((target, reference.name().unwrap().to_string()));
+            refs.push((reference.name().unwrap().to_string(), target));
         }
         filterobj = josh::filter::chain(josh::filter::squash(Some(&ids)), filterobj);
     };

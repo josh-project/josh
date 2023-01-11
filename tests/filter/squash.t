@@ -39,7 +39,9 @@
   Use '--' to separate paths from revisions, like this:
   'git <command> [<revision>...] -- [<file>...]'
   [128]
-  $ git tag tag_a 1d69b7d
+
+This one tag is an annotated tag, to make sure those are handled as well
+  $ git tag -a tag_a -m "created a tag" 1d69b7d
   $ josh-filter -s --squash "refs/tags/*" :author=\"New\ Author\"\;\"new@e.mail\" --update refs/heads/filtered
   [1] :author="New Author";"new@e.mail"
   [1] :squash(
