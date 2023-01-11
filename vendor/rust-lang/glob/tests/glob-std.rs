@@ -15,7 +15,7 @@
 extern crate glob;
 extern crate tempdir;
 
-use glob::glob;
+use glob::{glob, glob_with};
 use std::env;
 use std::fs;
 use std::path::PathBuf;
@@ -33,6 +33,10 @@ fn main() {
 
     fn glob_vec(pattern: &str) -> Vec<PathBuf> {
         glob(pattern).unwrap().map(|r| r.unwrap()).collect()
+    }
+
+    fn glob_with_vec(pattern: &str, options: glob::MatchOptions) -> Vec<PathBuf> {
+        glob_with(pattern, options).unwrap().map(|r| r.unwrap()).collect()
     }
 
     let root = TempDir::new("glob-tests");
@@ -305,6 +309,27 @@ fn main() {
     assert_eq!(
         glob_vec("bbb/specials/[]]"),
         vec!(PathBuf::from("bbb/specials/]"))
+    );
+
+    mk_file("i", true);
+    mk_file("i/qwe", true);
+    mk_file("i/qwe/.aaa", false);
+    mk_file("i/qwe/.bbb", true);
+    mk_file("i/qwe/.bbb/ccc", false);
+    mk_file("i/qwe/.bbb/.ddd", false);
+    mk_file("i/qwe/eee", false);
+
+    let options = glob::MatchOptions {
+        case_sensitive: false,
+        require_literal_separator: true,
+        require_literal_leading_dot: true,
+    };
+    assert_eq!(glob_with_vec("i/**/*a*", options), Vec::<PathBuf>::new());
+    assert_eq!(glob_with_vec("i/**/*c*", options), Vec::<PathBuf>::new());
+    assert_eq!(glob_with_vec("i/**/*d*", options), Vec::<PathBuf>::new());
+    assert_eq!(
+        glob_with_vec("i/**/*e*", options),
+        vec!(PathBuf::from("i/qwe"), PathBuf::from("i/qwe/eee"))
     );
 
     if env::consts::FAMILY != "windows" {
