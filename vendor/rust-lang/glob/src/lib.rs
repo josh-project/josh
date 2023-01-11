@@ -178,7 +178,15 @@ pub fn glob_with(pattern: &str, options: MatchOptions) -> Result<Paths, PatternE
     #[cfg(windows)]
     fn check_windows_verbatim(p: &Path) -> bool {
         match p.components().next() {
-            Some(Component::Prefix(ref p)) => p.kind().is_verbatim(),
+            Some(Component::Prefix(ref p)) => {
+                // Allow VerbatimDisk paths. std canonicalize() generates them, and they work fine
+                p.kind().is_verbatim()
+                    && if let std::path::Prefix::VerbatimDisk(_) = p.kind() {
+                        false
+                    } else {
+                        true
+                    }
+            }
             _ => false,
         }
     }
