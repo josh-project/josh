@@ -20,6 +20,7 @@ filter_spec = { (
     filter_group
   | filter_rev
   | filter_replace
+  | filter_squash
   | filter_presub
   | filter_subdir
   | filter_nop
@@ -48,6 +49,15 @@ filter_replace = {
     ~ NEWLINE*
     ~ (string ~ ":" ~ string)?
     ~ (CMD_SEP+ ~ (string ~ ":" ~ string))*
+    ~ NEWLINE*
+    ~ ")"
+}
+
+filter_squash = {
+    CMD_START ~ "squash" ~ "("
+    ~ NEWLINE*
+    ~ (argument ~ ":" ~ string)?
+    ~ (CMD_SEP+ ~ (argument ~ ":" ~ string))*
     ~ NEWLINE*
     ~ ")"
 }
