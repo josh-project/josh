@@ -28,7 +28,7 @@
 
   $ git merge -q branch2 --no-ff
 
-  $ josh-filter -s --squash "refs/tags/*" --author "New Author" --email "new@e.mail" --update refs/heads/filtered
+  $ josh-filter -s --squash-pattern "refs/tags/*" --author "New Author" --email "new@e.mail" --update refs/heads/filtered
   Warning: reference refs/heads/filtered wasn't updated
   [1] :squash(
   
@@ -42,7 +42,7 @@
 
 This one tag is an annotated tag, to make sure those are handled as well
   $ git tag -a tag_a -m "created a tag" 1d69b7d
-  $ josh-filter -s --squash "refs/tags/*" :author=\"New\ Author\"\;\"new@e.mail\" --update refs/heads/filtered
+  $ josh-filter -s --squash-pattern "refs/tags/*" :author=\"New\ Author\"\;\"new@e.mail\" --update refs/heads/filtered
   [1] :author="New Author";"new@e.mail"
   [1] :squash(
   
@@ -65,7 +65,7 @@ This one tag is an annotated tag, to make sure those are handled as well
   |/  
   * 0b4cf6c9efbbda1eada39fa9c1d21d2525b027bb (tag: tag_b) add file1
 
-  $ josh-filter -s --squash "refs/tags/*" :author=\"New\ Author\"\;\"new@e.mail\" --update refs/heads/filtered
+  $ josh-filter -s --squash-pattern "refs/tags/*" :author=\"New\ Author\"\;\"new@e.mail\" --update refs/heads/filtered
   [1] :squash(
   
   )
@@ -99,7 +99,20 @@ This one tag is an annotated tag, to make sure those are handled as well
 
   $ git tag tag_c 975d4c4
 
-  $ josh-filter -s --squash "refs/tags/*" :author=\"New\ Author\"\;\"new@e.mail\" --update refs/heads/filtered -p > filter.josh
+  $ git show-ref | grep refs/heads > squashlist
+  $ cat squashlist
+  86871b8775ad3baca86484337d1072aa1d386f7e refs/heads/branch2
+  5b1a753860ca124024f6dfb4fd018fe7df8beae4 refs/heads/filtered
+  1d69b7d2651f744be3416f2ad526aeccefb99310 refs/heads/master
+  $ josh-filter -s --squash-file squashlist :author=\"John\ Doe\"\;\"new@e.mail\" --update refs/heads/filtered -p > filter.josh
+  $ cat filter.josh
+  :squash(
+      1d69b7d2651f744be3416f2ad526aeccefb99310:"refs/heads/master"
+      5b1a753860ca124024f6dfb4fd018fe7df8beae4:"refs/heads/filtered"
+      86871b8775ad3baca86484337d1072aa1d386f7e:"refs/heads/branch2"
+  ):author="John Doe";"new@e.mail"
+
+  $ josh-filter -s --squash-pattern "refs/tags/*" :author=\"New\ Author\"\;\"new@e.mail\" --update refs/heads/filtered -p > filter.josh
   $ cat filter.josh
   :squash(
       0b4cf6c9efbbda1eada39fa9c1d21d2525b027bb:"refs/tags/tag_b"
