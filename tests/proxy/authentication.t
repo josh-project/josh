@@ -137,8 +137,12 @@
   |   |-- info
   |   |   `-- exclude
   |   |-- objects
+  |   |   |-- 23
+  |   |   |   `-- 212c7a0bc8290223561c459b535de9fee6adb3
   |   |   |-- 3d
   |   |   |   `-- 77ff51363c9825cc2a221fc0ba5a883a1a2c72
+  |   |   |-- 4b
+  |   |   |   `-- 825dc642cb6eb9a060e54bf8d69288fbee4904
   |   |   |-- a0
   |   |   |   `-- 24003ee1acc6bf70318a46e7b6df651b9dc246
   |   |   |-- bb
@@ -154,8 +158,10 @@
   |       |       `-- real_repo.git
   |       |           |-- HEAD
   |       |           `-- refs
-  |       |               `-- heads
-  |       |                   `-- master
+  |       |               |-- heads
+  |       |               |   `-- master
+  |       |               `-- josh
+  |       |                   `-- meta
   |       `-- tags
   `-- overlay
       |-- HEAD
@@ -164,6 +170,8 @@
       |-- info
       |   `-- exclude
       |-- objects
+      |   |-- 23
+      |   |   `-- 212c7a0bc8290223561c459b535de9fee6adb3
       |   |-- 91
       |   |   `-- 0a3d87d1a2d548fdb3d188ffb65bb9c6bd1679
       |   |-- f2
@@ -175,4 +183,4 @@
           |-- namespaces
           `-- tags
   
-  32 directories, 19 files
+  36 directories, 23 files
