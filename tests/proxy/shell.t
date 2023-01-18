@@ -27,7 +27,7 @@
         --filter-prefix <filter-prefix>
             Filter to be prefixed to all queries of this instance
     -h, --help
-            Print help information
+            Print help
 
   $ ${TARGET_DIR}/debug/josh-proxy --port=8002 --local=../../tmp --remote=http://localhost:8001 > proxy.out 2>&1 &
   $ sleep 1
