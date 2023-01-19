@@ -35,9 +35,14 @@ fn make_app() -> clap::Command {
                 .default_value("FILTERED_HEAD"),
         )
         .arg(
-            clap::Arg::new("squash")
+            clap::Arg::new("squash-pattern")
                 .help("Produce a history that contains only commits pointed to by references matching the given pattern")
-                .long("squash")
+                .long("squash-pattern")
+        )
+        .arg(
+            clap::Arg::new("squash-file")
+                .help("Produce a history that contains only commits listed in the given file")
+                .long("squash-file")
         )
         .arg(
             clap::Arg::new("author")
@@ -172,13 +177,30 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         filterobj = josh::filter::chain(josh::filter::squash(None), filterobj);
     }
 
-    if let Some(pattern) = args.get_one::<String>("squash") {
+    if let Some(pattern) = args.get_one::<String>("squash-pattern") {
         let pattern = pattern.to_string();
         for reference in repo.references_glob(&pattern).unwrap() {
             let reference = reference?;
             let target = reference.peel_to_commit()?.id();
             ids.push((target, reference.name().unwrap().to_string()));
             refs.push((reference.name().unwrap().to_string(), target));
+        }
+        filterobj = josh::filter::chain(josh::filter::squash(Some(&ids)), filterobj);
+    };
+
+    if let Some(filename) = args.get_one::<String>("squash-file") {
+        let reflist = read_to_string(filename)?;
+
+        for line in reflist.lines() {
+            let split = line.split(" ").collect::<Vec<_>>();
+            if let [sha, name] = split.as_slice() {
+                let target = git2::Oid::from_str(sha)?;
+                let target = repo.find_object(target, None)?.peel_to_commit()?.id();
+                ids.push((target, name.to_string()));
+                refs.push((name.to_string(), target));
+            } else if split.len() != 0 {
+                eprintln!("Warning: malformed line: {:?}", line);
+            }
         }
         filterobj = josh::filter::chain(josh::filter::squash(Some(&ids)), filterobj);
     };
