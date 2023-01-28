@@ -15,7 +15,6 @@ members = ["josh-proxy", "josh-ui", "josh-ssh-shell", "josh-rpc", ".", "hyper_cg
 [dependencies]
 backtrace = "0.3.67"
 bitvec = "1.0.1"
-chrono = "0.4.23"
 clap = "4.0.29"
 defer= "0.1.0"
 env_logger = "0.10.0"
@@ -26,7 +25,6 @@ handlebars = "4.3.5"
 hex = "0.4.3"
 indoc = "1.0.7"
 itertools = "0.10.5"
-juniper = "0.15.10"
 lazy_static = "1.4.0"
 log = "0.4.17"
 percent-encoding = "2.2.0"
@@ -42,6 +40,16 @@ sled = "0.34.7"
 strfmt = "0.2.2"
 toml = "0.5.10"
 tracing = "0.1.37"
+
+[dependencies.juniper]
+default-features = false
+version = "0.15.10"
+features = []
+
+[dependencies.chrono]
+default-features = false
+features = ["alloc", "std"]
+version = "0.4.23"
 
 [profile.release]
 lto = true
