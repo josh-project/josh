@@ -29,9 +29,9 @@ impl std::convert::TryFrom<String> for Filter {
     }
 }
 
-impl Into<String> for Filter {
-    fn into(self) -> String {
-        spec(self)
+impl From<Filter> for String {
+    fn from(val: Filter) -> Self {
+        spec(val)
     }
 }
 
@@ -447,7 +447,7 @@ fn apply_to_commit2(
                     } else {
                         Op::Rev(f2)
                     };
-                    if let Some(start) = apply_to_commit2(&op, &commit, transaction)? {
+                    if let Some(start) = apply_to_commit2(&op, commit, transaction)? {
                         transaction.insert(filter, commit.id(), start, true);
                         return Ok(Some(start));
                     } else {
@@ -459,10 +459,10 @@ fn apply_to_commit2(
             apply(transaction, nf, commit.tree()?)?
         }
         Op::Squash(Some(ids)) => {
-            if let Some(_) = ids.get(&commit.id()) {
+            if ids.get(&commit.id()).is_some() {
                 commit.tree()?
             } else {
-                for parent in commit.parents() {
+                if let Some(parent) = commit.parents().next() {
                     return Ok(
                         if let Some(fparent) = transaction.get(filter, parent.id()) {
                             Some(history::drop_commit(
@@ -679,12 +679,12 @@ fn apply_to_commit2(
     let filtered_parent_ids = some_or!(filtered_parent_ids, { return Ok(None) });
 
     let author = match to_op(filter) {
-        Op::Author(author, email) => Some((author.clone(), email.clone())),
+        Op::Author(author, email) => Some((author, email)),
         _ => None,
     };
 
     let message = match to_op(filter) {
-        Op::Squash(Some(ids)) => ids.get(&commit.id()).map(|x| x.clone()),
+        Op::Squash(Some(ids)) => ids.get(&commit.id()).cloned(),
         _ => None,
     };
 
@@ -728,7 +728,7 @@ fn apply2<'a>(
         Op::RegexReplace(replacements) => {
             let mut t = tree;
             for (regex, replacement) in replacements {
-                t = tree::regex_replace(t.id(), &regex, &replacement, transaction)?;
+                t = tree::regex_replace(t.id(), regex, replacement, transaction)?;
             }
             Ok(t)
         }
@@ -949,7 +949,7 @@ pub fn compute_warnings<'a>(
         let workspace_filter = &tree::get_blob(
             transaction.repo(),
             &tree,
-            &path.join(&Path::new("workspace.josh")),
+            &path.join(Path::new("workspace.josh")),
         );
         if let Ok(res) = parse(workspace_filter) {
             filter = res;

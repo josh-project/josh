@@ -118,7 +118,7 @@ fn run_command(path: &Path, cmd: &[&str]) -> String {
 
     let output = "";
 
-    let (stdout, stderr, _) = shell.command(&cmd);
+    let (stdout, stderr, _) = shell.command(cmd);
     let output = format!(
         "{}\n\n{}:\nstdout:\n{}\n\nstderr:{}\n",
         output,
@@ -293,7 +293,7 @@ pub fn refresh_known_filters(
                 upstream_repo,
             ) {
                 let mut u = filter_refs(
-                    &transaction_overlay,
+                    transaction_overlay,
                     filter::parse(filter_spec)?,
                     &[from],
                     filter::empty(),
@@ -321,7 +321,7 @@ pub fn run(repo_path: &std::path::Path, do_gc: bool) -> JoshResult<()> {
     transaction_overlay
         .repo()
         .odb()?
-        .add_disk_alternate(&repo_path.join("mirror").join("objects").to_str().unwrap())?;
+        .add_disk_alternate(repo_path.join("mirror").join("objects").to_str().unwrap())?;
 
     info!(
         "{}",
@@ -329,7 +329,7 @@ pub fn run(repo_path: &std::path::Path, do_gc: bool) -> JoshResult<()> {
             transaction_mirror.repo().path(),
             &["git", "count-objects", "-v"]
         )
-        .replace("\n", "  ")
+        .replace('\n', "  ")
     );
     info!(
         "{}",
@@ -337,12 +337,12 @@ pub fn run(repo_path: &std::path::Path, do_gc: bool) -> JoshResult<()> {
             transaction_overlay.repo().path(),
             &["git", "count-objects", "-v"]
         )
-        .replace("\n", "  ")
+        .replace('\n', "  ")
     );
-    if !std::env::var("JOSH_NO_DISCOVER").is_ok() {
+    if std::env::var("JOSH_NO_DISCOVER").is_err() {
         housekeeping::discover_filter_candidates(&transaction_mirror)?;
     }
-    if !std::env::var("JOSH_NO_REFRESH").is_ok() {
+    if std::env::var("JOSH_NO_REFRESH").is_err() {
         refresh_known_filters(&transaction_mirror, &transaction_overlay)?;
     }
     if do_gc {

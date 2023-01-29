@@ -220,7 +220,7 @@ fn common_pre(filters: &Vec<Filter>) -> Option<(Filter, Vec<Filter>)> {
     for f in filters {
         if let Op::Chain(a, b) = to_op(*f) {
             rest.push(b);
-            if c == None {
+            if c.is_none() {
                 c = Some(a);
             }
             if c != Some(a) {
@@ -240,7 +240,7 @@ fn common_post(filters: &Vec<Filter>) -> Option<(Filter, Vec<Filter>)> {
         let (a, b) = last_chain(to_filter(Op::Nop), *f);
         {
             rest.push(a);
-            if c == None {
+            if c.is_none() {
                 c = Some(b);
             }
             if c != Some(b) {

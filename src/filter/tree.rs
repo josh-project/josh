@@ -212,9 +212,7 @@ fn replace_child<'a>(
 ) -> JoshResult<git2::Tree<'a>> {
     let full_tree_id = {
         let mut builder = repo.treebuilder(Some(full_tree))?;
-        if oid == git2::Oid::zero() {
-            builder.remove(child).ok();
-        } else if oid == empty_id() {
+        if oid == git2::Oid::zero() || oid == empty_id() {
             builder.remove(child).ok();
         } else {
             builder.insert(child, oid, mode).ok();
@@ -296,8 +294,10 @@ pub fn diff_paths(
 
         for entry in tree1.iter() {
             let name = entry.name().ok_or_else(|| josh_error("no name"))?;
-            if let Some(_) = tree2.get_name(entry.name().ok_or_else(|| josh_error("no name"))?) {
-            } else {
+            if tree2
+                .get_name(entry.name().ok_or_else(|| josh_error("no name"))?)
+                .is_none()
+            {
                 r.append(&mut diff_paths(
                     repo,
                     entry.id(),
@@ -385,14 +385,14 @@ pub fn overlay(
 }
 
 pub fn pathline(b: &str) -> JoshResult<String> {
-    for line in b.split('\n') {
-        let l = line.trim_start_matches('#');
-        if l.is_empty() {
-            break;
-        }
-        return Ok(l.to_string());
+    match b
+        .split('\n')
+        .next()
+        .map(|line| line.trim_start_matches('#'))
+    {
+        Some(line) if !line.is_empty() => Ok(line.to_string()),
+        Some(_) | None => Err(josh_error("pathline")),
     }
-    Err(josh_error("pathline"))
 }
 
 const FILE_FILTER_SIZE: usize = 64;
@@ -533,20 +533,20 @@ pub fn trigram_index<'a>(
         if entry.kind() == Some(git2::ObjectType::Tree) {
             let s = trigram_index(transaction, transaction.repo().find_tree(entry.id())?)?;
 
-            for a in 0..arrs_sub.len() {
+            for (a, arr_sub) in arrs_sub.iter_mut().enumerate() {
                 let b = get_blob(repo, &s, Path::new(&format!("OWN{}", a)));
                 let hd = hex::decode(b.lines().collect::<Vec<_>>().join(""))?;
-                let new_size = std::cmp::max(hd.len(), arrs_sub[a].len());
-                arrs_sub[a].resize(new_size, 0);
-                for (a, b) in arrs_sub[a].iter_mut().zip(hd.iter()) {
+                let new_size = std::cmp::max(hd.len(), arr_sub.len());
+                arr_sub.resize(new_size, 0);
+                for (a, &b) in arr_sub.iter_mut().zip(hd.iter()) {
                     *a |= b;
                 }
 
                 let b = get_blob(repo, &s, Path::new(&format!("SUB{}", a)));
                 let hd = hex::decode(b.lines().collect::<Vec<_>>().join(""))?;
-                let new_size = std::cmp::max(hd.len(), arrs_sub[a].len());
-                arrs_sub[a].resize(new_size, 0);
-                for (a, b) in arrs_sub[a].iter_mut().zip(hd.iter()) {
+                let new_size = std::cmp::max(hd.len(), arr_sub.len());
+                arr_sub.resize(new_size, 0);
+                for (a, &b) in arr_sub.iter_mut().zip(hd.iter()) {
                     *a |= b;
                 }
             }
@@ -613,14 +613,14 @@ pub fn search_candidates(
     searchstring: &str,
     max_ord: usize,
 ) -> JoshResult<Vec<String>> {
-    let ff = make_dir_trigram_filter(&searchstring, FILE_FILTER_SIZE, &[2]);
+    let ff = make_dir_trigram_filter(searchstring, FILE_FILTER_SIZE, &[2]);
 
     let mut results = vec![];
 
     for ord in 0..max_ord {
         let dir_filter_size = usize::pow(4, 3 + ord as u32);
-        let df = make_dir_trigram_filter(&searchstring, dir_filter_size, &[0, 1, 2]);
-        trigram_search(&transaction, tree.clone(), "", &df, &ff, &mut results, ord)?;
+        let df = make_dir_trigram_filter(searchstring, dir_filter_size, &[0, 1, 2]);
+        trigram_search(transaction, tree.clone(), "", &df, &ff, &mut results, ord)?;
     }
     Ok(results)
 }
@@ -634,7 +634,7 @@ pub fn search_matches(
     let mut results = vec![];
 
     for c in candidates {
-        let b = get_blob(transaction.repo(), tree, &Path::new(&c));
+        let b = get_blob(transaction.repo(), tree, Path::new(&c));
 
         let mut bresults = vec![];
 
@@ -644,7 +644,7 @@ pub fn search_matches(
             }
         }
 
-        if bresults.len() != 0 {
+        if !bresults.is_empty() {
             results.push((c.to_owned(), bresults));
         }
     }
@@ -679,7 +679,7 @@ pub fn trigram_search<'a>(
         }
     };
 
-    let dmatch = if hd.len() != 0 {
+    let dmatch = if !hd.is_empty() {
         rs_tracing::trace_scoped!("dmatch own");
         let mut dmatch = true;
         for (a, b) in dir_filter.iter().zip(hd.iter()) {
@@ -695,16 +695,16 @@ pub fn trigram_search<'a>(
 
     if dmatch {
         rs_tracing::trace_scoped!("search blobs");
-        let b = get_blob(&repo, &tree, &Path::new(&format!("BLOBS{}", ord)));
+        let b = get_blob(repo, &tree, Path::new(&format!("BLOBS{}", ord)));
 
         let mut filename = None;
         let mut skip = false;
 
         for line in b.lines() {
-            if line == "" {
+            if line.is_empty() {
                 skip = false;
                 filename = None;
-            } else if filename == None {
+            } else if filename.is_none() {
                 filename = Some(line);
             } else if !skip {
                 let hd = hex::decode(&line[..FILE_FILTER_SIZE * 2])?;
@@ -722,7 +722,7 @@ pub fn trigram_search<'a>(
                         results.push(format!(
                             "{}{}{}",
                             root,
-                            if root == "" { "" } else { "/" },
+                            if root.is_empty() { "" } else { "/" },
                             filename
                         ));
                         skip = true;
@@ -779,9 +779,9 @@ pub fn trigram_search<'a>(
                 let mut results = vec![];
 
                 trigram_search(
-                    &transaction,
+                    transaction,
                     s,
-                    &format!("{}{}{}", root, if root == "" { "" } else { "/" }, name),
+                    &format!("{}{}{}", root, if root.is_empty() { "" } else { "/" }, name),
                     dir_filter,
                     file_filter,
                     &mut results,
@@ -791,13 +791,10 @@ pub fn trigram_search<'a>(
                 results
             },
         )
-        .reduce(
-            || vec![],
-            |mut r, mut b| {
-                r.append(&mut b);
-                r
-            },
-        );
+        .reduce(std::vec::Vec::new, |mut r, mut b| {
+            r.append(&mut b);
+            r
+        });
     results.append(&mut r);
     Ok(())
 }

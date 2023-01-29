@@ -64,7 +64,7 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> JoshResult<Op> {
         }
         Rule::filter_nop => Ok(Op::Nop),
         Rule::filter_subdir => Ok(Op::Subdir(
-            Path::new(&unquote(&pair.into_inner().next().unwrap().as_str())).to_owned(),
+            Path::new(&unquote(pair.into_inner().next().unwrap().as_str())).to_owned(),
         )),
         Rule::filter_presub => {
             let mut inner = pair.into_inner();
@@ -117,9 +117,7 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> JoshResult<Op> {
                 .into_inner()
                 .map(|x| unquote(x.as_str()))
                 .tuples()
-                .map(|(regex, replacement)| {
-                    Ok((regex::Regex::new(&regex)?, replacement.to_string()))
-                })
+                .map(|(regex, replacement)| Ok((regex::Regex::new(&regex)?, replacement)))
                 .collect::<JoshResult<_>>()?;
 
             Ok(Op::RegexReplace(replacements))
@@ -228,7 +226,7 @@ fn unquote(s: &str) -> String {
     if let Ok(serde_json::Value::String(s)) = serde_json::from_str(s) {
         return s;
     }
-    return s.to_string();
+    s.to_string()
 }
 
 // Encode string as json if it contains any chars reserved
@@ -277,7 +275,7 @@ pub fn get_comments(filter_spec: &str) -> JoshResult<String> {
     if let Ok(r) = Grammar::parse(Rule::workspace_file, filter_spec) {
         let mut r = r;
         let r = r.next().unwrap();
-        for pair in r.into_inner() {
+        if let Some(pair) = r.into_inner().next() {
             return match pair.as_rule() {
                 Rule::workspace_comments => Ok(pair.as_str().to_string()),
                 Rule::compose => Ok("".to_string()),

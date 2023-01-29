@@ -355,7 +355,7 @@ impl Revision {
             })
             .collect();
 
-        return Ok(Some(df));
+        Ok(Some(df))
     }
 
     fn file(&self, path: String, context: &Context) -> FieldResult<Option<Path>> {
@@ -456,7 +456,7 @@ impl Revision {
             };
             r.push(SearchResult { path, matches });
         }
-        return Ok(Some(r));
+        Ok(Some(r))
         /* println!("\n Search took {:?}", duration); */
     }
 }
@@ -557,7 +557,7 @@ impl Markers {
         } else {
             let t = transaction.repo().find_commit(self.commit_id)?.tree()?;
             let o = filter::tree::original_path(&transaction, self.filter, t, &self.path)?;
-            marker_path(&commit, &self.topic).join(&o)
+            marker_path(&commit, &self.topic).join(o)
         };
 
         let prev = if let Ok(e) = tree.get_path(&path) {
@@ -673,7 +673,7 @@ impl Path {
 
     fn dir(&self, relative: String) -> FieldResult<Path> {
         Ok(Path {
-            path: normalize_path(&self.path.join(&relative)),
+            path: normalize_path(&self.path.join(relative)),
             commit_id: self.commit_id,
             filter: self.filter,
             tree: self.tree,
@@ -855,7 +855,7 @@ fn marker_path(commit: &str, topic: &str) -> std::path::PathBuf {
         .join(&commit[..2])
         .join(&commit[2..5])
         .join(&commit[5..9])
-        .join(&commit)
+        .join(commit)
 }
 
 #[derive(juniper::GraphQLInputObject)]
@@ -897,7 +897,7 @@ impl RepositoryMut {
         if let Ok(mut meta_add) = context.meta_add.lock() {
             for mm in add {
                 let path = mm.path;
-                let path = &marker_path(&commit, &topic).join(&path);
+                let path = &marker_path(&commit, &topic).join(path);
                 let mut lines = meta_add.get(path).unwrap_or(&vec![]).clone();
 
                 let mm = mm

@@ -127,13 +127,13 @@ pub fn parse_args() -> josh::JoshResult<Args> {
     let remote = args
         .get_many::<String>("remote")
         .ok_or(josh_error("no remote specified"))?
-        .map(|s| s.clone())
+        .cloned()
         .collect::<Vec<_>>();
     let remote = parse_remotes(&remote)?;
 
     let local = args
         .get_one::<String>("local")
-        .ok_or(josh_error(&"missing local directory"))?
+        .ok_or(josh_error("missing local directory"))?
         .clone();
 
     let poll_user = args.get_one::<String>("poll").map(String::clone);
@@ -145,7 +145,7 @@ pub fn parse_args() -> josh::JoshResult<Args> {
 
     let filter_prefix = args.get_one::<String>("filter-prefix").map(String::clone);
 
-    return Ok(Args {
+    Ok(Args {
         remote,
         local,
         poll_user,
@@ -156,7 +156,7 @@ pub fn parse_args() -> josh::JoshResult<Args> {
         cache_duration,
         static_resource_proxy_target,
         filter_prefix,
-    });
+    })
 }
 
 pub fn parse_args_or_exit(code: i32) -> Args {
