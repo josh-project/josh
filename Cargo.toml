@@ -15,7 +15,7 @@ members = ["josh-proxy", "josh-ui", "josh-ssh-shell", "josh-rpc", ".", "hyper_cg
 [dependencies]
 backtrace = "0.3.67"
 bitvec = "1.0.1"
-clap = "4.0.29"
+clap = "4.1.4"
 defer= "0.1.0"
 env_logger = "0.10.0"
 git-version = "0.3.5"
