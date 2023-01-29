@@ -51,4 +51,4 @@ features = ["expose-test-schema"]
 
 [dependencies.git2]
 default-features = false
-version = "0.15.0"
+version = "0.16.1"
