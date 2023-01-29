@@ -5,5 +5,5 @@ edition = "2018"
 
 [dependencies]
 serde = { version = "1.0.150", features = ["std", "derive"] }
-tokio = { version = "1.23.0", features = ["fs", "io-std"] }
+tokio = { version = "1.24.2", features = ["fs", "io-std"] }
 libc = "0.2.138"
