@@ -84,8 +84,8 @@ pub async fn do_cgi(
         let mut line = String::new();
         while stdout.read_line(&mut line).await.unwrap_or(0) > 0 {
             line = line
-                .trim_end_matches("\n")
-                .trim_end_matches("\r")
+                .trim_end_matches('\n')
+                .trim_end_matches('\r')
                 .to_owned();
 
             let l: Vec<&str> = line.splitn(2, ": ").collect();
@@ -95,7 +95,7 @@ pub async fn do_cgi(
             if l[0] == "Status" {
                 response = response.status(
                     hyper::StatusCode::from_u16(
-                        u16::from_str(l[1].split(" ").next().unwrap_or("500")).unwrap_or(500),
+                        u16::from_str(l[1].split(' ').next().unwrap_or("500")).unwrap_or(500),
                     )
                     .unwrap_or(hyper::StatusCode::INTERNAL_SERVER_ERROR),
                 );
@@ -116,7 +116,7 @@ pub async fn do_cgi(
         return (response, err_output);
     }
 
-    return (error_response(), err_output);
+    (error_response(), err_output)
 }
 
 fn setup_cmd(cmd: &mut Command, req: &Request<hyper::Body>) {
@@ -138,24 +138,21 @@ fn setup_cmd(cmd: &mut Command, req: &Request<hyper::Body>) {
             "CONTENT_TYPE",
             req.headers()
                 .get(hyper::header::CONTENT_TYPE)
-                .map(|x| x.to_str().ok())
-                .flatten()
+                .and_then(|x| x.to_str().ok())
                 .unwrap_or_default(),
         )
         .env(
             "HTTP_CONTENT_ENCODING",
             req.headers()
                 .get(hyper::header::CONTENT_ENCODING)
-                .map(|x| x.to_str().ok())
-                .flatten()
+                .and_then(|x| x.to_str().ok())
                 .unwrap_or_default(),
         )
         .env(
             "CONTENT_LENGTH",
             req.headers()
                 .get(hyper::header::CONTENT_LENGTH)
-                .map(|x| x.to_str().ok())
-                .flatten()
+                .and_then(|x| x.to_str().ok())
                 .unwrap_or_default(),
         );
 }

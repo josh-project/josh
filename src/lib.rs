@@ -58,7 +58,7 @@ impl Change {
             author: Default::default(),
             label: Default::default(),
             id: Default::default(),
-            commit: commit,
+            commit,
         }
     }
 }
@@ -82,15 +82,15 @@ impl std::convert::TryFrom<String> for Oid {
     }
 }
 
-impl Into<String> for Oid {
-    fn into(self) -> String {
-        self.0.to_string()
+impl From<Oid> for String {
+    fn from(val: Oid) -> Self {
+        val.0.to_string()
     }
 }
 
-impl Into<git2::Oid> for Oid {
-    fn into(self) -> git2::Oid {
-        self.0
+impl From<Oid> for git2::Oid {
+    fn from(val: Oid) -> Self {
+        val.0
     }
 }
 
@@ -129,11 +129,11 @@ pub fn from_ns(path: &str) -> String {
 }
 
 pub fn to_filtered_ref(upstream_repo: &str, filter_spec: &str) -> String {
-    return format!(
+    format!(
         "josh/filtered/{}/{}",
         to_ns(upstream_repo),
         to_ns(filter_spec)
-    );
+    )
 }
 
 #[derive(Debug, Clone)]
@@ -210,7 +210,7 @@ pub fn get_change_id(commit: &git2::Commit, sha: git2::Oid) -> Change {
             change.label = Some(line.replacen("Change: ", "", 1));
         }
     }
-    return change;
+    change
 }
 
 #[tracing::instrument(skip(transaction))]
@@ -270,7 +270,7 @@ pub fn filter_refs(
     tracing::trace!("filter_refs");
 
     for k in refs {
-        let oid = ok_or!(filter_commit(&transaction, filterobj, k.1, permissions), {
+        let oid = ok_or!(filter_commit(transaction, filterobj, k.1, permissions), {
             tracing::event!(
                 tracing::Level::WARN,
                 msg = "filter_refs: Can't filter reference",
@@ -297,11 +297,10 @@ pub fn update_refs(
         }
     }
 
-    if !headref.is_empty() {
-        if head_oid == git2::Oid::zero() {
-            updated.clear();
-        }
+    if !headref.is_empty() && head_oid == git2::Oid::zero() {
+        updated.clear();
     }
+
     for (to_refname, filter_commit) in updated.iter() {
         if *filter_commit != git2::Oid::zero() {
             ok_or!(

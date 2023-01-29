@@ -62,10 +62,8 @@ pub async fn parse_req<S: ScalarValue>(
             let content_type = req
                 .headers()
                 .get(header::CONTENT_TYPE)
-                .map(|x| HeaderValue::to_str(x).ok())
-                .flatten()
-                .map(|x| x.split(";").next())
-                .flatten();
+                .and_then(|x| HeaderValue::to_str(x).ok())
+                .and_then(|x| x.split(';').next());
             match content_type {
                 Some("application/json") => parse_post_json_req(req.into_body()).await,
                 Some("application/graphql") => parse_post_graphql_req(req.into_body()).await,
@@ -287,13 +285,13 @@ enum GraphQLRequestError {
 }
 
 impl fmt::Display for GraphQLRequestError {
-    fn fmt(&self, mut f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            GraphQLRequestError::BodyHyper(ref err) => fmt::Display::fmt(err, &mut f),
-            GraphQLRequestError::BodyUtf8(ref err) => fmt::Display::fmt(err, &mut f),
-            GraphQLRequestError::BodyJSONError(ref err) => fmt::Display::fmt(err, &mut f),
-            GraphQLRequestError::Variables(ref err) => fmt::Display::fmt(err, &mut f),
-            GraphQLRequestError::Invalid(ref err) => fmt::Display::fmt(err, &mut f),
+            GraphQLRequestError::BodyHyper(ref err) => fmt::Display::fmt(err, f),
+            GraphQLRequestError::BodyUtf8(ref err) => fmt::Display::fmt(err, f),
+            GraphQLRequestError::BodyJSONError(ref err) => fmt::Display::fmt(err, f),
+            GraphQLRequestError::Variables(ref err) => fmt::Display::fmt(err, f),
+            GraphQLRequestError::Invalid(ref err) => fmt::Display::fmt(err, f),
         }
     }
 }

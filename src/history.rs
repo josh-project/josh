@@ -578,7 +578,7 @@ pub fn drop_commit<'a>(
     transaction: &cache::Transaction,
     filter: filter::Filter,
 ) -> JoshResult<git2::Oid> {
-    let r = if let Some(id) = filtered_parent_ids.iter().next() {
+    let r = if let Some(id) = filtered_parent_ids.first() {
         *id
     } else {
         git2::Oid::zero()

@@ -42,14 +42,14 @@ impl Handle {
         let u = josh::ok_or!(String::from_utf8(line[6..].to_vec()), {
             return Ok(("".to_string(), "".to_string()));
         });
-        let decoded = josh::ok_or!(base64::decode(&u), {
+        let decoded = josh::ok_or!(base64::decode(u), {
             return Ok(("".to_string(), "".to_string()));
         });
         let s = josh::ok_or!(String::from_utf8(decoded), {
             return Ok(("".to_string(), "".to_string()));
         });
         let (username, password) = s.as_str().split_once(':').unwrap_or(("", ""));
-        return Ok((username.to_string(), password.to_string()));
+        Ok((username.to_string(), password.to_string()))
     }
 }
 
@@ -65,7 +65,7 @@ pub fn add_auth(token: &str) -> josh::JoshResult<Handle> {
         header: Some(header),
     };
     AUTH.lock()?.insert(hp.clone(), p);
-    return Ok(hp);
+    Ok(hp)
 }
 
 pub async fn check_auth(url: &str, auth: &Handle, required: bool) -> josh::JoshResult<bool> {

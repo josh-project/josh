@@ -132,7 +132,7 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
         )?;
 
         transaction.repo().odb()?.add_disk_alternate(
-            &transaction_mirror
+            transaction_mirror
                 .repo()
                 .path()
                 .join("objects")
@@ -331,7 +331,7 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
         )?;
 
         if new_oid != reapply {
-            if let Ok(_) = std::env::var("JOSH_REWRITE_REFS") {
+            if std::env::var("JOSH_REWRITE_REFS").is_ok() {
                 transaction.repo().reference(
                     &format!(
                         "refs/josh/rewrites/{}/{:?}/r_{}",
@@ -394,13 +394,13 @@ fn split_changes(
                 }
                 let diff = &diffs[i];
                 let parent = repo.find_commit(*base)?;
-                if let Ok(mut index) = repo.apply_to_tree(&parent.tree()?, &diff, None) {
+                if let Ok(mut index) = repo.apply_to_tree(&parent.tree()?, diff, None) {
                     moved.insert(i);
                     let new_tree = repo.find_tree(index.write_tree_to(repo)?)?;
                     let new_commit = josh::history::rewrite_commit(
                         repo,
                         &repo.find_commit(changes[i].1)?,
-                        &vec![&parent],
+                        &[&parent],
                         &new_tree,
                         None,
                         None,
@@ -417,7 +417,7 @@ fn split_changes(
         bases = new_bases;
     }
 
-    return Ok(());
+    Ok(())
 }
 
 pub fn push_head_url(
@@ -439,12 +439,12 @@ pub fn push_head_url(
     if force {
         cmd.push("--force")
     }
-    cmd.push(&url);
+    cmd.push(url);
     cmd.push(&spec);
 
     let mut fakehead = repo.reference(&rn, oid, true, "push_head_url")?;
     let (stdout, stderr, status) =
-        run_git_with_auth(&repo.path(), &cmd, &remote_auth, Some(alternate.to_owned()))?;
+        run_git_with_auth(repo.path(), &cmd, remote_auth, Some(alternate.to_owned()))?;
     fakehead.delete()?;
 
     tracing::debug!("{}", &stderr);
@@ -456,8 +456,8 @@ pub fn push_head_url(
 }
 
 fn create_repo_base(path: &PathBuf) -> josh::JoshResult<josh::shell::Shell> {
-    std::fs::create_dir_all(&path).expect("can't create_dir_all");
-    git2::Repository::init_bare(&path)?;
+    std::fs::create_dir_all(path).expect("can't create_dir_all");
+    git2::Repository::init_bare(path)?;
 
     let credential_helper =
         r#"!f() { echo username="${GIT_USER}"; echo password="${GIT_PASSWORD}"; }; f"#;
@@ -471,7 +471,7 @@ fn create_repo_base(path: &PathBuf) -> josh::JoshResult<josh::shell::Shell> {
         ("uploadpack.allowTipSha1InWant", "true"),
         ("receive.advertisePushOptions", "true"),
         ("gc.auto", "0"),
-        ("credential.helper", &credential_helper),
+        ("credential.helper", credential_helper),
     ];
 
     let shell = josh::shell::Shell {
@@ -505,7 +505,7 @@ fn create_repo_base(path: &PathBuf) -> josh::JoshResult<josh::shell::Shell> {
             Ok(entry) if entry.path().ends_with(".lock") => Some(path),
             _ => None,
         })
-        .map(|file| fs::remove_file(file))
+        .map(fs::remove_file)
         .collect::<Result<Vec<_>, _>>()?;
 
     Ok(shell)
@@ -533,7 +533,7 @@ pub fn create_repo(path: &std::path::Path) -> josh::JoshResult<()> {
     )
     .expect("can't symlink pre-receive hook");
 
-    if std::env::var_os("JOSH_KEEP_NS") == None {
+    if std::env::var_os("JOSH_KEEP_NS").is_none() {
         std::fs::remove_dir_all(overlay_path.join("refs/namespaces")).ok();
     }
 
@@ -587,7 +587,7 @@ pub fn run_git_with_auth(
             ]
             .concat();
 
-            Ok(shell.command_env(&cmd, &env, &env_notrace))
+            Ok(shell.command_env(cmd, &env, &env_notrace))
         }
         RemoteAuth::Http { auth } => {
             let (username, password) = auth.parse()?;
@@ -601,7 +601,7 @@ pub fn run_git_with_auth(
             ]
             .concat();
 
-            Ok(shell.command_env(&cmd, &[], &env_notrace))
+            Ok(shell.command_env(cmd, &[], &env_notrace))
         }
     }
 }
@@ -611,10 +611,10 @@ pub fn get_head(
     url: &str,
     remote_auth: &RemoteAuth,
 ) -> josh::JoshResult<String> {
-    let cmd = &["git", "ls-remote", "--symref", &url, "HEAD"];
+    let cmd = &["git", "ls-remote", "--symref", url, "HEAD"];
 
     tracing::info!("get_head {:?} {:?} {:?}", cmd, path, "");
-    let (stdout, _, code) = run_git_with_auth(&path, cmd, &remote_auth, None)?;
+    let (stdout, _, code) = run_git_with_auth(path, cmd, remote_auth, None)?;
 
     if code != 0 {
         return Err(josh_error(&format!(
@@ -674,7 +674,7 @@ pub fn fetch_refs_from_url(
         })
         .collect();
 
-    let cmd = ["git", "fetch", "--prune", "--no-tags", &url]
+    let cmd = ["git", "fetch", "--prune", "--no-tags", url]
         .map(str::to_owned)
         .to_vec();
     let cmd = cmd.into_iter().chain(specs.into_iter()).collect::<Vec<_>>();
@@ -683,7 +683,7 @@ pub fn fetch_refs_from_url(
     tracing::info!("fetch_refs_from_url {:?} {:?} {:?}", cmd, path, "");
 
     let (_, stderr, code) =
-        run_git_with_auth(&path, &cmd, &remote_auth, None).map_err(|e| FetchError::Other(e))?;
+        run_git_with_auth(path, &cmd, remote_auth, None).map_err(FetchError::Other)?;
 
     tracing::debug!("fetch_refs_from_url done {:?} {:?} {:?}", cmd, path, stderr);
 
@@ -704,9 +704,10 @@ pub fn fetch_refs_from_url(
 
     if stderr.contains("error:") {
         tracing::error!("{:?}", stderr);
-        return Err(FetchError::Other(
-            josh::josh_error(&format!("git error: {:?}", stderr)).into(),
-        ));
+        return Err(FetchError::Other(josh::josh_error(&format!(
+            "git error: {:?}",
+            stderr
+        ))));
     }
 
     Ok(())
@@ -738,7 +739,7 @@ impl TmpGitNamespace {
         &self.name
     }
     pub fn reference(&self, refname: &str) -> String {
-        return format!("refs/namespaces/{}/{}", &self.name, refname);
+        format!("refs/namespaces/{}/{}", &self.name, refname)
     }
 }
 
@@ -753,7 +754,7 @@ impl std::fmt::Debug for TmpGitNamespace {
 
 impl Drop for TmpGitNamespace {
     fn drop(&mut self) {
-        if std::env::var_os("JOSH_KEEP_NS") != None {
+        if std::env::var_os("JOSH_KEEP_NS").is_some() {
             return;
         }
         let request_tmp_namespace = self.repo_path.join("refs/namespaces").join(&self.name);
@@ -792,7 +793,7 @@ fn changes_to_refs(
                     change.commit
                 )));
             }
-            seen.push(&label);
+            seen.push(label);
         } else {
             return Err(josh::josh_error(&format!(
                 "rejecting to push {:?} without label",

@@ -13,7 +13,7 @@ use futures::FutureExt;
 use hyper::body::HttpBody;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Request, Response, Server, StatusCode};
-use hyper_reverse_proxy;
+
 use indoc::formatdoc;
 use josh::{josh_error, JoshError, JoshResult};
 use josh_rpc::calls::RequestedCommand;
@@ -160,7 +160,7 @@ async fn fetch_upstream(
     match (force, fetch_timer_ok, head_ref, head_ref_resolved) {
         (false, true, None, _) => return Ok(()),
         (false, true, Some(head_ref), _) => {
-            if let Some(_) = resolve_cache_ref(head_ref).map_err(FetchError::from_josh_error)? {
+            if (resolve_cache_ref(head_ref).map_err(FetchError::from_josh_error)?).is_some() {
                 trace!("cache ref resolved");
                 return Ok(());
             }
@@ -214,7 +214,7 @@ async fn fetch_upstream(
 
     std::mem::drop(permit);
 
-    if let Ok(_) = fetch_result {
+    if fetch_result.is_ok() {
         fetch_timers.write()?.insert(key, std::time::Instant::now());
     }
 
@@ -365,7 +365,7 @@ async fn do_filter(
             let name = format!(
                 "refs/josh/upstream/{}/{}",
                 &josh::to_ns(&meta.config.repo),
-                headref.clone()
+                headref
             );
             if let Ok(r) = transaction.repo().revparse_single(&name) {
                 refslist.push((headref.clone(), r.id()));
@@ -387,10 +387,10 @@ async fn do_filter(
         let t2 = josh::cache::Transaction::open(&repo_path.join("overlay"), None)?;
         t2.repo()
             .odb()?
-            .add_disk_alternate(&repo_path.join("mirror").join("objects").to_str().unwrap())?;
+            .add_disk_alternate(repo_path.join("mirror").join("objects").to_str().unwrap())?;
         let updated_refs = josh::filter_refs(&t2, filter, &refslist, josh::filter::empty())?;
         let mut updated_refs = josh_proxy::refs_locking(updated_refs, &meta);
-        josh::housekeeping::namespace_refs(&mut updated_refs, &temp_ns.name());
+        josh::housekeeping::namespace_refs(&mut updated_refs, temp_ns.name());
         josh::update_refs(&t2, &mut updated_refs, &temp_ns.reference(&headref));
         t2.repo()
             .reference_symbolic(
@@ -454,7 +454,7 @@ async fn handle_ui_request(
         .request(&req)
         .build(result)?;
 
-    return Ok(response);
+    Ok(response)
 }
 
 async fn query_meta_repo(
@@ -473,7 +473,7 @@ async fn query_meta_repo(
     match fetch_upstream(
         serv.clone(),
         meta_repo.to_owned(),
-        &remote_auth,
+        remote_auth,
         remote_url.to_owned(),
         Some("HEAD"),
         None,
@@ -489,7 +489,7 @@ async fn query_meta_repo(
 
     let transaction = josh::cache::Transaction::open(
         &serv.repo_path.join("mirror"),
-        Some(&format!("refs/josh/upstream/{}/", &josh::to_ns(&meta_repo),)),
+        Some(&format!("refs/josh/upstream/{}/", &josh::to_ns(meta_repo),)),
     )?;
 
     let meta_tree = transaction
@@ -500,11 +500,11 @@ async fn query_meta_repo(
     let meta_blob = josh::filter::tree::get_blob(
         transaction.repo(),
         &meta_tree,
-        &std::path::Path::new(&upstream_repo.trim_start_matches("/")).join("config.yml"),
+        &std::path::Path::new(&upstream_repo.trim_start_matches('/')).join("config.yml"),
     );
 
-    if meta_blob == "" {
-        return Err(josh::josh_error(&"meta repo entry not found"));
+    if meta_blob.is_empty() {
+        return Err(josh::josh_error("meta repo entry not found"));
     }
 
     let mut meta: josh_proxy::MetaConfig = Default::default();
@@ -515,16 +515,16 @@ async fn query_meta_repo(
         let meta_blob = josh::filter::tree::get_blob(
             transaction.repo(),
             &meta_tree,
-            &std::path::Path::new(&upstream_repo.trim_start_matches("/")).join("lock.yml"),
+            &std::path::Path::new(&upstream_repo.trim_start_matches('/')).join("lock.yml"),
         );
 
-        if meta_blob == "" {
-            return Err(josh::josh_error(&"locked refs not found"));
+        if meta_blob.is_empty() {
+            return Err(josh::josh_error("locked refs not found"));
         }
         meta.refs_lock = serde_yaml::from_str(&meta_blob)?;
     }
 
-    return Ok(meta);
+    Ok(meta)
 }
 
 async fn make_meta_config(
@@ -699,7 +699,7 @@ async fn serve_namespace(
             stdout_stream.flush().await
         };
 
-        copy_future.await.map_err(|e| ServeError::FifoError(e))
+        copy_future.await.map_err(ServeError::FifoError)
     };
 
     let write_stdin = async {
@@ -722,7 +722,7 @@ async fn serve_namespace(
             copy_result = copy_future => {
                 copy_result
                     .map(|_| ())
-                    .map_err(|e| ServeError::FifoError(e))
+                    .map_err(ServeError::FifoError)
             }
             _ = stdin_cancel_token.cancelled() => {
                 Ok(())
@@ -781,7 +781,7 @@ async fn serve_namespace(
 
 fn is_repo_blocked(meta: &MetaConfig) -> bool {
     let block = std::env::var("JOSH_REPO_BLOCK").unwrap_or("".to_owned());
-    let block = block.split(";").collect::<Vec<_>>();
+    let block = block.split(';').collect::<Vec<_>>();
 
     for b in block {
         if b == meta.config.repo {
@@ -948,7 +948,7 @@ async fn handle_serve_namespace_request(
         Ok(filter) => filter,
         Err(e) => {
             return Ok(make_response(
-                hyper::Body::from(format!("Failed to parse filter: {}", e.to_string())),
+                hyper::Body::from(format!("Failed to parse filter: {}", e)),
                 StatusCode::BAD_REQUEST,
             ))
         }
@@ -958,13 +958,13 @@ async fn handle_serve_namespace_request(
         query_filter,
         match &ARGS.filter_prefix {
             Some(filter_prefix) => {
-                let filter_prefix = match josh::filter::parse(&filter_prefix) {
+                let filter_prefix = match josh::filter::parse(filter_prefix) {
                     Ok(filter) => filter,
                     Err(e) => {
                         return Ok(make_response(
                             hyper::Body::from(format!(
                                 "Failed to parse prefix filter passed as command line argument: {}",
-                                e.to_string()
+                                e
                             )),
                             StatusCode::SERVICE_UNAVAILABLE,
                         ))
@@ -1036,7 +1036,7 @@ async fn call_service(
         if let Some(parsed_url) = FilteredRepoUrl::from_str(&path) {
             let mut pu = parsed_url;
 
-            if pu.rest.starts_with(":") {
+            if pu.rest.starts_with(':') {
                 let guessed_url = path.trim_end_matches("/info/refs");
                 return Ok(make_response(
                     hyper::Body::from(formatdoc!(
@@ -1224,7 +1224,7 @@ async fn call_service(
         git_ns: temp_ns.name().to_string(),
         git_dir: repo_path.clone(),
         mirror_git_dir: mirror_repo_path.clone(),
-        context_propagator: context_propagator,
+        context_propagator,
     };
 
     let mut cmd = Command::new("git");
@@ -1281,8 +1281,7 @@ async fn serve_query(
 
         let transaction = josh::cache::Transaction::open(&serv.repo_path.join("overlay"), None)?;
         transaction.repo().odb()?.add_disk_alternate(
-            &serv
-                .repo_path
+            serv.repo_path
                 .join("mirror")
                 .join("objects")
                 .to_str()
@@ -1300,7 +1299,7 @@ async fn serve_query(
     .in_current_span()
     .await?;
 
-    return Ok(match res {
+    Ok(match res {
         Ok(Some(res)) => Response::builder()
             .status(hyper::StatusCode::OK)
             .body(hyper::Body::from(res))?,
@@ -1312,7 +1311,7 @@ async fn serve_query(
         Err(res) => Response::builder()
             .status(hyper::StatusCode::UNPROCESSABLE_ENTITY)
             .body(hyper::Body::from(res.to_string()))?,
-    });
+    })
 }
 
 #[tracing::instrument]
@@ -1538,10 +1537,7 @@ fn update_hook(refname: &str, old: &str, new: &str) -> josh::JoshResult<i32> {
 
     let client = reqwest::blocking::Client::builder().timeout(None).build()?;
     let resp = client
-        .post(&format!(
-            "http://localhost:{}/repo_update",
-            repo_update.port
-        ))
+        .post(format!("http://localhost:{}/repo_update", repo_update.port))
         .json(&repo_update)
         .send();
 
@@ -1587,8 +1583,7 @@ async fn serve_graphql(
     )?;
     let transaction = josh::cache::Transaction::open(&serv.repo_path.join("overlay"), None)?;
     transaction.repo().odb()?.add_disk_alternate(
-        &serv
-            .repo_path
+        serv.repo_path
             .join("mirror")
             .join("objects")
             .to_str()
@@ -1677,8 +1672,7 @@ async fn serve_graphql(
         )?;
         josh_proxy::push_head_url(
             context.transaction.lock()?.repo(),
-            &serv
-                .repo_path
+            serv.repo_path
                 .join("mirror")
                 .join("objects")
                 .to_str()
@@ -1687,7 +1681,7 @@ async fn serve_graphql(
             &refname,
             &remote_url,
             &remote_auth,
-            &temp_ns.name(),
+            temp_ns.name(),
             "META_PUSH",
             false,
         )?;
@@ -1695,7 +1689,7 @@ async fn serve_graphql(
     })
     .in_current_span()
     .await??;
-    return Ok(gql_result);
+    Ok(gql_result)
 }
 
 async fn shutdown_signal() {

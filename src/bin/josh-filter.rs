@@ -12,7 +12,8 @@ fn make_app() -> clap::Command {
     let app = clap::Command::new("josh-filter");
 
     let app = { app.arg(clap::Arg::new("search").long("search")) };
-    let app = app
+
+    app
         .arg(
             clap::Arg::new("filter")
                 .help("Filter to apply")
@@ -134,8 +135,7 @@ fn make_app() -> clap::Command {
         .arg(clap::Arg::new("groups").long("groups"))
         .arg(clap::Arg::new("user").long("user").short('u'))
         .arg(clap::Arg::new("repo").long("repo").short('r'))
-        .arg(clap::Arg::new("version").action(clap::ArgAction::SetTrue).long("version").short('v'));
-    return app;
+        .arg(clap::Arg::new("version").action(clap::ArgAction::SetTrue).long("version").short('v'))
 }
 
 fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
@@ -192,13 +192,13 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         let reflist = read_to_string(filename)?;
 
         for line in reflist.lines() {
-            let split = line.split(" ").collect::<Vec<_>>();
+            let split = line.split(' ').collect::<Vec<_>>();
             if let [sha, name] = split.as_slice() {
                 let target = git2::Oid::from_str(sha)?;
                 let target = repo.find_object(target, None)?.peel_to_commit()?.id();
                 ids.push((target, name.to_string()));
                 refs.push((name.to_string(), target));
-            } else if split.len() != 0 {
+            } else if !split.is_empty() {
                 eprintln!("Warning: malformed line: {:?}", line);
             }
         }
@@ -305,7 +305,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         permissions_filter = josh::filter::empty();
     }
 
-    let old_oid = if let Ok(id) = transaction.repo().refname_to_id(&target) {
+    let old_oid = if let Ok(id) = transaction.repo().refname_to_id(target) {
         id
     } else {
         git2::Oid::zero()
@@ -357,11 +357,11 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         let candidates = josh::filter::tree::search_candidates(
             &transaction,
             &index_tree,
-            &searchstring,
+            searchstring,
             max_complexity,
         )?;
         let matches =
-            josh::filter::tree::search_matches(&transaction, &tree, &searchstring, &candidates)?;
+            josh::filter::tree::search_matches(&transaction, &tree, searchstring, &candidates)?;
         /* let duration = start.elapsed(); */
 
         for r in matches {
@@ -428,7 +428,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
     if let Some(query) = args.get_one::<String>("query") {
         let repo = git2::Repository::open_from_env()?;
         let transaction = josh::cache::Transaction::new(repo, None);
-        let commit_id = transaction.repo().refname_to_id(&update_target)?;
+        let commit_id = transaction.repo().refname_to_id(update_target)?;
         print!(
             "{}",
             josh::query::render(&transaction, "", commit_id, query,)?
