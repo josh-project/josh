@@ -46,16 +46,6 @@ fn make_app() -> clap::Command {
                 .long("squash-file")
         )
         .arg(
-            clap::Arg::new("author")
-                .help("Author to use for commits with rewritten message")
-                .long("author")
-        )
-        .arg(
-            clap::Arg::new("email")
-                .help("Author email to use for commits with rewritten message")
-                .long("email")
-        )
-        .arg(
             clap::Arg::new("single")
                 .action(clap::ArgAction::SetTrue)
                 .help("Produce a history that contains only one single commit")

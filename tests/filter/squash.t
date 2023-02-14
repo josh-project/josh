@@ -28,7 +28,7 @@
 
   $ git merge -q branch2 --no-ff
 
-  $ josh-filter -s --squash-pattern "refs/tags/*" --author "New Author" --email "new@e.mail" --update refs/heads/filtered
+  $ josh-filter -s --squash-pattern "refs/tags/*" --update refs/heads/filtered
   Warning: reference refs/heads/filtered wasn't updated
   [1] :squash(
   
