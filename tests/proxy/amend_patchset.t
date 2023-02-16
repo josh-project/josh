@@ -119,8 +119,8 @@
 
   $ bash ${TESTDIR}/destroy_test_env.sh
   "real_repo.git" = [
-      ':/sub3',
-      '::sub3/',
+      ":/sub3",
+      "::sub3/",
   ]
   .
   |-- josh

@@ -117,15 +117,15 @@
 
   $ bash ${TESTDIR}/destroy_test_env.sh
   "meta_repo.git" = [
-      '::path/',
-      '::path/to/',
-      '::with_prefix.git/',
+      "::path/",
+      "::path/to/",
+      "::with_prefix.git/",
   ]
   "real_repo.git" = [
-      '::sub1/',
-      '::sub2/',
-      ':prefix=my_prefix',
-      ':prefix=my_prefix:/my_prefix:/sub1',
+      "::sub1/",
+      "::sub2/",
+      ":prefix=my_prefix",
+      ":prefix=my_prefix:/my_prefix:/sub1",
   ]
   .
   |-- josh

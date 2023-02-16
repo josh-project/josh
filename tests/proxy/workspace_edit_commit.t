@@ -171,13 +171,13 @@
 
   $ bash ${TESTDIR}/destroy_test_env.sh
   "real_repo.git" = [
-      '::sub1/',
-      '::sub1/subsub/',
-      '::sub2/',
-      '::sub3/',
-      '::sub4/',
-      '::ws/',
-      ':workspace=ws',
+      "::sub1/",
+      "::sub1/subsub/",
+      "::sub2/",
+      "::sub3/",
+      "::sub4/",
+      "::ws/",
+      ":workspace=ws",
   ]
   .
   |-- josh
