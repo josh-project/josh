@@ -15,35 +15,35 @@ members = ["josh-proxy", "josh-ui", "josh-ssh-shell", "josh-rpc", ".", "hyper_cg
 [dependencies]
 backtrace = "0.3.67"
 bitvec = "1.0.1"
-clap = "4.0.29"
+clap = "4.1.6"
 defer= "0.1.0"
 env_logger = "0.10.0"
 git-version = "0.3.5"
-git2 = { version = "0.15.0", default-features = false }
-glob = "0.3.0"
-handlebars = "4.3.5"
+git2 = { version = "0.16.1", default-features = false }
+glob = "0.3.1"
+handlebars = "4.3.6"
 hex = "0.4.3"
-indoc = "1.0.7"
+indoc = "2.0.0"
 itertools = "0.10.5"
 lazy_static = "1.4.0"
 log = "0.4.17"
 percent-encoding = "2.2.0"
-pest= "2.5.1"
-pest_derive = "2.5.1"
+pest= "2.5.5"
+pest_derive = "2.5.5"
 rayon = "1.6.1"
-regex = "1.7.0"
-rs_tracing= { version = "1.0.1", features = ["rs_tracing"] }
-serde = { version = "1.0.150", features = ["derive"] }
-serde_json= "1.0.89"
-serde_yaml = "0.9.14"
+regex = "1.7.1"
+rs_tracing= { version = "1.1.0", features = ["rs_tracing"] }
+serde = { version = "1.0.152", features = ["derive"] }
+serde_json= "1.0.93"
+serde_yaml = "0.9.17"
 sled = "0.34.7"
-strfmt = "0.2.2"
-toml = "0.5.10"
+strfmt = "0.2.4"
+toml = "0.7.2"
 tracing = "0.1.37"
 
 [dependencies.juniper]
 default-features = false
-version = "0.15.10"
+version = "0.15.11"
 features = []
 
 [dependencies.chrono]

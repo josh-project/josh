@@ -92,8 +92,8 @@ Check the branch again
 
   $ bash ${TESTDIR}/destroy_test_env.sh
   "real_repo.git" = [
-      ':/sub',
-      '::sub/',
+      ":/sub",
+      "::sub/",
   ]
   .
   |-- josh

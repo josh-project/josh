@@ -322,9 +322,9 @@
 
   $ bash ${TESTDIR}/destroy_test_env.sh
   "real_repo.git" = [
-      '::a/',
-      '::a/b/',
-      '::sub1/',
+      "::a/",
+      "::a/b/",
+      "::sub1/",
   ]
   .
   |-- josh

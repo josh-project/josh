@@ -432,13 +432,13 @@ Note that ws/d/ is now present in the ws
 
   $ bash ${TESTDIR}/destroy_test_env.sh
   "real_repo.git" = [
-      '::sub1/',
-      '::sub1/subsub/',
-      '::sub2/',
-      '::sub3/',
-      '::ws/',
-      '::ws/d/',
-      ':workspace=ws',
+      "::sub1/",
+      "::sub1/subsub/",
+      "::sub2/",
+      "::sub3/",
+      "::ws/",
+      "::ws/d/",
+      ":workspace=ws",
   ]
   .
   |-- josh

@@ -68,9 +68,9 @@
 
   $ bash ${TESTDIR}/destroy_test_env.sh
   "real_repo.git" = [
-      '::sub1/',
-      '::sub2/',
-      ':prefix=pre',
+      "::sub1/",
+      "::sub2/",
+      ":prefix=pre",
   ]
   .
   |-- josh
