@@ -338,14 +338,16 @@ async fn do_filter(
     meta: josh_proxy::MetaConfig,
     temp_ns: Arc<josh_proxy::TmpGitNamespace>,
     filter: josh::filter::Filter,
-    headref: String,
+    head_ref: &HeadRef,
 ) -> josh::JoshResult<()> {
     let permit = service.filter_permits.acquire().await;
     let heads_map = service.heads_map.clone();
 
-    let s = tracing::span!(tracing::Level::TRACE, "do_filter worker");
-    let r = tokio::task::spawn_blocking(move || {
-        let _e = s.enter();
+    let tracing_span = tracing::span!(tracing::Level::TRACE, "do_filter worker");
+    let head_ref = head_ref.clone();
+
+    tokio::task::spawn_blocking(move || {
+        let _span_guard = tracing_span.enter();
         tracing::trace!("in do_filter worker");
         let filter_spec = josh::filter::spec(filter);
         josh::housekeeping::remember_filter(&meta.config.repo, &filter_spec);
@@ -357,57 +359,86 @@ async fn do_filter(
                 &josh::to_ns(&meta.config.repo),
             )),
         )?;
-        let mut refslist = josh::housekeeping::list_refs(transaction.repo(), &meta.config.repo)?;
 
-        let mut headref = headref;
-
-        if headref.starts_with("refs/") || headref == "HEAD" {
-            let name = format!(
+        let resolve_ref = |ref_value: &str| {
+            let josh_name = format!(
                 "refs/josh/upstream/{}/{}",
                 &josh::to_ns(&meta.config.repo),
-                headref
+                ref_value
             );
-            if let Ok(r) = transaction.repo().revparse_single(&name) {
-                refslist.push((headref.clone(), r.id()));
-            }
-        } else {
-            // @sha case
-            refslist.push((headref.clone(), git2::Oid::from_str(&headref)?));
-            headref = format!("refs/heads/_{}", headref);
-        }
 
-        if headref == "HEAD" {
-            headref = heads_map
+            transaction
+                .repo()
+                .revparse_single(&josh_name)
+                .map_err(|e| josh_error(&format!("Could not find ref: {}", e)))
+        };
+
+        let (refs_list, head_ref) = match head_ref {
+            HeadRef::Explicit(ref_value)
+                if ref_value.starts_with("refs/") || ref_value == "HEAD" =>
+            {
+                let object = resolve_ref(&ref_value)?;
+                let list = vec![(ref_value.clone(), object.id())];
+
+                (list, ref_value.clone())
+            }
+            HeadRef::Explicit(ref_value) => {
+                // When it's not something starting with refs/ or HEAD, it's
+                // probably sha1
+                let list = vec![(ref_value.clone(), git2::Oid::from_str(&ref_value)?)];
+                let synthetic_ref = format!("refs/heads/_{}", ref_value);
+
+                (list, synthetic_ref)
+            }
+            HeadRef::Implicit => {
+                // When user did not explicitly request a ref to filter,
+                // start with a list of all existing refs
+                let mut list =
+                    josh::housekeeping::list_refs(transaction.repo(), &meta.config.repo)?;
+
+                let head_ref = head_ref.get().to_string();
+                if let Ok(object) = resolve_ref(&head_ref) {
+                    list.push((head_ref.clone(), object.id()));
+                }
+
+                (list, head_ref)
+            }
+        };
+
+        let head_ref = if head_ref == "HEAD" {
+            heads_map
                 .read()?
                 .get(&meta.config.repo)
                 .unwrap_or(&"invalid".to_string())
-                .clone();
-        }
+                .clone()
+        } else {
+            head_ref
+        };
 
         let t2 = josh::cache::Transaction::open(&repo_path.join("overlay"), None)?;
         t2.repo()
             .odb()?
             .add_disk_alternate(repo_path.join("mirror").join("objects").to_str().unwrap())?;
-        let updated_refs = josh::filter_refs(&t2, filter, &refslist, josh::filter::empty())?;
+        let updated_refs = josh::filter_refs(&t2, filter, &refs_list, josh::filter::empty())?;
         let mut updated_refs = josh_proxy::refs_locking(updated_refs, &meta);
         josh::housekeeping::namespace_refs(&mut updated_refs, temp_ns.name());
-        josh::update_refs(&t2, &mut updated_refs, &temp_ns.reference(&headref));
+        josh::update_refs(&t2, &mut updated_refs, &temp_ns.reference(&head_ref));
         t2.repo()
             .reference_symbolic(
                 &temp_ns.reference("HEAD"),
-                &temp_ns.reference(&headref),
+                &temp_ns.reference(&head_ref),
                 true,
                 "",
             )
             .ok();
 
-        Ok(())
+        Ok::<_, JoshError>(())
     })
-    .await?;
+    .await??;
 
     std::mem::drop(permit);
 
-    r
+    Ok(())
 }
 
 fn make_response(body: hyper::Body, code: hyper::StatusCode) -> Response<hyper::Body> {
@@ -792,15 +823,31 @@ fn is_repo_blocked(meta: &MetaConfig) -> bool {
     false
 }
 
-fn headref_or_default(headref: &str) -> String {
-    let result = headref
+#[derive(Clone, Debug)]
+enum HeadRef {
+    Explicit(String),
+    Implicit,
+}
+
+impl HeadRef {
+    // Sometimes we don't care about whether it's implicit or explicit
+    fn get(&self) -> &str {
+        match self {
+            HeadRef::Explicit(r) => &r,
+            HeadRef::Implicit => "HEAD",
+        }
+    }
+}
+
+fn head_ref_or_default(head_ref: &str) -> HeadRef {
+    let result = head_ref
         .trim_start_matches(|char| char == '@' || char == '^')
         .to_owned();
 
     if result.is_empty() {
-        "HEAD".to_string()
+        HeadRef::Implicit
     } else {
-        result
+        HeadRef::Explicit(result)
     }
 }
 
@@ -890,9 +937,9 @@ async fn handle_serve_namespace_request(
     };
 
     let remote_url = upstream + meta_config.config.repo.as_str();
-    let headref = headref_or_default(&parsed_url.headref);
+    let head_ref = head_ref_or_default(&parsed_url.headref);
 
-    let remote_refs = [headref.as_str()];
+    let remote_refs = [head_ref.get()];
     let remote_refs = match ssh_list_refs(&remote_url, auth_socket, Some(&remote_refs)).await {
         Ok(remote_refs) => remote_refs,
         Err(e) => {
@@ -903,7 +950,7 @@ async fn handle_serve_namespace_request(
         }
     };
 
-    let resolved_ref = match remote_refs.get(&headref) {
+    let resolved_ref = match remote_refs.get(head_ref.get()) {
         Some(resolved_ref) => resolved_ref,
         None => {
             return Ok(make_response(
@@ -918,7 +965,7 @@ async fn handle_serve_namespace_request(
         meta_config.config.repo.to_owned(),
         &remote_auth,
         remote_url.to_owned(),
-        Some(&headref),
+        Some(head_ref.get()),
         Some(resolved_ref),
         false,
     )
@@ -977,7 +1024,7 @@ async fn handle_serve_namespace_request(
         },
     );
 
-    let temp_ns = match prepare_namespace(serv.clone(), &meta_config, filter, &headref).await {
+    let temp_ns = match prepare_namespace(serv.clone(), &meta_config, filter, &head_ref).await {
         Ok(ns) => ns,
         Err(e) => {
             return Ok(make_response(
@@ -1151,13 +1198,13 @@ async fn call_service(
         .await??);
     }
 
-    let headref = headref_or_default(&parsed_url.headref);
+    let headref = head_ref_or_default(&parsed_url.headref);
     match fetch_upstream(
         serv.clone(),
         meta.config.repo.to_owned(),
         &remote_auth,
         remote_url.to_owned(),
-        Some(&headref),
+        Some(headref.get()),
         None,
         false,
     )
@@ -1184,7 +1231,7 @@ async fn call_service(
         req.uri().query().map(|x| x.to_string()),
         parsed_url.pathinfo.is_empty(),
     ) {
-        return serve_query(serv, q, meta.config.repo, filter, headref).await;
+        return serve_query(serv, q, meta.config.repo, filter, headref.get()).await;
     }
 
     let temp_ns = prepare_namespace(serv.clone(), &meta, filter, &headref)
@@ -1265,11 +1312,12 @@ async fn serve_query(
     q: String,
     upstream_repo: String,
     filter: josh::filter::Filter,
-    headref: String,
+    head_ref: &str,
 ) -> josh::JoshResult<Response<hyper::Body>> {
-    let s = tracing::span!(tracing::Level::TRACE, "render worker");
+    let tracing_span = tracing::span!(tracing::Level::TRACE, "render worker");
+    let head_ref = head_ref.to_string();
     let res = tokio::task::spawn_blocking(move || -> josh::JoshResult<_> {
-        let _e = s.enter();
+        let _span_guard = tracing_span.enter();
 
         let transaction_mirror = josh::cache::Transaction::open(
             &serv.repo_path.join("mirror"),
@@ -1290,7 +1338,7 @@ async fn serve_query(
 
         let commit_id = transaction_mirror
             .repo()
-            .refname_to_id(&transaction_mirror.refname(&headref))?;
+            .refname_to_id(&transaction_mirror.refname(&head_ref))?;
         let commit_id =
             josh::filter_commit(&transaction, filter, commit_id, josh::filter::empty())?;
 
@@ -1319,7 +1367,7 @@ async fn prepare_namespace(
     serv: Arc<JoshProxyService>,
     meta: &josh_proxy::MetaConfig,
     filter: josh::filter::Filter,
-    headref: &str,
+    head_ref: &HeadRef,
 ) -> josh::JoshResult<std::sync::Arc<josh_proxy::TmpGitNamespace>> {
     let temp_ns = Arc::new(josh_proxy::TmpGitNamespace::new(
         &serv.repo_path.join("overlay"),
@@ -1334,7 +1382,7 @@ async fn prepare_namespace(
         meta.clone(),
         temp_ns.to_owned(),
         filter,
-        headref.to_string(),
+        head_ref,
     )
     .await?;
 
