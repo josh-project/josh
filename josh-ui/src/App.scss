@@ -85,11 +85,12 @@ nav {
   }
 }
 
-pre.commit-message {
+div.commit-message {
   padding: 1em 2em;
   margin:0em;
   font-family: $font-main;
   background: #111111;
+  white-space: pre;
 }
 
 .logo {

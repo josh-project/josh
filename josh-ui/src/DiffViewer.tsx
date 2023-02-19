@@ -1,6 +1,10 @@
 import React from "react";
 import {DiffEditor} from "@monaco-editor/react";
-import {NavigateCallback, QUERY_FILE_DIFF} from "./Navigation";
+import {
+    NavigateCallback,
+    NavigateTargetType,
+    QUERY_FILE_DIFF,
+} from "./Navigation";
 import {GraphQLClient} from "graphql-request";
 import {getServer} from "./Server";
 import {match} from "ts-pattern";
@@ -73,10 +77,19 @@ export class DiffViewer extends React.Component<DiffViewerProps, State> {
     }
 
     render() {
+        const navigate = (e: React.MouseEvent<HTMLDivElement>) => {
+            this.props.navigateCallback(NavigateTargetType.Change, {
+                repo:   this.props.repo,
+                filter: this.props.filter,
+                path:   '',
+                rev:    this.props.rev
+            })
+        }
+
         if (this.state.content_a !== undefined 
         &&  this.state.content_b !== undefined) {
             return <div>
-                <pre className="commit-message">{this.state.summary}</pre>
+                <div className="commit-message" onClick={navigate.bind(this)}>{this.state.summary}</div>
                 <div className="diff-view-filename">{this.props.path}</div>
                 <DiffEditor
                     modified={this.state.content_b}
