@@ -456,29 +456,13 @@ pub fn push_head_url(
 }
 
 fn create_repo_base(path: &PathBuf) -> josh::JoshResult<josh::shell::Shell> {
-<<<<<<< Updated upstream
     std::fs::create_dir_all(path).expect("can't create_dir_all");
-    git2::Repository::init_bare(path)?;
-=======
-    std::fs::create_dir_all(&path).expect("can't create_dir_all");
-    git_repository::init_bare(&path)?;
->>>>>>> Stashed changes
+    gix::init_bare(path)?;
 
     let credential_helper =
         r#"!f() { echo username="${GIT_USER}"; echo password="${GIT_PASSWORD}"; }; f"#;
 
     let config_options = [
-<<<<<<< Updated upstream
-        ("http.receivepack", "true"),
-        ("user.name", "josh"),
-        ("user.email", "josh@josh-project.dev"),
-        ("uploadpack.allowAnySHA1InWant", "true"),
-        ("uploadpack.allowReachableSHA1InWant", "true"),
-        ("uploadpack.allowTipSha1InWant", "true"),
-        ("receive.advertisePushOptions", "true"),
-        ("gc.auto", "0"),
-        ("credential.helper", credential_helper),
-=======
         ("http", &[("receivepack", "true")] as &[(&str, &str)]),
         (
             "user",
@@ -494,15 +478,18 @@ fn create_repo_base(path: &PathBuf) -> josh::JoshResult<josh::shell::Shell> {
         ),
         ("receive", &[("advertisePushOptions", "true")]),
         ("gc", &[("auto", "0")]),
-        ("credential", &[("helper", &credential_helper)]),
->>>>>>> Stashed changes
+        ("credential", &[("helper", credential_helper)]),
     ];
 
     let shell = josh::shell::Shell {
         cwd: path.to_path_buf(),
     };
 
-    let mut config = git_repository::config::File::from_git_dir(&path)
+    let config_source = gix::config::Source::Local;
+    let config_location = config_source.storage_location(&mut |_| None).unwrap();
+    let config_location = path.join(config_location);
+
+    let mut config = gix::config::File::from_path_no_includes(&config_location, config_source)
         .map_err(|_| josh_error("unable to open repo config file"))?;
 
     config_options
@@ -513,39 +500,26 @@ fn create_repo_base(path: &PathBuf) -> josh::JoshResult<josh::shell::Shell> {
                 .new_section(section, None)
                 .map_err(|_| josh_error("unable to create config section"))?;
 
-            values.iter().cloned().try_for_each(|(key, value)| -> JoshResult<()> {
-                use git_repository::config::parse::section::Key;
-                use std::convert::TryFrom;
+            values
+                .iter()
+                .cloned()
+                .try_for_each(|(key, value)| -> JoshResult<()> {
+                    use gix::config::parse::section::Key;
+                    use std::convert::TryFrom;
 
-                let key = Key::try_from(key)
-                    .map_err(|_| josh_error("unable to create config section"))?;
-                let value = Some(value.into());
+                    let key = Key::try_from(key)
+                        .map_err(|_| josh_error("unable to create config section"))?;
+                    let value = Some(value.into());
 
-                section.push(key, value);
+                    section.push(key, value);
 
-                Ok(())
-            })?;
+                    Ok(())
+                })?;
 
             Ok(())
         })?;
 
-    // let mut git_config = git_config::File::default();
-    // let mut section = git_config.new_section("hello", Some(Cow::Borrowed("world".into())))?;
-    // section.push(section::Key::try_from("a")?, Some("b".into()));
-    // let nl = section.newline().to_owned();
-    // assert_eq!(git_config.to_string(), format!("[hello \"world\"]{nl}\ta = b{nl}"));
-    // let _section = git_config.new_section("core", None);
-    // assert_eq!(git_config.to_string(), format!("[hello \"world\"]{nl}\ta = b{nl}[core]{nl}"));
-
-    // config_options
-    //     .iter()
-    //     .map(
-    //         |(key, value)| match shell.command(&["git", "config", key, value]) {
-    //             (_, _, code) if code != 0 => Err(josh_error("failed to set git config value")),
-    //             _ => Ok(()),
-    //         },
-    //     )
-    //     .collect::<Result<Vec<_>, _>>()?;
+    fs::write(&config_location, config.to_string())?;
 
     let hooks = path.join("hooks");
     let packed_refs = path.join("packed-refs");
@@ -564,12 +538,8 @@ fn create_repo_base(path: &PathBuf) -> josh::JoshResult<josh::shell::Shell> {
             Ok(entry) if entry.path().ends_with(".lock") => Some(path),
             _ => None,
         })
-<<<<<<< Updated upstream
         .map(fs::remove_file)
         .collect::<Result<Vec<_>, _>>()?;
-=======
-        .try_for_each(|file| fs::remove_file(file))?;
->>>>>>> Stashed changes
 
     Ok(shell)
 }
