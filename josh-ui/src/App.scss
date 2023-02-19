@@ -91,7 +91,20 @@ div.commit-message {
   font-family: $font-main;
   background: #111111;
   white-space: pre;
+
+  &.link {
+    cursor: pointer;
+  }
 }
+
+span.prevnext {
+    float: right;
+    span {
+        margin-left: 10px;
+        cursor: pointer;
+    }
+}
+
 
 .logo {
   img {
