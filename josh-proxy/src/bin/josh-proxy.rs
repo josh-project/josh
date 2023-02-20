@@ -15,12 +15,14 @@ use hyper::service::{make_service_fn, service_fn};
 use hyper::{Request, Response, Server, StatusCode};
 
 use indoc::formatdoc;
+use josh::compat::GitOxideCompatExt;
 use josh::{josh_error, JoshError, JoshResult};
 use josh_rpc::calls::RequestedCommand;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::io;
 use std::net::IpAddr;
+use std::path::PathBuf;
 use std::process::Stdio;
 use std::str::FromStr;
 use std::sync::{Arc, RwLock};
@@ -360,32 +362,41 @@ async fn do_filter(
             )),
         )?;
 
-        let resolve_ref = |ref_value: &str| {
-            let josh_name = format!(
-                "refs/josh/upstream/{}/{}",
+        let resolve_ref = |ref_value: &str| -> JoshResult<gix::ObjectId> {
+            let josh_name = [
+                "refs",
+                "josh",
+                "upstream",
                 &josh::to_ns(&meta.config.repo),
-                ref_value
-            );
+                ref_value,
+            ]
+            .iter()
+            .collect::<PathBuf>();
 
-            transaction
-                .repo()
-                .revparse_single(&josh_name)
-                .map_err(|e| josh_error(&format!("Could not find ref: {}", e)))
+            Ok(transaction
+                .oxide_repo()
+                .find_reference(josh_name.to_str().unwrap())
+                .map_err(|e| josh_error(&format!("Could not find ref: {}", e)))?
+                .id()
+                .into())
         };
 
-        let (refs_list, head_ref) = match head_ref {
+        let (refs_list, head_ref) = match &head_ref {
             HeadRef::Explicit(ref_value)
                 if ref_value.starts_with("refs/") || ref_value == "HEAD" =>
             {
                 let object = resolve_ref(&ref_value)?;
-                let list = vec![(ref_value.clone(), object.id())];
+                let list = vec![(PathBuf::from(ref_value), object)];
 
                 (list, ref_value.clone())
             }
             HeadRef::Explicit(ref_value) => {
                 // When it's not something starting with refs/ or HEAD, it's
                 // probably sha1
-                let list = vec![(ref_value.clone(), git2::Oid::from_str(&ref_value)?)];
+                let list = vec![(
+                    PathBuf::from(ref_value),
+                    gix::ObjectId::from_str(&ref_value)?,
+                )];
                 let synthetic_ref = format!("refs/heads/_{}", ref_value);
 
                 (list, synthetic_ref)
@@ -394,11 +405,11 @@ async fn do_filter(
                 // When user did not explicitly request a ref to filter,
                 // start with a list of all existing refs
                 let mut list =
-                    josh::housekeeping::list_refs(transaction.repo(), &meta.config.repo)?;
+                    josh::housekeeping::list_refs(transaction.oxide_repo(), &meta.config.repo)?;
 
                 let head_ref = head_ref.get().to_string();
                 if let Ok(object) = resolve_ref(&head_ref) {
-                    list.push((head_ref.clone(), object.id()));
+                    list.push((PathBuf::from(&head_ref), object));
                 }
 
                 (list, head_ref)
@@ -414,6 +425,11 @@ async fn do_filter(
         } else {
             head_ref
         };
+
+        let refs_list = refs_list
+            .iter()
+            .map(|(reference, oid)| (reference.to_str().unwrap().to_string(), oid.to_git2()))
+            .collect::<Vec<_>>();
 
         let t2 = josh::cache::Transaction::open(&repo_path.join("overlay"), None)?;
         t2.repo()

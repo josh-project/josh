@@ -151,7 +151,9 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
     if !args.get_flag("no-cache") {
         josh::cache::load(repo.path())?;
     }
-    let transaction = josh::cache::Transaction::new(repo, None);
+
+    let oxide_repo = gix::ThreadSafeRepository::open(repo.path())?;
+    let transaction = josh::cache::Transaction::new(repo, oxide_repo.to_thread_local(), None);
     let repo = transaction.repo();
 
     let input_ref = args.get_one::<String>("input").unwrap();
@@ -417,7 +419,8 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
 
     if let Some(query) = args.get_one::<String>("query") {
         let repo = git2::Repository::open_from_env()?;
-        let transaction = josh::cache::Transaction::new(repo, None);
+        let oxide_repo = gix::ThreadSafeRepository::open(repo.path())?;
+        let transaction = josh::cache::Transaction::new(repo, oxide_repo.to_thread_local(), None);
         let commit_id = transaction.repo().refname_to_id(update_target)?;
         print!(
             "{}",

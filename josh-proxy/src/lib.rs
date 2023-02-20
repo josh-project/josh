@@ -5,7 +5,7 @@ pub mod juniper_hyper;
 #[macro_use]
 extern crate lazy_static;
 
-use josh::{josh_error, JoshError};
+use josh::{josh_error, JoshError, JoshResult};
 use std::fs;
 use std::path::PathBuf;
 
@@ -457,36 +457,69 @@ pub fn push_head_url(
 
 fn create_repo_base(path: &PathBuf) -> josh::JoshResult<josh::shell::Shell> {
     std::fs::create_dir_all(path).expect("can't create_dir_all");
-    git2::Repository::init_bare(path)?;
+    gix::init_bare(path)?;
 
     let credential_helper =
         r#"!f() { echo username="${GIT_USER}"; echo password="${GIT_PASSWORD}"; }; f"#;
 
     let config_options = [
-        ("http.receivepack", "true"),
-        ("user.name", "josh"),
-        ("user.email", "josh@josh-project.dev"),
-        ("uploadpack.allowAnySHA1InWant", "true"),
-        ("uploadpack.allowReachableSHA1InWant", "true"),
-        ("uploadpack.allowTipSha1InWant", "true"),
-        ("receive.advertisePushOptions", "true"),
-        ("gc.auto", "0"),
-        ("credential.helper", credential_helper),
+        ("http", &[("receivepack", "true")] as &[(&str, &str)]),
+        (
+            "user",
+            &[("name", "josh"), ("email", "josh@josh-project.dev")],
+        ),
+        (
+            "uploadpack",
+            &[
+                ("allowAnySHA1InWant", "true"),
+                ("allowReachableSHA1InWant", "true"),
+                ("allowTipSha1InWant", "true"),
+            ],
+        ),
+        ("receive", &[("advertisePushOptions", "true")]),
+        ("gc", &[("auto", "0")]),
+        ("credential", &[("helper", credential_helper)]),
     ];
 
     let shell = josh::shell::Shell {
         cwd: path.to_path_buf(),
     };
 
+    let config_source = gix::config::Source::Local;
+    let config_location = config_source.storage_location(&mut |_| None).unwrap();
+    let config_location = path.join(config_location);
+
+    let mut config = gix::config::File::from_path_no_includes(&config_location, config_source)
+        .map_err(|_| josh_error("unable to open repo config file"))?;
+
     config_options
         .iter()
-        .map(
-            |(key, value)| match shell.command(&["git", "config", key, value]) {
-                (_, _, code) if code != 0 => Err(josh_error("failed to set git config value")),
-                _ => Ok(()),
-            },
-        )
-        .collect::<Result<Vec<_>, _>>()?;
+        .cloned()
+        .try_for_each(|(section, values)| -> JoshResult<()> {
+            let mut section = config
+                .new_section(section, None)
+                .map_err(|_| josh_error("unable to create config section"))?;
+
+            values
+                .iter()
+                .cloned()
+                .try_for_each(|(key, value)| -> JoshResult<()> {
+                    use gix::config::parse::section::Key;
+                    use std::convert::TryFrom;
+
+                    let key = Key::try_from(key)
+                        .map_err(|_| josh_error("unable to create config section"))?;
+                    let value = Some(value.into());
+
+                    section.push(key, value);
+
+                    Ok(())
+                })?;
+
+            Ok(())
+        })?;
+
+    fs::write(&config_location, config.to_string())?;
 
     let hooks = path.join("hooks");
     let packed_refs = path.join("packed-refs");

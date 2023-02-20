@@ -2,7 +2,7 @@ use git2;
 
 use super::*;
 use std::collections::{BTreeSet, HashMap};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tracing::{info, span, Level};
 
 pub type KnownViews = HashMap<String, (git2::Oid, BTreeSet<String>)>;
@@ -13,25 +13,28 @@ lazy_static! {
 }
 
 pub fn list_refs(
-    repo: &git2::Repository,
+    repo: &gix::Repository,
     upstream_repo: &str,
-) -> JoshResult<Vec<(String, git2::Oid)>> {
+) -> JoshResult<Vec<(PathBuf, gix::ObjectId)>> {
     let mut refs = vec![];
 
-    let prefix = format!("refs/josh/upstream/{}/", &to_ns(upstream_repo));
+    let prefix = ["refs", "josh", "upstream", &to_ns(upstream_repo)]
+        .iter()
+        .collect::<PathBuf>();
 
-    for glob in [
-        format!("{}refs/heads/*", &prefix),
-        format!("{}refs/tags/*", &prefix),
+    for group in [
+        prefix.join("refs").join("heads"),
+        prefix.join("refs").join("tags"),
     ]
     .iter()
     {
-        for r in repo.references_glob(glob)? {
-            let r = r?;
-            if let (Some(name), Some(target)) = (r.name(), r.target()) {
-                let name = name.replacen(&prefix, "", 1);
-                refs.push((name.to_string(), target));
-            }
+        for reference in repo.references()?.prefixed(group)? {
+            let reference =
+                reference.map_err(|e| josh_error(&format!("unable to obtain reference: {}", e)))?;
+
+            let name = reference.name().to_path().strip_prefix(&prefix)?;
+            let oid = gix::ObjectId::from(reference.target().id());
+            refs.push((name.to_owned(), oid))
         }
     }
 

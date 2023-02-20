@@ -38,6 +38,7 @@ extern crate serde_json;
 use std::collections::HashMap;
 
 pub mod cache;
+pub mod compat;
 pub mod filter;
 pub mod graphql;
 pub mod history;
