@@ -457,7 +457,10 @@ pub fn push_head_url(
 
 fn create_repo_base(path: &PathBuf) -> josh::JoshResult<josh::shell::Shell> {
     std::fs::create_dir_all(path).expect("can't create_dir_all");
-    gix::init_bare(path)?;
+
+    if !gix::open(path).is_ok() {
+        gix::init_bare(path)?;
+    }
 
     let credential_helper =
         r#"!f() { echo username="${GIT_USER}"; echo password="${GIT_PASSWORD}"; }; f"#;
