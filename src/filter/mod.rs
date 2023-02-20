@@ -443,22 +443,22 @@ fn apply_to_commit2(
                 .get(&git2::Oid::zero())
                 .unwrap_or(&to_filter(Op::Nop));
 
-            for (id, startfilter) in filters {
-                if *id == commit.id() {
-                    let mut f2 = filters.clone();
-                    f2.remove(id);
-                    f2.insert(git2::Oid::zero(), *startfilter);
-                    let op = if f2.len() == 1 {
-                        to_op(*startfilter)
-                    } else {
-                        Op::Rev(f2)
-                    };
-                    if let Some(start) = apply_to_commit2(&op, commit, transaction)? {
-                        transaction.insert(filter, commit.id(), start, true);
-                        return Ok(Some(start));
-                    } else {
-                        return Ok(None);
-                    }
+            let id = commit.id();
+
+            if let Some(startfilter) = filters.get(&id) {
+                let mut f2 = filters.clone();
+                f2.remove(&id);
+                f2.insert(git2::Oid::zero(), *startfilter);
+                let op = if f2.len() == 1 {
+                    to_op(*startfilter)
+                } else {
+                    Op::Rev(f2)
+                };
+                if let Some(start) = apply_to_commit2(&op, commit, transaction)? {
+                    transaction.insert(filter, id, start, true);
+                    return Ok(Some(start));
+                } else {
+                    return Ok(None);
                 }
             }
 
