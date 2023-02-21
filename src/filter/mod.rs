@@ -95,9 +95,15 @@ enum Op {
     Empty,
     Fold,
     Paths,
-    Squash(Option<std::collections::HashMap<git2::Oid, String>>),
+
+    // We use BTreeMap rather than HashMap to guarantee deterministic results when
+    // converting to Filter
+    Squash(Option<std::collections::BTreeMap<git2::Oid, String>>),
     Author(String, String),
-    Rev(std::collections::HashMap<git2::Oid, Filter>),
+
+    // We use BTreeMap rather than HashMap to guarantee deterministic results when
+    // converting to Filter
+    Rev(std::collections::BTreeMap<git2::Oid, Filter>),
     Linear,
     Unsign,
 
