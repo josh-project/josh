@@ -107,9 +107,9 @@ export class ChangeViewer extends React.Component<ChangeViewProps, State> {
             return <div className={'file-browser-loading'}>Loading...</div>
         } else {
             return <div>
-                <pre className="commit-message">
+                <div className="commit-message">
                     {this.state.summary}
-                </pre>
+                </div>
                 <div className={'file-browser-list'}>
                     {this.renderList(this.state.files, NavigateTargetType.Diff)}
                 </div>
