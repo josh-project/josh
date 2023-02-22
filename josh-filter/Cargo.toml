@@ -1,0 +1,31 @@
+[package]
+authors = ["Christian Schilling <christian.schilling@esrlabs.com>"]
+description = "GIT filter cli"
+edition = "2018"
+keywords = ["git", "monorepo", "workflow", "scm"]
+license-file = "LICENSE"
+name = "josh-filter"
+readme = "README.md"
+repository = "https://github.com/josh-project/josh"
+version = "22.4.15"
+
+
+[dependencies]
+josh = {path = ".." }
+env_logger = "0.10.0"
+serde = { version = "1.0.152", features = ["derive"] }
+serde_json= "1.0.93"
+serde_yaml = "0.9.17"
+defer= "0.1.0"
+gix = "0.36.0"
+clap = "4.1.6"
+rs_tracing= { version = "1.1.0", features = ["rs_tracing"] }
+
+[dependencies.git2]
+default-features = false
+version = "0.16.1"
+
+[dependencies.juniper]
+default-features = false
+version = "0.15.11"
+features = []
