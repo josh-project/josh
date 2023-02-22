@@ -1,7 +1,14 @@
 import React from "react";
 import {GraphQLClient} from 'graphql-request'
 import {getServer} from "./Server";
-import {NavigateCallback, NavigateTargetType, QUERY_CHANGE} from "./Navigation";
+import {
+    NavigateCallback,
+    NavigateTargetType,
+    QUERY_CHANGE,
+    from_or_to_path,
+    ChangedFile,
+    Path
+} from "./Navigation";
 import {match} from "ts-pattern";
 
 export type ChangeViewProps = {
@@ -9,15 +16,6 @@ export type ChangeViewProps = {
     filter: string
     rev: string
     navigateCallback: NavigateCallback
-}
-
-type Path = {
-    path: string
-}
-
-type ChangedFile = {
-    from: Path
-    to: Path
 }
 
 type State = {
@@ -83,17 +81,12 @@ export class ChangeViewer extends React.Component<ChangeViewProps, State> {
 
         return values.map((entry) => {
             let className = `file-browser-list-entry file-browser-list-entry-${classNameSuffix}`
-            let path = "";
+            let path = from_or_to_path(entry);
             if (!entry.from) {
                 className = className.concat(" added");
-                path = entry.to.path;
             }
             else if (!entry.to) {
                 className = className.concat(" deleted");
-                path = entry.from.path;
-            }
-            else {
-                path = entry.from.path;
             }
 
             return <div className={className} key={path} onClick={navigate.bind(this,path)}>

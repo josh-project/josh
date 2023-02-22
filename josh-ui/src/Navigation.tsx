@@ -15,6 +15,22 @@ export type NavigateTarget = {
   rev: string
 }
 
+export type Path = {
+    path: string
+}
+
+export type ChangedFile = {
+    from: Path
+    to: Path
+}
+
+export function from_or_to_path(f: ChangedFile) {
+    if (!f.from) {
+        return f.to.path;
+    }
+    return f.from.path;
+}
+
 export type NavigateCallback = (targetType: NavigateTargetType, target: NavigateTarget) => void
 
 export const QUERY_DIR = gql`
@@ -48,6 +64,14 @@ query($rev: String!, $filter: String!, $path: String!) {
     history(limit: 2) {
       file(path:$path) {
         text
+      }
+    }
+    changedFiles {
+      from {
+        path
+      }
+      to {
+        path
       }
     }
   }
