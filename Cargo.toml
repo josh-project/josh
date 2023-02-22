@@ -1,55 +1,15 @@
-[package]
-name = "josh"
-version = "22.4.15"
-repository = "https://github.com/josh-project/josh"
-authors = ["Christian Schilling <initcrash@gmail.com>"]
-license-file = "LICENSE"
-description = "GIT virtualization proxy"
-keywords = ["git", "monorepo", "workflow", "scm"]
-readme = "README.md"
-edition = "2018"
-
 [workspace]
-members = ["josh-filter", "josh-proxy", "josh-ui", "josh-ssh-shell", "josh-rpc", ".", "hyper_cgi"]
+members = [
+    "hyper_cgi",
+    "josh-core",
+    "josh-filter",
+    "josh-proxy",
+    "josh-rpc",
+    "josh-ssh-shell",
+    "josh-ui",
+]
 
-[dependencies]
-backtrace = "0.3.67"
-bitvec = "1.0.1"
-defer= "0.1.0"
-env_logger = "0.10.0"
-git-version = "0.3.5"
-git2 = { version = "0.16.1", default-features = false }
-glob = "0.3.1"
-handlebars = "4.3.6"
-hex = "0.4.3"
-indoc = "2.0.0"
-itertools = "0.10.5"
-lazy_static = "1.4.0"
-log = "0.4.17"
-percent-encoding = "2.2.0"
-pest= "2.5.5"
-pest_derive = "2.5.5"
-rayon = "1.6.1"
-regex = "1.7.1"
-rs_tracing= { version = "1.1.0", features = ["rs_tracing"] }
-serde = { version = "1.0.152", features = ["derive"] }
-serde_json= "1.0.93"
-serde_yaml = "0.9.17"
-sled = "0.34.7"
-strfmt = "0.2.4"
-toml = "0.7.2"
-tracing = "0.1.37"
-gix = "0.36.0"
 
-[dependencies.juniper]
-default-features = false
-version = "0.15.11"
-features = []
-
-[dependencies.chrono]
-default-features = false
-features = ["alloc", "std"]
-version = "0.4.23"
 
 [profile.release]
 lto = true
