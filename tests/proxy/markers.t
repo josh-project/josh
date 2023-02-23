@@ -75,16 +75,20 @@
 
   $ cat > ../query <<EOF
   > {"query":"mutation {
-  >   meta(commit: \"1e64dc7136eae9c6b88e4ab831322f3c72a5c0e4\", topic:\"tool/warn\", add: [
-  >      { path:\"a/b/c\", data: [\"{\\\\\"location\\\\\":\\\\\"1234\\\\\",\\\\\"message\\\\\":\\\n \\\\\"m1\\\\\"}\"] }
-  >   ])
+  >   rev(at: \"1e64dc7136eae9c6b88e4ab831322f3c72a5c0e4\") {
+  >     meta(topic:\"tool/warn\", add: [
+  >        { path:\"a/b/c\", data: [\"{\\\\\"location\\\\\":\\\\\"1234\\\\\",\\\\\"message\\\\\":\\\n \\\\\"m1\\\\\"}\"] }
+  >     ])
+  >   }
   > }"}
   > EOF
 
   $ cat ../query | curl -s -X POST -H "content-type: application/json" --data @- "http://localhost:8002/~/graphql/real_repo.git"
   {
     "data": {
-      "meta": true
+      "rev": {
+        "meta": true
+      }
     }
   } (no-eol)
 
@@ -107,16 +111,20 @@
 
   $ cat > ../query <<EOF
   > {"query":"mutation {
-  >   meta(commit: \"1e64dc7136eae9c6b88e4ab831322f3c72a5c0e4\", topic:\"tool/warn\", add: [
-  >      { path:\"a/b/c\", data: [\"{\\\\\"location\\\\\":\\\\\"1235\\\\\",\\\\\"message\\\\\":\\\\\"foobar\\\\\"}\"] }
-  >   ])
+  >   rev(at: \"1e64dc7136eae9c6b88e4ab831322f3c72a5c0e4\") {
+  >     meta(topic:\"tool/warn\", add: [
+  >        { path:\"a/b/c\", data: [\"{\\\\\"location\\\\\":\\\\\"1235\\\\\",\\\\\"message\\\\\":\\\\\"foobar\\\\\"}\"] }
+  >     ])
+  >   }
   > }"}
   > EOF
 
   $ cat ../query | curl -s -X POST -H "content-type: application/json" --data @- "http://localhost:8002/~/graphql/real_repo.git"
   {
     "data": {
-      "meta": true
+      "rev": {
+        "meta": true
+      }
     }
   } (no-eol)
 
@@ -144,19 +152,23 @@
 
   $ cat > ../query <<EOF
   > {"query":"mutation {
-  >   meta(commit: \"1e64dc7136eae9c6b88e4ab831322f3c72a5c0e4\", topic:\"tool/warn\", add: [
-  >      { path:\"a/b/d\", data: [
-  >        \"{\\\\\"location\\\\\":\\\\\"1235\\\\\",\\\\\"message\\\\\":\\\\\"foobar\\\\\"}\",
-  >        \"{\\\\\"location\\\\\":\\\\\"1236\\\\\",\\\\\"message\\\\\":\\\\\"foobar\\\\\"}\"
-  >      ]}
-  >   ])
+  >   rev(at: \"1e64dc7136eae9c6b88e4ab831322f3c72a5c0e4\") {
+  >     meta(topic:\"tool/warn\", add: [
+  >        { path:\"a/b/d\", data: [
+  >          \"{\\\\\"location\\\\\":\\\\\"1235\\\\\",\\\\\"message\\\\\":\\\\\"foobar\\\\\"}\",
+  >          \"{\\\\\"location\\\\\":\\\\\"1236\\\\\",\\\\\"message\\\\\":\\\\\"foobar\\\\\"}\"
+  >        ]}
+  >     ])
+  >   }
   > }"}
   > EOF
 
   $ cat ../query | curl -s -X POST -H "content-type: application/json" --data @- "http://localhost:8002/~/graphql/real_repo.git"
   {
     "data": {
-      "meta": true
+      "rev": {
+        "meta": true
+      }
     }
   } (no-eol)
 
