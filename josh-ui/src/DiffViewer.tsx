@@ -101,12 +101,15 @@ export class DiffViewer extends React.Component<DiffViewerProps, State> {
             })
         }
 
+        let index = this.state.all_files.findIndex(f => from_or_to_path(f) === this.props.path);
+        let prevclass = (index === 0) ?  "inactive" : "active";
+        let nextclass = (index + 1 === this.state.all_files.length) ? "inactive" : "active";
+
         const navigate_diff = (delta: number, e: React.MouseEvent<HTMLDivElement>) => {
-            let i = this.state.all_files.findIndex(f => from_or_to_path(f) === this.props.path);
             this.props.navigateCallback(NavigateTargetType.Diff, {
                 repo:   this.props.repo,
                 filter: this.props.filter,
-                path:   from_or_to_path(this.state.all_files[i+delta]),
+                path:   from_or_to_path(this.state.all_files[index+delta]),
                 rev:    this.props.rev
             })
         }
@@ -117,8 +120,8 @@ export class DiffViewer extends React.Component<DiffViewerProps, State> {
                 <div className="commit-message link" onClick={navigate.bind(this)}>{this.state.summary}</div>
                 <div className="diff-view-filename">{this.props.path}
                 <span className="prevnext">
-                    <span onClick={navigate_diff.bind(this, -1)}>&lt;</span>
-                    <span onClick={navigate_diff.bind(this, 1)}>&gt;</span>
+                    <span className={prevclass} onClick={navigate_diff.bind(this, -1)}>&lt;</span>
+                    <span className={nextclass} onClick={navigate_diff.bind(this, 1)}>&gt;</span>
                 </span>
                 </div>
                 <DiffEditor

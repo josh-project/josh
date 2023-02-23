@@ -101,7 +101,12 @@ span.prevnext {
     float: right;
     span {
         margin-left: 10px;
-        cursor: pointer;
+        &.inactive {
+            color: #111111;
+        }
+        &.active {
+            cursor: pointer;
+        }
     }
 }
 
