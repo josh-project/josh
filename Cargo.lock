@@ -1477,6 +1477,7 @@ dependencies = [
  "clap",
  "futures",
  "hyper",
+ "hyper-reverse-proxy",
  "lazy_static",
  "rand 0.8.5",
  "tokio",

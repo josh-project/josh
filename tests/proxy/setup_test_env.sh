@@ -7,6 +7,7 @@ export TESTTMP=${PWD}
 killall josh-proxy >/dev/null 2>&1 || true
 killall hyper-cgi-test-server >/dev/null 2>&1 || true
 killall josh-ssh-dev-server >/dev/null 2>&1 || true
+killall lfs-test-server >/dev/null 2>&1 || true
 
 export GIT_CONFIG_NOSYSTEM=1
 git init -q --bare "${TESTTMP}/remote/real_repo.git/" 1> /dev/null
@@ -98,3 +99,12 @@ do
         exit 1
     fi
 done
+
+LFS_LISTEN="tcp://:9999"
+LFS_HOST="127.0.0.1:9999"
+LFS_CONTENTPATH="${TESTTMP}/lfs-content"
+LFS_SCHEME="http"
+
+export LFS_LISTEN LFS_HOST LFS_CONTENTPATH LFS_SCHEME
+
+lfs-test-server > /dev/null 2>&1 &

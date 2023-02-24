@@ -91,6 +91,11 @@ RUN pip3 install \
 
 RUN apk add --no-cache go nodejs npm openssh-client patch
 
+ARG GIT_LFS_VERSION=d4ced458b5cc9eaa712c1a2d299d77a4e3a0a7c5
+RUN GOPATH=/opt/lfs-test-server go install \
+    github.com/git-lfs/lfs-test-server@${GIT_LFS_VERSION}
+ENV PATH=${PATH}:/opt/lfs-test-server/bin
+
 WORKDIR /usr/src/josh
 
 FROM dev as dev-local
