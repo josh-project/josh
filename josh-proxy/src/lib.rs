@@ -863,7 +863,10 @@ pub fn merge_meta(
     transaction: &josh::cache::Transaction,
     transaction_mirror: &josh::cache::Transaction,
     meta_add: &std::collections::HashMap<std::path::PathBuf, Vec<String>>,
-) -> josh::JoshResult<(String, git2::Oid)> {
+) -> josh::JoshResult<Option<(String, git2::Oid)>> {
+    if meta_add.is_empty() {
+        return Ok(None);
+    }
     let rev = transaction_mirror.refname("refs/josh/meta");
 
     let r = transaction_mirror.repo().revparse_single(&rev);
@@ -919,5 +922,5 @@ pub fn merge_meta(
         &parent.as_ref().into_iter().collect::<Vec<_>>(),
     )?;
 
-    Ok(("refs/josh/meta".to_string(), oid))
+    Ok(Some(("refs/josh/meta".to_string(), oid)))
 }

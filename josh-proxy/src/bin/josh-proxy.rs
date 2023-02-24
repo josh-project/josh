@@ -1729,26 +1729,28 @@ async fn serve_graphql(
             tracing::Span::current(),
         ));
 
-        let (refname, oid) = josh_proxy::merge_meta(
-            &*context.transaction.lock()?,
+        let transaction = &*context.transaction.lock()?;
+        if let Some((refname, oid)) = josh_proxy::merge_meta(
+            transaction,
             &*context.transaction_mirror.lock()?,
             &*context.meta_add.lock()?,
-        )?;
-        josh_proxy::push_head_url(
-            context.transaction.lock()?.repo(),
-            serv.repo_path
-                .join("mirror")
-                .join("objects")
-                .to_str()
-                .unwrap(),
-            oid,
-            &refname,
-            &remote_url,
-            &remote_auth,
-            temp_ns.name(),
-            "META_PUSH",
-            false,
-        )?;
+        )? {
+            josh_proxy::push_head_url(
+                transaction.repo(),
+                serv.repo_path
+                    .join("mirror")
+                    .join("objects")
+                    .to_str()
+                    .unwrap(),
+                oid,
+                &refname,
+                &remote_url,
+                &remote_auth,
+                temp_ns.name(),
+                "META_PUSH",
+                false,
+            )?;
+        }
         Ok(())
     })
     .in_current_span()
