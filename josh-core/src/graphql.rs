@@ -837,6 +837,9 @@ pub struct Context {
     pub meta_add: std::sync::Arc<
         std::sync::Mutex<std::collections::HashMap<std::path::PathBuf, Vec<String>>>,
     >,
+    pub to_push: std::sync::Arc<
+        std::sync::Mutex<std::collections::HashSet<(git2::Oid, String, Option<String>)>>,
+    >,
     pub allow_refs: std::sync::Mutex<bool>,
 }
 
@@ -873,11 +876,36 @@ fn format_marker(input: &str) -> JoshResult<String> {
 
 struct RevMut {
     at: String,
+    filter: filter::Filter,
 }
 
 #[graphql_object(context = Context)]
 impl RevMut {
+    fn push(&self, target: String, repo: Option<String>, context: &Context) -> FieldResult<bool> {
+        let transaction = context.transaction.lock()?;
+        let transaction_mirror = context.transaction_mirror.lock()?;
+
+        let commit = transaction_mirror
+            .repo()
+            .find_commit(git2::Oid::from_str(&self.at)?)?;
+
+        let filter_commit = transaction.repo().find_commit(filter::apply_to_commit(
+            self.filter,
+            &commit,
+            &transaction,
+        )?)?;
+
+        if let Ok(mut to_push) = context.to_push.lock() {
+            to_push.insert((filter_commit.id(), target, repo));
+        }
+
+        return Ok(true);
+    }
+
     fn meta(&self, topic: String, add: Vec<MarkersInput>, context: &Context) -> FieldResult<bool> {
+        if self.filter != filter::nop() {
+            return Err(josh_error("meta mutation for filtered revs is not implemented").into());
+        }
         if let Ok(mut meta_add) = context.meta_add.lock() {
             for mm in add {
                 let path = mm.path;
@@ -905,7 +933,7 @@ impl RevMut {
 
 #[graphql_object(context = Context)]
 impl RepositoryMut {
-    fn rev(at: String, context: &Context) -> FieldResult<RevMut> {
+    fn rev(at: String, filter: Option<String>, context: &Context) -> FieldResult<RevMut> {
         {
             let mut allow_refs = context.allow_refs.lock()?;
             if !*allow_refs {
@@ -920,7 +948,16 @@ impl RepositoryMut {
             .repo()
             .find_commit(git2::Oid::from_str(&at)?)?;
 
-        Ok(RevMut { at: at })
+        let filter = if let Some(spec) = filter {
+            filter::parse(&spec)?
+        } else {
+            filter::nop()
+        };
+
+        Ok(RevMut {
+            at: at,
+            filter: filter,
+        })
     }
 }
 
@@ -1002,6 +1039,7 @@ pub fn context(transaction: cache::Transaction, transaction_mirror: cache::Trans
         transaction_mirror: std::sync::Arc::new(std::sync::Mutex::new(transaction_mirror)),
         transaction: std::sync::Arc::new(std::sync::Mutex::new(transaction)),
         meta_add: std::sync::Arc::new(std::sync::Mutex::new(Default::default())),
+        to_push: std::sync::Arc::new(std::sync::Mutex::new(Default::default())),
         allow_refs: std::sync::Mutex::new(false),
     }
 }
