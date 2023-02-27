@@ -3,6 +3,7 @@ extern crate lazy_static;
 use core::iter;
 use core::str::from_utf8;
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
+use std::str::FromStr;
 
 use futures::FutureExt;
 
@@ -141,6 +142,21 @@ async fn call(
         return response;
     }
 
+    if let Some(proxy) = &ARGS.get_one::<String>("proxy") {
+        if let [proxy_path, proxy_target] = proxy.split(":").collect::<Vec<_>>().as_slice() {
+            if path == *proxy_path {
+                let client_ip = std::net::IpAddr::from_str("127.0.0.1").unwrap();
+                return match hyper_reverse_proxy::call(client_ip, proxy_target, req).await {
+                    Ok(response) => response,
+                    Err(error) => hyper::Response::builder()
+                        .status(hyper::StatusCode::INTERNAL_SERVER_ERROR)
+                        .body(hyper::Body::from(format!("Proxy error: {:?}", error)))
+                        .unwrap(),
+                };
+            }
+        }
+    }
+
     let workdir = std::path::PathBuf::from(
         ARGS.get_one::<String>("dir")
             .expect("missing working directory"),
@@ -205,6 +221,7 @@ fn parse_args() -> clap::ArgMatches {
     let app = clap::Command::new("hyper-cgi-test-server")
         .arg(clap::Arg::new("dir").long("dir"))
         .arg(clap::Arg::new("cmd").long("cmd"))
+        .arg(clap::Arg::new("proxy").long("proxy"))
         .arg(clap::Arg::new("args").long("args").short('a').num_args(1..))
         .arg(clap::Arg::new("port").long("port"));
 
