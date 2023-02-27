@@ -2,14 +2,15 @@
 
 !Cargo.lock
 !Cargo.toml
-!run-josh.sh
-!src
-!josh-ui/public
-!josh-ui/src
-!josh-ui/*.toml
-!josh-ui/*.rs
-!josh-ui/*.json
+!hyper_cgi
+!josh-filter
 !josh-proxy
 !josh-rpc
 !josh-ssh-shell
-!hyper_cgi
+!josh-ui/*.json
+!josh-ui/*.rs
+!josh-ui/*.toml
+!josh-ui/public
+!josh-ui/src
+!run-josh.sh
+!src

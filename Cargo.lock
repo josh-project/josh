@@ -1604,7 +1604,6 @@ dependencies = [
  "backtrace",
  "bitvec",
  "chrono",
- "clap",
  "defer",
  "env_logger",
  "git-version",
@@ -1631,6 +1630,23 @@ dependencies = [
  "strfmt",
  "toml",
  "tracing",
+]
+
+[[package]]
+name = "josh-filter"
+version = "22.4.15"
+dependencies = [
+ "clap",
+ "defer",
+ "env_logger",
+ "git2",
+ "gix",
+ "josh",
+ "juniper",
+ "rs_tracing",
+ "serde",
+ "serde_json",
+ "serde_yaml",
 ]
 
 [[package]]
