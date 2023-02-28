@@ -101,8 +101,23 @@ impl From<git2::Oid> for Oid {
     }
 }
 
-pub const VERSION: &str =
-    git_version::git_version!(args = ["--tags", "--always", "--dirty=-modified"]);
+/// Determine the josh version number with the following precedence:
+///
+/// 1. If in a git checkout, and `git` binary is present, use the
+///    commit ID or nearest tag.
+/// 2. If not in a git checkout, use the value of the `JOSH_VERSION`
+///    environment variable (e.g. a build from a tarball).
+/// 3. If neither options work, fall back to the string "unknown".
+///
+/// This is used to display version numbers at runtime in different
+/// josh components.
+pub const VERSION: &str = git_version::git_version!(
+    args = ["--tags", "--always", "--dirty=-modified"],
+    fallback = match option_env!("JOSH_VERSION") {
+        Some(v) => v,
+        None => "unknown",
+    },
+);
 
 const FRAGMENT: &percent_encoding::AsciiSet = &percent_encoding::CONTROLS
     .add(b'/')
