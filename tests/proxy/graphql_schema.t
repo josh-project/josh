@@ -312,6 +312,22 @@
                 "deprecationReason": null,
                 "description": null,
                 "isDeprecated": false,
+                "name": "describe",
+                "type": {
+                  "kind": "NON_NULL",
+                  "name": null,
+                  "ofType": {
+                    "kind": "OBJECT",
+                    "name": "Describe",
+                    "ofType": null
+                  }
+                }
+              },
+              {
+                "args": [],
+                "deprecationReason": null,
+                "description": null,
+                "isDeprecated": false,
                 "name": "summary",
                 "type": {
                   "kind": "NON_NULL",
@@ -1757,6 +1773,45 @@
             "interfaces": [],
             "kind": "OBJECT",
             "name": "__EnumValue",
+            "possibleTypes": null
+          },
+          {
+            "description": null,
+            "enumValues": null,
+            "fields": [
+              {
+                "args": [],
+                "deprecationReason": null,
+                "description": null,
+                "isDeprecated": false,
+                "name": "name",
+                "type": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              },
+              {
+                "args": [],
+                "deprecationReason": null,
+                "description": null,
+                "isDeprecated": false,
+                "name": "depth",
+                "type": {
+                  "kind": "NON_NULL",
+                  "name": null,
+                  "ofType": {
+                    "kind": "SCALAR",
+                    "name": "Int",
+                    "ofType": null
+                  }
+                }
+              }
+            ],
+            "inputFields": null,
+            "interfaces": [],
+            "kind": "OBJECT",
+            "name": "Describe",
             "possibleTypes": null
           },
           {

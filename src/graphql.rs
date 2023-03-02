@@ -1,7 +1,10 @@
 #![allow(unused_variables)]
 
 use super::*;
+use crate::compat::Git2CompatExt;
+use gix::commit::describe::SelectRef;
 use juniper::{graphql_object, EmptyMutation, EmptySubscription, FieldResult};
+use std::convert::TryFrom;
 
 pub struct Revision {
     filter: filter::Filter,
@@ -62,6 +65,22 @@ impl DiffPath {
     }
 }
 
+pub struct Describe {
+    name: Option<String>,
+    depth: u32,
+}
+
+#[graphql_object(context = Context)]
+impl Describe {
+    fn name(&self) -> FieldResult<Option<String>> {
+        Ok(self.name.clone())
+    }
+
+    fn depth(&self) -> FieldResult<i32> {
+        Ok(self.depth as i32)
+    }
+}
+
 impl Revision {
     fn files_or_dirs(
         &self,
@@ -112,6 +131,33 @@ impl Revision {
         )?)?;
         let a = filter_commit.author();
         Ok(a.email().unwrap_or("").to_owned())
+    }
+
+    fn describe(&self, context: &Context) -> FieldResult<Describe> {
+        let transaction = context.transaction.lock()?;
+
+        let object = transaction
+            .oxide_repo()
+            .find_object(self.commit_id.to_oxide())?;
+
+        let commit = gix::Commit::try_from(object)
+            .map_err(|_| josh_error("referenced object is not a commit"))?;
+
+        let describe_result = commit
+            .describe()
+            .names(SelectRef::AllTags)
+            .id_as_fallback(false)
+            .try_resolve()?;
+
+        Ok(describe_result
+            .map(|resolution| Describe {
+                name: resolution.outcome.name.map(|name| name.to_string()),
+                depth: resolution.outcome.depth,
+            })
+            .unwrap_or(Describe {
+                name: None,
+                depth: 0,
+            }))
     }
 
     fn summary(&self, context: &Context) -> FieldResult<String> {
