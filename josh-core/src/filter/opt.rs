@@ -248,10 +248,9 @@ fn common_post(filters: &Vec<Filter>) -> Option<(Filter, Vec<Filter>)> {
             }
         }
     }
-    if Some(to_filter(Op::Nop)) == c {
-        None
-    } else {
-        c.map(|c| (c, rest))
+    match c.map(to_op) {
+        Some(Op::Prefix(_)) => c.map(|c| (c, rest)),
+        _ => None,
     }
 }
 
