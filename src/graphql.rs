@@ -871,33 +871,17 @@ fn format_marker(input: &str) -> JoshResult<String> {
     Ok(format!("{}:{}", &hash, &line))
 }
 
+struct RevMut {
+    at: String,
+}
+
 #[graphql_object(context = Context)]
-impl RepositoryMut {
-    fn meta(
-        &self,
-        commit: String,
-        topic: String,
-        add: Vec<MarkersInput>,
-        context: &Context,
-    ) -> FieldResult<bool> {
-        {
-            let mut allow_refs = context.allow_refs.lock()?;
-            if !*allow_refs {
-                *allow_refs = true;
-                return Err(josh_error("ref query not allowed").into());
-            };
-        }
-        let transaction_mirror = context.transaction_mirror.lock()?;
-
-        // Just check that the commit exists
-        transaction_mirror
-            .repo()
-            .find_commit(git2::Oid::from_str(&commit)?)?;
-
+impl RevMut {
+    fn meta(&self, topic: String, add: Vec<MarkersInput>, context: &Context) -> FieldResult<bool> {
         if let Ok(mut meta_add) = context.meta_add.lock() {
             for mm in add {
                 let path = mm.path;
-                let path = &marker_path(&commit, &topic).join(path);
+                let path = &marker_path(&self.at, &topic).join(path);
                 let mut lines = meta_add.get(path).unwrap_or(&vec![]).clone();
 
                 let mm = mm
@@ -916,6 +900,27 @@ impl RepositoryMut {
         }
 
         Ok(true)
+    }
+}
+
+#[graphql_object(context = Context)]
+impl RepositoryMut {
+    fn rev(at: String, context: &Context) -> FieldResult<RevMut> {
+        {
+            let mut allow_refs = context.allow_refs.lock()?;
+            if !*allow_refs {
+                *allow_refs = true;
+                return Err(josh_error("ref query not allowed").into());
+            };
+        }
+        let transaction_mirror = context.transaction_mirror.lock()?;
+
+        // Just check that the commit exists
+        transaction_mirror
+            .repo()
+            .find_commit(git2::Oid::from_str(&at)?)?;
+
+        Ok(RevMut { at: at })
     }
 }
 
