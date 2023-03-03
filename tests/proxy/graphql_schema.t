@@ -129,6 +129,16 @@
                         "ofType": null
                       }
                     }
+                  },
+                  {
+                    "defaultValue": null,
+                    "description": null,
+                    "name": "filter",
+                    "type": {
+                      "kind": "SCALAR",
+                      "name": "String",
+                      "ofType": null
+                    }
                   }
                 ],
                 "deprecationReason": null,
@@ -1551,6 +1561,47 @@
             "description": null,
             "enumValues": null,
             "fields": [
+              {
+                "args": [
+                  {
+                    "defaultValue": null,
+                    "description": null,
+                    "name": "target",
+                    "type": {
+                      "kind": "NON_NULL",
+                      "name": null,
+                      "ofType": {
+                        "kind": "SCALAR",
+                        "name": "String",
+                        "ofType": null
+                      }
+                    }
+                  },
+                  {
+                    "defaultValue": null,
+                    "description": null,
+                    "name": "repo",
+                    "type": {
+                      "kind": "SCALAR",
+                      "name": "String",
+                      "ofType": null
+                    }
+                  }
+                ],
+                "deprecationReason": null,
+                "description": null,
+                "isDeprecated": false,
+                "name": "push",
+                "type": {
+                  "kind": "NON_NULL",
+                  "name": null,
+                  "ofType": {
+                    "kind": "SCALAR",
+                    "name": "Boolean",
+                    "ofType": null
+                  }
+                }
+              },
               {
                 "args": [
                   {

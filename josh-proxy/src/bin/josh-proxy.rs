@@ -1161,7 +1161,7 @@ async fn call_service(
         }
     };
 
-    let remote_url = upstream + meta.config.repo.as_str();
+    let remote_url = upstream.clone() + meta.config.repo.as_str();
 
     if let Some(filter_prefix) = &ARGS.filter_prefix {
         filter = josh::filter::chain(josh::filter::parse(filter_prefix)?, filter);
@@ -1202,7 +1202,7 @@ async fn call_service(
     }
 
     if parsed_url.api == "/~/graphql" {
-        return serve_graphql(serv, req, meta.config.repo.to_owned(), remote_url, auth).await;
+        return serve_graphql(serv, req, meta.config.repo.to_owned(), upstream, auth).await;
     }
 
     if parsed_url.api == "/~/graphiql" {
@@ -1630,9 +1630,10 @@ async fn serve_graphql(
     serv: Arc<JoshProxyService>,
     req: Request<hyper::Body>,
     upstream_repo: String,
-    remote_url: String,
+    upstream: String,
     auth: josh_proxy::auth::Handle,
 ) -> josh::JoshResult<Response<hyper::Body>> {
+    let remote_url = upstream.clone() + upstream_repo.as_str();
     let parsed = match josh_proxy::juniper_hyper::parse_req(req).await {
         Ok(r) => r,
         Err(resp) => return Ok(resp),
@@ -1730,11 +1731,22 @@ async fn serve_graphql(
         ));
 
         let transaction = &*context.transaction.lock()?;
+        let mut to_push = context.to_push.lock()?.clone();
+
         if let Some((refname, oid)) = josh_proxy::merge_meta(
             transaction,
             &*context.transaction_mirror.lock()?,
             &*context.meta_add.lock()?,
         )? {
+            to_push.insert((oid, refname, None));
+        }
+
+        for (oid, refname, repo) in to_push {
+            let url = if let Some(repo) = repo {
+                format!("{}/{}", upstream, repo)
+            } else {
+                remote_url.clone()
+            };
             josh_proxy::push_head_url(
                 transaction.repo(),
                 serv.repo_path
@@ -1744,13 +1756,14 @@ async fn serve_graphql(
                     .unwrap(),
                 oid,
                 &refname,
-                &remote_url,
+                &url,
                 &remote_auth,
                 temp_ns.name(),
-                "META_PUSH",
+                "QUERY_PUSH",
                 false,
             )?;
         }
+
         Ok(())
     })
     .in_current_span()
