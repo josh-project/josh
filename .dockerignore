@@ -3,6 +3,7 @@
 !Cargo.lock
 !Cargo.toml
 !hyper_cgi
+!josh-core
 !josh-filter
 !josh-proxy
 !josh-rpc
@@ -13,4 +14,3 @@
 !josh-ui/public
 !josh-ui/src
 !run-josh.sh
-!src
