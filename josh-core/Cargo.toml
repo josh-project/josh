@@ -30,7 +30,7 @@ rayon = "1.6.1"
 regex = "1.7.1"
 rs_tracing= { version = "1.1.0", features = ["rs_tracing"] }
 serde = { version = "1.0.152", features = ["derive"] }
-serde_json= "1.0.93"
+serde_json= "1.0.94"
 serde_yaml = "0.9.17"
 sled = "0.34.7"
 strfmt = "0.2.4"
