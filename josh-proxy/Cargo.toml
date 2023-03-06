@@ -20,7 +20,7 @@ hyper-reverse-proxy = "0.5.1"
 hyper-staticfile = "0.9.5"
 hyper-tls = "0.5.0"
 hyper_cgi = {path = "../hyper_cgi"}
-indoc = "2.0.0"
+indoc = "2.0.1"
 josh = {path = "../josh-core" }
 lazy_static = "1.4.0"
 opentelemetry = "0.18.0"
