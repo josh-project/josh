@@ -4,6 +4,6 @@ version = "0.1.0"
 edition = "2018"
 
 [dependencies]
-serde = { version = "1.0.152", features = ["std", "derive"] }
+serde = { version = "1.0.154", features = ["std", "derive"] }
 tokio = { version = "1.25.0", features = ["fs", "io-std"] }
 libc = "0.2.139"
