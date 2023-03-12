@@ -6,20 +6,24 @@ blazingly-fast, incremental, and reversible implementation of git history filter
 `josh-proxy` can be integrated with any git host:
 
 ```
-$ docker run -p 8000:8000 -e JOSH_REMOTE=https://github.com -v josh-vol:/data/git joshproject/josh-proxy:latest
+$ docker run \
+    -p 8000:8000 \
+    -e JOSH_REMOTE=https://github.com \
+    -v josh-vol:/data/git \
+    joshproject/josh-proxy:latest
 ```
 
 See [Container options](#container-options) for full list of environment variables.
 
 ## Use cases
 
-### Partial cloning
+### Partial cloning <a href="https://josh-project.dev/~/ui/browse?repo=josh.git&path=&filter=%3A%2Fdocs&rev=HEAD"><img src="https://img.shields.io/badge/try_it-josh--project.dev-black"/></a>
 
 Reduce scope and size of clones by treating subdirectories of the monorepo
 as individual repositories.
 
 ```
-$ git clone http://josh/monorepo.git:/path/to/library.git
+$ git clone https://josh-project.dev/josh.git:/docs.git
 ```
 
 The partial repo will act as a normal git repository but only contain the files
