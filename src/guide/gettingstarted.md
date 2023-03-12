@@ -10,35 +10,35 @@ proxy to serve your own git repository.
 
 ## Setting up the proxy
 
-Josh is distributed via [docker hub](https://hub.docker.com/r/joshproject/josh-proxy),
+Josh is distributed via [Docker Hub](https://hub.docker.com/r/joshproject/josh-proxy),
 and is installed and started with the following command:
 
 ```shell
 {{#include gettingstarted.t:docker_github}}
 ```
 
-This starts josh as a proxy to github.com, in a docker container, 
-mounting the ./git\_data folder to the image for use by josh.
+This starts Josh as a proxy to `github.com`, in a Docker container, 
+creating a volume `josh-vol` and mounting it to the image for use by Josh.
 
 ## Cloning a repository
 
-Once josh is running, we can clone a repository through it.
-For example, let's clone josh:
+Once Josh is running, we can clone a repository through it.
+For example, let's clone Josh:
 
 ```shell
 {{#include gettingstarted.t:clone_full}}
 ```
 
-As we can see, this repository is simply the normal josh one:
+As we can see, this repository is simply the normal Josh one:
 
 ```shell
 {{#include gettingstarted.t:ls_full}}
 ```
 
-## Extracting a module
+## Cloning a part of the repo
 
-Josh becomes interesting when we want to extract a module.
-Let's check out the josh repository again, but this time let's filter
+Josh becomes interesting when we want to clone a part of the repo.
+Let's check out the Josh repository again, but this time let's filter
 only the documentation out:
 
 ```shell
