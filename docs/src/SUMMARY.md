@@ -12,6 +12,7 @@
 - [Filter syntax](./reference/filters.md)
 - [Proxy](./reference/proxy.md)
 - [Workspaces](./reference/workspace.md)
+- [Container configuration](./reference/container.md)
 - [Command line tools](./reference/cli.md)
 - [Graphql API](./reference/graphql.md)
 - [Handlebar generator]()
