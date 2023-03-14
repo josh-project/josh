@@ -8,9 +8,8 @@ ANCHOR: docker_github
   >   --publish 8000:8000 \
   >   --env JOSH_REMOTE=https://github.com \
   >   --volume josh-vol:/data/git \
-  >   joshproject/josh-proxy:latest
+  >   joshproject/josh-proxy:latest >/dev/null
 ANCHOR_END: docker_github
-  * (glob)
 
 # waiting for josh to be running
   $ until curl -s http://localhost:8000/
@@ -90,3 +89,4 @@ ANCHOR_END: ls_doc
 # cleanup
   $ cd ${TESTTMP}
   $ docker stop josh-proxy >/dev/null
+  $ docker rm josh-proxy >/dev/null
