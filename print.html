@@ -83,7 +83,7 @@
 
         <nav id="sidebar" class="sidebar" aria-label="Table of contents">
             <div class="sidebar-scrollbox">
-                <ol class="chapter"><li class="chapter-item expanded "><a href="intro.html"><strong aria-hidden="true">1.</strong> Intro</a></li><li class="chapter-item expanded "><a href="usecases.html"><strong aria-hidden="true">2.</strong> Use cases</a></li><li class="chapter-item expanded "><a href="faq.html"><strong aria-hidden="true">3.</strong> FAQ</a></li><li class="chapter-item expanded affix "><li class="part-title">Guide</li><li class="chapter-item expanded "><a href="guide/gettingstarted.html"><strong aria-hidden="true">4.</strong> Getting started</a></li><li class="chapter-item expanded "><a href="guide/workspaces.html"><strong aria-hidden="true">5.</strong> Working with workspaces</a></li><li class="chapter-item expanded "><a href="guide/importing.html"><strong aria-hidden="true">6.</strong> Importing projects</a></li><li class="chapter-item expanded "><div><strong aria-hidden="true">7.</strong> Integrating with CI</div></li><li class="chapter-item expanded affix "><li class="part-title">Reference</li><li class="chapter-item expanded "><a href="reference/filters.html"><strong aria-hidden="true">8.</strong> Filter syntax</a></li><li class="chapter-item expanded "><a href="reference/proxy.html"><strong aria-hidden="true">9.</strong> Proxy</a></li><li class="chapter-item expanded "><a href="reference/workspace.html"><strong aria-hidden="true">10.</strong> Workspaces</a></li><li class="chapter-item expanded "><a href="reference/cli.html"><strong aria-hidden="true">11.</strong> Command line tools</a></li><li class="chapter-item expanded "><a href="reference/graphql.html"><strong aria-hidden="true">12.</strong> Graphql API</a></li><li class="chapter-item expanded "><div><strong aria-hidden="true">13.</strong> Handlebar generator</div></li><li class="chapter-item expanded "><div><strong aria-hidden="true">14.</strong> The josh UI</div></li><li class="chapter-item expanded affix "><li class="part-title">Contributing</li><li class="chapter-item expanded "><a href="contributing/testing.html"><strong aria-hidden="true">15.</strong> Testing</a></li><li class="chapter-item expanded "><a href="contributing/dev-tools.html"><strong aria-hidden="true">16.</strong> Development tools</a></li><li class="chapter-item expanded "><div><strong aria-hidden="true">17.</strong> Tracing</div></li></ol>            </div>
+                <ol class="chapter"><li class="chapter-item expanded "><a href="intro.html"><strong aria-hidden="true">1.</strong> Intro</a></li><li class="chapter-item expanded "><a href="usecases.html"><strong aria-hidden="true">2.</strong> Use cases</a></li><li class="chapter-item expanded "><a href="faq.html"><strong aria-hidden="true">3.</strong> FAQ</a></li><li class="chapter-item expanded affix "><li class="part-title">Guide</li><li class="chapter-item expanded "><a href="guide/gettingstarted.html"><strong aria-hidden="true">4.</strong> Getting started</a></li><li class="chapter-item expanded "><a href="guide/workspaces.html"><strong aria-hidden="true">5.</strong> Working with workspaces</a></li><li class="chapter-item expanded "><a href="guide/importing.html"><strong aria-hidden="true">6.</strong> Importing projects</a></li><li class="chapter-item expanded "><div><strong aria-hidden="true">7.</strong> Integrating with CI</div></li><li class="chapter-item expanded affix "><li class="part-title">Reference</li><li class="chapter-item expanded "><a href="reference/filters.html"><strong aria-hidden="true">8.</strong> Filter syntax</a></li><li class="chapter-item expanded "><a href="reference/proxy.html"><strong aria-hidden="true">9.</strong> Proxy</a></li><li class="chapter-item expanded "><a href="reference/workspace.html"><strong aria-hidden="true">10.</strong> Workspaces</a></li><li class="chapter-item expanded "><a href="reference/container.html"><strong aria-hidden="true">11.</strong> Container configuration</a></li><li class="chapter-item expanded "><a href="reference/cli.html"><strong aria-hidden="true">12.</strong> Command line tools</a></li><li class="chapter-item expanded "><a href="reference/graphql.html"><strong aria-hidden="true">13.</strong> Graphql API</a></li><li class="chapter-item expanded "><div><strong aria-hidden="true">14.</strong> Handlebar generator</div></li><li class="chapter-item expanded "><div><strong aria-hidden="true">15.</strong> The josh UI</div></li><li class="chapter-item expanded affix "><li class="part-title">Contributing</li><li class="chapter-item expanded "><a href="contributing/testing.html"><strong aria-hidden="true">16.</strong> Testing</a></li><li class="chapter-item expanded "><a href="contributing/dev-tools.html"><strong aria-hidden="true">17.</strong> Development tools</a></li><li class="chapter-item expanded "><div><strong aria-hidden="true">18.</strong> Tracing</div></li></ol>            </div>
             <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
         </nav>
 
@@ -333,20 +333,26 @@ proxy to serve your own git repository.</p>
 which can be run with <a href="https://bitheap.org/cram/">cram</a>.</p>
 </blockquote>
 <h2 id="setting-up-the-proxy"><a class="header" href="#setting-up-the-proxy">Setting up the proxy</a></h2>
-<p>Josh is distributed via <a href="https://hub.docker.com/r/joshproject/josh-proxy">docker hub</a>,
+<p>Josh is distributed via <a href="https://hub.docker.com/r/joshproject/josh-proxy">Docker Hub</a>,
 and is installed and started with the following command:</p>
-<pre><code class="language-shell">  $ docker run -d -p 8000:8000 -e JOSH_REMOTE=https://github.com -v josh-vol:$(pwd)/git_data joshproject/josh-proxy:latest &gt; josh.out
+<pre><code class="language-shell">  $ docker run \
+  &gt;   --name josh-proxy \
+  &gt;   --detach \
+  &gt;   --publish 8000:8000 \
+  &gt;   --env JOSH_REMOTE=https://github.com \
+  &gt;   --volume josh-vol:/data/git \
+  &gt;   joshproject/josh-proxy:latest &gt;/dev/null
 </code></pre>
-<p>This starts josh as a proxy to github.com, in a docker container, 
-mounting the ./git_data folder to the image for use by josh.</p>
+<p>This starts Josh as a proxy to <code>github.com</code>, in a Docker container, 
+creating a volume <code>josh-vol</code> and mounting it to the image for use by Josh.</p>
 <h2 id="cloning-a-repository"><a class="header" href="#cloning-a-repository">Cloning a repository</a></h2>
-<p>Once josh is running, we can clone a repository through it.
-For example, let's clone josh:</p>
+<p>Once Josh is running, we can clone a repository through it.
+For example, let's clone Josh:</p>
 <pre><code class="language-shell">  $ git clone http://localhost:8000/josh-project/josh.git
   Cloning into 'josh'...
   $ cd josh
 </code></pre>
-<p>As we can see, this repository is simply the normal josh one:</p>
+<p>As we can see, this repository is simply the normal Josh one:</p>
 <pre><code class="language-shell">  $ ls
   Cargo.lock
   Cargo.toml
@@ -377,9 +383,9 @@ For example, let's clone josh:</p>
   
       Update release.yml
 </code></pre>
-<h2 id="extracting-a-module"><a class="header" href="#extracting-a-module">Extracting a module</a></h2>
-<p>Josh becomes interesting when we want to extract a module.
-Let's check out the josh repository again, but this time let's filter
+<h2 id="cloning-a-part-of-the-repo"><a class="header" href="#cloning-a-part-of-the-repo">Cloning a part of the repo</a></h2>
+<p>Josh becomes interesting when we want to clone a part of the repo.
+Let's check out the Josh repository again, but this time let's filter
 only the documentation out:</p>
 <pre><code class="language-shell">  $ cd ..
   $ git clone http://localhost:8000/josh-project/josh.git:/docs.git
@@ -1067,6 +1073,123 @@ repo will have two copies of that path from that point on. Effectivly creating a
 <h2 id="remove-a-mapped-path"><a class="header" href="#remove-a-mapped-path">Remove a mapped path</a></h2>
 <p>To remove a mapped path as well as it's contents, remove the entry from the
 <code>workspace.josh</code> file and also remove the path inside the workspace using <code>git rm</code>.</p>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="container-configuration"><a class="header" href="#container-configuration">Container configuration</a></h1>
+<h2 id="container-options"><a class="header" href="#container-options">Container options</a></h2>
+<table>
+    <tr>
+        <th>
+            Variable
+        </th>
+        <th>
+            Meaning
+        </th>
+    </tr>
+    <tr>
+        <td>
+            <code>JOSH_REMOTE</code>
+        </td>
+        <td>
+            HTTP remote, including protocol.
+            Example: <code>https://github.com</code>
+        </td>
+    </tr>
+    <tr>
+        <td>
+            <code>JOSH_REMOTE_SSH</code>
+        </td>
+        <td>
+            SSH remote, including protocol.
+            Example: <code>ssh://git@github.com</code>
+        </td>
+    </tr>
+    <tr>
+        <td>
+            <code>JOSH_HTTP_PORT</code>
+        </td>
+        <td>
+            HTTP port to listen on.
+            Default: 8000
+        </td>
+    </tr>
+    <tr>
+        <td>
+            <code>JOSH_SSH_PORT</code>
+        </td>
+        <td>
+            SSH port to listen on.
+            Default: 8022
+        </td>
+    </tr>
+    <tr>
+        <td>
+            <code>JOSH_SSH_MAX_STARTUPS</code>
+        </td>
+        <td>
+            Maximum number of concurrent SSH authentication attempts. Default: 16
+        </td>
+    </tr>
+    <tr>
+        <td>
+            <code>JOSH_SSH_TIMEOUT</code>
+        </td>
+        <td>
+            Timeout, in seconds, for a single request when serving repos over SSH.
+            This time should cover fetch from upstream repo, filtering, and serving
+            repo to client. Default: 300
+        </td>
+    </tr>
+    <tr>
+        <td>
+            <code>JOSH_EXTRA_OPTS</code>
+        </td>
+        <td>
+            Extra options passed directly to
+            <code>josh-proxy</code> process
+        </td>
+    </tr>
+</table>
+<h2 id="container-volumes"><a class="header" href="#container-volumes">Container volumes</a></h2>
+<table>
+    <tr>
+        <th>
+            Volume
+        </th>
+        <th>
+            Purpose
+        </th>
+    </tr>
+    <tr>
+        <td>
+            <code>/data/git</code>
+        </td>
+        <td>
+            Git cache volume. If this volume is not
+            mounted, the cache will be lost every time
+            the container is shut down.
+        </td>
+    </tr>
+    <tr>
+        <td>
+            <code>/data/keys</code>
+        </td>
+        <td>
+            SSH server keys. If this volume is not
+            mounted, a new key will be generated on
+            each container startup
+        </td>
+    </tr>
+</table>
+<h2 id="configuring-ssh-access"><a class="header" href="#configuring-ssh-access">Configuring SSH access</a></h2>
+<p>Josh supports SSH access (just pull without pushing, for now).
+To use SSH, you need to add the following lines to your <code>~/.ssh/config</code>:</p>
+<pre><code>Host your-josh-instance.com
+    ForwardAgent yes
+    PreferredAuthentications publickey
+</code></pre>
+<p>Alternatively, you can pass those options via <code>GIT_SSH_COMMAND</code>:</p>
+<pre><code>GIT_SSH_COMMAND=&quot;ssh -o PreferredAuthentications=publickey -o ForwardAgent=yes&quot; git clone ssh://git@your-josh-instance.com/...
+</code></pre>
+<p>In other words, you need to ensure SSH agent forwarding is enabled.</p>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="josh-filter"><a class="header" href="#josh-filter">josh-filter</a></h1>
 <p>Command to rewrite history using <code>josh</code> filter specs.
 By default it will use <code>HEAD</code> as input and update <code>FILTERED_HEAD</code> with the filtered

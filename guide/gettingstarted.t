@@ -1,9 +1,14 @@
   $ export TESTTMP=${PWD}
-  $ mkdir git_data
 
 # starting josh
 ANCHOR: docker_github
-  $ docker run -d -p 8000:8000 -e JOSH_REMOTE=https://github.com -v josh-vol:$(pwd)/git_data joshproject/josh-proxy:latest > josh.out
+  $ docker run \
+  >   --name josh-proxy \
+  >   --detach \
+  >   --publish 8000:8000 \
+  >   --env JOSH_REMOTE=https://github.com \
+  >   --volume josh-vol:/data/git \
+  >   joshproject/josh-proxy:latest >/dev/null
 ANCHOR_END: docker_github
 
 # waiting for josh to be running
@@ -83,4 +88,5 @@ ANCHOR_END: ls_doc
 
 # cleanup
   $ cd ${TESTTMP}
-  $ docker stop $(cat josh.out) >/dev/null
+  $ docker stop josh-proxy >/dev/null
+  $ docker rm josh-proxy >/dev/null

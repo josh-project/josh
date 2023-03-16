@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Graphql API - Just One Single History</title>
+        <title>Container configuration - Just One Single History</title>
                 
 
         <!-- Custom HTML head -->
@@ -82,7 +82,7 @@
 
         <nav id="sidebar" class="sidebar" aria-label="Table of contents">
             <div class="sidebar-scrollbox">
-                <ol class="chapter"><li class="chapter-item expanded "><a href="../intro.html"><strong aria-hidden="true">1.</strong> Intro</a></li><li class="chapter-item expanded "><a href="../usecases.html"><strong aria-hidden="true">2.</strong> Use cases</a></li><li class="chapter-item expanded "><a href="../faq.html"><strong aria-hidden="true">3.</strong> FAQ</a></li><li class="chapter-item expanded affix "><li class="part-title">Guide</li><li class="chapter-item expanded "><a href="../guide/gettingstarted.html"><strong aria-hidden="true">4.</strong> Getting started</a></li><li class="chapter-item expanded "><a href="../guide/workspaces.html"><strong aria-hidden="true">5.</strong> Working with workspaces</a></li><li class="chapter-item expanded "><a href="../guide/importing.html"><strong aria-hidden="true">6.</strong> Importing projects</a></li><li class="chapter-item expanded "><div><strong aria-hidden="true">7.</strong> Integrating with CI</div></li><li class="chapter-item expanded affix "><li class="part-title">Reference</li><li class="chapter-item expanded "><a href="../reference/filters.html"><strong aria-hidden="true">8.</strong> Filter syntax</a></li><li class="chapter-item expanded "><a href="../reference/proxy.html"><strong aria-hidden="true">9.</strong> Proxy</a></li><li class="chapter-item expanded "><a href="../reference/workspace.html"><strong aria-hidden="true">10.</strong> Workspaces</a></li><li class="chapter-item expanded "><a href="../reference/container.html"><strong aria-hidden="true">11.</strong> Container configuration</a></li><li class="chapter-item expanded "><a href="../reference/cli.html"><strong aria-hidden="true">12.</strong> Command line tools</a></li><li class="chapter-item expanded "><a href="../reference/graphql.html" class="active"><strong aria-hidden="true">13.</strong> Graphql API</a></li><li class="chapter-item expanded "><div><strong aria-hidden="true">14.</strong> Handlebar generator</div></li><li class="chapter-item expanded "><div><strong aria-hidden="true">15.</strong> The josh UI</div></li><li class="chapter-item expanded affix "><li class="part-title">Contributing</li><li class="chapter-item expanded "><a href="../contributing/testing.html"><strong aria-hidden="true">16.</strong> Testing</a></li><li class="chapter-item expanded "><a href="../contributing/dev-tools.html"><strong aria-hidden="true">17.</strong> Development tools</a></li><li class="chapter-item expanded "><div><strong aria-hidden="true">18.</strong> Tracing</div></li></ol>            </div>
+                <ol class="chapter"><li class="chapter-item expanded "><a href="../intro.html"><strong aria-hidden="true">1.</strong> Intro</a></li><li class="chapter-item expanded "><a href="../usecases.html"><strong aria-hidden="true">2.</strong> Use cases</a></li><li class="chapter-item expanded "><a href="../faq.html"><strong aria-hidden="true">3.</strong> FAQ</a></li><li class="chapter-item expanded affix "><li class="part-title">Guide</li><li class="chapter-item expanded "><a href="../guide/gettingstarted.html"><strong aria-hidden="true">4.</strong> Getting started</a></li><li class="chapter-item expanded "><a href="../guide/workspaces.html"><strong aria-hidden="true">5.</strong> Working with workspaces</a></li><li class="chapter-item expanded "><a href="../guide/importing.html"><strong aria-hidden="true">6.</strong> Importing projects</a></li><li class="chapter-item expanded "><div><strong aria-hidden="true">7.</strong> Integrating with CI</div></li><li class="chapter-item expanded affix "><li class="part-title">Reference</li><li class="chapter-item expanded "><a href="../reference/filters.html"><strong aria-hidden="true">8.</strong> Filter syntax</a></li><li class="chapter-item expanded "><a href="../reference/proxy.html"><strong aria-hidden="true">9.</strong> Proxy</a></li><li class="chapter-item expanded "><a href="../reference/workspace.html"><strong aria-hidden="true">10.</strong> Workspaces</a></li><li class="chapter-item expanded "><a href="../reference/container.html" class="active"><strong aria-hidden="true">11.</strong> Container configuration</a></li><li class="chapter-item expanded "><a href="../reference/cli.html"><strong aria-hidden="true">12.</strong> Command line tools</a></li><li class="chapter-item expanded "><a href="../reference/graphql.html"><strong aria-hidden="true">13.</strong> Graphql API</a></li><li class="chapter-item expanded "><div><strong aria-hidden="true">14.</strong> Handlebar generator</div></li><li class="chapter-item expanded "><div><strong aria-hidden="true">15.</strong> The josh UI</div></li><li class="chapter-item expanded affix "><li class="part-title">Contributing</li><li class="chapter-item expanded "><a href="../contributing/testing.html"><strong aria-hidden="true">16.</strong> Testing</a></li><li class="chapter-item expanded "><a href="../contributing/dev-tools.html"><strong aria-hidden="true">17.</strong> Development tools</a></li><li class="chapter-item expanded "><div><strong aria-hidden="true">18.</strong> Tracing</div></li></ol>            </div>
             <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
         </nav>
 
@@ -143,25 +143,133 @@
 
                 <div id="content" class="content">
                     <main>
-                        <h1 id="graphql-api"><a class="header" href="#graphql-api">GraphQL API</a></h1>
-<p>Josh implements a GraphQL API to query the content of repositories without a need to clone
-them via a git client.</p>
-<p>The API is exposed at:</p>
-<pre><code>http://hostname/~/graphql/name_of_repo.git
+                        <h1 id="container-configuration"><a class="header" href="#container-configuration">Container configuration</a></h1>
+<h2 id="container-options"><a class="header" href="#container-options">Container options</a></h2>
+<table>
+    <tr>
+        <th>
+            Variable
+        </th>
+        <th>
+            Meaning
+        </th>
+    </tr>
+    <tr>
+        <td>
+            <code>JOSH_REMOTE</code>
+        </td>
+        <td>
+            HTTP remote, including protocol.
+            Example: <code>https://github.com</code>
+        </td>
+    </tr>
+    <tr>
+        <td>
+            <code>JOSH_REMOTE_SSH</code>
+        </td>
+        <td>
+            SSH remote, including protocol.
+            Example: <code>ssh://git@github.com</code>
+        </td>
+    </tr>
+    <tr>
+        <td>
+            <code>JOSH_HTTP_PORT</code>
+        </td>
+        <td>
+            HTTP port to listen on.
+            Default: 8000
+        </td>
+    </tr>
+    <tr>
+        <td>
+            <code>JOSH_SSH_PORT</code>
+        </td>
+        <td>
+            SSH port to listen on.
+            Default: 8022
+        </td>
+    </tr>
+    <tr>
+        <td>
+            <code>JOSH_SSH_MAX_STARTUPS</code>
+        </td>
+        <td>
+            Maximum number of concurrent SSH authentication attempts. Default: 16
+        </td>
+    </tr>
+    <tr>
+        <td>
+            <code>JOSH_SSH_TIMEOUT</code>
+        </td>
+        <td>
+            Timeout, in seconds, for a single request when serving repos over SSH.
+            This time should cover fetch from upstream repo, filtering, and serving
+            repo to client. Default: 300
+        </td>
+    </tr>
+    <tr>
+        <td>
+            <code>JOSH_EXTRA_OPTS</code>
+        </td>
+        <td>
+            Extra options passed directly to
+            <code>josh-proxy</code> process
+        </td>
+    </tr>
+</table>
+<h2 id="container-volumes"><a class="header" href="#container-volumes">Container volumes</a></h2>
+<table>
+    <tr>
+        <th>
+            Volume
+        </th>
+        <th>
+            Purpose
+        </th>
+    </tr>
+    <tr>
+        <td>
+            <code>/data/git</code>
+        </td>
+        <td>
+            Git cache volume. If this volume is not
+            mounted, the cache will be lost every time
+            the container is shut down.
+        </td>
+    </tr>
+    <tr>
+        <td>
+            <code>/data/keys</code>
+        </td>
+        <td>
+            SSH server keys. If this volume is not
+            mounted, a new key will be generated on
+            each container startup
+        </td>
+    </tr>
+</table>
+<h2 id="configuring-ssh-access"><a class="header" href="#configuring-ssh-access">Configuring SSH access</a></h2>
+<p>Josh supports SSH access (just pull without pushing, for now).
+To use SSH, you need to add the following lines to your <code>~/.ssh/config</code>:</p>
+<pre><code>Host your-josh-instance.com
+    ForwardAgent yes
+    PreferredAuthentications publickey
 </code></pre>
-<p>To explore the API and generated documentation, an interactive GraphQL shell can be found at:</p>
-<pre><code>http://hostname/~/graphiql/name_of_repo.git
+<p>Alternatively, you can pass those options via <code>GIT_SSH_COMMAND</code>:</p>
+<pre><code>GIT_SSH_COMMAND=&quot;ssh -o PreferredAuthentications=publickey -o ForwardAgent=yes&quot; git clone ssh://git@your-josh-instance.com/...
 </code></pre>
+<p>In other words, you need to ensure SSH agent forwarding is enabled.</p>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                                                    <a rel="prev" href="../reference/cli.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                                    <a rel="prev" href="../reference/workspace.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <i class="fa fa-angle-left"></i>
                             </a>
                         
-                                                    <a rel="next" href="../contributing/testing.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                                    <a rel="next" href="../reference/cli.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <i class="fa fa-angle-right"></i>
                             </a>
                         
@@ -171,11 +279,11 @@ them via a git client.</p>
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                                    <a rel="prev" href="../reference/cli.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                    <a rel="prev" href="../reference/workspace.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <i class="fa fa-angle-left"></i>
                     </a>
                 
-                                    <a rel="next" href="../contributing/testing.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                    <a rel="next" href="../reference/cli.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <i class="fa fa-angle-right"></i>
                     </a>
                             </nav>
