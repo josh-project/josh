@@ -1,11 +1,14 @@
 use super::*;
+use compat::Git2CompatExt;
+use compat::GitOxideCompatExt;
+use gix::bstr::{BString, ByteSlice};
 
 pub fn walk2(
     filter: filter::Filter,
     input: git2::Oid,
     transaction: &cache::Transaction,
 ) -> JoshResult<()> {
-    rs_tracing::trace_scoped!("walk2","spec":filter::spec(filter), "id": input.to_string());
+    rs_tracing::trace_scoped!("walk2", "spec": filter::spec(filter), "id": input.to_string());
 
     ok_or!(transaction.repo().find_commit(input), {
         return Ok(());
@@ -15,7 +18,7 @@ pub fn walk2(
         return Ok(());
     }
 
-    let (known, n_new) = find_known(filter, input, transaction)?;
+    let known = find_known(filter, input.to_oxide(), transaction)?;
 
     let walk = {
         let mut walk = transaction.repo().revwalk()?;
@@ -24,17 +27,12 @@ pub fn walk2(
         }
         walk.set_sorting(git2::Sort::REVERSE | git2::Sort::TOPOLOGICAL)?;
         walk.push(input)?;
-        for k in known.iter() {
-            walk.hide(*k)?;
+        for known_id in known.iter() {
+            walk.hide(known_id.to_git2())?;
         }
         walk
     };
 
-    log::info!(
-        "Walking {} new commits for:\n{}\n",
-        n_new,
-        filter::pretty(filter, 4),
-    );
     let mut n_commits = 0;
     let mut n_misses = transaction.misses();
 
@@ -153,64 +151,136 @@ pub fn find_original(
 
 fn find_known(
     filter: filter::Filter,
-    input: git2::Oid,
+    input: gix::ObjectId,
     transaction: &cache::Transaction,
-) -> JoshResult<(Vec<git2::Oid>, usize)> {
-    log::debug!("find_known");
-    let mut known = vec![];
-    let mut walk = transaction.repo().revwalk()?;
-    walk.push(input)?;
+) -> JoshResult<Vec<gix::ObjectId>> {
+    let walk = transaction.oxide_repo().rev_walk([input]).all()?;
 
-    let n_new = walk
-        .with_hide_callback(&|id| {
-            let k = transaction.known(filter, id);
-            if k {
-                known.push(id)
-            }
-            k
-        })?
-        .count();
-    log::debug!("/find_known {}", n_new);
-    Ok((known, n_new))
+    walk.filter_map(|id| -> Option<JoshResult<gix::ObjectId>> {
+        let id = match id {
+            Err(e) => return Some(Err(josh_error(&format!("error while rev walk: {}", e)))),
+            Ok(id) => id.detach(),
+        };
+
+        let id_git2 = id.to_git2();
+        if transaction.known(filter, id_git2) {
+            Some(Ok(id))
+        } else {
+            None
+        }
+    })
+    .collect::<JoshResult<Vec<_>>>()
+}
+
+// fn find_known(
+//     filter: filter::Filter,
+//     input: git2::Oid,
+//     transaction: &cache::Transaction,
+// ) -> JoshResult<(Vec<git2::Oid>, usize)> {
+//     log::debug!("find_known");
+//     let mut known = vec![];
+//     let mut walk = transaction.repo().revwalk()?;
+//     walk.push(input)?;
+//
+//     let n_new = walk
+//         .with_hide_callback(&|id| {
+//             let k = transaction.known(filter, id);
+//             if k {
+//                 known.push(id)
+//             }
+//             k
+//         })?
+//         .count();
+//     log::debug!("/find_known {}", n_new);
+//     Ok((known, n_new))
+// }
+
+pub fn rewrite_commit(
+    repo: &gix::Repository,
+    base: &gix::Commit,
+    parents: &[gix::ObjectId],
+    tree: gix::ObjectId,
+    author: Option<(String, String)>,
+    message: Option<String>,
+    _unsign: bool,
+) -> JoshResult<gix::ObjectId> {
+    let message = message.unwrap_or(
+        base.message_raw()
+            .unwrap_or(BString::from("no message").as_bstr())
+            .to_string(),
+    );
+
+    let (author, committer) = if let Some((author, email)) = author {
+        let base_author_time = base.author()?.time;
+        let new_author = gix::actor::Signature {
+            name: BString::from(author.as_str()),
+            email: BString::from(email.as_str()),
+            time: base_author_time,
+        };
+
+        let base_committer_time = base.committer()?.time;
+        let new_committer = gix::actor::Signature {
+            name: BString::from(author),
+            email: BString::from(email),
+            time: base_committer_time,
+        };
+
+        (new_author, new_committer)
+    } else {
+        (base.author()?.to_owned(), base.committer()?.to_owned())
+    };
+
+    let commit = gix_object::Commit {
+        tree,
+        parents: parents.into_iter().map(|&id| id.clone()).collect(),
+        author,
+        committer,
+        encoding: None,
+        message: BString::from(message),
+        extra_headers: vec![],
+    };
+
+    let oid = repo.write_object(commit)?;
+    Ok(oid.detach())
 }
 
 // takes everything from base except it's tree and replaces it with the tree
 // given
-pub fn rewrite_commit(
-    repo: &git2::Repository,
-    base: &git2::Commit,
-    parents: &[&git2::Commit],
-    tree: &git2::Tree,
-    author: Option<(String, String)>,
-    message: Option<String>,
-    unsign: bool,
-) -> JoshResult<git2::Oid> {
-    let message = message.unwrap_or(base.message_raw().unwrap_or("no message").to_string());
-
-    let b = if let Some((author, email)) = author {
-        let a = base.author();
-        let new_a = git2::Signature::new(&author, &email, &a.when())?;
-        let c = base.committer();
-        let new_c = git2::Signature::new(&author, &email, &c.when())?;
-        repo.commit_create_buffer(&new_a, &new_c, &message, tree, parents)?
-    } else {
-        repo.commit_create_buffer(&base.author(), &base.committer(), &message, tree, parents)?
-    };
-
-    if let (false, Ok((sig, _))) = (unsign, repo.extract_signature(&base.id(), None)) {
-        // Re-create the object with the original signature (which of course does not match any
-        // more, but this is needed to guarantee perfect round-trips).
-        let b = b
-            .as_str()
-            .ok_or_else(|| josh_error("non-UTF-8 signed commit"))?;
-        let sig = sig
-            .as_str()
-            .ok_or_else(|| josh_error("non-UTF-8 signature"))?;
-        return Ok(repo.commit_signed(b, sig, None)?);
-    }
-
-    return Ok(repo.odb()?.write(git2::ObjectType::Commit, &b)?);
-}
+// pub fn rewrite_commit(
+//     repo: &git2::Repository,
+//     base: &git2::Commit,
+//     parents: &[&git2::Commit],
+//     tree: &git2::Tree,
+//     author: Option<(String, String)>,
+//     message: Option<String>,
+//     unsign: bool,
+// ) -> JoshResult<git2::Oid> {
+//     let message = message.unwrap_or(base.message_raw().unwrap_or("no message").to_string());
+//
+//     let b = if let Some((author, email)) = author {
+//         let a = base.author();
+//         let new_a = git2::Signature::new(&author, &email, &a.when())?;
+//         let c = base.committer();
+//         let new_c = git2::Signature::new(&author, &email, &c.when())?;
+//         repo.commit_create_buffer(&new_a, &new_c, &message, tree, parents)?
+//     } else {
+//         repo.commit_create_buffer(&base.author(), &base.committer(), &message, tree, parents)?
+//     };
+//
+//     if let (false, Ok((sig, _))) = (unsign, repo.extract_signature(&base.id(), None)) {
+//         // Re-create the object with the original signature (which of course does not match any
+//         // more, but this is needed to guarantee perfect round-trips).
+//         let b = b
+//             .as_str()
+//             .ok_or_else(|| josh_error("non-UTF-8 signed commit"))?;
+//         let sig = sig
+//             .as_str()
+//             .ok_or_else(|| josh_error("non-UTF-8 signature"))?;
+//         return Ok(repo.commit_signed(b, sig, None)?);
+//     }
+//
+//     return Ok(repo.odb()?.write(git2::ObjectType::Commit, &b)?);
+// }
 
 fn find_oldest_similar_commit(
     transaction: &cache::Transaction,
@@ -499,15 +569,26 @@ pub fn unapply_filter(
             }
         };
 
+        let original_parents_refs_oxide = original_parents_refs
+            .iter()
+            .map(|parent| parent.id().to_oxide())
+            .collect::<Vec<_>>();
+
+        let module_commit_oxide = transaction
+            .oxide_repo()
+            .find_object(module_commit.id().to_oxide())?
+            .into_commit();
+
         ret = rewrite_commit(
-            transaction.repo(),
-            &module_commit,
-            &original_parents_refs,
-            &new_tree,
+            transaction.oxide_repo(),
+            &module_commit_oxide,
+            &original_parents_refs_oxide,
+            new_tree.id().to_oxide(),
             None,
             None,
             false,
-        )?;
+        )?
+        .to_git2();
 
         ret = if original_parents_refs.len() == 1
             && new_tree.id() == original_parents_refs[0].tree_id()
@@ -557,6 +638,7 @@ pub fn remove_commit_signature<'a>(
 ) -> JoshResult<git2::Oid> {
     let (r, is_new) = create_filtered_commit2(
         transaction.repo(),
+        transaction.oxide_repo(),
         original_commit,
         filtered_parent_ids,
         filtered_tree,
@@ -600,6 +682,7 @@ pub fn create_filtered_commit<'a>(
 ) -> JoshResult<git2::Oid> {
     let (r, is_new) = create_filtered_commit2(
         transaction.repo(),
+        transaction.oxide_repo(),
         original_commit,
         filtered_parent_ids,
         filtered_tree,
@@ -617,6 +700,7 @@ pub fn create_filtered_commit<'a>(
 
 fn create_filtered_commit2<'a>(
     repo: &'a git2::Repository,
+    oxide_repo: &'a gix::Repository,
     original_commit: &'a git2::Commit,
     filtered_parent_ids: Vec<git2::Oid>,
     filtered_tree: git2::Tree<'a>,
@@ -661,16 +745,26 @@ fn create_filtered_commit2<'a>(
         }
     }
 
+    let original_commit_oxide = oxide_repo
+        .find_object(original_commit.id().to_oxide())?
+        .into_commit();
+
+    let selected_filtered_parent_commits_oxide = selected_filtered_parent_commits
+        .iter()
+        .map(|parent| parent.id().to_oxide())
+        .collect::<Vec<_>>();
+
     Ok((
         rewrite_commit(
-            repo,
-            original_commit,
-            &selected_filtered_parent_commits,
-            &filtered_tree,
+            oxide_repo,
+            &original_commit_oxide,
+            &selected_filtered_parent_commits_oxide,
+            filtered_tree.id().to_oxide(),
             author,
             message,
             unsign,
-        )?,
+        )?
+        .to_git2(),
         true,
     ))
 }

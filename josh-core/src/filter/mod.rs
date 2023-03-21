@@ -5,6 +5,7 @@ mod opt;
 mod parse;
 pub mod tree;
 
+use crate::compat::{Git2CompatExt, GitOxideCompatExt};
 pub use opt::invert;
 pub use parse::get_comments;
 pub use parse::parse;
@@ -400,6 +401,7 @@ fn apply_to_commit2(
     transaction: &cache::Transaction,
 ) -> JoshResult<Option<git2::Oid>> {
     let repo = transaction.repo();
+    let oxide_repo = transaction.oxide_repo();
     let filter = to_filter(op.clone());
 
     match &op {
@@ -417,16 +419,23 @@ fn apply_to_commit2(
             };
         }
         Op::Squash(None) => {
-            return Some(history::rewrite_commit(
-                repo,
-                commit,
-                &[],
-                &commit.tree()?,
-                None,
-                None,
-                true,
-            ))
-            .transpose()
+            let commit_oxide = oxide_repo
+                .find_object(commit.id().to_oxide())?
+                .into_commit();
+
+            return Some(
+                history::rewrite_commit(
+                    oxide_repo,
+                    &commit_oxide,
+                    &[],
+                    commit.id().to_oxide(),
+                    None,
+                    None,
+                    true,
+                )
+                .map(|id| id.to_git2()),
+            )
+            .transpose();
         }
         _ => {
             if let Some(oid) = transaction.get(filter, commit.id()) {
