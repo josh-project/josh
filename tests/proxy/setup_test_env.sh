@@ -27,6 +27,7 @@ GIT_DIR="${TESTTMP}/remote/" GIT_PROJECT_ROOT="${TESTTMP}/remote/" GIT_HTTP_EXPO
     --port=8001 \
     --dir="${TESTTMP}/remote/" \
     --cmd=git \
+    --proxy "/real_repo.git/info/lfs=http://127.0.0.1:9999" \
     --args=http-backend \
     > "${TESTTMP}/hyper-cgi-test-server.out" 2>&1 &
 echo $! > "${TESTTMP}/server_pid"
@@ -104,7 +105,8 @@ LFS_LISTEN="tcp://:9999"
 LFS_HOST="127.0.0.1:9999"
 LFS_CONTENTPATH="${TESTTMP}/lfs-content"
 LFS_SCHEME="http"
+LFS_PUBLIC="TRUE"
 
-export LFS_LISTEN LFS_HOST LFS_CONTENTPATH LFS_SCHEME
+export LFS_LISTEN LFS_HOST LFS_CONTENTPATH LFS_SCHEME LFS_PUBLIC
 
-lfs-test-server > /dev/null 2>&1 &
+lfs-test-server  > /dev/null 2>&1 &

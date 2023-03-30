@@ -92,10 +92,17 @@ RUN pip3 install \
 
 RUN apk add --no-cache go nodejs npm openssh-client patch
 
-ARG GIT_LFS_VERSION=d4ced458b5cc9eaa712c1a2d299d77a4e3a0a7c5
-RUN GOPATH=/opt/lfs-test-server go install \
-    github.com/git-lfs/lfs-test-server@${GIT_LFS_VERSION}
-ENV PATH=${PATH}:/opt/lfs-test-server/bin
+ARG GIT_LFS_TEST_SERVER_VERSION=d4ced458b5cc9eaa712c1a2d299d77a4e3a0a7c5
+
+COPY lfs-test-server lfs-test-server
+RUN cd lfs-test-server && GOPATH=/opt/git-lfs go install
+
+ENV PATH=${PATH}:/opt/git-lfs/bin
+
+RUN git clone https://github.com/git-lfs/git-lfs.git /usr/src/git-lfs
+WORKDIR /usr/src/git-lfs
+RUN make
+RUN cp bin/git-lfs /opt/git-lfs/bin
 
 WORKDIR /usr/src/josh
 
@@ -113,6 +120,7 @@ ENV CARGO_TARGET_DIR=/opt/cache/cargo-target
 ENV CARGO_HOME=/opt/cache/cargo-cache
 ENV GOCACHE=/opt/cache/go-cache
 ENV GOPATH=/opt/cache/go-path
+ENV GOFLAGS=-buildvcs=false
 RUN npm config set cache /opt/cache/npm-cache --global
 
 ARG USER_GID
