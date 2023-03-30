@@ -111,7 +111,7 @@
 
 ## Configuring SSH access
 
-Josh supports SSH access.
+Josh supports SSH access (just pull without pushing, for now).
 To use SSH, you need to add the following lines to your `~/.ssh/config`:
 
 ```
