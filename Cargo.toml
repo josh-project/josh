@@ -28,12 +28,12 @@ lazy_static = "1.5.0"
 libc = "0.2.167"
 regex = "1.11.2"
 rs_tracing = { version = "1.1.0", features = ["rs_tracing"] }
-serde = { version = "1.0.226", features = ["std", "derive"] }
-serde_json = "1.0.145"
+serde = { version = "1.0.215", features = ["std", "derive"] }
+serde_json = "1.0.143"
 serde_yaml = "0.9.34"
 toml = "0.8.19"
 tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
-tempfile = "3.22.0"
+tempfile = "3.14.0"
 hex = "0.4.3"
 
 [workspace.dependencies.git2]
@@ -73,6 +73,6 @@ version = "0.1.41"
 features = ["max_level_trace", "release_max_level_trace"]
 
 [workspace.dependencies.clap]
-version = "4.5.48"
+version = "4.5.45"
 features = ["derive", "help", "std", "usage"]
 default-features = false
