@@ -221,6 +221,26 @@ function Changes() {
     </div>
 }
 
+function Search() {
+    const param = useStrictGetSearchParam()
+
+    useTitleEffect(`Search - ${param('repo')} - Josh`)
+
+    return <div>
+        <TopNav
+            repo={param('repo')} 
+            page="search"
+            filter={param('filter')} />
+
+        <SearchResults
+            repo={param('repo')}
+            filter={param('filter')}
+            searchstr={param('q')}
+            navigateCallback={useNavigateCallback()}
+        />
+    </div>
+}
+
 
 function View() {
     const param = useStrictGetSearchParam()
