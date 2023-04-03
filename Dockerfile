@@ -10,9 +10,10 @@ ENV RUSTUP_HOME=/usr/local/rustup
 ENV CARGO_HOME=/usr/local/cargo
 ENV PATH=/usr/local/cargo/bin:${PATH}
 
+ARG ARCH=x86_64
 ARG RUSTUP_VERSION=1.25.1
 ARG RUST_VERSION=1.66.0
-ARG RUST_ARCH=x86_64-unknown-linux-musl
+ARG RUST_ARCH=${ARCH}-unknown-linux-musl
 
 # https://github.com/sfackler/rust-openssl/issues/1462
 ENV RUSTFLAGS="-Ctarget-feature=-crt-static"
@@ -86,8 +87,7 @@ RUN git config -f /opt/git-install/etc/gitconfig --add safe.directory "*" && \
 ARG CRAM_VERSION=d245cca
 ARG PYGIT2_VERSION=1.11.1
 RUN pip3 install \
-  git+https://github.com/brodie/cram.git@${CRAM_VERSION} \
-  pygit2==${PYGIT2_VERSION}
+  git+https://github.com/brodie/cram.git@${CRAM_VERSION}
 
 RUN apk add --no-cache go nodejs npm openssh-client patch
 
@@ -184,8 +184,8 @@ COPY --from=build --link=false /usr/src/josh/static/ /josh/static/
 ARG S6_OVERLAY_VERSION=3.1.2.1
 ADD https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-noarch.tar.xz /tmp
 RUN tar -C / -Jxpf /tmp/s6-overlay-noarch.tar.xz
-ADD https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-x86_64.tar.xz /tmp
-RUN tar -C / -Jxpf /tmp/s6-overlay-x86_64.tar.xz
+ADD https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-${ARCH}.tar.xz /tmp
+RUN tar -C / -Jxpf /tmp/s6-overlay-${ARCH}.tar.xz
 
 ARG GIT_GID_UID=2001
 
