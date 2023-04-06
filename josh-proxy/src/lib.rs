@@ -469,7 +469,7 @@ fn create_repo_base(path: &PathBuf) -> josh::JoshResult<josh::shell::Shell> {
         ("http", &[("receivepack", "true")] as &[(&str, &str)]),
         (
             "user",
-            &[("name", "josh"), ("email", "josh@josh-project.dev")],
+            &[("name", "JOSH"), ("email", "josh@josh-project.dev")],
         ),
         (
             "uploadpack",
@@ -905,12 +905,12 @@ pub fn merge_meta(
 
     let signature = if let Ok(time) = std::env::var("JOSH_COMMIT_TIME") {
         git2::Signature::new(
-            "josh",
+            "JOSH",
             "josh@josh-project.dev",
             &git2::Time::new(time.parse()?, 0),
         )
     } else {
-        git2::Signature::now("josh", "josh@josh-project.dev")
+        git2::Signature::now("JOSH", "josh@josh-project.dev")
     }?;
 
     let oid = transaction.repo().commit(
