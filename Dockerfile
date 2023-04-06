@@ -93,15 +93,15 @@ RUN apk add --no-cache go nodejs npm openssh-client patch
 
 ARG GIT_LFS_TEST_SERVER_VERSION=d4ced458b5cc9eaa712c1a2d299d77a4e3a0a7c5
 
-RUN GOPATH=/opt/git-lfs go install \
-    github.com/git-lfs/lfs-test-server@${GIT_LFS_TEST_SERVER_VERSION}
+#RUN GOPATH=/opt/git-lfs go install \
+#    github.com/git-lfs/lfs-test-server@${GIT_LFS_TEST_SERVER_VERSION}
 
-ENV PATH=${PATH}:/opt/git-lfs/bin
-
-RUN git clone https://github.com/git-lfs/git-lfs.git /usr/src/git-lfs
-WORKDIR /usr/src/git-lfs
-RUN make
-RUN cp bin/git-lfs /opt/git-lfs/bin
+#ENV PATH=${PATH}:/opt/git-lfs/bin
+#
+#RUN git clone https://github.com/git-lfs/git-lfs.git /usr/src/git-lfs
+#WORKDIR /usr/src/git-lfs
+#RUN make
+#RUN cp bin/git-lfs /opt/git-lfs/bin
 
 WORKDIR /usr/src/josh
 
