@@ -238,6 +238,7 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
                 .revparse_single(&original_target_ref)
                 .map(|x| x.id())
             {
+                let signature = proxy_commit_signature()?;
                 let base_commit = transaction.repo().find_commit(base_commit_id)?;
                 let merged_tree = transaction
                     .repo()
@@ -245,8 +246,8 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
                     .write_tree_to(transaction.repo())?;
                 transaction.repo().commit(
                     None,
-                    &backward_commit.author(),
-                    &backward_commit.committer(),
+                    &signature,
+                    &signature,
                     &format!("Merge from {}", &repo_update.filter_spec),
                     &transaction.repo().find_tree(merged_tree)?,
                     &[&base_commit, &backward_commit],

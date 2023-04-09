@@ -71,15 +71,15 @@ Flushed credential cache
   $ git sync origin HEAD:refs/heads/master -o merge
   * HEAD -> refs/heads/master
   From http://localhost:8002/real_repo.git:workspace=ws
-   * branch            4a199f3a19a292e6639dede0f8602afc19a82dfc -> FETCH_HEAD
-  HEAD is now at 4a199f3 Merge from :workspace=ws
+   * branch            d91fa4981fe3546f44fa5a779ec6f69b20fdaa0f -> FETCH_HEAD
+  HEAD is now at d91fa49 Merge from :workspace=ws
   Pushing to http://localhost:8002/real_repo.git:workspace=ws.git
   POST git-receive-pack (439 bytes)
   remote: josh-proxy        
   remote: response from upstream:        
   remote: To http://localhost:8001/real_repo.git        
-  remote:    5d605ce..98c996c  JOSH_PUSH -> master        
-  remote: REWRITE(1b46698f32d1d1db1eaeb34f8c9037778d65f3a9 -> 4a199f3a19a292e6639dede0f8602afc19a82dfc)        
+  remote:    5d605ce..0ebcca7  JOSH_PUSH -> master        
+  remote: REWRITE(1b46698f32d1d1db1eaeb34f8c9037778d65f3a9 -> d91fa4981fe3546f44fa5a779ec6f69b20fdaa0f)        
   remote: 
   remote: 
   updating local tracking ref 'refs/remotes/origin/master'
@@ -89,7 +89,7 @@ $ curl -s http://localhost:8002/flush
 Flushed credential cache
   $ git pull --rebase
   From http://localhost:8002/real_repo.git:workspace=ws
-   + 1b46698...4a199f3 master     -> origin/master  (forced update)
+   + 1b46698...d91fa49 master     -> origin/master  (forced update)
   Already up to date.
 
   $ tree
@@ -104,18 +104,18 @@ Flushed credential cache
   
   4 directories, 3 files
 
-  $ git log --graph --pretty=%s
-  *   Merge from :workspace=ws
+  $ git log --graph --pretty="%s - %an <%ae>"
+  *   Merge from :workspace=ws - JOSH <josh@josh-project.dev>
   |\  
-  | * add file2
-  | * add file1
-  * add workspace
+  | * add file2 - Josh <josh@example.com>
+  | * add file1 - Josh <josh@example.com>
+  * add workspace - Josh <josh@example.com>
 
   $ cd ${TESTTMP}/real_repo
   $ git pull --rebase
   From http://localhost:8001/real_repo
-     5d605ce..98c996c  master     -> origin/master
-  Updating 5d605ce..98c996c
+     5d605ce..0ebcca7  master     -> origin/master
+  Updating 5d605ce..0ebcca7
   Fast-forward
    ws/workspace.josh | 2 ++
    1 file changed, 2 insertions(+)
@@ -167,7 +167,7 @@ Flushed credential cache
   $ git sync
     refs/heads/master -> refs/heads/master
   Pushing to http://localhost:8001/real_repo.git
-  POST git-receive-pack (790 bytes)
+  POST git-receive-pack (789 bytes)
   updating local tracking ref 'refs/remotes/origin/master'
   
 
@@ -176,8 +176,8 @@ $ curl -s http://localhost:8002/flush
 Flushed credential cache
   $ git pull --rebase
   From http://localhost:8002/real_repo.git:workspace=ws
-     4a199f3..4972ae1  master     -> origin/master
-  Updating 4a199f3..4972ae1
+     d91fa49..5d189f7  master     -> origin/master
+  Updating d91fa49..5d189f7
   Fast-forward
    d/file3        | 1 +
    workspace.josh | 3 ++-
@@ -222,7 +222,7 @@ Flushed credential cache
   4 directories, 3 files
 
   $ git checkout HEAD~1 1> /dev/null
-  Previous HEAD position was 4a199f3 Merge from :workspace=ws
+  Previous HEAD position was d91fa49 Merge from :workspace=ws
   HEAD is now at 9441c1b add workspace
   $ tree
   .
@@ -247,15 +247,15 @@ Flushed credential cache
   $ git sync
     refs/heads/master -> refs/heads/master
   From http://localhost:8002/real_repo.git:workspace=ws
-   * branch            3136fff7280627623bf4d71191d1aea783579be0 -> FETCH_HEAD
-  HEAD is now at 3136fff add in filter
+   * branch            3fc46d98fe664e12a931c5c1365a1cd845a78a64 -> FETCH_HEAD
+  HEAD is now at 3fc46d9 add in filter
   Pushing to http://localhost:8002/real_repo.git:workspace=ws.git
-  POST git-receive-pack (808 bytes)
+  POST git-receive-pack (807 bytes)
   remote: josh-proxy        
   remote: response from upstream:        
   remote: To http://localhost:8001/real_repo.git        
-  remote:    e41565c..9c41f84  JOSH_PUSH -> master        
-  remote: REWRITE(6f33ff469334600e2a53433208efc1cd734b49b3 -> 3136fff7280627623bf4d71191d1aea783579be0)        
+  remote:    f9be76c..c88a8ce  JOSH_PUSH -> master        
+  remote: REWRITE(dce83c94807b93f44776c7a1e71cf4f4f8f222b5 -> 3fc46d98fe664e12a931c5c1365a1cd845a78a64)        
   remote: 
   remote: 
   updating local tracking ref 'refs/remotes/origin/master'
@@ -274,15 +274,15 @@ Flushed credential cache
   $ git sync
     refs/heads/master -> refs/heads/master
   From http://localhost:8002/real_repo.git:workspace=ws
-   * branch            91e1e8645d3439b195f3866664092ebc20e63bb5 -> FETCH_HEAD
-  HEAD is now at 91e1e86 try to modify ws
+   * branch            14c05920b084cdb89feaa847f9c99d764148ff9b -> FETCH_HEAD
+  HEAD is now at 14c0592 try to modify ws
   Pushing to http://localhost:8002/real_repo.git:workspace=ws.git
   POST git-receive-pack (464 bytes)
   remote: josh-proxy        
   remote: response from upstream:        
   remote: To http://localhost:8001/real_repo.git        
-  remote:    9c41f84..21cd34c  JOSH_PUSH -> master        
-  remote: REWRITE(9f8d9c0adcbc65e17dfb359c6e3dee7520649c88 -> 91e1e8645d3439b195f3866664092ebc20e63bb5)        
+  remote:    c88a8ce..381a4ab  JOSH_PUSH -> master        
+  remote: REWRITE(7da1ae7f2b93967ad7ea421fa7db95b73b8aa07e -> 14c05920b084cdb89feaa847f9c99d764148ff9b)        
   remote: 
   remote: 
   updating local tracking ref 'refs/remotes/origin/master'
@@ -292,7 +292,7 @@ $ curl -s http://localhost:8002/flush
 Flushed credential cache
   $ git pull --rebase
   From http://localhost:8002/real_repo.git:workspace=ws
-   + 9f8d9c0...91e1e86 master     -> origin/master  (forced update)
+   + 7da1ae7...14c0592 master     -> origin/master  (forced update)
   Already up to date.
 
   $ tree
@@ -335,8 +335,8 @@ $ curl -s http://localhost:8002/flush
 Flushed credential cache
   $ git pull --rebase
   From http://localhost:8001/real_repo
-     e41565c..21cd34c  master     -> origin/master
-  Updating e41565c..21cd34c
+     f9be76c..381a4ab  master     -> origin/master
+  Updating f9be76c..381a4ab
   Fast-forward
    sub1/subsub/file1     | 1 -
    sub1/subsub/newfile_1 | 1 +
@@ -410,8 +410,8 @@ Note that ws/d/ is now present in the ws
   5 directories, 9 files
 
   $ git checkout HEAD~1 1> /dev/null
-  Previous HEAD position was 9c41f84 add in filter
-  HEAD is now at e41565c mod workspace
+  Previous HEAD position was c88a8ce add in filter
+  HEAD is now at f9be76c mod workspace
   $ git clean -ffdx 1> /dev/null
   $ tree
   .
@@ -456,14 +456,16 @@ Note that ws/d/ is now present in the ws
   |   |-- objects
   |   |   |-- 04
   |   |   |   `-- 28323b9901ac5959af01b8686b2524c671adc1
+  |   |   |-- 0d
+  |   |   |   `-- 4ddd7b05d80c6b177e125195baba7544999ba1
+  |   |   |-- 0e
+  |   |   |   `-- bcca72a14d4aa4b50037956fdad1d440deeee1
   |   |   |-- 0f
   |   |   |   `-- 7ceed53e5b4ab96efad3c0b77e2c00d10169ba
   |   |   |-- 1c
   |   |   |   `-- b5d64cdb55e3db2a8d6f00d596572b4cfa9d5c
   |   |   |-- 1e
   |   |   |   `-- 6ea69c6325d02f1dbc9614935f88ce9d2afbac
-  |   |   |-- 21
-  |   |   |   `-- cd34cf0a5b7f59eaa6beab4d2e3d0c76bdf8ac
   |   |   |-- 2a
   |   |   |   `-- f8fd9cc75470c09c6442895133a815806018fc
   |   |   |-- 2c
@@ -476,10 +478,10 @@ Note that ws/d/ is now present in the ws
   |   |   |   `-- dcdc06e9d605c8aca2375b96f7d431d2eb41d7
   |   |   |-- 34
   |   |   |   `-- c24765275d6f3ec5d6baeaaa4299471d6f7df0
-  |   |   |-- 35
-  |   |   |   `-- 09aec137bbedd7925edc2069421db0aeff4684
   |   |   |-- 36
   |   |   |   `-- 52f9baa44258d0f505314830ad37d16eafc981
+  |   |   |-- 38
+  |   |   |   `-- 1a4abe20b33f38f4b6f559d08a38c59355ff7e
   |   |   |-- 3d
   |   |   |   `-- 77ff51363c9825cc2a221fc0ba5a883a1a2c72
   |   |   |-- 41
@@ -508,10 +510,6 @@ Note that ws/d/ is now present in the ws
   |   |   |   `-- 837e6104d0a81b944c067e16ddc83c7a38739f
   |   |   |-- 8a
   |   |   |   `-- 7fb63d6ac5e60e16941591969c5f8a8d23b8a5
-  |   |   |-- 98
-  |   |   |   `-- c996c3ca42384d9328e0d3ad12ae9bf496e786
-  |   |   |-- 9c
-  |   |   |   `-- 41f84a301918bbba26e7109efa440f973cec2a
   |   |   |-- a0
   |   |   |   `-- 24003ee1acc6bf70318a46e7b6df651b9dc246
   |   |   |-- a1
@@ -524,12 +522,13 @@ Note that ws/d/ is now present in the ws
   |   |   |   `-- 665856e841c4ae4a956483dc57b2ea4cc20116
   |   |   |-- c6
   |   |   |   `-- 6fb92e3be8e4dc4c89f94d796f3a4b1833e0fa
+  |   |   |-- c8
+  |   |   |   `-- 8a8cea02112a17891dfdffe7ebd55efd3a3fa2
   |   |   |-- d3
   |   |   |   `-- d2a4d6db7addc2b087dcdb3e63785d3315c00e
   |   |   |-- d7
   |   |   |   `-- 330ea337031af43ba1cf6982a873a40b9170ac
   |   |   |-- e4
-  |   |   |   |-- 1565cb5139d39c394a5fb54fe9c567b5453944
   |   |   |   `-- 5f0325cd9fab82d962b758e556d9bf8079fc37
   |   |   |-- e6
   |   |   |   `-- 9de29bb2d1d6434b8b29ae775ad8c2e48c5391
@@ -540,6 +539,8 @@ Note that ws/d/ is now present in the ws
   |   |   |   `-- d0c4d5fe3173ba8ca39fc198658487eaab8014
   |   |   |-- f6
   |   |   |   `-- 3dd93419493d22aeaf6bcb5c0bec4c2701b049
+  |   |   |-- f9
+  |   |   |   `-- be76cb9c282a39cf1384e7cbe3d1fb7d425696
   |   |   |-- fd
   |   |   |   `-- 2bc852c86f084dd411054c9c297b05ccf76427
   |   |   |-- info
@@ -572,12 +573,15 @@ Note that ws/d/ is now present in the ws
       |   |-- 0c
       |   |   |-- d4309cc22b5903503a7196f49c24cf358a578a
       |   |   `-- ee64f3b2f9f9dd40a2b36afdccb728b753659c
+      |   |-- 0e
+      |   |   `-- bcca72a14d4aa4b50037956fdad1d440deeee1
       |   |-- 12
       |   |   `-- f49faa307e33da834e082e022f0b5c83d0f3e1
       |   |-- 13
       |   |   |-- 10813ea4e1d46c4c5c59bfdaf97a6de3b24c31
       |   |   `-- fa30d95222c1c055e613c116b32e17bac4d0c4
       |   |-- 14
+      |   |   |-- c05920b084cdb89feaa847f9c99d764148ff9b
       |   |   `-- da1560586adda328cca1fbf58c026d6730444f
       |   |-- 17
       |   |   |-- 039634b139f6fba381ff8bc55b9c5de210f87f
@@ -588,8 +592,6 @@ Note that ws/d/ is now present in the ws
       |   |   `-- 46698f32d1d1db1eaeb34f8c9037778d65f3a9
       |   |-- 20
       |   |   `-- 189c97a0ef53368b7ec335baa7a1b86bd76f8e
-      |   |-- 21
-      |   |   `-- cd34cf0a5b7f59eaa6beab4d2e3d0c76bdf8ac
       |   |-- 23
       |   |   `-- d20398ffe09015ada5794763b97c750b61bdc4
       |   |-- 28
@@ -609,7 +611,6 @@ Note that ws/d/ is now present in the ws
       |   |-- 30
       |   |   `-- 48804b01e298df4a6e1bc60a1e3b2ca0b016bd
       |   |-- 31
-      |   |   |-- 36fff7280627623bf4d71191d1aea783579be0
       |   |   |-- af3d0a5be6cc36a10a6b984673087c2d068432
       |   |   `-- efdeb5de300e7a344ebb5b006c0380f2223d45
       |   |-- 34
@@ -617,11 +618,14 @@ Note that ws/d/ is now present in the ws
       |   |-- 36
       |   |   `-- 52f9baa44258d0f505314830ad37d16eafc981
       |   |-- 38
+      |   |   |-- 1a4abe20b33f38f4b6f559d08a38c59355ff7e
       |   |   `-- b8a2ae02de9bdb715894896a3442d2bc54bc09
       |   |-- 39
       |   |   `-- abfc68c47fd430cd9775fc18c9f93bc391052e
       |   |-- 3a
       |   |   `-- 748f0be2a5670c0c282196d3a66620e8599ee5
+      |   |-- 3f
+      |   |   `-- c46d98fe664e12a931c5c1365a1cd845a78a64
       |   |-- 40
       |   |   `-- c389b6b248e13f3cb88dcd79467d7396a4489e
       |   |-- 41
@@ -635,10 +639,6 @@ Note that ws/d/ is now present in the ws
       |   |   `-- bc1eabe4b2029b9fcb661f0d447d8389d17337
       |   |-- 47
       |   |   `-- 8644b35118f1d733b14cafb04c51e5b6579243
-      |   |-- 49
-      |   |   `-- 72ae19097180428a9230e3cc70255501d7ab66
-      |   |-- 4a
-      |   |   `-- 199f3a19a292e6639dede0f8602afc19a82dfc
       |   |-- 4b
       |   |   `-- 825dc642cb6eb9a060e54bf8d69288fbee4904
       |   |-- 4c
@@ -651,6 +651,8 @@ Note that ws/d/ is now present in the ws
       |   |   `-- 8a4b8c1452d54f1ca88454067369112809a4d2
       |   |-- 5b
       |   |   `-- 560252b0c3c6abc5e0327596a49efb15e494cb
+      |   |-- 5d
+      |   |   `-- 189f7f6e9e6ca744c8a397c1b63f653e7158b5
       |   |-- 5e
       |   |   `-- 9213824faf1eb95d0c522329518489196374fd
       |   |-- 5f
@@ -669,8 +671,6 @@ Note that ws/d/ is now present in the ws
       |   |-- 6d
       |   |   |-- 4b5c23a94a89c7f26266ccf635647fd4002b19
       |   |   `-- 5a5046f3a9591a32ec47bc38a1da879aca6743
-      |   |-- 6f
-      |   |   `-- 33ff469334600e2a53433208efc1cd734b49b3
       |   |-- 70
       |   |   `-- eb05d32223342a549cfb00c20b1464bf1b9513
       |   |-- 71
@@ -686,6 +686,7 @@ Note that ws/d/ is now present in the ws
       |   |-- 7c
       |   |   `-- 30b7adfa79351301a11882adf49f438ec294f8
       |   |-- 7d
+      |   |   |-- a1ae7f2b93967ad7ea421fa7db95b73b8aa07e
       |   |   `-- fca2962177d9c9925fedf2fbdd79fc7e9309fc
       |   |-- 7f
       |   |   |-- 39c7601f2c1ca44fdc9237efa34f2887daa2b4
@@ -696,8 +697,6 @@ Note that ws/d/ is now present in the ws
       |   |   `-- c4bb045e98da7cf00714d91ac77c7ea7e08b63
       |   |-- 8d
       |   |   `-- 603d2815e0a920045ac900135485b9fec9c9d8
-      |   |-- 91
-      |   |   `-- e1e8645d3439b195f3866664092ebc20e63bb5
       |   |-- 92
       |   |   `-- 1819911214b87cff59a38006d63bfccad279f0
       |   |-- 93
@@ -711,20 +710,17 @@ Note that ws/d/ is now present in the ws
       |   |-- 97
       |   |   `-- cdedf56398e9e3830d0db5bb329d91c443ce81
       |   |-- 98
-      |   |   |-- 84cc2efe368ea0aa9d912fa596b26c5d75dbee
-      |   |   `-- c996c3ca42384d9328e0d3ad12ae9bf496e786
+      |   |   `-- 84cc2efe368ea0aa9d912fa596b26c5d75dbee
       |   |-- 99
       |   |   |-- 8e4d99b52680e8fc6d50d98cddad2a4e36a604
       |   |   `-- acd82fe2a9b89022d1aee5a580c123a8161f4a
       |   |-- 9c
-      |   |   |-- 41f84a301918bbba26e7109efa440f973cec2a
       |   |   `-- 78c532d93505a2a24430635b342b91db22fee0
       |   |-- 9d
       |   |   `-- e3bbb26e2b40f02ca8de195933eb620bbf0b6a
       |   |-- 9e
       |   |   `-- 4d2bcaee240904058a6160e84311667b409b08
       |   |-- 9f
-      |   |   |-- 8d9c0adcbc65e17dfb359c6e3dee7520649c88
       |   |   `-- 8daab1754f04fbe8aaac6fcbb44c8324df09eb
       |   |-- a1
       |   |   |-- 1e8a91058875f157ca1246bdc403b88e93cd94
@@ -756,15 +752,20 @@ Note that ws/d/ is now present in the ws
       |   |   `-- 489fc8fd6ae9ac08c0168d7cabaf5645b922fa
       |   |-- c2
       |   |   `-- d86319b61f31a7f4f1bc89b8ea4356b60c4658
+      |   |-- c8
+      |   |   `-- 8a8cea02112a17891dfdffe7ebd55efd3a3fa2
       |   |-- cb
       |   |   `-- bceb2fb07839b8796fadb2b6a8b785b8fd7440
       |   |-- d3
       |   |   `-- d2a4d6db7addc2b087dcdb3e63785d3315c00e
       |   |-- d7
       |   |   `-- 330ea337031af43ba1cf6982a873a40b9170ac
+      |   |-- d9
+      |   |   `-- 1fa4981fe3546f44fa5a779ec6f69b20fdaa0f
       |   |-- da
       |   |   `-- af0560e4e779353311a9039b31ea4f0f1dec37
       |   |-- dc
+      |   |   |-- e83c94807b93f44776c7a1e71cf4f4f8f222b5
       |   |   `-- ffb9b655a4a1d6b9b152917199457d2ddd57cd
       |   |-- e1
       |   |   |-- 0bf0281a70e6b19939ad6e26e10252bbebe300
@@ -808,6 +809,6 @@ Note that ws/d/ is now present in the ws
           |-- namespaces
           `-- tags
   
-  174 directories, 193 files
+  175 directories, 193 files
 
 $ cat ${TESTTMP}/josh-proxy.out

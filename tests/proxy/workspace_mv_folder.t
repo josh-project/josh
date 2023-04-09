@@ -71,15 +71,15 @@ Flushed credential cache
   $ git sync origin HEAD:refs/heads/master -o merge
   * HEAD -> refs/heads/master
   From http://localhost:8002/real_repo.git:workspace=ws
-   * branch            4a199f3a19a292e6639dede0f8602afc19a82dfc -> FETCH_HEAD
-  HEAD is now at 4a199f3 Merge from :workspace=ws
+   * branch            d91fa4981fe3546f44fa5a779ec6f69b20fdaa0f -> FETCH_HEAD
+  HEAD is now at d91fa49 Merge from :workspace=ws
   Pushing to http://localhost:8002/real_repo.git:workspace=ws.git
   POST git-receive-pack (439 bytes)
   remote: josh-proxy        
   remote: response from upstream:        
   remote: To http://localhost:8001/real_repo.git        
-  remote:    5d605ce..98c996c  JOSH_PUSH -> master        
-  remote: REWRITE(1b46698f32d1d1db1eaeb34f8c9037778d65f3a9 -> 4a199f3a19a292e6639dede0f8602afc19a82dfc)        
+  remote:    5d605ce..0ebcca7  JOSH_PUSH -> master        
+  remote: REWRITE(1b46698f32d1d1db1eaeb34f8c9037778d65f3a9 -> d91fa4981fe3546f44fa5a779ec6f69b20fdaa0f)        
   remote: 
   remote: 
   updating local tracking ref 'refs/remotes/origin/master'
@@ -89,7 +89,7 @@ $ curl -s http://localhost:8002/flush
 Flushed credential cache
   $ git pull --rebase
   From http://localhost:8002/real_repo.git:workspace=ws
-   + 1b46698...4a199f3 master     -> origin/master  (forced update)
+   + 1b46698...d91fa49 master     -> origin/master  (forced update)
   Already up to date.
 
   $ tree
@@ -114,8 +114,8 @@ Flushed credential cache
   $ cd ${TESTTMP}/real_repo
   $ git pull --rebase
   From http://localhost:8001/real_repo
-     5d605ce..98c996c  master     -> origin/master
-  Updating 5d605ce..98c996c
+     5d605ce..0ebcca7  master     -> origin/master
+  Updating 5d605ce..0ebcca7
   Fast-forward
    ws/workspace.josh | 2 ++
    1 file changed, 2 insertions(+)
@@ -157,15 +157,15 @@ Flushed credential cache
   $ git sync
     refs/heads/master -> refs/heads/master
   From http://localhost:8002/real_repo.git:workspace=ws
-   * branch            972d4a71028801672fec931fdceb43ab0eb9e9d8 -> FETCH_HEAD
-  HEAD is now at 972d4a7 mod workspace
+   * branch            251b9a34c94c69defbebdfc716a7eff98df80b51 -> FETCH_HEAD
+  HEAD is now at 251b9a3 mod workspace
   Pushing to http://localhost:8002/real_repo.git:workspace=ws.git
-  POST git-receive-pack (529 bytes)
+  POST git-receive-pack (530 bytes)
   remote: josh-proxy        
   remote: response from upstream:        
   remote: To http://localhost:8001/real_repo.git        
-  remote:    98c996c..3493173  JOSH_PUSH -> master        
-  remote: REWRITE(9b7be1961f489739b9f94ff6df1b48132d57b649 -> 972d4a71028801672fec931fdceb43ab0eb9e9d8)        
+  remote:    0ebcca7..57d15ef  JOSH_PUSH -> master        
+  remote: REWRITE(5d8563b5319ef897a6aa971c0e4dd275a1139bf5 -> 251b9a34c94c69defbebdfc716a7eff98df80b51)        
   remote: 
   remote: 
   updating local tracking ref 'refs/remotes/origin/master'
@@ -175,7 +175,7 @@ $ curl -s http://localhost:8002/flush
 Flushed credential cache
   $ git pull --rebase
   From http://localhost:8002/real_repo.git:workspace=ws
-   + 9b7be19...972d4a7 master     -> origin/master  (forced update)
+   + 5d8563b...251b9a3 master     -> origin/master  (forced update)
   Already up to date.
 
   $ tree
@@ -204,8 +204,8 @@ $ curl -s http://localhost:8002/flush
 Flushed credential cache
   $ git pull --rebase
   From http://localhost:8001/real_repo
-     98c996c..3493173  master     -> origin/master
-  Updating 98c996c..3493173
+     0ebcca7..57d15ef  master     -> origin/master
+  Updating 0ebcca7..57d15ef
   Fast-forward
    ws/workspace.josh | 2 +-
    1 file changed, 1 insertion(+), 1 deletion(-)

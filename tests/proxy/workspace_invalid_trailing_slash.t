@@ -55,8 +55,8 @@ Flushed credential cache
   remote: josh-proxy
   remote: response from upstream:
   remote: To http://localhost:8001/real_repo.git
-  remote:    81c59c0..ae64c76  JOSH_PUSH -> master
-  remote: REWRITE(85ee20960c56619305e098b301d8253888b6ce5b -> c255706f564f629eed1756b789d761048cfe060a)
+  remote:    81c59c0..37c79e6  JOSH_PUSH -> master
+  remote: REWRITE(85ee20960c56619305e098b301d8253888b6ce5b -> 705dcb4e33bd0dd3f95d5831fc8dc8a41ca3e566)
   remote:
   remote:
   To http://localhost:8002/real_repo.git:workspace=ws.git
@@ -92,8 +92,8 @@ Flushed credential cache
   $ cd ${TESTTMP}/real_repo
   $ git pull --rebase
   From http://localhost:8001/real_repo
-     81c59c0..ae64c76  master     -> origin/master
-  Updating 81c59c0..ae64c76
+     81c59c0..37c79e6  master     -> origin/master
+  Updating 81c59c0..37c79e6
   Fast-forward
    ws/workspace.josh | 4 ++++
    1 file changed, 4 insertions(+)
@@ -128,7 +128,7 @@ Flushed credential cache
   remote: josh-proxy
   remote: response from upstream:
   remote:
-  remote: Can't apply "mod workspace" (4e531443c5533e6d1b2503d0fad238cfc8491807)
+  remote: Can't apply "mod workspace" (b78eb888451be077531b50794384c2faec025765)
   remote: Invalid workspace:
   remote: ----
   remote:  --> 1:1
@@ -205,6 +205,8 @@ Flushed credential cache
   |   |   |   `-- cadcac11584c2c798ff38995ebd4d27490885a
   |   |   |-- 2b
   |   |   |   `-- 20b4f8abb6d70648e2573e2f798a18e0079f9e
+  |   |   |-- 37
+  |   |   |   `-- c79e64948d36bd1bb804e274ef5419bb44e602
   |   |   |-- 3d
   |   |   |   `-- 77ff51363c9825cc2a221fc0ba5a883a1a2c72
   |   |   |-- 81
@@ -220,8 +222,6 @@ Flushed credential cache
   |   |   |   `-- 24003ee1acc6bf70318a46e7b6df651b9dc246
   |   |   |-- ad
   |   |   |   `-- 24149d789e59d4b5f9ce41cda90110ca0f98b7
-  |   |   |-- ae
-  |   |   |   `-- 64c764b19ab4cb9c8d4ad32ae9dc04a30eb42a
   |   |   |-- b3
   |   |   |   `-- dc01c39cba3251ec3a349fc585bd57ee4136f8
   |   |   |-- e6
@@ -257,6 +257,8 @@ Flushed credential cache
       |   |   `-- 20b4f8abb6d70648e2573e2f798a18e0079f9e
       |   |-- 31
       |   |   `-- f15ce76ce6a453ecc90f5852e70babf3554707
+      |   |-- 37
+      |   |   `-- c79e64948d36bd1bb804e274ef5419bb44e602
       |   |-- 3d
       |   |   `-- 96ae1a24134d32cf3eca0629fb4fd1d095693a
       |   |-- 41
@@ -267,8 +269,6 @@ Flushed credential cache
       |   |   `-- 9ee6ea51565adf5c005dd1bc93f4b42f335be3
       |   |-- 4b
       |   |   `-- 825dc642cb6eb9a060e54bf8d69288fbee4904
-      |   |-- 4e
-      |   |   `-- 531443c5533e6d1b2503d0fad238cfc8491807
       |   |-- 51
       |   |   `-- 45dedc66248700cf33e354ef555877bc24f533
       |   |-- 66
@@ -276,6 +276,10 @@ Flushed credential cache
       |   |-- 6c
       |   |   |-- 8233465e92d353e2ef47c02dc568ea44a32339
       |   |   `-- 9e5f368b68b7e511f7b0ce25cbedd2a3b42abb
+      |   |-- 70
+      |   |   `-- 5dcb4e33bd0dd3f95d5831fc8dc8a41ca3e566
+      |   |-- 7b
+      |   |   `-- 418ed7c356797b1a8eef3ff949632495d273c6
       |   |-- 7d
       |   |   `-- 5816334652b9738e33e4ceaf925573c3414e0c
       |   |-- 85
@@ -294,12 +298,10 @@ Flushed credential cache
       |   |   `-- 613be55337cdfab189935d8dbd1d4f427ef75e
       |   |-- a1
       |   |   `-- fe09109ceb8c170db78421172e3674ff18f762
-      |   |-- ae
-      |   |   `-- 64c764b19ab4cb9c8d4ad32ae9dc04a30eb42a
-      |   |-- c2
-      |   |   `-- 55706f564f629eed1756b789d761048cfe060a
-      |   |-- cc
-      |   |   `-- c413520301cf92e055b007c3810e6239e43939
+      |   |-- b7
+      |   |   `-- 8eb888451be077531b50794384c2faec025765
+      |   |-- cd
+      |   |   `-- 9ae8cb61e7d1aaa7b90766ff9aa9b3dc78c856
       |   |-- db
       |   |   `-- 9120ba624b0afe79d37a5a262d8deb14e13707
       |   |-- df
@@ -308,8 +310,6 @@ Flushed credential cache
       |   |   `-- 2803a3f6b703de58a33b330f70b5034e0ebcf8
       |   |-- f7
       |   |   `-- 99a2ffcfae170f01efea806ff109e5e702191a
-      |   |-- f8
-      |   |   `-- 0574b1c92818683f0283f78078031282fff75a
       |   |-- info
       |   `-- pack
       `-- refs
