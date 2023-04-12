@@ -859,6 +859,18 @@ fn changes_to_refs(
         .collect())
 }
 
+fn proxy_commit_signature<'a>() -> josh::JoshResult<git2::Signature<'a>> {
+    Ok(if let Ok(time) = std::env::var("JOSH_COMMIT_TIME") {
+        git2::Signature::new(
+            "JOSH",
+            "josh@josh-project.dev",
+            &git2::Time::new(time.parse()?, 0),
+        )?
+    } else {
+        git2::Signature::now("JOSH", "josh@josh-project.dev")?
+    })
+}
+
 pub fn merge_meta(
     transaction: &josh::cache::Transaction,
     transaction_mirror: &josh::cache::Transaction,
@@ -903,16 +915,7 @@ pub fn merge_meta(
         tree = josh::filter::tree::insert(transaction.repo(), &tree, path, blob, 0o0100644)?;
     }
 
-    let signature = if let Ok(time) = std::env::var("JOSH_COMMIT_TIME") {
-        git2::Signature::new(
-            "JOSH",
-            "josh@josh-project.dev",
-            &git2::Time::new(time.parse()?, 0),
-        )
-    } else {
-        git2::Signature::now("JOSH", "josh@josh-project.dev")
-    }?;
-
+    let signature = proxy_commit_signature()?;
     let oid = transaction.repo().commit(
         None,
         &signature,
