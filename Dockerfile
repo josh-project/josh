@@ -1,6 +1,7 @@
 # syntax=docker/dockerfile:1.4-labs
 
 ARG ALPINE_VERSION=3.17
+ARG ARCH=x86_64
 
 FROM alpine:${ALPINE_VERSION} as rust-base
 
@@ -10,7 +11,7 @@ ENV RUSTUP_HOME=/usr/local/rustup
 ENV CARGO_HOME=/usr/local/cargo
 ENV PATH=/usr/local/cargo/bin:${PATH}
 
-ARG ARCH=x86_64
+ARG ARCH
 ARG RUSTUP_VERSION=1.25.1
 ARG RUST_VERSION=1.66.0
 ARG RUST_ARCH=${ARCH}-unknown-linux-musl
@@ -184,6 +185,7 @@ COPY --from=build --link=false /usr/src/josh/static/ /josh/static/
 ARG S6_OVERLAY_VERSION=3.1.2.1
 ADD https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-noarch.tar.xz /tmp
 RUN tar -C / -Jxpf /tmp/s6-overlay-noarch.tar.xz
+ARG ARCH
 ADD https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-${ARCH}.tar.xz /tmp
 RUN tar -C / -Jxpf /tmp/s6-overlay-${ARCH}.tar.xz
 
