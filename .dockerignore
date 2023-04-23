@@ -13,4 +13,5 @@
 !josh-ui/*.toml
 !josh-ui/public
 !josh-ui/src
+!lfs-test-server
 !run-josh.sh

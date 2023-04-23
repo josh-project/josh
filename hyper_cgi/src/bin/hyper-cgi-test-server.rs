@@ -107,6 +107,7 @@ async fn call(
     req: hyper::Request<hyper::Body>,
 ) -> hyper::Response<hyper::Body> {
     println!("call {:?}", req.uri().path());
+    let mut req = req;
 
     let path = req.uri().path();
 
@@ -143,16 +144,20 @@ async fn call(
     }
 
     if let Some(proxy) = &ARGS.get_one::<String>("proxy") {
-        if let [proxy_path, proxy_target] = proxy.split(":").collect::<Vec<_>>().as_slice() {
-            if path == *proxy_path {
-                let client_ip = std::net::IpAddr::from_str("127.0.0.1").unwrap();
-                return match hyper_reverse_proxy::call(client_ip, proxy_target, req).await {
-                    Ok(response) => response,
-                    Err(error) => hyper::Response::builder()
-                        .status(hyper::StatusCode::INTERNAL_SERVER_ERROR)
-                        .body(hyper::Body::from(format!("Proxy error: {:?}", error)))
-                        .unwrap(),
-                };
+        for proxy in proxy.split(",") {
+            if let [proxy_path, proxy_target] = proxy.split("=").collect::<Vec<_>>().as_slice() {
+                if let Some(ppath) = path.strip_prefix(proxy_path) {
+                    let client_ip = std::net::IpAddr::from_str("127.0.0.1").unwrap();
+                    *req.uri_mut() = ppath.parse().unwrap();
+                    println!("proxy {:?}", req.uri().path());
+                    return match hyper_reverse_proxy::call(client_ip, proxy_target, req).await {
+                        Ok(response) => response,
+                        Err(error) => hyper::Response::builder()
+                            .status(hyper::StatusCode::INTERNAL_SERVER_ERROR)
+                            .body(hyper::Body::from(format!("Proxy error: {:?}", error)))
+                            .unwrap(),
+                    };
+                }
             }
         }
     }
