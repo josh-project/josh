@@ -36,7 +36,7 @@ sled = "0.34.7"
 strfmt = "0.2.4"
 toml = "0.7.2"
 tracing = "0.1.37"
-gix = "0.36.0"
+gix = "0.40.0"
 
 [dependencies.juniper]
 default-features = false
