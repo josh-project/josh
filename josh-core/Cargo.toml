@@ -35,7 +35,7 @@ serde_yaml = "0.9.17"
 sled = "0.34.7"
 strfmt = "0.2.4"
 toml = "0.7.2"
-tracing = "0.1.37"
+tracing = "0.1.38"
 gix = "0.36.0"
 
 [dependencies.juniper]
