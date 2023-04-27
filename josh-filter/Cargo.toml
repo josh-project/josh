@@ -23,7 +23,7 @@ rs_tracing= { version = "1.1.0", features = ["rs_tracing"] }
 
 [dependencies.git2]
 default-features = false
-version = "0.16.1"
+version = "0.17.1"
 
 [dependencies.juniper]
 default-features = false
