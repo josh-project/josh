@@ -24,7 +24,7 @@ indoc = "2.0.0"
 josh = {path = "../josh-core" }
 lazy_static = "1.4.0"
 opentelemetry = "0.18.0"
-opentelemetry-jaeger = "0.17.0"
+opentelemetry-jaeger = "0.18.0"
 percent-encoding = "2.2.0"
 regex = "1.7.1"
 reqwest= { version = "0.11.14", default-features = false, features = ["blocking", "json"] }
