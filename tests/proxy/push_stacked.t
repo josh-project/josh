@@ -224,6 +224,8 @@ Make sure all temporary namespace got removed
       |   |   `-- c67dccc160a868cefdab0bd9d7141b7276c4f3
       |   |-- 49
       |   |   `-- 03654ec80c5cff86ab37a0b9d7bcf8332e8c54
+      |   |-- 4b
+      |   |   `-- 825dc642cb6eb9a060e54bf8d69288fbee4904
       |   |-- 57
       |   |   `-- a39cc050b1493cf6313822f0de3cee3ca4f39a
       |   |-- 6b
@@ -249,7 +251,7 @@ Make sure all temporary namespace got removed
           |-- namespaces
           `-- tags
   
-  55 directories, 43 files
+  56 directories, 44 files
 
 $ cat ${TESTTMP}/josh-proxy.out
 $ cat ${TESTTMP}/josh-proxy.out | grep REPO_UPDATE

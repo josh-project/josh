@@ -81,8 +81,8 @@ allowed.
 ### Match directories **`::X/`**
 All matching subdirectories in the input root
 
-### Match files **`::X`**
-All matching files in the input root
+### Match files or directories **`::X`**
+All matching files or directories in the input root
 
 ### Match nested directories **`::**/X/`**
 All subdirectories matching the pattern in arbitrarily deep subdirectories of the input

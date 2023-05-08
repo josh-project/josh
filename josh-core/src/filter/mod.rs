@@ -759,11 +759,7 @@ fn apply2<'a>(
                 .get_path(path)
                 .map(|x| (x.id(), x.filemode()))
                 .unwrap_or((git2::Oid::zero(), 0o0100644));
-            if repo.find_blob(file).is_ok() {
-                tree::insert(repo, &tree::empty(repo), path, file, mode)
-            } else {
-                Ok(tree::empty(repo))
-            }
+            tree::insert(repo, &tree::empty(repo), path, file, mode)
         }
 
         Op::Subdir(path) => {
