@@ -117,7 +117,7 @@ enum Op {
     Subdir(std::path::PathBuf),
     Workspace(std::path::PathBuf),
 
-    Glob(String),
+    Pattern(String),
 
     Compose(Vec<Filter>),
     Chain(Filter, Filter),
@@ -313,7 +313,7 @@ fn spec2(op: &Op) -> String {
         Op::Subdir(path) => format!(":/{}", parse::quote_if(&path.to_string_lossy())),
         Op::File(path) => format!("::{}", parse::quote_if(&path.to_string_lossy())),
         Op::Prefix(path) => format!(":prefix={}", parse::quote_if(&path.to_string_lossy())),
-        Op::Glob(pattern) => format!("::{}", parse::quote_if(pattern)),
+        Op::Pattern(pattern) => format!("::{}", parse::quote_if(pattern)),
         Op::Author(author, email) => {
             format!(":author={};{}", parse::quote(author), parse::quote(email))
         }
@@ -764,7 +764,7 @@ fn apply2<'a>(
             Ok(t)
         }
 
-        Op::Glob(pattern) => {
+        Op::Pattern(pattern) => {
             let pattern = glob::Pattern::new(pattern)?;
             let options = glob::MatchOptions {
                 case_sensitive: true,

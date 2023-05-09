@@ -434,7 +434,7 @@ pub fn invert(filter: Filter) -> JoshResult<Filter> {
         Op::Subdir(path) => Some(Op::Prefix(path)),
         Op::File(path) => Some(Op::File(path)),
         Op::Prefix(path) => Some(Op::Subdir(path)),
-        Op::Glob(pattern) => Some(Op::Glob(pattern)),
+        Op::Pattern(pattern) => Some(Op::Pattern(pattern)),
         Op::Rev(_) => Some(Op::Nop),
         _ => None,
     };

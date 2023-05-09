@@ -76,7 +76,7 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> JoshResult<Op> {
                     to_filter(make_op(&["prefix", arg])?),
                 ))
             } else if arg.contains('*') {
-                Ok(Op::Glob(arg.to_string()))
+                Ok(Op::Pattern(arg.to_string()))
             } else {
                 Ok(Op::File(Path::new(arg).to_owned()))
             }
