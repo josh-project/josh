@@ -37,6 +37,7 @@ if (( ! NO_BUILD_CONTAINER )); then
         --build-arg USER_UID="$(id -u)" \
         --build-arg USER_GID="$(id -g)" \
         --build-arg ARCH="${ARCH}" \
+        --network=host \
         .
 fi
 
@@ -58,5 +59,6 @@ docker run -it --rm \
     --volume "$(pwd)":"$(pwd)" \
     --volume cache:/opt/cache \
     --user "$(id -u)":"$(id -g)" \
+    --network=host \
     josh-dev-local \
     bash -c "${TEST_SCRIPT}"
