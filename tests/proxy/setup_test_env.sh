@@ -33,6 +33,7 @@ GIT_DIR="${TESTTMP}/remote/" GIT_PROJECT_ROOT="${TESTTMP}/remote/" GIT_HTTP_EXPO
 echo $! > "${TESTTMP}/server_pid"
 
 # Copy static UI resources
+mkdir -p "${TESTDIR}/../../static"
 cp -R "${TESTDIR}/../../static/" /josh/
 
 if [ -n "${CARGO_TARGET_DIR+x}" ]; then
