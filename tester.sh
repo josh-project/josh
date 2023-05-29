@@ -24,7 +24,7 @@ fi
 
 ARCH=$(arch)
 
-if [ ARCH == "arm64" ]; then
+if [ "$ARCH" = "arm64" ]; then
     ARCH="aarch64"
 fi
 
