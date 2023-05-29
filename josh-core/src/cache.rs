@@ -73,6 +73,9 @@ pub struct Transaction {
 
 impl Transaction {
     pub fn open(path: &std::path::Path, ref_prefix: Option<&str>) -> JoshResult<Transaction> {
+        if !path.exists() {
+            return Err(josh_error("path does not exist"));
+        }
         Ok(Transaction::new(
             git2::Repository::open_ext(
                 path,

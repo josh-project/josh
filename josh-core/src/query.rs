@@ -23,7 +23,20 @@ impl GraphQLHelper {
             .join(path);
         let path = normalize_path(&path);
 
-        let transaction = cache::Transaction::open(&self.repo_path, Some(&self.ref_prefix))?;
+        let transaction = if let Ok(to) =
+            cache::Transaction::open(&self.repo_path.join("mirror"), Some(&self.ref_prefix))
+        {
+            to.repo().odb()?.add_disk_alternate(
+                self.repo_path
+                    .join("overlay")
+                    .join("objects")
+                    .to_str()
+                    .unwrap(),
+            )?;
+            to
+        } else {
+            cache::Transaction::open(&self.repo_path, Some(&self.ref_prefix))?
+        };
 
         let tree = transaction.repo().find_commit(self.commit_id)?.tree()?;
 
@@ -41,8 +54,26 @@ impl GraphQLHelper {
             variables.insert(k.to_string(), juniper::InputValue::scalar(v.render()));
         }
 
-        let transaction = cache::Transaction::open(&self.repo_path, None)?;
-        let transaction_overlay = cache::Transaction::open(&self.repo_path, None)?;
+        let (transaction, transaction_overlay) =
+            if let Ok(to) = cache::Transaction::open(&self.repo_path.join("overlay"), None) {
+                to.repo().odb()?.add_disk_alternate(
+                    self.repo_path
+                        .join("mirror")
+                        .join("objects")
+                        .to_str()
+                        .unwrap(),
+                )?;
+                (
+                    cache::Transaction::open(&self.repo_path.join("mirror"), None)?,
+                    to,
+                )
+            } else {
+                (
+                    cache::Transaction::open(&self.repo_path, None)?,
+                    cache::Transaction::open(&self.repo_path, None)?,
+                )
+            };
+
         let (res, _errors) = juniper::execute_sync(
             &query,
             None,
@@ -77,7 +108,7 @@ impl handlebars::HelperDef for GraphQLHelper {
                 h.hash(),
                 rc.get_current_template_name().unwrap_or(&"/".to_owned()),
             )
-            .map_err(|_| handlebars::RenderError::new("josh"))?,
+            .map_err(|e| handlebars::RenderError::new(format!("{}", e)))?,
         ));
     }
 }
@@ -91,6 +122,7 @@ pub fn render(
     ref_prefix: &str,
     commit_id: git2::Oid,
     query_and_params: &str,
+    split_odb: bool,
 ) -> JoshResult<Option<String>> {
     let mut parameters = query_and_params.split('&');
     let query = parameters
@@ -162,13 +194,24 @@ pub fn render(
     drop(obj);
     drop(tree);
 
+    let repo_path = if split_odb {
+        transaction
+            .repo()
+            .path()
+            .parent()
+            .ok_or(josh_error("parent"))?
+            .to_owned()
+    } else {
+        transaction.repo().path().to_owned()
+    };
+
     let mut handlebars = handlebars::Handlebars::new();
     handlebars.register_template_string(path, template)?;
     handlebars.register_helper("concat", Box::new(helpers::concat_helper));
     handlebars.register_helper(
         "graphql",
         Box::new(GraphQLHelper {
-            repo_path: transaction.repo().path().to_owned(),
+            repo_path: repo_path,
             ref_prefix: ref_prefix.to_owned(),
             commit_id,
         }),

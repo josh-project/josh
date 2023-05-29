@@ -1358,7 +1358,7 @@ async fn serve_query(
         let commit_id =
             josh::filter_commit(&transaction, filter, commit_id, josh::filter::empty())?;
 
-        josh::query::render(&transaction, "", commit_id, &q)
+        josh::query::render(&transaction, "", commit_id, &q, true)
     })
     .in_current_span()
     .await?;

@@ -424,7 +424,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         let commit_id = transaction.repo().refname_to_id(update_target)?;
         print!(
             "{}",
-            josh::query::render(&transaction, "", commit_id, query,)?
+            josh::query::render(&transaction, "", commit_id, query, false)?
                 .unwrap_or("File not found".to_string())
         );
     }
