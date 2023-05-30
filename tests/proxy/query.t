@@ -16,10 +16,20 @@
   $ git add sub2
   $ git commit -m "add file2" 1> /dev/null
 
-  $ cat > tmpl_file <<EOF
-  > param: {{ param_val }}
+  $ cat > x.graphql <<EOF
+  > query {
+  >  hash
+  > }
   > EOF
 
+  $ cat > tmpl_file <<EOF
+  > param: {{ param_val }}
+  > {{ #with (graphql file="x.graphql") as |gql| }}
+  > sha: {{ gql.hash }}
+  > {{ /with }}
+  > EOF
+
+  $ git add x.graphql
   $ git add tmpl_file
   $ git commit -m "add tmpl_file" 1> /dev/null
 
@@ -47,6 +57,7 @@
   JoshError(Error rendering "tmpl_file" line 1, col 8: Variable "param_val" not found in strict mode.) (no-eol)
   $ curl -s http://localhost:8002/real_repo.git?render=tmpl_file\&param_val=12345
   param: 12345
+  sha: 002d20d28aab1ebe3892b01ec1dfc60d43fc598f
   $ curl -s http://localhost:8002/real_repo.git?get=sub1/file1
   contents1
   $ curl -s http://localhost:8002/real_repo.git@refs/changes/123/2:nop.git?get=sub2/on_change
