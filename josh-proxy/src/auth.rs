@@ -1,3 +1,8 @@
+// Import the base64 crate Engine trait anonymously so we can
+// call its methods without adding to the namespace.
+use base64::engine::general_purpose::STANDARD as BASE64;
+use base64::engine::Engine as _;
+
 lazy_static! {
     static ref AUTH: std::sync::Mutex<std::collections::HashMap<Handle, Header>> =
         std::sync::Mutex::new(std::collections::HashMap::new());
@@ -42,7 +47,7 @@ impl Handle {
         let u = josh::ok_or!(String::from_utf8(line[6..].to_vec()), {
             return Ok(("".to_string(), "".to_string()));
         });
-        let decoded = josh::ok_or!(base64::decode(u), {
+        let decoded = josh::ok_or!(BASE64.decode(u), {
             return Ok(("".to_string(), "".to_string()));
         });
         let s = josh::ok_or!(String::from_utf8(decoded), {
@@ -54,7 +59,7 @@ impl Handle {
 }
 
 pub fn add_auth(token: &str) -> josh::JoshResult<Handle> {
-    let header = hyper::header::HeaderValue::from_str(&format!("Basic {}", base64::encode(token)))?;
+    let header = hyper::header::HeaderValue::from_str(&format!("Basic {}", BASE64.encode(token)))?;
     let hp = Handle {
         hash: format!(
             "{:?}",

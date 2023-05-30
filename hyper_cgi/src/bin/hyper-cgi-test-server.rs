@@ -9,6 +9,11 @@ use futures::FutureExt;
 
 use hyper::server::Server;
 
+// Import the base64 crate Engine trait anonymously so we can
+// call its methods without adding to the namespace.
+use base64::engine::general_purpose::STANDARD as BASE64;
+use base64::engine::Engine as _;
+
 #[macro_export]
 macro_rules! some_or {
     ($e:expr, $b:block) => {
@@ -51,7 +56,7 @@ pub fn parse_auth(req: &hyper::Request<hyper::Body>) -> Option<(String, String)>
     let u = ok_or!(String::from_utf8(line[6..].to_vec()), {
         return None;
     });
-    let decoded = ok_or!(base64::decode(&u), {
+    let decoded = ok_or!(BASE64.decode(&u), {
         return None;
     });
     let s = ok_or!(String::from_utf8(decoded), {
