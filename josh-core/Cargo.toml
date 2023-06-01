@@ -46,4 +46,4 @@ features = []
 [dependencies.chrono]
 default-features = false
 features = ["alloc", "std"]
-version = "0.4.25"
+version = "0.4.26"
