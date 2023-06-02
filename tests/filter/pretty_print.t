@@ -55,6 +55,33 @@
       ::a/
       ::b/
   ]
+  $ josh-filter -p :[::a,::b]:/c
+  :[
+      ::a:/c
+      ::b:/c
+  ]
+  $ josh-filter -p :[::a,::b]::c
+  :[
+      ::a
+      ::b
+  ]::c
+Exclude of compose should not be split out
+  $ josh-filter -p :[:/a:prefix=a,:/b:prefix=b]:exclude[::a/a,::b/b]
+  :[
+      ::a/
+      ::b/
+  ]:exclude[
+      ::a/a
+      ::b/b
+  ]
+  $ josh-filter --reverse -p :[:/a:prefix=a,:/b:prefix=b]:exclude[::a/a,::b/b]
+  :exclude[
+      ::a/a
+      ::b/b
+  ]:[
+      ::a/
+      ::b/
+  ]
   $ josh-filter -p :prefix=a/b:prefix=c
   :prefix=c/a/b
   $ josh-filter --reverse -p :prefix=a/b:prefix=c

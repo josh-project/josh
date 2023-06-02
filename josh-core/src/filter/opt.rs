@@ -235,22 +235,30 @@ fn common_pre(filters: &Vec<Filter>) -> Option<(Filter, Vec<Filter>)> {
 
 fn common_post(filters: &Vec<Filter>) -> Option<(Filter, Vec<Filter>)> {
     let mut rest = vec![];
-    let mut c: Option<Filter> = None;
+    let mut common_post: Option<Filter> = None;
     for f in filters {
         let (a, b) = last_chain(to_filter(Op::Nop), *f);
         {
             rest.push(a);
-            if c.is_none() {
-                c = Some(b);
+            if common_post.is_none() {
+                common_post = Some(b);
             }
-            if c != Some(b) {
+            if common_post != Some(b) {
                 return None;
             }
         }
     }
-    match c.map(to_op) {
-        Some(Op::Prefix(_)) => c.map(|c| (c, rest)),
-        _ => None,
+
+    if let Some(c) = common_post {
+        if invert(c).ok() == common_post {
+            common_post.map(|c| (c, rest))
+        } else if let Op::Prefix(_) = to_op(c) {
+            common_post.map(|c| (c, rest))
+        } else {
+            None
+        }
+    } else {
+        None
     }
 }
 
