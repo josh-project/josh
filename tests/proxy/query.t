@@ -66,6 +66,15 @@ Now render still works (used to fail if filtered previously)
   sha: 890148bbaa6a797bac8aef672a437f2b08635f15
   filter_sha: ffe8d082c1034053534ea8068f4205ac72a1098e
 
+Graphql works
+  $ curl -s http://localhost:8002/real_repo.git?graphql=x.graphql
+  {
+    "hash": "890148bbaa6a797bac8aef672a437f2b08635f15",
+    "rev": {
+      "hash": "ffe8d082c1034053534ea8068f4205ac72a1098e"
+    }
+  } (no-eol)
+
 
 Failing render for lack of variable
   $ curl -i -s http://localhost:8002/real_repo.git?render=tmpl_file
