@@ -8,6 +8,7 @@
 
   $ mkdir sub1
   $ echo contents1 > sub1/file1
+  $ echo contents > sub1/test
   $ git add sub1
   $ git commit -m "add file1" 1> /dev/null
 
@@ -19,6 +20,10 @@
   $ cat > x.graphql <<EOF
   > query {
   >  hash
+  >  rev(filter: "::**/file*")
+  >  {
+  >    hash
+  >  }
   > }
   > EOF
 
@@ -26,6 +31,7 @@
   > param: {{ param_val }}
   > {{ #with (graphql file="x.graphql") as |gql| }}
   > sha: {{ gql.hash }}
+  > filter_sha: {{gql.rev.hash}}
   > {{ /with }}
   > EOF
 
@@ -46,18 +52,31 @@
    * [new reference]   HEAD -> refs/changes/123/2
 
   $ cd ${TESTTMP}
-
+Get works
   $ curl -s http://localhost:8002/real_repo.git:/sub1.git?get=file1
   contents1
+
+Filter once before calling render
+  $ git clone http://localhost:8002/real_repo.git::**/file*.git
+  Cloning into 'file*'...
+
+Now render still works (used to fail if filtered previously)
+  $ curl -s http://localhost:8002/real_repo.git?render=tmpl_file\&param_val=12345
+  param: 12345
+  sha: 890148bbaa6a797bac8aef672a437f2b08635f15
+  filter_sha: ffe8d082c1034053534ea8068f4205ac72a1098e
+
+
+Failing render for lack of variable
   $ curl -i -s http://localhost:8002/real_repo.git?render=tmpl_file
   HTTP/1.1 422 Unprocessable Entity\r (esc)
   content-length: 100\r (esc)
   date: *\r (esc) (glob)
   \r (esc)
   JoshError(Error rendering "tmpl_file" line 1, col 8: Variable "param_val" not found in strict mode.) (no-eol)
-  $ curl -s http://localhost:8002/real_repo.git?render=tmpl_file\&param_val=12345
-  param: 12345
-  sha: 002d20d28aab1ebe3892b01ec1dfc60d43fc598f
+
+
+
   $ curl -s http://localhost:8002/real_repo.git?get=sub1/file1
   contents1
   $ curl -s http://localhost:8002/real_repo.git@refs/changes/123/2:nop.git?get=sub2/on_change
