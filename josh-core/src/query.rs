@@ -54,7 +54,7 @@ impl GraphQLHelper {
             variables.insert(k.to_string(), juniper::InputValue::scalar(v.render()));
         }
 
-        let (transaction, transaction_overlay) =
+        let (transaction, transaction_mirror) =
             if let Ok(to) = cache::Transaction::open(&self.repo_path.join("overlay"), None) {
                 to.repo().odb()?.add_disk_alternate(
                     self.repo_path
@@ -64,8 +64,8 @@ impl GraphQLHelper {
                         .unwrap(),
                 )?;
                 (
-                    cache::Transaction::open(&self.repo_path.join("mirror"), None)?,
                     to,
+                    cache::Transaction::open(&self.repo_path.join("mirror"), None)?,
                 )
             } else {
                 (
@@ -79,7 +79,7 @@ impl GraphQLHelper {
             None,
             &graphql::commit_schema(self.commit_id),
             &variables,
-            &graphql::context(transaction, transaction_overlay),
+            &graphql::context(transaction, transaction_mirror),
         )?;
 
         let j = serde_json::to_string(&res)?;
