@@ -159,9 +159,9 @@ pub fn render(
     }
 
     let template = if let Ok(blob) = obj.peel_to_blob() {
-        let template = std::str::from_utf8(blob.content())?;
+        let file = std::str::from_utf8(blob.content())?;
         if cmd == "get" {
-            return Ok(Some(template.to_string()));
+            return Ok(Some(file.to_string()));
         }
         if cmd == "graphql" {
             let mut variables = juniper::Variables::new();
@@ -169,21 +169,49 @@ pub fn render(
             for (k, v) in params {
                 variables.insert(k.to_string(), juniper::InputValue::scalar(v));
             }
-            let transaction = cache::Transaction::open(transaction.repo().path(), None)?;
-            let transaction_overlay = cache::Transaction::open(transaction.repo().path(), None)?;
+            let (transaction, transaction_mirror) = if let Ok(to) = cache::Transaction::open(
+                &transaction
+                    .repo()
+                    .path()
+                    .parent()
+                    .ok_or(josh_error("parent"))?
+                    .join("overlay"),
+                None,
+            ) {
+                to.repo().odb()?.add_disk_alternate(
+                    &transaction
+                        .repo()
+                        .path()
+                        .parent()
+                        .ok_or(josh_error("parent"))?
+                        .join("mirror")
+                        .join("objects")
+                        .to_str()
+                        .unwrap(),
+                )?;
+                (
+                    to,
+                    cache::Transaction::open(&transaction.repo().path(), None)?,
+                )
+            } else {
+                (
+                    cache::Transaction::open(transaction.repo().path(), None)?,
+                    cache::Transaction::open(transaction.repo().path(), None)?,
+                )
+            };
             let (res, _errors) = juniper::execute_sync(
-                template,
+                file,
                 None,
                 &graphql::commit_schema(commit_id),
                 &variables,
-                &graphql::context(transaction, transaction_overlay),
+                &graphql::context(transaction, transaction_mirror),
             )?;
 
             let j = serde_json::to_string_pretty(&res)?;
             return Ok(Some(j));
         }
         if cmd == "render" {
-            template.to_string()
+            file.to_string()
         } else {
             return Err(josh_error("no such cmd"));
         }
