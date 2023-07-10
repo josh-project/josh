@@ -29,7 +29,7 @@ pest_derive = "2.6.0"
 rayon = "1.7.0"
 regex = "1.8.3"
 rs_tracing= { version = "1.1.0", features = ["rs_tracing"] }
-serde = { version = "1.0.163", features = ["derive"] }
+serde = { version = "1.0.171", features = ["derive"] }
 serde_json= "1.0.96"
 serde_yaml = "0.9.21"
 sled = "0.34.7"
