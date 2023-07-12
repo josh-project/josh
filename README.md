@@ -84,7 +84,7 @@ $ git clone http://josh/central.git:workspace=workspaces/project1.git
 
 With everything stored in one repo, CI/CD systems only need to look into one source for each particular
 deliverable.
-However, in traditional monorepo environments, dependency mangement is handled by the build system.
+However, in traditional monorepo environments, dependency management is handled by the build system.
 Build systems are usually tailored to specific languages and need their input already checked
 out on the filesystem.
 So the question:
