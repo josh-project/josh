@@ -84,32 +84,32 @@ $ git clone http://josh/central.git:workspace=workspaces/project1.git
 
 With everything stored in one repo, CI/CD systems only need to look into one source for each particular
 deliverable.
-However in traditional monorepo environments dependency mangement is handled by the build system.
+However, in traditional monorepo environments, dependency mangement is handled by the build system.
 Build systems are usually tailored to specific languages and need their input already checked
 out on the filesystem.
 So the question:
 
-> "What deliverables are affected by a given commit and need to be rebuild?"
+> "What deliverables are affected by a given commit and need to be rebuilt?"
 
 cannot be answered without cloning the entire repository and understanding how the languages
 used handle dependencies.
 
-In particular when using C familiy languages, hidden dependencies on header files are easy to miss.
-For this reason limiting the visibility of files to the compiler by sandboxing is pretty much a requirement
+In particular, when using C family languages, hidden dependencies on header files are easy to miss.
+For this reason, limiting the visibility of files to the compiler by sandboxing is pretty much a requirement
 for reproducible builds.
 
-With Josh, each deliverable gets it's own virtual git repository with dependencies declared in the `workspace.josh`
+With Josh, each deliverable gets its own virtual git repository with dependencies declared in the `workspace.josh`
 file. This means answering the above question becomes as simple as comparing commit ids.
-Furthermore due to the tree filtering each build is guaranteed to be perfectly sandboxed
+Furthermore, due to the tree filtering, each build is guaranteed to be perfectly sandboxed
 and only sees those parts of the monorepo that have actually been mapped.
 
-This also means the deliverables to be re-build can be determined without cloning any repos like
+This also means the deliverables to be re-built can be determined without cloning any repos like
 typically necessary with normal build tools.
 
 ### GraphQL API
 
 It is often desireable to access content stored in git without requiring a clone of the repository.
-This is usefull for CI/CD systems or web frontends such as dashboards.
+This is useful for CI/CD systems or web frontends, such as dashboards.
 
 Josh exposes a GraphQL API for that purpose. For example, it can be used to find all workspaces currently
 present in the tree:
