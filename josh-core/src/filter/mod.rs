@@ -117,7 +117,7 @@ enum Op {
     Subdir(std::path::PathBuf),
     Workspace(std::path::PathBuf),
 
-    Pattern(String),
+    Pattern(Vec<String>),
 
     Compose(Vec<Filter>),
     Chain(Filter, Filter),
@@ -313,7 +313,20 @@ fn spec2(op: &Op) -> String {
         Op::Subdir(path) => format!(":/{}", parse::quote_if(&path.to_string_lossy())),
         Op::File(path) => format!("::{}", parse::quote_if(&path.to_string_lossy())),
         Op::Prefix(path) => format!(":prefix={}", parse::quote_if(&path.to_string_lossy())),
-        Op::Pattern(pattern) => format!("::{}", parse::quote_if(pattern)),
+        Op::Pattern(patterns) if patterns.len() == 1 => {
+            format!("::{}", parse::quote_if(patterns[0].as_str()))
+        }
+        Op::Pattern(patterns) => {
+            let v = patterns
+                .iter()
+                .map(|pattern| format!("{}", parse::quote_if(pattern)))
+                .collect::<Vec<_>>();
+            if v.len() == 1 {
+                v[0].clone()
+            } else {
+                format!(":patterns({})", v.join(","))
+            }
+        }
         Op::Author(author, email) => {
             format!(":author={};{}", parse::quote(author), parse::quote(email))
         }
@@ -764,18 +777,25 @@ fn apply2<'a>(
             Ok(t)
         }
 
-        Op::Pattern(pattern) => {
-            let pattern = glob::Pattern::new(pattern)?;
+        Op::Pattern(patterns) => {
             let options = glob::MatchOptions {
                 case_sensitive: true,
                 require_literal_separator: true,
                 require_literal_leading_dot: true,
             };
+
+            let patterns = patterns
+                .iter()
+                .map(|p| Ok(glob::Pattern::new(p)?))
+                .collect::<JoshResult<Vec<_>>>()?;
+
             tree::remove_pred(
                 transaction,
                 "",
                 tree.id(),
-                &|path, isblob| isblob && (pattern.matches_path_with(path, options)),
+                &|path, isblob| {
+                    isblob && (patterns.iter().any(|p| p.matches_path_with(path, options)))
+                },
                 to_filter(op.clone()).id(),
             )
         }

@@ -76,7 +76,7 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> JoshResult<Op> {
                     to_filter(make_op(&["prefix", arg])?),
                 ))
             } else if arg.contains('*') {
-                Ok(Op::Pattern(arg.to_string()))
+                Ok(Op::Pattern(vec![arg.to_string()]))
             } else {
                 Ok(Op::File(Path::new(arg).to_owned()))
             }
@@ -135,6 +135,14 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> JoshResult<Op> {
                 .collect::<JoshResult<_>>()?;
 
             Ok(Op::Squash(Some(ids)))
+        }
+        Rule::filter_patterns => {
+            let patterns = pair
+                .into_inner()
+                .map(|pattern| Ok(unquote(pattern.as_str())))
+                .collect::<JoshResult<_>>()?;
+
+            Ok(Op::Pattern(patterns))
         }
 
         _ => Err(josh_error("parse_item: no match")),
