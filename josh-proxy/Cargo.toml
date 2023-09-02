@@ -43,7 +43,7 @@ uuid = { version = "1.3.3", features = ["v4"] }
 josh-rpc = { path = "../josh-rpc" }
 tokio-util = "0.7.8"
 tempdir = "0.3.7"
-gix = "0.44.1"
+gix = "0.49.0"
 
 [dependencies.juniper]
 version = "0.15.11"
