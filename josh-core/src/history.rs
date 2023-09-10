@@ -461,23 +461,51 @@ pub fn unapply_filter(
 
                 if tid == git2::Oid::zero() && parent_count == 2 {
                     // If we could not select one of the parents, try to merge them.
+                    // We expect conflicts to occur only in the paths that are present in
+                    // the filtered commit.
+                    // As we are going to replace the contents of these files with commit being
+                    // pushed, we can ignore those conflicts. To do that we perform the merge
+                    // twice: Once with the "ours" and once with the "theirs" merge file favor.
+                    // After that we do "unapply()" on both resulting trees, which will replace
+                    // the files selected by the filter with the content being pushed.
+                    // If our assumption was correct and all conflicts were in filtered files,
+                    // both resulting trees will be the same and we can pick the result to proceed.
 
-                    if let Ok(mut merged_index) = transaction.repo().merge_commits(
+                    let mut mergeopts = git2::MergeOptions::new();
+                    mergeopts.file_favor(git2::FileFavor::Ours);
+
+                    let mut merged_index = transaction.repo().merge_commits(
                         original_parents_refs[0],
                         original_parents_refs[1],
-                        None,
-                    ) {
-                        // If we can auto merge without conflicts, take the result.
-                        if !merged_index.has_conflicts() {
-                            let base_tree = merged_index.write_tree_to(transaction.repo())?;
-                            tid = filter::unapply(
-                                transaction,
-                                filterobj,
-                                tree,
-                                transaction.repo().find_tree(base_tree)?,
-                            )?
-                            .id();
-                        }
+                        Some(&mergeopts),
+                    )?;
+                    let base_tree = merged_index.write_tree_to(transaction.repo())?;
+                    let tid_ours = filter::unapply(
+                        transaction,
+                        filterobj,
+                        tree.clone(),
+                        transaction.repo().find_tree(base_tree)?,
+                    )?
+                    .id();
+
+                    mergeopts.file_favor(git2::FileFavor::Theirs);
+
+                    let mut merged_index = transaction.repo().merge_commits(
+                        original_parents_refs[0],
+                        original_parents_refs[1],
+                        Some(&mergeopts),
+                    )?;
+                    let base_tree = merged_index.write_tree_to(transaction.repo())?;
+                    let tid_theirs = filter::unapply(
+                        transaction,
+                        filterobj,
+                        tree.clone(),
+                        transaction.repo().find_tree(base_tree)?,
+                    )?
+                    .id();
+
+                    if tid_ours == tid_theirs {
+                        tid = tid_ours;
                     }
                 }
 
@@ -486,11 +514,14 @@ pub fn unapply_filter(
                     // more and maybe consider allowing a manual override as last resort.
                     tracing::warn!("rejecting merge");
                     let msg = format!(
-                        "rejecting merge with {} parents:\n{:?}\n1) {:?}\n2) {:?}",
+                        "rejecting merge with {} parents:\n{:?} ({:?})\n1) {:?} ({:?})\n2) {:?} ({:?})",
                         parent_count,
                         module_commit.summary().unwrap_or_default(),
+                        module_commit.id(),
                         original_parents_refs[0].summary().unwrap_or_default(),
+                        original_parents_refs[0].id(),
                         original_parents_refs[1].summary().unwrap_or_default(),
+                        original_parents_refs[1].id(),
                     );
                     return Err(josh_error(&msg));
                 }
