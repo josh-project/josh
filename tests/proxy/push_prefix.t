@@ -47,7 +47,7 @@
   `-- sub1
       `-- file1
   
-  1 directory, 2 files
+  2 directories, 2 files
 
   $ bash ${TESTDIR}/destroy_test_env.sh
   "real_repo.git" = [
@@ -117,5 +117,5 @@
           |-- namespaces
           `-- tags
   
-  37 directories, 24 files
+  38 directories, 24 files
 

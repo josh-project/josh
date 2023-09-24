@@ -102,7 +102,7 @@ Flushed credential cache
   |       `-- file1
   `-- workspace.josh
   
-  4 directories, 3 files
+  5 directories, 3 files
 
   $ git log --graph --pretty="%s - %an <%ae>"
   *   Merge from :workspace=ws - JOSH <josh@josh-project.dev>
@@ -196,7 +196,7 @@ Flushed credential cache
   |   `-- file3
   `-- workspace.josh
   
-  5 directories, 4 files
+  6 directories, 4 files
 
   $ git log --graph --pretty=%s
   *   mod workspace
@@ -219,7 +219,7 @@ Flushed credential cache
   |       `-- file1
   `-- workspace.josh
   
-  4 directories, 3 files
+  5 directories, 3 files
 
   $ git checkout HEAD~1 1> /dev/null
   Previous HEAD position was d91fa49 Merge from :workspace=ws
@@ -228,7 +228,7 @@ Flushed credential cache
   .
   `-- workspace.josh
   
-  0 directories, 1 file
+  1 directory, 1 file
 
   $ git checkout master 1> /dev/null
   Previous HEAD position was 9441c1b add workspace
@@ -309,7 +309,7 @@ Flushed credential cache
   |-- workspace.josh
   `-- ws_file
   
-  5 directories, 6 files
+  6 directories, 6 files
 
   $ cat workspace.josh
   c = :/sub1
@@ -369,7 +369,7 @@ Note that ws/d/ is now present in the ws
       |-- workspace.josh
       `-- ws_file
   
-  5 directories, 9 files
+  6 directories, 9 files
   $ git log --graph --pretty=%s
   * try to modify ws
   * add in filter
@@ -407,7 +407,7 @@ Note that ws/d/ is now present in the ws
       |-- workspace.josh
       `-- ws_file
   
-  5 directories, 9 files
+  6 directories, 9 files
 
   $ git checkout HEAD~1 1> /dev/null
   Previous HEAD position was c88a8ce add in filter
@@ -428,7 +428,7 @@ Note that ws/d/ is now present in the ws
   `-- ws
       `-- workspace.josh
   
-  5 directories, 7 files
+  6 directories, 7 files
 
   $ bash ${TESTDIR}/destroy_test_env.sh
   "real_repo.git" = [
@@ -809,6 +809,6 @@ Note that ws/d/ is now present in the ws
           |-- namespaces
           `-- tags
   
-  175 directories, 193 files
+  176 directories, 193 files
 
 $ cat ${TESTTMP}/josh-proxy.out

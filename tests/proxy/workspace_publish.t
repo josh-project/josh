@@ -50,7 +50,7 @@
   |       `-- file2
   `-- workspace.josh
   
-  2 directories, 2 files
+  3 directories, 2 files
 
   $ git log --graph --pretty=%s
   * add file2
@@ -96,7 +96,7 @@
   `-- ws
       `-- workspace.josh
   
-  4 directories, 4 files
+  5 directories, 4 files
   $ git log --graph --pretty=%s
   * publish
   * add in filter
@@ -115,7 +115,7 @@
       |       `-- newfile_1
       `-- workspace.josh
   
-  4 directories, 4 files
+  5 directories, 4 files
 
   $ bash ${TESTDIR}/destroy_test_env.sh
   "real_repo.git" = [
@@ -280,6 +280,6 @@
           |-- namespaces
           `-- tags
   
-  82 directories, 73 files
+  83 directories, 73 files
 
 $ cat ${TESTTMP}/josh-proxy.out | grep VIEW

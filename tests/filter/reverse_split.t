@@ -30,7 +30,7 @@
   `-- rest
       `-- file2.b
   
-  2 directories, 2 files
+  3 directories, 2 files
   $ git log --graph --pretty=%s
   * add file2.b
   * add file1.a
@@ -82,5 +82,5 @@
   |-- file3.a
   `-- file4.b
   
-  0 directories, 4 files
+  1 directory, 4 files
 

@@ -101,7 +101,7 @@
   |       `-- file1
   `-- workspace.josh
   
-  4 directories, 3 files
+  5 directories, 3 files
 
   $ git log --graph --pretty=%s
   * add file2
@@ -476,4 +476,4 @@
           |-- namespaces
           `-- tags
   
-  149 directories, 146 files
+  150 directories, 146 files

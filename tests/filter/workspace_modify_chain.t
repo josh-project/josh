@@ -40,7 +40,7 @@
   `-- subsub
       `-- file2
   
-  1 directory, 1 file
+  2 directories, 1 file
 
   $ echo ws_content > subsub/fileX
   $ echo ws_content > subsub/file1
@@ -69,7 +69,7 @@
   `-- ws
       `-- workspace.josh
   
-  4 directories, 6 files
+  5 directories, 6 files
 
   $ cat ws/file1
   *: No such file or directory (glob)

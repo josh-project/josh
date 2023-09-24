@@ -61,7 +61,7 @@ Flushed credential cache
       |-- file1
       `-- file3
   
-  1 directory, 2 files
+  2 directories, 2 files
 
   $ git rebase master -q
   $ git log --graph --pretty=%s
@@ -76,7 +76,7 @@ Flushed credential cache
       |-- file2
       `-- file3
   
-  1 directory, 3 files
+  2 directories, 3 files
 
   $ bash ${TESTDIR}/destroy_test_env.sh
   "real_repo.git" = [
@@ -154,7 +154,7 @@ Flushed credential cache
           |-- namespaces
           `-- tags
   
-  41 directories, 28 files
+  42 directories, 28 files
 
   $ cat ${TESTTMP}/josh-proxy.out | grep graph_descendant_of
   [1]

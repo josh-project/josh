@@ -48,7 +48,7 @@
   `-- sub1
       `-- file1
   
-  3 directories, 2 files
+  4 directories, 2 files
 
   $ git push
   To http://localhost:8001/real_repo.git
@@ -68,7 +68,7 @@
   `-- sub1
       `-- file1
   
-  3 directories, 2 files
+  4 directories, 2 files
 
   $ cat sub1/file1
   contents
@@ -554,4 +554,4 @@
           |-- namespaces
           `-- tags
   
-  108 directories, 106 files
+  109 directories, 106 files

@@ -81,7 +81,7 @@ Put a double slash in the URL to see that it also works
       |-- file1
       `-- file2
   
-  1 directory, 2 files
+  2 directories, 2 files
 
   $ cat sub1/file2
   contents2
@@ -102,7 +102,7 @@ Put a double slash in the URL to see that it also works
       |-- file1
       `-- file2
   
-  1 directory, 2 files
+  2 directories, 2 files
 
   $ cat sub1/file2
   contents2_repo2
@@ -202,5 +202,5 @@ Put a double slash in the URL to see that it also works
           |-- namespaces
           `-- tags
   
-  49 directories, 35 files
+  50 directories, 35 files
 

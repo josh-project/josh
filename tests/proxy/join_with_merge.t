@@ -52,7 +52,7 @@
       |-- newfile1
       `-- newfile_master
   
-  1 directory, 3 files
+  2 directories, 3 files
 
 
   $ bash ${TESTDIR}/destroy_test_env.sh
@@ -132,4 +132,4 @@
           |-- namespaces
           `-- tags
   
-  43 directories, 30 files
+  44 directories, 30 files

@@ -50,7 +50,7 @@
   `-- sub2
       `-- file2
   
-  2 directories, 3 files
+  3 directories, 3 files
 
   $ git log --graph --pretty=%s
   * add file2
@@ -77,7 +77,7 @@
   |-- file1
   `-- file12
   
-  0 directories, 2 files
+  1 directory, 2 files
 
   $ git log --graph --pretty=%s
   * add file12
@@ -99,7 +99,7 @@
   .
   `-- file1
   
-  0 directories, 1 file
+  1 directory, 1 file
 
   $ git log --graph --pretty=%s
   * add file1
@@ -178,5 +178,5 @@
           |-- namespaces
           `-- tags
   
-  37 directories, 26 files
+  38 directories, 26 files
 $ cat ${TESTTMP}/josh-proxy.out | grep TAGS

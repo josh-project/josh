@@ -102,7 +102,7 @@ Flushed credential cache
   |       `-- file1
   `-- workspace.josh
   
-  4 directories, 3 files
+  5 directories, 3 files
 
   $ git log --graph --pretty=%s
   * add workspace
@@ -190,7 +190,7 @@ Flushed credential cache
   |   `-- file3
   `-- workspace.josh
   
-  5 directories, 4 files
+  6 directories, 4 files
 
   $ git log --graph --pretty=%s
   *   mod workspace
@@ -211,7 +211,7 @@ Flushed credential cache
   |       `-- file1
   `-- workspace.josh
   
-  4 directories, 3 files
+  5 directories, 3 files
 
   $ git checkout HEAD~1 1> /dev/null
   Previous HEAD position was 003a297 add workspace
@@ -225,7 +225,7 @@ Flushed credential cache
       `-- subsub
           `-- file1
   
-  4 directories, 2 files
+  5 directories, 2 files
 
   $ git checkout master 1> /dev/null
   Previous HEAD position was 2a03ad0 add file2
@@ -309,7 +309,7 @@ Note that d/ is still in the tree but now it is not overlayed
   |-- workspace.josh
   `-- ws_file
   
-  6 directories, 7 files
+  7 directories, 7 files
 
   $ cat workspace.josh
   c = :/sub1
@@ -371,7 +371,7 @@ Note that ws/d/ is now present in the ws
       |-- workspace.josh
       `-- ws_file
   
-  6 directories, 10 files
+  7 directories, 10 files
   $ git log --graph --pretty=%s
   * try to modify ws
   * add in filter
@@ -407,7 +407,7 @@ Note that ws/d/ is now present in the ws
       |-- workspace.josh
       `-- ws_file
   
-  5 directories, 9 files
+  6 directories, 9 files
 
   $ git checkout HEAD~1 1> /dev/null
   Previous HEAD position was a1a7760 add in filter
@@ -428,7 +428,7 @@ Note that ws/d/ is now present in the ws
   `-- ws
       `-- workspace.josh
   
-  5 directories, 7 files
+  6 directories, 7 files
 
   $ bash ${TESTDIR}/destroy_test_env.sh
   "real_repo.git" = [
@@ -818,6 +818,6 @@ Note that ws/d/ is now present in the ws
           |-- namespaces
           `-- tags
   
-  177 directories, 199 files
+  178 directories, 199 files
 
 $ cat ${TESTTMP}/josh-proxy.out

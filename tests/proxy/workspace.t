@@ -97,7 +97,7 @@
   |       `-- file1
   `-- workspace.josh
   
-  4 directories, 3 files
+  5 directories, 3 files
 
   $ cat workspace.josh
   # comment
@@ -122,7 +122,7 @@
   |       `-- file1
   `-- workspace.josh
   
-  2 directories, 2 files
+  3 directories, 2 files
 
   $ git checkout master 1> /dev/null
   Previous HEAD position was e27e2ee add file1
@@ -171,7 +171,7 @@
   `-- ws
       `-- workspace.josh
   
-  5 directories, 9 files
+  6 directories, 9 files
 
   $ cat ws/workspace.josh
   # comment
@@ -212,7 +212,7 @@
   `-- ws
       `-- workspace.josh
   
-  5 directories, 7 files
+  6 directories, 7 files
 
   $ bash ${TESTDIR}/destroy_test_env.sh
   "real_repo.git" = [
@@ -414,6 +414,6 @@
           |-- namespaces
           `-- tags
   
-  99 directories, 90 files
+  100 directories, 90 files
 
 $ cat ${TESTTMP}/josh-proxy.out

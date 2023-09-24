@@ -1,4 +1,5 @@
 [workspace]
+resolver = "2"
 members = [
     "hyper_cgi",
     "josh-core",

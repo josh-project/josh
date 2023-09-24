@@ -67,4 +67,4 @@ so the workspace.josh will still appear in the root of the workspace
   |       `-- file2
   `-- workspace.josh
   
-  3 directories, 4 files
+  4 directories, 4 files

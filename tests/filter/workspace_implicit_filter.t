@@ -50,4 +50,4 @@
   |       `-- file2
   `-- workspace.josh
   
-  3 directories, 3 files
+  4 directories, 3 files

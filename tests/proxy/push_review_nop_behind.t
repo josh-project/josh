@@ -108,4 +108,4 @@ This is a regression test for that problem.
           |-- namespaces
           `-- tags
   
-  33 directories, 20 files
+  34 directories, 20 files

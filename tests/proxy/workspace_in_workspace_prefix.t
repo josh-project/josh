@@ -92,7 +92,7 @@
   |       `-- file1
   `-- workspace.josh
   
-  4 directories, 3 files
+  5 directories, 3 files
 
   $ cat workspace.josh
   a/b = :/sub2
@@ -112,7 +112,7 @@
   |       `-- file1
   `-- workspace.josh
   
-  2 directories, 2 files
+  3 directories, 2 files
 
   $ git checkout master 1> /dev/null
   Previous HEAD position was 833812f add file1
@@ -161,7 +161,7 @@
   `-- ws
       `-- workspace.josh
   
-  5 directories, 9 files
+  6 directories, 9 files
 
   $ cat ws/workspace.josh
   c = :/sub1

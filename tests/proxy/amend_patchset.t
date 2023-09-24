@@ -44,7 +44,7 @@
   `-- sub3
       `-- file3
   
-  1 directory, 2 files
+  2 directories, 2 files
 
   $ git log --graph --pretty=%s
   * add file3
@@ -86,7 +86,7 @@
   |-- file2x
   `-- file3
   
-  0 directories, 2 files
+  1 directory, 2 files
 
   $ echo content4 > file_new 1> /dev/null
   $ git add .
@@ -115,7 +115,7 @@
       |-- file3
       `-- file_new
   
-  1 directory, 4 files
+  2 directories, 4 files
 
   $ bash ${TESTDIR}/destroy_test_env.sh
   "real_repo.git" = [
@@ -216,4 +216,4 @@
           |-- namespaces
           `-- tags
   
-  53 directories, 39 files
+  54 directories, 39 files
