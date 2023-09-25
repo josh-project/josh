@@ -31,7 +31,7 @@
   `-- sub2
       `-- file3
   
-  2 directories, 3 files
+  3 directories, 3 files
 
   $ josh-filter -s c=:exclude[::sub1/] master --update refs/josh/filter/master
   [1] :prefix=c
@@ -47,7 +47,7 @@
       `-- sub2
           `-- file3
   
-  2 directories, 1 file
+  3 directories, 1 file
 
   $ josh-filter -s c=:exclude[::sub1/file2] master --update refs/josh/filter/master
   [2] :/sub1
@@ -68,7 +68,7 @@
       `-- sub2
           `-- file3
   
-  3 directories, 2 files
+  4 directories, 2 files
 
   $ josh-filter -s c=:exclude[::sub2/file3] master --update refs/josh/filter/master
   [2] :/sub1
@@ -90,4 +90,4 @@
           |-- file1
           `-- file2
   
-  2 directories, 2 files
+  3 directories, 2 files

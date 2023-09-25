@@ -39,7 +39,7 @@
       |-- file1
       `-- file2
   
-  1 directory, 2 files
+  2 directories, 2 files
 
   $ bash ${TESTDIR}/destroy_test_env.sh
   "real_repo.git" = [
@@ -115,6 +115,6 @@
           |-- namespaces
           `-- tags
   
-  40 directories, 27 files
+  41 directories, 27 files
 
 $ cat ${TESTTMP}/josh-proxy.out | grep VIEW

@@ -72,7 +72,7 @@
   |       `-- master
   `-- tags
   
-  7 directories, 5 files
+  8 directories, 5 files
 
   $ git read-tree HEAD josh/filter/libs/master josh/filter/libs/foo
   $ git commit -m "sync"
@@ -100,7 +100,7 @@
       |-- file1
       `-- file2
   
-  3 directories, 3 files
+  4 directories, 3 files
   $ git log --graph --pretty=%s
   * sync
   * initial

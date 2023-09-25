@@ -48,7 +48,7 @@
       |   `-- on_change
       `-- tmpl_file
   
-  3 directories, 4 files
+  4 directories, 4 files
 
   $ git clone http://localhost:8002/real_repo.git:/sub2.git
   Cloning into 'sub2'...
@@ -56,6 +56,6 @@
   sub2
   `-- file2
   
-  0 directories, 1 file
+  1 directory, 1 file
   $ curl -s http://localhost:8002/real_repo.git:/sub1.git?get=file1
   contents1

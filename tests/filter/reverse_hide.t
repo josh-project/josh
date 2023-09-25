@@ -25,7 +25,7 @@
   `-- sub1
       `-- file1
   
-  1 directory, 1 file
+  2 directories, 1 file
   $ git log --graph --pretty=%s
   * add file1
 
@@ -49,7 +49,7 @@
   `-- sub2
       `-- file2
   
-  2 directories, 3 files
+  3 directories, 3 files
 
 
   $ cat sub1/file3

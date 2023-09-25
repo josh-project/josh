@@ -86,7 +86,7 @@
   `-- sub2
       `-- file2
   
-  2 directories, 2 files
+  3 directories, 2 files
 
   $ git log --graph --pretty=%s
   * add file2
@@ -103,7 +103,7 @@
       `-- sub2
           `-- file2
   
-  3 directories, 2 files
+  4 directories, 2 files
 
   $ cd ${TESTTMP}
   $ git clone -q http://localhost:8002/with_prefix.git:/my_prefix/sub1.git
@@ -112,7 +112,7 @@
   .
   `-- file1
   
-  0 directories, 1 file
+  1 directory, 1 file
 
 
   $ bash ${TESTDIR}/destroy_test_env.sh
@@ -213,4 +213,4 @@
           |-- namespaces
           `-- tags
   
-  49 directories, 35 files
+  50 directories, 35 files

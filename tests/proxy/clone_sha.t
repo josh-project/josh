@@ -26,7 +26,7 @@
   `-- sub1
       `-- file1
   
-  1 directory, 1 file
+  2 directories, 1 file
 
   $ git push -q
 
@@ -83,7 +83,7 @@ Check (2) and (3) but with a branch ref
   `-- sub1
       `-- file1
   
-  1 directory, 1 file
+  2 directories, 1 file
 
   $ cat sub1/file1
   contents1
@@ -150,5 +150,5 @@ Check (2) and (3) but with a branch ref
           |-- namespaces
           `-- tags
   
-  34 directories, 23 files
+  35 directories, 23 files
 

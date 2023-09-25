@@ -67,7 +67,7 @@ Empty root commits from unrelated parts of the tree should not be included
       |-- file2
       `-- file3
   
-  1 directory, 5 files
+  2 directories, 5 files
 
   $ git log master --graph --pretty=%s
   *   Merge branch 'other'

@@ -56,7 +56,7 @@
       |-- file1
       `-- file2
   
-  1 directory, 2 files
+  2 directories, 2 files
 
   $ cat sub1/file2
   contents2
@@ -70,7 +70,7 @@
       |-- file1
       `-- file2
   
-  1 directory, 2 files
+  2 directories, 2 files
 
   $ cat sub1/file2
   contents2
@@ -146,7 +146,7 @@ Make sure all temporary namespace got removed
           |-- namespaces
           `-- tags
   
-  36 directories, 23 files
+  37 directories, 23 files
 
 $ cat ${TESTTMP}/josh-proxy.out
 $ cat ${TESTTMP}/josh-proxy.out | grep REPO_UPDATE

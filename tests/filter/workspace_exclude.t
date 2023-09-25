@@ -54,7 +54,7 @@
   |       `-- file2
   `-- workspace.josh
   
-  3 directories, 3 files
+  4 directories, 3 files
 
   $ echo ws_content > fileX
   $ echo ws_content > file1
@@ -91,7 +91,7 @@
       |-- fileX
       `-- workspace.josh
   
-  4 directories, 6 files
+  5 directories, 6 files
 
   $ cat ws/file1
   ws_content

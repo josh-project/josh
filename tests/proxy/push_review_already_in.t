@@ -97,5 +97,5 @@ test for that.
           |-- namespaces
           `-- tags
   
-  31 directories, 18 files
+  32 directories, 18 files
 

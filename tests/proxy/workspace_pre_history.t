@@ -63,7 +63,7 @@ file was created
   |-- file1
   `-- workspace.josh
   
-  2 directories, 3 files
+  3 directories, 3 files
 
   $ git log --graph --pretty=%s
   * add file1
@@ -77,7 +77,7 @@ file was created
   |-- file1
   `-- workspace.josh
   
-  0 directories, 2 files
+  1 directory, 2 files
 
   $ bash ${TESTDIR}/destroy_test_env.sh
   "real_repo.git" = [
@@ -177,6 +177,6 @@ file was created
           |-- namespaces
           `-- tags
   
-  51 directories, 38 files
+  52 directories, 38 files
 
 $ cat ${TESTTMP}/josh-proxy.out | grep VIEW

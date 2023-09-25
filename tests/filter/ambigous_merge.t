@@ -105,7 +105,7 @@
       |-- file2
       `-- fileX
   
-  2 directories, 7 files
+  3 directories, 7 files
 
   $ git log --graph --oneline --decorate master
   *   8cbae19 (HEAD -> master) Merge branch 'hidden_branch1' into hidden_master

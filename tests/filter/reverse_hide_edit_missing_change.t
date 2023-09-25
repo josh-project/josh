@@ -25,7 +25,7 @@
   `-- subx
       `-- filex
   
-  2 directories, 4 files
+  3 directories, 4 files
 
   $ josh-filter -s :exclude[::sub2/] master --update refs/heads/hidden
   [1] :exclude[::sub2/]
@@ -39,7 +39,7 @@
   `-- subx
       `-- filex
   
-  1 directory, 2 files
+  2 directories, 2 files
   $ git log --graph --pretty=%s
   * add file1
 
@@ -88,5 +88,5 @@
   `-- subx
       `-- filex
   
-  2 directories, 4 files
+  3 directories, 4 files
 

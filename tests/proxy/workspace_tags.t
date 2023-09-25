@@ -92,7 +92,7 @@
   |       `-- file1
   `-- workspace.josh
   
-  4 directories, 3 files
+  5 directories, 3 files
 
   $ cat workspace.josh
   a/b = :/sub2
@@ -451,6 +451,6 @@
           |-- namespaces
           `-- tags
   
-  113 directories, 107 files
+  114 directories, 107 files
 
 $ cat ${TESTTMP}/josh-proxy.out

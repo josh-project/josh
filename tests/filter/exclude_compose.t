@@ -31,7 +31,7 @@
   `-- sub3
       `-- file1
   
-  2 directories, 2 files
+  3 directories, 2 files
   $ git log --graph --pretty=%s
   * add file3
   * add file1
@@ -61,7 +61,7 @@
   `-- sub3
       `-- file1
   
-  1 directory, 1 file
+  2 directories, 1 file
 
   $ josh-filter -s :exclude[sub1=:/sub3] master --update refs/josh/filtered
   [1] :/sub1
@@ -88,4 +88,4 @@
   `-- sub3
       `-- file1
   
-  2 directories, 2 files
+  3 directories, 2 files

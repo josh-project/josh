@@ -47,7 +47,7 @@
   `-- ws2
       `-- workspace.josh
   
-  6 directories, 5 files
+  7 directories, 5 files
 
   $ josh-filter -s :workspace=ws
   [1] :/sub1
@@ -79,7 +79,7 @@
           `-- subsub
               `-- file2
   
-  4 directories, 3 files
+  5 directories, 3 files
 
   $ git checkout master 2> /dev/null
   $ josh-filter -s :workspace=ws2
@@ -133,4 +133,4 @@
       `-- blub
           `-- file1
   
-  6 directories, 4 files
+  7 directories, 4 files

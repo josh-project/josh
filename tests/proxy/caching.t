@@ -110,7 +110,7 @@
           |-- namespaces
           `-- tags
   
-  36 directories, 23 files
+  37 directories, 23 files
 
 # setup without caching
   $ EXTRA_OPTS= . ${TESTDIR}/setup_test_env.sh
@@ -229,4 +229,4 @@
           |-- namespaces
           `-- tags
   
-  40 directories, 27 files
+  41 directories, 27 files

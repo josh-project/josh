@@ -51,7 +51,7 @@ Flushed credential cache
   `-- repo1
       `-- file1
   
-  1 directory, 1 file
+  2 directories, 1 file
 
 $ curl -s http://localhost:8002/flush
 Flushed credential cache
@@ -72,7 +72,7 @@ Flushed credential cache
   `-- repo2
       `-- file2
   
-  2 directories, 2 files
+  3 directories, 2 files
 
   $ git checkout master
   Switched to branch 'master'
@@ -101,7 +101,7 @@ Flushed credential cache
   `-- repo2
       `-- file2
   
-  2 directories, 3 files
+  3 directories, 3 files
 
   $ git push 2> /dev/null
 
@@ -118,7 +118,7 @@ Flushed credential cache
   |-- file1
   `-- new_file1
   
-  0 directories, 2 files
+  1 directory, 2 files
 
   $ cd ${TESTTMP}/repo1
   $ echo new_content2 > new_file2 1> /dev/null
@@ -148,7 +148,7 @@ Flushed credential cache
   `-- repo2
       `-- file2
   
-  2 directories, 4 files
+  3 directories, 4 files
 
   $ git log --graph --pretty=%s
   *   Import 2
@@ -182,7 +182,7 @@ Flushed credential cache
   |-- new_file1
   `-- new_file2
   
-  0 directories, 3 files
+  1 directory, 3 files
   $ git log --graph --pretty=%s
   *   Import 2
   |\  
@@ -242,7 +242,7 @@ Flushed credential cache
   |-- new_file1
   `-- new_file2
   
-  0 directories, 3 files
+  1 directory, 3 files
   $ git log --graph --pretty=%s
   *   Import 3
   |\  
@@ -289,7 +289,7 @@ Flushed credential cache
   `-- repo2
       `-- file2
   
-  2 directories, 4 files
+  3 directories, 4 files
 
   $ bash ${TESTDIR}/destroy_test_env.sh
   "real_repo.git" = [
@@ -421,4 +421,4 @@ Flushed credential cache
           |-- namespaces
           `-- tags
   
-  66 directories, 54 files
+  67 directories, 54 files

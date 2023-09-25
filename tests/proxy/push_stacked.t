@@ -109,7 +109,7 @@
   `-- sub1
       `-- file1
   
-  1 directory, 2 files
+  2 directories, 2 files
 
 To avoid stacked changes to cause excessive amounts of refs, refs get filtered to only
 get listed if they differ from HEAD
@@ -251,7 +251,7 @@ Make sure all temporary namespace got removed
           |-- namespaces
           `-- tags
   
-  56 directories, 44 files
+  57 directories, 44 files
 
 $ cat ${TESTTMP}/josh-proxy.out
 $ cat ${TESTTMP}/josh-proxy.out | grep REPO_UPDATE
