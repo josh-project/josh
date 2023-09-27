@@ -375,6 +375,27 @@ pub fn apply_to_commit(
     }
 }
 
+// Handle workspace.josh files that contain ":workspace=..." as their only filter as
+// a "redirect" to that other workspace. We chain an exclude of the redirecting workspace
+// in front to prevent infinite recursion.
+fn resolve_workspace_redirect<'a>(
+    repo: &'a git2::Repository,
+    tree: &'a git2::Tree<'a>,
+    path: &Path,
+) -> Option<Filter> {
+    let f = parse::parse(&tree::get_blob(repo, tree, &path.join("workspace.josh")))
+        .unwrap_or_else(|_| to_filter(Op::Empty));
+
+    if let Op::Workspace(_) = to_op(f) {
+        Some(chain(
+            to_filter(Op::Exclude(to_filter(Op::File(path.to_owned())))),
+            f,
+        ))
+    } else {
+        None
+    }
+}
+
 fn get_workspace<'a>(repo: &'a git2::Repository, tree: &'a git2::Tree<'a>, path: &Path) -> Filter {
     let f = parse::parse(&tree::get_blob(repo, tree, &path.join("workspace.josh")))
         .unwrap_or_else(|_| to_filter(Op::Empty));
@@ -567,6 +588,10 @@ fn apply_to_commit2(
                 .parent_ids()
                 .map(|parent| transaction.get(filter, parent))
                 .collect::<Option<Vec<git2::Oid>>>();
+
+            if let Some(redirect) = resolve_workspace_redirect(repo, &commit.tree()?, ws_path) {
+                return apply_to_commit2(&to_op(redirect), &commit, transaction);
+            }
 
             let normal_parents = some_or!(normal_parents, { return Ok(None) });
 
