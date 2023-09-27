@@ -38,7 +38,7 @@
   .
   `-- file1
   
-  0 directories, 1 file
+  1 directory, 1 file
 
 Error: comment in the middle
   $ cat > workspace.josh <<EOF

@@ -78,7 +78,7 @@
   |       `-- file2
   `-- workspace.josh
   
-  2 directories, 4 files
+  3 directories, 4 files
 
   $ josh-filter -s :workspace=ws2 master --update refs/josh/master
   [1] :/sub1
@@ -130,4 +130,4 @@
   |       `-- file2
   `-- workspace.josh
   
-  2 directories, 4 files
+  3 directories, 4 files

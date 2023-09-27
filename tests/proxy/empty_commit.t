@@ -46,7 +46,7 @@ should still be included.
       |-- file1
       `-- file2
   
-  1 directory, 2 files
+  2 directories, 2 files
 
   $ git log --graph --pretty=%s
   * add file2
@@ -69,7 +69,7 @@ should still be included.
       |-- file1
       `-- file2
   
-  1 directory, 2 files
+  2 directories, 2 files
 
   $ git log --graph --pretty=%s
   * add file2
@@ -140,4 +140,4 @@ should still be included.
           |-- namespaces
           `-- tags
   
-  35 directories, 22 files
+  36 directories, 22 files

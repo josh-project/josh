@@ -225,6 +225,6 @@
           |-- namespaces
           `-- tags
   
-  68 directories, 55 files
+  69 directories, 55 files
 
 $ cat ${TESTTMP}/josh-proxy.out

@@ -82,7 +82,7 @@ Flushed credential cache
   |       `-- file1
   `-- workspace.josh
   
-  3 directories, 3 files
+  4 directories, 3 files
   $ cat workspace.josh
   a = :/sub1:[
       ::subsub1/
@@ -164,7 +164,7 @@ Flushed credential cache
   |       `-- file1
   `-- workspace.josh
   
-  3 directories, 3 files
+  4 directories, 3 files
 
   $ git log --graph --pretty=%s
   * mod workspace
@@ -317,4 +317,4 @@ Flushed credential cache
           |-- namespaces
           `-- tags
   
-  72 directories, 61 files
+  73 directories, 61 files

@@ -61,4 +61,4 @@
   |       `-- file1
   `-- workspace.josh
   
-  6 directories, 4 files
+  7 directories, 4 files

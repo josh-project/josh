@@ -29,7 +29,7 @@ Articially create a subtree merge
   `-- subtree
       `-- file2
   
-  1 directory, 2 files
+  2 directories, 2 files
   $ git log --graph --pretty=%s
   *   subtree merge
   |\  

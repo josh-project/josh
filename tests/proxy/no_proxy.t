@@ -26,7 +26,7 @@
   `-- sub1
       `-- file1
   
-  1 directory, 1 file
+  2 directories, 1 file
 
   $ git push
   To http://localhost:8001/real_repo.git
@@ -65,4 +65,4 @@
           |-- heads
           `-- tags
   
-  20 directories, 10 files
+  21 directories, 10 files

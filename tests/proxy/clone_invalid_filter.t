@@ -39,7 +39,7 @@
   `-- sub2
       `-- file2
   
-  3 directories, 2 files
+  4 directories, 2 files
 
   $ git log --graph --pretty=%s
   * add file2

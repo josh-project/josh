@@ -45,7 +45,7 @@
       |   `-- file1
       `-- workspace.josh
   
-  4 directories, 4 files
+  5 directories, 4 files
 
   $ cat sub1/file1
   contents1
@@ -68,7 +68,7 @@
   |   `-- file1
   `-- workspace.josh
   
-  3 directories, 3 files
+  4 directories, 3 files
 
   $ cat c/file1
   ws_content
@@ -94,7 +94,7 @@
       |-- workspace.josh
       `-- ws_created_file
   
-  4 directories, 5 files
+  5 directories, 5 files
 
   $ cat sub1/file1
   ws_content

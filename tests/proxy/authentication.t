@@ -27,7 +27,7 @@
   `-- sub1
       `-- file1
   
-  1 directory, 1 file
+  2 directories, 1 file
 
   $ git push
   To http://localhost:8001/real_repo.git
@@ -75,7 +75,7 @@
   `-- sub1
       `-- file1
   
-  1 directory, 1 file
+  2 directories, 1 file
 
   $ cat sub1/file1
   contents1
@@ -106,7 +106,7 @@
   `-- sub1
       `-- file1
   
-  1 directory, 2 files
+  2 directories, 2 files
 
   $ cd ${TESTTMP}/real_repo
   $ curl -s http://localhost:8001/_noauth
@@ -175,4 +175,4 @@
           |-- namespaces
           `-- tags
   
-  32 directories, 19 files
+  33 directories, 19 files

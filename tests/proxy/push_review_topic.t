@@ -101,7 +101,7 @@ Make sure all temporary namespace got removed
           |-- namespaces
           `-- tags
   
-  36 directories, 23 files
+  37 directories, 23 files
 
 $ cat ${TESTTMP}/josh-proxy.out
 $ cat ${TESTTMP}/josh-proxy.out | grep REPO_UPDATE

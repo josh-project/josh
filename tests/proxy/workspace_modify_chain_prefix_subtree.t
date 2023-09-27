@@ -101,7 +101,7 @@
   |   `-- file3
   `-- workspace.josh
   
-  5 directories, 4 files
+  6 directories, 4 files
 
   $ git log --graph --pretty=%s
   *   mod workspace
@@ -122,7 +122,7 @@
   |       `-- file1
   `-- workspace.josh
   
-  4 directories, 3 files
+  5 directories, 3 files
 
   $ git checkout -q HEAD~1 1> /dev/null
   $ tree
@@ -134,7 +134,7 @@
       `-- subsub
           `-- file1
   
-  4 directories, 2 files
+  5 directories, 2 files
 
   $ git checkout -q master 1> /dev/null
 
@@ -200,7 +200,7 @@ Note that d/ is still in the tree but now it is not overlayed
   |-- workspace.josh
   `-- ws_file
   
-  5 directories, 6 files
+  6 directories, 6 files
 
 
 
@@ -232,7 +232,7 @@ Note that ws/d/ is now present in the ws
       |-- workspace.josh
       `-- ws_file
   
-  5 directories, 9 files
+  6 directories, 9 files
   $ git log --graph --pretty=%s
   * try to modify ws
   * add in filter
@@ -271,7 +271,7 @@ Note that ws/d/ is now present in the ws
       |-- workspace.josh
       `-- ws_file
   
-  5 directories, 9 files
+  6 directories, 9 files
 
   $ git checkout -q HEAD~1 1> /dev/null
   $ git clean -ffdx 1> /dev/null
@@ -290,7 +290,7 @@ Note that ws/d/ is now present in the ws
   `-- ws
       `-- workspace.josh
   
-  5 directories, 7 files
+  6 directories, 7 files
 
 
   $ bash ${TESTDIR}/destroy_test_env.sh
@@ -652,6 +652,6 @@ Note that ws/d/ is now present in the ws
           |-- namespaces
           `-- tags
   
-  166 directories, 182 files
+  167 directories, 182 files
 
 $ cat ${TESTTMP}/josh-proxy.out | grep VIEW

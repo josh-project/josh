@@ -35,7 +35,7 @@
   `-- sub1
       `-- file1
   
-  1 directory, 1 file
+  2 directories, 1 file
   $ echo contents3 > sub1/file3
   $ git add sub1/file3
   $ git commit -m "add file3" 1> /dev/null
@@ -52,7 +52,7 @@
       |-- file1
       `-- file2
   
-  1 directory, 2 files
+  2 directories, 2 files
   $ echo contents4 > sub1/file4
   $ git add sub1/file4
   $ git commit -m "add file4" 1> /dev/null
@@ -93,7 +93,7 @@
   `-- sub2
       `-- file2
   
-  2 directories, 5 files
+  3 directories, 5 files
 
 
 

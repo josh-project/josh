@@ -36,7 +36,7 @@
   `-- sub2
       `-- file2
   
-  2 directories, 2 files
+  3 directories, 2 files
 
   $ git log --graph --pretty=%s
   * add file2
@@ -132,4 +132,4 @@
           |-- namespaces
           `-- tags
   
-  34 directories, 20 files
+  35 directories, 20 files

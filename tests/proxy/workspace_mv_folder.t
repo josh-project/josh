@@ -102,7 +102,7 @@ Flushed credential cache
   |       `-- file1
   `-- workspace.josh
   
-  4 directories, 3 files
+  5 directories, 3 files
 
   $ git log --graph --pretty=%s
   *   Merge from :workspace=ws
@@ -188,7 +188,7 @@ Flushed credential cache
   |       `-- file1
   `-- workspace.josh
   
-  4 directories, 3 files
+  5 directories, 3 files
 
   $ git log --graph --pretty=%s
   * mod workspace
@@ -223,7 +223,7 @@ Flushed credential cache
   `-- ws
       `-- workspace.josh
   
-  4 directories, 6 files
+  5 directories, 6 files
   $ git log --graph --pretty=%s
   * mod workspace
   *   Merge from :workspace=ws

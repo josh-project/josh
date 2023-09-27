@@ -104,7 +104,7 @@
   `-- d
       `-- file3
   
-  5 directories, 3 files
+  6 directories, 3 files
  
   $ git log --graph --pretty=%s
   *   mod workspace
@@ -123,7 +123,7 @@
       `-- subsub
           `-- file1
   
-  4 directories, 2 files
+  5 directories, 2 files
  
   $ git checkout HEAD~1 1> /dev/null
   Previous HEAD position was 2a03ad0 add file2
@@ -134,7 +134,7 @@
       `-- subsub
           `-- file1
   
-  2 directories, 1 file
+  3 directories, 1 file
  
   $ git checkout master 1> /dev/null
   Previous HEAD position was 02668d7 add file1
@@ -178,7 +178,7 @@
       |   `-- ws_file
       `-- workspace.josh
   
-  6 directories, 9 files
+  7 directories, 9 files
   $ git log --graph --pretty=%s
   * add in filter
   * mod workspace
@@ -211,7 +211,7 @@
   `-- ws
       `-- workspace.josh
   
-  5 directories, 7 files
+  6 directories, 7 files
   $ cat sub1/subsub/file1
   contents1
  
@@ -234,7 +234,7 @@
   `-- ws
       `-- workspace.josh
   
-  5 directories, 7 files
+  6 directories, 7 files
  
  
   $ bash ${TESTDIR}/destroy_test_env.sh
@@ -525,6 +525,6 @@
           |-- namespaces
           `-- tags
   
-  137 directories, 139 files
+  138 directories, 139 files
 
 $ cat ${TESTTMP}/josh-proxy.out | grep VIEW

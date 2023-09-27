@@ -74,7 +74,7 @@ Flushed credential cache
       |-- file1
       `-- file2
   
-  1 directory, 2 files
+  2 directories, 2 files
 
   $ cat sub1/file2
   contents2
@@ -158,6 +158,6 @@ Make sure all temporary namespace got removed
           |-- namespaces
           `-- tags
   
-  40 directories, 28 files
+  41 directories, 28 files
 
 $ cat ${TESTTMP}/josh-proxy.out

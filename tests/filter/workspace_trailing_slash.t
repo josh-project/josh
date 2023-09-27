@@ -72,7 +72,7 @@
   `-- ws
       `-- c
   
-  2 directories, 1 file
+  3 directories, 1 file
 
   $ git checkout -q HEAD~1
   $ tree
@@ -86,5 +86,5 @@
   `-- ws
       `-- c
   
-  5 directories, 3 files
+  6 directories, 3 files
 

@@ -119,7 +119,7 @@
   `-- sub1
       `-- file1
   
-  1 directory, 1 file
+  2 directories, 1 file
 
 Make sure all temporary namespace got removed
   $ tree ${TESTTMP}/remote/scratch/real_repo.git/refs/ | grep request_
@@ -230,7 +230,7 @@ Make sure all temporary namespace got removed
           |-- namespaces
           `-- tags
   
-  54 directories, 44 files
+  55 directories, 44 files
 
 $ cat ${TESTTMP}/josh-proxy.out
 $ cat ${TESTTMP}/josh-proxy.out | grep REPO_UPDATE
