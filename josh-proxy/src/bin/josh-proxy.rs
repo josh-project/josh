@@ -129,6 +129,15 @@ async fn fetch_upstream(
 
     let refs_to_fetch: Vec<_> = refs_to_fetch.iter().map(|x| x.to_string()).collect();
 
+    let us = upstream_repo.clone();
+    let semaphore = service
+        .fetch_permits
+        .lock()?
+        .entry(us.clone())
+        .or_insert(Arc::new(tokio::sync::Semaphore::new(1)))
+        .clone();
+    let permit = semaphore.acquire().await;
+
     let fetch_timer_ok = {
         if let Some(last) = service.fetch_timers.read()?.get(&key) {
             let since = std::time::Instant::now().duration_since(*last);
@@ -183,15 +192,7 @@ async fn fetch_upstream(
     let br_path = service.repo_path.join("mirror");
 
     let span = tracing::span!(tracing::Level::TRACE, "fetch worker");
-    let us = upstream_repo.clone();
     let ru = remote_url.clone();
-    let semaphore = service
-        .fetch_permits
-        .lock()?
-        .entry(us.clone())
-        .or_insert(Arc::new(tokio::sync::Semaphore::new(1)))
-        .clone();
-    let permit = semaphore.acquire().await;
     let task_remote_auth = remote_auth.clone();
     let fetch_result = tokio::task::spawn_blocking(move || {
         let _span_guard = span.enter();
