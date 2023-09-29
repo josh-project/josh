@@ -1303,7 +1303,7 @@ async fn call_service(
             .to_str()
             .ok_or(josh::josh_error("repo_path.to_str"))?,
     );
-    cmd.env("GIT_NAMESPACE", temp_ns.name().clone());
+    cmd.env("GIT_NAMESPACE", temp_ns.name());
     cmd.env("GIT_PROJECT_ROOT", repo_path);
     cmd.env("JOSH_REPO_UPDATE", serde_json::to_string(&repo_update)?);
     cmd.env("PATH_INFO", parsed_url.pathinfo.clone());

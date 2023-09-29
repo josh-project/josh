@@ -10,10 +10,63 @@ members = [
     "josh-ui",
 ]
 
-
-
 [profile.release]
 lto = true
 opt-level = 3
 codegen-units = 1
 
+[workspace.dependencies]
+defer = "0.1.0"
+env_logger = "0.10.0"
+futures = "0.3.28"
+gix = "0.54.1"
+hyper-reverse-proxy = "0.5.1"
+lazy_static = "1.4.0"
+libc = "0.2.148"
+regex = "1.9.5"
+rs_tracing= { version = "1.1.0", features = ["rs_tracing"] }
+serde = { version = "1.0.188", features = ["std", "derive"] }
+serde_json = "1.0.107"
+serde_yaml = "0.9.25"
+toml = "0.8.1"
+tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
+
+[workspace.dependencies.git2]
+default-features = false
+version = "0.18.1"
+
+[workspace.dependencies.juniper]
+version = "0.15.11"
+default-features = false
+features = ["expose-test-schema"]
+
+[workspace.dependencies.tokio]
+version = "1.32.0"
+features = [
+    "fs",
+    "rt-multi-thread",
+    "macros",
+    "io-std",
+    "io-util",
+    "net",
+    "process",
+    "signal",
+]
+
+[workspace.dependencies.tokio-util]
+version = "0.7.9"
+features = ["compat"]
+
+[workspace.dependencies.reqwest]
+version = "0.11.20"
+default-features = false
+features = ["blocking", "json"]
+
+[workspace.dependencies.tracing]
+version = "0.1.37"
+features = ["max_level_trace", "release_max_level_trace"]
+
+[workspace.dependencies.clap]
+version = "4.4.6"
+features = ["derive", "help", "std", "usage"]
+default-features = false

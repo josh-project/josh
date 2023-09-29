@@ -5,7 +5,7 @@ edition = "2021"
 
 [build-dependencies]
 npm_rs = "1.0.0"
-dircpy = "0.3.14"
+dircpy = "0.3.15"
 
 [lib]
 path = 'lib.rs'
