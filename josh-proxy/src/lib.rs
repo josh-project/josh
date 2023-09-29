@@ -510,7 +510,6 @@ fn create_repo_base(path: &PathBuf) -> josh::JoshResult<josh::shell::Shell> {
                 .cloned()
                 .try_for_each(|(key, value)| -> JoshResult<()> {
                     use gix::config::parse::section::Key;
-                    use std::convert::TryFrom;
 
                     let key = Key::try_from(key)
                         .map_err(|_| josh_error("unable to create config section"))?;
