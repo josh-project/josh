@@ -493,8 +493,9 @@ fn create_repo_base(path: &PathBuf) -> josh::JoshResult<josh::shell::Shell> {
     let config_location = config_source.storage_location(&mut |_| None).unwrap();
     let config_location = path.join(config_location);
 
-    let mut config = gix::config::File::from_path_no_includes(&config_location, config_source)
-        .map_err(|_| josh_error("unable to open repo config file"))?;
+    let mut config =
+        gix::config::File::from_path_no_includes(config_location.clone(), config_source)
+            .map_err(|_| josh_error("unable to open repo config file"))?;
 
     config_options
         .iter()

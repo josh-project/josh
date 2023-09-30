@@ -162,7 +162,7 @@ fn find_known(
     walk.push(input)?;
 
     let n_new = walk
-        .with_hide_callback(&|id| {
+        .with_hide_callback(&mut |id| {
             let k = transaction.known(filter, id);
             if k {
                 known.push(id)

@@ -10,40 +10,34 @@ readme = "README.md"
 edition = "2018"
 
 [dependencies]
-backtrace = "0.3.67"
+backtrace = "0.3.69"
 bitvec = "1.0.1"
-defer= "0.1.0"
-env_logger = "0.10.0"
 git-version = "0.3.5"
-git2 = { version = "0.17.2", default-features = false }
+git2 = { workspace = true }
 glob = "0.3.1"
-handlebars = "4.3.7"
+handlebars = "4.4.0"
 hex = "0.4.3"
-indoc = "2.0.1"
-itertools = "0.10.5"
-lazy_static = "1.4.0"
-log = "0.4.18"
-percent-encoding = "2.2.0"
-pest= "2.6.0"
-pest_derive = "2.6.0"
-rayon = "1.7.0"
-regex = "1.8.3"
-rs_tracing= { version = "1.1.0", features = ["rs_tracing"] }
-serde = { version = "1.0.163", features = ["derive"] }
-serde_json= "1.0.96"
-serde_yaml = "0.9.21"
+indoc = "2.0.4"
+itertools = "0.11.0"
+lazy_static = { workspace = true }
+log = "0.4.20"
+percent-encoding = "2.3.0"
+pest = "2.7.4"
+pest_derive = "2.7.4"
+rayon = "1.8.0"
+regex = { workspace = true }
+rs_tracing = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
 sled = "0.34.7"
 strfmt = "0.2.4"
-toml = "0.7.4"
-tracing = "0.1.37"
-gix = "0.44.1"
-
-[dependencies.juniper]
-default-features = false
-version = "0.15.11"
-features = []
+toml = { workspace = true }
+tracing = { workspace = true }
+gix = { workspace = true }
+juniper = { workspace = true }
 
 [dependencies.chrono]
 default-features = false
 features = ["alloc", "std"]
-version = "0.4.25"
+version = "0.4.31"
