@@ -1426,7 +1426,7 @@ fn trace_http_response_code(trace_span: Span, http_status: StatusCode) {
 
 #[tokio::main]
 async fn run_proxy() -> josh::JoshResult<i32> {
-    let addr = format!("0.0.0.0:{}", ARGS.port).parse()?;
+    let addr = format!("[::]:{}", ARGS.port).parse()?;
     let upstream = match (&ARGS.remote.http, &ARGS.remote.ssh) {
         (Some(http), None) => JoshProxyUpstream::Http(http.clone()),
         (None, Some(ssh)) => JoshProxyUpstream::Ssh(ssh.clone()),
