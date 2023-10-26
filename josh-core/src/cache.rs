@@ -87,13 +87,27 @@ impl Transaction {
         ))
     }
 
+    pub fn open_from_env(load_cache: bool) -> JoshResult<Transaction> {
+        let repo = git2::Repository::open_from_env()?;
+        let path = repo.path().to_owned();
+        if load_cache {
+            load(&path)?
+        };
+
+        Ok(Transaction::new(
+            repo,
+            gix::ThreadSafeRepository::open(path)?.to_thread_local(),
+            None,
+        ))
+    }
+
     pub fn status(&self, _msg: &str) {
         /* let mut t2 = self.t2.borrow_mut(); */
         /* write!(t2.out, "{}", msg).ok(); */
         /* t2.out.flush().ok(); */
     }
 
-    pub fn new(
+    fn new(
         repo: git2::Repository,
         oxide_repo: gix::Repository,
         ref_prefix: Option<&str>,

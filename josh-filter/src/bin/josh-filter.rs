@@ -147,15 +147,9 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
 
     let mut filterobj = josh::filter::parse(&specstr)?;
 
-    let repo = git2::Repository::open_from_env()?;
-    if !args.get_flag("no-cache") {
-        josh::cache::load(repo.path())?;
-    }
+    let transaction = josh::cache::Transaction::open_from_env(!args.get_flag("no-cache"))?;
 
-    let oxide_repo = gix::ThreadSafeRepository::open(repo.path())?;
-    let transaction = josh::cache::Transaction::new(repo, oxide_repo.to_thread_local(), None);
     let repo = transaction.repo();
-
     let input_ref = args.get_one::<String>("input").unwrap();
 
     let mut refs = vec![];
@@ -418,9 +412,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
     std::mem::drop(finish);
 
     if let Some(query) = args.get_one::<String>("query") {
-        let repo = git2::Repository::open_from_env()?;
-        let oxide_repo = gix::ThreadSafeRepository::open(repo.path())?;
-        let transaction = josh::cache::Transaction::new(repo, oxide_repo.to_thread_local(), None);
+        let transaction = josh::cache::Transaction::open_from_env(false)?;
         let commit_id = transaction.repo().refname_to_id(update_target)?;
         print!(
             "{}",
