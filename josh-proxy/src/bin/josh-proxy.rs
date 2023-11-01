@@ -1,7 +1,10 @@
 #![deny(warnings)]
 #[macro_use]
 extern crate lazy_static;
+extern crate clap;
 
+use clap::Parser;
+use josh_proxy::cli;
 use josh_proxy::{run_git_with_auth, FetchError, MetaConfig, RemoteAuth, RepoConfig, RepoUpdate};
 use opentelemetry::global;
 use opentelemetry::sdk::propagation::TraceContextPropagator;
@@ -37,7 +40,7 @@ fn version_str() -> String {
 }
 
 lazy_static! {
-    static ref ARGS: josh_proxy::cli::Args = josh_proxy::cli::parse_args_or_exit(1);
+    static ref ARGS: josh_proxy::cli::Args = josh_proxy::cli::Args::parse();
 }
 
 josh::regex_parsed!(
@@ -1424,20 +1427,41 @@ fn trace_http_response_code(trace_span: Span, http_status: StatusCode) {
     };
 }
 
+/// Turn a list of [cli::Remote] into a [JoshProxyUpstream] struct.
+fn make_upstream(remotes: &Vec<cli::Remote>) -> josh::JoshResult<JoshProxyUpstream> {
+    if remotes.is_empty() {
+        unreachable!() // already checked in the parser
+    } else if remotes.len() == 1 {
+        Ok(match &remotes[0] {
+            cli::Remote::Http(url) => JoshProxyUpstream::Http(url.to_string()),
+            cli::Remote::Ssh(url) => JoshProxyUpstream::Ssh(url.to_string()),
+        })
+    } else if remotes.len() == 2 {
+        Ok(match (&remotes[0], &remotes[1]) {
+            (cli::Remote::Http(_), cli::Remote::Http(_))
+            | (cli::Remote::Ssh(_), cli::Remote::Ssh(_)) => {
+                return Err(josh_error("two cli::remotes of the same type passed"))
+            }
+            (cli::Remote::Http(http_url), cli::Remote::Ssh(ssh_url))
+            | (cli::Remote::Ssh(ssh_url), cli::Remote::Http(http_url)) => JoshProxyUpstream::Both {
+                http: http_url.to_string(),
+                ssh: ssh_url.to_string(),
+            },
+        })
+    } else {
+        Err(josh_error("too many remotes"))
+    }
+}
+
 #[tokio::main]
 async fn run_proxy() -> josh::JoshResult<i32> {
     let addr = format!("[::]:{}", ARGS.port).parse()?;
-    let upstream = match (&ARGS.remote.http, &ARGS.remote.ssh) {
-        (Some(http), None) => JoshProxyUpstream::Http(http.clone()),
-        (None, Some(ssh)) => JoshProxyUpstream::Ssh(ssh.clone()),
-        (Some(http), Some(ssh)) => JoshProxyUpstream::Both {
-            http: http.clone(),
-            ssh: ssh.clone(),
-        },
-        (None, None) => return Err(josh_error("missing remote host url")),
-    };
+    let upstream = make_upstream(&ARGS.remote).map_err(|e| {
+        eprintln!("Upstream parsing error: {}", &e);
+        e
+    })?;
 
-    let local = std::path::PathBuf::from(&ARGS.local);
+    let local = std::path::PathBuf::from(&ARGS.local.as_ref().unwrap());
     let local = if local.is_absolute() {
         local
     } else {
