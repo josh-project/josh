@@ -1,12 +1,12 @@
   $ . ${TESTDIR}/setup_test_env.sh
   $ kill -9 $(cat ${TESTTMP}/proxy_pid)
   $ ${TARGET_DIR}/debug/josh-proxy --help
-  Usage: josh-proxy [OPTIONS]
+  Usage: josh-proxy [OPTIONS] --remote <REMOTE> --local <LOCAL>
   
   Options:
-        --remote <remote>
+        --remote <REMOTE>
             
-        --local <local>
+        --local <LOCAL>
             
         --poll <poll>
             
@@ -16,15 +16,15 @@
             
         --no-background
             
-    -n <n>
+    -n <N>
             DEPRECATED - no effect! Number of concurrent upstream git fetch/push operations
-        --port <port>
-            
-    -c, --cache-duration <cache-duration>
-            Duration between forced cache refresh
-        --static-resource-proxy-target <static-resource-proxy-target>
+        --port <PORT>
+            [default: 8000]
+    -c, --cache-duration <CACHE_DURATION>
+            Duration between forced cache refresh [default: 0]
+        --static-resource-proxy-target <STATIC_RESOURCE_PROXY_TARGET>
             Proxy static resource requests to a different URL
-        --filter-prefix <filter-prefix>
+        --filter-prefix <FILTER_PREFIX>
             Filter to be prefixed to all queries of this instance
     -h, --help
             Print help
