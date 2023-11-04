@@ -48,6 +48,7 @@ if [[ ! -v CARGO_TARGET_DIR ]]; then
     exit 1
 fi
 
+export RUSTFLFAGS="-D warnings"
 cargo build --workspace --exclude josh-ui --features hyper_cgi/test-server
 ( cd josh-ssh-dev-server ; go build -o "\${CARGO_TARGET_DIR}/josh-ssh-dev-server" )
 sh run-tests.sh ${TESTS}
