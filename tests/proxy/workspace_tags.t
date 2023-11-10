@@ -231,7 +231,7 @@
   ]
   .
   |-- josh
-  |   `-- 16
+  |   `-- 17
   |       `-- sled
   |           |-- blobs
   |           |-- conf
@@ -353,8 +353,6 @@
       |   |   `-- 1906dd31141f2fbab6485ccd34bbd1ea440464
       |   |-- 2e
       |   |   `-- aadc29a9215c79ff47c4b3a82a024816eb195a
-      |   |-- 37
-      |   |   `-- c3159b05efb7c51e9157e5140a462898ab1a16
       |   |-- 39
       |   |   `-- abfc68c47fd430cd9775fc18c9f93bc391052e
       |   |-- 43
@@ -367,17 +365,12 @@
       |   |   `-- 5d64cb11e557bba3e609d2b7a605bb80806e94
       |   |-- 5a
       |   |   `-- f4045367114a7584eefa64b95bb69d7f840aef
-      |   |-- 5c
-      |   |   `-- 874339dcbbc0c34c083557c2e652380c3cb3d6
       |   |-- 5f
       |   |   `-- a942ed9d35f280b35df2c4ef7acd23319271a5
       |   |-- 60
-      |   |   |-- 5066c26f66fca5a424aa32bd042ae71c7c8705
-      |   |   `-- da713d13cb085a9b7629cdc3a1d88d83dd49ae
+      |   |   `-- 5066c26f66fca5a424aa32bd042ae71c7c8705
       |   |-- 64
       |   |   `-- d1f8d32b274d8c1eeb69891931f52b6ade9417
-      |   |-- 65
-      |   |   `-- 786136396010946815eff820697a6d0578c113
       |   |-- 66
       |   |   `-- b81c71c0ad10acdb2b4df3b04eef8abd79e64b
       |   |-- 6b
@@ -403,8 +396,6 @@
       |   |-- a4
       |   |   |-- 1772e0c7cdad1a13b7a7bc38c0d382a5a827ce
       |   |   `-- 8223bf4fc7801a0322b4ecaa5ed6a2c5dce7f1
-      |   |-- ae
-      |   |   `-- 3b5ae2be9441da66ee2a69926b45d0e3a5adb2
       |   |-- b0
       |   |   `-- fdeb65d9b9069015ef9c0f735a4f6f2f28fe77
       |   |-- b1
@@ -435,8 +426,6 @@
       |   |   `-- 1ae75547e348b07cb28a721a06ef6580ff67f0
       |   |-- ed
       |   |   `-- 8ae0c02d30bd34d7a8584cb0930d0d7a58df26
-      |   |-- ee
-      |   |   `-- 5bbeab31c4de6c44afb01fa077befd53977492
       |   |-- f2
       |   |   |-- 257977b96d2272be155d6699046148e477e9fb
       |   |   `-- 7e0d18d976fd84da0a9e260989ecb6edaa593f
@@ -451,6 +440,6 @@
           |-- namespaces
           `-- tags
   
-  114 directories, 107 files
+  109 directories, 101 files
 
 $ cat ${TESTTMP}/josh-proxy.out

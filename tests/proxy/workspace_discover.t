@@ -102,7 +102,7 @@
   ]
   .
   |-- josh
-  |   `-- 16
+  |   `-- 17
   |       `-- sled
   |           |-- blobs
   |           |-- conf
@@ -196,8 +196,6 @@
       |   |   `-- 52611a9e7c56dfdfeadec043ced6d6ef7a5c33
       |   |-- 4b
       |   |   `-- 825dc642cb6eb9a060e54bf8d69288fbee4904
-      |   |-- 65
-      |   |   `-- 786136396010946815eff820697a6d0578c113
       |   |-- 6b
       |   |   `-- e0d68b8e87001c8b91281636e21d6387010332
       |   |-- 78
@@ -225,6 +223,6 @@
           |-- namespaces
           `-- tags
   
-  69 directories, 55 files
+  68 directories, 54 files
 
 $ cat ${TESTTMP}/josh-proxy.out

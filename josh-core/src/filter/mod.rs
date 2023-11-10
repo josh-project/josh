@@ -652,7 +652,7 @@ fn apply_to_commit2(
             let mut filtered_tree = commit.tree_id();
 
             for t in trees {
-                filtered_tree = tree::overlay(repo, filtered_tree, t)?;
+                filtered_tree = tree::overlay(transaction, filtered_tree, t)?;
             }
 
             repo.find_tree(filtered_tree)?
@@ -856,7 +856,7 @@ pub fn unapply<'a>(
         let new_tree = apply(transaction, inverted, tree)?;
 
         return Ok(transaction.repo().find_tree(tree::overlay(
-            transaction.repo(),
+            transaction,
             new_tree.id(),
             stripped,
         )?)?);
@@ -911,7 +911,7 @@ fn unapply_workspace<'a>(
             let new_tree = apply(transaction, invert(filter)?, tree)?;
 
             let result = transaction.repo().find_tree(tree::overlay(
-                transaction.repo(),
+                transaction,
                 new_tree.id(),
                 stripped,
             )?)?;

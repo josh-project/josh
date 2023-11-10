@@ -225,7 +225,7 @@
   ]
   .
   |-- josh
-  |   `-- 16
+  |   `-- 17
   |       `-- sled
   |           |-- blobs
   |           |-- conf
@@ -331,12 +331,8 @@
       |   |   `-- 825dc642cb6eb9a060e54bf8d69288fbee4904
       |   |-- 4d
       |   |   `-- 5d64cb11e557bba3e609d2b7a605bb80806e94
-      |   |-- 59
-      |   |   `-- 661ed23a4ab82e9dc4f4b4b46f108e21962740
       |   |-- 5a
       |   |   `-- f4045367114a7584eefa64b95bb69d7f840aef
-      |   |-- 5e
-      |   |   `-- 7c803167e280bcdbb85f245e45820ab9a139dc
       |   |-- 64
       |   |   `-- d1f8d32b274d8c1eeb69891931f52b6ade9417
       |   |-- 66
@@ -347,8 +343,6 @@
       |   |   `-- 788a139643ad181e2b1684dd7f8a31e3da6249
       |   |-- 78
       |   |   `-- 2f6261fa32f8bfec7b89f77bb5cce40c4611cb
-      |   |-- 7a
-      |   |   `-- 4c609f497d3360d4e8e451ab86262b321da64a
       |   |-- 85
       |   |   `-- 5c8765f063f6ab4a2563eb2de090a6c9b9deb4
       |   |-- 98
@@ -356,7 +350,6 @@
       |   |-- 9c
       |   |   `-- afb9379b412184574e4f15a86c54609a07e6af
       |   |-- 9f
-      |   |   |-- 51da357b05e7040f93fac55358555dba47f474
       |   |   `-- 8daab1754f04fbe8aaac6fcbb44c8324df09eb
       |   |-- a3
       |   |   `-- d19dcb2f51fa1efd55250f60df559c2b8270b8
@@ -367,7 +360,6 @@
       |   |-- b7
       |   |   `-- 5b16149287cb154dc97714814f3be0f9f52d2c
       |   |-- b8
-      |   |   |-- 558337a04104de5267b07276dac31a923708eb
       |   |   `-- ddfe2d00f876ae2513a5b26a560485762f6bfa
       |   |-- bb
       |   |   `-- 76696a87dd29d841caa7f0d48e2f4e5359d369
@@ -401,8 +393,6 @@
       |   |   `-- 7e0d18d976fd84da0a9e260989ecb6edaa593f
       |   |-- f6
       |   |   `-- 3dd93419493d22aeaf6bcb5c0bec4c2701b049
-      |   |-- f9
-      |   |   `-- 98899b80851f251ca131ccbd9846b7a15efba2
       |   |-- fa
       |   |   `-- 3b9622c1bcc8363c27d4eb05d1ae8dae15e871
       |   |-- fc
@@ -414,6 +404,6 @@
           |-- namespaces
           `-- tags
   
-  100 directories, 90 files
+  96 directories, 84 files
 
 $ cat ${TESTTMP}/josh-proxy.out
