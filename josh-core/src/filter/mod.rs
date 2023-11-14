@@ -571,7 +571,12 @@ fn apply_to_commit2(
                 .collect::<Option<Vec<git2::Oid>>>();
 
             if let Some(redirect) = resolve_workspace_redirect(repo, &commit.tree()?, ws_path) {
-                return apply_to_commit2(&to_op(redirect), &commit, transaction);
+                if let Some(r) = apply_to_commit2(&to_op(redirect), &commit, transaction)? {
+                    transaction.insert(filter, commit.id(), r, true);
+                    return Ok(Some(r));
+                } else {
+                    return Ok(None);
+                }
             }
 
             let normal_parents = some_or!(normal_parents, { return Ok(None) });
@@ -758,6 +763,11 @@ fn apply2<'a>(
             let wsj_file = to_filter(Op::File(Path::new("workspace.josh").to_owned()));
             let base = to_filter(Op::Subdir(path.to_owned()));
             let wsj_file = chain(base, wsj_file);
+
+            if let Some(redirect) = resolve_workspace_redirect(repo, &tree, path) {
+                return apply(transaction, redirect, tree);
+            }
+
             apply(
                 transaction,
                 compose(wsj_file, compose(get_workspace(repo, &tree, path), base)),
