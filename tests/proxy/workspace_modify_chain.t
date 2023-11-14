@@ -344,8 +344,6 @@
       |   |   `-- 668d7af968c8eed910db7539a57b18dd62a50e
       |   |-- 04
       |   |   `-- 28323b9901ac5959af01b8686b2524c671adc1
-      |   |-- 0b
-      |   |   `-- 976ee9223f2a23c5339d6cb3bda2196dbae6b1
       |   |-- 0c
       |   |   `-- d4309cc22b5903503a7196f49c24cf358a578a
       |   |-- 13
@@ -361,8 +359,6 @@
       |   |   `-- 5dccdc2e37df9aaccec46009520154219134e7
       |   |-- 27
       |   |   `-- d0eee16bdbe4a1ade0ebf877f97467de3b218e
-      |   |-- 28
-      |   |   `-- a3e71d163a9eb30c3639b16a16f57077abf29b
       |   |-- 2a
       |   |   |-- 03ad0fe1720ee0afc95ba8e1bc38a35b87983f
       |   |   `-- 3e798288165d5b090a10460984776489bcc7cc
@@ -428,8 +424,6 @@
       |   |   `-- f66d258b7b4c3757e63f985b08f7daa33db64e
       |   |-- 98
       |   |   `-- 84cc2efe368ea0aa9d912fa596b26c5d75dbee
-      |   |-- 99
-      |   |   `-- 8e4d99b52680e8fc6d50d98cddad2a4e36a604
       |   |-- 9d
       |   |   `-- e3bbb26e2b40f02ca8de195933eb620bbf0b6a
       |   |-- 9e
@@ -475,8 +469,7 @@
       |   |-- e8
       |   |   `-- d34a664c80ff36cdff2c41c1fd3964f6e30f00
       |   |-- ea
-      |   |   |-- 1ae75547e348b07cb28a721a06ef6580ff67f0
-      |   |   `-- 7beb7786b5dbadf54412f90d4e729f41f26c00
+      |   |   `-- 1ae75547e348b07cb28a721a06ef6580ff67f0
       |   |-- ec
       |   |   `-- 4f59ca1a0ac5b2f375d4917dbba5e6aedff12a
       |   |-- ef
@@ -499,6 +492,6 @@
           |-- namespaces
           `-- tags
   
-  127 directories, 124 files
+  124 directories, 120 files
 
 $ cat ${TESTTMP}/josh-proxy.out | grep VIEW

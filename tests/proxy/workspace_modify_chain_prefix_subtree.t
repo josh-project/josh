@@ -427,8 +427,6 @@ Note that ws/d/ is now present in the ws
       |   |   `-- 28323b9901ac5959af01b8686b2524c671adc1
       |   |-- 09
       |   |   `-- b613e901acc0b5e4279ec6732261134a06f667
-      |   |-- 0b
-      |   |   `-- 976ee9223f2a23c5339d6cb3bda2196dbae6b1
       |   |-- 0c
       |   |   |-- 66ddcaed3f256f7dacc400a684aa1b91ac638f
       |   |   `-- d4309cc22b5903503a7196f49c24cf358a578a
@@ -448,8 +446,6 @@ Note that ws/d/ is now present in the ws
       |   |   `-- d20398ffe09015ada5794763b97c750b61bdc4
       |   |-- 27
       |   |   `-- 5b45aec0a1c944c3a4c71cc71ee08d0c9ea347
-      |   |-- 28
-      |   |   `-- a3e71d163a9eb30c3639b16a16f57077abf29b
       |   |-- 2a
       |   |   |-- 03ad0fe1720ee0afc95ba8e1bc38a35b87983f
       |   |   `-- 3e798288165d5b090a10460984776489bcc7cc
@@ -536,7 +532,6 @@ Note that ws/d/ is now present in the ws
       |   |-- 98
       |   |   `-- 84cc2efe368ea0aa9d912fa596b26c5d75dbee
       |   |-- 99
-      |   |   |-- 8e4d99b52680e8fc6d50d98cddad2a4e36a604
       |   |   `-- acd82fe2a9b89022d1aee5a580c123a8161f4a
       |   |-- 9c
       |   |   `-- 78c532d93505a2a24430635b342b91db22fee0
@@ -586,8 +581,7 @@ Note that ws/d/ is now present in the ws
       |   |-- e9
       |   |   `-- 9a2c69c0fb10af8dd1524e7f976df3d898f6ac
       |   |-- ea
-      |   |   |-- 1ae75547e348b07cb28a721a06ef6580ff67f0
-      |   |   `-- 7beb7786b5dbadf54412f90d4e729f41f26c00
+      |   |   `-- 1ae75547e348b07cb28a721a06ef6580ff67f0
       |   |-- ec
       |   |   `-- 4f59ca1a0ac5b2f375d4917dbba5e6aedff12a
       |   |-- ed
@@ -612,6 +606,6 @@ Note that ws/d/ is now present in the ws
           |-- namespaces
           `-- tags
   
-  153 directories, 156 files
+  151 directories, 152 files
 
 $ cat ${TESTTMP}/josh-proxy.out | grep VIEW

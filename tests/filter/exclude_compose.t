@@ -20,8 +20,6 @@
   $ git commit -m "add file3" 1> /dev/null
 
   $ josh-filter -s :exclude[::sub2/] master --update refs/heads/hidden
-  [1] :prefix=sub2
-  [2] :/sub2
   [2] :exclude[::sub2/]
   $ git checkout -q hidden 1> /dev/null
   $ tree
@@ -41,14 +39,6 @@
   $ git commit -m "add sub1/file3" 1> /dev/null
 
   $ josh-filter -s :exclude[::sub1/,::sub2/] master --update refs/josh/filtered
-  [1] :/sub1
-  [1] :prefix=sub1
-  [1] :prefix=sub2
-  [2] :/sub2
-  [2] :[
-      ::sub1/
-      ::sub2/
-  ]
   [2] :exclude[
       ::sub1/
       ::sub2/
@@ -64,20 +54,11 @@
   2 directories, 1 file
 
   $ josh-filter -s :exclude[sub1=:/sub3] master --update refs/josh/filtered
-  [1] :/sub1
-  [1] :prefix=sub2
-  [2] :/sub2
-  [2] :/sub3
-  [2] :[
-      ::sub1/
-      ::sub2/
-  ]
   [2] :exclude[
       ::sub1/
       ::sub2/
   ]
   [2] :exclude[::sub2/]
-  [2] :prefix=sub1
   [3] :exclude[:/sub3:prefix=sub1]
 
   $ git checkout -q refs/josh/filtered

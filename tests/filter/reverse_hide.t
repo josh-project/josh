@@ -16,8 +16,6 @@
 
   $ josh-filter -s :exclude[::sub2/] master --update refs/heads/hidden
   [1] :exclude[::sub2/]
-  [1] :prefix=sub2
-  [2] :/sub2
   $ git checkout hidden 1> /dev/null
   Switched to branch 'hidden'
   $ tree
@@ -35,8 +33,6 @@
 
   $ josh-filter -s :exclude[::sub2/] --reverse master --update refs/heads/hidden
   [1] :exclude[::sub2/]
-  [1] :prefix=sub2
-  [2] :/sub2
 
   $ git checkout master
   Switched to branch 'master'
@@ -70,8 +66,6 @@
   $ git commit -m "empty commit" --allow-empty 1> /dev/null
 
   $ josh-filter -s :exclude[::sub2/] --reverse master --update refs/heads/hidden
-  [1] :prefix=sub2
-  [2] :/sub2
   [2] :exclude[::sub2/]
   $ git log --graph --pretty=%s refs/heads/master
   * empty commit

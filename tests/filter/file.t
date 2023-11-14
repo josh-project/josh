@@ -29,11 +29,6 @@
   $ git commit -m "initial" 1> /dev/null
 
   $ josh-filter -s --file file.josh
-  [1] :prefix=a
-  [1] :prefix=b
-  [2] :/sub1
-  [2] :/sub2
-  [2] :prefix=c
   [3] :[
       c = :/sub1
       a/b = :/sub2
@@ -44,11 +39,6 @@
   * add file1
 
   $ josh-filter -s --single --file file.josh
-  [2] :prefix=a
-  [2] :prefix=b
-  [3] :/sub1
-  [3] :/sub2
-  [3] :prefix=c
   [4] :[
       c = :/sub1
       a/b = :/sub2

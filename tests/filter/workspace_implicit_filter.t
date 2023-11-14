@@ -23,12 +23,6 @@
   $ git commit -m "add ws" 1> /dev/null
 
   $ josh-filter -s :workspace=ws master --update refs/josh/master
-  [1] :/sub1
-  [1] :/subsub
-  [1] :prefix=sub1
-  [1] :prefix=sub2
-  [1] :prefix=subsub
-  [2] :/sub2
   [2] :[
       ::sub1/
       ::sub2/subsub/
