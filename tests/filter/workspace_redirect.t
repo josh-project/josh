@@ -39,6 +39,7 @@
   ]
   [2] :workspace=ws
   $ josh-filter -s :workspace=ws_new master --update refs/heads/filtered_new
+  [1] :workspace=ws_new
   [2] :[
       a = :/sub1
       ::sub2/subsub/
@@ -142,6 +143,7 @@
       a = :/sub1
       ::sub2/subsub/
   ]
-  [2] :workspace=ws
+  [2] :workspace=ws_new
   [3] :exclude[::ws]
   [3] :exclude[::ws_new]
+  [3] :workspace=ws
