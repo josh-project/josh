@@ -564,41 +564,6 @@ fn apply_to_commit2(
             ))
             .transpose();
         }
-        Op::Compose(filters) => {
-            let filtered = filters
-                .iter()
-                .map(|f| apply_to_commit2(&to_op(*f), commit, transaction))
-                .collect::<Vec<_>>()
-                .into_iter()
-                .collect::<JoshResult<Option<Vec<_>>>>()?;
-
-            let filtered = some_or!(filtered, { return Ok(None) });
-
-            let inverted = invert(filter)?;
-
-            if filter == inverted {
-                // If the filter is symetric it does not change any paths and uniqueness of
-                // mappings is already guaranteed.
-                let filtered = filtered
-                    .into_iter()
-                    .filter(|id| *id != git2::Oid::zero())
-                    .into_iter()
-                    .map(|id| Ok(repo.find_commit(id)?.tree_id()))
-                    .collect::<JoshResult<Vec<_>>>()?;
-
-                tree::compose_fast(transaction, filtered)?
-            } else {
-                let filtered = filters
-                    .iter()
-                    .zip(filtered.into_iter())
-                    .filter(|(_, id)| *id != git2::Oid::zero())
-                    .into_iter()
-                    .map(|(f, id)| Ok((f, repo.find_commit(id)?.tree()?)))
-                    .collect::<JoshResult<Vec<_>>>()?;
-
-                tree::compose(transaction, filtered)?
-            }
-        }
         Op::Workspace(ws_path) => {
             let normal_parents = commit
                 .parent_ids()
@@ -672,45 +637,6 @@ fn apply_to_commit2(
             }
 
             repo.find_tree(filtered_tree)?
-        }
-        Op::Subtract(a, b) => {
-            let af = {
-                transaction
-                    .repo()
-                    .find_commit(some_or!(
-                        apply_to_commit2(&to_op(*a), commit, transaction)?,
-                        { return Ok(None) }
-                    ))
-                    .map(|x| x.tree_id())
-                    .unwrap_or_else(|_| tree::empty_id())
-            };
-            let bf = {
-                transaction
-                    .repo()
-                    .find_commit(some_or!(
-                        apply_to_commit2(&to_op(*b), commit, transaction)?,
-                        { return Ok(None) }
-                    ))
-                    .map(|x| x.tree_id())
-                    .unwrap_or_else(|_| tree::empty_id())
-            };
-            let bf = repo.find_tree(bf)?;
-            let bu = apply(transaction, invert(*b)?, bf)?;
-            let ba = apply(transaction, *a, bu)?.id();
-            repo.find_tree(tree::subtract(transaction, af, ba)?)?
-        }
-        Op::Exclude(b) => {
-            let bf = {
-                transaction
-                    .repo()
-                    .find_commit(some_or!(
-                        apply_to_commit2(&to_op(*b), commit, transaction)?,
-                        { return Ok(None) }
-                    ))
-                    .map(|x| x.tree_id())
-                    .unwrap_or_else(|_| tree::empty_id())
-            };
-            repo.find_tree(tree::subtract(transaction, commit.tree_id(), bf)?)?
         }
         _ => apply(transaction, filter, commit.tree()?)?,
     };

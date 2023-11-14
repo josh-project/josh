@@ -14,13 +14,10 @@
   $ git commit -m "add file2.b" 1> /dev/null
 
   $ josh-filter -s $FILTER master --update refs/heads/filtered
-  [1] ::*.a
-  [1] :prefix=a
   [2] :[
       a = ::*.a
       :prefix=rest
   ]
-  [2] :prefix=rest
   $ git checkout filtered 1> /dev/null
   Switched to branch 'filtered'
   $ tree
@@ -41,13 +38,10 @@
   $ git commit -m "add files" 1> /dev/null
 
   $ josh-filter -s $FILTER --reverse master --update refs/heads/filtered
-  [1] ::*.a
-  [1] :prefix=a
   [2] :[
       a = ::*.a
       :prefix=rest
   ]
-  [2] :prefix=rest
 
   $ git checkout master
   Switched to branch 'master'

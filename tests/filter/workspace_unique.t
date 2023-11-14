@@ -29,18 +29,6 @@ so the workspace.josh will still appear in the root of the workspace
   $ git commit -m "add ws" 1> /dev/null
 
   $ josh-filter -s :workspace=ws master --update refs/josh/master
-  [1] :/sub1
-  [1] :/subsub
-  [1] ::file1
-  [1] ::ws/workspace.josh
-  [1] :[
-      ::file1
-      :prefix=a
-  ]
-  [1] :prefix=a
-  [1] :prefix=sub2
-  [1] :prefix=subsub
-  [2] :/sub2
   [2] :[
       :/sub1:[
           ::file1

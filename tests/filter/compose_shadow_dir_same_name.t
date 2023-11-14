@@ -86,17 +86,9 @@
   +contents1
 
   $ josh-filter -s ":[:/sub/xx::file3,:/sub1,:/xx,:/sub/xx]"
-  [1] :/sub1
-  [1] ::file3
-  [2] :/sub
-  [3] :/xx
   [3] :[
       :/sub/xx::file3
       :/sub1
-      :/xx
-      :/sub/xx
-  ]
-  [3] :[
       :/xx
       :/sub/xx
   ]

@@ -50,12 +50,6 @@
   7 directories, 5 files
 
   $ josh-filter -s :workspace=ws
-  [1] :/sub1
-  [1] :/subsub
-  [1] :prefix=sub1
-  [1] :prefix=sub2
-  [1] :prefix=subsub
-  [2] :/sub2
   [2] :[
       ::sub1/
       ::sub2/subsub/
@@ -83,27 +77,13 @@
 
   $ git checkout master 2> /dev/null
   $ josh-filter -s :workspace=ws2
-  [1] :/sub1
-  [1] :/subsub
-  [1] :prefix=blub
-  [1] :prefix=sub1
-  [1] :prefix=sub2
-  [1] :prefix=sub3
-  [1] :prefix=subsub
-  [2] :/sub2
-  [2] :/sub3
   [2] :[
       ::sub1/
       ::sub2/subsub/
   ]
-  [2] :prefix=a
   [2] :prefix=x
   [2] :workspace=ws
   [2] :workspace=ws2
-  [3] :[
-      ::sub2/subsub/
-      ::sub3/
-  ]
   [3] :[
       a = :[
           ::sub2/subsub/

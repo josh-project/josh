@@ -24,14 +24,6 @@
   $ git commit -m "add ws" 1> /dev/null
 
   $ josh-filter -s :workspace=ws master --update refs/heads/filtered
-  [1] :/sub1
-  [1] :/subsub
-  [1] ::file1
-  [1] :exclude[::file1]
-  [1] :prefix=a
-  [1] :prefix=sub2
-  [1] :prefix=subsub
-  [2] :/sub2
   [2] :[
       a = :/sub1:exclude[::file1]
       ::sub2/subsub/
@@ -62,14 +54,6 @@
   $ git commit -m "add 1X" 1> /dev/null
 
   $ josh-filter -s :workspace=ws --reverse master --update refs/heads/filtered
-  [1] :/sub1
-  [1] :/subsub
-  [1] ::file1
-  [1] :exclude[::file1]
-  [1] :prefix=a
-  [1] :prefix=sub2
-  [1] :prefix=subsub
-  [2] :/sub2
   [2] :[
       a = :/sub1:exclude[::file1]
       ::sub2/subsub/

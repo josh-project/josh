@@ -33,25 +33,12 @@
   $ git commit -m "add ws_new" 1> /dev/null
 
   $ josh-filter -s :workspace=ws master --update refs/heads/filtered
-  [1] :/sub1
-  [1] :/subsub
-  [1] :prefix=a
-  [1] :prefix=sub2
-  [1] :prefix=subsub
-  [2] :/sub2
   [2] :[
       a = :/sub1
       ::sub2/subsub/
   ]
   [2] :workspace=ws
   $ josh-filter -s :workspace=ws_new master --update refs/heads/filtered_new
-  [1] :/sub1
-  [1] :/subsub
-  [1] :prefix=a
-  [1] :prefix=sub2
-  [1] :prefix=subsub
-  [2] :/sub2
-  [2] ::ws_new
   [2] :[
       a = :/sub1
       ::sub2/subsub/
@@ -151,18 +138,10 @@
   $ git commit -m "add ws recursion" 1> /dev/null
 
   $ josh-filter -s :workspace=ws master --update refs/heads/filtered
-  [1] :/sub1
-  [1] :/subsub
-  [1] :prefix=a
-  [1] :prefix=sub2
-  [1] :prefix=subsub
-  [2] :/sub2
   [2] :[
       a = :/sub1
       ::sub2/subsub/
   ]
   [2] :workspace=ws
-  [3] ::ws
-  [3] ::ws_new
   [3] :exclude[::ws]
   [3] :exclude[::ws_new]
