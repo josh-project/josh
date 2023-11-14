@@ -12,6 +12,8 @@ pub use parse::parse;
 lazy_static! {
     static ref FILTERS: std::sync::Mutex<std::collections::HashMap<Filter, Op>> =
         std::sync::Mutex::new(std::collections::HashMap::new());
+    static ref WORKSPACES: std::sync::Mutex<std::collections::HashMap<git2::Oid, Filter>> =
+        std::sync::Mutex::new(std::collections::HashMap::new());
 }
 
 /// Filters are represented as `git2::Oid`, however they are not ever stored
@@ -397,13 +399,27 @@ fn resolve_workspace_redirect<'a>(
 }
 
 fn get_workspace<'a>(repo: &'a git2::Repository, tree: &'a git2::Tree<'a>, path: &Path) -> Filter {
-    let f = parse::parse(&tree::get_blob(repo, tree, &path.join("workspace.josh")))
-        .unwrap_or_else(|_| to_filter(Op::Empty));
+    let ws_path = normalize_path(&path.join("workspace.josh"));
+    let ws_id = ok_or!(tree.get_path(&ws_path), {
+        return to_filter(Op::Empty);
+    })
+    .id();
+    let ws_blob = tree::get_blob(repo, tree, &ws_path);
 
-    if invert(f).is_ok() {
-        f
+    let mut workspaces = WORKSPACES.lock().unwrap();
+
+    if let Some(f) = workspaces.get(&ws_id) {
+        *f
     } else {
-        to_filter(Op::Empty)
+        let f = parse::parse(&ws_blob).unwrap_or_else(|_| to_filter(Op::Empty));
+
+        let f = if invert(f).is_ok() {
+            f
+        } else {
+            to_filter(Op::Empty)
+        };
+        workspaces.insert(ws_id, f);
+        f
     }
 }
 
