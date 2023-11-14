@@ -50,7 +50,7 @@
   $ bash ${TESTDIR}/destroy_test_env.sh
   .
   |-- josh
-  |   `-- 16
+  |   `-- 17
   |       `-- sled
   |           |-- blobs
   |           |-- conf

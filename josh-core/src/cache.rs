@@ -1,7 +1,7 @@
 use super::*;
 use std::collections::HashMap;
 
-const CACHE_VERSION: u64 = 16;
+const CACHE_VERSION: u64 = 17;
 
 lazy_static! {
     static ref DB: std::sync::Mutex<Option<sled::Db>> = std::sync::Mutex::new(None);
@@ -54,6 +54,7 @@ struct Transaction2 {
     commit_map: HashMap<git2::Oid, HashMap<git2::Oid, git2::Oid>>,
     apply_map: HashMap<git2::Oid, HashMap<git2::Oid, git2::Oid>>,
     subtract_map: HashMap<(git2::Oid, git2::Oid), git2::Oid>,
+    overlay_map: HashMap<(git2::Oid, git2::Oid), git2::Oid>,
     unapply_map: HashMap<git2::Oid, HashMap<git2::Oid, git2::Oid>>,
     sled_trees: HashMap<git2::Oid, sled::Tree>,
     path_tree: sled::Tree,
@@ -139,6 +140,7 @@ impl Transaction {
                 commit_map: HashMap::new(),
                 apply_map: HashMap::new(),
                 subtract_map: HashMap::new(),
+                overlay_map: HashMap::new(),
                 unapply_map: HashMap::new(),
                 sled_trees: HashMap::new(),
                 path_tree,
@@ -208,6 +210,16 @@ impl Transaction {
     pub fn get_subtract(&self, from: (git2::Oid, git2::Oid)) -> Option<git2::Oid> {
         let t2 = self.t2.borrow_mut();
         return t2.subtract_map.get(&from).cloned();
+    }
+
+    pub fn insert_overlay(&self, from: (git2::Oid, git2::Oid), to: git2::Oid) {
+        let mut t2 = self.t2.borrow_mut();
+        t2.overlay_map.insert(from, to);
+    }
+
+    pub fn get_overlay(&self, from: (git2::Oid, git2::Oid)) -> Option<git2::Oid> {
+        let t2 = self.t2.borrow_mut();
+        return t2.overlay_map.get(&from).cloned();
     }
 
     pub fn insert_unapply(&self, filter: filter::Filter, from: git2::Oid, to: git2::Oid) {

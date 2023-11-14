@@ -340,11 +340,14 @@ pub fn diff_paths(
 }
 
 pub fn overlay(
-    repo: &git2::Repository,
+    transaction: &cache::Transaction,
     input1: git2::Oid,
     input2: git2::Oid,
 ) -> JoshResult<git2::Oid> {
-    rs_tracing::trace_scoped!("overlay");
+    if let Some(cached) = transaction.get_overlay((input1, input2)) {
+        return Ok(cached);
+    }
+    let repo = transaction.repo();
     if input1 == input2 {
         return Ok(input1);
     }
@@ -356,29 +359,35 @@ pub fn overlay(
     }
 
     if let (Ok(tree1), Ok(tree2)) = (repo.find_tree(input1), repo.find_tree(input2)) {
-        let mut result_tree = tree1.clone();
+        rs_tracing::trace_begin!( "overlay",
+            "overlay_a": format!("{}", input1),
+            "overlay_b": format!("{}", input2),
+            "overlay_ab": format!("{} - {}", input1, input2));
+        let mut builder = repo.treebuilder(Some(&tree1))?;
 
+        let mut i = 0;
         for entry in tree2.iter() {
-            if let Some(e) = tree1.get_name(entry.name().ok_or_else(|| josh_error("no name"))?) {
-                result_tree = replace_child(
-                    repo,
-                    Path::new(entry.name().ok_or_else(|| josh_error("no name"))?),
-                    overlay(repo, e.id(), entry.id())?,
-                    e.filemode(),
-                    &result_tree,
-                )?;
+            i += 1;
+            let (id, mode) = if let Some(e) =
+                tree1.get_name(entry.name().ok_or_else(|| josh_error("no name"))?)
+            {
+                (overlay(transaction, e.id(), entry.id())?, e.filemode())
             } else {
-                result_tree = replace_child(
-                    repo,
-                    Path::new(entry.name().ok_or_else(|| josh_error("no name"))?),
-                    entry.id(),
-                    entry.filemode(),
-                    &result_tree,
-                )?;
-            }
+                (entry.id(), entry.filemode())
+            };
+
+            builder.insert(
+                Path::new(entry.name().ok_or_else(|| josh_error("no name"))?),
+                id,
+                mode,
+            )?;
         }
 
-        return Ok(result_tree.id());
+        let rid = builder.write()?;
+        rs_tracing::trace_end!( "overlay", "count":i);
+
+        transaction.insert_overlay((input1, input2), rid);
+        return Ok(rid);
     }
 
     Ok(input1)
@@ -837,7 +846,7 @@ pub fn invert_paths<'a>(
                 &format!("{}{}{}", root, if root.is_empty() { "" } else { "/" }, name),
                 repo.find_tree(entry.id())?,
             )?;
-            result = repo.find_tree(overlay(repo, result.id(), s.id())?)?;
+            result = repo.find_tree(overlay(transaction, result.id(), s.id())?)?;
         }
     }
 
@@ -897,7 +906,7 @@ fn populate(
         for entry in content.iter() {
             if let Some(e) = paths.get_name(entry.name().ok_or_else(|| josh_error("no name"))?) {
                 result_tree = overlay(
-                    repo,
+                    transaction,
                     result_tree,
                     populate(transaction, e.id(), entry.id())?,
                 )?;
@@ -918,7 +927,7 @@ pub fn compose_fast(
     let repo = transaction.repo();
     let mut result = empty_id();
     for tree in trees {
-        result = overlay(repo, tree, result)?;
+        result = overlay(transaction, tree, result)?;
     }
 
     Ok(repo.find_tree(result)?)
@@ -950,8 +959,8 @@ pub fn compose<'a>(
             apply(transaction, invert(*f)?, applied)?.id()
         };
         transaction.insert_unapply(*f, aid, unapplied);
-        taken = repo.find_tree(overlay(repo, taken.id(), unapplied)?)?;
-        result = repo.find_tree(overlay(repo, subtracted.id(), result.id())?)?;
+        taken = repo.find_tree(overlay(transaction, taken.id(), unapplied)?)?;
+        result = repo.find_tree(overlay(transaction, subtracted.id(), result.id())?)?;
     }
 
     Ok(result)
