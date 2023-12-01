@@ -49,7 +49,6 @@ pub mod shell;
 pub struct Change {
     pub author: String,
     pub id: Option<String>,
-    pub label: Option<String>,
     pub commit: git2::Oid,
 }
 
@@ -57,7 +56,6 @@ impl Change {
     fn new(commit: git2::Oid) -> Self {
         Self {
             author: Default::default(),
-            label: Default::default(),
             id: Default::default(),
             commit,
         }
@@ -219,11 +217,13 @@ pub fn get_change_id(commit: &git2::Commit, sha: git2::Oid) -> Change {
     change.author = commit.author().email().unwrap_or("").to_string();
 
     for line in commit.message().unwrap_or("").split('\n') {
+        if line.starts_with("Change: ") {
+            change.id = Some(line.replacen("Change: ", "", 1));
+            // If there is a "Change-Id" as well, it will take precedence
+        }
         if line.starts_with("Change-Id: ") {
             change.id = Some(line.replacen("Change-Id: ", "", 1));
-        }
-        if line.starts_with("Change: ") {
-            change.label = Some(line.replacen("Change: ", "", 1));
+            break;
         }
     }
     change

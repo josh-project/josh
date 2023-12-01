@@ -206,11 +206,18 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
             None
         };
 
-        let mut changes = if push_mode == PushMode::Stack || push_mode == PushMode::Split {
-            Some(vec![])
+        let author = if let Some(p) = push_options.get("author") {
+            p.to_string()
         } else {
-            None
+            "".to_string()
         };
+
+        let mut changes =
+            if push_mode == PushMode::Stack || push_mode == PushMode::Split || author != "" {
+                Some(vec![])
+            } else {
+                None
+            };
 
         let filterobj = josh::filter::parse(&repo_update.filter_spec)?;
         let new_oid = git2::Oid::from_str(new)?;
@@ -265,18 +272,16 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
             push_to
         };
 
-        let author = if let Some(p) = push_options.get("author") {
-            p.to_string()
-        } else {
-            "".to_string()
-        };
-
         let to_push = if let Some(changes) = changes {
             let mut v = vec![];
             v.append(&mut changes_to_refs(&baseref, &author, changes)?);
 
             if push_mode == PushMode::Split {
                 split_changes(transaction.repo(), &mut v, old)?;
+            }
+
+            if push_mode == PushMode::Review {
+                v.push((ref_with_options, oid_to_push, "JOSH_PUSH".to_string()));
             }
 
             v.push((
@@ -820,20 +825,20 @@ fn changes_to_refs(
     };
 
     for change in changes.iter() {
-        if let Some(label) = &change.label {
-            if label.contains('@') {
-                return Err(josh::josh_error("Change label must not contain '@'"));
+        if let Some(id) = &change.id {
+            if id.contains('@') {
+                return Err(josh::josh_error("Change id must not contain '@'"));
             }
-            if seen.contains(&label) {
+            if seen.contains(&id) {
                 return Err(josh::josh_error(&format!(
                     "rejecting to push {:?} with duplicate label",
                     change.commit
                 )));
             }
-            seen.push(label);
+            seen.push(id);
         } else {
             return Err(josh::josh_error(&format!(
-                "rejecting to push {:?} without label",
+                "rejecting to push {:?} without id",
                 change.commit
             )));
         }
@@ -847,11 +852,11 @@ fn changes_to_refs(
                     "refs/heads/@changes/{}/{}/{}",
                     baseref.replacen("refs/heads/", "", 1),
                     change.author,
-                    change.label.as_ref().unwrap_or(&"".to_string()),
+                    change.id.as_ref().unwrap_or(&"".to_string()),
                 ),
                 change.commit,
                 change
-                    .label
+                    .id
                     .as_ref()
                     .unwrap_or(&"JOSH_PUSH".to_string())
                     .to_string(),
