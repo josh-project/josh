@@ -247,6 +247,7 @@ fn find_new_branch_base(
     filter: filter::Filter,
     contained_in: git2::Oid,
     filtered: git2::Oid,
+    base_on_oldest: bool,
 ) -> JoshResult<git2::Oid> {
     let walk = {
         let mut walk = transaction.repo().revwalk()?;
@@ -261,12 +262,15 @@ fn find_new_branch_base(
         if let Ok(base) = find_unapply_base(transaction, bm, filter, contained_in, rev) {
             if base != git2::Oid::zero() {
                 tracing::info!("new branch base: {:?} mapping to {:?}", base, rev);
-                let base =
+                let base = if base_on_oldest {
                     if let Ok(new_base) = find_oldest_similar_commit(transaction, filter, base) {
                         new_base
                     } else {
                         base
-                    };
+                    }
+                } else {
+                    base
+                };
                 tracing::info!("inserting in bm {}, {}", rev, base);
                 bm.insert(rev, base);
                 return Ok(rev);
@@ -287,12 +291,20 @@ pub fn unapply_filter(
     keep_orphans: bool,
     reparent_orphans: Option<git2::Oid>,
     change_ids: &mut Option<Vec<Change>>,
+    base_on_oldest: bool,
 ) -> JoshResult<git2::Oid> {
     let mut bm = HashMap::new();
     let mut ret = original_target;
 
     let old = if old == git2::Oid::zero() {
-        match find_new_branch_base(transaction, &mut bm, filterobj, original_target, new) {
+        match find_new_branch_base(
+            transaction,
+            &mut bm,
+            filterobj,
+            original_target,
+            new,
+            base_on_oldest,
+        ) {
             Ok(res) => {
                 tracing::info!("No error, branch base {} ", res);
                 res
