@@ -841,8 +841,8 @@ impl Pattern {
                             false
                         }
                         AnyChar => true,
-                        AnyWithin(ref specifiers) => in_char_specifiers(&specifiers, c, options),
-                        AnyExcept(ref specifiers) => !in_char_specifiers(&specifiers, c, options),
+                        AnyWithin(ref specifiers) => in_char_specifiers(specifiers, c, options),
+                        AnyExcept(ref specifiers) => !in_char_specifiers(specifiers, c, options),
                         Char(c2) => chars_eq(c, c2, options.case_sensitive),
                         AnySequence | AnyRecursiveSequence => unreachable!(),
                     } {
@@ -1488,12 +1488,12 @@ mod test {
     fn test_matches_path() {
         // on windows, (Path::new("a/b").as_str().unwrap() == "a\\b"), so this
         // tests that / and \ are considered equivalent on windows
-        assert!(Pattern::new("a/b").unwrap().matches_path(&Path::new("a/b")));
+        assert!(Pattern::new("a/b").unwrap().matches_path(Path::new("a/b")));
     }
 
     #[test]
     fn test_path_join() {
-        let pattern = Path::new("one").join(&Path::new("**/*.rs"));
+        let pattern = Path::new("one").join(Path::new("**/*.rs"));
         assert!(Pattern::new(pattern.to_str().unwrap()).is_ok());
     }
 }
