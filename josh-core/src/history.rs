@@ -224,6 +224,9 @@ pub fn rewrite_commit(
     return Ok(repo.odb()?.write(git2::ObjectType::Commit, &b)?);
 }
 
+// Given an OID of an unfiltered commit and a filter,
+// find the oldest commit (within the topological order)
+// that gives the same result when filtered
 fn find_oldest_similar_commit(
     transaction: &cache::Transaction,
     filter: filter::Filter,
