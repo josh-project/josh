@@ -260,6 +260,7 @@ fn find_new_branch_base(
     transaction: &cache::Transaction,
     filtered_to_original: &mut HashMap<git2::Oid, git2::Oid>,
     filter: filter::Filter,
+    // See "contained_in" in find_unapply_base
     contained_in: git2::Oid,
     filtered: git2::Oid,
 ) -> JoshResult<git2::Oid> {
@@ -271,6 +272,7 @@ fn find_new_branch_base(
     };
     tracing::info!("new branch base?");
 
+    // Walk filtered history tree, trying to find a base for every commit
     for rev in walk {
         let rev = rev?;
         if let Ok(base) =
