@@ -833,12 +833,18 @@ pub fn unapply<'a>(
     }
 
     if let Op::Chain(a, b) = to_op(filter) {
-        let i = if let Ok(i) = invert(a) { invert(i)? } else { a };
-        let p = apply(transaction, i, parent_tree.clone())?;
+        // If filter "a" is invertable, use "invert(invert(a))" version of it, otherwise use as is
+        let a_normalized = if let Ok(a_inverted) = invert(a) {
+            invert(a_inverted)?
+        } else {
+            a
+        };
+        let filtered_parent_tree = apply(transaction, a_normalized, parent_tree.clone())?;
+
         return unapply(
             transaction,
             a,
-            unapply(transaction, b, tree, p)?,
+            unapply(transaction, b, tree, filtered_parent_tree)?,
             parent_tree,
         );
     }
