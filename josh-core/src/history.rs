@@ -243,7 +243,7 @@ fn find_oldest_similar_commit(
 
 fn find_new_branch_base(
     transaction: &cache::Transaction,
-    bm: &mut HashMap<git2::Oid, git2::Oid>,
+    filtered_to_original: &mut HashMap<git2::Oid, git2::Oid>,
     filter: filter::Filter,
     contained_in: git2::Oid,
     filtered: git2::Oid,
@@ -258,7 +258,9 @@ fn find_new_branch_base(
 
     for rev in walk {
         let rev = rev?;
-        if let Ok(base) = find_unapply_base(transaction, bm, filter, contained_in, rev) {
+        if let Ok(base) =
+            find_unapply_base(transaction, filtered_to_original, filter, contained_in, rev)
+        {
             if base != git2::Oid::zero() {
                 tracing::info!("new branch base: {:?} mapping to {:?}", base, rev);
                 let base =
@@ -267,8 +269,10 @@ fn find_new_branch_base(
                     } else {
                         base
                     };
-                tracing::info!("inserting in bm {}, {}", rev, base);
-                bm.insert(rev, base);
+
+                tracing::info!("inserting in filtered_to_original {}, {}", rev, base);
+                filtered_to_original.insert(rev, base);
+
                 return Ok(rev);
             }
         }
