@@ -75,24 +75,35 @@ pub fn walk2(
 
 fn find_unapply_base(
     transaction: &cache::Transaction,
-    bm: &mut HashMap<git2::Oid, git2::Oid>,
+    // Used as a cache to avoid re-applying the filter to the same commit -
+    // this function is called during revwalk so there be a lot of repeated
+    // calls
+    filtered_to_original: &mut HashMap<git2::Oid, git2::Oid>,
     filter: filter::Filter,
+    // "contained in" refers to OID of the commit in the original (unfiltered) history
+    // that is a part of history tree that contains the "base" commit we're looking for
     contained_in: git2::Oid,
+    // Filtered OID to compare against
     filtered: git2::Oid,
 ) -> JoshResult<git2::Oid> {
     if contained_in == git2::Oid::zero() {
         tracing::info!("contained in zero",);
         return Ok(git2::Oid::zero());
     }
-    if let Some(original) = bm.get(&filtered) {
-        tracing::info!("Found in bm",);
+
+    if let Some(original) = filtered_to_original.get(&filtered) {
+        tracing::info!("Found in filtered_to_original",);
         return Ok(*original);
     }
+
     let contained_in_commit = transaction.repo().find_commit(contained_in)?;
     let oid = filter::apply_to_commit(filter, &contained_in_commit, transaction)?;
     if oid != git2::Oid::zero() {
-        bm.insert(oid, contained_in);
+        filtered_to_original.insert(oid, contained_in);
     }
+
+    // Start a revwalk in the original history tree starting from the
+    // contained_in "hint"
     let mut walk = transaction.repo().revwalk()?;
     walk.set_sorting(git2::Sort::TOPOLOGICAL)?;
     walk.push(contained_in)?;
@@ -100,7 +111,8 @@ fn find_unapply_base(
     for original in walk {
         let original = transaction.repo().find_commit(original?)?;
         if filtered == filter::apply_to_commit(filter, &original, transaction)? {
-            bm.insert(filtered, original.id());
+            // In case a match is found, cache the result
+            filtered_to_original.insert(filtered, original.id());
             tracing::info!("found original properly {}", original.id());
             return Ok(original.id());
         }
