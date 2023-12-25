@@ -362,6 +362,7 @@ pub fn unapply_filter(
         walk.set_sorting(git2::Sort::REVERSE | git2::Sort::TOPOLOGICAL)?;
         walk.push(new_filtered_oid)?;
 
+        // The main reason hide() can fail is if old_filtered_oid is not found in the repo
         if walk.hide(old_filtered_oid).is_ok() {
             tracing::info!("walk: hidden {}", old_filtered_oid);
         } else {
@@ -371,6 +372,7 @@ pub fn unapply_filter(
         walk
     };
 
+    // Walk starting from new filtered OID
     for rev in walk {
         let rev = rev?;
 
@@ -395,6 +397,7 @@ pub fn unapply_filter(
             filtered_parent_ids.pop();
         }
 
+        // For every parent of a filtered commit, find unapply base
         let original_parents: Result<Vec<_>, _> = filtered_parent_ids
             .iter()
             .map(|filtered_parent_id| -> JoshResult<_> {
@@ -418,6 +421,7 @@ pub fn unapply_filter(
             })
             .collect();
 
+        // If there are no parents and "reparent" option is given, use the given OID as a parent
         let mut original_parents = original_parents?;
         if let (0, Some(reparent)) = (original_parents.len(), reparent_orphans) {
             original_parents = vec![transaction.repo().find_commit(reparent)?];
@@ -429,7 +433,8 @@ pub fn unapply_filter(
             filtered_parent_ids
         );
 
-        let original_parents_refs: Vec<&git2::Commit> = original_parents.iter().collect();
+        // Convert original_parents to a vector of (rust) references
+        let original_parents: Vec<&git2::Commit> = original_parents.iter().collect();
         let tree = module_commit.tree()?;
         let commit_message = module_commit.summary().unwrap_or("NO COMMIT MESSAGE");
 
@@ -440,11 +445,11 @@ pub fn unapply_filter(
                 ?commit_message,
                 ?rev,
                 ?filtered_parent_ids,
-                ?original_parents_refs
+                ?original_parents
             );
             let _span_guard = span.enter();
 
-            original_parents_refs
+            original_parents
                 .iter()
                 .map(|commit| -> JoshResult<_> {
                     Ok(filter::unapply(transaction, filter, tree.clone(), commit.tree()?)?.id())
@@ -496,10 +501,10 @@ pub fn unapply_filter(
                 for i in 0..parent_count {
                     // If one of the parents is a descendant of the target branch and the other is
                     // not, pick the tree of the one that is a descendant.
-                    if (original_parents_refs[i].id() == original_target)
+                    if (original_parents[i].id() == original_target)
                         || transaction
                             .repo()
-                            .graph_descendant_of(original_parents_refs[i].id(), original_target)?
+                            .graph_descendant_of(original_parents[i].id(), original_target)?
                     {
                         tid = new_trees[i];
                         break;
@@ -522,8 +527,8 @@ pub fn unapply_filter(
                     mergeopts.file_favor(git2::FileFavor::Ours);
 
                     let mut merged_index = transaction.repo().merge_commits(
-                        original_parents_refs[0],
-                        original_parents_refs[1],
+                        original_parents[0],
+                        original_parents[1],
                         Some(&mergeopts),
                     )?;
                     let base_tree = merged_index.write_tree_to(transaction.repo())?;
@@ -538,8 +543,8 @@ pub fn unapply_filter(
                     mergeopts.file_favor(git2::FileFavor::Theirs);
 
                     let mut merged_index = transaction.repo().merge_commits(
-                        original_parents_refs[0],
-                        original_parents_refs[1],
+                        original_parents[0],
+                        original_parents[1],
                         Some(&mergeopts),
                     )?;
                     let base_tree = merged_index.write_tree_to(transaction.repo())?;
@@ -565,10 +570,10 @@ pub fn unapply_filter(
                         parent_count,
                         module_commit.summary().unwrap_or_default(),
                         module_commit.id(),
-                        original_parents_refs[0].summary().unwrap_or_default(),
-                        original_parents_refs[0].id(),
-                        original_parents_refs[1].summary().unwrap_or_default(),
-                        original_parents_refs[1].id(),
+                        original_parents[0].summary().unwrap_or_default(),
+                        original_parents[0].id(),
+                        original_parents[1].summary().unwrap_or_default(),
+                        original_parents[1].id(),
                     );
                     return Err(josh_error(&msg));
                 }
@@ -580,18 +585,18 @@ pub fn unapply_filter(
         ret = rewrite_commit(
             transaction.repo(),
             &module_commit,
-            &original_parents_refs,
+            &original_parents,
             &new_tree,
             None,
             None,
             false,
         )?;
 
-        ret = if original_parents_refs.len() == 1
-            && new_tree.id() == original_parents_refs[0].tree_id()
+        ret = if original_parents.len() == 1
+            && new_tree.id() == original_parents[0].tree_id()
             && Some(module_commit.tree_id()) != module_commit.parents().next().map(|x| x.tree_id())
         {
-            original_parents_refs[0].id()
+            original_parents[0].id()
         } else {
             if let Some(ref mut change_ids) = change_ids {
                 change_ids.push(get_change_id(&module_commit, ret));
