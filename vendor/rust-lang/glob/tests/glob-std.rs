@@ -44,6 +44,19 @@ fn main() {
         }
     }
 
+    fn mk_symlink_dir(original: &str, link: &str) {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::symlink;
+            symlink(original, link).unwrap();
+        }
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::symlink_dir;
+            symlink_dir(original, link).unwrap();
+        }
+    }
+
     fn glob_vec(pattern: &str) -> Vec<PathBuf> {
         glob(pattern).unwrap().map(|r| r.unwrap()).collect()
     }
@@ -98,6 +111,22 @@ fn main() {
     mk_file("r/two/b.md", false);
     mk_file("r/three", true);
     mk_file("r/three/c.md", false);
+
+    mk_file("dirsym", true);
+    mk_symlink_dir(root.path().join("r").to_str().unwrap(), "dirsym/link");
+
+    assert_eq!(
+        glob_vec("dirsym/**/*.md"),
+        vec!(
+            PathBuf::from("dirsym/link/another/a.md"),
+            PathBuf::from("dirsym/link/current_dir.md"),
+            PathBuf::from("dirsym/link/one/a.md"),
+            PathBuf::from("dirsym/link/one/another/a.md"),
+            PathBuf::from("dirsym/link/one/another/deep/spelunking.md"),
+            PathBuf::from("dirsym/link/three/c.md"),
+            PathBuf::from("dirsym/link/two/b.md")
+        )
+    );
 
     // all recursive entities
     assert_eq!(
