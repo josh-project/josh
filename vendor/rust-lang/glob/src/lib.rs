@@ -337,7 +337,15 @@ impl PathWrapper {
         let is_directory = e
             .file_type()
             .ok()
-            .map(|file_type| file_type.is_dir())
+            .and_then(|file_type| {
+                // We need to use fs::metadata to resolve the actual path
+                // if it's a symlink.
+                if file_type.is_symlink() {
+                    None
+                } else {
+                    Some(file_type.is_dir())
+                }
+            })
             .or_else(|| fs::metadata(&path).map(|m| m.is_dir()).ok())
             .unwrap_or(false);
         Self { path, is_directory }
