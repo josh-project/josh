@@ -219,6 +219,14 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
                 None
             };
 
+        if changes.is_some() && push_mode == PushMode::Review {
+            changes = Some(refs_to_changes(
+                &transaction_mirror,
+                &baseref.replacen("refs/heads/", "", 1),
+                &author,
+            ));
+        }
+
         let filterobj = josh::filter::parse(&repo_update.filter_spec)?;
         let new_oid = git2::Oid::from_str(new)?;
         let backward_new_oid = {
@@ -814,6 +822,38 @@ impl Drop for TmpGitNamespace {
     }
 }
 
+fn refs_to_changes(
+    transaction: &josh::cache::Transaction,
+    baseref: &str,
+    change_author: &str,
+) -> Vec<josh::Change> {
+    let mut changes = vec![];
+    let glob = transaction.refname(&format!(
+        "refs/heads/@changes/{}/{}/*",
+        baseref, change_author
+    ));
+
+    for r in transaction.repo().references_glob(&glob).unwrap() {
+        let r = r.unwrap();
+        let mut change = josh::Change::new(r.target().unwrap());
+        change.author = change_author.to_string();
+
+        let id = r.name().unwrap().replacen(
+            &transaction.refname(&format!(
+                "refs/heads/@changes/{}/{}/",
+                baseref, change_author
+            )),
+            "",
+            1,
+        );
+        change.id = Some(id);
+
+        changes.push(change);
+    }
+
+    return changes;
+}
+
 fn changes_to_refs(
     baseref: &str,
     change_author: &str,
@@ -833,12 +873,12 @@ fn changes_to_refs(
             if id.contains('@') {
                 return Err(josh::josh_error("Change id must not contain '@'"));
             }
-            if seen.contains(&id) {
-                return Err(josh::josh_error(&format!(
-                    "rejecting to push {:?} with duplicate label",
-                    change.commit
-                )));
-            }
+            //if seen.contains(&id) {
+            //    return Err(josh::josh_error(&format!(
+            //        "rejecting to push {:?} with duplicate label",
+            //        change.commit
+            //    )));
+            //}
             seen.push(id);
         } else {
             return Err(josh::josh_error(&format!(
