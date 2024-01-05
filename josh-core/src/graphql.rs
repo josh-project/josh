@@ -147,8 +147,7 @@ impl Revision {
 
         let ts = filter_commit.time().seconds();
 
-        let ndt = chrono::NaiveDateTime::from_timestamp_opt(ts, 0)
-            .ok_or(josh_error("from_timestamp_opt"))?;
+        let ndt = chrono::DateTime::from_timestamp(ts, 0).ok_or(josh_error("from_timestamp"))?;
         Ok(ndt.format(&format).to_string())
     }
 
