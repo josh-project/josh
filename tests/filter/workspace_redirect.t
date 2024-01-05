@@ -24,6 +24,19 @@
   $ git add ws
   $ git commit -m "add ws" 1> /dev/null
 
+  $ mkdir sub3
+  $ echo contents3 > sub3/file4
+  $ git add sub3
+  $ git commit -m "add file4" 1> /dev/null
+
+  $ cat > ws/workspace.josh <<EOF
+  > ::sub2/subsub/
+  > a = :/sub1
+  > b = :/sub3
+  > EOF
+  $ git add ws
+  $ git commit -m "edit ws" 1> /dev/null
+
   $ mkdir ws_new
   $ echo "foobar" > ws_new/extra_file_new
   $ cat > ws_new/workspace.josh <<EOF
@@ -33,25 +46,35 @@
   $ git commit -m "add ws_new" 1> /dev/null
 
   $ josh-filter -s :workspace=ws master --update refs/heads/filtered
+  [1] :prefix=b
+  [2] :/sub3
   [2] :[
       a = :/sub1
       ::sub2/subsub/
   ]
-  [2] :workspace=ws
+  [3] :workspace=ws
   $ josh-filter -s :workspace=ws_new master --update refs/heads/filtered_new
+  [1] :prefix=b
   [1] :workspace=ws_new
+  [2] :/sub3
   [2] :[
       a = :/sub1
       ::sub2/subsub/
   ]
-  [2] :workspace=ws
-  [3] :exclude[::ws_new]
+  [3] :workspace=ws
+  [5] :exclude[::ws_new]
 
   $ git log --graph --pretty=%s refs/heads/filtered
+  *   edit ws
+  |\  
+  | * add file4
   * add ws
   * add file2
   * add file1
   $ git log --graph --pretty=%s refs/heads/filtered_new
+  *   edit ws
+  |\  
+  | * add file4
   * add ws
   * add file2
   * add file1
@@ -71,6 +94,13 @@
   +++ b/a/file4
   @@ -0,0 +1 @@
   +contents4
+  diff --git a/b/file4 b/b/file4
+  new file mode 100644
+  index 0000000..1cb5d64
+  --- /dev/null
+  +++ b/b/file4
+  @@ -0,0 +1 @@
+  +contents3
   diff --git a/extra_file b/extra_file
   new file mode 100644
   index 0000000..323fae0
@@ -87,12 +117,13 @@
   +contents1
   diff --git a/workspace.josh b/workspace.josh
   new file mode 100644
-  index 0000000..68bf391
+  index 0000000..795cb6d
   --- /dev/null
   +++ b/workspace.josh
-  @@ -0,0 +1,2 @@
+  @@ -0,0 +1,3 @@
   +::sub2/subsub/
   +a = :/sub1
+  +b = :/sub3
   $ git diff ${EMPTY_TREE}..refs/heads/filtered_new
   diff --git a/a/file1 b/a/file1
   new file mode 100644
@@ -108,6 +139,13 @@
   +++ b/a/file4
   @@ -0,0 +1 @@
   +contents4
+  diff --git a/b/file4 b/b/file4
+  new file mode 100644
+  index 0000000..1cb5d64
+  --- /dev/null
+  +++ b/b/file4
+  @@ -0,0 +1 @@
+  +contents3
   diff --git a/extra_file b/extra_file
   new file mode 100644
   index 0000000..323fae0
@@ -124,12 +162,13 @@
   +contents1
   diff --git a/workspace.josh b/workspace.josh
   new file mode 100644
-  index 0000000..68bf391
+  index 0000000..795cb6d
   --- /dev/null
   +++ b/workspace.josh
-  @@ -0,0 +1,2 @@
+  @@ -0,0 +1,3 @@
   +::sub2/subsub/
   +a = :/sub1
+  +b = :/sub3
 
 
   $ cat > ws/workspace.josh <<EOF
@@ -139,11 +178,13 @@
   $ git commit -m "add ws recursion" 1> /dev/null
 
   $ josh-filter -s :workspace=ws master --update refs/heads/filtered
+  [1] :prefix=b
+  [2] :/sub3
   [2] :[
       a = :/sub1
       ::sub2/subsub/
   ]
-  [2] :workspace=ws_new
-  [3] :exclude[::ws]
-  [3] :exclude[::ws_new]
-  [3] :workspace=ws
+  [3] :workspace=ws_new
+  [4] :exclude[::ws]
+  [4] :workspace=ws
+  [6] :exclude[::ws_new]
