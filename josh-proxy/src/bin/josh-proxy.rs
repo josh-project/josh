@@ -2,19 +2,24 @@
 extern crate lazy_static;
 extern crate clap;
 
+use bytes::Bytes;
 use clap::Parser;
+use http_body_util::Full;
+use hyper::body::Incoming;
+use hyper::server::conn::http1;
+use hyper_util::rt::{tokio::TokioIo, tokio::TokioTimer};
 use josh_proxy::cli;
 use josh_proxy::{run_git_with_auth, FetchError, MetaConfig, RemoteAuth, RepoConfig, RepoUpdate};
 use opentelemetry::global;
 use opentelemetry::sdk::propagation::TraceContextPropagator;
+use tokio::pin;
+use tokio::sync::broadcast;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 use tracing_subscriber::Layer;
 
-use futures::future;
 use futures::FutureExt;
-use hyper::body::HttpBody;
-use hyper::service::{make_service_fn, service_fn};
-use hyper::{Request, Response, Server, StatusCode};
+use hyper::service::service_fn;
+use hyper::{Request, Response, StatusCode};
 
 use indoc::formatdoc;
 use josh::compat::GitOxideCompatExt;
@@ -23,16 +28,18 @@ use josh_rpc::calls::RequestedCommand;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::io;
-use std::net::IpAddr;
+use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::str::FromStr;
 use std::sync::{Arc, RwLock};
 use tokio::io::AsyncWriteExt;
-use tokio::net::UnixStream;
+use tokio::net::{TcpListener, UnixStream};
 use tokio::process::Command;
 use tracing::{trace, Span};
 use tracing_futures::Instrument;
+
+use http_body_util::BodyExt;
 
 fn version_str() -> String {
     format!("Version: {}\n", josh::VERSION,)
@@ -290,30 +297,27 @@ async fn fetch_upstream(
 async fn static_paths(
     service: &JoshProxyService,
     path: &str,
-) -> josh::JoshResult<Option<Response<hyper::Body>>> {
+) -> josh::JoshResult<Option<Response<Full<Bytes>>>> {
     tracing::debug!("static_path {:?}", path);
     if path == "/version" {
         return Ok(Some(make_response(
-            hyper::Body::from(version_str()),
+            version_str().as_str(),
             hyper::StatusCode::OK,
         )));
     }
     if path == "/remote" {
         return match service.upstream.get(UpstreamProtocol::Http) {
             None => Ok(Some(make_response(
-                hyper::Body::from("HTTP remote is not configured"),
+                "HTTP remote is not configured",
                 hyper::StatusCode::SERVICE_UNAVAILABLE,
             ))),
-            Some(remote) => Ok(Some(make_response(
-                hyper::Body::from(remote),
-                hyper::StatusCode::OK,
-            ))),
+            Some(remote) => Ok(Some(make_response(remote.as_str(), hyper::StatusCode::OK))),
         };
     }
     if path == "/flush" {
         service.fetch_timers.write()?.clear();
         return Ok(Some(make_response(
-            hyper::Body::from("Flushed credential cache\n"),
+            "Flushed credential cache\n",
             hyper::StatusCode::OK,
         )));
     }
@@ -341,7 +345,7 @@ async fn static_paths(
         .await??;
 
         return Ok(Some(make_response(
-            hyper::Body::from(body_str),
+            body_str.as_str(),
             hyper::StatusCode::OK,
         )));
     }
@@ -351,15 +355,14 @@ async fn static_paths(
 #[tracing::instrument]
 async fn repo_update_fn(
     serv: Arc<JoshProxyService>,
-    req: Request<hyper::Body>,
-) -> josh::JoshResult<Response<hyper::Body>> {
-    let body = hyper::body::to_bytes(req.into_body()).await;
+    req: Request<Incoming>,
+) -> josh::JoshResult<Response<Full<Bytes>>> {
+    let body = req.into_body().collect().await?.to_bytes();
 
     let s = tracing::span!(tracing::Level::TRACE, "repo update worker");
 
     let result = tokio::task::spawn_blocking(move || {
         let _e = s.enter();
-        let body = body?;
         let buffer = std::str::from_utf8(&body)?;
         let repo_update: RepoUpdate = serde_json::from_str(buffer)?;
         let context_propagator = repo_update.context_propagator.clone();
@@ -375,10 +378,10 @@ async fn repo_update_fn(
     Ok(match result {
         Ok(stderr) => Response::builder()
             .status(hyper::StatusCode::OK)
-            .body(hyper::Body::from(stderr)),
+            .body(Full::new(Bytes::from(stderr))),
         Err(josh::JoshError(stderr)) => Response::builder()
             .status(hyper::StatusCode::INTERNAL_SERVER_ERROR)
-            .body(hyper::Body::from(stderr)),
+            .body(Full::new(Bytes::from(stderr))),
     }?)
 }
 
@@ -506,18 +509,20 @@ async fn do_filter(
     Ok(())
 }
 
-fn make_response(body: hyper::Body, code: hyper::StatusCode) -> Response<hyper::Body> {
+fn make_response(body: &str, code: hyper::StatusCode) -> Response<Full<Bytes>> {
+    let owned_body = body.to_owned();
     Response::builder()
         .status(code)
         .header(hyper::header::CONTENT_TYPE, "text/plain")
-        .body(body)
+        .body(Full::new(Bytes::from(owned_body)))
         .expect("Can't build response")
 }
 
 async fn handle_ui_request(
-    req: Request<hyper::Body>,
+    req: Request<Incoming>,
     resource_path: &str,
-) -> josh::JoshResult<Response<hyper::Body>> {
+) -> josh::JoshResult<Response<Full<Bytes>>> {
+    /*
     // Proxy: can be used for UI development or to serve a different UI
     if let Some(proxy) = &ARGS.static_resource_proxy_target {
         let client_ip = IpAddr::from_str("127.0.0.1").unwrap();
@@ -525,10 +530,10 @@ async fn handle_ui_request(
             Ok(response) => Ok(response),
             Err(error) => Ok(Response::builder()
                 .status(StatusCode::INTERNAL_SERVER_ERROR)
-                .body(hyper::Body::from(format!("Proxy error: {:?}", error)))
+                .body(Full::new(Bytes::from(format!("Proxy error: {:?}", error))))
                 .unwrap()),
         };
-    }
+    }*/
 
     // Serve prebuilt UI from static resources dir
     let is_app_route = resource_path == "/"
@@ -545,10 +550,18 @@ async fn handle_ui_request(
         resource_path
     };
 
-    let result = hyper_staticfile::resolve_path("/josh/static", resolve_path).await?;
-    let response = hyper_staticfile::ResponseBuilder::new()
-        .request(&req)
-        .build(result)?;
+    let resolver = hyper_staticfile::Resolver::new("josh/static");
+    let request = hyper::http::Request::get(resolve_path).body(()).unwrap();
+    let result = resolver.resolve_request(&request).await?;
+    let response = hyper::Response::new(Full::new(
+        hyper_staticfile::ResponseBuilder::new()
+            .request(&req)
+            .build(result)?
+            .into_body()
+            .collect()
+            .await?
+            .to_bytes(),
+    ));
 
     Ok(response)
 }
@@ -918,9 +931,9 @@ fn head_ref_or_default(head_ref: &str) -> HeadRef {
 
 async fn handle_serve_namespace_request(
     serv: Arc<JoshProxyService>,
-    req: Request<hyper::Body>,
-) -> josh::JoshResult<Response<hyper::Body>> {
-    let error_response = |status: StatusCode| Ok(make_response(hyper::Body::empty(), status));
+    req: Request<Incoming>,
+) -> josh::JoshResult<Response<Full<Bytes>>> {
+    let error_response = |status: StatusCode| Ok(make_response("", status));
 
     if req.method() != hyper::Method::POST {
         return error_response(StatusCode::METHOD_NOT_ALLOWED);
@@ -931,18 +944,15 @@ async fn handle_serve_namespace_request(
         _ => return error_response(StatusCode::BAD_REQUEST),
     }
 
-    let body = match req.into_body().data().await {
-        None => return error_response(StatusCode::BAD_REQUEST),
-        Some(result) => match result {
-            Ok(bytes) => bytes,
-            Err(_) => return error_response(StatusCode::IM_A_TEAPOT),
-        },
+    let body = match req.into_body().collect().await {
+        Ok(bytes) => bytes.to_bytes(),
+        Err(_) => return error_response(StatusCode::IM_A_TEAPOT),
     };
 
     let params = match serde_json::from_slice::<josh_rpc::calls::ServeNamespace>(&body) {
         Err(error) => {
             return Ok(make_response(
-                hyper::Body::from(error.to_string()),
+                error.to_string().as_str(),
                 StatusCode::BAD_REQUEST,
             ))
         }
@@ -957,7 +967,7 @@ async fn handle_serve_namespace_request(
         parsed_url
     } else {
         return Ok(make_response(
-            hyper::Body::from("Unable to parse query"),
+            "Unable to parse query",
             StatusCode::BAD_REQUEST,
         ));
     };
@@ -978,7 +988,7 @@ async fn handle_serve_namespace_request(
         Ok(meta) => meta,
         Err(e) => {
             return Ok(make_response(
-                hyper::Body::from(format!("Error fetching meta repo: {}", e)),
+                format!("Error fetching meta repo: {}", e).as_str(),
                 StatusCode::INTERNAL_SERVER_ERROR,
             ));
         }
@@ -986,7 +996,7 @@ async fn handle_serve_namespace_request(
 
     if is_repo_blocked(&meta_config) {
         return Ok(make_response(
-            hyper::Body::from("Access to this repo is blocked via JOSH_REPO_BLOCK"),
+            "Access to this repo is blocked via JOSH_REPO_BLOCK",
             StatusCode::UNPROCESSABLE_ENTITY,
         ));
     }
@@ -995,7 +1005,7 @@ async fn handle_serve_namespace_request(
         Some(upstream) => upstream,
         None => {
             return Ok(make_response(
-                hyper::Body::from("SSH remote is not configured"),
+                "SSH remote is not configured",
                 hyper::StatusCode::SERVICE_UNAVAILABLE,
             ))
         }
@@ -1009,7 +1019,7 @@ async fn handle_serve_namespace_request(
         Ok(remote_refs) => remote_refs,
         Err(e) => {
             return Ok(make_response(
-                hyper::Body::from(e.to_string()),
+                e.to_string().as_str(),
                 hyper::StatusCode::FORBIDDEN,
             ))
         }
@@ -1019,7 +1029,7 @@ async fn handle_serve_namespace_request(
         Some(resolved_ref) => resolved_ref,
         None => {
             return Ok(make_response(
-                hyper::Body::from("Could not resolve remote ref"),
+                "Could not resolve remote ref",
                 hyper::StatusCode::INTERNAL_SERVER_ERROR,
             ))
         }
@@ -1039,13 +1049,13 @@ async fn handle_serve_namespace_request(
         Ok(_) => {}
         Err(FetchError::AuthRequired) => {
             return Ok(make_response(
-                hyper::Body::from("Access to upstream repo denied"),
+                "Access to upstream repo denied",
                 StatusCode::FORBIDDEN,
             ))
         }
         Err(FetchError::Other(e)) => {
             return Ok(make_response(
-                hyper::Body::from(e.to_string()),
+                e.to_string().as_str(),
                 StatusCode::INTERNAL_SERVER_ERROR,
             ))
         }
@@ -1060,7 +1070,7 @@ async fn handle_serve_namespace_request(
         Ok(filter) => filter,
         Err(e) => {
             return Ok(make_response(
-                hyper::Body::from(format!("Failed to parse filter: {}", e)),
+                format!("Failed to parse filter: {}", e).as_str(),
                 StatusCode::BAD_REQUEST,
             ))
         }
@@ -1074,10 +1084,11 @@ async fn handle_serve_namespace_request(
                     Ok(filter) => filter,
                     Err(e) => {
                         return Ok(make_response(
-                            hyper::Body::from(format!(
+                            format!(
                                 "Failed to parse prefix filter passed as command line argument: {}",
                                 e
-                            )),
+                            )
+                            .as_str(),
                             StatusCode::SERVICE_UNAVAILABLE,
                         ))
                     }
@@ -1093,7 +1104,7 @@ async fn handle_serve_namespace_request(
         Ok(ns) => ns,
         Err(e) => {
             return Ok(make_response(
-                hyper::Body::from(e.to_string()),
+                e.to_string().as_str(),
                 StatusCode::INTERNAL_SERVER_ERROR,
             ))
         }
@@ -1103,9 +1114,9 @@ async fn handle_serve_namespace_request(
     std::mem::drop(temp_ns);
 
     match serve_result {
-        Ok(_) => Ok(make_response(hyper::Body::empty(), StatusCode::NO_CONTENT)),
+        Ok(_) => Ok(make_response("", StatusCode::NO_CONTENT)),
         Err(e) => Ok(make_response(
-            hyper::Body::from(e.to_string()),
+            e.to_string().as_str(),
             StatusCode::INTERNAL_SERVER_ERROR,
         )),
     }
@@ -1114,8 +1125,8 @@ async fn handle_serve_namespace_request(
 #[tracing::instrument]
 async fn call_service(
     serv: Arc<JoshProxyService>,
-    req_auth: (josh_proxy::auth::Handle, Request<hyper::Body>),
-) -> josh::JoshResult<Response<hyper::Body>> {
+    req_auth: (josh_proxy::auth::Handle, Request<Incoming>),
+) -> josh::JoshResult<Response<Full<Bytes>>> {
     let (auth, req) = req_auth;
 
     let path = {
@@ -1151,7 +1162,7 @@ async fn call_service(
             if pu.rest.starts_with(':') {
                 let guessed_url = path.trim_end_matches("/info/refs");
                 return Ok(make_response(
-                    hyper::Body::from(formatdoc!(
+                    formatdoc!(
                         r#"
                         Invalid URL: "{0}"
 
@@ -1160,7 +1171,8 @@ async fn call_service(
                           {0}.git
                         "#,
                         guessed_url
-                    )),
+                    )
+                    .as_str(),
                     hyper::StatusCode::UNPROCESSABLE_ENTITY,
                 ));
             }
@@ -1182,7 +1194,7 @@ async fn call_service(
             return Ok(Response::builder()
                 .status(hyper::StatusCode::FOUND)
                 .header("Location", redirect_path)
-                .body(hyper::Body::empty())?);
+                .body(Full::new(Bytes::new()))?);
         }
     };
 
@@ -1204,7 +1216,7 @@ async fn call_service(
         Some(upstream) => upstream,
         None => {
             return Ok(make_response(
-                hyper::Body::from("HTTP remote is not configured"),
+                "HTTP remote is not configured",
                 hyper::StatusCode::SERVICE_UNAVAILABLE,
             ))
         }
@@ -1220,16 +1232,17 @@ async fn call_service(
         return Ok(Response::builder()
             .status(hyper::StatusCode::TEMPORARY_REDIRECT)
             .header("Location", format!("{}{}", remote_url, parsed_url.pathinfo))
-            .body(hyper::Body::empty())?);
+            .body(Full::new(Bytes::new()))?);
     }
 
     if is_repo_blocked(&meta) {
         return Ok(make_response(
-            hyper::Body::from(formatdoc!(
+            formatdoc!(
                 r#"
                     Access to this repo is blocked via JOSH_REPO_BLOCK
                     "#
-            )),
+            )
+            .as_str(),
             hyper::StatusCode::UNPROCESSABLE_ENTITY,
         ));
     }
@@ -1247,7 +1260,7 @@ async fn call_service(
                 "Basic realm=User Visible Realm",
             )
             .status(hyper::StatusCode::UNAUTHORIZED);
-        return Ok(builder.body(hyper::Body::empty())?);
+        return Ok(builder.body(Full::new(Bytes::new()))?);
     }
 
     if parsed_url.api == "/~/graphql" {
@@ -1284,11 +1297,11 @@ async fn call_service(
                     "Basic realm=User Visible Realm",
                 )
                 .status(hyper::StatusCode::UNAUTHORIZED);
-            return Ok(builder.body(hyper::Body::empty())?);
+            return Ok(builder.body(Full::new(Bytes::new()))?);
         }
         Err(FetchError::Other(e)) => {
             let builder = Response::builder().status(hyper::StatusCode::INTERNAL_SERVER_ERROR);
-            return Ok(builder.body(hyper::Body::from(e.0))?);
+            return Ok(builder.body(Full::new(Bytes::from(e.0)))?);
         }
     }
 
@@ -1378,7 +1391,7 @@ async fn serve_query(
     upstream_repo: String,
     filter: josh::filter::Filter,
     head_ref: &str,
-) -> josh::JoshResult<Response<hyper::Body>> {
+) -> josh::JoshResult<Response<Full<Bytes>>> {
     let tracing_span = tracing::span!(tracing::Level::TRACE, "render worker");
     let head_ref = head_ref.to_string();
     let res = tokio::task::spawn_blocking(move || -> josh::JoshResult<_> {
@@ -1421,15 +1434,15 @@ async fn serve_query(
                     .get("content-type")
                     .unwrap_or(&"text/plain".to_string()),
             )
-            .body(hyper::Body::from(res))?,
+            .body(Full::new(Bytes::from(res)))?,
 
         Ok(None) => Response::builder()
             .status(hyper::StatusCode::NOT_FOUND)
-            .body(hyper::Body::from("File not found".to_string()))?,
+            .body(Full::new(Bytes::from("File not found".to_string())))?,
 
         Err(res) => Response::builder()
             .status(hyper::StatusCode::UNPROCESSABLE_ENTITY)
-            .body(hyper::Body::from(res.to_string()))?,
+            .body(Full::new(Bytes::from(res.to_string())))?,
     })
 }
 
@@ -1506,11 +1519,8 @@ fn make_upstream(remotes: &Vec<cli::Remote>) -> josh::JoshResult<JoshProxyUpstre
 
 #[tokio::main]
 async fn run_proxy() -> josh::JoshResult<i32> {
-    let addr = format!("[::]:{}", ARGS.port).parse()?;
-    let upstream = make_upstream(&ARGS.remote).map_err(|e| {
-        eprintln!("Upstream parsing error: {}", &e);
-        e
-    })?;
+    let addr: SocketAddr = format!("[::]:{}", ARGS.port).parse()?;
+    let upstream = make_upstream(&ARGS.remote).map_err(|e| e)?;
 
     let local = std::path::PathBuf::from(&ARGS.local.as_ref().unwrap());
     let local = if local.is_absolute() {
@@ -1535,64 +1545,102 @@ async fn run_proxy() -> josh::JoshResult<i32> {
 
     let ps = proxy_service.clone();
 
-    let make_service = make_service_fn(move |_| {
-        let proxy_service = proxy_service.clone();
+    let listener = TcpListener::bind(addr).await?;
 
-        let service = service_fn(move |_req| {
+    let (shutdown_tx, shutdown_rx) = broadcast::channel(1);
+
+    let server_future = async move {
+        loop {
+            let mut rx = shutdown_rx.resubscribe();
+            let (tcp, _) = tokio::select! {
+                res = listener.accept() => match res {
+                Ok(value) => value,
+                Err(err) => { println!("Error {}", err);
+                continue;
+                }
+                },
+                _ = rx.recv() => {
+                    break;
+                }
+            };
+            let io = TokioIo::new(tcp);
             let proxy_service = proxy_service.clone();
 
-            let _s = tracing::span!(
-                tracing::Level::TRACE,
-                "http_request",
-                path = _req.uri().path()
-            );
-            let s = _s;
+            tokio::task::spawn(async move {
+                let conn = http1::Builder::new()
+                    .timer(TokioTimer::new())
+                    .serve_connection(
+                        io,
+                        service_fn(move |_req| {
+                            let proxy_service = proxy_service.clone();
 
-            async move {
-                let r = if let Ok(req_auth) = josh_proxy::auth::strip_auth(_req) {
-                    match call_service(proxy_service, req_auth)
-                        .instrument(s.clone())
-                        .await
-                    {
-                        Ok(r) => r,
-                        Err(e) => make_response(
-                            hyper::Body::from(match e {
-                                JoshError(s) => s,
-                            }),
-                            hyper::StatusCode::INTERNAL_SERVER_ERROR,
-                        ),
+                            let _s = tracing::span!(
+                                tracing::Level::TRACE,
+                                "http_request",
+                                path = _req.uri().path()
+                            );
+                            let s = _s;
+
+                            async move {
+                                let r = if let Ok(req_auth) = josh_proxy::auth::strip_auth(_req) {
+                                    match call_service(proxy_service, req_auth)
+                                        .instrument(s.clone())
+                                        .await
+                                    {
+                                        Ok(r) => r,
+                                        Err(e) => make_response(
+                                            match e {
+                                                JoshError(s) => s,
+                                            }
+                                            .as_str(),
+                                            hyper::StatusCode::INTERNAL_SERVER_ERROR,
+                                        ),
+                                    }
+                                } else {
+                                    make_response(
+                                        "JoshError( strip_auth)",
+                                        hyper::StatusCode::INTERNAL_SERVER_ERROR,
+                                    )
+                                };
+                                let _e = s.enter();
+                                trace_http_response_code(s.clone(), r.status());
+                                r
+                            }
+                            .map(Ok::<_, hyper::http::Error>)
+                        }),
+                    );
+                pin!(conn);
+                let shutdown_rx = rx.recv();
+                pin!(shutdown_rx);
+
+                tokio::select! {
+                    res = conn.as_mut() => {
+                        if let Err(e) = res {
+                            println!("Error serving connection: {:?}", e);
+                        }
+                    },
+                    _ = shutdown_rx => {
+                        println!("Graceful shutdown requested");
+                        conn.as_mut().graceful_shutdown();
                     }
-                } else {
-                    make_response(
-                        hyper::Body::from("JoshError(strip_auth)"),
-                        hyper::StatusCode::INTERNAL_SERVER_ERROR,
-                    )
                 };
-                let _e = s.enter();
-                trace_http_response_code(s.clone(), r.status());
-                r
-            }
-            .map(Ok::<_, hyper::http::Error>)
-        });
-
-        future::ok::<_, hyper::http::Error>(service)
-    });
-
-    let server = Server::bind(&addr).serve(make_service);
+            });
+        }
+    };
 
     println!("Now listening on {}", addr);
-
-    let server_future = server.with_graceful_shutdown(shutdown_signal());
 
     if ARGS.no_background {
         tokio::select!(
             r = server_future => println!("http server exited: {:?}", r),
+            _ = shutdown_signal(shutdown_tx) => println!("shutdown requested"),
         );
     } else {
         tokio::select!(
             r = run_housekeeping(local) => println!("run_housekeeping exited: {:?}", r),
             r = run_polling(ps.clone()) => println!("run_polling exited: {:?}", r),
             r = server_future => println!("http server exited: {:?}", r),
+            _ = shutdown_signal(shutdown_tx) => println!("shutdown requested"),
         );
     }
     Ok(0)
@@ -1704,15 +1752,19 @@ fn update_hook(refname: &str, old: &str, new: &str) -> josh::JoshResult<i32> {
 
 async fn serve_graphql(
     serv: Arc<JoshProxyService>,
-    req: Request<hyper::Body>,
+    req: Request<Incoming>,
     upstream_repo: String,
     upstream: String,
     auth: josh_proxy::auth::Handle,
-) -> josh::JoshResult<Response<hyper::Body>> {
+) -> josh::JoshResult<Response<Full<Bytes>>> {
     let remote_url = upstream.clone() + upstream_repo.as_str();
     let parsed = match josh_proxy::juniper_hyper::parse_req(req).await {
         Ok(r) => r,
-        Err(resp) => return Ok(resp),
+        Err(resp) => {
+            return Ok(hyper::Response::new(Full::new(Bytes::from(
+                resp.collect().await?.to_bytes(),
+            ))))
+        }
     };
 
     let transaction_mirror = josh::cache::Transaction::open(
@@ -1771,12 +1823,12 @@ async fn serve_graphql(
                             "Basic realm=User Visible Realm",
                         )
                         .status(hyper::StatusCode::UNAUTHORIZED);
-                    return Ok(builder.body(hyper::Body::empty())?);
+                    return Ok(builder.body(Full::new(Bytes::new()))?);
                 }
                 Err(FetchError::Other(e)) => {
                     let builder =
                         Response::builder().status(hyper::StatusCode::INTERNAL_SERVER_ERROR);
-                    return Ok(builder.body(hyper::Body::from(e.0))?);
+                    return Ok(builder.body(Full::new(Bytes::from(e.0)))?);
                 }
             };
 
@@ -1790,8 +1842,8 @@ async fn serve_graphql(
         hyper::StatusCode::BAD_REQUEST
     };
 
-    let body = hyper::Body::from(serde_json::to_string_pretty(&res).unwrap());
-    let mut resp = Response::new(hyper::Body::empty());
+    let body = Full::new(Bytes::from(serde_json::to_string_pretty(&res).unwrap()));
+    let mut resp = Response::new(Full::new(Bytes::new()));
     *resp.status_mut() = code;
     resp.headers_mut().insert(
         hyper::header::CONTENT_TYPE,
@@ -1847,11 +1899,12 @@ async fn serve_graphql(
     Ok(gql_result)
 }
 
-async fn shutdown_signal() {
+async fn shutdown_signal(shutdown_tx: broadcast::Sender<()>) {
     // Wait for the CTRL+C signal
     tokio::signal::ctrl_c()
         .await
         .expect("failed to install CTRL+C signal handler");
+    let _ = shutdown_tx.send(());
     println!("shutdown_signal");
 }
 
