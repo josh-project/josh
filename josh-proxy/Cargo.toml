@@ -10,15 +10,17 @@ repository = "https://github.com/josh-project/josh"
 version = "22.4.15"
 
 [dependencies]
-bytes = "1.5.0"
 base64 = "0.21.7"
+bytes = "1.5.0"
 clap = { workspace = true }
 futures = { workspace = true }
-hyper = { version = "0.14.28", features = ["stream"] }
+hyper = { version = "1.1.0" }
 hyper-reverse-proxy = { workspace = true }
-hyper-staticfile = "0.9.5"
-hyper-tls = "0.5.0"
+hyper-staticfile = "0.10.0"
+hyper-tls = "0.6.0"
 hyper_cgi = { path = "../hyper_cgi" }
+hyper-util = { version = "0.1.2", features = ["client", "client-legacy", "http1", "tokio"] }
+http-body-util = "0.1.0"
 indoc = "2.0.4"
 josh = {path = "../josh-core" }
 lazy_static = { workspace = true }
