@@ -1,21 +1,28 @@
 //! This module implements a do_cgi function, to run CGI scripts with hyper
+use bytes::Bytes;
 use futures::TryStreamExt;
-use futures::stream::StreamExt;
-use hyper::{Request, Response};
+use http_body_util::{BodyStream, Full};
+use hyper::{Request, Response, body::Body};
+use std::io;
 use std::process::Stdio;
 use std::str::FromStr;
 use tokio::io::AsyncBufReadExt;
 use tokio::io::AsyncReadExt;
+use tokio::io::AsyncWriteExt;
 use tokio::io::BufReader;
 use tokio::process::Command;
 
 /// do_cgi is an async function that takes a hyper request and a CGI compatible
 /// command, and passes the request to be executed to the command.
-/// It then returns a hyper response and the stderr output of the command.
-pub async fn do_cgi(
-    req: Request<hyper::Body>,
+/// It then returns an hyper response and the stderr output of the command.
+pub async fn do_cgi<B, E>(
+    req: Request<B>,
     cmd: Command,
-) -> (hyper::http::Response<hyper::Body>, Vec<u8>) {
+) -> (hyper::http::Response<Full<Bytes>>, Vec<u8>)
+where
+    B: hyper::body::Body<Error = E>,
+    E: std::error::Error + Sync + Send + 'static,
+{
     let mut cmd = cmd;
     setup_cmd(&mut cmd, &req);
 
@@ -56,14 +63,13 @@ pub async fn do_cgi(
         }
     };
 
-    let req_body = req
-        .into_body()
-        .map(|result| {
-            result.map_err(|_error| std::io::Error::new(std::io::ErrorKind::Other, "Error!"))
-        })
-        .into_async_read();
+    let stream_of_frames = BodyStream::new(req.into_body());
+    let stream_of_bytes = stream_of_frames
+        .try_filter_map(|frame| async move { Ok(frame.into_data().ok()) })
+        .map_err(|err| io::Error::new(io::ErrorKind::Other, err));
+    let async_read = tokio_util::io::StreamReader::new(stream_of_bytes);
+    let mut req_body = std::pin::pin!(async_read);
 
-    let mut req_body = to_tokio_async_read(req_body);
     let mut err_output = vec![];
 
     let mut stdout = BufReader::new(stdout);
@@ -71,7 +77,9 @@ pub async fn do_cgi(
     let mut data = vec![];
     let write_stdin = async {
         let mut stdin = stdin;
-        tokio::io::copy(&mut req_body, &mut stdin).await
+        let res = tokio::io::copy(&mut req_body, &mut stdin).await;
+        stdin.flush().await.unwrap();
+        res
     };
 
     let read_stderr = async {
@@ -105,7 +113,7 @@ pub async fn do_cgi(
             line = String::new();
         }
         stdout.read_to_end(&mut data).await?;
-        convert_error_io_hyper(response.body(hyper::Body::from(data)))
+        convert_error_io_hyper(response.body(Full::new(Bytes::from(data))))
     };
 
     let wait_process = async { child.wait().await };
@@ -119,7 +127,7 @@ pub async fn do_cgi(
     (error_response(), err_output)
 }
 
-fn setup_cmd(cmd: &mut Command, req: &Request<hyper::Body>) {
+fn setup_cmd(cmd: &mut Command, req: &Request<impl Body>) {
     cmd.stdout(Stdio::piped());
     cmd.stderr(Stdio::piped());
     cmd.stdin(Stdio::piped());
@@ -157,14 +165,10 @@ fn setup_cmd(cmd: &mut Command, req: &Request<hyper::Body>) {
         );
 }
 
-fn to_tokio_async_read(r: impl futures::io::AsyncRead) -> impl tokio::io::AsyncRead {
-    tokio_util::compat::FuturesAsyncReadCompatExt::compat(r)
-}
-
-fn error_response() -> hyper::Response<hyper::Body> {
+fn error_response() -> hyper::Response<Full<Bytes>> {
     Response::builder()
         .status(hyper::StatusCode::INTERNAL_SERVER_ERROR)
-        .body(hyper::Body::empty())
+        .body(Full::new(Bytes::new()))
         .unwrap()
 }
 
@@ -177,7 +181,8 @@ fn convert_error_io_hyper<T>(res: Result<T, hyper::http::Error>) -> Result<T, st
 
 #[cfg(test)]
 mod tests {
-    use hyper::body::HttpBody;
+    use bytes::Bytes;
+    use http_body_util::{BodyExt, Full};
 
     #[tokio::test]
     async fn run_cmd() {
@@ -193,7 +198,7 @@ mod tests {
             .header("Accept-Encoding", "deflate, gzip, br")
             .header("Accept-Language", "en-US, *;q=0.9")
             .header("Pragma", "no-cache")
-            .body(hyper::Body::from("\r\na body"))
+            .body(Full::new(Bytes::from("\r\na body")))
             .unwrap();
 
         let mut cmd = tokio::process::Command::new("cat");
@@ -203,7 +208,7 @@ mod tests {
 
         assert_eq!(resp.status(), hyper::StatusCode::OK);
 
-        let resp_string = resp.into_body().data().await.unwrap().unwrap().to_vec();
+        let resp_string = resp.into_body().collect().await.unwrap().to_bytes();
         let resp_string = String::from_utf8_lossy(&resp_string);
 
         assert_eq!("", std::str::from_utf8(&stderr).unwrap());

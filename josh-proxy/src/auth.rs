@@ -1,4 +1,3 @@
-use hyper::body::HttpBody;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 
@@ -6,6 +5,11 @@ use std::sync::Arc;
 // call its methods without adding to the namespace.
 use base64::engine::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
+use bytes::Bytes;
+use http_body_util::{BodyExt, Empty};
+use hyper::body::Incoming;
+use hyper_util::client::legacy::Client;
+use hyper_util::rt::TokioExecutor;
 use tracing::Instrument;
 
 // Auths in those groups are independent of each other.
@@ -144,30 +148,36 @@ pub async fn check_http_auth(url: &str, auth: &Handle, required: bool) -> josh::
     let auth_header = AUTH.lock()?.get(auth).cloned().unwrap_or_default();
 
     let refs_url = format!("{}/info/refs?service=git-upload-pack", url);
-    let do_request = || {
+    let do_request = {
         let refs_url = refs_url.clone();
-        let do_request_span = tracing::info_span!("check_http_auth: make request");
+        let auth_header = auth_header.clone();
 
-        async move {
-            let https = hyper_tls::HttpsConnector::new();
-            let client = hyper::Client::builder().build::<_, hyper::Body>(https);
+        move || {
+            let refs_url = refs_url.clone();
+            let auth_header = auth_header.clone();
+            let do_request_span = tracing::info_span!("check_http_auth: make request");
 
-            let builder = hyper::Request::builder()
-                .method(hyper::Method::GET)
-                .uri(&refs_url);
+            async move {
+                let https = hyper_tls::HttpsConnector::new();
+                let client = Client::builder(TokioExecutor::new()).build::<_, Empty<Bytes>>(https);
 
-            let builder = if let Some(value) = auth_header.header {
-                builder.header(hyper::header::AUTHORIZATION, value)
-            } else {
-                builder
-            };
+                let builder = hyper::Request::builder()
+                    .method(hyper::Method::GET)
+                    .uri(&refs_url);
 
-            let request = builder.body(hyper::Body::empty())?;
-            let resp = client.request(request).await?;
+                let builder = if let Some(value) = auth_header.header.clone() {
+                    builder.header(hyper::header::AUTHORIZATION, value)
+                } else {
+                    builder
+                };
 
-            Ok::<_, josh::JoshError>(resp)
+                let request = builder.body(Empty::new())?;
+                let resp = client.request(request).await?;
+
+                Ok::<_, josh::JoshError>(resp)
+            }
+            .instrument(do_request_span)
         }
-        .instrument(do_request_span)
     };
 
     // Only lock the mutex if auth handle is not empty, because otherwise
@@ -245,8 +255,8 @@ pub async fn check_http_auth(url: &str, auth: &Handle, required: bool) -> josh::
 }
 
 pub fn strip_auth(
-    req: hyper::Request<hyper::Body>,
-) -> josh::JoshResult<(Handle, hyper::Request<hyper::Body>)> {
+    req: hyper::Request<Incoming>,
+) -> josh::JoshResult<(Handle, hyper::Request<Incoming>)> {
     let mut req = req;
     let header: Option<hyper::header::HeaderValue> =
         req.headers_mut().remove(hyper::header::AUTHORIZATION);
