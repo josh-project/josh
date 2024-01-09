@@ -384,14 +384,17 @@ fn resolve_workspace_redirect<'a>(
     repo: &'a git2::Repository,
     tree: &'a git2::Tree<'a>,
     path: &Path,
-) -> Option<Filter> {
+) -> Option<(Filter, std::path::PathBuf)> {
     let f = parse::parse(&tree::get_blob(repo, tree, &path.join("workspace.josh")))
         .unwrap_or_else(|_| to_filter(Op::Empty));
 
-    if let Op::Workspace(_) = to_op(f) {
-        Some(chain(
-            to_filter(Op::Exclude(to_filter(Op::File(path.to_owned())))),
-            f,
+    if let Op::Workspace(p) = to_op(f) {
+        Some((
+            chain(
+                to_filter(Op::Exclude(to_filter(Op::File(path.to_owned())))),
+                f,
+            ),
+            p,
         ))
     } else {
         None
@@ -570,7 +573,8 @@ fn apply_to_commit2(
                 .map(|parent| transaction.get(filter, parent))
                 .collect::<Option<Vec<git2::Oid>>>();
 
-            if let Some(redirect) = resolve_workspace_redirect(repo, &commit.tree()?, ws_path) {
+            if let Some((redirect, _)) = resolve_workspace_redirect(repo, &commit.tree()?, ws_path)
+            {
                 if let Some(r) = apply_to_commit2(&to_op(redirect), &commit, transaction)? {
                     transaction.insert(filter, commit.id(), r, true);
                     return Ok(Some(r));
@@ -588,17 +592,22 @@ fn apply_to_commit2(
                 .map(|parent| {
                     rs_tracing::trace_scoped!("parent", "id": parent.id().to_string());
 
+                    let p = if let Some((_, p)) =
+                        resolve_workspace_redirect(repo, &parent.tree()?, ws_path)
+                    {
+                        p
+                    } else {
+                        ws_path.clone()
+                    };
+
                     let pcw = get_workspace(
                         repo,
                         &parent.tree().unwrap_or_else(|_| tree::empty(repo)),
-                        ws_path,
+                        &p,
                     );
+                    let f = opt::optimize(to_filter(Op::Subtract(cw, pcw)));
 
-                    apply_to_commit2(
-                        &to_op(opt::optimize(to_filter(Op::Subtract(cw, pcw)))),
-                        &parent,
-                        transaction,
-                    )
+                    apply_to_commit2(&to_op(f), &parent, transaction)
                 })
                 .collect::<JoshResult<Option<Vec<_>>>>()?;
 
@@ -764,7 +773,7 @@ fn apply2<'a>(
             let base = to_filter(Op::Subdir(path.to_owned()));
             let wsj_file = chain(base, wsj_file);
 
-            if let Some(redirect) = resolve_workspace_redirect(repo, &tree, path) {
+            if let Some((redirect, _)) = resolve_workspace_redirect(repo, &tree, path) {
                 return apply(transaction, redirect, tree);
             }
 
