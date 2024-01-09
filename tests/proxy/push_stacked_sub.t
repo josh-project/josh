@@ -20,13 +20,13 @@
 
   $ echo contents2 > file2
   $ git add file2
-  $ git commit -m "Change: 1234" 1> /dev/null
+  $ git commit -m "Change-Id: 1234" 1> /dev/null
   $ echo contents2 > file7
   $ git add file7
-  $ git commit -m "Change: foo7" 1> /dev/null
+  $ git commit -m "Change-Id: foo7" 1> /dev/null
   $ git log --decorate --graph --pretty="%s %d"
-  * Change: foo7  (HEAD -> master)
-  * Change: 1234 
+  * Change-Id: foo7  (HEAD -> master)
+  * Change-Id: 1234 
   * add file1  (origin/master, origin/HEAD)
   $ git push -o author=josh@example.com origin master:refs/stack/for/master
   remote: josh-proxy        
@@ -74,7 +74,7 @@
   $ git push -o author=josh@example.com origin master:refs/stack/for/master
   remote: josh-proxy        
   remote: response from upstream:        
-  remote: rejecting to push b24ca49011fe415d9668f7feb40cd3deb5c20a61 without label        
+  remote: rejecting to push a3065162ecee0fecc977ec04a275e10b5e15a39c without id        
   remote: 
   remote: 
   remote: error: hook declined to update refs/stack/for/master        
@@ -95,8 +95,8 @@
    * [new branch]      @heads/other_branch/josh@example.com -> origin/@heads/other_branch/josh@example.com
   $ git log --decorate --graph --pretty="%s %d"
   * add file3  (HEAD -> master)
-  * Change: foo7  (origin/@heads/other_branch/josh@example.com, origin/@heads/master/josh@example.com, origin/@changes/other_branch/josh@example.com/foo7, origin/@changes/master/josh@example.com/foo7)
-  * Change: 1234  (origin/@changes/other_branch/josh@example.com/1234, origin/@changes/master/josh@example.com/1234)
+  * Change-Id: foo7  (origin/@heads/other_branch/josh@example.com, origin/@heads/master/josh@example.com, origin/@changes/other_branch/josh@example.com/foo7, origin/@changes/master/josh@example.com/foo7)
+  * Change-Id: 1234  (origin/@changes/other_branch/josh@example.com/1234, origin/@changes/master/josh@example.com/1234)
   * add file1  (origin/master, origin/HEAD)
 
   $ cd ${TESTTMP}/real_repo
@@ -132,7 +132,7 @@ Make sure all temporary namespace got removed
   ]
   .
   |-- josh
-  |   `-- 17
+  |   `-- 18
   |       `-- sled
   |           |-- blobs
   |           |-- conf
@@ -145,11 +145,12 @@ Make sure all temporary namespace got removed
   |   |-- info
   |   |   `-- exclude
   |   |-- objects
+  |   |   |-- 2b
+  |   |   |   `-- b94719cad2e76eb5dbcae874a2b0e44521e802
   |   |   |-- 3d
   |   |   |   `-- 77ff51363c9825cc2a221fc0ba5a883a1a2c72
   |   |   |-- 6b
-  |   |   |   |-- 46faacade805991bcaea19382c9d941828ce80
-  |   |   |   `-- cb941a811aa3b70b6794a44d28b926a466002a
+  |   |   |   `-- 46faacade805991bcaea19382c9d941828ce80
   |   |   |-- a0
   |   |   |   `-- 24003ee1acc6bf70318a46e7b6df651b9dc246
   |   |   |-- b2
@@ -163,8 +164,8 @@ Make sure all temporary namespace got removed
   |   |   |   `-- 27a2e3a6bfbb7307f522ad94fdfc8c20b92967
   |   |   |-- c8
   |   |   |   `-- 2fc150c43f13cc56c0e9caeba01b58ec612022
-  |   |   |-- d1
-  |   |   |   `-- 030c2e0611fd64e11a6485143e48cd30b89829
+  |   |   |-- e3
+  |   |   |   `-- a269743538338b0d059eda2f72976ec29220a8
   |   |   |-- info
   |   |   `-- pack
   |   `-- refs
@@ -198,19 +199,23 @@ Make sure all temporary namespace got removed
       |-- info
       |   `-- exclude
       |-- objects
-      |   |-- 06
-      |   |   `-- 30e5c5b53e8c621a498904cc4b851f481d8fac
       |   |-- 0b
       |   |   `-- 4cf6c9efbbda1eada39fa9c1d21d2525b027bb
-      |   |-- 50
-      |   |   `-- 71f95f7f5d8fde1629ba2fcf134008b56ddf8e
+      |   |-- 11
+      |   |   `-- 06a6f09b169109f5ebd17428219142c67e84b9
+      |   |-- 2b
+      |   |   `-- b94719cad2e76eb5dbcae874a2b0e44521e802
+      |   |-- 40
+      |   |   `-- 3e13a101fd75090369ffc317afafcfb646c576
+      |   |-- 4b
+      |   |   `-- 5ffb79a1f3852443bd747a6b213bf1e4abe168
       |   |-- 6b
-      |   |   |-- 46faacade805991bcaea19382c9d941828ce80
-      |   |   `-- cb941a811aa3b70b6794a44d28b926a466002a
+      |   |   `-- 46faacade805991bcaea19382c9d941828ce80
       |   |-- 88
       |   |   `-- 2b84c5d3241087bc41982a744b72b7a174c49e
+      |   |-- a3
+      |   |   `-- 065162ecee0fecc977ec04a275e10b5e15a39c
       |   |-- b2
-      |   |   |-- 4ca49011fe415d9668f7feb40cd3deb5c20a61
       |   |   `-- ea883bc5df63565960a38cad7a57f73ac66eaa
       |   |-- ba
       |   |   |-- 7e17233d9f79c96cb694959eb065302acd96a6
@@ -219,10 +224,8 @@ Make sure all temporary namespace got removed
       |   |   `-- 33ab805ad4ef7ddda5b51e4a78ec0fac6b699a
       |   |-- c6
       |   |   `-- 27a2e3a6bfbb7307f522ad94fdfc8c20b92967
-      |   |-- d1
-      |   |   `-- 030c2e0611fd64e11a6485143e48cd30b89829
-      |   |-- ec
-      |   |   `-- eda0a03c409bb2944ee1755af4fedb7e5b60cf
+      |   |-- e3
+      |   |   `-- a269743538338b0d059eda2f72976ec29220a8
       |   |-- info
       |   `-- pack
       `-- refs
@@ -230,7 +233,7 @@ Make sure all temporary namespace got removed
           |-- namespaces
           `-- tags
   
-  55 directories, 44 files
+  58 directories, 44 files
 
 $ cat ${TESTTMP}/josh-proxy.out
 $ cat ${TESTTMP}/josh-proxy.out | grep REPO_UPDATE

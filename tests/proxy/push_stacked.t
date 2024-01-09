@@ -21,13 +21,13 @@
 
   $ echo contents2 > file2
   $ git add file2
-  $ git commit -m "Change: 1234" 1> /dev/null
+  $ git commit -m "Change-Id: 1234" 1> /dev/null
   $ echo contents2 > file7
   $ git add file7
-  $ git commit -m "Change: foo7" 1> /dev/null
+  $ git commit -m "Change-Id: foo7" 1> /dev/null
   $ git log --decorate --graph --pretty="%s %d"
-  * Change: foo7  (HEAD -> master)
-  * Change: 1234 
+  * Change-Id: foo7  (HEAD -> master)
+  * Change-Id: 1234 
   * add file1  (origin/master, origin/HEAD)
   $ git push -o author=foo@example.com origin master:refs/stack/for/master
   remote: josh-proxy        
@@ -57,7 +57,7 @@
   $ git push -o author=josh@example.com origin master:refs/stack/for/master
   remote: josh-proxy        
   remote: response from upstream:        
-  remote: rejecting to push 23c67dccc160a868cefdab0bd9d7141b7276c4f3 without label        
+  remote: rejecting to push 3ad32b3bd3bb778441e7eae43930d8dc6293eddc without id        
   remote: 
   remote: 
   remote: error: hook declined to update refs/stack/for/master        
@@ -69,7 +69,7 @@
   remote: josh-proxy        
   remote: response from upstream:        
   remote: To http://localhost:8001/real_repo.git        
-  remote:    4903654..23c67dc  master -> @heads/master/foo@example.com        
+  remote:    ec41aad..3ad32b3  master -> @heads/master/foo@example.com        
   remote: 
   remote: 
   To http://localhost:8002/real_repo.git
@@ -86,8 +86,8 @@
 
   $ git log --decorate --graph --pretty="%s %d"
   * add file3  (HEAD -> master, origin/@heads/master/foo@example.com)
-  * Change: foo7  (origin/@heads/master/josh@example.com, origin/@changes/master/josh@example.com/foo7)
-  * Change: 1234  (origin/@changes/master/josh@example.com/1234)
+  * Change-Id: foo7  (origin/@heads/master/josh@example.com, origin/@changes/master/josh@example.com/foo7)
+  * Change-Id: 1234  (origin/@changes/master/josh@example.com/1234)
   * add file1  (origin/master, origin/HEAD)
 
   $ cd ${TESTTMP}/real_repo
@@ -116,10 +116,10 @@ get listed if they differ from HEAD
 
   $ git ls-remote http://localhost:8002/real_repo.git
   4950fa502f51b7bfda0d7975dbff9b0f9a9481ca\tHEAD (esc)
-  82599da2054669a020103a7bd8aa456540a0c5ee\trefs/heads/@changes/master/josh@example.com/1234 (esc)
-  4903654ec80c5cff86ab37a0b9d7bcf8332e8c54\trefs/heads/@changes/master/josh@example.com/foo7 (esc)
-  23c67dccc160a868cefdab0bd9d7141b7276c4f3\trefs/heads/@heads/master/foo@example.com (esc)
-  4903654ec80c5cff86ab37a0b9d7bcf8332e8c54\trefs/heads/@heads/master/josh@example.com (esc)
+  3b0e3dbefd779ec54d92286047f32d3129161c0d\trefs/heads/@changes/master/josh@example.com/1234 (esc)
+  ec41aad70b4b898baf48efeb795a7753d9674152\trefs/heads/@changes/master/josh@example.com/foo7 (esc)
+  3ad32b3bd3bb778441e7eae43930d8dc6293eddc\trefs/heads/@heads/master/foo@example.com (esc)
+  ec41aad70b4b898baf48efeb795a7753d9674152\trefs/heads/@heads/master/josh@example.com (esc)
   4950fa502f51b7bfda0d7975dbff9b0f9a9481ca\trefs/heads/master (esc)
 
   $ git ls-remote http://localhost:8002/real_repo.git:/sub1.git
@@ -133,9 +133,9 @@ get listed if they differ from HEAD
   $ git ls-remote http://localhost:8002/real_repo.git::file7.git
   23b2396b6521abcd906f16d8492c5aeacaee06ed\tHEAD (esc)
   23b2396b6521abcd906f16d8492c5aeacaee06ed\trefs/heads/@changes/master/josh@example.com/1234 (esc)
-  57a39cc050b1493cf6313822f0de3cee3ca4f39a\trefs/heads/@changes/master/josh@example.com/foo7 (esc)
-  57a39cc050b1493cf6313822f0de3cee3ca4f39a\trefs/heads/@heads/master/foo@example.com (esc)
-  57a39cc050b1493cf6313822f0de3cee3ca4f39a\trefs/heads/@heads/master/josh@example.com (esc)
+  08c82a20e92d548ff32f86d634b82da6756e1f5f\trefs/heads/@changes/master/josh@example.com/foo7 (esc)
+  08c82a20e92d548ff32f86d634b82da6756e1f5f\trefs/heads/@heads/master/foo@example.com (esc)
+  08c82a20e92d548ff32f86d634b82da6756e1f5f\trefs/heads/@heads/master/josh@example.com (esc)
   23b2396b6521abcd906f16d8492c5aeacaee06ed\trefs/heads/master (esc)
 
 Make sure all temporary namespace got removed
@@ -151,7 +151,7 @@ Make sure all temporary namespace got removed
   ]
   .
   |-- josh
-  |   `-- 17
+  |   `-- 18
   |       `-- sled
   |           |-- blobs
   |           |-- conf
@@ -164,17 +164,16 @@ Make sure all temporary namespace got removed
   |   |-- info
   |   |   `-- exclude
   |   |-- objects
-  |   |   |-- 23
-  |   |   |   `-- c67dccc160a868cefdab0bd9d7141b7276c4f3
+  |   |   |-- 3a
+  |   |   |   `-- d32b3bd3bb778441e7eae43930d8dc6293eddc
+  |   |   |-- 3b
+  |   |   |   `-- 0e3dbefd779ec54d92286047f32d3129161c0d
   |   |   |-- 3d
   |   |   |   `-- 77ff51363c9825cc2a221fc0ba5a883a1a2c72
   |   |   |-- 49
-  |   |   |   |-- 03654ec80c5cff86ab37a0b9d7bcf8332e8c54
   |   |   |   `-- 50fa502f51b7bfda0d7975dbff9b0f9a9481ca
   |   |   |-- 6b
   |   |   |   `-- 46faacade805991bcaea19382c9d941828ce80
-  |   |   |-- 82
-  |   |   |   `-- 599da2054669a020103a7bd8aa456540a0c5ee
   |   |   |-- 85
   |   |   |   `-- 90a3b0b3086ab857b91581c320e377dc9780ea
   |   |   |-- 90
@@ -185,6 +184,8 @@ Make sure all temporary namespace got removed
   |   |   |   `-- 24003ee1acc6bf70318a46e7b6df651b9dc246
   |   |   |-- b2
   |   |   |   `-- dd517c55420a48cb543e0195b4751bf514b941
+  |   |   |-- ec
+  |   |   |   `-- 41aad70b4b898baf48efeb795a7753d9674152
   |   |   |-- ed
   |   |   |   `-- b2a5b9c65fae1d20c1b1fb777d1ea025456faa
   |   |   |-- info
@@ -215,25 +216,24 @@ Make sure all temporary namespace got removed
       |-- info
       |   `-- exclude
       |-- objects
+      |   |-- 08
+      |   |   `-- c82a20e92d548ff32f86d634b82da6756e1f5f
       |   |-- 0b
       |   |   `-- 4cf6c9efbbda1eada39fa9c1d21d2525b027bb
       |   |-- 0f
       |   |   `-- 8d6bce4783eb0366cc72cb5f6fb7952c360d89
       |   |-- 23
-      |   |   |-- b2396b6521abcd906f16d8492c5aeacaee06ed
-      |   |   `-- c67dccc160a868cefdab0bd9d7141b7276c4f3
-      |   |-- 49
-      |   |   `-- 03654ec80c5cff86ab37a0b9d7bcf8332e8c54
+      |   |   `-- b2396b6521abcd906f16d8492c5aeacaee06ed
+      |   |-- 38
+      |   |   `-- 25d17d9f46345e352ea6d1d0a89f2be16a1b2c
+      |   |-- 3a
+      |   |   `-- d32b3bd3bb778441e7eae43930d8dc6293eddc
+      |   |-- 3b
+      |   |   `-- 0e3dbefd779ec54d92286047f32d3129161c0d
       |   |-- 4b
       |   |   `-- 825dc642cb6eb9a060e54bf8d69288fbee4904
-      |   |-- 57
-      |   |   `-- a39cc050b1493cf6313822f0de3cee3ca4f39a
       |   |-- 6b
       |   |   `-- 46faacade805991bcaea19382c9d941828ce80
-      |   |-- 82
-      |   |   `-- 599da2054669a020103a7bd8aa456540a0c5ee
-      |   |-- 8f
-      |   |   `-- f5dfb4fb8ef665cf128d90b68f0ed2f612cafd
       |   |-- 96
       |   |   `-- 539577d449c8e5446b5339c20436a13ec51f41
       |   |-- 9a
@@ -242,6 +242,8 @@ Make sure all temporary namespace got removed
       |   |   `-- a557394ce29f000108607abd97f19fed4d1b7c
       |   |-- b2
       |   |   `-- dd517c55420a48cb543e0195b4751bf514b941
+      |   |-- ec
+      |   |   `-- 41aad70b4b898baf48efeb795a7753d9674152
       |   |-- ed
       |   |   `-- b2a5b9c65fae1d20c1b1fb777d1ea025456faa
       |   |-- info
@@ -251,7 +253,7 @@ Make sure all temporary namespace got removed
           |-- namespaces
           `-- tags
   
-  57 directories, 44 files
+  59 directories, 44 files
 
 $ cat ${TESTTMP}/josh-proxy.out
 $ cat ${TESTTMP}/josh-proxy.out | grep REPO_UPDATE
