@@ -35,21 +35,21 @@ fn die(message: &str) -> ! {
 
 #[derive(thiserror::Error, Debug)]
 enum CallError {
-    FifoError(#[from] std::io::Error),
-    RequestError(#[from] reqwest::Error),
-    RemoteError { status: StatusCode, body: Vec<u8> },
+    Fifo(#[from] std::io::Error),
+    Request(#[from] reqwest::Error),
+    Remote { status: StatusCode, body: Vec<u8> },
 }
 
 impl Display for CallError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            CallError::FifoError(e) => {
+            CallError::Fifo(e) => {
                 write!(f, "{:?}", e)
             }
-            CallError::RequestError(e) => {
+            CallError::Request(e) => {
                 write!(f, "{:?}", e)
             }
-            CallError::RemoteError { status, body } => {
+            CallError::Remote { status, body } => {
                 write!(f, "Remote backend returned error: ")?;
                 write!(f, "status code: {}, ", status)?;
                 write!(f, "body: {}", String::from_utf8_lossy(body).into_owned())
@@ -158,7 +158,7 @@ async fn handle_command(
 
         match status {
             StatusCode::OK | StatusCode::NO_CONTENT => Ok(()),
-            code => Err(CallError::RemoteError {
+            code => Err(CallError::Remote {
                 status: code,
                 body: bytes.to_vec(),
             }),

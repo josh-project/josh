@@ -118,7 +118,7 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
     let push_options: std::collections::HashMap<String, String> =
         serde_json::from_str(&push_options_string)?;
 
-    for (refname, (old, new)) in repo_update.refs.iter() {
+    if let Some((refname, (old, new))) = repo_update.refs.iter().next() {
         tracing::debug!("REPO_UPDATE env ok");
 
         let transaction = josh::cache::Transaction::open(
@@ -213,7 +213,7 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
         };
 
         let mut changes =
-            if push_mode == PushMode::Stack || push_mode == PushMode::Split || author != "" {
+            if push_mode == PushMode::Stack || push_mode == PushMode::Split || !author.is_empty() {
                 Some(vec![])
             } else {
                 None
@@ -426,6 +426,7 @@ fn split_changes(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn push_head_url(
     repo: &git2::Repository,
     alternate: &str,
@@ -464,7 +465,7 @@ pub fn push_head_url(
 fn create_repo_base(path: &PathBuf) -> josh::JoshResult<josh::shell::Shell> {
     std::fs::create_dir_all(path).expect("can't create_dir_all");
 
-    if !gix::open(path).is_ok() {
+    if gix::open(path).is_err() {
         gix::init_bare(path)?;
     }
 
@@ -719,7 +720,7 @@ pub fn fetch_refs_from_url(
     let cmd = ["git", "fetch", "--prune", "--no-tags", url]
         .map(str::to_owned)
         .to_vec();
-    let cmd = cmd.into_iter().chain(specs.into_iter()).collect::<Vec<_>>();
+    let cmd = cmd.into_iter().chain(specs).collect::<Vec<_>>();
     let cmd = cmd.iter().map(|s| s as &str).collect::<Vec<&str>>();
 
     tracing::info!("fetch_refs_from_url {:?} {:?} {:?}", cmd, path, "");

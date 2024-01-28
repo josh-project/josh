@@ -105,7 +105,7 @@ impl std::fmt::Debug for JoshProxyService {
 fn fetch_needed(
     service: Arc<JoshProxyService>,
     remote_url: &String,
-    upstream_repo: &String,
+    upstream_repo: &str,
     force: bool,
     head_ref: Option<&str>,
     head_ref_resolved: Option<&str>,
@@ -135,7 +135,7 @@ fn fetch_needed(
             &service.repo_path.join("mirror"),
             Some(&format!(
                 "refs/josh/upstream/{}/",
-                &josh::to_ns(&upstream_repo),
+                &josh::to_ns(upstream_repo),
             )),
         )?;
 
@@ -167,7 +167,7 @@ fn fetch_needed(
         _ => (),
     };
 
-    return Ok(true);
+    Ok(true)
 }
 
 #[tracing::instrument]
@@ -434,7 +434,7 @@ async fn do_filter(
             HeadRef::Explicit(ref_value)
                 if ref_value.starts_with("refs/") || ref_value == "HEAD" =>
             {
-                let object = resolve_ref(&ref_value)?;
+                let object = resolve_ref(ref_value)?;
                 let list = vec![(PathBuf::from(ref_value), object)];
 
                 (list, ref_value.clone())
@@ -444,7 +444,7 @@ async fn do_filter(
                 // probably sha1
                 let list = vec![(
                     PathBuf::from(ref_value),
-                    gix::ObjectId::from_str(&ref_value)?,
+                    gix::ObjectId::from_str(ref_value)?,
                 )];
                 let synthetic_ref = format!("refs/heads/_{}", ref_value);
 
@@ -603,9 +603,10 @@ async fn query_meta_repo(
         return Err(josh::josh_error("meta repo entry not found"));
     }
 
-    let mut meta: josh_proxy::MetaConfig = Default::default();
-
-    meta.config = serde_yaml::from_str(&meta_blob)?;
+    let mut meta: josh_proxy::MetaConfig = josh_proxy::MetaConfig {
+        config: serde_yaml::from_str(&meta_blob)?,
+        ..Default::default()
+    };
 
     if meta.config.lock_refs {
         let meta_blob = josh::filter::tree::get_blob(
@@ -679,7 +680,7 @@ async fn ssh_list_refs(
         None => vec!["HEAD"],
     };
 
-    let ls_remote = vec!["git", "ls-remote", url];
+    let ls_remote = ["git", "ls-remote", url];
     let command = ls_remote
         .iter()
         .chain(refs.iter())
@@ -831,7 +832,7 @@ async fn serve_namespace(
         match tokio::time::timeout(max_duration, process.wait()).await {
             Ok(status) => match status {
                 Ok(status) => match status.code() {
-                    Some(code) if code == 0 => Ok(()),
+                    Some(0) => Ok(()),
                     Some(code) => Err(ServeError::SubprocessExited(code)),
                     None => {
                         let io_error = std::io::Error::from(std::io::ErrorKind::Other);
@@ -898,7 +899,7 @@ impl HeadRef {
     // Sometimes we don't care about whether it's implicit or explicit
     fn get(&self) -> &str {
         match self {
-            HeadRef::Explicit(r) => &r,
+            HeadRef::Explicit(r) => r,
             HeadRef::Implicit => "HEAD",
         }
     }

@@ -366,7 +366,7 @@ pub fn apply_to_commit(
         let missing = transaction.get_missing();
 
         // Since 'missing' is sorted by nesting, the first is always the minimal
-        let minimal_nesting = missing.get(0).map(|(f, _)| nesting(*f)).unwrap_or(0);
+        let minimal_nesting = missing.first().map(|(f, _)| nesting(*f)).unwrap_or(0);
 
         for (f, i) in missing {
             if nesting(f) != minimal_nesting {
@@ -575,7 +575,7 @@ fn apply_to_commit2(
 
             if let Some((redirect, _)) = resolve_workspace_redirect(repo, &commit.tree()?, ws_path)
             {
-                if let Some(r) = apply_to_commit2(&to_op(redirect), &commit, transaction)? {
+                if let Some(r) = apply_to_commit2(&to_op(redirect), commit, transaction)? {
                     transaction.insert(filter, commit.id(), r, true);
                     return Ok(Some(r));
                 } else {
@@ -615,7 +615,7 @@ fn apply_to_commit2(
 
             let filtered_parent_ids = normal_parents
                 .into_iter()
-                .chain(extra_parents.into_iter())
+                .chain(extra_parents)
                 .collect();
 
             let filtered_tree = apply(transaction, filter, commit.tree()?)?;
@@ -789,7 +789,7 @@ fn apply2<'a>(
                 .iter()
                 .map(|f| apply(transaction, *f, tree.clone()))
                 .collect::<JoshResult<_>>()?;
-            let filtered: Vec<_> = filters.iter().zip(filtered.into_iter()).collect();
+            let filtered: Vec<_> = filters.iter().zip(filtered).collect();
             tree::compose(transaction, filtered)
         }
 
@@ -989,6 +989,14 @@ pub fn make_permissions_filter(filter: Filter, whitelist: Filter, blacklist: Fil
     opt::optimize(filter)
 }
 
+pub fn is_linear(filter: Filter) -> bool {
+    match to_op(filter) {
+        Op::Linear => true,
+        Op::Chain(a, b) => is_linear(a) || is_linear(b),
+        _ => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1015,13 +1023,5 @@ mod tests {
             PathBuf::from("c/a"),
             dst_path(parse(":[a=:/x::y/,a/b=:/i]:prefix=c").unwrap())
         );
-    }
-}
-
-pub fn is_linear(filter: Filter) -> bool {
-    match to_op(filter) {
-        Op::Linear => true,
-        Op::Chain(a, b) => is_linear(a) || is_linear(b),
-        _ => false,
     }
 }

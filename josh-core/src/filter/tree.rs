@@ -219,7 +219,7 @@ fn replace_child<'a>(
         }
         builder.write()?
     };
-    return Ok(repo.find_tree(full_tree_id)?);
+    Ok(repo.find_tree(full_tree_id)?)
 }
 
 pub fn insert<'a>(
@@ -634,12 +634,13 @@ pub fn search_candidates(
     Ok(results)
 }
 
+type SearchMatches = Vec<(String, Vec<(usize, String)>)>;
 pub fn search_matches(
     transaction: &cache::Transaction,
     tree: &git2::Tree,
     searchstring: &str,
     candidates: &Vec<String>,
-) -> JoshResult<Vec<(String, Vec<(usize, String)>)>> {
+) -> JoshResult<SearchMatches> {
     let mut results = vec![];
 
     for c in candidates {
