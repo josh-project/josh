@@ -82,7 +82,7 @@ Failing render for lack of variable
   content-length: 100\r (esc)
   date: *\r (esc) (glob)
   \r (esc)
-  JoshError(Error rendering "tmpl_file" line 1, col 8: Variable "param_val" not found in strict mode.) (no-eol)
+  JoshError(Error rendering "tmpl_file" line 1, col 8: Failed to access variable in strict mode Some("param_val")) (no-eol)
 
 
 
