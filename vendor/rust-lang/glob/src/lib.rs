@@ -524,10 +524,14 @@ impl fmt::Display for PatternError {
 ///
 /// - `*` matches any (possibly empty) sequence of characters.
 ///
-/// - `**` matches the current directory and arbitrary subdirectories. This
-///   sequence **must** form a single path component, so both `**a` and `b**`
-///   are invalid and will result in an error.  A sequence of more than two
-///   consecutive `*` characters is also invalid.
+/// - `**` matches the current directory and arbitrary
+///   subdirectories. To match files in arbitrary subdiretories, use
+///   `**/*`.
+///
+///   This sequence **must** form a single path component, so both
+///   `**a` and `b**` are invalid and will result in an error.  A
+///   sequence of more than two consecutive `*` characters is also
+///   invalid.
 ///
 /// - `[...]` matches any character inside the brackets.  Character sequences
 ///   can also specify ranges of characters, as ordered by Unicode, so e.g.
