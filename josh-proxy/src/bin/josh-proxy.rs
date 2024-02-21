@@ -110,6 +110,14 @@ fn fetch_needed(
     head_ref: Option<&str>,
     head_ref_resolved: Option<&str>,
 ) -> Result<bool, FetchError> {
+    if let Some(head_ref) = head_ref {
+        if head_ref != "HEAD" && !head_ref.starts_with("refs/") {
+            // If the request is for fetching a sha, don't fetch, as most upstreams
+            // don't support that. The rev should have been fetched previously by reference.
+            return Ok(false);
+        }
+    }
+
     let fetch_timer_ok = {
         if let Some(last) = service.fetch_timers.read()?.get(remote_url) {
             let since = std::time::Instant::now().duration_since(*last);
