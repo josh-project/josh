@@ -335,7 +335,7 @@
   - add file2
   - add file1
   $ josh-filter -q "render=sub1/tmpl_file_err&tmpl_param1=tmpl_param_value1&tmpl_p2=val2"
-  ERROR: Error rendering "sub1/tmpl_file_err" line 1, col 14: Variable "tmpl_param12" not found in strict mode.
+  ERROR: Error rendering "sub1/tmpl_file_err" line 1, col 14: Failed to access variable in strict mode Some("tmpl_param12")
   [1]
   $ josh-filter :/sub1 -q render=file2
   contents2

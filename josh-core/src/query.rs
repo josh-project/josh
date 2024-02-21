@@ -102,13 +102,13 @@ impl handlebars::HelperDef for GraphQLHelper {
         _: &handlebars::Handlebars,
         _: &handlebars::Context,
         rc: &mut handlebars::RenderContext,
-    ) -> Result<handlebars::ScopedJson<'reg, 'rc>, handlebars::RenderError> {
+    ) -> Result<handlebars::ScopedJson<'rc>, handlebars::RenderError> {
         return Ok(handlebars::ScopedJson::Derived(
             self.josh_helper(
                 h.hash(),
                 rc.get_current_template_name().unwrap_or(&"/".to_owned()),
             )
-            .map_err(|e| handlebars::RenderError::new(format!("{}", e)))?,
+            .map_err(|e| handlebars::RenderErrorReason::Other(format!("{}", e)))?,
         ));
     }
 }
