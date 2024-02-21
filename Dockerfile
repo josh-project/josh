@@ -13,7 +13,7 @@ ENV PATH=/usr/local/cargo/bin:${PATH}
 
 ARG ARCH
 ARG RUSTUP_VERSION=1.26.0
-ARG RUST_VERSION=1.72.1
+ARG RUST_VERSION=1.74
 ARG RUST_ARCH=${ARCH}-unknown-linux-musl
 
 # https://github.com/sfackler/rust-openssl/issues/1462
