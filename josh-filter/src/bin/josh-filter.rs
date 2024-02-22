@@ -223,7 +223,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
             mempack.dump(repo, &mut buf).unwrap();
             if buf.len() > 32 {
                 let mut w = odb.packwriter().unwrap();
-                w.write(&buf).unwrap();
+                w.write_all(&buf).unwrap();
                 w.commit().unwrap();
             }
         }
@@ -297,19 +297,19 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
     };
 
     let mut updated_refs = josh::filter_refs(&transaction, filterobj, &refs, permissions_filter)?;
-    for i in 0..updated_refs.len() {
-        if updated_refs[i].0 == input_ref {
+    for updated_ref in &mut updated_refs {
+        if updated_ref.0 == input_ref {
             if reverse {
-                updated_refs[i].0 = "refs/JOSH_TMP".to_string();
+                updated_ref.0 = "refs/JOSH_TMP".to_string();
             } else {
-                updated_refs[i].0 = target.to_string();
+                updated_ref.0 = target.to_string();
             }
         } else {
-            updated_refs[i].0 =
-                updated_refs[i]
+            updated_ref.0 =
+                updated_ref
                     .0
                     .replacen("refs/heads/", "refs/heads/filtered/", 1);
-            updated_refs[i].0 = updated_refs[i]
+            updated_ref.0 = updated_ref
                 .0
                 .replacen("refs/tags/", "refs/tags/filtered/", 1);
         }

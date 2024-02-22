@@ -179,7 +179,7 @@ pub fn render(
                 None,
             ) {
                 to.repo().odb()?.add_disk_alternate(
-                    &transaction
+                    transaction
                         .repo()
                         .path()
                         .parent()
@@ -191,7 +191,7 @@ pub fn render(
                 )?;
                 (
                     to,
-                    cache::Transaction::open(&transaction.repo().path(), None)?,
+                    cache::Transaction::open(transaction.repo().path(), None)?,
                 )
             } else {
                 (
@@ -239,7 +239,7 @@ pub fn render(
     handlebars.register_helper(
         "graphql",
         Box::new(GraphQLHelper {
-            repo_path: repo_path,
+            repo_path,
             ref_prefix: ref_prefix.to_owned(),
             commit_id,
         }),
@@ -248,6 +248,6 @@ pub fn render(
 
     match handlebars.render(path, &json!(params)) {
         Ok(res) => Ok(Some(res)),
-        Err(res) => return Err(josh_error(&format!("{}", res))),
+        Err(res) => Err(josh_error(&format!("{}", res))),
     }
 }

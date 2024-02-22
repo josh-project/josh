@@ -190,7 +190,7 @@ impl Transaction {
         let mut t2 = self.t2.borrow_mut();
         t2.apply_map
             .entry(filter.id())
-            .or_insert_with(HashMap::new)
+            .or_default()
             .insert(from, to);
     }
 
@@ -226,7 +226,7 @@ impl Transaction {
         let mut t2 = self.t2.borrow_mut();
         t2.unapply_map
             .entry(filter.id())
-            .or_insert_with(HashMap::new)
+            .or_default()
             .insert(from, to);
     }
 
@@ -307,7 +307,7 @@ impl Transaction {
             .lock()
             .unwrap()
             .entry(filter.id())
-            .or_insert_with(HashMap::new)
+            .or_default()
             .insert(from, to);
     }
 
@@ -334,7 +334,7 @@ impl Transaction {
         let mut t2 = self.t2.borrow_mut();
         t2.commit_map
             .entry(filter.id())
-            .or_insert_with(HashMap::new)
+            .or_default()
             .insert(from, to);
 
         // In addition to commits that are explicitly requested to be stored, also store

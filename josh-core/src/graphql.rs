@@ -831,6 +831,7 @@ impl Reference {
     }
 }
 
+type ObjectToPush = (git2::Oid, String, Option<String>);
 pub struct Context {
     pub transaction: std::sync::Arc<std::sync::Mutex<cache::Transaction>>,
     pub transaction_mirror: std::sync::Arc<std::sync::Mutex<cache::Transaction>>,
@@ -838,7 +839,7 @@ pub struct Context {
         std::sync::Mutex<std::collections::HashMap<std::path::PathBuf, Vec<String>>>,
     >,
     pub to_push: std::sync::Arc<
-        std::sync::Mutex<std::collections::HashSet<(git2::Oid, String, Option<String>)>>,
+        std::sync::Mutex<std::collections::HashSet<ObjectToPush>>,
     >,
     pub allow_refs: std::sync::Mutex<bool>,
 }
@@ -955,8 +956,8 @@ impl RepositoryMut {
         };
 
         Ok(RevMut {
-            at: at,
-            filter: filter,
+            at,
+            filter,
         })
     }
 }

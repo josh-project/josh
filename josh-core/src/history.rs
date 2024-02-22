@@ -209,7 +209,7 @@ pub fn rewrite_commit(
         return Ok(repo.commit_signed(b, sig, None)?);
     }
 
-    return Ok(repo.odb()?.write(git2::ObjectType::Commit, &b)?);
+    Ok(repo.odb()?.write(git2::ObjectType::Commit, &b)?)
 }
 
 fn find_oldest_similar_commit(
@@ -278,6 +278,7 @@ fn find_new_branch_base(
 }
 
 #[tracing::instrument(skip(transaction, change_ids))]
+#[allow(clippy::too_many_arguments)]
 pub fn unapply_filter(
     transaction: &cache::Transaction,
     filterobj: filter::Filter,
@@ -603,8 +604,8 @@ pub fn remove_commit_signature<'a>(
     Ok(r)
 }
 
-pub fn drop_commit<'a>(
-    original_commit: &'a git2::Commit,
+pub fn drop_commit(
+    original_commit: &git2::Commit,
     filtered_parent_ids: Vec<git2::Oid>,
     transaction: &cache::Transaction,
     filter: filter::Filter,
