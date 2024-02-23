@@ -416,6 +416,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         print!(
             "{}",
             josh::query::render(&transaction, "", commit_id, query, false)?
+                .map(|x| x.0)
                 .unwrap_or("File not found".to_string())
         );
     }

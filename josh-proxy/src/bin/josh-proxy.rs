@@ -1413,8 +1413,14 @@ async fn serve_query(
     .await?;
 
     Ok(match res {
-        Ok(Some(res)) => Response::builder()
+        Ok(Some((res, params))) => Response::builder()
             .status(hyper::StatusCode::OK)
+            .header(
+                "content-type",
+                params
+                    .get("content-type")
+                    .unwrap_or(&"text/plain".to_string()),
+            )
             .body(hyper::Body::from(res))?,
 
         Ok(None) => Response::builder()

@@ -24,4 +24,5 @@ trap 'rm ${CONFIG_FILE}' EXIT
 export GIT_CONFIG_GLOBAL=${CONFIG_FILE}
 #git config --global init.defaultBranch master
 
+cargo fmt
 python3 -m cram "$@"

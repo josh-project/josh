@@ -123,7 +123,7 @@ pub fn render(
     commit_id: git2::Oid,
     query_and_params: &str,
     split_odb: bool,
-) -> JoshResult<Option<String>> {
+) -> JoshResult<Option<(String, std::collections::BTreeMap<String, String>)>> {
     let mut parameters = query_and_params.split('&');
     let query = parameters
         .next()
@@ -161,13 +161,13 @@ pub fn render(
     let template = if let Ok(blob) = obj.peel_to_blob() {
         let file = std::str::from_utf8(blob.content())?;
         if cmd == "get" {
-            return Ok(Some(file.to_string()));
+            return Ok(Some((file.to_string(), params)));
         }
         if cmd == "graphql" {
             let mut variables = juniper::Variables::new();
 
-            for (k, v) in params {
-                variables.insert(k.to_string(), juniper::InputValue::scalar(v));
+            for (k, v) in params.iter() {
+                variables.insert(k.to_string(), juniper::InputValue::scalar(v.clone()));
             }
             let (transaction, transaction_mirror) = if let Ok(to) = cache::Transaction::open(
                 &transaction
@@ -208,7 +208,7 @@ pub fn render(
             )?;
 
             let j = serde_json::to_string_pretty(&res)?;
-            return Ok(Some(j));
+            return Ok(Some((j, params)));
         }
         if cmd == "render" {
             file.to_string()
@@ -216,7 +216,7 @@ pub fn render(
             return Err(josh_error("no such cmd"));
         }
     } else {
-        return Ok(Some("".to_string()));
+        return Ok(Some(("".to_string(), params)));
     };
 
     drop(obj);
@@ -246,8 +246,10 @@ pub fn render(
     );
     handlebars.set_strict_mode(true);
 
-    match handlebars.render(path, &json!(params)) {
-        Ok(res) => Ok(Some(res)),
+    let rendered = match handlebars.render(path, &json!(params)) {
+        Ok(res) => res,
         Err(res) => return Err(josh_error(&format!("{}", res))),
-    }
+    };
+
+    Ok(Some((rendered, params)))
 }
