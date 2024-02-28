@@ -235,6 +235,7 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
                 josh_merge,
                 reparent_orphans,
                 &mut changes,
+                true,
             )?
         };
 

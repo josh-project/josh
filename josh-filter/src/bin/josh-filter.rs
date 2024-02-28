@@ -371,6 +371,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
             false,
             None,
             &mut None,
+            true,
         ) {
             Ok(rewritten) => {
                 repo.reference(&input_ref, rewritten, true, "unapply_filter")?;
