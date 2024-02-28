@@ -84,6 +84,24 @@
       ]
     }
   }
+  $ josh-filter :/ -g 'query { rev(at: "refs/heads/master", filter: ":/sub2") { results: search(string: "e") { path { path }, matches { line, text }} }}'
+  {
+    "rev": {
+      "results": [
+        {
+          "path": {
+            "path": "file3"
+          },
+          "matches": [
+            {
+              "line": 1,
+              "text": "One more to see what happens"
+            }
+          ]
+        }
+      ]
+    }
+  }
 
   $ git diff ${EMPTY_TREE}..refs/heads/index
   diff --git a/SUB1 b/SUB1

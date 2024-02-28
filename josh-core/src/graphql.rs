@@ -427,7 +427,7 @@ impl Revision {
     ) -> FieldResult<Option<Vec<SearchResult>>> {
         let max_complexity = max_complexity.unwrap_or(6) as usize;
         let transaction = context.transaction.lock()?;
-        let ifilterobj = filter::chain(self.filter, filter::parse(":SQUASH:INDEX")?);
+        let ifilterobj = filter::parse(":SQUASH:INDEX")?;
         let tree = transaction.repo().find_commit(self.commit_id)?.tree()?;
 
         let tree = filter::apply(&transaction, self.filter, tree)?;
