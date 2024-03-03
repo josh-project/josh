@@ -80,8 +80,10 @@ fn find_unapply_base(
     // calls
     filtered_to_original: &mut HashMap<git2::Oid, git2::Oid>,
     filter: filter::Filter,
-    // "contained in" refers to OID of the commit in the original (unfiltered) history
-    // that is a part of history tree that contains the "base" commit we're looking for
+    // When building the filtered_to_original mapping use this as a starting point
+    // for the search for orginals. If there are multiple originals that map to the
+    // same filtered commit (which is common) use one that is reachable from contained_in.
+    // Or, in other words, one that is contained in the the history of contained_in.
     contained_in: git2::Oid,
     // Filtered OID to compare against
     filtered: git2::Oid,
@@ -272,7 +274,7 @@ fn find_new_branch_base(
     };
     tracing::info!("new branch base?");
 
-    // Walk filtered history tree, trying to find a base for every commit
+    // Walk filtered history, trying to find a base for every commit
     for rev in walk {
         let rev = rev?;
         if let Ok(base) =
