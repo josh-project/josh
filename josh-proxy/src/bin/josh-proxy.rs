@@ -170,7 +170,7 @@ fn fetch_needed(
     return Ok(true);
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip(service))]
 async fn fetch_upstream(
     service: Arc<JoshProxyService>,
     upstream_repo: String,
@@ -237,7 +237,7 @@ async fn fetch_upstream(
     let heads_map = service.heads_map.clone();
     let br_path = service.repo_path.join("mirror");
 
-    let span = tracing::span!(tracing::Level::TRACE, "fetch worker");
+    let span = tracing::span!(tracing::Level::INFO, "fetch_refs_from_url");
     let ru = remote_url.clone();
     let task_remote_auth = remote_auth.clone();
     let fetch_result = tokio::task::spawn_blocking(move || {
@@ -247,7 +247,7 @@ async fn fetch_upstream(
     .await?;
 
     let us = upstream_repo.clone();
-    let s = tracing::span!(tracing::Level::TRACE, "get_head worker");
+    let s = tracing::span!(tracing::Level::INFO, "get_head");
     let br_path = service.repo_path.join("mirror");
     let ru = remote_url.clone();
     let task_remote_auth = remote_auth.clone();
@@ -348,11 +348,7 @@ async fn static_paths(
     Ok(None)
 }
 
-#[tracing::instrument]
-async fn repo_update_fn(
-    serv: Arc<JoshProxyService>,
-    req: Request<hyper::Body>,
-) -> josh::JoshResult<Response<hyper::Body>> {
+async fn repo_update_fn(req: Request<hyper::Body>) -> josh::JoshResult<Response<hyper::Body>> {
     let body = hyper::body::to_bytes(req.into_body()).await;
 
     let s = tracing::span!(tracing::Level::TRACE, "repo update worker");
@@ -382,7 +378,7 @@ async fn repo_update_fn(
     }?)
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip(service))]
 async fn do_filter(
     repo_path: std::path::PathBuf,
     service: Arc<JoshProxyService>,
@@ -394,7 +390,7 @@ async fn do_filter(
     let permit = service.filter_permits.acquire().await;
     let heads_map = service.heads_map.clone();
 
-    let tracing_span = tracing::span!(tracing::Level::TRACE, "do_filter worker");
+    let tracing_span = tracing::span!(tracing::Level::INFO, "do_filter worker");
     let head_ref = head_ref.clone();
 
     tokio::task::spawn_blocking(move || {
@@ -1111,7 +1107,7 @@ async fn handle_serve_namespace_request(
     }
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip(serv))]
 async fn call_service(
     serv: Arc<JoshProxyService>,
     req_auth: (josh_proxy::auth::Handle, Request<hyper::Body>),
@@ -1136,7 +1132,7 @@ async fn call_service(
 
     // When exposed to internet, should be blocked
     if path == "/repo_update" {
-        return repo_update_fn(serv, req).await;
+        return repo_update_fn(req).await;
     }
 
     if path == "/serve_namespace" {
@@ -1273,7 +1269,6 @@ async fn call_service(
         None,
         false,
     )
-    .in_current_span()
     .await
     {
         Ok(_) => {}
@@ -1299,9 +1294,7 @@ async fn call_service(
         return serve_query(serv, q, meta.config.repo, filter, headref.get()).await;
     }
 
-    let temp_ns = prepare_namespace(serv.clone(), &meta, filter, &headref)
-        .in_current_span()
-        .await?;
+    let temp_ns = prepare_namespace(serv.clone(), &meta, filter, &headref).await?;
 
     let repo_path = serv
         .repo_path
@@ -1317,14 +1310,18 @@ async fn call_service(
         .ok_or(josh::josh_error("repo_path.to_str"))?
         .to_string();
 
-    let span = tracing::span!(tracing::Level::TRACE, "hyper_cgi");
-    let _enter = span.enter();
-    let mut context_propagator = HashMap::<String, String>::default();
-    let context = span.context();
-    global::get_text_map_propagator(|propagator| {
-        propagator.inject_context(&context, &mut context_propagator);
-    });
-    tracing::warn!("debug propagator: {:?}", context_propagator);
+    let context_propagator = {
+        let span = tracing::Span::current();
+
+        let mut context_propagator = HashMap::<String, String>::default();
+        let context = span.context();
+        global::get_text_map_propagator(|propagator| {
+            propagator.inject_context(&context, &mut context_propagator);
+        });
+
+        tracing::debug!("context propagator: {:?}", context_propagator);
+        context_propagator
+    };
 
     let repo_update = josh_proxy::RepoUpdate {
         refs: HashMap::new(),
@@ -1339,37 +1336,41 @@ async fn call_service(
         context_propagator,
     };
 
-    let mut cmd = Command::new("git");
-    cmd.arg("http-backend");
-    cmd.current_dir(&serv.repo_path.join("overlay"));
-    cmd.env("GIT_DIR", &repo_path);
-    cmd.env("GIT_HTTP_EXPORT_ALL", "");
-    cmd.env(
-        "GIT_ALTERNATE_OBJECT_DIRECTORIES",
-        serv.repo_path
-            .join("mirror")
-            .join("objects")
-            .to_str()
-            .ok_or(josh::josh_error("repo_path.to_str"))?,
-    );
-    cmd.env("GIT_NAMESPACE", temp_ns.name());
-    cmd.env("GIT_PROJECT_ROOT", repo_path);
-    cmd.env("JOSH_REPO_UPDATE", serde_json::to_string(&repo_update)?);
-    cmd.env("PATH_INFO", parsed_url.pathinfo.clone());
+    let cgi_response = async {
+        let mut cmd = Command::new("git");
+        cmd.arg("http-backend");
+        cmd.current_dir(&serv.repo_path.join("overlay"));
+        cmd.env("GIT_DIR", &repo_path);
+        cmd.env("GIT_HTTP_EXPORT_ALL", "");
+        cmd.env(
+            "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+            serv.repo_path
+                .join("mirror")
+                .join("objects")
+                .to_str()
+                .ok_or(josh::josh_error("repo_path.to_str"))?,
+        );
+        cmd.env("GIT_NAMESPACE", temp_ns.name());
+        cmd.env("GIT_PROJECT_ROOT", repo_path);
+        cmd.env("JOSH_REPO_UPDATE", serde_json::to_string(&repo_update)?);
+        cmd.env("PATH_INFO", parsed_url.pathinfo.clone());
 
-    let git_span = tracing::span!(tracing::Level::TRACE, "git http backend");
-    let cgires = hyper_cgi::do_cgi(req, cmd).instrument(git_span).await;
+        let (response, stderr) = hyper_cgi::do_cgi(req, cmd).await;
+        tracing::debug!("Git stderr: {}", String::from_utf8_lossy(&stderr));
 
-    tracing::debug!(
-        "Git stderr: {}",
-        String::from_utf8(cgires.1).unwrap_or("".to_string())
-    );
+        Ok::<_, JoshError>(response)
+    }
+    .instrument(tracing::span!(
+        tracing::Level::INFO,
+        "hyper_cgi / git-http-backend"
+    ))
+    .await?;
 
     // This is chained as a seperate future to make sure that
     // it is executed in all cases.
     std::mem::drop(temp_ns);
 
-    Ok(cgires.0)
+    Ok(cgi_response)
 }
 
 async fn serve_query(
@@ -1433,7 +1434,7 @@ async fn serve_query(
     })
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip(serv))]
 async fn prepare_namespace(
     serv: Arc<JoshProxyService>,
     meta: &josh_proxy::MetaConfig,
@@ -1460,18 +1461,20 @@ async fn prepare_namespace(
     Ok(temp_ns)
 }
 
-fn trace_http_response_code(trace_span: Span, http_status: StatusCode) {
+fn trace_http_response(trace_span: Span, response: &Response<hyper::Body>) {
+    use opentelemetry_semantic_conventions::trace::HTTP_RESPONSE_STATUS_CODE;
+
     macro_rules! trace {
         ($level:expr) => {{
             tracing::event!(
                 parent: trace_span,
                 $level,
-                http_status = http_status.as_u16()
+                { HTTP_RESPONSE_STATUS_CODE } = response.status().as_u16()
             );
         }};
     }
 
-    match http_status.as_u16() {
+    match response.status().as_u16() {
         s if s < 400 => trace!(tracing::Level::TRACE),
         s if s < 500 => trace!(tracing::Level::WARN),
         _ => trace!(tracing::Level::ERROR),
@@ -1504,8 +1507,47 @@ fn make_upstream(remotes: &Vec<cli::Remote>) -> josh::JoshResult<JoshProxyUpstre
     }
 }
 
+#[tracing::instrument(skip_all, fields(url.path, http.request.method))]
+async fn handle_http_request(
+    proxy_service: Arc<JoshProxyService>,
+    req: Request<hyper::body::Body>,
+) -> Result<Response<hyper::Body>, hyper::http::Error> {
+    use opentelemetry_semantic_conventions::trace::{HTTP_REQUEST_METHOD, URL_PATH};
+
+    let span = tracing::Span::current();
+    span.record(URL_PATH, req.uri().path());
+    span.record(HTTP_REQUEST_METHOD, req.method().to_string());
+
+    async move {
+        let response = if let Ok(req_auth) = josh_proxy::auth::strip_auth(req) {
+            call_service(proxy_service, req_auth)
+                .await
+                .unwrap_or_else(|e| {
+                    make_response(
+                        hyper::Body::from(match e {
+                            JoshError(s) => s,
+                        }),
+                        hyper::StatusCode::INTERNAL_SERVER_ERROR,
+                    )
+                })
+        } else {
+            make_response(
+                hyper::Body::from("JoshError(strip_auth)"),
+                hyper::StatusCode::INTERNAL_SERVER_ERROR,
+            )
+        };
+
+        trace_http_response(span.clone(), &response);
+        response
+    }
+    .map(Ok::<_, hyper::http::Error>)
+    .await
+}
+
 #[tokio::main]
 async fn run_proxy() -> josh::JoshResult<i32> {
+    init_trace();
+
     let addr = format!("[::]:{}", ARGS.port).parse()?;
     let upstream = make_upstream(&ARGS.remote).map_err(|e| {
         eprintln!("Upstream parsing error: {}", &e);
@@ -1537,42 +1579,9 @@ async fn run_proxy() -> josh::JoshResult<i32> {
 
     let make_service = make_service_fn(move |_| {
         let proxy_service = proxy_service.clone();
-
-        let service = service_fn(move |_req| {
+        let service = service_fn(move |req| {
             let proxy_service = proxy_service.clone();
-
-            let _s = tracing::span!(
-                tracing::Level::TRACE,
-                "http_request",
-                path = _req.uri().path()
-            );
-            let s = _s;
-
-            async move {
-                let r = if let Ok(req_auth) = josh_proxy::auth::strip_auth(_req) {
-                    match call_service(proxy_service, req_auth)
-                        .instrument(s.clone())
-                        .await
-                    {
-                        Ok(r) => r,
-                        Err(e) => make_response(
-                            hyper::Body::from(match e {
-                                JoshError(s) => s,
-                            }),
-                            hyper::StatusCode::INTERNAL_SERVER_ERROR,
-                        ),
-                    }
-                } else {
-                    make_response(
-                        hyper::Body::from("JoshError(strip_auth)"),
-                        hyper::StatusCode::INTERNAL_SERVER_ERROR,
-                    )
-                };
-                let _e = s.enter();
-                trace_http_response_code(s.clone(), r.status());
-                r
-            }
-            .map(Ok::<_, hyper::http::Error>)
+            handle_http_request(proxy_service, req)
         });
 
         future::ok::<_, hyper::http::Error>(service)
@@ -1595,6 +1604,7 @@ async fn run_proxy() -> josh::JoshResult<i32> {
             r = server_future => println!("http server exited: {:?}", r),
         );
     }
+
     Ok(0)
 }
 
@@ -1855,6 +1865,71 @@ async fn shutdown_signal() {
     println!("shutdown_signal");
 }
 
+fn init_trace() {
+    use opentelemetry_otlp::WithExportConfig;
+
+    // Set format for propagating tracing context. This allows to link traces from one invocation
+    // of josh to the next
+    global::set_text_map_propagator(TraceContextPropagator::new());
+
+    let fmt_layer = tracing_subscriber::fmt::layer()
+        .compact()
+        .with_ansi(false)
+        .with_writer(io::stderr);
+
+    let filter = match std::env::var("RUST_LOG") {
+        Ok(_) => tracing_subscriber::EnvFilter::from_default_env(),
+        _ => tracing_subscriber::EnvFilter::new("josh=trace,josh_proxy=trace"),
+    };
+
+    let service_name = std::env::var("JOSH_SERVICE_NAME").unwrap_or("josh-proxy".to_owned());
+
+    if let Ok(endpoint) = std::env::var("JOSH_JAEGER_ENDPOINT") {
+        let tracer = opentelemetry_jaeger::new_agent_pipeline()
+            .with_service_name(service_name)
+            .with_endpoint(endpoint)
+            .install_simple()
+            .expect("can't install opentelemetry pipeline");
+
+        let telemetry_layer = tracing_opentelemetry::layer().with_tracer(tracer);
+        let subscriber = filter
+            .and_then(fmt_layer)
+            .and_then(telemetry_layer)
+            .with_subscriber(tracing_subscriber::Registry::default());
+
+        tracing::subscriber::set_global_default(subscriber).expect("can't set_global_default");
+    } else if let Ok(endpoint) = std::env::var("JOSH_OTLP_ENDPOINT") {
+        use opentelemetry::KeyValue;
+
+        let resource =
+            opentelemetry::sdk::Resource::new(vec![KeyValue::new("service.name", service_name)]);
+
+        let tracer = opentelemetry_otlp::new_pipeline()
+            .tracing()
+            .with_exporter(
+                opentelemetry_otlp::new_exporter()
+                    .tonic()
+                    .with_endpoint(endpoint),
+            )
+            .with_trace_config(opentelemetry::sdk::trace::config().with_resource(resource))
+            .install_simple()
+            .expect("can't install opentelemetry pipeline");
+
+        let telemetry_layer = tracing_opentelemetry::layer().with_tracer(tracer);
+        let subscriber = filter
+            .and_then(fmt_layer)
+            .and_then(telemetry_layer)
+            .with_subscriber(tracing_subscriber::Registry::default());
+
+        tracing::subscriber::set_global_default(subscriber).expect("can't set_global_default");
+    } else {
+        let subscriber = filter
+            .and_then(fmt_layer)
+            .with_subscriber(tracing_subscriber::Registry::default());
+        tracing::subscriber::set_global_default(subscriber).expect("can't set_global_default");
+    };
+}
+
 fn main() {
     // josh-proxy creates a symlink to itself as a git update hook.
     // When it gets called by git as that hook, the binary name will end
@@ -1875,41 +1950,7 @@ fn main() {
         }
     }
 
-    // Set format for propagating tracing context. This allows to link traces from one invocation
-    // of josh to the next
-    global::set_text_map_propagator(TraceContextPropagator::new());
-
-    let fmt_layer = tracing_subscriber::fmt::layer()
-        .compact()
-        .with_ansi(false)
-        .with_writer(io::stderr);
-
-    let filter = match std::env::var("RUST_LOG") {
-        Ok(_) => tracing_subscriber::EnvFilter::from_default_env(),
-        _ => tracing_subscriber::EnvFilter::new("josh=trace,josh_proxy=trace"),
-    };
-
-    if let Ok(endpoint) = std::env::var("JOSH_JAEGER_ENDPOINT") {
-        let tracer = opentelemetry_jaeger::new_agent_pipeline()
-            .with_service_name(
-                std::env::var("JOSH_SERVICE_NAME").unwrap_or("josh-proxy".to_owned()),
-            )
-            .with_endpoint(endpoint)
-            .install_simple()
-            .expect("can't install opentelemetry pipeline");
-
-        let telemetry_layer = tracing_opentelemetry::layer().with_tracer(tracer);
-        let subscriber = filter
-            .and_then(fmt_layer)
-            .and_then(telemetry_layer)
-            .with_subscriber(tracing_subscriber::Registry::default());
-        tracing::subscriber::set_global_default(subscriber).expect("can't set_global_default");
-    } else {
-        let subscriber = filter
-            .and_then(fmt_layer)
-            .with_subscriber(tracing_subscriber::Registry::default());
-        tracing::subscriber::set_global_default(subscriber).expect("can't set_global_default");
-    };
-
-    std::process::exit(run_proxy().unwrap_or(1));
+    let exit_code = run_proxy().unwrap_or(1);
+    global::shutdown_tracer_provider();
+    std::process::exit(exit_code);
 }
