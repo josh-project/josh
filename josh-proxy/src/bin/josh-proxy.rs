@@ -1402,9 +1402,13 @@ async fn serve_query(
                 .unwrap(),
         )?;
 
-        let commit_id = transaction_mirror
-            .repo()
-            .refname_to_id(&transaction_mirror.refname(&head_ref))?;
+        let commit_id = if let Ok(oid) = git2::Oid::from_str(&head_ref) {
+            oid
+        } else {
+            transaction_mirror
+                .repo()
+                .refname_to_id(&transaction_mirror.refname(&head_ref))?
+        };
         let commit_id =
             josh::filter_commit(&transaction, filter, commit_id, josh::filter::empty())?;
 
