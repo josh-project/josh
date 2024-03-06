@@ -75,24 +75,37 @@ pub fn walk2(
 
 fn find_unapply_base(
     transaction: &cache::Transaction,
-    bm: &mut HashMap<git2::Oid, git2::Oid>,
+    // Used as a cache to avoid re-applying the filter to the same commit -
+    // this function is called during revwalk so there be a lot of repeated
+    // calls
+    filtered_to_original: &mut HashMap<git2::Oid, git2::Oid>,
     filter: filter::Filter,
+    // When building the filtered_to_original mapping use this as a starting point
+    // for the search for orginals. If there are multiple originals that map to the
+    // same filtered commit (which is common) use one that is reachable from contained_in.
+    // Or, in other words, one that is contained in the the history of contained_in.
     contained_in: git2::Oid,
+    // Filtered OID to compare against
     filtered: git2::Oid,
 ) -> JoshResult<git2::Oid> {
     if contained_in == git2::Oid::zero() {
         tracing::info!("contained in zero",);
         return Ok(git2::Oid::zero());
     }
-    if let Some(original) = bm.get(&filtered) {
-        tracing::info!("Found in bm",);
+
+    if let Some(original) = filtered_to_original.get(&filtered) {
+        tracing::info!("Found in filtered_to_original",);
         return Ok(*original);
     }
+
     let contained_in_commit = transaction.repo().find_commit(contained_in)?;
     let oid = filter::apply_to_commit(filter, &contained_in_commit, transaction)?;
     if oid != git2::Oid::zero() {
-        bm.insert(oid, contained_in);
+        filtered_to_original.insert(oid, contained_in);
     }
+
+    // Start a revwalk in the original history tree starting from the
+    // contained_in "hint"
     let mut walk = transaction.repo().revwalk()?;
     walk.set_sorting(git2::Sort::TOPOLOGICAL)?;
     walk.push(contained_in)?;
@@ -100,7 +113,8 @@ fn find_unapply_base(
     for original in walk {
         let original = transaction.repo().find_commit(original?)?;
         if filtered == filter::apply_to_commit(filter, &original, transaction)? {
-            bm.insert(filtered, original.id());
+            // In case a match is found, cache the result
+            filtered_to_original.insert(filtered, original.id());
             tracing::info!("found original properly {}", original.id());
             return Ok(original.id());
         }
@@ -212,6 +226,9 @@ pub fn rewrite_commit(
     return Ok(repo.odb()?.write(git2::ObjectType::Commit, &b)?);
 }
 
+// Given an OID of an unfiltered commit and a filter,
+// find the oldest commit (within the topological order)
+// that gives the same result when filtered
 fn find_oldest_similar_commit(
     transaction: &cache::Transaction,
     filter: filter::Filter,
@@ -243,8 +260,9 @@ fn find_oldest_similar_commit(
 
 fn find_new_branch_base(
     transaction: &cache::Transaction,
-    bm: &mut HashMap<git2::Oid, git2::Oid>,
+    filtered_to_original: &mut HashMap<git2::Oid, git2::Oid>,
     filter: filter::Filter,
+    // See "contained_in" in find_unapply_base
     contained_in: git2::Oid,
     filtered: git2::Oid,
 ) -> JoshResult<git2::Oid> {
@@ -256,9 +274,12 @@ fn find_new_branch_base(
     };
     tracing::info!("new branch base?");
 
+    // Walk filtered history, trying to find a base for every commit
     for rev in walk {
         let rev = rev?;
-        if let Ok(base) = find_unapply_base(transaction, bm, filter, contained_in, rev) {
+        if let Ok(base) =
+            find_unapply_base(transaction, filtered_to_original, filter, contained_in, rev)
+        {
             if base != git2::Oid::zero() {
                 tracing::info!("new branch base: {:?} mapping to {:?}", base, rev);
                 let base =
@@ -267,8 +288,10 @@ fn find_new_branch_base(
                     } else {
                         base
                     };
-                tracing::info!("inserting in bm {}, {}", rev, base);
-                bm.insert(rev, base);
+
+                tracing::info!("inserting in filtered_to_original {}, {}", rev, base);
+                filtered_to_original.insert(rev, base);
+
                 return Ok(rev);
             }
         }
@@ -280,74 +303,92 @@ fn find_new_branch_base(
 #[tracing::instrument(skip(transaction, change_ids))]
 pub fn unapply_filter(
     transaction: &cache::Transaction,
-    filterobj: filter::Filter,
+    filter: filter::Filter,
     original_target: git2::Oid,
-    old: git2::Oid,
-    new: git2::Oid,
+    old_filtered_oid: git2::Oid,
+    new_filtered_oid: git2::Oid,
     keep_orphans: bool,
     reparent_orphans: Option<git2::Oid>,
     change_ids: &mut Option<Vec<Change>>,
 ) -> JoshResult<git2::Oid> {
-    let mut bm = HashMap::new();
+    let mut filtered_to_original = HashMap::new();
     let mut ret = original_target;
 
-    let old = if old == git2::Oid::zero() {
-        match find_new_branch_base(transaction, &mut bm, filterobj, original_target, new) {
+    let old_filtered_oid = if old_filtered_oid == git2::Oid::zero() {
+        match find_new_branch_base(
+            transaction,
+            &mut filtered_to_original,
+            filter,
+            original_target,
+            new_filtered_oid,
+        ) {
             Ok(res) => {
                 tracing::info!("No error, branch base {} ", res);
                 res
             }
             Err(_) => {
                 tracing::info!("Error in new branch base");
-                old
+                old_filtered_oid
             }
         }
     } else {
         tracing::info!("Old not zero");
-        old
+        old_filtered_oid
     };
 
-    if new == old {
+    if new_filtered_oid == old_filtered_oid {
         tracing::info!("New == old. Pushing a new branch?");
-        let ret = if let Some(original) = bm.get(&new) {
-            tracing::info!("Found in bm {}", original);
+
+        let unapply_result = if let Some(original) = filtered_to_original.get(&new_filtered_oid) {
+            tracing::info!("Found in filtered_to_original {}", original);
             *original
         } else {
             tracing::info!("Had to go through the whole thing",);
-            find_original(transaction, filterobj, original_target, new, false)?
+            find_original(
+                transaction,
+                filter,
+                original_target,
+                new_filtered_oid,
+                false,
+            )?
         };
-        return Ok(ret);
+
+        return Ok(unapply_result);
     }
 
     tracing::info!("before walk");
 
     let walk = {
         let mut walk = transaction.repo().revwalk()?;
+
         walk.set_sorting(git2::Sort::REVERSE | git2::Sort::TOPOLOGICAL)?;
-        walk.push(new)?;
-        if walk.hide(old).is_ok() {
-            tracing::info!("walk: hidden {}", old);
+        walk.push(new_filtered_oid)?;
+
+        // The main reason hide() can fail is if old_filtered_oid is not found in the repo
+        if walk.hide(old_filtered_oid).is_ok() {
+            tracing::info!("walk: hidden {}", old_filtered_oid);
         } else {
             tracing::warn!("walk: can't hide");
         }
+
         walk
     };
 
+    // Walk starting from new filtered OID
     for rev in walk {
         let rev = rev?;
 
-        let s = tracing::span!(tracing::Level::TRACE, "walk commit", ?rev);
-        let _e = s.enter();
-        tracing::info!("walk commit: {:?}", rev);
+        let span = tracing::span!(tracing::Level::TRACE, "walk commit", ?rev);
+        let _span_guard = span.enter();
 
+        tracing::info!("walk commit: {:?}", rev);
         let module_commit = transaction.repo().find_commit(rev)?;
 
-        if bm.contains_key(&module_commit.id()) {
+        if filtered_to_original.contains_key(&module_commit.id()) {
             continue;
         }
 
         let mut filtered_parent_ids: Vec<_> = module_commit.parent_ids().collect();
-
         let is_initial_merge = filtered_parent_ids.len() == 2
             && transaction
                 .repo()
@@ -358,52 +399,62 @@ pub fn unapply_filter(
             filtered_parent_ids.pop();
         }
 
+        // For every parent of a filtered commit, find unapply base
         let original_parents: Result<Vec<_>, _> = filtered_parent_ids
             .iter()
-            .map(|x| -> JoshResult<_> {
-                find_unapply_base(transaction, &mut bm, filterobj, original_target, *x)
+            .map(|filtered_parent_id| -> JoshResult<_> {
+                find_unapply_base(
+                    transaction,
+                    &mut filtered_to_original,
+                    filter,
+                    original_target,
+                    *filtered_parent_id,
+                )
             })
-            .filter(|x| {
-                if let Ok(i) = x {
-                    *i != git2::Oid::zero()
+            .filter(|unapply_base| {
+                if let Ok(oid) = unapply_base {
+                    *oid != git2::Oid::zero()
                 } else {
                     true
                 }
             })
-            .map(|x| -> JoshResult<_> { Ok(transaction.repo().find_commit(x?)?) })
+            .map(|unapply_base| -> JoshResult<_> {
+                Ok(transaction.repo().find_commit(unapply_base?)?)
+            })
             .collect();
 
+        // If there are no parents and "reparent" option is given, use the given OID as a parent
         let mut original_parents = original_parents?;
-
         if let (0, Some(reparent)) = (original_parents.len(), reparent_orphans) {
             original_parents = vec![transaction.repo().find_commit(reparent)?];
         }
+
         tracing::info!(
             "parents: {:?} -> {:?}",
             original_parents,
             filtered_parent_ids
         );
 
-        let original_parents_refs: Vec<&git2::Commit> = original_parents.iter().collect();
-
+        // Convert original_parents to a vector of (rust) references
+        let original_parents: Vec<&git2::Commit> = original_parents.iter().collect();
         let tree = module_commit.tree()?;
-
         let commit_message = module_commit.summary().unwrap_or("NO COMMIT MESSAGE");
 
         let new_trees: JoshResult<Vec<_>> = {
-            let s = tracing::span!(
+            let span = tracing::span!(
                 tracing::Level::TRACE,
                 "unapply filter",
                 ?commit_message,
                 ?rev,
                 ?filtered_parent_ids,
-                ?original_parents_refs
+                ?original_parents
             );
-            let _e = s.enter();
-            original_parents_refs
+            let _span_guard = span.enter();
+
+            original_parents
                 .iter()
-                .map(|x| -> JoshResult<_> {
-                    Ok(filter::unapply(transaction, filterobj, tree.clone(), x.tree()?)?.id())
+                .map(|commit| -> JoshResult<_> {
+                    Ok(filter::unapply(transaction, filter, tree.clone(), commit.tree()?)?.id())
                 })
                 .collect()
         };
@@ -420,11 +471,14 @@ pub fn unapply_filter(
             }
         };
 
-        let mut dedup = new_trees.clone();
-        dedup.sort();
-        dedup.dedup();
+        let new_unique_trees = {
+            let mut new_trees_dedup = new_trees.clone();
+            new_trees_dedup.sort();
+            new_trees_dedup.dedup();
+            new_trees_dedup.len()
+        };
 
-        let new_tree = match dedup.len() {
+        let new_tree = match new_unique_trees {
             // The normal case: Either there was only one parent or all of them where the same
             // outside of the current filter in which case they collapse into one tree and that
             // is the one we pick
@@ -436,7 +490,7 @@ pub fn unapply_filter(
                 tracing::debug!("unrelated history");
                 filter::unapply(
                     transaction,
-                    filterobj,
+                    filter,
                     tree,
                     filter::tree::empty(transaction.repo()),
                 )?
@@ -449,10 +503,10 @@ pub fn unapply_filter(
                 for i in 0..parent_count {
                     // If one of the parents is a descendant of the target branch and the other is
                     // not, pick the tree of the one that is a descendant.
-                    if (original_parents_refs[i].id() == original_target)
+                    if (original_parents[i].id() == original_target)
                         || transaction
                             .repo()
-                            .graph_descendant_of(original_parents_refs[i].id(), original_target)?
+                            .graph_descendant_of(original_parents[i].id(), original_target)?
                     {
                         tid = new_trees[i];
                         break;
@@ -475,14 +529,14 @@ pub fn unapply_filter(
                     mergeopts.file_favor(git2::FileFavor::Ours);
 
                     let mut merged_index = transaction.repo().merge_commits(
-                        original_parents_refs[0],
-                        original_parents_refs[1],
+                        original_parents[0],
+                        original_parents[1],
                         Some(&mergeopts),
                     )?;
                     let base_tree = merged_index.write_tree_to(transaction.repo())?;
                     let tid_ours = filter::unapply(
                         transaction,
-                        filterobj,
+                        filter,
                         tree.clone(),
                         transaction.repo().find_tree(base_tree)?,
                     )?
@@ -491,14 +545,14 @@ pub fn unapply_filter(
                     mergeopts.file_favor(git2::FileFavor::Theirs);
 
                     let mut merged_index = transaction.repo().merge_commits(
-                        original_parents_refs[0],
-                        original_parents_refs[1],
+                        original_parents[0],
+                        original_parents[1],
                         Some(&mergeopts),
                     )?;
                     let base_tree = merged_index.write_tree_to(transaction.repo())?;
                     let tid_theirs = filter::unapply(
                         transaction,
-                        filterobj,
+                        filter,
                         tree.clone(),
                         transaction.repo().find_tree(base_tree)?,
                     )?
@@ -518,10 +572,10 @@ pub fn unapply_filter(
                         parent_count,
                         module_commit.summary().unwrap_or_default(),
                         module_commit.id(),
-                        original_parents_refs[0].summary().unwrap_or_default(),
-                        original_parents_refs[0].id(),
-                        original_parents_refs[1].summary().unwrap_or_default(),
-                        original_parents_refs[1].id(),
+                        original_parents[0].summary().unwrap_or_default(),
+                        original_parents[0].id(),
+                        original_parents[1].summary().unwrap_or_default(),
+                        original_parents[1].id(),
                     );
                     return Err(josh_error(&msg));
                 }
@@ -533,18 +587,18 @@ pub fn unapply_filter(
         ret = rewrite_commit(
             transaction.repo(),
             &module_commit,
-            &original_parents_refs,
+            &original_parents,
             &new_tree,
             None,
             None,
             false,
         )?;
 
-        ret = if original_parents_refs.len() == 1
-            && new_tree.id() == original_parents_refs[0].tree_id()
+        ret = if original_parents.len() == 1
+            && new_tree.id() == original_parents[0].tree_id()
             && Some(module_commit.tree_id()) != module_commit.parents().next().map(|x| x.tree_id())
         {
-            original_parents_refs[0].id()
+            original_parents[0].id()
         } else {
             if let Some(ref mut change_ids) = change_ids {
                 change_ids.push(get_change_id(&module_commit, ret));
@@ -552,7 +606,7 @@ pub fn unapply_filter(
             ret
         };
 
-        bm.insert(module_commit.id(), ret);
+        filtered_to_original.insert(module_commit.id(), ret);
     }
 
     tracing::trace!("done {:?}", ret);
