@@ -799,14 +799,18 @@ impl Drop for TmpGitNamespace {
         if std::env::var_os("JOSH_KEEP_NS").is_some() {
             return;
         }
+
         let request_tmp_namespace = self.repo_path.join("refs/namespaces").join(&self.name);
-        std::fs::remove_dir_all(&request_tmp_namespace).unwrap_or_else(|e| {
-            tracing::error!(
-                "remove_dir_all {:?} failed, error:{:?}",
-                request_tmp_namespace,
-                e
-            )
-        });
+
+        if std::path::Path::new(&request_tmp_namespace).exists() {
+            fs::remove_dir_all(&request_tmp_namespace).unwrap_or_else(|err| {
+                tracing::error!(
+                    "remove_dir_all {} failed, error: {}",
+                    request_tmp_namespace.display(),
+                    err
+                )
+            });
+        }
     }
 }
 
