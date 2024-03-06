@@ -69,11 +69,22 @@ Now render still works (used to fail if filtered previously)
   param: 12345
   sha: 890148bbaa6a797bac8aef672a437f2b08635f15
   filter_sha: ffe8d082c1034053534ea8068f4205ac72a1098e
+
   $ curl -s -i http://localhost:8002/real_repo.git?render=tmpl_file\&param_val=12345 | grep -v date:
   HTTP/1.1 200 OK\r (esc)
   content-type: text/plain\r (esc)
   content-length: 112\r (esc)
   \r (esc)
+  param: 12345
+  sha: 890148bbaa6a797bac8aef672a437f2b08635f15
+  filter_sha: ffe8d082c1034053534ea8068f4205ac72a1098e
+
+  $ curl -s http://localhost:8002/real_repo.git@refs/heads/master?render=tmpl_file\&param_val=12345 | grep -v date:
+  param: 12345
+  sha: 890148bbaa6a797bac8aef672a437f2b08635f15
+  filter_sha: ffe8d082c1034053534ea8068f4205ac72a1098e
+
+  $ curl -s http://localhost:8002/real_repo.git@890148bbaa6a797bac8aef672a437f2b08635f15?render=tmpl_file\&param_val=12345 | grep -v date:
   param: 12345
   sha: 890148bbaa6a797bac8aef672a437f2b08635f15
   filter_sha: ffe8d082c1034053534ea8068f4205ac72a1098e
