@@ -44,3 +44,5 @@ tempdir = "0.3.7"
 gix = { workspace = true }
 juniper = { workspace = true }
 git2 = { workspace = true }
+opentelemetry-semantic-conventions = "0.14.0"
+opentelemetry-otlp = "0.13.0"
