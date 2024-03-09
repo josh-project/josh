@@ -1,8 +1,11 @@
 use std::{error::Error, fmt, string::FromUtf8Error, sync::Arc};
 
+use bytes::Bytes;
+use http_body_util::{BodyExt, Full};
 use hyper::{
+    body::Incoming,
     header::{self, HeaderValue},
-    Body, Method, Request, Response, StatusCode,
+    Method, Request, Response, StatusCode,
 };
 use juniper::{
     http::{GraphQLBatchRequest, GraphQLRequest as JuniperGraphQLRequest, GraphQLRequest},
@@ -14,8 +17,8 @@ use url::form_urlencoded;
 pub async fn graphql_sync<CtxT, QueryT, MutationT, SubscriptionT, S>(
     root_node: Arc<RootNode<'static, QueryT, MutationT, SubscriptionT, S>>,
     context: Arc<CtxT>,
-    req: Request<Body>,
-) -> Result<Response<Body>, hyper::Error>
+    req: Request<Incoming>,
+) -> Result<Response<Full<Bytes>>, hyper::Error>
 where
     QueryT: GraphQLType<S, Context = CtxT>,
     QueryT::TypeInfo: Sync,
@@ -35,8 +38,8 @@ where
 pub async fn graphql<CtxT, QueryT, MutationT, SubscriptionT, S>(
     root_node: Arc<RootNode<'static, QueryT, MutationT, SubscriptionT, S>>,
     context: Arc<CtxT>,
-    req: Request<Body>,
-) -> Result<Response<Body>, hyper::Error>
+    req: Request<Incoming>,
+) -> Result<Response<Full<Bytes>>, hyper::Error>
 where
     QueryT: GraphQLTypeAsync<S, Context = CtxT>,
     QueryT::TypeInfo: Sync,
@@ -54,8 +57,8 @@ where
 }
 
 pub async fn parse_req<S: ScalarValue>(
-    req: Request<Body>,
-) -> Result<GraphQLBatchRequest<S>, Response<Body>> {
+    req: Request<Incoming>,
+) -> Result<GraphQLBatchRequest<S>, Response<Full<Bytes>>> {
     match *req.method() {
         Method::GET => parse_get_req(req),
         Method::POST => {
@@ -76,7 +79,7 @@ pub async fn parse_req<S: ScalarValue>(
 }
 
 fn parse_get_req<S: ScalarValue>(
-    req: Request<Body>,
+    req: Request<Incoming>,
 ) -> Result<GraphQLBatchRequest<S>, GraphQLRequestError> {
     req.uri()
         .query()
@@ -89,13 +92,14 @@ fn parse_get_req<S: ScalarValue>(
 }
 
 async fn parse_post_json_req<S: ScalarValue>(
-    body: Body,
+    body: Incoming,
 ) -> Result<GraphQLBatchRequest<S>, GraphQLRequestError> {
-    let chunk = hyper::body::to_bytes(body)
+    let chunk = body
+        .collect()
         .await
         .map_err(GraphQLRequestError::BodyHyper)?;
 
-    let input = String::from_utf8(chunk.iter().cloned().collect())
+    let input = String::from_utf8(chunk.to_bytes().iter().cloned().collect())
         .map_err(GraphQLRequestError::BodyUtf8)?;
 
     serde_json::from_str::<GraphQLBatchRequest<S>>(&input)
@@ -103,13 +107,14 @@ async fn parse_post_json_req<S: ScalarValue>(
 }
 
 async fn parse_post_graphql_req<S: ScalarValue>(
-    body: Body,
+    body: Incoming,
 ) -> Result<GraphQLBatchRequest<S>, GraphQLRequestError> {
-    let chunk = hyper::body::to_bytes(body)
+    let chunk = body
+        .collect()
         .await
         .map_err(GraphQLRequestError::BodyHyper)?;
 
-    let query = String::from_utf8(chunk.iter().cloned().collect())
+    let query = String::from_utf8(chunk.to_bytes().iter().cloned().collect())
         .map_err(GraphQLRequestError::BodyUtf8)?;
 
     Ok(GraphQLBatchRequest::Single(GraphQLRequest::new(
@@ -120,32 +125,29 @@ async fn parse_post_graphql_req<S: ScalarValue>(
 pub fn graphiql(
     graphql_endpoint: &str,
     subscriptions_endpoint: Option<&str>,
-) -> Result<Response<Body>, hyper::Error> {
+) -> Result<Response<Full<Bytes>>, hyper::Error> {
     let mut resp = new_html_response(StatusCode::OK);
     // XXX: is the call to graphiql_source blocking?
-    *resp.body_mut() = Body::from(juniper::http::graphiql::graphiql_source(
-        graphql_endpoint,
-        subscriptions_endpoint,
-    ));
+    *resp.body_mut() =
+        juniper::http::graphiql::graphiql_source(graphql_endpoint, subscriptions_endpoint).into();
     Ok(resp)
 }
 
 pub async fn playground(
     graphql_endpoint: &str,
     subscriptions_endpoint: Option<&str>,
-) -> Result<Response<Body>, hyper::Error> {
+) -> Result<Response<Full<Bytes>>, hyper::Error> {
     let mut resp = new_html_response(StatusCode::OK);
-    *resp.body_mut() = Body::from(juniper::http::playground::playground_source(
-        graphql_endpoint,
-        subscriptions_endpoint,
-    ));
+    *resp.body_mut() =
+        juniper::http::playground::playground_source(graphql_endpoint, subscriptions_endpoint)
+            .into();
     Ok(resp)
 }
 
-fn render_error(err: GraphQLRequestError) -> Response<Body> {
+fn render_error(err: GraphQLRequestError) -> Response<Full<Bytes>> {
     let message = format!("{}", err);
     let mut resp = new_response(StatusCode::BAD_REQUEST);
-    *resp.body_mut() = Body::from(message);
+    *resp.body_mut() = message.into();
     resp
 }
 
@@ -153,7 +155,7 @@ async fn execute_request_sync<CtxT, QueryT, MutationT, SubscriptionT, S>(
     root_node: Arc<RootNode<'static, QueryT, MutationT, SubscriptionT, S>>,
     context: Arc<CtxT>,
     request: GraphQLBatchRequest<S>,
-) -> Response<Body>
+) -> Response<Full<Bytes>>
 where
     QueryT: GraphQLType<S, Context = CtxT>,
     QueryT::TypeInfo: Sync,
@@ -165,7 +167,7 @@ where
     S: ScalarValue + Send + Sync,
 {
     let res = request.execute_sync(&*root_node, &context);
-    let body = Body::from(serde_json::to_string_pretty(&res).unwrap());
+    let body = serde_json::to_string_pretty(&res).unwrap();
     let code = if res.is_ok() {
         StatusCode::OK
     } else {
@@ -176,7 +178,7 @@ where
         header::CONTENT_TYPE,
         HeaderValue::from_static("application/json"),
     );
-    *resp.body_mut() = body;
+    *resp.body_mut() = body.into();
     resp
 }
 
@@ -184,7 +186,7 @@ pub async fn execute_request<CtxT, QueryT, MutationT, SubscriptionT, S>(
     root_node: Arc<RootNode<'static, QueryT, MutationT, SubscriptionT, S>>,
     context: Arc<CtxT>,
     request: GraphQLBatchRequest<S>,
-) -> Response<Body>
+) -> Response<Full<Bytes>>
 where
     QueryT: GraphQLTypeAsync<S, Context = CtxT>,
     QueryT::TypeInfo: Sync,
@@ -196,7 +198,7 @@ where
     S: ScalarValue + Send + Sync,
 {
     let res = request.execute(&*root_node, &context).await;
-    let body = Body::from(serde_json::to_string_pretty(&res).unwrap());
+    let body = serde_json::to_string_pretty(&res).unwrap();
     let code = if res.is_ok() {
         StatusCode::OK
     } else {
@@ -207,7 +209,7 @@ where
         header::CONTENT_TYPE,
         HeaderValue::from_static("application/json"),
     );
-    *resp.body_mut() = body;
+    *resp.body_mut() = body.into();
     resp
 }
 
@@ -260,13 +262,13 @@ fn invalid_err(parameter_name: &str) -> GraphQLRequestError {
     ))
 }
 
-fn new_response(code: StatusCode) -> Response<Body> {
-    let mut r = Response::new(Body::empty());
+fn new_response(code: StatusCode) -> Response<Full<Bytes>> {
+    let mut r = Response::new(Full::new(Bytes::new()));
     *r.status_mut() = code;
     r
 }
 
-fn new_html_response(code: StatusCode) -> Response<Body> {
+fn new_html_response(code: StatusCode) -> Response<Full<Bytes>> {
     let mut resp = new_response(code);
     resp.headers_mut().insert(
         header::CONTENT_TYPE,
@@ -310,10 +312,10 @@ impl Error for GraphQLRequestError {
 
 #[cfg(test)]
 mod tests {
-    use hyper::{
-        service::{make_service_fn, service_fn},
-        Body, Method, Response, Server, StatusCode,
-    };
+    use bytes::Bytes;
+    use http_body_util::Full;
+    use hyper::{server::conn::http1::Builder, service::service_fn, Method, Response, StatusCode};
+    use hyper_util::rt::TokioIo;
     use juniper::{
         http::tests as http_tests,
         tests::fixtures::starwars::schema::{Database, Query},
@@ -321,6 +323,9 @@ mod tests {
     };
     use reqwest::{self, blocking::Response as ReqwestResponse};
     use std::{net::SocketAddr, sync::Arc, thread, time::Duration};
+    use tokio::net::TcpListener;
+    use tokio::pin;
+    use tokio::sync::broadcast;
 
     struct TestHyperIntegration {
         port: u16,
@@ -387,60 +392,99 @@ mod tests {
             EmptySubscription::<Database>::new(),
         ));
 
-        let new_service = make_service_fn(move |_| {
-            let root_node = root_node.clone();
-            let ctx = db.clone();
+        let root_node = root_node.clone();
+        let ctx = db.clone();
 
+        let new_service = service_fn(move |req| {
+            let root_node = root_node.clone();
+            let ctx = ctx.clone();
+            let matches = {
+                let path = req.uri().path();
+                match req.method() {
+                    &Method::POST | &Method::GET => path == "/graphql" || path == "/graphql/",
+                    _ => false,
+                }
+            };
             async move {
-                Ok::<_, hyper::Error>(service_fn(move |req| {
-                    let root_node = root_node.clone();
-                    let ctx = ctx.clone();
-                    let matches = {
-                        let path = req.uri().path();
-                        match req.method() {
-                            &Method::POST | &Method::GET => {
-                                path == "/graphql" || path == "/graphql/"
-                            }
-                            _ => false,
-                        }
-                    };
-                    async move {
-                        if matches {
-                            if is_sync {
-                                super::graphql_sync(root_node, ctx, req).await
-                            } else {
-                                super::graphql(root_node, ctx, req).await
-                            }
-                        } else {
-                            let mut resp = Response::new(Body::empty());
-                            *resp.status_mut() = StatusCode::NOT_FOUND;
-                            Ok(resp)
-                        }
+                if matches {
+                    if is_sync {
+                        super::graphql_sync(root_node, ctx, req).await
+                    } else {
+                        super::graphql(root_node, ctx, req).await
                     }
-                }))
+                } else {
+                    let mut resp = Response::new(Full::new(Bytes::new()));
+                    *resp.status_mut() = StatusCode::NOT_FOUND;
+                    Ok(resp)
+                }
             }
         });
 
-        let (shutdown_fut, shutdown) = futures::future::abortable(async {
+        let (shutdown_tx, mut shutdown_rx) = broadcast::channel(1);
+        let tx2 = shutdown_tx.clone();
+
+        let (shutdown_fut, shutdown) = futures::future::abortable(async move {
             tokio::time::sleep(Duration::from_secs(60)).await;
+            shutdown_tx.send(());
         });
 
-        let server = Server::bind(&addr)
-            .serve(new_service)
-            .with_graceful_shutdown(async {
-                shutdown_fut.await.unwrap_err();
-            });
+        let listener = TcpListener::bind(addr).await.unwrap();
+        println!("Listening on http://{}", addr);
+        tokio::task::spawn(async move {
+            loop {
+                let mut rx = shutdown_rx.resubscribe();
+                let (tcp, remote_address) = tokio::select! {
+                    res = listener.accept() => {
+                        match res {
+                            Ok((a,b)) => (a,b),
+                            Err(e) =>{ println!("Error accepting connection: {:?}", e);
+                            continue;
+                            }
+                        }
+                    },
+                    _ = rx.recv() => {
+                        break;
+                    }
+                };
+
+                let io = TokioIo::new(tcp);
+
+                println!("accepted connection from {:?}", remote_address);
+
+                let new_service = new_service.clone();
+
+                let mut rx = shutdown_rx.resubscribe();
+                tokio::task::spawn(async move {
+                    let conn = Builder::new().serve_connection(io, new_service);
+                    pin!(conn);
+                    let shutdown_rx = rx.recv();
+                    pin!(shutdown_rx);
+
+                    tokio::select! {
+                        res = conn.as_mut() => {
+                            if let Err(e) = res {
+                                return Err(e);
+                            }
+                            res
+                        }
+                        _ = shutdown_rx => {
+                            println!("calling conn.graceful_shutdown");
+                            conn.as_mut().graceful_shutdown();
+                            Ok(())
+                        }
+                    };
+                    Ok(())
+                });
+            }
+        });
 
         tokio::task::spawn_blocking(move || {
             thread::sleep(Duration::from_millis(10)); // wait 10ms for server to bind
             let integration = TestHyperIntegration { port };
             http_tests::run_http_test_suite(&integration);
             shutdown.abort();
+            tx2.send(());
         });
-
-        if let Err(e) = server.await {
-            eprintln!("server error: {}", e);
-        }
     }
 
     #[tokio::test]

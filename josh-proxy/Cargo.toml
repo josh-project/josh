@@ -10,20 +10,23 @@ repository = "https://github.com/josh-project/josh"
 version = "22.4.15"
 
 [dependencies]
-base64 = "0.21.4"
+base64 = "0.21.7"
+bytes = "1.5.0"
 clap = { workspace = true }
 futures = { workspace = true }
-hyper = { version = "0.14.27", features = ["stream"] }
+hyper = { version = "1.1.0" }
 hyper-reverse-proxy = { workspace = true }
-hyper-staticfile = "0.9.5"
-hyper-tls = "0.5.0"
+hyper-staticfile = "0.10.0"
+hyper-tls = "0.6.0"
 hyper_cgi = { path = "../hyper_cgi" }
+hyper-util = { version = "0.1.2", features = ["client", "client-legacy", "http1", "tokio"] }
+http-body-util = "0.1.0"
 indoc = "2.0.4"
 josh = {path = "../josh-core" }
 lazy_static = { workspace = true }
 opentelemetry = "0.20.0"
 opentelemetry-jaeger = "0.19.0"
-percent-encoding = "2.3.0"
+percent-encoding = "2.3.1"
 regex = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
@@ -36,8 +39,8 @@ tracing-futures = "0.2.5"
 tracing-opentelemetry = "0.21.0"
 tracing-subscriber = { workspace = true }
 unindent = "0.2.3"
-url = "2.4.1"
-uuid = { version = "1.4.1", features = ["v4"] }
+url = "2.5.0"
+uuid = { version = "1.7.0", features = ["v4"] }
 josh-rpc = { path = "../josh-rpc" }
 tokio-util = { workspace = true }
 tempdir = "0.3.7"

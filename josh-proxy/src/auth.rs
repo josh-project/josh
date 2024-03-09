@@ -2,6 +2,11 @@
 // call its methods without adding to the namespace.
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::engine::Engine as _;
+use bytes::Bytes;
+use http_body_util::Empty;
+use hyper::body::Incoming;
+use hyper_util::client::legacy::Client;
+use hyper_util::rt::TokioExecutor;
 
 lazy_static! {
     static ref AUTH: std::sync::Mutex<std::collections::HashMap<Handle, Header>> =
@@ -90,7 +95,7 @@ pub async fn check_auth(url: &str, auth: &Handle, required: bool) -> josh::JoshR
     tracing::trace!("no cached auth {:?}", *AUTH_TIMERS.lock()?);
 
     let https = hyper_tls::HttpsConnector::new();
-    let client = hyper::Client::builder().build::<_, hyper::Body>(https);
+    let client = Client::builder(TokioExecutor::new()).build::<_, Empty<Bytes>>(https);
 
     let password = AUTH
         .lock()?
@@ -109,7 +114,7 @@ pub async fn check_auth(url: &str, auth: &Handle, required: bool) -> josh::JoshR
         builder
     };
 
-    let request = builder.body(hyper::Body::empty())?;
+    let request = builder.body(Empty::new())?;
     let resp = client.request(request).await?;
 
     let status = resp.status();
@@ -125,10 +130,7 @@ pub async fn check_auth(url: &str, auth: &Handle, required: bool) -> josh::JoshR
         Ok(true)
     } else if status == hyper::StatusCode::UNAUTHORIZED {
         tracing::warn!("resp.status == 401: {:?}", &err_msg);
-        tracing::trace!(
-            "body: {:?}",
-            std::str::from_utf8(&hyper::body::to_bytes(resp.into_body()).await?)
-        );
+        tracing::trace!("body: {:?}", resp.into_body());
         Ok(false)
     } else {
         return Err(josh::josh_error(&err_msg));
@@ -136,8 +138,8 @@ pub async fn check_auth(url: &str, auth: &Handle, required: bool) -> josh::JoshR
 }
 
 pub fn strip_auth(
-    req: hyper::Request<hyper::Body>,
-) -> josh::JoshResult<(Handle, hyper::Request<hyper::Body>)> {
+    req: hyper::Request<Incoming>,
+) -> josh::JoshResult<(Handle, hyper::Request<Incoming>)> {
     let mut req = req;
     let header: Option<hyper::header::HeaderValue> =
         req.headers_mut().remove(hyper::header::AUTHORIZATION);
