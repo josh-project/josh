@@ -229,7 +229,7 @@ pub fn get_change_id(commit: &git2::Commit, sha: git2::Oid) -> Change {
     change
 }
 
-#[tracing::instrument(skip(transaction))]
+#[tracing::instrument(level = tracing::Level::TRACE, skip(transaction))]
 pub fn filter_commit(
     transaction: &cache::Transaction,
     filterobj: filter::Filter,
