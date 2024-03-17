@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod body;
 pub mod cli;
 pub mod juniper_hyper;
 
