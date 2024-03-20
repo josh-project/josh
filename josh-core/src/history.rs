@@ -440,7 +440,22 @@ pub fn unapply_filter(
         let tree = module_commit.tree()?;
         let commit_message = module_commit.summary().unwrap_or("NO COMMIT MESSAGE");
 
-        let new_trees: JoshResult<Vec<_>> = {
+        let mut nt = None;
+        if let Some(change_ids) = change_ids {
+            for c in change_ids.iter() {
+                let cid = get_change_id(&module_commit, ret);
+
+                if c.id == cid.id {
+                    let x = transaction.repo().find_commit(c.commit)?;
+                    nt = Some(filter::unapply(transaction, filter, tree.clone(), x.tree()?)?.id());
+                    break;
+                }
+            }
+        }
+
+        let new_trees: JoshResult<Vec<_>> = if let Some(nt) = nt {
+            Ok(vec![nt])
+        } else {
             let span = tracing::span!(
                 tracing::Level::TRACE,
                 "unapply filter",
