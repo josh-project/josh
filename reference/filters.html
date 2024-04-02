@@ -217,7 +217,7 @@ simply dropping all parents except the first on every commit.</p>
 <h3 id="filter-specific-parts-of-the-history-revsha_0filter_0sha_nfilter_n"><a class="header" href="#filter-specific-parts-of-the-history-revsha_0filter_0sha_nfilter_n">Filter specific parts of the history <strong>:rev(&lt;sha_0&gt;:filter_0,...,&lt;sha_N&gt;:filter_N)</strong></a></h3>
 <p>Produce a history where the commits specified by <code>&lt;sha_N&gt;</code> are replaced by the result of applying
 <code>:filter_N</code> to it.</p>
-<p>It will appear like all <em>ancestors</em> of <code>&lt;sha_N&gt;</code> are also filtered with <code>&lt;filter_N&gt;</code>. If an
+<p>It will appear like <code>&lt;sha_N&gt;</code> and all its ancestors are also filtered with <code>&lt;filter_N&gt;</code>. If an
 ancestor also has a matching entry in the <code>:rev(...)</code> it's filter will <em>replace</em> <code>&lt;filter_N&gt;</code>
 for all further ancestors (and so on).</p>
 <p>This special value <code>0000000000000000000000000000000000000000</code> can be used as a <code>&lt;sha_n&gt;</code> to filter
