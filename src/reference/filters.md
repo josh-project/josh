@@ -102,7 +102,7 @@ simply dropping all parents except the first on every commit.
 Produce a history where the commits specified by `<sha_N>` are replaced by the result of applying
 `:filter_N` to it.
 
-It will appear like all *ancestors* of `<sha_N>` are also filtered with `<filter_N>`. If an
+It will appear like `<sha_N>` and all its ancestors are also filtered with `<filter_N>`. If an
 ancestor also has a matching entry in the `:rev(...)` it's filter will *replace* `<filter_N>`
 for all further ancestors (and so on).
 
