@@ -75,13 +75,13 @@ Flushed credential cache
   HEAD is now at 003a297 add workspace
   Pushing to http://localhost:8002/real_repo.git:workspace=ws.git
   POST git-receive-pack (440 bytes)
-  remote: josh-proxy        
-  remote: response from upstream:        
+  remote: josh-proxy: pre-receive hook        
+  remote: upstream: response status: 200 OK        
+  remote: upstream: response body:        
+  remote: 
   remote: To http://localhost:8001/real_repo.git        
   remote:    5d605ce..82678b3  JOSH_PUSH -> master        
   remote: REWRITE(1b46698f32d1d1db1eaeb34f8c9037778d65f3a9 -> 003a2970e4c23b64f915025e9adc2e6ed04bc63a)        
-  remote: 
-  remote: 
   updating local tracking ref 'refs/remotes/origin/master'
   
 
@@ -248,13 +248,13 @@ Flushed credential cache
   HEAD is now at 2a6aa2a add in filter
   Pushing to http://localhost:8002/real_repo.git:workspace=ws.git
   POST git-receive-pack (808 bytes)
-  remote: josh-proxy        
-  remote: response from upstream:        
+  remote: josh-proxy: pre-receive hook        
+  remote: upstream: response status: 200 OK        
+  remote: upstream: response body:        
+  remote: 
   remote: To http://localhost:8001/real_repo.git        
   remote:    f021d4b..a1a7760  JOSH_PUSH -> master        
   remote: REWRITE(d681a08f543313f2a8bd86fab920e2271d0403d1 -> 2a6aa2a100b34d0d56e4b5f19e9bfdc2cd6f7d54)        
-  remote: 
-  remote: 
   updating local tracking ref 'refs/remotes/origin/master'
   
 
@@ -275,13 +275,13 @@ Flushed credential cache
   HEAD is now at 60bd0e1 try to modify ws
   Pushing to http://localhost:8002/real_repo.git:workspace=ws.git
   POST git-receive-pack (466 bytes)
-  remote: josh-proxy        
-  remote: response from upstream:        
+  remote: josh-proxy: pre-receive hook        
+  remote: upstream: response status: 200 OK        
+  remote: upstream: response body:        
+  remote: 
   remote: To http://localhost:8001/real_repo.git        
   remote:    a1a7760..108eb9a  JOSH_PUSH -> master        
   remote: REWRITE(b8012aab20a6c6a0c2dc3b428d3578aadc9c527f -> 60bd0e180735e169b5c853545d8b1272ed0fc319)        
-  remote: 
-  remote: 
   updating local tracking ref 'refs/remotes/origin/master'
   
 

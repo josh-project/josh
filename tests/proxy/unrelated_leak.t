@@ -46,22 +46,22 @@ Flushed credential cache
   $ git add .
   $ git commit -m "edit file4" 1> /dev/null
   $ git push -o base=refs/heads/master origin master:refs/heads/from_filtered 2>&1 >/dev/null | sed -e 's/[ ]*$//g'
-  remote: josh-proxy
-  remote: response from upstream:
+  remote: josh-proxy: pre-receive hook
+  remote: upstream: response status: 200 OK
+  remote: upstream: response body:
+  remote:
   remote: To http://localhost:8001/real_repo.git
   remote:  * [new branch]      JOSH_PUSH -> from_filtered
-  remote:
-  remote:
   To http://localhost:8002/real_repo.git:/sub1.git
    * [new branch]      master -> from_filtered
 
   $ git push origin master:refs/heads/master 2>&1 >/dev/null | sed -e 's/[ ]*$//g'
-  remote: josh-proxy
-  remote: response from upstream:
+  remote: josh-proxy: pre-receive hook
+  remote: upstream: response status: 200 OK
+  remote: upstream: response body:
+  remote:
   remote: To http://localhost:8001/real_repo.git
   remote:    db0fd21..e170e96  JOSH_PUSH -> master
-  remote:
-  remote:
   To http://localhost:8002/real_repo.git:/sub1.git
      0b4cf6c..da0d1f3  master -> master
 

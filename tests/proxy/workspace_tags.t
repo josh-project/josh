@@ -111,13 +111,13 @@
   $ git commit -m "add in filter" 1> /dev/null
 
   $ git push 2>&1 >/dev/null | sed -e 's/[ ]*$//g'
-  remote: josh-proxy
-  remote: response from upstream:
+  remote: josh-proxy: pre-receive hook
+  remote: upstream: response status: 200 OK
+  remote: upstream: response body:
+  remote:
   remote: To http://localhost:8001/real_repo.git
   remote:    176e8e0..11e2559  JOSH_PUSH -> master
   remote: REWRITE(5fa942ed9d35f280b35df2c4ef7acd23319271a5 -> 2cbcd105ead63a4fecf486b949db7f44710300e5)
-  remote:
-  remote:
   To http://localhost:8002/real_repo.git:workspace=ws.git
      6be0d68..5fa942e  master -> master
   $ git log --graph --oneline
@@ -148,13 +148,13 @@
   $ git tag tag_from_ws_1
 
   $ git push origin tag_from_ws_1 -o base=refs/heads/master
-  remote: josh-proxy        
-  remote: response from upstream:        
+  remote: josh-proxy: pre-receive hook        
+  remote: upstream: response status: 200 OK        
+  remote: upstream: response body:        
+  remote: 
   remote: To http://localhost:8001/real_repo.git        
   remote:  * [new tag]         JOSH_PUSH -> tag_from_ws_1        
   remote: REWRITE(5fa942ed9d35f280b35df2c4ef7acd23319271a5 -> 2cbcd105ead63a4fecf486b949db7f44710300e5)        
-  remote: 
-  remote: 
   To http://localhost:8002/real_repo.git:workspace=ws.git
    * [new tag]         tag_from_ws_1 -> tag_from_ws_1
 
@@ -189,15 +189,15 @@
   1b46698 add workspace
   $ git tag tag_from_ws_2
   $ git push origin tag_from_ws_2 -o base=refs/heads/master 2>&1 >/dev/null | sed -e 's/[ ]*$//g'
-  remote: josh-proxy
-  remote: response from upstream:
+  remote: josh-proxy: pre-receive hook
+  remote: upstream: response status: 200 OK
+  remote: upstream: response body:
+  remote:
   remote: To http://localhost:8001/real_repo.git
   remote:  * [new tag]         JOSH_PUSH -> tag_from_ws_2
   remote: warnings:
   remote: No match for "c = :/sub1"
   remote: No match for "a/b = :/sub2"
-  remote:
-  remote:
   To http://localhost:8002/real_repo.git:workspace=ws.git
    * [new tag]         tag_from_ws_2 -> tag_from_ws_2
 

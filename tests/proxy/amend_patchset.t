@@ -60,12 +60,12 @@
   > EOF
 
   $ git push origin HEAD:refs/for/master 2>&1 >/dev/null | sed -e 's/[ ]*$//g'
-  remote: josh-proxy
-  remote: response from upstream:
+  remote: josh-proxy: pre-receive hook
+  remote: upstream: response status: 200 OK
+  remote: upstream: response body:
+  remote:
   remote: To http://localhost:8001/real_repo.git
   remote:  * [new reference]   JOSH_PUSH -> refs/for/master
-  remote:
-  remote:
   To http://localhost:8002/real_repo.git
    * [new reference]   HEAD -> refs/for/master
 
@@ -92,12 +92,12 @@
   $ git add .
   $ git commit --amend --no-edit -q
   $ git push origin HEAD:refs/for/master 2>&1 >/dev/null | sed -e 's/[ ]*$//g'
-  remote: josh-proxy
-  remote: response from upstream:
+  remote: josh-proxy: pre-receive hook
+  remote: upstream: response status: 200 OK
+  remote: upstream: response body:
+  remote:
   remote: To http://localhost:8001/real_repo.git
   remote:  * [new reference]   JOSH_PUSH -> refs/for/master
-  remote:
-  remote:
   To http://localhost:8002/real_repo.git:/sub3.git
    * [new reference]   HEAD -> refs/for/master
 

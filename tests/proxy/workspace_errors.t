@@ -54,8 +54,10 @@ Error: comment in the middle
   $ git add workspace.josh
   $ git commit -m "add workspace file" 1> /dev/null
   $ git push
-  remote: josh-proxy        
-  remote: response from upstream:        
+  remote: josh-proxy: pre-receive hook        
+  remote: upstream: response status: 500 Internal Server Error        
+  remote: upstream: response body:        
+  remote: 
   remote: 
   remote: Can't apply "add workspace file" (4f70c9a0179b1cae80148572c8dfc3ba1f2d43a2)        
   remote: Invalid workspace:        
@@ -76,8 +78,6 @@ Error: comment in the middle
   remote: c = :/sub1        
   remote: 
   remote: ----        
-  remote: 
-  remote: 
   remote: error: hook declined to update refs/heads/master        
   To http://localhost:8002/real_repo.git:workspace=ws.git
    ! [remote rejected] master -> master (hook declined)
@@ -93,8 +93,10 @@ Error in filter
   $ git add workspace.josh
   $ git commit -m "add workspace file" --amend 1> /dev/null
   $ git push
-  remote: josh-proxy        
-  remote: response from upstream:        
+  remote: josh-proxy: pre-receive hook        
+  remote: upstream: response status: 500 Internal Server Error        
+  remote: upstream: response body:        
+  remote: 
   remote: 
   remote: Can't apply "add workspace file" (74128cac082e518bc3ddec183bb11b16856406cd)        
   remote: Invalid workspace:        
@@ -110,8 +112,6 @@ Error in filter
   remote: c = :/sub1        
   remote: 
   remote: ----        
-  remote: 
-  remote: 
   remote: error: hook declined to update refs/heads/master        
   To http://localhost:8002/real_repo.git:workspace=ws.git
    ! [remote rejected] master -> master (hook declined)
@@ -136,8 +136,10 @@ No match for filters
   $ git add workspace.josh
   $ git commit -m "add workspace file" --amend 1> /dev/null
   $ git push origin HEAD:master
-  remote: josh-proxy        
-  remote: response from upstream:        
+  remote: josh-proxy: pre-receive hook        
+  remote: upstream: response status: 200 OK        
+  remote: upstream: response body:        
+  remote: 
   remote: To http://localhost:8001/real_repo.git        
   remote:    5119a73..25943be  JOSH_PUSH -> master        
   remote: warnings:        
@@ -149,8 +151,6 @@ No match for filters
   remote: No match for "test/test = :/test:/"        
   remote: No match for "::test/test/"        
   remote: REWRITE(064643c5fdf5295695d383a511e4335ea3262fce -> 9cbc5874da793480ee59207ca72d9f0523b8b127)        
-  remote: 
-  remote: 
   To http://localhost:8002/real_repo.git:workspace=ws.git
      66a8b5e..064643c  HEAD -> master
 

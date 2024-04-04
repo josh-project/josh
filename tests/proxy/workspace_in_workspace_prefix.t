@@ -126,13 +126,13 @@
   $ git commit -m "add in filter" 1> /dev/null
 
   $ git push 2>&1 >/dev/null | sed -e 's/[ ]*$//g'
-  remote: josh-proxy
-  remote: response from upstream:
+  remote: josh-proxy: pre-receive hook
+  remote: upstream: response status: 200 OK
+  remote: upstream: response body:
+  remote:
   remote: To http://localhost:8001/real_repo.git
   remote:    176e8e0..11e2559  JOSH_PUSH -> master
   remote: REWRITE(5fa942ed9d35f280b35df2c4ef7acd23319271a5 -> 2cbcd105ead63a4fecf486b949db7f44710300e5)
-  remote:
-  remote:
   To http://localhost:8002/real_repo.git:workspace=ws.git
      6be0d68..5fa942e  master -> master
 
@@ -198,13 +198,13 @@
   HEAD is now at b3be5ad add ws2
   Pushing to http://localhost:8002/real_repo.git:workspace=ws2.git
   POST git-receive-pack (424 bytes)
-  remote: josh-proxy        
-  remote: response from upstream:        
+  remote: josh-proxy: pre-receive hook        
+  remote: upstream: response status: 200 OK        
+  remote: upstream: response body:        
+  remote: 
   remote: To http://localhost:8001/real_repo.git        
   remote:    11e2559..517813c  JOSH_PUSH -> master        
   remote: REWRITE(d31a8dce16b9b197a1411e750602e62d8d2f97ae -> b3be5ad252e0f493a404a8785653065d7e677f21)        
-  remote: 
-  remote: 
   updating local tracking ref 'refs/remotes/origin/master'
   
 
@@ -216,13 +216,13 @@
   ! refs/heads/master -> refs/heads/master
   Pushing to http://localhost:8002/real_repo.git:workspace=ws2.git
   POST git-receive-pack (487 bytes)
-  remote: josh-proxy        
-  remote: response from upstream:        
+  remote: josh-proxy: pre-receive hook        
+  remote: upstream: response status: 500 Internal Server Error        
+  remote: upstream: response body:        
+  remote: 
   remote: 
   remote: Can't apply "add workspace filter" (a5a685ff773c9d3e2d4535a7c0b71b8752dc8b45)        
   remote: Invalid workspace: not reversible        
-  remote: 
-  remote: 
   remote: error: hook declined to update refs/heads/master        
   error: failed to push some refs to 'http://localhost:8002/real_repo.git:workspace=ws2.git'
   

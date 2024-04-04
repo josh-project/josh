@@ -34,8 +34,10 @@
   * Change-Id: 1234 
   * add file1  (origin/master, origin/HEAD)
   $ git push -o split -o author=josh@example.com origin master:refs/split/for/master
-  remote: josh-proxy        
-  remote: response from upstream:        
+  remote: josh-proxy: pre-receive hook        
+  remote: upstream: response status: 200 OK        
+  remote: upstream: response body:        
+  remote: 
   remote: To http://localhost:8001/real_repo.git        
   remote:  * [new branch]      1234 -> @changes/master/josh@example.com/1234        
   remote: To http://localhost:8001/real_repo.git        
@@ -44,8 +46,6 @@
   remote:  * [new branch]      1235 -> @changes/master/josh@example.com/1235        
   remote: To http://localhost:8001/real_repo.git        
   remote:  * [new branch]      master -> @heads/master/josh@example.com        
-  remote: 
-  remote: 
   To http://localhost:8002/real_repo.git
    * [new reference]   master -> refs/split/for/master
 

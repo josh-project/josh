@@ -29,26 +29,26 @@
   * Change-Id: 1234 
   * add file1  (origin/master, origin/HEAD)
   $ git push -o author=josh@example.com origin master:refs/stack/for/master
-  remote: josh-proxy        
-  remote: response from upstream:        
+  remote: josh-proxy: pre-receive hook        
+  remote: upstream: response status: 200 OK        
+  remote: upstream: response body:        
+  remote: 
   remote: To http://localhost:8001/real_repo.git        
   remote:  * [new branch]      1234 -> @changes/master/josh@example.com/1234        
   remote: To http://localhost:8001/real_repo.git        
   remote:  * [new branch]      foo7 -> @changes/master/josh@example.com/foo7        
   remote: To http://localhost:8001/real_repo.git        
   remote:  * [new branch]      master -> @heads/master/josh@example.com        
-  remote: 
-  remote: 
   To http://localhost:8002/real_repo.git:/sub1.git
    * [new reference]   master -> refs/stack/for/master
   $ git push -o author=josh@example.com origin master:refs/stack/for/other_branch
-  remote: josh-proxy        
-  remote: response from upstream:        
+  remote: josh-proxy: pre-receive hook        
+  remote: upstream: response status: 500 Internal Server Error        
+  remote: upstream: response body:        
+  remote: 
   remote: Reference "refs/heads/other_branch" does not exist on remote.        
   remote: If you want to create it, pass "-o base=<basebranch>" or "-o base=path/to/ref"        
   remote: to specify a base branch/reference.        
-  remote: 
-  remote: 
   remote: 
   remote: error: hook declined to update refs/stack/for/other_branch        
   To http://localhost:8002/real_repo.git:/sub1.git
@@ -56,27 +56,27 @@
   error: failed to push some refs to 'http://localhost:8002/real_repo.git:/sub1.git'
   [1]
   $ git push -o base=master -o author=josh@example.com origin master:refs/stack/for/other_branch
-  remote: josh-proxy        
-  remote: response from upstream:        
+  remote: josh-proxy: pre-receive hook        
+  remote: upstream: response status: 200 OK        
+  remote: upstream: response body:        
+  remote: 
   remote: To http://localhost:8001/real_repo.git        
   remote:  * [new branch]      1234 -> @changes/other_branch/josh@example.com/1234        
   remote: To http://localhost:8001/real_repo.git        
   remote:  * [new branch]      foo7 -> @changes/other_branch/josh@example.com/foo7        
   remote: To http://localhost:8001/real_repo.git        
   remote:  * [new branch]      other_branch -> @heads/other_branch/josh@example.com        
-  remote: 
-  remote: 
   To http://localhost:8002/real_repo.git:/sub1.git
    * [new reference]   master -> refs/stack/for/other_branch
   $ echo contents2 > file3
   $ git add file3
   $ git commit -m "add file3" 1> /dev/null
   $ git push -o author=josh@example.com origin master:refs/stack/for/master
-  remote: josh-proxy        
-  remote: response from upstream:        
+  remote: josh-proxy: pre-receive hook        
+  remote: upstream: response status: 500 Internal Server Error        
+  remote: upstream: response body:        
+  remote: 
   remote: rejecting to push a3065162ecee0fecc977ec04a275e10b5e15a39c without id        
-  remote: 
-  remote: 
   remote: error: hook declined to update refs/stack/for/master        
   To http://localhost:8002/real_repo.git:/sub1.git
    ! [remote rejected] master -> refs/stack/for/master (hook declined)

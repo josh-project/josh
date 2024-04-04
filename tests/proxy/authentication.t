@@ -87,12 +87,12 @@
    1 file changed, 1 insertion(+)
    create mode 100644 file2
   $ git push
-  remote: josh-proxy        
-  remote: response from upstream:        
+  remote: josh-proxy: pre-receive hook        
+  remote: upstream: response status: 200 OK        
+  remote: upstream: response body:        
+  remote: 
   remote: To http://localhost:8001/real_repo.git        
   remote:    bb282e9..f23daa6  JOSH_PUSH -> master        
-  remote: 
-  remote: 
   To http://localhost:8002/real_repo.git
      bb282e9..f23daa6  master -> master
 

@@ -22,13 +22,13 @@
   $ git add file2
   $ git commit -m "add file2" 1> /dev/null
   $ git push origin HEAD:refs/heads/new_branch 2>&1 >/dev/null | sed -e 's/[ ]*$//g'
-  remote: josh-proxy
-  remote: response from upstream:
+  remote: josh-proxy: pre-receive hook
+  remote: upstream: response status: 500 Internal Server Error
+  remote: upstream: response body:
+  remote:
   remote: Reference "refs/heads/new_branch" does not exist on remote.
   remote: If you want to create it, pass "-o base=<basebranch>" or "-o base=path/to/ref"
   remote: to specify a base branch/reference.
-  remote:
-  remote:
   remote:
   remote: error: hook declined to update refs/heads/new_branch
   To http://localhost:8002/real_repo.git:/sub1.git
@@ -36,24 +36,24 @@
   error: failed to push some refs to 'http://localhost:8002/real_repo.git:/sub1.git'
 
   $ git push -o base=refs/heads/master origin HEAD:refs/heads/new_branch 2>&1 >/dev/null | sed -e 's/[ ]*$//g'
-  remote: josh-proxy
-  remote: response from upstream:
+  remote: josh-proxy: pre-receive hook
+  remote: upstream: response status: 200 OK
+  remote: upstream: response body:
+  remote:
   remote: To http://localhost:8001/real_repo.git
   remote:  * [new branch]      JOSH_PUSH -> new_branch
-  remote:
-  remote:
   To http://localhost:8002/real_repo.git:/sub1.git
    * [new branch]      HEAD -> new_branch
 
 $ curl -s http://localhost:8002/flush
 Flushed credential cache
   $ git push
-  remote: josh-proxy        
-  remote: response from upstream:        
+  remote: josh-proxy: pre-receive hook        
+  remote: upstream: response status: 200 OK        
+  remote: upstream: response body:        
+  remote: 
   remote: To http://localhost:8001/real_repo.git        
   remote:    bb282e9..81b10fb  JOSH_PUSH -> master        
-  remote: 
-  remote: 
   To http://localhost:8002/real_repo.git:/sub1.git
      0b4cf6c..d8388f5  master -> master
 

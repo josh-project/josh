@@ -75,13 +75,13 @@ Flushed credential cache
   HEAD is now at d91fa49 Merge from :workspace=ws
   Pushing to http://localhost:8002/real_repo.git:workspace=ws.git
   POST git-receive-pack (439 bytes)
-  remote: josh-proxy        
-  remote: response from upstream:        
+  remote: josh-proxy: pre-receive hook        
+  remote: upstream: response status: 200 OK        
+  remote: upstream: response body:        
+  remote: 
   remote: To http://localhost:8001/real_repo.git        
   remote:    5d605ce..0ebcca7  JOSH_PUSH -> master        
   remote: REWRITE(1b46698f32d1d1db1eaeb34f8c9037778d65f3a9 -> d91fa4981fe3546f44fa5a779ec6f69b20fdaa0f)        
-  remote: 
-  remote: 
   updating local tracking ref 'refs/remotes/origin/master'
   
 
@@ -161,13 +161,13 @@ Flushed credential cache
   HEAD is now at 251b9a3 mod workspace
   Pushing to http://localhost:8002/real_repo.git:workspace=ws.git
   POST git-receive-pack (530 bytes)
-  remote: josh-proxy        
-  remote: response from upstream:        
+  remote: josh-proxy: pre-receive hook        
+  remote: upstream: response status: 200 OK        
+  remote: upstream: response body:        
+  remote: 
   remote: To http://localhost:8001/real_repo.git        
   remote:    0ebcca7..57d15ef  JOSH_PUSH -> master        
   remote: REWRITE(5d8563b5319ef897a6aa971c0e4dd275a1139bf5 -> 251b9a34c94c69defbebdfc716a7eff98df80b51)        
-  remote: 
-  remote: 
   updating local tracking ref 'refs/remotes/origin/master'
   
 

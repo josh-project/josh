@@ -30,22 +30,24 @@
   * Change-Id: 1234 
   * add file1  (origin/master, origin/HEAD)
   $ git push -o author=foo@example.com origin master:refs/for/master
-  remote: josh-proxy        
-  remote: response from upstream:        
+  remote: josh-proxy: pre-receive hook        
+  remote: upstream: response status: 200 OK        
+  remote: upstream: response body:        
+  remote: 
   remote: To http://localhost:8001/real_repo.git        
   remote:  * [new reference]   JOSH_PUSH -> refs/for/master        
   remote: To http://localhost:8001/real_repo.git        
   remote:  * [new branch]      master -> @heads/master/foo@example.com        
-  remote: 
-  remote: 
   To http://localhost:8002/real_repo.git
    * [new reference]   master -> refs/for/master
   $ git push http://localhost:8001/real_repo.git :refs/for/master
   To http://localhost:8001/real_repo.git
    - [deleted]         refs/for/master
   $ git push -o author=josh@example.com origin master:refs/for/master
-  remote: josh-proxy        
-  remote: response from upstream:        
+  remote: josh-proxy: pre-receive hook        
+  remote: upstream: response status: 200 OK        
+  remote: upstream: response body:        
+  remote: 
   remote: To http://localhost:8001/real_repo.git        
   remote:  * [new branch]      1234 -> @changes/master/josh@example.com/1234        
   remote: To http://localhost:8001/real_repo.git        
@@ -54,19 +56,17 @@
   remote:  * [new reference]   JOSH_PUSH -> refs/for/master        
   remote: To http://localhost:8001/real_repo.git        
   remote:  * [new branch]      master -> @heads/master/josh@example.com        
-  remote: 
-  remote: 
   To http://localhost:8002/real_repo.git
    * [new reference]   master -> refs/for/master
   $ echo contents2 > file3
   $ git add file3
   $ git commit -m "add file3" 1> /dev/null
   $ git push -o author=josh@example.com origin master:refs/for/master
-  remote: josh-proxy        
-  remote: response from upstream:        
+  remote: josh-proxy: pre-receive hook        
+  remote: upstream: response status: 500 Internal Server Error        
+  remote: upstream: response body:        
+  remote: 
   remote: rejecting to push 3ad32b3bd3bb778441e7eae43930d8dc6293eddc without id        
-  remote: 
-  remote: 
   remote: error: hook declined to update refs/for/master        
   To http://localhost:8002/real_repo.git
    ! [remote rejected] master -> refs/for/master (hook declined)
@@ -76,14 +76,14 @@
   To http://localhost:8001/real_repo.git
    - [deleted]         refs/for/master
   $ git push -o author=foo@example.com origin master:refs/for/master
-  remote: josh-proxy        
-  remote: response from upstream:        
+  remote: josh-proxy: pre-receive hook        
+  remote: upstream: response status: 200 OK        
+  remote: upstream: response body:        
+  remote: 
   remote: To http://localhost:8001/real_repo.git        
   remote:  * [new reference]   JOSH_PUSH -> refs/for/master        
   remote: To http://localhost:8001/real_repo.git        
   remote:    ec41aad..3ad32b3  master -> @heads/master/foo@example.com        
-  remote: 
-  remote: 
   To http://localhost:8002/real_repo.git
    * [new reference]   master -> refs/for/master
 
