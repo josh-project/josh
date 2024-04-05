@@ -22,12 +22,12 @@
   $ git add .
   $ git commit -m "add file2" 1> /dev/null
   $ git push
-  remote: josh-proxy        
-  remote: response from upstream:        
+  remote: josh-proxy: pre-receive hook        
+  remote: upstream: response status: 200 OK        
+  remote: upstream: response body:        
+  remote: 
   remote: To http://localhost:8001/real_repo.git        
   remote:    bb282e9..b7cf821  JOSH_PUSH -> master        
-  remote: 
-  remote: 
   To http://localhost:8002/real_repo.git:prefix=pre.git
      1f0b9d8..f99a2dd  master -> master
 

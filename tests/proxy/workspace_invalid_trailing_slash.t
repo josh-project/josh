@@ -52,13 +52,13 @@ Flushed credential cache
   $ git add .
   $ git commit -m "add workspace" 1> /dev/null
   $ git push origin HEAD:refs/heads/master -o merge 2>&1 >/dev/null | sed -e 's/[ ]*$//g'
-  remote: josh-proxy
-  remote: response from upstream:
+  remote: josh-proxy: pre-receive hook
+  remote: upstream: response status: 200 OK
+  remote: upstream: response body:
+  remote:
   remote: To http://localhost:8001/real_repo.git
   remote:    81c59c0..37c79e6  JOSH_PUSH -> master
   remote: REWRITE(85ee20960c56619305e098b301d8253888b6ce5b -> 705dcb4e33bd0dd3f95d5831fc8dc8a41ca3e566)
-  remote:
-  remote:
   To http://localhost:8002/real_repo.git:workspace=ws.git
    * [new branch]      HEAD -> master
 
@@ -125,8 +125,10 @@ Flushed credential cache
 
 
   $ git push 2>&1 >/dev/null | sed -e 's/[ ]*$//g'
-  remote: josh-proxy
-  remote: response from upstream:
+  remote: josh-proxy: pre-receive hook
+  remote: upstream: response status: 500 Internal Server Error
+  remote: upstream: response body:
+  remote:
   remote:
   remote: Can't apply "mod workspace" (b78eb888451be077531b50794384c2faec025765)
   remote: Invalid workspace:
@@ -141,8 +143,6 @@ Flushed credential cache
   remote: a/ = :/sub1
   remote:
   remote: ----
-  remote:
-  remote:
   remote: error: hook declined to update refs/heads/master
   To http://localhost:8002/real_repo.git:workspace=ws.git
    ! [remote rejected] master -> master (hook declined)

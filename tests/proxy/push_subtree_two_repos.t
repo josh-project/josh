@@ -31,12 +31,12 @@
   $ git add file2
   $ git commit -m "add file2" 1> /dev/null
   $ git push 1> /dev/null
-  remote: josh-proxy        
-  remote: response from upstream:        
+  remote: josh-proxy: pre-receive hook        
+  remote: upstream: response status: 200 OK        
+  remote: upstream: response body:        
+  remote: 
   remote: To http://localhost:8001/real_repo.git        
   remote:    bb282e9..81b10fb  JOSH_PUSH -> master        
-  remote: 
-  remote: 
   To http://localhost:8002/real_repo.git:/sub1.git
      0b4cf6c..d8388f5  master -> master
 
@@ -56,12 +56,12 @@ Put a double slash in the URL to see that it also works
   $ git add file2
   $ git commit -m "add file2" 1> /dev/null
   $ git push 1> /dev/null
-  remote: josh-proxy        
-  remote: response from upstream:        
+  remote: josh-proxy: pre-receive hook        
+  remote: upstream: response status: 200 OK        
+  remote: upstream: response body:        
+  remote: 
   remote: To http://localhost:8001/real/repo2.git        
   remote:    bcd5520..dcd1fcd  JOSH_PUSH -> master        
-  remote: 
-  remote: 
   To http://localhost:8002/real/repo2.git:/sub1.git
      e31c696..5c1144a  master -> master
 

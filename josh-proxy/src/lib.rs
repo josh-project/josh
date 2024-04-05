@@ -1,6 +1,7 @@
 pub mod auth;
 pub mod cli;
 pub mod juniper_hyper;
+pub mod trace;
 
 #[macro_use]
 extern crate lazy_static;
@@ -108,19 +109,44 @@ pub struct RepoUpdate {
     pub context_propagator: std::collections::HashMap<String, String>,
 }
 
+#[derive(serde::Serialize, serde::Deserialize, Debug)]
+#[serde(default)]
+pub struct PushOptions {
+    pub merge: bool,
+    pub create: bool,
+    pub force: bool,
+    pub base: Option<String>,
+    pub author: Option<String>,
+}
+
+impl Default for PushOptions {
+    fn default() -> Self {
+        PushOptions {
+            merge: false,
+            create: false,
+            force: false,
+            base: None,
+            author: None,
+        }
+    }
+}
+
 pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> {
-    let p = std::path::PathBuf::from(&repo_update.git_dir)
+    let push_options_path = std::path::PathBuf::from(&repo_update.git_dir)
         .join("refs/namespaces")
         .join(&repo_update.git_ns)
         .join("push_options");
 
-    let push_options_string = std::fs::read_to_string(p)?;
-    let push_options: std::collections::HashMap<String, String> =
-        serde_json::from_str(&push_options_string)?;
+    let push_options = std::fs::read_to_string(push_options_path)?;
+    let push_options: PushOptions = serde_json::from_str(&push_options)
+        .map_err(|e| josh_error(&format!("Failed to parse push options: {}", e)))?;
+
+    tracing::debug!(
+        push_options = ?push_options,
+        "process_repo_update"
+    );
 
     for (refname, (old, new)) in repo_update.refs.iter() {
-        tracing::debug!("REPO_UPDATE env ok");
-
         let transaction = josh::cache::Transaction::open(
             std::path::Path::new(&repo_update.git_dir),
             Some(&format!("refs/josh/upstream/{}/", repo_update.base_ns)),
@@ -141,28 +167,34 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
         )?;
 
         let old = git2::Oid::from_str(old)?;
-
         let (baseref, push_to, options, push_mode) = baseref_and_options(refname)?;
-        let josh_merge = push_options.contains_key("merge");
-
-        tracing::debug!("push options: {:?}", push_options);
-        tracing::debug!("josh-merge: {:?}", josh_merge);
 
         let old = if old == git2::Oid::zero() {
             let rev = format!("refs/namespaces/{}/{}", repo_update.git_ns, &baseref);
-            let oid = if let Ok(x) = transaction.repo().revparse_single(&rev) {
-                x.id()
+            let oid = if let Ok(resolved) = transaction.repo().revparse_single(&rev) {
+                resolved.id()
             } else {
                 old
             };
-            tracing::debug!("push: old oid: {:?}, rev: {:?}", oid, rev);
+
+            tracing::debug!(
+                old_oid = ?oid,
+                rev = %rev,
+                "resolve_old"
+            );
+
             oid
         } else {
-            tracing::debug!("push: old oid: {:?}, refname: {:?}", old, refname);
+            tracing::debug!(
+                old_oid = ?old,
+                refname = %refname,
+                "resolve_old"
+            );
+
             old
         };
 
-        let original_target_ref = if let Some(base) = push_options.get("base") {
+        let original_target_ref = if let Some(base) = &push_options.base {
             // Allow user to use just the branchname as the base:
             let full_path_base_refname =
                 transaction_mirror.refname(&format!("refs/heads/{}", base));
@@ -173,7 +205,7 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
             {
                 full_path_base_refname
             } else {
-                transaction_mirror.refname(base)
+                transaction_mirror.refname(&base)
             }
         } else {
             transaction_mirror.refname(&baseref)
@@ -184,12 +216,18 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
             .refname_to_id(&original_target_ref)
         {
             tracing::debug!(
-                "push: original_target oid: {:?}, original_target_ref: {:?}",
-                oid,
-                original_target_ref
+                original_target_oid = ?oid,
+                original_target_ref = %original_target_ref,
+                "resolve_original_target"
             );
+
             oid
         } else {
+            tracing::debug!(
+                original_target_ref = %original_target_ref,
+                "resolve_original_target"
+            );
+
             return Err(josh::josh_error(&unindent::unindent(&format!(
                 r###"
                     Reference {:?} does not exist on remote.
@@ -200,14 +238,14 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
             ))));
         };
 
-        let reparent_orphans = if push_options.contains_key("create") {
+        let reparent_orphans = if push_options.create {
             Some(original_target)
         } else {
             None
         };
 
-        let author = if let Some(p) = push_options.get("author") {
-            p.to_string()
+        let author = if let Some(author) = &push_options.author {
+            author.to_string()
         } else {
             "".to_string()
         };
@@ -219,26 +257,30 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
                 None
             };
 
-        let filterobj = josh::filter::parse(&repo_update.filter_spec)?;
+        let filter = josh::filter::parse(&repo_update.filter_spec)?;
         let new_oid = git2::Oid::from_str(new)?;
         let backward_new_oid = {
-            tracing::debug!("=== MORE");
-
-            tracing::debug!("=== processed_old {:?}", old);
-
-            josh::history::unapply_filter(
+            let unapply_result = josh::history::unapply_filter(
                 &transaction,
-                filterobj,
+                filter,
                 original_target,
                 old,
                 new_oid,
-                josh_merge,
+                push_options.merge,
                 reparent_orphans,
                 &mut changes,
-            )?
+            )?;
+
+            tracing::debug!(
+                processed_old = ?old,
+                unapply_result = ?unapply_result,
+                "unapply_filter"
+            );
+
+            unapply_result
         };
 
-        let oid_to_push = if josh_merge {
+        let oid_to_push = if push_options.merge {
             let backward_commit = transaction.repo().find_commit(backward_new_oid)?;
             if let Ok(base_commit_id) = transaction_mirror
                 .repo()
@@ -301,6 +343,8 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
         let mut resp = vec![];
 
         for (reference, oid, display_name) in to_push {
+            let force_push = push_mode != PushMode::Normal || push_options.force;
+
             let (text, status) = push_head_url(
                 transaction.repo(),
                 &format!("{}/objects", repo_update.mirror_git_dir),
@@ -310,17 +354,17 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
                 &repo_update.remote_auth,
                 &repo_update.git_ns,
                 &display_name,
-                push_mode != PushMode::Normal,
+                force_push,
             )?;
+
             if status != 0 {
                 return Err(josh::josh_error(&text));
             }
 
             resp.push(text.to_string());
-
             let mut warnings = josh::filter::compute_warnings(
                 &transaction,
-                filterobj,
+                filter,
                 transaction.repo().find_commit(oid)?.tree()?,
             );
 
@@ -331,7 +375,7 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
         }
 
         let reapply = josh::filter::apply_to_commit(
-            filterobj,
+            filter,
             &transaction.repo().find_commit(oid_to_push)?,
             &transaction,
         )?;
@@ -342,7 +386,7 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
                     &format!(
                         "refs/josh/rewrites/{}/{:?}/r_{}",
                         repo_update.base_ns,
-                        filterobj.id(),
+                        filter.id(),
                         reapply
                     ),
                     reapply,
@@ -350,8 +394,14 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
                     "reapply",
                 )?;
             }
+
+            tracing::debug!(
+                new_oid = ?new_oid,
+                reapply = ?reapply,
+                "rewrite"
+            );
+
             let text = format!("REWRITE({} -> {})", new_oid, reapply);
-            tracing::debug!("{}", text);
             resp.push(text);
         }
 
@@ -437,27 +487,29 @@ pub fn push_head_url(
     display_name: &str,
     force: bool,
 ) -> josh::JoshResult<(String, i32)> {
-    let rn = format!("refs/{}", &namespace);
-
-    let spec = format!("{}:{}", &rn, &refname);
+    let push_temp_ref = format!("refs/{}", &namespace);
+    let push_refspec = format!("{}:{}", &push_temp_ref, &refname);
 
     let mut cmd = vec!["git", "push"];
     if force {
         cmd.push("--force")
     }
     cmd.push(url);
-    cmd.push(&spec);
+    cmd.push(&push_refspec);
 
-    let mut fakehead = repo.reference(&rn, oid, true, "push_head_url")?;
+    let mut fake_head = repo.reference(&push_temp_ref, oid, true, "push_head_url")?;
     let (stdout, stderr, status) =
         run_git_with_auth(repo.path(), &cmd, remote_auth, Some(alternate.to_owned()))?;
-    fakehead.delete()?;
+    fake_head.delete()?;
 
-    tracing::debug!("{}", &stderr);
-    tracing::debug!("{}", &stdout);
+    tracing::debug!(
+        stdout = %stdout,
+        stderr = %stderr,
+        status = %status,
+        "push_head_url: run_git"
+    );
 
-    let stderr = stderr.replace(&rn, display_name);
-
+    let stderr = stderr.replace(&push_temp_ref, display_name);
     Ok((stderr, status))
 }
 

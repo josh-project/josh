@@ -136,13 +136,13 @@
   $ git commit -m "add in filter" 1> /dev/null
 
   $ git push 2>&1 >/dev/null | sed -e 's/[ ]*$//g'
-  remote: josh-proxy
-  remote: response from upstream:
+  remote: josh-proxy: pre-receive hook
+  remote: upstream: response status: 200 OK
+  remote: upstream: response body:
+  remote:
   remote: To http://localhost:8001/real_repo.git
   remote:    dc5f7e8..bb76696  JOSH_PUSH -> master
   remote: REWRITE(b176252014d4a10d3ec078667ecf45dd9a140951 -> fa3b9622c1bcc8363c27d4eb05d1ae8dae15e871)
-  remote:
-  remote:
   To http://localhost:8002/real_repo.git:workspace=ws.git
      be06ec3..b176252  master -> master
 

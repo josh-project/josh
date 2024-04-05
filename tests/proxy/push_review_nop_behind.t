@@ -33,12 +33,12 @@ This is a regression test for that problem.
   $ git commit -m "add file3" 1> /dev/null
 
   $ git push origin HEAD:refs/for/master
-  remote: josh-proxy        
-  remote: response from upstream:        
+  remote: josh-proxy: pre-receive hook        
+  remote: upstream: response status: 200 OK        
+  remote: upstream: response body:        
+  remote: 
   remote: To http://localhost:8001/real_repo.git        
   remote:  * [new reference]   JOSH_PUSH -> refs/for/master        
-  remote: 
-  remote: 
   To http://localhost:8002/real_repo.git
    * [new reference]   HEAD -> refs/for/master
 

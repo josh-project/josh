@@ -32,12 +32,12 @@ Flushed credential cache
   * add file3
   * add file1
   $ git push origin master:refs/for/master
-  remote: josh-proxy        
-  remote: response from upstream:        
+  remote: josh-proxy: pre-receive hook        
+  remote: upstream: response status: 200 OK        
+  remote: upstream: response body:        
+  remote: 
   remote: To http://localhost:8001/real_repo.git        
   remote:  * [new reference]   JOSH_PUSH -> refs/for/master        
-  remote: 
-  remote: 
   To http://localhost:8002/real_repo.git:/sub1.git
    * [new reference]   master -> refs/for/master
 

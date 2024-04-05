@@ -149,13 +149,13 @@
   $ git commit -m "add in filter" 1> /dev/null
 
   $ git push 2>&1 >/dev/null | sed -e 's/[ ]*$//g'
-  remote: josh-proxy
-  remote: response from upstream:
+  remote: josh-proxy: pre-receive hook
+  remote: upstream: response status: 200 OK
+  remote: upstream: response body:
+  remote:
   remote: To http://localhost:8001/real_repo.git
   remote:    aaec05d..edefd7d  JOSH_PUSH -> master
   remote: REWRITE(7de033196d3f74f40139647122f499286a97498b -> 44edc62d506b9805a3edfc74db15b1cc0bfc6871)
-  remote:
-  remote:
   To http://localhost:8002/real_repo.git:workspace=ws:prefix=pre:/pre.git
      6712cb1..7de0331  master -> master
 
@@ -172,13 +172,13 @@
   $ git commit -m "try to modify ws" 1> /dev/null
 
   $ git push 2>&1 >/dev/null | sed -e 's/[ ]*$//g'
-  remote: josh-proxy
-  remote: response from upstream:
+  remote: josh-proxy: pre-receive hook
+  remote: upstream: response status: 200 OK
+  remote: upstream: response body:
+  remote:
   remote: To http://localhost:8001/real_repo.git
   remote:    edefd7d..0c66ddc  JOSH_PUSH -> master
   remote: REWRITE(9f7fe44ebf4b96d3fc03aa7bffff6baa4a84eb63 -> 707a20731ff94c2dee063a8b274665b1cc730e26)
-  remote:
-  remote:
   To http://localhost:8002/real_repo.git:workspace=ws:prefix=pre:/pre.git
      44edc62..9f7fe44  master -> master
 $ curl -s http://localhost:8002/flush

@@ -124,13 +124,13 @@
    1 file changed, 1 insertion(+)
 
   $ git push origin HEAD:refs/for/master 2>&1 >/dev/null | sed -e 's/[ ]*$//g'
-  remote: josh-proxy
-  remote: response from upstream:
+  remote: josh-proxy: pre-receive hook
+  remote: upstream: response status: 200 OK
+  remote: upstream: response body:
+  remote:
   remote: To http://localhost:8001/real_repo.git
   remote:  * [new reference]   JOSH_PUSH -> refs/for/master
   remote: REWRITE(e63efb2615e1c17f0d0b6e610da85da09438cd29 -> 9bd58f891b4f17736c1b51903837de717fce13a5)
-  remote:
-  remote:
   To http://localhost:8002/real_repo.git:workspace=ws.git
    * [new reference]   HEAD -> refs/for/master
 
@@ -158,13 +158,13 @@
   > EOF
 
   $ git push origin HEAD:refs/for/master 2>&1 >/dev/null | sed -e 's/[ ]*$//g'
-  remote: josh-proxy
-  remote: response from upstream:
+  remote: josh-proxy: pre-receive hook
+  remote: upstream: response status: 200 OK
+  remote: upstream: response body:
+  remote:
   remote: To http://localhost:8001/real_repo.git
   remote:  * [new reference]   JOSH_PUSH -> refs/for/master
   remote: REWRITE(5645805dcc75cfe4922b9cb301c40a4a4b35a59d -> 9a28fa82a736714d831348bbf62b951be65331b7)
-  remote:
-  remote:
   To http://localhost:8002/real_repo.git:workspace=ws.git
    * [new reference]   HEAD -> refs/for/master
 
