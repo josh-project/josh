@@ -124,17 +124,18 @@ pub fn render(
     query_and_params: &str,
     split_odb: bool,
 ) -> JoshResult<Option<(String, std::collections::BTreeMap<String, String>)>> {
-    let mut parameters = query_and_params.split('&');
-    let query = parameters
-        .next()
-        .ok_or_else(|| josh_error(&format!("invalid query {:?}", query_and_params)))?;
-    let mut split = query.splitn(2, '=');
-    let cmd = split
-        .next()
-        .ok_or_else(|| josh_error(&format!("invalid query {:?}", query_and_params)))?;
-    let path = split
-        .next()
-        .ok_or_else(|| josh_error(&format!("invalid query {:?}", query_and_params)))?;
+    let params = form_urlencoded::parse(&query_and_params.as_bytes())
+        .map(|(x, y)| (x.to_string(), y.to_string()))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let (cmd, path) = if let Some(path) = params.get("get") {
+        ("get", path)
+    } else if let Some(path) = params.get("graphql") {
+        ("graphql", path)
+    } else if let Some(path) = params.get("render") {
+        ("render", path)
+    } else {
+        return Err(josh_error("no command"));
+    };
 
     let tree = transaction.repo().find_commit(commit_id)?.tree()?;
 
@@ -145,18 +146,6 @@ pub fn render(
             return Ok(None);
         }
     );
-
-    let mut params = std::collections::BTreeMap::new();
-    for p in parameters {
-        let mut split = p.splitn(2, '=');
-        let name = split
-            .next()
-            .ok_or_else(|| josh_error(&format!("invalid query {:?}", query_and_params)))?;
-        let value = split
-            .next()
-            .ok_or_else(|| josh_error(&format!("invalid query {:?}", query_and_params)))?;
-        params.insert(name.to_string(), value.to_string());
-    }
 
     let template = if let Ok(blob) = obj.peel_to_blob() {
         let file = std::str::from_utf8(blob.content())?;

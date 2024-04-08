@@ -36,6 +36,7 @@ toml = { workspace = true }
 tracing = { workspace = true }
 gix = { workspace = true }
 juniper = { workspace = true }
+form_urlencoded = "1.2.1"
 
 [dependencies.chrono]
 default-features = false

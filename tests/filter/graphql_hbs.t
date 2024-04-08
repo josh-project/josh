@@ -306,9 +306,10 @@
       ]
     }
   } (no-eol)
-  $ josh-filter -q "render=sub1/tmpl_file&tmpl_param1=tmpl_param_value1&tmpl_p2=val2"
+
+  $ josh-filter -q "render=sub1%2Ftmpl_file&tmpl_param1=tmpl_param_value1&tmpl_p2=val%252"
   tmpl_param1: tmpl_param_value1
-  tmpl_p2: val2
+  tmpl_p2: val%2
   ID: a00263b0ee48ce1badf88d178a1e4fc27546aad0
   Summary: add templ_file
   From TOML: my_value
