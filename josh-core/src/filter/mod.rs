@@ -14,6 +14,8 @@ lazy_static! {
         std::sync::Mutex::new(std::collections::HashMap::new());
     static ref WORKSPACES: std::sync::Mutex<std::collections::HashMap<git2::Oid, Filter>> =
         std::sync::Mutex::new(std::collections::HashMap::new());
+    static ref ANCESTORS: std::sync::Mutex<std::collections::HashMap<git2::Oid, std::collections::HashSet<git2::Oid>>> =
+        std::sync::Mutex::new(std::collections::HashMap::new());
 }
 
 /// Filters are represented as `git2::Oid`, however they are not ever stored
@@ -482,20 +484,23 @@ fn apply_to_commit2(
 
             let id = commit.id();
 
-            if let Some(startfilter) = filters.get(&id) {
-                let mut f2 = filters.clone();
-                f2.remove(&id);
-                f2.insert(git2::Oid::zero(), *startfilter);
-                let op = if f2.len() == 1 {
-                    to_op(*startfilter)
-                } else {
-                    Op::Rev(f2)
-                };
-                if let Some(start) = apply_to_commit2(&op, commit, transaction)? {
-                    transaction.insert(filter, id, start, true);
-                    return Ok(Some(start));
-                } else {
-                    return Ok(None);
+            for (&filter_tip, startfilter) in filters.iter() {
+                if filter_tip != git2::Oid::zero() && is_ancestor_of(repo, id, filter_tip)? {
+                    // Remove this filter but preserve the others.
+                    let mut f2 = filters.clone();
+                    f2.remove(&filter_tip);
+                    f2.insert(git2::Oid::zero(), *startfilter);
+                    let op = if f2.len() == 1 {
+                        to_op(*startfilter)
+                    } else {
+                        Op::Rev(f2)
+                    };
+                    if let Some(start) = apply_to_commit2(&op, commit, transaction)? {
+                        transaction.insert(filter, id, start, true);
+                        return Ok(Some(start));
+                    } else {
+                        return Ok(None);
+                    }
                 }
             }
 
@@ -978,6 +983,33 @@ pub fn make_permissions_filter(filter: Filter, whitelist: Filter, blacklist: Fil
         compose(blacklist, to_filter(Op::Subtract(nop(), whitelist))),
     );
     opt::optimize(filter)
+}
+
+/// Check if `commit` is an ancestor of `tip`.
+///
+/// Creates a cache for a given `tip` so repeated queries with the same `tip` are more efficient.
+fn is_ancestor_of(repo: &git2::Repository, commit: git2::Oid, tip: git2::Oid) -> JoshResult<bool> {
+    let mut ancestor_cache = ANCESTORS.lock().unwrap();
+    let ancestors = match ancestor_cache.entry(tip) {
+        std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
+        std::collections::hash_map::Entry::Vacant(entry) => {
+            tracing::trace!("is_ancestor_of tip={tip}");
+            // Recursively compute all ancestors of `tip`.
+            // Invariant: Everything in `todo` is also in `ancestors`.
+            let mut todo = vec![tip];
+            let mut ancestors = std::collections::HashSet::from_iter(todo.iter().copied());
+            while let Some(commit) = todo.pop() {
+                for parent in repo.find_commit(commit)?.parent_ids() {
+                    if ancestors.insert(parent) {
+                        // Newly inserted! Also handle its parents.
+                        todo.push(parent);
+                    }
+                }
+            }
+            entry.insert(ancestors)
+        }
+    };
+    Ok(ancestors.contains(&commit))
 }
 
 #[cfg(test)]
