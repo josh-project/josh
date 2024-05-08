@@ -295,12 +295,12 @@ pub fn refresh_known_filters(
                 &to_filtered_ref(upstream_repo, filter_spec),
                 upstream_repo,
             ) {
-                let mut u = filter_refs(
+                let (mut u, _) = filter_refs(
                     transaction_overlay,
                     filter::parse(filter_spec)?,
                     &[from],
                     filter::empty(),
-                )?;
+                );
                 u[0].0 = to_ref;
                 updated_refs.append(&mut u);
             }

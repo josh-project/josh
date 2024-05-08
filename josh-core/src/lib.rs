@@ -276,28 +276,33 @@ pub fn filter_refs(
     filterobj: filter::Filter,
     refs: &[(String, git2::Oid)],
     permissions: filter::Filter,
-) -> JoshResult<Vec<(String, git2::Oid)>> {
+) -> (Vec<(String, git2::Oid)>, Vec<(String, JoshError)>) {
     rs_tracing::trace_scoped!("filter_refs", "spec": filter::spec(filterobj));
     let s = tracing::Span::current();
     let _e = s.enter();
     let mut updated = vec![];
+    let mut errors = vec![];
 
     tracing::trace!("filter_refs");
 
     for k in refs {
-        let oid = ok_or!(filter_commit(transaction, filterobj, k.1, permissions), {
-            tracing::event!(
-                tracing::Level::WARN,
-                msg = "filter_refs: Can't filter reference",
-                warn = true,
-                from = k.0.as_str(),
-            );
-            git2::Oid::zero()
-        });
+        let oid = match filter_commit(transaction, filterobj, k.1, permissions) {
+            Ok(oid) => oid,
+            Err(e) => {
+                errors.push((k.0.to_string(), e));
+                tracing::event!(
+                    tracing::Level::WARN,
+                    msg = "filter_refs: Can't filter reference",
+                    warn = true,
+                    from = k.0.as_str(),
+                );
+                git2::Oid::zero()
+            }
+        };
         updated.push((k.0.to_string(), oid));
     }
 
-    Ok(updated)
+    (updated, errors)
 }
 
 pub fn update_refs(
