@@ -236,12 +236,12 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
             if i.contains(":workspace=") {
                 continue;
             }
-            let mut updated_refs = josh::filter_refs(
+            let (mut updated_refs, _) = josh::filter_refs(
                 &transaction,
                 josh::filter::parse(&i)?,
                 &[(input_ref.to_string(), r.id())],
                 josh::filter::empty(),
-            )?;
+            );
             updated_refs[0].0 = "refs/JOSH_TMP".to_string();
             josh::update_refs(&transaction, &mut updated_refs, "");
         }
@@ -296,7 +296,12 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         git2::Oid::zero()
     };
 
-    let mut updated_refs = josh::filter_refs(&transaction, filterobj, &refs, permissions_filter)?;
+    let (mut updated_refs, errors) =
+        josh::filter_refs(&transaction, filterobj, &refs, permissions_filter);
+
+    for error in errors {
+        return Err(error.1);
+    }
     for i in 0..updated_refs.len() {
         if updated_refs[i].0 == input_ref {
             if reverse {
