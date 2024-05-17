@@ -54,11 +54,6 @@
 
   $ cd ${TESTTMP}
 
-  $ git ls-remote http://localhost:8002/real_repo.git | tr '\t' ' '
-  bb282e9cdc1b972fffd08fd21eead43bc0c83cb8 HEAD
-  36c6ab9d481503e14a88f783e87f3791aa8cef99 refs/heads/branch-1
-  bb282e9cdc1b972fffd08fd21eead43bc0c83cb8 refs/heads/master
-
 Checks the following:
 
 1) Two different formats for separating origin ref in the remote URL
@@ -135,6 +130,7 @@ Check (2) and (3) but with a branch ref
   |       |   `-- upstream
   |       |       `-- real_repo.git
   |       |           |-- HEAD
+  |       |           |-- bb282e9cdc1b972fffd08fd21eead43bc0c83cb8
   |       |           `-- refs
   |       |               `-- heads
   |       |                   |-- branch-1
@@ -154,5 +150,5 @@ Check (2) and (3) but with a branch ref
           |-- namespaces
           `-- tags
   
-  35 directories, 22 files
+  35 directories, 23 files
 
