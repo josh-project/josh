@@ -264,13 +264,13 @@ async fn fetch_upstream(
 
     match (fetch_result, remote_auth) {
         (Ok(_), RemoteAuth::Http { auth }) => {
-            let (auth_user, _) = auth.parse().map_err(FetchError::from_josh_error)?;
-
-            if matches!(&ARGS.poll_user, Some(user) if auth_user == user.as_str()) {
-                service
-                    .poll
-                    .lock()?
-                    .insert((upstream_repo, auth.clone(), remote_url));
+            if let Some((auth_user, _)) = auth.parse() {
+                if matches!(&ARGS.poll_user, Some(user) if auth_user == user.as_str()) {
+                    service
+                        .poll
+                        .lock()?
+                        .insert((upstream_repo, auth.clone(), remote_url));
+                }
             }
 
             Ok(())
@@ -1275,10 +1275,7 @@ async fn call_service(
 
     let http_auth_required = ARGS.require_auth && parsed_url.pathinfo == "/git-receive-pack";
 
-    if !josh_proxy::auth::check_auth(&remote_url, &auth, http_auth_required)
-        .in_current_span()
-        .await?
-    {
+    if !josh_proxy::auth::check_http_auth(&remote_url, &auth, http_auth_required).await? {
         tracing::trace!("require-auth");
         let builder = Response::builder()
             .header(

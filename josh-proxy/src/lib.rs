@@ -684,7 +684,7 @@ pub fn run_git_with_auth(
             Ok(shell.command_env(cmd, &env, &env_notrace))
         }
         RemoteAuth::Http { auth } => {
-            let (username, password) = auth.parse()?;
+            let (username, password) = auth.parse().unwrap_or_default();
             let env_notrace = [
                 [
                     ("GIT_PASSWORD", password.as_str()),
