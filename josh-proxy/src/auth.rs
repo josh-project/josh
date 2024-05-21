@@ -69,8 +69,8 @@ impl Handle {
                 .ok_or_else(|| josh::josh_error("no auth found"))?;
 
             let line = String::from_utf8(line)?;
-            let token = line
-                .strip_prefix("Basic ")
+            let (_, token) = line
+                .split_once(' ')
                 .ok_or_else(|| josh::josh_error("Unsupported auth type"))?;
 
             let decoded = BASE64.decode(token)?;
