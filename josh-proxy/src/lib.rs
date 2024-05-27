@@ -137,7 +137,9 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
         .join(&repo_update.git_ns)
         .join("push_options");
 
-    let push_options = std::fs::read_to_string(push_options_path)?;
+    let push_options = std::fs::read_to_string(&push_options_path)?;
+    std::fs::remove_file(push_options_path).ok();
+
     let push_options: PushOptions = serde_json::from_str(&push_options)
         .map_err(|e| josh_error(&format!("Failed to parse push options: {}", e)))?;
 
