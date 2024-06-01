@@ -19,7 +19,7 @@ codegen-units = 1
 defer = "0.1.0"
 env_logger = "0.10.0"
 futures = "0.3.28"
-gix = "0.54.1"
+gix = { version = "0.63.0", default-features = false }
 hyper-reverse-proxy = "0.5.1"
 lazy_static = "1.4.0"
 libc = "0.2.148"

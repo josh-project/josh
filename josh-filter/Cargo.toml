@@ -16,7 +16,6 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 defer = { workspace = true }
-gix = { workspace = true }
 clap = { workspace = true }
 rs_tracing = { workspace = true }
 juniper = { workspace = true }

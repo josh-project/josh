@@ -34,7 +34,6 @@ sled = "0.34.7"
 strfmt = "0.2.4"
 toml = { workspace = true }
 tracing = { workspace = true }
-gix = { workspace = true }
 juniper = { workspace = true }
 form_urlencoded = "1.2.1"
 
