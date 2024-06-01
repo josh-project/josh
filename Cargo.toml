@@ -16,24 +16,26 @@ opt-level = 3
 codegen-units = 1
 
 [workspace.dependencies]
-defer = "0.1.0"
-env_logger = "0.10.0"
-futures = "0.3.28"
+base64 = "0.21.7"
+defer = "0.2.1"
+env_logger = "0.11.3"
+futures = "0.3.30"
 gix = { version = "0.63.0", default-features = false }
 hyper-reverse-proxy = "0.5.1"
 lazy_static = "1.4.0"
-libc = "0.2.148"
-regex = "1.9.5"
-rs_tracing= { version = "1.1.0", features = ["rs_tracing"] }
-serde = { version = "1.0.188", features = ["std", "derive"] }
-serde_json = "1.0.107"
-serde_yaml = "0.9.25"
-toml = "0.8.1"
-tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
+libc = "0.2.155"
+regex = "1.10.4"
+rs_tracing = { version = "1.1.0", features = ["rs_tracing"] }
+serde = { version = "1.0.203", features = ["std", "derive"] }
+serde_json = "1.0.117"
+serde_yaml = "0.9.33"
+toml = "0.8.13"
+tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
+tempfile = "3.10.1"
 
 [workspace.dependencies.git2]
 default-features = false
-version = "0.18.1"
+version = "0.18.3"
 
 [workspace.dependencies.juniper]
 version = "0.15.11"
@@ -41,7 +43,7 @@ default-features = false
 features = ["expose-test-schema"]
 
 [workspace.dependencies.tokio]
-version = "1.32.0"
+version = "1.38.0"
 features = [
     "fs",
     "rt-multi-thread",
@@ -54,19 +56,19 @@ features = [
 ]
 
 [workspace.dependencies.tokio-util]
-version = "0.7.9"
+version = "0.7.11"
 features = ["compat"]
 
 [workspace.dependencies.reqwest]
-version = "0.11.20"
+version = "0.11.26"
 default-features = false
 features = ["blocking", "json"]
 
 [workspace.dependencies.tracing]
-version = "0.1.37"
+version = "0.1.40"
 features = ["max_level_trace", "release_max_level_trace"]
 
 [workspace.dependencies.clap]
-version = "4.4.6"
+version = "4.5.4"
 features = ["derive", "help", "std", "usage"]
 default-features = false

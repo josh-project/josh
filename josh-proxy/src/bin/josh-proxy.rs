@@ -6,7 +6,6 @@ use clap::Parser;
 use josh_proxy::cli;
 use josh_proxy::{run_git_with_auth, FetchError, MetaConfig, RemoteAuth, RepoConfig, RepoUpdate};
 use opentelemetry::global;
-use opentelemetry::sdk::propagation::TraceContextPropagator;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 use tracing_subscriber::Layer;
 
@@ -686,7 +685,7 @@ async fn ssh_list_refs(
     auth_socket: std::path::PathBuf,
     refs: Option<&[&str]>,
 ) -> JoshResult<HashMap<String, String>> {
-    let temp_dir = tempdir::TempDir::new("josh")?;
+    let temp_dir = tempfile::TempDir::with_prefix("josh")?;
     let refs = match refs {
         Some(refs) => refs.to_vec(),
         None => vec!["HEAD"],
@@ -1961,8 +1960,10 @@ async fn shutdown_signal() {
     println!("shutdown_signal");
 }
 
+#[allow(deprecated)]
 fn init_trace() {
     use opentelemetry_otlp::WithExportConfig;
+    use opentelemetry_sdk::propagation::TraceContextPropagator;
 
     // Set format for propagating tracing context. This allows to link traces from one invocation
     // of josh to the next
@@ -1998,7 +1999,7 @@ fn init_trace() {
         use opentelemetry::KeyValue;
 
         let resource =
-            opentelemetry::sdk::Resource::new(vec![KeyValue::new("service.name", service_name)]);
+            opentelemetry_sdk::Resource::new(vec![KeyValue::new("service.name", service_name)]);
 
         let tracer = opentelemetry_otlp::new_pipeline()
             .tracing()
@@ -2007,7 +2008,7 @@ fn init_trace() {
                     .tonic()
                     .with_endpoint(endpoint),
             )
-            .with_trace_config(opentelemetry::sdk::trace::config().with_resource(resource))
+            .with_trace_config(opentelemetry_sdk::trace::config().with_resource(resource))
             .install_simple()
             .expect("can't install opentelemetry pipeline");
 
