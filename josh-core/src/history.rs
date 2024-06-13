@@ -1,4 +1,5 @@
 use super::*;
+use std::collections::HashMap;
 
 pub fn walk2(
     filter: filter::Filter,

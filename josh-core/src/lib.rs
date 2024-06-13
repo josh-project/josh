@@ -34,10 +34,7 @@ extern crate pest_derive;
 #[macro_use]
 extern crate serde_json;
 
-use std::collections::HashMap;
-
 pub mod cache;
-pub mod compat;
 pub mod filter;
 pub mod graphql;
 pub mod history;
@@ -367,14 +364,14 @@ pub fn normalize_path(path: &std::path::Path) -> std::path::PathBuf {
     ret
 }
 
-type Users = HashMap<String, User>;
+type Users = std::collections::HashMap<String, User>;
 
 #[derive(Debug, serde::Deserialize)]
 struct User {
     pub groups: toml::value::Array,
 }
 
-type Groups = HashMap<String, HashMap<String, Group>>;
+type Groups = std::collections::HashMap<String, std::collections::HashMap<String, Group>>;
 #[derive(Debug, serde::Deserialize)]
 struct Group {
     pub whitelist: String,

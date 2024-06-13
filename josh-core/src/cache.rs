@@ -68,7 +68,6 @@ struct Transaction2 {
 pub struct Transaction {
     t2: std::cell::RefCell<Transaction2>,
     repo: git2::Repository,
-    oxide_repo: gix::Repository,
     ref_prefix: String,
 }
 
@@ -83,7 +82,6 @@ impl Transaction {
                 git2::RepositoryOpenFlags::NO_SEARCH,
                 &[] as &[&std::ffi::OsStr],
             )?,
-            gix::ThreadSafeRepository::open(path)?.to_thread_local(),
             ref_prefix,
         ))
     }
@@ -95,11 +93,7 @@ impl Transaction {
             load(&path)?
         };
 
-        Ok(Transaction::new(
-            repo,
-            gix::ThreadSafeRepository::open(path)?.to_thread_local(),
-            None,
-        ))
+        Ok(Transaction::new(repo, None))
     }
 
     pub fn status(&self, _msg: &str) {
@@ -108,11 +102,7 @@ impl Transaction {
         /* t2.out.flush().ok(); */
     }
 
-    fn new(
-        repo: git2::Repository,
-        oxide_repo: gix::Repository,
-        ref_prefix: Option<&str>,
-    ) -> Transaction {
+    fn new(repo: git2::Repository, ref_prefix: Option<&str>) -> Transaction {
         log::debug!("new transaction");
         let path_tree = DB
             .lock()
@@ -151,7 +141,6 @@ impl Transaction {
                 walks: 0,
             }),
             repo,
-            oxide_repo,
             ref_prefix: ref_prefix.unwrap_or("").to_string(),
         }
     }
@@ -162,10 +151,6 @@ impl Transaction {
 
     pub fn repo(&self) -> &git2::Repository {
         &self.repo
-    }
-
-    pub fn oxide_repo(&self) -> &gix::Repository {
-        &self.oxide_repo
     }
 
     pub fn refname(&self, r: &str) -> String {
