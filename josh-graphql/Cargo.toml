@@ -1,0 +1,22 @@
+[package]
+name = "josh-graphql"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+josh = { path = "../josh-core" }
+juniper = { workspace = true }
+git2 = { workspace = true }
+rs_tracing = { workspace = true }
+regex = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+strfmt = "0.2.4"
+toml = { workspace = true }
+tracing = { workspace = true }
+lazy_static = { workspace = true }
+
+[dependencies.chrono]
+default-features = false
+features = ["alloc", "std"]
+version = "0.4.38"

@@ -1563,16 +1563,12 @@ version = "22.4.15"
 dependencies = [
  "backtrace",
  "bitvec",
- "chrono",
- "form_urlencoded",
  "git-version",
  "git2",
  "glob",
- "handlebars",
  "hex",
  "indoc",
  "itertools 0.13.0",
- "juniper",
  "lazy_static",
  "log",
  "percent-encoding",
@@ -1585,8 +1581,6 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "sled",
- "strfmt",
- "toml",
  "tracing",
 ]
 
@@ -1599,11 +1593,31 @@ dependencies = [
  "env_logger",
  "git2",
  "josh",
+ "josh-graphql",
+ "josh-templates",
  "juniper",
  "rs_tracing",
  "serde",
  "serde_json",
  "serde_yaml",
+]
+
+[[package]]
+name = "josh-graphql"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "git2",
+ "josh",
+ "juniper",
+ "lazy_static",
+ "regex",
+ "rs_tracing",
+ "serde_json",
+ "serde_yaml",
+ "strfmt",
+ "toml",
+ "tracing",
 ]
 
 [[package]]
@@ -1622,7 +1636,9 @@ dependencies = [
  "hyper_cgi",
  "indoc",
  "josh",
+ "josh-graphql",
  "josh-rpc",
+ "josh-templates",
  "juniper",
  "lazy_static",
  "opentelemetry",
@@ -1674,6 +1690,19 @@ dependencies = [
  "tokio-util",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "josh-templates"
+version = "0.1.0"
+dependencies = [
+ "form_urlencoded",
+ "git2",
+ "handlebars",
+ "josh",
+ "josh-graphql",
+ "juniper",
+ "serde_json",
 ]
 
 [[package]]

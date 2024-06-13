@@ -1446,7 +1446,7 @@ async fn serve_query(
         let commit_id =
             josh::filter_commit(&transaction, filter, commit_id, josh::filter::empty())?;
 
-        josh::query::render(&transaction, "", commit_id, &q, true)
+        josh_templates::render(&transaction, "", commit_id, &q, true)
     })
     .in_current_span()
     .await?;
@@ -1807,7 +1807,7 @@ async fn serve_graphql(
                     .to_string(),
             )?;
 
-            Ok(Arc::new(josh::graphql::context(
+            Ok(Arc::new(josh_graphql::graphql::context(
                 transaction,
                 transaction_mirror,
             )))
@@ -1815,7 +1815,7 @@ async fn serve_graphql(
         .await??
     };
 
-    let root_node = Arc::new(josh::graphql::repo_schema(
+    let root_node = Arc::new(josh_graphql::graphql::repo_schema(
         upstream_repo
             .strip_suffix(".git")
             .unwrap_or(&upstream_repo)

@@ -8,6 +8,8 @@
 !josh-proxy
 !josh-rpc
 !josh-ssh-shell
+!josh-templates
+!josh-graphql
 !josh-ui/*.json
 !josh-ui/*.rs
 !josh-ui/*.toml

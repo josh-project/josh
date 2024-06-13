@@ -20,6 +20,8 @@ hyper-tls = "0.5.0"
 hyper_cgi = { path = "../hyper_cgi" }
 indoc = "2.0.5"
 josh = {path = "../josh-core" }
+josh-templates = { path = "../josh-templates" }
+josh-graphql = { path = "../josh-graphql" }
 lazy_static = { workspace = true }
 opentelemetry = "0.23.0"
 opentelemetry-jaeger = "0.22.0"

@@ -399,12 +399,12 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
     }
 
     if let Some(gql_query) = args.get_one::<String>("graphql") {
-        let context = josh::graphql::context(transaction.try_clone()?, transaction.try_clone()?);
+        let context = josh_graphql::context(transaction.try_clone()?, transaction.try_clone()?);
         *context.allow_refs.lock()? = true;
         let (res, _errors) = juniper::execute_sync(
             gql_query,
             None,
-            &josh::graphql::repo_schema(".".to_string(), true),
+            &josh_graphql::repo_schema(".".to_string(), true),
             &std::collections::HashMap::new(),
             &context,
         )?;
@@ -420,7 +420,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         let commit_id = transaction.repo().refname_to_id(update_target)?;
         print!(
             "{}",
-            josh::query::render(&transaction, "", commit_id, query, false)?
+            josh_templates::render(&transaction, "", commit_id, query, false)?
                 .map(|x| x.0)
                 .unwrap_or("File not found".to_string())
         );

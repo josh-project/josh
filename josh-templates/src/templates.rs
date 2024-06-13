@@ -1,4 +1,5 @@
-use super::*;
+use josh::{cache, josh_error, JoshResult};
+use serde_json::json;
 
 struct GraphQLHelper {
     repo_path: std::path::PathBuf,
@@ -21,7 +22,7 @@ impl GraphQLHelper {
         let path = std::path::PathBuf::from(template_name)
             .join("..")
             .join(path);
-        let path = normalize_path(&path);
+        let path = josh::normalize_path(&path);
 
         let transaction = if let Ok(to) =
             cache::Transaction::open(&self.repo_path.join("mirror"), Some(&self.ref_prefix))
@@ -77,9 +78,9 @@ impl GraphQLHelper {
         let (res, _errors) = juniper::execute_sync(
             &query,
             None,
-            &graphql::commit_schema(self.commit_id),
+            &josh_graphql::graphql::commit_schema(self.commit_id),
             &variables,
-            &graphql::context(transaction, transaction_mirror),
+            &josh_graphql::context(transaction, transaction_mirror),
         )?;
 
         let j = serde_json::to_string(&res)?;
@@ -114,7 +115,7 @@ impl handlebars::HelperDef for GraphQLHelper {
 }
 
 mod helpers {
-    handlebars_helper!(concat_helper: |x: str, y: str| format!("{}{}", x, y) );
+    handlebars::handlebars_helper!(concat_helper: |x: str, y: str| format!("{}{}", x, y) );
 }
 
 pub fn render(
@@ -138,14 +139,15 @@ pub fn render(
     };
 
     let tree = transaction.repo().find_commit(commit_id)?.tree()?;
+    let obj = tree
+        .get_path(&std::path::PathBuf::from(path))?
+        .to_object(transaction.repo());
 
-    let obj = ok_or!(
-        tree.get_path(&std::path::PathBuf::from(path))?
-            .to_object(transaction.repo()),
-        {
-            return Ok(None);
-        }
-    );
+    let obj = if let Ok(obj) = obj {
+        obj
+    } else {
+        return Ok(None);
+    };
 
     let template = if let Ok(blob) = obj.peel_to_blob() {
         let file = std::str::from_utf8(blob.content())?;
@@ -191,9 +193,9 @@ pub fn render(
             let (res, _errors) = juniper::execute_sync(
                 file,
                 None,
-                &graphql::commit_schema(commit_id),
+                &josh_graphql::commit_schema(commit_id),
                 &variables,
-                &graphql::context(transaction, transaction_mirror),
+                &josh_graphql::context(transaction, transaction_mirror),
             )?;
 
             let j = serde_json::to_string_pretty(&res)?;
@@ -228,7 +230,7 @@ pub fn render(
     handlebars.register_helper(
         "graphql",
         Box::new(GraphQLHelper {
-            repo_path: repo_path,
+            repo_path,
             ref_prefix: ref_prefix.to_owned(),
             commit_id,
         }),

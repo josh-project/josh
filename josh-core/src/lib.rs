@@ -25,21 +25,10 @@ macro_rules! ok_or {
 #[macro_use]
 extern crate rs_tracing;
 
-#[macro_use]
-extern crate handlebars;
-
-#[macro_use]
-extern crate pest_derive;
-
-#[macro_use]
-extern crate serde_json;
-
 pub mod cache;
 pub mod filter;
-pub mod graphql;
 pub mod history;
 pub mod housekeeping;
-pub mod query;
 pub mod shell;
 
 pub struct Change {
@@ -190,7 +179,7 @@ macro_rules! regex_parsed {
 impl $name {
     fn from_str(path: &str) -> Option<$name> {
 
-lazy_static! {
+lazy_static::lazy_static! {
     static ref REGEX: regex::Regex =
         regex::Regex::new($re)
             .expect("can't compile regex");
@@ -368,7 +357,7 @@ type Users = std::collections::HashMap<String, User>;
 
 #[derive(Debug, serde::Deserialize)]
 struct User {
-    pub groups: toml::value::Array,
+    pub groups: Vec<String>,
 }
 
 type Groups = std::collections::HashMap<String, std::collections::HashMap<String, Group>>;
@@ -400,7 +389,7 @@ pub fn get_acl(
             let mut blacklist = filter::empty();
             for g in &u.groups {
                 let lists = groups.get(repo).and_then(|repo| {
-                    repo.get(g.as_str()?).map(|group| {
+                    repo.get(g.as_str()).map(|group| {
                         let w = filter::parse(&group.whitelist);
                         let b = filter::parse(&group.blacklist);
                         (w, b)
