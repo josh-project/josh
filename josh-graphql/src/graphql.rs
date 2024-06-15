@@ -1,6 +1,6 @@
 #![allow(unused_variables)]
 
-use super::*;
+use josh::{cache, filter, history, josh_error, JoshResult};
 use juniper::{graphql_object, EmptyMutation, EmptySubscription, FieldResult};
 
 pub struct Revision {
@@ -674,7 +674,7 @@ impl Path {
 
     fn dir(&self, relative: String) -> FieldResult<Path> {
         Ok(Path {
-            path: normalize_path(&self.path.join(relative)),
+            path: josh::normalize_path(&self.path.join(relative)),
             commit_id: self.commit_id,
             filter: self.filter,
             tree: self.tree,
@@ -955,10 +955,7 @@ impl RepositoryMut {
             filter::nop()
         };
 
-        Ok(RevMut {
-            at: at,
-            filter: filter,
-        })
+        Ok(RevMut { at, filter })
     }
 }
 
@@ -983,7 +980,7 @@ impl Repository {
             pattern.unwrap_or_else(|| "refs/heads/*".to_string())
         );
 
-        log::debug!("refname: {:?}", refname);
+        tracing::debug!(refname = refname, "refs");
 
         let mut refs = vec![];
 
@@ -1029,7 +1026,7 @@ impl Repository {
     }
 }
 
-regex_parsed!(
+josh::regex_parsed!(
     UpstreamRef,
     r"refs/josh/upstream/.*[.]git/(?P<reference>refs/heads/.*)",
     [reference]
@@ -1066,7 +1063,7 @@ pub fn repo_schema(name: String, local: bool) -> RepoSchema {
     let ns = if local {
         "".to_string()
     } else {
-        format!("refs/josh/upstream/{}.git/", to_ns(&name))
+        format!("refs/josh/upstream/{}.git/", josh::to_ns(&name))
     };
     RepoSchema::new(
         Repository { name, ns },

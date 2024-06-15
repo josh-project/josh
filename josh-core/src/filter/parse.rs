@@ -293,6 +293,6 @@ pub fn get_comments(filter_spec: &str) -> JoshResult<String> {
     )));
 }
 
-#[derive(Parser)]
+#[derive(pest_derive::Parser)]
 #[grammar = "filter/grammar.pest"]
 struct Grammar;

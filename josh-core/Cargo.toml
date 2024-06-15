@@ -15,7 +15,6 @@ bitvec = "1.0.1"
 git-version = "0.3.9"
 git2 = { workspace = true }
 glob = "0.3.1"
-handlebars = "5.1.2"
 hex = "0.4.3"
 indoc = "2.0.5"
 itertools = "0.13.0"
@@ -31,13 +30,4 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 sled = "0.34.7"
-strfmt = "0.2.4"
-toml = { workspace = true }
 tracing = { workspace = true }
-juniper = { workspace = true }
-form_urlencoded = "1.2.1"
-
-[dependencies.chrono]
-default-features = false
-features = ["alloc", "std"]
-version = "0.4.38"

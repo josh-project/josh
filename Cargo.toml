@@ -4,9 +4,11 @@ members = [
     "hyper_cgi",
     "josh-core",
     "josh-filter",
+    "josh-graphql",
     "josh-proxy",
     "josh-rpc",
     "josh-ssh-shell",
+    "josh-templates",
     "josh-ui",
 ]
 
