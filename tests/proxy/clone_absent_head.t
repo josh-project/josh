@@ -108,7 +108,6 @@
   |   |   |   `-- 2fc150c43f13cc56c0e9caeba01b58ec612022
   |   |   |-- info
   |   |   `-- pack
-  |   |-- packed-refs
   |   `-- refs
   |       |-- heads
   |       |-- josh
@@ -127,6 +126,6 @@
           |-- namespaces
           `-- tags
   
-  27 directories, 16 files
+  27 directories, 15 files
 
 $ cat ${TESTTMP}/josh-proxy.out

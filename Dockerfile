@@ -1,9 +1,9 @@
-# syntax=docker/dockerfile:1.6-labs@sha256:bd24901c537a316a4802d920bf86605f4db8ef676ef7258a3b381e12d90c62c8
+# syntax=docker/dockerfile:1.8@sha256:d6d396f3780b1dd56a3acbc975f57bd2fc501989b50164c41387c42d04e780d0
 
-ARG ALPINE_VERSION=3.18
+ARG ALPINE_VERSION=3.20
 ARG ARCH=x86_64
 
-FROM alpine:${ALPINE_VERSION} as rust-base
+FROM alpine:${ALPINE_VERSION} AS rust-base
 
 RUN apk add --no-cache ca-certificates gcc musl-dev
 
@@ -12,8 +12,12 @@ ENV CARGO_HOME=/usr/local/cargo
 ENV PATH=/usr/local/cargo/bin:${PATH}
 
 ARG ARCH
-ARG RUSTUP_VERSION=1.26.0
-ARG RUST_VERSION=1.74
+
+# Update check: https://github.com/rust-lang/rustup/tags
+ARG RUSTUP_VERSION=1.27.1
+
+# Update check: https://github.com/rust-lang/rust/tags
+ARG RUST_VERSION=1.79.0
 ARG RUST_ARCH=${ARCH}-unknown-linux-musl
 
 # https://github.com/sfackler/rust-openssl/issues/1462
@@ -27,9 +31,10 @@ RUN /tmp/rustup-init \
     --default-toolchain ${RUST_VERSION} \
     --default-host ${RUST_ARCH}
 
-FROM rust-base as dev-planner
+FROM rust-base AS dev-planner
 
-RUN cargo install --version 0.1.62 cargo-chef
+# Update check: https://github.com/LukeMathWalker/cargo-chef/releases
+RUN cargo install --version 0.1.67 cargo-chef
 
 WORKDIR /usr/src/josh
 COPY . .
@@ -37,7 +42,7 @@ COPY . .
 ENV CARGO_TARGET_DIR=/opt/cargo-target
 RUN cargo chef prepare --recipe-path recipe.json
 
-FROM rust-base as dev
+FROM rust-base AS dev
 
 RUN apk add --no-cache \
     zlib-dev \
@@ -46,11 +51,12 @@ RUN apk add --no-cache \
 
 WORKDIR /usr/src/josh
 RUN rustup component add rustfmt
-RUN cargo install --version 0.1.62 cargo-chef
+RUN cargo install --version 0.1.67 cargo-chef
 RUN cargo install --verbose --version 0.10.0 graphql_client_cli
 
 RUN apk add --no-cache \
     bash \
+    coreutils \
     curl \
     cmake \
     make \
@@ -58,13 +64,15 @@ RUN apk add --no-cache \
     gettext \
     python3 \
     python3-dev \
+    libffi-dev \
     py3-pip \
     tree \
     autoconf \
     libgit2-dev \
     psmisc
 
-ARG GIT_VERSION=2.38.1
+# Update check: https://github.com/git/git/tags
+ARG GIT_VERSION=2.45.2
 WORKDIR /usr/src/git
 RUN <<EOF
 set -e
@@ -85,10 +93,12 @@ RUN mkdir /opt/git-install/etc
 RUN git config -f /opt/git-install/etc/gitconfig --add safe.directory "*" && \
     git config -f /opt/git-install/etc/gitconfig protocol.file.allow "always"
 
-ARG CRAM_VERSION=d245cca
-ARG PYGIT2_VERSION=1.11.1
-RUN pip3 install \
-  git+https://github.com/brodie/cram.git@${CRAM_VERSION}
+# Update check: https://github.com/prysk/prysk/releases
+ARG PRYSK_VERSION=0.20.0
+
+# This is a Docker image so --break-system-packages is okay
+RUN pip3 install --break-system-packages \
+  git+https://github.com/prysk/prysk.git@${PRYSK_VERSION}
 
 RUN apk add --no-cache go nodejs npm openssh-client patch
 
@@ -106,7 +116,7 @@ RUN cp bin/git-lfs /opt/git-lfs/bin
 
 WORKDIR /usr/src/josh
 
-FROM dev as dev-local
+FROM dev AS dev-local
 
 RUN mkdir -p /opt/cache && \
     chmod 777 /opt/cache
@@ -140,12 +150,12 @@ RUN adduser \
       -g '' \
       dev
 
-FROM dev as dev-cache
+FROM dev AS dev-cache
 
 COPY --from=dev-planner /usr/src/josh/recipe.json .
 ENV CARGO_TARGET_DIR=/opt/cargo-target
 
-FROM dev-cache as dev-ci
+FROM dev-cache AS dev-ci
 
 RUN mkdir -p /josh/static && \
     chmod 777 /josh/static
@@ -156,7 +166,7 @@ RUN mkdir -p josh-ui
 COPY josh-ui/package.json josh-ui/package-lock.json josh-ui/
 RUN cd josh-ui && npm install
 
-FROM dev-cache as build
+FROM dev-cache AS build
 
 RUN cargo chef cook --release --workspace --recipe-path recipe.json
 
@@ -167,7 +177,7 @@ RUN --mount=target=.git,from=git \
   cargo build -p josh-proxy -p josh-ssh-shell --release
 
 ARG ALPINE_VERSION
-FROM alpine:${ALPINE_VERSION} as run
+FROM alpine:${ALPINE_VERSION} AS run
 
 RUN apk add --no-cache \
     zlib \
