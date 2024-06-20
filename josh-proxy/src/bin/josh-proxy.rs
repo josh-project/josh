@@ -2009,7 +2009,7 @@ fn init_trace() {
                     .with_endpoint(endpoint),
             )
             .with_trace_config(opentelemetry_sdk::trace::config().with_resource(resource))
-            .install_simple()
+            .install_batch(opentelemetry_sdk::runtime::Tokio)
             .expect("can't install opentelemetry pipeline");
 
         let telemetry_layer = tracing_opentelemetry::layer().with_tracer(tracer);
