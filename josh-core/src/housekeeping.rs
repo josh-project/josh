@@ -322,6 +322,8 @@ pub fn get_known_filters() -> JoshResult<std::collections::BTreeMap<String, BTre
 }
 
 pub fn run(repo_path: &std::path::Path, do_gc: bool) -> JoshResult<()> {
+    const CRUFT_PACK_SIZE: usize = 1024 * 1024 * 64;
+
     let transaction_mirror = cache::Transaction::open(&repo_path.join("mirror"), None)?;
     let transaction_overlay = cache::Transaction::open(&repo_path.join("overlay"), None)?;
 
@@ -382,9 +384,11 @@ pub fn run(repo_path: &std::path::Path, do_gc: bool) -> JoshResult<()> {
                     "git",
                     "repack",
                     "-dn",
-                    "--keep-unreachable",
+                    "--cruft",
+                    &format!("--max-cruft-size={}", CRUFT_PACK_SIZE),
                     "--no-write-bitmap-index",
-                    "--threads=4"
+                    "--window-memory=128m",
+                    "--threads=4",
                 ]
             )
         );
