@@ -9,7 +9,7 @@ history, taking a filter specification as argument.
 
 It can be installed with the following Cargo command, assuming Rust is installed:
 ```shell
-cargo install josh --git https://github.com/josh-project/josh.git
+cargo install josh-filter --git https://github.com/josh-project/josh.git
 ```
 
 git-sync
