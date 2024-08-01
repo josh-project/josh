@@ -48,7 +48,7 @@ test for that.
   "real_repo.git" = []
   .
   |-- josh
-  |   `-- 19
+  |   `-- 20
   |       `-- sled
   |           |-- blobs
   |           |-- conf
