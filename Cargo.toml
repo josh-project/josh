@@ -37,7 +37,7 @@ tempfile = "3.10.1"
 
 [workspace.dependencies.git2]
 default-features = false
-version = "0.18.3"
+version = "0.19"
 
 [workspace.dependencies.juniper]
 version = "0.15.11"
