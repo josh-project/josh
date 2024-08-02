@@ -101,13 +101,24 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> JoshResult<Op> {
                 _ => Err(josh_error("parse_item: no match {:?}")),
             }
         }
-        Rule::filter_rev => {
-            let v: Vec<_> = pair.into_inner().map(|x| unquote(x.as_str())).collect();
+        Rule::filter_join => {
+            let v: Vec<_> = pair.into_inner().map(|x| x.as_str()).collect();
 
             let hm = v
                 .iter()
                 .tuples()
-                .map(|(oid, filter)| Ok((git2::Oid::from_str(oid)?, parse(filter)?)))
+                .map(|(oid, filter)| Ok((LazyRef::parse(oid)?, parse(filter)?)))
+                .collect::<JoshResult<_>>()?;
+
+            Ok(Op::Join(hm))
+        }
+        Rule::filter_rev => {
+            let v: Vec<_> = pair.into_inner().map(|x| x.as_str()).collect();
+
+            let hm = v
+                .iter()
+                .tuples()
+                .map(|(oid, filter)| Ok((LazyRef::parse(oid)?, parse(filter)?)))
                 .collect::<JoshResult<_>>()?;
 
             Ok(Op::Rev(hm))
@@ -127,10 +138,7 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> JoshResult<Op> {
                 .into_inner()
                 .tuples()
                 .map(|(oid, message)| {
-                    Ok((
-                        git2::Oid::from_str(oid.as_str())?,
-                        unquote(message.as_str()),
-                    ))
+                    Ok((LazyRef::parse(oid.as_str())?, unquote(message.as_str())))
                 })
                 .collect::<JoshResult<_>>()?;
 
@@ -223,7 +231,8 @@ fn parse_workspace(filter_spec: &str) -> JoshResult<Vec<Filter>> {
 
 // Parse json string if neccessary
 fn unquote(s: &str) -> String {
-    if let Ok(serde_json::Value::String(s)) = serde_json::from_str(s) {
+    let s = s.replace("'", "\"");
+    if let Ok(serde_json::Value::String(s)) = serde_json::from_str(&s) {
         return s;
     }
     s.to_string()

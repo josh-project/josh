@@ -402,6 +402,23 @@ async fn repo_update_fn(req: Request<hyper::Body>) -> josh::JoshResult<Response<
     }?)
 }
 
+fn resolve_ref(
+    transaction: &josh::cache::Transaction,
+    repo: &str,
+    ref_value: &str,
+) -> JoshResult<git2::Oid> {
+    let josh_name = ["refs", "josh", "upstream", &josh::to_ns(repo), ref_value]
+        .iter()
+        .collect::<PathBuf>();
+
+    Ok(transaction
+        .repo()
+        .find_reference(josh_name.to_str().unwrap())
+        .map_err(|e| josh_error(&format!("Could not find ref: {}", e)))?
+        .target()
+        .ok_or(josh_error("Could not resolve ref"))?)
+}
+
 #[tracing::instrument(skip(service))]
 async fn do_filter(
     repo_path: std::path::PathBuf,
@@ -431,30 +448,29 @@ async fn do_filter(
             )),
         )?;
 
-        let resolve_ref = |ref_value: &str| -> JoshResult<git2::Oid> {
-            let josh_name = [
-                "refs",
-                "josh",
-                "upstream",
-                &josh::to_ns(&meta.config.repo),
-                ref_value,
-            ]
+        let lazy_refs: Vec<_> = josh::filter::lazy_refs(filter)
             .iter()
-            .collect::<PathBuf>();
+            .map(|x| x.split_once("@").unwrap())
+            .map(|(x, y)| (x.to_string(), y.to_string()))
+            .collect();
 
-            Ok(transaction
-                .repo()
-                .find_reference(josh_name.to_str().unwrap())
-                .map_err(|e| josh_error(&format!("Could not find ref: {}", e)))?
-                .target()
-                .ok_or(josh_error("Could not resolve ref"))?)
-        };
+        let resolved_refs = lazy_refs
+            .iter()
+            .map(|(rp, rf)| {
+                (
+                    format!("{}@{}", rp, rf),
+                    resolve_ref(&transaction, rp, rf).unwrap(),
+                )
+            })
+            .collect();
+
+        let filter = josh::filter::resolve_refs(&resolved_refs, filter);
 
         let (refs_list, head_ref) = match &head_ref {
             HeadRef::Explicit(ref_value)
                 if ref_value.starts_with("refs/") || ref_value == "HEAD" =>
             {
-                let object = resolve_ref(&ref_value)?;
+                let object = resolve_ref(&transaction, &meta.config.repo, &ref_value)?;
                 let list = vec![(ref_value.clone(), object)];
 
                 (list, ref_value.clone())
@@ -474,7 +490,7 @@ async fn do_filter(
                     josh::housekeeping::list_refs(transaction.repo(), &meta.config.repo)?;
 
                 let head_ref = head_ref.get().to_string();
-                if let Ok(object) = resolve_ref(&head_ref) {
+                if let Ok(object) = resolve_ref(&transaction, &meta.config.repo, &head_ref) {
                     list.push((head_ref.clone(), object));
                 }
 
@@ -887,12 +903,12 @@ async fn serve_namespace(
     }
 }
 
-fn is_repo_blocked(meta: &MetaConfig) -> bool {
+fn is_repo_blocked(config: &RepoConfig) -> bool {
     let block = std::env::var("JOSH_REPO_BLOCK").unwrap_or("".to_owned());
     let block = block.split(';').collect::<Vec<_>>();
 
     for b in block {
-        if b == meta.config.repo {
+        if b == config.repo {
             return true;
         }
     }
@@ -1024,7 +1040,7 @@ async fn handle_serve_namespace_request(
         }
     };
 
-    if is_repo_blocked(&meta_config) {
+    if is_repo_blocked(&meta_config.config) {
         return Ok(make_response(
             hyper::Body::from("Access to this repo is blocked via JOSH_REPO_BLOCK"),
             StatusCode::UNPROCESSABLE_ENTITY,
@@ -1273,12 +1289,23 @@ async fn call_service(
             ))
         }
     };
-
-    let remote_url = upstream.clone() + meta.config.repo.as_str();
-
     if let Some(filter_prefix) = &ARGS.filter_prefix {
         filter = josh::filter::chain(josh::filter::parse(filter_prefix)?, filter);
     }
+    let mut fetch_repos = vec![meta.config.repo.clone()];
+
+    let lazy_refs: Vec<_> = josh::filter::lazy_refs(filter)
+        .iter()
+        .map(|x| x.split_once("@").unwrap())
+        .map(|(x, y)| (x.to_string(), y.to_string()))
+        .collect();
+
+    fetch_repos.extend(lazy_refs.iter().map(|(x, y)| x.clone()));
+
+    ///////////////
+
+    let remote_url = upstream.clone() + meta.config.repo.as_str();
+    let headref = head_ref_or_default(&parsed_url.headref);
 
     if parsed_url.pathinfo.starts_with("/info/lfs") {
         return Ok(Response::builder()
@@ -1287,28 +1314,31 @@ async fn call_service(
             .body(hyper::Body::empty())?);
     }
 
-    if is_repo_blocked(&meta) {
-        return Ok(make_response(
-            hyper::Body::from(formatdoc!(
-                r#"
-                    Access to this repo is blocked via JOSH_REPO_BLOCK
-                    "#
-            )),
-            hyper::StatusCode::UNPROCESSABLE_ENTITY,
-        ));
-    }
-
     let http_auth_required = ARGS.require_auth && parsed_url.pathinfo == "/git-receive-pack";
 
-    if !josh_proxy::auth::check_http_auth(&remote_url, &auth, http_auth_required).await? {
-        tracing::trace!("require-auth");
-        let builder = Response::builder()
-            .header(
-                hyper::header::WWW_AUTHENTICATE,
-                "Basic realm=User Visible Realm",
-            )
-            .status(hyper::StatusCode::UNAUTHORIZED);
-        return Ok(builder.body(hyper::Body::empty())?);
+    for fetch_repo in fetch_repos.iter() {
+        let fetch_url = upstream.clone() + fetch_repo.as_str();
+        if is_repo_blocked(&meta.config) {
+            return Ok(make_response(
+                hyper::Body::from(formatdoc!(
+                    r#"
+                        Access to this repo is blocked via JOSH_REPO_BLOCK
+                        "#
+                )),
+                hyper::StatusCode::UNPROCESSABLE_ENTITY,
+            ));
+        }
+
+        if !josh_proxy::auth::check_http_auth(&fetch_url, &auth, http_auth_required).await? {
+            tracing::trace!("require-auth");
+            let builder = Response::builder()
+                .header(
+                    hyper::header::WWW_AUTHENTICATE,
+                    "Basic realm=User Visible Realm",
+                )
+                .status(hyper::StatusCode::UNAUTHORIZED);
+            return Ok(builder.body(hyper::Body::empty())?);
+        }
     }
 
     if parsed_url.api == "/~/graphql" {
@@ -1324,33 +1354,37 @@ async fn call_service(
         .await??);
     }
 
-    let headref = head_ref_or_default(&parsed_url.headref);
-    match fetch_upstream(
-        serv.clone(),
-        meta.config.repo.to_owned(),
-        &remote_auth,
-        remote_url.to_owned(),
-        Some(headref.get()),
-        None,
-        false,
-    )
-    .await
-    {
-        Ok(_) => {}
-        Err(FetchError::AuthRequired) => {
-            let builder = Response::builder()
-                .header(
-                    hyper::header::WWW_AUTHENTICATE,
-                    "Basic realm=User Visible Realm",
-                )
-                .status(hyper::StatusCode::UNAUTHORIZED);
-            return Ok(builder.body(hyper::Body::empty())?);
-        }
-        Err(FetchError::Other(e)) => {
-            let builder = Response::builder().status(hyper::StatusCode::INTERNAL_SERVER_ERROR);
-            return Ok(builder.body(hyper::Body::from(e.0))?);
+    for fetch_repo in fetch_repos.iter() {
+        let fetch_url = upstream.clone() + fetch_repo.as_str();
+        match fetch_upstream(
+            serv.clone(),
+            fetch_repo.to_owned(),
+            &remote_auth,
+            fetch_url.to_owned(),
+            Some(headref.get()),
+            None,
+            false,
+        )
+        .await
+        {
+            Ok(_) => {}
+            Err(FetchError::AuthRequired) => {
+                let builder = Response::builder()
+                    .header(
+                        hyper::header::WWW_AUTHENTICATE,
+                        "Basic realm=User Visible Realm",
+                    )
+                    .status(hyper::StatusCode::UNAUTHORIZED);
+                return Ok(builder.body(hyper::Body::empty())?);
+            }
+            Err(FetchError::Other(e)) => {
+                let builder = Response::builder().status(hyper::StatusCode::INTERNAL_SERVER_ERROR);
+                return Ok(builder.body(hyper::Body::from(e.0))?);
+            }
         }
     }
+
+    //////////////
 
     if let (Some(q), true) = (
         req.uri().query().map(|x| x.to_string()),
