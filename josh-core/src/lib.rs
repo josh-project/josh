@@ -38,7 +38,7 @@ pub struct Change {
 }
 
 impl Change {
-    fn new(commit: git2::Oid) -> Self {
+    pub fn new(commit: git2::Oid) -> Self {
         Self {
             author: Default::default(),
             id: Default::default(),

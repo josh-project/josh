@@ -134,7 +134,7 @@ Make sure all temporary namespace got removed
   "real_repo.git" = ["::sub1/"]
   .
   |-- josh
-  |   `-- 20
+  |   `-- 19
   |       `-- sled
   |           |-- blobs
   |           |-- conf

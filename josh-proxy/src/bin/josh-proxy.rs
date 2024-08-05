@@ -1185,9 +1185,7 @@ async fn call_service(
         while path.contains("//") {
             path = path.replace("//", "/");
         }
-        percent_encoding::percent_decode_str(&path)
-            .decode_utf8_lossy()
-            .to_string()
+        path
     };
 
     if let Some(resource_path) = path.strip_prefix("/~/ui") {
