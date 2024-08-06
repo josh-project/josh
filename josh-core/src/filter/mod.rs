@@ -741,7 +741,12 @@ fn apply_to_commit2(
                         },
                     );
                 }
-                tree::empty(repo)
+                return Ok(Some(history::drop_commit(
+                    commit,
+                    vec![],
+                    transaction,
+                    filter,
+                )?));
             }
         }
         Op::Linear => {
