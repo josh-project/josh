@@ -8,17 +8,22 @@ GROUP_START = _{ "[" }
 GROUP_END = _{ "]" }
 PATH = _{ (ALNUM | "/")+ }
 filter_path = { PATH }
+argument = { string | PATH }
+rev = { string | ALNUM+ }
 
-string = ${ "\"" ~ inner ~ "\"" }
+sstring = _{"\'" ~ inner ~ "\'"}
+dstring = _{"\"" ~ inner ~ "\""}
+string = ${ sstring | dstring }
 inner = @{ char* }
 char = {
-    !("\"" | "\\") ~ ANY
-    | "\\" ~ ("\"" | "\\" | "/" | "b" | "f" | "n" | "r" | "t" | "u")
+    !("\"" | "\'" | "\\") ~ ANY
+    | "\\" ~ ("\"" | "\'" | "\\" | "/" | "b" | "f" | "n" | "r" | "t" | "u")
 }
 
 filter_spec = { (
     filter_group
   | filter_rev
+  | filter_join
   | filter_replace
   | filter_squash
   | filter_presub
@@ -38,11 +43,21 @@ filter_noarg = { CMD_START ~ cmd }
 filter_rev = {
     CMD_START ~ "rev" ~ "("
     ~ NEWLINE*
-    ~ (argument ~ filter_spec)?
-    ~ (CMD_SEP+ ~ (argument ~ filter_spec))*
+    ~ (rev ~ filter_spec)?
+    ~ (CMD_SEP+ ~ (rev ~ filter_spec))*
     ~ NEWLINE*
     ~ ")"
 }
+
+filter_join = {
+    CMD_START ~ "join" ~ "("
+    ~ NEWLINE*
+    ~ (rev ~ filter_spec)?
+    ~ (CMD_SEP+ ~ (rev ~ filter_spec))*
+    ~ NEWLINE*
+    ~ ")"
+}
+
 
 filter_replace = {
     CMD_START ~ "replace" ~ "("
@@ -56,13 +71,11 @@ filter_replace = {
 filter_squash = {
     CMD_START ~ "squash" ~ "("
     ~ NEWLINE*
-    ~ (argument ~ ":" ~ string)?
-    ~ (CMD_SEP+ ~ (argument ~ ":" ~ string))*
+    ~ (rev ~ ":" ~ string)?
+    ~ (CMD_SEP+ ~ (rev ~ ":" ~ string))*
     ~ NEWLINE*
     ~ ")"
 }
-
-argument = { string | PATH }
 
 cmd = { ALNUM+ }
 

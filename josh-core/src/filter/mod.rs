@@ -68,7 +68,9 @@ pub fn empty() -> Filter {
 pub fn squash(ids: Option<&[(git2::Oid, String)]>) -> Filter {
     if let Some(ids) = ids {
         to_filter(Op::Squash(Some(
-            ids.iter().map(|(x, y)| (*x, y.clone())).collect(),
+            ids.iter()
+                .map(|(x, y)| (LazyRef::Resolved(*x), y.clone()))
+                .collect(),
         )))
     } else {
         to_filter(Op::Squash(None))
@@ -93,6 +95,32 @@ fn to_op(filter: Filter) -> Op {
         .clone()
 }
 
+#[derive(Hash, Clone, Debug, PartialEq, PartialOrd, Eq, Ord)]
+enum LazyRef {
+    Resolved(git2::Oid),
+    Lazy(String),
+}
+
+impl LazyRef {
+    fn to_string(&self) -> String {
+        match self {
+            LazyRef::Resolved(id) => format!("{}", id),
+            LazyRef::Lazy(lazy) => format!("\"{}\"", lazy),
+        }
+    }
+    fn parse(s: &str) -> JoshResult<LazyRef> {
+        let s = s.replace("'", "\"");
+        if let Ok(serde_json::Value::String(s)) = serde_json::from_str(&s) {
+            return Ok(LazyRef::Lazy(s));
+        }
+        if let Ok(oid) = git2::Oid::from_str(&s) {
+            return Ok(LazyRef::Resolved(oid));
+        } else {
+            return Err(josh_error(&format!("invalid ref: {:?}", s)));
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 enum Op {
     Nop,
@@ -102,12 +130,13 @@ enum Op {
 
     // We use BTreeMap rather than HashMap to guarantee deterministic results when
     // converting to Filter
-    Squash(Option<std::collections::BTreeMap<git2::Oid, String>>),
+    Squash(Option<std::collections::BTreeMap<LazyRef, String>>),
     Author(String, String),
 
     // We use BTreeMap rather than HashMap to guarantee deterministic results when
     // converting to Filter
-    Rev(std::collections::BTreeMap<git2::Oid, Filter>),
+    Rev(std::collections::BTreeMap<LazyRef, Filter>),
+    Join(std::collections::BTreeMap<LazyRef, Filter>),
     Linear,
     Unsign,
 
@@ -240,7 +269,142 @@ fn nesting2(op: &Op) -> usize {
                 .max()
                 .unwrap_or(0)
         }
+        Op::Join(filters) => {
+            1 + filters
+                .values()
+                .map(|filter| nesting(*filter))
+                .max()
+                .unwrap_or(0)
+        }
         _ => 0,
+    }
+}
+
+pub fn lazy_refs(filter: Filter) -> Vec<String> {
+    lazy_refs2(&to_op(filter))
+}
+
+fn lazy_refs2(op: &Op) -> Vec<String> {
+    let mut lr = match op {
+        Op::Compose(filters) => {
+            filters
+                .iter()
+                .map(|f| lazy_refs(*f))
+                .fold(vec![], |mut acc, mut v| {
+                    acc.append(&mut v);
+                    acc
+                })
+        }
+        Op::Exclude(filter) => lazy_refs(*filter),
+        Op::Chain(a, b) => {
+            let mut av = lazy_refs(*a);
+            av.append(&mut lazy_refs(*b));
+            av
+        }
+        Op::Subtract(a, b) => {
+            let mut av = lazy_refs(*a);
+            av.append(&mut lazy_refs(*b));
+            av
+        }
+        Op::Rev(filters) => lazy_refs2(&Op::Join(filters.clone())),
+        Op::Join(filters) => {
+            let mut lr = lazy_refs2(&Op::Compose(filters.values().map(|x| *x).collect()));
+            lr.extend(filters.keys().filter_map(|x| {
+                if let LazyRef::Lazy(s) = x {
+                    Some(s.to_owned())
+                } else {
+                    None
+                }
+            }));
+            lr
+        }
+        Op::Squash(Some(revs)) => {
+            let mut lr = vec![];
+            lr.extend(revs.keys().filter_map(|x| {
+                if let LazyRef::Lazy(s) = x {
+                    Some(s.to_owned())
+                } else {
+                    None
+                }
+            }));
+            lr
+        }
+        _ => vec![],
+    };
+    lr.sort();
+    lr.dedup();
+    lr
+}
+
+pub fn resolve_refs(refs: &std::collections::HashMap<String, git2::Oid>, filter: Filter) -> Filter {
+    to_filter(resolve_refs2(refs, &to_op(filter)))
+}
+
+fn resolve_refs2(refs: &std::collections::HashMap<String, git2::Oid>, op: &Op) -> Op {
+    match op {
+        Op::Compose(filters) => Op::Compose(
+            filters
+                .into_iter()
+                .map(|f| resolve_refs(refs, *f))
+                .collect(),
+        ),
+        Op::Exclude(filter) => Op::Exclude(resolve_refs(refs, *filter)),
+        Op::Chain(a, b) => Op::Chain(resolve_refs(refs, *a), resolve_refs(refs, *b)),
+        Op::Chain(a, b) => Op::Subtract(resolve_refs(refs, *a), resolve_refs(refs, *b)),
+        Op::Rev(filters) => {
+            let lr = filters
+                .into_iter()
+                .map(|(r, f)| {
+                    let f = resolve_refs(refs, *f);
+                    if let LazyRef::Lazy(s) = r {
+                        if let Some(res) = refs.get(s) {
+                            (LazyRef::Resolved(*res), f)
+                        } else {
+                            (r.clone(), f)
+                        }
+                    } else {
+                        (r.clone(), f)
+                    }
+                })
+                .collect();
+            Op::Rev(lr)
+        }
+        Op::Join(filters) => {
+            let lr = filters
+                .into_iter()
+                .map(|(r, f)| {
+                    let f = resolve_refs(refs, *f);
+                    if let LazyRef::Lazy(s) = r {
+                        if let Some(res) = refs.get(s) {
+                            (LazyRef::Resolved(*res), f)
+                        } else {
+                            (r.clone(), f)
+                        }
+                    } else {
+                        (r.clone(), f)
+                    }
+                })
+                .collect();
+            Op::Join(lr)
+        }
+        Op::Squash(Some(filters)) => {
+            let lr = filters
+                .into_iter()
+                .map(|(r, m)| {
+                    if let LazyRef::Lazy(s) = r {
+                        if let Some(res) = refs.get(s) {
+                            (LazyRef::Resolved(*res), m.clone())
+                        } else {
+                            (r.clone(), m.clone())
+                        }
+                    } else {
+                        (r.clone(), m.clone())
+                    }
+                })
+                .collect();
+            Op::Squash(Some(lr))
+        }
+        _ => op.clone(),
     }
 }
 
@@ -272,10 +436,18 @@ fn spec2(op: &Op) -> String {
         Op::Rev(filters) => {
             let mut v = filters
                 .iter()
-                .map(|(k, v)| format!("{}{}", k, spec(*v)))
+                .map(|(k, v)| format!("{}{}", k.to_string(), spec(*v)))
                 .collect::<Vec<_>>();
             v.sort();
             format!(":rev({})", v.join(","))
+        }
+        Op::Join(filters) => {
+            let mut v = filters
+                .iter()
+                .map(|(k, v)| format!("{}{}", k.to_string(), spec(*v)))
+                .collect::<Vec<_>>();
+            v.sort();
+            format!(":join({})", v.join(","))
         }
         Op::Workspace(path) => {
             format!(":workspace={}", parse::quote_if(&path.to_string_lossy()))
@@ -307,7 +479,7 @@ fn spec2(op: &Op) -> String {
         Op::Squash(Some(ids)) => {
             let mut v = ids
                 .iter()
-                .map(|(oid, msg)| format!("{}:{}", oid, parse::quote(msg)))
+                .map(|(oid, msg)| format!("{}:{}", oid.to_string(), parse::quote(msg)))
                 .collect::<Vec<_>>();
             v.sort();
             format!(":squash({})", v.join(","))
@@ -470,6 +642,34 @@ fn apply_to_commit2(
             ))
             .transpose()
         }
+        Op::Join(refs) => {
+            // First loop to populate missing list
+            for (&_, f) in refs.iter() {
+                transaction.get(*f, commit.id());
+            }
+            let mut result = commit.id();
+            for (&ref combine_tip, f) in refs.iter() {
+                if let LazyRef::Resolved(combine_tip) = combine_tip {
+                    let old = some_or!(transaction.get(*f, commit.id()), {
+                        return Ok(None);
+                    });
+                    result = history::unapply_filter(
+                        transaction,
+                        *f,
+                        result,
+                        old,
+                        *combine_tip,
+                        false,
+                        None,
+                        &mut None,
+                    )?;
+                } else {
+                    return Err(josh_error("unresolved lazy ref"));
+                }
+            }
+            transaction.insert(filter, commit.id(), result, true);
+            return Ok(Some(result));
+        }
         _ => {
             if let Some(oid) = transaction.get(filter, commit.id()) {
                 return Ok(Some(oid));
@@ -482,16 +682,21 @@ fn apply_to_commit2(
     let filtered_tree = match &to_op(filter) {
         Op::Rev(filters) => {
             let nf = *filters
-                .get(&git2::Oid::zero())
+                .get(&LazyRef::Resolved(git2::Oid::zero()))
                 .unwrap_or(&to_filter(Op::Nop));
 
             let id = commit.id();
 
-            for (&filter_tip, startfilter) in filters.iter() {
-                if filter_tip == git2::Oid::zero() {
+            for (&ref filter_tip, startfilter) in filters.iter() {
+                let filter_tip = if let LazyRef::Resolved(filter_tip) = filter_tip {
+                    filter_tip
+                } else {
+                    return Err(josh_error("unresolved lazy ref"));
+                };
+                if *filter_tip == git2::Oid::zero() {
                     continue;
                 }
-                if !ok_or!(is_ancestor_of(repo, id, filter_tip), {
+                if !ok_or!(is_ancestor_of(repo, id, *filter_tip), {
                     return Err(josh_error(&format!(
                         "`:rev(...)` with non existing OID: {}",
                         filter_tip
@@ -501,8 +706,8 @@ fn apply_to_commit2(
                 }
                 // Remove this filter but preserve the others.
                 let mut f2 = filters.clone();
-                f2.remove(&filter_tip);
-                f2.insert(git2::Oid::zero(), *startfilter);
+                f2.remove(&LazyRef::Resolved(*filter_tip));
+                f2.insert(LazyRef::Resolved(git2::Oid::zero()), *startfilter);
                 let op = if f2.len() == 1 {
                     to_op(*startfilter)
                 } else {
@@ -519,7 +724,7 @@ fn apply_to_commit2(
             apply(transaction, nf, commit.tree()?)?
         }
         Op::Squash(Some(ids)) => {
-            if ids.get(&commit.id()).is_some() {
+            if ids.get(&LazyRef::Resolved(commit.id())).is_some() {
                 commit.tree()?
             } else {
                 if let Some(parent) = commit.parents().next() {
@@ -685,7 +890,7 @@ fn apply_to_commit2(
     };
 
     let message = match to_op(filter) {
-        Op::Squash(Some(ids)) => ids.get(&commit.id()).cloned(),
+        Op::Squash(Some(ids)) => ids.get(&LazyRef::Resolved(commit.id())).cloned(),
         _ => None,
     };
 
@@ -726,6 +931,7 @@ fn apply2<'a>(
         Op::Linear => Ok(tree),
         Op::Unsign => Ok(tree),
         Op::Rev(_) => Err(josh_error("not applicable to tree")),
+        Op::Join(_) => Err(josh_error("not applicable to tree")),
         Op::RegexReplace(replacements) => {
             let mut t = tree;
             for (regex, replacement) in replacements {
