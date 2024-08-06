@@ -222,6 +222,9 @@ ancestor also has a matching entry in the <code>:rev(...)</code> it's filter wil
 for all further ancestors (and so on).</p>
 <p>This special value <code>0000000000000000000000000000000000000000</code> can be used as a <code>&lt;sha_n&gt;</code> to filter
 commits that don't match any of the other shas.</p>
+<h3 id="join-multiple-histories-into-one-joinsha_0filter_0sha_nfilter_n"><a class="header" href="#join-multiple-histories-into-one-joinsha_0filter_0sha_nfilter_n">Join multiple histories into one <strong>:join(&lt;sha_0&gt;:filter_0,...,&lt;sha_N&gt;:filter_N)</strong></a></h3>
+<p>Produce the history that would be the result of pushing the passed branches with the
+passed filters into the upstream.</p>
 <h2 id="filter-order-matters"><a class="header" href="#filter-order-matters">Filter order matters</a></h2>
 <p>Filters are applied in the left-to-right order they are given in the filter specification,
 and they are <code>not</code> commutative.</p>
