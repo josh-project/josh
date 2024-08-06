@@ -350,7 +350,7 @@ fn resolve_refs2(refs: &std::collections::HashMap<String, git2::Oid>, op: &Op) -
         ),
         Op::Exclude(filter) => Op::Exclude(resolve_refs(refs, *filter)),
         Op::Chain(a, b) => Op::Chain(resolve_refs(refs, *a), resolve_refs(refs, *b)),
-        Op::Chain(a, b) => Op::Subtract(resolve_refs(refs, *a), resolve_refs(refs, *b)),
+        Op::Subtract(a, b) => Op::Subtract(resolve_refs(refs, *a), resolve_refs(refs, *b)),
         Op::Rev(filters) => {
             let lr = filters
                 .into_iter()
