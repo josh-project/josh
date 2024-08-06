@@ -35,7 +35,7 @@
   $ bash ${TESTDIR}/destroy_test_env.sh
   .
   |-- josh
-  |   `-- 20
+  |   `-- 21
   |       `-- sled
   |           |-- blobs
   |           |-- conf

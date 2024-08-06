@@ -30,9 +30,6 @@
 
   $ josh-filter -s --squash-pattern "refs/tags/*" --update refs/heads/filtered
   Warning: reference refs/heads/filtered wasn't updated
-  [1] :squash(
-  
-  )
 
   $ git log --graph --decorate --pretty=oneline refs/heads/filtered
   fatal: ambiguous argument 'refs/heads/filtered': unknown revision or path not in the working tree.
@@ -45,9 +42,6 @@ This one tag is an annotated tag, to make sure those are handled as well
   $ josh-filter -s --squash-pattern "refs/tags/*" :author=\"New\ Author\"\;\"new@e.mail\" --update refs/heads/filtered
   [1] :author="New Author";"new@e.mail"
   [1] :squash(
-  
-  )
-  [2] :squash(
       1d69b7d2651f744be3416f2ad526aeccefb99310:"refs/tags/tag_a"
   )
 
@@ -67,9 +61,6 @@ This one tag is an annotated tag, to make sure those are handled as well
 
   $ josh-filter -s --squash-pattern "refs/tags/*" :author=\"New\ Author\"\;\"new@e.mail\" --update refs/heads/filtered
   [1] :squash(
-  
-  )
-  [2] :squash(
       1d69b7d2651f744be3416f2ad526aeccefb99310:"refs/tags/tag_a"
   )
   [3] :squash(
@@ -124,9 +115,6 @@ This one tag is an annotated tag, to make sure those are handled as well
   ):author="New Author";"new@e.mail"
   $ josh-filter -s --file filter.josh --update refs/heads/filtered
   [1] :squash(
-  
-  )
-  [2] :squash(
       1d69b7d2651f744be3416f2ad526aeccefb99310:"refs/tags/tag_a"
   )
   [3] :squash(
