@@ -109,6 +109,11 @@ for all further ancestors (and so on).
 This special value `0000000000000000000000000000000000000000` can be used as a `<sha_n>` to filter
 commits that don't match any of the other shas.
 
+### Join multiple histories into one **:join(<sha_0>:filter_0,...,<sha_N>:filter_N)**
+
+Produce the history that would be the result of pushing the passed branches with the
+passed filters into the upstream.
+
 Filter order matters
 --------------------
 
