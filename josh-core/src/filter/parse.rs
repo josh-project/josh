@@ -85,6 +85,10 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> JoshResult<Op> {
             let mut inner = pair.into_inner();
             make_op(&[inner.next().unwrap().as_str()])
         }
+        Rule::filter_message => {
+            let mut inner = pair.into_inner();
+            Ok(Op::Message(unquote(inner.next().unwrap().as_str())))
+        }
         Rule::filter_group => {
             let v: Vec<_> = pair.into_inner().map(|x| unquote(x.as_str())).collect();
 
@@ -137,9 +141,7 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> JoshResult<Op> {
             let ids = pair
                 .into_inner()
                 .tuples()
-                .map(|(oid, message)| {
-                    Ok((LazyRef::parse(oid.as_str())?, unquote(message.as_str())))
-                })
+                .map(|(oid, filter)| Ok((LazyRef::parse(oid.as_str())?, parse(filter.as_str())?)))
                 .collect::<JoshResult<_>>()?;
 
             Ok(Op::Squash(Some(ids)))

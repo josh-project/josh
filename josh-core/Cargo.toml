@@ -26,6 +26,7 @@ pest_derive = "2.7.10"
 rayon = "1.10.0"
 regex = { workspace = true }
 rs_tracing = { workspace = true }
+strfmt = "0.2.4"
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
