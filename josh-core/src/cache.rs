@@ -1,7 +1,7 @@
 use super::*;
 use std::collections::HashMap;
 
-const CACHE_VERSION: u64 = 21;
+const CACHE_VERSION: u64 = 22;
 
 lazy_static! {
     static ref DB: std::sync::Mutex<Option<sled::Db>> = std::sync::Mutex::new(None);

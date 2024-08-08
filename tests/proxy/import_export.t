@@ -301,7 +301,7 @@ Flushed credential cache
   "repo2.git" = [":prefix=repo2"]
   .
   |-- josh
-  |   `-- 21
+  |   `-- 22
   |       `-- sled
   |           |-- blobs
   |           |-- conf
