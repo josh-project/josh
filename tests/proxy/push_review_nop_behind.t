@@ -55,7 +55,7 @@ This is a regression test for that problem.
   "real_repo.git" = []
   .
   |-- josh
-  |   `-- 21
+  |   `-- 22
   |       `-- sled
   |           |-- blobs
   |           |-- conf

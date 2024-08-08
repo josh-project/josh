@@ -8,6 +8,7 @@ fn make_op(args: &[&str]) -> JoshResult<Op> {
         ["empty"] => Ok(Op::Empty),
         ["prefix", arg] => Ok(Op::Prefix(Path::new(arg).to_owned())),
         ["author", author, email] => Ok(Op::Author(author.to_string(), email.to_string())),
+        ["committer", author, email] => Ok(Op::Committer(author.to_string(), email.to_string())),
         ["workspace", arg] => Ok(Op::Workspace(Path::new(arg).to_owned())),
         ["prefix"] => Err(josh_error(indoc!(
             r#"

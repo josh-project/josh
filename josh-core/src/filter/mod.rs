@@ -137,6 +137,7 @@ enum Op {
     // converting to Filter
     Squash(Option<std::collections::BTreeMap<LazyRef, Filter>>),
     Author(String, String),
+    Committer(String, String),
 
     // We use BTreeMap rather than HashMap to guarantee deterministic results when
     // converting to Filter
@@ -491,6 +492,13 @@ fn spec2(op: &Op) -> String {
         Op::Glob(pattern) => format!("::{}", parse::quote_if(pattern)),
         Op::Author(author, email) => {
             format!(":author={};{}", parse::quote(author), parse::quote(email))
+        }
+        Op::Committer(author, email) => {
+            format!(
+                ":committer={};{}",
+                parse::quote(author),
+                parse::quote(email)
+            )
         }
         Op::Message(m) => {
             format!(":{}", parse::quote(m))
@@ -926,6 +934,12 @@ fn apply_to_commit2(
         Op::Author(author, email) => RewriteData {
             tree: commit.tree()?,
             author: Some((author.clone(), email.clone())),
+            committer: None,
+            message: None,
+        },
+        Op::Committer(author, email) => RewriteData {
+            tree: commit.tree()?,
+            author: None,
             committer: Some((author.clone(), email.clone())),
             message: None,
         },
@@ -989,6 +1003,7 @@ fn apply2<'a>(
         Op::Squash(None) => Ok(tree),
         Op::Message(_) => Ok(tree),
         Op::Author(_, _) => Ok(tree),
+        Op::Committer(_, _) => Ok(tree),
         Op::Squash(Some(_)) => Err(josh_error("not applicable to tree")),
         Op::Linear => Ok(tree),
         Op::Unsign => Ok(tree),
