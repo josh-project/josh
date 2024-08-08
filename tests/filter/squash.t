@@ -40,6 +40,7 @@
 This one tag is an annotated tag, to make sure those are handled as well
   $ git tag -a tag_a -m "created a tag" 1d69b7d
   $ josh-filter -s --squash-pattern "refs/tags/*" :author=\"New\ Author\"\;\"new@e.mail\" --update refs/heads/filtered
+  [1] :"refs/tags/tag_a"
   [1] :author="New Author";"new@e.mail"
   [1] :squash(
       1d69b7d2651f744be3416f2ad526aeccefb99310:"refs/tags/tag_a"
@@ -60,6 +61,9 @@ This one tag is an annotated tag, to make sure those are handled as well
   * 0b4cf6c9efbbda1eada39fa9c1d21d2525b027bb (tag: tag_b) add file1
 
   $ josh-filter -s --squash-pattern "refs/tags/*" :author=\"New\ Author\"\;\"new@e.mail\" --update refs/heads/filtered
+  [1] :"refs/tags/filtered/tag_a"
+  [1] :"refs/tags/tag_a"
+  [1] :"refs/tags/tag_b"
   [1] :squash(
       1d69b7d2651f744be3416f2ad526aeccefb99310:"refs/tags/tag_a"
   )
@@ -114,6 +118,10 @@ This one tag is an annotated tag, to make sure those are handled as well
       975d4c4975912729482cc864d321c5196a969271:"refs/tags/tag_c"
   ):author="New Author";"new@e.mail"
   $ josh-filter -s --file filter.josh --update refs/heads/filtered
+  [1] :"refs/tags/filtered/tag_a"
+  [1] :"refs/tags/tag_a"
+  [1] :"refs/tags/tag_b"
+  [1] :"refs/tags/tag_c"
   [1] :squash(
       1d69b7d2651f744be3416f2ad526aeccefb99310:"refs/tags/tag_a"
   )

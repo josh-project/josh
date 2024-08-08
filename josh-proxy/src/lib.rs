@@ -6,6 +6,7 @@ pub mod trace;
 #[macro_use]
 extern crate lazy_static;
 
+use josh::history::RewriteData;
 use josh::{josh_error, JoshError, JoshResult};
 use std::fs;
 use std::path::PathBuf;
@@ -459,9 +460,12 @@ fn split_changes(
                         repo,
                         &repo.find_commit(changes[i].1)?,
                         &[&parent],
-                        &new_tree,
-                        None,
-                        None,
+                        RewriteData {
+                            tree: new_tree,
+                            author: None,
+                            committer: None,
+                            message: None,
+                        },
                         false,
                     )?;
                     changes[i].1 = new_commit;

@@ -189,28 +189,42 @@ fn find_known(
     Ok((known, n_new))
 }
 
+pub struct RewriteData<'a> {
+    pub tree: git2::Tree<'a>,
+    pub author: Option<(String, String)>,
+    pub committer: Option<(String, String)>,
+    pub message: Option<String>,
+}
+
 // takes everything from base except it's tree and replaces it with the tree
 // given
 pub fn rewrite_commit(
     repo: &git2::Repository,
     base: &git2::Commit,
     parents: &[&git2::Commit],
-    tree: &git2::Tree,
-    author: Option<(String, String)>,
-    message: Option<String>,
+    rewrite_data: RewriteData,
     unsign: bool,
 ) -> JoshResult<git2::Oid> {
-    let message = message.unwrap_or(base.message_raw().unwrap_or("no message").to_string());
+    let message = rewrite_data
+        .message
+        .unwrap_or(base.message_raw().unwrap_or("no message").to_string());
+    let tree = &rewrite_data.tree;
 
-    let b = if let Some((author, email)) = author {
-        let a = base.author();
-        let new_a = git2::Signature::new(&author, &email, &a.when())?;
-        let c = base.committer();
-        let new_c = git2::Signature::new(&author, &email, &c.when())?;
-        repo.commit_create_buffer(&new_a, &new_c, &message, tree, parents)?
+    let a = base.author();
+    let new_a = if let Some((author, email)) = rewrite_data.author {
+        git2::Signature::new(&author, &email, &a.when())?
     } else {
-        repo.commit_create_buffer(&base.author(), &base.committer(), &message, tree, parents)?
+        a
     };
+
+    let c = base.committer();
+    let new_c = if let Some((committer, email)) = rewrite_data.committer {
+        git2::Signature::new(&committer, &email, &c.when())?
+    } else {
+        c
+    };
+
+    let b = repo.commit_create_buffer(&new_a, &new_c, &message, tree, parents)?;
 
     if let (false, Ok((sig, _))) = (unsign, repo.extract_signature(&base.id(), None)) {
         // Re-create the object with the original signature (which of course does not match any
@@ -589,9 +603,12 @@ pub fn unapply_filter(
             transaction.repo(),
             &module_commit,
             &original_parents,
-            &new_tree,
-            None,
-            None,
+            RewriteData {
+                tree: new_tree.clone(),
+                author: None,
+                committer: None,
+                message: None,
+            },
             false,
         )?;
 
@@ -645,9 +662,12 @@ pub fn remove_commit_signature<'a>(
         transaction.repo(),
         original_commit,
         filtered_parent_ids,
-        filtered_tree,
-        None,
-        None,
+        RewriteData {
+            tree: filtered_tree,
+            author: None,
+            committer: None,
+            message: None,
+        },
         true,
     )?;
 
@@ -678,19 +698,15 @@ pub fn drop_commit<'a>(
 pub fn create_filtered_commit<'a>(
     original_commit: &'a git2::Commit,
     filtered_parent_ids: Vec<git2::Oid>,
-    filtered_tree: git2::Tree<'a>,
+    rewrite_data: RewriteData,
     transaction: &cache::Transaction,
     filter: filter::Filter,
-    author: Option<(String, String)>,
-    message: Option<String>,
 ) -> JoshResult<git2::Oid> {
     let (r, is_new) = create_filtered_commit2(
         transaction.repo(),
         original_commit,
         filtered_parent_ids,
-        filtered_tree,
-        author,
-        message,
+        rewrite_data,
         false,
     )?;
 
@@ -705,9 +721,7 @@ fn create_filtered_commit2<'a>(
     repo: &'a git2::Repository,
     original_commit: &'a git2::Commit,
     filtered_parent_ids: Vec<git2::Oid>,
-    filtered_tree: git2::Tree<'a>,
-    author: Option<(String, String)>,
-    message: Option<String>,
+    rewrite_data: RewriteData,
     unsign: bool,
 ) -> JoshResult<(git2::Oid, bool)> {
     let filtered_parent_commits: Result<Vec<_>, _> = filtered_parent_ids
@@ -732,7 +746,7 @@ fn create_filtered_commit2<'a>(
 
     let selected_filtered_parent_commits: Vec<&_> = select_parent_commits(
         original_commit,
-        filtered_tree.id(),
+        rewrite_data.tree.id(),
         filtered_parent_commits.iter().collect(),
     );
 
@@ -742,7 +756,7 @@ fn create_filtered_commit2<'a>(
         if !filtered_parent_commits.is_empty() {
             return Ok((filtered_parent_commits[0].id(), false));
         }
-        if filtered_tree.id() == filter::tree::empty_id() {
+        if rewrite_data.tree.id() == filter::tree::empty_id() {
             return Ok((git2::Oid::zero(), false));
         }
     }
@@ -752,9 +766,7 @@ fn create_filtered_commit2<'a>(
             repo,
             original_commit,
             &selected_filtered_parent_commits,
-            &filtered_tree,
-            author,
-            message,
+            rewrite_data,
             unsign,
         )?,
         true,

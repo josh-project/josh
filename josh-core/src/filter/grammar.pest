@@ -22,6 +22,7 @@ char = {
 
 filter_spec = { (
     filter_group
+  | filter_message
   | filter_rev
   | filter_join
   | filter_replace
@@ -39,6 +40,7 @@ filter_nop = { CMD_START ~ "/" }
 filter_presub = { CMD_START ~ ":" ~ argument }
 filter = { CMD_START ~ cmd ~ "=" ~ (argument ~ (";" ~ argument)*)? }
 filter_noarg = { CMD_START ~ cmd }
+filter_message = { CMD_START ~ string }
 
 filter_rev = {
     CMD_START ~ "rev" ~ "("
@@ -71,8 +73,8 @@ filter_replace = {
 filter_squash = {
     CMD_START ~ "squash" ~ "("
     ~ NEWLINE*
-    ~ (rev ~ ":" ~ string)?
-    ~ (CMD_SEP+ ~ (rev ~ ":" ~ string))*
+    ~ (rev ~ filter_spec)?
+    ~ (CMD_SEP+ ~ (rev ~ filter_spec))*
     ~ NEWLINE*
     ~ ")"
 }

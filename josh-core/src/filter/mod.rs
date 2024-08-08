@@ -1,4 +1,5 @@
 use super::*;
+use history::RewriteData;
 use pest::Parser;
 use std::path::Path;
 mod opt;
@@ -65,7 +66,11 @@ pub fn empty() -> Filter {
     to_filter(Op::Empty)
 }
 
-pub fn squash(ids: Option<&[(git2::Oid, String)]>) -> Filter {
+pub fn message(m: &str) -> Filter {
+    to_filter(Op::Message(m.to_string()))
+}
+
+pub fn squash(ids: Option<&[(git2::Oid, Filter)]>) -> Filter {
     if let Some(ids) = ids {
         to_filter(Op::Squash(Some(
             ids.iter()
@@ -130,7 +135,7 @@ enum Op {
 
     // We use BTreeMap rather than HashMap to guarantee deterministic results when
     // converting to Filter
-    Squash(Option<std::collections::BTreeMap<LazyRef, String>>),
+    Squash(Option<std::collections::BTreeMap<LazyRef, Filter>>),
     Author(String, String),
 
     // We use BTreeMap rather than HashMap to guarantee deterministic results when
@@ -151,6 +156,7 @@ enum Op {
     Workspace(std::path::PathBuf),
 
     Glob(String),
+    Message(String),
 
     Compose(Vec<Filter>),
     Chain(Filter, Filter),
@@ -235,14 +241,7 @@ fn pretty2(op: &Op, indent: usize, compose: bool) -> String {
         Op::Squash(Some(ids)) => {
             let mut v = ids
                 .iter()
-                .map(|(oid, msg)| {
-                    format!(
-                        "{}{}:{}",
-                        " ".repeat(indent),
-                        &oid.to_string(),
-                        parse::quote(msg)
-                    )
-                })
+                .map(|(oid, f)| format!("{}{}{}", " ".repeat(indent), &oid.to_string(), spec(*f)))
                 .collect::<Vec<_>>();
             v.sort();
             format!(":squash(\n{}\n)", v.join("\n"))
@@ -479,7 +478,7 @@ fn spec2(op: &Op) -> String {
         Op::Squash(Some(ids)) => {
             let mut v = ids
                 .iter()
-                .map(|(oid, msg)| format!("{}:{}", oid.to_string(), parse::quote(msg)))
+                .map(|(oid, f)| format!("{}{}", oid.to_string(), spec(*f)))
                 .collect::<Vec<_>>();
             v.sort();
             format!(":squash({})", v.join(","))
@@ -492,6 +491,9 @@ fn spec2(op: &Op) -> String {
         Op::Glob(pattern) => format!("::{}", parse::quote_if(pattern)),
         Op::Author(author, email) => {
             format!(":author={};{}", parse::quote(author), parse::quote(email))
+        }
+        Op::Message(m) => {
+            format!(":{}", parse::quote(m))
         }
     }
 }
@@ -635,9 +637,12 @@ fn apply_to_commit2(
                 repo,
                 commit,
                 &[],
-                &commit.tree()?,
-                None,
-                None,
+                RewriteData {
+                    tree: commit.tree()?,
+                    author: None,
+                    committer: None,
+                    message: None,
+                },
                 true,
             ))
             .transpose()
@@ -679,7 +684,7 @@ fn apply_to_commit2(
 
     rs_tracing::trace_scoped!("apply_to_commit", "spec": spec(filter), "commit": commit.id().to_string());
 
-    let filtered_tree = match &to_op(filter) {
+    let rewrite_data = match &to_op(filter) {
         Op::Rev(filters) => {
             let nf = *filters
                 .get(&LazyRef::Resolved(git2::Oid::zero()))
@@ -721,11 +726,41 @@ fn apply_to_commit2(
                 }
             }
 
-            apply(transaction, nf, commit.tree()?)?
+            RewriteData {
+                tree: apply(transaction, nf, commit.tree()?)?,
+                message: None,
+                author: None,
+                committer: None,
+            }
         }
         Op::Squash(Some(ids)) => {
-            if ids.get(&LazyRef::Resolved(commit.id())).is_some() {
-                commit.tree()?
+            if let Some(sq) = ids.get(&LazyRef::Resolved(commit.id())) {
+                let oid = if let Some(oid) =
+                    apply_to_commit2(&Op::Chain(filter::squash(None), *sq), commit, transaction)?
+                {
+                    oid
+                } else {
+                    return Ok(None);
+                };
+
+                let rc = transaction.repo().find_commit(oid)?;
+                let author = rc
+                    .author()
+                    .name()
+                    .map(|x| x.to_owned())
+                    .zip(rc.author().email().map(|x| x.to_owned()));
+                let committer = rc
+                    .committer()
+                    .name()
+                    .map(|x| x.to_owned())
+                    .zip(rc.committer().email().map(|x| x.to_owned()));
+                RewriteData {
+                    tree: rc.tree()?,
+                    message: rc.message_raw().map(|x| x.to_owned()),
+                    author: author,
+                    committer: committer,
+                }
+                //commit.tree()?
             } else {
                 if let Some(parent) = commit.parents().next() {
                     return Ok(
@@ -762,11 +797,14 @@ fn apply_to_commit2(
             return Some(history::create_filtered_commit(
                 commit,
                 vec![parent],
-                commit.tree()?,
+                RewriteData {
+                    tree: commit.tree()?,
+                    author: None,
+                    committer: None,
+                    message: None,
+                },
                 transaction,
                 filter,
-                None,
-                None,
             ))
             .transpose();
         }
@@ -847,11 +885,14 @@ fn apply_to_commit2(
             return Some(history::create_filtered_commit(
                 commit,
                 filtered_parent_ids,
-                filtered_tree,
+                RewriteData {
+                    tree: filtered_tree,
+                    author: None,
+                    committer: None,
+                    message: None,
+                },
                 transaction,
                 filter,
-                None,
-                None,
             ))
             .transpose();
         }
@@ -874,9 +915,36 @@ fn apply_to_commit2(
                 filtered_tree = tree::overlay(transaction, filtered_tree, t)?;
             }
 
-            repo.find_tree(filtered_tree)?
+            let filtered_tree = repo.find_tree(filtered_tree)?;
+            RewriteData {
+                tree: filtered_tree,
+                author: None,
+                committer: None,
+                message: None,
+            }
         }
-        _ => apply(transaction, filter, commit.tree()?)?,
+        Op::Author(author, email) => RewriteData {
+            tree: commit.tree()?,
+            author: Some((author.clone(), email.clone())),
+            committer: Some((author.clone(), email.clone())),
+            message: None,
+        },
+        Op::Message(m) => RewriteData {
+            tree: commit.tree()?,
+            author: None,
+            committer: None,
+            // Pass the message through `strfmt` to enable future extensions
+            message: Some(strfmt::strfmt(
+                m,
+                &std::collections::HashMap::<String, &dyn strfmt::DisplayStr>::new(),
+            )?),
+        },
+        _ => RewriteData {
+            tree: apply(transaction, filter, commit.tree()?)?,
+            message: None,
+            author: None,
+            committer: None,
+        },
     };
 
     let filtered_parent_ids = {
@@ -889,24 +957,12 @@ fn apply_to_commit2(
 
     let filtered_parent_ids = some_or!(filtered_parent_ids, { return Ok(None) });
 
-    let author = match to_op(filter) {
-        Op::Author(author, email) => Some((author, email)),
-        _ => None,
-    };
-
-    let message = match to_op(filter) {
-        Op::Squash(Some(ids)) => ids.get(&LazyRef::Resolved(commit.id())).cloned(),
-        _ => None,
-    };
-
     Some(history::create_filtered_commit(
         commit,
         filtered_parent_ids,
-        filtered_tree,
+        rewrite_data,
         transaction,
         filter,
-        author,
-        message,
     ))
     .transpose()
 }
@@ -931,6 +987,7 @@ fn apply2<'a>(
         Op::Empty => return Ok(tree::empty(repo)),
         Op::Fold => Ok(tree),
         Op::Squash(None) => Ok(tree),
+        Op::Message(_) => Ok(tree),
         Op::Author(_, _) => Ok(tree),
         Op::Squash(Some(_)) => Err(josh_error("not applicable to tree")),
         Op::Linear => Ok(tree),
