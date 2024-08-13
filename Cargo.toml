@@ -31,7 +31,7 @@ rs_tracing = { version = "1.1.0", features = ["rs_tracing"] }
 serde = { version = "1.0.203", features = ["std", "derive"] }
 serde_json = "1.0.117"
 serde_yaml = "0.9.33"
-toml = "0.8.13"
+toml = "0.8.19"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 tempfile = "3.10.1"
 
