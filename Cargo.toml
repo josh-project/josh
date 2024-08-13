@@ -20,7 +20,7 @@ codegen-units = 1
 [workspace.dependencies]
 base64 = "0.21.7"
 defer = "0.2.1"
-env_logger = "0.11.3"
+env_logger = "0.11.5"
 futures = "0.3.30"
 gix = { version = "0.63.0", default-features = false }
 hyper-reverse-proxy = "0.5.1"
