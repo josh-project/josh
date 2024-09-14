@@ -196,39 +196,50 @@ pub struct RewriteData<'a> {
     pub message: Option<String>,
 }
 
-// takes everything from base except it's tree and replaces it with the tree
+// takes everything from base except its tree and replaces it with the tree
 // given
 pub fn rewrite_commit(
     repo: &git2::Repository,
-    base: &git2::Commit,
+    base: &git2::Commit, // original commit that we are modifying
     parents: &[&git2::Commit],
     rewrite_data: RewriteData,
     unsign: bool,
 ) -> JoshResult<git2::Oid> {
     use commit_buffer::CommitBuffer;
 
-    let message = rewrite_data
-        .message
-        .unwrap_or(base.message_raw().unwrap_or("no message").to_string());
-    let tree = &rewrite_data.tree;
+    let odb = repo.odb()?;
+    let odb_commit = odb.read(base.id())?;
+    assert!(odb_commit.kind() == git2::ObjectType::Commit);
 
-    let a = base.author();
-    let new_a = if let Some((author, email)) = rewrite_data.author {
-        git2::Signature::new(&author, &email, &a.when())?
-    } else {
-        a
-    };
+    let mut b = CommitBuffer::new(odb_commit.data());
+    b.set_header("tree", rewrite_data.tree.id().to_string().as_str());
 
-    let c = base.committer();
-    let new_c = if let Some((committer, email)) = rewrite_data.committer {
-        git2::Signature::new(&committer, &email, &c.when())?
-    } else {
-        c
-    };
+    let parent_shas: Vec<_> = parents.iter().map(|x| x.id().to_string()).collect();
+    b.set_parents(
+        parent_shas
+            .iter()
+            .map(|s| s.as_str())
+            .collect::<Vec<&str>>()
+            .as_slice(),
+    );
 
-    let b: CommitBuffer = repo
-        .commit_create_buffer(&new_a, &new_c, &message, tree, parents)?
-        .into();
+    if let Some(message) = rewrite_data.message {
+        b.set_message(&message);
+    }
+
+    if let Some((author, email)) = rewrite_data.author {
+        let a = base.author();
+        let new_a = git2::Signature::new(&author, &email, &a.when())?;
+        b.set_author(&new_a);
+    }
+
+    if let Some((committer, email)) = rewrite_data.committer {
+        let a = base.committer();
+        let new_a = git2::Signature::new(&committer, &email, &a.when())?;
+        b.set_committer(&new_a);
+    }
+
+    b.remove_gpg_signature();
 
     if let (false, Ok((sig, _))) = (unsign, repo.extract_signature(&base.id(), None)) {
         // Re-create the object with the original signature (which of course does not match any
