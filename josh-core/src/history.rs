@@ -205,6 +205,8 @@ pub fn rewrite_commit(
     rewrite_data: RewriteData,
     unsign: bool,
 ) -> JoshResult<git2::Oid> {
+    use commit_buffer::CommitBuffer;
+
     let message = rewrite_data
         .message
         .unwrap_or(base.message_raw().unwrap_or("no message").to_string());
@@ -224,21 +226,20 @@ pub fn rewrite_commit(
         c
     };
 
-    let b = repo.commit_create_buffer(&new_a, &new_c, &message, tree, parents)?;
+    let b: CommitBuffer = repo
+        .commit_create_buffer(&new_a, &new_c, &message, tree, parents)?
+        .into();
 
     if let (false, Ok((sig, _))) = (unsign, repo.extract_signature(&base.id(), None)) {
         // Re-create the object with the original signature (which of course does not match any
         // more, but this is needed to guarantee perfect round-trips).
-        let b = b
-            .as_str()
-            .ok_or_else(|| josh_error("non-UTF-8 signed commit"))?;
         let sig = sig
             .as_str()
             .ok_or_else(|| josh_error("non-UTF-8 signature"))?;
-        return Ok(repo.commit_signed(b, sig, None)?);
+        return Ok(repo.commit_signed(b.as_bstring().to_string().as_str(), sig, None)?);
     }
 
-    return Ok(repo.odb()?.write(git2::ObjectType::Commit, &b)?);
+    return Ok(odb.write(git2::ObjectType::Commit, &b.as_bstring())?);
 }
 
 // Given an OID of an unfiltered commit and a filter,

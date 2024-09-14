@@ -26,6 +26,7 @@ macro_rules! ok_or {
 extern crate rs_tracing;
 
 pub mod cache;
+mod commit_buffer;
 pub mod filter;
 pub mod history;
 pub mod housekeeping;
