@@ -1563,8 +1563,10 @@ version = "22.4.15"
 dependencies = [
  "backtrace",
  "bitvec",
+ "bstr",
  "git-version",
  "git2",
+ "gix-object",
  "glob",
  "hex",
  "indoc",
