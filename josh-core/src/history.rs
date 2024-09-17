@@ -214,21 +214,20 @@ pub fn rewrite_commit(
 
     // gix_object uses BStr for Oids, but in hex representation, not raw bytes. Because of lifetimes we have to
     // pre-prepare this before creating the CommitRef
-    let tree_id = rewrite_data.tree.id();
-    let tree_id = hex::encode(tree_id.as_bytes());
+    let tree_id = format!("{}", rewrite_data.tree.id());
     let parent_ids = parents
         .iter()
-        .map(|x| hex::encode(x.id().as_bytes()))
+        .map(|x| format!("{}", x.id()))
         .collect::<Vec<_>>();
 
     let mut commit = CommitRef::from_bytes(odb_commit.data())?;
 
-    commit.tree = tree_id.as_bytes().as_bstr();
+    commit.tree = tree_id.as_bytes().into();
 
     commit.parents.clear();
     commit
         .parents
-        .extend(parent_ids.iter().map(|x| x.as_bytes().as_bstr()));
+        .extend(parent_ids.iter().map(|x| x.as_bytes().into()));
 
     if let Some(ref msg) = rewrite_data.message {
         commit.message = msg.as_bytes().into();
@@ -246,7 +245,7 @@ pub fn rewrite_commit(
 
     commit
         .extra_headers
-        .retain(|(k, _)| *k != "gpgsig".as_bytes().as_bstr());
+        .retain(|(k, _)| k.as_bytes() != "gpgsig".as_bytes());
 
     let mut b = vec![];
     commit.write_to(&mut b)?;
