@@ -205,8 +205,6 @@ pub fn rewrite_commit(
     rewrite_data: RewriteData,
     unsign: bool,
 ) -> JoshResult<git2::Oid> {
-    use gix_object::{CommitRef, WriteTo};
-
     let odb = repo.odb()?;
     let odb_commit = odb.read(base.id())?;
     assert!(odb_commit.kind() == git2::ObjectType::Commit);
@@ -219,7 +217,7 @@ pub fn rewrite_commit(
         .map(|x| format!("{}", x.id()))
         .collect::<Vec<_>>();
 
-    let mut commit = CommitRef::from_bytes(odb_commit.data())?;
+    let mut commit = gix_object::CommitRef::from_bytes(odb_commit.data())?;
 
     commit.tree = tree_id.as_bytes().into();
 
@@ -247,7 +245,7 @@ pub fn rewrite_commit(
         .retain(|(k, _)| *k != "gpgsig".as_bytes() || !unsign);
 
     let mut b = vec![];
-    commit.write_to(&mut b)?;
+    gix_object::WriteTo::write_to(&commit, &mut b)?;
 
     return Ok(odb.write(git2::ObjectType::Commit, &b)?);
 }
