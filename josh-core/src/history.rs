@@ -245,19 +245,10 @@ pub fn rewrite_commit(
 
     commit
         .extra_headers
-        .retain(|(k, _)| k.as_bytes() != "gpgsig".as_bytes());
+        .retain(|(k, _)| k.as_bytes() != "gpgsig".as_bytes() || !unsign);
 
     let mut b = vec![];
     commit.write_to(&mut b)?;
-
-    if let (false, Ok((sig, _))) = (unsign, repo.extract_signature(&base.id(), None)) {
-        // Re-create the object with the original signature (which of course does not match any
-        // more, but this is needed to guarantee perfect round-trips).
-        let sig = sig
-            .as_str()
-            .ok_or_else(|| josh_error("non-UTF-8 signature"))?;
-        return Ok(repo.commit_signed(b.to_str()?, sig, None)?);
-    }
 
     return Ok(odb.write(git2::ObjectType::Commit, &b)?);
 }
