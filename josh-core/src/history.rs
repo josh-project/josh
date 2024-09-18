@@ -205,7 +205,6 @@ pub fn rewrite_commit(
     rewrite_data: RewriteData,
     unsign: bool,
 ) -> JoshResult<git2::Oid> {
-    use bstr::ByteSlice;
     use gix_object::{CommitRef, WriteTo};
 
     let odb = repo.odb()?;
@@ -245,7 +244,7 @@ pub fn rewrite_commit(
 
     commit
         .extra_headers
-        .retain(|(k, _)| k.as_bytes() != "gpgsig".as_bytes() || !unsign);
+        .retain(|(k, _)| *k != "gpgsig".as_bytes() || !unsign);
 
     let mut b = vec![];
     commit.write_to(&mut b)?;
