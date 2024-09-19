@@ -49,11 +49,13 @@ Write a custom header into the commit (h/t https://github.com/Byron/gitoxide/blo
   > index 1758866..fe1998a 100644
   > --- a/commit.txt
   > +++ b/commit.txt
-  > @@ -2,5 +2,7 @@ tree 15e3a4de9f0b90057746be6658b0f321f4bcc470
+  > @@ -2,5 +2,9 @@ tree 15e3a4de9f0b90057746be6658b0f321f4bcc470
   >  parent 7d7c9293be5483ccd1a24bdf33ad52cf07cda738
   >  author Josh <josh@example.com> 1112911993 +0000
   >  committer Josh <josh@example.com> 1112911993 +0000
-  > +custom-header and value
+  > +custom-header with
+  > + multiline
+  > + value
   > +another-header such that it sorts before custom-header
   >  
   >  second
@@ -61,7 +63,7 @@ Write a custom header into the commit (h/t https://github.com/Byron/gitoxide/blo
   patching file commit.txt
   $ new_commit=$(git hash-object --literally -w -t commit commit.txt)
   $ echo $new_commit
-  fcb8effd63b724bfaaa173ffb7b475bdb4598a1e
+  f2fd7b23a4a2318d534d122615a6e75196c3e3c4
   $ git update-ref refs/heads/master $new_commit
 
   $ josh-filter --update refs/heads/filtered ':prefix=pre'
@@ -87,7 +89,9 @@ Write a custom header into the commit (h/t https://github.com/Byron/gitoxide/blo
   parent 73007fa33b8628d6560b78e37191c07c9e001d3b
   author Josh <josh@example.com> 1112911993 +0000
   committer Josh <josh@example.com> 1112911993 +0000
-  custom-header and value
+  custom-header with
+   multiline
+   value
   another-header such that it sorts before custom-header
   
   second
@@ -95,7 +99,7 @@ Write a custom header into the commit (h/t https://github.com/Byron/gitoxide/blo
   $ josh-filter --update refs/heads/re-filtered ':/pre' refs/heads/filtered 
 
   $ git show refs/heads/re-filtered
-  commit fcb8effd63b724bfaaa173ffb7b475bdb4598a1e
+  commit f2fd7b23a4a2318d534d122615a6e75196c3e3c4
   Author: Josh <josh@example.com>
   Date:   Thu Apr 7 22:13:13 2005 +0000
   
@@ -114,13 +118,15 @@ Write a custom header into the commit (h/t https://github.com/Byron/gitoxide/blo
   parent 7d7c9293be5483ccd1a24bdf33ad52cf07cda738
   author Josh <josh@example.com> 1112911993 +0000
   committer Josh <josh@example.com> 1112911993 +0000
-  custom-header and value
+  custom-header with
+   multiline
+   value
   another-header such that it sorts before custom-header
   
   second
 
   $ git log --oneline --all --decorate
-  d56f8be (filtered) second
-  fcb8eff (HEAD -> master, re-filtered) second
+  63982dc (filtered) second
+  f2fd7b2 (HEAD -> master, re-filtered) second
   73007fa initial
   7d7c929 initial
