@@ -64,27 +64,27 @@ Write a custom header into the commit (h/t https://github.com/Byron/gitoxide/blo
   fcb8effd63b724bfaaa173ffb7b475bdb4598a1e
   $ git update-ref refs/heads/master $new_commit
 
-  $ josh-filter --update refs/heads/filtered ':replace("hello":"bye")'
+  $ josh-filter --update refs/heads/filtered ':prefix=pre'
 
   $ git diff ${EMPTY_TREE}..refs/heads/filtered
-  diff --git a/hw.txt b/hw.txt
+  diff --git a/pre/hw.txt b/pre/hw.txt
   new file mode 100644
-  index 0000000..0907563
+  index 0000000..3b18e51
   --- /dev/null
-  +++ b/hw.txt
+  +++ b/pre/hw.txt
   @@ -0,0 +1 @@
-  +bye world
-  diff --git a/subdir/hw.txt b/subdir/hw.txt
+  +hello world
+  diff --git a/pre/subdir/hw.txt b/pre/subdir/hw.txt
   new file mode 100644
-  index 0000000..9762554
+  index 0000000..1b95c6e
   --- /dev/null
-  +++ b/subdir/hw.txt
+  +++ b/pre/subdir/hw.txt
   @@ -0,0 +1 @@
-  +bye moon
+  +hello moon
 
   $ git cat-file -p refs/heads/filtered
-  tree 3e84d1eef0d5eb144c0c17d7ca57a880fe12a5af
-  parent 4a277978f4fd37719f92f0814518df2ca115de42
+  tree 6876aad1a2259b9d4c7c24e0e3ff908d3d580404
+  parent 73007fa33b8628d6560b78e37191c07c9e001d3b
   author Josh <josh@example.com> 1112911993 +0000
   committer Josh <josh@example.com> 1112911993 +0000
   custom-header and value
@@ -92,15 +92,35 @@ Write a custom header into the commit (h/t https://github.com/Byron/gitoxide/blo
   
   second
 
-Need to create a ref to be updated that is DIFFERENT from master so we can see the original commit and its headers are
-restored.  Merely updating master would not show that the original commit and its headers are restored because it would
-look that way if the filter hadn't run in reverse at all
-  $ git update-ref refs/heads/reversed 7d7c929
+  $ josh-filter --update refs/heads/re-filtered ':/pre' refs/heads/filtered 
 
-Now reverse original filter writing back to that ref so we can see that the original commit and its headers are restored
-  $ josh-filter --update refs/heads/reversed --reverse ':replace("hello":"bye")'
+  $ git show refs/heads/re-filtered
+  commit fcb8effd63b724bfaaa173ffb7b475bdb4598a1e
+  Author: Josh <josh@example.com>
+  Date:   Thu Apr 7 22:13:13 2005 +0000
+  
+      second
+  
+  diff --git a/subdir/hw.txt b/subdir/hw.txt
+  new file mode 100644
+  index 0000000..1b95c6e
+  --- /dev/null
+  +++ b/subdir/hw.txt
+  @@ -0,0 +1 @@
+  +hello moon
+
+  $ git cat-file -p refs/heads/re-filtered
+  tree 15e3a4de9f0b90057746be6658b0f321f4bcc470
+  parent 7d7c9293be5483ccd1a24bdf33ad52cf07cda738
+  author Josh <josh@example.com> 1112911993 +0000
+  committer Josh <josh@example.com> 1112911993 +0000
+  custom-header and value
+  another-header such that it sorts before custom-header
+  
+  second
 
   $ git log --oneline --all --decorate
-  0a2ba91 (filtered) second
-  fcb8eff (HEAD -> master, reversed) second
-  4a27797 initial
+  d56f8be (filtered) second
+  fcb8eff (HEAD -> master, re-filtered) second
+  73007fa initial
+  7d7c929 initial
