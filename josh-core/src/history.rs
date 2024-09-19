@@ -200,7 +200,7 @@ pub struct RewriteData<'a> {
 // given
 pub fn rewrite_commit(
     repo: &git2::Repository,
-    base: &git2::Commit, // original commit that we are modifying
+    base: &git2::Commit,
     parents: &[&git2::Commit],
     rewrite_data: RewriteData,
     unsign: bool,
