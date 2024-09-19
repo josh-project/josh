@@ -209,8 +209,8 @@ pub fn rewrite_commit(
     let odb_commit = odb.read(base.id())?;
     assert!(odb_commit.kind() == git2::ObjectType::Commit);
 
-    // gix_object uses BStr for Oids, but in hex representation, not raw bytes. Because of lifetimes we have to
-    // pre-prepare this before creating the CommitRef
+    // gix_object uses byte strings for Oids, but in hex representation, not raw bytes. Its `Format` implementation
+    // writes out hex-encoded bytes. Because CommitRef's reference lifetimes we have to this, before creating CommitRef
     let tree_id = format!("{}", rewrite_data.tree.id());
     let parent_ids = parents
         .iter()
