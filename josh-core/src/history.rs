@@ -196,7 +196,7 @@ pub struct RewriteData<'a> {
     pub message: Option<String>,
 }
 
-// takes everything from base except it's tree and replaces it with the tree
+// takes everything from base except its tree and replaces it with the tree
 // given
 pub fn rewrite_commit(
     repo: &git2::Repository,
@@ -205,40 +205,49 @@ pub fn rewrite_commit(
     rewrite_data: RewriteData,
     unsign: bool,
 ) -> JoshResult<git2::Oid> {
-    let message = rewrite_data
-        .message
-        .unwrap_or(base.message_raw().unwrap_or("no message").to_string());
-    let tree = &rewrite_data.tree;
+    let odb = repo.odb()?;
+    let odb_commit = odb.read(base.id())?;
+    assert!(odb_commit.kind() == git2::ObjectType::Commit);
 
-    let a = base.author();
-    let new_a = if let Some((author, email)) = rewrite_data.author {
-        git2::Signature::new(&author, &email, &a.when())?
-    } else {
-        a
-    };
+    // gix_object uses byte strings for Oids, but in hex representation, not raw bytes. Its `Format` implementation
+    // writes out hex-encoded bytes. Because CommitRef's reference lifetimes we have to this, before creating CommitRef
+    let tree_id = format!("{}", rewrite_data.tree.id());
+    let parent_ids = parents
+        .iter()
+        .map(|x| format!("{}", x.id()))
+        .collect::<Vec<_>>();
 
-    let c = base.committer();
-    let new_c = if let Some((committer, email)) = rewrite_data.committer {
-        git2::Signature::new(&committer, &email, &c.when())?
-    } else {
-        c
-    };
+    let mut commit = gix_object::CommitRef::from_bytes(odb_commit.data())?;
 
-    let b = repo.commit_create_buffer(&new_a, &new_c, &message, tree, parents)?;
+    commit.tree = tree_id.as_bytes().into();
 
-    if let (false, Ok((sig, _))) = (unsign, repo.extract_signature(&base.id(), None)) {
-        // Re-create the object with the original signature (which of course does not match any
-        // more, but this is needed to guarantee perfect round-trips).
-        let b = b
-            .as_str()
-            .ok_or_else(|| josh_error("non-UTF-8 signed commit"))?;
-        let sig = sig
-            .as_str()
-            .ok_or_else(|| josh_error("non-UTF-8 signature"))?;
-        return Ok(repo.commit_signed(b, sig, None)?);
+    commit.parents.clear();
+    commit
+        .parents
+        .extend(parent_ids.iter().map(|x| x.as_bytes().into()));
+
+    if let Some(ref msg) = rewrite_data.message {
+        commit.message = msg.as_bytes().into();
     }
 
-    return Ok(repo.odb()?.write(git2::ObjectType::Commit, &b)?);
+    if let Some((ref author, ref email)) = rewrite_data.author {
+        commit.author.name = author.as_bytes().into();
+        commit.author.email = email.as_bytes().into();
+    }
+
+    if let Some((ref author, ref email)) = rewrite_data.committer {
+        commit.committer.name = author.as_bytes().into();
+        commit.committer.email = email.as_bytes().into();
+    }
+
+    commit
+        .extra_headers
+        .retain(|(k, _)| *k != "gpgsig".as_bytes() || !unsign);
+
+    let mut b = vec![];
+    gix_object::WriteTo::write_to(&commit, &mut b)?;
+
+    return Ok(odb.write(git2::ObjectType::Commit, &b)?);
 }
 
 // Given an OID of an unfiltered commit and a filter,
