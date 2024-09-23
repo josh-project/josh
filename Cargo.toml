@@ -45,7 +45,7 @@ default-features = false
 features = ["expose-test-schema"]
 
 [workspace.dependencies.tokio]
-version = "1.38.0"
+version = "1.40.0"
 features = [
     "fs",
     "rt-multi-thread",
