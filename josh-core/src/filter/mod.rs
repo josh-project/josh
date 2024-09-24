@@ -1105,11 +1105,8 @@ pub fn unapply<'a>(
     parent_tree: git2::Tree<'a>,
 ) -> JoshResult<git2::Tree<'a>> {
     if let Ok(inverted) = invert(filter) {
-        let matching = apply(
-            transaction,
-            chain(invert(inverted)?, inverted),
-            parent_tree.clone(),
-        )?;
+        let filtered = apply(transaction, invert(inverted)?, parent_tree.clone())?;
+        let matching = apply(transaction, inverted, filtered)?;
         let stripped = tree::subtract(transaction, parent_tree.id(), matching.id())?;
         let new_tree = apply(transaction, inverted, tree)?;
 
@@ -1166,11 +1163,8 @@ fn unapply_workspace<'a>(
             let wsj_file = chain(root, wsj_file);
             let filter = compose(wsj_file, compose(workspace, root));
             let original_filter = compose(wsj_file, compose(original_workspace, root));
-            let matching = apply(
-                transaction,
-                chain(original_filter, invert(original_filter)?),
-                parent_tree.clone(),
-            )?;
+            let filtered = apply(transaction, original_filter, parent_tree.clone())?;
+            let matching = apply(transaction, invert(original_filter)?, filtered)?;
             let stripped = tree::subtract(transaction, parent_tree.id(), matching.id())?;
             let new_tree = apply(transaction, invert(filter)?, tree)?;
 
