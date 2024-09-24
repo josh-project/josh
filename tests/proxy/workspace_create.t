@@ -611,8 +611,7 @@ Note that ws/d/ is now present in the ws
       |   |-- 40
       |   |   `-- c389b6b248e13f3cb88dcd79467d7396a4489e
       |   |-- 43
-      |   |   |-- 52611a9e7c56dfdfeadec043ced6d6ef7a5c33
-      |   |   `-- c475ca897b62fd739409aee5db69b0c480aa0d
+      |   |   `-- 52611a9e7c56dfdfeadec043ced6d6ef7a5c33
       |   |-- 46
       |   |   `-- bc1eabe4b2029b9fcb661f0d447d8389d17337
       |   |-- 47
@@ -622,8 +621,6 @@ Note that ws/d/ is now present in the ws
       |   |   `-- 825dc642cb6eb9a060e54bf8d69288fbee4904
       |   |-- 4c
       |   |   `-- a9fbf65ee12663ac24db4be4cab10e53d6d6e7
-      |   |-- 4d
-      |   |   `-- dbf4f812dbd547947a2511b01985fb7a460eae
       |   |-- 5b
       |   |   `-- 560252b0c3c6abc5e0327596a49efb15e494cb
       |   |-- 5e
@@ -634,8 +631,6 @@ Note that ws/d/ is now present in the ws
       |   |-- 64
       |   |   |-- 6fd2c5bfe156d57ba03f62f2fe735ddbb74e22
       |   |   `-- d1f8d32b274d8c1eeb69891931f52b6ade9417
-      |   |-- 66
-      |   |   `-- b81c71c0ad10acdb2b4df3b04eef8abd79e64b
       |   |-- 6c
       |   |   `-- 68dd37602c8e2036362ab81b12829c4d6c0867
       |   |-- 6d
@@ -684,8 +679,6 @@ Note that ws/d/ is now present in the ws
       |   |   |-- 269dc50ffcdc1b87664a061926bf9a072a3456
       |   |   |-- a7760c60ac08ecdcac395823637989a4d681a6
       |   |   `-- c31372c5de4fb705ffdcbf5a4ec5c5103231d9
-      |   |-- a9
-      |   |   `-- 954d28dd1313fb2d8f20fc11a1106376c2ffae
       |   |-- b1
       |   |   `-- c3c9b731fea98c82ce8e9286e213fcb033f70d
       |   |-- b2
@@ -700,8 +693,6 @@ Note that ws/d/ is now present in the ws
       |   |   `-- f9dcf1394d5152de67b115f55f25e4dc0a2398
       |   |-- bc
       |   |   `-- 665856e841c4ae4a956483dc57b2ea4cc20116
-      |   |-- bd
-      |   |   `-- 495daf53fe6fd641cc91e8208674050f602955
       |   |-- bf
       |   |   `-- 7841c0db704465dda4b387d5da09694647d188
       |   |-- c1
@@ -755,6 +746,6 @@ Note that ws/d/ is now present in the ws
           |-- namespaces
           `-- tags
   
-  154 directories, 160 files
+  150 directories, 155 files
 
 $ cat ${TESTTMP}/josh-proxy.out
