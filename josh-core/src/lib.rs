@@ -155,9 +155,9 @@ where
     T: std::error::Error,
 {
     fn from(item: T) -> Self {
-        tracing::event!(tracing::Level::ERROR, item = ?item, error = true);
-        log::error!("JoshError: {:?}", item);
         let bt = backtrace::Backtrace::new();
+        tracing::event!(tracing::Level::ERROR, item = ?item, backtrace = format!("{:?}", bt), error = true);
+        log::error!("JoshError: {:?}", item);
         log::error!("Backtrace: {:?}", bt);
         josh_error(&format!("converted {:?}", item))
     }
