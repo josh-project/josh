@@ -30,6 +30,7 @@
    1 file changed, 1 insertion(+)
    create mode 100644 sub1/file12
 
+  $ git tag -m "a tag object" a_tag_object
 
   $ mkdir sub2
   $ echo contents1 > sub2/file2
@@ -40,7 +41,7 @@
    create mode 100644 sub2/file2
 
   $ git describe --tags
-  a_tag-2-gbbc3f80
+  a_tag_object-1-gbbc3f80
 
   $ tree
   .
@@ -65,6 +66,7 @@
   $ git push --tags
   To http://localhost:8001/real_repo.git
    * [new tag]         a_tag -> a_tag
+   * [new tag]         a_tag_object -> a_tag_object
 
   $ cd ${TESTTMP}
 
@@ -84,7 +86,7 @@
   * add file1
 
   $ git describe --tags
-  a_tag-1-g6e99e1e
+  a_tag_object
 
   $ cat file1
   contents1
@@ -142,6 +144,8 @@
   |   |   |   |-- 282e9cdc1b972fffd08fd21eead43bc0c83cb8
   |   |   |   |-- c3f8026800792a43ffbc932153f4864509378e
   |   |   |   `-- f54cff926d013ce65a3b1cf4e8d239c43beb4b
+  |   |   |-- c1
+  |   |   |   `-- 90f9e0d45065e20a13996f541c3571ed317c45
   |   |   |-- c8
   |   |   |   `-- 2fc150c43f13cc56c0e9caeba01b58ec612022
   |   |   |-- fa
@@ -158,7 +162,8 @@
   |       |               |-- heads
   |       |               |   `-- master
   |       |               `-- tags
-  |       |                   `-- a_tag
+  |       |                   |-- a_tag
+  |       |                   `-- a_tag_object
   |       `-- tags
   `-- overlay
       |-- HEAD
@@ -178,5 +183,5 @@
           |-- namespaces
           `-- tags
   
-  38 directories, 26 files
+  39 directories, 28 files
 $ cat ${TESTTMP}/josh-proxy.out | grep TAGS
