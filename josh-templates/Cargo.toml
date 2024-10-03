@@ -9,5 +9,5 @@ josh = { path = "../josh-core" }
 josh-graphql = { path = "../josh-graphql" }
 juniper = { workspace = true }
 serde_json = { workspace = true }
-handlebars = "5.1.2"
+handlebars = "6.1.0"
 form_urlencoded = "1.2.1"
