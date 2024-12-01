@@ -571,10 +571,10 @@ fn create_repo_base(path: &PathBuf) -> josh::JoshResult<josh::shell::Shell> {
             values
                 .iter()
                 .cloned()
-                .try_for_each(|(key, value)| -> JoshResult<()> {
-                    use gix::config::parse::section::Key;
+                .try_for_each(|(name, value)| -> JoshResult<()> {
+                    use gix::config::parse::section::ValueName;
 
-                    let key = Key::try_from(key)
+                    let key = ValueName::try_from(name)
                         .map_err(|_| josh_error("unable to create config section"))?;
                     let value = Some(value.into());
 

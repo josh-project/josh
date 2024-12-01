@@ -127,7 +127,7 @@ Make sure all temporary namespace got removed
   "real_repo.git" = [
       ":/sub1",
       "::sub1/",
-      ":join(\"/real/repo2.git@refs/heads/master\":/sub1)",
+      ':join("/real/repo2.git@refs/heads/master":/sub1)',
       ":join(d8388f5880393d255b371f1ed9b801d35620017e:/sub1)",
   ]
   .
