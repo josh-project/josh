@@ -1300,7 +1300,7 @@ async fn call_service(
         .map(|(x, y)| (x.to_string(), y.to_string()))
         .collect();
 
-    fetch_repos.extend(lazy_refs.iter().map(|(x, y)| x.clone()));
+    fetch_repos.extend(lazy_refs.iter().map(|(x, _y)| x.clone()));
 
     ///////////////
 

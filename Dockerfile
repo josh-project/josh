@@ -17,7 +17,7 @@ ARG ARCH
 ARG RUSTUP_VERSION=1.27.1
 
 # Update check: https://github.com/rust-lang/rust/tags
-ARG RUST_VERSION=1.79.0
+ARG RUST_VERSION=1.83.0
 ARG RUST_ARCH=${ARCH}-unknown-linux-musl
 
 # https://github.com/sfackler/rust-openssl/issues/1462
