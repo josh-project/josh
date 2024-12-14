@@ -13,9 +13,9 @@ version = "22.4.15"
 base64 = { workspace = true }
 clap = { workspace = true }
 futures = { workspace = true }
-hyper = { version = "0.14.28", features = ["stream"] }
+hyper = { version = "0.14.31", features = ["stream"] }
 hyper-reverse-proxy = { workspace = true }
-hyper-staticfile = "0.9.5"
+hyper-staticfile = "0.9.6"
 hyper-tls = "0.5.0"
 hyper_cgi = { path = "../hyper_cgi" }
 indoc = "2.0.5"
@@ -25,7 +25,7 @@ josh-graphql = { path = "../josh-graphql" }
 lazy_static = { workspace = true }
 opentelemetry = "0.23.0"
 opentelemetry-jaeger = "0.22.0"
-percent-encoding = "2.3.0"
+percent-encoding = "2.3.1"
 regex = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
@@ -38,8 +38,8 @@ tracing-futures = "0.2.5"
 tracing-opentelemetry = "0.24.0"
 tracing-subscriber = { workspace = true }
 unindent = "0.2.3"
-url = "2.5.0"
-uuid = { version = "1.8.0", features = ["v4"] }
+url = "2.5.4"
+uuid = { version = "1.11.0", features = ["v4"] }
 josh-rpc = { path = "../josh-rpc" }
 tokio-util = { workspace = true }
 tempfile = { workspace = true }

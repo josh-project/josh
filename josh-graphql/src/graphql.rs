@@ -798,7 +798,7 @@ impl Document {
         })
     }
 
-    fn id() -> String {
+    fn id(&self) -> String {
         self.id.to_string()
     }
 }
