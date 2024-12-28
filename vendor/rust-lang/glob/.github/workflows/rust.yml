@@ -1,4 +1,4 @@
-name: Continuous integration
+name: CI
 
 on:
   pull_request:
@@ -7,29 +7,28 @@ on:
       - master
 
 jobs:
-  os_tests:
-    name: "Tests / OS: ${{ matrix.os }} - ${{ matrix.channel }}"
+  test:
+    name: Tests
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         channel:
-        - stable
-        - beta
-        - nightly
-        - 1.23.0
+          - stable
+          - beta
+          - nightly
+          - 1.23.0
         os:
-        # FIXME: compiling with 1.23 on macOS 12 fails to linL
-        # archive member 'rust.metadata.bin' with length 40821 is not mach-o or llvm bitcode file
-        - macos-11
-        - windows-2022
-        - ubuntu-22.04
+          - macos-11
+          - windows-2022
+          - ubuntu-22.04
 
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
 
     - name: Update rust
-      run: rustup update ${{ matrix.channel }} --no-self-update
+      run: |
+        rustup default ${{ matrix.channel }}
+        rustup update --no-self-update
 
-    - name: Tests
-      run: cargo +${{ matrix.channel }} test --all
+    - run: cargo test --all
