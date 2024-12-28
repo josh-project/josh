@@ -14,13 +14,16 @@ jobs:
       matrix:
         channel:
           - stable
-          - beta
           - nightly
           - 1.63.0 # MSRV of test dependencies
         os:
-          - macos-11
-          - windows-2022
-          - ubuntu-22.04
+          - macos-13 # x86 MacOS
+          - macos-15 # Arm MacOS
+          - windows-2025
+          - ubuntu-24.04
+        include:
+          - channel: beta
+            os: ubuntu-24.04
 
     steps:
     - name: Checkout repository
@@ -35,7 +38,7 @@ jobs:
 
   msrv:
     name: Check building with the MSRV
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
