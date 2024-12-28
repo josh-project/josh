@@ -16,7 +16,7 @@ jobs:
           - stable
           - beta
           - nightly
-          - 1.23.0
+          - 1.63.0 # MSRV of test dependencies
         os:
           - macos-11
           - windows-2022
@@ -32,3 +32,17 @@ jobs:
         rustup update --no-self-update
 
     - run: cargo test --all
+
+  msrv:
+    name: Check building with the MSRV
+    runs-on: ubuntu-22.04
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Update rust
+      run: |
+        rustup default 1.23.0
+        rustup update --no-self-update
+
+    - run: cargo build
