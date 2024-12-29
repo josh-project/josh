@@ -1,5 +1,10 @@
 name: CI
 
+env:
+  CARGO_TERM_VERBOSE: true
+  RUSTDOCFLAGS: -Dwarnings
+  RUSTFLAGS: -Dwarnings
+
 on:
   pull_request:
   push:
