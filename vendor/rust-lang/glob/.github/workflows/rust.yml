@@ -41,6 +41,23 @@ jobs:
 
     - run: cargo test --all
 
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-24.04
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Update rust
+      run: |
+        # use beta since it gives us near-latest fixes but isn't as volatile as nightly
+        rustup default beta
+        rustup component add clippy
+        rustup update --no-self-update
+
+    # FIXME(msrv): suggestions do not work in 1.23, nor dows `#![allow(clippy::...)]`
+    - run: cargo clippy --all -- -Aclippy::while_let_loop
+
   msrv:
     name: Check building with the MSRV
     runs-on: ubuntu-24.04
@@ -70,6 +87,7 @@ jobs:
   success:
     needs:
       - test
+      - clippy
       - msrv
       - rustfmt
     runs-on: ubuntu-latest
