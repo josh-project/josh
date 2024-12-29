@@ -70,6 +70,7 @@ extern crate doc_comment;
 doctest!("../README.md");
 
 use std::cmp;
+use std::cmp::Ordering;
 use std::error::Error;
 use std::fmt;
 use std::fs;
@@ -620,52 +621,56 @@ impl Pattern {
 
                     let count = i - old;
 
-                    if count > 2 {
-                        return Err(PatternError {
-                            pos: old + 2,
-                            msg: ERROR_WILDCARDS,
-                        });
-                    } else if count == 2 {
-                        // ** can only be an entire path component
-                        // i.e. a/**/b is valid, but a**/b or a/**b is not
-                        // invalid matches are treated literally
-                        let is_valid = if i == 2 || path::is_separator(chars[i - count - 1]) {
-                            // it ends in a '/'
-                            if i < chars.len() && path::is_separator(chars[i]) {
-                                i += 1;
-                                true
-                            // or the pattern ends here
-                            // this enables the existing globbing mechanism
-                            } else if i == chars.len() {
-                                true
-                            // `**` ends in non-separator
+                    match count.cmp(&2) {
+                        Ordering::Greater => {
+                            return Err(PatternError {
+                                pos: old + 2,
+                                msg: ERROR_WILDCARDS,
+                            })
+                        }
+                        Ordering::Equal => {
+                            // ** can only be an entire path component
+                            // i.e. a/**/b is valid, but a**/b or a/**b is not
+                            // invalid matches are treated literally
+                            let is_valid = if i == 2 || path::is_separator(chars[i - count - 1]) {
+                                // it ends in a '/'
+                                if i < chars.len() && path::is_separator(chars[i]) {
+                                    i += 1;
+                                    true
+                                // or the pattern ends here
+                                // this enables the existing globbing mechanism
+                                } else if i == chars.len() {
+                                    true
+                                // `**` ends in non-separator
+                                } else {
+                                    return Err(PatternError {
+                                        pos: i,
+                                        msg: ERROR_RECURSIVE_WILDCARDS,
+                                    });
+                                }
+                            // `**` begins with non-separator
                             } else {
                                 return Err(PatternError {
-                                    pos: i,
+                                    pos: old - 1,
                                     msg: ERROR_RECURSIVE_WILDCARDS,
                                 });
-                            }
-                        // `**` begins with non-separator
-                        } else {
-                            return Err(PatternError {
-                                pos: old - 1,
-                                msg: ERROR_RECURSIVE_WILDCARDS,
-                            });
-                        };
+                            };
 
-                        if is_valid {
-                            // collapse consecutive AnyRecursiveSequence to a
-                            // single one
+                            if is_valid {
+                                // collapse consecutive AnyRecursiveSequence to a
+                                // single one
 
-                            let tokens_len = tokens.len();
+                                let tokens_len = tokens.len();
 
-                            if !(tokens_len > 1 && tokens[tokens_len - 1] == AnyRecursiveSequence) {
-                                is_recursive = true;
-                                tokens.push(AnyRecursiveSequence);
+                                if !(tokens_len > 1
+                                    && tokens[tokens_len - 1] == AnyRecursiveSequence)
+                                {
+                                    is_recursive = true;
+                                    tokens.push(AnyRecursiveSequence);
+                                }
                             }
                         }
-                    } else {
-                        tokens.push(AnySequence);
+                        Ordering::Less => tokens.push(AnySequence),
                     }
                 }
                 '[' => {
@@ -1029,7 +1034,7 @@ fn chars_eq(a: char, b: char, case_sensitive: bool) -> bool {
         true
     } else if !case_sensitive && a.is_ascii() && b.is_ascii() {
         // FIXME: work with non-ascii chars properly (issue #9084)
-        a.to_ascii_lowercase() == b.to_ascii_lowercase()
+        a.eq_ignore_ascii_case(&b)
     } else {
         a == b
     }
