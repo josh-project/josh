@@ -208,9 +208,7 @@ pub fn glob_with(pattern: &str, options: MatchOptions) -> Result<Paths, PatternE
     }
 
     // make sure that the pattern is valid first, else early return with error
-    if let Err(err) = Pattern::new(pattern) {
-        return Err(err);
-    }
+    let _ = Pattern::new(pattern)?;
 
     let mut components = Path::new(pattern).components().peekable();
     loop {
@@ -391,7 +389,7 @@ impl Iterator for Paths {
         if let Some(scope) = self.scope.take() {
             if !self.dir_patterns.is_empty() {
                 // Shouldn't happen, but we're using -1 as a special index.
-                assert!(self.dir_patterns.len() < !0 as usize);
+                assert!(self.dir_patterns.len() < std::usize::MAX);
 
                 fill_todo(&mut self.todo, &self.dir_patterns, 0, &scope, self.options);
             }
@@ -409,7 +407,7 @@ impl Iterator for Paths {
 
             // idx -1: was already checked by fill_todo, maybe path was '.' or
             // '..' that we can't match here because of normalization.
-            if idx == !0 as usize {
+            if idx == std::usize::MAX {
                 if self.require_dir && !path.is_directory {
                     continue;
                 }
@@ -843,8 +841,8 @@ impl Pattern {
                             false
                         }
                         AnyChar => true,
-                        AnyWithin(ref specifiers) => in_char_specifiers(&specifiers, c, options),
-                        AnyExcept(ref specifiers) => !in_char_specifiers(&specifiers, c, options),
+                        AnyWithin(ref specifiers) => in_char_specifiers(specifiers, c, options),
+                        AnyExcept(ref specifiers) => !in_char_specifiers(specifiers, c, options),
                         Char(c2) => chars_eq(c, c2, options.case_sensitive),
                         AnySequence | AnyRecursiveSequence => unreachable!(),
                     } {
@@ -892,7 +890,7 @@ fn fill_todo(
             // We know it's good, so don't make the iterator match this path
             // against the pattern again. In particular, it can't match
             // . or .. globs since these never show up as path components.
-            todo.push(Ok((next_path, !0 as usize)));
+            todo.push(Ok((next_path, std::usize::MAX)));
         } else {
             fill_todo(todo, patterns, idx + 1, &next_path, options);
         }
@@ -941,7 +939,7 @@ fn fill_todo(
                 Ok(mut children) => {
                     if options.require_literal_leading_dot {
                         children
-                            .retain(|x| !x.file_name().unwrap().to_str().unwrap().starts_with("."));
+                            .retain(|x| !x.file_name().unwrap().to_str().unwrap().starts_with('.'));
                     }
                     children.sort_by(|p1, p2| p2.file_name().cmp(&p1.file_name()));
                     todo.extend(children.into_iter().map(|x| Ok((x, idx))));
@@ -1490,12 +1488,12 @@ mod test {
     fn test_matches_path() {
         // on windows, (Path::new("a/b").as_str().unwrap() == "a\\b"), so this
         // tests that / and \ are considered equivalent on windows
-        assert!(Pattern::new("a/b").unwrap().matches_path(&Path::new("a/b")));
+        assert!(Pattern::new("a/b").unwrap().matches_path(Path::new("a/b")));
     }
 
     #[test]
     fn test_path_join() {
-        let pattern = Path::new("one").join(&Path::new("**/*.rs"));
+        let pattern = Path::new("one").join(Path::new("**/*.rs"));
         assert!(Pattern::new(pattern.to_str().unwrap()).is_ok());
     }
 }
