@@ -3,22 +3,14 @@
 #[macro_export]
 macro_rules! some_or {
     ($e:expr, $b:block) => {
-        if let Some(x) = $e {
-            x
-        } else {
-            $b
-        }
+        if let Some(x) = $e { x } else { $b }
     };
 }
 
 #[macro_export]
 macro_rules! ok_or {
     ($e:expr, $b:block) => {
-        if let Ok(x) = $e {
-            x
-        } else {
-            $b
-        }
+        if let Ok(x) = $e { x } else { $b }
     };
 }
 

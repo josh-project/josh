@@ -7,7 +7,7 @@ pub mod trace;
 extern crate lazy_static;
 
 use josh::history::RewriteData;
-use josh::{josh_error, JoshError, JoshResult};
+use josh::{JoshError, JoshResult, josh_error};
 use std::fs;
 use std::path::PathBuf;
 

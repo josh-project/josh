@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 // Import the base64 crate Engine trait anonymously so we can
 // call its methods without adding to the namespace.
-use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::engine::Engine as _;
+use base64::engine::general_purpose::STANDARD as BASE64;
 use tracing::Instrument;
 
 // Auths in those groups are independent of each other.

@@ -2,7 +2,7 @@ use crate::*;
 use itertools::Itertools;
 use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
-use tracing::{info, span, Level};
+use tracing::{Level, info, span};
 
 pub type KnownViews = HashMap<String, (git2::Oid, BTreeSet<String>)>;
 

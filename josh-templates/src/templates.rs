@@ -1,4 +1,4 @@
-use josh::{cache, josh_error, JoshResult};
+use josh::{JoshResult, cache, josh_error};
 use serde_json::json;
 
 struct GraphQLHelper {

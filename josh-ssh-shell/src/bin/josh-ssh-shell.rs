@@ -5,8 +5,8 @@ extern crate shell_words;
 
 use clap::Parser;
 use josh_rpc::calls::{RequestedCommand, ServeNamespace};
-use reqwest::header::CONTENT_TYPE;
 use reqwest::StatusCode;
+use reqwest::header::CONTENT_TYPE;
 use std::convert::TryFrom;
 use std::fmt::{Display, Formatter};
 use std::os::unix::fs::FileTypeExt;

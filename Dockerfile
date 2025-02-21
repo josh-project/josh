@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.8@sha256:d6d396f3780b1dd56a3acbc975f57bd2fc501989b50164c41387c42d04e780d0
 
-ARG ALPINE_VERSION=3.20
+ARG ALPINE_VERSION=3.21
 ARG ARCH=x86_64
 
 FROM alpine:${ALPINE_VERSION} AS rust-base
@@ -17,7 +17,7 @@ ARG ARCH
 ARG RUSTUP_VERSION=1.27.1
 
 # Update check: https://github.com/rust-lang/rust/tags
-ARG RUST_VERSION=1.83.0
+ARG RUST_VERSION=1.85.0
 ARG RUST_ARCH=${ARCH}-unknown-linux-musl
 
 # https://github.com/sfackler/rust-openssl/issues/1462
@@ -34,7 +34,7 @@ RUN /tmp/rustup-init \
 FROM rust-base AS dev-planner
 
 # Update check: https://github.com/LukeMathWalker/cargo-chef/releases
-RUN cargo install --version 0.1.67 cargo-chef
+RUN cargo install --version 0.1.71 cargo-chef
 
 WORKDIR /usr/src/josh
 COPY . .
@@ -51,7 +51,7 @@ RUN apk add --no-cache \
 
 WORKDIR /usr/src/josh
 RUN rustup component add rustfmt
-RUN cargo install --version 0.1.67 cargo-chef
+RUN cargo install --version 0.1.71 cargo-chef
 RUN cargo install --verbose --version 0.10.0 graphql_client_cli
 
 RUN apk add --no-cache \
