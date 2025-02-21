@@ -491,7 +491,7 @@ pub fn unapply_filter(
                     commit_message,
                     module_commit.id(),
                     msg
-                )))
+                )));
             }
         };
 
@@ -627,7 +627,7 @@ pub fn unapply_filter(
         {
             original_parents[0].id()
         } else {
-            if let Some(ref mut change_ids) = change_ids {
+            if let Some(change_ids) = change_ids {
                 change_ids.push(get_change_id(&module_commit, ret));
             }
             ret

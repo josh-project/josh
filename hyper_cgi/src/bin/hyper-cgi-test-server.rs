@@ -2,7 +2,7 @@
 extern crate lazy_static;
 use core::iter;
 use core::str::from_utf8;
-use rand::{distributions::Alphanumeric, thread_rng, Rng};
+use rand::{Rng, distributions::Alphanumeric, thread_rng};
 use std::str::FromStr;
 
 use futures::FutureExt;
@@ -11,28 +11,20 @@ use hyper::server::Server;
 
 // Import the base64 crate Engine trait anonymously so we can
 // call its methods without adding to the namespace.
-use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::engine::Engine as _;
+use base64::engine::general_purpose::STANDARD as BASE64;
 
 #[macro_export]
 macro_rules! some_or {
     ($e:expr, $b:block) => {
-        if let Some(x) = $e {
-            x
-        } else {
-            $b
-        }
+        if let Some(x) = $e { x } else { $b }
     };
 }
 
 #[macro_export]
 macro_rules! ok_or {
     ($e:expr, $b:block) => {
-        if let Ok(x) = $e {
-            x
-        } else {
-            $b
-        }
+        if let Ok(x) = $e { x } else { $b }
     };
 }
 

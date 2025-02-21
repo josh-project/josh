@@ -1,7 +1,7 @@
 #![allow(unused_variables)]
 
-use josh::{cache, filter, history, josh_error, JoshResult};
-use juniper::{graphql_object, EmptyMutation, EmptySubscription, FieldResult};
+use josh::{JoshResult, cache, filter, history, josh_error};
+use juniper::{EmptyMutation, EmptySubscription, FieldResult, graphql_object};
 
 pub struct Revision {
     filter: filter::Filter,

@@ -653,7 +653,7 @@ fn apply_to_commit2(
                 },
                 true,
             ))
-            .transpose()
+            .transpose();
         }
         Op::Join(refs) => {
             // First loop to populate missing list

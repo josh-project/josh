@@ -2,7 +2,7 @@
 name = "hyper_cgi"
 version = "22.10.25"
 authors = ["Christian Schilling <initcrash@gmail.com>", "Louis-Marie Givel <louis-marie.givel@esrlabs.com>"]
-edition = "2021"
+edition = "2024"
 license-file = "LICENSE"
 description = "Run CGI scripts with hyper"
 repository = "https://github.com/josh-project/josh"

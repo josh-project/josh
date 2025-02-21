@@ -4,19 +4,19 @@ extern crate clap;
 
 use clap::Parser;
 use josh_proxy::cli;
-use josh_proxy::{run_git_with_auth, FetchError, MetaConfig, RemoteAuth, RepoConfig, RepoUpdate};
+use josh_proxy::{FetchError, MetaConfig, RemoteAuth, RepoConfig, RepoUpdate, run_git_with_auth};
 use opentelemetry::global;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 use tracing_subscriber::Layer;
 
-use futures::future;
 use futures::FutureExt;
+use futures::future;
 use hyper::body::HttpBody;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Request, Response, Server, StatusCode};
 
 use indoc::formatdoc;
-use josh::{josh_error, JoshError, JoshResult};
+use josh::{JoshError, JoshResult, josh_error};
 use josh_rpc::calls::RequestedCommand;
 use serde::Serialize;
 use std::collections::HashMap;
@@ -29,7 +29,7 @@ use std::sync::{Arc, RwLock};
 use tokio::io::AsyncWriteExt;
 use tokio::net::UnixStream;
 use tokio::process::Command;
-use tracing::{trace, Span};
+use tracing::{Span, trace};
 use tracing_futures::Instrument;
 
 fn version_str() -> String {
@@ -734,7 +734,7 @@ async fn ssh_list_refs(
             return Err(josh_error(&format!(
                 "auth check: git exited with code {}: {}",
                 code, stderr
-            )))
+            )));
         }
         Err(e) => return Err(e),
     };
@@ -997,7 +997,7 @@ async fn handle_serve_namespace_request(
             return Ok(make_response(
                 hyper::Body::from(error.to_string()),
                 StatusCode::BAD_REQUEST,
-            ))
+            ));
         }
         Ok(parsed) => parsed,
     };
@@ -1053,7 +1053,7 @@ async fn handle_serve_namespace_request(
             return Ok(make_response(
                 hyper::Body::from("SSH remote is not configured"),
                 hyper::StatusCode::SERVICE_UNAVAILABLE,
-            ))
+            ));
         }
     };
 
@@ -1075,7 +1075,7 @@ async fn handle_serve_namespace_request(
                         return Ok(make_response(
                             hyper::Body::from(e.to_string()),
                             hyper::StatusCode::FORBIDDEN,
-                        ))
+                        ));
                     }
                 };
 
@@ -1085,7 +1085,7 @@ async fn handle_serve_namespace_request(
                     return Ok(make_response(
                         hyper::Body::from("Could not resolve remote ref"),
                         hyper::StatusCode::INTERNAL_SERVER_ERROR,
-                    ))
+                    ));
                 }
             }
         }
@@ -1107,13 +1107,13 @@ async fn handle_serve_namespace_request(
             return Ok(make_response(
                 hyper::Body::from("Access to upstream repo denied"),
                 StatusCode::FORBIDDEN,
-            ))
+            ));
         }
         Err(FetchError::Other(e)) => {
             return Ok(make_response(
                 hyper::Body::from(e.to_string()),
                 StatusCode::INTERNAL_SERVER_ERROR,
-            ))
+            ));
         }
     }
 
@@ -1128,7 +1128,7 @@ async fn handle_serve_namespace_request(
             return Ok(make_response(
                 hyper::Body::from(format!("Failed to parse filter: {}", e)),
                 StatusCode::BAD_REQUEST,
-            ))
+            ));
         }
     };
 
@@ -1145,7 +1145,7 @@ async fn handle_serve_namespace_request(
                                 e
                             )),
                             StatusCode::SERVICE_UNAVAILABLE,
-                        ))
+                        ));
                     }
                 };
 
@@ -1161,7 +1161,7 @@ async fn handle_serve_namespace_request(
             return Ok(make_response(
                 hyper::Body::from(e.to_string()),
                 StatusCode::INTERNAL_SERVER_ERROR,
-            ))
+            ));
         }
     };
 
@@ -1286,7 +1286,7 @@ async fn call_service(
             return Ok(make_response(
                 hyper::Body::from("HTTP remote is not configured"),
                 hyper::StatusCode::SERVICE_UNAVAILABLE,
-            ))
+            ));
         }
     };
     if let Some(filter_prefix) = &ARGS.filter_prefix {
@@ -1568,7 +1568,7 @@ fn make_upstream(remotes: &Vec<cli::Remote>) -> josh::JoshResult<JoshProxyUpstre
         Ok(match (&remotes[0], &remotes[1]) {
             (cli::Remote::Http(_), cli::Remote::Http(_))
             | (cli::Remote::Ssh(_), cli::Remote::Ssh(_)) => {
-                return Err(josh_error("two cli::remotes of the same type passed"))
+                return Err(josh_error("two cli::remotes of the same type passed"));
             }
             (cli::Remote::Http(http_url), cli::Remote::Ssh(ssh_url))
             | (cli::Remote::Ssh(ssh_url), cli::Remote::Http(http_url)) => JoshProxyUpstream::Both {
@@ -1704,7 +1704,7 @@ async fn run_polling(serv: Arc<JoshProxyService>) -> josh::JoshResult<()> {
                 Ok(()) => {}
                 Err(FetchError::Other(e)) => return Err(e),
                 Err(FetchError::AuthRequired) => {
-                    return Err(josh_error("auth: access denied while polling"))
+                    return Err(josh_error("auth: access denied while polling"));
                 }
             }
         }
@@ -1788,11 +1788,7 @@ fn update_hook(refname: &str, old: &str, new: &str) -> josh::JoshResult<i32> {
                 }
             }
 
-            if success {
-                Ok(0)
-            } else {
-                Ok(1)
-            }
+            if success { Ok(0) } else { Ok(1) }
         }
         Err(err) => {
             tracing::warn!("/repo_update request failed {:?}", err);

@@ -7,7 +7,7 @@ license-file = "LICENSE"
 description = "GIT virtualization proxy"
 keywords = ["git", "monorepo", "workflow", "scm"]
 readme = "README.md"
-edition = "2021"
+edition = "2024"
 
 [dependencies]
 backtrace = "0.3.74"

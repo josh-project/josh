@@ -1,7 +1,7 @@
 [package]
 authors = ["Christian Schilling <christian.schilling@esrlabs.com>"]
 description = "GIT filter cli"
-edition = "2021"
+edition = "2024"
 keywords = ["git", "monorepo", "workflow", "scm"]
 license-file = "LICENSE"
 name = "josh-filter"

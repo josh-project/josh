@@ -1,12 +1,12 @@
 use std::{error::Error, fmt, string::FromUtf8Error, sync::Arc};
 
 use hyper::{
-    header::{self, HeaderValue},
     Body, Method, Request, Response, StatusCode,
+    header::{self, HeaderValue},
 };
 use juniper::{
-    http::{GraphQLBatchRequest, GraphQLRequest as JuniperGraphQLRequest, GraphQLRequest},
     GraphQLSubscriptionType, GraphQLType, GraphQLTypeAsync, InputValue, RootNode, ScalarValue,
+    http::{GraphQLBatchRequest, GraphQLRequest as JuniperGraphQLRequest, GraphQLRequest},
 };
 use serde_json::error::Error as SerdeError;
 use url::form_urlencoded;
@@ -311,13 +311,13 @@ impl Error for GraphQLRequestError {
 #[cfg(test)]
 mod tests {
     use hyper::{
-        service::{make_service_fn, service_fn},
         Body, Method, Response, Server, StatusCode,
+        service::{make_service_fn, service_fn},
     };
     use juniper::{
+        EmptyMutation, EmptySubscription, RootNode,
         http::tests as http_tests,
         tests::fixtures::starwars::schema::{Database, Query},
-        EmptyMutation, EmptySubscription, RootNode,
     };
     use reqwest::{self, blocking::Response as ReqwestResponse};
     use std::{net::SocketAddr, sync::Arc, thread, time::Duration};

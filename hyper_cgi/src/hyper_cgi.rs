@@ -1,6 +1,6 @@
 //! This module implements a do_cgi function, to run CGI scripts with hyper
-use futures::stream::StreamExt;
 use futures::TryStreamExt;
+use futures::stream::StreamExt;
 use hyper::{Request, Response};
 use std::process::Stdio;
 use std::str::FromStr;
@@ -25,7 +25,7 @@ pub async fn do_cgi(
             return (
                 error_response(),
                 std::vec::Vec::from("Unable to spawn child command"),
-            )
+            );
         }
     };
     let stdin = match child.stdin.take() {
@@ -34,7 +34,7 @@ pub async fn do_cgi(
             return (
                 error_response(),
                 std::vec::Vec::from("Unable to open stdin"),
-            )
+            );
         }
     };
     let stdout = match child.stdout.take() {
@@ -43,7 +43,7 @@ pub async fn do_cgi(
             return (
                 error_response(),
                 std::vec::Vec::from("Unable to open stdout"),
-            )
+            );
         }
     };
     let stderr = match child.stderr.take() {
@@ -52,7 +52,7 @@ pub async fn do_cgi(
             return (
                 error_response(),
                 std::vec::Vec::from("Unable to open stderr"),
-            )
+            );
         }
     };
 
