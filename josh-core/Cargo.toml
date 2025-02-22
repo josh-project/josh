@@ -17,7 +17,7 @@ git-version = "0.3.9"
 git2 = { workspace = true }
 gix-object = "0.46.0"
 glob = "0.3.1"
-hex = "0.4.3"
+hex = { workspace = true }
 indoc = "2.0.5"
 itertools = "0.13.0"
 lazy_static = { workspace = true }

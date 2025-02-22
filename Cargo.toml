@@ -34,6 +34,7 @@ serde_yaml = "0.9.34"
 toml = "0.8.19"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 tempfile = "3.14.0"
+hex = "0.4.3"
 
 [workspace.dependencies.git2]
 default-features = false

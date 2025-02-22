@@ -98,16 +98,25 @@ impl Handle {
     }
 }
 
+fn hash_header(header: &hyper::http::HeaderValue) -> String {
+    use sha2::{Digest, Sha256};
+
+    let mut hasher = Sha256::new();
+    hasher.update(header.as_bytes());
+    let result = hasher.finalize();
+    hex::encode(result)
+}
+
 pub fn add_auth(token: &str) -> josh::JoshResult<Handle> {
     let header = hyper::header::HeaderValue::from_str(&format!("Basic {}", BASE64.encode(token)))?;
-    let hp = Handle {
-        hash: Some(git2::Oid::hash_object(git2::ObjectType::Blob, header.as_bytes())?.to_string()),
+    let handle = Handle {
+        hash: Some(hash_header(&header)),
     };
-    let p = Header {
+    let header_wrapper = Header {
         header: Some(header),
     };
-    AUTH.lock()?.insert(hp.clone(), p);
-    Ok(hp)
+    AUTH.lock()?.insert(handle.clone(), header_wrapper);
+    Ok(handle)
 }
 
 #[tracing::instrument()]
@@ -180,7 +189,7 @@ pub async fn check_http_auth(url: &str, auth: &Handle, required: bool) -> josh::
         }
 
         tracing::info!(
-            auth_timers = ?auth_timers,
+            auth_timers_count = auth_timers.len(),
             "check_http_auth: no valid cached auth"
         );
 
@@ -237,16 +246,14 @@ pub fn strip_auth(
         req.headers_mut().remove(hyper::header::AUTHORIZATION);
 
     if let Some(header) = header {
-        let hp = Handle {
-            hash: Some(
-                git2::Oid::hash_object(git2::ObjectType::Blob, header.as_bytes())?.to_string(),
-            ),
+        let handle = Handle {
+            hash: Some(hash_header(&header)),
         };
-        let p = Header {
+        let header_wrapper = Header {
             header: Some(header),
         };
-        AUTH.lock()?.insert(hp.clone(), p);
-        return Ok((hp, req));
+        AUTH.lock()?.insert(handle.clone(), header_wrapper);
+        return Ok((handle, req));
     }
 
     Ok((Handle { hash: None }, req))
