@@ -11,6 +11,7 @@ version = "22.4.15"
 
 [dependencies]
 sha2 = "0.10.8"
+lru = "0.13.0"
 hex = { workspace = true }
 base64 = { workspace = true }
 clap = { workspace = true }
