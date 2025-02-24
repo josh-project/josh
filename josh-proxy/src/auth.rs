@@ -1,3 +1,4 @@
+use std::num::NonZeroUsize;
 use std::sync::Arc;
 
 // Import the base64 crate Engine trait anonymously so we can
@@ -25,8 +26,10 @@ impl AuthTimersGroupKey {
     }
 }
 
+const AUTH_LRU_CACHE_SIZE: NonZeroUsize = NonZeroUsize::new(1000).unwrap();
+
 // Within a group, we can hold the lock for longer to verify the auth with upstream
-type AuthTimersGroup = std::collections::HashMap<Handle, std::time::Instant>;
+type AuthTimersGroup = lru::LruCache<Handle, std::time::Instant>;
 type AuthTimers =
     std::collections::HashMap<AuthTimersGroupKey, Arc<tokio::sync::Mutex<AuthTimersGroup>>>;
 
@@ -129,13 +132,15 @@ pub async fn check_http_auth(url: &str, auth: &Handle, required: bool) -> josh::
 
     let group_key = AuthTimersGroupKey::new(url, &auth);
     let auth_timers = AUTH_TIMERS
-        .lock()
-        .unwrap()
+        .lock()?
         .entry(group_key.clone())
-        .or_default()
+        .or_insert_with(|| {
+            let cache = lru::LruCache::new(AUTH_LRU_CACHE_SIZE);
+            Arc::new(tokio::sync::Mutex::new(cache))
+        })
         .clone();
 
-    let auth_header = AUTH.lock().unwrap().get(auth).cloned().unwrap_or_default();
+    let auth_header = AUTH.lock()?.get(auth).cloned().unwrap_or_default();
 
     let refs_url = format!("{}/info/refs?service=git-upload-pack", url);
     let do_request = || {
@@ -195,7 +200,7 @@ pub async fn check_http_auth(url: &str, auth: &Handle, required: bool) -> josh::
 
         let resp = do_request().await?;
         if resp.status().is_success() {
-            auth_timers.insert(auth.clone(), std::time::Instant::now());
+            auth_timers.put(auth.clone(), std::time::Instant::now());
         }
 
         resp
