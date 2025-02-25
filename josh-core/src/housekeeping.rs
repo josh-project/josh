@@ -362,8 +362,9 @@ pub fn run(repo_path: &std::path::Path, do_gc: bool) -> JoshResult<()> {
                 &[
                     "git",
                     "repack",
-                    "-dn",
+                    "-adn",
                     "--keep-unreachable",
+                    "--pack-kept-objects",
                     "--no-write-bitmap-index",
                     "--threads=4"
                 ]
