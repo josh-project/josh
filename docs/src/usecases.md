@@ -73,7 +73,7 @@ $ git clone http://josh/central.git:workspace=workspaces/project1.git
 
 Each of the subprojects defines a `workspace.josh` file, defining the mapping between the original central.git repository and the hierarchy in use inside of the project.
 
-In this setup, project1 and project2 can seemlessly depend on the latest version of library1, while only checking out the part of the central monorepo that's needed for their purpose.
+In this setup, project1 and project2 can seamlessly depend on the latest version of library1, while only checking out the part of the central monorepo that's needed for their purpose.
 What's more, any changes to a shared module will be synced in both directions.
 
 If a developer of the library1 pushed a new update, both projects will get the new version, and the developer will be able to check if they broke any test.
