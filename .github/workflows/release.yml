@@ -27,7 +27,7 @@ jobs:
           tags: |
             type=ref,event=tag
       - name: Login to DockerHub
-        uses: docker/login-action@v1
+        uses: docker/login-action@v3
         with:
           username: initcrash
           password: ${{ secrets.DOCKERHUB_TOKEN }}
