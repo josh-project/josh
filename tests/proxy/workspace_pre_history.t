@@ -1,4 +1,4 @@
-Worspaces should also contain the history of the main directory before the workspace.josh
+Workspaces should also contain the history of the main directory before the workspace.josh
 file was created
 
 
