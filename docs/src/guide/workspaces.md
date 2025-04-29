@@ -112,7 +112,7 @@ let's observe the result:
 {{#include workspaces.t:library_sync2}}
 ```
 
-After pushing and fetching the result, we see that it has been succesfully mapped by josh.
+After pushing and fetching the result, we see that it has been successfully mapped by josh.
 
 One suprising thing is the history: our "mapping" commit became a merge commit!
 This is because josh needs to merge the history of the module we want to map into the
