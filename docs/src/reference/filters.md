@@ -13,7 +13,7 @@ Filters always begin with a colon and can be chained:
 
     :filter1:filter2
 
-When used as part of an URL filters can not contain white space or newlines. When read from a file
+When used as part of an URL filters cannot contain white space or newlines. When read from a file
 however white space can be inserted between filters (not after the leading colon).
 Additionally newlines can be used instead of ``,`` inside of composition filters.
 
