@@ -93,7 +93,7 @@ So the question:
 cannot be answered without cloning the entire repository and understanding how the languages
 used handle dependencies.
 
-In particular when using C familiy languages, hidden dependencies on header files are easy to miss.
+In particular when using C family languages, hidden dependencies on header files are easy to miss.
 For this reason limiting the visibility of files to the compiler by sandboxing is pretty much a requirement
 for reproducible builds.
 
