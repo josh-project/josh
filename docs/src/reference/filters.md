@@ -66,7 +66,7 @@ workspace root as well as additional files specified in the ``workspace.josh`` f
 Applies the supplied regular expressions to every file in the input tree.
 
 ### Signature removal **`:unsign`**
-The default behaviour of Josh is to copy, if it exsists, the signature of the original commit in
+The default behaviour of Josh is to copy, if it exists, the signature of the original commit in
 the filtered commit. This makes the signature invalid, but allows a perfect round-trip: josh will be
 able to recreate the original commit from the filtered one.
 
