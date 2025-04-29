@@ -9,9 +9,9 @@ use tokio::io::AsyncReadExt;
 use tokio::io::BufReader;
 use tokio::process::Command;
 
-/// do_cgi is an async function that takes an hyper request and a CGI compatible
+/// do_cgi is an async function that takes a hyper request and a CGI compatible
 /// command, and passes the request to be executed to the command.
-/// It then returns an hyper response and the stderr output of the command.
+/// It then returns a hyper response and the stderr output of the command.
 pub async fn do_cgi(
     req: Request<hyper::Body>,
     cmd: Command,
