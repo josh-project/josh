@@ -20,7 +20,7 @@ jobs:
         run: git fetch --tags origin
       - name: Generate docker metadata
         id: meta
-        uses: docker/metadata-action@v3
+        uses: docker/metadata-action@v5
         with:
           images: |
             joshproject/josh-proxy
