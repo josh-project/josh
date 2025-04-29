@@ -66,7 +66,7 @@ func (l *KVLogger) Log(data kv) {
 	l.mu.Unlock()
 }
 
-// Fatal is equivalent to Log() follwed by a call to os.Exit(1)
+// Fatal is equivalent to Log() followed by a call to os.Exit(1)
 func (l *KVLogger) Fatal(data kv) {
 	l.Log(data)
 	os.Exit(1)
