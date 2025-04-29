@@ -44,7 +44,7 @@ func TestPutMeta(t *testing.T) {
 
 	meta, err = metaStoreTest.Get(&RequestVars{Oid: nonExistingOid})
 	if err != nil {
-		t.Errorf("expected to be able to retreive new put, got : %s", err)
+		t.Errorf("expected to be able to retrieve new put, got : %s", err)
 	}
 
 	if meta.Oid != nonExistingOid {
