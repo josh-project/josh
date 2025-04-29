@@ -14,7 +14,7 @@ The partial repo will act as a normal git repository but only contain the files
 found in the subdirectory and only commits affecting those files.
 The partial repo supports both fetch as well as push operation.
 
-This helps not just to improve performace on the client due to having fewer files in
+This helps not just to improve performance on the client due to having fewer files in
 the tree,
 it also enables collaboration on parts of the monorepo with other parties
 utilizing git's normal distributed development features.
