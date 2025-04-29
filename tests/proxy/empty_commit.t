@@ -4,7 +4,7 @@ all commits whose tree has no diff to the parent.
 This makes sure that when extracting subdirectories for example, only commits that affect
 the directory of interest are included in the history.
 However in case the diff was also empty in the untransformed commit this means the commit
-was creaded on purpose (by passing --allow-empty to git commit) and in this case the commit
+was created on purpose (by passing --allow-empty to git commit) and in this case the commit
 should still be included.
 
   $ . ${TESTDIR}/setup_test_env.sh
