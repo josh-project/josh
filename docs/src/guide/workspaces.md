@@ -135,7 +135,7 @@ no merge here.
 
 ### Interacting with workspaces
 
-Let's now create a second workspce, this time for application2.
+Let's now create a second workspace, this time for application2.
 It depends on library1 and library2.
 
 ```shell
