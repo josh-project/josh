@@ -41,7 +41,7 @@ cat > guide.c <<EOF
 #include "lib2.h"
 void main(void)
 {
-  printf("Answer to life, the universe, and everyting: %d, %d, %d\n", life(), universe(), everything());
+  printf("Answer to life, the universe, and everything: %d, %d, %d\n", life(), universe(), everything());
 }
 EOF
 git add .
