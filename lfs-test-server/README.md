@@ -126,7 +126,7 @@ bash run.sh
 
 ```
 
-Check the managment page
+Check the management page
 
 browser: https://localhost:9999/mgmt
 
