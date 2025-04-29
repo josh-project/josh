@@ -148,7 +148,7 @@ func (v *RequestVars) VerifyLink() string {
 	return fmt.Sprintf("%s%s", Config.ExtOrigin, path)
 }
 
-// link provides a structure used to build a hypermedia representation of an HTTP link.
+// link provides a structure used to build a hyper media representation of an HTTP link.
 type link struct {
 	Href      string            `json:"href"`
 	Header    map[string]string `json:"header,omitempty"`
