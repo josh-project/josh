@@ -179,7 +179,7 @@ We can push this change like any normal git change:
 ```
 
 Since the change was merged in the central repository, 
-a developper can now pull from the application1 workspace.
+a developer can now pull from the application1 workspace.
 
 ```shell
 {{#include workspaces.t:app1_pull}}
