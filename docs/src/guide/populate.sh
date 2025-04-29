@@ -56,7 +56,7 @@ cat > library2.md <<EOF
 Library2 provides the answer to the universe and everything
 EOF
 cat > guide.md <<EOF
-The guide project aimes to adress matters of life, universe, and everything.
+The guide project aimes to address matters of life, universe, and everything.
 EOF
 git add .
 git commit -m "Add documentation"
