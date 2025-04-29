@@ -97,7 +97,7 @@ In particular when using C family languages, hidden dependencies on header files
 For this reason limiting the visibility of files to the compiler by sandboxing is pretty much a requirement
 for reproducible builds.
 
-With Josh, each deliverable gets it's own virtual git repository with dependencies declared in the `workspace.josh`
+With Josh, each deliverable gets its own virtual git repository with dependencies declared in the `workspace.josh`
 file. This means answering the above question becomes as simple as comparing commit ids.
 Furthermore due to the tree filtering each build is guaranteed to be perfectly sandboxed
 and only sees those parts of the monorepo that have actually been mapped.
