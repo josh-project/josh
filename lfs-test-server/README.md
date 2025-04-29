@@ -68,7 +68,7 @@ To use the LFS test server with the Git LFS client, configure it in the reposito
 
 HTTPS:
 
-NOTE: If using https with a self signed cert also disable cert checking in the client repo.
+NOTE: If using https with a self-signed cert also disable cert checking in the client repo.
 
 ```
   [lfs]
