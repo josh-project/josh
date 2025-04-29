@@ -17,7 +17,7 @@ func TestGetMeta(t *testing.T) {
 
 	meta, err := metaStoreTest.Get(&RequestVars{Oid: contentOid})
 	if err != nil {
-		t.Fatalf("Error retreiving meta: %s", err)
+		t.Fatalf("Error retrieving meta: %s", err)
 	}
 
 	if meta.Oid != contentOid {

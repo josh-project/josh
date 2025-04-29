@@ -236,7 +236,7 @@ func TestPut(t *testing.T) {
 
 	r, err := testContentStore.Get(&MetaObject{Oid: contentOid}, 0)
 	if err != nil {
-		t.Fatalf("error retreiving from content store: %s", err)
+		t.Fatalf("error retrieving from content store: %s", err)
 	} else {
 		defer r.Close()
 	}
