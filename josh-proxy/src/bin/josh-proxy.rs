@@ -1436,7 +1436,7 @@ async fn call_service(
     ))
     .await?;
 
-    // This is chained as a seperate future to make sure that
+    // This is chained as a separate future to make sure that
     // it is executed in all cases.
     std::mem::drop(temp_ns);
 
