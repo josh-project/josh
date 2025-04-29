@@ -84,7 +84,7 @@ If a developer of project1 needs to update the library, the changes will be auto
 With everything stored in one repo, CI/CD systems only need to look into one source for each particular
 deliverable.
 However in traditional monorepo environments dependency management is handled by the build system.
-Build systems are usually taylored to specific languages and need their input already checked
+Build systems are usually tailored to specific languages and need their input already checked
 out on the filesystem.
 So the question:
 
