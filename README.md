@@ -131,4 +131,4 @@ performing many requests to the main git host.
 
 ## FAQ
 
-See [here](https://josh-project.github.io/josh/faq.html)
+See the [FAQ](https://josh-project.github.io/josh/faq.html)
