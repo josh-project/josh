@@ -108,7 +108,7 @@ typically necessary with normal build tools.
 ### GraphQL API
 
 It is often desireable to access content stored in git without requiring a clone of the repository.
-This is usefull for CI/CD systems or web frontends such as dashboards.
+This is useful for CI/CD systems or web frontends such as dashboards.
 
 Josh exposes a GraphQL API for that purpose. For example, it can be used to find all workspaces currently
 present in the tree:
