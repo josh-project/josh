@@ -32,7 +32,7 @@ for the same purpose.
 Which one is right in more advanced use cases depends on your goals: `git filter-repo` offers more flexibility and options
 on what kind of filtering it supports, like rewriting commit messages or even plugging arbitrary scripts into the filtering.
 
-Josh uses a DSL instead of arbitary scripts for complex filters and is much more restrictive in the kind of filtering
+Josh uses a DSL instead of arbitrary scripts for complex filters and is much more restrictive in the kind of filtering
 possilbe, but in exchange for those limitations offers incremental filtering as well as bidirectional operation, meaning converting changes between both the original and the filtered repos.
 
 ## How is Josh different from all of the above alternatives?
