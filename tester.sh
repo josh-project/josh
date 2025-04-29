@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# this script can be used to run tests in the container used for deployement.
+# this script can be used to run tests in the container used for deployment.
 # usage:
 #  Run all tests: ./tester.sh
 #  Run specific test: ./tester.sh path/to/test.t
