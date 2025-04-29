@@ -198,7 +198,7 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
         };
 
         let original_target_ref = if let Some(base) = &push_options.base {
-            // Allow user to use just the branchname as the base:
+            // Allow user to use just the branch name as the base:
             let full_path_base_refname =
                 transaction_mirror.refname(&format!("refs/heads/{}", base));
             if transaction_mirror
