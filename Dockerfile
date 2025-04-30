@@ -211,8 +211,12 @@ RUN apk add --no-cache curl && \
     rm /tmp/s6-overlay-noarch.tar.xz && \
     apk del curl
 ARG ARCH
-ADD https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-${ARCH}.tar.xz /tmp
-RUN tar -C / -Jxpf /tmp/s6-overlay-${ARCH}.tar.xz
+RUN apk add --no-cache curl && \
+    s6_arch=$(if [ "$ARCH" = amd64 ]; then echo x86_64; elif [ "$ARCH" = arm64 ]; then echo aarch64; else echo unknown; fi); \
+    curl -sSL https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-${s6_arch}.tar.xz -o /tmp/s6-overlay-arch.tar.xz && \
+    tar -C / -Jxpf /tmp/s6-overlay-arch.tar.xz && \
+    rm /tmp/s6-overlay-arch.tar.xz && \
+    apk del curl
 
 ARG GIT_GID_UID=2001
 
