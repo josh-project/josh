@@ -8,6 +8,9 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     if: ${{ github.event_name == 'release' || (github.event_name == 'pull_request' && github.event.label.name == 'build-release-container') }}
     steps:
       - name: Setup BuildX
@@ -23,14 +26,15 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: |
-            joshproject/josh-proxy
+            ${{ secrets.DOCKERHUB_TOKEN == '' && format('ghcr.io/{0}', github.repository) || 'joshproject/josh-proxy' }}
           tags: |
             type=ref,event=tag
       - name: Login to DockerHub
         uses: docker/login-action@v3
         with:
-          username: initcrash
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          registry: ${{ secrets.DOCKERHUB_TOKEN == '' && 'ghcr.io' || '' }}
+          username: ${{ secrets.DOCKERHUB_TOKEN == '' && github.actor || 'initcrash' }}
+          password: ${{ secrets.DOCKERHUB_TOKEN == '' && github.token || secrets.DOCKERHUB_TOKEN }}
       - name: Build docker image
         uses: docker/build-push-action@v6
         with:
