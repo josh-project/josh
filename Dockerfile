@@ -205,8 +205,11 @@ COPY --from=build --link=false /opt/cargo-target/release/josh-ssh-shell /usr/bin
 COPY --from=build --link=false /usr/src/josh/static/ /josh/static/
 
 ARG S6_OVERLAY_VERSION=3.1.2.1
-ADD https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-noarch.tar.xz /tmp
-RUN tar -C / -Jxpf /tmp/s6-overlay-noarch.tar.xz
+RUN apk add --no-cache curl && \
+    curl -sSL https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-noarch.tar.xz -o /tmp/s6-overlay-noarch.tar.xz && \
+    tar -C / -Jxpf /tmp/s6-overlay-noarch.tar.xz && \
+    rm /tmp/s6-overlay-noarch.tar.xz && \
+    apk del curl
 ARG ARCH
 ADD https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-${ARCH}.tar.xz /tmp
 RUN tar -C / -Jxpf /tmp/s6-overlay-${ARCH}.tar.xz
