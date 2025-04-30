@@ -18,18 +18,22 @@ ARG RUSTUP_VERSION=1.27.1
 
 # Update check: https://github.com/rust-lang/rust/tags
 ARG RUST_VERSION=1.85.0
-ARG RUST_ARCH=${ARCH}-unknown-linux-musl
 
 # https://github.com/sfackler/rust-openssl/issues/1462
 ENV RUSTFLAGS="-Ctarget-feature=-crt-static"
 
-ADD --chmod=755 https://static.rust-lang.org/rustup/archive/${RUSTUP_VERSION}/${RUST_ARCH}/rustup-init /tmp
-RUN /tmp/rustup-init \
+RUN RUST_ARCH=$(if [ "$ARCH" = amd64 ]; then echo x86_64; elif [ "$ARCH" = arm64 ]; then echo aarch64; else echo unknown; fi)-unknown-linux-musl; \
+    apk add --no-cache curl && \
+    curl -sSL https://static.rust-lang.org/rustup/archive/${RUSTUP_VERSION}/${RUST_ARCH}/rustup-init -o /tmp/rustup-init && \
+    chmod +x /tmp/rustup-init && \
+    /tmp/rustup-init \
     -y \
     --no-modify-path \
     --profile minimal \
     --default-toolchain ${RUST_VERSION} \
-    --default-host ${RUST_ARCH}
+    --default-host ${RUST_ARCH} && \
+    rm /tmp/rustup-init && \
+    apk del curl
 
 FROM rust-base AS dev-planner
 
