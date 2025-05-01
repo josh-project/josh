@@ -58,8 +58,8 @@ RUN apk add --no-cache \
 
 WORKDIR /usr/src/josh
 RUN rustup component add rustfmt
-RUN cargo install --version 0.1.71 cargo-chef
-RUN cargo install --verbose --version 0.10.0 graphql_client_cli
+RUN cargo install --version 0.1.71 cargo-chef &&\
+    cargo install --verbose --version 0.10.0 graphql_client_cli
 
 RUN apk add --no-cache \
     bash \
