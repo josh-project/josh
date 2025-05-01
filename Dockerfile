@@ -86,6 +86,7 @@ RUN <<EOF
 set -e
 wget https://mirrors.edge.kernel.org/pub/software/scm/git/git-${GIT_VERSION}.tar.gz
 tar --extract --gzip --file git-${GIT_VERSION}.tar.gz
+rm git-${GIT_VERSION}.tar.gz
 cd git-${GIT_VERSION}
 make configure
 ./configure \
