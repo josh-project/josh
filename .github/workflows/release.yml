@@ -33,7 +33,7 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: ${{ secrets.DOCKERHUB_TOKEN == '' && 'ghcr.io' || '' }}
-          username: ${{ secrets.DOCKERHUB_TOKEN == '' && github.actor || 'initcrash' }}
+          username: ${{ secrets.DOCKERHUB_TOKEN == '' && github.actor || vars.DOCKERHUB_USER || 'initcrash' }}
           password: ${{ secrets.DOCKERHUB_TOKEN == '' && github.token || secrets.DOCKERHUB_TOKEN }}
       - name: Build docker image
         uses: docker/build-push-action@v6
