@@ -205,18 +205,19 @@ COPY --from=build --link=false /opt/cargo-target/release/josh-ssh-shell /usr/bin
 COPY --from=build --link=false /usr/src/josh/static/ /josh/static/
 
 ARG S6_OVERLAY_VERSION=3.1.2.1
-RUN apk add --no-cache curl && \
-    curl -sSL https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-noarch.tar.xz -o /tmp/s6-overlay-noarch.tar.xz && \
-    tar -C / -Jxpf /tmp/s6-overlay-noarch.tar.xz && \
-    rm /tmp/s6-overlay-noarch.tar.xz && \
-    apk del curl
 ARG ARCH
-RUN apk add --no-cache curl && \
-    s6_arch=$(if [ "$ARCH" = amd64 ]; then echo x86_64; elif [ "$ARCH" = arm64 ]; then echo aarch64; else echo unknown; fi); \
-    curl -sSL https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-${s6_arch}.tar.xz -o /tmp/s6-overlay-arch.tar.xz && \
-    tar -C / -Jxpf /tmp/s6-overlay-arch.tar.xz && \
-    rm /tmp/s6-overlay-arch.tar.xz && \
-    apk del curl
+RUN <<EOF
+set -eux
+apk add --no-cache curl
+curl -sSL https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-noarch.tar.xz -o /tmp/s6-overlay-noarch.tar.xz
+tar -C / -Jxpf /tmp/s6-overlay-noarch.tar.xz
+rm /tmp/s6-overlay-noarch.tar.xz
+s6_arch=$(if [ "$ARCH" = amd64 ]; then echo x86_64; elif [ "$ARCH" = arm64 ]; then echo aarch64; else echo unknown; fi);
+curl -sSL https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-${s6_arch}.tar.xz -o /tmp/s6-overlay-arch.tar.xz
+tar -C / -Jxpf /tmp/s6-overlay-arch.tar.xz
+rm /tmp/s6-overlay-arch.tar.xz
+apk del curl
+EOF
 
 ARG GIT_GID_UID=2001
 
