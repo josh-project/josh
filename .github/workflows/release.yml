@@ -68,7 +68,8 @@ jobs:
         env:
           digest: ${{ steps.build.outputs.digest }}
         run: |
-          mkdir -p $RUNNER_TEMP/digests
+          : Create digests directory with a file whose name matches the digest env with the 'sha256:' prefix removed
+          mkdir -p "$RUNNER_TEMP/digests"
           touch "$RUNNER_TEMP/digests/${digest#sha256:}"
 
       - name: Upload digest
