@@ -128,11 +128,11 @@ WORKDIR /usr/src/josh
 
 FROM dev AS dev-local
 
-RUN mkdir -p /opt/cache && \
-    chmod 777 /opt/cache
-
-RUN mkdir -p /josh/static && \
-    chmod 777 /josh/static
+RUN <<EOF
+set  -eux
+mkdir -p /opt/cache /josh/static
+chmod 777 /opt/cache /josh/static
+EOF
 
 VOLUME /opt/cache
 
