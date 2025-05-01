@@ -17,7 +17,7 @@
         --no-background
             
     -n <N>
-            DEPRECATED - no effect! Number of concurrent upstream git fetch/push operations
+            DEPRECATED - no effect!
         --port <PORT>
             [default: 8000]
     -c, --cache-duration <CACHE_DURATION>

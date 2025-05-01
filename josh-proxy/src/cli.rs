@@ -32,7 +32,7 @@ pub struct Args {
 
     #[arg(
         short,
-        help = "DEPRECATED - no effect! Number of concurrent upstream git fetch/push operations"
+        help = "DEPRECATED - no effect!"
     )]
     _n: Option<String>,
 
