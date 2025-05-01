@@ -116,10 +116,13 @@ RUN cd lfs-test-server && GOPATH=/opt/git-lfs go install
 
 ENV PATH=${PATH}:/opt/git-lfs/bin
 
-RUN git clone https://github.com/git-lfs/git-lfs.git /usr/src/git-lfs
-WORKDIR /usr/src/git-lfs
-RUN make
-RUN cp bin/git-lfs /opt/git-lfs/bin
+RUN <<EOF
+set -eux
+git clone https://github.com/git-lfs/git-lfs.git /usr/src/git-lfs
+cd /usr/src/git-lfs
+make
+cp bin/git-lfs /opt/git-lfs/bin
+EOF
 
 WORKDIR /usr/src/josh
 
