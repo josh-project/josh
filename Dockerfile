@@ -80,6 +80,7 @@ RUN apk add --no-cache \
 
 # Update check: https://github.com/git/git/tags
 ARG GIT_VERSION=2.45.2
+ENV PATH=${PATH}:/opt/git-install/bin
 WORKDIR /usr/src/git
 RUN <<EOF
 set -e
@@ -93,12 +94,10 @@ make configure
     --exec-prefix=/opt/git-install
 make -j$(nproc)
 make install
+mkdir /opt/git-install/etc
+git config -f /opt/git-install/etc/gitconfig --add safe.directory "*"
+git config -f /opt/git-install/etc/gitconfig protocol.file.allow "always"
 EOF
-
-ENV PATH=${PATH}:/opt/git-install/bin
-RUN mkdir /opt/git-install/etc
-RUN git config -f /opt/git-install/etc/gitconfig --add safe.directory "*" && \
-    git config -f /opt/git-install/etc/gitconfig protocol.file.allow "always"
 
 # Update check: https://github.com/prysk/prysk/releases
 ARG PRYSK_VERSION=0.20.0
