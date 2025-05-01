@@ -5,9 +5,21 @@ on:
     types: [published]
   pull_request:
     types: [labeled]
+env:
+  REGISTRY_IMAGE: ${{ secrets.DOCKERHUB_TOKEN == '' && format('ghcr.io/{0}', github.repository) || 'joshproject/josh-proxy' }}
 jobs:
   build:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: linux
+            arch: amd64
+            runner: ubuntu-latest
+          - os: linux
+            arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
       packages: write
@@ -26,27 +38,90 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: |
-            ${{ secrets.DOCKERHUB_TOKEN == '' && format('ghcr.io/{0}', github.repository) || 'joshproject/josh-proxy' }}
+            ${{ env.REGISTRY_IMAGE }}
           tags: |
             type=ref,event=tag
-      - name: Login to DockerHub
+      - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:
           registry: ${{ secrets.DOCKERHUB_TOKEN == '' && 'ghcr.io' || '' }}
           username: ${{ secrets.DOCKERHUB_TOKEN == '' && github.actor || vars.DOCKERHUB_USER || 'initcrash' }}
           password: ${{ secrets.DOCKERHUB_TOKEN == '' && github.token || secrets.DOCKERHUB_TOKEN }}
       - name: Build docker image
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: .
           file: Dockerfile
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          platforms: linux/amd64,linux/arm64
+          platforms: ${{ matrix.os }}/${{ matrix.arch}}
           build-contexts: |
             git=.git
             docker=docker
           target: run
           push: ${{ github.event_name == 'release' && 'true' || 'false' }}
-          tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          tags: ${{ env.REGISTRY_IMAGE }}
+          outputs: type=image,push-by-digest=true,name-canonical=true,push=true
+      - name: Export digest
+        env:
+          digest: ${{ steps.build.outputs.digest }}
+        run: |
+          mkdir -p $RUNNER_TEMP/digests
+          touch "$RUNNER_TEMP/digests/${digest#sha256:}"
+
+      - name: Upload digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ matrix.os }}-${{ matrix.arch }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    needs:
+      - build
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@v4
+        with:
+          path: ${{ runner.temp }}/digests
+          pattern: digests-*
+          merge-multiple: true
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.DOCKERHUB_TOKEN == '' && 'ghcr.io' || '' }}
+          username: ${{ secrets.DOCKERHUB_TOKEN == '' && github.actor || vars.DOCKERHUB_USER || 'initcrash' }}
+          password: ${{ secrets.DOCKERHUB_TOKEN == '' && github.token || secrets.DOCKERHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY_IMAGE }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+
+      - name: Create manifest list and push
+        working-directory: ${{ runner.temp }}/digests
+        run: |
+          docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf "$REGISTRY_IMAGE"'@sha256:%s ' *)
+
+      - name: Inspect image
+        env:
+          version: ${{ steps.meta.outputs.version }}
+        run: |
+          docker buildx imagetools inspect $REGISTRY_IMAGE:$version
