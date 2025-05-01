@@ -229,8 +229,10 @@ EOF
 
 ARG GIT_GID_UID=2001
 
-RUN addgroup -g ${GIT_GID_UID} git
-RUN adduser \
+RUN <<EOF
+set -eux
+addgroup -g ${GIT_GID_UID} git
+adduser \
     -h /home/git \
     -s /usr/bin/josh-ssh-shell \
     -G git \
@@ -239,7 +241,8 @@ RUN adduser \
     git
 
 # https://unix.stackexchange.com/a/193131/336647
-RUN usermod -p '*' git
+usermod -p '*' git
+EOF
 
 COPY --from=docker --link=false etc/ssh/sshd_config.template /etc/ssh/sshd_config.template
 
