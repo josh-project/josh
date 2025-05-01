@@ -129,7 +129,7 @@ WORKDIR /usr/src/josh
 FROM dev AS dev-local
 
 RUN <<EOF
-set  -eux
+set -eux
 mkdir -p /opt/cache /josh/static
 chmod 777 /opt/cache /josh/static
 EOF
@@ -146,19 +146,21 @@ RUN npm config set cache /opt/cache/npm-cache --global
 ARG USER_GID
 ARG USER_UID
 
-RUN \
-  if [ ! $(getent group ${USER_GID}) ] ; then \
-    addgroup \
-      -g ${USER_GID} dev ; \
-  fi
+RUN <<EOF
+set -eux
+if [ ! $(getent group ${USER_GID}) ] ; then
+addgroup \
+    -g ${USER_GID} dev
+fi
 
-RUN adduser \
-      -u ${USER_UID} \
-      -G $(getent group ${USER_GID} | cut -d: -f1) \
-      -D \
-      -H \
-      -g '' \
-      dev
+adduser \
+    -u ${USER_UID} \
+    -G $(getent group ${USER_GID} | cut -d: -f1) \
+    -D \
+    -H \
+    -g '' \
+    dev
+EOF
 
 FROM dev AS dev-cache
 
