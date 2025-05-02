@@ -30,10 +30,7 @@ pub struct Args {
     #[arg(long)]
     pub no_background: bool,
 
-    #[arg(
-        short,
-        help = "DEPRECATED - no effect! Number of concurrent upstream git fetch/push operations"
-    )]
+    #[arg(short, help = "DEPRECATED - no effect!")]
     _n: Option<String>,
 
     #[arg(long, default_value = "8000")]
