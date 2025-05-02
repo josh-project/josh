@@ -24,16 +24,28 @@ ENV RUSTFLAGS="-Ctarget-feature=-crt-static"
 
 RUN <<EOF
 set -eux
-RUST_ARCH=$(if [ "$ARCH" = amd64 ]; then echo x86_64; elif [ "$ARCH" = arm64 ]; then echo aarch64; else echo unknown; fi)-unknown-linux-musl;
+
 apk add --no-cache curl
-curl -sSL https://static.rust-lang.org/rustup/archive/${RUSTUP_VERSION}/${RUST_ARCH}/rustup-init -o /tmp/rustup-init
+
+if [ "$ARCH" = amd64 ]; then
+    rust_arch=x86_64;
+elif [ "$ARCH" = arm64 ]; then
+    rust_arch=aarch64;
+else
+    echo "Unsupported arch";
+    exit 1
+fi
+
+rust_arch=${rust_arch}-unknown-linux-musl
+
+curl -sSL https://static.rust-lang.org/rustup/archive/${RUSTUP_VERSION}/${rust_arch}/rustup-init -o /tmp/rustup-init
 chmod +x /tmp/rustup-init
 /tmp/rustup-init \
     -y \
     --no-modify-path \
     --profile minimal \
     --default-toolchain ${RUST_VERSION} \
-    --default-host ${RUST_ARCH}
+    --default-host ${rust_arch}
 rm /tmp/rustup-init
 apk del curl
 EOF
@@ -148,9 +160,9 @@ ARG USER_UID
 
 RUN <<EOF
 set -eux
+
 if [ ! $(getent group ${USER_GID}) ] ; then
-addgroup \
-    -g ${USER_GID} dev
+    addgroup -g ${USER_GID} dev
 fi
 
 adduser \
@@ -216,14 +228,28 @@ ARG S6_OVERLAY_VERSION=3.1.2.1
 ARG ARCH
 RUN <<EOF
 set -eux
+
 apk add --no-cache curl
-curl -sSL https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-noarch.tar.xz -o /tmp/s6-overlay-noarch.tar.xz
+
+curl -sSL https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-noarch.tar.xz \
+    -o /tmp/s6-overlay-noarch.tar.xz
 tar -C / -Jxpf /tmp/s6-overlay-noarch.tar.xz
 rm /tmp/s6-overlay-noarch.tar.xz
-s6_arch=$(if [ "$ARCH" = amd64 ]; then echo x86_64; elif [ "$ARCH" = arm64 ]; then echo aarch64; else echo unknown; fi);
-curl -sSL https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-${s6_arch}.tar.xz -o /tmp/s6-overlay-arch.tar.xz
+
+if [ "$ARCH" = amd64 ]; then
+    s6_arch=x86_64;
+elif [ "$ARCH" = arm64 ]; then
+    s6_arch=aarch64;
+else
+    echo "Unsupported arch";
+    exit 1
+fi
+
+curl -sSL https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-${s6_arch}.tar.xz \
+    -o /tmp/s6-overlay-arch.tar.xz
 tar -C / -Jxpf /tmp/s6-overlay-arch.tar.xz
 rm /tmp/s6-overlay-arch.tar.xz
+
 apk del curl
 EOF
 

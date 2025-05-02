@@ -22,12 +22,6 @@ else
     TESTS="$*"
 fi
 
-ARCH=$(arch)
-
-if [ "$ARCH" = "arm64" ]; then
-    ARCH="aarch64"
-fi
-
 echo "running: ${TESTS}"
 
 if (( ! NO_BUILD_CONTAINER )); then
@@ -36,7 +30,6 @@ if (( ! NO_BUILD_CONTAINER )); then
         --tag=josh-dev-local \
         --build-arg USER_UID="$(id -u)" \
         --build-arg USER_GID="$(id -g)" \
-        --build-arg ARCH="${ARCH}" \
         .
 fi
 
