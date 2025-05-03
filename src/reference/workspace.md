@@ -84,7 +84,7 @@ Remove a mapping
 
 To remove a mapping remove the corresponding entry from the ``workspace.josh`` file.
 The content of the previously shared path will stay in the workspace. That means the main
-repo will have two copies of that path from that point on. Effectivly creating a fork of that code.
+repo will have two copies of that path from that point on. Effectively creating a fork of that code.
 
 Remove a mapped path
 --------------------

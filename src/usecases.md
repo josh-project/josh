@@ -14,7 +14,7 @@ The partial repo will act as a normal git repository but only contain the files
 found in the subdirectory and only commits affecting those files.
 The partial repo supports both fetch as well as push operation.
 
-This helps not just to improve performace on the client due to having fewer files in
+This helps not just to improve performance on the client due to having fewer files in
 the tree,
 it also enables collaboration on parts of the monorepo with other parties
 utilizing git's normal distributed development features.
@@ -73,7 +73,7 @@ $ git clone http://josh/central.git:workspace=workspaces/project1.git
 
 Each of the subprojects defines a `workspace.josh` file, defining the mapping between the original central.git repository and the hierarchy in use inside of the project.
 
-In this setup, project1 and project2 can seemlessly depend on the latest version of library1, while only checking out the part of the central monorepo that's needed for their purpose.
+In this setup, project1 and project2 can seamlessly depend on the latest version of library1, while only checking out the part of the central monorepo that's needed for their purpose.
 What's more, any changes to a shared module will be synced in both directions.
 
 If a developer of the library1 pushed a new update, both projects will get the new version, and the developer will be able to check if they broke any test.
@@ -83,8 +83,8 @@ If a developer of project1 needs to update the library, the changes will be auto
 
 With everything stored in one repo, CI/CD systems only need to look into one source for each particular
 deliverable.
-However in traditional monorepo environments dependency mangement is handled by the build system.
-Build systems are usually taylored to specific languages and need their input already checked
+However in traditional monorepo environments dependency management is handled by the build system.
+Build systems are usually tailored to specific languages and need their input already checked
 out on the filesystem.
 So the question:
 
@@ -93,11 +93,11 @@ So the question:
 cannot be answered without cloning the entire repository and understanding how the languages
 used handle dependencies.
 
-In particular when using C familiy languages, hidden dependencies on header files are easy to miss.
+In particular when using C family languages, hidden dependencies on header files are easy to miss.
 For this reason limiting the visibility of files to the compiler by sandboxing is pretty much a requirement
 for reproducible builds.
 
-With Josh, each deliverable gets it's own virtual git repository with dependencies declared in the `workspace.josh`
+With Josh, each deliverable gets its own virtual git repository with dependencies declared in the `workspace.josh`
 file. This means answering the above question becomes as simple as comparing commit ids.
 Furthermore due to the tree filtering each build is guaranteed to be perfectly sandboxed
 and only sees those parts of the monorepo that have actually been mapped.
@@ -108,7 +108,7 @@ typically necessary with normal build tools.
 ### GraphQL API
 
 It is often desireable to access content stored in git without requiring a clone of the repository.
-This is usefull for CI/CD systems or web frontends such as dashboards.
+This is useful for CI/CD systems or web frontends such as dashboards.
 
 Josh exposes a GraphQL API for that purpose. For example, it can be used to find all workspaces currently
 present in the tree:
