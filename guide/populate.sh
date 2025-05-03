@@ -41,7 +41,7 @@ cat > guide.c <<EOF
 #include "lib2.h"
 void main(void)
 {
-  printf("Answer to life, the universe, and everyting: %d, %d, %d\n", life(), universe(), everything());
+  printf("Answer to life, the universe, and everything: %d, %d, %d\n", life(), universe(), everything());
 }
 EOF
 git add .
@@ -56,7 +56,7 @@ cat > library2.md <<EOF
 Library2 provides the answer to the universe and everything
 EOF
 cat > guide.md <<EOF
-The guide project aimes to adress matters of life, universe, and everything.
+The guide project aims to address matters of life, universe, and everything.
 EOF
 git add .
 git commit -m "Add documentation"

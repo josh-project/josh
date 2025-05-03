@@ -194,7 +194,7 @@ whole history to say &quot;I want a new version of that repository that only con
 can do that, it is a fairly expensive operation it's something you would do for example when you
 import an old repository into a one huge git repository and then you can split it later on to be
 multiple smaller ones, you can do it, what I am trying to say is that you should generally try to
-avoid it. It's not that git can not handle huge projects, git would not perform as well as it would
+avoid it. It's not that git cannot handle huge projects, git would not perform as well as it would
 otherwise. And you will have issues that you wish you didn't not have.</p>
 <p>So I am skipping this issue and going back to the performance issue. One of the things I want to
 say about performance is that a lot of people seem to think that performance is about doing the
@@ -211,7 +211,7 @@ as individual repositories.</p>
 <p>The partial repo will act as a normal git repository but only contain the files
 found in the subdirectory and only commits affecting those files.
 The partial repo supports both fetch as well as push operation.</p>
-<p>This helps not just to improve performace on the client due to having fewer files in
+<p>This helps not just to improve performance on the client due to having fewer files in
 the tree,
 it also enables collaboration on parts of the monorepo with other parties
 utilizing git's normal distributed development features.
@@ -259,15 +259,15 @@ dependencies = :/modules:[
 <pre><code>$ git clone http://josh/central.git:workspace=workspaces/project1.git
 </code></pre>
 <p>Each of the subprojects defines a <code>workspace.josh</code> file, defining the mapping between the original central.git repository and the hierarchy in use inside of the project.</p>
-<p>In this setup, project1 and project2 can seemlessly depend on the latest version of library1, while only checking out the part of the central monorepo that's needed for their purpose.
+<p>In this setup, project1 and project2 can seamlessly depend on the latest version of library1, while only checking out the part of the central monorepo that's needed for their purpose.
 What's more, any changes to a shared module will be synced in both directions.</p>
 <p>If a developer of the library1 pushed a new update, both projects will get the new version, and the developer will be able to check if they broke any test.
 If a developer of project1 needs to update the library, the changes will be automatically shared back into central, and project2.</p>
 <h3 id="simplified-cicd"><a class="header" href="#simplified-cicd">Simplified CI/CD</a></h3>
 <p>With everything stored in one repo, CI/CD systems only need to look into one source for each particular
 deliverable.
-However in traditional monorepo environments dependency mangement is handled by the build system.
-Build systems are usually taylored to specific languages and need their input already checked
+However in traditional monorepo environments dependency management is handled by the build system.
+Build systems are usually tailored to specific languages and need their input already checked
 out on the filesystem.
 So the question:</p>
 <blockquote>
@@ -275,10 +275,10 @@ So the question:</p>
 </blockquote>
 <p>cannot be answered without cloning the entire repository and understanding how the languages
 used handle dependencies.</p>
-<p>In particular when using C familiy languages, hidden dependencies on header files are easy to miss.
+<p>In particular when using C family languages, hidden dependencies on header files are easy to miss.
 For this reason limiting the visibility of files to the compiler by sandboxing is pretty much a requirement
 for reproducible builds.</p>
-<p>With Josh, each deliverable gets it's own virtual git repository with dependencies declared in the <code>workspace.josh</code>
+<p>With Josh, each deliverable gets its own virtual git repository with dependencies declared in the <code>workspace.josh</code>
 file. This means answering the above question becomes as simple as comparing commit ids.
 Furthermore due to the tree filtering each build is guaranteed to be perfectly sandboxed
 and only sees those parts of the monorepo that have actually been mapped.</p>
@@ -286,7 +286,7 @@ and only sees those parts of the monorepo that have actually been mapped.</p>
 typically necessary with normal build tools.</p>
 <h3 id="graphql-api"><a class="header" href="#graphql-api">GraphQL API</a></h3>
 <p>It is often desireable to access content stored in git without requiring a clone of the repository.
-This is usefull for CI/CD systems or web frontends such as dashboards.</p>
+This is useful for CI/CD systems or web frontends such as dashboards.</p>
 <p>Josh exposes a GraphQL API for that purpose. For example, it can be used to find all workspaces currently
 present in the tree:</p>
 <pre><code>query {
@@ -307,7 +307,7 @@ Both can certainly be used together if needed.</p>
 <p>A partial clone will cause git to download only parts of an object database according to some predicate. It is still the same object database with the history having the same commits and sha1s. It still allows loading skipped parts of the object database at a later point.
 Josh creates an alternate history that has no reference to the skipped parts. It is as such very similar to git filter-branch just faster, with added features and a different user interface.</p>
 <h2 id="how-is-it-different-from-submodules"><a class="header" href="#how-is-it-different-from-submodules">How is it different from submodules?</a></h2>
-<p>Where git submodules are multiple, independant repos, referencing each other with SHAs, Josh supports the monorepo approach.
+<p>Where git submodules are multiple, independent repos, referencing each other with SHAs, Josh supports the monorepo approach.
 All of the code is in one single repo which can easily be kept in sync, and Josh provides any sub folder (or in the case of workspaces, more complicated recombination of folders) as their own git repository.
 These repos are transparently synchronised both ways with the main monorepo.
 Josh can thus do more than submodules can, and is easier and faster to use.</p>
@@ -320,8 +320,8 @@ of <code>git subtree split</code> which has been specifically optimized for bein
 for the same purpose.</p>
 <p>Which one is right in more advanced use cases depends on your goals: <code>git filter-repo</code> offers more flexibility and options
 on what kind of filtering it supports, like rewriting commit messages or even plugging arbitrary scripts into the filtering.</p>
-<p>Josh uses a DSL instead of arbitary scripts for complex filters and is much more restrictive in the kind of filtering
-possilbe, but in exchange for those limitations offers incremental filtering as well as bidirectional operation, meaning converting changes between both the original and the filtered repos.</p>
+<p>Josh uses a DSL instead of arbitrary scripts for complex filters and is much more restrictive in the kind of filtering
+possible, but in exchange for those limitations offers incremental filtering as well as bidirectional operation, meaning converting changes between both the original and the filtered repos.</p>
 <h2 id="how-is-josh-different-from-all-of-the-above-alternatives"><a class="header" href="#how-is-josh-different-from-all-of-the-above-alternatives">How is Josh different from all of the above alternatives?</a></h2>
 <p>Josh includes <code>josh-proxy</code> which offers repo filtering as a service, mainly intended to support monorepo workflows.</p>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="getting-started"><a class="header" href="#getting-started">Getting Started</a></h1>
@@ -580,7 +580,7 @@ We can now sync up with the server:</p>
   | * 366adba Add library1
   * 50cd611 Add application1
 </code></pre>
-<p>After pushing and fetching the result, we see that it has been succesfully mapped by josh.</p>
+<p>After pushing and fetching the result, we see that it has been successfully mapped by josh.</p>
 <p>One suprising thing is the history: our &quot;mapping&quot; commit became a merge commit!
 This is because josh needs to merge the history of the module we want to map into the
 repository of the workspace.
@@ -632,7 +632,7 @@ it to, fetch the transformed result. Otherwise, it works like git push.</p>
 <p>We can see the newly added commit for workspace.josh in application1, and as expected,
 no merge here.</p>
 <h3 id="interacting-with-workspaces"><a class="header" href="#interacting-with-workspaces">Interacting with workspaces</a></h3>
-<p>Let's now create a second workspce, this time for application2.
+<p>Let's now create a second workspace, this time for application2.
 It depends on library1 and library2.</p>
 <pre><code class="language-shell">  $ git clone http://127.0.0.1:8000/real_repo.git:workspace=application2.git application2
   Cloning into 'application2'...
@@ -705,7 +705,7 @@ Let's go ahead a fix it!</p>
      5115fd2..82238bf  master -&gt; master
 </code></pre>
 <p>Since the change was merged in the central repository, 
-a developper can now pull from the application1 workspace.</p>
+a developer can now pull from the application1 workspace.</p>
 <pre><code class="language-shell">  $ cd ../application1
   $ git pull
   From http://127.0.0.1:8000/real_repo.git:workspace=application1
@@ -838,7 +838,7 @@ making filters chainable.</p>
 <p>Filters always begin with a colon and can be chained:</p>
 <pre><code>:filter1:filter2
 </code></pre>
-<p>When used as part of an URL filters can not contain white space or newlines. When read from a file
+<p>When used as part of an URL filters cannot contain white space or newlines. When read from a file
 however white space can be inserted between filters (not after the leading colon).
 Additionally newlines can be used instead of <code>,</code> inside of composition filters.</p>
 <p>Some filters take arguments, and arguments can optionally be quoted using double quotes,
@@ -878,7 +878,7 @@ workspace root as well as additional files specified in the <code>workspace.josh
 <h3 id="text-replacement-replaceregex_0replacement_0regex_nreplacement_n"><a class="header" href="#text-replacement-replaceregex_0replacement_0regex_nreplacement_n">Text replacement <strong><code>:replace(&quot;regex_0&quot;:&quot;replacement_0&quot;,...,&quot;regex_N&quot;:&quot;replacement_N&quot;)</code></strong></a></h3>
 <p>Applies the supplied regular expressions to every file in the input tree.</p>
 <h3 id="signature-removal-unsign"><a class="header" href="#signature-removal-unsign">Signature removal <strong><code>:unsign</code></strong></a></h3>
-<p>The default behaviour of Josh is to copy, if it exsists, the signature of the original commit in
+<p>The default behaviour of Josh is to copy, if it exists, the signature of the original commit in
 the filtered commit. This makes the signature invalid, but allows a perfect round-trip: josh will be
 able to recreate the original commit from the filtered one.</p>
 <p>This behaviour might not be desirable, and this filter drops the signatures from the history.</p>
@@ -1072,7 +1072,7 @@ that the path already exists in the workspace but not in the shared location.</p
 <h2 id="remove-a-mapping"><a class="header" href="#remove-a-mapping">Remove a mapping</a></h2>
 <p>To remove a mapping remove the corresponding entry from the <code>workspace.josh</code> file.
 The content of the previously shared path will stay in the workspace. That means the main
-repo will have two copies of that path from that point on. Effectivly creating a fork of that code.</p>
+repo will have two copies of that path from that point on. Effectively creating a fork of that code.</p>
 <h2 id="remove-a-mapped-path"><a class="header" href="#remove-a-mapped-path">Remove a mapped path</a></h2>
 <p>To remove a mapped path as well as it's contents, remove the entry from the
 <code>workspace.josh</code> file and also remove the path inside the workspace using <code>git rm</code>.</p>
@@ -1235,7 +1235,7 @@ of the Josh project.</p>
 <p>Due to the fact that the integration tests need additional tools and a more complex
 environment and due to the fact that the integration test are done using <a href="https://pypi.org/project/cram/">cram</a>.
 you will need to crate an extra environment to run these tests. To simplify the
-setup of the integration testing we have setup a <a href="https://nixos.org/manual/nix/stable/#chap-installation">Nix Shell</a> environment which
+setup of the integration testing we have set up a <a href="https://nixos.org/manual/nix/stable/#chap-installation">Nix Shell</a> environment which
 you can start by using the following command if you have installed the <a href="https://nixos.org/manual/nix/stable/#chap-installation">Nix Shell</a>.</p>
 <p><strong>Attention:</strong>
 Currently it is still necessary to install the following tools in your host system.</p>

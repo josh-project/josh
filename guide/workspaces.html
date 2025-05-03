@@ -306,7 +306,7 @@ We can now sync up with the server:</p>
   | * 366adba Add library1
   * 50cd611 Add application1
 </code></pre>
-<p>After pushing and fetching the result, we see that it has been succesfully mapped by josh.</p>
+<p>After pushing and fetching the result, we see that it has been successfully mapped by josh.</p>
 <p>One suprising thing is the history: our &quot;mapping&quot; commit became a merge commit!
 This is because josh needs to merge the history of the module we want to map into the
 repository of the workspace.
@@ -358,7 +358,7 @@ it to, fetch the transformed result. Otherwise, it works like git push.</p>
 <p>We can see the newly added commit for workspace.josh in application1, and as expected,
 no merge here.</p>
 <h3 id="interacting-with-workspaces"><a class="header" href="#interacting-with-workspaces">Interacting with workspaces</a></h3>
-<p>Let's now create a second workspce, this time for application2.
+<p>Let's now create a second workspace, this time for application2.
 It depends on library1 and library2.</p>
 <pre><code class="language-shell">  $ git clone http://127.0.0.1:8000/real_repo.git:workspace=application2.git application2
   Cloning into 'application2'...
@@ -431,7 +431,7 @@ Let's go ahead a fix it!</p>
      5115fd2..82238bf  master -&gt; master
 </code></pre>
 <p>Since the change was merged in the central repository, 
-a developper can now pull from the application1 workspace.</p>
+a developer can now pull from the application1 workspace.</p>
 <pre><code class="language-shell">  $ cd ../application1
   $ git pull
   From http://127.0.0.1:8000/real_repo.git:workspace=application1
