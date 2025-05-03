@@ -232,7 +232,7 @@ fn parse_workspace(filter_spec: &str) -> JoshResult<Vec<Filter>> {
     }
 }
 
-// Parse json string if neccessary
+// Parse json string if necessary
 fn unquote(s: &str) -> String {
     let s = s.replace("'", "\"");
     if let Ok(serde_json::Value::String(s)) = serde_json::from_str(&s) {

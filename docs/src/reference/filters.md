@@ -13,7 +13,7 @@ Filters always begin with a colon and can be chained:
 
     :filter1:filter2
 
-When used as part of an URL filters can not contain white space or newlines. When read from a file
+When used as part of an URL filters cannot contain white space or newlines. When read from a file
 however white space can be inserted between filters (not after the leading colon).
 Additionally newlines can be used instead of ``,`` inside of composition filters.
 
@@ -66,7 +66,7 @@ workspace root as well as additional files specified in the ``workspace.josh`` f
 Applies the supplied regular expressions to every file in the input tree.
 
 ### Signature removal **`:unsign`**
-The default behaviour of Josh is to copy, if it exsists, the signature of the original commit in
+The default behaviour of Josh is to copy, if it exists, the signature of the original commit in
 the filtered commit. This makes the signature invalid, but allows a perfect round-trip: josh will be
 able to recreate the original commit from the filtered one.
 

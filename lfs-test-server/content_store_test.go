@@ -129,7 +129,7 @@ func TestContentStoreGetWithRange(t *testing.T) {
 	}
 }
 
-func TestContenStoreGetNonExisting(t *testing.T) {
+func TestContentStoreGetNonExisting(t *testing.T) {
 	setup()
 	defer teardown()
 

@@ -12,7 +12,7 @@ Josh creates an alternate history that has no reference to the skipped parts. It
 
 ## How is it different from submodules?
 
-Where git submodules are multiple, independant repos, referencing each other with SHAs, Josh supports the monorepo approach.
+Where git submodules are multiple, independent repos, referencing each other with SHAs, Josh supports the monorepo approach.
 All of the code is in one single repo which can easily be kept in sync, and Josh provides any sub folder (or in the case of workspaces, more complicated recombination of folders) as their own git repository.
 These repos are transparently synchronised both ways with the main monorepo.
 Josh can thus do more than submodules can, and is easier and faster to use.
@@ -32,8 +32,8 @@ for the same purpose.
 Which one is right in more advanced use cases depends on your goals: `git filter-repo` offers more flexibility and options
 on what kind of filtering it supports, like rewriting commit messages or even plugging arbitrary scripts into the filtering.
 
-Josh uses a DSL instead of arbitary scripts for complex filters and is much more restrictive in the kind of filtering
-possilbe, but in exchange for those limitations offers incremental filtering as well as bidirectional operation, meaning converting changes between both the original and the filtered repos.
+Josh uses a DSL instead of arbitrary scripts for complex filters and is much more restrictive in the kind of filtering
+possible, but in exchange for those limitations offers incremental filtering as well as bidirectional operation, meaning converting changes between both the original and the filtered repos.
 
 ## How is Josh different from all of the above alternatives?
 

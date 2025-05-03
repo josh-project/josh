@@ -112,7 +112,7 @@ let's observe the result:
 {{#include workspaces.t:library_sync2}}
 ```
 
-After pushing and fetching the result, we see that it has been succesfully mapped by josh.
+After pushing and fetching the result, we see that it has been successfully mapped by josh.
 
 One suprising thing is the history: our "mapping" commit became a merge commit!
 This is because josh needs to merge the history of the module we want to map into the
@@ -135,7 +135,7 @@ no merge here.
 
 ### Interacting with workspaces
 
-Let's now create a second workspce, this time for application2.
+Let's now create a second workspace, this time for application2.
 It depends on library1 and library2.
 
 ```shell
@@ -179,7 +179,7 @@ We can push this change like any normal git change:
 ```
 
 Since the change was merged in the central repository, 
-a developper can now pull from the application1 workspace.
+a developer can now pull from the application1 workspace.
 
 ```shell
 {{#include workspaces.t:app1_pull}}

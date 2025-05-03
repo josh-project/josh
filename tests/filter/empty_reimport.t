@@ -48,11 +48,11 @@
   $ git checkout other_branch
   Switched to branch 'other_branch'
 
-  $ echo content > pre/blafile1
+  $ echo content > pre/blah-file1
   $ git add pre
   $ git commit -m "more change on other" 1> /dev/null
 
-  $ echo content > pre/blefile2
+  $ echo content > pre/blah-file2
   $ git add pre
   $ git commit -m "more change on other 2" 1> /dev/null
 

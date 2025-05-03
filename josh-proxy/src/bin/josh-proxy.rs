@@ -1436,7 +1436,7 @@ async fn call_service(
     ))
     .await?;
 
-    // This is chained as a seperate future to make sure that
+    // This is chained as a separate future to make sure that
     // it is executed in all cases.
     std::mem::drop(temp_ns);
 
@@ -2065,7 +2065,7 @@ fn main() {
     // end in "/update" and this will not be a new server.
     // The update hook will then make a http request back to the main
     // process to do the actual computation while taking advantage of the
-    // cached data already loaded into the main processe's memory.
+    // cached data already loaded into the main process's memory.
     if let [a0, a1, a2, a3, ..] = &std::env::args().collect::<Vec<_>>().as_slice() {
         if a0.ends_with("/update") {
             std::process::exit(update_hook(a1, a2, a3).unwrap_or(1));

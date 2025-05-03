@@ -82,9 +82,9 @@ fn find_unapply_base(
     filtered_to_original: &mut HashMap<git2::Oid, git2::Oid>,
     filter: filter::Filter,
     // When building the filtered_to_original mapping use this as a starting point
-    // for the search for orginals. If there are multiple originals that map to the
+    // for the search for originals. If there are multiple originals that map to the
     // same filtered commit (which is common) use one that is reachable from contained_in.
-    // Or, in other words, one that is contained in the the history of contained_in.
+    // Or, in other words, one that is contained in the history of contained_in.
     contained_in: git2::Oid,
     // Filtered OID to compare against
     filtered: git2::Oid,

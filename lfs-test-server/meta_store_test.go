@@ -17,7 +17,7 @@ func TestGetMeta(t *testing.T) {
 
 	meta, err := metaStoreTest.Get(&RequestVars{Oid: contentOid})
 	if err != nil {
-		t.Fatalf("Error retreiving meta: %s", err)
+		t.Fatalf("Error retrieving meta: %s", err)
 	}
 
 	if meta.Oid != contentOid {
@@ -44,7 +44,7 @@ func TestPutMeta(t *testing.T) {
 
 	meta, err = metaStoreTest.Get(&RequestVars{Oid: nonExistingOid})
 	if err != nil {
-		t.Errorf("expected to be able to retreive new put, got : %s", err)
+		t.Errorf("expected to be able to retrieve new put, got : %s", err)
 	}
 
 	if meta.Oid != nonExistingOid {

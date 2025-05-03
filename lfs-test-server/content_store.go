@@ -28,7 +28,7 @@ func NewContentStore(base string) (*ContentStore, error) {
 	return &ContentStore{base}, nil
 }
 
-// Get takes a Meta object and retreives the content from the store, returning
+// Get takes a Meta object and retrieves the content from the store, returning
 // it as an io.ReaderCloser. If fromByte > 0, the reader starts from that byte
 func (s *ContentStore) Get(meta *MetaObject, fromByte int64) (io.ReadCloser, error) {
 	path := filepath.Join(s.basePath, transformKey(meta.Oid))

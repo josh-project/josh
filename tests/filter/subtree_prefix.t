@@ -14,7 +14,7 @@ Initial commit of subtree branch
   $ git commit -m "add file2 (in subtree)" 1>/dev/null
   $ export SUBTREE_TIP=$(git rev-parse HEAD)
 
-Articially create a subtree merge
+Artificially create a subtree merge
 (merge commit has subtree files in subfolder but has subtree commit as a parent)
   $ git checkout master
   Switched to branch 'master'

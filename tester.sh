@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# this script can be used to run tests in the container used for deployement.
+# this script can be used to run tests in the container used for deployment.
 # usage:
 #  Run all tests: ./tester.sh
 #  Run specific test: ./tester.sh path/to/test.t
@@ -41,7 +41,7 @@ if [[ ! -v CARGO_TARGET_DIR ]]; then
     exit 1
 fi
 
-export RUSTFLFAGS="-D warnings"
+export RUSTFLAGS="-D warnings"
 cargo build --workspace --exclude josh-ui --features hyper_cgi/test-server
 ( cd josh-ssh-dev-server ; go build -o "\${CARGO_TARGET_DIR}/josh-ssh-dev-server" )
 sh run-tests.sh ${TESTS}

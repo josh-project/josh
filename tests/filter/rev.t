@@ -51,7 +51,7 @@
   $ josh-filter -s ":rev(ffffffffffffffffffffffffffffffffffffffff:prefix=x/y)" --update refs/heads/filtered
   [5] :prefix=x
   [5] :prefix=y
-  ERROR: `:rev(...)` with non existing OID: ffffffffffffffffffffffffffffffffffffffff
+  ERROR: `:rev(...)` with nonexistent OID: ffffffffffffffffffffffffffffffffffffffff
   [1]
 
   $ josh-filter -s ":rev(975d4c4975912729482cc864d321c5196a969271:prefix=x/y)" --update refs/heads/filtered

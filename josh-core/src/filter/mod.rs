@@ -711,7 +711,7 @@ fn apply_to_commit2(
                 }
                 if !ok_or!(is_ancestor_of(repo, id, *filter_tip), {
                     return Err(josh_error(&format!(
-                        "`:rev(...)` with non existing OID: {}",
+                        "`:rev(...)` with nonexistent OID: {}",
                         filter_tip
                     )));
                 }) {

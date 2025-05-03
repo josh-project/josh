@@ -16,7 +16,7 @@ cargo test --all
 Due to the fact that the integration tests need additional tools and a more complex
 environment and due to the fact that the integration test are done using [cram](https://pypi.org/project/cram/).
 you will need to crate an extra environment to run these tests. To simplify the
-setup of the integration testing we have setup a [Nix Shell](https://nixos.org/manual/nix/stable/#chap-installation) environment which
+setup of the integration testing we have set up a [Nix Shell](https://nixos.org/manual/nix/stable/#chap-installation) environment which
 you can start by using the following command if you have installed the [Nix Shell](https://nixos.org/manual/nix/stable/#chap-installation).
 
 **Attention:**

@@ -46,7 +46,7 @@ pub fn list_refs(
 }
 
 pub fn remember_filter(upstream_repo: &str, filter_spec: &str) {
-    // no need to rember the nop filter since we already keep a reference to
+    // no need to remember the nop filter since we already keep a reference to
     // the unfiltered branch in refs/josh/upstream
     if filter_spec != ":/" {
         if let Ok(mut known_filters) = KNOWN_FILTERS.try_lock() {
@@ -91,7 +91,7 @@ pub fn default_from_to(
         }
     }
 
-    // no need to rember the nop filter since we already keep a reference to
+    // no need to remember the nop filter since we already keep a reference to
     // the unfiltered branch in refs/josh/upstream
     if filter_spec != ":/" {
         if let Ok(mut known_filters) = KNOWN_FILTERS.try_lock() {
