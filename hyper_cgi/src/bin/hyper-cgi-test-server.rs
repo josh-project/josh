@@ -2,7 +2,7 @@
 extern crate lazy_static;
 use core::iter;
 use core::str::from_utf8;
-use rand::{Rng, distributions::Alphanumeric, thread_rng};
+use rand::{Rng, distr::Alphanumeric, rng};
 use std::str::FromStr;
 
 use futures::FutureExt;
@@ -117,7 +117,7 @@ async fn call(
         let builder = hyper::Response::builder();
         let username = path[12..].to_owned();
         let password = iter::repeat(())
-            .map(|()| thread_rng().sample(Alphanumeric))
+            .map(|()| rng().sample(Alphanumeric))
             .take(10)
             .collect::<Vec<u8>>();
         let mut password: String = from_utf8(&password).unwrap().to_string();
