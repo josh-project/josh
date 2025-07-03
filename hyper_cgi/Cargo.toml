@@ -12,7 +12,7 @@ readme = "README.md"
 futures = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
-hyper = { version = "0.14.31", features = ["stream", "tcp", "server", "http1"] }
+hyper = { version = "0.14.31", features = ["stream", "tcp", "server", "http1", "backports", "deprecated"] }
 
 clap = { workspace = true, optional = true }
 base64 = { workspace = true, optional = true }

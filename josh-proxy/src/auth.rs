@@ -1,3 +1,4 @@
+use hyper::body::HttpBody;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 
@@ -225,7 +226,7 @@ pub async fn check_http_auth(url: &str, auth: &Handle, required: bool) -> josh::
             "check_http_auth: unauthorized"
         );
 
-        let response = hyper::body::to_bytes(resp.into_body()).await?;
+        let response = resp.into_body().collect().await?.to_bytes();
         let response = String::from_utf8_lossy(&response);
 
         tracing::event!(

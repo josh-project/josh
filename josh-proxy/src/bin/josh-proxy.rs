@@ -373,13 +373,13 @@ async fn static_paths(
 }
 
 async fn repo_update_fn(req: Request<hyper::Body>) -> josh::JoshResult<Response<hyper::Body>> {
-    let body = hyper::body::to_bytes(req.into_body()).await;
+    let body = req.into_body().collect().await;
 
     let s = tracing::span!(tracing::Level::TRACE, "repo update worker");
 
     let result = tokio::task::spawn_blocking(move || {
         let _e = s.enter();
-        let body = body?;
+        let body = body?.to_bytes();
         let buffer = std::str::from_utf8(&body)?;
         let repo_update: RepoUpdate = serde_json::from_str(buffer)?;
         let context_propagator = repo_update.context_propagator.clone();
