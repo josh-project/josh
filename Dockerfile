@@ -197,8 +197,7 @@ RUN cargo chef cook --release --workspace --recipe-path recipe.json
 COPY Cargo.toml Cargo.lock josh-ui josh-ui/
 RUN cargo build -p josh-ui --release
 COPY . .
-RUN --mount=target=.git,from=git \
-  cargo build -p josh-proxy -p josh-ssh-shell --release
+RUN cargo build -p josh-proxy -p josh-ssh-shell --release
 
 ARG ALPINE_VERSION
 FROM alpine:${ALPINE_VERSION} AS run
@@ -270,19 +269,14 @@ adduser \
 usermod -p '*' git
 EOF
 
-COPY --from=docker --link=false etc/ssh/sshd_config.template /etc/ssh/sshd_config.template
+COPY docker/etc/ssh/sshd_config.template /etc/ssh/
 
 ARG RC6_D=/etc/s6-overlay/s6-rc.d
 
-COPY --from=docker --link=false \
-  josh-auth-key \
-  josh-ensure-dir \
-  josh-ensure-mode \
-  josh-ensure-owner \
-  /opt/josh-scripts/
-COPY --from=docker --link=false s6-rc.d/. ${RC6_D}/
-COPY --from=docker --link=false finish ${RC6_D}/josh/
-COPY --from=docker --link=false finish ${RC6_D}/sshd/
+COPY docker/josh-auth-key docker/josh-ensure-* /opt/josh-scripts/
+COPY docker/s6-rc.d/. ${RC6_D}/
+COPY docker/finish ${RC6_D}/josh/
+COPY docker/finish ${RC6_D}/sshd/
 
 WORKDIR /
 ENV S6_KEEP_ENV=1
