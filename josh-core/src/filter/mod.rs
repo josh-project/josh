@@ -74,7 +74,7 @@ pub fn squash(ids: Option<&[(git2::Oid, Filter)]>) -> Filter {
     if let Some(ids) = ids {
         to_filter(Op::Squash(Some(
             ids.iter()
-                .map(|(x, y)| (LazyRef::Resolved(*x), y.clone()))
+                .map(|(x, y)| (LazyRef::Resolved(*x), *y))
                 .collect(),
         )))
     } else {
@@ -119,9 +119,9 @@ impl LazyRef {
             return Ok(LazyRef::Lazy(s));
         }
         if let Ok(oid) = git2::Oid::from_str(&s) {
-            return Ok(LazyRef::Resolved(oid));
+            Ok(LazyRef::Resolved(oid))
         } else {
-            return Err(josh_error(&format!("invalid ref: {:?}", s)));
+            Err(josh_error(&format!("invalid ref: {:?}", s)))
         }
     }
 }
@@ -308,7 +308,7 @@ fn lazy_refs2(op: &Op) -> Vec<String> {
         }
         Op::Rev(filters) => lazy_refs2(&Op::Join(filters.clone())),
         Op::Join(filters) => {
-            let mut lr = lazy_refs2(&Op::Compose(filters.values().map(|x| *x).collect()));
+            let mut lr = lazy_refs2(&Op::Compose(filters.values().copied().collect()));
             lr.extend(filters.keys().filter_map(|x| {
                 if let LazyRef::Lazy(s) = x {
                     Some(s.to_owned())
@@ -344,7 +344,7 @@ fn resolve_refs2(refs: &std::collections::HashMap<String, git2::Oid>, op: &Op) -
     match op {
         Op::Compose(filters) => Op::Compose(
             filters
-                .into_iter()
+                .iter()
                 .map(|f| resolve_refs(refs, *f))
                 .collect(),
         ),
@@ -353,7 +353,7 @@ fn resolve_refs2(refs: &std::collections::HashMap<String, git2::Oid>, op: &Op) -
         Op::Subtract(a, b) => Op::Subtract(resolve_refs(refs, *a), resolve_refs(refs, *b)),
         Op::Rev(filters) => {
             let lr = filters
-                .into_iter()
+                .iter()
                 .map(|(r, f)| {
                     let f = resolve_refs(refs, *f);
                     if let LazyRef::Lazy(s) = r {
@@ -371,7 +371,7 @@ fn resolve_refs2(refs: &std::collections::HashMap<String, git2::Oid>, op: &Op) -
         }
         Op::Join(filters) => {
             let lr = filters
-                .into_iter()
+                .iter()
                 .map(|(r, f)| {
                     let f = resolve_refs(refs, *f);
                     if let LazyRef::Lazy(s) = r {
@@ -389,16 +389,16 @@ fn resolve_refs2(refs: &std::collections::HashMap<String, git2::Oid>, op: &Op) -
         }
         Op::Squash(Some(filters)) => {
             let lr = filters
-                .into_iter()
+                .iter()
                 .map(|(r, m)| {
                     if let LazyRef::Lazy(s) = r {
                         if let Some(res) = refs.get(s) {
-                            (LazyRef::Resolved(*res), m.clone())
+                            (LazyRef::Resolved(*res), *m)
                         } else {
-                            (r.clone(), m.clone())
+                            (r.clone(), *m)
                         }
                     } else {
-                        (r.clone(), m.clone())
+                        (r.clone(), *m)
                     }
                 })
                 .collect();
@@ -550,7 +550,7 @@ pub fn apply_to_commit(
         let missing = transaction.get_missing();
 
         // Since 'missing' is sorted by nesting, the first is always the minimal
-        let minimal_nesting = missing.get(0).map(|(f, _)| nesting(*f)).unwrap_or(0);
+        let minimal_nesting = missing.first().map(|(f, _)| nesting(*f)).unwrap_or(0);
 
         for (f, i) in missing {
             if nesting(f) != minimal_nesting {
@@ -661,7 +661,7 @@ fn apply_to_commit2(
                 transaction.get(*f, commit.id());
             }
             let mut result = commit.id();
-            for (&ref combine_tip, f) in refs.iter() {
+            for (combine_tip, f) in refs.iter() {
                 if let LazyRef::Resolved(combine_tip) = combine_tip {
                     let old = some_or!(transaction.get(*f, commit.id()), {
                         return Ok(None);
@@ -700,7 +700,7 @@ fn apply_to_commit2(
 
             let id = commit.id();
 
-            for (&ref filter_tip, startfilter) in filters.iter() {
+            for (filter_tip, startfilter) in filters.iter() {
                 let filter_tip = if let LazyRef::Resolved(filter_tip) = filter_tip {
                     filter_tip
                 } else {
@@ -765,8 +765,8 @@ fn apply_to_commit2(
                 RewriteData {
                     tree: rc.tree()?,
                     message: rc.message_raw().map(|x| x.to_owned()),
-                    author: author,
-                    committer: committer,
+                    author,
+                    committer,
                 }
                 //commit.tree()?
             } else {
@@ -845,7 +845,7 @@ fn apply_to_commit2(
 
             if let Some((redirect, _)) = resolve_workspace_redirect(repo, &commit.tree()?, ws_path)
             {
-                if let Some(r) = apply_to_commit2(&to_op(redirect), &commit, transaction)? {
+                if let Some(r) = apply_to_commit2(&to_op(redirect), commit, transaction)? {
                     transaction.insert(filter, commit.id(), r, true);
                     return Ok(Some(r));
                 } else {
@@ -885,7 +885,7 @@ fn apply_to_commit2(
 
             let filtered_parent_ids = normal_parents
                 .into_iter()
-                .chain(extra_parents.into_iter())
+                .chain(extra_parents)
                 .collect();
 
             let filtered_tree = apply(transaction, filter, commit.tree()?)?;
@@ -998,7 +998,7 @@ fn apply2<'a>(
     let repo = transaction.repo();
     match op {
         Op::Nop => Ok(tree),
-        Op::Empty => return Ok(tree::empty(repo)),
+        Op::Empty => Ok(tree::empty(repo)),
         Op::Fold => Ok(tree),
         Op::Squash(None) => Ok(tree),
         Op::Message(_) => Ok(tree),
@@ -1041,10 +1041,10 @@ fn apply2<'a>(
         }
 
         Op::Subdir(path) => {
-            return Ok(tree
+            Ok(tree
                 .get_path(path)
                 .and_then(|x| repo.find_tree(x.id()))
-                .unwrap_or_else(|_| tree::empty(repo)));
+                .unwrap_or_else(|_| tree::empty(repo)))
         }
         Op::Prefix(path) => tree::insert(repo, &tree::empty(repo), path, tree.id(), 0o0040000),
 
@@ -1086,7 +1086,7 @@ fn apply2<'a>(
                 .iter()
                 .map(|f| apply(transaction, *f, tree.clone()))
                 .collect::<JoshResult<_>>()?;
-            let filtered: Vec<_> = filters.iter().zip(filtered.into_iter()).collect();
+            let filtered: Vec<_> = filters.iter().zip(filtered).collect();
             tree::compose(transaction, filtered)
         }
 
@@ -1152,7 +1152,7 @@ fn unapply_workspace<'a>(
     tree: git2::Tree<'a>,
     parent_tree: git2::Tree<'a>,
 ) -> JoshResult<Option<git2::Tree<'a>>> {
-    return match op {
+    match op {
         Op::Workspace(path) => {
             let tree = pre_process_tree(transaction.repo(), tree)?;
             let workspace = get_workspace(transaction.repo(), &tree, Path::new(""));
@@ -1174,10 +1174,10 @@ fn unapply_workspace<'a>(
                 stripped,
             )?)?;
 
-            return Ok(Some(result));
+            Ok(Some(result))
         }
         _ => Ok(None),
-    };
+    }
 }
 
 fn pre_process_tree<'a>(
@@ -1317,6 +1317,14 @@ fn is_ancestor_of(
     Ok(ancestors.contains(&commit))
 }
 
+pub fn is_linear(filter: Filter) -> bool {
+    match to_op(filter) {
+        Op::Linear => true,
+        Op::Chain(a, b) => is_linear(a) || is_linear(b),
+        _ => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1343,13 +1351,5 @@ mod tests {
             PathBuf::from("c/a"),
             dst_path(parse(":[a=:/x::y/,a/b=:/i]:prefix=c").unwrap())
         );
-    }
-}
-
-pub fn is_linear(filter: Filter) -> bool {
-    match to_op(filter) {
-        Op::Linear => true,
-        Op::Chain(a, b) => is_linear(a) || is_linear(b),
-        _ => false,
     }
 }

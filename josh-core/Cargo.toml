@@ -6,7 +6,7 @@ authors = ["Christian Schilling <initcrash@gmail.com>"]
 license-file = "LICENSE"
 description = "GIT virtualization proxy"
 keywords = ["git", "monorepo", "workflow", "scm"]
-readme = "README.md"
+readme = "../README.md"
 edition = "2024"
 
 [dependencies]

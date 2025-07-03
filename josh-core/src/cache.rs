@@ -175,7 +175,7 @@ impl Transaction {
         let mut t2 = self.t2.borrow_mut();
         t2.apply_map
             .entry(filter.id())
-            .or_insert_with(HashMap::new)
+            .or_default()
             .insert(from, to);
     }
 
@@ -194,7 +194,7 @@ impl Transaction {
 
     pub fn get_subtract(&self, from: (git2::Oid, git2::Oid)) -> Option<git2::Oid> {
         let t2 = self.t2.borrow_mut();
-        return t2.subtract_map.get(&from).cloned();
+        t2.subtract_map.get(&from).cloned()
     }
 
     pub fn insert_overlay(&self, from: (git2::Oid, git2::Oid), to: git2::Oid) {
@@ -204,14 +204,14 @@ impl Transaction {
 
     pub fn get_overlay(&self, from: (git2::Oid, git2::Oid)) -> Option<git2::Oid> {
         let t2 = self.t2.borrow_mut();
-        return t2.overlay_map.get(&from).cloned();
+        t2.overlay_map.get(&from).cloned()
     }
 
     pub fn insert_unapply(&self, filter: filter::Filter, from: git2::Oid, to: git2::Oid) {
         let mut t2 = self.t2.borrow_mut();
         t2.unapply_map
             .entry(filter.id())
-            .or_insert_with(HashMap::new)
+            .or_default()
             .insert(from, to);
     }
 
@@ -292,7 +292,7 @@ impl Transaction {
             .lock()
             .unwrap()
             .entry(filter.id())
-            .or_insert_with(HashMap::new)
+            .or_default()
             .insert(from, to);
     }
 
@@ -319,7 +319,7 @@ impl Transaction {
         let mut t2 = self.t2.borrow_mut();
         t2.commit_map
             .entry(filter.id())
-            .or_insert_with(HashMap::new)
+            .or_default()
             .insert(from, to);
 
         // In addition to commits that are explicitly requested to be stored, also store

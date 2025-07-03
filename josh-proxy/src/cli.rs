@@ -10,7 +10,7 @@ fn parse_remote(s: &str) -> Result<Remote, &'static str> {
             Ok(Remote::Http(s.to_string()))
         }
         s if s.starts_with("ssh://") => Ok(Remote::Ssh(s.to_string())),
-        _ => return Err("unsupported scheme"),
+        _ => Err("unsupported scheme"),
     }
 }
 

@@ -5,7 +5,7 @@ edition = "2024"
 keywords = ["git", "monorepo", "workflow", "scm"]
 license-file = "LICENSE"
 name = "josh-proxy"
-readme = "README.md"
+readme = "../README.md"
 repository = "https://github.com/josh-project/josh"
 version = "22.4.15"
 

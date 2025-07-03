@@ -131,7 +131,7 @@ pub async fn check_http_auth(url: &str, auth: &Handle, required: bool) -> josh::
         return Ok(false);
     }
 
-    let group_key = AuthTimersGroupKey::new(url, &auth);
+    let group_key = AuthTimersGroupKey::new(url, auth);
     let auth_timers = AUTH_TIMERS
         .lock()?
         .entry(group_key.clone())

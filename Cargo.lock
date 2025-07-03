@@ -2029,9 +2029,7 @@ dependencies = [
  "josh-templates",
  "juniper",
  "rs_tracing",
- "serde",
  "serde_json",
- "serde_yaml",
 ]
 
 [[package]]

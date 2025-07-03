@@ -174,7 +174,7 @@ async fn fetch_needed(
         _ => (),
     };
 
-    return Ok(true);
+    Ok(true)
 }
 
 #[tracing::instrument(skip(service))]
@@ -411,12 +411,12 @@ fn resolve_ref(
         .iter()
         .collect::<PathBuf>();
 
-    Ok(transaction
+    transaction
         .repo()
         .find_reference(josh_name.to_str().unwrap())
         .map_err(|e| josh_error(&format!("Could not find ref: {}", e)))?
         .target()
-        .ok_or(josh_error("Could not resolve ref"))?)
+        .ok_or(josh_error("Could not resolve ref"))
 }
 
 #[tracing::instrument(skip(service))]
@@ -470,7 +470,7 @@ async fn do_filter(
             HeadRef::Explicit(ref_value)
                 if ref_value.starts_with("refs/") || ref_value == "HEAD" =>
             {
-                let object = resolve_ref(&transaction, &meta.config.repo, &ref_value)?;
+                let object = resolve_ref(&transaction, &meta.config.repo, ref_value)?;
                 let list = vec![(ref_value.clone(), object)];
 
                 (list, ref_value.clone())
@@ -478,7 +478,7 @@ async fn do_filter(
             HeadRef::Explicit(ref_value) => {
                 // When it's not something starting with refs/ or HEAD, it's
                 // probably sha1
-                let list = vec![(ref_value.to_string(), git2::Oid::from_str(&ref_value)?)];
+                let list = vec![(ref_value.to_string(), git2::Oid::from_str(ref_value)?)];
 
                 let synthetic_ref = format!("refs/heads/_{}", ref_value);
                 (list, synthetic_ref)
@@ -707,7 +707,7 @@ async fn ssh_list_refs(
         None => vec!["HEAD"],
     };
 
-    let ls_remote = vec!["git", "ls-remote", url];
+    let ls_remote = ["git", "ls-remote", url];
     let command = ls_remote
         .iter()
         .chain(refs.iter())
@@ -926,7 +926,7 @@ impl HeadRef {
     // Sometimes we don't care about whether it's implicit or explicit
     fn get(&self) -> &str {
         match self {
-            HeadRef::Explicit(r) => &r,
+            HeadRef::Explicit(r) => r,
             HeadRef::Implicit => "HEAD",
         }
     }
@@ -934,7 +934,7 @@ impl HeadRef {
 
 fn head_ref_or_default(head_ref: &str) -> HeadRef {
     let result = head_ref
-        .trim_start_matches(|char| char == '@' || char == '^')
+        .trim_start_matches(['@', '^'])
         .to_owned();
 
     if result.is_empty() {
@@ -1623,9 +1623,8 @@ async fn run_proxy() -> josh::JoshResult<i32> {
     init_trace();
 
     let addr = format!("[::]:{}", ARGS.port).parse()?;
-    let upstream = make_upstream(&ARGS.remote).map_err(|e| {
-        eprintln!("Upstream parsing error: {}", &e);
-        e
+    let upstream = make_upstream(&ARGS.remote).inspect_err(|e| {
+        eprintln!("Upstream parsing error: {}", e);
     })?;
 
     let local = std::path::PathBuf::from(&ARGS.local.as_ref().unwrap());

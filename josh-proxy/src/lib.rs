@@ -112,6 +112,7 @@ pub struct RepoUpdate {
 
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
 #[serde(default)]
+#[derive(Default)]
 pub struct PushOptions {
     pub merge: bool,
     pub create: bool,
@@ -120,17 +121,6 @@ pub struct PushOptions {
     pub author: Option<String>,
 }
 
-impl Default for PushOptions {
-    fn default() -> Self {
-        PushOptions {
-            merge: false,
-            create: false,
-            force: false,
-            base: None,
-            author: None,
-        }
-    }
-}
 
 pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> {
     let push_options_path = std::path::PathBuf::from(&repo_update.git_dir)
@@ -208,7 +198,7 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
             {
                 full_path_base_refname
             } else {
-                transaction_mirror.refname(&base)
+                transaction_mirror.refname(base)
             }
         } else {
             transaction_mirror.refname(&baseref)
@@ -254,7 +244,7 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
         };
 
         let mut changes =
-            if push_mode == PushMode::Stack || push_mode == PushMode::Split || author != "" {
+            if push_mode == PushMode::Stack || push_mode == PushMode::Split || !author.is_empty() {
                 Some(vec![])
             } else {
                 None
@@ -522,7 +512,7 @@ pub fn push_head_url(
 fn create_repo_base(path: &PathBuf) -> josh::JoshResult<josh::shell::Shell> {
     std::fs::create_dir_all(path).expect("can't create_dir_all");
 
-    if !gix::open(path).is_ok() {
+    if gix::open(path).is_err() {
         gix::init_bare(path)?;
     }
 
@@ -777,7 +767,7 @@ pub fn fetch_refs_from_url(
     let cmd = ["git", "fetch", "--prune", "--no-tags", url]
         .map(str::to_owned)
         .to_vec();
-    let cmd = cmd.into_iter().chain(specs.into_iter()).collect::<Vec<_>>();
+    let cmd = cmd.into_iter().chain(specs).collect::<Vec<_>>();
     let cmd = cmd.iter().map(|s| s as &str).collect::<Vec<&str>>();
 
     tracing::info!("fetch_refs_from_url {:?} {:?} {:?}", cmd, path, "");

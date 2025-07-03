@@ -739,11 +739,11 @@ pub struct Document {
 impl Document {
     fn pointer(&self, pointer: Option<String>) -> serde_json::Value {
         if let Some(pointer) = pointer {
-            return self
+            self
                 .value
                 .pointer(&pointer)
                 .unwrap_or(&json!({}))
-                .to_owned();
+                .to_owned()
         } else {
             self.value.clone()
         }
@@ -900,7 +900,7 @@ impl RevMut {
             to_push.insert((filter_commit.id(), target, repo));
         }
 
-        return Ok(true);
+        Ok(true)
     }
 
     fn meta(&self, topic: String, add: Vec<MarkersInput>, context: &Context) -> FieldResult<bool> {

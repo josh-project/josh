@@ -110,13 +110,13 @@ const FRAGMENT: &percent_encoding::AsciiSet = &percent_encoding::CONTROLS
     .add(b'\\');
 
 pub fn to_ns(path: &str) -> String {
-    return percent_encoding::utf8_percent_encode(path.trim_matches('/'), FRAGMENT).to_string();
+    percent_encoding::utf8_percent_encode(path.trim_matches('/'), FRAGMENT).to_string()
 }
 
 pub fn from_ns(path: &str) -> String {
-    return percent_encoding::percent_decode_str(path.trim_matches('/'))
+    percent_encoding::percent_decode_str(path.trim_matches('/'))
         .decode_utf8_lossy()
-        .to_string();
+        .to_string()
 }
 
 pub fn to_filtered_ref(upstream_repo: &str, filter_spec: &str) -> String {
@@ -377,7 +377,7 @@ pub fn get_acl(
     let groups: Groups = serde_yaml::from_str(&groups)
         .map_err(|err| josh_error(format!("failed to parse groups file: {}", err).as_str()))?;
 
-    return users
+    users
         .get(user)
         .and_then(|u| {
             let mut whitelist = filter::empty();
@@ -406,5 +406,5 @@ pub fn get_acl(
             println!("w: {:?}, b: {:?}", whitelist, blacklist);
             Some(Ok((whitelist, blacklist)))
         })
-        .unwrap_or_else(|| Ok((filter::empty(), filter::nop())));
+        .unwrap_or_else(|| Ok((filter::empty(), filter::nop())))
 }
