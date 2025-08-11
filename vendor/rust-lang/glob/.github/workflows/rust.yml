@@ -54,8 +54,6 @@ jobs:
         rustup default beta
         rustup component add clippy
         rustup update --no-self-update
-
-    # FIXME(msrv): suggestions do not work in 1.23, nor dows `#![allow(clippy::...)]`
     - run: cargo clippy --all -- -Aclippy::while_let_loop
 
   msrv:
@@ -67,7 +65,7 @@ jobs:
 
     - name: Update rust
       run: |
-        rustup default 1.23.0
+        rustup default 1.63.0
         rustup update --no-self-update
 
     - run: cargo build

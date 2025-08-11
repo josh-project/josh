@@ -61,6 +61,7 @@
     html_root_url = "https://docs.rs/glob/0.3.1"
 )]
 #![deny(missing_docs)]
+#![allow(clippy::while_let_loop)]
 
 #[cfg(test)]
 #[macro_use]
@@ -390,7 +391,7 @@ impl Iterator for Paths {
         if let Some(scope) = self.scope.take() {
             if !self.dir_patterns.is_empty() {
                 // Shouldn't happen, but we're using -1 as a special index.
-                assert!(self.dir_patterns.len() < std::usize::MAX);
+                assert!(self.dir_patterns.len() < usize::MAX);
 
                 fill_todo(&mut self.todo, &self.dir_patterns, 0, &scope, self.options);
             }
@@ -408,7 +409,7 @@ impl Iterator for Paths {
 
             // idx -1: was already checked by fill_todo, maybe path was '.' or
             // '..' that we can't match here because of normalization.
-            if idx == std::usize::MAX {
+            if idx == usize::MAX {
                 if self.require_dir && !path.is_directory {
                     continue;
                 }
@@ -895,7 +896,7 @@ fn fill_todo(
             // We know it's good, so don't make the iterator match this path
             // against the pattern again. In particular, it can't match
             // . or .. globs since these never show up as path components.
-            todo.push(Ok((next_path, std::usize::MAX)));
+            todo.push(Ok((next_path, usize::MAX)));
         } else {
             fill_todo(todo, patterns, idx + 1, &next_path, options);
         }
