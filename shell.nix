@@ -1,16 +1,14 @@
-with (import <nixpkgs> {});
-
 let
-  extra_deps = if stdenv.isDarwin then [
-    darwin.apple_sdk.frameworks.Security
-  ] else [];
-  pkgs = import ( fetchTarball {
-      name = "nixos-21.11";
-      url =  "https://github.com/NixOS/nixpkgs/archive/refs/tags/21.11.tar.gz";
-      # Hash obtained using `nix-prefetch-url --unpack <url>`
-      sha256 = "162dywda2dvfj1248afxc45kcrg83appjd0nmdb541hl7rnncf02";
+  pkgs = import (fetchTarball {
+    name = "nixos-25.05";
+    url = "https://github.com/NixOS/nixpkgs/archive/refs/tags/25.05.tar.gz";
+    sha256 = "1915r28xc4znrh2vf4rrjnxldw2imysz819gzhk9qlrkqanmfsxd";
   }) {};
-  rust_channel = nixpkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain;
+  
+  pythonWithPryskDeps = pkgs.python3.withPackages (ps: with ps; [
+    pip
+    setuptools
+  ]);
 in
    pkgs.mkShell {
      buildInputs = [
@@ -22,10 +20,30 @@ in
        pkgs.rustfmt
        pkgs.libiconv
        pkgs.openssl.dev
-       pkgs.pkgconfig
-       pkgs.python39Packages.cram
-       pkgs.nodejs-17_x
-     ] ++ extra_deps;
+       pkgs.pkg-config
+       pkgs.nodejs
+       pythonWithPryskDeps
+     ];
      RUST_BACKTRACE = 1;
+     
+     shellHook = ''
+       echo "Welcome to Josh development environment!"
+       echo "Rust version: $(rustc --version)"
+       echo "Cargo version: $(cargo --version)"
+       
+       # Install prysk using pip in a virtual environment
+       if [ ! -d ".venv" ]; then
+         echo "Creating Python virtual environment..."
+         python3 -m venv .venv
+       fi
+       
+       source .venv/bin/activate
+       
+       # Install or upgrade prysk
+       echo "Installing/updating prysk..."
+       pip install --upgrade pip
+       pip install --upgrade prysk
+       
+       echo "Prysk installed: $(prysk --version 2>/dev/null || echo 'Run prysk --help for usage')"
+     '';
    }
-
