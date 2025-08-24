@@ -2,6 +2,7 @@ use std::{error::Error, fmt, string::FromUtf8Error, sync::Arc};
 
 use hyper::{
     Body, Method, Request, Response, StatusCode,
+    body::HttpBody,
     header::{self, HeaderValue},
 };
 use juniper::{
@@ -91,9 +92,11 @@ fn parse_get_req<S: ScalarValue>(
 async fn parse_post_json_req<S: ScalarValue>(
     body: Body,
 ) -> Result<GraphQLBatchRequest<S>, GraphQLRequestError> {
-    let chunk = hyper::body::to_bytes(body)
-        .await
-        .map_err(GraphQLRequestError::BodyHyper)?;
+    let chunk = body
+        .map_err(GraphQLRequestError::BodyHyper)
+        .collect()
+        .await?
+        .to_bytes();
 
     let input = String::from_utf8(chunk.iter().cloned().collect())
         .map_err(GraphQLRequestError::BodyUtf8)?;
@@ -105,9 +108,11 @@ async fn parse_post_json_req<S: ScalarValue>(
 async fn parse_post_graphql_req<S: ScalarValue>(
     body: Body,
 ) -> Result<GraphQLBatchRequest<S>, GraphQLRequestError> {
-    let chunk = hyper::body::to_bytes(body)
-        .await
-        .map_err(GraphQLRequestError::BodyHyper)?;
+    let chunk = body
+        .map_err(GraphQLRequestError::BodyHyper)
+        .collect()
+        .await?
+        .to_bytes();
 
     let query = String::from_utf8(chunk.iter().cloned().collect())
         .map_err(GraphQLRequestError::BodyUtf8)?;

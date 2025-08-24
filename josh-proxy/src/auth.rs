@@ -1,3 +1,4 @@
+use hyper::body::HttpBody;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 
@@ -130,7 +131,7 @@ pub async fn check_http_auth(url: &str, auth: &Handle, required: bool) -> josh::
         return Ok(false);
     }
 
-    let group_key = AuthTimersGroupKey::new(url, &auth);
+    let group_key = AuthTimersGroupKey::new(url, auth);
     let auth_timers = AUTH_TIMERS
         .lock()?
         .entry(group_key.clone())
@@ -225,7 +226,7 @@ pub async fn check_http_auth(url: &str, auth: &Handle, required: bool) -> josh::
             "check_http_auth: unauthorized"
         );
 
-        let response = hyper::body::to_bytes(resp.into_body()).await?;
+        let response = resp.into_body().collect().await?.to_bytes();
         let response = String::from_utf8_lossy(&response);
 
         tracing::event!(

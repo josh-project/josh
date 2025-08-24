@@ -1,6 +1,4 @@
-.git
-lfs-content
-lfs.db
+.*
 Procfile
-Readme.md
-TODO
+*.md
+Dockerfile

@@ -247,7 +247,7 @@ pub fn rewrite_commit(
     let mut b = vec![];
     gix_object::WriteTo::write_to(&commit, &mut b)?;
 
-    return Ok(odb.write(git2::ObjectType::Commit, &b)?);
+    Ok(odb.write(git2::ObjectType::Commit, &b)?)
 }
 
 // Given an OID of an unfiltered commit and a filter,
@@ -687,8 +687,8 @@ pub fn remove_commit_signature<'a>(
     Ok(r)
 }
 
-pub fn drop_commit<'a>(
-    original_commit: &'a git2::Commit,
+pub fn drop_commit(
+    original_commit: &git2::Commit,
     filtered_parent_ids: Vec<git2::Oid>,
     transaction: &cache::Transaction,
     filter: filter::Filter,
@@ -704,8 +704,8 @@ pub fn drop_commit<'a>(
     Ok(r)
 }
 
-pub fn create_filtered_commit<'a>(
-    original_commit: &'a git2::Commit,
+pub fn create_filtered_commit(
+    original_commit: &git2::Commit,
     filtered_parent_ids: Vec<git2::Oid>,
     rewrite_data: RewriteData,
     transaction: &cache::Transaction,

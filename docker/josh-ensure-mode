@@ -15,7 +15,7 @@ backtick CURRENT_MODE { stat -c "%a" ${path} }
 importas current_mode CURRENT_MODE
 foreground
 {
-  if { s6-test ${mode} != ${current_mode} }
+  if { eltest ${mode} != ${current_mode} }
   chmod ${mode} ${path}
 }
 $@

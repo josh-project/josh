@@ -17,3 +17,4 @@
 !josh-ui/src
 !lfs-test-server
 !run-josh.sh
+!docker/

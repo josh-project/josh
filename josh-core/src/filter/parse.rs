@@ -192,13 +192,11 @@ fn parse_group(filter_spec: &str) -> JoshResult<Vec<Filter>> {
 
             Ok(filters)
         }
-        Err(r) => {
-            return Err(josh_error(&format!(
-                "Invalid workspace:\n----\n{}\n\n{}\n----",
-                r.to_string().replace('␊', ""),
-                filter_spec
-            )));
-        }
+        Err(r) => Err(josh_error(&format!(
+            "Invalid workspace:\n----\n{}\n\n{}\n----",
+            r.to_string().replace('␊', ""),
+            filter_spec
+        ))),
     }
 }
 
@@ -222,13 +220,11 @@ fn parse_workspace(filter_spec: &str) -> JoshResult<Vec<Filter>> {
             }
             Err(josh_error("invalid workspace file"))
         }
-        Err(r) => {
-            return Err(josh_error(&format!(
-                "Invalid workspace:\n----\n{}\n\n{}\n----",
-                r.to_string().replace('␊', ""),
-                filter_spec
-            )));
-        }
+        Err(r) => Err(josh_error(&format!(
+            "Invalid workspace:\n----\n{}\n\n{}\n----",
+            r.to_string().replace('␊', ""),
+            filter_spec
+        ))),
     }
 }
 
@@ -299,10 +295,10 @@ pub fn get_comments(filter_spec: &str) -> JoshResult<String> {
         }
     }
 
-    return Err(josh_error(&format!(
+    Err(josh_error(&format!(
         "Invalid workspace:\n----\n{}\n----",
         filter_spec
-    )));
+    )))
 }
 
 #[derive(pest_derive::Parser)]

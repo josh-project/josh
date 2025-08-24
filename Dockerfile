@@ -1,6 +1,6 @@
-# syntax=docker/dockerfile:1.8@sha256:d6d396f3780b1dd56a3acbc975f57bd2fc501989b50164c41387c42d04e780d0
+# syntax=docker/dockerfile:1.15.1@sha256:9857836c9ee4268391bb5b09f9f157f3c91bb15821bb77969642813b0d00518d
 
-ARG ALPINE_VERSION=3.21
+ARG ALPINE_VERSION=3.22
 ARG ARCH=${TARGETARCH}
 
 FROM alpine:${ALPINE_VERSION} AS rust-base
@@ -14,10 +14,10 @@ ENV PATH=/usr/local/cargo/bin:${PATH}
 ARG ARCH
 
 # Update check: https://github.com/rust-lang/rustup/tags
-ARG RUSTUP_VERSION=1.27.1
+ARG RUSTUP_VERSION=1.28.2
 
 # Update check: https://github.com/rust-lang/rust/tags
-ARG RUST_VERSION=1.85.0
+ARG RUST_VERSION=1.89.0
 
 # https://github.com/sfackler/rust-openssl/issues/1462
 ENV RUSTFLAGS="-Ctarget-feature=-crt-static"
@@ -53,7 +53,7 @@ EOF
 FROM rust-base AS dev-planner
 
 # Update check: https://github.com/LukeMathWalker/cargo-chef/releases
-RUN cargo install --version 0.1.71 cargo-chef
+RUN cargo install --version 0.1.72 cargo-chef
 
 WORKDIR /usr/src/josh
 COPY . .
@@ -64,14 +64,16 @@ RUN cargo chef prepare --recipe-path recipe.json
 FROM rust-base AS dev
 
 RUN apk add --no-cache \
+    zlib-static \
     zlib-dev \
+    openssl-libs-static \
     openssl-dev \
     curl-dev
 
 WORKDIR /usr/src/josh
 RUN rustup component add rustfmt
-RUN cargo install --version 0.1.71 cargo-chef &&\
-    cargo install --verbose --version 0.10.0 graphql_client_cli
+RUN cargo install --version 0.1.72 cargo-chef &&\
+    cargo install --verbose --version 0.14.0 graphql_client_cli
 
 RUN apk add --no-cache \
     bash \
@@ -91,7 +93,7 @@ RUN apk add --no-cache \
     psmisc
 
 # Update check: https://github.com/git/git/tags
-ARG GIT_VERSION=2.45.2
+ARG GIT_VERSION=2.50.0
 ENV PATH=${PATH}:/opt/git-install/bin
 WORKDIR /usr/src/git
 RUN <<EOF
@@ -224,7 +226,7 @@ COPY --from=build --link=false /opt/cargo-target/release/josh-proxy /usr/bin/
 COPY --from=build --link=false /opt/cargo-target/release/josh-ssh-shell /usr/bin/
 COPY --from=build --link=false /usr/src/josh/static/ /josh/static/
 
-ARG S6_OVERLAY_VERSION=3.1.2.1
+ARG S6_OVERLAY_VERSION=3.2.1.0
 ARG ARCH
 RUN <<EOF
 set -eux
@@ -270,22 +272,17 @@ adduser \
 usermod -p '*' git
 EOF
 
-COPY --from=docker --link=false etc/ssh/sshd_config.template /etc/ssh/sshd_config.template
+COPY docker/etc/ssh/sshd_config.template /etc/ssh/
 
 ARG RC6_D=/etc/s6-overlay/s6-rc.d
 
-COPY --from=docker --link=false \
-  josh-auth-key \
-  josh-ensure-dir \
-  josh-ensure-mode \
-  josh-ensure-owner \
-  /opt/josh-scripts/
-COPY --from=docker --link=false s6-rc.d/. ${RC6_D}/
-COPY --from=docker --link=false finish ${RC6_D}/josh/
-COPY --from=docker --link=false finish ${RC6_D}/sshd/
+COPY docker/josh-auth-key docker/josh-ensure-* /opt/josh-scripts/
+COPY docker/s6-rc.d/. ${RC6_D}/
+COPY docker/finish ${RC6_D}/josh/
+COPY docker/finish ${RC6_D}/sshd/
 
 WORKDIR /
 ENV S6_KEEP_ENV=1
 ENV S6_BEHAVIOUR_IF_STAGE2_FAILS=2
-ENV PATH=${PATH}:/opt/josh-scripts
+ENV PATH=${PATH}:/command:/opt/josh-scripts
 ENTRYPOINT ["/init"]

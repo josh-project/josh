@@ -27,7 +27,7 @@ pub fn list_refs(
     ]
     .iter()
     {
-        for reference in repo.references_glob(&glob)? {
+        for reference in repo.references_glob(glob)? {
             let reference =
                 reference.map_err(|e| josh_error(&format!("unable to obtain reference: {}", e)))?;
 

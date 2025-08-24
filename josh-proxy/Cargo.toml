@@ -5,13 +5,13 @@ edition = "2024"
 keywords = ["git", "monorepo", "workflow", "scm"]
 license-file = "LICENSE"
 name = "josh-proxy"
-readme = "README.md"
+readme = "../README.md"
 repository = "https://github.com/josh-project/josh"
 version = "22.4.15"
 
 [dependencies]
 sha2 = "0.10.8"
-lru = "0.13.0"
+lru = "0.16.0"
 hex = { workspace = true }
 base64 = { workspace = true }
 clap = { workspace = true }

@@ -197,7 +197,7 @@
    * branch            b3be5ad252e0f493a404a8785653065d7e677f21 -> FETCH_HEAD
   HEAD is now at b3be5ad add ws2
   Pushing to http://localhost:8002/real_repo.git:workspace=ws2.git
-  POST git-receive-pack (424 bytes)
+  POST git-receive-pack (430 bytes)
   remote: josh-proxy: pre-receive hook        
   remote: upstream: response status: 200 OK        
   remote: upstream: response body:        
@@ -215,7 +215,7 @@
   $ git sync
   ! refs/heads/master -> refs/heads/master
   Pushing to http://localhost:8002/real_repo.git:workspace=ws2.git
-  POST git-receive-pack (487 bytes)
+  POST git-receive-pack (493 bytes)
   remote: josh-proxy: pre-receive hook        
   remote: upstream: response status: 500 Internal Server Error        
   remote: upstream: response body:        

@@ -922,7 +922,7 @@ fn populate(
 pub fn compose_fast(
     transaction: &cache::Transaction,
     trees: Vec<git2::Oid>,
-) -> JoshResult<git2::Tree> {
+) -> JoshResult<git2::Tree<'_>> {
     rs_tracing::trace_scoped!("compose_fast");
     let repo = transaction.repo();
     let mut result = empty_id();
@@ -990,6 +990,6 @@ pub fn empty_id() -> git2::Oid {
     git2::Oid::from_str("4b825dc642cb6eb9a060e54bf8d69288fbee4904").unwrap()
 }
 
-pub fn empty(repo: &git2::Repository) -> git2::Tree {
+pub fn empty(repo: &git2::Repository) -> git2::Tree<'_> {
     repo.find_tree(empty_id()).unwrap()
 }

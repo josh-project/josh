@@ -1,8 +1,37 @@
 version: 2
 updates:
 - package-ecosystem: cargo
+  directories:
+    - "/"
+    - "hyper_cgi"
+    - "josh-core"
+    - "josh-filter"
+    - "josh-graphql"
+    - "josh-proxy"
+    - "josh-rpc"
+    - "josh-ssh-shell"
+    - "josh-templates"
+    - "josh-ui"
+  schedule:
+    interval: weekly
+  open-pull-requests-limit: 10
+- package-ecosystem: npm
+  directory: "josh-ui"
+  schedule:
+    interval: weekly
+- package-ecosystem: gomod
+  directories:
+    - "josh-ssh-dev-server"
+    - "lfs-test-server"
+  schedule:
+    interval: weekly
+- package-ecosystem: docker
+  directories:
+    - "/"
+    - "lfs-test-server"
+  schedule:
+    interval: weekly
+- package-ecosystem: github-actions
   directory: "/"
   schedule:
-    interval: daily
-    time: "04:00"
-  open-pull-requests-limit: 10
+    interval: weekly

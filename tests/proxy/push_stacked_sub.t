@@ -112,7 +112,7 @@
   error: pathspec 'heads/master/josh@example.com' did not match any file(s) known to git
   [1]
   $ git log --decorate --graph --pretty="%s %d"
-  * add file1  (HEAD -> master, origin/master)
+  * add file1  (HEAD -> master, origin/master, origin/HEAD)
 
   $ tree
   .

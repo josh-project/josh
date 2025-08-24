@@ -50,6 +50,7 @@
 
   $ git branch -a
   * master
+    remotes/libs/HEAD -> libs/foo
     remotes/libs/foo
     remotes/libs/master
 
@@ -68,11 +69,12 @@
   |           `-- master
   |-- remotes
   |   `-- libs
+  |       |-- HEAD
   |       |-- foo
   |       `-- master
   `-- tags
   
-  8 directories, 5 files
+  8 directories, 6 files
 
   $ git read-tree HEAD josh/filter/libs/master josh/filter/libs/foo
   $ git commit -m "sync"

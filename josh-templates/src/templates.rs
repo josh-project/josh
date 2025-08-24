@@ -104,13 +104,13 @@ impl handlebars::HelperDef for GraphQLHelper {
         _: &handlebars::Context,
         rc: &mut handlebars::RenderContext,
     ) -> Result<handlebars::ScopedJson<'rc>, handlebars::RenderError> {
-        return Ok(handlebars::ScopedJson::Derived(
+        Ok(handlebars::ScopedJson::Derived(
             self.josh_helper(
                 h.hash(),
                 rc.get_current_template_name().unwrap_or(&"/".to_owned()),
             )
             .map_err(|e| handlebars::RenderErrorReason::Other(format!("{}", e)))?,
-        ));
+        ))
     }
 }
 
@@ -125,7 +125,7 @@ pub fn render(
     query_and_params: &str,
     split_odb: bool,
 ) -> JoshResult<Option<(String, std::collections::BTreeMap<String, String>)>> {
-    let params = form_urlencoded::parse(&query_and_params.as_bytes())
+    let params = form_urlencoded::parse(query_and_params.as_bytes())
         .map(|(x, y)| (x.to_string(), y.to_string()))
         .collect::<std::collections::BTreeMap<_, _>>();
     let (cmd, path) = if let Some(path) = params.get("get") {
@@ -170,7 +170,7 @@ pub fn render(
                 None,
             ) {
                 to.repo().odb()?.add_disk_alternate(
-                    &transaction
+                    transaction
                         .repo()
                         .path()
                         .parent()
@@ -182,7 +182,7 @@ pub fn render(
                 )?;
                 (
                     to,
-                    cache::Transaction::open(&transaction.repo().path(), None)?,
+                    cache::Transaction::open(transaction.repo().path(), None)?,
                 )
             } else {
                 (

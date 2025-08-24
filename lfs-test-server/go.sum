@@ -1,8 +1,8 @@
-github.com/boltdb/bolt v0.0.0-20150329202000-ee954308d641 h1:HzvhaGdNSavlePHbf8gWLk+4PScN+/BP3n+M7CYi6Jg=
-github.com/boltdb/bolt v0.0.0-20150329202000-ee954308d641/go.mod h1:clJnj/oiGkjum5o1McbSZDSLxVThjynRyGBgiAx27Ps=
 github.com/boltdb/bolt v1.3.1 h1:JQmyP4ZBrce+ZQu0dY660FMfatumYDLun9hBCUVIkF4=
 github.com/boltdb/bolt v1.3.1/go.mod h1:clJnj/oiGkjum5o1McbSZDSLxVThjynRyGBgiAx27Ps=
-github.com/gorilla/context v0.0.0-20141217160251-215affda49ad h1:wJwKN6X6iRRVnjdBgrkWjhBOvYm7yw5boqXwFUnBtbE=
-github.com/gorilla/context v0.0.0-20141217160251-215affda49ad/go.mod h1:kBGZzfjB9CEq2AlWe17Uuf7NDRt0dE0s8S51q0aT7Yg=
-github.com/gorilla/mux v0.0.0-20140926153814-e444e69cbd2e h1:nH09qCdJVZxw0nRVfm14xjXkw2puLyLPN56n4u+vTC0=
-github.com/gorilla/mux v0.0.0-20140926153814-e444e69cbd2e/go.mod h1:1lud6UwP+6orDFRuTfBEV8e9/aOM/c4fVVCaMa2zaAs=
+github.com/gorilla/context v1.1.2 h1:WRkNAv2uoa03QNIc1A6u4O7DAGMUVoopZhkiXWA2V1o=
+github.com/gorilla/context v1.1.2/go.mod h1:KDPwT9i/MeWHiLl90fuTgrt4/wPcv75vFAZLaOOcbxM=
+github.com/gorilla/mux v1.8.1 h1:TuBL49tXwgrFYWhqrNgrUNEY92u81SPhu7sTdzQEiWY=
+github.com/gorilla/mux v1.8.1/go.mod h1:AKf9I4AEqPTmMytcMc0KkNouC66V3BtZ4qD5fmWSiMQ=
+golang.org/x/sys v0.33.0 h1:q3i8TbbEz+JRD9ywIRlyRAQbM0qF7hu24q3teo2hbuw=
+golang.org/x/sys v0.33.0/go.mod h1:BJP2sWEmIv4KK5OTEluFJCKSidICx8ciO85XgH3Ak8k=

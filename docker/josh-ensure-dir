@@ -11,7 +11,7 @@ multisubstitute
 }
 foreground
 {
-  if { s6-test ! -d ${path} }
+  if { eltest ! -d ${path} }
   mkdir -p ${path}
 }
 $@

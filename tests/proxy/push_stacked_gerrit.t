@@ -114,7 +114,7 @@
   * add file3  (HEAD -> @heads/master/foo@example.com, origin/@heads/master/foo@example.com)
   * Change-Id: foo7  (origin/@heads/master/josh@example.com, origin/@changes/master/josh@example.com/foo7)
   * Change-Id: 1234  (origin/@changes/master/josh@example.com/1234)
-  * add file1  (origin/master, master)
+  * add file1  (origin/master, origin/HEAD, master)
 
   $ tree
   .
