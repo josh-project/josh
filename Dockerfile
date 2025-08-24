@@ -199,7 +199,8 @@ RUN cargo chef cook --release --workspace --recipe-path recipe.json
 COPY Cargo.toml Cargo.lock josh-ui josh-ui/
 RUN cargo build -p josh-ui --release
 COPY . .
-RUN cargo build -p josh-proxy -p josh-ssh-shell --release
+RUN --mount=target=.git,from=git \
+  cargo build -p josh-proxy -p josh-ssh-shell --release
 
 ARG ALPINE_VERSION
 FROM alpine:${ALPINE_VERSION} AS run
