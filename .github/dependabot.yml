@@ -13,8 +13,7 @@ updates:
     - "josh-templates"
     - "josh-ui"
   schedule:
-    interval: daily
-    time: "04:00"
+    interval: weekly
   open-pull-requests-limit: 10
 - package-ecosystem: npm
   directory: "josh-ui"
