@@ -281,5 +281,5 @@ COPY docker/finish ${RC6_D}/sshd/
 WORKDIR /
 ENV S6_KEEP_ENV=1
 ENV S6_BEHAVIOUR_IF_STAGE2_FAILS=2
-ENV PATH=${PATH}:/opt/josh-scripts
+ENV PATH=${PATH}:/command:/opt/josh-scripts
 ENTRYPOINT ["/init"]

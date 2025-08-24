@@ -9,7 +9,7 @@ josh-ensure-mode -p ${key_dir} -m 700
 
 foreground
 {
-  if { s6-test ( ! -f ${key_dir}/id_${key_type} ) -o ( ! -f ${key_dir}/id_${key_type}.pub ) }
+  if { eltest ( ! -f ${key_dir}/id_${key_type} ) -o ( ! -f ${key_dir}/id_${key_type}.pub ) }
   foreground
   {
     fdmove -c 1 2

@@ -15,7 +15,7 @@ backtick CURRENT_OWNER { stat -c "%G:%U" ${path} }
 importas current_owner CURRENT_OWNER
 foreground
 {
-  if { s6-test ${owner} != ${current_owner} }
+  if { eltest ${owner} != ${current_owner} }
   chown ${owner} ${path}
 }
 $@
