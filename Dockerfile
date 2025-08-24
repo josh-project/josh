@@ -64,7 +64,9 @@ RUN cargo chef prepare --recipe-path recipe.json
 FROM rust-base AS dev
 
 RUN apk add --no-cache \
+    zlib-static \
     zlib-dev \
+    openssl-libs-static \
     openssl-dev \
     curl-dev
 
