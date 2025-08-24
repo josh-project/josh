@@ -342,12 +342,9 @@ pub fn resolve_refs(refs: &std::collections::HashMap<String, git2::Oid>, filter:
 
 fn resolve_refs2(refs: &std::collections::HashMap<String, git2::Oid>, op: &Op) -> Op {
     match op {
-        Op::Compose(filters) => Op::Compose(
-            filters
-                .iter()
-                .map(|f| resolve_refs(refs, *f))
-                .collect(),
-        ),
+        Op::Compose(filters) => {
+            Op::Compose(filters.iter().map(|f| resolve_refs(refs, *f)).collect())
+        }
         Op::Exclude(filter) => Op::Exclude(resolve_refs(refs, *filter)),
         Op::Chain(a, b) => Op::Chain(resolve_refs(refs, *a), resolve_refs(refs, *b)),
         Op::Subtract(a, b) => Op::Subtract(resolve_refs(refs, *a), resolve_refs(refs, *b)),
@@ -883,10 +880,7 @@ fn apply_to_commit2(
 
             let extra_parents = some_or!(extra_parents, { return Ok(None) });
 
-            let filtered_parent_ids = normal_parents
-                .into_iter()
-                .chain(extra_parents)
-                .collect();
+            let filtered_parent_ids = normal_parents.into_iter().chain(extra_parents).collect();
 
             let filtered_tree = apply(transaction, filter, commit.tree()?)?;
 
@@ -1040,12 +1034,10 @@ fn apply2<'a>(
             tree::insert(repo, &tree::empty(repo), path, file, mode)
         }
 
-        Op::Subdir(path) => {
-            Ok(tree
-                .get_path(path)
-                .and_then(|x| repo.find_tree(x.id()))
-                .unwrap_or_else(|_| tree::empty(repo)))
-        }
+        Op::Subdir(path) => Ok(tree
+            .get_path(path)
+            .and_then(|x| repo.find_tree(x.id()))
+            .unwrap_or_else(|_| tree::empty(repo))),
         Op::Prefix(path) => tree::insert(repo, &tree::empty(repo), path, tree.id(), 0o0040000),
 
         Op::Subtract(a, b) => {

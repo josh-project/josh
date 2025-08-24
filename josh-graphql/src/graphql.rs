@@ -739,8 +739,7 @@ pub struct Document {
 impl Document {
     fn pointer(&self, pointer: Option<String>) -> serde_json::Value {
         if let Some(pointer) = pointer {
-            self
-                .value
+            self.value
                 .pointer(&pointer)
                 .unwrap_or(&json!({}))
                 .to_owned()

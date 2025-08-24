@@ -121,7 +121,6 @@ pub struct PushOptions {
     pub author: Option<String>,
 }
 
-
 pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> {
     let push_options_path = std::path::PathBuf::from(&repo_update.git_dir)
         .join("refs/namespaces")

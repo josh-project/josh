@@ -933,9 +933,7 @@ impl HeadRef {
 }
 
 fn head_ref_or_default(head_ref: &str) -> HeadRef {
-    let result = head_ref
-        .trim_start_matches(['@', '^'])
-        .to_owned();
+    let result = head_ref.trim_start_matches(['@', '^']).to_owned();
 
     if result.is_empty() {
         HeadRef::Implicit
