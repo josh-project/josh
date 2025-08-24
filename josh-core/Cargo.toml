@@ -24,7 +24,7 @@ log = "0.4.22"
 percent-encoding = "2.3.1"
 pest = "2.7.14"
 pest_derive = "2.7.14"
-rayon = "1.10.0"
+rayon = "1.11.0"
 regex = { workspace = true }
 rs_tracing = { workspace = true }
 strfmt = "0.2.4"
