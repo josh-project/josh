@@ -169,7 +169,7 @@
    * [new tag]         tag_from_ws_1 -> tag_from_ws_1
 
   $ git log --tags --graph --pretty="%s %d"
-  * add in filter  (HEAD -> master, tag: tag_from_ws_1, origin/master)
+  * add in filter  (HEAD -> master, tag: tag_from_ws_1, origin/master, origin/HEAD)
   * add file2 
   * add file1 
   * add file3 
@@ -208,7 +208,7 @@
    * [new tag]         tag_from_ws_2 -> tag_from_ws_2
 
   $ git log --tags --graph --pretty="%s %d"
-  * add in filter  (HEAD -> master, tag: tag_from_ws_1, origin/master)
+  * add in filter  (HEAD -> master, tag: tag_from_ws_1, origin/master, origin/HEAD)
   * add file2 
   * add file1 
   * add file3 

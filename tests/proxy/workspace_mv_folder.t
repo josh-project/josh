@@ -51,7 +51,7 @@
   $ git sync
   * refs/heads/master -> refs/heads/master
   Pushing to http://localhost:8001/real_repo.git
-  POST git-receive-pack (1457 bytes)
+  POST git-receive-pack (1463 bytes)
   updating local tracking ref 'refs/remotes/origin/master'
   
 
@@ -74,7 +74,7 @@ Flushed credential cache
    * branch            d91fa4981fe3546f44fa5a779ec6f69b20fdaa0f -> FETCH_HEAD
   HEAD is now at d91fa49 Merge from :workspace=ws
   Pushing to http://localhost:8002/real_repo.git:workspace=ws.git
-  POST git-receive-pack (439 bytes)
+  POST git-receive-pack (445 bytes)
   remote: josh-proxy: pre-receive hook        
   remote: upstream: response status: 200 OK        
   remote: upstream: response body:        
@@ -160,7 +160,7 @@ Flushed credential cache
    * branch            251b9a34c94c69defbebdfc716a7eff98df80b51 -> FETCH_HEAD
   HEAD is now at 251b9a3 mod workspace
   Pushing to http://localhost:8002/real_repo.git:workspace=ws.git
-  POST git-receive-pack (530 bytes)
+  POST git-receive-pack (536 bytes)
   remote: josh-proxy: pre-receive hook        
   remote: upstream: response status: 200 OK        
   remote: upstream: response body:        
