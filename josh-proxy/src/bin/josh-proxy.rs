@@ -5,7 +5,7 @@ extern crate clap;
 use clap::Parser;
 use josh_proxy::cli;
 use josh_proxy::{FetchError, MetaConfig, RemoteAuth, RepoConfig, RepoUpdate, run_git_with_auth};
-use opentelemetry::global;
+use opentelemetry::{global, trace::TracerProvider};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 use tracing_subscriber::Layer;
 
@@ -18,6 +18,7 @@ use hyper::{Request, Response, Server, StatusCode};
 use indoc::formatdoc;
 use josh::{JoshError, JoshResult, josh_error};
 use josh_rpc::calls::RequestedCommand;
+use opentelemetry_sdk::trace::SdkTracerProvider;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::io;
@@ -1618,8 +1619,6 @@ async fn handle_http_request(
 
 #[tokio::main]
 async fn run_proxy() -> josh::JoshResult<i32> {
-    init_trace();
-
     let addr = format!("[::]:{}", ARGS.port).parse()?;
     let upstream = make_upstream(&ARGS.remote).inspect_err(|e| {
         eprintln!("Upstream parsing error: {}", e);
@@ -1990,7 +1989,7 @@ async fn shutdown_signal() {
 }
 
 #[allow(deprecated)]
-fn init_trace() {
+fn init_trace() -> Option<SdkTracerProvider> {
     use opentelemetry_otlp::WithExportConfig;
     use opentelemetry_sdk::propagation::TraceContextPropagator;
 
@@ -2010,12 +2009,22 @@ fn init_trace() {
 
     let service_name = std::env::var("JOSH_SERVICE_NAME").unwrap_or("josh-proxy".to_owned());
 
-    if let Ok(endpoint) = std::env::var("JOSH_JAEGER_ENDPOINT") {
-        let tracer = opentelemetry_jaeger::new_agent_pipeline()
-            .with_service_name(service_name)
+    if let Ok(endpoint) =
+        std::env::var("JOSH_OTLP_ENDPOINT").or(std::env::var("JOSH_JAEGER_ENDPOINT"))
+    {
+        let otlp_exporter = opentelemetry_otlp::SpanExporter::builder()
+            .with_http()
+            .with_protocol(opentelemetry_otlp::Protocol::HttpBinary)
             .with_endpoint(endpoint)
-            .install_simple()
-            .expect("can't install opentelemetry pipeline");
+            .build()
+            .expect("failed to build OTLS endpoint");
+
+        let tracer_provider = opentelemetry_sdk::trace::SdkTracerProvider::builder()
+            .with_simple_exporter(otlp_exporter)
+            .build();
+
+        let tracer = tracer_provider.tracer(service_name);
+        global::set_tracer_provider(tracer_provider.clone());
 
         let telemetry_layer = tracing_opentelemetry::layer().with_tracer(tracer);
         let subscriber = filter
@@ -2024,36 +2033,16 @@ fn init_trace() {
             .with_subscriber(tracing_subscriber::Registry::default());
 
         tracing::subscriber::set_global_default(subscriber).expect("can't set_global_default");
-    } else if let Ok(endpoint) = std::env::var("JOSH_OTLP_ENDPOINT") {
-        use opentelemetry::KeyValue;
 
-        let resource =
-            opentelemetry_sdk::Resource::new(vec![KeyValue::new("service.name", service_name)]);
-
-        let tracer = opentelemetry_otlp::new_pipeline()
-            .tracing()
-            .with_exporter(
-                opentelemetry_otlp::new_exporter()
-                    .tonic()
-                    .with_endpoint(endpoint),
-            )
-            .with_trace_config(opentelemetry_sdk::trace::config().with_resource(resource))
-            .install_batch(opentelemetry_sdk::runtime::Tokio)
-            .expect("can't install opentelemetry pipeline");
-
-        let telemetry_layer = tracing_opentelemetry::layer().with_tracer(tracer);
-        let subscriber = filter
-            .and_then(fmt_layer)
-            .and_then(telemetry_layer)
-            .with_subscriber(tracing_subscriber::Registry::default());
-
-        tracing::subscriber::set_global_default(subscriber).expect("can't set_global_default");
+        Some(tracer_provider)
     } else {
         let subscriber = filter
             .and_then(fmt_layer)
             .with_subscriber(tracing_subscriber::Registry::default());
         tracing::subscriber::set_global_default(subscriber).expect("can't set_global_default");
-    };
+
+        None
+    }
 }
 
 fn main() {
@@ -2084,7 +2073,12 @@ fn main() {
         }
     }
 
+    let tracer_provider = init_trace();
     let exit_code = run_proxy().unwrap_or(1);
-    global::shutdown_tracer_provider();
+    if let Some(tracer_provider) = tracer_provider {
+        tracer_provider
+            .shutdown()
+            .expect("failed to shutdown tracer");
+    }
     std::process::exit(exit_code);
 }
