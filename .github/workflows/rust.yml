@@ -2,7 +2,7 @@ name: rust
 
 on:
   push:
-    branches: [ master, 'gh-readonly-queue/**' ]
+    branches: [ master ]
   pull_request:
     branches: [ '**' ]
   merge_group:
