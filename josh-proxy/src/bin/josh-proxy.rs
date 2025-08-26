@@ -1617,7 +1617,6 @@ async fn handle_http_request(
     .await
 }
 
-#[tokio::main]
 async fn run_proxy() -> josh::JoshResult<i32> {
     let addr = format!("[::]:{}", ARGS.port).parse()?;
     let upstream = make_upstream(&ARGS.remote).inspect_err(|e| {
@@ -1988,7 +1987,6 @@ async fn shutdown_signal() {
     println!("shutdown_signal");
 }
 
-#[allow(deprecated)]
 fn init_trace() -> Option<SdkTracerProvider> {
     use opentelemetry_otlp::WithExportConfig;
     use opentelemetry_sdk::propagation::TraceContextPropagator;
@@ -2013,11 +2011,10 @@ fn init_trace() -> Option<SdkTracerProvider> {
         std::env::var("JOSH_OTLP_ENDPOINT").or(std::env::var("JOSH_JAEGER_ENDPOINT"))
     {
         let otlp_exporter = opentelemetry_otlp::SpanExporter::builder()
-            .with_http()
-            .with_protocol(opentelemetry_otlp::Protocol::HttpBinary)
+            .with_tonic()
             .with_endpoint(endpoint)
             .build()
-            .expect("failed to build OTLS endpoint");
+            .expect("failed to build OTLP endpoint");
 
         let tracer_provider = opentelemetry_sdk::trace::SdkTracerProvider::builder()
             .with_simple_exporter(otlp_exporter)
@@ -2073,12 +2070,22 @@ fn main() {
         }
     }
 
-    let tracer_provider = init_trace();
-    let exit_code = run_proxy().unwrap_or(1);
-    if let Some(tracer_provider) = tracer_provider {
-        tracer_provider
-            .shutdown()
-            .expect("failed to shutdown tracer");
-    }
+    let exit_code = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(async {
+            let tracer_provider = init_trace();
+            let exit_code = run_proxy().await.unwrap_or(1);
+
+            if let Some(tracer_provider) = tracer_provider {
+                tracer_provider
+                    .shutdown()
+                    .expect("failed to shutdown tracer");
+            }
+
+            exit_code
+        });
+
     std::process::exit(exit_code);
 }
