@@ -2,9 +2,10 @@ name: rust
 
 on:
   push:
-    branches: [ master ]
+    branches: [ master, 'gh-readonly-queue/**' ]
   pull_request:
     branches: [ '**' ]
+  merge_group:
 
 env:
   CARGO_TERM_COLOR: always
