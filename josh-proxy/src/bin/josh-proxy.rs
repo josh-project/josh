@@ -2026,7 +2026,7 @@ fn init_trace() -> Option<opentelemetry_sdk::trace::SdkTracerProvider> {
 
         let tracer_provider = SdkTracerProvider::builder()
             .with_resource(resource)
-            .with_simple_exporter(otlp_exporter)
+            .with_batch_exporter(otlp_exporter)
             .build();
 
         let tracer = tracer_provider.tracer(service_name);
