@@ -190,7 +190,7 @@ RUN cargo chef cook --workspace --recipe-path recipe.json
 
 RUN mkdir -p josh-ui
 COPY josh-ui/package.json josh-ui/package-lock.json josh-ui/
-RUN cd josh-ui && npm install
+RUN cd josh-ui && npm install --legacy-peer-deps
 
 FROM dev-cache AS build
 

@@ -20,9 +20,10 @@
     "react-router-dom": "^6.2.1",
     "react-scripts": "5.0.0",
     "sass": "^1.49.9",
+    "styled-components": "^6.1.19",
     "ts-pattern": "^3.3.5",
     "tsoption": "^0.7.0",
-    "typescript": "^4.5.5",
+    "typescript": "^5.9.2",
     "web-vitals": "^2.1.4"
   },
   "scripts": {

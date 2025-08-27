@@ -4,8 +4,9 @@ use npm_rs::*;
 fn main() {
     let exit_status = NpmEnv::default()
         .with_env("PUBLIC_URL", "/~/ui")
+        .with_env("TSC_COMPILE_ON_ERROR", "true")
         .init_env()
-        .install(None)
+        .install(Some(&["--legacy-peer-deps"]))
         .run("build")
         .exec();
 
