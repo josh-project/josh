@@ -5,9 +5,6 @@ extern crate clap;
 use clap::Parser;
 use josh_proxy::cli;
 use josh_proxy::{FetchError, MetaConfig, RemoteAuth, RepoConfig, RepoUpdate, run_git_with_auth};
-use opentelemetry::global;
-use tracing_opentelemetry::OpenTelemetrySpanExt;
-use tracing_subscriber::Layer;
 
 use futures::FutureExt;
 use futures::future;
@@ -31,6 +28,7 @@ use tokio::net::UnixStream;
 use tokio::process::Command;
 use tracing::{Span, trace};
 use tracing_futures::Instrument;
+use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 fn version_str() -> String {
     format!("Version: {}\n", josh::VERSION,)
@@ -378,6 +376,8 @@ async fn repo_update_fn(req: Request<hyper::Body>) -> josh::JoshResult<Response<
     let s = tracing::span!(tracing::Level::TRACE, "repo update worker");
 
     let result = tokio::task::spawn_blocking(move || {
+        use opentelemetry::global;
+
         let _e = s.enter();
         let body = body?.to_bytes();
         let buffer = std::str::from_utf8(&body)?;
@@ -1616,10 +1616,7 @@ async fn handle_http_request(
     .await
 }
 
-#[tokio::main]
 async fn run_proxy() -> josh::JoshResult<i32> {
-    init_trace();
-
     let addr = format!("[::]:{}", ARGS.port).parse()?;
     let upstream = make_upstream(&ARGS.remote).inspect_err(|e| {
         eprintln!("Upstream parsing error: {}", e);
@@ -1989,8 +1986,12 @@ async fn shutdown_signal() {
     println!("shutdown_signal");
 }
 
-#[allow(deprecated)]
-fn init_trace() {
+fn init_trace() -> Option<opentelemetry_sdk::trace::SdkTracerProvider> {
+    use opentelemetry::{KeyValue, global, trace::TracerProvider};
+    use opentelemetry_sdk::trace::SdkTracerProvider;
+    use opentelemetry_semantic_conventions::resource::SERVICE_NAME;
+    use tracing_subscriber::Layer;
+
     use opentelemetry_otlp::WithExportConfig;
     use opentelemetry_sdk::propagation::TraceContextPropagator;
 
@@ -2010,12 +2011,26 @@ fn init_trace() {
 
     let service_name = std::env::var("JOSH_SERVICE_NAME").unwrap_or("josh-proxy".to_owned());
 
-    if let Ok(endpoint) = std::env::var("JOSH_JAEGER_ENDPOINT") {
-        let tracer = opentelemetry_jaeger::new_agent_pipeline()
-            .with_service_name(service_name)
+    if let Ok(endpoint) =
+        std::env::var("JOSH_OTLP_ENDPOINT").or(std::env::var("JOSH_JAEGER_ENDPOINT"))
+    {
+        let otlp_exporter = opentelemetry_otlp::SpanExporter::builder()
+            .with_tonic()
             .with_endpoint(endpoint)
-            .install_simple()
-            .expect("can't install opentelemetry pipeline");
+            .build()
+            .expect("failed to build OTLP endpoint");
+
+        let resource = opentelemetry_sdk::Resource::builder()
+            .with_attribute(KeyValue::new(SERVICE_NAME, service_name.clone()))
+            .build();
+
+        let tracer_provider = SdkTracerProvider::builder()
+            .with_resource(resource)
+            .with_batch_exporter(otlp_exporter)
+            .build();
+
+        let tracer = tracer_provider.tracer(service_name);
+        global::set_tracer_provider(tracer_provider.clone());
 
         let telemetry_layer = tracing_opentelemetry::layer().with_tracer(tracer);
         let subscriber = filter
@@ -2024,36 +2039,16 @@ fn init_trace() {
             .with_subscriber(tracing_subscriber::Registry::default());
 
         tracing::subscriber::set_global_default(subscriber).expect("can't set_global_default");
-    } else if let Ok(endpoint) = std::env::var("JOSH_OTLP_ENDPOINT") {
-        use opentelemetry::KeyValue;
 
-        let resource =
-            opentelemetry_sdk::Resource::new(vec![KeyValue::new("service.name", service_name)]);
-
-        let tracer = opentelemetry_otlp::new_pipeline()
-            .tracing()
-            .with_exporter(
-                opentelemetry_otlp::new_exporter()
-                    .tonic()
-                    .with_endpoint(endpoint),
-            )
-            .with_trace_config(opentelemetry_sdk::trace::config().with_resource(resource))
-            .install_batch(opentelemetry_sdk::runtime::Tokio)
-            .expect("can't install opentelemetry pipeline");
-
-        let telemetry_layer = tracing_opentelemetry::layer().with_tracer(tracer);
-        let subscriber = filter
-            .and_then(fmt_layer)
-            .and_then(telemetry_layer)
-            .with_subscriber(tracing_subscriber::Registry::default());
-
-        tracing::subscriber::set_global_default(subscriber).expect("can't set_global_default");
+        Some(tracer_provider)
     } else {
         let subscriber = filter
             .and_then(fmt_layer)
             .with_subscriber(tracing_subscriber::Registry::default());
         tracing::subscriber::set_global_default(subscriber).expect("can't set_global_default");
-    };
+
+        None
+    }
 }
 
 fn main() {
@@ -2084,7 +2079,22 @@ fn main() {
         }
     }
 
-    let exit_code = run_proxy().unwrap_or(1);
-    global::shutdown_tracer_provider();
+    let exit_code = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(async {
+            let tracer_provider = init_trace();
+            let exit_code = run_proxy().await.unwrap_or(1);
+
+            if let Some(tracer_provider) = tracer_provider {
+                tracer_provider
+                    .shutdown()
+                    .expect("failed to shutdown tracer");
+            }
+
+            exit_code
+        });
+
     std::process::exit(exit_code);
 }
