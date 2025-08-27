@@ -5,7 +5,7 @@ extern crate clap;
 use clap::Parser;
 use josh_proxy::cli;
 use josh_proxy::{FetchError, MetaConfig, RemoteAuth, RepoConfig, RepoUpdate, run_git_with_auth};
-use opentelemetry::{global, trace::TracerProvider};
+use opentelemetry::{KeyValue, global, trace::TracerProvider};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 use tracing_subscriber::Layer;
 
@@ -19,6 +19,7 @@ use indoc::formatdoc;
 use josh::{JoshError, JoshResult, josh_error};
 use josh_rpc::calls::RequestedCommand;
 use opentelemetry_sdk::trace::SdkTracerProvider;
+use opentelemetry_semantic_conventions::resource::SERVICE_NAME;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::io;
@@ -2016,7 +2017,12 @@ fn init_trace() -> Option<SdkTracerProvider> {
             .build()
             .expect("failed to build OTLP endpoint");
 
-        let tracer_provider = opentelemetry_sdk::trace::SdkTracerProvider::builder()
+        let resource = opentelemetry_sdk::Resource::builder()
+            .with_attribute(KeyValue::new(SERVICE_NAME, service_name.clone()))
+            .build();
+
+        let tracer_provider = SdkTracerProvider::builder()
+            .with_resource(resource)
             .with_simple_exporter(otlp_exporter)
             .build();
 
