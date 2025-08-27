@@ -5,9 +5,6 @@ extern crate clap;
 use clap::Parser;
 use josh_proxy::cli;
 use josh_proxy::{FetchError, MetaConfig, RemoteAuth, RepoConfig, RepoUpdate, run_git_with_auth};
-use opentelemetry::{KeyValue, global, trace::TracerProvider};
-use tracing_opentelemetry::OpenTelemetrySpanExt;
-use tracing_subscriber::Layer;
 
 use futures::FutureExt;
 use futures::future;
@@ -18,8 +15,6 @@ use hyper::{Request, Response, Server, StatusCode};
 use indoc::formatdoc;
 use josh::{JoshError, JoshResult, josh_error};
 use josh_rpc::calls::RequestedCommand;
-use opentelemetry_sdk::trace::SdkTracerProvider;
-use opentelemetry_semantic_conventions::resource::SERVICE_NAME;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::io;
@@ -33,6 +28,7 @@ use tokio::net::UnixStream;
 use tokio::process::Command;
 use tracing::{Span, trace};
 use tracing_futures::Instrument;
+use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 fn version_str() -> String {
     format!("Version: {}\n", josh::VERSION,)
@@ -380,6 +376,8 @@ async fn repo_update_fn(req: Request<hyper::Body>) -> josh::JoshResult<Response<
     let s = tracing::span!(tracing::Level::TRACE, "repo update worker");
 
     let result = tokio::task::spawn_blocking(move || {
+        use opentelemetry::global;
+
         let _e = s.enter();
         let body = body?.to_bytes();
         let buffer = std::str::from_utf8(&body)?;
@@ -1988,7 +1986,12 @@ async fn shutdown_signal() {
     println!("shutdown_signal");
 }
 
-fn init_trace() -> Option<SdkTracerProvider> {
+fn init_trace() -> Option<opentelemetry_sdk::trace::SdkTracerProvider> {
+    use opentelemetry::{KeyValue, global, trace::TracerProvider};
+    use opentelemetry_sdk::trace::SdkTracerProvider;
+    use opentelemetry_semantic_conventions::resource::SERVICE_NAME;
+    use tracing_subscriber::Layer;
+
     use opentelemetry_otlp::WithExportConfig;
     use opentelemetry_sdk::propagation::TraceContextPropagator;
 
