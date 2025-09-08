@@ -209,11 +209,12 @@ pub fn find_all_workspaces_and_subdirectories(
     let _trace_s = span!(Level::TRACE, "find_all_workspaces_and_subdirectories");
     let mut hs = std::collections::HashSet::new();
     tree.walk(git2::TreeWalkMode::PreOrder, |root, entry| {
-        if entry.name() == Some("workspace.josh") {
-            hs.insert(format!(":workspace={}", root.trim_matches('/')));
-        }
         if root.is_empty() {
             return 0;
+        }
+
+        if entry.name() == Some("workspace.josh") {
+            hs.insert(format!(":workspace={}", root.trim_matches('/')));
         }
         let v = format!("::{}/", root.trim_matches('/'));
         if v.chars().filter(|x| *x == '/').count() < 3 {
