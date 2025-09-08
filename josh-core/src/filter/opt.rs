@@ -4,6 +4,9 @@
  */
 
 use super::*;
+use std::cmp::Ordering;
+use std::collections::HashMap;
+use std::collections::VecDeque;
 
 lazy_static! {
     static ref OPTIMIZED: std::sync::Mutex<std::collections::HashMap<Filter, Filter>> =
@@ -197,21 +200,78 @@ fn last_chain(rest: Filter, filter: Filter) -> (Filter, Filter) {
     }
 }
 
-fn prefix_sort(filters: &[Filter]) -> Vec<Filter> {
-    let mut sorted = filters.to_owned();
-    sorted.sort_by(|a, b| {
-        let (src_a, src_b) = (src_path(*a), src_path(*b));
-        if src_a.starts_with(&src_b) || src_b.starts_with(&src_a) {
-            return std::cmp::Ordering::Equal;
-        }
-        let (dst_a, dst_b) = (dst_path(*a), dst_path(*b));
-        if dst_a.starts_with(&dst_b) || dst_b.starts_with(&dst_a) {
-            return std::cmp::Ordering::Equal;
-        }
+pub fn prefix_sort(filters: &[Filter]) -> Vec<Filter> {
+    let n = filters.len();
 
-        (&src_a, &dst_a).partial_cmp(&(&src_b, &dst_b)).unwrap()
+    // Step 1: Build graph of ordering constraints
+    let mut graph: HashMap<usize, Vec<usize>> = HashMap::new();
+    let mut indegree = vec![0; n];
+
+    for i in 0..n {
+        for j in i + 1..n {
+            let src_i = src_path(filters[i].clone());
+            let dst_i = dst_path(filters[i].clone());
+            let src_j = src_path(filters[j].clone());
+            let dst_j = dst_path(filters[j].clone());
+
+            let constraint = if src_j.starts_with(&src_i) || src_i.starts_with(&src_j) {
+                Some((i, j))
+            } else if dst_j.starts_with(&dst_i) || dst_i.starts_with(&dst_j) {
+                Some((i, j))
+            } else {
+                None
+            };
+
+            if let Some((a, b)) = constraint {
+                graph.entry(a).or_default().push(b);
+                indegree[b] += 1;
+            }
+        }
+    }
+
+    // Step 2: Sort indices alphabetically by (src, dst)
+    let mut indices: Vec<usize> = (0..n).collect();
+    indices.sort_by(|&i, &j| {
+        let key_i = (src_path(filters[i].clone()), dst_path(filters[i].clone()));
+        let key_j = (src_path(filters[j].clone()), dst_path(filters[j].clone()));
+
+        match key_i.0.cmp(&key_j.0) {
+            Ordering::Equal => key_i.1.cmp(&key_j.1),
+            other => other,
+        }
     });
-    sorted
+
+    // Step 3: Topological sort with alphabetical tie-break
+    let mut result = Vec::new();
+    let mut available: VecDeque<usize> = indices
+        .iter()
+        .copied()
+        .filter(|&i| indegree[i] == 0)
+        .collect();
+
+    while let Some(i) = available.pop_front() {
+        result.push(i);
+        if let Some(neighbors) = graph.get(&i) {
+            for &j in neighbors {
+                indegree[j] -= 1;
+                if indegree[j] == 0 {
+                    // Insert j into available, keeping alphabetical order
+                    let pos = available.iter().position(|&x| {
+                        let key_j = (src_path(filters[j].clone()), dst_path(filters[j].clone()));
+                        let key_x = (src_path(filters[x].clone()), dst_path(filters[x].clone()));
+                        key_j < key_x
+                    });
+                    if let Some(p) = pos {
+                        available.insert(p, j);
+                    } else {
+                        available.push_back(j);
+                    }
+                }
+            }
+        }
+    }
+
+    result.into_iter().map(|i| filters[i].clone()).collect()
 }
 
 fn common_pre(filters: &Vec<Filter>) -> Option<(Filter, Vec<Filter>)> {
