@@ -233,9 +233,6 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         let r = repo.revparse_single(&input_ref)?;
         let hs = josh::housekeeping::find_all_workspaces_and_subdirectories(&r.peel_to_tree()?)?;
         for i in hs {
-            if i.contains(":workspace=") {
-                continue;
-            }
             let (mut updated_refs, _) = josh::filter_refs(
                 &transaction,
                 josh::filter::parse(&i)?,
