@@ -72,3 +72,20 @@
   +++ b/subdir/hw.txt
   @@ -0,0 +1 @@
   +hello moon
+
+  $ josh-filter --update refs/heads/filtered ':[xdir=:/subdir,:replace("hello":"bye","(?m)^(?P<l>.+)$":"$l!")]'
+  $ git diff ${EMPTY_TREE}..refs/heads/filtered
+  diff --git a/hw.txt b/hw.txt
+  new file mode 100644
+  index 0000000..9836695
+  --- /dev/null
+  +++ b/hw.txt
+  @@ -0,0 +1 @@
+  +bye world!
+  diff --git a/xdir/hw.txt b/xdir/hw.txt
+  new file mode 100644
+  index 0000000..1b95c6e
+  --- /dev/null
+  +++ b/xdir/hw.txt
+  @@ -0,0 +1 @@
+  +hello moon
