@@ -590,9 +590,7 @@ fn get_workspace<'a>(repo: &'a git2::Repository, tree: &'a git2::Tree<'a>, path:
     .id();
     let ws_blob = tree::get_blob(repo, tree, &ws_path);
 
-    let mut workspaces = WORKSPACES.lock().unwrap();
-
-    if let Some(f) = workspaces.get(&ws_id) {
+    if let Some(f) = WORKSPACES.lock().unwrap().get(&ws_id) {
         *f
     } else {
         let f = parse::parse(&ws_blob).unwrap_or_else(|_| to_filter(Op::Empty));
@@ -602,7 +600,7 @@ fn get_workspace<'a>(repo: &'a git2::Repository, tree: &'a git2::Tree<'a>, path:
         } else {
             to_filter(Op::Empty)
         };
-        workspaces.insert(ws_id, f);
+        WORKSPACES.lock().unwrap().insert(ws_id, f);
         f
     }
 }
