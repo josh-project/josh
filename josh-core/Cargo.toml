@@ -20,7 +20,7 @@ hex = { workspace = true }
 indoc = "2.0.5"
 itertools = "0.14.0"
 lazy_static = { workspace = true }
-log = "0.4.22"
+log = "0.4.28"
 percent-encoding = "2.3.1"
 pest = "2.7.14"
 pest_derive = "2.8.2"
