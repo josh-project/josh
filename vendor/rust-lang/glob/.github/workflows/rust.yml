@@ -20,7 +20,7 @@ jobs:
         channel:
           - stable
           - nightly
-          - 1.63.0 # MSRV of test dependencies
+          - 1.71.0 # MSRV of test dependencies
         os:
           - macos-13 # x86 MacOS
           - macos-15 # Arm MacOS

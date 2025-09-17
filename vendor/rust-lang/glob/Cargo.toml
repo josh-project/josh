@@ -13,6 +13,5 @@ categories = ["filesystem"]
 rust-version = "1.63.0"
 
 [dev-dependencies]
-# FIXME: This should be replaced by `tempfile`
-tempdir = "0.3"
+tempfile = "3"
 doc-comment = "0.3"
