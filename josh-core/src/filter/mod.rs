@@ -156,7 +156,7 @@ enum Op {
     Subdir(std::path::PathBuf),
     Workspace(std::path::PathBuf),
 
-    Glob(String),
+    Pattern(String),
     Message(String),
 
     Compose(Vec<Filter>),
@@ -486,7 +486,7 @@ fn spec2(op: &Op) -> String {
         Op::Subdir(path) => format!(":/{}", parse::quote_if(&path.to_string_lossy())),
         Op::File(path) => format!("::{}", parse::quote_if(&path.to_string_lossy())),
         Op::Prefix(path) => format!(":prefix={}", parse::quote_if(&path.to_string_lossy())),
-        Op::Glob(pattern) => format!("::{}", parse::quote_if(pattern)),
+        Op::Pattern(pattern) => format!("::{}", parse::quote_if(pattern)),
         Op::Author(author, email) => {
             format!(":author={};{}", parse::quote(author), parse::quote(email))
         }
@@ -590,9 +590,7 @@ fn get_workspace<'a>(repo: &'a git2::Repository, tree: &'a git2::Tree<'a>, path:
     .id();
     let ws_blob = tree::get_blob(repo, tree, &ws_path);
 
-    let mut workspaces = WORKSPACES.lock().unwrap();
-
-    if let Some(f) = workspaces.get(&ws_id) {
+    if let Some(f) = WORKSPACES.lock().unwrap().get(&ws_id) {
         *f
     } else {
         let f = parse::parse(&ws_blob).unwrap_or_else(|_| to_filter(Op::Empty));
@@ -602,7 +600,7 @@ fn get_workspace<'a>(repo: &'a git2::Repository, tree: &'a git2::Tree<'a>, path:
         } else {
             to_filter(Op::Empty)
         };
-        workspaces.insert(ws_id, f);
+        WORKSPACES.lock().unwrap().insert(ws_id, f);
         f
     }
 }
@@ -1011,7 +1009,7 @@ fn apply2<'a>(
             Ok(t)
         }
 
-        Op::Glob(pattern) => {
+        Op::Pattern(pattern) => {
             let pattern = glob::Pattern::new(pattern)?;
             let options = glob::MatchOptions {
                 case_sensitive: true,
