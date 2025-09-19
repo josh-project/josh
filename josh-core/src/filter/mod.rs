@@ -144,6 +144,7 @@ enum Op {
     Rev(std::collections::BTreeMap<LazyRef, Filter>),
     Join(std::collections::BTreeMap<LazyRef, Filter>),
     Linear,
+    Prune,
     Unsign,
 
     RegexReplace(Vec<(regex::Regex, String)>),
@@ -485,6 +486,7 @@ fn spec2(op: &Op) -> String {
         Op::Unsign => ":unsign".to_string(),
         Op::Subdir(path) => format!(":/{}", parse::quote_if(&path.to_string_lossy())),
         Op::File(path) => format!("::{}", parse::quote_if(&path.to_string_lossy())),
+        Op::Prune => ":prune=trivial-merge".to_string(),
         Op::Prefix(path) => format!(":prefix={}", parse::quote_if(&path.to_string_lossy())),
         Op::Pattern(pattern) => format!("::{}", parse::quote_if(pattern)),
         Op::Author(author, email) => {
@@ -811,6 +813,33 @@ fn apply_to_commit2(
             ))
             .transpose();
         }
+        Op::Prune => {
+            let p: Vec<_> = commit.parent_ids().collect();
+
+            if p.len() > 0 {
+                let parent = some_or!(transaction.get(filter, p[0]), {
+                    return Ok(None);
+                });
+
+                let parent_tree = transaction.repo().find_commit(parent)?.tree_id();
+
+                if parent_tree == commit.tree_id() {
+                    return Ok(Some(history::drop_commit(
+                        commit,
+                        vec![parent],
+                        transaction,
+                        filter,
+                    )?));
+                }
+            }
+
+            RewriteData {
+                tree: commit.tree()?,
+                message: None,
+                author: None,
+                committer: None,
+            }
+        }
         Op::Unsign => {
             let parents: Vec<_> = commit.parent_ids().collect();
 
@@ -998,6 +1027,7 @@ fn apply2<'a>(
         Op::Committer(_, _) => Ok(tree),
         Op::Squash(Some(_)) => Err(josh_error("not applicable to tree")),
         Op::Linear => Ok(tree),
+        Op::Prune => Ok(tree),
         Op::Unsign => Ok(tree),
         Op::Rev(_) => Err(josh_error("not applicable to tree")),
         Op::Join(_) => Err(josh_error("not applicable to tree")),

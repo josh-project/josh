@@ -114,6 +114,13 @@ commits that don't match any of the other shas.
 Produce the history that would be the result of pushing the passed branches with the
 passed filters into the upstream.
 
+### Prune trivial merge commits **:prune=trivial-merge**
+
+Produce a history that skips all merge commits whose tree is identical to the first parents
+tree.
+Normally Josh will keep all commits in the filtered history whose tree differs from any of it's
+parents.
+
 Filter order matters
 --------------------
 

@@ -35,6 +35,22 @@ fn make_op(args: &[&str]) -> JoshResult<Op> {
         ["SQUASH"] => Ok(Op::Squash(None)),
         ["SQUASH", _ids @ ..] => Err(josh_error("SQUASH with ids can't be parsed")),
         ["linear"] => Ok(Op::Linear),
+        ["prune", "trivial-merge"] => Ok(Op::Prune),
+        ["prune"] => Err(josh_error(indoc!(
+            r#"
+            Filter ":prune" requires an argument.
+
+            Note: use "=" to provide the argument value:
+
+              :prune=trivial-merge
+            "#
+        ))),
+        ["prune", _] => Err(josh_error(indoc!(
+            r#"
+            Filter ":prune" only supports "trivial-merge"
+            as argument value.
+            "#
+        ))),
         ["unsign"] => Ok(Op::Unsign),
         ["PATHS"] => Ok(Op::Paths),
         ["INDEX"] => Ok(Op::Index),
