@@ -100,6 +100,18 @@ fn to_op(filter: Filter) -> Op {
         .clone()
 }
 
+pub fn is_computed(filter: Filter) -> bool {
+    matches!(to_op(filter), Op::Computed(_))
+}
+
+pub fn computed_args(filter: Filter) -> Option<Vec<String>> {
+    if let Op::Computed(args) = to_op(filter) {
+        Some(args)
+    } else {
+        None
+    }
+}
+
 #[derive(Hash, Clone, Debug, PartialEq, PartialOrd, Eq, Ord)]
 enum LazyRef {
     Resolved(git2::Oid),
@@ -155,6 +167,8 @@ enum Op {
     Prefix(std::path::PathBuf),
     Subdir(std::path::PathBuf),
     Workspace(std::path::PathBuf),
+
+    Computed(Vec<String>),
 
     Glob(String),
     Message(String),
@@ -260,6 +274,7 @@ fn nesting2(op: &Op) -> usize {
         Op::Compose(filters) => 1 + filters.iter().map(|f| nesting(*f)).fold(0, |a, b| a.max(b)),
         Op::Exclude(filter) => 1 + nesting(*filter),
         Op::Workspace(_) => usize::MAX / 2, // divide by 2 to make sure there is enough headroom to avoid overflows
+        Op::Computed(_) => usize::MAX / 2,
         Op::Chain(a, b) => 1 + nesting(*a).max(nesting(*b)),
         Op::Subtract(a, b) => 1 + nesting(*a).max(nesting(*b)),
         Op::Rev(filters) => {
@@ -306,6 +321,7 @@ fn lazy_refs2(op: &Op) -> Vec<String> {
             av.append(&mut lazy_refs(*b));
             av
         }
+        Op::Computed(_) => vec![],
         Op::Rev(filters) => lazy_refs2(&Op::Join(filters.clone())),
         Op::Join(filters) => {
             let mut lr = lazy_refs2(&Op::Compose(filters.values().copied().collect()));
@@ -448,6 +464,14 @@ fn spec2(op: &Op) -> String {
         }
         Op::Workspace(path) => {
             format!(":workspace={}", parse::quote_if(&path.to_string_lossy()))
+        }
+        Op::Computed(args) => {
+            let encoded: Vec<String> = args.iter().map(|a| parse::quote(a)).collect();
+            if encoded.is_empty() {
+                ":computed".to_string()
+            } else {
+                format!(":computed={}", encoded.join(";"))
+            }
         }
         Op::RegexReplace(replacements) => {
             let v = replacements
@@ -898,6 +922,16 @@ fn apply_to_commit2(
             ))
             .transpose();
         }
+        Op::Computed(_) => {
+            let resolved = transaction.forward_filter_for_commit(filter, commit)?;
+            if let Some(result) = apply_to_commit2(&to_op(resolved), commit, transaction)? {
+                transaction.insert(filter, commit.id(), result, true);
+                transaction.record_computed_commit(commit.id(), result, resolved)?;
+                return Ok(Some(result));
+            } else {
+                return Ok(None);
+            }
+        }
         Op::Fold => {
             let filtered_parent_ids = commit
                 .parents()
@@ -1056,6 +1090,8 @@ fn apply2<'a>(
         Op::Index => tree::trigram_index(transaction, tree),
 
         Op::Invert => tree::invert_paths(transaction, "", tree),
+
+        Op::Computed(_) => Err(josh_error("computed filter requires commit context")),
 
         Op::Workspace(path) => {
             let wsj_file = to_filter(Op::File(Path::new("workspace.josh").to_owned()));
@@ -1320,7 +1356,237 @@ pub fn is_linear(filter: Filter) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cache::{self, ComputedFilter as ComputedFilterTrait};
+    use crate::history;
+    use git2::Repository;
+    use std::collections::HashMap;
+    use std::path::Path;
     use std::path::PathBuf;
+    use std::sync::{Arc, Mutex};
+    use tempfile::TempDir;
+
+    #[derive(Default)]
+    struct TestResolver {
+        forward_calls: Mutex<Vec<git2::Oid>>,
+        records: Mutex<HashMap<git2::Oid, (git2::Oid, Filter)>>,
+    }
+
+    impl ComputedFilterTrait for TestResolver {
+        fn forward_filter_for_commit(
+            &self,
+            _repo: &Repository,
+            commit_oid: git2::Oid,
+            _args: &[String],
+        ) -> JoshResult<Filter> {
+            let mut calls = self.forward_calls.lock().unwrap();
+            calls.push(commit_oid);
+            Ok(parse(":prefix=resolved")?)
+        }
+
+        fn record_filtered_commit(
+            &self,
+            original_commit_oid: git2::Oid,
+            filtered_commit_oid: git2::Oid,
+            filter: Filter,
+        ) -> JoshResult<()> {
+            self.records
+                .lock()
+                .unwrap()
+                .insert(filtered_commit_oid, (original_commit_oid, filter));
+            Ok(())
+        }
+
+        fn lookup_commit_filter(
+            &self,
+            filtered_commit_oid: git2::Oid,
+        ) -> JoshResult<Option<Filter>> {
+            Ok(self
+                .records
+                .lock()
+                .unwrap()
+                .get(&filtered_commit_oid)
+                .map(|(_, filter)| *filter))
+        }
+
+        fn lookup_filtered_base_commit(
+            &self,
+            new_filtered_commit_oid: git2::Oid,
+        ) -> JoshResult<Option<git2::Oid>> {
+            Ok(self
+                .records
+                .lock()
+                .unwrap()
+                .get(&new_filtered_commit_oid)
+                .map(|(original, _)| *original))
+        }
+    }
+
+    fn init_repo() -> (TempDir, Repository, git2::Oid) {
+        let tmp = TempDir::new().unwrap();
+        let repo = Repository::init(tmp.path()).unwrap();
+
+        std::fs::write(tmp.path().join("file.txt"), "hello").unwrap();
+        let mut index = repo.index().unwrap();
+        index.add_path(Path::new("file.txt")).unwrap();
+        index.write().unwrap();
+        let tree_id = index.write_tree().unwrap();
+        let sig = git2::Signature::now("test", "test@example.com").unwrap();
+        let commit_id = {
+            let tree = repo.find_tree(tree_id).unwrap();
+            repo.commit(Some("HEAD"), &sig, &sig, "initial", &tree, &[])
+                .unwrap()
+        };
+
+        (tmp, repo, commit_id)
+    }
+
+    #[test]
+    fn computed_filter_records_metadata() {
+        let (_tmp, repo, commit_id) = init_repo();
+        let commit = repo.find_commit(commit_id).unwrap();
+
+        let resolver = Arc::new(TestResolver::default());
+        cache::load(repo.path()).unwrap();
+        let tx = cache::Transaction::open_with_computed(repo.path(), None, Some(resolver.clone()))
+            .unwrap();
+
+        let filter = parse(":computed=\"demo\"").unwrap();
+        let result_oid = apply_to_commit(filter, &commit, &tx).unwrap();
+        assert_ne!(result_oid, git2::Oid::zero());
+
+        let calls = resolver.forward_calls.lock().unwrap().clone();
+        assert_eq!(calls, vec![commit_id]);
+
+        let resolved_filter = resolver
+            .records
+            .lock()
+            .unwrap()
+            .get(&result_oid)
+            .map(|(_, f)| *f)
+            .unwrap();
+        assert_eq!(spec(resolved_filter), ":prefix=resolved");
+
+        let lookup_filter = tx.lookup_commit_filter(result_oid).unwrap().unwrap();
+        assert_eq!(spec(lookup_filter), ":prefix=resolved");
+
+        let base = tx.lookup_filtered_base_commit(result_oid).unwrap().unwrap();
+        assert_eq!(base, commit_id);
+    }
+
+    #[test]
+    fn computed_filter_caches_resolved_filters() {
+        let (_tmp, repo, commit_id) = init_repo();
+        let commit = repo.find_commit(commit_id).unwrap();
+
+        let resolver = Arc::new(TestResolver::default());
+        cache::load(repo.path()).unwrap();
+        let tx = cache::Transaction::open_with_computed(repo.path(), None, Some(resolver.clone()))
+            .unwrap();
+
+        let filter = parse(":computed=\"demo\"").unwrap();
+        let result_first = apply_to_commit(filter, &commit, &tx).unwrap();
+        let result_second = apply_to_commit(filter, &commit, &tx).unwrap();
+        assert_eq!(result_first, result_second);
+
+        let calls = resolver.forward_calls.lock().unwrap().clone();
+        assert_eq!(calls, vec![commit_id]);
+    }
+
+    #[test]
+    fn computed_filter_unapply_requires_metadata() {
+        let (_tmp, repo, commit_id) = init_repo();
+        let commit = repo.find_commit(commit_id).unwrap();
+
+        let resolver = Arc::new(TestResolver::default());
+        cache::load(repo.path()).unwrap();
+        let tx = cache::Transaction::open_with_computed(repo.path(), None, Some(resolver.clone()))
+            .unwrap();
+
+        let filter = parse(":computed=\"demo\"").unwrap();
+        let filtered_oid = apply_to_commit(filter, &commit, &tx).unwrap();
+        assert_ne!(filtered_oid, git2::Oid::zero());
+
+        let mut change_ids = None;
+        let unapplied = history::unapply_filter(
+            &tx,
+            filter,
+            commit_id,
+            git2::Oid::zero(),
+            filtered_oid,
+            false,
+            None,
+            &mut change_ids,
+        )
+        .unwrap();
+        assert_eq!(unapplied, commit_id);
+
+        resolver.records.lock().unwrap().remove(&filtered_oid);
+
+        let tx2 = cache::Transaction::open_with_computed(repo.path(), None, Some(resolver.clone()))
+            .unwrap();
+        let err = history::unapply_filter(
+            &tx2,
+            filter,
+            commit_id,
+            git2::Oid::zero(),
+            filtered_oid,
+            false,
+            None,
+            &mut None,
+        )
+        .unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("missing computed filter metadata for filtered commit"),
+            "unexpected error: {err:?}"
+        );
+    }
+
+    #[test]
+    fn computed_filter_requires_resolver() {
+        let (_tmp, repo, commit_id) = init_repo();
+        let commit = repo.find_commit(commit_id).unwrap();
+
+        cache::load(repo.path()).unwrap();
+        let tx = cache::Transaction::open(repo.path(), None).unwrap();
+
+        let filter = parse(":computed=\"demo\"").unwrap();
+        let err = apply_to_commit(filter, &commit, &tx).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("computed filter resolver is not installed on this Transaction"),
+            "unexpected error: {err:?}"
+        );
+    }
+
+    #[test]
+    fn computed_filter_find_original_uses_metadata() {
+        let (_tmp, repo, commit_id) = init_repo();
+        let commit = repo.find_commit(commit_id).unwrap();
+
+        let resolver = Arc::new(TestResolver::default());
+        cache::load(repo.path()).unwrap();
+        let tx = cache::Transaction::open_with_computed(repo.path(), None, Some(resolver.clone()))
+            .unwrap();
+
+        let filter = parse(":computed=\"demo\"").unwrap();
+        let filtered_oid = apply_to_commit(filter, &commit, &tx).unwrap();
+        assert_ne!(filtered_oid, git2::Oid::zero());
+
+        let original = history::find_original(&tx, filter, commit_id, filtered_oid, false).unwrap();
+        assert_eq!(original, commit_id);
+
+        resolver.records.lock().unwrap().remove(&filtered_oid);
+
+        let tx2 = cache::Transaction::open_with_computed(repo.path(), None, Some(resolver.clone()))
+            .unwrap();
+        let err = history::find_original(&tx2, filter, commit_id, filtered_oid, false).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("missing computed filter metadata for filtered commit"),
+            "unexpected error: {err:?}"
+        );
+    }
 
     #[test]
     fn src_path_test() {

@@ -63,12 +63,40 @@ struct Transaction2 {
     missing: Vec<(filter::Filter, git2::Oid)>,
     misses: usize,
     walks: usize,
+    resolved_filters: HashMap<(git2::Oid, git2::Oid), filter::Filter>,
 }
 
 pub struct Transaction {
     t2: std::cell::RefCell<Transaction2>,
     repo: git2::Repository,
     ref_prefix: String,
+    computed: Option<std::sync::Arc<dyn ComputedFilter + Send + Sync>>,
+}
+
+pub trait ComputedFilter {
+    fn forward_filter_for_commit(
+        &self,
+        repo: &git2::Repository,
+        commit_oid: git2::Oid,
+        args: &[String],
+    ) -> JoshResult<filter::Filter>;
+
+    fn record_filtered_commit(
+        &self,
+        original_commit_oid: git2::Oid,
+        filtered_commit_oid: git2::Oid,
+        filter: filter::Filter,
+    ) -> JoshResult<()>;
+
+    fn lookup_commit_filter(
+        &self,
+        filtered_commit_oid: git2::Oid,
+    ) -> JoshResult<Option<filter::Filter>>;
+
+    fn lookup_filtered_base_commit(
+        &self,
+        filtered_commit_oid: git2::Oid,
+    ) -> JoshResult<Option<git2::Oid>>;
 }
 
 impl Transaction {
@@ -84,6 +112,16 @@ impl Transaction {
             )?,
             ref_prefix,
         ))
+    }
+
+    pub fn open_with_computed(
+        path: &std::path::Path,
+        ref_prefix: Option<&str>,
+        resolver: Option<std::sync::Arc<dyn ComputedFilter + Send + Sync>>,
+    ) -> JoshResult<Transaction> {
+        let mut tx = Transaction::open(path, ref_prefix)?;
+        tx.computed = resolver;
+        Ok(tx)
     }
 
     pub fn open_from_env(load_cache: bool) -> JoshResult<Transaction> {
@@ -139,14 +177,18 @@ impl Transaction {
                 missing: vec![],
                 misses: 0,
                 walks: 0,
+                resolved_filters: HashMap::new(),
             }),
             repo,
             ref_prefix: ref_prefix.unwrap_or("").to_string(),
+            computed: None,
         }
     }
 
     pub fn try_clone(&self) -> JoshResult<Transaction> {
-        Transaction::open(self.repo.path(), Some(&self.ref_prefix))
+        let mut tx = Transaction::open(self.repo.path(), Some(&self.ref_prefix))?;
+        tx.computed = self.computed.clone();
+        Ok(tx)
     }
 
     pub fn repo(&self) -> &git2::Repository {
@@ -169,6 +211,88 @@ impl Transaction {
 
     pub fn end_walk(&self) {
         self.t2.borrow_mut().walks -= 1;
+    }
+
+    pub fn set_computed_resolver(
+        &mut self,
+        resolver: Option<std::sync::Arc<dyn ComputedFilter + Send + Sync>>,
+    ) {
+        self.computed = resolver;
+    }
+
+    fn require_computed(&self) -> JoshResult<&(dyn ComputedFilter + Send + Sync)> {
+        self.computed.as_deref().ok_or_else(|| {
+            josh_error("computed filter resolver is not installed on this Transaction")
+        })
+    }
+
+    pub fn forward_filter_for_commit(
+        &self,
+        base_filter: filter::Filter,
+        commit: &git2::Commit<'_>,
+    ) -> JoshResult<filter::Filter> {
+        if let Some(args) = filter::computed_args(base_filter) {
+            let key = (base_filter.id(), commit.id());
+            if let Some(resolved) = self.t2.borrow().resolved_filters.get(&key) {
+                return Ok(*resolved);
+            }
+
+            let resolver = self.require_computed()?;
+            let resolved = resolver.forward_filter_for_commit(self.repo(), commit.id(), &args)?;
+            if filter::is_computed(resolved) {
+                return Err(josh_error(
+                    "computed filter resolver returned another computed filter",
+                ));
+            }
+            self.t2.borrow_mut().resolved_filters.insert(key, resolved);
+            Ok(resolved)
+        } else {
+            Ok(base_filter)
+        }
+    }
+
+    pub fn record_computed_commit(
+        &self,
+        original_commit_oid: git2::Oid,
+        filtered_commit_oid: git2::Oid,
+        resolved_filter: filter::Filter,
+    ) -> JoshResult<()> {
+        if filter::is_computed(resolved_filter) {
+            return Err(josh_error(
+                "resolved computed filter must not remain computed",
+            ));
+        }
+
+        if let Some(resolver) = self.computed.as_ref() {
+            resolver.record_filtered_commit(
+                original_commit_oid,
+                filtered_commit_oid,
+                resolved_filter,
+            )?;
+        }
+        Ok(())
+    }
+
+    pub fn lookup_commit_filter(
+        &self,
+        filtered_commit_oid: git2::Oid,
+    ) -> JoshResult<Option<filter::Filter>> {
+        if let Some(resolver) = self.computed.as_ref() {
+            resolver.lookup_commit_filter(filtered_commit_oid)
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn lookup_filtered_base_commit(
+        &self,
+        filtered_commit_oid: git2::Oid,
+    ) -> JoshResult<Option<git2::Oid>> {
+        if let Some(resolver) = self.computed.as_ref() {
+            resolver.lookup_filtered_base_commit(filtered_commit_oid)
+        } else {
+            Ok(None)
+        }
     }
 
     pub fn insert_apply(&self, filter: filter::Filter, from: git2::Oid, to: git2::Oid) {

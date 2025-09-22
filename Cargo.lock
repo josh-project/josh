@@ -1932,6 +1932,7 @@ dependencies = [
  "serde_yaml",
  "sled",
  "strfmt",
+ "tempfile",
  "tracing",
 ]
 

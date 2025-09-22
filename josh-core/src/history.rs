@@ -99,6 +99,19 @@ fn find_unapply_base(
         return Ok(*original);
     }
 
+    if filter::is_computed(filter) {
+        if let Some(original) = transaction.lookup_filtered_base_commit(filtered)? {
+            filtered_to_original.insert(filtered, original);
+            tracing::info!("Found via computed metadata {}, {}", filtered, original);
+            return Ok(original);
+        } else {
+            return Err(josh_error(&format!(
+                "missing computed filter metadata for filtered commit {}",
+                filtered
+            )));
+        }
+    }
+
     let contained_in_commit = transaction.repo().find_commit(contained_in)?;
     let oid = filter::apply_to_commit(filter, &contained_in_commit, transaction)?;
     if oid != git2::Oid::zero() {
@@ -137,6 +150,16 @@ pub fn find_original(
     }
     if filter == filter::nop() {
         return Ok(filtered);
+    }
+    if filter::is_computed(filter) {
+        return transaction
+            .lookup_filtered_base_commit(filtered)?
+            .ok_or_else(|| {
+                josh_error(&format!(
+                    "missing computed filter metadata for filtered commit {}",
+                    filtered
+                ))
+            });
     }
     let mut walk = transaction.repo().revwalk()?;
     walk.set_sorting(git2::Sort::TOPOLOGICAL)?;
@@ -290,6 +313,18 @@ fn find_new_branch_base(
     contained_in: git2::Oid,
     filtered: git2::Oid,
 ) -> JoshResult<git2::Oid> {
+    if filter::is_computed(filter) {
+        if let Some(base) = transaction.lookup_filtered_base_commit(filtered)? {
+            filtered_to_original.insert(filtered, base);
+            return Ok(filtered);
+        } else {
+            return Err(josh_error(&format!(
+                "missing computed filter metadata for filtered commit {}",
+                filtered
+            )));
+        }
+    }
+
     let walk = {
         let mut walk = transaction.repo().revwalk()?;
         walk.set_sorting(git2::Sort::TOPOLOGICAL)?;
@@ -408,6 +443,25 @@ pub fn unapply_filter(
         tracing::info!("walk commit: {:?}", rev);
         let module_commit = transaction.repo().find_commit(rev)?;
 
+        let commit_filter = if filter::is_computed(filter) {
+            let resolved = transaction
+                .lookup_commit_filter(module_commit.id())?
+                .ok_or_else(|| {
+                    josh_error(&format!(
+                        "missing computed filter metadata for filtered commit {}",
+                        module_commit.id()
+                    ))
+                })?;
+            if filter::is_computed(resolved) {
+                return Err(josh_error(
+                    "computed resolver returned nested computed filter during unapply",
+                ));
+            }
+            resolved
+        } else {
+            filter
+        };
+
         if filtered_to_original.contains_key(&module_commit.id()) {
             continue;
         }
@@ -430,7 +484,7 @@ pub fn unapply_filter(
                 find_unapply_base(
                     transaction,
                     &mut filtered_to_original,
-                    filter,
+                    commit_filter,
                     original_target,
                     *filtered_parent_id,
                 )
@@ -478,7 +532,10 @@ pub fn unapply_filter(
             original_parents
                 .iter()
                 .map(|commit| -> JoshResult<_> {
-                    Ok(filter::unapply(transaction, filter, tree.clone(), commit.tree()?)?.id())
+                    Ok(
+                        filter::unapply(transaction, commit_filter, tree.clone(), commit.tree()?)?
+                            .id(),
+                    )
                 })
                 .collect()
         };

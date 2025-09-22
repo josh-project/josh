@@ -40,6 +40,8 @@ fn make_op(args: &[&str]) -> JoshResult<Op> {
         ["INDEX"] => Ok(Op::Index),
         ["INVERT"] => Ok(Op::Invert),
         ["FOLD"] => Ok(Op::Fold),
+        ["computed"] => Ok(Op::Computed(vec![])),
+        ["computed", rest @ ..] => Ok(Op::Computed(rest.iter().map(|s| s.to_string()).collect())),
         _ => Err(josh_error(
             formatdoc!(
                 r#"
