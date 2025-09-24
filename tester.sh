@@ -47,7 +47,7 @@ cargo build --workspace --exclude josh-ui --features hyper_cgi/test-server
 sh run-tests.sh ${TESTS}
 EOF
 
-docker run -it --rm \
+docker run --rm \
     --workdir "$(pwd)" \
     --volume "$(pwd)":"$(pwd)" \
     --volume cache:/opt/cache \

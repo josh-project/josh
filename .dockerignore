@@ -5,6 +5,7 @@
 !hyper_cgi
 !hyper-reverse-proxy
 !josh-core
+!josh-cli
 !josh-filter
 !josh-proxy
 !josh-rpc
