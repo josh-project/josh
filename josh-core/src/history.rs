@@ -28,27 +28,27 @@ pub fn walk2(
 
         let missing = transaction.get_missing();
         /* let mut i = 0; */
-     //   for (f, id) in missing.into_iter().rev() {
-     //       if filter == f {
-     //           walk.push(id)?;
-     //           /* i = i+1; */
-     //         //  if i > 100 {
-     //         //      break;
-     //         //  }
-     //       }
+        //   for (f, id) in missing.into_iter().rev() {
+        //       if filter == f {
+        //           walk.push(id)?;
+        //           /* i = i+1; */
+        //         //  if i > 100 {
+        //         //      break;
+        //         //  }
+        //       }
 
-     //   }
+        //   }
         walk.push(input)?;
-       // for k in known.iter() {
-       //     walk.hide(*k)?;
-       // }
+        // for k in known.iter() {
+        //     walk.hide(*k)?;
+        // }
         walk
     };
-        let mut hidecb = |id| {
-            let k = transaction.known(filter, id);
-            k
-        };
-       let walk = walk.with_hide_callback(&mut hidecb)?;
+    let mut hidecb = |id| {
+        let k = transaction.known(filter, id);
+        k
+    };
+    let walk = walk.with_hide_callback(&mut hidecb)?;
     eprintln!("/building walk");
 
     log::info!(
@@ -70,8 +70,7 @@ pub fn walk2(
         )? {
             //eprintln!("/apply_to_commit3 break {}", n_in);
             /* break; */
-        }
-        else {
+        } else {
             n_out += 1;
         }
         //eprintln!("/apply_to_commit3 {}", n_in);
@@ -97,7 +96,7 @@ pub fn walk2(
         n_in,
         n_out,
     );
-            cache_sled::sled_print_stats()?;
+    cache_sled::sled_print_stats()?;
 
     transaction.end_walk();
 
@@ -201,7 +200,12 @@ fn find_known(
     input: git2::Oid,
     transaction: &cache::Transaction,
 ) -> JoshResult<(Vec<git2::Oid>, usize)> {
-    log::debug!("find_known {} {} {}", input, filter::spec(filter), cache::n_parents(transaction, input)?);
+    log::debug!(
+        "find_known {} {} {}",
+        input,
+        filter::spec(filter),
+        cache::n_parents(transaction, input)?
+    );
     let mut known = vec![];
     let mut walk = transaction.repo().revwalk()?;
     walk.push(input)?;

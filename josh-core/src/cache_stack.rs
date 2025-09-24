@@ -52,7 +52,7 @@ impl CacheStack {
         &self,
         filter: filter::Filter,
         from: git2::Oid,
-        np: u128
+        np: u128,
     ) -> JoshResult<Option<git2::Oid>> {
         let values = self
             .backends

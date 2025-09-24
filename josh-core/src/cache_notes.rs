@@ -18,14 +18,13 @@ impl NotesCacheBackend {
 
 fn is_note_eligible(repo: &git2::Repository, oid: git2::Oid, np: u128) -> bool {
     /* oid.as_bytes()[0] % 8 == 0 */
-   let parent_count = if let Ok(c) = repo.find_commit(oid) {
-       c.parent_ids().count()
-   } else {
-       return false;
-   };
+    let parent_count = if let Ok(c) = repo.find_commit(oid) {
+        c.parent_ids().count()
+    } else {
+        return false;
+    };
 
-    np % 100 == 0
-    || parent_count != 1
+    np % 100 == 0 || parent_count != 1
     /* || (np+1) % 100 == 0 */
 }
 
@@ -36,7 +35,6 @@ fn note_path(key: git2::Oid, np: u128) -> String {
 impl CacheBackend for NotesCacheBackend {
     fn read(&self, filter: Filter, from: git2::Oid, np: u128) -> JoshResult<Option<git2::Oid>> {
         if filter == n_parents_f() {
-
             return Ok(None);
         }
         let repo = self.repo.lock()?;
@@ -58,7 +56,6 @@ impl CacheBackend for NotesCacheBackend {
 
     fn write(&self, filter: Filter, from: git2::Oid, to: git2::Oid, np: u128) -> JoshResult<()> {
         if filter == n_parents_f() {
-
             return Ok(());
         }
 
@@ -67,11 +64,8 @@ impl CacheBackend for NotesCacheBackend {
             return Ok(());
         }
 
-
         let key = crate::filter::as_tree(&*repo, filter)?;
         let signature = crate::cache::josh_commit_signature()?;
-
-
 
         repo.note(
             &signature,
