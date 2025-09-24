@@ -121,6 +121,22 @@ tree.
 Normally Josh will keep all commits in the filtered history whose tree differs from any of it's
 parents.
 
+### Freeze tree updates
+
+`:freeze` filter prevents appearance of selected subtrees for a given revision.
+
+In practical terms, it means that file and folder updates are "held off" or "frozen".
+If a tree entry already existed in the parent revision, that version will be chosen.
+Otherwise, the tree entry will not appear in the filtered commit.
+
+The source of the parent revision is always the first commit parent.
+
+Note that this filter is only practical when used with `:hook` or `workspace.josh`,
+as it should apply per-revision only. Applying `:freeze` for the whole history
+will result in the subtree being excluded from all revisions.
+
+Refer to `freeze_filter_workspace.t` and `freeze_filter_hook.t` for reference.
+
 Filter order matters
 --------------------
 

@@ -133,6 +133,58 @@ fn make_app() -> clap::Command {
         .arg(clap::Arg::new("version").action(clap::ArgAction::SetTrue).long("version").short('v'))
 }
 
+struct GitNotesFilterHook {
+    repo: std::sync::Mutex<git2::Repository>,
+}
+
+impl josh::cache::FilterHook for GitNotesFilterHook {
+    fn filter_for_commit(
+        &self,
+        commit_oid: git2::Oid,
+        arg: &str,
+    ) -> josh::JoshResult<josh::filter::Filter> {
+        let notes_ref = if arg.starts_with("refs/") {
+            arg.to_string()
+        } else {
+            format!("refs/notes/{}", arg)
+        };
+        let repo = self.repo.lock().unwrap();
+        let note = repo
+            .find_note(Some(notes_ref.as_str()), commit_oid)
+            .map_err(|_| josh::josh_error("missing git note for commit"))?;
+        let msg = note
+            .message()
+            .ok_or_else(|| josh::josh_error("empty git note"))?;
+        josh::filter::parse(msg)
+    }
+}
+
+struct ChangeIdFilterHook {
+    repo: std::sync::Mutex<git2::Repository>,
+}
+
+impl josh::cache::FilterHook for ChangeIdFilterHook {
+    fn filter_for_commit(
+        &self,
+        commit_oid: git2::Oid,
+        arg: &str,
+    ) -> josh::JoshResult<josh::filter::Filter> {
+        let repo = self.repo.lock().unwrap();
+        let commit = repo.find_commit(commit_oid)?;
+        let data = format!(
+            "{:?}:{:?}:{}:{}",
+            commit.message(),
+            commit.time(),
+            commit.author(),
+            commit.committer()
+        );
+
+        let hash = git2::Oid::hash_object(git2::ObjectType::Blob, data.as_bytes())
+            .expect("hash_object changeid");
+        josh::filter::parse(&format!(":\"{}\"", hash))
+    }
+}
+
 fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
     let args = make_app().get_matches_from(args);
 
@@ -152,7 +204,32 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
 
     let mut filterobj = josh::filter::parse(&specstr)?;
 
-    let transaction = josh::cache::Transaction::open_from_env(!args.get_flag("no-cache"))?;
+    let repo_path = {
+        let repo = git2::Repository::open_from_env()?;
+        repo.path().to_path_buf()
+    };
+
+    if !args.get_flag("no-cache") {
+        josh::cache_sled::sled_load(&repo_path)?;
+    }
+
+    let cache = std::sync::Arc::new(
+        josh::cache_stack::CacheStack::new()
+            .with_backend(josh::cache_sled::SledCacheBackend::default())
+            .with_backend(josh::cache_notes::NotesCacheBackend::new(&repo_path)?),
+    );
+
+    let mut transaction = josh::cache::TransactionContext::from_env(cache.clone())?.open(None)?;
+
+    let repo_for_hook = git2::Repository::open_ext(
+        transaction.repo().path(),
+        git2::RepositoryOpenFlags::NO_SEARCH,
+        &[] as &[&std::ffi::OsStr],
+    )?;
+    let hook = ChangeIdFilterHook {
+        repo: std::sync::Mutex::new(repo_for_hook),
+    };
+    transaction = transaction.with_filter_hook(std::sync::Arc::new(hook));
 
     let repo = transaction.repo();
     let input_ref = args.get_one::<String>("input").unwrap();
@@ -232,7 +309,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
             rs_tracing::close_trace_file!();
         }
         if args.get_flag("cache-stats") {
-            josh::cache::print_stats();
+            josh::cache_sled::sled_print_stats().expect("failed to collect cache stats");
         }
         if let Some(mempack) = mp {
             let mut buf = git2::Buf::new();
@@ -429,11 +506,12 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
     std::mem::drop(finish);
 
     if let Some(query) = args.get_one::<String>("query") {
-        let transaction = josh::cache::Transaction::open_from_env(false)?;
+        let transaction = josh::cache::TransactionContext::from_env(cache.clone())?.open(None)?;
         let commit_id = transaction.repo().refname_to_id(update_target)?;
+
         print!(
             "{}",
-            josh_templates::render(&transaction, "", commit_id, query, false)?
+            josh_templates::render(&transaction, cache.clone(), "", commit_id, query, false)?
                 .map(|x| x.0)
                 .unwrap_or("File not found".to_string())
         );

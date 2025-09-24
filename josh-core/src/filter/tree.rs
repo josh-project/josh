@@ -1,5 +1,7 @@
 use super::*;
 
+use crate::cache::TransactionContext;
+use crate::cache_stack::CacheStack;
 use rayon::prelude::*;
 
 pub fn pathstree<'a>(
@@ -778,10 +780,11 @@ pub fn trigram_search<'a>(
         .map(|x| (x.id(), x.name().unwrap().to_string()))
         .collect::<Vec<_>>();
 
+    let tran_context = TransactionContext::new(rpath, CacheStack::default().into());
     let mut r = trees
         .par_iter()
         .map_init(
-            || cache::Transaction::open(rpath, None).unwrap(),
+            || tran_context.open(None).unwrap(),
             |transaction, (id, name)| {
                 let s = transaction.repo().find_tree(*id).unwrap();
 

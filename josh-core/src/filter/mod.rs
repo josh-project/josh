@@ -51,6 +51,10 @@ impl Filter {
     }
 }
 
+pub fn n_parents_f() -> Filter {
+    Filter(git2::Oid::zero())
+}
+
 impl std::fmt::Debug for Filter {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         to_op(*self).fmt(f)
@@ -197,6 +201,10 @@ pub fn message(m: &str) -> Filter {
     to_filter(Op::Message(m.to_string()))
 }
 
+pub fn hook(h: &str) -> Filter {
+    to_filter(Op::Hook(h.to_string()))
+}
+
 pub fn squash(ids: Option<&[(git2::Oid, Filter)]>) -> Filter {
     if let Some(ids) = ids {
         to_filter(Op::Squash(Some(
@@ -219,6 +227,9 @@ fn to_filter(op: Op) -> Filter {
 }
 
 fn to_op(filter: Filter) -> Op {
+    if filter == n_parents_f() {
+        return Op::Nop;
+    }
     FILTERS
         .lock()
         .unwrap()
@@ -276,6 +287,8 @@ enum Op {
 
     RegexReplace(Vec<(regex::Regex, String)>),
 
+    Hook(String),
+
     Index,
     Invert,
 
@@ -283,6 +296,8 @@ enum Op {
     Prefix(std::path::PathBuf),
     Subdir(std::path::PathBuf),
     Workspace(std::path::PathBuf),
+    Lookup(std::path::PathBuf),
+    Lookup2(git2::Oid),
 
     Pattern(String),
     Message(String),
@@ -291,6 +306,7 @@ enum Op {
     Chain(Filter, Filter),
     Subtract(Filter, Filter),
     Exclude(Filter),
+    Freeze(Filter),
 }
 
 /// Pretty print the filter on multiple lines with initial indentation level.
@@ -335,6 +351,10 @@ fn pretty2(op: &Op, indent: usize, compose: bool) -> String {
         Op::Exclude(bf) => match to_op(*bf) {
             Op::Compose(filters) => ff(&filters, "exclude", indent),
             b => format!(":exclude[{}]", pretty2(&b, indent, false)),
+        },
+        Op::Freeze(filter) => match to_op(*filter) {
+            Op::Compose(filters) => ff(&filters, "freeze", indent),
+            b => format!(":freeze[{}]", pretty2(&b, indent, false)),
         },
         Op::Chain(a, b) => match (to_op(*a), to_op(*b)) {
             (Op::Subdir(p1), Op::Prefix(p2)) if p1 == p2 => {
@@ -386,8 +406,11 @@ pub fn nesting(filter: Filter) -> usize {
 fn nesting2(op: &Op) -> usize {
     match op {
         Op::Compose(filters) => 1 + filters.iter().map(|f| nesting(*f)).fold(0, |a, b| a.max(b)),
-        Op::Exclude(filter) => 1 + nesting(*filter),
+        Op::Exclude(filter) | Op::Freeze(filter) => 1 + nesting(*filter),
         Op::Workspace(_) => usize::MAX / 2, // divide by 2 to make sure there is enough headroom to avoid overflows
+        Op::Hook(_) => usize::MAX / 2, // divide by 2 to make sure there is enough headroom to avoid overflows
+        Op::Lookup(_) => usize::MAX / 2, // divide by 2 to make sure there is enough headroom to avoid overflows
+        Op::Lookup2(_) => usize::MAX / 2, // divide by 2 to make sure there is enough headroom to avoid overflows
         Op::Chain(a, b) => 1 + nesting(*a).max(nesting(*b)),
         Op::Subtract(a, b) => 1 + nesting(*a).max(nesting(*b)),
         Op::Rev(filters) => {
@@ -423,7 +446,7 @@ fn lazy_refs2(op: &Op) -> Vec<String> {
                     acc
                 })
         }
-        Op::Exclude(filter) => lazy_refs(*filter),
+        Op::Exclude(filter) | Op::Freeze(filter) => lazy_refs(*filter),
         Op::Chain(a, b) => {
             let mut av = lazy_refs(*a);
             av.append(&mut lazy_refs(*b));
@@ -474,6 +497,7 @@ fn resolve_refs2(refs: &std::collections::HashMap<String, git2::Oid>, op: &Op) -
             Op::Compose(filters.iter().map(|f| resolve_refs(refs, *f)).collect())
         }
         Op::Exclude(filter) => Op::Exclude(resolve_refs(refs, *filter)),
+        Op::Freeze(filter) => Op::Freeze(resolve_refs(refs, *filter)),
         Op::Chain(a, b) => Op::Chain(resolve_refs(refs, *a), resolve_refs(refs, *b)),
         Op::Subtract(a, b) => Op::Subtract(resolve_refs(refs, *a), resolve_refs(refs, *b)),
         Op::Rev(filters) => {
@@ -536,6 +560,9 @@ fn resolve_refs2(refs: &std::collections::HashMap<String, git2::Oid>, op: &Op) -
 /// Compact, single line string representation of a filter so that `parse(spec(F)) == F`
 /// Note that this is will not be the best human readable representation. For that see `pretty(...)`
 pub fn spec(filter: Filter) -> String {
+    if filter == n_parents_f() {
+        return "n_parents_f".to_string();
+    }
     let filter = opt::simplify(filter);
     spec2(&to_op(filter))
 }
@@ -558,6 +585,9 @@ fn spec2(op: &Op) -> String {
         Op::Exclude(b) => {
             format!(":exclude[{}]", spec(*b))
         }
+        Op::Freeze(filter) => {
+            format!(":freeze[{}]", spec(*filter))
+        }
         Op::Rev(filters) => {
             let mut v = filters
                 .iter()
@@ -576,6 +606,12 @@ fn spec2(op: &Op) -> String {
         }
         Op::Workspace(path) => {
             format!(":workspace={}", parse::quote_if(&path.to_string_lossy()))
+        }
+        Op::Lookup(path) => {
+            format!(":lookup={}", parse::quote_if(&path.to_string_lossy()))
+        }
+        Op::Lookup2(oid) => {
+            format!(":lookup2={}", oid.to_string())
         }
         Op::RegexReplace(replacements) => {
             let v = replacements
@@ -628,6 +664,9 @@ fn spec2(op: &Op) -> String {
         }
         Op::Message(m) => {
             format!(":{}", parse::quote(m))
+        }
+        Op::Hook(hook) => {
+            format!(":hook={}", parse::quote(hook))
         }
     }
 }
@@ -698,8 +737,8 @@ fn as_tree2(repo: &git2::Repository, op: &Op) -> JoshResult<git2::Oid> {
         Op::Exclude(b) => {
             builder.insert("exclude", as_tree(repo, *b)?, git2::FileMode::Tree.into())?;
         }
-        Op::Hold(b) => {
-            builder.insert("hold", as_tree(repo, *b)?, git2::FileMode::Tree.into())?;
+        Op::Freeze(b) => {
+            builder.insert("freeze", as_tree(repo, *b)?, git2::FileMode::Tree.into())?;
         }
         Op::Subdir(path) => {
             builder.insert(
@@ -912,7 +951,9 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> JoshResult<Op> {
 
     // Assume there's only one entry and get it directly
     let entry = tree.get(0).ok_or_else(|| josh_error("Empty tree"))?;
-    let name = entry.name().ok_or_else(|| josh_error("Entry has no name"))?;
+    let name = entry
+        .name()
+        .ok_or_else(|| josh_error("Entry has no name"))?;
 
     match name {
         "nop" => {
@@ -1100,10 +1141,10 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> JoshResult<Op> {
             let filter = from_tree2(repo, exclude_tree.id())?;
             Ok(Op::Exclude(to_filter(filter)))
         }
-        "hold" => {
-            let hold_tree = repo.find_tree(entry.id())?;
-            let filter = from_tree2(repo, hold_tree.id())?;
-            Ok(Op::Hold(to_filter(filter)))
+        "freeze" => {
+            let freeze_tree = repo.find_tree(entry.id())?;
+            let filter = from_tree2(repo, freeze_tree.id())?;
+            Ok(Op::Freeze(to_filter(filter)))
         }
         "rev" => {
             let rev_tree = repo.find_tree(entry.id())?;
@@ -1217,7 +1258,7 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> JoshResult<Op> {
             }
             Ok(Op::RegexReplace(replacements))
         }
-        _ => Err(josh_error("Unknown tree structure"))
+        _ => Err(josh_error("Unknown tree structure")),
     }
 }
 
@@ -1264,13 +1305,21 @@ pub fn apply_to_commit(
 
         let missing = transaction.get_missing();
 
+        eprintln!("MISSING {:?}", missing.len());
+
         // Since 'missing' is sorted by nesting, the first is always the minimal
-        let minimal_nesting = missing.first().map(|(f, _)| nesting(*f)).unwrap_or(0);
+        /* let minimal_nesting = missing.first().map(|(f, _)| nesting(*f)).unwrap_or(0); */
+
+        // let mut lf = None;
 
         for (f, i) in missing {
-            if nesting(f) != minimal_nesting {
-                break;
-            }
+            //     if let Some(f) = lf {
+            //         continue;
+            //     }
+            //     lf = Some(f);
+            /* if nesting(f) != minimal_nesting { */
+            /* break; */
+            /* } */
             history::walk2(f, i, transaction)?;
         }
     }
@@ -1300,8 +1349,8 @@ fn resolve_workspace_redirect<'a>(
     }
 }
 
-fn get_workspace<'a>(repo: &'a git2::Repository, tree: &'a git2::Tree<'a>, path: &Path) -> Filter {
-    let ws_path = normalize_path(&path.join("workspace.josh"));
+fn get_filter<'a>(repo: &'a git2::Repository, tree: &'a git2::Tree<'a>, path: &Path) -> Filter {
+    let ws_path = normalize_path(path);
     let ws_id = ok_or!(tree.get_path(&ws_path), {
         return to_filter(Op::Empty);
     })
@@ -1453,6 +1502,69 @@ fn apply_to_commit2(
                 Apply::from_commit(commit)?.with_parents(filtered_parent_ids),
             )?
         }
+        Op::Lookup(lookup_path) => {
+            let lookup_commit = if let Some(lookup_commit) =
+                apply_to_commit2(&Op::Subdir(lookup_path.clone()), &commit, transaction)?
+            {
+                lookup_commit
+            } else {
+                return Ok(None);
+            };
+
+            let op = Op::Lookup2(lookup_commit);
+
+            if let Some(start) = transaction.get(to_filter(op), commit.id()) {
+                transaction.insert(filter, commit.id(), start, true);
+                return Ok(Some(start));
+            } else {
+                return Ok(None);
+            }
+        }
+
+        Op::Lookup2(lookup_commit_id) => {
+            let lookup_commit = repo.find_commit(*lookup_commit_id)?;
+            for parent in lookup_commit.parents() {
+                let lookup_tree = lookup_commit.tree_id();
+                let cw = get_filter(
+                    repo,
+                    &repo.find_tree(lookup_tree)?,
+                    &std::path::PathBuf::new().join(commit.id().to_string()),
+                );
+                if cw != filter::empty() {
+                    if let Some(start) =
+                        apply_to_commit2(&Op::Lookup2(parent.id()), &commit, transaction)?
+                    {
+                        transaction.insert(filter, commit.id(), start, true);
+                        return Ok(Some(start));
+                    } else {
+                        return Ok(None);
+                    }
+                }
+                break;
+            }
+            let lookup_tree = lookup_commit.tree_id();
+            let cw = get_filter(
+                repo,
+                &repo.find_tree(lookup_tree)?,
+                &std::path::PathBuf::new().join(commit.id().to_string()),
+            );
+
+            if cw == filter::empty() {
+                // FIXME empty filter or no entry in table?
+                for parent in commit.parents() {
+                    if let Some(start) = apply_to_commit2(&op, &parent, transaction)? {
+                        transaction.insert(filter, commit.id(), start, true);
+                        return Ok(Some(start));
+                    } else {
+                        return Ok(None);
+                    }
+                }
+                return Ok(None);
+            }
+
+            Apply::from_commit(commit)?
+                .with_tree(apply(transaction, cw, Apply::from_commit(commit)?)?.into_tree())
+        }
         Op::Squash(Some(ids)) => {
             if let Some(sq) = ids.get(&LazyRef::Resolved(commit.id())) {
                 let oid = if let Some(oid) =
@@ -1584,7 +1696,7 @@ fn apply_to_commit2(
 
             let normal_parents = some_or!(normal_parents, { return Ok(None) });
 
-            let cw = get_workspace(repo, &commit.tree()?, ws_path);
+            let cw = get_filter(repo, &commit.tree()?, &ws_path.join("workspace.josh"));
 
             let extra_parents = commit
                 .parents()
@@ -1599,10 +1711,10 @@ fn apply_to_commit2(
                         ws_path.clone()
                     };
 
-                    let pcw = get_workspace(
+                    let pcw = get_filter(
                         repo,
                         &parent.tree().unwrap_or_else(|_| tree::empty(repo)),
-                        &p,
+                        &p.join("workspace.josh"),
                     );
                     let f = opt::optimize(to_filter(Op::Subtract(cw, pcw)));
 
@@ -1651,6 +1763,51 @@ fn apply_to_commit2(
 
             let filtered_tree = repo.find_tree(filtered_tree)?;
             Apply::from_commit(commit)?.with_tree(filtered_tree)
+        }
+        Op::Hook(hook) => {
+            let commit_filter = transaction.lookup_filter_hook(&hook, commit.id())?;
+            let normal_parents = commit
+                .parent_ids()
+                .map(|x| transaction.get(filter, x))
+                .collect::<Option<Vec<_>>>();
+            let normal_parents = some_or!(normal_parents, { return Ok(None) });
+
+            let extra_parents = commit
+                .parents()
+                .map(|parent| {
+                    rs_tracing::trace_scoped!("hook parent", "id": parent.id().to_string());
+
+                    let pcw = transaction.lookup_filter_hook(&hook, parent.id())?;
+                    let f = opt::optimize(to_filter(Op::Subtract(commit_filter, pcw)));
+
+                    let r = apply_to_commit2(&to_op(f), &parent, transaction);
+                    r
+                })
+                .collect::<JoshResult<Option<Vec<_>>>>()?;
+
+            let extra_parents = some_or!(extra_parents, { return Ok(None) });
+
+            let extra_parents: Vec<_> = extra_parents
+                .into_iter()
+                .filter(|&oid| oid != git2::Oid::zero())
+                .collect();
+
+            let filtered_parent_ids: Vec<_> =
+                normal_parents.into_iter().chain(extra_parents).collect();
+
+            let tree_data = apply(
+                transaction,
+                commit_filter,
+                Apply::from_commit(commit)?.with_parents(filtered_parent_ids.clone()),
+            )?;
+            return Some(history::create_filtered_commit(
+                commit,
+                filtered_parent_ids,
+                tree_data,
+                transaction,
+                filter,
+            ))
+            .transpose();
         }
         _ => {
             let filtered_parent_ids = commit
@@ -1718,6 +1875,8 @@ fn apply2<'a>(transaction: &'a cache::Transaction, op: &Op, x: Apply<'a>) -> Jos
         Op::Prune => Ok(x),
         Op::Unsign => Ok(x),
         Op::Rev(_) => Err(josh_error("not applicable to tree")),
+        Op::Lookup(_) => Err(josh_error("not applicable to tree")),
+        Op::Lookup2(_) => Err(josh_error("not applicable to tree")),
         Op::Join(_) => Err(josh_error("not applicable to tree")),
         Op::RegexReplace(replacements) => {
             let mut t = x.tree().clone();
@@ -1806,7 +1965,10 @@ fn apply2<'a>(transaction: &'a cache::Transaction, op: &Op, x: Apply<'a>) -> Jos
                 transaction,
                 compose(
                     wsj_file,
-                    compose(get_workspace(repo, &x.tree(), path), base),
+                    compose(
+                        get_filter(repo, &x.tree(), &path.join("workspace.josh")),
+                        base,
+                    ),
                 ),
                 x,
             )
@@ -1826,6 +1988,26 @@ fn apply2<'a>(transaction: &'a cache::Transaction, op: &Op, x: Apply<'a>) -> Jos
 
         Op::Chain(a, b) => {
             return apply(transaction, *b, apply(transaction, *a, x.clone())?);
+        }
+        Op::Hook(_) => Err(josh_error("not applicable to tree")),
+
+        Op::Freeze(freeze_filter) => {
+            let filtered_parent = if let Some(parent) = x.parents.as_ref().and_then(|p| p.first()) {
+                let parent = repo.find_commit(*parent)?;
+                let filtered = apply(transaction, *freeze_filter, Apply::from_commit(&parent)?)?;
+                filtered.tree.id()
+            } else {
+                tree::empty_id()
+            };
+
+            // Mask out all the "held" files from current tree
+            let exclude = to_filter(Op::Exclude(*freeze_filter));
+            let with_mask = apply(transaction, exclude, x.clone())?;
+
+            // Overlay filtered parent tree on current one to override versions
+            let with_overlay = tree::overlay(transaction, with_mask.tree.id(), filtered_parent)?;
+
+            Ok(x.with_tree(repo.find_tree(with_overlay)?))
         }
     }
 }
@@ -1898,8 +2080,12 @@ fn unapply_workspace<'a>(
     match op {
         Op::Workspace(path) => {
             let tree = pre_process_tree(transaction.repo(), tree)?;
-            let workspace = get_workspace(transaction.repo(), &tree, Path::new(""));
-            let original_workspace = get_workspace(transaction.repo(), &parent_tree, path);
+            let workspace = get_filter(transaction.repo(), &tree, Path::new("workspace.josh"));
+            let original_workspace = get_filter(
+                transaction.repo(),
+                &parent_tree,
+                &path.join("workspace.josh"),
+            );
 
             let root = to_filter(Op::Subdir(path.to_owned()));
             let wsj_file = to_filter(Op::File(Path::new("workspace.josh").to_owned()));
