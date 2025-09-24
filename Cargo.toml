@@ -4,6 +4,7 @@ members = [
     "hyper_cgi",
     "hyper-reverse-proxy",
     "josh-core",
+    "josh-cli",
     "josh-filter",
     "josh-graphql",
     "josh-proxy",
@@ -22,6 +23,7 @@ codegen-units = 1
 base64 = "0.22.1"
 defer = "0.2.1"
 env_logger = "0.11.5"
+log = "0.4.28"
 futures = "0.3.31"
 gix = { version = "0.72.1", default-features = false }
 hyper-reverse-proxy = { path = "hyper-reverse-proxy", version = "0.0.1" }
