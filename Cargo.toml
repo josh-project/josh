@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "hyper_cgi",
     "josh-core",
+    "josh-cli",
     "josh-filter",
     "josh-graphql",
     "josh-proxy",
