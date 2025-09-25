@@ -73,6 +73,6 @@ version = "0.1.41"
 features = ["max_level_trace", "release_max_level_trace"]
 
 [workspace.dependencies.clap]
-version = "4.5.47"
+version = "4.5.48"
 features = ["derive", "help", "std", "usage"]
 default-features = false
