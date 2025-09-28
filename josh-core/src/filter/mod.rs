@@ -289,6 +289,8 @@ enum Op {
     Prefix(std::path::PathBuf),
     Subdir(std::path::PathBuf),
     Workspace(std::path::PathBuf),
+    Lookup(std::path::PathBuf),
+    Lookup2(git2::Oid),
 
     Pattern(String),
     Message(String),
@@ -394,6 +396,8 @@ fn nesting2(op: &Op) -> usize {
         Op::Compose(filters) => 1 + filters.iter().map(|f| nesting(*f)).fold(0, |a, b| a.max(b)),
         Op::Exclude(filter) => 1 + nesting(*filter),
         Op::Workspace(_) => usize::MAX / 2, // divide by 2 to make sure there is enough headroom to avoid overflows
+        Op::Lookup(_) => usize::MAX / 2, // divide by 2 to make sure there is enough headroom to avoid overflows
+        Op::Lookup2(_) => usize::MAX / 2, // divide by 2 to make sure there is enough headroom to avoid overflows
         Op::Chain(a, b) => 1 + nesting(*a).max(nesting(*b)),
         Op::Subtract(a, b) => 1 + nesting(*a).max(nesting(*b)),
         Op::Rev(filters) => {
@@ -582,6 +586,12 @@ fn spec2(op: &Op) -> String {
         }
         Op::Workspace(path) => {
             format!(":workspace={}", parse::quote_if(&path.to_string_lossy()))
+        }
+        Op::Lookup(path) => {
+            format!(":lookup={}", parse::quote_if(&path.to_string_lossy()))
+        }
+        Op::Lookup2(oid) => {
+            format!(":lookup2={}", oid.to_string())
         }
         Op::RegexReplace(replacements) => {
             let v = replacements
@@ -1309,8 +1319,8 @@ fn resolve_workspace_redirect<'a>(
     }
 }
 
-fn get_workspace<'a>(repo: &'a git2::Repository, tree: &'a git2::Tree<'a>, path: &Path) -> Filter {
-    let ws_path = normalize_path(&path.join("workspace.josh"));
+fn get_filter<'a>(repo: &'a git2::Repository, tree: &'a git2::Tree<'a>, path: &Path) -> Filter {
+    let ws_path = normalize_path(path);
     let ws_id = ok_or!(tree.get_path(&ws_path), {
         return to_filter(Op::Empty);
     })
@@ -1462,6 +1472,69 @@ fn apply_to_commit2(
                 Apply::from_commit(commit)?.with_parents(filtered_parent_ids),
             )?
         }
+        Op::Lookup(lookup_path) => {
+            let lookup_commit = if let Some(lookup_commit) =
+                apply_to_commit2(&Op::Subdir(lookup_path.clone()), &commit, transaction)?
+            {
+                lookup_commit
+            } else {
+                return Ok(None);
+            };
+
+            let op = Op::Lookup2(lookup_commit);
+
+            if let Some(start) = transaction.get(to_filter(op), commit.id()) {
+                transaction.insert(filter, commit.id(), start, true);
+                return Ok(Some(start));
+            } else {
+                return Ok(None);
+            }
+        }
+
+        Op::Lookup2(lookup_commit_id) => {
+            let lookup_commit = repo.find_commit(*lookup_commit_id)?;
+            for parent in lookup_commit.parents() {
+                let lookup_tree = lookup_commit.tree_id();
+                let cw = get_filter(
+                    repo,
+                    &repo.find_tree(lookup_tree)?,
+                    &std::path::PathBuf::new().join(commit.id().to_string()),
+                );
+                if cw != filter::empty() {
+                    if let Some(start) =
+                        apply_to_commit2(&Op::Lookup2(parent.id()), &commit, transaction)?
+                    {
+                        transaction.insert(filter, commit.id(), start, true);
+                        return Ok(Some(start));
+                    } else {
+                        return Ok(None);
+                    }
+                }
+                break;
+            }
+            let lookup_tree = lookup_commit.tree_id();
+            let cw = get_filter(
+                repo,
+                &repo.find_tree(lookup_tree)?,
+                &std::path::PathBuf::new().join(commit.id().to_string()),
+            );
+
+            if cw == filter::empty() {
+                // FIXME empty filter or no entry in table?
+                for parent in commit.parents() {
+                    if let Some(start) = apply_to_commit2(&op, &parent, transaction)? {
+                        transaction.insert(filter, commit.id(), start, true);
+                        return Ok(Some(start));
+                    } else {
+                        return Ok(None);
+                    }
+                }
+                return Ok(None);
+            }
+
+            Apply::from_commit(commit)?
+                .with_tree(apply(transaction, cw, Apply::from_commit(commit)?)?.into_tree())
+        }
         Op::Squash(Some(ids)) => {
             if let Some(sq) = ids.get(&LazyRef::Resolved(commit.id())) {
                 let oid = if let Some(oid) =
@@ -1593,7 +1666,7 @@ fn apply_to_commit2(
 
             let normal_parents = some_or!(normal_parents, { return Ok(None) });
 
-            let cw = get_workspace(repo, &commit.tree()?, ws_path);
+            let cw = get_filter(repo, &commit.tree()?, &ws_path.join("workspace.josh"));
 
             let extra_parents = commit
                 .parents()
@@ -1608,10 +1681,10 @@ fn apply_to_commit2(
                         ws_path.clone()
                     };
 
-                    let pcw = get_workspace(
+                    let pcw = get_filter(
                         repo,
                         &parent.tree().unwrap_or_else(|_| tree::empty(repo)),
-                        &p,
+                        &p.join("workspace.josh"),
                     );
                     let f = opt::optimize(to_filter(Op::Subtract(cw, pcw)));
 
@@ -1739,6 +1812,8 @@ fn apply2<'a>(transaction: &'a cache::Transaction, op: &Op, x: Apply<'a>) -> Jos
         Op::Prune => Ok(x),
         Op::Unsign => Ok(x),
         Op::Rev(_) => Err(josh_error("not applicable to tree")),
+        Op::Lookup(_) => Err(josh_error("not applicable to tree")),
+        Op::Lookup2(_) => Err(josh_error("not applicable to tree")),
         Op::Join(_) => Err(josh_error("not applicable to tree")),
         Op::RegexReplace(replacements) => {
             let mut t = x.tree().clone();
@@ -1827,7 +1902,10 @@ fn apply2<'a>(transaction: &'a cache::Transaction, op: &Op, x: Apply<'a>) -> Jos
                 transaction,
                 compose(
                     wsj_file,
-                    compose(get_workspace(repo, &x.tree(), path), base),
+                    compose(
+                        get_filter(repo, &x.tree(), &path.join("workspace.josh")),
+                        base,
+                    ),
                 ),
                 x,
             )
@@ -1920,8 +1998,12 @@ fn unapply_workspace<'a>(
     match op {
         Op::Workspace(path) => {
             let tree = pre_process_tree(transaction.repo(), tree)?;
-            let workspace = get_workspace(transaction.repo(), &tree, Path::new(""));
-            let original_workspace = get_workspace(transaction.repo(), &parent_tree, path);
+            let workspace = get_filter(transaction.repo(), &tree, Path::new("workspace.josh"));
+            let original_workspace = get_filter(
+                transaction.repo(),
+                &parent_tree,
+                &path.join("workspace.josh"),
+            );
 
             let root = to_filter(Op::Subdir(path.to_owned()));
             let wsj_file = to_filter(Op::File(Path::new("workspace.josh").to_owned()));
