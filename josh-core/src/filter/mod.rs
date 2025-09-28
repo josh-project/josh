@@ -317,6 +317,8 @@ enum Op {
     Prefix(std::path::PathBuf),
     Subdir(std::path::PathBuf),
     Workspace(std::path::PathBuf),
+    Lookup(std::path::PathBuf),
+    Lookup2(git2::Oid),
 
     Pattern(String),
     Message(String, regex::Regex),
@@ -637,6 +639,12 @@ fn spec2(op: &Op) -> String {
         Op::Workspace(path) => {
             format!(":workspace={}", parse::quote_if(&path.to_string_lossy()))
         }
+        Op::Lookup(path) => {
+            format!(":lookup={}", parse::quote_if(&path.to_string_lossy()))
+        }
+        Op::Lookup2(oid) => {
+            format!(":lookup2={}", oid.to_string())
+        }
         Op::RegexReplace(replacements) => {
             let v = replacements
                 .iter()
@@ -941,6 +949,69 @@ fn apply_to_commit2(
             }
 
             apply(transaction, nf, Apply::from_commit(commit)?)?
+        }
+        Op::Lookup(lookup_path) => {
+            let lookup_commit = if let Some(lookup_commit) =
+                apply_to_commit2(&Op::Subdir(lookup_path.clone()), &commit, transaction)?
+            {
+                lookup_commit
+            } else {
+                return Ok(None);
+            };
+
+            let op = Op::Lookup2(lookup_commit);
+
+            if let Some(start) = transaction.get(to_filter(op), commit.id()) {
+                transaction.insert(filter, commit.id(), start, true);
+                return Ok(Some(start));
+            } else {
+                return Ok(None);
+            }
+        }
+
+        Op::Lookup2(lookup_commit_id) => {
+            let lookup_commit = repo.find_commit(*lookup_commit_id)?;
+            for parent in lookup_commit.parents() {
+                let lookup_tree = lookup_commit.tree_id();
+                let cw = get_filter(
+                    repo,
+                    &repo.find_tree(lookup_tree)?,
+                    &std::path::PathBuf::new().join(commit.id().to_string()),
+                );
+                if cw != filter::empty() {
+                    if let Some(start) =
+                        apply_to_commit2(&Op::Lookup2(parent.id()), &commit, transaction)?
+                    {
+                        transaction.insert(filter, commit.id(), start, true);
+                        return Ok(Some(start));
+                    } else {
+                        return Ok(None);
+                    }
+                }
+                break;
+            }
+            let lookup_tree = lookup_commit.tree_id();
+            let cw = get_filter(
+                repo,
+                &repo.find_tree(lookup_tree)?,
+                &std::path::PathBuf::new().join(commit.id().to_string()),
+            );
+
+            if cw == filter::empty() {
+                // FIXME empty filter or no entry in table?
+                for parent in commit.parents() {
+                    if let Some(start) = apply_to_commit2(&op, &parent, transaction)? {
+                        transaction.insert(filter, commit.id(), start, true);
+                        return Ok(Some(start));
+                    } else {
+                        return Ok(None);
+                    }
+                }
+                return Ok(None);
+            }
+
+            Apply::from_commit(commit)?
+                .with_tree(apply(transaction, cw, Apply::from_commit(commit)?)?.into_tree())
         }
         Op::Squash(Some(ids)) => {
             if let Some(sq) = ids.get(&LazyRef::Resolved(commit.id())) {
@@ -1609,6 +1680,8 @@ fn apply2<'a>(transaction: &'a cache::Transaction, op: &Op, x: Apply<'a>) -> Jos
             Ok(x.with_tree(result_tree))
         }
         Op::Rev(_) => Err(josh_error("not applicable to tree")),
+        Op::Lookup(_) => Err(josh_error("not applicable to tree")),
+        Op::Lookup2(_) => Err(josh_error("not applicable to tree")),
         Op::Join(_) => Err(josh_error("not applicable to tree")),
         Op::RegexReplace(replacements) => {
             let mut t = x.tree().clone();
