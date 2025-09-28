@@ -10,6 +10,8 @@ fn make_op(args: &[&str]) -> JoshResult<Op> {
         ["author", author, email] => Ok(Op::Author(author.to_string(), email.to_string())),
         ["committer", author, email] => Ok(Op::Committer(author.to_string(), email.to_string())),
         ["workspace", arg] => Ok(Op::Workspace(Path::new(arg).to_owned())),
+        #[cfg(feature = "incubating")]
+        ["lookup", arg] => Ok(Op::Lookup(Path::new(arg).to_owned())),
         ["prefix"] => Err(josh_error(indoc!(
             r#"
             Filter ":prefix" requires an argument.
