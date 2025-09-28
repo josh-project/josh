@@ -336,6 +336,16 @@ impl InMemoryBuilder {
                 let params_tree = self.build_str_params(&[hook.as_ref()]);
                 push_tree_entries(&mut entries, [("hook", params_tree)]);
             }
+            #[cfg(feature = "incubating")]
+            Op::Lookup(path) => {
+                let params_tree = self.build_str_params(&[path.to_string_lossy().as_ref()]);
+                push_tree_entries(&mut entries, [("lookup", params_tree)]);
+            }
+            #[cfg(feature = "incubating")]
+            Op::Lookup2(oid) => {
+                let params_tree = self.build_str_params(&[oid.to_string().as_ref()]);
+                push_tree_entries(&mut entries, [("lookup2", params_tree)]);
+            }
         }
 
         let tree = gix_object::Tree { entries };
@@ -639,6 +649,32 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> JoshResult<Op> {
             )?;
             let path = std::str::from_utf8(path_blob.content())?;
             Ok(Op::Stored(std::path::PathBuf::from(path)))
+        }
+        #[cfg(feature = "incubating")]
+        "lookup" => {
+            let inner = repo.find_tree(entry.id())?;
+            let path_blob = repo.find_blob(
+                inner
+                    .get_name("0")
+                    .ok_or_else(|| josh_error("lookup: missing path"))?
+                    .id(),
+            )?;
+            let path = std::str::from_utf8(path_blob.content())?;
+            Ok(Op::Lookup(std::path::PathBuf::from(path)))
+        }
+        #[cfg(feature = "incubating")]
+        "lookup2" => {
+            let inner = repo.find_tree(entry.id())?;
+            let oid_blob = repo.find_blob(
+                inner
+                    .get_name("0")
+                    .ok_or_else(|| josh_error("lookup2: missing oid"))?
+                    .id(),
+            )?;
+            let oid_str = std::str::from_utf8(oid_blob.content())?;
+            let oid = git2::Oid::from_str(oid_str)
+                .map_err(|e| josh_error(&format!("lookup2: invalid oid: {}", e)))?;
+            Ok(Op::Lookup2(oid))
         }
         "compose" => {
             let compose_tree = repo.find_tree(entry.id())?;

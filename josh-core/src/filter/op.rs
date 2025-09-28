@@ -69,6 +69,10 @@ pub enum Op {
     Prefix(std::path::PathBuf),
     Subdir(std::path::PathBuf),
     Workspace(std::path::PathBuf),
+    #[cfg(feature = "incubating")]
+    Lookup(std::path::PathBuf),
+    #[cfg(feature = "incubating")]
+    Lookup2(git2::Oid),
     Stored(std::path::PathBuf),
 
     Pattern(String),
