@@ -331,6 +331,7 @@ impl InMemoryBuilder {
                 let blob = self.write_blob(hook.as_bytes());
                 push_blob_entries(&mut entries, [("hook", blob)]);
             }
+            &Op::Lookup(_) | &Op::Lookup2(_) => todo!(),
         }
 
         let tree = gix_object::Tree { entries };
