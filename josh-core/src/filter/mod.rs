@@ -321,6 +321,10 @@ enum Op {
     Prefix(std::path::PathBuf),
     Subdir(std::path::PathBuf),
     Workspace(std::path::PathBuf),
+    #[cfg(feature = "incubating")]
+    Lookup(std::path::PathBuf),
+    #[cfg(feature = "incubating")]
+    Lookup2(git2::Oid),
     Stored(std::path::PathBuf),
 
     Pattern(String),
@@ -598,6 +602,14 @@ fn spec2(op: &Op) -> String {
         }
         Op::Workspace(path) => {
             format!(":workspace={}", parse::quote_if(&path.to_string_lossy()))
+        }
+        #[cfg(feature = "incubating")]
+        Op::Lookup(path) => {
+            format!(":lookup={}", parse::quote_if(&path.to_string_lossy()))
+        }
+        #[cfg(feature = "incubating")]
+        Op::Lookup2(oid) => {
+            format!(":lookup2={}", oid.to_string())
         }
         Op::Stored(path) => {
             format!(":+{}", parse::quote_if(&path.to_string_lossy()))
@@ -925,6 +937,71 @@ fn apply_to_commit2(
             }
 
             apply(transaction, nf, Apply::from_commit(commit)?)?
+        }
+        #[cfg(feature = "incubating")]
+        Op::Lookup(lookup_path) => {
+            let lookup_commit = if let Some(lookup_commit) =
+                apply_to_commit2(&Op::Subdir(lookup_path.clone()), &commit, transaction)?
+            {
+                lookup_commit
+            } else {
+                return Ok(None);
+            };
+
+            let op = Op::Lookup2(lookup_commit);
+
+            if let Some(start) = transaction.get(to_filter(op), commit.id()) {
+                transaction.insert(filter, commit.id(), start, true);
+                return Ok(Some(start));
+            } else {
+                return Ok(None);
+            }
+        }
+
+        #[cfg(feature = "incubating")]
+        Op::Lookup2(lookup_commit_id) => {
+            let lookup_commit = repo.find_commit(*lookup_commit_id)?;
+            for parent in lookup_commit.parents() {
+                let lookup_tree = lookup_commit.tree_id();
+                let cw = get_filter(
+                    transaction,
+                    &repo.find_tree(lookup_tree)?,
+                    &std::path::PathBuf::new().join(commit.id().to_string()),
+                );
+                if cw != filter::empty() {
+                    if let Some(start) =
+                        apply_to_commit2(&Op::Lookup2(parent.id()), &commit, transaction)?
+                    {
+                        transaction.insert(filter, commit.id(), start, true);
+                        return Ok(Some(start));
+                    } else {
+                        return Ok(None);
+                    }
+                }
+                break;
+            }
+            let lookup_tree = lookup_commit.tree_id();
+            let cw = get_filter(
+                transaction,
+                &repo.find_tree(lookup_tree)?,
+                &std::path::PathBuf::new().join(commit.id().to_string()),
+            );
+
+            if cw == filter::empty() {
+                // FIXME empty filter or no entry in table?
+                for parent in commit.parents() {
+                    if let Some(start) = apply_to_commit2(&op, &parent, transaction)? {
+                        transaction.insert(filter, commit.id(), start, true);
+                        return Ok(Some(start));
+                    } else {
+                        return Ok(None);
+                    }
+                }
+                return Ok(None);
+            }
+
+            Apply::from_commit(commit)?
+                .with_tree(apply(transaction, cw, Apply::from_commit(commit)?)?.into_tree())
         }
         Op::Squash(Some(ids)) => {
             if let Some(sq) = ids.get(&LazyRef::Resolved(commit.id())) {
@@ -1726,6 +1803,8 @@ fn apply2<'a>(transaction: &'a cache::Transaction, op: &Op, x: Apply<'a>) -> Jos
             }
         }
         Op::Pin(_) => Ok(x),
+        #[cfg(feature = "incubating")]
+        Op::Lookup(_) | Op::Lookup2(_) => Err(josh_error("not applicable to tree")),
     }
 }
 
