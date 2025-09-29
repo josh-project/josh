@@ -23,7 +23,7 @@
     "ts-pattern": "^3.3.5",
     "tsoption": "^0.7.0",
     "typescript": "^4.5.5",
-    "web-vitals": "^2.1.4"
+    "web-vitals": "^5.1.0"
   },
   "scripts": {
     "start": "BROWSER=none react-scripts start",
