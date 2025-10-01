@@ -197,6 +197,10 @@ pub fn message(m: &str) -> Filter {
     to_filter(Op::Message(m.to_string()))
 }
 
+pub fn hook(h: &str) -> Filter {
+    to_filter(Op::Hook(h.to_string()))
+}
+
 pub fn squash(ids: Option<&[(git2::Oid, Filter)]>) -> Filter {
     if let Some(ids) = ids {
         to_filter(Op::Squash(Some(
@@ -275,6 +279,8 @@ enum Op {
     Unsign,
 
     RegexReplace(Vec<(regex::Regex, String)>),
+
+    Hook(String),
 
     Index,
     Invert,
@@ -628,6 +634,9 @@ fn spec2(op: &Op) -> String {
         }
         Op::Message(m) => {
             format!(":{}", parse::quote(m))
+        }
+        Op::Hook(hook) => {
+            format!(":hook={}", parse::quote(hook))
         }
     }
 }
@@ -1652,6 +1661,18 @@ fn apply_to_commit2(
             let filtered_tree = repo.find_tree(filtered_tree)?;
             Apply::from_commit(commit)?.with_tree(filtered_tree)
         }
+        Op::Hook(hook) => {
+            let commit_filter = transaction.lookup_filter_hook(&hook, commit.id())?;
+            let filtered_parent_ids = commit
+                .parent_ids()
+                .map(|x| transaction.get(filter, x))
+                .collect::<Option<Vec<_>>>();
+            apply(
+                transaction,
+                commit_filter,
+                Apply::from_commit(commit)?.with_parents(filtered_parent_ids.unwrap_or_default()),
+            )?
+        }
         _ => {
             let filtered_parent_ids = commit
                 .parent_ids()
@@ -1827,6 +1848,7 @@ fn apply2<'a>(transaction: &'a cache::Transaction, op: &Op, x: Apply<'a>) -> Jos
         Op::Chain(a, b) => {
             return apply(transaction, *b, apply(transaction, *a, x.clone())?);
         }
+        Op::Hook(_) => Err(josh_error("not applicable to tree")),
     }
 }
 
