@@ -197,6 +197,10 @@ pub fn message(m: &str) -> Filter {
     to_filter(Op::Message(m.to_string()))
 }
 
+pub fn hook(h: &str) -> Filter {
+    to_filter(Op::Hook(h.to_string()))
+}
+
 pub fn squash(ids: Option<&[(git2::Oid, Filter)]>) -> Filter {
     if let Some(ids) = ids {
         to_filter(Op::Squash(Some(
@@ -275,6 +279,8 @@ enum Op {
     Unsign,
 
     RegexReplace(Vec<(regex::Regex, String)>),
+
+    Hook(String),
 
     Index,
     Invert,
@@ -388,6 +394,7 @@ fn nesting2(op: &Op) -> usize {
         Op::Compose(filters) => 1 + filters.iter().map(|f| nesting(*f)).fold(0, |a, b| a.max(b)),
         Op::Exclude(filter) => 1 + nesting(*filter),
         Op::Workspace(_) => usize::MAX / 2, // divide by 2 to make sure there is enough headroom to avoid overflows
+        Op::Hook(_) => usize::MAX / 2, // divide by 2 to make sure there is enough headroom to avoid overflows
         Op::Chain(a, b) => 1 + nesting(*a).max(nesting(*b)),
         Op::Subtract(a, b) => 1 + nesting(*a).max(nesting(*b)),
         Op::Rev(filters) => {
@@ -628,6 +635,9 @@ fn spec2(op: &Op) -> String {
         }
         Op::Message(m) => {
             format!(":{}", parse::quote(m))
+        }
+        Op::Hook(hook) => {
+            format!(":hook={}", parse::quote(hook))
         }
     }
 }
@@ -1063,6 +1073,53 @@ fn apply_to_commit2(
             let filtered_tree = repo.find_tree(filtered_tree)?;
             Apply::from_commit(commit)?.with_tree(filtered_tree)
         }
+        Op::Hook(hook) => {
+            let commit_filter = transaction.lookup_filter_hook(&hook, commit.id())?;
+            let normal_parents = commit
+                .parent_ids()
+                .map(|x| transaction.get(filter, x))
+                .collect::<Option<Vec<_>>>();
+            let normal_parents = some_or!(normal_parents, { return Ok(None) });
+
+            // Compute the difference between the current commit's filter and each parent's filter.
+            // This determines what new content should be contributed by that parent in the filtered history.
+            let extra_parents = commit
+                .parents()
+                .map(|parent| {
+                    rs_tracing::trace_scoped!("hook parent", "id": parent.id().to_string());
+
+                    let pcw = transaction.lookup_filter_hook(&hook, parent.id())?;
+                    let f = opt::optimize(to_filter(Op::Subtract(commit_filter, pcw)));
+
+                    let r = apply_to_commit2(&to_op(f), &parent, transaction);
+                    r
+                })
+                .collect::<JoshResult<Option<Vec<_>>>>()?;
+
+            let extra_parents = some_or!(extra_parents, { return Ok(None) });
+
+            let extra_parents: Vec<_> = extra_parents
+                .into_iter()
+                .filter(|&oid| oid != git2::Oid::zero())
+                .collect();
+
+            let filtered_parent_ids: Vec<_> =
+                normal_parents.into_iter().chain(extra_parents).collect();
+
+            let tree_data = apply(
+                transaction,
+                commit_filter,
+                Apply::from_commit(commit)?.with_parents(filtered_parent_ids.clone()),
+            )?;
+            return Some(history::create_filtered_commit(
+                commit,
+                filtered_parent_ids,
+                tree_data,
+                transaction,
+                filter,
+            ))
+            .transpose();
+        }
         _ => {
             let filtered_parent_ids = commit
                 .parent_ids()
@@ -1238,6 +1295,7 @@ fn apply2<'a>(transaction: &'a cache::Transaction, op: &Op, x: Apply<'a>) -> Jos
         Op::Chain(a, b) => {
             return apply(transaction, *b, apply(transaction, *a, x.clone())?);
         }
+        Op::Hook(_) => Err(josh_error("not applicable to tree")),
     }
 }
 

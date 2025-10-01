@@ -2,6 +2,10 @@ use super::*;
 use std::collections::HashMap;
 use std::sync::{LazyLock, RwLock};
 
+pub trait FilterHook {
+    fn filter_for_commit(&self, commit_oid: git2::Oid, arg: &str) -> JoshResult<filter::Filter>;
+}
+
 const CACHE_VERSION: u64 = 24;
 
 lazy_static! {
@@ -73,6 +77,7 @@ pub struct Transaction {
     t2: std::cell::RefCell<Transaction2>,
     repo: git2::Repository,
     ref_prefix: String,
+    filter_hook: Option<std::sync::Arc<dyn FilterHook + Send + Sync>>,
 }
 
 impl Transaction {
@@ -146,6 +151,7 @@ impl Transaction {
             }),
             repo,
             ref_prefix: ref_prefix.unwrap_or("").to_string(),
+            filter_hook: None,
         }
     }
 
@@ -317,6 +323,18 @@ impl Transaction {
             return m.get(&from).cloned();
         }
         None
+    }
+
+    pub fn lookup_filter_hook(&self, hook: &str, from: git2::Oid) -> JoshResult<filter::Filter> {
+        if let Some(h) = &self.filter_hook {
+            return h.filter_for_commit(from, hook);
+        }
+        Err(josh_error("missing filter hook"))
+    }
+
+    pub fn with_filter_hook(mut self, hook: std::sync::Arc<dyn FilterHook + Send + Sync>) -> Self {
+        self.filter_hook = Some(hook);
+        self
     }
 
     pub fn insert(&self, filter: filter::Filter, from: git2::Oid, to: git2::Oid, store: bool) {

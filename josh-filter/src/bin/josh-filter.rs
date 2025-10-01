@@ -127,6 +127,32 @@ fn make_app() -> clap::Command {
         .arg(clap::Arg::new("version").action(clap::ArgAction::SetTrue).long("version").short('v'))
 }
 
+struct GitNotesFilterHook {
+    repo: std::sync::Mutex<git2::Repository>,
+}
+
+impl josh::cache::FilterHook for GitNotesFilterHook {
+    fn filter_for_commit(
+        &self,
+        commit_oid: git2::Oid,
+        arg: &str,
+    ) -> josh::JoshResult<josh::filter::Filter> {
+        let notes_ref = if arg.starts_with("refs/") {
+            arg.to_string()
+        } else {
+            format!("refs/notes/{}", arg)
+        };
+        let repo = self.repo.lock().unwrap();
+        let note = repo
+            .find_note(Some(notes_ref.as_str()), commit_oid)
+            .map_err(|_| josh::josh_error("missing git note for commit"))?;
+        let msg = note
+            .message()
+            .ok_or_else(|| josh::josh_error("empty git note"))?;
+        josh::filter::parse(msg)
+    }
+}
+
 fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
     let args = make_app().get_matches_from(args);
 
@@ -146,7 +172,16 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
 
     let mut filterobj = josh::filter::parse(&specstr)?;
 
-    let transaction = josh::cache::Transaction::open_from_env(!args.get_flag("no-cache"))?;
+    let mut transaction = josh::cache::Transaction::open_from_env(!args.get_flag("no-cache"))?;
+    let repo_for_hook = git2::Repository::open_ext(
+        transaction.repo().path(),
+        git2::RepositoryOpenFlags::NO_SEARCH,
+        &[] as &[&std::ffi::OsStr],
+    )?;
+    let hook = GitNotesFilterHook {
+        repo: std::sync::Mutex::new(repo_for_hook),
+    };
+    transaction = transaction.with_filter_hook(std::sync::Arc::new(hook));
 
     let repo = transaction.repo();
     let input_ref = args.get_one::<String>("input").unwrap();

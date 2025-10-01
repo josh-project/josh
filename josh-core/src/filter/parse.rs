@@ -56,6 +56,7 @@ fn make_op(args: &[&str]) -> JoshResult<Op> {
         ["INDEX"] => Ok(Op::Index),
         ["INVERT"] => Ok(Op::Invert),
         ["FOLD"] => Ok(Op::Fold),
+        ["hook", arg] => Ok(Op::Hook(arg.to_string())),
         _ => Err(josh_error(
             formatdoc!(
                 r#"
