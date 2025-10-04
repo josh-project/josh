@@ -82,6 +82,7 @@ pub fn simplify(filter: Filter) -> Filter {
             Op::Subtract(simplify(to_filter(a)), simplify(to_filter(b)))
         }
         Op::Exclude(b) => Op::Exclude(simplify(b)),
+        Op::Pin(b) => Op::Pin(simplify(b)),
         _ => to_op(filter),
     });
 
@@ -137,6 +138,7 @@ pub fn flatten(filter: Filter) -> Filter {
             Op::Subtract(flatten(to_filter(a)), flatten(to_filter(b)))
         }
         Op::Exclude(b) => Op::Exclude(flatten(b)),
+        Op::Pin(b) => Op::Pin(flatten(b)),
         _ => to_op(filter),
     });
 
@@ -440,8 +442,9 @@ fn step(filter: Filter) -> Filter {
             (a, b) => Op::Chain(step(to_filter(a)), step(to_filter(b))),
         },
         Op::Exclude(b) if b == to_filter(Op::Nop) => Op::Empty,
-        Op::Exclude(b) if b == to_filter(Op::Empty) => Op::Nop,
+        Op::Exclude(b) | Op::Pin(b) if b == to_filter(Op::Empty) => Op::Nop,
         Op::Exclude(b) => Op::Exclude(step(b)),
+        Op::Pin(b) => Op::Pin(step(b)),
         Op::Subtract(a, b) if a == b => Op::Empty,
         Op::Subtract(af, bf) => match (to_op(af), to_op(bf)) {
             (Op::Empty, _) => Op::Empty,
@@ -502,6 +505,7 @@ pub fn invert(filter: Filter) -> JoshResult<Filter> {
         Op::Pattern(pattern) => Some(Op::Pattern(pattern)),
         Op::Rev(_) => Some(Op::Nop),
         Op::RegexReplace(_) => Some(Op::Nop),
+        Op::Pin(_) => Some(Op::Nop),
         _ => None,
     };
 
