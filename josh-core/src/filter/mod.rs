@@ -297,6 +297,7 @@ enum Op {
     Chain(Filter, Filter),
     Subtract(Filter, Filter),
     Exclude(Filter),
+    Pin(Filter),
 }
 
 /// Pretty print the filter on multiple lines with initial indentation level.
@@ -341,6 +342,10 @@ fn pretty2(op: &Op, indent: usize, compose: bool) -> String {
         Op::Exclude(bf) => match to_op(*bf) {
             Op::Compose(filters) => ff(&filters, "exclude", indent),
             b => format!(":exclude[{}]", pretty2(&b, indent, false)),
+        },
+        Op::Pin(filter) => match to_op(*filter) {
+            Op::Compose(filters) => ff(&filters, "pin", indent),
+            b => format!(":pin[{}]", pretty2(&b, indent, false)),
         },
         Op::Chain(a, b) => match (to_op(*a), to_op(*b)) {
             (Op::Subdir(p1), Op::Prefix(p2)) if p1 == p2 => {
@@ -392,7 +397,7 @@ pub fn nesting(filter: Filter) -> usize {
 fn nesting2(op: &Op) -> usize {
     match op {
         Op::Compose(filters) => 1 + filters.iter().map(|f| nesting(*f)).fold(0, |a, b| a.max(b)),
-        Op::Exclude(filter) => 1 + nesting(*filter),
+        Op::Exclude(filter) | Op::Pin(filter) => 1 + nesting(*filter),
         Op::Workspace(_) => usize::MAX / 2, // divide by 2 to make sure there is enough headroom to avoid overflows
         Op::Hook(_) => usize::MAX / 2, // divide by 2 to make sure there is enough headroom to avoid overflows
         Op::Chain(a, b) => 1 + nesting(*a).max(nesting(*b)),
@@ -430,7 +435,7 @@ fn lazy_refs2(op: &Op) -> Vec<String> {
                     acc
                 })
         }
-        Op::Exclude(filter) => lazy_refs(*filter),
+        Op::Exclude(filter) | Op::Pin(filter) => lazy_refs(*filter),
         Op::Chain(a, b) => {
             let mut av = lazy_refs(*a);
             av.append(&mut lazy_refs(*b));
@@ -481,6 +486,7 @@ fn resolve_refs2(refs: &std::collections::HashMap<String, git2::Oid>, op: &Op) -
             Op::Compose(filters.iter().map(|f| resolve_refs(refs, *f)).collect())
         }
         Op::Exclude(filter) => Op::Exclude(resolve_refs(refs, *filter)),
+        Op::Pin(filter) => Op::Pin(resolve_refs(refs, *filter)),
         Op::Chain(a, b) => Op::Chain(resolve_refs(refs, *a), resolve_refs(refs, *b)),
         Op::Subtract(a, b) => Op::Subtract(resolve_refs(refs, *a), resolve_refs(refs, *b)),
         Op::Rev(filters) => {
@@ -564,6 +570,9 @@ fn spec2(op: &Op) -> String {
         }
         Op::Exclude(b) => {
             format!(":exclude[{}]", spec(*b))
+        }
+        Op::Pin(filter) => {
+            format!(":pin[{}]", spec(*filter))
         }
         Op::Rev(filters) => {
             let mut v = filters
@@ -707,6 +716,9 @@ fn as_tree2(repo: &git2::Repository, op: &Op) -> JoshResult<git2::Oid> {
         }
         Op::Exclude(b) => {
             builder.insert("exclude", as_tree(repo, *b)?, git2::FileMode::Tree.into())?;
+        }
+        Op::Pin(b) => {
+            builder.insert("pin", as_tree(repo, *b)?, git2::FileMode::Tree.into())?;
         }
         Op::Subdir(path) => {
             builder.insert(
@@ -1083,6 +1095,11 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> JoshResult<Op> {
             let exclude_tree = repo.find_tree(entry.id())?;
             let filter = from_tree2(repo, exclude_tree.id())?;
             Ok(Op::Exclude(to_filter(filter)))
+        }
+        "pin" => {
+            let pin_tree = repo.find_tree(entry.id())?;
+            let filter = from_tree2(repo, pin_tree.id())?;
+            Ok(Op::Pin(to_filter(filter)))
         }
         "rev" => {
             let rev_tree = repo.find_tree(entry.id())?;
@@ -1810,6 +1827,25 @@ fn apply2<'a>(transaction: &'a cache::Transaction, op: &Op, x: Apply<'a>) -> Jos
             return apply(transaction, *b, apply(transaction, *a, x.clone())?);
         }
         Op::Hook(_) => Err(josh_error("not applicable to tree")),
+
+        Op::Pin(pin_filter) => {
+            let filtered_parent = if let Some(parent) = x.parents.as_ref().and_then(|p| p.first()) {
+                let parent = repo.find_commit(*parent)?;
+                let filtered = apply(transaction, *pin_filter, Apply::from_commit(&parent)?)?;
+                filtered.tree.id()
+            } else {
+                tree::empty_id()
+            };
+
+            // Mask out all the "pinned" files from current tree
+            let exclude = to_filter(Op::Exclude(*pin_filter));
+            let with_mask = apply(transaction, exclude, x.clone())?;
+
+            // Overlay filtered parent tree on current one to override versions
+            let with_overlay = tree::overlay(transaction, with_mask.tree.id(), filtered_parent)?;
+
+            Ok(x.with_tree(repo.find_tree(with_overlay)?))
+        }
     }
 }
 
