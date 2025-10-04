@@ -3,6 +3,50 @@ use std::collections::HashMap;
 
 const CACHE_VERSION: u64 = 24;
 
+fn josh_commit_signature<'a>() -> JoshResult<git2::Signature<'a>> {
+    Ok(if let Ok(time) = std::env::var("JOSH_COMMIT_TIME") {
+        git2::Signature::new(
+            "JOSH",
+            "josh@josh-project.dev",
+            &git2::Time::new(time.parse()?, 0),
+        )?
+    } else {
+        git2::Signature::now("JOSH", "josh@josh-project.dev")?
+    })
+}
+
+fn store_note(repo: &git2::Repository, kind: &str, key: git2::Oid, from: git2::Oid, to: git2::Oid) {
+    let signature = josh_commit_signature().unwrap();
+    repo.note(
+        &signature,
+        &signature,
+        Some(&format!("refs/josh/{}/{}/{}", kind, CACHE_VERSION, key)),
+        from,
+        &format!("{}", to),
+        true,
+    )
+    .unwrap();
+}
+
+fn lookup_note(
+    repo: &git2::Repository,
+    kind: &str,
+    key: git2::Oid,
+    from: git2::Oid,
+) -> Option<git2::Oid> {
+    if from.as_bytes()[0] != 0 {
+        return None;
+    }
+    if let Ok(note) = repo.find_note(
+        Some(&format!("refs/josh/{}/{}/{}", kind, CACHE_VERSION, key)),
+        from,
+    ) {
+        Some(git2::Oid::from_str(note.message().unwrap()).unwrap())
+    } else {
+        None
+    }
+}
+
 lazy_static! {
     static ref DB: std::sync::Mutex<Option<sled::Db>> = std::sync::Mutex::new(None);
     static ref REF_CACHE: std::sync::Mutex<HashMap<git2::Oid, HashMap<git2::Oid, git2::Oid>>> =
@@ -336,6 +380,9 @@ impl Transaction {
             });
 
             t.insert(from.as_bytes(), to.as_bytes()).unwrap();
+            if from.as_bytes()[0] == 0 {
+                store_note(&self.repo, "cache", filter.id(), from, to);
+            }
         }
     }
 
@@ -396,8 +443,15 @@ impl Transaction {
                 .open_tree(filter::spec(filter))
                 .unwrap()
         });
-        if let Some(oid) = t.get(from.as_bytes()).unwrap() {
-            let oid = git2::Oid::from_bytes(&oid).unwrap();
+        let oid = if let Some(oid) = t.get(from.as_bytes()).unwrap() {
+            Some(git2::Oid::from_bytes(&oid).unwrap())
+        } else if let Some(oid) = lookup_note(&self.repo, "cache", filter.id(), from) {
+            Some(oid)
+        } else {
+            None
+        };
+
+        if let Some(oid) = oid {
             if oid == git2::Oid::zero() {
                 return Some(oid);
             }
