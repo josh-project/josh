@@ -358,6 +358,7 @@
       |   |-- 20
       |   |   `-- 5dccdc2e37df9aaccec46009520154219134e7
       |   |-- 27
+      |   |   |-- 153f2bc72430a7221a94318d46d2eb1402c9db
       |   |   `-- d0eee16bdbe4a1ade0ebf877f97467de3b218e
       |   |-- 2a
       |   |   |-- 03ad0fe1720ee0afc95ba8e1bc38a35b87983f
@@ -383,6 +384,8 @@
       |   |   `-- 3b7672b3bcf00bbd95e650076c375528d5f5c3
       |   |-- 47
       |   |   `-- 8644b35118f1d733b14cafb04c51e5b6579243
+      |   |-- 4a
+      |   |   `-- 63d3ce0a2d493bd0cda58ae8fd064be63c9e95
       |   |-- 4b
       |   |   `-- 825dc642cb6eb9a060e54bf8d69288fbee4904
       |   |-- 4f
@@ -431,7 +434,8 @@
       |   |-- a3
       |   |   `-- d027b4cc082c08af95fcbe03eecd9a62a08c48
       |   |-- a7
-      |   |   `-- 3af649c49fa4b0facff36fafdc1e2bef594d4e
+      |   |   |-- 3af649c49fa4b0facff36fafdc1e2bef594d4e
+      |   |   `-- fe5239814b5bfdbadc9f213abc2a2f2c1f31db
       |   |-- aa
       |   |   `-- 0654329f0642e4505db87c24aea80ba52fd689
       |   |-- ac
@@ -484,9 +488,13 @@
       |   `-- pack
       `-- refs
           |-- heads
+          |-- josh
+          |   `-- cache
+          |       `-- 24
+          |           `-- 7bd92d97e96693ea7fd7eb5757b3580002889948
           |-- namespaces
           `-- tags
   
-  122 directories, 117 files
+  126 directories, 121 files
 
 $ cat ${TESTTMP}/josh-proxy.out | grep VIEW
