@@ -299,6 +299,7 @@ enum Op {
     Chain(Filter, Filter),
     Subtract(Filter, Filter),
     Exclude(Filter),
+    Hold(Filter),
 }
 
 /// Pretty print the filter on multiple lines with initial indentation level.
@@ -343,6 +344,10 @@ fn pretty2(op: &Op, indent: usize, compose: bool) -> String {
         Op::Exclude(bf) => match to_op(*bf) {
             Op::Compose(filters) => ff(&filters, "exclude", indent),
             b => format!(":exclude[{}]", pretty2(&b, indent, false)),
+        },
+        Op::Hold(filter) => match to_op(*filter) {
+            Op::Compose(filters) => ff(&filters, "hold", indent),
+            b => format!(":hold[{}]", pretty2(&b, indent, false)),
         },
         Op::Chain(a, b) => match (to_op(*a), to_op(*b)) {
             (Op::Subdir(p1), Op::Prefix(p2)) if p1 == p2 => {
@@ -394,7 +399,7 @@ pub fn nesting(filter: Filter) -> usize {
 fn nesting2(op: &Op) -> usize {
     match op {
         Op::Compose(filters) => 1 + filters.iter().map(|f| nesting(*f)).fold(0, |a, b| a.max(b)),
-        Op::Exclude(filter) => 1 + nesting(*filter),
+        Op::Exclude(filter) | Op::Hold(filter) => 1 + nesting(*filter),
         Op::Workspace(_) => usize::MAX / 2, // divide by 2 to make sure there is enough headroom to avoid overflows
         Op::Lookup(_) => usize::MAX / 2, // divide by 2 to make sure there is enough headroom to avoid overflows
         Op::Lookup2(_) => usize::MAX / 2, // divide by 2 to make sure there is enough headroom to avoid overflows
@@ -433,7 +438,7 @@ fn lazy_refs2(op: &Op) -> Vec<String> {
                     acc
                 })
         }
-        Op::Exclude(filter) => lazy_refs(*filter),
+        Op::Exclude(filter) | Op::Hold(filter) => lazy_refs(*filter),
         Op::Chain(a, b) => {
             let mut av = lazy_refs(*a);
             av.append(&mut lazy_refs(*b));
@@ -484,6 +489,7 @@ fn resolve_refs2(refs: &std::collections::HashMap<String, git2::Oid>, op: &Op) -
             Op::Compose(filters.iter().map(|f| resolve_refs(refs, *f)).collect())
         }
         Op::Exclude(filter) => Op::Exclude(resolve_refs(refs, *filter)),
+        Op::Hold(filter) => Op::Hold(resolve_refs(refs, *filter)),
         Op::Chain(a, b) => Op::Chain(resolve_refs(refs, *a), resolve_refs(refs, *b)),
         Op::Subtract(a, b) => Op::Subtract(resolve_refs(refs, *a), resolve_refs(refs, *b)),
         Op::Rev(filters) => {
@@ -567,6 +573,9 @@ fn spec2(op: &Op) -> String {
         }
         Op::Exclude(b) => {
             format!(":exclude[{}]", spec(*b))
+        }
+        Op::Hold(filter) => {
+            format!(":hold[{}]", spec(*filter))
         }
         Op::Rev(filters) => {
             let mut v = filters
@@ -1927,6 +1936,25 @@ fn apply2<'a>(transaction: &'a cache::Transaction, op: &Op, x: Apply<'a>) -> Jos
             return apply(transaction, *b, apply(transaction, *a, x.clone())?);
         }
         Op::Hook(_) => Err(josh_error("not applicable to tree")),
+
+        Op::Hold(hold_filter) => {
+            let filtered_parent = if let Some(parent) = x.parents.as_ref().and_then(|p| p.first()) {
+                let parent = repo.find_commit(*parent)?;
+                let filtered = apply(transaction, *hold_filter, Apply::from_commit(&parent)?)?;
+                filtered.tree.id()
+            } else {
+                tree::empty_id()
+            };
+
+            // Mask out all the "held" files from current tree
+            let exclude = to_filter(Op::Exclude(*hold_filter));
+            let with_mask = apply(transaction, exclude, x.clone())?;
+
+            // Overlay filtered parent tree on current one to override versions
+            let with_overlay = tree::overlay(transaction, with_mask.tree.id(), filtered_parent)?;
+
+            Ok(x.with_tree(repo.find_tree(with_overlay)?))
+        }
     }
 }
 
