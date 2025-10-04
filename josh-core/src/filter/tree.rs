@@ -1,4 +1,5 @@
 use super::*;
+use std::path::PathBuf;
 
 use crate::cache::TransactionContext;
 use crate::cache_stack::CacheStack;
@@ -999,6 +1000,41 @@ pub fn get_blob(repo: &git2::Repository, tree: &git2::Tree, path: &Path) -> Stri
     });
 
     content.to_owned()
+}
+
+/// Compose a new tree by taking paths out of `paths`,
+/// and actual blobs out of `blobs`.
+pub fn transpose<'a>(
+    transaction: &'a cache::Transaction,
+    paths: &'a git2::Tree,
+    blobs: &'a git2::Tree,
+) -> JoshResult<git2::Tree<'a>> {
+    use git2::build::TreeUpdateBuilder;
+    use git2::{TreeWalkMode, TreeWalkResult};
+
+    let mut builder = TreeUpdateBuilder::new();
+
+    paths.walk(TreeWalkMode::PostOrder, |path, entry| {
+        let path = PathBuf::from(path).join(entry.name().unwrap_or(""));
+
+        let entry = match blobs.get_path(&path) {
+            Ok(entry) => entry,
+            Err(e) if e.code() == git2::ErrorCode::NotFound => return TreeWalkResult::Ok,
+            Err(_) => return TreeWalkResult::Abort,
+        };
+
+        if entry.kind() != Some(git2::ObjectType::Blob) {
+            return TreeWalkResult::Ok;
+        }
+
+        builder.upsert(path, entry.id(), git2::FileMode::Blob);
+        TreeWalkResult::Ok
+    })?;
+
+    let repo = transaction.repo();
+    let tree = builder.create_updated(repo, &empty(repo))?;
+
+    Ok(repo.find_tree(tree)?)
 }
 
 pub fn empty_id() -> git2::Oid {

@@ -115,6 +115,7 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> JoshResult<Op> {
                 [cmd, args] => {
                     let g = parse_group(args)?;
                     match *cmd {
+                        "pin" => Ok(Op::Pin(to_filter(Op::Compose(g)))),
                         "exclude" => Ok(Op::Exclude(to_filter(Op::Compose(g)))),
                         "subtract" if g.len() == 2 => Ok(Op::Subtract(g[0], g[1])),
                         _ => Err(josh_error(&format!("parse_item: no match {:?}", cmd))),
