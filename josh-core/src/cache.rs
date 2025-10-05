@@ -1,12 +1,22 @@
 use super::*;
+
+use crate::cache_sled::sled_open_josh_trees;
+use crate::cache_stack::CacheStack;
+
 use std::collections::HashMap;
 use std::sync::{LazyLock, RwLock};
+
+pub(crate) const CACHE_VERSION: u64 = 24;
+
+pub trait CacheBackend: Send + Sync {
+    fn read(&self, filter: filter::Filter, from: git2::Oid) -> JoshResult<Option<git2::Oid>>;
+
+    fn write(&self, filter: filter::Filter, from: git2::Oid, to: git2::Oid) -> JoshResult<()>;
+}
 
 pub trait FilterHook {
     fn filter_for_commit(&self, commit_oid: git2::Oid, arg: &str) -> JoshResult<filter::Filter>;
 }
-
-const CACHE_VERSION: u64 = 24;
 
 lazy_static! {
     static ref DB: std::sync::Mutex<Option<sled::Db>> = std::sync::Mutex::new(None);
@@ -21,39 +31,40 @@ static POPULATE_MAP: LazyLock<RwLock<HashMap<(git2::Oid, git2::Oid), git2::Oid>>
 static GLOB_MAP: LazyLock<RwLock<HashMap<(git2::Oid, git2::Oid), git2::Oid>>> =
     LazyLock::new(Default::default);
 
-pub fn load(path: &std::path::Path) -> JoshResult<()> {
-    *DB.lock()? = Some(
-        sled::Config::default()
-            .path(path.join(format!("josh/{}/sled/", CACHE_VERSION)))
-            .flush_every_ms(Some(200))
-            .open()?,
-    );
-    Ok(())
+pub struct TransactionContext {
+    path: std::path::PathBuf,
+    cache: std::sync::Arc<CacheStack>,
 }
 
-pub fn print_stats() {
-    let d = DB.lock().unwrap();
-    let db = d.as_ref().unwrap();
-    db.flush().unwrap();
-    log::debug!("Trees:");
-    let mut v = vec![];
-    for name in db.tree_names() {
-        let name = String::from_utf8(name.to_vec()).unwrap();
-        let t = db.open_tree(&name).unwrap();
-        if !t.is_empty() {
-            let name = if let Ok(filter) = filter::parse(&name) {
-                filter::pretty(filter, 4)
-            } else {
-                name.clone()
-            };
-            v.push((t.len(), name));
+impl TransactionContext {
+    pub fn from_env(cache: std::sync::Arc<CacheStack>) -> JoshResult<Self> {
+        let repo = git2::Repository::open_from_env()?;
+        let path = repo.path().to_owned();
+
+        Ok(Self { path, cache })
+    }
+
+    pub fn new(path: impl AsRef<std::path::Path>, cache: std::sync::Arc<CacheStack>) -> Self {
+        Self {
+            path: path.as_ref().to_path_buf(),
+            cache,
         }
     }
 
-    v.sort();
+    pub fn open(&self, ref_prefix: Option<&str>) -> JoshResult<Transaction> {
+        if !self.path.exists() {
+            return Err(josh_error("path does not exist"));
+        }
 
-    for (len, name) in v.iter() {
-        println!("[{}] {}", len, name);
+        Ok(Transaction::new(
+            git2::Repository::open_ext(
+                &self.path,
+                git2::RepositoryOpenFlags::NO_SEARCH,
+                &[] as &[&std::ffi::OsStr],
+            )?,
+            self.cache.clone(),
+            ref_prefix,
+        ))
     }
 }
 
@@ -64,7 +75,7 @@ struct Transaction2 {
     subtract_map: HashMap<(git2::Oid, git2::Oid), git2::Oid>,
     overlay_map: HashMap<(git2::Oid, git2::Oid), git2::Oid>,
     unapply_map: HashMap<git2::Oid, HashMap<git2::Oid, git2::Oid>>,
-    sled_trees: HashMap<git2::Oid, sled::Tree>,
+    cache: std::sync::Arc<CacheStack>,
     path_tree: sled::Tree,
     invert_tree: sled::Tree,
     trigram_index_tree: sled::Tree,
@@ -81,59 +92,16 @@ pub struct Transaction {
 }
 
 impl Transaction {
-    pub fn open(path: &std::path::Path, ref_prefix: Option<&str>) -> JoshResult<Transaction> {
-        if !path.exists() {
-            return Err(josh_error("path does not exist"));
-        }
-        Ok(Transaction::new(
-            git2::Repository::open_ext(
-                path,
-                git2::RepositoryOpenFlags::NO_SEARCH,
-                &[] as &[&std::ffi::OsStr],
-            )?,
-            ref_prefix,
-        ))
-    }
-
-    pub fn open_from_env(load_cache: bool) -> JoshResult<Transaction> {
-        let repo = git2::Repository::open_from_env()?;
-        let path = repo.path().to_owned();
-        if load_cache {
-            load(&path)?
-        };
-
-        Ok(Transaction::new(repo, None))
-    }
-
-    pub fn status(&self, _msg: &str) {
-        /* let mut t2 = self.t2.borrow_mut(); */
-        /* write!(t2.out, "{}", msg).ok(); */
-        /* t2.out.flush().ok(); */
-    }
-
-    fn new(repo: git2::Repository, ref_prefix: Option<&str>) -> Transaction {
+    fn new(
+        repo: git2::Repository,
+        cache: std::sync::Arc<CacheStack>,
+        ref_prefix: Option<&str>,
+    ) -> Transaction {
         log::debug!("new transaction");
-        let path_tree = DB
-            .lock()
-            .unwrap()
-            .as_ref()
-            .unwrap()
-            .open_tree("_paths")
-            .unwrap();
-        let invert_tree = DB
-            .lock()
-            .unwrap()
-            .as_ref()
-            .unwrap()
-            .open_tree("_invert")
-            .unwrap();
-        let trigram_index_tree = DB
-            .lock()
-            .unwrap()
-            .as_ref()
-            .unwrap()
-            .open_tree("_trigram_index")
-            .unwrap();
+
+        let (path_tree, invert_tree, trigram_index_tree) =
+            sled_open_josh_trees().expect("failed to open transaction");
+
         Transaction {
             t2: std::cell::RefCell::new(Transaction2 {
                 commit_map: HashMap::new(),
@@ -141,7 +109,7 @@ impl Transaction {
                 subtract_map: HashMap::new(),
                 overlay_map: HashMap::new(),
                 unapply_map: HashMap::new(),
-                sled_trees: HashMap::new(),
+                cache,
                 path_tree,
                 invert_tree,
                 trigram_index_tree,
@@ -156,7 +124,12 @@ impl Transaction {
     }
 
     pub fn try_clone(&self) -> JoshResult<Transaction> {
-        Transaction::open(self.repo.path(), Some(&self.ref_prefix))
+        let context = TransactionContext {
+            cache: self.t2.borrow().cache.clone(),
+            path: self.repo.path().to_owned(),
+        };
+
+        context.open(Some(&self.ref_prefix))
     }
 
     pub fn repo(&self) -> &git2::Repository {
@@ -348,32 +321,10 @@ impl Transaction {
         // random extra commits (probability 1/256) to avoid long searches for filters that reduce
         // the history length by a very large factor.
         if store || from.as_bytes()[0] == 0 {
-            let t = t2.sled_trees.entry(filter.id()).or_insert_with(|| {
-                DB.lock()
-                    .unwrap()
-                    .as_ref()
-                    .unwrap()
-                    .open_tree(filter::spec(filter))
-                    .unwrap()
-            });
-
-            t.insert(from.as_bytes(), to.as_bytes()).unwrap();
+            t2.cache
+                .write_all(filter, from, to)
+                .expect("Failed to write cache");
         }
-    }
-
-    #[allow(clippy::len_without_is_empty)]
-    pub fn len(&self, filter: filter::Filter) -> usize {
-        let mut t2 = self.t2.borrow_mut();
-        let t = t2.sled_trees.entry(filter.id()).or_insert_with(|| {
-            DB.lock()
-                .unwrap()
-                .as_ref()
-                .unwrap()
-                .open_tree(filter::spec(filter))
-                .unwrap()
-        });
-
-        t.len()
     }
 
     pub fn get_missing(&self) -> Vec<(filter::Filter, git2::Oid)> {
@@ -404,25 +355,25 @@ impl Transaction {
         if filter == filter::nop() {
             return Some(from);
         }
-        let mut t2 = self.t2.borrow_mut();
+        let t2 = self.t2.borrow_mut();
         if let Some(m) = t2.commit_map.get(&filter.id()) {
             if let Some(oid) = m.get(&from).cloned() {
                 return Some(oid);
             }
         }
-        let t = t2.sled_trees.entry(filter.id()).or_insert_with(|| {
-            DB.lock()
-                .unwrap()
-                .as_ref()
-                .unwrap()
-                .open_tree(filter::spec(filter))
-                .unwrap()
-        });
-        if let Some(oid) = t.get(from.as_bytes()).unwrap() {
-            let oid = git2::Oid::from_bytes(&oid).unwrap();
+
+        let oid = t2
+            .cache
+            .read_propagate(filter, from)
+            .expect("Failed to read from cache backend");
+
+        let oid = if let Some(oid) = oid { Some(oid) } else { None };
+
+        if let Some(oid) = oid {
             if oid == git2::Oid::zero() {
                 return Some(oid);
             }
+
             if self.repo.odb().unwrap().exists(oid) {
                 // Only report an object as cached if it exists in the object database.
                 // This forces a rebuild in case the object was garbage collected.

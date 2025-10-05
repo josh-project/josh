@@ -172,7 +172,14 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
 
     let mut filterobj = josh::filter::parse(&specstr)?;
 
-    let mut transaction = josh::cache::Transaction::open_from_env(!args.get_flag("no-cache"))?;
+    if !args.get_flag("no-cache") {
+        let repo = git2::Repository::open_from_env()?;
+        josh::cache_sled::sled_load(repo.path())?;
+    }
+
+    let cache = std::sync::Arc::new(josh::cache_stack::CacheStack::default());
+    let mut transaction = josh::cache::TransactionContext::from_env(cache.clone())?.open(None)?;
+
     let repo_for_hook = git2::Repository::open_ext(
         transaction.repo().path(),
         git2::RepositoryOpenFlags::NO_SEARCH,
@@ -251,7 +258,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
             rs_tracing::close_trace_file!();
         }
         if args.get_flag("cache-stats") {
-            josh::cache::print_stats();
+            josh::cache_sled::sled_print_stats().expect("failed to collect cache stats");
         }
         if let Some(mempack) = mp {
             let mut buf = git2::Buf::new();
@@ -448,11 +455,12 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
     std::mem::drop(finish);
 
     if let Some(query) = args.get_one::<String>("query") {
-        let transaction = josh::cache::Transaction::open_from_env(false)?;
+        let transaction = josh::cache::TransactionContext::from_env(cache.clone())?.open(None)?;
         let commit_id = transaction.repo().refname_to_id(update_target)?;
+
         print!(
             "{}",
-            josh_templates::render(&transaction, "", commit_id, query, false)?
+            josh_templates::render(&transaction, cache.clone(), "", commit_id, query, false)?
                 .map(|x| x.0)
                 .unwrap_or("File not found".to_string())
         );
