@@ -1,17 +1,21 @@
 use super::*;
 use std::collections::HashMap;
+use std::sync::{LazyLock, RwLock};
 
 const CACHE_VERSION: u64 = 24;
 
 lazy_static! {
     static ref DB: std::sync::Mutex<Option<sled::Db>> = std::sync::Mutex::new(None);
-    static ref REF_CACHE: std::sync::Mutex<HashMap<git2::Oid, HashMap<git2::Oid, git2::Oid>>> =
-        std::sync::Mutex::new(HashMap::new());
-    static ref POPULATE_MAP: std::sync::Mutex<HashMap<(git2::Oid, git2::Oid), git2::Oid>> =
-        std::sync::Mutex::new(HashMap::new());
-    static ref GLOB_MAP: std::sync::Mutex<HashMap<(git2::Oid, git2::Oid), git2::Oid>> =
-        std::sync::Mutex::new(HashMap::new());
 }
+
+static REF_CACHE: LazyLock<RwLock<HashMap<git2::Oid, HashMap<git2::Oid, git2::Oid>>>> =
+    LazyLock::new(Default::default);
+
+static POPULATE_MAP: LazyLock<RwLock<HashMap<(git2::Oid, git2::Oid), git2::Oid>>> =
+    LazyLock::new(Default::default);
+
+static GLOB_MAP: LazyLock<RwLock<HashMap<(git2::Oid, git2::Oid), git2::Oid>>> =
+    LazyLock::new(Default::default);
 
 pub fn load(path: &std::path::Path) -> JoshResult<()> {
     *DB.lock()? = Some(
@@ -272,24 +276,24 @@ impl Transaction {
     }
 
     pub fn insert_populate(&self, tree: (git2::Oid, git2::Oid), result: git2::Oid) {
-        POPULATE_MAP.lock().unwrap().entry(tree).or_insert(result);
+        POPULATE_MAP.write().unwrap().entry(tree).or_insert(result);
     }
 
     pub fn get_populate(&self, tree: (git2::Oid, git2::Oid)) -> Option<git2::Oid> {
-        return POPULATE_MAP.lock().unwrap().get(&tree).cloned();
+        POPULATE_MAP.read().unwrap().get(&tree).cloned()
     }
 
     pub fn insert_glob(&self, tree: (git2::Oid, git2::Oid), result: git2::Oid) {
-        GLOB_MAP.lock().unwrap().entry(tree).or_insert(result);
+        GLOB_MAP.write().unwrap().entry(tree).or_insert(result);
     }
 
     pub fn get_glob(&self, tree: (git2::Oid, git2::Oid)) -> Option<git2::Oid> {
-        return GLOB_MAP.lock().unwrap().get(&tree).cloned();
+        GLOB_MAP.read().unwrap().get(&tree).cloned()
     }
 
     pub fn insert_ref(&self, filter: filter::Filter, from: git2::Oid, to: git2::Oid) {
         REF_CACHE
-            .lock()
+            .write()
             .unwrap()
             .entry(filter.id())
             .or_default()
@@ -297,7 +301,7 @@ impl Transaction {
     }
 
     pub fn get_ref(&self, filter: filter::Filter, from: git2::Oid) -> Option<git2::Oid> {
-        if let Some(m) = REF_CACHE.lock().unwrap().get(&filter.id()) {
+        if let Some(m) = REF_CACHE.read().unwrap().get(&filter.id()) {
             if let Some(oid) = m.get(&from) {
                 if self.repo.odb().unwrap().exists(*oid) {
                     return Some(*oid);
