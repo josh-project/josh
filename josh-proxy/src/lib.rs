@@ -8,6 +8,8 @@ pub mod trace;
 #[macro_use]
 extern crate lazy_static;
 
+use josh::cache::TransactionContext;
+use josh::cache_stack::CacheStack;
 use josh::{JoshError, JoshResult, josh_error};
 use std::fs;
 use std::path::PathBuf;
@@ -139,16 +141,21 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
         "process_repo_update"
     );
 
-    for (refname, (old, new)) in repo_update.refs.iter() {
-        let transaction = josh::cache::Transaction::open(
-            std::path::Path::new(&repo_update.git_dir),
-            Some(&format!("refs/josh/upstream/{}/", repo_update.base_ns)),
-        )?;
+    let cache = std::sync::Arc::new(CacheStack::default());
+    let transaction_ctx = TransactionContext::new(&repo_update.git_dir, cache.clone());
+    let transaction_mirror_ctx =
+        TransactionContext::new(&repo_update.mirror_git_dir, cache.clone());
 
-        let transaction_mirror = josh::cache::Transaction::open(
-            std::path::Path::new(&repo_update.mirror_git_dir),
-            Some(&format!("refs/josh/upstream/{}/", repo_update.base_ns)),
-        )?;
+    for (refname, (old, new)) in repo_update.refs.iter() {
+        let transaction = transaction_ctx.open(Some(&format!(
+            "refs/josh/upstream/{}/",
+            repo_update.base_ns
+        )))?;
+
+        let transaction_mirror = transaction_mirror_ctx.open(Some(&format!(
+            "refs/josh/upstream/{}/",
+            repo_update.base_ns
+        )))?;
 
         transaction.repo().odb()?.add_disk_alternate(
             transaction_mirror

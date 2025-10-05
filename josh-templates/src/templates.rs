@@ -1,10 +1,19 @@
+use josh::cache::TransactionContext;
+use josh::cache_stack::CacheStack;
 use josh::{JoshResult, cache, josh_error};
 use serde_json::json;
 
 struct GraphQLHelper {
     repo_path: std::path::PathBuf,
+    cache: std::sync::Arc<CacheStack>,
     ref_prefix: String,
     commit_id: git2::Oid,
+}
+
+impl GraphQLHelper {
+    fn transaction_context(&self, path: impl AsRef<std::path::Path>) -> TransactionContext {
+        TransactionContext::new(path, self.cache.clone())
+    }
 }
 
 impl GraphQLHelper {
@@ -13,6 +22,9 @@ impl GraphQLHelper {
         hash: &std::collections::BTreeMap<&str, handlebars::PathAndJson>,
         template_name: &str,
     ) -> JoshResult<serde_json::Value> {
+        let mirror_path = self.repo_path.join("mirror");
+        let overlay_path = self.repo_path.join("overlay");
+
         let path = if let Some(f) = hash.get("file") {
             f.render()
         } else {
@@ -22,10 +34,11 @@ impl GraphQLHelper {
         let path = std::path::PathBuf::from(template_name)
             .join("..")
             .join(path);
-        let path = josh::normalize_path(&path);
 
-        let transaction = if let Ok(to) =
-            cache::Transaction::open(&self.repo_path.join("mirror"), Some(&self.ref_prefix))
+        let path = josh::normalize_path(&path);
+        let transaction = if let Ok(to) = self
+            .transaction_context(&mirror_path)
+            .open(Some(&self.ref_prefix))
         {
             to.repo().odb()?.add_disk_alternate(
                 self.repo_path
@@ -36,7 +49,8 @@ impl GraphQLHelper {
             )?;
             to
         } else {
-            cache::Transaction::open(&self.repo_path, Some(&self.ref_prefix))?
+            self.transaction_context(&self.repo_path)
+                .open(Some(&self.ref_prefix))?
         };
 
         let tree = transaction.repo().find_commit(self.commit_id)?.tree()?;
@@ -56,7 +70,7 @@ impl GraphQLHelper {
         }
 
         let (transaction, transaction_mirror) =
-            if let Ok(to) = cache::Transaction::open(&self.repo_path.join("overlay"), None) {
+            if let Ok(to) = self.transaction_context(&overlay_path).open(None) {
                 to.repo().odb()?.add_disk_alternate(
                     self.repo_path
                         .join("mirror")
@@ -64,14 +78,11 @@ impl GraphQLHelper {
                         .to_str()
                         .unwrap(),
                 )?;
-                (
-                    to,
-                    cache::Transaction::open(&self.repo_path.join("mirror"), None)?,
-                )
+                (to, self.transaction_context(&mirror_path).open(None)?)
             } else {
                 (
-                    cache::Transaction::open(&self.repo_path, None)?,
-                    cache::Transaction::open(&self.repo_path, None)?,
+                    self.transaction_context(&self.repo_path).open(None)?,
+                    self.transaction_context(&self.repo_path).open(None)?,
                 )
             };
 
@@ -120,11 +131,20 @@ mod helpers {
 
 pub fn render(
     transaction: &cache::Transaction,
+    cache: std::sync::Arc<CacheStack>,
     ref_prefix: &str,
     commit_id: git2::Oid,
     query_and_params: &str,
     split_odb: bool,
 ) -> JoshResult<Option<(String, std::collections::BTreeMap<String, String>)>> {
+    let repo_path = transaction.repo().path();
+    let overlay_path = transaction
+        .repo()
+        .path()
+        .parent()
+        .ok_or(josh_error("parent"))?
+        .join("overlay");
+
     let params = form_urlencoded::parse(query_and_params.as_bytes())
         .map(|(x, y)| (x.to_string(), y.to_string()))
         .collect::<std::collections::BTreeMap<_, _>>();
@@ -160,36 +180,30 @@ pub fn render(
             for (k, v) in params.iter() {
                 variables.insert(k.to_string(), juniper::InputValue::scalar(v.clone()));
             }
-            let (transaction, transaction_mirror) = if let Ok(to) = cache::Transaction::open(
-                &transaction
-                    .repo()
-                    .path()
-                    .parent()
-                    .ok_or(josh_error("parent"))?
-                    .join("overlay"),
-                None,
-            ) {
-                to.repo().odb()?.add_disk_alternate(
-                    transaction
-                        .repo()
-                        .path()
-                        .parent()
-                        .ok_or(josh_error("parent"))?
-                        .join("mirror")
-                        .join("objects")
-                        .to_str()
-                        .unwrap(),
-                )?;
-                (
-                    to,
-                    cache::Transaction::open(transaction.repo().path(), None)?,
-                )
-            } else {
-                (
-                    cache::Transaction::open(transaction.repo().path(), None)?,
-                    cache::Transaction::open(transaction.repo().path(), None)?,
-                )
-            };
+
+            let (transaction, transaction_mirror) =
+                if let Ok(to) = TransactionContext::new(&overlay_path, cache.clone()).open(None) {
+                    to.repo().odb()?.add_disk_alternate(
+                        transaction
+                            .repo()
+                            .path()
+                            .parent()
+                            .ok_or(josh_error("parent"))?
+                            .join("mirror")
+                            .join("objects")
+                            .to_str()
+                            .unwrap(),
+                    )?;
+                    (
+                        to,
+                        TransactionContext::new(repo_path, cache.clone()).open(None)?,
+                    )
+                } else {
+                    (
+                        TransactionContext::new(repo_path, cache.clone()).open(None)?,
+                        TransactionContext::new(repo_path, cache.clone()).open(None)?,
+                    )
+                };
             let (res, _errors) = juniper::execute_sync(
                 file,
                 None,
@@ -231,6 +245,7 @@ pub fn render(
         "graphql",
         Box::new(GraphQLHelper {
             repo_path,
+            cache,
             ref_prefix: ref_prefix.to_owned(),
             commit_id,
         }),

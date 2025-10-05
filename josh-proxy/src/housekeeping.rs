@@ -1,4 +1,4 @@
-use josh::{JoshResult, cache, housekeeping, shell};
+use josh::{JoshResult, housekeeping, shell};
 use std::path::Path;
 
 macro_rules! trace_object_count {
@@ -134,11 +134,19 @@ fn run_command(path: &Path, cmd: &[&str]) -> CommandResult {
 }
 
 #[tracing::instrument(name = "housekeeping_run", skip_all)]
-pub fn run(repo_path: &std::path::Path, do_gc: bool) -> JoshResult<()> {
+pub fn run(
+    repo_path: &std::path::Path,
+    cache: std::sync::Arc<josh::cache_stack::CacheStack>,
+    do_gc: bool,
+) -> JoshResult<()> {
+    use josh::cache::TransactionContext;
+
     const CRUFT_PACK_SIZE: usize = 1024 * 1024 * 64;
 
-    let transaction_mirror = cache::Transaction::open(&repo_path.join("mirror"), None)?;
-    let transaction_overlay = cache::Transaction::open(&repo_path.join("overlay"), None)?;
+    let transaction_mirror =
+        TransactionContext::new(repo_path.join("mirror"), cache.clone()).open(None)?;
+    let transaction_overlay =
+        TransactionContext::new(repo_path.join("overlay"), cache).open(None)?;
 
     transaction_overlay
         .repo()
