@@ -69,6 +69,12 @@ fn make_app() -> clap::Command {
                 .short('p'),
         )
         .arg(
+            clap::Arg::new("filter-id")
+                .action(clap::ArgAction::SetTrue)
+                .help("Print the filter id and exit")
+                .short('i'),
+        )
+        .arg(
             clap::Arg::new("cache-stats")
                 .action(clap::ArgAction::SetTrue)
                 .help("Show stats about cache content")
@@ -242,6 +248,16 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
             "{}",
             josh::filter::pretty(filterobj, if args.contains_id("file") { 0 } else { 4 })
         );
+        return Ok(0);
+    }
+
+    if args.get_flag("filter-id") {
+        let filterobj = if args.get_flag("reverse") {
+            josh::filter::invert(filterobj)?
+        } else {
+            filterobj
+        };
+        println!("{}", josh::filter::as_tree(repo, filterobj)?);
         return Ok(0);
     }
 
