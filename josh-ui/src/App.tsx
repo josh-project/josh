@@ -4,11 +4,10 @@ import {FileList} from './FileBrowser';
 import {useEffect} from 'react';
 import {None, Option} from 'tsoption';
 import {
-    LibraryOutline,
-    GitCommitOutline,
-    GitPullRequestOutline,
-    SearchOutline
-} from 'react-ionicons'
+    IoGitCommitOutline as GitCommitOutline,
+    IoGitPullRequestOutline as GitPullRequestOutline,
+    IoSearchOutline as SearchOutline,
+} from 'react-icons/io5'
 
 import {
     BrowserRouter,
@@ -31,6 +30,10 @@ import {HistoryList} from "./History";
 import {ChangesList} from "./Changes";
 import {Breadcrumbs} from "./Breadcrumbs";
 import {DEFAULT_FILTER} from "./Josh";
+
+const BASE_URL = import.meta.env.BASE_URL;
+const ROUTER_BASENAME = BASE_URL.replace(/\/$/, '') || '/';
+const LOGO_SRC = `${BASE_URL}logo.png`;
 
 function useTitleEffect(title: string) {
     useEffect(() => {
@@ -282,29 +285,26 @@ function Sidebar() {
 
     return <div className="sidebar">
       <Link to={`/select?${createSearchParams(params)}`}>
-        <img src={process.env.PUBLIC_URL.concat("/logo.png")} alt="Josh logo"/>
+        <img src={LOGO_SRC} alt="Josh logo"/>
       </Link>
       <Link to={`/history?${createSearchParams(params)}`}>
         <GitCommitOutline
           color={'#aaaaaa'} 
           title="history"
-          height="32px"
-          width="32px"
+          size="32px"
         />
       </Link>
       <Link to={`/changes?${createSearchParams(params)}`}>
       <GitPullRequestOutline
         color={'#aaaaaa'} 
         title="changes"
-        height="32px"
-        width="32px"
+        size="32px"
       />
       </Link>
       <SearchOutline
         color={'#555555'} 
         title="search"
-        height="32px"
-        width="32px"
+        size="32px"
       />
     </div>;
 }
@@ -313,7 +313,7 @@ function Sidebar() {
 function App() {
     return (
         <div>
-        <BrowserRouter basename={'/~/ui'}>
+        <BrowserRouter basename={ROUTER_BASENAME}>
             <Sidebar/>
             <Routes>
                 <Route index element={<Navigate to="/select" />} />
