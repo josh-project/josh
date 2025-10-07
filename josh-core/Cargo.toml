@@ -23,7 +23,7 @@ lazy_static = { workspace = true }
 log = "0.4.28"
 percent-encoding = "2.3.1"
 pest = "2.8.3"
-pest_derive = "2.8.2"
+pest_derive = "2.8.3"
 rayon = "1.11.0"
 regex = { workspace = true }
 rs_tracing = { workspace = true }
