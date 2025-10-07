@@ -12,6 +12,7 @@ use std::net::SocketAddr;
 use tokio::net::TcpListener;
 
 use futures::FutureExt;
+use std::str::FromStr;
 
 use hyper::body::Incoming;
 
@@ -107,7 +108,7 @@ fn auth_response(
 
 async fn call(
     serv: std::sync::Arc<std::sync::Mutex<ServerState>>,
-    req: hyper::Request<Incoming>,
+    mut req: hyper::Request<Incoming>,
 ) -> hyper::Response<Full<Bytes>> {
     println!("call {:?}", req.uri().path());
 
@@ -145,7 +146,6 @@ async fn call(
         return response;
     }
 
-    /*
     if let Some(proxy) = &ARGS.get_one::<String>("proxy") {
         for proxy in proxy.split(",") {
             if let [proxy_path, proxy_target] = proxy.split("=").collect::<Vec<_>>().as_slice() {
@@ -157,14 +157,13 @@ async fn call(
                         Ok(response) => response,
                         Err(error) => hyper::Response::builder()
                             .status(hyper::StatusCode::INTERNAL_SERVER_ERROR)
-                            .body(format!("Proxy error: {:?}", error))
+                            .body(Full::new(Bytes::from(format!("Proxy error: {:?}", error))))
                             .unwrap(),
                     };
                 }
             }
         }
     }
-    */
 
     let workdir = std::path::PathBuf::from(
         ARGS.get_one::<String>("dir")

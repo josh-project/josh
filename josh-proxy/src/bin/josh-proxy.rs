@@ -26,9 +26,10 @@ use josh_rpc::calls::RequestedCommand;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::io;
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::str::FromStr;
 use std::sync::{Arc, RwLock};
 use tokio::io::AsyncWriteExt;
 use tokio::net::{TcpListener, UnixStream};
@@ -553,7 +554,6 @@ async fn handle_ui_request(
     req: Request<Incoming>,
     resource_path: &str,
 ) -> josh::JoshResult<Response<Full<Bytes>>> {
-    /*
     // Proxy: can be used for UI development or to serve a different UI
     if let Some(proxy) = &ARGS.static_resource_proxy_target {
         let client_ip = IpAddr::from_str("127.0.0.1").unwrap();
@@ -564,7 +564,7 @@ async fn handle_ui_request(
                 .body(Full::new(Bytes::from(format!("Proxy error: {:?}", error))))
                 .unwrap()),
         };
-    }*/
+    }
 
     // Serve prebuilt UI from static resources dir
     let is_app_route = resource_path == "/"

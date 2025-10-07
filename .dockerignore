@@ -3,6 +3,7 @@
 !Cargo.lock
 !Cargo.toml
 !hyper_cgi
+!hyper-reverse-proxy
 !josh-core
 !josh-filter
 !josh-proxy
