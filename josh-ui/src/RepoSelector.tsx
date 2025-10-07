@@ -1,5 +1,5 @@
 import React from 'react';
-import {match, select, when} from 'ts-pattern';
+import { match, P } from 'ts-pattern';
 import {None, Option} from 'tsoption';
 import {getServer} from './Server';
 import {NavigateCallback, NavigateTargetType} from "./Navigation";
@@ -22,11 +22,11 @@ function checkUrl(url: string, expectedPath: string): UrlCheckResult {
     }
 
     return match(url)
-        .with(when((v: string) => v.startsWith('git@')),
+        .with(P.when((v: string) => v.startsWith('git@')),
             () => ({ type: 'ProtocolNotSupported' } as UrlCheckResult))
-        .with(when((v: string) => v.startsWith(expectedPath)),
+        .with(P.when((v: string) => v.startsWith(expectedPath)),
             (v) => ({ type: 'RemoteFound', path: trimSuffix(v.replace(expectedPath, '')) } as UrlCheckResult))
-        .with(when((v: string) => !(v.startsWith('http://') || v.startsWith('https://'))),
+        .with(P.when((v: string) => !(v.startsWith('http://') || v.startsWith('https://'))),
             (v) => ({ type: 'RemoteFound', path: trimSuffix(v) }) as UrlCheckResult)
         .otherwise(() => ({ type: 'RemoteMismatch' } as UrlCheckResult))
 }
@@ -42,7 +42,7 @@ function formatHint(checkResult: UrlCheckResult, filter: Option<string>): string
             () => 'Only HTTPS access is currently supported')
         .with({ type: 'NotAGitRepo' },
             () => 'Repository URL should end in .git')
-        .with({ type: 'RemoteFound', path: select() },
+        .with({ type: 'RemoteFound', path: P.select() },
             (path) => makeCheckoutHint(path))
         .otherwise(() => 'Repository is not located on the current remote')
 }
@@ -86,8 +86,8 @@ export class RepoSelector extends React.Component<RepoSelectorProps, State> {
     getStatus = () => {
         return match(this.state.remote)
             .with({ type: 'None' }, () => 'loading...' )
-            .with({ type: 'Error', error: select() }, (e) => `error: ${e.message}` )
-            .with({ type: 'Some', value: select() }, (v) => `${v}/` )
+            .with({ type: 'Error', error: P.select() }, (e) => `error: ${e.message}` )
+            .with({ type: 'Some', value: P.select() }, (v) => `${v}/` )
             .exhaustive()
     }
 
@@ -98,7 +98,7 @@ export class RepoSelector extends React.Component<RepoSelectorProps, State> {
 
             const maybeFilter = this.state.filter
             const maybeRepo = match(checkResult)
-                .with({ type: 'RemoteFound', path: select() },
+                .with({ type: 'RemoteFound', path: P.select() },
                     (path) => Option.of(path))
                 .otherwise(() => new None<string>())
 
@@ -123,7 +123,7 @@ export class RepoSelector extends React.Component<RepoSelectorProps, State> {
         }
 
         return match(this.state.remote)
-            .with({ type: 'Some', value: select() }, (remote): ParsedInput => {
+            .with({ type: 'Some', value: P.select() }, (remote): ParsedInput => {
                 return parseWithRemote(remote)
             })
             .with({ type: 'None' }, (): ParsedInput => {
