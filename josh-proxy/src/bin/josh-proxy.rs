@@ -385,7 +385,7 @@ async fn repo_update_fn(req: Request<hyper::Body>) -> josh::JoshResult<Response<
         let context_propagator = repo_update.context_propagator.clone();
         let parent_context =
             global::get_text_map_propagator(|propagator| propagator.extract(&context_propagator));
-        s.set_parent(parent_context);
+        let _ = s.set_parent(parent_context);
 
         josh_proxy::process_repo_update(repo_update)
     })
