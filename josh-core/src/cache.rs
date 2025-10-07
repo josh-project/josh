@@ -22,6 +22,18 @@ lazy_static! {
     static ref DB: std::sync::Mutex<Option<sled::Db>> = std::sync::Mutex::new(None);
 }
 
+pub(crate) fn josh_commit_signature<'a>() -> JoshResult<git2::Signature<'a>> {
+    Ok(if let Ok(time) = std::env::var("JOSH_COMMIT_TIME") {
+        git2::Signature::new(
+            "JOSH",
+            "josh@josh-project.dev",
+            &git2::Time::new(time.parse()?, 0),
+        )?
+    } else {
+        git2::Signature::now("JOSH", "josh@josh-project.dev")?
+    })
+}
+
 static REF_CACHE: LazyLock<RwLock<HashMap<git2::Oid, HashMap<git2::Oid, git2::Oid>>>> =
     LazyLock::new(Default::default);
 

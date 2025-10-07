@@ -178,12 +178,21 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
 
     let mut filterobj = josh::filter::parse(&specstr)?;
 
-    if !args.get_flag("no-cache") {
+    let repo_path = {
         let repo = git2::Repository::open_from_env()?;
-        josh::cache_sled::sled_load(repo.path())?;
+        repo.path().to_path_buf()
+    };
+
+    if !args.get_flag("no-cache") {
+        josh::cache_sled::sled_load(&repo_path)?;
     }
 
-    let cache = std::sync::Arc::new(josh::cache_stack::CacheStack::default());
+    let cache = std::sync::Arc::new(
+        josh::cache_stack::CacheStack::new()
+            .with_backend(josh::cache_sled::SledCacheBackend::default())
+            .with_backend(josh::cache_notes::NotesCacheBackend::new(&repo_path)?),
+    );
+
     let mut transaction = josh::cache::TransactionContext::from_env(cache.clone())?.open(None)?;
 
     let repo_for_hook = git2::Repository::open_ext(
