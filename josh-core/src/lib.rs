@@ -18,6 +18,7 @@ macro_rules! ok_or {
 extern crate rs_tracing;
 
 pub mod cache;
+pub mod cache_notes;
 pub mod cache_sled;
 pub mod cache_stack;
 pub mod filter;

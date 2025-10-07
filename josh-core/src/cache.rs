@@ -18,7 +18,7 @@ pub trait FilterHook {
     fn filter_for_commit(&self, commit_oid: git2::Oid, arg: &str) -> JoshResult<filter::Filter>;
 }
 
-fn josh_commit_signature<'a>() -> JoshResult<git2::Signature<'a>> {
+pub(crate) fn josh_commit_signature<'a>() -> JoshResult<git2::Signature<'a>> {
     Ok(if let Ok(time) = std::env::var("JOSH_COMMIT_TIME") {
         git2::Signature::new(
             "JOSH",
@@ -28,38 +28,6 @@ fn josh_commit_signature<'a>() -> JoshResult<git2::Signature<'a>> {
     } else {
         git2::Signature::now("JOSH", "josh@josh-project.dev")?
     })
-}
-
-fn store_note(repo: &git2::Repository, kind: &str, key: git2::Oid, from: git2::Oid, to: git2::Oid) {
-    let signature = josh_commit_signature().unwrap();
-    repo.note(
-        &signature,
-        &signature,
-        Some(&format!("refs/josh/{}/{}/{}", kind, CACHE_VERSION, key)),
-        from,
-        &format!("{}", to),
-        true,
-    )
-    .unwrap();
-}
-
-fn lookup_note(
-    repo: &git2::Repository,
-    kind: &str,
-    key: git2::Oid,
-    from: git2::Oid,
-) -> Option<git2::Oid> {
-    if from.as_bytes()[0] != 0 {
-        return None;
-    }
-    if let Ok(note) = repo.find_note(
-        Some(&format!("refs/josh/{}/{}/{}", kind, CACHE_VERSION, key)),
-        from,
-    ) {
-        Some(git2::Oid::from_str(note.message().unwrap()).unwrap())
-    } else {
-        None
-    }
 }
 
 static REF_CACHE: LazyLock<RwLock<HashMap<git2::Oid, HashMap<git2::Oid, git2::Oid>>>> =
@@ -365,10 +333,6 @@ impl Transaction {
                 .write_all(filter, from, to)
                 // TODO propagate error?
                 .expect("Failed to write cache");
-
-            if from.as_bytes()[0] == 0 {
-                store_note(&self.repo, "cache", filter.id(), from, to);
-            }
         }
     }
 
@@ -407,18 +371,12 @@ impl Transaction {
             }
         }
 
-        // TODO move note backend
         let oid = t2
             .cache
             .read_propagate(filter, from)
             .expect("Failed to read from cache backend");
-        let oid = if let Some(oid) = oid {
-            Some(oid)
-        } else if let Some(oid) = lookup_note(&self.repo, "cache", filter.id(), from) {
-            Some(oid)
-        } else {
-            None
-        };
+
+        let oid = if let Some(oid) = oid { Some(oid) } else { None };
 
         if let Some(oid) = oid {
             if oid == git2::Oid::zero() {
