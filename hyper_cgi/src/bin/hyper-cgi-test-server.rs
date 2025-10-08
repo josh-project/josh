@@ -1,13 +1,20 @@
 #[macro_use]
 extern crate lazy_static;
+use bytes::Bytes;
 use core::iter;
 use core::str::from_utf8;
+use http_body_util::Full;
+use hyper::server::conn::http1;
+use hyper::service::service_fn;
+use hyper_util::rt::{TokioIo, TokioTimer};
 use rand::{Rng, distr::Alphanumeric, rng};
-use std::str::FromStr;
+use std::net::SocketAddr;
+use tokio::net::TcpListener;
 
 use futures::FutureExt;
+use std::str::FromStr;
 
-use hyper::server::Server;
+use hyper::body::Incoming;
 
 // Import the base64 crate Engine trait anonymously so we can
 // call its methods without adding to the namespace.
@@ -36,7 +43,7 @@ pub struct ServerState {
     users: Vec<(String, String)>,
 }
 
-pub fn parse_auth(req: &hyper::Request<hyper::Body>) -> Option<(String, String)> {
+pub fn parse_auth(req: &hyper::Request<Incoming>) -> Option<(String, String)> {
     let line = some_or!(
         req.headers()
             .get("authorization")
@@ -61,9 +68,9 @@ pub fn parse_auth(req: &hyper::Request<hyper::Body>) -> Option<(String, String)>
 }
 
 fn auth_response(
-    req: &hyper::Request<hyper::Body>,
+    req: &hyper::Request<Incoming>,
     users: &Vec<(String, String)>,
-) -> Option<hyper::Response<hyper::Body>> {
+) -> Option<hyper::Response<Full<Bytes>>> {
     if users.len() == 0 {
         return None;
     }
@@ -75,7 +82,7 @@ fn auth_response(
             let builder = hyper::Response::builder()
                 .header("WWW-Authenticate", "Basic realm=User Visible Realm")
                 .status(hyper::StatusCode::UNAUTHORIZED);
-            return Some(builder.body(hyper::Body::empty()).unwrap());
+            return Some(builder.body(Full::new(Bytes::new())).unwrap());
         }
     };
 
@@ -94,17 +101,16 @@ fn auth_response(
         .status(hyper::StatusCode::UNAUTHORIZED);
     return Some(
         builder
-            .body(hyper::Body::empty())
+            .body(Full::new(Bytes::new()))
             .unwrap_or(hyper::Response::default()),
     );
 }
 
 async fn call(
     serv: std::sync::Arc<std::sync::Mutex<ServerState>>,
-    req: hyper::Request<hyper::Body>,
-) -> hyper::Response<hyper::Body> {
+    mut req: hyper::Request<Incoming>,
+) -> hyper::Response<Full<Bytes>> {
     println!("call {:?}", req.uri().path());
-    let mut req = req;
 
     let path = req.uri().path();
 
@@ -125,7 +131,7 @@ async fn call(
         for (u, p) in serv.lock().unwrap().users.iter() {
             if username == *u {
                 password = p.clone();
-                return builder.body(hyper::Body::from(password)).unwrap();
+                return builder.body(Full::new(Bytes::from(password))).unwrap();
             }
         }
         serv.lock()
@@ -133,7 +139,7 @@ async fn call(
             .users
             .push((username, password.clone()));
         println!("users: {:?}", serv.lock().unwrap().users);
-        return builder.body(hyper::Body::from(password)).unwrap();
+        return builder.body(Full::new(Bytes::from(password))).unwrap();
     }
 
     if let Some(response) = auth_response(&req, &serv.lock().unwrap().users) {
@@ -151,7 +157,7 @@ async fn call(
                         Ok(response) => response,
                         Err(error) => hyper::Response::builder()
                             .status(hyper::StatusCode::INTERNAL_SERVER_ERROR)
-                            .body(hyper::Body::from(format!("Proxy error: {:?}", error)))
+                            .body(Full::new(Bytes::from(format!("Proxy error: {:?}", error))))
                             .unwrap(),
                     };
                 }
@@ -176,22 +182,10 @@ async fn call(
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let server_state = std::sync::Arc::new(std::sync::Mutex::new(ServerState { users: vec![] }));
 
-    let make_service = hyper::service::make_service_fn(move |_| {
-        let server_state = server_state.clone();
-
-        let service = hyper::service::service_fn(move |_req| {
-            let server_state = server_state.clone();
-
-            call(server_state, _req).map(Ok::<_, hyper::http::Error>)
-        });
-
-        futures::future::ok::<_, hyper::http::Error>(service)
-    });
-
-    let addr = format!(
+    let addr: SocketAddr = format!(
         "0.0.0.0:{}",
         ARGS.get_one::<String>("port")
             .unwrap_or(&"8000".to_owned())
@@ -199,11 +193,32 @@ async fn main() {
     )
     .parse()
     .unwrap();
-    let server = Server::bind(&addr).serve(make_service);
-    println!("Now listening on {}", addr);
 
-    if let Err(e) = server.await {
-        eprintln!("server error: {}", e);
+    let listener = TcpListener::bind(addr).await?;
+    println!("Now listening on {}", addr);
+    let server_state = server_state.clone();
+
+    loop {
+        let (tcp, _) = listener.accept().await?;
+        let io = TokioIo::new(tcp);
+        let server_state = server_state.clone();
+
+        tokio::task::spawn(async move {
+            if let Err(err) = http1::Builder::new()
+                .timer(TokioTimer::new())
+                .serve_connection(
+                    io,
+                    service_fn(move |_req| {
+                        let server_state = server_state.clone();
+
+                        call(server_state, _req).map(Ok::<_, hyper::http::Error>)
+                    }),
+                )
+                .await
+            {
+                println!("Error serving connection: {:?}", err);
+            }
+        });
     }
 }
 
