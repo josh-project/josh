@@ -302,6 +302,8 @@ enum Op {
     Pattern(String),
     Message(String),
 
+    HistoryConcat(LazyRef, Filter),
+
     Compose(Vec<Filter>),
     Chain(Filter, Filter),
     Subtract(Filter, Filter),
@@ -458,6 +460,13 @@ fn lazy_refs2(op: &Op) -> Vec<String> {
             av
         }
         Op::Rev(filters) => lazy_refs2(&Op::Join(filters.clone())),
+        Op::HistoryConcat(r, _) => {
+            let mut lr = Vec::new();
+            if let LazyRef::Lazy(s) = r {
+                lr.push(s.to_owned());
+            }
+            lr
+        }
         Op::Join(filters) => {
             let mut lr = lazy_refs2(&Op::Compose(filters.values().copied().collect()));
             lr.extend(filters.keys().filter_map(|x| {
@@ -517,6 +526,19 @@ fn resolve_refs2(refs: &std::collections::HashMap<String, git2::Oid>, op: &Op) -
                 })
                 .collect();
             Op::Rev(lr)
+        }
+        Op::HistoryConcat(r, filter) => {
+            let f = resolve_refs(refs, *filter);
+            let resolved_ref = if let LazyRef::Lazy(s) = r {
+                if let Some(res) = refs.get(s) {
+                    LazyRef::Resolved(*res)
+                } else {
+                    r.clone()
+                }
+            } else {
+                r.clone()
+            };
+            Op::HistoryConcat(resolved_ref, f)
         }
         Op::Join(filters) => {
             let lr = filters
@@ -664,6 +686,9 @@ fn spec2(op: &Op) -> String {
         }
         Op::Message(m) => {
             format!(":{}", parse::quote(m))
+        }
+        Op::HistoryConcat(r, filter) => {
+            format!(":concat({}{})", r.to_string(), spec(*filter))
         }
         Op::Hook(hook) => {
             format!(":hook={}", parse::quote(hook))
@@ -873,6 +898,13 @@ fn as_tree2(repo: &git2::Repository, op: &Op) -> JoshResult<git2::Oid> {
                 .collect::<Vec<_>>();
             v.sort();
             builder.insert("rev", rev_params(repo, &v)?, git2::FileMode::Tree.into())?;
+        }
+        Op::HistoryConcat(r, f) => {
+            builder.insert(
+                "historyconcat",
+                rev_params(repo, &vec![(r.to_string(), *f)])?,
+                git2::FileMode::Tree.into(),
+            )?;
         }
         Op::Join(filters) => {
             let mut v = filters
@@ -1809,6 +1841,19 @@ fn apply_to_commit2(
             ))
             .transpose();
         }
+        Op::HistoryConcat(r, f) => {
+            if let LazyRef::Resolved(c) = r {
+                let a = apply_to_commit2(&to_op(*f), &repo.find_commit(*c)?, transaction)?;
+                let a = some_or!(a, { return Ok(None) });
+                if commit.id() == a {
+                    transaction.insert(filter, commit.id(), *c, true);
+                    return Ok(Some(*c));
+                }
+            } else {
+                return Err(josh_error("unresolved lazy ref"));
+            }
+            Apply::from_commit(commit)?
+        }
         _ => {
             let filtered_parent_ids = commit
                 .parent_ids()
@@ -1860,7 +1905,7 @@ fn apply2<'a>(transaction: &'a cache::Transaction, op: &Op, x: Apply<'a>) -> Jos
         Op::Nop => Ok(x),
         Op::Empty => Ok(x.with_tree(tree::empty(repo))),
         Op::Fold => Ok(x),
-        Op::Squash(None) => Ok(x),
+        Op::Squash(..) => Ok(x),
         Op::Author(author, email) => Ok(x.with_author((author.clone(), email.clone()))),
         Op::Committer(author, email) => Ok(x.with_committer((author.clone(), email.clone()))),
         Op::Message(m) => Ok(x.with_message(
@@ -1870,7 +1915,7 @@ fn apply2<'a>(transaction: &'a cache::Transaction, op: &Op, x: Apply<'a>) -> Jos
                 &std::collections::HashMap::<String, &dyn strfmt::DisplayStr>::new(),
             )?,
         )),
-        Op::Squash(Some(_)) => Err(josh_error("not applicable to tree")),
+        Op::HistoryConcat(..) => Ok(x),
         Op::Linear => Ok(x),
         Op::Prune => Ok(x),
         Op::Unsign => Ok(x),
