@@ -317,6 +317,8 @@ enum Op {
     Pattern(String),
     Message(String, regex::Regex),
 
+    HistoryConcat(LazyRef, Filter),
+
     Compose(Vec<Filter>),
     Chain(Filter, Filter),
     Subtract(Filter, Filter),
@@ -441,6 +443,14 @@ fn lazy_refs2(op: &Op) -> Vec<String> {
             av
         }
         Op::Rev(filters) => lazy_refs2(&Op::Join(filters.clone())),
+        Op::HistoryConcat(r, f) => {
+            let mut lr = Vec::new();
+            if let LazyRef::Lazy(s) = r {
+                lr.push(s.to_owned());
+            }
+            lr.append(&mut lazy_refs(*f));
+            lr
+        }
         Op::Join(filters) => {
             let mut lr = lazy_refs2(&Op::Compose(filters.values().copied().collect()));
             lr.extend(filters.keys().filter_map(|x| {
@@ -500,6 +510,19 @@ fn resolve_refs2(refs: &std::collections::HashMap<String, git2::Oid>, op: &Op) -
                 })
                 .collect();
             Op::Rev(lr)
+        }
+        Op::HistoryConcat(r, filter) => {
+            let f = resolve_refs(refs, *filter);
+            let resolved_ref = if let LazyRef::Lazy(s) = r {
+                if let Some(res) = refs.get(s) {
+                    LazyRef::Resolved(*res)
+                } else {
+                    r.clone()
+                }
+            } else {
+                r.clone()
+            };
+            Op::HistoryConcat(resolved_ref, f)
         }
         Op::Join(filters) => {
             let lr = filters
@@ -657,6 +680,9 @@ fn spec2(op: &Op) -> String {
         }
         Op::Message(m, r) => {
             format!(":{};{}", parse::quote(m), parse::quote(r.as_str()))
+        }
+        Op::HistoryConcat(r, filter) => {
+            format!(":concat({}{})", r.to_string(), spec(*filter))
         }
         Op::Hook(hook) => {
             format!(":hook={}", parse::quote(hook))
@@ -1113,6 +1139,19 @@ fn apply_to_commit2(
 
             return per_rev_filter(transaction, commit, filter, commit_filter, parent_filters);
         }
+        Op::HistoryConcat(r, f) => {
+            if let LazyRef::Resolved(c) = r {
+                let a = apply_to_commit2(&to_op(*f), &repo.find_commit(*c)?, transaction)?;
+                let a = some_or!(a, { return Ok(None) });
+                if commit.id() == a {
+                    transaction.insert(filter, commit.id(), *c, true);
+                    return Ok(Some(*c));
+                }
+            } else {
+                return Err(josh_error("unresolved lazy ref"));
+            }
+            Apply::from_commit(commit)?
+        }
         _ => apply(transaction, filter, Apply::from_commit(commit)?)?,
     };
 
@@ -1177,6 +1216,7 @@ fn apply2<'a>(transaction: &'a cache::Transaction, op: &Op, x: Apply<'a>) -> Jos
 
             Ok(x.with_message(text::transform_with_template(&r, &m, &message, &hm)?))
         }
+        Op::HistoryConcat(..) => Ok(x),
         Op::Linear => Ok(x),
         Op::Prune => Ok(x),
         Op::Unsign => Ok(x),
