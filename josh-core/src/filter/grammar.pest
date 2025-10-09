@@ -24,6 +24,8 @@ filter_spec = { (
     filter_group
   | filter_message
   | filter_rev
+  | filter_from
+  | filter_concat
   | filter_join
   | filter_replace
   | filter_squash
@@ -51,6 +53,24 @@ filter_rev = {
     ~ ")"
 }
 
+filter_from = {
+    CMD_START ~ "from" ~ "("
+    ~ NEWLINE*
+    ~ (rev ~ filter_spec)?
+    ~ (CMD_SEP+ ~ (rev ~ filter_spec))*
+    ~ NEWLINE*
+    ~ ")"
+}
+
+filter_concat = {
+    CMD_START ~ "from" ~ "("
+    ~ NEWLINE*
+    ~ (rev ~ filter_spec)?
+    ~ (CMD_SEP+ ~ (rev ~ filter_spec))*
+    ~ NEWLINE*
+    ~ ")"
+}
+
 filter_join = {
     CMD_START ~ "join" ~ "("
     ~ NEWLINE*
@@ -59,7 +79,6 @@ filter_join = {
     ~ NEWLINE*
     ~ ")"
 }
-
 
 filter_replace = {
     CMD_START ~ "replace" ~ "("
