@@ -160,6 +160,8 @@ enum Op {
     Pattern(String),
     Message(String),
 
+    HistoryConcat(LazyRef, Filter),
+
     Compose(Vec<Filter>),
     Chain(Filter, Filter),
     Subtract(Filter, Filter),
@@ -308,6 +310,13 @@ fn lazy_refs2(op: &Op) -> Vec<String> {
             av
         }
         Op::Rev(filters) => lazy_refs2(&Op::Join(filters.clone())),
+        Op::HistoryConcat(r, _) => {
+            let mut lr = Vec::new();
+            if let LazyRef::Lazy(s) = r {
+                lr.push(s.to_owned());
+            }
+            lr
+        }
         Op::Join(filters) => {
             let mut lr = lazy_refs2(&Op::Compose(filters.values().copied().collect()));
             lr.extend(filters.keys().filter_map(|x| {
@@ -366,6 +375,19 @@ fn resolve_refs2(refs: &std::collections::HashMap<String, git2::Oid>, op: &Op) -
                 })
                 .collect();
             Op::Rev(lr)
+        }
+        Op::HistoryConcat(r, filter) => {
+            let f = resolve_refs(refs, *filter);
+            let resolved_ref = if let LazyRef::Lazy(s) = r {
+                if let Some(res) = refs.get(s) {
+                    LazyRef::Resolved(*res)
+                } else {
+                    r.clone()
+                }
+            } else {
+                r.clone()
+            };
+            Op::HistoryConcat(resolved_ref, f)
         }
         Op::Join(filters) => {
             let lr = filters
@@ -501,6 +523,9 @@ fn spec2(op: &Op) -> String {
         }
         Op::Message(m) => {
             format!(":{}", parse::quote(m))
+        }
+        Op::HistoryConcat(r, filter) => {
+            format!(":concat({}{})", r.to_string(), spec(*filter))
         }
     }
 }
@@ -974,6 +999,24 @@ fn apply_to_commit2(
                 &std::collections::HashMap::<String, &dyn strfmt::DisplayStr>::new(),
             )?),
         },
+        Op::HistoryConcat(r, f) => {
+            if let LazyRef::Resolved(c) = r {
+                let a = apply_to_commit2(&to_op(*f), &repo.find_commit(*c)?, transaction)?;
+                let a = some_or!(a, { return Ok(None) });
+                if commit.id() == a {
+                    transaction.insert(filter, commit.id(), *c, true);
+                    return Ok(Some(*c));
+                }
+            } else {
+                return Err(josh_error("unresolved lazy ref"));
+            }
+            RewriteData {
+                tree: commit.tree()?,
+                message: None,
+                author: None,
+                committer: None,
+            }
+        }
         _ => RewriteData {
             tree: apply(transaction, filter, commit.tree()?)?,
             message: None,
@@ -1019,6 +1062,7 @@ fn apply2<'a>(
     let repo = transaction.repo();
     match op {
         Op::Nop => Ok(tree),
+        Op::HistoryConcat(..) => Ok(tree),
         Op::Empty => Ok(tree::empty(repo)),
         Op::Fold => Ok(tree),
         Op::Squash(None) => Ok(tree),
