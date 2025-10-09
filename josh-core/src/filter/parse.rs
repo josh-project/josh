@@ -178,6 +178,31 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> JoshResult<Op> {
 
             Ok(Op::Rev(hm))
         }
+        Rule::filter_from => {
+            let v: Vec<_> = pair.into_inner().map(|x| x.as_str()).collect();
+
+            if v.len() == 2 {
+                let oid = LazyRef::parse(v[0])?;
+                let filter = parse(v[1])?;
+                Ok(Op::Chain(
+                    filter,
+                    filter::to_filter(Op::HistoryConcat(oid, filter)),
+                ))
+            } else {
+                Err(josh_error("wrong argument count for :from"))
+            }
+        }
+        Rule::filter_concat => {
+            let v: Vec<_> = pair.into_inner().map(|x| x.as_str()).collect();
+
+            if v.len() == 2 {
+                let oid = LazyRef::parse(v[0])?;
+                let filter = parse(v[1])?;
+                Ok(Op::HistoryConcat(oid, filter))
+            } else {
+                Err(josh_error("wrong argument count for :concat"))
+            }
+        }
         Rule::filter_replace => {
             let replacements = pair
                 .into_inner()

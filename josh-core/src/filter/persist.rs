@@ -290,6 +290,10 @@ impl InMemoryBuilder {
                 let params_tree = self.build_rev_params(&v)?;
                 push_tree_entries(&mut entries, [("join", params_tree)]);
             }
+            Op::HistoryConcat(lr, f) => {
+                let params_tree = self.build_rev_params(&[(lr.to_string(), *f)])?;
+                push_tree_entries(&mut entries, [("concat", params_tree)]);
+            }
             Op::Squash(Some(ids)) => {
                 let mut v = ids
                     .iter()
@@ -634,6 +638,28 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> JoshResult<Op> {
                 filters.insert(LazyRef::parse(&key)?, to_filter(filter));
             }
             Ok(Op::Join(filters))
+        }
+        "concat" => {
+            let concat_tree = repo.find_tree(entry.id())?;
+            let entry = concat_tree
+                .get(0)
+                .ok_or_else(|| josh_error("concat: missing entry"))?;
+            let inner_tree = repo.find_tree(entry.id())?;
+            let key_blob = repo.find_blob(
+                inner_tree
+                    .get_name("o")
+                    .ok_or_else(|| josh_error("concat: missing key"))?
+                    .id(),
+            )?;
+            let filter_tree = repo.find_tree(
+                inner_tree
+                    .get_name("f")
+                    .ok_or_else(|| josh_error("concat: missing filter"))?
+                    .id(),
+            )?;
+            let key = std::str::from_utf8(key_blob.content())?.to_string();
+            let filter = from_tree2(repo, filter_tree.id())?;
+            Ok(Op::HistoryConcat(LazyRef::parse(&key)?, to_filter(filter)))
         }
         "squash" => {
             // blob -> Squash(None), tree -> Squash(Some(...))
