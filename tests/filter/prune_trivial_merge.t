@@ -21,27 +21,36 @@
   $ git add .
   $ git commit -m "mod file1" 1> /dev/null
 
+  $ git commit --allow-empty -m "empty commit" 1> /dev/null
+
   $ git merge -q  branch1 --no-ff
   $ git log --graph --pretty=%s
   *   Merge branch 'branch1'
   |\  
   | * add file2
+  * | empty commit
   * | mod file1
   |/  
   * add file1
 
   $ josh-filter -s ::file1
-  [3] ::file1
+  [4] ::file1
   $ git log --graph --pretty=%s FILTERED_HEAD
   *   Merge branch 'branch1'
   |\  
+  * | empty commit
   * | mod file1
   |/  
   * add file1
   $ josh-filter -s ::file1:prune=trivial-merge
-  [2] :prune=trivial-merge
-  [3] ::file1
+  [3] :prune=trivial-merge
+  [4] ::file1
 
   $ git log --graph --pretty=%s FILTERED_HEAD
+  * empty commit
   * mod file1
   * add file1
+
+
+
+
