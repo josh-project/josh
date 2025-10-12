@@ -9,7 +9,7 @@
   $ bash ${TESTDIR}/destroy_test_env.sh
   .
   |-- josh
-  |   `-- 22
+  |   `-- 23
   |       `-- sled
   |           |-- blobs
   |           |-- conf

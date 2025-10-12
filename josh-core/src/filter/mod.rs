@@ -816,7 +816,7 @@ fn apply_to_commit2(
         Op::Prune => {
             let p: Vec<_> = commit.parent_ids().collect();
 
-            if p.len() > 0 {
+            if p.len() > 1 {
                 let parent = some_or!(transaction.get(filter, p[0]), {
                     return Ok(None);
                 });
