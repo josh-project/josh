@@ -412,3 +412,55 @@ pub fn get_acl(
         })
         .unwrap_or_else(|| Ok((filter::empty(), filter::nop())))
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct JoshLinkFile {
+    pub remote: String,
+    pub branch: String,
+    pub filter: filter::Filter,
+    pub commit: Oid,
+}
+
+pub struct ParsedSubmoduleEntry {
+    pub path: std::path::PathBuf,
+    pub url: String,
+    pub branch: String,
+}
+
+pub fn parse_gitmodules(gitmodules_content: &str) -> JoshResult<Vec<ParsedSubmoduleEntry>> {
+    use gix_submodule::File;
+
+    let submodules = File::from_bytes(gitmodules_content.as_bytes(), None, &Default::default())
+        .map_err(|e| josh_error(&format!("Failed to parse .gitmodules: {}", e)))?;
+
+    let mut entries: Vec<ParsedSubmoduleEntry> = Vec::new();
+
+    for name in submodules.names() {
+        // path is required to consider an entry
+        if let Ok(path) = submodules.path(name) {
+            let path = std::path::PathBuf::from(path.to_string());
+
+            let url = submodules
+                .url(name)
+                .ok()
+                .map(|u| u.to_string())
+                .unwrap_or_default();
+
+            // Default branch to "HEAD" if not configured
+            let branch = submodules
+                .branch(name)
+                .ok()
+                .and_then(|opt| {
+                    opt.map(|b| match b {
+                        gix_submodule::config::Branch::CurrentInSuperproject => ".".to_string(),
+                        gix_submodule::config::Branch::Name(n) => n.to_string(),
+                    })
+                })
+                .unwrap_or_else(|| "HEAD".to_string());
+
+            entries.push(ParsedSubmoduleEntry { path, url, branch });
+        }
+    }
+
+    Ok(entries)
+}
