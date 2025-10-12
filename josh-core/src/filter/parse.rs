@@ -53,6 +53,9 @@ fn make_op(args: &[&str]) -> JoshResult<Op> {
             "#
         ))),
         ["unsign"] => Ok(Op::Unsign),
+        ["unsubmodule"] => Ok(Op::UnSubmodule),
+        ["link"] => Ok(Op::Link),
+        ["export"] => Ok(Op::Export),
         ["PATHS"] => Ok(Op::Paths),
         ["INDEX"] => Ok(Op::Index),
         ["INVERT"] => Ok(Op::Invert),
