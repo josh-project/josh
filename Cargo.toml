@@ -27,7 +27,7 @@ gix = { version = "0.72.1", default-features = false }
 hyper-reverse-proxy = { path = "hyper-reverse-proxy", version = "0.0.1" }
 lazy_static = "1.5.0"
 libc = "0.2.176"
-regex = "1.11.3"
+regex = "1.12.2"
 rs_tracing = { version = "1.1.0", features = ["rs_tracing"] }
 serde = { version = "1.0.228", features = ["std", "derive"] }
 serde_json = "1.0.145"
