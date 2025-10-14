@@ -63,15 +63,17 @@
   $ git commit -m "add file3" 1> /dev/null
   $ git push -o author=josh@example.com origin master:refs/for/master
   remote: josh-proxy: pre-receive hook        
-  remote: upstream: response status: 500 Internal Server Error        
+  remote: upstream: response status: 200 OK        
   remote: upstream: response body:        
   remote: 
-  remote: rejecting to push 3ad32b3bd3bb778441e7eae43930d8dc6293eddc without id        
-  remote: error: hook declined to update refs/for/master        
+  remote: Everything up-to-date        
+  remote: Everything up-to-date        
+  remote: To http://localhost:8001/real_repo.git        
+  remote:    ec41aad..3ad32b3  JOSH_PUSH -> refs/for/master        
+  remote: To http://localhost:8001/real_repo.git        
+  remote:    ec41aad..3ad32b3  master -> @heads/master/josh@example.com        
   To http://localhost:8002/real_repo.git
-   ! [remote rejected] master -> refs/for/master (hook declined)
-  error: failed to push some refs to 'http://localhost:8002/real_repo.git'
-  [1]
+   * [new reference]   master -> refs/for/master
   $ git push http://localhost:8001/real_repo.git :refs/for/master
   To http://localhost:8001/real_repo.git
    - [deleted]         refs/for/master
@@ -97,8 +99,8 @@
    * [new branch]      @heads/master/josh@example.com -> origin/@heads/master/josh@example.com
 
   $ git log --decorate --graph --pretty="%s %d"
-  * add file3  (HEAD -> master, origin/@heads/master/foo@example.com)
-  * Change-Id: foo7  (origin/@heads/master/josh@example.com, origin/@changes/master/josh@example.com/foo7)
+  * add file3  (HEAD -> master, origin/@heads/master/josh@example.com, origin/@heads/master/foo@example.com)
+  * Change-Id: foo7  (origin/@changes/master/josh@example.com/foo7)
   * Change-Id: 1234  (origin/@changes/master/josh@example.com/1234)
   * add file1  (origin/master, origin/HEAD)
 
@@ -111,8 +113,8 @@
    * [new branch]      @heads/master/josh@example.com -> origin/@heads/master/josh@example.com
   $ git checkout -q @heads/master/foo@example.com
   $ git log --decorate --graph --pretty="%s %d"
-  * add file3  (HEAD -> @heads/master/foo@example.com, origin/@heads/master/foo@example.com)
-  * Change-Id: foo7  (origin/@heads/master/josh@example.com, origin/@changes/master/josh@example.com/foo7)
+  * add file3  (HEAD -> @heads/master/foo@example.com, origin/@heads/master/josh@example.com, origin/@heads/master/foo@example.com)
+  * Change-Id: foo7  (origin/@changes/master/josh@example.com/foo7)
   * Change-Id: 1234  (origin/@changes/master/josh@example.com/1234)
   * add file1  (origin/master, origin/HEAD, master)
 

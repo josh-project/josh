@@ -129,16 +129,12 @@ pub fn changes_to_refs(
                 )));
             }
             seen.push(id);
-        } else {
-            return Err(josh_error(&format!(
-                "rejecting to push {:?} without id",
-                change.commit
-            )));
         }
     }
 
     Ok(changes
         .iter()
+        .filter(|change| change.id.is_some())
         .map(|change| {
             (
                 format!(

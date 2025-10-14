@@ -56,15 +56,15 @@
   $ git commit -m "add file3" 1> /dev/null
   $ git push -o author=josh@example.com origin master:refs/stack/for/master
   remote: josh-proxy: pre-receive hook        
-  remote: upstream: response status: 500 Internal Server Error        
+  remote: upstream: response status: 200 OK        
   remote: upstream: response body:        
   remote: 
-  remote: rejecting to push 3ad32b3bd3bb778441e7eae43930d8dc6293eddc without id        
-  remote: error: hook declined to update refs/stack/for/master        
+  remote: Everything up-to-date        
+  remote: Everything up-to-date        
+  remote: To http://localhost:8001/real_repo.git        
+  remote:    ec41aad..3ad32b3  master -> @heads/master/josh@example.com        
   To http://localhost:8002/real_repo.git
-   ! [remote rejected] master -> refs/stack/for/master (hook declined)
-  error: failed to push some refs to 'http://localhost:8002/real_repo.git'
-  [1]
+   * [new reference]   master -> refs/stack/for/master
   $ git push -o author=foo@example.com origin master:refs/stack/for/master
   remote: josh-proxy: pre-receive hook        
   remote: upstream: response status: 200 OK        
@@ -85,8 +85,8 @@
    * [new branch]      @heads/master/josh@example.com -> origin/@heads/master/josh@example.com
 
   $ git log --decorate --graph --pretty="%s %d"
-  * add file3  (HEAD -> master, origin/@heads/master/foo@example.com)
-  * Change-Id: foo7  (origin/@heads/master/josh@example.com, origin/@changes/master/josh@example.com/foo7)
+  * add file3  (HEAD -> master, origin/@heads/master/josh@example.com, origin/@heads/master/foo@example.com)
+  * Change-Id: foo7  (origin/@changes/master/josh@example.com/foo7)
   * Change-Id: 1234  (origin/@changes/master/josh@example.com/1234)
   * add file1  (origin/master, origin/HEAD)
 
@@ -119,7 +119,7 @@ get listed if they differ from HEAD
   3b0e3dbefd779ec54d92286047f32d3129161c0d\trefs/heads/@changes/master/josh@example.com/1234 (esc)
   ec41aad70b4b898baf48efeb795a7753d9674152\trefs/heads/@changes/master/josh@example.com/foo7 (esc)
   3ad32b3bd3bb778441e7eae43930d8dc6293eddc\trefs/heads/@heads/master/foo@example.com (esc)
-  ec41aad70b4b898baf48efeb795a7753d9674152\trefs/heads/@heads/master/josh@example.com (esc)
+  3ad32b3bd3bb778441e7eae43930d8dc6293eddc\trefs/heads/@heads/master/josh@example.com (esc)
   4950fa502f51b7bfda0d7975dbff9b0f9a9481ca\trefs/heads/master (esc)
 
   $ git ls-remote http://localhost:8002/real_repo.git:/sub1.git
