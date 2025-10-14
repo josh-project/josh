@@ -427,7 +427,11 @@ fn step(filter: Filter) -> Filter {
                 Op::Empty
             }
             (Op::Prefix(a), Op::Subdir(b)) if a != b => {
-                Op::Prefix(a.strip_prefix(&b).unwrap_or(&a).to_owned())
+                if let Ok(stripped) = a.strip_prefix(&b) {
+                    Op::Prefix(stripped.to_owned())
+                } else {
+                    to_op(filter)
+                }
             }
             (Op::Nop, b) => b,
             (a, Op::Nop) => a,
@@ -527,4 +531,20 @@ pub fn invert(filter: Filter) -> JoshResult<Filter> {
 
     INVERTED.lock().unwrap().insert(original, result);
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn regression_chain_prefix_subdir() {
+        // When prefix is chained with subdir, and the subdir is deeper than
+        // the prefix, the errornous code optimized this to just Prefix("a")
+        let filter = to_filter(Op::Chain(
+            to_filter(Op::Prefix(std::path::PathBuf::from("a"))),
+            to_filter(Op::Subdir(std::path::PathBuf::from("a/b"))),
+        ));
+        assert_eq!(filter, optimize(filter));
+    }
 }

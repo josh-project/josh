@@ -93,7 +93,7 @@ Check (2) and (3) but with a branch ref
   "real_repo.git" = ["::sub1/"]
   .
   |-- josh
-  |   `-- 23
+  |   `-- 24
   |       `-- sled
   |           |-- blobs
   |           |-- conf

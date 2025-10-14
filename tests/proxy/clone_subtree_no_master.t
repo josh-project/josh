@@ -78,7 +78,7 @@
   "real_repo.git" = [":/sub1"]
   .
   |-- josh
-  |   `-- 23
+  |   `-- 24
   |       `-- sled
   |           |-- blobs
   |           |-- conf
