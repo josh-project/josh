@@ -130,11 +130,7 @@ pub fn changes_to_refs(
                     change.commit
                 )));
             }
-        } else {
-            return Err(josh_error(&format!(
-                "rejecting to push {:?} without id",
-                change.commit
-            )));
+            seen.insert(id);
         }
     }
 
