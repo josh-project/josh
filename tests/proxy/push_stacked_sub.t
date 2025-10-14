@@ -73,15 +73,15 @@
   $ git commit -m "add file3" 1> /dev/null
   $ git push -o author=josh@example.com origin master:refs/stack/for/master
   remote: josh-proxy: pre-receive hook        
-  remote: upstream: response status: 500 Internal Server Error        
+  remote: upstream: response status: 200 OK        
   remote: upstream: response body:        
   remote: 
-  remote: rejecting to push a3065162ecee0fecc977ec04a275e10b5e15a39c without id        
-  remote: error: hook declined to update refs/stack/for/master        
+  remote: Everything up-to-date        
+  remote: Everything up-to-date        
+  remote: To http://localhost:8001/real_repo.git        
+  remote:    2bb9471..a306516  master -> @heads/master/josh@example.com        
   To http://localhost:8002/real_repo.git:/sub1.git
-   ! [remote rejected] master -> refs/stack/for/master (hook declined)
-  error: failed to push some refs to 'http://localhost:8002/real_repo.git:/sub1.git'
-  [1]
+   * [new reference]   master -> refs/stack/for/master
 
   $ curl -s http://localhost:8002/flush
   Flushed credential cache
@@ -94,8 +94,8 @@
    * [new branch]      @heads/master/josh@example.com -> origin/@heads/master/josh@example.com
    * [new branch]      @heads/other_branch/josh@example.com -> origin/@heads/other_branch/josh@example.com
   $ git log --decorate --graph --pretty="%s %d"
-  * add file3  (HEAD -> master)
-  * Change-Id: foo7  (origin/@heads/other_branch/josh@example.com, origin/@heads/master/josh@example.com, origin/@changes/other_branch/josh@example.com/foo7, origin/@changes/master/josh@example.com/foo7)
+  * add file3  (HEAD -> master, origin/@heads/master/josh@example.com)
+  * Change-Id: foo7  (origin/@heads/other_branch/josh@example.com, origin/@changes/other_branch/josh@example.com/foo7, origin/@changes/master/josh@example.com/foo7)
   * Change-Id: 1234  (origin/@changes/other_branch/josh@example.com/1234, origin/@changes/master/josh@example.com/1234)
   * add file1  (origin/master, origin/HEAD)
 
@@ -151,8 +151,12 @@ Make sure all temporary namespace got removed
   |   |   |   `-- 77ff51363c9825cc2a221fc0ba5a883a1a2c72
   |   |   |-- 6b
   |   |   |   `-- 46faacade805991bcaea19382c9d941828ce80
+  |   |   |-- 88
+  |   |   |   `-- 2b84c5d3241087bc41982a744b72b7a174c49e
   |   |   |-- a0
   |   |   |   `-- 24003ee1acc6bf70318a46e7b6df651b9dc246
+  |   |   |-- a3
+  |   |   |   `-- 065162ecee0fecc977ec04a275e10b5e15a39c
   |   |   |-- b2
   |   |   |   `-- ea883bc5df63565960a38cad7a57f73ac66eaa
   |   |   |-- ba
@@ -160,6 +164,8 @@ Make sure all temporary namespace got removed
   |   |   |   `-- c8af20b53d712874a32944874c66a21afa91f9
   |   |   |-- bb
   |   |   |   `-- 282e9cdc1b972fffd08fd21eead43bc0c83cb8
+  |   |   |-- be
+  |   |   |   `-- 33ab805ad4ef7ddda5b51e4a78ec0fac6b699a
   |   |   |-- c6
   |   |   |   `-- 27a2e3a6bfbb7307f522ad94fdfc8c20b92967
   |   |   |-- c8
@@ -233,7 +239,7 @@ Make sure all temporary namespace got removed
           |-- namespaces
           `-- tags
   
-  58 directories, 44 files
+  61 directories, 47 files
 
 $ cat ${TESTTMP}/josh-proxy.out
 $ cat ${TESTTMP}/josh-proxy.out | grep REPO_UPDATE
