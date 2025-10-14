@@ -1,7 +1,6 @@
 use crate::*;
 use itertools::Itertools;
 use std::collections::{BTreeSet, HashMap};
-use std::path::Path;
 use tracing::{Level, info, span};
 
 pub type KnownViews = HashMap<String, (git2::Oid, BTreeSet<String>)>;
@@ -116,25 +115,6 @@ pub fn memorize_from_to(
 
     let oid = repo.revparse_single(&from)?.id();
     Ok(((from, oid), to_ref))
-}
-
-fn run_command(path: &Path, cmd: &[&str]) -> String {
-    let shell = shell::Shell {
-        cwd: path.to_owned(),
-    };
-
-    let output = "";
-
-    let (stdout, stderr, _) = shell.command(cmd);
-    let output = format!(
-        "{}\n\n{}:\nstdout:\n{}\n\nstderr:{}\n",
-        output,
-        cmd.join(" "),
-        stdout,
-        stderr
-    );
-
-    output
 }
 
 regex_parsed!(UpstreamRef, r"refs/josh/upstream/(?P<ns>.*[.]git)/.*", [ns]);
@@ -320,94 +300,4 @@ pub fn get_known_filters() -> JoshResult<std::collections::BTreeMap<String, BTre
         .iter()
         .map(|(repo, (_, filters))| (repo.clone(), filters.clone()))
         .collect())
-}
-
-pub fn run(repo_path: &std::path::Path, do_gc: bool) -> JoshResult<()> {
-    const CRUFT_PACK_SIZE: usize = 1024 * 1024 * 64;
-
-    let transaction_mirror = cache::Transaction::open(&repo_path.join("mirror"), None)?;
-    let transaction_overlay = cache::Transaction::open(&repo_path.join("overlay"), None)?;
-
-    transaction_overlay
-        .repo()
-        .odb()?
-        .add_disk_alternate(repo_path.join("mirror").join("objects").to_str().unwrap())?;
-
-    info!(
-        "{}",
-        run_command(
-            transaction_mirror.repo().path(),
-            &["git", "count-objects", "-v"]
-        )
-        .replace('\n', "  ")
-    );
-    info!(
-        "{}",
-        run_command(
-            transaction_overlay.repo().path(),
-            &["git", "count-objects", "-v"]
-        )
-        .replace('\n', "  ")
-    );
-    if std::env::var("JOSH_NO_DISCOVER").is_err() {
-        housekeeping::discover_filter_candidates(&transaction_mirror)?;
-    }
-    if std::env::var("JOSH_NO_REFRESH").is_err() {
-        refresh_known_filters(&transaction_mirror, &transaction_overlay)?;
-    }
-    if do_gc {
-        info!(
-            "\n----------\n{}\n----------",
-            run_command(
-                transaction_mirror.repo().path(),
-                &[
-                    "git",
-                    "repack",
-                    "-adn",
-                    "--keep-unreachable",
-                    "--pack-kept-objects",
-                    "--no-write-bitmap-index",
-                    "--threads=4"
-                ]
-            )
-        );
-        info!(
-            "\n----------\n{}\n----------",
-            run_command(
-                transaction_mirror.repo().path(),
-                &["git", "multi-pack-index", "write", "--bitmap"]
-            )
-        );
-        info!(
-            "\n----------\n{}\n----------",
-            run_command(
-                transaction_overlay.repo().path(),
-                &[
-                    "git",
-                    "repack",
-                    "-dn",
-                    "--cruft",
-                    &format!("--max-cruft-size={}", CRUFT_PACK_SIZE),
-                    "--no-write-bitmap-index",
-                    "--window-memory=128m",
-                    "--threads=4",
-                ]
-            )
-        );
-        info!(
-            "\n----------\n{}\n----------",
-            run_command(
-                transaction_overlay.repo().path(),
-                &["git", "multi-pack-index", "write", "--bitmap"]
-            )
-        );
-        info!(
-            "\n----------\n{}\n----------",
-            run_command(
-                transaction_mirror.repo().path(),
-                &["git", "count-objects", "-vH"]
-            )
-        );
-    }
-    Ok(())
 }
