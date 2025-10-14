@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "dependencies": {
-    "@monaco-editor/react": "^4.3.1",
+    "@monaco-editor/react": "^4.7.0",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^12.1.2",
     "@testing-library/user-event": "^13.5.0",
