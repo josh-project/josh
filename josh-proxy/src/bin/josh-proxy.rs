@@ -1755,7 +1755,7 @@ async fn run_housekeeping(local: std::path::PathBuf) -> josh::JoshResult<()> {
     loop {
         let local = local.clone();
         tokio::task::spawn_blocking(move || {
-            josh::housekeeping::run(&local, (i % 60 == 0) && ARGS.gc)
+            josh_proxy::housekeeping::run(&local, (i % 60 == 0) && ARGS.gc)
         })
         .await??;
         tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
