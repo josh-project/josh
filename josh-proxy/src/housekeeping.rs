@@ -133,6 +133,7 @@ fn run_command(path: &Path, cmd: &[&str]) -> CommandResult {
     }
 }
 
+#[tracing::instrument(name = "housekeeping_run", skip_all)]
 pub fn run(repo_path: &std::path::Path, do_gc: bool) -> JoshResult<()> {
     const CRUFT_PACK_SIZE: usize = 1024 * 1024 * 64;
 
@@ -224,7 +225,7 @@ pub fn run(repo_path: &std::path::Path, do_gc: bool) -> JoshResult<()> {
 
         let final_object_count: ParsedCommandResult<CountObjectsOutput> = run_command(
             transaction_mirror.repo().path(),
-            &["git", "count-objects", "-vH"],
+            &["git", "count-objects", "-v"],
         )
         .into();
 
