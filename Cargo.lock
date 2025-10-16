@@ -1942,6 +1942,7 @@ dependencies = [
  "log",
  "rs_tracing",
  "serde_json",
+ "toml",
 ]
 
 [[package]]
