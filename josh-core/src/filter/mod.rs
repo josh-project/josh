@@ -264,6 +264,12 @@ impl LazyRef {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum LinkMode {
+    Full,
+    Squashed,
+}
+
 #[derive(Clone, Debug)]
 enum Op {
     Nop,
@@ -271,7 +277,7 @@ enum Op {
     Fold,
     Paths,
     UnSubmodule,
-    Link,
+    Link(LinkMode),
     Export,
 
     // We use BTreeMap rather than HashMap to guarantee deterministic results when
@@ -417,7 +423,7 @@ fn nesting2(op: &Op) -> usize {
         Op::Lookup(_) => usize::MAX / 2, // divide by 2 to make sure there is enough headroom to avoid overflows
         Op::Lookup2(_) => usize::MAX / 2, // divide by 2 to make sure there is enough headroom to avoid overflows
         Op::UnSubmodule => 2,
-        Op::Link => 2,
+        Op::Link(_) => 2,
         Op::Export => 2,
         Op::Chain(a, b) => 1 + nesting(*a).max(nesting(*b)),
         Op::Subtract(a, b) => 1 + nesting(*a).max(nesting(*b)),
@@ -676,7 +682,8 @@ fn spec2(op: &Op) -> String {
         Op::Linear => ":linear".to_string(),
         Op::Unsign => ":unsign".to_string(),
         Op::UnSubmodule => ":unsubmodule".to_string(),
-        Op::Link => ":link".to_string(),
+        Op::Link(LinkMode::Full) => ":link".to_string(),
+        Op::Link(LinkMode::Squashed) => ":link=squashed".to_string(),
         Op::Export => ":export".to_string(),
         Op::Subdir(path) => format!(":/{}", parse::quote_if(&path.to_string_lossy())),
         Op::File(path) => format!("::{}", parse::quote_if(&path.to_string_lossy())),
@@ -1751,6 +1758,8 @@ fn apply_to_commit2(
             let mut filtered_parent_ids: Vec<git2::Oid> =
                 some_or!(filtered_parent_ids, { return Ok(None) });
 
+            // TODO: remove all parents that don't have a .josh-link.toml
+
             if let Some(link_file) = read_josh_link(
                 repo,
                 &commit.tree()?,
@@ -1773,7 +1782,7 @@ fn apply_to_commit2(
             ))
             .transpose();
         }
-        Op::Link => {
+        Op::Link(LinkMode::Full) => {
             let normal_parents = commit
                 .parent_ids()
                 .map(|parent| transaction.get(filter, parent))

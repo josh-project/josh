@@ -554,4 +554,40 @@ mod tests {
         ));
         assert_eq!(filter, optimize(filter));
     }
+
+    #[test]
+    fn test_link_mode_parsing() {
+        use super::super::parse;
+
+        // Test parsing :link (should default to Full)
+        let filter_full = parse(":link").unwrap();
+        if let Op::Link(LinkMode::Full) = to_op(filter_full) {
+            // Expected
+        } else {
+            panic!("Expected Op::Link(LinkMode::Full)");
+        }
+
+        // Test parsing :link=squashed
+        let filter_squashed = parse(":link=squashed").unwrap();
+        if let Op::Link(LinkMode::Squashed) = to_op(filter_squashed) {
+            // Expected
+        } else {
+            panic!("Expected Op::Link(LinkMode::Squashed)");
+        }
+    }
+
+    #[test]
+    fn test_link_mode_pretty_printing() {
+        use super::super::parse;
+
+        // Test pretty printing :link (Full mode)
+        let filter_full = parse(":link").unwrap();
+        let pretty_full = super::super::spec(filter_full);
+        assert_eq!(pretty_full, ":link");
+
+        // Test pretty printing :link=squashed (Squashed mode)
+        let filter_squashed = parse(":link=squashed").unwrap();
+        let pretty_squashed = super::super::spec(filter_squashed);
+        assert_eq!(pretty_squashed, ":link=squashed");
+    }
 }
