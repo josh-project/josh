@@ -2203,13 +2203,17 @@ fn apply2<'a>(transaction: &'a cache::Transaction, op: &Op, x: Apply<'a>) -> Jos
         Op::Squash(..) => Ok(x),
         Op::Author(author, email) => Ok(x.with_author((author.clone(), email.clone()))),
         Op::Committer(author, email) => Ok(x.with_committer((author.clone(), email.clone()))),
-        Op::Message(m) => Ok(x.with_message(
-            // Pass the message through `strfmt` to enable future extensions
-            strfmt::strfmt(
-                m,
-                &std::collections::HashMap::<String, &dyn strfmt::DisplayStr>::new(),
-            )?,
-        )),
+        Op::Message(m) => {
+            let tree_id = x.tree().id().to_string();
+            /* let commit_id = x.commit().id().to_string(); */
+            let mut hm = std::collections::HashMap::<String, &dyn strfmt::DisplayStr>::new();
+            hm.insert("tree".to_string(), &tree_id);
+            /* hm.insert("commit".to_string(), &commit_id); */
+            Ok(x.with_message(
+                // Pass the message through `strfmt` to enable future extensions
+                strfmt::strfmt(m, &hm)?,
+            ))
+        }
         Op::HistoryConcat(..) => Ok(x),
         Op::Linear => Ok(x),
         Op::Prune => Ok(x),
