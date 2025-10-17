@@ -530,6 +530,55 @@ pub fn update_gitmodules(
         .map_err(|e| josh_error(&format!("Invalid UTF-8 in gitmodules: {}", e)))
 }
 
+pub fn find_link_files(
+    repo: &git2::Repository,
+    tree: &git2::Tree,
+) -> JoshResult<Vec<(std::path::PathBuf, JoshLinkFile)>> {
+    let mut link_files = Vec::new();
+
+    tree.walk(git2::TreeWalkMode::PreOrder, |root, entry| {
+        if let Some(name) = entry.name() {
+            if name == ".josh-link.toml" {
+                // Found a link file
+                let link_blob = match repo.find_blob(entry.id()) {
+                    Ok(blob) => blob,
+                    Err(e) => {
+                        eprintln!("Failed to find blob: {}", e);
+                        return git2::TreeWalkResult::Skip;
+                    }
+                };
+
+                let link_content = match std::str::from_utf8(link_blob.content()) {
+                    Ok(content) => content,
+                    Err(e) => {
+                        eprintln!("Failed to parse link file content: {}", e);
+                        return git2::TreeWalkResult::Skip;
+                    }
+                };
+
+                let link_file: JoshLinkFile = match toml::from_str(link_content) {
+                    Ok(file) => file,
+                    Err(e) => {
+                        eprintln!("Failed to parse .josh-link.toml: {}", e);
+                        return git2::TreeWalkResult::Skip;
+                    }
+                };
+
+                let root = root.trim_matches('/');
+                // Use root as the directory path where the .josh-link.toml file is located
+                let path = std::path::PathBuf::from(root);
+
+                link_files.push((path, link_file));
+            }
+        }
+
+        git2::TreeWalkResult::Ok
+    })
+    .map_err(|e| josh_error(&format!("Failed to walk tree: {}", e)))?;
+
+    Ok(link_files)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

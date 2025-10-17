@@ -1904,6 +1904,7 @@ dependencies = [
  "bitvec",
  "git-version",
  "git2",
+ "gix-config",
  "gix-object",
  "gix-submodule",
  "glob",

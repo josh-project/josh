@@ -1052,9 +1052,22 @@ fn handle_link_add(args: &LinkAddArgs) -> Result<(), Box<dyn std::error::Error>>
 
     // Load the cache and create transaction
     let repo_path = repo.path().parent().unwrap();
-    josh::cache::load(repo_path).map_err(|e| format!("Failed to load cache: {}", e))?;
-    let transaction = josh::cache::Transaction::open_from_env(true)
-        .map_err(|e| format!("Failed to create transaction: {}", e))?;
+
+    let cache = std::sync::Arc::new(
+        josh::cache_stack::CacheStack::new()
+            .with_backend(josh::cache_sled::SledCacheBackend::default())
+            .with_backend(
+                josh::cache_notes::NotesCacheBackend::new(&repo_path)
+                    .map_err(|e| format!("Failed to create NotesCacheBackend: {}", e.0))?,
+            ),
+    );
+
+    // Open Josh transaction
+    let mut transaction = josh::cache::TransactionContext::from_env(cache.clone())
+        .map_err(|e| format!("Failed TransactionContext::from_env: {}", e.0))?
+        .open(None)
+        .map_err(|e| format!("Failed TransactionContext::open: {}", e.0))?;
+
     let filtered_commit =
         josh::filter_commit(&transaction, link_filter, new_commit, josh::filter::empty())
             .map_err(|e| format!("Failed to apply :link filter: {}", e))?;
@@ -1111,12 +1124,11 @@ fn handle_link_fetch(args: &LinkFetchArgs) -> Result<(), Box<dyn std::error::Err
         let link_file: JoshLinkFile = toml::from_str(link_content)
             .map_err(|e| format!("Failed to parse .josh-link.toml: {}", e))?;
 
-        vec![(path.clone(), link_file)]
+        vec![(std::path::PathBuf::from(path), link_file)]
     } else {
         // No path specified - find all .josh-link.toml files in the tree
-        let mut link_files = Vec::new();
-        find_link_files_recursive(&repo, &head_tree, std::path::Path::new(""), &mut link_files)?;
-        link_files
+        josh::find_link_files(&repo, &head_tree)
+            .map_err(|e| format!("Failed to find link files: {}", e))?
     };
 
     if link_files.is_empty() {
@@ -1128,7 +1140,7 @@ fn handle_link_fetch(args: &LinkFetchArgs) -> Result<(), Box<dyn std::error::Err
     // Fetch from all the link files
     let mut updated_link_files = Vec::new();
     for (path, mut link_file) in link_files {
-        println!("Fetching from link at path: {}", path);
+        println!("Fetching from link at path: {}", path.display());
 
         // Use git fetch shell command
         let output = std::process::Command::new("git")
@@ -1139,7 +1151,7 @@ fn handle_link_fetch(args: &LinkFetchArgs) -> Result<(), Box<dyn std::error::Err
         if !output.status.success() {
             return Err(format!(
                 "git fetch failed for path '{}': {}",
-                path,
+                path.display(),
                 String::from_utf8_lossy(&output.stderr)
             )
             .into());
@@ -1172,7 +1184,7 @@ fn handle_link_fetch(args: &LinkFetchArgs) -> Result<(), Box<dyn std::error::Err
             .map_err(|e| format!("Failed to create blob: {}", e))?;
 
         // Create the path for the .josh-link.toml file
-        let link_path = std::path::Path::new(path).join(".josh-link.toml");
+        let link_path = path.join(".josh-link.toml");
 
         // Insert the updated .josh-link.toml file into the tree
         new_tree = tree::insert(&repo, &new_tree, &link_path, link_blob, 0o0100644)
@@ -1205,7 +1217,7 @@ fn handle_link_fetch(args: &LinkFetchArgs) -> Result<(), Box<dyn std::error::Err
                 "Update links: {}",
                 updated_link_files
                     .iter()
-                    .map(|(p, _)| p.as_str())
+                    .map(|(p, _)| p.display().to_string())
                     .collect::<Vec<_>>()
                     .join(", ")
             ),
@@ -1220,9 +1232,20 @@ fn handle_link_fetch(args: &LinkFetchArgs) -> Result<(), Box<dyn std::error::Err
 
     // Load the cache and create transaction
     let repo_path = repo.path().parent().unwrap();
-    josh::cache::load(repo_path).map_err(|e| format!("Failed to load cache: {}", e))?;
-    let transaction = josh::cache::Transaction::open_from_env(true)
-        .map_err(|e| format!("Failed to create transaction: {}", e))?;
+    let cache = std::sync::Arc::new(
+        josh::cache_stack::CacheStack::new()
+            .with_backend(josh::cache_sled::SledCacheBackend::default())
+            .with_backend(
+                josh::cache_notes::NotesCacheBackend::new(&repo_path)
+                    .map_err(|e| format!("Failed to create NotesCacheBackend: {}", e.0))?,
+            ),
+    );
+
+    // Open Josh transaction
+    let mut transaction = josh::cache::TransactionContext::from_env(cache.clone())
+        .map_err(|e| format!("Failed TransactionContext::from_env: {}", e.0))?
+        .open(None)
+        .map_err(|e| format!("Failed TransactionContext::open: {}", e.0))?;
     let filtered_commit =
         josh::filter_commit(&transaction, link_filter, new_commit, josh::filter::empty())
             .map_err(|e| format!("Failed to apply :link filter: {}", e))?;
@@ -1236,43 +1259,6 @@ fn handle_link_fetch(args: &LinkFetchArgs) -> Result<(), Box<dyn std::error::Err
 
     println!("Updated {} link file(s)", updated_link_files.len());
     println!("Created branch: {}", branch_name);
-
-    Ok(())
-}
-
-fn find_link_files_recursive(
-    repo: &git2::Repository,
-    tree: &git2::Tree,
-    current_path: &std::path::Path,
-    link_files: &mut Vec<(String, josh::JoshLinkFile)>,
-) -> Result<(), Box<dyn std::error::Error>> {
-    for entry in tree.iter() {
-        let entry_name = entry.name().ok_or("Invalid entry name")?;
-        let entry_path = current_path.join(entry_name);
-
-        if entry_name == ".josh-link.toml" {
-            // Found a link file
-            let link_blob = repo
-                .find_blob(entry.id())
-                .map_err(|e| format!("Failed to find blob: {}", e))?;
-
-            let link_content = std::str::from_utf8(link_blob.content())
-                .map_err(|e| format!("Failed to parse link file content: {}", e))?;
-
-            let link_file: josh::JoshLinkFile = toml::from_str(link_content)
-                .map_err(|e| format!("Failed to parse .josh-link.toml: {}", e))?;
-
-            let path_str = current_path.to_string_lossy().to_string();
-            link_files.push((path_str, link_file));
-        } else if entry.kind() == Some(git2::ObjectType::Tree) {
-            // Recursively search subdirectories
-            let sub_tree = repo
-                .find_tree(entry.id())
-                .map_err(|e| format!("Failed to find tree: {}", e))?;
-
-            find_link_files_recursive(repo, &sub_tree, &entry_path, link_files)?;
-        }
-    }
 
     Ok(())
 }

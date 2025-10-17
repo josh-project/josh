@@ -1,5 +1,6 @@
-Test Link filter (identical to UnSubmodule)
+Test Link filter (identical to Adapt)
 
+  $ export TESTTMP=${PWD}
   $ cd ${TESTTMP}
   $ git init -q main-repo 1> /dev/null
   $ cd main-repo
@@ -12,14 +13,16 @@ Test Link filter (identical to UnSubmodule)
   $ git init -q submodule-repo 1> /dev/null
   $ cd submodule-repo
   $ git config protocol.file.allow always
-  $ mkdir -p libs/foo libs/bar
-  $ echo "foo content" > libs/foo/file1.txt
-  $ echo "bar content" > libs/bar/file2.txt
-  $ git add libs/
+  $ mkdir -p foo bar
+  $ echo "foo content" > foo/file1.txt
+  $ echo "bar content" > bar/file2.txt
+  $ git add .
   $ git commit -m "add libs" 1> /dev/null
 
   $ cd ${TESTTMP}/main-repo
   $ git submodule add ../submodule-repo libs
+  Cloning into '/tmp/prysk-tests-qqjv_m_8/link.t/main-repo/libs'...
+  done.
   $ git add .gitmodules libs
   $ git commit -m "add libs submodule" 1> /dev/null
 
@@ -27,8 +30,12 @@ Test Link filter (identical to UnSubmodule)
   From ../submodule-repo
    * branch            HEAD       -> FETCH_HEAD
 
-  $ josh-filter -s :link master --update refs/josh/filter/master
+  $ josh-filter -s :adapt=submodules:link master --update refs/josh/filter/master
+  [1] :prefix=libs
+  [2] :adapt=submodules
+  [2] :link=embedded
   $ git ls-tree -r --name-only refs/josh/filter/master
+  libs/.josh-link.toml
   libs/bar/file2.txt
   libs/foo/file1.txt
   main.txt
@@ -49,5 +56,6 @@ Test Link on repo without submodules (should be no-op)
   $ git commit -m "add file" 1> /dev/null
 
   $ josh-filter -s :link master --update refs/josh/filter/master
+  [1] :link=embedded
   $ git ls-tree -r --name-only refs/josh/filter/master
   file.txt

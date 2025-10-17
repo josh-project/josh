@@ -82,6 +82,9 @@
   $ git ls-tree -r HEAD
   100644 blob f2376e2bab6c5194410bd8a55630f83f933d2f34\tREADME.md (esc)
   100644 blob 206d76fad48424fec1fface3ad37d1c24e5eba3a\tlibs/.josh-link.toml (esc)
+  100644 blob dfcaa10d372d874e1cab9c3ba8d0b683099c3826\tlibs/docs/readme.txt (esc)
+  100644 blob abe06153eb1e2462265336768a6ecd1164f73ae2\tlibs/libs/lib1.txt (esc)
+  100644 blob f03a884ed41c1a40b529001c0b429eed24c5e9e5\tlibs/utils/util1.txt (esc)
   $ cat libs/.josh-link.toml
   remote = "../remote.git"
   branch = "HEAD"

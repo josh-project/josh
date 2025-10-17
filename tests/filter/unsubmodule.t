@@ -54,52 +54,47 @@
   160000 commit 00c8fe9f1bb75a3f6280992ec7c3c893d858f5dd\tlibs (esc)
   100644 blob bcb9dcad21591bd9284afbb6c21e6d69eafe8f15\tmain.txt (esc)
 
-Test UnSubmodule filter - should expand submodule into actual tree content
+Test Adapt filter - should expand submodule into actual tree content
 
-  $ josh-filter -s :unsubmodule master --update refs/josh/filter/master
-  [2] :prefix=libs
-  [3] :unsubmodule
+  $ josh-filter -s :adapt=submodules master --update refs/josh/filter/master
+  [3] :adapt=submodules
   $ git log --graph --pretty=%s refs/josh/filter/master
-  *   add libs submodule
-  |\  
-  | * add bar with file
-  | * add foo with files
+  * add libs submodule
   * add main.txt
   * init
   $ git ls-tree --name-only -r refs/josh/filter/master
-  libs/bar/file3.txt
-  libs/foo/file1.txt
-  libs/foo/file2.txt
+  libs/.josh-link.toml
   main.txt
 
   $ git ls-tree refs/josh/filter/master
-  040000 tree e06b912df6ae0105e3a525f7a9427d98574fbc4f\tlibs (esc)
+  040000 tree 34bc8209dca31283563d5519e297ae8cc7f0f19a\tlibs (esc)
   100644 blob bcb9dcad21591bd9284afbb6c21e6d69eafe8f15\tmain.txt (esc)
 
   $ git ls-tree refs/josh/filter/master libs
-  040000 tree e06b912df6ae0105e3a525f7a9427d98574fbc4f\tlibs (esc)
+  040000 tree 34bc8209dca31283563d5519e297ae8cc7f0f19a\tlibs (esc)
 
   $ git ls-tree refs/josh/filter/master libs/foo
-  040000 tree 81a0b9c71d7fac4f553b2a52b9d8d52d07dd8036\tlibs/foo (esc)
 
   $ git ls-tree refs/josh/filter/master libs/bar
-  040000 tree bd42a3e836f59dda9f9d5950d0e38431c9b1bfb5\tlibs/bar (esc)
 
   $ git show refs/josh/filter/master:libs/foo/file1.txt
-  foo content
+  fatal: path 'libs/foo/file1.txt' exists on disk, but not in 'refs/josh/filter/master'
+  [128]
 
   $ git show refs/josh/filter/master:libs/foo/file2.txt
-  bar content
+  fatal: path 'libs/foo/file2.txt' exists on disk, but not in 'refs/josh/filter/master'
+  [128]
 
   $ git show refs/josh/filter/master:libs/bar/file3.txt
-  baz content
+  fatal: path 'libs/bar/file3.txt' exists on disk, but not in 'refs/josh/filter/master'
+  [128]
 
 Test that .gitmodules file is removed after unsubmodule
 
   $ git ls-tree refs/josh/filter/master | grep gitmodules
   [1]
 
-Test UnSubmodule with multiple submodules
+Test Adapt with multiple submodules
 
   $ cd ${TESTTMP}
   $ git init -q another-submodule 1> /dev/null
@@ -124,35 +119,26 @@ Test UnSubmodule with multiple submodules
   	path = modules/another
   	url = ../another-submodule
 
-  $ josh-filter -s :unsubmodule master --update refs/josh/filter/master
-  [1] :prefix=another
-  [1] :prefix=modules
-  [2] :prefix=libs
-  [4] :unsubmodule
+  $ josh-filter -s :adapt=submodules master --update refs/josh/filter/master
+  [4] :adapt=submodules
   $ git log --graph --pretty=%s refs/josh/filter/master
-  *   add another submodule
-  |\  
-  | * add another.txt
-  *   add libs submodule
-  |\  
-  | * add bar with file
-  | * add foo with files
+  * add another submodule
+  * add libs submodule
   * add main.txt
   * init
   $ git ls-tree --name-only -r refs/josh/filter/master
-  libs/bar/file3.txt
-  libs/foo/file1.txt
-  libs/foo/file2.txt
+  libs/.josh-link.toml
   main.txt
-  modules/another/another.txt
+  modules/another/.josh-link.toml
 
   $ git ls-tree refs/josh/filter/master modules
-  040000 tree 3b3ee7ba855155941a68a17379e74feb261d9ab2\tmodules (esc)
+  040000 tree 9dd65d88b3c43c244c71187f86c40f77e771e432\tmodules (esc)
 
   $ git show refs/josh/filter/master:modules/another/another.txt
-  another content
+  fatal: path 'modules/another/another.txt' exists on disk, but not in 'refs/josh/filter/master'
+  [128]
 
-Test UnSubmodule with submodule changes - add commits to submodule and update
+Test Adapt with submodule changes - add commits to submodule and update
 
   $ cd ${TESTTMP}/submodule-repo
   $ mkdir -p libs/foo libs/bar
@@ -169,48 +155,34 @@ Test UnSubmodule with submodule changes - add commits to submodule and update
   From ../submodule-repo
    * branch            HEAD       -> FETCH_HEAD
   $ git submodule update --remote libs
-  From /tmp/prysk-tests-6ai1pji4/unsubmodule.t/submodule-repo
+  From /tmp/prysk-tests-qqjv_m_8/unsubmodule.t/submodule-repo
      00c8fe9..47f1d80  master     -> origin/master
   Submodule path 'libs': checked out '47f1d800e93b0892d3bc525632c9ffc8d32eeb4c'
   $ git add libs
   $ git commit -m "update libs submodule" 1> /dev/null
 
-  $ josh-filter -s :unsubmodule master --update refs/josh/filter/master
-  [1] :prefix=another
-  [1] :prefix=modules
-  [4] :prefix=libs
-  [5] :unsubmodule
+  $ josh-filter -s :adapt=submodules master --update refs/josh/filter/master
+  [5] :adapt=submodules
   $ git log --graph --pretty=%s refs/josh/filter/master
-  *   update libs submodule
-  |\  
-  | * add file4.txt
-  | * add file3.txt
-  * |   add another submodule
-  |\ \  
-  | * | add another.txt
-  |  /  
-  * | add libs submodule
-  |\| 
-  | * add bar with file
-  | * add foo with files
+  * update libs submodule
+  * add another submodule
+  * add libs submodule
   * add main.txt
   * init
   $ git ls-tree --name-only -r refs/josh/filter/master
-  libs/bar/file3.txt
-  libs/foo/file1.txt
-  libs/foo/file2.txt
-  libs/libs/bar/file4.txt
-  libs/libs/foo/file3.txt
+  libs/.josh-link.toml
   main.txt
-  modules/another/another.txt
+  modules/another/.josh-link.toml
 
   $ git show refs/josh/filter/master:libs/libs/foo/file3.txt
-  new content
+  fatal: path 'libs/libs/foo/file3.txt' exists on disk, but not in 'refs/josh/filter/master'
+  [128]
 
   $ git show refs/josh/filter/master:libs/libs/bar/file4.txt
-  another new content
+  fatal: path 'libs/libs/bar/file4.txt' exists on disk, but not in 'refs/josh/filter/master'
+  [128]
 
-Test UnSubmodule on repo without submodules (should be no-op)
+Test Adapt on repo without submodules (should be no-op)
 
   $ cd ${TESTTMP}
   $ git init -q no-submodules 1> /dev/null
@@ -219,15 +191,15 @@ Test UnSubmodule on repo without submodules (should be no-op)
   $ git add file.txt
   $ git commit -m "add file" 1> /dev/null
 
-  $ josh-filter -s :unsubmodule master --update refs/josh/filter/master
-  [1] :unsubmodule
+  $ josh-filter -s :adapt=submodules master --update refs/josh/filter/master
+  [1] :adapt=submodules
   $ git ls-tree --name-only -r refs/josh/filter/master
   file.txt
 
   $ git show refs/josh/filter/master:file.txt
   content
 
-Test UnSubmodule on repo with .gitmodules but no actual submodule entries
+Test Adapt on repo with .gitmodules but no actual submodule entries
 
   $ cd ${TESTTMP}
   $ git init -q empty-submodules 1> /dev/null
