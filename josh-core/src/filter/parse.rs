@@ -58,6 +58,7 @@ fn make_op(args: &[&str]) -> JoshResult<Op> {
         ["link"] => Ok(Op::Link(LinkMode::Embedded)),
         ["link", "embedded"] => Ok(Op::Link(LinkMode::Embedded)),
         ["link", "squashed"] => Ok(Op::Link(LinkMode::Snapshot)),
+        ["embed", path] => Ok(Op::Embed(Path::new(path).to_owned())),
         ["export"] => Ok(Op::Export),
         ["PATHS"] => Ok(Op::Paths),
         ["INDEX"] => Ok(Op::Index),
@@ -176,6 +177,17 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> JoshResult<Op> {
                 Ok(Op::HistoryConcat(oid, filter))
             } else {
                 Err(josh_error("wrong argument count for :concat"))
+            }
+        }
+        Rule::filter_unapply => {
+            let v: Vec<_> = pair.into_inner().map(|x| x.as_str()).collect();
+
+            if v.len() == 2 {
+                let oid = LazyRef::parse(v[0])?;
+                let filter = parse(v[1])?;
+                Ok(Op::Unapply(oid, filter))
+            } else {
+                Err(josh_error("wrong argument count for :unapply"))
             }
         }
         Rule::filter_replace => {

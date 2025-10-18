@@ -280,6 +280,7 @@ enum Op {
     Link(LinkMode),
     Unlink,
     Export,
+    Embed(std::path::PathBuf),
 
     // We use BTreeMap rather than HashMap to guarantee deterministic results when
     // converting to Filter
@@ -313,6 +314,7 @@ enum Op {
     Message(String),
 
     HistoryConcat(LazyRef, Filter),
+    Unapply(LazyRef, Filter),
 
     Compose(Vec<Filter>),
     Chain(Filter, Filter),
@@ -480,6 +482,13 @@ fn lazy_refs2(op: &Op) -> Vec<String> {
             }
             lr
         }
+        Op::Unapply(r, _) => {
+            let mut lr = Vec::new();
+            if let LazyRef::Lazy(s) = r {
+                lr.push(s.to_owned());
+            }
+            lr
+        }
         Op::Join(filters) => {
             let mut lr = lazy_refs2(&Op::Compose(filters.values().copied().collect()));
             lr.extend(filters.keys().filter_map(|x| {
@@ -552,6 +561,19 @@ fn resolve_refs2(refs: &std::collections::HashMap<String, git2::Oid>, op: &Op) -
                 r.clone()
             };
             Op::HistoryConcat(resolved_ref, f)
+        }
+        Op::Unapply(r, f) => {
+            let f = resolve_refs(refs, *f);
+            let resolved_ref = if let LazyRef::Lazy(s) = r {
+                if let Some(res) = refs.get(s) {
+                    LazyRef::Resolved(*res)
+                } else {
+                    r.clone()
+                }
+            } else {
+                r.clone()
+            };
+            Op::Unapply(resolved_ref, f)
         }
         Op::Join(filters) => {
             let lr = filters
@@ -692,6 +714,9 @@ fn spec2(op: &Op) -> String {
         Op::Prune => ":prune=trivial-merge".to_string(),
         Op::Prefix(path) => format!(":prefix={}", parse::quote_if(&path.to_string_lossy())),
         Op::Pattern(pattern) => format!("::{}", parse::quote_if(pattern)),
+        Op::Embed(path) => {
+            format!(":embed={}", parse::quote_if(&path.to_string_lossy()),)
+        }
         Op::Author(author, email) => {
             format!(":author={};{}", parse::quote(author), parse::quote(email))
         }
@@ -707,6 +732,9 @@ fn spec2(op: &Op) -> String {
         }
         Op::HistoryConcat(r, filter) => {
             format!(":concat({}{})", r.to_string(), spec(*filter))
+        }
+        Op::Unapply(r, filter) => {
+            format!(":unapply({}{})", r.to_string(), spec(*filter))
         }
         Op::Hook(hook) => {
             format!(":hook={}", parse::quote(hook))
@@ -814,6 +842,13 @@ fn as_tree2(repo: &git2::Repository, op: &Op) -> JoshResult<git2::Oid> {
         Op::File(path) => {
             builder.insert(
                 "file",
+                repo.blob(&path.to_string_lossy().as_bytes())?,
+                git2::FileMode::Blob.into(),
+            )?;
+        }
+        Op::Embed(path) => {
+            builder.insert(
+                "embed",
                 repo.blob(&path.to_string_lossy().as_bytes())?,
                 git2::FileMode::Blob.into(),
             )?;
@@ -958,6 +993,13 @@ fn as_tree2(repo: &git2::Repository, op: &Op) -> JoshResult<git2::Oid> {
         Op::HistoryConcat(r, f) => {
             builder.insert(
                 "historyconcat",
+                rev_params(repo, &vec![(r.to_string(), *f)])?,
+                git2::FileMode::Tree.into(),
+            )?;
+        }
+        Op::Unapply(r, f) => {
+            builder.insert(
+                "unapply",
                 rev_params(repo, &vec![(r.to_string(), *f)])?,
                 git2::FileMode::Tree.into(),
             )?;
@@ -1878,11 +1920,27 @@ fn apply_to_commit2(
 
             let extra_parents = {
                 let mut extra_parents = vec![];
-                for (root, link_file) in v {
-                    let f = filter::chain(link_file.filter, to_filter(Op::Prefix(root)));
-                    let scommit = repo.find_commit(link_file.commit.0)?;
+                for (root, _link_file) in v {
+                    let embeding = some_or!(
+                        apply_to_commit2(
+                            &Op::Chain(
+                                to_filter(Op::Message("{commit}".to_string())),
+                                to_filter(Op::File(root.join(".josh-link.toml")))
+                            ),
+                            &commit,
+                            transaction
+                        )?,
+                        {
+                            return Ok(None);
+                        }
+                    );
 
-                    let r = some_or!(apply_to_commit2(&to_op(f), &scommit, transaction)?, {
+                    let f = to_filter(Op::Embed(root));
+                    /* let f = filter::chain(link_file.filter, to_filter(Op::Prefix(root))); */
+                    /* let scommit = repo.find_commit(link_file.commit.0)?; */
+
+                    let embeding = repo.find_commit(embeding)?;
+                    let r = some_or!(apply_to_commit2(&to_op(f), &embeding, transaction)?, {
                         return Ok(None);
                     });
 
@@ -2038,8 +2096,50 @@ fn apply_to_commit2(
             ))
             .transpose();
         }
-        Op::HistoryConcat(r, f) => {
-            if let LazyRef::Resolved(c) = r {
+        Op::Unapply(target, uf) => {
+            if let LazyRef::Resolved(target) = target {
+                let target = repo.find_commit(*target)?;
+                if let Some(parent) = target.parents().next() {
+                    let ptree = apply(transaction, *uf, Apply::from_commit(&parent)?)?;
+                    if let Some(link) = read_josh_link(
+                        repo,
+                        &ptree.tree(),
+                        &std::path::PathBuf::new(),
+                        ".josh-link.toml",
+                    ) {
+                        if commit.id() == link.commit.0 {
+                            let unapply =
+                                to_filter(Op::Unapply(LazyRef::Resolved(parent.id()), *uf));
+                            let r = some_or!(transaction.get(unapply, link.commit.0), {
+                                return Ok(None);
+                            });
+                            transaction.insert(filter, commit.id(), r, true);
+                            return Ok(Some(r));
+                        }
+                    }
+                }
+            } else {
+                return Err(josh_error("unresolved lazy ref"));
+            }
+            Apply::from_commit(commit)?
+        }
+        Op::Embed(path) => {
+            let subdir = to_filter(Op::Subdir(path.clone()));
+            let unapply = to_filter(Op::Unapply(LazyRef::Resolved(commit.id()), subdir));
+
+            if let Some(link) = read_josh_link(repo, &commit.tree()?, &path, ".josh-link.toml") {
+                let r = some_or!(transaction.get(unapply, link.commit.0), {
+                    return Ok(None);
+                });
+                transaction.insert(filter, commit.id(), r, true);
+                return Ok(Some(r));
+            } else {
+                return Ok(Some(git2::Oid::zero()));
+            }
+        }
+
+        Op::HistoryConcat(c, f) => {
+            if let LazyRef::Resolved(c) = c {
                 let a = apply_to_commit2(&to_op(*f), &repo.find_commit(*c)?, transaction)?;
                 let a = some_or!(a, { return Ok(None) });
                 if commit.id() == a {
@@ -2459,6 +2559,23 @@ fn apply2<'a>(transaction: &'a cache::Transaction, op: &Op, x: Apply<'a>) -> Jos
             let with_overlay = tree::overlay(transaction, with_mask.tree.id(), filtered_parent)?;
 
             Ok(x.with_tree(repo.find_tree(with_overlay)?))
+        }
+
+        Op::Embed(..) => Err(josh_error("not applicable to tree")),
+        Op::Unapply(target, uf) => {
+            if let LazyRef::Resolved(target) = target {
+                let target = repo.find_commit(*target)?;
+                let target = git2::Oid::from_str(target.message().unwrap())?;
+                let target = repo.find_commit(target)?;
+                Ok(Apply::from_tree(filter::unapply(
+                    transaction,
+                    *uf,
+                    x.tree().clone(),
+                    target.tree()?,
+                )?))
+            } else {
+                return Err(josh_error("unresolved lazy ref"));
+            }
         }
     }
 }

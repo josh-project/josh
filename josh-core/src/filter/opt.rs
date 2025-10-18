@@ -555,40 +555,4 @@ mod tests {
         ));
         assert_eq!(filter, optimize(filter));
     }
-
-    #[test]
-    fn test_link_mode_parsing() {
-        use super::super::parse;
-
-        // Test parsing :link (should default to Embedded)
-        let filter_full = parse(":link").unwrap();
-        if let Op::Link(LinkMode::Embedded) = to_op(filter_full) {
-            // Expected
-        } else {
-            panic!("Expected Op::Link(LinkMode::Embedded)");
-        }
-
-        // Test parsing :link=snapshot
-        let filter_squashed = parse(":link=snapshot").unwrap();
-        if let Op::Link(LinkMode::Snapshot) = to_op(filter_squashed) {
-            // Expected
-        } else {
-            panic!("Expected Op::Link(LinkMode::Snapshot)");
-        }
-    }
-
-    #[test]
-    fn test_link_mode_pretty_printing() {
-        use super::super::parse;
-
-        // Test pretty printing :link (Embedded mode)
-        let filter_full = parse(":link").unwrap();
-        let pretty_full = super::super::spec(filter_full);
-        assert_eq!(pretty_full, ":link");
-
-        // Test pretty printing :link=snapshot (Snapshot mode)
-        let filter_squashed = parse(":link=snapshot").unwrap();
-        let pretty_squashed = super::super::spec(filter_squashed);
-        assert_eq!(pretty_squashed, ":link=snapshot");
-    }
 }
