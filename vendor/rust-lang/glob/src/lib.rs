@@ -299,8 +299,15 @@ impl GlobError {
     }
 
     /// Consumes self, returning the _raw_ underlying `io::Error`
+    #[deprecated(note = "use `.into` instead")]
     pub fn into_error(self) -> io::Error {
         self.error
+    }
+}
+
+impl From<GlobError> for io::Error {
+    fn from(value: GlobError) -> Self {
+        value.error
     }
 }
 
