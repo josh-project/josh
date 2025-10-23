@@ -24,7 +24,6 @@
   date: * (glob)
   \r (esc)
   $ curl -s -I http://127.0.0.1:8002/a/repo
-  HTTP/1.1 302 Found\r (esc)
-  location: /~/ui/browse?repo=/a/repo.git&path=&filter=%3A%2F&rev=HEAD\r (esc)
+  HTTP/1.1 404 Not Found\r (esc)
   date: * (glob)
   \r (esc)
