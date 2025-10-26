@@ -19,11 +19,15 @@ impl CacheStack {
         }
     }
 
+    /// Add a cache backend to existing [CacheStack] instance
+    /// with builder-like pattern.
+    /// The newly added backend will be queried _after_ the existing ones.
     pub fn with_backend<T: CacheBackend + 'static>(mut self, backend: T) -> Self {
         self.backends.push(Box::new(backend));
         self
     }
 
+    /// Write a record to all cache backends.
     pub fn write_all(
         &self,
         filter: filter::Filter,
@@ -37,7 +41,12 @@ impl CacheStack {
         Ok(())
     }
 
-    // when reading,
+    /// Try to read from the cache backend stack.
+    ///
+    /// When a record is found, it's propagated to the backends
+    /// "below" it, meaning to the backends that were added earlier.
+    /// This behaviour can be used for example to provide faster
+    /// ephemeral cache alongside slower persistent one.
     pub fn read_propagate(
         &self,
         filter: filter::Filter,
