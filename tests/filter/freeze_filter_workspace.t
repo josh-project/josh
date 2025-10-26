@@ -21,10 +21,10 @@ Populate repo contents for the first commit
   > }
   > EOF
 
-Create a workspace: the :hold filter must be applicable per-commit, so it should
+Create a workspace: the :freeze filter must be applicable per-commit, so it should
 be tied to commit sha1 either via workspace or via hook. Otherwise we are going
-to hold a file in every commit, resulting in no versions of the file appearing at all.
-Don't hold anything yet.
+to prevent the file appearing in every commit, resulting in no versions of the
+file making it to the filtered history at all. Don't freeze anything yet.
 
   $ mkdir -p workspaces/code
   $ cat << EOF > workspaces/code/workspace.josh
@@ -40,7 +40,7 @@ Don't hold anything yet.
   100644 blob 5910ad90fda519a6cc9299d4688679d56dc8d6dd lib.js
   100644 blob 035bf7abf8a572ccf122f71984ed0e9680e8a01d workspace.josh
 
-Update a file, but put it on hold in workspace
+Update a file, but freeze it in workspace
 
   $ cat << EOF > code/app.js
   > async fn main() {
@@ -49,7 +49,7 @@ Update a file, but put it on hold in workspace
   > EOF
 
   $ cat << EOF > workspaces/code/workspace.josh
-  > :/code:hold[::app.js]
+  > :/code:freeze[::app.js]
   > EOF
 
   $ git add .
@@ -59,25 +59,25 @@ Filter and check history
 
   $ josh-filter ':workspace=workspaces/code'
   $ git log --oneline FILTERED_HEAD
-  dcd72a8 secret update
+  7a6caa2 secret update
   6620984 first commit
 
 We only see workspace.josh update
 
   $ git show FILTERED_HEAD
-  commit dcd72a8e32bea4c3c86a28e21843e74c3bd351f3
+  commit 7a6caa204512b03eb13a3b7890248cd783870f31
   Author: Josh <josh@example.com>
   Date:   Thu Apr 7 22:13:13 2005 +0000
   
       secret update
   
   diff --git a/workspace.josh b/workspace.josh
-  index 035bf7a..22fbc80 100644
+  index 035bf7a..d44f76c 100644
   --- a/workspace.josh
   +++ b/workspace.josh
   @@ -1 +1 @@
   -:/code
-  +:/code:hold[::app.js]
+  +:/code:freeze[::app.js]
 
 We can also exclude workspace.josh itself
 
@@ -94,7 +94,7 @@ Now, let's add another file, but prevent it from appearing
   > fn bar() {}
   > EOF
 
-Also, update app.js and remove hold from it
+Also, update app.js and unfreeze it
 
   $ cat << EOF > code/app.js
   > async fn main() {
@@ -104,7 +104,7 @@ Also, update app.js and remove hold from it
   > EOF
 
   $ cat << EOF > workspaces/code/workspace.josh
-  > :/code:hold[::lib2.js]
+  > :/code:freeze[::lib2.js]
   > EOF
 
   $ git add .
@@ -115,14 +115,14 @@ Also, update app.js and remove hold from it
 Check the resulting history
 
   $ git log --oneline FILTERED_HEAD
-  c44c048 read env variable
-  dcd72a8 secret update
+  413bdd8 read env variable
+  7a6caa2 secret update
   6620984 first commit
 
 Check that files changed in commits are as expected
 
   $ git show --stat FILTERED_HEAD~1
-  commit dcd72a8e32bea4c3c86a28e21843e74c3bd351f3
+  commit 7a6caa204512b03eb13a3b7890248cd783870f31
   Author: Josh <josh@example.com>
   Date:   Thu Apr 7 22:13:13 2005 +0000
   
@@ -132,7 +132,7 @@ Check that files changed in commits are as expected
    1 file changed, 1 insertion(+), 1 deletion(-)
 
   $ git show --stat FILTERED_HEAD
-  commit c44c048e8ae5d25b41af2981b87a6b61749fec6a
+  commit 413bdd8bc39bcbd4f292d72c687205fe0978f84e
   Author: Josh <josh@example.com>
   Date:   Thu Apr 7 22:13:13 2005 +0000
   
@@ -145,7 +145,7 @@ Check that files changed in commits are as expected
 We can also verify that the "offending" version was skipped in filtered history
 
   $ git show FILTERED_HEAD -- app.js
-  commit c44c048e8ae5d25b41af2981b87a6b61749fec6a
+  commit 413bdd8bc39bcbd4f292d72c687205fe0978f84e
   Author: Josh <josh@example.com>
   Date:   Thu Apr 7 22:13:13 2005 +0000
   

@@ -3,7 +3,7 @@
   $ export TESTTMP=${PWD}
   $ cd ${TESTTMP}
 
-Similar scenario to hold_filter_workspace.t, except here it's using
+Similar scenario to freeze_filter_workspace.t, except here it's using
 filter hooks as opposed to workspace.josh
 
   $ git init -q repo
@@ -27,11 +27,11 @@ Populate repo contents for the first commit
   $ git add .
   $ git commit -q -m "first commit"
 
-Add note with basic filter - no hold yet
+Add note with basic filter - no freeze yet
 
   $ git notes add -m ':/code' -f
 
-Update files, but hold one file using git notes
+Update files, but freeze one file using git notes
 
   $ cat << EOF > code/app.js
   > async fn main() {
@@ -46,9 +46,9 @@ Update files, but hold one file using git notes
   $ git add .
   $ git commit -q -m "secret update"
 
-Add note with hold filter for this commit
+Add note with freeze filter for this commit
 
-  $ git notes add -m ':/code:hold[::app.js]' -f
+  $ git notes add -m ':/code:freeze[::app.js]' -f
 
 Filter using the hook
 
@@ -77,13 +77,13 @@ Verify that the secret update commit doesn't show app.js changes
   @@ -0,0 +1 @@
   +fn foo() {}
 
-Add another file and use hook to hold it
+Add another file and use hook to freeze it
 
   $ cat << EOF > code/lib3.js
   > fn bar() {}
   > EOF
 
-Also update app.js to remove the secret - remove hold from it
+Also update app.js to remove the secret - unfreeze it
 
   $ cat << EOF > code/app.js
   > async fn main() {
@@ -95,9 +95,9 @@ Also update app.js to remove the secret - remove hold from it
   $ git add .
   $ git commit -q -m "read env variable"
 
-Add note to hold the new file and allow app.js changes
+Add note to freeze the new file and allow app.js changes
 
-  $ git notes add -m ':/code:hold[::lib3.js]' -f
+  $ git notes add -m ':/code:freeze[::lib3.js]' -f
 
   $ josh-filter ':hook=commits'
 

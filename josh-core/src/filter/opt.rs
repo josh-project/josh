@@ -82,7 +82,7 @@ pub fn simplify(filter: Filter) -> Filter {
             Op::Subtract(simplify(to_filter(a)), simplify(to_filter(b)))
         }
         Op::Exclude(b) => Op::Exclude(simplify(b)),
-        Op::Hold(b) => Op::Hold(simplify(b)),
+        Op::Freeze(b) => Op::Freeze(simplify(b)),
         _ => to_op(filter),
     });
 
@@ -138,7 +138,7 @@ pub fn flatten(filter: Filter) -> Filter {
             Op::Subtract(flatten(to_filter(a)), flatten(to_filter(b)))
         }
         Op::Exclude(b) => Op::Exclude(flatten(b)),
-        Op::Hold(b) => Op::Hold(flatten(b)),
+        Op::Freeze(b) => Op::Freeze(flatten(b)),
         _ => to_op(filter),
     });
 
@@ -441,10 +441,10 @@ fn step(filter: Filter) -> Filter {
             (_, Op::Empty) => Op::Empty,
             (a, b) => Op::Chain(step(to_filter(a)), step(to_filter(b))),
         },
-        Op::Exclude(b) | Op::Hold(b) if b == to_filter(Op::Nop) => Op::Empty,
-        Op::Exclude(b) | Op::Hold(b) if b == to_filter(Op::Empty) => Op::Nop,
+        Op::Exclude(b) | Op::Freeze(b) if b == to_filter(Op::Nop) => Op::Empty,
+        Op::Exclude(b) | Op::Freeze(b) if b == to_filter(Op::Empty) => Op::Nop,
         Op::Exclude(b) => Op::Exclude(step(b)),
-        Op::Hold(b) => Op::Hold(step(b)),
+        Op::Freeze(b) => Op::Freeze(step(b)),
         Op::Subtract(a, b) if a == b => Op::Empty,
         Op::Subtract(af, bf) => match (to_op(af), to_op(bf)) {
             (Op::Empty, _) => Op::Empty,
@@ -505,7 +505,7 @@ pub fn invert(filter: Filter) -> JoshResult<Filter> {
         Op::Pattern(pattern) => Some(Op::Pattern(pattern)),
         Op::Rev(_) => Some(Op::Nop),
         Op::RegexReplace(_) => Some(Op::Nop),
-        Op::Hold(_) => Some(Op::Nop),
+        Op::Freeze(_) => Some(Op::Nop),
         _ => None,
     };
 
