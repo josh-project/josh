@@ -16,58 +16,88 @@ pub fn walk2(
         return Ok(());
     }
 
-    let (known, n_new) = find_known(filter, input, transaction)?;
+    //let (known, n_new) = find_known(filter, input, transaction)?;
 
+    eprintln!("building walk");
     let walk = {
         let mut walk = transaction.repo().revwalk()?;
         if filter::is_linear(filter) {
             walk.simplify_first_parent()?;
         }
         walk.set_sorting(git2::Sort::REVERSE | git2::Sort::TOPOLOGICAL)?;
+
+        let missing = transaction.get_missing();
+        /* let mut i = 0; */
+     //   for (f, id) in missing.into_iter().rev() {
+     //       if filter == f {
+     //           walk.push(id)?;
+     //           /* i = i+1; */
+     //         //  if i > 100 {
+     //         //      break;
+     //         //  }
+     //       }
+
+     //   }
         walk.push(input)?;
-        for k in known.iter() {
-            walk.hide(*k)?;
-        }
+       // for k in known.iter() {
+       //     walk.hide(*k)?;
+       // }
         walk
     };
+        let mut hidecb = |id| {
+            let k = transaction.known(filter, id);
+            k
+        };
+       let walk = walk.with_hide_callback(&mut hidecb)?;
+    eprintln!("/building walk");
 
     log::info!(
         "Walking {} new commits for:\n{}\n",
-        n_new,
+        0,
         filter::pretty(filter, 4),
     );
-    let mut n_commits = 0;
-    let mut n_misses = transaction.misses();
+    let mut n_in = 0;
+    let mut n_out = 0;
 
     let walks = transaction.new_walk();
 
     for original_commit_id in walk {
+        //eprintln!("apply_to_commit3 {}", n_in);
         if !filter::apply_to_commit3(
             filter,
             &transaction.repo().find_commit(original_commit_id?)?,
             transaction,
         )? {
-            break;
+            //eprintln!("/apply_to_commit3 break {}", n_in);
+            /* break; */
         }
+        else {
+            n_out += 1;
+        }
+        //eprintln!("/apply_to_commit3 {}", n_in);
 
-        n_commits += 1;
-        if n_commits % 1000 == 0 {
+        n_in += 1;
+        if n_in % 1000 == 0 {
             log::debug!(
-                "{} {} commits filtered, {} misses",
+                "{} {} commits filtered, {} written",
                 " ->".repeat(walks),
-                n_commits,
-                transaction.misses() - n_misses,
+                n_in,
+                n_out,
             );
-            n_misses = transaction.misses();
+        }
+        if n_in % 10000 == 0 {
+            /* break; */
+            cache_sled::sled_print_stats()?;
         }
     }
 
     log::info!(
-        "{} {} commits filtered, {} misses",
+        "{} {} commits filtered, {} written",
         " ->".repeat(walks),
-        n_commits,
-        transaction.misses() - n_misses,
+        n_in,
+        n_out,
     );
+            cache_sled::sled_print_stats()?;
 
     transaction.end_walk();
 
@@ -171,10 +201,11 @@ fn find_known(
     input: git2::Oid,
     transaction: &cache::Transaction,
 ) -> JoshResult<(Vec<git2::Oid>, usize)> {
-    log::debug!("find_known");
+    log::debug!("find_known {} {} {}", input, filter::spec(filter), cache::n_parents(transaction, input)?);
     let mut known = vec![];
     let mut walk = transaction.repo().revwalk()?;
     walk.push(input)?;
+    walk.simplify_first_parent()?;
 
     let n_new = walk
         .with_hide_callback(&mut |id| {
@@ -185,7 +216,9 @@ fn find_known(
             k
         })?
         .count();
-    log::debug!("/find_known {}", n_new);
+    known.sort();
+    known.dedup();
+    log::debug!("/find_known {} {:?}", n_new, known);
     Ok((known, n_new))
 }
 

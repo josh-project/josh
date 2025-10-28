@@ -80,7 +80,7 @@ fn insert_sled_tree(filter: Filter) -> sled::Tree {
 }
 
 impl CacheBackend for SledCacheBackend {
-    fn read(&self, filter: Filter, from: git2::Oid) -> JoshResult<Option<git2::Oid>> {
+    fn read(&self, filter: Filter, from: git2::Oid, np: u128) -> JoshResult<Option<git2::Oid>> {
         let mut trees = self.trees.lock()?;
         let tree = trees
             .entry(filter.id())
@@ -94,7 +94,7 @@ impl CacheBackend for SledCacheBackend {
         }
     }
 
-    fn write(&self, filter: Filter, from: git2::Oid, to: git2::Oid) -> JoshResult<()> {
+    fn write(&self, filter: Filter, from: git2::Oid, to: git2::Oid, np: u128) -> JoshResult<()> {
         let mut trees = self.trees.lock()?;
         let tree = trees
             .entry(filter.id())

@@ -51,6 +51,11 @@ impl Filter {
     }
 }
 
+pub fn n_parents_f() -> Filter
+{
+    Filter(git2::Oid::zero())
+}
+
 impl std::fmt::Debug for Filter {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         to_op(*self).fmt(f)
@@ -223,6 +228,7 @@ fn to_filter(op: Op) -> Filter {
 }
 
 fn to_op(filter: Filter) -> Op {
+    if filter == n_parents_f() { return Op::Nop; }
     FILTERS
         .lock()
         .unwrap()
@@ -553,6 +559,7 @@ fn resolve_refs2(refs: &std::collections::HashMap<String, git2::Oid>, op: &Op) -
 /// Compact, single line string representation of a filter so that `parse(spec(F)) == F`
 /// Note that this is will not be the best human readable representation. For that see `pretty(...)`
 pub fn spec(filter: Filter) -> String {
+    if filter == n_parents_f() { return "n_parents_f".to_string(); }
     let filter = opt::simplify(filter);
     spec2(&to_op(filter))
 }
@@ -1295,13 +1302,21 @@ pub fn apply_to_commit(
 
         let missing = transaction.get_missing();
 
+        eprintln!("MISSING {:?}", missing.len());
+
         // Since 'missing' is sorted by nesting, the first is always the minimal
-        let minimal_nesting = missing.first().map(|(f, _)| nesting(*f)).unwrap_or(0);
+        /* let minimal_nesting = missing.first().map(|(f, _)| nesting(*f)).unwrap_or(0); */
+
+       // let mut lf = None;
 
         for (f, i) in missing {
-            if nesting(f) != minimal_nesting {
-                break;
-            }
+       //     if let Some(f) = lf {
+       //         continue;
+       //     }
+       //     lf = Some(f);
+            /* if nesting(f) != minimal_nesting { */
+                /* break; */
+            /* } */
             history::walk2(f, i, transaction)?;
         }
     }

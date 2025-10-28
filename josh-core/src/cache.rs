@@ -9,9 +9,9 @@ use std::sync::{LazyLock, RwLock};
 pub const CACHE_VERSION: u64 = 24;
 
 pub trait CacheBackend: Send + Sync {
-    fn read(&self, filter: filter::Filter, from: git2::Oid) -> JoshResult<Option<git2::Oid>>;
+    fn read(&self, filter: filter::Filter, from: git2::Oid, np: u128) -> JoshResult<Option<git2::Oid>>;
 
-    fn write(&self, filter: filter::Filter, from: git2::Oid, to: git2::Oid) -> JoshResult<()>;
+    fn write(&self, filter: filter::Filter, from: git2::Oid, to: git2::Oid, np: u128) -> JoshResult<()>;
 }
 
 pub trait FilterHook {
@@ -319,6 +319,7 @@ impl Transaction {
     }
 
     pub fn insert(&self, filter: filter::Filter, from: git2::Oid, to: git2::Oid, store: bool) {
+        let np = if filter != filter::n_parents_f() {n_parents(self, from).unwrap() } else { 0 };
         let mut t2 = self.t2.borrow_mut();
         t2.commit_map
             .entry(filter.id())
@@ -330,7 +331,7 @@ impl Transaction {
         // the history length by a very large factor.
         if store || from.as_bytes()[0] == 0 {
             t2.cache
-                .write_all(filter, from, to)
+                .write_all(filter, from, to, np)
                 // TODO propagate error?
                 .expect("Failed to write cache");
         }
@@ -338,7 +339,7 @@ impl Transaction {
 
     pub fn get_missing(&self) -> Vec<(filter::Filter, git2::Oid)> {
         let mut missing = self.t2.borrow().missing.clone();
-        missing.sort_by_key(|(f, i)| (filter::nesting(*f), *f, *i));
+        /* missing.sort_by_key(|(f, i)| (filter::nesting(*f), *f, *i)); */
         missing.dedup();
         missing.retain(|(f, i)| !self.known(*f, *i));
         self.t2.borrow_mut().missing = missing.clone();
@@ -355,7 +356,10 @@ impl Transaction {
         } else {
             let mut t2 = self.t2.borrow_mut();
             t2.misses += 1;
-            t2.missing.push((filter, from));
+            if !t2.missing.contains(&(filter, from)) {
+                t2.missing.insert(0,(filter, from));
+                /* eprintln!("N MISSING {}", t2.missing.len()); */
+            }
             None
         }
     }
@@ -364,6 +368,7 @@ impl Transaction {
         if filter == filter::nop() {
             return Some(from);
         }
+        let np = if filter != filter::n_parents_f() {n_parents(self, from).unwrap() } else { 0 };
         let t2 = self.t2.borrow_mut();
         if let Some(m) = t2.commit_map.get(&filter.id()) {
             if let Some(oid) = m.get(&from).cloned() {
@@ -373,13 +378,16 @@ impl Transaction {
 
         let oid = t2
             .cache
-            .read_propagate(filter, from)
+            .read_propagate(filter, from, np)
             .expect("Failed to read from cache backend");
 
         let oid = if let Some(oid) = oid { Some(oid) } else { None };
 
         if let Some(oid) = oid {
             if oid == git2::Oid::zero() {
+                return Some(oid);
+            }
+            if filter == filter::n_parents_f() {
                 return Some(oid);
             }
 
@@ -393,3 +401,61 @@ impl Transaction {
         None
     }
 }
+
+
+/// Encode a `u128` into a 20-byte git OID (SHA-1 sized).
+/// The high 4 bytes of the OID are zero; the low 16 bytes
+/// contain the big-endian integer.
+pub fn oid_from_u128(n: u128) -> git2::Oid {
+    let mut bytes = [0u8; 20];
+    // place the 16 integer bytes at the end (big-endian)
+    bytes[20 - 16..].copy_from_slice(&n.to_be_bytes());
+    // Safe: length is exactly 20
+    git2::Oid::from_bytes(&bytes).expect("20-byte OID construction cannot fail")
+}
+
+/// Decode a `u128` previously encoded by `oid_from_u128`.
+pub fn u128_from_oid(oid: git2::Oid) -> u128 {
+    let b = oid.as_bytes();
+    let mut n = [0u8; 16];
+    n.copy_from_slice(&b[20 - 16..]); // take the last 16 bytes
+    u128::from_be_bytes(n)
+}
+
+pub fn n_parents(transaction: &cache::Transaction, input: git2::Oid) -> JoshResult<u128>
+{
+    /* return Ok(0); */
+    if let Some(count) = transaction.get(filter::n_parents_f(), input) {
+        return Ok(u128_from_oid(count));
+    }
+    eprintln!("n_parents {:?}", input);
+
+    let commit = transaction.repo().find_commit(input)?;
+    if let Some(p) = commit.parent_ids().next() {
+        if let Some(count) = transaction.get(filter::n_parents_f(), p) {
+            let pc = u128_from_oid(count);
+            transaction.insert(filter::n_parents_f(), input, oid_from_u128(pc+1), true);
+            return n_parents(transaction, input);
+        }
+    }
+
+    let mut walk = transaction.repo().revwalk()?;
+    /* walk.simplify_first_parent()?; */
+    walk.set_sorting(git2::Sort::REVERSE | git2::Sort::TOPOLOGICAL)?;
+    walk.push(input)?;
+    eprintln!("n_parents walk");
+
+    for c in walk {
+        let commit = transaction.repo().find_commit(c?)?;
+        let pc = if let Some(p) = commit.parent_ids().next() {
+            n_parents(transaction, p)?
+        }
+        else {
+            0
+        };
+
+        transaction.insert(filter::n_parents_f(), commit.id(), oid_from_u128(pc+1), true);
+    }
+    n_parents(transaction, input)
+}
+
