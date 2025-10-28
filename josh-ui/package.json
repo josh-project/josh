@@ -22,7 +22,7 @@
     "sass": "^1.93.2",
     "ts-pattern": "^3.3.5",
     "tsoption": "^0.7.0",
-    "typescript": "^4.5.5",
+    "typescript": "^5.9.3",
     "web-vitals": "^5.1.0"
   },
   "scripts": {
