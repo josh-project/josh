@@ -56,6 +56,7 @@
   ]
   [2] :prefix=x
   [2] :workspace=ws
+  [4] sequence_number
 
   $ git log --graph --pretty=%s FILTERED_HEAD
   * add ws
@@ -92,6 +93,7 @@
       blub = :/sub1
   ]
   [3] :prefix=xyz
+  [7] sequence_number
 
   $ git log --graph --pretty=%s FILTERED_HEAD
   * add ws

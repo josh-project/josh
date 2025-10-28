@@ -36,6 +36,7 @@
   $ josh-filter -s c=:exclude[::sub1/] master --update refs/josh/filter/master
   [1] :prefix=c
   [2] :exclude[::sub1/]
+  [4] sequence_number
   $ git checkout josh/filter/master 2> /dev/null
   $ git log --graph --pretty=%s
   * add file3
@@ -51,6 +52,7 @@
   [2] :exclude[::sub1/]
   [2] :exclude[::sub1/file2]
   [3] :prefix=c
+  [5] sequence_number
   $ git checkout josh/filter/master 2> /dev/null
   $ git log --graph --pretty=%s
   * add file3
@@ -70,6 +72,7 @@
   [2] :exclude[::sub1/file2]
   [2] :exclude[::sub2/file3]
   [4] :prefix=c
+  [5] sequence_number
   $ git checkout josh/filter/master 2> /dev/null
   $ git log --graph --pretty=%s
   * add file2

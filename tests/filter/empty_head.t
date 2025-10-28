@@ -20,6 +20,7 @@
 
   $ josh-filter -s :/sub1 master --update refs/josh/filter/master
   [2] :/sub1
+  [3] sequence_number
   $ git log --graph --pretty=%s josh/filter/master
   * add file2
   * add file1
@@ -27,6 +28,7 @@
   $ josh-filter -s :/sub2 master --update refs/josh/filter/master
   [2] :/sub1
   [2] :/sub2
+  [3] sequence_number
   $ git log --graph --pretty=%s josh/filter/master
   * add file3
 
@@ -38,5 +40,6 @@
   Warning: reference refs/josh/filter/master wasn't updated
   [2] :/sub1
   [2] :/sub2
+  [4] sequence_number
   $ git log --graph --pretty=%s josh/filter/master
   * add file3

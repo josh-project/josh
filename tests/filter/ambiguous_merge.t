@@ -39,6 +39,7 @@
   $ josh-filter -s ::sub1/ branch1 --update refs/heads/hidden_branch1
   [2] :prefix=sub1
   [3] :/sub1
+  [5] sequence_number
   $ git checkout hidden_branch1
   Switched to branch 'hidden_branch1'
   $ git log --graph --oneline --decorate
@@ -54,6 +55,7 @@
   $ josh-filter -s ::sub1/ master --update refs/heads/hidden_master
   [3] :prefix=sub1
   [4] :/sub1
+  [7] sequence_number
   $ git checkout hidden_master
   Switched to branch 'hidden_master'
   $ git log --graph --oneline --decorate
@@ -86,6 +88,7 @@
   $ josh-filter -s ::sub1/ --reverse master --update refs/heads/hidden_master
   [3] :prefix=sub1
   [4] :/sub1
+  [7] sequence_number
 
   $ git checkout master
   Switched to branch 'master'

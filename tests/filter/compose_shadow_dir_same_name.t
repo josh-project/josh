@@ -92,6 +92,7 @@
       :/xx
       :/sub/xx
   ]
+  [3] sequence_number
   $ git diff ${EMPTY_TREE}..FILTERED_HEAD
   diff --git a/file1 b/file1
   new file mode 100644

@@ -29,6 +29,7 @@
   [1] :prefix=subsub
   [2] :workspace=ws
   [3] :/sub2
+  [7] sequence_number
 
   $ git log --graph --pretty=%s refs/heads/filtered
   * add file2
@@ -53,6 +54,7 @@
   [1] :prefix=subsub
   [2] :workspace=ws
   [3] :/sub2
+  [7] sequence_number
   $ git checkout master
   Switched to branch 'master'
 

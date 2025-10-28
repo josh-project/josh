@@ -8,6 +8,7 @@ Initial commit
 Apply prefix filter
   $ josh-filter -s :prefix=subtree refs/heads/master --update refs/heads/filtered
   [1] :prefix=subtree
+  [1] sequence_number
 
   $ git log --graph --pretty=%s refs/heads/filtered
   * add file1

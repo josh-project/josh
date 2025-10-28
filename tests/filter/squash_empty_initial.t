@@ -37,6 +37,7 @@
 
   $ josh-filter -s --squash-pattern "refs/tags/*" --update refs/heads/filtered
   Warning: reference refs/heads/filtered wasn't updated
+  [5] sequence_number
   $ git log --graph --decorate --pretty=oneline refs/heads/filtered
   fatal: ambiguous argument 'refs/heads/filtered': unknown revision or path not in the working tree.
   Use '--' to separate paths from revisions, like this:
@@ -50,6 +51,7 @@
   [1] :squash(
       882f2656a5075936eb37bfefde740e0b453e4479:"refs/tags/tag_a"
   )
+  [7] sequence_number
 
   $ git log --graph --decorate --pretty=oneline refs/heads/filtered
   * 977cc3ee14c0d6163ba63bd96f4aeedd43916ba7 (tag: filtered/tag_a, filtered) refs/tags/tag_a

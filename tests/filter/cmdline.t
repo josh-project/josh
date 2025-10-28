@@ -36,6 +36,7 @@
   $ josh-filter -s c=:/sub1 --update refs/josh/filter/libs/master libs/master
   [2] :/sub1
   [2] :prefix=c
+  [4] sequence_number
   $ git log --graph --pretty=%s josh/filter/libs/master
   * add file2
   * add file1
@@ -45,6 +46,7 @@
   [2] :/sub1
   [2] :/sub2
   [2] :prefix=c
+  [7] sequence_number
   $ git log --graph --pretty=%s josh/filter/libs/foo
   * add file3
 
@@ -63,6 +65,13 @@
   |-- heads
   |   `-- master
   |-- josh
+  |   |-- 24
+  |   |   `-- 0
+  |   |       |-- 5a4a73be0065ab74681f8302fd032224a32ffaed
+  |   |       |-- c37f9b5c5d2022cce0acbae87682f3eb5cdf29fb
+  |   |       |-- d14715b1358e12e9fb4132036e06049fd1ddf88f
+  |   |       |-- d6fc41eeb18ee6e3acf23e9a49bd4f10136d1db0
+  |   |       `-- fcdb5e527e610ecf5ad7e25a5b388fffc2af7240
   |   `-- filter
   |       `-- libs
   |           |-- foo
@@ -74,7 +83,7 @@
   |       `-- master
   `-- tags
   
-  8 directories, 6 files
+  10 directories, 11 files
 
   $ git read-tree HEAD josh/filter/libs/master josh/filter/libs/foo
   $ git commit -m "sync"

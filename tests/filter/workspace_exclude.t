@@ -29,6 +29,7 @@
       ::sub2/subsub/
   ]
   [2] :workspace=ws
+  [3] sequence_number
 
   $ git log --graph --pretty=%s refs/heads/filtered
   * add ws
@@ -59,6 +60,7 @@
       ::sub2/subsub/
   ]
   [2] :workspace=ws
+  [3] sequence_number
   $ git checkout master
   Switched to branch 'master'
 

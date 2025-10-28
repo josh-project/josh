@@ -30,6 +30,7 @@
 
   $ josh-filter -s --squash-pattern "refs/tags/*" --update refs/heads/filtered
   Warning: reference refs/heads/filtered wasn't updated
+  [5] sequence_number
 
   $ git log --graph --decorate --pretty=oneline refs/heads/filtered
   fatal: ambiguous argument 'refs/heads/filtered': unknown revision or path not in the working tree.
@@ -45,6 +46,7 @@ This one tag is an annotated tag, to make sure those are handled as well
   [1] :squash(
       1d69b7d2651f744be3416f2ad526aeccefb99310:"refs/tags/tag_a"
   )
+  [7] sequence_number
 
   $ git log --graph --decorate --pretty=oneline refs/heads/filtered
   * 977cc3ee14c0d6163ba63bd96f4aeedd43916ba7 (tag: filtered/tag_a, filtered) refs/tags/tag_a
@@ -73,6 +75,7 @@ This one tag is an annotated tag, to make sure those are handled as well
       977cc3ee14c0d6163ba63bd96f4aeedd43916ba7:"refs/tags/filtered/tag_a"
   )
   [4] :author="New Author";"new@e.mail"
+  [11] sequence_number
 
   $ git log --graph --decorate --pretty=oneline refs/heads/filtered
   * be41caf35896090033cfd103e06aae721a3ce541 (tag: filtered/tag_a, filtered) refs/tags/tag_a
@@ -115,6 +118,7 @@ This one tag is an annotated tag, to make sure those are handled as well
       a68763bdf2f45a44304067954855749e366a5533:"refs/tags/filtered/filtered/tag_a"
       be41caf35896090033cfd103e06aae721a3ce541:"refs/tags/filtered/tag_a"
   )
+  [16] sequence_number
   $ git log --graph --pretty=%an:%ae-%cn:%ce refs/heads/filtered
   * Josh:josh@example.com-New Author:new@e.mail
   |\
@@ -181,6 +185,7 @@ This one tag is an annotated tag, to make sure those are handled as well
       be41caf35896090033cfd103e06aae721a3ce541:"refs/tags/filtered/tag_a"
   )
   [6] :author="New Author";"new@e.mail"
+  [19] sequence_number
 
   $ git log --graph --decorate --pretty=oneline refs/heads/filtered
   *   2826b9a173c7a7d5c83d9ae2614de89c77205d83 (filtered) refs/tags/tag_a

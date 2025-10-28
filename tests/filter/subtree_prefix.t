@@ -44,6 +44,7 @@ Rewrite the subtree part of the history
   $ josh-filter -s ":rev($SUBTREE_TIP:prefix=subtree)" refs/heads/master --update refs/heads/filtered
   [1] :prefix=subtree
   [4] :rev(c036f944faafb865e0585e4fa5e005afa0aeea3f:prefix=subtree)
+  [4] sequence_number
 
   $ git log --graph --pretty=%s refs/heads/filtered
   * subtree edit from main repo
@@ -70,6 +71,7 @@ Extract the subtree history
   [1] :prefix=subtree
   [4] :/subtree
   [4] :rev(c036f944faafb865e0585e4fa5e005afa0aeea3f:prefix=subtree)
+  [7] sequence_number
   $ git checkout subtree
   Switched to branch 'subtree'
   $ cat file2
@@ -83,6 +85,7 @@ Work in the subtree, and sync that back.
   [1] :prefix=subtree
   [4] :/subtree
   [4] :rev(c036f944faafb865e0585e4fa5e005afa0aeea3f:prefix=subtree)
+  [7] sequence_number
   $ git log --graph --pretty=%s  refs/heads/master
   * add even more content
   * subtree edit from main repo
@@ -105,6 +108,7 @@ And then re-extract, which should re-construct the same subtree.
   [1] :prefix=subtree
   [5] :/subtree
   [5] :rev(c036f944faafb865e0585e4fa5e005afa0aeea3f:prefix=subtree)
+  [9] sequence_number
   $ test $(git rev-parse subtree) = $(git rev-parse subtree2)
 
 Simulate a feature branch on the main repo that crosses subtree changes
@@ -179,6 +183,7 @@ And finally, sync first from main to sub and then back.
   [1] :prefix=subtree
   [9] :/subtree
   [9] :rev(c036f944faafb865e0585e4fa5e005afa0aeea3f:prefix=subtree)
+  [17] sequence_number
 
   $ git log --graph --pretty=%H:%s refs/heads/master
   *   6ac0ba56575859cfaacd5818084333e532ffc442:Merge branch 'subtree-sync' into subtree
@@ -225,6 +230,7 @@ taken back into the main history.
   [1] :prefix=subtree
   [13] :/subtree
   [13] :rev(c036f944faafb865e0585e4fa5e005afa0aeea3f:prefix=subtree)
+  [25] sequence_number
   $ git ls-tree --name-only -r refs/heads/master
   feature1
   feature2

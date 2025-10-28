@@ -21,6 +21,7 @@
 
   $ josh-filter -s :exclude[::sub2/] master --update refs/heads/hidden
   [2] :exclude[::sub2/]
+  [3] sequence_number
   $ git checkout -q hidden 1> /dev/null
   $ tree
   .
@@ -44,6 +45,7 @@
       ::sub2/
   ]
   [2] :exclude[::sub2/]
+  [3] sequence_number
 
   $ git checkout -q refs/josh/filtered
   $ tree
@@ -60,6 +62,7 @@
   ]
   [2] :exclude[::sub2/]
   [3] :exclude[:/sub3:prefix=sub1]
+  [3] sequence_number
 
   $ git checkout -q refs/josh/filtered
   $ tree

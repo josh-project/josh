@@ -22,6 +22,7 @@ Empty root commits from unrelated parts of the tree should not be included
   $ josh-filter -s c=:/sub1 master --update refs/josh/filter/master
   [3] :/sub1
   [3] :prefix=c
+  [6] sequence_number
 
   $ git log refs/josh/filter/master --graph --pretty=%s
   * add file3
@@ -83,6 +84,7 @@ Empty root commits from unrelated parts of the tree should not be included
   $ josh-filter -s c=:/sub1 master
   [3] :prefix=c
   [5] :/sub1
+  [10] sequence_number
 
   $ git log FILTERED_HEAD --graph --pretty=%s
   * add file3
@@ -98,6 +100,7 @@ Empty root commits from unrelated parts of the tree should not be included
   [5] :/sub1
   [5] :exclude[::sub1/]
   [6] :prefix=c
+  [10] sequence_number
 
   $ git log FILTERED_HEAD --graph --pretty=%s
   * add some_other_file
@@ -113,6 +116,7 @@ Empty root commits from unrelated parts of the tree should not be included
   [5] :/sub1
   [5] :exclude[::sub1/]
   [6] :prefix=c
+  [12] sequence_number
 
   $ git ls-tree --name-only -r FILTERED_HEAD
   x/c/some_file

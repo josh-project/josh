@@ -8,15 +8,13 @@ pub fn walk2(
 ) -> JoshResult<()> {
     rs_tracing::trace_scoped!("walk2","spec":filter::spec(filter), "id": input.to_string());
 
-    ok_or!(transaction.repo().find_commit(input), {
-        return Ok(());
-    });
-
     if transaction.known(filter, input) {
         return Ok(());
     }
 
-    let (known, n_new) = find_known(filter, input, transaction)?;
+    ok_or!(transaction.repo().find_commit(input), {
+        return Ok(());
+    });
 
     let walk = {
         let mut walk = transaction.repo().revwalk()?;
@@ -24,51 +22,52 @@ pub fn walk2(
             walk.simplify_first_parent()?;
         }
         walk.set_sorting(git2::Sort::REVERSE | git2::Sort::TOPOLOGICAL)?;
+
         walk.push(input)?;
-        for k in known.iter() {
-            walk.hide(*k)?;
-        }
         walk
     };
+    let mut hide_callback = |id| {
+        let k = transaction.known(filter, id);
+        k
+    };
+    let walk = walk.with_hide_callback(&mut hide_callback)?;
 
     log::info!(
         "Walking {} new commits for:\n{}\n",
-        n_new,
+        0,
         filter::pretty(filter, 4),
     );
-    let mut n_commits = 0;
-    let mut n_misses = transaction.misses();
+    let mut n_in = 0;
+    let mut n_out = 0;
 
     let walks = transaction.new_walk();
 
     for original_commit_id in walk {
-        if !filter::apply_to_commit3(
+        if filter::apply_to_commit3(
             filter,
             &transaction.repo().find_commit(original_commit_id?)?,
             transaction,
         )? {
-            break;
+            n_out += 1;
         }
 
-        n_commits += 1;
-        if n_commits % 1000 == 0 {
+        n_in += 1;
+        if n_in % 1000 == 0 {
             log::debug!(
-                "{} {} commits filtered, {} misses",
+                "{} {} commits filtered, {} written",
                 " ->".repeat(walks),
-                n_commits,
-                transaction.misses() - n_misses,
+                n_in,
+                n_out,
             );
-            n_misses = transaction.misses();
         }
     }
 
     log::info!(
-        "{} {} commits filtered, {} misses",
+        "{} {} commits filtered, {} written",
         " ->".repeat(walks),
-        n_commits,
-        transaction.misses() - n_misses,
+        n_in,
+        n_out,
     );
-
     transaction.end_walk();
 
     Ok(())
@@ -164,29 +163,6 @@ pub fn find_original(
     }
 
     Ok(git2::Oid::zero())
-}
-
-fn find_known(
-    filter: filter::Filter,
-    input: git2::Oid,
-    transaction: &cache::Transaction,
-) -> JoshResult<(Vec<git2::Oid>, usize)> {
-    log::debug!("find_known");
-    let mut known = vec![];
-    let mut walk = transaction.repo().revwalk()?;
-    walk.push(input)?;
-
-    let n_new = walk
-        .with_hide_callback(&mut |id| {
-            let k = transaction.known(filter, id);
-            if k {
-                known.push(id)
-            }
-            k
-        })?
-        .count();
-    log::debug!("/find_known {}", n_new);
-    Ok((known, n_new))
 }
 
 // takes everything from base except its tree and replaces it with the tree

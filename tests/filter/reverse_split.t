@@ -18,6 +18,7 @@
       a = ::*.a
       :prefix=rest
   ]
+  [2] sequence_number
   $ git checkout filtered 1> /dev/null
   Switched to branch 'filtered'
   $ tree
@@ -42,6 +43,7 @@
       a = ::*.a
       :prefix=rest
   ]
+  [2] sequence_number
 
   $ git checkout master
   Switched to branch 'master'

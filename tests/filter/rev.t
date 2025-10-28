@@ -39,6 +39,7 @@
   $ josh-filter -s :prefix=x/y --update refs/heads/filtered
   [5] :prefix=x
   [5] :prefix=y
+  [10] sequence_number
   $ git log --graph --decorate --pretty=%H:%T refs/heads/filtered
   *   37f8b29c9e892ea0eb7abac2759ddc6fb0337203:dcbbddf47649f8e73f59fae92896c0d2cd02b6ec
   |\  
@@ -51,6 +52,7 @@
   $ josh-filter -s ":rev(ffffffffffffffffffffffffffffffffffffffff:prefix=x/y)" --update refs/heads/filtered
   [5] :prefix=x
   [5] :prefix=y
+  [10] sequence_number
   ERROR: `:rev(...)` with nonexistent OID: ffffffffffffffffffffffffffffffffffffffff
   [1]
 
@@ -58,6 +60,7 @@
   [5] :prefix=x
   [5] :prefix=y
   [5] :rev(975d4c4975912729482cc864d321c5196a969271:prefix=x/y)
+  [10] sequence_number
   $ git log --graph --decorate --pretty=%H:%T refs/heads/filtered
   *   54651c29aa86e8512a7b9d39e3b8ea26da644247:5f47d9fdffdc726bb8ebcfea67531d2574243c5d
   |\  
@@ -73,6 +76,7 @@
   [5] :prefix=y
   [5] :rev(975d4c4975912729482cc864d321c5196a969271:prefix=x/y)
   [5] :rev(e707f76bb6a1390f28b2162da5b5eb6933009070:prefix=x/y)
+  [10] sequence_number
   $ git log --graph --decorate --pretty=%H:%T refs/heads/filtered
   *   5fe60a2d55b652822b3d3f25410714e9053ba72b:5f47d9fdffdc726bb8ebcfea67531d2574243c5d
   |\  
@@ -95,6 +99,7 @@
   [5] :rev(975d4c4975912729482cc864d321c5196a969271:prefix=x/y)
   [5] :rev(975d4c4975912729482cc864d321c5196a969271:prefix=x/y,e707f76bb6a1390f28b2162da5b5eb6933009070:prefix=x/y)
   [5] :rev(e707f76bb6a1390f28b2162da5b5eb6933009070:prefix=x/y)
+  [10] sequence_number
   $ git log --graph --decorate --pretty=%H:%T refs/heads/filtered
   *   63fea1234f375bd09019b676da8291f28d2ddb43:5f47d9fdffdc726bb8ebcfea67531d2574243c5d
   |\  
@@ -121,6 +126,7 @@
   [5] :rev(975d4c4975912729482cc864d321c5196a969271:prefix=x/z,e707f76bb6a1390f28b2162da5b5eb6933009070:prefix=x/y)
   [5] :rev(e707f76bb6a1390f28b2162da5b5eb6933009070:prefix=x/y)
   [6] :prefix=x
+  [11] sequence_number
   $ cat > filter.josh <<EOF
   > :rev(
   >   e707f76bb6a1390f28b2162da5b5eb6933009070:prefix=x/y
@@ -140,6 +146,7 @@
   [5] :rev(975d4c4975912729482cc864d321c5196a969271:prefix=x/z,e707f76bb6a1390f28b2162da5b5eb6933009070:prefix=x/y)
   [5] :rev(e707f76bb6a1390f28b2162da5b5eb6933009070:prefix=x/y)
   [6] :prefix=x
+  [11] sequence_number
   $ git log --graph --decorate --pretty=%H:%T refs/heads/filtered
   *   1c4fe25dc386c77adaae12d6b1cd3abfa296fc3c:5f47d9fdffdc726bb8ebcfea67531d2574243c5d
   |\  
@@ -155,13 +162,14 @@
   [2] :rev(0000000000000000000000000000000000000000:prefix=x/y,975d4c4975912729482cc864d321c5196a969271:prefix=x/z)
   [2] :rev(0000000000000000000000000000000000000000:prefix=x/y,e707f76bb6a1390f28b2162da5b5eb6933009070:prefix=x/y)
   [2] :rev(0000000000000000000000000000000000000000:prefix=x/z,e707f76bb6a1390f28b2162da5b5eb6933009070:prefix=x/y)
-  [3] :linear
+  [5] :linear
   [5] :prefix=y
   [5] :rev(975d4c4975912729482cc864d321c5196a969271:prefix=x/y)
   [5] :rev(975d4c4975912729482cc864d321c5196a969271:prefix=x/y,e707f76bb6a1390f28b2162da5b5eb6933009070:prefix=x/y)
   [5] :rev(975d4c4975912729482cc864d321c5196a969271:prefix=x/z,e707f76bb6a1390f28b2162da5b5eb6933009070:prefix=x/y)
   [5] :rev(e707f76bb6a1390f28b2162da5b5eb6933009070:prefix=x/y)
   [6] :prefix=x
+  [11] sequence_number
   $ git log --graph --decorate --pretty=%H:%T refs/heads/filtered
   * f8e8bc9daf54340c9fce647be467d2577b623bbe:5f47d9fdffdc726bb8ebcfea67531d2574243c5d
   * e707f76bb6a1390f28b2162da5b5eb6933009070:5d8a699f74b48c9c595f4615dd3755244e11d176
@@ -195,14 +203,15 @@
   [2] :rev(0000000000000000000000000000000000000000:prefix=x/y,e707f76bb6a1390f28b2162da5b5eb6933009070:prefix=x/y)
   [2] :rev(0000000000000000000000000000000000000000:prefix=x/z,e707f76bb6a1390f28b2162da5b5eb6933009070:prefix=x/y)
   [2] :rev(0000000000000000000000000000000000000000:prefix=y,0b4cf6c9efbbda1eada39fa9c1d21d2525b027bb:prefix=z)
-  [3] :linear
   [3] :rev(0000000000000000000000000000000000000000:prefix=x,0b4cf6c9efbbda1eada39fa9c1d21d2525b027bb:prefix=z,e707f76bb6a1390f28b2162da5b5eb6933009070:prefix=y)
+  [5] :linear
   [5] :prefix=y
   [5] :rev(975d4c4975912729482cc864d321c5196a969271:prefix=x/y)
   [5] :rev(975d4c4975912729482cc864d321c5196a969271:prefix=x/y,e707f76bb6a1390f28b2162da5b5eb6933009070:prefix=x/y)
   [5] :rev(975d4c4975912729482cc864d321c5196a969271:prefix=x/z,e707f76bb6a1390f28b2162da5b5eb6933009070:prefix=x/y)
   [5] :rev(e707f76bb6a1390f28b2162da5b5eb6933009070:prefix=x/y)
   [6] :prefix=x
+  [12] sequence_number
 
   $ git log --graph --decorate --pretty=%H:%T refs/heads/filtered
   * 2944f04c33ea037f7696282bf20b2e570524552e:047b1b6f39e8d95b62ef7f136189005d0e3c80b3
