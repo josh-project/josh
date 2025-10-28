@@ -40,6 +40,7 @@
   $ josh-filter -s c=:/pre master --update refs/josh/filter/master
   [2] :prefix=c
   [4] :/pre
+  [7] sequence_number
 
   $ git log josh/filter/master --graph --pretty=%s
   * change on other 2
@@ -82,6 +83,7 @@
   $ josh-filter -s c=:/pre master --update refs/josh/filter/master
   [5] :prefix=c
   [7] :/pre
+  [14] sequence_number
 
   $ git log josh/filter/master --graph --pretty=%s
   *   Merge branch 'other_branch'

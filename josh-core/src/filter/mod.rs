@@ -51,6 +51,10 @@ impl Filter {
     }
 }
 
+pub fn sequence_number() -> Filter {
+    Filter(git2::Oid::zero())
+}
+
 impl std::fmt::Debug for Filter {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         to_op(*self).fmt(f)
@@ -224,6 +228,9 @@ fn to_filter(op: Op) -> Filter {
 }
 
 fn to_op(filter: Filter) -> Op {
+    if filter == sequence_number() {
+        return Op::Nop;
+    }
     FILTERS
         .lock()
         .unwrap()
@@ -391,36 +398,6 @@ fn pretty2(op: &Op, indent: usize, compose: bool) -> String {
     }
 }
 
-pub fn nesting(filter: Filter) -> usize {
-    nesting2(&to_op(filter))
-}
-
-fn nesting2(op: &Op) -> usize {
-    match op {
-        Op::Compose(filters) => 1 + filters.iter().map(|f| nesting(*f)).fold(0, |a, b| a.max(b)),
-        Op::Exclude(filter) | Op::Pin(filter) => 1 + nesting(*filter),
-        Op::Workspace(_) => usize::MAX / 2, // divide by 2 to make sure there is enough headroom to avoid overflows
-        Op::Hook(_) => usize::MAX / 2, // divide by 2 to make sure there is enough headroom to avoid overflows
-        Op::Chain(a, b) => 1 + nesting(*a).max(nesting(*b)),
-        Op::Subtract(a, b) => 1 + nesting(*a).max(nesting(*b)),
-        Op::Rev(filters) => {
-            1 + filters
-                .values()
-                .map(|filter| nesting(*filter))
-                .max()
-                .unwrap_or(0)
-        }
-        Op::Join(filters) => {
-            1 + filters
-                .values()
-                .map(|filter| nesting(*filter))
-                .max()
-                .unwrap_or(0)
-        }
-        _ => 0,
-    }
-}
-
 pub fn lazy_refs(filter: Filter) -> Vec<String> {
     lazy_refs2(&to_op(filter))
 }
@@ -550,6 +527,9 @@ fn resolve_refs2(refs: &std::collections::HashMap<String, git2::Oid>, op: &Op) -
 /// Compact, single line string representation of a filter so that `parse(spec(F)) == F`
 /// Note that this is will not be the best human readable representation. For that see `pretty(...)`
 pub fn spec(filter: Filter) -> String {
+    if filter == sequence_number() {
+        return "sequence_number".to_string();
+    }
     let filter = opt::simplify(filter);
     spec2(&to_op(filter))
 }
@@ -1261,13 +1241,7 @@ pub fn apply_to_commit(
 
         let missing = transaction.get_missing();
 
-        // Since 'missing' is sorted by nesting, the first is always the minimal
-        let minimal_nesting = missing.first().map(|(f, _)| nesting(*f)).unwrap_or(0);
-
         for (f, i) in missing {
-            if nesting(f) != minimal_nesting {
-                break;
-            }
             history::walk2(f, i, transaction)?;
         }
     }

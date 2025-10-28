@@ -13,6 +13,7 @@
   $ josh-filter -s c=:prefix=pre master --update refs/josh/filter/master
   [1] :prefix=c
   [1] :prefix=pre
+  [2] sequence_number
   $ git cat-file commit master
   tree 2f407f8ecb16a66b85e2c84d3889720b7a0e3762
   author Josh <josh@example.com> 1112911993 +0000

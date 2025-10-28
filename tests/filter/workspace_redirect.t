@@ -53,16 +53,18 @@
       ::sub2/subsub/
   ]
   [3] :workspace=ws
+  [7] sequence_number
   $ josh-filter -s :workspace=ws_new master --update refs/heads/filtered_new
   [1] :prefix=b
-  [1] :workspace=ws_new
   [2] :/sub3
   [2] :[
       a = :/sub1
       ::sub2/subsub/
   ]
+  [2] :workspace=ws_new
   [3] :workspace=ws
   [5] :exclude[::ws_new]
+  [7] sequence_number
 
   $ git log --graph --pretty=%s refs/heads/filtered
   *   edit ws
@@ -188,3 +190,4 @@
   [4] :exclude[::ws]
   [4] :workspace=ws
   [6] :exclude[::ws_new]
+  [10] sequence_number

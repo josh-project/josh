@@ -32,7 +32,8 @@
   * add file1
 
   $ josh-filter -s :linear refs/heads/master --update refs/heads/filtered
-  [3] :linear
+  [4] :linear
+  [4] sequence_number
 
   $ git log --graph --pretty=%s refs/heads/filtered
   * Merge branch 'branch2'
@@ -57,7 +58,8 @@
   * add file1
 
   $ josh-filter -s :linear refs/heads/master --update refs/heads/filtered --reverse
-  [3] :linear
+  [4] :linear
+  [4] sequence_number
 
   $ git log --graph --pretty=%s refs/heads/master
   * mod file2

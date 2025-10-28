@@ -1,5 +1,6 @@
 use crate::JoshResult;
 use crate::cache::{CACHE_VERSION, CacheBackend};
+use crate::filter;
 use crate::filter::Filter;
 
 pub struct NotesCacheBackend {
@@ -15,24 +16,53 @@ impl NotesCacheBackend {
     }
 }
 
-fn is_note_eligible(oid: git2::Oid) -> bool {
-    oid.as_bytes()[0] == 0
+// The notes cache is meant to be sparse. That is, not all entries are actually persisted.
+// This makes it smaller and faster to download.
+// It is expected that on any node (server, proxy, local repo) a full "dense" local cache
+// is used in addition to the sparse note cache.
+// The note cache is mostly only used for initial "cold starts" or longer "catch up".
+// For incremental filtering it's fine re-filter commits and rely on the local "dense" cache.
+// We store entries for 1% of all commits, and additionally all merges and orphans.
+fn is_note_eligible(repo: &git2::Repository, oid: git2::Oid, sequence_number: u128) -> bool {
+    let parent_count = if let Ok(c) = repo.find_commit(oid) {
+        c.parent_ids().count()
+    } else {
+        return false;
+    };
+
+    sequence_number % 100 == 0 || parent_count != 1
 }
 
-fn note_path(key: git2::Oid) -> String {
-    format!("refs/josh/{}/{}", CACHE_VERSION, key)
+// To additionally limit the size of the note trees the cache is also sharded by sequence
+// number in groups of 10000. Note that this does not limit the number of entried per bucket
+// as branches mean many commits share the same sequence number.
+fn note_path(key: git2::Oid, sequence_number: u128) -> String {
+    format!(
+        "refs/josh/{}/{}/{}",
+        CACHE_VERSION,
+        sequence_number / 10000,
+        key,
+    )
 }
 
 impl CacheBackend for NotesCacheBackend {
-    fn read(&self, filter: Filter, from: git2::Oid) -> JoshResult<Option<git2::Oid>> {
+    fn read(
+        &self,
+        filter: Filter,
+        from: git2::Oid,
+        sequence_number: u128,
+    ) -> JoshResult<Option<git2::Oid>> {
+        if filter == filter::sequence_number() {
+            return Ok(None);
+        }
         let repo = self.repo.lock()?;
-        let key = crate::filter::as_tree(&repo, filter)?;
-
-        if !is_note_eligible(from) {
+        if !is_note_eligible(&repo, from, sequence_number) {
             return Ok(None);
         }
 
-        if let Ok(note) = repo.find_note(Some(&note_path(key)), from) {
+        let key = crate::filter::as_tree(&*repo, filter)?;
+
+        if let Ok(note) = repo.find_note(Some(&note_path(key, sequence_number)), from) {
             let message = note.message().unwrap_or("");
             let result = git2::Oid::from_str(message)?;
 
@@ -42,20 +72,29 @@ impl CacheBackend for NotesCacheBackend {
         }
     }
 
-    fn write(&self, filter: Filter, from: git2::Oid, to: git2::Oid) -> JoshResult<()> {
-        let repo = self.repo.lock()?;
-        let key = crate::filter::as_tree(&repo, filter)?;
-
-        if !is_note_eligible(from) {
+    fn write(
+        &self,
+        filter: Filter,
+        from: git2::Oid,
+        to: git2::Oid,
+        sequence_number: u128,
+    ) -> JoshResult<()> {
+        if filter == filter::sequence_number() {
             return Ok(());
         }
 
+        let repo = self.repo.lock()?;
+        if !is_note_eligible(&*repo, from, sequence_number) {
+            return Ok(());
+        }
+
+        let key = crate::filter::as_tree(&*repo, filter)?;
         let signature = crate::cache::josh_commit_signature()?;
 
         repo.note(
             &signature,
             &signature,
-            Some(&note_path(key)),
+            Some(&note_path(key, sequence_number)),
             from,
             &to.to_string(),
             true,

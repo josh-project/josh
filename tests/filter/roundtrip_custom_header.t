@@ -130,3 +130,5 @@ Write a custom header into the commit (h/t https://github.com/Byron/gitoxide/blo
   f2fd7b2 (HEAD -> master, re-filtered) second
   73007fa initial
   7d7c929 initial
+  9340c45 Notes added by 'git_note_create' from libgit2
+  56a1fe0 Notes added by 'git_note_create' from libgit2

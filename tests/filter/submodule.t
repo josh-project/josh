@@ -25,9 +25,11 @@
 
   $ josh-filter -s :/libs master --update refs/josh/filter/master
   [1] :/libs
+  [2] sequence_number
   $ git ls-tree --name-only -r refs/josh/filter/master 
   $ josh-filter -s c=:/libs master --update refs/josh/filter/master
   Warning: reference refs/josh/filter/master wasn't updated
   [1] :/libs
   [1] :prefix=c
+  [2] sequence_number
   $ git ls-tree --name-only -r refs/josh/filter/master 

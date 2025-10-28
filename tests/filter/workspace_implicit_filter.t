@@ -28,6 +28,7 @@
       ::sub2/subsub/
   ]
   [2] :workspace=ws
+  [3] sequence_number
 
   $ git log --graph --pretty=%s refs/josh/master
   * add ws

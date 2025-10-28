@@ -33,9 +33,10 @@ impl CacheStack {
         filter: filter::Filter,
         from: git2::Oid,
         to: git2::Oid,
+        sequence_number: u128,
     ) -> JoshResult<()> {
         for backend in &self.backends {
-            backend.write(filter, from, to)?;
+            backend.write(filter, from, to, sequence_number)?;
         }
 
         Ok(())
@@ -51,16 +52,19 @@ impl CacheStack {
         &self,
         filter: filter::Filter,
         from: git2::Oid,
+        sequence_number: u128,
     ) -> JoshResult<Option<git2::Oid>> {
         let values = self
             .backends
             .iter()
             .enumerate()
-            .find_map(|(index, backend)| match backend.read(filter, from) {
-                Ok(None) => None,
-                Ok(Some(oid)) => Some(Ok((index, oid))),
-                Err(e) => Some(Err(e)),
-            });
+            .find_map(
+                |(index, backend)| match backend.read(filter, from, sequence_number) {
+                    Ok(None) => None,
+                    Ok(Some(oid)) => Some(Ok((index, oid))),
+                    Err(e) => Some(Err(e)),
+                },
+            );
 
         let (index, oid) = match values {
             // None of the backends had the value
@@ -74,7 +78,7 @@ impl CacheStack {
         self.backends
             .iter()
             .take(index)
-            .try_for_each(|backend| backend.write(filter, from, oid))?;
+            .try_for_each(|backend| backend.write(filter, from, oid, sequence_number))?;
 
         Ok(Some(oid))
     }

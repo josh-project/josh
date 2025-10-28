@@ -28,6 +28,7 @@
       a/b = :/sub2
   ]
   [2] :workspace=ws
+  [3] sequence_number
 
   $ git log --graph --pretty=%s refs/josh/master
   * add ws
@@ -48,6 +49,7 @@
       a/b = :/sub2
   ]
   [3] :workspace=ws
+  [4] sequence_number
 
   $ git log --graph --pretty=%s refs/josh/master
   * add trailing slash

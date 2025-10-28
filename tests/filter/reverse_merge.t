@@ -26,6 +26,7 @@
 
   $ josh-filter -s :exclude[::sub2/] branch1 --update refs/heads/hidden_branch1
   [2] :exclude[::sub2/]
+  [2] sequence_number
   $ git checkout hidden_branch1
   Switched to branch 'hidden_branch1'
   $ tree
@@ -40,6 +41,7 @@
 
   $ josh-filter -s :exclude[::sub2/] master --update refs/heads/hidden_master
   [3] :exclude[::sub2/]
+  [3] sequence_number
   $ git checkout hidden_master
   Switched to branch 'hidden_master'
   $ tree
@@ -73,6 +75,7 @@
 
   $ josh-filter -s :exclude[::sub2/] --reverse master --update refs/heads/hidden_master
   [3] :exclude[::sub2/]
+  [3] sequence_number
 
   $ git checkout master
   Switched to branch 'master'

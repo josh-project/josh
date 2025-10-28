@@ -19,6 +19,7 @@ in that subtree repo should have an empty tree
   $ josh-filter -s c=:/sub1 master --update refs/josh/filter/master
   [2] :/sub1
   [2] :prefix=c
+  [4] sequence_number
 
   $ git log refs/josh/filter/master --graph --pretty=%s
   * add file2
@@ -36,6 +37,7 @@ in that subtree repo should have an empty tree
   $ josh-filter -s c=:/sub1 master --update refs/josh/filter/master
   [3] :/sub1
   [3] :prefix=c
+  [6] sequence_number
 
   $ git log refs/josh/filter/master --graph --pretty=%s
   * rm sub1

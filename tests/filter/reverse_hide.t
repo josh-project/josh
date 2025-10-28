@@ -16,6 +16,7 @@
 
   $ josh-filter -s :exclude[::sub2/] master --update refs/heads/hidden
   [1] :exclude[::sub2/]
+  [2] sequence_number
   $ git checkout hidden 1> /dev/null
   Switched to branch 'hidden'
   $ tree
@@ -33,6 +34,7 @@
 
   $ josh-filter -s :exclude[::sub2/] --reverse master --update refs/heads/hidden
   [1] :exclude[::sub2/]
+  [2] sequence_number
 
   $ git checkout master
   Switched to branch 'master'
@@ -67,6 +69,7 @@
 
   $ josh-filter -s :exclude[::sub2/] --reverse master --update refs/heads/hidden
   [2] :exclude[::sub2/]
+  [3] sequence_number
   $ git log --graph --pretty=%s refs/heads/master
   * empty commit
   * add sub1/file3

@@ -29,6 +29,7 @@
 
   $ josh-filter -s :exclude[::sub2/] master --update refs/heads/hidden
   [1] :exclude[::sub2/]
+  [2] sequence_number
   $ git checkout hidden 1> /dev/null
   Switched to branch 'hidden'
   $ tree
@@ -48,6 +49,7 @@
 
   $ josh-filter -s :exclude[::sub2/] --reverse master --update refs/heads/hidden
   [1] :exclude[::sub2/]
+  [2] sequence_number
 
   $ git checkout master
   Switched to branch 'master'

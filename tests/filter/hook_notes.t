@@ -25,6 +25,7 @@
   $ josh-filter -s :hook=commits HEAD --update refs/josh/filtered
   [2] ::b
   [3] :hook="commits"
+  [3] sequence_number
 
   $ git log --graph --pretty=%s refs/josh/filtered
   *   add f3

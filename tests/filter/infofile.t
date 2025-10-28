@@ -25,6 +25,7 @@
   $ josh-filter -s c=:/sub1 master --update refs/josh/filter/master
   [2] :/sub1
   [2] :prefix=c
+  [6] sequence_number
   $ git log --graph --pretty=%s josh/filter/master
   * add file2
   * add file1
@@ -33,6 +34,7 @@
   Warning: reference refs/josh/filter/master wasn't updated
   [2] :/sub1
   [2] :prefix=c
+  [6] sequence_number
   $ git log --graph --pretty=%s josh/filter/master
   * add file2
   * add file1
@@ -41,6 +43,7 @@
   [2] :/sub1
   [2] :/sub2
   [3] :prefix=c
+  [7] sequence_number
   $ git log --graph --pretty=%s josh/filter/master
   * add file3
 
@@ -53,5 +56,6 @@
   [2] :/sub1
   [2] :/sub2
   [3] :prefix=c
+  [8] sequence_number
   $ git log --graph --pretty=%s josh/filter/master
   * add file3

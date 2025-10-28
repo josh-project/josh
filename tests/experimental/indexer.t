@@ -20,6 +20,7 @@
 
   $ josh-filter -s :INDEX --update refs/heads/index
   [3] :INDEX
+  [3] sequence_number
   [6] _trigram_index
 
   $ josh-filter :/ --search "Another"

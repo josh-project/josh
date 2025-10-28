@@ -33,6 +33,7 @@
       c = :/sub1
       a/b = :/sub2
   ]
+  [4] sequence_number
   $ git log --graph --pretty=%s FILTERED_HEAD
   * add file3
   * add file2
@@ -43,6 +44,7 @@
       c = :/sub1
       a/b = :/sub2
   ]
+  [5] sequence_number
   $ git log --graph --pretty=%s FILTERED_HEAD
   * initial
 
@@ -50,7 +52,11 @@
   .git/refs/
   |-- heads
   |   `-- master
+  |-- josh
+  |   `-- 24
+  |       `-- 0
+  |           `-- 8d28f139b3f76b91bc4e6146a5943eb1635bfb11
   `-- tags
   
-  3 directories, 1 file
+  6 directories, 2 files
 

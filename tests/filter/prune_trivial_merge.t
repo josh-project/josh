@@ -35,6 +35,7 @@
 
   $ josh-filter -s ::file1
   [4] ::file1
+  [5] sequence_number
   $ git log --graph --pretty=%s FILTERED_HEAD
   *   Merge branch 'branch1'
   |\  
@@ -45,6 +46,7 @@
   $ josh-filter -s ::file1:prune=trivial-merge
   [3] :prune=trivial-merge
   [4] ::file1
+  [6] sequence_number
 
   $ git log --graph --pretty=%s FILTERED_HEAD
   * empty commit
