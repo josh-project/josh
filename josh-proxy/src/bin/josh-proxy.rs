@@ -1253,19 +1253,17 @@ async fn call_service(
             }
             pu
         } else {
-            let redirect_path = if path == "/" {
-                "/~/ui/".to_string()
+            if path == "/" {
+                let redirect_path = "/~/ui/".to_string();
+                return Ok(Response::builder()
+                    .status(hyper::StatusCode::FOUND)
+                    .header("Location", redirect_path)
+                    .body(empty())?);
             } else {
-                format!(
-                    "/~/ui/browse?repo={}.git&path=&filter=%3A%2F&rev=HEAD",
-                    path
-                )
+                return Ok(Response::builder()
+                    .status(hyper::StatusCode::NOT_FOUND)
+                    .body(empty())?);
             };
-
-            return Ok(Response::builder()
-                .status(hyper::StatusCode::FOUND)
-                .header("Location", redirect_path)
-                .body(empty())?);
         }
     };
 
