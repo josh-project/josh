@@ -1,6 +1,7 @@
 pub mod auth;
 pub mod cli;
 pub mod housekeeping;
+pub mod hyper_integration;
 pub mod juniper_hyper;
 pub mod trace;
 
