@@ -1548,12 +1548,14 @@ async fn prepare_namespace(
 }
 
 fn trace_http_response_code(trace_span: Span, http_status: StatusCode) {
+    use opentelemetry_semantic_conventions::trace::HTTP_RESPONSE_STATUS_CODE;
+
     macro_rules! trace {
         ($level:expr) => {{
             tracing::event!(
                 parent: trace_span,
                 $level,
-                http_status = http_status.as_u16()
+                { HTTP_RESPONSE_STATUS_CODE } = http_status.as_u16()
             );
         }};
     }
@@ -1589,6 +1591,35 @@ fn make_upstream(remotes: &Vec<cli::Remote>) -> josh::JoshResult<JoshProxyUpstre
     } else {
         Err(josh_error("too many remotes"))
     }
+}
+
+#[tracing::instrument(skip_all, fields(url.path, http.request.method))]
+async fn handle_http_request(
+    proxy_service: Arc<JoshProxyService>,
+    req: Request<Incoming>,
+) -> Result<JoshResponse, hyper::http::Error> {
+    use opentelemetry_semantic_conventions::trace::{HTTP_REQUEST_METHOD, URL_PATH};
+
+    let span = tracing::Span::current();
+    span.record(URL_PATH, req.uri().path());
+    span.record(HTTP_REQUEST_METHOD, req.method().to_string());
+
+    let r = if let Ok(req_auth) = josh_proxy::auth::strip_auth(req) {
+        match call_service(proxy_service, req_auth)
+            .instrument(span.clone())
+            .await
+        {
+            Ok(r) => r,
+            Err(e) => make_response(&e.0, hyper::StatusCode::INTERNAL_SERVER_ERROR),
+        }
+    } else {
+        make_response(
+            "JoshError( strip_auth)",
+            hyper::StatusCode::INTERNAL_SERVER_ERROR,
+        )
+    };
+    trace_http_response_code(span.clone(), r.status());
+    Ok(r)
 }
 
 async fn run_proxy() -> josh::JoshResult<i32> {
@@ -1646,41 +1677,9 @@ async fn run_proxy() -> josh::JoshResult<i32> {
                     .timer(TokioTimer::new())
                     .serve_connection(
                         io,
-                        service_fn(move |_req| {
+                        service_fn(|req| {
                             let proxy_service = proxy_service.clone();
-
-                            let _s = tracing::span!(
-                                tracing::Level::TRACE,
-                                "http_request",
-                                path = _req.uri().path().to_string()
-                            );
-                            let s = _s;
-
-                            async move {
-                                let r = if let Ok(req_auth) = josh_proxy::auth::strip_auth(_req) {
-                                    match call_service(proxy_service, req_auth)
-                                        .instrument(s.clone())
-                                        .await
-                                    {
-                                        Ok(r) => r,
-                                        Err(e) => make_response(
-                                            match e {
-                                                JoshError(s) => s,
-                                            }
-                                            .as_str(),
-                                            hyper::StatusCode::INTERNAL_SERVER_ERROR,
-                                        ),
-                                    }
-                                } else {
-                                    make_response(
-                                        "JoshError( strip_auth)",
-                                        hyper::StatusCode::INTERNAL_SERVER_ERROR,
-                                    )
-                                };
-                                let _e = s.enter();
-                                trace_http_response_code(s.clone(), r.status());
-                                Ok::<_, hyper::http::Error>(r)
-                            }
+                            async { handle_http_request(proxy_service, req).await }
                         }),
                     );
                 pin!(conn);
