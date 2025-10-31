@@ -1209,6 +1209,13 @@ async fn call_service(
     };
 
     if let Some(resource_path) = path.strip_prefix("/~/ui") {
+        if resource_path == "" {
+            let redirect_path = "/~/ui/".to_string();
+            return Ok(Response::builder()
+                .status(hyper::StatusCode::FOUND)
+                .header(hyper::header::LOCATION, redirect_path)
+                .body(empty())?);
+        }
         return handle_ui_request(req, resource_path).await;
     }
 
@@ -1257,7 +1264,7 @@ async fn call_service(
                 let redirect_path = "/~/ui/".to_string();
                 return Ok(Response::builder()
                     .status(hyper::StatusCode::FOUND)
-                    .header("Location", redirect_path)
+                    .header(hyper::header::LOCATION, redirect_path)
                     .body(empty())?);
             } else {
                 return Ok(Response::builder()
@@ -1311,7 +1318,10 @@ async fn call_service(
     if parsed_url.pathinfo.starts_with("/info/lfs") {
         return Ok(Response::builder()
             .status(hyper::StatusCode::TEMPORARY_REDIRECT)
-            .header("Location", format!("{}{}", remote_url, parsed_url.pathinfo))
+            .header(
+                hyper::header::LOCATION,
+                format!("{}{}", remote_url, parsed_url.pathinfo),
+            )
             .body(empty())?);
     }
 
@@ -1493,7 +1503,7 @@ async fn serve_query(
         Ok(Some((res, params))) => Response::builder()
             .status(hyper::StatusCode::OK)
             .header(
-                "content-type",
+                hyper::header::CONTENT_TYPE,
                 params
                     .get("content-type")
                     .unwrap_or(&"text/plain".to_string()),
