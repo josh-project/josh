@@ -343,8 +343,6 @@
       |   |   `-- 2a35c53f4e5901c9cc083a94b417c15837cad8
       |   |-- 22
       |   |   `-- b3eaf7b374287220ac787fd2bce5958b69115c
-      |   |-- 23
-      |   |   `-- f7e90462b3fc5db0a26335139e1fe83d04d2cd
       |   |-- 26
       |   |   `-- 6864a895cac573b04a44bd40ee3bd8fe458a5f
       |   |-- 2c
@@ -379,25 +377,18 @@
       |   |   `-- 0f21b330a3d45f363fcde6bfb57eed22948cb6
       |   |-- 83
       |   |   `-- 3812f1557e561166754add564fe32228dd1703
-      |   |-- 96
-      |   |   `-- f5351b972284f81d7246836f82f6be06c6631f
       |   |-- 98
       |   |   `-- 84cc2efe368ea0aa9d912fa596b26c5d75dbee
       |   |-- 9c
       |   |   `-- f258b407cd9cdba97e16a293582b29d302b796
       |   |-- 9f
       |   |   `-- 8daab1754f04fbe8aaac6fcbb44c8324df09eb
-      |   |-- a0
-      |   |   `-- 28e4ad33176e7db6f3d4a5fc7e92257cfe213e
       |   |-- a3
       |   |   `-- d19dcb2f51fa1efd55250f60df559c2b8270b8
       |   |-- a4
-      |   |   |-- 1772e0c7cdad1a13b7a7bc38c0d382a5a827ce
-      |   |   `-- 8223bf4fc7801a0322b4ecaa5ed6a2c5dce7f1
+      |   |   `-- 1772e0c7cdad1a13b7a7bc38c0d382a5a827ce
       |   |-- b0
       |   |   `-- fdeb65d9b9069015ef9c0f735a4f6f2f28fe77
-      |   |-- b1
-      |   |   `-- c1b15558aebbce0682f25933cb729e9acd209c
       |   |-- b6
       |   |   `-- c8440fe2cd36638ddb6b3505c1e8f2202f6191
       |   |-- b8
@@ -416,12 +407,8 @@
       |   |   `-- d2a4d6db7addc2b087dcdb3e63785d3315c00e
       |   |-- d7
       |   |   `-- 330ea337031af43ba1cf6982a873a40b9170ac
-      |   |-- e2
-      |   |   `-- 5d071c2db414f24473e3768c063dbcf8c55d04
       |   |-- ea
       |   |   `-- 1ae75547e348b07cb28a721a06ef6580ff67f0
-      |   |-- ed
-      |   |   `-- 8ae0c02d30bd34d7a8584cb0930d0d7a58df26
       |   |-- f2
       |   |   |-- 257977b96d2272be155d6699046148e477e9fb
       |   |   `-- 7e0d18d976fd84da0a9e260989ecb6edaa593f
@@ -436,6 +423,6 @@
           |-- namespaces
           `-- tags
   
-  107 directories, 99 files
+  101 directories, 92 files
 
 $ cat ${TESTTMP}/josh-proxy.out

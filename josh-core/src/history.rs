@@ -16,58 +16,87 @@ pub fn walk2(
         return Ok(());
     }
 
-    let (known, n_new) = find_known(filter, input, transaction)?;
+    //let (known, n_new) = find_known(filter, input, transaction)?;
 
+    eprintln!("building walk");
     let walk = {
         let mut walk = transaction.repo().revwalk()?;
         if filter::is_linear(filter) {
             walk.simplify_first_parent()?;
         }
         walk.set_sorting(git2::Sort::REVERSE | git2::Sort::TOPOLOGICAL)?;
+
+        let missing = transaction.get_missing();
+        /* let mut i = 0; */
+        //   for (f, id) in missing.into_iter().rev() {
+        //       if filter == f {
+        //           walk.push(id)?;
+        //           /* i = i+1; */
+        //         //  if i > 100 {
+        //         //      break;
+        //         //  }
+        //       }
+
+        //   }
         walk.push(input)?;
-        for k in known.iter() {
-            walk.hide(*k)?;
-        }
+        // for k in known.iter() {
+        //     walk.hide(*k)?;
+        // }
         walk
     };
+    let mut hidecb = |id| {
+        let k = transaction.known(filter, id);
+        k
+    };
+    let walk = walk.with_hide_callback(&mut hidecb)?;
+    eprintln!("/building walk");
 
     log::info!(
         "Walking {} new commits for:\n{}\n",
-        n_new,
+        0,
         filter::pretty(filter, 4),
     );
-    let mut n_commits = 0;
-    let mut n_misses = transaction.misses();
+    let mut n_in = 0;
+    let mut n_out = 0;
 
     let walks = transaction.new_walk();
 
     for original_commit_id in walk {
+        //eprintln!("apply_to_commit3 {}", n_in);
         if !filter::apply_to_commit3(
             filter,
             &transaction.repo().find_commit(original_commit_id?)?,
             transaction,
         )? {
-            break;
+            //eprintln!("/apply_to_commit3 break {}", n_in);
+            /* break; */
+        } else {
+            n_out += 1;
         }
+        //eprintln!("/apply_to_commit3 {}", n_in);
 
-        n_commits += 1;
-        if n_commits % 1000 == 0 {
+        n_in += 1;
+        if n_in % 1000 == 0 {
             log::debug!(
-                "{} {} commits filtered, {} misses",
+                "{} {} commits filtered, {} written",
                 " ->".repeat(walks),
-                n_commits,
-                transaction.misses() - n_misses,
+                n_in,
+                n_out,
             );
-            n_misses = transaction.misses();
+        }
+        if n_in % 10000 == 0 {
+            /* break; */
+            cache_sled::sled_print_stats()?;
         }
     }
 
     log::info!(
-        "{} {} commits filtered, {} misses",
+        "{} {} commits filtered, {} written",
         " ->".repeat(walks),
-        n_commits,
-        transaction.misses() - n_misses,
+        n_in,
+        n_out,
     );
+    cache_sled::sled_print_stats()?;
 
     transaction.end_walk();
 
@@ -171,10 +200,16 @@ fn find_known(
     input: git2::Oid,
     transaction: &cache::Transaction,
 ) -> JoshResult<(Vec<git2::Oid>, usize)> {
-    log::debug!("find_known");
+    log::debug!(
+        "find_known {} {} {}",
+        input,
+        filter::spec(filter),
+        cache::n_parents(transaction, input)?
+    );
     let mut known = vec![];
     let mut walk = transaction.repo().revwalk()?;
     walk.push(input)?;
+    walk.simplify_first_parent()?;
 
     let n_new = walk
         .with_hide_callback(&mut |id| {
@@ -185,15 +220,10 @@ fn find_known(
             k
         })?
         .count();
-    log::debug!("/find_known {}", n_new);
+    known.sort();
+    known.dedup();
+    log::debug!("/find_known {} {:?}", n_new, known);
     Ok((known, n_new))
-}
-
-pub struct RewriteData<'a> {
-    pub tree: git2::Tree<'a>,
-    pub author: Option<(String, String)>,
-    pub committer: Option<(String, String)>,
-    pub message: Option<String>,
 }
 
 // takes everything from base except its tree and replaces it with the tree
@@ -202,7 +232,7 @@ pub fn rewrite_commit(
     repo: &git2::Repository,
     base: &git2::Commit,
     parents: &[&git2::Commit],
-    rewrite_data: RewriteData,
+    rewrite_data: filter::Apply,
     unsign: bool,
 ) -> JoshResult<git2::Oid> {
     let odb = repo.odb()?;
@@ -211,7 +241,7 @@ pub fn rewrite_commit(
 
     // gix_object uses byte strings for Oids, but in hex representation, not raw bytes. Its `Format` implementation
     // writes out hex-encoded bytes. Because CommitRef's reference lifetimes we have to this, before creating CommitRef
-    let tree_id = format!("{}", rewrite_data.tree.id());
+    let tree_id = format!("{}", rewrite_data.tree().id());
     let parent_ids = parents
         .iter()
         .map(|x| format!("{}", x.id()))
@@ -612,12 +642,7 @@ pub fn unapply_filter(
             transaction.repo(),
             &module_commit,
             &original_parents,
-            RewriteData {
-                tree: new_tree.clone(),
-                author: None,
-                committer: None,
-                message: None,
-            },
+            filter::Apply::from_tree(new_tree.clone()),
             false,
         )?;
 
@@ -671,12 +696,7 @@ pub fn remove_commit_signature<'a>(
         transaction.repo(),
         original_commit,
         filtered_parent_ids,
-        RewriteData {
-            tree: filtered_tree,
-            author: None,
-            committer: None,
-            message: None,
-        },
+        filter::Apply::from_commit(original_commit)?.with_tree(filtered_tree),
         true,
     )?;
 
@@ -707,7 +727,7 @@ pub fn drop_commit(
 pub fn create_filtered_commit(
     original_commit: &git2::Commit,
     filtered_parent_ids: Vec<git2::Oid>,
-    rewrite_data: RewriteData,
+    rewrite_data: filter::Apply,
     transaction: &cache::Transaction,
     filter: filter::Filter,
 ) -> JoshResult<git2::Oid> {
@@ -730,7 +750,7 @@ fn create_filtered_commit2<'a>(
     repo: &'a git2::Repository,
     original_commit: &'a git2::Commit,
     filtered_parent_ids: Vec<git2::Oid>,
-    rewrite_data: RewriteData,
+    rewrite_data: filter::Apply,
     unsign: bool,
 ) -> JoshResult<(git2::Oid, bool)> {
     let filtered_parent_commits: Result<Vec<_>, _> = filtered_parent_ids
@@ -755,7 +775,7 @@ fn create_filtered_commit2<'a>(
 
     let selected_filtered_parent_commits: Vec<&_> = select_parent_commits(
         original_commit,
-        rewrite_data.tree.id(),
+        rewrite_data.tree().id(),
         filtered_parent_commits.iter().collect(),
     );
 
@@ -765,7 +785,7 @@ fn create_filtered_commit2<'a>(
         if !filtered_parent_commits.is_empty() {
             return Ok((filtered_parent_commits[0].id(), false));
         }
-        if rewrite_data.tree.id() == filter::tree::empty_id() {
+        if rewrite_data.tree().id() == filter::tree::empty_id() {
             return Ok((git2::Oid::zero(), false));
         }
     }

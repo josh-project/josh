@@ -1,5 +1,7 @@
 use super::*;
 
+use crate::cache::TransactionContext;
+use crate::cache_stack::CacheStack;
 use rayon::prelude::*;
 
 pub fn pathstree<'a>(
@@ -778,10 +780,11 @@ pub fn trigram_search<'a>(
         .map(|x| (x.id(), x.name().unwrap().to_string()))
         .collect::<Vec<_>>();
 
+    let tran_context = TransactionContext::new(rpath, CacheStack::default().into());
     let mut r = trees
         .par_iter()
         .map_init(
-            || cache::Transaction::open(rpath, None).unwrap(),
+            || tran_context.open(None).unwrap(),
             |transaction, (id, name)| {
                 let s = transaction.repo().find_tree(*id).unwrap();
 
@@ -861,8 +864,12 @@ pub fn original_path(
     tree: git2::Tree,
     path: &Path,
 ) -> JoshResult<String> {
-    let paths_tree = apply(transaction, chain(to_filter(Op::Paths), filter), tree)?;
-    let b = get_blob(transaction.repo(), &paths_tree, path);
+    let paths_tree = apply(
+        transaction,
+        chain(to_filter(Op::Paths), filter),
+        Apply::from_tree(tree),
+    )?;
+    let b = get_blob(transaction.repo(), paths_tree.tree(), path);
     pathline(&b)
 }
 
@@ -872,9 +879,13 @@ pub fn repopulated_tree(
     full_tree: git2::Tree,
     partial_tree: git2::Tree,
 ) -> JoshResult<git2::Oid> {
-    let paths_tree = apply(transaction, chain(to_filter(Op::Paths), filter), full_tree)?;
+    let paths_tree = apply(
+        transaction,
+        chain(to_filter(Op::Paths), filter),
+        Apply::from_tree(full_tree),
+    )?;
 
-    let ipaths = invert_paths(transaction, "", paths_tree)?;
+    let ipaths = invert_paths(transaction, "", paths_tree.into_tree())?;
     populate(transaction, ipaths.id(), partial_tree.id())
 }
 
@@ -946,7 +957,9 @@ pub fn compose<'a>(
         let taken_applied = if let Some(cached) = transaction.get_apply(*f, tid) {
             cached
         } else {
-            apply(transaction, *f, taken.clone())?.id()
+            apply(transaction, *f, Apply::from_tree(taken.clone()))?
+                .tree()
+                .id()
         };
         transaction.insert_apply(*f, tid, taken_applied);
 
@@ -956,7 +969,9 @@ pub fn compose<'a>(
         let unapplied = if let Some(cached) = transaction.get_unapply(*f, aid) {
             cached
         } else {
-            apply(transaction, invert(*f)?, applied)?.id()
+            apply(transaction, invert(*f)?, Apply::from_tree(applied))?
+                .tree()
+                .id()
         };
         transaction.insert_unapply(*f, aid, unapplied);
         taken = repo.find_tree(overlay(transaction, taken.id(), unapplied)?)?;
