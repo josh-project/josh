@@ -1,51 +1,89 @@
 use super::*;
+
+use crate::cache_sled::sled_open_josh_trees;
+use crate::cache_stack::CacheStack;
+
 use std::collections::HashMap;
+use std::sync::{LazyLock, RwLock};
 
-const CACHE_VERSION: u64 = 24;
+pub const CACHE_VERSION: u64 = 24;
 
-lazy_static! {
-    static ref DB: std::sync::Mutex<Option<sled::Db>> = std::sync::Mutex::new(None);
-    static ref REF_CACHE: std::sync::Mutex<HashMap<git2::Oid, HashMap<git2::Oid, git2::Oid>>> =
-        std::sync::Mutex::new(HashMap::new());
-    static ref POPULATE_MAP: std::sync::Mutex<HashMap<(git2::Oid, git2::Oid), git2::Oid>> =
-        std::sync::Mutex::new(HashMap::new());
-    static ref GLOB_MAP: std::sync::Mutex<HashMap<(git2::Oid, git2::Oid), git2::Oid>> =
-        std::sync::Mutex::new(HashMap::new());
+pub trait CacheBackend: Send + Sync {
+    fn read(
+        &self,
+        filter: filter::Filter,
+        from: git2::Oid,
+        np: u128,
+    ) -> JoshResult<Option<git2::Oid>>;
+
+    fn write(
+        &self,
+        filter: filter::Filter,
+        from: git2::Oid,
+        to: git2::Oid,
+        np: u128,
+    ) -> JoshResult<()>;
 }
 
-pub fn load(path: &std::path::Path) -> JoshResult<()> {
-    *DB.lock()? = Some(
-        sled::Config::default()
-            .path(path.join(format!("josh/{}/sled/", CACHE_VERSION)))
-            .flush_every_ms(Some(200))
-            .open()?,
-    );
-    Ok(())
+pub trait FilterHook {
+    fn filter_for_commit(&self, commit_oid: git2::Oid, arg: &str) -> JoshResult<filter::Filter>;
 }
 
-pub fn print_stats() {
-    let d = DB.lock().unwrap();
-    let db = d.as_ref().unwrap();
-    db.flush().unwrap();
-    log::debug!("Trees:");
-    let mut v = vec![];
-    for name in db.tree_names() {
-        let name = String::from_utf8(name.to_vec()).unwrap();
-        let t = db.open_tree(&name).unwrap();
-        if !t.is_empty() {
-            let name = if let Ok(filter) = filter::parse(&name) {
-                filter::pretty(filter, 4)
-            } else {
-                name.clone()
-            };
-            v.push((t.len(), name));
+pub(crate) fn josh_commit_signature<'a>() -> JoshResult<git2::Signature<'a>> {
+    Ok(if let Ok(time) = std::env::var("JOSH_COMMIT_TIME") {
+        git2::Signature::new(
+            "JOSH",
+            "josh@josh-project.dev",
+            &git2::Time::new(time.parse()?, 0),
+        )?
+    } else {
+        git2::Signature::now("JOSH", "josh@josh-project.dev")?
+    })
+}
+
+static REF_CACHE: LazyLock<RwLock<HashMap<git2::Oid, HashMap<git2::Oid, git2::Oid>>>> =
+    LazyLock::new(Default::default);
+
+static POPULATE_MAP: LazyLock<RwLock<HashMap<(git2::Oid, git2::Oid), git2::Oid>>> =
+    LazyLock::new(Default::default);
+
+static GLOB_MAP: LazyLock<RwLock<HashMap<(git2::Oid, git2::Oid), git2::Oid>>> =
+    LazyLock::new(Default::default);
+
+pub struct TransactionContext {
+    path: std::path::PathBuf,
+    cache: std::sync::Arc<CacheStack>,
+}
+
+impl TransactionContext {
+    pub fn from_env(cache: std::sync::Arc<CacheStack>) -> JoshResult<Self> {
+        let repo = git2::Repository::open_from_env()?;
+        let path = repo.path().to_owned();
+
+        Ok(Self { path, cache })
+    }
+
+    pub fn new(path: impl AsRef<std::path::Path>, cache: std::sync::Arc<CacheStack>) -> Self {
+        Self {
+            path: path.as_ref().to_path_buf(),
+            cache,
         }
     }
 
-    v.sort();
+    pub fn open(&self, ref_prefix: Option<&str>) -> JoshResult<Transaction> {
+        if !self.path.exists() {
+            return Err(josh_error("path does not exist"));
+        }
 
-    for (len, name) in v.iter() {
-        println!("[{}] {}", len, name);
+        Ok(Transaction::new(
+            git2::Repository::open_ext(
+                &self.path,
+                git2::RepositoryOpenFlags::NO_SEARCH,
+                &[] as &[&std::ffi::OsStr],
+            )?,
+            self.cache.clone(),
+            ref_prefix,
+        ))
     }
 }
 
@@ -56,7 +94,7 @@ struct Transaction2 {
     subtract_map: HashMap<(git2::Oid, git2::Oid), git2::Oid>,
     overlay_map: HashMap<(git2::Oid, git2::Oid), git2::Oid>,
     unapply_map: HashMap<git2::Oid, HashMap<git2::Oid, git2::Oid>>,
-    sled_trees: HashMap<git2::Oid, sled::Tree>,
+    cache: std::sync::Arc<CacheStack>,
     path_tree: sled::Tree,
     invert_tree: sled::Tree,
     trigram_index_tree: sled::Tree,
@@ -69,62 +107,20 @@ pub struct Transaction {
     t2: std::cell::RefCell<Transaction2>,
     repo: git2::Repository,
     ref_prefix: String,
+    filter_hook: Option<std::sync::Arc<dyn FilterHook + Send + Sync>>,
 }
 
 impl Transaction {
-    pub fn open(path: &std::path::Path, ref_prefix: Option<&str>) -> JoshResult<Transaction> {
-        if !path.exists() {
-            return Err(josh_error("path does not exist"));
-        }
-        Ok(Transaction::new(
-            git2::Repository::open_ext(
-                path,
-                git2::RepositoryOpenFlags::NO_SEARCH,
-                &[] as &[&std::ffi::OsStr],
-            )?,
-            ref_prefix,
-        ))
-    }
-
-    pub fn open_from_env(load_cache: bool) -> JoshResult<Transaction> {
-        let repo = git2::Repository::open_from_env()?;
-        let path = repo.path().to_owned();
-        if load_cache {
-            load(&path)?
-        };
-
-        Ok(Transaction::new(repo, None))
-    }
-
-    pub fn status(&self, _msg: &str) {
-        /* let mut t2 = self.t2.borrow_mut(); */
-        /* write!(t2.out, "{}", msg).ok(); */
-        /* t2.out.flush().ok(); */
-    }
-
-    fn new(repo: git2::Repository, ref_prefix: Option<&str>) -> Transaction {
+    fn new(
+        repo: git2::Repository,
+        cache: std::sync::Arc<CacheStack>,
+        ref_prefix: Option<&str>,
+    ) -> Transaction {
         log::debug!("new transaction");
-        let path_tree = DB
-            .lock()
-            .unwrap()
-            .as_ref()
-            .unwrap()
-            .open_tree("_paths")
-            .unwrap();
-        let invert_tree = DB
-            .lock()
-            .unwrap()
-            .as_ref()
-            .unwrap()
-            .open_tree("_invert")
-            .unwrap();
-        let trigram_index_tree = DB
-            .lock()
-            .unwrap()
-            .as_ref()
-            .unwrap()
-            .open_tree("_trigram_index")
-            .unwrap();
+
+        let (path_tree, invert_tree, trigram_index_tree) =
+            sled_open_josh_trees().expect("failed to open transaction");
+
         Transaction {
             t2: std::cell::RefCell::new(Transaction2 {
                 commit_map: HashMap::new(),
@@ -132,7 +128,7 @@ impl Transaction {
                 subtract_map: HashMap::new(),
                 overlay_map: HashMap::new(),
                 unapply_map: HashMap::new(),
-                sled_trees: HashMap::new(),
+                cache,
                 path_tree,
                 invert_tree,
                 trigram_index_tree,
@@ -142,11 +138,17 @@ impl Transaction {
             }),
             repo,
             ref_prefix: ref_prefix.unwrap_or("").to_string(),
+            filter_hook: None,
         }
     }
 
     pub fn try_clone(&self) -> JoshResult<Transaction> {
-        Transaction::open(self.repo.path(), Some(&self.ref_prefix))
+        let context = TransactionContext {
+            cache: self.t2.borrow().cache.clone(),
+            path: self.repo.path().to_owned(),
+        };
+
+        context.open(Some(&self.ref_prefix))
     }
 
     pub fn repo(&self) -> &git2::Repository {
@@ -272,24 +274,24 @@ impl Transaction {
     }
 
     pub fn insert_populate(&self, tree: (git2::Oid, git2::Oid), result: git2::Oid) {
-        POPULATE_MAP.lock().unwrap().entry(tree).or_insert(result);
+        POPULATE_MAP.write().unwrap().entry(tree).or_insert(result);
     }
 
     pub fn get_populate(&self, tree: (git2::Oid, git2::Oid)) -> Option<git2::Oid> {
-        return POPULATE_MAP.lock().unwrap().get(&tree).cloned();
+        POPULATE_MAP.read().unwrap().get(&tree).cloned()
     }
 
     pub fn insert_glob(&self, tree: (git2::Oid, git2::Oid), result: git2::Oid) {
-        GLOB_MAP.lock().unwrap().entry(tree).or_insert(result);
+        GLOB_MAP.write().unwrap().entry(tree).or_insert(result);
     }
 
     pub fn get_glob(&self, tree: (git2::Oid, git2::Oid)) -> Option<git2::Oid> {
-        return GLOB_MAP.lock().unwrap().get(&tree).cloned();
+        GLOB_MAP.read().unwrap().get(&tree).cloned()
     }
 
     pub fn insert_ref(&self, filter: filter::Filter, from: git2::Oid, to: git2::Oid) {
         REF_CACHE
-            .lock()
+            .write()
             .unwrap()
             .entry(filter.id())
             .or_default()
@@ -297,7 +299,7 @@ impl Transaction {
     }
 
     pub fn get_ref(&self, filter: filter::Filter, from: git2::Oid) -> Option<git2::Oid> {
-        if let Some(m) = REF_CACHE.lock().unwrap().get(&filter.id()) {
+        if let Some(m) = REF_CACHE.read().unwrap().get(&filter.id()) {
             if let Some(oid) = m.get(&from) {
                 if self.repo.odb().unwrap().exists(*oid) {
                     return Some(*oid);
@@ -315,7 +317,24 @@ impl Transaction {
         None
     }
 
+    pub fn lookup_filter_hook(&self, hook: &str, from: git2::Oid) -> JoshResult<filter::Filter> {
+        if let Some(h) = &self.filter_hook {
+            return h.filter_for_commit(from, hook);
+        }
+        Err(josh_error("missing filter hook"))
+    }
+
+    pub fn with_filter_hook(mut self, hook: std::sync::Arc<dyn FilterHook + Send + Sync>) -> Self {
+        self.filter_hook = Some(hook);
+        self
+    }
+
     pub fn insert(&self, filter: filter::Filter, from: git2::Oid, to: git2::Oid, store: bool) {
+        let np = if filter != filter::n_parents_f() {
+            n_parents(self, from).unwrap()
+        } else {
+            0
+        };
         let mut t2 = self.t2.borrow_mut();
         t2.commit_map
             .entry(filter.id())
@@ -326,37 +345,16 @@ impl Transaction {
         // random extra commits (probability 1/256) to avoid long searches for filters that reduce
         // the history length by a very large factor.
         if store || from.as_bytes()[0] == 0 {
-            let t = t2.sled_trees.entry(filter.id()).or_insert_with(|| {
-                DB.lock()
-                    .unwrap()
-                    .as_ref()
-                    .unwrap()
-                    .open_tree(filter::spec(filter))
-                    .unwrap()
-            });
-
-            t.insert(from.as_bytes(), to.as_bytes()).unwrap();
+            t2.cache
+                .write_all(filter, from, to, np)
+                // TODO propagate error?
+                .expect("Failed to write cache");
         }
-    }
-
-    #[allow(clippy::len_without_is_empty)]
-    pub fn len(&self, filter: filter::Filter) -> usize {
-        let mut t2 = self.t2.borrow_mut();
-        let t = t2.sled_trees.entry(filter.id()).or_insert_with(|| {
-            DB.lock()
-                .unwrap()
-                .as_ref()
-                .unwrap()
-                .open_tree(filter::spec(filter))
-                .unwrap()
-        });
-
-        t.len()
     }
 
     pub fn get_missing(&self) -> Vec<(filter::Filter, git2::Oid)> {
         let mut missing = self.t2.borrow().missing.clone();
-        missing.sort_by_key(|(f, i)| (filter::nesting(*f), *f, *i));
+        /* missing.sort_by_key(|(f, i)| (filter::nesting(*f), *f, *i)); */
         missing.dedup();
         missing.retain(|(f, i)| !self.known(*f, *i));
         self.t2.borrow_mut().missing = missing.clone();
@@ -373,7 +371,10 @@ impl Transaction {
         } else {
             let mut t2 = self.t2.borrow_mut();
             t2.misses += 1;
-            t2.missing.push((filter, from));
+            if !t2.missing.contains(&(filter, from)) {
+                t2.missing.insert(0, (filter, from));
+                /* eprintln!("N MISSING {}", t2.missing.len()); */
+            }
             None
         }
     }
@@ -382,25 +383,33 @@ impl Transaction {
         if filter == filter::nop() {
             return Some(from);
         }
-        let mut t2 = self.t2.borrow_mut();
+        let np = if filter != filter::n_parents_f() {
+            n_parents(self, from).unwrap()
+        } else {
+            0
+        };
+        let t2 = self.t2.borrow_mut();
         if let Some(m) = t2.commit_map.get(&filter.id()) {
             if let Some(oid) = m.get(&from).cloned() {
                 return Some(oid);
             }
         }
-        let t = t2.sled_trees.entry(filter.id()).or_insert_with(|| {
-            DB.lock()
-                .unwrap()
-                .as_ref()
-                .unwrap()
-                .open_tree(filter::spec(filter))
-                .unwrap()
-        });
-        if let Some(oid) = t.get(from.as_bytes()).unwrap() {
-            let oid = git2::Oid::from_bytes(&oid).unwrap();
+
+        let oid = t2
+            .cache
+            .read_propagate(filter, from, np)
+            .expect("Failed to read from cache backend");
+
+        let oid = if let Some(oid) = oid { Some(oid) } else { None };
+
+        if let Some(oid) = oid {
             if oid == git2::Oid::zero() {
                 return Some(oid);
             }
+            if filter == filter::n_parents_f() {
+                return Some(oid);
+            }
+
             if self.repo.odb().unwrap().exists(oid) {
                 // Only report an object as cached if it exists in the object database.
                 // This forces a rebuild in case the object was garbage collected.
@@ -410,4 +419,63 @@ impl Transaction {
 
         None
     }
+}
+
+/// Encode a `u128` into a 20-byte git OID (SHA-1 sized).
+/// The high 4 bytes of the OID are zero; the low 16 bytes
+/// contain the big-endian integer.
+pub fn oid_from_u128(n: u128) -> git2::Oid {
+    let mut bytes = [0u8; 20];
+    // place the 16 integer bytes at the end (big-endian)
+    bytes[20 - 16..].copy_from_slice(&n.to_be_bytes());
+    // Safe: length is exactly 20
+    git2::Oid::from_bytes(&bytes).expect("20-byte OID construction cannot fail")
+}
+
+/// Decode a `u128` previously encoded by `oid_from_u128`.
+pub fn u128_from_oid(oid: git2::Oid) -> u128 {
+    let b = oid.as_bytes();
+    let mut n = [0u8; 16];
+    n.copy_from_slice(&b[20 - 16..]); // take the last 16 bytes
+    u128::from_be_bytes(n)
+}
+
+pub fn n_parents(transaction: &cache::Transaction, input: git2::Oid) -> JoshResult<u128> {
+    /* return Ok(0); */
+    if let Some(count) = transaction.get(filter::n_parents_f(), input) {
+        return Ok(u128_from_oid(count));
+    }
+    eprintln!("n_parents {:?}", input);
+
+    let commit = transaction.repo().find_commit(input)?;
+    if let Some(p) = commit.parent_ids().next() {
+        if let Some(count) = transaction.get(filter::n_parents_f(), p) {
+            let pc = u128_from_oid(count);
+            transaction.insert(filter::n_parents_f(), input, oid_from_u128(pc + 1), true);
+            return n_parents(transaction, input);
+        }
+    }
+
+    let mut walk = transaction.repo().revwalk()?;
+    /* walk.simplify_first_parent()?; */
+    walk.set_sorting(git2::Sort::REVERSE | git2::Sort::TOPOLOGICAL)?;
+    walk.push(input)?;
+    eprintln!("n_parents walk");
+
+    for c in walk {
+        let commit = transaction.repo().find_commit(c?)?;
+        let pc = if let Some(p) = commit.parent_ids().next() {
+            n_parents(transaction, p)?
+        } else {
+            0
+        };
+
+        transaction.insert(
+            filter::n_parents_f(),
+            commit.id(),
+            oid_from_u128(pc + 1),
+            true,
+        );
+    }
+    n_parents(transaction, input)
 }

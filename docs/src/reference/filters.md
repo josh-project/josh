@@ -114,12 +114,33 @@ commits that don't match any of the other shas.
 Produce the history that would be the result of pushing the passed branches with the
 passed filters into the upstream.
 
+### Start filtering from a specific commit **:from(<sha>:filter)**
+
+Produce a history that keeps the original history leading up to the specified commit `<sha>` unchanged,
+but applies the given `:filter` to all commits from that commit onwards.
+
 ### Prune trivial merge commits **:prune=trivial-merge**
 
 Produce a history that skips all merge commits whose tree is identical to the first parents
 tree.
 Normally Josh will keep all commits in the filtered history whose tree differs from any of it's
 parents.
+
+### Freeze tree updates
+
+`:freeze` filter prevents appearance of selected subtrees for a given revision.
+
+In practical terms, it means that file and folder updates are "held off" or "frozen".
+If a tree entry already existed in the parent revision, that version will be chosen.
+Otherwise, the tree entry will not appear in the filtered commit.
+
+The source of the parent revision is always the first commit parent.
+
+Note that this filter is only practical when used with `:hook` or `workspace.josh`,
+as it should apply per-revision only. Applying `:freeze` for the whole history
+will result in the subtree being excluded from all revisions.
+
+Refer to `freeze_filter_workspace.t` and `freeze_filter_hook.t` for reference.
 
 Filter order matters
 --------------------

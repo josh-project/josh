@@ -18,6 +18,7 @@ use hyper::{Request, Response, StatusCode};
 
 use http_body_util::BodyExt;
 use indoc::formatdoc;
+use josh::cache_stack::CacheStack;
 use josh::{JoshError, JoshResult, josh_error};
 use josh_graphql::graphql;
 use josh_rpc::calls::RequestedCommand;
@@ -86,12 +87,25 @@ impl JoshProxyUpstream {
 struct JoshProxyService {
     port: String,
     repo_path: std::path::PathBuf,
+    cache: Arc<CacheStack>,
     upstream: JoshProxyUpstream,
     fetch_timers: Arc<RwLock<FetchTimers>>,
     heads_map: HeadsMap,
     fetch_permits: Arc<std::sync::Mutex<HashMap<String, Arc<tokio::sync::Semaphore>>>>,
     filter_permits: Arc<tokio::sync::Semaphore>,
     poll: Polls,
+}
+
+impl JoshProxyService {
+    fn open_overlay(&self, ref_prefix: Option<&str>) -> JoshResult<josh::cache::Transaction> {
+        josh::cache::TransactionContext::new(self.repo_path.join("overlay"), self.cache.clone())
+            .open(ref_prefix)
+    }
+
+    fn open_mirror(&self, ref_prefix: Option<&str>) -> JoshResult<josh::cache::Transaction> {
+        josh::cache::TransactionContext::new(self.repo_path.join("mirror"), self.cache.clone())
+            .open(ref_prefix)
+    }
 }
 
 impl std::fmt::Debug for JoshProxyService {
@@ -131,15 +145,13 @@ async fn fetch_needed(
     let resolve_cache_ref = |cache_ref: &str| {
         let cache_ref = cache_ref.to_string();
         let upstream_repo = upstream_repo.to_string();
+        let service = service.clone();
 
         tokio::task::spawn_blocking(move || {
-            let transaction = josh::cache::Transaction::open(
-                &service.repo_path.join("mirror"),
-                Some(&format!(
-                    "refs/josh/upstream/{}/",
-                    &josh::to_ns(&upstream_repo),
-                )),
-            )?;
+            let transaction = service.open_mirror(Some(&format!(
+                "refs/josh/upstream/{}/",
+                &josh::to_ns(&upstream_repo)
+            )))?;
 
             match transaction
                 .repo()
@@ -315,7 +327,7 @@ async fn fetch_upstream(
 }
 
 async fn static_paths(
-    service: &JoshProxyService,
+    service: Arc<JoshProxyService>,
     path: &str,
 ) -> josh::JoshResult<Option<JoshResponse>> {
     tracing::debug!("static_path {:?}", path);
@@ -347,12 +359,11 @@ async fn static_paths(
         let refresh = path == "/filters/refresh";
 
         let body_str = tokio::task::spawn_blocking(move || -> josh::JoshResult<_> {
-            let transaction_mirror =
-                josh::cache::Transaction::open(&service.repo_path.join("mirror"), None)?;
+            let transaction_mirror = service.open_mirror(None)?;
             josh::housekeeping::discover_filter_candidates(&transaction_mirror)?;
+
             if refresh {
-                let transaction_overlay =
-                    josh::cache::Transaction::open(&service.repo_path.join("overlay"), None)?;
+                let transaction_overlay = service.open_overlay(None)?;
                 josh::housekeeping::refresh_known_filters(
                     &transaction_mirror,
                     &transaction_overlay,
@@ -438,6 +449,7 @@ async fn do_filter(
 
     let tracing_span = tracing::span!(tracing::Level::INFO, "do_filter worker");
     let head_ref = head_ref.clone();
+    let service = service.clone();
 
     tokio::task::spawn_blocking(move || {
         let _span_guard = tracing_span.enter();
@@ -445,13 +457,10 @@ async fn do_filter(
         let filter_spec = josh::filter::spec(filter);
         josh::housekeeping::remember_filter(&meta.config.repo, &filter_spec);
 
-        let transaction = josh::cache::Transaction::open(
-            &repo_path.join("mirror"),
-            Some(&format!(
-                "refs/josh/upstream/{}/",
-                &josh::to_ns(&meta.config.repo),
-            )),
-        )?;
+        let transaction = service.open_mirror(Some(&format!(
+            "refs/josh/upstream/{}/",
+            &josh::to_ns(&meta.config.repo)
+        )))?;
 
         let lazy_refs: Vec<_> = josh::filter::lazy_refs(filter)
             .iter()
@@ -513,7 +522,7 @@ async fn do_filter(
             head_ref
         };
 
-        let t2 = josh::cache::Transaction::open(&repo_path.join("overlay"), None)?;
+        let t2 = service.open_overlay(None)?;
         t2.repo()
             .odb()?
             .add_disk_alternate(repo_path.join("mirror").join("objects").to_str().unwrap())?;
@@ -621,10 +630,10 @@ async fn query_meta_repo(
         Err(FetchError::Other(e)) => return Err(josh_error(&format!("meta fetch failed: {}", e))),
     }
 
-    let transaction = josh::cache::Transaction::open(
-        &serv.repo_path.join("mirror"),
-        Some(&format!("refs/josh/upstream/{}/", &josh::to_ns(meta_repo),)),
-    )?;
+    let transaction = serv.open_mirror(Some(&format!(
+        "refs/josh/upstream/{}/",
+        &josh::to_ns(meta_repo)
+    )))?;
 
     let meta_tree = transaction
         .repo()
@@ -1219,7 +1228,7 @@ async fn call_service(
         return handle_ui_request(req, resource_path).await;
     }
 
-    if let Some(response) = static_paths(&serv, &path).await? {
+    if let Some(response) = static_paths(serv.clone(), &path).await? {
         return Ok(response);
     }
 
@@ -1467,15 +1476,13 @@ async fn serve_query(
     let res = tokio::task::spawn_blocking(move || -> josh::JoshResult<_> {
         let _span_guard = tracing_span.enter();
 
-        let transaction_mirror = josh::cache::Transaction::open(
-            &serv.repo_path.join("mirror"),
-            Some(&format!(
-                "refs/josh/upstream/{}/",
-                &josh::to_ns(&upstream_repo),
-            )),
-        )?;
+        let transaction_mirror = serv.open_mirror(Some(&format!(
+            "refs/josh/upstream/{}/",
+            &josh::to_ns(&upstream_repo)
+        )))?;
 
-        let transaction = josh::cache::Transaction::open(&serv.repo_path.join("overlay"), None)?;
+        let transaction = serv.open_overlay(None)?;
+
         transaction.repo().odb()?.add_disk_alternate(
             serv.repo_path
                 .join("mirror")
@@ -1494,7 +1501,7 @@ async fn serve_query(
         let commit_id =
             josh::filter_commit(&transaction, filter, commit_id, josh::filter::empty())?;
 
-        josh_templates::render(&transaction, "", commit_id, &q, true)
+        josh_templates::render(&transaction, serv.cache.clone(), "", commit_id, &q, true)
     })
     .in_current_span()
     .await?;
@@ -1636,12 +1643,15 @@ async fn run_proxy() -> josh::JoshResult<i32> {
     };
 
     josh_proxy::create_repo(&local)?;
-    josh::cache::load(&local)?;
+    josh::cache_sled::sled_load(&local)?;
+
+    let cache = Arc::new(CacheStack::default());
 
     let proxy_service = Arc::new(JoshProxyService {
         port: ARGS.port.to_string(),
         repo_path: local.to_owned(),
         upstream,
+        cache,
         fetch_timers: Arc::new(RwLock::new(FetchTimers::new())),
         heads_map: Arc::new(RwLock::new(std::collections::HashMap::new())),
         poll: Arc::new(std::sync::Mutex::new(std::collections::HashSet::new())),
@@ -1752,10 +1762,15 @@ async fn run_polling(serv: Arc<JoshProxyService>) -> josh::JoshResult<()> {
 
 async fn run_housekeeping(local: std::path::PathBuf) -> josh::JoshResult<()> {
     let mut i: usize = 0;
+    let cache = std::sync::Arc::new(CacheStack::default());
+
     loop {
         let local = local.clone();
+        let cache = cache.clone();
+
         tokio::task::spawn_blocking(move || {
-            josh_proxy::housekeeping::run(&local, (i % 60 == 0) && ARGS.gc)
+            let do_gc = (i % 60 == 0) && ARGS.gc;
+            josh_proxy::housekeeping::run(&local, cache, do_gc)
         })
         .await??;
         tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
@@ -1849,14 +1864,16 @@ async fn serve_graphql(
         Err(resp) => return Ok(erase(resp)),
     };
 
-    let transaction_mirror = josh::cache::Transaction::open(
-        &serv.repo_path.join("mirror"),
-        Some(&format!(
-            "refs/josh/upstream/{}/",
-            &josh::to_ns(&upstream_repo),
-        )),
-    )?;
-    let transaction = josh::cache::Transaction::open(&serv.repo_path.join("overlay"), None)?;
+    let cache = std::sync::Arc::new(josh::cache_stack::CacheStack::default());
+    let transaction_mirror =
+        josh::cache::TransactionContext::new(&serv.repo_path.join("mirror"), cache.clone()).open(
+            Some(&format!(
+                "refs/josh/upstream/{}/",
+                &josh::to_ns(&upstream_repo),
+            )),
+        )?;
+    let transaction =
+        josh::cache::TransactionContext::new(&serv.repo_path.join("overlay"), cache).open(None)?;
     transaction.repo().odb()?.add_disk_alternate(
         serv.repo_path
             .join("mirror")

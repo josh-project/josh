@@ -1,5 +1,6 @@
 #![allow(unused_variables)]
 
+use josh::filter::Apply;
 use josh::{JoshResult, cache, filter, history, josh_error};
 use juniper::{EmptyMutation, EmptySubscription, FieldResult, graphql_object};
 
@@ -72,9 +73,9 @@ impl Revision {
     ) -> FieldResult<Option<Vec<Path>>> {
         let transaction = context.transaction.lock()?;
         let commit = transaction.repo().find_commit(self.commit_id)?;
-        let tree = filter::apply(&transaction, self.filter, commit.tree()?)?;
-        let tree_id = tree.id();
-        let paths = find_paths(&transaction, tree, at, depth, kind)?;
+        let x = filter::apply(&transaction, self.filter, Apply::from_tree(commit.tree()?))?;
+        let tree_id = x.tree().id();
+        let paths = find_paths(&transaction, x.tree().clone(), at, depth, kind)?;
         let mut ws = vec![];
         for path in paths {
             ws.push(Path {
@@ -364,17 +365,21 @@ impl Revision {
         let path = std::path::Path::new(&path).to_owned();
         let tree = transaction.repo().find_commit(self.commit_id)?.tree()?;
 
-        let tree = filter::apply(&transaction, self.filter, tree)?;
+        let x = filter::apply(&transaction, self.filter, Apply::from_tree(tree))?;
 
-        if let Some(git2::ObjectType::Blob) = tree.get_path(&path)?.kind() {
-            Ok(Some(Path {
-                path,
-                commit_id: self.commit_id,
-                filter: self.filter,
-                tree: tree.id(),
-            }))
+        if let Some(entry) = x.tree().get_path(&path).ok() {
+            if let Some(git2::ObjectType::Blob) = entry.kind() {
+                Ok(Some(Path {
+                    path,
+                    commit_id: self.commit_id,
+                    filter: self.filter,
+                    tree: x.tree().id(),
+                }))
+            } else {
+                Err(josh_error("not a blob").into())
+            }
         } else {
-            Err(josh_error("not a blob").into())
+            Ok(None)
         }
     }
 
@@ -383,7 +388,7 @@ impl Revision {
         let transaction = context.transaction.lock()?;
         let tree = transaction.repo().find_commit(self.commit_id)?.tree()?;
 
-        let tree = filter::apply(&transaction, self.filter, tree)?;
+        let x = filter::apply(&transaction, self.filter, Apply::from_tree(tree))?;
 
         let path = std::path::Path::new(&path).to_owned();
 
@@ -392,19 +397,23 @@ impl Revision {
                 path,
                 commit_id: self.commit_id,
                 filter: self.filter,
-                tree: tree.id(),
+                tree: x.tree().id(),
             }));
         }
 
-        if let Some(git2::ObjectType::Tree) = tree.get_path(&path)?.kind() {
-            Ok(Some(Path {
-                path,
-                commit_id: self.commit_id,
-                filter: self.filter,
-                tree: tree.id(),
-            }))
+        if let Some(entry) = x.tree().get_path(&path).ok() {
+            if let Some(git2::ObjectType::Tree) = entry.kind() {
+                Ok(Some(Path {
+                    path,
+                    commit_id: self.commit_id,
+                    filter: self.filter,
+                    tree: x.tree().id(),
+                }))
+            } else {
+                Err(josh_error("not a tree").into())
+            }
         } else {
-            Err(josh_error("not a tree").into())
+            Ok(None)
         }
     }
 
@@ -431,13 +440,17 @@ impl Revision {
         let ifilterobj = filter::parse(":SQUASH:INDEX")?;
         let tree = transaction.repo().find_commit(self.commit_id)?.tree()?;
 
-        let tree = filter::apply(&transaction, self.filter, tree)?;
-        let index_tree = filter::apply(&transaction, ifilterobj, tree.clone())?;
+        let x = filter::apply(&transaction, self.filter, Apply::from_tree(tree))?;
+        let index_tree = filter::apply(&transaction, ifilterobj, x.clone())?;
 
         /* let start = std::time::Instant::now(); */
-        let candidates =
-            filter::tree::search_candidates(&transaction, &index_tree, &string, max_complexity)?;
-        let results = filter::tree::search_matches(&transaction, &tree, &string, &candidates)?;
+        let candidates = filter::tree::search_candidates(
+            &transaction,
+            index_tree.tree(),
+            &string,
+            max_complexity,
+        )?;
+        let results = filter::tree::search_matches(&transaction, x.tree(), &string, &candidates)?;
         /* let duration = start.elapsed(); */
 
         let mut r = vec![];
@@ -453,7 +466,7 @@ impl Revision {
                 path: std::path::PathBuf::from(m.0),
                 commit_id: self.commit_id,
                 filter: self.filter,
-                tree: tree.id(),
+                tree: x.tree().id(),
             };
             r.push(SearchResult { path, matches });
         }

@@ -277,8 +277,6 @@ Flushed credential cache
       |   |   `-- 8233465e92d353e2ef47c02dc568ea44a32339
       |   |-- 70
       |   |   `-- 5dcb4e33bd0dd3f95d5831fc8dc8a41ca3e566
-      |   |-- 7b
-      |   |   `-- 418ed7c356797b1a8eef3ff949632495d273c6
       |   |-- 7d
       |   |   `-- 5816334652b9738e33e4ceaf925573c3414e0c
       |   |-- 85
@@ -297,8 +295,6 @@ Flushed credential cache
       |   |   `-- 613be55337cdfab189935d8dbd1d4f427ef75e
       |   |-- b7
       |   |   `-- 8eb888451be077531b50794384c2faec025765
-      |   |-- cd
-      |   |   `-- 9ae8cb61e7d1aaa7b90766ff9aa9b3dc78c856
       |   |-- db
       |   |   `-- 9120ba624b0afe79d37a5a262d8deb14e13707
       |   |-- f0
@@ -312,4 +308,4 @@ Flushed credential cache
           |-- namespaces
           `-- tags
   
-  71 directories, 58 files
+  69 directories, 56 files

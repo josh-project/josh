@@ -10,6 +10,7 @@ fn make_op(args: &[&str]) -> JoshResult<Op> {
         ["author", author, email] => Ok(Op::Author(author.to_string(), email.to_string())),
         ["committer", author, email] => Ok(Op::Committer(author.to_string(), email.to_string())),
         ["workspace", arg] => Ok(Op::Workspace(Path::new(arg).to_owned())),
+        ["lookup", arg] => Ok(Op::Lookup(Path::new(arg).to_owned())),
         ["prefix"] => Err(josh_error(indoc!(
             r#"
             Filter ":prefix" requires an argument.
@@ -56,6 +57,7 @@ fn make_op(args: &[&str]) -> JoshResult<Op> {
         ["INDEX"] => Ok(Op::Index),
         ["INVERT"] => Ok(Op::Invert),
         ["FOLD"] => Ok(Op::Fold),
+        ["hook", arg] => Ok(Op::Hook(arg.to_string())),
         _ => Err(josh_error(
             formatdoc!(
                 r#"
@@ -114,6 +116,7 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> JoshResult<Op> {
                 [cmd, args] => {
                     let g = parse_group(args)?;
                     match *cmd {
+                        "freeze" => Ok(Op::Freeze(to_filter(Op::Compose(g)))),
                         "exclude" => Ok(Op::Exclude(to_filter(Op::Compose(g)))),
                         "subtract" if g.len() == 2 => Ok(Op::Subtract(g[0], g[1])),
                         _ => Err(josh_error(&format!("parse_item: no match {:?}", cmd))),
@@ -143,6 +146,31 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> JoshResult<Op> {
                 .collect::<JoshResult<_>>()?;
 
             Ok(Op::Rev(hm))
+        }
+        Rule::filter_from => {
+            let v: Vec<_> = pair.into_inner().map(|x| x.as_str()).collect();
+
+            if v.len() == 2 {
+                let oid = LazyRef::parse(v[0])?;
+                let filter = parse(v[1])?;
+                Ok(Op::Chain(
+                    filter,
+                    filter::to_filter(Op::HistoryConcat(oid, filter)),
+                ))
+            } else {
+                Err(josh_error("wrong argument count for :from"))
+            }
+        }
+        Rule::filter_concat => {
+            let v: Vec<_> = pair.into_inner().map(|x| x.as_str()).collect();
+
+            if v.len() == 2 {
+                let oid = LazyRef::parse(v[0])?;
+                let filter = parse(v[1])?;
+                Ok(Op::HistoryConcat(oid, filter))
+            } else {
+                Err(josh_error("wrong argument count for :concat"))
+            }
         }
         Rule::filter_replace => {
             let replacements = pair
