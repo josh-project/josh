@@ -1,5 +1,4 @@
 use super::*;
-use history::RewriteData;
 use pest::Parser;
 use std::path::Path;
 mod opt;
@@ -55,6 +54,134 @@ impl Filter {
 impl std::fmt::Debug for Filter {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         to_op(*self).fmt(f)
+    }
+}
+
+pub struct Apply<'a> {
+    tree: git2::Tree<'a>,
+    pub author: Option<(String, String)>,
+    pub committer: Option<(String, String)>,
+    pub message: Option<String>,
+    pub parents: Option<Vec<git2::Oid>>,
+}
+
+impl<'a> Clone for Apply<'a> {
+    fn clone(&self) -> Self {
+        Apply {
+            tree: self.tree.clone(),
+            author: self.author.clone(),
+            committer: self.committer.clone(),
+            message: self.message.clone(),
+            parents: self.parents.clone(),
+        }
+    }
+}
+
+impl<'a> Apply<'a> {
+    pub fn from_tree(tree: git2::Tree<'a>) -> Self {
+        Apply {
+            tree,
+            author: None,
+            committer: None,
+            message: None,
+            parents: None,
+        }
+    }
+
+    pub fn from_tree_with_metadata(
+        tree: git2::Tree<'a>,
+        author: Option<(String, String)>,
+        committer: Option<(String, String)>,
+        message: Option<String>,
+    ) -> Self {
+        Apply {
+            tree,
+            author,
+            committer,
+            message,
+            parents: None,
+        }
+    }
+
+    pub fn from_commit(commit: &git2::Commit<'a>) -> JoshResult<Self> {
+        let tree = commit.tree()?;
+        let author = commit
+            .author()
+            .name()
+            .map(|name| name.to_owned())
+            .zip(commit.author().email().map(|email| email.to_owned()));
+        let committer = commit
+            .committer()
+            .name()
+            .map(|name| name.to_owned())
+            .zip(commit.committer().email().map(|email| email.to_owned()));
+        let message = commit.message_raw().map(|msg| msg.to_owned());
+
+        Ok(Apply {
+            tree,
+            author,
+            committer,
+            message,
+            parents: None,
+        })
+    }
+
+    pub fn with_author(self, author: (String, String)) -> Self {
+        Apply {
+            tree: self.tree,
+            author: Some(author),
+            committer: self.committer,
+            message: self.message,
+            parents: self.parents,
+        }
+    }
+
+    pub fn with_committer(self, committer: (String, String)) -> Self {
+        Apply {
+            tree: self.tree,
+            author: self.author,
+            committer: Some(committer),
+            message: self.message,
+            parents: self.parents,
+        }
+    }
+
+    pub fn with_message(self, message: String) -> Self {
+        Apply {
+            tree: self.tree,
+            author: self.author,
+            committer: self.committer,
+            message: Some(message),
+            parents: self.parents,
+        }
+    }
+
+    pub fn with_tree(self, tree: git2::Tree<'a>) -> Self {
+        Apply {
+            tree,
+            author: self.author,
+            committer: self.committer,
+            message: self.message,
+            parents: self.parents,
+        }
+    }
+
+    pub fn with_parents(self, parents: Vec<git2::Oid>) -> Self {
+        Apply {
+            tree: self.tree,
+            author: self.author,
+            committer: self.committer,
+            message: self.message,
+            parents: Some(parents),
+        }
+    }
+
+    pub fn tree(&self) -> &git2::Tree<'a> {
+        &self.tree
+    }
+
+    pub fn into_tree(self) -> git2::Tree<'a> {
+        self.tree
     }
 }
 
@@ -642,12 +769,7 @@ fn apply_to_commit2(
                 repo,
                 commit,
                 &[],
-                RewriteData {
-                    tree: commit.tree()?,
-                    author: None,
-                    committer: None,
-                    message: None,
-                },
+                Apply::from_commit(commit)?,
                 true,
             ))
             .transpose();
@@ -731,12 +853,16 @@ fn apply_to_commit2(
                 }
             }
 
-            RewriteData {
-                tree: apply(transaction, nf, commit.tree()?)?,
-                message: None,
-                author: None,
-                committer: None,
-            }
+            let filtered_parent_ids = commit
+                .parents()
+                .map(|x| transaction.get(filter, x.id()))
+                .collect::<Option<Vec<_>>>();
+            let filtered_parent_ids = some_or!(filtered_parent_ids, { return Ok(None) });
+            apply(
+                transaction,
+                nf,
+                Apply::from_commit(commit)?.with_parents(filtered_parent_ids),
+            )?
         }
         Op::Squash(Some(ids)) => {
             if let Some(sq) = ids.get(&LazyRef::Resolved(commit.id())) {
@@ -759,12 +885,12 @@ fn apply_to_commit2(
                     .name()
                     .map(|x| x.to_owned())
                     .zip(rc.committer().email().map(|x| x.to_owned()));
-                RewriteData {
-                    tree: rc.tree()?,
-                    message: rc.message_raw().map(|x| x.to_owned()),
+                Apply::from_tree_with_metadata(
+                    rc.tree()?,
                     author,
                     committer,
-                }
+                    rc.message_raw().map(|x| x.to_owned()),
+                )
                 //commit.tree()?
             } else {
                 if let Some(parent) = commit.parents().next() {
@@ -802,12 +928,7 @@ fn apply_to_commit2(
             return Some(history::create_filtered_commit(
                 commit,
                 vec![parent],
-                RewriteData {
-                    tree: commit.tree()?,
-                    author: None,
-                    committer: None,
-                    message: None,
-                },
+                Apply::from_commit(commit)?,
                 transaction,
                 filter,
             ))
@@ -833,12 +954,7 @@ fn apply_to_commit2(
                 }
             }
 
-            RewriteData {
-                tree: commit.tree()?,
-                message: None,
-                author: None,
-                committer: None,
-            }
+            Apply::from_commit(commit)?
         }
         Op::Unsign => {
             let parents: Vec<_> = commit.parent_ids().collect();
@@ -907,19 +1023,19 @@ fn apply_to_commit2(
 
             let extra_parents = some_or!(extra_parents, { return Ok(None) });
 
-            let filtered_parent_ids = normal_parents.into_iter().chain(extra_parents).collect();
+            let filtered_parent_ids: Vec<_> =
+                normal_parents.into_iter().chain(extra_parents).collect();
 
-            let filtered_tree = apply(transaction, filter, commit.tree()?)?;
+            let filtered_tree = apply(
+                transaction,
+                filter,
+                Apply::from_commit(commit)?.with_parents(filtered_parent_ids.clone()),
+            )?;
 
             return Some(history::create_filtered_commit(
                 commit,
                 filtered_parent_ids,
-                RewriteData {
-                    tree: filtered_tree,
-                    author: None,
-                    committer: None,
-                    message: None,
-                },
+                filtered_tree,
                 transaction,
                 filter,
             ))
@@ -945,42 +1061,23 @@ fn apply_to_commit2(
             }
 
             let filtered_tree = repo.find_tree(filtered_tree)?;
-            RewriteData {
-                tree: filtered_tree,
-                author: None,
-                committer: None,
-                message: None,
-            }
+            Apply::from_commit(commit)?.with_tree(filtered_tree)
         }
-        Op::Author(author, email) => RewriteData {
-            tree: commit.tree()?,
-            author: Some((author.clone(), email.clone())),
-            committer: None,
-            message: None,
-        },
-        Op::Committer(author, email) => RewriteData {
-            tree: commit.tree()?,
-            author: None,
-            committer: Some((author.clone(), email.clone())),
-            message: None,
-        },
-        Op::Message(m) => RewriteData {
-            tree: commit.tree()?,
-            author: None,
-            committer: None,
-            // Pass the message through `strfmt` to enable future extensions
-            message: Some(strfmt::strfmt(
-                m,
-                &std::collections::HashMap::<String, &dyn strfmt::DisplayStr>::new(),
-            )?),
-        },
-        _ => RewriteData {
-            tree: apply(transaction, filter, commit.tree()?)?,
-            message: None,
-            author: None,
-            committer: None,
-        },
+        _ => {
+            let filtered_parent_ids = commit
+                .parent_ids()
+                .map(|x| transaction.get(filter, x))
+                .collect::<Option<Vec<_>>>();
+            let filtered_parent_ids = some_or!(filtered_parent_ids, { return Ok(None) });
+            apply(
+                transaction,
+                filter,
+                Apply::from_commit(commit)?.with_parents(filtered_parent_ids),
+            )?
+        }
     };
+
+    let tree_data = rewrite_data;
 
     let filtered_parent_ids = {
         rs_tracing::trace_scoped!("filtered_parent_ids", "n": commit.parent_ids().len());
@@ -995,7 +1092,7 @@ fn apply_to_commit2(
     Some(history::create_filtered_commit(
         commit,
         filtered_parent_ids,
-        rewrite_data,
+        tree_data,
         transaction,
         filter,
     ))
@@ -1006,37 +1103,39 @@ fn apply_to_commit2(
 pub fn apply<'a>(
     transaction: &'a cache::Transaction,
     filter: Filter,
-    tree: git2::Tree<'a>,
-) -> JoshResult<git2::Tree<'a>> {
-    apply2(transaction, &to_op(filter), tree)
+    x: Apply<'a>,
+) -> JoshResult<Apply<'a>> {
+    apply2(transaction, &to_op(filter), x)
 }
 
-fn apply2<'a>(
-    transaction: &'a cache::Transaction,
-    op: &Op,
-    tree: git2::Tree<'a>,
-) -> JoshResult<git2::Tree<'a>> {
+fn apply2<'a>(transaction: &'a cache::Transaction, op: &Op, x: Apply<'a>) -> JoshResult<Apply<'a>> {
     let repo = transaction.repo();
     match op {
-        Op::Nop => Ok(tree),
-        Op::Empty => Ok(tree::empty(repo)),
-        Op::Fold => Ok(tree),
-        Op::Squash(None) => Ok(tree),
-        Op::Message(_) => Ok(tree),
-        Op::Author(_, _) => Ok(tree),
-        Op::Committer(_, _) => Ok(tree),
+        Op::Nop => Ok(x),
+        Op::Empty => Ok(x.with_tree(tree::empty(repo))),
+        Op::Fold => Ok(x),
+        Op::Squash(None) => Ok(x),
+        Op::Author(author, email) => Ok(x.with_author((author.clone(), email.clone()))),
+        Op::Committer(author, email) => Ok(x.with_committer((author.clone(), email.clone()))),
+        Op::Message(m) => Ok(x.with_message(
+            // Pass the message through `strfmt` to enable future extensions
+            strfmt::strfmt(
+                m,
+                &std::collections::HashMap::<String, &dyn strfmt::DisplayStr>::new(),
+            )?,
+        )),
         Op::Squash(Some(_)) => Err(josh_error("not applicable to tree")),
-        Op::Linear => Ok(tree),
-        Op::Prune => Ok(tree),
-        Op::Unsign => Ok(tree),
+        Op::Linear => Ok(x),
+        Op::Prune => Ok(x),
+        Op::Unsign => Ok(x),
         Op::Rev(_) => Err(josh_error("not applicable to tree")),
         Op::Join(_) => Err(josh_error("not applicable to tree")),
         Op::RegexReplace(replacements) => {
-            let mut t = tree;
+            let mut t = x.tree().clone();
             for (regex, replacement) in replacements {
                 t = tree::regex_replace(t.id(), regex, replacement, transaction)?;
             }
-            Ok(t)
+            Ok(x.with_tree(t))
         }
 
         Op::Pattern(pattern) => {
@@ -1046,72 +1145,98 @@ fn apply2<'a>(
                 require_literal_separator: true,
                 require_literal_leading_dot: true,
             };
-            tree::remove_pred(
+            Ok(x.clone().with_tree(tree::remove_pred(
                 transaction,
                 "",
-                tree.id(),
+                x.tree().id(),
                 &|path, isblob| isblob && (pattern.matches_path_with(path, options)),
                 to_filter(op.clone()).id(),
-            )
+            )?))
         }
         Op::File(path) => {
-            let (file, mode) = tree
+            let (file, mode) = x
+                .tree()
                 .get_path(path)
                 .map(|x| (x.id(), x.filemode()))
                 .unwrap_or((git2::Oid::zero(), 0o0100644));
-            tree::insert(repo, &tree::empty(repo), path, file, mode)
+            Ok(x.with_tree(tree::insert(repo, &tree::empty(repo), path, file, mode)?))
         }
 
-        Op::Subdir(path) => Ok(tree
-            .get_path(path)
-            .and_then(|x| repo.find_tree(x.id()))
-            .unwrap_or_else(|_| tree::empty(repo))),
-        Op::Prefix(path) => tree::insert(repo, &tree::empty(repo), path, tree.id(), 0o0040000),
+        Op::Subdir(path) => Ok(x.clone().with_tree(
+            x.tree()
+                .get_path(path)
+                .and_then(|x| repo.find_tree(x.id()))
+                .unwrap_or_else(|_| tree::empty(repo)),
+        )),
+        Op::Prefix(path) => Ok(x.clone().with_tree(tree::insert(
+            repo,
+            &tree::empty(repo),
+            path,
+            x.tree().id(),
+            0o0040000,
+        )?)),
 
         Op::Subtract(a, b) => {
-            let af = apply(transaction, *a, tree.clone())?;
-            let bf = apply(transaction, *b, tree.clone())?;
-            let bu = apply(transaction, invert(*b)?, bf)?;
-            let ba = apply(transaction, *a, bu)?.id();
-            Ok(repo.find_tree(tree::subtract(transaction, af.id(), ba)?)?)
+            let af = apply(transaction, *a, x.clone())?;
+            let bf = apply(transaction, *b, x.clone())?;
+            let bu = apply(transaction, invert(*b)?, bf.clone())?;
+            let ba = apply(transaction, *a, bu.clone())?.tree().id();
+            Ok(x.with_tree(repo.find_tree(tree::subtract(transaction, af.tree().id(), ba)?)?))
         }
         Op::Exclude(b) => {
-            let bf = apply(transaction, *b, tree.clone())?.id();
-            Ok(repo.find_tree(tree::subtract(transaction, tree.id(), bf)?)?)
+            let bf = apply(transaction, *b, x.clone())?.tree().id();
+            Ok(x.clone().with_tree(repo.find_tree(tree::subtract(
+                transaction,
+                x.tree().id(),
+                bf,
+            )?)?))
         }
 
-        Op::Paths => tree::pathstree("", tree.id(), transaction),
-        Op::Index => tree::trigram_index(transaction, tree),
+        Op::Paths => Ok(x
+            .clone()
+            .with_tree(tree::pathstree("", x.tree().id(), transaction)?)),
+        Op::Index => Ok(x
+            .clone()
+            .with_tree(tree::trigram_index(transaction, x.tree().clone())?)),
 
-        Op::Invert => tree::invert_paths(transaction, "", tree),
+        Op::Invert => {
+            Ok(x.clone()
+                .with_tree(tree::invert_paths(transaction, "", x.tree().clone())?))
+        }
 
         Op::Workspace(path) => {
             let wsj_file = to_filter(Op::File(Path::new("workspace.josh").to_owned()));
             let base = to_filter(Op::Subdir(path.to_owned()));
             let wsj_file = chain(base, wsj_file);
 
-            if let Some((redirect, _)) = resolve_workspace_redirect(repo, &tree, path) {
-                return apply(transaction, redirect, tree);
+            if let Some((redirect, _)) = resolve_workspace_redirect(repo, x.tree(), path) {
+                return apply(transaction, redirect, x.clone());
             }
 
             apply(
                 transaction,
-                compose(wsj_file, compose(get_workspace(repo, &tree, path), base)),
-                tree,
+                compose(
+                    wsj_file,
+                    compose(get_workspace(repo, &x.tree(), path), base),
+                ),
+                x,
             )
         }
 
         Op::Compose(filters) => {
             let filtered: Vec<_> = filters
                 .iter()
-                .map(|f| apply(transaction, *f, tree.clone()))
+                .map(|f| apply(transaction, *f, x.clone()))
                 .collect::<JoshResult<_>>()?;
-            let filtered: Vec<_> = filters.iter().zip(filtered).collect();
-            tree::compose(transaction, filtered)
+            let filtered: Vec<_> = filters
+                .iter()
+                .zip(filtered.iter().map(|t| t.tree().clone()))
+                .collect();
+            Ok(x.with_tree(tree::compose(transaction, filtered)?))
         }
 
         Op::Chain(a, b) => {
-            return apply(transaction, *b, apply(transaction, *a, tree)?);
+            return apply(transaction, *b, apply(transaction, *a, x.clone())?);
         }
     }
 }
@@ -1125,14 +1250,18 @@ pub fn unapply<'a>(
     parent_tree: git2::Tree<'a>,
 ) -> JoshResult<git2::Tree<'a>> {
     if let Ok(inverted) = invert(filter) {
-        let filtered = apply(transaction, invert(inverted)?, parent_tree.clone())?;
-        let matching = apply(transaction, inverted, filtered)?;
-        let stripped = tree::subtract(transaction, parent_tree.id(), matching.id())?;
-        let new_tree = apply(transaction, inverted, tree)?;
+        let filtered = apply(
+            transaction,
+            invert(inverted)?,
+            Apply::from_tree(parent_tree.clone()),
+        )?;
+        let matching = apply(transaction, inverted, filtered.clone())?;
+        let stripped = tree::subtract(transaction, parent_tree.id(), matching.tree().id())?;
+        let x = apply(transaction, inverted, Apply::from_tree(tree))?;
 
         return Ok(transaction.repo().find_tree(tree::overlay(
             transaction,
-            new_tree.id(),
+            x.tree().id(),
             stripped,
         )?)?);
     }
@@ -1153,7 +1282,12 @@ pub fn unapply<'a>(
         } else {
             a
         };
-        let filtered_parent_tree = apply(transaction, a_normalized, parent_tree.clone())?;
+        let filtered_parent_tree = apply(
+            transaction,
+            a_normalized,
+            Apply::from_tree(parent_tree.clone()),
+        )?
+        .into_tree();
 
         return unapply(
             transaction,
@@ -1183,14 +1317,18 @@ fn unapply_workspace<'a>(
             let wsj_file = chain(root, wsj_file);
             let filter = compose(wsj_file, compose(workspace, root));
             let original_filter = compose(wsj_file, compose(original_workspace, root));
-            let filtered = apply(transaction, original_filter, parent_tree.clone())?;
-            let matching = apply(transaction, invert(original_filter)?, filtered)?;
-            let stripped = tree::subtract(transaction, parent_tree.id(), matching.id())?;
-            let new_tree = apply(transaction, invert(filter)?, tree)?;
+            let filtered = apply(
+                transaction,
+                original_filter,
+                Apply::from_tree(parent_tree.clone()),
+            )?;
+            let matching = apply(transaction, invert(original_filter)?, filtered.clone())?;
+            let stripped = tree::subtract(transaction, parent_tree.id(), matching.tree().id())?;
+            let x = apply(transaction, invert(filter)?, Apply::from_tree(tree))?;
 
             let result = transaction.repo().find_tree(tree::overlay(
                 transaction,
-                new_tree.id(),
+                x.tree().id(),
                 stripped,
             )?)?;
 
@@ -1285,9 +1423,9 @@ fn compute_warnings2<'a>(
 ) -> Vec<String> {
     let mut warnings = Vec::new();
 
-    let tree = apply(transaction, filter, tree);
-    if let Ok(tree) = tree {
-        if tree.is_empty() {
+    let x = apply(transaction, filter, Apply::from_tree(tree));
+    if let Ok(x) = x {
+        if x.tree().is_empty() {
             warnings.push(format!("No match for \"{}\"", pretty(filter, 2)));
         }
     }

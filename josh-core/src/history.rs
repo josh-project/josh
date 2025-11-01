@@ -189,20 +189,13 @@ fn find_known(
     Ok((known, n_new))
 }
 
-pub struct RewriteData<'a> {
-    pub tree: git2::Tree<'a>,
-    pub author: Option<(String, String)>,
-    pub committer: Option<(String, String)>,
-    pub message: Option<String>,
-}
-
 // takes everything from base except its tree and replaces it with the tree
 // given
 pub fn rewrite_commit(
     repo: &git2::Repository,
     base: &git2::Commit,
     parents: &[&git2::Commit],
-    rewrite_data: RewriteData,
+    rewrite_data: filter::Apply,
     unsign: bool,
 ) -> JoshResult<git2::Oid> {
     let odb = repo.odb()?;
@@ -211,7 +204,7 @@ pub fn rewrite_commit(
 
     // gix_object uses byte strings for Oids, but in hex representation, not raw bytes. Its `Format` implementation
     // writes out hex-encoded bytes. Because CommitRef's reference lifetimes we have to this, before creating CommitRef
-    let tree_id = format!("{}", rewrite_data.tree.id());
+    let tree_id = format!("{}", rewrite_data.tree().id());
     let parent_ids = parents
         .iter()
         .map(|x| format!("{}", x.id()))
@@ -612,12 +605,7 @@ pub fn unapply_filter(
             transaction.repo(),
             &module_commit,
             &original_parents,
-            RewriteData {
-                tree: new_tree.clone(),
-                author: None,
-                committer: None,
-                message: None,
-            },
+            filter::Apply::from_tree(new_tree.clone()),
             false,
         )?;
 
@@ -671,12 +659,7 @@ pub fn remove_commit_signature<'a>(
         transaction.repo(),
         original_commit,
         filtered_parent_ids,
-        RewriteData {
-            tree: filtered_tree,
-            author: None,
-            committer: None,
-            message: None,
-        },
+        filter::Apply::from_commit(original_commit)?.with_tree(filtered_tree),
         true,
     )?;
 
@@ -707,7 +690,7 @@ pub fn drop_commit(
 pub fn create_filtered_commit(
     original_commit: &git2::Commit,
     filtered_parent_ids: Vec<git2::Oid>,
-    rewrite_data: RewriteData,
+    rewrite_data: filter::Apply,
     transaction: &cache::Transaction,
     filter: filter::Filter,
 ) -> JoshResult<git2::Oid> {
@@ -730,7 +713,7 @@ fn create_filtered_commit2<'a>(
     repo: &'a git2::Repository,
     original_commit: &'a git2::Commit,
     filtered_parent_ids: Vec<git2::Oid>,
-    rewrite_data: RewriteData,
+    rewrite_data: filter::Apply,
     unsign: bool,
 ) -> JoshResult<(git2::Oid, bool)> {
     let filtered_parent_commits: Result<Vec<_>, _> = filtered_parent_ids
@@ -755,7 +738,7 @@ fn create_filtered_commit2<'a>(
 
     let selected_filtered_parent_commits: Vec<&_> = select_parent_commits(
         original_commit,
-        rewrite_data.tree.id(),
+        rewrite_data.tree().id(),
         filtered_parent_commits.iter().collect(),
     );
 
@@ -765,7 +748,7 @@ fn create_filtered_commit2<'a>(
         if !filtered_parent_commits.is_empty() {
             return Ok((filtered_parent_commits[0].id(), false));
         }
-        if rewrite_data.tree.id() == filter::tree::empty_id() {
+        if rewrite_data.tree().id() == filter::tree::empty_id() {
             return Ok((git2::Oid::zero(), false));
         }
     }
