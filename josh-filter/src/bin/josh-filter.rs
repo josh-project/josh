@@ -159,6 +159,32 @@ impl josh::cache::FilterHook for GitNotesFilterHook {
     }
 }
 
+struct ChangeIdFilterHook {
+    repo: std::sync::Mutex<git2::Repository>,
+}
+
+impl josh::cache::FilterHook for ChangeIdFilterHook {
+    fn filter_for_commit(
+        &self,
+        commit_oid: git2::Oid,
+        arg: &str,
+    ) -> josh::JoshResult<josh::filter::Filter> {
+        let repo = self.repo.lock().unwrap();
+        let commit = repo.find_commit(commit_oid)?;
+        let data = format!(
+            "{:?}:{:?}:{}:{}",
+            commit.message(),
+            commit.time(),
+            commit.author(),
+            commit.committer()
+        );
+
+        let hash = git2::Oid::hash_object(git2::ObjectType::Blob, data.as_bytes())
+            .expect("hash_object changeid");
+        josh::filter::parse(&format!(":\"{}\"", hash))
+    }
+}
+
 fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
     let args = make_app().get_matches_from(args);
 
@@ -200,7 +226,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         git2::RepositoryOpenFlags::NO_SEARCH,
         &[] as &[&std::ffi::OsStr],
     )?;
-    let hook = GitNotesFilterHook {
+    let hook = ChangeIdFilterHook {
         repo: std::sync::Mutex::new(repo_for_hook),
     };
     transaction = transaction.with_filter_hook(std::sync::Arc::new(hook));
