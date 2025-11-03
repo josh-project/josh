@@ -445,6 +445,7 @@ fn step(filter: Filter) -> Filter {
         Op::Subtract(a, b) if a == b => Op::Empty,
         Op::Subtract(af, bf) => match (to_op(af), to_op(bf)) {
             (Op::Empty, _) => Op::Empty,
+            (Op::Message(..), Op::Message(..)) => Op::Empty,
             (_, Op::Nop) => Op::Empty,
             (a, Op::Empty) => a,
             (Op::Chain(a, b), Op::Chain(c, d)) if a == c => {
@@ -492,6 +493,7 @@ fn step(filter: Filter) -> Filter {
 pub fn invert(filter: Filter) -> JoshResult<Filter> {
     let result = match to_op(filter) {
         Op::Nop => Some(Op::Nop),
+        Op::Message(..) => Some(Op::Nop),
         Op::Linear => Some(Op::Nop),
         Op::Prune => Some(Op::Prune),
         Op::Unsign => Some(Op::Unsign),
