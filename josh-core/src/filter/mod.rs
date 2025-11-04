@@ -1546,11 +1546,6 @@ fn apply_to_commit2(
             .transpose();
         }
         Op::Workspace(ws_path) => {
-            let normal_parents = commit
-                .parent_ids()
-                .map(|parent| transaction.get(filter, parent))
-                .collect::<Option<Vec<git2::Oid>>>();
-
             if let Some((redirect, _)) = resolve_workspace_redirect(repo, &commit.tree()?, ws_path)
             {
                 if let Some(r) = apply_to_commit2(&to_op(redirect), commit, transaction)? {
@@ -1561,11 +1556,11 @@ fn apply_to_commit2(
                 }
             }
 
-            let normal_parents = some_or!(normal_parents, { return Ok(None) });
+            let commit_filter = filter;
 
             let cw = get_workspace(repo, &commit.tree()?, ws_path);
 
-            let extra_parents = commit
+            let parent_filters = commit
                 .parents()
                 .map(|parent| {
                     rs_tracing::trace_scoped!("parent", "id": parent.id().to_string());
@@ -1583,31 +1578,18 @@ fn apply_to_commit2(
                         &parent.tree().unwrap_or_else(|_| tree::empty(repo)),
                         &p,
                     );
-                    let f = opt::optimize(to_filter(Op::Subtract(cw, pcw)));
-
-                    apply_to_commit2(&to_op(f), &parent, transaction)
+                    Ok((parent, pcw))
                 })
-                .collect::<JoshResult<Option<Vec<_>>>>()?;
+                .collect::<JoshResult<Vec<_>>>()?;
 
-            let extra_parents = some_or!(extra_parents, { return Ok(None) });
-
-            let filtered_parent_ids: Vec<_> =
-                normal_parents.into_iter().chain(extra_parents).collect();
-
-            let filtered_tree = apply(
+            return per_rev_filter(
                 transaction,
-                filter,
-                Apply::from_commit(commit)?.with_parents(filtered_parent_ids.clone()),
-            )?;
-
-            return Some(history::create_filtered_commit(
                 commit,
-                filtered_parent_ids,
-                filtered_tree,
-                transaction,
                 filter,
-            ))
-            .transpose();
+                commit_filter,
+                cw,
+                parent_filters,
+            );
         }
         Op::Fold => {
             let filtered_parent_ids = commit
@@ -1633,50 +1615,24 @@ fn apply_to_commit2(
         }
         Op::Hook(hook) => {
             let commit_filter = transaction.lookup_filter_hook(&hook, commit.id())?;
-            let normal_parents = commit
-                .parent_ids()
-                .map(|x| transaction.get(filter, x))
-                .collect::<Option<Vec<_>>>();
-            let normal_parents = some_or!(normal_parents, { return Ok(None) });
+            let cw = commit_filter;
 
-            // Compute the difference between the current commit's filter and each parent's filter.
-            // This determines what new content should be contributed by that parent in the filtered history.
-            let extra_parents = commit
+            let parent_filters = commit
                 .parents()
                 .map(|parent| {
-                    rs_tracing::trace_scoped!("hook parent", "id": parent.id().to_string());
-
                     let pcw = transaction.lookup_filter_hook(&hook, parent.id())?;
-                    let f = opt::optimize(to_filter(Op::Subtract(commit_filter, pcw)));
-
-                    let r = apply_to_commit2(&to_op(f), &parent, transaction);
-                    r
+                    Ok((parent, pcw))
                 })
-                .collect::<JoshResult<Option<Vec<_>>>>()?;
+                .collect::<JoshResult<Vec<_>>>()?;
 
-            let extra_parents = some_or!(extra_parents, { return Ok(None) });
-
-            let extra_parents: Vec<_> = extra_parents
-                .into_iter()
-                .filter(|&oid| oid != git2::Oid::zero())
-                .collect();
-
-            let filtered_parent_ids: Vec<_> =
-                normal_parents.into_iter().chain(extra_parents).collect();
-
-            let tree_data = apply(
+            return per_rev_filter(
                 transaction,
-                commit_filter,
-                Apply::from_commit(commit)?.with_parents(filtered_parent_ids.clone()),
-            )?;
-            return Some(history::create_filtered_commit(
                 commit,
-                filtered_parent_ids,
-                tree_data,
-                transaction,
                 filter,
-            ))
-            .transpose();
+                commit_filter,
+                cw,
+                parent_filters,
+            );
         }
         _ => {
             let filtered_parent_ids = commit
@@ -2097,6 +2053,53 @@ pub fn is_linear(filter: Filter) -> bool {
         Op::Chain(a, b) => is_linear(a) || is_linear(b),
         _ => false,
     }
+}
+
+fn per_rev_filter(
+    transaction: &cache::Transaction,
+    commit: &git2::Commit,
+    filter: Filter,
+    commit_filter: Filter,
+    cw: Filter,
+    parent_filters: Vec<(git2::Commit, Filter)>,
+) -> JoshResult<Option<git2::Oid>> {
+    // Compute the difference between the current commit's filter and each parent's filter.
+    // This determines what new content should be contributed by that parent in the filtered history.
+    let extra_parents = parent_filters
+        .into_iter()
+        .map(|(parent, pcw)| {
+            let f = opt::optimize(to_filter(Op::Subtract(cw, pcw)));
+            apply_to_commit2(&to_op(f), &parent, transaction)
+        })
+        .collect::<JoshResult<Option<Vec<_>>>>()?;
+
+    let extra_parents = some_or!(extra_parents, { return Ok(None) });
+
+    let extra_parents: Vec<_> = extra_parents
+        .into_iter()
+        .filter(|&oid| oid != git2::Oid::zero())
+        .collect();
+
+    let normal_parents = commit
+        .parent_ids()
+        .map(|parent| transaction.get(filter, parent))
+        .collect::<Option<Vec<git2::Oid>>>();
+    let normal_parents = some_or!(normal_parents, { return Ok(None) });
+    let filtered_parent_ids: Vec<_> = normal_parents.into_iter().chain(extra_parents).collect();
+
+    let tree_data = apply(
+        transaction,
+        commit_filter,
+        Apply::from_commit(commit)?.with_parents(filtered_parent_ids.clone()),
+    )?;
+    return Some(history::create_filtered_commit(
+        commit,
+        filtered_parent_ids,
+        tree_data,
+        transaction,
+        filter,
+    ))
+    .transpose();
 }
 
 #[cfg(test)]
