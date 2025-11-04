@@ -71,6 +71,7 @@ impl InMemoryBuilder {
             .collect();
         push_blob_entries(&mut entries, indexed_blobs);
 
+        entries.sort_by(|a, b| a.filename.cmp(&b.filename));
         let tree = gix_object::Tree { entries };
         self.write_tree(tree)
     }
@@ -85,6 +86,7 @@ impl InMemoryBuilder {
                 oid: child,
             });
         }
+        entries.sort_by(|a, b| a.filename.cmp(&b.filename));
         let tree = gix_object::Tree { entries };
         Ok(self.write_tree(tree))
     }
@@ -118,6 +120,7 @@ impl InMemoryBuilder {
                 oid: inner_oid,
             });
         }
+        outer_entries.sort_by(|a, b| a.filename.cmp(&b.filename));
         let outer_tree = gix_object::Tree {
             entries: outer_entries,
         };
@@ -149,6 +152,7 @@ impl InMemoryBuilder {
                 oid: inner_oid,
             });
         }
+        outer_entries.sort_by(|a, b| a.filename.cmp(&b.filename));
         let outer_tree = gix_object::Tree {
             entries: outer_entries,
         };
@@ -293,6 +297,7 @@ impl InMemoryBuilder {
             }
         }
 
+        entries.sort_by(|a, b| a.filename.cmp(&b.filename));
         let tree = gix_object::Tree { entries };
         Ok(self.write_tree(tree))
     }

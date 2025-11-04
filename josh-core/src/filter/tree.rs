@@ -633,7 +633,6 @@ pub fn search_candidates(
         let df = make_dir_trigram_filter(searchstring, dir_filter_size, &[0, 1, 2]);
         trigram_search(transaction, tree.clone(), "", &df, &ff, &mut results, ord)?;
     }
-    results.sort();
     Ok(results)
 }
 
