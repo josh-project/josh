@@ -1272,7 +1272,22 @@ fn resolve_workspace_redirect<'a>(
 }
 
 fn get_workspace<'a>(repo: &'a git2::Repository, tree: &'a git2::Tree<'a>, path: &Path) -> Filter {
-    let ws_path = normalize_path(&path.join("workspace.josh"));
+    let path = if let Some((_, path)) = resolve_workspace_redirect(repo, &tree, path) {
+        path
+    } else {
+        path.to_owned()
+    };
+    let wsj_file = to_filter(Op::File(Path::new("workspace.josh").to_owned()));
+    let base = to_filter(Op::Subdir(path.to_owned()));
+    let wsj_file = chain(base, wsj_file);
+    compose(
+        wsj_file,
+        compose(get_filter(repo, tree, &path.join("workspace.josh")), base),
+    )
+}
+
+fn get_filter<'a>(repo: &'a git2::Repository, tree: &'a git2::Tree<'a>, path: &Path) -> Filter {
+    let ws_path = normalize_path(path);
     let ws_id = ok_or!(tree.get_path(&ws_path), {
         return to_filter(Op::Empty);
     })
@@ -1548,40 +1563,22 @@ fn apply_to_commit2(
                 }
             }
 
-            let commit_filter = filter;
-
-            let cw = get_workspace(repo, &commit.tree()?, ws_path);
+            let commit_filter = get_workspace(repo, &commit.tree()?, &ws_path);
 
             let parent_filters = commit
                 .parents()
                 .map(|parent| {
                     rs_tracing::trace_scoped!("parent", "id": parent.id().to_string());
-
-                    let p = if let Some((_, p)) =
-                        resolve_workspace_redirect(repo, &parent.tree()?, ws_path)
-                    {
-                        p
-                    } else {
-                        ws_path.clone()
-                    };
-
                     let pcw = get_workspace(
                         repo,
                         &parent.tree().unwrap_or_else(|_| tree::empty(repo)),
-                        &p,
+                        &ws_path,
                     );
                     Ok((parent, pcw))
                 })
                 .collect::<JoshResult<Vec<_>>>()?;
 
-            return per_rev_filter(
-                transaction,
-                commit,
-                filter,
-                commit_filter,
-                cw,
-                parent_filters,
-            );
+            return per_rev_filter(transaction, commit, filter, commit_filter, parent_filters);
         }
         Op::Fold => {
             let filtered_parent_ids = commit
@@ -1607,7 +1604,6 @@ fn apply_to_commit2(
         }
         Op::Hook(hook) => {
             let commit_filter = transaction.lookup_filter_hook(&hook, commit.id())?;
-            let cw = commit_filter;
 
             let parent_filters = commit
                 .parents()
@@ -1617,14 +1613,7 @@ fn apply_to_commit2(
                 })
                 .collect::<JoshResult<Vec<_>>>()?;
 
-            return per_rev_filter(
-                transaction,
-                commit,
-                filter,
-                commit_filter,
-                cw,
-                parent_filters,
-            );
+            return per_rev_filter(transaction, commit, filter, commit_filter, parent_filters);
         }
         _ => {
             let filtered_parent_ids = commit
@@ -1767,24 +1756,7 @@ fn apply2<'a>(transaction: &'a cache::Transaction, op: &Op, x: Apply<'a>) -> Jos
                 .with_tree(tree::invert_paths(transaction, "", x.tree().clone())?))
         }
 
-        Op::Workspace(path) => {
-            let wsj_file = to_filter(Op::File(Path::new("workspace.josh").to_owned()));
-            let base = to_filter(Op::Subdir(path.to_owned()));
-            let wsj_file = chain(base, wsj_file);
-
-            if let Some((redirect, _)) = resolve_workspace_redirect(repo, x.tree(), path) {
-                return apply(transaction, redirect, x.clone());
-            }
-
-            apply(
-                transaction,
-                compose(
-                    wsj_file,
-                    compose(get_workspace(repo, &x.tree(), path), base),
-                ),
-                x,
-            )
-        }
+        Op::Workspace(path) => apply(transaction, get_workspace(repo, &x.tree(), &path), x),
 
         Op::Compose(filters) => {
             let filtered: Vec<_> = filters
@@ -1875,8 +1847,12 @@ fn unapply_workspace<'a>(
     match op {
         Op::Workspace(path) => {
             let tree = pre_process_tree(transaction.repo(), tree)?;
-            let workspace = get_workspace(transaction.repo(), &tree, Path::new(""));
-            let original_workspace = get_workspace(transaction.repo(), &parent_tree, path);
+            let workspace = get_filter(transaction.repo(), &tree, Path::new("workspace.josh"));
+            let original_workspace = get_filter(
+                transaction.repo(),
+                &parent_tree,
+                &path.join("workspace.josh"),
+            );
 
             let root = to_filter(Op::Subdir(path.to_owned()));
             let wsj_file = to_filter(Op::File(Path::new("workspace.josh").to_owned()));
@@ -2071,7 +2047,6 @@ fn per_rev_filter(
     commit: &git2::Commit,
     filter: Filter,
     commit_filter: Filter,
-    cw: Filter,
     parent_filters: Vec<(git2::Commit, Filter)>,
 ) -> JoshResult<Option<git2::Oid>> {
     // Compute the difference between the current commit's filter and each parent's filter.
@@ -2079,7 +2054,7 @@ fn per_rev_filter(
     let extra_parents = parent_filters
         .into_iter()
         .map(|(parent, pcw)| {
-            let f = opt::optimize(to_filter(Op::Subtract(cw, pcw)));
+            let f = opt::optimize(to_filter(Op::Subtract(commit_filter, pcw)));
             apply_to_commit2(&to_op(f), &parent, transaction)
         })
         .collect::<JoshResult<Option<Vec<_>>>>()?;
@@ -2099,8 +2074,8 @@ fn per_rev_filter(
 
     // Special case: `:pin` filter needs to be aware of filtered history
     let pin_details = if let Some(&parent) = normal_parents.first() {
-        let legalized_a = legalize_pin(cw, &|f| f);
-        let legalized_b = legalize_pin(cw, &|f| to_filter(Op::Exclude(f)));
+        let legalized_a = legalize_pin(commit_filter, &|f| f);
+        let legalized_b = legalize_pin(commit_filter, &|f| to_filter(Op::Exclude(f)));
 
         if legalized_a != legalized_b {
             let pin_subtract = apply(
