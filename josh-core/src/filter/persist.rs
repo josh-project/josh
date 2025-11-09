@@ -220,6 +220,11 @@ impl InMemoryBuilder {
                     push_tree_entries(&mut entries, [("file", params_tree)]);
                 }
             }
+            #[cfg(feature = "incubating")]
+            Op::Embed(path) => {
+                let blob = self.write_blob(path.to_string_lossy().as_bytes());
+                push_blob_entries(&mut entries, [("embed", blob)]);
+            }
             Op::Pattern(pattern) => {
                 let blob = self.write_blob(pattern.as_bytes());
                 push_blob_entries(&mut entries, [("pattern", blob)]);
@@ -240,9 +245,29 @@ impl InMemoryBuilder {
                 let blob = self.write_blob(b"");
                 push_blob_entries(&mut entries, [("empty", blob)]);
             }
+            #[cfg(feature = "incubating")]
+            Op::Export => {
+                let blob = self.write_blob(b"");
+                push_blob_entries(&mut entries, [("export", blob)]);
+            }
             Op::Paths => {
                 let blob = self.write_blob(b"");
                 push_blob_entries(&mut entries, [("paths", blob)]);
+            }
+            #[cfg(feature = "incubating")]
+            Op::Link(mode) => {
+                let blob = self.write_blob(mode.as_bytes());
+                push_blob_entries(&mut entries, [("link", blob)]);
+            }
+            #[cfg(feature = "incubating")]
+            Op::Adapt(mode) => {
+                let blob = self.write_blob(mode.as_bytes());
+                push_blob_entries(&mut entries, [("adapt", blob)]);
+            }
+            #[cfg(feature = "incubating")]
+            Op::Unlink => {
+                let blob = self.write_blob(b"");
+                push_blob_entries(&mut entries, [("unlink", blob)]);
             }
             Op::Invert => {
                 let blob = self.write_blob(b"");
@@ -284,6 +309,11 @@ impl InMemoryBuilder {
             Op::HistoryConcat(lr, f) => {
                 let params_tree = self.build_rev_params(&[(lr.to_string(), *f)])?;
                 push_tree_entries(&mut entries, [("concat", params_tree)]);
+            }
+            #[cfg(feature = "incubating")]
+            Op::Unapply(lr, f) => {
+                let params_tree = self.build_rev_params(&[(lr.to_string(), *f)])?;
+                push_tree_entries(&mut entries, [("unapply", params_tree)]);
             }
             Op::Squash(Some(ids)) => {
                 let mut v = ids
@@ -362,6 +392,26 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> JoshResult<Op> {
         "paths" => {
             let _ = repo.find_blob(entry.id())?;
             Ok(Op::Paths)
+        }
+        #[cfg(feature = "incubating")]
+        "export" => {
+            let _ = repo.find_blob(entry.id())?;
+            Ok(Op::Export)
+        }
+        #[cfg(feature = "incubating")]
+        "link" => {
+            let blob = repo.find_blob(entry.id())?;
+            Ok(Op::Link(std::str::from_utf8(blob.content())?.to_string()))
+        }
+        #[cfg(feature = "incubating")]
+        "adapt" => {
+            let blob = repo.find_blob(entry.id())?;
+            Ok(Op::Adapt(std::str::from_utf8(blob.content())?.to_string()))
+        }
+        #[cfg(feature = "incubating")]
+        "unlink" => {
+            let _ = repo.find_blob(entry.id())?;
+            Ok(Op::Unlink)
         }
         "invert" => {
             let _ = repo.find_blob(entry.id())?;
@@ -496,6 +546,12 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> JoshResult<Op> {
                 Ok(Op::File(path_buf.clone(), path_buf))
             }
         }
+        #[cfg(feature = "incubating")]
+        "embed" => {
+            let blob = repo.find_blob(entry.id())?;
+            let path = std::str::from_utf8(blob.content())?;
+            Ok(Op::Embed(std::path::PathBuf::from(path)))
+        }
         "pattern" => {
             let blob = repo.find_blob(entry.id())?;
             let pattern = std::str::from_utf8(blob.content())?.to_string();
@@ -625,6 +681,29 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> JoshResult<Op> {
             let key = std::str::from_utf8(key_blob.content())?.to_string();
             let filter = from_tree2(repo, filter_tree.id())?;
             Ok(Op::HistoryConcat(LazyRef::parse(&key)?, to_filter(filter)))
+        }
+        #[cfg(feature = "incubating")]
+        "unapply" => {
+            let concat_tree = repo.find_tree(entry.id())?;
+            let entry = concat_tree
+                .get(0)
+                .ok_or_else(|| josh_error("concat: missing entry"))?;
+            let inner_tree = repo.find_tree(entry.id())?;
+            let key_blob = repo.find_blob(
+                inner_tree
+                    .get_name("o")
+                    .ok_or_else(|| josh_error("concat: missing key"))?
+                    .id(),
+            )?;
+            let filter_tree = repo.find_tree(
+                inner_tree
+                    .get_name("f")
+                    .ok_or_else(|| josh_error("concat: missing filter"))?
+                    .id(),
+            )?;
+            let key = std::str::from_utf8(key_blob.content())?.to_string();
+            let filter = from_tree2(repo, filter_tree.id())?;
+            Ok(Op::Unapply(LazyRef::parse(&key)?, to_filter(filter)))
         }
         "squash" => {
             // blob -> Squash(None), tree -> Squash(Some(...))
