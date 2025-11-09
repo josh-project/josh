@@ -26,6 +26,7 @@ filter_spec = { (
   | filter_rev
   | filter_from
   | filter_concat
+  | filter_unapply
   | filter_join
   | filter_replace
   | filter_squash
@@ -66,6 +67,15 @@ filter_from = {
 
 filter_concat = {
     CMD_START ~ "concat" ~ "("
+    ~ NEWLINE*
+    ~ (rev ~ filter_spec)?
+    ~ (CMD_SEP+ ~ (rev ~ filter_spec))*
+    ~ NEWLINE*
+    ~ ")"
+}
+
+filter_unapply = {
+    CMD_START ~ "unapply" ~ "("
     ~ NEWLINE*
     ~ (rev ~ filter_spec)?
     ~ (CMD_SEP+ ~ (rev ~ filter_spec))*
