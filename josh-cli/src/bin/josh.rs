@@ -105,6 +105,9 @@ pub enum Command {
 
     /// Apply filtering to existing refs (like `josh fetch` but without fetching)
     Filter(FilterArgs),
+
+    /// Manage josh links (like `josh remote` but for links)
+    Link(LinkArgs),
 }
 
 #[derive(Debug, clap::Parser)]
@@ -242,6 +245,47 @@ pub struct FilterArgs {
     pub remote: String,
 }
 
+#[derive(Debug, clap::Parser)]
+pub struct LinkArgs {
+    /// Link subcommand
+    #[command(subcommand)]
+    pub command: LinkCommand,
+}
+
+#[derive(Debug, clap::Subcommand)]
+pub enum LinkCommand {
+    /// Add a link with optional filter and target branch
+    Add(LinkAddArgs),
+    /// Fetch from existing link files
+    Fetch(LinkFetchArgs),
+}
+
+#[derive(Debug, clap::Parser)]
+pub struct LinkAddArgs {
+    /// Path where the link will be mounted
+    #[arg()]
+    pub path: String,
+
+    /// Remote repository URL
+    #[arg()]
+    pub url: String,
+
+    /// Optional filter to apply to the linked repository
+    #[arg()]
+    pub filter: Option<String>,
+
+    /// Target branch to link (defaults to HEAD)
+    #[arg(long = "target")]
+    pub target: Option<String>,
+}
+
+#[derive(Debug, clap::Parser)]
+pub struct LinkFetchArgs {
+    /// Optional path to specific .josh-link.toml file (if not provided, fetches all)
+    #[arg()]
+    pub path: Option<String>,
+}
+
 fn main() {
     env_logger::init();
     let cli = Cli::parse();
@@ -253,6 +297,7 @@ fn main() {
         Command::Push(args) => handle_push(args),
         Command::Remote(args) => handle_remote(args),
         Command::Filter(args) => handle_filter(args),
+        Command::Link(args) => handle_link(args),
     };
 
     if let Err(e) = result {
@@ -799,6 +844,347 @@ fn handle_push(args: &PushArgs) -> anyhow::Result<()> {
             eprintln!("Pushed {} to {}/{}", oid, args.remote, refname);
         }
     }
+
+    Ok(())
+}
+
+fn handle_link(args: &LinkArgs) -> anyhow::Result<()> {
+    match &args.command {
+        LinkCommand::Add(add_args) => handle_link_add(add_args),
+        LinkCommand::Fetch(fetch_args) => handle_link_fetch(fetch_args),
+    }
+}
+
+fn handle_link_add(args: &LinkAddArgs) -> anyhow::Result<()> {
+    use josh_core::filter::tree;
+    use josh_core::{JoshLinkFile, Oid};
+
+    // Check if we're in a git repository
+    let repo = git2::Repository::open_from_env().context("Not in a git repository")?;
+
+    // Validate the path (should not be empty and should be a valid path)
+    if args.path.is_empty() {
+        return Err(anyhow::anyhow!("Path cannot be empty"));
+    }
+
+    // Normalize the path by removing leading and trailing slashes
+    let normalized_path = args.path.trim_matches('/').to_string();
+
+    // Get the filter (default to ":/" if not provided)
+    let filter = args.filter.as_deref().unwrap_or(":/");
+
+    // Get the target branch (default to "HEAD" if not provided)
+    let target = args.target.as_deref().unwrap_or("HEAD");
+
+    // Parse the filter
+    let filter_obj = josh_core::filter::parse(filter)
+        .map_err(from_josh_err)
+        .with_context(|| format!("Failed to parse filter '{}'", filter))?;
+
+    // Use git fetch shell command
+    let output = std::process::Command::new("git")
+        .args(&["fetch", &args.url, &target])
+        .output()
+        .context("Failed to execute git fetch")?;
+
+    if !output.status.success() {
+        return Err(anyhow::anyhow!(
+            "git fetch failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+
+    // Get the commit SHA from FETCH_HEAD
+    let fetch_head = repo
+        .find_reference("FETCH_HEAD")
+        .context("Failed to find FETCH_HEAD")?;
+    let fetch_commit = fetch_head
+        .peel_to_commit()
+        .context("Failed to get FETCH_HEAD commit")?;
+    let actual_commit_sha = fetch_commit.id();
+
+    // Get the current HEAD commit
+    let head_ref = repo.head().context("Failed to get HEAD")?;
+    let head_commit = head_ref
+        .peel_to_commit()
+        .context("Failed to get HEAD commit")?;
+    let head_tree = head_commit.tree().context("Failed to get HEAD tree")?;
+
+    // Create the JoshLinkFile with the actual commit SHA
+    let link_file = JoshLinkFile {
+        remote: args.url.clone(),
+        branch: target.to_string(),
+        filter: filter_obj,
+        commit: Oid::from(actual_commit_sha),
+    };
+
+    // Create the .josh-link.toml content
+    let link_content = toml::to_string(&link_file).context("Failed to serialize link file")?;
+
+    // Create the blob for the .josh-link.toml file
+    let link_blob = repo
+        .blob(link_content.as_bytes())
+        .context("Failed to create blob")?;
+
+    // Create the path for the .josh-link.toml file
+    let link_path = std::path::Path::new(&normalized_path).join(".josh-link.toml");
+
+    // Insert the .josh-link.toml file into the tree
+    let new_tree = tree::insert(&repo, &head_tree, &link_path, link_blob, 0o0100644)
+        .map_err(from_josh_err)
+        .context("Failed to insert link file into tree")?;
+
+    // Create a new commit with the updated tree
+    let signature = if let Ok(time) = std::env::var("JOSH_COMMIT_TIME") {
+        git2::Signature::new(
+            "JOSH",
+            "josh@josh-project.dev",
+            &git2::Time::new(time.parse().context("Failed to parse JOSH_COMMIT_TIME")?, 0),
+        )
+        .context("Failed to create signature")?
+    } else {
+        repo.signature().context("Failed to get signature")?
+    };
+
+    let new_commit = repo
+        .commit(
+            None, // Don't update any reference
+            &signature,
+            &signature,
+            &format!("Add link: {}", normalized_path),
+            &new_tree,
+            &[&head_commit],
+        )
+        .context("Failed to create commit")?;
+
+    // Apply the :link filter to the new commit
+    let link_filter = josh_core::filter::parse(":link=snapshot")
+        .map_err(from_josh_err)
+        .context("Failed to parse :link filter")?;
+
+    // Load the cache and create transaction
+    let repo_path = repo.path().parent().unwrap();
+
+    josh_core::cache_sled::sled_load(&repo_path).unwrap();
+    let cache = std::sync::Arc::new(
+        josh_core::cache_stack::CacheStack::new()
+            .with_backend(josh_core::cache_sled::SledCacheBackend::default())
+            .with_backend(
+                josh_core::cache_notes::NotesCacheBackend::new(&repo_path)
+                    .map_err(from_josh_err)
+                    .context("Failed to create NotesCacheBackend")?,
+            ),
+    );
+
+    // Open Josh transaction
+    let transaction = josh_core::cache::TransactionContext::from_env(cache.clone())
+        .map_err(from_josh_err)
+        .context("Failed TransactionContext::from_env")?
+        .open(None)
+        .map_err(from_josh_err)
+        .context("Failed TransactionContext::open")?;
+
+    let filtered_commit = josh_core::filter_commit(
+        &transaction,
+        link_filter,
+        new_commit,
+        josh_core::filter::empty(),
+    )
+    .map_err(from_josh_err)
+    .context("Failed to apply :link filter")?;
+
+    // Create the fixed branch name
+    let branch_name = "refs/heads/josh-link";
+
+    // Create or update the branch reference
+    repo.reference(branch_name, filtered_commit, true, "josh link add")
+        .with_context(|| format!("Failed to create branch '{}'", branch_name))?;
+
+    println!(
+        "Added link '{}' with URL '{}', filter '{}', and target '{}'",
+        normalized_path, args.url, filter, target
+    );
+    println!("Created branch: {}", branch_name);
+
+    Ok(())
+}
+
+fn handle_link_fetch(args: &LinkFetchArgs) -> anyhow::Result<()> {
+    use josh_core::filter::tree;
+    use josh_core::{JoshLinkFile, Oid};
+
+    // Check if we're in a git repository
+    let repo = git2::Repository::open_from_env().context("Not in a git repository")?;
+
+    // Get the current HEAD commit
+    let head_ref = repo.head().context("Failed to get HEAD")?;
+    let head_commit = head_ref
+        .peel_to_commit()
+        .context("Failed to get HEAD commit")?;
+    let head_tree = head_commit.tree().context("Failed to get HEAD tree")?;
+
+    let link_files = if let Some(path) = &args.path {
+        // Single path specified - find the .josh-link.toml file at that path
+        let link_path = std::path::Path::new(path).join(".josh-link.toml");
+        let link_entry = head_tree
+            .get_path(&link_path)
+            .with_context(|| format!("Failed to find .josh-link.toml at path '{}'", path))?;
+
+        let link_blob = repo
+            .find_blob(link_entry.id())
+            .context("Failed to find blob")?;
+
+        let link_content = std::str::from_utf8(link_blob.content())
+            .context("Failed to parse link file content")?;
+
+        let link_file: JoshLinkFile =
+            toml::from_str(link_content).context("Failed to parse .josh-link.toml")?;
+
+        vec![(std::path::PathBuf::from(path), link_file)]
+    } else {
+        // No path specified - find all .josh-link.toml files in the tree
+        josh_core::find_link_files(&repo, &head_tree)
+            .map_err(from_josh_err)
+            .context("Failed to find link files")?
+    };
+
+    if link_files.is_empty() {
+        return Err(anyhow::anyhow!("No .josh-link.toml files found"));
+    }
+
+    println!("Found {} link file(s) to fetch", link_files.len());
+
+    // Fetch from all the link files
+    let mut updated_link_files = Vec::new();
+    for (path, mut link_file) in link_files {
+        println!("Fetching from link at path: {}", path.display());
+
+        // Use git fetch shell command
+        let output = std::process::Command::new("git")
+            .args(&["fetch", &link_file.remote, &link_file.branch])
+            .output()
+            .context("Failed to execute git fetch")?;
+
+        if !output.status.success() {
+            return Err(anyhow::anyhow!(
+                "git fetch failed for path '{}': {}",
+                path.display(),
+                String::from_utf8_lossy(&output.stderr)
+            ));
+        }
+
+        // Get the commit SHA from FETCH_HEAD
+        let fetch_head = repo
+            .find_reference("FETCH_HEAD")
+            .context("Failed to find FETCH_HEAD")?;
+        let fetch_commit = fetch_head
+            .peel_to_commit()
+            .context("Failed to get FETCH_HEAD commit")?;
+        let actual_commit_sha = fetch_commit.id();
+
+        // Update the link file with the new commit SHA
+        link_file.commit = Oid::from(actual_commit_sha);
+        updated_link_files.push((path, link_file));
+    }
+
+    // Create new tree with updated .josh-link.toml files
+    let mut new_tree = head_tree;
+    for (path, link_file) in &updated_link_files {
+        // Create the .josh-link.toml content
+        let link_content = toml::to_string(link_file).context("Failed to serialize link file")?;
+
+        // Create the blob for the .josh-link.toml file
+        let link_blob = repo
+            .blob(link_content.as_bytes())
+            .context("Failed to create blob")?;
+
+        // Create the path for the .josh-link.toml file
+        let link_path = path.join(".josh-link.toml");
+
+        // Insert the updated .josh-link.toml file into the tree
+        new_tree = tree::insert(&repo, &new_tree, &link_path, link_blob, 0o0100644)
+            .map_err(from_josh_err)
+            .with_context(|| {
+                format!(
+                    "Failed to insert link file into tree at path '{}'",
+                    path.display()
+                )
+            })?;
+    }
+
+    // Create a new commit with the updated tree
+    let signature = if let Ok(time) = std::env::var("JOSH_COMMIT_TIME") {
+        git2::Signature::new(
+            "JOSH",
+            "josh@josh-project.dev",
+            &git2::Time::new(time.parse().context("Failed to parse JOSH_COMMIT_TIME")?, 0),
+        )
+        .context("Failed to create signature")?
+    } else {
+        repo.signature().context("Failed to get signature")?
+    };
+
+    let new_commit = repo
+        .commit(
+            None, // Don't update any reference
+            &signature,
+            &signature,
+            &format!(
+                "Update links: {}",
+                updated_link_files
+                    .iter()
+                    .map(|(p, _)| p.display().to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+            &new_tree,
+            &[&head_commit],
+        )
+        .context("Failed to create commit")?;
+
+    // Apply the :link filter to the new commit
+    let link_filter = josh_core::filter::parse(":link")
+        .map_err(from_josh_err)
+        .context("Failed to parse :link filter")?;
+
+    // Load the cache and create transaction
+    let repo_path = repo.path().parent().unwrap();
+    josh_core::cache_sled::sled_load(&repo_path).unwrap();
+    let cache = std::sync::Arc::new(
+        josh_core::cache_stack::CacheStack::new()
+            .with_backend(josh_core::cache_sled::SledCacheBackend::default())
+            .with_backend(
+                josh_core::cache_notes::NotesCacheBackend::new(&repo_path)
+                    .map_err(from_josh_err)
+                    .context("Failed to create NotesCacheBackend")?,
+            ),
+    );
+
+    // Open Josh transaction
+    let transaction = josh_core::cache::TransactionContext::from_env(cache.clone())
+        .map_err(from_josh_err)
+        .context("Failed TransactionContext::from_env")?
+        .open(None)
+        .map_err(from_josh_err)
+        .context("Failed TransactionContext::open")?;
+    let filtered_commit = josh_core::filter_commit(
+        &transaction,
+        link_filter,
+        new_commit,
+        josh_core::filter::empty(),
+    )
+    .map_err(from_josh_err)
+    .context("Failed to apply :link filter")?;
+
+    // Create the fixed branch name
+    let branch_name = "refs/heads/josh-link";
+
+    // Create or update the branch reference
+    repo.reference(branch_name, filtered_commit, true, "josh link fetch")
+        .with_context(|| format!("Failed to create branch '{}'", branch_name))?;
+
+    println!("Updated {} link file(s)", updated_link_files.len());
+    println!("Created branch: {}", branch_name);
 
     Ok(())
 }

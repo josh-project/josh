@@ -22,3 +22,4 @@ clap = { workspace = true }
 rs_tracing = { workspace = true }
 juniper = { workspace = true }
 git2 = { workspace = true }
+toml = { workspace = true }
