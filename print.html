@@ -915,6 +915,16 @@ passed filters into the upstream.</p>
 tree.
 Normally Josh will keep all commits in the filtered history whose tree differs from any of it's
 parents.</p>
+<h3 id="pin-tree-contents"><a class="header" href="#pin-tree-contents">Pin tree contents</a></h3>
+<p>Pin revision of a subtree to revision of the parent commit.</p>
+<p>In practical terms, it means that file and folder updates are &quot;held off&quot;, and revisions are &quot;pinned&quot;.
+If a tree entry already existed in the parent revision, that version will be chosen.
+Otherwise, the tree entry will not appear in the filtered commit.</p>
+<p>The source of the parent revision is always the first commit parent.</p>
+<p>Note that this filter is only practical when used with <code>:hook</code> or <code>workspace.josh</code>,
+as it should apply per-revision only. Applying <code>:pin</code> for the whole history
+will result in the subtree being excluded from all revisions.</p>
+<p>Refer to <code>pin_filter_workspace.t</code> and <code>pin_filter_hook.t</code> for reference.</p>
 <h2 id="filter-order-matters"><a class="header" href="#filter-order-matters">Filter order matters</a></h2>
 <p>Filters are applied in the left-to-right order they are given in the filter specification,
 and they are <code>not</code> commutative.</p>
