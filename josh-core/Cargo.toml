@@ -15,6 +15,7 @@ bitvec = "1.0.1"
 git-version = "0.3.9"
 git2 = { workspace = true }
 gix-object = "0.50.2"
+gix-hash = "*"
 glob = "0.3.1"
 hex = { workspace = true }
 indoc = "2.0.7"

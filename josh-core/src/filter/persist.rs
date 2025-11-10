@@ -1,267 +1,336 @@
+use gix_object::WriteTo;
+use gix_object::bstr::BString;
+use std::collections::HashMap;
+
 use crate::filter::{Filter, LazyRef, Op, to_filter, to_op};
 use crate::{JoshResult, josh_error};
 
-pub fn as_tree(repo: &git2::Repository, filter: Filter) -> JoshResult<git2::Oid> {
-    as_tree2(repo, &to_op(filter))
-}
-
-fn filter_params(repo: &git2::Repository, params: &[Filter]) -> JoshResult<git2::Oid> {
-    let mut builder = repo.treebuilder(None)?;
-    for (i, f) in params.iter().enumerate() {
-        let child = as_tree(repo, *f)?;
-        builder.insert(format!("{}", i), child, git2::FileMode::Tree.into())?;
+fn push_blob_entries(
+    entries: &mut Vec<gix_object::tree::Entry>,
+    items: impl IntoIterator<Item = (impl AsRef<str>, gix_hash::ObjectId)>,
+) {
+    for (name, oid) in items {
+        entries.push(gix_object::tree::Entry {
+            mode: gix_object::tree::EntryKind::Blob.into(),
+            filename: BString::from(name.as_ref()),
+            oid,
+        });
     }
-    Ok(builder.write()?)
 }
 
-fn str_params(repo: &git2::Repository, params: &[&str]) -> JoshResult<git2::Oid> {
-    let mut builder = repo.treebuilder(None)?;
-    for (i, f) in params.iter().enumerate() {
-        builder.insert(
-            format!("{}", i),
-            repo.blob(f.as_bytes())?,
-            git2::FileMode::Blob.into(),
-        )?;
+fn push_tree_entries(
+    entries: &mut Vec<gix_object::tree::Entry>,
+    items: impl IntoIterator<Item = (impl AsRef<str>, gix_hash::ObjectId)>,
+) {
+    for (name, oid) in items {
+        entries.push(gix_object::tree::Entry {
+            mode: gix_object::tree::EntryKind::Tree.into(),
+            filename: BString::from(name.as_ref()),
+            oid,
+        });
     }
-    Ok(builder.write()?)
 }
 
-fn as_tree2(repo: &git2::Repository, op: &Op) -> JoshResult<git2::Oid> {
-    let mut builder = repo.treebuilder(None)?;
-    match op {
-        Op::Author(name, email) => {
-            builder.insert(
-                "author",
-                str_params(repo, &[name, email])?,
-                git2::FileMode::Tree.into(),
-            )?;
-        }
-        Op::Committer(name, email) => {
-            builder.insert(
-                "committer",
-                str_params(repo, &[name, email])?,
-                git2::FileMode::Tree.into(),
-            )?;
-        }
-        Op::Compose(filters) => {
-            builder.insert(
-                "compose",
-                filter_params(repo, filters)?,
-                git2::FileMode::Tree.into(),
-            )?;
-        }
-        Op::Subtract(a, b) => {
-            builder.insert(
-                "subtract",
-                filter_params(repo, &[*a, *b])?,
-                git2::FileMode::Tree.into(),
-            )?;
-        }
-        Op::Chain(a, b) => {
-            builder.insert(
-                "chain",
-                filter_params(repo, &[*a, *b])?,
-                git2::FileMode::Tree.into(),
-            )?;
-        }
-        Op::Exclude(b) => {
-            builder.insert("exclude", as_tree(repo, *b)?, git2::FileMode::Tree.into())?;
-        }
-        Op::Pin(b) => {
-            builder.insert("pin", as_tree(repo, *b)?, git2::FileMode::Tree.into())?;
-        }
-        Op::Subdir(path) => {
-            builder.insert(
-                "subdir",
-                repo.blob(&path.to_string_lossy().as_bytes())?,
-                git2::FileMode::Blob.into(),
-            )?;
-        }
-        Op::Prefix(path) => {
-            builder.insert(
-                "prefix",
-                repo.blob(&path.to_string_lossy().as_bytes())?,
-                git2::FileMode::Blob.into(),
-            )?;
-        }
-        Op::File(path) => {
-            builder.insert(
-                "file",
-                repo.blob(&path.to_string_lossy().as_bytes())?,
-                git2::FileMode::Blob.into(),
-            )?;
-        }
-        Op::Pattern(pattern) => {
-            builder.insert(
-                "pattern",
-                repo.blob(&pattern.as_bytes())?,
-                git2::FileMode::Blob.into(),
-            )?;
-        }
-        Op::Message(m) => {
-            builder.insert(
-                "message",
-                repo.blob(&m.as_bytes())?,
-                git2::FileMode::Blob.into(),
-            )?;
-        }
-        Op::Workspace(path) => {
-            builder.insert(
-                "workspace",
-                repo.blob(&path.to_string_lossy().as_bytes())?,
-                git2::FileMode::Blob.into(),
-            )?;
-        }
-        Op::Nop => {
-            builder.insert(
-                "nop",
-                repo.blob(&"".as_bytes())?,
-                git2::FileMode::Blob.into(),
-            )?;
-        }
-        Op::Empty => {
-            builder.insert(
-                "empty",
-                repo.blob(&"".as_bytes())?,
-                git2::FileMode::Blob.into(),
-            )?;
-        }
-        Op::Paths => {
-            builder.insert(
-                "paths",
-                repo.blob(&"".as_bytes())?,
-                git2::FileMode::Blob.into(),
-            )?;
-        }
-        Op::Invert => {
-            builder.insert(
-                "invert",
-                repo.blob(&"".as_bytes())?,
-                git2::FileMode::Blob.into(),
-            )?;
-        }
-        Op::Index => {
-            builder.insert(
-                "index",
-                repo.blob(&"".as_bytes())?,
-                git2::FileMode::Blob.into(),
-            )?;
-        }
-        Op::Fold => {
-            builder.insert(
-                "fold",
-                repo.blob(&"".as_bytes())?,
-                git2::FileMode::Blob.into(),
-            )?;
-        }
-        Op::Linear => {
-            builder.insert(
-                "linear",
-                repo.blob(&"".as_bytes())?,
-                git2::FileMode::Blob.into(),
-            )?;
-        }
-        Op::Unsign => {
-            builder.insert(
-                "unsign",
-                repo.blob(&"".as_bytes())?,
-                git2::FileMode::Blob.into(),
-            )?;
-        }
-        Op::Squash(None) => {
-            builder.insert(
-                "squash",
-                repo.blob(&"".as_bytes())?,
-                git2::FileMode::Blob.into(),
-            )?;
-        }
-        Op::Prune => {
-            builder.insert(
-                "prune",
-                repo.blob(&"trivial-merge".as_bytes())?,
-                git2::FileMode::Blob.into(),
-            )?;
-        }
-        Op::Rev(filters) => {
-            let mut v = filters
-                .iter()
-                .map(|(k, v)| (k.to_string(), *v))
-                .collect::<Vec<_>>();
-            v.sort();
-            builder.insert("rev", rev_params(repo, &v)?, git2::FileMode::Tree.into())?;
-        }
-        Op::Join(filters) => {
-            let mut v = filters
-                .iter()
-                .map(|(k, v)| (k.to_string(), *v))
-                .collect::<Vec<_>>();
-            v.sort();
-            builder.insert("join", rev_params(repo, &v)?, git2::FileMode::Tree.into())?;
-        }
-        Op::Squash(Some(ids)) => {
-            let mut v = ids
-                .iter()
-                .map(|(k, v)| (k.to_string(), *v))
-                .collect::<Vec<_>>();
-            v.sort();
-            builder.insert("squash", rev_params(repo, &v)?, git2::FileMode::Tree.into())?;
-        }
-        Op::RegexReplace(replacements) => {
-            builder.insert(
-                "regex_replace",
-                regex_replace_params(repo, replacements)?,
-                git2::FileMode::Tree.into(),
-            )?;
-        }
-        Op::Hook(hook) => {
-            builder.insert(
-                "hook",
-                repo.blob(hook.as_bytes())?,
-                git2::FileMode::Blob.into(),
-            )?;
-        }
-    };
-    Ok(builder.write()?)
+struct InMemoryBuilder {
+    // Map from hash to (kind, raw bytes)
+    pending_writes: HashMap<gix_hash::ObjectId, (gix_object::Kind, Vec<u8>)>,
 }
 
-fn rev_params(repo: &git2::Repository, params: &[(String, Filter)]) -> JoshResult<git2::Oid> {
-    let mut outer = repo.treebuilder(None)?;
-    for (i, (key, filter)) in params.iter().enumerate() {
-        let mut inner = repo.treebuilder(None)?;
-        inner.insert("o", repo.blob(key.as_bytes())?, git2::FileMode::Blob.into())?;
-        inner.insert("f", as_tree(repo, *filter)?, git2::FileMode::Tree.into())?;
-        let inner_oid = inner.write()?;
-        outer.insert(format!("{}", i), inner_oid, git2::FileMode::Tree.into())?;
+impl InMemoryBuilder {
+    fn new() -> Self {
+        Self {
+            pending_writes: HashMap::new(),
+        }
     }
-    Ok(outer.write()?)
+
+    fn write_blob(&mut self, data: &[u8]) -> gix_hash::ObjectId {
+        let hash = gix_object::compute_hash(gix_hash::Kind::Sha1, gix_object::Kind::Blob, data)
+            .expect("failed to compute hash");
+        self.pending_writes
+            .insert(hash, (gix_object::Kind::Blob, data.to_vec()));
+        hash
+    }
+
+    fn write_tree(&mut self, mut tree: gix_object::Tree) -> gix_hash::ObjectId {
+        tree.entries.sort_by(|a, b| a.filename.cmp(&b.filename));
+        let mut buffer = Vec::new();
+        tree.write_to(&mut buffer).expect("failed to write tree");
+        let hash = gix_object::compute_hash(gix_hash::Kind::Sha1, gix_object::Kind::Tree, &buffer)
+            .expect("failed to compute hash");
+        self.pending_writes
+            .insert(hash, (gix_object::Kind::Tree, buffer));
+        hash
+    }
+
+    fn build_str_params(&mut self, params: &[&str]) -> gix_hash::ObjectId {
+        let mut entries = Vec::new();
+
+        let indexed_blobs: Vec<_> = params
+            .iter()
+            .enumerate()
+            .map(|(i, param)| (i.to_string(), self.write_blob(param.as_bytes())))
+            .collect();
+        push_blob_entries(&mut entries, indexed_blobs);
+
+        let tree = gix_object::Tree { entries };
+        self.write_tree(tree)
+    }
+
+    fn build_filter_params(&mut self, params: &[Filter]) -> JoshResult<gix_hash::ObjectId> {
+        let mut entries = Vec::new();
+        for (i, filter) in params.iter().enumerate() {
+            let child = self.build_filter(*filter)?;
+            entries.push(gix_object::tree::Entry {
+                mode: gix_object::tree::EntryKind::Tree.into(),
+                filename: BString::from(i.to_string()),
+                oid: child,
+            });
+        }
+        let tree = gix_object::Tree { entries };
+        Ok(self.write_tree(tree))
+    }
+
+    fn build_rev_params(&mut self, params: &[(String, Filter)]) -> JoshResult<gix_hash::ObjectId> {
+        let mut outer_entries = Vec::new();
+        for (i, (key, filter)) in params.iter().enumerate() {
+            let key_blob = self.write_blob(key.as_bytes());
+            let filter_tree = self.build_filter(*filter)?;
+
+            let inner_entries = vec![
+                gix_object::tree::Entry {
+                    mode: gix_object::tree::EntryKind::Blob.into(),
+                    filename: BString::from("o"),
+                    oid: key_blob,
+                },
+                gix_object::tree::Entry {
+                    mode: gix_object::tree::EntryKind::Tree.into(),
+                    filename: BString::from("f"),
+                    oid: filter_tree,
+                },
+            ];
+            let inner_tree = gix_object::Tree {
+                entries: inner_entries,
+            };
+            let inner_oid = self.write_tree(inner_tree);
+
+            outer_entries.push(gix_object::tree::Entry {
+                mode: gix_object::tree::EntryKind::Tree.into(),
+                filename: BString::from(i.to_string()),
+                oid: inner_oid,
+            });
+        }
+        let outer_tree = gix_object::Tree {
+            entries: outer_entries,
+        };
+        Ok(self.write_tree(outer_tree))
+    }
+
+    fn build_regex_replace_params(
+        &mut self,
+        replacements: &[(regex::Regex, String)],
+    ) -> gix_hash::ObjectId {
+        let mut outer_entries = Vec::new();
+        for (i, (regex, replacement)) in replacements.iter().enumerate() {
+            let regex_blob = self.write_blob(regex.as_str().as_bytes());
+            let replacement_blob = self.write_blob(replacement.as_bytes());
+
+            let mut inner_entries = Vec::new();
+            push_blob_entries(
+                &mut inner_entries,
+                [("p", regex_blob), ("r", replacement_blob)],
+            );
+            let inner_tree = gix_object::Tree {
+                entries: inner_entries,
+            };
+            let inner_oid = self.write_tree(inner_tree);
+
+            outer_entries.push(gix_object::tree::Entry {
+                mode: gix_object::tree::EntryKind::Tree.into(),
+                filename: BString::from(format!("{}", i)),
+                oid: inner_oid,
+            });
+        }
+        let outer_tree = gix_object::Tree {
+            entries: outer_entries,
+        };
+        self.write_tree(outer_tree)
+    }
+
+    fn build_filter(&mut self, filter: Filter) -> JoshResult<gix_hash::ObjectId> {
+        let op = to_op(filter);
+        self.build_op(&op)
+    }
+
+    fn build_op(&mut self, op: &Op) -> JoshResult<gix_hash::ObjectId> {
+        let mut entries = Vec::new();
+
+        match op {
+            Op::Author(name, email) => {
+                let params_tree = self.build_str_params(&[name, email]);
+                push_tree_entries(&mut entries, [("author", params_tree)]);
+            }
+            Op::Committer(name, email) => {
+                let params_tree = self.build_str_params(&[name, email]);
+                push_tree_entries(&mut entries, [("committer", params_tree)]);
+            }
+            Op::Compose(filters) => {
+                let params_tree = self.build_filter_params(filters)?;
+                push_tree_entries(&mut entries, [("compose", params_tree)]);
+            }
+            Op::Subtract(a, b) => {
+                let params_tree = self.build_filter_params(&[*a, *b])?;
+                push_tree_entries(&mut entries, [("subtract", params_tree)]);
+            }
+            Op::Chain(a, b) => {
+                let params_tree = self.build_filter_params(&[*a, *b])?;
+                push_tree_entries(&mut entries, [("chain", params_tree)]);
+            }
+            Op::Exclude(b) => {
+                let child = self.build_filter(*b)?;
+                push_tree_entries(&mut entries, [("exclude", child)]);
+            }
+            Op::Pin(b) => {
+                let child = self.build_filter(*b)?;
+                push_tree_entries(&mut entries, [("pin", child)]);
+            }
+            Op::Subdir(path) => {
+                let blob = self.write_blob(path.to_string_lossy().as_bytes());
+                push_blob_entries(&mut entries, [("subdir", blob)]);
+            }
+            Op::Prefix(path) => {
+                let blob = self.write_blob(path.to_string_lossy().as_bytes());
+                push_blob_entries(&mut entries, [("prefix", blob)]);
+            }
+            Op::File(path) => {
+                let blob = self.write_blob(path.to_string_lossy().as_bytes());
+                push_blob_entries(&mut entries, [("file", blob)]);
+            }
+            Op::Pattern(pattern) => {
+                let blob = self.write_blob(pattern.as_bytes());
+                push_blob_entries(&mut entries, [("pattern", blob)]);
+            }
+            Op::Message(m) => {
+                let blob = self.write_blob(m.as_bytes());
+                push_blob_entries(&mut entries, [("message", blob)]);
+            }
+            Op::Workspace(path) => {
+                let blob = self.write_blob(path.to_string_lossy().as_bytes());
+                push_blob_entries(&mut entries, [("workspace", blob)]);
+            }
+            Op::Nop => {
+                let blob = self.write_blob(b"");
+                push_blob_entries(&mut entries, [("nop", blob)]);
+            }
+            Op::Empty => {
+                let blob = self.write_blob(b"");
+                push_blob_entries(&mut entries, [("empty", blob)]);
+            }
+            Op::Paths => {
+                let blob = self.write_blob(b"");
+                push_blob_entries(&mut entries, [("paths", blob)]);
+            }
+            Op::Invert => {
+                let blob = self.write_blob(b"");
+                push_blob_entries(&mut entries, [("invert", blob)]);
+            }
+            Op::Index => {
+                let blob = self.write_blob(b"");
+                push_blob_entries(&mut entries, [("index", blob)]);
+            }
+            Op::Fold => {
+                let blob = self.write_blob(b"");
+                push_blob_entries(&mut entries, [("fold", blob)]);
+            }
+            Op::Linear => {
+                let blob = self.write_blob(b"");
+                push_blob_entries(&mut entries, [("linear", blob)]);
+            }
+            Op::Unsign => {
+                let blob = self.write_blob(b"");
+                push_blob_entries(&mut entries, [("unsign", blob)]);
+            }
+            Op::Squash(None) => {
+                let blob = self.write_blob(b"");
+                push_blob_entries(&mut entries, [("squash", blob)]);
+            }
+            Op::Prune => {
+                let blob = self.write_blob(b"trivial-merge");
+                push_blob_entries(&mut entries, [("prune", blob)]);
+            }
+            Op::Rev(filters) => {
+                let mut v = filters
+                    .iter()
+                    .map(|(k, v)| (k.to_string(), *v))
+                    .collect::<Vec<_>>();
+                v.sort();
+                let params_tree = self.build_rev_params(&v)?;
+                push_tree_entries(&mut entries, [("rev", params_tree)]);
+            }
+            Op::Join(filters) => {
+                let mut v = filters
+                    .iter()
+                    .map(|(k, v)| (k.to_string(), *v))
+                    .collect::<Vec<_>>();
+                v.sort();
+                let params_tree = self.build_rev_params(&v)?;
+                push_tree_entries(&mut entries, [("join", params_tree)]);
+            }
+            Op::Squash(Some(ids)) => {
+                let mut v = ids
+                    .iter()
+                    .map(|(k, v)| (k.to_string(), *v))
+                    .collect::<Vec<_>>();
+                v.sort();
+                let params_tree = self.build_rev_params(&v)?;
+                push_tree_entries(&mut entries, [("squash", params_tree)]);
+            }
+            Op::RegexReplace(replacements) => {
+                let params_tree = self.build_regex_replace_params(replacements);
+                push_tree_entries(&mut entries, [("regex_replace", params_tree)]);
+            }
+            Op::Hook(hook) => {
+                let blob = self.write_blob(hook.as_bytes());
+                push_blob_entries(&mut entries, [("hook", blob)]);
+            }
+        }
+
+        let tree = gix_object::Tree { entries };
+        Ok(self.write_tree(tree))
+    }
 }
 
-fn regex_replace_params(
-    repo: &git2::Repository,
-    replacements: &[(regex::Regex, String)],
-) -> JoshResult<git2::Oid> {
-    let mut outer = repo.treebuilder(None)?;
-    for (i, (regex, replacement)) in replacements.iter().enumerate() {
-        let mut inner = repo.treebuilder(None)?;
-        inner.insert(
-            "p",
-            repo.blob(regex.as_str().as_bytes())?,
-            git2::FileMode::Blob.into(),
-        )?;
-        inner.insert(
-            "r",
-            repo.blob(replacement.as_bytes())?,
-            git2::FileMode::Blob.into(),
-        )?;
-        let inner_oid = inner.write()?;
-        outer.insert(format!("{}", i), inner_oid, git2::FileMode::Tree.into())?;
+pub fn as_tree(repo: &git2::Repository, filter: crate::filter::Filter) -> JoshResult<git2::Oid> {
+    let mut builder = InMemoryBuilder::new();
+    let tree_id = builder.build_filter(filter)?;
+
+    // Write all pending objects to the git2 repository
+    let odb = repo.odb()?;
+    for (oid, (kind, data)) in builder.pending_writes {
+        let git2_type = match kind {
+            gix_object::Kind::Tree => git2::ObjectType::Tree,
+            gix_object::Kind::Blob => git2::ObjectType::Blob,
+            gix_object::Kind::Commit => git2::ObjectType::Commit,
+            gix_object::Kind::Tag => git2::ObjectType::Tag,
+        };
+
+        let oid = git2::Oid::from_bytes(oid.as_bytes())?;
+
+        // On some platforms, .exists() is cheaper in terms of i/o
+        // than .write(), because .write() updates file access time
+        // in loose object backend
+        if !odb.exists(oid) {
+            odb.write(git2_type, &data)?;
+        }
     }
-    Ok(outer.write()?)
+
+    // Return the root tree OID
+    Ok(git2::Oid::from_bytes(tree_id.as_bytes())?)
 }
 
 pub fn from_tree(repo: &git2::Repository, tree_oid: git2::Oid) -> JoshResult<Filter> {
     Ok(to_filter(from_tree2(repo, tree_oid)?))
 }
+
 fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> JoshResult<Op> {
     let tree = repo.find_tree(tree_oid)?;
 
