@@ -71,7 +71,6 @@ pub struct Apply<'a> {
     pub author: Option<(String, String)>,
     pub committer: Option<(String, String)>,
     pub message: Option<String>,
-    pub parents: Option<Vec<git2::Oid>>,
 }
 
 impl<'a> Clone for Apply<'a> {
@@ -81,7 +80,6 @@ impl<'a> Clone for Apply<'a> {
             author: self.author.clone(),
             committer: self.committer.clone(),
             message: self.message.clone(),
-            parents: self.parents.clone(),
         }
     }
 }
@@ -93,7 +91,6 @@ impl<'a> Apply<'a> {
             author: None,
             committer: None,
             message: None,
-            parents: None,
         }
     }
 
@@ -108,7 +105,6 @@ impl<'a> Apply<'a> {
             author,
             committer,
             message,
-            parents: None,
         }
     }
 
@@ -131,7 +127,6 @@ impl<'a> Apply<'a> {
             author,
             committer,
             message,
-            parents: None,
         })
     }
 
@@ -141,7 +136,6 @@ impl<'a> Apply<'a> {
             author: Some(author),
             committer: self.committer,
             message: self.message,
-            parents: self.parents,
         }
     }
 
@@ -151,7 +145,6 @@ impl<'a> Apply<'a> {
             author: self.author,
             committer: Some(committer),
             message: self.message,
-            parents: self.parents,
         }
     }
 
@@ -161,7 +154,6 @@ impl<'a> Apply<'a> {
             author: self.author,
             committer: self.committer,
             message: Some(message),
-            parents: self.parents,
         }
     }
 
@@ -171,17 +163,6 @@ impl<'a> Apply<'a> {
             author: self.author,
             committer: self.committer,
             message: self.message,
-            parents: self.parents,
-        }
-    }
-
-    pub fn with_parents(self, parents: Vec<git2::Oid>) -> Self {
-        Apply {
-            tree: self.tree,
-            author: self.author,
-            committer: self.committer,
-            message: self.message,
-            parents: Some(parents),
         }
     }
 
@@ -866,16 +847,7 @@ fn apply_to_commit2(
                 }
             }
 
-            let filtered_parent_ids = commit
-                .parents()
-                .map(|x| transaction.get(filter, x.id()))
-                .collect::<Option<Vec<_>>>();
-            let filtered_parent_ids = some_or!(filtered_parent_ids, { return Ok(None) });
-            apply(
-                transaction,
-                nf,
-                Apply::from_commit(commit)?.with_parents(filtered_parent_ids),
-            )?
+            apply(transaction, nf, Apply::from_commit(commit)?)?
         }
         Op::Squash(Some(ids)) => {
             if let Some(sq) = ids.get(&LazyRef::Resolved(commit.id())) {
@@ -1053,18 +1025,7 @@ fn apply_to_commit2(
 
             return per_rev_filter(transaction, commit, filter, commit_filter, parent_filters);
         }
-        _ => {
-            let filtered_parent_ids = commit
-                .parent_ids()
-                .map(|x| transaction.get(filter, x))
-                .collect::<Option<Vec<_>>>();
-            let filtered_parent_ids = some_or!(filtered_parent_ids, { return Ok(None) });
-            apply(
-                transaction,
-                filter,
-                Apply::from_commit(commit)?.with_parents(filtered_parent_ids),
-            )?
-        }
+        _ => apply(transaction, filter, Apply::from_commit(commit)?)?,
     };
 
     let tree_data = rewrite_data;
@@ -1538,11 +1499,7 @@ fn per_rev_filter(
 
     let filtered_parent_ids: Vec<_> = normal_parents.into_iter().chain(extra_parents).collect();
 
-    let mut tree_data = apply(
-        transaction,
-        commit_filter,
-        Apply::from_commit(commit)?.with_parents(filtered_parent_ids.clone()),
-    )?;
+    let mut tree_data = apply(transaction, commit_filter, Apply::from_commit(commit)?)?;
 
     if let Some((pin_subtract, pin_overlay)) = pin_details {
         let with_exclude = tree::subtract(transaction, tree_data.tree().id(), pin_subtract)?;
