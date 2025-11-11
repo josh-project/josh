@@ -26,6 +26,7 @@ env_logger = "0.11.5"
 log = "0.4.28"
 futures = "0.3.31"
 gix = { version = "0.73.0", default-features = false }
+gix-hash = "0.19.0"
 hyper-reverse-proxy = { path = "hyper-reverse-proxy", version = "0.0.1" }
 lazy_static = "1.5.0"
 libc = "0.2.177"
