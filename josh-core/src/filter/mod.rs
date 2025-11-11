@@ -4,6 +4,7 @@ use std::path::Path;
 mod opt;
 mod parse;
 pub mod persist;
+pub mod text;
 pub mod tree;
 
 pub use persist::as_tree;

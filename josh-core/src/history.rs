@@ -602,11 +602,23 @@ pub fn unapply_filter(
             }
         };
 
+        let mut apply = filter::Apply::from_tree(new_tree.clone());
+
+        if change_ids.is_some() {
+            let new_message = filter::text::transform_with_template(
+                &regex::Regex::new("(?m)^Change: [^ ]+")?,
+                &"",
+                module_commit.message_raw().unwrap(),
+                &std::collections::HashMap::new(),
+            )?;
+            apply = apply.with_message(new_message);
+        }
+
         ret = rewrite_commit(
             transaction.repo(),
             &module_commit,
             &original_parents,
-            filter::Apply::from_tree(new_tree.clone()),
+            apply,
             false,
         )?;
 
