@@ -51,19 +51,23 @@ fn split_changes(
 
     let commits: Vec<git2::Commit> = changes
         .iter()
-        .map(|(_, commit, _)| Ok(repo.find_commit(*commit)?))
-        .collect::<JoshResult<Vec<_>>>()?;
+        .map(|(_, commit, _)| repo.find_commit(*commit))
+        .collect::<Result<Vec<_>, _>>()?;
 
-    let mut trees: Vec<git2::Tree> = commits
-        .iter()
-        .map(|commit| Ok(commit.tree()?))
-        .collect::<JoshResult<Vec<_>>>()?;
+    let base_tree = std::iter::once(repo.find_commit(base)?.tree()?);
+    let trees: Vec<git2::Tree> = base_tree
+        .chain(
+            commits
+                .iter()
+                .map(|commit| commit.tree())
+                .collect::<Result<Vec<_>, _>>()?,
+        )
+        .collect();
 
-    trees.insert(0, repo.find_commit(base)?.tree()?);
-
-    let diffs: Vec<git2::Diff> = (1..trees.len())
-        .map(|i| Ok(repo.diff_tree_to_tree(Some(&trees[i - 1]), Some(&trees[i]), None)?))
-        .collect::<JoshResult<Vec<_>>>()?;
+    let diffs: Vec<git2::Diff> = trees
+        .windows(2)
+        .map(|window| repo.diff_tree_to_tree(Some(&window[0]), Some(&window[1]), None))
+        .collect::<Result<Vec<_>, _>>()?;
 
     let mut moved = std::collections::HashSet::new();
     let mut bases = vec![base];
@@ -105,53 +109,55 @@ pub fn changes_to_refs(
     change_author: &str,
     changes: Vec<Change>,
 ) -> JoshResult<Vec<(String, git2::Oid, String)>> {
-    let mut seen = vec![];
-    let mut changes = changes;
-    changes.retain(|change| change.author == change_author);
     if !change_author.contains('@') {
         return Err(josh_error(
             "Push option 'author' needs to be set to a valid email address",
         ));
     };
 
+    let changes: Vec<Change> = changes
+        .into_iter()
+        .filter(|change| change.author == change_author)
+        .collect();
+
+    let mut seen = std::collections::HashSet::new();
     for change in changes.iter() {
-        if let Some(id) = &change.id {
-            if id.contains('@') {
-                return Err(josh_error("Change id must not contain '@'"));
+        match &change.id {
+            Some(id) => {
+                if id.contains('@') {
+                    return Err(josh_error("Change id must not contain '@'"));
+                }
+                if !seen.insert(id) {
+                    return Err(josh_error(&format!(
+                        "rejecting to push {:?} with duplicate label",
+                        change.commit
+                    )));
+                }
             }
-            if seen.contains(&id) {
+            None => {
                 return Err(josh_error(&format!(
-                    "rejecting to push {:?} with duplicate label",
+                    "rejecting to push {:?} without id",
                     change.commit
                 )));
             }
-            seen.push(id);
-        } else {
-            return Err(josh_error(&format!(
-                "rejecting to push {:?} without id",
-                change.commit
-            )));
         }
     }
 
     Ok(changes
         .into_iter()
-        .filter(|change| change.id.is_some())
-        .map(|change| {
-            (
-                format!(
-                    "refs/heads/@changes/{}/{}/{}",
-                    baseref.replacen("refs/heads/", "", 1),
-                    change.author,
-                    change.id.as_ref().unwrap_or(&"".to_string()),
-                ),
-                change.commit,
-                change
-                    .id
-                    .as_ref()
-                    .unwrap_or(&"JOSH_PUSH".to_string())
-                    .to_string(),
-            )
+        .filter_map(|change| {
+            change.id.map(|id| {
+                (
+                    format!(
+                        "refs/heads/@changes/{}/{}/{}",
+                        baseref.replacen("refs/heads/", "", 1),
+                        change.author,
+                        id,
+                    ),
+                    change.commit,
+                    id.to_string(),
+                )
+            })
         })
         .collect())
 }
@@ -162,39 +168,42 @@ pub fn build_to_push(
     push_mode: PushMode,
     baseref: &str,
     author: &str,
-    ref_with_options: String,
+    ref_with_options: &str,
     oid_to_push: git2::Oid,
-    old: git2::Oid,
+    base_oid: git2::Oid,
 ) -> JoshResult<Vec<(String, git2::Oid, String)>> {
-    if let Some(changes) = changes {
-        let mut v = vec![];
-        let mut refs = changes_to_refs(baseref, author, changes)?;
-        v.append(&mut refs);
-        if push_mode == PushMode::Split {
-            split_changes(repo, &mut v, old)?;
-        }
-        if push_mode == PushMode::Review {
-            v.push((
-                ref_with_options.clone(),
+    match changes {
+        Some(changes) => {
+            let mut push_refs = changes_to_refs(baseref, author, changes)?;
+
+            if push_mode == PushMode::Split {
+                split_changes(repo, &mut push_refs, base_oid)?;
+            }
+
+            if push_mode == PushMode::Review {
+                push_refs.push((
+                    ref_with_options.to_string(),
+                    oid_to_push,
+                    "JOSH_PUSH".to_string(),
+                ));
+            }
+
+            push_refs.push((
+                format!(
+                    "refs/heads/@heads/{}/{}",
+                    baseref.replacen("refs/heads/", "", 1),
+                    author,
+                ),
                 oid_to_push,
-                "JOSH_PUSH".to_string(),
-            ));
-        }
-        v.push((
-            format!(
-                "refs/heads/@heads/{}/{}",
                 baseref.replacen("refs/heads/", "", 1),
-                author,
-            ),
-            oid_to_push,
-            baseref.replacen("refs/heads/", "", 1),
-        ));
-        Ok(v)
-    } else {
-        Ok(vec![(
-            ref_with_options,
+            ));
+
+            Ok(push_refs)
+        }
+        None => Ok(vec![(
+            ref_with_options.to_string(),
             oid_to_push,
             "JOSH_PUSH".to_string(),
-        )])
+        )]),
     }
 }

@@ -1884,6 +1884,7 @@ dependencies = [
 name = "josh-cli"
 version = "22.4.15"
 dependencies = [
+ "anyhow",
  "clap",
  "defer",
  "env_logger",

@@ -20,6 +20,7 @@ opt-level = 3
 codegen-units = 1
 
 [workspace.dependencies]
+anyhow = "1.0"
 base64 = "0.22.1"
 defer = "0.2.1"
 env_logger = "0.11.5"
