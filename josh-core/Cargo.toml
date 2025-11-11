@@ -1,5 +1,5 @@
 [package]
-name = "josh"
+name = "josh-core"
 version = "22.4.15"
 repository = "https://ithub.com/josh-project/josh"
 authors = ["Christian Schilling <initcrash@gmail.com>"]

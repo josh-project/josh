@@ -8,27 +8,27 @@ pub mod trace;
 #[macro_use]
 extern crate lazy_static;
 
-use josh::cache::TransactionContext;
-use josh::cache_stack::CacheStack;
-use josh::{JoshError, JoshResult, josh_error};
+use josh_core::cache::TransactionContext;
+use josh_core::cache_stack::CacheStack;
+use josh_core::{JoshError, JoshResult, josh_error};
 use std::fs;
 use std::path::PathBuf;
 
-use josh::changes::PushMode;
+use josh_core::changes::PushMode;
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone, Default)]
 pub struct Ref {
-    pub target: josh::Oid,
+    pub target: josh_core::Oid,
 }
 
-type RefsLock = std::collections::HashMap<String, josh::Oid>;
+type RefsLock = std::collections::HashMap<String, josh_core::Oid>;
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone, Default)]
 pub struct RepoConfig {
     pub repo: String,
 
     #[serde(default)]
-    pub filter: josh::filter::Filter,
+    pub filter: josh_core::filter::Filter,
 
     #[serde(default)]
     pub lock_refs: bool,
@@ -55,7 +55,7 @@ pub fn refs_locking(refs: Vec<(String, git2::Oid)>, meta: &MetaConfig) -> Vec<(S
     output
 }
 
-use josh::changes::baseref_and_options;
+use josh_core::changes::baseref_and_options;
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 pub enum RemoteAuth {
@@ -90,7 +90,7 @@ pub struct PushOptions {
     pub author: Option<String>,
 }
 
-pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> {
+pub fn process_repo_update(repo_update: RepoUpdate) -> josh_core::JoshResult<String> {
     let push_options_path = std::path::PathBuf::from(&repo_update.git_dir)
         .join("refs/namespaces")
         .join(&repo_update.git_ns)
@@ -194,7 +194,7 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
                 "resolve_original_target"
             );
 
-            return Err(josh::josh_error(&unindent::unindent(&format!(
+            return Err(josh_core::josh_error(&unindent::unindent(&format!(
                 r###"
                     Reference {:?} does not exist on remote.
                     If you want to create it, pass "-o base=<basebranch>" or "-o base=path/to/ref"
@@ -223,21 +223,21 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
                 None
             };
 
-        let filter = josh::filter::parse(&repo_update.filter_spec)?;
+        let filter = josh_core::filter::parse(&repo_update.filter_spec)?;
         let new_oid = git2::Oid::from_str(new)?;
         let backward_new_oid = {
-            let unapply_result = josh::history::unapply_filter(
+            let unapply_result = josh_core::history::unapply_filter(
                 &transaction,
                 filter,
                 original_target,
                 old,
                 new_oid,
                 if push_options.merge || push_options.allow_orphans {
-                    josh::history::OrphansMode::Keep
+                    josh_core::history::OrphansMode::Keep
                 } else if push_options.edit {
-                    josh::history::OrphansMode::Remove
+                    josh_core::history::OrphansMode::Remove
                 } else {
-                    josh::history::OrphansMode::Fail
+                    josh_core::history::OrphansMode::Fail
                 },
                 reparent_orphans,
                 &mut changes,
@@ -274,7 +274,7 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
                     &[&base_commit, &backward_commit],
                 )?
             } else {
-                return Err(josh::josh_error("josh_merge failed"));
+                return Err(josh_core::josh_error("josh_merge failed"));
             }
         } else {
             backward_new_oid
@@ -315,11 +315,11 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
             )?;
 
             if status != 0 {
-                return Err(josh::josh_error(&text));
+                return Err(josh_core::josh_error(&text));
             }
 
             resp.push(text.to_string());
-            let mut warnings = josh::filter::compute_warnings(
+            let mut warnings = josh_core::filter::compute_warnings(
                 &transaction,
                 filter,
                 transaction.repo().find_commit(oid)?.tree()?,
@@ -331,7 +331,7 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
             }
         }
 
-        let reapply = josh::filter::apply_to_commit(
+        let reapply = josh_core::filter::apply_to_commit(
             filter,
             &transaction.repo().find_commit(oid_to_push)?,
             &transaction,
@@ -368,7 +368,7 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
     Ok("".to_string())
 }
 
-use josh::changes::build_to_push;
+use josh_core::changes::build_to_push;
 
 pub fn push_head_url(
     repo: &git2::Repository,
@@ -380,7 +380,7 @@ pub fn push_head_url(
     namespace: &str,
     display_name: &str,
     force: bool,
-) -> josh::JoshResult<(String, i32)> {
+) -> josh_core::JoshResult<(String, i32)> {
     let push_temp_ref = format!("refs/{}", &namespace);
     let push_refspec = format!("{}:{}", &push_temp_ref, &refname);
 
@@ -407,7 +407,7 @@ pub fn push_head_url(
     Ok((stderr, status))
 }
 
-fn create_repo_base(path: &PathBuf) -> josh::JoshResult<josh::shell::Shell> {
+fn create_repo_base(path: &PathBuf) -> josh_core::JoshResult<josh_core::shell::Shell> {
     std::fs::create_dir_all(path).expect("can't create_dir_all");
 
     if gix::open(path).is_err() {
@@ -436,7 +436,7 @@ fn create_repo_base(path: &PathBuf) -> josh::JoshResult<josh::shell::Shell> {
         ("credential", &[("helper", credential_helper)]),
     ];
 
-    let shell = josh::shell::Shell {
+    let shell = josh_core::shell::Shell {
         cwd: path.to_path_buf(),
     };
 
@@ -499,7 +499,7 @@ fn create_repo_base(path: &PathBuf) -> josh::JoshResult<josh::shell::Shell> {
     Ok(shell)
 }
 
-pub fn create_repo(path: &std::path::Path) -> josh::JoshResult<()> {
+pub fn create_repo(path: &std::path::Path) -> josh_core::JoshResult<()> {
     let mirror_path = path.join("mirror");
     tracing::debug!("init mirror repo: {:?}", mirror_path);
     create_repo_base(&mirror_path)?;
@@ -548,8 +548,8 @@ pub fn run_git_with_auth(
     cmd: &[&str],
     remote_auth: &RemoteAuth,
     alt_object_dir: Option<String>,
-) -> josh::JoshResult<(String, String, i32)> {
-    let shell = josh::shell::Shell {
+) -> josh_core::JoshResult<(String, String, i32)> {
+    let shell = josh_core::shell::Shell {
         cwd: cwd.to_owned(),
     };
 
@@ -598,7 +598,7 @@ pub fn get_head(
     path: &std::path::Path,
     url: &str,
     remote_auth: &RemoteAuth,
-) -> josh::JoshResult<String> {
+) -> josh_core::JoshResult<String> {
     let cmd = &["git", "ls-remote", "--symref", url, "HEAD"];
 
     tracing::info!("get_head {:?} {:?} {:?}", cmd, path, "");
@@ -656,7 +656,7 @@ pub fn fetch_refs_from_url(
             format!(
                 "+{}:refs/josh/upstream/{}/{}",
                 &r,
-                josh::to_ns(upstream_repo),
+                josh_core::to_ns(upstream_repo),
                 &r
             )
         })
@@ -692,7 +692,7 @@ pub fn fetch_refs_from_url(
 
     if stderr.contains("error:") {
         tracing::error!("{:?}", stderr);
-        return Err(FetchError::Other(josh::josh_error(&format!(
+        return Err(FetchError::Other(josh_core::josh_error(&format!(
             "git error: {:?}",
             stderr
         ))));
@@ -760,7 +760,7 @@ impl Drop for TmpGitNamespace {
     }
 }
 
-fn proxy_commit_signature<'a>() -> josh::JoshResult<git2::Signature<'a>> {
+fn proxy_commit_signature<'a>() -> josh_core::JoshResult<git2::Signature<'a>> {
     Ok(if let Ok(time) = std::env::var("JOSH_COMMIT_TIME") {
         git2::Signature::new(
             "JOSH",
@@ -773,10 +773,10 @@ fn proxy_commit_signature<'a>() -> josh::JoshResult<git2::Signature<'a>> {
 }
 
 pub fn merge_meta(
-    transaction: &josh::cache::Transaction,
-    transaction_mirror: &josh::cache::Transaction,
+    transaction: &josh_core::cache::Transaction,
+    transaction_mirror: &josh_core::cache::Transaction,
     meta_add: &std::collections::HashMap<std::path::PathBuf, Vec<String>>,
-) -> josh::JoshResult<Option<(String, git2::Oid)>> {
+) -> josh_core::JoshResult<Option<(String, git2::Oid)>> {
     if meta_add.is_empty() {
         return Ok(None);
     }
@@ -788,7 +788,7 @@ pub fn merge_meta(
         let tree = meta_commit.tree()?;
         (tree, Some(meta_commit))
     } else {
-        (josh::filter::tree::empty(transaction.repo()), None)
+        (josh_core::filter::tree::empty(transaction.repo()), None)
     };
 
     let mut tree = tree;
@@ -813,7 +813,7 @@ pub fn merge_meta(
 
         let blob = transaction.repo().blob(lines.join("\n").as_bytes())?;
 
-        tree = josh::filter::tree::insert(transaction.repo(), &tree, path, blob, 0o0100644)?;
+        tree = josh_core::filter::tree::insert(transaction.repo(), &tree, path, blob, 0o0100644)?;
     }
 
     let signature = proxy_commit_signature()?;

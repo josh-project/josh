@@ -1,6 +1,6 @@
-use josh::cache::TransactionContext;
-use josh::cache_stack::CacheStack;
-use josh::{JoshResult, cache, josh_error};
+use josh_core::cache::TransactionContext;
+use josh_core::cache_stack::CacheStack;
+use josh_core::{JoshResult, cache, josh_error};
 use serde_json::json;
 
 struct GraphQLHelper {
@@ -35,7 +35,7 @@ impl GraphQLHelper {
             .join("..")
             .join(path);
 
-        let path = josh::normalize_path(&path);
+        let path = josh_core::normalize_path(&path);
         let transaction = if let Ok(to) = self
             .transaction_context(&mirror_path)
             .open(Some(&self.ref_prefix))

@@ -3,7 +3,7 @@
 #[macro_use]
 extern crate rs_tracing;
 
-use josh::JoshError;
+use josh_core::JoshError;
 use std::fs::read_to_string;
 use std::io::Write;
 
@@ -137,12 +137,12 @@ struct GitNotesFilterHook {
     repo: std::sync::Mutex<git2::Repository>,
 }
 
-impl josh::cache::FilterHook for GitNotesFilterHook {
+impl josh_core::cache::FilterHook for GitNotesFilterHook {
     fn filter_for_commit(
         &self,
         commit_oid: git2::Oid,
         arg: &str,
-    ) -> josh::JoshResult<josh::filter::Filter> {
+    ) -> josh_core::JoshResult<josh_core::filter::Filter> {
         let notes_ref = if arg.starts_with("refs/") {
             arg.to_string()
         } else {
@@ -151,15 +151,15 @@ impl josh::cache::FilterHook for GitNotesFilterHook {
         let repo = self.repo.lock().unwrap();
         let note = repo
             .find_note(Some(notes_ref.as_str()), commit_oid)
-            .map_err(|_| josh::josh_error("missing git note for commit"))?;
+            .map_err(|_| josh_core::josh_error("missing git note for commit"))?;
         let msg = note
             .message()
-            .ok_or_else(|| josh::josh_error("empty git note"))?;
-        josh::filter::parse(msg)
+            .ok_or_else(|| josh_core::josh_error("empty git note"))?;
+        josh_core::filter::parse(msg)
     }
 }
 
-fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
+fn run_filter(args: Vec<String>) -> josh_core::JoshResult<i32> {
     let args = make_app().get_matches_from(args);
 
     if args.get_flag("trace") {
@@ -167,7 +167,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
     }
 
     if args.get_flag("version") {
-        println!("Version: {}", josh::VERSION);
+        println!("Version: {}", josh_core::VERSION);
         return Ok(0);
     }
     let specstr = args.get_one::<String>("filter").unwrap();
@@ -176,7 +176,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         .and_then(|f| read_to_string(f).ok())
         .unwrap_or(specstr.to_string());
 
-    let mut filterobj = josh::filter::parse(&specstr)?;
+    let mut filterobj = josh_core::filter::parse(&specstr)?;
 
     let repo_path = {
         let repo = git2::Repository::open_from_env()?;
@@ -184,16 +184,17 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
     };
 
     if !args.get_flag("no-cache") {
-        josh::cache_sled::sled_load(&repo_path)?;
+        josh_core::cache_sled::sled_load(&repo_path)?;
     }
 
     let cache = std::sync::Arc::new(
-        josh::cache_stack::CacheStack::new()
-            .with_backend(josh::cache_sled::SledCacheBackend::default())
-            .with_backend(josh::cache_notes::NotesCacheBackend::new(&repo_path)?),
+        josh_core::cache_stack::CacheStack::new()
+            .with_backend(josh_core::cache_sled::SledCacheBackend::default())
+            .with_backend(josh_core::cache_notes::NotesCacheBackend::new(&repo_path)?),
     );
 
-    let mut transaction = josh::cache::TransactionContext::from_env(cache.clone())?.open(None)?;
+    let mut transaction =
+        josh_core::cache::TransactionContext::from_env(cache.clone())?.open(None)?;
 
     let repo_for_hook = git2::Repository::open_ext(
         transaction.repo().path(),
@@ -209,14 +210,14 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
     let input_ref = args.get_one::<String>("input").unwrap();
 
     let mut refs = vec![];
-    let mut ids: Vec<(git2::Oid, josh::filter::Filter)> = vec![];
+    let mut ids: Vec<(git2::Oid, josh_core::filter::Filter)> = vec![];
 
     let reference = repo.resolve_reference_from_short_name(input_ref).unwrap();
     let input_ref = reference.name().unwrap().to_string();
     refs.push((input_ref.clone(), reference.target().unwrap()));
 
     if args.get_flag("single") {
-        filterobj = josh::filter::chain(josh::filter::squash(None), filterobj);
+        filterobj = josh_core::filter::chain(josh_core::filter::squash(None), filterobj);
     }
 
     if let Some(pattern) = args.get_one::<String>("squash-pattern") {
@@ -224,10 +225,13 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         for reference in repo.references_glob(&pattern).unwrap() {
             let reference = reference?;
             let target = reference.peel_to_commit()?.id();
-            ids.push((target, josh::filter::message(reference.name().unwrap())));
+            ids.push((
+                target,
+                josh_core::filter::message(reference.name().unwrap()),
+            ));
             refs.push((reference.name().unwrap().to_string(), target));
         }
-        filterobj = josh::filter::chain(josh::filter::squash(Some(&ids)), filterobj);
+        filterobj = josh_core::filter::chain(josh_core::filter::squash(Some(&ids)), filterobj);
     };
 
     if let Some(filename) = args.get_one::<String>("squash-file") {
@@ -238,35 +242,35 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
             if let [sha, name] = split.as_slice() {
                 let target = git2::Oid::from_str(sha)?;
                 let target = repo.find_object(target, None)?.peel_to_commit()?.id();
-                ids.push((target, josh::filter::message(name)));
+                ids.push((target, josh_core::filter::message(name)));
                 refs.push((name.to_string(), target));
             } else if !split.is_empty() {
                 eprintln!("Warning: malformed line: {:?}", line);
             }
         }
-        filterobj = josh::filter::chain(josh::filter::squash(Some(&ids)), filterobj);
+        filterobj = josh_core::filter::chain(josh_core::filter::squash(Some(&ids)), filterobj);
     };
 
     if args.get_flag("print-filter") {
         let filterobj = if args.get_flag("reverse") {
-            josh::filter::invert(filterobj)?
+            josh_core::filter::invert(filterobj)?
         } else {
             filterobj
         };
         println!(
             "{}",
-            josh::filter::pretty(filterobj, if args.contains_id("file") { 0 } else { 4 })
+            josh_core::filter::pretty(filterobj, if args.contains_id("file") { 0 } else { 4 })
         );
         return Ok(0);
     }
 
     if args.get_flag("filter-id") {
         let filterobj = if args.get_flag("reverse") {
-            josh::filter::invert(filterobj)?
+            josh_core::filter::invert(filterobj)?
         } else {
             filterobj
         };
-        println!("{}", josh::filter::as_tree(repo, filterobj)?);
+        println!("{}", josh_core::filter::as_tree(repo, filterobj)?);
         return Ok(0);
     }
 
@@ -283,7 +287,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
             rs_tracing::close_trace_file!();
         }
         if args.get_flag("cache-stats") {
-            josh::cache_sled::sled_print_stats().expect("failed to collect cache stats");
+            josh_core::cache_sled::sled_print_stats().expect("failed to collect cache stats");
         }
         if let Some(mempack) = mp {
             let mut buf = git2::Buf::new();
@@ -298,16 +302,17 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
 
     if args.get_flag("discover") {
         let r = repo.revparse_single(&input_ref)?;
-        let hs = josh::housekeeping::find_all_workspaces_and_subdirectories(&r.peel_to_tree()?)?;
+        let hs =
+            josh_core::housekeeping::find_all_workspaces_and_subdirectories(&r.peel_to_tree()?)?;
         for i in hs {
-            let (mut updated_refs, _) = josh::filter_refs(
+            let (mut updated_refs, _) = josh_core::filter_refs(
                 &transaction,
-                josh::filter::parse(&i)?,
+                josh_core::filter::parse(&i)?,
                 &[(input_ref.to_string(), r.id())],
-                josh::filter::empty(),
+                josh_core::filter::empty(),
             );
             updated_refs[0].0 = "refs/JOSH_TMP".to_string();
-            josh::update_refs(&transaction, &mut updated_refs, "");
+            josh_core::update_refs(&transaction, &mut updated_refs, "");
         }
     }
 
@@ -318,7 +323,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
     let reverse = args.get_flag("reverse");
 
     let check_permissions = args.get_flag("check-permission");
-    let mut permissions_filter = josh::filter::empty();
+    let mut permissions_filter = josh_core::filter::empty();
     if check_permissions {
         let whitelist;
         let blacklist;
@@ -332,26 +337,27 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
             let user = args.get_one::<String>("user").unwrap();
             let repo = args.get_one::<String>("repo").unwrap();
 
-            let acl = josh::get_acl(users, groups, user, repo)?;
+            let acl = josh_core::get_acl(users, groups, user, repo)?;
             whitelist = acl.0;
             blacklist = acl.1;
         } else {
             whitelist = match args.get_one::<String>("whitelist") {
-                Some(s) => josh::filter::parse(s)?,
-                _ => josh::filter::nop(),
+                Some(s) => josh_core::filter::parse(s)?,
+                _ => josh_core::filter::nop(),
             };
             blacklist = match args.get_one::<String>("blacklist") {
-                Some(s) => josh::filter::parse(s)?,
-                _ => josh::filter::empty(),
+                Some(s) => josh_core::filter::parse(s)?,
+                _ => josh_core::filter::empty(),
             };
         }
-        permissions_filter = josh::filter::make_permissions_filter(filterobj, whitelist, blacklist)
+        permissions_filter =
+            josh_core::filter::make_permissions_filter(filterobj, whitelist, blacklist)
     }
 
     let missing_permissions = args.get_flag("missing-permission");
     if missing_permissions {
         filterobj = permissions_filter;
-        permissions_filter = josh::filter::empty();
+        permissions_filter = josh_core::filter::empty();
     }
 
     let old_oid = if let Ok(id) = transaction.repo().refname_to_id(target) {
@@ -361,7 +367,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
     };
 
     let (mut updated_refs, errors) =
-        josh::filter_refs(&transaction, filterobj, &refs, permissions_filter);
+        josh_core::filter_refs(&transaction, filterobj, &refs, permissions_filter);
 
     for error in errors {
         return Err(error.1);
@@ -383,10 +389,11 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
                 .replacen("refs/tags/", "refs/tags/filtered/", 1);
         }
     }
-    josh::update_refs(&transaction, &mut updated_refs, "");
+    josh_core::update_refs(&transaction, &mut updated_refs, "");
 
     if let Some(searchstring) = args.get_one::<String>("search") {
-        let ifilterobj = josh::filter::chain(filterobj, josh::filter::parse(":SQUASH:INDEX")?);
+        let ifilterobj =
+            josh_core::filter::chain(filterobj, josh_core::filter::parse(":SQUASH:INDEX")?);
 
         let max_complexity: usize = args
             .get_one::<String>("max_comp")
@@ -396,9 +403,9 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         let commit = repo.find_reference(&input_ref)?.peel_to_commit()?;
 
         let index_commit =
-            josh::filter_commit(&transaction, ifilterobj, commit.id(), permissions_filter)?;
+            josh_core::filter_commit(&transaction, ifilterobj, commit.id(), permissions_filter)?;
         let tree = repo
-            .find_commit(josh::filter_commit(
+            .find_commit(josh_core::filter_commit(
                 &transaction,
                 filterobj,
                 commit.id(),
@@ -408,14 +415,18 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         let index_tree = repo.find_commit(index_commit)?.tree()?;
 
         /* let start = std::time::Instant::now(); */
-        let candidates = josh::filter::tree::search_candidates(
+        let candidates = josh_core::filter::tree::search_candidates(
             &transaction,
             &index_tree,
             searchstring,
             max_complexity,
         )?;
-        let matches =
-            josh::filter::tree::search_matches(&transaction, &tree, searchstring, &candidates)?;
+        let matches = josh_core::filter::tree::search_matches(
+            &transaction,
+            &tree,
+            searchstring,
+            &candidates,
+        )?;
         /* let duration = start.elapsed(); */
 
         for r in matches {
@@ -431,13 +442,13 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
         let old = repo.revparse_single("JOSH_TMP").unwrap().id();
         let unfiltered_old = repo.revparse_single(&input_ref).unwrap().id();
 
-        match josh::history::unapply_filter(
+        match josh_core::history::unapply_filter(
             &transaction,
             filterobj,
             unfiltered_old,
             old,
             new,
-            josh::history::OrphansMode::Keep,
+            josh_core::history::OrphansMode::Keep,
             None,
             &mut None,
         ) {
@@ -480,7 +491,8 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
     std::mem::drop(finish);
 
     if let Some(query) = args.get_one::<String>("query") {
-        let transaction = josh::cache::TransactionContext::from_env(cache.clone())?.open(None)?;
+        let transaction =
+            josh_core::cache::TransactionContext::from_env(cache.clone())?.open(None)?;
         let commit_id = transaction.repo().refname_to_id(update_target)?;
 
         print!(
