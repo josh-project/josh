@@ -121,6 +121,34 @@ tree.
 Normally Josh will keep all commits in the filtered history whose tree differs from any of it's
 parents.
 
+### Commit message rewriting **`:"template"`** or **`:"template";"regex"`**
+
+Rewrite commit messages using a template string. The template can use regex capture groups
+to extract and reformat parts of the original commit message.
+
+**Simple message replacement:**
+```
+:"New message"
+```
+This replaces all commit messages with "New message".
+
+**Using regex with named capture groups:**
+```
+:"[{type}] {message}";"(?s)^(?P<type>fix|feat|docs): (?P<message>.+)$"
+```
+This uses a regex to match the original commit message and extract named capture groups (`{type}` and `{message}`)
+which are then used in the template. The regex `(?s)^(?P<type>fix|feat|docs): (?P<message>.+)$` matches
+commit messages starting with "fix:", "feat:", or "docs:" followed by a message, and the template
+reformats them as `[type] message`.
+
+**Removing text from messages:**
+```
+:"";"TODO"
+```
+This removes all occurrences of "TODO" from commit messages by matching "TODO" and replacing it with an empty string.
+The regex pattern can use `(?s)` to enable dot-all mode (so `.` matches newlines), allowing it to work with
+multi-line commit messages that include both a subject line and a body.
+
 ### Pin tree contents
 
 Pin revision of a subtree to revision of the parent commit.
