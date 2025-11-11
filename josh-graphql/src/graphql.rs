@@ -1,7 +1,7 @@
 #![allow(unused_variables)]
 
-use josh::filter::Apply;
-use josh::{JoshResult, cache, filter, history, josh_error};
+use josh_core::filter::Apply;
+use josh_core::{JoshResult, cache, filter, history, josh_error};
 use juniper::{EmptyMutation, EmptySubscription, FieldResult, graphql_object};
 
 pub struct Revision {
@@ -687,7 +687,7 @@ impl Path {
 
     fn dir(&self, relative: String) -> FieldResult<Path> {
         Ok(Path {
-            path: josh::normalize_path(&self.path.join(relative)),
+            path: josh_core::normalize_path(&self.path.join(relative)),
             commit_id: self.commit_id,
             filter: self.filter,
             tree: self.tree,
@@ -1038,7 +1038,7 @@ impl Repository {
     }
 }
 
-josh::regex_parsed!(
+josh_core::regex_parsed!(
     UpstreamRef,
     r"refs/josh/upstream/.*[.]git/(?P<reference>refs/heads/.*)",
     [reference]
@@ -1075,7 +1075,7 @@ pub fn repo_schema(name: String, local: bool) -> RepoSchema {
     let ns = if local {
         "".to_string()
     } else {
-        format!("refs/josh/upstream/{}.git/", josh::to_ns(&name))
+        format!("refs/josh/upstream/{}.git/", josh_core::to_ns(&name))
     };
     RepoSchema::new(
         Repository { name, ns },

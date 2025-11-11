@@ -2,14 +2,14 @@
 
 use anyhow::Context;
 use clap::Parser;
-use josh::changes::{PushMode, build_to_push};
-use josh::shell::Shell;
+use josh_core::changes::{PushMode, build_to_push};
+use josh_core::shell::Shell;
 
 use std::io::IsTerminal;
 use std::process::{Command as ProcessCommand, Stdio};
 
-/// Helper function to convert josh::JoshError to anyhow::Error
-fn from_josh_err(err: josh::JoshError) -> anyhow::Error {
+/// Helper function to convert josh_core::JoshError to anyhow::Error
+fn from_josh_err(err: josh_core::JoshError) -> anyhow::Error {
     anyhow::anyhow!("{}", err.0)
 }
 
@@ -42,7 +42,7 @@ fn spawn_git_command(
         command.status()?.code()
     } else {
         // Not in TTY: capture output and print stderr (for tests, CI, etc.)
-        // Use the same approach as josh::shell::Shell for consistency
+        // Use the same approach as josh_core::shell::Shell for consistency
         let output = command
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
@@ -273,26 +273,26 @@ fn apply_josh_filtering(
     remote_name: &str,
 ) -> anyhow::Result<()> {
     // Use josh API directly instead of calling josh-filter binary
-    let filterobj = josh::filter::parse(filter)
+    let filterobj = josh_core::filter::parse(filter)
         .map_err(from_josh_err)
         .context("Failed to parse filter")?;
 
-    josh::cache_sled::sled_load(&repo_path.join(".git"))
+    josh_core::cache_sled::sled_load(&repo_path.join(".git"))
         .map_err(from_josh_err)
         .context("Failed to load sled cache")?;
 
     let cache = std::sync::Arc::new(
-        josh::cache_stack::CacheStack::new()
-            .with_backend(josh::cache_sled::SledCacheBackend::default())
+        josh_core::cache_stack::CacheStack::new()
+            .with_backend(josh_core::cache_sled::SledCacheBackend::default())
             .with_backend(
-                josh::cache_notes::NotesCacheBackend::new(repo_path)
+                josh_core::cache_notes::NotesCacheBackend::new(repo_path)
                     .map_err(from_josh_err)
                     .context("Failed to create NotesCacheBackend")?,
             ),
     );
 
     // Open Josh transaction
-    let transaction = josh::cache::TransactionContext::new(repo_path, cache.clone())
+    let transaction = josh_core::cache::TransactionContext::new(repo_path, cache.clone())
         .open(None)
         .map_err(from_josh_err)?;
 
@@ -315,8 +315,12 @@ fn apply_josh_filtering(
     }
 
     // Apply the filter to all remote refs
-    let (updated_refs, errors) =
-        josh::filter_refs(&transaction, filterobj, &input_refs, josh::filter::empty());
+    let (updated_refs, errors) = josh_core::filter_refs(
+        &transaction,
+        filterobj,
+        &input_refs,
+        josh_core::filter::empty(),
+    );
 
     // Check for errors
     for error in errors {
@@ -584,26 +588,26 @@ fn handle_push(args: &PushArgs) -> anyhow::Result<()> {
         .context("Failed to read filter from git config")?;
 
     // Parse the filter using Josh API
-    let filter = josh::filter::parse(&filter_str)
+    let filter = josh_core::filter::parse(&filter_str)
         .map_err(from_josh_err)
         .context("Failed to parse filter")?;
 
-    josh::cache_sled::sled_load(repo_path)
+    josh_core::cache_sled::sled_load(repo_path)
         .map_err(from_josh_err)
         .context("Failed to load sled cache")?;
 
     let cache = std::sync::Arc::new(
-        josh::cache_stack::CacheStack::new()
-            .with_backend(josh::cache_sled::SledCacheBackend::default())
+        josh_core::cache_stack::CacheStack::new()
+            .with_backend(josh_core::cache_sled::SledCacheBackend::default())
             .with_backend(
-                josh::cache_notes::NotesCacheBackend::new(repo_path)
+                josh_core::cache_notes::NotesCacheBackend::new(repo_path)
                     .map_err(from_josh_err)
                     .context("Failed to create NotesCacheBackend")?,
             ),
     );
 
     // Open Josh transaction
-    let transaction = josh::cache::TransactionContext::from_env(cache.clone())
+    let transaction = josh_core::cache::TransactionContext::from_env(cache.clone())
         .map_err(from_josh_err)
         .context("Failed TransactionContext::from_env")?
         .open(None)
@@ -672,11 +676,11 @@ fn handle_push(args: &PushArgs) -> anyhow::Result<()> {
                 let josh_remote_oid = josh_remote_reference.target().unwrap_or(git2::Oid::zero());
 
                 // Apply the filter to the josh remote ref to get the old filtered oid
-                let (filtered_oids, errors) = josh::filter_refs(
+                let (filtered_oids, errors) = josh_core::filter_refs(
                     &transaction,
                     filter,
                     &[(josh_remote_ref.clone(), josh_remote_oid)],
-                    josh::filter::empty(),
+                    josh_core::filter::empty(),
                 );
 
                 // Check for errors
@@ -709,7 +713,7 @@ fn handle_push(args: &PushArgs) -> anyhow::Result<()> {
         // Get author email from git config
         let author = config.get_string("user.email").unwrap_or_default();
 
-        let mut changes: Option<Vec<josh::Change>> =
+        let mut changes: Option<Vec<josh_core::Change>> =
             if push_mode == PushMode::Stack || push_mode == PushMode::Split {
                 Some(vec![])
             } else {
@@ -717,13 +721,13 @@ fn handle_push(args: &PushArgs) -> anyhow::Result<()> {
             };
 
         // Use Josh API to unapply the filter
-        let unfiltered_oid = josh::history::unapply_filter(
+        let unfiltered_oid = josh_core::history::unapply_filter(
             &transaction,
             filter,
             original_target,
             old_filtered_oid,
             local_commit,
-            josh::history::OrphansMode::Keep,
+            josh_core::history::OrphansMode::Keep,
             None,         // reparent_orphans
             &mut changes, // change_ids
         )

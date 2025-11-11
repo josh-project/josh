@@ -67,26 +67,26 @@ impl std::fmt::Debug for Handle {
 impl Handle {
     // Returns a pair: (username, password)
     pub fn parse(&self) -> Option<(String, String)> {
-        let get_result = || -> josh::JoshResult<(String, String)> {
+        let get_result = || -> josh_core::JoshResult<(String, String)> {
             let line = AUTH
                 .lock()
                 .unwrap()
                 .get(self)
                 .and_then(|h| h.header.as_ref())
                 .map(|h| h.as_bytes().to_owned())
-                .ok_or_else(|| josh::josh_error("no auth found"))?;
+                .ok_or_else(|| josh_core::josh_error("no auth found"))?;
 
             let line = String::from_utf8(line)?;
             let (_, token) = line
                 .split_once(' ')
-                .ok_or_else(|| josh::josh_error("Unsupported auth type"))?;
+                .ok_or_else(|| josh_core::josh_error("Unsupported auth type"))?;
 
             let decoded = BASE64.decode(token)?;
             let decoded = String::from_utf8(decoded)?;
 
             let (username, password) = decoded
                 .split_once(':')
-                .ok_or_else(|| josh::josh_error("No password found"))?;
+                .ok_or_else(|| josh_core::josh_error("No password found"))?;
 
             Ok((username.to_string(), password.to_string()))
         };
@@ -115,7 +115,7 @@ fn hash_header(header: &hyper::http::HeaderValue) -> String {
     hex::encode(result)
 }
 
-pub fn add_auth(token: &str) -> josh::JoshResult<Handle> {
+pub fn add_auth(token: &str) -> josh_core::JoshResult<Handle> {
     let header = hyper::header::HeaderValue::from_str(&format!("Basic {}", BASE64.encode(token)))?;
     let handle = Handle {
         hash: Some(hash_header(&header)),
@@ -128,7 +128,11 @@ pub fn add_auth(token: &str) -> josh::JoshResult<Handle> {
 }
 
 #[tracing::instrument()]
-pub async fn check_http_auth(url: &str, auth: &Handle, required: bool) -> josh::JoshResult<bool> {
+pub async fn check_http_auth(
+    url: &str,
+    auth: &Handle,
+    required: bool,
+) -> josh_core::JoshResult<bool> {
     use opentelemetry_semantic_conventions::trace::HTTP_RESPONSE_STATUS_CODE;
 
     if required && auth.hash.is_none() {
@@ -174,7 +178,7 @@ pub async fn check_http_auth(url: &str, auth: &Handle, required: bool) -> josh::
                 let request = builder.body(Empty::new())?;
                 let resp = client.request(request).await?;
 
-                Ok::<_, josh::JoshError>(resp)
+                Ok::<_, josh_core::JoshError>(resp)
             }
             .instrument(do_request_span)
         }
@@ -247,7 +251,7 @@ pub async fn check_http_auth(url: &str, auth: &Handle, required: bool) -> josh::
 
         Ok(false)
     } else {
-        return Err(josh::josh_error(&format!(
+        return Err(josh_core::josh_error(&format!(
             "check_http_auth: got http response: {} {:?}",
             refs_url, resp
         )));
@@ -256,7 +260,7 @@ pub async fn check_http_auth(url: &str, auth: &Handle, required: bool) -> josh::
 
 pub fn strip_auth(
     req: hyper::Request<Incoming>,
-) -> josh::JoshResult<(Handle, hyper::Request<Incoming>)> {
+) -> josh_core::JoshResult<(Handle, hyper::Request<Incoming>)> {
     let mut req = req;
     let header: Option<hyper::header::HeaderValue> =
         req.headers_mut().remove(hyper::header::AUTHORIZATION);

@@ -18,8 +18,8 @@ use hyper::{Request, Response, StatusCode};
 
 use http_body_util::BodyExt;
 use indoc::formatdoc;
-use josh::cache_stack::CacheStack;
-use josh::{JoshError, JoshResult, josh_error};
+use josh_core::cache_stack::CacheStack;
+use josh_core::{JoshError, JoshResult, josh_error};
 use josh_graphql::graphql;
 use josh_rpc::calls::RequestedCommand;
 use serde::Serialize;
@@ -37,14 +37,14 @@ use tracing::{Span, trace};
 use tracing_futures::Instrument;
 
 fn version_str() -> String {
-    format!("Version: {}\n", josh::VERSION,)
+    format!("Version: {}\n", josh_core::VERSION,)
 }
 
 lazy_static! {
     static ref ARGS: josh_proxy::cli::Args = josh_proxy::cli::Args::parse();
 }
 
-josh::regex_parsed!(
+josh_core::regex_parsed!(
     FilteredRepoUrl,
     r"(?P<api>/~/\w+)?(?P<upstream_repo>/[^:!]*[.]git)(?P<headref>[\^@][^:!]*)?((?P<filter_spec>[:!].*)[.]git)?(?P<pathinfo>/.*)?(?P<rest>.*)",
     [api, upstream_repo, filter_spec, pathinfo, headref, rest]
@@ -97,13 +97,16 @@ struct JoshProxyService {
 }
 
 impl JoshProxyService {
-    fn open_overlay(&self, ref_prefix: Option<&str>) -> JoshResult<josh::cache::Transaction> {
-        josh::cache::TransactionContext::new(self.repo_path.join("overlay"), self.cache.clone())
-            .open(ref_prefix)
+    fn open_overlay(&self, ref_prefix: Option<&str>) -> JoshResult<josh_core::cache::Transaction> {
+        josh_core::cache::TransactionContext::new(
+            self.repo_path.join("overlay"),
+            self.cache.clone(),
+        )
+        .open(ref_prefix)
     }
 
-    fn open_mirror(&self, ref_prefix: Option<&str>) -> JoshResult<josh::cache::Transaction> {
-        josh::cache::TransactionContext::new(self.repo_path.join("mirror"), self.cache.clone())
+    fn open_mirror(&self, ref_prefix: Option<&str>) -> JoshResult<josh_core::cache::Transaction> {
+        josh_core::cache::TransactionContext::new(self.repo_path.join("mirror"), self.cache.clone())
             .open(ref_prefix)
     }
 }
@@ -150,7 +153,7 @@ async fn fetch_needed(
         tokio::task::spawn_blocking(move || {
             let transaction = service.open_mirror(Some(&format!(
                 "refs/josh/upstream/{}/",
-                &josh::to_ns(&upstream_repo)
+                &josh_core::to_ns(&upstream_repo)
             )))?;
 
             match transaction
@@ -329,7 +332,7 @@ async fn fetch_upstream(
 async fn static_paths(
     service: Arc<JoshProxyService>,
     path: &str,
-) -> josh::JoshResult<Option<JoshResponse>> {
+) -> josh_core::JoshResult<Option<JoshResponse>> {
     tracing::debug!("static_path {:?}", path);
     if path == "/version" {
         return Ok(Some(make_response(
@@ -358,19 +361,19 @@ async fn static_paths(
         let service = service.clone();
         let refresh = path == "/filters/refresh";
 
-        let body_str = tokio::task::spawn_blocking(move || -> josh::JoshResult<_> {
+        let body_str = tokio::task::spawn_blocking(move || -> josh_core::JoshResult<_> {
             let transaction_mirror = service.open_mirror(None)?;
-            josh::housekeeping::discover_filter_candidates(&transaction_mirror)?;
+            josh_core::housekeeping::discover_filter_candidates(&transaction_mirror)?;
 
             if refresh {
                 let transaction_overlay = service.open_overlay(None)?;
-                josh::housekeeping::refresh_known_filters(
+                josh_core::housekeeping::refresh_known_filters(
                     &transaction_mirror,
                     &transaction_overlay,
                 )?;
             }
             Ok(toml::to_string_pretty(
-                &josh::housekeeping::get_known_filters()?,
+                &josh_core::housekeeping::get_known_filters()?,
             )?)
         })
         .await??;
@@ -387,7 +390,7 @@ async fn static_paths(
 async fn repo_update_fn(
     _serv: Arc<JoshProxyService>,
     req: Request<Incoming>,
-) -> josh::JoshResult<JoshResponse> {
+) -> josh_core::JoshResult<JoshResponse> {
     let body = req.into_body().collect().await?.to_bytes();
 
     let s = tracing::span!(tracing::Level::TRACE, "repo update worker");
@@ -412,20 +415,26 @@ async fn repo_update_fn(
         Ok(stderr) => Response::builder()
             .status(hyper::StatusCode::OK)
             .body(full(stderr)),
-        Err(josh::JoshError(stderr)) => Response::builder()
+        Err(josh_core::JoshError(stderr)) => Response::builder()
             .status(hyper::StatusCode::INTERNAL_SERVER_ERROR)
             .body(full(stderr)),
     }?)
 }
 
 fn resolve_ref(
-    transaction: &josh::cache::Transaction,
+    transaction: &josh_core::cache::Transaction,
     repo: &str,
     ref_value: &str,
 ) -> JoshResult<git2::Oid> {
-    let josh_name = ["refs", "josh", "upstream", &josh::to_ns(repo), ref_value]
-        .iter()
-        .collect::<PathBuf>();
+    let josh_name = [
+        "refs",
+        "josh",
+        "upstream",
+        &josh_core::to_ns(repo),
+        ref_value,
+    ]
+    .iter()
+    .collect::<PathBuf>();
 
     transaction
         .repo()
@@ -441,9 +450,9 @@ async fn do_filter(
     service: Arc<JoshProxyService>,
     meta: josh_proxy::MetaConfig,
     temp_ns: Arc<josh_proxy::TmpGitNamespace>,
-    filter: josh::filter::Filter,
+    filter: josh_core::filter::Filter,
     head_ref: &HeadRef,
-) -> josh::JoshResult<()> {
+) -> josh_core::JoshResult<()> {
     let permit = service.filter_permits.acquire().await;
     let heads_map = service.heads_map.clone();
 
@@ -454,15 +463,15 @@ async fn do_filter(
     tokio::task::spawn_blocking(move || {
         let _span_guard = tracing_span.enter();
         tracing::trace!("in do_filter worker");
-        let filter_spec = josh::filter::spec(filter);
-        josh::housekeeping::remember_filter(&meta.config.repo, &filter_spec);
+        let filter_spec = josh_core::filter::spec(filter);
+        josh_core::housekeeping::remember_filter(&meta.config.repo, &filter_spec);
 
         let transaction = service.open_mirror(Some(&format!(
             "refs/josh/upstream/{}/",
-            &josh::to_ns(&meta.config.repo)
+            &josh_core::to_ns(&meta.config.repo)
         )))?;
 
-        let lazy_refs: Vec<_> = josh::filter::lazy_refs(filter)
+        let lazy_refs: Vec<_> = josh_core::filter::lazy_refs(filter)
             .iter()
             .map(|x| x.split_once("@").unwrap())
             .map(|(x, y)| (x.to_string(), y.to_string()))
@@ -478,7 +487,7 @@ async fn do_filter(
             })
             .collect();
 
-        let filter = josh::filter::resolve_refs(&resolved_refs, filter);
+        let filter = josh_core::filter::resolve_refs(&resolved_refs, filter);
 
         let (refs_list, head_ref) = match &head_ref {
             HeadRef::Explicit(ref_value)
@@ -501,7 +510,7 @@ async fn do_filter(
                 // When user did not explicitly request a ref to filter,
                 // start with a list of all existing refs
                 let mut list =
-                    josh::housekeeping::list_refs(transaction.repo(), &meta.config.repo)?;
+                    josh_core::housekeeping::list_refs(transaction.repo(), &meta.config.repo)?;
 
                 let head_ref = head_ref.get().to_string();
                 if let Ok(object) = resolve_ref(&transaction, &meta.config.repo, &head_ref) {
@@ -526,10 +535,11 @@ async fn do_filter(
         t2.repo()
             .odb()?
             .add_disk_alternate(repo_path.join("mirror").join("objects").to_str().unwrap())?;
-        let (updated_refs, _) = josh::filter_refs(&t2, filter, &refs_list, josh::filter::empty());
+        let (updated_refs, _) =
+            josh_core::filter_refs(&t2, filter, &refs_list, josh_core::filter::empty());
         let mut updated_refs = josh_proxy::refs_locking(updated_refs, &meta);
-        josh::housekeeping::namespace_refs(&mut updated_refs, temp_ns.name());
-        josh::update_refs(&t2, &mut updated_refs, &temp_ns.reference(&head_ref));
+        josh_core::housekeeping::namespace_refs(&mut updated_refs, temp_ns.name());
+        josh_core::update_refs(&t2, &mut updated_refs, &temp_ns.reference(&head_ref));
         t2.repo()
             .reference_symbolic(
                 &temp_ns.reference("HEAD"),
@@ -560,7 +570,7 @@ fn make_response(body: &str, code: hyper::StatusCode) -> JoshResponse {
 async fn handle_ui_request(
     req: Request<Incoming>,
     resource_path: &str,
-) -> josh::JoshResult<JoshResponse> {
+) -> josh_core::JoshResult<JoshResponse> {
     // Proxy: can be used for UI development or to serve a different UI
     if let Some(proxy) = &ARGS.static_resource_proxy_target {
         let client_ip = IpAddr::from_str("127.0.0.1").unwrap();
@@ -606,7 +616,7 @@ async fn query_meta_repo(
     upstream_protocol: UpstreamProtocol,
     upstream_repo: &str,
     remote_auth: &RemoteAuth,
-) -> josh::JoshResult<josh_proxy::MetaConfig> {
+) -> josh_core::JoshResult<josh_proxy::MetaConfig> {
     let upstream = serv
         .upstream
         .get(upstream_protocol)
@@ -632,7 +642,7 @@ async fn query_meta_repo(
 
     let transaction = serv.open_mirror(Some(&format!(
         "refs/josh/upstream/{}/",
-        &josh::to_ns(meta_repo)
+        &josh_core::to_ns(meta_repo)
     )))?;
 
     let meta_tree = transaction
@@ -640,14 +650,14 @@ async fn query_meta_repo(
         .find_reference(&transaction.refname("HEAD"))?
         .peel_to_tree()?;
 
-    let meta_blob = josh::filter::tree::get_blob(
+    let meta_blob = josh_core::filter::tree::get_blob(
         transaction.repo(),
         &meta_tree,
         &std::path::Path::new(&upstream_repo.trim_start_matches('/')).join("config.yml"),
     );
 
     if meta_blob.is_empty() {
-        return Err(josh::josh_error("meta repo entry not found"));
+        return Err(josh_core::josh_error("meta repo entry not found"));
     }
 
     let mut meta: josh_proxy::MetaConfig = Default::default();
@@ -655,14 +665,14 @@ async fn query_meta_repo(
     meta.config = serde_yaml::from_str(&meta_blob)?;
 
     if meta.config.lock_refs {
-        let meta_blob = josh::filter::tree::get_blob(
+        let meta_blob = josh_core::filter::tree::get_blob(
             transaction.repo(),
             &meta_tree,
             &std::path::Path::new(&upstream_repo.trim_start_matches('/')).join("lock.yml"),
         );
 
         if meta_blob.is_empty() {
-            return Err(josh::josh_error("locked refs not found"));
+            return Err(josh_core::josh_error("locked refs not found"));
         }
         meta.refs_lock = serde_yaml::from_str(&meta_blob)?;
     }
@@ -675,7 +685,7 @@ async fn make_meta_config(
     remote_auth: &RemoteAuth,
     upstream_protocol: UpstreamProtocol,
     parsed_url: &FilteredRepoUrl,
-) -> josh::JoshResult<MetaConfig> {
+) -> josh_core::JoshResult<MetaConfig> {
     let meta_repo = std::env::var("JOSH_META_REPO");
     let auth_token = std::env::var("JOSH_META_AUTH_TOKEN");
 
@@ -781,7 +791,7 @@ async fn serve_namespace(
     repo_path: std::path::PathBuf,
     namespace: &str,
     repo_update: RepoUpdate,
-) -> josh::JoshResult<()> {
+) -> josh_core::JoshResult<()> {
     const SERVE_TIMEOUT: u64 = 60;
 
     tracing::trace!(
@@ -964,7 +974,7 @@ fn head_ref_or_default(head_ref: &str) -> HeadRef {
 fn make_repo_update(
     remote_url: &str,
     serv: Arc<JoshProxyService>,
-    filter: josh::filter::Filter,
+    filter: josh_core::filter::Filter,
     remote_auth: RemoteAuth,
     meta: &MetaConfig,
     repo_path: &Path,
@@ -977,8 +987,8 @@ fn make_repo_update(
         remote_url: remote_url.to_string(),
         remote_auth,
         port: serv.port.clone(),
-        filter_spec: josh::filter::spec(filter),
-        base_ns: josh::to_ns(&meta.config.repo),
+        filter_spec: josh_core::filter::spec(filter),
+        base_ns: josh_core::to_ns(&meta.config.repo),
         git_ns: ns.name().to_string(),
         git_dir: repo_path.display().to_string(),
         mirror_git_dir: serv.repo_path.join("mirror").display().to_string(),
@@ -989,7 +999,7 @@ fn make_repo_update(
 async fn handle_serve_namespace_request(
     serv: Arc<JoshProxyService>,
     req: Request<Incoming>,
-) -> josh::JoshResult<JoshResponse> {
+) -> josh_core::JoshResult<JoshResponse> {
     let error_response = |status: StatusCode| Ok(make_response("", status));
 
     if req.method() != hyper::Method::POST {
@@ -1132,7 +1142,7 @@ async fn handle_serve_namespace_request(
         parsed_url.filter_spec
     );
 
-    let query_filter = match josh::filter::parse(&parsed_url.filter_spec) {
+    let query_filter = match josh_core::filter::parse(&parsed_url.filter_spec) {
         Ok(filter) => filter,
         Err(e) => {
             return Ok(make_response(
@@ -1142,11 +1152,11 @@ async fn handle_serve_namespace_request(
         }
     };
 
-    let filter = josh::filter::chain(
+    let filter = josh_core::filter::chain(
         query_filter,
         match &ARGS.filter_prefix {
             Some(filter_prefix) => {
-                let filter_prefix = match josh::filter::parse(filter_prefix) {
+                let filter_prefix = match josh_core::filter::parse(filter_prefix) {
                     Ok(filter) => filter,
                     Err(e) => {
                         return Ok(make_response(
@@ -1160,7 +1170,7 @@ async fn handle_serve_namespace_request(
                     }
                 };
 
-                josh::filter::chain(meta_config.config.filter, filter_prefix)
+                josh_core::filter::chain(meta_config.config.filter, filter_prefix)
             }
             None => meta_config.config.filter,
         },
@@ -1204,7 +1214,7 @@ async fn handle_serve_namespace_request(
 async fn call_service(
     serv: Arc<JoshProxyService>,
     req_auth: (josh_proxy::auth::Handle, Request<Incoming>),
-) -> josh::JoshResult<JoshResponse> {
+) -> josh_core::JoshResult<JoshResponse> {
     let (auth, req) = req_auth;
 
     let path = {
@@ -1292,9 +1302,9 @@ async fn call_service(
     )
     .await?;
 
-    let mut filter = josh::filter::chain(
+    let mut filter = josh_core::filter::chain(
         meta.config.filter,
-        josh::filter::parse(&parsed_url.filter_spec)?,
+        josh_core::filter::parse(&parsed_url.filter_spec)?,
     );
 
     let upstream = match serv.upstream.get(UpstreamProtocol::Http) {
@@ -1307,11 +1317,11 @@ async fn call_service(
         }
     };
     if let Some(filter_prefix) = &ARGS.filter_prefix {
-        filter = josh::filter::chain(josh::filter::parse(filter_prefix)?, filter);
+        filter = josh_core::filter::chain(josh_core::filter::parse(filter_prefix)?, filter);
     }
     let mut fetch_repos = vec![meta.config.repo.clone()];
 
-    let lazy_refs: Vec<_> = josh::filter::lazy_refs(filter)
+    let lazy_refs: Vec<_> = josh_core::filter::lazy_refs(filter)
         .iter()
         .map(|x| x.split_once("@").unwrap())
         .map(|(x, y)| (x.to_string(), y.to_string()))
@@ -1468,17 +1478,17 @@ async fn serve_query(
     serv: Arc<JoshProxyService>,
     q: String,
     upstream_repo: String,
-    filter: josh::filter::Filter,
+    filter: josh_core::filter::Filter,
     head_ref: &str,
-) -> josh::JoshResult<JoshResponse> {
+) -> josh_core::JoshResult<JoshResponse> {
     let tracing_span = tracing::span!(tracing::Level::TRACE, "render worker");
     let head_ref = head_ref.to_string();
-    let res = tokio::task::spawn_blocking(move || -> josh::JoshResult<_> {
+    let res = tokio::task::spawn_blocking(move || -> josh_core::JoshResult<_> {
         let _span_guard = tracing_span.enter();
 
         let transaction_mirror = serv.open_mirror(Some(&format!(
             "refs/josh/upstream/{}/",
-            &josh::to_ns(&upstream_repo)
+            &josh_core::to_ns(&upstream_repo)
         )))?;
 
         let transaction = serv.open_overlay(None)?;
@@ -1499,7 +1509,7 @@ async fn serve_query(
                 .refname_to_id(&transaction_mirror.refname(&head_ref))?
         };
         let commit_id =
-            josh::filter_commit(&transaction, filter, commit_id, josh::filter::empty())?;
+            josh_core::filter_commit(&transaction, filter, commit_id, josh_core::filter::empty())?;
 
         josh_templates::render(&transaction, serv.cache.clone(), "", commit_id, &q, true)
     })
@@ -1531,9 +1541,9 @@ async fn serve_query(
 async fn prepare_namespace(
     serv: Arc<JoshProxyService>,
     meta: &josh_proxy::MetaConfig,
-    filter: josh::filter::Filter,
+    filter: josh_core::filter::Filter,
     head_ref: &HeadRef,
-) -> josh::JoshResult<std::sync::Arc<josh_proxy::TmpGitNamespace>> {
+) -> josh_core::JoshResult<std::sync::Arc<josh_proxy::TmpGitNamespace>> {
     let temp_ns = Arc::new(josh_proxy::TmpGitNamespace::new(
         &serv.repo_path.join("overlay"),
         tracing::Span::current(),
@@ -1575,7 +1585,7 @@ fn trace_http_response_code(trace_span: Span, http_status: StatusCode) {
 }
 
 /// Turn a list of [cli::Remote] into a [JoshProxyUpstream] struct.
-fn make_upstream(remotes: &Vec<cli::Remote>) -> josh::JoshResult<JoshProxyUpstream> {
+fn make_upstream(remotes: &Vec<cli::Remote>) -> josh_core::JoshResult<JoshProxyUpstream> {
     if remotes.is_empty() {
         unreachable!() // already checked in the parser
     } else if remotes.len() == 1 {
@@ -1629,7 +1639,7 @@ async fn handle_http_request(
     Ok(r)
 }
 
-async fn run_proxy() -> josh::JoshResult<i32> {
+async fn run_proxy() -> josh_core::JoshResult<i32> {
     let addr: SocketAddr = format!("[::]:{}", ARGS.port).parse()?;
     let upstream = make_upstream(&ARGS.remote).inspect_err(|e| {
         eprintln!("Upstream parsing error: {}", e);
@@ -1643,7 +1653,7 @@ async fn run_proxy() -> josh::JoshResult<i32> {
     };
 
     josh_proxy::create_repo(&local)?;
-    josh::cache_sled::sled_load(&local)?;
+    josh_core::cache_sled::sled_load(&local)?;
 
     let cache = Arc::new(CacheStack::default());
 
@@ -1730,7 +1740,7 @@ async fn run_proxy() -> josh::JoshResult<i32> {
     Ok(0)
 }
 
-async fn run_polling(serv: Arc<JoshProxyService>) -> josh::JoshResult<()> {
+async fn run_polling(serv: Arc<JoshProxyService>) -> josh_core::JoshResult<()> {
     loop {
         let polls = serv.poll.lock()?.clone();
 
@@ -1760,7 +1770,7 @@ async fn run_polling(serv: Arc<JoshProxyService>) -> josh::JoshResult<()> {
     }
 }
 
-async fn run_housekeeping(local: std::path::PathBuf) -> josh::JoshResult<()> {
+async fn run_housekeeping(local: std::path::PathBuf) -> josh_core::JoshResult<()> {
     let mut i: usize = 0;
     let cache = std::sync::Arc::new(CacheStack::default());
 
@@ -1778,7 +1788,7 @@ async fn run_housekeeping(local: std::path::PathBuf) -> josh::JoshResult<()> {
     }
 }
 
-fn repo_update_from_env() -> josh::JoshResult<josh_proxy::RepoUpdate> {
+fn repo_update_from_env() -> josh_core::JoshResult<josh_proxy::RepoUpdate> {
     let repo_update =
         std::env::var("JOSH_REPO_UPDATE").map_err(|_| josh_error("JOSH_REPO_UPDATE not set"))?;
 
@@ -1786,7 +1796,7 @@ fn repo_update_from_env() -> josh::JoshResult<josh_proxy::RepoUpdate> {
         .map_err(|e| josh_error(&format!("Failed to parse JOSH_REPO_UPDATE: {}", e)))
 }
 
-fn pre_receive_hook() -> josh::JoshResult<i32> {
+fn pre_receive_hook() -> josh_core::JoshResult<i32> {
     let repo_update = repo_update_from_env()?;
 
     let push_options_path = std::path::PathBuf::from(repo_update.git_dir)
@@ -1811,7 +1821,7 @@ fn pre_receive_hook() -> josh::JoshResult<i32> {
     Ok(0)
 }
 
-fn update_hook(refname: &str, old: &str, new: &str) -> josh::JoshResult<i32> {
+fn update_hook(refname: &str, old: &str, new: &str) -> josh_core::JoshResult<i32> {
     let mut repo_update = repo_update_from_env()?;
 
     repo_update
@@ -1857,23 +1867,23 @@ async fn serve_graphql(
     upstream_repo: String,
     upstream: String,
     auth: josh_proxy::auth::Handle,
-) -> josh::JoshResult<JoshResponse> {
+) -> josh_core::JoshResult<JoshResponse> {
     let remote_url = upstream.clone() + upstream_repo.as_str();
     let parsed = match josh_proxy::juniper_hyper::parse_req(req).await {
         Ok(r) => r,
         Err(resp) => return Ok(erase(resp)),
     };
 
-    let cache = std::sync::Arc::new(josh::cache_stack::CacheStack::default());
+    let cache = std::sync::Arc::new(josh_core::cache_stack::CacheStack::default());
     let transaction_mirror =
-        josh::cache::TransactionContext::new(&serv.repo_path.join("mirror"), cache.clone()).open(
-            Some(&format!(
+        josh_core::cache::TransactionContext::new(&serv.repo_path.join("mirror"), cache.clone())
+            .open(Some(&format!(
                 "refs/josh/upstream/{}/",
-                &josh::to_ns(&upstream_repo),
-            )),
-        )?;
+                &josh_core::to_ns(&upstream_repo),
+            )))?;
     let transaction =
-        josh::cache::TransactionContext::new(&serv.repo_path.join("overlay"), cache).open(None)?;
+        josh_core::cache::TransactionContext::new(&serv.repo_path.join("overlay"), cache)
+            .open(None)?;
     transaction.repo().odb()?.add_disk_alternate(
         serv.repo_path
             .join("mirror")
@@ -1951,7 +1961,7 @@ async fn serve_graphql(
     *resp.body_mut() = body;
     let gql_result = resp;
 
-    tokio::task::spawn_blocking(move || -> josh::JoshResult<_> {
+    tokio::task::spawn_blocking(move || -> josh_core::JoshResult<_> {
         let temp_ns = Arc::new(josh_proxy::TmpGitNamespace::new(
             &serv.repo_path.join("overlay"),
             tracing::Span::current(),
