@@ -284,7 +284,7 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
             push_mode,
             &baseref,
             &author,
-            ref_with_options,
+            &ref_with_options,
             oid_to_push,
             old,
         )?;
