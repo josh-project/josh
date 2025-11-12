@@ -55,7 +55,12 @@ fn split_changes(
         .collect::<Result<Vec<_>, _>>()?;
 
     let mut trees = vec![repo.find_commit(base)?.tree()?];
-    trees.extend(commits.iter().map(|commit| commit.tree()).collect::<Result<Vec<_>, _>>()?);
+    trees.extend(
+        commits
+            .iter()
+            .map(|commit| commit.tree())
+            .collect::<Result<Vec<_>, _>>()?,
+    );
 
     let diffs: Vec<git2::Diff> = trees
         .windows(2)
