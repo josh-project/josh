@@ -54,15 +54,8 @@ fn split_changes(
         .map(|(_, commit, _)| repo.find_commit(*commit))
         .collect::<Result<Vec<_>, _>>()?;
 
-    let base_tree = std::iter::once(repo.find_commit(base)?.tree()?);
-    let trees: Vec<git2::Tree> = base_tree
-        .chain(
-            commits
-                .iter()
-                .map(|commit| commit.tree())
-                .collect::<Result<Vec<_>, _>>()?,
-        )
-        .collect();
+    let mut trees = vec![repo.find_commit(base)?.tree()?];
+    trees.extend(commits.iter().map(|commit| commit.tree()).collect::<Result<Vec<_>, _>>()?);
 
     let diffs: Vec<git2::Diff> = trees
         .windows(2)
@@ -122,24 +115,21 @@ pub fn changes_to_refs(
 
     let mut seen = std::collections::HashSet::new();
     for change in changes.iter() {
-        match &change.id {
-            Some(id) => {
-                if id.contains('@') {
-                    return Err(josh_error("Change id must not contain '@'"));
-                }
-                if !seen.insert(id) {
-                    return Err(josh_error(&format!(
-                        "rejecting to push {:?} with duplicate label",
-                        change.commit
-                    )));
-                }
+        if let Some(id) = &change.id {
+            if id.contains('@') {
+                return Err(josh_error("Change id must not contain '@'"));
             }
-            None => {
+            if !seen.insert(id) {
                 return Err(josh_error(&format!(
-                    "rejecting to push {:?} without id",
+                    "rejecting to push {:?} with duplicate label",
                     change.commit
                 )));
             }
+        } else {
+            return Err(josh_error(&format!(
+                "rejecting to push {:?} without id",
+                change.commit
+            )));
         }
     }
 
@@ -172,38 +162,37 @@ pub fn build_to_push(
     oid_to_push: git2::Oid,
     base_oid: git2::Oid,
 ) -> JoshResult<Vec<(String, git2::Oid, String)>> {
-    match changes {
-        Some(changes) => {
-            let mut push_refs = changes_to_refs(baseref, author, changes)?;
+    if let Some(changes) = changes {
+        let mut push_refs = changes_to_refs(baseref, author, changes)?;
 
-            if push_mode == PushMode::Split {
-                split_changes(repo, &mut push_refs, base_oid)?;
-            }
-
-            if push_mode == PushMode::Review {
-                push_refs.push((
-                    ref_with_options.to_string(),
-                    oid_to_push,
-                    "JOSH_PUSH".to_string(),
-                ));
-            }
-
-            push_refs.push((
-                format!(
-                    "refs/heads/@heads/{}/{}",
-                    baseref.replacen("refs/heads/", "", 1),
-                    author,
-                ),
-                oid_to_push,
-                baseref.replacen("refs/heads/", "", 1),
-            ));
-
-            Ok(push_refs)
+        if push_mode == PushMode::Split {
+            split_changes(repo, &mut push_refs, base_oid)?;
         }
-        None => Ok(vec![(
+
+        if push_mode == PushMode::Review {
+            push_refs.push((
+                ref_with_options.to_string(),
+                oid_to_push,
+                "JOSH_PUSH".to_string(),
+            ));
+        }
+
+        push_refs.push((
+            format!(
+                "refs/heads/@heads/{}/{}",
+                baseref.replacen("refs/heads/", "", 1),
+                author,
+            ),
+            oid_to_push,
+            baseref.replacen("refs/heads/", "", 1),
+        ));
+
+        Ok(push_refs)
+    } else {
+        Ok(vec![(
             ref_with_options.to_string(),
             oid_to_push,
             "JOSH_PUSH".to_string(),
-        )]),
+        )])
     }
 }
