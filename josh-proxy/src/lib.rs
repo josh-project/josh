@@ -82,6 +82,8 @@ pub struct RepoUpdate {
 #[derive(Default)]
 pub struct PushOptions {
     pub merge: bool,
+    pub allow_orphans: bool,
+    pub edit: bool,
     pub create: bool,
     pub force: bool,
     pub base: Option<String>,
@@ -230,7 +232,13 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh::JoshResult<String> 
                 original_target,
                 old,
                 new_oid,
-                push_options.merge,
+                if push_options.merge || push_options.allow_orphans {
+                    josh::history::OrphansMode::Keep
+                } else if push_options.edit {
+                    josh::history::OrphansMode::Remove
+                } else {
+                    josh::history::OrphansMode::Fail
+                },
                 reparent_orphans,
                 &mut changes,
             )?;

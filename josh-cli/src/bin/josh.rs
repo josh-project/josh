@@ -723,7 +723,7 @@ fn handle_push(args: &PushArgs) -> anyhow::Result<()> {
             original_target,
             old_filtered_oid,
             local_commit,
-            false,        // keep_orphans
+            josh::history::OrphansMode::Keep,
             None,         // reparent_orphans
             &mut changes, // change_ids
         )
