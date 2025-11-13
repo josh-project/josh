@@ -785,7 +785,7 @@ fn apply_to_commit2(
                         result,
                         old,
                         *combine_tip,
-                        false,
+                        history::OrphansMode::Keep,
                         None,
                         &mut None,
                     )?;

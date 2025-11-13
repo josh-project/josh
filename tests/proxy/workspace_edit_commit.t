@@ -159,6 +159,21 @@
 
   $ git push origin HEAD:refs/for/master 2>&1 >/dev/null | sed -e 's/[ ]*$//g'
   remote: josh-proxy: pre-receive hook
+  remote: upstream: response status: 500 Internal Server Error
+  remote: upstream: response body:
+  remote:
+  remote: Rejecting new orphan branch at "Add new folders" (5645805dcc75cfe4922b9cb301c40a4a4b35a59d)
+  remote: Specify one of these options:
+  remote:   '-o allow_orphans' to keep the history as is
+  remote:   '-o merge' to import new history by creating merge commit
+  remote:   '-o edit' if you are editing a stored filter or workspace
+  remote:
+  remote: error: hook declined to update refs/for/master
+  To http://localhost:8002/real_repo.git:workspace=ws.git
+   ! [remote rejected] HEAD -> refs/for/master (hook declined)
+  error: failed to push some refs to 'http://localhost:8002/real_repo.git:workspace=ws.git'
+  $ git push -o edit origin HEAD:refs/for/master 2>&1 >/dev/null | sed -e 's/[ ]*$//g'
+  remote: josh-proxy: pre-receive hook
   remote: upstream: response status: 200 OK
   remote: upstream: response body:
   remote:

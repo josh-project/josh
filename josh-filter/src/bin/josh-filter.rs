@@ -437,7 +437,7 @@ fn run_filter(args: Vec<String>) -> josh::JoshResult<i32> {
             unfiltered_old,
             old,
             new,
-            false,
+            josh::history::OrphansMode::Keep,
             None,
             &mut None,
         ) {

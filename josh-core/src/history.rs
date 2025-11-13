@@ -293,6 +293,13 @@ fn find_new_branch_base(
     Ok(git2::Oid::zero())
 }
 
+#[derive(Clone, Debug)]
+pub enum OrphansMode {
+    Keep,
+    Remove,
+    Fail,
+}
+
 #[tracing::instrument(skip(transaction, change_ids))]
 pub fn unapply_filter(
     transaction: &cache::Transaction,
@@ -300,7 +307,7 @@ pub fn unapply_filter(
     original_target: git2::Oid,
     old_filtered_oid: git2::Oid,
     new_filtered_oid: git2::Oid,
-    keep_orphans: bool,
+    orphans_mode: OrphansMode,
     reparent_orphans: Option<git2::Oid>,
     change_ids: &mut Option<Vec<Change>>,
 ) -> JoshResult<git2::Oid> {
@@ -382,14 +389,32 @@ pub fn unapply_filter(
         }
 
         let mut filtered_parent_ids: Vec<_> = module_commit.parent_ids().collect();
-        let is_initial_merge = filtered_parent_ids.len() == 2
+        let has_new_orphan = filtered_parent_ids.len() > 1
             && transaction
                 .repo()
-                .merge_base_many(&filtered_parent_ids)
+                .merge_base_octopus(&filtered_parent_ids)
                 .is_err();
 
-        if !keep_orphans && is_initial_merge {
-            filtered_parent_ids.pop();
+        if has_new_orphan {
+            match orphans_mode {
+                OrphansMode::Keep => {}
+                OrphansMode::Remove => {
+                    filtered_parent_ids.pop();
+                }
+                OrphansMode::Fail => {
+                    return Err(josh_error(&unindent::unindent(&format!(
+                        r###"
+                        Rejecting new orphan branch at {:?} ({:?})
+                        Specify one of these options:
+                          '-o allow_orphans' to keep the history as is
+                          '-o merge' to import new history by creating merge commit
+                          '-o edit' if you are editing a stored filter or workspace
+                        "###,
+                        module_commit.summary().unwrap_or_default(),
+                        module_commit.id(),
+                    ))));
+                }
+            }
         }
 
         // For every parent of a filtered commit, find unapply base
