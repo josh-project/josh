@@ -194,14 +194,14 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh_core::JoshResult<Str
                 "resolve_original_target"
             );
 
-            return Err(josh_core::josh_error(&unindent::unindent(&format!(
+            return Err(josh_core::josh_error(&indoc::formatdoc!(
                 r###"
                     Reference {:?} does not exist on remote.
                     If you want to create it, pass "-o base=<basebranch>" or "-o base=path/to/ref"
                     to specify a base branch/reference.
                     "###,
                 baseref
-            ))));
+            )));
         };
 
         let reparent_orphans = if push_options.create {

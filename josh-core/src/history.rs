@@ -402,7 +402,7 @@ pub fn unapply_filter(
                     filtered_parent_ids.pop();
                 }
                 OrphansMode::Fail => {
-                    return Err(josh_error(&unindent::unindent(&format!(
+                    return Err(josh_error(&indoc::formatdoc!(
                         r###"
                         Rejecting new orphan branch at {:?} ({:?})
                         Specify one of these options:
@@ -412,7 +412,7 @@ pub fn unapply_filter(
                         "###,
                         module_commit.summary().unwrap_or_default(),
                         module_commit.id(),
-                    ))));
+                    )));
                 }
             }
         }
