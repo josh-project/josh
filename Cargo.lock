@@ -1878,7 +1878,6 @@ dependencies = [
  "sled",
  "strfmt",
  "tracing",
- "unindent",
 ]
 
 [[package]]
