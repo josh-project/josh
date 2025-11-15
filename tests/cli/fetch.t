@@ -32,7 +32,7 @@
   Fetched from remote: origin
   Already on 'master'
   
-  Cloned repository to: libs
+  Cloned repository to: ${TESTTMP}/libs
 
   $ cd libs
 

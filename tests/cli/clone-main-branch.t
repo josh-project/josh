@@ -63,7 +63,7 @@ Test josh clone with main branch as default
   Fetched from remote: origin
   Switched to a new branch 'main'
   
-  Cloned repository to: filtered-repo
+  Cloned repository to: ${TESTTMP}/filtered-repo
 
   $ cat filtered-repo/.git/HEAD
   ref: refs/heads/main
