@@ -17,7 +17,7 @@ else
 fi
 
 if (( $# == 0 )); then
-    TESTS="tests/{filter{**/,},proxy}/*.t"
+    TESTS="tests/{filter{**/,},proxy,cli}/*.t"
 else
     TESTS="$*"
 fi
