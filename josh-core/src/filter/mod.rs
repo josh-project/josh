@@ -728,11 +728,6 @@ fn resolve_workspace_redirect<'a>(
 }
 
 fn get_workspace<'a>(repo: &'a git2::Repository, tree: &'a git2::Tree<'a>, path: &Path) -> Filter {
-    let path = if let Some((_, path)) = resolve_workspace_redirect(repo, &tree, path) {
-        path
-    } else {
-        path.to_owned()
-    };
     let wsj_file = file("workspace.josh");
     let base = to_filter(Op::Subdir(path.to_owned()));
     let wsj_file = chain(base, wsj_file);
