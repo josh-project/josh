@@ -295,16 +295,7 @@ fn main() {
     env_logger::init();
     let cli = Cli::parse();
 
-    let result = match &cli.command {
-        Command::Clone(args) => handle_clone(args),
-        Command::Fetch(args) => handle_fetch(args),
-        Command::Pull(args) => handle_pull(args),
-        Command::Push(args) => handle_push(args),
-        Command::Remote(args) => handle_remote(args),
-        Command::Filter(args) => handle_filter(args),
-        #[cfg(feature = "incubating")]
-        Command::Link(args) => handle_link(args),
-    };
+    let result = run_command(&cli);
 
     if let Err(e) = result {
         eprintln!("Error: {e}");
@@ -317,16 +308,16 @@ fn main() {
     }
 }
 
-/// Apply josh filtering to all remote refs and update local refs
-fn apply_josh_filtering(
-    repo_path: &std::path::Path,
-    filter: &str,
-    remote_name: &str,
-) -> anyhow::Result<()> {
-    // Use josh API directly instead of calling josh-filter binary
-    let filterobj = josh_core::filter::parse(filter)
-        .map_err(from_josh_err)
-        .context("Failed to parse filter")?;
+fn run_command(cli: &Cli) -> anyhow::Result<()> {
+    // For clone, do the initial repo setup before creating transaction
+    let repo_path = if let Command::Clone(args) = &cli.command {
+        // For clone, we're not in a git repo initially, so clone first and use that path
+        clone_repo(args)?
+    } else {
+        // For other commands, we need to be in a git repo
+        let repo = git2::Repository::open_from_env().context("Not in a git repository")?;
+        repo.path().parent().unwrap().to_path_buf()
+    };
 
     josh_core::cache_sled::sled_load(&repo_path.join(".git"))
         .map_err(from_josh_err)
@@ -336,16 +327,41 @@ fn apply_josh_filtering(
         josh_core::cache_stack::CacheStack::new()
             .with_backend(josh_core::cache_sled::SledCacheBackend::default())
             .with_backend(
-                josh_core::cache_notes::NotesCacheBackend::new(repo_path)
+                josh_core::cache_notes::NotesCacheBackend::new(&repo_path)
                     .map_err(from_josh_err)
                     .context("Failed to create NotesCacheBackend")?,
             ),
     );
 
-    // Open Josh transaction
-    let transaction = josh_core::cache::TransactionContext::new(repo_path, cache.clone())
+    // Create transaction using the known repo path
+    let transaction = josh_core::cache::TransactionContext::new(&repo_path, cache.clone())
         .open(None)
-        .map_err(from_josh_err)?;
+        .map_err(from_josh_err)
+        .context("Failed TransactionContext::open")?;
+
+    match &cli.command {
+        Command::Clone(args) => handle_clone(args, &transaction),
+        Command::Fetch(args) => handle_fetch(args, &transaction),
+        Command::Pull(args) => handle_pull(args, &transaction),
+        Command::Push(args) => handle_push(args, &transaction),
+        Command::Remote(args) => handle_remote(args, &transaction),
+        Command::Filter(args) => handle_filter(args, &transaction),
+        #[cfg(feature = "incubating")]
+        Command::Link(args) => handle_link(args, &transaction),
+    }
+}
+
+/// Apply josh filtering to all remote refs and update local refs
+fn apply_josh_filtering(
+    transaction: &josh_core::cache::Transaction,
+    repo_path: &std::path::Path,
+    filter: &str,
+    remote_name: &str,
+) -> anyhow::Result<()> {
+    // Use josh API directly instead of calling josh-filter binary
+    let filterobj = josh_core::filter::parse(filter)
+        .map_err(from_josh_err)
+        .context("Failed to parse filter")?;
 
     let repo = transaction.repo();
 
@@ -425,7 +441,8 @@ fn to_absolute_remote_url(url: &str) -> anyhow::Result<String> {
     }
 }
 
-fn handle_clone(args: &CloneArgs) -> anyhow::Result<()> {
+/// Initial clone setup: create directory, init repo, add remote (no transaction needed)
+fn clone_repo(args: &CloneArgs) -> anyhow::Result<std::path::PathBuf> {
     // Use the provided output directory
     let output_dir = args.out.clone();
 
@@ -445,6 +462,16 @@ fn handle_clone(args: &CloneArgs) -> anyhow::Result<()> {
 
     handle_remote_add_repo(&remote_add_args, &output_dir)?;
 
+    Ok(output_dir)
+}
+
+fn handle_clone(
+    args: &CloneArgs,
+    transaction: &josh_core::cache::Transaction,
+) -> anyhow::Result<()> {
+    // Get the repo path from the transaction
+    let output_dir = transaction.repo().path().parent().unwrap();
+
     // Create FetchArgs from CloneArgs
     let fetch_args = FetchArgs {
         remote: "origin".to_string(),
@@ -453,13 +480,13 @@ fn handle_clone(args: &CloneArgs) -> anyhow::Result<()> {
     };
 
     // Use handle_fetch to do the actual fetching and filtering
-    handle_fetch_repo(&fetch_args, &output_dir)?;
+    handle_fetch_repo(&fetch_args, output_dir, transaction)?;
 
     // Get the default branch name from the remote HEAD symref
     let default_branch = if args.branch == "HEAD" {
         // Read the remote HEAD symref to get the default branch
         let head_ref = "refs/remotes/origin/HEAD".to_string();
-        let repo = git2::Repository::open(&output_dir).context("Failed to open repository")?;
+        let repo = transaction.repo();
 
         let head_reference = repo
             .find_reference(&head_ref)
@@ -514,7 +541,7 @@ fn handle_clone(args: &CloneArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn handle_pull(args: &PullArgs) -> anyhow::Result<()> {
+fn handle_pull(args: &PullArgs, transaction: &josh_core::cache::Transaction) -> anyhow::Result<()> {
     // Check if we're in a git repository
     let repo = git2::Repository::open_from_env().context("Not in a git repository")?;
     let repo_path = repo.path().parent().unwrap().to_path_buf();
@@ -527,7 +554,7 @@ fn handle_pull(args: &PullArgs) -> anyhow::Result<()> {
     };
 
     // Use handle_fetch to do the actual fetching and filtering
-    handle_fetch_repo(&fetch_args, &repo_path)?;
+    handle_fetch_repo(&fetch_args, &repo_path, transaction)?;
 
     // Get current working directory for shell commands
     let current_dir = std::env::current_dir()?;
@@ -555,12 +582,15 @@ fn handle_pull(args: &PullArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn handle_fetch(args: &FetchArgs) -> anyhow::Result<()> {
+fn handle_fetch(
+    args: &FetchArgs,
+    transaction: &josh_core::cache::Transaction,
+) -> anyhow::Result<()> {
     // Check if we're in a git repository
     let repo = git2::Repository::open_from_env().context("Not in a git repository")?;
     let repo_path = repo.path().parent().unwrap().to_path_buf();
 
-    handle_fetch_repo(args, &repo_path)
+    handle_fetch_repo(args, &repo_path, transaction)
 }
 
 fn try_parse_symref(remote: &str, output: &str) -> Option<(String, String)> {
@@ -573,7 +603,11 @@ fn try_parse_symref(remote: &str, output: &str) -> Option<(String, String)> {
     Some((default_branch.to_string(), default_branch_ref))
 }
 
-fn handle_fetch_repo(args: &FetchArgs, repo_path: &std::path::Path) -> anyhow::Result<()> {
+fn handle_fetch_repo(
+    args: &FetchArgs,
+    repo_path: &std::path::Path,
+    transaction: &josh_core::cache::Transaction,
+) -> anyhow::Result<()> {
     let repo = git2::Repository::open(repo_path).context("Failed to open repository")?;
 
     // Read the remote URL from josh-remote config
@@ -624,7 +658,7 @@ fn handle_fetch_repo(args: &FetchArgs, repo_path: &std::path::Path) -> anyhow::R
         remote: args.remote.clone(),
     };
 
-    handle_filter_repo(&filter_args, repo_path, false)?;
+    handle_filter_repo(&filter_args, repo_path, false, transaction)?;
 
     // Note: fetch doesn't checkout, it just updates the refs
     eprintln!("Fetched from remote: {}", args.remote);
@@ -632,7 +666,7 @@ fn handle_fetch_repo(args: &FetchArgs, repo_path: &std::path::Path) -> anyhow::R
     Ok(())
 }
 
-fn handle_push(args: &PushArgs) -> anyhow::Result<()> {
+fn handle_push(args: &PushArgs, transaction: &josh_core::cache::Transaction) -> anyhow::Result<()> {
     // Read filter from git config for the specific remote
     let repo = git2::Repository::open_from_env().context("Not in a git repository")?;
     let repo_path = repo.path().parent().unwrap();
@@ -648,28 +682,6 @@ fn handle_push(args: &PushArgs) -> anyhow::Result<()> {
     let filter = josh_core::filter::parse(&filter_str)
         .map_err(from_josh_err)
         .context("Failed to parse filter")?;
-
-    josh_core::cache_sled::sled_load(repo_path)
-        .map_err(from_josh_err)
-        .context("Failed to load sled cache")?;
-
-    let cache = std::sync::Arc::new(
-        josh_core::cache_stack::CacheStack::new()
-            .with_backend(josh_core::cache_sled::SledCacheBackend::default())
-            .with_backend(
-                josh_core::cache_notes::NotesCacheBackend::new(repo_path)
-                    .map_err(from_josh_err)
-                    .context("Failed to create NotesCacheBackend")?,
-            ),
-    );
-
-    // Open Josh transaction
-    let transaction = josh_core::cache::TransactionContext::from_env(cache.clone())
-        .map_err(from_josh_err)
-        .context("Failed TransactionContext::from_env")?
-        .open(None)
-        .map_err(from_josh_err)
-        .context("Failed TransactionContext::open")?;
 
     // Get the remote URL from josh-remote config
     let remote_url = config
@@ -855,15 +867,18 @@ fn handle_push(args: &PushArgs) -> anyhow::Result<()> {
 }
 
 #[cfg(feature = "incubating")]
-fn handle_link(args: &LinkArgs) -> anyhow::Result<()> {
+fn handle_link(args: &LinkArgs, transaction: &josh_core::cache::Transaction) -> anyhow::Result<()> {
     match &args.command {
-        LinkCommand::Add(add_args) => handle_link_add(add_args),
-        LinkCommand::Fetch(fetch_args) => handle_link_fetch(fetch_args),
+        LinkCommand::Add(add_args) => handle_link_add(add_args, transaction),
+        LinkCommand::Fetch(fetch_args) => handle_link_fetch(fetch_args, transaction),
     }
 }
 
 #[cfg(feature = "incubating")]
-fn handle_link_add(args: &LinkAddArgs) -> anyhow::Result<()> {
+fn handle_link_add(
+    args: &LinkAddArgs,
+    transaction: &josh_core::cache::Transaction,
+) -> anyhow::Result<()> {
     use josh_core::filter::tree;
     use josh_core::{JoshLinkFile, Oid};
 
@@ -970,30 +985,8 @@ fn handle_link_add(args: &LinkAddArgs) -> anyhow::Result<()> {
         .map_err(from_josh_err)
         .context("Failed to parse :link filter")?;
 
-    // Load the cache and create transaction
-    let repo_path = repo.path().parent().unwrap();
-
-    josh_core::cache_sled::sled_load(&repo_path).unwrap();
-    let cache = std::sync::Arc::new(
-        josh_core::cache_stack::CacheStack::new()
-            .with_backend(josh_core::cache_sled::SledCacheBackend::default())
-            .with_backend(
-                josh_core::cache_notes::NotesCacheBackend::new(&repo_path)
-                    .map_err(from_josh_err)
-                    .context("Failed to create NotesCacheBackend")?,
-            ),
-    );
-
-    // Open Josh transaction
-    let transaction = josh_core::cache::TransactionContext::from_env(cache.clone())
-        .map_err(from_josh_err)
-        .context("Failed TransactionContext::from_env")?
-        .open(None)
-        .map_err(from_josh_err)
-        .context("Failed TransactionContext::open")?;
-
     let filtered_commit = josh_core::filter_commit(
-        &transaction,
+        transaction,
         link_filter,
         new_commit,
         josh_core::filter::empty(),
@@ -1018,7 +1011,10 @@ fn handle_link_add(args: &LinkAddArgs) -> anyhow::Result<()> {
 }
 
 #[cfg(feature = "incubating")]
-fn handle_link_fetch(args: &LinkFetchArgs) -> anyhow::Result<()> {
+fn handle_link_fetch(
+    args: &LinkFetchArgs,
+    transaction: &josh_core::cache::Transaction,
+) -> anyhow::Result<()> {
     use josh_core::filter::tree;
     use josh_core::{JoshLinkFile, Oid};
 
@@ -1156,28 +1152,8 @@ fn handle_link_fetch(args: &LinkFetchArgs) -> anyhow::Result<()> {
         .map_err(from_josh_err)
         .context("Failed to parse :link filter")?;
 
-    // Load the cache and create transaction
-    let repo_path = repo.path().parent().unwrap();
-    josh_core::cache_sled::sled_load(&repo_path).unwrap();
-    let cache = std::sync::Arc::new(
-        josh_core::cache_stack::CacheStack::new()
-            .with_backend(josh_core::cache_sled::SledCacheBackend::default())
-            .with_backend(
-                josh_core::cache_notes::NotesCacheBackend::new(&repo_path)
-                    .map_err(from_josh_err)
-                    .context("Failed to create NotesCacheBackend")?,
-            ),
-    );
-
-    // Open Josh transaction
-    let transaction = josh_core::cache::TransactionContext::from_env(cache.clone())
-        .map_err(from_josh_err)
-        .context("Failed TransactionContext::from_env")?
-        .open(None)
-        .map_err(from_josh_err)
-        .context("Failed TransactionContext::open")?;
     let filtered_commit = josh_core::filter_commit(
-        &transaction,
+        transaction,
         link_filter,
         new_commit,
         josh_core::filter::empty(),
@@ -1198,7 +1174,10 @@ fn handle_link_fetch(args: &LinkFetchArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn handle_remote(args: &RemoteArgs) -> anyhow::Result<()> {
+fn handle_remote(
+    args: &RemoteArgs,
+    _transaction: &josh_core::cache::Transaction,
+) -> anyhow::Result<()> {
     match &args.command {
         RemoteCommand::Add(add_args) => handle_remote_add(add_args),
     }
@@ -1277,11 +1256,14 @@ fn handle_remote_add_repo(args: &RemoteAddArgs, repo_path: &std::path::Path) -> 
 }
 
 /// Handle the `josh filter` command - apply filtering to existing refs without fetching
-fn handle_filter(args: &FilterArgs) -> anyhow::Result<()> {
+fn handle_filter(
+    args: &FilterArgs,
+    transaction: &josh_core::cache::Transaction,
+) -> anyhow::Result<()> {
     let repo = git2::Repository::open_from_env().context("Not in a git repository")?;
     let repo_path = repo.path().parent().unwrap().to_path_buf();
 
-    handle_filter_repo(args, &repo_path, true)
+    handle_filter_repo(args, &repo_path, true, transaction)
 }
 
 /// Internal filter function that can be called from other handlers
@@ -1289,6 +1271,7 @@ fn handle_filter_repo(
     args: &FilterArgs,
     repo_path: &std::path::Path,
     print_messages: bool,
+    transaction: &josh_core::cache::Transaction,
 ) -> anyhow::Result<()> {
     let repo = git2::Repository::open(repo_path).context("Failed to open repository")?;
 
@@ -1305,7 +1288,7 @@ fn handle_filter_repo(
     }
 
     // Apply josh filtering (this is the same as in handle_fetch but without the git fetch step)
-    apply_josh_filtering(repo_path, &filter, &args.remote)?;
+    apply_josh_filtering(transaction, repo_path, &filter, &args.remote)?;
 
     if print_messages {
         println!("Applied filter to remote: {}", args.remote);

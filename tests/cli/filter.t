@@ -30,7 +30,7 @@ Test josh filter command - apply filtering without fetching
   Fetched from remote: origin
   Already on 'master'
   
-  Cloned repository to: filtered-repo
+  Cloned repository to: ${TESTTMP}/filtered-repo
 
   $ cd filtered-repo
 

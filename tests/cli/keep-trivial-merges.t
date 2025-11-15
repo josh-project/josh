@@ -41,7 +41,7 @@ Test josh clone with --keep-trivial-merges flag
   Fetched from remote: origin
   Already on 'master'
   
-  Cloned repository to: libs
+  Cloned repository to: ${TESTTMP}/libs
 
   $ cd libs
 

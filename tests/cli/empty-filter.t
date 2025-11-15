@@ -119,7 +119,7 @@ Test josh clone with filter that results in empty tree for some branches
   Fetched from remote: origin
   Already on 'master'
   
-  Cloned repository to: filtered-repo
+  Cloned repository to: ${TESTTMP}/filtered-repo
 
   $ cd filtered-repo
 
