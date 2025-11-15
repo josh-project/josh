@@ -105,7 +105,14 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> JoshResult<Op> {
         }
         Rule::filter_message => {
             let mut inner = pair.into_inner();
-            Ok(Op::Message(unquote(inner.next().unwrap().as_str())))
+            let fmt = unquote(inner.next().unwrap().as_str());
+            let regex = if let Some(r) = inner.next() {
+                regex::Regex::new(&unquote(r.as_str()))
+                    .map_err(|e| josh_error(&format!("invalid regex: {}", e)))?
+            } else {
+                super::MESSAGE_MATCH_ALL_REGEX.clone()
+            };
+            Ok(Op::Message(fmt, regex))
         }
         Rule::filter_group => {
             let v: Vec<_> = pair.into_inner().map(|x| unquote(x.as_str())).collect();

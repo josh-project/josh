@@ -1850,7 +1850,25 @@ dependencies = [
 ]
 
 [[package]]
-name = "josh"
+name = "josh-cli"
+version = "22.4.15"
+dependencies = [
+ "anyhow",
+ "clap",
+ "defer",
+ "env_logger",
+ "git2",
+ "josh-core",
+ "josh-graphql",
+ "josh-templates",
+ "juniper",
+ "log",
+ "rs_tracing",
+ "serde_json",
+]
+
+[[package]]
+name = "josh-core"
 version = "22.4.15"
 dependencies = [
  "backtrace",
@@ -1881,24 +1899,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "josh-cli"
-version = "22.4.15"
-dependencies = [
- "anyhow",
- "clap",
- "defer",
- "env_logger",
- "git2",
- "josh",
- "josh-graphql",
- "josh-templates",
- "juniper",
- "log",
- "rs_tracing",
- "serde_json",
-]
-
-[[package]]
 name = "josh-filter"
 version = "22.4.15"
 dependencies = [
@@ -1906,7 +1906,7 @@ dependencies = [
  "defer",
  "env_logger",
  "git2",
- "josh",
+ "josh-core",
  "josh-graphql",
  "josh-templates",
  "juniper",
@@ -1920,7 +1920,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "git2",
- "josh",
+ "josh-core",
  "juniper",
  "lazy_static",
  "regex",
@@ -1951,7 +1951,7 @@ dependencies = [
  "hyper-util",
  "hyper_cgi",
  "indoc",
- "josh",
+ "josh-core",
  "josh-graphql",
  "josh-rpc",
  "josh-templates",
@@ -1977,7 +1977,6 @@ dependencies = [
  "tracing-futures",
  "tracing-opentelemetry",
  "tracing-subscriber",
- "unindent",
  "url",
  "uuid",
 ]
@@ -2016,7 +2015,7 @@ dependencies = [
  "form_urlencoded",
  "git2",
  "handlebars",
- "josh",
+ "josh-core",
  "josh-graphql",
  "juniper",
  "serde_json",
@@ -3561,12 +3560,6 @@ checksum = "5033c97c4262335cded6d6fc3e5c18ab755e1a3dc96376350f3d8e9f009ad956"
 dependencies = [
  "tinyvec",
 ]
-
-[[package]]
-name = "unindent"
-version = "0.2.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7264e107f553ccae879d21fbea1d6724ac785e8c3bfc762137959b5802826ef3"
 
 [[package]]
 name = "unsafe-libyaml"

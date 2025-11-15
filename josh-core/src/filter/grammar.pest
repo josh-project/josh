@@ -40,7 +40,7 @@ filter_nop = { CMD_START ~ "/" }
 filter_presub = { CMD_START ~ ":" ~ argument }
 filter = { CMD_START ~ cmd ~ "=" ~ (argument ~ (";" ~ argument)*)? }
 filter_noarg = { CMD_START ~ cmd }
-filter_message = { CMD_START ~ string }
+filter_message = { CMD_START ~ string ~ (";" ~ string)? }
 
 filter_rev = {
     CMD_START ~ "rev" ~ "("

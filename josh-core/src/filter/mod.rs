@@ -23,6 +23,12 @@ lazy_static! {
         std::sync::Mutex::new(std::collections::HashMap::new());
 }
 
+lazy_static! {
+    /// Match-all regex pattern used as the default for Op::Message when no regex is specified.
+    /// The pattern `(?s)^.*$` matches any string (including newlines) from start to end.
+    static ref MESSAGE_MATCH_ALL_REGEX: regex::Regex = regex::Regex::new("(?s)^.*$").unwrap();
+}
+
 /// Filters are represented as `git2::Oid`, however they are not ever stored
 /// inside the repo.
 #[derive(
@@ -69,6 +75,7 @@ impl std::fmt::Debug for Filter {
 #[derive(Debug)]
 pub struct Apply<'a> {
     tree: git2::Tree<'a>,
+    commit: git2::Oid,
     pub author: Option<(String, String)>,
     pub committer: Option<(String, String)>,
     pub message: Option<String>,
@@ -78,6 +85,7 @@ impl<'a> Clone for Apply<'a> {
     fn clone(&self) -> Self {
         Apply {
             tree: self.tree.clone(),
+            commit: self.commit.clone(),
             author: self.author.clone(),
             committer: self.committer.clone(),
             message: self.message.clone(),
@@ -90,6 +98,7 @@ impl<'a> Apply<'a> {
         Apply {
             tree,
             author: None,
+            commit: git2::Oid::zero(),
             committer: None,
             message: None,
         }
@@ -104,6 +113,7 @@ impl<'a> Apply<'a> {
         Apply {
             tree,
             author,
+            commit: git2::Oid::zero(),
             committer,
             message,
         }
@@ -125,6 +135,7 @@ impl<'a> Apply<'a> {
 
         Ok(Apply {
             tree,
+            commit: commit.id(),
             author,
             committer,
             message,
@@ -135,6 +146,7 @@ impl<'a> Apply<'a> {
         Apply {
             tree: self.tree,
             author: Some(author),
+            commit: self.commit,
             committer: self.committer,
             message: self.message,
         }
@@ -144,6 +156,7 @@ impl<'a> Apply<'a> {
         Apply {
             tree: self.tree,
             author: self.author,
+            commit: self.commit,
             committer: Some(committer),
             message: self.message,
         }
@@ -153,8 +166,19 @@ impl<'a> Apply<'a> {
         Apply {
             tree: self.tree,
             author: self.author,
+            commit: self.commit,
             committer: self.committer,
             message: Some(message),
+        }
+    }
+
+    pub fn with_commit(self, commit: git2::Oid) -> Self {
+        Apply {
+            tree: self.tree,
+            author: self.author,
+            commit: commit,
+            committer: self.committer,
+            message: self.message,
         }
     }
 
@@ -162,6 +186,7 @@ impl<'a> Apply<'a> {
         Apply {
             tree,
             author: self.author,
+            commit: self.commit,
             committer: self.committer,
             message: self.message,
         }
@@ -185,7 +210,7 @@ pub fn empty() -> Filter {
 }
 
 pub fn message(m: &str) -> Filter {
-    to_filter(Op::Message(m.to_string()))
+    to_filter(Op::Message(m.to_string(), MESSAGE_MATCH_ALL_REGEX.clone()))
 }
 
 pub fn hook(h: &str) -> Filter {
@@ -285,7 +310,7 @@ enum Op {
     Workspace(std::path::PathBuf),
 
     Pattern(String),
-    Message(String),
+    Message(String, regex::Regex),
 
     Compose(Vec<Filter>),
     Chain(Filter, Filter),
@@ -609,8 +634,11 @@ fn spec2(op: &Op) -> String {
                 parse::quote(email)
             )
         }
-        Op::Message(m) => {
+        Op::Message(m, r) if r.as_str() == MESSAGE_MATCH_ALL_REGEX.as_str() => {
             format!(":{}", parse::quote(m))
+        }
+        Op::Message(m, r) => {
+            format!(":{};{}", parse::quote(m), parse::quote(r.as_str()))
         }
         Op::Hook(hook) => {
             format!(":hook={}", parse::quote(hook))
@@ -1069,14 +1097,27 @@ fn apply2<'a>(transaction: &'a cache::Transaction, op: &Op, x: Apply<'a>) -> Jos
         Op::Squash(None) => Ok(x),
         Op::Author(author, email) => Ok(x.with_author((author.clone(), email.clone()))),
         Op::Committer(author, email) => Ok(x.with_committer((author.clone(), email.clone()))),
-        Op::Message(m) => Ok(x.with_message(
-            // Pass the message through `strfmt` to enable future extensions
-            strfmt::strfmt(
-                m,
-                &std::collections::HashMap::<String, &dyn strfmt::DisplayStr>::new(),
-            )?,
-        )),
         Op::Squash(Some(_)) => Err(josh_error("not applicable to tree")),
+        Op::Message(m, r) => {
+            let tree_id = x.tree().id().to_string();
+            let commit = x.commit;
+            let commit_id = commit.to_string();
+            let mut hm = std::collections::HashMap::<String, String>::new();
+            hm.insert("tree".to_string(), tree_id);
+            hm.insert("commit".to_string(), commit_id);
+
+            let message = if let Some(ref m) = x.message {
+                m.to_string()
+            } else {
+                if let Ok(c) = transaction.repo().find_commit(commit) {
+                    c.message_raw().unwrap_or_default().to_string()
+                } else {
+                    "".to_string()
+                }
+            };
+
+            Ok(x.with_message(text::transform_with_template(&r, &m, &message, &hm)?))
+        }
         Op::Linear => Ok(x),
         Op::Prune => Ok(x),
         Op::Unsign => Ok(x),
