@@ -33,9 +33,20 @@ Note that ``:/a/b`` and ``:/a:/b`` are equivalent ways to get the same result.
 ### Directory **`::a/`**
 A shorthand for the commonly occurring filter combination ``:/a:prefix=a``.
 
-### File **`::a`**
-Produces a tree with only the specified file in it's root.
+### File **`::a`** or **`::destination=source`**
+Produces a tree with only the specified file.
+
+When using a single argument (`::a`), the file is placed at the same full path as in the source tree.
+When using the `destination=source` syntax (`::destination=source`), the file is renamed from `source` to `destination` in the filtered tree.
+
+Examples:
+- `::file.txt` - Selects `file.txt` and places it at `file.txt`
+- `::src/file.txt` - Selects `src/file.txt` and places it at `src/file.txt`
+- `::renamed.txt=src/original.txt` - Selects `src/original.txt` and places it at `renamed.txt`
+- `::subdir/file.txt=src/file.txt` - Selects `src/file.txt` and places it at `subdir/file.txt`
+
 Note that `::a/b` is equivalent to `::a/::b`.
+Pattern filters (with `*`) cannot be combined with the `destination=source` syntax.
 
 ### Prefix **`:prefix=a`**
 Take the input tree and place it into subdirectory ``a``.
