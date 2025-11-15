@@ -22,7 +22,7 @@ Test josh clone via HTTP (no filter)
   From http://127.0.0.1:8001/real_repo
    * [new branch]      master     -> refs/josh/remotes/origin/master
   
-  From file://$TESTTMP/repo1-clone-josh
+  From file://${TESTTMP}/repo1-clone-josh
    * [new branch]      master     -> origin/master
   
   Fetched from remote: origin
@@ -47,7 +47,7 @@ Test josh clone via HTTP (with filter)
   From http://127.0.0.1:8001/real_repo
    * [new branch]      master     -> refs/josh/remotes/origin/master
   
-  From file://$TESTTMP/repo1-clone-josh-filtered
+  From file://${TESTTMP}/repo1-clone-josh-filtered
    * [new branch]      master     -> origin/master
   
   Fetched from remote: origin
@@ -69,7 +69,7 @@ Test josh clone via HTTP (with explicit filter argument)
   From http://127.0.0.1:8001/real_repo
    * [new branch]      master     -> refs/josh/remotes/origin/master
   
-  From file://$TESTTMP/repo1-clone-josh-explicit
+  From file://${TESTTMP}/repo1-clone-josh-explicit
    * [new branch]      master     -> origin/master
   
   Fetched from remote: origin

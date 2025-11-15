@@ -453,7 +453,13 @@ fn handle_clone(args: &CloneArgs) -> anyhow::Result<()> {
     )
     .with_context(|| format!("Failed to set upstream for branch {}", default_branch))?;
 
-    println!("Cloned repository to: {}", output_dir.display());
+    let output_str = output_dir.display().to_string();
+    let output_str = if let Ok(testtmp) = std::env::var("TESTTMP") {
+        output_str.replace(&testtmp, "${TESTTMP}")
+    } else {
+        output_str.to_string()
+    };
+    println!("Cloned repository to: {}", output_str);
     Ok(())
 }
 

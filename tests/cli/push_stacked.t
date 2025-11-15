@@ -25,10 +25,10 @@ Clone with josh filter
 
   $ josh clone ${TESTTMP}/remote :/sub1 filtered
   Added remote 'origin' with filter ':/sub1:prune=trivial-merge'
-  From $TESTTMP/remote
+  From file://${TESTTMP}/remote
    * [new branch]      master     -> refs/josh/remotes/origin/master
   
-  From file://$TESTTMP/filtered
+  From file://${TESTTMP}/filtered
    * [new branch]      master     -> origin/master
   
   Fetched from remote: origin
@@ -73,15 +73,15 @@ Push with stacked changes (should create multiple refs)
   5f2928c89c4dcc7f5a8c59ef65734a83620cefee\trefs/remotes/origin/HEAD (esc)
   5f2928c89c4dcc7f5a8c59ef65734a83620cefee\trefs/remotes/origin/master (esc)
   $ josh push --stack
-  To $TESTTMP/remote
+  To file://${TESTTMP}/remote
    * [new branch]      c61c37f4a3d5eb447f41dde15620eee1a181d60b -> @changes/master/josh@example.com/1234
   
   Pushed c61c37f4a3d5eb447f41dde15620eee1a181d60b to origin/refs/heads/@changes/master/josh@example.com/1234
-  To $TESTTMP/remote
+  To file://${TESTTMP}/remote
    * [new branch]      2cbfa8cb8d9a9f1de029fcba547a6e56c742733f -> @changes/master/josh@example.com/foo7
   
   Pushed 2cbfa8cb8d9a9f1de029fcba547a6e56c742733f to origin/refs/heads/@changes/master/josh@example.com/foo7
-  To $TESTTMP/remote
+  To file://${TESTTMP}/remote
    * [new branch]      2cbfa8cb8d9a9f1de029fcba547a6e56c742733f -> @heads/master/josh@example.com
   
   Pushed 2cbfa8cb8d9a9f1de029fcba547a6e56c742733f to origin/refs/heads/@heads/master/josh@example.com
@@ -118,7 +118,7 @@ Test normal push (without --split) - create a new commit
   * Change-Id: 1234:43d6fcc9e7a81452d7343c78c0102f76027717fb
   * add file1:5f2928c89c4dcc7f5a8c59ef65734a83620cefee
   $ josh push
-  To $TESTTMP/remote
+  To file://${TESTTMP}/remote
      6ed6c1c..d3e371f  d3e371f8c637c91b59e05aae1066cf0adbe0da93 -> master
   
   Pushed d3e371f8c637c91b59e05aae1066cf0adbe0da93 to origin/master
