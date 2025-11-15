@@ -30,11 +30,11 @@
 
   $ josh clone ${TESTTMP}/remote/libs :/sub1 libs
   Added remote 'origin' with filter ':/sub1:prune=trivial-merge'
-  From $TESTTMP/remote/libs
+  From file://${TESTTMP}/remote/libs
    * [new branch]      feature    -> refs/josh/remotes/origin/feature
    * [new branch]      master     -> refs/josh/remotes/origin/master
   
-  From file://$TESTTMP/libs
+  From file://${TESTTMP}/libs
    * [new branch]      feature    -> origin/feature
    * [new branch]      master     -> origin/master
   
@@ -61,10 +61,10 @@
   $ cd ${TESTTMP}/libs
 
   $ josh pull
-  From $TESTTMP/remote/libs
+  From file://${TESTTMP}/remote/libs
      667a912..2c470be  master     -> refs/josh/remotes/origin/master
   
-  From file://$TESTTMP/libs
+  From file://${TESTTMP}/libs
      d8388f5..0974639  master     -> origin/master
   
   Fetched from remote: origin

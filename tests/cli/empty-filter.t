@@ -105,13 +105,13 @@ Test josh clone with filter that results in empty tree for some branches
 
   $ josh clone remote.git :/sub1 filtered-repo
   Added remote 'origin' with filter ':/sub1:prune=trivial-merge'
-  From $TESTTMP/remote
+  From file://${TESTTMP}/remote
    * [new branch]      content-branch -> refs/josh/remotes/origin/content-branch
    * [new branch]      master         -> refs/josh/remotes/origin/master
    * [new branch]      mixed-branch   -> refs/josh/remotes/origin/mixed-branch
    * [new branch]      truly-empty-branch -> refs/josh/remotes/origin/truly-empty-branch
   
-  From file://$TESTTMP/filtered-repo
+  From file://${TESTTMP}/filtered-repo
    * [new branch]      content-branch -> origin/content-branch
    * [new branch]      master         -> origin/master
    * [new branch]      mixed-branch   -> origin/mixed-branch

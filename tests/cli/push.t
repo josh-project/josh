@@ -25,10 +25,10 @@ Clone with josh filter
 
   $ josh clone ${TESTTMP}/remote :/sub1 filtered
   Added remote 'origin' with filter ':/sub1:prune=trivial-merge'
-  From $TESTTMP/remote
+  From file://${TESTTMP}/remote
    * [new branch]      master     -> refs/josh/remotes/origin/master
   
-  From file://$TESTTMP/filtered
+  From file://${TESTTMP}/filtered
    * [new branch]      master     -> origin/master
   
   Fetched from remote: origin
@@ -52,7 +52,7 @@ Make a change in the filtered repository
 Push the change back
 
   $ josh push
-  To $TESTTMP/remote
+  To file://${TESTTMP}/remote
      bd8c97c..6cd75eb  6cd75ebe1f882bd362eeb6f1199b9540552ac413 -> master
   
   Pushed 6cd75ebe1f882bd362eeb6f1199b9540552ac413 to origin/master

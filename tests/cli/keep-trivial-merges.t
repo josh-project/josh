@@ -30,11 +30,11 @@ Test josh clone with --keep-trivial-merges flag
 
   $ josh clone remote/libs :/sub1 libs --keep-trivial-merges
   Added remote 'origin' with filter ':/sub1'
-  From $TESTTMP/remote/libs
+  From file://${TESTTMP}/remote/libs
    * [new branch]      feature    -> refs/josh/remotes/origin/feature
    * [new branch]      master     -> refs/josh/remotes/origin/master
   
-  From file://$TESTTMP/libs
+  From file://${TESTTMP}/libs
    * [new branch]      feature    -> origin/feature
    * [new branch]      master     -> origin/master
   

@@ -36,10 +36,10 @@ Test that josh clone also sets up proper refspecs
 
   $ josh clone ${TESTTMP}/remote/libs :/sub1 cloned-repo
   Added remote 'origin' with filter ':/sub1:prune=trivial-merge'
-  From $TESTTMP/remote/libs
+  From file://${TESTTMP}/remote/libs
    * [new branch]      master     -> refs/josh/remotes/origin/master
   
-  From file://$TESTTMP/cloned-repo
+  From file://${TESTTMP}/cloned-repo
    * [new branch]      master     -> origin/master
   
   Fetched from remote: origin

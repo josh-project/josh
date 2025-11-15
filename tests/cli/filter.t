@@ -21,10 +21,10 @@ Test josh filter command - apply filtering without fetching
 
   $ josh clone ${TESTTMP}/remote/libs :/sub1 filtered-repo
   Added remote 'origin' with filter ':/sub1:prune=trivial-merge'
-  From $TESTTMP/remote/libs
+  From file://${TESTTMP}/remote/libs
    * [new branch]      master     -> refs/josh/remotes/origin/master
   
-  From file://$TESTTMP/filtered-repo
+  From file://${TESTTMP}/filtered-repo
    * [new branch]      master     -> origin/master
   
   Fetched from remote: origin
@@ -60,7 +60,9 @@ Test josh filter with non-existent remote
   $ git init -q
 
   $ josh filter nonexistent
-  Error: No filter configured for remote 'nonexistent': config value 'josh-remote.nonexistent.filter' was not found; class=Config (7); code=NotFound (-3)
+  Error: No filter configured for remote 'nonexistent'
+  No filter configured for remote 'nonexistent'
+  config value 'josh-remote.nonexistent.filter' was not found; class=Config (7); code=NotFound (-3)
   [1]
 
   $ cd ..

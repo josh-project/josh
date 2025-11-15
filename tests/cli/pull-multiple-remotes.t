@@ -42,10 +42,10 @@
 
   $ josh clone ${TESTTMP}/remote1/libs :/sub1 libs
   Added remote 'origin' with filter ':/sub1:prune=trivial-merge'
-  From $TESTTMP/remote1/libs
+  From file://${TESTTMP}/remote1/libs
    * [new branch]      master     -> refs/josh/remotes/origin/master
   
-  From file://$TESTTMP/libs
+  From file://${TESTTMP}/libs
    * [new branch]      master     -> origin/master
   
   Fetched from remote: origin
@@ -66,10 +66,10 @@
   Added remote 'remote2' with filter ':/sub2:prune=trivial-merge'
 
   $ josh pull --remote remote2
-  From $TESTTMP/remote2/libs
+  From file://${TESTTMP}/remote2/libs
    * [new branch]      master     -> refs/josh/remotes/remote2/master
   
-  From file://$TESTTMP/libs
+  From file://${TESTTMP}/libs
    * [new branch]      master     -> remote2/master
   
   Fetched from remote: remote2
@@ -77,7 +77,9 @@
   a branch. Because this is not the default configured remote
   for your current branch, you must specify a branch on the command line.
   
-  Error: git pull failed with exit code: 1
+  Error: git pull failed
+  git pull failed
+  Command exited with code 1: git pull remote2
   [1]
 
   $ tree
