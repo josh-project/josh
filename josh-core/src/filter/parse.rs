@@ -87,6 +87,9 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> JoshResult<Op> {
         Rule::filter_presub => {
             let mut inner = pair.into_inner();
             let arg = &unquote(inner.next().unwrap().as_str());
+            let has_second_arg = inner.peek().is_some();
+            let second_arg = inner.next().map(|x| unquote(x.as_str()));
+
             if arg.ends_with('/') {
                 let arg = arg.trim_end_matches('/');
                 Ok(Op::Chain(
@@ -94,9 +97,29 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> JoshResult<Op> {
                     to_filter(make_op(&["prefix", arg])?),
                 ))
             } else if arg.contains('*') {
+                // Pattern case - error if combined with = (destination=source syntax)
+                if has_second_arg {
+                    return Err(josh_error(&format!(
+                        "Pattern filters cannot use destination=source syntax: {}",
+                        arg
+                    )));
+                }
                 Ok(Op::Pattern(arg.to_string()))
             } else {
-                Ok(Op::File(Path::new(arg).to_owned()))
+                // File case - error if source contains * (patterns not supported in source)
+                if let Some(ref source_arg) = second_arg {
+                    if source_arg.contains('*') {
+                        return Err(josh_error(&format!(
+                            "Pattern filters not supported in source path: {}",
+                            source_arg
+                        )));
+                    }
+                }
+                let dest_path = Path::new(arg).to_owned();
+                let source_path = second_arg
+                    .map(|s| Path::new(&s).to_owned())
+                    .unwrap_or_else(|| dest_path.clone());
+                Ok(Op::File(dest_path, source_path))
             }
         }
         Rule::filter_noarg => {
@@ -105,7 +128,14 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> JoshResult<Op> {
         }
         Rule::filter_message => {
             let mut inner = pair.into_inner();
-            Ok(Op::Message(unquote(inner.next().unwrap().as_str())))
+            let fmt = unquote(inner.next().unwrap().as_str());
+            let regex = if let Some(r) = inner.next() {
+                regex::Regex::new(&unquote(r.as_str()))
+                    .map_err(|e| josh_error(&format!("invalid regex: {}", e)))?
+            } else {
+                super::MESSAGE_MATCH_ALL_REGEX.clone()
+            };
+            Ok(Op::Message(fmt, regex))
         }
         Rule::filter_group => {
             let v: Vec<_> = pair.into_inner().map(|x| unquote(x.as_str())).collect();
