@@ -23,6 +23,12 @@ lazy_static! {
         std::sync::Mutex::new(std::collections::HashMap::new());
 }
 
+lazy_static! {
+    /// Match-all regex pattern used as the default for Op::Message when no regex is specified.
+    /// The pattern `(?s)^.*$` matches any string (including newlines) from start to end.
+    static ref MESSAGE_MATCH_ALL_REGEX: regex::Regex = regex::Regex::new("(?s)^.*$").unwrap();
+}
+
 /// Filters are represented as `git2::Oid`, however they are not ever stored
 /// inside the repo.
 #[derive(
@@ -69,6 +75,7 @@ impl std::fmt::Debug for Filter {
 #[derive(Debug)]
 pub struct Apply<'a> {
     tree: git2::Tree<'a>,
+    commit: git2::Oid,
     pub author: Option<(String, String)>,
     pub committer: Option<(String, String)>,
     pub message: Option<String>,
@@ -78,6 +85,7 @@ impl<'a> Clone for Apply<'a> {
     fn clone(&self) -> Self {
         Apply {
             tree: self.tree.clone(),
+            commit: self.commit.clone(),
             author: self.author.clone(),
             committer: self.committer.clone(),
             message: self.message.clone(),
@@ -90,6 +98,7 @@ impl<'a> Apply<'a> {
         Apply {
             tree,
             author: None,
+            commit: git2::Oid::zero(),
             committer: None,
             message: None,
         }
@@ -104,6 +113,7 @@ impl<'a> Apply<'a> {
         Apply {
             tree,
             author,
+            commit: git2::Oid::zero(),
             committer,
             message,
         }
@@ -125,6 +135,7 @@ impl<'a> Apply<'a> {
 
         Ok(Apply {
             tree,
+            commit: commit.id(),
             author,
             committer,
             message,
@@ -135,6 +146,7 @@ impl<'a> Apply<'a> {
         Apply {
             tree: self.tree,
             author: Some(author),
+            commit: self.commit,
             committer: self.committer,
             message: self.message,
         }
@@ -144,6 +156,7 @@ impl<'a> Apply<'a> {
         Apply {
             tree: self.tree,
             author: self.author,
+            commit: self.commit,
             committer: Some(committer),
             message: self.message,
         }
@@ -153,8 +166,19 @@ impl<'a> Apply<'a> {
         Apply {
             tree: self.tree,
             author: self.author,
+            commit: self.commit,
             committer: self.committer,
             message: Some(message),
+        }
+    }
+
+    pub fn with_commit(self, commit: git2::Oid) -> Self {
+        Apply {
+            tree: self.tree,
+            author: self.author,
+            commit: commit,
+            committer: self.committer,
+            message: self.message,
         }
     }
 
@@ -162,6 +186,7 @@ impl<'a> Apply<'a> {
         Apply {
             tree,
             author: self.author,
+            commit: self.commit,
             committer: self.committer,
             message: self.message,
         }
@@ -185,7 +210,11 @@ pub fn empty() -> Filter {
 }
 
 pub fn message(m: &str) -> Filter {
-    to_filter(Op::Message(m.to_string()))
+    to_filter(Op::Message(m.to_string(), MESSAGE_MATCH_ALL_REGEX.clone()))
+}
+
+pub fn file(path: std::path::PathBuf) -> Filter {
+    to_filter(Op::File(path.clone(), path))
 }
 
 pub fn hook(h: &str) -> Filter {
@@ -279,13 +308,15 @@ enum Op {
     Index,
     Invert,
 
-    File(std::path::PathBuf),
+    File(std::path::PathBuf, std::path::PathBuf), // File(dest_path, source_path)
     Prefix(std::path::PathBuf),
     Subdir(std::path::PathBuf),
     Workspace(std::path::PathBuf),
 
     Pattern(String),
-    Message(String),
+    Message(String, regex::Regex),
+
+    HistoryConcat(LazyRef, Filter),
 
     Compose(Vec<Filter>),
     Chain(Filter, Filter),
@@ -411,6 +442,13 @@ fn lazy_refs2(op: &Op) -> Vec<String> {
             av
         }
         Op::Rev(filters) => lazy_refs2(&Op::Join(filters.clone())),
+        Op::HistoryConcat(r, _) => {
+            let mut lr = Vec::new();
+            if let LazyRef::Lazy(s) = r {
+                lr.push(s.to_owned());
+            }
+            lr
+        }
         Op::Join(filters) => {
             let mut lr = lazy_refs2(&Op::Compose(filters.values().copied().collect()));
             lr.extend(filters.keys().filter_map(|x| {
@@ -470,6 +508,19 @@ fn resolve_refs2(refs: &std::collections::HashMap<String, git2::Oid>, op: &Op) -
                 })
                 .collect();
             Op::Rev(lr)
+        }
+        Op::HistoryConcat(r, filter) => {
+            let f = resolve_refs(refs, *filter);
+            let resolved_ref = if let LazyRef::Lazy(s) = r {
+                if let Some(res) = refs.get(s) {
+                    LazyRef::Resolved(*res)
+                } else {
+                    r.clone()
+                }
+            } else {
+                r.clone()
+            };
+            Op::HistoryConcat(resolved_ref, f)
         }
         Op::Join(filters) => {
             let lr = filters
@@ -595,7 +646,17 @@ fn spec2(op: &Op) -> String {
         Op::Linear => ":linear".to_string(),
         Op::Unsign => ":unsign".to_string(),
         Op::Subdir(path) => format!(":/{}", parse::quote_if(&path.to_string_lossy())),
-        Op::File(path) => format!("::{}", parse::quote_if(&path.to_string_lossy())),
+        Op::File(dest_path, source_path) => {
+            if source_path == dest_path {
+                format!("::{}", parse::quote_if(&dest_path.to_string_lossy()))
+            } else {
+                format!(
+                    "::{}={}",
+                    parse::quote_if(&dest_path.to_string_lossy()),
+                    parse::quote_if(&source_path.to_string_lossy())
+                )
+            }
+        }
         Op::Prune => ":prune=trivial-merge".to_string(),
         Op::Prefix(path) => format!(":prefix={}", parse::quote_if(&path.to_string_lossy())),
         Op::Pattern(pattern) => format!("::{}", parse::quote_if(pattern)),
@@ -609,9 +670,15 @@ fn spec2(op: &Op) -> String {
                 parse::quote(email)
             )
         }
-        Op::Message(m) => {
+        Op::Message(m, r) if r.as_str() == MESSAGE_MATCH_ALL_REGEX.as_str() => {
             format!(":{}", parse::quote(m))
         }
+        Op::Message(m, r) => {
+            format!(":{};{}", parse::quote(m), parse::quote(r.as_str()))
+        }
+        Op::HistoryConcat(r, filter) => {
+            format!(":concat({}{})", r.to_string(), spec(*filter))
+		}
         Op::Hook(hook) => {
             format!(":hook={}", parse::quote(hook))
         }
@@ -625,7 +692,7 @@ pub fn src_path(filter: Filter) -> std::path::PathBuf {
 fn src_path2(op: &Op) -> std::path::PathBuf {
     normalize_path(&match op {
         Op::Subdir(path) => path.to_owned(),
-        Op::File(path) => path.to_owned(),
+        Op::File(_, source_path) => source_path.to_owned(),
         Op::Chain(a, b) => src_path(*a).join(src_path(*b)),
         _ => std::path::PathBuf::new(),
     })
@@ -638,7 +705,7 @@ pub fn dst_path(filter: Filter) -> std::path::PathBuf {
 fn dst_path2(op: &Op) -> std::path::PathBuf {
     normalize_path(&match op {
         Op::Prefix(path) => path.to_owned(),
-        Op::File(path) => path.to_owned(),
+        Op::File(dest_path, _) => dest_path.to_owned(),
         Op::Chain(a, b) => dst_path(*b).join(dst_path(*a)),
         _ => std::path::PathBuf::new(),
     })
@@ -679,25 +746,14 @@ fn resolve_workspace_redirect<'a>(
         .unwrap_or_else(|_| to_filter(Op::Empty));
 
     if let Op::Workspace(p) = to_op(f) {
-        Some((
-            chain(
-                to_filter(Op::Exclude(to_filter(Op::File(path.to_owned())))),
-                f,
-            ),
-            p,
-        ))
+        Some((chain(to_filter(Op::Exclude(file(path.to_owned()))), f), p))
     } else {
         None
     }
 }
 
 fn get_workspace<'a>(repo: &'a git2::Repository, tree: &'a git2::Tree<'a>, path: &Path) -> Filter {
-    let path = if let Some((_, path)) = resolve_workspace_redirect(repo, &tree, path) {
-        path
-    } else {
-        path.to_owned()
-    };
-    let wsj_file = to_filter(Op::File(Path::new("workspace.josh").to_owned()));
+    let wsj_file = file(Path::new("workspace.josh").to_owned());
     let base = to_filter(Op::Subdir(path.to_owned()));
     let wsj_file = chain(base, wsj_file);
     compose(
@@ -1026,6 +1082,19 @@ fn apply_to_commit2(
 
             return per_rev_filter(transaction, commit, filter, commit_filter, parent_filters);
         }
+        Op::HistoryConcat(r, f) => {
+            if let LazyRef::Resolved(c) = r {
+                let a = apply_to_commit2(&to_op(*f), &repo.find_commit(*c)?, transaction)?;
+                let a = some_or!(a, { return Ok(None) });
+                if commit.id() == a {
+                    transaction.insert(filter, commit.id(), *c, true);
+                    return Ok(Some(*c));
+                }
+            } else {
+                return Err(josh_error("unresolved lazy ref"));
+            }
+            Apply::from_commit(commit)?
+        }
         _ => apply(transaction, filter, Apply::from_commit(commit)?)?,
     };
 
@@ -1069,14 +1138,28 @@ fn apply2<'a>(transaction: &'a cache::Transaction, op: &Op, x: Apply<'a>) -> Jos
         Op::Squash(None) => Ok(x),
         Op::Author(author, email) => Ok(x.with_author((author.clone(), email.clone()))),
         Op::Committer(author, email) => Ok(x.with_committer((author.clone(), email.clone()))),
-        Op::Message(m) => Ok(x.with_message(
-            // Pass the message through `strfmt` to enable future extensions
-            strfmt::strfmt(
-                m,
-                &std::collections::HashMap::<String, &dyn strfmt::DisplayStr>::new(),
-            )?,
-        )),
         Op::Squash(Some(_)) => Err(josh_error("not applicable to tree")),
+        Op::Message(m, r) => {
+            let tree_id = x.tree().id().to_string();
+            let commit = x.commit;
+            let commit_id = commit.to_string();
+            let mut hm = std::collections::HashMap::<String, String>::new();
+            hm.insert("tree".to_string(), tree_id);
+            hm.insert("commit".to_string(), commit_id);
+
+            let message = if let Some(ref m) = x.message {
+                m.to_string()
+            } else {
+                if let Ok(c) = transaction.repo().find_commit(commit) {
+                    c.message_raw().unwrap_or_default().to_string()
+                } else {
+                    "".to_string()
+                }
+            };
+
+            Ok(x.with_message(text::transform_with_template(&r, &m, &message, &hm)?))
+        }
+        Op::HistoryConcat(..) => Ok(x),
         Op::Linear => Ok(x),
         Op::Prune => Ok(x),
         Op::Unsign => Ok(x),
@@ -1105,13 +1188,19 @@ fn apply2<'a>(transaction: &'a cache::Transaction, op: &Op, x: Apply<'a>) -> Jos
                 to_filter(op.clone()).id(),
             )?))
         }
-        Op::File(path) => {
+        Op::File(dest_path, source_path) => {
             let (file, mode) = x
                 .tree()
-                .get_path(path)
+                .get_path(source_path)
                 .map(|x| (x.id(), x.filemode()))
                 .unwrap_or((git2::Oid::zero(), git2::FileMode::Blob.into()));
-            Ok(x.with_tree(tree::insert(repo, &tree::empty(repo), path, file, mode)?))
+            Ok(x.with_tree(tree::insert(
+                repo,
+                &tree::empty(repo),
+                dest_path,
+                file,
+                mode,
+            )?))
         }
 
         Op::Subdir(path) => Ok(x.clone().with_tree(
@@ -1255,7 +1344,10 @@ fn unapply_workspace<'a>(
             );
 
             let root = to_filter(Op::Subdir(path.to_owned()));
-            let wsj_file = to_filter(Op::File(Path::new("workspace.josh").to_owned()));
+            let wsj_file = to_filter(Op::File(
+                Path::new("workspace.josh").to_owned(),
+                Path::new("workspace.josh").to_owned(),
+            ));
             let wsj_file = chain(root, wsj_file);
             let filter = compose(wsj_file, compose(workspace, root));
             let original_filter = compose(wsj_file, compose(original_workspace, root));

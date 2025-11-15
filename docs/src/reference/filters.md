@@ -33,9 +33,20 @@ Note that ``:/a/b`` and ``:/a:/b`` are equivalent ways to get the same result.
 ### Directory **`::a/`**
 A shorthand for the commonly occurring filter combination ``:/a:prefix=a``.
 
-### File **`::a`**
-Produces a tree with only the specified file in it's root.
+### File **`::a`** or **`::destination=source`**
+Produces a tree with only the specified file.
+
+When using a single argument (`::a`), the file is placed at the same full path as in the source tree.
+When using the `destination=source` syntax (`::destination=source`), the file is renamed from `source` to `destination` in the filtered tree.
+
+Examples:
+- `::file.txt` - Selects `file.txt` and places it at `file.txt`
+- `::src/file.txt` - Selects `src/file.txt` and places it at `src/file.txt`
+- `::renamed.txt=src/original.txt` - Selects `src/original.txt` and places it at `renamed.txt`
+- `::subdir/file.txt=src/file.txt` - Selects `src/file.txt` and places it at `subdir/file.txt`
+
 Note that `::a/b` is equivalent to `::a/::b`.
+Pattern filters (with `*`) cannot be combined with the `destination=source` syntax.
 
 ### Prefix **`:prefix=a`**
 Take the input tree and place it into subdirectory ``a``.
@@ -114,12 +125,45 @@ commits that don't match any of the other shas.
 Produce the history that would be the result of pushing the passed branches with the
 passed filters into the upstream.
 
+### Start filtering from a specific commit **:from(<sha>:filter)**
+
+Produce a history that keeps the original history leading up to the specified commit `<sha>` unchanged,
+but applies the given `:filter` to all commits from that commit onwards.
+
 ### Prune trivial merge commits **:prune=trivial-merge**
 
 Produce a history that skips all merge commits whose tree is identical to the first parents
 tree.
 Normally Josh will keep all commits in the filtered history whose tree differs from any of it's
 parents.
+
+### Commit message rewriting **`:"template"`** or **`:"template";"regex"`**
+
+Rewrite commit messages using a template string. The template can use regex capture groups
+to extract and reformat parts of the original commit message.
+
+**Simple message replacement:**
+```
+:"New message"
+```
+This replaces all commit messages with "New message".
+
+**Using regex with named capture groups:**
+```
+:"[{type}] {message}";"(?s)^(?P<type>fix|feat|docs): (?P<message>.+)$"
+```
+This uses a regex to match the original commit message and extract named capture groups (`{type}` and `{message}`)
+which are then used in the template. The regex `(?s)^(?P<type>fix|feat|docs): (?P<message>.+)$` matches
+commit messages starting with "fix:", "feat:", or "docs:" followed by a message, and the template
+reformats them as `[type] message`.
+
+**Removing text from messages:**
+```
+:"";"TODO"
+```
+This removes all occurrences of "TODO" from commit messages by matching "TODO" and replacing it with an empty string.
+The regex pattern can use `(?s)` to enable dot-all mode (so `.` matches newlines), allowing it to work with
+multi-line commit messages that include both a subject line and a body.
 
 ### Pin tree contents
 
