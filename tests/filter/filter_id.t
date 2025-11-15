@@ -399,3 +399,202 @@ Subdir only filters should not reorder filters that share a prefix
   $ josh-filter -p --file f
   :/x/subsub2
   a/subsub1 = :/sub1/subsub1
+
+Test File filter tree representations
+  $ cd ${TESTTMP}
+  $ git init -q test_file_filter_tree 1> /dev/null
+  $ cd test_file_filter_tree
+  $ git commit -q --allow-empty -m "empty"
+
+Test ::file.txt (single argument, no trailing slash, no =, no *)
+  $ FILTER_HASH=$(josh-filter -i ::file.txt)
+  $ git read-tree --reset -u ${FILTER_HASH}
+  $ tree
+  .
+  `-- file
+  
+  1 directory, 1 file
+  $ git diff 4b825dc642cb6eb9a060e54bf8d69288fbee4904..${FILTER_HASH}
+  diff --git a/file b/file
+  new file mode 100644
+  index 0000000..4c33073
+  --- /dev/null
+  +++ b/file
+  @@ -0,0 +1 @@
+  +file.txt
+  \ No newline at end of file
+
+Test ::dest.txt=src.txt (with =, destination=source)
+  $ FILTER_HASH=$(josh-filter -i ::dest.txt=src.txt)
+  $ git read-tree --reset -u ${FILTER_HASH}
+  $ tree
+  .
+  `-- file
+      |-- 0
+      `-- 1
+  
+  2 directories, 2 files
+  $ git diff 4b825dc642cb6eb9a060e54bf8d69288fbee4904..${FILTER_HASH}
+  diff --git a/file/0 b/file/0
+  new file mode 100644
+  index 0000000..e59d527
+  --- /dev/null
+  +++ b/file/0
+  @@ -0,0 +1 @@
+  +dest.txt
+  \ No newline at end of file
+  diff --git a/file/1 b/file/1
+  new file mode 100644
+  index 0000000..b443386
+  --- /dev/null
+  +++ b/file/1
+  @@ -0,0 +1 @@
+  +src.txt
+  \ No newline at end of file
+
+Test ::*.txt (with *, pattern)
+  $ FILTER_HASH=$(josh-filter -i ::*.txt)
+  $ git read-tree --reset -u ${FILTER_HASH}
+  $ tree
+  .
+  `-- pattern
+  
+  1 directory, 1 file
+  $ git diff 4b825dc642cb6eb9a060e54bf8d69288fbee4904..${FILTER_HASH}
+  diff --git a/pattern b/pattern
+  new file mode 100644
+  index 0000000..314f02b
+  --- /dev/null
+  +++ b/pattern
+  @@ -0,0 +1 @@
+  +*.txt
+  \ No newline at end of file
+
+Test ::dir/ (with trailing slash, directory)
+  $ FILTER_HASH=$(josh-filter -i ::dir/)
+  $ git read-tree --reset -u ${FILTER_HASH}
+  $ tree
+  .
+  `-- chain
+      |-- 0
+      |   `-- subdir
+      `-- 1
+          `-- prefix
+  
+  4 directories, 2 files
+  $ git diff 4b825dc642cb6eb9a060e54bf8d69288fbee4904..${FILTER_HASH}
+  diff --git a/chain/0/subdir b/chain/0/subdir
+  new file mode 100644
+  index 0000000..8724519
+  --- /dev/null
+  +++ b/chain/0/subdir
+  @@ -0,0 +1 @@
+  +dir
+  \ No newline at end of file
+  diff --git a/chain/1/prefix b/chain/1/prefix
+  new file mode 100644
+  index 0000000..8724519
+  --- /dev/null
+  +++ b/chain/1/prefix
+  @@ -0,0 +1 @@
+  +dir
+  \ No newline at end of file
+
+Test ::a/b/c/ (nested directory path with trailing slash)
+  $ FILTER_HASH=$(josh-filter -i ::a/b/c/)
+  $ git read-tree --reset -u ${FILTER_HASH}
+  $ tree
+  .
+  `-- chain
+      |-- 0
+      |   `-- subdir
+      `-- 1
+          `-- chain
+              |-- 0
+              |   `-- subdir
+              `-- 1
+                  `-- chain
+                      |-- 0
+                      |   `-- subdir
+                      `-- 1
+                          `-- chain
+                              |-- 0
+                              |   `-- prefix
+                              `-- 1
+                                  `-- chain
+                                      |-- 0
+                                      |   `-- prefix
+                                      `-- 1
+                                          `-- prefix
+  
+  16 directories, 6 files
+  $ git diff 4b825dc642cb6eb9a060e54bf8d69288fbee4904..${FILTER_HASH}
+  diff --git a/chain/0/subdir b/chain/0/subdir
+  new file mode 100644
+  index 0000000..2e65efe
+  --- /dev/null
+  +++ b/chain/0/subdir
+  @@ -0,0 +1 @@
+  +a
+  \ No newline at end of file
+  diff --git a/chain/1/chain/0/subdir b/chain/1/chain/0/subdir
+  new file mode 100644
+  index 0000000..63d8dbd
+  --- /dev/null
+  +++ b/chain/1/chain/0/subdir
+  @@ -0,0 +1 @@
+  +b
+  \ No newline at end of file
+  diff --git a/chain/1/chain/1/chain/0/subdir b/chain/1/chain/1/chain/0/subdir
+  new file mode 100644
+  index 0000000..3410062
+  --- /dev/null
+  +++ b/chain/1/chain/1/chain/0/subdir
+  @@ -0,0 +1 @@
+  +c
+  \ No newline at end of file
+  diff --git a/chain/1/chain/1/chain/1/chain/0/prefix b/chain/1/chain/1/chain/1/chain/0/prefix
+  new file mode 100644
+  index 0000000..3410062
+  --- /dev/null
+  +++ b/chain/1/chain/1/chain/1/chain/0/prefix
+  @@ -0,0 +1 @@
+  +c
+  \ No newline at end of file
+  diff --git a/chain/1/chain/1/chain/1/chain/1/chain/0/prefix b/chain/1/chain/1/chain/1/chain/1/chain/0/prefix
+  new file mode 100644
+  index 0000000..63d8dbd
+  --- /dev/null
+  +++ b/chain/1/chain/1/chain/1/chain/1/chain/0/prefix
+  @@ -0,0 +1 @@
+  +b
+  \ No newline at end of file
+  diff --git a/chain/1/chain/1/chain/1/chain/1/chain/1/prefix b/chain/1/chain/1/chain/1/chain/1/chain/1/prefix
+  new file mode 100644
+  index 0000000..2e65efe
+  --- /dev/null
+  +++ b/chain/1/chain/1/chain/1/chain/1/chain/1/prefix
+  @@ -0,0 +1 @@
+  +a
+  \ No newline at end of file
+
+Test error cases: mixing * and = (should be errors)
+  $ cd ${TESTTMP}
+  $ git init -q test_file_filter_errors 1> /dev/null
+  $ cd test_file_filter_errors
+  $ git commit -q --allow-empty -m "empty"
+
+Test ::*.txt=src.txt (pattern with = should be error)
+  $ josh-filter -i ::*.txt=src.txt
+  ERROR: Pattern filters cannot use destination=source syntax: *.txt
+  [1]
+
+Test ::dest.txt=*.txt (destination=source with pattern in source should be error)
+  $ josh-filter -i ::dest.txt=*.txt
+  ERROR: Pattern filters not supported in source path: *.txt
+  [1]
+
+Test ::*.txt=*.txt (pattern with pattern in source should be error)
+  $ josh-filter -i ::*.txt=*.txt
+  ERROR: Pattern filters cannot use destination=source syntax: *.txt
+  [1]

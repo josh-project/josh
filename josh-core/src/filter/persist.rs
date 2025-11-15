@@ -165,6 +165,10 @@ impl InMemoryBuilder {
         let mut entries = Vec::new();
 
         match op {
+            Op::Message(fmt, regex) => {
+                let params_tree = self.build_str_params(&[fmt, regex.as_str()]);
+                push_tree_entries(&mut entries, [("message", params_tree)]);
+            }
             Op::Author(name, email) => {
                 let params_tree = self.build_str_params(&[name, email]);
                 push_tree_entries(&mut entries, [("author", params_tree)]);
@@ -201,17 +205,24 @@ impl InMemoryBuilder {
                 let blob = self.write_blob(path.to_string_lossy().as_bytes());
                 push_blob_entries(&mut entries, [("prefix", blob)]);
             }
-            Op::File(path) => {
-                let blob = self.write_blob(path.to_string_lossy().as_bytes());
-                push_blob_entries(&mut entries, [("file", blob)]);
+            Op::File(dest_path, source_path) => {
+                if source_path == dest_path {
+                    // Backward compatibility: use blob format when source and dest are the same
+                    let blob = self.write_blob(dest_path.to_string_lossy().as_bytes());
+                    push_blob_entries(&mut entries, [("file", blob)]);
+                } else {
+                    // New format: use tree format when source and dest differ
+                    // Store as (dest_path, source_path) to match enum order
+                    let params_tree = self.build_str_params(&[
+                        dest_path.to_string_lossy().as_ref(),
+                        source_path.to_string_lossy().as_ref(),
+                    ]);
+                    push_tree_entries(&mut entries, [("file", params_tree)]);
+                }
             }
             Op::Pattern(pattern) => {
                 let blob = self.write_blob(pattern.as_bytes());
                 push_blob_entries(&mut entries, [("pattern", blob)]);
-            }
-            Op::Message(m) => {
-                let blob = self.write_blob(m.as_bytes());
-                push_blob_entries(&mut entries, [("message", blob)]);
             }
             Op::Workspace(path) => {
                 let blob = self.write_blob(path.to_string_lossy().as_bytes());
@@ -423,6 +434,26 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> JoshResult<Op> {
             let email = std::str::from_utf8(email_blob.content())?.to_string();
             Ok(Op::Committer(name, email))
         }
+        "message" => {
+            let inner = repo.find_tree(entry.id())?;
+            let fmt_blob = repo.find_blob(
+                inner
+                    .get_name("0")
+                    .ok_or_else(|| josh_error("message: missing fmt string"))?
+                    .id(),
+            )?;
+            let regex_blob = repo.find_blob(
+                inner
+                    .get_name("1")
+                    .ok_or_else(|| josh_error("message: missing regex"))?
+                    .id(),
+            )?;
+            let fmt = std::str::from_utf8(fmt_blob.content())?.to_string();
+            let regex_str = std::str::from_utf8(regex_blob.content())?;
+            let regex = regex::Regex::new(regex_str)
+                .map_err(|e| josh_error(&format!("invalid regex: {}", e)))?;
+            Ok(Op::Message(fmt, regex))
+        }
         "subdir" => {
             let blob = repo.find_blob(entry.id())?;
             let path = std::str::from_utf8(blob.content())?;
@@ -434,19 +465,42 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> JoshResult<Op> {
             Ok(Op::Prefix(std::path::PathBuf::from(path)))
         }
         "file" => {
-            let blob = repo.find_blob(entry.id())?;
-            let path = std::str::from_utf8(blob.content())?;
-            Ok(Op::File(std::path::PathBuf::from(path)))
+            // Try to read as tree (new format with destination path)
+            if let Ok(inner) = repo.find_tree(entry.id()) {
+                let dest_blob = repo.find_blob(
+                    inner
+                        .get_name("0")
+                        .ok_or_else(|| josh_error("file: missing destination path"))?
+                        .id(),
+                )?;
+                let dest_path_str = std::str::from_utf8(dest_blob.content())?.to_string();
+                let source_path = inner
+                    .get_name("1")
+                    .and_then(|entry| repo.find_blob(entry.id()).ok())
+                    .and_then(|blob| {
+                        std::str::from_utf8(blob.content())
+                            .ok()
+                            .map(|s| s.to_string())
+                    })
+                    .map(|s| std::path::PathBuf::from(s))
+                    .unwrap_or_else(|| std::path::PathBuf::from(&dest_path_str));
+                Ok(Op::File(
+                    std::path::PathBuf::from(dest_path_str),
+                    source_path,
+                ))
+            } else {
+                // Fall back to blob format (old format, backward compatibility)
+                let blob = repo.find_blob(entry.id())?;
+                let path_str = std::str::from_utf8(blob.content())?.to_string();
+                let path_buf = std::path::PathBuf::from(&path_str);
+                // When reading from blob format, destination is the same as source
+                Ok(Op::File(path_buf.clone(), path_buf))
+            }
         }
         "pattern" => {
             let blob = repo.find_blob(entry.id())?;
             let pattern = std::str::from_utf8(blob.content())?.to_string();
             Ok(Op::Pattern(pattern))
-        }
-        "message" => {
-            let blob = repo.find_blob(entry.id())?;
-            let message = std::str::from_utf8(blob.content())?.to_string();
-            Ok(Op::Message(message))
         }
         "workspace" => {
             let blob = repo.find_blob(entry.id())?;
