@@ -501,7 +501,7 @@ pub fn invert(filter: Filter) -> JoshResult<Filter> {
         Op::Unsign => Some(Op::Unsign),
         Op::Empty => Some(Op::Empty),
         Op::Subdir(path) => Some(Op::Prefix(path)),
-        Op::File(path) => Some(Op::File(path)),
+        Op::File(dest_path, source_path) => Some(Op::File(source_path, dest_path)),
         Op::Prefix(path) => Some(Op::Subdir(path)),
         Op::Pattern(pattern) => Some(Op::Pattern(pattern)),
         Op::Rev(_) => Some(Op::Nop),

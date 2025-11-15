@@ -212,6 +212,11 @@ pub fn message(m: &str) -> Filter {
     to_filter(Op::Message(m.to_string(), MESSAGE_MATCH_ALL_REGEX.clone()))
 }
 
+pub fn file(path: impl Into<std::path::PathBuf>) -> Filter {
+    let p = path.into();
+    to_filter(Op::File(p.clone(), p))
+}
+
 pub fn hook(h: &str) -> Filter {
     to_filter(Op::Hook(h.to_string()))
 }
@@ -303,7 +308,7 @@ enum Op {
     Index,
     Invert,
 
-    File(std::path::PathBuf),
+    File(std::path::PathBuf, std::path::PathBuf), // File(dest_path, source_path)
     Prefix(std::path::PathBuf),
     Subdir(std::path::PathBuf),
     Workspace(std::path::PathBuf),
@@ -619,7 +624,17 @@ fn spec2(op: &Op) -> String {
         Op::Linear => ":linear".to_string(),
         Op::Unsign => ":unsign".to_string(),
         Op::Subdir(path) => format!(":/{}", parse::quote_if(&path.to_string_lossy())),
-        Op::File(path) => format!("::{}", parse::quote_if(&path.to_string_lossy())),
+        Op::File(dest_path, source_path) => {
+            if source_path == dest_path {
+                format!("::{}", parse::quote_if(&dest_path.to_string_lossy()))
+            } else {
+                format!(
+                    "::{}={}",
+                    parse::quote_if(&dest_path.to_string_lossy()),
+                    parse::quote_if(&source_path.to_string_lossy())
+                )
+            }
+        }
         Op::Prune => ":prune=trivial-merge".to_string(),
         Op::Prefix(path) => format!(":prefix={}", parse::quote_if(&path.to_string_lossy())),
         Op::Pattern(pattern) => format!("::{}", parse::quote_if(pattern)),
@@ -652,7 +667,7 @@ pub fn src_path(filter: Filter) -> std::path::PathBuf {
 fn src_path2(op: &Op) -> std::path::PathBuf {
     normalize_path(&match op {
         Op::Subdir(path) => path.to_owned(),
-        Op::File(path) => path.to_owned(),
+        Op::File(_, source_path) => source_path.to_owned(),
         Op::Chain(a, b) => src_path(*a).join(src_path(*b)),
         _ => std::path::PathBuf::new(),
     })
@@ -665,7 +680,7 @@ pub fn dst_path(filter: Filter) -> std::path::PathBuf {
 fn dst_path2(op: &Op) -> std::path::PathBuf {
     normalize_path(&match op {
         Op::Prefix(path) => path.to_owned(),
-        Op::File(path) => path.to_owned(),
+        Op::File(dest_path, _) => dest_path.to_owned(),
         Op::Chain(a, b) => dst_path(*b).join(dst_path(*a)),
         _ => std::path::PathBuf::new(),
     })
@@ -706,13 +721,7 @@ fn resolve_workspace_redirect<'a>(
         .unwrap_or_else(|_| to_filter(Op::Empty));
 
     if let Op::Workspace(p) = to_op(f) {
-        Some((
-            chain(
-                to_filter(Op::Exclude(to_filter(Op::File(path.to_owned())))),
-                f,
-            ),
-            p,
-        ))
+        Some((chain(to_filter(Op::Exclude(file(path))), f), p))
     } else {
         None
     }
@@ -724,7 +733,7 @@ fn get_workspace<'a>(repo: &'a git2::Repository, tree: &'a git2::Tree<'a>, path:
     } else {
         path.to_owned()
     };
-    let wsj_file = to_filter(Op::File(Path::new("workspace.josh").to_owned()));
+    let wsj_file = file("workspace.josh");
     let base = to_filter(Op::Subdir(path.to_owned()));
     let wsj_file = chain(base, wsj_file);
     compose(
@@ -1145,13 +1154,19 @@ fn apply2<'a>(transaction: &'a cache::Transaction, op: &Op, x: Apply<'a>) -> Jos
                 to_filter(op.clone()).id(),
             )?))
         }
-        Op::File(path) => {
+        Op::File(dest_path, source_path) => {
             let (file, mode) = x
                 .tree()
-                .get_path(path)
+                .get_path(source_path)
                 .map(|x| (x.id(), x.filemode()))
                 .unwrap_or((git2::Oid::zero(), git2::FileMode::Blob.into()));
-            Ok(x.with_tree(tree::insert(repo, &tree::empty(repo), path, file, mode)?))
+            Ok(x.with_tree(tree::insert(
+                repo,
+                &tree::empty(repo),
+                dest_path,
+                file,
+                mode,
+            )?))
         }
 
         Op::Subdir(path) => Ok(x.clone().with_tree(
@@ -1295,7 +1310,10 @@ fn unapply_workspace<'a>(
             );
 
             let root = to_filter(Op::Subdir(path.to_owned()));
-            let wsj_file = to_filter(Op::File(Path::new("workspace.josh").to_owned()));
+            let wsj_file = to_filter(Op::File(
+                Path::new("workspace.josh").to_owned(),
+                Path::new("workspace.josh").to_owned(),
+            ));
             let wsj_file = chain(root, wsj_file);
             let filter = compose(wsj_file, compose(workspace, root));
             let original_filter = compose(wsj_file, compose(original_workspace, root));
