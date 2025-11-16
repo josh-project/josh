@@ -149,6 +149,10 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> JoshResult<Op> {
                     match *cmd {
                         "pin" => Ok(Op::Pin(to_filter(Op::Compose(g)))),
                         "exclude" => Ok(Op::Exclude(to_filter(Op::Compose(g)))),
+                        "invert" => {
+                            let filter = to_filter(Op::Compose(g));
+                            Ok(to_op(invert(filter)?))
+                        }
                         "subtract" if g.len() == 2 => Ok(Op::Subtract(g[0], g[1])),
                         _ => Err(josh_error(&format!("parse_item: no match {:?}", cmd))),
                     }
@@ -222,7 +226,22 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> JoshResult<Op> {
 
             Ok(Op::Squash(Some(ids)))
         }
+        Rule::filter_scope => {
+            let mut inner = pair.into_inner();
+            let x_filter_spec = inner
+                .next()
+                .ok_or_else(|| josh_error("filter_scope: missing filter_spec"))?;
+            let y_compose = inner
+                .next()
+                .ok_or_else(|| josh_error("filter_scope: missing compose"))?;
 
+            let x = parse(x_filter_spec.as_str())?;
+            let y_filters = parse_group(y_compose.as_str())?;
+            let y = to_filter(Op::Compose(y_filters));
+
+            let inverted_x = invert(x)?;
+            Ok(Op::Chain(x, to_filter(Op::Chain(y, inverted_x))))
+        }
         _ => Err(josh_error("parse_item: no match")),
     }
 }

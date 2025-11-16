@@ -66,6 +66,42 @@ Remove all paths present in the *output* of ``:filter`` from the input tree.
 It should generally be avoided to use any filters that change paths and instead only
 use filters that select paths without altering them.
 
+### Invert **`:invert[:filter]`**
+A shorthand syntax that applies the inverse of the composed filter. The inverse of a filter is
+a filter that undoes the transformation. For example, the inverse of ``:/sub1`` (subdirectory)
+is ``:prefix=sub1`` (prefix), and vice versa.
+
+**Example:**
+```
+:invert[:/sub1]
+```
+This is equivalent to ``:prefix=sub1``, which takes the input tree and places it into
+the ``sub1`` subdirectory.
+
+Multiple filters can be provided in the compose:
+```
+:invert[:/sub1,:/sub2]
+```
+This inverts the composition of ``:/sub1`` and ``:/sub2``.
+
+### Scope **`:<X>[..]`**
+A shorthand syntax that expands to ``:X:[..]:invert[:X]``, where:
+- ``:X`` is a filter (without built-in compose)
+- ``:[..]`` is a compose filter (like in ``:exclude``)
+
+This filter first applies ``:X`` to scope the input, then applies the compose filter ``:[..]``,
+and finally inverts ``:X`` to restore the original scope. This is useful when you want to
+apply a composition filter within a specific scope and then restore the original structure.
+
+**Example:**
+```
+:<:/sub1>[::file1,::file2]
+```
+This is equivalent to ``:/sub1:[::file1,::file2]:invert[:/sub1]``, which:
+1. Selects the ``sub1`` subdirectory (applies ``:/sub1``)
+2. Applies the composition filter to select ``file1`` and ``file2`` (applies ``:[::file1,::file2]``)
+3. Restores the original scope by inverting the subdirectory selection (applies ``:invert[:/sub1]``)
+
 ### Stored **`:+path/to/file`**
 Looks for a file with a ``.josh`` extension at the specified path and applies the filter defined in that file.
 The path argument should be provided *without* the ``.josh`` extension, as it will be automatically appended.

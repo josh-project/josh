@@ -33,6 +33,7 @@ filter_spec = { (
   | filter_subdir
   | filter_stored
   | filter_nop
+  | filter_scope
   | filter
   | filter_noarg
 )+ }
@@ -98,6 +99,14 @@ filter_squash = {
     ~ (CMD_SEP+ ~ (rev ~ filter_spec))*
     ~ NEWLINE*
     ~ ")"
+}
+
+filter_scope = {
+    CMD_START ~ "<"
+    ~ NEWLINE*
+    ~ filter_spec
+    ~ NEWLINE*
+    ~ ">" ~ GROUP_START ~ compose ~ GROUP_END
 }
 
 cmd = { ALNUM+ }
