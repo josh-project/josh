@@ -5,9 +5,6 @@ pub mod hyper_integration;
 pub mod juniper_hyper;
 pub mod trace;
 
-#[macro_use]
-extern crate lazy_static;
-
 use josh_core::cache::TransactionContext;
 use josh_core::cache_stack::CacheStack;
 use josh_core::{JoshError, JoshResult, josh_error};

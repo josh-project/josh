@@ -7,15 +7,14 @@ use super::*;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::collections::VecDeque;
+use std::sync::LazyLock;
 
-lazy_static! {
-    static ref OPTIMIZED: std::sync::Mutex<std::collections::HashMap<Filter, Filter>> =
-        std::sync::Mutex::new(std::collections::HashMap::new());
-    static ref INVERTED: std::sync::Mutex<std::collections::HashMap<Filter, Filter>> =
-        std::sync::Mutex::new(std::collections::HashMap::new());
-    static ref SIMPLIFIED: std::sync::Mutex<std::collections::HashMap<Filter, Filter>> =
-        std::sync::Mutex::new(std::collections::HashMap::new());
-}
+static OPTIMIZED: LazyLock<std::sync::Mutex<std::collections::HashMap<Filter, Filter>>> =
+    LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+static INVERTED: LazyLock<std::sync::Mutex<std::collections::HashMap<Filter, Filter>>> =
+    LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+static SIMPLIFIED: LazyLock<std::sync::Mutex<std::collections::HashMap<Filter, Filter>>> =
+    LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
 
 /*
  * Attempt to create an alternative representation of a filter AST that is most
