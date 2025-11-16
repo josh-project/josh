@@ -228,6 +228,10 @@ impl InMemoryBuilder {
                 let blob = self.write_blob(path.to_string_lossy().as_bytes());
                 push_blob_entries(&mut entries, [("workspace", blob)]);
             }
+            Op::Stored(path) => {
+                let blob = self.write_blob(path.to_string_lossy().as_bytes());
+                push_blob_entries(&mut entries, [("stored", blob)]);
+            }
             Op::Nop => {
                 let blob = self.write_blob(b"");
                 push_blob_entries(&mut entries, [("nop", blob)]);
@@ -506,6 +510,11 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> JoshResult<Op> {
             let blob = repo.find_blob(entry.id())?;
             let path = std::str::from_utf8(blob.content())?;
             Ok(Op::Workspace(std::path::PathBuf::from(path)))
+        }
+        "stored" => {
+            let blob = repo.find_blob(entry.id())?;
+            let path = std::str::from_utf8(blob.content())?;
+            Ok(Op::Stored(std::path::PathBuf::from(path)))
         }
         "compose" => {
             let compose_tree = repo.find_tree(entry.id())?;

@@ -312,6 +312,7 @@ enum Op {
     Prefix(std::path::PathBuf),
     Subdir(std::path::PathBuf),
     Workspace(std::path::PathBuf),
+    Stored(std::path::PathBuf),
 
     Pattern(String),
     Message(String, regex::Regex),
@@ -589,6 +590,9 @@ fn spec2(op: &Op) -> String {
         Op::Workspace(path) => {
             format!(":workspace={}", parse::quote_if(&path.to_string_lossy()))
         }
+        Op::Stored(path) => {
+            format!(":+{}", parse::quote_if(&path.to_string_lossy()))
+        }
         Op::RegexReplace(replacements) => {
             let v = replacements
                 .iter()
@@ -735,6 +739,31 @@ fn get_workspace<'a>(repo: &'a git2::Repository, tree: &'a git2::Tree<'a>, path:
         wsj_file,
         compose(get_filter(repo, tree, &path.join("workspace.josh")), base),
     )
+}
+
+// Handle stored.josh files that contain ":stored=..." as their only filter as
+// a "redirect" to that other stored. We chain an exclude of the redirecting stored
+// in front to prevent infinite recursion.
+fn resolve_stored_redirect<'a>(
+    repo: &'a git2::Repository,
+    tree: &'a git2::Tree<'a>,
+    path: &Path,
+) -> Option<(Filter, std::path::PathBuf)> {
+    let stored_path = path.with_extension("josh");
+    let f = parse::parse(&tree::get_blob(repo, tree, &stored_path))
+        .unwrap_or_else(|_| to_filter(Op::Empty));
+
+    if let Op::Stored(p) = to_op(f) {
+        Some((chain(to_filter(Op::Exclude(file(stored_path))), f), p))
+    } else {
+        None
+    }
+}
+
+fn get_stored<'a>(repo: &'a git2::Repository, tree: &'a git2::Tree<'a>, path: &Path) -> Filter {
+    let stored_path = path.with_extension("josh");
+    let sj_file = file(stored_path.clone());
+    compose(sj_file, get_filter(repo, tree, &stored_path))
 }
 
 fn get_filter<'a>(repo: &'a git2::Repository, tree: &'a git2::Tree<'a>, path: &Path) -> Filter {
@@ -1022,6 +1051,33 @@ fn apply_to_commit2(
 
             return per_rev_filter(transaction, commit, filter, commit_filter, parent_filters);
         }
+        Op::Stored(s_path) => {
+            if let Some((redirect, _)) = resolve_stored_redirect(repo, &commit.tree()?, s_path) {
+                if let Some(r) = apply_to_commit2(&to_op(redirect), commit, transaction)? {
+                    transaction.insert(filter, commit.id(), r, true);
+                    return Ok(Some(r));
+                } else {
+                    return Ok(None);
+                }
+            }
+
+            let commit_filter = get_stored(repo, &commit.tree()?, &s_path);
+
+            let parent_filters = commit
+                .parents()
+                .map(|parent| {
+                    rs_tracing::trace_scoped!("parent", "id": parent.id().to_string());
+                    let pcs = get_stored(
+                        repo,
+                        &parent.tree().unwrap_or_else(|_| tree::empty(repo)),
+                        &s_path,
+                    );
+                    Ok((parent, pcs))
+                })
+                .collect::<JoshResult<Vec<_>>>()?;
+
+            return per_rev_filter(transaction, commit, filter, commit_filter, parent_filters);
+        }
         Op::Fold => {
             let filtered_parent_ids = commit
                 .parents()
@@ -1207,6 +1263,7 @@ fn apply2<'a>(transaction: &'a cache::Transaction, op: &Op, x: Apply<'a>) -> Jos
         }
 
         Op::Workspace(path) => apply(transaction, get_workspace(repo, &x.tree(), &path), x),
+        Op::Stored(path) => apply(transaction, get_stored(repo, &x.tree(), &path), x),
 
         Op::Compose(filters) => {
             let filtered: Vec<_> = filters
@@ -1329,6 +1386,31 @@ fn unapply_workspace<'a>(
 
             Ok(Some(result))
         }
+        Op::Stored(path) => {
+            let stored_path = path.with_extension("josh");
+            let stored = get_filter(transaction.repo(), &tree, &stored_path);
+            let original_stored = get_filter(transaction.repo(), &parent_tree, &stored_path);
+
+            let sj_file = file(stored_path.clone());
+            let filter = compose(sj_file, stored);
+            let original_filter = compose(sj_file, original_stored);
+            let filtered = apply(
+                transaction,
+                original_filter,
+                Apply::from_tree(parent_tree.clone()),
+            )?;
+            let matching = apply(transaction, invert(original_filter)?, filtered.clone())?;
+            let stripped = tree::subtract(transaction, parent_tree.id(), matching.tree().id())?;
+            let x = apply(transaction, invert(filter)?, Apply::from_tree(tree))?;
+
+            let result = transaction.repo().find_tree(tree::overlay(
+                transaction,
+                x.tree().id(),
+                stripped,
+            )?)?;
+
+            Ok(Some(result))
+        }
         _ => Ok(None),
     }
 }
@@ -1393,6 +1475,17 @@ pub fn compute_warnings<'a>(
             filter = res;
         } else {
             warnings.push("couldn't parse workspace\n".to_string());
+            return warnings;
+        }
+    }
+
+    if let Op::Stored(path) = to_op(filter) {
+        let stored_path = path.with_extension("josh");
+        let stored_filter = &tree::get_blob(transaction.repo(), &tree, &stored_path);
+        if let Ok(res) = parse(stored_filter) {
+            filter = res;
+        } else {
+            warnings.push("couldn't parse stored\n".to_string());
             return warnings;
         }
     }
