@@ -644,3 +644,336 @@ Test ::*.txt=*.txt (pattern with pattern in source should be error)
   $ josh-filter -i ::*.txt=*.txt
   ERROR: Pattern filters cannot use destination=source syntax: *.txt
   [1]
+
+Test :FOLD
+  $ FILTER_HASH=$(josh-filter -i ':FOLD')
+  $ josh-filter -p ${FILTER_HASH}
+  :FOLD
+  $ git read-tree --reset -u ${FILTER_HASH}
+  $ tree
+  .
+  `-- fold
+  
+  1 directory, 1 file
+
+Test :PATHS
+  $ FILTER_HASH=$(josh-filter -i ':PATHS')
+  $ josh-filter -p ${FILTER_HASH}
+  :PATHS
+  $ git read-tree --reset -u ${FILTER_HASH}
+  $ tree
+  .
+  `-- paths
+  
+  1 directory, 1 file
+
+Test :INDEX
+  $ FILTER_HASH=$(josh-filter -i ':INDEX')
+  $ josh-filter -p ${FILTER_HASH}
+  :INDEX
+  $ git read-tree --reset -u ${FILTER_HASH}
+  $ tree
+  .
+  `-- index
+  
+  1 directory, 1 file
+
+Test :INVERT
+  $ FILTER_HASH=$(josh-filter -i ':INVERT')
+  $ josh-filter -p ${FILTER_HASH}
+  :INVERT
+  $ git read-tree --reset -u ${FILTER_HASH}
+  $ tree
+  .
+  `-- invert
+  
+  1 directory, 1 file
+
+Test :linear
+  $ FILTER_HASH=$(josh-filter -i ':linear')
+  $ josh-filter -p ${FILTER_HASH}
+  :linear
+  $ git read-tree --reset -u ${FILTER_HASH}
+  $ tree
+  .
+  `-- linear
+  
+  1 directory, 1 file
+
+Test :prune=trivial-merge
+  $ FILTER_HASH=$(josh-filter -i ':prune=trivial-merge')
+  $ josh-filter -p ${FILTER_HASH}
+  :prune=trivial-merge
+  $ git read-tree --reset -u ${FILTER_HASH}
+  $ tree
+  .
+  `-- prune
+  
+  1 directory, 1 file
+
+Test :unsign
+  $ FILTER_HASH=$(josh-filter -i ':unsign')
+  $ josh-filter -p ${FILTER_HASH}
+  :unsign
+  $ git read-tree --reset -u ${FILTER_HASH}
+  $ tree
+  .
+  `-- unsign
+  
+  1 directory, 1 file
+
+Test :unlink
+  $ FILTER_HASH=$(josh-filter -i ':unlink')
+  $ josh-filter -p ${FILTER_HASH}
+  :unlink
+  $ git read-tree --reset -u ${FILTER_HASH}
+  $ tree
+  .
+  `-- unlink
+  
+  1 directory, 1 file
+
+Test :export
+  $ FILTER_HASH=$(josh-filter -i ':export')
+  $ josh-filter -p ${FILTER_HASH}
+  :export
+  $ git read-tree --reset -u ${FILTER_HASH}
+  $ tree
+  .
+  `-- export
+  
+  1 directory, 1 file
+
+Test :adapt=submodules
+  $ FILTER_HASH=$(josh-filter -i ':adapt=submodules')
+  $ josh-filter -p ${FILTER_HASH}
+  :adapt=submodules
+  $ git read-tree --reset -u ${FILTER_HASH}
+  $ tree
+  .
+  `-- adapt
+      `-- 0
+  
+  2 directories, 1 file
+
+Test :link=embedded
+  $ FILTER_HASH=$(josh-filter -i ':link=embedded')
+  $ josh-filter -p ${FILTER_HASH}
+  :link=embedded
+  $ git read-tree --reset -u ${FILTER_HASH}
+  $ tree
+  .
+  `-- link
+      `-- 0
+  
+  2 directories, 1 file
+
+Test :embed=path/to/dir
+  $ FILTER_HASH=$(josh-filter -i ':embed=path/to/dir')
+  $ josh-filter -p ${FILTER_HASH}
+  :embed=path/to/dir
+  $ git read-tree --reset -u ${FILTER_HASH}
+  $ tree
+  .
+  `-- embed
+      `-- 0
+  
+  2 directories, 1 file
+
+Test :workspace=path/to/workspace
+  $ FILTER_HASH=$(josh-filter -i ':workspace=path/to/workspace')
+  $ josh-filter -p ${FILTER_HASH}
+  :workspace=path/to/workspace
+  $ git read-tree --reset -u ${FILTER_HASH}
+  $ tree
+  .
+  `-- workspace
+      `-- 0
+  
+  2 directories, 1 file
+
+Test :+path/to/stored
+  $ FILTER_HASH=$(josh-filter -i ':+path/to/stored')
+  $ josh-filter -p ${FILTER_HASH}
+  :+path/to/stored
+  $ git read-tree --reset -u ${FILTER_HASH}
+  $ tree
+  .
+  `-- stored
+      `-- 0
+  
+  2 directories, 1 file
+
+Test :hook=hookname
+  $ FILTER_HASH=$(josh-filter -i ':hook=hookname')
+  $ josh-filter -p ${FILTER_HASH}
+  :hook="hookname"
+  $ git read-tree --reset -u ${FILTER_HASH}
+  $ tree
+  .
+  `-- hook
+      `-- 0
+  
+  2 directories, 1 file
+
+Test :author=Name;email@example.com
+  $ FILTER_HASH=$(josh-filter -i ':author="Name";"email@example.com"')
+  $ josh-filter -p ${FILTER_HASH}
+  :author="Name";"email@example.com"
+  $ git read-tree --reset -u ${FILTER_HASH}
+  $ tree
+  .
+  `-- author
+      |-- 0
+      `-- 1
+  
+  2 directories, 2 files
+
+Test :committer=Name;email@example.com
+  $ FILTER_HASH=$(josh-filter -i ':committer="Name";"email@example.com"')
+  $ josh-filter -p ${FILTER_HASH}
+  :committer="Name";"email@example.com"
+  $ git read-tree --reset -u ${FILTER_HASH}
+  $ tree
+  .
+  `-- committer
+      |-- 0
+      `-- 1
+  
+  2 directories, 2 files
+
+Test :"commit message"
+  $ FILTER_HASH=$(josh-filter -i ':"commit message"')
+  $ josh-filter -p ${FILTER_HASH}
+  :"commit message"
+  $ git read-tree --reset -u ${FILTER_HASH}
+  $ tree
+  .
+  `-- message
+      |-- 0
+      `-- 1
+  
+  2 directories, 2 files
+
+Test :"commit message";".*"
+  $ FILTER_HASH=$(josh-filter -i ':"commit message";".*"')
+  $ josh-filter -p ${FILTER_HASH}
+  :"commit message";".*"
+  $ git read-tree --reset -u ${FILTER_HASH}
+  $ tree
+  .
+  `-- message
+      |-- 0
+      `-- 1
+  
+  2 directories, 2 files
+
+Test :pin[:/a]
+  $ FILTER_HASH=$(josh-filter -i ':pin[:/a]')
+  $ josh-filter -p ${FILTER_HASH}
+  :pin[:/a]
+  $ git read-tree --reset -u ${FILTER_HASH}
+  $ tree
+  .
+  `-- pin
+      `-- 0
+          `-- subdir
+              `-- 0
+  
+  4 directories, 1 file
+
+Test :SQUASH
+  $ FILTER_HASH=$(josh-filter -i ':SQUASH')
+  $ josh-filter -p ${FILTER_HASH}
+  :SQUASH
+  $ git read-tree --reset -u ${FILTER_HASH}
+  $ tree
+  .
+  `-- squash
+  
+  1 directory, 1 file
+
+Test :replace("pattern":"replacement")
+  $ FILTER_HASH=$(josh-filter -i ':replace("pattern":"replacement")')
+  $ josh-filter -p ${FILTER_HASH}
+  :replace(
+      "pattern":"replacement"
+  )
+  $ git read-tree --reset -u ${FILTER_HASH}
+  $ tree
+  .
+  `-- regex_replace
+      `-- 0
+          |-- p
+          `-- r
+  
+  3 directories, 2 files
+
+Test :rev(0000000000000000000000000000000000000000:/a)
+  $ FILTER_HASH=$(josh-filter -i ':rev(0000000000000000000000000000000000000000:/a)')
+  $ josh-filter -p ${FILTER_HASH}
+  :rev(0000000000000000000000000000000000000000:/a)
+  $ git read-tree --reset -u ${FILTER_HASH}
+  $ tree
+  .
+  `-- rev
+      `-- 0
+          |-- f
+          |   `-- subdir
+          |       `-- 0
+          `-- o
+  
+  5 directories, 2 files
+
+Test :join(0000000000000000000000000000000000000000:/a)
+  $ FILTER_HASH=$(josh-filter -i ':join(0000000000000000000000000000000000000000:/a)')
+  $ josh-filter -p ${FILTER_HASH}
+  :join(0000000000000000000000000000000000000000:/a)
+  $ git read-tree --reset -u ${FILTER_HASH}
+  $ tree
+  .
+  `-- join
+      `-- 0
+          |-- f
+          |   `-- subdir
+          |       `-- 0
+          `-- o
+  
+  5 directories, 2 files
+
+Test :from(0000000000000000000000000000000000000000:/a)
+  $ FILTER_HASH=$(josh-filter -i ':from(0000000000000000000000000000000000000000:/a)')
+  $ josh-filter -p ${FILTER_HASH}
+  :/a:concat(0000000000000000000000000000000000000000:/a)
+  $ git read-tree --reset -u ${FILTER_HASH}
+  $ tree
+  .
+  `-- chain
+      |-- 0
+      |   `-- subdir
+      |       `-- 0
+      `-- 1
+          `-- concat
+              `-- 0
+                  |-- f
+                  |   `-- subdir
+                  |       `-- 0
+                  `-- o
+  
+  9 directories, 3 files
+
+Test :unapply(0000000000000000000000000000000000000000:/a)
+  $ FILTER_HASH=$(josh-filter -i ':unapply(0000000000000000000000000000000000000000:/a)')
+  $ josh-filter -p ${FILTER_HASH}
+  :unapply(0000000000000000000000000000000000000000:/a)
+  $ git read-tree --reset -u ${FILTER_HASH}
+  $ tree
+  .
+  `-- unapply
+      `-- 0
+          |-- f
+          |   `-- subdir
+          |       `-- 0
+          `-- o
+  
+  5 directories, 2 files
