@@ -46,7 +46,7 @@ features = ["vendored-libgit2"]
 version = "0.20.2"
 
 [workspace.dependencies.juniper]
-version = "0.16.2"
+version = "0.17.0"
 default-features = false
 features = ["expose-test-schema"]
 
