@@ -169,7 +169,7 @@ Test josh clone with filter that results in empty tree for some branches
   |   |-- 24
   |   |   `-- 0
   |   |       |-- 9d5b5e98dceaf62470a7569949757c9643632621
-  |   |       `-- d14715b1358e12e9fb4132036e06049fd1ddf88f
+  |   |       `-- bf567e0faf634a663d6cef48145a035e1974ab1d
   |   `-- remotes
   |       `-- origin
   |           |-- content-branch
