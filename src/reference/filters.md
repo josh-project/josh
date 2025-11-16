@@ -66,10 +66,22 @@ Remove all paths present in the *output* of ``:filter`` from the input tree.
 It should generally be avoided to use any filters that change paths and instead only
 use filters that select paths without altering them.
 
+### Stored **`:+path/to/file`**
+Looks for a file with a ``.josh`` extension at the specified path and applies the filter defined in that file.
+The path argument should be provided *without* the ``.josh`` extension, as it will be automatically appended.
+
+For example, ``:+st/config`` will look for a file at ``st/config.josh`` and apply the filter defined in that file.
+The resulting tree will contain the contents specified by the filter in the ``.josh`` file.
+
+Stored filters apply from the root of the repository, making them useful for configuration files that define
+filters to be applied at the repository root level.
+
 ### Workspace **`:workspace=a`**
-Similar to ``:/a`` but also looks for a ``workspace.josh`` file inside the
-specified directory (called the "workspace root").
-The resulting tree will contain the contents of the
+Like stored filters, but with an additional "base" component that first selects the specified directory
+(called the "workspace root") before applying the filter from the ``workspace.josh`` file inside it.
+
+The workspace filter is equivalent to ``:/a`` combined with applying a stored filter, where the filter is read
+from ``workspace.josh`` within the selected directory. The resulting tree will contain the contents of the
 workspace root as well as additional files specified in the ``workspace.josh`` file.
 (see [Workspaces](./workspace.md))
 
