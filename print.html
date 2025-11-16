@@ -915,6 +915,26 @@ passed filters into the upstream.</p>
 tree.
 Normally Josh will keep all commits in the filtered history whose tree differs from any of it's
 parents.</p>
+<h3 id="commit-message-rewriting-template-or-templateregex"><a class="header" href="#commit-message-rewriting-template-or-templateregex">Commit message rewriting <strong><code>:&quot;template&quot;</code></strong> or <strong><code>:&quot;template&quot;;&quot;regex&quot;</code></strong></a></h3>
+<p>Rewrite commit messages using a template string. The template can use regex capture groups
+to extract and reformat parts of the original commit message.</p>
+<p><strong>Simple message replacement:</strong></p>
+<pre><code>:&quot;New message&quot;
+</code></pre>
+<p>This replaces all commit messages with &quot;New message&quot;.</p>
+<p><strong>Using regex with named capture groups:</strong></p>
+<pre><code>:&quot;[{type}] {message}&quot;;&quot;(?s)^(?P&lt;type&gt;fix|feat|docs): (?P&lt;message&gt;.+)$&quot;
+</code></pre>
+<p>This uses a regex to match the original commit message and extract named capture groups (<code>{type}</code> and <code>{message}</code>)
+which are then used in the template. The regex <code>(?s)^(?P&lt;type&gt;fix|feat|docs): (?P&lt;message&gt;.+)$</code> matches
+commit messages starting with &quot;fix:&quot;, &quot;feat:&quot;, or &quot;docs:&quot; followed by a message, and the template
+reformats them as <code>[type] message</code>.</p>
+<p><strong>Removing text from messages:</strong></p>
+<pre><code>:&quot;&quot;;&quot;TODO&quot;
+</code></pre>
+<p>This removes all occurrences of &quot;TODO&quot; from commit messages by matching &quot;TODO&quot; and replacing it with an empty string.
+The regex pattern can use <code>(?s)</code> to enable dot-all mode (so <code>.</code> matches newlines), allowing it to work with
+multi-line commit messages that include both a subject line and a body.</p>
 <h3 id="pin-tree-contents"><a class="header" href="#pin-tree-contents">Pin tree contents</a></h3>
 <p>Pin revision of a subtree to revision of the parent commit.</p>
 <p>In practical terms, it means that file and folder updates are &quot;held off&quot;, and revisions are &quot;pinned&quot;.
