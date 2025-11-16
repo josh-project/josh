@@ -1543,12 +1543,14 @@ fn per_rev_filter(
             )?;
 
             let parent = transaction.repo().find_commit(parent)?;
-            let parent = parent.tree()?;
 
-            let pin_subtract = pin_subtract.tree();
-            let pin_overlay = tree::transpose(transaction, pin_subtract, &parent)?;
+            let pin_overlay = tree::populate(
+                transaction,
+                tree::pathstree("", pin_subtract.tree.id(), transaction)?.id(),
+                parent.tree_id(),
+            )?;
 
-            Some((pin_subtract.id(), pin_overlay.id()))
+            Some((pin_subtract.tree.id(), pin_overlay))
         } else {
             None
         }
