@@ -4,6 +4,11 @@
   $ git commit -q --allow-empty -m "empty"
 
   $ FILTER_HASH=$(josh-filter -i :[:/a,:/b])
+  $ josh-filter -p ${FILTER_HASH}
+  :[
+      :/a
+      :/b
+  ]
   $ git read-tree --reset -u ${FILTER_HASH}
   $ find . -type f -not -path './.git/*' -exec echo "-- {}" \; -exec cat {} \;
   -- ./compose/0/subdir/0
@@ -56,6 +61,11 @@
   $ josh-filter --reverse -p :[:empty,:/a]
   :prefix=a
   $ FILTER_HASH=$(josh-filter -i :[x=:/a:/b:/d,y=:/a:/c:/d])
+  $ josh-filter -p ${FILTER_HASH}
+  :/a:[
+      x = :/b/d
+      y = :/c/d
+  ]
   $ git read-tree --reset -u ${FILTER_HASH}
   $ tree
   .
@@ -415,6 +425,8 @@ Test File filter tree representations
 
 Test ::file.txt (single argument, no trailing slash, no =, no *)
   $ FILTER_HASH=$(josh-filter -i ::file.txt)
+  $ josh-filter -p ${FILTER_HASH}
+  ::file.txt
   $ git read-tree --reset -u ${FILTER_HASH}
   $ tree
   .
@@ -443,6 +455,8 @@ Test ::file.txt (single argument, no trailing slash, no =, no *)
 
 Test ::dest.txt=src.txt (with =, destination=source)
   $ FILTER_HASH=$(josh-filter -i ::dest.txt=src.txt)
+  $ josh-filter -p ${FILTER_HASH}
+  ::dest.txt=src.txt
   $ git read-tree --reset -u ${FILTER_HASH}
   $ tree
   .
@@ -471,6 +485,8 @@ Test ::dest.txt=src.txt (with =, destination=source)
 
 Test ::*.txt (with *, pattern)
   $ FILTER_HASH=$(josh-filter -i ::*.txt)
+  $ josh-filter -p ${FILTER_HASH}
+  ::*.txt
   $ git read-tree --reset -u ${FILTER_HASH}
   $ tree
   .
@@ -490,6 +506,8 @@ Test ::*.txt (with *, pattern)
 
 Test ::dir/ (with trailing slash, directory)
   $ FILTER_HASH=$(josh-filter -i ::dir/)
+  $ josh-filter -p ${FILTER_HASH}
+  ::dir/
   $ git read-tree --reset -u ${FILTER_HASH}
   $ tree
   .
@@ -522,6 +540,8 @@ Test ::dir/ (with trailing slash, directory)
 
 Test ::a/b/c/ (nested directory path with trailing slash)
   $ FILTER_HASH=$(josh-filter -i ::a/b/c/)
+  $ josh-filter -p ${FILTER_HASH}
+  ::a/b/c/
   $ git read-tree --reset -u ${FILTER_HASH}
   $ tree
   .
