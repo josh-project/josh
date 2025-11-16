@@ -23,14 +23,17 @@ Test basic scope filter syntax :<X>[Y]
   `-- chain
       |-- 0
       |   `-- subdir
+      |       `-- 0
       `-- 1
           `-- chain
               |-- 0
               |   `-- subdir
+              |       `-- 0
               `-- 1
                   `-- prefix
+                      `-- 0
   
-  7 directories, 3 files
+  10 directories, 3 files
   $ cat sub1/file1
   cat: sub1/file1: No such file or directory
   [1]
@@ -48,22 +51,27 @@ Test scope filter with multiple filters in compose
   `-- chain
       |-- 0
       |   `-- subdir
+      |       `-- 0
       `-- 1
           `-- chain
               |-- 0
               |   `-- compose
               |       |-- 0
               |       |   `-- subdir
+              |       |       `-- 0
               |       `-- 1
               |           `-- chain
               |               |-- 0
               |               |   `-- subdir
+              |               |       `-- 0
               |               `-- 1
               |                   `-- subdir
+              |                       `-- 0
               `-- 1
                   `-- prefix
+                      `-- 0
   
-  13 directories, 5 files
+  18 directories, 5 files
 
 Test scope filter with prefix filter
   $ FILTER_HASH=$(josh-filter -i ':<:prefix=sub1>[:prefix=file1]')
@@ -86,15 +94,20 @@ Test scope filter with subdir and exclude
   `-- chain
       |-- 0
       |   `-- subdir
+      |       `-- 0
       `-- 1
           `-- chain
               |-- 0
               |   `-- exclude
-              |       `-- file
+              |       `-- 0
+              |           `-- file
+              |               |-- 0
+              |               `-- 1
               `-- 1
                   `-- prefix
+                      `-- 0
   
-  8 directories, 3 files
+  12 directories, 4 files
 
 Test scope filter verifies it expands to chain(X, chain(Y, invert(X)))
   $ FILTER_HASH=$(josh-filter -i ':<:/sub1>[:/file1]')
@@ -115,20 +128,25 @@ Test scope filter with nested filters
   `-- chain
       |-- 0
       |   `-- subdir
+      |       `-- 0
       `-- 1
           `-- chain
               |-- 0
               |   `-- compose
               |       |-- 0
               |       |   `-- subdir
+              |       |       `-- 0
               |       `-- 1
               |           `-- chain
               |               |-- 0
               |               |   `-- subdir
+              |               |       `-- 0
               |               `-- 1
               |                   `-- subdir
+              |                       `-- 0
               `-- 1
                   `-- prefix
+                      `-- 0
   
-  13 directories, 5 files
+  18 directories, 5 files
 

@@ -3,36 +3,33 @@
   $ git init -q
   $ git commit -q --allow-empty -m "empty"
 
-  $ josh-filter -i :[:/a,:/b]
-  6777de6ebd97608a3c9fbd8e39ad50cb52b4ae89
-  $ git read-tree --reset -u 046b1982b3fa906076d7fce31acf11f19ab4c4c3
-  $ find . -type f -not -path './.git/*' -exec echo "-- {}" \; -exec cat {} \;
-  -- ./subdir
-  a (no-eol)
-  $ git read-tree --reset -u 6777de6ebd97608a3c9fbd8e39ad50cb52b4ae89
+  $ FILTER_HASH=$(josh-filter -i :[:/a,:/b])
+  $ git read-tree --reset -u ${FILTER_HASH}
   $ tree
   .
   `-- compose
       |-- 0
       |   `-- subdir
+      |       `-- 0
       `-- 1
           `-- subdir
+              `-- 0
   
-  4 directories, 2 files
-  $ git diff ${EMPTY_TREE}..6777de6ebd97608a3c9fbd8e39ad50cb52b4ae89
-  diff --git a/compose/0/subdir b/compose/0/subdir
+  6 directories, 2 files
+  $ git diff ${EMPTY_TREE}..${FILTER_HASH}
+  diff --git a/compose/0/subdir/0 b/compose/0/subdir/0
   new file mode 100644
   index 0000000..2e65efe
   --- /dev/null
-  +++ b/compose/0/subdir
+  +++ b/compose/0/subdir/0
   @@ -0,0 +1 @@
   +a
   \ No newline at end of file
-  diff --git a/compose/1/subdir b/compose/1/subdir
+  diff --git a/compose/1/subdir/0 b/compose/1/subdir/0
   new file mode 100644
   index 0000000..63d8dbd
   --- /dev/null
-  +++ b/compose/1/subdir
+  +++ b/compose/1/subdir/0
   @@ -0,0 +1 @@
   +b
   \ No newline at end of file
@@ -54,92 +51,98 @@
   :/a
   $ josh-filter --reverse -p :[:empty,:/a]
   :prefix=a
-  $ josh-filter -i :[x=:/a:/b:/d,y=:/a:/c:/d]
-  9cac689eff79c3a65966083286840d7ea913e918
-  $ git read-tree --reset -u 9cac689eff79c3a65966083286840d7ea913e918
+  $ FILTER_HASH=$(josh-filter -i :[x=:/a:/b:/d,y=:/a:/c:/d])
+  $ git read-tree --reset -u ${FILTER_HASH}
   $ tree
   .
   `-- chain
       |-- 0
       |   `-- subdir
+      |       `-- 0
       `-- 1
           `-- compose
               |-- 0
               |   `-- chain
               |       |-- 0
               |       |   `-- subdir
+              |       |       `-- 0
               |       `-- 1
               |           `-- chain
               |               |-- 0
               |               |   `-- subdir
+              |               |       `-- 0
               |               `-- 1
               |                   `-- prefix
+              |                       `-- 0
               `-- 1
                   `-- chain
                       |-- 0
                       |   `-- subdir
+                      |       `-- 0
                       `-- 1
                           `-- chain
                               |-- 0
                               |   `-- subdir
+                              |       `-- 0
                               `-- 1
                                   `-- prefix
+                                      `-- 0
   
-  19 directories, 7 files
-  $ git diff ${EMPTY_TREE}..9cac689eff79c3a65966083286840d7ea913e918
-  diff --git a/chain/0/subdir b/chain/0/subdir
+  26 directories, 7 files
+  $ git diff ${EMPTY_TREE}..${FILTER_HASH}
+  diff --git a/chain/0/subdir/0 b/chain/0/subdir/0
   new file mode 100644
   index 0000000..2e65efe
   --- /dev/null
-  +++ b/chain/0/subdir
+  +++ b/chain/0/subdir/0
   @@ -0,0 +1 @@
   +a
   \ No newline at end of file
-  diff --git a/chain/1/compose/0/chain/0/subdir b/chain/1/compose/0/chain/0/subdir
+  diff --git a/chain/1/compose/0/chain/0/subdir/0 b/chain/1/compose/0/chain/0/subdir/0
   new file mode 100644
   index 0000000..63d8dbd
   --- /dev/null
-  +++ b/chain/1/compose/0/chain/0/subdir
+  +++ b/chain/1/compose/0/chain/0/subdir/0
   @@ -0,0 +1 @@
   +b
   \ No newline at end of file
-  diff --git a/chain/1/compose/0/chain/1/chain/0/subdir b/chain/1/compose/0/chain/1/chain/0/subdir
+  diff --git a/chain/1/compose/0/chain/1/chain/0/subdir/0 b/chain/1/compose/0/chain/1/chain/0/subdir/0
   new file mode 100644
   index 0000000..c59d9b6
   --- /dev/null
-  +++ b/chain/1/compose/0/chain/1/chain/0/subdir
+  +++ b/chain/1/compose/0/chain/1/chain/0/subdir/0
   @@ -0,0 +1 @@
   +d
   \ No newline at end of file
-  diff --git a/chain/1/compose/0/chain/1/chain/1/prefix b/chain/1/compose/0/chain/1/chain/1/prefix
+  diff --git a/chain/1/compose/0/chain/1/chain/1/prefix/0 b/chain/1/compose/0/chain/1/chain/1/prefix/0
   new file mode 100644
   index 0000000..c1b0730
   --- /dev/null
-  +++ b/chain/1/compose/0/chain/1/chain/1/prefix
+  +++ b/chain/1/compose/0/chain/1/chain/1/prefix/0
   @@ -0,0 +1 @@
   +x
   \ No newline at end of file
-  diff --git a/chain/1/compose/1/chain/0/subdir b/chain/1/compose/1/chain/0/subdir
+  diff --git a/chain/1/compose/1/chain/0/subdir/0 b/chain/1/compose/1/chain/0/subdir/0
   new file mode 100644
   index 0000000..3410062
   --- /dev/null
-  +++ b/chain/1/compose/1/chain/0/subdir
+  +++ b/chain/1/compose/1/chain/0/subdir/0
   @@ -0,0 +1 @@
   +c
   \ No newline at end of file
-  diff --git a/chain/1/compose/1/chain/1/chain/0/subdir b/chain/1/compose/1/chain/1/chain/0/subdir
+  diff --git a/chain/1/compose/1/chain/1/chain/0/subdir/0 b/chain/1/compose/1/chain/1/chain/0/subdir/0
   new file mode 100644
   index 0000000..c59d9b6
   --- /dev/null
-  +++ b/chain/1/compose/1/chain/1/chain/0/subdir
+  +++ b/chain/1/compose/1/chain/1/chain/0/subdir/0
   @@ -0,0 +1 @@
   +d
   \ No newline at end of file
-  diff --git a/chain/1/compose/1/chain/1/chain/1/prefix b/chain/1/compose/1/chain/1/chain/1/prefix
+  diff --git a/chain/1/compose/1/chain/1/chain/1/prefix/0 b/chain/1/compose/1/chain/1/chain/1/prefix/0
   new file mode 100644
   index 0000000..e25f181
   --- /dev/null
-  +++ b/chain/1/compose/1/chain/1/chain/1/prefix
+  +++ b/chain/1/compose/1/chain/1/chain/1/prefix/0
   @@ -0,0 +1 @@
   +y
   \ No newline at end of file
@@ -412,14 +415,24 @@ Test ::file.txt (single argument, no trailing slash, no =, no *)
   $ tree
   .
   `-- file
+      |-- 0
+      `-- 1
   
-  1 directory, 1 file
+  2 directories, 2 files
   $ git diff 4b825dc642cb6eb9a060e54bf8d69288fbee4904..${FILTER_HASH}
-  diff --git a/file b/file
+  diff --git a/file/0 b/file/0
   new file mode 100644
   index 0000000..4c33073
   --- /dev/null
-  +++ b/file
+  +++ b/file/0
+  @@ -0,0 +1 @@
+  +file.txt
+  \ No newline at end of file
+  diff --git a/file/1 b/file/1
+  new file mode 100644
+  index 0000000..4c33073
+  --- /dev/null
+  +++ b/file/1
   @@ -0,0 +1 @@
   +file.txt
   \ No newline at end of file
@@ -458,14 +471,15 @@ Test ::*.txt (with *, pattern)
   $ tree
   .
   `-- pattern
+      `-- 0
   
-  1 directory, 1 file
+  2 directories, 1 file
   $ git diff 4b825dc642cb6eb9a060e54bf8d69288fbee4904..${FILTER_HASH}
-  diff --git a/pattern b/pattern
+  diff --git a/pattern/0 b/pattern/0
   new file mode 100644
   index 0000000..314f02b
   --- /dev/null
-  +++ b/pattern
+  +++ b/pattern/0
   @@ -0,0 +1 @@
   +*.txt
   \ No newline at end of file
@@ -478,24 +492,26 @@ Test ::dir/ (with trailing slash, directory)
   `-- chain
       |-- 0
       |   `-- subdir
+      |       `-- 0
       `-- 1
           `-- prefix
+              `-- 0
   
-  4 directories, 2 files
+  6 directories, 2 files
   $ git diff 4b825dc642cb6eb9a060e54bf8d69288fbee4904..${FILTER_HASH}
-  diff --git a/chain/0/subdir b/chain/0/subdir
+  diff --git a/chain/0/subdir/0 b/chain/0/subdir/0
   new file mode 100644
   index 0000000..8724519
   --- /dev/null
-  +++ b/chain/0/subdir
+  +++ b/chain/0/subdir/0
   @@ -0,0 +1 @@
   +dir
   \ No newline at end of file
-  diff --git a/chain/1/prefix b/chain/1/prefix
+  diff --git a/chain/1/prefix/0 b/chain/1/prefix/0
   new file mode 100644
   index 0000000..8724519
   --- /dev/null
-  +++ b/chain/1/prefix
+  +++ b/chain/1/prefix/0
   @@ -0,0 +1 @@
   +dir
   \ No newline at end of file
@@ -508,72 +524,78 @@ Test ::a/b/c/ (nested directory path with trailing slash)
   `-- chain
       |-- 0
       |   `-- subdir
+      |       `-- 0
       `-- 1
           `-- chain
               |-- 0
               |   `-- subdir
+              |       `-- 0
               `-- 1
                   `-- chain
                       |-- 0
                       |   `-- subdir
+                      |       `-- 0
                       `-- 1
                           `-- chain
                               |-- 0
                               |   `-- prefix
+                              |       `-- 0
                               `-- 1
                                   `-- chain
                                       |-- 0
                                       |   `-- prefix
+                                      |       `-- 0
                                       `-- 1
                                           `-- prefix
+                                              `-- 0
   
-  16 directories, 6 files
+  22 directories, 6 files
   $ git diff 4b825dc642cb6eb9a060e54bf8d69288fbee4904..${FILTER_HASH}
-  diff --git a/chain/0/subdir b/chain/0/subdir
+  diff --git a/chain/0/subdir/0 b/chain/0/subdir/0
   new file mode 100644
   index 0000000..2e65efe
   --- /dev/null
-  +++ b/chain/0/subdir
+  +++ b/chain/0/subdir/0
   @@ -0,0 +1 @@
   +a
   \ No newline at end of file
-  diff --git a/chain/1/chain/0/subdir b/chain/1/chain/0/subdir
+  diff --git a/chain/1/chain/0/subdir/0 b/chain/1/chain/0/subdir/0
   new file mode 100644
   index 0000000..63d8dbd
   --- /dev/null
-  +++ b/chain/1/chain/0/subdir
+  +++ b/chain/1/chain/0/subdir/0
   @@ -0,0 +1 @@
   +b
   \ No newline at end of file
-  diff --git a/chain/1/chain/1/chain/0/subdir b/chain/1/chain/1/chain/0/subdir
+  diff --git a/chain/1/chain/1/chain/0/subdir/0 b/chain/1/chain/1/chain/0/subdir/0
   new file mode 100644
   index 0000000..3410062
   --- /dev/null
-  +++ b/chain/1/chain/1/chain/0/subdir
+  +++ b/chain/1/chain/1/chain/0/subdir/0
   @@ -0,0 +1 @@
   +c
   \ No newline at end of file
-  diff --git a/chain/1/chain/1/chain/1/chain/0/prefix b/chain/1/chain/1/chain/1/chain/0/prefix
+  diff --git a/chain/1/chain/1/chain/1/chain/0/prefix/0 b/chain/1/chain/1/chain/1/chain/0/prefix/0
   new file mode 100644
   index 0000000..3410062
   --- /dev/null
-  +++ b/chain/1/chain/1/chain/1/chain/0/prefix
+  +++ b/chain/1/chain/1/chain/1/chain/0/prefix/0
   @@ -0,0 +1 @@
   +c
   \ No newline at end of file
-  diff --git a/chain/1/chain/1/chain/1/chain/1/chain/0/prefix b/chain/1/chain/1/chain/1/chain/1/chain/0/prefix
+  diff --git a/chain/1/chain/1/chain/1/chain/1/chain/0/prefix/0 b/chain/1/chain/1/chain/1/chain/1/chain/0/prefix/0
   new file mode 100644
   index 0000000..63d8dbd
   --- /dev/null
-  +++ b/chain/1/chain/1/chain/1/chain/1/chain/0/prefix
+  +++ b/chain/1/chain/1/chain/1/chain/1/chain/0/prefix/0
   @@ -0,0 +1 @@
   +b
   \ No newline at end of file
-  diff --git a/chain/1/chain/1/chain/1/chain/1/chain/1/prefix b/chain/1/chain/1/chain/1/chain/1/chain/1/prefix
+  diff --git a/chain/1/chain/1/chain/1/chain/1/chain/1/prefix/0 b/chain/1/chain/1/chain/1/chain/1/chain/1/prefix/0
   new file mode 100644
   index 0000000..2e65efe
   --- /dev/null
-  +++ b/chain/1/chain/1/chain/1/chain/1/chain/1/prefix
+  +++ b/chain/1/chain/1/chain/1/chain/1/chain/1/prefix/0
   @@ -0,0 +1 @@
   +a
   \ No newline at end of file
@@ -684,8 +706,9 @@ Test :workspace=path/to/workspace
   $ tree
   .
   `-- workspace
+      `-- 0
   
-  1 directory, 1 file
+  2 directories, 1 file
 
 Test :+path/to/stored
   $ FILTER_HASH=$(josh-filter -i ':+path/to/stored')
@@ -695,8 +718,9 @@ Test :+path/to/stored
   $ tree
   .
   `-- stored
+      `-- 0
   
-  1 directory, 1 file
+  2 directories, 1 file
 
 Test :hook=hookname
   $ FILTER_HASH=$(josh-filter -i ':hook=hookname')
@@ -706,8 +730,9 @@ Test :hook=hookname
   $ tree
   .
   `-- hook
+      `-- 0
   
-  1 directory, 1 file
+  2 directories, 1 file
 
 Test :author=Name;email@example.com
   $ FILTER_HASH=$(josh-filter -i ':author="Name";"email@example.com"')
@@ -769,9 +794,11 @@ Test :pin[:/a]
   $ tree
   .
   `-- pin
-      `-- subdir
+      `-- 0
+          `-- subdir
+              `-- 0
   
-  2 directories, 1 file
+  4 directories, 1 file
 
 Test :SQUASH
   $ FILTER_HASH=$(josh-filter -i ':SQUASH')
@@ -811,9 +838,10 @@ Test :rev(0000000000000000000000000000000000000000:/a)
       `-- 0
           |-- f
           |   `-- subdir
+          |       `-- 0
           `-- o
   
-  4 directories, 2 files
+  5 directories, 2 files
 
 Test :from(0000000000000000000000000000000000000000:/a)
   $ FILTER_HASH=$(josh-filter -i ':from(0000000000000000000000000000000000000000:/a)')
@@ -825,12 +853,14 @@ Test :from(0000000000000000000000000000000000000000:/a)
   `-- chain
       |-- 0
       |   `-- subdir
+      |       `-- 0
       `-- 1
           `-- concat
               `-- 0
                   |-- f
                   |   `-- subdir
+                  |       `-- 0
                   `-- o
   
-  7 directories, 3 files
+  9 directories, 3 files
 
