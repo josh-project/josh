@@ -171,16 +171,25 @@ fn run_filter(args: Vec<String>) -> josh_core::JoshResult<i32> {
         return Ok(0);
     }
     let specstr = args.get_one::<String>("filter").unwrap();
+    let is_from_file = args.get_one::<String>("file").is_some();
     let specstr = args
         .get_one::<String>("file")
         .and_then(|f| read_to_string(f).ok())
         .unwrap_or(specstr.to_string());
 
-    let mut filterobj = josh_core::filter::parse(&specstr)?;
+    let repo = git2::Repository::open_from_env()?;
+    let repo_path = repo.path().to_path_buf();
 
-    let repo_path = {
-        let repo = git2::Repository::open_from_env()?;
-        repo.path().to_path_buf()
+    // If the filter spec doesn't contain a colon and it's not from a file,
+    // treat it as a SHA and read from tree
+    let mut filterobj = if specstr.contains(':') || is_from_file {
+        josh_core::filter::parse(&specstr)?
+    } else {
+        // Try to parse as SHA and read filter from tree
+        let tree_oid = git2::Oid::from_str(&specstr.trim()).map_err(|_| {
+            josh_core::josh_error(&format!("Invalid filter spec or SHA: {}", specstr))
+        })?;
+        josh_core::filter::persist::from_tree(&repo, tree_oid)?
     };
 
     if !args.get_flag("no-cache") {
