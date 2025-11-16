@@ -190,51 +190,44 @@ impl InMemoryBuilder {
                 push_tree_entries(&mut entries, [("chain", params_tree)]);
             }
             Op::Exclude(b) => {
-                let child = self.build_filter(*b)?;
-                push_tree_entries(&mut entries, [("exclude", child)]);
+                let params_tree = self.build_filter_params(&[*b])?;
+                push_tree_entries(&mut entries, [("exclude", params_tree)]);
             }
             Op::Pin(b) => {
-                let child = self.build_filter(*b)?;
-                push_tree_entries(&mut entries, [("pin", child)]);
+                let params_tree = self.build_filter_params(&[*b])?;
+                push_tree_entries(&mut entries, [("pin", params_tree)]);
             }
             Op::Subdir(path) => {
-                let blob = self.write_blob(path.to_string_lossy().as_bytes());
-                push_blob_entries(&mut entries, [("subdir", blob)]);
+                let params_tree = self.build_str_params(&[path.to_string_lossy().as_ref()]);
+                push_tree_entries(&mut entries, [("subdir", params_tree)]);
             }
             Op::Prefix(path) => {
-                let blob = self.write_blob(path.to_string_lossy().as_bytes());
-                push_blob_entries(&mut entries, [("prefix", blob)]);
+                let params_tree = self.build_str_params(&[path.to_string_lossy().as_ref()]);
+                push_tree_entries(&mut entries, [("prefix", params_tree)]);
             }
             Op::File(dest_path, source_path) => {
-                if source_path == dest_path {
-                    // Backward compatibility: use blob format when source and dest are the same
-                    let blob = self.write_blob(dest_path.to_string_lossy().as_bytes());
-                    push_blob_entries(&mut entries, [("file", blob)]);
-                } else {
-                    // New format: use tree format when source and dest differ
-                    // Store as (dest_path, source_path) to match enum order
-                    let params_tree = self.build_str_params(&[
-                        dest_path.to_string_lossy().as_ref(),
-                        source_path.to_string_lossy().as_ref(),
-                    ]);
-                    push_tree_entries(&mut entries, [("file", params_tree)]);
-                }
+                // Store as (dest_path, source_path) to match enum order
+                let params_tree = self.build_str_params(&[
+                    dest_path.to_string_lossy().as_ref(),
+                    source_path.to_string_lossy().as_ref(),
+                ]);
+                push_tree_entries(&mut entries, [("file", params_tree)]);
             }
             Op::Embed(path) => {
-                let blob = self.write_blob(path.to_string_lossy().as_bytes());
-                push_blob_entries(&mut entries, [("embed", blob)]);
+                let params_tree = self.build_str_params(&[path.to_string_lossy().as_ref()]);
+                push_tree_entries(&mut entries, [("embed", params_tree)]);
             }
             Op::Pattern(pattern) => {
-                let blob = self.write_blob(pattern.as_bytes());
-                push_blob_entries(&mut entries, [("pattern", blob)]);
+                let params_tree = self.build_str_params(&[pattern.as_ref()]);
+                push_tree_entries(&mut entries, [("pattern", params_tree)]);
             }
             Op::Workspace(path) => {
-                let blob = self.write_blob(path.to_string_lossy().as_bytes());
-                push_blob_entries(&mut entries, [("workspace", blob)]);
+                let params_tree = self.build_str_params(&[path.to_string_lossy().as_ref()]);
+                push_tree_entries(&mut entries, [("workspace", params_tree)]);
             }
             Op::Stored(path) => {
-                let blob = self.write_blob(path.to_string_lossy().as_bytes());
-                push_blob_entries(&mut entries, [("stored", blob)]);
+                let params_tree = self.build_str_params(&[path.to_string_lossy().as_ref()]);
+                push_tree_entries(&mut entries, [("stored", params_tree)]);
             }
             Op::Nop => {
                 let blob = self.write_blob(b"");
@@ -253,12 +246,12 @@ impl InMemoryBuilder {
                 push_blob_entries(&mut entries, [("paths", blob)]);
             }
             Op::Link(mode) => {
-                let blob = self.write_blob(mode.as_bytes());
-                push_blob_entries(&mut entries, [("link", blob)]);
+                let params_tree = self.build_str_params(&[mode.as_ref()]);
+                push_tree_entries(&mut entries, [("link", params_tree)]);
             }
             Op::Adapt(mode) => {
-                let blob = self.write_blob(mode.as_bytes());
-                push_blob_entries(&mut entries, [("adapt", blob)]);
+                let params_tree = self.build_str_params(&[mode.as_ref()]);
+                push_tree_entries(&mut entries, [("adapt", params_tree)]);
             }
             Op::Unlink => {
                 let blob = self.write_blob(b"");
@@ -332,8 +325,8 @@ impl InMemoryBuilder {
                 push_tree_entries(&mut entries, [("regex_replace", params_tree)]);
             }
             Op::Hook(hook) => {
-                let blob = self.write_blob(hook.as_bytes());
-                push_blob_entries(&mut entries, [("hook", blob)]);
+                let params_tree = self.build_str_params(&[hook.as_ref()]);
+                push_tree_entries(&mut entries, [("hook", params_tree)]);
             }
         }
 
@@ -401,12 +394,28 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> JoshResult<Op> {
             Ok(Op::Export)
         }
         "link" => {
-            let blob = repo.find_blob(entry.id())?;
-            Ok(Op::Link(std::str::from_utf8(blob.content())?.to_string()))
+            let inner = repo.find_tree(entry.id())?;
+            let mode_blob = repo.find_blob(
+                inner
+                    .get_name("0")
+                    .ok_or_else(|| josh_error("link: missing mode"))?
+                    .id(),
+            )?;
+            Ok(Op::Link(
+                std::str::from_utf8(mode_blob.content())?.to_string(),
+            ))
         }
         "adapt" => {
-            let blob = repo.find_blob(entry.id())?;
-            Ok(Op::Adapt(std::str::from_utf8(blob.content())?.to_string()))
+            let inner = repo.find_tree(entry.id())?;
+            let mode_blob = repo.find_blob(
+                inner
+                    .get_name("0")
+                    .ok_or_else(|| josh_error("adapt: missing mode"))?
+                    .id(),
+            )?;
+            Ok(Op::Adapt(
+                std::str::from_utf8(mode_blob.content())?.to_string(),
+            ))
         }
         "unlink" => {
             let _ = repo.find_blob(entry.id())?;
@@ -442,8 +451,14 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> JoshResult<Op> {
             }
         }
         "hook" => {
-            let blob = repo.find_blob(entry.id())?;
-            let hook_name = std::str::from_utf8(blob.content())?.to_string();
+            let inner = repo.find_tree(entry.id())?;
+            let hook_blob = repo.find_blob(
+                inner
+                    .get_name("0")
+                    .ok_or_else(|| josh_error("hook: missing hook name"))?
+                    .id(),
+            )?;
+            let hook_name = std::str::from_utf8(hook_blob.content())?.to_string();
             Ok(Op::Hook(hook_name))
         }
         "author" => {
@@ -503,66 +518,90 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> JoshResult<Op> {
             Ok(Op::Message(fmt, regex))
         }
         "subdir" => {
-            let blob = repo.find_blob(entry.id())?;
-            let path = std::str::from_utf8(blob.content())?;
+            let inner = repo.find_tree(entry.id())?;
+            let path_blob = repo.find_blob(
+                inner
+                    .get_name("0")
+                    .ok_or_else(|| josh_error("subdir: missing path"))?
+                    .id(),
+            )?;
+            let path = std::str::from_utf8(path_blob.content())?;
             Ok(Op::Subdir(std::path::PathBuf::from(path)))
         }
         "prefix" => {
-            let blob = repo.find_blob(entry.id())?;
-            let path = std::str::from_utf8(blob.content())?;
+            let inner = repo.find_tree(entry.id())?;
+            let path_blob = repo.find_blob(
+                inner
+                    .get_name("0")
+                    .ok_or_else(|| josh_error("prefix: missing path"))?
+                    .id(),
+            )?;
+            let path = std::str::from_utf8(path_blob.content())?;
             Ok(Op::Prefix(std::path::PathBuf::from(path)))
         }
         "file" => {
-            // Try to read as tree (new format with destination path)
-            if let Ok(inner) = repo.find_tree(entry.id()) {
-                let dest_blob = repo.find_blob(
-                    inner
-                        .get_name("0")
-                        .ok_or_else(|| josh_error("file: missing destination path"))?
-                        .id(),
-                )?;
-                let dest_path_str = std::str::from_utf8(dest_blob.content())?.to_string();
-                let source_path = inner
+            let inner = repo.find_tree(entry.id())?;
+            let dest_blob = repo.find_blob(
+                inner
+                    .get_name("0")
+                    .ok_or_else(|| josh_error("file: missing destination path"))?
+                    .id(),
+            )?;
+            let source_blob = repo.find_blob(
+                inner
                     .get_name("1")
-                    .and_then(|entry| repo.find_blob(entry.id()).ok())
-                    .and_then(|blob| {
-                        std::str::from_utf8(blob.content())
-                            .ok()
-                            .map(|s| s.to_string())
-                    })
-                    .map(|s| std::path::PathBuf::from(s))
-                    .unwrap_or_else(|| std::path::PathBuf::from(&dest_path_str));
-                Ok(Op::File(
-                    std::path::PathBuf::from(dest_path_str),
-                    source_path,
-                ))
-            } else {
-                // Fall back to blob format (old format, backward compatibility)
-                let blob = repo.find_blob(entry.id())?;
-                let path_str = std::str::from_utf8(blob.content())?.to_string();
-                let path_buf = std::path::PathBuf::from(&path_str);
-                // When reading from blob format, destination is the same as source
-                Ok(Op::File(path_buf.clone(), path_buf))
-            }
+                    .ok_or_else(|| josh_error("file: missing source path"))?
+                    .id(),
+            )?;
+            let dest_path_str = std::str::from_utf8(dest_blob.content())?.to_string();
+            let source_path_str = std::str::from_utf8(source_blob.content())?.to_string();
+            Ok(Op::File(
+                std::path::PathBuf::from(dest_path_str),
+                std::path::PathBuf::from(source_path_str),
+            ))
         }
         "embed" => {
-            let blob = repo.find_blob(entry.id())?;
-            let path = std::str::from_utf8(blob.content())?;
+            let inner = repo.find_tree(entry.id())?;
+            let path_blob = repo.find_blob(
+                inner
+                    .get_name("0")
+                    .ok_or_else(|| josh_error("embed: missing path"))?
+                    .id(),
+            )?;
+            let path = std::str::from_utf8(path_blob.content())?;
             Ok(Op::Embed(std::path::PathBuf::from(path)))
         }
         "pattern" => {
-            let blob = repo.find_blob(entry.id())?;
-            let pattern = std::str::from_utf8(blob.content())?.to_string();
+            let inner = repo.find_tree(entry.id())?;
+            let pattern_blob = repo.find_blob(
+                inner
+                    .get_name("0")
+                    .ok_or_else(|| josh_error("pattern: missing pattern"))?
+                    .id(),
+            )?;
+            let pattern = std::str::from_utf8(pattern_blob.content())?.to_string();
             Ok(Op::Pattern(pattern))
         }
         "workspace" => {
-            let blob = repo.find_blob(entry.id())?;
-            let path = std::str::from_utf8(blob.content())?;
+            let inner = repo.find_tree(entry.id())?;
+            let path_blob = repo.find_blob(
+                inner
+                    .get_name("0")
+                    .ok_or_else(|| josh_error("workspace: missing path"))?
+                    .id(),
+            )?;
+            let path = std::str::from_utf8(path_blob.content())?;
             Ok(Op::Workspace(std::path::PathBuf::from(path)))
         }
         "stored" => {
-            let blob = repo.find_blob(entry.id())?;
-            let path = std::str::from_utf8(blob.content())?;
+            let inner = repo.find_tree(entry.id())?;
+            let path_blob = repo.find_blob(
+                inner
+                    .get_name("0")
+                    .ok_or_else(|| josh_error("stored: missing path"))?
+                    .id(),
+            )?;
+            let path = std::str::from_utf8(path_blob.content())?;
             Ok(Op::Stored(std::path::PathBuf::from(path)))
         }
         "compose" => {
@@ -624,13 +663,33 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> JoshResult<Op> {
         }
         "exclude" => {
             let exclude_tree = repo.find_tree(entry.id())?;
-            let filter = from_tree2(repo, exclude_tree.id())?;
-            Ok(Op::Exclude(to_filter(filter)))
+            if exclude_tree.len() == 1 {
+                let filter_tree = repo.find_tree(
+                    exclude_tree
+                        .get_name("0")
+                        .ok_or_else(|| josh_error("exclude: missing 0"))?
+                        .id(),
+                )?;
+                let filter = from_tree2(repo, filter_tree.id())?;
+                Ok(Op::Exclude(to_filter(filter)))
+            } else {
+                Err(josh_error("exclude: expected 1 entry"))
+            }
         }
         "pin" => {
             let pin_tree = repo.find_tree(entry.id())?;
-            let filter = from_tree2(repo, pin_tree.id())?;
-            Ok(Op::Pin(to_filter(filter)))
+            if pin_tree.len() == 1 {
+                let filter_tree = repo.find_tree(
+                    pin_tree
+                        .get_name("0")
+                        .ok_or_else(|| josh_error("pin: missing 0"))?
+                        .id(),
+                )?;
+                let filter = from_tree2(repo, filter_tree.id())?;
+                Ok(Op::Pin(to_filter(filter)))
+            } else {
+                Err(josh_error("pin: expected 1 entry"))
+            }
         }
         "rev" => {
             let rev_tree = repo.find_tree(entry.id())?;
