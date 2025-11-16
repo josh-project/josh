@@ -29,9 +29,6 @@ pub trait FilterHook {
     fn filter_for_commit(&self, commit_oid: git2::Oid, arg: &str) -> JoshResult<filter::Filter>;
 }
 
-static DB: LazyLock<std::sync::Mutex<Option<sled::Db>>> =
-    LazyLock::new(|| std::sync::Mutex::new(None));
-
 pub(crate) fn josh_commit_signature<'a>() -> JoshResult<git2::Signature<'a>> {
     Ok(if let Ok(time) = std::env::var("JOSH_COMMIT_TIME") {
         git2::Signature::new(
