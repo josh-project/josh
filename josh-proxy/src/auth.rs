@@ -1,5 +1,5 @@
 use std::num::NonZeroUsize;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
 // Import the base64 crate Engine trait anonymously so we can
 // call its methods without adding to the namespace.
@@ -38,13 +38,12 @@ type AuthTimersGroup = lru::LruCache<Handle, std::time::Instant>;
 type AuthTimers =
     std::collections::HashMap<AuthTimersGroupKey, Arc<tokio::sync::Mutex<AuthTimersGroup>>>;
 
-lazy_static! {
-    // Note the use of std::sync::Mutex: access to those structures should only be performed
-    // shortly, without blocking the async runtime for long time and without holding the
-    // lock across an await point.
-    static ref AUTH: std::sync::Mutex<std::collections::HashMap<Handle, Header>> = Default::default();
-    static ref AUTH_TIMERS: std::sync::Mutex<AuthTimers> = Default::default();
-}
+// Note the use of std::sync::Mutex: access to those structures should only be performed
+// shortly, without blocking the async runtime for long time and without holding the
+// lock across an await point.
+static AUTH: LazyLock<std::sync::Mutex<std::collections::HashMap<Handle, Header>>> =
+    LazyLock::new(Default::default);
+static AUTH_TIMERS: LazyLock<std::sync::Mutex<AuthTimers>> = LazyLock::new(Default::default);
 
 // Wrapper struct for storing passwords to avoid having
 // them output to traces by accident

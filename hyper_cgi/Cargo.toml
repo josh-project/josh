@@ -21,7 +21,6 @@ http-body-util = "0.1.0"
 clap = { workspace = true, optional = true }
 base64 = { workspace = true, optional = true }
 rand = { version = "0.9.2", optional = true, features = ["std"] }
-lazy_static = { version = "1.5.0", optional = true }
 hyper-reverse-proxy = { workspace = true }
 
 [lib]
@@ -29,7 +28,7 @@ name = "hyper_cgi"
 path = "src/hyper_cgi.rs"
 
 [features]
-test-server = ["clap", "base64", "lazy_static", "rand"]
+test-server = ["clap", "base64", "rand"]
 
 [[bin]]
 name = "hyper-cgi-test-server"

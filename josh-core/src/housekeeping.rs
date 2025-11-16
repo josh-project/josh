@@ -1,14 +1,13 @@
 use crate::*;
 use itertools::Itertools;
 use std::collections::{BTreeSet, HashMap};
+use std::sync::LazyLock;
 use tracing::{Level, info, span};
 
 pub type KnownViews = HashMap<String, (git2::Oid, BTreeSet<String>)>;
 
-lazy_static! {
-    static ref KNOWN_FILTERS: std::sync::Mutex<KnownViews> =
-        std::sync::Mutex::new(std::collections::HashMap::new());
-}
+static KNOWN_FILTERS: LazyLock<std::sync::Mutex<KnownViews>> =
+    LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
 
 pub fn list_refs(
     repo: &git2::Repository,

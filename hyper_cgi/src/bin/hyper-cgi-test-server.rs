@@ -1,5 +1,3 @@
-#[macro_use]
-extern crate lazy_static;
 use bytes::Bytes;
 use core::iter;
 use core::str::from_utf8;
@@ -9,6 +7,7 @@ use hyper::service::service_fn;
 use hyper_util::rt::{TokioIo, TokioTimer};
 use rand::{Rng, distr::Alphanumeric, rng};
 use std::net::SocketAddr;
+use std::sync::LazyLock;
 use tokio::net::TcpListener;
 
 use futures::FutureExt;
@@ -35,9 +34,7 @@ macro_rules! ok_or {
     };
 }
 
-lazy_static! {
-    static ref ARGS: clap::ArgMatches = parse_args();
-}
+static ARGS: LazyLock<clap::ArgMatches> = LazyLock::new(|| parse_args());
 
 pub struct ServerState {
     users: Vec<(String, String)>,

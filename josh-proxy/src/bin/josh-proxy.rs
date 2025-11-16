@@ -1,5 +1,3 @@
-#[macro_use]
-extern crate lazy_static;
 extern crate clap;
 
 use clap::Parser;
@@ -29,7 +27,7 @@ use std::net::{IpAddr, SocketAddr};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::str::FromStr;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, LazyLock, RwLock};
 use tokio::io::AsyncWriteExt;
 use tokio::net::{TcpListener, UnixStream};
 use tokio::process::Command;
@@ -40,9 +38,7 @@ fn version_str() -> String {
     format!("Version: {}\n", josh_core::VERSION,)
 }
 
-lazy_static! {
-    static ref ARGS: josh_proxy::cli::Args = josh_proxy::cli::Args::parse();
-}
+static ARGS: LazyLock<josh_proxy::cli::Args> = LazyLock::new(|| josh_proxy::cli::Args::parse());
 
 josh_core::regex_parsed!(
     FilteredRepoUrl,

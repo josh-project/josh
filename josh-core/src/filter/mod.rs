@@ -1,6 +1,7 @@
 use super::*;
 use pest::Parser;
 use std::path::Path;
+use std::sync::LazyLock;
 mod opt;
 mod parse;
 pub mod persist;
@@ -14,20 +15,18 @@ pub use opt::invert;
 pub use parse::get_comments;
 pub use parse::parse;
 
-lazy_static! {
-    static ref FILTERS: std::sync::Mutex<std::collections::HashMap<Filter, Op>> =
-        std::sync::Mutex::new(std::collections::HashMap::new());
-    static ref WORKSPACES: std::sync::Mutex<std::collections::HashMap<git2::Oid, Filter>> =
-        std::sync::Mutex::new(std::collections::HashMap::new());
-    static ref ANCESTORS: std::sync::Mutex<std::collections::HashMap<git2::Oid, std::collections::HashSet<git2::Oid>>> =
-        std::sync::Mutex::new(std::collections::HashMap::new());
-}
+static FILTERS: LazyLock<std::sync::Mutex<std::collections::HashMap<Filter, Op>>> =
+    LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+static WORKSPACES: LazyLock<std::sync::Mutex<std::collections::HashMap<git2::Oid, Filter>>> =
+    LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+static ANCESTORS: LazyLock<
+    std::sync::Mutex<std::collections::HashMap<git2::Oid, std::collections::HashSet<git2::Oid>>>,
+> = LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
 
-lazy_static! {
-    /// Match-all regex pattern used as the default for Op::Message when no regex is specified.
-    /// The pattern `(?s)^.*$` matches any string (including newlines) from start to end.
-    static ref MESSAGE_MATCH_ALL_REGEX: regex::Regex = regex::Regex::new("(?s)^.*$").unwrap();
-}
+/// Match-all regex pattern used as the default for Op::Message when no regex is specified.
+/// The pattern `(?s)^.*$` matches any string (including newlines) from start to end.
+static MESSAGE_MATCH_ALL_REGEX: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new("(?s)^.*$").unwrap());
 
 /// Filters are represented as `git2::Oid`, however they are not ever stored
 /// inside the repo.

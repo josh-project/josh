@@ -14,7 +14,6 @@ serde_yaml = { workspace = true }
 strfmt = "0.2.4"
 toml = { workspace = true }
 tracing = { workspace = true }
-lazy_static = { workspace = true }
 
 [dependencies.chrono]
 default-features = false

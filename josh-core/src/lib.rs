@@ -159,9 +159,6 @@ where
     }
 }
 
-#[macro_use]
-extern crate lazy_static;
-
 #[macro_export]
 macro_rules! regex_parsed {
     ($name:ident, $re:literal,  [$( $i:ident ),+]) => {
@@ -174,12 +171,11 @@ macro_rules! regex_parsed {
 
 impl $name {
     fn from_str(path: &str) -> Option<$name> {
-
-lazy_static::lazy_static! {
-    static ref REGEX: regex::Regex =
-        regex::Regex::new($re)
-            .expect("can't compile regex");
-}
+        use std::sync::LazyLock;
+        static REGEX: LazyLock<regex::Regex> = LazyLock::new(|| {
+            regex::Regex::new($re)
+                .expect("can't compile regex")
+        });
         let caps = REGEX.captures(&path)?;
         let as_str = |x: regex::Match| x.as_str().to_owned();
 
