@@ -29,6 +29,7 @@ filter_spec = { (
   | filter_squash
   | filter_presub
   | filter_subdir
+  | filter_stored
   | filter_nop
   | filter
   | filter_noarg
@@ -36,6 +37,7 @@ filter_spec = { (
 
 filter_group = { CMD_START ~ cmd? ~ GROUP_START ~ compose ~ GROUP_END }
 filter_subdir = { CMD_START ~ "/" ~ argument }
+filter_stored = { CMD_START ~ "+" ~ argument }
 filter_nop = { CMD_START ~ "/" }
 filter_presub = { CMD_START ~ ":" ~ argument ~ ("=" ~ argument)? }
 filter = { CMD_START ~ cmd ~ "=" ~ (argument ~ (";" ~ argument)*)? }

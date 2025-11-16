@@ -84,6 +84,9 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> JoshResult<Op> {
         Rule::filter_subdir => Ok(Op::Subdir(
             Path::new(&unquote(pair.into_inner().next().unwrap().as_str())).to_owned(),
         )),
+        Rule::filter_stored => Ok(Op::Stored(
+            Path::new(&unquote(pair.into_inner().next().unwrap().as_str())).to_owned(),
+        )),
         Rule::filter_presub => {
             let mut inner = pair.into_inner();
             let arg = &unquote(inner.next().unwrap().as_str());
