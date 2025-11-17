@@ -94,6 +94,8 @@ struct Transaction2 {
     subtract_map: HashMap<(git2::Oid, git2::Oid), git2::Oid>,
     overlay_map: HashMap<(git2::Oid, git2::Oid), git2::Oid>,
     unapply_map: HashMap<git2::Oid, HashMap<git2::Oid, git2::Oid>>,
+    legalize_map: HashMap<(filter::Filter, git2::Oid), filter::Filter>,
+
     cache: std::sync::Arc<CacheStack>,
     path_tree: sled::Tree,
     invert_tree: sled::Tree,
@@ -128,6 +130,7 @@ impl Transaction {
                 subtract_map: HashMap::new(),
                 overlay_map: HashMap::new(),
                 unapply_map: HashMap::new(),
+                legalize_map: HashMap::new(),
                 cache,
                 path_tree,
                 invert_tree,
@@ -207,6 +210,16 @@ impl Transaction {
     pub fn get_overlay(&self, from: (git2::Oid, git2::Oid)) -> Option<git2::Oid> {
         let t2 = self.t2.borrow_mut();
         t2.overlay_map.get(&from).cloned()
+    }
+
+    pub fn insert_legalize(&self, from: (filter::Filter, git2::Oid), to: filter::Filter) {
+        let mut t2 = self.t2.borrow_mut();
+        t2.legalize_map.insert(from, to);
+    }
+
+    pub fn get_legalize(&self, from: (filter::Filter, git2::Oid)) -> Option<filter::Filter> {
+        let t2 = self.t2.borrow_mut();
+        t2.legalize_map.get(&from).cloned()
     }
 
     pub fn insert_unapply(&self, filter: filter::Filter, from: git2::Oid, to: git2::Oid) {
