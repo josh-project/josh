@@ -852,9 +852,19 @@ of the filtered tree.
 Note that <code>:/a/b</code> and <code>:/a:/b</code> are equivalent ways to get the same result.</p>
 <h3 id="directory-a"><a class="header" href="#directory-a">Directory <strong><code>::a/</code></strong></a></h3>
 <p>A shorthand for the commonly occurring filter combination <code>:/a:prefix=a</code>.</p>
-<h3 id="file-a"><a class="header" href="#file-a">File <strong><code>::a</code></strong></a></h3>
-<p>Produces a tree with only the specified file in it's root.
-Note that <code>::a/b</code> is equivalent to <code>::a/::b</code>.</p>
+<h3 id="file-a-or-destinationsource"><a class="header" href="#file-a-or-destinationsource">File <strong><code>::a</code></strong> or <strong><code>::destination=source</code></strong></a></h3>
+<p>Produces a tree with only the specified file.</p>
+<p>When using a single argument (<code>::a</code>), the file is placed at the same full path as in the source tree.
+When using the <code>destination=source</code> syntax (<code>::destination=source</code>), the file is renamed from <code>source</code> to <code>destination</code> in the filtered tree.</p>
+<p>Examples:</p>
+<ul>
+<li><code>::file.txt</code> - Selects <code>file.txt</code> and places it at <code>file.txt</code></li>
+<li><code>::src/file.txt</code> - Selects <code>src/file.txt</code> and places it at <code>src/file.txt</code></li>
+<li><code>::renamed.txt=src/original.txt</code> - Selects <code>src/original.txt</code> and places it at <code>renamed.txt</code></li>
+<li><code>::subdir/file.txt=src/file.txt</code> - Selects <code>src/file.txt</code> and places it at <code>subdir/file.txt</code></li>
+</ul>
+<p>Note that <code>::a/b</code> is equivalent to <code>::a/::b</code>.
+Pattern filters (with <code>*</code>) cannot be combined with the <code>destination=source</code> syntax.</p>
 <h3 id="prefix-prefixa"><a class="header" href="#prefix-prefixa">Prefix <strong><code>:prefix=a</code></strong></a></h3>
 <p>Take the input tree and place it into subdirectory <code>a</code>.
 Note that <code>:prefix=a/b</code> and <code>:prefix=b:prefix=a</code> are equivalent.</p>
