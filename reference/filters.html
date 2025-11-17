@@ -243,6 +243,9 @@ commits that don't match any of the other shas.</p>
 <h3 id="join-multiple-histories-into-one-joinsha_0filter_0sha_nfilter_n"><a class="header" href="#join-multiple-histories-into-one-joinsha_0filter_0sha_nfilter_n">Join multiple histories into one <strong>:join(&lt;sha_0&gt;:filter_0,...,&lt;sha_N&gt;:filter_N)</strong></a></h3>
 <p>Produce the history that would be the result of pushing the passed branches with the
 passed filters into the upstream.</p>
+<h3 id="start-filtering-from-a-specific-commit-fromshafilter"><a class="header" href="#start-filtering-from-a-specific-commit-fromshafilter">Start filtering from a specific commit <strong>:from(<sha>:filter)</strong></a></h3>
+<p>Produce a history that keeps the original history up to and including the specified commit <code>&lt;sha&gt;</code> unchanged,
+but applies the given <code>:filter</code> to all commits after that commit.</p>
 <h3 id="prune-trivial-merge-commits-prunetrivial-merge"><a class="header" href="#prune-trivial-merge-commits-prunetrivial-merge">Prune trivial merge commits <strong>:prune=trivial-merge</strong></a></h3>
 <p>Produce a history that skips all merge commits whose tree is identical to the first parents
 tree.
