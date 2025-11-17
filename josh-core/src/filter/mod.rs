@@ -296,7 +296,6 @@ enum Op {
     // We use BTreeMap rather than HashMap to guarantee deterministic results when
     // converting to Filter
     Rev(std::collections::BTreeMap<LazyRef, Filter>),
-    Join(std::collections::BTreeMap<LazyRef, Filter>),
     Linear,
     Prune,
     Unsign,
@@ -463,17 +462,6 @@ fn lazy_refs2(op: &Op) -> Vec<String> {
             lr.append(&mut lazy_refs(*f));
             lr
         }
-        Op::Join(filters) => {
-            let mut lr = lazy_refs2(&Op::Compose(filters.values().copied().collect()));
-            lr.extend(filters.keys().filter_map(|x| {
-                if let LazyRef::Lazy(s) = x {
-                    Some(s.to_owned())
-                } else {
-                    None
-                }
-            }));
-            lr
-        }
         Op::Squash(Some(revs)) => {
             let mut lr = vec![];
             lr.extend(revs.keys().filter_map(|x| {
@@ -536,24 +524,6 @@ fn resolve_refs2(refs: &std::collections::HashMap<String, git2::Oid>, op: &Op) -
             };
             Op::HistoryConcat(resolved_ref, f)
         }
-        Op::Join(filters) => {
-            let lr = filters
-                .iter()
-                .map(|(r, f)| {
-                    let f = resolve_refs(refs, *f);
-                    if let LazyRef::Lazy(s) = r {
-                        if let Some(res) = refs.get(s) {
-                            (LazyRef::Resolved(*res), f)
-                        } else {
-                            (r.clone(), f)
-                        }
-                    } else {
-                        (r.clone(), f)
-                    }
-                })
-                .collect();
-            Op::Join(lr)
-        }
         Op::Squash(Some(filters)) => {
             let lr = filters
                 .iter()
@@ -613,14 +583,6 @@ fn spec2(op: &Op) -> String {
                 .collect::<Vec<_>>();
             v.sort();
             format!(":rev({})", v.join(","))
-        }
-        Op::Join(filters) => {
-            let mut v = filters
-                .iter()
-                .map(|(k, v)| format!("{}{}", k.to_string(), spec(*v)))
-                .collect::<Vec<_>>();
-            v.sort();
-            format!(":join({})", v.join(","))
         }
         Op::Workspace(path) => {
             format!(":workspace={}", parse::quote_if(&path.to_string_lossy()))
@@ -863,34 +825,6 @@ fn apply_to_commit2(
                 true,
             ))
             .transpose();
-        }
-        Op::Join(refs) => {
-            // First loop to populate missing list
-            for (&_, f) in refs.iter() {
-                transaction.get(*f, commit.id());
-            }
-            let mut result = commit.id();
-            for (combine_tip, f) in refs.iter() {
-                if let LazyRef::Resolved(combine_tip) = combine_tip {
-                    let old = some_or!(transaction.get(*f, commit.id()), {
-                        return Ok(None);
-                    });
-                    result = history::unapply_filter(
-                        transaction,
-                        *f,
-                        result,
-                        old,
-                        *combine_tip,
-                        history::OrphansMode::Keep,
-                        None,
-                        &mut None,
-                    )?;
-                } else {
-                    return Err(josh_error("unresolved lazy ref"));
-                }
-            }
-            transaction.insert(filter, commit.id(), result, true);
-            return Ok(Some(result));
         }
         _ => {
             if let Some(oid) = transaction.get(filter, commit.id()) {
@@ -1221,7 +1155,6 @@ fn apply2<'a>(transaction: &'a cache::Transaction, op: &Op, x: Apply<'a>) -> Jos
         Op::Prune => Ok(x),
         Op::Unsign => Ok(x),
         Op::Rev(_) => Err(josh_error("not applicable to tree")),
-        Op::Join(_) => Err(josh_error("not applicable to tree")),
         Op::RegexReplace(replacements) => {
             let mut t = x.tree().clone();
             for (regex, replacement) in replacements {

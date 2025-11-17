@@ -160,17 +160,6 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> JoshResult<Op> {
                 _ => Err(josh_error("parse_item: no match {:?}")),
             }
         }
-        Rule::filter_join => {
-            let v: Vec<_> = pair.into_inner().map(|x| x.as_str()).collect();
-
-            let hm = v
-                .iter()
-                .tuples()
-                .map(|(oid, filter)| Ok((LazyRef::parse(oid)?, parse(filter)?)))
-                .collect::<JoshResult<_>>()?;
-
-            Ok(Op::Join(hm))
-        }
         Rule::filter_rev => {
             let v: Vec<_> = pair.into_inner().map(|x| x.as_str()).collect();
 

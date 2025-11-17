@@ -281,15 +281,6 @@ impl InMemoryBuilder {
                 let params_tree = self.build_rev_params(&v)?;
                 push_tree_entries(&mut entries, [("rev", params_tree)]);
             }
-            Op::Join(filters) => {
-                let mut v = filters
-                    .iter()
-                    .map(|(k, v)| (k.to_string(), *v))
-                    .collect::<Vec<_>>();
-                v.sort();
-                let params_tree = self.build_rev_params(&v)?;
-                push_tree_entries(&mut entries, [("join", params_tree)]);
-            }
             Op::HistoryConcat(lr, f) => {
                 let params_tree = self.build_rev_params(&[(lr.to_string(), *f)])?;
                 push_tree_entries(&mut entries, [("concat", params_tree)]);
@@ -612,32 +603,6 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> JoshResult<Op> {
                 filters.insert(LazyRef::parse(&key)?, to_filter(filter));
             }
             Ok(Op::Rev(filters))
-        }
-        "join" => {
-            let join_tree = repo.find_tree(entry.id())?;
-            let mut filters = std::collections::BTreeMap::new();
-            for i in 0..join_tree.len() {
-                let entry = join_tree
-                    .get(i)
-                    .ok_or_else(|| josh_error("join: missing entry"))?;
-                let inner_tree = repo.find_tree(entry.id())?;
-                let key_blob = repo.find_blob(
-                    inner_tree
-                        .get_name("o")
-                        .ok_or_else(|| josh_error("join: missing key"))?
-                        .id(),
-                )?;
-                let filter_tree = repo.find_tree(
-                    inner_tree
-                        .get_name("f")
-                        .ok_or_else(|| josh_error("join: missing filter"))?
-                        .id(),
-                )?;
-                let key = std::str::from_utf8(key_blob.content())?.to_string();
-                let filter = from_tree2(repo, filter_tree.id())?;
-                filters.insert(LazyRef::parse(&key)?, to_filter(filter));
-            }
-            Ok(Op::Join(filters))
         }
         "concat" => {
             let concat_tree = repo.find_tree(entry.id())?;
