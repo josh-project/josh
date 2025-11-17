@@ -26,7 +26,7 @@ filter_spec = { (
   | filter_rev
   | filter_from
   | filter_concat
-  | filter_join
+  | filter_unapply
   | filter_replace
   | filter_squash
   | filter_presub
@@ -74,14 +74,15 @@ filter_concat = {
     ~ ")"
 }
 
-filter_join = {
-    CMD_START ~ "join" ~ "("
+filter_unapply = {
+    CMD_START ~ "unapply" ~ "("
     ~ NEWLINE*
     ~ (rev ~ filter_spec)?
     ~ (CMD_SEP+ ~ (rev ~ filter_spec))*
     ~ NEWLINE*
     ~ ")"
 }
+
 
 filter_replace = {
     CMD_START ~ "replace" ~ "("
