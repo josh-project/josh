@@ -63,8 +63,13 @@
       ::sub2/subsub/
   ]
   [3] :+st/config
-  [6] :exclude[::st_new/config.josh]
-  [8] sequence_number
+  [5] :[
+      ::st/config.josh
+      a = :/sub1
+      ::sub2/subsub/
+      b = :/sub3
+  ]
+  [7] sequence_number
 
   $ git log --graph --pretty=%s refs/heads/filtered
   *   edit st
@@ -74,9 +79,9 @@
   * add file2
   * add file1
   $ git log --graph --pretty=%s refs/heads/filtered_new
-  *   edit st
-  |\  
-  | * add file4
+  * add st_new
+  * edit st
+  * add file4
   * add st
   * add file2
   * add file1
@@ -150,6 +155,13 @@
   +::sub2/subsub/
   +a = :/sub1
   +b = :/sub3
+  diff --git a/st_new/config.josh b/st_new/config.josh
+  new file mode 100644
+  index 0000000..15782f4
+  --- /dev/null
+  +++ b/st_new/config.josh
+  @@ -0,0 +1 @@
+  +:+st/config
   diff --git a/sub2/subsub/file2 b/sub2/subsub/file2
   new file mode 100644
   index 0000000..a024003
@@ -167,14 +179,26 @@
 
   $ josh-filter -s :+st/config master --update refs/heads/filtered
   [1] :prefix=b
+  [2] :+st_new/config
   [2] :/sub3
   [2] :[
       a = :/sub1
       ::sub2/subsub/
   ]
-  [3] :+st_new/config
+  [2] :subtract[
+          ::st_new/config.josh
+          :[
+              a = :/sub1
+              ::sub2/subsub/
+              b = :/sub3
+          ]
+      ]
   [4] :+st/config
-  [5] :exclude[::st/config.josh]
-  [9] :exclude[::st_new/config.josh]
-  [13] sequence_number
+  [5] :[
+      ::st/config.josh
+      a = :/sub1
+      ::sub2/subsub/
+      b = :/sub3
+  ]
+  [8] sequence_number
 
