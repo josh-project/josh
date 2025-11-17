@@ -16,12 +16,12 @@ pub use parse::get_comments;
 pub use parse::parse;
 
 static FILTERS: LazyLock<std::sync::Mutex<std::collections::HashMap<Filter, Op>>> =
-    LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+    LazyLock::new(|| Default::default());
 static WORKSPACES: LazyLock<std::sync::Mutex<std::collections::HashMap<git2::Oid, Filter>>> =
-    LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+    LazyLock::new(|| Default::default());
 static ANCESTORS: LazyLock<
     std::sync::Mutex<std::collections::HashMap<git2::Oid, std::collections::HashSet<git2::Oid>>>,
-> = LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+> = LazyLock::new(|| Default::default());
 
 /// Match-all regex pattern used as the default for Op::Message when no regex is specified.
 /// The pattern `(?s)^.*$` matches any string (including newlines) from start to end.
@@ -442,7 +442,19 @@ fn lazy_refs2(op: &Op) -> Vec<String> {
             av.append(&mut lazy_refs(*b));
             av
         }
-        Op::Rev(filters) => lazy_refs2(&Op::Join(filters.clone())),
+        Op::Rev(filters) => {
+            let mut lr = lazy_refs2(&Op::Compose(filters.values().copied().collect()));
+            lr.extend(filters.keys().filter_map(|x| {
+                if let LazyRef::Lazy(s) = x {
+                    Some(s.to_owned())
+                } else {
+                    None
+                }
+            }));
+            lr.sort();
+            lr.dedup();
+            lr
+        }
         Op::HistoryConcat(r, f) => {
             let mut lr = Vec::new();
             if let LazyRef::Lazy(s) = r {
@@ -757,53 +769,50 @@ fn resolve_workspace_redirect<'a>(
     }
 }
 
-fn get_workspace<'a>(repo: &'a git2::Repository, tree: &'a git2::Tree<'a>, path: &Path) -> Filter {
+fn get_workspace<'a>(
+    transaction: &cache::Transaction,
+    tree: &'a git2::Tree<'a>,
+    path: &Path,
+) -> Filter {
     let wsj_file = file("workspace.josh");
     let base = to_filter(Op::Subdir(path.to_owned()));
     let wsj_file = chain(base, wsj_file);
     compose(
         wsj_file,
-        compose(get_filter(repo, tree, &path.join("workspace.josh")), base),
+        compose(
+            get_filter(transaction, tree, &path.join("workspace.josh")),
+            base,
+        ),
     )
 }
 
-// Handle stored.josh files that contain ":stored=..." as their only filter as
-// a "redirect" to that other stored. We chain an exclude of the redirecting stored
-// in front to prevent infinite recursion.
-fn resolve_stored_redirect<'a>(
-    repo: &'a git2::Repository,
+fn get_stored<'a>(
+    transaction: &cache::Transaction,
     tree: &'a git2::Tree<'a>,
     path: &Path,
-) -> Option<(Filter, std::path::PathBuf)> {
-    let stored_path = path.with_extension("josh");
-    let f = parse::parse(&tree::get_blob(repo, tree, &stored_path))
-        .unwrap_or_else(|_| to_filter(Op::Empty));
-
-    if let Op::Stored(p) = to_op(f) {
-        Some((chain(to_filter(Op::Exclude(file(stored_path))), f), p))
-    } else {
-        None
-    }
-}
-
-fn get_stored<'a>(repo: &'a git2::Repository, tree: &'a git2::Tree<'a>, path: &Path) -> Filter {
+) -> Filter {
     let stored_path = path.with_extension("josh");
     let sj_file = file(stored_path.clone());
-    compose(sj_file, get_filter(repo, tree, &stored_path))
+    compose(sj_file, get_filter(transaction, tree, &stored_path))
 }
 
-fn get_filter<'a>(repo: &'a git2::Repository, tree: &'a git2::Tree<'a>, path: &Path) -> Filter {
+fn get_filter<'a>(
+    transaction: &cache::Transaction,
+    tree: &'a git2::Tree<'a>,
+    path: &Path,
+) -> Filter {
     let ws_path = normalize_path(path);
     let ws_id = ok_or!(tree.get_path(&ws_path), {
         return to_filter(Op::Empty);
     })
     .id();
-    let ws_blob = tree::get_blob(repo, tree, &ws_path);
+    let ws_blob = tree::get_blob(transaction.repo(), tree, &ws_path);
 
     if let Some(f) = WORKSPACES.lock().unwrap().get(&ws_id) {
         *f
     } else {
         let f = parse::parse(&ws_blob).unwrap_or_else(|_| to_filter(Op::Empty));
+        let f = legalize_stored(transaction, f, tree).unwrap_or_else(|_| to_filter(Op::Empty));
 
         let f = if invert(f).is_ok() {
             f
@@ -1060,14 +1069,14 @@ fn apply_to_commit2(
                 }
             }
 
-            let commit_filter = get_workspace(repo, &commit.tree()?, &ws_path);
+            let commit_filter = get_workspace(transaction, &commit.tree()?, &ws_path);
 
             let parent_filters = commit
                 .parents()
                 .map(|parent| {
                     rs_tracing::trace_scoped!("parent", "id": parent.id().to_string());
                     let pcw = get_workspace(
-                        repo,
+                        transaction,
                         &parent.tree().unwrap_or_else(|_| tree::empty(repo)),
                         &ws_path,
                     );
@@ -1078,23 +1087,14 @@ fn apply_to_commit2(
             return per_rev_filter(transaction, commit, filter, commit_filter, parent_filters);
         }
         Op::Stored(s_path) => {
-            if let Some((redirect, _)) = resolve_stored_redirect(repo, &commit.tree()?, s_path) {
-                if let Some(r) = apply_to_commit2(&to_op(redirect), commit, transaction)? {
-                    transaction.insert(filter, commit.id(), r, true);
-                    return Ok(Some(r));
-                } else {
-                    return Ok(None);
-                }
-            }
-
-            let commit_filter = get_stored(repo, &commit.tree()?, &s_path);
+            let commit_filter = get_stored(transaction, &commit.tree()?, &s_path);
 
             let parent_filters = commit
                 .parents()
                 .map(|parent| {
                     rs_tracing::trace_scoped!("parent", "id": parent.id().to_string());
                     let pcs = get_stored(
-                        repo,
+                        transaction,
                         &parent.tree().unwrap_or_else(|_| tree::empty(repo)),
                         &s_path,
                     );
@@ -1302,8 +1302,8 @@ fn apply2<'a>(transaction: &'a cache::Transaction, op: &Op, x: Apply<'a>) -> Jos
                 .with_tree(tree::invert_paths(transaction, "", x.tree().clone())?))
         }
 
-        Op::Workspace(path) => apply(transaction, get_workspace(repo, &x.tree(), &path), x),
-        Op::Stored(path) => apply(transaction, get_stored(repo, &x.tree(), &path), x),
+        Op::Workspace(path) => apply(transaction, get_workspace(transaction, &x.tree(), &path), x),
+        Op::Stored(path) => apply(transaction, get_stored(transaction, &x.tree(), &path), x),
 
         Op::Compose(filters) => {
             let filtered: Vec<_> = filters
@@ -1394,12 +1394,9 @@ fn unapply_workspace<'a>(
     match op {
         Op::Workspace(path) => {
             let tree = pre_process_tree(transaction.repo(), tree)?;
-            let workspace = get_filter(transaction.repo(), &tree, Path::new("workspace.josh"));
-            let original_workspace = get_filter(
-                transaction.repo(),
-                &parent_tree,
-                &path.join("workspace.josh"),
-            );
+            let workspace = get_filter(transaction, &tree, Path::new("workspace.josh"));
+            let original_workspace =
+                get_filter(transaction, &parent_tree, &path.join("workspace.josh"));
 
             let root = to_filter(Op::Subdir(path.to_owned()));
             let wsj_file = to_filter(Op::File(
@@ -1428,8 +1425,8 @@ fn unapply_workspace<'a>(
         }
         Op::Stored(path) => {
             let stored_path = path.with_extension("josh");
-            let stored = get_filter(transaction.repo(), &tree, &stored_path);
-            let original_stored = get_filter(transaction.repo(), &parent_tree, &stored_path);
+            let stored = get_filter(transaction, &tree, &stored_path);
+            let original_stored = get_filter(transaction, &parent_tree, &stored_path);
 
             let sj_file = file(stored_path.clone());
             let filter = compose(sj_file, stored);
@@ -1626,6 +1623,45 @@ where
         Op::Pin(f) => c(f),
         _ => f,
     }
+}
+
+fn legalize_stored(t: &cache::Transaction, f: Filter, tree: &git2::Tree) -> JoshResult<Filter> {
+    if let Some(f) = t.get_legalize((f, tree.id())) {
+        return Ok(f);
+    }
+
+    // Put an entry into the hashtable to prevent infinite recursion.
+    // If we get called with the same arguments again before we return,
+    // Above check breaks the recursion.
+    t.insert_legalize((f, tree.id()), empty());
+
+    let r = match to_op(f) {
+        Op::Compose(f) => {
+            let f = f
+                .into_iter()
+                .map(|f| legalize_stored(t, f, tree))
+                .collect::<JoshResult<Vec<_>>>()?;
+            to_filter(Op::Compose(f))
+        }
+        Op::Chain(a, b) => {
+            let first = legalize_stored(t, a, tree)?;
+            let second =
+                legalize_stored(t, b, &apply(t, first, Apply::from_tree(tree.clone()))?.tree)?;
+            to_filter(Op::Chain(first, second))
+        }
+        Op::Subtract(a, b) => to_filter(Op::Subtract(
+            legalize_stored(t, a, tree)?,
+            legalize_stored(t, b, tree)?,
+        )),
+        Op::Exclude(f) => to_filter(Op::Exclude(legalize_stored(t, f, tree)?)),
+        Op::Pin(f) => to_filter(Op::Pin(legalize_stored(t, f, tree)?)),
+        Op::Stored(path) => get_stored(t, tree, &path),
+        _ => f,
+    };
+
+    t.insert_legalize((f, tree.id()), r);
+
+    Ok(r)
 }
 
 fn per_rev_filter(
