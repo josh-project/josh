@@ -847,7 +847,7 @@ fn handle_remote_add_repo(args: &RemoteAddArgs, repo_path: &std::path::Path) -> 
         .context("Failed to store filter in git config")?;
 
     // Store refspec in josh-remote section (for unfiltered refs)
-    let refspec = format!("refs/heads/*:refs/josh/remotes/{}/*", args.name);
+    let refspec = format!("+refs/heads/*:refs/josh/remotes/{}/*", args.name);
     config
         .set_str(&format!("josh-remote.{}.fetch", args.name), &refspec)
         .context("Failed to store refspec in git config")?;
