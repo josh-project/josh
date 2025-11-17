@@ -194,10 +194,18 @@ filters are composed matters.</p>
 <p>Remove all paths present in the <em>output</em> of <code>:filter</code> from the input tree.
 It should generally be avoided to use any filters that change paths and instead only
 use filters that select paths without altering them.</p>
+<h3 id="stored-pathtofile"><a class="header" href="#stored-pathtofile">Stored <strong><code>:+path/to/file</code></strong></a></h3>
+<p>Looks for a file with a <code>.josh</code> extension at the specified path and applies the filter defined in that file.
+The path argument should be provided <em>without</em> the <code>.josh</code> extension, as it will be automatically appended.</p>
+<p>For example, <code>:+st/config</code> will look for a file at <code>st/config.josh</code> and apply the filter defined in that file.
+The resulting tree will contain the contents specified by the filter in the <code>.josh</code> file.</p>
+<p>Stored filters apply from the root of the repository, making them useful for configuration files that define
+filters to be applied at the repository root level.</p>
 <h3 id="workspace-workspacea"><a class="header" href="#workspace-workspacea">Workspace <strong><code>:workspace=a</code></strong></a></h3>
-<p>Similar to <code>:/a</code> but also looks for a <code>workspace.josh</code> file inside the
-specified directory (called the &quot;workspace root&quot;).
-The resulting tree will contain the contents of the
+<p>Like stored filters, but with an additional &quot;base&quot; component that first selects the specified directory
+(called the &quot;workspace root&quot;) before applying the filter from the <code>workspace.josh</code> file inside it.</p>
+<p>The workspace filter is equivalent to <code>:/a</code> combined with applying a stored filter, where the filter is read
+from <code>workspace.josh</code> within the selected directory. The resulting tree will contain the contents of the
 workspace root as well as additional files specified in the <code>workspace.josh</code> file.
 (see <a href="./workspace.html">Workspaces</a>)</p>
 <h3 id="text-replacement-replaceregex_0replacement_0regex_nreplacement_n"><a class="header" href="#text-replacement-replaceregex_0replacement_0regex_nreplacement_n">Text replacement <strong><code>:replace(&quot;regex_0&quot;:&quot;replacement_0&quot;,...,&quot;regex_N&quot;:&quot;replacement_N&quot;)</code></strong></a></h3>
