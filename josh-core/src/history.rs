@@ -706,7 +706,7 @@ pub fn unapply_filter(
                 &regex::Regex::new("(?m)^Change: [^ ]+")?,
                 &"",
                 module_commit.message_raw().unwrap(),
-                &std::collections::HashMap::new(),
+                |_key: &str| -> Option<String> { None },
             )?;
             apply = apply.with_message(new_message);
         }
