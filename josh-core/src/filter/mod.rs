@@ -1054,7 +1054,7 @@ fn apply_to_commit2(
                 for (root, _link_file) in v {
                     let embeding = some_or!(
                         apply_to_commit2(
-                            &Op::Chain(message("{commit}"), file(root.join(".josh-link.toml"))),
+                            &Op::Chain(message("{@}"), file(root.join(".josh-link.toml"))),
                             &commit,
                             transaction
                         )?,
@@ -1377,9 +1377,6 @@ fn apply2<'a>(
             let tree_id = x.tree().id().to_string();
             let commit = x.commit;
             let commit_id = commit.to_string();
-            let mut hm = std::collections::HashMap::<String, String>::new();
-            hm.insert("tree".to_string(), tree_id);
-            hm.insert("commit".to_string(), commit_id);
 
             let message = if let Some(ref m) = x.message {
                 m.to_string()
@@ -1391,7 +1388,29 @@ fn apply2<'a>(
                 }
             };
 
-            Ok(x.with_message(text::transform_with_template(&r, &m, &message, &hm)?))
+            let tree = x.tree().clone();
+            Ok(x.with_message(text::transform_with_template(
+                &r,
+                &m,
+                &message,
+                |key: &str| -> Option<String> {
+                    match key {
+                        "#" => Some(tree_id.clone()),
+                        "@" => Some(commit_id.clone()),
+                        key if key.starts_with("/") => {
+                            Some(tree::get_blob(repo, &tree, std::path::Path::new(&key[1..])))
+                        }
+
+                        key if key.starts_with("#") => Some(
+                            tree.get_path(std::path::Path::new(&key[1..]))
+                                .map(|e| e.id())
+                                .unwrap_or(git2::Oid::zero())
+                                .to_string(),
+                        ),
+                        _ => None,
+                    }
+                },
+            )?))
         }
         Op::HistoryConcat(..) => Ok(x),
         Op::Linear => Ok(x),
