@@ -64,7 +64,7 @@ Test Adapt filter - should expand submodule into actual tree content
   [1] :embed=libs
   [2] ::libs/.josh-link.toml
   [2] :unapply(06d10a853b133ffc533e8ec3f2ed4ec43b64670c:/libs)
-  [3] :"{commit}"
+  [3] :"{@}"
   [3] :adapt=submodules
   [3] :link=embedded
   [10] sequence_number
@@ -145,7 +145,7 @@ Test Adapt with multiple submodules
   [1] :embed=libs
   [2] ::libs/.josh-link.toml
   [2] :unapply(06d10a853b133ffc533e8ec3f2ed4ec43b64670c:/libs)
-  [3] :"{commit}"
+  [3] :"{@}"
   [3] :link=embedded
   [4] :adapt=submodules
   [11] sequence_number
@@ -165,7 +165,7 @@ Test Adapt with multiple submodules
   [2] ::libs/.josh-link.toml
   [2] ::modules/another/.josh-link.toml
   [2] :unapply(06d10a853b133ffc533e8ec3f2ed4ec43b64670c:/libs)
-  [4] :"{commit}"
+  [4] :"{@}"
   [4] :adapt=submodules
   [4] :link=embedded
   [15] sequence_number
@@ -247,7 +247,7 @@ Test Adapt with submodule changes - add commits to submodule and update
   [2] :unapply(06d10a853b133ffc533e8ec3f2ed4ec43b64670c:/libs)
   [3] ::libs/.josh-link.toml
   [4] :unapply(f4bfdb82ca5e0f06f941f68be2a0fd19573bc415:/libs)
-  [5] :"{commit}"
+  [5] :"{@}"
   [5] :adapt=submodules
   [5] :link=embedded
   [21] sequence_number
@@ -309,7 +309,7 @@ Test Adapt with submodule changes - add commits to submodule and update
   [2] :unapply(06d10a853b133ffc533e8ec3f2ed4ec43b64670c:/libs)
   [3] ::libs/.josh-link.toml
   [4] :unapply(f4bfdb82ca5e0f06f941f68be2a0fd19573bc415:/libs)
-  [5] :"{commit}"
+  [5] :"{@}"
   [5] :adapt=submodules
   [5] :link=embedded
   [9] :/libs
@@ -335,7 +335,7 @@ Test Adapt with submodule changes - add commits to submodule and update
   [2] :unapply(06d10a853b133ffc533e8ec3f2ed4ec43b64670c:/libs)
   [3] ::libs/.josh-link.toml
   [4] :unapply(f4bfdb82ca5e0f06f941f68be2a0fd19573bc415:/libs)
-  [5] :"{commit}"
+  [5] :"{@}"
   [5] :adapt=submodules
   [5] :link=embedded
   [7] :prune=trivial-merge
@@ -360,7 +360,7 @@ Test Adapt with submodule changes - add commits to submodule and update
   [2] :unapply(06d10a853b133ffc533e8ec3f2ed4ec43b64670c:/libs)
   [3] ::libs/.josh-link.toml
   [4] :unapply(f4bfdb82ca5e0f06f941f68be2a0fd19573bc415:/libs)
-  [5] :"{commit}"
+  [5] :"{@}"
   [5] :adapt=submodules
   [5] :link=embedded
   [7] :export
@@ -380,7 +380,7 @@ Test Adapt with submodule changes - add commits to submodule and update
   [2] :unapply(06d10a853b133ffc533e8ec3f2ed4ec43b64670c:/libs)
   [3] ::libs/.josh-link.toml
   [4] :unapply(f4bfdb82ca5e0f06f941f68be2a0fd19573bc415:/libs)
-  [5] :"{commit}"
+  [5] :"{@}"
   [5] :adapt=submodules
   [5] :link=embedded
   [7] :export
@@ -401,7 +401,7 @@ Test Adapt with submodule changes - add commits to submodule and update
   [3] ::libs/.josh-link.toml
   [4] :/another
   [4] :unapply(f4bfdb82ca5e0f06f941f68be2a0fd19573bc415:/libs)
-  [5] :"{commit}"
+  [5] :"{@}"
   [5] :adapt=submodules
   [5] :link=embedded
   [7] :/modules
@@ -425,7 +425,7 @@ Test Adapt with submodule changes - add commits to submodule and update
   [3] ::libs/.josh-link.toml
   [4] :/another
   [4] :unapply(f4bfdb82ca5e0f06f941f68be2a0fd19573bc415:/libs)
-  [5] :"{commit}"
+  [5] :"{@}"
   [5] :adapt=submodules
   [5] :link=embedded
   [7] :/modules
@@ -465,7 +465,7 @@ Test Adapt with submodule changes - add commits to submodule and update
   [3] ::libs/.josh-link.toml
   [4] :/another
   [4] :unapply(f4bfdb82ca5e0f06f941f68be2a0fd19573bc415:/libs)
-  [5] :"{commit}"
+  [5] :"{@}"
   [5] :adapt=submodules
   [5] :link=embedded
   [7] :/modules
@@ -503,7 +503,7 @@ Test Adapt with submodule changes - add commits to submodule and update
   [4] :/another
   [4] :prefix=libs
   [4] :unapply(f4bfdb82ca5e0f06f941f68be2a0fd19573bc415:/libs)
-  [5] :"{commit}"
+  [5] :"{@}"
   [5] :adapt=submodules
   [5] :link=embedded
   [7] :/modules

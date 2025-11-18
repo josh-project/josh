@@ -33,7 +33,7 @@ Test Link filter (identical to Adapt)
   $ josh-filter -s :adapt=submodules:link master --update refs/josh/filter/master
   [1] :embed=libs
   [1] :unapply(a1520c70819abcbe295fe431e4b88cf56f5a0c95:/libs)
-  [2] :"{commit}"
+  [2] :"{@}"
   [2] ::libs/.josh-link.toml
   [2] :adapt=submodules
   [2] :link=embedded
