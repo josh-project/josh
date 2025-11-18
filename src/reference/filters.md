@@ -183,7 +183,8 @@ parents.
 ### Commit message rewriting **`:"template"`** or **`:"template";"regex"`**
 
 Rewrite commit messages using a template string. The template can use regex capture groups
-to extract and reformat parts of the original commit message.
+to extract and reformat parts of the original commit message, as well as special template variables
+for commit metadata.
 
 **Simple message replacement:**
 ```
@@ -199,6 +200,27 @@ This uses a regex to match the original commit message and extract named capture
 which are then used in the template. The regex `(?s)^(?P<type>fix|feat|docs): (?P<message>.+)$` matches
 commit messages starting with "fix:", "feat:", or "docs:" followed by a message, and the template
 reformats them as `[type] message`.
+
+**Using template variables:**
+The template supports special variables that provide access to commit metadata:
+- `{#}` - The tree object ID (SHA-1 hash) of the commit
+- `{@}` - The commit object ID (SHA-1 hash)
+- `{/path}` - The content of the file at the specified path in the commit tree
+- `{#path}` - The object ID (SHA-1 hash) of the tree entry at the specified path
+
+Regex capture groups take priority over template variables. If a regex capture group has the same name as a template variable, the capture group value will be used.
+
+Example:
+```
+:"Message: {#} {@}"
+```
+This replaces commit messages with "Message: " followed by the tree ID and commit ID.
+
+**Combining regex capture groups and template variables:**
+```
+:"[{type}] {message} (commit: {@})";"(?s)^(?P<type>Original) (?P<message>.+)$"
+```
+This combines regex capture groups (`{type}` and `{message}`) with template variables (`{@}` for the commit ID).
 
 **Removing text from messages:**
 ```
