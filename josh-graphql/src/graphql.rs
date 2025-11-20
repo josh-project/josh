@@ -1055,7 +1055,7 @@ pub fn context(transaction: cache::Transaction, transaction_mirror: cache::Trans
 }
 
 pub type CommitSchema =
-    juniper::RootNode<'static, Revision, EmptyMutation<Context>, EmptySubscription<Context>>;
+    juniper::RootNode<Revision, EmptyMutation<Context>, EmptySubscription<Context>>;
 
 pub fn commit_schema(commit_id: git2::Oid) -> CommitSchema {
     CommitSchema::new(
@@ -1068,8 +1068,7 @@ pub fn commit_schema(commit_id: git2::Oid) -> CommitSchema {
     )
 }
 
-pub type RepoSchema =
-    juniper::RootNode<'static, Repository, RepositoryMut, EmptySubscription<Context>>;
+pub type RepoSchema = juniper::RootNode<Repository, RepositoryMut, EmptySubscription<Context>>;
 
 pub fn repo_schema(name: String, local: bool) -> RepoSchema {
     let ns = if local {
