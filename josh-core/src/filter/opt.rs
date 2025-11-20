@@ -498,8 +498,10 @@ pub fn invert(filter: Filter) -> JoshResult<Filter> {
         Op::Message(..) => Some(Op::Nop),
         Op::Linear => Some(Op::Nop),
         Op::Prune => Some(Op::Prune),
+        Op::Export => Some(Op::Export),
         Op::Unsign => Some(Op::Unsign),
         Op::Empty => Some(Op::Empty),
+        Op::Link(..) => Some(Op::Unlink),
         Op::Subdir(path) => Some(Op::Prefix(path)),
         Op::File(dest_path, source_path) => Some(Op::File(source_path, dest_path)),
         Op::Prefix(path) => Some(Op::Subdir(path)),
@@ -529,7 +531,7 @@ pub fn invert(filter: Filter) -> JoshResult<Filter> {
                 .collect::<JoshResult<Vec<_>>>()?,
         ),
         Op::Exclude(filter) => Op::Exclude(invert(filter)?),
-        _ => return Err(josh_error("no invert")),
+        _ => return Err(josh_error(&format!("no invert {:?}", filter))),
     });
 
     let result = optimize(result);

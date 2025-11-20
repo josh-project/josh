@@ -16,12 +16,16 @@ pub use parse::get_comments;
 pub use parse::parse;
 
 static FILTERS: LazyLock<std::sync::Mutex<std::collections::HashMap<Filter, Op>>> =
-    LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+    LazyLock::new(|| Default::default());
 static WORKSPACES: LazyLock<std::sync::Mutex<std::collections::HashMap<git2::Oid, Filter>>> =
-    LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+    LazyLock::new(|| Default::default());
 static ANCESTORS: LazyLock<
     std::sync::Mutex<std::collections::HashMap<git2::Oid, std::collections::HashSet<git2::Oid>>>,
-> = LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+> = LazyLock::new(|| Default::default());
+
+static LEGALIZED: LazyLock<
+    std::sync::Mutex<std::collections::HashMap<(Filter, git2::Oid), Filter>>,
+> = LazyLock::new(|| Default::default());
 
 /// Match-all regex pattern used as the default for Op::Message when no regex is specified.
 /// The pattern `(?s)^.*$` matches any string (including newlines) from start to end.
@@ -286,6 +290,11 @@ enum Op {
     Empty,
     Fold,
     Paths,
+    Adapt(String),
+    Link(String),
+    Unlink,
+    Export,
+    Embed(std::path::PathBuf),
 
     // We use BTreeMap rather than HashMap to guarantee deterministic results when
     // converting to Filter
@@ -318,6 +327,7 @@ enum Op {
     Message(String, regex::Regex),
 
     HistoryConcat(LazyRef, Filter),
+    Unapply(LazyRef, Filter),
 
     Compose(Vec<Filter>),
     Chain(Filter, Filter),
@@ -442,8 +452,28 @@ fn lazy_refs2(op: &Op) -> Vec<String> {
             av.append(&mut lazy_refs(*b));
             av
         }
-        Op::Rev(filters) => lazy_refs2(&Op::Join(filters.clone())),
+        Op::Rev(filters) => {
+            let mut lr = lazy_refs2(&Op::Compose(filters.values().copied().collect()));
+            lr.extend(filters.keys().filter_map(|x| {
+                if let LazyRef::Lazy(s) = x {
+                    Some(s.to_owned())
+                } else {
+                    None
+                }
+            }));
+            lr.sort();
+            lr.dedup();
+            lr
+        }
         Op::HistoryConcat(r, f) => {
+            let mut lr = Vec::new();
+            if let LazyRef::Lazy(s) = r {
+                lr.push(s.to_owned());
+            }
+            lr.append(&mut lazy_refs(*f));
+            lr
+        }
+        Op::Unapply(r, f) => {
             let mut lr = Vec::new();
             if let LazyRef::Lazy(s) = r {
                 lr.push(s.to_owned());
@@ -523,6 +553,19 @@ fn resolve_refs2(refs: &std::collections::HashMap<String, git2::Oid>, op: &Op) -
                 r.clone()
             };
             Op::HistoryConcat(resolved_ref, f)
+        }
+        Op::Unapply(r, f) => {
+            let f = resolve_refs(refs, *f);
+            let resolved_ref = if let LazyRef::Lazy(s) = r {
+                if let Some(res) = refs.get(s) {
+                    LazyRef::Resolved(*res)
+                } else {
+                    r.clone()
+                }
+            } else {
+                r.clone()
+            };
+            Op::Unapply(resolved_ref, f)
         }
         Op::Join(filters) => {
             let lr = filters
@@ -650,6 +693,10 @@ fn spec2(op: &Op) -> String {
         }
         Op::Linear => ":linear".to_string(),
         Op::Unsign => ":unsign".to_string(),
+        Op::Adapt(adapter) => format!(":adapt={}", adapter),
+        Op::Link(mode) => format!(":link={}", mode),
+        Op::Export => ":export".to_string(),
+        Op::Unlink => ":unlink".to_string(),
         Op::Subdir(path) => format!(":/{}", parse::quote_if(&path.to_string_lossy())),
         Op::File(dest_path, source_path) => {
             if source_path == dest_path {
@@ -665,6 +712,9 @@ fn spec2(op: &Op) -> String {
         Op::Prune => ":prune=trivial-merge".to_string(),
         Op::Prefix(path) => format!(":prefix={}", parse::quote_if(&path.to_string_lossy())),
         Op::Pattern(pattern) => format!("::{}", parse::quote_if(pattern)),
+        Op::Embed(path) => {
+            format!(":embed={}", parse::quote_if(&path.to_string_lossy()),)
+        }
         Op::Author(author, email) => {
             format!(":author={};{}", parse::quote(author), parse::quote(email))
         }
@@ -683,6 +733,9 @@ fn spec2(op: &Op) -> String {
         }
         Op::HistoryConcat(r, filter) => {
             format!(":concat({}{})", r.to_string(), spec(*filter))
+        }
+        Op::Unapply(r, filter) => {
+            format!(":unapply({}{})", r.to_string(), spec(*filter))
         }
         Op::Hook(hook) => {
             format!(":hook={}", parse::quote(hook))
@@ -757,53 +810,50 @@ fn resolve_workspace_redirect<'a>(
     }
 }
 
-fn get_workspace<'a>(repo: &'a git2::Repository, tree: &'a git2::Tree<'a>, path: &Path) -> Filter {
+fn get_workspace<'a>(
+    transaction: &cache::Transaction,
+    tree: &'a git2::Tree<'a>,
+    path: &Path,
+) -> Filter {
     let wsj_file = file("workspace.josh");
     let base = to_filter(Op::Subdir(path.to_owned()));
     let wsj_file = chain(base, wsj_file);
     compose(
         wsj_file,
-        compose(get_filter(repo, tree, &path.join("workspace.josh")), base),
+        compose(
+            get_filter(transaction, tree, &path.join("workspace.josh")),
+            base,
+        ),
     )
 }
 
-// Handle stored.josh files that contain ":stored=..." as their only filter as
-// a "redirect" to that other stored. We chain an exclude of the redirecting stored
-// in front to prevent infinite recursion.
-fn resolve_stored_redirect<'a>(
-    repo: &'a git2::Repository,
+fn get_stored<'a>(
+    transaction: &cache::Transaction,
     tree: &'a git2::Tree<'a>,
     path: &Path,
-) -> Option<(Filter, std::path::PathBuf)> {
-    let stored_path = path.with_extension("josh");
-    let f = parse::parse(&tree::get_blob(repo, tree, &stored_path))
-        .unwrap_or_else(|_| to_filter(Op::Empty));
-
-    if let Op::Stored(p) = to_op(f) {
-        Some((chain(to_filter(Op::Exclude(file(stored_path))), f), p))
-    } else {
-        None
-    }
-}
-
-fn get_stored<'a>(repo: &'a git2::Repository, tree: &'a git2::Tree<'a>, path: &Path) -> Filter {
+) -> Filter {
     let stored_path = path.with_extension("josh");
     let sj_file = file(stored_path.clone());
-    compose(sj_file, get_filter(repo, tree, &stored_path))
+    compose(sj_file, get_filter(transaction, tree, &stored_path))
 }
 
-fn get_filter<'a>(repo: &'a git2::Repository, tree: &'a git2::Tree<'a>, path: &Path) -> Filter {
+fn get_filter<'a>(
+    transaction: &cache::Transaction,
+    tree: &'a git2::Tree<'a>,
+    path: &Path,
+) -> Filter {
     let ws_path = normalize_path(path);
     let ws_id = ok_or!(tree.get_path(&ws_path), {
         return to_filter(Op::Empty);
     })
     .id();
-    let ws_blob = tree::get_blob(repo, tree, &ws_path);
+    let ws_blob = tree::get_blob(transaction.repo(), tree, &ws_path);
 
     if let Some(f) = WORKSPACES.lock().unwrap().get(&ws_id) {
         *f
     } else {
         let f = parse::parse(&ws_blob).unwrap_or_else(|_| to_filter(Op::Empty));
+        let f = legalize_stored(transaction, f, tree);
 
         let f = if invert(f).is_ok() {
             f
@@ -1049,6 +1099,160 @@ fn apply_to_commit2(
             ))
             .transpose();
         }
+        Op::Export => {
+            let filtered_parent_ids = {
+                commit
+                    .parents()
+                    .map(|x| transaction.get(filter, x.id()))
+                    .collect::<Option<_>>()
+            };
+
+            let mut filtered_parent_ids: Vec<git2::Oid> =
+                some_or!(filtered_parent_ids, { return Ok(None) });
+
+            // TODO: remove all parents that don't have a .josh-link.toml
+
+            //     let mut ok = true;
+            //     filtered_parent_ids.retain(|c| {
+            //         if let Ok(c) = repo.find_commit(*c) {
+            //             c.tree_id() != new_tree.id()
+            //         } else {
+            //             ok = false;
+            //             false
+            //         }
+            //     });
+
+            //     if !ok {
+            //         return Err(josh_error("missing commit"));
+            //     }
+
+            if let Some(link_file) = read_josh_link(
+                repo,
+                &commit.tree()?,
+                &std::path::PathBuf::new(),
+                ".josh-link.toml",
+            ) {
+                if filtered_parent_ids.contains(&link_file.commit.0) {
+                    while filtered_parent_ids[0] != link_file.commit.0 {
+                        filtered_parent_ids.rotate_right(1);
+                    }
+                }
+            }
+
+            return Some(history::create_filtered_commit(
+                commit,
+                filtered_parent_ids,
+                apply(transaction, filter, Apply::from_commit(commit)?)?,
+                transaction,
+                filter,
+            ))
+            .transpose();
+        }
+        Op::Unlink => {
+            let filtered_parent_ids = {
+                commit
+                    .parents()
+                    .map(|x| transaction.get(filter, x.id()))
+                    .collect::<Option<_>>()
+            };
+
+            let mut filtered_parent_ids: Vec<git2::Oid> =
+                some_or!(filtered_parent_ids, { return Ok(None) });
+
+            let mut link_parents = vec![];
+            for (link_path, link_file) in find_link_files(&repo, &commit.tree()?)?.into_iter() {
+                if let Some(cmt) =
+                    transaction.get(to_filter(Op::Prefix(link_path)), link_file.commit.0)
+                {
+                    link_parents.push(cmt);
+                } else {
+                    return Ok(None);
+                }
+            }
+
+            let new_tree = apply(transaction, filter, Apply::from_commit(commit)?)?;
+
+            filtered_parent_ids.retain(|c| !link_parents.contains(c));
+
+            return Some(history::create_filtered_commit(
+                commit,
+                filtered_parent_ids,
+                new_tree,
+                transaction,
+                filter,
+            ))
+            .transpose();
+        }
+        Op::Link(mode) if mode == "embedded" => {
+            let normal_parents = commit
+                .parent_ids()
+                .map(|parent| transaction.get(filter, parent))
+                .collect::<Option<Vec<git2::Oid>>>();
+
+            let normal_parents = some_or!(normal_parents, { return Ok(None) });
+
+            let mut roots = get_link_roots(repo, transaction, &commit.tree()?)?;
+
+            if let Some(parent) = commit.parents().next() {
+                roots.retain(|root| {
+                    if let (Ok(a), Ok(b)) = (
+                        commit.tree().and_then(|x| x.get_path(&root)),
+                        parent.tree().and_then(|x| x.get_path(&root)),
+                    ) && a.id() == b.id()
+                    {
+                        false
+                    } else {
+                        true
+                    }
+                });
+            };
+
+            let v = links_from_roots(repo, &commit.tree()?, roots)?;
+
+            let extra_parents = {
+                let mut extra_parents = vec![];
+                for (root, _link_file) in v {
+                    let embeding = some_or!(
+                        apply_to_commit2(
+                            &Op::Chain(message("{commit}"), file(root.join(".josh-link.toml"))),
+                            &commit,
+                            transaction
+                        )?,
+                        {
+                            return Ok(None);
+                        }
+                    );
+
+                    let f = to_filter(Op::Embed(root));
+                    /* let f = filter::chain(link_file.filter, to_filter(Op::Prefix(root))); */
+                    /* let scommit = repo.find_commit(link_file.commit.0)?; */
+
+                    let embeding = repo.find_commit(embeding)?;
+                    let r = some_or!(apply_to_commit2(&to_op(f), &embeding, transaction)?, {
+                        return Ok(None);
+                    });
+
+                    extra_parents.push(r);
+                }
+
+                extra_parents
+            };
+
+            let filtered_tree = apply(transaction, filter, Apply::from_commit(commit)?)?;
+            let filtered_parent_ids = normal_parents
+                .into_iter()
+                .chain(extra_parents)
+                .collect::<Vec<_>>();
+
+            return Some(history::create_filtered_commit(
+                commit,
+                filtered_parent_ids.clone(),
+                filtered_tree,
+                transaction,
+                filter,
+            ))
+            .transpose();
+        }
         Op::Workspace(ws_path) => {
             if let Some((redirect, _)) = resolve_workspace_redirect(repo, &commit.tree()?, ws_path)
             {
@@ -1060,14 +1264,14 @@ fn apply_to_commit2(
                 }
             }
 
-            let commit_filter = get_workspace(repo, &commit.tree()?, &ws_path);
+            let commit_filter = get_workspace(transaction, &commit.tree()?, &ws_path);
 
             let parent_filters = commit
                 .parents()
                 .map(|parent| {
                     rs_tracing::trace_scoped!("parent", "id": parent.id().to_string());
                     let pcw = get_workspace(
-                        repo,
+                        transaction,
                         &parent.tree().unwrap_or_else(|_| tree::empty(repo)),
                         &ws_path,
                     );
@@ -1078,23 +1282,14 @@ fn apply_to_commit2(
             return per_rev_filter(transaction, commit, filter, commit_filter, parent_filters);
         }
         Op::Stored(s_path) => {
-            if let Some((redirect, _)) = resolve_stored_redirect(repo, &commit.tree()?, s_path) {
-                if let Some(r) = apply_to_commit2(&to_op(redirect), commit, transaction)? {
-                    transaction.insert(filter, commit.id(), r, true);
-                    return Ok(Some(r));
-                } else {
-                    return Ok(None);
-                }
-            }
-
-            let commit_filter = get_stored(repo, &commit.tree()?, &s_path);
+            let commit_filter = get_stored(transaction, &commit.tree()?, &s_path);
 
             let parent_filters = commit
                 .parents()
                 .map(|parent| {
                     rs_tracing::trace_scoped!("parent", "id": parent.id().to_string());
                     let pcs = get_stored(
-                        repo,
+                        transaction,
                         &parent.tree().unwrap_or_else(|_| tree::empty(repo)),
                         &s_path,
                     );
@@ -1139,8 +1334,60 @@ fn apply_to_commit2(
 
             return per_rev_filter(transaction, commit, filter, commit_filter, parent_filters);
         }
-        Op::HistoryConcat(r, f) => {
-            if let LazyRef::Resolved(c) = r {
+        Op::Unapply(target, uf) => {
+            if let LazyRef::Resolved(target) = target {
+                /* dbg!(target); */
+                let target = repo.find_commit(*target)?;
+                if let Some(parent) = target.parents().next() {
+                    let ptree = apply(transaction, *uf, Apply::from_commit(&parent)?)?;
+                    if let Some(link) = read_josh_link(
+                        repo,
+                        &ptree.tree(),
+                        &std::path::PathBuf::new(),
+                        ".josh-link.toml",
+                    ) {
+                        if commit.id() == link.commit.0 {
+                            let unapply =
+                                to_filter(Op::Unapply(LazyRef::Resolved(parent.id()), *uf));
+                            let r = some_or!(transaction.get(unapply, link.commit.0), {
+                                return Ok(None);
+                            });
+                            transaction.insert(filter, commit.id(), r, true);
+                            return Ok(Some(r));
+                        }
+                    }
+                }
+            } else {
+                return Err(josh_error("unresolved lazy ref"));
+            }
+            /* dbg!("FALLTHROUGH"); */
+            apply(
+                transaction,
+                filter,
+                Apply::from_commit(commit)?, /* Apply::from_commit(commit)?.with_parents(filtered_parent_ids), */
+            )?
+            /* Apply::from_commit(commit)? */
+        }
+        Op::Embed(path) => {
+            let subdir = to_filter(Op::Subdir(path.clone()));
+            let unapply = to_filter(Op::Unapply(LazyRef::Resolved(commit.id()), subdir));
+
+            /* dbg!("embed"); */
+            /* dbg!(&path); */
+            if let Some(link) = read_josh_link(repo, &commit.tree()?, &path, ".josh-link.toml") {
+                /* dbg!(&link); */
+                let r = some_or!(transaction.get(unapply, link.commit.0), {
+                    return Ok(None);
+                });
+                transaction.insert(filter, commit.id(), r, true);
+                return Ok(Some(r));
+            } else {
+                return Ok(Some(git2::Oid::zero()));
+            }
+        }
+
+        Op::HistoryConcat(c, f) => {
+            if let LazyRef::Resolved(c) = c {
                 let a = apply_to_commit2(&to_op(*f), &repo.find_commit(*c)?, transaction)?;
                 let a = some_or!(a, { return Ok(None) });
                 if commit.id() == a {
@@ -1186,6 +1433,104 @@ pub fn apply<'a>(
     apply2(transaction, &to_op(filter), x)
 }
 
+fn extract_submodule_commits<'a>(
+    repo: &'a git2::Repository,
+    tree: &git2::Tree<'a>,
+) -> JoshResult<std::collections::BTreeMap<std::path::PathBuf, (git2::Oid, ParsedSubmoduleEntry)>> {
+    // Get .gitmodules blob from the tree
+    let gitmodules_content = tree::get_blob(repo, tree, std::path::Path::new(".gitmodules"));
+
+    if gitmodules_content.is_empty() {
+        // No .gitmodules file, return empty map
+        return Ok(std::collections::BTreeMap::new());
+    }
+
+    // Parse submodule entries using parse_gitmodules
+    let submodule_entries = match parse_gitmodules(&gitmodules_content) {
+        Ok(entries) => entries,
+        Err(_) => {
+            // If parsing fails, return empty map
+            return Ok(std::collections::BTreeMap::new());
+        }
+    };
+
+    let mut submodule_commits: std::collections::BTreeMap<
+        std::path::PathBuf,
+        (git2::Oid, ParsedSubmoduleEntry),
+    > = std::collections::BTreeMap::new();
+
+    for parsed in submodule_entries {
+        let submodule_path = parsed.path.clone();
+        // Get the submodule entry from the tree
+        if let Ok(entry) = tree.get_path(&submodule_path) {
+            // Check if this is a commit (submodule) entry
+            if entry.kind() == Some(git2::ObjectType::Commit) {
+                // Get the commit OID stored in the tree entry
+                let commit_oid = entry.id();
+                // Store OID and parsed entry metadata
+                submodule_commits.insert(submodule_path, (commit_oid, parsed));
+            }
+        }
+    }
+
+    Ok(submodule_commits)
+}
+
+fn get_link_roots<'a>(
+    _repo: &'a git2::Repository,
+    transaction: &'a cache::Transaction,
+    tree: &'a git2::Tree<'a>,
+) -> JoshResult<Vec<std::path::PathBuf>> {
+    let link_filter = to_filter(Op::Pattern("**/.josh-link.toml".to_string()));
+    let link_tree = apply(transaction, link_filter, Apply::from_tree(tree.clone()))?;
+
+    let mut roots = vec![];
+    link_tree
+        .tree()
+        .walk(git2::TreeWalkMode::PreOrder, |root, entry| {
+            let root = root.trim_matches('/');
+            let root = std::path::PathBuf::from(root);
+            if entry.name() == Some(".josh-link.toml") {
+                roots.push(root);
+            }
+            0
+        })?;
+
+    Ok(roots)
+}
+
+fn links_from_roots<'a>(
+    repo: &'a git2::Repository,
+    tree: &git2::Tree<'a>,
+    roots: Vec<std::path::PathBuf>,
+) -> JoshResult<Vec<(std::path::PathBuf, JoshLinkFile)>> {
+    let mut v = vec![];
+    for root in roots {
+        if let Some(link_file) = read_josh_link(repo, tree, &root, ".josh-link.toml") {
+            v.push((root, link_file));
+        }
+    }
+    Ok(v)
+}
+
+fn read_josh_link<'a>(
+    repo: &'a git2::Repository,
+    tree: &git2::Tree<'a>,
+    root: &std::path::Path,
+    filename: &str,
+) -> Option<JoshLinkFile> {
+    let link_path = root.join(filename);
+    let link_entry = tree.get_path(&link_path).ok()?;
+    let link_blob = repo.find_blob(link_entry.id()).ok()?;
+    let b = std::str::from_utf8(link_blob.content())
+        .map_err(|e| josh_error(&format!("invalid utf8 in {}: {}", filename, e)))
+        .ok()?;
+    let link_file: JoshLinkFile = toml::from_str(b)
+        .map_err(|e| josh_error(&format!("invalid toml in {}: {}", filename, e)))
+        .ok()?;
+    Some(link_file)
+}
+
 fn apply2<'a>(transaction: &'a cache::Transaction, op: &Op, x: Apply<'a>) -> JoshResult<Apply<'a>> {
     let repo = transaction.repo();
     match op {
@@ -1220,6 +1565,111 @@ fn apply2<'a>(transaction: &'a cache::Transaction, op: &Op, x: Apply<'a>) -> Jos
         Op::Linear => Ok(x),
         Op::Prune => Ok(x),
         Op::Unsign => Ok(x),
+        Op::Adapt(adapter) => {
+            let mut result_tree = x.tree().clone();
+            match adapter.as_ref() {
+                "submodules" => {
+                    // Extract submodule commits
+                    let submodule_commits = extract_submodule_commits(repo, &result_tree)?;
+
+                    // Process each submodule commit
+                    for (submodule_path, (commit_oid, meta)) in submodule_commits {
+                        let prefix_filter = to_filter(Op::Nop);
+                        let link_file = JoshLinkFile {
+                            remote: meta.url.clone(),
+                            filter: prefix_filter,
+                            branch: "HEAD".to_string(),
+                            commit: Oid(commit_oid),
+                        };
+                        result_tree = tree::insert(
+                            repo,
+                            &result_tree,
+                            &submodule_path.join(".josh-link.toml"),
+                            repo.blob(toml::to_string(&link_file)?.as_bytes())?,
+                            0o0100644,
+                        )?;
+                    }
+
+                    // Remove .gitmodules file by setting it to zero OID
+                    result_tree = tree::insert(
+                        repo,
+                        &result_tree,
+                        std::path::Path::new(".gitmodules"),
+                        git2::Oid::zero(),
+                        0o0100644,
+                    )?;
+                }
+                _ => return Err(josh_error(&format!("unknown adapter {:?}", adapter))),
+            }
+
+            // Remove .gitmodules file by setting it to zero OID
+            result_tree = tree::insert(
+                repo,
+                &result_tree,
+                std::path::Path::new(".gitmodules"),
+                git2::Oid::zero(),
+                0o0100644,
+            )?;
+
+            Ok(x.with_tree(result_tree))
+        }
+        Op::Export => {
+            let tree = x.tree().clone();
+            Ok(x.with_tree(tree::insert(
+                repo,
+                &tree,
+                &std::path::Path::new(".josh-link.toml"),
+                git2::Oid::zero(),
+                0o0100644,
+            )?))
+        }
+        Op::Unlink => {
+            let mut result_tree = x.tree.clone();
+            for (link_path, link_file) in find_link_files(&repo, &result_tree)?.iter() {
+                result_tree =
+                    tree::insert(repo, &result_tree, &link_path, git2::Oid::zero(), 0o0100644)?;
+                result_tree = tree::insert(
+                    repo,
+                    &result_tree,
+                    &link_path.join(".josh-link.toml"),
+                    repo.blob(toml::to_string(&link_file)?.as_bytes())?,
+                    0o0100644,
+                )?;
+            }
+            Ok(x.with_tree(result_tree))
+        }
+        Op::Link(_) => {
+            let roots = get_link_roots(repo, transaction, &x.tree())?;
+            let v = links_from_roots(repo, &x.tree(), roots)?;
+            let mut result_tree = x.tree().clone();
+
+            for (root, link_file) in v {
+                let submodule_tree = repo.find_commit(link_file.commit.0)?.tree()?;
+                let submodule_tree = apply(
+                    transaction,
+                    link_file.filter,
+                    Apply::from_tree(submodule_tree),
+                )
+                .unwrap();
+
+                result_tree = tree::insert(
+                    repo,
+                    &result_tree,
+                    &root,
+                    submodule_tree.tree().id(),
+                    0o0040000, // Tree mode
+                )?;
+                result_tree = tree::insert(
+                    repo,
+                    &result_tree,
+                    &root.join(".josh-link.toml"),
+                    repo.blob(toml::to_string(&link_file)?.as_bytes())?,
+                    0o0100644,
+                )?;
+            }
+
+            Ok(x.with_tree(result_tree))
+        }
         Op::Rev(_) => Err(josh_error("not applicable to tree")),
         Op::Join(_) => Err(josh_error("not applicable to tree")),
         Op::RegexReplace(replacements) => {
@@ -1302,8 +1752,8 @@ fn apply2<'a>(transaction: &'a cache::Transaction, op: &Op, x: Apply<'a>) -> Jos
                 .with_tree(tree::invert_paths(transaction, "", x.tree().clone())?))
         }
 
-        Op::Workspace(path) => apply(transaction, get_workspace(repo, &x.tree(), &path), x),
-        Op::Stored(path) => apply(transaction, get_stored(repo, &x.tree(), &path), x),
+        Op::Workspace(path) => apply(transaction, get_workspace(transaction, &x.tree(), &path), x),
+        Op::Stored(path) => apply(transaction, get_stored(transaction, &x.tree(), &path), x),
 
         Op::Compose(filters) => {
             let filtered: Vec<_> = filters
@@ -1322,6 +1772,23 @@ fn apply2<'a>(transaction: &'a cache::Transaction, op: &Op, x: Apply<'a>) -> Jos
         }
         Op::Hook(_) => Err(josh_error("not applicable to tree")),
 
+        Op::Embed(..) => Err(josh_error("not applicable to tree")),
+        Op::Unapply(target, uf) => {
+            if let LazyRef::Resolved(target) = target {
+                let target = repo.find_commit(*target)?;
+                let target = git2::Oid::from_str(target.message().unwrap())?;
+                let target = repo.find_commit(target)?;
+                /* dbg!(&uf); */
+                Ok(Apply::from_tree(filter::unapply(
+                    transaction,
+                    *uf,
+                    x.tree().clone(),
+                    target.tree()?,
+                )?))
+            } else {
+                return Err(josh_error("unresolved lazy ref"));
+            }
+        }
         Op::Pin(_) => Ok(x),
     }
 }
@@ -1394,12 +1861,9 @@ fn unapply_workspace<'a>(
     match op {
         Op::Workspace(path) => {
             let tree = pre_process_tree(transaction.repo(), tree)?;
-            let workspace = get_filter(transaction.repo(), &tree, Path::new("workspace.josh"));
-            let original_workspace = get_filter(
-                transaction.repo(),
-                &parent_tree,
-                &path.join("workspace.josh"),
-            );
+            let workspace = get_filter(transaction, &tree, Path::new("workspace.josh"));
+            let original_workspace =
+                get_filter(transaction, &parent_tree, &path.join("workspace.josh"));
 
             let root = to_filter(Op::Subdir(path.to_owned()));
             let wsj_file = to_filter(Op::File(
@@ -1428,8 +1892,8 @@ fn unapply_workspace<'a>(
         }
         Op::Stored(path) => {
             let stored_path = path.with_extension("josh");
-            let stored = get_filter(transaction.repo(), &tree, &stored_path);
-            let original_stored = get_filter(transaction.repo(), &parent_tree, &stored_path);
+            let stored = get_filter(transaction, &tree, &stored_path);
+            let original_stored = get_filter(transaction, &parent_tree, &stored_path);
 
             let sj_file = file(stored_path.clone());
             let filter = compose(sj_file, stored);
@@ -1626,6 +2090,58 @@ where
         Op::Pin(f) => c(f),
         _ => f,
     }
+}
+
+fn legalize_stored(t: &cache::Transaction, f: Filter, tree: &git2::Tree) -> Filter {
+    legalize_stored2(t, f, tree, &mut *LEGALIZED.lock().unwrap()).unwrap_or_else(|_| empty())
+}
+
+fn legalize_stored2(
+    t: &cache::Transaction,
+    f: Filter,
+    tree: &git2::Tree,
+    hm: &mut std::collections::HashMap<(Filter, git2::Oid), Filter>,
+) -> JoshResult<Filter> {
+    if let Some(f) = hm.get(&(f, tree.id())) {
+        return Ok(*f);
+    }
+
+    // Put an entry into the hashtable to prevent infinite recursion.
+    // If we get called with the same arguments again before we return,
+    // Above check breaks the recursion.
+    hm.insert((f, tree.id()), empty());
+
+    let r = match to_op(f) {
+        Op::Compose(f) => {
+            let f = f
+                .into_iter()
+                .map(|f| legalize_stored2(t, f, tree, hm))
+                .collect::<JoshResult<Vec<_>>>()?;
+            to_filter(Op::Compose(f))
+        }
+        Op::Chain(a, b) => {
+            let first = legalize_stored2(t, a, tree, hm)?;
+            let second = legalize_stored2(
+                t,
+                b,
+                &apply(t, first, Apply::from_tree(tree.clone()))?.tree,
+                hm,
+            )?;
+            to_filter(Op::Chain(first, second))
+        }
+        Op::Subtract(a, b) => to_filter(Op::Subtract(
+            legalize_stored2(t, a, tree, hm)?,
+            legalize_stored2(t, b, tree, hm)?,
+        )),
+        Op::Exclude(f) => to_filter(Op::Exclude(legalize_stored2(t, f, tree, hm)?)),
+        Op::Pin(f) => to_filter(Op::Pin(legalize_stored2(t, f, tree, hm)?)),
+        Op::Stored(path) => get_stored(t, tree, &path),
+        _ => f,
+    };
+
+    hm.insert((f, tree.id()), r);
+
+    Ok(r)
 }
 
 fn per_rev_filter(
