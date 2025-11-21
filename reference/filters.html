@@ -194,6 +194,37 @@ filters are composed matters.</p>
 <p>Remove all paths present in the <em>output</em> of <code>:filter</code> from the input tree.
 It should generally be avoided to use any filters that change paths and instead only
 use filters that select paths without altering them.</p>
+<h3 id="invert-invertfilter"><a class="header" href="#invert-invertfilter">Invert <strong><code>:invert[:filter]</code></strong></a></h3>
+<p>A shorthand syntax that applies the inverse of the composed filter. The inverse of a filter is
+a filter that undoes the transformation. For example, the inverse of <code>:/sub1</code> (subdirectory)
+is <code>:prefix=sub1</code> (prefix), and vice versa.</p>
+<p><strong>Example:</strong></p>
+<pre><code>:invert[:/sub1]
+</code></pre>
+<p>This is equivalent to <code>:prefix=sub1</code>, which takes the input tree and places it into
+the <code>sub1</code> subdirectory.</p>
+<p>Multiple filters can be provided in the compose:</p>
+<pre><code>:invert[:/sub1,:/sub2]
+</code></pre>
+<p>This inverts the composition of <code>:/sub1</code> and <code>:/sub2</code>.</p>
+<h3 id="scope-x"><a class="header" href="#scope-x">Scope <strong><code>:&lt;X&gt;[..]</code></strong></a></h3>
+<p>A shorthand syntax that expands to <code>:X:[..]:invert[:X]</code>, where:</p>
+<ul>
+<li><code>:X</code> is a filter (without built-in compose)</li>
+<li><code>:[..]</code> is a compose filter (like in <code>:exclude</code>)</li>
+</ul>
+<p>This filter first applies <code>:X</code> to scope the input, then applies the compose filter <code>:[..]</code>,
+and finally inverts <code>:X</code> to restore the original scope. This is useful when you want to
+apply a composition filter within a specific scope and then restore the original structure.</p>
+<p><strong>Example:</strong></p>
+<pre><code>:&lt;:/sub1&gt;[::file1,::file2]
+</code></pre>
+<p>This is equivalent to <code>:/sub1:[::file1,::file2]:invert[:/sub1]</code>, which:</p>
+<ol>
+<li>Selects the <code>sub1</code> subdirectory (applies <code>:/sub1</code>)</li>
+<li>Applies the composition filter to select <code>file1</code> and <code>file2</code> (applies <code>:[::file1,::file2]</code>)</li>
+<li>Restores the original scope by inverting the subdirectory selection (applies <code>:invert[:/sub1]</code>)</li>
+</ol>
 <h3 id="stored-pathtofile"><a class="header" href="#stored-pathtofile">Stored <strong><code>:+path/to/file</code></strong></a></h3>
 <p>Looks for a file with a <code>.josh</code> extension at the specified path and applies the filter defined in that file.
 The path argument should be provided <em>without</em> the <code>.josh</code> extension, as it will be automatically appended.</p>
