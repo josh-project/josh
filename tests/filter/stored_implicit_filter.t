@@ -23,6 +23,7 @@
   $ git commit -m "add st" 1> /dev/null
 
   $ josh-filter -s :+st/config master --update refs/josh/master
+  6f43d8ee3bbf33e24fa190605ed12c47e6ede762
   [2] :+st/config
   [2] :[
       ::sub1/

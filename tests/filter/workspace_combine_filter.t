@@ -50,6 +50,7 @@
   7 directories, 5 files
 
   $ josh-filter -s :workspace=ws
+  0fe13f59da8ba3f49ca610f2354254747502fa40
   [2] :[
       ::sub1/
       ::sub2/subsub/
@@ -78,6 +79,7 @@
 
   $ git checkout master 2> /dev/null
   $ josh-filter -s :workspace=ws2
+  8a0812406d4c375a5f173abc839b00ad3b7fc30d
   [2] :[
       ::sub1/
       ::sub2/subsub/

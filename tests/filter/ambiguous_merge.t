@@ -37,6 +37,7 @@
   * 4d74643 add sub2/file2
 
   $ josh-filter -s ::sub1/ branch1 --update refs/heads/hidden_branch1
+  81a8353fd06d2ff76184dc3e55de179590872799
   [2] :prefix=sub1
   [3] :/sub1
   [5] sequence_number
@@ -53,6 +54,7 @@
   Switched to branch 'master'
 
   $ josh-filter -s ::sub1/ master --update refs/heads/hidden_master
+  586737e31b886be151bc20c30f0a0305e3c6568d
   [3] :prefix=sub1
   [4] :/sub1
   [7] sequence_number
@@ -86,6 +88,8 @@
   * 7671c2a add sub1/file1
 
   $ josh-filter -s ::sub1/ --reverse master --update refs/heads/hidden_master
+  8cbae19889134bd4ec430c0b79c61ee8547e0d1c
+  586737e31b886be151bc20c30f0a0305e3c6568d
   [3] :prefix=sub1
   [4] :/sub1
   [7] sequence_number

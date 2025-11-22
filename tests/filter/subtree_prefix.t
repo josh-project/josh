@@ -42,6 +42,7 @@ Change subtree file
 
 Rewrite the subtree part of the history
   $ josh-filter -s ":rev($SUBTREE_TIP:prefix=subtree)" refs/heads/master --update refs/heads/filtered
+  62ddf0f36ad4769606bce1404e1132f4f01174c9
   [1] :prefix=subtree
   [4] :rev(c036f944faafb865e0585e4fa5e005afa0aeea3f:prefix=subtree)
   [4] sequence_number
@@ -68,6 +69,7 @@ Compare input and result. ^^2 is the 2nd parent of the first parent, i.e., the '
 
 Extract the subtree history
   $ josh-filter -s ":rev($SUBTREE_TIP:prefix=subtree):/subtree" refs/heads/master --update refs/heads/subtree
+  d71429596bb87d1b8a7aa23b628f43ef7f80dbb8
   [1] :prefix=subtree
   [4] :/subtree
   [4] :rev(c036f944faafb865e0585e4fa5e005afa0aeea3f:prefix=subtree)
@@ -82,6 +84,8 @@ Work in the subtree, and sync that back.
   $ echo even more contents >> file2
   $ git commit -am "add even more content" 1>/dev/null
   $ josh-filter -s ":rev($SUBTREE_TIP:prefix=subtree):/subtree" refs/heads/master --update refs/heads/subtree --reverse
+  103bfec17c47adbe70a95fca90caefb989b6cda6
+  d71429596bb87d1b8a7aa23b628f43ef7f80dbb8
   [1] :prefix=subtree
   [4] :/subtree
   [4] :rev(c036f944faafb865e0585e4fa5e005afa0aeea3f:prefix=subtree)
@@ -105,6 +109,7 @@ Work in the subtree, and sync that back.
 
 And then re-extract, which should re-construct the same subtree.
   $ josh-filter -s ":rev($SUBTREE_TIP:prefix=subtree):/subtree" refs/heads/master --update refs/heads/subtree2
+  d4baf6a78a4f3966055c12821bce8a9e0933a3c7
   [1] :prefix=subtree
   [5] :/subtree
   [5] :rev(c036f944faafb865e0585e4fa5e005afa0aeea3f:prefix=subtree)
@@ -180,6 +185,8 @@ And finally, sync first from main to sub and then back.
   |/  
   * add file2 (in subtree)
   $ josh-filter -s ":rev($SUBTREE_TIP:prefix=subtree):/subtree" refs/heads/master --update refs/heads/subtree --reverse
+  6ac0ba56575859cfaacd5818084333e532ffc442
+  ad6796dd3ec3fc7898ce5acb7d0af0d1ce5b33ab
   [1] :prefix=subtree
   [9] :/subtree
   [9] :rev(c036f944faafb865e0585e4fa5e005afa0aeea3f:prefix=subtree)
@@ -227,6 +234,8 @@ taken back into the main history.
   Switched to branch 'master'
 
   $ josh-filter -s ":rev($SUBTREE_TIP:prefix=subtree):/subtree" refs/heads/master --update refs/heads/subtree --reverse
+  f814033dd0148da19a3199cd3cb2d21464ce85a3
+  5de7588097f88737a7528360fadbcd4e663fe72c
   [1] :prefix=subtree
   [13] :/subtree
   [13] :rev(c036f944faafb865e0585e4fa5e005afa0aeea3f:prefix=subtree)

@@ -29,6 +29,7 @@
   > EOF
 
   $ josh-filter -g "$(cat query)"
+  cf097a3a1f43e2b368aadd9e5c523880c78aa4cb
   {
     "rev": {
       "history": [
@@ -52,6 +53,7 @@
   > EOF
 
   $ josh-filter -g "$(cat query2)"
+  cf097a3a1f43e2b368aadd9e5c523880c78aa4cb
   {
     "rev": {
       "history": [

@@ -38,7 +38,9 @@
   $ git commit -m "add ws2" 1> /dev/null
 
   $ josh-filter -s
+  c0f12229f0a2169c7475977697584b0a273e7c29
   $ josh-filter -d -s
+  c0f12229f0a2169c7475977697584b0a273e7c29
   [1] :/sub1
   [1] :/subsub
   [1] :prefix=sub1
@@ -76,6 +78,7 @@
   $ git commit -m "add root ws" 1> /dev/null
 
   $ josh-filter -d -s
+  2a5512a2902428612da6ae41b6d2e7a468aa56b1
   [1] :/sub1
   [1] :/subsub
   [1] :prefix=sub1

@@ -15,6 +15,7 @@
   $ git commit -m "add file2" 1> /dev/null
 
   $ josh-filter -s :exclude[::sub2/] master --update refs/heads/hidden
+  bb282e9cdc1b972fffd08fd21eead43bc0c83cb8
   [1] :exclude[::sub2/]
   [2] sequence_number
   $ git checkout hidden 1> /dev/null
@@ -33,6 +34,8 @@
   $ git commit -m "edit file1" 1> /dev/null
 
   $ josh-filter -s :exclude[::sub2/] --reverse master --update refs/heads/hidden
+  04a66ac914f2040990c1a47c7dc152fe02b1c337
+  bb282e9cdc1b972fffd08fd21eead43bc0c83cb8
   [1] :exclude[::sub2/]
   [2] sequence_number
 

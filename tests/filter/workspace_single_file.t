@@ -38,6 +38,7 @@
   $ git commit -m "add ws2" 1> /dev/null
 
   $ josh-filter -s :workspace=ws master --update refs/josh/master
+  94d7e28562c4e60f7ceb5e1f33832ffee639030c
   [2] :[
       :/sub1:[
           ::file1
@@ -71,6 +72,7 @@
   3 directories, 4 files
 
   $ josh-filter -s :workspace=ws2 master --update refs/josh/master
+  be20e659999253f02308f34dbfc697f0cd5ae514
   [2] :[
       :/sub1:[
           ::file1

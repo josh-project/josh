@@ -24,6 +24,7 @@
   $ git commit -m "add ws" 1> /dev/null
 
   $ josh-filter -s $FILTER master --update refs/heads/filtered
+  81acde732b72597c0cb9bac6736d89d01dca81dd
   [1] :/subsub
   [1] :prefix=sub2
   [1] :prefix=subsub
@@ -49,6 +50,8 @@
   $ git commit -m "add 1X" 1> /dev/null
 
   $ josh-filter -s $FILTER --reverse master --update refs/heads/filtered
+  96bf13926606a13c7b7bc4caf3bcf80a1b3e4a36
+  81acde732b72597c0cb9bac6736d89d01dca81dd
   [1] :/subsub
   [1] :prefix=sub2
   [1] :prefix=subsub

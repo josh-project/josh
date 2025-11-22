@@ -18,6 +18,7 @@
 
 Test that message rewriting with regex works
   $ josh-filter ':"[{type}] {message}";"(?s)^(?P<type>fix|feat|docs): (?P<message>.+)$"' --update refs/josh/filter/master master
+  e6cd4a53ce0664f06bbcdd2f5727c114fb4cda7c
   $ git log --pretty=%s josh/filter/master
   [docs] update documentation
   [feat] new feature
@@ -37,6 +38,7 @@ Test that message rewriting with regex works
 
 Test that message rewriting with regex and template variables works
   $ josh-filter ':"[{type}] {message} (commit: {commit})";"(?s)^(?P<type>Original) (?P<message>.+)$"' --update refs/josh/filter/master master
+  7f14701ff3a86f0e511cfd76d41715cac7dc7999
   $ git log --pretty=%s josh/filter/master
   [Original] commit message  (commit: 16421eebc58313502a347bc92349cc2f52d58fbd)
   $ git cat-file commit josh/filter/master | grep -A 1 "^$"
@@ -53,6 +55,7 @@ Test that message rewriting with regex and template variables works
 
 Test that message rewriting can remove multiple occurrences from a message with body
   $ josh-filter ':"";"TODO"' --update refs/josh/filter/master master
+  5609433160403649c1663beec7d714ea9ee2bb1d
   $ git log -1 --pretty=format:"%B" josh/filter/master | cat
   Subject line with 
   

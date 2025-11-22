@@ -20,6 +20,7 @@ Empty root commits from unrelated parts of the tree should not be included
   $ git commit -m "add file3" 1> /dev/null
 
   $ josh-filter -s c=:/sub1 master --update refs/josh/filter/master
+  540f1cbf31dcaef743774db17c00cd20b814db62
   [3] :/sub1
   [3] :prefix=c
   [6] sequence_number
@@ -82,6 +83,7 @@ Empty root commits from unrelated parts of the tree should not be included
 
 
   $ josh-filter -s c=:/sub1 master
+  540f1cbf31dcaef743774db17c00cd20b814db62
   [3] :prefix=c
   [5] :/sub1
   [10] sequence_number
@@ -97,6 +99,7 @@ Empty root commits from unrelated parts of the tree should not be included
   c/file3
 
   $ josh-filter -s c=:exclude[::sub1/] master
+  bb6f1f462c619bf0527e82f634cae2c61cfe3446
   [5] :/sub1
   [5] :exclude[::sub1/]
   [6] :prefix=c
@@ -112,6 +115,7 @@ Empty root commits from unrelated parts of the tree should not be included
   c/some_other_file
 
   $ josh-filter -s :prefix=x FILTERED_HEAD
+  0392736892dab8a99e29255e644af19dfbb7d937
   [3] :prefix=x
   [5] :/sub1
   [5] :exclude[::sub1/]

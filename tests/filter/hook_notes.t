@@ -23,6 +23,7 @@
 
 
   $ josh-filter -s :hook=commits HEAD --update refs/josh/filtered
+  d7ef53ca3ac61727fefea31e0f43e18de1a786a0
   [2] ::b
   [3] :hook="commits"
   [3] sequence_number

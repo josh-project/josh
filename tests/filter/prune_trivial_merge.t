@@ -34,6 +34,7 @@
   * add file1
 
   $ josh-filter -s ::file1
+  dbf2fc5500dcee37c7d7a417efd4beffd3d2d3ea
   [4] ::file1
   [5] sequence_number
   $ git log --graph --pretty=%s FILTERED_HEAD
@@ -44,6 +45,7 @@
   |/  
   * add file1
   $ josh-filter -s ::file1:prune=trivial-merge
+  392b6f0d3ce0244b00bfc9340219481aae9835a3
   [3] :prune=trivial-merge
   [4] ::file1
   [6] sequence_number

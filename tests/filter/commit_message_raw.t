@@ -11,6 +11,7 @@
   > ' -m "blabla" 1> /dev/null
 
   $ josh-filter -s c=:prefix=pre master --update refs/josh/filter/master
+  7b2759b3e39a73ae111b75014a49fa511d0be927
   [1] :prefix=c
   [1] :prefix=pre
   [2] sequence_number

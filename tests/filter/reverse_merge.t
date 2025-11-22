@@ -25,6 +25,7 @@
   * add sub2
 
   $ josh-filter -s :exclude[::sub2/] branch1 --update refs/heads/hidden_branch1
+  bb282e9cdc1b972fffd08fd21eead43bc0c83cb8
   [2] :exclude[::sub2/]
   [2] sequence_number
   $ git checkout hidden_branch1
@@ -40,6 +41,7 @@
   $ git commit -m "add file3" 1> /dev/null
 
   $ josh-filter -s :exclude[::sub2/] master --update refs/heads/hidden_master
+  60e15e185773918ce57eccb412f1e772bc6746fc
   [3] :exclude[::sub2/]
   [3] sequence_number
   $ git checkout hidden_master
@@ -74,6 +76,8 @@
   * add file1
 
   $ josh-filter -s :exclude[::sub2/] --reverse master --update refs/heads/hidden_master
+  1496b9e75273ad3a0de58812a731a7a50b0d2a66
+  60e15e185773918ce57eccb412f1e772bc6746fc
   [3] :exclude[::sub2/]
   [3] sequence_number
 

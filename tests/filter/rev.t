@@ -37,6 +37,7 @@
   |/  
   * 0b4cf6c9efbbda1eada39fa9c1d21d2525b027bb
   $ josh-filter -s :prefix=x/y --update refs/heads/filtered
+  37f8b29c9e892ea0eb7abac2759ddc6fb0337203
   [5] :prefix=x
   [5] :prefix=y
   [10] sequence_number
@@ -57,6 +58,7 @@
   [1]
 
   $ josh-filter -s ":rev(975d4c4975912729482cc864d321c5196a969271:prefix=x/y)" --update refs/heads/filtered
+  54651c29aa86e8512a7b9d39e3b8ea26da644247
   [5] :prefix=x
   [5] :prefix=y
   [5] :rev(975d4c4975912729482cc864d321c5196a969271:prefix=x/y)
@@ -72,6 +74,7 @@
 
 
   $ josh-filter -s ":rev(e707f76bb6a1390f28b2162da5b5eb6933009070:prefix=x/y)" --update refs/heads/filtered
+  5fe60a2d55b652822b3d3f25410714e9053ba72b
   [5] :prefix=x
   [5] :prefix=y
   [5] :rev(975d4c4975912729482cc864d321c5196a969271:prefix=x/y)
@@ -92,6 +95,7 @@
   > )
   > EOF
   $ josh-filter -s --file filter.josh --update refs/heads/filtered
+  63fea1234f375bd09019b676da8291f28d2ddb43
   [2] :rev(0000000000000000000000000000000000000000:prefix=x/y,975d4c4975912729482cc864d321c5196a969271:prefix=x/y)
   [2] :rev(0000000000000000000000000000000000000000:prefix=x/y,e707f76bb6a1390f28b2162da5b5eb6933009070:prefix=x/y)
   [5] :prefix=x
@@ -115,6 +119,7 @@
   > )
   > EOF
   $ josh-filter -s --file filter.josh --update refs/heads/filtered
+  1c4fe25dc386c77adaae12d6b1cd3abfa296fc3c
   [1] :prefix=z
   [2] :rev(0000000000000000000000000000000000000000:prefix=x/y,975d4c4975912729482cc864d321c5196a969271:prefix=x/y)
   [2] :rev(0000000000000000000000000000000000000000:prefix=x/y,975d4c4975912729482cc864d321c5196a969271:prefix=x/z)
@@ -135,6 +140,7 @@
   > EOF
   $ josh-filter -s --file filter.josh --update refs/heads/filtered
   Warning: reference refs/heads/filtered wasn't updated
+  1c4fe25dc386c77adaae12d6b1cd3abfa296fc3c
   [1] :prefix=z
   [2] :rev(0000000000000000000000000000000000000000:prefix=x/y,975d4c4975912729482cc864d321c5196a969271:prefix=x/y)
   [2] :rev(0000000000000000000000000000000000000000:prefix=x/y,975d4c4975912729482cc864d321c5196a969271:prefix=x/z)
@@ -157,6 +163,7 @@
   * 26cbb56df84c5e9fdce7afc7855025862e835ee2:105b58b790c53d350e23a51ad763a88e6b977ae7
 
   $ josh-filter -s :linear --update refs/heads/filtered
+  f8e8bc9daf54340c9fce647be467d2577b623bbe
   [1] :prefix=z
   [2] :rev(0000000000000000000000000000000000000000:prefix=x/y,975d4c4975912729482cc864d321c5196a969271:prefix=x/y)
   [2] :rev(0000000000000000000000000000000000000000:prefix=x/y,975d4c4975912729482cc864d321c5196a969271:prefix=x/z)
@@ -196,6 +203,7 @@
   > )
   > EOF
   $ josh-filter -s --file filter.josh --update refs/heads/filtered
+  2944f04c33ea037f7696282bf20b2e570524552e
   [1] :prefix=z
   [1] :rev(0000000000000000000000000000000000000000:prefix=z,e707f76bb6a1390f28b2162da5b5eb6933009070:prefix=y)
   [2] :rev(0000000000000000000000000000000000000000:prefix=x/y,975d4c4975912729482cc864d321c5196a969271:prefix=x/y)

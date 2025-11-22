@@ -52,6 +52,7 @@
 
 
   $ josh-filter ":[:/sub1,:/xx]"
+  11f4a718fc1c49fdda1b3ebce22efec68683edaf
   $ git diff ${EMPTY_TREE}..FILTERED_HEAD
   diff --git a/file1 b/file1
   new file mode 100644
@@ -69,6 +70,7 @@
   +contents1
 
   $ josh-filter ":[:/xx,:/sub1]"
+  11f4a718fc1c49fdda1b3ebce22efec68683edaf
   $ git diff ${EMPTY_TREE}..FILTERED_HEAD
   diff --git a/file1 b/file1
   new file mode 100644
@@ -86,6 +88,7 @@
   +contents1
 
   $ josh-filter -s ":[:/sub/xx::file3,:/sub1,:/xx,:/sub/xx]"
+  f9da6dcfc582a60447a9870b596eb9f28a7e03ec
   [3] :[
       :/sub/xx::file3
       :/sub1

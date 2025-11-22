@@ -17,6 +17,7 @@ in that subtree repo should have an empty tree
   $ git commit -m "add file2" 1> /dev/null
 
   $ josh-filter -s c=:/sub1 master --update refs/josh/filter/master
+  21a904a6f350cb1f8ea4dc6fe9bd4e3b4cc4840b
   [2] :/sub1
   [2] :prefix=c
   [4] sequence_number
@@ -37,6 +38,7 @@ in that subtree repo should have an empty tree
   sub1_new/file2
 
   $ josh-filter -s c=:/sub1 master --update refs/josh/filter/master
+  fb6e2fa26823e0a17862feffc25e8439d75744ce
   [3] :/sub1
   [3] :prefix=c
   [6] sequence_number
@@ -52,6 +54,7 @@ in that subtree repo should have an empty tree
   $ git add unrelated_file
   $ git commit -m "add unrelated_file" 1> /dev/null
   $ josh-filter -s c=:/sub1 master --update refs/josh/filter/master2
+  fb6e2fa26823e0a17862feffc25e8439d75744ce
   [3] :/sub1
   [3] :prefix=c
   [7] sequence_number

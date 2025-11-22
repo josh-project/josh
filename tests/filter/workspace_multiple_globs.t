@@ -28,6 +28,7 @@
   $ git commit -m "add ws" 1> /dev/null
 
   $ josh-filter -s :workspace=ws master --update refs/josh/master
+  d1be0fcf3fb8cc7f2310ec2d70beef9652a21832
   [2] :[
       a = ::**/file2
       b = ::**/file1

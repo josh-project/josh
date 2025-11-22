@@ -53,6 +53,7 @@
   ws_content
 
   $ josh-filter :workspace=ws master --update refs/heads/ws
+  4da312ea25eac6a97c651e185ff76f9bc488b963
   $ git checkout ws 1> /dev/null
   Switched to branch 'ws'
   $ git log --graph --pretty=%s
@@ -78,6 +79,8 @@
   $ git commit -m "add ws_created_file" 1> /dev/null
 
   $ josh-filter :workspace=ws master --update refs/heads/ws --reverse
+  f662f202fb7aa7eb2b875c1c7522dd3ffd85d2aa
+  4da312ea25eac6a97c651e185ff76f9bc488b963
 
   $ git checkout master
   Switched to branch 'master'
