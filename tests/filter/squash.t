@@ -29,6 +29,7 @@
   $ git merge -q branch2 --no-ff
 
   $ josh-filter -s --squash-pattern "refs/tags/*" --update refs/heads/filtered
+  0000000000000000000000000000000000000000
   Warning: reference refs/heads/filtered wasn't updated
   [5] sequence_number
 

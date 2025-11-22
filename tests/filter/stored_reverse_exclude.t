@@ -56,6 +56,7 @@
   $ git commit -m "add 1X" 1> /dev/null
 
   $ josh-filter -s :+st/config --reverse master --update refs/heads/filtered
+  6182f2f07949f7ccfd2e1ac0dfbd65b29f8e3d84
   [2] :+st/config
   [2] :[
       a = :/sub1:exclude[::file1]

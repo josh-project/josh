@@ -57,6 +57,7 @@
   $ git commit -m "modify and add files" 1> /dev/null
 
   $ josh-filter -s :+st/config --reverse master --update refs/heads/filtered
+  b3ae61d547a0c794fa987774cf2d02131c5c3ad7
   [2] :+st/config
   [2] :[
       a = :/sub1

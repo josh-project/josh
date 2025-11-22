@@ -39,6 +39,7 @@
   $ git commit -m "add files" 1> /dev/null
 
   $ josh-filter -s $FILTER --reverse master --update refs/heads/filtered
+  4031be37b86723bab26952dcd055a4d7294aa827
   [2] :[
       a = ::*.a
       :prefix=rest

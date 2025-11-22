@@ -33,6 +33,7 @@
   $ git commit -m "edit file1" 1> /dev/null
 
   $ josh-filter -s :exclude[::sub2/] --reverse master --update refs/heads/hidden
+  04a66ac914f2040990c1a47c7dc152fe02b1c337
   [1] :exclude[::sub2/]
   [2] sequence_number
 

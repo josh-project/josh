@@ -78,6 +78,7 @@
   $ git commit -m "add ws_created_file" 1> /dev/null
 
   $ josh-filter :workspace=ws master --update refs/heads/ws --reverse
+  f662f202fb7aa7eb2b875c1c7522dd3ffd85d2aa
 
   $ git checkout master
   Switched to branch 'master'

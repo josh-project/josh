@@ -56,6 +56,7 @@
   +bye moon!
 
   $ josh-filter --update refs/heads/filtered --reverse ':replace("hello":"bye","(?m)^(?P<l>.+)$":"$l!")'
+  79f224d32bbdf7dcec1b488336f6c0baa4712138
 
   $ git diff ${EMPTY_TREE}..refs/heads/master
   diff --git a/hw.txt b/hw.txt

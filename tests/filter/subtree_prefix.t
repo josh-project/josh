@@ -82,6 +82,7 @@ Work in the subtree, and sync that back.
   $ echo even more contents >> file2
   $ git commit -am "add even more content" 1>/dev/null
   $ josh-filter -s ":rev($SUBTREE_TIP:prefix=subtree):/subtree" refs/heads/master --update refs/heads/subtree --reverse
+  103bfec17c47adbe70a95fca90caefb989b6cda6
   [1] :prefix=subtree
   [4] :/subtree
   [4] :rev(c036f944faafb865e0585e4fa5e005afa0aeea3f:prefix=subtree)
@@ -180,6 +181,7 @@ And finally, sync first from main to sub and then back.
   |/  
   * add file2 (in subtree)
   $ josh-filter -s ":rev($SUBTREE_TIP:prefix=subtree):/subtree" refs/heads/master --update refs/heads/subtree --reverse
+  6ac0ba56575859cfaacd5818084333e532ffc442
   [1] :prefix=subtree
   [9] :/subtree
   [9] :rev(c036f944faafb865e0585e4fa5e005afa0aeea3f:prefix=subtree)
@@ -227,6 +229,7 @@ taken back into the main history.
   Switched to branch 'master'
 
   $ josh-filter -s ":rev($SUBTREE_TIP:prefix=subtree):/subtree" refs/heads/master --update refs/heads/subtree --reverse
+  f814033dd0148da19a3199cd3cb2d21464ce85a3
   [1] :prefix=subtree
   [13] :/subtree
   [13] :rev(c036f944faafb865e0585e4fa5e005afa0aeea3f:prefix=subtree)
