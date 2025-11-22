@@ -63,7 +63,7 @@ Test josh clone with main branch as default
   Fetched from remote: origin
   Switched to a new branch 'main'
   
-  Cloned repository to: filtered-repo
+  Cloned repository to: ${TESTTMP}/filtered-repo
 
   $ cat filtered-repo/.git/HEAD
   ref: refs/heads/main
@@ -71,12 +71,12 @@ Test josh clone with main branch as default
   ref: refs/remotes/origin/main
 
   $ cd filtered-repo
-  $ find .git | grep HEAD
-  .git/refs/remotes/origin/HEAD
-  .git/refs/namespaces/josh-origin/HEAD
+  $ find .git | grep HEAD | sort
   .git/FETCH_HEAD
-  .git/logs/HEAD
   .git/HEAD
+  .git/logs/HEAD
+  .git/refs/namespaces/josh-origin/HEAD
+  .git/refs/remotes/origin/HEAD
   $ git symbolic-ref refs/remotes/origin/HEAD
   refs/remotes/origin/main
 

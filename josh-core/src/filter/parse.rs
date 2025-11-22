@@ -52,6 +52,18 @@ fn make_op(args: &[&str]) -> JoshResult<Op> {
             "#
         ))),
         ["unsign"] => Ok(Op::Unsign),
+        #[cfg(feature = "incubating")]
+        ["unlink"] => Ok(Op::Unlink),
+        #[cfg(feature = "incubating")]
+        ["adapt", adapter] => Ok(Op::Adapt(adapter.to_string())),
+        #[cfg(feature = "incubating")]
+        ["link"] => Ok(Op::Link("embedded".to_string())),
+        #[cfg(feature = "incubating")]
+        ["link", mode] => Ok(Op::Link(mode.to_string())),
+        #[cfg(feature = "incubating")]
+        ["embed", path] => Ok(Op::Embed(Path::new(path).to_owned())),
+        #[cfg(feature = "incubating")]
+        ["export"] => Ok(Op::Export),
         ["PATHS"] => Ok(Op::Paths),
         ["INDEX"] => Ok(Op::Index),
         ["INVERT"] => Ok(Op::Invert),
@@ -194,6 +206,18 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> JoshResult<Op> {
                 Ok(Op::HistoryConcat(oid, filter))
             } else {
                 Err(josh_error("wrong argument count for :concat"))
+            }
+        }
+        #[cfg(feature = "incubating")]
+        Rule::filter_unapply => {
+            let v: Vec<_> = pair.into_inner().map(|x| x.as_str()).collect();
+
+            if v.len() == 2 {
+                let oid = LazyRef::parse(v[0])?;
+                let filter = parse(v[1])?;
+                Ok(Op::Unapply(oid, filter))
+            } else {
+                Err(josh_error("wrong argument count for :unapply"))
             }
         }
         Rule::filter_replace => {

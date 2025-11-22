@@ -28,7 +28,7 @@ Test josh clone via HTTP (no filter)
   Fetched from remote: origin
   Already on 'master'
   
-  Cloned repository to: repo1-clone-josh
+  Cloned repository to: ${TESTTMP}/repo1-clone-josh
 
   $ cd repo1-clone-josh
   $ ls
@@ -53,7 +53,7 @@ Test josh clone via HTTP (with filter)
   Fetched from remote: origin
   Already on 'master'
   
-  Cloned repository to: repo1-clone-josh-filtered
+  Cloned repository to: ${TESTTMP}/repo1-clone-josh-filtered
 
   $ cd repo1-clone-josh-filtered
   $ ls
@@ -75,7 +75,7 @@ Test josh clone via HTTP (with explicit filter argument)
   Fetched from remote: origin
   Already on 'master'
   
-  Cloned repository to: repo1-clone-josh-explicit
+  Cloned repository to: ${TESTTMP}/repo1-clone-josh-explicit
 
   $ cd repo1-clone-josh-explicit
   $ ls
