@@ -34,3 +34,6 @@ serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 sled = "0.34.7"
 tracing = { workspace = true }
+
+[features]
+incubating = []
