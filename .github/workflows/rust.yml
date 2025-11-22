@@ -53,3 +53,25 @@ jobs:
           ( cd josh-ssh-dev-server ; go build -o "${CARGO_TARGET_DIR}/josh-ssh-dev-server" )
           sh run-tests.sh --verbose tests/filter/**.t
           sh run-tests.sh --verbose tests/proxy/**.t
+          sh run-tests.sh --verbose tests/cli/**.t
+
+    - name: Run tests (incubating)
+      uses: addnab/docker-run-action@v3
+      with:
+        image: josh-ci-dev:latest
+        options: -v ${{ github.workspace }}:/github/workspace -w /github/workspace
+        run: |
+          set -e -x
+
+          # Formatting
+          cargo fmt -- --check
+
+          # Unit tests
+          cargo test --workspace --all --features incubating
+
+          # Integration tests
+          cargo build --workspace --all-targets --features hyper_cgi/test-server --features incubating
+          ( cd josh-ssh-dev-server ; go build -o "${CARGO_TARGET_DIR}/josh-ssh-dev-server" )
+          sh run-tests.sh --verbose tests/filter/**.t
+          sh run-tests.sh --verbose tests/proxy/**.t
+          sh run-tests.sh --verbose tests/cli/**.t

@@ -71,12 +71,12 @@ Test josh clone with main branch as default
   ref: refs/remotes/origin/main
 
   $ cd filtered-repo
-  $ find .git | grep HEAD
-  .git/refs/remotes/origin/HEAD
-  .git/refs/namespaces/josh-origin/HEAD
+  $ find .git | grep HEAD | sort
   .git/FETCH_HEAD
-  .git/logs/HEAD
   .git/HEAD
+  .git/logs/HEAD
+  .git/refs/namespaces/josh-origin/HEAD
+  .git/refs/remotes/origin/HEAD
   $ git symbolic-ref refs/remotes/origin/HEAD
   refs/remotes/origin/main
 
@@ -114,7 +114,7 @@ Test josh clone with main branch as default
   |   |-- 24
   |   |   `-- 0
   |   |       |-- 9d5b5e98dceaf62470a7569949757c9643632621
-  |   |       `-- d14715b1358e12e9fb4132036e06049fd1ddf88f
+  |   |       `-- bf567e0faf634a663d6cef48145a035e1974ab1d
   |   `-- remotes
   |       `-- origin
   |           |-- feature-branch
