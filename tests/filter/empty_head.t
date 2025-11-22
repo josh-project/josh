@@ -19,6 +19,7 @@
   $ git commit -m "add file3" 1> /dev/null
 
   $ josh-filter -s :/sub1 master --update refs/josh/filter/master
+  d8388f5880393d255b371f1ed9b801d35620017e
   [2] :/sub1
   [3] sequence_number
   $ git log --graph --pretty=%s josh/filter/master
@@ -26,6 +27,7 @@
   * add file1
 
   $ josh-filter -s :/sub2 master --update refs/josh/filter/master
+  915f9d7068b11998493d4c9c373a32be4097daae
   [2] :/sub1
   [2] :/sub2
   [3] sequence_number
@@ -38,6 +40,7 @@
 
   $ josh-filter -s :/sub2 master --update refs/josh/filter/master
   Warning: reference refs/josh/filter/master wasn't updated
+  915f9d7068b11998493d4c9c373a32be4097daae
   [2] :/sub1
   [2] :/sub2
   [4] sequence_number

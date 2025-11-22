@@ -50,6 +50,7 @@
   7 directories, 5 files
 
   $ josh-filter -s :+st/config
+  9527d0249f419b172c6ca02390fde00f81e9c078
   [2] :+st/config
   [2] :[
       ::sub1/
@@ -79,6 +80,7 @@
 
   $ git checkout master 2> /dev/null
   $ josh-filter -s :+st2/config
+  f9e1862628d454b0cc4e98305983335d9c615113
   [2] :+st/config
   [2] :+st2/config
   [2] :[

@@ -47,6 +47,7 @@
   st_content
 
   $ josh-filter :+st/config master --update refs/heads/st
+  99b3384cb31ab9d642bd2e5e4050d57f97fe2862
   $ git checkout st 1> /dev/null
   Switched to branch 'st'
   $ git log --graph --pretty=%s
@@ -74,6 +75,8 @@
   $ git commit -m "modify and add files" 1> /dev/null
 
   $ josh-filter :+st/config master --update refs/heads/st --reverse
+  3cbdd590e0f190a08fc64b34386a3dcc698e177f
+  99b3384cb31ab9d642bd2e5e4050d57f97fe2862
 
   $ git checkout master
   Switched to branch 'master'

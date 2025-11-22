@@ -17,6 +17,7 @@ in that subtree repo should have an empty tree
   $ git commit -m "add file2" 1> /dev/null
 
   $ josh-filter -s c=:/sub1 master --update refs/josh/filter/master
+  21a904a6f350cb1f8ea4dc6fe9bd4e3b4cc4840b
   [2] :/sub1
   [2] :prefix=c
   [4] sequence_number
@@ -35,6 +36,7 @@ in that subtree repo should have an empty tree
   $ git commit -m "rm sub1" 1> /dev/null
 
   $ josh-filter -s c=:/sub1 master --update refs/josh/filter/master
+  1e8394fa1057f9c14155ea4f612320544ec3510d
   [3] :/sub1
   [3] :prefix=c
   [6] sequence_number

@@ -37,6 +37,7 @@
 
   $ josh-filter -s --squash-pattern "refs/tags/*" --update refs/heads/filtered
   Warning: reference refs/heads/filtered wasn't updated
+  0000000000000000000000000000000000000000
   [5] sequence_number
   $ git log --graph --decorate --pretty=oneline refs/heads/filtered
   fatal: ambiguous argument 'refs/heads/filtered': unknown revision or path not in the working tree.
@@ -46,6 +47,7 @@
 
   $ git tag -a tag_a -m "created a tag" 882f2656a5075936eb37bfefde740e0b453e4479
   $ josh-filter -s --squash-pattern "refs/tags/*" :author=\"New\ Author\"\;\"new@e.mail\" --update refs/heads/filtered
+  977cc3ee14c0d6163ba63bd96f4aeedd43916ba7
   [1] :"refs/tags/tag_a"
   [1] :author="New Author";"new@e.mail"
   [1] :squash(

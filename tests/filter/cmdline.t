@@ -34,6 +34,7 @@
   $ git commit -m "initial" --allow-empty 1> /dev/null
 
   $ josh-filter -s c=:/sub1 --update refs/josh/filter/libs/master libs/master
+  21a904a6f350cb1f8ea4dc6fe9bd4e3b4cc4840b
   [2] :/sub1
   [2] :prefix=c
   [4] sequence_number
@@ -41,6 +42,7 @@
   * add file2
   * add file1
   $ josh-filter -s a/b=:/sub2 --update refs/josh/filter/libs/foo libs/foo
+  933f26e096e3452793bcbb82e8d927d7820340fb
   [1] :prefix=a
   [1] :prefix=b
   [2] :/sub1

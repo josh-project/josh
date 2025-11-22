@@ -46,6 +46,7 @@
   $ git commit -m "add st_new" 1> /dev/null
 
   $ josh-filter -s :+st/config master --update refs/heads/filtered
+  6c3969ebc7f3a9286e3b94fea28646aaaa9021b1
   [1] :prefix=b
   [2] :/sub3
   [2] :[
@@ -55,6 +56,7 @@
   [3] :+st/config
   [7] sequence_number
   $ josh-filter -s :+st_new/config master --update refs/heads/filtered_new
+  5f2b78a024c1abd991085bea441509b6c252eb93
   [1] :prefix=b
   [2] :+st_new/config
   [2] :/sub3
@@ -178,6 +180,7 @@
   $ git commit -m "add st recursion" 1> /dev/null
 
   $ josh-filter -s :+st/config master --update refs/heads/filtered
+  267d7721cca8af54f01f44756b10ede7b22ef238
   [1] :prefix=b
   [2] :+st_new/config
   [2] :/sub3

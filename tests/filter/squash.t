@@ -30,6 +30,7 @@
 
   $ josh-filter -s --squash-pattern "refs/tags/*" --update refs/heads/filtered
   Warning: reference refs/heads/filtered wasn't updated
+  0000000000000000000000000000000000000000
   [5] sequence_number
 
   $ git log --graph --decorate --pretty=oneline refs/heads/filtered
@@ -41,6 +42,7 @@
 This one tag is an annotated tag, to make sure those are handled as well
   $ git tag -a tag_a -m "created a tag" 1d69b7d
   $ josh-filter -s --squash-pattern "refs/tags/*" :author=\"New\ Author\"\;\"new@e.mail\" --update refs/heads/filtered
+  977cc3ee14c0d6163ba63bd96f4aeedd43916ba7
   [1] :"refs/tags/tag_a"
   [1] :author="New Author";"new@e.mail"
   [1] :squash(
@@ -63,6 +65,7 @@ This one tag is an annotated tag, to make sure those are handled as well
   * 0b4cf6c9efbbda1eada39fa9c1d21d2525b027bb (tag: tag_b) add file1
 
   $ josh-filter -s --squash-pattern "refs/tags/*" :author=\"New\ Author\"\;\"new@e.mail\" --update refs/heads/filtered
+  be41caf35896090033cfd103e06aae721a3ce541
   [1] :"refs/tags/filtered/tag_a"
   [1] :"refs/tags/tag_a"
   [1] :"refs/tags/tag_b"
@@ -96,6 +99,7 @@ This one tag is an annotated tag, to make sure those are handled as well
   * New Author:new@e.mail-Josh:josh@example.com
 
   $ josh-filter -s --squash-pattern "refs/tags/*" :committer=\"New\ Author\"\;\"new@e.mail\" --update refs/heads/filtered
+  97c6007771c497c9530d61aa89af663daebb1625
   [1] :"refs/tags/filtered/filtered/tag_a"
   [1] :"refs/tags/filtered/tag_a"
   [1] :"refs/tags/filtered/tag_b"
@@ -152,6 +156,7 @@ This one tag is an annotated tag, to make sure those are handled as well
       c4215db39f3cd96f07fe4c1f701dad39d5f5dec3:"refs/tags/filtered/filtered/tag_b"
   ):author="New Author";"new@e.mail"
   $ josh-filter -s --file filter.josh --update refs/heads/filtered
+  2826b9a173c7a7d5c83d9ae2614de89c77205d83
   [1] :"refs/tags/filtered/filtered/tag_a"
   [1] :"refs/tags/filtered/tag_a"
   [1] :"refs/tags/filtered/tag_b"

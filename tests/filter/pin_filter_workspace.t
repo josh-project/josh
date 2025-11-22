@@ -35,6 +35,7 @@ Don't pin anything yet.
   $ git commit -q -m "first commit"
 
   $ josh-filter ':workspace=workspaces/code'
+  6620984e0025382baa68fadd32674591710c3417
   $ git ls-tree --format="${GIT_TREE_FMT}" -r FILTERED_HEAD
   100644 blob 0747fcb9cd688a7876932dcc30006e6ffa9106d6 app.js
   100644 blob 5910ad90fda519a6cc9299d4688679d56dc8d6dd lib.js
@@ -58,6 +59,7 @@ Update a file, but put it on pin in workspace
 Filter and check history
 
   $ josh-filter ':workspace=workspaces/code'
+  4f83a362554fde79389596222637db9084e028bc
   $ git log --oneline FILTERED_HEAD
   4f83a36 secret update
   6620984 first commit
@@ -82,6 +84,7 @@ We only see workspace.josh update
 We can also exclude workspace.josh itself
 
   $ josh-filter ':workspace=workspaces/code:exclude[::workspace.josh]'
+  71f53f9d53491b1b751e26a892a6c52462d61405
 
 This makes the commit disappear completely
 
@@ -111,6 +114,7 @@ Also, update app.js and remove pin from it
   $ git commit -q -m "read env variable"
 
   $ josh-filter ':workspace=workspaces/code'
+  824fe83d4a74a71fd7bec25756166863e063b932
 
 Check the resulting history
 

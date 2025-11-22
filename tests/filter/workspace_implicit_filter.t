@@ -23,6 +23,7 @@
   $ git commit -m "add ws" 1> /dev/null
 
   $ josh-filter -s :workspace=ws master --update refs/josh/master
+  556ad2808e44236459764f4566115dda763b8f65
   [2] :[
       ::sub1/
       ::sub2/subsub/

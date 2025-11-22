@@ -23,6 +23,7 @@
   $ git commit -m "unrelated" 1> /dev/null
 
   $ josh-filter -s c=:/sub1 master --update refs/josh/filter/master
+  21a904a6f350cb1f8ea4dc6fe9bd4e3b4cc4840b
   [2] :/sub1
   [2] :prefix=c
   [6] sequence_number
@@ -32,6 +33,7 @@
 
   $ josh-filter -s c=:/sub1 master --update refs/josh/filter/master
   Warning: reference refs/josh/filter/master wasn't updated
+  21a904a6f350cb1f8ea4dc6fe9bd4e3b4cc4840b
   [2] :/sub1
   [2] :prefix=c
   [6] sequence_number
@@ -40,6 +42,7 @@
   * add file1
 
   $ josh-filter -s c=:/sub2 master --update refs/josh/filter/master
+  a0d6ebb0ef3270908e83192cad2444e085f90303
   [2] :/sub1
   [2] :/sub2
   [3] :prefix=c
@@ -53,6 +56,7 @@
 
   $ josh-filter -s c=:/sub2 master --update refs/josh/filter/master
   Warning: reference refs/josh/filter/master wasn't updated
+  a0d6ebb0ef3270908e83192cad2444e085f90303
   [2] :/sub1
   [2] :/sub2
   [3] :prefix=c

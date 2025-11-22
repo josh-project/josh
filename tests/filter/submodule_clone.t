@@ -31,6 +31,7 @@ This repo will include a submodule
 Include the folder with submodules and .gitmodules file
 
   $ josh-filter ':[::modules/,::.gitmodules]'
+  e1a71e368a6eca04de01f2a06fdd2c99a615dc6f
   $ git checkout --quiet FILTERED_HEAD
   $ git switch --quiet -c filtered
   $ git remote add origin $(pwd)/../remote-app

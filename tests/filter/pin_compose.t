@@ -58,6 +58,7 @@ Commit this:
 Now, filter the ws and check the result
 
   $ josh-filter ':workspace=workspaces/overlay'
+  8bbdb0f42df3d05ecebc73b059f8f8106709f2cd
   $ git ls-tree --format="${GIT_TREE_FMT}" -r FILTERED_HEAD
   100644 blob 0747fcb9cd688a7876932dcc30006e6ffa9106d6 app.js
   100644 blob 5910ad90fda519a6cc9299d4688679d56dc8d6dd lib.js
@@ -103,6 +104,7 @@ Verify commit tree looks right:
 Filter the workspace and check the result:
 
   $ josh-filter ':workspace=workspaces/overlay'
+  d31c0fbf860c02be551fae16711c1e0330822cab
 
 We can see now that the app.js file was held at the previous version:
 

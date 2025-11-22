@@ -20,6 +20,7 @@
   $ git commit -m "add file3" 1> /dev/null
 
   $ josh-filter -s :exclude[::sub2/] master --update refs/heads/hidden
+  e22af2825a6c7b4b59fefb7cdb4618474d643446
   [2] :exclude[::sub2/]
   [3] sequence_number
   $ git checkout -q hidden 1> /dev/null
@@ -40,6 +41,7 @@
   $ git commit -m "add sub1/file3" 1> /dev/null
 
   $ josh-filter -s :exclude[::sub1/,::sub2/] master --update refs/josh/filtered
+  20c49dc2904816af9719b79d80ec84ec7d0b6e30
   [2] :exclude[
       ::sub1/
       ::sub2/
@@ -56,6 +58,7 @@
   2 directories, 1 file
 
   $ josh-filter -s :exclude[sub1=:/sub3] master --update refs/josh/filtered
+  990f678a016ea2e798f1341ac1049993a0fab726
   [2] :exclude[
       ::sub1/
       ::sub2/

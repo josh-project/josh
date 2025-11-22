@@ -53,6 +53,7 @@ Add note with pin filter for this commit
 Filter using the hook
 
   $ josh-filter ':hook=commits'
+  e22b4d031f61b2d443a11700627fa73011bfd95f
 
 Check the filtered history
 
@@ -100,6 +101,7 @@ Add note to pin the new file and allow app.js changes
   $ git notes add -m ':/code:pin[::lib3.js]' -f
 
   $ josh-filter ':hook=commits'
+  6b712b21b99511e8b40334a96ef266d2a38f2e94
 
 Check the resulting history
 

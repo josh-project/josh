@@ -123,17 +123,23 @@
   $ git commit -m "add templ_file" 1> /dev/null
 
   $ josh-filter :/ HEAD -q get=sub1/file1
+  a00263b0ee48ce1badf88d178a1e4fc27546aad0
   contents1
   $ josh-filter :nop HEAD -q get=sub1/file2
+  a00263b0ee48ce1badf88d178a1e4fc27546aad0
   contents2
   $ josh-filter :/sub1 HEAD -q get=file1
+  04373eb39733c5aed711e60e34d8e2418d4dabce
   contents1
 
   $ josh-filter :/sub1
+  04373eb39733c5aed711e60e34d8e2418d4dabce
 
   $ josh-filter -q render=sub1/file1
+  a00263b0ee48ce1badf88d178a1e4fc27546aad0
   contents1
   $ josh-filter -q "graphql=sub1/x.graphql&name=config_file.toml"
+  a00263b0ee48ce1badf88d178a1e4fc27546aad0
   {
     "hash": "a00263b0ee48ce1badf88d178a1e4fc27546aad0",
     "summary": "add templ_file",
@@ -308,6 +314,7 @@
   } (no-eol)
 
   $ josh-filter -q "render=sub1%2Ftmpl_file&tmpl_param1=tmpl_param_value1&tmpl_p2=val%252"
+  a00263b0ee48ce1badf88d178a1e4fc27546aad0
   tmpl_param1: tmpl_param_value1
   tmpl_p2: val%2
   ID: a00263b0ee48ce1badf88d178a1e4fc27546aad0
@@ -336,7 +343,9 @@
   - add file2
   - add file1
   $ josh-filter -q "render=sub1/tmpl_file_err&tmpl_param1=tmpl_param_value1&tmpl_p2=val2"
+  a00263b0ee48ce1badf88d178a1e4fc27546aad0
   ERROR: Error rendering "sub1/tmpl_file_err" line 1, col 14: Failed to access variable in strict mode Some("tmpl_param12")
   [1]
   $ josh-filter :/sub1 -q render=file2
+  04373eb39733c5aed711e60e34d8e2418d4dabce
   contents2

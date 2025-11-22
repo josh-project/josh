@@ -67,6 +67,7 @@ Write a custom header into the commit (h/t https://github.com/Byron/gitoxide/blo
   $ git update-ref refs/heads/master $new_commit
 
   $ josh-filter --update refs/heads/filtered ':prefix=pre'
+  63982dc9240ef0b6dc10fa1643bfa8700b5e2a3f
 
   $ git diff ${EMPTY_TREE}..refs/heads/filtered
   diff --git a/pre/hw.txt b/pre/hw.txt
@@ -97,6 +98,7 @@ Write a custom header into the commit (h/t https://github.com/Byron/gitoxide/blo
   second
 
   $ josh-filter --update refs/heads/re-filtered ':/pre' refs/heads/filtered 
+  f2fd7b23a4a2318d534d122615a6e75196c3e3c4
 
   $ git show refs/heads/re-filtered
   commit f2fd7b23a4a2318d534d122615a6e75196c3e3c4

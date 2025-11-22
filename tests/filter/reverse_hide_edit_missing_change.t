@@ -28,6 +28,7 @@
   3 directories, 4 files
 
   $ josh-filter -s :exclude[::sub2/] master --update refs/heads/hidden
+  e736ad9e31a359186cd09c3a234bc497d5de7462
   [1] :exclude[::sub2/]
   [2] sequence_number
   $ git checkout hidden 1> /dev/null
@@ -48,6 +49,8 @@
   $ git commit -m "edit files" 1> /dev/null
 
   $ josh-filter -s :exclude[::sub2/] --reverse master --update refs/heads/hidden
+  55031991a5c2f493f2d62201828d8f20844ab219
+  e736ad9e31a359186cd09c3a234bc497d5de7462
   [1] :exclude[::sub2/]
   [2] sequence_number
 

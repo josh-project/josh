@@ -18,6 +18,7 @@
 
 Test that message rewriting works
   $ josh-filter ':"new message"' --update refs/josh/filter/master master
+  5f6f6e08a73a44279f4c80bd928430663c7ebbb2
   $ git log --pretty=%s josh/filter/master
   new message
   new message
@@ -37,6 +38,7 @@ Test that message rewriting works
 
 Test that message rewriting with template variables works
   $ josh-filter ':"Message: {tree} {commit}"' --update refs/josh/filter/master master
+  025b01893026c240e56c95e6e8f1659aa417581e
   $ git log --pretty=%s josh/filter/master
   Message: 3d77ff51363c9825cc2a221fc0ba5a883a1a2c72 8e125b48e2286c74bf9be1bbb8d3034a7370eebc
   $ git cat-file commit josh/filter/master | grep -A 1 "^$"

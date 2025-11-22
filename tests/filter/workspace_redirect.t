@@ -46,6 +46,7 @@
   $ git commit -m "add ws_new" 1> /dev/null
 
   $ josh-filter -s :workspace=ws master --update refs/heads/filtered
+  b9624622ee21a49c687f9fe717803c10aeb7829d
   [1] :prefix=b
   [2] :/sub3
   [2] :[
@@ -55,6 +56,7 @@
   [3] :workspace=ws
   [7] sequence_number
   $ josh-filter -s :workspace=ws_new master --update refs/heads/filtered_new
+  b9624622ee21a49c687f9fe717803c10aeb7829d
   [1] :prefix=b
   [2] :/sub3
   [2] :[
@@ -180,6 +182,7 @@
   $ git commit -m "add ws recursion" 1> /dev/null
 
   $ josh-filter -s :workspace=ws master --update refs/heads/filtered
+  0000000000000000000000000000000000000000
   [1] :prefix=b
   [2] :/sub3
   [2] :[
