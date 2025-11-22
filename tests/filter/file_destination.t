@@ -109,6 +109,7 @@ Test File filter with destination path --reverse
   $ git commit -m "modify file" 1> /dev/null
 
   $ josh-filter -s ::renamed.txt=src/subdir/original.txt --reverse master --update refs/josh/master
+  c122559c82871c0c453012051d4b067158a9a8cb
   [1] ::renamed.txt=src/subdir/original.txt
   [1] sequence_number
 
@@ -151,6 +152,7 @@ Test File filter backward compatibility --reverse
   $ git commit -m "modify file" 1> /dev/null
 
   $ josh-filter -s ::src/subdir/file.txt --reverse master --update refs/josh/master
+  49d6b8e7dbefec1836449d7a62f9f906e00521e7
   [1] ::src/subdir/file.txt
   [1] sequence_number
 

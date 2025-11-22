@@ -37,6 +37,7 @@
   $ git commit -m "add file5" 1> /dev/null
 
   $ josh-filter -s :/sub2 master --update refs/josh/filter/master
+  915f9d7068b11998493d4c9c373a32be4097daae
   Warning: reference refs/josh/filter/master wasn't updated
   [2] :/sub1
   [2] :/sub2

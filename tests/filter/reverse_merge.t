@@ -74,6 +74,7 @@
   * add file1
 
   $ josh-filter -s :exclude[::sub2/] --reverse master --update refs/heads/hidden_master
+  1496b9e75273ad3a0de58812a731a7a50b0d2a66
   [3] :exclude[::sub2/]
   [3] sequence_number
 

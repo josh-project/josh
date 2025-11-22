@@ -36,6 +36,7 @@
   * 8c26fa0172bda17bafcbcf9684e639c6b0bae9c4 Empty initial
 
   $ josh-filter -s --squash-pattern "refs/tags/*" --update refs/heads/filtered
+  0000000000000000000000000000000000000000
   Warning: reference refs/heads/filtered wasn't updated
   [5] sequence_number
   $ git log --graph --decorate --pretty=oneline refs/heads/filtered

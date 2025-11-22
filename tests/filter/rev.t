@@ -134,6 +134,7 @@
   > )
   > EOF
   $ josh-filter -s --file filter.josh --update refs/heads/filtered
+  1c4fe25dc386c77adaae12d6b1cd3abfa296fc3c
   Warning: reference refs/heads/filtered wasn't updated
   [1] :prefix=z
   [2] :rev(0000000000000000000000000000000000000000:prefix=x/y,975d4c4975912729482cc864d321c5196a969271:prefix=x/y)

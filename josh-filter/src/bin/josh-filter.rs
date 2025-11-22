@@ -443,7 +443,7 @@ fn run_filter(args: Vec<String>) -> josh_core::JoshResult<i32> {
                 println!("{}:{}: {}", r.0, l.0, l.1);
             }
         }
-        /* println!("\n Search took {:?}", duration); */
+        /* eprintln!("\n Search took {:?}", duration); */
     }
 
     if reverse {
@@ -463,9 +463,10 @@ fn run_filter(args: Vec<String>) -> josh_core::JoshResult<i32> {
         ) {
             Ok(rewritten) => {
                 repo.reference(&input_ref, rewritten, true, "unapply_filter")?;
+                println!("{}", rewritten);
             }
             Err(JoshError(msg)) => {
-                println!("{}", msg);
+                eprintln!("{}", msg);
                 return Ok(1);
             }
         }
@@ -476,7 +477,8 @@ fn run_filter(args: Vec<String>) -> josh_core::JoshResult<i32> {
         && updated_refs.len() == 1
         && updated_refs[0].1 == old_oid
     {
-        println!(
+        println!("{}", updated_refs[0].1);
+        eprintln!(
             "Warning: reference {} wasn't updated",
             args.get_one::<String>("update").unwrap()
         );
@@ -526,7 +528,7 @@ fn main() {
     };
 
     std::process::exit(if let Err(e) = run_filter(args) {
-        println!(
+        eprintln!(
             "ERROR: {}",
             match e {
                 JoshError(s) => s,

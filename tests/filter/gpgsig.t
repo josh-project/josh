@@ -44,6 +44,7 @@ Remove the signature, the shas are different.
   cb22ebb8e47b109f7add68b1043e561e0db09802
   0b4cf6c9efbbda1eada39fa9c1d21d2525b027bb
   $ josh-filter --reverse :unsign refs/heads/double-filtered --update refs/heads/filtered -s
+  cb22ebb8e47b109f7add68b1043e561e0db09802
   [1] :unsign
   [1] sequence_number
   $ git rev-parse master double-filtered
@@ -55,6 +56,7 @@ Round trip does not work but reversed works since the commit exists
   $ josh-filter :/extra refs/heads/filtered --update refs/heads/double-filtered
   $ git branch reversed
   $ josh-filter --reverse :prefix=extra:unsign refs/heads/reversed --update refs/heads/filtered
+  cb22ebb8e47b109f7add68b1043e561e0db09802
   $ git rev-parse master double-filtered reversed
   cb22ebb8e47b109f7add68b1043e561e0db09802
   0b4cf6c9efbbda1eada39fa9c1d21d2525b027bb

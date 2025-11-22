@@ -31,6 +31,7 @@
   * add file1
 
   $ josh-filter -s c=:/sub1 master --update refs/josh/filter/master
+  21a904a6f350cb1f8ea4dc6fe9bd4e3b4cc4840b
   Warning: reference refs/josh/filter/master wasn't updated
   [2] :/sub1
   [2] :prefix=c
@@ -52,6 +53,7 @@
   $ git commit -m "add file5" 1> /dev/null
 
   $ josh-filter -s c=:/sub2 master --update refs/josh/filter/master
+  a0d6ebb0ef3270908e83192cad2444e085f90303
   Warning: reference refs/josh/filter/master wasn't updated
   [2] :/sub1
   [2] :/sub2

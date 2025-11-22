@@ -74,6 +74,7 @@
   $ git commit -m "modify and add files" 1> /dev/null
 
   $ josh-filter :+st/config master --update refs/heads/st --reverse
+  3cbdd590e0f190a08fc64b34386a3dcc698e177f
 
   $ git checkout master
   Switched to branch 'master'
