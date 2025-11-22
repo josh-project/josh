@@ -11,3 +11,6 @@ juniper = { workspace = true }
 serde_json = { workspace = true }
 handlebars = "6.2.0"
 form_urlencoded = "1.2.2"
+
+[features]
+incubating = []
