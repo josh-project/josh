@@ -16,3 +16,6 @@ tokio-util = { workspace = true }
 thiserror = "2.0.17"
 tempfile = { workspace = true }
 reqwest = { workspace = true }
+
+[features]
+incubating = []
