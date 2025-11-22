@@ -7,3 +7,6 @@ edition = "2024"
 serde = { workspace = true }
 tokio = { workspace = true }
 libc = { workspace = true }
+
+[features]
+incubating = []

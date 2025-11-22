@@ -9,3 +9,6 @@ dircpy = "0.3.19"
 
 [lib]
 path = 'lib.rs'
+
+[features]
+incubating = []
