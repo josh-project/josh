@@ -14,7 +14,7 @@ backtrace = "0.3.76"
 bitvec = "1.0.1"
 git-version = "0.3.9"
 git2 = { workspace = true }
-gix-object = "0.51.1"
+gix-object = "0.52.0"
 gix-config = "0.46.0"
 gix-hash = { workspace = true }
 glob = "0.3.1"
