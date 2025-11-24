@@ -24,7 +24,7 @@ itertools = "0.14.0"
 log = { workspace = true }
 percent-encoding = "2.3.1"
 pest = "2.8.4"
-pest_derive = "2.8.3"
+pest_derive = "2.8.4"
 rayon = "1.11.0"
 regex = { workspace = true }
 rs_tracing = { workspace = true }
