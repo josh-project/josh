@@ -17,7 +17,7 @@ base64 = { workspace = true }
 bytes = "1.5.0"
 clap = { workspace = true }
 futures = { workspace = true }
-hyper = { version = "1.2.0" }
+hyper = { version = "1.8.1" }
 hyper-reverse-proxy = { workspace = true }
 hyper-staticfile = "0.10.0"
 hyper-tls = "0.6.0"
