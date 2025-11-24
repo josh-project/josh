@@ -22,7 +22,7 @@ hyper-reverse-proxy = { workspace = true }
 hyper-staticfile = "0.10.0"
 hyper-tls = "0.6.0"
 hyper_cgi = { path = "../hyper_cgi" }
-hyper-util = { version = "0.1.3", features = ["client", "client-legacy", "http1", "tokio"] }
+hyper-util = { version = "0.1.18", features = ["client", "client-legacy", "http1", "tokio"] }
 http-body-util = "0.1.0"
 indoc = "2.0.7"
 josh-core = {path = "../josh-core" }
