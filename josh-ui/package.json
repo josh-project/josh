@@ -13,7 +13,7 @@
     "@types/react-dom": "^19.2.1",
     "graphql": "^16.12.0",
     "graphql-request": "^7.3.3",
-    "monaco-editor": "^0.54.0",
+    "monaco-editor": "^0.55.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-icons": "^5.5.0",
