@@ -1832,17 +1832,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "hyper-reverse-proxy"
-version = "0.0.1"
-dependencies = [
- "bytes",
- "http-body-util",
- "hyper",
- "hyper-tls",
- "hyper-util",
-]
-
-[[package]]
 name = "hyper-staticfile"
 version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1916,7 +1905,7 @@ dependencies = [
 
 [[package]]
 name = "hyper_cgi"
-version = "22.10.25"
+version = "25.11.26"
 dependencies = [
  "base64",
  "bytes",
@@ -1925,8 +1914,8 @@ dependencies = [
  "http-body",
  "http-body-util",
  "hyper",
- "hyper-reverse-proxy",
  "hyper-util",
+ "josh-reverse-proxy",
  "rand 0.9.2",
  "tokio",
  "tokio-util",
@@ -2159,8 +2148,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "josh-cli"
-version = "22.4.15"
+name = "josh"
+version = "25.11.26"
 dependencies = [
  "anyhow",
  "clap",
@@ -2168,8 +2157,6 @@ dependencies = [
  "env_logger",
  "git2",
  "josh-core",
- "josh-graphql",
- "josh-templates",
  "juniper",
  "log",
  "rs_tracing",
@@ -2179,7 +2166,7 @@ dependencies = [
 
 [[package]]
 name = "josh-core"
-version = "22.4.15"
+version = "25.11.26"
 dependencies = [
  "backtrace",
  "bitvec",
@@ -2211,7 +2198,7 @@ dependencies = [
 
 [[package]]
 name = "josh-filter"
-version = "22.4.15"
+version = "25.11.24"
 dependencies = [
  "clap",
  "defer",
@@ -2227,7 +2214,7 @@ dependencies = [
 
 [[package]]
 name = "josh-graphql"
-version = "0.1.0"
+version = "25.11.26"
 dependencies = [
  "chrono",
  "git2",
@@ -2244,7 +2231,7 @@ dependencies = [
 
 [[package]]
 name = "josh-proxy"
-version = "22.4.15"
+version = "25.11.26"
 dependencies = [
  "base64",
  "bytes",
@@ -2255,7 +2242,6 @@ dependencies = [
  "hex",
  "http-body-util",
  "hyper",
- "hyper-reverse-proxy",
  "hyper-staticfile",
  "hyper-tls",
  "hyper-util",
@@ -2263,6 +2249,7 @@ dependencies = [
  "indoc",
  "josh-core",
  "josh-graphql",
+ "josh-reverse-proxy",
  "josh-rpc",
  "josh-templates",
  "juniper",
@@ -2291,8 +2278,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "josh-reverse-proxy"
+version = "25.11.26"
+dependencies = [
+ "bytes",
+ "http-body-util",
+ "hyper",
+ "hyper-tls",
+ "hyper-util",
+]
+
+[[package]]
 name = "josh-rpc"
-version = "0.1.0"
+version = "25.11.26"
 dependencies = [
  "libc",
  "serde",
@@ -2301,7 +2299,7 @@ dependencies = [
 
 [[package]]
 name = "josh-ssh-shell"
-version = "0.1.0"
+version = "25.11.26"
 dependencies = [
  "clap",
  "josh-rpc",
@@ -2319,7 +2317,7 @@ dependencies = [
 
 [[package]]
 name = "josh-templates"
-version = "0.1.0"
+version = "25.11.26"
 dependencies = [
  "form_urlencoded",
  "git2",
@@ -2332,7 +2330,7 @@ dependencies = [
 
 [[package]]
 name = "josh-ui"
-version = "0.1.0"
+version = "25.11.26"
 dependencies = [
  "dircpy",
  "npm_rs",

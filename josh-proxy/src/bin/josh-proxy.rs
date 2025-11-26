@@ -570,7 +570,7 @@ async fn handle_ui_request(
     // Proxy: can be used for UI development or to serve a different UI
     if let Some(proxy) = &ARGS.static_resource_proxy_target {
         let client_ip = IpAddr::from_str("127.0.0.1").unwrap();
-        return match hyper_reverse_proxy::call(client_ip, proxy, req).await {
+        return match josh_reverse_proxy::call(client_ip, proxy, req).await {
             Ok(response) => Ok(erase(response)),
             Err(error) => Ok(Response::builder()
                 .status(StatusCode::INTERNAL_SERVER_ERROR)

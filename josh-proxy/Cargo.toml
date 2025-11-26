@@ -1,13 +1,14 @@
 [package]
-authors = ["Christian Schilling <christian.schilling@esrlabs.com>"]
-description = "GIT virtualization proxy"
-edition = "2024"
-keywords = ["git", "monorepo", "workflow", "scm"]
-license-file = "LICENSE"
 name = "josh-proxy"
-readme = "../README.md"
+version = "25.11.26"
+edition = "2024"
+
 repository = "https://github.com/josh-project/josh"
-version = "22.4.15"
+authors = ["Christian Schilling <christian.schilling@esrlabs.com>"]
+license-file = "../LICENSE"
+description = "GIT virtualization proxy"
+readme = "../README.md"
+keywords = ["git", "monorepo", "workflow", "scm"]
 
 [dependencies]
 sha2 = "0.10.8"
@@ -18,16 +19,16 @@ bytes = "1.11.0"
 clap = { workspace = true }
 futures = { workspace = true }
 hyper = { version = "1.8.1" }
-hyper-reverse-proxy = { workspace = true }
+josh-reverse-proxy = { workspace = true }
 hyper-staticfile = "0.10.0"
 hyper-tls = "0.6.0"
-hyper_cgi = { path = "../hyper_cgi" }
+hyper_cgi = { workspace = true }
 hyper-util = { version = "0.1.18", features = ["client", "client-legacy", "http1", "tokio"] }
 http-body-util = "0.1.0"
 indoc = "2.0.7"
-josh-core = {path = "../josh-core" }
-josh-templates = { path = "../josh-templates" }
-josh-graphql = { path = "../josh-graphql" }
+josh-core = { workspace = true }
+josh-templates = { workspace = true }
+josh-graphql = { workspace = true }
 percent-encoding = "2.3.1"
 regex = { workspace = true }
 reqwest = { workspace = true }
@@ -42,7 +43,7 @@ tracing-opentelemetry = "0.32.0"
 tracing-subscriber = { workspace = true }
 url = "2.5.4"
 uuid = { version = "1.18.1", features = ["v4"] }
-josh-rpc = { path = "../josh-rpc" }
+josh-rpc = { workspace = true }
 tokio-util = { workspace = true }
 tempfile = { workspace = true }
 gix = { workspace = true }

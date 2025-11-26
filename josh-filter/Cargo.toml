@@ -1,18 +1,19 @@
 [package]
-authors = ["Christian Schilling <christian.schilling@esrlabs.com>"]
-description = "GIT filter cli"
-edition = "2024"
-keywords = ["git", "monorepo", "workflow", "scm"]
-license-file = "LICENSE"
 name = "josh-filter"
-readme = "../README.md"
+version = "25.11.24"
+edition = "2024"
+
 repository = "https://github.com/josh-project/josh"
-version = "22.4.15"
+authors = ["Christian Schilling <initcrash@gmail.com>"]
+license-file = "../LICENSE"
+description = "Low-level CLI interface for local Josh use"
+keywords = ["git", "monorepo", "workflow", "scm"]
+readme = "../README.md"
 
 [dependencies]
-josh-core = { path = "../josh-core" }
-josh-graphql = { path = "../josh-graphql" }
-josh-templates = { path = "../josh-templates" }
+josh-core = { workspace = true }
+josh-graphql = { workspace = true }
+josh-templates = { workspace = true }
 env_logger = { workspace = true }
 serde_json = { workspace = true }
 defer = { workspace = true }

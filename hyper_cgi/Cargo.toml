@@ -1,11 +1,12 @@
 [package]
 name = "hyper_cgi"
-version = "22.10.25"
-authors = ["Christian Schilling <initcrash@gmail.com>", "Louis-Marie Givel <louis-marie.givel@esrlabs.com>"]
+version = "25.11.26"
 edition = "2024"
+
+repository = "https://github.com/josh-project/josh"
+authors = ["Christian Schilling <initcrash@gmail.com>", "Louis-Marie Givel <louis-marie.givel@esrlabs.com>"]
 license-file = "LICENSE"
 description = "Run CGI scripts with hyper"
-repository = "https://github.com/josh-project/josh"
 readme = "README.md"
 
 [dependencies]
@@ -21,7 +22,7 @@ http-body-util = "0.1.0"
 clap = { workspace = true, optional = true }
 base64 = { workspace = true, optional = true }
 rand = { version = "0.9.2", optional = true, features = ["std"] }
-hyper-reverse-proxy = { workspace = true }
+josh-reverse-proxy = { workspace = true }
 
 [lib]
 name = "hyper_cgi"

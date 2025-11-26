@@ -1,10 +1,13 @@
 [package]
-name = "hyper-reverse-proxy"
-version = "0.0.1"
+name = "josh-reverse-proxy"
+version = "25.11.26"
 edition = "2024"
-license = "MIT"
-authors = ["Josh Project"]
+
+repository = "https://github.com/josh-project/josh"
+authors = ["Louis-Marie Givel <louis-marie@givel.fr."]
+license-file = "../LICENSE"
 description = "Minimal hyper reverse proxy compatibility layer for Josh"
+readme = "../README.md"
 
 [dependencies]
 bytes = "1.11.0"
