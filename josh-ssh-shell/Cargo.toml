@@ -1,14 +1,20 @@
 [package]
 name = "josh-ssh-shell"
-version = "0.1.0"
+version = "25.11.26"
 edition = "2024"
+
+repository = "https://github.com/josh-project/josh"
+authors = ["Vlad Ivanov <vlad-ivanov-name@users.noreply.github.com>"]
+license-file = "../LICENSE"
+description = "Custom shell for josh SSH support"
+readme = "../README.md"
 
 [dependencies]
 clap = { workspace = true }
 libc = { workspace = true }
 shell-words = "1.1.0"
 tokio = { workspace = true }
-josh-rpc = { path = "../josh-rpc" }
+josh-rpc = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }

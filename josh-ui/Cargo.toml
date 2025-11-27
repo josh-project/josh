@@ -1,7 +1,13 @@
 [package]
 name = "josh-ui"
-version = "0.1.0"
+version = "25.11.26"
 edition = "2024"
+
+repository = "https://github.com/josh-project/josh"
+authors = ["Christian Schilling <initcrash@gmail.com>"]
+license-file = "../LICENSE"
+description = "Web-based git UI using josh-proxy as a backend"
+readme = "../README.md"
 
 [build-dependencies]
 npm_rs = "1.0.0"
