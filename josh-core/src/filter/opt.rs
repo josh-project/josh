@@ -315,6 +315,8 @@ fn common_post(filters: &Vec<Filter>) -> Option<(Filter, Vec<Filter>)> {
             common_post.map(|c| (c, rest))
         } else if let Op::Prefix(_) = to_op(c) {
             common_post.map(|c| (c, rest))
+        } else if let Op::Message(..) = to_op(c) {
+            common_post.map(|c| (c, rest))
         } else {
             None
         }
