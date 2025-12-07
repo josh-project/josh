@@ -150,7 +150,7 @@ async fn call(
                     let client_ip = std::net::IpAddr::from_str("127.0.0.1").unwrap();
                     *req.uri_mut() = ppath.parse().unwrap();
                     println!("proxy {:?}", req.uri().path());
-                    return match hyper_reverse_proxy::call(client_ip, proxy_target, req).await {
+                    return match josh_reverse_proxy::call(client_ip, proxy_target, req).await {
                         Ok(response) => response,
                         Err(error) => hyper::Response::builder()
                             .status(hyper::StatusCode::INTERNAL_SERVER_ERROR)

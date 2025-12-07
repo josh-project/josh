@@ -1,18 +1,17 @@
 [package]
-authors = ["Christian Schilling <christian.schilling@esrlabs.com>"]
-description = "Josh CLI"
+name = "josh"
+version = "25.11.26"
 edition = "2024"
-keywords = ["git", "monorepo", "workflow", "scm"]
-license-file = "LICENSE"
-name = "josh-cli"
-readme = "../README.md"
+
 repository = "https://github.com/josh-project/josh"
-version = "22.4.15"
+authors = ["Christian Schilling <christian.schilling@esrlabs.com>"]
+license-file = "../LICENSE"
+description = "CLI interface for josh"
+readme = "../README.md"
+keywords = ["git", "monorepo", "workflow", "scm"]
 
 [dependencies]
-josh-core = { path = "../josh-core" }
-josh-graphql = { path = "../josh-graphql" }
-josh-templates = { path = "../josh-templates" }
+josh-core = { workspace = true }
 anyhow = { workspace = true }
 env_logger = { workspace = true }
 log = { workspace = true }

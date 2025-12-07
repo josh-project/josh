@@ -1,12 +1,18 @@
 [package]
 name = "josh-templates"
-version = "0.1.0"
+version = "25.11.26"
 edition = "2024"
+
+repository = "https://github.com/josh-project/josh"
+authors = ["Christian Schilling <initcrash@gmail.com>", "Vlad Ivanov <vlad-ivanov-name@users.noreply.github.com>"]
+license-file = "../LICENSE"
+description = "Templates support for josh with handlebars syntax"
+readme = "../README.md"
 
 [dependencies]
 git2 = { workspace = true }
-josh-core = { path = "../josh-core" }
-josh-graphql = { path = "../josh-graphql" }
+josh-core = { workspace = true }
+josh-graphql = { workspace = true }
 juniper = { workspace = true }
 serde_json = { workspace = true }
 handlebars = "6.2.0"

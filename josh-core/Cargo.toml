@@ -1,13 +1,14 @@
 [package]
 name = "josh-core"
-version = "22.4.15"
-repository = "https://ithub.com/josh-project/josh"
+version = "25.11.26"
+edition = "2024"
+
+repository = "https://github.com/josh-project/josh"
 authors = ["Christian Schilling <initcrash@gmail.com>"]
-license-file = "LICENSE"
-description = "GIT virtualization proxy"
+license-file = "../LICENSE"
+description = "Filtering for git repositories"
 keywords = ["git", "monorepo", "workflow", "scm"]
 readme = "../README.md"
-edition = "2024"
 
 [dependencies]
 backtrace = "0.3.76"

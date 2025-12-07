@@ -1,10 +1,16 @@
 [package]
 name = "josh-graphql"
-version = "0.1.0"
+version = "25.11.26"
 edition = "2024"
 
+repository = "https://github.com/josh-project/josh"
+authors = ["Christian Schilling <initcrash@gmail.com>"]
+license-file = "../LICENSE"
+description = "GraphQL API for josh"
+readme = "../README.md"
+
 [dependencies]
-josh-core = { path = "../josh-core" }
+josh-core = { workspace = true }
 juniper = { workspace = true }
 git2 = { workspace = true }
 rs_tracing = { workspace = true }
