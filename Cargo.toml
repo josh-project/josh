@@ -46,7 +46,7 @@ hex = "0.4.3"
 [workspace.dependencies.git2]
 default-features = false
 features = ["vendored-libgit2"]
-version = "0.20.2"
+version = "0.20.3"
 
 [workspace.dependencies.juniper]
 version = "0.17.0"
