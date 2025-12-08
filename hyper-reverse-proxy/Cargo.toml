@@ -11,4 +11,4 @@ bytes = "1.11.0"
 http-body-util = "0.1.0"
 hyper = { version = "1.8.1", features = ["http1", "client"] }
 hyper-tls = "0.6.0"
-hyper-util = { version = "0.1.18", features = ["client", "client-legacy", "http1", "tokio"] }
+hyper-util = { version = "0.1.19", features = ["client", "client-legacy", "http1", "tokio"] }
