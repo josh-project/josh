@@ -41,7 +41,7 @@ tracing-futures = "0.2.5"
 tracing-opentelemetry = "0.32.0"
 tracing-subscriber = { workspace = true }
 url = "2.5.4"
-uuid = { version = "1.18.1", features = ["v4"] }
+uuid = { version = "1.19.0", features = ["v4"] }
 josh-rpc = { path = "../josh-rpc" }
 tokio-util = { workspace = true }
 tempfile = { workspace = true }
