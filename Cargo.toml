@@ -32,7 +32,7 @@ gix-object = "0.50.2"
 gix-config = "0.47.1"
 gix-submodule = "0.21.0"
 hyper-reverse-proxy = { path = "hyper-reverse-proxy", version = "0.0.1" }
-libc = "0.2.177"
+libc = "0.2.178"
 regex = "1.12.2"
 rs_tracing = { version = "1.1.0", features = ["rs_tracing"] }
 serde = { version = "1.0.228", features = ["std", "derive"] }
