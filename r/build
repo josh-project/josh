@@ -1,0 +1,38 @@
+#!/bin/bash
+set -e
+
+TREE=$(git write-tree)
+COMMIT=$(echo "WIP" | git commit-tree $TREE)
+git update-ref R_HEAD $COMMIT
+
+git diff --stat HEAD..R_HEAD
+
+josh-filter :+r/$1:/build --update refs/r/$1/build R_HEAD
+josh-filter :+r/$1:/run --update refs/r/$1/run R_HEAD
+
+IMAGE_NAME=r-image:$(git rev-parse refs/r/$1/build^{tree})
+if docker image inspect $IMAGE_NAME >/dev/null 2>&1; then
+    echo "Image exists locally"
+else
+    echo "Image does not exist locally"
+    git archive --format=tar $(git rev-parse refs/r/$1/build^{tree}) | docker buildx build \
+        --target=dev-local \
+        --build-arg USER_UID=$(id -u) \
+        --build-arg USER_GID=$(id -g) \
+        -t $IMAGE_NAME -
+fi
+
+vol=$1_snapshot
+docker volume remove "$vol" || true
+docker volume create "$vol"
+docker run --rm -v "$vol":/data busybox sh -c "chown -R $(id -u):$(id -g) /data"
+
+git archive $(git rev-parse refs/r/$1/run^{tree}) | docker run --rm --user $(id -u):$(id -g) -i -v "$vol":/dst busybox tar -xC /dst
+
+docker run -it --rm \
+    -v "$vol":$PWD \
+    -v "$PWD/tests:$PWD/tests" \
+    -v rcache:/opt/cache \
+    -w $PWD \
+    --user $(id -u):$(id -g) \
+    $IMAGE_NAME sh -c "bash run.sh ${*:2}"
