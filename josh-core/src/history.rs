@@ -1,5 +1,6 @@
 use super::*;
-use std::collections::HashMap;
+use std::cell::RefCell;
+use std::collections::{HashMap, HashSet};
 
 pub fn walk2(
     filter: filter::Filter,
@@ -110,18 +111,114 @@ fn find_unapply_base(
     walk.set_sorting(git2::Sort::TOPOLOGICAL)?;
     walk.push(contained_in)?;
 
+    // libgit2 does not read the list of commits lazily; instead,
+    // it reads the whole list, sorts it according to user's preference,
+    // and then lets the user iterate.
+    //
+    // while this does ensure the desired iteration order, it also means
+    // revwalks don't really scale. this approach below uses "hide callbacks"
+    // feature to stop iteration early - for real this time. hide callbacks
+    // are invoked during commit graph index read, and affect which commits
+    // are added to the traversal list.
+    //
+    // because we still want topological order - but it would be impossible to
+    // guarantee without reading full graph - we instead use something like
+    // "best effort" topo sorting, where commits are held as pending until
+    // at least one other commit references them as a parent.
+    #[derive(Default)]
+    struct CallbackContext {
+        result: Option<JoshResult<(git2::Oid, git2::Oid)>>,
+        unlocked: HashSet<git2::Oid>,
+        pending: HashSet<git2::Oid>,
+    }
+
+    let ctx = RefCell::new(CallbackContext::default());
+
+    // The start commit has no children in this subgraph, so it's immediately unlocked
+    ctx.borrow_mut().unlocked.insert(contained_in);
+
+    let mut hide_callback = |oid: git2::Oid| {
+        let mut ctx = ctx.borrow_mut();
+
+        // Returning true once is not enough: we need to ensure
+        // we don't add more commits to walk list as the loop
+        // in libgit2 continues if callback returns true
+        //
+        // https://github.com/libgit2/libgit2/blob/610dcaac065c0f27daca84b87795ed26926864f5/src/libgit2/revwalk.c#L428-L429
+        if ctx.result.is_some() {
+            return true;
+        }
+
+        ctx.pending.insert(oid);
+        if !ctx.unlocked.contains(&oid) {
+            return false;
+        }
+
+        // Check if any pending commits are now unlocked
+        // Processing one might unlock another
+        loop {
+            let &pending_oid = match ctx
+                .pending
+                .iter()
+                .find(|&pending_oid| ctx.unlocked.contains(&pending_oid))
+            {
+                Some(oid) => oid,
+                None => break,
+            };
+
+            ctx.pending.remove(&pending_oid);
+
+            let commit = match transaction.repo().find_commit(pending_oid) {
+                Ok(commit) => commit,
+                Err(e) => {
+                    ctx.result = Some(Err(e.into()));
+                    return true;
+                }
+            };
+
+            let original_filtered = match filter::apply_to_commit(filter, &commit, transaction) {
+                Ok(oid) => oid,
+                Err(e) => {
+                    ctx.result = Some(Err(e.into()));
+                    return true;
+                }
+            };
+
+            if filtered == original_filtered {
+                ctx.result = Some(Ok((filtered, pending_oid)));
+                return true;
+            }
+
+            for parent_id in commit.parent_ids() {
+                ctx.unlocked.insert(parent_id);
+            }
+        }
+
+        false
+    };
+
+    let walk = walk.with_hide_callback(&mut hide_callback)?;
     for original in walk {
-        let original = transaction.repo().find_commit(original?)?;
-        if filtered == filter::apply_to_commit(filter, &original, transaction)? {
-            // In case a match is found, cache the result
-            filtered_to_original.insert(filtered, original.id());
-            tracing::info!("found original properly {}", original.id());
-            return Ok(original.id());
+        // Only propagate errors; value is unused. Drives iteration to trigger hide_callback.
+        original?;
+
+        if ctx.borrow().result.is_some() {
+            break;
         }
     }
 
-    tracing::info!("Didn't find original",);
-    Ok(git2::Oid::zero())
+    match ctx.into_inner().result {
+        Some(Ok((filtered, original))) => {
+            filtered_to_original.insert(filtered, original);
+            tracing::info!("found original properly {}", original);
+            Ok(original)
+        }
+        Some(Err(e)) => Err(e),
+        None => {
+            tracing::info!("Didn't find original",);
+            Ok(git2::Oid::zero())
+        }
+    }
 }
 
 pub fn find_original(
