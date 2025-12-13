@@ -6,7 +6,6 @@
 use super::*;
 use std::cmp::Ordering;
 use std::collections::HashMap;
-use std::collections::VecDeque;
 use std::sync::LazyLock;
 
 static OPTIMIZED: LazyLock<std::sync::Mutex<std::collections::HashMap<Filter, Filter>>> =
@@ -201,78 +200,140 @@ fn last_chain(rest: Filter, filter: Filter) -> (Filter, Filter) {
     }
 }
 
+#[derive(Default)]
+struct PathTrie {
+    children: HashMap<std::ffi::OsString, PathTrie>,
+    indices: Vec<usize>,
+}
+
+impl PathTrie {
+    fn insert(&mut self, path: &Path, index: usize) {
+        let mut node = self;
+        for comp in path.components() {
+            let key = comp.as_os_str().to_owned();
+            node = node.children.entry(key).or_default();
+        }
+        node.indices.push(index);
+    }
+
+    fn find_overlapping(&self, path: &Path) -> Vec<usize> {
+        let mut result = Vec::new();
+        let mut node = self;
+
+        result.extend(&node.indices);
+        for comp in path.components() {
+            match node.children.get(comp.as_os_str()) {
+                Some(child) => {
+                    node = child;
+                    result.extend(&node.indices);
+                }
+                None => return result,
+            }
+        }
+
+        node.collect_descendants(&mut result);
+        result
+    }
+
+    fn collect_descendants(&self, result: &mut Vec<usize>) {
+        for child in self.children.values() {
+            result.extend(&child.indices);
+            child.collect_descendants(result);
+        }
+    }
+}
+
 pub fn prefix_sort(filters: &[Filter]) -> Vec<Filter> {
+    if filters.len() <= 1 {
+        return filters.to_vec();
+    }
+
     let n = filters.len();
+    let mut outgoing: Vec<std::collections::HashSet<usize>> = vec![Default::default(); n];
 
-    // Step 1: Build graph of ordering constraints
-    let mut graph: HashMap<usize, Vec<usize>> = HashMap::new();
-    let mut indegree = vec![0; n];
+    let mut src_trie = PathTrie::default();
+    let mut dst_trie = PathTrie::default();
 
-    for i in 0..n {
-        for j in i + 1..n {
-            let src_i = src_path(filters[i].clone());
-            let dst_i = dst_path(filters[i].clone());
-            let src_j = src_path(filters[j].clone());
-            let dst_j = dst_path(filters[j].clone());
+    for (i, filter) in filters.iter().enumerate() {
+        let src = src_path(filter.clone());
+        let dst = dst_path(filter.clone());
 
-            let constraint = if src_j.starts_with(&src_i) || src_i.starts_with(&src_j) {
-                Some((i, j))
-            } else if dst_j.starts_with(&dst_i) || dst_i.starts_with(&dst_j) {
-                Some((i, j))
-            } else {
-                None
-            };
+        for j in src_trie.find_overlapping(&src) {
+            outgoing[j].insert(i);
+        }
 
-            if let Some((a, b)) = constraint {
-                graph.entry(a).or_default().push(b);
-                indegree[b] += 1;
+        for j in dst_trie.find_overlapping(&dst) {
+            outgoing[j].insert(i);
+        }
+
+        src_trie.insert(&src, i);
+        dst_trie.insert(&dst, i);
+    }
+
+    topo_sort_with_tiebreak(&outgoing, filters)
+}
+
+fn topo_sort_with_tiebreak(
+    outgoing: &[std::collections::HashSet<usize>],
+    filters: &[Filter],
+) -> Vec<Filter> {
+    use std::collections::BinaryHeap;
+
+    let mut indegree: Vec<usize> = vec![0; filters.len()];
+    for neighbors in outgoing {
+        for &j in neighbors {
+            indegree[j] += 1;
+        }
+    }
+
+    // Use a BinaryHeap with a wrapper for custom ordering
+    #[derive(Eq, PartialEq)]
+    struct SortKey(usize, std::path::PathBuf, std::path::PathBuf); // (index, src, dst)
+
+    impl Ord for SortKey {
+        fn cmp(&self, other: &Self) -> Ordering {
+            match other.1.cmp(&self.1) {
+                Ordering::Equal => other.2.cmp(&self.2),
+                ord => ord,
             }
         }
     }
 
-    // Step 2: Sort indices alphabetically by (src, dst)
-    let mut indices: Vec<usize> = (0..n).collect();
-    indices.sort_by(|&i, &j| {
-        let key_i = (src_path(filters[i].clone()), dst_path(filters[i].clone()));
-        let key_j = (src_path(filters[j].clone()), dst_path(filters[j].clone()));
-
-        match key_i.0.cmp(&key_j.0) {
-            Ordering::Equal => key_i.1.cmp(&key_j.1),
-            other => other,
+    impl PartialOrd for SortKey {
+        fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+            Some(self.cmp(other))
         }
-    });
+    }
 
-    // Step 3: Topological sort with alphabetical tie-break
-    let mut result = Vec::new();
-    let mut available: VecDeque<usize> = indices
+    let make_key = |i: usize| -> SortKey {
+        SortKey(
+            i,
+            src_path(filters[i].clone()),
+            dst_path(filters[i].clone()),
+        )
+    };
+
+    let mut heap: BinaryHeap<SortKey> = indegree
         .iter()
-        .copied()
-        .filter(|&i| indegree[i] == 0)
+        .enumerate()
+        .filter(|(_, deg)| **deg == 0)
+        .map(|(i, _)| make_key(i))
         .collect();
 
-    while let Some(i) = available.pop_front() {
-        result.push(i);
-        if let Some(neighbors) = graph.get(&i) {
-            for &j in neighbors {
-                indegree[j] -= 1;
-                if indegree[j] == 0 {
-                    // Insert j into available, keeping alphabetical order
-                    let pos = available.iter().position(|&x| {
-                        let key_j = (src_path(filters[j].clone()), dst_path(filters[j].clone()));
-                        let key_x = (src_path(filters[x].clone()), dst_path(filters[x].clone()));
-                        key_j < key_x
-                    });
-                    if let Some(p) = pos {
-                        available.insert(p, j);
-                    } else {
-                        available.push_back(j);
-                    }
-                }
+    let mut result = Vec::with_capacity(filters.len());
+
+    while let Some(SortKey(i, _, _)) = heap.pop() {
+        result.push(filters[i].clone());
+
+        for &j in outgoing[i].iter() {
+            indegree[j] -= 1;
+            if indegree[j] == 0 {
+                heap.push(make_key(j));
             }
         }
     }
 
-    result.into_iter().map(|i| filters[i].clone()).collect()
+    result
 }
 
 fn common_pre(filters: &Vec<Filter>) -> Option<(Filter, Vec<Filter>)> {
