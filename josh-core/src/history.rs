@@ -1,4 +1,5 @@
 use super::*;
+use std::cell::RefCell;
 use std::collections::HashMap;
 
 pub fn walk2(
@@ -110,18 +111,61 @@ fn find_unapply_base(
     walk.set_sorting(git2::Sort::TOPOLOGICAL)?;
     walk.push(contained_in)?;
 
+    let find_result = RefCell::new(None);
+    let mut hide_callback = |original| {
+        // Returning true once is not enough: we need to ensure
+        // we don't add more commits to walk list as the loop
+        // in libgit2 continues if callback returns true
+        //
+        // https://github.com/libgit2/libgit2/blob/610dcaac065c0f27daca84b87795ed26926864f5/src/libgit2/revwalk.c#L428-L429
+        if find_result.borrow().is_some() {
+            return true;
+        }
+
+        let original = match transaction.repo().find_commit(original) {
+            Ok(commit) => commit,
+            Err(e) => {
+                *find_result.borrow_mut() = Some(Err(josh_error(&e.to_string())));
+                return true;
+            }
+        };
+
+        let original_filtered = match filter::apply_to_commit(filter, &original, transaction) {
+            Ok(oid) => oid,
+            Err(e) => {
+                *find_result.borrow_mut() = Some(Err(josh_error(&e.to_string())));
+                return true;
+            }
+        };
+
+        if filtered == original_filtered {
+            *find_result.borrow_mut() = Some(Ok((filtered, original.id())));
+            return true;
+        }
+
+        false
+    };
+
+    let walk = walk.with_hide_callback(&mut hide_callback)?;
     for original in walk {
-        let original = transaction.repo().find_commit(original?)?;
-        if filtered == filter::apply_to_commit(filter, &original, transaction)? {
-            // In case a match is found, cache the result
-            filtered_to_original.insert(filtered, original.id());
-            tracing::info!("found original properly {}", original.id());
-            return Ok(original.id());
+        let _original = original?;
+        if find_result.borrow().is_some() {
+            break;
         }
     }
 
-    tracing::info!("Didn't find original",);
-    Ok(git2::Oid::zero())
+    match find_result.into_inner() {
+        Some(Ok((filtered, original))) => {
+            filtered_to_original.insert(filtered, original);
+            tracing::info!("found original properly {}", original);
+            Ok(original)
+        }
+        Some(Err(e)) => Err(e),
+        None => {
+            tracing::info!("Didn't find original",);
+            Ok(git2::Oid::zero())
+        }
+    }
 }
 
 pub fn find_original(
