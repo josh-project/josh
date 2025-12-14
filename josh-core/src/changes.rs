@@ -85,7 +85,7 @@ fn split_changes(
                         repo,
                         &repo.find_commit(changes[i].1)?,
                         &[&parent],
-                        filter::Apply::from_tree(new_tree),
+                        filter::Rewrite::from_tree(new_tree),
                         false,
                     )?;
                     changes[i].1 = new_commit;

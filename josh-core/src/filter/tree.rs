@@ -867,7 +867,7 @@ pub fn original_path(
     let paths_tree = apply(
         transaction,
         chain(to_filter(Op::Paths), filter),
-        Apply::from_tree(tree),
+        Rewrite::from_tree(tree),
     )?;
     let b = get_blob(transaction.repo(), paths_tree.tree(), path);
     pathline(&b)
@@ -882,7 +882,7 @@ pub fn repopulated_tree(
     let paths_tree = apply(
         transaction,
         chain(to_filter(Op::Paths), filter),
-        Apply::from_tree(full_tree),
+        Rewrite::from_tree(full_tree),
     )?;
 
     let ipaths = invert_paths(transaction, "", paths_tree.into_tree())?;
@@ -957,7 +957,7 @@ pub fn compose<'a>(
         let taken_applied = if let Some(cached) = transaction.get_apply(*f, tid) {
             cached
         } else {
-            apply(transaction, *f, Apply::from_tree(taken.clone()))?
+            apply(transaction, *f, Rewrite::from_tree(taken.clone()))?
                 .tree()
                 .id()
         };
@@ -969,7 +969,7 @@ pub fn compose<'a>(
         let unapplied = if let Some(cached) = transaction.get_unapply(*f, aid) {
             cached
         } else {
-            apply(transaction, invert(*f)?, Apply::from_tree(applied))?
+            apply(transaction, invert(*f)?, Rewrite::from_tree(applied))?
                 .tree()
                 .id()
         };

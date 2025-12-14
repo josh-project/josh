@@ -171,7 +171,7 @@ pub fn rewrite_commit(
     repo: &git2::Repository,
     base: &git2::Commit,
     parents: &[&git2::Commit],
-    rewrite_data: filter::Apply,
+    rewrite_data: filter::Rewrite,
     unsign: bool,
 ) -> JoshResult<git2::Oid> {
     let odb = repo.odb()?;
@@ -602,7 +602,7 @@ pub fn unapply_filter(
             }
         };
 
-        let mut apply = filter::Apply::from_tree(new_tree.clone());
+        let mut apply = filter::Rewrite::from_tree(new_tree.clone());
 
         if change_ids.is_some() {
             let new_message = filter::text::transform_with_template(
@@ -672,7 +672,7 @@ pub fn remove_commit_signature<'a>(
         transaction.repo(),
         original_commit,
         filtered_parent_ids,
-        filter::Apply::from_commit(original_commit)?.with_tree(filtered_tree),
+        filter::Rewrite::from_commit(original_commit)?.with_tree(filtered_tree),
         true,
     )?;
 
@@ -703,7 +703,7 @@ pub fn drop_commit(
 pub fn create_filtered_commit(
     original_commit: &git2::Commit,
     filtered_parent_ids: Vec<git2::Oid>,
-    rewrite_data: filter::Apply,
+    rewrite_data: filter::Rewrite,
     transaction: &cache::Transaction,
     filter: filter::Filter,
 ) -> JoshResult<git2::Oid> {
@@ -726,7 +726,7 @@ fn create_filtered_commit2<'a>(
     repo: &'a git2::Repository,
     original_commit: &'a git2::Commit,
     filtered_parent_ids: Vec<git2::Oid>,
-    rewrite_data: filter::Apply,
+    rewrite_data: filter::Rewrite,
     unsign: bool,
 ) -> JoshResult<(git2::Oid, bool)> {
     let filtered_parent_commits: Result<Vec<_>, _> = filtered_parent_ids

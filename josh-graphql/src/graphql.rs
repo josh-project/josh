@@ -1,6 +1,6 @@
 #![allow(unused_variables)]
 
-use josh_core::filter::Apply;
+use josh_core::filter::Rewrite;
 use josh_core::{JoshResult, cache, filter, history, josh_error};
 use juniper::{EmptyMutation, EmptySubscription, FieldResult, graphql_object};
 
@@ -73,7 +73,11 @@ impl Revision {
     ) -> FieldResult<Option<Vec<Path>>> {
         let transaction = context.transaction.lock()?;
         let commit = transaction.repo().find_commit(self.commit_id)?;
-        let x = filter::apply(&transaction, self.filter, Apply::from_tree(commit.tree()?))?;
+        let x = filter::apply(
+            &transaction,
+            self.filter,
+            Rewrite::from_tree(commit.tree()?),
+        )?;
         let tree_id = x.tree().id();
         let paths = find_paths(&transaction, x.tree().clone(), at, depth, kind)?;
         let mut ws = vec![];
@@ -365,7 +369,7 @@ impl Revision {
         let path = std::path::Path::new(&path).to_owned();
         let tree = transaction.repo().find_commit(self.commit_id)?.tree()?;
 
-        let x = filter::apply(&transaction, self.filter, Apply::from_tree(tree))?;
+        let x = filter::apply(&transaction, self.filter, Rewrite::from_tree(tree))?;
 
         if let Some(entry) = x.tree().get_path(&path).ok() {
             if let Some(git2::ObjectType::Blob) = entry.kind() {
@@ -388,7 +392,7 @@ impl Revision {
         let transaction = context.transaction.lock()?;
         let tree = transaction.repo().find_commit(self.commit_id)?.tree()?;
 
-        let x = filter::apply(&transaction, self.filter, Apply::from_tree(tree))?;
+        let x = filter::apply(&transaction, self.filter, Rewrite::from_tree(tree))?;
 
         let path = std::path::Path::new(&path).to_owned();
 
@@ -440,7 +444,7 @@ impl Revision {
         let ifilterobj = filter::parse(":SQUASH:INDEX")?;
         let tree = transaction.repo().find_commit(self.commit_id)?.tree()?;
 
-        let x = filter::apply(&transaction, self.filter, Apply::from_tree(tree))?;
+        let x = filter::apply(&transaction, self.filter, Rewrite::from_tree(tree))?;
         let index_tree = filter::apply(&transaction, ifilterobj, x.clone())?;
 
         /* let start = std::time::Instant::now(); */
