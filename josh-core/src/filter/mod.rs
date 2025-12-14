@@ -13,13 +13,11 @@ use op::{LazyRef, Op};
 
 pub use persist::as_tree;
 pub use persist::from_tree;
+pub(crate) use persist::{to_filter, to_op};
 
 pub use opt::invert;
 pub use parse::get_comments;
 pub use parse::parse;
-
-static FILTERS: LazyLock<std::sync::Mutex<std::collections::HashMap<Filter, Op>>> =
-    LazyLock::new(|| Default::default());
 static WORKSPACES: LazyLock<std::sync::Mutex<std::collections::HashMap<git2::Oid, Filter>>> =
     LazyLock::new(|| Default::default());
 static ANCESTORS: LazyLock<
@@ -234,27 +232,6 @@ pub fn squash(ids: Option<&[(git2::Oid, Filter)]>) -> Filter {
     } else {
         to_filter(Op::Squash(None))
     }
-}
-
-fn to_filter(op: Op) -> Filter {
-    let s = format!("{:?}", op);
-    let f = Filter(
-        git2::Oid::hash_object(git2::ObjectType::Blob, s.as_bytes()).expect("hash_object filter"),
-    );
-    FILTERS.lock().unwrap().insert(f, op);
-    f
-}
-
-fn to_op(filter: Filter) -> Op {
-    if filter == sequence_number() {
-        return Op::Nop;
-    }
-    FILTERS
-        .lock()
-        .unwrap()
-        .get(&filter)
-        .expect("unknown filter")
-        .clone()
 }
 
 /// Pretty print the filter on multiple lines with initial indentation level.
