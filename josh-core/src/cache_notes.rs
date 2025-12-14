@@ -60,7 +60,7 @@ impl CacheBackend for NotesCacheBackend {
             return Ok(None);
         }
 
-        let key = crate::filter::as_tree(&*repo, filter)?;
+        let key = filter.id();
 
         if let Ok(note) = repo.find_note(Some(&note_path(key, sequence_number)), from) {
             let message = note.message().unwrap_or("");
@@ -88,7 +88,7 @@ impl CacheBackend for NotesCacheBackend {
             return Ok(());
         }
 
-        let key = crate::filter::as_tree(&*repo, filter)?;
+        let key = filter.id();
         let signature = crate::cache::josh_commit_signature()?;
 
         repo.note(

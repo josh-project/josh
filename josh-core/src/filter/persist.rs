@@ -1,9 +1,25 @@
 use gix_object::WriteTo;
 use gix_object::bstr::BString;
 use std::collections::HashMap;
+use std::sync::LazyLock;
 
-use crate::filter::{Filter, LazyRef, Op, to_filter, to_op};
+use crate::filter::{Filter, LazyRef, Op, sequence_number};
 use crate::{JoshResult, josh_error};
+
+static FILTERS: LazyLock<std::sync::Mutex<std::collections::HashMap<Filter, Op>>> =
+    LazyLock::new(|| Default::default());
+
+pub(crate) fn to_op(filter: Filter) -> Op {
+    if filter == sequence_number() {
+        return Op::Nop;
+    }
+    FILTERS
+        .lock()
+        .unwrap()
+        .get(&filter)
+        .expect("unknown filter")
+        .clone()
+}
 
 fn push_blob_entries(
     entries: &mut Vec<gix_object::tree::Entry>,
@@ -79,7 +95,7 @@ impl InMemoryBuilder {
     fn build_filter_params(&mut self, params: &[Filter]) -> JoshResult<gix_hash::ObjectId> {
         let mut entries = Vec::new();
         for (i, filter) in params.iter().enumerate() {
-            let child = self.build_filter(*filter)?;
+            let child = gix_hash::ObjectId::from_bytes_or_panic(filter.id().as_bytes());
             entries.push(gix_object::tree::Entry {
                 mode: gix_object::tree::EntryKind::Tree.into(),
                 filename: BString::from(i.to_string()),
@@ -94,7 +110,7 @@ impl InMemoryBuilder {
         let mut outer_entries = Vec::new();
         for (i, (key, filter)) in params.iter().enumerate() {
             let key_blob = self.write_blob(key.as_bytes());
-            let filter_tree = self.build_filter(*filter)?;
+            let filter_tree = gix_hash::ObjectId::from_bytes_or_panic(filter.id().as_bytes());
 
             let inner_entries = vec![
                 gix_object::tree::Entry {
@@ -154,11 +170,6 @@ impl InMemoryBuilder {
             entries: outer_entries,
         };
         self.write_tree(outer_tree)
-    }
-
-    fn build_filter(&mut self, filter: Filter) -> JoshResult<gix_hash::ObjectId> {
-        let op = to_op(filter);
-        self.build_op(&op)
     }
 
     fn build_op(&mut self, op: &Op) -> JoshResult<gix_hash::ObjectId> {
@@ -332,32 +343,55 @@ impl InMemoryBuilder {
     }
 }
 
-pub fn as_tree(repo: &git2::Repository, filter: crate::filter::Filter) -> JoshResult<git2::Oid> {
+pub(crate) fn to_filter(op: Op) -> Filter {
     let mut builder = InMemoryBuilder::new();
-    let tree_id = builder.build_filter(filter)?;
+    let tree_id = builder.build_op(&op).unwrap();
+    let oid = git2::Oid::from_bytes(tree_id.as_bytes()).unwrap();
+
+    let f = Filter(oid);
+    FILTERS.lock().unwrap().insert(f, op);
+    f
+}
+
+pub fn as_tree(repo: &git2::Repository, filter: crate::filter::Filter) -> JoshResult<git2::Oid> {
+    let odb = repo.odb()?;
+
+    // If the tree exists in the ODB it means all children must already exist as
+    // well so we can just return it.
+    if odb.exists(filter.id()) {
+        return Ok(filter.id());
+    }
+
+    // We don't try to figure out what to write exactly, just write all
+    // filters we know about to the ODB
+    let filters = FILTERS.lock().unwrap().clone();
+    let mut builder = InMemoryBuilder::new();
+    for (f, op) in filters.into_iter() {
+        if !odb.exists(f.id()) {
+            builder.build_op(&op)?;
+        }
+    }
 
     // Write all pending objects to the git2 repository
-    let odb = repo.odb()?;
     for (oid, (kind, data)) in builder.pending_writes {
-        let git2_type = match kind {
-            gix_object::Kind::Tree => git2::ObjectType::Tree,
-            gix_object::Kind::Blob => git2::ObjectType::Blob,
-            gix_object::Kind::Commit => git2::ObjectType::Commit,
-            gix_object::Kind::Tag => git2::ObjectType::Tag,
-        };
-
         let oid = git2::Oid::from_bytes(oid.as_bytes())?;
 
         // On some platforms, .exists() is cheaper in terms of i/o
         // than .write(), because .write() updates file access time
         // in loose object backend
         if !odb.exists(oid) {
+            let git2_type = match kind {
+                gix_object::Kind::Tree => git2::ObjectType::Tree,
+                gix_object::Kind::Blob => git2::ObjectType::Blob,
+                gix_object::Kind::Commit => git2::ObjectType::Commit,
+                gix_object::Kind::Tag => git2::ObjectType::Tag,
+            };
             odb.write(git2_type, &data)?;
         }
     }
 
-    // Return the root tree OID
-    Ok(git2::Oid::from_bytes(tree_id.as_bytes())?)
+    // Now the tree should really be in the ODB
+    Ok(filter.id())
 }
 
 pub fn from_tree(repo: &git2::Repository, tree_oid: git2::Oid) -> JoshResult<Filter> {
