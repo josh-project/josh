@@ -2,11 +2,14 @@ use super::*;
 use pest::Parser;
 use std::path::Path;
 use std::sync::LazyLock;
+mod op;
 mod opt;
 mod parse;
 pub mod persist;
 pub mod text;
 pub mod tree;
+
+use op::{LazyRef, Op};
 
 pub use persist::as_tree;
 pub use persist::from_tree;
@@ -252,89 +255,6 @@ fn to_op(filter: Filter) -> Op {
         .get(&filter)
         .expect("unknown filter")
         .clone()
-}
-
-#[derive(Hash, Clone, Debug, PartialEq, PartialOrd, Eq, Ord)]
-enum LazyRef {
-    Resolved(git2::Oid),
-    Lazy(String),
-}
-
-impl LazyRef {
-    fn to_string(&self) -> String {
-        match self {
-            LazyRef::Resolved(id) => format!("{}", id),
-            LazyRef::Lazy(lazy) => format!("\"{}\"", lazy),
-        }
-    }
-    fn parse(s: &str) -> JoshResult<LazyRef> {
-        let s = s.replace("'", "\"");
-        if let Ok(serde_json::Value::String(s)) = serde_json::from_str(&s) {
-            return Ok(LazyRef::Lazy(s));
-        }
-        if let Ok(oid) = git2::Oid::from_str(&s) {
-            Ok(LazyRef::Resolved(oid))
-        } else {
-            Err(josh_error(&format!("invalid ref: {:?}", s)))
-        }
-    }
-}
-
-#[derive(Clone, Debug)]
-enum Op {
-    Nop,
-    Empty,
-    Fold,
-    Paths,
-    #[cfg(feature = "incubating")]
-    Adapt(String),
-    #[cfg(feature = "incubating")]
-    Link(String),
-    #[cfg(feature = "incubating")]
-    Unlink,
-    #[cfg(feature = "incubating")]
-    Export,
-    #[cfg(feature = "incubating")]
-    Embed(std::path::PathBuf),
-
-    // We use BTreeMap rather than HashMap to guarantee deterministic results when
-    // converting to Filter
-    Squash(Option<std::collections::BTreeMap<LazyRef, Filter>>),
-    Author(String, String),
-    Committer(String, String),
-
-    // We use BTreeMap rather than HashMap to guarantee deterministic results when
-    // converting to Filter
-    Rev(std::collections::BTreeMap<LazyRef, Filter>),
-    Linear,
-    Prune,
-    Unsign,
-
-    RegexReplace(Vec<(regex::Regex, String)>),
-
-    Hook(String),
-
-    Index,
-    Invert,
-
-    File(std::path::PathBuf, std::path::PathBuf), // File(dest_path, source_path)
-    Prefix(std::path::PathBuf),
-    Subdir(std::path::PathBuf),
-    Workspace(std::path::PathBuf),
-    Stored(std::path::PathBuf),
-
-    Pattern(String),
-    Message(String, regex::Regex),
-
-    HistoryConcat(LazyRef, Filter),
-    #[cfg(feature = "incubating")]
-    Unapply(LazyRef, Filter),
-
-    Compose(Vec<Filter>),
-    Chain(Filter, Filter),
-    Subtract(Filter, Filter),
-    Exclude(Filter),
-    Pin(Filter),
 }
 
 /// Pretty print the filter on multiple lines with initial indentation level.
