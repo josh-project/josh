@@ -72,7 +72,7 @@ impl std::fmt::Debug for Filter {
 }
 
 #[derive(Debug)]
-pub struct Apply<'a> {
+pub struct Rewrite<'a> {
     tree: git2::Tree<'a>,
     commit: git2::Oid,
     pub author: Option<(String, String)>,
@@ -80,9 +80,9 @@ pub struct Apply<'a> {
     pub message: Option<String>,
 }
 
-impl<'a> Clone for Apply<'a> {
+impl<'a> Clone for Rewrite<'a> {
     fn clone(&self) -> Self {
-        Apply {
+        Rewrite {
             tree: self.tree.clone(),
             commit: self.commit.clone(),
             author: self.author.clone(),
@@ -92,9 +92,9 @@ impl<'a> Clone for Apply<'a> {
     }
 }
 
-impl<'a> Apply<'a> {
+impl<'a> Rewrite<'a> {
     pub fn from_tree(tree: git2::Tree<'a>) -> Self {
-        Apply {
+        Rewrite {
             tree,
             author: None,
             commit: git2::Oid::zero(),
@@ -109,7 +109,7 @@ impl<'a> Apply<'a> {
         committer: Option<(String, String)>,
         message: Option<String>,
     ) -> Self {
-        Apply {
+        Rewrite {
             tree,
             author,
             commit: git2::Oid::zero(),
@@ -132,7 +132,7 @@ impl<'a> Apply<'a> {
             .zip(commit.committer().email().map(|email| email.to_owned()));
         let message = commit.message_raw().map(|msg| msg.to_owned());
 
-        Ok(Apply {
+        Ok(Rewrite {
             tree,
             commit: commit.id(),
             author,
@@ -142,7 +142,7 @@ impl<'a> Apply<'a> {
     }
 
     pub fn with_author(self, author: (String, String)) -> Self {
-        Apply {
+        Rewrite {
             tree: self.tree,
             author: Some(author),
             commit: self.commit,
@@ -152,7 +152,7 @@ impl<'a> Apply<'a> {
     }
 
     pub fn with_committer(self, committer: (String, String)) -> Self {
-        Apply {
+        Rewrite {
             tree: self.tree,
             author: self.author,
             commit: self.commit,
@@ -162,7 +162,7 @@ impl<'a> Apply<'a> {
     }
 
     pub fn with_message(self, message: String) -> Self {
-        Apply {
+        Rewrite {
             tree: self.tree,
             author: self.author,
             commit: self.commit,
@@ -172,7 +172,7 @@ impl<'a> Apply<'a> {
     }
 
     pub fn with_commit(self, commit: git2::Oid) -> Self {
-        Apply {
+        Rewrite {
             tree: self.tree,
             author: self.author,
             commit: commit,
@@ -182,7 +182,7 @@ impl<'a> Apply<'a> {
     }
 
     pub fn with_tree(self, tree: git2::Tree<'a>) -> Self {
-        Apply {
+        Rewrite {
             tree,
             author: self.author,
             commit: self.commit,
@@ -868,7 +868,7 @@ fn apply_to_commit2(
                 repo,
                 commit,
                 &[],
-                Apply::from_commit(commit)?,
+                Rewrite::from_commit(commit)?,
                 true,
             ))
             .transpose();
@@ -924,7 +924,7 @@ fn apply_to_commit2(
                 }
             }
 
-            apply(transaction, nf, Apply::from_commit(commit)?)?
+            apply(transaction, nf, Rewrite::from_commit(commit)?)?
         }
         Op::Squash(Some(ids)) => {
             if let Some(sq) = ids.get(&LazyRef::Resolved(commit.id())) {
@@ -947,7 +947,7 @@ fn apply_to_commit2(
                     .name()
                     .map(|x| x.to_owned())
                     .zip(rc.committer().email().map(|x| x.to_owned()));
-                Apply::from_tree_with_metadata(
+                Rewrite::from_tree_with_metadata(
                     rc.tree()?,
                     author,
                     committer,
@@ -990,7 +990,7 @@ fn apply_to_commit2(
             return Some(history::create_filtered_commit(
                 commit,
                 vec![parent],
-                Apply::from_commit(commit)?,
+                Rewrite::from_commit(commit)?,
                 transaction,
                 filter,
             ))
@@ -1016,7 +1016,7 @@ fn apply_to_commit2(
                 }
             }
 
-            Apply::from_commit(commit)?
+            Rewrite::from_commit(commit)?
         }
         Op::Unsign => {
             let parents: Vec<_> = commit.parent_ids().collect();
@@ -1083,7 +1083,7 @@ fn apply_to_commit2(
             return Some(history::create_filtered_commit(
                 commit,
                 filtered_parent_ids,
-                apply(transaction, filter, Apply::from_commit(commit)?)?,
+                apply(transaction, filter, Rewrite::from_commit(commit)?)?,
                 transaction,
                 filter,
             ))
@@ -1112,7 +1112,7 @@ fn apply_to_commit2(
                 }
             }
 
-            let new_tree = apply(transaction, filter, Apply::from_commit(commit)?)?;
+            let new_tree = apply(transaction, filter, Rewrite::from_commit(commit)?)?;
 
             filtered_parent_ids.retain(|c| !link_parents.contains(c));
 
@@ -1182,7 +1182,7 @@ fn apply_to_commit2(
                 extra_parents
             };
 
-            let filtered_tree = apply(transaction, filter, Apply::from_commit(commit)?)?;
+            let filtered_tree = apply(transaction, filter, Rewrite::from_commit(commit)?)?;
             let filtered_parent_ids = normal_parents
                 .into_iter()
                 .chain(extra_parents)
@@ -1263,7 +1263,7 @@ fn apply_to_commit2(
             }
 
             let filtered_tree = repo.find_tree(filtered_tree)?;
-            Apply::from_commit(commit)?.with_tree(filtered_tree)
+            Rewrite::from_commit(commit)?.with_tree(filtered_tree)
         }
         Op::Hook(hook) => {
             let commit_filter = transaction.lookup_filter_hook(&hook, commit.id())?;
@@ -1284,7 +1284,7 @@ fn apply_to_commit2(
                 /* dbg!(target); */
                 let target = repo.find_commit(*target)?;
                 if let Some(parent) = target.parents().next() {
-                    let ptree = apply(transaction, *uf, Apply::from_commit(&parent)?)?;
+                    let ptree = apply(transaction, *uf, Rewrite::from_commit(&parent)?)?;
                     if let Some(link) = read_josh_link(
                         repo,
                         &ptree.tree(),
@@ -1309,9 +1309,9 @@ fn apply_to_commit2(
             apply(
                 transaction,
                 filter,
-                Apply::from_commit(commit)?, /* Apply::from_commit(commit)?.with_parents(filtered_parent_ids), */
+                Rewrite::from_commit(commit)?, /* Rewrite::from_commit(commit)?.with_parents(filtered_parent_ids), */
             )?
-            /* Apply::from_commit(commit)? */
+            /* Rewrite::from_commit(commit)? */
         }
         #[cfg(feature = "incubating")]
         Op::Embed(path) => {
@@ -1343,9 +1343,9 @@ fn apply_to_commit2(
             } else {
                 return Err(josh_error("unresolved lazy ref"));
             }
-            Apply::from_commit(commit)?
+            Rewrite::from_commit(commit)?
         }
-        _ => apply(transaction, filter, Apply::from_commit(commit)?)?,
+        _ => apply(transaction, filter, Rewrite::from_commit(commit)?)?,
     };
 
     let tree_data = rewrite_data;
@@ -1374,8 +1374,8 @@ fn apply_to_commit2(
 pub fn apply<'a>(
     transaction: &'a cache::Transaction,
     filter: Filter,
-    x: Apply<'a>,
-) -> JoshResult<Apply<'a>> {
+    x: Rewrite<'a>,
+) -> JoshResult<Rewrite<'a>> {
     apply2(transaction, &to_op(filter), x)
 }
 
@@ -1430,7 +1430,7 @@ fn get_link_roots<'a>(
     tree: &'a git2::Tree<'a>,
 ) -> JoshResult<Vec<std::path::PathBuf>> {
     let link_filter = to_filter(Op::Pattern("**/.josh-link.toml".to_string()));
-    let link_tree = apply(transaction, link_filter, Apply::from_tree(tree.clone()))?;
+    let link_tree = apply(transaction, link_filter, Rewrite::from_tree(tree.clone()))?;
 
     let mut roots = vec![];
     link_tree
@@ -1462,7 +1462,11 @@ fn links_from_roots<'a>(
     Ok(v)
 }
 
-fn apply2<'a>(transaction: &'a cache::Transaction, op: &Op, x: Apply<'a>) -> JoshResult<Apply<'a>> {
+fn apply2<'a>(
+    transaction: &'a cache::Transaction,
+    op: &Op,
+    x: Rewrite<'a>,
+) -> JoshResult<Rewrite<'a>> {
     let repo = transaction.repo();
     match op {
         Op::Nop => Ok(x),
@@ -1574,7 +1578,7 @@ fn apply2<'a>(transaction: &'a cache::Transaction, op: &Op, x: Apply<'a>) -> Jos
                 let submodule_tree = apply(
                     transaction,
                     link_file.filter,
-                    Apply::from_tree(submodule_tree),
+                    Rewrite::from_tree(submodule_tree),
                 )
                 .unwrap();
 
@@ -1706,7 +1710,7 @@ fn apply2<'a>(transaction: &'a cache::Transaction, op: &Op, x: Apply<'a>) -> Jos
                 let target = git2::Oid::from_str(target.message().unwrap())?;
                 let target = repo.find_commit(target)?;
                 /* dbg!(&uf); */
-                Ok(Apply::from_tree(filter::unapply(
+                Ok(Rewrite::from_tree(filter::unapply(
                     transaction,
                     *uf,
                     x.tree().clone(),
@@ -1732,11 +1736,11 @@ pub fn unapply<'a>(
         let filtered = apply(
             transaction,
             invert(inverted)?,
-            Apply::from_tree(parent_tree.clone()),
+            Rewrite::from_tree(parent_tree.clone()),
         )?;
         let matching = apply(transaction, inverted, filtered.clone())?;
         let stripped = tree::subtract(transaction, parent_tree.id(), matching.tree().id())?;
-        let x = apply(transaction, inverted, Apply::from_tree(tree))?;
+        let x = apply(transaction, inverted, Rewrite::from_tree(tree))?;
 
         return Ok(transaction.repo().find_tree(tree::overlay(
             transaction,
@@ -1764,7 +1768,7 @@ pub fn unapply<'a>(
         let filtered_parent_tree = apply(
             transaction,
             a_normalized,
-            Apply::from_tree(parent_tree.clone()),
+            Rewrite::from_tree(parent_tree.clone()),
         )?
         .into_tree();
 
@@ -1803,11 +1807,11 @@ fn unapply_workspace<'a>(
             let filtered = apply(
                 transaction,
                 original_filter,
-                Apply::from_tree(parent_tree.clone()),
+                Rewrite::from_tree(parent_tree.clone()),
             )?;
             let matching = apply(transaction, invert(original_filter)?, filtered.clone())?;
             let stripped = tree::subtract(transaction, parent_tree.id(), matching.tree().id())?;
-            let x = apply(transaction, invert(filter)?, Apply::from_tree(tree))?;
+            let x = apply(transaction, invert(filter)?, Rewrite::from_tree(tree))?;
 
             let result = transaction.repo().find_tree(tree::overlay(
                 transaction,
@@ -1828,11 +1832,11 @@ fn unapply_workspace<'a>(
             let filtered = apply(
                 transaction,
                 original_filter,
-                Apply::from_tree(parent_tree.clone()),
+                Rewrite::from_tree(parent_tree.clone()),
             )?;
             let matching = apply(transaction, invert(original_filter)?, filtered.clone())?;
             let stripped = tree::subtract(transaction, parent_tree.id(), matching.tree().id())?;
-            let x = apply(transaction, invert(filter)?, Apply::from_tree(tree))?;
+            let x = apply(transaction, invert(filter)?, Rewrite::from_tree(tree))?;
 
             let result = transaction.repo().find_tree(tree::overlay(
                 transaction,
@@ -1942,7 +1946,7 @@ fn compute_warnings2<'a>(
 ) -> Vec<String> {
     let mut warnings = Vec::new();
 
-    let x = apply(transaction, filter, Apply::from_tree(tree));
+    let x = apply(transaction, filter, Rewrite::from_tree(tree));
     if let Ok(x) = x {
         if x.tree().is_empty() {
             warnings.push(format!("No match for \"{}\"", pretty(filter, 2)));
@@ -2039,8 +2043,11 @@ fn legalize_stored(t: &cache::Transaction, f: Filter, tree: &git2::Tree) -> Josh
         }
         Op::Chain(a, b) => {
             let first = legalize_stored(t, a, tree)?;
-            let second =
-                legalize_stored(t, b, &apply(t, first, Apply::from_tree(tree.clone()))?.tree)?;
+            let second = legalize_stored(
+                t,
+                b,
+                &apply(t, first, Rewrite::from_tree(tree.clone()))?.tree,
+            )?;
             to_filter(Op::Chain(first, second))
         }
         Op::Subtract(a, b) => to_filter(Op::Subtract(
@@ -2097,7 +2104,7 @@ fn per_rev_filter(
             let pin_subtract = apply(
                 transaction,
                 opt::optimize(to_filter(Op::Subtract(legalized_a, legalized_b))),
-                Apply::from_commit(commit)?,
+                Rewrite::from_commit(commit)?,
             )?;
 
             let parent = transaction.repo().find_commit(parent)?;
@@ -2118,7 +2125,7 @@ fn per_rev_filter(
 
     let filtered_parent_ids: Vec<_> = normal_parents.into_iter().chain(extra_parents).collect();
 
-    let mut tree_data = apply(transaction, commit_filter, Apply::from_commit(commit)?)?;
+    let mut tree_data = apply(transaction, commit_filter, Rewrite::from_commit(commit)?)?;
 
     if let Some((pin_subtract, pin_overlay)) = pin_details {
         let with_exclude = tree::subtract(transaction, tree_data.tree().id(), pin_subtract)?;
