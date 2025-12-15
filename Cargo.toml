@@ -71,7 +71,7 @@ version = "0.7.17"
 features = ["compat"]
 
 [workspace.dependencies.reqwest]
-version = "0.12.24"
+version = "0.12.26"
 default-features = false
 features = ["blocking", "json"]
 
