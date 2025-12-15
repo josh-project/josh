@@ -1,6 +1,12 @@
-use super::*;
+use crate::filter::{self, Filter, chain, invert, to_filter, to_op};
+use crate::{JoshResult, josh_error};
 use indoc::{formatdoc, indoc};
 use itertools::Itertools;
+use pest::Parser;
+use std::path::Path;
+
+use crate::filter::op::{LazyRef, Op};
+use crate::filter::opt;
 
 fn make_op(args: &[&str]) -> JoshResult<Op> {
     match args {
@@ -149,7 +155,7 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> JoshResult<Op> {
                 regex::Regex::new(&unquote(r.as_str()))
                     .map_err(|e| josh_error(&format!("invalid regex: {}", e)))?
             } else {
-                super::MESSAGE_MATCH_ALL_REGEX.clone()
+                crate::filter::MESSAGE_MATCH_ALL_REGEX.clone()
             };
             Ok(Op::Message(fmt, regex))
         }
@@ -411,5 +417,5 @@ pub fn get_comments(filter_spec: &str) -> JoshResult<String> {
 }
 
 #[derive(pest_derive::Parser)]
-#[grammar = "filter/grammar.pest"]
+#[grammar = "flang/grammar.pest"]
 struct Grammar;

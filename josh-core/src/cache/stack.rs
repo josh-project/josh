@@ -1,5 +1,5 @@
-use crate::cache::CacheBackend;
-use crate::cache_sled::SledCacheBackend;
+use super::cache::CacheBackend;
+use super::sled::SledCacheBackend;
 use crate::{JoshResult, filter};
 
 pub struct CacheStack {

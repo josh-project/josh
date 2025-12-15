@@ -1,5 +1,5 @@
+use super::cache::{CACHE_VERSION, CacheBackend};
 use crate::JoshResult;
-use crate::cache::{CACHE_VERSION, CacheBackend};
 use crate::filter;
 use crate::filter::Filter;
 
@@ -89,7 +89,7 @@ impl CacheBackend for NotesCacheBackend {
         }
 
         let key = filter.id();
-        let signature = crate::cache::josh_commit_signature()?;
+        let signature = super::cache::josh_commit_signature()?;
 
         repo.note(
             &signature,

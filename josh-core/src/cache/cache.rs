@@ -1,7 +1,5 @@
-use super::*;
-
-use crate::cache_sled::sled_open_josh_trees;
-use crate::cache_stack::CacheStack;
+use super::sled::sled_open_josh_trees;
+use super::stack::CacheStack;
 
 use std::collections::HashMap;
 use std::sync::{LazyLock, RwLock};
@@ -11,25 +9,29 @@ pub(crate) const CACHE_VERSION: u64 = 24;
 pub trait CacheBackend: Send + Sync {
     fn read(
         &self,
-        filter: filter::Filter,
+        filter: crate::filter::Filter,
         from: git2::Oid,
         sequence_number: u128,
-    ) -> JoshResult<Option<git2::Oid>>;
+    ) -> crate::JoshResult<Option<git2::Oid>>;
 
     fn write(
         &self,
-        filter: filter::Filter,
+        filter: crate::filter::Filter,
         from: git2::Oid,
         to: git2::Oid,
         sequence_number: u128,
-    ) -> JoshResult<()>;
+    ) -> crate::JoshResult<()>;
 }
 
 pub trait FilterHook {
-    fn filter_for_commit(&self, commit_oid: git2::Oid, arg: &str) -> JoshResult<filter::Filter>;
+    fn filter_for_commit(
+        &self,
+        commit_oid: git2::Oid,
+        arg: &str,
+    ) -> crate::JoshResult<crate::filter::Filter>;
 }
 
-pub(crate) fn josh_commit_signature<'a>() -> JoshResult<git2::Signature<'a>> {
+pub(crate) fn josh_commit_signature<'a>() -> crate::JoshResult<git2::Signature<'a>> {
     Ok(if let Ok(time) = std::env::var("JOSH_COMMIT_TIME") {
         git2::Signature::new(
             "JOSH",
@@ -56,7 +58,7 @@ pub struct TransactionContext {
 }
 
 impl TransactionContext {
-    pub fn from_env(cache: std::sync::Arc<CacheStack>) -> JoshResult<Self> {
+    pub fn from_env(cache: std::sync::Arc<CacheStack>) -> crate::JoshResult<Self> {
         let repo = git2::Repository::open_from_env()?;
         let path = repo.path().to_owned();
 
@@ -70,9 +72,9 @@ impl TransactionContext {
         }
     }
 
-    pub fn open(&self, ref_prefix: Option<&str>) -> JoshResult<Transaction> {
+    pub fn open(&self, ref_prefix: Option<&str>) -> crate::JoshResult<Transaction> {
         if !self.path.exists() {
-            return Err(josh_error("path does not exist"));
+            return Err(crate::josh_error("path does not exist"));
         }
 
         Ok(Transaction::new(
@@ -94,13 +96,13 @@ struct Transaction2 {
     subtract_map: HashMap<(git2::Oid, git2::Oid), git2::Oid>,
     overlay_map: HashMap<(git2::Oid, git2::Oid), git2::Oid>,
     unapply_map: HashMap<git2::Oid, HashMap<git2::Oid, git2::Oid>>,
-    legalize_map: HashMap<(filter::Filter, git2::Oid), filter::Filter>,
+    legalize_map: HashMap<(crate::filter::Filter, git2::Oid), crate::filter::Filter>,
 
     cache: std::sync::Arc<CacheStack>,
     path_tree: sled::Tree,
     invert_tree: sled::Tree,
     trigram_index_tree: sled::Tree,
-    missing: Vec<(filter::Filter, git2::Oid)>,
+    missing: Vec<(crate::filter::Filter, git2::Oid)>,
     misses: usize,
     walks: usize,
 }
@@ -145,7 +147,7 @@ impl Transaction {
         }
     }
 
-    pub fn try_clone(&self) -> JoshResult<Transaction> {
+    pub fn try_clone(&self) -> crate::JoshResult<Transaction> {
         let context = TransactionContext {
             cache: self.t2.borrow().cache.clone(),
             path: self.repo.path().to_owned(),
@@ -176,7 +178,7 @@ impl Transaction {
         self.t2.borrow_mut().walks -= 1;
     }
 
-    pub fn insert_apply(&self, filter: filter::Filter, from: git2::Oid, to: git2::Oid) {
+    pub fn insert_apply(&self, filter: crate::filter::Filter, from: git2::Oid, to: git2::Oid) {
         let mut t2 = self.t2.borrow_mut();
         t2.apply_map
             .entry(filter.id())
@@ -184,7 +186,7 @@ impl Transaction {
             .insert(from, to);
     }
 
-    pub fn get_apply(&self, filter: filter::Filter, from: git2::Oid) -> Option<git2::Oid> {
+    pub fn get_apply(&self, filter: crate::filter::Filter, from: git2::Oid) -> Option<git2::Oid> {
         let t2 = self.t2.borrow_mut();
         if let Some(m) = t2.apply_map.get(&filter.id()) {
             return m.get(&from).cloned();
@@ -212,17 +214,24 @@ impl Transaction {
         t2.overlay_map.get(&from).cloned()
     }
 
-    pub fn insert_legalize(&self, from: (filter::Filter, git2::Oid), to: filter::Filter) {
+    pub fn insert_legalize(
+        &self,
+        from: (crate::filter::Filter, git2::Oid),
+        to: crate::filter::Filter,
+    ) {
         let mut t2 = self.t2.borrow_mut();
         t2.legalize_map.insert(from, to);
     }
 
-    pub fn get_legalize(&self, from: (filter::Filter, git2::Oid)) -> Option<filter::Filter> {
+    pub fn get_legalize(
+        &self,
+        from: (crate::filter::Filter, git2::Oid),
+    ) -> Option<crate::filter::Filter> {
         let t2 = self.t2.borrow_mut();
         t2.legalize_map.get(&from).cloned()
     }
 
-    pub fn insert_unapply(&self, filter: filter::Filter, from: git2::Oid, to: git2::Oid) {
+    pub fn insert_unapply(&self, filter: crate::filter::Filter, from: git2::Oid, to: git2::Oid) {
         let mut t2 = self.t2.borrow_mut();
         t2.unapply_map
             .entry(filter.id())
@@ -302,7 +311,7 @@ impl Transaction {
         GLOB_MAP.read().unwrap().get(&tree).cloned()
     }
 
-    pub fn insert_ref(&self, filter: filter::Filter, from: git2::Oid, to: git2::Oid) {
+    pub fn insert_ref(&self, filter: crate::filter::Filter, from: git2::Oid, to: git2::Oid) {
         REF_CACHE
             .write()
             .unwrap()
@@ -311,7 +320,7 @@ impl Transaction {
             .insert(from, to);
     }
 
-    pub fn get_ref(&self, filter: filter::Filter, from: git2::Oid) -> Option<git2::Oid> {
+    pub fn get_ref(&self, filter: crate::filter::Filter, from: git2::Oid) -> Option<git2::Oid> {
         if let Some(m) = REF_CACHE.read().unwrap().get(&filter.id()) {
             if let Some(oid) = m.get(&from) {
                 if self.repo.odb().unwrap().exists(*oid) {
@@ -322,7 +331,7 @@ impl Transaction {
         None
     }
 
-    pub fn get_unapply(&self, filter: filter::Filter, from: git2::Oid) -> Option<git2::Oid> {
+    pub fn get_unapply(&self, filter: crate::filter::Filter, from: git2::Oid) -> Option<git2::Oid> {
         let t2 = self.t2.borrow_mut();
         if let Some(m) = t2.unapply_map.get(&filter.id()) {
             return m.get(&from).cloned();
@@ -330,11 +339,15 @@ impl Transaction {
         None
     }
 
-    pub fn lookup_filter_hook(&self, hook: &str, from: git2::Oid) -> JoshResult<filter::Filter> {
+    pub fn lookup_filter_hook(
+        &self,
+        hook: &str,
+        from: git2::Oid,
+    ) -> crate::JoshResult<crate::filter::Filter> {
         if let Some(h) = &self.filter_hook {
             return h.filter_for_commit(from, hook);
         }
-        Err(josh_error("missing filter hook"))
+        Err(crate::josh_error("missing filter hook"))
     }
 
     pub fn with_filter_hook(mut self, hook: std::sync::Arc<dyn FilterHook + Send + Sync>) -> Self {
@@ -342,8 +355,14 @@ impl Transaction {
         self
     }
 
-    pub fn insert(&self, filter: filter::Filter, from: git2::Oid, to: git2::Oid, store: bool) {
-        let sequence_number = if filter != filter::sequence_number() {
+    pub fn insert(
+        &self,
+        filter: crate::filter::Filter,
+        from: git2::Oid,
+        to: git2::Oid,
+        store: bool,
+    ) {
+        let sequence_number = if filter != crate::filter::sequence_number() {
             compute_sequence_number(self, from).expect("compute_sequence_number failed")
         } else {
             0
@@ -364,7 +383,7 @@ impl Transaction {
         }
     }
 
-    pub fn get_missing(&self) -> Vec<(filter::Filter, git2::Oid)> {
+    pub fn get_missing(&self) -> Vec<(crate::filter::Filter, git2::Oid)> {
         let mut missing = self.t2.borrow().missing.clone();
         missing.dedup();
         missing.retain(|(f, i)| !self.known(*f, *i));
@@ -372,11 +391,11 @@ impl Transaction {
         missing
     }
 
-    pub fn known(&self, filter: filter::Filter, from: git2::Oid) -> bool {
+    pub fn known(&self, filter: crate::filter::Filter, from: git2::Oid) -> bool {
         self.get2(filter, from).is_some()
     }
 
-    pub fn get(&self, filter: filter::Filter, from: git2::Oid) -> Option<git2::Oid> {
+    pub fn get(&self, filter: crate::filter::Filter, from: git2::Oid) -> Option<git2::Oid> {
         if let Some(x) = self.get2(filter, from) {
             Some(x)
         } else {
@@ -389,11 +408,11 @@ impl Transaction {
         }
     }
 
-    fn get2(&self, filter: filter::Filter, from: git2::Oid) -> Option<git2::Oid> {
-        if filter == filter::nop() {
+    fn get2(&self, filter: crate::filter::Filter, from: git2::Oid) -> Option<git2::Oid> {
+        if filter == crate::filter::nop() {
             return Some(from);
         }
-        let sequence_number = if filter != filter::sequence_number() {
+        let sequence_number = if filter != crate::filter::sequence_number() {
             compute_sequence_number(self, from).expect("compute_sequence_number failed")
         } else {
             0
@@ -416,7 +435,7 @@ impl Transaction {
             if oid == git2::Oid::zero() {
                 return Some(oid);
             }
-            if filter == filter::sequence_number() {
+            if filter == crate::filter::sequence_number() {
                 return Some(oid);
             }
 
@@ -451,19 +470,19 @@ pub fn u128_from_oid(oid: git2::Oid) -> u128 {
 }
 
 pub fn compute_sequence_number(
-    transaction: &cache::Transaction,
+    transaction: &Transaction,
     input: git2::Oid,
-) -> JoshResult<u128> {
-    if let Some(count) = transaction.get(filter::sequence_number(), input) {
+) -> crate::JoshResult<u128> {
+    if let Some(count) = transaction.get(crate::filter::sequence_number(), input) {
         return Ok(u128_from_oid(count));
     }
 
     let commit = transaction.repo().find_commit(input)?;
     if let Some(p) = commit.parent_ids().next() {
-        if let Some(count) = transaction.get(filter::sequence_number(), p) {
+        if let Some(count) = transaction.get(crate::filter::sequence_number(), p) {
             let pc = u128_from_oid(count);
             transaction.insert(
-                filter::sequence_number(),
+                crate::filter::sequence_number(),
                 input,
                 oid_from_u128(pc + 1),
                 true,
@@ -485,15 +504,15 @@ pub fn compute_sequence_number(
         };
 
         transaction.insert(
-            filter::sequence_number(),
+            crate::filter::sequence_number(),
             commit.id(),
             oid_from_u128(pc + 1),
             true,
         );
     }
-    if let Some(count) = transaction.get(filter::sequence_number(), input) {
+    if let Some(count) = transaction.get(crate::filter::sequence_number(), input) {
         Ok(u128_from_oid(count))
     } else {
-        Err(josh_error("missing sequence_number"))
+        Err(crate::josh_error("missing sequence_number"))
     }
 }
