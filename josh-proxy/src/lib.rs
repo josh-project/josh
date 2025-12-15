@@ -5,8 +5,7 @@ pub mod hyper_integration;
 pub mod juniper_hyper;
 pub mod trace;
 
-use josh_core::cache::TransactionContext;
-use josh_core::cache_stack::CacheStack;
+use josh_core::cache::{CacheStack, TransactionContext};
 use josh_core::{JoshError, JoshResult, josh_error};
 use std::fs;
 use std::path::PathBuf;

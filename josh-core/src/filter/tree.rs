@@ -1,7 +1,7 @@
 use super::*;
 
+use crate::cache::CacheStack;
 use crate::cache::TransactionContext;
-use crate::cache_stack::CacheStack;
 use rayon::prelude::*;
 
 pub fn pathstree<'a>(
