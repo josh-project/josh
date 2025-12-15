@@ -1,5 +1,4 @@
-use josh_core::cache::TransactionContext;
-use josh_core::cache_stack::CacheStack;
+use josh_core::cache::{CacheStack, TransactionContext};
 use josh_core::{JoshResult, cache, josh_error};
 use serde_json::json;
 

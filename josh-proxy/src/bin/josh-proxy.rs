@@ -16,7 +16,7 @@ use hyper::{Request, Response, StatusCode};
 
 use http_body_util::BodyExt;
 use indoc::formatdoc;
-use josh_core::cache_stack::CacheStack;
+use josh_core::cache::CacheStack;
 use josh_core::{JoshError, JoshResult, josh_error};
 use josh_graphql::graphql;
 use josh_rpc::calls::RequestedCommand;
@@ -1649,7 +1649,7 @@ async fn run_proxy() -> josh_core::JoshResult<i32> {
     };
 
     josh_proxy::create_repo(&local)?;
-    josh_core::cache_sled::sled_load(&local)?;
+    josh_core::cache::sled_load(&local)?;
 
     let cache = Arc::new(CacheStack::default());
 
@@ -1870,7 +1870,7 @@ async fn serve_graphql(
         Err(resp) => return Ok(erase(resp)),
     };
 
-    let cache = std::sync::Arc::new(josh_core::cache_stack::CacheStack::default());
+    let cache = std::sync::Arc::new(josh_core::cache::CacheStack::default());
     let transaction_mirror =
         josh_core::cache::TransactionContext::new(&serv.repo_path.join("mirror"), cache.clone())
             .open(Some(&format!(

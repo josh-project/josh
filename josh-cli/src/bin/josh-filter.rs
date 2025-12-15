@@ -193,13 +193,13 @@ fn run_filter(args: Vec<String>) -> josh_core::JoshResult<i32> {
     };
 
     if !args.get_flag("no-cache") {
-        josh_core::cache_sled::sled_load(&repo_path)?;
+        josh_core::cache::sled_load(&repo_path)?;
     }
 
     let cache = std::sync::Arc::new(
-        josh_core::cache_stack::CacheStack::new()
-            .with_backend(josh_core::cache_sled::SledCacheBackend::default())
-            .with_backend(josh_core::cache_notes::NotesCacheBackend::new(&repo_path)?),
+        josh_core::cache::CacheStack::new()
+            .with_backend(josh_core::cache::SledCacheBackend::default())
+            .with_backend(josh_core::cache::NotesCacheBackend::new(&repo_path)?),
     );
 
     let mut transaction =
@@ -296,7 +296,7 @@ fn run_filter(args: Vec<String>) -> josh_core::JoshResult<i32> {
             rs_tracing::close_trace_file!();
         }
         if args.get_flag("cache-stats") {
-            josh_core::cache_sled::sled_print_stats().expect("failed to collect cache stats");
+            josh_core::cache::sled_print_stats().expect("failed to collect cache stats");
         }
         if let Some(mempack) = mp {
             let mut buf = git2::Buf::new();

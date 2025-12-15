@@ -319,15 +319,15 @@ fn run_command(cli: &Cli) -> anyhow::Result<()> {
         repo.path().parent().unwrap().to_path_buf()
     };
 
-    josh_core::cache_sled::sled_load(&repo_path.join(".git"))
+    josh_core::cache::sled_load(&repo_path.join(".git"))
         .map_err(from_josh_err)
         .context("Failed to load sled cache")?;
 
     let cache = std::sync::Arc::new(
-        josh_core::cache_stack::CacheStack::new()
-            .with_backend(josh_core::cache_sled::SledCacheBackend::default())
+        josh_core::cache::CacheStack::new()
+            .with_backend(josh_core::cache::SledCacheBackend::default())
             .with_backend(
-                josh_core::cache_notes::NotesCacheBackend::new(&repo_path)
+                josh_core::cache::NotesCacheBackend::new(&repo_path)
                     .map_err(from_josh_err)
                     .context("Failed to create NotesCacheBackend")?,
             ),

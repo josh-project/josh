@@ -26,3 +26,7 @@ toml = { workspace = true }
 
 [features]
 incubating = []
+
+[[bin]]
+name = "josh-filter"
+path = "src/bin/josh-filter.rs"

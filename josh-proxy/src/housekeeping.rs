@@ -136,7 +136,7 @@ fn run_command(path: &Path, cmd: &[&str]) -> CommandResult {
 #[tracing::instrument(name = "housekeeping_run", skip_all)]
 pub fn run(
     repo_path: &std::path::Path,
-    cache: std::sync::Arc<josh_core::cache_stack::CacheStack>,
+    cache: std::sync::Arc<josh_core::cache::CacheStack>,
     do_gc: bool,
 ) -> JoshResult<()> {
     use josh_core::cache::TransactionContext;

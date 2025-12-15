@@ -2237,22 +2237,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "josh-filter"
-version = "22.4.15"
-dependencies = [
- "clap",
- "defer",
- "env_logger",
- "git2",
- "josh-core",
- "josh-graphql",
- "josh-templates",
- "juniper",
- "rs_tracing",
- "serde_json",
-]
-
-[[package]]
 name = "josh-graphql"
 version = "0.1.0"
 dependencies = [
