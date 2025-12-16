@@ -141,7 +141,7 @@ No match for filters
   remote: upstream: response body:        
   remote: 
   remote: To http://localhost:8001/real_repo.git        
-  remote:    5119a73..25943be  JOSH_PUSH -> master        
+  remote:    5119a73..25c566d  JOSH_PUSH -> master        
   remote: warnings:        
   remote: No match for "::abc"        
   remote: No match for "a/b = :/b/c/*"        
@@ -150,7 +150,7 @@ No match for filters
   remote: No match for "test = ::test"        
   remote: No match for "test/test = :/test:/"        
   remote: No match for "::test/test/"        
-  remote: REWRITE(064643c5fdf5295695d383a511e4335ea3262fce -> 9cbc5874da793480ee59207ca72d9f0523b8b127)        
+  remote: REWRITE(064643c5fdf5295695d383a511e4335ea3262fce -> e972e5448a9595045a092fb5f7d82dc6797b4d23)        
   To http://localhost:8002/real_repo.git:workspace=ws.git
      66a8b5e..064643c  HEAD -> master
 

@@ -83,7 +83,7 @@ pub enum Op {
     Unapply(LazyRef, Filter),
 
     Compose(Vec<Filter>),
-    Chain(Filter, Filter),
+    Chain(Vec<Filter>),
     Subtract(Filter, Filter),
     Exclude(Filter),
     Pin(Filter),

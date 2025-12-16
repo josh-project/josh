@@ -222,9 +222,11 @@ fn lazy_refs2(op: &Op) -> Vec<String> {
                 })
         }
         Op::Exclude(filter) | Op::Pin(filter) => lazy_refs(*filter),
-        Op::Chain(a, b) => {
-            let mut av = lazy_refs(*a);
-            av.append(&mut lazy_refs(*b));
+        Op::Chain(filters) => {
+            let mut av = vec![];
+            for filter in filters {
+                av.append(&mut lazy_refs(*filter));
+            }
             av
         }
         Op::Subtract(a, b) => {
@@ -282,7 +284,7 @@ fn resolve_refs2(refs: &std::collections::HashMap<String, git2::Oid>, op: &Op) -
         }
         Op::Exclude(filter) => Op::Exclude(resolve_refs(refs, *filter)),
         Op::Pin(filter) => Op::Pin(resolve_refs(refs, *filter)),
-        Op::Chain(a, b) => Op::Chain(resolve_refs(refs, *a), resolve_refs(refs, *b)),
+        Op::Chain(filters) => Op::Chain(filters.iter().map(|f| resolve_refs(refs, *f)).collect()),
         Op::Subtract(a, b) => Op::Subtract(resolve_refs(refs, *a), resolve_refs(refs, *b)),
         Op::Rev(filters) => {
             let lr = filters
@@ -344,7 +346,9 @@ fn src_path2(op: &Op) -> std::path::PathBuf {
     normalize_path(&match op {
         Op::Subdir(path) => path.to_owned(),
         Op::File(_, source_path) => source_path.to_owned(),
-        Op::Chain(a, b) => src_path(*a).join(src_path(*b)),
+        Op::Chain(filters) => filters
+            .iter()
+            .fold(std::path::PathBuf::new(), |acc, f| acc.join(src_path(*f))),
         _ => std::path::PathBuf::new(),
     })
 }
@@ -357,7 +361,10 @@ fn dst_path2(op: &Op) -> std::path::PathBuf {
     normalize_path(&match op {
         Op::Prefix(path) => path.to_owned(),
         Op::File(dest_path, _) => dest_path.to_owned(),
-        Op::Chain(a, b) => dst_path(*b).join(dst_path(*a)),
+        Op::Chain(filters) => filters
+            .iter()
+            .rev()
+            .fold(std::path::PathBuf::new(), |acc, f| acc.join(dst_path(*f))),
         _ => std::path::PathBuf::new(),
     })
 }
@@ -497,15 +504,22 @@ fn apply_to_commit2(
         Op::Nop => return Ok(Some(commit.id())),
         Op::Empty => return Ok(Some(git2::Oid::zero())),
 
-        Op::Chain(a, b) => {
-            let r = some_or!(apply_to_commit2(&to_op(*a), commit, transaction)?, {
-                return Ok(None);
-            });
-            return if let Ok(r) = repo.find_commit(r) {
-                apply_to_commit2(&to_op(*b), &r, transaction)
-            } else {
-                Ok(Some(git2::Oid::zero()))
-            };
+        Op::Chain(filters) => {
+            let mut current_oid = commit.id();
+            for filter in filters {
+                if current_oid == git2::Oid::zero() {
+                    break;
+                }
+                let current_commit = repo.find_commit(current_oid)?;
+                let r = some_or!(
+                    apply_to_commit2(&to_op(*filter), &current_commit, transaction)?,
+                    {
+                        return Ok(None);
+                    }
+                );
+                current_oid = r;
+            }
+            return Ok(Some(current_oid));
         }
         Op::Squash(None) => {
             return Some(history::rewrite_commit(
@@ -521,6 +535,7 @@ fn apply_to_commit2(
             if let Some(oid) = transaction.get(filter, commit.id()) {
                 return Ok(Some(oid));
             }
+            // Continue to process the filter if not cached
         }
     };
 
@@ -637,9 +652,11 @@ fn apply_to_commit2(
         }
         Op::Squash(Some(ids)) => {
             if let Some(sq) = ids.get(&LazyRef::Resolved(commit.id())) {
-                let oid = if let Some(oid) =
-                    apply_to_commit2(&Op::Chain(filter::squash(None), *sq), commit, transaction)?
-                {
+                let oid = if let Some(oid) = apply_to_commit2(
+                    &Op::Chain(vec![filter::squash(None), *sq]),
+                    commit,
+                    transaction,
+                )? {
                     oid
                 } else {
                     return Ok(None);
@@ -866,7 +883,7 @@ fn apply_to_commit2(
                 for (root, _link_file) in v {
                     let embeding = some_or!(
                         apply_to_commit2(
-                            &Op::Chain(message("{@}"), file(root.join(".josh-link.toml"))),
+                            &Op::Chain(vec![message("{@}"), file(root.join(".josh-link.toml"))]),
                             &commit,
                             transaction
                         )?,
@@ -1424,8 +1441,12 @@ fn apply2<'a>(
             Ok(x.with_tree(tree::compose(transaction, filtered)?))
         }
 
-        Op::Chain(a, b) => {
-            return apply(transaction, *b, apply(transaction, *a, x.clone())?);
+        Op::Chain(filters) => {
+            let mut result = x;
+            for filter in filters {
+                result = apply(transaction, *filter, result)?;
+            }
+            return Ok(result);
         }
         Op::Hook(_) => Err(josh_error("not applicable to tree")),
 
@@ -1488,24 +1509,37 @@ pub fn unapply<'a>(
         return Ok(ws);
     }
 
-    if let Op::Chain(a, b) = to_op(filter) {
-        // If filter "a" is invertable, use "invert(invert(a))" version of it, otherwise use as is
-        let a_normalized = if let Ok(a_inverted) = invert(a) {
-            invert(a_inverted)?
+    if let Op::Chain(filters) = to_op(filter) {
+        // Split into first and rest, unapply recursively
+        let (first, rest) = match filters.split_first() {
+            Some((first, rest)) => (first, rest),
+            None => return Ok(tree),
+        };
+
+        if rest.is_empty() {
+            return unapply(transaction, *first, tree, parent_tree);
+        }
+
+        let rest_chain = to_filter(Op::Chain(rest.to_vec()));
+
+        // Compute filtered_parent_tree for the first filter
+        let first_normalized = if let Ok(first_inverted) = invert(*first) {
+            invert(first_inverted)?
         } else {
-            a
+            *first
         };
         let filtered_parent_tree = apply(
             transaction,
-            a_normalized,
+            first_normalized,
             Rewrite::from_tree(parent_tree.clone()),
         )?
         .into_tree();
 
+        // Recursively unapply: first unapply the rest, then unapply first
         return unapply(
             transaction,
-            a,
-            unapply(transaction, b, tree, filtered_parent_tree)?,
+            *first,
+            unapply(transaction, rest_chain, tree, filtered_parent_tree)?,
             parent_tree,
         );
     }
@@ -1721,7 +1755,7 @@ fn is_ancestor_of(
 pub fn is_linear(filter: Filter) -> bool {
     match to_op(filter) {
         Op::Linear => true,
-        Op::Chain(a, b) => is_linear(a) || is_linear(b),
+        Op::Chain(filters) => filters.iter().any(|f| is_linear(*f)),
         _ => false,
     }
 }
@@ -1735,7 +1769,9 @@ where
             let f = f.into_iter().map(|f| legalize_pin(f, c)).collect();
             to_filter(Op::Compose(f))
         }
-        Op::Chain(a, b) => to_filter(Op::Chain(legalize_pin(a, c), legalize_pin(b, c))),
+        Op::Chain(filters) => to_filter(Op::Chain(
+            filters.iter().map(|f| legalize_pin(*f, c)).collect(),
+        )),
         Op::Subtract(a, b) => to_filter(Op::Subtract(legalize_pin(a, c), legalize_pin(b, c))),
         Op::Exclude(f) => to_filter(Op::Exclude(legalize_pin(f, c))),
         Op::Pin(f) => c(f),
@@ -1761,14 +1797,15 @@ fn legalize_stored(t: &cache::Transaction, f: Filter, tree: &git2::Tree) -> Josh
                 .collect::<JoshResult<Vec<_>>>()?;
             to_filter(Op::Compose(f))
         }
-        Op::Chain(a, b) => {
-            let first = legalize_stored(t, a, tree)?;
-            let second = legalize_stored(
-                t,
-                b,
-                &apply(t, first, Rewrite::from_tree(tree.clone()))?.tree,
-            )?;
-            to_filter(Op::Chain(first, second))
+        Op::Chain(filters) => {
+            let mut result = Vec::with_capacity(filters.len());
+            let mut current_tree = tree.clone();
+            for filter in filters {
+                let legalized = legalize_stored(t, filter, &current_tree)?;
+                current_tree = apply(t, legalized, Rewrite::from_tree(current_tree.clone()))?.tree;
+                result.push(legalized);
+            }
+            to_filter(Op::Chain(result))
         }
         Op::Subtract(a, b) => to_filter(Op::Subtract(
             legalize_stored(t, a, tree)?,

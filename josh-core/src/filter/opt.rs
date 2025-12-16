@@ -66,18 +66,46 @@ pub fn simplify(filter: Filter) -> Filter {
             }
             Op::Compose(out.drain(..).map(simplify).collect())
         }
-        Op::Chain(a, b) => match (to_op(a), to_op(b)) {
-            (a, Op::Chain(x, y)) => Op::Chain(to_filter(Op::Chain(to_filter(a), x)), y),
-            (Op::Prefix(x), Op::Prefix(y)) => Op::Prefix(y.join(x)),
-            (Op::Subdir(x), Op::Subdir(y)) => Op::Subdir(x.join(y)),
-            (Op::Chain(x, y), b) => match (to_op(x), to_op(y), b.clone()) {
-                (x, Op::Prefix(p1), Op::Prefix(p2)) => {
-                    Op::Chain(simplify(to_filter(x)), to_filter(Op::Prefix(p2.join(p1))))
+        Op::Chain(filters) => {
+            // Flatten nested chains
+            let mut flattened = Vec::with_capacity(filters.len());
+            for filter in filters {
+                if let Op::Chain(nested) = to_op(filter) {
+                    flattened.extend(nested);
+                } else {
+                    flattened.push(filter);
                 }
-                _ => Op::Chain(simplify(a), simplify(to_filter(b))),
-            },
-            (a, b) => Op::Chain(simplify(to_filter(a)), simplify(to_filter(b))),
-        },
+            }
+            // Simplify each filter
+            let simplified: Vec<_> = flattened.iter().map(|f| simplify(*f)).collect();
+            // Try to combine adjacent Prefix/Subdir operations
+            let mut result = vec![];
+            let mut i = 0;
+            while i < simplified.len() {
+                if i + 1 < simplified.len() {
+                    match (to_op(simplified[i]), to_op(simplified[i + 1])) {
+                        (Op::Prefix(x), Op::Prefix(y)) => {
+                            result.push(to_filter(Op::Prefix(y.join(x))));
+                            i += 2;
+                            continue;
+                        }
+                        (Op::Subdir(x), Op::Subdir(y)) => {
+                            result.push(to_filter(Op::Subdir(x.join(y))));
+                            i += 2;
+                            continue;
+                        }
+                        _ => {}
+                    }
+                }
+                result.push(simplified[i]);
+                i += 1;
+            }
+            if result.len() == 1 {
+                to_op(result[0])
+            } else {
+                Op::Chain(result)
+            }
+        }
         Op::Subtract(a, b) => {
             let (a, b) = (to_op(a), to_op(b));
             Op::Subtract(simplify(to_filter(a)), simplify(to_filter(b)))
@@ -117,23 +145,31 @@ pub fn flatten(filter: Filter) -> Filter {
             }
             Op::Compose(out.drain(..).map(flatten).collect())
         }
-        Op::Chain(af, bf) => match (to_op(af), to_op(bf)) {
-            (_, Op::Compose(filters)) => {
-                let mut out = vec![];
-                for f in filters {
-                    out.push(to_filter(Op::Chain(af, f)));
+        Op::Chain(filters) => {
+            // Flatten nested chains first
+            let mut flattened = vec![];
+            for filter in filters {
+                if let Op::Chain(nested) = to_op(filter) {
+                    flattened.extend(nested);
+                } else {
+                    flattened.push(filter);
                 }
-                Op::Compose(out)
             }
-            (Op::Compose(filters), _) => {
-                let mut out = vec![];
-                for f in filters {
-                    out.push(to_filter(Op::Chain(f, bf)));
+            // Check if any filter is a Compose and distribute
+            for (i, filter) in flattened.iter().enumerate() {
+                if let Op::Compose(compose_filters) = to_op(*filter) {
+                    // Distribute: create a Compose where each element is the chain with one compose element
+                    let mut result = vec![];
+                    for compose_filter in compose_filters {
+                        let mut new_chain = flattened.clone();
+                        new_chain[i] = compose_filter;
+                        result.push(to_filter(Op::Chain(new_chain)));
+                    }
+                    return to_filter(Op::Compose(result));
                 }
-                Op::Compose(out)
             }
-            _ => Op::Chain(flatten(af), flatten(bf)),
-        },
+            Op::Chain(flattened.iter().map(|f| flatten(*f)).collect())
+        }
         Op::Subtract(a, b) => {
             let (a, b) = (to_op(a), to_op(b));
             Op::Subtract(flatten(to_filter(a)), flatten(to_filter(b)))
@@ -150,6 +186,8 @@ pub fn flatten(filter: Filter) -> Filter {
     }
 }
 
+// FIXME: This code is somewhat complex and can probably be simplified
+// after the "chain as vec" refactor.
 fn group(filters: &Vec<Filter>) -> Vec<Vec<Filter>> {
     let mut res: Vec<Vec<Filter>> = vec![];
     for f in filters {
@@ -158,15 +196,19 @@ fn group(filters: &Vec<Filter>) -> Vec<Vec<Filter>> {
             continue;
         }
 
-        if let Op::Chain(a, _) = to_op(*f) {
-            if let Op::Chain(x, _) = to_op(res[res.len() - 1][0]) {
-                if a == x {
-                    let n = res.len();
-                    res[n - 1].push(*f);
-                    continue;
-                }
+        if let Op::Chain(filters) = to_op(*f)
+            && !filters.is_empty()
+        {
+            if let Op::Chain(other_filters) = to_op(res[res.len() - 1][0])
+                && !other_filters.is_empty()
+                && filters[0] == other_filters[0]
+            {
+                let n = res.len();
+                res[n - 1].push(*f);
+                continue;
             }
         }
+
         res.push(vec![*f]);
     }
     if res.len() != filters.len() {
@@ -181,15 +223,11 @@ fn group(filters: &Vec<Filter>) -> Vec<Vec<Filter>> {
         }
 
         let (_, a) = last_chain(to_filter(Op::Nop), *f);
-        {
-            let (_, x) = last_chain(to_filter(Op::Nop), res[res.len() - 1][0]);
-            {
-                if a == x {
-                    let n = res.len();
-                    res[n - 1].push(*f);
-                    continue;
-                }
-            }
+        let (_, x) = last_chain(to_filter(Op::Nop), res[res.len() - 1][0]);
+        if a == x {
+            let n = res.len();
+            res[n - 1].push(*f);
+            continue;
         }
         res.push(vec![*f]);
     }
@@ -198,7 +236,15 @@ fn group(filters: &Vec<Filter>) -> Vec<Vec<Filter>> {
 
 fn last_chain(rest: Filter, filter: Filter) -> (Filter, Filter) {
     match to_op(filter) {
-        Op::Chain(a, b) => last_chain(to_filter(Op::Chain(rest, a)), b),
+        Op::Chain(filters) => {
+            if filters.is_empty() {
+                (rest, filter)
+            } else {
+                let mut new_rest = vec![rest];
+                new_rest.extend(filters[..filters.len() - 1].iter().copied());
+                last_chain(to_filter(Op::Chain(new_rest)), filters[filters.len() - 1])
+            }
+        }
         _ => (rest, filter),
     }
 }
@@ -343,12 +389,21 @@ fn common_pre(filters: &Vec<Filter>) -> Option<(Filter, Vec<Filter>)> {
     let mut rest = vec![];
     let mut c: Option<Filter> = None;
     for f in filters {
-        if let Op::Chain(a, b) = to_op(*f) {
-            rest.push(b);
-            if c.is_none() {
-                c = Some(a);
-            }
-            if c != Some(a) {
+        if let Op::Chain(chain_filters) = to_op(*f) {
+            if !chain_filters.is_empty() {
+                let first = chain_filters[0];
+                let rest_chain = if chain_filters.len() > 1 {
+                    to_filter(Op::Chain(chain_filters[1..].to_vec()))
+                } else {
+                    to_filter(Op::Nop)
+                };
+                rest.push(rest_chain);
+                if c.is_none() {
+                    c = Some(first);
+                } else if c != Some(first) {
+                    return None;
+                }
+            } else {
                 return None;
             }
         } else {
@@ -440,11 +495,10 @@ fn step(filter: Filter) -> Filter {
     let result = to_filter(match to_op(filter) {
         Op::Subdir(path) => {
             if path.components().count() > 1 {
-                let mut components = path.components();
-                let a = components.next().unwrap();
                 Op::Chain(
-                    to_filter(Op::Subdir(std::path::PathBuf::from(&a))),
-                    to_filter(Op::Subdir(components.as_path().to_owned())),
+                    path.components()
+                        .map(|x| to_filter(Op::Subdir(std::path::PathBuf::from(&x))))
+                        .collect(),
                 )
             } else {
                 Op::Subdir(path)
@@ -452,11 +506,11 @@ fn step(filter: Filter) -> Filter {
         }
         Op::Prefix(path) => {
             if path.components().count() > 1 {
-                let mut components = path.components();
-                let a = components.next().unwrap();
                 Op::Chain(
-                    to_filter(Op::Prefix(components.as_path().to_owned())),
-                    to_filter(Op::Prefix(std::path::PathBuf::from(&a))),
+                    path.components()
+                        .rev()
+                        .map(|x| to_filter(Op::Prefix(std::path::PathBuf::from(&x))))
+                        .collect(),
                 )
             } else {
                 Op::Prefix(path)
@@ -470,9 +524,9 @@ fn step(filter: Filter) -> Filter {
             filters.retain(|x| *x != to_filter(Op::Empty));
             let mut grouped = group(&filters);
             if let Some((common, rest)) = common_pre(&filters) {
-                Op::Chain(common, to_filter(Op::Compose(rest)))
+                Op::Chain(vec![common, to_filter(Op::Compose(rest))])
             } else if let Some((common, rest)) = common_post(&filters) {
-                Op::Chain(to_filter(Op::Compose(rest)), common)
+                Op::Chain(vec![to_filter(Op::Compose(rest)), common])
             } else if grouped.len() != 1 && grouped.len() != filters.len() {
                 Op::Compose(
                     grouped
@@ -485,27 +539,61 @@ fn step(filter: Filter) -> Filter {
                 Op::Compose(filters.drain(..).map(step).collect())
             }
         }
-        Op::Chain(a, b) => match (to_op(a), to_op(b)) {
-            (Op::Chain(x, y), b) => Op::Chain(x, to_filter(Op::Chain(y, to_filter(b)))),
-            (Op::Prefix(a), Op::Subdir(b)) if a == b => Op::Nop,
-            (Op::Prefix(a), Op::Subdir(b))
-                if a != b && a.components().count() == b.components().count() =>
-            {
-                Op::Empty
-            }
-            (Op::Prefix(a), Op::Subdir(b)) if a != b => {
-                if let Ok(stripped) = a.strip_prefix(&b) {
-                    Op::Prefix(stripped.to_owned())
+        Op::Chain(filters) => {
+            // Flatten nested chains
+            let mut flattened = vec![];
+            for filter in &filters {
+                if let Op::Chain(nested) = to_op(*filter) {
+                    flattened.extend(nested);
                 } else {
-                    to_op(filter)
+                    flattened.push(*filter);
                 }
             }
-            (Op::Nop, b) => b,
-            (a, Op::Nop) => a,
-            (Op::Empty, _) => Op::Empty,
-            (_, Op::Empty) => Op::Empty,
-            (a, b) => Op::Chain(step(to_filter(a)), step(to_filter(b))),
-        },
+
+            // If any filter is Op::Empty the whole chain results in Op::Empty
+            if filters.contains(&to_filter(Op::Empty)) {
+                return to_filter(Op::Empty);
+            }
+
+            // Remove Nop filters
+            let nop_filter = to_filter(Op::Nop);
+            flattened.retain(|f| *f != nop_filter);
+            if flattened.is_empty() {
+                return to_filter(Op::Nop);
+            }
+
+            // Optimize adjacent Prefix/Subdir pairs
+            let mut result = vec![];
+            let mut i = 0;
+            while i < flattened.len() {
+                if i + 1 < flattened.len() {
+                    match (to_op(flattened[i]), to_op(flattened[i + 1])) {
+                        (Op::Prefix(a), Op::Subdir(b)) if a == b => {
+                            // Skip both, they cancel out
+                            i += 2;
+                            continue;
+                        }
+                        (Op::Prefix(a), Op::Subdir(b))
+                            if a != b && a.components().count() == b.components().count() =>
+                        {
+                            // :prefix=a:/b will always result in an empty tree since the
+                            // output of :prefix=a does not have a subtree "b"
+                            return to_filter(Op::Empty);
+                        }
+                        _ => {}
+                    }
+                }
+                result.push(step(flattened[i]));
+                i += 1;
+            }
+            if result.is_empty() {
+                Op::Nop
+            } else if result.len() == 1 {
+                to_op(result[0])
+            } else {
+                Op::Chain(result)
+            }
+        }
         Op::Exclude(b) if b == to_filter(Op::Nop) => Op::Empty,
         Op::Exclude(b) | Op::Pin(b) if b == to_filter(Op::Empty) => Op::Nop,
         Op::Exclude(b) => Op::Exclude(step(b)),
@@ -516,23 +604,37 @@ fn step(filter: Filter) -> Filter {
             (Op::Message(..), Op::Message(..)) => Op::Empty,
             (_, Op::Nop) => Op::Empty,
             (a, Op::Empty) => a,
-            (Op::Chain(a, b), Op::Chain(c, d)) if a == c => {
-                Op::Chain(a, to_filter(Op::Subtract(b, d)))
+            (Op::Chain(a_filters), Op::Chain(b_filters))
+                if !a_filters.is_empty()
+                    && !b_filters.is_empty()
+                    && a_filters[0] == b_filters[0] =>
+            {
+                let mut new_a = a_filters.clone();
+                let mut new_b = b_filters.clone();
+                let common = new_a.remove(0);
+                new_b.remove(0);
+                Op::Chain(vec![
+                    common,
+                    to_filter(Op::Subtract(
+                        to_filter(Op::Chain(new_a)),
+                        to_filter(Op::Chain(new_b)),
+                    )),
+                ])
             }
             (_, b) if prefix_of(b.clone()) != to_filter(Op::Nop) => {
                 Op::Subtract(af, last_chain(to_filter(Op::Nop), to_filter(b)).0)
             }
-            (a, _) if prefix_of(a.clone()) != to_filter(Op::Nop) => Op::Chain(
+            (a, _) if prefix_of(a.clone()) != to_filter(Op::Nop) => Op::Chain(vec![
                 to_filter(Op::Subtract(
                     last_chain(to_filter(Op::Nop), to_filter(a.clone())).0,
                     bf,
                 )),
                 prefix_of(a),
-            ),
+            ]),
             (_, b) if is_prefix(b.clone()) => Op::Subtract(af, to_filter(Op::Nop)),
             _ if common_post(&vec![af, bf]).is_some() => {
                 let (cp, rest) = common_post(&vec![af, bf]).unwrap();
-                Op::Chain(to_filter(Op::Subtract(rest[0], rest[1])), cp)
+                Op::Chain(vec![to_filter(Op::Subtract(rest[0], rest[1])), cp])
             }
             (Op::Compose(mut av), _) if av.contains(&bf) => {
                 av.retain(|x| *x != bf);
@@ -591,7 +693,14 @@ pub fn invert(filter: Filter) -> JoshResult<Filter> {
     rs_tracing::trace_scoped!("invert", "spec": spec(filter));
 
     let result = to_filter(match to_op(filter) {
-        Op::Chain(a, b) => Op::Chain(invert(b)?, invert(a)?),
+        Op::Chain(filters) => {
+            let inverted: Vec<_> = filters
+                .iter()
+                .rev()
+                .map(|f| invert(*f))
+                .collect::<JoshResult<_>>()?;
+            Op::Chain(inverted)
+        }
         Op::Compose(filters) => Op::Compose(
             filters
                 .into_iter()
@@ -616,10 +725,11 @@ mod tests {
     fn regression_chain_prefix_subdir() {
         // When prefix is chained with subdir, and the subdir is deeper than
         // the prefix, the errornous code optimized this to just Prefix("a")
-        let filter = to_filter(Op::Chain(
+        let filter = to_filter(Op::Chain(vec![
             to_filter(Op::Prefix(std::path::PathBuf::from("a"))),
             to_filter(Op::Subdir(std::path::PathBuf::from("a/b"))),
-        ));
-        assert_eq!(filter, optimize(filter));
+        ]));
+        let expected = to_filter(Op::Subdir(std::path::PathBuf::from("b")));
+        assert_eq!(expected, optimize(filter));
     }
 }
