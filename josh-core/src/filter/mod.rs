@@ -496,6 +496,14 @@ fn spec2(op: &Op) -> String {
         Op::Workspace(path) => {
             format!(":workspace={}", parse::quote_if(&path.to_string_lossy()))
         }
+        #[cfg(feature = "incubating")]
+        Op::Lookup(path) => {
+            format!(":lookup={}", parse::quote_if(&path.to_string_lossy()))
+        }
+        #[cfg(feature = "incubating")]
+        Op::Lookup2(oid) => {
+            format!(":lookup2={}", oid.to_string())
+        }
         Op::Stored(path) => {
             format!(":+{}", parse::quote_if(&path.to_string_lossy()))
         }
@@ -823,6 +831,71 @@ fn apply_to_commit2(
 
             apply(transaction, nf, Rewrite::from_commit(commit)?)?
         }
+        #[cfg(feature = "incubating")]
+        Op::Lookup(lookup_path) => {
+            let lookup_commit = if let Some(lookup_commit) =
+                apply_to_commit2(&Op::Subdir(lookup_path.clone()), &commit, transaction)?
+            {
+                lookup_commit
+            } else {
+                return Ok(None);
+            };
+
+            let op = Op::Lookup2(lookup_commit);
+
+            if let Some(start) = transaction.get(to_filter(op), commit.id()) {
+                transaction.insert(filter, commit.id(), start, true);
+                return Ok(Some(start));
+            } else {
+                return Ok(None);
+            }
+        }
+
+        #[cfg(feature = "incubating")]
+        Op::Lookup2(lookup_commit_id) => {
+            let lookup_commit = repo.find_commit(*lookup_commit_id)?;
+            for parent in lookup_commit.parents() {
+                let lookup_tree = lookup_commit.tree_id();
+                let cw = get_filter(
+                    transaction,
+                    &repo.find_tree(lookup_tree)?,
+                    &std::path::PathBuf::new().join(commit.id().to_string()),
+                );
+                if cw != filter::empty() {
+                    if let Some(start) =
+                        apply_to_commit2(&Op::Lookup2(parent.id()), &commit, transaction)?
+                    {
+                        transaction.insert(filter, commit.id(), start, true);
+                        return Ok(Some(start));
+                    } else {
+                        return Ok(None);
+                    }
+                }
+                break;
+            }
+            let lookup_tree = lookup_commit.tree_id();
+            let cw = get_filter(
+                transaction,
+                &repo.find_tree(lookup_tree)?,
+                &std::path::PathBuf::new().join(commit.id().to_string()),
+            );
+
+            if cw == filter::empty() {
+                // FIXME empty filter or no entry in table?
+                for parent in commit.parents() {
+                    if let Some(start) = apply_to_commit2(&op, &parent, transaction)? {
+                        transaction.insert(filter, commit.id(), start, true);
+                        return Ok(Some(start));
+                    } else {
+                        return Ok(None);
+                    }
+                }
+                return Ok(None);
+            }
+
+            Rewrite::from_commit(commit)?
+                .with_tree(apply(transaction, cw, Rewrite::from_commit(commit)?)?.into_tree())
+        }
         Op::Squash(Some(ids)) => {
             if let Some(sq) = ids.get(&LazyRef::Resolved(commit.id())) {
                 let oid = if let Some(oid) =
@@ -1054,7 +1127,7 @@ fn apply_to_commit2(
                 for (root, _link_file) in v {
                     let embeding = some_or!(
                         apply_to_commit2(
-                            &Op::Chain(message("{commit}"), file(root.join(".josh-link.toml"))),
+                            &Op::Chain(message("{@}"), file(root.join(".josh-link.toml"))),
                             &commit,
                             transaction
                         )?,
@@ -1377,9 +1450,6 @@ fn apply2<'a>(
             let tree_id = x.tree().id().to_string();
             let commit = x.commit;
             let commit_id = commit.to_string();
-            let mut hm = std::collections::HashMap::<String, String>::new();
-            hm.insert("tree".to_string(), tree_id);
-            hm.insert("commit".to_string(), commit_id);
 
             let message = if let Some(ref m) = x.message {
                 m.to_string()
@@ -1391,7 +1461,29 @@ fn apply2<'a>(
                 }
             };
 
-            Ok(x.with_message(text::transform_with_template(&r, &m, &message, &hm)?))
+            let tree = x.tree().clone();
+            Ok(x.with_message(text::transform_with_template(
+                &r,
+                &m,
+                &message,
+                |key: &str| -> Option<String> {
+                    match key {
+                        "#" => Some(tree_id.clone()),
+                        "@" => Some(commit_id.clone()),
+                        key if key.starts_with("/") => {
+                            Some(tree::get_blob(repo, &tree, std::path::Path::new(&key[1..])))
+                        }
+
+                        key if key.starts_with("#") => Some(
+                            tree.get_path(std::path::Path::new(&key[1..]))
+                                .map(|e| e.id())
+                                .unwrap_or(git2::Oid::zero())
+                                .to_string(),
+                        ),
+                        _ => None,
+                    }
+                },
+            )?))
         }
         Op::HistoryConcat(..) => Ok(x),
         Op::Linear => Ok(x),
@@ -1618,6 +1710,8 @@ fn apply2<'a>(
             }
         }
         Op::Pin(_) => Ok(x),
+        #[cfg(feature = "incubating")]
+        Op::Lookup(_) | Op::Lookup2(_) => Err(josh_error("not applicable to tree")),
     }
 }
 

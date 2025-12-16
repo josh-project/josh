@@ -2,43 +2,61 @@ use crate::JoshResult;
 use regex::Regex;
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::fmt::Write;
 
-pub fn transform_with_template(
+pub fn transform_with_template<F>(
     re: &Regex,
     template: &str,
     input: &str,
-    globals: &HashMap<String, String>,
-) -> JoshResult<String> {
+    globals: F,
+) -> JoshResult<String>
+where
+    F: Fn(&str) -> Option<String>,
+{
     let first_error: RefCell<Option<crate::JoshError>> = RefCell::new(None);
 
     let result = re
         .replace_all(input, |caps: &regex::Captures| {
-            // Build a HashMap with all named captures and globals
-            // We need to store the string values to keep them alive for the HashMap references
-            let mut string_storage: HashMap<String, String> = HashMap::new();
-
             // Collect all named capture values
+            let mut string_storage: HashMap<String, String> = HashMap::new();
             for name in re.capture_names().flatten() {
                 if let Some(m) = caps.name(name) {
                     string_storage.insert(name.to_string(), m.as_str().to_string());
                 }
             }
 
-            // Build the HashMap for strfmt with references to the stored strings
-            let mut vars: HashMap<String, &dyn strfmt::DisplayStr> = HashMap::new();
+            // Use strfmt_map which calls our function for each key it needs
+            match strfmt::strfmt_map(
+                template,
+                |mut fmt: strfmt::Formatter| -> Result<(), strfmt::FmtError> {
+                    let key = fmt.key;
 
-            // Add all globals first (lower priority)
-            for (key, value) in globals {
-                vars.insert(key.clone(), value as &dyn strfmt::DisplayStr);
-            }
+                    // First check named captures (higher priority)
+                    if let Some(value) = string_storage.get(key) {
+                        write!(fmt, "{}", value).map_err(|_| {
+                            strfmt::FmtError::Invalid(format!(
+                                "failed to write value for key: {}",
+                                key
+                            ))
+                        })?;
+                        return Ok(());
+                    }
 
-            // Add all named captures (higher priority - will overwrite globals if there's a conflict)
-            for (key, value) in &string_storage {
-                vars.insert(key.clone(), value as &dyn strfmt::DisplayStr);
-            }
+                    // Then call globals function (lower priority)
+                    if let Some(global_value) = globals(key) {
+                        write!(fmt, "{}", global_value).map_err(|_| {
+                            strfmt::FmtError::Invalid(format!(
+                                "failed to write global value for key: {}",
+                                key
+                            ))
+                        })?;
+                        return Ok(());
+                    }
 
-            // Format the template, propagating errors
-            match strfmt::strfmt(template, &vars) {
+                    // Key not found - skip it (strfmt will leave the placeholder)
+                    fmt.skip()
+                },
+            ) {
                 Ok(s) => s,
                 Err(e) => {
                     let mut error = first_error.borrow_mut();
