@@ -21,6 +21,10 @@ pub(crate) fn to_op(filter: Filter) -> Op {
         .clone()
 }
 
+pub(crate) fn to_ops(filters: &[Filter]) -> Vec<Op> {
+    return filters.iter().map(|x| to_op(*x)).collect();
+}
+
 fn push_blob_entries(
     entries: &mut Vec<gix_object::tree::Entry>,
     items: impl IntoIterator<Item = (impl AsRef<str>, gix_hash::ObjectId)>,
@@ -196,8 +200,8 @@ impl InMemoryBuilder {
                 let params_tree = self.build_filter_params(&[*a, *b])?;
                 push_tree_entries(&mut entries, [("subtract", params_tree)]);
             }
-            Op::Chain(a, b) => {
-                let params_tree = self.build_filter_params(&[*a, *b])?;
+            Op::Chain(filters) => {
+                let params_tree = self.build_filter_params(filters)?;
                 push_tree_entries(&mut entries, [("chain", params_tree)]);
             }
             Op::Exclude(b) => {
@@ -713,24 +717,21 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> JoshResult<Op> {
         }
         "chain" => {
             let chain_tree = repo.find_tree(entry.id())?;
-            if chain_tree.len() == 2 {
-                let a_tree = repo.find_tree(
-                    chain_tree
-                        .get_name("0")
-                        .ok_or_else(|| josh_error("chain: missing 0"))?
-                        .id(),
-                )?;
-                let b_tree = repo.find_tree(
-                    chain_tree
-                        .get_name("1")
-                        .ok_or_else(|| josh_error("chain: missing 1"))?
-                        .id(),
-                )?;
-                let a = from_tree2(repo, a_tree.id())?;
-                let b = from_tree2(repo, b_tree.id())?;
-                Ok(Op::Chain(to_filter(a), to_filter(b)))
+            if chain_tree.len() >= 1 {
+                let mut filters = vec![];
+                for i in 0..chain_tree.len() {
+                    let filter_tree = repo.find_tree(
+                        chain_tree
+                            .get_name(&i.to_string())
+                            .ok_or_else(|| josh_error(&format!("chain: missing {}", i)))?
+                            .id(),
+                    )?;
+                    let filter = from_tree2(repo, filter_tree.id())?;
+                    filters.push(to_filter(filter));
+                }
+                Ok(Op::Chain(filters))
             } else {
-                Err(josh_error("chain: expected 2 entries"))
+                Err(josh_error("chain: expected at least 1 entry"))
             }
         }
         "exclude" => {

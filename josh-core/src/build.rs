@@ -44,7 +44,7 @@ pub fn squash(ids: Option<&[(git2::Oid, Filter)]>) -> Filter {
 
 /// Create a filter that is the result of feeding the output of `first` into `second`
 pub fn chain(first: Filter, second: Filter) -> Filter {
-    opt::optimize(to_filter(Op::Chain(first, second)))
+    opt::optimize(to_filter(Op::Chain(vec![first, second])))
 }
 
 /// Create a filter that is the result of overlaying the output of `first` onto `second`

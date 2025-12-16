@@ -76,29 +76,25 @@
               |       |-- 0
               |       |   `-- subdir
               |       |       `-- 0
-              |       `-- 1
-              |           `-- chain
-              |               |-- 0
-              |               |   `-- subdir
-              |               |       `-- 0
-              |               `-- 1
-              |                   `-- prefix
-              |                       `-- 0
+              |       |-- 1
+              |       |   `-- subdir
+              |       |       `-- 0
+              |       `-- 2
+              |           `-- prefix
+              |               `-- 0
               `-- 1
                   `-- chain
                       |-- 0
                       |   `-- subdir
                       |       `-- 0
-                      `-- 1
-                          `-- chain
-                              |-- 0
-                              |   `-- subdir
-                              |       `-- 0
-                              `-- 1
-                                  `-- prefix
-                                      `-- 0
+                      |-- 1
+                      |   `-- subdir
+                      |       `-- 0
+                      `-- 2
+                          `-- prefix
+                              `-- 0
   
-  26 directories, 7 files
+  22 directories, 7 files
   $ git diff ${EMPTY_TREE}..${FILTER_HASH}
   diff --git a/chain/0/subdir/0 b/chain/0/subdir/0
   new file mode 100644
@@ -116,19 +112,19 @@
   @@ -0,0 +1 @@
   +b
   \ No newline at end of file
-  diff --git a/chain/1/compose/0/chain/1/chain/0/subdir/0 b/chain/1/compose/0/chain/1/chain/0/subdir/0
+  diff --git a/chain/1/compose/0/chain/1/subdir/0 b/chain/1/compose/0/chain/1/subdir/0
   new file mode 100644
   index 0000000..c59d9b6
   --- /dev/null
-  +++ b/chain/1/compose/0/chain/1/chain/0/subdir/0
+  +++ b/chain/1/compose/0/chain/1/subdir/0
   @@ -0,0 +1 @@
   +d
   \ No newline at end of file
-  diff --git a/chain/1/compose/0/chain/1/chain/1/prefix/0 b/chain/1/compose/0/chain/1/chain/1/prefix/0
+  diff --git a/chain/1/compose/0/chain/2/prefix/0 b/chain/1/compose/0/chain/2/prefix/0
   new file mode 100644
   index 0000000..c1b0730
   --- /dev/null
-  +++ b/chain/1/compose/0/chain/1/chain/1/prefix/0
+  +++ b/chain/1/compose/0/chain/2/prefix/0
   @@ -0,0 +1 @@
   +x
   \ No newline at end of file
@@ -140,19 +136,19 @@
   @@ -0,0 +1 @@
   +c
   \ No newline at end of file
-  diff --git a/chain/1/compose/1/chain/1/chain/0/subdir/0 b/chain/1/compose/1/chain/1/chain/0/subdir/0
+  diff --git a/chain/1/compose/1/chain/1/subdir/0 b/chain/1/compose/1/chain/1/subdir/0
   new file mode 100644
   index 0000000..c59d9b6
   --- /dev/null
-  +++ b/chain/1/compose/1/chain/1/chain/0/subdir/0
+  +++ b/chain/1/compose/1/chain/1/subdir/0
   @@ -0,0 +1 @@
   +d
   \ No newline at end of file
-  diff --git a/chain/1/compose/1/chain/1/chain/1/prefix/0 b/chain/1/compose/1/chain/1/chain/1/prefix/0
+  diff --git a/chain/1/compose/1/chain/2/prefix/0 b/chain/1/compose/1/chain/2/prefix/0
   new file mode 100644
   index 0000000..e25f181
   --- /dev/null
-  +++ b/chain/1/compose/1/chain/1/chain/1/prefix/0
+  +++ b/chain/1/compose/1/chain/2/prefix/0
   @@ -0,0 +1 @@
   +y
   \ No newline at end of file
@@ -545,31 +541,23 @@ Test ::a/b/c/ (nested directory path with trailing slash)
       |-- 0
       |   `-- subdir
       |       `-- 0
-      `-- 1
-          `-- chain
-              |-- 0
-              |   `-- subdir
-              |       `-- 0
-              `-- 1
-                  `-- chain
-                      |-- 0
-                      |   `-- subdir
-                      |       `-- 0
-                      `-- 1
-                          `-- chain
-                              |-- 0
-                              |   `-- prefix
-                              |       `-- 0
-                              `-- 1
-                                  `-- chain
-                                      |-- 0
-                                      |   `-- prefix
-                                      |       `-- 0
-                                      `-- 1
-                                          `-- prefix
-                                              `-- 0
+      |-- 1
+      |   `-- subdir
+      |       `-- 0
+      |-- 2
+      |   `-- subdir
+      |       `-- 0
+      |-- 3
+      |   `-- prefix
+      |       `-- 0
+      |-- 4
+      |   `-- prefix
+      |       `-- 0
+      `-- 5
+          `-- prefix
+              `-- 0
   
-  22 directories, 6 files
+  14 directories, 6 files
   $ git diff 4b825dc642cb6eb9a060e54bf8d69288fbee4904..${FILTER_HASH}
   diff --git a/chain/0/subdir/0 b/chain/0/subdir/0
   new file mode 100644
@@ -579,43 +567,43 @@ Test ::a/b/c/ (nested directory path with trailing slash)
   @@ -0,0 +1 @@
   +a
   \ No newline at end of file
-  diff --git a/chain/1/chain/0/subdir/0 b/chain/1/chain/0/subdir/0
+  diff --git a/chain/1/subdir/0 b/chain/1/subdir/0
   new file mode 100644
   index 0000000..63d8dbd
   --- /dev/null
-  +++ b/chain/1/chain/0/subdir/0
+  +++ b/chain/1/subdir/0
   @@ -0,0 +1 @@
   +b
   \ No newline at end of file
-  diff --git a/chain/1/chain/1/chain/0/subdir/0 b/chain/1/chain/1/chain/0/subdir/0
+  diff --git a/chain/2/subdir/0 b/chain/2/subdir/0
   new file mode 100644
   index 0000000..3410062
   --- /dev/null
-  +++ b/chain/1/chain/1/chain/0/subdir/0
+  +++ b/chain/2/subdir/0
   @@ -0,0 +1 @@
   +c
   \ No newline at end of file
-  diff --git a/chain/1/chain/1/chain/1/chain/0/prefix/0 b/chain/1/chain/1/chain/1/chain/0/prefix/0
+  diff --git a/chain/3/prefix/0 b/chain/3/prefix/0
   new file mode 100644
   index 0000000..3410062
   --- /dev/null
-  +++ b/chain/1/chain/1/chain/1/chain/0/prefix/0
+  +++ b/chain/3/prefix/0
   @@ -0,0 +1 @@
   +c
   \ No newline at end of file
-  diff --git a/chain/1/chain/1/chain/1/chain/1/chain/0/prefix/0 b/chain/1/chain/1/chain/1/chain/1/chain/0/prefix/0
+  diff --git a/chain/4/prefix/0 b/chain/4/prefix/0
   new file mode 100644
   index 0000000..63d8dbd
   --- /dev/null
-  +++ b/chain/1/chain/1/chain/1/chain/1/chain/0/prefix/0
+  +++ b/chain/4/prefix/0
   @@ -0,0 +1 @@
   +b
   \ No newline at end of file
-  diff --git a/chain/1/chain/1/chain/1/chain/1/chain/1/prefix/0 b/chain/1/chain/1/chain/1/chain/1/chain/1/prefix/0
+  diff --git a/chain/5/prefix/0 b/chain/5/prefix/0
   new file mode 100644
   index 0000000..2e65efe
   --- /dev/null
-  +++ b/chain/1/chain/1/chain/1/chain/1/chain/1/prefix/0
+  +++ b/chain/5/prefix/0
   @@ -0,0 +1 @@
   +a
   \ No newline at end of file

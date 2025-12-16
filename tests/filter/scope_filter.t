@@ -24,16 +24,14 @@ Test basic scope filter syntax :<X>[Y]
       |-- 0
       |   `-- subdir
       |       `-- 0
-      `-- 1
-          `-- chain
-              |-- 0
-              |   `-- subdir
-              |       `-- 0
-              `-- 1
-                  `-- prefix
-                      `-- 0
+      |-- 1
+      |   `-- subdir
+      |       `-- 0
+      `-- 2
+          `-- prefix
+              `-- 0
   
-  10 directories, 3 files
+  8 directories, 3 files
   $ cat sub1/file1
   cat: sub1/file1: No such file or directory
   [1]
@@ -52,26 +50,24 @@ Test scope filter with multiple filters in compose
       |-- 0
       |   `-- subdir
       |       `-- 0
-      `-- 1
-          `-- chain
-              |-- 0
-              |   `-- compose
-              |       |-- 0
-              |       |   `-- subdir
-              |       |       `-- 0
-              |       `-- 1
-              |           `-- chain
-              |               |-- 0
-              |               |   `-- subdir
-              |               |       `-- 0
-              |               `-- 1
-              |                   `-- subdir
-              |                       `-- 0
-              `-- 1
-                  `-- prefix
-                      `-- 0
+      |-- 1
+      |   `-- compose
+      |       |-- 0
+      |       |   `-- subdir
+      |       |       `-- 0
+      |       `-- 1
+      |           `-- chain
+      |               |-- 0
+      |               |   `-- subdir
+      |               |       `-- 0
+      |               `-- 1
+      |                   `-- subdir
+      |                       `-- 0
+      `-- 2
+          `-- prefix
+              `-- 0
   
-  18 directories, 5 files
+  16 directories, 5 files
 
 Test scope filter with prefix filter
   $ FILTER_HASH=$(josh-filter -i ':<:prefix=sub1>[:prefix=file1]')
@@ -95,19 +91,17 @@ Test scope filter with subdir and exclude
       |-- 0
       |   `-- subdir
       |       `-- 0
-      `-- 1
-          `-- chain
-              |-- 0
-              |   `-- exclude
-              |       `-- 0
-              |           `-- file
-              |               |-- 0
-              |               `-- 1
-              `-- 1
-                  `-- prefix
-                      `-- 0
+      |-- 1
+      |   `-- exclude
+      |       `-- 0
+      |           `-- file
+      |               |-- 0
+      |               `-- 1
+      `-- 2
+          `-- prefix
+              `-- 0
   
-  12 directories, 4 files
+  10 directories, 4 files
 
 Test scope filter verifies it expands to chain(X, chain(Y, invert(X)))
   $ FILTER_HASH=$(josh-filter -i ':<:/sub1>[:/file1]')
@@ -129,24 +123,22 @@ Test scope filter with nested filters
       |-- 0
       |   `-- subdir
       |       `-- 0
-      `-- 1
-          `-- chain
-              |-- 0
-              |   `-- compose
-              |       |-- 0
-              |       |   `-- subdir
-              |       |       `-- 0
-              |       `-- 1
-              |           `-- chain
-              |               |-- 0
-              |               |   `-- subdir
-              |               |       `-- 0
-              |               `-- 1
-              |                   `-- subdir
-              |                       `-- 0
-              `-- 1
-                  `-- prefix
-                      `-- 0
+      |-- 1
+      |   `-- compose
+      |       |-- 0
+      |       |   `-- subdir
+      |       |       `-- 0
+      |       `-- 1
+      |           `-- chain
+      |               |-- 0
+      |               |   `-- subdir
+      |               |       `-- 0
+      |               `-- 1
+      |                   `-- subdir
+      |                       `-- 0
+      `-- 2
+          `-- prefix
+              `-- 0
   
-  18 directories, 5 files
+  16 directories, 5 files
 

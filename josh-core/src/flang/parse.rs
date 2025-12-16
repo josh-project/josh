@@ -114,10 +114,10 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> JoshResult<Op> {
 
             if arg.ends_with('/') {
                 let arg = arg.trim_end_matches('/');
-                Ok(Op::Chain(
+                Ok(Op::Chain(vec![
                     to_filter(Op::Subdir(std::path::PathBuf::from(arg))),
                     to_filter(make_op(&["prefix", arg])?),
-                ))
+                ]))
             } else if arg.contains('*') {
                 // Pattern case - error if combined with = (destination=source syntax)
                 if second_arg.is_some() {
@@ -197,10 +197,10 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> JoshResult<Op> {
             if v.len() == 2 {
                 let oid = LazyRef::parse(v[0])?;
                 let filter = parse(v[1])?;
-                Ok(Op::Chain(
+                Ok(Op::Chain(vec![
                     filter,
                     filter::to_filter(Op::HistoryConcat(oid, filter)),
-                ))
+                ]))
             } else {
                 Err(josh_error("wrong argument count for :from"))
             }
@@ -261,7 +261,7 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> JoshResult<Op> {
             let y = to_filter(Op::Compose(y_filters));
 
             let inverted_x = invert(x)?;
-            Ok(Op::Chain(x, to_filter(Op::Chain(y, inverted_x))))
+            Ok(Op::Chain(vec![x, y, inverted_x]))
         }
         _ => Err(josh_error("parse_item: no match")),
     }
@@ -380,7 +380,12 @@ pub fn parse(filter_spec: &str) -> JoshResult<Filter> {
         for pair in r.into_inner() {
             let v = parse_item(pair)?;
             chain = Some(if let Some(c) = chain {
-                Op::Chain(to_filter(c), to_filter(v))
+                if let Op::Chain(mut filters) = c {
+                    filters.push(to_filter(v));
+                    Op::Chain(filters)
+                } else {
+                    Op::Chain(vec![to_filter(c), to_filter(v)])
+                }
             } else {
                 v
             });

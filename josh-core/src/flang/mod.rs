@@ -2,7 +2,9 @@ pub mod parse;
 
 use crate::filter::op::Op;
 use crate::filter::opt;
+use crate::filter::persist::to_filter;
 use crate::filter::persist::to_op;
+use crate::filter::persist::to_ops;
 use crate::filter::sequence_number;
 use crate::filter::{self, Filter};
 
@@ -53,23 +55,38 @@ fn pretty2(op: &Op, indent: usize, compose: bool) -> String {
             Op::Compose(filters) => ff(&filters, "pin", indent),
             b => format!(":pin[{}]", pretty2(&b, indent, false)),
         },
-        Op::Chain(a, b) => match (to_op(*a), to_op(*b)) {
-            (Op::Subdir(p1), Op::Prefix(p2)) if p1 == p2 => {
-                format!("::{}/", parse::quote_if(&p1.to_string_lossy()))
+        Op::Chain(filters) => {
+            if filters.is_empty() {
+                return ":/".to_string();
             }
-            (a, Op::Prefix(p)) if compose => {
-                format!(
-                    "{} = {}",
-                    parse::quote_if(&p.to_string_lossy()),
-                    pretty2(&a, indent, false)
-                )
+            if filters.len() == 1 {
+                return pretty2(&to_op(filters[0]), indent, compose);
             }
-            (a, b) => format!(
-                "{}{}",
-                pretty2(&a, indent, false),
-                pretty2(&b, indent, false)
-            ),
-        },
+            // Check for special case: Subdir + Prefix that cancel
+            match &to_ops(&filters)[..] {
+                [Op::Subdir(p1), Op::Prefix(p2)] if p1 == p2 => {
+                    return format!("::{}/", parse::quote_if(&p1.to_string_lossy()));
+                }
+                [a @ .., Op::Prefix(p)] if compose => {
+                    return format!(
+                        "{} = {}",
+                        parse::quote_if(&p.to_string_lossy()),
+                        pretty2(
+                            &Op::Chain(a.iter().map(|x| to_filter(x.clone())).collect()),
+                            indent,
+                            false
+                        )
+                    );
+                }
+                _ => {}
+            }
+            // General case: concatenate all filters
+            filters
+                .iter()
+                .map(|f| pretty2(&to_op(*f), indent, false))
+                .collect::<Vec<_>>()
+                .join("")
+        }
         Op::RegexReplace(replacements) => {
             let v = replacements
                 .iter()
@@ -159,12 +176,24 @@ pub(crate) fn spec2(op: &Op) -> String {
             format!(":replace({})", v.join(","))
         }
 
-        Op::Chain(a, b) => match (to_op(*a), to_op(*b)) {
-            (Op::Subdir(p1), Op::Prefix(p2)) if p1 == p2 => {
-                format!("::{}/", parse::quote_if(&p1.to_string_lossy()))
+        Op::Chain(filters) => {
+            if filters.is_empty() {
+                return ":/".to_string();
             }
-            (a, b) => format!("{}{}", spec2(&a), spec2(&b)),
-        },
+            if filters.len() == 2 {
+                match (to_op(filters[0]), to_op(filters[1])) {
+                    (Op::Subdir(p1), Op::Prefix(p2)) if p1 == p2 => {
+                        return format!("::{}/", parse::quote_if(&p1.to_string_lossy()));
+                    }
+                    _ => {}
+                }
+            }
+            filters
+                .iter()
+                .map(|f| spec2(&to_op(*f)))
+                .collect::<Vec<_>>()
+                .join("")
+        }
 
         Op::Nop => ":/".to_string(),
         Op::Empty => ":empty".to_string(),
