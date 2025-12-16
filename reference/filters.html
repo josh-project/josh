@@ -281,7 +281,8 @@ Normally Josh will keep all commits in the filtered history whose tree differs f
 parents.</p>
 <h3 id="commit-message-rewriting-template-or-templateregex"><a class="header" href="#commit-message-rewriting-template-or-templateregex">Commit message rewriting <strong><code>:&quot;template&quot;</code></strong> or <strong><code>:&quot;template&quot;;&quot;regex&quot;</code></strong></a></h3>
 <p>Rewrite commit messages using a template string. The template can use regex capture groups
-to extract and reformat parts of the original commit message.</p>
+to extract and reformat parts of the original commit message, as well as special template variables
+for commit metadata.</p>
 <p><strong>Simple message replacement:</strong></p>
 <pre><code>:&quot;New message&quot;
 </code></pre>
@@ -293,6 +294,23 @@ to extract and reformat parts of the original commit message.</p>
 which are then used in the template. The regex <code>(?s)^(?P&lt;type&gt;fix|feat|docs): (?P&lt;message&gt;.+)$</code> matches
 commit messages starting with &quot;fix:&quot;, &quot;feat:&quot;, or &quot;docs:&quot; followed by a message, and the template
 reformats them as <code>[type] message</code>.</p>
+<p><strong>Using template variables:</strong>
+The template supports special variables that provide access to commit metadata:</p>
+<ul>
+<li><code>{#}</code> - The tree object ID (SHA-1 hash) of the commit</li>
+<li><code>{@}</code> - The commit object ID (SHA-1 hash)</li>
+<li><code>{/path}</code> - The content of the file at the specified path in the commit tree</li>
+<li><code>{#path}</code> - The object ID (SHA-1 hash) of the tree entry at the specified path</li>
+</ul>
+<p>Regex capture groups take priority over template variables. If a regex capture group has the same name as a template variable, the capture group value will be used.</p>
+<p>Example:</p>
+<pre><code>:&quot;Message: {#} {@}&quot;
+</code></pre>
+<p>This replaces commit messages with &quot;Message: &quot; followed by the tree ID and commit ID.</p>
+<p><strong>Combining regex capture groups and template variables:</strong></p>
+<pre><code>:&quot;[{type}] {message} (commit: {@})&quot;;&quot;(?s)^(?P&lt;type&gt;Original) (?P&lt;message&gt;.+)$&quot;
+</code></pre>
+<p>This combines regex capture groups (<code>{type}</code> and <code>{message}</code>) with template variables (<code>{@}</code> for the commit ID).</p>
 <p><strong>Removing text from messages:</strong></p>
 <pre><code>:&quot;&quot;;&quot;TODO&quot;
 </code></pre>
