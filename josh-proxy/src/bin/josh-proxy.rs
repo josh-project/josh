@@ -531,8 +531,12 @@ async fn do_filter(
         t2.repo()
             .odb()?
             .add_disk_alternate(repo_path.join("mirror").join("objects").to_str().unwrap())?;
-        let (updated_refs, _) =
-            josh_core::filter_refs(&t2, filter, &refs_list, josh_core::filter::empty());
+        let (updated_refs, _) = josh_core::filter_refs(
+            &t2,
+            filter,
+            &refs_list,
+            josh_core::filter::Filter::new().empty(),
+        );
         let mut updated_refs = josh_proxy::refs_locking(updated_refs, &meta);
         josh_core::housekeeping::namespace_refs(&mut updated_refs, temp_ns.name());
         josh_core::update_refs(&t2, &mut updated_refs, &temp_ns.reference(&head_ref));
@@ -1148,29 +1152,26 @@ async fn handle_serve_namespace_request(
         }
     };
 
-    let filter = josh_core::filter::chain(
-        query_filter,
-        match &ARGS.filter_prefix {
-            Some(filter_prefix) => {
-                let filter_prefix = match josh_core::filter::parse(filter_prefix) {
-                    Ok(filter) => filter,
-                    Err(e) => {
-                        return Ok(make_response(
-                            format!(
-                                "Failed to parse prefix filter passed as command line argument: {}",
-                                e
-                            )
-                            .as_str(),
-                            StatusCode::SERVICE_UNAVAILABLE,
-                        ));
-                    }
-                };
+    let filter = query_filter.chain(match &ARGS.filter_prefix {
+        Some(filter_prefix) => {
+            let filter_prefix = match josh_core::filter::parse(filter_prefix) {
+                Ok(filter) => filter,
+                Err(e) => {
+                    return Ok(make_response(
+                        format!(
+                            "Failed to parse prefix filter passed as command line argument: {}",
+                            e
+                        )
+                        .as_str(),
+                        StatusCode::SERVICE_UNAVAILABLE,
+                    ));
+                }
+            };
 
-                josh_core::filter::chain(meta_config.config.filter, filter_prefix)
-            }
-            None => meta_config.config.filter,
-        },
-    );
+            meta_config.config.filter.chain(filter_prefix)
+        }
+        None => meta_config.config.filter,
+    });
 
     let temp_ns = match prepare_namespace(serv.clone(), &meta_config, filter, &head_ref).await {
         Ok(ns) => ns,
@@ -1298,10 +1299,10 @@ async fn call_service(
     )
     .await?;
 
-    let mut filter = josh_core::filter::chain(
-        meta.config.filter,
-        josh_core::filter::parse(&parsed_url.filter_spec)?,
-    );
+    let mut filter = meta
+        .config
+        .filter
+        .chain(josh_core::filter::parse(&parsed_url.filter_spec)?);
 
     let upstream = match serv.upstream.get(UpstreamProtocol::Http) {
         Some(upstream) => upstream,
@@ -1313,7 +1314,7 @@ async fn call_service(
         }
     };
     if let Some(filter_prefix) = &ARGS.filter_prefix {
-        filter = josh_core::filter::chain(josh_core::filter::parse(filter_prefix)?, filter);
+        filter = josh_core::filter::parse(filter_prefix)?.chain(filter);
     }
     let mut fetch_repos = vec![meta.config.repo.clone()];
 
@@ -1504,8 +1505,12 @@ async fn serve_query(
                 .repo()
                 .refname_to_id(&transaction_mirror.refname(&head_ref))?
         };
-        let commit_id =
-            josh_core::filter_commit(&transaction, filter, commit_id, josh_core::filter::empty())?;
+        let commit_id = josh_core::filter_commit(
+            &transaction,
+            filter,
+            commit_id,
+            josh_core::filter::Filter::new().empty(),
+        )?;
 
         josh_templates::render(&transaction, serv.cache.clone(), "", commit_id, &q, true)
     })

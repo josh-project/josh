@@ -1,4 +1,4 @@
-use crate::filter::{self, Filter, chain, invert, to_filter, to_op};
+use crate::filter::{self, Filter, invert, to_filter};
 use crate::{JoshResult, josh_error};
 use indoc::{formatdoc, indoc};
 use itertools::Itertools;
@@ -8,16 +8,17 @@ use std::path::Path;
 use crate::filter::op::{LazyRef, Op};
 use crate::filter::opt;
 
-fn make_op(args: &[&str]) -> JoshResult<Op> {
+fn make_filter(args: &[&str]) -> JoshResult<Filter> {
+    let f = Filter::new();
     match args {
-        ["nop"] => Ok(Op::Nop),
-        ["empty"] => Ok(Op::Empty),
-        ["prefix", arg] => Ok(Op::Prefix(Path::new(arg).to_owned())),
-        ["author", author, email] => Ok(Op::Author(author.to_string(), email.to_string())),
-        ["committer", author, email] => Ok(Op::Committer(author.to_string(), email.to_string())),
-        ["workspace", arg] => Ok(Op::Workspace(Path::new(arg).to_owned())),
+        ["nop"] => Ok(f),
+        ["empty"] => Ok(f.empty()),
+        ["prefix", arg] => Ok(f.prefix(arg)),
+        ["author", name, email] => Ok(f.author(*name, *email)),
+        ["committer", name, email] => Ok(f.committer(*name, *email)),
+        ["workspace", arg] => Ok(f.workspace(arg)),
         #[cfg(feature = "incubating")]
-        ["lookup", arg] => Ok(Op::Lookup(Path::new(arg).to_owned())),
+        ["lookup", arg] => Ok(to_filter(Op::Lookup(Path::new(arg).to_owned()))),
         ["prefix"] => Err(josh_error(indoc!(
             r#"
             Filter ":prefix" requires an argument.
@@ -40,10 +41,10 @@ fn make_op(args: &[&str]) -> JoshResult<Op> {
             Where `path` is path to the directory where workspace.josh file is located
             "#
         ))),
-        ["SQUASH"] => Ok(Op::Squash(None)),
+        ["SQUASH"] => Ok(f.squash(None)),
         ["SQUASH", _ids @ ..] => Err(josh_error("SQUASH with ids can't be parsed")),
-        ["linear"] => Ok(Op::Linear),
-        ["prune", "trivial-merge"] => Ok(Op::Prune),
+        ["linear"] => Ok(f.linear()),
+        ["prune", "trivial-merge"] => Ok(f.prune_trivial_merge()),
         ["prune"] => Err(josh_error(indoc!(
             r#"
             Filter ":prune" requires an argument.
@@ -59,24 +60,26 @@ fn make_op(args: &[&str]) -> JoshResult<Op> {
             as argument value.
             "#
         ))),
-        ["unsign"] => Ok(Op::Unsign),
+        ["unsign"] => Ok(f.unsign()),
+
         #[cfg(feature = "incubating")]
-        ["unlink"] => Ok(Op::Unlink),
+        ["unlink"] => Ok(to_filter(Op::Unlink)),
         #[cfg(feature = "incubating")]
-        ["adapt", adapter] => Ok(Op::Adapt(adapter.to_string())),
+        ["adapt", adapter] => Ok(to_filter(Op::Adapt(adapter.to_string()))),
         #[cfg(feature = "incubating")]
-        ["link"] => Ok(Op::Link("embedded".to_string())),
+        ["link"] => Ok(to_filter(Op::Link("embedded".to_string()))),
         #[cfg(feature = "incubating")]
-        ["link", mode] => Ok(Op::Link(mode.to_string())),
+        ["link", mode] => Ok(to_filter(Op::Link(mode.to_string()))),
         #[cfg(feature = "incubating")]
-        ["embed", path] => Ok(Op::Embed(Path::new(path).to_owned())),
+        ["embed", path] => Ok(to_filter(Op::Embed(Path::new(path).to_owned()))),
         #[cfg(feature = "incubating")]
-        ["export"] => Ok(Op::Export),
-        ["PATHS"] => Ok(Op::Paths),
-        ["INDEX"] => Ok(Op::Index),
-        ["INVERT"] => Ok(Op::Invert),
-        ["FOLD"] => Ok(Op::Fold),
-        ["hook", arg] => Ok(Op::Hook(arg.to_string())),
+        ["export"] => Ok(to_filter(Op::Export)),
+
+        ["PATHS"] => Ok(to_filter(Op::Paths)),
+        ["INDEX"] => Ok(to_filter(Op::Index)),
+        ["INVERT"] => Ok(to_filter(Op::Invert)),
+        ["FOLD"] => Ok(to_filter(Op::Fold)),
+        ["hook", arg] => Ok(f.hook(arg)),
         _ => Err(josh_error(
             formatdoc!(
                 r#"
@@ -94,19 +97,20 @@ fn make_op(args: &[&str]) -> JoshResult<Op> {
     }
 }
 
-fn parse_item(pair: pest::iterators::Pair<Rule>) -> JoshResult<Op> {
+fn parse_item(pair: pest::iterators::Pair<Rule>) -> JoshResult<Filter> {
+    let f = Filter::new();
     match pair.as_rule() {
         Rule::filter => {
             let v: Vec<_> = pair.into_inner().map(|x| unquote(x.as_str())).collect();
-            make_op(v.iter().map(String::as_str).collect::<Vec<_>>().as_slice())
+            make_filter(v.iter().map(String::as_str).collect::<Vec<_>>().as_slice())
         }
-        Rule::filter_nop => Ok(Op::Nop),
-        Rule::filter_subdir => Ok(Op::Subdir(
-            Path::new(&unquote(pair.into_inner().next().unwrap().as_str())).to_owned(),
-        )),
-        Rule::filter_stored => Ok(Op::Stored(
-            Path::new(&unquote(pair.into_inner().next().unwrap().as_str())).to_owned(),
-        )),
+        Rule::filter_nop => Ok(f),
+        Rule::filter_subdir => Ok(
+            f.subdir(Path::new(&unquote(pair.into_inner().next().unwrap().as_str())).to_owned())
+        ),
+        Rule::filter_stored => Ok(
+            f.stored(Path::new(&unquote(pair.into_inner().next().unwrap().as_str())).to_owned())
+        ),
         Rule::filter_presub => {
             let mut inner = pair.into_inner();
             let arg = &unquote(inner.next().unwrap().as_str());
@@ -114,10 +118,7 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> JoshResult<Op> {
 
             if arg.ends_with('/') {
                 let arg = arg.trim_end_matches('/');
-                Ok(Op::Chain(vec![
-                    to_filter(Op::Subdir(std::path::PathBuf::from(arg))),
-                    to_filter(make_op(&["prefix", arg])?),
-                ]))
+                Ok(f.subdir(arg).prefix(arg))
             } else if arg.contains('*') {
                 // Pattern case - error if combined with = (destination=source syntax)
                 if second_arg.is_some() {
@@ -126,7 +127,7 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> JoshResult<Op> {
                         arg
                     )));
                 }
-                Ok(Op::Pattern(arg.to_string()))
+                Ok(f.pattern(arg))
             } else {
                 // File case - error if source contains * (patterns not supported in source)
                 if let Some(ref source_arg) = second_arg
@@ -141,12 +142,12 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> JoshResult<Op> {
                 let source_path = second_arg
                     .map(|s| Path::new(&s).to_owned())
                     .unwrap_or_else(|| dest_path.clone());
-                Ok(Op::File(dest_path, source_path))
+                Ok(f.rename(dest_path, source_path))
             }
         }
         Rule::filter_noarg => {
             let mut inner = pair.into_inner();
-            make_op(&[inner.next().unwrap().as_str()])
+            make_filter(&[inner.next().unwrap().as_str()])
         }
         Rule::filter_message => {
             let mut inner = pair.into_inner();
@@ -157,23 +158,23 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> JoshResult<Op> {
             } else {
                 crate::filter::MESSAGE_MATCH_ALL_REGEX.clone()
             };
-            Ok(Op::Message(fmt, regex))
+            Ok(f.message_regex(fmt, regex))
         }
         Rule::filter_group => {
             let v: Vec<_> = pair.into_inner().map(|x| unquote(x.as_str())).collect();
 
             match v.iter().map(String::as_str).collect::<Vec<_>>().as_slice() {
-                [args] => Ok(Op::Compose(parse_group(args)?)),
+                [args] => Ok(to_filter(Op::Compose(parse_group(args)?))),
                 [cmd, args] => {
                     let g = parse_group(args)?;
                     match *cmd {
-                        "pin" => Ok(Op::Pin(to_filter(Op::Compose(g)))),
-                        "exclude" => Ok(Op::Exclude(to_filter(Op::Compose(g)))),
+                        "pin" => Ok(to_filter(Op::Pin(to_filter(Op::Compose(g))))),
+                        "exclude" => Ok(to_filter(Op::Exclude(to_filter(Op::Compose(g))))),
                         "invert" => {
                             let filter = to_filter(Op::Compose(g));
-                            Ok(to_op(invert(filter)?))
+                            invert(filter)
                         }
-                        "subtract" if g.len() == 2 => Ok(Op::Subtract(g[0], g[1])),
+                        "subtract" if g.len() == 2 => Ok(to_filter(Op::Subtract(g[0], g[1]))),
                         _ => Err(josh_error(&format!("parse_item: no match {:?}", cmd))),
                     }
                 }
@@ -189,7 +190,7 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> JoshResult<Op> {
                 .map(|(oid, filter)| Ok((LazyRef::parse(oid)?, parse(filter)?)))
                 .collect::<JoshResult<_>>()?;
 
-            Ok(Op::Rev(hm))
+            Ok(to_filter(Op::Rev(hm)))
         }
         Rule::filter_from => {
             let v: Vec<_> = pair.into_inner().map(|x| x.as_str()).collect();
@@ -197,10 +198,7 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> JoshResult<Op> {
             if v.len() == 2 {
                 let oid = LazyRef::parse(v[0])?;
                 let filter = parse(v[1])?;
-                Ok(Op::Chain(vec![
-                    filter,
-                    filter::to_filter(Op::HistoryConcat(oid, filter)),
-                ]))
+                Ok(filter.chain(filter::to_filter(Op::HistoryConcat(oid, filter))))
             } else {
                 Err(josh_error("wrong argument count for :from"))
             }
@@ -211,7 +209,7 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> JoshResult<Op> {
             if v.len() == 2 {
                 let oid = LazyRef::parse(v[0])?;
                 let filter = parse(v[1])?;
-                Ok(Op::HistoryConcat(oid, filter))
+                Ok(to_filter(Op::HistoryConcat(oid, filter)))
             } else {
                 Err(josh_error("wrong argument count for :concat"))
             }
@@ -223,7 +221,7 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> JoshResult<Op> {
             if v.len() == 2 {
                 let oid = LazyRef::parse(v[0])?;
                 let filter = parse(v[1])?;
-                Ok(Op::Unapply(oid, filter))
+                Ok(to_filter(Op::Unapply(oid, filter)))
             } else {
                 Err(josh_error("wrong argument count for :unapply"))
             }
@@ -236,7 +234,7 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> JoshResult<Op> {
                 .map(|(regex, replacement)| Ok((regex::Regex::new(&regex)?, replacement)))
                 .collect::<JoshResult<_>>()?;
 
-            Ok(Op::RegexReplace(replacements))
+            Ok(to_filter(Op::RegexReplace(replacements)))
         }
         Rule::filter_squash => {
             let ids = pair
@@ -245,7 +243,7 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> JoshResult<Op> {
                 .map(|(oid, filter)| Ok((LazyRef::parse(oid.as_str())?, parse(filter.as_str())?)))
                 .collect::<JoshResult<_>>()?;
 
-            Ok(Op::Squash(Some(ids)))
+            Ok(to_filter(Op::Squash(Some(ids))))
         }
         Rule::filter_scope => {
             let mut inner = pair.into_inner();
@@ -260,8 +258,7 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> JoshResult<Op> {
             let y_filters = parse_group(y_compose.as_str())?;
             let y = to_filter(Op::Compose(y_filters));
 
-            let inverted_x = invert(x)?;
-            Ok(Op::Chain(vec![x, y, inverted_x]))
+            Ok(f.chain(x).chain(y).chain(invert(x)?))
         }
         _ => Err(josh_error("parse_item: no match")),
     }
@@ -280,7 +277,7 @@ fn parse_file_entry(
                 .map(|x| x.as_str().to_owned())
                 .unwrap_or(format!(":/{}", path));
             let filter = parse(&filter)?;
-            let filter = chain(filter, to_filter(Op::Prefix(Path::new(path).to_owned())));
+            let filter = filter.chain(to_filter(Op::Prefix(Path::new(path).to_owned())));
             filters.push(filter);
             Ok(())
         }
@@ -373,24 +370,15 @@ pub fn parse(filter_spec: &str) -> JoshResult<Filter> {
     if filter_spec.is_empty() {
         return Ok(to_filter(Op::Empty));
     }
-    let mut chain: Option<Op> = None;
+    let mut chain = Filter::new();
     if let Ok(r) = Grammar::parse(Rule::filter_chain, filter_spec) {
         let mut r = r;
         let r = r.next().unwrap();
         for pair in r.into_inner() {
             let v = parse_item(pair)?;
-            chain = Some(if let Some(c) = chain {
-                if let Op::Chain(mut filters) = c {
-                    filters.push(to_filter(v));
-                    Op::Chain(filters)
-                } else {
-                    Op::Chain(vec![to_filter(c), to_filter(v)])
-                }
-            } else {
-                v
-            });
+            chain = chain.chain(v);
         }
-        return Ok(opt::optimize(to_filter(chain.unwrap_or(Op::Nop))));
+        return Ok(chain);
     };
 
     Ok(opt::optimize(to_filter(Op::Compose(parse_workspace(

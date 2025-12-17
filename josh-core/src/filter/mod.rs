@@ -53,7 +53,7 @@ impl From<Filter> for String {
 
 impl Default for Filter {
     fn default() -> Filter {
-        nop()
+        Filter::new()
     }
 }
 
@@ -66,6 +66,137 @@ impl Filter {
     /// like sequence_number that don't correspond to a normal Op variant.
     pub(crate) fn from_oid(oid: git2::Oid) -> Filter {
         Filter(oid)
+    }
+}
+
+impl Filter {
+    /// Create a no-op filter that passes everything through unchanged
+    pub fn new() -> Filter {
+        to_filter(Op::Nop)
+    }
+
+    /// Create a filter that is the result of feeding the output of `first` into `second`
+    pub fn chain(self, second: Filter) -> Filter {
+        opt::optimize(to_filter(Op::Chain(vec![self, second])))
+    }
+
+    /// Create a no-op filter that passes everything through unchanged
+    pub fn nop(self) -> Filter {
+        self
+    }
+
+    pub fn is_nop(self) -> bool {
+        self == to_filter(Op::Nop)
+    }
+
+    /// Create a filter that produces an empty tree
+    pub fn empty(self) -> Filter {
+        to_filter(Op::Empty)
+    }
+
+    /// Chain a filter that ensures linear history by dropping all parents
+    /// of commits except the first parent
+    pub fn linear(self) -> Filter {
+        self.chain(to_filter(Op::Linear))
+    }
+
+    /// Chain a file filter that selects a single file
+    pub fn file(self, path: impl Into<std::path::PathBuf>) -> Filter {
+        let p = path.into();
+        self.rename(p.clone(), p)
+    }
+
+    /// Chain a filter that renames a file from `src` to `dst`
+    /// The file is extracted from the source path and placed at the destination path
+    pub fn rename(
+        self,
+        dst: impl Into<std::path::PathBuf>,
+        src: impl Into<std::path::PathBuf>,
+    ) -> Filter {
+        self.chain(to_filter(Op::File(dst.into(), src.into())))
+    }
+
+    /// Chain a filter that selects a subdirectory from the tree
+    /// Only the contents of the specified directory are included
+    pub fn subdir(self, path: impl Into<std::path::PathBuf>) -> Filter {
+        self.chain(to_filter(Op::Subdir(path.into())))
+    }
+
+    /// Chain a filter that adds a prefix path to the tree
+    /// The entire tree is placed under the specified directory path
+    pub fn prefix(self, path: impl Into<std::path::PathBuf>) -> Filter {
+        self.chain(to_filter(Op::Prefix(path.into())))
+    }
+
+    /// Chain a filter that loads a stored filter from a file
+    /// The filter is read from a `.josh` file at the specified path
+    pub fn stored(self, path: impl Into<std::path::PathBuf>) -> Filter {
+        self.chain(to_filter(Op::Stored(path.into())))
+    }
+
+    /// Chain a filter that matches files by glob pattern
+    /// Only files matching the pattern are included in the result
+    pub fn pattern(self, p: impl Into<String>) -> Filter {
+        self.chain(to_filter(Op::Pattern(p.into())))
+    }
+
+    /// Chain a filter that loads a workspace filter from a `workspace.josh` file
+    /// The workspace filter is read from the specified directory path
+    pub fn workspace(self, path: impl Into<std::path::PathBuf>) -> Filter {
+        self.chain(to_filter(Op::Workspace(path.into())))
+    }
+
+    /// Chain a filter that sets the author name and email for commits
+    pub fn author(self, name: impl Into<String>, email: impl Into<String>) -> Filter {
+        self.chain(to_filter(Op::Author(name.into(), email.into())))
+    }
+
+    /// Chain a filter that sets the committer name and email for commits
+    pub fn committer(self, name: impl Into<String>, email: impl Into<String>) -> Filter {
+        self.chain(to_filter(Op::Committer(name.into(), email.into())))
+    }
+
+    /// Chain a filter that prunes trivial merge commits
+    /// Removes merge commits where the tree is identical to the first parent
+    pub fn prune_trivial_merge(self) -> Filter {
+        self.chain(to_filter(Op::Prune))
+    }
+
+    /// Chain a filter that removes commit signatures
+    /// The filtered commits will not have GPG signatures
+    pub fn unsign(self) -> Filter {
+        self.chain(to_filter(Op::Unsign))
+    }
+
+    /// Chain a squash filter
+    pub fn squash(self, ids: Option<&[(git2::Oid, Filter)]>) -> Filter {
+        self.chain(if let Some(ids) = ids {
+            to_filter(Op::Squash(Some(
+                ids.iter()
+                    .map(|(x, y)| (LazyRef::Resolved(*x), *y))
+                    .collect(),
+            )))
+        } else {
+            to_filter(Op::Squash(None))
+        })
+    }
+
+    /// Chain a message filter that transforms commit messages
+    pub fn message(self, m: &str) -> Filter {
+        self.chain(to_filter(Op::Message(
+            m.to_string(),
+            MESSAGE_MATCH_ALL_REGEX.clone(),
+        )))
+    }
+
+    /// Chain a message filter that transforms commit messages
+    pub fn message_regex(self, m: impl Into<String>, regex: regex::Regex) -> Filter {
+        self.chain(to_filter(Op::Message(m.into(), regex)))
+    }
+
+    /// Chain a hook filter
+    pub fn hook(self, h: &str) -> Filter {
+        self.chain(to_filter(Op::Hook(h.to_string())))
     }
 }
 
@@ -204,7 +335,12 @@ impl<'a> Rewrite<'a> {
     }
 }
 
-pub use crate::build::{chain, compose, empty, file, hook, message, nop, sequence_number, squash};
+pub use crate::build::compose;
+
+/// Create a sequence_number filter used for tracking commit sequence numbers
+pub fn sequence_number() -> Filter {
+    Filter::from_oid(git2::Oid::zero())
+}
 
 pub fn lazy_refs(filter: Filter) -> Vec<String> {
     lazy_refs2(&to_op(filter))
@@ -404,7 +540,7 @@ fn resolve_workspace_redirect<'a>(
         .unwrap_or_else(|_| to_filter(Op::Empty));
 
     if let Op::Workspace(p) = to_op(f) {
-        Some((chain(to_filter(Op::Exclude(file(path))), f), p))
+        Some((to_filter(Op::Exclude(Filter::new().file(path))).chain(f), p))
     } else {
         None
     }
@@ -415,9 +551,9 @@ fn get_workspace<'a>(
     tree: &'a git2::Tree<'a>,
     path: &Path,
 ) -> Filter {
-    let wsj_file = file("workspace.josh");
+    let wsj_file = Filter::new().file("workspace.josh");
     let base = to_filter(Op::Subdir(path.to_owned()));
-    let wsj_file = chain(base, wsj_file);
+    let wsj_file = base.chain(wsj_file);
     compose(
         wsj_file,
         compose(
@@ -433,7 +569,7 @@ fn get_stored<'a>(
     path: &Path,
 ) -> Filter {
     let stored_path = path.with_extension("josh");
-    let sj_file = file(stored_path.clone());
+    let sj_file = Filter::new().file(stored_path.clone());
     compose(sj_file, get_filter(transaction, tree, &stored_path))
 }
 
@@ -615,7 +751,7 @@ fn apply_to_commit2(
                     &repo.find_tree(lookup_tree)?,
                     &std::path::PathBuf::new().join(commit.id().to_string()),
                 );
-                if cw != filter::empty() {
+                if cw != filter::Filter::new().empty() {
                     if let Some(start) =
                         apply_to_commit2(&Op::Lookup2(parent.id()), &commit, transaction)?
                     {
@@ -634,7 +770,7 @@ fn apply_to_commit2(
                 &std::path::PathBuf::new().join(commit.id().to_string()),
             );
 
-            if cw == filter::empty() {
+            if cw == filter::Filter::new().empty() {
                 // FIXME empty filter or no entry in table?
                 for parent in commit.parents() {
                     if let Some(start) = apply_to_commit2(&op, &parent, transaction)? {
@@ -653,7 +789,7 @@ fn apply_to_commit2(
         Op::Squash(Some(ids)) => {
             if let Some(sq) = ids.get(&LazyRef::Resolved(commit.id())) {
                 let oid = if let Some(oid) = apply_to_commit2(
-                    &Op::Chain(vec![filter::squash(None), *sq]),
+                    &Op::Chain(vec![filter::Filter::new().squash(None), *sq]),
                     commit,
                     transaction,
                 )? {
@@ -883,7 +1019,10 @@ fn apply_to_commit2(
                 for (root, _link_file) in v {
                     let embeding = some_or!(
                         apply_to_commit2(
-                            &Op::Chain(vec![message("{@}"), file(root.join(".josh-link.toml"))]),
+                            &Op::Chain(vec![
+                                Filter::new().message("{@}"),
+                                Filter::new().file(root.join(".josh-link.toml"))
+                            ]),
                             &commit,
                             transaction
                         )?,
@@ -1565,7 +1704,7 @@ fn unapply_workspace<'a>(
                 Path::new("workspace.josh").to_owned(),
                 Path::new("workspace.josh").to_owned(),
             ));
-            let wsj_file = chain(root, wsj_file);
+            let wsj_file = root.chain(wsj_file);
             let filter = compose(wsj_file, compose(workspace, root));
             let original_filter = compose(wsj_file, compose(original_workspace, root));
             let filtered = apply(
@@ -1590,7 +1729,7 @@ fn unapply_workspace<'a>(
             let stored = get_filter(transaction, &tree, &stored_path);
             let original_stored = get_filter(transaction, &parent_tree, &stored_path);
 
-            let sj_file = file(stored_path.clone());
+            let sj_file = Filter::new().file(stored_path.clone());
             let filter = compose(sj_file, stored);
             let original_filter = compose(sj_file, original_stored);
             let filtered = apply(
@@ -1712,13 +1851,13 @@ fn compute_warnings2<'a>(
 pub fn make_permissions_filter(filter: Filter, whitelist: Filter, blacklist: Filter) -> Filter {
     rs_tracing::trace_scoped!("make_permissions_filter");
 
-    let filter = chain(to_filter(Op::Paths), filter);
-    let filter = chain(filter, to_filter(Op::Invert));
-    let filter = chain(
-        filter,
-        compose(blacklist, to_filter(Op::Subtract(nop(), whitelist))),
-    );
-    opt::optimize(filter)
+    to_filter(Op::Paths)
+        .chain(filter)
+        .chain(to_filter(Op::Invert))
+        .chain(compose(
+            blacklist,
+            to_filter(Op::Subtract(Filter::new(), whitelist)),
+        ))
 }
 
 /// Check if `commit` is an ancestor of `tip`.
@@ -1787,7 +1926,7 @@ fn legalize_stored(t: &cache::Transaction, f: Filter, tree: &git2::Tree) -> Josh
     // Put an entry into the hashtable to prevent infinite recursion.
     // If we get called with the same arguments again before we return,
     // Above check breaks the recursion.
-    t.insert_legalize((f, tree.id()), empty());
+    t.insert_legalize((f, tree.id()), Filter::new().empty());
 
     let r = match to_op(f) {
         Op::Compose(f) => {
@@ -1934,11 +2073,11 @@ mod tests {
         // Test that :invert[X] syntax parses correctly
         let filter = parse(":invert[:/sub1]").unwrap();
         // Verify it's not empty
-        assert_ne!(filter, empty());
+        assert_ne!(filter, Filter::new().empty());
 
         // Test with prefix filter (inverse of subdir)
         let filter2 = parse(":invert[:prefix=sub1]").unwrap();
-        assert_ne!(filter2, empty());
+        assert_ne!(filter2, Filter::new().empty());
 
         // Test that it produces the correct inverse
         let filter3 = parse(":invert[:/sub1]").unwrap();
@@ -1948,7 +2087,7 @@ mod tests {
 
         // Test with multiple filters in compose
         let filter4 = parse(":invert[:/sub1,:/sub2]").unwrap();
-        assert_ne!(filter4, empty());
+        assert_ne!(filter4, Filter::new().empty());
     }
 
     #[test]

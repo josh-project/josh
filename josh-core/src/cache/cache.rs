@@ -409,7 +409,7 @@ impl Transaction {
     }
 
     fn get2(&self, filter: crate::filter::Filter, from: git2::Oid) -> Option<git2::Oid> {
-        if filter == crate::filter::nop() {
+        if filter.is_nop() {
             return Some(from);
         }
         let sequence_number = if filter != crate::filter::sequence_number() {
