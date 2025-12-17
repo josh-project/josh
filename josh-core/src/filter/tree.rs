@@ -866,7 +866,7 @@ pub fn original_path(
 ) -> JoshResult<String> {
     let paths_tree = apply(
         transaction,
-        chain(to_filter(Op::Paths), filter),
+        to_filter(Op::Paths).chain(filter),
         Rewrite::from_tree(tree),
     )?;
     let b = get_blob(transaction.repo(), paths_tree.tree(), path);
@@ -881,7 +881,7 @@ pub fn repopulated_tree(
 ) -> JoshResult<git2::Oid> {
     let paths_tree = apply(
         transaction,
-        chain(to_filter(Op::Paths), filter),
+        to_filter(Op::Paths).chain(filter),
         Rewrite::from_tree(full_tree),
     )?;
 
