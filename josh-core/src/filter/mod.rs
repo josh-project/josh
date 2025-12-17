@@ -515,7 +515,7 @@ pub fn apply_to_commit(
 ) -> JoshResult<git2::Oid> {
     let filter = opt::optimize(filter);
     loop {
-        let filtered = apply_to_commit2(&to_op(filter), commit, transaction)?;
+        let filtered = apply_to_commit2(filter, commit, transaction)?;
 
         if let Some(id) = filtered {
             return Ok(id);
@@ -602,14 +602,6 @@ fn get_filter<'a>(
     }
 }
 
-pub fn apply_to_commit3(
-    filter: Filter,
-    commit: &git2::Commit,
-    transaction: &cache::Transaction,
-) -> JoshResult<bool> {
-    Ok(apply_to_commit2(&to_op(filter), commit, transaction)?.is_some())
-}
-
 #[cfg(feature = "incubating")]
 fn read_josh_link<'a>(
     repo: &'a git2::Repository,
@@ -629,13 +621,13 @@ fn read_josh_link<'a>(
     Some(link_file)
 }
 
-fn apply_to_commit2(
-    op: &Op,
+pub fn apply_to_commit2(
+    filter: Filter,
     commit: &git2::Commit,
     transaction: &cache::Transaction,
 ) -> JoshResult<Option<git2::Oid>> {
     let repo = transaction.repo();
-    let filter = to_filter(op.clone());
+    let op = to_op(filter);
 
     match &op {
         Op::Nop => return Ok(Some(commit.id())),
@@ -648,12 +640,9 @@ fn apply_to_commit2(
                     break;
                 }
                 let current_commit = repo.find_commit(current_oid)?;
-                let r = some_or!(
-                    apply_to_commit2(&to_op(*filter), &current_commit, transaction)?,
-                    {
-                        return Ok(None);
-                    }
-                );
+                let r = some_or!(apply_to_commit2(*filter, &current_commit, transaction)?, {
+                    return Ok(None);
+                });
                 current_oid = r;
             }
             return Ok(Some(current_oid));
@@ -678,7 +667,7 @@ fn apply_to_commit2(
 
     rs_tracing::trace_scoped!("apply_to_commit", "spec": spec(filter), "commit": commit.id().to_string());
 
-    let rewrite_data = match &to_op(filter) {
+    let rewrite_data = match &op {
         Op::Rev(filters) => {
             let nf = *filters
                 .get(&LazyRef::Resolved(git2::Oid::zero()))
@@ -707,12 +696,12 @@ fn apply_to_commit2(
                 let mut f2 = filters.clone();
                 f2.remove(&LazyRef::Resolved(*filter_tip));
                 f2.insert(LazyRef::Resolved(git2::Oid::zero()), *startfilter);
-                let op = if f2.len() == 1 {
-                    to_op(*startfilter)
+                let f = if f2.len() == 1 {
+                    *startfilter
                 } else {
-                    Op::Rev(f2)
+                    to_filter(Op::Rev(f2))
                 };
-                if let Some(start) = apply_to_commit2(&op, commit, transaction)? {
+                if let Some(start) = apply_to_commit2(f, commit, transaction)? {
                     transaction.insert(filter, id, start, true);
                     return Ok(Some(start));
                 } else {
@@ -725,7 +714,7 @@ fn apply_to_commit2(
         #[cfg(feature = "incubating")]
         Op::Lookup(lookup_path) => {
             let lookup_commit = if let Some(lookup_commit) =
-                apply_to_commit2(&Op::Subdir(lookup_path.clone()), &commit, transaction)?
+                apply_to_commit2(Filter::new().subdir(lookup_path), &commit, transaction)?
             {
                 lookup_commit
             } else {
@@ -754,7 +743,7 @@ fn apply_to_commit2(
                 );
                 if cw != filter::Filter::new().empty() {
                     if let Some(start) =
-                        apply_to_commit2(&Op::Lookup2(parent.id()), &commit, transaction)?
+                        apply_to_commit2(to_filter(Op::Lookup2(parent.id())), &commit, transaction)?
                     {
                         transaction.insert(filter, commit.id(), start, true);
                         return Ok(Some(start));
@@ -774,7 +763,7 @@ fn apply_to_commit2(
             if cw == filter::Filter::new().empty() {
                 // FIXME empty filter or no entry in table?
                 for parent in commit.parents() {
-                    if let Some(start) = apply_to_commit2(&op, &parent, transaction)? {
+                    if let Some(start) = apply_to_commit2(filter, &parent, transaction)? {
                         transaction.insert(filter, commit.id(), start, true);
                         return Ok(Some(start));
                     } else {
@@ -790,7 +779,7 @@ fn apply_to_commit2(
         Op::Squash(Some(ids)) => {
             if let Some(sq) = ids.get(&LazyRef::Resolved(commit.id())) {
                 let oid = if let Some(oid) = apply_to_commit2(
-                    &Op::Chain(vec![filter::Filter::new().squash(None), *sq]),
+                    filter::Filter::new().squash(None).chain(*sq),
                     commit,
                     transaction,
                 )? {
@@ -1020,10 +1009,9 @@ fn apply_to_commit2(
                 for (root, _link_file) in v {
                     let embeding = some_or!(
                         apply_to_commit2(
-                            &Op::Chain(vec![
-                                Filter::new().message("{@}"),
-                                Filter::new().file(root.join(".josh-link.toml"))
-                            ]),
+                            Filter::new()
+                                .message("{@}")
+                                .file(root.join(".josh-link.toml")),
                             &commit,
                             transaction
                         )?,
@@ -1038,7 +1026,7 @@ fn apply_to_commit2(
                     /* let scommit = repo.find_commit(link_file.commit.0)?; */
 
                     let embeding = repo.find_commit(embeding)?;
-                    let r = some_or!(apply_to_commit2(&to_op(f), &embeding, transaction)?, {
+                    let r = some_or!(apply_to_commit2(f, &embeding, transaction)?, {
                         return Ok(None);
                     });
 
@@ -1066,7 +1054,7 @@ fn apply_to_commit2(
         Op::Workspace(ws_path) => {
             if let Some((redirect, _)) = resolve_workspace_redirect(repo, &commit.tree()?, ws_path)
             {
-                if let Some(r) = apply_to_commit2(&to_op(redirect), commit, transaction)? {
+                if let Some(r) = apply_to_commit2(redirect, commit, transaction)? {
                     transaction.insert(filter, commit.id(), r, true);
                     return Ok(Some(r));
                 } else {
@@ -1200,7 +1188,7 @@ fn apply_to_commit2(
 
         Op::HistoryConcat(c, f) => {
             if let LazyRef::Resolved(c) = c {
-                let a = apply_to_commit2(&to_op(*f), &repo.find_commit(*c)?, transaction)?;
+                let a = apply_to_commit2(*f, &repo.find_commit(*c)?, transaction)?;
                 let a = some_or!(a, { return Ok(None) });
                 if commit.id() == a {
                     transaction.insert(filter, commit.id(), *c, true);
@@ -1234,15 +1222,6 @@ fn apply_to_commit2(
         filter,
     ))
     .transpose()
-}
-
-/// Filter a single tree. This does not involve walking history and is thus fast in most cases.
-pub fn apply<'a>(
-    transaction: &'a cache::Transaction,
-    filter: Filter,
-    x: Rewrite<'a>,
-) -> JoshResult<Rewrite<'a>> {
-    apply2(transaction, &to_op(filter), x)
 }
 
 #[cfg(feature = "incubating")]
@@ -1328,13 +1307,15 @@ fn links_from_roots<'a>(
     Ok(v)
 }
 
-fn apply2<'a>(
+/// Filter a single tree. This does not involve walking history and is thus fast in most cases.
+pub fn apply<'a>(
     transaction: &'a cache::Transaction,
-    op: &Op,
+    filter: Filter,
     x: Rewrite<'a>,
 ) -> JoshResult<Rewrite<'a>> {
     let repo = transaction.repo();
-    match op {
+    let op = to_op(filter);
+    match &op {
         Op::Nop => Ok(x),
         Op::Empty => Ok(x.with_tree(tree::empty(repo))),
         Op::Fold => Ok(x),
@@ -1975,7 +1956,7 @@ fn per_rev_filter(
         .into_iter()
         .map(|(parent, pcw)| {
             let f = opt::optimize(to_filter(Op::Subtract(commit_filter, pcw)));
-            apply_to_commit2(&to_op(f), &parent, transaction)
+            apply_to_commit2(f, &parent, transaction)
         })
         .collect::<JoshResult<Option<Vec<_>>>>()?;
 

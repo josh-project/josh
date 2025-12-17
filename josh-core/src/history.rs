@@ -44,11 +44,13 @@ pub fn walk2(
     let walks = transaction.new_walk();
 
     for original_commit_id in walk {
-        if filter::apply_to_commit3(
+        if filter::apply_to_commit2(
             filter,
             &transaction.repo().find_commit(original_commit_id?)?,
             transaction,
-        )? {
+        )?
+        .is_some()
+        {
             n_out += 1;
         }
 
