@@ -570,7 +570,7 @@ impl Markers {
 
         let commit = self.commit_id.to_string();
 
-        let path = if self.filter == filter::nop() {
+        let path = if self.filter == filter::Filter::new() {
             marker_path(&commit, &self.topic).join(&self.path)
         } else {
             let t = transaction.repo().find_commit(self.commit_id)?.tree()?;
@@ -628,7 +628,7 @@ impl Markers {
             .flatten()
             .unwrap_or_else(|| filter::tree::empty(transaction.repo()));
 
-        let mtree = if self.filter == filter::nop() {
+        let mtree = if self.filter == filter::Filter::new() {
             mtree
         } else {
             transaction
@@ -920,7 +920,7 @@ impl RevMut {
     }
 
     fn meta(&self, topic: String, add: Vec<MarkersInput>, context: &Context) -> FieldResult<bool> {
-        if self.filter != filter::nop() {
+        if self.filter != filter::Filter::new() {
             return Err(josh_error("meta mutation for filtered revs is not implemented").into());
         }
         if let Ok(mut meta_add) = context.meta_add.lock() {
@@ -968,7 +968,7 @@ impl RepositoryMut {
         let filter = if let Some(spec) = filter {
             filter::parse(&spec)?
         } else {
-            filter::nop()
+            filter::Filter::new()
         };
 
         Ok(RevMut { at, filter })
@@ -1065,7 +1065,7 @@ pub fn commit_schema(commit_id: git2::Oid) -> CommitSchema {
     CommitSchema::new(
         Revision {
             commit_id,
-            filter: filter::nop(),
+            filter: filter::Filter::new(),
         },
         EmptyMutation::new(),
         EmptySubscription::new(),

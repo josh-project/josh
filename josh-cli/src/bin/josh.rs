@@ -387,7 +387,7 @@ fn apply_josh_filtering(
         &transaction,
         filterobj,
         &input_refs,
-        josh_core::filter::empty(),
+        josh_core::filter::Filter::new().empty(),
     );
 
     // Check for errors
@@ -750,7 +750,7 @@ fn handle_push(args: &PushArgs, transaction: &josh_core::cache::Transaction) -> 
                     &transaction,
                     filter,
                     &[(josh_remote_ref.clone(), josh_remote_oid)],
-                    josh_core::filter::empty(),
+                    josh_core::filter::Filter::new().empty(),
                 );
 
                 // Check for errors
@@ -990,7 +990,7 @@ fn handle_link_add(
         transaction,
         link_filter,
         new_commit,
-        josh_core::filter::empty(),
+        josh_core::filter::Filter::new().empty(),
     )
     .map_err(from_josh_err)
     .context("Failed to apply :link filter")?;
@@ -1157,7 +1157,7 @@ fn handle_link_fetch(
         transaction,
         link_filter,
         new_commit,
-        josh_core::filter::empty(),
+        josh_core::filter::Filter::new().empty(),
     )
     .map_err(from_josh_err)
     .context("Failed to apply :link filter")?;

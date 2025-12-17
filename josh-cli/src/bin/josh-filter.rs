@@ -236,7 +236,9 @@ fn run_filter(args: Vec<String>) -> josh_core::JoshResult<i32> {
     refs.push((input_ref.clone(), reference.target().unwrap()));
 
     if args.get_flag("single") {
-        filterobj = josh_core::filter::chain(josh_core::filter::squash(None), filterobj);
+        filterobj = josh_core::filter::Filter::new()
+            .squash(None)
+            .chain(filterobj);
     }
 
     if let Some(pattern) = args.get_one::<String>("squash-pattern") {
@@ -246,11 +248,13 @@ fn run_filter(args: Vec<String>) -> josh_core::JoshResult<i32> {
             let target = reference.peel_to_commit()?.id();
             ids.push((
                 target,
-                josh_core::filter::message(reference.name().unwrap()),
+                josh_core::filter::Filter::new().message(reference.name().unwrap()),
             ));
             refs.push((reference.name().unwrap().to_string(), target));
         }
-        filterobj = josh_core::filter::chain(josh_core::filter::squash(Some(&ids)), filterobj);
+        filterobj = josh_core::filter::Filter::new()
+            .squash(Some(&ids))
+            .chain(filterobj);
     };
 
     if let Some(filename) = args.get_one::<String>("squash-file") {
@@ -261,13 +265,15 @@ fn run_filter(args: Vec<String>) -> josh_core::JoshResult<i32> {
             if let [sha, name] = split.as_slice() {
                 let target = git2::Oid::from_str(sha)?;
                 let target = repo.find_object(target, None)?.peel_to_commit()?.id();
-                ids.push((target, josh_core::filter::message(name)));
+                ids.push((target, josh_core::filter::Filter::new().message(name)));
                 refs.push((name.to_string(), target));
             } else if !split.is_empty() {
                 eprintln!("Warning: malformed line: {:?}", line);
             }
         }
-        filterobj = josh_core::filter::chain(josh_core::filter::squash(Some(&ids)), filterobj);
+        filterobj = josh_core::filter::Filter::new()
+            .squash(Some(&ids))
+            .chain(filterobj);
     };
 
     if args.get_flag("print-filter") {
@@ -328,7 +334,7 @@ fn run_filter(args: Vec<String>) -> josh_core::JoshResult<i32> {
                 &transaction,
                 josh_core::filter::parse(&i)?,
                 &[(input_ref.to_string(), r.id())],
-                josh_core::filter::empty(),
+                josh_core::filter::Filter::new().empty(),
             );
             updated_refs[0].0 = "refs/JOSH_TMP".to_string();
             josh_core::update_refs(&transaction, &mut updated_refs, "");
@@ -342,7 +348,7 @@ fn run_filter(args: Vec<String>) -> josh_core::JoshResult<i32> {
     let reverse = args.get_flag("reverse");
 
     let check_permissions = args.get_flag("check-permission");
-    let mut permissions_filter = josh_core::filter::empty();
+    let mut permissions_filter = josh_core::filter::Filter::new().empty();
     if check_permissions {
         let whitelist;
         let blacklist;
@@ -362,11 +368,11 @@ fn run_filter(args: Vec<String>) -> josh_core::JoshResult<i32> {
         } else {
             whitelist = match args.get_one::<String>("whitelist") {
                 Some(s) => josh_core::filter::parse(s)?,
-                _ => josh_core::filter::nop(),
+                _ => josh_core::filter::Filter::new(),
             };
             blacklist = match args.get_one::<String>("blacklist") {
                 Some(s) => josh_core::filter::parse(s)?,
-                _ => josh_core::filter::empty(),
+                _ => josh_core::filter::Filter::new().empty(),
             };
         }
         permissions_filter =
@@ -376,7 +382,7 @@ fn run_filter(args: Vec<String>) -> josh_core::JoshResult<i32> {
     let missing_permissions = args.get_flag("missing-permission");
     if missing_permissions {
         filterobj = permissions_filter;
-        permissions_filter = josh_core::filter::empty();
+        permissions_filter = josh_core::filter::Filter::new().empty();
     }
 
     let old_oid = if let Ok(id) = transaction.repo().refname_to_id(target) {
@@ -411,8 +417,7 @@ fn run_filter(args: Vec<String>) -> josh_core::JoshResult<i32> {
     josh_core::update_refs(&transaction, &mut updated_refs, "");
 
     if let Some(searchstring) = args.get_one::<String>("search") {
-        let ifilterobj =
-            josh_core::filter::chain(filterobj, josh_core::filter::parse(":SQUASH:INDEX")?);
+        let ifilterobj = filterobj.chain(josh_core::filter::parse(":SQUASH:INDEX")?);
 
         let max_complexity: usize = args
             .get_one::<String>("max_comp")

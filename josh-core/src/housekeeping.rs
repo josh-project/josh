@@ -283,7 +283,7 @@ pub fn refresh_known_filters(
                     transaction_overlay,
                     filter::parse(filter_spec)?,
                     &[from],
-                    filter::empty(),
+                    filter::Filter::new().empty(),
                 );
                 u[0].0 = to_ref;
                 updated_refs.append(&mut u);

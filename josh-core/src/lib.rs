@@ -379,8 +379,8 @@ pub fn get_acl(
     users
         .get(user)
         .and_then(|u| {
-            let mut whitelist = filter::empty();
-            let mut blacklist = filter::empty();
+            let mut whitelist = filter::Filter::new().empty();
+            let mut blacklist = filter::Filter::new().empty();
             for g in &u.groups {
                 let lists = groups.get(repo).and_then(|repo| {
                     repo.get(g.as_str()).map(|group| {
@@ -405,7 +405,7 @@ pub fn get_acl(
             println!("w: {:?}, b: {:?}", whitelist, blacklist);
             Some(Ok((whitelist, blacklist)))
         })
-        .unwrap_or_else(|| Ok((filter::empty(), filter::nop())))
+        .unwrap_or_else(|| Ok((filter::Filter::new().empty(), filter::Filter::new())))
 }
 
 #[cfg(feature = "incubating")]
