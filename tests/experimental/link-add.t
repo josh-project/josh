@@ -48,12 +48,12 @@
 
 # Test basic link add with default filter and target
   $ josh link add libs ../remote.git
-  Added link 'libs' with URL '*', filter ':/', and target 'HEAD' (glob)
+  Added link 'libs' with URL '../remote.git', filter ':/', and target 'HEAD'
   Created branch: refs/heads/josh-link
 
 # Verify the branch was created
   $ git show-ref | grep refs/heads/josh-link
-  d92220053f9cc43c012995d1ca1f691fb6a374fa refs/heads/josh-link
+  79e670f61e148fa3afb960ef988a85d51e66a98b refs/heads/josh-link
 
 # Verify HEAD was not updated
   $ git log --oneline
@@ -78,31 +78,34 @@
   
   Turn off this advice by setting config variable advice.detachedHead to false
   
-  HEAD is now at d922200 Add link: libs
+  HEAD is now at 79e670f Add link: libs
   $ git ls-tree -r HEAD
   100644 blob f2376e2bab6c5194410bd8a55630f83f933d2f34\tREADME.md (esc)
-  100644 blob 206d76fad48424fec1fface3ad37d1c24e5eba3a\tlibs/.josh-link.toml (esc)
+  100644 blob b942b8f32405589665681075e32599a49265b10e\tlibs/.link.josh (esc)
   100644 blob dfcaa10d372d874e1cab9c3ba8d0b683099c3826\tlibs/docs/readme.txt (esc)
   100644 blob abe06153eb1e2462265336768a6ecd1164f73ae2\tlibs/libs/lib1.txt (esc)
   100644 blob f03a884ed41c1a40b529001c0b429eed24c5e9e5\tlibs/utils/util1.txt (esc)
-  $ cat libs/.josh-link.toml
-  remote = "../remote.git"
-  branch = "HEAD"
-  filter = ":/"
-  commit = "d27fa3a10cc019e6aa55fc74c1f0893913380e2d"
+  $ cat libs/.link.josh
+  :~(
+      commit="d27fa3a10cc019e6aa55fc74c1f0893913380e2d"
+      remote="../remote.git"
+      target="HEAD"
+  )[
+      :/
+  ] (no-eol)
 
   $ git checkout master
-  Previous HEAD position was d922200 Add link: libs
+  Previous HEAD position was 79e670f Add link: libs
   Switched to branch 'master'
 
 # Test link add with custom filter and target
   $ josh link add utils ../remote.git :/utils --target master
-  Added link 'utils' with URL '*', filter ':/utils', and target 'master' (glob)
+  Added link 'utils' with URL '../remote.git', filter ':/utils', and target 'master'
   Created branch: refs/heads/josh-link
 
 # Verify the branch was created
   $ git show-ref | grep refs/heads/josh-link
-  361928abbc41f83a6f6ef33dc414dfcf9b257a96 refs/heads/josh-link
+  ec335114bd6b9619d3c839a0a229eb8169b035c4 refs/heads/josh-link
 
 # Check the content of the utils link branch
   $ git checkout refs/heads/josh-link
@@ -123,25 +126,28 @@
   
   Turn off this advice by setting config variable advice.detachedHead to false
   
-  HEAD is now at 361928a Add link: utils
-  $ cat utils/.josh-link.toml
-  remote = "../remote.git"
-  branch = "master"
-  filter = ":/utils"
-  commit = "d27fa3a10cc019e6aa55fc74c1f0893913380e2d"
+  HEAD is now at ec33511 Add link: utils
+  $ cat utils/.link.josh
+  :~(
+      commit="d27fa3a10cc019e6aa55fc74c1f0893913380e2d"
+      remote="../remote.git"
+      target="master"
+  )[
+      :/utils
+  ] (no-eol)
 
   $ git checkout master
-  Previous HEAD position was 361928a Add link: utils
+  Previous HEAD position was ec33511 Add link: utils
   Switched to branch 'master'
 
 # Test path normalization (path with leading slash)
   $ josh link add /docs ../remote.git :/docs
-  Added link 'docs' with URL '*', filter ':/docs', and target 'HEAD' (glob)
+  Added link 'docs' with URL '../remote.git', filter ':/docs', and target 'HEAD'
   Created branch: refs/heads/josh-link
 
 # Verify path was normalized (no leading slash in branch name)
   $ git show-ref | grep refs/heads/josh-link
-  0f959dafbb6690a168f83f2b86fb7929a5391b85 refs/heads/josh-link
+  4d12b3bd580585afc610ad4a5a996b65814f630a refs/heads/josh-link
 
 
 # Test error case - empty path
@@ -198,15 +204,12 @@
 # Test josh link fetch command
 # First, create a link file directly in the master branch for testing
   $ mkdir -p test-link
-  $ echo 'remote = "../remote.git"' > test-link/.josh-link.toml
-  $ echo 'branch = "HEAD"' >> test-link/.josh-link.toml
-  $ echo 'filter = ":/test"' >> test-link/.josh-link.toml
-  $ echo 'commit = "d27fa3a10cc019e6aa55fc74c1f0893913380e2d"' >> test-link/.josh-link.toml
-  $ git add test-link/.josh-link.toml
+  $ echo ':~(branch="HEAD",commit="d27fa3a10cc019e6aa55fc74c1f0893913380e2d",remote="../remote.git")[:/test]' > test-link/.link.josh
+  $ git add test-link/.link.josh
   $ git commit -m "Add test link file for fetch testing"
   [master *] Add test link file for fetch testing (glob)
-   1 file changed, 4 insertions(+)
-   create mode 100644 test-link/.josh-link.toml
+   1 file changed, 1 insertion(+)
+   create mode 100644 test-link/.link.josh
 
 # Test fetch with specific path
   $ josh link fetch test-link
@@ -217,7 +220,7 @@
 
 # Verify the branch was updated
   $ git show-ref | grep refs/heads/josh-link
-  82aa51e68542366219191a2a25fefbb6ed6e57a0 refs/heads/josh-link
+  427df5b47081f00d8ea5cfa7db2c9bbb66599245 refs/heads/josh-link
 
 # Check the updated content
   $ git checkout refs/heads/josh-link
@@ -238,21 +241,24 @@
   
   Turn off this advice by setting config variable advice.detachedHead to false
   
-  HEAD is now at 82aa51e Update links: test-link
+  HEAD is now at 427df5b Update links: test-link
   $ git ls-tree -r HEAD
   100644 blob f2376e2bab6c5194410bd8a55630f83f933d2f34	README.md (esc)
-  100644 blob bd917a0bed306891ca07801e3d89b9140954434f	test-link/.josh-link.toml (esc)
-  $ cat test-link/.josh-link.toml
-  remote = "../remote.git"
-  branch = "HEAD"
-  filter = ":/test"
-  commit = "d27fa3a10cc019e6aa55fc74c1f0893913380e2d"
+  100644 blob 710e3f16e0bf9cb958d197e369ac56e5c12430c6\ttest-link/.link.josh (esc)
+  $ cat test-link/.link.josh
+  :~(
+      branch="HEAD"
+      commit="d27fa3a10cc019e6aa55fc74c1f0893913380e2d"
+      remote="../remote.git"
+  )[
+      :/test
+  ] (no-eol)
 
   $ git checkout master
-  Previous HEAD position was 82aa51e Update links: test-link
+  Previous HEAD position was 427df5b Update links: test-link
   Switched to branch 'master'
 
-# Test fetch with no path (should find all .josh-link.toml files)
+# Test fetch with no path (should find all .link.josh files)
   $ josh link fetch
   Found 1 link file(s) to fetch
   Fetching from link at path: test-link
@@ -261,9 +267,8 @@
 
 # Test error case - path that doesn't exist
   $ josh link fetch nonexistent
-  Error: Failed to find .josh-link.toml at path 'nonexistent'
-  Failed to find .josh-link.toml at path 'nonexistent'
-  the path 'nonexistent' does not exist in the given tree; class=Tree (14); code=NotFound (-3)
+  Error: Link file not found at path 'nonexistent'
+  Link file not found at path 'nonexistent'
   [1]
 
 # Test error case - no link files found
@@ -281,8 +286,8 @@
    create mode 100644 README.md
 
   $ josh link fetch
-  Error: No .josh-link.toml files found
-  No .josh-link.toml files found
+  Error: No .link.josh files found
+  No .link.josh files found
   [1]
 
   $ cd ..

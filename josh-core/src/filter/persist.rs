@@ -12,6 +12,15 @@ static FILTERS: LazyLock<
     std::sync::Mutex<HashMap<Filter, Op, BuildHasherDefault<PassthroughHasher>>>,
 > = LazyLock::new(|| Default::default());
 
+pub(crate) fn peel_op(filter: Filter) -> Op {
+    let op = to_op(filter);
+    if let Op::Meta(_, f) = op {
+        return peel_op(f);
+    } else {
+        return op;
+    }
+}
+
 pub(crate) fn to_op(filter: Filter) -> Op {
     if filter == sequence_number() {
         return Op::Nop;
@@ -362,6 +371,19 @@ impl InMemoryBuilder {
             Op::Lookup2(oid) => {
                 let params_tree = self.build_str_params(&[oid.to_string().as_ref()]);
                 push_tree_entries(&mut entries, [("lookup2", params_tree)]);
+            }
+            Op::Meta(meta, filter) => {
+                let mut meta_entries = Vec::new();
+                for (key, value) in meta.iter() {
+                    let value_blob = self.write_blob(value.as_bytes());
+                    push_blob_entries(&mut meta_entries, [(key.as_str(), value_blob)]);
+                }
+                let filter_tree = gix_hash::ObjectId::from_bytes_or_panic(filter.id().as_bytes());
+                push_tree_entries(&mut meta_entries, [("0", filter_tree)]);
+                let meta_tree = self.write_tree(gix_object::Tree {
+                    entries: meta_entries,
+                });
+                push_tree_entries(&mut entries, [("meta", meta_tree)]);
             }
         }
 
@@ -907,6 +929,40 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> JoshResult<Op> {
                 replacements.push((regex, replacement));
             }
             Ok(Op::RegexReplace(replacements))
+        }
+        "meta" => {
+            let meta_tree = repo.find_tree(entry.id())?;
+            let filter_tree = repo.find_tree(
+                meta_tree
+                    .get_name("0")
+                    .ok_or_else(|| josh_error("meta: missing filter tree"))?
+                    .id(),
+            )?;
+
+            // Deserialize metadata map - keys are filenames, values are blob contents
+            let mut meta = std::collections::BTreeMap::new();
+            for i in 0..meta_tree.len() {
+                let meta_entry = meta_tree
+                    .get(i)
+                    .ok_or_else(|| josh_error("meta: missing metadata entry"))?;
+                let meta_key = meta_entry
+                    .name()
+                    .ok_or_else(|| josh_error("meta: missing metadata key"))?;
+
+                // Skip the "0" entry (filter)
+                if meta_key == "0" {
+                    continue;
+                }
+
+                // The entry should be a blob with the value as content
+                let value_blob = repo.find_blob(meta_entry.id())?;
+                let value = std::str::from_utf8(value_blob.content())?.to_string();
+                meta.insert(meta_key.to_string(), value);
+            }
+
+            // Deserialize filter
+            let filter = from_tree2(repo, filter_tree.id())?;
+            Ok(Op::Meta(meta, to_filter(filter)))
         }
         _ => Err(josh_error("Unknown tree structure")),
     }
