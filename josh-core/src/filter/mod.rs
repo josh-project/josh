@@ -825,18 +825,17 @@ pub fn apply_to_commit2(
             }
         }
         Op::Linear => {
-            let p: Vec<_> = commit.parent_ids().collect();
-            if p.is_empty() {
-                transaction.insert(filter, commit.id(), commit.id(), true);
-                return Ok(Some(commit.id()));
-            }
-            let parent = some_or!(transaction.get(filter, p[0]), {
-                return Ok(None);
-            });
+            let parent = if let Some(parent) = commit.parent_ids().next() {
+                vec![some_or!(transaction.get(filter, parent), {
+                    return Ok(None);
+                })]
+            } else {
+                vec![]
+            };
 
             return Some(history::create_filtered_commit(
                 commit,
-                vec![parent],
+                parent,
                 Rewrite::from_commit(commit)?,
                 transaction,
                 filter,
