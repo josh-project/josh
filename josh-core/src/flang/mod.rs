@@ -109,6 +109,17 @@ fn pretty2(op: &Op, indent: usize, compose: bool) -> String {
             v.sort();
             format!(":squash(\n{}\n)", v.join("\n"))
         }
+        Op::Meta(meta, filter) => {
+            let ind2 = std::cmp::max(indent, 4);
+            let mut meta_parts: Vec<_> = meta
+                .iter()
+                .map(|(k, v)| format!("{}{}={}", " ".repeat(ind2), k, parse::quote(v)))
+                .collect();
+            meta_parts.sort();
+            let meta_str = meta_parts.join("\n");
+
+            ff(&vec![*filter], &format!("~(\n{}\n)", meta_str), indent)
+        }
         _ => spec2(op),
     }
 }
@@ -264,6 +275,14 @@ pub(crate) fn spec2(op: &Op) -> String {
         }
         Op::Hook(hook) => {
             format!(":hook={}", parse::quote(hook))
+        }
+        Op::Meta(meta, filter) => {
+            let mut meta_parts = meta
+                .iter()
+                .map(|(k, v)| format!("{}={}", k, parse::quote(v)))
+                .collect::<Vec<_>>();
+            meta_parts.sort();
+            format!(":~({})[{}]", meta_parts.join(","), spec(*filter))
         }
     }
 }

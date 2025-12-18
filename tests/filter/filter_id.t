@@ -872,3 +872,24 @@ Test :from(0000000000000000000000000000000000000000:/a)
   
   9 directories, 3 files
 
+  $ FILTER_HASH=$(josh-filter -i ':~(key1="value1",key2="value2",a="b")[:/sub1]')
+  $ josh-filter -p ${FILTER_HASH}
+  :~(
+      a="b"
+      key1="value1"
+      key2="value2"
+  )[
+      :/sub1
+  ]
+  $ git read-tree --reset -u ${FILTER_HASH}
+  $ tree
+  .
+  `-- meta
+      |-- 0
+      |   `-- subdir
+      |       `-- 0
+      |-- a
+      |-- key1
+      `-- key2
+  
+  4 directories, 4 files

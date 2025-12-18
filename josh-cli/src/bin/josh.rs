@@ -286,7 +286,7 @@ pub struct LinkAddArgs {
 #[cfg(feature = "incubating")]
 #[derive(Debug, clap::Parser)]
 pub struct LinkFetchArgs {
-    /// Optional path to specific .josh-link.toml file (if not provided, fetches all)
+    /// Optional path to specific .link.josh file (if not provided, fetches all)
     #[arg()]
     pub path: Option<String>,
 }
@@ -771,7 +771,7 @@ fn handle_push(args: &PushArgs, transaction: &josh_core::cache::Transaction) -> 
         log::debug!("old_filtered_oid: {:?}", old_filtered_oid);
         log::debug!("original_target: {:?}", original_target);
 
-        // Set push mode based on the flags
+        // Set push mode based on the metadata
         let push_mode = if args.split {
             PushMode::Split
         } else if args.stack {
@@ -881,7 +881,6 @@ fn handle_link_add(
     transaction: &josh_core::cache::Transaction,
 ) -> anyhow::Result<()> {
     use josh_core::filter::tree;
-    use josh_core::{JoshLinkFile, Oid};
 
     // Check if we're in a git repository
     let repo = git2::Repository::open_from_env().context("Not in a git repository")?;
@@ -934,26 +933,24 @@ fn handle_link_add(
         .context("Failed to get HEAD commit")?;
     let head_tree = head_commit.tree().context("Failed to get HEAD tree")?;
 
-    // Create the JoshLinkFile with the actual commit SHA
-    let link_file = JoshLinkFile {
-        remote: args.url.clone(),
-        branch: target.to_string(),
-        filter: filter_obj,
-        commit: Oid::from(actual_commit_sha),
-    };
+    // Create a filter with metadata
+    let mut meta = std::collections::BTreeMap::new();
+    meta.insert("remote".to_string(), args.url.clone());
+    meta.insert("target".to_string(), target.to_string());
+    meta.insert("commit".to_string(), actual_commit_sha.to_string());
 
-    // Create the .josh-link.toml content
-    let link_content = toml::to_string(&link_file).context("Failed to serialize link file")?;
+    let link_filter = filter_obj.with_meta(meta);
+    let link_content = josh_core::filter::pretty(link_filter, 0);
 
-    // Create the blob for the .josh-link.toml file
+    // Create the blob for the .link.josh file
     let link_blob = repo
         .blob(link_content.as_bytes())
         .context("Failed to create blob")?;
 
-    // Create the path for the .josh-link.toml file
-    let link_path = std::path::Path::new(&normalized_path).join(".josh-link.toml");
+    // Create the path for the .link.josh file
+    let link_path = std::path::Path::new(&normalized_path).join(".link.josh");
 
-    // Insert the .josh-link.toml file into the tree
+    // Insert the .link.josh file into the tree
     let new_tree = tree::insert(&repo, &head_tree, &link_path, link_blob, 0o0100644)
         .map_err(from_josh_err)
         .context("Failed to insert link file into tree")?;
@@ -1017,7 +1014,6 @@ fn handle_link_fetch(
     transaction: &josh_core::cache::Transaction,
 ) -> anyhow::Result<()> {
     use josh_core::filter::tree;
-    use josh_core::{JoshLinkFile, Oid};
 
     // Check if we're in a git repository
     let repo = git2::Repository::open_from_env().context("Not in a git repository")?;
@@ -1030,44 +1026,50 @@ fn handle_link_fetch(
     let head_tree = head_commit.tree().context("Failed to get HEAD tree")?;
 
     let link_files = if let Some(path) = &args.path {
-        // Single path specified - find the .josh-link.toml file at that path
-        let link_path = std::path::Path::new(path).join(".josh-link.toml");
-        let link_entry = head_tree
-            .get_path(&link_path)
-            .with_context(|| format!("Failed to find .josh-link.toml at path '{}'", path))?;
+        // Single path specified - use find_link_files to get all link files, then find the one at the specified path
+        let link_files = josh_core::find_link_files(&repo, &head_tree)
+            .map_err(from_josh_err)
+            .context("Failed to find link files")?;
 
-        let link_blob = repo
-            .find_blob(link_entry.id())
-            .context("Failed to find blob")?;
-
-        let link_content = std::str::from_utf8(link_blob.content())
-            .context("Failed to parse link file content")?;
-
-        let link_file: JoshLinkFile =
-            toml::from_str(link_content).context("Failed to parse .josh-link.toml")?;
+        let link_file = link_files
+            .iter()
+            .find(|(p, _)| p.to_string_lossy() == path.as_str())
+            .map(|(_, lf)| lf.clone())
+            .ok_or_else(|| anyhow::anyhow!("Link file not found at path '{}'", path))?;
 
         vec![(std::path::PathBuf::from(path), link_file)]
     } else {
-        // No path specified - find all .josh-link.toml files in the tree
+        // No path specified - find all .link.josh files in the tree
         josh_core::find_link_files(&repo, &head_tree)
             .map_err(from_josh_err)
             .context("Failed to find link files")?
     };
 
     if link_files.is_empty() {
-        return Err(anyhow::anyhow!("No .josh-link.toml files found"));
+        return Err(anyhow::anyhow!("No .link.josh files found"));
     }
 
     println!("Found {} link file(s) to fetch", link_files.len());
 
     // Fetch from all the link files
     let mut updated_link_files = Vec::new();
-    for (path, mut link_file) in link_files {
+    for (path, link_file) in link_files {
         println!("Fetching from link at path: {}", path.display());
+
+        // Get remote and branch from metadata
+        let remote = link_file.get_meta("remote").ok_or_else(|| {
+            anyhow::anyhow!(
+                "Link file missing 'remote' metadata at path '{}'",
+                path.display()
+            )
+        })?;
+        let branch = link_file
+            .get_meta("target")
+            .unwrap_or_else(|| "HEAD".to_string());
 
         // Use git fetch shell command
         let output = std::process::Command::new("git")
-            .args(&["fetch", &link_file.remote, &link_file.branch])
+            .args(&["fetch", &remote, &branch])
             .output()
             .context("Failed to execute git fetch")?;
 
@@ -1088,26 +1090,28 @@ fn handle_link_fetch(
             .context("Failed to get FETCH_HEAD commit")?;
         let actual_commit_sha = fetch_commit.id();
 
-        // Update the link file with the new commit SHA
-        link_file.commit = Oid::from(actual_commit_sha);
-        updated_link_files.push((path, link_file));
+        // Update the link file with the new commit SHA by updating the commit metadata
+        let mut meta = std::collections::BTreeMap::new();
+        meta.insert("commit".to_string(), actual_commit_sha.to_string());
+        let updated_link_file = link_file.with_meta(meta);
+        updated_link_files.push((path, updated_link_file));
     }
 
-    // Create new tree with updated .josh-link.toml files
+    // Create new tree with updated .link.josh files
     let mut new_tree = head_tree;
     for (path, link_file) in &updated_link_files {
-        // Create the .josh-link.toml content
-        let link_content = toml::to_string(link_file).context("Failed to serialize link file")?;
+        // The link_file is already a filter with metadata, just serialize it
+        let link_content = josh_core::filter::pretty(*link_file, 0);
 
-        // Create the blob for the .josh-link.toml file
+        // Create the blob for the .link.josh file
         let link_blob = repo
             .blob(link_content.as_bytes())
             .context("Failed to create blob")?;
 
-        // Create the path for the .josh-link.toml file
-        let link_path = path.join(".josh-link.toml");
+        // Create the path for the .link.josh file
+        let link_path = path.join(".link.josh");
 
-        // Insert the updated .josh-link.toml file into the tree
+        // Insert the updated .link.josh file into the tree
         new_tree = tree::insert(&repo, &new_tree, &link_path, link_blob, 0o0100644)
             .map_err(from_josh_err)
             .with_context(|| {

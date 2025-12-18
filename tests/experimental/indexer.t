@@ -19,29 +19,38 @@
   $ git commit -m "add file3" 1> /dev/null
 
   $ josh-filter -s :INDEX --update refs/heads/index
+  7f9854361a53e0a7faa7428a5909267f6e04fb99
   [3] :INDEX
   [3] sequence_number
   [6] _trigram_index
 
   $ josh-filter :/ --search "Another"
   sub1/file2:1: Another document with more 
+  2b1320977125dad24866056fa94acf30d77d9453
   $ josh-filter :/ --search "happens"
   sub2/file3:1: One more to see what happens
+  2b1320977125dad24866056fa94acf30d77d9453
   $ josh-filter :/ --search "Test"
   sub1/file1:1: First Test document
+  2b1320977125dad24866056fa94acf30d77d9453
   $ josh-filter :/ --search "document"
   sub1/file1:1: First Test document
   sub1/file2:1: Another document with more 
+  2b1320977125dad24866056fa94acf30d77d9453
   $ josh-filter :/ --search "x"
+  2b1320977125dad24866056fa94acf30d77d9453
   $ josh-filter :/ --search "e"
   sub1/file1:1: First Test document
   sub1/file2:1: Another document with more 
   sub1/file2:3:  one line
   sub2/file3:1: One more to see what happens
+  2b1320977125dad24866056fa94acf30d77d9453
   $ josh-filter :/ --search "line"
   sub1/file2:3:  one line
+  2b1320977125dad24866056fa94acf30d77d9453
 
   $ josh-filter :/ -g 'query { rev(at: "refs/heads/master") { results: search(string: "e") { path { path }, matches { line, text }} }}'
+  2b1320977125dad24866056fa94acf30d77d9453
   {
     "rev": {
       "results": [
@@ -86,6 +95,7 @@
     }
   }
   $ josh-filter :/ -g 'query { rev(at: "refs/heads/master", filter: ":/sub2") { results: search(string: "e") { path { path }, matches { line, text }} }}'
+  2b1320977125dad24866056fa94acf30d77d9453
   {
     "rev": {
       "results": [

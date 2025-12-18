@@ -409,15 +409,6 @@ pub fn get_acl(
 }
 
 #[cfg(feature = "incubating")]
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct JoshLinkFile {
-    pub remote: String,
-    pub branch: String,
-    pub filter: filter::Filter,
-    pub commit: Oid,
-}
-
-#[cfg(feature = "incubating")]
 pub struct ParsedSubmoduleEntry {
     pub path: std::path::PathBuf,
     pub url: String,
@@ -539,12 +530,12 @@ pub fn update_gitmodules(
 pub fn find_link_files(
     repo: &git2::Repository,
     tree: &git2::Tree,
-) -> JoshResult<Vec<(std::path::PathBuf, JoshLinkFile)>> {
+) -> JoshResult<Vec<(std::path::PathBuf, filter::Filter)>> {
     let mut link_files = Vec::new();
 
     tree.walk(git2::TreeWalkMode::PreOrder, |root, entry| {
         if let Some(name) = entry.name() {
-            if name == ".josh-link.toml" {
+            if name == ".link.josh" {
                 // Found a link file
                 let link_blob = match repo.find_blob(entry.id()) {
                     Ok(blob) => blob,
@@ -562,19 +553,19 @@ pub fn find_link_files(
                     }
                 };
 
-                let link_file: JoshLinkFile = match toml::from_str(link_content) {
-                    Ok(file) => file,
+                let filter = match filter::parse(link_content.trim()) {
+                    Ok(f) => f,
                     Err(e) => {
-                        eprintln!("Failed to parse .josh-link.toml: {}", e);
+                        eprintln!("Failed to parse .link.josh filter: {}", e);
                         return git2::TreeWalkResult::Skip;
                     }
                 };
 
                 let root = root.trim_matches('/');
-                // Use root as the directory path where the .josh-link.toml file is located
+                // Use root as the directory path where the .link.josh file is located
                 let path = std::path::PathBuf::from(root);
 
-                link_files.push((path, link_file));
+                link_files.push((path, filter));
             }
         }
 

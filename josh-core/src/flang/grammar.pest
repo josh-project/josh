@@ -34,6 +34,7 @@ filter_spec = { (
   | filter_stored
   | filter_nop
   | filter_scope
+  | filter_meta
   | filter
   | filter_noarg
 )+ }
@@ -108,6 +109,15 @@ filter_scope = {
     ~ filter_spec
     ~ NEWLINE*
     ~ ">" ~ GROUP_START ~ compose ~ GROUP_END
+}
+
+filter_meta = {
+    CMD_START ~ "~" ~ "("
+    ~ NEWLINE*
+    ~ (filter_path ~ "=" ~ string)?
+    ~ (CMD_SEP+ ~ (filter_path ~ "=" ~ string))*
+    ~ NEWLINE*
+    ~ ")" ~ GROUP_START ~ compose ~ GROUP_END
 }
 
 cmd = { ALNUM+ }

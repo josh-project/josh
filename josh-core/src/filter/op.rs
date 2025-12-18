@@ -30,6 +30,8 @@ impl LazyRef {
 
 #[derive(Clone, Debug)]
 pub enum Op {
+    Meta(std::collections::BTreeMap<String, String>, Filter),
+
     Nop,
     Empty,
     Fold,
