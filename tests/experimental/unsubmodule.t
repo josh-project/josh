@@ -57,6 +57,7 @@
 Test Adapt filter - should expand submodule into actual tree content
 
   $ josh-filter -s :adapt=submodules master --update refs/josh/filter/master
+  428551c96b42eb626013d6c5d94e9666bcf3dcef
   [3] :adapt=submodules
   [3] sequence_number
   $ git log --graph --pretty=%s refs/josh/filter/master
@@ -64,15 +65,15 @@ Test Adapt filter - should expand submodule into actual tree content
   * add main.txt
   * init
   $ git ls-tree --name-only -r refs/josh/filter/master
-  libs/.josh-link.toml
+  libs/.link.josh
   main.txt
 
   $ git ls-tree refs/josh/filter/master
-  040000 tree 34bc8209dca31283563d5519e297ae8cc7f0f19a\tlibs (esc)
+  040000 tree a1f8ad7b8c0d42a34b7b6d12f17dc69710e054ea\tlibs (esc)
   100644 blob bcb9dcad21591bd9284afbb6c21e6d69eafe8f15\tmain.txt (esc)
 
   $ git ls-tree refs/josh/filter/master libs
-  040000 tree 34bc8209dca31283563d5519e297ae8cc7f0f19a\tlibs (esc)
+  040000 tree a1f8ad7b8c0d42a34b7b6d12f17dc69710e054ea\tlibs (esc)
 
   $ git ls-tree refs/josh/filter/master libs/foo
 
@@ -121,6 +122,7 @@ Test Adapt with multiple submodules
   	url = ../another-submodule
 
   $ josh-filter -s :adapt=submodules master --update refs/josh/filter/master
+  63de7227a11c0aaee2179218bd3989100d491f80
   [4] :adapt=submodules
   [4] sequence_number
   $ git log --graph --pretty=%s refs/josh/filter/master
@@ -129,12 +131,12 @@ Test Adapt with multiple submodules
   * add main.txt
   * init
   $ git ls-tree --name-only -r refs/josh/filter/master
-  libs/.josh-link.toml
+  libs/.link.josh
   main.txt
-  modules/another/.josh-link.toml
+  modules/another/.link.josh
 
   $ git ls-tree refs/josh/filter/master modules
-  040000 tree 9dd65d88b3c43c244c71187f86c40f77e771e432\tmodules (esc)
+  040000 tree f0bfc65981a41d3cf8cdf818f2d209b1dd73e794\tmodules (esc)
 
   $ git show refs/josh/filter/master:modules/another/another.txt
   fatal: path 'modules/another/another.txt' exists on disk, but not in 'refs/josh/filter/master'
@@ -164,6 +166,7 @@ Test Adapt with submodule changes - add commits to submodule and update
   $ git commit -m "update libs submodule" 1> /dev/null
 
   $ josh-filter -s :adapt=submodules master --update refs/josh/filter/master
+  2d0cfa84f11f2afa4fd2acc719cc4e3b5b08a1cc
   [5] :adapt=submodules
   [5] sequence_number
   $ git log --graph --pretty=%s refs/josh/filter/master
@@ -173,9 +176,9 @@ Test Adapt with submodule changes - add commits to submodule and update
   * add main.txt
   * init
   $ git ls-tree --name-only -r refs/josh/filter/master
-  libs/.josh-link.toml
+  libs/.link.josh
   main.txt
-  modules/another/.josh-link.toml
+  modules/another/.link.josh
 
   $ git show refs/josh/filter/master:libs/libs/foo/file3.txt
   fatal: path 'libs/libs/foo/file3.txt' exists on disk, but not in 'refs/josh/filter/master'
@@ -195,6 +198,7 @@ Test Adapt on repo without submodules (should be no-op)
   $ git commit -m "add file" 1> /dev/null
 
   $ josh-filter -s :adapt=submodules master --update refs/josh/filter/master
+  62f270988ac3ab05a33d0705fb1e4982165f69f2
   [1] :adapt=submodules
   [1] sequence_number
   $ git ls-tree --name-only -r refs/josh/filter/master
