@@ -676,13 +676,20 @@ Test :INVERT
 Test :linear
   $ FILTER_HASH=$(josh-filter -i ':linear')
   $ josh-filter -p ${FILTER_HASH}
-  :linear
+  :~(
+      graph="linear"
+  )[
+      :/
+  ]
   $ git read-tree --reset -u ${FILTER_HASH}
   $ tree
   .
-  `-- linear
+  `-- meta
+      |-- 0
+      |   `-- nop
+      `-- graph
   
-  1 directory, 1 file
+  3 directories, 2 files
 
 Test :prune=trivial-merge
   $ FILTER_HASH=$(josh-filter -i ':prune=trivial-merge')

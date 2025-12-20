@@ -98,7 +98,7 @@ impl Filter {
     /// Chain a filter that ensures linear history by dropping all parents
     /// of commits except the first parent
     pub fn linear(self) -> Filter {
-        self.chain(to_filter(Op::Linear))
+        self.with_meta("graph", "linear")
     }
 
     /// Chain a file filter that selects a single file
@@ -836,25 +836,6 @@ pub fn apply_to_commit2(
                 )?));
             }
         }
-        Op::Linear => {
-            let p: Vec<_> = commit.parent_ids().collect();
-            if p.is_empty() {
-                transaction.insert(filter, commit.id(), commit.id(), true);
-                return Ok(Some(commit.id()));
-            }
-            let parent = some_or!(transaction.get(filter, p[0]), {
-                return Ok(None);
-            });
-
-            return Some(history::create_filtered_commit(
-                commit,
-                vec![parent],
-                Rewrite::from_commit(commit)?,
-                transaction,
-                filter,
-            ))
-            .transpose();
-        }
         Op::Prune => {
             let p: Vec<_> = commit.parent_ids().collect();
 
@@ -1363,7 +1344,6 @@ pub fn apply<'a>(
             )?))
         }
         Op::HistoryConcat(..) => Ok(x),
-        Op::Linear => Ok(x),
         Op::Prune => Ok(x),
         #[cfg(feature = "incubating")]
         Op::Adapt(adapter) => {
@@ -1881,14 +1861,6 @@ pub fn is_ancestor_of(
     Ok(ancestors.contains(&commit))
 }
 
-pub fn is_linear(filter: Filter) -> bool {
-    match peel_op(filter) {
-        Op::Linear => true,
-        Op::Chain(filters) => filters.iter().any(|f| is_linear(*f)),
-        _ => false,
-    }
-}
-
 fn legalize_pin<F>(f: Filter, c: &F) -> Filter
 where
     F: Fn(Filter) -> Filter,
@@ -1965,7 +1937,7 @@ fn per_rev_filter(
     let extra_parents = parent_filters
         .into_iter()
         .map(|(parent, pcw)| {
-            let f = opt::optimize(to_filter(Op::Subtract(commit_filter, pcw)));
+            let f = opt::optimize(to_filter(Op::Subtract(commit_filter.peel(), pcw.peel())));
             apply_to_commit2(f, &parent, transaction)
         })
         .collect::<JoshResult<Option<Vec<_>>>>()?;
@@ -2022,14 +1994,15 @@ fn per_rev_filter(
         tree_data = tree_data.with_tree(transaction.repo().find_tree(with_overlay)?);
     }
 
-    Some(history::create_filtered_commit(
+    return Some(history::create_filtered_commit_with_meta(
         commit,
         filtered_parent_ids,
         tree_data,
         transaction,
-        filter,
+        filter.peel(),
+        commit_filter.into_meta(),
     ))
-    .transpose()
+    .transpose();
 }
 
 #[cfg(test)]
