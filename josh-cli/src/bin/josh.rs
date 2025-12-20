@@ -383,12 +383,7 @@ fn apply_josh_filtering(
     }
 
     // Apply the filter to all remote refs
-    let (updated_refs, errors) = josh_core::filter_refs(
-        transaction,
-        filterobj,
-        &input_refs,
-        josh_core::filter::Filter::new().empty(),
-    );
+    let (updated_refs, errors) = josh_core::filter_refs(&transaction, filterobj, &input_refs);
 
     // Check for errors
     if let Some(error) = errors.into_iter().next() {
@@ -750,7 +745,6 @@ fn handle_push(args: &PushArgs, transaction: &josh_core::cache::Transaction) -> 
                     transaction,
                     filter,
                     &[(josh_remote_ref.clone(), josh_remote_oid)],
-                    josh_core::filter::Filter::new().empty(),
                 );
 
                 // Check for errors
@@ -983,14 +977,9 @@ fn handle_link_add(
         .map_err(from_josh_err)
         .context("Failed to parse :link filter")?;
 
-    let filtered_commit = josh_core::filter_commit(
-        transaction,
-        link_filter,
-        new_commit,
-        josh_core::filter::Filter::new().empty(),
-    )
-    .map_err(from_josh_err)
-    .context("Failed to apply :link filter")?;
+    let filtered_commit = josh_core::filter_commit(transaction, link_filter, new_commit)
+        .map_err(from_josh_err)
+        .context("Failed to apply :link filter")?;
 
     // Create the fixed branch name
     let branch_name = "refs/heads/josh-link";
@@ -1157,14 +1146,9 @@ fn handle_link_fetch(
         .map_err(from_josh_err)
         .context("Failed to parse :link filter")?;
 
-    let filtered_commit = josh_core::filter_commit(
-        transaction,
-        link_filter,
-        new_commit,
-        josh_core::filter::Filter::new().empty(),
-    )
-    .map_err(from_josh_err)
-    .context("Failed to apply :link filter")?;
+    let filtered_commit = josh_core::filter_commit(transaction, link_filter, new_commit)
+        .map_err(from_josh_err)
+        .context("Failed to apply :link filter")?;
 
     // Create the fixed branch name
     let branch_name = "refs/heads/josh-link";

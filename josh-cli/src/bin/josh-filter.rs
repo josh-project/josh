@@ -115,14 +115,6 @@ fn make_app() -> clap::Command {
             ),
         )
         .arg(
-            clap::Arg::new("check-permission")
-                .action(clap::ArgAction::SetTrue)
-                .long("check-permission")
-                .short('c'),
-        )
-        .arg(clap::Arg::new("missing-permission").long("missing-permission")
-                .action(clap::ArgAction::SetTrue))
-        .arg(
             clap::Arg::new("whitelist")
                 .long("whitelist")
                 .short('w'),
@@ -335,7 +327,6 @@ fn run_filter(args: Vec<String>) -> josh_core::JoshResult<i32> {
                 &transaction,
                 josh_core::filter::parse(&i)?,
                 &[(input_ref.to_string(), r.id())],
-                josh_core::filter::Filter::new().empty(),
             );
             updated_refs[0].0 = "refs/JOSH_TMP".to_string();
             josh_core::update_refs(&transaction, &mut updated_refs, "");
@@ -348,52 +339,13 @@ fn run_filter(args: Vec<String>) -> josh_core::JoshResult<i32> {
 
     let reverse = args.get_flag("reverse");
 
-    let check_permissions = args.get_flag("check-permission");
-    let mut permissions_filter = josh_core::filter::Filter::new().empty();
-    if check_permissions {
-        let whitelist;
-        let blacklist;
-        if args.contains_id("users")
-            && args.contains_id("groups")
-            && args.contains_id("user")
-            && args.contains_id("repo")
-        {
-            let users = args.get_one::<String>("users").unwrap();
-            let groups = args.get_one::<String>("groups").unwrap();
-            let user = args.get_one::<String>("user").unwrap();
-            let repo = args.get_one::<String>("repo").unwrap();
-
-            let acl = josh_core::get_acl(users, groups, user, repo)?;
-            whitelist = acl.0;
-            blacklist = acl.1;
-        } else {
-            whitelist = match args.get_one::<String>("whitelist") {
-                Some(s) => josh_core::filter::parse(s)?,
-                _ => josh_core::filter::Filter::new(),
-            };
-            blacklist = match args.get_one::<String>("blacklist") {
-                Some(s) => josh_core::filter::parse(s)?,
-                _ => josh_core::filter::Filter::new().empty(),
-            };
-        }
-        permissions_filter =
-            josh_core::filter::make_permissions_filter(filterobj, whitelist, blacklist)
-    }
-
-    let missing_permissions = args.get_flag("missing-permission");
-    if missing_permissions {
-        filterobj = permissions_filter;
-        permissions_filter = josh_core::filter::Filter::new().empty();
-    }
-
     let old_oid = if let Ok(id) = transaction.repo().refname_to_id(target) {
         id
     } else {
         git2::Oid::zero()
     };
 
-    let (mut updated_refs, errors) =
-        josh_core::filter_refs(&transaction, filterobj, &refs, permissions_filter);
+    let (mut updated_refs, errors) = josh_core::filter_refs(&transaction, filterobj, &refs);
 
     if let Some(error) = errors.into_iter().next() {
         return Err(error.1);
@@ -422,14 +374,12 @@ fn run_filter(args: Vec<String>) -> josh_core::JoshResult<i32> {
 
         let commit = repo.find_reference(&input_ref)?.peel_to_commit()?;
 
-        let index_commit =
-            josh_core::filter_commit(&transaction, ifilterobj, commit.id(), permissions_filter)?;
+        let index_commit = josh_core::filter_commit(&transaction, ifilterobj, commit.id())?;
         let tree = repo
             .find_commit(josh_core::filter_commit(
                 &transaction,
                 filterobj,
                 commit.id(),
-                permissions_filter,
             )?)?
             .tree()?;
         let index_tree = repo.find_commit(index_commit)?.tree()?;
