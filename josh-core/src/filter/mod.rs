@@ -166,7 +166,7 @@ impl Filter {
     /// Chain a filter that removes commit signatures
     /// The filtered commits will not have GPG signatures
     pub fn unsign(self) -> Filter {
-        self.chain(to_filter(Op::Unsign))
+        self.with_meta("signature", "remove")
     }
 
     /// Chain a squash filter
@@ -200,23 +200,28 @@ impl Filter {
         self.chain(to_filter(Op::Hook(h.to_string())))
     }
 
-    /// Wrap this filter with metadata (key-value pairs)
+    /// Wrap this filter with metadata (a single key-value pair)
     /// The metadata is stored alongside the filter
-    /// If the filter is already wrapped in Meta, the new metadata entries are merged with existing ones
+    /// If the filter is already wrapped in Meta, the new metadata entry is merged with existing ones
     /// (new entries take precedence over existing ones with the same key)
-    pub fn with_meta(self, new_meta: std::collections::BTreeMap<String, String>) -> Filter {
+    pub fn with_meta<K, V>(self, key: K, value: V) -> Filter
+    where
+        K: Into<String>,
+        V: Into<String>,
+    {
+        let key = key.into();
+        let value = value.into();
         let op = to_op(self);
         match op {
-            Op::Meta(existing_meta, inner_filter) => {
+            Op::Meta(mut existing_meta, inner_filter) => {
                 // Merge existing metadata with new metadata (new entries take precedence)
-                let mut merged_meta = existing_meta;
-                for (key, value) in new_meta {
-                    merged_meta.insert(key, value);
-                }
-                to_filter(Op::Meta(merged_meta, inner_filter))
+                existing_meta.insert(key, value);
+                to_filter(Op::Meta(existing_meta, inner_filter))
             }
             _ => {
                 // Filter doesn't have metadata, wrap it
+                let mut new_meta = std::collections::BTreeMap::new();
+                new_meta.insert(key, value);
                 to_filter(Op::Meta(new_meta, self))
             }
         }
@@ -229,6 +234,16 @@ impl Filter {
         match op {
             Op::Meta(meta, _) => meta.get(key).cloned(),
             _ => None,
+        }
+    }
+
+    /// Get all metadata from this filter as a BTreeMap
+    /// Returns an empty BTreeMap if the filter doesn't have metadata
+    pub fn into_meta(self) -> std::collections::BTreeMap<String, String> {
+        let op = to_op(self);
+        match op {
+            Op::Meta(meta, _) => meta,
+            _ => std::collections::BTreeMap::new(),
         }
     }
 
@@ -680,8 +695,11 @@ pub fn apply_to_commit2(
     let repo = transaction.repo();
     let op = peel_op(filter);
 
+    if filter == Filter::new() {
+        return Ok(Some(commit.id()));
+    }
+
     match &op {
-        Op::Nop => return Ok(Some(commit.id())),
         Op::Empty => return Ok(Some(git2::Oid::zero())),
 
         Op::Chain(filters) => {
@@ -858,27 +876,6 @@ pub fn apply_to_commit2(
             }
 
             Rewrite::from_commit(commit)?
-        }
-        Op::Unsign => {
-            let parents: Vec<_> = commit.parent_ids().collect();
-
-            let filtered_parents: Vec<_> = parents
-                .iter()
-                .map(|p| transaction.get(filter, *p))
-                .collect();
-            if filtered_parents.iter().any(|p| p.is_none()) {
-                return Ok(None);
-            }
-            let filtered_parents = filtered_parents.iter().map(|p| p.unwrap()).collect();
-
-            return Some(history::remove_commit_signature(
-                commit,
-                filtered_parents,
-                commit.tree()?,
-                transaction,
-                filter,
-            ))
-            .transpose();
         }
         #[cfg(feature = "incubating")]
         Op::Export => {
@@ -1368,7 +1365,6 @@ pub fn apply<'a>(
         Op::HistoryConcat(..) => Ok(x),
         Op::Linear => Ok(x),
         Op::Prune => Ok(x),
-        Op::Unsign => Ok(x),
         #[cfg(feature = "incubating")]
         Op::Adapt(adapter) => {
             let mut result_tree = x.tree().clone();
@@ -1382,12 +1378,10 @@ pub fn apply<'a>(
                         let prefix_filter = to_filter(Op::Nop);
 
                         // Create a filter with metadata
-                        let mut link_meta = std::collections::BTreeMap::new();
-                        link_meta.insert("remote".to_string(), meta.url.clone());
-                        link_meta.insert("target".to_string(), "HEAD".to_string());
-                        link_meta.insert("commit".to_string(), commit_oid.to_string());
-
-                        let link_filter = prefix_filter.with_meta(link_meta);
+                        let link_filter = prefix_filter
+                            .with_meta("remote", meta.url.clone())
+                            .with_meta("target", "HEAD")
+                            .with_meta("commit", commit_oid.to_string());
                         let link_content = pretty(link_filter, 0);
 
                         result_tree = tree::insert(

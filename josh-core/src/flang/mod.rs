@@ -214,7 +214,6 @@ pub(crate) fn spec2(op: &Op) -> String {
             format!(":squash({})", v.join(","))
         }
         Op::Linear => ":linear".to_string(),
-        Op::Unsign => ":unsign".to_string(),
         #[cfg(feature = "incubating")]
         Op::Adapt(adapter) => format!(":adapt={}", adapter),
         #[cfg(feature = "incubating")]

@@ -928,12 +928,10 @@ fn handle_link_add(
     let head_tree = head_commit.tree().context("Failed to get HEAD tree")?;
 
     // Create a filter with metadata
-    let mut meta = std::collections::BTreeMap::new();
-    meta.insert("remote".to_string(), args.url.clone());
-    meta.insert("target".to_string(), target.to_string());
-    meta.insert("commit".to_string(), actual_commit_sha.to_string());
-
-    let link_filter = filter_obj.with_meta(meta);
+    let link_filter = filter_obj
+        .with_meta("remote", args.url.clone())
+        .with_meta("target", target.to_string())
+        .with_meta("commit", actual_commit_sha.to_string());
     let link_content = josh_core::filter::pretty(link_filter, 0);
 
     // Create the blob for the .link.josh file
@@ -1080,9 +1078,7 @@ fn handle_link_fetch(
         let actual_commit_sha = fetch_commit.id();
 
         // Update the link file with the new commit SHA by updating the commit metadata
-        let mut meta = std::collections::BTreeMap::new();
-        meta.insert("commit".to_string(), actual_commit_sha.to_string());
-        let updated_link_file = link_file.with_meta(meta);
+        let updated_link_file = link_file.with_meta("commit", actual_commit_sha.to_string());
         updated_link_files.push((path, updated_link_file));
     }
 

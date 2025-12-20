@@ -41,14 +41,22 @@ If 0b4cf6c9efbbda1eada39fa9c1d21d2525b027bb shows up then the signature was lost
 Remove the signature, the shas are different.
   $ josh-filter :unsign refs/heads/master --update refs/heads/filtered -s
   0b4cf6c9efbbda1eada39fa9c1d21d2525b027bb
-  [1] :unsign
+  [1] :~(
+      signature="remove"
+  )[
+      :/
+  ]
   [1] sequence_number
   $ git rev-parse master filtered
   cb22ebb8e47b109f7add68b1043e561e0db09802
   0b4cf6c9efbbda1eada39fa9c1d21d2525b027bb
   $ josh-filter --reverse :unsign refs/heads/double-filtered --update refs/heads/filtered -s
   cb22ebb8e47b109f7add68b1043e561e0db09802
-  [1] :unsign
+  [1] :~(
+      signature="remove"
+  )[
+      :/
+  ]
   [1] sequence_number
   $ git rev-parse master double-filtered
   cb22ebb8e47b109f7add68b1043e561e0db09802
