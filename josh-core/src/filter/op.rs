@@ -58,8 +58,6 @@ pub enum Op {
     Rev(std::collections::BTreeMap<LazyRef, Filter>),
     Linear,
     Prune,
-    Unsign,
-
     RegexReplace(Vec<(regex::Regex, String)>),
 
     Hook(String),
