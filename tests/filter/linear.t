@@ -33,7 +33,11 @@
 
   $ josh-filter -s :linear refs/heads/master --update refs/heads/filtered
   d24e7038b232dc1bd6d803d211e92039229375b4
-  [4] :linear
+  [4] :~(
+      graph="linear"
+  )[
+      :/
+  ]
   [4] sequence_number
 
   $ git log --graph --pretty=%s refs/heads/filtered
@@ -60,7 +64,11 @@
 
   $ josh-filter -s :linear refs/heads/master --update refs/heads/filtered --reverse
   65fb0dcfe9fd24ab4d7027ff1359bd44847bd21a
-  [4] :linear
+  [4] :~(
+      graph="linear"
+  )[
+      :/
+  ]
   [4] sequence_number
 
   $ git log --graph --pretty=%s refs/heads/master
