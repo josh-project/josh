@@ -1,6 +1,6 @@
 use super::*;
 use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 pub fn walk2(
     filter: filter::Filter,
@@ -752,27 +752,7 @@ fn select_parent_commits<'a>(
     }
 }
 
-pub fn remove_commit_signature<'a>(
-    original_commit: &'a git2::Commit,
-    filtered_parent_ids: Vec<git2::Oid>,
-    filtered_tree: git2::Tree<'a>,
-    transaction: &cache::Transaction,
-    filter: filter::Filter,
-) -> JoshResult<git2::Oid> {
-    let (r, is_new) = create_filtered_commit2(
-        transaction.repo(),
-        original_commit,
-        filtered_parent_ids,
-        filter::Rewrite::from_commit(original_commit)?.with_tree(filtered_tree),
-        true,
-    )?;
-
-    let store = is_new || original_commit.parent_ids().len() != 1;
-
-    transaction.insert(filter, original_commit.id(), r, store);
-
-    Ok(r)
-}
+// parents={none, linear, keep-trivial, default}
 
 pub fn drop_commit(
     original_commit: &git2::Commit,
@@ -798,12 +778,13 @@ pub fn create_filtered_commit(
     transaction: &cache::Transaction,
     filter: filter::Filter,
 ) -> JoshResult<git2::Oid> {
+    let options = filter.get_all_meta();
     let (r, is_new) = create_filtered_commit2(
         transaction.repo(),
         original_commit,
         filtered_parent_ids,
         rewrite_data,
-        false,
+        options,
     )?;
 
     let store = is_new || original_commit.parent_ids().len() != 1;
@@ -818,7 +799,7 @@ fn create_filtered_commit2<'a>(
     original_commit: &'a git2::Commit,
     filtered_parent_ids: Vec<git2::Oid>,
     rewrite_data: filter::Rewrite,
-    unsign: bool,
+    options: BTreeMap<String, String>,
 ) -> JoshResult<(git2::Oid, bool)> {
     let filtered_parent_commits: Result<Vec<_>, _> = filtered_parent_ids
         .iter()
@@ -856,6 +837,8 @@ fn create_filtered_commit2<'a>(
             return Ok((git2::Oid::zero(), false));
         }
     }
+
+    let unsign = options.get("signature") == Some(&"remove".to_string());
 
     Ok((
         rewrite_commit(
