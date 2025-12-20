@@ -672,7 +672,6 @@ pub fn invert(filter: Filter) -> JoshResult<Filter> {
         Op::Prune => Some(Op::Prune),
         #[cfg(feature = "incubating")]
         Op::Export => Some(Op::Export),
-        Op::Unsign => Some(Op::Unsign),
         Op::Empty => Some(Op::Empty),
         #[cfg(feature = "incubating")]
         Op::Link(..) => Some(Op::Unlink),
@@ -697,6 +696,7 @@ pub fn invert(filter: Filter) -> JoshResult<Filter> {
     rs_tracing::trace_scoped!("invert", "spec": spec(filter));
 
     let result = to_filter(match to_op(filter) {
+        Op::Meta(m, f) => Op::Meta(m, invert(f)?),
         Op::Chain(filters) => {
             let inverted: Vec<_> = filters
                 .iter()

@@ -698,13 +698,20 @@ Test :prune=trivial-merge
 Test :unsign
   $ FILTER_HASH=$(josh-filter -i ':unsign')
   $ josh-filter -p ${FILTER_HASH}
-  :unsign
+  :~(
+      signature="remove"
+  )[
+      :/
+  ]
   $ git read-tree --reset -u ${FILTER_HASH}
   $ tree
   .
-  `-- unsign
+  `-- meta
+      |-- 0
+      |   `-- nop
+      `-- signature
   
-  1 directory, 1 file
+  3 directories, 2 files
 
 Test :workspace=path/to/workspace
   $ FILTER_HASH=$(josh-filter -i ':workspace=path/to/workspace')
