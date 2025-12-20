@@ -315,10 +315,6 @@ impl InMemoryBuilder {
                 let blob = self.write_blob(b"");
                 push_blob_entries(&mut entries, [("linear", blob)]);
             }
-            Op::Unsign => {
-                let blob = self.write_blob(b"");
-                push_blob_entries(&mut entries, [("unsign", blob)]);
-            }
             Op::Squash(None) => {
                 let blob = self.write_blob(b"");
                 push_blob_entries(&mut entries, [("squash", blob)]);
@@ -510,10 +506,6 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> JoshResult<Op> {
         "linear" => {
             let _ = repo.find_blob(entry.id())?;
             Ok(Op::Linear)
-        }
-        "unsign" => {
-            let _ = repo.find_blob(entry.id())?;
-            Ok(Op::Unsign)
         }
         "prune" => {
             let blob = repo.find_blob(entry.id())?;

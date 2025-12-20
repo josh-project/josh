@@ -1,6 +1,6 @@
 use super::*;
 use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 pub fn walk2(
     filter: filter::Filter,
@@ -752,27 +752,7 @@ fn select_parent_commits<'a>(
     }
 }
 
-pub fn remove_commit_signature<'a>(
-    original_commit: &'a git2::Commit,
-    filtered_parent_ids: Vec<git2::Oid>,
-    filtered_tree: git2::Tree<'a>,
-    transaction: &cache::Transaction,
-    filter: filter::Filter,
-) -> JoshResult<git2::Oid> {
-    let (r, is_new) = create_filtered_commit2(
-        transaction.repo(),
-        original_commit,
-        filtered_parent_ids,
-        filter::Rewrite::from_commit(original_commit)?.with_tree(filtered_tree),
-        true,
-    )?;
-
-    let store = is_new || original_commit.parent_ids().len() != 1;
-
-    transaction.insert(filter, original_commit.id(), r, store);
-
-    Ok(r)
-}
+// parents={none, linear, keep-trivial, default}
 
 pub fn drop_commit(
     original_commit: &git2::Commit,
@@ -791,19 +771,20 @@ pub fn drop_commit(
     Ok(r)
 }
 
-pub fn create_filtered_commit(
+pub fn create_filtered_commit_with_meta(
     original_commit: &git2::Commit,
     filtered_parent_ids: Vec<git2::Oid>,
     rewrite_data: filter::Rewrite,
     transaction: &cache::Transaction,
     filter: filter::Filter,
+    meta: std::collections::BTreeMap<String, String>,
 ) -> JoshResult<git2::Oid> {
     let (r, is_new) = create_filtered_commit2(
         transaction.repo(),
         original_commit,
         filtered_parent_ids,
         rewrite_data,
-        false,
+        meta,
     )?;
 
     let store = is_new || original_commit.parent_ids().len() != 1;
@@ -813,12 +794,29 @@ pub fn create_filtered_commit(
     Ok(r)
 }
 
+pub fn create_filtered_commit(
+    original_commit: &git2::Commit,
+    filtered_parent_ids: Vec<git2::Oid>,
+    rewrite_data: filter::Rewrite,
+    transaction: &cache::Transaction,
+    filter: filter::Filter,
+) -> JoshResult<git2::Oid> {
+    create_filtered_commit_with_meta(
+        original_commit,
+        filtered_parent_ids,
+        rewrite_data,
+        transaction,
+        filter,
+        filter.into_meta(),
+    )
+}
+
 fn create_filtered_commit2<'a>(
     repo: &'a git2::Repository,
     original_commit: &'a git2::Commit,
     filtered_parent_ids: Vec<git2::Oid>,
     rewrite_data: filter::Rewrite,
-    unsign: bool,
+    options: BTreeMap<String, String>,
 ) -> JoshResult<(git2::Oid, bool)> {
     let filtered_parent_commits: Result<Vec<_>, _> = filtered_parent_ids
         .iter()
@@ -856,6 +854,8 @@ fn create_filtered_commit2<'a>(
             return Ok((git2::Oid::zero(), false));
         }
     }
+
+    let unsign = options.get("signature").is_some_and(|s| s == "remove");
 
     Ok((
         rewrite_commit(
