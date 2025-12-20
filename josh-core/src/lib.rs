@@ -210,33 +210,11 @@ pub fn filter_commit(
     transaction: &cache::Transaction,
     filterobj: filter::Filter,
     oid: git2::Oid,
-    permissions: filter::Filter,
 ) -> JoshResult<git2::Oid> {
     let original_commit = {
         let obj = transaction.repo().find_object(oid, None)?;
         obj.peel_to_commit()?
     };
-
-    let perms_commit = if let Some(s) = transaction.get_ref(permissions, oid) {
-        s
-    } else {
-        tracing::trace!("apply_to_commit (permissions)");
-
-        filter::apply_to_commit(permissions, &original_commit, transaction)?
-    };
-
-    if perms_commit != git2::Oid::zero() {
-        let perms_commit = transaction.repo().find_commit(perms_commit)?;
-        if !perms_commit.tree()?.is_empty() || perms_commit.parents().len() > 0 {
-            tracing::event!(
-                tracing::Level::WARN,
-                msg = "filter_commit: missing permissions for commit",
-                warn = true,
-                oid = format!("{:?}", oid),
-            );
-            return Err(josh_error("missing permissions for commit"));
-        }
-    }
 
     let filter_commit = if let Some(s) = transaction.get_ref(filterobj, oid) {
         s
@@ -251,14 +229,11 @@ pub fn filter_commit(
     Ok(filter_commit)
 }
 
-type FilterRefsResult = (Vec<(String, git2::Oid)>, Vec<(String, JoshError)>);
-
 pub fn filter_refs(
     transaction: &cache::Transaction,
     filterobj: filter::Filter,
     refs: &[(String, git2::Oid)],
-    permissions: filter::Filter,
-) -> FilterRefsResult {
+) -> (Vec<(String, git2::Oid)>, Vec<(String, JoshError)>) {
     rs_tracing::trace_scoped!("filter_refs", "spec": filter::spec(filterobj));
     let s = tracing::Span::current();
     let _e = s.enter();
@@ -268,7 +243,7 @@ pub fn filter_refs(
     tracing::trace!("filter_refs");
 
     for k in refs {
-        let oid = match filter_commit(transaction, filterobj, k.1, permissions) {
+        let oid = match filter_commit(transaction, filterobj, k.1) {
             Ok(oid) => oid,
             Err(e) => {
                 errors.push((k.0.to_string(), e));
