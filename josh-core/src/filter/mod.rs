@@ -763,71 +763,6 @@ pub fn apply_to_commit2(
             apply(transaction, nf, Rewrite::from_commit(commit)?)?
         }
 
-        #[cfg(feature = "incubating")]
-        Op::Lookup(lookup_path) => {
-            let lookup_commit = if let Some(lookup_commit) =
-                apply_to_commit2(Filter::new().subdir(lookup_path), &commit, transaction)?
-            {
-                lookup_commit
-            } else {
-                return Ok(None);
-            };
-
-            let op = Op::Lookup2(lookup_commit);
-
-            if let Some(start) = transaction.get(to_filter(op), commit.id()) {
-                transaction.insert(filter, commit.id(), start, true);
-                return Ok(Some(start));
-            } else {
-                return Ok(None);
-            }
-        }
-
-        #[cfg(feature = "incubating")]
-        Op::Lookup2(lookup_commit_id) => {
-            let lookup_commit = repo.find_commit(*lookup_commit_id)?;
-            for parent in lookup_commit.parents() {
-                let lookup_tree = lookup_commit.tree_id();
-                let cw = get_filter(
-                    transaction,
-                    &repo.find_tree(lookup_tree)?,
-                    &std::path::PathBuf::new().join(commit.id().to_string()),
-                );
-                if cw != filter::Filter::new().empty() {
-                    if let Some(start) =
-                        apply_to_commit2(to_filter(Op::Lookup2(parent.id())), &commit, transaction)?
-                    {
-                        transaction.insert(filter, commit.id(), start, true);
-                        return Ok(Some(start));
-                    } else {
-                        return Ok(None);
-                    }
-                }
-                break;
-            }
-            let lookup_tree = lookup_commit.tree_id();
-            let cw = get_filter(
-                transaction,
-                &repo.find_tree(lookup_tree)?,
-                &std::path::PathBuf::new().join(commit.id().to_string()),
-            );
-
-            if cw == filter::Filter::new().empty() {
-                // FIXME empty filter or no entry in table?
-                for parent in commit.parents() {
-                    if let Some(start) = apply_to_commit2(filter, &parent, transaction)? {
-                        transaction.insert(filter, commit.id(), start, true);
-                        return Ok(Some(start));
-                    } else {
-                        return Ok(None);
-                    }
-                }
-                return Ok(None);
-            }
-
-            Rewrite::from_commit(commit)?
-                .with_tree(apply(transaction, cw, Rewrite::from_commit(commit)?)?.into_tree())
-        }
         Op::Squash(Some(ids)) => {
             if let Some(sq) = ids.get(&LazyRef::Resolved(commit.id())) {
                 let oid = if let Some(oid) = apply_to_commit2(
@@ -1677,8 +1612,6 @@ pub fn apply<'a>(
             }
         }
         Op::Pin(_) => Ok(x),
-        #[cfg(feature = "incubating")]
-        Op::Lookup(_) | Op::Lookup2(_) => Err(josh_error("not applicable to tree")),
         Op::Meta(_, _) => unreachable!(),
     }
 }
