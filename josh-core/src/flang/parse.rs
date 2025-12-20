@@ -17,8 +17,6 @@ fn make_filter(args: &[&str]) -> JoshResult<Filter> {
         ["author", name, email] => Ok(f.author(*name, *email)),
         ["committer", name, email] => Ok(f.committer(*name, *email)),
         ["workspace", arg] => Ok(f.workspace(arg)),
-        #[cfg(feature = "incubating")]
-        ["lookup", arg] => Ok(to_filter(Op::Lookup(Path::new(arg).to_owned()))),
         ["prefix"] => Err(josh_error(indoc!(
             r#"
             Filter ":prefix" requires an argument.

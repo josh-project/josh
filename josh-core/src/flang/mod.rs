@@ -166,14 +166,6 @@ pub(crate) fn spec2(op: &Op) -> String {
         Op::Workspace(path) => {
             format!(":workspace={}", parse::quote_if(&path.to_string_lossy()))
         }
-        #[cfg(feature = "incubating")]
-        Op::Lookup(path) => {
-            format!(":lookup={}", parse::quote_if(&path.to_string_lossy()))
-        }
-        #[cfg(feature = "incubating")]
-        Op::Lookup2(oid) => {
-            format!(":lookup2={}", oid.to_string())
-        }
         Op::Stored(path) => {
             format!(":+{}", parse::quote_if(&path.to_string_lossy()))
         }
