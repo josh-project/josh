@@ -531,12 +531,7 @@ async fn do_filter(
         t2.repo()
             .odb()?
             .add_disk_alternate(repo_path.join("mirror").join("objects").to_str().unwrap())?;
-        let (updated_refs, _) = josh_core::filter_refs(
-            &t2,
-            filter,
-            &refs_list,
-            josh_core::filter::Filter::new().empty(),
-        );
+        let (updated_refs, _) = josh_core::filter_refs(&t2, filter, &refs_list);
         let mut updated_refs = josh_proxy::refs_locking(updated_refs, &meta);
         josh_core::housekeeping::namespace_refs(&mut updated_refs, temp_ns.name());
         josh_core::update_refs(&t2, &mut updated_refs, &temp_ns.reference(&head_ref));
@@ -1505,12 +1500,7 @@ async fn serve_query(
                 .repo()
                 .refname_to_id(&transaction_mirror.refname(&head_ref))?
         };
-        let commit_id = josh_core::filter_commit(
-            &transaction,
-            filter,
-            commit_id,
-            josh_core::filter::Filter::new().empty(),
-        )?;
+        let commit_id = josh_core::filter_commit(&transaction, filter, commit_id)?;
 
         josh_templates::render(&transaction, serv.cache.clone(), "", commit_id, &q, true)
     })
