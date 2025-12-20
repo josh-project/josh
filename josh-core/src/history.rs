@@ -19,7 +19,7 @@ pub fn walk2(
 
     let walk = {
         let mut walk = transaction.repo().revwalk()?;
-        if filter::is_linear(filter) {
+        if filter.get_meta("graph").is_some_and(|s| s == "linear") {
             walk.simplify_first_parent()?;
         }
         walk.set_sorting(git2::Sort::REVERSE | git2::Sort::TOPOLOGICAL)?;
@@ -872,6 +872,10 @@ fn create_filtered_commit2<'a>(
         if is_initial_merge {
             filtered_parent_commits.retain(|x| x.tree_id() != filter::tree::empty_id());
         }
+    }
+
+    if options.get("graph").is_some_and(|s| s == "linear") {
+        filtered_parent_commits.truncate(1);
     }
 
     let selected_filtered_parent_commits: Vec<&_> = select_parent_commits(
