@@ -1850,18 +1850,6 @@ fn compute_warnings2<'a>(
     warnings
 }
 
-pub fn make_permissions_filter(filter: Filter, whitelist: Filter, blacklist: Filter) -> Filter {
-    rs_tracing::trace_scoped!("make_permissions_filter");
-
-    to_filter(Op::Paths)
-        .chain(filter)
-        .chain(to_filter(Op::Invert))
-        .chain(compose(&[
-            blacklist,
-            to_filter(Op::Subtract(Filter::new(), whitelist)),
-        ]))
-}
-
 /// Check if `commit` is an ancestor of `tip`.
 ///
 /// Creates a cache for a given `tip` so repeated queries with the same `tip` are more efficient.
