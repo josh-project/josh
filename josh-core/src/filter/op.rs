@@ -59,7 +59,6 @@ pub enum Op {
     // We use BTreeMap rather than HashMap to guarantee deterministic results when
     // converting to Filter
     Rev(std::collections::BTreeMap<LazyRef, Filter>),
-    Linear,
     Prune,
     RegexReplace(Vec<(regex::Regex, String)>),
 
