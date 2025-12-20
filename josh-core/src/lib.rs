@@ -42,40 +42,51 @@ impl Change {
     }
 }
 
+type RawOid = [u8; 20];
+
 #[derive(
     Clone, Hash, PartialEq, Eq, Copy, PartialOrd, Ord, Debug, serde::Serialize, serde::Deserialize,
 )]
 #[serde(try_from = "String", into = "String")]
-pub struct Oid(git2::Oid);
+pub struct Oid(RawOid);
 
 impl Default for Oid {
     fn default() -> Self {
-        Oid(git2::Oid::zero())
+        Oid([0; _])
     }
 }
 
 impl std::convert::TryFrom<String> for Oid {
     type Error = JoshError;
     fn try_from(s: String) -> JoshResult<Oid> {
-        Ok(Oid(git2::Oid::from_str(&s)?))
+        use std::str::FromStr;
+
+        let oid = gix_hash::ObjectId::from_str(&s)?;
+        let mut raw: RawOid = [0; _];
+        raw.copy_from_slice(oid.as_bytes());
+
+        Ok(Oid(raw))
     }
 }
 
 impl From<Oid> for String {
     fn from(val: Oid) -> Self {
-        val.0.to_string()
+        let oid = gix_hash::ObjectId::from(val.0);
+        oid.to_string()
     }
 }
 
 impl From<Oid> for git2::Oid {
     fn from(val: Oid) -> Self {
-        val.0
+        git2::Oid::from_bytes(&val.0).expect("oid length must match")
     }
 }
 
 impl From<git2::Oid> for Oid {
     fn from(oid: git2::Oid) -> Self {
-        Self(oid)
+        let mut raw: RawOid = [0; _];
+        raw.copy_from_slice(oid.as_bytes());
+        Self(raw)
     }
 }
 
