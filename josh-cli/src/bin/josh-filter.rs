@@ -87,6 +87,11 @@ fn make_app() -> clap::Command {
                 .short('n'),
         )
         .arg(
+            clap::Arg::new("notes-cache")
+                .action(clap::ArgAction::SetTrue)
+                .help("Enables notes based cache")
+        )
+        .arg(
             clap::Arg::new("pack")
                 .action(clap::ArgAction::SetTrue)
                 .help("Write a packfile instead of loose objects")
@@ -196,11 +201,16 @@ fn run_filter(args: Vec<String>) -> josh_core::JoshResult<i32> {
         josh_core::cache::sled_load(&repo_path)?;
     }
 
-    let cache = std::sync::Arc::new(
-        josh_core::cache::CacheStack::new()
-            .with_backend(josh_core::cache::SledCacheBackend::default())
-            .with_backend(josh_core::cache::NotesCacheBackend::new(&repo_path)?),
-    );
+    let cache = std::sync::Arc::new({
+        let cache = josh_core::cache::CacheStack::new()
+            .with_backend(josh_core::cache::SledCacheBackend::default());
+
+        if args.get_flag("notes-cache") {
+            cache.with_backend(josh_core::cache::NotesCacheBackend::new(&repo_path)?)
+        } else {
+            cache
+        }
+    });
 
     let mut transaction =
         josh_core::cache::TransactionContext::from_env(cache.clone())?.open(None)?;
