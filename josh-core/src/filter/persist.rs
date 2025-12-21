@@ -1,13 +1,16 @@
 use gix_object::WriteTo;
 use gix_object::bstr::BString;
 use std::collections::HashMap;
+use std::hash::BuildHasherDefault;
 use std::sync::LazyLock;
 
+use crate::filter::hash::PassthroughHasher;
 use crate::filter::{Filter, LazyRef, Op, sequence_number};
 use crate::{JoshResult, josh_error};
 
-static FILTERS: LazyLock<std::sync::Mutex<std::collections::HashMap<Filter, Op>>> =
-    LazyLock::new(|| Default::default());
+static FILTERS: LazyLock<
+    std::sync::Mutex<HashMap<Filter, Op, BuildHasherDefault<PassthroughHasher>>>,
+> = LazyLock::new(|| Default::default());
 
 pub(crate) fn to_op(filter: Filter) -> Op {
     if filter == sequence_number() {

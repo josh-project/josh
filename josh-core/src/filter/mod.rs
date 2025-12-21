@@ -1,6 +1,7 @@
 use super::*;
 use std::path::Path;
 use std::sync::LazyLock;
+pub(crate) mod hash;
 pub(crate) mod op;
 pub(crate) mod opt;
 pub mod persist;
