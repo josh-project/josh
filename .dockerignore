@@ -15,6 +15,9 @@
 !josh-ui/*.json
 !josh-ui/*.rs
 !josh-ui/*.toml
+!josh-ui/*.html
+!josh-ui/*.js
+!josh-ui/*.mjs
 !josh-ui/public
 !josh-ui/src
 !lfs-test-server
