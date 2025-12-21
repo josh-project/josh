@@ -303,7 +303,7 @@ pub fn prefix_sort(filters: &[Filter]) -> Vec<Filter> {
     }
 
     let n = filters.len();
-    let mut outgoing: Vec<std::collections::HashSet<usize>> = vec![Default::default(); n];
+    let mut outgoing: Vec<rustc_hash::FxHashSet<usize>> = vec![Default::default(); n];
 
     let mut src_trie = PathTrie::default();
     let mut dst_trie = PathTrie::default();
@@ -328,7 +328,7 @@ pub fn prefix_sort(filters: &[Filter]) -> Vec<Filter> {
 }
 
 fn topo_sort_with_tiebreak(
-    outgoing: &[std::collections::HashSet<usize>],
+    outgoing: &[rustc_hash::FxHashSet<usize>],
     filters: &[Filter],
 ) -> Vec<Filter> {
     use std::collections::BinaryHeap;
