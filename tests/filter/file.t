@@ -54,11 +54,7 @@
   .git/refs/
   |-- heads
   |   `-- master
-  |-- josh
-  |   `-- 24
-  |       `-- 0
-  |           `-- fc16bb70cbbc24982dac74e19c853a8fc91a2aed
   `-- tags
   
-  6 directories, 2 files
+  3 directories, 1 file
 

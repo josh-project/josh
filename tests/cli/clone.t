@@ -51,10 +51,6 @@
   |-- heads
   |   `-- master
   |-- josh
-  |   |-- 24
-  |   |   `-- 0
-  |   |       |-- 9d5b5e98dceaf62470a7569949757c9643632621
-  |   |       `-- bf567e0faf634a663d6cef48145a035e1974ab1d
   |   `-- remotes
   |       `-- origin
   |           |-- feature
@@ -73,7 +69,7 @@
   |       `-- master
   `-- tags
   
-  14 directories, 11 files
+  12 directories, 9 files
 
   $ tree
   .
