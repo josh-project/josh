@@ -6,14 +6,19 @@
 use super::*;
 use std::cmp::Ordering;
 use std::collections::HashMap;
+use std::hash::BuildHasherDefault;
 use std::sync::LazyLock;
 
-static OPTIMIZED: LazyLock<std::sync::Mutex<std::collections::HashMap<Filter, Filter>>> =
-    LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
-static INVERTED: LazyLock<std::sync::Mutex<std::collections::HashMap<Filter, Filter>>> =
-    LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
-static SIMPLIFIED: LazyLock<std::sync::Mutex<std::collections::HashMap<Filter, Filter>>> =
-    LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+use crate::filter::hash::PassthroughHasher;
+
+type FilterHashMap = HashMap<Filter, Filter, BuildHasherDefault<PassthroughHasher>>;
+
+static OPTIMIZED: LazyLock<std::sync::Mutex<FilterHashMap>> =
+    LazyLock::new(|| std::sync::Mutex::new(HashMap::default()));
+static INVERTED: LazyLock<std::sync::Mutex<FilterHashMap>> =
+    LazyLock::new(|| std::sync::Mutex::new(HashMap::default()));
+static SIMPLIFIED: LazyLock<std::sync::Mutex<FilterHashMap>> =
+    LazyLock::new(|| std::sync::Mutex::new(HashMap::default()));
 
 /*
  * Attempt to create an alternative representation of a filter AST that is most
