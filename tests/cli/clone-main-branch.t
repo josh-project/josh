@@ -111,10 +111,6 @@ Test josh clone with main branch as default
   |   |-- feature-branch
   |   `-- main
   |-- josh
-  |   |-- 24
-  |   |   `-- 0
-  |   |       |-- 9d5b5e98dceaf62470a7569949757c9643632621
-  |   |       `-- bf567e0faf634a663d6cef48145a035e1974ab1d
   |   `-- remotes
   |       `-- origin
   |           |-- feature-branch
@@ -133,6 +129,6 @@ Test josh clone with main branch as default
   |       `-- main
   `-- tags
   
-  14 directories, 12 files
+  12 directories, 10 files
 
   $ cd ..

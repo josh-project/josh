@@ -166,10 +166,6 @@ Test josh clone with filter that results in empty tree for some branches
   |   |-- master
   |   `-- mixed-branch
   |-- josh
-  |   |-- 24
-  |   |   `-- 0
-  |   |       |-- 9d5b5e98dceaf62470a7569949757c9643632621
-  |   |       `-- bf567e0faf634a663d6cef48145a035e1974ab1d
   |   `-- remotes
   |       `-- origin
   |           |-- content-branch
@@ -192,6 +188,6 @@ Test josh clone with filter that results in empty tree for some branches
   |       `-- mixed-branch
   `-- tags
   
-  14 directories, 17 files
+  12 directories, 15 files
 
   $ cd ..

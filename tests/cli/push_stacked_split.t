@@ -144,8 +144,6 @@ Test that we can fetch the split refs back
   * | Change-Id: 1234  (origin/@changes/master/josh@example.com/1234) 43d6fcc9e7a81452d7343c78c0102f76027717fb
   |/  
   * add file1  (origin/master, origin/HEAD) 5f2928c89c4dcc7f5a8c59ef65734a83620cefee
-  * Notes added by 'git_note_create' from libgit2  725a17751b9dc03b1696fb894d0643c5b6f0397d
-  * Notes added by 'git_note_create' from libgit2  030ef005644909d7f6320dcd99684a36860fb7d9
 
 Test normal push still works
 
