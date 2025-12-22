@@ -2232,6 +2232,7 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "sled",
+ "smallvec",
  "strfmt",
  "toml",
  "tracing",

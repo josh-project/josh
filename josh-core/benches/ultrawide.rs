@@ -5,7 +5,7 @@ use rand::distr::{Alphabetic, Distribution};
 use rand::rngs::ThreadRng;
 use std::path::PathBuf;
 
-const N_PATHS: usize = 1000;
+const N_PATHS: usize = 3000;
 
 fn generate_paths() -> Vec<PathBuf> {
     const PATH_COMPONENTS_MAX: usize = 10;
