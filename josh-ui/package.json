@@ -15,7 +15,7 @@
     "graphql-request": "^7.3.5",
     "monaco-editor": "^0.55.1",
     "react": "^19.2.0",
-    "react-dom": "^19.2.1",
+    "react-dom": "^19.2.3",
     "react-icons": "^5.5.0",
     "react-router-dom": "^7.10.1",
     "sass": "^1.96.0",
