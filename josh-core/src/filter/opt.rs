@@ -297,27 +297,37 @@ impl PathTrie {
     }
 }
 
+type PrefixSortEdges = Vec<smallvec::SmallVec<[usize; 32]>>;
+
 pub fn prefix_sort(filters: &[Filter]) -> Vec<Filter> {
     if filters.len() <= 1 {
         return filters.to_vec();
     }
 
     let n = filters.len();
-    let mut outgoing: Vec<rustc_hash::FxHashSet<usize>> = vec![Default::default(); n];
+    let mut outgoing: PrefixSortEdges = vec![Default::default(); n];
 
     let mut src_trie = PathTrie::default();
     let mut dst_trie = PathTrie::default();
+
+    let mut maybe_push_outgoing = |j: usize, i: usize| {
+        // `i` only can increase in the loop below,
+        // so it's enough to just check the last element
+        if Some(i) != outgoing[j].last().cloned() {
+            outgoing[j].push(i);
+        }
+    };
 
     for (i, filter) in filters.iter().enumerate() {
         let src = src_path(filter.clone());
         let dst = dst_path(filter.clone());
 
         for j in src_trie.find_overlapping(&src) {
-            outgoing[j].insert(i);
+            maybe_push_outgoing(j, i);
         }
 
         for j in dst_trie.find_overlapping(&dst) {
-            outgoing[j].insert(i);
+            maybe_push_outgoing(j, i);
         }
 
         src_trie.insert(&src, i);
@@ -327,10 +337,7 @@ pub fn prefix_sort(filters: &[Filter]) -> Vec<Filter> {
     topo_sort_with_tiebreak(&outgoing, filters)
 }
 
-fn topo_sort_with_tiebreak(
-    outgoing: &[rustc_hash::FxHashSet<usize>],
-    filters: &[Filter],
-) -> Vec<Filter> {
+fn topo_sort_with_tiebreak(outgoing: &PrefixSortEdges, filters: &[Filter]) -> Vec<Filter> {
     use std::collections::BinaryHeap;
 
     let mut indegree: Vec<usize> = vec![0; filters.len()];
