@@ -396,10 +396,10 @@ pub fn get_acl(
                     return Some(Err(JoshError(format!("Error parsing blacklist: {}", e))));
                 }
                 if let Ok(w) = lists.0 {
-                    whitelist = filter::compose(whitelist, w);
+                    whitelist = filter::compose(&[whitelist, w]);
                 }
                 if let Ok(b) = lists.1 {
-                    blacklist = filter::compose(blacklist, b);
+                    blacklist = filter::compose(&[blacklist, b]);
                 }
             }
             println!("w: {:?}, b: {:?}", whitelist, blacklist);

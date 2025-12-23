@@ -1,13 +1,14 @@
 use criterion::{Criterion, criterion_group, criterion_main};
-use itertools::Itertools;
 use rand::Rng;
 use rand::distr::{Alphabetic, Distribution};
 use rand::rngs::ThreadRng;
 use std::path::PathBuf;
 
+use josh_core::filter::Filter;
+
 const N_PATHS: usize = 3000;
 
-fn generate_paths() -> Vec<PathBuf> {
+fn generate_filters() -> Vec<Filter> {
     const PATH_COMPONENTS_MAX: usize = 10;
     const PATH_COMPONENT_LEN: usize = 2;
 
@@ -23,7 +24,7 @@ fn generate_paths() -> Vec<PathBuf> {
     }
 
     // Create a single path -- anywhere from 1 to PATH_COMPONENTS_MAX components
-    fn make_path(rng: &mut ThreadRng) -> PathBuf {
+    fn make_subdir_filter(rng: &mut ThreadRng) -> Filter {
         let num_components = rng.random_range(1..=PATH_COMPONENTS_MAX);
         let mut path = PathBuf::new();
 
@@ -31,30 +32,22 @@ fn generate_paths() -> Vec<PathBuf> {
             path.push(make_path_component(rng))
         }
 
-        path
+        Filter::new().subdir(&path).prefix(&path)
     }
 
     let mut rng = rand::rng();
 
     // Finally, create N_PATHS of random paths
-    (0..N_PATHS).map(|_| make_path(&mut rng)).collect()
+    (0..N_PATHS).map(|_| make_subdir_filter(&mut rng)).collect()
 }
 
 fn ultrawide(c: &mut Criterion) {
     c.bench_function("ultrawide_filter_parse", |b| {
         b.iter_with_setup_wrapper(|runner| {
-            let filter = generate_paths()
-                .into_iter()
-                .map(|p| {
-                    let p = p.display().to_string();
-                    format!("::{p}/")
-                })
-                .join(",");
-
-            let filter = format!(":[{}]", filter);
+            let filter = generate_filters();
 
             runner.run(move || {
-                let filter = josh_core::filter::parse(&filter).expect("failed to parse");
+                let filter = josh_core::filter::compose(&filter);
                 std::hint::black_box(filter);
             })
         });
