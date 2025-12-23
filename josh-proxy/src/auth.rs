@@ -5,11 +5,8 @@ use std::sync::{Arc, LazyLock};
 // call its methods without adding to the namespace.
 use base64::engine::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
-use bytes::Bytes;
-use http_body_util::{BodyExt, Empty};
 use hyper::body::Incoming;
-use hyper_util::client::legacy::Client;
-use hyper_util::rt::TokioExecutor;
+use reqwest;
 use tracing::Instrument;
 
 // Auths in those groups are independent of each other.
@@ -161,21 +158,17 @@ pub async fn check_http_auth(
             let do_request_span = tracing::info_span!("check_http_auth: make request");
 
             async move {
-                let https = hyper_tls::HttpsConnector::new();
-                let client = Client::builder(TokioExecutor::new()).build::<_, Empty<Bytes>>(https);
+                let client = reqwest::Client::new();
 
-                let builder = hyper::Request::builder()
-                    .method(hyper::Method::GET)
-                    .uri(&refs_url);
+                let request = client.get(&refs_url);
 
-                let builder = if let Some(value) = auth_header.header.clone() {
-                    builder.header(hyper::header::AUTHORIZATION, value)
+                let request = if let Some(value) = auth_header.header.clone() {
+                    request.header(reqwest::header::AUTHORIZATION, value)
                 } else {
-                    builder
+                    request
                 };
 
-                let request = builder.body(Empty::new())?;
-                let resp = client.request(request).await?;
+                let resp = request.send().await?;
 
                 Ok::<_, josh_core::JoshError>(resp)
             }
@@ -239,8 +232,7 @@ pub async fn check_http_auth(
             "check_http_auth: unauthorized"
         );
 
-        let response = resp.into_body().collect().await?.to_bytes();
-        let response = String::from_utf8_lossy(&response);
+        let response = resp.text().await?;
 
         tracing::event!(
             tracing::Level::TRACE,
