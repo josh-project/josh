@@ -555,13 +555,13 @@ fn get_workspace<'a>(
     let wsj_file = Filter::new().file("workspace.josh");
     let base = to_filter(Op::Subdir(path.to_owned()));
     let wsj_file = base.chain(wsj_file);
-    compose(
+    compose(&[
         wsj_file,
-        compose(
+        compose(&[
             get_filter(transaction, tree, &path.join("workspace.josh")),
             base,
-        ),
-    )
+        ]),
+    ])
 }
 
 fn get_stored<'a>(
@@ -571,7 +571,7 @@ fn get_stored<'a>(
 ) -> Filter {
     let stored_path = path.with_extension("josh");
     let sj_file = Filter::new().file(stored_path.clone());
-    compose(sj_file, get_filter(transaction, tree, &stored_path))
+    compose(&[sj_file, get_filter(transaction, tree, &stored_path)])
 }
 
 fn get_filter<'a>(
@@ -1687,8 +1687,8 @@ fn unapply_workspace<'a>(
                 Path::new("workspace.josh").to_owned(),
             ));
             let wsj_file = root.chain(wsj_file);
-            let filter = compose(wsj_file, compose(workspace, root));
-            let original_filter = compose(wsj_file, compose(original_workspace, root));
+            let filter = compose(&[wsj_file, compose(&[workspace, root])]);
+            let original_filter = compose(&[wsj_file, compose(&[original_workspace, root])]);
             let filtered = apply(
                 transaction,
                 original_filter,
@@ -1712,8 +1712,8 @@ fn unapply_workspace<'a>(
             let original_stored = get_filter(transaction, &parent_tree, &stored_path);
 
             let sj_file = Filter::new().file(stored_path.clone());
-            let filter = compose(sj_file, stored);
-            let original_filter = compose(sj_file, original_stored);
+            let filter = compose(&[sj_file, stored]);
+            let original_filter = compose(&[sj_file, original_stored]);
             let filtered = apply(
                 transaction,
                 original_filter,
@@ -1836,10 +1836,10 @@ pub fn make_permissions_filter(filter: Filter, whitelist: Filter, blacklist: Fil
     to_filter(Op::Paths)
         .chain(filter)
         .chain(to_filter(Op::Invert))
-        .chain(compose(
+        .chain(compose(&[
             blacklist,
             to_filter(Op::Subtract(Filter::new(), whitelist)),
-        ))
+        ]))
 }
 
 /// Check if `commit` is an ancestor of `tip`.
