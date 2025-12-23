@@ -1,9 +1,9 @@
 let
   pkgs = import (fetchTarball {
-    name = "nixos-24.11";
-    url = "https://github.com/NixOS/nixpkgs/archive/refs/tags/24.11.tar.gz";
+    name = "nixpkgs-release-25.11";
+    url = "https://github.com/NixOS/nixpkgs/archive/871b9fd269ff6246794583ce4ee1031e1da71895.tar.gz";
     # Hash obtained using `nix-prefetch-url --unpack <url>`
-    sha256 = "1250a3g9g4id46h9ysy5xfqnjf0yb2mfai366pyj5y2bzb8x0i2l";
+    sha256 = "1zn1lsafn62sz6azx6j735fh4vwwghj8cc9x91g5sx2nrg23ap9k";
   }) {};
   
   # Handle darwin-specific dependencies properly
