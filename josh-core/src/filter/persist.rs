@@ -76,7 +76,7 @@ impl InMemoryBuilder {
 
     fn write_tree(&mut self, mut tree: gix_object::Tree) -> gix_hash::ObjectId {
         tree.entries.sort_by(|a, b| a.filename.cmp(&b.filename));
-        let mut buffer = Vec::new();
+        let mut buffer = Vec::with_capacity(tree.size() as usize);
         tree.write_to(&mut buffer).expect("failed to write tree");
         let hash = gix_object::compute_hash(gix_hash::Kind::Sha1, gix_object::Kind::Tree, &buffer)
             .expect("failed to compute hash");
