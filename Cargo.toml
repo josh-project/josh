@@ -75,7 +75,7 @@ default-features = false
 features = ["blocking", "default-tls", "json"]
 
 [workspace.dependencies.tracing]
-version = "0.1.43"
+version = "0.1.44"
 features = ["max_level_trace", "release_max_level_trace"]
 
 [workspace.dependencies.clap]
