@@ -61,12 +61,22 @@ struct InMemoryBuilder {
 
 impl InMemoryBuilder {
     fn new() -> Self {
-        Self {
-            pending_writes: HashMap::new(),
-        }
+        // Add an empty blob because we use a shortcut for them below
+        // in write_blob
+        let mut pending_writes = HashMap::new();
+        pending_writes.insert(
+            gix_hash::ObjectId::empty_blob(gix_hash::Kind::Sha1),
+            (gix_object::Kind::Blob, Vec::new()),
+        );
+
+        Self { pending_writes }
     }
 
     fn write_blob(&mut self, data: &[u8]) -> gix_hash::ObjectId {
+        if data.is_empty() {
+            return gix_hash::ObjectId::empty_blob(gix_hash::Kind::Sha1);
+        }
+
         let hash = gix_object::compute_hash(gix_hash::Kind::Sha1, gix_object::Kind::Blob, data)
             .expect("failed to compute hash");
         self.pending_writes
