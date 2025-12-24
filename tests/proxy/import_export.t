@@ -169,7 +169,7 @@ Flushed credential cache
 
   $ cd ${TESTTMP}/r1
   $ curl -s http://localhost:8002/flush
-  Flushed credential cache
+  Flushed credential cache (no-eol)
   $ git pull --rebase 2> /dev/null
   Updating 85c3ce1..6fe45a9
   Fast-forward

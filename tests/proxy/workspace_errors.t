@@ -197,5 +197,5 @@ Flushed credential cache
         ]
       }
     }
-  } (no-eol)
+  }
 $ cat ${TESTTMP}/josh-proxy.out
