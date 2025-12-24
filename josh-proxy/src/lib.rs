@@ -1,8 +1,9 @@
 pub mod auth;
 pub mod cli;
+pub mod graphql;
 pub mod housekeeping;
-pub mod hyper_integration;
-pub mod juniper_hyper;
+pub mod http;
+pub mod service;
 pub mod trace;
 
 use josh_core::cache::{CacheStack, TransactionContext};

@@ -14,16 +14,14 @@ sha2 = "0.10.8"
 lru = "0.16.2"
 hex = { workspace = true }
 base64 = { workspace = true }
-bytes = "1.11.0"
 clap = { workspace = true }
-futures = { workspace = true }
-hyper = { version = "1.8.1" }
-hyper-reverse-proxy = { workspace = true }
-hyper-staticfile = "0.10.0"
-hyper-tls = "0.6.0"
+
+axum = { version = "^0.8", features = ["macros"] }
+axum-extra = { version = "^0.12", features = ["typed-header", "erased-json"] }
+tower-http = { version = "0.6", features = ["trace", "fs"] }
+mime = "^0.3"
+
 hyper_cgi = { path = "../hyper_cgi" }
-hyper-util = { version = "0.1.19", features = ["client", "client-legacy", "http1", "tokio"] }
-http-body-util = "0.1.0"
 indoc = "2.0.7"
 josh-core = {path = "../josh-core" }
 josh-templates = { path = "../josh-templates" }

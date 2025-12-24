@@ -3,9 +3,9 @@ use std::sync::{Arc, LazyLock};
 
 // Import the base64 crate Engine trait anonymously so we can
 // call its methods without adding to the namespace.
+use axum::http::HeaderValue;
 use base64::engine::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
-use hyper::body::Incoming;
 use reqwest;
 use tracing::Instrument;
 
@@ -46,7 +46,7 @@ static AUTH_TIMERS: LazyLock<std::sync::Mutex<AuthTimers>> = LazyLock::new(Defau
 // them output to traces by accident
 #[derive(Clone, Default)]
 struct Header {
-    pub header: Option<hyper::header::HeaderValue>,
+    pub header: Option<HeaderValue>,
 }
 
 #[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
@@ -102,7 +102,7 @@ impl Handle {
     }
 }
 
-fn hash_header(header: &hyper::http::HeaderValue) -> String {
+fn hash_header(header: &HeaderValue) -> String {
     use sha2::{Digest, Sha256};
 
     let mut hasher = Sha256::new();
@@ -112,7 +112,7 @@ fn hash_header(header: &hyper::http::HeaderValue) -> String {
 }
 
 pub fn add_auth(token: &str) -> josh_core::JoshResult<Handle> {
-    let header = hyper::header::HeaderValue::from_str(&format!("Basic {}", BASE64.encode(token)))?;
+    let header = HeaderValue::from_str(&format!("Basic {}", BASE64.encode(token)))?;
     let handle = Handle {
         hash: Some(hash_header(&header)),
     };
@@ -223,9 +223,9 @@ pub async fn check_http_auth(
         "check_http_auth: response"
     );
 
-    if status == hyper::StatusCode::OK {
+    if status == reqwest::StatusCode::OK {
         Ok(true)
-    } else if status == hyper::StatusCode::UNAUTHORIZED {
+    } else if status == reqwest::StatusCode::UNAUTHORIZED {
         tracing::event!(
             tracing::Level::WARN,
             { HTTP_RESPONSE_STATUS_CODE } = status.as_u16(),
@@ -249,12 +249,10 @@ pub async fn check_http_auth(
     }
 }
 
-pub fn strip_auth(
-    req: hyper::Request<Incoming>,
-) -> josh_core::JoshResult<(Handle, hyper::Request<Incoming>)> {
-    let mut req = req;
-    let header: Option<hyper::header::HeaderValue> =
-        req.headers_mut().remove(hyper::header::AUTHORIZATION);
+pub fn strip_auth<B>(
+    mut req: axum::http::Request<B>,
+) -> josh_core::JoshResult<(Handle, axum::http::Request<B>)> {
+    let header: Option<HeaderValue> = req.headers_mut().remove(axum::http::header::AUTHORIZATION);
 
     if let Some(header) = header {
         let handle = Handle {

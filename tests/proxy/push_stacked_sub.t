@@ -84,7 +84,7 @@
    * [new reference]   master -> refs/stack/for/master
 
   $ curl -s http://localhost:8002/flush
-  Flushed credential cache
+  Flushed credential cache (no-eol)
   $ git fetch origin
   From http://localhost:8002/real_repo.git:/sub1
    * [new branch]      @changes/master/josh@example.com/1234 -> origin/@changes/master/josh@example.com/1234
