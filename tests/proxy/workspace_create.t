@@ -86,7 +86,7 @@ Flushed credential cache
   
 
   $ curl -s http://localhost:8002/flush
-  Flushed credential cache
+  Flushed credential cache (no-eol)
   $ git pull --rebase
   From http://localhost:8002/real_repo.git:workspace=ws
    + 1b46698...003a297 master     -> origin/master  (forced update)

@@ -90,7 +90,7 @@
         "meta": true
       }
     }
-  } (no-eol)
+  }
 
   $ git fetch http://localhost:8001/real_repo.git refs/josh/meta
   From http://localhost:8001/real_repo
@@ -126,7 +126,7 @@
         "meta": true
       }
     }
-  } (no-eol)
+  }
 
   $ git fetch http://localhost:8001/real_repo.git refs/josh/meta
   From http://localhost:8001/real_repo
@@ -170,7 +170,7 @@
         "meta": true
       }
     }
-  } (no-eol)
+  }
 
   $ git fetch http://localhost:8001/real_repo.git refs/josh/meta
   From http://localhost:8001/real_repo
@@ -276,7 +276,7 @@
         ]
       }
     }
-  } (no-eol)
+  }
 
   $ cat > ../query <<EOF
   > {"query":"{ rev(at:\"refs/heads/master\", filter:\":/a\") {
@@ -329,7 +329,7 @@
         ]
       }
     }
-  } (no-eol)
+  }
 
 
   $ bash ${TESTDIR}/destroy_test_env.sh
