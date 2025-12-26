@@ -245,6 +245,47 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> JoshResult<Filter> {
 
             Ok(to_filter(Op::Squash(Some(ids))))
         }
+        Rule::filter_meta => {
+            let mut inner = pair.into_inner();
+            let mut meta = std::collections::BTreeMap::new();
+            let mut compose_item = None;
+
+            // Collect all items - filter_path (keys) and string (values) come in pairs, then compose
+            let mut items = Vec::new();
+            while let Some(item) = inner.next() {
+                match item.as_rule() {
+                    Rule::filter_path => items.push(item),
+                    Rule::string => items.push(item),
+                    Rule::compose => {
+                        compose_item = Some(item);
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+
+            // Parse key=value pairs - keys are filter_path (unquoted), values are string (quoted, need unquote)
+            for chunk in items.chunks(2) {
+                if chunk.len() == 2 {
+                    let key = chunk[0].as_str().to_string();
+                    let value = unquote(chunk[1].as_str());
+                    meta.insert(key, value);
+                }
+            }
+
+            let filter = if let Some(compose_pair) = compose_item {
+                let filters = parse_group(compose_pair.as_str())?;
+                if filters.len() == 1 {
+                    filters[0]
+                } else {
+                    to_filter(Op::Compose(filters))
+                }
+            } else {
+                return Err(josh_error("filter_meta: missing filter"));
+            };
+
+            Ok(to_filter(Op::Meta(meta, filter)))
+        }
         Rule::filter_scope => {
             let mut inner = pair.into_inner();
             let x_filter_spec = inner
