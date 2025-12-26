@@ -35,7 +35,7 @@ libc = "0.2.178"
 regex = "1.12.2"
 rs_tracing = { version = "1.1.0", features = ["rs_tracing"] }
 serde = { version = "1.0.228", features = ["std", "derive"] }
-serde_json = "1.0.145"
+serde_json = "1.0.147"
 serde_yaml = "0.9.34"
 toml = "0.9.10"
 tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
