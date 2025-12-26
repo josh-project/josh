@@ -27,7 +27,7 @@ log = "0.4.29"
 futures = "0.3.31"
 gix = { version = "0.76.0", default-features = false }
 gix-hash = "0.19.0"
-gix-object = "0.50.2"
+gix-object = "0.53.0"
 gix-config = "0.47.1"
 gix-submodule = "0.21.0"
 hyper-reverse-proxy = { path = "hyper-reverse-proxy", version = "0.0.1" }
