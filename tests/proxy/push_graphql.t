@@ -35,7 +35,7 @@
         "push": true
       }
     }
-  } (no-eol)
+  }
   $ git ls-remote --symref http://localhost:8001/real_repo.git
   ref: refs/heads/master\tHEAD (esc)
   bb282e9cdc1b972fffd08fd21eead43bc0c83cb8\tHEAD (esc)
@@ -56,7 +56,7 @@
         "push": true
       }
     }
-  } (no-eol)
+  }
   $ git ls-remote --symref http://localhost:8001/real/repo2.git
   c90121689a90787dea0aa3be06701af6c66c3e20\trefs/heads/newbranch (esc)
   $ git ls-remote --symref http://localhost:8001/real_repo.git
