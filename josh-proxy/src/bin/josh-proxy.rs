@@ -1868,7 +1868,13 @@ async fn run_proxy() -> josh_core::JoshResult<i32> {
         .route("/~/graphiql/{*path}", get(handle_graphiql))
         .fallback(call_service)
         .layer(middleware::from_fn(auth_middleware))
-        .layer(TraceLayer::new_for_http())
+        .layer(
+            TraceLayer::new_for_http()
+                .make_span_with(josh_proxy::trace::SpanMaker {})
+                .on_response(josh_proxy::trace::TraceResponse {})
+                .on_request(())
+                .on_failure(()),
+        )
         .with_state(proxy_service.clone());
 
     let (shutdown_tx, _shutdown_rx) = broadcast::channel(1);
