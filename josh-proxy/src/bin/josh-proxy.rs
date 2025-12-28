@@ -32,9 +32,7 @@ use std::io;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::sync::{Arc, LazyLock};
-
-static ARGS: LazyLock<josh_proxy::cli::Args> = LazyLock::new(|| josh_proxy::cli::Args::parse());
+use std::sync::Arc;
 
 josh_core::regex_parsed!(
     FilteredRepoUrl,
@@ -58,7 +56,7 @@ async fn fetch_needed(
 
         if let Some(last) = last {
             let since = std::time::Instant::now().duration_since(last);
-            let max = std::time::Duration::from_secs(ARGS.cache_duration);
+            let max = std::time::Duration::from_secs(service.cache_duration);
 
             tracing::trace!("last: {:?}, since: {:?}, max: {:?}", last, since, max);
             since < max
@@ -236,7 +234,7 @@ async fn fetch_upstream(
     match (fetch_result, remote_auth) {
         (Ok(_), RemoteAuth::Http { auth }) => {
             if let Some((auth_user, _)) = auth.parse() {
-                if matches!(&ARGS.poll_user, Some(user) if auth_user == user.as_str()) {
+                if matches!(&service.poll_user, Some(user) if auth_user == user.as_str()) {
                     service
                         .poll
                         .lock()?
@@ -1036,7 +1034,7 @@ async fn handle_serve_namespace(
         }
     };
 
-    let filter = query_filter.chain(match &ARGS.filter_prefix {
+    let filter = query_filter.chain(match &serv.filter_prefix {
         Some(filter_prefix) => {
             let filter_prefix = match josh_core::filter::parse(filter_prefix) {
                 Ok(filter) => filter,
@@ -1191,7 +1189,7 @@ async fn call_service(
             .filter
             .chain(josh_core::filter::parse(&parsed_url.filter_spec)?);
 
-        if let Some(filter_prefix) = &ARGS.filter_prefix {
+        if let Some(filter_prefix) = &serv.filter_prefix {
             josh_core::filter::parse(filter_prefix)?.chain(filter)
         } else {
             filter
@@ -1217,7 +1215,7 @@ async fn call_service(
         );
     }
 
-    let http_auth_required = ARGS.require_auth && parsed_url.pathinfo == "/git-receive-pack";
+    let http_auth_required = serv.require_auth && parsed_url.pathinfo == "/git-receive-pack";
 
     for fetch_repo in fetch_repos.iter() {
         let fetch_url = upstream.clone() + fetch_repo.as_str();
@@ -1449,7 +1447,7 @@ async fn run_polling(serv: Arc<JoshProxyService>) -> josh_core::JoshResult<()> {
     }
 }
 
-async fn run_housekeeping(local: std::path::PathBuf) -> josh_core::JoshResult<()> {
+async fn run_housekeeping(local: std::path::PathBuf, gc: bool) -> josh_core::JoshResult<()> {
     let mut i: usize = 0;
     let cache = std::sync::Arc::new(CacheStack::default());
 
@@ -1458,7 +1456,7 @@ async fn run_housekeeping(local: std::path::PathBuf) -> josh_core::JoshResult<()
         let cache = cache.clone();
 
         tokio::task::spawn_blocking(move || {
-            let do_gc = (i % 60 == 0) && ARGS.gc;
+            let do_gc = (i % 60 == 0) && gc;
             josh_proxy::housekeeping::run(&local, cache, do_gc)
         })
         .await??;
@@ -1572,7 +1570,7 @@ async fn handle_graphql(
     let content_type = content_type.map(|ct| ct.0.into());
 
     // Check authentication
-    if !josh_proxy::auth::check_http_auth(&remote_url, &auth, ARGS.require_auth).await? {
+    if !josh_proxy::auth::check_http_auth(&remote_url, &auth, serv.require_auth).await? {
         return Ok(Response::builder()
             .header(header::WWW_AUTHENTICATE, "Basic realm=User Visible Realm")
             .status(StatusCode::UNAUTHORIZED)
@@ -1793,12 +1791,12 @@ fn init_trace() -> Option<opentelemetry_sdk::trace::SdkTracerProvider> {
     }
 }
 
-async fn run_proxy() -> josh_core::JoshResult<i32> {
-    let upstream = make_upstream(&ARGS.remote).inspect_err(|e| {
+async fn run_proxy(args: josh_proxy::cli::Args) -> josh_core::JoshResult<i32> {
+    let upstream = make_upstream(&args.remote).inspect_err(|e| {
         eprintln!("Upstream parsing error: {}", e);
     })?;
 
-    let local = std::path::PathBuf::from(&ARGS.local.as_ref().unwrap());
+    let local = std::path::PathBuf::from(&args.local.as_ref().unwrap());
     let local = if local.is_absolute() {
         local
     } else {
@@ -1811,9 +1809,13 @@ async fn run_proxy() -> josh_core::JoshResult<i32> {
     let cache = Arc::new(CacheStack::default());
 
     let proxy_service = Arc::new(JoshProxyService {
-        port: ARGS.port.to_string(),
+        port: args.port.to_string(),
         repo_path: local.to_owned(),
         upstream,
+        require_auth: args.require_auth,
+        poll_user: args.poll_user,
+        cache_duration: args.cache_duration,
+        filter_prefix: args.filter_prefix,
         cache,
         fetch_timers: Default::default(),
         heads_map: Default::default(),
@@ -1879,7 +1881,7 @@ async fn run_proxy() -> josh_core::JoshResult<i32> {
 
     let (shutdown_tx, _shutdown_rx) = broadcast::channel(1);
 
-    let addr: SocketAddr = format!("[::]:{}", ARGS.port).parse()?;
+    let addr: SocketAddr = format!("[::]:{}", args.port).parse()?;
     let listener = tokio::net::TcpListener::bind(addr).await?;
 
     let server_future = async move {
@@ -1890,14 +1892,14 @@ async fn run_proxy() -> josh_core::JoshResult<i32> {
 
     eprintln!("Now listening on {}", addr);
 
-    if ARGS.no_background {
+    if args.no_background {
         tokio::select!(
             r = server_future => eprintln!("http server exited: {:?}", r),
             _ = shutdown_signal(shutdown_tx) => eprintln!("shutdown requested"),
         );
     } else {
         tokio::select!(
-            r = run_housekeeping(local) => eprintln!("run_housekeeping exited: {:?}", r),
+            r = run_housekeeping(local, args.gc) => eprintln!("run_housekeeping exited: {:?}", r),
             r = run_polling(ps.clone()) => eprintln!("run_polling exited: {:?}", r),
             r = server_future => eprintln!("http server exited: {:?}", r),
             _ = shutdown_signal(shutdown_tx) => eprintln!("shutdown requested"),
@@ -1935,13 +1937,14 @@ fn main() {
         }
     }
 
+    let args = josh_proxy::cli::Args::parse();
     let exit_code = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
         .unwrap()
         .block_on(async {
             let tracer_provider = init_trace();
-            let exit_code = run_proxy().await.unwrap_or(1);
+            let exit_code = run_proxy(args).await.unwrap_or(1);
 
             if let Some(tracer_provider) = tracer_provider {
                 tracer_provider

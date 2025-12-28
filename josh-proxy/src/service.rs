@@ -41,8 +41,12 @@ pub enum UpstreamProtocol {
 pub struct JoshProxyService {
     pub port: String,
     pub repo_path: std::path::PathBuf,
-    pub cache: Arc<CacheStack>,
     pub upstream: JoshProxyUpstream,
+    pub require_auth: bool,
+    pub poll_user: Option<String>,
+    pub cache_duration: u64,
+    pub filter_prefix: Option<String>,
+    pub cache: Arc<CacheStack>,
     pub fetch_timers: Arc<RwLock<FetchTimers>>,
     pub heads_map: HeadsMap,
     pub fetch_permits: Arc<std::sync::Mutex<HashMap<String, Arc<tokio::sync::Semaphore>>>>,
