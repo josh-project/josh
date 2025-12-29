@@ -251,12 +251,14 @@ pub fn filter_commit(
     Ok(filter_commit)
 }
 
+type FilterRefsResult = (Vec<(String, git2::Oid)>, Vec<(String, JoshError)>);
+
 pub fn filter_refs(
     transaction: &cache::Transaction,
     filterobj: filter::Filter,
     refs: &[(String, git2::Oid)],
     permissions: filter::Filter,
-) -> (Vec<(String, git2::Oid)>, Vec<(String, JoshError)>) {
+) -> FilterRefsResult {
     rs_tracing::trace_scoped!("filter_refs", "spec": filter::spec(filterobj));
     let s = tracing::Span::current();
     let _e = s.enter();

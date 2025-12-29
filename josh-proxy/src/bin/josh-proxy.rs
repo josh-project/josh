@@ -282,25 +282,25 @@ fn main() {
     // The update hook will then make a http request back to the main
     // process to do the actual computation while taking advantage of the
     // cached data already loaded into the main process's memory.
-    if let [a0, a1, a2, a3, ..] = &std::env::args().collect::<Vec<_>>().as_slice() {
-        if a0.ends_with("/update") {
-            std::process::exit(update_hook(a1, a2, a3).unwrap_or(1));
-        }
+    if let [a0, a1, a2, a3, ..] = &std::env::args().collect::<Vec<_>>().as_slice()
+        && a0.ends_with("/update")
+    {
+        std::process::exit(update_hook(a1, a2, a3).unwrap_or(1));
     }
 
-    if let [a0, ..] = &std::env::args().collect::<Vec<_>>().as_slice() {
-        if a0.ends_with("/pre-receive") {
-            eprintln!("josh-proxy: pre-receive hook");
-            let code = match pre_receive_hook() {
-                Ok(code) => code,
-                Err(e) => {
-                    eprintln!("josh-proxy: pre-receive hook failed: {}", e);
-                    std::process::exit(1);
-                }
-            };
+    if let [a0, ..] = &std::env::args().collect::<Vec<_>>().as_slice()
+        && a0.ends_with("/pre-receive")
+    {
+        eprintln!("josh-proxy: pre-receive hook");
+        let code = match pre_receive_hook() {
+            Ok(code) => code,
+            Err(e) => {
+                eprintln!("josh-proxy: pre-receive hook failed: {}", e);
+                std::process::exit(1);
+            }
+        };
 
-            std::process::exit(code);
-        }
+        std::process::exit(code);
     }
 
     let args = josh_proxy::cli::Args::parse();

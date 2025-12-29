@@ -145,7 +145,7 @@ async fn create_proxied_response(
     let (mut parts, body) = response.into_parts();
     parts.headers = remove_hop_headers(&parts.headers);
 
-    if method == &Method::HEAD || parts.status == StatusCode::NO_CONTENT {
+    if method == Method::HEAD || parts.status == StatusCode::NO_CONTENT {
         let response = Response::from_parts(parts, Full::new(Bytes::new()));
         return Ok(response);
     }

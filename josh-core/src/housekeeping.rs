@@ -46,14 +46,14 @@ pub fn list_refs(
 pub fn remember_filter(upstream_repo: &str, filter_spec: &str) {
     // no need to remember the nop filter since we already keep a reference to
     // the unfiltered branch in refs/josh/upstream
-    if filter_spec != ":/" {
-        if let Ok(mut known_filters) = KNOWN_FILTERS.try_lock() {
-            let known_f = &mut known_filters
-                .entry(upstream_repo.trim_start_matches('/').to_string())
-                .or_insert_with(|| (git2::Oid::zero(), BTreeSet::new()));
+    if filter_spec != ":/"
+        && let Ok(mut known_filters) = KNOWN_FILTERS.try_lock()
+    {
+        let known_f = &mut known_filters
+            .entry(upstream_repo.trim_start_matches('/').to_string())
+            .or_insert_with(|| (git2::Oid::zero(), BTreeSet::new()));
 
-            known_f.1.insert(filter_spec.to_string());
-        }
+        known_f.1.insert(filter_spec.to_string());
     }
 }
 
@@ -91,14 +91,14 @@ pub fn default_from_to(
 
     // no need to remember the nop filter since we already keep a reference to
     // the unfiltered branch in refs/josh/upstream
-    if filter_spec != ":/" {
-        if let Ok(mut known_filters) = KNOWN_FILTERS.try_lock() {
-            let known_f = &mut known_filters
-                .entry(upstream_repo.trim_start_matches('/').to_string())
-                .or_insert_with(|| (git2::Oid::zero(), BTreeSet::new()));
+    if filter_spec != ":/"
+        && let Ok(mut known_filters) = KNOWN_FILTERS.try_lock()
+    {
+        let known_f = &mut known_filters
+            .entry(upstream_repo.trim_start_matches('/').to_string())
+            .or_insert_with(|| (git2::Oid::zero(), BTreeSet::new()));
 
-            known_f.1.insert(filter_spec.to_string());
-        }
+        known_f.1.insert(filter_spec.to_string());
     }
 
     refs
@@ -152,13 +152,13 @@ pub fn discover_filter_candidates(transaction: &cache::Transaction) -> JoshResul
             .entry(name.clone())
             .or_insert_with(|| (git2::Oid::zero(), BTreeSet::new()));
 
-        if let Some(target) = r.target() {
-            if known_f.0 != target {
-                let hs = find_all_workspaces_and_subdirectories(&r.peel_to_tree()?)?;
-                known_f.0 = target;
-                for i in hs {
-                    known_f.1.insert(i);
-                }
+        if let Some(target) = r.target()
+            && known_f.0 != target
+        {
+            let hs = find_all_workspaces_and_subdirectories(&r.peel_to_tree()?)?;
+            known_f.0 = target;
+            for i in hs {
+                known_f.1.insert(i);
             }
         }
     }

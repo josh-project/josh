@@ -10,14 +10,14 @@ use crate::{JoshResult, josh_error};
 
 static FILTERS: LazyLock<
     std::sync::Mutex<HashMap<Filter, Op, BuildHasherDefault<PassthroughHasher>>>,
-> = LazyLock::new(|| Default::default());
+> = LazyLock::new(Default::default);
 
 pub(crate) fn peel_op(filter: Filter) -> Op {
     let op = to_op(filter);
     if let Op::Meta(_, f) = op {
-        return peel_op(f);
+        peel_op(f)
     } else {
-        return op;
+        op
     }
 }
 
@@ -34,7 +34,7 @@ pub(crate) fn to_op(filter: Filter) -> Op {
 }
 
 pub(crate) fn to_ops(filters: &[Filter]) -> Vec<Op> {
-    return filters.iter().map(|x| to_op(*x)).collect();
+    filters.iter().map(|x| to_op(*x)).collect()
 }
 
 fn push_blob_entries(
@@ -716,7 +716,7 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> JoshResult<Op> {
         }
         "chain" => {
             let chain_tree = repo.find_tree(entry.id())?;
-            if chain_tree.len() >= 1 {
+            if !chain_tree.is_empty() {
                 let mut filters = vec![];
                 for i in 0..chain_tree.len() {
                     let filter_tree = repo.find_tree(
@@ -836,11 +836,11 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> JoshResult<Op> {
         }
         "squash" => {
             // blob -> Squash(None), tree -> Squash(Some(...))
-            if let Some(kind) = entry.kind() {
-                if kind == git2::ObjectType::Blob {
-                    let _ = repo.find_blob(entry.id())?;
-                    return Ok(Op::Squash(None));
-                }
+            if let Some(kind) = entry.kind()
+                && kind == git2::ObjectType::Blob
+            {
+                let _ = repo.find_blob(entry.id())?;
+                return Ok(Op::Squash(None));
             }
             let squash_tree = repo.find_tree(entry.id())?;
             let mut filters = std::collections::BTreeMap::new();

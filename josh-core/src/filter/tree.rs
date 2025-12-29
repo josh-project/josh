@@ -636,12 +636,14 @@ pub fn search_candidates(
     Ok(results)
 }
 
+type SearchMatchesResult = Vec<(String, Vec<(usize, String)>)>;
+
 pub fn search_matches(
     transaction: &cache::Transaction,
     tree: &git2::Tree,
     searchstring: &str,
     candidates: &Vec<String>,
-) -> JoshResult<Vec<(String, Vec<(usize, String)>)>> {
+) -> JoshResult<SearchMatchesResult> {
     let mut results = vec![];
 
     for c in candidates {
@@ -728,16 +730,14 @@ pub fn trigram_search<'a>(
                     }
                 }
 
-                if fmatch {
-                    if let Some(filename) = filename {
-                        results.push(format!(
-                            "{}{}{}",
-                            root,
-                            if root.is_empty() { "" } else { "/" },
-                            filename
-                        ));
-                        skip = true;
-                    }
+                if fmatch && let Some(filename) = filename {
+                    results.push(format!(
+                        "{}{}{}",
+                        root,
+                        if root.is_empty() { "" } else { "/" },
+                        filename
+                    ));
+                    skip = true;
                 }
             }
         }

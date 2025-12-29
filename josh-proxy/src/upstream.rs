@@ -103,11 +103,10 @@ async fn fetch_needed(
             if let Some(oid) = resolve_cache_ref(head_ref)
                 .await?
                 .map_err(FetchError::from_josh_error)?
+                && oid.to_string() == head_ref_resolved
             {
-                if oid.to_string() == head_ref_resolved {
-                    tracing::trace!("cache ref resolved and matches");
-                    return Ok(false);
-                }
+                tracing::trace!("cache ref resolved and matches");
+                return Ok(false);
             }
         }
         _ => (),
@@ -234,13 +233,13 @@ pub async fn fetch_upstream(
 
     match (fetch_result, remote_auth) {
         (Ok(_), RemoteAuth::Http { auth }) => {
-            if let Some((auth_user, _)) = auth.parse() {
-                if matches!(&service.poll_user, Some(user) if auth_user == user.as_str()) {
-                    service
-                        .poll
-                        .lock()?
-                        .insert((upstream_repo, auth.clone(), remote_url));
-                }
+            if let Some((auth_user, _)) = auth.parse()
+                && matches!(&service.poll_user, Some(user) if auth_user == user.as_str())
+            {
+                service
+                    .poll
+                    .lock()?
+                    .insert((upstream_repo, auth.clone(), remote_url));
             }
 
             Ok(())
@@ -272,7 +271,7 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh_core::JoshResult<Str
     let transaction_mirror_ctx =
         TransactionContext::new(&repo_update.mirror_git_dir, cache.clone());
 
-    for (refname, (old, new)) in repo_update.refs.iter() {
+    if let Some((refname, (old, new))) = repo_update.refs.iter().next() {
         let transaction = transaction_ctx.open(Some(&format!(
             "refs/josh/upstream/{}/",
             repo_update.base_ns
@@ -528,6 +527,7 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh_core::JoshResult<Str
     Ok("".to_string())
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn push_head_url(
     repo: &git2::Repository,
     alternate: &str,

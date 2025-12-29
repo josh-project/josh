@@ -1,6 +1,6 @@
 use std::sync::LazyLock;
 
-use super::cache::{CACHE_VERSION, CacheBackend};
+use super::transaction::{CACHE_VERSION, CacheBackend};
 use crate::filter::Filter;
 use crate::{JoshResult, filter, josh_error};
 

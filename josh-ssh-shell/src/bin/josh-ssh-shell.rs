@@ -34,6 +34,7 @@ fn die(message: &str) -> ! {
 }
 
 #[derive(thiserror::Error, Debug)]
+#[allow(clippy::enum_variant_names)]
 enum CallError {
     FifoError(#[from] std::io::Error),
     RequestError(#[from] reqwest::Error),

@@ -31,16 +31,16 @@ fn find_paths(
 
     let mut ws = vec![];
     tree.walk(git2::TreeWalkMode::PreOrder, |root, entry| {
-        if Some(kind) == entry.kind() {
-            if let Some(name) = entry.name() {
-                let path = std::path::Path::new(root).join(name);
-                if let Some(limit) = depth {
-                    if path.components().count() as i32 > limit {
-                        return 1;
-                    }
-                }
-                ws.push(base.join(path));
+        if Some(kind) == entry.kind()
+            && let Some(name) = entry.name()
+        {
+            let path = std::path::Path::new(root).join(name);
+            if let Some(limit) = depth
+                && path.components().count() as i32 > limit
+            {
+                return 1;
             }
+            ws.push(base.join(path));
         }
         0
     })?;
@@ -371,7 +371,7 @@ impl Revision {
 
         let x = filter::apply(&transaction, self.filter, Rewrite::from_tree(tree))?;
 
-        if let Some(entry) = x.tree().get_path(&path).ok() {
+        if let Ok(entry) = x.tree().get_path(&path) {
             if let Some(git2::ObjectType::Blob) = entry.kind() {
                 Ok(Some(Path {
                     path,
@@ -405,7 +405,7 @@ impl Revision {
             }));
         }
 
-        if let Some(entry) = x.tree().get_path(&path).ok() {
+        if let Ok(entry) = x.tree().get_path(&path) {
             if let Some(git2::ObjectType::Tree) = entry.kind() {
                 Ok(Some(Path {
                     path,
@@ -848,15 +848,17 @@ impl Reference {
     }
 }
 
+type ToPushSet = std::sync::Arc<
+    std::sync::Mutex<std::collections::HashSet<(git2::Oid, String, Option<String>)>>,
+>;
+
 pub struct Context {
     pub transaction: std::sync::Arc<std::sync::Mutex<cache::Transaction>>,
     pub transaction_mirror: std::sync::Arc<std::sync::Mutex<cache::Transaction>>,
     pub meta_add: std::sync::Arc<
         std::sync::Mutex<std::collections::HashMap<std::path::PathBuf, Vec<String>>>,
     >,
-    pub to_push: std::sync::Arc<
-        std::sync::Mutex<std::collections::HashSet<(git2::Oid, String, Option<String>)>>,
-    >,
+    pub to_push: ToPushSet,
     pub allow_refs: std::sync::Mutex<bool>,
 }
 

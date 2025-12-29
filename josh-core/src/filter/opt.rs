@@ -203,15 +203,13 @@ fn group(filters: &Vec<Filter>) -> Vec<Vec<Filter>> {
 
         if let Op::Chain(filters) = to_op(*f)
             && !filters.is_empty()
+            && let Op::Chain(other_filters) = to_op(res[res.len() - 1][0])
+            && !other_filters.is_empty()
+            && filters[0] == other_filters[0]
         {
-            if let Op::Chain(other_filters) = to_op(res[res.len() - 1][0])
-                && !other_filters.is_empty()
-                && filters[0] == other_filters[0]
-            {
-                let n = res.len();
-                res[n - 1].push(*f);
-                continue;
-            }
+            let n = res.len();
+            res[n - 1].push(*f);
+            continue;
         }
 
         res.push(vec![*f]);
@@ -319,8 +317,8 @@ pub fn prefix_sort(filters: &[Filter]) -> Vec<Filter> {
     };
 
     for (i, filter) in filters.iter().enumerate() {
-        let src = src_path(filter.clone());
-        let dst = dst_path(filter.clone());
+        let src = src_path(*filter);
+        let dst = dst_path(*filter);
 
         for j in src_trie.find_overlapping(&src) {
             maybe_push_outgoing(j, i);
@@ -366,13 +364,7 @@ fn topo_sort_with_tiebreak(outgoing: &PrefixSortEdges, filters: &[Filter]) -> Ve
         }
     }
 
-    let make_key = |i: usize| -> SortKey {
-        SortKey(
-            i,
-            src_path(filters[i].clone()),
-            dst_path(filters[i].clone()),
-        )
-    };
+    let make_key = |i: usize| -> SortKey { SortKey(i, src_path(filters[i]), dst_path(filters[i])) };
 
     let mut heap: BinaryHeap<SortKey> = indegree
         .iter()
@@ -384,7 +376,7 @@ fn topo_sort_with_tiebreak(outgoing: &PrefixSortEdges, filters: &[Filter]) -> Ve
     let mut result = Vec::with_capacity(filters.len());
 
     while let Some(SortKey(i, _, _)) = heap.pop() {
-        result.push(filters[i].clone());
+        result.push(filters[i]);
 
         for &j in outgoing[i].iter() {
             indegree[j] -= 1;

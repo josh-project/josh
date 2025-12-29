@@ -13,15 +13,15 @@ use crate::filter::{self, Filter};
 pub fn pretty(filter: Filter, indent: usize) -> String {
     let filter = opt::simplify(filter);
 
-    if let Op::Compose(filters) = to_op(filter) {
-        if indent == 0 {
-            let i = format!("\n{}", " ".repeat(indent));
-            return filters
-                .iter()
-                .map(|x| pretty2(&to_op(*x), indent + 4, true))
-                .collect::<Vec<_>>()
-                .join(&i);
-        }
+    if let Op::Compose(filters) = to_op(filter)
+        && indent == 0
+    {
+        let i = format!("\n{}", " ".repeat(indent));
+        return filters
+            .iter()
+            .map(|x| pretty2(&to_op(*x), indent + 4, true))
+            .collect::<Vec<_>>()
+            .join(&i);
     }
     pretty2(&to_op(filter), indent, true)
 }
@@ -63,7 +63,7 @@ fn pretty2(op: &Op, indent: usize, compose: bool) -> String {
                 return pretty2(&to_op(filters[0]), indent, compose);
             }
             // Check for special case: Subdir + Prefix that cancel
-            match &to_ops(&filters)[..] {
+            match &to_ops(filters)[..] {
                 [Op::Subdir(p1), Op::Prefix(p2)] if p1 == p2 => {
                     return format!("::{}/", parse::quote_if(&p1.to_string_lossy()));
                 }
@@ -158,7 +158,7 @@ pub(crate) fn spec2(op: &Op) -> String {
         Op::Rev(filters) => {
             let mut v = filters
                 .iter()
-                .map(|(k, v)| format!("{}{}", k.to_string(), spec(*v)))
+                .map(|(k, v)| format!("{}{}", k, spec(*v)))
                 .collect::<Vec<_>>();
             v.sort();
             format!(":rev({})", v.join(","))
@@ -208,7 +208,7 @@ pub(crate) fn spec2(op: &Op) -> String {
         Op::Squash(Some(ids)) => {
             let mut v = ids
                 .iter()
-                .map(|(oid, f)| format!("{}{}", oid.to_string(), spec(*f)))
+                .map(|(oid, f)| format!("{}{}", oid, spec(*f)))
                 .collect::<Vec<_>>();
             v.sort();
             format!(":squash({})", v.join(","))
@@ -259,11 +259,11 @@ pub(crate) fn spec2(op: &Op) -> String {
             format!(":{};{}", parse::quote(m), parse::quote(r.as_str()))
         }
         Op::HistoryConcat(r, filter) => {
-            format!(":concat({}{})", r.to_string(), spec(*filter))
+            format!(":concat({}{})", r, spec(*filter))
         }
         #[cfg(feature = "incubating")]
         Op::Unapply(r, filter) => {
-            format!(":unapply({}{})", r.to_string(), spec(*filter))
+            format!(":unapply({}{})", r, spec(*filter))
         }
         Op::Hook(hook) => {
             format!(":hook={}", parse::quote(hook))

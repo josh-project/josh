@@ -98,7 +98,7 @@ impl std::fmt::Debug for JoshProxyService {
 }
 
 /// Turn a list of [cli::Remote] into a [JoshProxyUpstream] struct.
-pub fn make_upstream(remotes: &Vec<cli::Remote>) -> JoshResult<JoshProxyUpstream> {
+pub fn make_upstream(remotes: &[cli::Remote]) -> JoshResult<JoshProxyUpstream> {
     if remotes.is_empty() {
         unreachable!() // already checked in the parser
     } else if remotes.len() == 1 {
@@ -273,6 +273,7 @@ async fn handle_flush(State(service): State<Arc<JoshProxyService>>) -> impl Into
 
 async fn handle_filters(service: Arc<JoshProxyService>, refresh: bool) -> impl IntoResponse {
     // Clear fetch timers
+    #[allow(clippy::redundant_pattern_matching)]
     if let Err(_) = service.fetch_timers.write().map(|mut t| t.clear()) {
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -502,9 +503,10 @@ async fn query_meta_repo(
         return Err(josh_core::josh_error("meta repo entry not found"));
     }
 
-    let mut meta: crate::MetaConfig = Default::default();
-
-    meta.config = serde_yaml::from_str(&meta_blob)?;
+    let mut meta: crate::MetaConfig = crate::MetaConfig {
+        config: serde_yaml::from_str(&meta_blob)?,
+        ..Default::default()
+    };
 
     if meta.config.lock_refs {
         let meta_blob = josh_core::filter::tree::get_blob(
@@ -734,7 +736,7 @@ async fn serve_namespace(
         match tokio::time::timeout(max_duration, process.wait()).await {
             Ok(status) => match status {
                 Ok(status) => match status.code() {
-                    Some(code) if code == 0 => Ok(()),
+                    Some(0) => Ok(()),
                     Some(code) => Err(ServeError::SubprocessExited(code)),
                     None => {
                         let io_error = std::io::Error::from(std::io::ErrorKind::Other);
@@ -1093,11 +1095,11 @@ async fn call_service(
                     "#,
                     guessed_url
                 );
-                return Ok(Response::builder()
+                return Response::builder()
                     .status(StatusCode::UNPROCESSABLE_ENTITY)
                     .header(header::CONTENT_TYPE, "text/plain")
                     .body(Body::from(msg))
-                    .map_err(|e| ProxyError(josh_error(&e.to_string())))?);
+                    .map_err(|e| ProxyError(josh_error(&e.to_string())));
             }
 
             if pu.filter_spec.is_empty() {
@@ -1425,7 +1427,7 @@ async fn handle_graphql(
 
     let transaction_mirror = serv.open_mirror(Some(&format!(
         "refs/josh/upstream/{}/",
-        &josh_core::to_ns(&upstream_repo),
+        &josh_core::to_ns(upstream_repo),
     )))?;
 
     let transaction = serv.open_overlay(None)?;
@@ -1442,7 +1444,7 @@ async fn handle_graphql(
     let root_node = Arc::new(graphql::repo_schema(
         format!(
             "/{}",
-            upstream_repo.strip_suffix(".git").unwrap_or(&upstream_repo)
+            upstream_repo.strip_suffix(".git").unwrap_or(upstream_repo)
         ),
         false,
     ));

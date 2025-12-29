@@ -321,12 +321,11 @@ impl Transaction {
     }
 
     pub fn get_ref(&self, filter: crate::filter::Filter, from: git2::Oid) -> Option<git2::Oid> {
-        if let Some(m) = REF_CACHE.read().unwrap().get(&filter.id()) {
-            if let Some(oid) = m.get(&from) {
-                if self.repo.odb().unwrap().exists(*oid) {
-                    return Some(*oid);
-                }
-            }
+        if let Some(m) = REF_CACHE.read().unwrap().get(&filter.id())
+            && let Some(oid) = m.get(&from)
+            && self.repo.odb().unwrap().exists(*oid)
+        {
+            return Some(*oid);
         }
         None
     }
@@ -418,18 +417,16 @@ impl Transaction {
             0
         };
         let t2 = self.t2.borrow_mut();
-        if let Some(m) = t2.commit_map.get(&filter.id()) {
-            if let Some(oid) = m.get(&from).cloned() {
-                return Some(oid);
-            }
+        if let Some(m) = t2.commit_map.get(&filter.id())
+            && let Some(oid) = m.get(&from).cloned()
+        {
+            return Some(oid);
         }
 
         let oid = t2
             .cache
             .read_propagate(filter, from, sequence_number)
             .expect("Failed to read from cache backend");
-
-        let oid = if let Some(oid) = oid { Some(oid) } else { None };
 
         if let Some(oid) = oid {
             if oid == git2::Oid::zero() {
@@ -478,17 +475,17 @@ pub fn compute_sequence_number(
     }
 
     let commit = transaction.repo().find_commit(input)?;
-    if let Some(p) = commit.parent_ids().next() {
-        if let Some(count) = transaction.get(crate::filter::sequence_number(), p) {
-            let pc = u128_from_oid(count);
-            transaction.insert(
-                crate::filter::sequence_number(),
-                input,
-                oid_from_u128(pc + 1),
-                true,
-            );
-            return Ok(pc + 1);
-        }
+    if let Some(p) = commit.parent_ids().next()
+        && let Some(count) = transaction.get(crate::filter::sequence_number(), p)
+    {
+        let pc = u128_from_oid(count);
+        transaction.insert(
+            crate::filter::sequence_number(),
+            input,
+            oid_from_u128(pc + 1),
+            true,
+        );
+        return Ok(pc + 1);
     }
 
     let mut walk = transaction.repo().revwalk()?;

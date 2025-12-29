@@ -27,10 +27,7 @@ pub fn walk2(
         walk.push(input)?;
         walk
     };
-    let mut hide_callback = |id| {
-        let k = transaction.known(filter, id);
-        k
-    };
+    let mut hide_callback = |id| transaction.known(filter, id);
     let walk = walk.with_hide_callback(&mut hide_callback)?;
 
     log::info!(
@@ -158,16 +155,11 @@ fn find_unapply_base(
 
         // Check if any pending commits are now unlocked
         // Processing one might unlock another
-        loop {
-            let &pending_oid = match ctx
-                .pending
-                .iter()
-                .find(|&pending_oid| ctx.unlocked.contains(&pending_oid))
-            {
-                Some(oid) => oid,
-                None => break,
-            };
-
+        while let Some(&pending_oid) = ctx
+            .pending
+            .iter()
+            .find(|&pending_oid| ctx.unlocked.contains(pending_oid))
+        {
             ctx.pending.remove(&pending_oid);
 
             let commit = match transaction.repo().find_commit(pending_oid) {
@@ -181,7 +173,7 @@ fn find_unapply_base(
             let original_filtered = match filter::apply_to_commit(filter, &commit, transaction) {
                 Ok(oid) => oid,
                 Err(e) => {
-                    ctx.result = Some(Err(e.into()));
+                    ctx.result = Some(Err(e));
                     return true;
                 }
             };
@@ -371,21 +363,19 @@ fn find_new_branch_base(
         let rev = rev?;
         if let Ok(base) =
             find_unapply_base(transaction, filtered_to_original, filter, contained_in, rev)
+            && base != git2::Oid::zero()
         {
-            if base != git2::Oid::zero() {
-                tracing::info!("new branch base: {:?} mapping to {:?}", base, rev);
-                let base =
-                    if let Ok(new_base) = find_oldest_similar_commit(transaction, filter, base) {
-                        new_base
-                    } else {
-                        base
-                    };
+            tracing::info!("new branch base: {:?} mapping to {:?}", base, rev);
+            let base = if let Ok(new_base) = find_oldest_similar_commit(transaction, filter, base) {
+                new_base
+            } else {
+                base
+            };
 
-                tracing::info!("inserting in filtered_to_original {}, {}", rev, base);
-                filtered_to_original.insert(rev, base);
+            tracing::info!("inserting in filtered_to_original {}, {}", rev, base);
+            filtered_to_original.insert(rev, base);
 
-                return Ok(rev);
-            }
+            return Ok(rev);
         }
     }
     tracing::info!("new branch base not found");
@@ -399,6 +389,7 @@ pub enum OrphansMode {
     Fail,
 }
 
+#[allow(clippy::too_many_arguments)]
 #[tracing::instrument(skip(transaction, change_ids))]
 pub fn unapply_filter(
     transaction: &cache::Transaction,
@@ -412,6 +403,7 @@ pub fn unapply_filter(
 ) -> JoshResult<git2::Oid> {
     let mut filtered_to_original = HashMap::new();
     let mut ret = original_target;
+    let change_id_regex = regex::Regex::new("(?m)^Change: [^ ]+")?;
 
     let old_filtered_oid = if old_filtered_oid == git2::Oid::zero() {
         match find_new_branch_base(
@@ -705,8 +697,8 @@ pub fn unapply_filter(
 
         if change_ids.is_some() {
             let new_message = filter::text::transform_with_template(
-                &regex::Regex::new("(?m)^Change: [^ ]+")?,
-                &"",
+                &change_id_regex,
+                "",
                 module_commit.message_raw().unwrap(),
                 |_key: &str| -> Option<String> { None },
             )?;
