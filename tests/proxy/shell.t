@@ -33,5 +33,5 @@
   $ sleep 1
   $ kill -9 $!
   $ grep "init mirror repo" proxy.out
-  * DEBUG josh_proxy: init mirror repo: "*/shell.t/../../tmp/mirror" (glob)
+  * DEBUG josh_proxy::service: init mirror repo: "*/shell.t/../../tmp/mirror" (glob)
   $ rm -Rf ../../tmp
