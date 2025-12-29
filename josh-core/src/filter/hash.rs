@@ -71,8 +71,8 @@ mod tests {
         let filter2 = Filter::new().subdir("b");
         let filter3 = Filter::new().subdir("a"); // same as filter1
 
-        map.insert(filter1.clone(), "value1".to_string());
-        map.insert(filter2.clone(), "value2".to_string());
+        map.insert(filter1, "value1".to_string());
+        map.insert(filter2, "value2".to_string());
 
         assert_eq!(map.get(&filter1), Some(&"value1".to_string()));
         assert_eq!(map.get(&filter2), Some(&"value2".to_string()));

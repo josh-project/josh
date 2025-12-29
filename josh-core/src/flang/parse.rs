@@ -244,13 +244,13 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> JoshResult<Filter> {
             Ok(to_filter(Op::Squash(Some(ids))))
         }
         Rule::filter_meta => {
-            let mut inner = pair.into_inner();
+            let inner = pair.into_inner();
             let mut meta = std::collections::BTreeMap::new();
             let mut compose_item = None;
 
             // Collect all items - filter_path (keys) and string (values) come in pairs, then compose
             let mut items = Vec::new();
-            while let Some(item) = inner.next() {
+            for item in inner {
                 match item.as_rule() {
                     Rule::filter_path => items.push(item),
                     Rule::string => items.push(item),
@@ -391,10 +391,10 @@ fn unquote(s: &str) -> String {
 // Encode string as json if it contains any chars reserved
 // by the filter language
 pub fn quote_if(s: &str) -> String {
-    if let Ok(r) = Grammar::parse(Rule::filter_path, s) {
-        if r.as_str() == s {
-            return s.to_string();
-        }
+    if let Ok(r) = Grammar::parse(Rule::filter_path, s)
+        && r.as_str() == s
+    {
+        return s.to_string();
     }
     quote(s)
 }

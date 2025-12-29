@@ -21,10 +21,10 @@ pub use opt::invert;
 pub use parse::get_comments;
 pub use parse::parse;
 static WORKSPACES: LazyLock<std::sync::Mutex<std::collections::HashMap<git2::Oid, Filter>>> =
-    LazyLock::new(|| Default::default());
+    LazyLock::new(Default::default);
 static ANCESTORS: LazyLock<
     std::sync::Mutex<std::collections::HashMap<git2::Oid, std::collections::HashSet<git2::Oid>>>,
-> = LazyLock::new(|| Default::default());
+> = LazyLock::new(Default::default);
 
 /// Match-all regex pattern used as the default for Op::Message when no regex is specified.
 /// The pattern `(?s)^.*$` matches any string (including newlines) from start to end.
@@ -263,7 +263,7 @@ impl<'a> Clone for Rewrite<'a> {
     fn clone(&self) -> Self {
         Rewrite {
             tree: self.tree.clone(),
-            commit: self.commit.clone(),
+            commit: self.commit,
             author: self.author.clone(),
             committer: self.committer.clone(),
             message: self.message.clone(),
@@ -354,7 +354,7 @@ impl<'a> Rewrite<'a> {
         Rewrite {
             tree: self.tree,
             author: self.author,
-            commit: commit,
+            commit,
             committer: self.committer,
             message: self.message,
         }
@@ -1059,7 +1059,7 @@ pub fn apply_to_commit2(
                 }
             }
 
-            let commit_filter = get_workspace(transaction, &commit.tree()?, &ws_path);
+            let commit_filter = get_workspace(transaction, &commit.tree()?, ws_path);
 
             let parent_filters = commit
                 .parents()
@@ -1068,7 +1068,7 @@ pub fn apply_to_commit2(
                     let pcw = get_workspace(
                         transaction,
                         &parent.tree().unwrap_or_else(|_| tree::empty(repo)),
-                        &ws_path,
+                        ws_path,
                     );
                     Ok((parent, pcw))
                 })
@@ -1077,7 +1077,7 @@ pub fn apply_to_commit2(
             return per_rev_filter(transaction, commit, filter, commit_filter, parent_filters);
         }
         Op::Stored(s_path) => {
-            let commit_filter = get_stored(transaction, &commit.tree()?, &s_path);
+            let commit_filter = get_stored(transaction, &commit.tree()?, s_path);
 
             let parent_filters = commit
                 .parents()
@@ -1086,7 +1086,7 @@ pub fn apply_to_commit2(
                     let pcs = get_stored(
                         transaction,
                         &parent.tree().unwrap_or_else(|_| tree::empty(repo)),
-                        &s_path,
+                        s_path,
                     );
                     Ok((parent, pcs))
                 })
@@ -1117,12 +1117,12 @@ pub fn apply_to_commit2(
             Rewrite::from_commit(commit)?.with_tree(filtered_tree)
         }
         Op::Hook(hook) => {
-            let commit_filter = transaction.lookup_filter_hook(&hook, commit.id())?;
+            let commit_filter = transaction.lookup_filter_hook(hook, commit.id())?;
 
             let parent_filters = commit
                 .parents()
                 .map(|parent| {
-                    let pcw = transaction.lookup_filter_hook(&hook, parent.id())?;
+                    let pcw = transaction.lookup_filter_hook(hook, parent.id())?;
                     Ok((parent, pcw))
                 })
                 .collect::<JoshResult<Vec<_>>>()?;
@@ -1333,18 +1333,16 @@ pub fn apply<'a>(
 
             let message = if let Some(ref m) = x.message {
                 m.to_string()
+            } else if let Ok(c) = transaction.repo().find_commit(commit) {
+                c.message_raw().unwrap_or_default().to_string()
             } else {
-                if let Ok(c) = transaction.repo().find_commit(commit) {
-                    c.message_raw().unwrap_or_default().to_string()
-                } else {
-                    "".to_string()
-                }
+                "".to_string()
             };
 
             let tree = x.tree().clone();
             Ok(x.with_message(text::transform_with_template(
-                &r,
-                &m,
+                r,
+                m,
                 &message,
                 |key: &str| -> Option<String> {
                     match key {
@@ -1568,8 +1566,8 @@ pub fn apply<'a>(
                 .with_tree(tree::invert_paths(transaction, "", x.tree().clone())?))
         }
 
-        Op::Workspace(path) => apply(transaction, get_workspace(transaction, &x.tree(), &path), x),
-        Op::Stored(path) => apply(transaction, get_stored(transaction, &x.tree(), &path), x),
+        Op::Workspace(path) => apply(transaction, get_workspace(transaction, x.tree(), path), x),
+        Op::Stored(path) => apply(transaction, get_stored(transaction, x.tree(), path), x),
 
         Op::Compose(filters) => {
             let filtered: Vec<_> = filters
@@ -1588,7 +1586,7 @@ pub fn apply<'a>(
             for filter in filters {
                 result = apply(transaction, *filter, result)?;
             }
-            return Ok(result);
+            Ok(result)
         }
         Op::Hook(_) => Err(josh_error("not applicable to tree: hook")),
 
@@ -1768,10 +1766,10 @@ fn pre_process_tree<'a>(
     }
 
     let mut blob = String::new();
-    if let Ok(c) = get_comments(&ws_file) {
-        if !c.is_empty() {
-            blob = c;
-        }
+    if let Ok(c) = get_comments(&ws_file)
+        && !c.is_empty()
+    {
+        blob = c;
     }
     let blob = &format!("{}{}\n", &blob, pretty(parsed, 0));
 
@@ -1842,10 +1840,10 @@ fn compute_warnings2<'a>(
     let mut warnings = Vec::new();
 
     let x = apply(transaction, filter, Rewrite::from_tree(tree));
-    if let Ok(x) = x {
-        if x.tree().is_empty() {
-            warnings.push(format!("No match for \"{}\"", pretty(filter, 2)));
-        }
+    if let Ok(x) = x
+        && x.tree().is_empty()
+    {
+        warnings.push(format!("No match for \"{}\"", pretty(filter, 2)));
     }
     warnings
 }
@@ -2034,14 +2032,14 @@ fn per_rev_filter(
         tree_data = tree_data.with_tree(transaction.repo().find_tree(with_overlay)?);
     }
 
-    return Some(history::create_filtered_commit(
+    Some(history::create_filtered_commit(
         commit,
         filtered_parent_ids,
         tree_data,
         transaction,
         filter,
     ))
-    .transpose();
+    .transpose()
 }
 
 #[cfg(test)]

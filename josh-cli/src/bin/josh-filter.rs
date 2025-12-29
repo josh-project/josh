@@ -192,7 +192,7 @@ fn run_filter(args: Vec<String>) -> josh_core::JoshResult<i32> {
         josh_core::filter::parse(&specstr)?
     } else {
         // Try to parse as SHA and read filter from tree
-        let tree_oid = git2::Oid::from_str(&specstr.trim()).map_err(|_| {
+        let tree_oid = git2::Oid::from_str(specstr.trim()).map_err(|_| {
             josh_core::josh_error(&format!("Invalid filter spec or SHA: {}", specstr))
         })?;
         josh_core::filter::persist::from_tree(&repo, tree_oid)?
@@ -320,7 +320,7 @@ fn run_filter(args: Vec<String>) -> josh_core::JoshResult<i32> {
             mempack.dump(repo, &mut buf).unwrap();
             if buf.len() > 32 {
                 let mut w = odb.packwriter().unwrap();
-                w.write(&buf).unwrap();
+                w.write_all(&buf).unwrap();
                 w.commit().unwrap();
             }
         }
@@ -395,24 +395,19 @@ fn run_filter(args: Vec<String>) -> josh_core::JoshResult<i32> {
     let (mut updated_refs, errors) =
         josh_core::filter_refs(&transaction, filterobj, &refs, permissions_filter);
 
-    for error in errors {
+    if let Some(error) = errors.into_iter().next() {
         return Err(error.1);
     }
-    for i in 0..updated_refs.len() {
-        if updated_refs[i].0 == input_ref {
+    for item in &mut updated_refs {
+        if item.0 == input_ref {
             if reverse {
-                updated_refs[i].0 = "refs/JOSH_TMP".to_string();
+                item.0 = "refs/JOSH_TMP".to_string();
             } else {
-                updated_refs[i].0 = target.to_string();
+                item.0 = target.to_string();
             }
         } else {
-            updated_refs[i].0 =
-                updated_refs[i]
-                    .0
-                    .replacen("refs/heads/", "refs/heads/filtered/", 1);
-            updated_refs[i].0 = updated_refs[i]
-                .0
-                .replacen("refs/tags/", "refs/tags/filtered/", 1);
+            item.0 = item.0.replacen("refs/heads/", "refs/heads/filtered/", 1);
+            item.0 = item.0.replacen("refs/tags/", "refs/tags/filtered/", 1);
         }
     }
     josh_core::update_refs(&transaction, &mut updated_refs, "");

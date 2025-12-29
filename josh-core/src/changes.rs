@@ -42,7 +42,7 @@ pub fn baseref_and_options(refname: &str) -> JoshResult<(String, String, Vec<Str
 
 fn split_changes(
     repo: &git2::Repository,
-    changes: &mut Vec<(String, git2::Oid, String)>,
+    changes: &mut [(String, git2::Oid, String)],
     base: git2::Oid,
 ) -> JoshResult<()> {
     if base == git2::Oid::zero() {
@@ -153,6 +153,7 @@ pub fn changes_to_refs(
         .collect())
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn build_to_push(
     repo: &git2::Repository,
     changes: Option<Vec<Change>>,

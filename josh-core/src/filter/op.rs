@@ -8,13 +8,16 @@ pub enum LazyRef {
     Lazy(String),
 }
 
-impl LazyRef {
-    pub fn to_string(&self) -> String {
+impl std::fmt::Display for LazyRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            LazyRef::Resolved(id) => format!("{}", id),
-            LazyRef::Lazy(lazy) => format!("\"{}\"", lazy),
+            LazyRef::Resolved(id) => write!(f, "{}", id),
+            LazyRef::Lazy(lazy) => write!(f, "\"{}\"", lazy),
         }
     }
+}
+
+impl LazyRef {
     pub fn parse(s: &str) -> JoshResult<LazyRef> {
         let s = s.replace("'", "\"");
         if let Ok(serde_json::Value::String(s)) = serde_json::from_str(&s) {

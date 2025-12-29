@@ -85,11 +85,7 @@ fn try_parse_count_objects_output(value: &str) -> Option<CountObjectsOutput> {
     let map = value
         .lines()
         .filter(|line| !line.trim().is_empty())
-        .map(|value| {
-            value
-                .split_once(':')
-                .and_then(|(k, v)| Some((k.trim(), v.trim())))
-        })
+        .map(|value| value.split_once(':').map(|(k, v)| (k.trim(), v.trim())))
         .collect::<Option<std::collections::HashMap<_, _>>>()?;
 
     let try_get =

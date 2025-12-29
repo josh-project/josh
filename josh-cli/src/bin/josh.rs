@@ -384,14 +384,14 @@ fn apply_josh_filtering(
 
     // Apply the filter to all remote refs
     let (updated_refs, errors) = josh_core::filter_refs(
-        &transaction,
+        transaction,
         filterobj,
         &input_refs,
         josh_core::filter::Filter::new().empty(),
     );
 
     // Check for errors
-    for error in errors {
+    if let Some(error) = errors.into_iter().next() {
         return Err(anyhow::anyhow!("josh filter error: {}", error.1.0));
     }
 
@@ -433,7 +433,7 @@ fn to_absolute_remote_url(url: &str) -> anyhow::Result<String> {
         Ok(url.to_owned())
     } else {
         // For local paths, make them absolute
-        let path = std::fs::canonicalize(&url)
+        let path = std::fs::canonicalize(url)
             .with_context(|| format!("Failed to resolve path {}", url))?
             .display()
             .to_string();
@@ -508,7 +508,7 @@ fn handle_clone(
     };
 
     spawn_git_command(
-        &output_dir,
+        output_dir,
         &[
             "checkout",
             "-b",
@@ -521,7 +521,7 @@ fn handle_clone(
 
     // Set up upstream tracking for the branch
     spawn_git_command(
-        &output_dir,
+        output_dir,
         &[
             "branch",
             "--set-upstream-to",
@@ -634,7 +634,7 @@ fn handle_fetch_repo(
     // Parse the output to get the default branch name
     // Output format: "ref: refs/heads/main\t<commit-hash>"
     let output = std::process::Command::new("git")
-        .args(&["ls-remote", "--symref", &remote_url, "HEAD"])
+        .args(["ls-remote", "--symref", &remote_url, "HEAD"])
         .current_dir(repo_path)
         .output()?;
 
@@ -747,15 +747,15 @@ fn handle_push(args: &PushArgs, transaction: &josh_core::cache::Transaction) -> 
 
                 // Apply the filter to the josh remote ref to get the old filtered oid
                 let (filtered_oids, errors) = josh_core::filter_refs(
-                    &transaction,
+                    transaction,
                     filter,
                     &[(josh_remote_ref.clone(), josh_remote_oid)],
                     josh_core::filter::Filter::new().empty(),
                 );
 
                 // Check for errors
-                for error in errors {
-                    return Err(anyhow::anyhow!("josh filter error: {}", error.1.0).into());
+                if let Some(error) = errors.into_iter().next() {
+                    return Err(anyhow::anyhow!("josh filter error: {}", error.1.0));
                 }
 
                 if let Some((_, filtered_oid)) = filtered_oids.first() {
@@ -792,7 +792,7 @@ fn handle_push(args: &PushArgs, transaction: &josh_core::cache::Transaction) -> 
 
         // Use Josh API to unapply the filter
         let unfiltered_oid = josh_core::history::unapply_filter(
-            &transaction,
+            transaction,
             filter,
             original_target,
             old_filtered_oid,

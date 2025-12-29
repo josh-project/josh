@@ -66,7 +66,7 @@ where
     let stream_of_frames = BodyStream::new(req.into_body());
     let stream_of_bytes = stream_of_frames
         .try_filter_map(|frame| async move { Ok(frame.into_data().ok()) })
-        .map_err(|err| io::Error::new(io::ErrorKind::Other, err));
+        .map_err(|err| io::Error::other(err));
     let async_read = tokio_util::io::StreamReader::new(stream_of_bytes);
     let mut req_body = std::pin::pin!(async_read);
 
@@ -175,7 +175,7 @@ fn error_response() -> hyper::Response<Full<Bytes>> {
 fn convert_error_io_hyper<T>(res: Result<T, hyper::http::Error>) -> Result<T, std::io::Error> {
     match res {
         Ok(res) => Ok(res),
-        Err(_) => Err(std::io::Error::new(std::io::ErrorKind::Other, "Error!")),
+        Err(_) => Err(std::io::Error::other("Error!")),
     }
 }
 
