@@ -2337,7 +2337,7 @@ dependencies = [
  "git-version",
  "git2",
  "gix-config 0.47.1",
- "gix-hash 0.19.0",
+ "gix-hash 0.21.0",
  "gix-object 0.50.2",
  "gix-submodule",
  "glob",
