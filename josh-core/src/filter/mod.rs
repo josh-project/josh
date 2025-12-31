@@ -735,12 +735,14 @@ pub fn apply_to_commit2(
                 if *filter_tip == git2::Oid::zero() {
                     continue;
                 }
-                if !ok_or!(is_ancestor_of(repo, id, *filter_tip), {
+                if !transaction.repo().odb()?.exists(*filter_tip) {
                     return Err(josh_error(&format!(
                         "`:rev(...)` with nonexistent OID: {}",
                         filter_tip
                     )));
-                }) {
+                }
+
+                if !is_ancestor_of(transaction, id, *filter_tip)? {
                     continue;
                 }
                 // Remove this filter but preserve the others.
@@ -1863,11 +1865,17 @@ pub fn make_permissions_filter(filter: Filter, whitelist: Filter, blacklist: Fil
 /// Check if `commit` is an ancestor of `tip`.
 ///
 /// Creates a cache for a given `tip` so repeated queries with the same `tip` are more efficient.
-fn is_ancestor_of(
-    repo: &git2::Repository,
+pub fn is_ancestor_of(
+    transaction: &cache::Transaction,
     commit: git2::Oid,
     tip: git2::Oid,
-) -> Result<bool, git2::Error> {
+) -> JoshResult<bool> {
+    if let Ok(tip_sequence_number) = cache::compute_sequence_number(transaction, tip) {
+        if cache::compute_sequence_number(transaction, commit)? > tip_sequence_number {
+            return Ok(false);
+        }
+    }
+
     let mut ancestor_cache = ANCESTORS.lock().unwrap();
     let ancestors = match ancestor_cache.entry(tip) {
         std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
@@ -1878,7 +1886,7 @@ fn is_ancestor_of(
             let mut todo = vec![tip];
             let mut ancestors = std::collections::HashSet::from_iter(todo.iter().copied());
             while let Some(commit) = todo.pop() {
-                for parent in repo.find_commit(commit)?.parent_ids() {
+                for parent in transaction.repo().find_commit(commit)?.parent_ids() {
                     if ancestors.insert(parent) {
                         // Newly inserted! Also handle its parents.
                         todo.push(parent);
