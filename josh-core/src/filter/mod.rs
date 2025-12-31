@@ -1937,7 +1937,7 @@ fn per_rev_filter(
     let extra_parents = parent_filters
         .into_iter()
         .map(|(parent, pcw)| {
-            let f = opt::optimize(to_filter(Op::Subtract(commit_filter, pcw)));
+            let f = opt::optimize(to_filter(Op::Subtract(commit_filter.peel(), pcw.peel())));
             apply_to_commit2(f, &parent, transaction)
         })
         .collect::<JoshResult<Option<Vec<_>>>>()?;
@@ -1994,12 +1994,13 @@ fn per_rev_filter(
         tree_data = tree_data.with_tree(transaction.repo().find_tree(with_overlay)?);
     }
 
-    Some(history::create_filtered_commit(
+    return Some(history::create_filtered_commit_with_meta(
         commit,
         filtered_parent_ids,
         tree_data,
         transaction,
-        filter,
+        filter.peel(),
+        commit_filter.get_all_meta(),
     ))
     .transpose()
 }
