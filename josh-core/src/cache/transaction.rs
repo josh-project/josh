@@ -4,7 +4,7 @@ use super::stack::CacheStack;
 use std::collections::HashMap;
 use std::sync::{LazyLock, RwLock};
 
-pub(crate) const CACHE_VERSION: u64 = 24;
+pub(crate) const CACHE_VERSION: u64 = 25;
 
 pub trait CacheBackend: Send + Sync {
     fn read(
@@ -466,6 +466,9 @@ pub fn u128_from_oid(oid: git2::Oid) -> u128 {
     u128::from_be_bytes(n)
 }
 
+/// Computes the sequence number for each commit so that the sequence_number for any
+/// commit is always larger than the sequence_number of all of its parents.
+/// This means sorting by sequence number results in a topological order.
 pub fn compute_sequence_number(
     transaction: &Transaction,
     input: git2::Oid,
@@ -474,38 +477,55 @@ pub fn compute_sequence_number(
         return Ok(u128_from_oid(count));
     }
 
-    let commit = transaction.repo().find_commit(input)?;
-    if let Some(p) = commit.parent_ids().next()
-        && let Some(count) = transaction.get(crate::filter::sequence_number(), p)
-    {
-        let pc = u128_from_oid(count);
-        transaction.insert(
-            crate::filter::sequence_number(),
-            input,
-            oid_from_u128(pc + 1),
-            true,
-        );
-        return Ok(pc + 1);
+    if !transaction.repo().odb()?.exists(input) {
+        return Err(crate::josh_error(
+            "compute_sequence_number: input does not exist",
+        ));
     }
 
-    let mut walk = transaction.repo().revwalk()?;
-    walk.set_sorting(git2::Sort::REVERSE | git2::Sort::TOPOLOGICAL)?;
-    walk.push(input)?;
-
-    for c in walk {
-        let commit = transaction.repo().find_commit(c?)?;
-        let pc = if let Some(p) = commit.parent_ids().next() {
-            compute_sequence_number(transaction, p)?
+    let commit = transaction.repo().find_commit(input)?;
+    let mut this_sequence_number = 0;
+    let mut no_walk = true;
+    for parent in commit.parent_ids() {
+        if let Some(parent_sequence_number) =
+            transaction.get(crate::filter::sequence_number(), parent)
+        {
+            let parent_sequence_number = u128_from_oid(parent_sequence_number);
+            this_sequence_number = std::cmp::max(this_sequence_number, parent_sequence_number + 1);
         } else {
-            0
-        };
+            no_walk = false;
+            break;
+        }
+    }
 
+    if no_walk {
         transaction.insert(
             crate::filter::sequence_number(),
             commit.id(),
-            oid_from_u128(pc + 1),
+            oid_from_u128(this_sequence_number),
             true,
         );
+    } else {
+        log::info!("compute_sequence_number: new_walk for {:?}", input);
+        let mut walk = transaction.repo().revwalk()?;
+        walk.set_sorting(git2::Sort::REVERSE | git2::Sort::TOPOLOGICAL)?;
+        walk.push(input)?;
+
+        for c in walk {
+            let commit = transaction.repo().find_commit(c?)?;
+            let mut this_sequence_number = 0;
+            for parent in commit.parent_ids() {
+                let parent_sequence_number = compute_sequence_number(transaction, parent)?;
+                this_sequence_number =
+                    std::cmp::max(this_sequence_number, parent_sequence_number + 1);
+            }
+            transaction.insert(
+                crate::filter::sequence_number(),
+                commit.id(),
+                oid_from_u128(this_sequence_number),
+                true,
+            );
+        }
     }
     if let Some(count) = transaction.get(crate::filter::sequence_number(), input) {
         Ok(u128_from_oid(count))
