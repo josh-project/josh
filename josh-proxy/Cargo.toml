@@ -21,7 +21,7 @@ axum-extra = { version = "^0.12", features = ["typed-header", "erased-json"] }
 tower-http = { version = "0.6", features = ["trace", "fs"] }
 mime = "^0.3"
 
-hyper_cgi = { path = "../hyper_cgi" }
+axum-cgi = { path = "../axum-cgi" }
 indoc = "2.0.7"
 josh-core = {path = "../josh-core" }
 josh-templates = { path = "../josh-templates" }
@@ -51,6 +51,9 @@ opentelemetry = "0.31.0"
 opentelemetry-semantic-conventions = "0.31.0"
 opentelemetry-otlp = { version = "0.31.0", features = ["grpc-tonic", "trace"] }
 opentelemetry_sdk = { version = "0.31.0", features = ["rt-tokio"] }
+
+[dev-dependencies]
+anyhow.workspace = true
 
 [features]
 incubating = []

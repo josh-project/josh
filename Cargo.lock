@@ -176,6 +176,35 @@ dependencies = [
 ]
 
 [[package]]
+name = "axum-cgi"
+version = "22.10.25"
+dependencies = [
+ "axum",
+ "bytes",
+ "futures",
+ "http",
+ "http-body-util",
+ "tokio",
+ "tokio-util",
+]
+
+[[package]]
+name = "axum-cgi-server"
+version = "22.10.25"
+dependencies = [
+ "anyhow",
+ "axum",
+ "axum-cgi",
+ "axum-extra",
+ "clap",
+ "http",
+ "rand",
+ "reqwest",
+ "tokio",
+ "url",
+]
+
+[[package]]
 name = "axum-core"
 version = "0.5.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2148,24 +2177,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "hyper_cgi"
-version = "22.10.25"
-dependencies = [
- "base64",
- "bytes",
- "clap",
- "futures",
- "http-body",
- "http-body-util",
- "hyper",
- "hyper-reverse-proxy",
- "hyper-util",
- "rand",
- "tokio",
- "tokio-util",
-]
-
-[[package]]
 name = "icu_collections"
 version = "2.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2467,14 +2478,15 @@ dependencies = [
 name = "josh-proxy"
 version = "22.4.15"
 dependencies = [
+ "anyhow",
  "axum",
+ "axum-cgi",
  "axum-extra",
  "base64",
  "clap",
  "git2",
  "gix",
  "hex",
- "hyper_cgi",
  "indoc",
  "josh-core",
  "josh-graphql",
