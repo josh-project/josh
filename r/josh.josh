@@ -1,0 +1,23 @@
+build = :[
+    ::Dockerfile
+    ::docker/
+    ::lfs-test-server/
+]
+run = :[
+    :/r::run.sh
+    ::run-tests.sh
+    ::**/*.toml
+    ::*.toml
+    ::hyper-reverse-proxy/
+    ::hyper_cgi/
+    ::josh-cli/
+    ::josh-core/
+    ::josh-filter/
+    ::josh-graphql/
+    ::josh-proxy/
+    ::josh-rpc/
+    ::josh-ssh-dev-server/
+    ::josh-ssh-shell/
+    ::josh-templates/
+    ::josh-ui/
+]
