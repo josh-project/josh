@@ -1,28 +1,15 @@
-//! This module implements a do_cgi function, to run CGI scripts with hyper
+use axum::body::Body;
+use axum::response::{IntoResponse, Response};
 use bytes::Bytes;
 use futures::TryStreamExt;
-use http_body_util::{BodyStream, Full};
-use hyper::{Request, Response, body::Body};
+use http::{Request, StatusCode};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
+
 use std::io;
 use std::process::Stdio;
 use std::str::FromStr;
-use tokio::io::AsyncBufReadExt;
-use tokio::io::AsyncReadExt;
-use tokio::io::AsyncWriteExt;
-use tokio::io::BufReader;
-use tokio::process::Command;
 
-/// do_cgi is an async function that takes a hyper request and a CGI compatible
-/// command, and passes the request to be executed to the command.
-/// It then returns an hyper response and the stderr output of the command.
-pub async fn do_cgi<B, E>(
-    req: Request<B>,
-    cmd: Command,
-) -> (hyper::http::Response<Full<Bytes>>, Vec<u8>)
-where
-    B: hyper::body::Body<Error = E>,
-    E: std::error::Error + Sync + Send + 'static,
-{
+pub async fn do_cgi(req: Request<Body>, cmd: tokio::process::Command) -> (Response, Vec<u8>) {
     let mut cmd = cmd;
     setup_cmd(&mut cmd, &req);
 
@@ -35,6 +22,7 @@ where
             );
         }
     };
+
     let stdin = match child.stdin.take() {
         Some(i) => i,
         None => {
@@ -44,6 +32,7 @@ where
             );
         }
     };
+
     let stdout = match child.stdout.take() {
         Some(o) => o,
         None => {
@@ -53,6 +42,7 @@ where
             );
         }
     };
+
     let stderr = match child.stderr.take() {
         Some(e) => e,
         None => {
@@ -63,18 +53,16 @@ where
         }
     };
 
-    let stream_of_frames = BodyStream::new(req.into_body());
-    let stream_of_bytes = stream_of_frames
-        .try_filter_map(|frame| async move { Ok(frame.into_data().ok()) })
-        .map_err(|err| io::Error::other(err));
+    // Convert axum body to async read
+    let data_stream = req.into_body().into_data_stream();
+    let stream_of_bytes = TryStreamExt::map_err(data_stream, io::Error::other);
     let async_read = tokio_util::io::StreamReader::new(stream_of_bytes);
     let mut req_body = std::pin::pin!(async_read);
 
     let mut err_output = vec![];
-
     let mut stdout = BufReader::new(stdout);
-
     let mut data = vec![];
+
     let write_stdin = async {
         let mut stdin = stdin;
         let res = tokio::io::copy(&mut req_body, &mut stdin).await;
@@ -88,8 +76,9 @@ where
     };
 
     let read_stdout = async {
-        let mut response = Response::builder();
+        let mut response = http::Response::builder();
         let mut line = String::new();
+
         while stdout.read_line(&mut line).await.unwrap_or(0) > 0 {
             line = line
                 .trim_end_matches('\n')
@@ -100,20 +89,22 @@ where
             if l.len() < 2 {
                 break;
             }
+
             if l[0] == "Status" {
                 response = response.status(
-                    hyper::StatusCode::from_u16(
+                    StatusCode::from_u16(
                         u16::from_str(l[1].split(' ').next().unwrap_or("500")).unwrap_or(500),
                     )
-                    .unwrap_or(hyper::StatusCode::INTERNAL_SERVER_ERROR),
+                    .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
                 );
             } else {
                 response = response.header(l[0], l[1]);
             }
             line = String::new();
         }
+
         stdout.read_to_end(&mut data).await?;
-        convert_error_io_hyper(response.body(Full::new(Bytes::from(data))))
+        convert_error_io_http(response.body(Body::from(Bytes::from(data))))
     };
 
     let wait_process = async { child.wait().await };
@@ -121,17 +112,17 @@ where
     if let Ok((_, _, response, _)) =
         tokio::try_join!(write_stdin, read_stderr, read_stdout, wait_process)
     {
-        return (response, err_output);
+        return (response.into_response(), err_output);
     }
 
     (error_response(), err_output)
 }
 
-fn setup_cmd(cmd: &mut Command, req: &Request<impl Body>) {
+fn setup_cmd(cmd: &mut tokio::process::Command, req: &Request<Body>) {
     cmd.stdout(Stdio::piped());
     cmd.stderr(Stdio::piped());
     cmd.stdin(Stdio::piped());
-    cmd.env("SERVER_SOFTWARE", "hyper")
+    cmd.env("SERVER_SOFTWARE", "axum")
         .env("SERVER_NAME", "localhost") // TODO
         .env("GATEWAY_INTERFACE", "CGI/1.1")
         .env("SERVER_PROTOCOL", "HTTP/1.1") // TODO
@@ -145,34 +136,31 @@ fn setup_cmd(cmd: &mut Command, req: &Request<impl Body>) {
         .env(
             "CONTENT_TYPE",
             req.headers()
-                .get(hyper::header::CONTENT_TYPE)
+                .get(http::header::CONTENT_TYPE)
                 .and_then(|x| x.to_str().ok())
                 .unwrap_or_default(),
         )
         .env(
             "HTTP_CONTENT_ENCODING",
             req.headers()
-                .get(hyper::header::CONTENT_ENCODING)
+                .get(http::header::CONTENT_ENCODING)
                 .and_then(|x| x.to_str().ok())
                 .unwrap_or_default(),
         )
         .env(
             "CONTENT_LENGTH",
             req.headers()
-                .get(hyper::header::CONTENT_LENGTH)
+                .get(http::header::CONTENT_LENGTH)
                 .and_then(|x| x.to_str().ok())
                 .unwrap_or_default(),
         );
 }
 
-fn error_response() -> hyper::Response<Full<Bytes>> {
-    Response::builder()
-        .status(hyper::StatusCode::INTERNAL_SERVER_ERROR)
-        .body(Full::new(Bytes::new()))
-        .unwrap()
+fn error_response() -> Response {
+    (StatusCode::INTERNAL_SERVER_ERROR, Body::new(String::new())).into_response()
 }
 
-fn convert_error_io_hyper<T>(res: Result<T, hyper::http::Error>) -> Result<T, std::io::Error> {
+fn convert_error_io_http<T>(res: Result<T, http::Error>) -> Result<T, std::io::Error> {
     match res {
         Ok(res) => Ok(res),
         Err(_) => Err(std::io::Error::other("Error!")),
@@ -181,35 +169,36 @@ fn convert_error_io_hyper<T>(res: Result<T, hyper::http::Error>) -> Result<T, st
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use bytes::Bytes;
-    use http_body_util::{BodyExt, Full};
+    use http_body_util::BodyExt;
 
     #[tokio::test]
     async fn run_cmd() {
         let body_content = "a body";
 
-        let req = hyper::Request::builder()
+        let req = http::Request::builder()
             .method("GET")
             .uri("/some/file?query=aquery")
-            .version(hyper::Version::HTTP_11)
-            .header("Host", "localhost:8001")
-            .header("User-Agent", "test/2.25.1")
-            .header("Accept", "*/*")
-            .header("Accept-Encoding", "deflate, gzip, br")
-            .header("Accept-Language", "en-US, *;q=0.9")
-            .header("Pragma", "no-cache")
-            .body(Full::new(Bytes::from("\r\na body")))
+            .version(http::Version::HTTP_11)
+            .header(http::header::HOST, "localhost:8001")
+            .header(http::header::USER_AGENT, "test/2.25.1")
+            .header(http::header::ACCEPT, "*/*")
+            .header(http::header::ACCEPT_ENCODING, "deflate, gzip, br")
+            .header(http::header::ACCEPT_LANGUAGE, "en-US, *;q=0.9")
+            .header(http::header::PRAGMA, "no-cache")
+            .body(Body::from(Bytes::from("\r\na body")))
             .unwrap();
 
         let mut cmd = tokio::process::Command::new("cat");
         cmd.arg("-");
 
-        let (resp, stderr) = super::do_cgi(req, cmd).await;
+        let (resp, stderr) = do_cgi(req, cmd).await;
 
-        assert_eq!(resp.status(), hyper::StatusCode::OK);
+        assert_eq!(resp.status(), StatusCode::OK);
 
-        let resp_string = resp.into_body().collect().await.unwrap().to_bytes();
-        let resp_string = String::from_utf8_lossy(&resp_string);
+        let body_bytes = resp.into_body().collect().await.unwrap().to_bytes();
+        let resp_string = String::from_utf8_lossy(&body_bytes);
 
         assert_eq!("", std::str::from_utf8(&stderr).unwrap());
         assert_eq!(body_content, resp_string);

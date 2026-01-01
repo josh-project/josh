@@ -5,7 +5,7 @@ set -u
 export TESTTMP=${PWD}
 
 killall josh-proxy >/dev/null 2>&1 || true
-killall hyper-cgi-test-server >/dev/null 2>&1 || true
+killall axum-cgi-server >/dev/null 2>&1 || true
 killall josh-ssh-dev-server >/dev/null 2>&1 || true
 killall lfs-test-server >/dev/null 2>&1 || true
 
@@ -23,13 +23,13 @@ export RUST_LOG=trace
 export JOSH_SERVICE_NAME="josh-proxy-test"
 export JOSH_REPO_BLOCK="/blocked_repo.git"
 
-GIT_DIR="${TESTTMP}/remote/" GIT_PROJECT_ROOT="${TESTTMP}/remote/" GIT_HTTP_EXPORT_ALL=1 hyper-cgi-test-server \
+GIT_DIR="${TESTTMP}/remote/" GIT_PROJECT_ROOT="${TESTTMP}/remote/" GIT_HTTP_EXPORT_ALL=1 axum-cgi-server \
     --port=8001 \
     --dir="${TESTTMP}/remote/" \
     --cmd=git \
     --proxy "/real_repo.git/info/lfs=http://127.0.0.1:9999" \
     --args=http-backend \
-    > "${TESTTMP}/hyper-cgi-test-server.out" 2>&1 &
+    > "${TESTTMP}/axum-cgi-server.out" 2>&1 &
 echo $! > "${TESTTMP}/server_pid"
 
 # Copy static UI resources

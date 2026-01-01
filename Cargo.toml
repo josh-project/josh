@@ -1,7 +1,8 @@
 [workspace]
 resolver = "2"
 members = [
-    "hyper_cgi",
+    "axum-cgi",
+    "axum-cgi-server",
     "hyper-reverse-proxy",
     "josh-core",
     "josh-cli",
@@ -82,3 +83,14 @@ features = ["max_level_trace", "release_max_level_trace"]
 version = "4.5.53"
 features = ["derive", "help", "std", "usage"]
 default-features = false
+
+[workspace.dependencies.axum]
+version = "^0.8"
+features = ["macros"]
+
+[workspace.dependencies.tower]
+version = "0.5"
+features = ["util"]
+
+[workspace.dependencies.url]
+version = "^2"
