@@ -1261,18 +1261,14 @@ async fn call_service(
         cmd.env("JOSH_REPO_UPDATE", serde_json::to_string(&repo_update)?);
         cmd.env("PATH_INFO", parsed_url.pathinfo.clone());
 
-        let (response, stderr) = hyper_cgi::do_cgi(req, cmd).await;
+        let (axum_response, stderr) = axum_cgi::do_cgi(req, cmd).await;
         tracing::debug!(stderr = %String::from_utf8_lossy(&stderr), "http-backend exited");
-
-        // Convert hyper response to axum response
-        let (parts, body) = response.into_parts();
-        let axum_response = Response::from_parts(parts, Body::new(body));
 
         Ok::<_, JoshError>(axum_response)
     }
     .instrument(tracing::span!(
         tracing::Level::INFO,
-        "hyper_cgi / git-http-backend"
+        "axum-cgi / git-http-backend"
     ))
     .await?;
 
