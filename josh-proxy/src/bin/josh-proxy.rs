@@ -147,7 +147,7 @@ async fn run_proxy(args: josh_proxy::cli::Args) -> josh_core::JoshResult<i32> {
         std::env::current_dir()?.join(local)
     };
 
-    josh_proxy::service::create_repo(&local)?;
+    josh_proxy::service::create_repo(&local, None)?;
     josh_core::cache::sled_load(&local)?;
 
     let cache = Arc::new(CacheStack::default());

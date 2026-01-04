@@ -57,3 +57,8 @@ anyhow.workspace = true
 
 [features]
 incubating = []
+
+[[bench]]
+name = "push_upstream"
+path = "benches/push_upstream.rs"
+harness = false
