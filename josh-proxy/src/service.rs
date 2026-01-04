@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use std::sync::{Arc, RwLock};
 
 use crate::http::ProxyError;
@@ -12,6 +13,7 @@ use josh_core::{JoshError, JoshResult, josh_error};
 use josh_graphql::graphql;
 use josh_rpc::calls::RequestedCommand;
 
+use crate::serve::CapabilitiesDirection;
 use axum::Router;
 use axum::body::Body;
 use axum::extract::State;
@@ -55,6 +57,12 @@ pub enum UpstreamProtocol {
     Ssh,
 }
 
+#[derive(Clone, Debug)]
+pub struct GitCapabilities {
+    pub upload_pack: Vec<String>,
+    pub receive_pack: Vec<String>,
+}
+
 #[derive(Clone)]
 pub struct JoshProxyService {
     pub port: String,
@@ -70,6 +78,7 @@ pub struct JoshProxyService {
     pub fetch_permits: Arc<std::sync::Mutex<HashMap<String, Arc<tokio::sync::Semaphore>>>>,
     pub filter_permits: Arc<tokio::sync::Semaphore>,
     pub poll: Polls,
+    pub git_capabilities: GitCapabilities,
 }
 
 impl JoshProxyService {
@@ -348,7 +357,11 @@ async fn do_filter(
     temp_ns: Arc<crate::TmpGitNamespace>,
     filter: josh_core::filter::Filter,
     head_ref: &HeadRef,
-) -> JoshResult<()> {
+) -> JoshResult<(
+    josh_core::cache::Transaction,
+    Vec<(String, git2::Oid)>,
+    String,
+)> {
     let permit = service.filter_permits.acquire().await;
     let heads_map = service.heads_map.clone();
 
@@ -356,7 +369,7 @@ async fn do_filter(
     let head_ref = head_ref.clone();
     let service = service.clone();
 
-    tokio::task::spawn_blocking(move || {
+    let result = tokio::task::spawn_blocking(move || {
         let _span_guard = tracing_span.enter();
         tracing::trace!("in do_filter worker");
         let filter_spec = josh_core::filter::spec(filter);
@@ -432,25 +445,15 @@ async fn do_filter(
             .odb()?
             .add_disk_alternate(repo_path.join("mirror").join("objects").to_str().unwrap())?;
         let (updated_refs, _) = josh_core::filter_refs(&t2, filter, &refs_list);
-        let mut updated_refs = crate::refs_locking(updated_refs, &meta);
-        josh_core::housekeeping::namespace_refs(&mut updated_refs, temp_ns.name());
-        josh_core::update_refs(&t2, &mut updated_refs, &temp_ns.reference(&head_ref));
-        t2.repo()
-            .reference_symbolic(
-                &temp_ns.reference("HEAD"),
-                &temp_ns.reference(&head_ref),
-                true,
-                "",
-            )
-            .ok();
+        let updated_refs = crate::refs_locking(updated_refs, &meta);
 
-        Ok::<_, JoshError>(())
+        Ok::<_, JoshError>((t2, updated_refs, head_ref))
     })
     .await??;
 
     std::mem::drop(permit);
 
-    Ok(())
+    Ok(result)
 }
 
 async fn query_meta_repo(
@@ -1011,12 +1014,19 @@ async fn handle_serve_namespace(
         None => meta_config.config.filter,
     });
 
-    let temp_ns = match prepare_namespace(serv.clone(), &meta_config, filter, &head_ref).await {
-        Ok(ns) => ns,
-        Err(e) => {
-            return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response();
-        }
-    };
+    let (temp_ns, transaction, updated_refs, head_ref_str) =
+        match prepare_namespace(serv.clone(), &meta_config, filter, &head_ref).await {
+            Ok(ns) => ns,
+            Err(e) => {
+                return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response();
+            }
+        };
+
+    if let Err(e) =
+        write_namespace_refs(temp_ns.clone(), transaction, updated_refs, head_ref_str).await
+    {
+        return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response();
+    }
 
     let overlay_path = serv.repo_path.join("overlay");
     let repo_update = make_repo_update(
@@ -1051,6 +1061,13 @@ async fn auth_middleware(req: Request<Body>, next: Next) -> Result<Response<Body
     req.extensions_mut().insert(auth);
 
     Ok(next.run(req).await)
+}
+
+// TODO: replace with axum routing/extractors
+fn parse_info_refs_service(query: &str) -> Option<String> {
+    url::form_urlencoded::parse(query.as_bytes())
+        .find(|(key, _)| key == "service")
+        .map(|(_, value)| value.into_owned())
 }
 
 async fn call_service(
@@ -1234,7 +1251,100 @@ async fn call_service(
         return Ok(response);
     }
 
-    let temp_ns = prepare_namespace(serv.clone(), &meta, filter, &headref).await?;
+    let (temp_ns, transaction, updated_refs, head_ref_str) =
+        prepare_namespace(serv.clone(), &meta, filter, &headref).await?;
+
+    if parsed_url.pathinfo == "/info/refs"
+        && let Some(query) = req.uri().query()
+        && let Some(service) = parse_info_refs_service(&query)
+        && let Ok(direction) = CapabilitiesDirection::from_str(&service)
+    {
+        use crate::serve::encode_info_refs_response;
+
+        let capabilities = match direction {
+            CapabilitiesDirection::UploadPack => serv.git_capabilities.upload_pack.clone(),
+            CapabilitiesDirection::ReceivePack => serv.git_capabilities.receive_pack.clone(),
+        };
+
+        // Apply the same ref clearing logic as update_refs() does:
+        // If the HEAD ref doesn't exist in the filtered refs, clear all refs
+        //
+        // Note: At this point, updated_refs contains PRE-namespaced refnames.
+        // For SHA-based filters like @bb282e9..., the refs are:
+        //   - refname: "bb282e9..." (raw SHA)
+        //   - head_ref_str: "refs/heads/_bb282e9..." (synthetic ref before namespacing)
+        //
+        // The namespace_refs() function will transform these refs:
+        //   - If refname starts with "refs/" or is "HEAD": prepend namespace
+        //   - Otherwise: format as "refs/namespaces/<ns>/refs/heads/_{refname}"
+        //
+        // So we need to check if head_ref_str matches either:
+        //   1. The refname directly (for refs already starting with "refs/")
+        //   2. The synthetic form "refs/heads/_{refname}" (for raw SHAs)
+        let mut head_oid = git2::Oid::zero();
+        for (refname, oid) in updated_refs.iter() {
+            let matches = if refname.starts_with("refs/") || refname == "HEAD" {
+                // Ref already has proper form, check directly
+                refname == &head_ref_str
+            } else {
+                // Raw SHA or similar - check against synthetic ref form
+                head_ref_str == format!("refs/heads/_{}", refname)
+            };
+
+            if matches {
+                head_oid = *oid;
+                break;
+            }
+        }
+
+        let refs_for_encoding = if !head_ref_str.is_empty() && head_oid == git2::Oid::zero() {
+            // HEAD doesn't exist in filtered view - return empty refs
+            Vec::new()
+        } else {
+            // Convert refs from (refname, oid) to (oid, refname) format
+            // Apply the same transformation as namespace_refs() but without the namespace prefix:
+            //   - If refname starts with "refs/" or is "HEAD": keep as-is
+            //   - Otherwise: transform to "refs/heads/_{refname}"
+            let mut refs: Vec<(String, String)> = updated_refs
+                .into_iter()
+                .map(|(refname, oid)| {
+                    let transformed_refname = if refname.starts_with("refs/") || refname == "HEAD" {
+                        refname
+                    } else {
+                        format!("refs/heads/_{}", refname)
+                    };
+                    (oid.to_string(), transformed_refname)
+                })
+                .collect();
+
+            // Add HEAD ref if it exists and is not already in the list
+            // (matches git http-backend behavior)
+            if !head_ref_str.is_empty() && head_oid != git2::Oid::zero() {
+                let head_exists = refs.iter().any(|(_, refname)| refname == "HEAD");
+                if !head_exists {
+                    refs.push((head_oid.to_string(), "HEAD".to_string()));
+                }
+            }
+
+            refs
+        };
+
+        let encoded = encode_info_refs_response(
+            &refs_for_encoding,
+            &capabilities,
+            direction,
+            Some(&head_ref_str),
+        )?;
+
+        return Ok(Response::builder()
+            .status(StatusCode::OK)
+            .header(header::CONTENT_TYPE, direction.content_type())
+            .body(Body::from(encoded))
+            .map_err(|e| ProxyError(josh_error(&e.to_string())))?);
+    }
+
+    write_namespace_refs(temp_ns.clone(), transaction, updated_refs, head_ref_str).await?;
+
     let overlay_path = serv.repo_path.join("overlay");
 
     let repo_update = make_repo_update(
@@ -1342,12 +1452,46 @@ async fn serve_render_template(
     })
 }
 
+async fn write_namespace_refs(
+    temp_ns: Arc<crate::TmpGitNamespace>,
+    transaction: josh_core::cache::Transaction,
+    mut updated_refs: Vec<(String, git2::Oid)>,
+    head_ref: String,
+) -> JoshResult<()> {
+    tokio::task::spawn_blocking(move || -> JoshResult<()> {
+        josh_core::housekeeping::namespace_refs(&mut updated_refs, temp_ns.name());
+        josh_core::update_refs(
+            &transaction,
+            updated_refs.clone(),
+            &temp_ns.reference(&head_ref),
+        );
+
+        transaction
+            .repo()
+            .reference_symbolic(
+                &temp_ns.reference("HEAD"),
+                &temp_ns.reference(&head_ref),
+                true,
+                "",
+            )
+            .ok();
+
+        Ok(())
+    })
+    .await?
+}
+
 async fn prepare_namespace(
     serv: Arc<JoshProxyService>,
     meta: &MetaConfig,
     filter: josh_core::filter::Filter,
     head_ref: &HeadRef,
-) -> JoshResult<Arc<crate::TmpGitNamespace>> {
+) -> JoshResult<(
+    Arc<crate::TmpGitNamespace>,
+    josh_core::cache::Transaction,
+    Vec<(String, git2::Oid)>,
+    String,
+)> {
     let temp_ns = Arc::new(crate::TmpGitNamespace::new(
         &serv.repo_path.join("overlay"),
         tracing::Span::current(),
@@ -1355,7 +1499,7 @@ async fn prepare_namespace(
 
     let serv = serv.clone();
 
-    do_filter(
+    let (transaction, updated_refs, head_ref) = do_filter(
         serv.repo_path.clone(),
         serv.clone(),
         meta.clone(),
@@ -1365,7 +1509,7 @@ async fn prepare_namespace(
     )
     .await?;
 
-    Ok(temp_ns)
+    Ok((temp_ns, transaction, updated_refs, head_ref))
 }
 
 async fn handle_graphql(
