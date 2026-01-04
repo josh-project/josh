@@ -215,7 +215,10 @@ fn create_repo_base(path: &PathBuf) -> JoshResult<josh_core::shell::Shell> {
     Ok(shell)
 }
 
-pub fn create_repo(path: &std::path::Path) -> JoshResult<()> {
+pub fn create_repo(
+    path: &std::path::Path,
+    josh_executable: Option<&std::path::Path>,
+) -> JoshResult<()> {
     let mirror_path = path.join("mirror");
     tracing::debug!("init mirror repo: {:?}", mirror_path);
     create_repo_base(&mirror_path)?;
@@ -225,7 +228,9 @@ pub fn create_repo(path: &std::path::Path) -> JoshResult<()> {
     let overlay_shell = create_repo_base(&overlay_path)?;
     overlay_shell.command(&["mkdir", "hooks"]);
 
-    let josh_executable = std::env::current_exe().expect("can't find path to exe");
+    let josh_executable = josh_executable
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| std::env::current_exe().expect("can't find path to exe"));
     std::os::unix::fs::symlink(
         josh_executable.clone(),
         overlay_path.join("hooks").join("update"),
