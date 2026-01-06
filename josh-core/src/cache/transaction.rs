@@ -400,9 +400,7 @@ impl Transaction {
         } else {
             let mut t2 = self.t2.borrow_mut();
             t2.misses += 1;
-            if !t2.missing.contains(&(filter, from)) {
-                t2.missing.insert(0, (filter, from));
-            }
+            t2.missing.push((filter, from));
             None
         }
     }
