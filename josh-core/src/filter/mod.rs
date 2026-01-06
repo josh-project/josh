@@ -566,7 +566,7 @@ pub fn apply_to_commit(
 
         let missing = transaction.get_missing();
 
-        for (f, i) in missing {
+        for (f, i) in missing.into_iter().rev() {
             history::walk2(f, i, transaction)?;
         }
     }
