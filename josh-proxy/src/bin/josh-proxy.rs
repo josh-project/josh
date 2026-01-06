@@ -1,13 +1,14 @@
 use josh_core::cache::CacheStack;
 use josh_core::josh_error;
 use josh_proxy::FetchError;
-use josh_proxy::service::{JoshProxyService, make_upstream};
+use josh_proxy::service::{GitCapabilities, JoshProxyService, make_upstream};
 use josh_proxy::upstream::{RemoteAuth, RepoUpdate};
 
 use clap::Parser;
 use tokio::sync::broadcast;
 use tracing_futures::Instrument;
 
+use josh_proxy::serve::{CapabilitiesDirection, git_list_capabilities};
 use std::collections::HashMap;
 use std::io;
 use std::net::SocketAddr;
@@ -152,6 +153,16 @@ async fn run_proxy(args: josh_proxy::cli::Args) -> josh_core::JoshResult<i32> {
 
     let cache = Arc::new(CacheStack::default());
 
+    let upload_pack_caps =
+        git_list_capabilities(&local.join("mirror"), CapabilitiesDirection::UploadPack)?;
+    let receive_pack_caps =
+        git_list_capabilities(&local.join("mirror"), CapabilitiesDirection::ReceivePack)?;
+
+    let git_capabilities = GitCapabilities {
+        upload_pack: upload_pack_caps,
+        receive_pack: receive_pack_caps,
+    };
+
     let proxy_service = Arc::new(JoshProxyService {
         port: args.port.to_string(),
         repo_path: local.to_owned(),
@@ -166,6 +177,7 @@ async fn run_proxy(args: josh_proxy::cli::Args) -> josh_core::JoshResult<i32> {
         poll: Default::default(),
         fetch_permits: Default::default(),
         filter_permits: Arc::new(tokio::sync::Semaphore::new(10)),
+        git_capabilities,
     });
 
     let ps = proxy_service.clone();
@@ -310,7 +322,10 @@ fn main() {
         .unwrap()
         .block_on(async {
             let tracer_provider = init_trace();
-            let exit_code = run_proxy(args).await.unwrap_or(1);
+            let exit_code = run_proxy(args)
+                .await
+                .inspect_err(|e| eprintln!("{}", e))
+                .unwrap_or(1);
 
             if let Some(tracer_provider) = tracer_provider {
                 tracer_provider

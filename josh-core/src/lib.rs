@@ -264,7 +264,7 @@ pub fn filter_refs(
 
 pub fn update_refs(
     transaction: &cache::Transaction,
-    updated: &mut Vec<(String, git2::Oid)>,
+    mut updated: Vec<(String, git2::Oid)>,
     headref: &str,
 ) {
     let mut head_oid = git2::Oid::zero();

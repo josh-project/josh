@@ -3,6 +3,7 @@ pub mod cli;
 pub mod graphql;
 pub mod housekeeping;
 pub mod http;
+pub mod serve;
 pub mod service;
 pub mod trace;
 pub mod upstream;

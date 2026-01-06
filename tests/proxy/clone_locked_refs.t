@@ -200,7 +200,6 @@
       |   `-- pack
       `-- refs
           |-- heads
-          |-- namespaces
           `-- tags
   
-  53 directories, 40 files
+  52 directories, 40 files

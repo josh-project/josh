@@ -1,5 +1,8 @@
 use josh_core::cache::CacheStack;
-use josh_proxy::service::{JoshProxyService, JoshProxyUpstream, make_service_router};
+use josh_proxy::serve::{CapabilitiesDirection, git_list_capabilities};
+use josh_proxy::service::{
+    GitCapabilities, JoshProxyService, JoshProxyUpstream, make_service_router,
+};
 
 use axum::{Router, extract::Request, response::Response, routing::any};
 use clap::Parser;
@@ -84,6 +87,22 @@ async fn main() -> anyhow::Result<()> {
 
     let proxy_task = {
         let cache = Arc::new(CacheStack::default());
+
+        let upload_pack_caps =
+            git_list_capabilities(&repo_path.join("mirror"), CapabilitiesDirection::UploadPack)
+                .expect("failed to read capabilities");
+
+        let receive_pack_caps = git_list_capabilities(
+            &repo_path.join("mirror"),
+            CapabilitiesDirection::ReceivePack,
+        )
+        .expect("failed to read capabilities");
+
+        let git_capabilities = GitCapabilities {
+            upload_pack: upload_pack_caps,
+            receive_pack: receive_pack_caps,
+        };
+
         let proxy_service = Arc::new(JoshProxyService {
             port: "8000".to_string(),
             repo_path: repo_path.clone(),
@@ -98,6 +117,7 @@ async fn main() -> anyhow::Result<()> {
             poll: Default::default(),
             fetch_permits: Default::default(),
             filter_permits: Arc::new(tokio::sync::Semaphore::new(10)),
+            git_capabilities,
         });
 
         let app = make_service_router(proxy_service);

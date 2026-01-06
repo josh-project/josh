@@ -44,6 +44,8 @@ josh-rpc = { path = "../josh-rpc" }
 tokio-util = { workspace = true }
 tempfile = { workspace = true }
 gix = { workspace = true }
+gix-packetline = { version = "^0", features = ["blocking-io"] }
+gix-transport = "^0"
 juniper = { workspace = true }
 git2 = { workspace = true }
 
@@ -61,4 +63,9 @@ incubating = []
 [[bench]]
 name = "push_upstream"
 path = "benches/push_upstream.rs"
+harness = false
+
+[[bench]]
+name = "list_refs"
+path = "benches/list_refs.rs"
 harness = false
