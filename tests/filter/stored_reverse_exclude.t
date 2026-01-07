@@ -58,7 +58,6 @@
 
   $ josh-filter -s :+st/config --reverse master --update refs/heads/filtered
   6182f2f07949f7ccfd2e1ac0dfbd65b29f8e3d84
-  9a6588a66e758aafb42bb1041db0048439eb4c06
   [2] :+st/config
   [2] :[
       a = :/sub1:exclude[::file1]

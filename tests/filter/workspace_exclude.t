@@ -57,13 +57,20 @@
 
   $ josh-filter -s :workspace=ws --reverse master --update refs/heads/filtered
   fdfbfdcdc052aeb50f5033ec3d7f0cee3340d253
-  d64cfa7819992ce9bfe0ee335b802928fb5df337
   [2] :[
       a = :/sub1:exclude[::file1]
       ::sub2/subsub/
   ]
   [2] :workspace=ws
   [3] sequence_number
+  $ josh-filter -s :workspace=ws --reverse --check-roundtrip master --update refs/heads/filtered
+  Roundtrip failed
+  [2] :[
+      a = :/sub1:exclude[::file1]
+      ::sub2/subsub/
+  ]
+  [3] :workspace=ws
+  [4] sequence_number
   $ git checkout master
   Switched to branch 'master'
 

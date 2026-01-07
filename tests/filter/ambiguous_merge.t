@@ -89,7 +89,6 @@
 
   $ josh-filter -s ::sub1/ --reverse master --update refs/heads/hidden_master
   8cbae19889134bd4ec430c0b79c61ee8547e0d1c
-  586737e31b886be151bc20c30f0a0305e3c6568d
   [3] :prefix=sub1
   [4] :/sub1
   [7] sequence_number
