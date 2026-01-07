@@ -35,7 +35,6 @@
 
   $ josh-filter -s :exclude[::sub2/] --reverse master --update refs/heads/hidden
   98fd34a66dabd3178d921b29e865e465042736bb
-  bb282e9cdc1b972fffd08fd21eead43bc0c83cb8
   [1] :exclude[::sub2/]
   [2] sequence_number
 
@@ -72,7 +71,6 @@
 
   $ josh-filter -s :exclude[::sub2/] --reverse master --update refs/heads/hidden
   d81806911addec824f6bd9c1d9386e3290237bf0
-  a896e1f75c9507a2faf7ec4f9be7d8e194075e1d
   [2] :exclude[::sub2/]
   [3] sequence_number
   $ git log --graph --pretty=%s refs/heads/master

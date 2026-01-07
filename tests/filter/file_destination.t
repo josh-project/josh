@@ -114,7 +114,6 @@ Test File filter with destination path --reverse
 
   $ josh-filter -s ::renamed.txt=src/subdir/original.txt --reverse master --update refs/josh/master
   c122559c82871c0c453012051d4b067158a9a8cb
-  febbdb79c867625e8ce536e06f80e88a9827edf9
   [1] ::renamed.txt=src/subdir/original.txt
   [1] sequence_number
 
@@ -159,7 +158,6 @@ Test File filter backward compatibility --reverse
 
   $ josh-filter -s ::src/subdir/file.txt --reverse master --update refs/josh/master
   49d6b8e7dbefec1836449d7a62f9f906e00521e7
-  0bbd185c6b7bc651e9557162c087cafc0dee8131
   [1] ::src/subdir/file.txt
   [1] sequence_number
 

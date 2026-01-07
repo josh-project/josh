@@ -76,7 +76,6 @@
 
   $ josh-filter :+st/config master --update refs/heads/st --reverse
   3cbdd590e0f190a08fc64b34386a3dcc698e177f
-  99b3384cb31ab9d642bd2e5e4050d57f97fe2862
 
   $ git checkout master
   Switched to branch 'master'

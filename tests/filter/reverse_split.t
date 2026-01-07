@@ -41,7 +41,6 @@
 
   $ josh-filter -s $FILTER --reverse master --update refs/heads/filtered
   4031be37b86723bab26952dcd055a4d7294aa827
-  41f610621233f1bf3c544178d280c27d9aecc231
   [2] :[
       a = ::*.a
       :prefix=rest

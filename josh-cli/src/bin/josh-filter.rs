@@ -115,6 +115,11 @@ fn make_app() -> clap::Command {
             ),
         )
         .arg(
+            clap::Arg::new("check-roundtrip").action(clap::ArgAction::SetTrue).long("check-roundtrip").help(
+                "If --reverse is also set, check if applying the filter to the result of the reverse filter gives back the input",
+            ),
+        )
+        .arg(
             clap::Arg::new("whitelist")
                 .long("whitelist")
                 .short('w'),
@@ -412,7 +417,7 @@ fn run_filter(args: Vec<String>) -> josh_core::JoshResult<i32> {
         let old = repo.revparse_single("JOSH_TMP").unwrap().id();
         let unfiltered_old = repo.revparse_single(&input_ref).unwrap().id();
 
-        match josh_core::history::unapply_filter(
+        let ret = match josh_core::history::unapply_filter(
             &transaction,
             filterobj,
             unfiltered_old,
@@ -424,12 +429,26 @@ fn run_filter(args: Vec<String>) -> josh_core::JoshResult<i32> {
         ) {
             Ok(rewritten) => {
                 repo.reference(&input_ref, rewritten, true, "unapply_filter")?;
-                println!("{}", rewritten);
+                rewritten
             }
             Err(JoshError(msg)) => {
                 eprintln!("{}", msg);
                 return Ok(1);
             }
+        };
+
+        let roundtripped = if args.get_flag("check-roundtrip") {
+            josh_core::filter_commit(&transaction, filterobj, ret)?
+        } else {
+            new
+        };
+
+        if roundtripped != new {
+            println!("Roundtrip failed");
+            return Ok(1);
+        } else {
+            println!("{}", ret);
+            return Ok(0);
         }
     }
 
