@@ -118,13 +118,14 @@ async fn fetch_needed(
 #[tracing::instrument(skip(service))]
 pub async fn fetch_upstream(
     service: Arc<JoshProxyService>,
-    upstream_repo: String,
+    upstream_repo: &str,
     remote_auth: &RemoteAuth,
     remote_url: String,
     head_ref: Option<&str>,
     head_ref_resolved: Option<&str>,
     force: bool,
 ) -> Result<(), FetchError> {
+    let upstream_repo = upstream_repo.to_owned();
     let refs_to_fetch = match head_ref {
         Some(head_ref) if head_ref != "HEAD" && !head_ref.starts_with("refs/heads/") => {
             vec![
