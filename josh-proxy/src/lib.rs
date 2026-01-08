@@ -22,40 +22,6 @@ pub struct Ref {
     pub target: josh_core::Oid,
 }
 
-type RefsLock = std::collections::HashMap<String, josh_core::Oid>;
-
-#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, Default)]
-pub struct RepoConfig {
-    pub repo: String,
-
-    #[serde(default)]
-    pub filter: josh_core::filter::Filter,
-
-    #[serde(default)]
-    pub lock_refs: bool,
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct MetaConfig {
-    pub config: RepoConfig,
-    pub refs_lock: RefsLock,
-}
-
-pub fn refs_locking(refs: Vec<(String, git2::Oid)>, meta: &MetaConfig) -> Vec<(String, git2::Oid)> {
-    if !meta.config.lock_refs {
-        return refs;
-    }
-    let mut output = vec![];
-
-    for (n, _) in refs.into_iter() {
-        if let Some(lid) = meta.refs_lock.get(&n) {
-            output.push((n, (*lid).into()));
-        }
-    }
-
-    output
-}
-
 fn make_ssh_command() -> String {
     let ssh_options = [
         "LogLevel=ERROR",

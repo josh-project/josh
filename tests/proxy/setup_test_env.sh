@@ -16,12 +16,9 @@ git init -q --bare "${TESTTMP}/remote/blocked_repo.git/" 1> /dev/null
 git config -f "${TESTTMP}/remote/blocked_repo.git/config" http.receivepack true
 git init -q --bare "${TESTTMP}/remote/real/repo2.git/" 1> /dev/null
 git config -f "${TESTTMP}/remote/real/repo2.git/config" http.receivepack true
-git init -q --bare "${TESTTMP}/remote/meta_repo.git/" 1> /dev/null
-git config -f "${TESTTMP}/remote/meta_repo.git/config" http.receivepack true
 
 export RUST_LOG=trace
 export JOSH_SERVICE_NAME="josh-proxy-test"
-export JOSH_REPO_BLOCK="/blocked_repo.git"
 
 GIT_DIR="${TESTTMP}/remote/" GIT_PROJECT_ROOT="${TESTTMP}/remote/" GIT_HTTP_EXPORT_ALL=1 axum-cgi-server \
     --port=8001 \

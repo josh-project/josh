@@ -95,7 +95,7 @@ async fn run_polling(serv: Arc<JoshProxyService>) -> josh_core::JoshResult<()> {
             let remote_auth = RemoteAuth::Http { auth };
             let fetch_result = josh_proxy::upstream::fetch_upstream(
                 serv.clone(),
-                upstream_repo.clone(),
+                &upstream_repo,
                 &remote_auth,
                 url.clone(),
                 None,
