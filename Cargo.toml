@@ -67,7 +67,7 @@ features = [
 ]
 
 [workspace.dependencies.tokio-util]
-version = "0.7.17"
+version = "0.7.18"
 features = ["compat"]
 
 [workspace.dependencies.reqwest]
