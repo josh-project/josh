@@ -17,7 +17,7 @@
     "react": "^19.2.0",
     "react-dom": "^19.2.3",
     "react-icons": "^5.5.0",
-    "react-router-dom": "^7.11.0",
+    "react-router-dom": "^7.12.0",
     "sass": "^1.97.1",
     "ts-pattern": "^5.8.0",
     "tsoption": "^0.7.0",
