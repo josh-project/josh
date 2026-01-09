@@ -1,6 +1,11 @@
 [book]
 authors = ["Christian Schilling", "Louis-Marie Givel"]
 language = "en"
-multilingual = false
 src = "src"
 title = "Just One Single History"
+
+[preprocessor.mermaid]
+command = "mdbook-mermaid"
+
+[output.html]
+additional-js = ["mermaid.min.js", "mermaid-init.js"]
