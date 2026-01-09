@@ -16,23 +16,43 @@ updates:
   schedule:
     interval: weekly
   open-pull-requests-limit: 10
+  groups:
+    rust-deps:
+      patterns:
+        - "*"
 - package-ecosystem: npm
   directory: "josh-ui"
   schedule:
     interval: weekly
+  groups:
+    npm-deps:
+      patterns:
+        - "*"
 - package-ecosystem: gomod
   directories:
     - "josh-ssh-dev-server"
     - "lfs-test-server"
   schedule:
     interval: weekly
+  groups:
+    go-deps:
+      patterns:
+        - "*"
 - package-ecosystem: docker
   directories:
     - "/"
     - "lfs-test-server"
   schedule:
     interval: weekly
+  groups:
+    docker-deps:
+      patterns:
+        - "*"
 - package-ecosystem: github-actions
   directory: "/"
   schedule:
     interval: weekly
+  groups:
+    actions-deps:
+      patterns:
+        - "*"
