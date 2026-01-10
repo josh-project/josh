@@ -11,7 +11,7 @@ version = "22.4.15"
 
 [dependencies]
 sha2 = "0.10.8"
-lru = "0.16.2"
+lru = "0.16.3"
 hex = { workspace = true }
 base64 = { workspace = true }
 clap = { workspace = true }
@@ -38,7 +38,7 @@ tracing = { workspace = true }
 tracing-futures = "0.2.5"
 tracing-opentelemetry = "0.32.0"
 tracing-subscriber = { workspace = true }
-url = "2.5.4"
+url = "2.5.8"
 uuid = { version = "1.19.0", features = ["v4"] }
 josh-rpc = { path = "../josh-rpc" }
 tokio-util = { workspace = true }

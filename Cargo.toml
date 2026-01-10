@@ -27,18 +27,18 @@ env_logger = "0.11.5"
 log = "0.4.29"
 futures = "0.3.31"
 gix = { version = "0.77.0", default-features = false }
-gix-hash = "0.19.0"
-gix-object = "0.50.2"
-gix-config = "0.47.1"
-gix-submodule = "0.21.0"
+gix-hash = "0.20.1"
+gix-object = "0.54.0"
+gix-config = "0.50.0"
+gix-submodule = "0.24.0"
 hyper-reverse-proxy = { path = "hyper-reverse-proxy", version = "0.0.1" }
-libc = "0.2.178"
+libc = "0.2.180"
 regex = "1.12.2"
 rs_tracing = { version = "1.1.0", features = ["rs_tracing"] }
 serde = { version = "1.0.228", features = ["std", "derive"] }
-serde_json = "1.0.148"
+serde_json = "1.0.149"
 serde_yaml = "0.9.34"
-toml = "0.9.10"
+toml = "0.9.11"
 tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
 tempfile = "3.24.0"
 hex = "0.4.3"
@@ -54,7 +54,7 @@ default-features = false
 features = ["expose-test-schema"]
 
 [workspace.dependencies.tokio]
-version = "1.48.0"
+version = "1.49.0"
 features = [
     "fs",
     "rt-multi-thread",
@@ -67,11 +67,11 @@ features = [
 ]
 
 [workspace.dependencies.tokio-util]
-version = "0.7.17"
+version = "0.7.18"
 features = ["compat"]
 
 [workspace.dependencies.reqwest]
-version = "0.12.28"
+version = "0.13.1"
 default-features = false
 features = ["blocking", "default-tls", "json"]
 
@@ -80,7 +80,7 @@ version = "0.1.44"
 features = ["max_level_trace", "release_max_level_trace"]
 
 [workspace.dependencies.clap]
-version = "4.5.53"
+version = "4.5.54"
 features = ["derive", "help", "std", "usage"]
 default-features = false
 

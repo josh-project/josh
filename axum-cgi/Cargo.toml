@@ -10,5 +10,5 @@ futures = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true, features = ["io"] }
 axum = { workspace = true }
-http = "1.2.0"
+http = "1.4.0"
 http-body-util = "0.1.0"
