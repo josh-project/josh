@@ -265,39 +265,70 @@ pub fn rewrite_commit(
     rewrite_data: filter::Rewrite,
     unsign: bool,
 ) -> JoshResult<git2::Oid> {
+    use gix_object::bstr::BString;
+
     let odb = repo.odb()?;
     let odb_commit = odb.read(base.id())?;
-    assert!(odb_commit.kind() == git2::ObjectType::Commit);
+    assert_eq!(odb_commit.kind(), git2::ObjectType::Commit);
 
-    // gix_object uses byte strings for Oids, but in hex representation, not raw bytes. Its `Format` implementation
-    // writes out hex-encoded bytes. Because CommitRef's reference lifetimes we have to this, before creating CommitRef
-    let tree_id = format!("{}", rewrite_data.tree().id());
+    // gix_object::CommitRef uses byte strings for Oids, but in hex representation, not raw bytes.
+    // Its `Format` implementation writes out hex-encoded bytes. Because of CommitRef's reference
+    // lifetimes we have to this, before creating CommitRef
+    let tree_id = BString::from(rewrite_data.tree().id().to_string());
     let parent_ids = parents
         .iter()
-        .map(|x| format!("{}", x.id()))
+        .map(|p| BString::from(p.id().to_string()))
         .collect::<Vec<_>>();
 
-    let mut commit = gix_object::CommitRef::from_bytes(odb_commit.data())?;
+    let mut author = None;
+    let mut committer = None;
 
-    commit.tree = tree_id.as_bytes().into();
+    let mut commit = gix_object::CommitRef::from_bytes(odb_commit.data())?;
+    commit.tree = tree_id.as_ref();
 
     commit.parents.clear();
     commit
         .parents
-        .extend(parent_ids.iter().map(|x| x.as_bytes().into()));
+        .extend(parent_ids.iter().map(BString::as_ref));
 
-    if let Some(ref msg) = rewrite_data.message {
-        commit.message = msg.as_bytes().into();
+    let rewrite_signature = |name: String, email: String, time: &str| -> JoshResult<BString> {
+        let name = BString::from(name);
+        let email = BString::from(email);
+
+        let signature = gix_actor::SignatureRef {
+            name: name.as_ref(),
+            email: email.as_ref(),
+            time,
+        };
+
+        let mut buffer = Vec::new();
+        signature.write_to(&mut buffer)?;
+
+        Ok(BString::from(buffer))
+    };
+
+    if let Some(rewrite_author) = rewrite_data
+        .author
+        .map(|(name, email)| rewrite_signature(name, email, commit.author()?.time))
+        .transpose()?
+    {
+        author = Some(rewrite_author);
     }
 
-    if let Some((ref author, ref email)) = rewrite_data.author {
-        commit.author.name = author.as_bytes().into();
-        commit.author.email = email.as_bytes().into();
+    if let Some(rewrite_committer) = rewrite_data
+        .committer
+        .map(|(name, email)| rewrite_signature(name, email, commit.committer()?.time))
+        .transpose()?
+    {
+        committer = Some(rewrite_committer);
     }
 
-    if let Some((ref author, ref email)) = rewrite_data.committer {
-        commit.committer.name = author.as_bytes().into();
-        commit.committer.email = email.as_bytes().into();
+    if let Some(author) = &author {
+        commit.author = author.as_ref();
+    }
+
+    if let Some(committer) = &committer {
+        commit.committer = committer.as_ref();
     }
 
     commit
