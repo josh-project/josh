@@ -282,6 +282,7 @@ pub fn rewrite_commit(
 
     let mut author = None;
     let mut committer = None;
+    let message = rewrite_data.message.map(|s| BString::from(s));
 
     let mut commit = gix_object::CommitRef::from_bytes(odb_commit.data())?;
     commit.tree = tree_id.as_ref();
@@ -329,6 +330,10 @@ pub fn rewrite_commit(
 
     if let Some(committer) = &committer {
         commit.committer = committer.as_ref();
+    }
+
+    if let Some(message) = &message {
+        commit.message = message.as_ref();
     }
 
     commit
