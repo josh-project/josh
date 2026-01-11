@@ -218,7 +218,7 @@ pub async fn fetch_upstream(
     };
 
     let fetch_timers = service.fetch_timers.clone();
-    let heads_map = service.heads_map.clone();
+    let heads_map = service.head_symref_map.clone();
 
     if let Ok(hres) = hres {
         heads_map.write()?.insert(upstream_repo.clone(), hres);
