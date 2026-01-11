@@ -1,7 +1,7 @@
   $ . ${TESTDIR}/setup_test_env.sh
   $ cd ${TESTTMP}
   $ curl -s -I http://127.0.0.1:8002/
-  HTTP/1.1 302 Found\r (esc)
+  HTTP/1.1 303 See Other\r (esc)
   location: /~/ui/\r (esc)
   content-length: 0\r (esc)
   date: *\r (esc) (glob)
