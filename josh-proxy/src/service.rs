@@ -15,7 +15,8 @@ use josh_rpc::calls::RequestedCommand;
 
 use axum::Router;
 use axum::body::Body;
-use axum::extract::State;
+use axum::extract::{FromRequestParts, State};
+use axum::http::request::Parts;
 use axum::http::{Request, Response, StatusCode, header};
 use axum::middleware::Next;
 use axum::response::IntoResponse;
@@ -47,6 +48,59 @@ impl JoshProxyUpstream {
             }
             _ => None,
         }
+    }
+}
+
+impl<S> FromRequestParts<S> for FilteredRepoUrl
+where
+    S: Sync + Send,
+{
+    type Rejection = axum::response::Response;
+
+    async fn from_request_parts(parts: &mut Parts, _: &S) -> Result<Self, Self::Rejection> {
+        let path = {
+            let mut path = parts.uri.path().to_owned();
+
+            while path.contains("//") {
+                path = path.replace("//", "/");
+            }
+
+            percent_encoding::percent_decode_str(&path)
+                .decode_utf8_lossy()
+                .to_string()
+        };
+
+        let mut parsed = match FilteredRepoUrl::from_str(&path) {
+            Some(parsed) => parsed,
+            None => {
+                // This is something that is not a repo, but the request path still
+                // contains something, so we return 404 to have a less confusing
+                // message for git cli
+                return Err(StatusCode::NOT_FOUND.into_response());
+            }
+        };
+
+        if parsed.rest.starts_with(':') {
+            let guessed_url = parts.uri.path().trim_end_matches("/info/refs");
+            let msg = indoc::formatdoc!(
+                r#"
+                Invalid URL: "{0}"
+
+                Note: repository URLs should end with ".git":
+
+                  {0}.git
+                "#,
+                guessed_url
+            );
+
+            return Err((StatusCode::UNPROCESSABLE_ENTITY, msg).into_response());
+        }
+
+        if parsed.filter_spec == "" {
+            parsed.filter_spec = ":/".to_string();
+        }
+
+        Ok(parsed)
     }
 }
 
@@ -785,31 +839,8 @@ fn make_repo_update(
 
 async fn handle_serve_namespace(
     State(serv): State<Arc<JoshProxyService>>,
-    req: Request<Body>,
+    axum::extract::Json(params): axum::extract::Json<josh_rpc::calls::ServeNamespace>,
 ) -> impl IntoResponse {
-    let error_response = |status: StatusCode| (status, "").into_response();
-
-    if req.method() != axum::http::Method::POST {
-        return error_response(StatusCode::METHOD_NOT_ALLOWED);
-    }
-
-    match req.headers().get(header::CONTENT_TYPE) {
-        Some(value) if value == "application/json" => (),
-        _ => return error_response(StatusCode::BAD_REQUEST),
-    }
-
-    let body = match axum::body::to_bytes(req.into_body(), usize::MAX).await {
-        Ok(bytes) => bytes,
-        Err(_) => return error_response(StatusCode::IM_A_TEAPOT),
-    };
-
-    let params = match serde_json::from_slice::<josh_rpc::calls::ServeNamespace>(&body) {
-        Err(error) => {
-            return (StatusCode::BAD_REQUEST, error.to_string()).into_response();
-        }
-        Ok(parsed) => parsed,
-    };
-
     let parsed_url = if let Some(mut parsed_url) = FilteredRepoUrl::from_str(&params.query) {
         if parsed_url.filter_spec.is_empty() {
             parsed_url.filter_spec = ":/".to_string();
@@ -819,9 +850,6 @@ async fn handle_serve_namespace(
     } else {
         return (StatusCode::BAD_REQUEST, "Unable to parse query").into_response();
     };
-
-    eprintln!("params: {:?}", params);
-    eprintln!("parsed_url.upstream_repo: {:?}", parsed_url.upstream_repo);
 
     let auth_socket = params.ssh_socket.clone();
     let remote_auth = RemoteAuth::Ssh {
@@ -968,10 +996,10 @@ async fn auth_middleware(req: Request<Body>, next: Next) -> Result<Response<Body
 
 async fn call_service(
     State(serv): State<Arc<JoshProxyService>>,
+    parsed_url: FilteredRepoUrl,
     req: Request<Body>,
 ) -> Result<impl IntoResponse, ProxyError> {
     use axum::response::Redirect;
-    use indoc::formatdoc;
     use tokio::process::Command;
 
     // Get auth from request extensions
@@ -980,61 +1008,6 @@ async fn call_service(
         .get::<crate::auth::Handle>()
         .cloned()
         .unwrap_or(crate::auth::Handle { hash: None });
-
-    let path = {
-        let mut path = req.uri().path().to_owned();
-        while path.contains("//") {
-            path = path.replace("//", "/");
-        }
-        percent_encoding::percent_decode_str(&path)
-            .decode_utf8_lossy()
-            .to_string()
-    };
-
-    // Need to have some way of passing the filter (via remote path like what github does?)
-    let parsed_url = {
-        if let Some(parsed_url) = FilteredRepoUrl::from_str(&path) {
-            let mut pu = parsed_url;
-
-            if pu.rest.starts_with(':') {
-                let guessed_url = path.trim_end_matches("/info/refs");
-                let msg = formatdoc!(
-                    r#"
-                    Invalid URL: "{0}"
-
-                    Note: repository URLs should end with ".git":
-
-                      {0}.git
-                    "#,
-                    guessed_url
-                );
-                return Response::builder()
-                    .status(StatusCode::UNPROCESSABLE_ENTITY)
-                    .header(header::CONTENT_TYPE, "text/plain")
-                    .body(Body::from(msg))
-                    .map_err(|e| ProxyError(josh_error(&e.to_string())));
-            }
-
-            if pu.filter_spec.is_empty() {
-                pu.filter_spec = ":/".to_string();
-            }
-            pu
-        } else {
-            return if path == "/" {
-                let redirect_path = "/~/ui/".to_string();
-                Ok(Response::builder()
-                    .status(StatusCode::FOUND)
-                    .header(header::LOCATION, redirect_path)
-                    .body(Body::from(vec![]))
-                    .map_err(|e| ProxyError(josh_error(&e.to_string())))?)
-            } else {
-                Ok(Response::builder()
-                    .status(StatusCode::NOT_FOUND)
-                    .body(Body::from(vec![]))
-                    .map_err(|e| ProxyError(josh_error(&e.to_string())))?)
-            };
-        }
-    };
 
     let remote_auth = RemoteAuth::Http { auth: auth.clone() };
     let upstream_repo = parsed_url.upstream_repo.clone();
@@ -1512,6 +1485,7 @@ pub fn make_service_router(proxy_service: Arc<JoshProxyService>) -> Router {
     };
 
     Router::new()
+        .route("/", get(async || axum::response::Redirect::to("/~/ui/")))
         .route("/version", get(handle_version))
         .route("/remote", get(handle_remote))
         .route("/flush", get(handle_flush))
