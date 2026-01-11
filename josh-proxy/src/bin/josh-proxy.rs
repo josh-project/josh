@@ -162,7 +162,7 @@ async fn run_proxy(args: josh_proxy::cli::Args) -> josh_core::JoshResult<i32> {
         filter_prefix: args.filter_prefix,
         cache,
         fetch_timers: Default::default(),
-        heads_map: Default::default(),
+        head_symref_map: Default::default(),
         poll: Default::default(),
         fetch_permits: Default::default(),
         filter_permits: Arc::new(tokio::sync::Semaphore::new(10)),

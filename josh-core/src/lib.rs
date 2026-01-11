@@ -262,36 +262,22 @@ pub fn filter_refs(
     (updated, errors)
 }
 
-pub fn update_refs(
-    transaction: &cache::Transaction,
-    updated: &mut Vec<(String, git2::Oid)>,
-    headref: &str,
-) {
-    let mut head_oid = git2::Oid::zero();
-    for (refname, oid) in updated.iter() {
-        if refname == headref {
-            head_oid = *oid;
+pub fn update_refs(transaction: &cache::Transaction, updated: Vec<(String, git2::Oid)>) {
+    for (refn, filtered_commit) in updated.into_iter() {
+        if filtered_commit.is_zero() {
+            continue;
         }
-    }
 
-    if !headref.is_empty() && head_oid == git2::Oid::zero() {
-        updated.clear();
-    }
-
-    for (to_refname, filter_commit) in updated.iter() {
-        if *filter_commit != git2::Oid::zero() {
-            ok_or!(
-                transaction
-                    .repo()
-                    .reference(to_refname, *filter_commit, true, "apply_filter")
-                    .map(|_| ()),
-                {
-                    tracing::error!(
-                        "can't update reference: {:?}, target: {:?}",
-                        &to_refname,
-                        filter_commit,
-                    );
-                }
+        if let Err(e) = transaction
+            .repo()
+            .reference(&refn, filtered_commit, true, "update_refs")
+            .map(|_| ())
+        {
+            tracing::error!(
+                error = %e,
+                filtered_commit = %filtered_commit,
+                refn = %refn,
+                "can't update reference",
             );
         }
     }

@@ -94,7 +94,7 @@ async fn main() -> anyhow::Result<()> {
             filter_prefix: None,
             cache,
             fetch_timers: Default::default(),
-            heads_map: Default::default(),
+            head_symref_map: Default::default(),
             poll: Default::default(),
             fetch_permits: Default::default(),
             filter_permits: Arc::new(tokio::sync::Semaphore::new(10)),

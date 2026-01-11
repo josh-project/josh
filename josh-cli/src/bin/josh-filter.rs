@@ -334,7 +334,7 @@ fn run_filter(args: Vec<String>) -> josh_core::JoshResult<i32> {
                 &[(input_ref.to_string(), r.id())],
             );
             updated_refs[0].0 = "refs/JOSH_TMP".to_string();
-            josh_core::update_refs(&transaction, &mut updated_refs, "");
+            josh_core::update_refs(&transaction, updated_refs);
         }
     }
 
@@ -367,7 +367,7 @@ fn run_filter(args: Vec<String>) -> josh_core::JoshResult<i32> {
             item.0 = item.0.replacen("refs/tags/", "refs/tags/filtered/", 1);
         }
     }
-    josh_core::update_refs(&transaction, &mut updated_refs, "");
+    josh_core::update_refs(&transaction, updated_refs.clone());
 
     if let Some(searchstring) = args.get_one::<String>("search") {
         let ifilterobj = filterobj.chain(josh_core::filter::parse(":SQUASH:INDEX")?);
