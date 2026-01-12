@@ -1,4 +1,4 @@
-use crate::service::JoshProxyService;
+use crate::service::{JoshProxyService, UpstreamProtocol};
 use crate::{FetchError, auth, proxy_commit_signature, run_git_with_auth};
 
 use josh_core::cache::{CacheStack, TransactionContext};
@@ -7,6 +7,11 @@ use josh_core::josh_error;
 
 use std::path::PathBuf;
 use std::sync::Arc;
+
+use axum::extract::FromRequestParts;
+use axum::http::request::Parts;
+use axum::response::IntoResponse;
+use reqwest::StatusCode;
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 pub enum RemoteAuth {
@@ -39,6 +44,28 @@ pub struct PushOptions {
     pub force: bool,
     pub base: Option<String>,
     pub author: Option<String>,
+}
+
+pub trait Upstream {
+    fn upstream(&self, protocol: UpstreamProtocol) -> Option<String>;
+}
+
+pub struct HttpUpstream(pub String);
+
+impl<S: Upstream + Send + Sync> FromRequestParts<S> for HttpUpstream {
+    type Rejection = axum::response::Response;
+
+    async fn from_request_parts(_: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+        if let Some(remote) = state.upstream(UpstreamProtocol::Http) {
+            Ok(HttpUpstream(remote))
+        } else {
+            Err((
+                StatusCode::SERVICE_UNAVAILABLE,
+                "Upstream of requested type is not configured",
+            )
+                .into_response())
+        }
+    }
 }
 
 async fn fetch_needed(

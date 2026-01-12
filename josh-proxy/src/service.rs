@@ -5,7 +5,7 @@ use std::str::FromStr;
 use std::sync::{Arc, RwLock};
 
 use crate::http::ProxyError;
-use crate::upstream::{RemoteAuth, RepoUpdate, process_repo_update};
+use crate::upstream::{HttpUpstream, RemoteAuth, RepoUpdate, Upstream, process_repo_update};
 use crate::{FetchError, FilteredRepoUrl, cli, run_git_with_auth};
 
 use josh_core::cache::{CacheStack, TransactionContext};
@@ -35,20 +35,6 @@ pub enum JoshProxyUpstream {
     Http(String),
     Ssh(String),
     Both { http: String, ssh: String },
-}
-
-impl JoshProxyUpstream {
-    pub fn get(&self, protocol: UpstreamProtocol) -> Option<String> {
-        match (self, protocol) {
-            (JoshProxyUpstream::Http(http), UpstreamProtocol::Http)
-            | (JoshProxyUpstream::Both { http, .. }, UpstreamProtocol::Http) => Some(http.clone()),
-            (JoshProxyUpstream::Ssh(ssh), UpstreamProtocol::Ssh)
-            | (JoshProxyUpstream::Both { http: _, ssh }, UpstreamProtocol::Ssh) => {
-                Some(ssh.clone())
-            }
-            _ => None,
-        }
-    }
 }
 
 impl<S> FromRequestParts<S> for FilteredRepoUrl
@@ -127,6 +113,20 @@ pub struct JoshProxyService {
     pub fetch_permits: Arc<std::sync::Mutex<HashMap<String, Arc<tokio::sync::Semaphore>>>>,
     pub filter_permits: Arc<tokio::sync::Semaphore>,
     pub poll: Polls,
+}
+
+impl crate::upstream::Upstream for Arc<JoshProxyService> {
+    fn upstream(&self, protocol: UpstreamProtocol) -> Option<String> {
+        match (&self.upstream, protocol) {
+            (JoshProxyUpstream::Http(http), UpstreamProtocol::Http)
+            | (JoshProxyUpstream::Both { http, .. }, UpstreamProtocol::Http) => Some(http.clone()),
+            (JoshProxyUpstream::Ssh(ssh), UpstreamProtocol::Ssh)
+            | (JoshProxyUpstream::Both { http: _, ssh }, UpstreamProtocol::Ssh) => {
+                Some(ssh.clone())
+            }
+            _ => None,
+        }
+    }
 }
 
 impl JoshProxyService {
@@ -312,15 +312,8 @@ async fn handle_version() -> impl IntoResponse {
     format!("Version: {}\n", josh_core::VERSION)
 }
 
-async fn handle_remote(State(service): State<Arc<JoshProxyService>>) -> impl IntoResponse {
-    match service.upstream.get(UpstreamProtocol::Http) {
-        None => (
-            StatusCode::SERVICE_UNAVAILABLE,
-            "HTTP remote is not configured",
-        )
-            .into_response(),
-        Some(remote) => (StatusCode::OK, remote).into_response(),
-    }
+async fn handle_remote(HttpUpstream(upstream): HttpUpstream) -> impl IntoResponse {
+    (StatusCode::OK, upstream)
 }
 
 async fn handle_flush(State(service): State<Arc<JoshProxyService>>) -> impl IntoResponse {
@@ -856,7 +849,7 @@ async fn handle_serve_namespace(
         auth_socket: auth_socket.clone(),
     };
 
-    let upstream = match serv.upstream.get(UpstreamProtocol::Ssh) {
+    let upstream = match serv.upstream(UpstreamProtocol::Ssh) {
         Some(upstream) => upstream,
         None => {
             return (
@@ -996,6 +989,7 @@ async fn auth_middleware(req: Request<Body>, next: Next) -> Result<Response<Body
 
 async fn call_service(
     State(serv): State<Arc<JoshProxyService>>,
+    HttpUpstream(upstream): HttpUpstream,
     parsed_url: FilteredRepoUrl,
     req: Request<Body>,
 ) -> Result<impl IntoResponse, ProxyError> {
@@ -1011,17 +1005,6 @@ async fn call_service(
 
     let remote_auth = RemoteAuth::Http { auth: auth.clone() };
     let upstream_repo = parsed_url.upstream_repo.clone();
-
-    let upstream = match serv.upstream.get(UpstreamProtocol::Http) {
-        Some(upstream) => upstream,
-        None => {
-            return Ok((
-                StatusCode::SERVICE_UNAVAILABLE,
-                "HTTP remote is not configured",
-            )
-                .into_response());
-        }
-    };
 
     let filter = {
         let filter = josh_core::filter::parse(&parsed_url.filter_spec)?;
@@ -1236,6 +1219,7 @@ async fn prepare_namespace(
 
 async fn handle_graphql(
     State(serv): State<Arc<JoshProxyService>>,
+    HttpUpstream(upstream): HttpUpstream,
     axum::extract::Path(path): axum::extract::Path<String>,
     // TODO: handle method routing and extraction via axum, instead of raw query/body here
     method: axum::http::Method,
@@ -1253,17 +1237,6 @@ async fn handle_graphql(
 
     // Extract upstream_repo from path (path is everything after /~/graphql)
     let upstream_repo = path.trim_start_matches('/');
-
-    let upstream = match serv.upstream.get(UpstreamProtocol::Http) {
-        Some(upstream) => upstream,
-        None => {
-            return Ok((
-                StatusCode::SERVICE_UNAVAILABLE,
-                "HTTP remote is not configured",
-            )
-                .into_response());
-        }
-    };
 
     let remote_url = format!("{}/{}", upstream, upstream_repo);
     let content_type = content_type.map(|ct| ct.0.into());
