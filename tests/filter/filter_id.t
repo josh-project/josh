@@ -691,6 +691,31 @@ Test :linear
   
   3 directories, 2 files
 
+  $ FILTER_HASH=$(josh-filter -i ':linear[::x/]')
+  $ josh-filter -p ${FILTER_HASH}
+  :~(
+      graph="linear"
+  )[
+      ::x/
+  ]
+  $ git read-tree --reset -u ${FILTER_HASH}
+  $ tree
+  .
+  `-- meta
+      |-- 0
+      |   `-- compose
+      |       `-- 0
+      |           `-- chain
+      |               |-- 0
+      |               |   `-- subdir
+      |               |       `-- 0
+      |               `-- 1
+      |                   `-- prefix
+      |                       `-- 0
+      `-- graph
+  
+  10 directories, 3 files
+
 Test :prune=trivial-merge
   $ FILTER_HASH=$(josh-filter -i ':prune=trivial-merge')
   $ josh-filter -p ${FILTER_HASH}

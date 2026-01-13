@@ -153,7 +153,7 @@ All files matching the pattern in arbitrarily deep subdirectories of the input
 
 These filter do not modify git trees, but instead only operate on the commit graph.
 
-### Linearise history **:linear**
+### Linearise history **:linear[:filter]**
 Produce a filtered history that does not contain any merge commits. This is done by
 simply dropping all parents except the first on every commit.
 
