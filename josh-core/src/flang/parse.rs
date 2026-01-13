@@ -168,6 +168,7 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> JoshResult<Filter> {
                     match *cmd {
                         "pin" => Ok(to_filter(Op::Pin(to_filter(Op::Compose(g))))),
                         "exclude" => Ok(to_filter(Op::Exclude(to_filter(Op::Compose(g))))),
+                        "linear" => Ok(to_filter(Op::Compose(g)).linear()),
                         "invert" => {
                             let filter = to_filter(Op::Compose(g));
                             invert(filter)

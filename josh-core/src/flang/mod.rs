@@ -118,7 +118,11 @@ fn pretty2(op: &Op, indent: usize, compose: bool) -> String {
             meta_parts.sort();
             let meta_str = meta_parts.join("\n");
 
-            ff(&vec![*filter], &format!("~(\n{}\n)", meta_str), indent)
+            if let Op::Compose(filters) = to_op(*filter) {
+                ff(&filters, &format!("~(\n{}\n)", meta_str), indent)
+            } else {
+                ff(&vec![*filter], &format!("~(\n{}\n)", meta_str), indent)
+            }
         }
         _ => spec2(op),
     }
