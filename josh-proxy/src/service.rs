@@ -90,6 +90,36 @@ where
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct UpstreamFetchResult {
+    pub upstream_repo: String,
+    pub filter: josh_core::filter::Filter,
+    pub headref: HeadRef,
+    pub remote_url: String,
+    pub remote_auth: RemoteAuth,
+}
+
+impl<S> FromRequestParts<S> for UpstreamFetchResult
+where
+    S: Sync + Send,
+{
+    type Rejection = axum::response::Response;
+
+    async fn from_request_parts(parts: &mut Parts, _: &S) -> Result<Self, Self::Rejection> {
+        parts
+            .extensions
+            .get::<UpstreamFetchResult>()
+            .cloned()
+            .ok_or_else(|| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "UpstreamFetchResult not found in extensions",
+                )
+                    .into_response()
+            })
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum UpstreamProtocol {
     Http,
@@ -764,7 +794,7 @@ async fn serve_namespace(
 }
 
 #[derive(Clone, Debug)]
-enum HeadRef {
+pub enum HeadRef {
     ExplicitHead,
     ExplicitRef(String),
     ExplicitSha(String, git2::Oid),
@@ -987,15 +1017,14 @@ async fn auth_middleware(req: Request<Body>, next: Next) -> Result<Response<Body
     Ok(next.run(req).await)
 }
 
-async fn call_service(
+// Middleware for upstream fetching
+async fn upstream_fetch_middleware(
     State(serv): State<Arc<JoshProxyService>>,
     HttpUpstream(upstream): HttpUpstream,
     parsed_url: FilteredRepoUrl,
-    req: Request<Body>,
-) -> Result<impl IntoResponse, ProxyError> {
-    use axum::response::Redirect;
-    use tokio::process::Command;
-
+    mut req: Request<Body>,
+    next: Next,
+) -> Result<Response<Body>, ProxyError> {
     // Get auth from request extensions
     let auth = req
         .extensions()
@@ -1027,30 +1056,36 @@ async fn call_service(
     fetch_repos.extend(lazy_refs.iter().map(|(x, _y)| x.clone()));
 
     let remote_url = upstream.clone() + &upstream_repo;
+
     let headref = match HeadRef::from_str(&parsed_url.headref) {
         Ok(hr) => hr,
-        Err(_) => return Ok((StatusCode::BAD_REQUEST, "Invalid head ref").into_response()),
+        Err(_) => {
+            return Ok((StatusCode::BAD_REQUEST, "Invalid head ref").into_response());
+        }
     };
-
-    if parsed_url.pathinfo.starts_with("/info/lfs") {
-        return Ok(
-            Redirect::temporary(&format!("{}{}", remote_url, parsed_url.pathinfo)).into_response(),
-        );
-    }
 
     let http_auth_required = serv.require_auth && parsed_url.pathinfo == "/git-receive-pack";
 
     for fetch_repo in fetch_repos.iter() {
         let fetch_url = upstream.clone() + fetch_repo.as_str();
 
-        if !crate::auth::check_http_auth(&fetch_url, &auth, http_auth_required).await? {
-            tracing::trace!("require-auth");
+        match crate::auth::check_http_auth(&fetch_url, &auth, http_auth_required).await {
+            Ok(false) => {
+                tracing::trace!("require-auth");
 
-            return Ok(Response::builder()
-                .header(header::WWW_AUTHENTICATE, "Basic realm=User Visible Realm")
-                .status(StatusCode::UNAUTHORIZED)
-                .body(Body::empty())
-                .expect("Failed to build response"));
+                return Ok((
+                    StatusCode::UNAUTHORIZED,
+                    [(
+                        header::WWW_AUTHENTICATE,
+                        r#"Basic realm="User Visible Realm""#,
+                    )],
+                )
+                    .into_response());
+            }
+            Err(e) => {
+                return Ok((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response());
+            }
+            Ok(true) => {}
         }
     }
 
@@ -1079,6 +1114,43 @@ async fn call_service(
                 return Ok((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response());
             }
         }
+    }
+
+    // Store results in request extensions
+    let fetch_result = UpstreamFetchResult {
+        upstream_repo,
+        filter,
+        headref,
+        remote_url,
+        remote_auth,
+    };
+
+    req.extensions_mut().insert(fetch_result);
+
+    Ok(next.run(req).await)
+}
+
+async fn call_service(
+    State(serv): State<Arc<JoshProxyService>>,
+    fetch_result: UpstreamFetchResult,
+    parsed_url: FilteredRepoUrl,
+    req: Request<Body>,
+) -> Result<impl IntoResponse, ProxyError> {
+    use axum::response::Redirect;
+    use tokio::process::Command;
+
+    let UpstreamFetchResult {
+        upstream_repo,
+        filter,
+        headref,
+        remote_url,
+        remote_auth,
+    } = fetch_result;
+
+    if parsed_url.pathinfo.starts_with("/info/lfs") {
+        return Ok(
+            Redirect::temporary(&format!("{}{}", remote_url, parsed_url.pathinfo)).into_response(),
+        );
     }
 
     if let (Some(q), true) = (
@@ -1457,6 +1529,15 @@ pub fn make_service_router(proxy_service: Arc<JoshProxyService>) -> Router {
             .fallback_service(ServeDir::new("/josh/static"))
     };
 
+    // All routes within this router require auth, and fetch upstream
+    let git_operations_router =
+        Router::new()
+            .fallback(call_service)
+            .layer(middleware::from_fn_with_state(
+                proxy_service.clone(),
+                upstream_fetch_middleware,
+            ));
+
     Router::new()
         .route("/", get(async || axum::response::Redirect::to("/~/ui/")))
         .route("/version", get(handle_version))
@@ -1483,7 +1564,7 @@ pub fn make_service_router(proxy_service: Arc<JoshProxyService>) -> Router {
             post(handle_graphql).get(handle_graphql),
         )
         .route("/~/graphiql/{*path}", get(handle_graphiql))
-        .fallback(call_service)
+        .merge(git_operations_router)
         .layer(middleware::from_fn(auth_middleware))
         .layer(
             tower_http::trace::TraceLayer::new_for_http()
