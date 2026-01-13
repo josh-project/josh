@@ -380,7 +380,7 @@ pub(crate) fn to_filter(op: Op) -> Filter {
     let oid = git2::Oid::from_bytes(tree_id.as_bytes()).unwrap();
 
     let f = Filter(oid);
-    FILTERS.lock().unwrap().insert(f, op);
+    FILTERS.lock().unwrap().entry(f).or_insert(op);
     f
 }
 
