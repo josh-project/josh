@@ -2167,6 +2167,8 @@ dependencies = [
  "clap",
  "git2",
  "gix",
+ "gix-packetline",
+ "gix-transport",
  "hex",
  "indoc",
  "josh-core",
