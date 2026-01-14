@@ -120,22 +120,22 @@ jobs:
           push: 'true'
           tags: ${{ needs.generate-tags.outputs.tags }}
           outputs: type=image,push-by-digest=true,name-canonical=true,push=true
-#      - name: Export digest
-#        env:
-#          digest: ${{ steps.build.outputs.digest }}
-#        run: |
-#          : Create digests directory with a file whose name matches the digest env with the 'sha256:' prefix removed
-#          mkdir -p "$RUNNER_TEMP/digests"
-#          touch "$RUNNER_TEMP/digests/${digest#sha256:}"
-#
-#      - name: Upload digest
-#        uses: actions/upload-artifact@v6
-#        with:
-#          name: digests-${{ matrix.os }}-${{ matrix.arch }}
-#          path: ${{ runner.temp }}/digests/*
-#          if-no-files-found: error
-#          retention-days: 1
-#
+      - name: Export digest
+        env:
+          digest: ${{ steps.build.outputs.digest }}
+        # Create digests directory with a file whose name matches
+        # the digest with the 'sha256:' prefix removed
+        run: |
+          mkdir -p "${RUNNER_TEMP}/digests"
+          touch "${RUNNER_TEMP}/digests/${digest#sha256:}"
+      - name: Upload digest
+        uses: actions/upload-artifact@v6
+        with:
+          name: digests-${{ matrix.os }}-${{ matrix.arch }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
 #  merge:
 #    runs-on: ubuntu-latest
 #    permissions:
