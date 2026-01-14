@@ -27,6 +27,7 @@ jobs:
 
           commit_sha = "${{ github.sha }}"
           release_tag = "${{ github.event.release.tag_name }}"
+          pr_number = "${{ github.event.pull_request.number }}"
 
           ghcr_image_base = "ghcr.io/josh-project/josh-proxy"
           dockerhub_image_base = "joshproject/josh-proxy"
