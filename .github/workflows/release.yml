@@ -18,10 +18,10 @@ jobs:
         id: generate-tags
         shell: python
         run: |
-          dockerhub_available = ${{ secrets.DOCKERHUB_TOKEN != '' }}
-          is_release = ${{ github.event_name == 'release' }}
-          is_master  = ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
-          commit_sha = ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' && github.sha || 'None' }}
+          dockerhub_available = "${{ secrets.DOCKERHUB_TOKEN != '' }}" == "true"
+          is_release = "${{ github.event_name }}" == "release"
+          is_master = "${{ github.event_name }}" == "push" and "${{ github.ref }}" == "refs/heads/master"
+          commit_sha = "${{ github.event_name == 'push' && github.ref == 'refs/heads/master' && github.sha || 'None' }}"
 
           def main():
               print(dockerhub_available)
