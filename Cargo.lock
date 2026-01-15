@@ -186,6 +186,7 @@ dependencies = [
  "http-body-util",
  "tokio",
  "tokio-util",
+ "tracing",
 ]
 
 [[package]]
@@ -2165,6 +2166,7 @@ dependencies = [
  "axum-extra",
  "base64",
  "clap",
+ "futures",
  "git2",
  "gix",
  "hex",
@@ -2181,6 +2183,7 @@ dependencies = [
  "opentelemetry-semantic-conventions",
  "opentelemetry_sdk",
  "percent-encoding",
+ "pin-project-lite",
  "regex",
  "reqwest",
  "serde",
