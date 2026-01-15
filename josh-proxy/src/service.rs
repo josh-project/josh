@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::{Arc, RwLock};
 
-use crate::http::ProxyError;
+use crate::http::{ProxyError, StreamWithGuard};
 use crate::upstream::{HttpUpstream, RemoteAuth, RepoUpdate, Upstream, process_repo_update};
 use crate::{FetchError, FilteredRepoUrl, cli, run_git_with_auth};
 
@@ -1174,7 +1174,7 @@ async fn call_service(
         temp_ns.clone(),
     );
 
-    let cgi_response = async {
+    let (response, stream) = async {
         let mut cmd = Command::new("git");
         cmd.arg("http-backend");
         cmd.current_dir(&overlay_path);
@@ -1193,10 +1193,8 @@ async fn call_service(
         cmd.env("JOSH_REPO_UPDATE", serde_json::to_string(&repo_update)?);
         cmd.env("PATH_INFO", parsed_url.pathinfo.clone());
 
-        let (axum_response, stderr) = axum_cgi::do_cgi(req, cmd).await;
-        tracing::debug!(stderr = %String::from_utf8_lossy(&stderr), "http-backend exited");
-
-        Ok::<_, JoshError>(axum_response)
+        let (response_builder, stream) = axum_cgi::do_cgi(req, cmd).await?;
+        Ok::<_, JoshError>((response_builder, stream))
     }
     .instrument(tracing::span!(
         tracing::Level::INFO,
@@ -1204,11 +1202,11 @@ async fn call_service(
     ))
     .await?;
 
-    // This is chained as a separate future to make sure that
-    // it is executed in all cases.
-    std::mem::drop(temp_ns);
+    // Dropping temp_ns has side effects, so it's sent over together with the stream
+    let stream = StreamWithGuard::new(stream, temp_ns);
+    let response = response.body(Body::from_stream(stream))?;
 
-    Ok(cgi_response)
+    Ok(response)
 }
 
 async fn serve_render_template(

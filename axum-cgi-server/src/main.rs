@@ -196,7 +196,22 @@ async fn handler(
     cmd.current_dir(&workdir);
     cmd.env("PATH_INFO", &path);
 
-    axum_cgi::do_cgi(req, cmd).await.0
+    match axum_cgi::do_cgi(req, cmd).await {
+        Ok((response_builder, stream)) => response_builder
+            .body(axum::body::Body::from_stream(stream))
+            .unwrap_or_else(|_| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Failed to build response",
+                )
+                    .into_response()
+            }),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("CGI error: {:?}", e),
+        )
+            .into_response(),
+    }
 }
 
 #[tokio::main]

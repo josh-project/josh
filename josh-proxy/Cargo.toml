@@ -33,6 +33,8 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 tokio = { workspace = true }
+futures = { workspace = true }
+pin-project-lite = "^0"
 toml = { workspace = true }
 tracing = { workspace = true }
 tracing-futures = "0.2.5"

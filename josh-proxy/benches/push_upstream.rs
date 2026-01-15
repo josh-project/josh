@@ -1,8 +1,10 @@
 use josh_core::cache::CacheStack;
 use josh_proxy::service::{JoshProxyService, JoshProxyUpstream, make_service_router};
 
+use axum::response::IntoResponse;
 use axum::{Router, extract::Request, response::Response, routing::any};
 use clap::Parser;
+use reqwest::StatusCode;
 use std::sync::Arc;
 
 #[derive(Parser, Debug)]
@@ -43,7 +45,15 @@ async fn git_handler(upstream_dir: std::path::PathBuf, req: Request) -> Response
     cmd.env("GIT_HTTP_EXPORT_ALL", "1");
     cmd.env("PATH_INFO", git_path);
 
-    axum_cgi::do_cgi(req, cmd).await.0
+    let (response, stream) = match axum_cgi::do_cgi(req, cmd).await {
+        Ok((r, s)) => (r, s),
+        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    };
+
+    response
+        .body(axum::body::Body::from_stream(stream))
+        .expect("failed to build response")
+        .into_response()
 }
 
 async fn start_git_server(upstream_dir: &std::path::Path) -> tokio::task::JoinHandle<()> {
