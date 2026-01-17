@@ -29,7 +29,7 @@ futures = "0.3.31"
 gix = { version = "0.77.0", default-features = false }
 gix-actor = "^0"
 gix-hash = "^0"
-gix-object = "0.54.0"
+gix-object = "0.54.1"
 gix-config = "0.50.0"
 gix-submodule = "0.24.0"
 hyper-reverse-proxy = { path = "hyper-reverse-proxy", version = "0.0.1" }
@@ -72,7 +72,7 @@ version = "0.7.18"
 features = ["compat"]
 
 [workspace.dependencies.reqwest]
-version = "^0.12"
+version = "^0.13"
 default-features = false
 features = ["blocking", "default-tls", "json"]
 
