@@ -51,7 +51,7 @@ Test josh clone with main branch as default
   c8050c5d4fc5f431e684ca501a7ff3db5aa47103\tHEAD (esc)
 
   $ josh clone remote.git :/sub1 filtered-repo
-  Added remote 'origin' with filter ':/sub1:prune=trivial-merge'
+  Added remote 'origin' with filter ':/sub1'
   From file://${TESTTMP}/remote
    * [new branch]      feature-branch -> refs/josh/remotes/origin/feature-branch
    * [new branch]      main           -> refs/josh/remotes/origin/main

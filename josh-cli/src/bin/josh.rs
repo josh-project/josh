@@ -1074,12 +1074,7 @@ fn handle_remote_add_repo(args: &RemoteAddArgs, repo_path: &std::path::Path) -> 
     let remote_url = to_absolute_remote_url(&args.url)?;
 
     // Store the filter in git config per remote
-    // Append ":prune=trivial-merge" to all filters unless --keep-trivial-merges flag is set
-    let filter_to_store = if args.keep_trivial_merges {
-        args.filter.clone()
-    } else {
-        format!("{}:prune=trivial-merge", args.filter)
-    };
+    let filter_to_store = args.filter.clone();
 
     let mut config = repo.config().context("Failed to get git config")?;
 

@@ -547,10 +547,11 @@ fn step(filter: Filter) -> Filter {
             // Flatten nested chains
             let mut flattened = vec![];
             for filter in &filters {
-                if let Op::Chain(nested) = to_op(*filter) {
+                let filter = step(*filter);
+                if let Op::Chain(nested) = to_op(filter) {
                     flattened.extend(nested);
                 } else {
-                    flattened.push(*filter);
+                    flattened.push(filter);
                 }
             }
 
@@ -636,7 +637,7 @@ fn step(filter: Filter) -> Filter {
                 prefix_of(a),
             ]),
             (_, b) if is_prefix(b.clone()) => Op::Subtract(af, to_filter(Op::Nop)),
-            _ if common_post(&vec![af, bf]).is_some() => {
+            _ if common_post(&vec![af, bf]).is_some_and(|cp| cp.0 != to_filter(Op::Nop)) => {
                 let (cp, rest) = common_post(&vec![af, bf]).unwrap();
                 Op::Chain(vec![to_filter(Op::Subtract(rest[0], rest[1])), cp])
             }

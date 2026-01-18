@@ -24,7 +24,7 @@ Create a test repository with some content
 Clone with josh filter
 
   $ josh clone ${TESTTMP}/remote :/sub1 filtered
-  Added remote 'origin' with filter ':/sub1:prune=trivial-merge'
+  Added remote 'origin' with filter ':/sub1'
   From file://${TESTTMP}/remote
    * [new branch]      master     -> refs/josh/remotes/origin/master
   

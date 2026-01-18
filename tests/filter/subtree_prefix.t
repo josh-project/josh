@@ -13,6 +13,8 @@ Initial commit of subtree branch
   $ git add .
   $ git commit -m "add file2 (in subtree)" 1>/dev/null
   $ export SUBTREE_TIP=$(git rev-parse HEAD)
+  $ export SUBTREE_FILTER=":~(history=\"keep-trivial-merges\")[:rev($SUBTREE_TIP:prefix=subtree)]"
+  $ export FILTER=":~(history=\"keep-trivial-merges\")[:rev($SUBTREE_TIP:prefix=subtree):/subtree]"
 
 Artificially create a subtree merge
 (merge commit has subtree files in subfolder but has subtree commit as a parent)
@@ -41,10 +43,13 @@ Change subtree file
   $ git commit -a -m "subtree edit from main repo" 1>/dev/null
 
 Rewrite the subtree part of the history
-  $ josh-filter -s ":rev($SUBTREE_TIP:prefix=subtree)" refs/heads/master --update refs/heads/filtered
+  $ josh-filter -s $SUBTREE_FILTER refs/heads/master --update refs/heads/filtered
   62ddf0f36ad4769606bce1404e1132f4f01174c9
-  [1] :prefix=subtree
-  [4] :rev(c036f944faafb865e0585e4fa5e005afa0aeea3f:prefix=subtree)
+  [4] :~(
+      history="keep-trivial-merges"
+  )[
+      :rev(c036f944faafb865e0585e4fa5e005afa0aeea3f:prefix=subtree)
+  ]
   [4] sequence_number
 
   $ git log --graph --pretty=%s refs/heads/filtered
@@ -68,11 +73,18 @@ Compare input and result. ^^2 is the 2nd parent of the first parent, i.e., the '
   rename to subtree/file2
 
 Extract the subtree history
-  $ josh-filter -s ":rev($SUBTREE_TIP:prefix=subtree):/subtree" refs/heads/master --update refs/heads/subtree
+  $ josh-filter -s $FILTER refs/heads/master --update refs/heads/subtree
   d71429596bb87d1b8a7aa23b628f43ef7f80dbb8
-  [1] :prefix=subtree
-  [4] :/subtree
-  [4] :rev(c036f944faafb865e0585e4fa5e005afa0aeea3f:prefix=subtree)
+  [4] :~(
+      history="keep-trivial-merges"
+  )[
+      :/subtree
+  ]
+  [4] :~(
+      history="keep-trivial-merges"
+  )[
+      :rev(c036f944faafb865e0585e4fa5e005afa0aeea3f:prefix=subtree)
+  ]
   [7] sequence_number
   $ git checkout subtree
   Switched to branch 'subtree'
@@ -83,11 +95,18 @@ Extract the subtree history
 Work in the subtree, and sync that back.
   $ echo even more contents >> file2
   $ git commit -am "add even more content" 1>/dev/null
-  $ josh-filter -s ":rev($SUBTREE_TIP:prefix=subtree):/subtree" refs/heads/master --update refs/heads/subtree --reverse
+  $ josh-filter -s $FILTER refs/heads/master --update refs/heads/subtree --reverse
   103bfec17c47adbe70a95fca90caefb989b6cda6
-  [1] :prefix=subtree
-  [4] :/subtree
-  [4] :rev(c036f944faafb865e0585e4fa5e005afa0aeea3f:prefix=subtree)
+  [4] :~(
+      history="keep-trivial-merges"
+  )[
+      :/subtree
+  ]
+  [4] :~(
+      history="keep-trivial-merges"
+  )[
+      :rev(c036f944faafb865e0585e4fa5e005afa0aeea3f:prefix=subtree)
+  ]
   [7] sequence_number
   $ git log --graph --pretty=%s  refs/heads/master
   * add even more content
@@ -107,11 +126,18 @@ Work in the subtree, and sync that back.
   even more contents
 
 And then re-extract, which should re-construct the same subtree.
-  $ josh-filter -s ":rev($SUBTREE_TIP:prefix=subtree):/subtree" refs/heads/master --update refs/heads/subtree2
+  $ josh-filter -s $FILTER refs/heads/master --update refs/heads/subtree2
   d4baf6a78a4f3966055c12821bce8a9e0933a3c7
-  [1] :prefix=subtree
-  [5] :/subtree
-  [5] :rev(c036f944faafb865e0585e4fa5e005afa0aeea3f:prefix=subtree)
+  [5] :~(
+      history="keep-trivial-merges"
+  )[
+      :/subtree
+  ]
+  [5] :~(
+      history="keep-trivial-merges"
+  )[
+      :rev(c036f944faafb865e0585e4fa5e005afa0aeea3f:prefix=subtree)
+  ]
   [9] sequence_number
   $ test $(git rev-parse subtree) = $(git rev-parse subtree2)
 
@@ -130,7 +156,7 @@ On the subtree, simulate some independent work, and then a sync, then some more 
   $ echo work > subfeature1
   $ git add subfeature1 >/dev/null
   $ git commit -m subfeature1 >/dev/null
-  $ josh-filter -s ":rev($SUBTREE_TIP:prefix=subtree):/subtree" refs/heads/master --update refs/heads/subtree-sync >/dev/null
+  $ josh-filter -s $FILTER refs/heads/master --update refs/heads/subtree-sync >/dev/null
   $ git merge subtree-sync --no-ff >/dev/null
   $ echo work > subfeature2
   $ git add subfeature2 >/dev/null
@@ -147,7 +173,7 @@ And another main tree feature off of SUBTREE_TIP
 
 And finally, sync first from main to sub and then back.
   $ git checkout subtree 2>/dev/null
-  $ josh-filter -s ":rev($SUBTREE_TIP:prefix=subtree):/subtree" refs/heads/master --update refs/heads/subtree-sync >/dev/null
+  $ josh-filter -s $FILTER refs/heads/master --update refs/heads/subtree-sync >/dev/null
   $ git merge subtree-sync --no-ff >/dev/null
 
   $ git log --graph --pretty=%s refs/heads/master
@@ -183,11 +209,18 @@ And finally, sync first from main to sub and then back.
   * | subtree edit from main repo
   |/  
   * add file2 (in subtree)
-  $ josh-filter -s ":rev($SUBTREE_TIP:prefix=subtree):/subtree" refs/heads/master --update refs/heads/subtree --reverse
+  $ josh-filter -s $FILTER refs/heads/master --update refs/heads/subtree --reverse
   6ac0ba56575859cfaacd5818084333e532ffc442
-  [1] :prefix=subtree
-  [9] :/subtree
-  [9] :rev(c036f944faafb865e0585e4fa5e005afa0aeea3f:prefix=subtree)
+  [9] :~(
+      history="keep-trivial-merges"
+  )[
+      :/subtree
+  ]
+  [9] :~(
+      history="keep-trivial-merges"
+  )[
+      :rev(c036f944faafb865e0585e4fa5e005afa0aeea3f:prefix=subtree)
+  ]
   [17] sequence_number
 
   $ git log --graph --pretty=%H:%s refs/heads/master
@@ -231,11 +264,18 @@ taken back into the main history.
   $ git checkout master
   Switched to branch 'master'
 
-  $ josh-filter -s ":rev($SUBTREE_TIP:prefix=subtree):/subtree" refs/heads/master --update refs/heads/subtree --reverse
+  $ josh-filter -s $FILTER refs/heads/master --update refs/heads/subtree --reverse
   f814033dd0148da19a3199cd3cb2d21464ce85a3
-  [1] :prefix=subtree
-  [13] :/subtree
-  [13] :rev(c036f944faafb865e0585e4fa5e005afa0aeea3f:prefix=subtree)
+  [13] :~(
+      history="keep-trivial-merges"
+  )[
+      :/subtree
+  ]
+  [13] :~(
+      history="keep-trivial-merges"
+  )[
+      :rev(c036f944faafb865e0585e4fa5e005afa0aeea3f:prefix=subtree)
+  ]
   [25] sequence_number
   $ git ls-tree --name-only -r refs/heads/master
   feature1

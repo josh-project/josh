@@ -34,7 +34,7 @@
   $ josh-filter -s :linear refs/heads/master --update refs/heads/filtered
   d24e7038b232dc1bd6d803d211e92039229375b4
   [4] :~(
-      graph="linear"
+      history="linear"
   )[
       :/
   ]
@@ -65,7 +65,7 @@
   $ josh-filter -s :linear refs/heads/master --update refs/heads/filtered --reverse
   65fb0dcfe9fd24ab4d7027ff1359bd44847bd21a
   [4] :~(
-      graph="linear"
+      history="linear"
   )[
       :/
   ]

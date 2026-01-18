@@ -20,7 +20,7 @@
 Test josh filter command - apply filtering without fetching
 
   $ josh clone ${TESTTMP}/remote/libs :/sub1 filtered-repo
-  Added remote 'origin' with filter ':/sub1:prune=trivial-merge'
+  Added remote 'origin' with filter ':/sub1'
   From file://${TESTTMP}/remote/libs
    * [new branch]      master     -> refs/josh/remotes/origin/master
   
@@ -42,10 +42,10 @@ Test josh filter command - apply filtering without fetching
   1432d42 add files
 
   $ git config josh-remote.origin.filter
-  :/sub1:prune=trivial-merge
+  :/sub1
 
   $ josh filter origin
-  Applying filter ':/sub1:prune=trivial-merge' to remote 'origin'
+  Applying filter ':/sub1' to remote 'origin'
   Applied filter to remote: origin
 
   $ git log --oneline

@@ -22,20 +22,20 @@ Test that josh remote add sets up proper refspecs
   $ cd test-repo
   $ git init -q
   $ josh remote add origin ${TESTTMP}/remote/libs :/sub1
-  Added remote 'origin' with filter ':/sub1:prune=trivial-merge'
+  Added remote 'origin' with filter ':/sub1'
 
   $ git config --get-all remote.origin.fetch
   +refs/heads/*:refs/remotes/origin/*
 
   $ git config josh-remote.origin.filter
-  :/sub1:prune=trivial-merge
+  :/sub1
 
   $ cd ..
 
 Test that josh clone also sets up proper refspecs
 
   $ josh clone ${TESTTMP}/remote/libs :/sub1 cloned-repo
-  Added remote 'origin' with filter ':/sub1:prune=trivial-merge'
+  Added remote 'origin' with filter ':/sub1'
   From file://${TESTTMP}/remote/libs
    * [new branch]      master     -> refs/josh/remotes/origin/master
   
@@ -53,7 +53,7 @@ Test that josh clone also sets up proper refspecs
   +refs/heads/*:refs/remotes/origin/*
 
   $ git config josh-remote.origin.filter
-  :/sub1:prune=trivial-merge
+  :/sub1
 
   $ cd ..
 

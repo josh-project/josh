@@ -18,7 +18,7 @@ Create a test repo and push it to the existing real_repo.git
 Test josh clone via HTTP (no filter)
 
   $ josh clone http://127.0.0.1:8001/real_repo.git :/ repo1-clone-josh
-  Added remote 'origin' with filter ':/:prune=trivial-merge'
+  Added remote 'origin' with filter ':/'
   From http://127.0.0.1:8001/real_repo
    * [new branch]      master     -> refs/josh/remotes/origin/master
   
@@ -43,7 +43,7 @@ Test josh clone via HTTP (no filter)
 Test josh clone via HTTP (with filter)
 
   $ josh clone http://127.0.0.1:8001/real_repo.git :/subdir repo1-clone-josh-filtered
-  Added remote 'origin' with filter ':/subdir:prune=trivial-merge'
+  Added remote 'origin' with filter ':/subdir'
   From http://127.0.0.1:8001/real_repo
    * [new branch]      master     -> refs/josh/remotes/origin/master
   
@@ -65,7 +65,7 @@ Test josh clone via HTTP (with filter)
 Test josh clone via HTTP (with explicit filter argument)
 
   $ josh clone http://127.0.0.1:8001/real_repo.git :/subdir repo1-clone-josh-explicit
-  Added remote 'origin' with filter ':/subdir:prune=trivial-merge'
+  Added remote 'origin' with filter ':/subdir'
   From http://127.0.0.1:8001/real_repo
    * [new branch]      master     -> refs/josh/remotes/origin/master
   

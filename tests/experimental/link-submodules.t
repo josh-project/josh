@@ -312,7 +312,7 @@ Test Adapt with submodule changes - add commits to submodule and update
   another new content
 
   $ josh-filter -s :adapt=submodules:link:/libs master
-  9313aaf84d267115def14d06fe9ecacc2ce38740
+  8ac312666f3f1871775f85d9f05a74f381021623
   [1] :embed=modules/another
   [1] :unapply(71fd9c59b40956e00bf73908266692bb0e266df3:/modules/another)
   [2] ::modules/another/.link.josh
@@ -326,15 +326,11 @@ Test Adapt with submodule changes - add commits to submodule and update
   [9] :/libs
   [29] sequence_number
   $ git log --graph --pretty=%s:%H FILTERED_HEAD
-  *   update libs submodule:9313aaf84d267115def14d06fe9ecacc2ce38740
+  *   update libs submodule:8ac312666f3f1871775f85d9f05a74f381021623
   |\  
   | * add file4.txt:3061af908a0dc1417902fbd7208bb2b8dc354e6c
   | * add file3.txt:411907f127aa115588a614ec1dff6ee3c4696173
-  * |   add another submodule:fcc582a1e6f724dfdde11d7f4707c58013f20d0f
-  |\ \  
-  | * | add another.txt:07ff7794145319cc52576872f51ee3099ebf63d8
-  |  /  
-  * / add libs submodule:628bd2a818c8443489290e9d262bebd7f0234763
+  * | add libs submodule:628bd2a818c8443489290e9d262bebd7f0234763
   |/  
   * add bar with file:00c8fe9f1bb75a3f6280992ec7c3c893d858f5dd
   * add foo with files:4b63f3e50a3a34404541bc4519a3a1a0a8e6f738
@@ -350,9 +346,9 @@ Test Adapt with submodule changes - add commits to submodule and update
   [5] :"{@}"
   [5] :adapt=submodules
   [5] :link=embedded
-  [7] :prune=trivial-merge
+  [6] :prune=trivial-merge
   [9] :/libs
-  [33] sequence_number
+  [31] sequence_number
   $ git log --graph --pretty=%s:%H FILTERED_HEAD
   *   update libs submodule:8ac312666f3f1871775f85d9f05a74f381021623
   |\  
@@ -375,11 +371,11 @@ Test Adapt with submodule changes - add commits to submodule and update
   [4] :unapply(c47d7c6dbbd79ffc66035eb776fb753e0ec74276:/libs)
   [5] :"{@}"
   [5] :adapt=submodules
+  [5] :export
   [5] :link=embedded
-  [7] :export
-  [7] :prune=trivial-merge
+  [6] :prune=trivial-merge
   [9] :/libs
-  [34] sequence_number
+  [31] sequence_number
   $ git log --graph --pretty=%s:%H:%T FILTERED_HEAD
   * add file4.txt:3061af908a0dc1417902fbd7208bb2b8dc354e6c:ac420a625dfb874002210e623a7fdb55708ef2fa
   * add file3.txt:411907f127aa115588a614ec1dff6ee3c4696173:2935d839ce5e2fa8d5d8fb1a8541bf95b98fbedb
@@ -396,38 +392,35 @@ Test Adapt with submodule changes - add commits to submodule and update
   [4] :unapply(c47d7c6dbbd79ffc66035eb776fb753e0ec74276:/libs)
   [5] :"{@}"
   [5] :adapt=submodules
+  [5] :export
   [5] :link=embedded
-  [7] :export
-  [7] :prune=trivial-merge
+  [6] :prune=trivial-merge
   [9] :/libs
-  [34] sequence_number
+  [31] sequence_number
   $ git log --graph --pretty=%s:%H FILTERED_HEAD
   * add file4.txt:3061af908a0dc1417902fbd7208bb2b8dc354e6c
   * add file3.txt:411907f127aa115588a614ec1dff6ee3c4696173
   * add bar with file:00c8fe9f1bb75a3f6280992ec7c3c893d858f5dd
   * add foo with files:4b63f3e50a3a34404541bc4519a3a1a0a8e6f738
   $ josh-filter -s :adapt=submodules:link:/modules/another master
-  67ab0ceb89d300e15c867a1b0788c908ee82cd9e
+  10045f12b3df5f3046513baf4a39559ab29df4c5
   [1] :embed=modules/another
   [1] :unapply(71fd9c59b40956e00bf73908266692bb0e266df3:/modules/another)
+  [2] :/another
   [2] ::modules/another/.link.josh
   [2] :embed=libs
   [2] :unapply(dcfe52c799660f1611d6125542d0503230a5e14b:/libs)
   [3] ::libs/.link.josh
-  [4] :/another
   [4] :unapply(c47d7c6dbbd79ffc66035eb776fb753e0ec74276:/libs)
   [5] :"{@}"
   [5] :adapt=submodules
+  [5] :export
   [5] :link=embedded
+  [6] :prune=trivial-merge
   [7] :/modules
-  [7] :export
-  [7] :prune=trivial-merge
   [9] :/libs
-  [38] sequence_number
+  [33] sequence_number
   $ git log --graph --pretty=%s:%H FILTERED_HEAD
-  *   update libs submodule:67ab0ceb89d300e15c867a1b0788c908ee82cd9e
-  |\  
-  | * add file3.txt:384883a5fb1bf846b14186b0036627e2fbe3676c
   * add another submodule:10045f12b3df5f3046513baf4a39559ab29df4c5
   * add another.txt:8fbd01fa31551a059e280f68ac37397712feb59e
 
@@ -435,20 +428,20 @@ Test Adapt with submodule changes - add commits to submodule and update
   5265f6775d830084c12c9ff59566eac5a934c7c7
   [1] :embed=modules/another
   [1] :unapply(71fd9c59b40956e00bf73908266692bb0e266df3:/modules/another)
+  [2] :/another
   [2] ::modules/another/.link.josh
   [2] :embed=libs
   [2] :unapply(dcfe52c799660f1611d6125542d0503230a5e14b:/libs)
   [3] ::libs/.link.josh
-  [4] :/another
   [4] :unapply(c47d7c6dbbd79ffc66035eb776fb753e0ec74276:/libs)
   [5] :"{@}"
   [5] :adapt=submodules
+  [5] :export
   [5] :link=embedded
+  [6] :prune=trivial-merge
   [7] :/modules
-  [7] :export
-  [7] :prune=trivial-merge
   [9] :/libs
-  [38] sequence_number
+  [33] sequence_number
   $ rm -Rf libs
   $ rm -Rf modules
   $ git checkout testsubexport
@@ -476,20 +469,20 @@ Test Adapt with submodule changes - add commits to submodule and update
   005cde5c84fbcf17526a0e2fec0a2932c4ce8f24
   [1] :embed=modules/another
   [1] :unapply(71fd9c59b40956e00bf73908266692bb0e266df3:/modules/another)
+  [2] :/another
   [2] ::modules/another/.link.josh
   [2] :embed=libs
   [2] :unapply(dcfe52c799660f1611d6125542d0503230a5e14b:/libs)
   [3] ::libs/.link.josh
-  [4] :/another
   [4] :unapply(c47d7c6dbbd79ffc66035eb776fb753e0ec74276:/libs)
   [5] :"{@}"
   [5] :adapt=submodules
   [5] :link=embedded
+  [6] :export
   [7] :/modules
-  [8] :export
-  [8] :prune=trivial-merge
+  [7] :prune=trivial-merge
   [10] :/libs
-  [41] sequence_number
+  [36] sequence_number
 
   $ git checkout testsubexported
   Switched to branch 'testsubexported'
@@ -514,22 +507,22 @@ Test Adapt with submodule changes - add commits to submodule and update
   [1] :embed=modules/another
   [1] :prefix=modules/another
   [1] :unapply(71fd9c59b40956e00bf73908266692bb0e266df3:/modules/another)
+  [2] :/another
   [2] ::modules/another/.link.josh
   [2] :embed=libs
   [2] :unapply(dcfe52c799660f1611d6125542d0503230a5e14b:/libs)
   [3] ::libs/.link.josh
-  [4] :/another
   [4] :prefix=libs
   [4] :unapply(c47d7c6dbbd79ffc66035eb776fb753e0ec74276:/libs)
   [5] :"{@}"
   [5] :adapt=submodules
   [5] :link=embedded
+  [6] :export
   [7] :/modules
-  [8] :export
-  [8] :prune=trivial-merge
+  [7] :prune=trivial-merge
   [10] :/libs
   [10] :unlink
-  [41] sequence_number
+  [36] sequence_number
 
   $ git log --graph --pretty=%s:%H:%T refs/heads/unlinked_master
   *   update libs submodule:2b905ecdb05cd2b5a248c5d6e7f3dd6887095a74:0dfb828fc97a6684c6e0532dfdf0fe6a5005768c

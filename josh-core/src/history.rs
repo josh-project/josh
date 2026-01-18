@@ -19,7 +19,7 @@ pub fn walk2(
 
     let walk = {
         let mut walk = transaction.repo().revwalk()?;
-        if filter.get_meta("graph").is_some_and(|s| s == "linear") {
+        if filter.get_meta("history").is_some_and(|s| s == "linear") {
             walk.simplify_first_parent()?;
         }
         walk.set_sorting(git2::Sort::REVERSE | git2::Sort::TOPOLOGICAL)?;
@@ -874,8 +874,26 @@ fn create_filtered_commit2<'a>(
         }
     }
 
-    if options.get("graph").is_some_and(|s| s == "linear") {
+    if options.get("history").is_some_and(|s| s == "linear") {
         filtered_parent_commits.truncate(1);
+    }
+
+    if !options
+        .get("history")
+        .is_some_and(|s| s == "keep-trivial-merges")
+    {
+        if filtered_parent_commits.len() > 1 {
+            let is_trivial_merge = filtered_parent_commits[0].tree_id() == rewrite_data.tree().id();
+            let was_trivial_merge = original_commit
+                .parents()
+                .next()
+                .is_some_and(|c| c.tree_id() == original_commit.tree_id());
+
+            if is_trivial_merge && !was_trivial_merge {
+                // Returning the parent id here means the commit is dropped from the output history
+                return Ok((filtered_parent_commits[0].id(), false));
+            }
+        }
     }
 
     let selected_filtered_parent_commits: Vec<&_> = select_parent_commits(
@@ -888,6 +906,7 @@ fn create_filtered_commit2<'a>(
         && !(original_commit.parents().len() == 0 && is_empty_root(repo, &original_commit.tree()?))
     {
         if !filtered_parent_commits.is_empty() {
+            // Returning the parent id here means the commit is dropped from the output history
             return Ok((filtered_parent_commits[0].id(), false));
         }
         if rewrite_data.tree().id() == filter::tree::empty_id() {

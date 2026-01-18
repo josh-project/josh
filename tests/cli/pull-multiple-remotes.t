@@ -41,7 +41,7 @@
   /opt/git-install/bin/git
 
   $ josh clone ${TESTTMP}/remote1/libs :/sub1 libs
-  Added remote 'origin' with filter ':/sub1:prune=trivial-merge'
+  Added remote 'origin' with filter ':/sub1'
   From file://${TESTTMP}/remote1/libs
    * [new branch]      master     -> refs/josh/remotes/origin/master
   
@@ -63,7 +63,7 @@
   1 directory, 2 files
 
   $ josh remote add remote2 ${TESTTMP}/remote2/libs :/sub2
-  Added remote 'remote2' with filter ':/sub2:prune=trivial-merge'
+  Added remote 'remote2' with filter ':/sub2'
 
   $ josh pull --remote remote2
   From file://${TESTTMP}/remote2/libs

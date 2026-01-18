@@ -22,7 +22,7 @@
   /opt/git-install/bin/git
 
   $ josh clone ${TESTTMP}/remote/libs :/sub1 libs
-  Added remote 'origin' with filter ':/sub1:prune=trivial-merge'
+  Added remote 'origin' with filter ':/sub1'
   From file://${TESTTMP}/remote/libs
    * [new branch]      master     -> refs/josh/remotes/origin/master
   
