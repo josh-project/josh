@@ -220,7 +220,7 @@
 
 # Verify the branch was updated
   $ git show-ref | grep refs/heads/josh-link
-  427df5b47081f00d8ea5cfa7db2c9bbb66599245 refs/heads/josh-link
+  5f87baff5d75d53361a27a7d31b7b2c066fd65d3 refs/heads/josh-link
 
 # Check the updated content
   $ git checkout refs/heads/josh-link
@@ -241,7 +241,7 @@
   
   Turn off this advice by setting config variable advice.detachedHead to false
   
-  HEAD is now at 427df5b Update links: test-link
+  HEAD is now at 5f87baf Add test link file for fetch testing
   $ git ls-tree -r HEAD
   100644 blob f2376e2bab6c5194410bd8a55630f83f933d2f34	README.md (esc)
   100644 blob 710e3f16e0bf9cb958d197e369ac56e5c12430c6\ttest-link/.link.josh (esc)
@@ -255,7 +255,7 @@
   ] (no-eol)
 
   $ git checkout master
-  Previous HEAD position was 427df5b Update links: test-link
+  Previous HEAD position was 5f87baf Add test link file for fetch testing
   Switched to branch 'master'
 
 # Test fetch with no path (should find all .link.josh files)

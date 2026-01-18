@@ -677,7 +677,7 @@ Test :linear
   $ FILTER_HASH=$(josh-filter -i ':linear')
   $ josh-filter -p ${FILTER_HASH}
   :~(
-      graph="linear"
+      history="linear"
   )[
       :/
   ]
@@ -687,14 +687,14 @@ Test :linear
   `-- meta
       |-- 0
       |   `-- nop
-      `-- graph
+      `-- history
   
   3 directories, 2 files
 
   $ FILTER_HASH=$(josh-filter -i ':linear[::x/]')
   $ josh-filter -p ${FILTER_HASH}
   :~(
-      graph="linear"
+      history="linear"
   )[
       ::x/
   ]
@@ -712,7 +712,7 @@ Test :linear
       |               `-- 1
       |                   `-- prefix
       |                       `-- 0
-      `-- graph
+      `-- history
   
   10 directories, 3 files
 

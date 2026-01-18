@@ -98,7 +98,7 @@ impl Filter {
     /// Chain a filter that ensures linear history by dropping all parents
     /// of commits except the first parent
     pub fn linear(self) -> Filter {
-        self.with_meta("graph", "linear")
+        self.with_meta("history", "linear")
     }
 
     /// Chain a file filter that selects a single file
@@ -687,6 +687,46 @@ fn read_josh_link<'a>(
     Some(filter)
 }
 
+fn get_rev_filter(
+    transaction: &cache::Transaction,
+    commit: &git2::Commit,
+    filters: &std::collections::BTreeMap<LazyRef, Filter>,
+) -> JoshResult<Filter> {
+    let default_filter = *filters
+        .get(&LazyRef::Resolved(git2::Oid::zero()))
+        .unwrap_or(&to_filter(Op::Nop));
+
+    let mut matching_filters = Vec::new();
+
+    for (filter_tip, startfilter) in filters.iter() {
+        let filter_tip = if let LazyRef::Resolved(filter_tip) = filter_tip {
+            filter_tip
+        } else {
+            return Err(josh_error("unresolved lazy ref"));
+        };
+        if *filter_tip == git2::Oid::zero() {
+            continue;
+        }
+        if !transaction.repo().odb()?.exists(*filter_tip) {
+            return Err(josh_error(&format!(
+                "`:rev(...)` with nonexistent OID: {}",
+                filter_tip
+            )));
+        }
+
+        if is_ancestor_of(transaction, commit.id(), *filter_tip)? {
+            let sequence_number = cache::compute_sequence_number(transaction, *filter_tip)?;
+            matching_filters.push((sequence_number, *startfilter));
+        }
+    }
+
+    if let Some((_, filter)) = matching_filters.iter().min_by_key(|(seq_num, _)| seq_num) {
+        Ok(*filter)
+    } else {
+        Ok(default_filter)
+    }
+}
+
 pub fn apply_to_commit2(
     filter: Filter,
     commit: &git2::Commit,
@@ -704,12 +744,17 @@ pub fn apply_to_commit2(
 
         Op::Chain(filters) => {
             let mut current_oid = commit.id();
-            for filter in filters {
+            let chain_meta = filter.into_meta();
+            for f in filters {
+                let mut f = *f;
+                for (k, v) in chain_meta.iter() {
+                    f = f.with_meta(k, v);
+                }
                 if current_oid == git2::Oid::zero() {
                     break;
                 }
                 let current_commit = repo.find_commit(current_oid)?;
-                let r = some_or!(apply_to_commit2(*filter, &current_commit, transaction)?, {
+                let r = some_or!(apply_to_commit2(f, &current_commit, transaction)?, {
                     return Ok(None);
                 });
                 current_oid = r;
@@ -737,52 +782,6 @@ pub fn apply_to_commit2(
     rs_tracing::trace_scoped!("apply_to_commit", "spec": spec(filter), "commit": commit.id().to_string());
 
     let rewrite_data = match &op {
-        Op::Rev(filters) => {
-            let nf = *filters
-                .get(&LazyRef::Resolved(git2::Oid::zero()))
-                .unwrap_or(&to_filter(Op::Nop));
-
-            let id = commit.id();
-
-            for (filter_tip, startfilter) in filters.iter() {
-                let filter_tip = if let LazyRef::Resolved(filter_tip) = filter_tip {
-                    filter_tip
-                } else {
-                    return Err(josh_error("unresolved lazy ref"));
-                };
-                if *filter_tip == git2::Oid::zero() {
-                    continue;
-                }
-                if !transaction.repo().odb()?.exists(*filter_tip) {
-                    return Err(josh_error(&format!(
-                        "`:rev(...)` with nonexistent OID: {}",
-                        filter_tip
-                    )));
-                }
-
-                if !is_ancestor_of(transaction, id, *filter_tip)? {
-                    continue;
-                }
-                // Remove this filter but preserve the others.
-                let mut f2 = filters.clone();
-                f2.remove(&LazyRef::Resolved(*filter_tip));
-                f2.insert(LazyRef::Resolved(git2::Oid::zero()), *startfilter);
-                let f = if f2.len() == 1 {
-                    *startfilter
-                } else {
-                    to_filter(Op::Rev(f2))
-                };
-                if let Some(start) = apply_to_commit2(f, commit, transaction)? {
-                    transaction.insert(filter, id, start, true);
-                    return Ok(Some(start));
-                } else {
-                    return Ok(None);
-                }
-            }
-
-            apply(transaction, nf, Rewrite::from_commit(commit)?)?
-        }
-
         Op::Squash(Some(ids)) => {
             if let Some(sq) = ids.get(&LazyRef::Resolved(commit.id())) {
                 let oid = if let Some(oid) = apply_to_commit2(
@@ -1069,6 +1068,19 @@ pub fn apply_to_commit2(
                         s_path,
                     );
                     Ok((parent, pcs))
+                })
+                .collect::<JoshResult<Vec<_>>>()?;
+
+            return per_rev_filter(transaction, commit, filter, commit_filter, parent_filters);
+        }
+        Op::Rev(filters) => {
+            let commit_filter = get_rev_filter(transaction, commit, filters)?;
+
+            let parent_filters = commit
+                .parents()
+                .map(|parent| {
+                    let pcw = get_rev_filter(transaction, &parent, filters)?;
+                    Ok((parent, pcw))
                 })
                 .collect::<JoshResult<Vec<_>>>()?;
 
@@ -1999,7 +2011,7 @@ fn per_rev_filter(
         filtered_parent_ids,
         tree_data,
         transaction,
-        filter.peel(),
+        filter,
         commit_filter.into_meta(),
     ))
     .transpose();

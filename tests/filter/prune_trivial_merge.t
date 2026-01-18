@@ -33,9 +33,13 @@
   |/  
   * add file1
 
-  $ josh-filter -s ::file1
+  $ josh-filter -s ":~(history=\"keep-trivial-merges\")[::file1]"
   dbf2fc5500dcee37c7d7a417efd4beffd3d2d3ea
-  [4] ::file1
+  [4] :~(
+      history="keep-trivial-merges"
+  )[
+      ::file1
+  ]
   [5] sequence_number
   $ git log --graph --pretty=%s FILTERED_HEAD
   *   Merge branch 'branch1'
@@ -44,17 +48,34 @@
   * | mod file1
   |/  
   * add file1
-  $ josh-filter -s ::file1:prune=trivial-merge
+  $ josh-filter -s "::file1" FILTERED_HEAD
+  dbf2fc5500dcee37c7d7a417efd4beffd3d2d3ea
+  [4] ::file1
+  [4] :~(
+      history="keep-trivial-merges"
+  )[
+      ::file1
+  ]
+  [6] sequence_number
+  $ git log --graph --pretty=%s FILTERED_HEAD
+  *   Merge branch 'branch1'
+  |\  
+  * | empty commit
+  * | mod file1
+  |/  
+  * add file1
+  $ josh-filter -s ":prune=trivial-merge" FILTERED_HEAD
   392b6f0d3ce0244b00bfc9340219481aae9835a3
   [3] :prune=trivial-merge
   [4] ::file1
+  [4] :~(
+      history="keep-trivial-merges"
+  )[
+      ::file1
+  ]
   [6] sequence_number
 
   $ git log --graph --pretty=%s FILTERED_HEAD
   * empty commit
   * mod file1
   * add file1
-
-
-
-
