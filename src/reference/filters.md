@@ -22,6 +22,57 @@ if special characters used by the filter language need to be used (like `:` or s
 
     :filter=argument1,"argument2"
 
+## Filter options **`:~(key1="value1",key2="value2")[:filter]`**
+
+The `:~(...)[]` syntax allows you to provide filter options (metadata) that affect how the filter
+is applied. The options are specified as key-value pairs in parentheses, followed by the actual
+filter in square brackets.
+
+**Syntax:**
+```
+:~(option1="value1",option2="value2")[:filter]
+```
+
+Multiple options can be specified by separating them with commas. Option values must be quoted
+using double quotes.
+
+**Example:**
+```
+:~(key1="value1",key2="value2")[:/sub1]
+```
+
+This applies the `:/sub1` filter with the specified options attached as metadata.
+
+### History option
+
+The `history` option controls how the commit history is processed during filtering.
+It affects both how commits are walked and how merge commits are handled in the output history.
+
+**Available values:**
+
+- **`history="linear"`** - Produces a linear history by converting merge commits into regular commits,
+  creating a linear chain of commits in the output history.
+
+  **Example:**
+  ```
+  :~(history="linear")[:/sub1]
+  ```
+
+- **`history="keep-trivial-merges"`** - Prevents dropping trivial merge commits that would
+  normally be pruned from the output history.
+  
+  Normally, Josh will drop merge commits from the filtered history if their filtered tree is
+  identical to the first parent's tree. Setting this option to `"keep-trivial-merges"` preserves
+  these commits in the output history.
+  
+  **Example:**
+  ```
+  :~(history="keep-trivial-merges")[::file1]
+  ```
+  
+  **Note for users of older versions:** In older versions of Josh, `"keep-trivial-merges"` was the
+  default behavior. If you're upgrading from an older version and need to recreate the same history
+  structure, you should explicitly set `history="keep-trivial-merges"` in your filter options.
 
 ## Available filters
 
