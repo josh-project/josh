@@ -49,14 +49,6 @@
     </tr>
     <tr>
         <td>
-            <code>JOSH_SSH_MAX_STARTUPS</code>
-        </td>
-        <td>
-            Maximum number of concurrent SSH authentication attempts. Default: 16
-        </td>
-    </tr>
-    <tr>
-        <td>
             <code>JOSH_SSH_TIMEOUT</code>
         </td>
         <td>
