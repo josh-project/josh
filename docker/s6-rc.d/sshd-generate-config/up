@@ -1,10 +1,8 @@
 #!/command/execlineb -P
 
 importas -D 8022 josh_ssh_port JOSH_SSH_PORT
-importas -D 16 josh_ssh_max_startups JOSH_SSH_MAX_STARTUPS
 emptyenv -p
 backtick JOSH_SSH_PORT { echo ${josh_ssh_port} }
-backtick JOSH_SSH_MAX_STARTUPS { echo ${josh_ssh_max_startups} }
 foreground
 {
   redirfd -r 0 /etc/ssh/sshd_config.template
