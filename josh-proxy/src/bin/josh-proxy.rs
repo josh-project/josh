@@ -1,7 +1,8 @@
 use josh_core::cache::CacheStack;
 use josh_core::josh_error;
 use josh_proxy::FetchError;
-use josh_proxy::service::{JoshProxyService, make_upstream};
+use josh_proxy::serve::{CapabilitiesDirection, git_list_capabilities};
+use josh_proxy::service::{GitCapabilities, JoshProxyService, make_upstream};
 use josh_proxy::upstream::{RemoteAuth, RepoUpdate};
 
 use clap::Parser;
@@ -152,6 +153,16 @@ async fn run_proxy(args: josh_proxy::cli::Args) -> josh_core::JoshResult<i32> {
 
     let cache = Arc::new(CacheStack::default());
 
+    let upload_pack_caps =
+        git_list_capabilities(&local.join("mirror"), CapabilitiesDirection::UploadPack)?;
+    let receive_pack_caps =
+        git_list_capabilities(&local.join("mirror"), CapabilitiesDirection::ReceivePack)?;
+
+    let git_capabilities = GitCapabilities {
+        upload_pack: upload_pack_caps,
+        receive_pack: receive_pack_caps,
+    };
+
     let proxy_service = Arc::new(JoshProxyService {
         port: args.port.to_string(),
         repo_path: local.to_owned(),
@@ -161,6 +172,7 @@ async fn run_proxy(args: josh_proxy::cli::Args) -> josh_core::JoshResult<i32> {
         cache_duration: args.cache_duration,
         filter_prefix: args.filter_prefix,
         cache,
+        git_capabilities,
         fetch_timers: Default::default(),
         head_symref_map: Default::default(),
         poll: Default::default(),

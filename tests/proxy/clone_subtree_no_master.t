@@ -129,7 +129,6 @@
       |   `-- pack
       `-- refs
           |-- heads
-          |-- namespaces
           `-- tags
   
-  35 directories, 20 files
+  34 directories, 20 files
