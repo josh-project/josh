@@ -5,8 +5,9 @@ use std::str::FromStr;
 use std::sync::{Arc, RwLock};
 
 use crate::http::{ProxyError, StreamWithGuard};
+use crate::serve::CapabilitiesDirection;
 use crate::upstream::{HttpUpstream, RemoteAuth, RepoUpdate, Upstream, process_repo_update};
-use crate::{FetchError, FilteredRepoUrl, cli, run_git_with_auth};
+use crate::{FetchError, FilteredRepoUrl, TmpGitNamespace, cli, run_git_with_auth};
 
 use josh_core::cache::{CacheStack, TransactionContext};
 use josh_core::{JoshError, JoshResult, josh_error};
@@ -127,6 +128,21 @@ pub enum UpstreamProtocol {
 }
 
 #[derive(Clone)]
+pub struct GitCapabilities {
+    pub upload_pack: Vec<String>,
+    pub receive_pack: Vec<String>,
+}
+
+impl GitCapabilities {
+    pub fn get(&self, direction: CapabilitiesDirection) -> &[String] {
+        match direction {
+            CapabilitiesDirection::UploadPack => &self.upload_pack,
+            CapabilitiesDirection::ReceivePack => &self.receive_pack,
+        }
+    }
+}
+
+#[derive(Clone)]
 pub struct JoshProxyService {
     pub port: String,
     pub repo_path: std::path::PathBuf,
@@ -136,6 +152,7 @@ pub struct JoshProxyService {
     pub cache_duration: u64,
     pub filter_prefix: Option<String>,
     pub cache: Arc<CacheStack>,
+    pub git_capabilities: GitCapabilities,
     pub fetch_timers: Arc<RwLock<FetchTimers>>,
     // Stores a map from upstream repo to the ref that
     // the symref HEAD resolves to for that repo
@@ -420,25 +437,36 @@ fn resolve_upstream_ref(
         .ok_or(josh_error("Could not resolve ref"))
 }
 
-struct NamespacedRefs {
+pub struct NamespacedRefs {
     transaction: josh_core::cache::Transaction,
-    // All refs below are already namespaced
+    ns: Arc<TmpGitNamespace>,
     refs: Vec<(String, git2::Oid)>,
-    // (source, target)
     head_symref: (String, String),
 }
 
 impl NamespacedRefs {
     // Writes the prepared list of refs to the repo, consuming self
     pub fn write_to_repo(self) -> JoshResult<()> {
-        josh_core::update_refs(&self.transaction, self.refs);
+        let refs = self
+            .refs
+            .into_iter()
+            .map(|(refn, oid)| (self.ns.reference(&refn), oid))
+            .collect();
+
+        josh_core::update_refs(&self.transaction, refs);
 
         let (source, target) = self.head_symref;
+        let (source, target) = (self.ns.reference(&source), self.ns.reference(&target));
+
         self.transaction
             .repo()
             .reference_symbolic(&source, &target, true, "write_to_repo")?;
 
         Ok(())
+    }
+
+    pub fn into_inner(self) -> (Vec<(String, git2::Oid)>, (String, String)) {
+        (self.refs, self.head_symref)
     }
 }
 
@@ -491,34 +519,6 @@ async fn filter_to_namespace(
             josh_core::filter::resolve_refs(&resolved_refs, filter)
         };
 
-        let refs_to_filter = match &head_ref {
-            HeadRef::ExplicitHead => {
-                let object = resolve_upstream_ref(&transaction, &repo, "HEAD")?;
-                vec![("HEAD".to_string(), object)]
-            }
-            HeadRef::ExplicitRef(ref_value) => {
-                let object = resolve_upstream_ref(&transaction, &repo, ref_value)?;
-                vec![(ref_value.to_owned(), object)]
-            }
-            HeadRef::ExplicitSha(oid_str, oid_val) => {
-                // When the user requests specific SHA, we create a synthetic ref in a form of
-                // refs/heads/_abcd..., and point HEAD symref to it
-                let synthetic_ref = format!("refs/heads/_{}", oid_str);
-                vec![(synthetic_ref, *oid_val)]
-            }
-            HeadRef::Implicit => {
-                // When user did not explicitly request a ref to filter,
-                // start with a list of all existing refs
-                let mut list = josh_core::housekeeping::list_refs(transaction.repo(), &repo)?;
-
-                if let Ok(object) = resolve_upstream_ref(&transaction, &repo, "HEAD") {
-                    list.push(("HEAD".to_string(), object));
-                }
-
-                list
-            }
-        };
-
         let head_symref_target = match &head_ref {
             HeadRef::ExplicitHead | HeadRef::Implicit => head_symref_map
                 .read()?
@@ -538,6 +538,28 @@ async fn filter_to_namespace(
             }
         };
 
+        let refs_to_filter = match &head_ref {
+            HeadRef::ExplicitHead => {
+                let object = resolve_upstream_ref(&transaction, &repo, "HEAD")?;
+                vec![(head_symref_target.clone(), object)]
+            }
+            HeadRef::ExplicitRef(ref_value) => {
+                let object = resolve_upstream_ref(&transaction, &repo, ref_value)?;
+                vec![(ref_value.to_owned(), object)]
+            }
+            HeadRef::ExplicitSha(oid_str, oid_val) => {
+                // When the user requests specific SHA, we create a synthetic ref in a form of
+                // refs/heads/_abcd..., and point HEAD symref to it
+                let synthetic_ref = format!("refs/heads/_{}", oid_str);
+                vec![(synthetic_ref, *oid_val)]
+            }
+            HeadRef::Implicit => {
+                // When user did not explicitly request a ref to filter,
+                // start with a list of all existing refs
+                josh_core::housekeeping::list_refs(transaction.repo(), &repo)?
+            }
+        };
+
         let t2 = service.open_overlay(None)?;
         t2.repo()
             .odb()?
@@ -548,10 +570,7 @@ async fn filter_to_namespace(
             .iter()
             .any(|(refn, oid)| refn == &head_symref_target && !oid.is_zero());
 
-        let head_symref = (
-            temp_ns.reference("HEAD"),
-            temp_ns.reference(&head_symref_target),
-        );
+        let head_symref = ("HEAD".to_string(), head_symref_target);
 
         // Skip refs that ended up with zero oid. This happens for example when we request
         // a namespace pointing to a workspace that only exists on some branches: the other
@@ -563,13 +582,13 @@ async fn filter_to_namespace(
             filtered_refs
                 .into_iter()
                 .filter(|(_, oid)| !oid.is_zero())
-                .map(|(refn, oid)| (temp_ns.reference(&refn), oid))
                 .collect()
         } else {
             Default::default()
         };
 
         Ok::<_, JoshError>(NamespacedRefs {
+            ns: temp_ns,
             transaction: t2,
             refs: namespaced_refs,
             head_symref,
@@ -975,11 +994,22 @@ async fn handle_serve_namespace(
         None => josh_core::filter::Filter::new(),
     });
 
-    let temp_ns = match prepare_namespace(serv.clone(), &repo, filter, &head_ref).await {
-        Ok(ns) => ns,
+    let (temp_ns, namespaced_refs) =
+        match prepare_namespace(serv.clone(), &repo, filter, &head_ref).await {
+            Ok(ns) => ns,
+            Err(e) => {
+                return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response();
+            }
+        };
+
+    match tokio::task::spawn_blocking(|| namespaced_refs.write_to_repo()).await {
         Err(e) => {
             return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response();
         }
+        Ok(Err(e)) => {
+            return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response();
+        }
+        _ => {}
     };
 
     let overlay_path = serv.repo_path.join("overlay");
@@ -1130,6 +1160,13 @@ async fn upstream_fetch_middleware(
     Ok(next.run(req).await)
 }
 
+// TODO: replace with axum routing/extractors
+fn parse_info_refs_service(query: &str) -> Option<String> {
+    url::form_urlencoded::parse(query.as_bytes())
+        .find(|(key, _)| key == "service")
+        .map(|(_, value)| value.into_owned())
+}
+
 async fn call_service(
     State(serv): State<Arc<JoshProxyService>>,
     fetch_result: UpstreamFetchResult,
@@ -1161,9 +1198,27 @@ async fn call_service(
         return Ok(response);
     }
 
-    let temp_ns = prepare_namespace(serv.clone(), &upstream_repo, filter, &headref).await?;
-    let overlay_path = serv.repo_path.join("overlay");
+    let (temp_ns, namespaced_refs) =
+        prepare_namespace(serv.clone(), &upstream_repo, filter, &headref).await?;
 
+    if parsed_url.pathinfo == "/info/refs"
+        && let Some(query) = req.uri().query()
+        && let Some(service) = parse_info_refs_service(&query)
+        && let Ok(direction) = CapabilitiesDirection::from_str(&service)
+    {
+        let capabilities = serv.git_capabilities.get(direction);
+        let encoded = crate::serve::encode_info_refs(namespaced_refs, direction, capabilities)?;
+
+        return Ok(Response::builder()
+            .status(StatusCode::OK)
+            .header(header::CONTENT_TYPE, direction.content_type())
+            .body(Body::from(encoded))
+            .map_err(|e| ProxyError(josh_error(&e.to_string())))?);
+    }
+
+    tokio::task::spawn_blocking(move || namespaced_refs.write_to_repo()).await??;
+
+    let overlay_path = serv.repo_path.join("overlay");
     let repo_update = make_repo_update(
         &remote_url,
         serv.clone(),
@@ -1272,7 +1327,7 @@ async fn prepare_namespace(
     repo: &str,
     filter: josh_core::filter::Filter,
     head_ref: &HeadRef,
-) -> JoshResult<Arc<crate::TmpGitNamespace>> {
+) -> JoshResult<(Arc<crate::TmpGitNamespace>, NamespacedRefs)> {
     let temp_ns = Arc::new(crate::TmpGitNamespace::new(
         &serv.repo_path.join("overlay"),
         tracing::Span::current(),
@@ -1280,11 +1335,9 @@ async fn prepare_namespace(
 
     let repo_path = serv.repo_path.clone();
     let refs =
-        filter_to_namespace(serv, repo, repo_path, temp_ns.to_owned(), filter, head_ref).await?;
+        filter_to_namespace(serv, repo, repo_path, temp_ns.clone(), filter, head_ref).await?;
 
-    refs.write_to_repo()?;
-
-    Ok(temp_ns)
+    Ok((temp_ns, refs))
 }
 
 async fn handle_graphql(
