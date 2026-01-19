@@ -1,9 +1,8 @@
 use josh_core::cache::CacheStack;
 use josh_core::josh_error;
-use josh_proxy::FetchError;
-use josh_proxy::serve::{CapabilitiesDirection, git_list_capabilities};
-use josh_proxy::service::{GitCapabilities, JoshProxyService, make_upstream};
+use josh_proxy::service::{JoshProxyService, make_service};
 use josh_proxy::upstream::{RemoteAuth, RepoUpdate};
+use josh_proxy::{FetchError, TmpGitNamespace};
 
 use clap::Parser;
 use tokio::sync::broadcast;
@@ -136,11 +135,15 @@ async fn run_housekeeping(local: std::path::PathBuf, gc: bool) -> josh_core::Jos
     }
 }
 
-async fn run_proxy(args: josh_proxy::cli::Args) -> josh_core::JoshResult<i32> {
-    let upstream = make_upstream(&args.remote).inspect_err(|e| {
-        eprintln!("Upstream parsing error: {}", e);
-    })?;
+fn io_thread(mut rx: tokio::sync::mpsc::UnboundedReceiver<josh_proxy::service::IoCleanup>) {
+    use josh_proxy::service::IoCleanup;
 
+    while let Some(IoCleanup { repo_path, name }) = rx.blocking_recv() {
+        TmpGitNamespace::cleanup(&repo_path, &name);
+    }
+}
+
+async fn run_proxy(args: josh_proxy::cli::Args) -> josh_core::JoshResult<i32> {
     let local = std::path::PathBuf::from(&args.local.as_ref().unwrap());
     let local = if local.is_absolute() {
         local
@@ -148,37 +151,22 @@ async fn run_proxy(args: josh_proxy::cli::Args) -> josh_core::JoshResult<i32> {
         std::env::current_dir()?.join(local)
     };
 
+    let (io_thread_tx, io_thread_rx) = tokio::sync::mpsc::unbounded_channel();
+    let io_thread = tokio::task::spawn_blocking(move || io_thread(io_thread_rx));
+
     josh_proxy::service::create_repo(&local, None)?;
     josh_core::cache::sled_load(&local)?;
 
-    let cache = Arc::new(CacheStack::default());
-
-    let upload_pack_caps =
-        git_list_capabilities(&local.join("mirror"), CapabilitiesDirection::UploadPack)?;
-    let receive_pack_caps =
-        git_list_capabilities(&local.join("mirror"), CapabilitiesDirection::ReceivePack)?;
-
-    let git_capabilities = GitCapabilities {
-        upload_pack: upload_pack_caps,
-        receive_pack: receive_pack_caps,
-    };
-
-    let proxy_service = Arc::new(JoshProxyService {
-        port: args.port.to_string(),
-        repo_path: local.to_owned(),
-        upstream,
-        require_auth: args.require_auth,
-        poll_user: args.poll_user,
-        cache_duration: args.cache_duration,
-        filter_prefix: args.filter_prefix,
-        cache,
-        git_capabilities,
-        fetch_timers: Default::default(),
-        head_symref_map: Default::default(),
-        poll: Default::default(),
-        fetch_permits: Default::default(),
-        filter_permits: Arc::new(tokio::sync::Semaphore::new(10)),
-    });
+    let proxy_service = make_service()
+        .port(args.port)
+        .repo_path(&local)
+        .remotes(&args.remote)
+        .require_auth(args.require_auth)
+        .cache_duration(args.cache_duration)
+        .io_thread_tx(io_thread_tx)
+        .maybe_filter_prefix(args.filter_prefix)
+        .maybe_poll_user(args.poll_user)
+        .call()?;
 
     let ps = proxy_service.clone();
 
@@ -206,11 +194,14 @@ async fn run_proxy(args: josh_proxy::cli::Args) -> josh_core::JoshResult<i32> {
     } else {
         tokio::select!(
             r = run_housekeeping(local, args.gc) => eprintln!("run_housekeeping exited: {:?}", r),
-            r = run_polling(ps.clone()) => eprintln!("run_polling exited: {:?}", r),
+            r = run_polling(ps) => eprintln!("run_polling exited: {:?}", r),
             r = server_future => eprintln!("http server exited: {:?}", r),
             _ = shutdown_signal(shutdown_tx) => eprintln!("shutdown requested"),
         );
     }
+
+    // Once sender is dropped, IO thread will finish
+    io_thread.await?;
 
     Ok(0)
 }

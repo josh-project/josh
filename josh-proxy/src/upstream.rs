@@ -24,7 +24,7 @@ pub struct RepoUpdate {
     pub refs: std::collections::HashMap<String, (String, String)>,
     pub remote_url: String,
     pub remote_auth: RemoteAuth,
-    pub port: String,
+    pub port: u16,
     pub filter_spec: String,
     pub base_ns: String,
     pub git_ns: String,

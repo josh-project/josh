@@ -5,7 +5,7 @@ use std::str::FromStr;
 use std::sync::{Arc, RwLock};
 
 use crate::http::{ProxyError, StreamWithGuard};
-use crate::serve::CapabilitiesDirection;
+use crate::serve::{CapabilitiesDirection, git_list_capabilities};
 use crate::upstream::{HttpUpstream, RemoteAuth, RepoUpdate, Upstream, process_repo_update};
 use crate::{FetchError, FilteredRepoUrl, TmpGitNamespace, cli, run_git_with_auth};
 
@@ -142,15 +142,20 @@ impl GitCapabilities {
     }
 }
 
+pub struct IoCleanup {
+    pub repo_path: std::path::PathBuf,
+    pub name: String,
+}
+
 #[derive(Clone)]
 pub struct JoshProxyService {
-    pub port: String,
+    pub port: u16,
     pub repo_path: std::path::PathBuf,
     pub upstream: JoshProxyUpstream,
     pub require_auth: bool,
     pub poll_user: Option<String>,
     pub cache_duration: u64,
-    pub filter_prefix: Option<String>,
+    pub filter_prefix: josh_core::filter::Filter,
     pub cache: Arc<CacheStack>,
     pub git_capabilities: GitCapabilities,
     pub fetch_timers: Arc<RwLock<FetchTimers>>,
@@ -160,6 +165,71 @@ pub struct JoshProxyService {
     pub fetch_permits: Arc<std::sync::Mutex<HashMap<String, Arc<tokio::sync::Semaphore>>>>,
     pub filter_permits: Arc<tokio::sync::Semaphore>,
     pub poll: Polls,
+    pub io_thread_tx: Option<tokio::sync::mpsc::UnboundedSender<IoCleanup>>,
+}
+
+#[bon::builder]
+pub fn make_service(
+    port: u16,
+    repo_path: &std::path::Path,
+    remotes: &[cli::Remote],
+    require_auth: Option<bool>,
+    poll_user: Option<String>,
+    cache_duration: Option<u64>,
+    cache: Option<CacheStack>,
+    filter_prefix: Option<String>,
+    git_capabilities: Option<GitCapabilities>,
+    io_thread_tx: Option<tokio::sync::mpsc::UnboundedSender<IoCleanup>>,
+) -> JoshResult<Arc<JoshProxyService>> {
+    let cache = Arc::new(cache.unwrap_or_default());
+    let repo_path = repo_path.to_owned();
+    let require_auth = require_auth.unwrap_or(false);
+    let cache_duration = cache_duration.unwrap_or(0);
+
+    let upstream = make_upstream(remotes).inspect_err(|e| {
+        eprintln!("Upstream parsing error: {}", e);
+    })?;
+
+    let filter_prefix = if let Some(filter_prefix) = filter_prefix {
+        josh_core::filter::parse(&filter_prefix)?
+    } else {
+        josh_core::filter::Filter::new()
+    };
+
+    let git_capabilities = if let Some(caps) = git_capabilities {
+        caps
+    } else {
+        let upload_pack_caps =
+            git_list_capabilities(&repo_path.join("mirror"), CapabilitiesDirection::UploadPack)?;
+
+        let receive_pack_caps = git_list_capabilities(
+            &repo_path.join("mirror"),
+            CapabilitiesDirection::ReceivePack,
+        )?;
+
+        GitCapabilities {
+            upload_pack: upload_pack_caps,
+            receive_pack: receive_pack_caps,
+        }
+    };
+
+    Ok(Arc::new(JoshProxyService {
+        port,
+        repo_path,
+        upstream,
+        require_auth,
+        poll_user,
+        cache_duration,
+        filter_prefix,
+        cache,
+        git_capabilities,
+        fetch_timers: Default::default(),
+        head_symref_map: Default::default(),
+        fetch_permits: Default::default(),
+        filter_permits: Arc::new(tokio::sync::Semaphore::new(10)),
+        poll: Default::default(),
+        io_thread_tx,
+    }))
 }
 
 impl crate::upstream::Upstream for Arc<JoshProxyService> {
@@ -869,7 +939,7 @@ fn make_repo_update(
         refs: HashMap::new(),
         remote_url: remote_url.to_string(),
         remote_auth,
-        port: serv.port.clone(),
+        port: serv.port,
         filter_spec: josh_core::filter::spec(filter),
         base_ns: josh_core::to_ns(repo),
         git_ns: ns.name().to_string(),
@@ -977,22 +1047,7 @@ async fn handle_serve_namespace(
         }
     };
 
-    let filter = query_filter.chain(match &serv.filter_prefix {
-        Some(filter_prefix) => match josh_core::filter::parse(filter_prefix) {
-            Ok(filter) => filter,
-            Err(e) => {
-                return (
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    format!(
-                        "Failed to parse prefix filter passed as command line argument: {}",
-                        e
-                    ),
-                )
-                    .into_response();
-            }
-        },
-        None => josh_core::filter::Filter::new(),
-    });
+    let filter = query_filter.chain(serv.filter_prefix);
 
     let (temp_ns, namespaced_refs) =
         match prepare_namespace(serv.clone(), &repo, filter, &head_ref).await {
@@ -1067,12 +1122,7 @@ async fn upstream_fetch_middleware(
 
     let filter = {
         let filter = josh_core::filter::parse(&parsed_url.filter_spec)?;
-
-        if let Some(filter_prefix) = &serv.filter_prefix {
-            josh_core::filter::parse(filter_prefix)?.chain(filter)
-        } else {
-            filter
-        }
+        serv.filter_prefix.chain(filter)
     };
 
     let mut fetch_repos = vec![upstream_repo.clone()];
@@ -1331,6 +1381,7 @@ async fn prepare_namespace(
     let temp_ns = Arc::new(crate::TmpGitNamespace::new(
         &serv.repo_path.join("overlay"),
         tracing::Span::current(),
+        serv.io_thread_tx.clone(),
     ));
 
     let repo_path = serv.repo_path.clone();
@@ -1455,6 +1506,7 @@ async fn handle_graphql(
         let temp_ns = Arc::new(crate::TmpGitNamespace::new(
             &serv.repo_path.join("overlay"),
             tracing::Span::current(),
+            serv.io_thread_tx.clone(),
         ));
 
         let transaction = &*context.transaction.lock()?;

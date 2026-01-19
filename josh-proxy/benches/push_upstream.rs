@@ -1,14 +1,10 @@
-use josh_core::cache::CacheStack;
-use josh_proxy::serve::{CapabilitiesDirection, git_list_capabilities};
-use josh_proxy::service::{
-    GitCapabilities, JoshProxyService, JoshProxyUpstream, make_service_router,
-};
+use josh_proxy::service::{make_service, make_service_router};
 
 use axum::response::IntoResponse;
 use axum::{Router, extract::Request, response::Response, routing::any};
 use clap::Parser;
+use josh_proxy::TmpGitNamespace;
 use reqwest::StatusCode;
-use std::sync::Arc;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -94,41 +90,24 @@ async fn main() -> anyhow::Result<()> {
     josh_core::cache::sled_load(&repo_path).expect("Failed to load cache");
 
     let git_server_task = start_git_server(&args.upstream_dir).await;
+    let (io_tx, mut io_rx) = tokio::sync::mpsc::unbounded_channel();
+
+    let io_task = tokio::task::spawn_blocking(move || {
+        while let Some(josh_proxy::service::IoCleanup { repo_path, name }) = io_rx.blocking_recv() {
+            TmpGitNamespace::cleanup(&repo_path, &name);
+        }
+    });
 
     let proxy_task = {
-        let cache = Arc::new(CacheStack::default());
-
-        let upload_pack_caps =
-            git_list_capabilities(&repo_path.join("mirror"), CapabilitiesDirection::UploadPack)
-                .expect("failed to discover capabilities");
-
-        let receive_pack_caps = git_list_capabilities(
-            &repo_path.join("mirror"),
-            CapabilitiesDirection::ReceivePack,
-        )
-        .expect("failed to discover capabilities");
-
-        let git_capabilities = GitCapabilities {
-            upload_pack: upload_pack_caps,
-            receive_pack: receive_pack_caps,
-        };
-
-        let proxy_service = Arc::new(JoshProxyService {
-            port: "8000".to_string(),
-            repo_path: repo_path.clone(),
-            upstream: JoshProxyUpstream::Http("http://127.0.0.1:8001".to_string()),
-            require_auth: false,
-            poll_user: None,
-            cache_duration: 0,
-            filter_prefix: None,
-            cache,
-            git_capabilities,
-            fetch_timers: Default::default(),
-            head_symref_map: Default::default(),
-            poll: Default::default(),
-            fetch_permits: Default::default(),
-            filter_permits: Arc::new(tokio::sync::Semaphore::new(10)),
-        });
+        let proxy_service = make_service()
+            .port(8000)
+            .repo_path(&repo_path)
+            .remotes(&[josh_proxy::cli::Remote::Http(
+                "http://127.0.0.1:8001".to_string(),
+            )])
+            .io_thread_tx(io_tx)
+            .call()
+            .expect("failed to build proxy service");
 
         let app = make_service_router(proxy_service);
         let listener = tokio::net::TcpListener::bind("127.0.0.1:8000")
@@ -189,6 +168,7 @@ async fn main() -> anyhow::Result<()> {
 
     proxy_task.abort();
     git_server_task.abort();
+    io_task.await?;
 
     Ok(())
 }
