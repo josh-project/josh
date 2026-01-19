@@ -195,19 +195,27 @@ pub fn fetch_refs_from_url(
     Ok(())
 }
 
+type IoCleanupSender = tokio::sync::mpsc::UnboundedSender<service::IoCleanup>;
+
 pub struct TmpGitNamespace {
     name: String,
     repo_path: std::path::PathBuf,
+    cleanup: Option<IoCleanupSender>,
     _span: tracing::Span,
 }
 
 impl TmpGitNamespace {
-    pub fn new(repo_path: &std::path::Path, span: tracing::Span) -> TmpGitNamespace {
+    pub fn new(
+        repo_path: &std::path::Path,
+        span: tracing::Span,
+        cleanup: Option<IoCleanupSender>,
+    ) -> TmpGitNamespace {
         let n = format!("request_{}", uuid::Uuid::new_v4());
         let n2 = n.clone();
         TmpGitNamespace {
             name: n,
             repo_path: repo_path.to_owned(),
+            cleanup,
             _span: tracing::span!(
                 parent: span,
                 tracing::Level::TRACE,
@@ -223,6 +231,18 @@ impl TmpGitNamespace {
     pub fn reference(&self, refname: &str) -> String {
         format!("refs/namespaces/{}/{}", &self.name, refname)
     }
+
+    pub fn cleanup(repo_path: &std::path::Path, name: &str) {
+        let ns_path = repo_path.join("refs/namespaces").join(&name);
+
+        if !std::path::Path::new(&ns_path).exists() {
+            return;
+        }
+
+        if let Err(e) = std::fs::remove_dir_all(&ns_path) {
+            tracing::error!(path = %ns_path.display(), error = %e, "remove_dir_all failed",)
+        }
+    }
 }
 
 impl std::fmt::Debug for TmpGitNamespace {
@@ -236,20 +256,16 @@ impl std::fmt::Debug for TmpGitNamespace {
 
 impl Drop for TmpGitNamespace {
     fn drop(&mut self) {
-        if std::env::var_os("JOSH_KEEP_NS").is_some() {
-            return;
-        }
-
-        let request_tmp_namespace = self.repo_path.join("refs/namespaces").join(&self.name);
-
-        if std::path::Path::new(&request_tmp_namespace).exists() {
-            std::fs::remove_dir_all(&request_tmp_namespace).unwrap_or_else(|err| {
-                tracing::error!(
-                    "remove_dir_all {} failed, error: {}",
-                    request_tmp_namespace.display(),
-                    err
-                )
-            });
+        if let Some(cleanup) = self.cleanup.take() {
+            if let Err(e) = cleanup.send(service::IoCleanup {
+                repo_path: self.repo_path.clone(),
+                name: self.name.clone(),
+            }) {
+                tracing::error!(error = %e, "failed to schedule deferred cleanup")
+            }
+        } else {
+            tracing::warn!("Cleaning up namespace synchronously");
+            Self::cleanup(&self.repo_path, &self.name);
         }
     }
 }
