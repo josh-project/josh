@@ -1,0 +1,10 @@
+[package]
+name = "josh-mq"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+tokio.workspace = true
+clap.workspace = true
+anyhow.workspace = true
+josh-core = { path = "../josh-core" }
