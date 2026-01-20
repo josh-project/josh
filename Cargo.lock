@@ -2182,6 +2182,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "josh-mq"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "josh-core",
+ "tokio",
+]
+
+[[package]]
 name = "josh-proxy"
 version = "22.4.15"
 dependencies = [

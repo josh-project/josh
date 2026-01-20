@@ -12,6 +12,7 @@ members = [
     "josh-ssh-shell",
     "josh-templates",
     "josh-ui",
+    "josh-mq",
 ]
 
 [profile.release]
