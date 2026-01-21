@@ -1,32 +1,28 @@
 use clap::Parser;
+use josh_mq::cli::{Cli, Commands, ConfigCommands};
+use josh_mq::config::{create_empty_config, handle_config_remote_command};
 
-#[derive(Parser)]
-#[command(about = "Josh Merge Queue")]
-struct Cli {
-    #[command(subcommand)]
-    command: Commands,
-}
+fn open_repo() -> anyhow::Result<gix::Repository> {
+    let dir = std::env::current_dir()?;
+    let repo = gix::ThreadSafeRepository::open(&dir)?.to_thread_local();
 
-#[derive(clap::Subcommand)]
-enum Commands {
-    /// Initialize metarepo
-    Init,
-    /// Fetch remotes, collect and record state of conditions
-    Fetch,
-    /// Single step through the queue, updating the state
-    Step,
-    /// Push updated metarepo state to remotes
-    Push,
+    Ok(repo)
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
+    let repo = open_repo()?;
 
     match cli.command {
         Commands::Init => {
-            todo!()
+            create_empty_config(&repo)?;
         }
+        Commands::Config { command } => match command {
+            ConfigCommands::Remote { command } => {
+                handle_config_remote_command(&repo, command)?;
+            }
+        },
         Commands::Fetch => {
             todo!()
         }
@@ -37,4 +33,6 @@ async fn main() -> anyhow::Result<()> {
             todo!()
         }
     }
+
+    Ok(())
 }

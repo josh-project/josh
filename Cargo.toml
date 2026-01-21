@@ -27,7 +27,7 @@ defer = "0.2.1"
 env_logger = "0.11.5"
 log = "0.4.29"
 futures = "0.3.31"
-gix = { version = "0.77.0", default-features = false }
+gix = { version = "0.77.0", default-features = false, features = ["tree-editor"] }
 gix-actor = "^0"
 gix-hash = "^0"
 gix-object = "0.54.0"
