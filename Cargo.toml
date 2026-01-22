@@ -27,12 +27,12 @@ defer = "0.2.1"
 env_logger = "0.11.5"
 log = "0.4.29"
 futures = "0.3.31"
-gix = { version = "0.77.0", default-features = false }
+gix = { version = "0.78.0", default-features = false }
 gix-actor = "^0"
 gix-hash = "^0"
-gix-object = "0.54.1"
-gix-config = "0.50.0"
-gix-submodule = "0.24.0"
+gix-object = "0.55.0"
+gix-config = "0.51.0"
+gix-submodule = "0.25.0"
 hyper-reverse-proxy = { path = "hyper-reverse-proxy", version = "0.0.1" }
 libc = "0.2.180"
 regex = "1.12.2"
