@@ -5,11 +5,11 @@
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
     "@testing-library/jest-dom": "^6.9.1",
-    "@testing-library/react": "^16.3.1",
+    "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",
     "@types/jest": "^30.0.0",
-    "@types/node": "^25.0.8",
-    "@types/react": "^19.2.8",
+    "@types/node": "^25.0.10",
+    "@types/react": "^19.2.9",
     "@types/react-dom": "^19.2.1",
     "graphql": "^16.12.0",
     "graphql-request": "^7.4.0",
@@ -18,7 +18,7 @@
     "react-dom": "^19.2.3",
     "react-icons": "^5.5.0",
     "react-router-dom": "^7.12.0",
-    "sass": "^1.97.2",
+    "sass": "^1.97.3",
     "ts-pattern": "^5.8.0",
     "tsoption": "^0.7.0",
     "typescript": "^5.9.3",
@@ -45,7 +45,7 @@
     ]
   },
   "devDependencies": {
-    "@typescript-eslint/eslint-plugin": "^8.53.0",
+    "@typescript-eslint/eslint-plugin": "^8.53.1",
     "@typescript-eslint/parser": "^8.48.1",
     "@vitejs/plugin-react": "^5.1.2",
     "eslint": "^9.39.2",
