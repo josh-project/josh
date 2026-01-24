@@ -55,11 +55,12 @@ This is a regression test for that problem.
   "real_repo.git" = []
   .
   |-- josh
-  |   `-- 26
-  |       `-- sled
-  |           |-- blobs
-  |           |-- conf
-  |           `-- db
+  |   `-- cache
+  |       `-- 26
+  |           `-- sled
+  |               |-- blobs
+  |               |-- conf
+  |               `-- db
   |-- mirror
   |   |-- FETCH_HEAD
   |   |-- HEAD
@@ -108,4 +109,4 @@ This is a regression test for that problem.
           |-- namespaces
           `-- tags
   
-  34 directories, 20 files
+  35 directories, 20 files

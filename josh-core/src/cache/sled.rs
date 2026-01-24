@@ -56,7 +56,7 @@ pub fn sled_open_josh_trees() -> JoshResult<(sled::Tree, sled::Tree, sled::Tree)
 
 pub fn sled_load(path: &std::path::Path) -> JoshResult<()> {
     let db = sled::Config::default()
-        .path(path.join(format!("josh/{}/sled/", CACHE_VERSION)))
+        .path(path.join(format!("josh/cache/{}/sled/", CACHE_VERSION)))
         .flush_every_ms(Some(200))
         .open()?;
 

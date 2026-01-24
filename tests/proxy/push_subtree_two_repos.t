@@ -118,11 +118,12 @@ Put a double slash in the URL to see that it also works
   ]
   .
   |-- josh
-  |   `-- 26
-  |       `-- sled
-  |           |-- blobs
-  |           |-- conf
-  |           `-- db
+  |   `-- cache
+  |       `-- 26
+  |           `-- sled
+  |               |-- blobs
+  |               |-- conf
+  |               `-- db
   |-- mirror
   |   |-- FETCH_HEAD
   |   |-- HEAD
@@ -202,5 +203,5 @@ Put a double slash in the URL to see that it also works
           |-- namespaces
           `-- tags
   
-  50 directories, 35 files
+  51 directories, 35 files
 

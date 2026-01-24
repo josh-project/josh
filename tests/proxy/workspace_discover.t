@@ -102,11 +102,12 @@
   ]
   .
   |-- josh
-  |   `-- 26
-  |       `-- sled
-  |           |-- blobs
-  |           |-- conf
-  |           `-- db
+  |   `-- cache
+  |       `-- 26
+  |           `-- sled
+  |               |-- blobs
+  |               |-- conf
+  |               `-- db
   |-- mirror
   |   |-- FETCH_HEAD
   |   |-- HEAD
@@ -223,6 +224,6 @@
           |-- namespaces
           `-- tags
   
-  68 directories, 54 files
+  69 directories, 54 files
 
 $ cat ${TESTTMP}/josh-proxy.out
