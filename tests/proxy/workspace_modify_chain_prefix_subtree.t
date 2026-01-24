@@ -304,11 +304,12 @@ Note that ws/d/ is now present in the ws
   ]
   .
   |-- josh
-  |   `-- 26
-  |       `-- sled
-  |           |-- blobs
-  |           |-- conf
-  |           `-- db
+  |   `-- cache
+  |       `-- 26
+  |           `-- sled
+  |               |-- blobs
+  |               |-- conf
+  |               `-- db
   |-- mirror
   |   |-- FETCH_HEAD
   |   |-- HEAD
@@ -597,6 +598,6 @@ Note that ws/d/ is now present in the ws
           |-- namespaces
           `-- tags
   
-  147 directories, 147 files
+  148 directories, 147 files
 
 $ cat ${TESTTMP}/josh-proxy.out | grep VIEW

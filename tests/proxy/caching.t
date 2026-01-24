@@ -51,11 +51,12 @@
   ]
   .
   |-- josh
-  |   `-- 26
-  |       `-- sled
-  |           |-- blobs
-  |           |-- conf
-  |           `-- db
+  |   `-- cache
+  |       `-- 26
+  |           `-- sled
+  |               |-- blobs
+  |               |-- conf
+  |               `-- db
   |-- mirror
   |   |-- FETCH_HEAD
   |   |-- HEAD
@@ -110,7 +111,7 @@
           |-- namespaces
           `-- tags
   
-  37 directories, 23 files
+  38 directories, 23 files
 
 # setup without caching
   $ EXTRA_OPTS= . ${TESTDIR}/setup_test_env.sh
@@ -162,11 +163,12 @@
   ]
   .
   |-- josh
-  |   `-- 26
-  |       `-- sled
-  |           |-- blobs
-  |           |-- conf
-  |           `-- db
+  |   `-- cache
+  |       `-- 26
+  |           `-- sled
+  |               |-- blobs
+  |               |-- conf
+  |               `-- db
   |-- mirror
   |   |-- FETCH_HEAD
   |   |-- HEAD
@@ -229,4 +231,4 @@
           |-- namespaces
           `-- tags
   
-  41 directories, 27 files
+  42 directories, 27 files

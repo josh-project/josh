@@ -35,11 +35,12 @@
   $ bash ${TESTDIR}/destroy_test_env.sh
   .
   |-- josh
-  |   `-- 26
-  |       `-- sled
-  |           |-- blobs
-  |           |-- conf
-  |           `-- db
+  |   `-- cache
+  |       `-- 26
+  |           `-- sled
+  |               |-- blobs
+  |               |-- conf
+  |               `-- db
   |-- mirror
   |   |-- HEAD
   |   |-- config
@@ -65,4 +66,4 @@
           |-- heads
           `-- tags
   
-  21 directories, 10 files
+  22 directories, 10 files
