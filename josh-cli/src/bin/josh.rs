@@ -362,6 +362,7 @@ fn run_command(cli: &Cli) -> anyhow::Result<()> {
 /// Apply josh filtering to all remote refs and update local refs
 fn apply_josh_filtering(
     transaction: &josh_core::cache::Transaction,
+    repo_path: &std::path::Path,
     filter: &str,
     remote_name: &str,
 ) -> anyhow::Result<()> {
@@ -419,7 +420,7 @@ fn apply_josh_filtering(
             .context("failed to create filtered reference")?;
     }
 
-    spawn_git_command(repo.path(), &["fetch", remote_name], &[])
+    spawn_git_command(repo_path, &["fetch", remote_name], &[])
         .context("failed to fetch filtered refs")?;
 
     Ok(())
@@ -441,6 +442,135 @@ fn to_absolute_remote_url(url: &str) -> anyhow::Result<String> {
 
         Ok(format!("file://{}", path))
     }
+}
+
+/// Read remote configuration from .git/josh/remotes/<name>.josh file
+/// Falls back to legacy git config josh-remote section if file doesn't exist
+fn read_remote_config(
+    repo_path: &std::path::Path,
+    remote_name: &str,
+) -> anyhow::Result<(String, String, josh_core::filter::Filter)> {
+    let remotes_dir = repo_path.join(".git").join("josh").join("remotes");
+    let remote_file = remotes_dir.join(format!("{}.josh", remote_name));
+
+    // Try to read from the new file format first
+    match std::fs::read_to_string(&remote_file) {
+        Ok(content) => {
+            // Parse the filter from the file
+            let filter = josh_core::filter::parse(&content)
+                .map_err(from_josh_err)
+                .with_context(|| {
+                    format!("Failed to parse filter from {}", remote_file.display())
+                })?;
+
+            // Extract metadata
+            let url = filter
+                .get_meta("url")
+                .ok_or_else(|| anyhow::anyhow!("Missing 'url' metadata in remote config"))?;
+            let fetch = filter
+                .get_meta("fetch")
+                .ok_or_else(|| anyhow::anyhow!("Missing 'fetch' metadata in remote config"))?;
+
+            return Ok((url, fetch, filter));
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            // File doesn't exist, try legacy git config
+            let repo = git2::Repository::open(repo_path)
+                .context("Failed to open repository for legacy config migration")?;
+            let config = repo.config().context("Failed to get git config")?;
+
+            // Try to read from legacy josh-remote config
+            let url = match config.get_string(&format!("josh-remote.{}.url", remote_name)) {
+                Ok(url) => url,
+                Err(_) => {
+                    return Err(anyhow::anyhow!(
+                        "Remote '{}' not found in new format (.git/josh/remotes/{}.josh) or legacy git config (josh-remote.{})",
+                        remote_name,
+                        remote_name,
+                        remote_name
+                    ));
+                }
+            };
+
+            let filter_str = config
+                .get_string(&format!("josh-remote.{}.filter", remote_name))
+                .with_context(|| {
+                    format!("Legacy config missing filter for remote '{}'", remote_name)
+                })?;
+
+            let fetch = config
+                .get_string(&format!("josh-remote.{}.fetch", remote_name))
+                .with_context(|| {
+                    format!("Legacy config missing fetch for remote '{}'", remote_name)
+                })?;
+
+            // Migrate to new format by writing the file
+            write_remote_config(repo_path, remote_name, &url, &filter_str, &fetch)
+                .context("Failed to migrate legacy config to new format")?;
+
+            // Parse the filter to return
+            let filter_obj = josh_core::filter::parse(&filter_str)
+                .map_err(from_josh_err)
+                .with_context(|| format!("Failed to parse filter '{}'", filter_str))?;
+
+            let filter_with_meta = filter_obj.with_meta("url", &url).with_meta("fetch", &fetch);
+
+            log::info!(
+                "Migrated remote '{}' from legacy git config to new file format",
+                remote_name
+            );
+
+            Ok((url, fetch, filter_with_meta))
+        }
+        Err(e) => {
+            return Err(anyhow::anyhow!(
+                "Failed to read remote config file: {}: {}",
+                remote_file.display(),
+                e
+            ));
+        }
+    }
+}
+
+/// Write remote configuration to .git/josh/remotes/<name>.josh file
+fn write_remote_config(
+    repo_path: &std::path::Path,
+    remote_name: &str,
+    url: &str,
+    filter: &str,
+    fetch: &str,
+) -> anyhow::Result<()> {
+    let remotes_dir = repo_path.join(".git").join("josh").join("remotes");
+
+    // Create the directory if it doesn't exist
+    std::fs::create_dir_all(&remotes_dir).with_context(|| {
+        format!(
+            "Failed to create remotes directory: {}",
+            remotes_dir.display()
+        )
+    })?;
+
+    // Parse the filter
+    let filter_obj = josh_core::filter::parse(filter)
+        .map_err(from_josh_err)
+        .with_context(|| format!("Failed to parse filter '{}'", filter))?;
+
+    // Wrap the filter with metadata
+    let filter_with_meta = filter_obj.with_meta("url", url).with_meta("fetch", fetch);
+
+    // Serialize the filter with metadata
+    let content = josh_core::filter::pretty(filter_with_meta, 0);
+
+    // Write to file
+    let remote_file = remotes_dir.join(format!("{}.josh", remote_name));
+    std::fs::write(&remote_file, content).with_context(|| {
+        format!(
+            "Failed to write remote config file: {}",
+            remote_file.display()
+        )
+    })?;
+
+    Ok(())
 }
 
 /// Initial clone setup: create directory, init repo, add remote (no transaction needed)
@@ -599,17 +729,11 @@ fn handle_fetch_repo(
     transaction: &josh_core::cache::Transaction,
 ) -> anyhow::Result<()> {
     let repo = transaction.repo();
+    let repo_path = repo.path().parent().unwrap();
 
-    // Read the remote URL from josh-remote config
-    let config = repo.config().context("Failed to get git config")?;
-
-    let remote_url = config
-        .get_string(&format!("josh-remote.{}.url", args.remote))
-        .with_context(|| format!("Failed to get remote URL for '{}'", args.remote))?;
-
-    let refspec = config
-        .get_string(&format!("josh-remote.{}.fetch", args.remote))
-        .with_context(|| format!("Failed to get refspec for '{}'", args.remote))?;
+    // Read the remote configuration from .git/josh/remotes/<name>.josh
+    let (remote_url, refspec, _filter) = read_remote_config(repo_path, &args.remote)
+        .with_context(|| format!("Failed to read remote config for '{}'", args.remote))?;
 
     // First, fetch unfiltered refs to refs/josh/remotes/*
     spawn_git_command(repo.path(), &["fetch", &remote_url, &refspec], &[])
@@ -657,24 +781,18 @@ fn handle_fetch_repo(
 }
 
 fn handle_push(args: &PushArgs, transaction: &josh_core::cache::Transaction) -> anyhow::Result<()> {
+    // Read remote configuration from .git/josh/remotes/<name>.josh
     let repo = transaction.repo();
+    let repo_path = repo.path().parent().unwrap();
 
+    let (remote_url, _refspec, filter_with_meta) = read_remote_config(repo_path, &args.remote)
+        .with_context(|| format!("Failed to read remote config for '{}'", args.remote))?;
+
+    // Get the wrapped filter (peel away metadata)
+    let filter = filter_with_meta.peel();
+
+    // Get git config for user email
     let config = repo.config().context("Failed to get git config")?;
-
-    // Step 2: Apply reverse filtering and push to actual remote
-    let filter_str = config
-        .get_string(&format!("josh-remote.{}.filter", args.remote))
-        .context("Failed to read filter from git config")?;
-
-    // Parse the filter using Josh API
-    let filter = josh_core::filter::parse(&filter_str)
-        .map_err(from_josh_err)
-        .context("Failed to parse filter")?;
-
-    // Get the remote URL from josh-remote config
-    let remote_url = config
-        .get_string(&format!("josh-remote.{}.url", args.remote))
-        .with_context(|| format!("Failed to get remote URL for '{}'", args.remote))?;
 
     // If no refspecs provided, push the current branch
     let refspecs = if args.refspecs.is_empty() {
@@ -1062,7 +1180,10 @@ fn handle_remote(
     transaction: &josh_core::cache::Transaction,
 ) -> anyhow::Result<()> {
     match &args.command {
-        RemoteCommand::Add(add_args) => handle_remote_add_repo(add_args, transaction.repo().path()),
+        RemoteCommand::Add(add_args) => {
+            let repo_path = transaction.repo().path().parent().unwrap();
+            handle_remote_add_repo(add_args, repo_path)
+        }
     }
 }
 
@@ -1070,32 +1191,24 @@ fn handle_remote_add_repo(args: &RemoteAddArgs, repo_path: &std::path::Path) -> 
     let repo = git2::Repository::open(repo_path).context("Failed to open repository")?;
     let workdir = normalize_repo_path(repo_path);
 
-    // Store the remote information in josh-remote config instead of adding a git remote
+    // Store the remote information in .git/josh/remotes/<name>.josh file
     let remote_url = to_absolute_remote_url(&args.url)?;
 
     // Store the filter in git config per remote
     let filter_to_store = args.filter.clone();
 
-    let mut config = repo.config().context("Failed to get git config")?;
-
-    // Store remote URL in josh-remote section
-    config
-        .set_str(&format!("josh-remote.{}.url", args.name), &remote_url)
-        .context("Failed to store remote URL in git config")?;
-
-    // Store filter in josh-remote section
-    config
-        .set_str(
-            &format!("josh-remote.{}.filter", args.name),
-            &filter_to_store,
-        )
-        .context("Failed to store filter in git config")?;
-
-    // Store refspec in josh-remote section (for unfiltered refs)
+    // Store refspec (for unfiltered refs)
     let refspec = format!("+refs/heads/*:refs/josh/remotes/{}/*", args.name);
-    config
-        .set_str(&format!("josh-remote.{}.fetch", args.name), &refspec)
-        .context("Failed to store refspec in git config")?;
+
+    // Write remote config to .git/josh/remotes/<name>.josh
+    write_remote_config(
+        repo_path,
+        &args.name,
+        &remote_url,
+        &filter_to_store,
+        &refspec,
+    )
+    .context("Failed to write remote config file")?;
 
     // Set up a git remote that points to "." with a refspec to fetch filtered refs
     // Add remote pointing to current directory
@@ -1145,21 +1258,27 @@ fn handle_filter_repo(
     transaction: &josh_core::cache::Transaction,
 ) -> anyhow::Result<()> {
     let repo = transaction.repo();
+    let repo_path = repo.path().parent().unwrap();
 
-    // Read the filter from git config for this remote
-    let config = repo.config().context("Failed to get git config")?;
+    // Read the remote configuration from .git/josh/remotes/<name>.josh
+    let (_url, _refspec, filter_with_meta) = read_remote_config(repo_path, &args.remote)
+        .with_context(|| format!("Failed to read remote config for '{}'", args.remote))?;
 
-    let filter_key = format!("josh-remote.{}.filter", args.remote);
-    let filter = config
-        .get_string(&filter_key)
-        .with_context(|| format!("No filter configured for remote '{}'", args.remote))?;
+    // Get the wrapped filter (peel away metadata)
+    let filter = filter_with_meta.peel();
+
+    // Serialize the filter for display/logging
+    let filter_str = josh_core::filter::spec(filter);
 
     if print_messages {
-        println!("Applying filter '{}' to remote '{}'", filter, args.remote);
+        println!(
+            "Applying filter '{}' to remote '{}'",
+            filter_str, args.remote
+        );
     }
 
     // Apply josh filtering (this is the same as in handle_fetch but without the git fetch step)
-    apply_josh_filtering(transaction, &filter, &args.remote)?;
+    apply_josh_filtering(transaction, repo_path, &filter_str, &args.remote)?;
 
     if print_messages {
         println!("Applied filter to remote: {}", args.remote);

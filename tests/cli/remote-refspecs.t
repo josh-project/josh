@@ -27,8 +27,13 @@ Test that josh remote add sets up proper refspecs
   $ git config --get-all remote.origin.fetch
   +refs/heads/*:refs/remotes/origin/*
 
-  $ git config josh-remote.origin.filter
-  :/sub1
+  $ cat .git/josh/remotes/origin.josh | sed "s|file://.*/remote/libs|file://\${TESTTMP}/remote/libs|"
+  :~(
+      fetch="+refs/heads/*:refs/josh/remotes/origin/*"
+      url="file://${TESTTMP}/remote/libs"
+  )[
+      :/sub1
+  ] (no-eol)
 
   $ cd ..
 
@@ -52,8 +57,13 @@ Test that josh clone also sets up proper refspecs
   $ git config --get-all remote.origin.fetch
   +refs/heads/*:refs/remotes/origin/*
 
-  $ git config josh-remote.origin.filter
-  :/sub1
+  $ cat .git/josh/remotes/origin.josh | sed "s|file://.*/remote/libs|file://\${TESTTMP}/remote/libs|"
+  :~(
+      fetch="+refs/heads/*:refs/josh/remotes/origin/*"
+      url="file://${TESTTMP}/remote/libs"
+  )[
+      :/sub1
+  ] (no-eol)
 
   $ cd ..
 
