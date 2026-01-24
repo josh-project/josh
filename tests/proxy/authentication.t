@@ -124,11 +124,12 @@
   "real_repo.git" = ["::sub1/"]
   .
   |-- josh
-  |   `-- 26
-  |       `-- sled
-  |           |-- blobs
-  |           |-- conf
-  |           `-- db
+  |   `-- cache
+  |       `-- 26
+  |           `-- sled
+  |               |-- blobs
+  |               |-- conf
+  |               `-- db
   |-- mirror
   |   |-- FETCH_HEAD
   |   |-- HEAD
@@ -175,4 +176,4 @@
           |-- namespaces
           `-- tags
   
-  33 directories, 19 files
+  34 directories, 19 files

@@ -133,11 +133,12 @@ Flushed credential cache
   ]
   .
   |-- josh
-  |   `-- 26
-  |       `-- sled
-  |           |-- blobs
-  |           |-- conf
-  |           `-- db
+  |   `-- cache
+  |       `-- 26
+  |           `-- sled
+  |               |-- blobs
+  |               |-- conf
+  |               `-- db
   |-- mirror
   |   |-- FETCH_HEAD
   |   |-- HEAD
@@ -246,4 +247,4 @@ Flushed credential cache
           |-- namespaces
           `-- tags
   
-  63 directories, 51 files
+  64 directories, 51 files

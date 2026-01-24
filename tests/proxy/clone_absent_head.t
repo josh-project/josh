@@ -85,11 +85,12 @@
   $ bash ${TESTDIR}/destroy_test_env.sh
   .
   |-- josh
-  |   `-- 26
-  |       `-- sled
-  |           |-- blobs
-  |           |-- conf
-  |           `-- db
+  |   `-- cache
+  |       `-- 26
+  |           `-- sled
+  |               |-- blobs
+  |               |-- conf
+  |               `-- db
   |-- mirror
   |   |-- FETCH_HEAD
   |   |-- HEAD
@@ -126,6 +127,6 @@
           |-- namespaces
           `-- tags
   
-  27 directories, 15 files
+  28 directories, 15 files
 
 $ cat ${TESTTMP}/josh-proxy.out

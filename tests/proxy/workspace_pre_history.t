@@ -88,11 +88,12 @@ file was created
   ]
   .
   |-- josh
-  |   `-- 26
-  |       `-- sled
-  |           |-- blobs
-  |           |-- conf
-  |           `-- db
+  |   `-- cache
+  |       `-- 26
+  |           `-- sled
+  |               |-- blobs
+  |               |-- conf
+  |               `-- db
   |-- mirror
   |   |-- FETCH_HEAD
   |   |-- HEAD
@@ -175,6 +176,6 @@ file was created
           |-- namespaces
           `-- tags
   
-  51 directories, 37 files
+  52 directories, 37 files
 
 $ cat ${TESTTMP}/josh-proxy.out | grep VIEW

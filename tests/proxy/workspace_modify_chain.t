@@ -249,11 +249,12 @@
   ]
   .
   |-- josh
-  |   `-- 26
-  |       `-- sled
-  |           |-- blobs
-  |           |-- conf
-  |           `-- db
+  |   `-- cache
+  |       `-- 26
+  |           `-- sled
+  |               |-- blobs
+  |               |-- conf
+  |               `-- db
   |-- mirror
   |   |-- FETCH_HEAD
   |   |-- HEAD
@@ -487,6 +488,6 @@
           |-- namespaces
           `-- tags
   
-  122 directories, 117 files
+  123 directories, 117 files
 
 $ cat ${TESTTMP}/josh-proxy.out | grep VIEW
