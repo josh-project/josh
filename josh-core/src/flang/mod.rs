@@ -26,6 +26,17 @@ pub fn pretty(filter: Filter, indent: usize) -> String {
     pretty2(&to_op(filter), indent, true)
 }
 
+/// Pretty print the filter for writing to a file or blob.
+/// This ensures the output always ends with a newline, which is required for files.
+pub fn as_file(filter: Filter, indent: usize) -> String {
+    let mut content = pretty(filter, indent);
+    // Ensure the content ends with a newline
+    if !content.ends_with('\n') {
+        content.push('\n');
+    }
+    content
+}
+
 fn pretty2(op: &Op, indent: usize, compose: bool) -> String {
     let ff = |filters: &Vec<_>, n, ind| {
         let ind2 = std::cmp::max(ind, 4);
