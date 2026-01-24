@@ -53,7 +53,7 @@
 
 # Verify the branch was created
   $ git show-ref | grep refs/heads/josh-link
-  79e670f61e148fa3afb960ef988a85d51e66a98b refs/heads/josh-link
+  db68386ec823b1b30b989dc23abfa7d8057e24b0 refs/heads/josh-link
 
 # Verify HEAD was not updated
   $ git log --oneline
@@ -78,10 +78,10 @@
   
   Turn off this advice by setting config variable advice.detachedHead to false
   
-  HEAD is now at 79e670f Add link: libs
+  HEAD is now at db68386 Add link: libs
   $ git ls-tree -r HEAD
   100644 blob f2376e2bab6c5194410bd8a55630f83f933d2f34\tREADME.md (esc)
-  100644 blob b942b8f32405589665681075e32599a49265b10e\tlibs/.link.josh (esc)
+  100644 blob 79305faa39f1fb55e495e7055d8e866a30ba0b10\tlibs/.link.josh (esc)
   100644 blob dfcaa10d372d874e1cab9c3ba8d0b683099c3826\tlibs/docs/readme.txt (esc)
   100644 blob abe06153eb1e2462265336768a6ecd1164f73ae2\tlibs/libs/lib1.txt (esc)
   100644 blob f03a884ed41c1a40b529001c0b429eed24c5e9e5\tlibs/utils/util1.txt (esc)
@@ -92,10 +92,10 @@
       target="HEAD"
   )[
       :/
-  ] (no-eol)
+  ]
 
   $ git checkout master
-  Previous HEAD position was 79e670f Add link: libs
+  Previous HEAD position was db68386 Add link: libs
   Switched to branch 'master'
 
 # Test link add with custom filter and target
@@ -105,7 +105,7 @@
 
 # Verify the branch was created
   $ git show-ref | grep refs/heads/josh-link
-  ec335114bd6b9619d3c839a0a229eb8169b035c4 refs/heads/josh-link
+  578df5a6e754ec12b3912e0cd70b54db8e479d74 refs/heads/josh-link
 
 # Check the content of the utils link branch
   $ git checkout refs/heads/josh-link
@@ -126,7 +126,7 @@
   
   Turn off this advice by setting config variable advice.detachedHead to false
   
-  HEAD is now at ec33511 Add link: utils
+  HEAD is now at 578df5a Add link: utils
   $ cat utils/.link.josh
   :~(
       commit="d27fa3a10cc019e6aa55fc74c1f0893913380e2d"
@@ -134,10 +134,10 @@
       target="master"
   )[
       :/utils
-  ] (no-eol)
+  ]
 
   $ git checkout master
-  Previous HEAD position was ec33511 Add link: utils
+  Previous HEAD position was 578df5a Add link: utils
   Switched to branch 'master'
 
 # Test path normalization (path with leading slash)
@@ -147,7 +147,7 @@
 
 # Verify path was normalized (no leading slash in branch name)
   $ git show-ref | grep refs/heads/josh-link
-  4d12b3bd580585afc610ad4a5a996b65814f630a refs/heads/josh-link
+  f67d653810126e1678b6b1dd285c775992251e33 refs/heads/josh-link
 
 
 # Test error case - empty path
@@ -220,7 +220,7 @@
 
 # Verify the branch was updated
   $ git show-ref | grep refs/heads/josh-link
-  5f87baff5d75d53361a27a7d31b7b2c066fd65d3 refs/heads/josh-link
+  c06b8d238dfee128f21b3ca0905e259c3bf0d121 refs/heads/josh-link
 
 # Check the updated content
   $ git checkout refs/heads/josh-link
@@ -241,10 +241,10 @@
   
   Turn off this advice by setting config variable advice.detachedHead to false
   
-  HEAD is now at 5f87baf Add test link file for fetch testing
+  HEAD is now at c06b8d2 Add test link file for fetch testing
   $ git ls-tree -r HEAD
   100644 blob f2376e2bab6c5194410bd8a55630f83f933d2f34	README.md (esc)
-  100644 blob 710e3f16e0bf9cb958d197e369ac56e5c12430c6\ttest-link/.link.josh (esc)
+  100644 blob 56d8dfb1d09ab62c7130f2cee51fccb59d1b102d\ttest-link/.link.josh (esc)
   $ cat test-link/.link.josh
   :~(
       branch="HEAD"
@@ -252,10 +252,10 @@
       remote="../remote.git"
   )[
       :/test
-  ] (no-eol)
+  ]
 
   $ git checkout master
-  Previous HEAD position was 5f87baf Add test link file for fetch testing
+  Previous HEAD position was c06b8d2 Add test link file for fetch testing
   Switched to branch 'master'
 
 # Test fetch with no path (should find all .link.josh files)

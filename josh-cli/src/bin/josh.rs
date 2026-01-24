@@ -559,7 +559,7 @@ fn write_remote_config(
     let filter_with_meta = filter_obj.with_meta("url", url).with_meta("fetch", fetch);
 
     // Serialize the filter with metadata
-    let content = josh_core::filter::pretty(filter_with_meta, 0);
+    let content = josh_core::filter::as_file(filter_with_meta, 0);
 
     // Write to file
     let remote_file = remotes_dir.join(format!("{}.josh", remote_name));

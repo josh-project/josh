@@ -47,7 +47,7 @@ Test josh filter command - apply filtering without fetching
       url="file://${TESTTMP}/remote/libs"
   )[
       :/sub1
-  ] (no-eol)
+  ]
 
   $ josh filter origin
   Applying filter ':/sub1' to remote 'origin'

@@ -33,7 +33,7 @@ Test that josh remote add sets up proper refspecs
       url="file://${TESTTMP}/remote/libs"
   )[
       :/sub1
-  ] (no-eol)
+  ]
 
   $ cd ..
 
@@ -63,7 +63,7 @@ Test that josh clone also sets up proper refspecs
       url="file://${TESTTMP}/remote/libs"
   )[
       :/sub1
-  ] (no-eol)
+  ]
 
   $ cd ..
 
