@@ -43,6 +43,6 @@ Test migration from legacy git config to new file format
       url="file://${TESTTMP}/remote/libs"
   )[
       :/sub1
-  ] (no-eol)
+  ]
 
   $ cd ..

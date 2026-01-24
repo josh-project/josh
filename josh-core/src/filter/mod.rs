@@ -16,7 +16,7 @@ pub use persist::as_tree;
 pub use persist::from_tree;
 pub(crate) use persist::{peel_op, to_filter, to_op};
 
-pub use crate::flang::{pretty, spec};
+pub use crate::flang::{as_file, pretty, spec};
 pub use opt::invert;
 pub use parse::get_comments;
 pub use parse::parse;
@@ -1376,7 +1376,7 @@ pub fn apply<'a>(
                             .with_meta("remote", meta.url.clone())
                             .with_meta("target", "HEAD")
                             .with_meta("commit", commit_oid.to_string());
-                        let link_content = pretty(link_filter, 0);
+                        let link_content = as_file(link_filter, 0);
 
                         result_tree = tree::insert(
                             repo,
@@ -1420,7 +1420,7 @@ pub fn apply<'a>(
                     tree::insert(repo, &result_tree, &link_path, git2::Oid::zero(), 0o0100644)?;
 
                 // The link_file is already a filter with metadata, just serialize it
-                let link_content = pretty(*link_file, 0);
+                let link_content = as_file(*link_file, 0);
 
                 result_tree = tree::insert(
                     repo,
@@ -1462,7 +1462,7 @@ pub fn apply<'a>(
                     0o0040000, // Tree mode
                 )?;
                 // The link_file is already a filter with metadata, just serialize it
-                let link_content = pretty(link_file, 0);
+                let link_content = as_file(link_file, 0);
 
                 result_tree = tree::insert(
                     repo,
