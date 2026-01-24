@@ -2,25 +2,32 @@
 
 use anyhow::Context;
 use clap::Parser;
+
 use josh_core::changes::{PushMode, build_to_push};
-use josh_core::shell::Shell;
+use josh_link::from_josh_err;
 
 use std::io::IsTerminal;
 use std::process::{Command as ProcessCommand, Stdio};
 
-/// Helper function to convert josh_core::JoshError to anyhow::Error
-fn from_josh_err(err: josh_core::JoshError) -> anyhow::Error {
-    anyhow::anyhow!("{}", err.0)
+/// Normalize repo path by stripping .git suffix if present
+fn normalize_repo_path(repo_path: &std::path::Path) -> &std::path::Path {
+    if repo_path.components().last() == Some(std::path::Component::Normal(".git".as_ref())) {
+        repo_path.parent().unwrap()
+    } else {
+        repo_path
+    }
 }
 
 /// Spawn a git command directly to the terminal so users can see progress
 /// Falls back to captured output if not in a TTY environment
 fn spawn_git_command(
-    cwd: &std::path::Path,
+    repo_path: &std::path::Path,
     args: &[&str],
     env: &[(&str, &str)],
 ) -> anyhow::Result<()> {
     log::debug!("spawn_git_command: {:?}", args);
+
+    let cwd = normalize_repo_path(repo_path);
 
     let mut command = ProcessCommand::new("git");
     command.current_dir(cwd).args(args);
@@ -355,7 +362,6 @@ fn run_command(cli: &Cli) -> anyhow::Result<()> {
 /// Apply josh filtering to all remote refs and update local refs
 fn apply_josh_filtering(
     transaction: &josh_core::cache::Transaction,
-    repo_path: &std::path::Path,
     filter: &str,
     remote_name: &str,
 ) -> anyhow::Result<()> {
@@ -413,7 +419,7 @@ fn apply_josh_filtering(
             .context("failed to create filtered reference")?;
     }
 
-    spawn_git_command(repo_path, &["fetch", remote_name], &[])
+    spawn_git_command(repo.path(), &["fetch", remote_name], &[])
         .context("failed to fetch filtered refs")?;
 
     Ok(())
@@ -465,8 +471,7 @@ fn handle_clone(
     args: &CloneArgs,
     transaction: &josh_core::cache::Transaction,
 ) -> anyhow::Result<()> {
-    // Get the repo path from the transaction
-    let output_dir = transaction.repo().path().parent().unwrap();
+    let repo = transaction.repo();
 
     // Create FetchArgs from CloneArgs
     let fetch_args = FetchArgs {
@@ -476,13 +481,12 @@ fn handle_clone(
     };
 
     // Use handle_fetch to do the actual fetching and filtering
-    handle_fetch_repo(&fetch_args, output_dir, transaction)?;
+    handle_fetch_repo(&fetch_args, transaction)?;
 
     // Get the default branch name from the remote HEAD symref
     let default_branch = if args.branch == "HEAD" {
         // Read the remote HEAD symref to get the default branch
         let head_ref = "refs/remotes/origin/HEAD".to_string();
-        let repo = transaction.repo();
 
         let head_reference = repo
             .find_reference(&head_ref)
@@ -503,7 +507,7 @@ fn handle_clone(
     };
 
     spawn_git_command(
-        output_dir,
+        repo.path(),
         &[
             "checkout",
             "-b",
@@ -516,7 +520,7 @@ fn handle_clone(
 
     // Set up upstream tracking for the branch
     spawn_git_command(
-        output_dir,
+        repo.path(),
         &[
             "branch",
             "--set-upstream-to",
@@ -527,20 +531,21 @@ fn handle_clone(
     )
     .with_context(|| format!("Failed to set upstream for branch {}", default_branch))?;
 
-    let output_str = output_dir.display().to_string();
-    let output_str = if let Ok(testtmp) = std::env::var("TESTTMP") {
-        output_str.replace(&testtmp, "${TESTTMP}")
+    let output_dir = normalize_repo_path(repo.path());
+    let output_dir = output_dir.display().to_string();
+
+    let output_dir = if let Ok(testtmp) = std::env::var("TESTTMP") {
+        output_dir.replace(&testtmp, "${TESTTMP}")
     } else {
-        output_str.to_string()
+        output_dir.to_string()
     };
-    println!("Cloned repository to: {}", output_str);
+
+    println!("Cloned repository to: {}", output_dir);
     Ok(())
 }
 
 fn handle_pull(args: &PullArgs, transaction: &josh_core::cache::Transaction) -> anyhow::Result<()> {
-    // Check if we're in a git repository
-    let repo = git2::Repository::open_from_env().context("Not in a git repository")?;
-    let repo_path = repo.path().parent().unwrap().to_path_buf();
+    let repo = transaction.repo();
 
     // Create FetchArgs from PullArgs
     let fetch_args = FetchArgs {
@@ -550,13 +555,7 @@ fn handle_pull(args: &PullArgs, transaction: &josh_core::cache::Transaction) -> 
     };
 
     // Use handle_fetch to do the actual fetching and filtering
-    handle_fetch_repo(&fetch_args, &repo_path, transaction)?;
-
-    // Get current working directory for shell commands
-    let current_dir = std::env::current_dir()?;
-    let repo_shell = Shell {
-        cwd: current_dir.clone(),
-    };
+    handle_fetch_repo(&fetch_args, transaction)?;
 
     // Now use actual git pull to integrate the changes
     let mut git_args = vec!["pull"];
@@ -571,7 +570,7 @@ fn handle_pull(args: &PullArgs, transaction: &josh_core::cache::Transaction) -> 
 
     git_args.push(&args.remote);
 
-    spawn_git_command(repo_shell.cwd.as_path(), &git_args, &[]).context("git pull failed")?;
+    spawn_git_command(repo.path(), &git_args, &[]).context("git pull failed")?;
 
     eprintln!("Pulled from remote: {}", args.remote);
 
@@ -582,11 +581,7 @@ fn handle_fetch(
     args: &FetchArgs,
     transaction: &josh_core::cache::Transaction,
 ) -> anyhow::Result<()> {
-    // Check if we're in a git repository
-    let repo = git2::Repository::open_from_env().context("Not in a git repository")?;
-    let repo_path = repo.path().parent().unwrap().to_path_buf();
-
-    handle_fetch_repo(args, &repo_path, transaction)
+    handle_fetch_repo(args, transaction)
 }
 
 fn try_parse_symref(remote: &str, output: &str) -> Option<(String, String)> {
@@ -601,10 +596,9 @@ fn try_parse_symref(remote: &str, output: &str) -> Option<(String, String)> {
 
 fn handle_fetch_repo(
     args: &FetchArgs,
-    repo_path: &std::path::Path,
     transaction: &josh_core::cache::Transaction,
 ) -> anyhow::Result<()> {
-    let repo = git2::Repository::open(repo_path).context("Failed to open repository")?;
+    let repo = transaction.repo();
 
     // Read the remote URL from josh-remote config
     let config = repo.config().context("Failed to get git config")?;
@@ -618,7 +612,7 @@ fn handle_fetch_repo(
         .with_context(|| format!("Failed to get refspec for '{}'", args.remote))?;
 
     // First, fetch unfiltered refs to refs/josh/remotes/*
-    spawn_git_command(repo_path, &["fetch", &remote_url, &refspec], &[])
+    spawn_git_command(repo.path(), &["fetch", &remote_url, &refspec], &[])
         .context("git fetch to josh/remotes failed")?;
 
     // Set up remote HEAD reference using git ls-remote
@@ -630,7 +624,7 @@ fn handle_fetch_repo(
     // Output format: "ref: refs/heads/main\t<commit-hash>"
     let output = std::process::Command::new("git")
         .args(["ls-remote", "--symref", &remote_url, "HEAD"])
-        .current_dir(repo_path)
+        .current_dir(repo.path().parent().unwrap())
         .output()?;
 
     if output.status.success() {
@@ -654,7 +648,7 @@ fn handle_fetch_repo(
         remote: args.remote.clone(),
     };
 
-    handle_filter_repo(&filter_args, repo_path, false, transaction)?;
+    handle_filter_repo(&filter_args, false, transaction)?;
 
     // Note: fetch doesn't checkout, it just updates the refs
     eprintln!("Fetched from remote: {}", args.remote);
@@ -663,9 +657,7 @@ fn handle_fetch_repo(
 }
 
 fn handle_push(args: &PushArgs, transaction: &josh_core::cache::Transaction) -> anyhow::Result<()> {
-    // Read filter from git config for the specific remote
-    let repo = git2::Repository::open_from_env().context("Not in a git repository")?;
-    let repo_path = repo.path().parent().unwrap();
+    let repo = transaction.repo();
 
     let config = repo.config().context("Failed to get git config")?;
 
@@ -848,7 +840,7 @@ fn handle_push(args: &PushArgs, transaction: &josh_core::cache::Transaction) -> 
 
             // Use direct spawn so users can see git push progress
             spawn_git_command(
-                repo_path,
+                repo.path(),
                 &git_push_args, // Skip "git" since spawn_git_command adds it
                 &[],
             )
@@ -859,6 +851,21 @@ fn handle_push(args: &PushArgs, transaction: &josh_core::cache::Transaction) -> 
     }
 
     Ok(())
+}
+
+#[cfg(feature = "incubating")]
+fn make_signature(repo: &git2::Repository) -> anyhow::Result<git2::Signature<'static>> {
+    if let Ok(time) = std::env::var("JOSH_COMMIT_TIME") {
+        git2::Signature::new(
+            "JOSH",
+            "josh@josh-project.dev",
+            &git2::Time::new(time.parse().context("Failed to parse JOSH_COMMIT_TIME")?, 0),
+        )
+        .context("Failed to create signature")
+    } else {
+        let sig = repo.signature().context("Failed to get signature")?;
+        Ok(sig.to_owned())
+    }
 }
 
 #[cfg(feature = "incubating")]
@@ -874,18 +881,12 @@ fn handle_link_add(
     args: &LinkAddArgs,
     transaction: &josh_core::cache::Transaction,
 ) -> anyhow::Result<()> {
-    use josh_core::filter::tree;
-
-    // Check if we're in a git repository
-    let repo = git2::Repository::open_from_env().context("Not in a git repository")?;
+    let repo = transaction.repo();
 
     // Validate the path (should not be empty and should be a valid path)
     if args.path.is_empty() {
         return Err(anyhow::anyhow!("Path cannot be empty"));
     }
-
-    // Normalize the path by removing leading and trailing slashes
-    let normalized_path = args.path.trim_matches('/').to_string();
 
     // Get the filter (default to ":/" if not provided)
     let filter = args.filter.as_deref().unwrap_or(":/");
@@ -893,14 +894,9 @@ fn handle_link_add(
     // Get the target branch (default to "HEAD" if not provided)
     let target = args.target.as_deref().unwrap_or("HEAD");
 
-    // Parse the filter
-    let filter_obj = josh_core::filter::parse(filter)
-        .map_err(from_josh_err)
-        .with_context(|| format!("Failed to parse filter '{}'", filter))?;
-
     // Use git fetch shell command
     let output = std::process::Command::new("git")
-        .args(&["fetch", &args.url, &target])
+        .args(&["fetch", &args.url, target])
         .output()
         .context("Failed to execute git fetch")?;
 
@@ -918,74 +914,36 @@ fn handle_link_add(
     let fetch_commit = fetch_head
         .peel_to_commit()
         .context("Failed to get FETCH_HEAD commit")?;
-    let actual_commit_sha = fetch_commit.id();
+    let fetched_commit = fetch_commit.id();
 
     // Get the current HEAD commit
     let head_ref = repo.head().context("Failed to get HEAD")?;
     let head_commit = head_ref
         .peel_to_commit()
         .context("Failed to get HEAD commit")?;
-    let head_tree = head_commit.tree().context("Failed to get HEAD tree")?;
-
-    // Create a filter with metadata
-    let link_filter = filter_obj
-        .with_meta("remote", args.url.clone())
-        .with_meta("target", target.to_string())
-        .with_meta("commit", actual_commit_sha.to_string());
-    let link_content = josh_core::filter::pretty(link_filter, 0);
-
-    // Create the blob for the .link.josh file
-    let link_blob = repo
-        .blob(link_content.as_bytes())
-        .context("Failed to create blob")?;
-
-    // Create the path for the .link.josh file
-    let link_path = std::path::Path::new(&normalized_path).join(".link.josh");
-
-    // Insert the .link.josh file into the tree
-    let new_tree = tree::insert(&repo, &head_tree, &link_path, link_blob, 0o0100644)
-        .map_err(from_josh_err)
-        .context("Failed to insert link file into tree")?;
 
     // Create a new commit with the updated tree
-    let signature = if let Ok(time) = std::env::var("JOSH_COMMIT_TIME") {
-        git2::Signature::new(
-            "JOSH",
-            "josh@josh-project.dev",
-            &git2::Time::new(time.parse().context("Failed to parse JOSH_COMMIT_TIME")?, 0),
-        )
-        .context("Failed to create signature")?
-    } else {
-        repo.signature().context("Failed to get signature")?
-    };
+    let signature = make_signature(&repo)?;
 
-    let new_commit = repo
-        .commit(
-            None, // Don't update any reference
-            &signature,
-            &signature,
-            &format!("Add link: {}", normalized_path),
-            &new_tree,
-            &[&head_commit],
-        )
-        .context("Failed to create commit")?;
-
-    // Apply the :link filter to the new commit
-    let link_filter = josh_core::filter::parse(":link=snapshot")
-        .map_err(from_josh_err)
-        .context("Failed to parse :link filter")?;
-
-    let filtered_commit = josh_core::filter_commit(transaction, link_filter, new_commit)
-        .map_err(from_josh_err)
-        .context("Failed to apply :link filter")?;
+    let result = josh_link::add_link(
+        transaction,
+        &args.path,
+        &args.url,
+        args.filter.as_deref(),
+        target,
+        fetched_commit,
+        &head_commit,
+        &signature,
+    )?;
 
     // Create the fixed branch name
     let branch_name = "refs/heads/josh-link";
 
     // Create or update the branch reference
-    repo.reference(branch_name, filtered_commit, true, "josh link add")
+    repo.reference(branch_name, result.filtered_commit, true, "josh link add")
         .with_context(|| format!("Failed to create branch '{}'", branch_name))?;
 
+    let normalized_path = args.path.trim_matches('/');
     println!(
         "Added link '{}' with URL '{}', filter '{}', and target '{}'",
         normalized_path, args.url, filter, target
@@ -1000,10 +958,7 @@ fn handle_link_fetch(
     args: &LinkFetchArgs,
     transaction: &josh_core::cache::Transaction,
 ) -> anyhow::Result<()> {
-    use josh_core::filter::tree;
-
-    // Check if we're in a git repository
-    let repo = git2::Repository::open_from_env().context("Not in a git repository")?;
+    let repo = transaction.repo();
 
     // Get the current HEAD commit
     let head_ref = repo.head().context("Failed to get HEAD")?;
@@ -1038,9 +993,9 @@ fn handle_link_fetch(
 
     println!("Found {} link file(s) to fetch", link_files.len());
 
-    // Fetch from all the link files
-    let mut updated_link_files = Vec::new();
-    for (path, link_file) in link_files {
+    // Fetch from all the link files and collect (path, new_oid) pairs
+    let mut links_to_update = Vec::new();
+    for (path, link_file) in &link_files {
         println!("Fetching from link at path: {}", path.display());
 
         // Get remote and branch from metadata
@@ -1075,85 +1030,28 @@ fn handle_link_fetch(
         let fetch_commit = fetch_head
             .peel_to_commit()
             .context("Failed to get FETCH_HEAD commit")?;
-        let actual_commit_sha = fetch_commit.id();
+        let new_oid = fetch_commit.id();
 
-        // Update the link file with the new commit SHA by updating the commit metadata
-        let updated_link_file = link_file.with_meta("commit", actual_commit_sha.to_string());
-        updated_link_files.push((path, updated_link_file));
+        links_to_update.push((path.clone(), new_oid));
     }
 
-    // Create new tree with updated .link.josh files
-    let mut new_tree = head_tree;
-    for (path, link_file) in &updated_link_files {
-        // The link_file is already a filter with metadata, just serialize it
-        let link_content = josh_core::filter::pretty(*link_file, 0);
-
-        // Create the blob for the .link.josh file
-        let link_blob = repo
-            .blob(link_content.as_bytes())
-            .context("Failed to create blob")?;
-
-        // Create the path for the .link.josh file
-        let link_path = path.join(".link.josh");
-
-        // Insert the updated .link.josh file into the tree
-        new_tree = tree::insert(&repo, &new_tree, &link_path, link_blob, 0o0100644)
-            .map_err(from_josh_err)
-            .with_context(|| {
-                format!(
-                    "Failed to insert link file into tree at path '{}'",
-                    path.display()
-                )
-            })?;
-    }
-
-    // Create a new commit with the updated tree
-    let signature = if let Ok(time) = std::env::var("JOSH_COMMIT_TIME") {
-        git2::Signature::new(
-            "JOSH",
-            "josh@josh-project.dev",
-            &git2::Time::new(time.parse().context("Failed to parse JOSH_COMMIT_TIME")?, 0),
-        )
-        .context("Failed to create signature")?
-    } else {
-        repo.signature().context("Failed to get signature")?
-    };
-
-    let new_commit = repo
-        .commit(
-            None, // Don't update any reference
-            &signature,
-            &signature,
-            &format!(
-                "Update links: {}",
-                updated_link_files
-                    .iter()
-                    .map(|(p, _)| p.display().to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ),
-            &new_tree,
-            &[&head_commit],
-        )
-        .context("Failed to create commit")?;
-
-    // Apply the :link filter to the new commit
-    let link_filter = josh_core::filter::parse(":link")
-        .map_err(from_josh_err)
-        .context("Failed to parse :link filter")?;
-
-    let filtered_commit = josh_core::filter_commit(transaction, link_filter, new_commit)
-        .map_err(from_josh_err)
-        .context("Failed to apply :link filter")?;
+    let signature = make_signature(&repo)?;
+    let result = josh_link::update_links(
+        &repo,
+        transaction,
+        &head_commit,
+        links_to_update,
+        &signature,
+    )?;
 
     // Create the fixed branch name
     let branch_name = "refs/heads/josh-link";
 
     // Create or update the branch reference
-    repo.reference(branch_name, filtered_commit, true, "josh link fetch")
+    repo.reference(branch_name, result.filtered_commit, true, "josh link fetch")
         .with_context(|| format!("Failed to create branch '{}'", branch_name))?;
 
-    println!("Updated {} link file(s)", updated_link_files.len());
+    println!("Updated {} link file(s)", link_files.len());
     println!("Created branch: {}", branch_name);
 
     Ok(())
@@ -1161,23 +1059,16 @@ fn handle_link_fetch(
 
 fn handle_remote(
     args: &RemoteArgs,
-    _transaction: &josh_core::cache::Transaction,
+    transaction: &josh_core::cache::Transaction,
 ) -> anyhow::Result<()> {
     match &args.command {
-        RemoteCommand::Add(add_args) => handle_remote_add(add_args),
+        RemoteCommand::Add(add_args) => handle_remote_add_repo(add_args, transaction.repo().path()),
     }
-}
-
-fn handle_remote_add(args: &RemoteAddArgs) -> anyhow::Result<()> {
-    // Check if we're in a git repository
-    let repo = git2::Repository::open_from_env().context("Not in a git repository")?;
-    let repo_path = repo.path().parent().unwrap();
-
-    handle_remote_add_repo(args, repo_path)
 }
 
 fn handle_remote_add_repo(args: &RemoteAddArgs, repo_path: &std::path::Path) -> anyhow::Result<()> {
     let repo = git2::Repository::open(repo_path).context("Failed to open repository")?;
+    let workdir = normalize_repo_path(repo_path);
 
     // Store the remote information in josh-remote config instead of adding a git remote
     let remote_url = to_absolute_remote_url(&args.url)?;
@@ -1213,16 +1104,20 @@ fn handle_remote_add_repo(args: &RemoteAddArgs, repo_path: &std::path::Path) -> 
 
     // Set up a git remote that points to "." with a refspec to fetch filtered refs
     // Add remote pointing to current directory
-    let repo_remote = to_absolute_remote_url(&repo_path.display().to_string())?;
-    spawn_git_command(repo_path, &["remote", "add", &args.name, &repo_remote], &[])
-        .context("Failed to add git remote")?;
+    let repo_remote = to_absolute_remote_url(&workdir.display().to_string())?;
+    spawn_git_command(
+        repo.path(),
+        &["remote", "add", &args.name, &repo_remote],
+        &[],
+    )
+    .context("Failed to add git remote")?;
 
     // Set up namespace configuration for the remote
     let namespace = format!("josh-{}", args.name);
     let uploadpack_cmd = format!("env GIT_NAMESPACE={} git upload-pack", namespace);
 
     spawn_git_command(
-        repo_path,
+        repo.path(),
         &[
             "config",
             &format!("remote.{}.uploadpack", args.name),
@@ -1245,20 +1140,16 @@ fn handle_filter(
     args: &FilterArgs,
     transaction: &josh_core::cache::Transaction,
 ) -> anyhow::Result<()> {
-    let repo = git2::Repository::open_from_env().context("Not in a git repository")?;
-    let repo_path = repo.path().parent().unwrap().to_path_buf();
-
-    handle_filter_repo(args, &repo_path, true, transaction)
+    handle_filter_repo(args, true, transaction)
 }
 
 /// Internal filter function that can be called from other handlers
 fn handle_filter_repo(
     args: &FilterArgs,
-    repo_path: &std::path::Path,
     print_messages: bool,
     transaction: &josh_core::cache::Transaction,
 ) -> anyhow::Result<()> {
-    let repo = git2::Repository::open(repo_path).context("Failed to open repository")?;
+    let repo = transaction.repo();
 
     // Read the filter from git config for this remote
     let config = repo.config().context("Failed to get git config")?;
@@ -1273,7 +1164,7 @@ fn handle_filter_repo(
     }
 
     // Apply josh filtering (this is the same as in handle_fetch but without the git fetch step)
-    apply_josh_filtering(transaction, repo_path, &filter, &args.remote)?;
+    apply_josh_filtering(transaction, &filter, &args.remote)?;
 
     if print_messages {
         println!("Applied filter to remote: {}", args.remote);

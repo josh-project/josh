@@ -2253,6 +2253,7 @@ dependencies = [
  "git2",
  "josh-core",
  "josh-graphql",
+ "josh-link",
  "josh-templates",
  "juniper",
  "log",
@@ -2313,6 +2314,15 @@ dependencies = [
  "strfmt",
  "toml",
  "tracing",
+]
+
+[[package]]
+name = "josh-link"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "git2",
+ "josh-core",
 ]
 
 [[package]]

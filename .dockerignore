@@ -13,6 +13,7 @@
 !josh-ssh-shell
 !josh-templates
 !josh-graphql
+!josh-link
 !josh-mq
 !josh-ui/*.json
 !josh-ui/*.rs
