@@ -1,6 +1,9 @@
 use anyhow::Context;
 use josh_core::filter::tree;
+
+use std::io::IsTerminal;
 use std::path::PathBuf;
+use std::process::Stdio;
 
 /// Result from adding a link to a repository
 pub struct AddLinkResult {
@@ -8,6 +11,61 @@ pub struct AddLinkResult {
     pub commit_with_link: git2::Oid,
     /// Commit after applying :link=snapshot filter
     pub filtered_commit: git2::Oid,
+}
+
+/// Prepared link addition, ready to be finalized
+pub struct PreparedLinkAdd {
+    tree_oid: git2::Oid,
+    path: PathBuf,
+}
+
+impl PreparedLinkAdd {
+    /// Create commit and apply :link=snapshot filter
+    ///
+    /// This is the typical usage for `josh link add`
+    pub fn into_commit(
+        self,
+        transaction: &josh_core::cache::Transaction,
+        head_commit: &git2::Commit,
+        signature: &git2::Signature,
+    ) -> anyhow::Result<AddLinkResult> {
+        let repo = transaction.repo();
+        let tree = repo
+            .find_tree(self.tree_oid)
+            .context("Failed to find tree")?;
+
+        let commit_with_link = repo
+            .commit(
+                None,
+                signature,
+                signature,
+                &format!("Add link: {}", self.path.display()),
+                &tree,
+                &[head_commit],
+            )
+            .context("Failed to create commit")?;
+
+        let snapshot_filter = josh_core::filter::parse(":link=snapshot")
+            .map_err(from_josh_err)
+            .context("Failed to parse :link=snapshot filter")?;
+
+        let filtered_commit =
+            josh_core::filter_commit(transaction, snapshot_filter, commit_with_link)
+                .map_err(from_josh_err)
+                .context("Failed to apply :link=snapshot filter")?;
+
+        Ok(AddLinkResult {
+            commit_with_link,
+            filtered_commit,
+        })
+    }
+
+    /// Get tree OID for custom commit creation
+    ///
+    /// This is used by josh-mq to add additional files before creating a commit
+    pub fn into_tree_oid(self) -> git2::Oid {
+        self.tree_oid
+    }
 }
 
 /// Result from updating links
@@ -22,28 +80,119 @@ pub fn from_josh_err(e: josh_core::JoshError) -> anyhow::Error {
     anyhow::anyhow!("{}", e.0)
 }
 
-pub fn add_link(
+pub fn make_signature(repo: &git2::Repository) -> anyhow::Result<git2::Signature<'static>> {
+    if let Ok(time) = std::env::var("JOSH_COMMIT_TIME") {
+        git2::Signature::new(
+            "JOSH",
+            "josh@josh-project.dev",
+            &git2::Time::new(time.parse().context("Failed to parse JOSH_COMMIT_TIME")?, 0),
+        )
+        .context("Failed to create signature")
+    } else {
+        let sig = repo.signature().context("Failed to get signature")?;
+        Ok(sig.to_owned())
+    }
+}
+
+/// Normalize repo path by stripping .git suffix if present
+pub fn normalize_repo_path(repo_path: &std::path::Path) -> PathBuf {
+    let components = repo_path.components().collect::<Vec<_>>();
+
+    if let Some((last, components)) = components.split_last()
+        && last == &std::path::Component::Normal(".git".as_ref())
+    {
+        components.iter().collect()
+    } else {
+        repo_path.into()
+    }
+}
+
+/// Spawn a git command directly to the terminal so users can see progress
+/// Falls back to captured output if not in a TTY environment
+pub fn spawn_git_command(
+    repo_path: &std::path::Path,
+    args: &[&str],
+    env: &[(&str, &str)],
+) -> anyhow::Result<()> {
+    log::debug!("spawn_git_command: {:?}", args);
+
+    let cwd = normalize_repo_path(repo_path);
+
+    let mut command = std::process::Command::new("git");
+    command.current_dir(cwd).args(args);
+
+    for (key, value) in env {
+        command.env(key, value);
+    }
+
+    // Check if we're in a TTY environment
+    let is_tty = std::io::stdin().is_terminal() && std::io::stdout().is_terminal();
+
+    let status = if is_tty {
+        // In TTY: inherit stdio so users can see progress
+        command
+            .stdin(Stdio::inherit())
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit());
+
+        command.status()?.code()
+    } else {
+        // Not in TTY: capture output and print stderr (for tests, CI, etc.)
+        let output = command
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .context("failed to execute git command")?;
+
+        // Print stderr if there's any output
+        if !output.stderr.is_empty() {
+            let output_str = String::from_utf8_lossy(&output.stderr);
+            let output_str = if let Ok(testtmp) = std::env::var("TESTTMP") {
+                output_str.replace(&testtmp, "${TESTTMP}")
+            } else {
+                output_str.to_string()
+            };
+
+            eprintln!("{}", output_str);
+        }
+
+        output.status.code()
+    };
+
+    match status.unwrap_or(1) {
+        0 => Ok(()),
+        code => {
+            let command = args.join(" ");
+            Err(anyhow::anyhow!(
+                "Command exited with code {}: git {}",
+                code,
+                command
+            ))
+        }
+    }
+}
+
+/// Prepare a link addition without creating a commit
+pub fn prepare_link_add(
     transaction: &josh_core::cache::Transaction,
-    path: &str,
+    path: &std::path::Path,
     url: &str,
     filter: Option<&str>,
     target: &str,
     fetched_commit: git2::Oid,
-    head_commit: &git2::Commit,
-    signature: &git2::Signature,
-) -> anyhow::Result<AddLinkResult> {
+    head_tree: &git2::Tree,
+) -> anyhow::Result<PreparedLinkAdd> {
     let repo = transaction.repo();
 
-    // Normalize the path by removing leading and trailing slashes
-    let normalized_path = path.trim_matches('/').to_string();
-
-    // Get the filter (default to ":/" if not provided)
-    let filter_str = filter.unwrap_or(":/");
+    // Strip leading slash if present (git tree paths are always relative)
+    let path = path.strip_prefix("/").unwrap_or(path);
+    let filter = filter.unwrap_or(":/");
 
     // Parse the filter
-    let filter_obj = josh_core::filter::parse(filter_str)
+    let filter_obj = josh_core::filter::parse(filter)
         .map_err(from_josh_err)
-        .with_context(|| format!("Failed to parse filter '{}'", filter_str))?;
+        .with_context(|| format!("Failed to parse filter '{}'", filter))?;
 
     // Create a filter with metadata
     let link_filter = filter_obj
@@ -58,40 +207,22 @@ pub fn add_link(
         .context("Failed to create blob")?;
 
     // Create the path for the .link.josh file
-    let link_path = std::path::Path::new(&normalized_path).join(".link.josh");
-
-    // Get the head tree
-    let head_tree = head_commit.tree().context("Failed to get HEAD tree")?;
+    let link_path = path.join(".link.josh");
 
     // Insert the .link.josh file into the tree
-    let new_tree = tree::insert(repo, &head_tree, &link_path, link_blob, 0o0100644)
-        .map_err(from_josh_err)
-        .context("Failed to insert link file into tree")?;
+    let new_tree = tree::insert(
+        repo,
+        head_tree,
+        &link_path,
+        link_blob,
+        git2::FileMode::Blob.into(),
+    )
+    .map_err(from_josh_err)
+    .context("Failed to insert link file into tree")?;
 
-    // Create a new commit with the updated tree
-    let commit_with_link = repo
-        .commit(
-            None, // Don't update any reference
-            signature,
-            signature,
-            &format!("Add link: {}", normalized_path),
-            &new_tree,
-            &[head_commit],
-        )
-        .context("Failed to create commit")?;
-
-    // Apply the :link=snapshot filter to the new commit
-    let snapshot_filter = josh_core::filter::parse(":link=snapshot")
-        .map_err(from_josh_err)
-        .context("Failed to parse :link=snapshot filter")?;
-
-    let filtered_commit = josh_core::filter_commit(transaction, snapshot_filter, commit_with_link)
-        .map_err(from_josh_err)
-        .context("Failed to apply :link=snapshot filter")?;
-
-    Ok(AddLinkResult {
-        commit_with_link,
-        filtered_commit,
+    Ok(PreparedLinkAdd {
+        tree_oid: new_tree.id(),
+        path: path.to_path_buf(),
     })
 }
 

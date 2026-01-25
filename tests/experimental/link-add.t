@@ -149,6 +149,35 @@
   $ git show-ref | grep refs/heads/josh-link
   f67d653810126e1678b6b1dd285c775992251e33 refs/heads/josh-link
 
+  $ git show refs/heads/josh-link
+  commit f67d653810126e1678b6b1dd285c775992251e33
+  Author: JOSH <josh@josh-project.dev>
+  Date:   Thu Jan 1 00:00:00 1970 +0000
+  
+      Add link: docs
+  
+  diff --git a/docs/.link.josh b/docs/.link.josh
+  new file mode 100644
+  index 0000000..0ffffee
+  --- /dev/null
+  +++ b/docs/.link.josh
+  @@ -0,0 +1,7 @@
+  +:~(
+  +    commit="d27fa3a10cc019e6aa55fc74c1f0893913380e2d"
+  +    remote="../remote.git"
+  +    target="HEAD"
+  +)[
+  +    :/docs
+  +]
+  diff --git a/docs/readme.txt b/docs/readme.txt
+  new file mode 100644
+  index 0000000..dfcaa10
+  --- /dev/null
+  +++ b/docs/readme.txt
+  @@ -0,0 +1 @@
+  +documentation
+
+
 
 # Test error case - empty path
   $ josh link add "" ../remote.git
