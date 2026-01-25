@@ -7,3 +7,4 @@ edition = "2024"
 josh-core = { path = "../josh-core", features = ["incubating"] }
 git2 = { workspace = true }
 anyhow = { workspace = true }
+log = { workspace = true }
