@@ -5,6 +5,7 @@
   
   Commands:
     init   Initialize metarepo
+    track  Track a remote repository
     fetch  Fetch remotes, collect and record state of conditions
     step   Single step through the queue, updating the state
     push   Push updated metarepo state to remotes

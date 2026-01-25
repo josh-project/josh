@@ -15,6 +15,22 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+    - name: Free up disk space
+      shell: bash
+      run: |
+        set -eu
+        CLEANUP_DIRS=(
+          "/usr/local/lib/android"
+          "/usr/share/dotnet"
+          "/usr/share/swift"
+          "/usr/local/.ghcup"
+        )
+        for dir in "${CLEANUP_DIRS[@]}"; do
+          if [[ -d "$dir" ]]; then
+            echo "removing ${dir}"
+            sudo rm -rf "$dir"
+          fi
+        done
     - name: Setup BuildX
       uses: docker/setup-buildx-action@v3
     - name: Checkout
