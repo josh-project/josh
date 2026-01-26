@@ -11,6 +11,7 @@
 !josh-proxy
 !josh-rpc
 !josh-ssh-shell
+!josh-starlark
 !josh-templates
 !josh-graphql
 !josh-link
