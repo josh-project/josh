@@ -208,21 +208,43 @@ These filter do not modify git trees, but instead only operate on the commit gra
 Produce a filtered history that does not contain any merge commits. This is done by
 simply dropping all parents except the first on every commit.
 
-### Filter specific parts of the history **:rev(<sha_0>:filter_0,...,<sha_N>:filter_N)**
-Produce a history where the commits specified by `<sha_N>` are replaced by the result of applying
-`:filter_N` to it.
+### Filter specific parts of the history **:rev(...)**
 
-It will appear like `<sha_N>` and all its ancestors are also filtered with `<filter_N>`. If an
-ancestor also has a matching entry in the `:rev(...)` it's filter will *replace* `<filter_N>`
-for all further ancestors (and so on).
+The `:rev(...)` filter allows you to apply different filters to different parts of the commit history based on commit relationships. Each entry in the filter specifies a condition and a filter to apply when that condition matches.
 
-This special value `0000000000000000000000000000000000000000` can be used as a `<sha_n>` to filter
-commits that don't match any of the other shas.
+**Syntax:**
+```
+:rev(
+  <operator><sha>:filter
+  _:filter
+  ...
+)
+```
 
-### Start filtering from a specific commit **:from(<sha>:filter)**
+**Operators:**
 
-Produce a history that keeps the original history up to and including the specified commit `<sha>` unchanged,
-but applies the given `:filter` to all commits after that commit.
+- **`<`** - Strict ancestor match: matches if the commit is an ancestor of `<sha>` AND the commit is not equal to `<sha>`
+- **`<=`** - Inclusive ancestor match: matches if the commit is an ancestor of `<sha>` OR the commit equals `<sha>`
+- **`==`** - Exact match: matches only if the commit equals `<sha>`
+- **`_`** - Default filter: matches any commit that doesn't match any previous condition (no SHA needed)
+
+**Matching behavior:**
+
+- Rules are evaluated in the order they are specified
+- **First match wins** - once a condition matches, that filter is applied and no further rules are checked
+- The default filter (`_`) will match any commit that hasn't matched a previous rule, making any rules after it unreachable
+
+**Examples:**
+
+```
+:rev(==def456:prefix=new,<=abc123:prefix=old)
+```
+This applies `:prefix=old` to commit `abc123` and all its ancestors, and `:prefix=new` only to commit `def456`.
+
+```
+:rev(<abc123:prefix=old,_:prefix=default)
+```
+This applies `:prefix=old` to all ancestors of `abc123` (but not `abc123` itself), and `:prefix=default` to all other commits (including `abc123` and any commits after it).
 
 ### Prune trivial merge commits **:prune=trivial-merge**
 
