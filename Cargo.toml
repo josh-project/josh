@@ -15,6 +15,7 @@ members = [
     "josh-templates",
     "josh-ui",
     "josh-mq",
+    "josh-starlark",
 ]
 
 [profile.release]
