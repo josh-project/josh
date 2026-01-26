@@ -8,6 +8,18 @@ pub enum LazyRef {
     Lazy(String),
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RevMatch {
+    /// `<` - matches if is_ancestor_of(commit, tip) && commit != tip (strict)
+    AncestorStrict,
+    /// `<=` - matches if is_ancestor_of(commit, tip) || commit == tip (inclusive)
+    AncestorInclusive,
+    /// `==` - matches if commit == tip
+    Equal,
+    /// `_` - default filter when no other matches (no SHA needed)
+    Default,
+}
+
 impl std::fmt::Display for LazyRef {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -56,9 +68,8 @@ pub enum Op {
     Author(String, String),
     Committer(String, String),
 
-    // We use BTreeMap rather than HashMap to guarantee deterministic results when
-    // converting to Filter
-    Rev(std::collections::BTreeMap<LazyRef, Filter>),
+    // Vec instead of BTreeMap to preserve order - first match wins
+    Rev(Vec<(RevMatch, LazyRef, Filter)>),
     Prune,
     RegexReplace(Vec<(regex::Regex, String)>),
 
@@ -76,7 +87,6 @@ pub enum Op {
     Pattern(String),
     Message(String, regex::Regex),
 
-    HistoryConcat(LazyRef, Filter),
     #[cfg(feature = "incubating")]
     Unapply(LazyRef, Filter),
 

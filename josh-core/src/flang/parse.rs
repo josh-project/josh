@@ -1,11 +1,11 @@
-use crate::filter::{self, Filter, invert, to_filter};
+use crate::filter::{Filter, invert, to_filter};
 use crate::{JoshResult, josh_error};
 use indoc::{formatdoc, indoc};
 use itertools::Itertools;
 use pest::Parser;
 use std::path::Path;
 
-use crate::filter::op::{LazyRef, Op};
+use crate::filter::op::{LazyRef, Op, RevMatch};
 use crate::filter::opt;
 
 fn make_filter(args: &[&str]) -> JoshResult<Filter> {
@@ -181,37 +181,69 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> JoshResult<Filter> {
             }
         }
         Rule::filter_rev => {
-            let v: Vec<_> = pair.into_inner().map(|x| x.as_str()).collect();
+            let mut entries = Vec::new();
+            for entry_pair in pair.into_inner() {
+                match entry_pair.as_rule() {
+                    Rule::rev_entry => {
+                        let mut inner = entry_pair.into_inner();
+                        let first = inner.next().ok_or_else(|| josh_error("rev_entry: empty"))?;
 
-            let hm = v
-                .iter()
-                .tuples()
-                .map(|(oid, filter)| Ok((LazyRef::parse(oid)?, parse(filter)?)))
-                .collect::<JoshResult<_>>()?;
-
-            Ok(to_filter(Op::Rev(hm)))
-        }
-        Rule::filter_from => {
-            let v: Vec<_> = pair.into_inner().map(|x| x.as_str()).collect();
-
-            if v.len() == 2 {
-                let oid = LazyRef::parse(v[0])?;
-                let filter = parse(v[1])?;
-                Ok(filter.chain(filter::to_filter(Op::HistoryConcat(oid, filter))))
-            } else {
-                Err(josh_error("wrong argument count for :from"))
+                        match first.as_rule() {
+                            Rule::rev_default => {
+                                // `_` - default filter, no SHA needed
+                                // The rev_default rule contains just filter_spec (the `_` is a literal)
+                                let filter_pair = first
+                                    .into_inner()
+                                    .next()
+                                    .ok_or_else(|| josh_error("rev_default: missing filter"))?;
+                                let filter = parse(filter_pair.as_str())?;
+                                entries.push((
+                                    RevMatch::Default,
+                                    LazyRef::Resolved(git2::Oid::zero()),
+                                    filter,
+                                ));
+                            }
+                            Rule::rev_match => {
+                                // Regular match with operator, SHA, and filter
+                                let match_op = match first.as_str() {
+                                    "<" => RevMatch::AncestorStrict,
+                                    "<=" => RevMatch::AncestorInclusive,
+                                    "==" => RevMatch::Equal,
+                                    _ => {
+                                        return Err(josh_error(&format!(
+                                            "invalid rev match operator: {:?}",
+                                            first.as_str()
+                                        )));
+                                    }
+                                };
+                                let oid_pair = inner
+                                    .next()
+                                    .ok_or_else(|| josh_error("rev_entry: missing rev"))?;
+                                let filter_pair = inner
+                                    .next()
+                                    .ok_or_else(|| josh_error("rev_entry: missing filter"))?;
+                                let oid = LazyRef::parse(oid_pair.as_str())?;
+                                let filter = parse(filter_pair.as_str())?;
+                                entries.push((match_op, oid, filter));
+                            }
+                            _ => {
+                                return Err(josh_error(&format!(
+                                    "rev_entry: unexpected rule: {:?}",
+                                    first.as_rule()
+                                )));
+                            }
+                        }
+                    }
+                    _ => {
+                        return Err(josh_error(&format!(
+                            "filter_rev: unexpected rule: {:?}",
+                            entry_pair.as_rule()
+                        )));
+                    }
+                }
             }
-        }
-        Rule::filter_concat => {
-            let v: Vec<_> = pair.into_inner().map(|x| x.as_str()).collect();
 
-            if v.len() == 2 {
-                let oid = LazyRef::parse(v[0])?;
-                let filter = parse(v[1])?;
-                Ok(to_filter(Op::HistoryConcat(oid, filter)))
-            } else {
-                Err(josh_error("wrong argument count for :concat"))
-            }
+            Ok(to_filter(Op::Rev(entries)))
         }
         #[cfg(feature = "incubating")]
         Rule::filter_unapply => {

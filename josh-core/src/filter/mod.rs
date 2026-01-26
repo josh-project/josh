@@ -430,8 +430,8 @@ fn lazy_refs2(op: &Op) -> Vec<String> {
             av
         }
         Op::Rev(filters) => {
-            let mut lr = lazy_refs2(&Op::Compose(filters.values().copied().collect()));
-            lr.extend(filters.keys().filter_map(|x| {
+            let mut lr = lazy_refs2(&Op::Compose(filters.iter().map(|(_, _, f)| *f).collect()));
+            lr.extend(filters.iter().filter_map(|(_, x, _)| {
                 if let LazyRef::Lazy(s) = x {
                     Some(s.to_owned())
                 } else {
@@ -440,14 +440,6 @@ fn lazy_refs2(op: &Op) -> Vec<String> {
             }));
             lr.sort();
             lr.dedup();
-            lr
-        }
-        Op::HistoryConcat(r, f) => {
-            let mut lr = Vec::new();
-            if let LazyRef::Lazy(s) = r {
-                lr.push(s.to_owned());
-            }
-            lr.append(&mut lazy_refs(*f));
             lr
         }
         Op::Squash(Some(revs)) => {
@@ -484,33 +476,21 @@ fn resolve_refs2(refs: &std::collections::HashMap<String, git2::Oid>, op: &Op) -
         Op::Rev(filters) => {
             let lr = filters
                 .iter()
-                .map(|(r, f)| {
+                .map(|(match_op, r, f)| {
                     let f = resolve_refs(refs, *f);
-                    if let LazyRef::Lazy(s) = r {
+                    let resolved_r = if let LazyRef::Lazy(s) = r {
                         if let Some(res) = refs.get(s) {
-                            (LazyRef::Resolved(*res), f)
+                            LazyRef::Resolved(*res)
                         } else {
-                            (r.clone(), f)
+                            r.clone()
                         }
                     } else {
-                        (r.clone(), f)
-                    }
+                        r.clone()
+                    };
+                    (*match_op, resolved_r, f)
                 })
                 .collect();
             Op::Rev(lr)
-        }
-        Op::HistoryConcat(r, filter) => {
-            let f = resolve_refs(refs, *filter);
-            let resolved_ref = if let LazyRef::Lazy(s) = r {
-                if let Some(res) = refs.get(s) {
-                    LazyRef::Resolved(*res)
-                } else {
-                    r.clone()
-                }
-            } else {
-                r.clone()
-            };
-            Op::HistoryConcat(resolved_ref, f)
         }
         Op::Squash(Some(filters)) => {
             let lr = filters
@@ -690,41 +670,77 @@ fn read_josh_link<'a>(
 fn get_rev_filter(
     transaction: &cache::Transaction,
     commit: &git2::Commit,
-    filters: &std::collections::BTreeMap<LazyRef, Filter>,
+    filters: &[(op::RevMatch, op::LazyRef, Filter)],
 ) -> JoshResult<Filter> {
-    let default_filter = *filters
-        .get(&LazyRef::Resolved(git2::Oid::zero()))
-        .unwrap_or(&to_filter(Op::Nop));
+    let commit_id = commit.id();
 
-    let mut matching_filters = Vec::new();
+    // First match wins - iterate in order
+    for (match_op, filter_tip_ref, startfilter) in filters.iter() {
+        let matches = match match_op {
+            op::RevMatch::AncestorStrict => {
+                // `<` - matches if commit is ancestor of tip AND commit != tip (strict)
+                let filter_tip = if let op::LazyRef::Resolved(filter_tip) = filter_tip_ref {
+                    filter_tip
+                } else {
+                    return Err(josh_error("unresolved lazy ref"));
+                };
 
-    for (filter_tip, startfilter) in filters.iter() {
-        let filter_tip = if let LazyRef::Resolved(filter_tip) = filter_tip {
-            filter_tip
-        } else {
-            return Err(josh_error("unresolved lazy ref"));
+                if !transaction.repo().odb()?.exists(*filter_tip) {
+                    return Err(josh_error(&format!(
+                        "`:rev(...)` with nonexistent OID: {}",
+                        filter_tip
+                    )));
+                }
+
+                is_ancestor_of(transaction, commit_id, *filter_tip)? && commit_id != *filter_tip
+            }
+            op::RevMatch::AncestorInclusive => {
+                // `<=` - matches if commit is ancestor of tip OR commit == tip (inclusive)
+                let filter_tip = if let op::LazyRef::Resolved(filter_tip) = filter_tip_ref {
+                    filter_tip
+                } else {
+                    return Err(josh_error("unresolved lazy ref"));
+                };
+
+                if !transaction.repo().odb()?.exists(*filter_tip) {
+                    return Err(josh_error(&format!(
+                        "`:rev(...)` with nonexistent OID: {}",
+                        filter_tip
+                    )));
+                }
+
+                is_ancestor_of(transaction, commit_id, *filter_tip)?
+            }
+            op::RevMatch::Equal => {
+                // `==` - matches if commit == tip
+                let filter_tip = if let op::LazyRef::Resolved(filter_tip) = filter_tip_ref {
+                    filter_tip
+                } else {
+                    return Err(josh_error("unresolved lazy ref"));
+                };
+
+                if !transaction.repo().odb()?.exists(*filter_tip) {
+                    return Err(josh_error(&format!(
+                        "`:rev(...)` with nonexistent OID: {}",
+                        filter_tip
+                    )));
+                }
+
+                commit_id == *filter_tip
+            }
+            op::RevMatch::Default => {
+                // `_` - always matches (makes filters after it unreachable)
+                true
+            }
         };
-        if *filter_tip == git2::Oid::zero() {
-            continue;
-        }
-        if !transaction.repo().odb()?.exists(*filter_tip) {
-            return Err(josh_error(&format!(
-                "`:rev(...)` with nonexistent OID: {}",
-                filter_tip
-            )));
-        }
 
-        if is_ancestor_of(transaction, commit.id(), *filter_tip)? {
-            let sequence_number = cache::compute_sequence_number(transaction, *filter_tip)?;
-            matching_filters.push((sequence_number, *startfilter));
+        if matches {
+            return Ok(*startfilter);
         }
     }
 
-    if let Some((_, filter)) = matching_filters.iter().min_by_key(|(seq_num, _)| seq_num) {
-        Ok(*filter)
-    } else {
-        Ok(default_filter)
-    }
+    // No match found, return Nop
+    Ok(to_filter(Op::Nop))
 }
 
 pub fn apply_to_commit2(
@@ -1181,19 +1197,6 @@ pub fn apply_to_commit2(
             return Ok(Some(git2::Oid::zero()));
         }
 
-        Op::HistoryConcat(c, f) => {
-            if let LazyRef::Resolved(c) = c {
-                let a = apply_to_commit2(*f, &repo.find_commit(*c)?, transaction)?;
-                let a = some_or!(a, { return Ok(None) });
-                if commit.id() == a {
-                    transaction.insert(filter, commit.id(), *c, true);
-                    return Ok(Some(*c));
-                }
-            } else {
-                return Err(josh_error("unresolved lazy ref"));
-            }
-            Rewrite::from_commit(commit)?
-        }
         _ => apply(transaction, filter, Rewrite::from_commit(commit)?)?,
     };
 
@@ -1355,7 +1358,6 @@ pub fn apply<'a>(
                 },
             )?))
         }
-        Op::HistoryConcat(..) => Ok(x),
         Op::Prune => Ok(x),
         #[cfg(feature = "incubating")]
         Op::Adapt(adapter) => {

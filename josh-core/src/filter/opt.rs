@@ -520,7 +520,12 @@ fn step(filter: Filter) -> Filter {
                 Op::Prefix(path)
             }
         }
-        Op::Rev(filters) => Op::Rev(filters.into_iter().map(|(i, f)| (i, step(f))).collect()),
+        Op::Rev(filters) => Op::Rev(
+            filters
+                .into_iter()
+                .map(|(m, i, f)| (m, i, step(f)))
+                .collect(),
+        ),
         Op::Compose(filters) if filters.is_empty() => Op::Empty,
         Op::Compose(filters) if filters.len() == 1 => to_op(filters[0]),
         Op::Compose(mut filters) => {

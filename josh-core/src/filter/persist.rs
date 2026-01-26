@@ -5,6 +5,7 @@ use std::hash::BuildHasherDefault;
 use std::sync::LazyLock;
 
 use crate::filter::hash::PassthroughHasher;
+use crate::filter::op::RevMatch;
 use crate::filter::{Filter, LazyRef, Op, sequence_number};
 use crate::{JoshResult, josh_error};
 
@@ -132,10 +133,97 @@ impl InMemoryBuilder {
         Ok(self.write_tree(tree))
     }
 
-    fn build_rev_params(&mut self, params: &[(String, Filter)]) -> JoshResult<gix_hash::ObjectId> {
+    fn build_rev_params(
+        &mut self,
+        params: &[(RevMatch, LazyRef, Filter)],
+    ) -> JoshResult<gix_hash::ObjectId> {
         let mut outer_entries = Vec::new();
-        for (i, (key, filter)) in params.iter().enumerate() {
+        for (i, (match_op, lazy_ref, filter)) in params.iter().enumerate() {
+            // Encode match operator as prefix
+            let key = match match_op {
+                RevMatch::AncestorStrict => format!("<{}", lazy_ref),
+                RevMatch::AncestorInclusive => format!("<={}", lazy_ref),
+                RevMatch::Equal => format!("=={}", lazy_ref),
+                RevMatch::Default => {
+                    // Default filter uses "_" as key (no SHA)
+                    "_".to_string()
+                }
+            };
             let key_blob = self.write_blob(key.as_bytes());
+            let filter_tree = gix_hash::ObjectId::from_bytes_or_panic(filter.id().as_bytes());
+
+            let inner_entries = vec![
+                gix_object::tree::Entry {
+                    mode: gix_object::tree::EntryKind::Blob.into(),
+                    filename: BString::from("o"),
+                    oid: key_blob,
+                },
+                gix_object::tree::Entry {
+                    mode: gix_object::tree::EntryKind::Tree.into(),
+                    filename: BString::from("f"),
+                    oid: filter_tree,
+                },
+            ];
+            let inner_tree = gix_object::Tree {
+                entries: inner_entries,
+            };
+            let inner_oid = self.write_tree(inner_tree);
+
+            outer_entries.push(gix_object::tree::Entry {
+                mode: gix_object::tree::EntryKind::Tree.into(),
+                filename: BString::from(i.to_string()),
+                oid: inner_oid,
+            });
+        }
+        let outer_tree = gix_object::Tree {
+            entries: outer_entries,
+        };
+        Ok(self.write_tree(outer_tree))
+    }
+
+    fn build_lazyref_filter_params(
+        &mut self,
+        lazy_ref: &LazyRef,
+        filter: Filter,
+    ) -> JoshResult<gix_hash::ObjectId> {
+        let key_blob = self.write_blob(lazy_ref.to_string().as_bytes());
+        let filter_tree = gix_hash::ObjectId::from_bytes_or_panic(filter.id().as_bytes());
+
+        let inner_entries = vec![
+            gix_object::tree::Entry {
+                mode: gix_object::tree::EntryKind::Blob.into(),
+                filename: BString::from("o"),
+                oid: key_blob,
+            },
+            gix_object::tree::Entry {
+                mode: gix_object::tree::EntryKind::Tree.into(),
+                filename: BString::from("f"),
+                oid: filter_tree,
+            },
+        ];
+        let inner_tree = gix_object::Tree {
+            entries: inner_entries,
+        };
+        let inner_oid = self.write_tree(inner_tree);
+
+        let outer_entries = vec![gix_object::tree::Entry {
+            mode: gix_object::tree::EntryKind::Tree.into(),
+            filename: BString::from("0"),
+            oid: inner_oid,
+        }];
+        let outer_tree = gix_object::Tree {
+            entries: outer_entries,
+        };
+        Ok(self.write_tree(outer_tree))
+    }
+
+    fn build_squash_params(
+        &mut self,
+        params: &std::collections::BTreeMap<LazyRef, Filter>,
+    ) -> JoshResult<gix_hash::ObjectId> {
+        let mut outer_entries = Vec::new();
+        for (i, (lazy_ref, filter)) in params.iter().enumerate() {
+            let key_blob = self.write_blob(lazy_ref.to_string().as_bytes());
             let filter_tree = gix_hash::ObjectId::from_bytes_or_panic(filter.id().as_bytes());
 
             let inner_entries = vec![
@@ -320,30 +408,17 @@ impl InMemoryBuilder {
                 push_blob_entries(&mut entries, [("prune", blob)]);
             }
             Op::Rev(filters) => {
-                let mut v = filters
-                    .iter()
-                    .map(|(k, v)| (k.to_string(), *v))
-                    .collect::<Vec<_>>();
-                v.sort();
-                let params_tree = self.build_rev_params(&v)?;
+                // No sorting - preserve order for first-match semantics
+                let params_tree = self.build_rev_params(filters)?;
                 push_tree_entries(&mut entries, [("rev", params_tree)]);
-            }
-            Op::HistoryConcat(lr, f) => {
-                let params_tree = self.build_rev_params(&[(lr.to_string(), *f)])?;
-                push_tree_entries(&mut entries, [("concat", params_tree)]);
             }
             #[cfg(feature = "incubating")]
             Op::Unapply(lr, f) => {
-                let params_tree = self.build_rev_params(&[(lr.to_string(), *f)])?;
+                let params_tree = self.build_lazyref_filter_params(lr, *f)?;
                 push_tree_entries(&mut entries, [("unapply", params_tree)]);
             }
             Op::Squash(Some(ids)) => {
-                let mut v = ids
-                    .iter()
-                    .map(|(k, v)| (k.to_string(), *v))
-                    .collect::<Vec<_>>();
-                v.sort();
-                let params_tree = self.build_rev_params(&v)?;
+                let params_tree = self.build_squash_params(ids)?;
                 push_tree_entries(&mut entries, [("squash", params_tree)]);
             }
             Op::RegexReplace(replacements) => {
@@ -749,12 +824,12 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> JoshResult<Op> {
         }
         "rev" => {
             let rev_tree = repo.find_tree(entry.id())?;
-            let mut filters = std::collections::BTreeMap::new();
+            let mut filters = Vec::new();
             for i in 0..rev_tree.len() {
-                let entry = rev_tree
-                    .get(i)
+                let rev_entry = rev_tree
+                    .get_name(&i.to_string())
                     .ok_or_else(|| josh_error("rev: missing entry"))?;
-                let inner_tree = repo.find_tree(entry.id())?;
+                let inner_tree = repo.find_tree(rev_entry.id())?;
                 let key_blob = repo.find_blob(
                     inner_tree
                         .get_name("o")
@@ -768,32 +843,31 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> JoshResult<Op> {
                         .id(),
                 )?;
                 let key = std::str::from_utf8(key_blob.content())?.to_string();
+
+                // Parse match operator from key
+                let (match_op, lazy_ref) = if key == "_" {
+                    // Default filter - no SHA needed
+                    (RevMatch::Default, LazyRef::Resolved(git2::Oid::zero()))
+                } else if key.starts_with("<=") {
+                    let ref_str = &key[2..];
+                    (RevMatch::AncestorInclusive, LazyRef::parse(ref_str)?)
+                } else if key.starts_with('<') {
+                    let ref_str = &key[1..];
+                    (RevMatch::AncestorStrict, LazyRef::parse(ref_str)?)
+                } else if key.starts_with("==") {
+                    let ref_str = &key[2..];
+                    (RevMatch::Equal, LazyRef::parse(ref_str)?)
+                } else {
+                    return Err(josh_error(&format!(
+                        "rev: invalid key format, must start with '<', '<=', '==', or be '_': {}",
+                        key
+                    )));
+                };
+
                 let filter = from_tree2(repo, filter_tree.id())?;
-                filters.insert(LazyRef::parse(&key)?, to_filter(filter));
+                filters.push((match_op, lazy_ref, to_filter(filter)));
             }
             Ok(Op::Rev(filters))
-        }
-        "concat" => {
-            let concat_tree = repo.find_tree(entry.id())?;
-            let entry = concat_tree
-                .get(0)
-                .ok_or_else(|| josh_error("concat: missing entry"))?;
-            let inner_tree = repo.find_tree(entry.id())?;
-            let key_blob = repo.find_blob(
-                inner_tree
-                    .get_name("o")
-                    .ok_or_else(|| josh_error("concat: missing key"))?
-                    .id(),
-            )?;
-            let filter_tree = repo.find_tree(
-                inner_tree
-                    .get_name("f")
-                    .ok_or_else(|| josh_error("concat: missing filter"))?
-                    .id(),
-            )?;
-            let key = std::str::from_utf8(key_blob.content())?.to_string();
-            let filter = from_tree2(repo, filter_tree.id())?;
-            Ok(Op::HistoryConcat(LazyRef::parse(&key)?, to_filter(filter)))
         }
         #[cfg(feature = "incubating")]
         "unapply" => {
