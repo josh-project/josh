@@ -24,8 +24,6 @@ filter_spec = { (
     filter_group
   | filter_message
   | filter_rev
-  | filter_from
-  | filter_concat
   | filter_unapply
   | filter_replace
   | filter_squash
@@ -51,29 +49,16 @@ filter_message = { CMD_START ~ string ~ (";" ~ string)? }
 filter_rev = {
     CMD_START ~ "rev" ~ "("
     ~ NEWLINE*
-    ~ (rev ~ filter_spec)?
-    ~ (CMD_SEP+ ~ (rev ~ filter_spec))*
+    ~ (rev_entry)?
+    ~ (CMD_SEP+ ~ rev_entry)*
     ~ NEWLINE*
     ~ ")"
 }
 
-filter_from = {
-    CMD_START ~ "from" ~ "("
-    ~ NEWLINE*
-    ~ (rev ~ filter_spec)?
-    ~ (CMD_SEP+ ~ (rev ~ filter_spec))*
-    ~ NEWLINE*
-    ~ ")"
-}
+rev_entry = { rev_default | (rev_match ~ rev ~ filter_spec) }
+rev_default = { "_" ~ filter_spec }
+rev_match = { "<=" | "<" | "==" }
 
-filter_concat = {
-    CMD_START ~ "concat" ~ "("
-    ~ NEWLINE*
-    ~ (rev ~ filter_spec)?
-    ~ (CMD_SEP+ ~ (rev ~ filter_spec))*
-    ~ NEWLINE*
-    ~ ")"
-}
 
 filter_unapply = {
     CMD_START ~ "unapply" ~ "("

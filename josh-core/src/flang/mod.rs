@@ -1,6 +1,6 @@
 pub mod parse;
 
-use crate::filter::op::Op;
+use crate::filter::op::{Op, RevMatch};
 use crate::filter::opt;
 use crate::filter::persist::to_filter;
 use crate::filter::persist::to_op;
@@ -160,11 +160,19 @@ pub(crate) fn spec2(op: &Op) -> String {
             format!(":pin[{}]", spec(*filter))
         }
         Op::Rev(filters) => {
-            let mut v = filters
+            // No sorting - preserve order for first-match semantics
+            let v = filters
                 .iter()
-                .map(|(k, v)| format!("{}{}", k, spec(*v)))
+                .map(|(match_op, k, v)| {
+                    let match_str = match match_op {
+                        RevMatch::AncestorStrict => format!("<{}", k),
+                        RevMatch::AncestorInclusive => format!("<={}", k),
+                        RevMatch::Equal => format!("=={}", k),
+                        RevMatch::Default => "_".to_string(),
+                    };
+                    format!("{}{}", match_str, spec(*v))
+                })
                 .collect::<Vec<_>>();
-            v.sort();
             format!(":rev({})", v.join(","))
         }
         Op::Workspace(path) => {
@@ -259,9 +267,6 @@ pub(crate) fn spec2(op: &Op) -> String {
         }
         Op::Message(m, r) => {
             format!(":{};{}", parse::quote(m), parse::quote(r.as_str()))
-        }
-        Op::HistoryConcat(r, filter) => {
-            format!(":concat({}{})", r, spec(*filter))
         }
         #[cfg(feature = "incubating")]
         Op::Unapply(r, filter) => {

@@ -51,34 +51,47 @@
   * 9f0db868b59a422c114df33bc6a8b2950f80490b:a087bfbdb1a5bad499b40ccd1363d30db1313f54
 
   $ josh-filter -s ":rev(ffffffffffffffffffffffffffffffffffffffff:prefix=x/y)" --update refs/heads/filtered
-  [5] :prefix=x
-  [5] :prefix=y
-  [10] sequence_number
-  ERROR: `:rev(...)` with nonexistent OID: ffffffffffffffffffffffffffffffffffffffff
+  ERROR: Invalid workspace:
+  ----
+   --> 1:6
+    |
+  1 | :rev(ffffffffffffffffffffffffffffffffffffffff:prefix=x/y)
+    |      ^---
+    |
+    = expected rev_entry
+  
+  :rev(ffffffffffffffffffffffffffffffffffffffff:prefix=x/y)
+  ----
   [1]
 
   $ josh-filter -s ":rev(975d4c4975912729482cc864d321c5196a969271:prefix=x/y)" --update refs/heads/filtered
-  54651c29aa86e8512a7b9d39e3b8ea26da644247
-  [5] :prefix=x
-  [5] :prefix=y
-  [5] :rev(975d4c4975912729482cc864d321c5196a969271:prefix=x/y)
-  [10] sequence_number
+  ERROR: Invalid workspace:
+  ----
+   --> 1:6
+    |
+  1 | :rev(975d4c4975912729482cc864d321c5196a969271:prefix=x/y)
+    |      ^---
+    |
+    = expected rev_entry
+  
+  :rev(975d4c4975912729482cc864d321c5196a969271:prefix=x/y)
+  ----
+  [1]
   $ git log --graph --decorate --pretty=%H:%T refs/heads/filtered
-  *   54651c29aa86e8512a7b9d39e3b8ea26da644247:5f47d9fdffdc726bb8ebcfea67531d2574243c5d
+  *   37f8b29c9e892ea0eb7abac2759ddc6fb0337203:dcbbddf47649f8e73f59fae92896c0d2cd02b6ec
   |\  
-  | * ee931ac07e4a953d1d2e0f65968946f5c09b0f4c:5d0da4f47308da86193b53b3374f5630c5a0fa3e
+  | * 714ed7037ce6a45f7342e2cc1a9bb644bb616c45:67e0ba73689ea02220cb270c5b5db564e520fce3
   | * cc0382917c6488d69dca4d6a147d55251b06ac08:8408d8fc882cba8e945b16bc69e3b475d65ecbeb
-  * | daf46738b8fddd211a1609bf3b9de339fe7589eb:5d8a699f74b48c9c595f4615dd3755244e11d176
+  * | 08158c6ba260a65db99c1e9e6f519e1963dff07b:6d18321f410e431cd446258dd5e01999306d9d44
   |/  
   * 9f0db868b59a422c114df33bc6a8b2950f80490b:a087bfbdb1a5bad499b40ccd1363d30db1313f54
 
 
-  $ josh-filter -s ":rev(e707f76bb6a1390f28b2162da5b5eb6933009070:prefix=x/y)" --update refs/heads/filtered
+  $ josh-filter -s ":rev(<=e707f76bb6a1390f28b2162da5b5eb6933009070:prefix=x/y)" --update refs/heads/filtered
   5fe60a2d55b652822b3d3f25410714e9053ba72b
   [5] :prefix=x
   [5] :prefix=y
-  [5] :rev(975d4c4975912729482cc864d321c5196a969271:prefix=x/y)
-  [5] :rev(e707f76bb6a1390f28b2162da5b5eb6933009070:prefix=x/y)
+  [5] :rev(<=e707f76bb6a1390f28b2162da5b5eb6933009070:prefix=x/y)
   [10] sequence_number
   $ git log --graph --decorate --pretty=%H:%T refs/heads/filtered
   *   5fe60a2d55b652822b3d3f25410714e9053ba72b:5f47d9fdffdc726bb8ebcfea67531d2574243c5d
@@ -90,17 +103,16 @@
   * 9f0db868b59a422c114df33bc6a8b2950f80490b:a087bfbdb1a5bad499b40ccd1363d30db1313f54
   $ cat > filter.josh <<EOF
   > :rev(
-  >   e707f76bb6a1390f28b2162da5b5eb6933009070:prefix=x/y
-  >   975d4c4975912729482cc864d321c5196a969271:prefix=x/y
+  >   <=e707f76bb6a1390f28b2162da5b5eb6933009070:prefix=x/y
+  >   <=975d4c4975912729482cc864d321c5196a969271:prefix=x/y
   > )
   > EOF
   $ josh-filter -s --file filter.josh --update refs/heads/filtered
   63fea1234f375bd09019b676da8291f28d2ddb43
   [5] :prefix=x
   [5] :prefix=y
-  [5] :rev(975d4c4975912729482cc864d321c5196a969271:prefix=x/y)
-  [5] :rev(975d4c4975912729482cc864d321c5196a969271:prefix=x/y,e707f76bb6a1390f28b2162da5b5eb6933009070:prefix=x/y)
-  [5] :rev(e707f76bb6a1390f28b2162da5b5eb6933009070:prefix=x/y)
+  [5] :rev(<=e707f76bb6a1390f28b2162da5b5eb6933009070:prefix=x/y)
+  [5] :rev(<=e707f76bb6a1390f28b2162da5b5eb6933009070:prefix=x/y,<=975d4c4975912729482cc864d321c5196a969271:prefix=x/y)
   [10] sequence_number
   $ git log --graph --decorate --pretty=%H:%T refs/heads/filtered
   *   63fea1234f375bd09019b676da8291f28d2ddb43:5f47d9fdffdc726bb8ebcfea67531d2574243c5d
@@ -112,52 +124,49 @@
   * 9f0db868b59a422c114df33bc6a8b2950f80490b:a087bfbdb1a5bad499b40ccd1363d30db1313f54
   $ cat > filter.josh <<EOF
   > :rev(
-  >     e707f76bb6a1390f28b2162da5b5eb6933009070:prefix=x/y
-  >     975d4c4975912729482cc864d321c5196a969271:prefix=x/z
+  >     <=e707f76bb6a1390f28b2162da5b5eb6933009070:prefix=x/y
+  >     <=975d4c4975912729482cc864d321c5196a969271:prefix=x/z
   > )
   > EOF
   $ josh-filter -s --file filter.josh --update refs/heads/filtered
-  3888953f24fcd65d381d17909edee7a6a4639571
+  a2f3cfd164ad740d899cc7b22a46bee6bce798cd
   [5] :prefix=x
   [5] :prefix=y
-  [5] :rev(975d4c4975912729482cc864d321c5196a969271:prefix=x/y)
-  [5] :rev(975d4c4975912729482cc864d321c5196a969271:prefix=x/y,e707f76bb6a1390f28b2162da5b5eb6933009070:prefix=x/y)
-  [5] :rev(975d4c4975912729482cc864d321c5196a969271:prefix=x/z,e707f76bb6a1390f28b2162da5b5eb6933009070:prefix=x/y)
-  [5] :rev(e707f76bb6a1390f28b2162da5b5eb6933009070:prefix=x/y)
+  [5] :rev(<=e707f76bb6a1390f28b2162da5b5eb6933009070:prefix=x/y)
+  [5] :rev(<=e707f76bb6a1390f28b2162da5b5eb6933009070:prefix=x/y,<=975d4c4975912729482cc864d321c5196a969271:prefix=x/y)
+  [5] :rev(<=e707f76bb6a1390f28b2162da5b5eb6933009070:prefix=x/y,<=975d4c4975912729482cc864d321c5196a969271:prefix=x/z)
   [10] sequence_number
   $ cat > filter.josh <<EOF
   > :rev(
-  >   e707f76bb6a1390f28b2162da5b5eb6933009070:prefix=x/y
-  >   975d4c4975912729482cc864d321c5196a969271:prefix=x/z
+  >   <=e707f76bb6a1390f28b2162da5b5eb6933009070:prefix=x/y
+  >   <=975d4c4975912729482cc864d321c5196a969271:prefix=x/z
   > )
   > EOF
   $ josh-filter -s --file filter.josh --update refs/heads/filtered
   Warning: reference refs/heads/filtered wasn't updated
-  3888953f24fcd65d381d17909edee7a6a4639571
+  a2f3cfd164ad740d899cc7b22a46bee6bce798cd
   [5] :prefix=x
   [5] :prefix=y
-  [5] :rev(975d4c4975912729482cc864d321c5196a969271:prefix=x/y)
-  [5] :rev(975d4c4975912729482cc864d321c5196a969271:prefix=x/y,e707f76bb6a1390f28b2162da5b5eb6933009070:prefix=x/y)
-  [5] :rev(975d4c4975912729482cc864d321c5196a969271:prefix=x/z,e707f76bb6a1390f28b2162da5b5eb6933009070:prefix=x/y)
-  [5] :rev(e707f76bb6a1390f28b2162da5b5eb6933009070:prefix=x/y)
+  [5] :rev(<=e707f76bb6a1390f28b2162da5b5eb6933009070:prefix=x/y)
+  [5] :rev(<=e707f76bb6a1390f28b2162da5b5eb6933009070:prefix=x/y,<=975d4c4975912729482cc864d321c5196a969271:prefix=x/y)
+  [5] :rev(<=e707f76bb6a1390f28b2162da5b5eb6933009070:prefix=x/y,<=975d4c4975912729482cc864d321c5196a969271:prefix=x/z)
   [10] sequence_number
   $ git log --graph --decorate --pretty=%H:%T refs/heads/filtered
-  *   3888953f24fcd65d381d17909edee7a6a4639571:5f47d9fdffdc726bb8ebcfea67531d2574243c5d
+  *   a2f3cfd164ad740d899cc7b22a46bee6bce798cd:5f47d9fdffdc726bb8ebcfea67531d2574243c5d
   |\  
-  | * d817c466a639fca29059705144ef9f63e194c3b5:5d0da4f47308da86193b53b3374f5630c5a0fa3e
-  | * 28b0f8962384c35ff4f370c0fb8d75bc9b035248:b9d380f578c1cb2bb5039977f64ccf1a804a91de
-  * | 74a368bd558785377d64ecdb3a47f2d1b4f25113:6d18321f410e431cd446258dd5e01999306d9d44
+  | * 17a13131b354b75d39aa29896f0500ac1b5e6764:5d0da4f47308da86193b53b3374f5630c5a0fa3e
+  | * 8516b8e4396bc91c72cec0038325d82604e8d685:b9d380f578c1cb2bb5039977f64ccf1a804a91de
+  * | 08158c6ba260a65db99c1e9e6f519e1963dff07b:6d18321f410e431cd446258dd5e01999306d9d44
   |/  
-  * 26cbb56df84c5e9fdce7afc7855025862e835ee2:105b58b790c53d350e23a51ad763a88e6b977ae7
+  * 9f0db868b59a422c114df33bc6a8b2950f80490b:a087bfbdb1a5bad499b40ccd1363d30db1313f54
 
   $ josh-filter -s :linear --update refs/heads/filtered
   f8e8bc9daf54340c9fce647be467d2577b623bbe
   [5] :prefix=x
   [5] :prefix=y
-  [5] :rev(975d4c4975912729482cc864d321c5196a969271:prefix=x/y)
-  [5] :rev(975d4c4975912729482cc864d321c5196a969271:prefix=x/y,e707f76bb6a1390f28b2162da5b5eb6933009070:prefix=x/y)
-  [5] :rev(975d4c4975912729482cc864d321c5196a969271:prefix=x/z,e707f76bb6a1390f28b2162da5b5eb6933009070:prefix=x/y)
-  [5] :rev(e707f76bb6a1390f28b2162da5b5eb6933009070:prefix=x/y)
+  [5] :rev(<=e707f76bb6a1390f28b2162da5b5eb6933009070:prefix=x/y)
+  [5] :rev(<=e707f76bb6a1390f28b2162da5b5eb6933009070:prefix=x/y,<=975d4c4975912729482cc864d321c5196a969271:prefix=x/y)
+  [5] :rev(<=e707f76bb6a1390f28b2162da5b5eb6933009070:prefix=x/y,<=975d4c4975912729482cc864d321c5196a969271:prefix=x/z)
   [5] :~(
       history="linear"
   )[
@@ -184,20 +193,19 @@
 
   $ cat > filter.josh <<EOF
   > :linear:rev(
-  >   0000000000000000000000000000000000000000:prefix=x
-  >   e707f76bb6a1390f28b2162da5b5eb6933009070:prefix=y
-  >   0b4cf6c9efbbda1eada39fa9c1d21d2525b027bb:prefix=z
+  >   _:prefix=x
+  >   <=e707f76bb6a1390f28b2162da5b5eb6933009070:prefix=y
+  >   <=0b4cf6c9efbbda1eada39fa9c1d21d2525b027bb:prefix=z
   > )
   > EOF
   $ josh-filter -s --file filter.josh --update refs/heads/filtered
-  2944f04c33ea037f7696282bf20b2e570524552e
-  [3] :rev(0000000000000000000000000000000000000000:prefix=x,0b4cf6c9efbbda1eada39fa9c1d21d2525b027bb:prefix=z,e707f76bb6a1390f28b2162da5b5eb6933009070:prefix=y)
+  37951772e1ff1a27f9b2bb2cc958ca77e7705c2b
+  [3] :rev(_:prefix=x,<=e707f76bb6a1390f28b2162da5b5eb6933009070:prefix=y,<=0b4cf6c9efbbda1eada39fa9c1d21d2525b027bb:prefix=z)
   [5] :prefix=x
   [5] :prefix=y
-  [5] :rev(975d4c4975912729482cc864d321c5196a969271:prefix=x/y)
-  [5] :rev(975d4c4975912729482cc864d321c5196a969271:prefix=x/y,e707f76bb6a1390f28b2162da5b5eb6933009070:prefix=x/y)
-  [5] :rev(975d4c4975912729482cc864d321c5196a969271:prefix=x/z,e707f76bb6a1390f28b2162da5b5eb6933009070:prefix=x/y)
-  [5] :rev(e707f76bb6a1390f28b2162da5b5eb6933009070:prefix=x/y)
+  [5] :rev(<=e707f76bb6a1390f28b2162da5b5eb6933009070:prefix=x/y)
+  [5] :rev(<=e707f76bb6a1390f28b2162da5b5eb6933009070:prefix=x/y,<=975d4c4975912729482cc864d321c5196a969271:prefix=x/y)
+  [5] :rev(<=e707f76bb6a1390f28b2162da5b5eb6933009070:prefix=x/y,<=975d4c4975912729482cc864d321c5196a969271:prefix=x/z)
   [5] :~(
       history="linear"
   )[
@@ -206,9 +214,9 @@
   [11] sequence_number
 
   $ git log --graph --decorate --pretty=%H:%T refs/heads/filtered
-  * 2944f04c33ea037f7696282bf20b2e570524552e:047b1b6f39e8d95b62ef7f136189005d0e3c80b3
-  * 3c2304baa035aa9c8e7e0f1fff5d7410be55f069:6300cae79def8ee31701b104857ff4338b6079aa
-  * 67480de4b94241494bfb0d7f606d421d8ed4f7e6:2fd6d8f78756533e937e3f168eb58e0fd8b1512c
+  * 37951772e1ff1a27f9b2bb2cc958ca77e7705c2b:047b1b6f39e8d95b62ef7f136189005d0e3c80b3
+  * f3378cf22f8de05bd2b411b640df4096e0fcf4d2:3440aebdbc752b9f2671b57f02df3a023788d849
+  * 902467f53eaa9c352159cf8a81c72715bdb3a4c3:cf77b08d2fe1c0530a1bcd10c5d3434737a80cc5
 
   $ git diff --stat ${EMPTY_TREE}..refs/heads/filtered
    x/file1 | 1 +
@@ -216,9 +224,9 @@
    x/file3 | 1 +
    3 files changed, 3 insertions(+)
   $ git diff --stat ${EMPTY_TREE}..refs/heads/filtered~1
-   y/file1 | 1 +
-   y/file2 | 1 +
+   x/file1 | 1 +
+   x/file2 | 1 +
    2 files changed, 2 insertions(+)
   $ git diff --stat ${EMPTY_TREE}..refs/heads/filtered~2
-   z/file1 | 1 +
+   x/file1 | 1 +
    1 file changed, 1 insertion(+)
