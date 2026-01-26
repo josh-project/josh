@@ -106,7 +106,7 @@ Error in filter
   remote: 1 | a/b = :b/sub2        
   remote:   |         ^---        
   remote:   |        
-  remote:   = expected EOI, filter_group, filter_subdir, filter_stored, filter_nop, filter_presub, filter, filter_noarg, filter_message, filter_rev, filter_from, filter_concat, filter_unapply, filter_replace, filter_squash, filter_scope, or filter_meta        
+  remote:   = expected EOI, filter_group, filter_subdir, filter_stored, filter_nop, filter_presub, filter, filter_noarg, filter_message, filter_rev, filter_unapply, filter_replace, filter_squash, filter_scope, or filter_meta        
   remote: 
   remote: a/b = :b/sub2        
   remote: c = :/sub1        

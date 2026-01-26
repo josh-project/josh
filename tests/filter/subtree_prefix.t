@@ -13,8 +13,8 @@ Initial commit of subtree branch
   $ git add .
   $ git commit -m "add file2 (in subtree)" 1>/dev/null
   $ export SUBTREE_TIP=$(git rev-parse HEAD)
-  $ export SUBTREE_FILTER=":~(history=\"keep-trivial-merges\")[:rev($SUBTREE_TIP:prefix=subtree)]"
-  $ export FILTER=":~(history=\"keep-trivial-merges\")[:rev($SUBTREE_TIP:prefix=subtree):/subtree]"
+  $ export SUBTREE_FILTER=":~(history=\"keep-trivial-merges\")[:rev(<=$SUBTREE_TIP:prefix=subtree)]"
+  $ export FILTER=":~(history=\"keep-trivial-merges\")[:rev(<=$SUBTREE_TIP:prefix=subtree):/subtree]"
 
 Artificially create a subtree merge
 (merge commit has subtree files in subfolder but has subtree commit as a parent)
@@ -48,7 +48,7 @@ Rewrite the subtree part of the history
   [4] :~(
       history="keep-trivial-merges"
   )[
-      :rev(c036f944faafb865e0585e4fa5e005afa0aeea3f:prefix=subtree)
+      :rev(<=c036f944faafb865e0585e4fa5e005afa0aeea3f:prefix=subtree)
   ]
   [4] sequence_number
 
@@ -83,7 +83,7 @@ Extract the subtree history
   [4] :~(
       history="keep-trivial-merges"
   )[
-      :rev(c036f944faafb865e0585e4fa5e005afa0aeea3f:prefix=subtree)
+      :rev(<=c036f944faafb865e0585e4fa5e005afa0aeea3f:prefix=subtree)
   ]
   [7] sequence_number
   $ git checkout subtree
@@ -105,7 +105,7 @@ Work in the subtree, and sync that back.
   [4] :~(
       history="keep-trivial-merges"
   )[
-      :rev(c036f944faafb865e0585e4fa5e005afa0aeea3f:prefix=subtree)
+      :rev(<=c036f944faafb865e0585e4fa5e005afa0aeea3f:prefix=subtree)
   ]
   [7] sequence_number
   $ git log --graph --pretty=%s  refs/heads/master
@@ -136,7 +136,7 @@ And then re-extract, which should re-construct the same subtree.
   [5] :~(
       history="keep-trivial-merges"
   )[
-      :rev(c036f944faafb865e0585e4fa5e005afa0aeea3f:prefix=subtree)
+      :rev(<=c036f944faafb865e0585e4fa5e005afa0aeea3f:prefix=subtree)
   ]
   [9] sequence_number
   $ test $(git rev-parse subtree) = $(git rev-parse subtree2)
@@ -219,7 +219,7 @@ And finally, sync first from main to sub and then back.
   [9] :~(
       history="keep-trivial-merges"
   )[
-      :rev(c036f944faafb865e0585e4fa5e005afa0aeea3f:prefix=subtree)
+      :rev(<=c036f944faafb865e0585e4fa5e005afa0aeea3f:prefix=subtree)
   ]
   [17] sequence_number
 
@@ -274,7 +274,7 @@ taken back into the main history.
   [13] :~(
       history="keep-trivial-merges"
   )[
-      :rev(c036f944faafb865e0585e4fa5e005afa0aeea3f:prefix=subtree)
+      :rev(<=c036f944faafb865e0585e4fa5e005afa0aeea3f:prefix=subtree)
   ]
   [25] sequence_number
   $ git ls-tree --name-only -r refs/heads/master
