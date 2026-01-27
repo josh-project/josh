@@ -1,6 +1,4 @@
-use super::Filter;
-use crate::JoshResult;
-use crate::josh_error;
+use crate::filter::Filter;
 
 #[derive(Hash, Clone, Debug, PartialEq, PartialOrd, Eq, Ord)]
 pub enum LazyRef {
@@ -30,7 +28,7 @@ impl std::fmt::Display for LazyRef {
 }
 
 impl LazyRef {
-    pub fn parse(s: &str) -> JoshResult<LazyRef> {
+    pub fn parse(s: &str) -> Result<LazyRef, String> {
         let s = s.replace("'", "\"");
         if let Ok(serde_json::Value::String(s)) = serde_json::from_str(&s) {
             return Ok(LazyRef::Lazy(s));
@@ -38,7 +36,7 @@ impl LazyRef {
         if let Ok(oid) = git2::Oid::from_str(&s) {
             Ok(LazyRef::Resolved(oid))
         } else {
-            Err(josh_error(&format!("invalid ref: {:?}", s)))
+            Err(format!("invalid ref: {:?}", s))
         }
     }
 }

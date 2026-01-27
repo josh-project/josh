@@ -2300,6 +2300,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "josh-filter"
+version = "22.4.15"
+dependencies = [
+ "git2",
+ "gix-hash",
+ "gix-object",
+ "regex",
+ "serde",
+ "serde_json",
+ "smallvec",
+]
+
+[[package]]
 name = "josh-graphql"
 version = "0.1.0"
 dependencies = [
