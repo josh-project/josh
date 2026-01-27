@@ -1,12 +1,10 @@
 pub mod parse;
 
-use crate::filter::op::{Op, RevMatch};
-use crate::filter::opt;
-use crate::filter::persist::to_filter;
-use crate::filter::persist::to_op;
-use crate::filter::persist::to_ops;
+use crate::filter::MESSAGE_MATCH_ALL_REGEX;
 use crate::filter::sequence_number;
-use crate::filter::{self, Filter};
+use crate::opt;
+use crate::persist::{to_filter, to_op, to_ops};
+use crate::{Filter, Op, RevMatch};
 
 /// Pretty print the filter on multiple lines with initial indentation level.
 /// Nested filters will be indented with additional 4 spaces per nesting level.
@@ -273,7 +271,7 @@ pub(crate) fn spec2(op: &Op) -> String {
                 parse::quote(email)
             )
         }
-        Op::Message(m, r) if r.as_str() == filter::MESSAGE_MATCH_ALL_REGEX.as_str() => {
+        Op::Message(m, r) if r.as_str() == MESSAGE_MATCH_ALL_REGEX.as_str() => {
             format!(":{}", parse::quote(m))
         }
         Op::Message(m, r) => {

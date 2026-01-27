@@ -6,6 +6,7 @@ members = [
     "hyper-reverse-proxy",
     "josh-core",
     "josh-cli",
+    "josh-filter",
     "josh-graphql",
     "josh-link",
     "josh-proxy",

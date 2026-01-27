@@ -2280,6 +2280,7 @@ dependencies = [
  "hex",
  "indoc",
  "itertools",
+ "josh-filter",
  "log",
  "percent-encoding",
  "pest",
@@ -2297,6 +2298,23 @@ dependencies = [
  "strfmt",
  "toml",
  "tracing",
+]
+
+[[package]]
+name = "josh-filter"
+version = "22.4.15"
+dependencies = [
+ "git2",
+ "gix-hash",
+ "gix-object",
+ "indoc",
+ "itertools",
+ "pest",
+ "pest_derive",
+ "regex",
+ "serde",
+ "serde_json",
+ "smallvec",
 ]
 
 [[package]]
