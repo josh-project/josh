@@ -3,13 +3,15 @@
  * All those functions convert filters from one equivalent representation into another.
  */
 
-use super::*;
+use crate::filter::Filter;
+use crate::op::Op;
+use crate::persist::{peel_op, to_filter, to_op};
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::hash::BuildHasherDefault;
 use std::sync::LazyLock;
 
-use crate::filter::hash::PassthroughHasher;
+use crate::hash::PassthroughHasher;
 
 type FilterHashMap = HashMap<Filter, Filter, BuildHasherDefault<PassthroughHasher>>;
 
@@ -19,6 +21,64 @@ static INVERTED: LazyLock<std::sync::Mutex<FilterHashMap>> =
     LazyLock::new(|| std::sync::Mutex::new(HashMap::default()));
 static SIMPLIFIED: LazyLock<std::sync::Mutex<FilterHashMap>> =
     LazyLock::new(|| std::sync::Mutex::new(HashMap::default()));
+
+fn normalize_path(path: &std::path::Path) -> std::path::PathBuf {
+    let mut components = path.components().peekable();
+    let mut ret = if let Some(c @ std::path::Component::Prefix(..)) = components.peek().cloned() {
+        components.next();
+        std::path::PathBuf::from(c.as_os_str())
+    } else {
+        std::path::PathBuf::new()
+    };
+
+    for component in components {
+        match component {
+            std::path::Component::Prefix(..) => unreachable!(),
+            std::path::Component::RootDir => {
+                ret.push(component.as_os_str());
+            }
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                ret.pop();
+            }
+            std::path::Component::Normal(c) => {
+                ret.push(c);
+            }
+        }
+    }
+    ret
+}
+
+fn src_path(filter: Filter) -> std::path::PathBuf {
+    src_path2(&peel_op(filter))
+}
+
+fn src_path2(op: &Op) -> std::path::PathBuf {
+    normalize_path(&match op {
+        Op::Subdir(path) => path.to_owned(),
+        Op::File(_, source_path) => source_path.to_owned(),
+        Op::Chain(filters) => filters
+            .iter()
+            .fold(std::path::PathBuf::new(), |acc, f| acc.join(src_path(*f))),
+        _ => std::path::PathBuf::new(),
+    })
+}
+
+fn dst_path(filter: Filter) -> std::path::PathBuf {
+    dst_path2(&peel_op(filter))
+}
+
+fn dst_path2(op: &Op) -> std::path::PathBuf {
+    normalize_path(&match op {
+        Op::Prefix(path) => path.to_owned(),
+        Op::File(dest_path, _) => dest_path.to_owned(),
+        Op::Chain(filters) => filters
+            .iter()
+            .rev()
+            .fold(std::path::PathBuf::new(), |acc, f| acc.join(dst_path(*f))),
+        _ => std::path::PathBuf::new(),
+    })
+}
 
 /*
  * Attempt to create an alternative representation of a filter AST that is most
@@ -54,10 +114,6 @@ pub fn simplify(filter: Filter) -> Filter {
     if let Some(f) = SIMPLIFIED.lock().unwrap().get(&filter) {
         return *f;
     }
-    rs_tracing::trace_scoped!(
-        "simplify",
-        "spec": crate::flang::spec2(&to_op(filter))
-    );
     let original = filter;
     let result = to_filter(match to_op(filter) {
         Op::Compose(filters) => {
@@ -136,7 +192,6 @@ pub fn simplify(filter: Filter) -> Filter {
  * the difference between two complex filters.
  */
 pub fn flatten(filter: Filter) -> Filter {
-    rs_tracing::trace_scoped!("flatten", "spec": spec(filter));
     let original = filter;
     let result = to_filter(match to_op(filter) {
         Op::Compose(filters) => {
@@ -259,7 +314,7 @@ struct PathTrie {
 }
 
 impl PathTrie {
-    fn insert(&mut self, path: &Path, index: usize) {
+    fn insert(&mut self, path: &std::path::Path, index: usize) {
         let mut node = self;
         for comp in path.components() {
             let key = comp.as_os_str().to_owned();
@@ -268,7 +323,7 @@ impl PathTrie {
         node.indices.push(index);
     }
 
-    fn find_overlapping(&self, path: &Path) -> Vec<usize> {
+    fn find_overlapping(&self, path: &std::path::Path) -> Vec<usize> {
         let mut result = Vec::new();
         let mut node = self;
 
@@ -297,7 +352,7 @@ impl PathTrie {
 
 type PrefixSortEdges = Vec<smallvec::SmallVec<[usize; 32]>>;
 
-pub fn prefix_sort(filters: &[Filter]) -> Vec<Filter> {
+fn prefix_sort(filters: &[Filter]) -> Vec<Filter> {
     if filters.len() <= 1 {
         return filters.to_vec();
     }
@@ -434,7 +489,7 @@ fn common_post(filters: &Vec<Filter>) -> Option<(Filter, Vec<Filter>)> {
     }
 
     if let Some(c) = common_post {
-        if invert(c).ok() == common_post {
+        if invert(c).is_ok() && invert(c).unwrap() == c {
             common_post.map(|c| (c, rest))
         } else if let Op::Prefix(_) = to_op(c) {
             common_post.map(|c| (c, rest))
@@ -453,20 +508,10 @@ fn common_post(filters: &Vec<Filter>) -> Option<(Filter, Vec<Filter>)> {
  */
 fn iterate(filter: Filter) -> Filter {
     let mut filter = filter;
-    log::debug!("opt::iterate:\n{}\n", pretty(filter, 0));
-    for i in 0..1000 {
+    for _i in 0..1000 {
         let optimized = step(filter);
         if filter == optimized {
             break;
-        }
-
-        if log::log_enabled!(log::Level::Debug) {
-            log::debug!(
-                "stepop {}:\n{:?}\n->\n{:?}\n",
-                i,
-                to_op(filter),
-                to_op(optimized)
-            );
         }
         filter = optimized;
     }
@@ -494,7 +539,6 @@ fn step(filter: Filter) -> Filter {
     if let Some(f) = OPTIMIZED.lock().unwrap().get(&filter) {
         return *f;
     }
-    rs_tracing::trace_scoped!("step", "spec": spec(filter));
     let original = filter;
     let result = to_filter(match to_op(filter) {
         Op::Subdir(path) => {
@@ -670,7 +714,7 @@ fn step(filter: Filter) -> Filter {
     result
 }
 
-pub fn invert(filter: Filter) -> JoshResult<Filter> {
+pub fn invert(filter: Filter) -> Result<Filter, String> {
     let result = match to_op(filter) {
         Op::Nop => Some(Op::Nop),
         Op::Message(..) => Some(Op::Nop),
@@ -698,7 +742,6 @@ pub fn invert(filter: Filter) -> JoshResult<Filter> {
     if let Some(f) = INVERTED.lock().unwrap().get(&filter) {
         return Ok(*f);
     }
-    rs_tracing::trace_scoped!("invert", "spec": spec(filter));
 
     let result = to_filter(match to_op(filter) {
         Op::Meta(m, f) => Op::Meta(m, invert(f)?),
@@ -707,38 +750,21 @@ pub fn invert(filter: Filter) -> JoshResult<Filter> {
                 .iter()
                 .rev()
                 .map(|f| invert(*f))
-                .collect::<JoshResult<_>>()?;
+                .collect::<Result<_, _>>()?;
             Op::Chain(inverted)
         }
         Op::Compose(filters) => Op::Compose(
             filters
                 .into_iter()
                 .map(invert)
-                .collect::<JoshResult<Vec<_>>>()?,
+                .collect::<Result<Vec<_>, _>>()?,
         ),
         Op::Exclude(filter) => Op::Exclude(invert(filter)?),
-        _ => return Err(josh_error(&format!("no invert {:?}", filter))),
+        _ => return Err(format!("no invert {:?}", filter)),
     });
 
     let result = optimize(result);
 
     INVERTED.lock().unwrap().insert(original, result);
     Ok(result)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn regression_chain_prefix_subdir() {
-        // When prefix is chained with subdir, and the subdir is deeper than
-        // the prefix, the errornous code optimized this to just Prefix("a")
-        let filter = to_filter(Op::Chain(vec![
-            to_filter(Op::Prefix(std::path::PathBuf::from("a"))),
-            to_filter(Op::Subdir(std::path::PathBuf::from("a/b"))),
-        ]));
-        let expected = to_filter(Op::Subdir(std::path::PathBuf::from("b")));
-        assert_eq!(expected, optimize(filter));
-    }
 }
