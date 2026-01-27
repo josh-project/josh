@@ -1,269 +1,64 @@
 use super::*;
 use std::path::Path;
 use std::sync::LazyLock;
-pub(crate) mod hash;
-pub(crate) mod op;
-pub(crate) mod opt;
-pub mod persist;
+
+// Re-export from josh-filter
+pub use josh_filter::filter::MESSAGE_MATCH_ALL_REGEX;
+pub use josh_filter::filter::sequence_number;
+pub use josh_filter::opt;
+pub use josh_filter::persist::{peel_op, to_filter, to_op, to_ops};
+pub use josh_filter::{Filter, LazyRef, Op, RevMatch};
+
 pub mod text;
 pub mod tree;
 
-use crate::flang::parse;
+// Wrapper functions to convert error types from josh-filter to JoshResult
+pub fn as_tree(repo: &git2::Repository, filter: Filter) -> JoshResult<git2::Oid> {
+    josh_filter::persist::as_tree(repo, filter).map_err(|e| josh_error(&e))
+}
 
-use op::{LazyRef, Op};
+pub fn from_tree(repo: &git2::Repository, tree_oid: git2::Oid) -> JoshResult<Filter> {
+    josh_filter::persist::from_tree(repo, tree_oid).map_err(|e| josh_error(&e))
+}
 
-pub use persist::as_tree;
-pub use persist::from_tree;
-pub(crate) use persist::{peel_op, to_filter, to_op};
+// Re-export flang functions from josh-filter with error type conversion
+pub fn parse(filter_spec: &str) -> JoshResult<Filter> {
+    josh_filter::flang::parse::parse(filter_spec).map_err(|e| josh_error(&e))
+}
 
-pub use crate::flang::{as_file, pretty, spec};
-pub use opt::invert;
-pub use parse::get_comments;
-pub use parse::parse;
+pub fn spec(filter: Filter) -> String {
+    josh_filter::spec(filter)
+}
+
+pub fn pretty(filter: Filter, indent: usize) -> String {
+    josh_filter::pretty(filter, indent)
+}
+
+pub fn as_file(filter: Filter, indent: usize) -> String {
+    josh_filter::as_file(filter, indent)
+}
+
+pub fn get_comments(filter_spec: &str) -> JoshResult<String> {
+    josh_filter::flang::parse::get_comments(filter_spec).map_err(|e| josh_error(&e))
+}
+
+/// Invert a filter, converting josh-filter's error type to JoshError
+pub fn invert(filter: Filter) -> JoshResult<Filter> {
+    josh_filter::opt::invert(filter).map_err(|e| josh_error(&e))
+}
 static WORKSPACES: LazyLock<std::sync::Mutex<std::collections::HashMap<git2::Oid, Filter>>> =
     LazyLock::new(Default::default);
 static ANCESTORS: LazyLock<
     std::sync::Mutex<std::collections::HashMap<git2::Oid, std::collections::HashSet<git2::Oid>>>,
 > = LazyLock::new(Default::default);
 
-/// Match-all regex pattern used as the default for Op::Message when no regex is specified.
-/// The pattern `(?s)^.*$` matches any string (including newlines) from start to end.
-pub(crate) static MESSAGE_MATCH_ALL_REGEX: LazyLock<regex::Regex> =
-    LazyLock::new(|| regex::Regex::new("(?s)^.*$").unwrap());
+// MESSAGE_MATCH_ALL_REGEX is now in josh-filter
 
-/// Filters are represented as `git2::Oid`, however they are not ever stored
-/// inside the repo.
-#[derive(
-    Clone, Hash, PartialEq, Eq, Copy, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
-)]
-#[serde(try_from = "String", into = "String")]
-pub struct Filter(git2::Oid);
-
-impl std::convert::TryFrom<String> for Filter {
-    type Error = JoshError;
-    fn try_from(s: String) -> JoshResult<Filter> {
-        parse(&s)
-    }
-}
-
-impl From<Filter> for String {
-    fn from(val: Filter) -> Self {
-        spec(val)
-    }
-}
-
-impl Default for Filter {
-    fn default() -> Filter {
-        Filter::new()
-    }
-}
-
-impl Filter {
-    pub fn id(&self) -> git2::Oid {
-        self.0
-    }
-
-    /// Create a Filter from an Oid. This is primarily used for special filters
-    /// like sequence_number that don't correspond to a normal Op variant.
-    pub(crate) fn from_oid(oid: git2::Oid) -> Filter {
-        Filter(oid)
-    }
-}
-
-impl Filter {
-    /// Create a no-op filter that passes everything through unchanged
-    pub fn new() -> Filter {
-        to_filter(Op::Nop)
-    }
-
-    /// Create a filter that is the result of feeding the output of `first` into `second`
-    pub fn chain(self, second: Filter) -> Filter {
-        opt::optimize(to_filter(Op::Chain(vec![self, second])))
-    }
-
-    /// Create a no-op filter that passes everything through unchanged
-    pub fn nop(self) -> Filter {
-        self
-    }
-
-    pub fn is_nop(self) -> bool {
-        self == to_filter(Op::Nop)
-    }
-
-    /// Create a filter that produces an empty tree
-    pub fn empty(self) -> Filter {
-        to_filter(Op::Empty)
-    }
-
-    /// Chain a filter that ensures linear history by dropping all parents
-    /// of commits except the first parent
-    pub fn linear(self) -> Filter {
-        self.with_meta("history", "linear")
-    }
-
-    /// Chain a file filter that selects a single file
-    pub fn file(self, path: impl Into<std::path::PathBuf>) -> Filter {
-        let p = path.into();
-        self.rename(p.clone(), p)
-    }
-
-    /// Chain a filter that renames a file from `src` to `dst`
-    /// The file is extracted from the source path and placed at the destination path
-    pub fn rename(
-        self,
-        dst: impl Into<std::path::PathBuf>,
-        src: impl Into<std::path::PathBuf>,
-    ) -> Filter {
-        self.chain(to_filter(Op::File(dst.into(), src.into())))
-    }
-
-    /// Chain a filter that selects a subdirectory from the tree
-    /// Only the contents of the specified directory are included
-    pub fn subdir(self, path: impl Into<std::path::PathBuf>) -> Filter {
-        self.chain(to_filter(Op::Subdir(path.into())))
-    }
-
-    /// Chain a filter that adds a prefix path to the tree
-    /// The entire tree is placed under the specified directory path
-    pub fn prefix(self, path: impl Into<std::path::PathBuf>) -> Filter {
-        self.chain(to_filter(Op::Prefix(path.into())))
-    }
-
-    /// Chain a filter that loads a stored filter from a file
-    /// The filter is read from a `.josh` file at the specified path
-    pub fn stored(self, path: impl Into<std::path::PathBuf>) -> Filter {
-        self.chain(to_filter(Op::Stored(path.into())))
-    }
-
-    /// Chain a filter that matches files by glob pattern
-    /// Only files matching the pattern are included in the result
-    pub fn pattern(self, p: impl Into<String>) -> Filter {
-        self.chain(to_filter(Op::Pattern(p.into())))
-    }
-
-    /// Chain a filter that loads a workspace filter from a `workspace.josh` file
-    /// The workspace filter is read from the specified directory path
-    pub fn workspace(self, path: impl Into<std::path::PathBuf>) -> Filter {
-        self.chain(to_filter(Op::Workspace(path.into())))
-    }
-
-    /// Chain a filter that sets the author name and email for commits
-    pub fn author(self, name: impl Into<String>, email: impl Into<String>) -> Filter {
-        self.chain(to_filter(Op::Author(name.into(), email.into())))
-    }
-
-    /// Chain a filter that sets the committer name and email for commits
-    pub fn committer(self, name: impl Into<String>, email: impl Into<String>) -> Filter {
-        self.chain(to_filter(Op::Committer(name.into(), email.into())))
-    }
-
-    /// Chain a filter that prunes trivial merge commits
-    /// Removes merge commits where the tree is identical to the first parent
-    pub fn prune_trivial_merge(self) -> Filter {
-        self.chain(to_filter(Op::Prune))
-    }
-
-    /// Chain a filter that removes commit signatures
-    /// The filtered commits will not have GPG signatures
-    pub fn unsign(self) -> Filter {
-        self.with_meta("signature", "remove")
-    }
-
-    /// Chain a squash filter
-    pub fn squash(self, ids: Option<&[(git2::Oid, Filter)]>) -> Filter {
-        self.chain(if let Some(ids) = ids {
-            to_filter(Op::Squash(Some(
-                ids.iter()
-                    .map(|(x, y)| (LazyRef::Resolved(*x), *y))
-                    .collect(),
-            )))
-        } else {
-            to_filter(Op::Squash(None))
-        })
-    }
-
-    /// Chain a message filter that transforms commit messages
-    pub fn message(self, m: &str) -> Filter {
-        self.chain(to_filter(Op::Message(
-            m.to_string(),
-            MESSAGE_MATCH_ALL_REGEX.clone(),
-        )))
-    }
-
-    /// Chain a message filter that transforms commit messages
-    pub fn message_regex(self, m: impl Into<String>, regex: regex::Regex) -> Filter {
-        self.chain(to_filter(Op::Message(m.into(), regex)))
-    }
-
-    /// Chain a hook filter
-    pub fn hook(self, h: &str) -> Filter {
-        self.chain(to_filter(Op::Hook(h.to_string())))
-    }
-
-    /// Wrap this filter with metadata (a single key-value pair)
-    /// The metadata is stored alongside the filter
-    /// If the filter is already wrapped in Meta, the new metadata entry is merged with existing ones
-    /// (new entries take precedence over existing ones with the same key)
-    pub fn with_meta<K, V>(self, key: K, value: V) -> Filter
-    where
-        K: Into<String>,
-        V: Into<String>,
-    {
-        let key = key.into();
-        let value = value.into();
-        let op = to_op(self);
-        match op {
-            Op::Meta(mut existing_meta, inner_filter) => {
-                // Merge existing metadata with new metadata (new entries take precedence)
-                existing_meta.insert(key, value);
-                to_filter(Op::Meta(existing_meta, inner_filter))
-            }
-            _ => {
-                // Filter doesn't have metadata, wrap it
-                let mut new_meta = std::collections::BTreeMap::new();
-                new_meta.insert(key, value);
-                to_filter(Op::Meta(new_meta, self))
-            }
-        }
-    }
-
-    /// Get a metadata value by key from this filter
-    /// Returns None if the filter doesn't have metadata or the key doesn't exist
-    pub fn get_meta(&self, key: &str) -> Option<String> {
-        let op = to_op(*self);
-        match op {
-            Op::Meta(meta, _) => meta.get(key).cloned(),
-            _ => None,
-        }
-    }
-
-    /// Get all metadata from this filter as a BTreeMap
-    /// Returns an empty BTreeMap if the filter doesn't have metadata
-    pub fn into_meta(self) -> std::collections::BTreeMap<String, String> {
-        let op = to_op(self);
-        match op {
-            Op::Meta(meta, _) => meta,
-            _ => std::collections::BTreeMap::new(),
-        }
-    }
-
-    /// Peel away metadata layers to get the inner filter
-    /// Recursively removes all Meta wrappers until reaching the actual filter
-    /// If the filter doesn't have metadata, returns the filter itself
-    pub fn peel(&self) -> Filter {
-        let op = to_op(*self);
-        match op {
-            Op::Meta(_, inner_filter) => inner_filter.peel(),
-            _ => *self,
-        }
-    }
-}
-
-impl std::fmt::Debug for Filter {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        to_op(*self).fmt(f)
-    }
-}
+// Filter type and builder methods are now in josh-filter
+// Note: TryFrom<String> and From<Filter> for String implementations
+// are not included here because they require parse/spec from josh-core
+// and we cannot implement external traits for external types.
+// These conversions should be done via parse() and spec() functions directly.
 
 #[derive(Debug)]
 pub struct Rewrite<'a> {
@@ -394,12 +189,7 @@ impl<'a> Rewrite<'a> {
     }
 }
 
-pub use crate::build::compose;
-
-/// Create a sequence_number filter used for tracking commit sequence numbers
-pub fn sequence_number() -> Filter {
-    Filter::from_oid(git2::Oid::zero())
-}
+pub use josh_filter::compose;
 
 pub fn lazy_refs(filter: Filter) -> Vec<String> {
     lazy_refs2(&peel_op(filter))
@@ -575,7 +365,7 @@ fn resolve_workspace_redirect<'a>(
     tree: &'a git2::Tree<'a>,
     path: &Path,
 ) -> Option<(Filter, std::path::PathBuf)> {
-    let f = parse::parse(&tree::get_blob(repo, tree, &path.join("workspace.josh")))
+    let f = parse(&tree::get_blob(repo, tree, &path.join("workspace.josh")))
         .unwrap_or_else(|_| to_filter(Op::Empty));
 
     if let Op::Workspace(p) = to_op(f) {
@@ -627,7 +417,7 @@ fn get_filter<'a>(
     if let Some(f) = WORKSPACES.lock().unwrap().get(&ws_id) {
         *f
     } else {
-        let f = parse::parse(&ws_blob).unwrap_or_else(|_| to_filter(Op::Empty));
+        let f = parse(&ws_blob).unwrap_or_else(|_| to_filter(Op::Empty));
         let f = legalize_stored(transaction, f, tree).unwrap_or_else(|_| to_filter(Op::Empty));
 
         let f = if invert(f).is_ok() {
@@ -670,16 +460,16 @@ fn read_josh_link<'a>(
 fn get_rev_filter(
     transaction: &cache::Transaction,
     commit: &git2::Commit,
-    filters: &[(op::RevMatch, op::LazyRef, Filter)],
+    filters: &[(RevMatch, LazyRef, Filter)],
 ) -> JoshResult<Filter> {
     let commit_id = commit.id();
 
     // First match wins - iterate in order
     for (match_op, filter_tip_ref, startfilter) in filters.iter() {
         let matches = match match_op {
-            op::RevMatch::AncestorStrict => {
+            RevMatch::AncestorStrict => {
                 // `<` - matches if commit is ancestor of tip AND commit != tip (strict)
-                let filter_tip = if let op::LazyRef::Resolved(filter_tip) = filter_tip_ref {
+                let filter_tip = if let LazyRef::Resolved(filter_tip) = filter_tip_ref {
                     filter_tip
                 } else {
                     return Err(josh_error("unresolved lazy ref"));
@@ -694,9 +484,9 @@ fn get_rev_filter(
 
                 is_ancestor_of(transaction, commit_id, *filter_tip)? && commit_id != *filter_tip
             }
-            op::RevMatch::AncestorInclusive => {
+            RevMatch::AncestorInclusive => {
                 // `<=` - matches if commit is ancestor of tip OR commit == tip (inclusive)
-                let filter_tip = if let op::LazyRef::Resolved(filter_tip) = filter_tip_ref {
+                let filter_tip = if let LazyRef::Resolved(filter_tip) = filter_tip_ref {
                     filter_tip
                 } else {
                     return Err(josh_error("unresolved lazy ref"));
@@ -711,9 +501,9 @@ fn get_rev_filter(
 
                 is_ancestor_of(transaction, commit_id, *filter_tip)?
             }
-            op::RevMatch::Equal => {
+            RevMatch::Equal => {
                 // `==` - matches if commit == tip
-                let filter_tip = if let op::LazyRef::Resolved(filter_tip) = filter_tip_ref {
+                let filter_tip = if let LazyRef::Resolved(filter_tip) = filter_tip_ref {
                     filter_tip
                 } else {
                     return Err(josh_error("unresolved lazy ref"));
@@ -728,7 +518,7 @@ fn get_rev_filter(
 
                 commit_id == *filter_tip
             }
-            op::RevMatch::Default => {
+            RevMatch::Default => {
                 // `_` - always matches (makes filters after it unreachable)
                 true
             }
@@ -2141,7 +1931,7 @@ mod tests {
 
     #[test]
     fn meta_filter_tree_roundtrip_test() {
-        use crate::filter::persist::{as_tree, from_tree};
+        use crate::filter::{as_tree, from_tree};
         use git2::Repository;
         use std::fs;
 

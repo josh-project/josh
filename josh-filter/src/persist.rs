@@ -4,16 +4,15 @@ use std::collections::HashMap;
 use std::hash::BuildHasherDefault;
 use std::sync::LazyLock;
 
-use crate::filter::hash::PassthroughHasher;
-use crate::filter::op::RevMatch;
-use crate::filter::{Filter, LazyRef, Op, sequence_number};
-use crate::{JoshResult, josh_error};
+use crate::filter::{Filter, sequence_number};
+use crate::hash::PassthroughHasher;
+use crate::op::{LazyRef, Op, RevMatch};
 
-static FILTERS: LazyLock<
+pub(crate) static FILTERS: LazyLock<
     std::sync::Mutex<HashMap<Filter, Op, BuildHasherDefault<PassthroughHasher>>>,
 > = LazyLock::new(Default::default);
 
-pub(crate) fn peel_op(filter: Filter) -> Op {
+pub fn peel_op(filter: Filter) -> Op {
     let op = to_op(filter);
     if let Op::Meta(_, f) = op {
         peel_op(f)
@@ -22,7 +21,7 @@ pub(crate) fn peel_op(filter: Filter) -> Op {
     }
 }
 
-pub(crate) fn to_op(filter: Filter) -> Op {
+pub fn to_op(filter: Filter) -> Op {
     if filter == sequence_number() {
         return Op::Nop;
     }
@@ -34,8 +33,13 @@ pub(crate) fn to_op(filter: Filter) -> Op {
         .clone()
 }
 
-pub(crate) fn to_ops(filters: &[Filter]) -> Vec<Op> {
+pub fn to_ops(filters: &[Filter]) -> Vec<Op> {
     filters.iter().map(|x| to_op(*x)).collect()
+}
+
+/// Get a clone of the FILTERS map for use in as_tree/from_tree
+pub fn get_filters() -> HashMap<Filter, Op, BuildHasherDefault<PassthroughHasher>> {
+    FILTERS.lock().unwrap().clone()
 }
 
 fn push_blob_entries(
@@ -119,7 +123,7 @@ impl InMemoryBuilder {
         self.write_tree(tree)
     }
 
-    fn build_filter_params(&mut self, params: &[Filter]) -> JoshResult<gix_hash::ObjectId> {
+    fn build_filter_params(&mut self, params: &[Filter]) -> Result<gix_hash::ObjectId, String> {
         let mut entries = Vec::new();
         for (i, filter) in params.iter().enumerate() {
             let child = gix_hash::ObjectId::from_bytes_or_panic(filter.id().as_bytes());
@@ -136,7 +140,7 @@ impl InMemoryBuilder {
     fn build_rev_params(
         &mut self,
         params: &[(RevMatch, LazyRef, Filter)],
-    ) -> JoshResult<gix_hash::ObjectId> {
+    ) -> Result<gix_hash::ObjectId, String> {
         let mut outer_entries = Vec::new();
         for (i, (match_op, lazy_ref, filter)) in params.iter().enumerate() {
             // Encode match operator as prefix
@@ -185,7 +189,7 @@ impl InMemoryBuilder {
         &mut self,
         lazy_ref: &LazyRef,
         filter: Filter,
-    ) -> JoshResult<gix_hash::ObjectId> {
+    ) -> Result<gix_hash::ObjectId, String> {
         let key_blob = self.write_blob(lazy_ref.to_string().as_bytes());
         let filter_tree = gix_hash::ObjectId::from_bytes_or_panic(filter.id().as_bytes());
 
@@ -220,7 +224,7 @@ impl InMemoryBuilder {
     fn build_squash_params(
         &mut self,
         params: &std::collections::BTreeMap<LazyRef, Filter>,
-    ) -> JoshResult<gix_hash::ObjectId> {
+    ) -> Result<gix_hash::ObjectId, String> {
         let mut outer_entries = Vec::new();
         for (i, (lazy_ref, filter)) in params.iter().enumerate() {
             let key_blob = self.write_blob(lazy_ref.to_string().as_bytes());
@@ -286,7 +290,7 @@ impl InMemoryBuilder {
         self.write_tree(outer_tree)
     }
 
-    fn build_op(&mut self, op: &Op) -> JoshResult<gix_hash::ObjectId> {
+    fn build_op(&mut self, op: &Op) -> Result<gix_hash::ObjectId, String> {
         let mut entries = Vec::new();
 
         match op {
@@ -449,9 +453,9 @@ impl InMemoryBuilder {
     }
 }
 
-pub(crate) fn to_filter(op: Op) -> Filter {
+pub fn to_filter(op: Op) -> Filter {
     let mut builder = InMemoryBuilder::new();
-    let tree_id = builder.build_op(&op).unwrap();
+    let tree_id = builder.build_op(&op).expect("failed to build op");
     let oid = git2::Oid::from_bytes(tree_id.as_bytes()).unwrap();
 
     let f = Filter(oid);
@@ -459,8 +463,8 @@ pub(crate) fn to_filter(op: Op) -> Filter {
     f
 }
 
-pub fn as_tree(repo: &git2::Repository, filter: crate::filter::Filter) -> JoshResult<git2::Oid> {
-    let odb = repo.odb()?;
+pub fn as_tree(repo: &git2::Repository, filter: Filter) -> Result<git2::Oid, String> {
+    let odb = repo.odb().map_err(|e| e.to_string())?;
 
     // If the tree exists in the ODB it means all children must already exist as
     // well so we can just return it.
@@ -470,7 +474,7 @@ pub fn as_tree(repo: &git2::Repository, filter: crate::filter::Filter) -> JoshRe
 
     // We don't try to figure out what to write exactly, just write all
     // filters we know about to the ODB
-    let filters = FILTERS.lock().unwrap().clone();
+    let filters = get_filters();
     let mut builder = InMemoryBuilder::new();
     for (f, op) in filters.into_iter() {
         if !odb.exists(f.id()) {
@@ -480,7 +484,7 @@ pub fn as_tree(repo: &git2::Repository, filter: crate::filter::Filter) -> JoshRe
 
     // Write all pending objects to the git2 repository
     for (oid, (kind, data)) in builder.pending_writes {
-        let oid = git2::Oid::from_bytes(oid.as_bytes())?;
+        let oid = git2::Oid::from_bytes(oid.as_bytes()).map_err(|e| e.to_string())?;
 
         // On some platforms, .exists() is cheaper in terms of i/o
         // than .write(), because .write() updates file access time
@@ -492,7 +496,7 @@ pub fn as_tree(repo: &git2::Repository, filter: crate::filter::Filter) -> JoshRe
                 gix_object::Kind::Commit => git2::ObjectType::Commit,
                 gix_object::Kind::Tag => git2::ObjectType::Tag,
             };
-            odb.write(git2_type, &data)?;
+            odb.write(git2_type, &data).map_err(|e| e.to_string())?;
         }
     }
 
@@ -500,194 +504,240 @@ pub fn as_tree(repo: &git2::Repository, filter: crate::filter::Filter) -> JoshRe
     Ok(filter.id())
 }
 
-pub fn from_tree(repo: &git2::Repository, tree_oid: git2::Oid) -> JoshResult<Filter> {
+pub fn from_tree(repo: &git2::Repository, tree_oid: git2::Oid) -> Result<Filter, String> {
     Ok(to_filter(from_tree2(repo, tree_oid)?))
 }
 
-fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> JoshResult<Op> {
-    let tree = repo.find_tree(tree_oid)?;
+fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> Result<Op, String> {
+    let tree = repo.find_tree(tree_oid).map_err(|e| e.to_string())?;
 
     // Assume there's only one entry and get it directly
-    let entry = tree.get(0).ok_or_else(|| josh_error("Empty tree"))?;
+    let entry = tree.get(0).ok_or_else(|| "Empty tree".to_string())?;
     let name = entry
         .name()
-        .ok_or_else(|| josh_error("Entry has no name"))?;
+        .ok_or_else(|| "Entry has no name".to_string())?;
 
     match name {
         "nop" => {
-            let _ = repo.find_blob(entry.id())?;
+            let _ = repo.find_blob(entry.id()).map_err(|e| e.to_string())?;
             Ok(Op::Nop)
         }
         "empty" => {
-            let _ = repo.find_blob(entry.id())?;
+            let _ = repo.find_blob(entry.id()).map_err(|e| e.to_string())?;
             Ok(Op::Empty)
         }
         "paths" => {
-            let _ = repo.find_blob(entry.id())?;
+            let _ = repo.find_blob(entry.id()).map_err(|e| e.to_string())?;
             Ok(Op::Paths)
         }
         #[cfg(feature = "incubating")]
         "export" => {
-            let _ = repo.find_blob(entry.id())?;
+            let _ = repo.find_blob(entry.id()).map_err(|e| e.to_string())?;
             Ok(Op::Export)
         }
         #[cfg(feature = "incubating")]
         "link" => {
-            let inner = repo.find_tree(entry.id())?;
-            let mode_blob = repo.find_blob(
-                inner
-                    .get_name("0")
-                    .ok_or_else(|| josh_error("link: missing mode"))?
-                    .id(),
-            )?;
+            let inner = repo.find_tree(entry.id()).map_err(|e| e.to_string())?;
+            let mode_blob = repo
+                .find_blob(
+                    inner
+                        .get_name("0")
+                        .ok_or_else(|| "link: missing mode".to_string())?
+                        .id(),
+                )
+                .map_err(|e| e.to_string())?;
             Ok(Op::Link(
-                std::str::from_utf8(mode_blob.content())?.to_string(),
+                std::str::from_utf8(mode_blob.content())
+                    .map_err(|e| e.to_string())?
+                    .to_string(),
             ))
         }
         #[cfg(feature = "incubating")]
         "adapt" => {
-            let inner = repo.find_tree(entry.id())?;
-            let mode_blob = repo.find_blob(
-                inner
-                    .get_name("0")
-                    .ok_or_else(|| josh_error("adapt: missing mode"))?
-                    .id(),
-            )?;
+            let inner = repo.find_tree(entry.id()).map_err(|e| e.to_string())?;
+            let mode_blob = repo
+                .find_blob(
+                    inner
+                        .get_name("0")
+                        .ok_or_else(|| "adapt: missing mode".to_string())?
+                        .id(),
+                )
+                .map_err(|e| e.to_string())?;
             Ok(Op::Adapt(
-                std::str::from_utf8(mode_blob.content())?.to_string(),
+                std::str::from_utf8(mode_blob.content())
+                    .map_err(|e| e.to_string())?
+                    .to_string(),
             ))
         }
         #[cfg(feature = "incubating")]
         "unlink" => {
-            let _ = repo.find_blob(entry.id())?;
+            let _ = repo.find_blob(entry.id()).map_err(|e| e.to_string())?;
             Ok(Op::Unlink)
         }
         "invert" => {
-            let _ = repo.find_blob(entry.id())?;
+            let _ = repo.find_blob(entry.id()).map_err(|e| e.to_string())?;
             Ok(Op::Invert)
         }
         "index" => {
-            let _ = repo.find_blob(entry.id())?;
+            let _ = repo.find_blob(entry.id()).map_err(|e| e.to_string())?;
             Ok(Op::Index)
         }
         "fold" => {
-            let _ = repo.find_blob(entry.id())?;
+            let _ = repo.find_blob(entry.id()).map_err(|e| e.to_string())?;
             Ok(Op::Fold)
         }
         "prune" => {
-            let blob = repo.find_blob(entry.id())?;
-            let content = std::str::from_utf8(blob.content())?;
+            let blob = repo.find_blob(entry.id()).map_err(|e| e.to_string())?;
+            let content = std::str::from_utf8(blob.content()).map_err(|e| e.to_string())?;
             if content == "trivial-merge" {
                 Ok(Op::Prune)
             } else {
-                Err(josh_error("Invalid prune content"))
+                Err("Invalid prune content".to_string())
             }
         }
         "hook" => {
-            let inner = repo.find_tree(entry.id())?;
-            let hook_blob = repo.find_blob(
-                inner
-                    .get_name("0")
-                    .ok_or_else(|| josh_error("hook: missing hook name"))?
-                    .id(),
-            )?;
-            let hook_name = std::str::from_utf8(hook_blob.content())?.to_string();
+            let inner = repo.find_tree(entry.id()).map_err(|e| e.to_string())?;
+            let hook_blob = repo
+                .find_blob(
+                    inner
+                        .get_name("0")
+                        .ok_or_else(|| "hook: missing hook name".to_string())?
+                        .id(),
+                )
+                .map_err(|e| e.to_string())?;
+            let hook_name = std::str::from_utf8(hook_blob.content())
+                .map_err(|e| e.to_string())?
+                .to_string();
             Ok(Op::Hook(hook_name))
         }
         "author" => {
-            let inner = repo.find_tree(entry.id())?;
-            let name_blob = repo.find_blob(
-                inner
-                    .get_name("0")
-                    .ok_or_else(|| josh_error("author: missing name"))?
-                    .id(),
-            )?;
-            let email_blob = repo.find_blob(
-                inner
-                    .get_name("1")
-                    .ok_or_else(|| josh_error("author: missing email"))?
-                    .id(),
-            )?;
-            let name = std::str::from_utf8(name_blob.content())?.to_string();
-            let email = std::str::from_utf8(email_blob.content())?.to_string();
+            let inner = repo.find_tree(entry.id()).map_err(|e| e.to_string())?;
+            let name_blob = repo
+                .find_blob(
+                    inner
+                        .get_name("0")
+                        .ok_or_else(|| "author: missing name".to_string())?
+                        .id(),
+                )
+                .map_err(|e| e.to_string())?;
+            let email_blob = repo
+                .find_blob(
+                    inner
+                        .get_name("1")
+                        .ok_or_else(|| "author: missing email".to_string())?
+                        .id(),
+                )
+                .map_err(|e| e.to_string())?;
+            let name = std::str::from_utf8(name_blob.content())
+                .map_err(|e| e.to_string())?
+                .to_string();
+            let email = std::str::from_utf8(email_blob.content())
+                .map_err(|e| e.to_string())?
+                .to_string();
             Ok(Op::Author(name, email))
         }
         "committer" => {
-            let inner = repo.find_tree(entry.id())?;
-            let name_blob = repo.find_blob(
-                inner
-                    .get_name("0")
-                    .ok_or_else(|| josh_error("committer: missing name"))?
-                    .id(),
-            )?;
-            let email_blob = repo.find_blob(
-                inner
-                    .get_name("1")
-                    .ok_or_else(|| josh_error("committer: missing email"))?
-                    .id(),
-            )?;
-            let name = std::str::from_utf8(name_blob.content())?.to_string();
-            let email = std::str::from_utf8(email_blob.content())?.to_string();
+            let inner = repo.find_tree(entry.id()).map_err(|e| e.to_string())?;
+            let name_blob = repo
+                .find_blob(
+                    inner
+                        .get_name("0")
+                        .ok_or_else(|| "committer: missing name".to_string())?
+                        .id(),
+                )
+                .map_err(|e| e.to_string())?;
+            let email_blob = repo
+                .find_blob(
+                    inner
+                        .get_name("1")
+                        .ok_or_else(|| "committer: missing email".to_string())?
+                        .id(),
+                )
+                .map_err(|e| e.to_string())?;
+            let name = std::str::from_utf8(name_blob.content())
+                .map_err(|e| e.to_string())?
+                .to_string();
+            let email = std::str::from_utf8(email_blob.content())
+                .map_err(|e| e.to_string())?
+                .to_string();
             Ok(Op::Committer(name, email))
         }
         "message" => {
-            let inner = repo.find_tree(entry.id())?;
-            let fmt_blob = repo.find_blob(
-                inner
-                    .get_name("0")
-                    .ok_or_else(|| josh_error("message: missing fmt string"))?
-                    .id(),
-            )?;
-            let regex_blob = repo.find_blob(
-                inner
-                    .get_name("1")
-                    .ok_or_else(|| josh_error("message: missing regex"))?
-                    .id(),
-            )?;
-            let fmt = std::str::from_utf8(fmt_blob.content())?.to_string();
-            let regex_str = std::str::from_utf8(regex_blob.content())?;
-            let regex = regex::Regex::new(regex_str)
-                .map_err(|e| josh_error(&format!("invalid regex: {}", e)))?;
+            let inner = repo.find_tree(entry.id()).map_err(|e| e.to_string())?;
+            let fmt_blob = repo
+                .find_blob(
+                    inner
+                        .get_name("0")
+                        .ok_or_else(|| "message: missing fmt string".to_string())?
+                        .id(),
+                )
+                .map_err(|e| e.to_string())?;
+            let regex_blob = repo
+                .find_blob(
+                    inner
+                        .get_name("1")
+                        .ok_or_else(|| "message: missing regex".to_string())?
+                        .id(),
+                )
+                .map_err(|e| e.to_string())?;
+            let fmt = std::str::from_utf8(fmt_blob.content())
+                .map_err(|e| e.to_string())?
+                .to_string();
+            let regex_str = std::str::from_utf8(regex_blob.content()).map_err(|e| e.to_string())?;
+            let regex =
+                regex::Regex::new(regex_str).map_err(|e| format!("invalid regex: {}", e))?;
             Ok(Op::Message(fmt, regex))
         }
         "subdir" => {
-            let inner = repo.find_tree(entry.id())?;
-            let path_blob = repo.find_blob(
-                inner
-                    .get_name("0")
-                    .ok_or_else(|| josh_error("subdir: missing path"))?
-                    .id(),
-            )?;
-            let path = std::str::from_utf8(path_blob.content())?;
+            let inner = repo.find_tree(entry.id()).map_err(|e| e.to_string())?;
+            let path_blob = repo
+                .find_blob(
+                    inner
+                        .get_name("0")
+                        .ok_or_else(|| "subdir: missing path".to_string())?
+                        .id(),
+                )
+                .map_err(|e| e.to_string())?;
+            let path = std::str::from_utf8(path_blob.content()).map_err(|e| e.to_string())?;
             Ok(Op::Subdir(std::path::PathBuf::from(path)))
         }
         "prefix" => {
-            let inner = repo.find_tree(entry.id())?;
-            let path_blob = repo.find_blob(
-                inner
-                    .get_name("0")
-                    .ok_or_else(|| josh_error("prefix: missing path"))?
-                    .id(),
-            )?;
-            let path = std::str::from_utf8(path_blob.content())?;
+            let inner = repo.find_tree(entry.id()).map_err(|e| e.to_string())?;
+            let path_blob = repo
+                .find_blob(
+                    inner
+                        .get_name("0")
+                        .ok_or_else(|| "prefix: missing path".to_string())?
+                        .id(),
+                )
+                .map_err(|e| e.to_string())?;
+            let path = std::str::from_utf8(path_blob.content()).map_err(|e| e.to_string())?;
             Ok(Op::Prefix(std::path::PathBuf::from(path)))
         }
         "file" => {
-            let inner = repo.find_tree(entry.id())?;
-            let dest_blob = repo.find_blob(
-                inner
-                    .get_name("0")
-                    .ok_or_else(|| josh_error("file: missing destination path"))?
-                    .id(),
-            )?;
-            let source_blob = repo.find_blob(
-                inner
-                    .get_name("1")
-                    .ok_or_else(|| josh_error("file: missing source path"))?
-                    .id(),
-            )?;
-            let dest_path_str = std::str::from_utf8(dest_blob.content())?.to_string();
-            let source_path_str = std::str::from_utf8(source_blob.content())?.to_string();
+            let inner = repo.find_tree(entry.id()).map_err(|e| e.to_string())?;
+            let dest_blob = repo
+                .find_blob(
+                    inner
+                        .get_name("0")
+                        .ok_or_else(|| "file: missing destination path".to_string())?
+                        .id(),
+                )
+                .map_err(|e| e.to_string())?;
+            let source_blob = repo
+                .find_blob(
+                    inner
+                        .get_name("1")
+                        .ok_or_else(|| "file: missing source path".to_string())?
+                        .id(),
+                )
+                .map_err(|e| e.to_string())?;
+            let dest_path_str = std::str::from_utf8(dest_blob.content())
+                .map_err(|e| e.to_string())?
+                .to_string();
+            let source_path_str = std::str::from_utf8(source_blob.content())
+                .map_err(|e| e.to_string())?
+                .to_string();
             Ok(Op::File(
                 std::path::PathBuf::from(dest_path_str),
                 std::path::PathBuf::from(source_path_str),
@@ -695,154 +745,180 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> JoshResult<Op> {
         }
         #[cfg(feature = "incubating")]
         "embed" => {
-            let inner = repo.find_tree(entry.id())?;
-            let path_blob = repo.find_blob(
-                inner
-                    .get_name("0")
-                    .ok_or_else(|| josh_error("embed: missing path"))?
-                    .id(),
-            )?;
-            let path = std::str::from_utf8(path_blob.content())?;
+            let inner = repo.find_tree(entry.id()).map_err(|e| e.to_string())?;
+            let path_blob = repo
+                .find_blob(
+                    inner
+                        .get_name("0")
+                        .ok_or_else(|| "embed: missing path".to_string())?
+                        .id(),
+                )
+                .map_err(|e| e.to_string())?;
+            let path = std::str::from_utf8(path_blob.content()).map_err(|e| e.to_string())?;
             Ok(Op::Embed(std::path::PathBuf::from(path)))
         }
         "pattern" => {
-            let inner = repo.find_tree(entry.id())?;
-            let pattern_blob = repo.find_blob(
-                inner
-                    .get_name("0")
-                    .ok_or_else(|| josh_error("pattern: missing pattern"))?
-                    .id(),
-            )?;
-            let pattern = std::str::from_utf8(pattern_blob.content())?.to_string();
+            let inner = repo.find_tree(entry.id()).map_err(|e| e.to_string())?;
+            let pattern_blob = repo
+                .find_blob(
+                    inner
+                        .get_name("0")
+                        .ok_or_else(|| "pattern: missing pattern".to_string())?
+                        .id(),
+                )
+                .map_err(|e| e.to_string())?;
+            let pattern = std::str::from_utf8(pattern_blob.content())
+                .map_err(|e| e.to_string())?
+                .to_string();
             Ok(Op::Pattern(pattern))
         }
         "workspace" => {
-            let inner = repo.find_tree(entry.id())?;
-            let path_blob = repo.find_blob(
-                inner
-                    .get_name("0")
-                    .ok_or_else(|| josh_error("workspace: missing path"))?
-                    .id(),
-            )?;
-            let path = std::str::from_utf8(path_blob.content())?;
+            let inner = repo.find_tree(entry.id()).map_err(|e| e.to_string())?;
+            let path_blob = repo
+                .find_blob(
+                    inner
+                        .get_name("0")
+                        .ok_or_else(|| "workspace: missing path".to_string())?
+                        .id(),
+                )
+                .map_err(|e| e.to_string())?;
+            let path = std::str::from_utf8(path_blob.content()).map_err(|e| e.to_string())?;
             Ok(Op::Workspace(std::path::PathBuf::from(path)))
         }
         "stored" => {
-            let inner = repo.find_tree(entry.id())?;
-            let path_blob = repo.find_blob(
-                inner
-                    .get_name("0")
-                    .ok_or_else(|| josh_error("stored: missing path"))?
-                    .id(),
-            )?;
-            let path = std::str::from_utf8(path_blob.content())?;
+            let inner = repo.find_tree(entry.id()).map_err(|e| e.to_string())?;
+            let path_blob = repo
+                .find_blob(
+                    inner
+                        .get_name("0")
+                        .ok_or_else(|| "stored: missing path".to_string())?
+                        .id(),
+                )
+                .map_err(|e| e.to_string())?;
+            let path = std::str::from_utf8(path_blob.content()).map_err(|e| e.to_string())?;
             Ok(Op::Stored(std::path::PathBuf::from(path)))
         }
         "compose" => {
-            let compose_tree = repo.find_tree(entry.id())?;
+            let compose_tree = repo.find_tree(entry.id()).map_err(|e| e.to_string())?;
             let mut filters = Vec::new();
             for i in 0..compose_tree.len() {
-                let entry = compose_tree
+                let compose_entry = compose_tree
                     .get(i)
-                    .ok_or_else(|| josh_error("compose: missing entry"))?;
-                let filter_tree = repo.find_tree(entry.id())?;
+                    .ok_or_else(|| "compose: missing entry".to_string())?;
+                let filter_tree = repo
+                    .find_tree(compose_entry.id())
+                    .map_err(|e| e.to_string())?;
                 let filter = from_tree2(repo, filter_tree.id())?;
                 filters.push(to_filter(filter));
             }
             Ok(Op::Compose(filters))
         }
         "subtract" => {
-            let subtract_tree = repo.find_tree(entry.id())?;
+            let subtract_tree = repo.find_tree(entry.id()).map_err(|e| e.to_string())?;
             if subtract_tree.len() == 2 {
-                let a_tree = repo.find_tree(
-                    subtract_tree
-                        .get_name("0")
-                        .ok_or_else(|| josh_error("subtract: missing 0"))?
-                        .id(),
-                )?;
-                let b_tree = repo.find_tree(
-                    subtract_tree
-                        .get_name("1")
-                        .ok_or_else(|| josh_error("subtract: missing 1"))?
-                        .id(),
-                )?;
+                let a_tree = repo
+                    .find_tree(
+                        subtract_tree
+                            .get_name("0")
+                            .ok_or_else(|| "subtract: missing 0".to_string())?
+                            .id(),
+                    )
+                    .map_err(|e| e.to_string())?;
+                let b_tree = repo
+                    .find_tree(
+                        subtract_tree
+                            .get_name("1")
+                            .ok_or_else(|| "subtract: missing 1".to_string())?
+                            .id(),
+                    )
+                    .map_err(|e| e.to_string())?;
                 let a = from_tree2(repo, a_tree.id())?;
                 let b = from_tree2(repo, b_tree.id())?;
                 Ok(Op::Subtract(to_filter(a), to_filter(b)))
             } else {
-                Err(josh_error("subtract: expected 2 entries"))
+                Err("subtract: expected 2 entries".to_string())
             }
         }
         "chain" => {
-            let chain_tree = repo.find_tree(entry.id())?;
+            let chain_tree = repo.find_tree(entry.id()).map_err(|e| e.to_string())?;
             if !chain_tree.is_empty() {
                 let mut filters = vec![];
                 for i in 0..chain_tree.len() {
-                    let filter_tree = repo.find_tree(
-                        chain_tree
-                            .get_name(&i.to_string())
-                            .ok_or_else(|| josh_error(&format!("chain: missing {}", i)))?
-                            .id(),
-                    )?;
+                    let filter_tree = repo
+                        .find_tree(
+                            chain_tree
+                                .get_name(&i.to_string())
+                                .ok_or_else(|| format!("chain: missing {}", i))?
+                                .id(),
+                        )
+                        .map_err(|e| e.to_string())?;
                     let filter = from_tree2(repo, filter_tree.id())?;
                     filters.push(to_filter(filter));
                 }
                 Ok(Op::Chain(filters))
             } else {
-                Err(josh_error("chain: expected at least 1 entry"))
+                Err("chain: expected at least 1 entry".to_string())
             }
         }
         "exclude" => {
-            let exclude_tree = repo.find_tree(entry.id())?;
+            let exclude_tree = repo.find_tree(entry.id()).map_err(|e| e.to_string())?;
             if exclude_tree.len() == 1 {
-                let filter_tree = repo.find_tree(
-                    exclude_tree
-                        .get_name("0")
-                        .ok_or_else(|| josh_error("exclude: missing 0"))?
-                        .id(),
-                )?;
+                let filter_tree = repo
+                    .find_tree(
+                        exclude_tree
+                            .get_name("0")
+                            .ok_or_else(|| "exclude: missing 0".to_string())?
+                            .id(),
+                    )
+                    .map_err(|e| e.to_string())?;
                 let filter = from_tree2(repo, filter_tree.id())?;
                 Ok(Op::Exclude(to_filter(filter)))
             } else {
-                Err(josh_error("exclude: expected 1 entry"))
+                Err("exclude: expected 1 entry".to_string())
             }
         }
         "pin" => {
-            let pin_tree = repo.find_tree(entry.id())?;
+            let pin_tree = repo.find_tree(entry.id()).map_err(|e| e.to_string())?;
             if pin_tree.len() == 1 {
-                let filter_tree = repo.find_tree(
-                    pin_tree
-                        .get_name("0")
-                        .ok_or_else(|| josh_error("pin: missing 0"))?
-                        .id(),
-                )?;
+                let filter_tree = repo
+                    .find_tree(
+                        pin_tree
+                            .get_name("0")
+                            .ok_or_else(|| "pin: missing 0".to_string())?
+                            .id(),
+                    )
+                    .map_err(|e| e.to_string())?;
                 let filter = from_tree2(repo, filter_tree.id())?;
                 Ok(Op::Pin(to_filter(filter)))
             } else {
-                Err(josh_error("pin: expected 1 entry"))
+                Err("pin: expected 1 entry".to_string())
             }
         }
         "rev" => {
-            let rev_tree = repo.find_tree(entry.id())?;
+            let rev_tree = repo.find_tree(entry.id()).map_err(|e| e.to_string())?;
             let mut filters = Vec::new();
             for i in 0..rev_tree.len() {
                 let rev_entry = rev_tree
                     .get_name(&i.to_string())
-                    .ok_or_else(|| josh_error("rev: missing entry"))?;
-                let inner_tree = repo.find_tree(rev_entry.id())?;
-                let key_blob = repo.find_blob(
-                    inner_tree
-                        .get_name("o")
-                        .ok_or_else(|| josh_error("rev: missing key"))?
-                        .id(),
-                )?;
-                let filter_tree = repo.find_tree(
-                    inner_tree
-                        .get_name("f")
-                        .ok_or_else(|| josh_error("rev: missing filter"))?
-                        .id(),
-                )?;
-                let key = std::str::from_utf8(key_blob.content())?.to_string();
+                    .ok_or_else(|| "rev: missing entry".to_string())?;
+                let inner_tree = repo.find_tree(rev_entry.id()).map_err(|e| e.to_string())?;
+                let key_blob = repo
+                    .find_blob(
+                        inner_tree
+                            .get_name("o")
+                            .ok_or_else(|| "rev: missing key".to_string())?
+                            .id(),
+                    )
+                    .map_err(|e| e.to_string())?;
+                let filter_tree = repo
+                    .find_tree(
+                        inner_tree
+                            .get_name("f")
+                            .ok_or_else(|| "rev: missing filter".to_string())?
+                            .id(),
+                    )
+                    .map_err(|e| e.to_string())?;
+                let key = std::str::from_utf8(key_blob.content()).map_err(|e| e.to_string())?;
 
                 // Parse match operator from key
                 let (match_op, lazy_ref) = if key == "_" {
@@ -850,7 +926,10 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> JoshResult<Op> {
                     (RevMatch::Default, LazyRef::Resolved(git2::Oid::zero()))
                 } else if key.starts_with("<=") {
                     let ref_str = &key[2..];
-                    (RevMatch::AncestorInclusive, LazyRef::parse(ref_str)?)
+                    (
+                        RevMatch::AncestorInclusive,
+                        LazyRef::parse(ref_str).map_err(|e| e)?,
+                    )
                 } else if key.starts_with('<') {
                     let ref_str = &key[1..];
                     (RevMatch::AncestorStrict, LazyRef::parse(ref_str)?)
@@ -858,10 +937,10 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> JoshResult<Op> {
                     let ref_str = &key[2..];
                     (RevMatch::Equal, LazyRef::parse(ref_str)?)
                 } else {
-                    return Err(josh_error(&format!(
+                    return Err(format!(
                         "rev: invalid key format, must start with '<', '<=', '==', or be '_': {}",
                         key
-                    )));
+                    ));
                 };
 
                 let filter = from_tree2(repo, filter_tree.id())?;
@@ -871,105 +950,131 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> JoshResult<Op> {
         }
         #[cfg(feature = "incubating")]
         "unapply" => {
-            let concat_tree = repo.find_tree(entry.id())?;
-            let entry = concat_tree
+            let concat_tree = repo.find_tree(entry.id()).map_err(|e| e.to_string())?;
+            let unapply_entry = concat_tree
                 .get(0)
-                .ok_or_else(|| josh_error("concat: missing entry"))?;
-            let inner_tree = repo.find_tree(entry.id())?;
-            let key_blob = repo.find_blob(
-                inner_tree
-                    .get_name("o")
-                    .ok_or_else(|| josh_error("concat: missing key"))?
-                    .id(),
-            )?;
-            let filter_tree = repo.find_tree(
-                inner_tree
-                    .get_name("f")
-                    .ok_or_else(|| josh_error("concat: missing filter"))?
-                    .id(),
-            )?;
-            let key = std::str::from_utf8(key_blob.content())?.to_string();
+                .ok_or_else(|| "concat: missing entry".to_string())?;
+            let inner_tree = repo
+                .find_tree(unapply_entry.id())
+                .map_err(|e| e.to_string())?;
+            let key_blob = repo
+                .find_blob(
+                    inner_tree
+                        .get_name("o")
+                        .ok_or_else(|| "concat: missing key".to_string())?
+                        .id(),
+                )
+                .map_err(|e| e.to_string())?;
+            let filter_tree = repo
+                .find_tree(
+                    inner_tree
+                        .get_name("f")
+                        .ok_or_else(|| "concat: missing filter".to_string())?
+                        .id(),
+                )
+                .map_err(|e| e.to_string())?;
+            let key = std::str::from_utf8(key_blob.content()).map_err(|e| e.to_string())?;
             let filter = from_tree2(repo, filter_tree.id())?;
-            Ok(Op::Unapply(LazyRef::parse(&key)?, to_filter(filter)))
+            Ok(Op::Unapply(
+                LazyRef::parse(&key).map_err(|e| e)?,
+                to_filter(filter),
+            ))
         }
         "squash" => {
             // blob -> Squash(None), tree -> Squash(Some(...))
             if let Some(kind) = entry.kind()
                 && kind == git2::ObjectType::Blob
             {
-                let _ = repo.find_blob(entry.id())?;
+                let _ = repo.find_blob(entry.id()).map_err(|e| e.to_string())?;
                 return Ok(Op::Squash(None));
             }
-            let squash_tree = repo.find_tree(entry.id())?;
+            let squash_tree = repo.find_tree(entry.id()).map_err(|e| e.to_string())?;
             let mut filters = std::collections::BTreeMap::new();
             for i in 0..squash_tree.len() {
-                let entry = squash_tree
+                let squash_entry = squash_tree
                     .get(i)
-                    .ok_or_else(|| josh_error("squash: missing entry"))?;
-                let inner_tree = repo.find_tree(entry.id())?;
-                let key_blob = repo.find_blob(
-                    inner_tree
-                        .get_name("o")
-                        .ok_or_else(|| josh_error("squash: missing key"))?
-                        .id(),
-                )?;
-                let filter_tree = repo.find_tree(
-                    inner_tree
-                        .get_name("f")
-                        .ok_or_else(|| josh_error("squash: missing filter"))?
-                        .id(),
-                )?;
-                let key = std::str::from_utf8(key_blob.content())?.to_string();
+                    .ok_or_else(|| "squash: missing entry".to_string())?;
+                let inner_tree = repo
+                    .find_tree(squash_entry.id())
+                    .map_err(|e| e.to_string())?;
+                let key_blob = repo
+                    .find_blob(
+                        inner_tree
+                            .get_name("o")
+                            .ok_or_else(|| "squash: missing key".to_string())?
+                            .id(),
+                    )
+                    .map_err(|e| e.to_string())?;
+                let filter_tree = repo
+                    .find_tree(
+                        inner_tree
+                            .get_name("f")
+                            .ok_or_else(|| "squash: missing filter".to_string())?
+                            .id(),
+                    )
+                    .map_err(|e| e.to_string())?;
+                let key = std::str::from_utf8(key_blob.content()).map_err(|e| e.to_string())?;
                 let filter = from_tree2(repo, filter_tree.id())?;
-                filters.insert(LazyRef::parse(&key)?, to_filter(filter));
+                filters.insert(LazyRef::parse(&key).map_err(|e| e)?, to_filter(filter));
             }
             Ok(Op::Squash(Some(filters)))
         }
         "regex_replace" => {
-            let regex_replace_tree = repo.find_tree(entry.id())?;
+            let regex_replace_tree = repo.find_tree(entry.id()).map_err(|e| e.to_string())?;
             let mut replacements = Vec::new();
             for i in 0..regex_replace_tree.len() {
-                let entry = regex_replace_tree
+                let regex_entry = regex_replace_tree
                     .get(i)
-                    .ok_or_else(|| josh_error("regex_replace: missing entry"))?;
-                let inner_tree = repo.find_tree(entry.id())?;
-                let regex_blob = repo.find_blob(
-                    inner_tree
-                        .get_name("p")
-                        .ok_or_else(|| josh_error("regex_replace: missing pattern"))?
-                        .id(),
-                )?;
-                let replacement_blob = repo.find_blob(
-                    inner_tree
-                        .get_name("r")
-                        .ok_or_else(|| josh_error("regex_replace: missing replacement"))?
-                        .id(),
-                )?;
-                let regex_str = std::str::from_utf8(regex_blob.content())?;
-                let replacement = std::str::from_utf8(replacement_blob.content())?.to_string();
-                let regex = regex::Regex::new(regex_str)?;
+                    .ok_or_else(|| "regex_replace: missing entry".to_string())?;
+                let inner_tree = repo
+                    .find_tree(regex_entry.id())
+                    .map_err(|e| e.to_string())?;
+                let regex_blob = repo
+                    .find_blob(
+                        inner_tree
+                            .get_name("p")
+                            .ok_or_else(|| "regex_replace: missing pattern".to_string())?
+                            .id(),
+                    )
+                    .map_err(|e| e.to_string())?;
+                let replacement_blob = repo
+                    .find_blob(
+                        inner_tree
+                            .get_name("r")
+                            .ok_or_else(|| "regex_replace: missing replacement".to_string())?
+                            .id(),
+                    )
+                    .map_err(|e| e.to_string())?;
+                let regex_str =
+                    std::str::from_utf8(regex_blob.content()).map_err(|e| e.to_string())?;
+                let replacement = std::str::from_utf8(replacement_blob.content())
+                    .map_err(|e| e.to_string())?
+                    .to_string();
+                let regex = regex::Regex::new(regex_str).map_err(|e| e.to_string())?;
                 replacements.push((regex, replacement));
             }
             Ok(Op::RegexReplace(replacements))
         }
         "meta" => {
-            let meta_tree = repo.find_tree(entry.id())?;
-            let filter_tree = repo.find_tree(
-                meta_tree
-                    .get_name("0")
-                    .ok_or_else(|| josh_error("meta: missing filter tree"))?
-                    .id(),
-            )?;
+            let meta_tree = repo.find_tree(entry.id()).map_err(|e| e.to_string())?;
+            let filter_tree = repo
+                .find_tree(
+                    meta_tree
+                        .get_name("0")
+                        .ok_or_else(|| "meta: missing filter tree".to_string())?
+                        .id(),
+                )
+                .map_err(|e| e.to_string())?;
 
             // Deserialize metadata map - keys are filenames, values are blob contents
             let mut meta = std::collections::BTreeMap::new();
             for i in 0..meta_tree.len() {
                 let meta_entry = meta_tree
                     .get(i)
-                    .ok_or_else(|| josh_error("meta: missing metadata entry"))?;
+                    .ok_or_else(|| "meta: missing metadata entry".to_string())?;
                 let meta_key = meta_entry
                     .name()
-                    .ok_or_else(|| josh_error("meta: missing metadata key"))?;
+                    .ok_or_else(|| "meta: missing metadata key".to_string())?;
 
                 // Skip the "0" entry (filter)
                 if meta_key == "0" {
@@ -977,8 +1082,10 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> JoshResult<Op> {
                 }
 
                 // The entry should be a blob with the value as content
-                let value_blob = repo.find_blob(meta_entry.id())?;
-                let value = std::str::from_utf8(value_blob.content())?.to_string();
+                let value_blob = repo.find_blob(meta_entry.id()).map_err(|e| e.to_string())?;
+                let value = std::str::from_utf8(value_blob.content())
+                    .map_err(|e| e.to_string())?
+                    .to_string();
                 meta.insert(meta_key.to_string(), value);
             }
 
@@ -986,6 +1093,6 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> JoshResult<Op> {
             let filter = from_tree2(repo, filter_tree.id())?;
             Ok(Op::Meta(meta, to_filter(filter)))
         }
-        _ => Err(josh_error("Unknown tree structure")),
+        _ => Err("Unknown tree structure".to_string()),
     }
 }

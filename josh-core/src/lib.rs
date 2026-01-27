@@ -17,11 +17,9 @@ macro_rules! ok_or {
 #[macro_use]
 extern crate rs_tracing;
 
-pub mod build;
 pub mod cache;
 pub mod changes;
 pub mod filter;
-pub mod flang;
 pub mod history;
 pub mod housekeeping;
 pub mod shell;
