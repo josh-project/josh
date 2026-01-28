@@ -41,8 +41,13 @@ Test josh filter command - apply filtering without fetching
   $ git log --oneline
   1432d42 add files
 
-  $ git config josh-remote.origin.filter
-  :/sub1
+  $ cat .git/josh/remotes/origin.josh | sed "s|file://.*/remote/libs|file://\${TESTTMP}/remote/libs|"
+  :~(
+      fetch="+refs/heads/*:refs/josh/remotes/origin/*"
+      url="file://${TESTTMP}/remote/libs"
+  )[
+      :/sub1
+  ] (no-eol)
 
   $ josh filter origin
   Applying filter ':/sub1' to remote 'origin'
@@ -59,11 +64,10 @@ Test josh filter with non-existent remote
   $ cd test-repo
   $ git init -q
 
-  $ josh filter nonexistent
-  Error: No filter configured for remote 'nonexistent'
-  No filter configured for remote 'nonexistent'
-  config value 'josh-remote.nonexistent.filter' was not found; class=Config (7); code=NotFound (-3)
-  [1]
+  $ josh filter nonexistent 2>&1 | sed "s|Failed to read remote config file: .*|Failed to read remote config file: *|"
+  Error: Failed to read remote config for 'nonexistent'
+  Failed to read remote config for 'nonexistent'
+  Remote 'nonexistent' not found in new format (.git/josh/remotes/nonexistent.josh) or legacy git config (josh-remote.nonexistent)
 
   $ cd ..
 
