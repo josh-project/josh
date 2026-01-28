@@ -196,11 +196,12 @@
   ]
   .
   |-- josh
-  |   `-- 26
-  |       `-- sled
-  |           |-- blobs
-  |           |-- conf
-  |           `-- db
+  |   `-- cache
+  |       `-- 26
+  |           `-- sled
+  |               |-- blobs
+  |               |-- conf
+  |               `-- db
   |-- mirror
   |   |-- FETCH_HEAD
   |   |-- HEAD
@@ -447,4 +448,4 @@
           |-- namespaces
           `-- tags
   
-  129 directories, 123 files
+  130 directories, 123 files

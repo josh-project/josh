@@ -48,11 +48,12 @@ test for that.
   "real_repo.git" = []
   .
   |-- josh
-  |   `-- 26
-  |       `-- sled
-  |           |-- blobs
-  |           |-- conf
-  |           `-- db
+  |   `-- cache
+  |       `-- 26
+  |           `-- sled
+  |               |-- blobs
+  |               |-- conf
+  |               `-- db
   |-- mirror
   |   |-- FETCH_HEAD
   |   |-- HEAD
@@ -97,5 +98,5 @@ test for that.
           |-- namespaces
           `-- tags
   
-  32 directories, 18 files
+  33 directories, 18 files
 

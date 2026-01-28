@@ -85,11 +85,12 @@ Flushed credential cache
   ]
   .
   |-- josh
-  |   `-- 26
-  |       `-- sled
-  |           |-- blobs
-  |           |-- conf
-  |           `-- db
+  |   `-- cache
+  |       `-- 26
+  |           `-- sled
+  |               |-- blobs
+  |               |-- conf
+  |               `-- db
   |-- mirror
   |   |-- FETCH_HEAD
   |   |-- HEAD
@@ -154,7 +155,7 @@ Flushed credential cache
           |-- namespaces
           `-- tags
   
-  42 directories, 28 files
+  43 directories, 28 files
 
   $ cat ${TESTTMP}/josh-proxy.out | grep graph_descendant_of
   [1]

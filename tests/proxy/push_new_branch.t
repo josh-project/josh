@@ -114,11 +114,12 @@ Check the branch again
   ]
   .
   |-- josh
-  |   `-- 26
-  |       `-- sled
-  |           |-- blobs
-  |           |-- conf
-  |           `-- db
+  |   `-- cache
+  |       `-- 26
+  |           `-- sled
+  |               |-- blobs
+  |               |-- conf
+  |               `-- db
   |-- mirror
   |   |-- FETCH_HEAD
   |   |-- HEAD
@@ -203,4 +204,4 @@ Check the branch again
           |-- namespaces
           `-- tags
   
-  51 directories, 39 files
+  52 directories, 39 files

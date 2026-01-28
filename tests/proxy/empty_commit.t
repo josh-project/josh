@@ -83,11 +83,12 @@ should still be included.
   "real_repo.git" = ["::sub1/"]
   .
   |-- josh
-  |   `-- 26
-  |       `-- sled
-  |           |-- blobs
-  |           |-- conf
-  |           `-- db
+  |   `-- cache
+  |       `-- 26
+  |           `-- sled
+  |               |-- blobs
+  |               |-- conf
+  |               `-- db
   |-- mirror
   |   |-- FETCH_HEAD
   |   |-- HEAD
@@ -140,4 +141,4 @@ should still be included.
           |-- namespaces
           `-- tags
   
-  36 directories, 22 files
+  37 directories, 22 files
