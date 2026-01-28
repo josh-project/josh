@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-0d759eee.js";
+            window.path_to_searchindex_js = "../searchindex-66a0124f.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-e9bc00a4.js"></script>
@@ -191,6 +191,45 @@ Additionally newlines can be used instead of <code>,</code> inside of compositio
 if special characters used by the filter language need to be used (like <code>:</code> or space):</p>
 <pre><code>:filter=argument1,"argument2"
 </code></pre>
+<h2 id="filter-options-key1value1key2value2filter"><a class="header" href="#filter-options-key1value1key2value2filter">Filter options <strong><code>:~(key1="value1",key2="value2")[:filter]</code></strong></a></h2>
+<p>The <code>:~(...)[]</code> syntax allows you to provide filter options (metadata) that affect how the filter
+is applied. The options are specified as key-value pairs in parentheses, followed by the actual
+filter in square brackets.</p>
+<p><strong>Syntax:</strong></p>
+<pre><code>:~(option1="value1",option2="value2")[:filter]
+</code></pre>
+<p>Multiple options can be specified by separating them with commas. Option values must be quoted
+using double quotes.</p>
+<p><strong>Example:</strong></p>
+<pre><code>:~(key1="value1",key2="value2")[:/sub1]
+</code></pre>
+<p>This applies the <code>:/sub1</code> filter with the specified options attached as metadata.</p>
+<h3 id="history-option"><a class="header" href="#history-option">History option</a></h3>
+<p>The <code>history</code> option controls how the commit history is processed during filtering.
+It affects both how commits are walked and how merge commits are handled in the output history.</p>
+<p><strong>Available values:</strong></p>
+<ul>
+<li>
+<p><strong><code>history="linear"</code></strong> - Produces a linear history by converting merge commits into regular commits,
+creating a linear chain of commits in the output history.</p>
+<p><strong>Example:</strong></p>
+<pre><code>:~(history="linear")[:/sub1]
+</code></pre>
+</li>
+<li>
+<p><strong><code>history="keep-trivial-merges"</code></strong> - Prevents dropping trivial merge commits that would
+normally be pruned from the output history.</p>
+<p>Normally, Josh will drop merge commits from the filtered history if their filtered tree is
+identical to the first parent’s tree. Setting this option to <code>"keep-trivial-merges"</code> preserves
+these commits in the output history.</p>
+<p><strong>Example:</strong></p>
+<pre><code>:~(history="keep-trivial-merges")[::file1]
+</code></pre>
+<p><strong>Note for users of older versions:</strong> In older versions of Josh, <code>"keep-trivial-merges"</code> was the
+default behavior. If you’re upgrading from an older version and need to recreate the same history
+structure, you should explicitly set <code>history="keep-trivial-merges"</code> in your filter options.</p>
+</li>
+</ul>
 <h2 id="available-filters"><a class="header" href="#available-filters">Available filters</a></h2>
 <h3 id="subdirectory-a"><a class="header" href="#subdirectory-a">Subdirectory <strong><code>:/a</code></strong></a></h3>
 <p>Take only the selected subdirectory from the input and make it the root
