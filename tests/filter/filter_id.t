@@ -874,10 +874,10 @@ Test :replace("pattern":"replacement")
   
   3 directories, 2 files
 
-Test :rev(0000000000000000000000000000000000000000:/a)
-  $ FILTER_HASH=$(josh-filter -i ':rev(0000000000000000000000000000000000000000:/a)')
+Test :rev(_:/a)
+  $ FILTER_HASH=$(josh-filter -i ':rev(_:/a)')
   $ josh-filter -p ${FILTER_HASH}
-  :rev(0000000000000000000000000000000000000000:/a)
+  :rev(_:/a)
   $ git read-tree --reset -u ${FILTER_HASH}
   $ tree
   .
@@ -890,26 +890,6 @@ Test :rev(0000000000000000000000000000000000000000:/a)
   
   5 directories, 2 files
 
-Test :from(0000000000000000000000000000000000000000:/a)
-  $ FILTER_HASH=$(josh-filter -i ':from(0000000000000000000000000000000000000000:/a)')
-  $ josh-filter -p ${FILTER_HASH}
-  :/a:concat(0000000000000000000000000000000000000000:/a)
-  $ git read-tree --reset -u ${FILTER_HASH}
-  $ tree
-  .
-  `-- chain
-      |-- 0
-      |   `-- subdir
-      |       `-- 0
-      `-- 1
-          `-- concat
-              `-- 0
-                  |-- f
-                  |   `-- subdir
-                  |       `-- 0
-                  `-- o
-  
-  9 directories, 3 files
 
   $ FILTER_HASH=$(josh-filter -i ':~(key1="value1",key2="value2",a="b")[:/sub1]')
   $ josh-filter -p ${FILTER_HASH}

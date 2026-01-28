@@ -93,11 +93,12 @@ Check (2) and (3) but with a branch ref
   "real_repo.git" = ["::sub1/"]
   .
   |-- josh
-  |   `-- 26
-  |       `-- sled
-  |           |-- blobs
-  |           |-- conf
-  |           `-- db
+  |   `-- cache
+  |       `-- 26
+  |           `-- sled
+  |               |-- blobs
+  |               |-- conf
+  |               `-- db
   |-- mirror
   |   |-- FETCH_HEAD
   |   |-- HEAD
@@ -150,5 +151,5 @@ Check (2) and (3) but with a branch ref
           |-- namespaces
           `-- tags
   
-  35 directories, 23 files
+  36 directories, 23 files
 
