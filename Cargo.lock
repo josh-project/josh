@@ -2323,6 +2323,7 @@ dependencies = [
  "anyhow",
  "git2",
  "josh-core",
+ "log",
 ]
 
 [[package]]
@@ -2331,7 +2332,10 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "git2",
  "josh-core",
+ "josh-link",
+ "serde_json",
  "tokio",
 ]
 

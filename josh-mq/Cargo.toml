@@ -7,4 +7,7 @@ edition = "2024"
 tokio.workspace = true
 clap.workspace = true
 anyhow.workspace = true
+serde_json.workspace = true
+git2.workspace = true
 josh-core = { path = "../josh-core" }
+josh-link = { path = "../josh-link" }
