@@ -8,16 +8,16 @@
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",
     "@types/jest": "^30.0.0",
-    "@types/node": "^25.0.10",
-    "@types/react": "^19.2.9",
+    "@types/node": "^25.1.0",
+    "@types/react": "^19.2.10",
     "@types/react-dom": "^19.2.1",
     "graphql": "^16.12.0",
     "graphql-request": "^7.4.0",
     "monaco-editor": "^0.55.1",
-    "react": "^19.2.0",
-    "react-dom": "^19.2.3",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
     "react-icons": "^5.5.0",
-    "react-router-dom": "^7.12.0",
+    "react-router-dom": "^7.13.0",
     "sass": "^1.97.3",
     "ts-pattern": "^5.8.0",
     "tsoption": "^0.7.0",
@@ -45,7 +45,7 @@
     ]
   },
   "devDependencies": {
-    "@typescript-eslint/eslint-plugin": "^8.53.1",
+    "@typescript-eslint/eslint-plugin": "^8.54.0",
     "@typescript-eslint/parser": "^8.48.1",
     "@vitejs/plugin-react": "^5.1.2",
     "eslint": "^9.39.2",
@@ -54,6 +54,6 @@
     "jsdom": "^27.4.0",
     "serve": "^14.2.5",
     "vite": "^7.3.1",
-    "vitest": "^4.0.17"
+    "vitest": "^4.0.18"
   }
 }
