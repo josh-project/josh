@@ -52,7 +52,7 @@ features = ["vendored-libgit2"]
 version = "0.20.3"
 
 [workspace.dependencies.juniper]
-version = "0.17.0"
+version = "0.17.1"
 default-features = false
 features = ["expose-test-schema"]
 
@@ -83,7 +83,7 @@ version = "0.1.44"
 features = ["max_level_trace", "release_max_level_trace"]
 
 [workspace.dependencies.clap]
-version = "4.5.54"
+version = "4.5.55"
 features = ["derive", "help", "std", "usage"]
 default-features = false
 
