@@ -1,7 +1,7 @@
-  $ josh-mq --help
-  Josh Merge Queue
+  $ josh-cq --help
+  Josh Commit Queue
   
-  Usage: josh-mq <COMMAND>
+  Usage: josh-cq <COMMAND>
   
   Commands:
     init   Initialize metarepo
@@ -13,3 +13,6 @@
   
   Options:
     -h, --help  Print help
+
+
+

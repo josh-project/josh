@@ -1,5 +1,5 @@
 [package]
-name = "josh-mq"
+name = "josh-cq"
 version = "0.1.0"
 edition = "2024"
 
