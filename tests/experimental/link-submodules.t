@@ -503,7 +503,7 @@ Test Adapt with submodule changes - add commits to submodule and update
   * add foo with files:4b63f3e50a3a34404541bc4519a3a1a0a8e6f738
 
   $ josh-filter -s ":adapt=submodules:link:unlink" refs/heads/master --update refs/heads/unlinked_master
-  2b905ecdb05cd2b5a248c5d6e7f3dd6887095a74
+  a7c39409ce746b0c981d18db7451fc75df3a9490
   [1] :embed=modules/another
   [1] :prefix=modules/another
   [1] :unapply(71fd9c59b40956e00bf73908266692bb0e266df3:/modules/another)
@@ -525,15 +525,15 @@ Test Adapt with submodule changes - add commits to submodule and update
   [36] sequence_number
 
   $ git log --graph --pretty=%s:%H:%T refs/heads/unlinked_master
-  *   update libs submodule:2b905ecdb05cd2b5a248c5d6e7f3dd6887095a74:0dfb828fc97a6684c6e0532dfdf0fe6a5005768c
+  *   update libs submodule:a7c39409ce746b0c981d18db7451fc75df3a9490:62df4e786466331a58259b2180cc3c30e8059019
   |\  
-  | * add file4.txt:6d3319e851d3799d989e7ecc6d12a2ddda5aac8d:148a6ede3adb68f6213a2b209e68afb3ee99bf15
-  | * add file3.txt:6bb30665285c7d39156f8ea3e74c79a53672710e:52778dc1b3e31b5fcc027bbf2f9b48319da95b00
-  * |   add another submodule:55aaec6b3d26535f20f50efc1dd8c5e4937f4d59:6d250abbd449d5fd76e0f7ff44a659e6ec5136a3
+  | * add file4.txt:8305970b0130e9825dd95672ee4c12d70886d42e:0d508d03433ddaff3cf02b0de6dec1c27bee7c2c
+  | * add file3.txt:cb701911d1a16dfdb793235cd69d6b3adab92ea2:b7ce872b882b2aa44b5319ffea2bf5850a31c5f2
+  * |   add another submodule:10678401fca5f6ab4f9b51d30477c8664ce40f34:85c7067c5a99b851eb6748b9056c6f4d8d377b30
   |\ \  
-  | * | add another.txt:f6b1aa76c1352b0cab300f78f550ac4058671c5b:0b1caa6663b6f1f8c31d81bf8d3ad631ec7a6c80
+  | * | add another.txt:b2425f43d4cae3aa9cc085f865921f0a0605add2:648d16f3ef9f1f210e646a04c9e9c2d4a08602c7
   |  /  
-  * | add libs submodule:2f033b1d40c13a99f3229902b4909f1182051ba5:780209fedc3c886da1b1e6e87c7962f20b817595
+  * | add libs submodule:abf2e05c51f856c862dd46ca1efc73d2dc15de0f:19ad184d92bce99c3d0cdd537fca7ef88a3015c2
   |\| 
   | * add bar with file:2926fa3361cec2d5695a119fcc3592f4214af3ba:0b7130f9c4103e0b89fd511f432114ef2ebd33e9
   | * add foo with files:e975fd8cd3f2d2de81884f5b761cc0ac150bdf47:1fbe431508b38e48268466d9bb922b979e173ca9

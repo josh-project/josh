@@ -50,7 +50,7 @@ pub fn add_link(
         .with_meta("remote", url.to_string())
         .with_meta("target", target.to_string())
         .with_meta("commit", fetched_commit.to_string());
-    let link_content = josh_core::filter::pretty(link_filter, 0);
+    let link_content = josh_core::filter::as_file(link_filter, 0);
 
     // Create the blob for the .link.josh file
     let link_blob = repo
@@ -127,7 +127,7 @@ pub fn update_links(
     // Create new tree with updated .link.josh files
     let mut new_tree = head_tree;
     for (path, link_file) in &updated_link_files {
-        let link_content = josh_core::filter::pretty(*link_file, 0);
+        let link_content = josh_core::filter::as_file(*link_file, 0);
 
         // Create the blob for the .link.josh file
         let link_blob = repo

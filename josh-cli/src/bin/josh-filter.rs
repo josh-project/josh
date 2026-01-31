@@ -192,7 +192,7 @@ fn run_filter(args: Vec<String>) -> josh_core::JoshResult<i32> {
         let tree_oid = git2::Oid::from_str(specstr.trim()).map_err(|_| {
             josh_core::josh_error(&format!("Invalid filter spec or SHA: {}", specstr))
         })?;
-        josh_core::filter::persist::from_tree(&repo, tree_oid)?
+        josh_core::filter::from_tree(&repo, tree_oid)?
     };
 
     if !args.get_flag("no-cache") {

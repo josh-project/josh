@@ -1,12 +1,10 @@
 pub mod parse;
 
-use crate::filter::op::Op;
-use crate::filter::opt;
-use crate::filter::persist::to_filter;
-use crate::filter::persist::to_op;
-use crate::filter::persist::to_ops;
+use crate::filter::MESSAGE_MATCH_ALL_REGEX;
 use crate::filter::sequence_number;
-use crate::filter::{self, Filter};
+use crate::opt;
+use crate::persist::{to_filter, to_op, to_ops};
+use crate::{Filter, Op, RevMatch};
 
 /// Pretty print the filter on multiple lines with initial indentation level.
 /// Nested filters will be indented with additional 4 spaces per nesting level.
@@ -24,6 +22,17 @@ pub fn pretty(filter: Filter, indent: usize) -> String {
             .join(&i);
     }
     pretty2(&to_op(filter), indent, true)
+}
+
+/// Pretty print the filter for writing to a file or blob.
+/// This ensures the output always ends with a newline, which is required for files.
+pub fn as_file(filter: Filter, indent: usize) -> String {
+    let mut content = pretty(filter, indent);
+    // Ensure the content ends with a newline
+    if !content.ends_with('\n') {
+        content.push('\n');
+    }
+    content
 }
 
 fn pretty2(op: &Op, indent: usize, compose: bool) -> String {
@@ -160,11 +169,19 @@ pub(crate) fn spec2(op: &Op) -> String {
             format!(":pin[{}]", spec(*filter))
         }
         Op::Rev(filters) => {
-            let mut v = filters
+            // No sorting - preserve order for first-match semantics
+            let v = filters
                 .iter()
-                .map(|(k, v)| format!("{}{}", k, spec(*v)))
+                .map(|(match_op, k, v)| {
+                    let match_str = match match_op {
+                        RevMatch::AncestorStrict => format!("<{}", k),
+                        RevMatch::AncestorInclusive => format!("<={}", k),
+                        RevMatch::Equal => format!("={}", k),
+                        RevMatch::Default => "_".to_string(),
+                    };
+                    format!("{}{}", match_str, spec(*v))
+                })
                 .collect::<Vec<_>>();
-            v.sort();
             format!(":rev({})", v.join(","))
         }
         Op::Workspace(path) => {
@@ -254,14 +271,11 @@ pub(crate) fn spec2(op: &Op) -> String {
                 parse::quote(email)
             )
         }
-        Op::Message(m, r) if r.as_str() == filter::MESSAGE_MATCH_ALL_REGEX.as_str() => {
+        Op::Message(m, r) if r.as_str() == MESSAGE_MATCH_ALL_REGEX.as_str() => {
             format!(":{}", parse::quote(m))
         }
         Op::Message(m, r) => {
             format!(":{};{}", parse::quote(m), parse::quote(r.as_str()))
-        }
-        Op::HistoryConcat(r, filter) => {
-            format!(":concat({}{})", r, spec(*filter))
         }
         #[cfg(feature = "incubating")]
         Op::Unapply(r, filter) => {

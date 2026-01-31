@@ -18,6 +18,7 @@ backtrace = "0.3.76"
 bitvec = "1.0.1"
 git-version = "0.3.9"
 git2 = { workspace = true }
+josh-filter = { path = "../josh-filter" }
 gix-actor = { workspace = true }
 gix-object = { workspace = true }
 gix-config = { workspace = true }
@@ -49,4 +50,4 @@ rand = "0.9.2"
 criterion2 = { version = "3.0.2" }
 
 [features]
-incubating = []
+incubating = ["josh-filter/incubating"]
