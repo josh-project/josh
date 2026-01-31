@@ -2643,6 +2643,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "josh-cq"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "git2",
+ "josh-core",
+ "josh-link",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "josh-filter"
 version = "22.4.15"
 dependencies = [
@@ -2684,19 +2697,6 @@ dependencies = [
  "git2",
  "josh-core",
  "log",
-]
-
-[[package]]
-name = "josh-mq"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "git2",
- "josh-core",
- "josh-link",
- "serde_json",
- "tokio",
 ]
 
 [[package]]

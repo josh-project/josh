@@ -7,7 +7,7 @@ use josh_link::{from_josh_err, make_signature, normalize_repo_path, spawn_git_co
 use std::collections::BTreeMap;
 
 #[derive(Parser)]
-#[command(about = "Josh Merge Queue")]
+#[command(about = "Josh Commit Queue")]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -48,7 +48,7 @@ fn handle_track(
     let repo = transaction.repo();
 
     // Fetch refs from remote
-    let refs = josh_mq::remote::list_refs(&args.url)?;
+    let refs = josh_cq::remote::list_refs(&args.url)?;
 
     // Fetch HEAD from remote
     spawn_git_command(repo.path(), &["fetch", &args.url, "HEAD"], &[])?;
@@ -130,7 +130,7 @@ fn handle_track(
 
     // Update HEAD to point to the new commit
     repo.head()?
-        .set_target(final_commit, "josh-mq track")
+        .set_target(final_commit, "josh-cq track")
         .context("Failed to update HEAD")?;
 
     println!("Tracked remote '{}' at {}", args.id, args.url);
