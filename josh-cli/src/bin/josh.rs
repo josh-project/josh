@@ -4,86 +4,7 @@ use anyhow::Context;
 use clap::Parser;
 
 use josh_core::changes::{PushMode, build_to_push};
-use josh_link::from_josh_err;
-
-use std::io::IsTerminal;
-use std::process::{Command as ProcessCommand, Stdio};
-
-/// Normalize repo path by stripping .git suffix if present
-fn normalize_repo_path(repo_path: &std::path::Path) -> &std::path::Path {
-    if repo_path.components().last() == Some(std::path::Component::Normal(".git".as_ref())) {
-        repo_path.parent().unwrap()
-    } else {
-        repo_path
-    }
-}
-
-/// Spawn a git command directly to the terminal so users can see progress
-/// Falls back to captured output if not in a TTY environment
-fn spawn_git_command(
-    repo_path: &std::path::Path,
-    args: &[&str],
-    env: &[(&str, &str)],
-) -> anyhow::Result<()> {
-    log::debug!("spawn_git_command: {:?}", args);
-
-    let cwd = normalize_repo_path(repo_path);
-
-    let mut command = ProcessCommand::new("git");
-    command.current_dir(cwd).args(args);
-
-    for (key, value) in env {
-        command.env(key, value);
-    }
-
-    // Check if we're in a TTY environment
-    let is_tty = std::io::stdin().is_terminal() && std::io::stdout().is_terminal();
-
-    let status = if is_tty {
-        // In TTY: inherit stdio so users can see progress
-        command
-            .stdin(Stdio::inherit())
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit());
-
-        command.status()?.code()
-    } else {
-        // Not in TTY: capture output and print stderr (for tests, CI, etc.)
-        // Use the same approach as josh_core::shell::Shell for consistency
-        let output = command
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
-            .context("failed to execute git command")?;
-
-        // Print stderr if there's any output
-        if !output.stderr.is_empty() {
-            let output_str = String::from_utf8_lossy(&output.stderr);
-            let output_str = if let Ok(testtmp) = std::env::var("TESTTMP") {
-                output_str.replace(&testtmp, "${TESTTMP}")
-            } else {
-                output_str.to_string()
-            };
-
-            eprintln!("{}", output_str);
-        }
-
-        output.status.code()
-    };
-
-    match status.unwrap_or(1) {
-        0 => Ok(()),
-        code => {
-            let command = args.join(" ");
-            Err(anyhow::anyhow!(
-                "Command exited with code {}: git {}",
-                code,
-                command
-            ))
-        }
-    }
-}
+use josh_link::{from_josh_err, normalize_repo_path, spawn_git_command};
 
 #[derive(Debug, clap::Parser)]
 #[command(name = "josh", version, about = "Josh: Git projections & sync tooling", long_about = None)]
@@ -972,21 +893,6 @@ fn handle_push(args: &PushArgs, transaction: &josh_core::cache::Transaction) -> 
 }
 
 #[cfg(feature = "incubating")]
-fn make_signature(repo: &git2::Repository) -> anyhow::Result<git2::Signature<'static>> {
-    if let Ok(time) = std::env::var("JOSH_COMMIT_TIME") {
-        git2::Signature::new(
-            "JOSH",
-            "josh@josh-project.dev",
-            &git2::Time::new(time.parse().context("Failed to parse JOSH_COMMIT_TIME")?, 0),
-        )
-        .context("Failed to create signature")
-    } else {
-        let sig = repo.signature().context("Failed to get signature")?;
-        Ok(sig.to_owned())
-    }
-}
-
-#[cfg(feature = "incubating")]
 fn handle_link(args: &LinkArgs, transaction: &josh_core::cache::Transaction) -> anyhow::Result<()> {
     match &args.command {
         LinkCommand::Add(add_args) => handle_link_add(add_args, transaction),
@@ -999,6 +905,8 @@ fn handle_link_add(
     args: &LinkAddArgs,
     transaction: &josh_core::cache::Transaction,
 ) -> anyhow::Result<()> {
+    use josh_link::make_signature;
+
     let repo = transaction.repo();
 
     // Validate the path (should not be empty and should be a valid path)
@@ -1039,20 +947,21 @@ fn handle_link_add(
     let head_commit = head_ref
         .peel_to_commit()
         .context("Failed to get HEAD commit")?;
+    let head_tree = head_commit.tree().context("Failed to get HEAD tree")?;
 
     // Create a new commit with the updated tree
     let signature = make_signature(&repo)?;
 
-    let result = josh_link::add_link(
+    let result = josh_link::prepare_link_add(
         transaction,
-        &args.path,
+        std::path::Path::new(&args.path),
         &args.url,
         args.filter.as_deref(),
         target,
         fetched_commit,
-        &head_commit,
-        &signature,
-    )?;
+        &head_tree,
+    )?
+    .into_commit(transaction, &head_commit, &signature)?;
 
     // Create the fixed branch name
     let branch_name = "refs/heads/josh-link";
@@ -1076,6 +985,8 @@ fn handle_link_fetch(
     args: &LinkFetchArgs,
     transaction: &josh_core::cache::Transaction,
 ) -> anyhow::Result<()> {
+    use josh_link::make_signature;
+
     let repo = transaction.repo();
 
     // Get the current HEAD commit
