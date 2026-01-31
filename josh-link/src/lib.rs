@@ -62,7 +62,7 @@ impl PreparedLinkAdd {
 
     /// Get tree OID for custom commit creation
     ///
-    /// This is used by josh-mq to add additional files before creating a commit
+    /// This is used by josh-cq to add additional files before creating a commit
     pub fn into_tree_oid(self) -> git2::Oid {
         self.tree_oid
     }
