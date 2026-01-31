@@ -27,13 +27,13 @@
   $ cd metarepo
 
 # Create an initial commit so we have a HEAD
-# TODO: commit something via josh-mq init instead?
+# TODO: commit something via josh-cq init instead?
   $ echo "metarepo" > init.txt
   $ git add init.txt
   $ git commit -q -m "Initial metarepo commit"
 
 # Track the remote repository
-  $ josh-mq track ../remote.git myremote
+  $ josh-cq track ../remote.git myremote
   From ../remote
    * branch            HEAD       -> FETCH_HEAD
   

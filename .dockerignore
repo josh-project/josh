@@ -15,7 +15,7 @@
 !josh-templates
 !josh-graphql
 !josh-link
-!josh-mq
+!josh-cq
 !josh-ui/*.json
 !josh-ui/*.rs
 !josh-ui/*.toml
