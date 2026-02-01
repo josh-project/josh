@@ -924,18 +924,18 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> Result<Op, String
                 let (match_op, lazy_ref) = if key == "_" {
                     // Default filter - no SHA needed
                     (RevMatch::Default, LazyRef::Resolved(git2::Oid::zero()))
-                } else if key.starts_with("<=") {
-                    let ref_str = &key[2..];
+                } else if let Some(ref_str) = key.strip_prefix("<=") {
                     (
                         RevMatch::AncestorInclusive,
                         LazyRef::parse(ref_str).map_err(|e| e)?,
                     )
-                } else if key.starts_with('<') {
-                    let ref_str = &key[1..];
-                    (RevMatch::AncestorStrict, LazyRef::parse(ref_str)?)
-                } else if key.starts_with("==") {
-                    let ref_str = &key[2..];
-                    (RevMatch::Equal, LazyRef::parse(ref_str)?)
+                } else if let Some(ref_str) = key.strip_prefix('<') {
+                    (
+                        RevMatch::AncestorStrict,
+                        LazyRef::parse(ref_str).map_err(|e| e)?,
+                    )
+                } else if let Some(ref_str) = key.strip_prefix("==") {
+                    (RevMatch::Equal, LazyRef::parse(ref_str).map_err(|e| e)?)
                 } else {
                     return Err(format!(
                         "rev: invalid key format, must start with '<', '<=', '==', or be '_': {}",

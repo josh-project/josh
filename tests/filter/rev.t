@@ -50,18 +50,11 @@
   |/  
   * 9f0db868b59a422c114df33bc6a8b2950f80490b:a087bfbdb1a5bad499b40ccd1363d30db1313f54
 
-  $ josh-filter -s ":rev(ffffffffffffffffffffffffffffffffffffffff:prefix=x/y)" --update refs/heads/filtered
-  ERROR: Invalid workspace:
-  ----
-   --> 1:6
-    |
-  1 | :rev(ffffffffffffffffffffffffffffffffffffffff:prefix=x/y)
-    |      ^---
-    |
-    = expected rev_entry
-  
-  :rev(ffffffffffffffffffffffffffffffffffffffff:prefix=x/y)
-  ----
+  $ josh-filter -s ":rev(==ffffffffffffffffffffffffffffffffffffffff:prefix=x/y)" --update refs/heads/filtered
+  [5] :prefix=x
+  [5] :prefix=y
+  [10] sequence_number
+  ERROR: `:rev(...)` with nonexistent OID: ffffffffffffffffffffffffffffffffffffffff
   [1]
 
   $ josh-filter -s ":rev(975d4c4975912729482cc864d321c5196a969271:prefix=x/y)" --update refs/heads/filtered
