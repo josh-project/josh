@@ -2,10 +2,10 @@ use anyhow::Context;
 use clap::Parser;
 
 use josh_core::filter::tree;
-use josh_core::git::{normalize_repo_path, spawn_git_command};
+use josh_core::git::normalize_repo_path;
 use josh_link::make_signature;
 
-use std::collections::BTreeMap;
+use josh_cq::vendor::{Vendor, make_vendor};
 
 #[derive(Parser)]
 #[command(about = "Josh Commit Queue")]
@@ -40,7 +40,13 @@ struct TrackArgs {
     url: String,
     /// ID for this remote
     id: String,
+    /// Vendor type for this remote
+    #[arg(long, default_value = "generic")]
+    vendor: josh_cq::vendor::Vendor,
 }
+
+// TODO: make it configurable/read git config
+const METAREPO_MAIN_REF: &'static str = "refs/heads/master";
 
 fn handle_track(
     args: &TrackArgs,
@@ -48,27 +54,19 @@ fn handle_track(
 ) -> anyhow::Result<()> {
     let repo = transaction.repo();
 
-    // Fetch refs from remote
-    let refs = josh_cq::remote::list_refs(&args.url)?;
+    // Fetch everything from the remote
+    let refs = josh_cq::remote::fetch(&repo, &args.url)?;
+    let head_target = josh_cq::remote::resolve_head_symref(&args.url)?;
 
-    // Fetch HEAD from remote
-    spawn_git_command(repo.path(), &["fetch", &args.url, "HEAD"], &[])?;
+    let resolved_head = refs.get(&head_target).with_context(|| {
+        format!(
+            "Remote advertized non-existing HEAD symref target {}",
+            head_target
+        )
+    })?;
 
-    // Get commit from FETCH_HEAD
-    let fetch_head_ref = repo
-        .find_reference("FETCH_HEAD")
-        .context("Failed to find FETCH_HEAD")?;
-    let fetched_commit = fetch_head_ref
-        .peel_to_commit()
-        .context("Failed to peel FETCH_HEAD to commit")?
-        .id();
-
-    // Get HEAD commit
-    let head_ref = repo.head().context("Failed to get HEAD")?;
-    let head_commit = head_ref
-        .peel_to_commit()
-        .context("Failed to peel HEAD to commit")?;
-    let head_tree = head_commit.tree().context("Failed to get HEAD tree")?;
+    let metarepo_main = repo.find_reference(METAREPO_MAIN_REF)?.peel_to_commit()?;
+    let metarepo_tree = metarepo_main.tree().context("Failed to get main tree")?;
 
     let signature = make_signature(repo)?;
 
@@ -79,8 +77,8 @@ fn handle_track(
         &args.url,
         None,   // filter (default :/)
         "HEAD", // target
-        fetched_commit,
-        &head_tree,
+        *resolved_head,
+        &metarepo_tree,
     )?
     .into_tree_oid();
 
@@ -88,30 +86,33 @@ fn handle_track(
         .find_tree(tree_with_link_oid)
         .context("Failed to find tree with link")?;
 
-    // Create refs.json blob
-    let refs_blob = {
-        let refs_map: BTreeMap<String, String> = refs
-            .iter()
-            .map(|(k, v)| (k.clone(), v.to_string()))
-            .collect();
+    let vendor = make_vendor(
+        Vendor::Generic,
+        repo.path(),
+        &refs,
+        (head_target.clone(), *resolved_head),
+    )?;
+    let changes = vendor.list_changes()?;
 
-        let refs_json =
-            serde_json::to_string_pretty(&refs_map).context("Failed to serialize refs to JSON")?;
+    // Create changes.json blob
+    let changes_blob = {
+        let changes_json =
+            serde_json::to_string_pretty(&changes).context("Failed to serialize refs to JSON")?;
 
-        repo.blob(refs_json.as_bytes())
-            .context("Failed to create refs.json blob")?
+        repo.blob(changes_json.as_bytes())
+            .context("Failed to create changes.json blob")?
     };
 
-    // Insert refs.json into the tree
-    let refs_path = std::path::Path::new("remotes")
+    // Insert changes.json into the tree
+    let changes_path = std::path::Path::new("remotes")
         .join(&args.id)
-        .join("refs.json");
+        .join("changes.json");
 
     let final_tree = tree::insert(
         repo,
         &tree_with_link,
-        &refs_path,
-        refs_blob,
+        &changes_path,
+        changes_blob,
         git2::FileMode::Blob.into(),
     )
     .context("Failed to insert refs.json into tree")?;
@@ -124,7 +125,7 @@ fn handle_track(
             &signature,
             &format!("Track remote: {}", args.id),
             &final_tree,
-            &[&head_commit],
+            &[&metarepo_main],
         )
         .context("Failed to create final commit")?;
 
@@ -134,7 +135,7 @@ fn handle_track(
         .context("Failed to update HEAD")?;
 
     println!("Tracked remote '{}' at {}", args.id, args.url);
-    println!("Found {} refs", refs.len());
+    println!("Found {} changes", changes.graph.node_count());
 
     Ok(())
 }
