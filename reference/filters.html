@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-66a0124f.js";
+            window.path_to_searchindex_js = "../searchindex-a1bf1bfa.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-e9bc00a4.js"></script>
@@ -333,17 +333,35 @@ allowed.</p>
 <h3 id="linearise-history-linearfilter"><a class="header" href="#linearise-history-linearfilter">Linearise history <strong>:linear[:filter]</strong></a></h3>
 <p>Produce a filtered history that does not contain any merge commits. This is done by
 simply dropping all parents except the first on every commit.</p>
-<h3 id="filter-specific-parts-of-the-history-revsha_0filter_0sha_nfilter_n"><a class="header" href="#filter-specific-parts-of-the-history-revsha_0filter_0sha_nfilter_n">Filter specific parts of the history <strong>:rev(&lt;sha_0&gt;:filter_0,…,&lt;sha_N&gt;:filter_N)</strong></a></h3>
-<p>Produce a history where the commits specified by <code>&lt;sha_N&gt;</code> are replaced by the result of applying
-<code>:filter_N</code> to it.</p>
-<p>It will appear like <code>&lt;sha_N&gt;</code> and all its ancestors are also filtered with <code>&lt;filter_N&gt;</code>. If an
-ancestor also has a matching entry in the <code>:rev(...)</code> it’s filter will <em>replace</em> <code>&lt;filter_N&gt;</code>
-for all further ancestors (and so on).</p>
-<p>This special value <code>0000000000000000000000000000000000000000</code> can be used as a <code>&lt;sha_n&gt;</code> to filter
-commits that don’t match any of the other shas.</p>
-<h3 id="start-filtering-from-a-specific-commit-fromfilter"><a class="header" href="#start-filtering-from-a-specific-commit-fromfilter">Start filtering from a specific commit <strong>:from(<sha>:filter)</sha></strong></a></h3>
-<p>Produce a history that keeps the original history up to and including the specified commit <code>&lt;sha&gt;</code> unchanged,
-but applies the given <code>:filter</code> to all commits after that commit.</p>
+<h3 id="filter-specific-parts-of-the-history-rev"><a class="header" href="#filter-specific-parts-of-the-history-rev">Filter specific parts of the history <strong>:rev(…)</strong></a></h3>
+<p>The <code>:rev(...)</code> filter allows you to apply different filters to different parts of the commit history based on commit relationships. Each entry in the filter specifies a condition and a filter to apply when that condition matches.</p>
+<p><strong>Syntax:</strong></p>
+<pre><code>:rev(
+  &lt;operator&gt;&lt;sha&gt;:filter
+  _:filter
+  ...
+)
+</code></pre>
+<p><strong>Operators:</strong></p>
+<ul>
+<li><strong><code>&lt;</code></strong> - Strict ancestor match: matches if the commit is an ancestor of <code>&lt;sha&gt;</code> AND the commit is not equal to <code>&lt;sha&gt;</code></li>
+<li><strong><code>&lt;=</code></strong> - Inclusive ancestor match: matches if the commit is an ancestor of <code>&lt;sha&gt;</code> OR the commit equals <code>&lt;sha&gt;</code></li>
+<li><strong><code>==</code></strong> - Exact match: matches only if the commit equals <code>&lt;sha&gt;</code></li>
+<li><strong><code>_</code></strong> - Default filter: matches any commit that doesn’t match any previous condition (no SHA needed)</li>
+</ul>
+<p><strong>Matching behavior:</strong></p>
+<ul>
+<li>Rules are evaluated in the order they are specified</li>
+<li><strong>First match wins</strong> - once a condition matches, that filter is applied and no further rules are checked</li>
+<li>The default filter (<code>_</code>) will match any commit that hasn’t matched a previous rule, making any rules after it unreachable</li>
+</ul>
+<p><strong>Examples:</strong></p>
+<pre><code>:rev(==def456:prefix=new,&lt;=abc123:prefix=old)
+</code></pre>
+<p>This applies <code>:prefix=old</code> to commit <code>abc123</code> and all its ancestors, and <code>:prefix=new</code> only to commit <code>def456</code>.</p>
+<pre><code>:rev(&lt;abc123:prefix=old,_:prefix=default)
+</code></pre>
+<p>This applies <code>:prefix=old</code> to all ancestors of <code>abc123</code> (but not <code>abc123</code> itself), and <code>:prefix=default</code> to all other commits (including <code>abc123</code> and any commits after it).</p>
 <h3 id="prune-trivial-merge-commits-prunetrivial-merge"><a class="header" href="#prune-trivial-merge-commits-prunetrivial-merge">Prune trivial merge commits <strong>:prune=trivial-merge</strong></a></h3>
 <p>Produce a history that skips all merge commits whose tree is identical to the first parents
 tree.
