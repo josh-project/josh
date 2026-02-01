@@ -221,8 +221,8 @@ fn lazy_refs2(op: &Op) -> Vec<String> {
         }
         Op::Rev(filters) => {
             let mut lr = lazy_refs2(&Op::Compose(filters.iter().map(|(_, _, f)| *f).collect()));
-            lr.extend(filters.iter().filter_map(|(_, x, _)| {
-                if let LazyRef::Lazy(s) = x {
+            lr.extend(filters.iter().filter_map(|(_, nested, _)| {
+                if let LazyRef::Lazy(s) = nested {
                     Some(s.to_owned())
                 } else {
                     None
@@ -234,8 +234,8 @@ fn lazy_refs2(op: &Op) -> Vec<String> {
         }
         Op::Squash(Some(revs)) => {
             let mut lr = vec![];
-            lr.extend(revs.keys().filter_map(|x| {
-                if let LazyRef::Lazy(s) = x {
+            lr.extend(revs.keys().filter_map(|nested| {
+                if let LazyRef::Lazy(s) = nested {
                     Some(s.to_owned())
                 } else {
                     None
@@ -466,55 +466,30 @@ fn get_rev_filter(
 
     // First match wins - iterate in order
     for (match_op, filter_tip_ref, startfilter) in filters.iter() {
+        let filter_tip = if let LazyRef::Resolved(filter_tip) = filter_tip_ref {
+            filter_tip
+        } else {
+            return Err(josh_error("unresolved lazy ref"));
+        };
+        if match_op != &RevMatch::Default && !transaction.repo().odb()?.exists(*filter_tip) {
+            return Err(josh_error(&format!(
+                "`:rev(...)` with nonexistent OID: {}",
+                filter_tip
+            )));
+        }
         let matches = match match_op {
             RevMatch::AncestorStrict => {
                 // `<` - matches if commit is ancestor of tip AND commit != tip (strict)
-                let filter_tip = if let LazyRef::Resolved(filter_tip) = filter_tip_ref {
-                    filter_tip
-                } else {
-                    return Err(josh_error("unresolved lazy ref"));
-                };
-
-                if !transaction.repo().odb()?.exists(*filter_tip) {
-                    return Err(josh_error(&format!(
-                        "`:rev(...)` with nonexistent OID: {}",
-                        filter_tip
-                    )));
-                }
 
                 is_ancestor_of(transaction, commit_id, *filter_tip)? && commit_id != *filter_tip
             }
             RevMatch::AncestorInclusive => {
                 // `<=` - matches if commit is ancestor of tip OR commit == tip (inclusive)
-                let filter_tip = if let LazyRef::Resolved(filter_tip) = filter_tip_ref {
-                    filter_tip
-                } else {
-                    return Err(josh_error("unresolved lazy ref"));
-                };
-
-                if !transaction.repo().odb()?.exists(*filter_tip) {
-                    return Err(josh_error(&format!(
-                        "`:rev(...)` with nonexistent OID: {}",
-                        filter_tip
-                    )));
-                }
 
                 is_ancestor_of(transaction, commit_id, *filter_tip)?
             }
             RevMatch::Equal => {
                 // `==` - matches if commit == tip
-                let filter_tip = if let LazyRef::Resolved(filter_tip) = filter_tip_ref {
-                    filter_tip
-                } else {
-                    return Err(josh_error("unresolved lazy ref"));
-                };
-
-                if !transaction.repo().odb()?.exists(*filter_tip) {
-                    return Err(josh_error(&format!(
-                        "`:rev(...)` with nonexistent OID: {}",
-                        filter_tip
-                    )));
-                }
 
                 commit_id == *filter_tip
             }
