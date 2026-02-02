@@ -14,9 +14,11 @@ Create a test repository with some content
   $ git init -q
   $ mkdir -p sub1
   $ echo "file1 content" > sub1/file1
+  $ git add sub1
+  $ git commit -q -m "add file1"
   $ echo "file2 content" > sub1/file2
   $ git add sub1
-  $ git commit -q -m "add files"
+  $ git commit -q -m "add file2"
   $ git remote add origin ${TESTTMP}/remote
   $ git push -q origin master
   $ cd ..
@@ -43,6 +45,10 @@ Clone with josh filter
   
   1 directory, 2 files
 
+  $ git log --oneline
+  33cbd5f add file2
+  5f2928c add file1
+
 Make a change in the filtered repository
 
   $ echo "modified content" > file1
@@ -51,15 +57,23 @@ Make a change in the filtered repository
 
 Push the change back
 
-  $ josh push
+  $ josh push -r origin -R HEAD:refs/heads/master -f
   To file://${TESTTMP}/remote
-     bd8c97c..6cd75eb  6cd75ebe1f882bd362eeb6f1199b9540552ac413 -> master
+     14ecb7c..33f0c00  33f0c009c43980ba5e76995b53f9615a4d880a08 -> master
   
-  Pushed 6cd75ebe1f882bd362eeb6f1199b9540552ac413 to origin/master
+  Pushed 33f0c009c43980ba5e76995b53f9615a4d880a08 to origin/master
+  $ josh push
+  Everything up-to-date
+  
+  Pushed 33f0c009c43980ba5e76995b53f9615a4d880a08 to origin/master
 
 Verify the change was pushed to the original repository
 
   $ cd ${TESTTMP}/local
   $ git pull -q --rebase origin master
+  $ git log --oneline --graph
+  * 33f0c00 modify file1
+  * 14ecb7c add file2
+  * 115b269 add file1
   $ cat sub1/file1
   modified content
