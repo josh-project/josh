@@ -734,6 +734,9 @@ fn handle_push(args: &PushArgs, transaction: &josh_core::cache::Transaction) -> 
             // If no colon, push local ref to remote with same name
             (refspec.clone(), refspec.clone())
         };
+        let remote_ref = remote_ref
+            .strip_prefix("refs/heads/")
+            .unwrap_or(&remote_ref);
 
         // Get the current commit of the local ref
         let local_commit = repo
@@ -820,7 +823,7 @@ fn handle_push(args: &PushArgs, transaction: &josh_core::cache::Transaction) -> 
         .context("Failed to unapply filter")?;
 
         // Define variables needed for build_to_push
-        let baseref = remote_ref.clone();
+        let baseref = remote_ref;
         let oid_to_push = unfiltered_oid;
         let old = original_target;
 
