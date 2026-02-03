@@ -20,7 +20,10 @@
   $ git commit -m "add file2" 1> /dev/null
 
   $ mkdir st
-  $ cat > st/config.josh <<EOF
+
+Use a filename with an extension here to check that the extension does not get replaced
+by ".josh" but rather kept and extended
+  $ cat > st/config.filter.josh <<EOF
   > :/sub1::file1
   > :/sub1::file2
   > ::sub2/subsub/
@@ -28,9 +31,9 @@
   $ git add st
   $ git commit -m "add st" 1> /dev/null
 
-  $ josh-filter -s :+st/config master --update refs/josh/master
-  4151198c71b2a1ecc2ff632ecf335c3f1604926b
-  [2] :+st/config
+  $ josh-filter -s :+st/config.filter master --update refs/josh/master
+  3397ec2c69d5c8f67ad39cf477b3711683022d84
+  [2] :+st/config.filter
   [2] :[
       :/sub1:[
           ::file1
@@ -49,14 +52,14 @@
   $ git ls-tree HEAD
   100644 blob a024003ee1acc6bf70318a46e7b6df651b9dc246\tfile1 (esc)
   100755 blob a024003ee1acc6bf70318a46e7b6df651b9dc246\tfile2 (esc)
-  040000 tree 39ba55859ffd8fca4931d1426510f486b3285e07\tst (esc)
+  040000 tree 708c21a7d31d142c2d1030810e573154134f32e6\tst (esc)
   040000 tree 81b2a24c53f9090c6f6a23176a2a5660e6f48317\tsub2 (esc)
   $ tree
   .
   |-- file1
   |-- file2
   |-- st
-  |   `-- config.josh
+  |   `-- config.filter.josh
   `-- sub2
       `-- subsub
           `-- file2

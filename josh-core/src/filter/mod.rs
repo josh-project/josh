@@ -369,7 +369,7 @@ fn get_stored<'a>(
     tree: &'a git2::Tree<'a>,
     path: &Path,
 ) -> Filter {
-    let stored_path = path.with_extension("josh");
+    let stored_path = path.with_added_extension("josh");
     let sj_file = Filter::new().file(stored_path.clone());
     compose(&[sj_file, get_filter(transaction, tree, &stored_path)])
 }
@@ -1515,7 +1515,7 @@ fn unapply_workspace<'a>(
             Ok(Some(result))
         }
         Op::Stored(path) => {
-            let stored_path = path.with_extension("josh");
+            let stored_path = path.with_added_extension("josh");
             let stored = get_filter(transaction, &tree, &stored_path);
             let original_stored = get_filter(transaction, &parent_tree, &stored_path);
 
@@ -1619,7 +1619,7 @@ pub fn compute_warnings<'a>(
     }
 
     if let Op::Stored(path) = to_op(filter) {
-        let stored_path = path.with_extension("josh");
+        let stored_path = path.with_added_extension("josh");
         let stored_filter = &tree::get_blob(transaction.repo(), &tree, &stored_path);
         if let Ok(res) = parse(stored_filter) {
             filter = res;
