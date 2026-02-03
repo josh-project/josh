@@ -81,6 +81,8 @@ pub enum Op {
     Subdir(std::path::PathBuf),
     Workspace(std::path::PathBuf),
     Stored(std::path::PathBuf),
+    #[cfg(feature = "incubating")]
+    Starlark(std::path::PathBuf, Filter),
 
     Pattern(String),
     Message(String, regex::Regex),

@@ -173,6 +173,8 @@ pub fn simplify(filter: Filter) -> Filter {
         }
         Op::Exclude(b) => Op::Exclude(simplify(b)),
         Op::Pin(b) => Op::Pin(simplify(b)),
+        #[cfg(feature = "incubating")]
+        Op::Starlark(path, sub) => Op::Starlark(path.clone(), simplify(sub)),
         _ => to_op(filter),
     });
 
@@ -236,6 +238,8 @@ pub fn flatten(filter: Filter) -> Filter {
         }
         Op::Exclude(b) => Op::Exclude(flatten(b)),
         Op::Pin(b) => Op::Pin(flatten(b)),
+        #[cfg(feature = "incubating")]
+        Op::Starlark(path, sub) => Op::Starlark(path.clone(), flatten(sub)),
         _ => to_op(filter),
     });
 
@@ -652,6 +656,8 @@ fn step(filter: Filter) -> Filter {
         Op::Exclude(b) | Op::Pin(b) if b == to_filter(Op::Empty) => Op::Nop,
         Op::Exclude(b) => Op::Exclude(step(b)),
         Op::Pin(b) => Op::Pin(step(b)),
+        #[cfg(feature = "incubating")]
+        Op::Starlark(path, sub) => Op::Starlark(path.clone(), step(sub)),
         Op::Subtract(a, b) if a == b => Op::Empty,
         Op::Subtract(af, bf) => match (to_op(af), to_op(bf)) {
             (Op::Empty, _) => Op::Empty,

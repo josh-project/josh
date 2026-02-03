@@ -190,6 +190,18 @@ pub(crate) fn spec2(op: &Op) -> String {
         Op::Stored(path) => {
             format!(":+{}", parse::quote_if(&path.to_string_lossy()))
         }
+        #[cfg(feature = "incubating")]
+        Op::Starlark(path, sub) => {
+            if *sub == to_filter(Op::Empty) {
+                format!(":*{}", parse::quote_if(&path.to_string_lossy()))
+            } else {
+                format!(
+                    ":*{}[{}]",
+                    parse::quote_if(&path.to_string_lossy()),
+                    spec(*sub)
+                )
+            }
+        }
         Op::RegexReplace(replacements) => {
             let v = replacements
                 .iter()

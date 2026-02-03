@@ -402,6 +402,35 @@ fn get_stored<'a>(
     compose(&[sj_file, get_filter(transaction, tree, &stored_path)])
 }
 
+#[cfg(feature = "incubating")]
+fn get_starlark<'a>(
+    transaction: &cache::Transaction,
+    tree: &'a git2::Tree<'a>,
+    path: &Path,
+    subfilter: Filter,
+) -> Filter {
+    let star_path = path.with_added_extension("star");
+    let script = tree::get_blob(transaction.repo(), tree, &star_path);
+    let filtered_tree = match apply(transaction, subfilter, Rewrite::from_tree(tree.clone())) {
+        Ok(rw) => rw.into_tree(),
+        Err(_) => return to_filter(Op::Empty),
+    };
+    let repo = match git2::Repository::open(transaction.repo().path()) {
+        Ok(r) => std::sync::Arc::new(std::sync::Mutex::new(r)),
+        Err(_) => return to_filter(Op::Empty),
+    };
+    match josh_starlark::evaluate(&script, filtered_tree.id(), repo) {
+        Ok(f) => {
+            let star_file = Filter::new().file(star_path);
+            compose(&[star_file, subfilter, f])
+        }
+        Err(e) => {
+            tracing::trace!("starlark evaluation failed: {}", e);
+            to_filter(Op::Empty)
+        }
+    }
+}
+
 fn get_filter<'a>(
     transaction: &cache::Transaction,
     tree: &'a git2::Tree<'a>,
@@ -847,6 +876,26 @@ pub fn apply_to_commit2(
                         transaction,
                         &parent.tree().unwrap_or_else(|_| tree::empty(repo)),
                         s_path,
+                    );
+                    Ok((parent, pcs))
+                })
+                .collect::<JoshResult<Vec<_>>>()?;
+
+            return per_rev_filter(transaction, commit, filter, commit_filter, parent_filters);
+        }
+        #[cfg(feature = "incubating")]
+        Op::Starlark(s_path, s_subfilter) => {
+            let commit_filter = get_starlark(transaction, &commit.tree()?, s_path, *s_subfilter);
+
+            let parent_filters = commit
+                .parents()
+                .map(|parent| {
+                    rs_tracing::trace_scoped!("parent", "id": parent.id().to_string());
+                    let pcs = get_starlark(
+                        transaction,
+                        &parent.tree().unwrap_or_else(|_| tree::empty(repo)),
+                        s_path,
+                        *s_subfilter,
                     );
                     Ok((parent, pcs))
                 })
@@ -1323,6 +1372,12 @@ pub fn apply<'a>(
 
         Op::Workspace(path) => apply(transaction, get_workspace(transaction, x.tree(), path), x),
         Op::Stored(path) => apply(transaction, get_stored(transaction, x.tree(), path), x),
+        #[cfg(feature = "incubating")]
+        Op::Starlark(path, subfilter) => apply(
+            transaction,
+            get_starlark(transaction, x.tree(), path, *subfilter),
+            x,
+        ),
 
         Op::Compose(filters) => {
             let filtered: Vec<_> = filters
@@ -1487,6 +1542,27 @@ fn unapply_workspace<'a>(
             let sj_file = Filter::new().file(stored_path.clone());
             let filter = compose(&[sj_file, stored]);
             let original_filter = compose(&[sj_file, original_stored]);
+            let filtered = apply(
+                transaction,
+                original_filter,
+                Rewrite::from_tree(parent_tree.clone()),
+            )?;
+            let matching = apply(transaction, invert(original_filter)?, filtered.clone())?;
+            let stripped = tree::subtract(transaction, parent_tree.id(), matching.tree().id())?;
+            let x = apply(transaction, invert(filter)?, Rewrite::from_tree(tree))?;
+
+            let result = transaction.repo().find_tree(tree::overlay(
+                transaction,
+                x.tree().id(),
+                stripped,
+            )?)?;
+
+            Ok(Some(result))
+        }
+        #[cfg(feature = "incubating")]
+        Op::Starlark(path, subfilter) => {
+            let filter = get_starlark(transaction, &tree, path, *subfilter);
+            let original_filter = get_starlark(transaction, &parent_tree, path, *subfilter);
             let filtered = apply(
                 transaction,
                 original_filter,
@@ -1696,6 +1772,8 @@ fn legalize_stored(t: &cache::Transaction, f: Filter, tree: &git2::Tree) -> Josh
         Op::Meta(meta, f) => to_filter(Op::Meta(meta, legalize_stored(t, f, tree)?)),
         Op::Pin(f) => to_filter(Op::Pin(legalize_stored(t, f, tree)?)),
         Op::Stored(path) => get_stored(t, tree, &path),
+        #[cfg(feature = "incubating")]
+        Op::Starlark(path, sub) => get_starlark(t, tree, &path, legalize_stored(t, sub, tree)?),
         _ => f,
     };
 

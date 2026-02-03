@@ -137,6 +137,29 @@ impl InMemoryBuilder {
         Ok(self.write_tree(tree))
     }
 
+    #[cfg(feature = "incubating")]
+    fn build_starlark_params(
+        &mut self,
+        path: &std::path::Path,
+        subfilter: Filter,
+    ) -> Result<gix_hash::ObjectId, String> {
+        let path_tree = self.build_str_params(&[path.to_string_lossy().as_ref()]);
+        let filter_tree = self.build_filter_params(&[subfilter])?;
+        let entries = vec![
+            gix_object::tree::Entry {
+                mode: gix_object::tree::EntryKind::Tree.into(),
+                filename: BString::from("0"),
+                oid: path_tree,
+            },
+            gix_object::tree::Entry {
+                mode: gix_object::tree::EntryKind::Tree.into(),
+                filename: BString::from("1"),
+                oid: filter_tree,
+            },
+        ];
+        Ok(self.write_tree(gix_object::Tree { entries }))
+    }
+
     fn build_rev_params(
         &mut self,
         params: &[(RevMatch, LazyRef, Filter)],
@@ -358,6 +381,11 @@ impl InMemoryBuilder {
             Op::Stored(path) => {
                 let params_tree = self.build_str_params(&[path.to_string_lossy().as_ref()]);
                 push_tree_entries(&mut entries, [("stored", params_tree)]);
+            }
+            #[cfg(feature = "incubating")]
+            Op::Starlark(path, subfilter) => {
+                let params_tree = self.build_starlark_params(path, *subfilter)?;
+                push_tree_entries(&mut entries, [("starlark", params_tree)]);
             }
             Op::Nop => {
                 let blob = self.write_blob(b"");
@@ -797,6 +825,36 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> Result<Op, String
                 .map_err(|e| e.to_string())?;
             let path = std::str::from_utf8(path_blob.content()).map_err(|e| e.to_string())?;
             Ok(Op::Stored(std::path::PathBuf::from(path)))
+        }
+        #[cfg(feature = "incubating")]
+        "starlark" => {
+            let inner = repo.find_tree(entry.id()).map_err(|e| e.to_string())?;
+            let path_tree = inner
+                .get_name("0")
+                .ok_or_else(|| "starlark: missing path".to_string())?;
+            let path_blob = repo
+                .find_blob(
+                    repo.find_tree(path_tree.id())
+                        .map_err(|e| e.to_string())?
+                        .get_name("0")
+                        .ok_or_else(|| "starlark: missing path blob".to_string())?
+                        .id(),
+                )
+                .map_err(|e| e.to_string())?;
+            let path = std::str::from_utf8(path_blob.content()).map_err(|e| e.to_string())?;
+            let filter_tree = repo
+                .find_tree(
+                    inner
+                        .get_name("1")
+                        .ok_or_else(|| "starlark: missing filter".to_string())?
+                        .id(),
+                )
+                .map_err(|e| e.to_string())?;
+            let filter = from_tree2(repo, filter_tree.id())?;
+            Ok(Op::Starlark(
+                std::path::PathBuf::from(path),
+                to_filter(filter),
+            ))
         }
         "compose" => {
             let compose_tree = repo.find_tree(entry.id()).map_err(|e| e.to_string())?;

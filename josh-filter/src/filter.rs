@@ -96,6 +96,14 @@ impl Filter {
         self.chain(to_filter(Op::Stored(path.into())))
     }
 
+    /// Chain a filter that evaluates a Starlark script from a `.star` file.
+    /// The path is used with `.star` extension. The subfilter is applied to the input tree to get the tree passed to the script.
+    /// Syntax: `:*starfile[:filter]` (e.g. `:*foo[:/lib]` passes the result of `:/lib` to the script).
+    #[cfg(feature = "incubating")]
+    pub fn starlark(self, path: impl Into<std::path::PathBuf>, subfilter: Filter) -> Filter {
+        self.chain(to_filter(Op::Starlark(path.into(), subfilter)))
+    }
+
     /// Chain a filter that matches files by glob pattern
     /// Only files matching the pattern are included in the result
     pub fn pattern(self, p: impl Into<String>) -> Filter {
