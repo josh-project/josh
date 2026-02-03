@@ -2622,6 +2622,7 @@ dependencies = [
  "indoc",
  "itertools 0.14.0",
  "josh-filter",
+ "josh-starlark",
  "log",
  "percent-encoding",
  "pest",
