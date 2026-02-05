@@ -2,7 +2,7 @@ use anyhow::Context;
 use clap::Parser;
 
 use josh_core::filter::tree;
-use josh_link::{from_josh_err, make_signature, normalize_repo_path, spawn_git_command};
+use josh_link::{from_josh_err, make_signature, normalize_repo_path};
 
 use std::collections::BTreeMap;
 
@@ -39,6 +39,9 @@ struct TrackArgs {
     url: String,
     /// ID for this remote
     id: String,
+    /// Vendor type for this remote
+    #[arg(long, default_value = "generic")]
+    vendor: josh_cq::vendor::Vendor,
 }
 
 fn handle_track(
@@ -47,27 +50,24 @@ fn handle_track(
 ) -> anyhow::Result<()> {
     let repo = transaction.repo();
 
-    // Fetch refs from remote
-    let refs = josh_cq::remote::list_refs(&args.url)?;
+    // Fetch everything from the remote
+    let refs = josh_cq::remote::fetch(&repo, &args.url)?;
+    let head_target = josh_cq::remote::resolve_head_symref(&args.url)?;
 
-    // Fetch HEAD from remote
-    spawn_git_command(repo.path(), &["fetch", &args.url, "HEAD"], &[])?;
+    let resolved_head = refs.get(&head_target).with_context(|| {
+        format!(
+            "Remote advertized non-existing HEAD symref target {}",
+            head_target
+        )
+    })?;
 
-    // Get commit from FETCH_HEAD
-    let fetch_head_ref = repo
-        .find_reference("FETCH_HEAD")
-        .context("Failed to find FETCH_HEAD")?;
-    let fetched_commit = fetch_head_ref
-        .peel_to_commit()
-        .context("Failed to peel FETCH_HEAD to commit")?
-        .id();
-
-    // Get HEAD commit
-    let head_ref = repo.head().context("Failed to get HEAD")?;
-    let head_commit = head_ref
+    // Get the metarepo's current HEAD commit and tree
+    let metarepo_head = repo
+        .head()
+        .context("Failed to get HEAD")?
         .peel_to_commit()
         .context("Failed to peel HEAD to commit")?;
-    let head_tree = head_commit.tree().context("Failed to get HEAD tree")?;
+    let metarepo_tree = metarepo_head.tree().context("Failed to get HEAD tree")?;
 
     let signature = make_signature(repo)?;
 
@@ -78,8 +78,8 @@ fn handle_track(
         &args.url,
         None,   // filter (default :/)
         "HEAD", // target
-        fetched_commit,
-        &head_tree,
+        *resolved_head,
+        &metarepo_tree,
     )?
     .into_tree_oid();
 
@@ -124,7 +124,7 @@ fn handle_track(
             &signature,
             &format!("Track remote: {}", args.id),
             &final_tree,
-            &[&head_commit],
+            &[&metarepo_head],
         )
         .context("Failed to create final commit")?;
 

@@ -9,5 +9,7 @@ clap.workspace = true
 anyhow.workspace = true
 serde_json.workspace = true
 git2.workspace = true
+uuid.workspace = true
+petgraph = "0.8"
 josh-core = { path = "../josh-core" }
 josh-link = { path = "../josh-link" }
