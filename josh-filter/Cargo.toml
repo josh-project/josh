@@ -17,8 +17,8 @@ serde = { workspace = true }
 regex = { workspace = true }
 smallvec = "1.15.1"
 serde_json = { workspace = true }
-pest = "2.8.5"
-pest_derive = "2.8.5"
+pest = "2.8.6"
+pest_derive = "2.8.6"
 indoc = "2.0.7"
 itertools = "0.14.0"
 
