@@ -230,7 +230,7 @@ pub fn update_links(
 
     // Find all link files to get their current metadata
     let link_files =
-        josh_core::find_link_files(repo, &head_tree).context("Failed to find link files")?;
+        josh_core::link::find_link_files(repo, &head_tree).context("Failed to find link files")?;
 
     // Update the link files with new commit OIDs
     let mut updated_link_files: Vec<(PathBuf, josh_core::filter::Filter)> = Vec::new();

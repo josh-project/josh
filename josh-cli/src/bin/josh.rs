@@ -987,8 +987,8 @@ fn handle_link_fetch(
 
     let link_files = if let Some(path) = &args.path {
         // Single path specified - use find_link_files to get all link files, then find the one at the specified path
-        let link_files =
-            josh_core::find_link_files(&repo, &head_tree).context("Failed to find link files")?;
+        let link_files = josh_core::link::find_link_files(&repo, &head_tree)
+            .context("Failed to find link files")?;
 
         let link_file = link_files
             .iter()
@@ -999,7 +999,7 @@ fn handle_link_fetch(
         vec![(std::path::PathBuf::from(path), link_file)]
     } else {
         // No path specified - find all .link.josh files in the tree
-        josh_core::find_link_files(&repo, &head_tree).context("Failed to find link files")?
+        josh_core::link::find_link_files(&repo, &head_tree).context("Failed to find link files")?
     };
 
     if link_files.is_empty() {
