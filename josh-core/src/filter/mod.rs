@@ -161,6 +161,8 @@ impl<'a> Rewrite<'a> {
     }
 }
 
+use crate::link::find_link_files;
+use crate::submodules::{ParsedSubmoduleEntry, parse_gitmodules};
 pub use josh_filter::compose;
 
 pub fn lazy_refs(filter: Filter) -> Vec<String> {
