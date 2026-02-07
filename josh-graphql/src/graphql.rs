@@ -1,7 +1,8 @@
 #![allow(unused_variables)]
 
+use anyhow::anyhow;
 use josh_core::filter::Rewrite;
-use josh_core::{JoshResult, cache, filter, history, josh_error};
+use josh_core::{cache, filter, history};
 use juniper::{EmptyMutation, EmptySubscription, FieldResult, graphql_object};
 
 pub struct Revision {
@@ -15,7 +16,7 @@ fn find_paths(
     at: Option<String>,
     depth: Option<i32>,
     kind: git2::ObjectType,
-) -> JoshResult<Vec<std::path::PathBuf>> {
+) -> anyhow::Result<Vec<std::path::PathBuf>> {
     let tree = if let Some(at) = at.as_ref() {
         if at.is_empty() {
             tree
@@ -71,7 +72,7 @@ impl Revision {
         context: &Context,
         kind: git2::ObjectType,
     ) -> FieldResult<Option<Vec<Path>>> {
-        let transaction = context.transaction.lock()?;
+        let transaction = context.transaction.lock().unwrap();
         let commit = transaction.repo().find_commit(self.commit_id)?;
         let x = filter::apply(
             &transaction,
@@ -101,14 +102,14 @@ impl Revision {
 
     fn hash(&self, context: &Context) -> FieldResult<String> {
         rs_tracing::trace_scoped!("hash");
-        let transaction = context.transaction.lock()?;
+        let transaction = context.transaction.lock().unwrap();
         let commit = transaction.repo().find_commit(self.commit_id)?;
         let filter_commit = filter::apply_to_commit(self.filter, &commit, &transaction)?;
         Ok(format!("{}", filter_commit))
     }
 
     fn author_email(&self, context: &Context) -> FieldResult<String> {
-        let transaction = context.transaction.lock()?;
+        let transaction = context.transaction.lock().unwrap();
         let commit = transaction.repo().find_commit(self.commit_id)?;
         let filter_commit = transaction.repo().find_commit(filter::apply_to_commit(
             self.filter,
@@ -120,7 +121,7 @@ impl Revision {
     }
 
     fn summary(&self, context: &Context) -> FieldResult<String> {
-        let transaction = context.transaction.lock()?;
+        let transaction = context.transaction.lock().unwrap();
         let commit = transaction.repo().find_commit(self.commit_id)?;
         let filter_commit = transaction.repo().find_commit(filter::apply_to_commit(
             self.filter,
@@ -131,7 +132,7 @@ impl Revision {
     }
 
     fn message(&self, context: &Context) -> FieldResult<String> {
-        let transaction = context.transaction.lock()?;
+        let transaction = context.transaction.lock().unwrap();
         let commit = transaction.repo().find_commit(self.commit_id)?;
         let filter_commit = transaction.repo().find_commit(filter::apply_to_commit(
             self.filter,
@@ -142,7 +143,7 @@ impl Revision {
     }
 
     fn date(&self, format: String, context: &Context) -> FieldResult<String> {
-        let transaction = context.transaction.lock()?;
+        let transaction = context.transaction.lock().unwrap();
         let commit = transaction.repo().find_commit(self.commit_id)?;
         let filter_commit = transaction.repo().find_commit(filter::apply_to_commit(
             self.filter,
@@ -152,8 +153,7 @@ impl Revision {
 
         let ts = filter_commit.time().seconds();
 
-        let ndt =
-            chrono::DateTime::from_timestamp(ts, 0).ok_or(josh_error("from_timestamp_opt"))?;
+        let ndt = chrono::DateTime::from_timestamp(ts, 0).ok_or(anyhow!("from_timestamp_opt"))?;
 
         Ok(ndt.format(&format).to_string())
     }
@@ -165,7 +165,7 @@ impl Revision {
         context: &Context,
     ) -> FieldResult<Option<Revision>> {
         let commit_id = if let Some(true) = original {
-            let transaction = context.transaction.lock()?;
+            let transaction = context.transaction.lock().unwrap();
             let commit = transaction.repo().find_commit(self.commit_id)?;
             let filter_commit = transaction.repo().find_commit(filter::apply_to_commit(
                 self.filter,
@@ -191,7 +191,7 @@ impl Revision {
     }
 
     fn parents(&self, context: &Context) -> FieldResult<Vec<Revision>> {
-        let transaction = context.transaction.lock()?;
+        let transaction = context.transaction.lock().unwrap();
         let commit = transaction.repo().find_commit(self.commit_id)?;
         let filter_commit = transaction.repo().find_commit(filter::apply_to_commit(
             self.filter,
@@ -226,7 +226,7 @@ impl Revision {
         rs_tracing::trace_scoped!("history");
         let limit = limit.unwrap_or(1) as usize;
         let offset = offset.unwrap_or(0) as usize;
-        let transaction = context.transaction.lock()?;
+        let transaction = context.transaction.lock().unwrap();
         let commit = transaction.repo().find_commit(self.commit_id)?;
         let filter_commit = transaction.repo().find_commit(filter::apply_to_commit(
             self.filter,
@@ -302,7 +302,7 @@ impl Revision {
         depth: Option<i32>,
         context: &Context,
     ) -> FieldResult<Option<Vec<DiffPath>>> {
-        let transaction = context.transaction.lock()?;
+        let transaction = context.transaction.lock().unwrap();
         let commit = transaction.repo().find_commit(self.commit_id)?;
         let filter_commit = transaction.repo().find_commit(filter::apply_to_commit(
             self.filter,
@@ -365,7 +365,7 @@ impl Revision {
     }
 
     fn file(&self, path: String, context: &Context) -> FieldResult<Option<Path>> {
-        let transaction = context.transaction.lock()?;
+        let transaction = context.transaction.lock().unwrap();
         let path = std::path::Path::new(&path).to_owned();
         let tree = transaction.repo().find_commit(self.commit_id)?.tree()?;
 
@@ -380,7 +380,7 @@ impl Revision {
                     tree: x.tree().id(),
                 }))
             } else {
-                Err(josh_error("not a blob").into())
+                Err(anyhow!("not a blob").into())
             }
         } else {
             Ok(None)
@@ -389,7 +389,7 @@ impl Revision {
 
     fn dir(&self, path: Option<String>, context: &Context) -> FieldResult<Option<Path>> {
         let path = path.unwrap_or_default();
-        let transaction = context.transaction.lock()?;
+        let transaction = context.transaction.lock().unwrap();
         let tree = transaction.repo().find_commit(self.commit_id)?.tree()?;
 
         let x = filter::apply(&transaction, self.filter, Rewrite::from_tree(tree))?;
@@ -414,7 +414,7 @@ impl Revision {
                     tree: x.tree().id(),
                 }))
             } else {
-                Err(josh_error("not a tree").into())
+                Err(anyhow!("not a tree").into())
             }
         } else {
             Ok(None)
@@ -422,7 +422,7 @@ impl Revision {
     }
 
     fn warnings(&self, context: &Context) -> FieldResult<Option<Vec<Warning>>> {
-        let transaction = context.transaction.lock()?;
+        let transaction = context.transaction.lock().unwrap();
         let commit = transaction.repo().find_commit(self.commit_id)?;
 
         let warnings = filter::compute_warnings(&transaction, self.filter, commit.tree()?)
@@ -440,7 +440,7 @@ impl Revision {
         context: &Context,
     ) -> FieldResult<Option<Vec<SearchResult>>> {
         let max_complexity = max_complexity.unwrap_or(6) as usize;
-        let transaction = context.transaction.lock()?;
+        let transaction = context.transaction.lock().unwrap();
         let ifilterobj = filter::parse(":SQUASH:INDEX")?;
         let tree = transaction.repo().find_commit(self.commit_id)?.tree()?;
 
@@ -555,8 +555,8 @@ struct Markers {
 #[graphql_object(context = Context)]
 impl Markers {
     fn data(&self, context: &Context) -> FieldResult<Vec<Document>> {
-        let transaction_mirror = context.transaction_mirror.lock()?;
-        let transaction = context.transaction.lock()?;
+        let transaction_mirror = context.transaction_mirror.lock().unwrap();
+        let transaction = context.transaction.lock().unwrap();
 
         let refname = transaction_mirror.refname("refs/josh/meta");
 
@@ -607,8 +607,8 @@ impl Markers {
     }
 
     fn count(&self, context: &Context) -> FieldResult<i32> {
-        let transaction_mirror = context.transaction_mirror.lock()?;
-        let transaction = context.transaction.lock()?;
+        let transaction_mirror = context.transaction_mirror.lock().unwrap();
+        let transaction = context.transaction.lock().unwrap();
 
         let refname = transaction_mirror.refname("refs/josh/meta");
 
@@ -655,7 +655,7 @@ impl Path {
         context: &Context,
         to_result: impl FnOnce(&cache::Transaction, git2::Oid) -> FieldResult<R>,
     ) -> FieldResult<R> {
-        let transaction = context.transaction.lock()?;
+        let transaction = context.transaction.lock().unwrap();
 
         let id = if self.path == std::path::Path::new("") {
             self.tree
@@ -834,7 +834,7 @@ impl Reference {
     }
 
     fn rev(&self, context: &Context, filter: Option<String>) -> FieldResult<Revision> {
-        let transaction_mirror = context.transaction_mirror.lock()?;
+        let transaction_mirror = context.transaction_mirror.lock().unwrap();
         let commit_id = transaction_mirror
             .repo()
             .find_reference(&self.refname)?
@@ -886,7 +886,7 @@ struct MarkersInput {
     data: Vec<String>,
 }
 
-fn format_marker(input: &str) -> JoshResult<String> {
+fn format_marker(input: &str) -> anyhow::Result<String> {
     let value = serde_json::from_str::<serde_json::Value>(input)?;
     let line = serde_json::to_string(&value)?;
     let hash = git2::Oid::hash_object(git2::ObjectType::Blob, line.as_bytes())?;
@@ -901,8 +901,8 @@ struct RevMut {
 #[graphql_object(context = Context)]
 impl RevMut {
     fn push(&self, target: String, repo: Option<String>, context: &Context) -> FieldResult<bool> {
-        let transaction = context.transaction.lock()?;
-        let transaction_mirror = context.transaction_mirror.lock()?;
+        let transaction = context.transaction.lock().unwrap();
+        let transaction_mirror = context.transaction_mirror.lock().unwrap();
 
         let commit = transaction_mirror
             .repo()
@@ -923,7 +923,7 @@ impl RevMut {
 
     fn meta(&self, topic: String, add: Vec<MarkersInput>, context: &Context) -> FieldResult<bool> {
         if !self.filter.is_nop() {
-            return Err(josh_error("meta mutation for filtered revs is not implemented").into());
+            return Err(anyhow!("meta mutation for filtered revs is not implemented").into());
         }
         if let Ok(mut meta_add) = context.meta_add.lock() {
             for mm in add {
@@ -936,7 +936,7 @@ impl RevMut {
                     .iter()
                     .map(String::as_str)
                     .map(format_marker)
-                    .collect::<JoshResult<Vec<_>>>()?;
+                    .collect::<anyhow::Result<Vec<_>>>()?;
 
                 for marker in mm.into_iter() {
                     lines.push(marker);
@@ -954,13 +954,13 @@ impl RevMut {
 impl RepositoryMut {
     fn rev(at: String, filter: Option<String>, context: &Context) -> FieldResult<RevMut> {
         {
-            let mut allow_refs = context.allow_refs.lock()?;
+            let mut allow_refs = context.allow_refs.lock().unwrap();
             if !*allow_refs {
                 *allow_refs = true;
-                return Err(josh_error("ref query not allowed").into());
+                return Err(anyhow!("ref query not allowed").into());
             };
         }
-        let transaction_mirror = context.transaction_mirror.lock()?;
+        let transaction_mirror = context.transaction_mirror.lock().unwrap();
 
         // Just check that the commit exists
         transaction_mirror
@@ -985,13 +985,13 @@ impl Repository {
 
     fn refs(&self, context: &Context, pattern: Option<String>) -> FieldResult<Vec<Reference>> {
         {
-            let mut allow_refs = context.allow_refs.lock()?;
+            let mut allow_refs = context.allow_refs.lock().unwrap();
             if !*allow_refs {
                 *allow_refs = true;
-                return Err(josh_error("ref query not allowed").into());
+                return Err(anyhow!("ref query not allowed").into());
             };
         }
-        let transaction_mirror = context.transaction_mirror.lock()?;
+        let transaction_mirror = context.transaction_mirror.lock().unwrap();
         let refname = format!(
             "{}{}",
             self.ns,
@@ -1004,9 +1004,7 @@ impl Repository {
 
         for reference in transaction_mirror.repo().references_glob(&refname)? {
             let r = reference?;
-            let name = r
-                .name()
-                .ok_or_else(|| josh_error("reference without name"))?;
+            let name = r.name().ok_or_else(|| anyhow!("reference without name"))?;
 
             refs.push(Reference {
                 refname: name.to_string(),
@@ -1019,9 +1017,9 @@ impl Repository {
     fn rev(&self, context: &Context, at: String, filter: Option<String>) -> FieldResult<Revision> {
         let rev = format!("{}{}", self.ns, at);
 
-        let transaction_mirror = context.transaction_mirror.lock()?;
+        let transaction_mirror = context.transaction_mirror.lock().unwrap();
         let commit_id = {
-            let mut allow_refs = context.allow_refs.lock()?;
+            let mut allow_refs = context.allow_refs.lock().unwrap();
             let id = if let Ok(id) = git2::Oid::from_str(&at) {
                 id
             } else if *allow_refs {
@@ -1032,7 +1030,7 @@ impl Repository {
 
             if !transaction_mirror.repo().odb()?.exists(id) {
                 *allow_refs = true;
-                return Err(josh_error("ref query not allowed").into());
+                return Err(anyhow!("ref query not allowed").into());
             }
             id
         };

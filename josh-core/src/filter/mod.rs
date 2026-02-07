@@ -1,51 +1,23 @@
 use super::*;
+use anyhow::{Context, anyhow};
+
 use std::path::Path;
 use std::sync::LazyLock;
 
 // Re-export from josh-filter
 pub use josh_filter::filter::MESSAGE_MATCH_ALL_REGEX;
 pub use josh_filter::filter::sequence_number;
+pub use josh_filter::flang::parse::{get_comments, parse};
 pub use josh_filter::opt;
+pub use josh_filter::opt::invert;
+pub use josh_filter::persist::{as_tree, from_tree};
 pub use josh_filter::persist::{peel_op, to_filter, to_op, to_ops};
 pub use josh_filter::{Filter, LazyRef, Op, RevMatch};
+pub use josh_filter::{as_file, pretty, spec};
 
 pub mod text;
 pub mod tree;
 
-// Wrapper functions to convert error types from josh-filter to JoshResult
-pub fn as_tree(repo: &git2::Repository, filter: Filter) -> JoshResult<git2::Oid> {
-    josh_filter::persist::as_tree(repo, filter).map_err(|e| josh_error(&e))
-}
-
-pub fn from_tree(repo: &git2::Repository, tree_oid: git2::Oid) -> JoshResult<Filter> {
-    josh_filter::persist::from_tree(repo, tree_oid).map_err(|e| josh_error(&e))
-}
-
-// Re-export flang functions from josh-filter with error type conversion
-pub fn parse(filter_spec: &str) -> JoshResult<Filter> {
-    josh_filter::flang::parse::parse(filter_spec).map_err(|e| josh_error(&e))
-}
-
-pub fn spec(filter: Filter) -> String {
-    josh_filter::spec(filter)
-}
-
-pub fn pretty(filter: Filter, indent: usize) -> String {
-    josh_filter::pretty(filter, indent)
-}
-
-pub fn as_file(filter: Filter, indent: usize) -> String {
-    josh_filter::as_file(filter, indent)
-}
-
-pub fn get_comments(filter_spec: &str) -> JoshResult<String> {
-    josh_filter::flang::parse::get_comments(filter_spec).map_err(|e| josh_error(&e))
-}
-
-/// Invert a filter, converting josh-filter's error type to JoshError
-pub fn invert(filter: Filter) -> JoshResult<Filter> {
-    josh_filter::opt::invert(filter).map_err(|e| josh_error(&e))
-}
 static WORKSPACES: LazyLock<std::sync::Mutex<std::collections::HashMap<git2::Oid, Filter>>> =
     LazyLock::new(Default::default);
 static ANCESTORS: LazyLock<
@@ -107,7 +79,7 @@ impl<'a> Rewrite<'a> {
         }
     }
 
-    pub fn from_commit(commit: &git2::Commit<'a>) -> JoshResult<Self> {
+    pub fn from_commit(commit: &git2::Commit<'a>) -> anyhow::Result<Self> {
         let tree = commit.tree()?;
         let author = commit
             .author()
@@ -340,7 +312,7 @@ pub fn apply_to_commit(
     filter: Filter,
     commit: &git2::Commit,
     transaction: &cache::Transaction,
-) -> JoshResult<git2::Oid> {
+) -> anyhow::Result<git2::Oid> {
     let filter = opt::optimize(filter);
     loop {
         let filtered = apply_to_commit2(filter, commit, transaction)?;
@@ -470,12 +442,12 @@ fn read_josh_link<'a>(
     let link_entry = tree.get_path(&link_path).ok()?;
     let link_blob = repo.find_blob(link_entry.id()).ok()?;
     let b = std::str::from_utf8(link_blob.content())
-        .map_err(|e| josh_error(&format!("invalid utf8 in {}: {}", filename, e)))
+        .with_context(|| format!("invalid utf8 in {}", filename))
         .ok()?;
 
     // Parse the filter string
     let filter = parse(b.trim())
-        .map_err(|e| josh_error(&format!("invalid filter in {}: {}", filename, e)))
+        .with_context(|| format!("invalid filter in {}", filename))
         .ok()?;
 
     // Validate that it has required metadata for a link file
@@ -490,7 +462,7 @@ fn get_rev_filter(
     transaction: &cache::Transaction,
     commit: &git2::Commit,
     filters: &[(RevMatch, LazyRef, Filter)],
-) -> JoshResult<Filter> {
+) -> anyhow::Result<Filter> {
     let commit_id = commit.id();
 
     // First match wins - iterate in order
@@ -498,13 +470,10 @@ fn get_rev_filter(
         let filter_tip = if let LazyRef::Resolved(filter_tip) = filter_tip_ref {
             filter_tip
         } else {
-            return Err(josh_error("unresolved lazy ref"));
+            return Err(anyhow!("unresolved lazy ref"));
         };
         if match_op != &RevMatch::Default && !transaction.repo().odb()?.exists(*filter_tip) {
-            return Err(josh_error(&format!(
-                "`:rev(...)` with nonexistent OID: {}",
-                filter_tip
-            )));
+            return Err(anyhow!("`:rev(...)` with nonexistent OID: {}", filter_tip));
         }
         let matches = match match_op {
             RevMatch::AncestorStrict => {
@@ -541,7 +510,7 @@ pub fn apply_to_commit2(
     filter: Filter,
     commit: &git2::Commit,
     transaction: &cache::Transaction,
-) -> JoshResult<Option<git2::Oid>> {
+) -> anyhow::Result<Option<git2::Oid>> {
     let repo = transaction.repo();
     let op = peel_op(filter);
 
@@ -692,7 +661,7 @@ pub fn apply_to_commit2(
             //     });
 
             //     if !ok {
-            //         return Err(josh_error("missing commit"));
+            //         return Err(anyhow!("missing commit"));
             //     }
 
             if let Some(link_file) = read_josh_link(
@@ -861,7 +830,7 @@ pub fn apply_to_commit2(
                     );
                     Ok((parent, pcw))
                 })
-                .collect::<JoshResult<Vec<_>>>()?;
+                .collect::<anyhow::Result<Vec<_>>>()?;
 
             return per_rev_filter(transaction, commit, filter, commit_filter, parent_filters);
         }
@@ -879,7 +848,7 @@ pub fn apply_to_commit2(
                     );
                     Ok((parent, pcs))
                 })
-                .collect::<JoshResult<Vec<_>>>()?;
+                .collect::<anyhow::Result<Vec<_>>>()?;
 
             return per_rev_filter(transaction, commit, filter, commit_filter, parent_filters);
         }
@@ -899,7 +868,7 @@ pub fn apply_to_commit2(
                     );
                     Ok((parent, pcs))
                 })
-                .collect::<JoshResult<Vec<_>>>()?;
+                .collect::<anyhow::Result<Vec<_>>>()?;
 
             return per_rev_filter(transaction, commit, filter, commit_filter, parent_filters);
         }
@@ -912,7 +881,7 @@ pub fn apply_to_commit2(
                     let pcw = get_rev_filter(transaction, &parent, filters)?;
                     Ok((parent, pcw))
                 })
-                .collect::<JoshResult<Vec<_>>>()?;
+                .collect::<anyhow::Result<Vec<_>>>()?;
 
             return per_rev_filter(transaction, commit, filter, commit_filter, parent_filters);
         }
@@ -927,7 +896,7 @@ pub fn apply_to_commit2(
             let trees: Vec<git2::Oid> = filtered_parent_ids
                 .iter()
                 .map(|x| Ok(repo.find_commit(*x)?.tree_id()))
-                .collect::<JoshResult<_>>()?;
+                .collect::<anyhow::Result<_>>()?;
 
             let mut filtered_tree = commit.tree_id();
 
@@ -947,7 +916,7 @@ pub fn apply_to_commit2(
                     let pcw = transaction.lookup_filter_hook(hook, parent.id())?;
                     Ok((parent, pcw))
                 })
-                .collect::<JoshResult<Vec<_>>>()?;
+                .collect::<anyhow::Result<Vec<_>>>()?;
 
             return per_rev_filter(transaction, commit, filter, commit_filter, parent_filters);
         }
@@ -980,7 +949,7 @@ pub fn apply_to_commit2(
                     }
                 }
             } else {
-                return Err(josh_error("unresolved lazy ref"));
+                return Err(anyhow!("unresolved lazy ref"));
             }
             /* dbg!("FALLTHROUGH"); */
             apply(
@@ -1040,7 +1009,8 @@ pub fn apply_to_commit2(
 fn extract_submodule_commits<'a>(
     repo: &'a git2::Repository,
     tree: &git2::Tree<'a>,
-) -> JoshResult<std::collections::BTreeMap<std::path::PathBuf, (git2::Oid, ParsedSubmoduleEntry)>> {
+) -> anyhow::Result<std::collections::BTreeMap<std::path::PathBuf, (git2::Oid, ParsedSubmoduleEntry)>>
+{
     // Get .gitmodules blob from the tree
     let gitmodules_content = tree::get_blob(repo, tree, std::path::Path::new(".gitmodules"));
 
@@ -1085,7 +1055,7 @@ fn get_link_roots<'a>(
     _repo: &'a git2::Repository,
     transaction: &'a cache::Transaction,
     tree: &'a git2::Tree<'a>,
-) -> JoshResult<Vec<std::path::PathBuf>> {
+) -> anyhow::Result<Vec<std::path::PathBuf>> {
     let link_filter = to_filter(Op::Pattern("**/.link.josh".to_string()));
     let link_tree = apply(transaction, link_filter, Rewrite::from_tree(tree.clone()))?;
 
@@ -1109,7 +1079,7 @@ fn links_from_roots<'a>(
     repo: &'a git2::Repository,
     tree: &git2::Tree<'a>,
     roots: Vec<std::path::PathBuf>,
-) -> JoshResult<Vec<(std::path::PathBuf, Filter)>> {
+) -> anyhow::Result<Vec<(std::path::PathBuf, Filter)>> {
     let mut v = vec![];
     for root in roots {
         if let Some(link_filter) = read_josh_link(repo, tree, &root, ".link.josh") {
@@ -1124,7 +1094,7 @@ pub fn apply<'a>(
     transaction: &'a cache::Transaction,
     filter: Filter,
     x: Rewrite<'a>,
-) -> JoshResult<Rewrite<'a>> {
+) -> anyhow::Result<Rewrite<'a>> {
     let repo = transaction.repo();
     let op = peel_op(filter);
     match &op {
@@ -1134,7 +1104,7 @@ pub fn apply<'a>(
         Op::Squash(None) => Ok(x),
         Op::Author(author, email) => Ok(x.with_author((author.clone(), email.clone()))),
         Op::Committer(author, email) => Ok(x.with_committer((author.clone(), email.clone()))),
-        Op::Squash(Some(_)) => Err(josh_error("not applicable to tree: squash")),
+        Op::Squash(Some(_)) => Err(anyhow!("not applicable to tree: squash")),
         Op::Message(m, r) => {
             let tree_id = x.tree().id().to_string();
             let commit = x.commit;
@@ -1210,7 +1180,7 @@ pub fn apply<'a>(
                         0o0100644,
                     )?;
                 }
-                _ => return Err(josh_error(&format!("unknown adapter {:?}", adapter))),
+                _ => return Err(anyhow!("unknown adapter {:?}", adapter)),
             }
 
             Ok(x.with_tree(result_tree))
@@ -1257,7 +1227,7 @@ pub fn apply<'a>(
                 let commit_oid = link_file
                     .get_meta("commit")
                     .and_then(|s| git2::Oid::from_str(&s).ok())
-                    .ok_or_else(|| josh_error("Link file missing commit metadata"))?;
+                    .ok_or_else(|| anyhow!("Link file missing commit metadata"))?;
 
                 let submodule_tree = repo.find_commit(commit_oid)?.tree()?;
                 let inner_filter = link_file.peel();
@@ -1289,7 +1259,7 @@ pub fn apply<'a>(
 
             Ok(x.with_tree(result_tree))
         }
-        Op::Rev(_) => Err(josh_error("not applicable to tree: rev")),
+        Op::Rev(_) => Err(anyhow!("not applicable to tree: rev")),
         Op::RegexReplace(replacements) => {
             let mut t = x.tree().clone();
             for (regex, replacement) in replacements {
@@ -1383,7 +1353,7 @@ pub fn apply<'a>(
             let filtered: Vec<_> = filters
                 .iter()
                 .map(|f| apply(transaction, *f, x.clone()))
-                .collect::<JoshResult<_>>()?;
+                .collect::<anyhow::Result<_>>()?;
             let filtered: Vec<_> = filters
                 .iter()
                 .zip(filtered.iter().map(|t| t.tree().clone()))
@@ -1398,10 +1368,10 @@ pub fn apply<'a>(
             }
             Ok(result)
         }
-        Op::Hook(_) => Err(josh_error("not applicable to tree: hook")),
+        Op::Hook(_) => Err(anyhow!("not applicable to tree: hook")),
 
         #[cfg(feature = "incubating")]
-        Op::Embed(..) => Err(josh_error("not applicable to tree: embed")),
+        Op::Embed(..) => Err(anyhow!("not applicable to tree: embed")),
         #[cfg(feature = "incubating")]
         Op::Unapply(target, uf) => {
             if let LazyRef::Resolved(target) = target {
@@ -1416,7 +1386,7 @@ pub fn apply<'a>(
                     target.tree()?,
                 )?))
             } else {
-                return Err(josh_error("unresolved lazy ref"));
+                return Err(anyhow!("unresolved lazy ref"));
             }
         }
         Op::Pin(_) => Ok(x),
@@ -1431,7 +1401,7 @@ pub fn unapply<'a>(
     filter: Filter,
     tree: git2::Tree<'a>,
     parent_tree: git2::Tree<'a>,
-) -> JoshResult<git2::Tree<'a>> {
+) -> anyhow::Result<git2::Tree<'a>> {
     if let Ok(inverted) = invert(filter) {
         let filtered = apply(
             transaction,
@@ -1493,7 +1463,7 @@ pub fn unapply<'a>(
         );
     }
 
-    Err(josh_error("filter cannot be unapplied"))
+    Err(anyhow!("filter cannot be unapplied"))
 }
 
 fn unapply_workspace<'a>(
@@ -1501,7 +1471,7 @@ fn unapply_workspace<'a>(
     op: &Op,
     tree: git2::Tree<'a>,
     parent_tree: git2::Tree<'a>,
-) -> JoshResult<Option<git2::Tree<'a>>> {
+) -> anyhow::Result<Option<git2::Tree<'a>>> {
     match op {
         Op::Workspace(path) => {
             let tree = pre_process_tree(transaction.repo(), tree)?;
@@ -1587,13 +1557,13 @@ fn unapply_workspace<'a>(
 fn pre_process_tree<'a>(
     repo: &'a git2::Repository,
     tree: git2::Tree<'a>,
-) -> JoshResult<git2::Tree<'a>> {
+) -> anyhow::Result<git2::Tree<'a>> {
     let path = Path::new("workspace.josh");
     let ws_file = tree::get_blob(repo, &tree, path);
     let parsed = filter::parse(&ws_file)?;
 
     if invert(parsed).is_err() {
-        return Err(josh_error("Invalid workspace: not reversible"));
+        return Err(anyhow!("Invalid workspace: not reversible"));
     }
 
     let mut blob = String::new();
@@ -1686,7 +1656,7 @@ pub fn is_ancestor_of(
     transaction: &cache::Transaction,
     commit: git2::Oid,
     tip: git2::Oid,
-) -> JoshResult<bool> {
+) -> anyhow::Result<bool> {
     if let Ok(tip_sequence_number) = cache::compute_sequence_number(transaction, tip) {
         if cache::compute_sequence_number(transaction, commit)? > tip_sequence_number {
             return Ok(false);
@@ -1736,7 +1706,7 @@ where
     }
 }
 
-fn legalize_stored(t: &cache::Transaction, f: Filter, tree: &git2::Tree) -> JoshResult<Filter> {
+fn legalize_stored(t: &cache::Transaction, f: Filter, tree: &git2::Tree) -> anyhow::Result<Filter> {
     if let Some(f) = t.get_legalize((f, tree.id())) {
         return Ok(f);
     }
@@ -1751,7 +1721,7 @@ fn legalize_stored(t: &cache::Transaction, f: Filter, tree: &git2::Tree) -> Josh
             let f = f
                 .into_iter()
                 .map(|f| legalize_stored(t, f, tree))
-                .collect::<JoshResult<Vec<_>>>()?;
+                .collect::<anyhow::Result<Vec<_>>>()?;
             to_filter(Op::Compose(f))
         }
         Op::Chain(filters) => {
@@ -1788,7 +1758,7 @@ fn per_rev_filter(
     filter: Filter,
     commit_filter: Filter,
     parent_filters: Vec<(git2::Commit, Filter)>,
-) -> JoshResult<Option<git2::Oid>> {
+) -> anyhow::Result<Option<git2::Oid>> {
     // Compute the difference between the current commit's filter and each parent's filter.
     // This determines what new content should be contributed by that parent in the filtered history.
     let extra_parents = parent_filters
@@ -1797,7 +1767,7 @@ fn per_rev_filter(
             let f = opt::optimize(to_filter(Op::Subtract(commit_filter.peel(), pcw.peel())));
             apply_to_commit2(f, &parent, transaction)
         })
-        .collect::<JoshResult<Option<Vec<_>>>>()?;
+        .collect::<anyhow::Result<Option<Vec<_>>>>()?;
 
     let extra_parents = some_or!(extra_parents, { return Ok(None) });
 

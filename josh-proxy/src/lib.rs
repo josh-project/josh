@@ -1,3 +1,4 @@
+use anyhow::anyhow;
 pub mod auth;
 pub mod cli;
 pub mod graphql;
@@ -8,7 +9,7 @@ pub mod service;
 pub mod trace;
 pub mod upstream;
 
-use josh_core::{JoshError, josh_error};
+use josh_core;
 
 use crate::upstream::RemoteAuth;
 
@@ -42,7 +43,7 @@ pub fn run_git_with_auth(
     cmd: &[&str],
     remote_auth: &RemoteAuth,
     alt_object_dir: Option<String>,
-) -> josh_core::JoshResult<(String, String, i32)> {
+) -> anyhow::Result<(String, String, i32)> {
     let shell = josh_core::shell::Shell {
         cwd: cwd.to_owned(),
     };
@@ -60,7 +61,7 @@ pub fn run_git_with_auth(
             let auth_socket = auth_socket.clone().into_os_string();
             let auth_socket = auth_socket
                 .to_str()
-                .ok_or(josh_error("failed to convert path"))?;
+                .ok_or(anyhow!("failed to convert path"))?;
 
             let env = [("GIT_SSH_COMMAND", ssh_command.as_str())];
             let env_notrace = [
@@ -92,17 +93,14 @@ pub fn get_head(
     path: &std::path::Path,
     url: &str,
     remote_auth: &RemoteAuth,
-) -> josh_core::JoshResult<String> {
+) -> anyhow::Result<String> {
     let cmd = &["git", "ls-remote", "--symref", url, "HEAD"];
 
     tracing::info!("get_head {:?} {:?} {:?}", cmd, path, "");
     let (stdout, _, code) = run_git_with_auth(path, cmd, remote_auth, None)?;
 
     if code != 0 {
-        return Err(josh_error(&format!(
-            "git subprocess exited with code {}",
-            code
-        )));
+        return Err(anyhow!("git subprocess exited with code {}", code));
     }
 
     let head = stdout
@@ -119,20 +117,20 @@ pub fn get_head(
 
 pub enum FetchError {
     AuthRequired,
-    Other(JoshError),
+    Other(anyhow::Error),
 }
 
 impl<T> From<T> for FetchError
 where
-    T: std::error::Error,
+    T: std::error::Error + Send + Sync + 'static,
 {
     fn from(e: T) -> Self {
-        FetchError::Other(JoshError::from(e))
+        FetchError::Other(anyhow::Error::from(e))
     }
 }
 
 impl FetchError {
-    pub fn from_josh_error(e: JoshError) -> Self {
+    pub fn from_anyhow(e: anyhow::Error) -> Self {
         FetchError::Other(e)
     }
 }
@@ -178,18 +176,16 @@ pub fn fetch_refs_from_url(
 
     if stderr.contains("fatal:") || code != 0 {
         tracing::error!("{:?}", stderr);
-        return Err(FetchError::Other(josh_error(&format!(
+        return Err(FetchError::Other(anyhow!(
             "git process exited with code {}: {:?}",
-            code, stderr
-        ))));
+            code,
+            stderr
+        )));
     }
 
     if stderr.contains("error:") {
         tracing::error!("{:?}", stderr);
-        return Err(FetchError::Other(josh_core::josh_error(&format!(
-            "git error: {:?}",
-            stderr
-        ))));
+        return Err(FetchError::Other(anyhow!("git error: {:?}", stderr)));
     }
 
     Ok(())
@@ -270,7 +266,7 @@ impl Drop for TmpGitNamespace {
     }
 }
 
-fn proxy_commit_signature<'a>() -> josh_core::JoshResult<git2::Signature<'a>> {
+fn proxy_commit_signature<'a>() -> anyhow::Result<git2::Signature<'a>> {
     Ok(if let Ok(time) = std::env::var("JOSH_COMMIT_TIME") {
         git2::Signature::new(
             "JOSH",
@@ -286,7 +282,7 @@ pub fn merge_meta(
     transaction: &josh_core::cache::Transaction,
     transaction_mirror: &josh_core::cache::Transaction,
     meta_add: &std::collections::HashMap<std::path::PathBuf, Vec<String>>,
-) -> josh_core::JoshResult<Option<(String, git2::Oid)>> {
+) -> anyhow::Result<Option<(String, git2::Oid)>> {
     if meta_add.is_empty() {
         return Ok(None);
     }

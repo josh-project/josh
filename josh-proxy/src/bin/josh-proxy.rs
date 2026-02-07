@@ -1,5 +1,5 @@
+use anyhow::{Context, anyhow};
 use josh_core::cache::CacheStack;
-use josh_core::josh_error;
 use josh_proxy::service::{JoshProxyService, make_service};
 use josh_proxy::upstream::{RemoteAuth, RepoUpdate};
 use josh_proxy::{FetchError, TmpGitNamespace};
@@ -87,9 +87,9 @@ fn init_trace() -> Option<opentelemetry_sdk::trace::SdkTracerProvider> {
     }
 }
 
-async fn run_polling(serv: Arc<JoshProxyService>) -> josh_core::JoshResult<()> {
+async fn run_polling(serv: Arc<JoshProxyService>) -> anyhow::Result<()> {
     loop {
-        let polls = serv.poll.lock()?.clone();
+        let polls = serv.poll.lock().unwrap().clone();
 
         for (upstream_repo, auth, url) in polls {
             let remote_auth = RemoteAuth::Http { auth };
@@ -109,7 +109,7 @@ async fn run_polling(serv: Arc<JoshProxyService>) -> josh_core::JoshResult<()> {
                 Ok(()) => {}
                 Err(FetchError::Other(e)) => return Err(e),
                 Err(FetchError::AuthRequired) => {
-                    return Err(josh_error("auth: access denied while polling"));
+                    return Err(anyhow!("auth: access denied while polling"));
                 }
             }
         }
@@ -117,7 +117,7 @@ async fn run_polling(serv: Arc<JoshProxyService>) -> josh_core::JoshResult<()> {
     }
 }
 
-async fn run_housekeeping(local: std::path::PathBuf, gc: bool) -> josh_core::JoshResult<()> {
+async fn run_housekeeping(local: std::path::PathBuf, gc: bool) -> anyhow::Result<()> {
     let mut i: usize = 0;
     let cache = std::sync::Arc::new(CacheStack::default());
 
@@ -143,7 +143,7 @@ fn io_thread(mut rx: tokio::sync::mpsc::UnboundedReceiver<josh_proxy::service::I
     }
 }
 
-async fn run_proxy(args: josh_proxy::cli::Args) -> josh_core::JoshResult<i32> {
+async fn run_proxy(args: josh_proxy::cli::Args) -> anyhow::Result<i32> {
     let local = std::path::PathBuf::from(&args.local.as_ref().unwrap());
     let local = if local.is_absolute() {
         local
@@ -178,11 +178,7 @@ async fn run_proxy(args: josh_proxy::cli::Args) -> josh_core::JoshResult<i32> {
     let addr: SocketAddr = format!("[::]:{}", args.port).parse()?;
     let listener = tokio::net::TcpListener::bind(addr).await?;
 
-    let server_future = async move {
-        axum::serve(listener, app)
-            .await
-            .map_err(|e| josh_error(&format!("Server error: {}", e)))
-    };
+    let server_future = async move { axum::serve(listener, app).await.context("Server error") };
 
     eprintln!("Now listening on {}", addr);
 
@@ -206,15 +202,13 @@ async fn run_proxy(args: josh_proxy::cli::Args) -> josh_core::JoshResult<i32> {
     Ok(0)
 }
 
-fn repo_update_from_env() -> josh_core::JoshResult<crate::RepoUpdate> {
-    let repo_update =
-        std::env::var("JOSH_REPO_UPDATE").map_err(|_| josh_error("JOSH_REPO_UPDATE not set"))?;
+fn repo_update_from_env() -> anyhow::Result<crate::RepoUpdate> {
+    let repo_update = std::env::var("JOSH_REPO_UPDATE").context("JOSH_REPO_UPDATE not set")?;
 
-    serde_json::from_str(&repo_update)
-        .map_err(|e| josh_error(&format!("Failed to parse JOSH_REPO_UPDATE: {}", e)))
+    serde_json::from_str(&repo_update).context("Failed to parse JOSH_REPO_UPDATE")
 }
 
-fn update_hook(refname: &str, old: &str, new: &str) -> josh_core::JoshResult<i32> {
+fn update_hook(refname: &str, old: &str, new: &str) -> anyhow::Result<i32> {
     let mut repo_update = repo_update_from_env()?;
 
     repo_update
@@ -253,7 +247,7 @@ fn update_hook(refname: &str, old: &str, new: &str) -> josh_core::JoshResult<i32
     }
 }
 
-fn pre_receive_hook() -> josh_core::JoshResult<i32> {
+fn pre_receive_hook() -> anyhow::Result<i32> {
     let repo_update = repo_update_from_env()?;
 
     let push_options_path = std::path::PathBuf::from(repo_update.git_dir)

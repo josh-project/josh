@@ -1,5 +1,7 @@
 #![warn(unused_extern_crates)]
 
+use anyhow::{Context, anyhow};
+
 #[macro_export]
 macro_rules! some_or {
     ($e:expr, $b:block) => {
@@ -53,8 +55,8 @@ impl Default for Oid {
 }
 
 impl std::convert::TryFrom<String> for Oid {
-    type Error = JoshError;
-    fn try_from(s: String) -> JoshResult<Oid> {
+    type Error = anyhow::Error;
+    fn try_from(s: String) -> anyhow::Result<Oid> {
         Ok(Oid(git2::Oid::from_str(&s)?))
     }
 }
@@ -128,34 +130,6 @@ pub fn to_filtered_ref(upstream_repo: &str, filter_spec: &str) -> String {
     )
 }
 
-#[derive(Debug, Clone)]
-pub struct JoshError(pub String);
-
-pub fn josh_error(s: &str) -> JoshError {
-    JoshError(s.to_owned())
-}
-
-impl std::fmt::Display for JoshError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "JoshError({})", self.0)
-    }
-}
-
-pub type JoshResult<T> = Result<T, JoshError>;
-
-impl<T> From<T> for JoshError
-where
-    T: std::error::Error,
-{
-    fn from(item: T) -> Self {
-        let bt = backtrace::Backtrace::new();
-        tracing::event!(tracing::Level::ERROR, item = ?item, backtrace = format!("{:?}", bt), error = true);
-        log::error!("JoshError: {:?}", item);
-        log::error!("Backtrace: {:?}", bt);
-        josh_error(&format!("converted {:?}", item))
-    }
-}
-
 #[macro_export]
 macro_rules! regex_parsed {
     ($name:ident, $re:literal,  [$( $i:ident ),+]) => {
@@ -208,7 +182,7 @@ pub fn filter_commit(
     transaction: &cache::Transaction,
     filterobj: filter::Filter,
     oid: git2::Oid,
-) -> JoshResult<git2::Oid> {
+) -> anyhow::Result<git2::Oid> {
     let original_commit = {
         let obj = transaction.repo().find_object(oid, None)?;
         obj.peel_to_commit()?
@@ -231,7 +205,7 @@ pub fn filter_refs(
     transaction: &cache::Transaction,
     filterobj: filter::Filter,
     refs: &[(String, git2::Oid)],
-) -> (Vec<(String, git2::Oid)>, Vec<(String, JoshError)>) {
+) -> (Vec<(String, git2::Oid)>, Vec<(String, anyhow::Error)>) {
     rs_tracing::trace_scoped!("filter_refs", "spec": filter::spec(filterobj));
     let s = tracing::Span::current();
     let _e = s.enter();
@@ -327,15 +301,11 @@ pub fn get_acl(
     groups: &str,
     user: &str,
     repo: &str,
-) -> JoshResult<(filter::Filter, filter::Filter)> {
-    let users =
-        std::fs::read_to_string(users).map_err(|_| josh_error("failed to read users file"))?;
-    let users: Users = serde_yaml::from_str(&users)
-        .map_err(|err| josh_error(format!("failed to parse users file: {}", err).as_str()))?;
-    let groups =
-        std::fs::read_to_string(groups).map_err(|_| josh_error("failed to read groups file"))?;
-    let groups: Groups = serde_yaml::from_str(&groups)
-        .map_err(|err| josh_error(format!("failed to parse groups file: {}", err).as_str()))?;
+) -> anyhow::Result<(filter::Filter, filter::Filter)> {
+    let users = std::fs::read_to_string(users).context("failed to read users file")?;
+    let users: Users = serde_yaml::from_str(&users).context("failed to parse users file")?;
+    let groups = std::fs::read_to_string(groups).context("failed to read groups file")?;
+    let groups: Groups = serde_yaml::from_str(&groups).context("failed to parse groups file")?;
 
     users
         .get(user)
@@ -351,10 +321,10 @@ pub fn get_acl(
                     })
                 })?;
                 if let Err(e) = lists.0 {
-                    return Some(Err(JoshError(format!("Error parsing whitelist: {}", e))));
+                    return Some(Err(anyhow!("Error parsing whitelist: {}", e)));
                 }
                 if let Err(e) = lists.1 {
-                    return Some(Err(JoshError(format!("Error parsing blacklist: {}", e))));
+                    return Some(Err(anyhow!("Error parsing blacklist: {}", e)));
                 }
                 if let Ok(w) = lists.0 {
                     whitelist = filter::compose(&[whitelist, w]);
@@ -377,11 +347,11 @@ pub struct ParsedSubmoduleEntry {
 }
 
 #[cfg(feature = "incubating")]
-pub fn parse_gitmodules(gitmodules_content: &str) -> JoshResult<Vec<ParsedSubmoduleEntry>> {
+pub fn parse_gitmodules(gitmodules_content: &str) -> anyhow::Result<Vec<ParsedSubmoduleEntry>> {
     use gix_submodule::File;
 
     let submodules = File::from_bytes(gitmodules_content.as_bytes(), None, &Default::default())
-        .map_err(|e| josh_error(&format!("Failed to parse .gitmodules: {}", e)))?;
+        .context("Failed to parse .gitmodules")?;
 
     let mut entries: Vec<ParsedSubmoduleEntry> = Vec::new();
 
@@ -419,7 +389,7 @@ pub fn parse_gitmodules(gitmodules_content: &str) -> JoshResult<Vec<ParsedSubmod
 pub fn update_gitmodules(
     gitmodules_content: &str,
     entry: &ParsedSubmoduleEntry,
-) -> JoshResult<String> {
+) -> anyhow::Result<String> {
     use gix_config::File as ConfigFile;
     use gix_submodule::File as SubmoduleFile;
 
@@ -429,7 +399,7 @@ pub fn update_gitmodules(
         None,
         &ConfigFile::new(gix_config::file::Metadata::default()),
     )
-    .map_err(|e| josh_error(&format!("Failed to parse .gitmodules: {}", e)))?;
+    .context("Failed to parse .gitmodules")?;
 
     // Get the underlying config file to modify it
     let mut config = submodule_file.config().clone();
@@ -456,7 +426,7 @@ pub fn update_gitmodules(
     // Create or update the submodule section
     let mut section = config
         .section_mut_or_create_new("submodule", Some(submodule_name.as_str().into()))
-        .map_err(|e| josh_error(&format!("Failed to create submodule section: {}", e)))?;
+        .context("Failed to create submodule section")?;
 
     // Remove existing keys if they exist to avoid duplicates
     use gix_config::parse::section::ValueName;
@@ -467,9 +437,9 @@ pub fn update_gitmodules(
     while section.remove("branch").is_some() {}
 
     // Set the submodule properties using push method
-    let path_key: ValueName = "path".try_into().unwrap();
-    let url_key: ValueName = "url".try_into().unwrap();
-    let branch_key: ValueName = "branch".try_into().unwrap();
+    let path_key: ValueName = "path".try_into()?;
+    let url_key: ValueName = "url".try_into()?;
+    let branch_key: ValueName = "branch".try_into()?;
 
     section.push(path_key, Some(entry.path.to_string_lossy().as_ref().into()));
     section.push(url_key, Some(entry.url.as_str().into()));
@@ -481,17 +451,16 @@ pub fn update_gitmodules(
     let mut output = Vec::new();
     config
         .write_to(&mut output)
-        .map_err(|e| josh_error(&format!("Failed to write gitmodules: {}", e)))?;
+        .context("Failed to write gitmodules")?;
 
-    String::from_utf8(output)
-        .map_err(|e| josh_error(&format!("Invalid UTF-8 in gitmodules: {}", e)))
+    String::from_utf8(output).context("Invalid UTF-8 in gitmodules")
 }
 
 #[cfg(feature = "incubating")]
 pub fn find_link_files(
     repo: &git2::Repository,
     tree: &git2::Tree,
-) -> JoshResult<Vec<(std::path::PathBuf, filter::Filter)>> {
+) -> anyhow::Result<Vec<(std::path::PathBuf, filter::Filter)>> {
     let mut link_files = Vec::new();
 
     tree.walk(git2::TreeWalkMode::PreOrder, |root, entry| {
@@ -532,7 +501,7 @@ pub fn find_link_files(
 
         git2::TreeWalkResult::Ok
     })
-    .map_err(|e| josh_error(&format!("Failed to walk tree: {}", e)))?;
+    .context("Failed to walk tree")?;
 
     Ok(link_files)
 }

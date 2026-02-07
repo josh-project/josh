@@ -4,14 +4,14 @@
  */
 
 use crate::filter::Filter;
+use crate::hash::PassthroughHasher;
 use crate::op::Op;
 use crate::persist::{peel_op, to_filter, to_op};
+use anyhow::anyhow;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::hash::BuildHasherDefault;
 use std::sync::LazyLock;
-
-use crate::hash::PassthroughHasher;
 
 type FilterHashMap = HashMap<Filter, Filter, BuildHasherDefault<PassthroughHasher>>;
 
@@ -720,7 +720,7 @@ fn step(filter: Filter) -> Filter {
     result
 }
 
-pub fn invert(filter: Filter) -> Result<Filter, String> {
+pub fn invert(filter: Filter) -> anyhow::Result<Filter> {
     let result = match to_op(filter) {
         Op::Nop => Some(Op::Nop),
         Op::Message(..) => Some(Op::Nop),
@@ -766,7 +766,7 @@ pub fn invert(filter: Filter) -> Result<Filter, String> {
                 .collect::<Result<Vec<_>, _>>()?,
         ),
         Op::Exclude(filter) => Op::Exclude(invert(filter)?),
-        _ => return Err(format!("no invert {:?}", filter)),
+        _ => return Err(anyhow!("no invert {:?}", filter)),
     });
 
     let result = optimize(result);

@@ -1,4 +1,5 @@
 use anyhow::Context;
+use anyhow::anyhow;
 use josh_core::filter::tree;
 
 use std::io::IsTerminal;
@@ -46,12 +47,10 @@ impl PreparedLinkAdd {
             .context("Failed to create commit")?;
 
         let snapshot_filter = josh_core::filter::parse(":link=snapshot")
-            .map_err(from_josh_err)
             .context("Failed to parse :link=snapshot filter")?;
 
         let filtered_commit =
             josh_core::filter_commit(transaction, snapshot_filter, commit_with_link)
-                .map_err(from_josh_err)
                 .context("Failed to apply :link=snapshot filter")?;
 
         Ok(AddLinkResult {
@@ -74,10 +73,6 @@ pub struct UpdateLinksResult {
     pub commit_with_updates: git2::Oid,
     /// Commit after applying :link filter
     pub filtered_commit: git2::Oid,
-}
-
-pub fn from_josh_err(e: josh_core::JoshError) -> anyhow::Error {
-    anyhow::anyhow!("{}", e.0)
 }
 
 pub fn make_signature(repo: &git2::Repository) -> anyhow::Result<git2::Signature<'static>> {
@@ -164,7 +159,7 @@ pub fn spawn_git_command(
         0 => Ok(()),
         code => {
             let command = args.join(" ");
-            Err(anyhow::anyhow!(
+            Err(anyhow!(
                 "Command exited with code {}: git {}",
                 code,
                 command
@@ -191,7 +186,6 @@ pub fn prepare_link_add(
 
     // Parse the filter
     let filter_obj = josh_core::filter::parse(filter)
-        .map_err(from_josh_err)
         .with_context(|| format!("Failed to parse filter '{}'", filter))?;
 
     // Create a filter with metadata
@@ -217,7 +211,6 @@ pub fn prepare_link_add(
         link_blob,
         git2::FileMode::Blob.into(),
     )
-    .map_err(from_josh_err)
     .context("Failed to insert link file into tree")?;
 
     Ok(PreparedLinkAdd {
@@ -236,9 +229,8 @@ pub fn update_links(
     let head_tree = head_commit.tree().context("Failed to get HEAD tree")?;
 
     // Find all link files to get their current metadata
-    let link_files = josh_core::find_link_files(repo, &head_tree)
-        .map_err(from_josh_err)
-        .context("Failed to find link files")?;
+    let link_files =
+        josh_core::find_link_files(repo, &head_tree).context("Failed to find link files")?;
 
     // Update the link files with new commit OIDs
     let mut updated_link_files: Vec<(PathBuf, josh_core::filter::Filter)> = Vec::new();
@@ -248,7 +240,7 @@ pub fn update_links(
             .iter()
             .find(|(p, _)| p == path)
             .map(|(_, lf)| lf)
-            .ok_or_else(|| anyhow::anyhow!("Link file not found at path '{}'", path.display()))?;
+            .ok_or_else(|| anyhow!("Link file not found at path '{}'", path.display()))?;
 
         // Update the link file with the new commit SHA
         let updated_link_file = link_file.with_meta("commit", new_oid.to_string());
@@ -269,9 +261,8 @@ pub fn update_links(
         let link_path = path.join(".link.josh");
 
         // Insert the updated .link.josh file into the tree
-        new_tree = tree::insert(repo, &new_tree, &link_path, link_blob, 0o0100644)
-            .map_err(from_josh_err)
-            .with_context(|| {
+        new_tree =
+            tree::insert(repo, &new_tree, &link_path, link_blob, 0o0100644).with_context(|| {
                 format!(
                     "Failed to insert link file into tree at path '{}'",
                     path.display()
@@ -299,12 +290,9 @@ pub fn update_links(
         .context("Failed to create commit")?;
 
     // Apply the :link filter to the new commit
-    let link_filter = josh_core::filter::parse(":link")
-        .map_err(from_josh_err)
-        .context("Failed to parse :link filter")?;
+    let link_filter = josh_core::filter::parse(":link").context("Failed to parse :link filter")?;
 
     let filtered_commit = josh_core::filter_commit(transaction, link_filter, commit_with_updates)
-        .map_err(from_josh_err)
         .context("Failed to apply :link filter")?;
 
     Ok(UpdateLinksResult {

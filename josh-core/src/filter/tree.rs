@@ -1,4 +1,5 @@
 use super::*;
+use anyhow::anyhow;
 
 use crate::cache::CacheStack;
 use crate::cache::TransactionContext;
@@ -8,7 +9,7 @@ pub fn pathstree<'a>(
     root: &str,
     input: git2::Oid,
     transaction: &'a cache::Transaction,
-) -> JoshResult<git2::Tree<'a>> {
+) -> anyhow::Result<git2::Tree<'a>> {
     let repo = transaction.repo();
     if let Some(cached) = transaction.get_paths((input, root.to_string())) {
         return Ok(repo.find_tree(cached)?);
@@ -18,10 +19,10 @@ pub fn pathstree<'a>(
     let mut result = empty(repo);
 
     for entry in tree.iter() {
-        let name = entry.name().ok_or_else(|| josh_error("no name"))?;
+        let name = entry.name().ok_or_else(|| anyhow!("no name"))?;
         if entry.kind() == Some(git2::ObjectType::Blob) {
             let path = normalize_path(&Path::new(root).join(name));
-            let path_string = path.to_str().ok_or_else(|| josh_error("no name"))?;
+            let path_string = path.to_str().ok_or_else(|| anyhow!("no name"))?;
             let file_contents = if name == "workspace.josh" {
                 format!(
                     "#{}\n{}",
@@ -62,14 +63,14 @@ pub fn regex_replace<'a>(
     regex: &regex::Regex,
     replacement: &str,
     transaction: &'a cache::Transaction,
-) -> super::JoshResult<git2::Tree<'a>> {
+) -> anyhow::Result<git2::Tree<'a>> {
     let repo = transaction.repo();
 
     let tree = repo.find_tree(input)?;
     let mut result = tree::empty(repo);
 
     for entry in tree.iter() {
-        let name = entry.name().ok_or(super::josh_error("no name"))?;
+        let name = entry.name().ok_or(anyhow!("no name"))?;
         if entry.kind() == Some(git2::ObjectType::Blob) {
             let file_contents = get_blob(repo, &tree, std::path::Path::new(&name));
             let replaced = regex.replacen(&file_contents, 0, replacement);
@@ -100,7 +101,7 @@ pub fn remove_pred<'a>(
     input: git2::Oid,
     pred: &dyn Fn(&Path, bool) -> bool,
     key: git2::Oid,
-) -> JoshResult<git2::Tree<'a>> {
+) -> anyhow::Result<git2::Tree<'a>> {
     let repo = transaction.repo();
     if let Some(cached) = transaction.get_glob((input, key)) {
         return Ok(repo.find_tree(cached)?);
@@ -111,13 +112,13 @@ pub fn remove_pred<'a>(
     let mut result = empty(repo);
 
     for entry in tree.iter() {
-        let name = entry.name().ok_or_else(|| josh_error("INVALID_FILENAME"))?;
+        let name = entry.name().ok_or_else(|| anyhow!("INVALID_FILENAME"))?;
         let path = std::path::PathBuf::from(root).join(name);
 
         if entry.kind() == Some(git2::ObjectType::Blob) && pred(&path, true) {
             result = replace_child(
                 repo,
-                Path::new(entry.name().ok_or_else(|| josh_error("no name"))?),
+                Path::new(entry.name().ok_or_else(|| anyhow!("no name"))?),
                 entry.id(),
                 entry.filemode(),
                 &result,
@@ -134,7 +135,7 @@ pub fn remove_pred<'a>(
                         "{}{}{}",
                         root,
                         if root.is_empty() { "" } else { "/" },
-                        entry.name().ok_or_else(|| josh_error("no name"))?
+                        entry.name().ok_or_else(|| anyhow!("no name"))?
                     ),
                     entry.id(),
                     &pred,
@@ -146,7 +147,7 @@ pub fn remove_pred<'a>(
             if s != empty_id() {
                 result = replace_child(
                     repo,
-                    Path::new(entry.name().ok_or_else(|| josh_error("no name"))?),
+                    Path::new(entry.name().ok_or_else(|| anyhow!("no name"))?),
                     s,
                     0o0040000,
                     &result,
@@ -163,7 +164,7 @@ pub fn subtract(
     transaction: &cache::Transaction,
     input1: git2::Oid,
     input2: git2::Oid,
-) -> JoshResult<git2::Oid> {
+) -> anyhow::Result<git2::Oid> {
     let repo = transaction.repo();
     if input1 == input2 {
         return Ok(empty_id());
@@ -184,10 +185,10 @@ pub fn subtract(
         let mut result_tree = tree1.clone();
 
         for entry in tree2.iter() {
-            if let Some(e) = tree1.get_name(entry.name().ok_or_else(|| josh_error("no name"))?) {
+            if let Some(e) = tree1.get_name(entry.name().ok_or_else(|| anyhow!("no name"))?) {
                 result_tree = replace_child(
                     repo,
-                    Path::new(entry.name().ok_or_else(|| josh_error("no name"))?),
+                    Path::new(entry.name().ok_or_else(|| anyhow!("no name"))?),
                     subtract(transaction, e.id(), entry.id())?,
                     e.filemode(),
                     &result_tree,
@@ -211,7 +212,7 @@ fn replace_child<'a>(
     oid: git2::Oid,
     mode: i32,
     full_tree: &git2::Tree,
-) -> JoshResult<git2::Tree<'a>> {
+) -> anyhow::Result<git2::Tree<'a>> {
     let full_tree_id = {
         let mut builder = repo.treebuilder(Some(full_tree))?;
         if oid == git2::Oid::zero() || oid == empty_id() {
@@ -230,12 +231,12 @@ pub fn insert<'a>(
     path: &Path,
     oid: git2::Oid,
     mode: i32,
-) -> JoshResult<git2::Tree<'a>> {
+) -> anyhow::Result<git2::Tree<'a>> {
     if path.components().count() == 1 {
         replace_child(repo, path, oid, mode, full_tree)
     } else {
-        let name = Path::new(path.file_name().ok_or_else(|| josh_error("file_name"))?);
-        let path = path.parent().ok_or_else(|| josh_error("path.parent"))?;
+        let name = Path::new(path.file_name().ok_or_else(|| anyhow!("file_name"))?);
+        let path = path.parent().ok_or_else(|| anyhow!("path.parent"))?;
 
         let st = if let Ok(st) = full_tree.get_path(path) {
             repo.find_tree(st.id()).unwrap_or(empty(repo))
@@ -254,7 +255,7 @@ pub fn diff_paths(
     input1: git2::Oid,
     input2: git2::Oid,
     root: &str,
-) -> JoshResult<Vec<(String, i32)>> {
+) -> anyhow::Result<Vec<(String, i32)>> {
     rs_tracing::trace_scoped!("diff_paths");
     if input1 == input2 {
         return Ok(vec![]);
@@ -276,8 +277,8 @@ pub fn diff_paths(
 
     if let (Ok(tree1), Ok(tree2)) = (repo.find_tree(input1), repo.find_tree(input2)) {
         for entry in tree2.iter() {
-            let name = entry.name().ok_or_else(|| josh_error("no name"))?;
-            if let Some(e) = tree1.get_name(entry.name().ok_or_else(|| josh_error("no name"))?) {
+            let name = entry.name().ok_or_else(|| anyhow!("no name"))?;
+            if let Some(e) = tree1.get_name(entry.name().ok_or_else(|| anyhow!("no name"))?) {
                 r.append(&mut diff_paths(
                     repo,
                     e.id(),
@@ -295,9 +296,9 @@ pub fn diff_paths(
         }
 
         for entry in tree1.iter() {
-            let name = entry.name().ok_or_else(|| josh_error("no name"))?;
+            let name = entry.name().ok_or_else(|| anyhow!("no name"))?;
             if tree2
-                .get_name(entry.name().ok_or_else(|| josh_error("no name"))?)
+                .get_name(entry.name().ok_or_else(|| anyhow!("no name"))?)
                 .is_none()
             {
                 r.append(&mut diff_paths(
@@ -314,7 +315,7 @@ pub fn diff_paths(
 
     if let Ok(tree2) = repo.find_tree(input2) {
         for entry in tree2.iter() {
-            let name = entry.name().ok_or_else(|| josh_error("no name"))?;
+            let name = entry.name().ok_or_else(|| anyhow!("no name"))?;
             r.append(&mut diff_paths(
                 repo,
                 git2::Oid::zero(),
@@ -327,7 +328,7 @@ pub fn diff_paths(
 
     if let Ok(tree1) = repo.find_tree(input2) {
         for entry in tree1.iter() {
-            let name = entry.name().ok_or_else(|| josh_error("no name"))?;
+            let name = entry.name().ok_or_else(|| anyhow!("no name"))?;
             r.append(&mut diff_paths(
                 repo,
                 entry.id(),
@@ -345,7 +346,7 @@ pub fn overlay(
     transaction: &cache::Transaction,
     input1: git2::Oid,
     input2: git2::Oid,
-) -> JoshResult<git2::Oid> {
+) -> anyhow::Result<git2::Oid> {
     if let Some(cached) = transaction.get_overlay((input1, input2)) {
         return Ok(cached);
     }
@@ -370,16 +371,15 @@ pub fn overlay(
         let mut i = 0;
         for entry in tree2.iter() {
             i += 1;
-            let (id, mode) = if let Some(e) =
-                tree1.get_name(entry.name().ok_or_else(|| josh_error("no name"))?)
-            {
-                (overlay(transaction, e.id(), entry.id())?, e.filemode())
-            } else {
-                (entry.id(), entry.filemode())
-            };
+            let (id, mode) =
+                if let Some(e) = tree1.get_name(entry.name().ok_or_else(|| anyhow!("no name"))?) {
+                    (overlay(transaction, e.id(), entry.id())?, e.filemode())
+                } else {
+                    (entry.id(), entry.filemode())
+                };
 
             builder.insert(
-                Path::new(entry.name().ok_or_else(|| josh_error("no name"))?),
+                Path::new(entry.name().ok_or_else(|| anyhow!("no name"))?),
                 id,
                 mode,
             )?;
@@ -395,14 +395,14 @@ pub fn overlay(
     Ok(input1)
 }
 
-pub fn pathline(b: &str) -> JoshResult<String> {
+pub fn pathline(b: &str) -> anyhow::Result<String> {
     match b
         .split('\n')
         .next()
         .map(|line| line.trim_start_matches('#'))
     {
         Some(line) if !line.is_empty() => Ok(line.to_string()),
-        Some(_) | None => Err(josh_error("pathline")),
+        Some(_) | None => Err(anyhow!("pathline")),
     }
 }
 
@@ -448,7 +448,7 @@ pub fn make_dir_trigram_filter(searchstring: &str, size: usize, bits: &[usize]) 
 pub fn trigram_index<'a>(
     transaction: &'a cache::Transaction,
     tree: git2::Tree<'a>,
-) -> JoshResult<git2::Tree<'a>> {
+) -> anyhow::Result<git2::Tree<'a>> {
     let repo = transaction.repo();
     if let Some(cached) = transaction.get_trigram_index(tree.id()) {
         return Ok(repo.find_tree(cached)?);
@@ -463,7 +463,7 @@ pub fn trigram_index<'a>(
 
     /* 'entry: */
     for entry in tree.iter() {
-        let name = entry.name().ok_or_else(|| josh_error("no name"))?;
+        let name = entry.name().ok_or_else(|| anyhow!("no name"))?;
         if entry.kind() == Some(git2::ObjectType::Blob) {
             let b = get_blob(repo, &tree, Path::new(name));
 
@@ -623,7 +623,7 @@ pub fn search_candidates(
     tree: &git2::Tree,
     searchstring: &str,
     max_ord: usize,
-) -> JoshResult<Vec<String>> {
+) -> anyhow::Result<Vec<String>> {
     let ff = make_dir_trigram_filter(searchstring, FILE_FILTER_SIZE, &[2]);
 
     let mut results = vec![];
@@ -643,7 +643,7 @@ pub fn search_matches(
     tree: &git2::Tree,
     searchstring: &str,
     candidates: &Vec<String>,
-) -> JoshResult<SearchMatchesResult> {
+) -> anyhow::Result<SearchMatchesResult> {
     let mut results = vec![];
 
     for c in candidates {
@@ -673,7 +673,7 @@ pub fn trigram_search<'a>(
     file_filter: &[u8],
     results: &mut Vec<String>,
     ord: usize,
-) -> JoshResult<()> {
+) -> anyhow::Result<()> {
     rs_tracing::trace_scoped!("trigram_search", "ord": ord, "root": root);
     let repo = transaction.repo();
 
@@ -815,7 +815,7 @@ pub fn invert_paths<'a>(
     transaction: &'a cache::Transaction,
     root: &str,
     tree: git2::Tree<'a>,
-) -> JoshResult<git2::Tree<'a>> {
+) -> anyhow::Result<git2::Tree<'a>> {
     let repo = transaction.repo();
     if let Some(cached) = transaction.get_invert((tree.id(), root.to_string())) {
         return Ok(repo.find_tree(cached)?);
@@ -824,7 +824,7 @@ pub fn invert_paths<'a>(
     let mut result = empty(repo);
 
     for entry in tree.iter() {
-        let name = entry.name().ok_or_else(|| josh_error("no name"))?;
+        let name = entry.name().ok_or_else(|| anyhow!("no name"))?;
 
         if entry.kind() == Some(git2::ObjectType::Blob) {
             let mpath = normalize_path(&Path::new(root).join(name))
@@ -863,7 +863,7 @@ pub fn original_path(
     filter: Filter,
     tree: git2::Tree,
     path: &Path,
-) -> JoshResult<String> {
+) -> anyhow::Result<String> {
     let paths_tree = apply(
         transaction,
         to_filter(Op::Paths).chain(filter),
@@ -878,7 +878,7 @@ pub fn repopulated_tree(
     filter: Filter,
     full_tree: git2::Tree,
     partial_tree: git2::Tree,
-) -> JoshResult<git2::Oid> {
+) -> anyhow::Result<git2::Oid> {
     let paths_tree = apply(
         transaction,
         to_filter(Op::Paths).chain(filter),
@@ -893,7 +893,7 @@ pub fn populate(
     transaction: &cache::Transaction,
     paths: git2::Oid,
     content: git2::Oid,
-) -> JoshResult<git2::Oid> {
+) -> anyhow::Result<git2::Oid> {
     rs_tracing::trace_scoped!("repopulate");
 
     if let Some(cached) = transaction.get_populate((paths, content)) {
@@ -915,7 +915,7 @@ pub fn populate(
         .id();
     } else if let (Ok(paths), Ok(content)) = (repo.find_tree(paths), repo.find_tree(content)) {
         for entry in content.iter() {
-            if let Some(e) = paths.get_name(entry.name().ok_or_else(|| josh_error("no name"))?) {
+            if let Some(e) = paths.get_name(entry.name().ok_or_else(|| anyhow!("no name"))?) {
                 result_tree = overlay(
                     transaction,
                     result_tree,
@@ -933,7 +933,7 @@ pub fn populate(
 pub fn compose_fast(
     transaction: &cache::Transaction,
     trees: Vec<git2::Oid>,
-) -> JoshResult<git2::Tree<'_>> {
+) -> anyhow::Result<git2::Tree<'_>> {
     rs_tracing::trace_scoped!("compose_fast");
     let repo = transaction.repo();
     let mut result = empty_id();
@@ -947,7 +947,7 @@ pub fn compose_fast(
 pub fn compose<'a>(
     transaction: &'a cache::Transaction,
     trees: Vec<(&Filter, git2::Tree<'a>)>,
-) -> JoshResult<git2::Tree<'a>> {
+) -> anyhow::Result<git2::Tree<'a>> {
     rs_tracing::trace_scoped!("compose");
     let repo = transaction.repo();
     let mut result = empty(repo);

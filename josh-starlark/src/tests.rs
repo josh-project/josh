@@ -3,64 +3,67 @@ use josh_filter::spec;
 use std::sync::{Arc, Mutex};
 
 #[test]
-fn test_simple_filter() {
+fn test_simple_filter() -> anyhow::Result<()> {
     // Create a temporary repository for testing
     let temp_dir = std::env::temp_dir().join("josh_starlark_test");
     let _ = std::fs::remove_dir_all(&temp_dir);
-    let repo = git2::Repository::init(&temp_dir).unwrap();
-    let empty_tree_oid = git2::Oid::from_str("4b825dc642cb6eb9a060e54bf8d69288fbee4904").unwrap();
+    let repo = git2::Repository::init(&temp_dir)?;
+    let empty_tree_oid = git2::Oid::from_str("4b825dc642cb6eb9a060e54bf8d69288fbee4904")?;
     let repo_arc = Arc::new(Mutex::new(repo));
 
     let script = r#"
 filter = filter.subdir("src")
 "#;
-    let filter = evaluate(script, empty_tree_oid, repo_arc.clone()).unwrap();
+    let filter = evaluate(script, empty_tree_oid, repo_arc.clone())?;
     let filter_spec = spec(filter);
     assert_eq!(filter_spec, ":/src");
+    Ok(())
 }
 
 #[test]
-fn test_chain_filter() {
+fn test_chain_filter() -> anyhow::Result<()> {
     // Create a temporary repository for testing
     let temp_dir = std::env::temp_dir().join("josh_starlark_test2");
     let _ = std::fs::remove_dir_all(&temp_dir);
-    let repo = git2::Repository::init(&temp_dir).unwrap();
-    let empty_tree_oid = git2::Oid::from_str("4b825dc642cb6eb9a060e54bf8d69288fbee4904").unwrap();
+    let repo = git2::Repository::init(&temp_dir)?;
+    let empty_tree_oid = git2::Oid::from_str("4b825dc642cb6eb9a060e54bf8d69288fbee4904")?;
     let repo_arc = Arc::new(Mutex::new(repo));
 
     let script = r#"
 filter = filter.subdir("src").prefix("lib")
 "#;
-    let filter = evaluate(script, empty_tree_oid, repo_arc.clone()).unwrap();
+    let filter = evaluate(script, empty_tree_oid, repo_arc.clone())?;
     let filter_spec = spec(filter);
     assert_eq!(filter_spec, ":/src:prefix=lib");
+    Ok(())
 }
 
 #[test]
-fn test_file_filter() {
+fn test_file_filter() -> anyhow::Result<()> {
     // Create a temporary repository for testing
     let temp_dir = std::env::temp_dir().join("josh_starlark_test3");
     let _ = std::fs::remove_dir_all(&temp_dir);
-    let repo = git2::Repository::init(&temp_dir).unwrap();
-    let empty_tree_oid = git2::Oid::from_str("4b825dc642cb6eb9a060e54bf8d69288fbee4904").unwrap();
+    let repo = git2::Repository::init(&temp_dir)?;
+    let empty_tree_oid = git2::Oid::from_str("4b825dc642cb6eb9a060e54bf8d69288fbee4904")?;
     let repo_arc = Arc::new(Mutex::new(repo));
 
     let script = r#"
 filter = filter.file("README.md")
 "#;
-    let filter = evaluate(script, empty_tree_oid, repo_arc.clone()).unwrap();
+    let filter = evaluate(script, empty_tree_oid, repo_arc.clone())?;
     let filter_spec = spec(filter);
     // file() creates a rename from the same path to itself, which is represented as ::README.md
     assert_eq!(filter_spec, "::README.md");
+    Ok(())
 }
 
 #[test]
-fn test_compose() {
+fn test_compose() -> anyhow::Result<()> {
     // Create a temporary repository for testing
     let temp_dir = std::env::temp_dir().join("josh_starlark_test4");
     let _ = std::fs::remove_dir_all(&temp_dir);
-    let repo = git2::Repository::init(&temp_dir).unwrap();
-    let empty_tree_oid = git2::Oid::from_str("4b825dc642cb6eb9a060e54bf8d69288fbee4904").unwrap();
+    let repo = git2::Repository::init(&temp_dir)?;
+    let empty_tree_oid = git2::Oid::from_str("4b825dc642cb6eb9a060e54bf8d69288fbee4904")?;
     let repo_arc = Arc::new(Mutex::new(repo));
 
     let script = r#"
@@ -68,45 +71,15 @@ f1 = filter.subdir("src")
 f2 = filter.subdir("lib")
 filter = compose([f1, f2])
 "#;
-    let filter = evaluate(script, empty_tree_oid, repo_arc.clone()).unwrap();
+    let filter = evaluate(script, empty_tree_oid, repo_arc.clone())?;
     let filter_spec = spec(filter);
     // compose formats as :[filter1,filter2]
     assert_eq!(filter_spec, ":[:/src,:/lib]");
-}
-
-#[derive(Debug)]
-enum CreateTestRepoError {
-    Time(std::time::SystemTimeError),
-    Git(git2::Error),
-    Poison(String),
-}
-
-impl std::fmt::Display for CreateTestRepoError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            CreateTestRepoError::Time(e) => e.fmt(f),
-            CreateTestRepoError::Git(e) => e.fmt(f),
-            CreateTestRepoError::Poison(e) => f.write_str(e),
-        }
-    }
-}
-
-impl std::error::Error for CreateTestRepoError {}
-
-impl From<std::time::SystemTimeError> for CreateTestRepoError {
-    fn from(e: std::time::SystemTimeError) -> Self {
-        CreateTestRepoError::Time(e)
-    }
-}
-
-impl From<git2::Error> for CreateTestRepoError {
-    fn from(e: git2::Error) -> Self {
-        CreateTestRepoError::Git(e)
-    }
+    Ok(())
 }
 
 // Helper function to create a test repository with files and directories
-fn create_test_repo() -> Result<(Arc<Mutex<git2::Repository>>, git2::Oid), CreateTestRepoError> {
+fn create_test_repo() -> anyhow::Result<(Arc<Mutex<git2::Repository>>, git2::Oid)> {
     let temp_dir = std::env::temp_dir().join(format!(
         "josh_starlark_tree_test_{}",
         std::time::SystemTime::now()
@@ -125,9 +98,7 @@ fn create_test_repo() -> Result<(Arc<Mutex<git2::Repository>>, git2::Oid), Creat
     //     - utils.rs (blob)
 
     let lib_tree_oid = {
-        let repo_guard = repo_arc
-            .lock()
-            .map_err(|e| CreateTestRepoError::Poison(e.to_string()))?;
+        let repo_guard = repo_arc.lock().unwrap();
         // Create blobs
         let utils_rs_blob = repo_guard.blob(b"pub fn helper() {\n    // helper\n}")?;
 
@@ -138,9 +109,7 @@ fn create_test_repo() -> Result<(Arc<Mutex<git2::Repository>>, git2::Oid), Creat
     };
 
     let src_tree_oid = {
-        let repo_guard = repo_arc
-            .lock()
-            .map_err(|e| CreateTestRepoError::Poison(e.to_string()))?;
+        let repo_guard = repo_arc.lock().unwrap();
         let main_rs_blob = repo_guard.blob(b"fn main() {\n    println!(\"Hello\");\n}")?;
 
         // Create src/ tree
@@ -151,9 +120,7 @@ fn create_test_repo() -> Result<(Arc<Mutex<git2::Repository>>, git2::Oid), Creat
     };
 
     let root_tree_oid = {
-        let repo_guard = repo_arc
-            .lock()
-            .map_err(|e| CreateTestRepoError::Poison(e.to_string()))?;
+        let repo_guard = repo_arc.lock().unwrap();
         let readme_blob = repo_guard.blob(b"# Project\nThis is a test project.")?;
 
         // Create root tree
@@ -167,22 +134,23 @@ fn create_test_repo() -> Result<(Arc<Mutex<git2::Repository>>, git2::Oid), Creat
 }
 
 #[test]
-fn test_tree_file() {
-    let (repo_arc, root_tree_oid) = create_test_repo().unwrap();
+fn test_tree_file() -> anyhow::Result<()> {
+    let (repo_arc, root_tree_oid) = create_test_repo()?;
 
     // Test accessing file content
     let script = r#"
 content = tree.file("README.md")
 filter = filter.subdir("src")
 "#;
-    let filter = evaluate(script, root_tree_oid, repo_arc.clone()).unwrap();
+    let filter = evaluate(script, root_tree_oid, repo_arc.clone())?;
     let filter_spec = spec(filter);
     assert_eq!(filter_spec, ":/src");
+    Ok(())
 }
 
 #[test]
-fn test_tree_file_nonexistent() {
-    let (repo_arc, root_tree_oid) = create_test_repo().unwrap();
+fn test_tree_file_nonexistent() -> anyhow::Result<()> {
+    let (repo_arc, root_tree_oid) = create_test_repo()?;
 
     // Test accessing non-existent file returns empty string
     let script = r#"
@@ -190,14 +158,15 @@ content = tree.file("nonexistent.txt")
 # Should return empty string, not error
 filter = filter.subdir("src")
 "#;
-    let filter = evaluate(script, root_tree_oid, repo_arc.clone()).unwrap();
+    let filter = evaluate(script, root_tree_oid, repo_arc.clone())?;
     let filter_spec = spec(filter);
     assert_eq!(filter_spec, ":/src");
+    Ok(())
 }
 
 #[test]
-fn test_tree_tree() {
-    let (repo_arc, root_tree_oid) = create_test_repo().unwrap();
+fn test_tree_tree() -> anyhow::Result<()> {
+    let (repo_arc, root_tree_oid) = create_test_repo()?;
 
     // Test accessing a tree
     let script = r#"
@@ -205,14 +174,15 @@ src_tree = tree.tree("src")
 main_content = src_tree.file("main.rs")
 filter = filter.subdir("src")
 "#;
-    let filter = evaluate(script, root_tree_oid, repo_arc.clone()).unwrap();
+    let filter = evaluate(script, root_tree_oid, repo_arc.clone())?;
     let filter_spec = spec(filter);
     assert_eq!(filter_spec, ":/src");
+    Ok(())
 }
 
 #[test]
-fn test_tree_tree_nonexistent() {
-    let (repo_arc, root_tree_oid) = create_test_repo().unwrap();
+fn test_tree_tree_nonexistent() -> anyhow::Result<()> {
+    let (repo_arc, root_tree_oid) = create_test_repo()?;
 
     // Test accessing non-existent tree returns empty tree
     let script = r#"
@@ -220,14 +190,15 @@ nonexistent_tree = tree.tree("nonexistent")
 # Should return empty tree, not error
 filter = filter.subdir("src")
 "#;
-    let filter = evaluate(script, root_tree_oid, repo_arc.clone()).unwrap();
+    let filter = evaluate(script, root_tree_oid, repo_arc.clone())?;
     let filter_spec = spec(filter);
     assert_eq!(filter_spec, ":/src");
+    Ok(())
 }
 
 #[test]
-fn test_tree_dirs() {
-    let (repo_arc, root_tree_oid) = create_test_repo().unwrap();
+fn test_tree_dirs() -> anyhow::Result<()> {
+    let (repo_arc, root_tree_oid) = create_test_repo()?;
 
     // Test getting list of directories
     let script = r#"
@@ -235,14 +206,15 @@ dirs_list = tree.dirs("")
 # Should contain "src"
 filter = filter.subdir("src")
 "#;
-    let filter = evaluate(script, root_tree_oid, repo_arc.clone()).unwrap();
+    let filter = evaluate(script, root_tree_oid, repo_arc.clone())?;
     let filter_spec = spec(filter);
     assert_eq!(filter_spec, ":/src");
+    Ok(())
 }
 
 #[test]
-fn test_tree_files() {
-    let (repo_arc, root_tree_oid) = create_test_repo().unwrap();
+fn test_tree_files() -> anyhow::Result<()> {
+    let (repo_arc, root_tree_oid) = create_test_repo()?;
 
     // Test getting list of files
     let script = r#"
@@ -250,14 +222,15 @@ files_list = tree.files("")
 # Should contain "README.md"
 filter = filter.subdir("src")
 "#;
-    let filter = evaluate(script, root_tree_oid, repo_arc.clone()).unwrap();
+    let filter = evaluate(script, root_tree_oid, repo_arc.clone())?;
     let filter_spec = spec(filter);
     assert_eq!(filter_spec, ":/src");
+    Ok(())
 }
 
 #[test]
-fn test_tree_nested_access() {
-    let (repo_arc, root_tree_oid) = create_test_repo().unwrap();
+fn test_tree_nested_access() -> anyhow::Result<()> {
+    let (repo_arc, root_tree_oid) = create_test_repo()?;
 
     // Test nested access: tree.tree("src").file("main.rs")
     let script = r#"
@@ -265,14 +238,15 @@ src_tree = tree.tree("src")
 main_content = src_tree.file("main.rs")
 filter = filter.subdir("src")
 "#;
-    let filter = evaluate(script, root_tree_oid, repo_arc.clone()).unwrap();
+    let filter = evaluate(script, root_tree_oid, repo_arc.clone())?;
     let filter_spec = spec(filter);
     assert_eq!(filter_spec, ":/src");
+    Ok(())
 }
 
 #[test]
-fn test_tree_build_filter_from_all_files() {
-    let (repo_arc, root_tree_oid) = create_test_repo().unwrap();
+fn test_tree_build_filter_from_all_files() -> anyhow::Result<()> {
+    let (repo_arc, root_tree_oid) = create_test_repo()?;
 
     // Test building a filter that includes all files from the tree
     // Using the new API: tree.files() to get file lists
@@ -292,7 +266,7 @@ def collect_all_files(dir_path=""):
 all_file_filters = collect_all_files("")
 filter = compose(all_file_filters)
 "#;
-    let filter = evaluate(script, root_tree_oid, repo_arc.clone()).unwrap();
+    let filter = evaluate(script, root_tree_oid, repo_arc.clone())?;
     let filter_spec = spec(filter);
 
     // The filter should contain all files: README.md, src/main.rs, src/lib/utils.rs
@@ -301,4 +275,5 @@ filter = compose(all_file_filters)
         filter_spec,
         ":[::README.md,::src/lib/utils.rs,::src/main.rs]"
     );
+    Ok(())
 }

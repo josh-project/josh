@@ -103,10 +103,10 @@ Failing render for lack of variable
   $ curl -i -s http://localhost:8002/real_repo.git?render=tmpl_file
   HTTP/1.1 422 Unprocessable Entity\r (esc)
   content-type: text/plain; charset=utf-8\r (esc)
-  content-length: 112\r (esc)
+  content-length: 101\r (esc)
   date: *\r (esc) (glob)
   \r (esc)
-  JoshError(Error rendering "tmpl_file" line 1, col 8: Failed to access variable in strict mode Some("param_val")) (no-eol)
+  Error rendering "tmpl_file" line 1, col 8: Failed to access variable in strict mode Some("param_val") (no-eol)
 
 
 

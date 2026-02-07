@@ -1,4 +1,5 @@
 use super::*;
+use anyhow::anyhow;
 
 #[derive(PartialEq, Clone, Copy, Debug)]
 pub enum PushMode {
@@ -8,9 +9,11 @@ pub enum PushMode {
     Split,
 }
 
-pub fn baseref_and_options(refname: &str) -> JoshResult<(String, String, Vec<String>, PushMode)> {
+pub fn baseref_and_options(
+    refname: &str,
+) -> anyhow::Result<(String, String, Vec<String>, PushMode)> {
     let mut split = refname.splitn(2, '%');
-    let push_to = split.next().ok_or(josh_error("no next"))?.to_owned();
+    let push_to = split.next().ok_or(anyhow!("no next"))?.to_owned();
 
     let options = if let Some(options) = split.next() {
         options.split(',').map(|x| x.to_string()).collect()
@@ -44,7 +47,7 @@ fn split_changes(
     repo: &git2::Repository,
     changes: &mut [(String, git2::Oid, String)],
     base: git2::Oid,
-) -> JoshResult<()> {
+) -> anyhow::Result<()> {
     if base == git2::Oid::zero() {
         return Ok(());
     }
@@ -106,9 +109,9 @@ pub fn changes_to_refs(
     baseref: &str,
     change_author: &str,
     changes: Vec<Change>,
-) -> JoshResult<Vec<(String, git2::Oid, String)>> {
+) -> anyhow::Result<Vec<(String, git2::Oid, String)>> {
     if !change_author.contains('@') {
-        return Err(josh_error(
+        return Err(anyhow!(
             "Push option 'author' needs to be set to a valid email address",
         ));
     };
@@ -122,13 +125,13 @@ pub fn changes_to_refs(
     for change in changes.iter() {
         if let Some(id) = &change.id {
             if id.contains('@') {
-                return Err(josh_error("Change id must not contain '@'"));
+                return Err(anyhow!("Change id must not contain '@'"));
             }
             if !seen.insert(id) {
-                return Err(josh_error(&format!(
+                return Err(anyhow!(
                     "rejecting to push {:?} with duplicate label",
                     change.commit
-                )));
+                ));
             }
             seen.insert(id);
         }
@@ -163,7 +166,7 @@ pub fn build_to_push(
     ref_with_options: &str,
     oid_to_push: git2::Oid,
     base_oid: git2::Oid,
-) -> JoshResult<Vec<(String, git2::Oid, String)>> {
+) -> anyhow::Result<Vec<(String, git2::Oid, String)>> {
     if let Some(changes) = changes {
         let mut push_refs = changes_to_refs(baseref, author, changes)?;
 

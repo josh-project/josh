@@ -1,4 +1,5 @@
 use crate::filter::StarlarkFilter;
+use anyhow::anyhow;
 use starlark::{
     environment::GlobalsBuilder,
     starlark_module,
@@ -16,14 +17,14 @@ pub fn filter_module(builder: &mut GlobalsBuilder) {
         // Get iterator from the value
         let mut iter = filters
             .iterate(heap)
-            .map_err(|e| anyhow::anyhow!("Failed to iterate over filters: {}", e))?;
+            .map_err(|e| anyhow!("Failed to iterate over filters: {}", e))?;
 
         // Convert to Vec<Filter>
         let mut filter_vec = Vec::new();
 
         while let Some(item) = iter.next() {
             let starlark_filter = item.downcast_ref::<StarlarkFilter>().ok_or_else(|| {
-                anyhow::anyhow!("Expected Filter in compose list, got {}", item.get_type())
+                anyhow!("Expected Filter in compose list, got {}", item.get_type())
             })?;
             filter_vec.push(starlark_filter.filter);
         }
