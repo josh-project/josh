@@ -44,8 +44,10 @@ jobs:
       with:
         context: .
         file: Dockerfile
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
+        cache-from: |
+          type=gha
+          type=gha,scope=main
+        cache-to: type=gha,mode=max,scope=${{ github.ref_name }}
         target: dev-ci
         tags: josh-ci-dev:latest
         push: false
