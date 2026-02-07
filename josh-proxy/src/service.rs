@@ -1,3 +1,4 @@
+use anyhow::{Context, anyhow};
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -9,8 +10,8 @@ use crate::serve::{CapabilitiesDirection, git_list_capabilities};
 use crate::upstream::{HttpUpstream, RemoteAuth, RepoUpdate, Upstream, process_repo_update};
 use crate::{FetchError, FilteredRepoUrl, TmpGitNamespace, cli, run_git_with_auth};
 
+use josh_core;
 use josh_core::cache::{CacheStack, TransactionContext};
-use josh_core::{JoshError, JoshResult, josh_error};
 use josh_graphql::graphql;
 use josh_rpc::calls::RequestedCommand;
 
@@ -180,7 +181,7 @@ pub fn make_service(
     filter_prefix: Option<String>,
     git_capabilities: Option<GitCapabilities>,
     io_thread_tx: Option<tokio::sync::mpsc::UnboundedSender<IoCleanup>>,
-) -> JoshResult<Arc<JoshProxyService>> {
+) -> anyhow::Result<Arc<JoshProxyService>> {
     let cache = Arc::new(cache.unwrap_or_default());
     let repo_path = repo_path.to_owned();
     let require_auth = require_auth.unwrap_or(false);
@@ -250,14 +251,14 @@ impl JoshProxyService {
     pub fn open_overlay(
         &self,
         ref_prefix: Option<&str>,
-    ) -> JoshResult<josh_core::cache::Transaction> {
+    ) -> anyhow::Result<josh_core::cache::Transaction> {
         TransactionContext::new(self.repo_path.join("overlay"), self.cache.clone()).open(ref_prefix)
     }
 
     pub fn open_mirror(
         &self,
         ref_prefix: Option<&str>,
-    ) -> JoshResult<josh_core::cache::Transaction> {
+    ) -> anyhow::Result<josh_core::cache::Transaction> {
         TransactionContext::new(self.repo_path.join("mirror"), self.cache.clone()).open(ref_prefix)
     }
 }
@@ -272,7 +273,7 @@ impl std::fmt::Debug for JoshProxyService {
 }
 
 /// Turn a list of [cli::Remote] into a [JoshProxyUpstream] struct.
-pub fn make_upstream(remotes: &[cli::Remote]) -> JoshResult<JoshProxyUpstream> {
+pub fn make_upstream(remotes: &[cli::Remote]) -> anyhow::Result<JoshProxyUpstream> {
     if remotes.is_empty() {
         unreachable!() // already checked in the parser
     } else if remotes.len() == 1 {
@@ -284,7 +285,7 @@ pub fn make_upstream(remotes: &[cli::Remote]) -> JoshResult<JoshProxyUpstream> {
         Ok(match (&remotes[0], &remotes[1]) {
             (cli::Remote::Http(_), cli::Remote::Http(_))
             | (cli::Remote::Ssh(_), cli::Remote::Ssh(_)) => {
-                return Err(josh_error("two cli::remotes of the same type passed"));
+                return Err(anyhow!("two cli::remotes of the same type passed"));
             }
             (cli::Remote::Http(http_url), cli::Remote::Ssh(ssh_url))
             | (cli::Remote::Ssh(ssh_url), cli::Remote::Http(http_url)) => JoshProxyUpstream::Both {
@@ -293,11 +294,11 @@ pub fn make_upstream(remotes: &[cli::Remote]) -> JoshResult<JoshProxyUpstream> {
             },
         })
     } else {
-        Err(josh_error("too many remotes"))
+        Err(anyhow!("too many remotes"))
     }
 }
 
-fn create_repo_base(path: &PathBuf) -> JoshResult<josh_core::shell::Shell> {
+fn create_repo_base(path: &PathBuf) -> anyhow::Result<josh_core::shell::Shell> {
     std::fs::create_dir_all(path).expect("can't create_dir_all");
 
     if gix::open(path).is_err() {
@@ -336,24 +337,24 @@ fn create_repo_base(path: &PathBuf) -> JoshResult<josh_core::shell::Shell> {
 
     let mut config =
         gix::config::File::from_path_no_includes(config_location.clone(), config_source)
-            .map_err(|_| josh_error("unable to open repo config file"))?;
+            .context("unable to open repo config file")?;
 
     config_options
         .iter()
         .cloned()
-        .try_for_each(|(section, values)| -> JoshResult<()> {
+        .try_for_each(|(section, values)| -> anyhow::Result<()> {
             let mut section = config
                 .new_section(section, None)
-                .map_err(|_| josh_error("unable to create config section"))?;
+                .context("unable to create config section")?;
 
             values
                 .iter()
                 .cloned()
-                .try_for_each(|(name, value)| -> JoshResult<()> {
+                .try_for_each(|(name, value)| -> anyhow::Result<()> {
                     use gix::config::parse::section::ValueName;
 
-                    let key = ValueName::try_from(name)
-                        .map_err(|_| josh_error("unable to create config section"))?;
+                    let key =
+                        ValueName::try_from(name).context("unable to create config section")?;
                     let value = Some(value.into());
 
                     section.push(key, value);
@@ -392,7 +393,7 @@ fn create_repo_base(path: &PathBuf) -> JoshResult<josh_core::shell::Shell> {
 pub fn create_repo(
     path: &std::path::Path,
     josh_executable: Option<&std::path::Path>,
-) -> JoshResult<()> {
+) -> anyhow::Result<()> {
     let mirror_path = path.join("mirror");
     tracing::debug!("init mirror repo: {:?}", mirror_path);
     create_repo_base(&mirror_path)?;
@@ -454,7 +455,7 @@ async fn handle_filters(service: Arc<JoshProxyService>, refresh: bool) -> impl I
             .into_response();
     }
 
-    let body_str = match tokio::task::spawn_blocking(move || -> JoshResult<_> {
+    let body_str = match tokio::task::spawn_blocking(move || -> anyhow::Result<_> {
         let transaction_mirror = service.open_mirror(None)?;
         josh_core::housekeeping::discover_filter_candidates(&transaction_mirror)?;
 
@@ -488,7 +489,7 @@ fn resolve_upstream_ref(
     transaction: &josh_core::cache::Transaction,
     repo: &str,
     ref_value: &str,
-) -> JoshResult<git2::Oid> {
+) -> anyhow::Result<git2::Oid> {
     let josh_name = [
         "refs",
         "josh",
@@ -502,9 +503,9 @@ fn resolve_upstream_ref(
     transaction
         .repo()
         .find_reference(josh_name.to_str().unwrap())
-        .map_err(|e| josh_error(&format!("Could not find ref: {}", e)))?
+        .context("Could not find ref")?
         .target()
-        .ok_or(josh_error("Could not resolve ref"))
+        .ok_or(anyhow!("Could not resolve ref"))
 }
 
 pub struct NamespacedRefs {
@@ -516,7 +517,7 @@ pub struct NamespacedRefs {
 
 impl NamespacedRefs {
     // Writes the prepared list of refs to the repo, consuming self
-    pub fn write_to_repo(self) -> JoshResult<()> {
+    pub fn write_to_repo(self) -> anyhow::Result<()> {
         let refs = self
             .refs
             .into_iter()
@@ -548,7 +549,7 @@ async fn filter_to_namespace(
     temp_ns: Arc<crate::TmpGitNamespace>,
     filter: josh_core::filter::Filter,
     head_ref: &HeadRef,
-) -> JoshResult<NamespacedRefs> {
+) -> anyhow::Result<NamespacedRefs> {
     let permit = service.filter_permits.acquire().await;
     let head_symref_map = service.head_symref_map.clone();
 
@@ -591,7 +592,8 @@ async fn filter_to_namespace(
 
         let head_symref_target = match &head_ref {
             HeadRef::ExplicitHead | HeadRef::Implicit => head_symref_map
-                .read()?
+                .read()
+                .unwrap()
                 .get(&repo)
                 .cloned()
                 .unwrap_or_else(|| {
@@ -657,7 +659,7 @@ async fn filter_to_namespace(
             Default::default()
         };
 
-        Ok::<_, JoshError>(NamespacedRefs {
+        Ok::<_, anyhow::Error>(NamespacedRefs {
             ns: temp_ns,
             transaction: t2,
             refs: namespaced_refs,
@@ -675,7 +677,7 @@ async fn ssh_list_refs(
     url: &str,
     auth_socket: std::path::PathBuf,
     refs: Option<&[&str]>,
-) -> JoshResult<HashMap<String, String>> {
+) -> anyhow::Result<HashMap<String, String>> {
     let temp_dir = tempfile::TempDir::with_prefix("josh")?;
     let refs = match refs {
         Some(refs) => refs.to_vec(),
@@ -689,7 +691,7 @@ async fn ssh_list_refs(
         .map(|s| s.to_string())
         .collect::<Vec<_>>();
 
-    let result = tokio::task::spawn_blocking(move || -> JoshResult<(String, String, i32)> {
+    let result = tokio::task::spawn_blocking(move || -> anyhow::Result<(String, String, i32)> {
         let command = command.iter().map(String::as_str).collect::<Vec<_>>();
 
         let (stdout, stderr, code) = run_git_with_auth(
@@ -706,10 +708,11 @@ async fn ssh_list_refs(
     let stdout = match result {
         Ok((stdout, _, 0)) => stdout,
         Ok((_, stderr, code)) => {
-            return Err(josh_error(&format!(
+            return Err(anyhow!(
                 "auth check: git exited with code {}: {}",
-                code, stderr
-            )));
+                code,
+                stderr
+            ));
         }
         Err(e) => return Err(e),
     };
@@ -724,10 +727,10 @@ async fn ssh_list_refs(
                 .as_slice()
             {
                 [sha1, git_ref] => Ok((git_ref.to_owned(), sha1.to_owned())),
-                _ => Err(josh_error("could not parse result of ls-remote")),
+                _ => Err(anyhow!("could not parse result of ls-remote")),
             }
         })
-        .collect::<JoshResult<HashMap<_, _>>>()?;
+        .collect::<anyhow::Result<HashMap<_, _>>>()?;
 
     Ok(refs)
 }
@@ -737,7 +740,7 @@ async fn serve_namespace(
     repo_path: std::path::PathBuf,
     namespace: &str,
     repo_update: RepoUpdate,
-) -> JoshResult<()> {
+) -> anyhow::Result<()> {
     use std::process::Stdio;
     use tokio::io::AsyncWriteExt;
     use tokio::net::UnixStream;
@@ -780,8 +783,8 @@ async fn serve_namespace(
         .stdout(Stdio::piped())
         .spawn()?;
 
-    let stdout = process.stdout.take().ok_or(josh_error("no stdout"))?;
-    let stdin = process.stdin.take().ok_or(josh_error("no stdin"))?;
+    let stdout = process.stdout.take().ok_or(anyhow!("no stdout"))?;
+    let stdin = process.stdin.take().ok_or(anyhow!("no stdin"))?;
 
     let stdin_cancel_token = tokio_util::sync::CancellationToken::new();
     let stdin_cancel_token_stdout = stdin_cancel_token.clone();
@@ -856,27 +859,19 @@ async fn serve_namespace(
     match subprocess_result {
         Ok(_) => Ok(()),
         Err(e) => match e {
-            ServeError::SubprocessExited(code) => Err(josh_error(&format!(
-                "git subprocess exited with code {}",
-                code
-            ))),
-            ServeError::SubprocessError(io_error) => Err(josh_error(&format!(
-                "could not start git subprocess: {}",
-                io_error
-            ))),
+            ServeError::SubprocessExited(code) => {
+                Err(anyhow!("git subprocess exited with code {}", code))
+            }
+            ServeError::SubprocessError(io_error) => {
+                Err(anyhow!("could not start git subprocess: {}", io_error))
+            }
             ServeError::SubprocessTimeout(elapsed) => {
                 let _ = process.kill().await;
-                Err(josh_error(&format!(
-                    "git subprocess timed out after {}",
-                    elapsed
-                )))
+                Err(anyhow!("git subprocess timed out after {}", elapsed))
             }
             ServeError::FifoError(io_error) => {
                 let _ = process.kill().await;
-                Err(josh_error(&format!(
-                    "git subprocess communication error: {}",
-                    io_error
-                )))
+                Err(anyhow!("git subprocess communication error: {}", io_error))
             }
         },
     }
@@ -902,7 +897,7 @@ impl HeadRef {
 }
 
 impl FromStr for HeadRef {
-    type Err = JoshError;
+    type Err = anyhow::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let result = s.trim_start_matches(['@', '^']);
@@ -915,7 +910,7 @@ impl FromStr for HeadRef {
                 if let Ok(oid) = git2::Oid::from_str(&r) {
                     HeadRef::ExplicitSha(r.to_string(), oid)
                 } else {
-                    return Err(josh_error("failed to parse ref"));
+                    return Err(anyhow!("failed to parse ref"));
                 }
             }
         };
@@ -1263,7 +1258,7 @@ async fn call_service(
             .status(StatusCode::OK)
             .header(header::CONTENT_TYPE, direction.content_type())
             .body(Body::from(encoded))
-            .map_err(|e| ProxyError(josh_error(&e.to_string())))?);
+            .map_err(ProxyError::from)?);
     }
 
     tokio::task::spawn_blocking(move || namespaced_refs.write_to_repo()).await??;
@@ -1299,7 +1294,7 @@ async fn call_service(
         cmd.env("PATH_INFO", parsed_url.pathinfo.clone());
 
         let (response_builder, stream) = axum_cgi::do_cgi(req, cmd).await?;
-        Ok::<_, JoshError>((response_builder, stream))
+        Ok::<_, anyhow::Error>((response_builder, stream))
     }
     .instrument(tracing::span!(
         tracing::Level::INFO,
@@ -1320,10 +1315,10 @@ async fn serve_render_template(
     upstream_repo: String,
     filter: josh_core::filter::Filter,
     head_ref: &str,
-) -> JoshResult<axum::response::Response> {
+) -> anyhow::Result<axum::response::Response> {
     let tracing_span = tracing::span!(tracing::Level::TRACE, "serve_render_template");
     let head_ref = head_ref.to_string();
-    let res = tokio::task::spawn_blocking(move || -> JoshResult<_> {
+    let res = tokio::task::spawn_blocking(move || -> anyhow::Result<_> {
         let _span_guard = tracing_span.enter();
 
         let transaction_mirror = serv.open_mirror(Some(&format!(
@@ -1377,7 +1372,7 @@ async fn prepare_namespace(
     repo: &str,
     filter: josh_core::filter::Filter,
     head_ref: &HeadRef,
-) -> JoshResult<(Arc<crate::TmpGitNamespace>, NamespacedRefs)> {
+) -> anyhow::Result<(Arc<crate::TmpGitNamespace>, NamespacedRefs)> {
     let temp_ns = Arc::new(crate::TmpGitNamespace::new(
         &serv.repo_path.join("overlay"),
         tracing::Span::current(),
@@ -1502,20 +1497,20 @@ async fn handle_graphql(
 
     let response = (code, ErasedJson::pretty(&res)).into_response();
 
-    tokio::task::spawn_blocking(move || -> JoshResult<_> {
+    tokio::task::spawn_blocking(move || -> anyhow::Result<_> {
         let temp_ns = Arc::new(crate::TmpGitNamespace::new(
             &serv.repo_path.join("overlay"),
             tracing::Span::current(),
             serv.io_thread_tx.clone(),
         ));
 
-        let transaction = &*context.transaction.lock()?;
-        let mut to_push = context.to_push.lock()?.clone();
+        let transaction = &*context.transaction.lock().unwrap();
+        let mut to_push = context.to_push.lock().unwrap().clone();
 
         if let Some((refname, oid)) = crate::merge_meta(
             transaction,
-            &*context.transaction_mirror.lock()?,
-            &*context.meta_add.lock()?,
+            &*context.transaction_mirror.lock().unwrap(),
+            &*context.meta_add.lock().unwrap(),
         )? {
             to_push.insert((oid, refname, None));
         }
@@ -1560,7 +1555,7 @@ async fn handle_graphiql(
 
     let response = tokio::task::spawn_blocking(move || crate::graphql::graphiql(&addr, None))
         .await
-        .map_err(|e| ProxyError(josh_error(&e.to_string())))?;
+        .map_err(|e| ProxyError(anyhow!("{}", e)))?;
 
     Ok(response.into_response())
 }
@@ -1601,9 +1596,7 @@ async fn handle_repo_update(
 
     match result {
         Ok(Ok(stderr)) => (StatusCode::OK, stderr).into_response(),
-        Ok(Err(josh_core::JoshError(stderr))) => {
-            (StatusCode::INTERNAL_SERVER_ERROR, stderr).into_response()
-        }
+        Ok(Err(e)) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Task error: {}", e),

@@ -1,4 +1,5 @@
 use super::*;
+use anyhow::anyhow;
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -6,7 +7,7 @@ pub fn walk2(
     filter: filter::Filter,
     input: git2::Oid,
     transaction: &cache::Transaction,
-) -> JoshResult<()> {
+) -> anyhow::Result<()> {
     rs_tracing::trace_scoped!("walk2","spec":filter::spec(filter), "id": input.to_string());
 
     if transaction.known(filter, input) {
@@ -87,7 +88,7 @@ fn find_unapply_base(
     contained_in: git2::Oid,
     // Filtered OID to compare against
     filtered: git2::Oid,
-) -> JoshResult<git2::Oid> {
+) -> anyhow::Result<git2::Oid> {
     if contained_in == git2::Oid::zero() {
         tracing::info!("contained in zero",);
         return Ok(git2::Oid::zero());
@@ -126,7 +127,7 @@ fn find_unapply_base(
     // at least one other commit references them as a parent.
     #[derive(Default)]
     struct CallbackContext {
-        result: Option<JoshResult<(git2::Oid, git2::Oid)>>,
+        result: Option<anyhow::Result<(git2::Oid, git2::Oid)>>,
         unlocked: HashSet<git2::Oid>,
         pending: HashSet<git2::Oid>,
     }
@@ -221,7 +222,7 @@ pub fn find_original(
     contained_in: git2::Oid,
     filtered: git2::Oid,
     linear: bool,
-) -> JoshResult<git2::Oid> {
+) -> anyhow::Result<git2::Oid> {
     if contained_in == git2::Oid::zero() {
         return Ok(git2::Oid::zero());
     }
@@ -264,7 +265,7 @@ pub fn rewrite_commit(
     parents: &[&git2::Commit],
     rewrite_data: filter::Rewrite,
     unsign: bool,
-) -> JoshResult<git2::Oid> {
+) -> anyhow::Result<git2::Oid> {
     use gix_object::bstr::BString;
 
     let odb = repo.odb()?;
@@ -292,7 +293,7 @@ pub fn rewrite_commit(
         .parents
         .extend(parent_ids.iter().map(BString::as_ref));
 
-    let rewrite_signature = |name: String, email: String, time: &str| -> JoshResult<BString> {
+    let rewrite_signature = |name: String, email: String, time: &str| -> anyhow::Result<BString> {
         let name = BString::from(name);
         let email = BString::from(email);
 
@@ -353,7 +354,7 @@ fn find_oldest_similar_commit(
     transaction: &cache::Transaction,
     filter: filter::Filter,
     unfiltered: git2::Oid,
-) -> JoshResult<git2::Oid> {
+) -> anyhow::Result<git2::Oid> {
     let walk = {
         let mut walk = transaction.repo().revwalk()?;
         walk.set_sorting(git2::Sort::TOPOLOGICAL)?;
@@ -385,7 +386,7 @@ fn find_new_branch_base(
     // See "contained_in" in find_unapply_base
     contained_in: git2::Oid,
     filtered: git2::Oid,
-) -> JoshResult<git2::Oid> {
+) -> anyhow::Result<git2::Oid> {
     let walk = {
         let mut walk = transaction.repo().revwalk()?;
         walk.set_sorting(git2::Sort::TOPOLOGICAL)?;
@@ -436,7 +437,7 @@ pub fn unapply_filter(
     orphans_mode: OrphansMode,
     reparent_orphans: Option<git2::Oid>,
     change_ids: &mut Option<Vec<Change>>,
-) -> JoshResult<git2::Oid> {
+) -> anyhow::Result<git2::Oid> {
     let mut filtered_to_original = HashMap::new();
     let mut ret = original_target;
     let change_id_regex = regex::Regex::new("(?m)^Change: [^ ]+")?;
@@ -529,7 +530,7 @@ pub fn unapply_filter(
                     filtered_parent_ids.pop();
                 }
                 OrphansMode::Fail => {
-                    return Err(josh_error(&indoc::formatdoc!(
+                    return Err(anyhow!(indoc::formatdoc!(
                         r###"
                         Rejecting new orphan branch at {:?} ({:?})
                         Specify one of these options:
@@ -547,7 +548,7 @@ pub fn unapply_filter(
         // For every parent of a filtered commit, find unapply base
         let original_parents: Result<Vec<_>, _> = filtered_parent_ids
             .iter()
-            .map(|filtered_parent_id| -> JoshResult<_> {
+            .map(|filtered_parent_id| -> anyhow::Result<_> {
                 find_unapply_base(
                     transaction,
                     &mut filtered_to_original,
@@ -563,7 +564,7 @@ pub fn unapply_filter(
                     true
                 }
             })
-            .map(|unapply_base| -> JoshResult<_> {
+            .map(|unapply_base| -> anyhow::Result<_> {
                 Ok(transaction.repo().find_commit(unapply_base?)?)
             })
             .collect();
@@ -585,7 +586,7 @@ pub fn unapply_filter(
         let tree = module_commit.tree()?;
         let commit_message = module_commit.summary().unwrap_or("NO COMMIT MESSAGE");
 
-        let new_trees: JoshResult<Vec<_>> = {
+        let new_trees: anyhow::Result<Vec<_>> = {
             let span = tracing::span!(
                 tracing::Level::TRACE,
                 "unapply filter",
@@ -598,7 +599,7 @@ pub fn unapply_filter(
 
             original_parents
                 .iter()
-                .map(|commit| -> JoshResult<_> {
+                .map(|commit| -> anyhow::Result<_> {
                     Ok(filter::unapply(transaction, filter, tree.clone(), commit.tree()?)?.id())
                 })
                 .collect()
@@ -606,13 +607,13 @@ pub fn unapply_filter(
 
         let new_trees = match new_trees {
             Ok(new_trees) => new_trees,
-            Err(JoshError(msg)) => {
-                return Err(josh_error(&format!(
+            Err(e) => {
+                return Err(anyhow!(
                     "\nCan't apply {:?} ({:?})\n{}",
                     commit_message,
                     module_commit.id(),
-                    msg
-                )));
+                    e
+                ));
             }
         };
 
@@ -712,7 +713,7 @@ pub fn unapply_filter(
                     // We give up. If we see this message again we need to investigate once
                     // more and maybe consider allowing a manual override as last resort.
                     tracing::warn!("rejecting merge");
-                    let msg = format!(
+                    return Err(anyhow!(
                         "rejecting merge with {} parents:\n{:?} ({:?})\n1) {:?} ({:?})\n2) {:?} ({:?})",
                         parent_count,
                         module_commit.summary().unwrap_or_default(),
@@ -721,8 +722,7 @@ pub fn unapply_filter(
                         original_parents[0].id(),
                         original_parents[1].summary().unwrap_or_default(),
                         original_parents[1].id(),
-                    );
-                    return Err(josh_error(&msg));
+                    ));
                 }
 
                 transaction.repo().find_tree(tid)?
@@ -795,7 +795,7 @@ pub fn drop_commit(
     filtered_parent_ids: Vec<git2::Oid>,
     transaction: &cache::Transaction,
     filter: filter::Filter,
-) -> JoshResult<git2::Oid> {
+) -> anyhow::Result<git2::Oid> {
     let r = if let Some(id) = filtered_parent_ids.first() {
         *id
     } else {
@@ -814,7 +814,7 @@ pub fn create_filtered_commit_with_meta(
     transaction: &cache::Transaction,
     filter: filter::Filter,
     meta: std::collections::BTreeMap<String, String>,
-) -> JoshResult<git2::Oid> {
+) -> anyhow::Result<git2::Oid> {
     let (r, is_new) = create_filtered_commit2(
         transaction.repo(),
         original_commit,
@@ -836,7 +836,7 @@ pub fn create_filtered_commit(
     rewrite_data: filter::Rewrite,
     transaction: &cache::Transaction,
     filter: filter::Filter,
-) -> JoshResult<git2::Oid> {
+) -> anyhow::Result<git2::Oid> {
     create_filtered_commit_with_meta(
         original_commit,
         filtered_parent_ids,
@@ -853,7 +853,7 @@ fn create_filtered_commit2<'a>(
     filtered_parent_ids: Vec<git2::Oid>,
     rewrite_data: filter::Rewrite,
     options: BTreeMap<String, String>,
-) -> JoshResult<(git2::Oid, bool)> {
+) -> anyhow::Result<(git2::Oid, bool)> {
     let filtered_parent_commits: Result<Vec<_>, _> = filtered_parent_ids
         .iter()
         .filter(|x| **x != git2::Oid::zero())

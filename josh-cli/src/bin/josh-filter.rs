@@ -3,7 +3,7 @@
 #[macro_use]
 extern crate rs_tracing;
 
-use josh_core::JoshError;
+use anyhow::Context;
 use std::fs::read_to_string;
 use std::io::Write;
 
@@ -145,7 +145,7 @@ impl josh_core::cache::FilterHook for GitNotesFilterHook {
         &self,
         commit_oid: git2::Oid,
         arg: &str,
-    ) -> josh_core::JoshResult<josh_core::filter::Filter> {
+    ) -> anyhow::Result<josh_core::filter::Filter> {
         let notes_ref = if arg.starts_with("refs/") {
             arg.to_string()
         } else {
@@ -154,15 +154,13 @@ impl josh_core::cache::FilterHook for GitNotesFilterHook {
         let repo = self.repo.lock().unwrap();
         let note = repo
             .find_note(Some(notes_ref.as_str()), commit_oid)
-            .map_err(|_| josh_core::josh_error("missing git note for commit"))?;
-        let msg = note
-            .message()
-            .ok_or_else(|| josh_core::josh_error("empty git note"))?;
+            .context("missing git note for commit")?;
+        let msg = note.message().context("empty git note")?;
         josh_core::filter::parse(msg)
     }
 }
 
-fn run_filter(args: Vec<String>) -> josh_core::JoshResult<i32> {
+fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
     let args = make_app().get_matches_from(args);
 
     if args.get_flag("trace") {
@@ -189,9 +187,8 @@ fn run_filter(args: Vec<String>) -> josh_core::JoshResult<i32> {
         josh_core::filter::parse(&specstr)?
     } else {
         // Try to parse as SHA and read filter from tree
-        let tree_oid = git2::Oid::from_str(specstr.trim()).map_err(|_| {
-            josh_core::josh_error(&format!("Invalid filter spec or SHA: {}", specstr))
-        })?;
+        let tree_oid = git2::Oid::from_str(specstr.trim())
+            .with_context(|| format!("Invalid filter spec or SHA: {}", specstr))?;
         josh_core::filter::from_tree(&repo, tree_oid)?
     };
 
@@ -431,8 +428,8 @@ fn run_filter(args: Vec<String>) -> josh_core::JoshResult<i32> {
                 repo.reference(&input_ref, rewritten, true, "unapply_filter")?;
                 rewritten
             }
-            Err(JoshError(msg)) => {
-                eprintln!("{}", msg);
+            Err(e) => {
+                eprintln!("{}", e);
                 return Ok(1);
             }
         };
@@ -443,13 +440,13 @@ fn run_filter(args: Vec<String>) -> josh_core::JoshResult<i32> {
             new
         };
 
-        if roundtripped != new {
+        return if roundtripped != new {
             println!("Roundtrip failed");
-            return Ok(1);
+            Ok(1)
         } else {
             println!("{}", ret);
-            return Ok(0);
-        }
+            Ok(0)
+        };
     }
 
     if !reverse
@@ -467,7 +464,7 @@ fn run_filter(args: Vec<String>) -> josh_core::JoshResult<i32> {
 
     if let Some(gql_query) = args.get_one::<String>("graphql") {
         let context = josh_graphql::context(transaction.try_clone()?, transaction.try_clone()?);
-        *context.allow_refs.lock()? = true;
+        *context.allow_refs.lock().unwrap() = true;
         let (res, _errors) = juniper::execute_sync(
             gql_query,
             None,
@@ -509,12 +506,7 @@ fn main() {
     };
 
     std::process::exit(if let Err(e) = run_filter(args) {
-        eprintln!(
-            "ERROR: {}",
-            match e {
-                JoshError(s) => s,
-            }
-        );
+        eprintln!("ERROR: {}", e);
         1
     } else {
         0

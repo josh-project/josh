@@ -1,4 +1,5 @@
 use crate::filter::Filter;
+use anyhow::anyhow;
 
 #[derive(Hash, Clone, Debug, PartialEq, PartialOrd, Eq, Ord)]
 pub enum LazyRef {
@@ -28,15 +29,16 @@ impl std::fmt::Display for LazyRef {
 }
 
 impl LazyRef {
-    pub fn parse(s: &str) -> Result<LazyRef, String> {
+    pub fn parse(s: &str) -> anyhow::Result<LazyRef> {
         let s = s.replace("'", "\"");
         if let Ok(serde_json::Value::String(s)) = serde_json::from_str(&s) {
             return Ok(LazyRef::Lazy(s));
         }
+
         if let Ok(oid) = git2::Oid::from_str(&s) {
             Ok(LazyRef::Resolved(oid))
         } else {
-            Err(format!("invalid ref: {:?}", s))
+            Err(anyhow!("invalid ref: {:?}", s))
         }
     }
 }

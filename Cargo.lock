@@ -2607,6 +2607,7 @@ dependencies = [
 name = "josh-core"
 version = "22.4.15"
 dependencies = [
+ "anyhow",
  "backtrace",
  "bitvec",
  "criterion2",
@@ -2659,6 +2660,7 @@ dependencies = [
 name = "josh-filter"
 version = "22.4.15"
 dependencies = [
+ "anyhow",
  "git2",
  "gix-hash",
  "gix-object",
@@ -2676,6 +2678,7 @@ dependencies = [
 name = "josh-graphql"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "chrono",
  "git2",
  "josh-core",
@@ -2792,6 +2795,7 @@ dependencies = [
 name = "josh-templates"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "form_urlencoded",
  "git2",
  "handlebars",

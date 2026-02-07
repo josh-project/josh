@@ -1,10 +1,10 @@
 #![warn(unused_extern_crates)]
 
-use anyhow::Context;
+use anyhow::{Context, anyhow};
 use clap::Parser;
 
 use josh_core::changes::{PushMode, build_to_push};
-use josh_link::{from_josh_err, normalize_repo_path, spawn_git_command};
+use josh_link::{normalize_repo_path, spawn_git_command};
 
 #[derive(Debug, clap::Parser)]
 #[command(name = "josh", version, about = "Josh: Git projections & sync tooling", long_about = None)]
@@ -247,9 +247,7 @@ fn run_command(cli: &Cli) -> anyhow::Result<()> {
         repo.path().parent().unwrap().to_path_buf()
     };
 
-    josh_core::cache::sled_load(&repo_path.join(".git"))
-        .map_err(from_josh_err)
-        .context("Failed to load sled cache")?;
+    josh_core::cache::sled_load(&repo_path.join(".git")).context("Failed to load sled cache")?;
 
     let cache = std::sync::Arc::new(
         josh_core::cache::CacheStack::new()
@@ -257,7 +255,7 @@ fn run_command(cli: &Cli) -> anyhow::Result<()> {
         // FIXME: NotesCacheBackend seems to have perf issues, so disable it for now
         //.with_backend(
         //    josh_core::cache::NotesCacheBackend::new(&repo_path)
-        //        .map_err(from_josh_err)
+        //        ?
         //        .context("Failed to create NotesCacheBackend")?,
         //),
     );
@@ -265,7 +263,6 @@ fn run_command(cli: &Cli) -> anyhow::Result<()> {
     // Create transaction using the known repo path
     let transaction = josh_core::cache::TransactionContext::new(&repo_path, cache.clone())
         .open(None)
-        .map_err(from_josh_err)
         .context("Failed TransactionContext::open")?;
 
     match &cli.command {
@@ -288,9 +285,7 @@ fn apply_josh_filtering(
     remote_name: &str,
 ) -> anyhow::Result<()> {
     // Use josh API directly instead of calling josh-filter binary
-    let filterobj = josh_core::filter::parse(filter)
-        .map_err(from_josh_err)
-        .context("Failed to parse filter")?;
+    let filterobj = josh_core::filter::parse(filter).context("Failed to parse filter")?;
 
     let repo = transaction.repo();
 
@@ -307,7 +302,7 @@ fn apply_josh_filtering(
     }
 
     if input_refs.is_empty() {
-        return Err(anyhow::anyhow!("No remote references found"));
+        return Err(anyhow!("No remote references found"));
     }
 
     // Apply the filter to all remote refs
@@ -315,7 +310,7 @@ fn apply_josh_filtering(
 
     // Check for errors
     if let Some(error) = errors.into_iter().next() {
-        return Err(anyhow::anyhow!("josh filter error: {}", error.1.0));
+        return Err(anyhow!("josh filter error: {}", error.1));
     }
 
     // Second pass: create all references
@@ -378,19 +373,17 @@ fn read_remote_config(
     match std::fs::read_to_string(&remote_file) {
         Ok(content) => {
             // Parse the filter from the file
-            let filter = josh_core::filter::parse(&content)
-                .map_err(from_josh_err)
-                .with_context(|| {
-                    format!("Failed to parse filter from {}", remote_file.display())
-                })?;
+            let filter = josh_core::filter::parse(&content).with_context(|| {
+                format!("Failed to parse filter from {}", remote_file.display())
+            })?;
 
             // Extract metadata
             let url = filter
                 .get_meta("url")
-                .ok_or_else(|| anyhow::anyhow!("Missing 'url' metadata in remote config"))?;
+                .ok_or_else(|| anyhow!("Missing 'url' metadata in remote config"))?;
             let fetch = filter
                 .get_meta("fetch")
-                .ok_or_else(|| anyhow::anyhow!("Missing 'fetch' metadata in remote config"))?;
+                .ok_or_else(|| anyhow!("Missing 'fetch' metadata in remote config"))?;
 
             return Ok((url, fetch, filter));
         }
@@ -404,7 +397,7 @@ fn read_remote_config(
             let url = match config.get_string(&format!("josh-remote.{}.url", remote_name)) {
                 Ok(url) => url,
                 Err(_) => {
-                    return Err(anyhow::anyhow!(
+                    return Err(anyhow!(
                         "Remote '{}' not found in new format (.git/josh/remotes/{}.josh) or legacy git config (josh-remote.{})",
                         remote_name,
                         remote_name,
@@ -431,7 +424,6 @@ fn read_remote_config(
 
             // Parse the filter to return
             let filter_obj = josh_core::filter::parse(&filter_str)
-                .map_err(from_josh_err)
                 .with_context(|| format!("Failed to parse filter '{}'", filter_str))?;
 
             let filter_with_meta = filter_obj.with_meta("url", &url).with_meta("fetch", &fetch);
@@ -444,7 +436,7 @@ fn read_remote_config(
             Ok((url, fetch, filter_with_meta))
         }
         Err(e) => {
-            return Err(anyhow::anyhow!(
+            return Err(anyhow!(
                 "Failed to read remote config file: {}: {}",
                 remote_file.display(),
                 e
@@ -473,7 +465,6 @@ fn write_remote_config(
 
     // Parse the filter
     let filter_obj = josh_core::filter::parse(filter)
-        .map_err(from_josh_err)
         .with_context(|| format!("Failed to parse filter '{}'", filter))?;
 
     // Wrap the filter with metadata
@@ -780,7 +771,7 @@ fn handle_push(args: &PushArgs, transaction: &josh_core::cache::Transaction) -> 
 
                 // Check for errors
                 if let Some(error) = errors.into_iter().next() {
-                    return Err(anyhow::anyhow!("josh filter error: {}", error.1.0));
+                    return Err(anyhow!("josh filter error: {}", error.1));
                 }
 
                 if let Some((_, filtered_oid)) = filtered_oids.first() {
@@ -826,7 +817,6 @@ fn handle_push(args: &PushArgs, transaction: &josh_core::cache::Transaction) -> 
             None,         // reparent_orphans
             &mut changes, // change_ids
         )
-        .map_err(from_josh_err)
         .context("Failed to unapply filter")?;
 
         // Define variables needed for build_to_push
@@ -846,7 +836,6 @@ fn handle_push(args: &PushArgs, transaction: &josh_core::cache::Transaction) -> 
             oid_to_push,
             old,
         )
-        .map_err(from_josh_err)
         .context("Failed to build to push")?;
 
         log::debug!("to_push: {:?}", to_push);
@@ -911,7 +900,7 @@ fn handle_link_add(
 
     // Validate the path (should not be empty and should be a valid path)
     if args.path.is_empty() {
-        return Err(anyhow::anyhow!("Path cannot be empty"));
+        return Err(anyhow!("Path cannot be empty"));
     }
 
     // Get the filter (default to ":/" if not provided)
@@ -927,7 +916,7 @@ fn handle_link_add(
         .context("Failed to execute git fetch")?;
 
     if !output.status.success() {
-        return Err(anyhow::anyhow!(
+        return Err(anyhow!(
             "git fetch failed: {}",
             String::from_utf8_lossy(&output.stderr)
         ));
@@ -998,26 +987,23 @@ fn handle_link_fetch(
 
     let link_files = if let Some(path) = &args.path {
         // Single path specified - use find_link_files to get all link files, then find the one at the specified path
-        let link_files = josh_core::find_link_files(&repo, &head_tree)
-            .map_err(from_josh_err)
-            .context("Failed to find link files")?;
+        let link_files =
+            josh_core::find_link_files(&repo, &head_tree).context("Failed to find link files")?;
 
         let link_file = link_files
             .iter()
             .find(|(p, _)| p.to_string_lossy() == path.as_str())
             .map(|(_, lf)| lf.clone())
-            .ok_or_else(|| anyhow::anyhow!("Link file not found at path '{}'", path))?;
+            .ok_or_else(|| anyhow!("Link file not found at path '{}'", path))?;
 
         vec![(std::path::PathBuf::from(path), link_file)]
     } else {
         // No path specified - find all .link.josh files in the tree
-        josh_core::find_link_files(&repo, &head_tree)
-            .map_err(from_josh_err)
-            .context("Failed to find link files")?
+        josh_core::find_link_files(&repo, &head_tree).context("Failed to find link files")?
     };
 
     if link_files.is_empty() {
-        return Err(anyhow::anyhow!("No .link.josh files found"));
+        return Err(anyhow!("No .link.josh files found"));
     }
 
     println!("Found {} link file(s) to fetch", link_files.len());
@@ -1029,7 +1015,7 @@ fn handle_link_fetch(
 
         // Get remote and branch from metadata
         let remote = link_file.get_meta("remote").ok_or_else(|| {
-            anyhow::anyhow!(
+            anyhow!(
                 "Link file missing 'remote' metadata at path '{}'",
                 path.display()
             )
@@ -1045,7 +1031,7 @@ fn handle_link_fetch(
             .context("Failed to execute git fetch")?;
 
         if !output.status.success() {
-            return Err(anyhow::anyhow!(
+            return Err(anyhow!(
                 "git fetch failed for path '{}': {}",
                 path.display(),
                 String::from_utf8_lossy(&output.stderr)

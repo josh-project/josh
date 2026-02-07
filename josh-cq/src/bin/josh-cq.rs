@@ -2,7 +2,7 @@ use anyhow::Context;
 use clap::Parser;
 
 use josh_core::filter::tree;
-use josh_link::{from_josh_err, make_signature, normalize_repo_path, spawn_git_command};
+use josh_link::{make_signature, normalize_repo_path, spawn_git_command};
 
 use std::collections::BTreeMap;
 
@@ -113,7 +113,6 @@ fn handle_track(
         refs_blob,
         git2::FileMode::Blob.into(),
     )
-    .map_err(from_josh_err)
     .context("Failed to insert refs.json into tree")?;
 
     // Create final commit with both files
@@ -154,9 +153,7 @@ async fn main() -> anyhow::Result<()> {
     let repo = git2::Repository::open_from_env().context("Not in a git repository")?;
     let repo_path = normalize_repo_path(repo.path());
 
-    josh_core::cache::sled_load(&repo_path.join(".git"))
-        .map_err(from_josh_err)
-        .context("Failed to load sled cache")?;
+    josh_core::cache::sled_load(&repo_path.join(".git")).context("Failed to load sled cache")?;
 
     let cache = std::sync::Arc::new(
         josh_core::cache::CacheStack::new()
@@ -165,7 +162,6 @@ async fn main() -> anyhow::Result<()> {
 
     let transaction = josh_core::cache::TransactionContext::new(&repo_path, cache.clone())
         .open(None)
-        .map_err(from_josh_err)
         .context("Failed TransactionContext::open")?;
 
     match action {

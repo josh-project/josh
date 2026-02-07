@@ -10,6 +10,7 @@ readme = "../README.md"
 edition = "2024"
 
 [dependencies]
+anyhow = { workspace = true }
 git2 = { workspace = true }
 gix-object = { workspace = true }
 gix-hash = { workspace = true }

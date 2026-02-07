@@ -1,5 +1,6 @@
+use anyhow::anyhow;
+use josh_core::cache;
 use josh_core::cache::{CacheStack, TransactionContext};
-use josh_core::{JoshResult, cache, josh_error};
 use serde_json::json;
 
 struct GraphQLHelper {
@@ -20,14 +21,14 @@ impl GraphQLHelper {
         &self,
         hash: &std::collections::BTreeMap<&str, handlebars::PathAndJson>,
         template_name: &str,
-    ) -> JoshResult<serde_json::Value> {
+    ) -> anyhow::Result<serde_json::Value> {
         let mirror_path = self.repo_path.join("mirror");
         let overlay_path = self.repo_path.join("overlay");
 
         let path = if let Some(f) = hash.get("file") {
             f.render()
         } else {
-            return Err(josh_error("missing pattern"));
+            return Err(anyhow!("missing pattern"));
         };
 
         let path = std::path::PathBuf::from(template_name)
@@ -135,13 +136,13 @@ pub fn render(
     commit_id: git2::Oid,
     query_and_params: &str,
     split_odb: bool,
-) -> JoshResult<Option<(String, std::collections::BTreeMap<String, String>)>> {
+) -> anyhow::Result<Option<(String, std::collections::BTreeMap<String, String>)>> {
     let repo_path = transaction.repo().path();
     let overlay_path = transaction
         .repo()
         .path()
         .parent()
-        .ok_or(josh_error("parent"))?
+        .ok_or(anyhow!("parent"))?
         .join("overlay");
 
     let params = form_urlencoded::parse(query_and_params.as_bytes())
@@ -154,7 +155,7 @@ pub fn render(
     } else if let Some(path) = params.get("render") {
         ("render", path)
     } else {
-        return Err(josh_error("no command"));
+        return Err(anyhow!("no command"));
     };
 
     let tree = transaction.repo().find_commit(commit_id)?.tree()?;
@@ -187,7 +188,7 @@ pub fn render(
                             .repo()
                             .path()
                             .parent()
-                            .ok_or(josh_error("parent"))?
+                            .ok_or(anyhow!("parent"))?
                             .join("mirror")
                             .join("objects")
                             .to_str()
@@ -217,7 +218,7 @@ pub fn render(
         if cmd == "render" {
             file.to_string()
         } else {
-            return Err(josh_error("no such cmd"));
+            return Err(anyhow!("no such cmd"));
         }
     } else {
         return Ok(Some(("".to_string(), params)));
@@ -231,7 +232,7 @@ pub fn render(
             .repo()
             .path()
             .parent()
-            .ok_or(josh_error("parent"))?
+            .ok_or(anyhow!("parent"))?
             .to_owned()
     } else {
         transaction.repo().path().to_owned()
@@ -253,7 +254,7 @@ pub fn render(
 
     let rendered = match handlebars.render(path, &json!(params)) {
         Ok(res) => res,
-        Err(res) => return Err(josh_error(&format!("{}", res))),
+        Err(res) => return Err(anyhow!("{}", res)),
     };
 
     Ok(Some((rendered, params)))

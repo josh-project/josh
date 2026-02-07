@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+anyhow = { workspace = true }
 git2 = { workspace = true }
 josh-core = { path = "../josh-core" }
 josh-graphql = { path = "../josh-graphql" }

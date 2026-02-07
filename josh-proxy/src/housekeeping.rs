@@ -1,4 +1,4 @@
-use josh_core::{JoshResult, housekeeping, shell};
+use josh_core::{housekeeping, shell};
 use std::path::Path;
 
 macro_rules! trace_object_count {
@@ -134,7 +134,7 @@ pub fn run(
     repo_path: &std::path::Path,
     cache: std::sync::Arc<josh_core::cache::CacheStack>,
     do_gc: bool,
-) -> JoshResult<()> {
+) -> anyhow::Result<()> {
     use josh_core::cache::TransactionContext;
 
     const CRUFT_PACK_SIZE: usize = 1024 * 1024 * 64;

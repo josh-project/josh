@@ -9,7 +9,6 @@ use url::form_urlencoded;
 
 use axum::http::{Method, StatusCode};
 use axum::response::{IntoResponse, Response};
-use josh_core::JoshResult;
 
 pub async fn graphql_sync<CtxT, QueryT, MutationT, SubscriptionT, S>(
     root_node: Arc<RootNode<QueryT, MutationT, SubscriptionT, S>>,
@@ -18,7 +17,7 @@ pub async fn graphql_sync<CtxT, QueryT, MutationT, SubscriptionT, S>(
     content_type: Option<axum_extra::headers::Mime>,
     query: Option<String>,
     body: String,
-) -> JoshResult<Response>
+) -> anyhow::Result<Response>
 where
     QueryT: GraphQLType<S, Context = CtxT>,
     QueryT::TypeInfo: Sync,
@@ -42,7 +41,7 @@ pub async fn graphql<CtxT, QueryT, MutationT, SubscriptionT, S>(
     content_type: Option<axum_extra::headers::Mime>,
     query: Option<String>,
     body: String,
-) -> JoshResult<Response>
+) -> anyhow::Result<Response>
 where
     QueryT: GraphQLTypeAsync<S, Context = CtxT>,
     QueryT::TypeInfo: Sync,
