@@ -1,4 +1,5 @@
 use crate::*;
+use anyhow::{Context, anyhow};
 use itertools::Itertools;
 use std::collections::{BTreeSet, HashMap};
 use std::sync::LazyLock;
@@ -12,7 +13,7 @@ static KNOWN_FILTERS: LazyLock<std::sync::Mutex<KnownViews>> =
 pub fn list_refs(
     repo: &git2::Repository,
     upstream_repo: &str,
-) -> JoshResult<Vec<(String, git2::Oid)>> {
+) -> anyhow::Result<Vec<(String, git2::Oid)>> {
     let mut refs = vec![];
 
     let prefix = ["refs", "josh", "upstream", &to_ns(upstream_repo)]
@@ -26,14 +27,13 @@ pub fn list_refs(
     .iter()
     {
         for reference in repo.references_glob(glob)? {
-            let reference =
-                reference.map_err(|e| josh_error(&format!("unable to obtain reference: {}", e)))?;
+            let reference = reference.context("unable to obtain reference")?;
 
             if let (Some(name), Some(target)) = (reference.name(), reference.target()) {
                 let name = name
                     .strip_prefix(&prefix)
                     .and_then(|name| name.strip_prefix('/'))
-                    .ok_or_else(|| josh_error("bug: unexpected result of a glob"))?;
+                    .ok_or_else(|| anyhow!("bug: unexpected result of a glob"))?;
 
                 refs.push((name.to_owned(), target))
             }
@@ -98,7 +98,7 @@ pub fn memorize_from_to(
     repo: &git2::Repository,
     namespace: &str,
     upstream_repo: &str,
-) -> JoshResult<((String, git2::Oid), String)> {
+) -> anyhow::Result<((String, git2::Oid), String)> {
     let from = format!("refs/josh/upstream/{}/HEAD", &to_ns(upstream_repo));
     let to_ref = format!("refs/{}/HEAD", &namespace);
 
@@ -118,9 +118,9 @@ regex_parsed!(
  * Determine filter specs that are either likely to be requested and/or
  * expensive to build from scratch using heuristics.
  */
-pub fn discover_filter_candidates(transaction: &cache::Transaction) -> JoshResult<()> {
+pub fn discover_filter_candidates(transaction: &cache::Transaction) -> anyhow::Result<()> {
     let repo = transaction.repo();
-    let mut known_filters = KNOWN_FILTERS.lock()?;
+    let mut known_filters = KNOWN_FILTERS.lock().unwrap();
     let trace_s = span!(Level::TRACE, "discover_filter_candidates");
     let _e = trace_s.enter();
 
@@ -128,12 +128,10 @@ pub fn discover_filter_candidates(transaction: &cache::Transaction) -> JoshResul
 
     for reference in repo.references_glob(&refname)? {
         let r = reference?;
-        let name = r
-            .name()
-            .ok_or_else(|| josh_error("reference without name"))?;
+        let name = r.name().ok_or_else(|| anyhow!("reference without name"))?;
         tracing::trace!("find: {}", name);
         let name = UpstreamRef::from_str(name)
-            .ok_or_else(|| josh_error("not a ns"))?
+            .ok_or_else(|| anyhow!("not a ns"))?
             .ns;
 
         let name = from_ns(&name);
@@ -156,11 +154,9 @@ pub fn discover_filter_candidates(transaction: &cache::Transaction) -> JoshResul
     let refname = "josh/filtered/*.git/*/HEAD".to_string();
     for reference in repo.references_glob(&refname)? {
         let r = reference?;
-        let name = r
-            .name()
-            .ok_or_else(|| josh_error("reference without name"))?;
+        let name = r.name().ok_or_else(|| anyhow!("reference without name"))?;
         tracing::trace!("known: {}", name);
-        let filtered = FilteredRefRegex::from_str(name).ok_or_else(|| josh_error("not a ns"))?;
+        let filtered = FilteredRefRegex::from_str(name).ok_or_else(|| anyhow!("not a ns"))?;
 
         known_filters
             .entry(from_ns(&filtered.upstream_repo))
@@ -174,7 +170,7 @@ pub fn discover_filter_candidates(transaction: &cache::Transaction) -> JoshResul
 
 pub fn find_all_workspaces_and_subdirectories(
     tree: &git2::Tree,
-) -> JoshResult<std::collections::HashSet<String>> {
+) -> anyhow::Result<std::collections::HashSet<String>> {
     let _trace_s = span!(Level::TRACE, "find_all_workspaces_and_subdirectories");
     let mut hs = std::collections::HashSet::new();
     tree.walk(git2::TreeWalkMode::PreOrder, |root, entry| {
@@ -199,7 +195,7 @@ pub fn get_info(
     transaction: &cache::Transaction,
     filter: filter::Filter,
     headref: &str,
-) -> JoshResult<String> {
+) -> anyhow::Result<String> {
     let _trace_s = span!(Level::TRACE, "get_info");
 
     let obj = transaction
@@ -255,8 +251,8 @@ pub fn get_info(
 pub fn refresh_known_filters(
     transaction_mirror: &cache::Transaction,
     transaction_overlay: &cache::Transaction,
-) -> JoshResult<Vec<(String, git2::Oid)>> {
-    let known_filters = KNOWN_FILTERS.lock()?;
+) -> anyhow::Result<Vec<(String, git2::Oid)>> {
+    let known_filters = KNOWN_FILTERS.lock().unwrap();
     let mut updated_refs = vec![];
     for (upstream_repo, e) in known_filters.iter() {
         info!("background rebuild root: {:?}", upstream_repo);
@@ -279,9 +275,10 @@ pub fn refresh_known_filters(
     Ok(updated_refs)
 }
 
-pub fn get_known_filters() -> JoshResult<std::collections::BTreeMap<String, BTreeSet<String>>> {
+pub fn get_known_filters() -> anyhow::Result<std::collections::BTreeMap<String, BTreeSet<String>>> {
     Ok(KNOWN_FILTERS
-        .lock()?
+        .lock()
+        .unwrap()
         .iter()
         .map(|(repo, (_, filters))| (repo.clone(), filters.clone()))
         .collect())

@@ -1,3 +1,4 @@
+use anyhow::anyhow;
 use std::num::NonZeroUsize;
 use std::sync::{Arc, LazyLock};
 
@@ -63,26 +64,26 @@ impl std::fmt::Debug for Handle {
 impl Handle {
     // Returns a pair: (username, password)
     pub fn parse(&self) -> Option<(String, String)> {
-        let get_result = || -> josh_core::JoshResult<(String, String)> {
+        let get_result = || -> anyhow::Result<(String, String)> {
             let line = AUTH
                 .lock()
                 .unwrap()
                 .get(self)
                 .and_then(|h| h.header.as_ref())
                 .map(|h| h.as_bytes().to_owned())
-                .ok_or_else(|| josh_core::josh_error("no auth found"))?;
+                .ok_or_else(|| anyhow!("no auth found"))?;
 
             let line = String::from_utf8(line)?;
             let (_, token) = line
                 .split_once(' ')
-                .ok_or_else(|| josh_core::josh_error("Unsupported auth type"))?;
+                .ok_or_else(|| anyhow!("Unsupported auth type"))?;
 
             let decoded = BASE64.decode(token)?;
             let decoded = String::from_utf8(decoded)?;
 
             let (username, password) = decoded
                 .split_once(':')
-                .ok_or_else(|| josh_core::josh_error("No password found"))?;
+                .ok_or_else(|| anyhow!("No password found"))?;
 
             Ok((username.to_string(), password.to_string()))
         };
@@ -111,7 +112,7 @@ fn hash_header(header: &HeaderValue) -> String {
     hex::encode(result)
 }
 
-pub fn add_auth(token: &str) -> josh_core::JoshResult<Handle> {
+pub fn add_auth(token: &str) -> anyhow::Result<Handle> {
     let header = HeaderValue::from_str(&format!("Basic {}", BASE64.encode(token)))?;
     let handle = Handle {
         hash: Some(hash_header(&header)),
@@ -119,16 +120,12 @@ pub fn add_auth(token: &str) -> josh_core::JoshResult<Handle> {
     let header_wrapper = Header {
         header: Some(header),
     };
-    AUTH.lock()?.insert(handle.clone(), header_wrapper);
+    AUTH.lock().unwrap().insert(handle.clone(), header_wrapper);
     Ok(handle)
 }
 
 #[tracing::instrument()]
-pub async fn check_http_auth(
-    url: &str,
-    auth: &Handle,
-    required: bool,
-) -> josh_core::JoshResult<bool> {
+pub async fn check_http_auth(url: &str, auth: &Handle, required: bool) -> anyhow::Result<bool> {
     use opentelemetry_semantic_conventions::trace::HTTP_RESPONSE_STATUS_CODE;
 
     if required && auth.hash.is_none() {
@@ -137,7 +134,8 @@ pub async fn check_http_auth(
 
     let group_key = AuthTimersGroupKey::new(url, auth);
     let auth_timers = AUTH_TIMERS
-        .lock()?
+        .lock()
+        .unwrap()
         .entry(group_key.clone())
         .or_insert_with(|| {
             let cache = lru::LruCache::new(AUTH_LRU_CACHE_SIZE);
@@ -145,7 +143,7 @@ pub async fn check_http_auth(
         })
         .clone();
 
-    let auth_header = AUTH.lock()?.get(auth).cloned().unwrap_or_default();
+    let auth_header = AUTH.lock().unwrap().get(auth).cloned().unwrap_or_default();
 
     let refs_url = format!("{}/info/refs?service=git-upload-pack", url);
     let do_request = {
@@ -170,7 +168,7 @@ pub async fn check_http_auth(
 
                 let resp = request.send().await?;
 
-                Ok::<_, josh_core::JoshError>(resp)
+                Ok::<_, anyhow::Error>(resp)
             }
             .instrument(do_request_span)
         }
@@ -242,16 +240,17 @@ pub async fn check_http_auth(
 
         Ok(false)
     } else {
-        return Err(josh_core::josh_error(&format!(
+        return Err(anyhow!(
             "check_http_auth: got http response: {} {:?}",
-            refs_url, resp
-        )));
+            refs_url,
+            resp
+        ));
     }
 }
 
 pub fn strip_auth<B>(
     mut req: axum::http::Request<B>,
-) -> josh_core::JoshResult<(Handle, axum::http::Request<B>)> {
+) -> anyhow::Result<(Handle, axum::http::Request<B>)> {
     let header: Option<HeaderValue> = req.headers_mut().remove(axum::http::header::AUTHORIZATION);
 
     if let Some(header) = header {
@@ -261,7 +260,7 @@ pub fn strip_auth<B>(
         let header_wrapper = Header {
             header: Some(header),
         };
-        AUTH.lock()?.insert(handle.clone(), header_wrapper);
+        AUTH.lock().unwrap().insert(handle.clone(), header_wrapper);
         return Ok((handle, req));
     }
 

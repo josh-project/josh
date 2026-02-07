@@ -1,16 +1,17 @@
+use anyhow::anyhow;
 use std::sync::LazyLock;
 
 use super::transaction::{CACHE_VERSION, CacheBackend};
+use crate::filter;
 use crate::filter::Filter;
-use crate::{JoshResult, filter, josh_error};
 
 static DB: LazyLock<std::sync::Mutex<Option<sled::Db>>> = LazyLock::new(Default::default);
 
-pub fn sled_print_stats() -> JoshResult<()> {
-    let db = DB.lock()?;
+pub fn sled_print_stats() -> anyhow::Result<()> {
+    let db = DB.lock().unwrap();
     let db = match db.as_ref() {
         Some(db) => db,
-        None => return Err(josh_error("cache not initialized")),
+        None => return Err(anyhow!("cache not initialized")),
     };
 
     db.flush()?;
@@ -40,11 +41,11 @@ pub fn sled_print_stats() -> JoshResult<()> {
     Ok(())
 }
 
-pub fn sled_open_josh_trees() -> JoshResult<(sled::Tree, sled::Tree, sled::Tree)> {
-    let db = DB.lock()?;
+pub fn sled_open_josh_trees() -> anyhow::Result<(sled::Tree, sled::Tree, sled::Tree)> {
+    let db = DB.lock().unwrap();
     let db = match db.as_ref() {
         Some(db) => db,
-        None => return Err(josh_error("cache not initialized")),
+        None => return Err(anyhow!("cache not initialized")),
     };
 
     let path_tree = db.open_tree("_paths")?;
@@ -54,13 +55,13 @@ pub fn sled_open_josh_trees() -> JoshResult<(sled::Tree, sled::Tree, sled::Tree)
     Ok((path_tree, invert_tree, trigram_index_tree))
 }
 
-pub fn sled_load(path: &std::path::Path) -> JoshResult<()> {
+pub fn sled_load(path: &std::path::Path) -> anyhow::Result<()> {
     let db = sled::Config::default()
         .path(path.join(format!("josh/cache/{}/sled/", CACHE_VERSION)))
         .flush_every_ms(Some(200))
         .open()?;
 
-    *DB.lock()? = Some(db);
+    *DB.lock().unwrap() = Some(db);
 
     Ok(())
 }
@@ -85,8 +86,8 @@ impl CacheBackend for SledCacheBackend {
         filter: Filter,
         from: git2::Oid,
         _sequence_number: u128,
-    ) -> JoshResult<Option<git2::Oid>> {
-        let mut trees = self.trees.lock()?;
+    ) -> anyhow::Result<Option<git2::Oid>> {
+        let mut trees = self.trees.lock().unwrap();
         let tree = trees
             .entry(filter.id())
             .or_insert_with(|| insert_sled_tree(filter));
@@ -105,8 +106,8 @@ impl CacheBackend for SledCacheBackend {
         from: git2::Oid,
         to: git2::Oid,
         _sequence_number: u128,
-    ) -> JoshResult<()> {
-        let mut trees = self.trees.lock()?;
+    ) -> anyhow::Result<()> {
+        let mut trees = self.trees.lock().unwrap();
         let tree = trees
             .entry(filter.id())
             .or_insert_with(|| insert_sled_tree(filter));

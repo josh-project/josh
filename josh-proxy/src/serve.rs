@@ -1,5 +1,5 @@
 use crate::service::NamespacedRefs;
-use josh_core::{JoshResult, josh_error};
+use anyhow::{Context, anyhow};
 use std::str::FromStr;
 
 #[derive(Debug, Clone, Copy)]
@@ -39,7 +39,7 @@ impl FromStr for CapabilitiesDirection {
 pub fn git_list_capabilities(
     repo_path: &std::path::Path,
     direction: CapabilitiesDirection,
-) -> JoshResult<Vec<String>> {
+) -> anyhow::Result<Vec<String>> {
     use gix_packetline::PacketLineRef;
     use gix_packetline::blocking_io::StreamingPeekableIter;
     use gix_transport::client::capabilities::Capabilities;
@@ -60,10 +60,10 @@ pub fn git_list_capabilities(
         .output()?;
 
     if !output.status.success() {
-        return Err(josh_error(&format!(
+        return Err(anyhow!(
             "git http-backend failed: {}",
             String::from_utf8_lossy(&output.stderr)
-        )));
+        ));
     }
 
     // Skip HTTP headers until we find the empty line
@@ -93,8 +93,8 @@ pub fn git_list_capabilities(
     // Read first ref line which contains capabilities
     if let Some(Ok(Ok(PacketLineRef::Data(data)))) = peekable.read_line() {
         // Use gix Capabilities parser for V1 protocol
-        let (caps, _delimiter_pos) = Capabilities::from_bytes(data)
-            .map_err(|e| josh_error(&format!("Failed to parse capabilities: {}", e)))?;
+        let (caps, _delimiter_pos) =
+            Capabilities::from_bytes(data).context("Failed to parse capabilities")?;
 
         let capabilities: Vec<String> = caps
             .iter()
@@ -113,7 +113,7 @@ pub fn git_list_capabilities(
         return Ok(capabilities);
     }
 
-    Err(josh_error(
+    Err(anyhow!(
         "Failed to parse capabilities from git http-backend output",
     ))
 }
@@ -122,7 +122,7 @@ pub fn encode_info_refs(
     namespaced_refs: NamespacedRefs,
     direction: CapabilitiesDirection,
     capabilities: &[String],
-) -> JoshResult<Vec<u8>> {
+) -> anyhow::Result<Vec<u8>> {
     use gix_packetline::blocking_io::encode;
 
     let mut output = Vec::new();
