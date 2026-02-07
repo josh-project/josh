@@ -1,5 +1,6 @@
 use super::sled::sled_open_josh_trees;
 use super::stack::CacheStack;
+use anyhow::anyhow;
 
 use std::collections::HashMap;
 use std::sync::{LazyLock, RwLock};
@@ -12,7 +13,7 @@ pub trait CacheBackend: Send + Sync {
         filter: crate::filter::Filter,
         from: git2::Oid,
         sequence_number: u128,
-    ) -> crate::JoshResult<Option<git2::Oid>>;
+    ) -> anyhow::Result<Option<git2::Oid>>;
 
     fn write(
         &self,
@@ -20,7 +21,7 @@ pub trait CacheBackend: Send + Sync {
         from: git2::Oid,
         to: git2::Oid,
         sequence_number: u128,
-    ) -> crate::JoshResult<()>;
+    ) -> anyhow::Result<()>;
 }
 
 pub trait FilterHook {
@@ -28,10 +29,10 @@ pub trait FilterHook {
         &self,
         commit_oid: git2::Oid,
         arg: &str,
-    ) -> crate::JoshResult<crate::filter::Filter>;
+    ) -> anyhow::Result<crate::filter::Filter>;
 }
 
-pub(crate) fn josh_commit_signature<'a>() -> crate::JoshResult<git2::Signature<'a>> {
+pub(crate) fn josh_commit_signature<'a>() -> anyhow::Result<git2::Signature<'a>> {
     Ok(if let Ok(time) = std::env::var("JOSH_COMMIT_TIME") {
         git2::Signature::new(
             "JOSH",
@@ -58,7 +59,7 @@ pub struct TransactionContext {
 }
 
 impl TransactionContext {
-    pub fn from_env(cache: std::sync::Arc<CacheStack>) -> crate::JoshResult<Self> {
+    pub fn from_env(cache: std::sync::Arc<CacheStack>) -> anyhow::Result<Self> {
         let repo = git2::Repository::open_from_env()?;
         let path = repo.path().to_owned();
 
@@ -72,9 +73,9 @@ impl TransactionContext {
         }
     }
 
-    pub fn open(&self, ref_prefix: Option<&str>) -> crate::JoshResult<Transaction> {
+    pub fn open(&self, ref_prefix: Option<&str>) -> anyhow::Result<Transaction> {
         if !self.path.exists() {
-            return Err(crate::josh_error("path does not exist"));
+            return Err(anyhow!("path does not exist"));
         }
 
         Ok(Transaction::new(
@@ -147,7 +148,7 @@ impl Transaction {
         }
     }
 
-    pub fn try_clone(&self) -> crate::JoshResult<Transaction> {
+    pub fn try_clone(&self) -> anyhow::Result<Transaction> {
         let context = TransactionContext {
             cache: self.t2.borrow().cache.clone(),
             path: self.repo.path().to_owned(),
@@ -342,11 +343,11 @@ impl Transaction {
         &self,
         hook: &str,
         from: git2::Oid,
-    ) -> crate::JoshResult<crate::filter::Filter> {
+    ) -> anyhow::Result<crate::filter::Filter> {
         if let Some(h) = &self.filter_hook {
             return h.filter_for_commit(from, hook);
         }
-        Err(crate::josh_error("missing filter hook"))
+        Err(anyhow!("missing filter hook"))
     }
 
     pub fn with_filter_hook(mut self, hook: std::sync::Arc<dyn FilterHook + Send + Sync>) -> Self {
@@ -470,15 +471,13 @@ pub fn u128_from_oid(oid: git2::Oid) -> u128 {
 pub fn compute_sequence_number(
     transaction: &Transaction,
     input: git2::Oid,
-) -> crate::JoshResult<u128> {
+) -> anyhow::Result<u128> {
     if let Some(count) = transaction.get(crate::filter::sequence_number(), input) {
         return Ok(u128_from_oid(count));
     }
 
     if !transaction.repo().odb()?.exists(input) {
-        return Err(crate::josh_error(
-            "compute_sequence_number: input does not exist",
-        ));
+        return Err(anyhow!("compute_sequence_number: input does not exist",));
     }
 
     let commit = transaction.repo().find_commit(input)?;
@@ -528,6 +527,6 @@ pub fn compute_sequence_number(
     if let Some(count) = transaction.get(crate::filter::sequence_number(), input) {
         Ok(u128_from_oid(count))
     } else {
-        Err(crate::josh_error("missing sequence_number"))
+        Err(anyhow!("missing sequence_number"))
     }
 }

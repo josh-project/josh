@@ -1,4 +1,5 @@
 use anyhow::Context;
+use anyhow::anyhow;
 
 use std::collections::BTreeMap;
 use std::process::Command;
@@ -14,7 +15,7 @@ pub fn list_refs(url: &str) -> anyhow::Result<BTreeMap<String, git2::Oid>> {
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(anyhow::anyhow!("git ls-remote failed: {}", stderr));
+        return Err(anyhow!("git ls-remote failed: {}", stderr));
     }
 
     let stdout = String::from_utf8(output.stdout)?;
@@ -32,7 +33,7 @@ pub fn list_refs(url: &str) -> anyhow::Result<BTreeMap<String, git2::Oid>> {
         .collect();
 
     if refs.is_empty() {
-        return Err(anyhow::anyhow!("No refs found at remote URL: {}", url));
+        return Err(anyhow!("No refs found at remote URL: {}", url));
     }
 
     Ok(refs)

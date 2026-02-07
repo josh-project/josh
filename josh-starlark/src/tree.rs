@@ -1,5 +1,6 @@
 use allocative::Allocative;
 use anyhow::Context;
+use anyhow::anyhow;
 use starlark::{
     environment::{MethodsBuilder, MethodsStatic},
     starlark_module, starlark_simple_value,
@@ -88,13 +89,10 @@ impl StarlarkTree {
 
             let entry = current_tree
                 .get_name(component)
-                .ok_or_else(|| anyhow::anyhow!("Path component '{}' not found", component))?;
+                .ok_or_else(|| anyhow!("Path component '{}' not found", component))?;
 
             if entry.kind() != Some(git2::ObjectType::Tree) {
-                return Err(anyhow::anyhow!(
-                    "Path component '{}' is not a directory",
-                    component
-                ));
+                return Err(anyhow!("Path component '{}' is not a directory", component));
             }
 
             current_tree_oid = entry.id();
@@ -105,10 +103,7 @@ impl StarlarkTree {
 
     /// Navigate to a path in the tree, returning the OID of the tree at that path
     fn navigate_to_path_oid(&self, path: &str) -> anyhow::Result<git2::Oid> {
-        let repo = self
-            .repo
-            .lock()
-            .map_err(|e| anyhow::anyhow!("Failed to lock repository: {}", e))?;
+        let repo = self.repo.lock().unwrap();
         self.navigate_to_path_oid_with_repo(path, &repo)
     }
 
@@ -163,10 +158,7 @@ fn tree_methods(_builder: &mut MethodsBuilder) {
         path: StringValue,
         heap: &'v starlark::values::Heap,
     ) -> anyhow::Result<Vec<Value<'v>>> {
-        let repo = this
-            .repo
-            .lock()
-            .map_err(|e| anyhow::anyhow!("Failed to lock repository: {}", e))?;
+        let repo = this.repo.lock().unwrap();
 
         let target_tree_oid = if path.as_str().is_empty() {
             this.tree_oid
@@ -211,10 +203,7 @@ fn tree_methods(_builder: &mut MethodsBuilder) {
         path: StringValue,
         heap: &'v starlark::values::Heap,
     ) -> anyhow::Result<Vec<Value<'v>>> {
-        let repo = this
-            .repo
-            .lock()
-            .map_err(|e| anyhow::anyhow!("Failed to lock repository: {}", e))?;
+        let repo = this.repo.lock().unwrap();
 
         let target_tree_oid = if path.as_str().is_empty() {
             this.tree_oid

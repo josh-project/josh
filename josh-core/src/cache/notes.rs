@@ -1,5 +1,4 @@
 use super::transaction::{CACHE_VERSION, CacheBackend};
-use crate::JoshResult;
 use crate::filter;
 use crate::filter::Filter;
 
@@ -8,7 +7,7 @@ pub struct NotesCacheBackend {
 }
 
 impl NotesCacheBackend {
-    pub fn new(repo_path: impl AsRef<std::path::Path>) -> JoshResult<Self> {
+    pub fn new(repo_path: impl AsRef<std::path::Path>) -> anyhow::Result<Self> {
         let repo = git2::Repository::open(repo_path.as_ref())?;
         Ok(Self {
             repo: std::sync::Mutex::new(repo),
@@ -51,11 +50,11 @@ impl CacheBackend for NotesCacheBackend {
         filter: Filter,
         from: git2::Oid,
         sequence_number: u128,
-    ) -> JoshResult<Option<git2::Oid>> {
+    ) -> anyhow::Result<Option<git2::Oid>> {
         if filter == filter::sequence_number() {
             return Ok(None);
         }
-        let repo = self.repo.lock()?;
+        let repo = self.repo.lock().unwrap();
         if !is_note_eligible(&repo, from, sequence_number) {
             return Ok(None);
         }
@@ -78,12 +77,12 @@ impl CacheBackend for NotesCacheBackend {
         from: git2::Oid,
         to: git2::Oid,
         sequence_number: u128,
-    ) -> JoshResult<()> {
+    ) -> anyhow::Result<()> {
         if filter == filter::sequence_number() {
             return Ok(());
         }
 
-        let repo = self.repo.lock()?;
+        let repo = self.repo.lock().unwrap();
         if !is_note_eligible(&repo, from, sequence_number) {
             return Ok(());
         }

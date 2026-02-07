@@ -1,6 +1,7 @@
 use crate::filter::StarlarkFilter;
 use crate::module::filter_module;
 use crate::tree::StarlarkTree;
+use anyhow::anyhow;
 use josh_filter::Filter;
 use starlark::{
     environment::{GlobalsBuilder, Module},
@@ -25,7 +26,7 @@ pub fn evaluate(
 ) -> anyhow::Result<Filter> {
     // Parse the starlark script
     let ast = AstModule::parse("script.star", script.to_owned(), &Dialect::Standard)
-        .map_err(|e| anyhow::anyhow!("Failed to parse starlark script: {}", e))?;
+        .map_err(|e| anyhow!("Failed to parse starlark script: {}", e))?;
 
     // Create a new module
     let module = Module::new();
@@ -47,18 +48,18 @@ pub fn evaluate(
     // Evaluate the script
     let _result = eval
         .eval_module(ast, &globals)
-        .map_err(|e| anyhow::anyhow!("Failed to evaluate starlark script: {}", e))?;
+        .map_err(|e| anyhow!("Failed to evaluate starlark script: {}", e))?;
 
     // Try to get the filter from the module
     // Look for a variable named "filter"
-    let filter_value = module.get("filter").ok_or_else(|| {
-        anyhow::anyhow!("Script must define 'filter' variable returning a Filter")
-    })?;
+    let filter_value = module
+        .get("filter")
+        .ok_or_else(|| anyhow!("Script must define 'filter' variable returning a Filter"))?;
 
     // Extract the Filter from the StarlarkFilter value
     let filter = filter_value
         .downcast_ref::<StarlarkFilter>()
-        .ok_or_else(|| anyhow::anyhow!("Expected Filter value, got {}", filter_value.get_type()))?;
+        .ok_or_else(|| anyhow!("Expected Filter value, got {}", filter_value.get_type()))?;
 
     Ok(filter.filter)
 }

@@ -1,6 +1,6 @@
 use super::sled::SledCacheBackend;
 use super::transaction::CacheBackend;
-use crate::{JoshResult, filter};
+use crate::filter;
 
 pub struct CacheStack {
     backends: Vec<Box<dyn CacheBackend>>,
@@ -34,7 +34,7 @@ impl CacheStack {
         from: git2::Oid,
         to: git2::Oid,
         sequence_number: u128,
-    ) -> JoshResult<()> {
+    ) -> anyhow::Result<()> {
         for backend in &self.backends {
             backend.write(filter, from, to, sequence_number)?;
         }
@@ -53,7 +53,7 @@ impl CacheStack {
         filter: filter::Filter,
         from: git2::Oid,
         sequence_number: u128,
-    ) -> JoshResult<Option<git2::Oid>> {
+    ) -> anyhow::Result<Option<git2::Oid>> {
         let values = self
             .backends
             .iter()

@@ -1,9 +1,9 @@
 use crate::service::{JoshProxyService, UpstreamProtocol};
 use crate::{FetchError, auth, proxy_commit_signature, run_git_with_auth};
+use anyhow::{Context, anyhow};
 
 use josh_core::cache::{CacheStack, TransactionContext};
 use josh_core::changes::{PushMode, baseref_and_options, build_to_push};
-use josh_core::josh_error;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -78,7 +78,7 @@ async fn fetch_needed(
 ) -> Result<bool, FetchError> {
     let fetch_timer_ok = {
         let last = {
-            let fetch_timers = service.fetch_timers.read()?;
+            let fetch_timers = service.fetch_timers.read().unwrap();
             fetch_timers.get(remote_url).cloned()
         };
 
@@ -119,7 +119,7 @@ async fn fetch_needed(
         (false, true, Some(head_ref), _) => {
             if (resolve_cache_ref(head_ref)
                 .await?
-                .map_err(FetchError::from_josh_error)?)
+                .map_err(FetchError::from_anyhow)?)
             .is_some()
             {
                 tracing::trace!("cache ref resolved");
@@ -129,7 +129,7 @@ async fn fetch_needed(
         (false, false, Some(head_ref), Some(head_ref_resolved)) => {
             if let Some(oid) = resolve_cache_ref(head_ref)
                 .await?
-                .map_err(FetchError::from_josh_error)?
+                .map_err(FetchError::from_anyhow)?
                 && oid.to_string() == head_ref_resolved
             {
                 tracing::trace!("cache ref resolved and matches");
@@ -187,7 +187,8 @@ pub async fn fetch_upstream(
 
     let semaphore = service
         .fetch_permits
-        .lock()?
+        .lock()
+        .unwrap()
         .entry(upstream_repo.clone())
         .or_insert(Arc::new(tokio::sync::Semaphore::new(1)))
         .clone();
@@ -248,14 +249,18 @@ pub async fn fetch_upstream(
     let heads_map = service.head_symref_map.clone();
 
     if let Ok(hres) = hres {
-        heads_map.write()?.insert(upstream_repo.clone(), hres);
+        heads_map
+            .write()
+            .unwrap()
+            .insert(upstream_repo.clone(), hres);
     }
 
     std::mem::drop(permit);
 
     if fetch_result.is_ok() {
         fetch_timers
-            .write()?
+            .write()
+            .unwrap()
             .insert(remote_url.clone(), std::time::Instant::now());
     }
 
@@ -266,7 +271,8 @@ pub async fn fetch_upstream(
             {
                 service
                     .poll
-                    .lock()?
+                    .lock()
+                    .unwrap()
                     .insert((upstream_repo, auth.clone(), remote_url));
             }
 
@@ -277,7 +283,7 @@ pub async fn fetch_upstream(
     }
 }
 
-pub fn process_repo_update(repo_update: RepoUpdate) -> josh_core::JoshResult<String> {
+pub fn process_repo_update(repo_update: RepoUpdate) -> anyhow::Result<String> {
     let push_options_path = std::path::PathBuf::from(&repo_update.git_dir)
         .join("refs/namespaces")
         .join(&repo_update.git_ns)
@@ -286,8 +292,8 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh_core::JoshResult<Str
     let push_options = std::fs::read_to_string(&push_options_path)?;
     std::fs::remove_file(push_options_path).ok();
 
-    let push_options: PushOptions = serde_json::from_str(&push_options)
-        .map_err(|e| josh_error(&format!("Failed to parse push options: {}", e)))?;
+    let push_options: PushOptions =
+        serde_json::from_str(&push_options).context("Failed to parse push options")?;
 
     tracing::debug!(
         push_options = ?push_options,
@@ -381,7 +387,7 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh_core::JoshResult<Str
                 "resolve_original_target"
             );
 
-            return Err(josh_core::josh_error(&indoc::formatdoc!(
+            return Err(anyhow!(indoc::formatdoc!(
                 r###"
                     Reference {:?} does not exist on remote.
                     If you want to create it, pass "-o base=<basebranch>" or "-o base=path/to/ref"
@@ -461,7 +467,7 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh_core::JoshResult<Str
                     &[&base_commit, &backward_commit],
                 )?
             } else {
-                return Err(josh_core::josh_error("josh_merge failed"));
+                return Err(anyhow!("josh_merge failed"));
             }
         } else {
             backward_new_oid
@@ -502,7 +508,7 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> josh_core::JoshResult<Str
             )?;
 
             if status != 0 {
-                return Err(josh_core::josh_error(&text));
+                return Err(anyhow!("{}", text));
             }
 
             resp.push(text.to_string());
@@ -566,7 +572,7 @@ pub fn push_head_url(
     namespace: &str,
     display_name: &str,
     force: bool,
-) -> josh_core::JoshResult<(String, i32)> {
+) -> anyhow::Result<(String, i32)> {
     let push_temp_ref = format!("refs/{}", &namespace);
     let push_refspec = format!("{}:{}", &push_temp_ref, &refname);
 

@@ -1,4 +1,4 @@
-use crate::JoshResult;
+use anyhow::Result;
 use regex::Regex;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -9,11 +9,11 @@ pub fn transform_with_template<F>(
     template: &str,
     input: &str,
     globals: F,
-) -> JoshResult<String>
+) -> anyhow::Result<String>
 where
     F: Fn(&str) -> Option<String>,
 {
-    let first_error: RefCell<Option<crate::JoshError>> = RefCell::new(None);
+    let first_error: RefCell<Option<anyhow::Error>> = RefCell::new(None);
 
     let result = re
         .replace_all(input, |caps: &regex::Captures| {

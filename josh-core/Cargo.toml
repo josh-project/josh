@@ -14,6 +14,7 @@ name = "ultrawide"
 harness = false
 
 [dependencies]
+anyhow = { workspace = true }
 backtrace = "0.3.76"
 bitvec = "1.0.1"
 git-version = "0.3.9"
