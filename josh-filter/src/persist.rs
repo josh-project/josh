@@ -209,6 +209,7 @@ impl InMemoryBuilder {
         Ok(self.write_tree(outer_tree))
     }
 
+    #[cfg(feature = "incubating")]
     fn build_lazyref_filter_params(
         &mut self,
         lazy_ref: &LazyRef,

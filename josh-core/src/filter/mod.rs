@@ -1,5 +1,5 @@
 use super::*;
-use anyhow::{Context, anyhow};
+use anyhow::anyhow;
 
 use std::path::Path;
 use std::sync::LazyLock;
@@ -440,6 +440,8 @@ fn read_josh_link<'a>(
     root: &std::path::Path,
     filename: &str,
 ) -> Option<Filter> {
+    use anyhow::Context;
+
     let link_path = root.join(filename);
     let link_entry = tree.get_path(&link_path).ok()?;
     let link_blob = repo.find_blob(link_entry.id()).ok()?;

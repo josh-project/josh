@@ -120,9 +120,9 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> anyhow::Result<Filter> {
             Ok(f.starlark(path, subfilter))
         }
         #[cfg(not(feature = "incubating"))]
-        Rule::filter_starlark => {
-            Err("Starlark filter is incubating. Build with --features incubating.".to_string())
-        }
+        Rule::filter_starlark => Err(anyhow!(
+            "Starlark filter is incubating. Build with --features incubating."
+        )),
         Rule::filter_presub => {
             let mut inner = pair.into_inner();
             let arg = &unquote(inner.next().unwrap().as_str());
