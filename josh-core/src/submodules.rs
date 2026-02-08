@@ -1,5 +1,3 @@
-use anyhow::Context;
-
 #[cfg(feature = "incubating")]
 pub struct ParsedSubmoduleEntry {
     pub path: std::path::PathBuf,
@@ -9,6 +7,7 @@ pub struct ParsedSubmoduleEntry {
 
 #[cfg(feature = "incubating")]
 pub fn parse_gitmodules(gitmodules_content: &str) -> anyhow::Result<Vec<ParsedSubmoduleEntry>> {
+    use anyhow::Context;
     use gix_submodule::File;
 
     let submodules = File::from_bytes(gitmodules_content.as_bytes(), None, &Default::default())
@@ -51,6 +50,7 @@ pub fn update_gitmodules(
     gitmodules_content: &str,
     entry: &ParsedSubmoduleEntry,
 ) -> anyhow::Result<String> {
+    use anyhow::Context;
     use gix_config::File as ConfigFile;
     use gix_submodule::File as SubmoduleFile;
 

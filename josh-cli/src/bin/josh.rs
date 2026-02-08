@@ -4,7 +4,7 @@ use anyhow::{Context, anyhow};
 use clap::Parser;
 
 use josh_core::changes::{PushMode, build_to_push};
-use josh_link::{normalize_repo_path, spawn_git_command};
+use josh_core::git::{normalize_repo_path, spawn_git_command};
 
 #[derive(Debug, clap::Parser)]
 #[command(name = "josh", version, about = "Josh: Git projections & sync tooling", long_about = None)]

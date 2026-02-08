@@ -2,7 +2,8 @@ use anyhow::Context;
 use clap::Parser;
 
 use josh_core::filter::tree;
-use josh_link::{make_signature, normalize_repo_path, spawn_git_command};
+use josh_core::git::{normalize_repo_path, spawn_git_command};
+use josh_link::make_signature;
 
 use std::collections::BTreeMap;
 

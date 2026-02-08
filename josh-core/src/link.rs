@@ -1,11 +1,10 @@
-use crate::filter;
-use anyhow::Context;
-
 #[cfg(feature = "incubating")]
 pub fn find_link_files(
     repo: &git2::Repository,
     tree: &git2::Tree,
-) -> anyhow::Result<Vec<(std::path::PathBuf, filter::Filter)>> {
+) -> anyhow::Result<Vec<(std::path::PathBuf, crate::filter::Filter)>> {
+    use crate::filter;
+    use anyhow::Context;
     let mut link_files = Vec::new();
 
     tree.walk(git2::TreeWalkMode::PreOrder, |root, entry| {

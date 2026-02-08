@@ -12,7 +12,7 @@ version = "22.4.15"
 [dependencies]
 josh-core = { path = "../josh-core" }
 josh-graphql = { path = "../josh-graphql" }
-josh-link = { path = "../josh-link" }
+josh-link = { path = "../josh-link", optional = true }
 josh-templates = { path = "../josh-templates" }
 anyhow = { workspace = true }
 env_logger = { workspace = true }
@@ -26,7 +26,7 @@ git2 = { workspace = true }
 toml = { workspace = true }
 
 [features]
-incubating = []
+incubating = ["dep:josh-link"]
 
 [[bin]]
 name = "josh-filter"
