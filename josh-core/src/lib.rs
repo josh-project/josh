@@ -20,6 +20,7 @@ extern crate rs_tracing;
 pub mod cache;
 pub mod changes;
 pub mod filter;
+pub mod git;
 pub mod history;
 pub mod housekeeping;
 pub mod link;

@@ -161,8 +161,6 @@ impl<'a> Rewrite<'a> {
     }
 }
 
-use crate::link::find_link_files;
-use crate::submodules::{ParsedSubmoduleEntry, parse_gitmodules};
 pub use josh_filter::compose;
 
 pub fn lazy_refs(filter: Filter) -> Vec<String> {
@@ -696,6 +694,8 @@ pub fn apply_to_commit2(
         }
         #[cfg(feature = "incubating")]
         Op::Unlink => {
+            use crate::link::find_link_files;
+
             let filtered_parent_ids = {
                 commit
                     .parents()
@@ -1013,8 +1013,13 @@ pub fn apply_to_commit2(
 fn extract_submodule_commits<'a>(
     repo: &'a git2::Repository,
     tree: &git2::Tree<'a>,
-) -> anyhow::Result<std::collections::BTreeMap<std::path::PathBuf, (git2::Oid, ParsedSubmoduleEntry)>>
-{
+) -> anyhow::Result<
+    std::collections::BTreeMap<
+        std::path::PathBuf,
+        (git2::Oid, crate::submodules::ParsedSubmoduleEntry),
+    >,
+> {
+    use crate::submodules::{ParsedSubmoduleEntry, parse_gitmodules};
     // Get .gitmodules blob from the tree
     let gitmodules_content = tree::get_blob(repo, tree, std::path::Path::new(".gitmodules"));
 
@@ -1202,6 +1207,7 @@ pub fn apply<'a>(
         }
         #[cfg(feature = "incubating")]
         Op::Unlink => {
+            use crate::link::find_link_files;
             let mut result_tree = x.tree.clone();
             for (link_path, link_file) in find_link_files(&repo, &result_tree)?.iter() {
                 result_tree =

@@ -181,6 +181,9 @@ ENV CARGO_TARGET_DIR=/opt/cargo-target
 
 FROM dev-cache AS dev-ci
 
+# Disable incremental builds on CI as the runners are ephemeral
+ENV CARGO_INCREMENTAL=0
+
 RUN mkdir -p /josh/static && \
     chmod 777 /josh/static
 
