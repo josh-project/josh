@@ -7,6 +7,7 @@
     init   Initialize metarepo
     track  Track a remote repository
     fetch  Fetch remotes, collect and record state of conditions
+    admit  Manually mark a change as admissible, allowing it to participate in speculative history
     step   Single step through the queue, updating the state
     push   Push updated metarepo state to remotes
     help   Print this message or the help of the given subcommand(s)

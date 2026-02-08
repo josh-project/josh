@@ -84,3 +84,29 @@
       }
     ]
   } (no-eol)
+
+# Admit a change
+  $ josh-cq admit change-1
+  Admitted change 'change-1'
+
+  $ git show HEAD:remotes/myremote/changes.json
+  {
+    "changes": [
+      {
+        "id": "change-1",
+        "head": "28d9779d81e6ccdd85e9145e5b1dae3a6ffd61f4",
+        "admit": true
+      },
+      {
+        "id": "change-2",
+        "head": "ddd79153049e608636bccd727396380ebf0e16de"
+      }
+    ],
+    "edges": [
+      {
+        "from": "change-2",
+        "to": "change-1",
+        "base": "28d9779d81e6ccdd85e9145e5b1dae3a6ffd61f4"
+      }
+    ]
+  } (no-eol)

@@ -9,6 +9,7 @@ pub type ChangeId = String;
 pub struct Change {
     pub id: ChangeId,
     pub head: git2::Oid,
+    pub admit: bool,
 }
 
 /// DAG (forest) of changes where edges point from child to parent.
@@ -34,6 +35,9 @@ pub struct ChangeGraph {
 struct SerializedChange {
     id: ChangeId,
     head: String,
+
+    #[serde(skip_serializing_if = "std::ops::Not::not", default)]
+    admit: bool,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -59,6 +63,7 @@ impl Serialize for ChangeGraph {
                 SerializedChange {
                     id: change.id.clone(),
                     head: change.head.to_string(),
+                    admit: change.admit,
                 }
             })
             .collect();
@@ -93,6 +98,7 @@ impl<'de> Deserialize<'de> for ChangeGraph {
             let idx = graph.add_node(Change {
                 id: change.id.clone(),
                 head: oid,
+                admit: change.admit,
             });
             nodes.insert(change.id, idx);
         }

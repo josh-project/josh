@@ -135,6 +135,7 @@ impl ChangeVendor for GenericRemote {
                     let node_idx = graph.add_node(Change {
                         id: change_id.clone(),
                         head: *oid,
+                        admit: false,
                     });
                     nodes.insert(change_id.clone(), node_idx);
                 }
