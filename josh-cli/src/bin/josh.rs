@@ -106,12 +106,18 @@ pub struct FetchArgs {
 
 #[derive(Debug, clap::Parser)]
 pub struct PushArgs {
-    /// Remote name (or URL) to push to
-    #[arg(short = 'r', long = "remote", default_value = "origin")]
-    pub remote: String,
+    /// Remote name (or URL) to push to (optional, defaults to git's configured remote)
+    ///
+    /// When omitted, behaves like `git push` and uses the current branch's
+    /// configured remote (or a reasonable default such as `origin`).
+    #[arg()]
+    pub remote: Option<String>,
 
     /// One or more refspecs to push (e.g. main, HEAD:refs/heads/main)
-    #[arg(short = 'R', long = "ref")]
+    ///
+    /// These are positional arguments following the optional remote, matching
+    /// `git push [<repository> [<refspec>...]]` syntax.
+    #[arg()]
     pub refspecs: Vec<String>,
 
     /// Force update (non-fast-forward)
@@ -697,8 +703,15 @@ fn handle_push(args: &PushArgs, transaction: &josh_core::cache::Transaction) -> 
     let repo = transaction.repo();
     let repo_path = repo.path().parent().unwrap();
 
-    let (remote_url, _refspec, filter_with_meta) = read_remote_config(repo_path, &args.remote)
-        .with_context(|| format!("Failed to read remote config for '{}'", args.remote))?;
+    // Determine which remote to use:
+    // - If a remote was explicitly provided, use it.
+    // - Otherwise, fall back to a reasonable default (currently \"origin\"),
+    //   similar to how `git push` uses the configured upstream when no
+    //   repository argument is given.
+    let remote_name = args.remote.as_deref().unwrap_or("origin");
+
+    let (remote_url, _refspec, filter_with_meta) = read_remote_config(repo_path, remote_name)
+        .with_context(|| format!("Failed to read remote config for '{}'", remote_name))?;
 
     // Get the wrapped filter (peel away metadata)
     let filter = filter_with_meta.peel();
@@ -749,7 +762,7 @@ fn handle_push(args: &PushArgs, transaction: &josh_core::cache::Transaction) -> 
         // We need to find the original commit in the unfiltered repository
         // that corresponds to the current filtered commit
         // Use josh/remotes references which contain the unfiltered commits
-        let josh_remote_ref = format!("refs/josh/remotes/{}/{}", args.remote, remote_ref);
+        let josh_remote_ref = format!("refs/josh/remotes/{}/{}", remote_name, remote_ref);
         let original_target = if let Ok(remote_reference) = repo.find_reference(&josh_remote_ref) {
             // If we have a josh remote reference, use its target (this is the unfiltered commit)
             remote_reference.target().unwrap_or(git2::Oid::zero())
@@ -760,7 +773,7 @@ fn handle_push(args: &PushArgs, transaction: &josh_core::cache::Transaction) -> 
 
         // Get the old filtered oid by applying the filter to the original remote ref
         // before we push to the namespace
-        let josh_remote_ref = format!("refs/josh/remotes/{}/{}", args.remote, remote_ref);
+        let josh_remote_ref = format!("refs/josh/remotes/{}/{}", remote_name, remote_ref);
         let old_filtered_oid =
             if let Ok(josh_remote_reference) = repo.find_reference(&josh_remote_ref) {
                 let josh_remote_oid = josh_remote_reference.target().unwrap_or(git2::Oid::zero());
@@ -877,7 +890,7 @@ fn handle_push(args: &PushArgs, transaction: &josh_core::cache::Transaction) -> 
             )
             .context("git push failed")?;
 
-            eprintln!("Pushed {} to {}/{}", oid, args.remote, refname);
+            eprintln!("Pushed {} to {}/{}", oid, remote_name, refname);
         }
     }
 
