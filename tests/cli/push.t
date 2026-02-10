@@ -57,7 +57,7 @@ Make a change in the filtered repository
 
 Push the change back
 
-  $ josh push -r origin -R HEAD:refs/heads/master -f
+  $ josh push origin HEAD:refs/heads/master -f
   To file://${TESTTMP}/remote
      14ecb7c..33f0c00  33f0c009c43980ba5e76995b53f9615a4d880a08 -> master
   
