@@ -19,7 +19,7 @@ members = [
 ]
 
 [profile.release]
-lto = true
+lto = "thin"
 opt-level = 3
 codegen-units = 1
 
