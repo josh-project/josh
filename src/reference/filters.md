@@ -221,6 +221,8 @@ The `:rev(...)` filter allows you to apply different filters to different parts 
 )
 ```
 
+Commit references must be **full 40-character SHA-1 hashes**; short/abbreviated SHAs are not accepted.
+
 **Operators:**
 
 - **`<`** - Strict ancestor match: matches if the commit is an ancestor of `<sha>` AND the commit is not equal to `<sha>`
@@ -237,14 +239,14 @@ The `:rev(...)` filter allows you to apply different filters to different parts 
 **Examples:**
 
 ```
-:rev(==def456:prefix=new,<=abc123:prefix=old)
+:rev(==def4567890123456789012345678901234567890:prefix=new,<=abc123450123456789012345678901234567890:prefix=old)
 ```
-This applies `:prefix=old` to commit `abc123` and all its ancestors, and `:prefix=new` only to commit `def456`.
+This applies `:prefix=old` to commit `abc12345...` and all its ancestors, and `:prefix=new` only to commit `def45678...`.
 
 ```
-:rev(<abc123:prefix=old,_:prefix=default)
+:rev(<abc123450123456789012345678901234567890:prefix=old,_:prefix=default)
 ```
-This applies `:prefix=old` to all ancestors of `abc123` (but not `abc123` itself), and `:prefix=default` to all other commits (including `abc123` and any commits after it).
+This applies `:prefix=old` to all ancestors of that commit (but not the commit itself), and `:prefix=default` to all other commits (including that commit and any commits after it).
 
 ### Prune trivial merge commits **:prune=trivial-merge**
 
