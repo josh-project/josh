@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-a1bf1bfa.js";
+            window.path_to_searchindex_js = "../searchindex-1bf21ddd.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-e9bc00a4.js"></script>
@@ -342,6 +342,7 @@ simply dropping all parents except the first on every commit.</p>
   ...
 )
 </code></pre>
+<p>Commit references must be <strong>full 40-character SHA-1 hashes</strong>; short/abbreviated SHAs are not accepted.</p>
 <p><strong>Operators:</strong></p>
 <ul>
 <li><strong><code>&lt;</code></strong> - Strict ancestor match: matches if the commit is an ancestor of <code>&lt;sha&gt;</code> AND the commit is not equal to <code>&lt;sha&gt;</code></li>
@@ -356,12 +357,12 @@ simply dropping all parents except the first on every commit.</p>
 <li>The default filter (<code>_</code>) will match any commit that hasn’t matched a previous rule, making any rules after it unreachable</li>
 </ul>
 <p><strong>Examples:</strong></p>
-<pre><code>:rev(==def456:prefix=new,&lt;=abc123:prefix=old)
+<pre><code>:rev(==def4567890123456789012345678901234567890:prefix=new,&lt;=abc123450123456789012345678901234567890:prefix=old)
 </code></pre>
-<p>This applies <code>:prefix=old</code> to commit <code>abc123</code> and all its ancestors, and <code>:prefix=new</code> only to commit <code>def456</code>.</p>
-<pre><code>:rev(&lt;abc123:prefix=old,_:prefix=default)
+<p>This applies <code>:prefix=old</code> to commit <code>abc12345...</code> and all its ancestors, and <code>:prefix=new</code> only to commit <code>def45678...</code>.</p>
+<pre><code>:rev(&lt;abc123450123456789012345678901234567890:prefix=old,_:prefix=default)
 </code></pre>
-<p>This applies <code>:prefix=old</code> to all ancestors of <code>abc123</code> (but not <code>abc123</code> itself), and <code>:prefix=default</code> to all other commits (including <code>abc123</code> and any commits after it).</p>
+<p>This applies <code>:prefix=old</code> to all ancestors of that commit (but not the commit itself), and <code>:prefix=default</code> to all other commits (including that commit and any commits after it).</p>
 <h3 id="prune-trivial-merge-commits-prunetrivial-merge"><a class="header" href="#prune-trivial-merge-commits-prunetrivial-merge">Prune trivial merge commits <strong>:prune=trivial-merge</strong></a></h3>
 <p>Produce a history that skips all merge commits whose tree is identical to the first parents
 tree.
