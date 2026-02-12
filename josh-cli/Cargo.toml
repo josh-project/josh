@@ -10,20 +10,21 @@ repository = "https://github.com/josh-project/josh"
 version = "22.4.15"
 
 [dependencies]
-josh-core = { path = "../josh-core" }
-josh-graphql = { path = "../josh-graphql" }
-josh-link = { path = "../josh-link", optional = true }
-josh-templates = { path = "../josh-templates" }
-anyhow = { workspace = true }
-env_logger = { workspace = true }
-log = { workspace = true }
-serde_json = { workspace = true }
-defer = { workspace = true }
-clap = { workspace = true }
-rs_tracing = { workspace = true }
-juniper = { workspace = true }
-git2 = { workspace = true }
-toml = { workspace = true }
+anyhow.workspace = true
+env_logger.workspace = true
+log.workspace = true
+serde_json.workspace = true
+defer.workspace = true
+clap.workspace = true
+rs_tracing.workspace = true
+juniper.workspace = true
+git2.workspace = true
+toml.workspace = true
+
+josh-core.workspace = true
+josh-graphql.workspace = true
+josh-link = { workspace = true, optional = true }
+josh-templates.workspace = true
 
 [features]
 incubating = ["dep:josh-link"]

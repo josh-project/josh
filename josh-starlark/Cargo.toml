@@ -10,9 +10,10 @@ readme = "../README.md"
 repository = "https://github.com/josh-project/josh"
 
 [dependencies]
-josh-filter = { path = "../josh-filter" }
 starlark = "0.13.0"
-starlark_derive = "0.13.0"
-anyhow = { workspace = true }
 allocative = "0.3"
-git2 = { workspace = true }
+
+anyhow.workspace = true
+git2.workspace = true
+
+josh-filter.workspace = true

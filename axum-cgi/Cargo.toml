@@ -6,10 +6,11 @@ license-file = "LICENSE"
 
 [dependencies]
 bytes = "1.11.1"
-futures = { workspace = true }
-tokio = { workspace = true }
-tokio-util = { workspace = true, features = ["io"] }
-axum = { workspace = true }
 http = "1.4.0"
 http-body-util = "0.1.0"
-tracing = { workspace = true }
+
+futures.workspace = true
+tokio.workspace = true
+tokio-util = { workspace = true, features = ["io"] }
+axum.workspace = true
+tracing.workspace = true

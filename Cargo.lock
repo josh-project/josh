@@ -2669,7 +2669,6 @@ dependencies = [
  "pest",
  "pest_derive",
  "regex",
- "serde",
  "serde_json",
  "smallvec",
 ]
@@ -2699,7 +2698,6 @@ dependencies = [
  "anyhow",
  "git2",
  "josh-core",
- "log",
 ]
 
 [[package]]
@@ -2737,7 +2735,6 @@ dependencies = [
  "reqwest 0.13.1",
  "serde",
  "serde_json",
- "serde_yaml",
  "sha2",
  "tempfile",
  "tokio",
@@ -2788,7 +2785,6 @@ dependencies = [
  "git2",
  "josh-filter",
  "starlark",
- "starlark_derive",
 ]
 
 [[package]]

@@ -4,18 +4,20 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-clap = { workspace = true }
-libc = { workspace = true }
 shell-words = "1.1.1"
-tokio = { workspace = true }
-josh-rpc = { path = "../josh-rpc" }
-serde_json = { workspace = true }
-tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
-tokio-util = { workspace = true }
 thiserror = "2.0.18"
-tempfile = { workspace = true }
-reqwest = { workspace = true }
+
+clap.workspace = true
+libc.workspace = true
+tokio.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+tokio-util.workspace = true
+tempfile.workspace = true
+reqwest.workspace = true
+
+josh-rpc.workspace = true
 
 [features]
 incubating = []

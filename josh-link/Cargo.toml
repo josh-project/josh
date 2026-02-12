@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-josh-core = { path = "../josh-core", features = ["incubating"] }
-git2 = { workspace = true }
-anyhow = { workspace = true }
-log = { workspace = true }
+git2.workspace = true
+anyhow.workspace = true
+
+josh-core = { workspace = true, features = ["incubating"] }
