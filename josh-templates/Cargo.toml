@@ -4,14 +4,16 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-anyhow = { workspace = true }
-git2 = { workspace = true }
-josh-core = { path = "../josh-core" }
-josh-graphql = { path = "../josh-graphql" }
-juniper = { workspace = true }
-serde_json = { workspace = true }
 handlebars = "6.4.0"
 form_urlencoded = "1.2.2"
+
+anyhow.workspace = true
+git2.workspace = true
+juniper.workspace = true
+serde_json.workspace = true
+
+josh-core.workspace = true
+josh-graphql.workspace = true
 
 [features]
 incubating = []

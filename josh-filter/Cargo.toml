@@ -10,18 +10,18 @@ readme = "../README.md"
 edition = "2024"
 
 [dependencies]
-anyhow = { workspace = true }
-git2 = { workspace = true }
-gix-object = { workspace = true }
-gix-hash = { workspace = true }
-serde = { workspace = true }
-regex = { workspace = true }
 smallvec = "1.15.1"
-serde_json = { workspace = true }
 pest = "2.8.6"
 pest_derive = "2.8.6"
 indoc = "2.0.7"
 itertools = "0.14.0"
+
+anyhow.workspace = true
+git2.workspace = true
+gix-object.workspace = true
+gix-hash.workspace = true
+regex.workspace = true
+serde_json.workspace = true
 
 [features]
 incubating = []

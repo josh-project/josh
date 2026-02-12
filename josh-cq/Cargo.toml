@@ -9,5 +9,6 @@ clap.workspace = true
 anyhow.workspace = true
 serde_json.workspace = true
 git2.workspace = true
-josh-core = { path = "../josh-core" }
-josh-link = { path = "../josh-link" }
+
+josh-core.workspace = true
+josh-link.workspace = true

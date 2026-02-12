@@ -6,13 +6,14 @@ license-file = "../axum-cgi/LICENSE"
 repository = "https://github.com/josh-project/josh"
 
 [dependencies]
-axum = { workspace = true }
 axum-extra = { version = "^0.12", features = ["typed-header"] }
-axum-cgi = { path = "../axum-cgi" }
-clap = { workspace = true }
 http = "1.4.0"
 rand = { version = "0.9.2", features = ["std"] }
-reqwest = { workspace = true }
-tokio = { workspace = true }
+
+axum.workspace = true
+axum-cgi.workspace = true
+clap.workspace = true
+reqwest.workspace = true
+tokio.workspace = true
 anyhow.workspace = true
 url.workspace = true

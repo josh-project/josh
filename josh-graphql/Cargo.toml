@@ -4,17 +4,19 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-anyhow = { workspace = true }
-josh-core = { path = "../josh-core" }
-juniper = { workspace = true }
-git2 = { workspace = true }
-rs_tracing = { workspace = true }
-regex = { workspace = true }
-serde_json = { workspace = true }
-serde_yaml = { workspace = true }
 strfmt = "0.2.4"
-toml = { workspace = true }
-tracing = { workspace = true }
+
+anyhow.workspace = true
+juniper.workspace = true
+git2.workspace = true
+rs_tracing.workspace = true
+regex.workspace = true
+serde_json.workspace = true
+serde_yaml.workspace = true
+toml.workspace = true
+tracing.workspace = true
+
+josh-core.workspace = true
 
 [dependencies.chrono]
 default-features = false

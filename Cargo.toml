@@ -36,7 +36,6 @@ gix-hash = "^0"
 gix-object = "0.55.0"
 gix-config = "0.51.0"
 gix-submodule = "0.25.0"
-hyper-reverse-proxy = { path = "hyper-reverse-proxy", version = "0.0.1" }
 libc = "0.2.180"
 regex = "1.12.3"
 rs_tracing = { version = "1.1.0", features = ["rs_tracing"] }
@@ -47,6 +46,16 @@ toml = "0.9.11"
 tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
 tempfile = "3.24.0"
 hex = "0.4.3"
+
+axum-cgi = { path = "axum-cgi" }
+hyper-reverse-proxy = { path = "hyper-reverse-proxy" }
+josh-filter = { path = "josh-filter" }
+josh-core = { path = "josh-core" }
+josh-graphql = { path = "josh-graphql" }
+josh-link = { path = "josh-link" }
+josh-rpc = { path = "josh-rpc" }
+josh-starlark = { path = "josh-starlark" }
+josh-templates = { path = "josh-templates" }
 
 [workspace.dependencies.git2]
 default-features = false
