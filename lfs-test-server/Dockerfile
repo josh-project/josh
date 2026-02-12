@@ -1,4 +1,4 @@
-FROM golang:1.25
+FROM golang:1.26
 
 WORKDIR /go/src/github.com/git-lfs/lfs-test-server
 
