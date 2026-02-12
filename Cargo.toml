@@ -27,25 +27,25 @@ codegen-units = 1
 anyhow = "1.0"
 base64 = "0.22.1"
 defer = "0.2.1"
-env_logger = "0.11.5"
+env_logger = "0.11.9"
 log = "0.4.29"
 futures = "0.3.31"
-gix = { version = "0.78.0", default-features = false }
+gix = { version = "0.79.0", default-features = false }
 gix-actor = "^0"
 gix-hash = "^0"
-gix-object = "0.55.0"
-gix-config = "0.51.0"
-gix-submodule = "0.25.0"
+gix-object = "0.56.0"
+gix-config = "0.52.0"
+gix-submodule = "0.26.0"
 hyper-reverse-proxy = { path = "hyper-reverse-proxy", version = "0.0.1" }
-libc = "0.2.180"
+libc = "0.2.181"
 regex = "1.12.3"
 rs_tracing = { version = "1.1.0", features = ["rs_tracing"] }
 serde = { version = "1.0.228", features = ["std", "derive"] }
 serde_json = "1.0.149"
 serde_yaml = "0.9.34"
-toml = "0.9.11"
+toml = "1.0.1"
 tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
-tempfile = "3.24.0"
+tempfile = "3.25.0"
 hex = "0.4.3"
 
 [workspace.dependencies.git2]
@@ -85,7 +85,7 @@ version = "0.1.44"
 features = ["max_level_trace", "release_max_level_trace"]
 
 [workspace.dependencies.clap]
-version = "4.5.57"
+version = "4.5.58"
 features = ["derive", "help", "std", "usage"]
 default-features = false
 
