@@ -30,8 +30,10 @@ GIT_DIR="${TESTTMP}/remote/" GIT_PROJECT_ROOT="${TESTTMP}/remote/" GIT_HTTP_EXPO
 echo $! > "${TESTTMP}/server_pid"
 
 # Copy static UI resources
-mkdir -p "${TESTDIR}/../../static"
-cp -R "${TESTDIR}/../../static/" /josh/
+if [ -n "${JOSH_TEST_UI+x}" ]; then
+    mkdir -p "${TESTDIR}/../../static"
+    cp -R "${TESTDIR}/../../static/" /josh/
+fi
 
 if [ -n "${CARGO_TARGET_DIR+x}" ]; then
     export TARGET_DIR=${CARGO_TARGET_DIR}
@@ -88,9 +90,9 @@ if [ -n "${JOSH_TEST_SSH+x}" ]; then
 fi
 
 COUNTER=0
-until curl -s http://localhost:8002/
+until nc -z localhost 8002 2>/dev/null;
 do
-    sleep 0.1
+    sleep 0.05
     COUNTER=$((COUNTER + 1))
     if [ ${COUNTER} -ge 20 ]; then
         >&2 echo "Starting josh proxy timed out"
@@ -99,12 +101,12 @@ do
     fi
 done
 
-LFS_LISTEN="tcp://:9999"
-LFS_HOST="127.0.0.1:9999"
-LFS_CONTENTPATH="${TESTTMP}/lfs-content"
-LFS_SCHEME="http"
-LFS_PUBLIC="TRUE"
+if [ -n "${JOSH_TEST_LFS+x}" ]; then
+    export LFS_LISTEN="tcp://:9999"
+    export LFS_HOST="127.0.0.1:9999"
+    export LFS_CONTENTPATH="${TESTTMP}/lfs-content"
+    export LFS_SCHEME="http"
+    export LFS_PUBLIC="TRUE"
 
-export LFS_LISTEN LFS_HOST LFS_CONTENTPATH LFS_SCHEME LFS_PUBLIC
-
-lfs-test-server  > /dev/null 2>&1 &
+    lfs-test-server  > /dev/null 2>&1 &
+fi

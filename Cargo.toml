@@ -18,6 +18,9 @@ members = [
     "josh-cq",
 ]
 
+[profile.test]
+opt-level = 1
+
 [profile.release]
 lto = "thin"
 opt-level = 3

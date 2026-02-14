@@ -1,3 +1,4 @@
+  $ export JOSH_TEST_LFS=1
   $ . ${TESTDIR}/setup_test_env.sh
   $ cd ${TESTTMP}
 

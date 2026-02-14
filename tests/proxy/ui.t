@@ -1,4 +1,6 @@
+  $ export JOSH_TEST_UI=1
   $ . ${TESTDIR}/setup_test_env.sh
+
   $ cd ${TESTTMP}
   $ curl -s -I http://127.0.0.1:8002/
   HTTP/1.1 303 See Other\r (esc)
