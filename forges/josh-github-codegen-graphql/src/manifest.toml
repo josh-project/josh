@@ -1,0 +1,11 @@
+[graphql]
+fragments = "fragments.graphql"
+queries = [
+  "get_repo_id.graphql",
+  "create_check_run.graphql",
+  "check_runs_discover.graphql",
+  "check_runs_get_simple.graphql",
+  "check_runs_get_with_pages.graphql",
+  "create_pull_request.graphql",
+  "close_pull_request.graphql",
+]
