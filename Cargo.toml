@@ -16,6 +16,10 @@ members = [
     "josh-ui",
     "josh-starlark",
     "josh-cq",
+
+    "forges/josh-github-graphql",
+    "forges/josh-github-codegen-graphql",
+    "forges/josh-github-webhooks",
 ]
 
 [profile.release]
@@ -46,6 +50,16 @@ toml = "0.9.11"
 tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
 tempfile = "3.24.0"
 hex = "0.4.3"
+secret-vault-value = "^1"
+hmac = "^0.12"
+sha2 = "^0.10"
+http = "^1"
+chrono = { version = "^0", default-features = false, features = ["serde"] }
+
+proc-macro2 = "^1"
+prettyplease = "0.2.37"
+graphql_client = "^0.16"
+graphql_client_codegen = { version = "^0.16.0" }
 
 axum-cgi = { path = "axum-cgi" }
 hyper-reverse-proxy = { path = "hyper-reverse-proxy" }
@@ -56,6 +70,11 @@ josh-link = { path = "josh-link" }
 josh-rpc = { path = "josh-rpc" }
 josh-starlark = { path = "josh-starlark" }
 josh-templates = { path = "josh-templates" }
+
+# Forges support
+josh-github-graphql = { path = "forges/josh-github-graphql" }
+josh-github-codegen-graphql = { path = "forges/josh-github-codegen-graphql" }
+josh-github-webhooks = { path = "forges/josh-github-webhooks" }
 
 [workspace.dependencies.git2]
 default-features = false
@@ -89,6 +108,10 @@ version = "^0.13"
 default-features = false
 features = ["blocking", "default-tls", "json"]
 
+[workspace.dependencies.reqwest-middleware]
+version = "^0.5"
+features = ["json"]
+
 [workspace.dependencies.tracing]
 version = "0.1.44"
 features = ["max_level_trace", "release_max_level_trace"]
@@ -108,3 +131,4 @@ features = ["util"]
 
 [workspace.dependencies.url]
 version = "^2"
+features = ["serde"]

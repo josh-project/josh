@@ -1,0 +1,142 @@
+{
+  "action": "created",
+  "installation": {
+    "id": 71469295,
+    "client_id": "Iv1.230259ca318b2e05",
+    "account": {
+      "login": "josh-project",
+      "id": 139575044,
+      "node_id": "O_kgDOCFG_BA",
+      "avatar_url": "https://avatars.githubusercontent.com/u/139575044?v=4",
+      "gravatar_id": "",
+      "url": "https://api.github.com/users/josh-project",
+      "html_url": "https://github.com/josh-project",
+      "followers_url": "https://api.github.com/users/josh-project/followers",
+      "following_url": "https://api.github.com/users/josh-project/following{/other_user}",
+      "gists_url": "https://api.github.com/users/josh-project/gists{/gist_id}",
+      "starred_url": "https://api.github.com/users/josh-project/starred{/owner}{/repo}",
+      "subscriptions_url": "https://api.github.com/users/josh-project/subscriptions",
+      "organizations_url": "https://api.github.com/users/josh-project/orgs",
+      "repos_url": "https://api.github.com/users/josh-project/repos",
+      "events_url": "https://api.github.com/users/josh-project/events{/privacy}",
+      "received_events_url": "https://api.github.com/users/josh-project/received_events",
+      "type": "Organization",
+      "user_view_type": "public",
+      "site_admin": false
+    },
+    "repository_selection": "all",
+    "access_tokens_url": "https://api.github.com/app/installations/71469295/access_tokens",
+    "repositories_url": "https://api.github.com/installation/repositories",
+    "html_url": "https://github.com/organizations/josh-project/settings/installations/71469295",
+    "app_id": 361677,
+    "app_slug": "josh-project-dev-test-only",
+    "target_id": 139575044,
+    "target_type": "Organization",
+    "permissions": {
+      "actions": "write",
+      "administration": "write",
+      "checks": "write",
+      "contents": "write",
+      "metadata": "read",
+      "pull_requests": "write",
+      "repository_hooks": "write",
+      "statuses": "write",
+      "workflows": "write"
+    },
+    "events": [
+      "check_run",
+      "check_suite",
+      "pull_request",
+      "push",
+      "workflow_job",
+      "workflow_run"
+    ],
+    "created_at": "2025-06-15T20:38:11.000+02:00",
+    "updated_at": "2025-06-15T20:38:12.000+02:00",
+    "single_file_name": null,
+    "has_multiple_single_files": false,
+    "single_file_paths": [],
+    "suspended_by": null,
+    "suspended_at": null
+  },
+  "repositories": [
+    {
+      "id": 668435879,
+      "node_id": "R_kgDOJ9eFpw",
+      "name": "webhooks_test",
+      "full_name": "josh-project/webhooks_test",
+      "private": true
+    },
+    {
+      "id": 741690523,
+      "node_id": "R_kgDOLDVMmw",
+      "name": "public",
+      "full_name": "josh-project/public",
+      "private": false
+    },
+    {
+      "id": 742047712,
+      "node_id": "R_kgDOLDq_4A",
+      "name": "checks-test",
+      "full_name": "josh-project/checks-test",
+      "private": true
+    },
+    {
+      "id": 776508217,
+      "node_id": "R_kgDOLkiTOQ",
+      "name": "issues",
+      "full_name": "josh-project/issues",
+      "private": true
+    },
+    {
+      "id": 781098483,
+      "node_id": "R_kgDOLo6d8w",
+      "name": "libgit2",
+      "full_name": "josh-project/libgit2",
+      "private": true
+    },
+    {
+      "id": 781099720,
+      "node_id": "R_kgDOLo6iyA",
+      "name": "git2-rs",
+      "full_name": "josh-project/git2-rs",
+      "private": true
+    },
+    {
+      "id": 788592891,
+      "node_id": "R_kgDOLwD4-w",
+      "name": "tech-demo-app",
+      "full_name": "josh-project/tech-demo-app",
+      "private": true
+    },
+    {
+      "id": 788592913,
+      "node_id": "R_kgDOLwD5EQ",
+      "name": "tech-demo-backend",
+      "full_name": "josh-project/tech-demo-backend",
+      "private": true
+    }
+  ],
+  "requester": null,
+  "sender": {
+    "login": "vlad-ivanov-name",
+    "id": 2057191,
+    "node_id": "MDQ6VXNlcjIwNTcxOTE=",
+    "avatar_url": "https://avatars.githubusercontent.com/u/2057191?v=4",
+    "gravatar_id": "",
+    "url": "https://api.github.com/users/vlad-ivanov-name",
+    "html_url": "https://github.com/vlad-ivanov-name",
+    "followers_url": "https://api.github.com/users/vlad-ivanov-name/followers",
+    "following_url": "https://api.github.com/users/vlad-ivanov-name/following{/other_user}",
+    "gists_url": "https://api.github.com/users/vlad-ivanov-name/gists{/gist_id}",
+    "starred_url": "https://api.github.com/users/vlad-ivanov-name/starred{/owner}{/repo}",
+    "subscriptions_url": "https://api.github.com/users/vlad-ivanov-name/subscriptions",
+    "organizations_url": "https://api.github.com/users/vlad-ivanov-name/orgs",
+    "repos_url": "https://api.github.com/users/vlad-ivanov-name/repos",
+    "events_url": "https://api.github.com/users/vlad-ivanov-name/events{/privacy}",
+    "received_events_url": "https://api.github.com/users/vlad-ivanov-name/received_events",
+    "type": "User",
+    "user_view_type": "public",
+    "site_admin": false
+  }
+}

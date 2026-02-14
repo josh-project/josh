@@ -1,0 +1,24 @@
+query CheckRunsDiscover($nodeIds: [ID!]!) {
+  rateLimit {
+    cost
+    limit
+    nodeCount
+    remaining
+  }
+
+  nodes(ids: $nodeIds) {
+    __typename
+
+    ... on Commit {
+      checkSuites(first: 100) {
+        nodes {
+          ... _CheckSuiteInfo
+
+          checkRuns {
+            totalCount
+          }
+        }
+      }
+    }
+  }
+}
