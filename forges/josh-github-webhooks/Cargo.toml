@@ -1,0 +1,21 @@
+[package]
+name = "josh-github-webhooks"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+axum.workspace = true
+secret-vault-value.workspace = true
+hmac.workspace = true
+sha2.workspace = true
+tracing.workspace = true
+http.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+
+constant_time_eq = "^0.4"
+hex = "^0.4"
+
+[dev-dependencies]
+anyhow.workspace = true
