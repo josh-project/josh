@@ -144,6 +144,7 @@ Test that we can fetch the split refs back
   * | Change-Id: 1234  (origin/@changes/master/josh@example.com/1234) 43d6fcc9e7a81452d7343c78c0102f76027717fb
   |/  
   * add file1  (origin/master, origin/HEAD) 5f2928c89c4dcc7f5a8c59ef65734a83620cefee
+  * cache  3c2c2237ae79b148f5a4ca12279f75ab6029fe2b
 
 Test normal push still works
 
