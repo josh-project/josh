@@ -207,13 +207,11 @@ fn run_repo(cmd: &RepoCommand) -> anyhow::Result<()> {
 
     let cache = std::sync::Arc::new(
         josh_core::cache::CacheStack::new()
-            .with_backend(josh_core::cache::SledCacheBackend::default()),
-        // FIXME: NotesCacheBackend seems to have perf issues, so disable it for now
-        //.with_backend(
-        //    josh_core::cache::NotesCacheBackend::new(&repo_path)
-        //        ?
-        //        .context("Failed to create NotesCacheBackend")?,
-        //),
+            .with_backend(josh_core::cache::SledCacheBackend::default())
+            .with_backend(
+                josh_core::cache::NotesCacheBackend::new(&repo_path)
+                    .context("Failed to create NotesCacheBackend")?,
+            ),
     );
 
     // Create transaction using the known repo path
