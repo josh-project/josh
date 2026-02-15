@@ -51,7 +51,7 @@ Test josh filter command - apply filtering without fetching
 
   $ josh filter origin
   Applying filter ':/sub1' to remote 'origin'
-  Applied filter to remote: origin
+  Applied filter ':/sub1' to remote 'origin'
 
   $ git log --oneline
   1432d42 add files
