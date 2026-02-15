@@ -3,6 +3,7 @@
 use anyhow::{Context, anyhow};
 use clap::Parser;
 
+use josh_cli::config::{RemoteConfig, read_remote_config, write_remote_config};
 use josh_core::changes::{PushMode, build_to_push};
 use josh_core::git::{normalize_repo_path, spawn_git_command};
 
@@ -255,7 +256,7 @@ fn run_command(cli: &Cli) -> anyhow::Result<()> {
     } else {
         // For other commands, we need to be in a git repo
         let repo = git2::Repository::open_from_env().context("Not in a git repository")?;
-        repo.path().parent().unwrap().to_path_buf()
+        normalize_repo_path(repo.path())
     };
 
     josh_core::cache::sled_load(&repo_path.join(".git")).context("Failed to load sled cache")?;
@@ -292,12 +293,9 @@ fn run_command(cli: &Cli) -> anyhow::Result<()> {
 fn apply_josh_filtering(
     transaction: &josh_core::cache::Transaction,
     repo_path: &std::path::Path,
-    filter: &str,
+    filter: josh_core::filter::Filter,
     remote_name: &str,
 ) -> anyhow::Result<()> {
-    // Use josh API directly instead of calling josh-filter binary
-    let filterobj = josh_core::filter::parse(filter).context("Failed to parse filter")?;
-
     let repo = transaction.repo();
 
     // Get all remote refs from refs/josh/remotes/{remote_name}/*
@@ -317,7 +315,7 @@ fn apply_josh_filtering(
     }
 
     // Apply the filter to all remote refs
-    let (updated_refs, errors) = josh_core::filter_refs(&transaction, filterobj, &input_refs);
+    let (updated_refs, errors) = josh_core::filter_refs(&transaction, filter, &input_refs);
 
     // Check for errors
     if let Some(error) = errors.into_iter().next() {
@@ -371,131 +369,6 @@ fn to_absolute_remote_url(url: &str) -> anyhow::Result<String> {
     }
 }
 
-/// Read remote configuration from .git/josh/remotes/<name>.josh file
-/// Falls back to legacy git config josh-remote section if file doesn't exist
-fn read_remote_config(
-    repo_path: &std::path::Path,
-    remote_name: &str,
-) -> anyhow::Result<(String, String, josh_core::filter::Filter)> {
-    let remotes_dir = repo_path.join(".git").join("josh").join("remotes");
-    let remote_file = remotes_dir.join(format!("{}.josh", remote_name));
-
-    // Try to read from the new file format first
-    match std::fs::read_to_string(&remote_file) {
-        Ok(content) => {
-            // Parse the filter from the file
-            let filter = josh_core::filter::parse(&content).with_context(|| {
-                format!("Failed to parse filter from {}", remote_file.display())
-            })?;
-
-            // Extract metadata
-            let url = filter
-                .get_meta("url")
-                .ok_or_else(|| anyhow!("Missing 'url' metadata in remote config"))?;
-            let fetch = filter
-                .get_meta("fetch")
-                .ok_or_else(|| anyhow!("Missing 'fetch' metadata in remote config"))?;
-
-            return Ok((url, fetch, filter));
-        }
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            // File doesn't exist, try legacy git config
-            let repo = git2::Repository::open(repo_path)
-                .context("Failed to open repository for legacy config migration")?;
-            let config = repo.config().context("Failed to get git config")?;
-
-            // Try to read from legacy josh-remote config
-            let url = match config.get_string(&format!("josh-remote.{}.url", remote_name)) {
-                Ok(url) => url,
-                Err(_) => {
-                    return Err(anyhow!(
-                        "Remote '{}' not found in new format (.git/josh/remotes/{}.josh) or legacy git config (josh-remote.{})",
-                        remote_name,
-                        remote_name,
-                        remote_name
-                    ));
-                }
-            };
-
-            let filter_str = config
-                .get_string(&format!("josh-remote.{}.filter", remote_name))
-                .with_context(|| {
-                    format!("Legacy config missing filter for remote '{}'", remote_name)
-                })?;
-
-            let fetch = config
-                .get_string(&format!("josh-remote.{}.fetch", remote_name))
-                .with_context(|| {
-                    format!("Legacy config missing fetch for remote '{}'", remote_name)
-                })?;
-
-            // Migrate to new format by writing the file
-            write_remote_config(repo_path, remote_name, &url, &filter_str, &fetch)
-                .context("Failed to migrate legacy config to new format")?;
-
-            // Parse the filter to return
-            let filter_obj = josh_core::filter::parse(&filter_str)
-                .with_context(|| format!("Failed to parse filter '{}'", filter_str))?;
-
-            let filter_with_meta = filter_obj.with_meta("url", &url).with_meta("fetch", &fetch);
-
-            log::info!(
-                "Migrated remote '{}' from legacy git config to new file format",
-                remote_name
-            );
-
-            Ok((url, fetch, filter_with_meta))
-        }
-        Err(e) => {
-            return Err(anyhow!(
-                "Failed to read remote config file: {}: {}",
-                remote_file.display(),
-                e
-            ));
-        }
-    }
-}
-
-/// Write remote configuration to .git/josh/remotes/<name>.josh file
-fn write_remote_config(
-    repo_path: &std::path::Path,
-    remote_name: &str,
-    url: &str,
-    filter: &str,
-    fetch: &str,
-) -> anyhow::Result<()> {
-    let remotes_dir = repo_path.join(".git").join("josh").join("remotes");
-
-    // Create the directory if it doesn't exist
-    std::fs::create_dir_all(&remotes_dir).with_context(|| {
-        format!(
-            "Failed to create remotes directory: {}",
-            remotes_dir.display()
-        )
-    })?;
-
-    // Parse the filter
-    let filter_obj = josh_core::filter::parse(filter)
-        .with_context(|| format!("Failed to parse filter '{}'", filter))?;
-
-    // Wrap the filter with metadata
-    let filter_with_meta = filter_obj.with_meta("url", url).with_meta("fetch", fetch);
-
-    // Serialize the filter with metadata
-    let content = josh_core::filter::as_file(filter_with_meta, 0);
-
-    // Write to file
-    let remote_file = remotes_dir.join(format!("{}.josh", remote_name));
-    std::fs::write(&remote_file, content).with_context(|| {
-        format!(
-            "Failed to write remote config file: {}",
-            remote_file.display()
-        )
-    })?;
-
-    Ok(())
-}
-
 /// Initial clone setup: create directory, init repo, add remote (no transaction needed)
 fn clone_repo(args: &CloneArgs) -> anyhow::Result<std::path::PathBuf> {
     // Use the provided output directory
@@ -534,7 +407,7 @@ fn handle_clone(
     };
 
     // Use handle_fetch to do the actual fetching and filtering
-    handle_fetch_repo(&fetch_args, transaction)?;
+    handle_fetch(&fetch_args, transaction)?;
 
     // Get the default branch name from the remote HEAD symref
     let default_branch = if args.branch == "HEAD" {
@@ -608,7 +481,7 @@ fn handle_pull(args: &PullArgs, transaction: &josh_core::cache::Transaction) -> 
     };
 
     // Use handle_fetch to do the actual fetching and filtering
-    handle_fetch_repo(&fetch_args, transaction)?;
+    handle_fetch(&fetch_args, transaction)?;
 
     // Now use actual git pull to integrate the changes
     let mut git_args = vec!["pull"];
@@ -630,13 +503,6 @@ fn handle_pull(args: &PullArgs, transaction: &josh_core::cache::Transaction) -> 
     Ok(())
 }
 
-fn handle_fetch(
-    args: &FetchArgs,
-    transaction: &josh_core::cache::Transaction,
-) -> anyhow::Result<()> {
-    handle_fetch_repo(args, transaction)
-}
-
 fn try_parse_symref(remote: &str, output: &str) -> Option<(String, String)> {
     let line = output.lines().next()?;
     let symref_part = line.split('\t').next()?;
@@ -647,19 +513,19 @@ fn try_parse_symref(remote: &str, output: &str) -> Option<(String, String)> {
     Some((default_branch.to_string(), default_branch_ref))
 }
 
-fn handle_fetch_repo(
+fn handle_fetch(
     args: &FetchArgs,
     transaction: &josh_core::cache::Transaction,
 ) -> anyhow::Result<()> {
     let repo = transaction.repo();
-    let repo_path = repo.path().parent().unwrap();
+    let repo_path = normalize_repo_path(repo.path());
 
     // Read the remote configuration from .git/josh/remotes/<name>.josh
-    let (remote_url, refspec, _filter) = read_remote_config(repo_path, &args.remote)
+    let RemoteConfig { url, ref_spec, .. } = read_remote_config(&repo_path, &args.remote)
         .with_context(|| format!("Failed to read remote config for '{}'", args.remote))?;
 
     // First, fetch unfiltered refs to refs/josh/remotes/*
-    spawn_git_command(repo.path(), &["fetch", &remote_url, &refspec], &[])
+    spawn_git_command(repo.path(), &["fetch", &url, &ref_spec], &[])
         .context("git fetch to josh/remotes failed")?;
 
     // Set up remote HEAD reference using git ls-remote
@@ -670,8 +536,8 @@ fn handle_fetch_repo(
     // Parse the output to get the default branch name
     // Output format: "ref: refs/heads/main\t<commit-hash>"
     let output = std::process::Command::new("git")
-        .args(["ls-remote", "--symref", &remote_url, "HEAD"])
-        .current_dir(repo.path().parent().unwrap())
+        .args(["ls-remote", "--symref", &url, "HEAD"])
+        .current_dir(normalize_repo_path(repo.path()))
         .output()?;
 
     if output.status.success() {
@@ -690,12 +556,18 @@ fn handle_fetch_repo(
         }
     }
 
-    // Apply josh filtering using handle_filter_internal (without messages)
-    let filter_args = FilterArgs {
-        remote: args.remote.clone(),
-    };
+    let repo_path = normalize_repo_path(repo.path());
+    let RemoteConfig {
+        filter_with_meta, ..
+    } = read_remote_config(&repo_path, &args.remote)
+        .with_context(|| format!("Failed to read remote config for '{}'", args.remote))?;
 
-    handle_filter_repo(&filter_args, false, transaction)?;
+    apply_josh_filtering(
+        transaction,
+        &repo_path,
+        filter_with_meta.peel(),
+        &args.remote,
+    )?;
 
     // Note: fetch doesn't checkout, it just updates the refs
     eprintln!("Fetched from remote: {}", args.remote);
@@ -706,7 +578,7 @@ fn handle_fetch_repo(
 fn handle_push(args: &PushArgs, transaction: &josh_core::cache::Transaction) -> anyhow::Result<()> {
     // Read remote configuration from .git/josh/remotes/<name>.josh
     let repo = transaction.repo();
-    let repo_path = repo.path().parent().unwrap();
+    let repo_path = normalize_repo_path(repo.path());
 
     // Determine which remote to use:
     // - If a remote was explicitly provided, use it.
@@ -715,7 +587,11 @@ fn handle_push(args: &PushArgs, transaction: &josh_core::cache::Transaction) -> 
     //   repository argument is given.
     let remote_name = args.remote.as_deref().unwrap_or("origin");
 
-    let (remote_url, _refspec, filter_with_meta) = read_remote_config(repo_path, remote_name)
+    let RemoteConfig {
+        url,
+        filter_with_meta,
+        ..
+    } = read_remote_config(&repo_path, remote_name)
         .with_context(|| format!("Failed to read remote config for '{}'", remote_name))?;
 
     // Get the wrapped filter (peel away metadata)
@@ -763,46 +639,33 @@ fn handle_push(args: &PushArgs, transaction: &josh_core::cache::Transaction) -> 
             .target()
             .context("Failed to get target of local ref")?;
 
-        // Get the original target (the base commit that was filtered)
-        // We need to find the original commit in the unfiltered repository
-        // that corresponds to the current filtered commit
-        // Use josh/remotes references which contain the unfiltered commits
+        // Look up the josh remote reference once and derive both original_target
+        // and old_filtered_oid from it
         let josh_remote_ref = format!("refs/josh/remotes/{}/{}", remote_name, remote_ref);
-        let original_target = if let Ok(remote_reference) = repo.find_reference(&josh_remote_ref) {
-            // If we have a josh remote reference, use its target (this is the unfiltered commit)
-            remote_reference.target().unwrap_or(git2::Oid::zero())
-        } else {
-            // If no josh remote reference, this is a new push
-            git2::Oid::zero()
-        };
+        let (original_target, old_filtered_oid) =
+            if let Ok(remote_reference) = repo.find_reference(&josh_remote_ref) {
+                let josh_remote_oid = remote_reference.target().unwrap_or(git2::Oid::zero());
 
-        // Get the old filtered oid by applying the filter to the original remote ref
-        // before we push to the namespace
-        let josh_remote_ref = format!("refs/josh/remotes/{}/{}", remote_name, remote_ref);
-        let old_filtered_oid =
-            if let Ok(josh_remote_reference) = repo.find_reference(&josh_remote_ref) {
-                let josh_remote_oid = josh_remote_reference.target().unwrap_or(git2::Oid::zero());
-
-                // Apply the filter to the josh remote ref to get the old filtered oid
+                // Apply the filter to get the old filtered oid
                 let (filtered_oids, errors) = josh_core::filter_refs(
                     transaction,
                     filter,
                     &[(josh_remote_ref.clone(), josh_remote_oid)],
                 );
 
-                // Check for errors
                 if let Some(error) = errors.into_iter().next() {
                     return Err(anyhow!("josh filter error: {}", error.1));
                 }
 
-                if let Some((_, filtered_oid)) = filtered_oids.first() {
+                let old_filtered = if let Some((_, filtered_oid)) = filtered_oids.first() {
                     *filtered_oid
                 } else {
                     git2::Oid::zero()
-                }
+                };
+
+                (josh_remote_oid, old_filtered)
             } else {
-                // If no josh remote reference, this is a new push
-                git2::Oid::zero()
+                (git2::Oid::zero(), git2::Oid::zero())
             };
 
         log::debug!("old_filtered_oid: {:?}", old_filtered_oid);
@@ -840,22 +703,17 @@ fn handle_push(args: &PushArgs, transaction: &josh_core::cache::Transaction) -> 
         )
         .context("Failed to unapply filter")?;
 
-        // Define variables needed for build_to_push
-        let baseref = remote_ref;
-        let oid_to_push = unfiltered_oid;
-        let old = original_target;
-
         log::debug!("unfiltered_oid: {:?}", unfiltered_oid);
 
         let to_push = build_to_push(
             transaction.repo(),
             changes,
             push_mode,
-            &baseref,
+            &remote_ref,
             &author,
             &remote_ref,
-            oid_to_push,
-            old,
+            unfiltered_oid,
+            original_target,
         )
         .context("Failed to build to push")?;
 
@@ -879,7 +737,7 @@ fn handle_push(args: &PushArgs, transaction: &josh_core::cache::Transaction) -> 
             }
 
             // Determine the target remote URL
-            let target_remote = remote_url.clone();
+            let target_remote = url.clone();
 
             // Create refspec: oid:refname
             let push_refspec = format!("{}:{}", oid, refname);
@@ -1099,8 +957,8 @@ fn handle_remote(
 ) -> anyhow::Result<()> {
     match &args.command {
         RemoteCommand::Add(add_args) => {
-            let repo_path = transaction.repo().path().parent().unwrap();
-            handle_remote_add_repo(add_args, repo_path)
+            let repo_path = normalize_repo_path(transaction.repo().path());
+            handle_remote_add_repo(add_args, &repo_path)
         }
     }
 }
@@ -1166,41 +1024,28 @@ fn handle_filter(
     args: &FilterArgs,
     transaction: &josh_core::cache::Transaction,
 ) -> anyhow::Result<()> {
-    handle_filter_repo(args, true, transaction)
-}
-
-/// Internal filter function that can be called from other handlers
-fn handle_filter_repo(
-    args: &FilterArgs,
-    print_messages: bool,
-    transaction: &josh_core::cache::Transaction,
-) -> anyhow::Result<()> {
     let repo = transaction.repo();
-    let repo_path = repo.path().parent().unwrap();
+    let repo_path = normalize_repo_path(repo.path());
 
-    // Read the remote configuration from .git/josh/remotes/<name>.josh
-    let (_url, _refspec, filter_with_meta) = read_remote_config(repo_path, &args.remote)
+    let RemoteConfig {
+        filter_with_meta, ..
+    } = read_remote_config(&repo_path, &args.remote)
         .with_context(|| format!("Failed to read remote config for '{}'", args.remote))?;
 
-    // Get the wrapped filter (peel away metadata)
     let filter = filter_with_meta.peel();
-
-    // Serialize the filter for display/logging
     let filter_str = josh_core::filter::spec(filter);
 
-    if print_messages {
-        println!(
-            "Applying filter '{}' to remote '{}'",
-            filter_str, args.remote
-        );
-    }
+    println!(
+        "Applying filter '{}' to remote '{}'",
+        filter_str, args.remote
+    );
 
-    // Apply josh filtering (this is the same as in handle_fetch but without the git fetch step)
-    apply_josh_filtering(transaction, repo_path, &filter_str, &args.remote)?;
+    apply_josh_filtering(transaction, &repo_path, filter, &args.remote)?;
 
-    if print_messages {
-        println!("Applied filter to remote: {}", args.remote);
-    }
+    println!(
+        "Applied filter '{}' to remote '{}'",
+        filter_str, args.remote
+    );
 
     Ok(())
 }
