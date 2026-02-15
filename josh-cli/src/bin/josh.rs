@@ -1,6 +1,7 @@
 use anyhow::{Context, anyhow};
 use clap::Parser;
 
+use josh_cli::commands::auth::AuthArgs;
 #[cfg(feature = "incubating")]
 use josh_cli::commands::link::LinkArgs;
 use josh_cli::commands::push::PushArgs;
@@ -22,6 +23,15 @@ pub struct Cli {
 
 #[derive(Debug, clap::Subcommand)]
 pub enum Command {
+    #[command(flatten)]
+    Repo(RepoCommand),
+    #[command(flatten)]
+    Standalone(StandaloneCommand),
+}
+
+/// Commands that require a git repository and transaction context
+#[derive(Debug, clap::Subcommand)]
+pub enum RepoCommand {
     /// Clone a repository with optional projection/filtering
     Clone(CloneArgs),
 
@@ -43,6 +53,13 @@ pub enum Command {
     /// Manage josh links (like `josh remote` but for links)
     #[cfg(feature = "incubating")]
     Link(LinkArgs),
+}
+
+/// Commands that don't require a git repository
+#[derive(Debug, clap::Subcommand)]
+pub enum StandaloneCommand {
+    /// Manage forge authentication
+    Auth(AuthArgs),
 }
 
 #[derive(Debug, clap::Parser)]
@@ -153,7 +170,10 @@ fn main() {
     env_logger::init();
     let cli = Cli::parse();
 
-    let result = run_command(&cli);
+    let result = match &cli.command {
+        Command::Standalone(cmd) => run_standalone(cmd),
+        Command::Repo(cmd) => run_repo(cmd),
+    };
 
     if let Err(e) = result {
         eprintln!("Error: {e}");
@@ -166,9 +186,15 @@ fn main() {
     }
 }
 
-fn run_command(cli: &Cli) -> anyhow::Result<()> {
+fn run_standalone(cmd: &StandaloneCommand) -> anyhow::Result<()> {
+    match cmd {
+        StandaloneCommand::Auth(args) => josh_cli::commands::auth::handle_auth(args),
+    }
+}
+
+fn run_repo(cmd: &RepoCommand) -> anyhow::Result<()> {
     // For clone, do the initial repo setup before creating transaction
-    let repo_path = if let Command::Clone(args) = &cli.command {
+    let repo_path = if let RepoCommand::Clone(args) = cmd {
         // For clone, we're not in a git repo initially, so clone first and use that path
         clone_repo(args)?
     } else {
@@ -195,15 +221,15 @@ fn run_command(cli: &Cli) -> anyhow::Result<()> {
         .open(None)
         .context("Failed TransactionContext::open")?;
 
-    match &cli.command {
-        Command::Clone(args) => handle_clone(args, &transaction),
-        Command::Fetch(args) => handle_fetch(args, &transaction),
-        Command::Pull(args) => handle_pull(args, &transaction),
-        Command::Push(args) => josh_cli::commands::push::handle_push(args, &transaction),
-        Command::Remote(args) => handle_remote(args, &transaction),
-        Command::Filter(args) => handle_filter(args, &transaction),
+    match cmd {
+        RepoCommand::Clone(args) => handle_clone(args, &transaction),
+        RepoCommand::Fetch(args) => handle_fetch(args, &transaction),
+        RepoCommand::Pull(args) => handle_pull(args, &transaction),
+        RepoCommand::Push(args) => josh_cli::commands::push::handle_push(args, &transaction),
+        RepoCommand::Remote(args) => handle_remote(args, &transaction),
+        RepoCommand::Filter(args) => handle_filter(args, &transaction),
         #[cfg(feature = "incubating")]
-        Command::Link(args) => josh_cli::commands::link::handle_link(args, &transaction),
+        RepoCommand::Link(args) => josh_cli::commands::link::handle_link(args, &transaction),
     }
 }
 
