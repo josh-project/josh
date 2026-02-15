@@ -20,6 +20,7 @@ members = [
     "forges/josh-github-graphql",
     "forges/josh-github-codegen-graphql",
     "forges/josh-github-webhooks",
+    "forges/josh-github-auth",
 ]
 
 [profile.release]
@@ -33,6 +34,8 @@ base64 = "0.22.1"
 defer = "0.2.1"
 env_logger = "0.11.5"
 log = "0.4.29"
+mime = "0.3"
+form_urlencoded = "1.2.2"
 futures = "0.3.31"
 gix = { version = "0.78.0", default-features = false }
 gix-actor = "^0"
@@ -75,6 +78,7 @@ josh-templates = { path = "josh-templates" }
 josh-github-graphql = { path = "forges/josh-github-graphql" }
 josh-github-codegen-graphql = { path = "forges/josh-github-codegen-graphql" }
 josh-github-webhooks = { path = "forges/josh-github-webhooks" }
+josh-github-auth = { path = "forges/josh-github-auth" }
 
 [workspace.dependencies.git2]
 default-features = false
@@ -132,3 +136,6 @@ features = ["util"]
 [workspace.dependencies.url]
 version = "^2"
 features = ["serde"]
+
+[workspace.dependencies.async-trait]
+version = "0.1"

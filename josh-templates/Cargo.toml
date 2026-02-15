@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 handlebars = "6.4.0"
-form_urlencoded = "1.2.2"
+form_urlencoded.workspace = true
 
 anyhow.workspace = true
 git2.workspace = true

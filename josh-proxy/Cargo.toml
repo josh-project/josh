@@ -15,7 +15,7 @@ lru = "0.16.3"
 axum = { version = "^0.8", features = ["macros"] }
 axum-extra = { version = "^0.12", features = ["typed-header", "erased-json"] }
 tower-http = { version = "0.6", features = ["trace", "fs"] }
-mime = "^0.3"
+mime.workspace = true
 indoc = "2.0.7"
 percent-encoding = "2.3.1"
 pin-project-lite = "^0"
