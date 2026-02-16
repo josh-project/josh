@@ -87,10 +87,10 @@ fn make_app() -> clap::Command {
                 .short('n'),
         )
         .arg(
-            clap::Arg::new("notes-cache")
+            clap::Arg::new("distributed-cache")
                 .action(clap::ArgAction::SetTrue)
-                .help("Enables notes based cache")
-                .long("notes-cache"),
+                .help("Enables distributed cache")
+                .long("distributed-cache"),
         )
         .arg(
             clap::Arg::new("pack")
@@ -200,8 +200,8 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
         let cache = josh_core::cache::CacheStack::new()
             .with_backend(josh_core::cache::SledCacheBackend::default());
 
-        if args.get_flag("notes-cache") {
-            cache.with_backend(josh_core::cache::NotesCacheBackend::new(&repo_path)?)
+        if args.get_flag("distributed-cache") {
+            cache.with_backend(josh_core::cache::DistributedCacheBackend::new(&repo_path)?)
         } else {
             cache
         }

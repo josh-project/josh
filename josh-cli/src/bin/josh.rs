@@ -209,8 +209,8 @@ fn run_repo(cmd: &RepoCommand) -> anyhow::Result<()> {
         josh_core::cache::CacheStack::new()
             .with_backend(josh_core::cache::SledCacheBackend::default())
             .with_backend(
-                josh_core::cache::NotesCacheBackend::new(&repo_path)
-                    .context("Failed to create NotesCacheBackend")?,
+                josh_core::cache::DistributedCacheBackend::new(&repo_path)
+                    .context("Failed to create DistributedCacheBackend")?,
             ),
     );
 
