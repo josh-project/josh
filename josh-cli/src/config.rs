@@ -1,9 +1,12 @@
 use anyhow::{Context, anyhow};
 
+use crate::forge::Forge;
+
 pub struct RemoteConfig {
     pub url: String,
     pub ref_spec: String,
     pub filter_with_meta: josh_core::filter::Filter,
+    pub forge: Option<Forge>,
 }
 
 pub fn migrate_legacy_config(
@@ -38,7 +41,7 @@ pub fn migrate_legacy_config(
         .with_context(|| format!("Legacy config missing fetch for remote '{}'", remote_name))?;
 
     // Migrate to new format by writing the file
-    write_remote_config(repo_path, remote_name, &url, &filter_str, &fetch)
+    write_remote_config(repo_path, remote_name, &url, &filter_str, &fetch, None)
         .context("Failed to migrate legacy config to new format")?;
 
     // Parse the filter to return
@@ -56,6 +59,7 @@ pub fn migrate_legacy_config(
         url,
         ref_spec: fetch,
         filter_with_meta,
+        forge: None,
     })
 }
 
@@ -96,10 +100,20 @@ pub fn read_remote_config(
         .get_meta("fetch")
         .ok_or_else(|| anyhow!("Missing 'fetch' metadata in remote config"))?;
 
+    let forge = filter
+        .get_meta("forge")
+        .map(|f| {
+            use clap::ValueEnum;
+            Forge::from_str(&f, true)
+        })
+        .transpose()
+        .map_err(|f| anyhow!("Unknown forge: {f}"))?;
+
     Ok(RemoteConfig {
         url,
         ref_spec: fetch,
         filter_with_meta: filter,
+        forge,
     })
 }
 
@@ -110,6 +124,7 @@ pub fn write_remote_config(
     url: &str,
     filter: &str,
     fetch: &str,
+    forge: Option<Forge>,
 ) -> anyhow::Result<()> {
     let remotes_dir = repo_path.join(".git").join("josh").join("remotes");
 
@@ -126,7 +141,11 @@ pub fn write_remote_config(
         .with_context(|| format!("Failed to parse filter '{}'", filter))?;
 
     // Wrap the filter with metadata
-    let filter_with_meta = filter_obj.with_meta("url", url).with_meta("fetch", fetch);
+    let mut filter_with_meta = filter_obj.with_meta("url", url).with_meta("fetch", fetch);
+
+    if let Some(forge) = forge {
+        filter_with_meta = filter_with_meta.with_meta("forge", forge.to_string());
+    }
 
     // Serialize the filter with metadata
     let content = josh_core::filter::as_file(filter_with_meta, 0);

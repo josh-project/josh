@@ -1,9 +1,9 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::Context;
-use clap::{Subcommand, ValueEnum};
+use clap::Subcommand;
 
-use crate::forge::GITHUB_APP_CLIENT_ID;
+use crate::forge::{Forge, GITHUB_APP_CLIENT_ID};
 
 const KEYRING_SERVICE: &str = "josh-cli";
 const KEYRING_GITHUB_ACCESS_TOKEN: &str = "github:access_token";
@@ -30,12 +30,6 @@ pub struct ForgeArgs {
     /// Forge to authenticate with
     #[arg()]
     pub forge: Forge,
-}
-
-#[derive(Debug, Clone, ValueEnum)]
-pub enum Forge {
-    /// GitHub
-    Github,
 }
 
 pub fn handle_auth(args: &AuthArgs) -> anyhow::Result<()> {
