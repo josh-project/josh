@@ -6,6 +6,7 @@ use josh_cli::commands::auth::AuthArgs;
 use josh_cli::commands::link::LinkArgs;
 use josh_cli::commands::push::PushArgs;
 use josh_cli::config::{RemoteConfig, read_remote_config, write_remote_config};
+use josh_cli::forge::Forge;
 use josh_core::git::{normalize_repo_path, spawn_git_command};
 
 #[derive(Debug, clap::Parser)]
@@ -83,6 +84,9 @@ pub struct CloneArgs {
     /// Keep trivial merges (don't append :prune=trivial-merge to filters)
     #[arg(long = "keep-trivial-merges")]
     pub keep_trivial_merges: bool,
+
+    #[command(flatten)]
+    pub forge_args: ForgeArgs,
 }
 
 #[derive(Debug, clap::Parser)]
@@ -157,6 +161,20 @@ pub struct RemoteAddArgs {
     /// Keep trivial merges (don't append :prune=trivial-merge to filters)
     #[arg(long = "keep-trivial-merges")]
     pub keep_trivial_merges: bool,
+
+    #[command(flatten)]
+    pub forge_args: ForgeArgs,
+}
+
+#[derive(Debug, Clone, clap::Args)]
+pub struct ForgeArgs {
+    /// Forge type for the remote (e.g. github)
+    #[arg(long = "forge", value_enum, conflicts_with = "no_forge")]
+    pub forge: Option<Forge>,
+
+    /// Explicitly disable forge integration
+    #[arg(long = "no-forge", conflicts_with = "forge")]
+    pub no_forge: bool,
 }
 
 #[derive(Debug, clap::Parser)]
@@ -328,6 +346,7 @@ fn clone_repo(args: &CloneArgs) -> anyhow::Result<std::path::PathBuf> {
         url: to_absolute_remote_url(&args.url)?,
         filter: args.filter.clone(),
         keep_trivial_merges: args.keep_trivial_merges,
+        forge_args: args.forge_args.clone(),
     };
 
     handle_remote_add_repo(&remote_add_args, &output_dir)?;
@@ -542,6 +561,15 @@ fn handle_remote_add_repo(args: &RemoteAddArgs, repo_path: &std::path::Path) -> 
     // Store refspec (for unfiltered refs)
     let refspec = format!("+refs/heads/*:refs/josh/remotes/{}/*", args.name);
 
+    let forge = if args.forge_args.no_forge {
+        None
+    } else {
+        args.forge_args
+            .forge
+            .clone()
+            .or_else(|| josh_cli::forge::guess_forge(&remote_url))
+    };
+
     // Write remote config to .git/josh/remotes/<name>.josh
     write_remote_config(
         repo_path,
@@ -549,6 +577,7 @@ fn handle_remote_add_repo(args: &RemoteAddArgs, repo_path: &std::path::Path) -> 
         &remote_url,
         &filter_to_store,
         &refspec,
+        forge,
     )
     .context("Failed to write remote config file")?;
 

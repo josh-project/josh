@@ -22,6 +22,7 @@ git2.workspace = true
 toml.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
 serde.workspace = true
+url.workspace = true
 
 keyring = "^3.6"
 arboard = { version = "^3.6", default-features = false }
