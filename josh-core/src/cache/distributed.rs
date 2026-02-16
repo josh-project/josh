@@ -6,20 +6,20 @@ use std::collections::HashMap;
 // Only flush shards after they gained enough new entries
 const FLUSH_AFTER: usize = 1000;
 
-pub struct NotesCacheBackend {
+pub struct DistributedCacheBackend {
     new_entries: std::sync::Mutex<HashMap<String, HashMap<git2::Oid, git2::Oid>>>,
     repo: std::sync::Mutex<git2::Repository>,
 }
 
-impl Drop for NotesCacheBackend {
+impl Drop for DistributedCacheBackend {
     fn drop(&mut self) {
         if !self.flush(true).is_ok() {
-            log::warn!("NotesCacheBackend: flush failed");
+            log::warn!("DistributedCacheBackend: flush failed");
         }
     }
 }
 
-impl NotesCacheBackend {
+impl DistributedCacheBackend {
     pub fn new(repo_path: impl AsRef<std::path::Path>) -> anyhow::Result<Self> {
         let repo = git2::Repository::open(repo_path.as_ref())?;
         Ok(Self {
@@ -109,7 +109,7 @@ fn fanout(commit: git2::Oid) -> std::path::PathBuf {
         .join(commit)
 }
 
-impl CacheBackend for NotesCacheBackend {
+impl CacheBackend for DistributedCacheBackend {
     fn read(
         &self,
         filter: Filter,
