@@ -2,18 +2,20 @@ use crate::connection::GithubApiConnection;
 use anyhow::anyhow;
 
 use josh_github_codegen_graphql::{
-    close_pull_request, create_pull_request, get_pr_by_head, update_pull_request, ClosePullRequest,
-    CreatePullRequest, GetPrByHead, UpdatePullRequest,
+    close_pull_request, convert_pull_request_to_draft, create_pull_request, get_pr_by_head,
+    mark_pull_request_ready_for_review, update_pull_request, ClosePullRequest,
+    ConvertPullRequestToDraft, CreatePullRequest, GetPrByHead, MarkPullRequestReadyForReview,
+    UpdatePullRequest,
 };
 
 impl GithubApiConnection {
-    /// Find an open PR by head branch name. Returns (node_id, number) if found.
+    /// Find an open PR by head branch name. Returns (node_id, number, is_draft) if found.
     pub async fn find_pull_request_by_head(
         &self,
         owner: &str,
         name: &str,
         head_ref_name: &str,
-    ) -> anyhow::Result<Option<(String, i64)>> {
+    ) -> anyhow::Result<Option<(String, i64, bool)>> {
         let variables = get_pr_by_head::Variables {
             owner: owner.to_string(),
             name: name.to_string(),
@@ -26,7 +28,7 @@ impl GithubApiConnection {
         };
         let nodes = repo.pull_requests.nodes.unwrap_or_default();
         let pr = nodes.into_iter().flatten().next();
-        Ok(pr.map(|n| (n.id, n.number)))
+        Ok(pr.map(|n| (n.id, n.number, n.is_draft)))
     }
 
     /// Update an existing PR's title, body, and/or base branch.
@@ -55,6 +57,56 @@ impl GithubApiConnection {
         Ok((pr.id, pr.number))
     }
 
+    pub async fn convert_pull_request_to_draft(
+        &self,
+        pull_request_id: &str,
+    ) -> anyhow::Result<(String, i64, bool)> {
+        let variables = convert_pull_request_to_draft::Variables {
+            pull_request_id: pull_request_id.to_string(),
+        };
+        let response = self
+            .make_request::<ConvertPullRequestToDraft>(variables)
+            .await?;
+        let response = match response.convert_pull_request_to_draft {
+            Some(r) => r,
+            None => {
+                return Err(anyhow!(
+                    "Failed to parse response: convert_pull_request_to_draft"
+                ))
+            }
+        };
+        let pr = match response.pull_request {
+            Some(p) => p,
+            None => return Err(anyhow!("Failed to parse response: pull_request")),
+        };
+        Ok((pr.id, pr.number, pr.is_draft))
+    }
+
+    pub async fn mark_pull_request_ready_for_review(
+        &self,
+        pull_request_id: &str,
+    ) -> anyhow::Result<(String, i64, bool)> {
+        let variables = mark_pull_request_ready_for_review::Variables {
+            pull_request_id: pull_request_id.to_string(),
+        };
+        let response = self
+            .make_request::<MarkPullRequestReadyForReview>(variables)
+            .await?;
+        let response = match response.mark_pull_request_ready_for_review {
+            Some(r) => r,
+            None => {
+                return Err(anyhow!(
+                    "Failed to parse response: mark_pull_request_ready_for_review"
+                ))
+            }
+        };
+        let pr = match response.pull_request {
+            Some(p) => p,
+            None => return Err(anyhow!("Failed to parse response: pull_request")),
+        };
+        Ok((pr.id, pr.number, pr.is_draft))
+    }
+
     pub async fn create_pull_request(
         &self,
         repository_id: &str,
@@ -62,6 +114,7 @@ impl GithubApiConnection {
         head_branch: &str,
         title: &str,
         body: &str,
+        draft: bool,
     ) -> anyhow::Result<(String, i64)> {
         let variables = create_pull_request::Variables {
             repository_id: repository_id.to_string(),
@@ -69,6 +122,7 @@ impl GithubApiConnection {
             head_ref_name: head_branch.into(),
             title: title.to_string(),
             body: body.to_string(),
+            draft,
         };
 
         let response = self.make_request::<CreatePullRequest>(variables).await?;
