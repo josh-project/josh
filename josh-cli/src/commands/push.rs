@@ -229,14 +229,16 @@ pub fn handle_push(
             git_push_args.push(&push_refspec);
 
             // Use direct spawn so users can see git push progress
-            spawn_git_command(
+            if let Err(e) = spawn_git_command(
                 repo.path(),
                 &git_push_args, // Skip "git" since spawn_git_command adds it
                 &[],
-            )
-            .context("git push failed")?;
-
-            eprintln!("Pushed {} to {}/{}", oid, remote_name, refname);
+            ) {
+                eprintln!("Failed to push {} to {}/{}", oid, remote_name, refname);
+                eprintln!("{}", e);
+            } else {
+                eprintln!("Pushed {} to {}/{}", oid, remote_name, refname);
+            }
         }
     }
 
