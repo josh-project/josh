@@ -1,11 +1,19 @@
+# Operations that use fragments (_RefInfo, _NodeInfo, etc.) - must be in same document as fragments
 [graphql]
 fragments = "fragments.graphql"
 queries = [
-  "get_repo_id.graphql",
   "create_check_run.graphql",
   "check_runs_discover.graphql",
   "check_runs_get_simple.graphql",
   "check_runs_get_with_pages.graphql",
+]
+
+# API operations with no fragments - generated separately so GitHub does not receive "fragment defined but not used"
+[graphql.api]
+queries = [
+  "get_repo_id.graphql",
+  "get_pr_by_head.graphql",
   "create_pull_request.graphql",
+  "update_pull_request.graphql",
   "close_pull_request.graphql",
 ]
