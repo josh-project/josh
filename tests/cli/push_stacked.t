@@ -77,9 +77,17 @@ Push with stacked changes (should create multiple refs)
   
   Pushed c61c37f4a3d5eb447f41dde15620eee1a181d60b to origin/refs/heads/@changes/master/josh@example.com/1234
   To file://${TESTTMP}/remote
+   * [new branch]      6ed6c1ca90cb15fe4edf8d133f0e2e44562aa77d -> @base/master/josh@example.com/1234
+  
+  Pushed 6ed6c1ca90cb15fe4edf8d133f0e2e44562aa77d to origin/refs/heads/@base/master/josh@example.com/1234
+  To file://${TESTTMP}/remote
    * [new branch]      2cbfa8cb8d9a9f1de029fcba547a6e56c742733f -> @changes/master/josh@example.com/foo7
   
   Pushed 2cbfa8cb8d9a9f1de029fcba547a6e56c742733f to origin/refs/heads/@changes/master/josh@example.com/foo7
+  To file://${TESTTMP}/remote
+   * [new branch]      c61c37f4a3d5eb447f41dde15620eee1a181d60b -> @base/master/josh@example.com/foo7
+  
+  Pushed c61c37f4a3d5eb447f41dde15620eee1a181d60b to origin/refs/heads/@base/master/josh@example.com/foo7
   To file://${TESTTMP}/remote
    * [new branch]      2cbfa8cb8d9a9f1de029fcba547a6e56c742733f -> @heads/master/josh@example.com
   
@@ -99,6 +107,8 @@ Verify the refs were created in the remote
   $ cd ${TESTTMP}/remote
   $ git ls-remote .
   6ed6c1ca90cb15fe4edf8d133f0e2e44562aa77d\tHEAD (esc)
+  6ed6c1ca90cb15fe4edf8d133f0e2e44562aa77d\trefs/heads/@base/master/josh@example.com/1234 (esc)
+  c61c37f4a3d5eb447f41dde15620eee1a181d60b\trefs/heads/@base/master/josh@example.com/foo7 (esc)
   c61c37f4a3d5eb447f41dde15620eee1a181d60b\trefs/heads/@changes/master/josh@example.com/1234 (esc)
   2cbfa8cb8d9a9f1de029fcba547a6e56c742733f\trefs/heads/@changes/master/josh@example.com/foo7 (esc)
   2cbfa8cb8d9a9f1de029fcba547a6e56c742733f\trefs/heads/@heads/master/josh@example.com (esc)

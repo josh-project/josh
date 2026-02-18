@@ -51,7 +51,11 @@
   remote: To http://localhost:8001/real_repo.git        
   remote:  * [new branch]      1234 -> @changes/master/josh@example.com/1234        
   remote: To http://localhost:8001/real_repo.git        
+  remote:  * [new branch]      1234 -> @base/master/josh@example.com/1234        
+  remote: To http://localhost:8001/real_repo.git        
   remote:  * [new branch]      foo7 -> @changes/master/josh@example.com/foo7        
+  remote: To http://localhost:8001/real_repo.git        
+  remote:  * [new branch]      foo7 -> @base/master/josh@example.com/foo7        
   remote: To http://localhost:8001/real_repo.git        
   remote:  * [new reference]   JOSH_PUSH -> refs/for/master        
   remote: To http://localhost:8001/real_repo.git        
@@ -66,6 +70,8 @@
   remote: upstream: response status: 200 OK        
   remote: upstream: response body:        
   remote: 
+  remote: Everything up-to-date        
+  remote: Everything up-to-date        
   remote: Everything up-to-date        
   remote: Everything up-to-date        
   remote: To http://localhost:8001/real_repo.git        
@@ -93,6 +99,8 @@
   Flushed credential cache (no-eol)
   $ git fetch origin
   From http://localhost:8002/real_repo
+   * [new branch]      @base/master/josh@example.com/1234 -> origin/@base/master/josh@example.com/1234
+   * [new branch]      @base/master/josh@example.com/foo7 -> origin/@base/master/josh@example.com/foo7
    * [new branch]      @changes/master/josh@example.com/1234 -> origin/@changes/master/josh@example.com/1234
    * [new branch]      @changes/master/josh@example.com/foo7 -> origin/@changes/master/josh@example.com/foo7
    * [new branch]      @heads/master/foo@example.com -> origin/@heads/master/foo@example.com
@@ -101,12 +109,14 @@
   $ git log --decorate --graph --pretty="%s %d"
   * add file3  (HEAD -> master, origin/@heads/master/josh@example.com, origin/@heads/master/foo@example.com)
   * Change-Id: foo7  (origin/@changes/master/josh@example.com/foo7)
-  * Change-Id: 1234  (origin/@changes/master/josh@example.com/1234)
-  * add file1  (origin/master, origin/HEAD)
+  * Change-Id: 1234  (origin/@changes/master/josh@example.com/1234, origin/@base/master/josh@example.com/foo7)
+  * add file1  (origin/master, origin/HEAD, origin/@base/master/josh@example.com/1234)
 
   $ cd ${TESTTMP}/real_repo
   $ git fetch origin
   From http://localhost:8001/real_repo
+   * [new branch]      @base/master/josh@example.com/1234 -> origin/@base/master/josh@example.com/1234
+   * [new branch]      @base/master/josh@example.com/foo7 -> origin/@base/master/josh@example.com/foo7
    * [new branch]      @changes/master/josh@example.com/1234 -> origin/@changes/master/josh@example.com/1234
    * [new branch]      @changes/master/josh@example.com/foo7 -> origin/@changes/master/josh@example.com/foo7
    * [new branch]      @heads/master/foo@example.com -> origin/@heads/master/foo@example.com
@@ -115,8 +125,8 @@
   $ git log --decorate --graph --pretty="%s %d"
   * add file3  (HEAD -> @heads/master/foo@example.com, origin/@heads/master/josh@example.com, origin/@heads/master/foo@example.com)
   * Change-Id: foo7  (origin/@changes/master/josh@example.com/foo7)
-  * Change-Id: 1234  (origin/@changes/master/josh@example.com/1234)
-  * add file1  (origin/master, origin/HEAD, master)
+  * Change-Id: 1234  (origin/@changes/master/josh@example.com/1234, origin/@base/master/josh@example.com/foo7)
+  * add file1  (origin/master, origin/HEAD, origin/@base/master/josh@example.com/1234, master)
 
   $ tree
   .
@@ -184,6 +194,11 @@ Make sure all temporary namespace got removed
   |       |           |-- HEAD
   |       |           `-- refs
   |       |               `-- heads
+  |       |                   |-- @base
+  |       |                   |   `-- master
+  |       |                   |       `-- josh@example.com
+  |       |                   |           |-- 1234
+  |       |                   |           `-- foo7
   |       |                   |-- @changes
   |       |                   |   `-- master
   |       |                   |       `-- josh@example.com
@@ -223,7 +238,7 @@ Make sure all temporary namespace got removed
           |-- namespaces
           `-- tags
   
-  52 directories, 36 files
+  55 directories, 38 files
 
 $ cat ${TESTTMP}/josh-proxy.out
 $ cat ${TESTTMP}/josh-proxy.out | grep REPO_UPDATE

@@ -41,9 +41,15 @@
   remote: To http://localhost:8001/real_repo.git        
   remote:  * [new branch]      1234 -> @changes/master/josh@example.com/1234        
   remote: To http://localhost:8001/real_repo.git        
+  remote:  * [new branch]      1234 -> @base/master/josh@example.com/1234        
+  remote: To http://localhost:8001/real_repo.git        
   remote:  * [new branch]      foo7 -> @changes/master/josh@example.com/foo7        
   remote: To http://localhost:8001/real_repo.git        
+  remote:  * [new branch]      foo7 -> @base/master/josh@example.com/foo7        
+  remote: To http://localhost:8001/real_repo.git        
   remote:  * [new branch]      1235 -> @changes/master/josh@example.com/1235        
+  remote: To http://localhost:8001/real_repo.git        
+  remote:  * [new branch]      1235 -> @base/master/josh@example.com/1235        
   remote: To http://localhost:8001/real_repo.git        
   remote:  * [new branch]      master -> @heads/master/josh@example.com        
   To http://localhost:8002/real_repo.git
@@ -53,6 +59,9 @@
   Flushed credential cache (no-eol)
   $ git fetch origin
   From http://localhost:8002/real_repo
+   * [new branch]      @base/master/josh@example.com/1234 -> origin/@base/master/josh@example.com/1234
+   * [new branch]      @base/master/josh@example.com/1235 -> origin/@base/master/josh@example.com/1235
+   * [new branch]      @base/master/josh@example.com/foo7 -> origin/@base/master/josh@example.com/foo7
    * [new branch]      @changes/master/josh@example.com/1234 -> origin/@changes/master/josh@example.com/1234
    * [new branch]      @changes/master/josh@example.com/1235 -> origin/@changes/master/josh@example.com/1235
    * [new branch]      @changes/master/josh@example.com/foo7 -> origin/@changes/master/josh@example.com/foo7
@@ -63,10 +72,10 @@
   * Change-Id: foo7 
   | * Change-Id: 1235  (origin/@changes/master/josh@example.com/1235)
   |/  
-  * Change-Id: 1234  (origin/@changes/master/josh@example.com/1234)
+  * Change-Id: 1234  (origin/@changes/master/josh@example.com/1234, origin/@base/master/josh@example.com/1235)
   | * Change-Id: foo7  (origin/@changes/master/josh@example.com/foo7)
   |/  
-  * add file1  (origin/master, origin/HEAD)
+  * add file1  (origin/master, origin/HEAD, origin/@base/master/josh@example.com/foo7, origin/@base/master/josh@example.com/1234)
 
 Make sure all temporary namespace got removed
   $ tree ${TESTTMP}/remote/scratch/real_repo.git/refs/ | grep request_
@@ -134,6 +143,12 @@ Make sure all temporary namespace got removed
   |       |           |-- HEAD
   |       |           `-- refs
   |       |               `-- heads
+  |       |                   |-- @base
+  |       |                   |   `-- master
+  |       |                   |       `-- josh@example.com
+  |       |                   |           |-- 1234
+  |       |                   |           |-- 1235
+  |       |                   |           `-- foo7
   |       |                   |-- @changes
   |       |                   |   `-- master
   |       |                   |       `-- josh@example.com
@@ -183,7 +198,7 @@ Make sure all temporary namespace got removed
           |-- namespaces
           `-- tags
   
-  62 directories, 46 files
+  65 directories, 49 files
 
 $ cat ${TESTTMP}/josh-proxy.out
 $ cat ${TESTTMP}/josh-proxy.out | grep REPO_UPDATE

@@ -36,7 +36,11 @@
   remote: To http://localhost:8001/real_repo.git        
   remote:  * [new branch]      1234 -> @changes/master/josh@example.com/1234        
   remote: To http://localhost:8001/real_repo.git        
+  remote:  * [new branch]      1234 -> @base/master/josh@example.com/1234        
+  remote: To http://localhost:8001/real_repo.git        
   remote:  * [new branch]      foo7 -> @changes/master/josh@example.com/foo7        
+  remote: To http://localhost:8001/real_repo.git        
+  remote:  * [new branch]      foo7 -> @base/master/josh@example.com/foo7        
   remote: To http://localhost:8001/real_repo.git        
   remote:  * [new branch]      master -> @heads/master/josh@example.com        
   To http://localhost:8002/real_repo.git:/sub1.git
@@ -63,7 +67,11 @@
   remote: To http://localhost:8001/real_repo.git        
   remote:  * [new branch]      1234 -> @changes/other_branch/josh@example.com/1234        
   remote: To http://localhost:8001/real_repo.git        
+  remote:  * [new branch]      1234 -> @base/other_branch/josh@example.com/1234        
+  remote: To http://localhost:8001/real_repo.git        
   remote:  * [new branch]      foo7 -> @changes/other_branch/josh@example.com/foo7        
+  remote: To http://localhost:8001/real_repo.git        
+  remote:  * [new branch]      foo7 -> @base/other_branch/josh@example.com/foo7        
   remote: To http://localhost:8001/real_repo.git        
   remote:  * [new branch]      other_branch -> @heads/other_branch/josh@example.com        
   To http://localhost:8002/real_repo.git:/sub1.git
@@ -78,6 +86,8 @@
   remote: 
   remote: Everything up-to-date        
   remote: Everything up-to-date        
+  remote: Everything up-to-date        
+  remote: Everything up-to-date        
   remote: To http://localhost:8001/real_repo.git        
   remote:    2bb9471..a306516  master -> @heads/master/josh@example.com        
   To http://localhost:8002/real_repo.git:/sub1.git
@@ -87,6 +97,10 @@
   Flushed credential cache (no-eol)
   $ git fetch origin
   From http://localhost:8002/real_repo.git:/sub1
+   * [new branch]      @base/master/josh@example.com/1234 -> origin/@base/master/josh@example.com/1234
+   * [new branch]      @base/master/josh@example.com/foo7 -> origin/@base/master/josh@example.com/foo7
+   * [new branch]      @base/other_branch/josh@example.com/1234 -> origin/@base/other_branch/josh@example.com/1234
+   * [new branch]      @base/other_branch/josh@example.com/foo7 -> origin/@base/other_branch/josh@example.com/foo7
    * [new branch]      @changes/master/josh@example.com/1234 -> origin/@changes/master/josh@example.com/1234
    * [new branch]      @changes/master/josh@example.com/foo7 -> origin/@changes/master/josh@example.com/foo7
    * [new branch]      @changes/other_branch/josh@example.com/1234 -> origin/@changes/other_branch/josh@example.com/1234
@@ -96,12 +110,16 @@
   $ git log --decorate --graph --pretty="%s %d"
   * add file3  (HEAD -> master, origin/@heads/master/josh@example.com)
   * Change-Id: foo7  (origin/@heads/other_branch/josh@example.com, origin/@changes/other_branch/josh@example.com/foo7, origin/@changes/master/josh@example.com/foo7)
-  * Change-Id: 1234  (origin/@changes/other_branch/josh@example.com/1234, origin/@changes/master/josh@example.com/1234)
-  * add file1  (origin/master, origin/HEAD)
+  * Change-Id: 1234  (origin/@changes/other_branch/josh@example.com/1234, origin/@changes/master/josh@example.com/1234, origin/@base/other_branch/josh@example.com/foo7, origin/@base/master/josh@example.com/foo7)
+  * add file1  (origin/master, origin/HEAD, origin/@base/other_branch/josh@example.com/1234, origin/@base/master/josh@example.com/1234)
 
   $ cd ${TESTTMP}/real_repo
   $ git fetch origin
   From http://localhost:8001/real_repo
+   * [new branch]      @base/master/josh@example.com/1234 -> origin/@base/master/josh@example.com/1234
+   * [new branch]      @base/master/josh@example.com/foo7 -> origin/@base/master/josh@example.com/foo7
+   * [new branch]      @base/other_branch/josh@example.com/1234 -> origin/@base/other_branch/josh@example.com/1234
+   * [new branch]      @base/other_branch/josh@example.com/foo7 -> origin/@base/other_branch/josh@example.com/foo7
    * [new branch]      @changes/master/josh@example.com/1234 -> origin/@changes/master/josh@example.com/1234
    * [new branch]      @changes/master/josh@example.com/foo7 -> origin/@changes/master/josh@example.com/foo7
    * [new branch]      @changes/other_branch/josh@example.com/1234 -> origin/@changes/other_branch/josh@example.com/1234
@@ -112,7 +130,7 @@
   error: pathspec 'heads/master/josh@example.com' did not match any file(s) known to git
   [1]
   $ git log --decorate --graph --pretty="%s %d"
-  * add file1  (HEAD -> master, origin/master, origin/HEAD)
+  * add file1  (HEAD -> master, origin/master, origin/HEAD, origin/@base/other_branch/josh@example.com/1234, origin/@base/master/josh@example.com/1234)
 
   $ tree
   .
@@ -183,6 +201,15 @@ Make sure all temporary namespace got removed
   |       |           |-- HEAD
   |       |           `-- refs
   |       |               `-- heads
+  |       |                   |-- @base
+  |       |                   |   |-- master
+  |       |                   |   |   `-- josh@example.com
+  |       |                   |   |       |-- 1234
+  |       |                   |   |       `-- foo7
+  |       |                   |   `-- other_branch
+  |       |                   |       `-- josh@example.com
+  |       |                   |           |-- 1234
+  |       |                   |           `-- foo7
   |       |                   |-- @changes
   |       |                   |   |-- master
   |       |                   |   |   `-- josh@example.com
@@ -240,7 +267,7 @@ Make sure all temporary namespace got removed
           |-- namespaces
           `-- tags
   
-  62 directories, 47 files
+  67 directories, 51 files
 
 $ cat ${TESTTMP}/josh-proxy.out
 $ cat ${TESTTMP}/josh-proxy.out | grep REPO_UPDATE
