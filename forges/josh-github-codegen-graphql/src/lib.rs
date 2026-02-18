@@ -10,4 +10,16 @@ pub type NodeId = String;
 pub type Uri = Url;
 pub type DateTime = chrono::DateTime<Utc>;
 
+// API operations (no fragments) - used for get_repo_id, create_pull_request, close_pull_request
+#[allow(unused_imports)]
+pub mod api {
+    // Generated code uses super::Uri, super::Id etc.; super is this module, so re-export from crate
+    pub use super::{DateTime, GitObjectId, Id, NodeId, Uri};
+    include!(concat!(env!("OUT_DIR"), "/generated_api.rs"));
+}
+pub use api::{
+    close_pull_request, create_pull_request, get_pr_by_head, get_repo_id, update_pull_request,
+    ClosePullRequest, CreatePullRequest, GetPrByHead, GetRepoId, UpdatePullRequest,
+};
+
 include!(concat!(env!("OUT_DIR"), "/generated.rs"));

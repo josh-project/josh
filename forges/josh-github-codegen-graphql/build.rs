@@ -17,15 +17,37 @@ struct Config {
 struct GraphQLConfig {
     queries: Vec<String>,
     fragments: String,
+    #[serde(default)]
+    api: Option<GraphQLApiConfig>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct GraphQLApiConfig {
+    queries: Vec<String>,
 }
 
 fn main() -> Result<()> {
     let manifest = read_manifest()?;
 
-    let files = [vec![manifest.graphql.fragments], manifest.graphql.queries].concat();
+    let files = [
+        vec![manifest.graphql.fragments.clone()],
+        manifest.graphql.queries.clone(),
+    ]
+    .concat();
     let concatenated_files = concatenate_graphql_files(&files)?;
     let generated_code = generate_code(&concatenated_files)?;
-    write_output(generated_code)?;
+    write_output(&generated_code, "generated.rs")?;
+
+    if let Some(api) = &manifest.graphql.api {
+        if !api.queries.is_empty() {
+            let api_concatenated = concatenate_graphql_files(&api.queries)?;
+            let api_generated = generate_code(&api_concatenated)?;
+            write_output(&api_generated, "generated_api.rs")?;
+            for query in &api.queries {
+                println!("cargo:rerun-if-changed=src/{}", query);
+            }
+        }
+    }
 
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=src/manifest.toml");
@@ -84,9 +106,9 @@ fn generate_code(query: &str) -> Result<String> {
     Ok(formatted)
 }
 
-fn write_output(generated_code: String) -> Result<()> {
+fn write_output(generated_code: &str, filename: &str) -> Result<()> {
     let out_dir = env::var_os("OUT_DIR").context("OUT_DIR not set")?;
-    let dest_path = Path::new(&out_dir).join("generated.rs");
+    let dest_path = Path::new(&out_dir).join(filename);
 
     fs::write(dest_path, generated_code).context("Failed to write generated code to file")
 }

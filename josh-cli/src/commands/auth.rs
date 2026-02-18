@@ -10,6 +10,25 @@ const KEYRING_GITHUB_ACCESS_TOKEN: &str = "github:access_token";
 const KEYRING_GITHUB_REFRESH_TOKEN: &str = "github:refresh_token";
 const KEYRING_GITHUB_TOKEN_EXPIRY: &str = "github:token_expiry";
 
+/// Read the GitHub access token: prefers GITHUB_TOKEN env (e.g. PAT with full permissions),
+/// then the token stored by `josh auth login github` (keyring).
+/// Use GITHUB_TOKEN if you get "Resource not accessible by integration" when creating/updating PRs
+/// (the app token from device flow may lack pull request write permission).
+pub fn get_github_access_token() -> anyhow::Result<Option<String>> {
+    if let Ok(t) = std::env::var("GITHUB_TOKEN") {
+        if !t.trim().is_empty() {
+            return Ok(Some(t));
+        }
+    }
+    let entry = keyring::Entry::new(KEYRING_SERVICE, KEYRING_GITHUB_ACCESS_TOKEN)
+        .context("Failed to create keyring entry")?;
+    match entry.get_password() {
+        Ok(token) => Ok(Some(token)),
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(e) => Err(e).context("Failed to read GitHub access token from keyring"),
+    }
+}
+
 #[derive(Debug, clap::Parser)]
 pub struct AuthArgs {
     /// Auth action to perform

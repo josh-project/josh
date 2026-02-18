@@ -2706,6 +2706,7 @@ dependencies = [
  "git2",
  "josh-core",
  "josh-github-auth",
+ "josh-github-graphql",
  "josh-graphql",
  "josh-link",
  "josh-templates",
@@ -2829,10 +2830,12 @@ name = "josh-github-graphql"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "git2",
  "graphql_client",
  "http",
  "josh-github-codegen-graphql",
+ "reqwest 0.13.1",
  "reqwest-middleware",
  "serde_json",
  "url",
@@ -3055,6 +3058,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "eebcc3aff044e5944a8fbaf69eb277d11986064cba30c468730e8b9909fb551c"
 dependencies = [
  "log",
+ "security-framework 2.11.1",
+ "security-framework 3.5.1",
  "zeroize",
 ]
 
