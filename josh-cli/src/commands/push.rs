@@ -351,11 +351,15 @@ fn create_or_update_github_prs(url: &str, pr_infos: &[PrInfo]) -> anyhow::Result
                 }
                 _ => info.base_branch.as_str(),
             };
+            let desired_draft = match &default_branch {
+                Some((default_name, _)) => effective_base_branch != default_name.as_str(),
+                None => effective_base_branch == info.base_branch.as_str(),
+            };
             match connection
                 .find_pull_request_by_head(&owner, &repo_name, &info.head_branch)
                 .await
             {
-                Ok(Some((pr_id, number))) => {
+                Ok(Some((pr_id, number, is_draft))) => {
                     match connection
                         .update_pull_request(
                             &pr_id,
@@ -365,10 +369,30 @@ fn create_or_update_github_prs(url: &str, pr_infos: &[PrInfo]) -> anyhow::Result
                         )
                         .await
                     {
-                        Ok((_, _)) => eprintln!(
-                            "Updated PR #{}: {} (base: {})",
-                            number, info.head_branch, effective_base_branch
-                        ),
+                        Ok((_, _)) => {
+                            if is_draft != desired_draft {
+                                let r = if desired_draft {
+                                    connection.convert_pull_request_to_draft(&pr_id).await
+                                } else {
+                                    connection.mark_pull_request_ready_for_review(&pr_id).await
+                                };
+                                match r {
+                                    Ok((_, _, new_is_draft)) => eprintln!(
+                                        "Updated PR #{}: {} (base: {}, draft: {})",
+                                        number, info.head_branch, effective_base_branch, new_is_draft
+                                    ),
+                                    Err(e) => eprintln!(
+                                        "Updated PR #{}: {} (base: {}), but failed to update draft status: {}",
+                                        number, info.head_branch, effective_base_branch, e
+                                    ),
+                                }
+                            } else {
+                                eprintln!(
+                                    "Updated PR #{}: {} (base: {}, draft: {})",
+                                    number, info.head_branch, effective_base_branch, is_draft
+                                );
+                            }
+                        }
                         Err(e) => {
                             let msg = e.to_string();
                             eprintln!("Failed to update PR #{} {}: {}", number, info.head_branch, msg);
@@ -386,12 +410,13 @@ fn create_or_update_github_prs(url: &str, pr_infos: &[PrInfo]) -> anyhow::Result
                             &info.head_branch,
                             &info.title,
                             &info.body,
+                            desired_draft,
                         )
                         .await
                     {
                         Ok((_, number)) => eprintln!(
-                            "Created PR #{}: {} → {}",
-                            number, info.head_branch, effective_base_branch
+                            "Created PR #{}: {} → {} (draft: {})",
+                            number, info.head_branch, effective_base_branch, desired_draft
                         ),
                         Err(e) => {
                             let msg = e.to_string();

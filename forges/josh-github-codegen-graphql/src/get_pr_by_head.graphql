@@ -4,6 +4,7 @@ query GetPrByHead($owner: String!, $name: String!, $headRefName: String!) {
       nodes {
         id
         number
+        isDraft
       }
     }
   }

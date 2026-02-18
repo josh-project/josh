@@ -3,7 +3,8 @@ mutation CreatePullRequest(
   $baseRefName: String!,
   $headRefName: String!,
   $title: String!,
-  $body: String!
+  $body: String!,
+  $draft: Boolean!
 ) {
   createPullRequest(
     input: {
@@ -11,7 +12,8 @@ mutation CreatePullRequest(
       baseRefName: $baseRefName,
       headRefName: $headRefName,
       title: $title,
-      body: $body
+      body: $body,
+      draft: $draft
     }
   ) {
     pullRequest {
@@ -20,6 +22,7 @@ mutation CreatePullRequest(
       url
       title
       state
+      isDraft
     }
   }
 }
