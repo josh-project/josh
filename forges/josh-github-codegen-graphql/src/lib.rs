@@ -18,8 +18,9 @@ pub mod api {
     include!(concat!(env!("OUT_DIR"), "/generated_api.rs"));
 }
 pub use api::{
-    close_pull_request, create_pull_request, get_pr_by_head, get_repo_id, update_pull_request,
-    ClosePullRequest, CreatePullRequest, GetPrByHead, GetRepoId, UpdatePullRequest,
+    close_pull_request, create_pull_request, get_default_branch, get_pr_by_head, get_repo_id,
+    update_pull_request, ClosePullRequest, CreatePullRequest, GetDefaultBranch, GetPrByHead,
+    GetRepoId, UpdatePullRequest,
 };
 
 include!(concat!(env!("OUT_DIR"), "/generated.rs"));

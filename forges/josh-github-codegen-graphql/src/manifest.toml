@@ -12,6 +12,7 @@ queries = [
 [graphql.api]
 queries = [
   "get_repo_id.graphql",
+  "get_default_branch.graphql",
   "get_pr_by_head.graphql",
   "create_pull_request.graphql",
   "update_pull_request.graphql",
