@@ -43,6 +43,21 @@ pub fn baseref_and_options(
     Ok((baseref, push_to, options, push_mode))
 }
 
+fn add_base_refs(
+    repo: &git2::Repository,
+    refs: &mut Vec<(String, git2::Oid, String)>,
+) -> anyhow::Result<()> {
+    let original_refs = std::mem::take(refs);
+    for (r, sha, id) in original_refs.into_iter() {
+        let base_ref = r.replacen("refs/heads/@changes", "refs/heads/@base", 1);
+        refs.push((r, sha, id.clone()));
+        if let Some(parent_sha) = repo.find_commit(sha)?.parent_ids().next() {
+            refs.push((base_ref, parent_sha, id))
+        }
+    }
+    Ok(())
+}
+
 fn split_changes(
     repo: &git2::Repository,
     changes: &mut [(String, git2::Oid, String)],
@@ -173,6 +188,8 @@ pub fn build_to_push(
         if push_mode == PushMode::Split {
             split_changes(repo, &mut push_refs, base_oid)?;
         }
+
+        add_base_refs(repo, &mut push_refs)?;
 
         if push_mode == PushMode::Review {
             push_refs.push((
