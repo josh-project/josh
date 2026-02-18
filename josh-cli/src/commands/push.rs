@@ -267,6 +267,7 @@ pub fn handle_push(
 struct PrInfo {
     pub head_branch: String,
     pub base_branch: String,
+    pub base_oid: git2::Oid,
     pub title: String,
     pub body: String,
 }
@@ -280,8 +281,15 @@ fn collect_pr_infos(
     fn branch_name(refname: &str) -> &str {
         refname.strip_prefix("refs/heads/").unwrap_or(refname)
     }
-    let mut by_id: HashMap<String, (Option<String>, Option<String>, Option<git2::Oid>)> =
-        HashMap::new();
+    let mut by_id: HashMap<
+        String,
+        (
+            Option<String>,
+            Option<String>,
+            Option<git2::Oid>,
+            Option<git2::Oid>,
+        ),
+    > = HashMap::new();
     for (refname, oid, id) in to_push {
         let branch = branch_name(refname).to_string();
         if refname.contains("@changes") {
@@ -289,13 +297,15 @@ fn collect_pr_infos(
             entry.0 = Some(branch);
             entry.2 = Some(*oid);
         } else if refname.contains("@base") {
-            by_id.entry(id.clone()).or_default().1 = Some(branch);
+            let entry = by_id.entry(id.clone()).or_default();
+            entry.1 = Some(branch);
+            entry.3 = Some(*oid);
         }
     }
     by_id
         .into_iter()
-        .filter_map(|(_, (head, base, head_oid))| {
-            let (head, base, head_oid) = (head?, base?, head_oid?);
+        .filter_map(|(_, (head, base, head_oid, base_oid))| {
+            let (head, base, head_oid, base_oid) = (head?, base?, head_oid?, base_oid?);
             let commit = repo.find_commit(head_oid).ok()?;
             let raw_message = commit.message().unwrap_or("");
             let message = raw_message.trim_end();
@@ -309,6 +319,7 @@ fn collect_pr_infos(
             Some(PrInfo {
                 head_branch: head,
                 base_branch: base,
+                base_oid,
                 title,
                 body,
             })
@@ -330,7 +341,16 @@ fn create_or_update_github_prs(url: &str, pr_infos: &[PrInfo]) -> anyhow::Result
     let rt = tokio::runtime::Runtime::new().context("Failed to create tokio runtime")?;
     rt.block_on(async {
         let repository_id = connection.get_repo_id(&owner, &repo_name).await?;
+        let default_branch = connection.get_default_branch(&owner, &repo_name).await?;
         for info in pr_infos {
+            let effective_base_branch = match &default_branch {
+                Some((default_name, default_oid))
+                    if info.base_oid.to_string() == *default_oid =>
+                {
+                    default_name.as_str()
+                }
+                _ => info.base_branch.as_str(),
+            };
             match connection
                 .find_pull_request_by_head(&owner, &repo_name, &info.head_branch)
                 .await
@@ -341,13 +361,13 @@ fn create_or_update_github_prs(url: &str, pr_infos: &[PrInfo]) -> anyhow::Result
                             &pr_id,
                             Some(&info.title),
                             Some(&info.body),
-                            Some(&info.base_branch),
+                            Some(effective_base_branch),
                         )
                         .await
                     {
                         Ok((_, _)) => eprintln!(
                             "Updated PR #{}: {} (base: {})",
-                            number, info.head_branch, info.base_branch
+                            number, info.head_branch, effective_base_branch
                         ),
                         Err(e) => {
                             let msg = e.to_string();
@@ -362,7 +382,7 @@ fn create_or_update_github_prs(url: &str, pr_infos: &[PrInfo]) -> anyhow::Result
                     match connection
                         .create_pull_request(
                             &repository_id,
-                            &info.base_branch,
+                            effective_base_branch,
                             &info.head_branch,
                             &info.title,
                             &info.body,
@@ -371,13 +391,13 @@ fn create_or_update_github_prs(url: &str, pr_infos: &[PrInfo]) -> anyhow::Result
                     {
                         Ok((_, number)) => eprintln!(
                             "Created PR #{}: {} → {}",
-                            number, info.head_branch, info.base_branch
+                            number, info.head_branch, effective_base_branch
                         ),
                         Err(e) => {
                             let msg = e.to_string();
                             eprintln!(
                                 "Failed to create PR {} → {}: {}",
-                                info.head_branch, info.base_branch, msg
+                                info.head_branch, effective_base_branch, msg
                             );
                             if msg.contains("Resource not accessible by integration") {
                                 eprintln!("Hint: set GITHUB_TOKEN to a Personal Access Token (repo + pull request) and try again.");
