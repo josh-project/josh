@@ -27,6 +27,7 @@ pub mod link;
 pub mod shell;
 pub mod submodules;
 
+#[derive(Debug)]
 pub struct Change {
     pub author: String,
     pub id: Option<String>,
