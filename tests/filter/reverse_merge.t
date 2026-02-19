@@ -1,0 +1,108 @@
+  $ export TESTTMP=${PWD}
+
+  $ cd ${TESTTMP}
+  $ git init -q real_repo 1> /dev/null
+  $ cd real_repo
+
+  $ mkdir sub2
+  $ echo contents1 > sub2/file2
+  $ git add sub2
+  $ git commit -m "add sub2" 1> /dev/null
+
+  $ mkdir sub1
+  $ echo contents1 > sub1/file1
+  $ git add sub1
+  $ git commit -m "add file1" 1> /dev/null
+  $ git branch branch1
+
+  $ echo contents1 > sub1/file2
+  $ git add sub1
+  $ git commit -m "add file2" 1> /dev/null
+
+  $ git log --graph --pretty=%s
+  * add file2
+  * add file1
+  * add sub2
+
+  $ josh-filter -s :exclude[::sub2/] branch1 --update refs/heads/hidden_branch1
+  bb282e9cdc1b972fffd08fd21eead43bc0c83cb8
+  [2] :exclude[::sub2/]
+  [2] sequence_number
+  $ git checkout hidden_branch1
+  Switched to branch 'hidden_branch1'
+  $ tree
+  .
+  `-- sub1
+      `-- file1
+  
+  2 directories, 1 file
+  $ echo contents3 > sub1/file3
+  $ git add sub1/file3
+  $ git commit -m "add file3" 1> /dev/null
+
+  $ josh-filter -s :exclude[::sub2/] master --update refs/heads/hidden_master
+  60e15e185773918ce57eccb412f1e772bc6746fc
+  [3] :exclude[::sub2/]
+  [3] sequence_number
+  $ git checkout hidden_master
+  Switched to branch 'hidden_master'
+  $ tree
+  .
+  `-- sub1
+      |-- file1
+      `-- file2
+  
+  2 directories, 2 files
+  $ echo contents4 > sub1/file4
+  $ git add sub1/file4
+  $ git commit -m "add file4" 1> /dev/null
+
+  $ git log hidden_master --graph --pretty=%s
+  * add file4
+  * add file2
+  * add file1
+  $ git log hidden_branch1 --graph --pretty=%s
+  * add file3
+  * add file1
+
+  $ git merge -q hidden_branch1 --no-ff
+  $ git log --graph --pretty=%s
+  *   Merge branch 'hidden_branch1' into hidden_master
+  |\  
+  | * add file3
+  * | add file4
+  * | add file2
+  |/  
+  * add file1
+
+  $ josh-filter -s :exclude[::sub2/] --reverse master --update refs/heads/hidden_master
+  1496b9e75273ad3a0de58812a731a7a50b0d2a66
+  [3] :exclude[::sub2/]
+  [3] sequence_number
+
+  $ git checkout master
+  Switched to branch 'master'
+
+  $ tree
+  .
+  |-- sub1
+  |   |-- file1
+  |   |-- file2
+  |   |-- file3
+  |   `-- file4
+  `-- sub2
+      `-- file2
+  
+  3 directories, 5 files
+
+
+
+  $ git log --graph --pretty=%s
+  *   Merge branch 'hidden_branch1' into hidden_master
+  |\  
+  | * add file3
+  * | add file4
+  * | add file2
+  |/  
+  * add file1
+  * add sub2

@@ -1,0 +1,1673 @@
+use anyhow::{Context, anyhow};
+use std::collections::{HashMap, HashSet};
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::str::FromStr;
+use std::sync::{Arc, RwLock};
+
+use crate::http::{ProxyError, StreamWithGuard};
+use crate::serve::{CapabilitiesDirection, git_list_capabilities};
+use crate::upstream::{HttpUpstream, RemoteAuth, RepoUpdate, Upstream, process_repo_update};
+use crate::{FetchError, FilteredRepoUrl, TmpGitNamespace, cli, run_git_with_auth};
+
+use josh_core;
+use josh_core::cache::{CacheStack, TransactionContext};
+use josh_graphql::graphql;
+use josh_rpc::calls::RequestedCommand;
+
+use axum::Router;
+use axum::body::Body;
+use axum::extract::{FromRequestParts, State};
+use axum::http::request::Parts;
+use axum::http::{Request, Response, StatusCode, header};
+use axum::middleware::Next;
+use axum::response::IntoResponse;
+use serde::Serialize;
+use tracing::{Span, trace};
+use tracing_futures::Instrument;
+use tracing_opentelemetry::OpenTelemetrySpanExt;
+
+pub type FetchTimers = HashMap<String, std::time::Instant>;
+pub type Polls = Arc<std::sync::Mutex<HashSet<(String, crate::auth::Handle, String)>>>;
+
+pub type HeadsMap = Arc<RwLock<HashMap<String, String>>>;
+
+#[derive(Serialize, Clone, Debug)]
+pub enum JoshProxyUpstream {
+    Http(String),
+    Ssh(String),
+    Both { http: String, ssh: String },
+}
+
+impl<S> FromRequestParts<S> for FilteredRepoUrl
+where
+    S: Sync + Send,
+{
+    type Rejection = axum::response::Response;
+
+    async fn from_request_parts(parts: &mut Parts, _: &S) -> Result<Self, Self::Rejection> {
+        let path = {
+            let mut path = parts.uri.path().to_owned();
+
+            while path.contains("//") {
+                path = path.replace("//", "/");
+            }
+
+            percent_encoding::percent_decode_str(&path)
+                .decode_utf8_lossy()
+                .to_string()
+        };
+
+        let mut parsed = match FilteredRepoUrl::from_str(&path) {
+            Some(parsed) => parsed,
+            None => {
+                // This is something that is not a repo, but the request path still
+                // contains something, so we return 404 to have a less confusing
+                // message for git cli
+                return Err(StatusCode::NOT_FOUND.into_response());
+            }
+        };
+
+        if parsed.rest.starts_with(':') {
+            let guessed_url = parts.uri.path().trim_end_matches("/info/refs");
+            let msg = indoc::formatdoc!(
+                r#"
+                Invalid URL: "{0}"
+
+                Note: repository URLs should end with ".git":
+
+                  {0}.git
+                "#,
+                guessed_url
+            );
+
+            return Err((StatusCode::UNPROCESSABLE_ENTITY, msg).into_response());
+        }
+
+        if parsed.filter_spec == "" {
+            parsed.filter_spec = ":/".to_string();
+        }
+
+        Ok(parsed)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct UpstreamFetchResult {
+    pub upstream_repo: String,
+    pub filter: josh_core::filter::Filter,
+    pub headref: HeadRef,
+    pub remote_url: String,
+    pub remote_auth: RemoteAuth,
+}
+
+impl<S> FromRequestParts<S> for UpstreamFetchResult
+where
+    S: Sync + Send,
+{
+    type Rejection = axum::response::Response;
+
+    async fn from_request_parts(parts: &mut Parts, _: &S) -> Result<Self, Self::Rejection> {
+        parts
+            .extensions
+            .get::<UpstreamFetchResult>()
+            .cloned()
+            .ok_or_else(|| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "UpstreamFetchResult not found in extensions",
+                )
+                    .into_response()
+            })
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum UpstreamProtocol {
+    Http,
+    Ssh,
+}
+
+#[derive(Clone)]
+pub struct GitCapabilities {
+    pub upload_pack: Vec<String>,
+    pub receive_pack: Vec<String>,
+}
+
+impl GitCapabilities {
+    pub fn get(&self, direction: CapabilitiesDirection) -> &[String] {
+        match direction {
+            CapabilitiesDirection::UploadPack => &self.upload_pack,
+            CapabilitiesDirection::ReceivePack => &self.receive_pack,
+        }
+    }
+}
+
+pub struct IoCleanup {
+    pub repo_path: std::path::PathBuf,
+    pub name: String,
+}
+
+#[derive(Clone)]
+pub struct JoshProxyService {
+    pub port: u16,
+    pub repo_path: std::path::PathBuf,
+    pub upstream: JoshProxyUpstream,
+    pub require_auth: bool,
+    pub poll_user: Option<String>,
+    pub cache_duration: u64,
+    pub filter_prefix: josh_core::filter::Filter,
+    pub cache: Arc<CacheStack>,
+    pub git_capabilities: GitCapabilities,
+    pub fetch_timers: Arc<RwLock<FetchTimers>>,
+    // Stores a map from upstream repo to the ref that
+    // the symref HEAD resolves to for that repo
+    pub head_symref_map: HeadsMap,
+    pub fetch_permits: Arc<std::sync::Mutex<HashMap<String, Arc<tokio::sync::Semaphore>>>>,
+    pub filter_permits: Arc<tokio::sync::Semaphore>,
+    pub poll: Polls,
+    pub io_thread_tx: Option<tokio::sync::mpsc::UnboundedSender<IoCleanup>>,
+}
+
+#[bon::builder]
+pub fn make_service(
+    port: u16,
+    repo_path: &std::path::Path,
+    remotes: &[cli::Remote],
+    require_auth: Option<bool>,
+    poll_user: Option<String>,
+    cache_duration: Option<u64>,
+    cache: Option<CacheStack>,
+    filter_prefix: Option<String>,
+    git_capabilities: Option<GitCapabilities>,
+    io_thread_tx: Option<tokio::sync::mpsc::UnboundedSender<IoCleanup>>,
+) -> anyhow::Result<Arc<JoshProxyService>> {
+    let cache = Arc::new(cache.unwrap_or_default());
+    let repo_path = repo_path.to_owned();
+    let require_auth = require_auth.unwrap_or(false);
+    let cache_duration = cache_duration.unwrap_or(0);
+
+    let upstream = make_upstream(remotes).inspect_err(|e| {
+        eprintln!("Upstream parsing error: {}", e);
+    })?;
+
+    let filter_prefix = if let Some(filter_prefix) = filter_prefix {
+        josh_core::filter::parse(&filter_prefix)?
+    } else {
+        josh_core::filter::Filter::new()
+    };
+
+    let git_capabilities = if let Some(caps) = git_capabilities {
+        caps
+    } else {
+        let upload_pack_caps =
+            git_list_capabilities(&repo_path.join("mirror"), CapabilitiesDirection::UploadPack)?;
+
+        let receive_pack_caps = git_list_capabilities(
+            &repo_path.join("mirror"),
+            CapabilitiesDirection::ReceivePack,
+        )?;
+
+        GitCapabilities {
+            upload_pack: upload_pack_caps,
+            receive_pack: receive_pack_caps,
+        }
+    };
+
+    Ok(Arc::new(JoshProxyService {
+        port,
+        repo_path,
+        upstream,
+        require_auth,
+        poll_user,
+        cache_duration,
+        filter_prefix,
+        cache,
+        git_capabilities,
+        fetch_timers: Default::default(),
+        head_symref_map: Default::default(),
+        fetch_permits: Default::default(),
+        filter_permits: Arc::new(tokio::sync::Semaphore::new(10)),
+        poll: Default::default(),
+        io_thread_tx,
+    }))
+}
+
+impl crate::upstream::Upstream for Arc<JoshProxyService> {
+    fn upstream(&self, protocol: UpstreamProtocol) -> Option<String> {
+        match (&self.upstream, protocol) {
+            (JoshProxyUpstream::Http(http), UpstreamProtocol::Http)
+            | (JoshProxyUpstream::Both { http, .. }, UpstreamProtocol::Http) => Some(http.clone()),
+            (JoshProxyUpstream::Ssh(ssh), UpstreamProtocol::Ssh)
+            | (JoshProxyUpstream::Both { http: _, ssh }, UpstreamProtocol::Ssh) => {
+                Some(ssh.clone())
+            }
+            _ => None,
+        }
+    }
+}
+
+impl JoshProxyService {
+    pub fn open_overlay(
+        &self,
+        ref_prefix: Option<&str>,
+    ) -> anyhow::Result<josh_core::cache::Transaction> {
+        TransactionContext::new(self.repo_path.join("overlay"), self.cache.clone()).open(ref_prefix)
+    }
+
+    pub fn open_mirror(
+        &self,
+        ref_prefix: Option<&str>,
+    ) -> anyhow::Result<josh_core::cache::Transaction> {
+        TransactionContext::new(self.repo_path.join("mirror"), self.cache.clone()).open(ref_prefix)
+    }
+}
+
+impl std::fmt::Debug for JoshProxyService {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("JoshProxyService")
+            .field("repo_path", &self.repo_path)
+            .field("upstream", &self.upstream)
+            .finish()
+    }
+}
+
+/// Turn a list of [cli::Remote] into a [JoshProxyUpstream] struct.
+pub fn make_upstream(remotes: &[cli::Remote]) -> anyhow::Result<JoshProxyUpstream> {
+    if remotes.is_empty() {
+        unreachable!() // already checked in the parser
+    } else if remotes.len() == 1 {
+        Ok(match &remotes[0] {
+            cli::Remote::Http(url) => JoshProxyUpstream::Http(url.to_string()),
+            cli::Remote::Ssh(url) => JoshProxyUpstream::Ssh(url.to_string()),
+        })
+    } else if remotes.len() == 2 {
+        Ok(match (&remotes[0], &remotes[1]) {
+            (cli::Remote::Http(_), cli::Remote::Http(_))
+            | (cli::Remote::Ssh(_), cli::Remote::Ssh(_)) => {
+                return Err(anyhow!("two cli::remotes of the same type passed"));
+            }
+            (cli::Remote::Http(http_url), cli::Remote::Ssh(ssh_url))
+            | (cli::Remote::Ssh(ssh_url), cli::Remote::Http(http_url)) => JoshProxyUpstream::Both {
+                http: http_url.to_string(),
+                ssh: ssh_url.to_string(),
+            },
+        })
+    } else {
+        Err(anyhow!("too many remotes"))
+    }
+}
+
+fn create_repo_base(path: &PathBuf) -> anyhow::Result<josh_core::shell::Shell> {
+    std::fs::create_dir_all(path).expect("can't create_dir_all");
+
+    if gix::open(path).is_err() {
+        gix::init_bare(path)?;
+    }
+
+    let credential_helper =
+        r#"!f() { echo username="${GIT_USER}"; echo password="${GIT_PASSWORD}"; }; f"#;
+
+    let config_options = [
+        ("http", &[("receivepack", "true")] as &[(&str, &str)]),
+        (
+            "user",
+            &[("name", "JOSH"), ("email", "josh@josh-project.dev")],
+        ),
+        (
+            "uploadpack",
+            &[
+                ("allowAnySHA1InWant", "true"),
+                ("allowReachableSHA1InWant", "true"),
+                ("allowTipSha1InWant", "true"),
+            ],
+        ),
+        ("receive", &[("advertisePushOptions", "true")]),
+        ("gc", &[("auto", "0")]),
+        ("credential", &[("helper", credential_helper)]),
+    ];
+
+    let shell = josh_core::shell::Shell {
+        cwd: path.to_path_buf(),
+    };
+
+    let config_source = gix::config::Source::Local;
+    let config_location = config_source.storage_location(&mut |_| None).unwrap();
+    let config_location = path.join(config_location);
+
+    let mut config =
+        gix::config::File::from_path_no_includes(config_location.clone(), config_source)
+            .context("unable to open repo config file")?;
+
+    config_options
+        .iter()
+        .cloned()
+        .try_for_each(|(section, values)| -> anyhow::Result<()> {
+            let mut section = config
+                .new_section(section, None)
+                .context("unable to create config section")?;
+
+            values
+                .iter()
+                .cloned()
+                .try_for_each(|(name, value)| -> anyhow::Result<()> {
+                    use gix::config::parse::section::ValueName;
+
+                    let key =
+                        ValueName::try_from(name).context("unable to create config section")?;
+                    let value = Some(value.into());
+
+                    section.push(key, value);
+
+                    Ok(())
+                })?;
+
+            Ok(())
+        })?;
+
+    fs::write(&config_location, config.to_string())?;
+
+    let hooks = path.join("hooks");
+    let packed_refs = path.join("packed-refs");
+
+    if hooks.exists() {
+        fs::remove_dir_all(hooks)?;
+    }
+
+    if packed_refs.exists() {
+        fs::remove_file(packed_refs)?;
+    }
+
+    // Delete all files ending with ".lock"
+    fs::read_dir(path)?
+        .filter_map(|entry| match entry {
+            Ok(entry) if entry.path().ends_with(".lock") => Some(path),
+            _ => None,
+        })
+        .map(fs::remove_file)
+        .collect::<Result<Vec<_>, _>>()?;
+
+    Ok(shell)
+}
+
+pub fn create_repo(
+    path: &std::path::Path,
+    josh_executable: Option<&std::path::Path>,
+) -> anyhow::Result<()> {
+    let mirror_path = path.join("mirror");
+    tracing::debug!("init mirror repo: {:?}", mirror_path);
+    create_repo_base(&mirror_path)?;
+
+    let overlay_path = path.join("overlay");
+    tracing::debug!("init overlay repo: {:?}", overlay_path);
+    let overlay_shell = create_repo_base(&overlay_path)?;
+    overlay_shell.command(&["mkdir", "hooks"]);
+
+    let josh_executable = josh_executable
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| std::env::current_exe().expect("can't find path to exe"));
+    std::os::unix::fs::symlink(
+        josh_executable.clone(),
+        overlay_path.join("hooks").join("update"),
+    )
+    .expect("can't symlink update hook");
+
+    std::os::unix::fs::symlink(
+        josh_executable,
+        overlay_path.join("hooks").join("pre-receive"),
+    )
+    .expect("can't symlink pre-receive hook");
+
+    if std::env::var_os("JOSH_KEEP_NS").is_none() {
+        std::fs::remove_dir_all(overlay_path.join("refs/namespaces")).ok();
+    }
+
+    tracing::info!("repo initialized");
+    Ok(())
+}
+
+async fn handle_version() -> impl IntoResponse {
+    format!("Version: {}\n", josh_core::VERSION)
+}
+
+async fn handle_remote(HttpUpstream(upstream): HttpUpstream) -> impl IntoResponse {
+    (StatusCode::OK, upstream)
+}
+
+async fn handle_flush(State(service): State<Arc<JoshProxyService>>) -> impl IntoResponse {
+    match service.fetch_timers.write() {
+        Ok(mut timers) => {
+            timers.clear();
+            (StatusCode::OK, "Flushed credential cache")
+        }
+        Err(_) => (StatusCode::INTERNAL_SERVER_ERROR, "Failed to flush cache"),
+    }
+}
+
+async fn handle_filters(service: Arc<JoshProxyService>, refresh: bool) -> impl IntoResponse {
+    // Clear fetch timers
+    #[allow(clippy::redundant_pattern_matching)]
+    if let Err(_) = service.fetch_timers.write().map(|mut t| t.clear()) {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Failed to clear fetch timers",
+        )
+            .into_response();
+    }
+
+    let body_str = match tokio::task::spawn_blocking(move || -> anyhow::Result<_> {
+        let transaction_mirror = service.open_mirror(None)?;
+        josh_core::housekeeping::discover_filter_candidates(&transaction_mirror)?;
+
+        if refresh {
+            let transaction_overlay = service.open_overlay(None)?;
+            josh_core::housekeeping::refresh_known_filters(
+                &transaction_mirror,
+                &transaction_overlay,
+            )?;
+        }
+
+        Ok(toml::to_string_pretty(
+            &josh_core::housekeeping::get_known_filters()?,
+        )?)
+    })
+    .await
+    {
+        Ok(Ok(s)) => s,
+        Ok(Err(e)) => {
+            return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response();
+        }
+        Err(e) => {
+            return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response();
+        }
+    };
+
+    (StatusCode::OK, body_str).into_response()
+}
+
+fn resolve_upstream_ref(
+    transaction: &josh_core::cache::Transaction,
+    repo: &str,
+    ref_value: &str,
+) -> anyhow::Result<git2::Oid> {
+    let josh_name = [
+        "refs",
+        "josh",
+        "upstream",
+        &josh_core::to_ns(repo),
+        ref_value,
+    ]
+    .iter()
+    .collect::<PathBuf>();
+
+    transaction
+        .repo()
+        .find_reference(josh_name.to_str().unwrap())
+        .context("Could not find ref")?
+        .target()
+        .ok_or(anyhow!("Could not resolve ref"))
+}
+
+pub struct NamespacedRefs {
+    transaction: josh_core::cache::Transaction,
+    ns: Arc<TmpGitNamespace>,
+    refs: Vec<(String, git2::Oid)>,
+    head_symref: (String, String),
+}
+
+impl NamespacedRefs {
+    // Writes the prepared list of refs to the repo, consuming self
+    pub fn write_to_repo(self) -> anyhow::Result<()> {
+        let refs = self
+            .refs
+            .into_iter()
+            .map(|(refn, oid)| (self.ns.reference(&refn), oid))
+            .collect();
+
+        josh_core::update_refs(&self.transaction, refs);
+
+        let (source, target) = self.head_symref;
+        let (source, target) = (self.ns.reference(&source), self.ns.reference(&target));
+
+        self.transaction
+            .repo()
+            .reference_symbolic(&source, &target, true, "write_to_repo")?;
+
+        Ok(())
+    }
+
+    pub fn into_inner(self) -> (Vec<(String, git2::Oid)>, (String, String)) {
+        (self.refs, self.head_symref)
+    }
+}
+
+#[tracing::instrument(skip(service, repo_path))]
+async fn filter_to_namespace(
+    service: Arc<JoshProxyService>,
+    repo: &str,
+    repo_path: PathBuf,
+    temp_ns: Arc<crate::TmpGitNamespace>,
+    filter: josh_core::filter::Filter,
+    head_ref: &HeadRef,
+) -> anyhow::Result<NamespacedRefs> {
+    let permit = service.filter_permits.acquire().await;
+    let head_symref_map = service.head_symref_map.clone();
+
+    let repo = repo.to_string();
+    let tracing_span = tracing::span!(tracing::Level::INFO, "filter_to_namespace worker");
+    let head_ref = head_ref.clone();
+    let service = service.clone();
+
+    let refs = tokio::task::spawn_blocking(move || {
+        let _span_guard = tracing_span.enter();
+        let filter_spec = josh_core::filter::spec(filter);
+        josh_core::housekeeping::remember_filter(&repo, &filter_spec);
+
+        let transaction = service.open_mirror(Some(&format!(
+            "refs/josh/upstream/{}/",
+            &josh_core::to_ns(&repo)
+        )))?;
+
+        // Resolve all refs mentioned in the filter to concrete OIDs,
+        // and apply this information to the filter
+        let filter = {
+            let lazy_refs: Vec<_> = josh_core::filter::lazy_refs(filter)
+                .iter()
+                .map(|x| x.split_once("@").unwrap())
+                .map(|(x, y)| (x.to_string(), y.to_string()))
+                .collect();
+
+            let resolved_refs = lazy_refs
+                .iter()
+                .map(|(rp, rf)| {
+                    (
+                        format!("{}@{}", rp, rf),
+                        resolve_upstream_ref(&transaction, rp, rf).unwrap(),
+                    )
+                })
+                .collect();
+
+            josh_core::filter::resolve_refs(&resolved_refs, filter)
+        };
+
+        let head_symref_target = match &head_ref {
+            HeadRef::ExplicitHead | HeadRef::Implicit => head_symref_map
+                .read()
+                .unwrap()
+                .get(&repo)
+                .cloned()
+                .unwrap_or_else(|| {
+                    tracing::error!(
+                        repo = %repo,
+                        "failed to resolve HEAD symref to concrete ref"
+                    );
+
+                    "refs/heads/invalid-head-ref".to_string()
+                }),
+            HeadRef::ExplicitRef(refn) => refn.to_owned(),
+            HeadRef::ExplicitSha(oid, _) => {
+                format!("refs/heads/_{}", oid)
+            }
+        };
+
+        let refs_to_filter = match &head_ref {
+            HeadRef::ExplicitHead => {
+                let object = resolve_upstream_ref(&transaction, &repo, "HEAD")?;
+                vec![(head_symref_target.clone(), object)]
+            }
+            HeadRef::ExplicitRef(ref_value) => {
+                let object = resolve_upstream_ref(&transaction, &repo, ref_value)?;
+                vec![(ref_value.to_owned(), object)]
+            }
+            HeadRef::ExplicitSha(oid_str, oid_val) => {
+                // When the user requests specific SHA, we create a synthetic ref in a form of
+                // refs/heads/_abcd..., and point HEAD symref to it
+                let synthetic_ref = format!("refs/heads/_{}", oid_str);
+                vec![(synthetic_ref, *oid_val)]
+            }
+            HeadRef::Implicit => {
+                // When user did not explicitly request a ref to filter,
+                // start with a list of all existing refs
+                josh_core::housekeeping::list_refs(transaction.repo(), &repo)?
+            }
+        };
+
+        let t2 = service.open_overlay(None)?;
+        t2.repo()
+            .odb()?
+            .add_disk_alternate(repo_path.join("mirror").join("objects").to_str().unwrap())?;
+
+        let (filtered_refs, _) = josh_core::filter_refs(&t2, filter, &refs_to_filter);
+        let populate_refs = filtered_refs
+            .iter()
+            .any(|(refn, oid)| refn == &head_symref_target && !oid.is_zero());
+
+        let head_symref = ("HEAD".to_string(), head_symref_target);
+
+        // Skip refs that ended up with zero oid. This happens for example when we request
+        // a namespace pointing to a workspace that only exists on some branches: the other
+        // branches will not be populated
+        //
+        // If there is no target of HEAD symref among the filtered refs, don't expose any
+        // refs in this namespace at all
+        let namespaced_refs = if populate_refs {
+            filtered_refs
+                .into_iter()
+                .filter(|(_, oid)| !oid.is_zero())
+                .collect()
+        } else {
+            Default::default()
+        };
+
+        Ok::<_, anyhow::Error>(NamespacedRefs {
+            ns: temp_ns,
+            transaction: t2,
+            refs: namespaced_refs,
+            head_symref,
+        })
+    })
+    .await??;
+
+    std::mem::drop(permit);
+
+    Ok(refs)
+}
+
+async fn ssh_list_refs(
+    url: &str,
+    auth_socket: std::path::PathBuf,
+    refs: Option<&[&str]>,
+) -> anyhow::Result<HashMap<String, String>> {
+    let temp_dir = tempfile::TempDir::with_prefix("josh")?;
+    let refs = match refs {
+        Some(refs) => refs.to_vec(),
+        None => vec!["HEAD"],
+    };
+
+    let ls_remote = ["git", "ls-remote", url];
+    let command = ls_remote
+        .iter()
+        .chain(refs.iter())
+        .map(|s| s.to_string())
+        .collect::<Vec<_>>();
+
+    let result = tokio::task::spawn_blocking(move || -> anyhow::Result<(String, String, i32)> {
+        let command = command.iter().map(String::as_str).collect::<Vec<_>>();
+
+        let (stdout, stderr, code) = run_git_with_auth(
+            temp_dir.path(),
+            &command,
+            &RemoteAuth::Ssh { auth_socket },
+            None,
+        )?;
+
+        Ok((stdout, stderr, code))
+    })
+    .await?;
+
+    let stdout = match result {
+        Ok((stdout, _, 0)) => stdout,
+        Ok((_, stderr, code)) => {
+            return Err(anyhow!(
+                "auth check: git exited with code {}: {}",
+                code,
+                stderr
+            ));
+        }
+        Err(e) => return Err(e),
+    };
+
+    let refs = stdout
+        .lines()
+        .map(|line| {
+            match line
+                .split('\t')
+                .map(str::to_owned)
+                .collect::<Vec<_>>()
+                .as_slice()
+            {
+                [sha1, git_ref] => Ok((git_ref.to_owned(), sha1.to_owned())),
+                _ => Err(anyhow!("could not parse result of ls-remote")),
+            }
+        })
+        .collect::<anyhow::Result<HashMap<_, _>>>()?;
+
+    Ok(refs)
+}
+
+async fn serve_namespace(
+    params: &josh_rpc::calls::ServeNamespace,
+    repo_path: std::path::PathBuf,
+    namespace: &str,
+    repo_update: RepoUpdate,
+) -> anyhow::Result<()> {
+    use std::process::Stdio;
+    use tokio::io::AsyncWriteExt;
+    use tokio::net::UnixStream;
+
+    const SERVE_TIMEOUT: u64 = 60;
+
+    tracing::trace!(
+        command = ?params.command,
+        query = %params.query,
+        namespace = %namespace,
+        "serve_namespace",
+    );
+
+    enum ServeError {
+        FifoError(std::io::Error),
+        SubprocessError(std::io::Error),
+        SubprocessTimeout(tokio::time::error::Elapsed),
+        SubprocessExited(i32),
+    }
+
+    let command = match params.command {
+        RequestedCommand::GitUploadPack => "git-upload-pack",
+        RequestedCommand::GitUploadArchive => "git-upload-archive",
+        RequestedCommand::GitReceivePack => "git-receive-pack",
+    };
+
+    let overlay_path = repo_path.join("overlay");
+
+    let mut process = tokio::process::Command::new(command)
+        .arg(&overlay_path)
+        .current_dir(&overlay_path)
+        .env("GIT_DIR", &repo_path)
+        .env("GIT_NAMESPACE", namespace)
+        .env(
+            "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+            repo_path.join("mirror").join("objects"),
+        )
+        .env("JOSH_REPO_UPDATE", serde_json::to_string(&repo_update)?)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()?;
+
+    let stdout = process.stdout.take().ok_or(anyhow!("no stdout"))?;
+    let stdin = process.stdin.take().ok_or(anyhow!("no stdin"))?;
+
+    let stdin_cancel_token = tokio_util::sync::CancellationToken::new();
+    let stdin_cancel_token_stdout = stdin_cancel_token.clone();
+
+    let read_stdout = async {
+        // If stdout stream was closed, cancel stdin copy future
+        let _guard_stdin = stdin_cancel_token_stdout.drop_guard();
+
+        let copy_future = async {
+            // Move stdout here because it should be closed after copy,
+            // and to be closed it needs to be dropped
+            let mut stdout = stdout;
+
+            // Dropping the handle at the end of this block will generate EOF at the other end
+            let mut stdout_stream = UnixStream::connect(&params.stdout_sock).await?;
+
+            tokio::io::copy(&mut stdout, &mut stdout_stream).await?;
+            stdout_stream.flush().await
+        };
+
+        copy_future.await.map_err(ServeError::FifoError)
+    };
+
+    let write_stdin = async {
+        // When stdout copying was finished (subprocess closed their
+        // stdout due to termination), we need to cancel this future.
+        // Future cancelling is implemented via token.
+        let copy_future = async {
+            // See comment about stdout above
+            let mut stdin = stdin;
+            let mut stdin_stream = UnixStream::connect(&params.stdin_sock).await?;
+
+            tokio::io::copy(&mut stdin_stream, &mut stdin).await?;
+
+            // Flushing is necessary to ensure file handle is closed when
+            // it goes out of scope / dropped
+            stdin.flush().await
+        };
+
+        tokio::select! {
+            copy_result = copy_future => {
+                copy_result
+                    .map(|_| ())
+                    .map_err(ServeError::FifoError)
+            }
+            _ = stdin_cancel_token.cancelled() => {
+                Ok(())
+            }
+        }
+    };
+
+    let maybe_process_completion = async {
+        let max_duration = tokio::time::Duration::from_secs(SERVE_TIMEOUT);
+        match tokio::time::timeout(max_duration, process.wait()).await {
+            Ok(status) => match status {
+                Ok(status) => match status.code() {
+                    Some(0) => Ok(()),
+                    Some(code) => Err(ServeError::SubprocessExited(code)),
+                    None => {
+                        let io_error = std::io::Error::from(std::io::ErrorKind::Other);
+                        Err(ServeError::SubprocessError(io_error))
+                    }
+                },
+                Err(io_error) => Err(ServeError::SubprocessError(io_error)),
+            },
+            Err(elapsed) => Err(ServeError::SubprocessTimeout(elapsed)),
+        }
+    };
+
+    let subprocess_result = tokio::try_join!(read_stdout, write_stdin, maybe_process_completion);
+
+    match subprocess_result {
+        Ok(_) => Ok(()),
+        Err(e) => match e {
+            ServeError::SubprocessExited(code) => {
+                Err(anyhow!("git subprocess exited with code {}", code))
+            }
+            ServeError::SubprocessError(io_error) => {
+                Err(anyhow!("could not start git subprocess: {}", io_error))
+            }
+            ServeError::SubprocessTimeout(elapsed) => {
+                let _ = process.kill().await;
+                Err(anyhow!("git subprocess timed out after {}", elapsed))
+            }
+            ServeError::FifoError(io_error) => {
+                let _ = process.kill().await;
+                Err(anyhow!("git subprocess communication error: {}", io_error))
+            }
+        },
+    }
+}
+
+#[derive(Clone, Debug)]
+pub enum HeadRef {
+    ExplicitHead,
+    ExplicitRef(String),
+    ExplicitSha(String, git2::Oid),
+    Implicit,
+}
+
+impl HeadRef {
+    // Sometimes we don't care about whether it's implicit or explicit
+    fn get(&self) -> &str {
+        match self {
+            HeadRef::ExplicitRef(r) => r,
+            HeadRef::ExplicitHead | HeadRef::Implicit => "HEAD",
+            HeadRef::ExplicitSha(sha, _) => sha,
+        }
+    }
+}
+
+impl FromStr for HeadRef {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let result = s.trim_start_matches(['@', '^']);
+
+        let result = match result {
+            "" => HeadRef::Implicit,
+            "HEAD" => HeadRef::ExplicitHead,
+            r if r.starts_with("refs/") => HeadRef::ExplicitRef(r.into()),
+            r => {
+                if let Ok(oid) = git2::Oid::from_str(&r) {
+                    HeadRef::ExplicitSha(r.to_string(), oid)
+                } else {
+                    return Err(anyhow!("failed to parse ref"));
+                }
+            }
+        };
+
+        Ok(result)
+    }
+}
+
+fn make_repo_update(
+    remote_url: &str,
+    serv: Arc<JoshProxyService>,
+    filter: josh_core::filter::Filter,
+    remote_auth: RemoteAuth,
+    repo_path: &Path,
+    repo: &str,
+    ns: Arc<crate::TmpGitNamespace>,
+) -> RepoUpdate {
+    let context_propagator = crate::trace::make_context_propagator();
+
+    RepoUpdate {
+        refs: HashMap::new(),
+        remote_url: remote_url.to_string(),
+        remote_auth,
+        port: serv.port,
+        filter_spec: josh_core::filter::spec(filter),
+        base_ns: josh_core::to_ns(repo),
+        git_ns: ns.name().to_string(),
+        git_dir: repo_path.display().to_string(),
+        mirror_git_dir: serv.repo_path.join("mirror").display().to_string(),
+        context_propagator,
+    }
+}
+
+async fn handle_serve_namespace(
+    State(serv): State<Arc<JoshProxyService>>,
+    axum::extract::Json(params): axum::extract::Json<josh_rpc::calls::ServeNamespace>,
+) -> impl IntoResponse {
+    let parsed_url = if let Some(mut parsed_url) = FilteredRepoUrl::from_str(&params.query) {
+        if parsed_url.filter_spec.is_empty() {
+            parsed_url.filter_spec = ":/".to_string();
+        }
+
+        parsed_url
+    } else {
+        return (StatusCode::BAD_REQUEST, "Unable to parse query").into_response();
+    };
+
+    let auth_socket = params.ssh_socket.clone();
+    let remote_auth = RemoteAuth::Ssh {
+        auth_socket: auth_socket.clone(),
+    };
+
+    let upstream = match serv.upstream(UpstreamProtocol::Ssh) {
+        Some(upstream) => upstream,
+        None => {
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "SSH remote is not configured",
+            )
+                .into_response();
+        }
+    };
+
+    let repo = parsed_url.upstream_repo.clone();
+    let remote_url = upstream + &repo;
+    let head_ref = match HeadRef::from_str(&parsed_url.headref) {
+        Ok(hr) => hr,
+        Err(_) => return (StatusCode::BAD_REQUEST, "Invalid head ref").into_response(),
+    };
+
+    let resolved_ref = match params.command {
+        RequestedCommand::GitReceivePack => None,
+        _ => {
+            let remote_refs = [head_ref.get()];
+            let remote_refs =
+                match ssh_list_refs(&remote_url, auth_socket, Some(&remote_refs)).await {
+                    Ok(remote_refs) => remote_refs,
+                    Err(e) => {
+                        return (StatusCode::FORBIDDEN, e.to_string()).into_response();
+                    }
+                };
+
+            match remote_refs.get(head_ref.get()) {
+                Some(resolved_ref) => Some(resolved_ref.clone()),
+                None => {
+                    return (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "Could not resolve remote ref",
+                    )
+                        .into_response();
+                }
+            }
+        }
+    };
+
+    match crate::upstream::fetch_upstream(
+        serv.clone(),
+        &repo,
+        &remote_auth,
+        remote_url.to_owned(),
+        Some(head_ref.get()),
+        resolved_ref.as_deref(),
+        false,
+    )
+    .await
+    {
+        Ok(_) => {}
+        Err(FetchError::AuthRequired) => {
+            return (StatusCode::FORBIDDEN, "Access to upstream repo denied").into_response();
+        }
+        Err(FetchError::Other(e)) => {
+            return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response();
+        }
+    }
+
+    trace!(
+        "handle_serve_namespace_request: filter_spec: {}",
+        parsed_url.filter_spec
+    );
+
+    let query_filter = match josh_core::filter::parse(&parsed_url.filter_spec) {
+        Ok(filter) => filter,
+        Err(e) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                format!("Failed to parse filter: {}", e),
+            )
+                .into_response();
+        }
+    };
+
+    let filter = query_filter.chain(serv.filter_prefix);
+
+    let (temp_ns, namespaced_refs) =
+        match prepare_namespace(serv.clone(), &repo, filter, &head_ref).await {
+            Ok(ns) => ns,
+            Err(e) => {
+                return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response();
+            }
+        };
+
+    match tokio::task::spawn_blocking(|| namespaced_refs.write_to_repo()).await {
+        Err(e) => {
+            return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response();
+        }
+        Ok(Err(e)) => {
+            return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response();
+        }
+        _ => {}
+    };
+
+    let overlay_path = serv.repo_path.join("overlay");
+    let repo_update = make_repo_update(
+        &remote_url,
+        serv.clone(),
+        filter,
+        remote_auth,
+        &overlay_path,
+        &repo,
+        temp_ns.clone(),
+    );
+
+    let serve_result =
+        serve_namespace(&params, serv.repo_path.clone(), temp_ns.name(), repo_update).await;
+    std::mem::drop(temp_ns);
+
+    match serve_result {
+        Ok(_) => (StatusCode::NO_CONTENT, "").into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+// Axum middleware for authentication
+async fn auth_middleware(req: Request<Body>, next: Next) -> Result<Response<Body>, StatusCode> {
+    let (auth, req_without_auth) = match crate::auth::strip_auth(req) {
+        Ok(result) => result,
+        Err(_) => return Err(StatusCode::INTERNAL_SERVER_ERROR),
+    };
+
+    // Store auth in request extensions
+    let mut req = req_without_auth;
+    req.extensions_mut().insert(auth);
+
+    Ok(next.run(req).await)
+}
+
+// Middleware for upstream fetching
+async fn upstream_fetch_middleware(
+    State(serv): State<Arc<JoshProxyService>>,
+    HttpUpstream(upstream): HttpUpstream,
+    parsed_url: FilteredRepoUrl,
+    mut req: Request<Body>,
+    next: Next,
+) -> Result<Response<Body>, ProxyError> {
+    // Get auth from request extensions
+    let auth = req
+        .extensions()
+        .get::<crate::auth::Handle>()
+        .cloned()
+        .unwrap_or(crate::auth::Handle { hash: None });
+
+    let remote_auth = RemoteAuth::Http { auth: auth.clone() };
+    let upstream_repo = parsed_url.upstream_repo.clone();
+
+    let filter = {
+        let filter = josh_core::filter::parse(&parsed_url.filter_spec)?;
+        serv.filter_prefix.chain(filter)
+    };
+
+    let mut fetch_repos = vec![upstream_repo.clone()];
+
+    let lazy_refs: Vec<_> = josh_core::filter::lazy_refs(filter)
+        .iter()
+        .map(|x| x.split_once("@").unwrap())
+        .map(|(x, y)| (x.to_string(), y.to_string()))
+        .collect();
+
+    fetch_repos.extend(lazy_refs.iter().map(|(x, _y)| x.clone()));
+
+    let remote_url = upstream.clone() + &upstream_repo;
+
+    let headref = match HeadRef::from_str(&parsed_url.headref) {
+        Ok(hr) => hr,
+        Err(_) => {
+            return Ok((StatusCode::BAD_REQUEST, "Invalid head ref").into_response());
+        }
+    };
+
+    let http_auth_required = serv.require_auth && parsed_url.pathinfo == "/git-receive-pack";
+
+    for fetch_repo in fetch_repos.iter() {
+        let fetch_url = upstream.clone() + fetch_repo.as_str();
+
+        match crate::auth::check_http_auth(&fetch_url, &auth, http_auth_required).await {
+            Ok(false) => {
+                tracing::trace!("require-auth");
+
+                return Ok((
+                    StatusCode::UNAUTHORIZED,
+                    [(
+                        header::WWW_AUTHENTICATE,
+                        r#"Basic realm="User Visible Realm""#,
+                    )],
+                )
+                    .into_response());
+            }
+            Err(e) => {
+                return Ok((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response());
+            }
+            Ok(true) => {}
+        }
+    }
+
+    for fetch_repo in fetch_repos.iter() {
+        let fetch_url = upstream.clone() + fetch_repo.as_str();
+        match crate::upstream::fetch_upstream(
+            serv.clone(),
+            &fetch_repo,
+            &remote_auth,
+            fetch_url.to_owned(),
+            Some(headref.get()),
+            None,
+            false,
+        )
+        .await
+        {
+            Ok(_) => {}
+            Err(FetchError::AuthRequired) => {
+                return Ok(Response::builder()
+                    .header(header::WWW_AUTHENTICATE, "Basic realm=User Visible Realm")
+                    .status(StatusCode::UNAUTHORIZED)
+                    .body(Body::default())
+                    .expect("Failed to build response"));
+            }
+            Err(FetchError::Other(e)) => {
+                return Ok((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response());
+            }
+        }
+    }
+
+    // Store results in request extensions
+    let fetch_result = UpstreamFetchResult {
+        upstream_repo,
+        filter,
+        headref,
+        remote_url,
+        remote_auth,
+    };
+
+    req.extensions_mut().insert(fetch_result);
+
+    Ok(next.run(req).await)
+}
+
+// TODO: replace with axum routing/extractors
+fn parse_info_refs_service(query: &str) -> Option<String> {
+    url::form_urlencoded::parse(query.as_bytes())
+        .find(|(key, _)| key == "service")
+        .map(|(_, value)| value.into_owned())
+}
+
+async fn call_service(
+    State(serv): State<Arc<JoshProxyService>>,
+    fetch_result: UpstreamFetchResult,
+    parsed_url: FilteredRepoUrl,
+    req: Request<Body>,
+) -> Result<impl IntoResponse, ProxyError> {
+    use axum::response::Redirect;
+    use tokio::process::Command;
+
+    let UpstreamFetchResult {
+        upstream_repo,
+        filter,
+        headref,
+        remote_url,
+        remote_auth,
+    } = fetch_result;
+
+    if parsed_url.pathinfo.starts_with("/info/lfs") {
+        return Ok(
+            Redirect::temporary(&format!("{}{}", remote_url, parsed_url.pathinfo)).into_response(),
+        );
+    }
+
+    if let (Some(q), true) = (
+        req.uri().query().map(|x| x.to_string()),
+        parsed_url.pathinfo.is_empty(),
+    ) {
+        let response = serve_render_template(serv, q, upstream_repo, filter, headref.get()).await?;
+        return Ok(response);
+    }
+
+    let (temp_ns, namespaced_refs) =
+        prepare_namespace(serv.clone(), &upstream_repo, filter, &headref).await?;
+
+    if parsed_url.pathinfo == "/info/refs"
+        && let Some(query) = req.uri().query()
+        && let Some(service) = parse_info_refs_service(&query)
+        && let Ok(direction) = CapabilitiesDirection::from_str(&service)
+    {
+        let capabilities = serv.git_capabilities.get(direction);
+        let encoded = crate::serve::encode_info_refs(namespaced_refs, direction, capabilities)?;
+
+        return Ok(Response::builder()
+            .status(StatusCode::OK)
+            .header(header::CONTENT_TYPE, direction.content_type())
+            .body(Body::from(encoded))
+            .map_err(ProxyError::from)?);
+    }
+
+    tokio::task::spawn_blocking(move || namespaced_refs.write_to_repo()).await??;
+
+    let overlay_path = serv.repo_path.join("overlay");
+    let repo_update = make_repo_update(
+        &remote_url,
+        serv.clone(),
+        filter,
+        remote_auth,
+        &overlay_path,
+        &upstream_repo,
+        temp_ns.clone(),
+    );
+
+    let (response, stream) = async {
+        let mut cmd = Command::new("git");
+        cmd.arg("http-backend");
+        cmd.current_dir(&overlay_path);
+        cmd.env("GIT_DIR", &overlay_path);
+        cmd.env("GIT_HTTP_EXPORT_ALL", "");
+        cmd.env(
+            "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+            serv.repo_path
+                .join("mirror")
+                .join("objects")
+                .display()
+                .to_string(),
+        );
+        cmd.env("GIT_NAMESPACE", temp_ns.name());
+        cmd.env("GIT_PROJECT_ROOT", &overlay_path);
+        cmd.env("JOSH_REPO_UPDATE", serde_json::to_string(&repo_update)?);
+        cmd.env("PATH_INFO", parsed_url.pathinfo.clone());
+
+        let (response_builder, stream) = axum_cgi::do_cgi(req, cmd).await?;
+        Ok::<_, anyhow::Error>((response_builder, stream))
+    }
+    .instrument(tracing::span!(
+        tracing::Level::INFO,
+        "axum-cgi / git-http-backend"
+    ))
+    .await?;
+
+    // Dropping temp_ns has side effects, so it's sent over together with the stream
+    let stream = StreamWithGuard::new(stream, temp_ns);
+    let response = response.body(Body::from_stream(stream))?;
+
+    Ok(response)
+}
+
+async fn serve_render_template(
+    serv: Arc<JoshProxyService>,
+    q: String,
+    upstream_repo: String,
+    filter: josh_core::filter::Filter,
+    head_ref: &str,
+) -> anyhow::Result<axum::response::Response> {
+    let tracing_span = tracing::span!(tracing::Level::TRACE, "serve_render_template");
+    let head_ref = head_ref.to_string();
+    let res = tokio::task::spawn_blocking(move || -> anyhow::Result<_> {
+        let _span_guard = tracing_span.enter();
+
+        let transaction_mirror = serv.open_mirror(Some(&format!(
+            "refs/josh/upstream/{}/",
+            &josh_core::to_ns(&upstream_repo)
+        )))?;
+
+        let transaction = serv.open_overlay(None)?;
+
+        transaction.repo().odb()?.add_disk_alternate(
+            serv.repo_path
+                .join("mirror")
+                .join("objects")
+                .to_str()
+                .unwrap(),
+        )?;
+
+        let commit_id = if let Ok(oid) = git2::Oid::from_str(&head_ref) {
+            oid
+        } else {
+            transaction_mirror
+                .repo()
+                .refname_to_id(&transaction_mirror.refname(&head_ref))?
+        };
+        let commit_id = josh_core::filter_commit(&transaction, filter, commit_id)?;
+
+        josh_templates::render(&transaction, serv.cache.clone(), "", commit_id, &q, true)
+    })
+    .in_current_span()
+    .await?;
+
+    Ok(match res {
+        Ok(Some((res, params))) => Response::builder()
+            .status(StatusCode::OK)
+            .header(
+                header::CONTENT_TYPE,
+                params
+                    .get("content-type")
+                    .unwrap_or(&"text/plain".to_string()),
+            )
+            .body(Body::from(res))?,
+
+        Ok(None) => (StatusCode::NOT_FOUND, "File not found").into_response(),
+
+        Err(e) => (StatusCode::UNPROCESSABLE_ENTITY, e.to_string()).into_response(),
+    })
+}
+
+async fn prepare_namespace(
+    serv: Arc<JoshProxyService>,
+    repo: &str,
+    filter: josh_core::filter::Filter,
+    head_ref: &HeadRef,
+) -> anyhow::Result<(Arc<crate::TmpGitNamespace>, NamespacedRefs)> {
+    let temp_ns = Arc::new(crate::TmpGitNamespace::new(
+        &serv.repo_path.join("overlay"),
+        tracing::Span::current(),
+        serv.io_thread_tx.clone(),
+    ));
+
+    let repo_path = serv.repo_path.clone();
+    let refs =
+        filter_to_namespace(serv, repo, repo_path, temp_ns.clone(), filter, head_ref).await?;
+
+    Ok((temp_ns, refs))
+}
+
+async fn handle_graphql(
+    State(serv): State<Arc<JoshProxyService>>,
+    HttpUpstream(upstream): HttpUpstream,
+    axum::extract::Path(path): axum::extract::Path<String>,
+    // TODO: handle method routing and extraction via axum, instead of raw query/body here
+    method: axum::http::Method,
+    content_type: Option<axum_extra::extract::TypedHeader<axum_extra::headers::ContentType>>,
+    axum::extract::RawQuery(query): axum::extract::RawQuery,
+    auth: Option<axum::extract::Extension<crate::auth::Handle>>,
+    body: String,
+) -> Result<impl IntoResponse, ProxyError> {
+    use axum_extra::response::ErasedJson;
+
+    // Get auth from request extensions
+    let auth = auth
+        .map(|auth| auth.0)
+        .unwrap_or(crate::auth::Handle { hash: None });
+
+    // Extract upstream_repo from path (path is everything after /~/graphql)
+    let upstream_repo = path.trim_start_matches('/');
+
+    let remote_url = format!("{}/{}", upstream, upstream_repo);
+    let content_type = content_type.map(|ct| ct.0.into());
+
+    // Check authentication
+    if !crate::auth::check_http_auth(&remote_url, &auth, serv.require_auth).await? {
+        return Ok(Response::builder()
+            .header(header::WWW_AUTHENTICATE, "Basic realm=User Visible Realm")
+            .status(StatusCode::UNAUTHORIZED)
+            .body(Body::default())
+            .expect("Failed to build response"));
+    }
+
+    let parsed = match crate::graphql::parse_req(method, content_type, query, body).await {
+        Ok(r) => r,
+        Err(resp) => return Ok(resp),
+    };
+
+    let transaction_mirror = serv.open_mirror(Some(&format!(
+        "refs/josh/upstream/{}/",
+        &josh_core::to_ns(upstream_repo),
+    )))?;
+
+    let transaction = serv.open_overlay(None)?;
+
+    transaction.repo().odb()?.add_disk_alternate(
+        serv.repo_path
+            .join("mirror")
+            .join("objects")
+            .to_str()
+            .unwrap(),
+    )?;
+
+    let context = Arc::new(graphql::context(transaction, transaction_mirror));
+    let root_node = Arc::new(graphql::repo_schema(
+        format!(
+            "/{}",
+            upstream_repo.strip_suffix(".git").unwrap_or(upstream_repo)
+        ),
+        false,
+    ));
+
+    let remote_auth = RemoteAuth::Http { auth };
+    let res = {
+        // First attempt to serve GraphQL query. If we can serve it
+        // that means all requested revisions were specified by SHA and we could find
+        // all of them locally, so no need to fetch.
+        let res = parsed.execute(&root_node, &context).await;
+
+        // The "allow_refs" flag will be set by the query handler if we need to do a fetch
+        // to complete the query.
+        if !*context.allow_refs.lock().unwrap() {
+            res
+        } else {
+            match crate::upstream::fetch_upstream(
+                serv.clone(),
+                upstream_repo,
+                &remote_auth,
+                remote_url.to_owned(),
+                Some("HEAD"),
+                None,
+                false,
+            )
+            .in_current_span()
+            .await
+            {
+                Ok(_) => {}
+                Err(FetchError::AuthRequired) => {
+                    return Ok(Response::builder()
+                        .header(header::WWW_AUTHENTICATE, "Basic realm=User Visible Realm")
+                        .status(StatusCode::UNAUTHORIZED)
+                        .body(Body::default())
+                        .expect("Failed to build response"));
+                }
+                Err(FetchError::Other(e)) => {
+                    return Err(e.into());
+                }
+            };
+
+            parsed.execute(&root_node, &context).await
+        }
+    };
+
+    let code = if res.is_ok() {
+        StatusCode::OK
+    } else {
+        StatusCode::BAD_REQUEST
+    };
+
+    let response = (code, ErasedJson::pretty(&res)).into_response();
+
+    tokio::task::spawn_blocking(move || -> anyhow::Result<_> {
+        let temp_ns = Arc::new(crate::TmpGitNamespace::new(
+            &serv.repo_path.join("overlay"),
+            tracing::Span::current(),
+            serv.io_thread_tx.clone(),
+        ));
+
+        let transaction = &*context.transaction.lock().unwrap();
+        let mut to_push = context.to_push.lock().unwrap().clone();
+
+        if let Some((refname, oid)) = crate::merge_meta(
+            transaction,
+            &*context.transaction_mirror.lock().unwrap(),
+            &*context.meta_add.lock().unwrap(),
+        )? {
+            to_push.insert((oid, refname, None));
+        }
+
+        for (oid, refname, repo) in to_push {
+            let url = if let Some(repo) = repo {
+                format!("{}/{}", upstream, repo)
+            } else {
+                remote_url.clone()
+            };
+
+            crate::upstream::push_head_url(
+                transaction.repo(),
+                serv.repo_path
+                    .join("mirror")
+                    .join("objects")
+                    .to_str()
+                    .unwrap(),
+                oid,
+                &refname,
+                &url,
+                &remote_auth,
+                temp_ns.name(),
+                "QUERY_PUSH",
+                false,
+            )?;
+        }
+
+        Ok(())
+    })
+    .in_current_span()
+    .await??;
+
+    Ok(response)
+}
+
+async fn handle_graphiql(
+    axum::extract::Path(path): axum::extract::Path<String>,
+) -> Result<impl IntoResponse, ProxyError> {
+    let upstream_repo = path.trim_start_matches('/');
+    let addr = format!("/~/graphql/{}", upstream_repo);
+
+    let response = tokio::task::spawn_blocking(move || crate::graphql::graphiql(&addr, None))
+        .await
+        .map_err(|e| ProxyError(anyhow!("{}", e)))?;
+
+    Ok(response.into_response())
+}
+
+#[tracing::instrument]
+async fn handle_repo_update(
+    State(_serv): State<Arc<JoshProxyService>>,
+    req: Request<Body>,
+) -> impl IntoResponse {
+    let body = match axum::body::to_bytes(req.into_body(), usize::MAX).await {
+        Ok(b) => b,
+        Err(e) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                format!("Failed to read body: {}", e),
+            )
+                .into_response();
+        }
+    };
+
+    let s = tracing::span!(tracing::Level::TRACE, "repo update worker");
+
+    let result = tokio::task::spawn_blocking(move || {
+        use opentelemetry::global;
+
+        let _e = s.enter();
+        let buffer = std::str::from_utf8(&body)?;
+        let repo_update: RepoUpdate = serde_json::from_str(buffer)?;
+        let context_propagator = repo_update.context_propagator.clone();
+        let parent_context =
+            global::get_text_map_propagator(|propagator| propagator.extract(&context_propagator));
+        let _ = s.set_parent(parent_context);
+
+        process_repo_update(repo_update)
+    })
+    .instrument(Span::current())
+    .await;
+
+    match result {
+        Ok(Ok(stderr)) => (StatusCode::OK, stderr).into_response(),
+        Ok(Err(e)) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Task error: {}", e),
+        )
+            .into_response(),
+    }
+}
+
+pub fn make_service_router(proxy_service: Arc<JoshProxyService>) -> Router {
+    use axum::middleware;
+    use axum::routing::{get, post};
+
+    // Serve static UI files with fallback to index.html only for specific SPA routes
+    let ui_router = {
+        use tower_http::services::{ServeDir, ServeFile};
+
+        let serve_index = ServeFile::new("/josh/static/index.html");
+        Router::new()
+            .route_service("/", serve_index.clone())
+            .route_service("/select", serve_index.clone())
+            .route_service("/browse", serve_index.clone())
+            .route_service("/view", serve_index.clone())
+            .route_service("/diff", serve_index.clone())
+            .route_service("/change", serve_index.clone())
+            .route_service("/history", serve_index.clone())
+            .fallback_service(ServeDir::new("/josh/static"))
+    };
+
+    // All routes within this router require auth, and fetch upstream
+    let git_operations_router =
+        Router::new()
+            .fallback(call_service)
+            .layer(middleware::from_fn_with_state(
+                proxy_service.clone(),
+                upstream_fetch_middleware,
+            ));
+
+    Router::new()
+        .route("/", get(async || axum::response::Redirect::to("/~/ui/")))
+        .route("/version", get(handle_version))
+        .route("/remote", get(handle_remote))
+        .route("/flush", get(handle_flush))
+        .route(
+            "/filters",
+            get(|State(service): State<Arc<JoshProxyService>>| async move {
+                handle_filters(service, false).await
+            }),
+        )
+        .route(
+            "/filters/refresh",
+            get(|State(service): State<Arc<JoshProxyService>>| async move {
+                handle_filters(service, true).await
+            }),
+        )
+        .route("/repo_update", post(handle_repo_update))
+        .route("/serve_namespace", post(handle_serve_namespace))
+        .nest("/~/ui", ui_router)
+        // Serve graphql APIs
+        .route(
+            "/~/graphql/{*path}",
+            post(handle_graphql).get(handle_graphql),
+        )
+        .route("/~/graphiql/{*path}", get(handle_graphiql))
+        .merge(git_operations_router)
+        .layer(middleware::from_fn(auth_middleware))
+        .layer(
+            tower_http::trace::TraceLayer::new_for_http()
+                .make_span_with(crate::trace::SpanMaker {})
+                .on_response(crate::trace::TraceResponse {})
+                .on_request(())
+                .on_failure(()),
+        )
+        .with_state(proxy_service.clone())
+}

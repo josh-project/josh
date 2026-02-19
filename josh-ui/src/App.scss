@@ -1,0 +1,439 @@
+$font-main: Consolas, Menlo, Monaco, 'Lucida Console', 'Liberation Mono', 'DejaVu Sans Mono',
+            'Bitstream Vera Sans Mono', 'Courier New', monospace, serif;
+$font-emoji: 'Apple Color Emoji', 'Android Emoji', 'Segoe UI Emoji', 'Open Sans';
+
+$color-background: #222222;
+$color-background-highlight: #272727;
+$color-font-normal: #dddddd;
+$color-font-shadowed: #aaaaaa;
+$color-font-highlight: #eeeeee;
+$color-highlight: #88c5c5;
+$color-highlight-complimentary: #cc7f3d;
+$color-link: $color-font-normal;
+$color-link-hover: #ffffaa;
+$color-link-visited: $color-font-normal;
+$color-link-visited-hover: #ffffaa;
+$color-file-added: #123212;
+$color-file-deleted: #321212;
+$color-file-added-hover: #324232;
+$color-file-deleted-hover: #423232;
+
+@mixin ui-link-clickable {
+  color: $color-link;
+  cursor: pointer;
+
+  &:hover {
+    color: $color-link-hover;
+  }
+
+  &:visited {
+    color: $color-link-visited;
+  }
+
+  &:visited:hover {
+    color: $color-link-visited-hover;
+  }
+}
+
+body {
+  background: $color-background;
+  font-family: $font-main;
+  color: $color-font-normal;
+  padding: 0;
+  margin: 0;
+}
+
+.file-browser-list {
+  margin: 1.5em;
+
+  &-entry {
+    @include ui-link-clickable;
+    padding: .4em .4em;
+
+    &:hover {
+      background: $color-background-highlight;
+    }
+  }
+
+  &-loading &-entry {
+    animation: file-browser-list-fade 120ms steps(1, end) both;
+  }
+}
+
+@keyframes file-browser-list-fade {
+  0% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.2;
+  }
+}
+
+nav {
+  &.breadcrumbs {
+    padding: .2em 1.8em;
+    margin-bottom: 0.7em;
+  }
+
+  &> .breadcrumbs-entry {
+    @include ui-link-clickable;
+    color: $color-font-shadowed;
+
+    &:last-child {
+      color: $color-font-highlight;
+    }
+  }
+}
+
+div.commit-message {
+  padding: 1em 2em;
+  margin:0em;
+  font-family: $font-main;
+  background: #111111;
+  white-space: pre;
+
+  &.link {
+    cursor: pointer;
+  }
+}
+
+span.prevnext {
+    float: right;
+    span {
+        margin-left: 10px;
+        &.inactive {
+            color: #111111;
+        }
+        &.active {
+            cursor: pointer;
+        }
+    }
+}
+
+
+.logo {
+  img {
+    display: inline-block;
+    height: 40px;
+    padding: 0em 0.8em;
+  }
+
+  margin: .3em 0 .7em;
+  display: flex;
+  flex-direction: row;
+
+  span {
+    align-self: center;
+    font-size: 1.44em;
+    height: 1em;
+  }
+
+ a {
+  font-weight: bold;
+  color: $color-highlight;
+  text-decoration: none;
+ }
+}
+
+.current-page {
+  margin: .3em 0 0.7em;
+  display: flex;
+  flex-direction: row;
+
+  span {
+    align-self: center;
+    font-size: 1.44em;
+    height: 1em;
+    font-weight: bold;
+    color: $color-font-shadowed;
+    text-decoration: none;
+  }
+
+}
+
+
+.now-browsing {
+  display: flex;
+  justify-content: space-between;
+  padding: .6em 1.7em;
+  margin-bottom: 0em;
+
+  &-select {
+    a {
+      color: $color-font-shadowed;
+      text-decoration: none;
+
+      &:hover {
+        color: $color-font-highlight;
+      }
+    }
+
+    &:before {
+      content: '// ';
+      color: $color-font-shadowed;
+    }
+  }
+
+  &-name {
+    &-filter {
+      font-weight: bold
+    }
+  }
+}
+
+.file-browser-list-entry {
+  @include ui-link-clickable;
+  padding: .4em .4em;
+
+  &:hover {
+    background: $color-background-highlight;
+  }
+
+  &.deleted {
+      background: $color-file-deleted;
+      &:hover {
+        background: $color-file-deleted-hover;
+      }
+  }
+
+  &.added {
+      background: $color-file-added;
+      &:hover {
+        background: $color-file-added-hover;
+      }
+  }
+
+}
+
+.diff-view-filename {
+  padding: 0.5em 2em;
+  font-family: $font-main;
+}
+
+.commit-list-entry-dir {
+  @include ui-link-clickable;
+  &:hover {
+    background: $color-background-highlight;
+  }
+}
+
+.history-list-entry .summary {
+  @include ui-link-clickable;
+  &:hover {
+    background: $color-background-highlight;
+  }
+}
+
+.history-list-entry .hash {
+  @include ui-link-clickable;
+  &:hover {
+    background: $color-background-highlight;
+  }
+}
+
+.changes-browser-list {
+  margin-left: 21px;
+}
+
+.history-browser-list {
+  margin-left: 21px;
+}
+
+.changes-list-entry .summary {
+  @include ui-link-clickable;
+  &:hover {
+    background: $color-background-highlight;
+  }
+}
+
+.changes-list-entry .hame {
+  display: block;
+  @include ui-link-clickable;
+  &:hover {
+    background: $color-background-highlight;
+  }
+}
+
+
+.commit-list-entry-browse {
+  @include ui-link-clickable;
+  &:hover {
+    background: $color-background-highlight;
+  }
+}
+
+
+.commit-list-entry {
+  padding: .4em .4em;
+  display: block;
+
+  &:hover {
+    background: $color-background-highlight;
+  }
+
+  span.hash {
+    margin: 0 0.7em 0 0;
+    color: $color-highlight;
+    font-weight: bolder;
+  }
+  span.name {
+    margin: 0 0.7em 0 0;
+    font-weight: bolder;
+    color: $color-font-shadowed;
+  }
+  span.authorEmail {
+    float: right;
+    margin: 0 0.7em 0 0;
+    color: $color-font-shadowed;
+    font-weight: bolder;
+  }
+  span.change-hash {
+    float: right;
+    margin: 0 0.7em 0 0;
+    font-weight: bolder;
+  }
+  span.summary {
+    margin: 0 0.7em 0 0;
+    font-weight: bolder;
+  }
+  span.change-summary {
+    color: $color-highlight;
+    display:block;
+    margin: 0 0.7em 0 0;
+    font-weight: bolder;
+  }
+}
+
+.ui-button {
+  $shadow-depth: 0.1em;
+
+  padding: 0.4em 1em 0.3em;
+  box-sizing: border-box;
+  margin-top: $shadow-depth;
+
+  text-transform: uppercase;
+  font-family: $font-main;
+  cursor: pointer;
+
+  border: 1px solid $color-highlight-complimentary;
+  box-shadow: $shadow-depth $shadow-depth 0 0 #94643b;
+  transform: translate(-1 * $shadow-depth, -1 * $shadow-depth);
+
+  background: #222;
+  color: #e1e1e1;
+}
+
+.ui-button:hover {
+  background: #333;
+}
+
+.ui-button:active {
+  transform: none;
+  box-shadow: none;
+}
+
+.ui-modal {
+  width: 80%;
+  max-width: 800px;
+  display: block;
+  box-sizing: border-box;
+  padding: 1em;
+  border: 2px solid $color-highlight-complimentary;
+  background-color: #333;
+
+  @media(max-width: 700px) {
+    & {
+      --width: calc(100% - 20px);
+      width: var(--width);
+      max-width: var(--width);
+    }
+  }
+
+  &-container {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    top: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  & h1, h2, h3, h4 {
+    margin-top: 0.4em;
+  }
+}
+
+.ui-input {
+  box-sizing: border-box;
+  font-family: $font-main;
+  background: $color-background;
+  color: #aaaaaa;
+  border: 1px solid #555;
+  outline: none;
+  box-shadow: none;
+
+  &:focus {
+    background: none;
+    border: 1px solid #555;
+  }
+
+  &:hover {
+    background: none;
+    border: 1px solid #555;
+  }
+}
+
+.sidebar {
+  img {
+    display: inline-block;
+    height: 40px;
+    padding: 0em 0.8em;
+    margin-bottom: 0.7em;
+  }
+    display: block;
+    position: fixed;
+    width: 60px;
+    height: 100%;
+    padding-top: 0.5em;
+    margin-left: -60px;
+    background-color: #000000;
+}
+
+.sidebar svg {
+    margin: 5px 14px;
+}
+
+#root {
+    margin-left: 60px;
+}
+
+.repo-selector  {
+  &-hint {
+    font-size: 0.8em;
+    font-style: italic;
+    margin: 0.7em 0;
+  }
+
+  &-button {
+    float: right;
+  }
+
+  $font-size: 0.8em;
+
+  &-status-label {
+    font-size: $font-size;
+  }
+
+
+  &-repo, &-filter {
+    margin-bottom: 0.7em;
+    display: flex;
+    align-items: baseline;
+
+    &-input {
+      flex-grow: 1;
+      font-size: $font-size;
+    }
+  }
+}

@@ -1,0 +1,39 @@
+[package]
+authors = ["Christian Schilling <christian.schilling@esrlabs.com>"]
+description = "Josh CLI"
+edition = "2024"
+keywords = ["git", "monorepo", "workflow", "scm"]
+license-file = "LICENSE"
+name = "josh-cli"
+readme = "../README.md"
+repository = "https://github.com/josh-project/josh"
+version = "22.4.15"
+
+[dependencies]
+anyhow.workspace = true
+env_logger.workspace = true
+log.workspace = true
+serde_json.workspace = true
+defer.workspace = true
+clap.workspace = true
+rs_tracing.workspace = true
+juniper.workspace = true
+git2.workspace = true
+toml.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+serde.workspace = true
+url.workspace = true
+
+josh-core.workspace = true
+josh-github-auth.workspace = true
+josh-github-graphql.workspace = true
+josh-graphql.workspace = true
+josh-link = { workspace = true, optional = true }
+josh-templates.workspace = true
+
+[features]
+incubating = ["dep:josh-link"]
+
+[[bin]]
+name = "josh-filter"
+path = "src/bin/josh-filter.rs"

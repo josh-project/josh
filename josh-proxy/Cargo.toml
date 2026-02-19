@@ -1,0 +1,68 @@
+[package]
+authors = ["Christian Schilling <christian.schilling@esrlabs.com>"]
+description = "GIT virtualization proxy"
+edition = "2024"
+keywords = ["git", "monorepo", "workflow", "scm"]
+license-file = "LICENSE"
+name = "josh-proxy"
+readme = "../README.md"
+repository = "https://github.com/josh-project/josh"
+version = "22.4.15"
+
+[dependencies]
+sha2 = "0.10.8"
+lru = "0.16.3"
+axum = { version = "^0.8", features = ["macros"] }
+axum-extra = { version = "^0.12", features = ["typed-header", "erased-json"] }
+tower-http = { version = "0.6", features = ["trace", "fs"] }
+mime.workspace = true
+indoc = "2.0.7"
+percent-encoding = "2.3.1"
+pin-project-lite = "^0"
+tracing-futures = "0.2.5"
+tracing-opentelemetry = "0.32.0"
+uuid = { version = "1.20.0", features = ["v4"] }
+gix-packetline = { version = "^0", features = ["blocking-io"] }
+gix-transport = "^0"
+opentelemetry = "0.31.0"
+opentelemetry-semantic-conventions = "0.31.0"
+opentelemetry-otlp = { version = "0.31.0", features = ["grpc-tonic", "trace"] }
+opentelemetry_sdk = { version = "0.31.0", features = ["rt-tokio"] }
+bon = "3.8.2"
+
+anyhow.workspace = true
+hex.workspace = true
+base64.workspace = true
+clap.workspace = true
+axum-cgi.workspace = true
+regex.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+futures.workspace = true
+toml.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+tokio-util.workspace = true
+tempfile.workspace = true
+gix.workspace = true
+juniper.workspace = true
+git2.workspace = true
+url.workspace = true
+
+josh-rpc.workspace = true
+josh-core.workspace = true
+josh-templates.workspace = true
+josh-graphql.workspace = true
+
+[dev-dependencies]
+anyhow.workspace = true
+
+[features]
+incubating = []
+
+[[bench]]
+name = "push_upstream"
+path = "benches/push_upstream.rs"
+harness = false

@@ -1,0 +1,19 @@
+[package]
+name = "josh-templates"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+handlebars = "6.4.0"
+form_urlencoded.workspace = true
+
+anyhow.workspace = true
+git2.workspace = true
+juniper.workspace = true
+serde_json.workspace = true
+
+josh-core.workspace = true
+josh-graphql.workspace = true
+
+[features]
+incubating = []

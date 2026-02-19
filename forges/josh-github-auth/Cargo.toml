@@ -1,0 +1,26 @@
+[package]
+name = "josh-github-auth"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow.workspace = true
+async-trait.workspace = true
+http.workspace = true
+reqwest.workspace = true
+reqwest-middleware.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio = { workspace = true, features = ["time"] }
+tracing.workspace = true
+mime.workspace = true
+form_urlencoded.workspace = true
+url.workspace = true
+
+# apple-native required on macOS so credentials persist in Keychain; without it the crate uses a mock store and the token is lost between processes
+keyring = { version = "^3.6", features = ["apple-native"] }
+arboard = { version = "^3.6", default-features = false }
+
+[dev-dependencies]
+tokio.workspace = true
+tracing-subscriber.workspace = true

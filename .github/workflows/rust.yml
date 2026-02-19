@@ -1,0 +1,66 @@
+name: rust
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ '**' ]
+  merge_group:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Free up disk space
+      shell: bash
+      run: |
+        set -eu
+        CLEANUP_DIRS=(
+          "/usr/local/lib/android"
+          "/usr/share/dotnet"
+          "/usr/share/swift"
+          "/usr/local/.ghcup"
+        )
+        for dir in "${CLEANUP_DIRS[@]}"; do
+          if [[ -d "$dir" ]]; then
+            echo "removing ${dir}"
+            sudo rm -rf "$dir"
+          fi
+        done
+    - name: Setup BuildX
+      uses: docker/setup-buildx-action@v3
+    - name: Checkout
+      uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
+    - name: Get tags
+      run: git fetch --tags origin
+    - name: Build dev image
+      uses: docker/build-push-action@v6
+      with:
+        context: .
+        file: Dockerfile
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        target: dev-ci
+        tags: josh-ci-dev:latest
+        push: false
+        load: true
+    - name: Run tests
+      run: >-
+        docker run --rm
+        -v ${{ github.workspace }}:/github/workspace
+        -w /github/workspace
+        josh-ci-dev:latest
+        bash /github/workspace/.github/workflows/scripts/run-tests.sh
+    - name: Run tests (incubating)
+      run: >-
+        docker run --rm
+        -v ${{ github.workspace }}:/github/workspace
+        -w /github/workspace
+        josh-ci-dev:latest
+        bash /github/workspace/.github/workflows/scripts/run-tests-incubating.sh

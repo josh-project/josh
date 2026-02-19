@@ -1,0 +1,14 @@
+[package]
+name = "josh-cq"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+tokio.workspace = true
+clap.workspace = true
+anyhow.workspace = true
+serde_json.workspace = true
+git2.workspace = true
+
+josh-core.workspace = true
+josh-link.workspace = true

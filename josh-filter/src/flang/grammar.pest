@@ -1,0 +1,136 @@
+WHITESPACE = _{ " " }
+CMD_START = _{ ":" }
+CMT_START = _{ "#" }
+CMD_END = _{("="|"/")}
+CMD_SEP = _{(","|NEWLINE)}
+ALNUM = _{( ASCII_ALPHANUMERIC | "_" | "-" | "+" | "." | "*" | "~")}
+GROUP_START = _{ "[" }
+GROUP_END = _{ "]" }
+PATH = _{ (ALNUM | "/")+ }
+filter_path = { PATH }
+argument = { string | PATH }
+rev = { string | ALNUM+ }
+
+sstring = _{"\'" ~ inner ~ "\'"}
+dstring = _{"\"" ~ inner ~ "\""}
+string = ${ sstring | dstring }
+inner = @{ char* }
+char = {
+    !("\"" | "\'" | "\\") ~ ANY
+    | "\\" ~ ("\"" | "\'" | "\\" | "/" | "b" | "f" | "n" | "r" | "t" | "u")
+}
+
+filter_spec = { (
+    filter_group
+  | filter_message
+  | filter_rev
+  | filter_unapply
+  | filter_replace
+  | filter_squash
+  | filter_presub
+  | filter_subdir
+  | filter_stored
+  | filter_starlark
+  | filter_nop
+  | filter_scope
+  | filter_meta
+  | filter
+  | filter_noarg
+)+ }
+
+filter_group = { CMD_START ~ cmd? ~ GROUP_START ~ compose ~ GROUP_END }
+filter_subdir = { CMD_START ~ "/" ~ argument }
+filter_stored = { CMD_START ~ "+" ~ argument }
+filter_starlark = { CMD_START ~ "*" ~ argument ~ (GROUP_START ~ compose ~ GROUP_END)? }
+filter_nop = { CMD_START ~ "/" }
+filter_presub = { CMD_START ~ ":" ~ argument ~ ("=" ~ argument)? }
+filter = { CMD_START ~ cmd ~ "=" ~ (argument ~ (";" ~ argument)*)? }
+filter_noarg = { CMD_START ~ cmd }
+filter_message = { CMD_START ~ string ~ (";" ~ string)? }
+
+filter_rev = {
+    CMD_START ~ "rev" ~ "("
+    ~ NEWLINE*
+    ~ (rev_entry)?
+    ~ (CMD_SEP+ ~ rev_entry)*
+    ~ NEWLINE*
+    ~ ")"
+}
+
+rev_entry = { rev_default | (rev_match ~ rev ~ filter_spec) }
+rev_default = { "_" ~ filter_spec }
+rev_match = { "<=" | "<" | "==" }
+
+
+filter_unapply = {
+    CMD_START ~ "unapply" ~ "("
+    ~ NEWLINE*
+    ~ (rev ~ filter_spec)?
+    ~ (CMD_SEP+ ~ (rev ~ filter_spec))*
+    ~ NEWLINE*
+    ~ ")"
+}
+
+
+filter_replace = {
+    CMD_START ~ "replace" ~ "("
+    ~ NEWLINE*
+    ~ (string ~ ":" ~ string)?
+    ~ (CMD_SEP+ ~ (string ~ ":" ~ string))*
+    ~ NEWLINE*
+    ~ ")"
+}
+
+filter_squash = {
+    CMD_START ~ "squash" ~ "("
+    ~ NEWLINE*
+    ~ (rev ~ filter_spec)?
+    ~ (CMD_SEP+ ~ (rev ~ filter_spec))*
+    ~ NEWLINE*
+    ~ ")"
+}
+
+filter_scope = {
+    CMD_START ~ "<"
+    ~ NEWLINE*
+    ~ filter_spec
+    ~ NEWLINE*
+    ~ ">" ~ GROUP_START ~ compose ~ GROUP_END
+}
+
+filter_meta = {
+    CMD_START ~ "~" ~ "("
+    ~ NEWLINE*
+    ~ (filter_path ~ "=" ~ string)?
+    ~ (CMD_SEP+ ~ (filter_path ~ "=" ~ string))*
+    ~ NEWLINE*
+    ~ ")" ~ GROUP_START ~ compose ~ GROUP_END
+}
+
+cmd = { ALNUM+ }
+
+file_entry = { dst_path ~ "=" ~ filter_spec }
+
+compose = {
+    NEWLINE*
+    ~ (filter_spec|file_entry)?
+    ~ (CMD_SEP+ ~ (filter_spec|file_entry))*
+    ~ NEWLINE*
+}
+
+workspace_comments = { 
+    NEWLINE*
+    ~ ( (CMT_START ~ (!NEWLINE ~ ANY)*)
+        ~ NEWLINE*)+
+}
+
+workspace_file = {
+    workspace_comments?
+    ~ compose
+    ~ EOI
+}
+
+filter_chain = _{ filter_spec ~ EOI }
+
+dst_path = @{ path ~ ("/" ~ path)* }
+path = @{ ALNUM+ }

@@ -1,0 +1,217 @@
+name: Build/publish images
+on:
+  release:
+    types: [published]
+  pull_request:
+    types: [labeled]
+  push:
+    branches:
+      - master
+jobs:
+  generate-tags:
+    runs-on: ubuntu-latest
+    outputs:
+      images: ${{ steps.generate-tags.outputs.images }}
+      tagged_images: ${{ steps.generate-tags.outputs.tagged_images }}
+      should_build: ${{ steps.generate-tags.outputs.should_build }}
+    steps:
+      - name: Generate list of image names and tags
+        id: generate-tags
+        shell: python
+        run: |
+          import os
+
+          dockerhub_available = "${{ secrets.DOCKERHUB_TOKEN != '' }}" == "true"
+          is_release = "${{ github.event_name }}" == "release"
+          is_master = "${{ github.event_name }}" == "push" and "${{ github.ref }}" == "refs/heads/master"
+          is_pr = "${{ github.event_name }}" == "pull_request"
+          pr_has_build_label = "${{ contains(github.event.pull_request.labels.*.name, 'build-release-container') }}" == "true"
+
+          commit_sha = "${{ github.sha }}"
+          release_tag = "${{ github.event.release.tag_name }}"
+          pr_number = "${{ github.event.pull_request.number }}"
+
+          ghcr_image_base = "ghcr.io/josh-project/josh-proxy"
+          dockerhub_image_base = "joshproject/josh-proxy"
+
+          def main():
+              images = []
+              tags = []
+
+              if is_release and dockerhub_available:
+                  images.append(dockerhub_image_base)
+
+              if is_release or is_master or (is_pr and pr_has_build_label):
+                  images.append(ghcr_image_base)
+
+              if is_release:
+                  tags.append(release_tag)
+                  tags.append(latest)
+              elif is_master:
+                  short_sha = commit_sha[:10]
+                  tags.append(f"sha-{short_sha}")
+              elif is_pr and pr_has_build_label:
+                  tags.append(f"pr-{pr_number}")
+
+              # Cross product: tags x images
+              tagged_images = [f"{image}:{tag}" for image in images for tag in tags]
+
+              # Write to GITHUB_OUTPUT
+              # Multi-line output for tags
+              with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+                  f.write("images<<EOF\n")
+                  f.write("\n".join(images))
+                  f.write("\nEOF\n")
+
+                  f.write("tagged_images<<EOF\n")
+                  f.write("\n".join(tagged_images))
+                  f.write("\nEOF\n")
+
+                  # Also output whether we should build at all
+                  f.write(f"should_build={'true' if tags else 'false'}\n")
+
+              # Also print for visibility in logs
+              print("Generated tagged images:")
+              for tagged_image in tagged_images:
+                  print(f"  - {tagged_image}")
+
+          main()
+  build:
+    needs: generate-tags
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: linux
+            arch: amd64
+            runner: ubuntu-latest
+          - os: linux
+            arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Setup BuildX
+        uses: docker/setup-buildx-action@v3
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Login to Docker Hub
+        if: github.event_name == 'release' && env.DOCKERHUB_TOKEN != ''
+        uses: docker/login-action@v3
+        env:
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        with:
+          username: initcrash
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build docker image
+        if: needs.generate-tags.outputs.should_build == 'true'
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: ${{ matrix.os }}/${{ matrix.arch}}
+          build-contexts: |
+            git=.git
+            docker=docker
+          target: run
+          push: 'true'
+          tags: ${{ needs.generate-tags.outputs.images }}
+          outputs: type=image,push-by-digest=true,name-canonical=true,push=true
+      - name: Export digest
+        if: needs.generate-tags.outputs.should_build == 'true'
+        env:
+          digest: ${{ steps.build.outputs.digest }}
+        # Create digests directory with a file whose name matches
+        # the digest with the 'sha256:' prefix removed
+        run: |
+          mkdir -p "${RUNNER_TEMP}/digests"
+          touch "${RUNNER_TEMP}/digests/${digest#sha256:}"
+      - name: Upload digest
+        if: needs.generate-tags.outputs.should_build == 'true'
+        uses: actions/upload-artifact@v6
+        with:
+          name: digests-${{ matrix.os }}-${{ matrix.arch }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    needs:
+      - generate-tags
+      - build
+    if: needs.generate-tags.outputs.should_build == 'true'
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@v7
+        with:
+          path: ${{ runner.temp }}/digests
+          pattern: digests-*
+          merge-multiple: true
+      - name: Login to Docker Hub
+        if: github.event_name == 'release' && env.DOCKERHUB_TOKEN != ''
+        uses: docker/login-action@v3
+        env:
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        with:
+          username: initcrash
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Create manifest lists and push tags
+        working-directory: ${{ runner.temp }}/digests
+        env:
+          TAGGED_IMAGES: ${{ needs.generate-tags.outputs.tagged_images }}
+        run: |
+          # The canonical image where digests were pushed during the build step
+          # GHCR is always used for builds (see generate-tags job)
+          canonical_image="ghcr.io/josh-project/josh-proxy"
+
+          # Build list of digest references for all architectures
+          # Each file in this directory is named after a digest (without 'sha256:' prefix)
+          digest_refs=()
+          for digest_file in *; do
+            digest_refs+=("${canonical_image}@sha256:${digest_file}")
+          done
+
+          echo "Digest references: ${digest_refs[@]}"
+
+          # Create a manifest list for each tagged image
+          # This creates the actual tags that point to multi-arch manifest lists
+          echo "${TAGGED_IMAGES}" | while IFS= read -r tagged_image; do
+            if [ -n "${tagged_image}" ]; then
+              echo "Creating manifest list for: ${tagged_image}"
+              docker buildx imagetools create -t "${tagged_image}" "${digest_refs[@]}"
+            fi
+          done
+      - name: Inspect image
+        env:
+          TAGGED_IMAGES: ${{ needs.generate-tags.outputs.tagged_images }}
+        run: |
+          # Inspect the first tagged image to verify the multi-arch manifest
+          first_image=$(echo "${TAGGED_IMAGES}" | head -n1)
+          if [ -n "${first_image}" ]; then
+            echo "Inspecting: ${first_image}"
+            docker buildx imagetools inspect "${first_image}"
+          fi

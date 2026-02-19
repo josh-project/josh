@@ -1,0 +1,12 @@
+query GetRepoId($owner: String!, $name: String!) {
+  rateLimit {
+    cost
+    limit
+    nodeCount
+    remaining
+  }
+
+  repository(owner: $owner, name: $name) {
+    id
+  }
+}

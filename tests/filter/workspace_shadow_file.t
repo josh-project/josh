@@ -1,0 +1,110 @@
+  $ export TESTTMP=${PWD}
+  $ if [ -n "${CARGO_TARGET_DIR+x}" ]; then
+  >     export TARGET_DIR=${CARGO_TARGET_DIR}
+  > else
+  >     export TARGET_DIR=${TESTDIR}/../../target
+  > fi
+  $ export "PATH=${TARGET_DIR}/debug:${PATH}"
+
+  $ cd ${TESTTMP}
+  $ git init -q real_repo 1> /dev/null
+  $ cd real_repo
+
+  $ mkdir sub1
+  $ echo contents1 > sub1/file1
+  $ git add sub1
+  $ git commit -m "add file1" 1> /dev/null
+
+  $ mkdir sub2
+  $ echo contents1 > sub2/file2
+  $ git add sub2
+  $ git commit -m "add file2" 1> /dev/null
+
+  $ mkdir -p ws/c
+  $ cat > ws/workspace.josh <<EOF
+  > a/b = :/sub2
+  > c = :/sub1
+  > EOF
+
+  $ echo ws_content > ws/c/file1
+  $ git add ws
+  $ git commit -m "add ws" 1> /dev/null
+
+  $ git log --graph --pretty=%s
+  * add ws
+  * add file2
+  * add file1
+  $ tree
+  .
+  |-- sub1
+  |   `-- file1
+  |-- sub2
+  |   `-- file2
+  `-- ws
+      |-- c
+      |   `-- file1
+      `-- workspace.josh
+  
+  5 directories, 4 files
+
+  $ cat sub1/file1
+  contents1
+  $ cat ws/c/file1
+  ws_content
+
+  $ josh-filter :workspace=ws master --update refs/heads/ws
+  4da312ea25eac6a97c651e185ff76f9bc488b963
+  $ git checkout ws 1> /dev/null
+  Switched to branch 'ws'
+  $ git log --graph --pretty=%s
+  * add ws
+  * add file2
+  * add file1
+  $ tree
+  .
+  |-- a
+  |   `-- b
+  |       `-- file2
+  |-- c
+  |   `-- file1
+  `-- workspace.josh
+  
+  4 directories, 3 files
+
+  $ cat c/file1
+  ws_content
+
+  $ echo contents3 > ws_created_file
+  $ git add ws_created_file
+  $ git commit -m "add ws_created_file" 1> /dev/null
+
+  $ josh-filter :workspace=ws master --update refs/heads/ws --reverse
+  f662f202fb7aa7eb2b875c1c7522dd3ffd85d2aa
+  $ josh-filter :workspace=ws master --update refs/heads/ws --reverse --check-roundtrip
+  Roundtrip failed
+
+  $ git checkout master
+  Switched to branch 'master'
+
+  $ tree
+  .
+  |-- sub1
+  |   `-- file1
+  |-- sub2
+  |   `-- file2
+  `-- ws
+      |-- c
+      |   `-- file1
+      |-- workspace.josh
+      `-- ws_created_file
+  
+  5 directories, 5 files
+
+  $ cat sub1/file1
+  ws_content
+
+  $ git log --graph --pretty=%s
+  * add ws_created_file
+  * add ws
+  * add file2
+  * add file1
