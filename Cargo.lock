@@ -2699,7 +2699,6 @@ name = "josh-cli"
 version = "22.4.15"
 dependencies = [
  "anyhow",
- "arboard",
  "clap",
  "defer",
  "env_logger",
@@ -2711,7 +2710,6 @@ dependencies = [
  "josh-link",
  "josh-templates",
  "juniper",
- "keyring",
  "log",
  "rs_tracing",
  "serde",
@@ -2796,9 +2794,11 @@ name = "josh-github-auth"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "arboard",
  "async-trait",
  "form_urlencoded",
  "http",
+ "keyring",
  "mime",
  "reqwest 0.13.1",
  "reqwest-middleware",
@@ -2807,6 +2807,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "url",
 ]
 
 [[package]]
@@ -2834,6 +2835,7 @@ dependencies = [
  "git2",
  "graphql_client",
  "http",
+ "josh-github-auth",
  "josh-github-codegen-graphql",
  "reqwest 0.13.1",
  "reqwest-middleware",
