@@ -1,0 +1,5 @@
+fragment _CommitInfo on Commit {
+  __typename
+  id
+  oid
+}
