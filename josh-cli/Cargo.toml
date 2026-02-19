@@ -24,10 +24,6 @@ tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
 serde.workspace = true
 url.workspace = true
 
-# apple-native required on macOS so credentials persist in Keychain; without it the crate uses a mock store and the token is lost between processes (e.g. after "josh auth login")
-keyring = { version = "^3.6", features = ["apple-native"] }
-arboard = { version = "^3.6", default-features = false }
-
 josh-core.workspace = true
 josh-github-auth.workspace = true
 josh-github-graphql.workspace = true
