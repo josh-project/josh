@@ -248,13 +248,22 @@ pub fn handle_push(
             && (push_mode == PushMode::Split || push_mode == PushMode::Stack)
             && forge == Some(Forge::Github)
         {
-            let pr_infos = josh_github_graphql::pr_sync::collect_pr_infos(repo, &to_push);
+            let pr_infos = josh_github_changes::collect_pr_infos(repo, &to_push);
+
             if !pr_infos.is_empty() {
+                use crate::forge::github;
+
                 let rt =
                     tokio::runtime::Runtime::new().context("Failed to create tokio runtime")?;
-                if let Err(e) = rt.block_on(josh_github_graphql::pr_sync::create_or_update_prs(
-                    &url, &pr_infos,
-                )) {
+
+                if let Err(e) = rt.block_on(async {
+                    let api_connection = github::make_api_connection().await;
+                    let api_connection =
+                        api_connection.with_context(|| github::api_connection_hint())?;
+
+                    josh_github_changes::create_or_update_prs(&api_connection, &url, &pr_infos)
+                        .await
+                }) {
                     eprintln!("Warning: failed to create/update GitHub PRs: {}", e);
                 }
             }

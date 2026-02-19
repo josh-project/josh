@@ -1,0 +1,11 @@
+[package]
+name = "josh-github-changes"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+git2.workspace = true
+anyhow.workspace = true
+url.workspace = true
+
+josh-github-graphql.workspace = true

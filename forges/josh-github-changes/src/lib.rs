@@ -1,7 +1,10 @@
+mod repo;
+
 use std::collections::HashMap;
 
-use crate::connection::GithubApiConnection;
+use josh_github_graphql::connection::GithubApiConnection;
 
+#[derive(Debug)]
 pub struct PrInfo {
     pub head_branch: String,
     pub base_branch: String,
@@ -65,19 +68,16 @@ pub fn collect_pr_infos(
         .collect()
 }
 
-pub async fn create_or_update_prs(url: &str, pr_infos: &[PrInfo]) -> anyhow::Result<()> {
-    let token = match josh_github_auth::token::get_access_token()? {
-        Some(t) => t,
-        None => {
-            eprintln!("No GitHub token found. Run 'josh auth login github' to create PRs.");
-            return Ok(());
-        }
-    };
-    let (owner, repo_name) = josh_github_auth::parse_owner_repo(url)?;
-    let connection = GithubApiConnection::with_token(token)?;
+pub async fn create_or_update_prs(
+    connection: &GithubApiConnection,
+    url: &str,
+    pr_infos: &[PrInfo],
+) -> anyhow::Result<()> {
+    let (owner, repo_name) = crate::repo::parse_owner_repo(url)?;
 
     let repository_id = connection.get_repo_id(&owner, &repo_name).await?;
     let default_branch = connection.get_default_branch(&owner, &repo_name).await?;
+
     for info in pr_infos {
         let effective_base_branch = match &default_branch {
             Some((default_name, default_oid)) if info.base_oid.to_string() == *default_oid => {
@@ -133,9 +133,6 @@ pub async fn create_or_update_prs(url: &str, pr_infos: &[PrInfo]) -> anyhow::Res
                             "Failed to update PR #{} {}: {}",
                             number, info.head_branch, msg
                         );
-                        if msg.contains("Resource not accessible by integration") {
-                            eprintln!("Hint: set GITHUB_TOKEN to a Personal Access Token (repo + pull request) and try again.");
-                        }
                     }
                 }
             }
@@ -161,14 +158,12 @@ pub async fn create_or_update_prs(url: &str, pr_infos: &[PrInfo]) -> anyhow::Res
                             "Failed to create PR {} → {}: {}",
                             info.head_branch, effective_base_branch, msg
                         );
-                        if msg.contains("Resource not accessible by integration") {
-                            eprintln!("Hint: set GITHUB_TOKEN to a Personal Access Token (repo + pull request) and try again.");
-                        }
                     }
                 }
             }
             Err(e) => eprintln!("Failed to look up PR for {}: {}", info.head_branch, e),
         }
     }
+
     Ok(())
 }
