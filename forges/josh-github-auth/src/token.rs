@@ -10,31 +10,12 @@ const KEYRING_ACCESS_TOKEN: &str = "github:access_token";
 const KEYRING_REFRESH_TOKEN: &str = "github:refresh_token";
 const KEYRING_TOKEN_EXPIRY: &str = "github:token_expiry";
 
-/// Read the GitHub access token: prefers GITHUB_TOKEN env (e.g. PAT with full permissions),
-/// then the token stored by `josh auth login github` (keyring).
-/// Use GITHUB_TOKEN if you get "Resource not accessible by integration" when creating/updating PRs
-/// (the app token from device flow may lack pull request write permission).
-pub fn get_access_token() -> anyhow::Result<Option<String>> {
-    if let Ok(t) = std::env::var("GITHUB_TOKEN") {
-        if !t.trim().is_empty() {
-            return Ok(Some(t));
-        }
-    }
-    let entry = keyring::Entry::new(KEYRING_SERVICE, KEYRING_ACCESS_TOKEN)
-        .context("Failed to create keyring entry")?;
-    match entry.get_password() {
-        Ok(token) => Ok(Some(token)),
-        Err(keyring::Error::NoEntry) => Ok(None),
-        Err(e) => Err(e).context("Failed to read GitHub access token from keyring"),
-    }
-}
-
 /// Login to GitHub using device flow and store the token in the keyring.
 pub async fn login() -> anyhow::Result<()> {
     let flow = DeviceAuthFlow::new(APP_CLIENT_ID);
 
     let device_code = flow
-        .request_device_code("repo")
+        .request_device_code()
         .await
         .context("failed to request device code")?;
 
@@ -90,6 +71,35 @@ fn store_keyring(token: &AccessTokenResponse) -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+/// Load a stored token from the keyring, if one exists.
+pub fn load_stored_token() -> Option<AccessTokenResponse> {
+    let access_token = keyring::Entry::new(KEYRING_SERVICE, KEYRING_ACCESS_TOKEN)
+        .ok()?
+        .get_password()
+        .ok()?;
+
+    let refresh_token = keyring::Entry::new(KEYRING_SERVICE, KEYRING_REFRESH_TOKEN)
+        .ok()
+        .and_then(|e| e.get_password().ok());
+
+    let expires_in = keyring::Entry::new(KEYRING_SERVICE, KEYRING_TOKEN_EXPIRY)
+        .ok()
+        .and_then(|e| e.get_password().ok())
+        .and_then(|expiry_str| expiry_str.parse::<u64>().ok())
+        .and_then(|expiry_epoch| {
+            let now = SystemTime::now().duration_since(UNIX_EPOCH).ok()?.as_secs();
+            expiry_epoch.checked_sub(now)
+        });
+
+    Some(AccessTokenResponse {
+        access_token,
+        token_type: "bearer".to_string(),
+        scope: String::new(),
+        refresh_token,
+        expires_in,
+    })
 }
 
 /// Logout from GitHub by removing tokens from the keyring.

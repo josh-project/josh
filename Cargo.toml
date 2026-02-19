@@ -17,6 +17,7 @@ members = [
     "josh-starlark",
     "josh-cq",
 
+    "forges/josh-github-changes",
     "forges/josh-github-graphql",
     "forges/josh-github-codegen-graphql",
     "forges/josh-github-webhooks",
@@ -75,6 +76,7 @@ josh-starlark = { path = "josh-starlark" }
 josh-templates = { path = "josh-templates" }
 
 # Forges support
+josh-github-changes = { path = "forges/josh-github-changes" }
 josh-github-graphql = { path = "forges/josh-github-graphql" }
 josh-github-codegen-graphql = { path = "forges/josh-github-codegen-graphql" }
 josh-github-webhooks = { path = "forges/josh-github-webhooks" }

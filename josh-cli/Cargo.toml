@@ -23,10 +23,13 @@ toml.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
 serde.workspace = true
 url.workspace = true
+reqwest.workspace = true
+reqwest-middleware.workspace = true
 
 josh-core.workspace = true
 josh-github-auth.workspace = true
 josh-github-graphql.workspace = true
+josh-github-changes.workspace = true
 josh-graphql.workspace = true
 josh-link = { workspace = true, optional = true }
 josh-templates.workspace = true

@@ -1,9 +1,11 @@
 use anyhow::Result;
 use reqwest::header;
 use reqwest_middleware::{Middleware, Next};
-use std::time::Duration;
+use secret_vault_value::SecretValue;
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::Instant;
+
+use std::time::Duration;
 
 use crate::device_flow::{AccessTokenResponse, DeviceAuthFlow};
 
@@ -20,7 +22,7 @@ enum Command {
 
 const EXPIRY_BUFFER: Duration = Duration::from_secs(30);
 
-async fn token_actor_loop(mut state: TokenState, mut rx: mpsc::Receiver<Command>) {
+async fn app_token_actor_loop(mut state: TokenState, mut rx: mpsc::UnboundedReceiver<Command>) {
     while let Some(cmd) = rx.recv().await {
         match cmd {
             Command::GetToken(reply) => {
@@ -50,12 +52,12 @@ async fn maybe_refresh_and_get_token(state: &mut TokenState) -> Result<String> {
 }
 
 pub struct GithubAuthMiddleware {
-    sender: mpsc::Sender<Command>,
+    sender: mpsc::UnboundedSender<Command>,
 }
 
 impl GithubAuthMiddleware {
-    pub fn new(token: AccessTokenResponse, client_id: String) -> Self {
-        let (sender, receiver) = mpsc::channel(8);
+    pub fn from_app_flow(token: AccessTokenResponse, client_id: String) -> Self {
+        let (sender, receiver) = mpsc::unbounded_channel();
 
         let expires_at = token
             .expires_in
@@ -68,7 +70,20 @@ impl GithubAuthMiddleware {
             flow: DeviceAuthFlow::new(client_id),
         };
 
-        tokio::spawn(token_actor_loop(state, receiver));
+        tokio::spawn(app_token_actor_loop(state, receiver));
+
+        Self { sender }
+    }
+
+    pub fn from_token(token: impl Into<SecretValue>) -> Self {
+        let (sender, mut receiver) = mpsc::unbounded_channel();
+        let token = token.into();
+
+        tokio::spawn(async move {
+            while let Some(Command::GetToken(reply)) = receiver.recv().await {
+                let _ = reply.send(Ok(token.as_sensitive_str().to_string()));
+            }
+        });
 
         Self { sender }
     }
@@ -78,7 +93,6 @@ impl GithubAuthMiddleware {
 
         self.sender
             .send(Command::GetToken(tx))
-            .await
             .map_err(|_| anyhow::anyhow!("token actor dropped"))?;
 
         rx.await

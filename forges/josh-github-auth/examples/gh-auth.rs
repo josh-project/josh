@@ -13,7 +13,7 @@ async fn main() -> anyhow::Result<()> {
     let flow = DeviceAuthFlow::new(client_id.clone());
 
     // Step 1: request device code
-    let device_code = flow.request_device_code("repo").await?;
+    let device_code = flow.request_device_code().await?;
     let url = device_code
         .verification_uri_complete
         .as_deref()
@@ -34,7 +34,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Build an HTTP client with the auth middleware
     let client = ClientBuilder::new(reqwest::Client::new())
-        .with(GithubAuthMiddleware::new(token, client_id))
+        .with(GithubAuthMiddleware::from_app_flow(token, client_id))
         .build();
 
     // Make an authenticated request to the GitHub API

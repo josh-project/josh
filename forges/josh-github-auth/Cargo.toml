@@ -20,6 +20,7 @@ url.workspace = true
 # apple-native required on macOS so credentials persist in Keychain; without it the crate uses a mock store and the token is lost between processes
 keyring = { version = "^3.6", features = ["apple-native"] }
 arboard = { version = "^3.6", default-features = false }
+secret-vault-value = "^1"
 
 [dev-dependencies]
 tokio.workspace = true

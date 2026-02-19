@@ -2705,12 +2705,15 @@ dependencies = [
  "git2",
  "josh-core",
  "josh-github-auth",
+ "josh-github-changes",
  "josh-github-graphql",
  "josh-graphql",
  "josh-link",
  "josh-templates",
  "juniper",
  "log",
+ "reqwest 0.13.1",
+ "reqwest-middleware",
  "rs_tracing",
  "serde",
  "serde_json",
@@ -2802,11 +2805,22 @@ dependencies = [
  "mime",
  "reqwest 0.13.1",
  "reqwest-middleware",
+ "secret-vault-value",
  "serde",
  "serde_json",
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "url",
+]
+
+[[package]]
+name = "josh-github-changes"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "git2",
+ "josh-github-graphql",
  "url",
 ]
 

@@ -16,6 +16,7 @@
 !josh-graphql
 !josh-link
 !josh-cq
+!forges/josh-github-changes
 !forges/josh-github-auth
 !forges/josh-github-codegen-graphql
 !forges/josh-github-graphql
