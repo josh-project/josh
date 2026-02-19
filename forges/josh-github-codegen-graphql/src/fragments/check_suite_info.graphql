@@ -1,0 +1,6 @@
+fragment _CheckSuiteInfo on CheckSuite {
+  id
+  app {
+    id
+  }
+}
