@@ -2,13 +2,14 @@ use anyhow::Context;
 use anyhow::anyhow;
 use josh_core::filter::tree;
 
+use std::collections::HashSet;
 use std::path::PathBuf;
 
 /// Result from adding a link to a repository
 pub struct AddLinkResult {
     /// Commit with .link.josh file added
     pub commit_with_link: git2::Oid,
-    /// Commit after applying :link=snapshot filter
+    /// Commit after applying the link filter
     pub filtered_commit: git2::Oid,
 }
 
@@ -19,7 +20,7 @@ pub struct PreparedLinkAdd {
 }
 
 impl PreparedLinkAdd {
-    /// Create commit and apply :link=snapshot filter
+    /// Create commit and apply the link filter
     ///
     /// This is the typical usage for `josh link add`
     pub fn into_commit(
@@ -44,12 +45,11 @@ impl PreparedLinkAdd {
             )
             .context("Failed to create commit")?;
 
-        let snapshot_filter = josh_core::filter::parse(":link=snapshot")
-            .context("Failed to parse :link=snapshot filter")?;
+        let link_filter =
+            josh_core::filter::parse(":link").context("Failed to parse link filter")?;
 
-        let filtered_commit =
-            josh_core::filter_commit(transaction, snapshot_filter, commit_with_link)
-                .context("Failed to apply :link=snapshot filter")?;
+        let filtered_commit = josh_core::filter_commit(transaction, link_filter, commit_with_link)
+            .context("Failed to apply link filter")?;
 
         Ok(AddLinkResult {
             commit_with_link,
@@ -71,6 +71,60 @@ pub struct UpdateLinksResult {
     pub commit_with_updates: git2::Oid,
     /// Commit after applying :link filter
     pub filtered_commit: git2::Oid,
+}
+
+/// A remote URL and commit SHA found in a `.link.josh` file.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct LinkRef {
+    pub remote: String,
+    pub commit: String,
+}
+
+/// Walk the entire commit history reachable from the given commit and collect
+/// all (remote, commit) pairs found in any `.link.josh` file across all commits and trees.
+pub fn collect_all_link_refs(
+    transaction: &josh_core::cache::Transaction,
+    commit: git2::Oid,
+) -> anyhow::Result<HashSet<LinkRef>> {
+    let repo = transaction.repo();
+
+    // Apply a filter that keeps only .link.josh files. This prunes the history
+    // to only commits that actually changed those files, so the revwalk below
+    // visits far fewer commits on typical repositories.
+    let link_file_filter =
+        josh_core::filter::parse("::**/.link.josh").context("Failed to parse .link.josh filter")?;
+
+    let filtered_commit = josh_core::filter_commit(transaction, link_file_filter, commit)
+        .context("Failed to apply .link.josh filter")?;
+
+    if filtered_commit == git2::Oid::zero() {
+        return Ok(HashSet::new());
+    }
+
+    let mut refs = HashSet::new();
+
+    let mut walk = repo.revwalk().context("Failed to create revwalk")?;
+    walk.push(filtered_commit)
+        .context("Failed to push commit to revwalk")?;
+
+    for oid in walk {
+        let oid = oid.context("Failed to get OID from revwalk")?;
+        let commit = repo.find_commit(oid).context("Failed to find commit")?;
+        let tree = commit.tree().context("Failed to get commit tree")?;
+
+        let link_files =
+            josh_core::link::find_link_files(repo, &tree).context("Failed to find link files")?;
+
+        for (_, filter) in link_files {
+            if let (Some(remote), Some(commit)) =
+                (filter.get_meta("remote"), filter.get_meta("commit"))
+            {
+                refs.insert(LinkRef { remote, commit });
+            }
+        }
+    }
+
+    Ok(refs)
 }
 
 pub fn make_signature(repo: &git2::Repository) -> anyhow::Result<git2::Signature<'static>> {
@@ -96,6 +150,7 @@ pub fn prepare_link_add(
     target: &str,
     fetched_commit: git2::Oid,
     head_tree: &git2::Tree,
+    mode: josh_core::filter::LinkMode,
 ) -> anyhow::Result<PreparedLinkAdd> {
     let repo = transaction.repo();
 
@@ -111,7 +166,8 @@ pub fn prepare_link_add(
     let link_filter = filter_obj
         .with_meta("remote", url.to_string())
         .with_meta("target", target.to_string())
-        .with_meta("commit", fetched_commit.to_string());
+        .with_meta("commit", fetched_commit.to_string())
+        .with_meta("mode", mode.as_str());
     let link_content = josh_core::filter::as_file(link_filter, 0);
 
     // Create the blob for the .link.josh file

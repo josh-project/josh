@@ -43,19 +43,20 @@
 
 # Verify the commit was created
   $ git log --oneline
-  c121e35 Track remote: myremote
+  4c107ca Track remote: myremote
   51f2a63 Initial metarepo commit
 
 # Check the tree structure
   $ git ls-tree --format "${GIT_TREE_FMT}" -r HEAD
   100644 blob c937373cb4421598011a1a58ddab20d6227618e0 init.txt
-  100644 blob 6356f6b63a72d736126c941703fc077d41b662ba remotes/myremote/link/.link.josh
+  100644 blob 95ae146ea76504b3b2e65265597f8c201ce88574 remotes/myremote/link/.link.josh
   100644 blob 9225fc196ba1c36efea3fe89d89f3264f20e25c1 remotes/myremote/refs.json
 
 # Verify .link.josh content
   $ git show HEAD:remotes/myremote/link/.link.josh
   :~(
       commit="18e9c0f08e192befb8ff07de548ddf5bd41f8e69"
+      mode="snapshot"
       remote="../remote.git"
       target="HEAD"
   )[

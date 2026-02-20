@@ -40,6 +40,9 @@ struct TrackArgs {
     url: String,
     /// ID for this remote
     id: String,
+    /// Link mode: embedded, snapshot, or pointer (defaults to snapshot)
+    #[arg(long = "mode", default_value = "snapshot")]
+    mode: String,
 }
 
 fn handle_track(
@@ -72,6 +75,9 @@ fn handle_track(
 
     let signature = make_signature(repo)?;
 
+    let mode = josh_core::filter::LinkMode::parse(&args.mode)
+        .with_context(|| format!("Invalid link mode: '{}'", args.mode))?;
+
     let link_path = std::path::Path::new("remotes").join(&args.id).join("link");
     let tree_with_link_oid = josh_link::prepare_link_add(
         &transaction,
@@ -81,6 +87,7 @@ fn handle_track(
         "HEAD", // target
         fetched_commit,
         &head_tree,
+        mode,
     )?
     .into_tree_oid();
 

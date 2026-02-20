@@ -48,7 +48,7 @@
 
 # Test basic link add with default filter and target
   $ josh link add libs ../remote.git
-  Added link 'libs' with URL '../remote.git', filter ':/', and target 'HEAD'
+  Added link 'libs' with URL '../remote.git', filter ':/', target 'HEAD', and mode 'snapshot'
   Created branch: refs/heads/josh-link
 
 # Verify the branch was created
@@ -101,7 +101,7 @@
 
 # Test link add with custom filter and target
   $ josh link add utils ../remote.git :/utils --target master
-  Added link 'utils' with URL '../remote.git', filter ':/utils', and target 'master'
+  Added link 'utils' with URL '../remote.git', filter ':/utils', target 'master', and mode 'snapshot'
   Created branch: refs/heads/josh-link
 
 # Verify the branch was created
@@ -144,7 +144,7 @@
 
 # Test path normalization (path with leading slash)
   $ josh link add /docs ../remote.git :/docs
-  Added link 'docs' with URL '../remote.git', filter ':/docs', and target 'HEAD'
+  Added link 'docs' with URL '../remote.git', filter ':/docs', target 'HEAD', and mode 'snapshot'
   Created branch: refs/heads/josh-link
 
 # Verify path was normalized (no leading slash in branch name)
@@ -212,9 +212,10 @@
   Usage: josh link <COMMAND>
   
   Commands:
-    add    Add a link with optional filter and target branch
-    fetch  Fetch from existing link files
-    help   Print this message or the help of the given subcommand(s)
+    add     Add a link with optional filter and target branch
+    fetch   Fetch all SHAs referenced in .link.josh files across history
+    update  Fetch the latest commit from each linked remote and update .link.josh files
+    help    Print this message or the help of the given subcommand(s)
   
   Options:
     -h, --help  Print help
@@ -231,6 +232,7 @@
   
   Options:
         --target <TARGET>  Target branch to link (defaults to HEAD)
+        --mode <MODE>      Link mode: embedded, snapshot, or pointer (defaults to snapshot) [default: snapshot]
     -h, --help             Print help
 
 # Test josh link fetch command
@@ -244,11 +246,11 @@
    create mode 100644 test-link/.link.josh
 
 # Test fetch with specific path
-  $ josh link fetch test-link
-  Found 1 link file(s) to fetch
-  Fetching from link at path: test-link
+  $ josh link update :/test-link
+  Found 1 link file(s) to update
+  Fetching HEAD from ../remote.git
   Updated 1 link file(s)
-  Created branch: refs/heads/josh-link
+  Updated branch: refs/heads/josh-link
 
 # Verify the branch was updated
   $ git show-ref | grep refs/heads/josh-link
@@ -291,17 +293,17 @@
   Previous HEAD position was 2263586 Add test link file for fetch testing
   Switched to branch 'master'
 
-# Test fetch with no path (should find all .link.josh files)
-  $ josh link fetch
-  Found 1 link file(s) to fetch
-  Fetching from link at path: test-link
+# Test update with no path (should find all .link.josh files)
+  $ josh link update
+  Found 1 link file(s) to update
+  Fetching HEAD from ../remote.git
   Updated 1 link file(s)
-  Created branch: refs/heads/josh-link
+  Updated branch: refs/heads/josh-link
 
 # Test error case - path that doesn't exist
-  $ josh link fetch nonexistent
-  Error: Link file not found at path 'nonexistent'
-  Link file not found at path 'nonexistent'
+  $ josh link update :/nonexistent
+  Error: No .link.josh files found
+  No .link.josh files found
   [1]
 
 # Test error case - no link files found
@@ -319,8 +321,6 @@
    create mode 100644 README.md
 
   $ josh link fetch
-  Error: No .link.josh files found
-  No .link.josh files found
-  [1]
+  No .link.josh references found in history
 
   $ cd ..

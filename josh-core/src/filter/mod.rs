@@ -5,6 +5,8 @@ use std::path::Path;
 use std::sync::LazyLock;
 
 // Re-export from josh-filter
+#[cfg(feature = "incubating")]
+pub use josh_filter::LinkMode;
 pub use josh_filter::filter::MESSAGE_MATCH_ALL_REGEX;
 pub use josh_filter::filter::sequence_number;
 pub use josh_filter::flang::parse::{get_comments, parse};
