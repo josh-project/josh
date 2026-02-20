@@ -81,7 +81,7 @@ fn require_auth(
 
 fn make_password() -> String {
     use core::iter;
-    use rand::{Rng, distr::Alphanumeric, rng};
+    use rand::{RngExt, distr::Alphanumeric, rng};
 
     iter::repeat(())
         .map(|()| rng().sample(Alphanumeric))

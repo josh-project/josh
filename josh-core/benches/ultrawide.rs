@@ -1,5 +1,5 @@
 use criterion::{Criterion, criterion_group, criterion_main};
-use rand::Rng;
+use rand::RngExt;
 use rand::distr::{Alphabetic, Distribution};
 use rand::rngs::ThreadRng;
 use std::path::PathBuf;
