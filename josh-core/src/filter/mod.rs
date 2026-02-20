@@ -1227,7 +1227,7 @@ pub fn apply<'a>(
             Ok(x.with_tree(result_tree))
         }
         #[cfg(feature = "incubating")]
-        Op::Link(_) => {
+        Op::Link(mode) => {
             let roots = get_link_roots(repo, transaction, &x.tree())?;
             let v = links_from_roots(repo, &x.tree(), roots)?;
             let mut result_tree = x.tree().clone();
@@ -1255,8 +1255,7 @@ pub fn apply<'a>(
                     submodule_tree.tree().id(),
                     0o0040000, // Tree mode
                 )?;
-                // The link_file is already a filter with metadata, just serialize it
-                let link_content = as_file(link_file, 0);
+                let link_content = as_file(link_file.with_meta("mode", mode.as_str()), 0);
 
                 result_tree = tree::insert(
                     repo,

@@ -61,7 +61,7 @@
 Test Adapt filter - should expand submodule into actual tree content
 
   $ josh-filter -s :adapt=submodules:link master --update refs/josh/filter/master
-  fd8970c6132c8f2a0533aeb91d90086c2782e9a8
+  de1d866c061edd259d604b67b87e8f9bbb95a493
   [1] :embed=libs
   [2] ::libs/.link.josh
   [2] :unapply(51cdca92afb4a930d3435b5f544f0282d6c33bf3:/libs)
@@ -84,11 +84,11 @@ Test Adapt filter - should expand submodule into actual tree content
   main.txt
 
   $ git ls-tree refs/josh/filter/master
-  040000 tree 15cb8eda58435469025e7b9405ccdbc63cb05995\tlibs (esc)
+  040000 tree c8039cb1eba006845979264c512b5b662a5e7d97\tlibs (esc)
   100644 blob bcb9dcad21591bd9284afbb6c21e6d69eafe8f15\tmain.txt (esc)
 
   $ git ls-tree refs/josh/filter/master libs
-  040000 tree 15cb8eda58435469025e7b9405ccdbc63cb05995\tlibs (esc)
+  040000 tree c8039cb1eba006845979264c512b5b662a5e7d97\tlibs (esc)
 
   $ git ls-tree refs/josh/filter/master libs/foo
   040000 tree 81a0b9c71d7fac4f553b2a52b9d8d52d07dd8036\tlibs/foo (esc)
@@ -99,6 +99,7 @@ Test Adapt filter - should expand submodule into actual tree content
   $ git show refs/josh/filter/master:libs/.link.josh
   :~(
       commit="00c8fe9f1bb75a3f6280992ec7c3c893d858f5dd"
+      mode="embedded"
       remote="../submodule-repo"
       target="HEAD"
   )[
@@ -167,7 +168,7 @@ Test Adapt with multiple submodules
       :/
   ]
   $ josh-filter -s :adapt=submodules:link master --update refs/josh/filter/master
-  ac26b33e2038781f938ca9ea9abc570e2da8ea06
+  af68a976cb7f00562363eb149c320e3ef641dc8d
   [1] :embed=libs
   [1] :embed=modules/another
   [1] :unapply(84809a41a369ce8cb9af00b6fc42291a8a745dd0:/modules/another)
@@ -198,7 +199,7 @@ Test Adapt with multiple submodules
   modules/another/another.txt
 
   $ git ls-tree refs/josh/filter/master modules
-  040000 tree 0160bce0163b5d2dc6d0efa34a2315558c6e9a48\tmodules (esc)
+  040000 tree 7b3cd056b887d0fee64b0752ce0bd983a5e05701\tmodules (esc)
 
   $ git show refs/josh/filter/master:modules/another/another.txt
   another content
@@ -249,7 +250,7 @@ Test Adapt with submodule changes - add commits to submodule and update
 
 
   $ josh-filter -s :adapt=submodules:link master --update refs/josh/filter/master
-  23aea647de9530bc8e648930c834ed4b73de1c80
+  dfa68288014b8226dcfe22c52afe6377c206848b
   [1] :embed=modules/another
   [1] :unapply(84809a41a369ce8cb9af00b6fc42291a8a745dd0:/modules/another)
   [2] ::modules/another/.link.josh
@@ -262,15 +263,15 @@ Test Adapt with submodule changes - add commits to submodule and update
   [5] :link=embedded
   [21] sequence_number
   $ git log --graph --pretty=%s:%H refs/josh/filter/master
-  *   update libs submodule:23aea647de9530bc8e648930c834ed4b73de1c80
+  *   update libs submodule:dfa68288014b8226dcfe22c52afe6377c206848b
   |\  
   | * add file4.txt:8305970b0130e9825dd95672ee4c12d70886d42e
   | * add file3.txt:cb701911d1a16dfdb793235cd69d6b3adab92ea2
-  * |   add another submodule:ac26b33e2038781f938ca9ea9abc570e2da8ea06
+  * |   add another submodule:af68a976cb7f00562363eb149c320e3ef641dc8d
   |\ \  
   | * | add another.txt:b2425f43d4cae3aa9cc085f865921f0a0605add2
   |  /  
-  * | add libs submodule:fd8970c6132c8f2a0533aeb91d90086c2782e9a8
+  * | add libs submodule:de1d866c061edd259d604b67b87e8f9bbb95a493
   |\| 
   | * add bar with file:2926fa3361cec2d5695a119fcc3592f4214af3ba
   | * add foo with files:e975fd8cd3f2d2de81884f5b761cc0ac150bdf47
@@ -300,7 +301,7 @@ Test Adapt with submodule changes - add commits to submodule and update
   another new content
 
   $ josh-filter -s :adapt=submodules:link:/libs master
-  d1089f8393043671a5348b3123aad85b23ab2e3b
+  b2e90aae4a2c0e7c2f9476d50300f92546cbc58f
   [1] :embed=modules/another
   [1] :unapply(84809a41a369ce8cb9af00b6fc42291a8a745dd0:/modules/another)
   [2] ::modules/another/.link.josh
@@ -314,16 +315,16 @@ Test Adapt with submodule changes - add commits to submodule and update
   [9] :/libs
   [29] sequence_number
   $ git log --graph --pretty=%s:%H FILTERED_HEAD
-  *   update libs submodule:d1089f8393043671a5348b3123aad85b23ab2e3b
+  *   update libs submodule:b2e90aae4a2c0e7c2f9476d50300f92546cbc58f
   |\  
   | * add file4.txt:3061af908a0dc1417902fbd7208bb2b8dc354e6c
   | * add file3.txt:411907f127aa115588a614ec1dff6ee3c4696173
-  * | add libs submodule:a8263e646790b897761eb69459f488111140e979
+  * | add libs submodule:24c4ad0143802f7d0cb1d76c5cfbc108f2f09e1e
   |/  
   * add bar with file:00c8fe9f1bb75a3f6280992ec7c3c893d858f5dd
   * add foo with files:4b63f3e50a3a34404541bc4519a3a1a0a8e6f738
   $ josh-filter -s :adapt=submodules:link:/libs:prune=trivial-merge master
-  d1089f8393043671a5348b3123aad85b23ab2e3b
+  b2e90aae4a2c0e7c2f9476d50300f92546cbc58f
   [1] :embed=modules/another
   [1] :unapply(84809a41a369ce8cb9af00b6fc42291a8a745dd0:/modules/another)
   [2] ::modules/another/.link.josh
@@ -338,11 +339,11 @@ Test Adapt with submodule changes - add commits to submodule and update
   [9] :/libs
   [31] sequence_number
   $ git log --graph --pretty=%s:%H FILTERED_HEAD
-  *   update libs submodule:d1089f8393043671a5348b3123aad85b23ab2e3b
+  *   update libs submodule:b2e90aae4a2c0e7c2f9476d50300f92546cbc58f
   |\  
   | * add file4.txt:3061af908a0dc1417902fbd7208bb2b8dc354e6c
   | * add file3.txt:411907f127aa115588a614ec1dff6ee3c4696173
-  * | add libs submodule:a8263e646790b897761eb69459f488111140e979
+  * | add libs submodule:24c4ad0143802f7d0cb1d76c5cfbc108f2f09e1e
   |/  
   * add bar with file:00c8fe9f1bb75a3f6280992ec7c3c893d858f5dd
   * add foo with files:4b63f3e50a3a34404541bc4519a3a1a0a8e6f738
@@ -391,7 +392,7 @@ Test Adapt with submodule changes - add commits to submodule and update
   * add bar with file:00c8fe9f1bb75a3f6280992ec7c3c893d858f5dd
   * add foo with files:4b63f3e50a3a34404541bc4519a3a1a0a8e6f738
   $ josh-filter -s :adapt=submodules:link:/modules/another master
-  4521d2b2891f3d844c8406e1f7debc066f363ce2
+  b74da266394ae690a9b37b003779a1b59373bc65
   [1] :embed=modules/another
   [1] :unapply(84809a41a369ce8cb9af00b6fc42291a8a745dd0:/modules/another)
   [2] :/another
@@ -409,11 +410,11 @@ Test Adapt with submodule changes - add commits to submodule and update
   [9] :/libs
   [33] sequence_number
   $ git log --graph --pretty=%s:%H FILTERED_HEAD
-  * add another submodule:4521d2b2891f3d844c8406e1f7debc066f363ce2
+  * add another submodule:b74da266394ae690a9b37b003779a1b59373bc65
   * add another.txt:8fbd01fa31551a059e280f68ac37397712feb59e
 
   $ josh-filter -s :adapt=submodules:link master --update refs/heads/testsubexport
-  23aea647de9530bc8e648930c834ed4b73de1c80
+  dfa68288014b8226dcfe22c52afe6377c206848b
   [1] :embed=modules/another
   [1] :unapply(84809a41a369ce8cb9af00b6fc42291a8a745dd0:/modules/another)
   [2] :/another
@@ -438,16 +439,16 @@ Test Adapt with submodule changes - add commits to submodule and update
   $ git add .
   $ git commit -m "mod libs submodule" 1> /dev/null
   $ git log --graph --pretty=%s:%H
-  * mod libs submodule:18b6be99f370de65342cc46e5b595ef4f3c093db
-  *   update libs submodule:23aea647de9530bc8e648930c834ed4b73de1c80
+  * mod libs submodule:eb58d7e3cbc481fd7b24e15a63aa5b98138de2ef
+  *   update libs submodule:dfa68288014b8226dcfe22c52afe6377c206848b
   |\  
   | * add file4.txt:8305970b0130e9825dd95672ee4c12d70886d42e
   | * add file3.txt:cb701911d1a16dfdb793235cd69d6b3adab92ea2
-  * |   add another submodule:ac26b33e2038781f938ca9ea9abc570e2da8ea06
+  * |   add another submodule:af68a976cb7f00562363eb149c320e3ef641dc8d
   |\ \  
   | * | add another.txt:b2425f43d4cae3aa9cc085f865921f0a0605add2
   |  /  
-  * | add libs submodule:fd8970c6132c8f2a0533aeb91d90086c2782e9a8
+  * | add libs submodule:de1d866c061edd259d604b67b87e8f9bbb95a493
   |\| 
   | * add bar with file:2926fa3361cec2d5695a119fcc3592f4214af3ba
   | * add foo with files:e975fd8cd3f2d2de81884f5b761cc0ac150bdf47
@@ -491,7 +492,7 @@ Test Adapt with submodule changes - add commits to submodule and update
   * add foo with files:4b63f3e50a3a34404541bc4519a3a1a0a8e6f738
 
   $ josh-filter -s ":adapt=submodules:link:unlink" refs/heads/master --update refs/heads/unlinked_master
-  a7c39409ce746b0c981d18db7451fc75df3a9490
+  ab26ba7d7f121ab9551c04a1e08a89e01e4919af
   [1] :embed=modules/another
   [1] :prefix=modules/another
   [1] :unapply(84809a41a369ce8cb9af00b6fc42291a8a745dd0:/modules/another)
@@ -513,15 +514,15 @@ Test Adapt with submodule changes - add commits to submodule and update
   [36] sequence_number
 
   $ git log --graph --pretty=%s:%H:%T refs/heads/unlinked_master
-  *   update libs submodule:a7c39409ce746b0c981d18db7451fc75df3a9490:62df4e786466331a58259b2180cc3c30e8059019
+  *   update libs submodule:ab26ba7d7f121ab9551c04a1e08a89e01e4919af:7ff0acd41cae0c10ec166888f075e3f22ad8b299
   |\  
   | * add file4.txt:8305970b0130e9825dd95672ee4c12d70886d42e:0d508d03433ddaff3cf02b0de6dec1c27bee7c2c
   | * add file3.txt:cb701911d1a16dfdb793235cd69d6b3adab92ea2:b7ce872b882b2aa44b5319ffea2bf5850a31c5f2
-  * |   add another submodule:10678401fca5f6ab4f9b51d30477c8664ce40f34:85c7067c5a99b851eb6748b9056c6f4d8d377b30
+  * |   add another submodule:8c61a5c6910160eca0bf40fe049327b85e922e43:7615aa4b11b195001ea4befbe65a098cf51fe992
   |\ \  
   | * | add another.txt:b2425f43d4cae3aa9cc085f865921f0a0605add2:648d16f3ef9f1f210e646a04c9e9c2d4a08602c7
   |  /  
-  * | add libs submodule:abf2e05c51f856c862dd46ca1efc73d2dc15de0f:19ad184d92bce99c3d0cdd537fca7ef88a3015c2
+  * | add libs submodule:07cd9b8b539e998af1ceceb1e0082f4c15c147e5:6e719f77f0079c314bf25ee0267e5c740a43e0b2
   |\| 
   | * add bar with file:2926fa3361cec2d5695a119fcc3592f4214af3ba:0b7130f9c4103e0b89fd511f432114ef2ebd33e9
   | * add foo with files:e975fd8cd3f2d2de81884f5b761cc0ac150bdf47:1fbe431508b38e48268466d9bb922b979e173ca9

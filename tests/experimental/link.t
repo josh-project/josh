@@ -31,7 +31,7 @@ Test Link filter (identical to Adapt)
    * branch            HEAD       -> FETCH_HEAD
 
   $ josh-filter -s :adapt=submodules:link master --update refs/josh/filter/master
-  377e50d6b49e7b85ec41081885faa5f44f5633df
+  27814d162ba765274145a42ae41d327137422c1b
   [1] :embed=libs
   [1] :unapply(784847e21478f8b81b2fbe8c92e20159a59773a8:/libs)
   [2] :"{@}"
