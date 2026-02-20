@@ -249,7 +249,7 @@ pub(crate) fn spec2(op: &Op) -> String {
         #[cfg(feature = "incubating")]
         Op::Adapt(adapter) => format!(":adapt={}", adapter),
         #[cfg(feature = "incubating")]
-        Op::Link(mode) => format!(":link={}", mode),
+        Op::Link(mode) => format!(":link={}", mode.as_str()),
         #[cfg(feature = "incubating")]
         Op::Export => ":export".to_string(),
         #[cfg(feature = "incubating")]

@@ -1,3 +1,5 @@
+#[cfg(feature = "incubating")]
+use crate::LinkMode;
 use crate::filter::Filter;
 use crate::opt;
 use crate::opt::invert;
@@ -68,9 +70,9 @@ fn make_filter(args: &[&str]) -> anyhow::Result<Filter> {
         #[cfg(feature = "incubating")]
         ["adapt", adapter] => Ok(to_filter(Op::Adapt(adapter.to_string()))),
         #[cfg(feature = "incubating")]
-        ["link"] => Ok(to_filter(Op::Link("embedded".to_string()))),
+        ["link"] => Ok(to_filter(Op::Link(LinkMode::Embedded))),
         #[cfg(feature = "incubating")]
-        ["link", mode] => Ok(to_filter(Op::Link(mode.to_string()))),
+        ["link", mode] => Ok(to_filter(Op::Link(LinkMode::parse(mode)?))),
         #[cfg(feature = "incubating")]
         ["embed", path] => Ok(to_filter(Op::Embed(Path::new(path).to_owned()))),
         #[cfg(feature = "incubating")]

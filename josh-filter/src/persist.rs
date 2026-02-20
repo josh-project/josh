@@ -408,7 +408,7 @@ impl InMemoryBuilder {
             }
             #[cfg(feature = "incubating")]
             Op::Link(mode) => {
-                let params_tree = self.build_str_params(&[mode.as_ref()]);
+                let params_tree = self.build_str_params(&[mode.as_str()]);
                 push_tree_entries(&mut entries, [("link", params_tree)]);
             }
             #[cfg(feature = "incubating")]
@@ -568,9 +568,9 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> anyhow::Result<Op
             let inner = repo.find_tree(entry.id())?;
             let mode_blob =
                 repo.find_blob(inner.get_name("0").context("link: missing mode")?.id())?;
-            Ok(Op::Link(
-                std::str::from_utf8(mode_blob.content())?.to_string(),
-            ))
+            Ok(Op::Link(crate::op::LinkMode::parse(std::str::from_utf8(
+                mode_blob.content(),
+            )?)?))
         }
         #[cfg(feature = "incubating")]
         "adapt" => {
