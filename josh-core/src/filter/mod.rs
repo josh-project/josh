@@ -739,14 +739,7 @@ pub fn apply_to_commit2(
             .transpose();
         }
         #[cfg(feature = "incubating")]
-        Op::Link(josh_filter::LinkMode::Embedded) => {
-            let normal_parents = commit
-                .parent_ids()
-                .map(|parent| transaction.get(filter, parent))
-                .collect::<Option<Vec<git2::Oid>>>();
-
-            let normal_parents = some_or!(normal_parents, { return Ok(None) });
-
+        Op::Link(mode) => {
             let mut roots = get_link_roots(repo, transaction, &commit.tree()?)?;
 
             if let Some(parent) = commit.parents().next() {
@@ -763,52 +756,75 @@ pub fn apply_to_commit2(
                 });
             };
 
-            let v = links_from_roots(repo, &commit.tree()?, roots)?;
+            let all_links = links_from_roots(repo, &commit.tree()?, roots)?;
 
-            let extra_parents = {
-                let mut extra_parents = vec![];
-                for (root, _link_file) in v {
-                    let embeding = some_or!(
-                        apply_to_commit2(
-                            Filter::new().message("{@}").file(root.join(".link.josh")),
-                            &commit,
-                            transaction
-                        )?,
-                        {
-                            return Ok(None);
-                        }
-                    );
-
-                    #[cfg(feature = "incubating")]
-                    let f = to_filter(Op::Embed(root));
-                    /* let f = filter::chain(link_file.filter, to_filter(Op::Prefix(root))); */
-                    /* let scommit = repo.find_commit(link_file.commit.0)?; */
-
-                    let embeding = repo.find_commit(embeding)?;
-                    let r = some_or!(apply_to_commit2(f, &embeding, transaction)?, {
-                        return Ok(None);
-                    });
-
-                    extra_parents.push(r);
-                }
-
-                extra_parents
-            };
-
-            let filtered_tree = apply(transaction, filter, Rewrite::from_commit(commit)?)?;
-            let filtered_parent_ids = normal_parents
+            // Only embedded-mode links get extra parent commits spliced in
+            let embedded_links: Vec<_> = all_links
                 .into_iter()
-                .chain(extra_parents)
-                .collect::<Vec<_>>();
+                .filter(|(_, link_file)| {
+                    let effective_mode = mode.clone().unwrap_or_else(|| {
+                        link_file
+                            .get_meta("mode")
+                            .and_then(|s| josh_filter::LinkMode::parse(&s).ok())
+                            .unwrap_or(josh_filter::LinkMode::Pointer)
+                    });
+                    effective_mode == josh_filter::LinkMode::Embedded
+                })
+                .collect();
 
-            return Some(history::create_filtered_commit(
-                commit,
-                filtered_parent_ids.clone(),
-                filtered_tree,
-                transaction,
-                filter,
-            ))
-            .transpose();
+            if embedded_links.is_empty() {
+                apply(transaction, filter, Rewrite::from_commit(commit)?)?
+            } else {
+                let normal_parents = commit
+                    .parent_ids()
+                    .map(|parent| transaction.get(filter, parent))
+                    .collect::<Option<Vec<git2::Oid>>>();
+
+                let normal_parents = some_or!(normal_parents, { return Ok(None) });
+
+                let extra_parents = {
+                    let mut extra_parents = vec![];
+                    for (root, _link_file) in embedded_links {
+                        let embeding = some_or!(
+                            apply_to_commit2(
+                                Filter::new().message("{@}").file(root.join(".link.josh")),
+                                &commit,
+                                transaction
+                            )?,
+                            {
+                                return Ok(None);
+                            }
+                        );
+
+                        #[cfg(feature = "incubating")]
+                        let f = to_filter(Op::Embed(root));
+
+                        let embeding = repo.find_commit(embeding)?;
+                        let r = some_or!(apply_to_commit2(f, &embeding, transaction)?, {
+                            return Ok(None);
+                        });
+
+                        extra_parents.push(r);
+                    }
+
+                    extra_parents
+                };
+
+                let filtered_tree = apply(transaction, filter, Rewrite::from_commit(commit)?)?;
+                let filtered_parent_ids = normal_parents
+                    .into_iter()
+                    .chain(extra_parents)
+                    .collect::<Vec<_>>();
+
+                return Some(history::create_filtered_commit(
+                    commit,
+                    filtered_parent_ids,
+                    filtered_tree,
+                    transaction,
+                    filter,
+                ))
+                .transpose();
+            }
         }
         Op::Workspace(ws_path) => {
             if let Some((redirect, _)) = resolve_workspace_redirect(repo, &commit.tree()?, ws_path)
@@ -1227,7 +1243,7 @@ pub fn apply<'a>(
             Ok(x.with_tree(result_tree))
         }
         #[cfg(feature = "incubating")]
-        Op::Link(_) => {
+        Op::Link(mode) => {
             let roots = get_link_roots(repo, transaction, &x.tree())?;
             let v = links_from_roots(repo, &x.tree(), roots)?;
             let mut result_tree = x.tree().clone();
@@ -1255,8 +1271,13 @@ pub fn apply<'a>(
                     submodule_tree.tree().id(),
                     0o0040000, // Tree mode
                 )?;
-                // The link_file is already a filter with metadata, just serialize it
-                let link_content = as_file(link_file, 0);
+                let effective_mode = mode.clone().unwrap_or_else(|| {
+                    link_file
+                        .get_meta("mode")
+                        .and_then(|s| josh_filter::LinkMode::parse(&s).ok())
+                        .unwrap_or(josh_filter::LinkMode::Pointer)
+                });
+                let link_content = as_file(link_file.with_meta("mode", effective_mode.as_str()), 0);
 
                 result_tree = tree::insert(
                     repo,

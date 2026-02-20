@@ -30,8 +30,8 @@ Test Link filter (identical to Adapt)
   From ../submodule-repo
    * branch            HEAD       -> FETCH_HEAD
 
-  $ josh-filter -s :adapt=submodules:link master --update refs/josh/filter/master
-  377e50d6b49e7b85ec41081885faa5f44f5633df
+  $ josh-filter -s :adapt=submodules:link=embedded master --update refs/josh/filter/master
+  27814d162ba765274145a42ae41d327137422c1b
   [1] :embed=libs
   [1] :unapply(784847e21478f8b81b2fbe8c92e20159a59773a8:/libs)
   [2] :"{@}"
@@ -62,7 +62,7 @@ Test Link on repo without submodules (should be no-op)
 
   $ josh-filter -s :link master --update refs/josh/filter/master
   62f270988ac3ab05a33d0705fb1e4982165f69f2
-  [1] :link=embedded
+  [1] :link
   [1] sequence_number
   $ git ls-tree -r --name-only refs/josh/filter/master
   file.txt

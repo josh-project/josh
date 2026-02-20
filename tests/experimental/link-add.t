@@ -53,7 +53,7 @@
 
 # Verify the branch was created
   $ git show-ref | grep refs/heads/josh-link
-  db68386ec823b1b30b989dc23abfa7d8057e24b0 refs/heads/josh-link
+  918c96051a5a4475a7d8f31c4d0b389cc7b2cc8d refs/heads/josh-link
 
 # Verify HEAD was not updated
   $ git log --oneline
@@ -78,16 +78,17 @@
   
   Turn off this advice by setting config variable advice.detachedHead to false
   
-  HEAD is now at db68386 Add link: libs
+  HEAD is now at 918c960 Add link: libs
   $ git ls-tree -r HEAD
   100644 blob f2376e2bab6c5194410bd8a55630f83f933d2f34\tREADME.md (esc)
-  100644 blob 79305faa39f1fb55e495e7055d8e866a30ba0b10\tlibs/.link.josh (esc)
+  100644 blob 0acb86f56c10bc4f5f4829b850009bf11a0bab9e\tlibs/.link.josh (esc)
   100644 blob dfcaa10d372d874e1cab9c3ba8d0b683099c3826\tlibs/docs/readme.txt (esc)
   100644 blob abe06153eb1e2462265336768a6ecd1164f73ae2\tlibs/libs/lib1.txt (esc)
   100644 blob f03a884ed41c1a40b529001c0b429eed24c5e9e5\tlibs/utils/util1.txt (esc)
   $ cat libs/.link.josh
   :~(
       commit="d27fa3a10cc019e6aa55fc74c1f0893913380e2d"
+      mode="snapshot"
       remote="../remote.git"
       target="HEAD"
   )[
@@ -95,7 +96,7 @@
   ]
 
   $ git checkout master
-  Previous HEAD position was db68386 Add link: libs
+  Previous HEAD position was 918c960 Add link: libs
   Switched to branch 'master'
 
 # Test link add with custom filter and target
@@ -105,7 +106,7 @@
 
 # Verify the branch was created
   $ git show-ref | grep refs/heads/josh-link
-  578df5a6e754ec12b3912e0cd70b54db8e479d74 refs/heads/josh-link
+  1120f9a55617aecbad290061bd459878d29792fe refs/heads/josh-link
 
 # Check the content of the utils link branch
   $ git checkout refs/heads/josh-link
@@ -126,10 +127,11 @@
   
   Turn off this advice by setting config variable advice.detachedHead to false
   
-  HEAD is now at 578df5a Add link: utils
+  HEAD is now at 1120f9a Add link: utils
   $ cat utils/.link.josh
   :~(
       commit="d27fa3a10cc019e6aa55fc74c1f0893913380e2d"
+      mode="snapshot"
       remote="../remote.git"
       target="master"
   )[
@@ -137,7 +139,7 @@
   ]
 
   $ git checkout master
-  Previous HEAD position was 578df5a Add link: utils
+  Previous HEAD position was 1120f9a Add link: utils
   Switched to branch 'master'
 
 # Test path normalization (path with leading slash)
@@ -147,10 +149,10 @@
 
 # Verify path was normalized (no leading slash in branch name)
   $ git show-ref | grep refs/heads/josh-link
-  f67d653810126e1678b6b1dd285c775992251e33 refs/heads/josh-link
+  18ba17c241e5bd6709b1a72a7537461592d1d59b refs/heads/josh-link
 
   $ git show refs/heads/josh-link
-  commit f67d653810126e1678b6b1dd285c775992251e33
+  commit 18ba17c241e5bd6709b1a72a7537461592d1d59b
   Author: JOSH <josh@josh-project.dev>
   Date:   Thu Jan 1 00:00:00 1970 +0000
   
@@ -158,12 +160,13 @@
   
   diff --git a/docs/.link.josh b/docs/.link.josh
   new file mode 100644
-  index 0000000..0ffffee
+  index 0000000..d1fd533
   --- /dev/null
   +++ b/docs/.link.josh
-  @@ -0,0 +1,7 @@
+  @@ -0,0 +1,8 @@
   +:~(
   +    commit="d27fa3a10cc019e6aa55fc74c1f0893913380e2d"
+  +    mode="snapshot"
   +    remote="../remote.git"
   +    target="HEAD"
   +)[
@@ -249,7 +252,7 @@
 
 # Verify the branch was updated
   $ git show-ref | grep refs/heads/josh-link
-  c06b8d238dfee128f21b3ca0905e259c3bf0d121 refs/heads/josh-link
+  2263586b2b74deec84d23baf43d92ce96b866d02 refs/heads/josh-link
 
 # Check the updated content
   $ git checkout refs/heads/josh-link
@@ -270,21 +273,22 @@
   
   Turn off this advice by setting config variable advice.detachedHead to false
   
-  HEAD is now at c06b8d2 Add test link file for fetch testing
+  HEAD is now at 2263586 Add test link file for fetch testing
   $ git ls-tree -r HEAD
   100644 blob f2376e2bab6c5194410bd8a55630f83f933d2f34	README.md (esc)
-  100644 blob 56d8dfb1d09ab62c7130f2cee51fccb59d1b102d\ttest-link/.link.josh (esc)
+  100644 blob 36a20d072b0e5502dad6203627950771eac14d19\ttest-link/.link.josh (esc)
   $ cat test-link/.link.josh
   :~(
       branch="HEAD"
       commit="d27fa3a10cc019e6aa55fc74c1f0893913380e2d"
+      mode="pointer"
       remote="../remote.git"
   )[
       :/test
   ]
 
   $ git checkout master
-  Previous HEAD position was c06b8d2 Add test link file for fetch testing
+  Previous HEAD position was 2263586 Add test link file for fetch testing
   Switched to branch 'master'
 
 # Test fetch with no path (should find all .link.josh files)

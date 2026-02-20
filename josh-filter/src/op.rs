@@ -82,7 +82,7 @@ pub enum Op {
     #[cfg(feature = "incubating")]
     Adapt(String),
     #[cfg(feature = "incubating")]
-    Link(LinkMode),
+    Link(Option<LinkMode>),
     #[cfg(feature = "incubating")]
     Unlink,
     #[cfg(feature = "incubating")]
