@@ -16,6 +16,8 @@ pub enum AuthCommand {
     Login(ForgeArgs),
     /// Log out from a forge
     Logout(ForgeArgs),
+    /// Debug forge authentication
+    Debug(ForgeArgs),
 }
 
 #[derive(Debug, clap::Parser)]
@@ -37,5 +39,36 @@ pub fn handle_auth(args: &AuthArgs) -> anyhow::Result<()> {
         AuthCommand::Logout(forge_args) => match forge_args.forge {
             Forge::Github => josh_github_auth::token::logout(),
         },
+        AuthCommand::Debug(forge_args) => match forge_args.forge {
+            Forge::Github => handle_debug_github_auth(),
+        },
     }
+}
+
+fn handle_debug_github_auth() -> anyhow::Result<()> {
+    let rt = tokio::runtime::Runtime::new().context("failed to create tokio runtime")?;
+
+    rt.block_on(async {
+        let api_connection = crate::forge::github::make_api_connection()
+            .await
+            .context(crate::forge::github::api_connection_hint())?;
+
+        let result = api_connection
+            .get_default_branch("josh-project", "josh")
+            .await?;
+
+        match result {
+            Some((branch, oid)) => {
+                println!(
+                    "API call to get default branch succeeded: {} ({})",
+                    branch, oid
+                );
+            }
+            None => {
+                println!("API call returned no data");
+            }
+        }
+
+        Ok(())
+    })
 }
