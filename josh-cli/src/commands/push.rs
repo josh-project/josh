@@ -209,7 +209,7 @@ pub fn handle_push(
             // Build git push command
             let mut git_push_args = vec!["push"];
 
-            if args.force || push_mode == PushMode::Split {
+            if args.force || push_mode == PushMode::Split || push_mode == PushMode::Stack {
                 git_push_args.push("--force");
             }
 
