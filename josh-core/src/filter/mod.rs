@@ -739,7 +739,7 @@ pub fn apply_to_commit2(
             .transpose();
         }
         #[cfg(feature = "incubating")]
-        Op::Link(mode) if mode == "embedded" => {
+        Op::Link(josh_filter::LinkMode::Embedded) => {
             let normal_parents = commit
                 .parent_ids()
                 .map(|parent| transaction.get(filter, parent))

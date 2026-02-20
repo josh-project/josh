@@ -1,6 +1,34 @@
 use crate::filter::Filter;
 use anyhow::anyhow;
 
+#[cfg(feature = "incubating")]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum LinkMode {
+    Embedded,
+    Snapshot,
+    Pointer,
+}
+
+#[cfg(feature = "incubating")]
+impl LinkMode {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            LinkMode::Embedded => "embedded",
+            LinkMode::Snapshot => "snapshot",
+            LinkMode::Pointer => "pointer",
+        }
+    }
+
+    pub fn parse(s: &str) -> anyhow::Result<Self> {
+        match s {
+            "embedded" => Ok(LinkMode::Embedded),
+            "snapshot" => Ok(LinkMode::Snapshot),
+            "pointer" => Ok(LinkMode::Pointer),
+            _ => Err(anyhow!("Unknown link mode: {:?}", s)),
+        }
+    }
+}
+
 #[derive(Hash, Clone, Debug, PartialEq, PartialOrd, Eq, Ord)]
 pub enum LazyRef {
     Resolved(git2::Oid),
@@ -54,7 +82,7 @@ pub enum Op {
     #[cfg(feature = "incubating")]
     Adapt(String),
     #[cfg(feature = "incubating")]
-    Link(String),
+    Link(LinkMode),
     #[cfg(feature = "incubating")]
     Unlink,
     #[cfg(feature = "incubating")]
