@@ -251,7 +251,7 @@ pub(crate) fn spec2(op: &Op) -> String {
         #[cfg(feature = "incubating")]
         Op::Link(None) => ":link".to_string(),
         #[cfg(feature = "incubating")]
-        Op::Link(Some(mode)) => format!(":link={}", mode.as_str()),
+        Op::Link(Some(mode)) => format!(":link={}", mode),
         #[cfg(feature = "incubating")]
         Op::Export => ":export".to_string(),
         #[cfg(feature = "incubating")]

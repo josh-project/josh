@@ -408,8 +408,8 @@ impl InMemoryBuilder {
             }
             #[cfg(feature = "incubating")]
             Op::Link(mode) => {
-                let params_tree =
-                    self.build_str_params(&[mode.as_ref().map(|m| m.as_str()).unwrap_or("")]);
+                let mode_str = mode.as_ref().map(|m| m.to_string()).unwrap_or_default();
+                let params_tree = self.build_str_params(&[&mode_str]);
                 push_tree_entries(&mut entries, [("link", params_tree)]);
             }
             #[cfg(feature = "incubating")]

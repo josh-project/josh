@@ -10,15 +10,18 @@ pub enum LinkMode {
 }
 
 #[cfg(feature = "incubating")]
-impl LinkMode {
-    pub fn as_str(&self) -> &'static str {
+impl std::fmt::Display for LinkMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            LinkMode::Embedded => "embedded",
-            LinkMode::Snapshot => "snapshot",
-            LinkMode::Pointer => "pointer",
+            LinkMode::Embedded => write!(f, "embedded"),
+            LinkMode::Snapshot => write!(f, "snapshot"),
+            LinkMode::Pointer => write!(f, "pointer"),
         }
     }
+}
 
+#[cfg(feature = "incubating")]
+impl LinkMode {
     pub fn parse(s: &str) -> anyhow::Result<Self> {
         match s {
             "embedded" => Ok(LinkMode::Embedded),
