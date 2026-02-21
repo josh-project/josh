@@ -14,6 +14,15 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        test_suite:
+          - name: tests
+            script: run-tests.sh
+          - name: tests-incubating
+            script: run-tests-incubating.sh
+    name: CI (${{ matrix.test_suite.name }})
     steps:
     - name: Free up disk space
       shell: bash
@@ -39,13 +48,19 @@ jobs:
         fetch-depth: 0
     - name: Get tags
       run: git fetch --tags origin
+    - name: Configure sccache
+      uses: actions/github-script@v7
+      with:
+        script: |
+          core.exportVariable('ACTIONS_RESULTS_URL', process.env.ACTIONS_RESULTS_URL || '');
+          core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
     - name: Build dev image
       uses: docker/build-push-action@v6
       with:
         context: .
         file: Dockerfile
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
+        cache-from: type=gha,scope=${{ matrix.test_suite.name }}
+        cache-to: type=gha,mode=max,scope=${{ matrix.test_suite.name }}
         target: dev-ci
         tags: josh-ci-dev:latest
         push: false
@@ -55,12 +70,9 @@ jobs:
         docker run --rm
         -v ${{ github.workspace }}:/github/workspace
         -w /github/workspace
+        -e ACTIONS_RESULTS_URL
+        -e ACTIONS_RUNTIME_TOKEN
+        -e SCCACHE_GHA_ENABLED=on
+        -e ACTIONS_CACHE_SERVICE_V2=true
         josh-ci-dev:latest
-        bash /github/workspace/.github/workflows/scripts/run-tests.sh
-    - name: Run tests (incubating)
-      run: >-
-        docker run --rm
-        -v ${{ github.workspace }}:/github/workspace
-        -w /github/workspace
-        josh-ci-dev:latest
-        bash /github/workspace/.github/workflows/scripts/run-tests-incubating.sh
+        bash /github/workspace/.github/workflows/scripts/${{ matrix.test_suite.script }}

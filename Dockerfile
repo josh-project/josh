@@ -50,17 +50,6 @@ rm /tmp/rustup-init
 apk del curl
 EOF
 
-FROM rust-base AS dev-planner
-
-# Update check: https://github.com/LukeMathWalker/cargo-chef/releases
-RUN cargo install --version 0.1.72 cargo-chef
-
-WORKDIR /usr/src/josh
-COPY . .
-
-ENV CARGO_TARGET_DIR=/opt/cargo-target
-RUN cargo chef prepare --recipe-path recipe.json
-
 FROM rust-base AS dev
 
 RUN apk add --no-cache \
@@ -72,8 +61,7 @@ RUN apk add --no-cache \
 
 WORKDIR /usr/src/josh
 RUN rustup component add rustfmt
-RUN cargo install --version 0.1.72 cargo-chef &&\
-    cargo install --verbose --version 0.14.0 graphql_client_cli
+RUN cargo install --verbose --version 0.14.0 graphql_client_cli
 
 RUN apk add --no-cache \
     bash \
@@ -138,6 +126,31 @@ EOF
 
 WORKDIR /usr/src/josh
 
+# Update check: https://github.com/mozilla/sccache/releases
+ARG SCCACHE_VERSION=0.14.0
+ARG ARCH
+RUN <<EOF
+set -eux
+
+if [ "$ARCH" = amd64 ]; then
+    sccache_arch=x86_64;
+elif [ "$ARCH" = arm64 ]; then
+    sccache_arch=aarch64;
+else
+    echo "Unsupported arch";
+    exit 1
+fi
+
+curl -sSL https://github.com/mozilla/sccache/releases/download/v${SCCACHE_VERSION}/sccache-v${SCCACHE_VERSION}-${sccache_arch}-unknown-linux-musl.tar.gz \
+    -o /tmp/sccache.tar.gz
+tar -xzf /tmp/sccache.tar.gz -C /tmp
+mv /tmp/sccache-v${SCCACHE_VERSION}-${sccache_arch}-unknown-linux-musl/sccache /usr/local/bin/sccache
+chmod +x /usr/local/bin/sccache
+rm -rf /tmp/sccache*
+EOF
+
+ENV RUSTC_WRAPPER=sccache
+
 FROM dev AS dev-local
 
 RUN <<EOF
@@ -174,33 +187,25 @@ adduser \
     dev
 EOF
 
-FROM dev AS dev-cache
+FROM dev AS dev-ci
 
-COPY --from=dev-planner /usr/src/josh/recipe.json .
-ENV CARGO_TARGET_DIR=/opt/cargo-target
-
-FROM dev-cache AS dev-ci
-
-# Disable incremental builds on CI as the runners are ephemeral
 ENV CARGO_INCREMENTAL=0
+ENV CARGO_TARGET_DIR=/opt/cargo-target
 
 RUN mkdir -p /josh/static && \
     chmod 777 /josh/static
-
-RUN cargo chef cook --workspace --recipe-path recipe.json
 
 RUN mkdir -p josh-ui
 COPY josh-ui/package.json josh-ui/package-lock.json josh-ui/
 RUN cd josh-ui && npm install
 
-FROM dev-cache AS build
+FROM dev AS build
 
-RUN cargo chef cook --release --workspace --recipe-path recipe.json
+ENV CARGO_TARGET_DIR=/opt/cargo-target
 
-COPY Cargo.toml Cargo.lock josh-ui josh-ui/
-RUN cargo build -p josh-ui --release
 COPY . .
 RUN --mount=target=.git,from=git \
+  cargo build -p josh-ui --release && \
   cargo build -p josh-proxy -p josh-ssh-shell --release
 
 ARG ALPINE_VERSION
