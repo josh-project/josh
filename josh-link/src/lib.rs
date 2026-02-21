@@ -167,7 +167,7 @@ pub fn prepare_link_add(
         .with_meta("remote", url.to_string())
         .with_meta("target", target.to_string())
         .with_meta("commit", fetched_commit.to_string())
-        .with_meta("mode", mode.as_str());
+        .with_meta("mode", mode.to_string());
     let link_content = josh_core::filter::as_file(link_filter, 0);
 
     // Create the blob for the .link.josh file

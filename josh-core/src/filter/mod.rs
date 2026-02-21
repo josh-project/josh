@@ -1279,7 +1279,8 @@ pub fn apply<'a>(
                         .and_then(|s| josh_filter::LinkMode::parse(&s).ok())
                         .unwrap_or(josh_filter::LinkMode::Pointer)
                 });
-                let link_content = as_file(link_file.with_meta("mode", effective_mode.as_str()), 0);
+                let link_content =
+                    as_file(link_file.with_meta("mode", effective_mode.to_string()), 0);
 
                 result_tree = tree::insert(
                     repo,
