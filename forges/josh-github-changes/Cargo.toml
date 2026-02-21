@@ -8,4 +8,5 @@ git2.workspace = true
 anyhow.workspace = true
 url.workspace = true
 
+josh-core.workspace = true
 josh-github-graphql.workspace = true

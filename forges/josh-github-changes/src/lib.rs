@@ -17,36 +17,43 @@ pub struct PrInfo {
 /// Uses the @base ref for each change as the base branch. Title and body come from the head commit message.
 pub fn collect_pr_infos(
     repo: &git2::Repository,
-    to_push: &[(String, git2::Oid, String)],
+    to_push: &[josh_core::changes::PushRef],
 ) -> Vec<PrInfo> {
+    #[derive(Default)]
+    struct ByIdEntry {
+        head_branch: Option<String>,
+        base_branch: Option<String>,
+        head_oid: Option<git2::Oid>,
+        base_oid: Option<git2::Oid>,
+    }
+
     fn branch_name(refname: &str) -> &str {
         refname.strip_prefix("refs/heads/").unwrap_or(refname)
     }
-    let mut by_id: HashMap<
-        String,
-        (
-            Option<String>,
-            Option<String>,
-            Option<git2::Oid>,
-            Option<git2::Oid>,
-        ),
-    > = HashMap::new();
-    for (refname, oid, id) in to_push {
-        let branch = branch_name(refname).to_string();
-        if refname.contains("@changes") {
-            let entry = by_id.entry(id.clone()).or_default();
-            entry.0 = Some(branch);
-            entry.2 = Some(*oid);
-        } else if refname.contains("@base") {
-            let entry = by_id.entry(id.clone()).or_default();
-            entry.1 = Some(branch);
-            entry.3 = Some(*oid);
+
+    let mut by_change_id: HashMap<String, ByIdEntry> = HashMap::new();
+    for push_ref in to_push {
+        let branch = branch_name(&push_ref.ref_name).to_string();
+        if push_ref.ref_name.contains("@changes") {
+            let entry = by_change_id.entry(push_ref.change_id.clone()).or_default();
+            entry.head_branch = Some(branch);
+            entry.head_oid = Some(push_ref.oid);
+        } else if push_ref.ref_name.contains("@base") {
+            let entry = by_change_id.entry(push_ref.change_id.clone()).or_default();
+            entry.base_branch = Some(branch);
+            entry.base_oid = Some(push_ref.oid);
         }
     }
-    by_id
+
+    by_change_id
         .into_iter()
-        .filter_map(|(_, (head, base, head_oid, base_oid))| {
-            let (head, base, head_oid, base_oid) = (head?, base?, head_oid?, base_oid?);
+        .filter_map(|(_, entry)| {
+            let (head, base, head_oid, base_oid) = (
+                entry.head_branch?,
+                entry.base_branch?,
+                entry.head_oid?,
+                entry.base_oid?,
+            );
             let commit = repo.find_commit(head_oid).ok()?;
             let raw_message = commit.message().unwrap_or("");
             let message = raw_message.trim_end();
