@@ -99,7 +99,13 @@ impl DeviceAuthFlow {
     /// Step 1: Request device and user codes from GitHub.
     pub async fn request_device_code(&self) -> Result<DeviceCodeResponse> {
         let body = self
-            .send_form(GITHUB_DEVICE_CODE_URL, &[("client_id", &self.client_id)])
+            .send_form(
+                GITHUB_DEVICE_CODE_URL,
+                &[
+                    ("client_id", &self.client_id),
+                    ("scope", &"repo workflow".to_string()),
+                ],
+            )
             .await?;
 
         Ok(serde_json::from_str(&body)?)

@@ -1,8 +1,7 @@
 pub mod device_flow;
 pub mod middleware;
 
-pub const APP_CLIENT_ID: &str = "Iv23liK2qIIUHy5iILiz";
-pub const APP_ID: &str = "2871336";
+pub const APP_CLIENT_ID: &str = "Ov23lijvAWwDiQDwZGhN";
 
 /// Check if the given URL is a GitHub URL.
 pub fn is_github_url(url: &str) -> bool {
