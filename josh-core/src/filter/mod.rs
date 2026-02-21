@@ -1186,7 +1186,8 @@ pub fn apply<'a>(
                         let link_filter = prefix_filter
                             .with_meta("remote", meta.url.clone())
                             .with_meta("target", "HEAD")
-                            .with_meta("commit", commit_oid.to_string());
+                            .with_meta("commit", commit_oid.to_string())
+                            .with_meta("mode", josh_filter::LinkMode::Pointer.to_string());
                         let link_content = as_file(link_filter, 0);
 
                         result_tree = tree::insert(
