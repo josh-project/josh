@@ -1,6 +1,5 @@
 pub mod device_flow;
 pub mod middleware;
-pub mod token;
 
 pub const APP_CLIENT_ID: &str = "Iv23liK2qIIUHy5iILiz";
 pub const APP_ID: &str = "2871336";

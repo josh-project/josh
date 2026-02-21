@@ -33,11 +33,11 @@ pub fn handle_auth(args: &AuthArgs) -> anyhow::Result<()> {
             Forge::Github => {
                 let rt =
                     tokio::runtime::Runtime::new().context("failed to create tokio runtime")?;
-                rt.block_on(josh_github_auth::token::login())
+                rt.block_on(crate::forge::github::login())
             }
         },
         AuthCommand::Logout(forge_args) => match forge_args.forge {
-            Forge::Github => josh_github_auth::token::logout(),
+            Forge::Github => crate::forge::github::logout(),
         },
         AuthCommand::Debug(forge_args) => match forge_args.forge {
             Forge::Github => handle_debug_github_auth(),

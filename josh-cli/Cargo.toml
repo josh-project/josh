@@ -19,12 +19,15 @@ clap.workspace = true
 rs_tracing.workspace = true
 juniper.workspace = true
 git2.workspace = true
-toml.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
 serde.workspace = true
-url.workspace = true
+chrono = { workspace = true, features = ["clock"] }
+dirs.workspace = true
 reqwest.workspace = true
 reqwest-middleware.workspace = true
+
+keyring = { version = "^3.6", features = ["apple-native"] }
+arboard = { version = "^3.6", default-features = false }
 
 josh-core.workspace = true
 josh-github-auth.workspace = true
@@ -35,6 +38,7 @@ josh-link = { workspace = true, optional = true }
 josh-templates.workspace = true
 
 [features]
+codesign = []
 incubating = ["dep:josh-link"]
 
 [[bin]]
