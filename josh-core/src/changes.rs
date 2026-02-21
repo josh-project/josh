@@ -9,6 +9,13 @@ pub enum PushMode {
     Split,
 }
 
+#[derive(Debug, Clone)]
+pub struct PushRef {
+    pub ref_name: String,
+    pub oid: git2::Oid,
+    pub change_id: String,
+}
+
 pub fn baseref_and_options(
     refname: &str,
 ) -> anyhow::Result<(String, String, Vec<String>, PushMode)> {
@@ -43,24 +50,32 @@ pub fn baseref_and_options(
     Ok((baseref, push_to, options, push_mode))
 }
 
-fn add_base_refs(
-    repo: &git2::Repository,
-    refs: &mut Vec<(String, git2::Oid, String)>,
-) -> anyhow::Result<()> {
+fn add_base_refs(repo: &git2::Repository, refs: &mut Vec<PushRef>) -> anyhow::Result<()> {
     let original_refs = std::mem::take(refs);
-    for (r, sha, id) in original_refs.into_iter() {
-        let base_ref = r.replacen("refs/heads/@changes", "refs/heads/@base", 1);
-        refs.push((r, sha, id.clone()));
-        if let Some(parent_sha) = repo.find_commit(sha)?.parent_ids().next() {
-            refs.push((base_ref, parent_sha, id))
+    for push_ref in original_refs.into_iter() {
+        let base_ref = push_ref
+            .ref_name
+            .replacen("refs/heads/@changes", "refs/heads/@base", 1);
+
+        let oid = push_ref.oid;
+        let change_id = push_ref.change_id.clone();
+        refs.push(push_ref);
+
+        if let Some(parent_sha) = repo.find_commit(oid)?.parent_ids().next() {
+            refs.push(PushRef {
+                ref_name: base_ref,
+                oid: parent_sha,
+                change_id,
+            });
         }
     }
+
     Ok(())
 }
 
 fn split_changes(
     repo: &git2::Repository,
-    changes: &mut [(String, git2::Oid, String)],
+    changes: &mut [PushRef],
     base: git2::Oid,
 ) -> anyhow::Result<()> {
     if base == git2::Oid::zero() {
@@ -69,7 +84,7 @@ fn split_changes(
 
     let commits: Vec<git2::Commit> = changes
         .iter()
-        .map(|(_, commit, _)| repo.find_commit(*commit))
+        .map(|push_ref| repo.find_commit(push_ref.oid))
         .collect::<Result<Vec<_>, _>>()?;
 
     let mut trees = vec![repo.find_commit(base)?.tree()?];
@@ -101,12 +116,12 @@ fn split_changes(
                     let new_tree = repo.find_tree(index.write_tree_to(repo)?)?;
                     let new_commit = history::rewrite_commit(
                         repo,
-                        &repo.find_commit(changes[i].1)?,
+                        &repo.find_commit(changes[i].oid)?,
                         &[&parent],
                         filter::Rewrite::from_tree(new_tree),
                         false,
                     )?;
-                    changes[i].1 = new_commit;
+                    changes[i].oid = new_commit;
                     new_bases.push(new_commit);
                 }
                 if moved.len() == changes.len() {
@@ -124,7 +139,7 @@ pub fn changes_to_refs(
     baseref: &str,
     change_author: &str,
     changes: Vec<Change>,
-) -> anyhow::Result<Vec<(String, git2::Oid, String)>> {
+) -> anyhow::Result<Vec<PushRef>> {
     if !change_author.contains('@') {
         return Err(anyhow!(
             "Push option 'author' needs to be set to a valid email address",
@@ -155,17 +170,15 @@ pub fn changes_to_refs(
     Ok(changes
         .into_iter()
         .filter_map(|change| {
-            change.id.map(|id| {
-                (
-                    format!(
-                        "refs/heads/@changes/{}/{}/{}",
-                        baseref.replacen("refs/heads/", "", 1),
-                        change.author,
-                        id,
-                    ),
-                    change.commit,
-                    id.to_string(),
-                )
+            change.id.map(|change_id| PushRef {
+                ref_name: format!(
+                    "refs/heads/@changes/{}/{}/{}",
+                    baseref.replacen("refs/heads/", "", 1),
+                    change.author,
+                    change_id,
+                ),
+                oid: change.commit,
+                change_id,
             })
         })
         .collect())
@@ -181,7 +194,7 @@ pub fn build_to_push(
     ref_with_options: &str,
     oid_to_push: git2::Oid,
     base_oid: git2::Oid,
-) -> anyhow::Result<Vec<(String, git2::Oid, String)>> {
+) -> anyhow::Result<Vec<PushRef>> {
     if let Some(changes) = changes {
         let mut push_refs = changes_to_refs(baseref, author, changes)?;
 
@@ -192,29 +205,29 @@ pub fn build_to_push(
         add_base_refs(repo, &mut push_refs)?;
 
         if push_mode == PushMode::Review {
-            push_refs.push((
-                ref_with_options.to_string(),
-                oid_to_push,
-                "JOSH_PUSH".to_string(),
-            ));
+            push_refs.push(PushRef {
+                ref_name: ref_with_options.to_string(),
+                oid: oid_to_push,
+                change_id: "JOSH_PUSH".into(),
+            });
         }
 
-        push_refs.push((
-            format!(
+        push_refs.push(PushRef {
+            ref_name: format!(
                 "refs/heads/@heads/{}/{}",
                 baseref.replacen("refs/heads/", "", 1),
                 author,
             ),
-            oid_to_push,
-            baseref.replacen("refs/heads/", "", 1),
-        ));
+            oid: oid_to_push,
+            change_id: baseref.replacen("refs/heads/", "", 1),
+        });
 
         Ok(push_refs)
     } else {
-        Ok(vec![(
-            ref_with_options.to_string(),
-            oid_to_push,
-            "JOSH_PUSH".to_string(),
-        )])
+        Ok(vec![PushRef {
+            ref_name: ref_with_options.to_string(),
+            oid: oid_to_push,
+            change_id: "JOSH_PUSH".to_string(),
+        }])
     }
 }

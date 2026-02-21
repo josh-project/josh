@@ -492,18 +492,18 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> anyhow::Result<String> {
 
         let mut resp = vec![];
 
-        for (reference, oid, display_name) in to_push {
+        for push_ref in to_push {
             let force_push = push_mode != PushMode::Normal || push_options.force;
 
             let (text, status) = push_head_url(
                 transaction.repo(),
                 &format!("{}/objects", repo_update.mirror_git_dir),
-                oid,
-                &reference,
+                push_ref.oid,
+                &push_ref.ref_name,
                 &repo_update.remote_url,
                 &repo_update.remote_auth,
                 &repo_update.git_ns,
-                &display_name,
+                &push_ref.change_id,
                 force_push,
             )?;
 
@@ -515,7 +515,7 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> anyhow::Result<String> {
             let mut warnings = josh_core::filter::compute_warnings(
                 &transaction,
                 filter,
-                transaction.repo().find_commit(oid)?.tree()?,
+                transaction.repo().find_commit(push_ref.oid)?.tree()?,
             );
 
             if !warnings.is_empty() {

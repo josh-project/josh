@@ -1,6 +1,6 @@
 use anyhow::{Context, anyhow};
 
-use josh_core::changes::{PushMode, build_to_push};
+use josh_core::changes::{PushMode, PushRef, build_to_push};
 use josh_core::git::{normalize_repo_path, spawn_git_command};
 
 use crate::config::{RemoteConfig, read_remote_config};
@@ -63,19 +63,195 @@ impl PushModeArgs {
     }
 }
 
+struct PreparedPush {
+    remote_name: String,
+    to_push: Vec<PushRef>,
+    push_mode: PushMode,
+    pr_infos: Vec<josh_github_changes::PrInfo>,
+}
+
+fn prepare_push(
+    refspec: &str,
+    remote_name: &str,
+    transaction: &josh_core::cache::Transaction,
+    filter: josh_core::filter::Filter,
+    push_mode: PushMode,
+    author: &str,
+    forge: &Option<Forge>,
+    dry_run: bool,
+) -> anyhow::Result<PreparedPush> {
+    let repo = transaction.repo();
+
+    let (local_ref, remote_ref) = if let Some(colon_pos) = refspec.find(':') {
+        let local = &refspec[..colon_pos];
+        let remote = &refspec[colon_pos + 1..];
+        (local.to_string(), remote.to_string())
+    } else {
+        (refspec.to_string(), refspec.to_string())
+    };
+
+    let remote_ref = remote_ref
+        .strip_prefix("refs/heads/")
+        .unwrap_or(&remote_ref);
+
+    let local_commit = repo
+        .resolve_reference_from_short_name(&local_ref)
+        .with_context(|| format!("Failed to resolve local ref '{}'", local_ref))?
+        .target()
+        .context("Failed to get target of local ref")?;
+
+    // Look up the josh remote reference once and derive both original_target
+    // and old_filtered_oid from it
+    let josh_remote_ref = format!("refs/josh/remotes/{}/{}", remote_name, remote_ref);
+    let (original_target, old_filtered_oid) =
+        if let Ok(remote_reference) = repo.find_reference(&josh_remote_ref) {
+            let josh_remote_oid = remote_reference.target().unwrap_or(git2::Oid::zero());
+
+            let (filtered_oids, errors) = josh_core::filter_refs(
+                transaction,
+                filter,
+                &[(josh_remote_ref.clone(), josh_remote_oid)],
+            );
+
+            if let Some(error) = errors.into_iter().next() {
+                return Err(anyhow!("josh filter error: {}", error.1));
+            }
+
+            let old_filtered = if let Some((_, filtered_oid)) = filtered_oids.first() {
+                *filtered_oid
+            } else {
+                git2::Oid::zero()
+            };
+
+            (josh_remote_oid, old_filtered)
+        } else {
+            (git2::Oid::zero(), git2::Oid::zero())
+        };
+
+    log::debug!("old_filtered_oid: {:?}", old_filtered_oid);
+    log::debug!("original_target: {:?}", original_target);
+
+    let mut changes: Option<Vec<josh_core::Change>> =
+        if push_mode == PushMode::Stack || push_mode == PushMode::Split {
+            Some(vec![])
+        } else {
+            None
+        };
+
+    let unfiltered_oid = josh_core::history::unapply_filter(
+        transaction,
+        filter,
+        original_target,
+        old_filtered_oid,
+        local_commit,
+        josh_core::history::OrphansMode::Keep,
+        None,
+        &mut changes,
+    )
+    .context("Failed to unapply filter")?;
+
+    log::debug!("unfiltered_oid: {:?}", unfiltered_oid);
+
+    let to_push = build_to_push(
+        repo,
+        changes,
+        push_mode,
+        remote_ref,
+        author,
+        remote_ref,
+        unfiltered_oid,
+        original_target,
+    )
+    .context("Failed to build to push")?;
+
+    log::debug!("to_push: {:?}", to_push);
+
+    let pr_infos = if !dry_run
+        && (push_mode == PushMode::Split || push_mode == PushMode::Stack)
+        && *forge == Some(Forge::Github)
+    {
+        josh_github_changes::collect_pr_infos(repo, &to_push)
+    } else {
+        vec![]
+    };
+
+    Ok(PreparedPush {
+        remote_name: remote_name.to_string(),
+        to_push,
+        push_mode,
+        pr_infos,
+    })
+}
+
+fn execute_push(
+    prepared: &PreparedPush,
+    repo_path: &std::path::Path,
+    url: &str,
+    force: bool,
+    atomic: bool,
+    dry_run: bool,
+) -> anyhow::Result<()> {
+    for push_ref in &prepared.to_push {
+        let mut git_push_args = vec!["push"];
+
+        if force || prepared.push_mode == PushMode::Split || prepared.push_mode == PushMode::Stack {
+            git_push_args.push("--force");
+        }
+
+        if atomic {
+            git_push_args.push("--atomic");
+        }
+
+        if dry_run {
+            git_push_args.push("--dry-run");
+        }
+
+        let target_remote = url.to_string();
+        let push_refspec = format!("{}:{}", push_ref.oid, push_ref.ref_name);
+
+        git_push_args.push(&target_remote);
+        git_push_args.push(&push_refspec);
+
+        if let Err(e) = spawn_git_command(repo_path, &git_push_args, &[]) {
+            eprintln!(
+                "Failed to push {} to {}/{}",
+                push_ref.oid, prepared.remote_name, push_ref.ref_name
+            );
+            eprintln!("{}", e);
+        } else {
+            eprintln!(
+                "Pushed {} to {}/{}",
+                push_ref.oid, prepared.remote_name, push_ref.ref_name
+            );
+        }
+    }
+
+    if !prepared.pr_infos.is_empty() {
+        use crate::forge::github;
+
+        let rt = tokio::runtime::Runtime::new().context("Failed to create tokio runtime")?;
+
+        if let Err(e) = rt.block_on(async {
+            let api_connection = github::make_api_connection().await;
+            let api_connection = api_connection.with_context(|| github::api_connection_hint())?;
+
+            josh_github_changes::create_or_update_prs(&api_connection, url, &prepared.pr_infos)
+                .await
+        }) {
+            eprintln!("Warning: failed to create/update GitHub PRs: {}", e);
+        }
+    }
+
+    Ok(())
+}
+
 pub fn handle_push(
     args: &PushArgs,
     transaction: &josh_core::cache::Transaction,
 ) -> anyhow::Result<()> {
-    // Read remote configuration from .git/josh/remotes/<name>.josh
     let repo = transaction.repo();
     let repo_path = normalize_repo_path(repo.path());
 
-    // Determine which remote to use:
-    // - If a remote was explicitly provided, use it.
-    // - Otherwise, fall back to a reasonable default (currently "origin"),
-    //   similar to how `git push` uses the configured upstream when no
-    //   repository argument is given.
     let remote_name = args.remote.as_deref().unwrap_or("origin");
 
     let RemoteConfig {
@@ -86,188 +262,49 @@ pub fn handle_push(
     } = read_remote_config(&repo_path, remote_name)
         .with_context(|| format!("Failed to read remote config for '{}'", remote_name))?;
 
-    // Get the wrapped filter (peel away metadata)
     let filter = filter_with_meta.peel();
 
-    // Get git config for user email
     let config = repo.config().context("Failed to get git config")?;
+    let author = config.get_string("user.email").unwrap_or_default();
+    let push_mode = args.push_mode.mode();
 
-    // If no refspecs provided, push the current branch
     let refspecs = if args.refspecs.is_empty() {
-        // Get the current branch name
         let head = repo.head().context("Failed to get HEAD")?;
-
         let current_branch = head
             .shorthand()
             .context("Failed to get current branch name")?;
-
         vec![current_branch.to_string()]
     } else {
         args.refspecs.clone()
     };
 
-    // For each refspec, we need to:
-    // 1. Get the current commit of the local ref
-    // 2. Use Josh API to unapply the filter
-    // 3. Push the unfiltered result to the remote
+    // Phase 1: Prepare all pushes (pure computation)
+    let prepared_pushes: Vec<PreparedPush> = refspecs
+        .iter()
+        .map(|refspec| {
+            prepare_push(
+                refspec,
+                remote_name,
+                transaction,
+                filter,
+                push_mode,
+                &author,
+                &forge,
+                args.dry_run,
+            )
+        })
+        .collect::<anyhow::Result<Vec<_>>>()?;
 
-    for refspec in &refspecs {
-        let (local_ref, remote_ref) = if let Some(colon_pos) = refspec.find(':') {
-            let local = &refspec[..colon_pos];
-            let remote = &refspec[colon_pos + 1..];
-            (local.to_string(), remote.to_string())
-        } else {
-            // If no colon, push local ref to remote with same name
-            (refspec.clone(), refspec.clone())
-        };
-        let remote_ref = remote_ref
-            .strip_prefix("refs/heads/")
-            .unwrap_or(&remote_ref);
-
-        // Get the current commit of the local ref
-        let local_commit = repo
-            .resolve_reference_from_short_name(&local_ref)
-            .with_context(|| format!("Failed to resolve local ref '{}'", local_ref))?
-            .target()
-            .context("Failed to get target of local ref")?;
-
-        // Look up the josh remote reference once and derive both original_target
-        // and old_filtered_oid from it
-        let josh_remote_ref = format!("refs/josh/remotes/{}/{}", remote_name, remote_ref);
-        let (original_target, old_filtered_oid) =
-            if let Ok(remote_reference) = repo.find_reference(&josh_remote_ref) {
-                let josh_remote_oid = remote_reference.target().unwrap_or(git2::Oid::zero());
-
-                // Apply the filter to get the old filtered oid
-                let (filtered_oids, errors) = josh_core::filter_refs(
-                    transaction,
-                    filter,
-                    &[(josh_remote_ref.clone(), josh_remote_oid)],
-                );
-
-                if let Some(error) = errors.into_iter().next() {
-                    return Err(anyhow!("josh filter error: {}", error.1));
-                }
-
-                let old_filtered = if let Some((_, filtered_oid)) = filtered_oids.first() {
-                    *filtered_oid
-                } else {
-                    git2::Oid::zero()
-                };
-
-                (josh_remote_oid, old_filtered)
-            } else {
-                (git2::Oid::zero(), git2::Oid::zero())
-            };
-
-        log::debug!("old_filtered_oid: {:?}", old_filtered_oid);
-        log::debug!("original_target: {:?}", original_target);
-
-        let push_mode = args.push_mode.mode();
-
-        // Get author email from git config
-        let author = config.get_string("user.email").unwrap_or_default();
-
-        let mut changes: Option<Vec<josh_core::Change>> =
-            if push_mode == PushMode::Stack || push_mode == PushMode::Split {
-                Some(vec![])
-            } else {
-                None
-            };
-
-        // Use Josh API to unapply the filter
-        let unfiltered_oid = josh_core::history::unapply_filter(
-            transaction,
-            filter,
-            original_target,
-            old_filtered_oid,
-            local_commit,
-            josh_core::history::OrphansMode::Keep,
-            None,         // reparent_orphans
-            &mut changes, // change_ids
-        )
-        .context("Failed to unapply filter")?;
-
-        log::debug!("unfiltered_oid: {:?}", unfiltered_oid);
-
-        let to_push = build_to_push(
-            transaction.repo(),
-            changes,
-            push_mode,
-            &remote_ref,
-            &author,
-            &remote_ref,
-            unfiltered_oid,
-            original_target,
-        )
-        .context("Failed to build to push")?;
-
-        log::debug!("to_push: {:?}", to_push);
-
-        // Process each entry in to_push (similar to josh-proxy)
-        for (refname, oid, _) in &to_push {
-            // Build git push command
-            let mut git_push_args = vec!["push"];
-
-            if args.force || push_mode == PushMode::Split || push_mode == PushMode::Stack {
-                git_push_args.push("--force");
-            }
-
-            if args.atomic {
-                git_push_args.push("--atomic");
-            }
-
-            if args.dry_run {
-                git_push_args.push("--dry-run");
-            }
-
-            // Determine the target remote URL
-            let target_remote = url.clone();
-
-            // Create refspec: oid:refname
-            let push_refspec = format!("{}:{}", oid, refname);
-
-            git_push_args.push(&target_remote);
-            git_push_args.push(&push_refspec);
-
-            // Use direct spawn so users can see git push progress
-            if let Err(e) = spawn_git_command(
-                repo.path(),
-                &git_push_args, // Skip "git" since spawn_git_command adds it
-                &[],
-            ) {
-                eprintln!("Failed to push {} to {}/{}", oid, remote_name, refname);
-                eprintln!("{}", e);
-            } else {
-                eprintln!("Pushed {} to {}/{}", oid, remote_name, refname);
-            }
-        }
-
-        // If push mode is split or stacked and forge is GitHub, create or update PRs
-        if !args.dry_run
-            && (push_mode == PushMode::Split || push_mode == PushMode::Stack)
-            && forge == Some(Forge::Github)
-        {
-            let pr_infos = josh_github_changes::collect_pr_infos(repo, &to_push);
-
-            if !pr_infos.is_empty() {
-                use crate::forge::github;
-
-                let rt =
-                    tokio::runtime::Runtime::new().context("Failed to create tokio runtime")?;
-
-                if let Err(e) = rt.block_on(async {
-                    let api_connection = github::make_api_connection().await;
-                    let api_connection =
-                        api_connection.with_context(|| github::api_connection_hint())?;
-
-                    josh_github_changes::create_or_update_prs(&api_connection, &url, &pr_infos)
-                        .await
-                }) {
-                    eprintln!("Warning: failed to create/update GitHub PRs: {}", e);
-                }
-            }
-        }
+    // Phase 2: Execute all pushes (side effects)
+    for prepared in &prepared_pushes {
+        execute_push(
+            prepared,
+            repo.path(),
+            &url,
+            args.force,
+            args.atomic,
+            args.dry_run,
+        )?;
     }
 
     Ok(())
