@@ -57,7 +57,7 @@
 Test Adapt filter - should expand submodule into actual tree content
 
   $ josh-filter -s :adapt=submodules master --update refs/josh/filter/master
-  62b65246e11e6387bbf05ad058578fc51dd11444
+  71cd16ff3e379f18440c941c375ddacae56e4a8d
   [3] :adapt=submodules
   [3] sequence_number
   $ git log --graph --pretty=%s refs/josh/filter/master
@@ -69,11 +69,11 @@ Test Adapt filter - should expand submodule into actual tree content
   main.txt
 
   $ git ls-tree refs/josh/filter/master
-  040000 tree e3e25508240c39000b1d9cc7f88e94984b4dd0de\tlibs (esc)
+  040000 tree 00f86aede4e175a087264f1274397ba16334ea4a\tlibs (esc)
   100644 blob bcb9dcad21591bd9284afbb6c21e6d69eafe8f15\tmain.txt (esc)
 
   $ git ls-tree refs/josh/filter/master libs
-  040000 tree e3e25508240c39000b1d9cc7f88e94984b4dd0de\tlibs (esc)
+  040000 tree 00f86aede4e175a087264f1274397ba16334ea4a\tlibs (esc)
 
   $ git ls-tree refs/josh/filter/master libs/foo
 
@@ -122,7 +122,7 @@ Test Adapt with multiple submodules
   	url = ../another-submodule
 
   $ josh-filter -s :adapt=submodules master --update refs/josh/filter/master
-  54bad69964a841c5df80b117b962cddfc89bb582
+  4e48d5817374b1950f15c4a8d135863594596dfe
   [4] :adapt=submodules
   [4] sequence_number
   $ git log --graph --pretty=%s refs/josh/filter/master
@@ -136,7 +136,7 @@ Test Adapt with multiple submodules
   modules/another/.link.josh
 
   $ git ls-tree refs/josh/filter/master modules
-  040000 tree 2b782bf31ccc3a38a9d1d04092289fe08dd8ae5a\tmodules (esc)
+  040000 tree 87e00852815f55431ea15f898ed31248c24217ca\tmodules (esc)
 
   $ git show refs/josh/filter/master:modules/another/another.txt
   fatal: path 'modules/another/another.txt' exists on disk, but not in 'refs/josh/filter/master'
@@ -166,7 +166,7 @@ Test Adapt with submodule changes - add commits to submodule and update
   $ git commit -m "update libs submodule" 1> /dev/null
 
   $ josh-filter -s :adapt=submodules master --update refs/josh/filter/master
-  317f9cc9e9df3966d95430b343c8496dbd0190fd
+  814db71a8c61b7ee00b175cc9aa64b73aaef37b9
   [5] :adapt=submodules
   [5] sequence_number
   $ git log --graph --pretty=%s refs/josh/filter/master
