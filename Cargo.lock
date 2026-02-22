@@ -2803,6 +2803,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "josh-changes"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "git2",
+ "josh-core",
+]
+
+[[package]]
 name = "josh-cli"
 version = "22.4.15"
 dependencies = [
@@ -2814,6 +2823,7 @@ dependencies = [
  "dirs",
  "env_logger",
  "git2",
+ "josh-changes",
  "josh-core",
  "josh-github-auth",
  "josh-github-changes",
@@ -2928,7 +2938,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "git2",
- "josh-core",
+ "josh-changes",
  "josh-github-graphql",
  "url",
 ]
@@ -3029,6 +3039,7 @@ dependencies = [
  "gix-transport",
  "hex",
  "indoc",
+ "josh-changes",
  "josh-core",
  "josh-graphql",
  "josh-rpc",

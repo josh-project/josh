@@ -29,6 +29,7 @@ reqwest-middleware.workspace = true
 keyring = { version = "^3.6", features = ["apple-native"] }
 arboard = { version = "^3.6", default-features = false }
 
+josh-changes.workspace = true
 josh-core.workspace = true
 josh-github-auth.workspace = true
 josh-github-graphql.workspace = true

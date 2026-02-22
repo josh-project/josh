@@ -2,8 +2,8 @@ use crate::service::{JoshProxyService, UpstreamProtocol};
 use crate::{FetchError, auth, proxy_commit_signature, run_git_with_auth};
 use anyhow::{Context, anyhow};
 
+use josh_changes::{PushMode, baseref_and_options, build_to_push};
 use josh_core::cache::{CacheStack, TransactionContext};
-use josh_core::changes::{PushMode, baseref_and_options, build_to_push};
 
 use std::path::PathBuf;
 use std::sync::Arc;

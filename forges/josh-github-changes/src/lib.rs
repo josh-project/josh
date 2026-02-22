@@ -15,10 +15,7 @@ pub struct PrInfo {
 
 /// Collect PR info from a set of refs to push.
 /// Uses the @base ref for each change as the base branch. Title and body come from the head commit message.
-pub fn collect_pr_infos(
-    repo: &git2::Repository,
-    to_push: &[josh_core::changes::PushRef],
-) -> Vec<PrInfo> {
+pub fn collect_pr_infos(repo: &git2::Repository, to_push: &[josh_changes::PushRef]) -> Vec<PrInfo> {
     #[derive(Default)]
     struct ByIdEntry {
         head_branch: Option<String>,
