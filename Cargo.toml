@@ -16,6 +16,7 @@ members = [
     "josh-ui",
     "josh-starlark",
     "josh-cq",
+    "josh-changes",
 
     "forges/josh-github-changes",
     "forges/josh-github-graphql",
@@ -69,6 +70,7 @@ graphql_client_codegen = { version = "^0.16.0" }
 axum-cgi = { path = "axum-cgi" }
 hyper-reverse-proxy = { path = "hyper-reverse-proxy" }
 josh-filter = { path = "josh-filter" }
+josh-changes = { path = "josh-changes" }
 josh-core = { path = "josh-core" }
 josh-graphql = { path = "josh-graphql" }
 josh-link = { path = "josh-link" }

@@ -51,6 +51,7 @@ juniper.workspace = true
 git2.workspace = true
 url.workspace = true
 
+josh-changes.workspace = true
 josh-rpc.workspace = true
 josh-core.workspace = true
 josh-templates.workspace = true

@@ -1,5 +1,5 @@
-use super::*;
 use anyhow::anyhow;
+use josh_core::Change;
 
 #[derive(PartialEq, Clone, Copy, Debug)]
 pub enum PushMode {
@@ -89,7 +89,7 @@ fn split_changes(
     Ok(())
 }
 
-pub(crate) fn downstack(
+pub fn downstack(
     repo: &git2::Repository,
     base: git2::Oid,
     change: git2::Oid,
@@ -155,11 +155,11 @@ pub(crate) fn downstack(
         let mut index = repo.apply_to_tree(&current_base.tree()?, &inter_diff, None)?;
         let new_tree = repo.find_tree(index.write_tree_to(repo)?)?;
 
-        let new_oid = history::rewrite_commit(
+        let new_oid = josh_core::history::rewrite_commit(
             repo,
             intermediate,
             &[&current_base],
-            filter::Rewrite::from_tree(new_tree),
+            josh_core::filter::Rewrite::from_tree(new_tree),
             false,
         )?;
         current_base = repo.find_commit(new_oid)?;
@@ -169,11 +169,11 @@ pub(crate) fn downstack(
     let mut index = repo.apply_to_tree(&current_base.tree()?, &change_diff, None)?;
     let new_tree = repo.find_tree(index.write_tree_to(repo)?)?;
 
-    history::rewrite_commit(
+    josh_core::history::rewrite_commit(
         repo,
         &change_commit,
         &[&current_base],
-        filter::Rewrite::from_tree(new_tree),
+        josh_core::filter::Rewrite::from_tree(new_tree),
         false,
     )
 }

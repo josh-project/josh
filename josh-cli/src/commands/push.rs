@@ -1,6 +1,6 @@
 use anyhow::{Context, anyhow};
 
-use josh_core::changes::{PushMode, PushRef, build_to_push};
+use josh_changes::{PushMode, PushRef, build_to_push};
 use josh_core::git::{normalize_repo_path, spawn_git_command};
 
 use crate::config::{RemoteConfig, read_remote_config};
