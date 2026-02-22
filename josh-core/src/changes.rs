@@ -82,57 +82,100 @@ fn split_changes(
         return Ok(());
     }
 
-    let commits: Vec<git2::Commit> = changes
-        .iter()
-        .map(|push_ref| repo.find_commit(push_ref.oid))
-        .collect::<Result<Vec<_>, _>>()?;
-
-    let mut trees = vec![repo.find_commit(base)?.tree()?];
-    trees.extend(
-        commits
-            .iter()
-            .map(|commit| commit.tree())
-            .collect::<Result<Vec<_>, _>>()?,
-    );
-
-    let diffs: Vec<git2::Diff> = trees
-        .windows(2)
-        .map(|window| repo.diff_tree_to_tree(Some(&window[0]), Some(&window[1]), None))
-        .collect::<Result<Vec<_>, _>>()?;
-
-    let mut moved = std::collections::HashSet::new();
-    let mut bases = vec![base];
-    for _ in 0..changes.len() {
-        let mut new_bases = vec![];
-        for base in bases.iter() {
-            for i in 0..diffs.len() {
-                if moved.contains(&i) {
-                    continue;
-                }
-                let diff = &diffs[i];
-                let parent = repo.find_commit(*base)?;
-                if let Ok(mut index) = repo.apply_to_tree(&parent.tree()?, diff, None) {
-                    moved.insert(i);
-                    let new_tree = repo.find_tree(index.write_tree_to(repo)?)?;
-                    let new_commit = history::rewrite_commit(
-                        repo,
-                        &repo.find_commit(changes[i].oid)?,
-                        &[&parent],
-                        filter::Rewrite::from_tree(new_tree),
-                        false,
-                    )?;
-                    changes[i].oid = new_commit;
-                    new_bases.push(new_commit);
-                }
-                if moved.len() == changes.len() {
-                    return Ok(());
-                }
-            }
-        }
-        bases = new_bases;
+    for push_ref in changes.iter_mut() {
+        push_ref.oid = downstack(repo, base, push_ref.oid)?;
     }
 
     Ok(())
+}
+
+pub(crate) fn downstack(
+    repo: &git2::Repository,
+    base: git2::Oid,
+    change: git2::Oid,
+) -> anyhow::Result<git2::Oid> {
+    if !repo.graph_descendant_of(change, base)? {
+        return Err(anyhow!(
+            "change {} is not a descendant of base {}",
+            change,
+            base
+        ));
+    }
+
+    // Collect commits from base to change (exclusive of base, inclusive of change)
+    let mut walk = repo.revwalk()?;
+    walk.simplify_first_parent()?;
+    walk.set_sorting(git2::Sort::REVERSE | git2::Sort::TOPOLOGICAL)?;
+    walk.push(change)?;
+    walk.hide(base)?;
+
+    let oids: Vec<git2::Oid> = walk.collect::<Result<Vec<_>, _>>()?;
+
+    if oids.is_empty() {
+        return Ok(change);
+    }
+
+    let mut commits: Vec<git2::Commit> = oids
+        .into_iter()
+        .map(|oid| repo.find_commit(oid))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    // The last commit is `change`; split it off from the intermediates
+    let change_commit = commits.pop().unwrap();
+    let change_parent = change_commit.parent(0)?;
+
+    // Compute d_change: the diff introduced by the change commit itself
+    let change_diff = repo.diff_tree_to_tree(
+        Some(&change_parent.tree()?),
+        Some(&change_commit.tree()?),
+        None,
+    )?;
+
+    // Walk through intermediates, including only those needed for d_change to apply
+    let mut current_base = repo.find_commit(base)?;
+
+    for intermediate in &commits {
+        // If d_change already applies to the current base tree, we can stop
+        if repo
+            .apply_to_tree(&current_base.tree()?, &change_diff, None)
+            .is_ok()
+        {
+            break;
+        }
+
+        // d_change does not apply yet; we need this intermediate commit.
+        // Rebase it onto current_base by applying its diff.
+        let inter_parent = intermediate.parent(0)?;
+        let inter_diff = repo.diff_tree_to_tree(
+            Some(&inter_parent.tree()?),
+            Some(&intermediate.tree()?),
+            None,
+        )?;
+
+        let mut index = repo.apply_to_tree(&current_base.tree()?, &inter_diff, None)?;
+        let new_tree = repo.find_tree(index.write_tree_to(repo)?)?;
+
+        let new_oid = history::rewrite_commit(
+            repo,
+            intermediate,
+            &[&current_base],
+            filter::Rewrite::from_tree(new_tree),
+            false,
+        )?;
+        current_base = repo.find_commit(new_oid)?;
+    }
+
+    // Apply d_change on top of the minimal base and create the new change commit
+    let mut index = repo.apply_to_tree(&current_base.tree()?, &change_diff, None)?;
+    let new_tree = repo.find_tree(index.write_tree_to(repo)?)?;
+
+    history::rewrite_commit(
+        repo,
+        &change_commit,
+        &[&current_base],
+        filter::Rewrite::from_tree(new_tree),
+        false,
+    )
 }
 
 pub fn changes_to_refs(
