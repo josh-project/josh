@@ -24,7 +24,6 @@ pub mod git;
 pub mod history;
 pub mod housekeeping;
 pub mod link;
-pub mod shell;
 pub mod submodules;
 
 #[derive(Debug)]

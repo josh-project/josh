@@ -6,6 +6,7 @@ pub mod housekeeping;
 pub mod http;
 pub mod serve;
 pub mod service;
+mod shell;
 pub mod trace;
 pub mod upstream;
 
@@ -44,7 +45,7 @@ pub fn run_git_with_auth(
     remote_auth: &RemoteAuth,
     alt_object_dir: Option<String>,
 ) -> anyhow::Result<(String, String, i32)> {
-    let shell = josh_core::shell::Shell {
+    let shell = shell::Shell {
         cwd: cwd.to_owned(),
     };
 

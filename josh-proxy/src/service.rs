@@ -298,7 +298,7 @@ pub fn make_upstream(remotes: &[cli::Remote]) -> anyhow::Result<JoshProxyUpstrea
     }
 }
 
-fn create_repo_base(path: &PathBuf) -> anyhow::Result<josh_core::shell::Shell> {
+fn create_repo_base(path: &PathBuf) -> anyhow::Result<crate::shell::Shell> {
     std::fs::create_dir_all(path).expect("can't create_dir_all");
 
     if gix::open(path).is_err() {
@@ -327,7 +327,7 @@ fn create_repo_base(path: &PathBuf) -> anyhow::Result<josh_core::shell::Shell> {
         ("credential", &[("helper", credential_helper)]),
     ];
 
-    let shell = josh_core::shell::Shell {
+    let shell = crate::shell::Shell {
         cwd: path.to_path_buf(),
     };
 

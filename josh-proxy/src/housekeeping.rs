@@ -1,4 +1,5 @@
-use josh_core::{housekeeping, shell};
+use crate::shell;
+use josh_core::housekeeping;
 use std::path::Path;
 
 macro_rules! trace_object_count {
