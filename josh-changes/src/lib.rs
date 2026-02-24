@@ -1,3 +1,5 @@
+pub mod forest;
+
 use anyhow::anyhow;
 use josh_core::Change;
 
