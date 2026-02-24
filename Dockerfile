@@ -149,8 +149,6 @@ chmod +x /usr/local/bin/sccache
 rm -rf /tmp/sccache*
 EOF
 
-ENV RUSTC_WRAPPER=sccache
-
 FROM dev AS dev-local
 
 RUN <<EOF
@@ -189,6 +187,7 @@ EOF
 
 FROM dev AS dev-ci
 
+ENV RUSTC_WRAPPER=sccache
 ENV CARGO_INCREMENTAL=0
 ENV CARGO_TARGET_DIR=/opt/cargo-target
 
