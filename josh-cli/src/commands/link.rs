@@ -63,6 +63,10 @@ pub struct LinkPushArgs {
     /// Path of the link to push (e.g. /docs or docs)
     #[arg()]
     pub path: String,
+
+    /// Force push, overwriting the remote branch
+    #[arg(long, short = 'f')]
+    pub force: bool,
 }
 
 pub fn handle_link(
@@ -443,7 +447,12 @@ fn handle_link_push(
     } else {
         target.clone()
     };
-    let refspec = format!("{}:{}", exported_commit, push_ref);
+    let refspec = format!(
+        "{}{}:{}",
+        if args.force { "+" } else { "" },
+        exported_commit,
+        push_ref
+    );
 
     josh_core::git::spawn_git_command(repo.path(), &["push", &remote, &refspec], &[])
         .with_context(|| format!("Failed to push to '{}'", remote))?;
