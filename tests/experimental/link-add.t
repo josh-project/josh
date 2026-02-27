@@ -14,7 +14,7 @@
   $ echo "documentation" > docs/readme.txt
   $ git add .
   $ git commit -m "Initial commit"
-  [master (root-commit) *] Initial commit (glob)
+  [master (root-commit) d27fa3a] Initial commit
    3 files changed, 3 insertions(+)
    create mode 100644 docs/readme.txt
    create mode 100644 libs/lib1.txt
@@ -48,16 +48,21 @@
 
 # Test basic link add with default filter and target
   $ josh link add libs ../remote.git
+  No local content at 'libs', fetching from remote...
+  From ../remote
+   * branch            HEAD       -> FETCH_HEAD
+  
+  Using fetched commit d27fa3a10cc019e6aa55fc74c1f0893913380e2d
   Added link 'libs' with URL '../remote.git', filter ':/', target 'HEAD', and mode 'snapshot'
   Created branch: refs/heads/josh-link
 
 # Verify the branch was created
   $ git show-ref | grep refs/heads/josh-link
-  918c96051a5a4475a7d8f31c4d0b389cc7b2cc8d refs/heads/josh-link
+  20159bad8939bce913e384abe37f12fef436bbaa refs/heads/josh-link
 
 # Verify HEAD was not updated
   $ git log --oneline
-  * Initial commit (glob)
+  3eb5c75 Initial commit
 
 # Check the content of the link branch
   $ git checkout refs/heads/josh-link
@@ -78,13 +83,11 @@
   
   Turn off this advice by setting config variable advice.detachedHead to false
   
-  HEAD is now at 918c960 Add link: libs
+  HEAD is now at 20159ba Add link: libs
+
   $ git ls-tree -r HEAD
   100644 blob f2376e2bab6c5194410bd8a55630f83f933d2f34\tREADME.md (esc)
   100644 blob 0acb86f56c10bc4f5f4829b850009bf11a0bab9e\tlibs/.link.josh (esc)
-  100644 blob dfcaa10d372d874e1cab9c3ba8d0b683099c3826\tlibs/docs/readme.txt (esc)
-  100644 blob abe06153eb1e2462265336768a6ecd1164f73ae2\tlibs/libs/lib1.txt (esc)
-  100644 blob f03a884ed41c1a40b529001c0b429eed24c5e9e5\tlibs/utils/util1.txt (esc)
   $ cat libs/.link.josh
   :~(
       commit="d27fa3a10cc019e6aa55fc74c1f0893913380e2d"
@@ -96,17 +99,22 @@
   ]
 
   $ git checkout master
-  Previous HEAD position was 918c960 Add link: libs
+  Previous HEAD position was 20159ba Add link: libs
   Switched to branch 'master'
 
 # Test link add with custom filter and target
   $ josh link add utils ../remote.git :/utils --target master
+  No local content at 'utils', fetching from remote...
+  From ../remote
+   * branch            master     -> FETCH_HEAD
+  
+  Using fetched commit d27fa3a10cc019e6aa55fc74c1f0893913380e2d
   Added link 'utils' with URL '../remote.git', filter ':/utils', target 'master', and mode 'snapshot'
   Created branch: refs/heads/josh-link
 
 # Verify the branch was created
   $ git show-ref | grep refs/heads/josh-link
-  1120f9a55617aecbad290061bd459878d29792fe refs/heads/josh-link
+  18e1f2757e519eadfa53bf03e51fb55e5e579808 refs/heads/josh-link
 
 # Check the content of the utils link branch
   $ git checkout refs/heads/josh-link
@@ -127,7 +135,7 @@
   
   Turn off this advice by setting config variable advice.detachedHead to false
   
-  HEAD is now at 1120f9a Add link: utils
+  HEAD is now at 18e1f27 Add link: utils
   $ cat utils/.link.josh
   :~(
       commit="d27fa3a10cc019e6aa55fc74c1f0893913380e2d"
@@ -139,20 +147,25 @@
   ]
 
   $ git checkout master
-  Previous HEAD position was 1120f9a Add link: utils
+  Previous HEAD position was 18e1f27 Add link: utils
   Switched to branch 'master'
 
 # Test path normalization (path with leading slash)
   $ josh link add /docs ../remote.git :/docs
+  No local content at 'docs', fetching from remote...
+  From ../remote
+   * branch            HEAD       -> FETCH_HEAD
+  
+  Using fetched commit d27fa3a10cc019e6aa55fc74c1f0893913380e2d
   Added link 'docs' with URL '../remote.git', filter ':/docs', target 'HEAD', and mode 'snapshot'
   Created branch: refs/heads/josh-link
 
 # Verify path was normalized (no leading slash in branch name)
   $ git show-ref | grep refs/heads/josh-link
-  18ba17c241e5bd6709b1a72a7537461592d1d59b refs/heads/josh-link
+  f185ec3e91d12287f1f12ac9421d09777fb279a3 refs/heads/josh-link
 
   $ git show refs/heads/josh-link
-  commit 18ba17c241e5bd6709b1a72a7537461592d1d59b
+  commit f185ec3e91d12287f1f12ac9421d09777fb279a3
   Author: JOSH <josh@josh-project.dev>
   Date:   Thu Jan 1 00:00:00 1970 +0000
   
@@ -172,13 +185,8 @@
   +)[
   +    :/docs
   +]
-  diff --git a/docs/readme.txt b/docs/readme.txt
-  new file mode 100644
-  index 0000000..dfcaa10
-  --- /dev/null
-  +++ b/docs/readme.txt
-  @@ -0,0 +1 @@
-  +documentation
+
+
 
 
 
@@ -215,6 +223,7 @@
     add     Add a link with optional filter and target branch
     fetch   Fetch all SHAs referenced in .link.josh files across history
     update  Fetch the latest commit from each linked remote and update .link.josh files
+    push    Push the linked repository to its remote using the :export filter
     help    Print this message or the help of the given subcommand(s)
   
   Options:
@@ -241,7 +250,7 @@
   $ echo ':~(branch="HEAD",commit="d27fa3a10cc019e6aa55fc74c1f0893913380e2d",remote="../remote.git")[:/test]' > test-link/.link.josh
   $ git add test-link/.link.josh
   $ git commit -m "Add test link file for fetch testing"
-  [master *] Add test link file for fetch testing (glob)
+  [master c3f3beb] Add test link file for fetch testing
    1 file changed, 1 insertion(+)
    create mode 100644 test-link/.link.josh
 
@@ -249,6 +258,9 @@
   $ josh link update :/test-link
   Found 1 link file(s) to update
   Fetching HEAD from ../remote.git
+  From ../remote
+   * branch            HEAD       -> FETCH_HEAD
+  
   Updated 1 link file(s)
   Updated branch: refs/heads/josh-link
 
@@ -297,6 +309,9 @@
   $ josh link update
   Found 1 link file(s) to update
   Fetching HEAD from ../remote.git
+  From ../remote
+   * branch            HEAD       -> FETCH_HEAD
+  
   Updated 1 link file(s)
   Updated branch: refs/heads/josh-link
 

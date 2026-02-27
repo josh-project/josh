@@ -104,6 +104,12 @@ impl Filter {
         self.chain(to_filter(Op::Starlark(path.into(), subfilter)))
     }
 
+    /// Chain a filter that removes the `.link.josh` marker to produce a standalone history
+    #[cfg(feature = "incubating")]
+    pub fn export(self) -> Filter {
+        self.chain(to_filter(Op::Export))
+    }
+
     /// Chain a filter that matches files by glob pattern
     /// Only files matching the pattern are included in the result
     pub fn pattern(self, p: impl Into<String>) -> Filter {
@@ -238,6 +244,10 @@ impl std::fmt::Debug for Filter {
 /// sequentially; so f(0) -> f(1) -> ... -> f(N)
 pub fn compose(filters: &[Filter]) -> Filter {
     opt::optimize(persist::to_filter(Op::Compose(filters.to_vec())))
+}
+
+pub fn invert(filter: Filter) -> anyhow::Result<Filter> {
+    opt::invert(filter)
 }
 
 /// Create a sequence_number filter used for tracking commit sequence numbers
