@@ -240,6 +240,10 @@ pub fn compose(filters: &[Filter]) -> Filter {
     opt::optimize(persist::to_filter(Op::Compose(filters.to_vec())))
 }
 
+pub fn invert(filter: Filter) -> anyhow::Result<Filter> {
+    opt::invert(filter)
+}
+
 /// Create a sequence_number filter used for tracking commit sequence numbers
 pub fn sequence_number() -> Filter {
     Filter::from_oid(git2::Oid::zero())
