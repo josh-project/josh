@@ -5,14 +5,6 @@ use josh_core::filter::tree;
 use std::collections::HashSet;
 use std::path::PathBuf;
 
-/// Result from adding a link to a repository
-pub struct AddLinkResult {
-    /// Commit with .link.josh file added
-    pub commit_with_link: git2::Oid,
-    /// Commit after applying the link filter
-    pub filtered_commit: git2::Oid,
-}
-
 /// Prepared link addition, ready to be finalized
 pub struct PreparedLinkAdd {
     tree_oid: git2::Oid,
@@ -20,41 +12,26 @@ pub struct PreparedLinkAdd {
 }
 
 impl PreparedLinkAdd {
-    /// Create commit and apply the link filter
-    ///
-    /// This is the typical usage for `josh link add`
     pub fn into_commit(
         self,
         transaction: &josh_core::cache::Transaction,
         head_commit: &git2::Commit,
         signature: &git2::Signature,
-    ) -> anyhow::Result<AddLinkResult> {
+    ) -> anyhow::Result<git2::Oid> {
         let repo = transaction.repo();
         let tree = repo
             .find_tree(self.tree_oid)
             .context("Failed to find tree")?;
 
-        let commit_with_link = repo
-            .commit(
-                None,
-                signature,
-                signature,
-                &format!("Add link: {}", self.path.display()),
-                &tree,
-                &[head_commit],
-            )
-            .context("Failed to create commit")?;
-
-        let link_filter =
-            josh_core::filter::parse(":link").context("Failed to parse link filter")?;
-
-        let filtered_commit = josh_core::filter_commit(transaction, link_filter, commit_with_link)
-            .context("Failed to apply link filter")?;
-
-        Ok(AddLinkResult {
-            commit_with_link,
-            filtered_commit,
-        })
+        repo.commit(
+            None,
+            signature,
+            signature,
+            &format!("Add link: {}", self.path.display()),
+            &tree,
+            &[head_commit],
+        )
+        .context("Failed to create commit")
     }
 
     /// Get tree OID for custom commit creation
@@ -200,8 +177,9 @@ pub fn update_links(
     head_commit: &git2::Commit,
     links_to_update: Vec<(PathBuf, git2::Oid)>,
     signature: &git2::Signature,
-) -> anyhow::Result<UpdateLinksResult> {
+) -> anyhow::Result<Option<UpdateLinksResult>> {
     let head_tree = head_commit.tree().context("Failed to get HEAD tree")?;
+    let head_tree_id = head_tree.id();
 
     // Find all link files to get their current metadata
     let link_files =
@@ -245,6 +223,10 @@ pub fn update_links(
             })?;
     }
 
+    if new_tree.id() == head_tree_id {
+        return Ok(None);
+    }
+
     // Create a new commit with the updated tree
     let commit_with_updates = repo
         .commit(
@@ -270,8 +252,8 @@ pub fn update_links(
     let filtered_commit = josh_core::filter_commit(transaction, link_filter, commit_with_updates)
         .context("Failed to apply :link filter")?;
 
-    Ok(UpdateLinksResult {
+    Ok(Some(UpdateLinksResult {
         commit_with_updates,
         filtered_commit,
-    })
+    }))
 }
