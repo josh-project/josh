@@ -40,7 +40,7 @@ async fn main() -> anyhow::Result<()> {
     // Make an authenticated request to the GitHub API
     let resp = client
         .get("https://api.github.com/user")
-        .header("User-Agent", "josh-github-auth-example")
+        .header(reqwest::header::USER_AGENT, "device-flow-example")
         .send()
         .await?;
 

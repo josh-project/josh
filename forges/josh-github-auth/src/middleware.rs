@@ -7,6 +7,7 @@ use tokio::time::Instant;
 
 use std::time::Duration;
 
+use crate::app_flow::GithubAppAuth;
 use crate::device_flow::{AccessTokenResponse, DeviceAuthFlow};
 
 struct TokenState {
@@ -22,7 +23,7 @@ enum Command {
 
 const EXPIRY_BUFFER: Duration = Duration::from_secs(30);
 
-async fn app_token_actor_loop(mut state: TokenState, mut rx: mpsc::UnboundedReceiver<Command>) {
+async fn device_flow_actor_loop(mut state: TokenState, mut rx: mpsc::UnboundedReceiver<Command>) {
     while let Some(cmd) = rx.recv().await {
         match cmd {
             Command::GetToken(reply) => {
@@ -51,6 +52,13 @@ async fn maybe_refresh_and_get_token(state: &mut TokenState) -> Result<String> {
     Ok(state.access_token.clone())
 }
 
+async fn app_flow_actor_loop(mut auth: GithubAppAuth, mut rx: mpsc::UnboundedReceiver<Command>) {
+    while let Some(Command::GetToken(reply)) = rx.recv().await {
+        let result = auth.get_or_refresh().await;
+        let _ = reply.send(result);
+    }
+}
+
 pub struct GithubAuthMiddleware {
     sender: mpsc::UnboundedSender<Command>,
 }
@@ -70,9 +78,22 @@ impl GithubAuthMiddleware {
             flow: DeviceAuthFlow::new(client_id),
         };
 
-        tokio::spawn(app_token_actor_loop(state, receiver));
+        tokio::spawn(device_flow_actor_loop(state, receiver));
 
         Self { sender }
+    }
+
+    pub async fn from_github_app(
+        app_id: String,
+        installation_id: String,
+        key: SecretValue,
+    ) -> Result<Self> {
+        let auth = GithubAppAuth::authenticate(app_id, installation_id, key).await?;
+        let (sender, receiver) = mpsc::unbounded_channel();
+
+        tokio::spawn(app_flow_actor_loop(auth, receiver));
+
+        Ok(Self { sender })
     }
 
     pub fn from_token(token: impl Into<SecretValue>) -> Self {
