@@ -1,0 +1,14 @@
+query GetRulesetRequiredChecks($rulesetId: ID!) {
+  node(id: $rulesetId) {
+    __typename
+    ... on RepositoryRuleset {
+      id
+      name
+      rules(first: 100, type: REQUIRED_STATUS_CHECKS) {
+        nodes {
+          ..._RequiredStatusChecksInfo
+        }
+      }
+    }
+  }
+}

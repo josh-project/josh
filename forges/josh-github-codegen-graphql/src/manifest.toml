@@ -24,3 +24,9 @@ fragments = ["check_run_info"]
 [queries.mark_pull_request_ready_for_review]
 
 [queries.close_pull_request]
+
+[queries.get_repository_rulesets]
+fragments = ["ruleset_info"]
+
+[queries.get_ruleset_required_checks]
+fragments = ["required_status_checks_info", "status_checks_params"]
