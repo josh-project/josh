@@ -18,6 +18,8 @@ form_urlencoded.workspace = true
 url.workspace = true
 
 secret-vault-value = "^1"
+jsonwebtoken.workspace = true
+chrono.workspace = true
 
 [dev-dependencies]
 tokio.workspace = true
