@@ -61,6 +61,7 @@ sha2 = "^0.10"
 http = "^1"
 chrono = { version = "^0", default-features = false, features = ["serde"] }
 dirs = "6"
+jsonwebtoken = "9"
 
 proc-macro2 = "^1"
 prettyplease = "0.2.37"

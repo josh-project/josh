@@ -1,3 +1,4 @@
+pub mod app_flow;
 pub mod device_flow;
 pub mod middleware;
 
