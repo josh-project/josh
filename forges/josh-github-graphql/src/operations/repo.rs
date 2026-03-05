@@ -21,7 +21,7 @@ pub struct RepositoryRuleset {
 }
 
 /// A required status check from a ruleset.
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct RequiredStatusCheck {
     pub context: String,
     pub integration_id: Option<i64>,

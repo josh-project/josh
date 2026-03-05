@@ -10,3 +10,4 @@ url.workspace = true
 
 josh-changes.workspace = true
 josh-github-graphql.workspace = true
+josh-github-webhooks.workspace = true
