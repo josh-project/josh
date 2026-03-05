@@ -5,6 +5,8 @@
 # 2. Format the code
 # :make  f
 
+# test change
+
 t: c
 	sh run-tests.sh tests/filter/*.t
 
