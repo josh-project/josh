@@ -30,3 +30,6 @@ fragments = ["ruleset_info"]
 
 [queries.get_ruleset_required_checks]
 fragments = ["required_status_checks_info", "status_checks_params"]
+
+[queries.get_repository_collaborators]
+fragments = ["collaborator_edge_info"]

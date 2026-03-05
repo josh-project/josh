@@ -103,6 +103,85 @@ pub struct PullRequestEvent {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+pub enum CheckRunConclusion {
+    Success,
+    Failure,
+    Cancelled,
+    Skipped,
+    TimedOut,
+    ActionRequired,
+    Neutral,
+    Stale,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CheckRun {
+    pub id: i64,
+    pub name: String,
+    pub head_sha: String,
+    pub status: String,
+    pub conclusion: Option<CheckRunConclusion>,
+    pub started_at: DateTime<Utc>,
+    pub completed_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "action", rename_all = "snake_case")]
+pub enum CheckRunEventDetails {
+    Created,
+    Completed,
+    Rerequested,
+    RequestedAction,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CheckRunEvent {
+    pub check_run: CheckRun,
+    pub repository: Repository,
+
+    #[serde(flatten)]
+    pub details: CheckRunEventDetails,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PullRequestReviewState {
+    Approved,
+    ChangesRequested,
+    Commented,
+    Dismissed,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PullRequestReview {
+    pub id: i64,
+    pub user: User,
+    pub body: Option<String>,
+    pub commit_id: String,
+    pub submitted_at: DateTime<Utc>,
+    pub state: PullRequestReviewState,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "action", rename_all = "snake_case")]
+pub enum PullRequestReviewEventDetails {
+    Submitted,
+    Dismissed,
+    Edited,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PullRequestReviewEvent {
+    pub review: PullRequestReview,
+    pub pull_request: PullRequest,
+    pub repository: Repository,
+
+    #[serde(flatten)]
+    pub details: PullRequestReviewEventDetails,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum WorkflowJobConclusion {
     Success,
     Failure,

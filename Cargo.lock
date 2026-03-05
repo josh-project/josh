@@ -2951,6 +2951,7 @@ dependencies = [
  "git2",
  "josh-changes",
  "josh-github-graphql",
+ "josh-github-webhooks",
  "url",
 ]
 

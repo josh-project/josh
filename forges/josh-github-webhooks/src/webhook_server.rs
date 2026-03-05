@@ -18,6 +18,8 @@ pub enum WebhookPayload {
     PullRequest(Box<crate::webhook_types::PullRequestEvent>),
     WorkflowJob(Box<crate::webhook_types::WorkflowJobEvent>),
     WorkflowRun(Box<crate::webhook_types::WorkflowRunEvent>),
+    CheckRun(Box<crate::webhook_types::CheckRunEvent>),
+    PullRequestReview(Box<crate::webhook_types::PullRequestReviewEvent>),
 }
 
 impl<S> axum::extract::FromRequest<S> for WebhookPayload
@@ -130,6 +132,22 @@ mod tests {
             (
                 include_file!("../tests/data/github_workflow_run_requested.json"),
                 "workflow_run",
+            ),
+            (
+                include_file!("../tests/data/github_check_run_completed.json"),
+                "check_run",
+            ),
+            (
+                include_file!("../tests/data/github_check_run_created.json"),
+                "check_run",
+            ),
+            (
+                include_file!("../tests/data/github_pull_request_review_submitted.json"),
+                "pull_request_review",
+            ),
+            (
+                include_file!("../tests/data/github_pull_request_review_dismissed.json"),
+                "pull_request_review",
             ),
         ];
 
