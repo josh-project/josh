@@ -440,7 +440,6 @@ pub fn unapply_filter(
 ) -> anyhow::Result<git2::Oid> {
     let mut filtered_to_original = HashMap::new();
     let mut ret = original_target;
-    let change_id_regex = regex::Regex::new("(?m)^Change: [^ ]+")?;
 
     let old_filtered_oid = if old_filtered_oid == git2::Oid::zero() {
         match find_new_branch_base(
@@ -729,17 +728,7 @@ pub fn unapply_filter(
             }
         };
 
-        let mut apply = filter::Rewrite::from_tree(new_tree.clone());
-
-        if change_ids.is_some() {
-            let new_message = filter::text::transform_with_template(
-                &change_id_regex,
-                "",
-                module_commit.message_raw().unwrap(),
-                |_key: &str| -> Option<String> { None },
-            )?;
-            apply = apply.with_message(new_message);
-        }
+        let apply = filter::Rewrite::from_tree(new_tree.clone());
 
         ret = rewrite_commit(
             transaction.repo(),

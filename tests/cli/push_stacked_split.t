@@ -80,9 +80,9 @@ Push with split mode (should create multiple refs for each change)
   
   Pushed 6ed6c1ca90cb15fe4edf8d133f0e2e44562aa77d to origin/refs/heads/@base/master/josh@example.com/1234
   To file://${TESTTMP}/remote
-   * [new branch]      ba95dae3e5cf8fb0db28a931081e3a28f61fc94b -> @changes/master/josh@example.com/foo7
+   * [new branch]      955da8395478e58213ad4ae975d9d885f87fdcec -> @changes/master/josh@example.com/foo7
   
-  Pushed ba95dae3e5cf8fb0db28a931081e3a28f61fc94b to origin/refs/heads/@changes/master/josh@example.com/foo7
+  Pushed 955da8395478e58213ad4ae975d9d885f87fdcec to origin/refs/heads/@changes/master/josh@example.com/foo7
   To file://${TESTTMP}/remote
    * [new branch]      6ed6c1ca90cb15fe4edf8d133f0e2e44562aa77d -> @base/master/josh@example.com/foo7
   
@@ -96,9 +96,9 @@ Push with split mode (should create multiple refs for each change)
   
   Pushed c61c37f4a3d5eb447f41dde15620eee1a181d60b to origin/refs/heads/@base/master/josh@example.com/1235
   To file://${TESTTMP}/remote
-   * [new branch]      a133b0963428bf64f918ad2a5db99511a194c5ef -> @heads/master/josh@example.com
+   * [new branch]      929b441481dc5e1a946004a5615592d837ad564b -> @heads/master/josh@example.com
   
-  Pushed a133b0963428bf64f918ad2a5db99511a194c5ef to origin/refs/heads/@heads/master/josh@example.com
+  Pushed 929b441481dc5e1a946004a5615592d837ad564b to origin/refs/heads/@heads/master/josh@example.com
 
 Verify the refs were created in the remote
 
@@ -106,18 +106,18 @@ Verify the refs were created in the remote
   $ git ls-remote . | grep "@" | sort
   6ed6c1ca90cb15fe4edf8d133f0e2e44562aa77d\trefs/heads/@base/master/josh@example.com/1234 (esc)
   6ed6c1ca90cb15fe4edf8d133f0e2e44562aa77d\trefs/heads/@base/master/josh@example.com/foo7 (esc)
-  a133b0963428bf64f918ad2a5db99511a194c5ef\trefs/heads/@heads/master/josh@example.com (esc)
-  ba95dae3e5cf8fb0db28a931081e3a28f61fc94b\trefs/heads/@changes/master/josh@example.com/foo7 (esc)
+  929b441481dc5e1a946004a5615592d837ad564b\trefs/heads/@heads/master/josh@example.com (esc)
+  955da8395478e58213ad4ae975d9d885f87fdcec\trefs/heads/@changes/master/josh@example.com/foo7 (esc)
   c61c37f4a3d5eb447f41dde15620eee1a181d60b\trefs/heads/@base/master/josh@example.com/1235 (esc)
   c61c37f4a3d5eb447f41dde15620eee1a181d60b\trefs/heads/@changes/master/josh@example.com/1234 (esc)
   ef7c3c85ad4c5875f308003d42a6e11d9b14aeb9\trefs/heads/@changes/master/josh@example.com/1235 (esc)
 
   $ git log --all --decorate --graph --pretty="%s %d %H"
   * Change-Id: 1235  (@changes/master/josh@example.com/1235) ef7c3c85ad4c5875f308003d42a6e11d9b14aeb9
-  | *   (@changes/master/josh@example.com/foo7) ba95dae3e5cf8fb0db28a931081e3a28f61fc94b
-  | | * Change-Id: 1235  (@heads/master/josh@example.com) a133b0963428bf64f918ad2a5db99511a194c5ef
-  | | * no change id  cea60eac003fd3e07809fd1c49d9f345943f4e25
-  | | *   115911beff2c43af69fb8b00efc50b6057b4174d
+  | * Change: foo7  (@changes/master/josh@example.com/foo7) 955da8395478e58213ad4ae975d9d885f87fdcec
+  | | * Change-Id: 1235  (@heads/master/josh@example.com) 929b441481dc5e1a946004a5615592d837ad564b
+  | | * no change id  5a2fe045f285a5d51f8904295ec5dd75ec038ae8
+  | | * Change: foo7  2a517abd0a36a0b76a734726466d785b9640f1b6
   | |/  
   |/|   
   * | Change-Id: 1234  (@changes/master/josh@example.com/1234, @base/master/josh@example.com/1235) c61c37f4a3d5eb447f41dde15620eee1a181d60b
@@ -149,14 +149,14 @@ Test that we can fetch the split refs back
   Fetched from remote: origin
 
   $ git log --all --decorate --graph --pretty="%s %d %H"
-  * Change-Id: 1235  (HEAD -> master) c4069901c8ecd228f53e7b55deae1362905732d3
+  * Change-Id: 1235  (HEAD -> master, origin/@heads/master/josh@example.com) c4069901c8ecd228f53e7b55deae1362905732d3
   * no change id  1c5e60ad475fec663012fe59ebb6a8fec1ff6a92
   * Change: foo7  cadc8f164b24465285d8ec413e0325a6341e4453
   | * Change-Id: 1235  ef7c3c85ad4c5875f308003d42a6e11d9b14aeb9
-  | | *   ba95dae3e5cf8fb0db28a931081e3a28f61fc94b
-  | | | * Change-Id: 1235  a133b0963428bf64f918ad2a5db99511a194c5ef
-  | | | * no change id  cea60eac003fd3e07809fd1c49d9f345943f4e25
-  | | | *   115911beff2c43af69fb8b00efc50b6057b4174d
+  | | * Change: foo7  955da8395478e58213ad4ae975d9d885f87fdcec
+  | | | * Change-Id: 1235  929b441481dc5e1a946004a5615592d837ad564b
+  | | | * no change id  5a2fe045f285a5d51f8904295ec5dd75ec038ae8
+  | | | * Change: foo7  2a517abd0a36a0b76a734726466d785b9640f1b6
   | | |/  
   | |/|   
   | * | Change-Id: 1234  c61c37f4a3d5eb447f41dde15620eee1a181d60b
@@ -164,13 +164,8 @@ Test that we can fetch the split refs back
   | * add file1  6ed6c1ca90cb15fe4edf8d133f0e2e44562aa77d
   | * Change-Id: 1235  (origin/@changes/master/josh@example.com/1235) 96da92a9021ee186e1e9dd82305ddebfd1153ed5
   |/  
-  | *   (origin/@changes/master/josh@example.com/foo7) efa55fb3fda9dee1c5c1cb135827f2900a9fecbe
-  | | * Change-Id: 1235  (origin/@heads/master/josh@example.com) c70f0bc008657ce15fdab70aa362e5fb6666e1ba
-  | | * no change id  0b31b13c2f0582a3f23cda90efb16cbfea87e66d
-  | | *   51310e834ba7c7f2f034352a39a308bd86e5dd70
-  | |/  
-  |/|   
-  * | Change-Id: 1234  (origin/@changes/master/josh@example.com/1234, origin/@base/master/josh@example.com/1235) 43d6fcc9e7a81452d7343c78c0102f76027717fb
+  * Change-Id: 1234  (origin/@changes/master/josh@example.com/1234, origin/@base/master/josh@example.com/1235) 43d6fcc9e7a81452d7343c78c0102f76027717fb
+  | * Change: foo7  (origin/@changes/master/josh@example.com/foo7) 209a5b0d94790084586f291624ce9340f5646636
   |/  
   * add file1  (origin/master, origin/HEAD, origin/@base/master/josh@example.com/foo7, origin/@base/master/josh@example.com/1234) 5f2928c89c4dcc7f5a8c59ef65734a83620cefee
   * cache  3c2c2237ae79b148f5a4ca12279f75ab6029fe2b
