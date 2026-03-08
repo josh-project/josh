@@ -409,13 +409,6 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> anyhow::Result<String> {
             "".to_string()
         };
 
-        let mut changes =
-            if push_mode == PushMode::Stack || push_mode == PushMode::Split || !author.is_empty() {
-                Some(vec![])
-            } else {
-                None
-            };
-
         let filter = josh_core::filter::parse(&repo_update.filter_spec)?;
         let new_oid = git2::Oid::from_str(new)?;
         let backward_new_oid = {
@@ -433,7 +426,6 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> anyhow::Result<String> {
                     josh_core::history::OrphansMode::Fail
                 },
                 reparent_orphans,
-                &mut changes,
             )?;
 
             tracing::debug!(
@@ -481,13 +473,12 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> anyhow::Result<String> {
 
         let to_push = build_to_push(
             transaction.repo(),
-            changes,
             push_mode,
             &baseref,
             &author,
             &ref_with_options,
             oid_to_push,
-            old,
+            original_target,
         )?;
 
         let mut resp = vec![];
