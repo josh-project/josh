@@ -2896,10 +2896,12 @@ name = "josh-cq"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "axum",
  "clap",
  "git2",
  "josh-core",
  "josh-link",
+ "serde",
  "serde_json",
  "tokio",
 ]
