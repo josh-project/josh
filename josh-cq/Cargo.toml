@@ -7,8 +7,10 @@ edition = "2024"
 tokio.workspace = true
 clap.workspace = true
 anyhow.workspace = true
+serde.workspace = true
 serde_json.workspace = true
 git2.workspace = true
+axum.workspace = true
 
 josh-core.workspace = true
 josh-link.workspace = true

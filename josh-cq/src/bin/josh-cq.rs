@@ -1,11 +1,7 @@
 use anyhow::Context;
 use clap::Parser;
 
-use josh_core::filter::tree;
-use josh_core::git::{normalize_repo_path, spawn_git_command};
-use josh_link::make_signature;
-
-use std::collections::BTreeMap;
+use josh_core::git::normalize_repo_path;
 
 #[derive(Parser)]
 #[command(about = "Josh Commit Queue")]
@@ -18,6 +14,8 @@ struct Cli {
 enum Commands {
     /// Initialize metarepo
     Init,
+    /// Start HTTP server
+    Serve(ServeArgs),
     #[command(flatten)]
     Action(ActionCommands),
 }
@@ -45,119 +43,18 @@ struct TrackArgs {
     mode: String,
 }
 
-fn handle_track(
-    args: &TrackArgs,
-    transaction: &josh_core::cache::Transaction,
-) -> anyhow::Result<()> {
-    let repo = transaction.repo();
-
-    // Fetch refs from remote
-    let refs = josh_cq::remote::list_refs(&args.url)?;
-
-    // Fetch HEAD from remote
-    spawn_git_command(repo.path(), &["fetch", &args.url, "HEAD"], &[])?;
-
-    // Get commit from FETCH_HEAD
-    let fetch_head_ref = repo
-        .find_reference("FETCH_HEAD")
-        .context("Failed to find FETCH_HEAD")?;
-    let fetched_commit = fetch_head_ref
-        .peel_to_commit()
-        .context("Failed to peel FETCH_HEAD to commit")?
-        .id();
-
-    // Get HEAD commit
-    let head_ref = repo.head().context("Failed to get HEAD")?;
-    let head_commit = head_ref
-        .peel_to_commit()
-        .context("Failed to peel HEAD to commit")?;
-    let head_tree = head_commit.tree().context("Failed to get HEAD tree")?;
-
-    let signature = make_signature(repo)?;
-
-    let mode = josh_core::filter::LinkMode::parse(&args.mode)
-        .with_context(|| format!("Invalid link mode: '{}'", args.mode))?;
-
-    let link_path = std::path::Path::new("remotes").join(&args.id).join("link");
-    let tree_with_link_oid = josh_link::prepare_link_add(
-        &transaction,
-        &link_path,
-        &args.url,
-        None,   // filter (default :/)
-        "HEAD", // target
-        fetched_commit,
-        &head_tree,
-        mode,
-    )?
-    .into_tree_oid();
-
-    let tree_with_link = repo
-        .find_tree(tree_with_link_oid)
-        .context("Failed to find tree with link")?;
-
-    // Create refs.json blob
-    let refs_blob = {
-        let refs_map: BTreeMap<String, String> = refs
-            .iter()
-            .map(|(k, v)| (k.clone(), v.to_string()))
-            .collect();
-
-        let refs_json =
-            serde_json::to_string_pretty(&refs_map).context("Failed to serialize refs to JSON")?;
-
-        repo.blob(refs_json.as_bytes())
-            .context("Failed to create refs.json blob")?
-    };
-
-    // Insert refs.json into the tree
-    let refs_path = std::path::Path::new("remotes")
-        .join(&args.id)
-        .join("refs.json");
-
-    let final_tree = tree::insert(
-        repo,
-        &tree_with_link,
-        &refs_path,
-        refs_blob,
-        git2::FileMode::Blob.into(),
-    )
-    .context("Failed to insert refs.json into tree")?;
-
-    // Create final commit with both files
-    let final_commit = repo
-        .commit(
-            None,
-            &signature,
-            &signature,
-            &format!("Track remote: {}", args.id),
-            &final_tree,
-            &[&head_commit],
-        )
-        .context("Failed to create final commit")?;
-
-    // Update HEAD to point to the new commit
-    repo.head()?
-        .set_target(final_commit, "josh-cq track")
-        .context("Failed to update HEAD")?;
-
-    println!("Tracked remote '{}' at {}", args.id, args.url);
-    println!("Found {} refs", refs.len());
-
-    Ok(())
+#[derive(clap::Parser)]
+struct ServeArgs {
+    /// Port to listen on
+    #[arg(long, default_value = "8080")]
+    port: u16,
 }
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    let cli = Cli::parse();
-
-    let action = match cli.command {
-        Commands::Init => {
-            // TODO
-            return Ok(());
-        }
-        Commands::Action(action) => action,
-    };
-
+fn open_repo() -> anyhow::Result<(
+    std::path::PathBuf,
+    std::sync::Arc<josh_core::cache::CacheStack>,
+    josh_core::cache::Transaction,
+)> {
     let repo = git2::Repository::open_from_env().context("Not in a git repository")?;
     let repo_path = normalize_repo_path(repo.path());
 
@@ -172,16 +69,51 @@ async fn main() -> anyhow::Result<()> {
         .open(None)
         .context("Failed TransactionContext::open")?;
 
-    match action {
-        ActionCommands::Track(ref args) => handle_track(args, &transaction),
-        ActionCommands::Fetch => {
-            todo!()
+    Ok((repo_path, cache, transaction))
+}
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    let cli = Cli::parse();
+
+    match cli.command {
+        Commands::Init => {
+            // TODO
+            return Ok(());
         }
-        ActionCommands::Step => {
-            todo!()
+        Commands::Serve(args) => {
+            let (repo_path, cache, _transaction) = open_repo()?;
+
+            let state = josh_cq::cq::AppState { repo_path, cache };
+            let app = josh_cq::cq::make_router(state);
+
+            let addr = std::net::SocketAddr::from(([0, 0, 0, 0], args.port));
+            println!("Listening on {}", addr);
+
+            let listener = tokio::net::TcpListener::bind(addr).await?;
+            axum::serve(listener, app).await?;
         }
-        ActionCommands::Push => {
-            todo!()
+        Commands::Action(action) => {
+            let (_repo_path, _cache, transaction) = open_repo()?;
+
+            match action {
+                ActionCommands::Track(ref args) => {
+                    let msg =
+                        josh_cq::cq::handle_track(&args.url, &args.id, &args.mode, &transaction)?;
+                    println!("{}", msg);
+                }
+                ActionCommands::Fetch => {
+                    todo!()
+                }
+                ActionCommands::Step => {
+                    todo!()
+                }
+                ActionCommands::Push => {
+                    todo!()
+                }
+            }
         }
     }
+
+    Ok(())
 }
