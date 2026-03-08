@@ -227,10 +227,31 @@ pub fn changes_to_refs(
         .collect())
 }
 
+fn get_changes(
+    repo: &git2::Repository,
+    tip: git2::Oid,
+    base: git2::Oid,
+) -> anyhow::Result<Vec<Change>> {
+    let mut walk = repo.revwalk()?;
+    walk.set_sorting(git2::Sort::REVERSE | git2::Sort::TOPOLOGICAL)?;
+    walk.simplify_first_parent()?;
+    walk.push(tip)?;
+    if base != git2::Oid::zero() {
+        walk.hide(base)?;
+    }
+
+    let mut changes = vec![];
+    for rev in walk {
+        let commit = repo.find_commit(rev?)?;
+        changes.push(josh_core::get_change_id(&commit));
+    }
+
+    Ok(changes)
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn build_to_push(
     repo: &git2::Repository,
-    changes: Option<Vec<Change>>,
     push_mode: PushMode,
     baseref: &str,
     author: &str,
@@ -238,7 +259,8 @@ pub fn build_to_push(
     oid_to_push: git2::Oid,
     base_oid: git2::Oid,
 ) -> anyhow::Result<Vec<PushRef>> {
-    if let Some(changes) = changes {
+    if push_mode == PushMode::Stack || push_mode == PushMode::Split || !author.is_empty() {
+        let changes = get_changes(repo, oid_to_push, base_oid)?;
         let mut push_refs = changes_to_refs(baseref, author, changes)?;
 
         if push_mode == PushMode::Split {

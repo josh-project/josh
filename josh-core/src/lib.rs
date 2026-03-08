@@ -160,8 +160,8 @@ impl $name {
     }
 }
 
-pub fn get_change_id(commit: &git2::Commit, sha: git2::Oid) -> Change {
-    let mut change = Change::new(sha);
+pub fn get_change_id(commit: &git2::Commit) -> Change {
+    let mut change = Change::new(commit.id());
     change.author = commit.author().email().unwrap_or("").to_string();
 
     for line in commit.message().unwrap_or("").split('\n') {

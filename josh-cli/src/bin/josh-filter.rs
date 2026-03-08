@@ -422,7 +422,6 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
             new,
             josh_core::history::OrphansMode::Keep,
             None,
-            &mut None,
         ) {
             Ok(rewritten) => {
                 repo.reference(&input_ref, rewritten, true, "unapply_filter")?;

@@ -131,13 +131,6 @@ fn prepare_push(
     log::debug!("old_filtered_oid: {:?}", old_filtered_oid);
     log::debug!("original_target: {:?}", original_target);
 
-    let mut changes: Option<Vec<josh_core::Change>> =
-        if push_mode == PushMode::Stack || push_mode == PushMode::Split {
-            Some(vec![])
-        } else {
-            None
-        };
-
     let unfiltered_oid = josh_core::history::unapply_filter(
         transaction,
         filter,
@@ -146,18 +139,22 @@ fn prepare_push(
         local_commit,
         josh_core::history::OrphansMode::Keep,
         None,
-        &mut changes,
     )
     .context("Failed to unapply filter")?;
 
     log::debug!("unfiltered_oid: {:?}", unfiltered_oid);
 
+    let changes_author = if push_mode == PushMode::Stack || push_mode == PushMode::Split {
+        author
+    } else {
+        ""
+    };
+
     let to_push = build_to_push(
         repo,
-        changes,
         push_mode,
         remote_ref,
-        author,
+        changes_author,
         remote_ref,
         unfiltered_oid,
         original_target,

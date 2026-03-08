@@ -426,8 +426,7 @@ pub enum OrphansMode {
     Fail,
 }
 
-#[allow(clippy::too_many_arguments)]
-#[tracing::instrument(skip(transaction, change_ids))]
+#[tracing::instrument(skip(transaction))]
 pub fn unapply_filter(
     transaction: &cache::Transaction,
     filter: filter::Filter,
@@ -436,7 +435,6 @@ pub fn unapply_filter(
     new_filtered_oid: git2::Oid,
     orphans_mode: OrphansMode,
     reparent_orphans: Option<git2::Oid>,
-    change_ids: &mut Option<Vec<Change>>,
 ) -> anyhow::Result<git2::Oid> {
     let mut filtered_to_original = HashMap::new();
     let mut ret = original_target;
@@ -744,9 +742,6 @@ pub fn unapply_filter(
         {
             original_parents[0].id()
         } else {
-            if let Some(change_ids) = change_ids {
-                change_ids.push(get_change_id(&module_commit, ret));
-            }
             ret
         };
 
