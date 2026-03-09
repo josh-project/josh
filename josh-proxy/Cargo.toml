@@ -21,7 +21,7 @@ percent-encoding = "2.3.1"
 pin-project-lite = "^0"
 tracing-futures = "0.2.5"
 tracing-opentelemetry = "0.32.0"
-uuid = { version = "1.21.0", features = ["v4"] }
+uuid = { version = "1.22.0", features = ["v4"] }
 gix-packetline = { version = "^0", features = ["blocking-io"] }
 gix-transport = "^0"
 opentelemetry = "0.31.0"
