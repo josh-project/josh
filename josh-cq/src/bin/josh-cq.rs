@@ -6,6 +6,10 @@ use josh_core::git::normalize_repo_path;
 #[derive(Parser)]
 #[command(about = "Josh Commit Queue")]
 struct Cli {
+    /// Path to the data directory (git repository). Defaults to current directory.
+    #[arg(long, global = true)]
+    data_dir: Option<std::path::PathBuf>,
+
     #[command(subcommand)]
     command: Commands,
 }
@@ -50,12 +54,17 @@ struct ServeArgs {
     port: u16,
 }
 
-fn open_repo() -> anyhow::Result<(
+fn open_repo(
+    data_dir: Option<&std::path::Path>,
+) -> anyhow::Result<(
     std::path::PathBuf,
     std::sync::Arc<josh_core::cache::CacheStack>,
     josh_core::cache::Transaction,
 )> {
-    let repo = git2::Repository::open_from_env().context("Not in a git repository")?;
+    let repo = match data_dir {
+        Some(dir) => git2::Repository::open(dir).context("Failed to open git repository")?,
+        None => git2::Repository::open_from_env().context("Not in a git repository")?,
+    };
     let repo_path = normalize_repo_path(repo.path());
 
     josh_core::cache::sled_load(&repo_path.join(".git")).context("Failed to load sled cache")?;
@@ -82,7 +91,7 @@ async fn main() -> anyhow::Result<()> {
             return Ok(());
         }
         Commands::Serve(args) => {
-            let (repo_path, cache, _transaction) = open_repo()?;
+            let (repo_path, cache, _transaction) = open_repo(cli.data_dir.as_deref())?;
 
             let state = josh_cq::cq::AppState { repo_path, cache };
             let app = josh_cq::cq::make_router(state);
@@ -94,7 +103,7 @@ async fn main() -> anyhow::Result<()> {
             axum::serve(listener, app).await?;
         }
         Commands::Action(action) => {
-            let (_repo_path, _cache, transaction) = open_repo()?;
+            let (_repo_path, _cache, transaction) = open_repo(cli.data_dir.as_deref())?;
 
             match action {
                 ActionCommands::Track(ref args) => {

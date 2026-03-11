@@ -1,7 +1,7 @@
   $ josh-cq --help
   Josh Commit Queue
   
-  Usage: josh-cq <COMMAND>
+  Usage: josh-cq [OPTIONS] <COMMAND>
   
   Commands:
     init   Initialize metarepo
@@ -13,7 +13,8 @@
     help   Print this message or the help of the given subcommand(s)
   
   Options:
-    -h, --help  Print help
+        --data-dir <DATA_DIR>  Path to the data directory (git repository). Defaults to current directory
+    -h, --help                 Print help
 
 
 
