@@ -23,6 +23,9 @@ members = [
     "forges/josh-github-codegen-graphql",
     "forges/josh-github-webhooks",
     "forges/josh-github-auth",
+
+    "deployment/josh-test-webhook-client",
+    "deployment/josh-test-webhook-service",
 ]
 
 [profile.release]
@@ -62,7 +65,14 @@ http = "^1"
 chrono = { version = "^0", default-features = false, features = ["serde"] }
 dirs = "6"
 jsonwebtoken = "9"
-
+bytes = "1.11.1"
+rand = "0.10.0"
+backon = "1.6.0"
+futures-util = "0.3.32"
+thiserror = "2.0.18"
+axum-auth = "0.8.1"
+bincode = "^2"
+tower-http = { version = "0.6", features = ["trace"] }
 proc-macro2 = "^1"
 prettyplease = "0.2.37"
 graphql_client = "^0.16"
@@ -85,6 +95,10 @@ josh-github-graphql = { path = "forges/josh-github-graphql" }
 josh-github-codegen-graphql = { path = "forges/josh-github-codegen-graphql" }
 josh-github-webhooks = { path = "forges/josh-github-webhooks" }
 josh-github-auth = { path = "forges/josh-github-auth" }
+
+# Deployment
+josh-test-webhook-service = { path = "deployment/josh-test-webhook-service" }
+josh-test-webhook-client = { path = "deployment/josh-test-webhook-client" }
 
 [workspace.dependencies.git2]
 default-features = false

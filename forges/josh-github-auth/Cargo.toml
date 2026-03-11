@@ -17,7 +17,7 @@ mime.workspace = true
 form_urlencoded.workspace = true
 url.workspace = true
 
-secret-vault-value = "^1"
+secret-vault-value.workspace = true
 jsonwebtoken.workspace = true
 chrono.workspace = true
 

@@ -1,0 +1,22 @@
+[package]
+name = "josh-test-webhook-client"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bincode.workspace = true
+tokio-tungstenite = { version = "^0", features = ["rustls-tls-native-roots"] }
+
+josh-test-webhook-service.workspace = true
+
+http.workspace = true
+bytes.workspace = true
+rand.workspace = true
+tokio.workspace = true
+url.workspace = true
+reqwest.workspace = true
+anyhow.workspace = true
+backon.workspace = true
+futures-util.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
