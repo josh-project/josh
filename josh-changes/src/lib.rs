@@ -4,7 +4,6 @@ use josh_core::Change;
 #[derive(PartialEq, Clone, Copy, Debug)]
 pub enum PushMode {
     Normal,
-    Review,
     Stack,
     Split,
 }
@@ -32,11 +31,9 @@ pub fn baseref_and_options(
     let mut push_mode = PushMode::Normal;
 
     if baseref.starts_with("refs/for") {
-        push_mode = PushMode::Review;
         baseref = baseref.replacen("refs/for", "refs/heads", 1)
     }
     if baseref.starts_with("refs/drafts") {
-        push_mode = PushMode::Review;
         baseref = baseref.replacen("refs/drafts", "refs/heads", 1)
     }
     if baseref.starts_with("refs/stack/for") {
@@ -259,7 +256,7 @@ pub fn build_to_push(
     oid_to_push: git2::Oid,
     base_oid: git2::Oid,
 ) -> anyhow::Result<Vec<PushRef>> {
-    if push_mode == PushMode::Stack || push_mode == PushMode::Split || !author.is_empty() {
+    if push_mode == PushMode::Stack || push_mode == PushMode::Split {
         let changes = get_changes(repo, oid_to_push, base_oid)?;
         let mut push_refs = changes_to_refs(baseref, author, changes)?;
 
@@ -268,14 +265,6 @@ pub fn build_to_push(
         }
 
         add_base_refs(repo, &mut push_refs)?;
-
-        if push_mode == PushMode::Review {
-            push_refs.push(PushRef {
-                ref_name: ref_with_options.to_string(),
-                oid: oid_to_push,
-                change_id: "JOSH_PUSH".into(),
-            });
-        }
 
         push_refs.push(PushRef {
             ref_name: format!(
