@@ -52,11 +52,11 @@ pub struct PushModeArgs {
 }
 
 impl PushModeArgs {
-    pub fn mode(&self) -> PushMode {
+    pub fn mode(&self, author: String) -> PushMode {
         if self.split {
-            PushMode::Split
+            PushMode::Split(author)
         } else if self.stack {
-            PushMode::Stack
+            PushMode::Stack(author)
         } else {
             PushMode::Normal
         }
@@ -76,7 +76,6 @@ fn prepare_push(
     transaction: &josh_core::cache::Transaction,
     filter: josh_core::filter::Filter,
     push_mode: PushMode,
-    author: &str,
     forge: &Option<Forge>,
     dry_run: bool,
 ) -> anyhow::Result<PreparedPush> {
@@ -144,17 +143,10 @@ fn prepare_push(
 
     log::debug!("unfiltered_oid: {:?}", unfiltered_oid);
 
-    let changes_author = if push_mode == PushMode::Stack || push_mode == PushMode::Split {
-        author
-    } else {
-        ""
-    };
-
     let to_push = build_to_push(
         repo,
-        push_mode,
+        &push_mode,
         remote_ref,
-        changes_author,
         remote_ref,
         unfiltered_oid,
         original_target,
@@ -164,7 +156,7 @@ fn prepare_push(
     log::debug!("to_push: {:?}", to_push);
 
     let pr_infos = if !dry_run
-        && (push_mode == PushMode::Split || push_mode == PushMode::Stack)
+        && matches!(push_mode, PushMode::Split(_) | PushMode::Stack(_))
         && *forge == Some(Forge::Github)
     {
         josh_github_changes::collect_pr_infos(repo, &to_push)
@@ -191,7 +183,7 @@ fn execute_push(
     for push_ref in &prepared.to_push {
         let mut git_push_args = vec!["push"];
 
-        if force || prepared.push_mode == PushMode::Split || prepared.push_mode == PushMode::Stack {
+        if force || matches!(prepared.push_mode, PushMode::Split(_) | PushMode::Stack(_)) {
             git_push_args.push("--force");
         }
 
@@ -262,8 +254,9 @@ pub fn handle_push(
     let filter = filter_with_meta.peel();
 
     let config = repo.config().context("Failed to get git config")?;
-    let author = config.get_string("user.email").unwrap_or_default();
-    let push_mode = args.push_mode.mode();
+    let push_mode = args
+        .push_mode
+        .mode(config.get_string("user.email").unwrap_or_default());
 
     let refspecs = if args.refspecs.is_empty() {
         let head = repo.head().context("Failed to get HEAD")?;
@@ -284,8 +277,7 @@ pub fn handle_push(
                 remote_name,
                 transaction,
                 filter,
-                push_mode,
-                &author,
+                push_mode.clone(),
                 &forge,
                 args.dry_run,
             )
