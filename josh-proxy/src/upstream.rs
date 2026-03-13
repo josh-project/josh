@@ -326,7 +326,8 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> anyhow::Result<String> {
         )?;
 
         let old = git2::Oid::from_str(old)?;
-        let (baseref, push_to, options, push_mode) = baseref_and_options(refname)?;
+        let author = push_options.author.as_deref().unwrap_or("");
+        let (baseref, push_to, options, push_mode) = baseref_and_options(refname, author)?;
 
         let old = if old == git2::Oid::zero() {
             let rev = format!("refs/namespaces/{}/{}", repo_update.git_ns, &baseref);
@@ -403,12 +404,6 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> anyhow::Result<String> {
             None
         };
 
-        let author = if let Some(author) = &push_options.author {
-            author.to_string()
-        } else {
-            "".to_string()
-        };
-
         let filter = josh_core::filter::parse(&repo_update.filter_spec)?;
         let new_oid = git2::Oid::from_str(new)?;
         let backward_new_oid = {
@@ -473,9 +468,8 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> anyhow::Result<String> {
 
         let to_push = build_to_push(
             transaction.repo(),
-            push_mode,
+            &push_mode,
             &baseref,
-            &author,
             &ref_with_options,
             oid_to_push,
             original_target,
@@ -484,7 +478,7 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> anyhow::Result<String> {
         let mut resp = vec![];
 
         for push_ref in to_push {
-            let force_push = push_mode != PushMode::Normal || push_options.force;
+            let force_push = !matches!(push_mode, PushMode::Normal) || push_options.force;
 
             let (text, status) = push_head_url(
                 transaction.repo(),

@@ -1,11 +1,11 @@
 use anyhow::anyhow;
 use josh_core::Change;
 
-#[derive(PartialEq, Clone, Copy, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum PushMode {
     Normal,
-    Stack,
-    Split,
+    Stack(String),
+    Split(String),
 }
 
 #[derive(Debug, Clone)]
@@ -17,6 +17,7 @@ pub struct PushRef {
 
 pub fn baseref_and_options(
     refname: &str,
+    author: &str,
 ) -> anyhow::Result<(String, String, Vec<String>, PushMode)> {
     let mut split = refname.splitn(2, '%');
     let push_to = split.next().ok_or(anyhow!("no next"))?.to_owned();
@@ -37,11 +38,11 @@ pub fn baseref_and_options(
         baseref = baseref.replacen("refs/drafts", "refs/heads", 1)
     }
     if baseref.starts_with("refs/stack/for") {
-        push_mode = PushMode::Stack;
+        push_mode = PushMode::Stack(author.to_string());
         baseref = baseref.replacen("refs/stack/for", "refs/heads", 1)
     }
     if baseref.starts_with("refs/split/for") {
-        push_mode = PushMode::Split;
+        push_mode = PushMode::Split(author.to_string());
         baseref = baseref.replacen("refs/split/for", "refs/heads", 1)
     }
     Ok((baseref, push_to, options, push_mode))
@@ -246,42 +247,41 @@ fn get_changes(
     Ok(changes)
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn build_to_push(
     repo: &git2::Repository,
-    push_mode: PushMode,
+    push_mode: &PushMode,
     baseref: &str,
-    author: &str,
     ref_with_options: &str,
     oid_to_push: git2::Oid,
     base_oid: git2::Oid,
 ) -> anyhow::Result<Vec<PushRef>> {
-    if push_mode == PushMode::Stack || push_mode == PushMode::Split {
-        let changes = get_changes(repo, oid_to_push, base_oid)?;
-        let mut push_refs = changes_to_refs(baseref, author, changes)?;
+    match push_mode {
+        PushMode::Stack(author) | PushMode::Split(author) => {
+            let changes = get_changes(repo, oid_to_push, base_oid)?;
+            let mut push_refs = changes_to_refs(baseref, author, changes)?;
 
-        if push_mode == PushMode::Split {
-            split_changes(repo, &mut push_refs, base_oid)?;
+            if matches!(push_mode, PushMode::Split(_)) {
+                split_changes(repo, &mut push_refs, base_oid)?;
+            }
+
+            add_base_refs(repo, &mut push_refs)?;
+
+            push_refs.push(PushRef {
+                ref_name: format!(
+                    "refs/heads/@heads/{}/{}",
+                    baseref.replacen("refs/heads/", "", 1),
+                    author,
+                ),
+                oid: oid_to_push,
+                change_id: baseref.replacen("refs/heads/", "", 1),
+            });
+
+            Ok(push_refs)
         }
-
-        add_base_refs(repo, &mut push_refs)?;
-
-        push_refs.push(PushRef {
-            ref_name: format!(
-                "refs/heads/@heads/{}/{}",
-                baseref.replacen("refs/heads/", "", 1),
-                author,
-            ),
-            oid: oid_to_push,
-            change_id: baseref.replacen("refs/heads/", "", 1),
-        });
-
-        Ok(push_refs)
-    } else {
-        Ok(vec![PushRef {
+        PushMode::Normal => Ok(vec![PushRef {
             ref_name: ref_with_options.to_string(),
             oid: oid_to_push,
             change_id: "JOSH_PUSH".to_string(),
-        }])
+        }]),
     }
 }
