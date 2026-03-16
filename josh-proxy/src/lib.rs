@@ -10,9 +10,9 @@ mod shell;
 pub mod trace;
 pub mod upstream;
 
-use josh_core;
-
+use crate::http::{IntoRetryable, RetryableError};
 use crate::upstream::RemoteAuth;
+use josh_core;
 
 josh_core::regex_parsed!(
     FilteredRepoUrl,
@@ -116,6 +116,7 @@ pub fn get_head(
     Ok(head)
 }
 
+#[derive(Debug)]
 pub enum FetchError {
     AuthRequired,
     Other(anyhow::Error),
@@ -142,7 +143,7 @@ pub fn fetch_refs_from_url(
     url: &str,
     refs_prefixes: &[String],
     remote_auth: &RemoteAuth,
-) -> Result<(), FetchError> {
+) -> Result<(), RetryableError<FetchError>> {
     let specs: Vec<_> = refs_prefixes
         .iter()
         .map(|r| {
@@ -163,8 +164,8 @@ pub fn fetch_refs_from_url(
 
     tracing::info!("fetch_refs_from_url {:?} {:?} {:?}", cmd, path, "");
 
-    let (_, stderr, code) =
-        run_git_with_auth(path, &cmd, remote_auth, None).map_err(FetchError::Other)?;
+    let (_, stderr, code) = run_git_with_auth(path, &cmd, remote_auth, None)
+        .map_err(|e| FetchError::Other(e).as_non_retryable())?;
 
     tracing::debug!("fetch_refs_from_url done {:?} {:?} {:?}", cmd, path, stderr);
 
@@ -172,7 +173,23 @@ pub fn fetch_refs_from_url(
         || stderr.contains("fatal: Could not read")
         || stderr.contains(": Permission denied")
     {
-        return Err(FetchError::AuthRequired);
+        return Err(FetchError::AuthRequired.as_non_retryable());
+    }
+
+    for line in stderr.lines() {
+        if let Some((_, rest)) = line.split_once("The requested URL returned error: ")
+            && let Ok(code) = rest
+                .chars()
+                .take_while(|c| c.is_ascii_digit())
+                .collect::<String>()
+                .parse::<u16>()
+            && (500..600).contains(&code)
+        {
+            return Err(
+                FetchError::Other(anyhow!("HTTP server error {}: {:?}", code, stderr))
+                    .as_retryable(),
+            );
+        }
     }
 
     if stderr.contains("fatal:") || code != 0 {
@@ -181,12 +198,13 @@ pub fn fetch_refs_from_url(
             "git process exited with code {}: {:?}",
             code,
             stderr
-        )));
+        ))
+        .as_non_retryable());
     }
 
     if stderr.contains("error:") {
         tracing::error!("{:?}", stderr);
-        return Err(FetchError::Other(anyhow!("git error: {:?}", stderr)));
+        return Err(FetchError::Other(anyhow!("git error: {:?}", stderr)).as_non_retryable());
     }
 
     Ok(())

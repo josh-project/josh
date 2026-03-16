@@ -30,6 +30,8 @@
 !josh-ui/*.mjs
 !josh-ui/public
 !josh-ui/src
+!deployment/josh-test-webhook-client
+!deployment/josh-test-webhook-service
 !lfs-test-server
 !run-josh.sh
 !docker/

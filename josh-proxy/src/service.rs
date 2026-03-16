@@ -167,6 +167,7 @@ pub struct JoshProxyService {
     pub filter_permits: Arc<tokio::sync::Semaphore>,
     pub poll: Polls,
     pub io_thread_tx: Option<tokio::sync::mpsc::UnboundedSender<IoCleanup>>,
+    pub http_retry: usize,
 }
 
 #[bon::builder]
@@ -181,6 +182,7 @@ pub fn make_service(
     filter_prefix: Option<String>,
     git_capabilities: Option<GitCapabilities>,
     io_thread_tx: Option<tokio::sync::mpsc::UnboundedSender<IoCleanup>>,
+    http_retry: Option<usize>,
 ) -> anyhow::Result<Arc<JoshProxyService>> {
     let cache = Arc::new(cache.unwrap_or_default());
     let repo_path = repo_path.to_owned();
@@ -230,6 +232,7 @@ pub fn make_service(
         filter_permits: Arc::new(tokio::sync::Semaphore::new(10)),
         poll: Default::default(),
         io_thread_tx,
+        http_retry: http_retry.unwrap_or(3),
     }))
 }
 
@@ -1144,7 +1147,9 @@ async fn upstream_fetch_middleware(
     for fetch_repo in fetch_repos.iter() {
         let fetch_url = upstream.clone() + fetch_repo.as_str();
 
-        match crate::auth::check_http_auth(&fetch_url, &auth, http_auth_required).await {
+        match crate::auth::check_http_auth(&fetch_url, &auth, http_auth_required, serv.http_retry)
+            .await
+        {
             Ok(false) => {
                 tracing::trace!("require-auth");
 
@@ -1411,7 +1416,8 @@ async fn handle_graphql(
     let content_type = content_type.map(|ct| ct.0.into());
 
     // Check authentication
-    if !crate::auth::check_http_auth(&remote_url, &auth, serv.require_auth).await? {
+    if !crate::auth::check_http_auth(&remote_url, &auth, serv.require_auth, serv.http_retry).await?
+    {
         return Ok(Response::builder()
             .header(header::WWW_AUTHENTICATE, "Basic realm=User Visible Realm")
             .status(StatusCode::UNAUTHORIZED)

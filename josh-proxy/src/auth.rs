@@ -1,6 +1,9 @@
 use anyhow::anyhow;
+use backon::Retryable;
 use std::num::NonZeroUsize;
 use std::sync::{Arc, LazyLock};
+
+use crate::http::RetryableError;
 
 // Import the base64 crate Engine trait anonymously so we can
 // call its methods without adding to the namespace.
@@ -93,7 +96,7 @@ impl Handle {
             Err(e) => {
                 tracing::trace!(
                     handle = ?self,
-                    "Falling back to default auth: {:?}",
+                    "Falling back to default auth: {}",
                     e
                 );
 
@@ -125,7 +128,12 @@ pub fn add_auth(token: &str) -> anyhow::Result<Handle> {
 }
 
 #[tracing::instrument()]
-pub async fn check_http_auth(url: &str, auth: &Handle, required: bool) -> anyhow::Result<bool> {
+pub async fn check_http_auth(
+    url: &str,
+    auth: &Handle,
+    required: bool,
+    max_retries: usize,
+) -> anyhow::Result<bool> {
     use opentelemetry_semantic_conventions::trace::HTTP_RESPONSE_STATUS_CODE;
 
     if required && auth.hash.is_none() {
@@ -166,51 +174,89 @@ pub async fn check_http_auth(url: &str, auth: &Handle, required: bool) -> anyhow
                     request
                 };
 
-                let resp = request.send().await?;
+                let resp = request.send().await.map_err(|e| {
+                    if e.is_connect() || e.is_timeout() {
+                        RetryableError::Retryable(e.into())
+                    } else {
+                        RetryableError::NonRetryable(e.into())
+                    }
+                })?;
 
-                Ok::<_, anyhow::Error>(resp)
+                if resp.status().is_server_error() {
+                    return Err(RetryableError::Retryable(anyhow!(
+                        "server error: {}",
+                        resp.status()
+                    )));
+                }
+
+                Ok(resp)
             }
             .instrument(do_request_span)
         }
     };
 
+    // Combine cache check, HTTP request, and cache update into one closure
+    // so the retry loop covers the full sequence.
+    //
     // Only lock the mutex if auth handle is not empty, because otherwise
     // for remotes that require auth, we could run into situation where
     // multiple requests are executed essentially sequentially because
     // remote always returns 401 for authenticated requests and we never
-    // populate the auth_timers map
-    let resp = if auth.hash.is_some() {
-        let mut auth_timers = auth_timers.lock().await;
+    // populate the auth_timers map.
+    let lock_and_request = || {
+        let do_request = &do_request;
+        let auth_timers = &auth_timers;
+        async move {
+            if auth.hash.is_some() {
+                // Hold lock across cache check, request, and cache update.
+                // Lock is released between retries (during backoff).
+                let mut auth_timers = auth_timers.lock().await;
 
-        if let Some(last) = auth_timers.get(auth) {
-            let since = std::time::Instant::now().duration_since(*last);
-            let expired = since > std::time::Duration::from_secs(60 * 30);
+                if let Some(last) = auth_timers.get(auth) {
+                    let since = std::time::Instant::now().duration_since(*last);
+                    let expired = since > std::time::Duration::from_secs(60 * 30);
 
-            tracing::info!(
-                last = ?last,
-                since = ?since,
-                expired = %expired,
-                "check_http_auth: found auth entry"
-            );
+                    tracing::info!(
+                        last = ?last,
+                        since = ?since,
+                        expired = %expired,
+                        "check_http_auth: found auth entry"
+                    );
 
-            if !expired {
-                return Ok(true);
+                    if !expired {
+                        return Ok(None);
+                    }
+                }
+
+                tracing::info!(
+                    auth_timers_count = auth_timers.len(),
+                    "check_http_auth: no valid cached auth"
+                );
+
+                let resp = do_request().await?;
+
+                if resp.status().is_success() {
+                    auth_timers.put(auth.clone(), std::time::Instant::now());
+                }
+
+                Ok(Some(resp))
+            } else {
+                Ok(Some(do_request().await?))
             }
         }
+    };
 
-        tracing::info!(
-            auth_timers_count = auth_timers.len(),
-            "check_http_auth: no valid cached auth"
-        );
+    let maybe_resp = lock_and_request
+        .retry(crate::http::make_exponential_backoff(max_retries))
+        .when(|e: &RetryableError| e.is_retryable())
+        .notify(|err, dur| {
+            tracing::warn!(?dur, %err, "check_http_auth: retrying on error");
+        })
+        .await
+        .map_err(RetryableError::into_inner)?;
 
-        let resp = do_request().await?;
-        if resp.status().is_success() {
-            auth_timers.put(auth.clone(), std::time::Instant::now());
-        }
-
-        resp
-    } else {
-        do_request().await?
+    let Some(resp) = maybe_resp else {
+        return Ok(true);
     };
 
     let status = resp.status();
