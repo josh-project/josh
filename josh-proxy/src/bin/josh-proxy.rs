@@ -166,6 +166,7 @@ async fn run_proxy(args: josh_proxy::cli::Args) -> anyhow::Result<i32> {
         .io_thread_tx(io_thread_tx)
         .maybe_filter_prefix(args.filter_prefix)
         .maybe_poll_user(args.poll_user)
+        .http_retry(args.http_retry)
         .call()?;
 
     let ps = proxy_service.clone();

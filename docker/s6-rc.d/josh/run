@@ -3,6 +3,7 @@
 importas josh_http_port JOSH_HTTP_PORT
 importas josh_remote_http JOSH_REMOTE
 importas josh_remote_ssh JOSH_REMOTE_SSH
+importas -D "3" josh_http_retry JOSH_HTTP_RETRY
 importas -D "" -s -C -d " " josh_extra_opts JOSH_EXTRA_OPTS
 s6-setuidgid git
 backtick RUST_BACKTRACE { echo 1 }
@@ -19,5 +20,6 @@ foreground
     --port=${josh_http_port} \
     --remote=${josh_remote_http} \
     --remote=${josh_remote_ssh} \
+    --http-retry=${josh_http_retry} \
     ${josh_extra_opts}
 }

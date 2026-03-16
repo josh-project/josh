@@ -29,8 +29,10 @@ opentelemetry-semantic-conventions = "0.31.0"
 opentelemetry-otlp = { version = "0.31.0", features = ["grpc-tonic", "trace"] }
 opentelemetry_sdk = { version = "0.31.0", features = ["rt-tokio"] }
 bon = "3.9.0"
+backon.workspace = true
 
 anyhow.workspace = true
+thiserror.workspace = true
 hex.workspace = true
 base64.workspace = true
 clap.workspace = true

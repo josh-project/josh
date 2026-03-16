@@ -46,4 +46,10 @@ pub struct Args {
     pub static_resource_proxy_target: Option<String>,
     #[arg(long, help = "Filter to be prefixed to all queries of this instance")]
     pub filter_prefix: Option<String>,
+    #[arg(
+        long,
+        default_value = "3",
+        help = "Number of retries for HTTP server errors"
+    )]
+    pub http_retry: usize,
 }

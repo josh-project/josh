@@ -1,6 +1,8 @@
+use crate::http::RetryableError;
 use crate::service::{JoshProxyService, UpstreamProtocol};
 use crate::{FetchError, auth, proxy_commit_signature, run_git_with_auth};
 use anyhow::{Context, anyhow};
+use backon::BackoffBuilder;
 
 use josh_changes::{PushMode, baseref_and_options, build_to_push};
 use josh_core::cache::{CacheStack, TransactionContext};
@@ -192,70 +194,91 @@ pub async fn fetch_upstream(
         .entry(upstream_repo.clone())
         .or_insert(Arc::new(tokio::sync::Semaphore::new(1)))
         .clone();
-    let permit = semaphore.acquire().await;
 
-    // Check the fetch condition once again after locking the semaphore, as an unknown
-    // amount of time might have passed and the outcome of this check might have changed
-    // while waiting.
-    if !fetch_needed(
-        service.clone(),
-        &remote_url,
-        &upstream_repo,
-        force,
-        head_ref,
-        head_ref_resolved,
-    )
-    .await?
-    {
-        return Ok(());
+    let backoff = crate::http::make_exponential_backoff(service.http_retry).build();
+    let mut fetch_result = Ok(());
+
+    for delay in std::iter::once(None).chain(backoff.map(|d| Some(d))) {
+        if let Some(delay) = delay {
+            tracing::warn!(delay = ?delay, "fetch got server error, retrying");
+            tokio::time::sleep(delay).await;
+        }
+
+        let permit = semaphore.acquire().await;
+
+        // Check the fetch condition once again after locking the semaphore, as an unknown
+        // amount of time might have passed and the outcome of this check might have changed
+        // while waiting.
+        if !fetch_needed(
+            service.clone(),
+            &remote_url,
+            &upstream_repo,
+            force,
+            head_ref,
+            head_ref_resolved,
+        )
+        .await?
+        {
+            return Ok(());
+        }
+
+        fetch_result = {
+            let span = tracing::span!(tracing::Level::INFO, "fetch_refs_from_url");
+
+            let mirror_path = service.repo_path.join("mirror");
+            let upstream_repo = upstream_repo.clone();
+            let remote_url = remote_url.clone();
+            let remote_auth = remote_auth.clone();
+            let refs_to_fetch = refs_to_fetch.clone();
+
+            tokio::task::spawn_blocking(move || {
+                let _span_guard = span.enter();
+                crate::fetch_refs_from_url(
+                    &mirror_path,
+                    &upstream_repo,
+                    &remote_url,
+                    &refs_to_fetch,
+                    &remote_auth,
+                )
+            })
+            .await?
+        };
+
+        let hres = {
+            let span = tracing::span!(tracing::Level::INFO, "get_head");
+
+            let mirror_path = service.repo_path.join("mirror");
+            let remote_url = remote_url.clone();
+            let remote_auth = remote_auth.clone();
+
+            tokio::task::spawn_blocking(move || {
+                let _span_guard = span.enter();
+                crate::get_head(&mirror_path, &remote_url, &remote_auth)
+            })
+            .await?
+        };
+
+        let heads_map = service.head_symref_map.clone();
+
+        if let Ok(hres) = hres {
+            heads_map
+                .write()
+                .unwrap()
+                .insert(upstream_repo.clone(), hres);
+        }
+
+        std::mem::drop(permit);
+
+        match &fetch_result {
+            Err(RetryableError::Retryable(e)) => {
+                tracing::warn!(?e, "fetch got retryable error, will retry if budget left");
+                continue;
+            }
+            _ => break,
+        }
     }
-
-    let fetch_result = {
-        let span = tracing::span!(tracing::Level::INFO, "fetch_refs_from_url");
-
-        let mirror_path = service.repo_path.join("mirror");
-        let upstream_repo = upstream_repo.clone();
-        let remote_url = remote_url.clone();
-        let remote_auth = remote_auth.clone();
-
-        tokio::task::spawn_blocking(move || {
-            let _span_guard = span.enter();
-            crate::fetch_refs_from_url(
-                &mirror_path,
-                &upstream_repo,
-                &remote_url,
-                &refs_to_fetch,
-                &remote_auth,
-            )
-        })
-        .await?
-    };
-
-    let hres = {
-        let span = tracing::span!(tracing::Level::INFO, "get_head");
-
-        let mirror_path = service.repo_path.join("mirror");
-        let remote_url = remote_url.clone();
-        let remote_auth = remote_auth.clone();
-
-        tokio::task::spawn_blocking(move || {
-            let _span_guard = span.enter();
-            crate::get_head(&mirror_path, &remote_url, &remote_auth)
-        })
-        .await?
-    };
 
     let fetch_timers = service.fetch_timers.clone();
-    let heads_map = service.head_symref_map.clone();
-
-    if let Ok(hres) = hres {
-        heads_map
-            .write()
-            .unwrap()
-            .insert(upstream_repo.clone(), hres);
-    }
-
-    std::mem::drop(permit);
 
     if fetch_result.is_ok() {
         fetch_timers
@@ -279,7 +302,7 @@ pub async fn fetch_upstream(
             Ok(())
         }
         (Ok(_), _) => Ok(()),
-        (Err(e), _) => Err(e),
+        (Err(e), _) => Err(e.into_inner()),
     }
 }
 
