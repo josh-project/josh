@@ -982,12 +982,12 @@ pub fn apply_to_commit2(
         }
         #[cfg(feature = "incubating")]
         Op::Embed(path) => {
-            let subdir = to_filter(Op::Subdir(path.clone()));
-            let unapply = to_filter(Op::Unapply(LazyRef::Resolved(commit.id()), subdir));
-
             /* dbg!("embed"); */
             /* dbg!(&path); */
             if let Some(link) = read_josh_link(repo, &commit.tree()?, &path, ".link.josh") {
+                //let subdir = to_filter(Op::Subdir(path.clone()));
+                let subdir = filter::invert(link.peel())?;
+                let unapply = to_filter(Op::Unapply(LazyRef::Resolved(commit.id()), subdir));
                 /* dbg!(&link); */
                 if let Some(commit_str) = link.get_meta("commit") {
                     if let Ok(commit_oid) = git2::Oid::from_str(&commit_str) {
@@ -1180,7 +1180,7 @@ pub fn apply<'a>(
 
                     // Process each submodule commit
                     for (submodule_path, (commit_oid, meta)) in submodule_commits {
-                        let prefix_filter = to_filter(Op::Nop);
+                        let prefix_filter = Filter::new().prefix(&submodule_path);
 
                         // Create a filter with metadata
                         let link_filter = prefix_filter
@@ -1267,13 +1267,9 @@ pub fn apply<'a>(
                 )
                 .unwrap();
 
-                result_tree = tree::insert(
-                    repo,
-                    &result_tree,
-                    &root,
-                    submodule_tree.tree().id(),
-                    0o0040000, // Tree mode
-                )?;
+                let result_tree_id =
+                    tree::overlay(transaction, result_tree.id(), submodule_tree.tree().id())?;
+                result_tree = repo.find_tree(result_tree_id)?;
                 let effective_mode = mode.clone().unwrap_or_else(|| {
                     link_file
                         .get_meta("mode")
