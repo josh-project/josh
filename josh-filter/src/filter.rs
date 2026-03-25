@@ -42,6 +42,10 @@ impl Filter {
         opt::optimize(to_filter(Op::Chain(vec![self, second])))
     }
 
+    pub fn exclude(self, other: Filter) -> Filter {
+        self.chain(to_filter(Op::Exclude(other)))
+    }
+
     /// Create a no-op filter that passes everything through unchanged
     pub fn nop(self) -> Filter {
         self
