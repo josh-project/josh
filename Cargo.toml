@@ -44,7 +44,7 @@ form_urlencoded = "1.2.2"
 futures = "0.3.32"
 gix = { version = "0.79.0", default-features = false }
 gix-actor = "^0"
-gix-hash = "^0"
+gix-hash = "0.22"
 gix-object = "0.56.0"
 gix-config = "0.52.0"
 gix-submodule = "0.26.0"
