@@ -6,6 +6,7 @@
 # Guide
 - [Getting started](./guide/gettingstarted.md)
 - [Working with workspaces](./guide/workspaces.md)
+- [Stacked changes](./guide/stacked-changes.md)
 - [Importing projects](./guide/importing.md)
 - [Integrating with CI]()
 # Reference
