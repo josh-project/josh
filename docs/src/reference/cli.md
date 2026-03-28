@@ -173,7 +173,6 @@ and used for automatic pull request management — see
 ```
 josh auth login <forge>
 josh auth logout <forge>
-josh auth debug <forge>
 ```
 
 The only currently supported forge is `github`. See
