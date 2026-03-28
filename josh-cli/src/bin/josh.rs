@@ -81,10 +81,6 @@ pub struct CloneArgs {
     #[arg(short = 'b', long = "branch", default_value = "HEAD")]
     pub branch: String,
 
-    /// Keep trivial merges (don't append :prune=trivial-merge to filters)
-    #[arg(long = "keep-trivial-merges")]
-    pub keep_trivial_merges: bool,
-
     #[command(flatten)]
     pub forge_args: ForgeArgs,
 }
@@ -157,10 +153,6 @@ pub struct RemoteAddArgs {
     /// Workspace/projection identifier or path to spec
     #[arg()]
     pub filter: String,
-
-    /// Keep trivial merges (don't append :prune=trivial-merge to filters)
-    #[arg(long = "keep-trivial-merges")]
-    pub keep_trivial_merges: bool,
 
     #[command(flatten)]
     pub forge_args: ForgeArgs,
@@ -345,7 +337,6 @@ fn clone_repo(args: &CloneArgs) -> anyhow::Result<std::path::PathBuf> {
         name: "origin".to_string(),
         url: to_absolute_remote_url(&args.url)?,
         filter: args.filter.clone(),
-        keep_trivial_merges: args.keep_trivial_merges,
         forge_args: args.forge_args.clone(),
     };
 
