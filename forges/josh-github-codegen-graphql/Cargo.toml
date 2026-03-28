@@ -1,0 +1,20 @@
+[package]
+name = "josh-github-codegen-graphql"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+serde.workspace = true
+chrono.workspace = true
+url.workspace = true
+graphql_client.workspace = true
+
+[build-dependencies]
+anyhow.workspace = true
+serde.workspace = true
+toml.workspace = true
+
+proc-macro2.workspace = true
+prettyplease.workspace = true
+graphql_client_codegen.workspace = true
+syn = "2"

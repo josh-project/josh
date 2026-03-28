@@ -1,0 +1,16 @@
+# List the start up tasks. Learn more https://www.gitpod.io/docs/config-start-tasks/
+image:
+  file: .gitpod.Dockerfile
+tasks:
+  - name: Dependencies
+    init: |
+      pip install cram
+      rustup target add wasm32-unknown-unknown
+      cargo install trunk
+      cargo install hyper_cgi --features=test-server
+      cargo build --workspace
+
+# List the ports to expose. Learn more https://www.gitpod.io/docs/config-ports/
+# ports:
+#   - port: 8000
+#     onOpen: open-preview

@@ -1,0 +1,23 @@
+[package]
+name = "josh-ssh-shell"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+shell-words = "1.1.1"
+thiserror = "2.0.18"
+
+clap.workspace = true
+libc.workspace = true
+tokio.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+tokio-util.workspace = true
+tempfile.workspace = true
+reqwest.workspace = true
+
+josh-rpc.workspace = true
+
+[features]
+incubating = []

@@ -1,0 +1,28 @@
+#!/command/execlineb
+
+define key_dir /data/keys/.ssh
+define key_type ed25519
+
+josh-ensure-dir -p ${key_dir}
+josh-ensure-owner -p ${key_dir} -o git:git
+josh-ensure-mode -p ${key_dir} -m 700
+
+foreground
+{
+  if { eltest ( ! -f ${key_dir}/id_${key_type} ) -o ( ! -f ${key_dir}/id_${key_type}.pub ) }
+  foreground
+  {
+    fdmove -c 1 2
+    echo "Generating new SSH server key"
+  }
+  foreground
+  {
+    ssh-keygen -t ${key_type} -N "" -f ${key_dir}/id_${key_type} -C git
+  }
+
+  josh-ensure-owner -p ${key_dir}/id_${key_type} -o git:git
+  josh-ensure-mode -p ${key_dir}/id_${key_type} -m 600
+
+  josh-ensure-owner -p ${key_dir}/id_${key_type}.pub -o git:git
+  josh-ensure-mode -p ${key_dir}/id_${key_type}.pub -m 644
+}

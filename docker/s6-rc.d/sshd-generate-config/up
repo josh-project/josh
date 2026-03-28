@@ -1,0 +1,11 @@
+#!/command/execlineb -P
+
+importas -D 8022 josh_ssh_port JOSH_SSH_PORT
+emptyenv -p
+backtick JOSH_SSH_PORT { echo ${josh_ssh_port} }
+foreground
+{
+  redirfd -r 0 /etc/ssh/sshd_config.template
+  redirfd -w 1 /etc/ssh/sshd_config
+  envsubst
+}

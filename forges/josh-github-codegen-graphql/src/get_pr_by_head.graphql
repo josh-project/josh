@@ -1,0 +1,11 @@
+query GetPrByHead($owner: String!, $name: String!, $headRefName: String!) {
+  repository(owner: $owner, name: $name) {
+    pullRequests(first: 1, headRefName: $headRefName, states: [OPEN]) {
+      nodes {
+        id
+        number
+        isDraft
+      }
+    }
+  }
+}

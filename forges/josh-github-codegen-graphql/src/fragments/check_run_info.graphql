@@ -1,0 +1,6 @@
+fragment _CheckRunInfo on CheckRun {
+  name
+  url
+  status
+  conclusion
+}

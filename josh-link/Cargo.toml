@@ -1,0 +1,10 @@
+[package]
+name = "josh-link"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+git2.workspace = true
+anyhow.workspace = true
+
+josh-core = { workspace = true, features = ["incubating"] }

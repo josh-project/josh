@@ -1,0 +1,13 @@
+fragment _RefInfo on Ref {
+  id
+  name
+  prefix
+
+  target {
+    __typename
+
+    ... on Commit {
+      ... _CommitInfo
+    }
+  }
+}

@@ -1,0 +1,17 @@
+#!/command/execlineb
+
+# Usage: josh-ensure-dir -p path program
+# Ensures that `path` exists, and then executes `program`
+
+elgetopt "p:"
+multisubstitute
+{
+  importas -i path ELGETOPT_p
+  elgetpositionals
+}
+foreground
+{
+  if { eltest ! -d ${path} }
+  mkdir -p ${path}
+}
+$@

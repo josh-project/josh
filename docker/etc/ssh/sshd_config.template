@@ -1,0 +1,43 @@
+# Base server parameters
+
+Port ${JOSH_SSH_PORT}
+AddressFamily any
+ListenAddress 0.0.0.0
+ListenAddress ::
+Protocol 2
+LogLevel INFO
+
+# Features and security
+
+AllowStreamLocalForwarding no
+AllowTcpForwarding no
+AllowAgentForwarding Yes
+PermitTunnel no
+# Important: prevent any interactive commands from execution
+PermitTTY no
+PermitUserEnvironment no
+PermitUserRC no
+X11Forwarding no
+PrintMotd no
+
+# Accepted environment variables
+
+AcceptEnv GIT_PROTOCOL
+
+# Client management
+
+ClientAliveInterval 360
+ClientAliveCountMax 0
+
+# Authentication
+
+PasswordAuthentication no
+HostbasedAuthentication no
+KbdInteractiveAuthentication no
+PermitRootLogin no
+AllowUsers git
+PubkeyAuthentication yes
+AuthorizedKeysFile none
+
+AuthorizedKeysCommand /opt/josh-scripts/josh-auth-key %t %k
+AuthorizedKeysCommandUser nobody

@@ -1,0 +1,11 @@
+#!/command/execlineb -P
+
+importas josh_http_port JOSH_HTTP_PORT
+importas josh_ssh_timeout JOSH_SSH_TIMEOUT
+
+/usr/sbin/sshd \
+  -e \
+  -D \
+  -h/data/keys/.ssh/id_ed25519 \
+  -oSetEnv=JOSH_SSH_SHELL_TIMEOUT=${josh_ssh_timeout} \
+  -oSetEnv=JOSH_SSH_SHELL_ENDPOINT_PORT=${josh_http_port}

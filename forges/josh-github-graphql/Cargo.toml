@@ -1,0 +1,22 @@
+[package]
+edition = "2021"
+name = "josh-github-graphql"
+version = "0.1.0"
+publish = false
+
+[lib]
+doctest = false
+
+[dependencies]
+http.workspace = true
+git2.workspace = true
+serde_json.workspace = true
+reqwest.workspace = true
+reqwest-middleware.workspace = true
+anyhow.workspace = true
+url.workspace = true
+async-trait.workspace = true
+graphql_client.workspace = true
+
+josh-github-auth.workspace = true
+josh-github-codegen-graphql.workspace = true

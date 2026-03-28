@@ -1,0 +1,14 @@
+[package]
+name = "hyper-reverse-proxy"
+version = "0.0.1"
+edition = "2024"
+license = "MIT"
+authors = ["Josh Project"]
+description = "Minimal hyper reverse proxy compatibility layer for Josh"
+
+[dependencies]
+bytes = "1.11.1"
+http-body-util = "0.1.0"
+hyper = { version = "1.8.1", features = ["http1", "client"] }
+hyper-tls = "0.6.0"
+hyper-util = { version = "0.1.20", features = ["client", "client-legacy", "http1", "tokio"] }

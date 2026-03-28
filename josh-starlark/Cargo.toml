@@ -1,0 +1,19 @@
+[package]
+name = "josh-starlark"
+version = "22.4.15"
+edition = "2024"
+authors = ["Christian Schilling <initcrash@gmail.com>"]
+license-file = "../LICENSE"
+description = "Starlark support for creating josh filters"
+keywords = ["git", "monorepo", "workflow", "scm", "starlark"]
+readme = "../README.md"
+repository = "https://github.com/josh-project/josh"
+
+[dependencies]
+starlark = "0.13.0"
+allocative = "0.3"
+
+anyhow.workspace = true
+git2.workspace = true
+
+josh-filter.workspace = true

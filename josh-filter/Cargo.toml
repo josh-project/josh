@@ -1,0 +1,27 @@
+[package]
+name = "josh-filter"
+version = "22.4.15"
+repository = "https://github.com/josh-project/josh"
+authors = ["Christian Schilling <initcrash@gmail.com>"]
+license-file = "../LICENSE"
+description = "Filter type and builder for josh"
+keywords = ["git", "monorepo", "workflow", "scm"]
+readme = "../README.md"
+edition = "2024"
+
+[dependencies]
+smallvec = "1.15.1"
+pest = "2.8.6"
+pest_derive = "2.8.6"
+indoc = "2.0.7"
+itertools = "0.14.0"
+
+anyhow.workspace = true
+git2.workspace = true
+gix-object.workspace = true
+gix-hash.workspace = true
+regex.workspace = true
+serde_json.workspace = true
+
+[features]
+incubating = []

@@ -1,0 +1,10 @@
+[package]
+name = "josh-changes"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow.workspace = true
+git2.workspace = true
+
+josh-core.workspace = true

@@ -1,0 +1,7 @@
+fragment _StatusChecksParams on RequiredStatusChecksParameters {
+  requiredStatusChecks {
+    context
+    integrationId
+  }
+  strictRequiredStatusChecksPolicy
+}
