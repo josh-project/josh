@@ -275,26 +275,45 @@ josh cache fetch
 It is intended for scripting and one-off history rewriting tasks rather than day-to-day
 development workflows.
 
-By default it reads from `HEAD` and writes the filtered result to `FILTERED_HEAD`.
+**Input:** the second positional argument selects what to filter. It defaults to `HEAD`
+but can be any of:
+
+- `.` - the working tree (including uncommitted changes)
+- `+` - the index (staged changes only)
+- A full or abbreviated commit SHA
+- A ref name (e.g. `main`, `refs/heads/feature`)
+
+**Output:** the filtered commit SHA is printed to stdout. The filtered history is also
+written to the ref given by `--update` (default: `FILTERED_HEAD`).
 
 **Basic usage:**
 
 ```shell
 # Filter HEAD through :/docs and write result to FILTERED_HEAD
 josh-filter :/docs
+
+# Filter the working tree and print the resulting SHA
+josh-filter :/docs .
+
+# Filter a specific commit SHA
+josh-filter :/docs abc1234 --update refs/my/filtered
 ```
 
 **Options:**
 
 | Flag | Description |
 |------|-------------|
+| `--update <ref>` | Ref to update with the filtered result (default: `FILTERED_HEAD`) |
 | `--file <path>` | Read filter spec from a file |
 | `--squash-pattern <pattern>` | Squash commits matching the pattern |
 | `--squash-file <path>` | Read squash patterns from a file |
 | `--single` | Produce a single squashed commit |
 | `-d` | Discovery mode: populate cache with probable filters |
 | `-t` | Output Chrome tracing data |
-| `-p` | Print the filter spec |
-| `-i` | Print the filter ID |
-| `--cache-stats` | Print cache statistics |
-| `--reverse` | Swap input and output (unapply filter) |
+| `-p` | Print the filter spec (and exit) |
+| `-i` | Print the filter ID (and exit) |
+| `-s` | Print cache statistics |
+| `-n` | Skip loading the cache |
+| `--distributed-cache` | Enable the distributed cache backend |
+| `--reverse` | Reverse-apply the filter (unapply): reconstruct upstream commits from filtered ones |
+| `--check-roundtrip` | When used with `--reverse`, verify that applying the filter to the reverse result reproduces the original commit. Exits with code 1 if the check fails. |
