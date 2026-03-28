@@ -2,6 +2,12 @@
 josh-proxy
 ==========
 
+> **Note**: `josh-proxy` is primarily intended for infrastructure and DevOps use cases
+> — for example, to deploy a shared caching proxy for your team or CI/CD pipelines so
+> that ordinary `git clone` works without any special client tooling. Individual
+> developers can use the [`josh` CLI](../reference/cli.md) instead, which requires no
+> server setup.
+
 Josh provides an HTTP proxy server that can be used with any git hosting service which communicates
 via HTTP.
 
