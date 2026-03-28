@@ -1,62 +1,89 @@
 # Getting Started
 
-This book will guide you into setting up the josh
-proxy to serve your own git repository.
+The `josh` command-line tool lets you clone, fetch, push, and manage filtered views of
+git repositories directly from your terminal.
 
-> ***NOTE***
-> 
-> All the commands are included from the file `gettingstarted.t`
-> which can be run with [cram](https://bitheap.org/cram/).
+## Installation
 
-## Setting up the proxy
-
-Josh is distributed via [Docker Hub](https://hub.docker.com/r/joshproject/josh-proxy),
-and is installed and started with the following command:
+Install `josh` using Cargo (requires [Rust](https://rustup.rs)):
 
 ```shell
-{{#include gettingstarted.t:docker_github}}
+cargo install josh-cli --locked --git https://github.com/josh-project/josh.git
 ```
-
-This starts Josh as a proxy to `github.com`, in a Docker container, 
-creating a volume `josh-vol` and mounting it to the image for use by Josh.
 
 ## Cloning a repository
 
-Once Josh is running, we can clone a repository through it.
-For example, let's clone Josh:
+`josh clone` is similar to `git clone` but takes two required arguments after the URL:
+a [filter](../reference/filters.md) and a local destination path. Unlike `git clone`,
+the destination path is always required and cannot be inferred from the URL.
+
+For example, let's clone just the documentation folder of the Josh repository:
 
 ```shell
-{{#include gettingstarted.t:clone_full}}
+josh clone https://github.com/josh-project/josh.git :/docs ./josh-docs
 ```
 
-As we can see, this repository is simply the normal Josh one:
+The filter `:/docs` tells Josh to check out only the contents of the `docs/` subdirectory.
+The resulting repository will contain only the files from that folder and only the commits
+that touch them — as if that subdirectory had always been its own repository.
+
+To clone a repository without any filter (equivalent to a plain `git clone`):
 
 ```shell
-{{#include gettingstarted.t:ls_full}}
+josh clone https://github.com/josh-project/josh.git :/ ./josh
 ```
 
-## Cloning a part of the repo
+## Making and pushing changes
 
-Josh becomes interesting when we want to clone a part of the repo.
-Let's check out the Josh repository again, but this time let's filter
-only the documentation out:
+The cloned repository is a normal git repository. Edit files, commit as usual, then use
+`josh push` to send your changes back upstream:
 
 ```shell
-{{#include gettingstarted.t:clone_doc}}
+cd josh-docs
+# ... edit files, git add, git commit ...
+josh push
 ```
 
-Note the addition of `:/docs` at the end of the url.
-This is called a filter, and it instructs josh to only check out the
-given folder.
+Josh transparently reverses the filter and applies your commits to the correct location
+in the upstream repository. From the perspective of the rest of the team, the changes
+appear exactly as if they had been pushed directly to the monorepo.
 
-Looking inside the repository, we now see that the history is quite
-different. Indeed, it contains only the commits pertaining to the 
-subfolder that we checked out.
+## Pulling changes
+
+Use `josh pull` to fetch and integrate updates from upstream:
 
 ```shell
-{{#include gettingstarted.t:ls_doc}}
+josh pull
 ```
 
-This repository is a real repository in which we can pull, commit, push,
-as with a regular one. Josh will take care of synchronizing it with
-the main one in a transparent fashion.
+## Cloning a part of a repository
+
+Josh becomes particularly useful when you want to work on a filtered view of a larger
+repository — for example, a single subdirectory or a composed workspace. The `josh` CLI
+applies the filter client-side, which means the full repository object database is still
+downloaded from the upstream host. The filter determines which commits and files are
+visible in your working tree and which refs you can push to, but it does not reduce
+transfer size.
+
+> **Note**: If a true partial download is important — for example to avoid transferring
+> a large monorepo over a slow connection — you need server-side filtering via a
+> [josh-proxy](../reference/proxy.md). With the proxy in place, only the filtered
+> objects are ever sent over the network.
+
+Beyond simple subdirectory extraction, Josh's
+[filter language](../reference/filters.md) supports composition, remapping, and
+exclusions, making it possible to carve out any virtual slice of a repository.
+
+## Next steps
+
+- **[Workspaces](./workspaces.md)** — Compose a virtual repository from multiple parts
+  of a monorepo and keep them in sync bidirectionally.
+- **[Stacked changes](./stacked-changes.md)** — Push a series of commits as individual
+  pull requests with automatic PR management.
+- **[Filter syntax](../reference/filters.md)** — Learn all the available filter
+  operations.
+- **[josh CLI reference](../reference/cli.md)** — Full reference for all `josh`
+  subcommands and options.
+- **[Proxy setup](../reference/proxy.md)** — Running a shared `josh-proxy` for your
+  team or CI/CD infrastructure, so that ordinary `git clone` works without any special
+  client tooling.
