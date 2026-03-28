@@ -14,6 +14,7 @@
 - [Workspaces](./reference/workspace.md)
 - [Container configuration](./reference/container.md)
 - [Command line tools](./reference/cli.md)
+- [Forge integration](./reference/forge.md)
 - [Graphql API](./reference/graphql.md)
 - [Handlebar generator]()
 - [The josh UI]()
