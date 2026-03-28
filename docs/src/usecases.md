@@ -6,6 +6,12 @@
 Reduce scope and size of clones by treating subdirectories of the monorepo
 as individual repositories.
 
+Using the `josh` CLI:
+```
+$ josh clone https://git.example.com/monorepo.git :/path/to/library ./library
+```
+
+Or via a shared [josh-proxy](./reference/proxy.md):
 ```
 $ git clone http://josh/monorepo.git:/path/to/library.git
 ```
@@ -65,8 +71,14 @@ dependencies = :/modules:[
     </tbody>
 </table>
 
-Workspaces act as normal git repos:
+Workspaces act as normal git repos.
 
+Using the `josh` CLI:
+```
+$ josh clone https://git.example.com/central.git :workspace=workspaces/project1 ./project1
+```
+
+Or via a shared [josh-proxy](./reference/proxy.md):
 ```
 $ git clone http://josh/central.git:workspace=workspaces/project1.git
 ```
