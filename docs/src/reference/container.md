@@ -68,6 +68,16 @@
     </tr>
 </table>
 
+## Retry with backoff
+
+`josh-proxy` automatically retries transient upstream errors with exponential backoff. The number
+of retries can be configured via `JOSH_HTTP_RETRY`:
+
+    JOSH_HTTP_RETRY="5"
+
+The default is 3 retries. Set `JOSH_HTTP_RETRY="0"` to disable retries entirely. See
+[Retry with backoff](proxy.md#retry-with-backoff) for full details.
+
 ## Container volumes
 
 <table>
