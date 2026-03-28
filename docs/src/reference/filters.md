@@ -343,6 +343,38 @@ This removes all occurrences of "TODO" from commit messages by matching "TODO" a
 The regex pattern can use `(?s)` to enable dot-all mode (so `.` matches newlines), allowing it to work with
 multi-line commit messages that include both a subject line and a body.
 
+### Hook **`:hook=<arg>`**
+
+Apply a different filter to each commit in a history, where the per-commit filter is
+resolved at runtime rather than being fixed at invocation time.
+
+`<arg>` selects the git notes ref that stores those per-commit filter specifications.
+When `<arg>` does not start with `refs/`, Josh reads notes from `refs/notes/<arg>`, so
+`:hook=commits` uses the default git notes ref `refs/notes/commits`. Each note body must
+contain a valid Josh filter expression for that commit; if a commit has no note in the
+selected ref, `josh-filter` fails.
+
+Minimal example:
+
+```shell
+git notes --ref=commits add -m ':/code' -f HEAD~1
+git notes --ref=commits add -m ':/code:pin[::app.js]' -f HEAD
+josh-filter ':hook=commits'
+```
+
+In this example, the first filtered commit exposes `code/` at the repository root, while
+the second uses `:pin` to keep `app.js` at its previous contents for that commit only.
+
+When using Josh as a library, hook resolution is not tied to git notes. You can provide
+your own implementation of the `josh_core::cache::FilterHook` trait and attach it with
+`TransactionContext::with_filter_hook`, which lets your application decide how
+`filter_for_commit(commit_oid, arg)` resolves the per-commit filter.
+
+> **Note:** Using `:hook` correctly requires care to preserve josh filter invariants —
+> violating them can produce incorrect or inconsistent results. Most users won't need this
+> filter, but if you have a use case that seems to call for it, we'd love to hear about it!
+> Feel free to open an issue or start a discussion.
+
 ### Pin tree contents
 
 Pin revision of a subtree to revision of the parent commit.
