@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Proxy - Just One Single History</title>
+        <title>Forge integration - Just One Single History</title>
 
 
         <!-- Custom HTML head -->
@@ -174,105 +174,56 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="josh-proxy"><a class="header" href="#josh-proxy">josh-proxy</a></h1>
-<blockquote>
-<p><strong>Note</strong>: <code>josh-proxy</code> is primarily intended for infrastructure and DevOps use cases
-— for example, to deploy a shared caching proxy for your team or CI/CD pipelines so
-that ordinary <code>git clone</code> works without any special client tooling. Individual
-developers can use the <a href="../reference/cli.html"><code>josh</code> CLI</a> instead, which requires no
-server setup.</p>
-</blockquote>
-<p>Josh provides an HTTP proxy server that can be used with any git hosting service which communicates
-via HTTP.</p>
-<p>It needs the URL of the upstream server and a local directory to store its data.
-Optionally, a port to listen on can be specified. For example, running a local <code>josh-proxy</code>
-instance for github.com on port 8000:</p>
-<pre><code>$ docker run -p 8000:8000 -e JOSH_REMOTE=https://github.com -v josh-vol:/data/git joshproject/josh-proxy:latest
+                        <h1 id="forge-integration"><a class="header" href="#forge-integration">Forge Integration</a></h1>
+<p>Forge integration is an <strong>optional</strong> feature that connects <code>josh</code> to a code hosting
+platform (a “forge”) such as GitHub. It is not required for normal git operations —
+cloning, pushing, and pulling all work without it, even with private repositories.</p>
+<p>Forge integration is specifically used for <strong>automatic pull request management</strong> during
+<a href="../guide/stacked-changes.html">stacked changes</a> workflows. When you push a stack of
+commits with <code>josh push --split</code> or <code>josh push --stack</code>, <code>josh</code> can automatically
+create or update one pull request per commit on the forge.</p>
+<h2 id="github"><a class="header" href="#github">GitHub</a></h2>
+<p>GitHub is currently the only supported forge.</p>
+<h3 id="authentication"><a class="header" href="#authentication">Authentication</a></h3>
+<p><code>josh</code> uses GitHub’s <a href="https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps#device-flow">device flow</a>
+for authentication — the same flow used by the official GitHub CLI.</p>
+<p><strong>Log in:</strong></p>
+<pre><code class="language-shell">josh auth login github
 </code></pre>
-<blockquote>
-<p><strong>Note</strong>: While <code>josh-proxy</code> is intended to be used with a http upstream it can also proxy for
-an ssh upstream when <code>ssh</code> is used instead of <code>http</code> in the url.
-In that case it will use the ssh private key of the current user (just like
-git would) and take the username from the downstream http request.
-This mode of operation can be useful for evaluation or local use by individual developers but
-should never be used on a normal server deployment.</p>
-</blockquote>
-<p>For a first example of how to make use of josh, just the josh documentation can be checked out as
-its own repository via this command:</p>
-<pre><code>$ git clone http://localhost:8000/josh-project/josh.git:/docs.git
+<p>This prints a URL and a one-time code. If clipboard access is available the code is
+also copied automatically, otherwise it is only printed to the terminal. Open the URL
+in your browser, enter the code, and authorize the application.</p>
+<p>The token is stored in <code>~/.config/josh-cli/credentials.json</code> with <code>0600</code> permissions.</p>
+<p><strong>Log out:</strong></p>
+<pre><code class="language-shell">josh auth logout github
 </code></pre>
-<blockquote>
-<p><strong>Note</strong>: This URL needs to contain the <code>.git</code> suffix twice: once after the original path
-and once more after the filter spec.</p>
-</blockquote>
-<p><code>josh-proxy</code> supports read and write access to the repository, so when making changes
-to any files in the filtered repository, you can just commit and push them
-like you are used to.</p>
-<blockquote>
-<p><strong>Note</strong>: The proxy is semantically stateless. The data inside the docker volume is only persisted across
-runs for performance reasons. This has two important implications for deployment:</p>
-<ol>
-<li>The data does not need to be backed up unless working with very large repos where rebuilding would
-be very expensive. And 2) Multiple instances of josh-proxy can be used interchangeably for availability
-or load balancing purposes.</li>
-</ol>
-</blockquote>
-<h2 id="url-syntax-and-breakdown"><a class="header" href="#url-syntax-and-breakdown">URL syntax and breakdown</a></h2>
-<p>This is the URL of a <code>josh-proxy</code> instance:</p>
-<pre><code>http://localhost:8000
+<p><strong>Alternatively</strong>, set the <code>GH_TOKEN</code> environment variable to a
+<a href="https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens">personal access token</a>.
+This takes precedence over any stored token and is useful in CI environments:</p>
+<pre><code class="language-shell">export GH_TOKEN=ghp_...
 </code></pre>
-<p>This is the repository location on the upstream host on which to perform the filter operations:</p>
-<pre><code>/josh-project/josh.git
-</code></pre>
-<p>This is the set of filter operations to perform:</p>
-<pre><code>:/docs.git
-</code></pre>
-<p>Much more information on the available filters and the syntax of all filters is covered in detail in
-the <a href="./filters.html">filters</a> section.</p>
-<h2 id="repository-naming"><a class="header" href="#repository-naming">Repository naming</a></h2>
-<p>By default, a git URL is used to point to the remote repository to download <em>and also</em> to dictate
-how the local repository shall be named.  It’s important to learn that the last name in the URL is
-what the local git client will name the new, local repository. For example:</p>
-<pre><code>$ git clone http://localhost:8000/josh-project/josh.git:/docs.git
-</code></pre>
-<p>will create the new repository at directory <code>docs</code>, as <code>docs.git</code> is the last name in the URL.</p>
-<p>By default, this leads to rather odd-looking repositories when the <code>prefix</code> filter is the final
-filter of a URL:</p>
-<pre><code>$ git clone http://localhost:8000/josh-project/josh.git:/docs:prefix=josh-docs.git
-</code></pre>
-<p>This will still clone just the josh documentation, but the final directory structure will look like
-this:</p>
-<pre><code>- prefix=josh-docs
-  - josh-docs
-    - &lt;docs&gt;
-</code></pre>
-<p>Having the root repository directory name be the fully-specified filter is most likely not what was
-intended. This results from git’s reuse and repurposing of the remote URL, as <code>prefix=josh-docs</code>
-is the final name in the URL. With no other alternatives, this gets used for the repository name.</p>
-<p>To explicitly specify a repository name, provide the desired name after the URL when cloning a new
-repository:</p>
-<pre><code>$ git clone http://localhost:8000/josh-project/josh.git:/docs:prefix=josh-docs.git my-repo
-</code></pre>
-<h2 id="serving-a-github-repo"><a class="header" href="#serving-a-github-repo">Serving a github repo</a></h2>
-<p>To prompt for authentication, Josh relies on the server requesting it on fetch. When using a server
-which doesn’t need authentication for fetching, Josh will not automatically prompt for
-authentication when pushing, and it will be impossible to provide credentials for pushing.</p>
-<p>To solve this, you need to pass the <code>--require-auth</code> option to josh-proxy.
-This can be done with <code>JOSH_EXTRA_OPTS</code> when using the docker image like so:</p>
-<p><code>docker run -d -p 8000:8000 -e JOSH_EXTRA_OPTS="--require-auth" -e JOSH_REMOTE=https://github.com/josh-project -v josh-vol:$(pwd)/git_data joshproject/josh-proxy:latest </code></p>
-<p>In this example, we serve only the josh-project repositories. Be aware that if you don’t add the
-organisation or repo URL, your instance will be able to serve all of github. You can (and should)
-restrict it to your repository or organisation by making it part of the URL.</p>
+<h3 id="what-forge-integration-enables"><a class="header" href="#what-forge-integration-enables">What forge integration enables</a></h3>
+<p>Once authenticated, <code>josh push --split</code> or <code>josh push --stack</code> will, in addition to
+pushing the git refs:</p>
+<ul>
+<li><strong>Create</strong> a pull request for each commit that does not yet have one.</li>
+<li><strong>Update</strong> existing pull requests (title, body, base branch) when commits are amended
+or rebased.</li>
+<li><strong>Manage draft status</strong> automatically: pull requests whose base branch is not the
+repository’s default branch are marked as drafts, and promoted to “ready for review”
+once they target the default branch directly.</li>
+</ul>
+<p>See the <a href="../guide/stacked-changes.html">Stacked changes</a> guide for a full walkthrough.</p>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="../reference/filters.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="../reference/cli.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
-                            <a rel="next prefetch" href="../reference/workspace.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="../reference/graphql.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -282,11 +233,11 @@ restrict it to your repository or organisation by making it part of the URL.</p>
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="../reference/filters.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="../reference/cli.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 
-                    <a rel="next prefetch" href="../reference/workspace.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="../reference/graphql.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>

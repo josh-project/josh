@@ -36,10 +36,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-6dd0a6ab.js";
+            window.path_to_searchindex_js = "searchindex-34692678.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-0e9aabdb.js"></script>
+        <script src="toc-c6b525b5.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -757,7 +757,7 @@ filtered view of a monorepo or a plain repository.</p>
 self-contained change. When you push with <code>--split</code> or <code>--stack</code>, Josh creates a
 separate git ref for each qualifying commit.</p>
 <p>A commit qualifies for a separate ref — and an automatic PR, when
-<a href="reference/forge.html">forge integration</a> is configured — only if both of the
+<a href="#forge-integration">forge integration</a> is configured — only if both of the
 following are true:</p>
 <ol>
 <li><strong>It has a change ID</strong> in the commit message footer (see below).</li>
@@ -845,7 +845,7 @@ pulling, the next <code>josh push --split</code> will retarget and promote the n
 from draft to ready for review.</p>
 <h2 id="without-forge-integration"><a class="header" href="#without-forge-integration">Without forge integration</a></h2>
 <p><code>josh push --split</code> and <code>josh push --stack</code> work without
-<a href="reference/forge.html">forge integration</a>. Josh still pushes the individual
+<a href="#forge-integration">forge integration</a>. Josh still pushes the individual
 <code>@changes/…</code> refs to the upstream repository; you can then create pull requests from
 them manually, or use them as part of a custom review workflow.</p>
 <div style="break-before: page; page-break-before: always;"></div>
@@ -1757,13 +1757,12 @@ after manually modifying the filter configuration without fetching.</p>
 <h2 id="josh-auth"><a class="header" href="#josh-auth">josh auth</a></h2>
 <p>Manage authentication credentials for forge integrations. Forge integration is optional
 and used for automatic pull request management — see
-<a href="reference/forge.html">Forge integration</a> for details.</p>
+<a href="#forge-integration">Forge integration</a> for details.</p>
 <pre><code>josh auth login &lt;forge&gt;
 josh auth logout &lt;forge&gt;
-josh auth debug &lt;forge&gt;
 </code></pre>
 <p>The only currently supported forge is <code>github</code>. See
-<a href="reference/forge.html">Forge integration</a> for full documentation.</p>
+<a href="#forge-integration">Forge integration</a> for full documentation.</p>
 <hr>
 <h2 id="josh-filter-standalone-binary"><a class="header" href="#josh-filter-standalone-binary">josh-filter (standalone binary)</a></h2>
 <p><code>josh-filter</code> is a lower-level command that rewrites git history using Josh filter specs.
@@ -1794,6 +1793,47 @@ josh-filter :/docs
 </tbody>
 </table>
 </div>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="forge-integration"><a class="header" href="#forge-integration">Forge Integration</a></h1>
+<p>Forge integration is an <strong>optional</strong> feature that connects <code>josh</code> to a code hosting
+platform (a “forge”) such as GitHub. It is not required for normal git operations —
+cloning, pushing, and pulling all work without it, even with private repositories.</p>
+<p>Forge integration is specifically used for <strong>automatic pull request management</strong> during
+<a href="#stacked-changes">stacked changes</a> workflows. When you push a stack of
+commits with <code>josh push --split</code> or <code>josh push --stack</code>, <code>josh</code> can automatically
+create or update one pull request per commit on the forge.</p>
+<h2 id="github"><a class="header" href="#github">GitHub</a></h2>
+<p>GitHub is currently the only supported forge.</p>
+<h3 id="authentication"><a class="header" href="#authentication">Authentication</a></h3>
+<p><code>josh</code> uses GitHub’s <a href="https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps#device-flow">device flow</a>
+for authentication — the same flow used by the official GitHub CLI.</p>
+<p><strong>Log in:</strong></p>
+<pre><code class="language-shell">josh auth login github
+</code></pre>
+<p>This prints a URL and a one-time code. If clipboard access is available the code is
+also copied automatically, otherwise it is only printed to the terminal. Open the URL
+in your browser, enter the code, and authorize the application.</p>
+<p>The token is stored in <code>~/.config/josh-cli/credentials.json</code> with <code>0600</code> permissions.</p>
+<p><strong>Log out:</strong></p>
+<pre><code class="language-shell">josh auth logout github
+</code></pre>
+<p><strong>Alternatively</strong>, set the <code>GH_TOKEN</code> environment variable to a
+<a href="https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens">personal access token</a>.
+This takes precedence over any stored token and is useful in CI environments:</p>
+<pre><code class="language-shell">export GH_TOKEN=ghp_...
+</code></pre>
+<h3 id="what-forge-integration-enables"><a class="header" href="#what-forge-integration-enables">What forge integration enables</a></h3>
+<p>Once authenticated, <code>josh push --split</code> or <code>josh push --stack</code> will, in addition to
+pushing the git refs:</p>
+<ul>
+<li><strong>Create</strong> a pull request for each commit that does not yet have one.</li>
+<li><strong>Update</strong> existing pull requests (title, body, base branch) when commits are amended
+or rebased.</li>
+<li><strong>Manage draft status</strong> automatically: pull requests whose base branch is not the
+repository’s default branch are marked as drafts, and promoted to “ready for review”
+once they target the default branch directly.</li>
+</ul>
+<p>See the <a href="#stacked-changes">Stacked changes</a> guide for a full walkthrough.</p>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="graphql-api-1"><a class="header" href="#graphql-api-1">GraphQL API</a></h1>
 <p>Josh implements a GraphQL API to query the content of repositories without a need to clone
