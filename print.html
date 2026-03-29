@@ -36,7 +36,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-9d875f8b.js";
+            window.path_to_searchindex_js = "searchindex-6dd0a6ab.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-0e9aabdb.js"></script>
@@ -1218,6 +1218,13 @@ again by the subdirectory filter. Thus, the order in which filters are provided 
 filter further transforms the latest transformation of the tree.</p>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="josh-proxy"><a class="header" href="#josh-proxy">josh-proxy</a></h1>
+<blockquote>
+<p><strong>Note</strong>: <code>josh-proxy</code> is primarily intended for infrastructure and DevOps use cases
+— for example, to deploy a shared caching proxy for your team or CI/CD pipelines so
+that ordinary <code>git clone</code> works without any special client tooling. Individual
+developers can use the <a href="#josh-cli"><code>josh</code> CLI</a> instead, which requires no
+server setup.</p>
+</blockquote>
 <p>Josh provides an HTTP proxy server that can be used with any git hosting service which communicates
 via HTTP.</p>
 <p>It needs the URL of the upstream server and a local directory to store its data.
