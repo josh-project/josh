@@ -6,7 +6,7 @@ cloning, pushing, and pulling all work without it, even with private repositorie
 
 Forge integration is specifically used for **automatic pull request management** during
 [stacked changes](../guide/stacked-changes.md) workflows. When you push a stack of
-commits with `josh push --split` or `josh push --stack`, `josh` can automatically
+commits with `josh publish`, `josh` can automatically
 create or update one pull request per commit on the forge.
 
 ## GitHub
@@ -46,8 +46,7 @@ export GH_TOKEN=ghp_...
 
 ### What forge integration enables
 
-Once authenticated, `josh push --split` or `josh push --stack` will, in addition to
-pushing the git refs:
+Once authenticated, `josh publish` will, in addition to pushing the git refs:
 
 - **Create** a pull request for each commit that does not yet have one.
 - **Update** existing pull requests (title, body, base branch) when commits are amended
