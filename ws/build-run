@@ -1,0 +1,61 @@
+#!/bin/bash
+set -e
+
+usage() {
+    echo "Usage: $0 <safe_name> <WS_TREE>" >&2
+    exit 1
+}
+
+[[ $# -eq 2 ]] || usage
+SAFE_NAME=$1
+WS_TREE=$2
+git ls-tree $WS_TREE
+IMAGE_TREE=$(git show $WS_TREE:image)
+RUN_TREE=$(git rev-parse $WS_TREE:run)
+
+$(dirname $0)/build-image "$IMAGE_TREE"
+
+out_vol="out_${WS_TREE}"
+cache_vol="${SAFE_NAME}_cache"
+podman volume create "$cache_vol" 2>/dev/null || true
+
+if podman volume inspect "$out_vol" >/dev/null 2>&1; then
+    echo "Cached output found, skipping build"
+else
+
+    BUILD_ARGS=(--device /dev/net/tun --net host --cap-add=SYS_MODULE --cap-add=NET_ADMIN)
+    if git rev-parse --verify "$WS_TREE:deps" >/dev/null 2>&1; then
+        while IFS= read -r filename; do
+            sha=$(git show "$WS_TREE:deps/$filename")
+            ws="${SAFE_NAME}-${filename}"
+            echo "DEP: $0 $ws $sha"
+            "$0" "$ws" "$sha"
+            BUILD_ARGS+=(-v "out_$sha:/$filename")
+        done < <(git ls-tree --name-only "$WS_TREE:deps")
+    fi
+
+    vol="snapshot_${RUN_TREE}_$(openssl rand -hex 4)"
+    podman volume create "$vol"
+    podman volume create "$out_vol"
+
+    podman run --rm -v "$vol":/data -v "$out_vol":/out -v "$cache_vol":/opt/cache busybox \
+        sh -c "chown -R $(id -u):$(id -g) /data /out /opt/cache"
+
+    git archive $RUN_TREE \
+        | podman run --rm --user $(id -u):$(id -g) -i -v "$vol":/dst busybox \
+            tar -xC /dst
+
+    podman run --rm -i -v "$vol":$PWD -v "$out_vol":/out -v "$cache_vol":/opt/cache -w $PWD \
+        "${BUILD_ARGS[@]}" \
+        --user $(id -u):$(id -g) ws_image_$IMAGE_TREE sh -c "bash run.sh" || RUN_STATUS=$?
+
+    podman volume rm "$vol"
+fi
+
+if [[ ${RUN_STATUS:-0} -ne 0 ]]; then
+    echo "FAILED: $SAFE_NAME"
+else
+    echo "SUCCESS: $SAFE_NAME"
+fi
+
+exit ${RUN_STATUS:-0}

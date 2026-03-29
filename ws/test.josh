@@ -1,0 +1,12 @@
+:#image[:+images/dev-local/image]
+
+deps = :[
+    :#cargo-target[:+ws/bld]
+]
+
+run = :[
+    ::run.sh=ws/run-tests.sh
+    ::run-tests.sh
+    ::tests/
+    ::scripts/
+]

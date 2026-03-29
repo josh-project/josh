@@ -1,0 +1,9 @@
+:#image[:+images/dev-local/image]
+
+run = :[
+    ::run.sh=ws/run-build.sh
+    :exclude[
+        ::ws/
+        ::tests/
+    ]
+]
