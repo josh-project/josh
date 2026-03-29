@@ -1,0 +1,10 @@
+:#image[:+images/dev-local/image]
+:$cache="cargo"
+
+run = :[
+    ::run.sh=ws/run-build.sh
+    :exclude[
+        ::ws/
+        ::tests/
+    ]
+]

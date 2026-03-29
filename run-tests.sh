@@ -13,6 +13,7 @@ else
     DATE_CMD="date"
 fi
 
+PATH="/josh/debug/:${PATH}"
 PATH="${TARGET_DIR}/debug/:${PATH}"
 PATH="$(pwd)/scripts/:${PATH}"
 export PATH

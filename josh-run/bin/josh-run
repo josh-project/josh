@@ -1,0 +1,47 @@
+#!/bin/bash
+# =============================================================================
+# This script splits out the requested workspace with Josh filters, builds (or
+# reuses) the corresponding podman image, prepares isolated volumes, runs the
+# workspace's entrypoint, and finally extracts any artifacts back to the host.
+#
+# Why Josh instead of the host checkout?
+# - Filters keep the container context minimal: only the workspace (image/run)
+#   paths are present, cutting down build context size and avoiding leakage of
+#   unrelated files.
+# - The filtered trees are keyed by their own SHAs, so the cache tag always
+#   matches the exact files fed to Docker; changing workspace files changes the
+#   image hash automatically.
+# - Only the filtered archive is piped into `podman build`; no bind-mounts or
+#   extra paths exist in the context, so no other files can influence the image.
+# - The host tree stays untouched; no extra copies or bind-mount complexity.
+# =============================================================================
+set -e
+
+usage() {
+    echo "Usage: $0 <filter> [<ref>]" >&2
+    echo "  <filter>  e.g. ':+ws/test'" >&2
+    echo "  <ref>     ref, SHA, '.' (working tree, default), or '+' (staged)" >&2
+    exit 1
+}
+
+[[ $# -ge 1 && $# -le 2 ]] || usage
+FILTER=":SQUASH$1"
+SNAPSHOT_INPUT=${2:-.}
+
+if [[ "$SNAPSHOT_INPUT" == "+" ]]; then
+    git diff --cached --stat
+elif [[ "$SNAPSHOT_INPUT" == "." ]]; then
+    git diff --stat HEAD
+fi
+
+# Derive filtered tree SHAs for the workspace: build context (:image),
+# runtime files (:run), and the combined workspace tree (for output vol naming).
+WS_TREE=$(git rev-parse $(josh-filter "$FILTER" "$SNAPSHOT_INPUT")^{tree})
+
+echo "WS_TREE: $WS_TREE"
+
+SAFE_NAME=$(josh-filter -i "$FILTER")
+$(dirname "$0")/josh-run-container "$SAFE_NAME" "$WS_TREE" || true
+
+# Pull generated artifacts from the output volume back to the host.
+podman volume export "out_$WS_TREE" | tar -xvf -

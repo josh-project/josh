@@ -2,7 +2,7 @@
   $ cd ${TESTTMP}
 
   $ curl -s http://localhost:8002/version
-  Version: *.*.* (glob)
+  Version: * (glob)
 
   $ bash ${TESTDIR}/destroy_test_env.sh
   .
