@@ -71,7 +71,7 @@ Push with stacked changes (should create multiple refs)
   5f2928c89c4dcc7f5a8c59ef65734a83620cefee\trefs/namespaces/josh-origin/refs/heads/master (esc)
   5f2928c89c4dcc7f5a8c59ef65734a83620cefee\trefs/remotes/origin/HEAD (esc)
   5f2928c89c4dcc7f5a8c59ef65734a83620cefee\trefs/remotes/origin/master (esc)
-  $ josh push --stack
+  $ josh publish
   To file://${TESTTMP}/remote
    * [new branch]      c61c37f4a3d5eb447f41dde15620eee1a181d60b -> @changes/master/josh@example.com/1234
   
@@ -81,17 +81,19 @@ Push with stacked changes (should create multiple refs)
   
   Pushed 6ed6c1ca90cb15fe4edf8d133f0e2e44562aa77d to origin/refs/heads/@base/master/josh@example.com/1234
   To file://${TESTTMP}/remote
-   * [new branch]      2cbfa8cb8d9a9f1de029fcba547a6e56c742733f -> @changes/master/josh@example.com/foo7
+   * [new branch]      c1b55ea7e5f27f82d3565c1f5d64113adf635c2c -> @changes/master/josh@example.com/foo7
   
-  Pushed 2cbfa8cb8d9a9f1de029fcba547a6e56c742733f to origin/refs/heads/@changes/master/josh@example.com/foo7
+  Pushed c1b55ea7e5f27f82d3565c1f5d64113adf635c2c to origin/refs/heads/@changes/master/josh@example.com/foo7
   To file://${TESTTMP}/remote
-   * [new branch]      c61c37f4a3d5eb447f41dde15620eee1a181d60b -> @base/master/josh@example.com/foo7
+   * [new branch]      6ed6c1ca90cb15fe4edf8d133f0e2e44562aa77d -> @base/master/josh@example.com/foo7
   
-  Pushed c61c37f4a3d5eb447f41dde15620eee1a181d60b to origin/refs/heads/@base/master/josh@example.com/foo7
+  Pushed 6ed6c1ca90cb15fe4edf8d133f0e2e44562aa77d to origin/refs/heads/@base/master/josh@example.com/foo7
   To file://${TESTTMP}/remote
    * [new branch]      2cbfa8cb8d9a9f1de029fcba547a6e56c742733f -> @heads/master/josh@example.com
   
   Pushed 2cbfa8cb8d9a9f1de029fcba547a6e56c742733f to origin/refs/heads/@heads/master/josh@example.com
+
+
   $ git ls-remote .
   da80e49d24d110866ce2ec7a5c21112696fd165b\tHEAD (esc)
   da80e49d24d110866ce2ec7a5c21112696fd165b\trefs/heads/master (esc)
@@ -108,9 +110,9 @@ Verify the refs were created in the remote
   $ git ls-remote .
   6ed6c1ca90cb15fe4edf8d133f0e2e44562aa77d\tHEAD (esc)
   6ed6c1ca90cb15fe4edf8d133f0e2e44562aa77d\trefs/heads/@base/master/josh@example.com/1234 (esc)
-  c61c37f4a3d5eb447f41dde15620eee1a181d60b\trefs/heads/@base/master/josh@example.com/foo7 (esc)
+  6ed6c1ca90cb15fe4edf8d133f0e2e44562aa77d\trefs/heads/@base/master/josh@example.com/foo7 (esc)
   c61c37f4a3d5eb447f41dde15620eee1a181d60b\trefs/heads/@changes/master/josh@example.com/1234 (esc)
-  2cbfa8cb8d9a9f1de029fcba547a6e56c742733f\trefs/heads/@changes/master/josh@example.com/foo7 (esc)
+  c1b55ea7e5f27f82d3565c1f5d64113adf635c2c\trefs/heads/@changes/master/josh@example.com/foo7 (esc)
   2cbfa8cb8d9a9f1de029fcba547a6e56c742733f\trefs/heads/@heads/master/josh@example.com (esc)
   6ed6c1ca90cb15fe4edf8d133f0e2e44562aa77d\trefs/heads/master (esc)
 

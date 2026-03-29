@@ -33,34 +33,32 @@ pub struct PushArgs {
     /// Dry run (don't actually update remote)
     #[arg(long = "dry-run", action = clap::ArgAction::SetTrue)]
     pub dry_run: bool,
-
-    /// Push mode (split or stack)
-    #[command(flatten)]
-    pub push_mode: PushModeArgs,
 }
 
-#[derive(Debug, clap::Args)]
-#[group(multiple = false)]
-pub struct PushModeArgs {
-    /// Use split mode for pushing
-    #[arg(long)]
-    pub split: bool,
+#[derive(Debug, clap::Parser)]
+pub struct PublishArgs {
+    /// Remote name (or URL) to push to (optional, defaults to git's configured remote)
+    ///
+    /// When omitted, behaves like `git push` and uses the current branch's
+    /// configured remote (or a reasonable default such as `origin`).
+    #[arg()]
+    pub remote: Option<String>,
 
-    /// Use stack mode for pushing
-    #[arg(long)]
-    pub stack: bool,
-}
+    /// One or more refspecs to push (e.g. main, HEAD:refs/heads/main)
+    #[arg()]
+    pub refspecs: Vec<String>,
 
-impl PushModeArgs {
-    pub fn mode(&self, author: String) -> PushMode {
-        if self.split {
-            PushMode::Split(author)
-        } else if self.stack {
-            PushMode::Stack(author)
-        } else {
-            PushMode::Normal
-        }
-    }
+    /// Force update (non-fast-forward)
+    #[arg(short = 'f', long = "force", action = clap::ArgAction::SetTrue)]
+    pub force: bool,
+
+    /// Atomic push (all-or-nothing if server supports it)
+    #[arg(long = "atomic", action = clap::ArgAction::SetTrue)]
+    pub atomic: bool,
+
+    /// Dry run (don't actually update remote)
+    #[arg(long = "dry-run", action = clap::ArgAction::SetTrue)]
+    pub dry_run: bool,
 }
 
 struct PreparedPush {
@@ -155,14 +153,12 @@ fn prepare_push(
 
     log::debug!("to_push: {:?}", to_push);
 
-    let pr_infos = if !dry_run
-        && matches!(push_mode, PushMode::Split(_) | PushMode::Stack(_))
-        && *forge == Some(Forge::Github)
-    {
-        josh_github_changes::collect_pr_infos(repo, &to_push)
-    } else {
-        vec![]
-    };
+    let pr_infos =
+        if !dry_run && matches!(push_mode, PushMode::Split(_)) && *forge == Some(Forge::Github) {
+            josh_github_changes::collect_pr_infos(repo, &to_push)
+        } else {
+            vec![]
+        };
 
     Ok(PreparedPush {
         remote_name: remote_name.to_string(),
@@ -183,7 +179,7 @@ fn execute_push(
     for push_ref in &prepared.to_push {
         let mut git_push_args = vec!["push"];
 
-        if force || matches!(prepared.push_mode, PushMode::Split(_) | PushMode::Stack(_)) {
+        if force || matches!(prepared.push_mode, PushMode::Split(_)) {
             git_push_args.push("--force");
         }
 
@@ -253,10 +249,68 @@ pub fn handle_push(
 
     let filter = filter_with_meta.peel();
 
+    let refspecs = if args.refspecs.is_empty() {
+        let head = repo.head().context("Failed to get HEAD")?;
+        let current_branch = head
+            .shorthand()
+            .context("Failed to get current branch name")?;
+        vec![current_branch.to_string()]
+    } else {
+        args.refspecs.clone()
+    };
+
+    // Phase 1: Prepare all pushes (pure computation)
+    let prepared_pushes: Vec<PreparedPush> = refspecs
+        .iter()
+        .map(|refspec| {
+            prepare_push(
+                refspec,
+                remote_name,
+                transaction,
+                filter,
+                PushMode::Normal,
+                &forge,
+                args.dry_run,
+            )
+        })
+        .collect::<anyhow::Result<Vec<_>>>()?;
+
+    // Phase 2: Execute all pushes (side effects)
+    for prepared in &prepared_pushes {
+        execute_push(
+            prepared,
+            repo.path(),
+            &url,
+            args.force,
+            args.atomic,
+            args.dry_run,
+        )?;
+    }
+
+    Ok(())
+}
+
+pub fn handle_publish(
+    args: &PublishArgs,
+    transaction: &josh_core::cache::Transaction,
+) -> anyhow::Result<()> {
+    let repo = transaction.repo();
+    let repo_path = normalize_repo_path(repo.path());
+
+    let remote_name = args.remote.as_deref().unwrap_or("origin");
+
+    let RemoteConfig {
+        url,
+        filter_with_meta,
+        forge,
+        ..
+    } = read_remote_config(&repo_path, remote_name)
+        .with_context(|| format!("Failed to read remote config for '{}'", remote_name))?;
+
+    let filter = filter_with_meta.peel();
+
     let config = repo.config().context("Failed to get git config")?;
-    let push_mode = args
-        .push_mode
-        .mode(config.get_string("user.email").unwrap_or_default());
+    let push_mode = PushMode::Split(config.get_string("user.email").unwrap_or_default());
 
     let refspecs = if args.refspecs.is_empty() {
         let head = repo.head().context("Failed to get HEAD")?;
