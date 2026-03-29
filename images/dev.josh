@@ -1,0 +1,7 @@
+bases = :[
+    :#BASE_IMAGE[:+images/rust-base]
+]
+context = :[
+    :/images/dev
+    ::lfs-test-server/
+]

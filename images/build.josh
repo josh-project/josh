@@ -1,0 +1,15 @@
+bases = :[
+    :#BASE_IMAGE[:+images/dev]
+]
+context = :[
+    :/images/build
+    :exclude[
+        ::images/
+        ::ws/
+        ::tests/
+        ::docs/
+        ::scripts/
+        ::josh-ssh-dev-server/
+        ::lfs-test-server/
+    ]
+]
