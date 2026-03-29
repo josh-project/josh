@@ -25,7 +25,7 @@ fi
 echo "running: ${TESTS}"
 
 if (( ! NO_BUILD_CONTAINER )); then
-    docker buildx build \
+    podman build \
         --target=dev-local \
         --tag=josh-dev-local \
         --build-arg USER_UID="$(id -u)" \
@@ -47,7 +47,7 @@ cargo build --workspace --exclude josh-ui --features incubating
 sh run-tests.sh ${TESTS}
 EOF
 
-docker run --rm \
+podman run --rm \
     --workdir "$(pwd)" \
     --volume "$(pwd)":"$(pwd)" \
     --volume cache:/opt/cache \
