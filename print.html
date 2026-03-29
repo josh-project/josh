@@ -36,10 +36,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-2af3b0db.js";
+            window.path_to_searchindex_js = "searchindex-23cc9c56.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-e9bc00a4.js"></script>
+        <script src="toc-0e9aabdb.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -773,6 +773,110 @@ a developer can now pull from the application1 workspace.</p>
   | * 366adba Add library1
   * 50cd611 Add application1
 </code></pre>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="stacked-changes"><a class="header" href="#stacked-changes">Stacked Changes</a></h1>
+<p>Josh supports a stacked-changes workflow where a series of commits on a local branch
+can each be pushed as a separate, independently-reviewable unit. This is useful when
+working on a larger feature that is best reviewed in smaller, logical steps.</p>
+<p>This feature is separate from Josh’s filtering functionality. It works with any
+repository accessible via the <code>josh</code> CLI, regardless of whether you are working with a
+filtered view of a monorepo or a plain repository.</p>
+<h2 id="concepts"><a class="header" href="#concepts">Concepts</a></h2>
+<p>In a stacked changes workflow, each commit on your local branch represents one
+self-contained change. When you push with <code>--split</code> or <code>--stack</code>, Josh creates a
+separate git ref for each qualifying commit.</p>
+<p>A commit qualifies for a separate ref — and an automatic PR, when
+<a href="reference/forge.html">forge integration</a> is configured — only if both of the
+following are true:</p>
+<ol>
+<li><strong>It has a change ID</strong> in the commit message footer (see below).</li>
+<li><strong>Its author email matches</strong> the email configured in <code>user.email</code> in your git config.</li>
+</ol>
+<p>Commits without a change ID, or authored by someone else, are silently skipped and are
+not pushed as individual changes.</p>
+<h2 id="change-ids"><a class="header" href="#change-ids">Change IDs</a></h2>
+<p>A change ID is a short, stable identifier that you add manually to the footer of a
+commit message, using either of these footers:</p>
+<pre><code>Change: my-feature-part-1
+</code></pre>
+<p>or the Gerrit-compatible form:</p>
+<pre><code>Change-Id: I1234abcd...
+</code></pre>
+<p>The change ID must not contain <code>@</code>. It must be unique within the stack. It is what
+allows <code>josh push</code> to match a commit to an existing PR across rebases and amends —
+so once you have assigned an ID to a change, keep it stable.</p>
+<p><strong>Example commit message:</strong></p>
+<pre><code>Add input validation to the login form
+
+Validates that the email field is non-empty and well-formed before
+submission. Returns an error message inline without clearing the form.
+
+Change: login-form-validation
+</code></pre>
+<h2 id="push-modes"><a class="header" href="#push-modes">Push modes</a></h2>
+<p>There are two stacked push modes:</p>
+<ul>
+<li>
+<p><strong><code>--split</code></strong> — Each commit is pushed as a <em>minimal, independent</em> diff. Josh strips
+away the context of earlier commits in the stack so that each change can be applied on
+its own. This is the recommended mode for GitHub PR stacks, because each PR shows only
+its own diff even before earlier PRs are merged.</p>
+</li>
+<li>
+<p><strong><code>--stack</code></strong> — Each commit is pushed with its full upstream context preserved. The
+history of earlier commits is kept intact. Use this when reviewers need the full
+context of the stack to understand each individual change.</p>
+</li>
+</ul>
+<h2 id="workflow"><a class="header" href="#workflow">Workflow</a></h2>
+<h3 id="1-write-your-commits"><a class="header" href="#1-write-your-commits">1. Write your commits</a></h3>
+<p>Work on your feature normally, writing one commit per logical step. Add a <code>Change:</code>
+footer to each commit you want to submit for review:</p>
+<pre><code>$ git commit -m "Add validation for input fields
+
+Change: input-validation"
+
+$ git commit -m "Wire validation into the form component
+
+Change: form-wiring"
+
+$ git commit -m "Add tests for form validation
+
+Change: validation-tests"
+</code></pre>
+<p>Commits without a <code>Change:</code> footer are included in the push to the base branch but
+do not get their own ref or PR.</p>
+<h3 id="2-push-as-a-stack"><a class="header" href="#2-push-as-a-stack">2. Push as a stack</a></h3>
+<pre><code class="language-shell">josh push --split
+</code></pre>
+<p>For each qualifying commit Josh pushes a ref under
+<code>refs/heads/@changes/&lt;base&gt;/&lt;author&gt;/&lt;change-id&gt;</code>. With GitHub forge integration
+enabled, a pull request is created (or updated) for each of these refs automatically.</p>
+<p>The first change in the stack targets the repository’s default branch. Each subsequent
+PR targets the branch of the change before it. Intermediate PRs are automatically
+marked as <strong>draft</strong> until the changes before them are merged.</p>
+<h3 id="3-iterate"><a class="header" href="#3-iterate">3. Iterate</a></h3>
+<p>After receiving review feedback, amend or rebase your commits as needed, keeping the
+<code>Change:</code> footers intact:</p>
+<pre><code class="language-shell">git rebase -i HEAD~3   # edit commits, preserve Change: footers
+josh push --split      # re-push; existing PRs are updated, not recreated
+</code></pre>
+<p>As long as the change ID in the footer is preserved through your edits, <code>josh push</code>
+updates the correct existing PRs rather than creating new ones.</p>
+<h3 id="4-merge"><a class="header" href="#4-merge">4. Merge</a></h3>
+<p>Once a PR is approved and its required checks pass, merge it through the forge’s normal
+UI. Then sync your local branch to account for the merged commit:</p>
+<pre><code class="language-shell">josh pull --rebase --autostash
+</code></pre>
+<p>This rebases your remaining local commits on top of the updated upstream state.
+<code>--autostash</code> ensures any uncommitted changes are preserved across the operation. After
+pulling, the next <code>josh push --split</code> will retarget and promote the next PR in the stack
+from draft to ready for review.</p>
+<h2 id="without-forge-integration"><a class="header" href="#without-forge-integration">Without forge integration</a></h2>
+<p><code>josh push --split</code> and <code>josh push --stack</code> work without
+<a href="reference/forge.html">forge integration</a>. Josh still pushes the individual
+<code>@changes/…</code> refs to the upstream repository; you can then create pull requests from
+them manually, or use them as part of a custom review workflow.</p>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="importing-projects"><a class="header" href="#importing-projects">Importing projects</a></h1>
 <p>When moving to a monorepo setup, especially in existing organisations,
@@ -1610,8 +1714,8 @@ the correct upstream commits, so your changes land in the right place in the mon
 <tr><td><code>-f</code>, <code>--force</code></td><td>Force-push (non-fast-forward)</td></tr>
 <tr><td><code>--atomic</code></td><td>Atomic push (all-or-nothing)</td></tr>
 <tr><td><code>--dry-run</code></td><td>Show what would be pushed without actually pushing</td></tr>
-<tr><td><code>--split</code></td><td>Push each commit as an independent, minimal diff (see <a href="guide/stacked-changes.html">Stacked changes</a>)</td></tr>
-<tr><td><code>--stack</code></td><td>Push commits as a stack, preserving upstream context (see <a href="guide/stacked-changes.html">Stacked changes</a>)</td></tr>
+<tr><td><code>--split</code></td><td>Push each commit as an independent, minimal diff (see <a href="#stacked-changes">Stacked changes</a>)</td></tr>
+<tr><td><code>--stack</code></td><td>Push commits as a stack, preserving upstream context (see <a href="#stacked-changes">Stacked changes</a>)</td></tr>
 </tbody>
 </table>
 </div>
