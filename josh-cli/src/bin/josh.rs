@@ -4,7 +4,7 @@ use clap::Parser;
 use josh_cli::commands::auth::AuthArgs;
 #[cfg(feature = "incubating")]
 use josh_cli::commands::link::LinkArgs;
-use josh_cli::commands::push::PushArgs;
+use josh_cli::commands::push::{PublishArgs, PushArgs};
 use josh_cli::config::{RemoteConfig, read_remote_config, write_remote_config};
 use josh_cli::forge::Forge;
 use josh_core::git::{normalize_repo_path, spawn_git_command};
@@ -44,6 +44,9 @@ pub enum RepoCommand {
 
     /// Push refs to a remote (like `git push`) with projection-aware options
     Push(PushArgs),
+
+    /// Push each commit as an independent, minimal diff (stacked changes workflow)
+    Publish(PublishArgs),
 
     /// Add a remote with optional projection/filtering (like `git remote add`)
     Remote(RemoteArgs),
@@ -222,6 +225,7 @@ fn run_repo(cmd: &RepoCommand) -> anyhow::Result<()> {
         RepoCommand::Fetch(args) => handle_fetch(args, &transaction),
         RepoCommand::Pull(args) => handle_pull(args, &transaction),
         RepoCommand::Push(args) => josh_cli::commands::push::handle_push(args, &transaction),
+        RepoCommand::Publish(args) => josh_cli::commands::push::handle_publish(args, &transaction),
         RepoCommand::Remote(args) => handle_remote(args, &transaction),
         RepoCommand::Filter(args) => handle_filter(args, &transaction),
         #[cfg(feature = "incubating")]

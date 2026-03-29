@@ -68,9 +68,9 @@ Set up git config for author
   $ git config user.email "josh@example.com"
   $ git config user.name "Josh Test"
 
-Push with split mode (should create multiple refs for each change)
+Publish changes (josh publish should create multiple refs for each change)
 
-  $ josh push --split
+  $ josh publish
   To file://${TESTTMP}/remote
    * [new branch]      c61c37f4a3d5eb447f41dde15620eee1a181d60b -> @changes/master/josh@example.com/1234
   
