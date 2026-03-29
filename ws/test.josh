@@ -1,0 +1,35 @@
+deps = :[
+    :#test-release[
+        :#image[:+images/dev-local/image]
+
+        deps = :[
+            :#josh[:+ws/build]
+        ]
+
+        run = :[
+            ::run.sh=ws/run-tests.sh
+            ::run-tests.sh
+            ::tests/:exclude[::tests/experimental/]
+            ::scripts/
+        ]
+    ]
+    :#test-incubating[
+        :#image[:+images/dev-local/image]
+
+        deps = :[
+            :#josh[
+                :+ws/build
+                env = :[
+                    :$CARGO_BUILD_FEATURES="--features incubating"
+                ]
+            ]
+        ]
+
+        run = :[
+            ::run.sh=ws/run-tests.sh
+            ::run-tests.sh
+            ::tests/
+            ::scripts/
+        ]
+    ]
+]

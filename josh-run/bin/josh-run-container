@@ -1,0 +1,79 @@
+#!/bin/bash
+set -e
+
+usage() {
+    echo "Usage: $0 <safe_name> <WS_TREE>" >&2
+    exit 1
+}
+
+[[ $# -eq 2 ]] || usage
+SAFE_NAME=$1
+WS_TREE=$2
+
+echo "ls $WS_TREE"
+git ls-tree $WS_TREE
+echo "/ls $WS_TREE"
+
+out_vol="out_${WS_TREE}"
+if podman volume inspect "$out_vol" >/dev/null 2>&1; then
+    echo "Cached output found, skipping build"
+else
+    BUILD_ARGS=(--device /dev/net/tun --net host --cap-add=SYS_MODULE --cap-add=NET_ADMIN)
+    if git rev-parse --verify "$WS_TREE:deps" >/dev/null 2>&1; then
+        git ls-tree "$WS_TREE:deps"
+        while IFS= read -r filename <&3; do
+            sha=$(git show "$WS_TREE:deps/$filename")
+            ws="${SAFE_NAME}-${filename}"
+            echo "DEP: $0 $ws $sha"
+            "$0" "$ws" "$sha"
+            BUILD_ARGS+=(-v "out_$sha:/$filename")
+        done 3< <(git ls-tree --name-only "$WS_TREE:deps")
+    fi
+
+    if git rev-parse --verify "$WS_TREE:run" >/dev/null 2>&1; then
+        IMAGE_TREE=$(git show $WS_TREE:image)
+        RUN_TREE=$(git rev-parse $WS_TREE:run)
+
+        $(dirname "$0")/josh-run-build-image "$IMAGE_TREE"
+
+        if git rev-parse --verify "$WS_TREE:cache" >/dev/null 2>&1; then
+            cache_content=$(git show "$WS_TREE:cache")
+            cache_vol="${cache_content}_cache"
+            podman volume create "$cache_vol" 2>/dev/null || true
+            CACHE_MOUNT=(-v "$cache_vol":/opt/cache)
+        else
+            CACHE_MOUNT=()
+        fi
+
+        ENV_ARGS=()
+        if git rev-parse --verify "$WS_TREE:env" >/dev/null 2>&1; then
+            while IFS= read -r varname <&3; do
+                value=$(git show "$WS_TREE:env/$varname")
+                ENV_ARGS+=(-e "$varname=$value")
+            done 3< <(git ls-tree --name-only "$WS_TREE:env")
+        fi
+
+        vol="snapshot_${RUN_TREE}_$(openssl rand -hex 4)"
+        podman volume create "$vol"
+        podman volume create "$out_vol"
+
+        git archive $RUN_TREE | podman volume import "$vol" -
+
+        podman run --rm -v "$vol":/data -v "$out_vol":/out "${CACHE_MOUNT[@]}" busybox \
+            sh -c "chown -R $(id -u):$(id -g) /data /out${cache_vol:+ /opt/cache}"
+
+        podman run --rm -i -v "$vol":$PWD -v "$out_vol":/out "${CACHE_MOUNT[@]}" -w $PWD \
+            "${BUILD_ARGS[@]}" "${ENV_ARGS[@]}" \
+            --user $(id -u):$(id -g) ws_image_$IMAGE_TREE sh -c "bash run.sh" || RUN_STATUS=$?
+
+        podman volume rm "$vol"
+    fi
+fi
+
+if [[ ${RUN_STATUS:-0} -ne 0 ]]; then
+    echo "FAILED: $SAFE_NAME"
+else
+    echo "SUCCESS: $SAFE_NAME"
+fi
+
+exit ${RUN_STATUS:-0}

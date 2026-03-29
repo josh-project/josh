@@ -1,0 +1,34 @@
+#!/bin/bash
+set -e
+
+usage() {
+    echo "Usage: $0 <BUILD_TREE>" >&2
+    exit 1
+}
+
+[[ $# -eq 1 ]] || usage
+BUILD_TREE=$(git rev-parse $1^{tree})
+CONTEXT_TREE=$(git rev-parse $BUILD_TREE:context)
+
+IMAGE_NAME=ws_image_$BUILD_TREE
+if podman image inspect $IMAGE_NAME >/dev/null 2>&1; then
+    echo "Image exists locally"
+else
+    echo "Image does not exist locally"
+    BUILD_ARGS=(--build-arg "USER_UID=$(id -u)" --build-arg "USER_GID=$(id -g)" --build-arg "ARCH=arm64")
+    if git rev-parse --verify "$BUILD_TREE:deps" >/dev/null 2>&1; then
+        while IFS= read -r filename; do
+            sha=$(git show "$BUILD_TREE:deps/$filename")
+            "$0" "$sha"
+            BUILD_ARGS+=(--build-arg "$filename=$(git rev-parse $sha^{tree})")
+        done < <(git ls-tree --name-only "$BUILD_TREE:deps")
+    fi
+    if git rev-parse --verify "$BUILD_TREE:args" >/dev/null 2>&1; then
+        while IFS= read -r filename; do
+            value=$(git show "$BUILD_TREE:args/$filename")
+            BUILD_ARGS+=(--build-arg "$filename=$value")
+        done < <(git ls-tree --name-only "$BUILD_TREE:args")
+    fi
+    git archive --format=tar $CONTEXT_TREE \
+        | podman build "${BUILD_ARGS[@]}" -t $IMAGE_NAME -
+fi
