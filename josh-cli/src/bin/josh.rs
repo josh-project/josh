@@ -95,14 +95,6 @@ pub struct PullArgs {
     #[arg(short = 'R', long = "ref", default_value = "HEAD")]
     pub rref: String,
 
-    /// Prune tracking refs no longer on the remote
-    #[arg(long = "prune", action = clap::ArgAction::SetTrue)]
-    pub prune: bool,
-
-    /// Fast-forward only (fail if merge needed)
-    #[arg(long = "ff-only", action = clap::ArgAction::SetTrue)]
-    pub ff_only: bool,
-
     /// Rebase the current branch on top of the upstream branch
     #[arg(long = "rebase", action = clap::ArgAction::SetTrue)]
     pub rebase: bool,
@@ -121,10 +113,6 @@ pub struct FetchArgs {
     /// Ref to fetch (branch, tag, or commit-ish)
     #[arg(short = 'R', long = "ref", default_value = "HEAD")]
     pub rref: String,
-
-    /// Prune tracking refs no longer on the remote
-    #[arg(long = "prune", action = clap::ArgAction::SetTrue)]
-    pub prune: bool,
 }
 
 #[derive(Debug, clap::Parser)]
@@ -355,7 +343,6 @@ fn handle_clone(
     let fetch_args = FetchArgs {
         remote: "origin".to_string(),
         rref: args.branch.clone(),
-        prune: false,
     };
 
     // Use handle_fetch to do the actual fetching and filtering
@@ -429,7 +416,6 @@ fn handle_pull(args: &PullArgs, transaction: &josh_core::cache::Transaction) -> 
     let fetch_args = FetchArgs {
         remote: args.remote.clone(),
         rref: args.rref.clone(),
-        prune: args.prune,
     };
 
     // Use handle_fetch to do the actual fetching and filtering
