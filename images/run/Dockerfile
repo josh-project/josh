@@ -76,14 +76,14 @@ adduser \
 usermod -p '*' git
 EOF
 
-COPY docker/etc/ssh/sshd_config.template /etc/ssh/
+COPY etc/ssh/sshd_config.template /etc/ssh/
 
 ARG RC6_D=/etc/s6-overlay/s6-rc.d
 
-COPY docker/josh-auth-key docker/josh-ensure-* /opt/josh-scripts/
-COPY docker/s6-rc.d/. ${RC6_D}/
-COPY docker/finish ${RC6_D}/josh/
-COPY docker/finish ${RC6_D}/sshd/
+COPY josh-auth-key josh-ensure-* /opt/josh-scripts/
+COPY s6-rc.d/. ${RC6_D}/
+COPY finish ${RC6_D}/josh/
+COPY finish ${RC6_D}/sshd/
 
 WORKDIR /
 ENV S6_KEEP_ENV=1

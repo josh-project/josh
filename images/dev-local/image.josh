@@ -1,0 +1,4 @@
+deps = :[
+    :#BASE_IMAGE[:+images/dev/image]
+]
+context = :/images/dev-local

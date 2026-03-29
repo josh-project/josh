@@ -1,0 +1,4 @@
+:[
+    :/images/build
+    :exclude[::images/]:exclude[::ws/]
+]
