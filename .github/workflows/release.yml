@@ -12,6 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       images: ${{ steps.generate-tags.outputs.images }}
+      images_csv: ${{ steps.generate-tags.outputs.images_csv }}
       tagged_images: ${{ steps.generate-tags.outputs.tagged_images }}
       should_build: ${{ steps.generate-tags.outputs.should_build }}
     steps:
@@ -62,6 +63,8 @@ jobs:
                   f.write("images<<EOF\n")
                   f.write("\n".join(images))
                   f.write("\nEOF\n")
+
+                  f.write(f"images_csv={','.join(images)}\n")
 
                   f.write("tagged_images<<EOF\n")
                   f.write("\n".join(tagged_images))
@@ -116,27 +119,33 @@ jobs:
       - name: Build docker image
         if: needs.generate-tags.outputs.should_build == 'true'
         id: build
-        uses: docker/build-push-action@v6
+        uses: docker/bake-action@v6
         with:
-          context: .
-          file: Dockerfile
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          platforms: ${{ matrix.os }}/${{ matrix.arch}}
-          build-contexts: |
-            git=.git
-            docker=docker
-          target: run
-          push: 'true'
-          tags: ${{ needs.generate-tags.outputs.images }}
-          outputs: type=image,push-by-digest=true,name-canonical=true,push=true
+          targets: run
+          set: |
+            rust-base.cache-from=type=gha,scope=rust-base
+            rust-base.cache-to=type=gha,mode=max,scope=rust-base
+            dev.cache-from=type=gha,scope=dev
+            dev.cache-to=type=gha,mode=max,scope=dev
+            build.cache-from=type=gha,scope=build
+            build.cache-to=type=gha,mode=max,scope=build
+            run.cache-from=type=gha
+            run.cache-to=type=gha,mode=max
+            run.platforms=${{ matrix.os }}/${{ matrix.arch }}
+            run.tags=${{ needs.generate-tags.outputs.images_csv }}
+            run.output=type=image,push-by-digest=true,name-canonical=true,push=true
       - name: Export digest
         if: needs.generate-tags.outputs.should_build == 'true'
         env:
-          digest: ${{ steps.build.outputs.digest }}
+          metadata: ${{ steps.build.outputs.metadata }}
         # Create digests directory with a file whose name matches
         # the digest with the 'sha256:' prefix removed
         run: |
+          digest=$(echo "$metadata" | jq -r '.run."containerimage.digest"')
+          if [ -z "$digest" ] || [ "$digest" = "null" ]; then
+            echo "Failed to extract digest from bake metadata" >&2
+            exit 1
+          fi
           mkdir -p "${RUNNER_TEMP}/digests"
           touch "${RUNNER_TEMP}/digests/${digest#sha256:}"
       - name: Upload digest
