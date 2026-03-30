@@ -109,6 +109,7 @@ pub enum Op {
     Index,
     Invert,
 
+    Blob(std::path::PathBuf, String), // Blob(dest_path, content)
     File(std::path::PathBuf, std::path::PathBuf), // File(dest_path, source_path)
     Prefix(std::path::PathBuf),
     Subdir(std::path::PathBuf),
@@ -116,6 +117,8 @@ pub enum Op {
     Stored(std::path::PathBuf),
     #[cfg(feature = "incubating")]
     Starlark(std::path::PathBuf, Filter),
+    #[cfg(feature = "incubating")]
+    TreeId(std::path::PathBuf, Filter),
 
     Pattern(String),
     Message(String, regex::Regex),

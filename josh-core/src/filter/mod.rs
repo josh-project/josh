@@ -1314,6 +1314,16 @@ pub fn apply<'a>(
                 to_filter(op.clone()).id(),
             )?))
         }
+        Op::Blob(dest_path, content) => {
+            let blob_oid = repo.blob(content.as_bytes())?;
+            Ok(x.clone().with_tree(tree::insert(
+                repo,
+                &tree::empty(repo),
+                &dest_path,
+                blob_oid,
+                git2::FileMode::Blob.into(),
+            )?))
+        }
         Op::File(dest_path, source_path) => {
             let (file, mode) = x
                 .tree()
@@ -1379,6 +1389,12 @@ pub fn apply<'a>(
             get_starlark(transaction, x.tree(), path, *subfilter),
             x,
         ),
+        #[cfg(feature = "incubating")]
+        Op::TreeId(path, subfilter) => {
+            let applied = apply(transaction, *subfilter, x.clone())?;
+            let oid_str = applied.tree().id().to_string();
+            apply(transaction, to_filter(Op::Blob(path.clone(), oid_str)), x)
+        }
 
         Op::Compose(filters) => {
             let filtered: Vec<_> = filters
@@ -1775,6 +1791,8 @@ fn legalize_stored(t: &cache::Transaction, f: Filter, tree: &git2::Tree) -> anyh
         Op::Stored(path) => get_stored(t, tree, &path),
         #[cfg(feature = "incubating")]
         Op::Starlark(path, sub) => get_starlark(t, tree, &path, legalize_stored(t, sub, tree)?),
+        #[cfg(feature = "incubating")]
+        Op::TreeId(path, f) => to_filter(Op::TreeId(path, legalize_stored(t, f, tree)?)),
         _ => f,
     };
 
