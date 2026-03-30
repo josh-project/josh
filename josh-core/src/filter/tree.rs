@@ -954,26 +954,34 @@ pub fn compose<'a>(
     let mut taken = empty(repo);
     for (f, applied) in trees {
         let tid = taken.id();
-        let taken_applied = if let Some(cached) = transaction.get_apply(*f, tid) {
+        // If a filter creates a tree entry that does not exist in the input (Like TreeId and Blob),
+        // the "output uniqueness handling" will cause it's output entry to be removed from the
+        // tree during compose.
+        // Note that f is only used for uniqueness calculation in this function so normalizing
+        // it using double invert is ok and and does not affect the output of the filter itself,
+        // since the original filter was already applied by the caller and passed via the "trees"
+        // parameter.
+        let f = invert(invert(*f)?)?;
+        let taken_applied = if let Some(cached) = transaction.get_apply(f, tid) {
             cached
         } else {
-            apply(transaction, *f, Rewrite::from_tree(taken.clone()))?
+            apply(transaction, f, Rewrite::from_tree(taken.clone()))?
                 .tree()
                 .id()
         };
-        transaction.insert_apply(*f, tid, taken_applied);
+        transaction.insert_apply(f, tid, taken_applied);
 
         let subtracted = repo.find_tree(subtract(transaction, applied.id(), taken_applied)?)?;
 
         let aid = applied.id();
-        let unapplied = if let Some(cached) = transaction.get_unapply(*f, aid) {
+        let unapplied = if let Some(cached) = transaction.get_unapply(f, aid) {
             cached
         } else {
-            apply(transaction, invert(*f)?, Rewrite::from_tree(applied))?
+            apply(transaction, invert(f)?, Rewrite::from_tree(applied))?
                 .tree()
                 .id()
         };
-        transaction.insert_unapply(*f, aid, unapplied);
+        transaction.insert_unapply(f, aid, unapplied);
         taken = repo.find_tree(overlay(transaction, taken.id(), unapplied)?)?;
         result = repo.find_tree(overlay(transaction, subtracted.id(), result.id())?)?;
     }
