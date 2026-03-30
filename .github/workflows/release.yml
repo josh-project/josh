@@ -113,20 +113,60 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build rust-base image
+        if: needs.generate-tags.outputs.should_build == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: images/rust-base/Dockerfile
+          cache-from: type=gha,scope=rust-base
+          cache-to: type=gha,mode=max,scope=rust-base
+          tags: josh-rust-base:latest
+          push: false
+          load: true
+          build-args: |
+            ARCH=${{ matrix.arch }}
+      - name: Build dev image
+        if: needs.generate-tags.outputs.should_build == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: images/dev/Dockerfile
+          cache-from: type=gha,scope=dev
+          cache-to: type=gha,mode=max,scope=dev
+          tags: josh-dev:latest
+          push: false
+          load: true
+          build-args: |
+            ARCH=${{ matrix.arch }}
+      - name: Build build image
+        if: needs.generate-tags.outputs.should_build == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: images/build/Dockerfile
+          cache-from: type=gha,scope=build
+          cache-to: type=gha,mode=max,scope=build
+          tags: josh-build:latest
+          push: false
+          load: true
+          build-contexts: |
+            git=.git
       - name: Build docker image
         if: needs.generate-tags.outputs.should_build == 'true'
         id: build
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: Dockerfile
+          file: images/run/Dockerfile
           cache-from: type=gha
           cache-to: type=gha,mode=max
           platforms: ${{ matrix.os }}/${{ matrix.arch}}
+          build-args: |
+            ARCH=${{ matrix.arch }}
           build-contexts: |
-            git=.git
-            docker=docker
-          target: run
+            josh-dev=docker-image://josh-dev:latest
+            josh-build=docker-image://josh-build:latest
           push: 'true'
           tags: ${{ needs.generate-tags.outputs.images }}
           outputs: type=image,push-by-digest=true,name-canonical=true,push=true

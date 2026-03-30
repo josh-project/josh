@@ -48,14 +48,33 @@ jobs:
         fetch-depth: 0
     - name: Get tags
       run: git fetch --tags origin
+    - name: Build rust-base image
+      uses: docker/build-push-action@v6
+      with:
+        context: .
+        file: images/rust-base/Dockerfile
+        cache-from: type=gha,scope=rust-base
+        cache-to: type=gha,mode=max,scope=rust-base
+        tags: josh-rust-base:latest
+        push: false
+        load: true
     - name: Build dev image
       uses: docker/build-push-action@v6
       with:
         context: .
-        file: Dockerfile
+        file: images/dev/Dockerfile
+        cache-from: type=gha,scope=dev
+        cache-to: type=gha,mode=max,scope=dev
+        tags: josh-dev:latest
+        push: false
+        load: true
+    - name: Build dev-ci image
+      uses: docker/build-push-action@v6
+      with:
+        context: .
+        file: images/dev-ci/Dockerfile
         cache-from: type=gha,scope=${{ matrix.test_suite.name }}
         cache-to: type=gha,mode=max,scope=${{ matrix.test_suite.name }}
-        target: dev-ci
         tags: josh-ci-dev:latest
         push: false
         load: true
