@@ -1314,6 +1314,16 @@ pub fn apply<'a>(
                 to_filter(op.clone()).id(),
             )?))
         }
+        Op::Blob(dest_path, content) => {
+            let blob_oid = repo.blob(content.as_bytes())?;
+            Ok(x.clone().with_tree(tree::insert(
+                repo,
+                &tree::empty(repo),
+                &dest_path,
+                blob_oid,
+                git2::FileMode::Blob.into(),
+            )?))
+        }
         Op::File(dest_path, source_path) => {
             let (file, mode) = x
                 .tree()

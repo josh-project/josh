@@ -125,6 +125,12 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> anyhow::Result<Filter> {
         Rule::filter_starlark => Err(anyhow!(
             "Starlark filter is incubating. Build with --features incubating."
         )),
+        Rule::filter_blob => {
+            let mut inner = pair.into_inner();
+            let path = Path::new(&unquote(inner.next().unwrap().as_str())).to_owned();
+            let content = unquote(inner.next().unwrap().as_str());
+            Ok(to_filter(Op::Blob(path, content)))
+        }
         Rule::filter_presub => {
             let mut inner = pair.into_inner();
             let arg = &unquote(inner.next().unwrap().as_str());
@@ -439,7 +445,8 @@ fn unquote(s: &str) -> String {
 // Encode string as json if it contains any chars reserved
 // by the filter language
 pub fn quote_if(s: &str) -> String {
-    if let Ok(r) = Grammar::parse(Rule::filter_path, s)
+    if !s.contains(char::is_whitespace)
+        && let Ok(r) = Grammar::parse(Rule::filter_path, s)
         && r.as_str() == s
     {
         return s.to_string();

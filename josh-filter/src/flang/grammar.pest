@@ -20,6 +20,8 @@ char = {
     | "\\" ~ ("\"" | "\'" | "\\" | "/" | "b" | "f" | "n" | "r" | "t" | "u")
 }
 
+filter_blob = { CMD_START ~ "$" ~ argument ~ "=" ~ string }
+
 filter_spec = { (
     filter_group
   | filter_message
@@ -27,6 +29,7 @@ filter_spec = { (
   | filter_unapply
   | filter_replace
   | filter_squash
+  | filter_blob
   | filter_presub
   | filter_subdir
   | filter_stored

@@ -257,6 +257,11 @@ pub(crate) fn spec2(op: &Op) -> String {
         #[cfg(feature = "incubating")]
         Op::Unlink => ":unlink".to_string(),
         Op::Subdir(path) => format!(":/{}", parse::quote_if(&path.to_string_lossy())),
+        Op::Blob(path, content) => format!(
+            ":${}={}",
+            parse::quote_if(&path.to_string_lossy()),
+            parse::quote(content)
+        ),
         Op::File(dest_path, source_path) => {
             if source_path == dest_path {
                 format!("::{}", parse::quote_if(&dest_path.to_string_lossy()))

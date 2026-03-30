@@ -109,6 +109,7 @@ pub enum Op {
     Index,
     Invert,
 
+    Blob(std::path::PathBuf, String), // Blob(dest_path, content)
     File(std::path::PathBuf, std::path::PathBuf), // File(dest_path, source_path)
     Prefix(std::path::PathBuf),
     Subdir(std::path::PathBuf),
