@@ -37,5 +37,6 @@ trap 'rm ${CONFIG_FILE}' EXIT
 export GIT_CONFIG_GLOBAL=${CONFIG_FILE}
 git config --global init.defaultBranch master
 
+cargo fmt
 export RUST_BACKTRACE=1
 python3 -m prysk "$@"

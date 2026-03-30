@@ -954,27 +954,26 @@ pub fn compose<'a>(
     let mut taken = empty(repo);
     for (f, applied) in trees {
         let tid = taken.id();
-        let f = invert(invert(*f)?)?;
-        let taken_applied = if let Some(cached) = transaction.get_apply(f, tid) {
+        let taken_applied = if let Some(cached) = transaction.get_apply(*f, tid) {
             cached
         } else {
-            apply(transaction, f, Rewrite::from_tree(taken.clone()))?
+            apply(transaction, *f, Rewrite::from_tree(taken.clone()))?
                 .tree()
                 .id()
         };
-        transaction.insert_apply(f, tid, taken_applied);
+        transaction.insert_apply(*f, tid, taken_applied);
 
         let subtracted = repo.find_tree(subtract(transaction, applied.id(), taken_applied)?)?;
 
         let aid = applied.id();
-        let unapplied = if let Some(cached) = transaction.get_unapply(f, aid) {
+        let unapplied = if let Some(cached) = transaction.get_unapply(*f, aid) {
             cached
         } else {
-            apply(transaction, invert(f)?, Rewrite::from_tree(applied))?
+            apply(transaction, invert(*f)?, Rewrite::from_tree(applied))?
                 .tree()
                 .id()
         };
-        transaction.insert_unapply(f, aid, unapplied);
+        transaction.insert_unapply(*f, aid, unapplied);
         taken = repo.find_tree(overlay(transaction, taken.id(), unapplied)?)?;
         result = repo.find_tree(overlay(transaction, subtracted.id(), result.id())?)?;
     }

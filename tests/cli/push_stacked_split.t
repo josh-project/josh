@@ -70,7 +70,7 @@ Set up git config for author
 
 Push with split mode (should create multiple refs for each change)
 
-  $ josh publish
+  $ josh push --split
   To file://${TESTTMP}/remote
    * [new branch]      c61c37f4a3d5eb447f41dde15620eee1a181d60b -> @changes/master/josh@example.com/1234
   

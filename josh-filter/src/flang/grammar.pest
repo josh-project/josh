@@ -20,8 +20,6 @@ char = {
     | "\\" ~ ("\"" | "\'" | "\\" | "/" | "b" | "f" | "n" | "r" | "t" | "u")
 }
 
-filter_blob = { CMD_START ~ "$" ~ argument ~ "=" ~ string }
-
 filter_spec = { (
     filter_group
   | filter_message
@@ -29,12 +27,10 @@ filter_spec = { (
   | filter_unapply
   | filter_replace
   | filter_squash
-  | filter_blob
   | filter_presub
   | filter_subdir
   | filter_stored
   | filter_starlark
-  | filter_treeid
   | filter_nop
   | filter_scope
   | filter_meta
@@ -46,7 +42,6 @@ filter_group = { CMD_START ~ cmd? ~ GROUP_START ~ compose ~ GROUP_END }
 filter_subdir = { CMD_START ~ "/" ~ argument }
 filter_stored = { CMD_START ~ "+" ~ argument }
 filter_starlark = { CMD_START ~ "*" ~ argument ~ (GROUP_START ~ compose ~ GROUP_END)? }
-filter_treeid = { CMD_START ~ "#" ~ argument ~ (GROUP_START ~ compose ~ GROUP_END)? }
 filter_nop = { CMD_START ~ "/" }
 filter_presub = { CMD_START ~ ":" ~ argument ~ ("=" ~ argument)? }
 filter = { CMD_START ~ cmd ~ "=" ~ (argument ~ (";" ~ argument)*)? }

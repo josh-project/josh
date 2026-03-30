@@ -11,7 +11,7 @@ filtered view of a monorepo or a plain repository.
 ## Concepts
 
 In a stacked changes workflow, each commit on your local branch represents one
-self-contained change. When you use `josh publish`, Josh creates a
+self-contained change. When you push with `--split` or `--stack`, Josh creates a
 separate git ref for each qualifying commit.
 
 A commit qualifies for a separate ref — and an automatic PR, when
@@ -54,6 +54,19 @@ submission. Returns an error message inline without clearing the form.
 Change: login-form-validation
 ```
 
+## Push modes
+
+There are two stacked push modes:
+
+- **`--split`** — Each commit is pushed as a *minimal, independent* diff. Josh strips
+  away the context of earlier commits in the stack so that each change can be applied on
+  its own. This is the recommended mode for GitHub PR stacks, because each PR shows only
+  its own diff even before earlier PRs are merged.
+
+- **`--stack`** — Each commit is pushed with its full upstream context preserved. The
+  history of earlier commits is kept intact. Use this when reviewers need the full
+  context of the stack to understand each individual change.
+
 ## Workflow
 
 ### 1. Write your commits
@@ -78,10 +91,10 @@ Change: validation-tests"
 Commits without a `Change:` footer are included in the push to the base branch but
 do not get their own ref or PR.
 
-### 2. Publish
+### 2. Push as a stack
 
 ```shell
-josh publish
+josh push --split
 ```
 
 For each qualifying commit Josh pushes a ref under
@@ -99,10 +112,10 @@ After receiving review feedback, amend or rebase your commits as needed, keeping
 
 ```shell
 git rebase -i HEAD~3   # edit commits, preserve Change: footers
-josh publish           # re-publish; existing PRs are updated, not recreated
+josh push --split      # re-push; existing PRs are updated, not recreated
 ```
 
-As long as the change ID in the footer is preserved through your edits, `josh publish`
+As long as the change ID in the footer is preserved through your edits, `josh push`
 updates the correct existing PRs rather than creating new ones.
 
 ### 4. Merge
@@ -116,11 +129,12 @@ josh pull --rebase --autostash
 
 This rebases your remaining local commits on top of the updated upstream state.
 `--autostash` ensures any uncommitted changes are preserved across the operation. After
-pulling, the next `josh publish` will retarget and promote the next PR in the stack
+pulling, the next `josh push --split` will retarget and promote the next PR in the stack
 from draft to ready for review.
 
 ## Without forge integration
 
-`josh publish` works without [forge integration](../reference/forge.md). Josh still
-pushes the individual `@changes/…` refs to the upstream repository; you can then create
-pull requests from them manually, or use them as part of a custom review workflow.
+`josh push --split` and `josh push --stack` work without
+[forge integration](../reference/forge.md). Josh still pushes the individual
+`@changes/…` refs to the upstream repository; you can then create pull requests from
+them manually, or use them as part of a custom review workflow.

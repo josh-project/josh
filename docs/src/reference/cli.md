@@ -106,31 +106,8 @@ josh push [<remote>] [<refspecs>...] [options]
 | `-f`, `--force` | Force-push (non-fast-forward) |
 | `--atomic` | Atomic push (all-or-nothing) |
 | `--dry-run` | Show what would be pushed without actually pushing |
-
----
-
-## josh publish
-
-Push each commit as an independent, minimal diff (stacked changes workflow). Each commit
-with a [Change ID](../guide/stacked-changes.md) is pushed to its own ref and, when
-[forge integration](./forge.md) is configured, gets its own pull request.
-
-```
-josh publish [<remote>] [<refspecs>...] [options]
-```
-
-| Argument | Description |
-|----------|-------------|
-| `<remote>` | Remote name to push to (default: `origin`) |
-| `<refspecs>` | Refs to push (default: current branch) |
-
-**Options:**
-
-| Flag | Description |
-|------|-------------|
-| `-f`, `--force` | Force-push (non-fast-forward) |
-| `--atomic` | Atomic push (all-or-nothing) |
-| `--dry-run` | Show what would be pushed without actually pushing |
+| `--split` | Push each commit as an independent, minimal diff (see [Stacked changes](../guide/stacked-changes.md)) |
+| `--stack` | Push commits as a stack, preserving upstream context (see [Stacked changes](../guide/stacked-changes.md)) |
 
 ---
 

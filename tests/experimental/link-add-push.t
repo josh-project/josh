@@ -52,12 +52,12 @@
       remote="../docs_repo.git"
       target="HEAD"
   )[
-      docs = :/some_prefix
+      :/some_prefix
   ]
 
   $ josh link push /docs
   To ../docs_repo.git
-   * [new branch]      cfb272114d10f61a88fbcd1976a0267ed7b55ebf -> master
+   * [new branch]      49451f0ceb13b6e4130217b4db23e114b529e15b -> master
   
 
   $ cd ${TESTTMP}
@@ -68,24 +68,7 @@
 
   $ cd docs_repo
 
-  $ git diff HEAD~1..HEAD
-  diff --git a/some_prefix/.link.josh b/some_prefix/.link.josh
-  new file mode 100644
-  index 0000000..e599191
-  --- /dev/null
-  +++ b/some_prefix/.link.josh
-  @@ -0,0 +1,8 @@
-  +:~(
-  +    commit="49451f0ceb13b6e4130217b4db23e114b529e15b"
-  +    mode="snapshot"
-  +    remote="../docs_repo.git"
-  +    target="HEAD"
-  +)[
-  +    docs = :/some_prefix
-  +]
-
   $ git log --graph --pretty=%s:%H
-  * Add link: docs:cfb272114d10f61a88fbcd1976a0267ed7b55ebf
   * update some docs:49451f0ceb13b6e4130217b4db23e114b529e15b
   * Initial commit:0d24cd27434a19674c17b21e47f176f7151a0260
 

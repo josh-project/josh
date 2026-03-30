@@ -31,9 +31,9 @@ Test Link filter (identical to Adapt)
    * branch            HEAD       -> FETCH_HEAD
 
   $ josh-filter -s :adapt=submodules:link=embedded master --update refs/josh/filter/master
-  92633928cfadfc6a62a6e9b6d5f2a1e133b24877
+  27814d162ba765274145a42ae41d327137422c1b
   [1] :embed=libs
-  [1] :unapply(547cadac76e234f77d5b363a4c517bf7a85cd4ee:/libs)
+  [1] :unapply(48c826999e0af24d18b3427ef57120c7077e318d:/libs)
   [2] :"{@}"
   [2] ::libs/.link.josh
   [2] :adapt=submodules

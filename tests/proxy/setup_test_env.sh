@@ -50,7 +50,7 @@ if [ -z "${EXTRA_OPTS+x}" ]; then
 fi
 
 # shellcheck disable=SC2086
-josh-proxy \
+"${TARGET_DIR}/debug/josh-proxy" \
     --port=8002 \
     --local="${TESTTMP}/remote/scratch/" \
     --remote=http://localhost:8001 \
@@ -59,7 +59,7 @@ josh-proxy \
     > "${TESTTMP}/josh-proxy.out" 2>&1 &
 echo $! > "${TESTTMP}"/proxy_pid
 
-SSH_TEST_SERVER="josh-ssh-dev-server"
+SSH_TEST_SERVER="${TARGET_DIR}/josh-ssh-dev-server"
 
 if [ -n "${JOSH_TEST_SSH+x}" ]; then
     if [ -n "${SSH_AUTH_SOCK+x}" ]; then
@@ -73,7 +73,7 @@ if [ -n "${JOSH_TEST_SSH+x}" ]; then
     JOSH_SSH_SHELL_ENDPOINT_PORT=8002 \
     RUST_LOG=error \
     "${SSH_TEST_SERVER}" \
-        -shell="josh-ssh-shell" \
+        -shell="${TARGET_DIR}/debug/josh-ssh-shell" \
         -port=9001 \
         > "${TESTTMP}/ssh-server-1.out" 2>&1 &
     echo $! > "${TESTTMP}"/ssh_server_1_pid

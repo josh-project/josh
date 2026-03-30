@@ -226,17 +226,9 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
     let mut refs = vec![];
     let mut ids: Vec<(git2::Oid, josh_core::filter::Filter)> = vec![];
 
-    let (input_ref, oid) = if let Ok(oid) = git2::Oid::from_str(input_ref) {
-        let oid = repo.find_object(oid, None)?.peel_to_commit()?.id();
-        (input_ref.to_string(), oid)
-    } else {
-        let reference = repo
-            .resolve_reference_from_short_name(input_ref)
-            .with_context(|| format!("could not resolve input: {:?}", input_ref))?;
-        let ref_name = reference.name().unwrap().to_string();
-        (ref_name, reference.target().unwrap())
-    };
-    refs.push((input_ref.clone(), oid));
+    let reference = repo.resolve_reference_from_short_name(input_ref).unwrap();
+    let input_ref = reference.name().unwrap().to_string();
+    refs.push((input_ref.clone(), reference.target().unwrap()));
 
     if args.get_flag("single") {
         filterobj = josh_core::filter::Filter::new()
@@ -382,7 +374,7 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
             .unwrap_or(&"6".to_string())
             .parse()?;
 
-        let commit = repo.revparse_single(&input_ref)?.peel_to_commit()?;
+        let commit = repo.find_reference(&input_ref)?.peel_to_commit()?;
 
         let index_commit = josh_core::filter_commit(&transaction, ifilterobj, commit.id())?;
         let tree = repo

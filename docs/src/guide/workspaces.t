@@ -57,7 +57,7 @@ ANCHOR: populate
   |   `-- lib1.h
   `-- library2
       `-- lib2.h
-
+  
   5 directories, 7 files
   $ git log --oneline --graph
   * f65e94b Add documentation
@@ -68,23 +68,41 @@ ANCHOR: populate
 ANCHOR_END: populate
 
   $ cd ${TESTTMP}
+  $ mkdir git_data
+
+# starting josh
+ANCHOR: docker_josh
+$ docker run -d --network="host" -e JOSH_REMOTE=http://127.0.0.1:8001 -v josh-vol:$(pwd)/git_data joshproject/josh-proxy:latest > josh.out
+ANCHOR_END: docker_josh
+
+# For simplicity sake, this test actually uses a locally build josh instance 
+# rather than the docker hub version.
+# Note: have to run cargo install on josh-proxy first
+
+  $ josh-proxy --port=8000 --local=$(pwd)/git_data --remote=http://localhost:8001 > josh.out &
+  $ echo $! > ./proxy_pid
+
+# waiting for josh to be running
+  $ until curl -s http://localhost:8000/
+  > do
+  >     sleep 0.1
+  > done
 
 # cloning a workspace
 ANCHOR: clone_workspace
-  $ josh clone http://localhost:8001/real_repo.git :workspace=application1 ./application1
-  Added remote 'origin' with filter ':workspace=application1'
-  Cloned repository to: */application1 (glob)
+  $ git clone http://127.0.0.1:8000/real_repo.git:workspace=application1.git application1
+  Cloning into 'application1'...
   $ cd application1
   $ tree
   .
   `-- app.c
-
+  
   0 directories, 1 file
   $ git log -2
-  commit * (glob)
+  commit 50cd6112e173df4cac1aca9cb88b5c2a180bc526
   Author: Josh <josh@example.com>
   Date:   Thu Apr 7 22:13:13 2005 +0000
-
+  
       Add application1
 ANCHOR_END: clone_workspace
 
@@ -94,16 +112,28 @@ ANCHOR: library_ws
   $ git add workspace.josh
 
   $ git commit -m "Map library1 to the application1 workspace"
-  [master *] Map library1 to the application1 workspace (glob)
+  [master 06361ee] Map library1 to the application1 workspace
    1 file changed, 1 insertion(+)
    create mode 100644 workspace.josh
 ANCHOR_END: library_ws
 
 ANCHOR: library_sync
-  $ josh push
-  Pushed * to origin/master (glob)
-  $ josh pull
-  Pulled from remote: origin
+  $ git sync origin HEAD
+    HEAD -> refs/heads/master
+  From http://127.0.0.1:8000/real_repo.git:workspace=application1
+   * branch            753d62ca1af960a3d071bb3b40722471228abbf6 -> FETCH_HEAD
+  HEAD is now at 753d62c Map library1 to the application1 workspace
+  Pushing to http://127.0.0.1:8000/real_repo.git:workspace=application1.git
+  POST git-receive-pack (477 bytes)
+  remote: josh-proxy        
+  remote: response from upstream:        
+  remote: To http://localhost:8001/real_repo.git        
+  remote:    f65e94b..37184cc  JOSH_PUSH -> master        
+  remote: REWRITE(06361eedf6d6f6d7ada6000481a47363b0f0c3de -> 753d62ca1af960a3d071bb3b40722471228abbf6)        
+  remote: 
+  remote: 
+  updating local tracking ref 'refs/remotes/origin/master'
+  
 ANCHOR_END: library_sync
 
 ANCHOR: library_sync2
@@ -114,13 +144,13 @@ ANCHOR: library_sync2
   |   `-- lib1
   |       `-- lib1.h
   `-- workspace.josh
-
+  
   2 directories, 3 files
   $ git log --graph --oneline
-  *   * Map library1 to the application1 workspace (glob)
-  |\
-  | * * Add library1 (glob)
-  * * Add application1 (glob)
+  *   753d62c Map library1 to the application1 workspace
+  |\  
+  | * 366adba Add library1
+  * 50cd611 Add application1
 ANCHOR_END: library_sync2
 
 ANCHOR: real_repo
@@ -128,8 +158,8 @@ ANCHOR: real_repo
   $ git pull origin master
   From http://localhost:8001/real_repo
    * branch            master     -> FETCH_HEAD
-     f65e94b..* master     -> origin/master (glob)
-  Updating f65e94b..* (glob)
+     f65e94b..37184cc  master     -> origin/master
+  Updating f65e94b..37184cc
   Fast-forward
    application1/workspace.josh | 1 +
    1 file changed, 1 insertion(+)
@@ -151,10 +181,10 @@ ANCHOR: real_repo
   |   `-- lib1.h
   `-- library2
       `-- lib2.h
-
+  
   5 directories, 8 files
   $ git log --graph --oneline
-  * * Map library1 to the application1 workspace (glob)
+  * 37184cc Map library1 to the application1 workspace
   * f65e94b Add documentation
   * f240612 Add application2
   * 0a7f473 Add library2
@@ -166,23 +196,34 @@ ANCHOR_END: real_repo
   $ cd ${TESTTMP}
 
 ANCHOR: application2
-  $ josh clone http://localhost:8001/real_repo.git :workspace=application2 ./application2
-  Added remote 'origin' with filter ':workspace=application2'
-  Cloned repository to: */application2 (glob)
+  $ git clone http://127.0.0.1:8000/real_repo.git:workspace=application2.git application2
+  Cloning into 'application2'...
   $ cd application2
   $ echo "libs/lib1 = :/library1" >> workspace.josh
   $ echo "libs/lib2 = :/library2" >> workspace.josh
   $ git add workspace.josh && git commit -m "Create workspace for application2"
-  [master *] Create workspace for application2 (glob)
+  [master 566a489] Create workspace for application2
    1 file changed, 2 insertions(+)
    create mode 100644 workspace.josh
 ANCHOR_END: application2
 
 ANCHOR: app2_sync
-  $ josh push
-  Pushed * to origin/master (glob)
-  $ josh pull
-  Pulled from remote: origin
+  $ git sync origin HEAD
+    HEAD -> refs/heads/master
+  From http://127.0.0.1:8000/real_repo.git:workspace=application2
+   * branch            5115fd2a5374cbc799da61a228f7fece3039250b -> FETCH_HEAD
+  HEAD is now at 5115fd2 Create workspace for application2
+  Pushing to http://127.0.0.1:8000/real_repo.git:workspace=application2.git
+  POST git-receive-pack (478 bytes)
+  remote: josh-proxy        
+  remote: response from upstream:        
+  remote: To http://localhost:8001/real_repo.git        
+  remote:    37184cc..feb3a5b  JOSH_PUSH -> master        
+  remote: REWRITE(566a4899f0697d0bde1ba064ed81f0654a316332 -> 5115fd2a5374cbc799da61a228f7fece3039250b)        
+  remote: 
+  remote: 
+  updating local tracking ref 'refs/remotes/origin/master'
+  
 ANCHOR_END: app2_sync
 
 ANCHOR: app2_files
@@ -195,46 +236,61 @@ ANCHOR: app2_files
   |   `-- lib2
   |       `-- lib2.h
   `-- workspace.josh
-
+  
   3 directories, 4 files
 ANCHOR_END: app2_files
 
 ANCHOR: app2_hist
   $ git log --oneline --graph
-  *   * Create workspace for application2 (glob)
-  |\
-  | * * Add library2 (glob)
-  | * * Add library1 (glob)
-  * * Add application2 (glob)
+  *   5115fd2 Create workspace for application2
+  |\  
+  | * ffaf58d Add library2
+  | * f4e4e40 Add library1
+  * ee8a5d7 Add application2
 ANCHOR_END: app2_hist
 
 ANCHOR: fix_typo
   $ sed -i 's/41/42/' libs/lib1/lib1.h
   $ git commit -a -m "fix lib1 typo"
-  [master *] fix lib1 typo (glob)
+  [master 82238bf] fix lib1 typo
    1 file changed, 1 insertion(+), 1 deletion(-)
 ANCHOR_END: fix_typo
 
 ANCHOR: push_change
-  $ josh push
-  Pushed * to origin/master (glob)
+  $ git push origin master
+  remote: josh-proxy        
+  remote: response from upstream:        
+  remote: To http://localhost:8001/real_repo.git        
+  remote:    feb3a5b..31e8fab  JOSH_PUSH -> master        
+  remote: 
+  remote: 
+  To http://127.0.0.1:8000/real_repo.git:workspace=application2.git
+     5115fd2..82238bf  master -> master
 ANCHOR_END: push_change
 
 ANCHOR: app1_pull
   $ cd ../application1
-  $ josh pull
-  Pulled from remote: origin
+  $ git pull
+  From http://127.0.0.1:8000/real_repo.git:workspace=application1
+   + 06361ee...c64b765 master     -> origin/master  (forced update)
+  Updating 753d62c..c64b765
+  Fast-forward
+   modules/lib1/lib1.h | 2 +-
+   1 file changed, 1 insertion(+), 1 deletion(-)
+  Current branch master is up to date.
 ANCHOR_END: app1_pull
 
 ANCHOR: app1_log
   $ git log --oneline --graph
-  * * fix lib1 typo (glob)
-  *   * Map library1 to the application1 workspace (glob)
-  |\
-  | * * Add library1 (glob)
-  * * Add application1 (glob)
+  * c64b765 fix lib1 typo
+  *   753d62c Map library1 to the application1 workspace
+  |\  
+  | * 366adba Add library1
+  * 50cd611 Add application1
 ANCHOR_END: app1_log
 
 # cleanup
   $ cd ${TESTTMP}
+$ docker stop $(cat josh.out) >/dev/null
   $ kill -9 $(cat ./server_pid)
+  $ kill -9 $(cat ./proxy_pid)
