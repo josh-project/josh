@@ -34,4 +34,5 @@
 !deployment/josh-test-webhook-service
 !lfs-test-server
 !run-josh.sh
-!docker/
+# Runtime scripts needed by the run image
+!images/run/
