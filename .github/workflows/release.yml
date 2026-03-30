@@ -46,7 +46,7 @@ jobs:
 
               if is_release:
                   tags.append(release_tag)
-                  tags.append(latest)
+                  tags.append("latest")
               elif is_master:
                   short_sha = commit_sha[:10]
                   tags.append(f"sha-{short_sha}")
@@ -57,11 +57,8 @@ jobs:
               tagged_images = [f"{image}:{tag}" for image in images for tag in tags]
 
               # Write to GITHUB_OUTPUT
-              # Multi-line output for tags
               with open(os.environ["GITHUB_OUTPUT"], "a") as f:
-                  f.write("images<<EOF\n")
-                  f.write("\n".join(images))
-                  f.write("\nEOF\n")
+                  f.write(f"images={','.join(images)}\n")
 
                   f.write("tagged_images<<EOF\n")
                   f.write("\n".join(tagged_images))
@@ -113,30 +110,39 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Get version
+        id: version
+        run: echo "version=$(git describe --tags --always --dirty=-modified)" >> $GITHUB_OUTPUT
       - name: Build docker image
         if: needs.generate-tags.outputs.should_build == 'true'
         id: build
-        uses: docker/build-push-action@v6
+        uses: docker/bake-action@v6
         with:
-          context: .
-          file: Dockerfile
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          platforms: ${{ matrix.os }}/${{ matrix.arch}}
-          build-contexts: |
-            git=.git
-            docker=docker
-          target: run
-          push: 'true'
-          tags: ${{ needs.generate-tags.outputs.images }}
-          outputs: type=image,push-by-digest=true,name-canonical=true,push=true
+          targets: run
+          set: |
+            rust-base.cache-from=type=gha,scope=rust-base-${{ matrix.arch }}
+            rust-base.cache-to=type=gha,mode=max,scope=rust-base-${{ matrix.arch }}
+            dev.cache-from=type=gha,scope=dev-${{ matrix.arch }}
+            dev.cache-to=type=gha,mode=max,scope=dev-${{ matrix.arch }}
+            build.cache-from=type=gha,scope=build-${{ matrix.arch }}
+            build.cache-to=type=gha,mode=max,scope=build-${{ matrix.arch }}
+            build.args.JOSH_VERSION=${{ steps.version.outputs.version }}
+            run.cache-from=type=gha,scope=run-${{ matrix.arch }}
+            run.cache-to=type=gha,mode=max,scope=run-${{ matrix.arch }}
+            run.tags=${{ needs.generate-tags.outputs.images }}
+            run.output=type=image,push-by-digest=true,name-canonical=true,push=true
       - name: Export digest
         if: needs.generate-tags.outputs.should_build == 'true'
-        env:
-          digest: ${{ steps.build.outputs.digest }}
         # Create digests directory with a file whose name matches
-        # the digest with the 'sha256:' prefix removed
+        # the digest with the 'sha256:' prefix removed.
+        # Note: metadata is inlined into the script (not passed as env var) to avoid
+        # "Argument list too long" errors — bake-action embeds the full GitHub context.
         run: |
+          digest=$(printf '%s' '${{ steps.build.outputs.metadata }}' | jq -r '.run."containerimage.digest"')
+          if [ -z "$digest" ] || [ "$digest" = "null" ]; then
+            echo "Failed to extract digest from bake metadata" >&2
+            exit 1
+          fi
           mkdir -p "${RUNNER_TEMP}/digests"
           touch "${RUNNER_TEMP}/digests/${digest#sha256:}"
       - name: Upload digest
