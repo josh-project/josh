@@ -108,6 +108,13 @@ impl Filter {
         self.chain(to_filter(Op::Starlark(path.into(), subfilter)))
     }
 
+    /// Chain a filter that inserts a blob containing the tree OID of the subfilter applied to the input tree.
+    /// Syntax: `:#path[filter]` (e.g. `:#version.txt[:/lib]` inserts a blob at `version.txt` with the OID of `:/lib` applied).
+    #[cfg(feature = "incubating")]
+    pub fn treeid(self, path: impl Into<std::path::PathBuf>, subfilter: Filter) -> Filter {
+        self.chain(to_filter(Op::TreeId(path.into(), subfilter)))
+    }
+
     /// Chain a filter that removes the `.link.josh` marker to produce a standalone history
     #[cfg(feature = "incubating")]
     pub fn export(self) -> Filter {

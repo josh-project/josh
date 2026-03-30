@@ -359,6 +359,12 @@ impl InMemoryBuilder {
                 let params_tree = self.build_str_params(&[path.to_string_lossy().as_ref()]);
                 push_tree_entries(&mut entries, [("prefix", params_tree)]);
             }
+            #[cfg(feature = "incubating")]
+            Op::Blob(path, content) => {
+                let params_tree =
+                    self.build_str_params(&[path.to_string_lossy().as_ref(), content.as_str()]);
+                push_tree_entries(&mut entries, [("blob", params_tree)]);
+            }
             Op::File(dest_path, source_path) => {
                 // Store as (dest_path, source_path) to match enum order
                 let params_tree = self.build_str_params(&[
@@ -388,6 +394,11 @@ impl InMemoryBuilder {
             Op::Starlark(path, subfilter) => {
                 let params_tree = self.build_starlark_params(path, *subfilter)?;
                 push_tree_entries(&mut entries, [("starlark", params_tree)]);
+            }
+            #[cfg(feature = "incubating")]
+            Op::TreeId(path, subfilter) => {
+                let params_tree = self.build_starlark_params(path, *subfilter)?;
+                push_tree_entries(&mut entries, [("treeid", params_tree)]);
             }
             Op::Nop => {
                 let blob = self.write_blob(b"");
@@ -672,6 +683,17 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> anyhow::Result<Op
             let path = std::str::from_utf8(path_blob.content())?;
             Ok(Op::Prefix(std::path::PathBuf::from(path)))
         }
+        #[cfg(feature = "incubating")]
+        "blob" => {
+            let inner = repo.find_tree(entry.id())?;
+            let path_blob =
+                repo.find_blob(inner.get_name("0").context("blob: missing path")?.id())?;
+            let content_blob =
+                repo.find_blob(inner.get_name("1").context("blob: missing content")?.id())?;
+            let path = std::str::from_utf8(path_blob.content())?;
+            let content = std::str::from_utf8(content_blob.content())?.to_string();
+            Ok(Op::Blob(std::path::PathBuf::from(path), content))
+        }
         "file" => {
             let inner = repo.find_tree(entry.id())?;
             let dest_blob = repo.find_blob(
@@ -745,6 +767,25 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> anyhow::Result<Op
             )?;
             let filter = from_tree2(repo, filter_tree.id())?;
             Ok(Op::Starlark(
+                std::path::PathBuf::from(path),
+                to_filter(filter),
+            ))
+        }
+        #[cfg(feature = "incubating")]
+        "treeid" => {
+            let inner = repo.find_tree(entry.id())?;
+            let path_tree = inner.get_name("0").context("treeid: missing path")?;
+            let path_blob = repo.find_blob(
+                repo.find_tree(path_tree.id())?
+                    .get_name("0")
+                    .context("treeid: missing path blob")?
+                    .id(),
+            )?;
+            let path = std::str::from_utf8(path_blob.content())?;
+            let filter_tree =
+                repo.find_tree(inner.get_name("1").context("treeid: missing filter")?.id())?;
+            let filter = from_tree2(repo, filter_tree.id())?;
+            Ok(Op::TreeId(
                 std::path::PathBuf::from(path),
                 to_filter(filter),
             ))
