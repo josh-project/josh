@@ -50,7 +50,7 @@ if [ -z "${EXTRA_OPTS+x}" ]; then
 fi
 
 # shellcheck disable=SC2086
-"${TARGET_DIR}/debug/josh-proxy" \
+josh-proxy \
     --port=8002 \
     --local="${TESTTMP}/remote/scratch/" \
     --remote=http://localhost:8001 \
