@@ -1,0 +1,33 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cargo build:*)",
+      "Bash(cargo fmt:*)",
+      "Bash(grep:*)",
+      "Bash(cargo check:*)",
+      "Bash(xargs:*)",
+      "Bash(./tester.sh:*)",
+      "Bash(ls:*)",
+      "Bash(ws/build test:*)",
+      "Bash(chmod:*)",
+      "Bash(bash build-images.sh)",
+      "Bash(bash images/build.sh)",
+      "Bash(head:*)",
+      "Bash(ws/build:*)",
+      "Bash(find:*)",
+      "Bash(josh-filter:*)",
+      "Bash(podman volume ls:*)",
+      "Bash(for vol in out_test_a45b09d80494bd6ac45028fccfd7cf65afc919f5 out_test_a7b663e11ea28be521dc31b1d900f594fb5190ea out_test_62b0a020fc00519cbdb812c6ba18ace6d4bd3434)",
+      "Bash(do)",
+      "Bash(echo:*)",
+      "Bash(podman run:*)",
+      "Bash(done)",
+      "Bash(podman volume inspect:*)",
+      "Bash(python3:*)",
+      "Bash(# Understand what characters appear in typical Josh filter strings # and what podman allows in volume names # Let''s check the Josh filter docs or source for filter syntax find /Users/christianschilling/code/josh/josh-filter/src -name \"\"*.rs\"\")",
+      "Bash(git show:*)",
+      "Bash(git --version:*)",
+      "Bash(git filter-branch:*)"
+    ]
+  }
+}

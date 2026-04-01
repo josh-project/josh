@@ -1,2 +1,2 @@
 #!/usr/bin/env bash
-ws/build test
+ws/build :+ws/test
