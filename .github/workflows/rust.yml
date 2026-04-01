@@ -68,6 +68,8 @@ jobs:
         tags: josh-dev:latest
         push: false
         load: true
+        build-contexts: |
+          josh-rust-base=docker-image://josh-rust-base:latest
     - name: Build dev-ci image
       uses: docker/build-push-action@v6
       with:
@@ -78,6 +80,8 @@ jobs:
         tags: josh-ci-dev:latest
         push: false
         load: true
+        build-contexts: |
+          josh-dev=docker-image://josh-dev:latest
     - name: Run tests
       run: >-
         docker run --rm

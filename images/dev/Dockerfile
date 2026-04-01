@@ -79,7 +79,7 @@ WORKDIR /usr/src/josh
 
 # Update check: https://github.com/mozilla/sccache/releases
 ARG SCCACHE_VERSION=0.14.0
-ARG ARCH
+ARG ARCH=${TARGETARCH}
 RUN <<EOF
 set -eux
 

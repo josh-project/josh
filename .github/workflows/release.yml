@@ -139,6 +139,8 @@ jobs:
           load: true
           build-args: |
             ARCH=${{ matrix.arch }}
+          build-contexts: |
+            josh-rust-base=docker-image://josh-rust-base:latest
       - name: Build build image
         if: needs.generate-tags.outputs.should_build == 'true'
         uses: docker/build-push-action@v6
@@ -152,6 +154,7 @@ jobs:
           load: true
           build-contexts: |
             git=.git
+            josh-dev=docker-image://josh-dev:latest
       - name: Build docker image
         if: needs.generate-tags.outputs.should_build == 'true'
         id: build
