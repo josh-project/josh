@@ -26,7 +26,7 @@ pest_derive = "2.8.6"
 rayon = "1.11.0"
 strfmt = "0.2.4"
 sled = "0.34.7"
-rustc-hash = "2.1.1"
+rustc-hash = "2.1.2"
 smallvec = "1.15.1"
 
 anyhow.workspace = true
@@ -51,7 +51,7 @@ josh-starlark = { workspace = true, optional = true }
 
 [dev-dependencies]
 rand = "0.10.0"
-criterion2 = { version = "3.0.2" }
+criterion2 = { version = "3.0.3" }
 
 [features]
 incubating = ["dep:josh-starlark", "josh-filter/incubating"]
