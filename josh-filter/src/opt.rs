@@ -177,6 +177,10 @@ pub fn simplify(filter: Filter) -> Filter {
         Op::Starlark(path, sub) => Op::Starlark(path.clone(), simplify(sub)),
         #[cfg(feature = "incubating")]
         Op::TreeId(path, sub) => Op::TreeId(path.clone(), simplify(sub)),
+        #[cfg(feature = "incubating")]
+        Op::ObjectDeref(_) => to_op(filter),
+        #[cfg(feature = "incubating")]
+        Op::ObjectRef(_) => to_op(filter),
         _ => to_op(filter),
     });
 
@@ -244,6 +248,10 @@ pub fn flatten(filter: Filter) -> Filter {
         Op::Starlark(path, sub) => Op::Starlark(path.clone(), flatten(sub)),
         #[cfg(feature = "incubating")]
         Op::TreeId(path, sub) => Op::TreeId(path.clone(), flatten(sub)),
+        #[cfg(feature = "incubating")]
+        Op::ObjectDeref(_) => to_op(filter),
+        #[cfg(feature = "incubating")]
+        Op::ObjectRef(_) => to_op(filter),
         _ => to_op(filter),
     });
 
@@ -664,6 +672,10 @@ fn step(filter: Filter) -> Filter {
         Op::Starlark(path, sub) => Op::Starlark(path.clone(), step(sub)),
         #[cfg(feature = "incubating")]
         Op::TreeId(path, sub) => Op::TreeId(path.clone(), step(sub)),
+        #[cfg(feature = "incubating")]
+        Op::ObjectDeref(_) => to_op(filter),
+        #[cfg(feature = "incubating")]
+        Op::ObjectRef(_) => to_op(filter),
         Op::Subtract(a, b) if a == b => Op::Empty,
         Op::Subtract(af, bf) => match (to_op(af), to_op(bf)) {
             (Op::Empty, _) => Op::Empty,
@@ -747,6 +759,10 @@ pub fn invert(filter: Filter) -> anyhow::Result<Filter> {
         Op::Blob(path, _) => Some(Op::Exclude(to_filter(Op::File(path.clone(), path)))),
         #[cfg(feature = "incubating")]
         Op::TreeId(path, _) => Some(Op::Exclude(to_filter(Op::File(path.clone(), path)))),
+        #[cfg(feature = "incubating")]
+        Op::ObjectDeref(path) => Some(Op::ObjectRef(path.clone())),
+        #[cfg(feature = "incubating")]
+        Op::ObjectRef(path) => Some(Op::ObjectDeref(path.clone())),
         _ => None,
     };
 
