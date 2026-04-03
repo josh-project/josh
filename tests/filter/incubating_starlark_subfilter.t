@@ -23,9 +23,9 @@
   $ git add st
   $ git commit -m "add starlark config" 1> /dev/null
 
-  $ josh-filter -s :*st/config[::sub1/] master --update refs/josh/master
+  $ josh-filter -s :!st/config[::sub1/] master --update refs/josh/master
   0c7056c463e5edf79768f0b69ce5ed494d601389
-  [3] :*st/config[::sub1/]
+  [3] :!st/config[::sub1/]
   [3] sequence_number
 
   $ git log --graph --pretty=%s refs/josh/master
