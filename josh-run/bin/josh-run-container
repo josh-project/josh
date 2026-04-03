@@ -14,8 +14,9 @@ echo "ls $WS_TREE"
 git ls-tree $WS_TREE
 echo "/ls $WS_TREE"
 
+OUTPUT_MODE=$(git show "$WS_TREE:output" 2>/dev/null || echo "volume")
 out_vol="out_${WS_TREE}"
-if podman volume inspect "$out_vol" >/dev/null 2>&1; then
+if [[ "$OUTPUT_MODE" != "none" ]] && podman volume inspect "$out_vol" >/dev/null 2>&1; then
     echo "Cached output found, skipping build"
 else
     BUILD_ARGS=(--device /dev/net/tun --net host --cap-add=SYS_MODULE --cap-add=NET_ADMIN)
@@ -26,6 +27,11 @@ else
             ws="${SAFE_NAME}-${filename}"
             echo "DEP: $0 $ws $sha"
             "$0" "$ws" "$sha"
+            dep_output_mode=$(git show "$sha:output" 2>/dev/null || echo "volume")
+            if [[ "$dep_output_mode" == "none" ]]; then
+                echo "Dependency '$filename' has output=none and cannot be mounted" >&2
+                exit 1
+            fi
             BUILD_ARGS+=(-v "out_$sha:/$filename")
         done 3< <(git ls-tree --name-only "$WS_TREE:deps")
     fi
@@ -55,16 +61,32 @@ else
 
         vol="snapshot_${RUN_TREE}_$(openssl rand -hex 4)"
         podman volume create "$vol"
-        podman volume create "$out_vol"
+        if [[ "$OUTPUT_MODE" != "none" ]]; then
+            podman volume create "$out_vol"
+        elif podman volume inspect "$out_vol" >/dev/null 2>&1; then
+            podman volume rm "$out_vol"
+        fi
 
         git archive $RUN_TREE | podman volume import "$vol" -
 
-        podman run --rm -v "$vol":/data -v "$out_vol":/out "${CACHE_MOUNT[@]}" busybox \
-            sh -c "chown -R $(id -u):$(id -g) /data /out${cache_vol:+ /opt/cache}"
+        owner_paths=(/data)
+        if [[ "$OUTPUT_MODE" != "none" ]]; then
+            owner_paths+=(/out)
+            CONTAINER_OUTPUT_ARGS=(-v "$out_vol":/out)
+        else
+            CONTAINER_OUTPUT_ARGS=()
+        fi
+        if [[ -n "${cache_vol:-}" ]]; then
+            owner_paths+=(/opt/cache)
+        fi
 
-        podman run --rm -i -v "$vol":$PWD -v "$out_vol":/out "${CACHE_MOUNT[@]}" -w $PWD \
+        podman run --rm -v "$vol":/data "${CONTAINER_OUTPUT_ARGS[@]}" "${CACHE_MOUNT[@]}" busybox \
+            sh -c "chown -R $(id -u):$(id -g) ${owner_paths[*]}"
+
+        podman run --rm -it -v "$vol":$PWD "${CONTAINER_OUTPUT_ARGS[@]}" "${CACHE_MOUNT[@]}" -w $PWD \
             "${BUILD_ARGS[@]}" "${ENV_ARGS[@]}" \
-            --user $(id -u):$(id -g) ws_image_$IMAGE_TREE sh -c "bash run.sh" || RUN_STATUS=$?
+            --entrypoint sh \
+            --user $(id -u):$(id -g) ws_image_$IMAGE_TREE -c "bash run.sh" || RUN_STATUS=$?
 
         podman volume rm "$vol"
     fi

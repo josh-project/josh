@@ -15,12 +15,16 @@ if podman image inspect $IMAGE_NAME >/dev/null 2>&1; then
     echo "Image exists locally"
 else
     echo "Image does not exist locally"
-    BUILD_ARGS=(--build-arg "USER_UID=$(id -u)" --build-arg "USER_GID=$(id -g)" --build-arg "ARCH=arm64")
+    ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
+    BUILD_ARGS=(--build-arg "USER_UID=$(id -u)" --build-arg "USER_GID=$(id -g)" --build-arg "ARCH=$ARCH")
+    if [ -d ".git" ]; then
+        BUILD_ARGS+=(--build-context "git=.git")
+    fi
     if git rev-parse --verify "$BUILD_TREE:deps" >/dev/null 2>&1; then
         while IFS= read -r filename; do
             sha=$(git show "$BUILD_TREE:deps/$filename")
             "$0" "$sha"
-            BUILD_ARGS+=(--build-arg "$filename=$(git rev-parse $sha^{tree})")
+            BUILD_ARGS+=(--build-arg "$filename=ws_image_$(git rev-parse $sha^{tree})")
         done < <(git ls-tree --name-only "$BUILD_TREE:deps")
     fi
     if git rev-parse --verify "$BUILD_TREE:args" >/dev/null 2>&1; then

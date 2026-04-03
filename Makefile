@@ -15,7 +15,4 @@ f:
 	cargo fmt
 
 build-image-release:
-	docker buildx build \
-		--target=run \
-		--build-context=git=.git \
-		--tag josh-run .
+	docker buildx bake run

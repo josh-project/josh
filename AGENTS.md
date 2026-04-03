@@ -12,12 +12,12 @@ josh-run/bin/josh-run :+ws/test
 
 **Run only the release tests (excludes incubating features):**
 ```
-josh-run/bin/josh-run :+ws/test:/deps:*/test-release
+josh-run/bin/josh-run :+ws/test:/deps:*/stable
 ```
 
 **Run only the incubating tests:**
 ```
-josh-run/bin/josh-run :+ws/test:/deps:*/test-incubating
+josh-run/bin/josh-run :+ws/test:/deps:*/incubating
 ```
 
 The second argument to `josh-run/bin/josh-run` is the git ref to build from:

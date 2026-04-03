@@ -34,4 +34,4 @@
 !deployment/josh-test-webhook-service
 !lfs-test-server
 !run-josh.sh
-!docker/
+!images/run/

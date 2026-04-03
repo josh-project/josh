@@ -27,13 +27,13 @@ target "build" {
   dockerfile = "images/build/Dockerfile"
   tags       = ["josh-build:latest"]
   contexts = {
-    git      = ".git"
+    git                 = ".git"
     josh-dev = "target:dev"
   }
 }
 
 target "run" {
-  context    = "."
+  context    = "images/run"
   dockerfile = "images/run/Dockerfile"
   contexts = {
     josh-dev   = "target:dev"

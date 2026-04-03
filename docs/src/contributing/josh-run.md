@@ -45,13 +45,13 @@ This runs both the release test suite and the incubating test suite (with `--fea
 ### Run only release tests
 
 ```sh
-josh-run/bin/josh-run :+ws/test:/deps:*/test-release
+josh-run/bin/josh-run :+ws/test:/deps:*/stable
 ```
 
 ### Run only incubating tests
 
 ```sh
-josh-run/bin/josh-run :+ws/test:/deps:*/test-incubating
+josh-run/bin/josh-run :+ws/test:/deps:*/incubating
 ```
 
 ## Syntax
@@ -148,6 +148,7 @@ A workspace is defined by a josh filter file, typically under `ws/`. The filter 
 | `deps/` | subtree | Each file names a dependency. Its content is the tree SHA of that dependency's output volume, which is mounted at `/<filename>` inside the container. |
 | `cache` | blob | Optional. Names a persistent podman volume mounted at `/opt/cache` (e.g. for Cargo's registry cache). |
 | `env/` | subtree | Optional. Each file is an environment variable injected into the container. The filename is the variable name; the content is the value. |
+| `output` | blob | Optional. `none` disables the output volume entirely, so no `/out` mount is provided and the run is never cache-skipped based on a prior output volume. |
 
 ### Example: `ws/build.josh`
 
@@ -156,7 +157,7 @@ A workspace is defined by a josh filter file, typically under `ws/`. The filter 
 :$cache="cargo"
 
 run = :[
-    ::run.sh=ws/run-build.sh
+    ::run.sh=ws/build.sh
     :exclude[
         ::ws/
         ::tests/
@@ -167,13 +168,13 @@ run = :[
 This workspace:
 - Uses the `images/dev-local/image` subtree as the Docker build context.
 - Declares a persistent cache volume named `cargo` (mounted at `/opt/cache`).
-- Populates `run/` with: the build entrypoint (`ws/run-build.sh` renamed to `run.sh`) and every file in the repo except `ws/` and `tests/`.
+- Populates `run/` with: the build entrypoint (`ws/build.sh` renamed to `run.sh`) and every file in the repo except `ws/` and `tests/`.
 
 ### Example: `ws/test.josh`
 
 ```
 deps = :[
-    :#test-release[
+    :#stable[
         :#image[:+images/dev-local/image]
 
         deps = :[
@@ -181,13 +182,13 @@ deps = :[
         ]
 
         run = :[
-            ::run.sh=ws/run-tests.sh
+            ::run.sh=ws/tests.sh
             ::run-tests.sh
             ::tests/:exclude[::tests/experimental/]
             ::scripts/
         ]
     ]
-    :#test-incubating[
+    :#incubating[
         :#image[:+images/dev-local/image]
 
         deps = :[
@@ -200,7 +201,7 @@ deps = :[
         ]
 
         run = :[
-            ::run.sh=ws/run-tests.sh
+            ::run.sh=ws/tests.sh
             ::run-tests.sh
             ::tests/
             ::scripts/
@@ -209,11 +210,11 @@ deps = :[
 ]
 ```
 
-This workspace has two top-level dependencies: `test-release` and `test-incubating`. Each:
+This workspace has two top-level dependencies: `stable` and `incubating`. Each:
 - Uses `images/dev-local/image` as the container image.
 - Depends on the `ws/build` workspace (whose output — the compiled binaries — is mounted at `/josh` inside the test container).
-- `test-incubating` passes `CARGO_BUILD_FEATURES=--features incubating` into the build dependency, causing it to compile with incubating features enabled.
-- `test-release` excludes `tests/experimental/` from the run tree.
+- `incubating` passes `CARGO_BUILD_FEATURES=--features incubating` into the build dependency, causing it to compile with incubating features enabled.
+- `stable` excludes `tests/experimental/` from the run tree.
 
 ## How it works
 
@@ -228,7 +229,7 @@ josh-run/bin/josh-run <filter> [<ref>]
 │
 └─► josh-run-container <safe_name> <WS_TREE>
     │
-    │  4. Check if out_<WS_TREE> volume exists → cache hit, skip to step 11
+    │  4. If output != none, check if out_<WS_TREE> volume exists → cache hit, skip to step 11
     │  5. For each entry in WS_TREE:deps/:
     │       a. Read the dep's WS_TREE SHA from WS_TREE:deps/<name>
     │       b. Recurse: josh-run-container <safe_name>-<dep> <dep_sha>
@@ -244,13 +245,13 @@ josh-run/bin/josh-run <filter> [<ref>]
     │  9.  git archive WS_TREE:run | podman volume import → snapshot volume
     │  10. podman run ws_image_<IMAGE_TREE> bash run.sh
     │       - snapshot volume mounted at $PWD
-    │       - out_<WS_TREE> volume mounted at /out
+    │       - out_<WS_TREE> volume mounted at /out when output != none
     │       - dep output volumes mounted at /<dep_name>
     │       - cache volume mounted at /opt/cache (if configured)
     │  11. podman volume rm snapshot volume
     │
 ◄──
-    12. podman volume export out_<WS_TREE> | tar -xvf -
+    12. If output != none, podman volume export out_<WS_TREE> | tar -xvf -
         (extract artifacts to host working directory)
 ```
 
@@ -260,13 +261,13 @@ Container images are named `ws_image_<IMAGE_TREE>` where `IMAGE_TREE` is the git
 
 ### Artifact extraction
 
-After the run, `josh-run` exports the entire `out_<WS_TREE>` volume back to the current working directory with `tar -xvf -`. The entrypoint script (`run.sh`) is responsible for placing outputs under `/out` inside the container. For example, `ws/run-build.sh` copies compiled binaries to `/out/debug/`.
+After the run, `josh-run` exports the entire `out_<WS_TREE>` volume back to the current working directory with `tar -xvf -` when output collection is enabled. The entrypoint script (`run.sh`) is responsible for placing outputs under `/out` inside the container. For example, `ws/build.sh` copies compiled binaries to `/out/debug/`.
 
 ## Creating a new workspace
 
 1. **Write a `.josh` file** under `ws/` (or anywhere in the repo). Define at minimum an `image` reference and a `run` subtree containing a `run.sh` entrypoint.
 
-2. **Write the entrypoint script** (`run.sh`). It runs inside the container. Place any outputs you want extracted under `/out`.
+2. **Write the entrypoint script** (`run.sh`). It runs inside the container. Place any outputs you want extracted under `/out`, unless you set `output = "none"` for a run-only workspace.
 
 3. **Run it:**
 
