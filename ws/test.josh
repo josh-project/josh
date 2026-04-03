@@ -1,5 +1,16 @@
 :$output="none"
 deps = :[
+    :#fmt[
+        :#image[:+images/dev-local/image]
+
+        run = :[
+            :$run.sh="set -e; cargo fmt -- --check"
+            :exclude[
+                ::ws/
+                ::tests/
+            ]
+        ]
+    ]
     :#stable[
         :#image[:+images/dev-local/image]
 
