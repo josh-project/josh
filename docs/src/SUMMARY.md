@@ -14,6 +14,7 @@
 # Reference
 - [josh CLI](./reference/cli.md)
 - [Filter syntax](./reference/filters.md)
+- [Experimental features](./reference/experimental.md)
 - [Workspaces](./reference/workspace.md)
 - [Forge integration](./reference/forge.md)
 - [Graphql API](./reference/graphql.md)
