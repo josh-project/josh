@@ -1,4 +1,7 @@
-:[
+deps = :[
+    :#BASE_IMAGE[:+images/dev/image]
+]
+context = :[
     :/images/build
     :exclude[::images/]:exclude[::ws/]
 ]
