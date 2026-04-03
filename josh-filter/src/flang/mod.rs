@@ -204,16 +204,16 @@ pub(crate) fn spec2(op: &Op) -> String {
         }
         #[cfg(feature = "incubating")]
         Op::TreeId(path, sub) => {
-            if *sub == to_filter(Op::Empty) {
-                format!(":#{}", parse::quote_if(&path.to_string_lossy()))
-            } else {
-                format!(
-                    ":#{}[{}]",
-                    parse::quote_if(&path.to_string_lossy()),
-                    spec(*sub)
-                )
-            }
+            format!(
+                ":#{}[{}]",
+                parse::quote_if(&path.to_string_lossy()),
+                spec(*sub)
+            )
         }
+        #[cfg(feature = "incubating")]
+        Op::ObjectDeref(path) => format!(":*{}", parse::quote_if(&path.to_string_lossy())),
+        #[cfg(feature = "incubating")]
+        Op::ObjectRef(path) => format!(":&{}", parse::quote_if(&path.to_string_lossy())),
         Op::RegexReplace(replacements) => {
             let v = replacements
                 .iter()

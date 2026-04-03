@@ -285,7 +285,6 @@ impl Drop for TmpGitNamespace {
     }
 }
 
-
 pub fn merge_meta(
     transaction: &josh_core::cache::Transaction,
     transaction_mirror: &josh_core::cache::Transaction,
