@@ -400,6 +400,16 @@ impl InMemoryBuilder {
                 let params_tree = self.build_starlark_params(path, *subfilter)?;
                 push_tree_entries(&mut entries, [("treeid", params_tree)]);
             }
+            #[cfg(feature = "incubating")]
+            Op::ObjectDeref(path) => {
+                let params_tree = self.build_str_params(&[path.to_string_lossy().as_ref()]);
+                push_tree_entries(&mut entries, [("treederef", params_tree)]);
+            }
+            #[cfg(feature = "incubating")]
+            Op::ObjectRef(path) => {
+                let params_tree = self.build_str_params(&[path.to_string_lossy().as_ref()]);
+                push_tree_entries(&mut entries, [("treeref", params_tree)]);
+            }
             Op::Nop => {
                 let blob = self.write_blob(b"");
                 push_blob_entries(&mut entries, [("nop", blob)]);
@@ -770,6 +780,22 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> anyhow::Result<Op
                 std::path::PathBuf::from(path),
                 to_filter(filter),
             ))
+        }
+        #[cfg(feature = "incubating")]
+        "treederef" => {
+            let inner = repo.find_tree(entry.id())?;
+            let path_blob =
+                repo.find_blob(inner.get_name("0").context("treederef: missing path")?.id())?;
+            let path = std::str::from_utf8(path_blob.content())?;
+            Ok(Op::ObjectDeref(std::path::PathBuf::from(path)))
+        }
+        #[cfg(feature = "incubating")]
+        "treeref" => {
+            let inner = repo.find_tree(entry.id())?;
+            let path_blob =
+                repo.find_blob(inner.get_name("0").context("treeref: missing path")?.id())?;
+            let path = std::str::from_utf8(path_blob.content())?;
+            Ok(Op::ObjectRef(std::path::PathBuf::from(path)))
         }
         #[cfg(feature = "incubating")]
         "treeid" => {
