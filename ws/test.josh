@@ -1,5 +1,6 @@
+:$output="none"
 deps = :[
-    :#test-release[
+    :#stable[
         :#image[:+images/dev-local/image]
 
         deps = :[
@@ -7,13 +8,13 @@ deps = :[
         ]
 
         run = :[
-            ::run.sh=ws/run-tests.sh
+            ::run.sh=ws/tests.sh
             ::run-tests.sh
             ::tests/:exclude[::tests/experimental/]
             ::scripts/
         ]
     ]
-    :#test-incubating[
+    :#incubating[
         :#image[:+images/dev-local/image]
 
         deps = :[
@@ -26,7 +27,7 @@ deps = :[
         ]
 
         run = :[
-            ::run.sh=ws/run-tests.sh
+            ::run.sh=ws/tests.sh
             ::run-tests.sh
             ::tests/
             ::scripts/
