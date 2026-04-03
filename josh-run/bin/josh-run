@@ -42,7 +42,10 @@ WS_TREE=$(git rev-parse $(josh-filter "$FILTER" "$SNAPSHOT_INPUT")^{tree})
 echo "WS_TREE: $WS_TREE"
 
 SAFE_NAME=$(josh-filter -i "$FILTER")
+OUTPUT_MODE=$(git show "$WS_TREE:output" 2>/dev/null || echo "volume")
 $(dirname "$0")/josh-run-container "$SAFE_NAME" "$WS_TREE" || true
 
-# Pull generated artifacts from the output volume back to the host.
-podman volume export "out_$WS_TREE" | tar -xvf -
+# Pull generated artifacts from the output volume back to the host when enabled.
+if [[ "$OUTPUT_MODE" != "none" ]]; then
+    podman volume export "out_$WS_TREE" | tar -xvf -
+fi

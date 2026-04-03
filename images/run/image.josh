@@ -1,3 +1,7 @@
-:[
+deps = :[
+    :#DEV_IMAGE[:+images/dev/image]
+    :#BUILD_IMAGE[:+images/build/image]
+]
+context = :[
     :/images/run
 ]
