@@ -128,10 +128,7 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> anyhow::Result<Filter> {
         Rule::filter_starlark => {
             let mut inner = pair.into_inner();
             let path = Path::new(&unquote(inner.next().unwrap().as_str())).to_owned();
-            let subfilter = match inner.next() {
-                Some(compose_pair) => to_filter(Op::Compose(parse_group(compose_pair.as_str())?)),
-                None => to_filter(Op::Empty),
-            };
+            let subfilter = to_filter(Op::Compose(parse_group(inner.next().unwrap().as_str())?));
             Ok(f.starlark(path, subfilter))
         }
         #[cfg(not(feature = "incubating"))]
