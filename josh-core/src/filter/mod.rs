@@ -1396,6 +1396,63 @@ pub fn apply<'a>(
             let oid_str = applied.tree().id().to_string();
             apply(transaction, to_filter(Op::Blob(path.clone(), oid_str)), x)
         }
+        #[cfg(feature = "incubating")]
+        Op::ObjectRef(path) => {
+            let repo = transaction.repo();
+            if let Ok(entry) = x.tree().get_path(path) {
+                let oid_str = entry.id().to_string();
+                let blob_oid = repo.blob(oid_str.as_bytes())?;
+                Ok(x.clone().with_tree(tree::insert(
+                    repo,
+                    &tree::empty(repo),
+                    path,
+                    blob_oid,
+                    git2::FileMode::Blob.into(),
+                )?))
+            } else {
+                Ok(x)
+            }
+        }
+        #[cfg(feature = "incubating")]
+        Op::ObjectDeref(path) => {
+            let repo = transaction.repo();
+            // If path doesn't exist in input, do nothing (nop).
+            let entry = match x.tree().get_path(path) {
+                Ok(e) => e,
+                Err(_) => return Ok(x),
+            };
+            // Path exists: read OID string from blob content.
+            let oid_str = if let Ok(blob) = repo.find_blob(entry.id()) {
+                std::str::from_utf8(blob.content())?
+                    .lines()
+                    .next()
+                    .unwrap_or("")
+                    .trim()
+                    .to_string()
+            } else {
+                String::new()
+            };
+            if let Ok(oid) = git2::Oid::from_str(&oid_str) {
+                let (oid, mode) = if repo.find_tree(oid).is_ok() {
+                    (oid, git2::FileMode::Tree.into())
+                } else if repo.find_blob(oid).is_ok() {
+                    (oid, git2::FileMode::Blob.into())
+                } else {
+                    return Err(anyhow::anyhow!(":*: object not found in repo: {}", oid));
+                };
+                Ok(x.with_tree(tree::insert(repo, &tree::empty(repo), path, oid, mode)?))
+            } else {
+                // Content is not a valid OID: insert empty blob at path.
+                let empty_blob = repo.blob(b"")?;
+                Ok(x.with_tree(tree::insert(
+                    repo,
+                    &tree::empty(repo),
+                    path,
+                    empty_blob,
+                    git2::FileMode::Blob.into(),
+                )?))
+            }
+        }
 
         Op::Compose(filters) => {
             let filtered: Vec<_> = filters
@@ -1956,6 +2013,15 @@ mod tests {
         let spec_str = spec(filter5);
         // The spec should contain the chain representation
         assert!(!spec_str.is_empty());
+    }
+
+    #[cfg(feature = "incubating")]
+    #[test]
+    fn deref_shortcut_parsing_test() {
+        assert_eq!(parse(":*/path").unwrap(), parse(":*path:/path").unwrap());
+        assert_eq!(parse(":*/a/b").unwrap(), parse(":*a/b:/a/b").unwrap());
+        assert_eq!(spec(parse(":*/path").unwrap()), ":*path:/path");
+        assert_eq!(spec(parse(":*path").unwrap()), ":*path");
     }
 
     #[test]

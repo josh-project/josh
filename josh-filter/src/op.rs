@@ -120,6 +120,10 @@ pub enum Op {
     Starlark(std::path::PathBuf, Filter),
     #[cfg(feature = "incubating")]
     TreeId(std::path::PathBuf, Filter),
+    #[cfg(feature = "incubating")]
+    ObjectDeref(std::path::PathBuf),
+    #[cfg(feature = "incubating")]
+    ObjectRef(std::path::PathBuf),
 
     Pattern(String),
     Message(String, regex::Regex),

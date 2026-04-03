@@ -97,6 +97,19 @@ fn make_filter(args: &[&str]) -> anyhow::Result<Filter> {
     }
 }
 
+#[cfg(feature = "incubating")]
+fn parse_treederef(arg: &str) -> Filter {
+    let f = Filter::new();
+    if let Some(path) = arg.strip_prefix('/') {
+        let path = Path::new(path).to_owned();
+        f.chain(to_filter(Op::ObjectDeref(path.clone())))
+            .subdir(path)
+    } else {
+        let path = Path::new(arg).to_owned();
+        f.chain(to_filter(Op::ObjectDeref(path)))
+    }
+}
+
 fn parse_item(pair: pest::iterators::Pair<Rule>) -> anyhow::Result<Filter> {
     let f = Filter::new();
     match pair.as_rule() {
@@ -129,17 +142,31 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> anyhow::Result<Filter> {
         Rule::filter_treeid => {
             let mut inner = pair.into_inner();
             let path = Path::new(&unquote(inner.next().unwrap().as_str())).to_owned();
-            let subfilter = match inner.next() {
-                Some(compose_pair) => to_filter(Op::Compose(parse_group(compose_pair.as_str())?)),
-                None => to_filter(Op::Empty),
-            };
-            Ok(f.treeid(path, subfilter))
+            let sf = to_filter(Op::Compose(parse_group(inner.next().unwrap().as_str())?));
+            Ok(f.treeid(path, sf))
         }
         #[cfg(not(feature = "incubating"))]
         Rule::filter_treeid => Err(anyhow!(
             "TreeId filter is incubating. Build with --features incubating."
         )),
         #[cfg(feature = "incubating")]
+        Rule::filter_treeref => {
+            let path = Path::new(&unquote(pair.into_inner().next().unwrap().as_str())).to_owned();
+            Ok(f.chain(to_filter(Op::ObjectRef(path))))
+        }
+        #[cfg(not(feature = "incubating"))]
+        Rule::filter_treeref => Err(anyhow!(
+            "ObjectRef filter is incubating. Build with --features incubating."
+        )),
+        #[cfg(feature = "incubating")]
+        Rule::filter_treederef => {
+            let path = unquote(pair.into_inner().next().unwrap().as_str());
+            Ok(parse_treederef(&path))
+        }
+        #[cfg(not(feature = "incubating"))]
+        Rule::filter_treederef => Err(anyhow!(
+            "ObjectDeref filter is incubating. Build with --features incubating."
+        )),
         Rule::filter_blob => {
             let mut inner = pair.into_inner();
             let path = Path::new(&unquote(inner.next().unwrap().as_str())).to_owned();
