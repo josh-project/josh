@@ -1,3 +1,4 @@
+:$label="cargo build"
 :#image[:+images/dev-local/image]
 :$cache="cargo"
 

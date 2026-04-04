@@ -1,3 +1,4 @@
+:$label="josh proxy"
 :#image[:+images/run/image]
 :$cache="josh-data"
 :$output="none"

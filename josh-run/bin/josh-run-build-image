@@ -12,9 +12,9 @@ CONTEXT_TREE=$(git rev-parse $BUILD_TREE:context)
 
 IMAGE_NAME=ws_image_$BUILD_TREE
 if podman image inspect $IMAGE_NAME >/dev/null 2>&1; then
-    echo "Image exists locally"
+    echo "[image:${BUILD_TREE:0:12}] Already built"
 else
-    echo "Image does not exist locally"
+    echo "[image:${BUILD_TREE:0:12}] Building..."
     ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
     BUILD_ARGS=(--build-arg "USER_UID=$(id -u)" --build-arg "USER_GID=$(id -g)" --build-arg "ARCH=$ARCH")
     if [ -d ".git" ]; then
