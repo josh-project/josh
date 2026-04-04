@@ -3,6 +3,22 @@ use std::io::IsTerminal;
 use std::path::PathBuf;
 use std::process::Stdio;
 
+const JOSH_COMMIT_TIME_ENV: &str = "JOSH_COMMIT_TIME";
+const JOSH_COMMIT_NAME: &str = "JOSH";
+const JOSH_COMMIT_EMAIL: &str = "josh@josh-project.dev";
+
+pub fn josh_commit_signature<'a>() -> anyhow::Result<git2::Signature<'a>> {
+    Ok(if let Ok(time) = std::env::var(JOSH_COMMIT_TIME_ENV) {
+        git2::Signature::new(
+            JOSH_COMMIT_NAME,
+            JOSH_COMMIT_EMAIL,
+            &git2::Time::new(time.parse()?, 0),
+        )?
+    } else {
+        git2::Signature::now(JOSH_COMMIT_NAME, JOSH_COMMIT_EMAIL)?
+    })
+}
+
 /// Normalize repo path by stripping .git suffix if present
 pub fn normalize_repo_path(repo_path: &std::path::Path) -> PathBuf {
     let components = repo_path.components().collect::<Vec<_>>();

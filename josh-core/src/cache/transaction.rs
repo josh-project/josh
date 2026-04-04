@@ -32,18 +32,6 @@ pub trait FilterHook {
     ) -> anyhow::Result<crate::filter::Filter>;
 }
 
-pub(crate) fn josh_commit_signature<'a>() -> anyhow::Result<git2::Signature<'a>> {
-    Ok(if let Ok(time) = std::env::var("JOSH_COMMIT_TIME") {
-        git2::Signature::new(
-            "JOSH",
-            "josh@josh-project.dev",
-            &git2::Time::new(time.parse()?, 0),
-        )?
-    } else {
-        git2::Signature::now("JOSH", "josh@josh-project.dev")?
-    })
-}
-
 static REF_CACHE: LazyLock<RwLock<HashMap<git2::Oid, HashMap<git2::Oid, git2::Oid>>>> =
     LazyLock::new(Default::default);
 
