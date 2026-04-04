@@ -15,6 +15,7 @@ ENV CARGO_TARGET_DIR=/opt/target/cargo-target
 ENV CARGO_BUILD_BUILD_DIR=/opt/cache/cargo-build
 ENV CARGO_HOME=/opt/cache/cargo-cache
 ENV GOCACHE=/opt/cache/go-cache
+ENV GOMODCACHE=/opt/cache/go-mod-cache
 ENV GOPATH=/opt/target/go-path
 ENV GOFLAGS=-buildvcs=false
 RUN npm config set cache /opt/cache/npm-cache --global

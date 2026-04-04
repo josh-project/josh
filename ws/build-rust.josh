@@ -1,9 +1,13 @@
-:$label="cargo fetch"
+:$label="rust build"
 :#image[:+images/dev-local/image]
 :$cache="rust"
 
+deps = :[
+    :#fetch[:+ws/fetch]
+]
+
 run = :[
-    :$run.sh="set -e; cargo fetch --locked"
+    ::run.sh=ws/build-rust.sh
     :exclude[
         ::ws/
         ::tests/

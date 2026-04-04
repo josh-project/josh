@@ -1,13 +1,13 @@
-:$label="cargo build"
+:$label="go build"
 :#image[:+images/dev-local/image]
-:$cache="cargo"
+:$cache="go"
 
 deps = :[
-    :#fetch[:+ws/fetch]
+    :#go-fetch[:+ws/fetch-go]
 ]
 
 run = :[
-    ::run.sh=ws/build.sh
+    ::run.sh=ws/build-go.sh
     :exclude[
         ::ws/
         ::tests/

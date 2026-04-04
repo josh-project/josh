@@ -4,7 +4,7 @@ deps = :[
     :#cargo-test[
         :$label="cargo test"
         :#image[:+images/dev-local/image]
-        :$cache="cargo"
+        :$cache="rust"
 
         deps = :[
             :#fetch[:+ws/fetch]
@@ -39,7 +39,8 @@ deps = :[
         :#image[:+images/dev-local/image]
 
         deps = :[
-            :#josh[:+ws/build]
+            :#josh[:+ws/build-rust]
+            :#build-go[:+ws/build-go]
         ]
 
         run = :[
@@ -55,11 +56,12 @@ deps = :[
 
         deps = :[
             :#josh[
-                :+ws/build
+                :+ws/build-rust
                 env = :[
                     :$CARGO_BUILD_FEATURES="--features incubating"
                 ]
             ]
+            :#build-go[:+ws/build-go]
         ]
 
         run = :[

@@ -1,0 +1,11 @@
+:$label="go mod download"
+:#image[:+images/dev-local/image]
+:$cache="go"
+
+run = :[
+    :$run.sh="set -e; cd josh-ssh-dev-server && go mod download"
+    :exclude[
+        ::ws/
+        ::tests/
+    ]
+]
