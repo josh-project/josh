@@ -7,6 +7,54 @@ use anyhow::Context;
 use std::fs::read_to_string;
 use std::io::Write;
 
+/// Resolve the `input` argument to a (ref_string, commit_oid) pair.
+///
+/// - `"+"`: Creates a temporary commit from the current index (staged changes
+///   on top of HEAD). Useful to filter what is about to be committed.
+/// - `"."`: Creates a temporary commit from the working tree (all tracked and
+///   untracked files under the repo root, reset to HEAD first so only working
+///   tree contents are captured). Useful to preview the filter output before
+///   staging or committing.
+/// - A raw SHA hex string: resolves the object and peels to its commit.
+/// - Anything else: treated as a ref name (short names like `master` are
+///   resolved automatically).
+fn resolve_input_ref(
+    repo: &git2::Repository,
+    input_ref: &str,
+) -> anyhow::Result<(String, git2::Oid)> {
+    if input_ref == "+" || input_ref == "." {
+        let mut index = repo.index()?;
+        let tree_oid = if input_ref == "+" {
+            // Use the index as-is (staged changes only)
+            index.write_tree_to(repo)?
+        } else {
+            // Build a tree from the working tree: start from HEAD,
+            // then layer all working-tree files on top via the index
+            let head_tree = repo.head()?.peel_to_tree()?;
+            index.read_tree(&head_tree)?;
+            index.add_all(["*"].iter(), git2::IndexAddOption::DEFAULT, None)?;
+            index.update_all(["*"].iter(), None)?;
+            index.write_tree_to(repo)?
+        };
+        // Create a temporary dangling commit so the rest of the pipeline can
+        // treat this input identically to any other commit reference
+        let tree = repo.find_tree(tree_oid)?;
+        let sig = josh_core::git::josh_commit_signature()?;
+        let head_commit = repo.head()?.peel_to_commit()?;
+        let commit_oid = repo.commit(None, &sig, &sig, "WIP", &tree, &[&head_commit])?;
+        Ok((commit_oid.to_string(), commit_oid))
+    } else if let Ok(oid) = git2::Oid::from_str(input_ref) {
+        let oid = repo.find_object(oid, None)?.peel_to_commit()?.id();
+        Ok((input_ref.to_string(), oid))
+    } else {
+        let reference = repo
+            .resolve_reference_from_short_name(input_ref)
+            .with_context(|| format!("could not resolve input: {:?}", input_ref))?;
+        let ref_name = reference.name().unwrap().to_string();
+        Ok((ref_name, reference.target().unwrap()))
+    }
+}
+
 fn make_app() -> clap::Command {
     let app = clap::Command::new("josh-filter");
 
@@ -20,7 +68,7 @@ fn make_app() -> clap::Command {
         )
         .arg(
             clap::Arg::new("input")
-                .help("Ref to apply filter to")
+                .help("Ref or SHA to apply filter to, '.' for the working tree, or '+' for the index (staged changes)")
                 .default_value("HEAD"),
         )
         .arg(
@@ -226,16 +274,7 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
     let mut refs = vec![];
     let mut ids: Vec<(git2::Oid, josh_core::filter::Filter)> = vec![];
 
-    let (input_ref, oid) = if let Ok(oid) = git2::Oid::from_str(input_ref) {
-        let oid = repo.find_object(oid, None)?.peel_to_commit()?.id();
-        (input_ref.to_string(), oid)
-    } else {
-        let reference = repo
-            .resolve_reference_from_short_name(input_ref)
-            .with_context(|| format!("could not resolve input: {:?}", input_ref))?;
-        let ref_name = reference.name().unwrap().to_string();
-        (ref_name, reference.target().unwrap())
-    };
+    let (input_ref, oid) = resolve_input_ref(repo, input_ref)?;
     refs.push((input_ref.clone(), oid));
 
     if args.get_flag("single") {

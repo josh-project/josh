@@ -49,7 +49,7 @@ impl DistributedCacheBackend {
             };
             let updated = builder.create_updated(&repo, &tree)?;
 
-            let signature = super::transaction::josh_commit_signature()?;
+            let signature = crate::git::josh_commit_signature()?;
             let parents = if let Ok(r) = repo.revparse_single(&rp) {
                 vec![r.peel_to_commit()?]
             } else {

@@ -1,6 +1,6 @@
 use crate::http::RetryableError;
 use crate::service::{JoshProxyService, UpstreamProtocol};
-use crate::{FetchError, auth, proxy_commit_signature, run_git_with_auth};
+use crate::{FetchError, auth, run_git_with_auth};
 use anyhow::{Context, anyhow};
 use backon::BackoffBuilder;
 
@@ -462,7 +462,7 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> anyhow::Result<String> {
                 .revparse_single(&original_target_ref)
                 .map(|x| x.id())
             {
-                let signature = proxy_commit_signature()?;
+                let signature = josh_core::git::josh_commit_signature()?;
                 let base_commit = transaction.repo().find_commit(base_commit_id)?;
                 let merged_tree = transaction
                     .repo()
