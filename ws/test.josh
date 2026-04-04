@@ -1,5 +1,25 @@
 :$output="none"
 deps = :[
+    :#cargo-test[
+        :#image[:+images/dev-local/image]
+        :$cache="cargo"
+
+        deps = :[
+            :#fetch[:+ws/fetch]
+        ]
+
+        env = :[
+            :$RUSTFLAGS="-D warnings"
+        ]
+
+        run = :[
+            :$run.sh="set -e; cargo test --workspace --offline --locked"
+            :exclude[
+                ::ws/
+                ::tests/
+            ]
+        ]
+    ]
     :#fmt[
         :#image[:+images/dev-local/image]
 
