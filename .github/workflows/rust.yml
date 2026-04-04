@@ -48,17 +48,18 @@ jobs:
         fetch-depth: 0
     - name: Get tags
       run: git fetch --tags origin
-    - name: Build dev image
-      uses: docker/build-push-action@v6
+    - name: Build CI image
+      uses: docker/bake-action@v6
       with:
-        context: .
-        file: Dockerfile
-        cache-from: type=gha,scope=${{ matrix.test_suite.name }}
-        cache-to: type=gha,mode=max,scope=${{ matrix.test_suite.name }}
-        target: dev-ci
-        tags: josh-ci-dev:latest
-        push: false
+        targets: dev-ci
         load: true
+        set: |
+          rust-base.cache-from=type=gha,scope=rust-base
+          rust-base.cache-to=type=gha,mode=max,scope=rust-base
+          dev.cache-from=type=gha,scope=dev
+          dev.cache-to=type=gha,mode=max,scope=dev
+          dev-ci.cache-from=type=gha,scope=${{ matrix.test_suite.name }}
+          dev-ci.cache-to=type=gha,mode=max,scope=${{ matrix.test_suite.name }}
     - name: Run tests
       run: >-
         docker run --rm
