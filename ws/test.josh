@@ -1,5 +1,21 @@
 :$output="none"
 deps = :[
+    :#cargo-test[
+        :#image[:+images/dev-local/image]
+        :$cache="cargo"
+
+        deps = :[
+            :#fetch[:+ws/fetch]
+        ]
+
+        run = :[
+            ::run.sh=ws/cargo-test.sh
+            :exclude[
+                ::ws/
+                ::tests/
+            ]
+        ]
+    ]
     :#fmt[
         :#image[:+images/dev-local/image]
 

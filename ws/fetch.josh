@@ -1,12 +1,8 @@
 :#image[:+images/dev-local/image]
 :$cache="cargo"
 
-deps = :[
-    :#fetch[:+ws/fetch]
-]
-
 run = :[
-    ::run.sh=ws/build.sh
+    :$run.sh="set -e; cargo fetch --locked"
     :exclude[
         ::ws/
         ::tests/
