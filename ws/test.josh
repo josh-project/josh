@@ -8,8 +8,12 @@ deps = :[
             :#fetch[:+ws/fetch]
         ]
 
+        env = :[
+            :$RUSTFLAGS="-D warnings"
+        ]
+
         run = :[
-            ::run.sh=ws/cargo-test.sh
+            :$run.sh="set -e; cargo test --workspace --offline --locked"
             :exclude[
                 ::ws/
                 ::tests/
