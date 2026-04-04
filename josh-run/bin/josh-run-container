@@ -17,7 +17,7 @@ echo "/ls $WS_TREE"
 OUTPUT_MODE=$(git show "$WS_TREE:output" 2>/dev/null || echo "volume")
 out_vol="out_${WS_TREE}"
 if [[ "$OUTPUT_MODE" != "none" ]] && podman volume inspect "$out_vol" >/dev/null 2>&1; then
-    echo "Cached output found, skipping build"
+    echo "Cached output found, skipping build ($out_vol)"
 else
     BUILD_ARGS=(--device /dev/net/tun --net host --cap-add=SYS_MODULE --cap-add=NET_ADMIN)
     if git rev-parse --verify "$WS_TREE:deps" >/dev/null 2>&1; then
