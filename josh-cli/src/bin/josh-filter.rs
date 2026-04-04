@@ -20,7 +20,7 @@ fn make_app() -> clap::Command {
         )
         .arg(
             clap::Arg::new("input")
-                .help("Ref to apply filter to")
+                .help("Ref or SHA to apply filter to, '.' for the working tree, or '+' for the index (staged changes)")
                 .default_value("HEAD"),
         )
         .arg(
@@ -226,7 +226,27 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
     let mut refs = vec![];
     let mut ids: Vec<(git2::Oid, josh_core::filter::Filter)> = vec![];
 
-    let (input_ref, oid) = if let Ok(oid) = git2::Oid::from_str(input_ref) {
+    let (input_ref, oid) = if input_ref == "+" {
+        let mut index = repo.index()?;
+        let tree_oid = index.write_tree_to(repo)?;
+        let tree = repo.find_tree(tree_oid)?;
+        let sig = josh_core::git::josh_commit_signature()?;
+        let head_commit = repo.head()?.peel_to_commit()?;
+        let commit_oid = repo.commit(None, &sig, &sig, "WIP", &tree, &[&head_commit])?;
+        (commit_oid.to_string(), commit_oid)
+    } else if input_ref == "." {
+        let mut index = repo.index()?;
+        let head_tree = repo.head()?.peel_to_tree()?;
+        index.read_tree(&head_tree)?;
+        index.add_all(["*"].iter(), git2::IndexAddOption::DEFAULT, None)?;
+        index.update_all(["*"].iter(), None)?;
+        let tree_oid = index.write_tree_to(repo)?;
+        let tree = repo.find_tree(tree_oid)?;
+        let sig = josh_core::git::josh_commit_signature()?;
+        let head_commit = repo.head()?.peel_to_commit()?;
+        let commit_oid = repo.commit(None, &sig, &sig, "WIP", &tree, &[&head_commit])?;
+        (commit_oid.to_string(), commit_oid)
+    } else if let Ok(oid) = git2::Oid::from_str(input_ref) {
         let oid = repo.find_object(oid, None)?.peel_to_commit()?.id();
         (input_ref.to_string(), oid)
     } else {

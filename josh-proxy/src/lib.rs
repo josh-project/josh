@@ -285,18 +285,6 @@ impl Drop for TmpGitNamespace {
     }
 }
 
-fn proxy_commit_signature<'a>() -> anyhow::Result<git2::Signature<'a>> {
-    Ok(if let Ok(time) = std::env::var("JOSH_COMMIT_TIME") {
-        git2::Signature::new(
-            "JOSH",
-            "josh@josh-project.dev",
-            &git2::Time::new(time.parse()?, 0),
-        )?
-    } else {
-        git2::Signature::now("JOSH", "josh@josh-project.dev")?
-    })
-}
-
 pub fn merge_meta(
     transaction: &josh_core::cache::Transaction,
     transaction_mirror: &josh_core::cache::Transaction,
@@ -341,7 +329,7 @@ pub fn merge_meta(
         tree = josh_core::filter::tree::insert(transaction.repo(), &tree, path, blob, 0o0100644)?;
     }
 
-    let signature = proxy_commit_signature()?;
+    let signature = josh_core::git::josh_commit_signature()?;
     let oid = transaction.repo().commit(
         None,
         &signature,
