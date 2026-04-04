@@ -14,7 +14,7 @@ pub async fn verify_github_signature_middleware(
     request: extract::Request,
     next: axum::middleware::Next,
 ) -> axum::response::Response {
-    use hmac::{Hmac, Mac};
+    use hmac::{Hmac, KeyInit, Mac};
     use sha2::Sha256;
 
     // Extract the signature from headers
