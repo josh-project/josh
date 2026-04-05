@@ -36,10 +36,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-34692678.js";
+            window.path_to_searchindex_js = "searchindex-08490afc.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-c6b525b5.js"></script>
+        <script src="toc-7b1b477e.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -954,6 +954,218 @@ Change-ID.</p>
 <code>merge-staging</code> for this, to which users with permission to import
 projects can force-push unrelated histories.</p>
 <div style="break-before: page; page-break-before: always;"></div>
+<h1 id="josh-cli"><a class="header" href="#josh-cli">josh CLI</a></h1>
+<p>The <code>josh</code> command is the primary tool for working with filtered git repositories.
+It provides projection-aware equivalents of the common git operations.</p>
+<h2 id="installation-1"><a class="header" href="#installation-1">Installation</a></h2>
+<pre><code class="language-shell">cargo install josh-cli --locked --git https://github.com/josh-project/josh.git
+</code></pre>
+<hr>
+<h2 id="josh-clone"><a class="header" href="#josh-clone">josh clone</a></h2>
+<p>Clone a repository, optionally applying a filter projection.</p>
+<pre><code>josh clone &lt;url&gt; &lt;filter&gt; &lt;out&gt; [options]
+</code></pre>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Argument</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>&lt;url&gt;</code></td><td>Remote repository URL (HTTPS, SSH, or local path)</td></tr>
+<tr><td><code>&lt;filter&gt;</code></td><td><a href="#history-filtering">Filter spec</a> to apply (e.g. <code>:/docs</code>, <code>:workspace=workspaces/myproject</code>)</td></tr>
+<tr><td><code>&lt;out&gt;</code></td><td>Local directory to clone into</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Options:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Flag</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>-b</code>, <code>--branch &lt;ref&gt;</code></td><td>Branch or ref to clone (default: <code>HEAD</code>)</td></tr>
+<tr><td><code>--forge &lt;name&gt;</code></td><td>Forge integration to use (e.g. <code>github</code>)</td></tr>
+<tr><td><code>--no-forge</code></td><td>Disable forge integration</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Examples:</strong></p>
+<pre><code class="language-shell"># Clone only the docs/ subdirectory
+josh clone https://github.com/josh-project/josh.git :/docs ./josh-docs
+
+# Clone a workspace projection
+josh clone https://github.com/myorg/monorepo.git :workspace=workspaces/frontend ./frontend
+
+# Clone the full repository (no filter)
+josh clone https://github.com/josh-project/josh.git :/ ./josh
+</code></pre>
+<hr>
+<h2 id="josh-fetch"><a class="header" href="#josh-fetch">josh fetch</a></h2>
+<p>Fetch from a remote and update the filtered local refs. Equivalent to <code>git fetch</code> but
+filter-aware.</p>
+<pre><code>josh fetch [options]
+</code></pre>
+<p><strong>Options:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Flag</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>-r</code>, <code>--remote &lt;name&gt;</code></td><td>Remote name or URL to fetch from (default: <code>origin</code>)</td></tr>
+<tr><td><code>-R</code>, <code>--ref &lt;ref&gt;</code></td><td>Ref to fetch (default: <code>HEAD</code>)</td></tr>
+</tbody>
+</table>
+</div>
+<hr>
+<h2 id="josh-pull"><a class="header" href="#josh-pull">josh pull</a></h2>
+<p>Fetch and integrate changes from a remote. Equivalent to <code>git pull</code> but filter-aware.</p>
+<pre><code>josh pull [options]
+</code></pre>
+<p><strong>Options:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Flag</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>-r</code>, <code>--remote &lt;name&gt;</code></td><td>Remote name or URL to pull from (default: <code>origin</code>)</td></tr>
+<tr><td><code>-R</code>, <code>--ref &lt;ref&gt;</code></td><td>Ref to pull (default: <code>HEAD</code>)</td></tr>
+<tr><td><code>--rebase</code></td><td>Rebase the current branch on top of the upstream branch</td></tr>
+<tr><td><code>--autostash</code></td><td>Automatically stash local changes before rebasing</td></tr>
+</tbody>
+</table>
+</div>
+<hr>
+<h2 id="josh-push"><a class="header" href="#josh-push">josh push</a></h2>
+<p>Push commits back to the upstream repository. Josh reverses the filter and reconstructs
+the correct upstream commits, so your changes land in the right place in the monorepo.</p>
+<pre><code>josh push [&lt;remote&gt;] [&lt;refspecs&gt;...] [options]
+</code></pre>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Argument</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>&lt;remote&gt;</code></td><td>Remote name to push to (default: <code>origin</code>)</td></tr>
+<tr><td><code>&lt;refspecs&gt;</code></td><td>Refs to push (default: current branch)</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Options:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Flag</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>-f</code>, <code>--force</code></td><td>Force-push (non-fast-forward)</td></tr>
+<tr><td><code>--atomic</code></td><td>Atomic push (all-or-nothing)</td></tr>
+<tr><td><code>--dry-run</code></td><td>Show what would be pushed without actually pushing</td></tr>
+<tr><td><code>--split</code></td><td>Push each commit as an independent, minimal diff (see <a href="#stacked-changes">Stacked changes</a>)</td></tr>
+<tr><td><code>--stack</code></td><td>Push commits as a stack, preserving upstream context (see <a href="#stacked-changes">Stacked changes</a>)</td></tr>
+</tbody>
+</table>
+</div>
+<hr>
+<h2 id="josh-remote"><a class="header" href="#josh-remote">josh remote</a></h2>
+<p>Manage josh-aware remotes.</p>
+<blockquote>
+<p><strong>Note</strong>: <code>josh remote add</code> can be used in any existing git repository, not only ones
+originally cloned with <code>josh clone</code>. This is the standard way to add josh filtering to
+a repository you already have checked out.</p>
+</blockquote>
+<h3 id="josh-remote-add"><a class="header" href="#josh-remote-add">josh remote add</a></h3>
+<p>Add a remote with an associated filter projection.</p>
+<pre><code>josh remote add &lt;name&gt; &lt;url&gt; &lt;filter&gt; [options]
+</code></pre>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Argument</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>&lt;name&gt;</code></td><td>Remote name</td></tr>
+<tr><td><code>&lt;url&gt;</code></td><td>Remote repository URL</td></tr>
+<tr><td><code>&lt;filter&gt;</code></td><td><a href="#history-filtering">Filter spec</a> to associate with this remote</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Options:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Flag</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>--forge &lt;name&gt;</code></td><td>Forge integration (e.g. <code>github</code>)</td></tr>
+<tr><td><code>--no-forge</code></td><td>Disable forge integration</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Example:</strong></p>
+<pre><code class="language-shell"># Add a second remote scoped to the backend/ subdirectory
+josh remote add backend https://github.com/myorg/monorepo.git :/services/backend
+</code></pre>
+<hr>
+<h2 id="josh-filter"><a class="header" href="#josh-filter">josh filter</a></h2>
+<p>Re-apply the filter for an existing remote to update the local filtered refs. Useful
+after manually modifying the filter configuration without fetching.</p>
+<pre><code>josh filter &lt;remote&gt;
+</code></pre>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Argument</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>&lt;remote&gt;</code></td><td>Remote name whose filter should be re-applied</td></tr>
+</tbody>
+</table>
+</div>
+<hr>
+<h2 id="josh-auth"><a class="header" href="#josh-auth">josh auth</a></h2>
+<p>Manage authentication credentials for forge integrations. Forge integration is optional
+and used for automatic pull request management — see
+<a href="#forge-integration">Forge integration</a> for details.</p>
+<pre><code>josh auth login &lt;forge&gt;
+josh auth logout &lt;forge&gt;
+</code></pre>
+<p>The only currently supported forge is <code>github</code>. See
+<a href="#forge-integration">Forge integration</a> for full documentation.</p>
+<hr>
+<h2 id="josh-filter-standalone-binary"><a class="header" href="#josh-filter-standalone-binary">josh-filter (standalone binary)</a></h2>
+<p><code>josh-filter</code> is a lower-level command that rewrites git history using Josh filter specs.
+It is intended for scripting and one-off history rewriting tasks rather than day-to-day
+development workflows.</p>
+<p>By default it reads from <code>HEAD</code> and writes the filtered result to <code>FILTERED_HEAD</code>.</p>
+<p><strong>Basic usage:</strong></p>
+<pre><code class="language-shell"># Filter HEAD through :/docs and write result to FILTERED_HEAD
+josh-filter :/docs
+</code></pre>
+<p><strong>Options:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Flag</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>--file &lt;path&gt;</code></td><td>Read filter spec from a file</td></tr>
+<tr><td><code>--squash-pattern &lt;pattern&gt;</code></td><td>Squash commits matching the pattern</td></tr>
+<tr><td><code>--squash-file &lt;path&gt;</code></td><td>Read squash patterns from a file</td></tr>
+<tr><td><code>--single</code></td><td>Produce a single squashed commit</td></tr>
+<tr><td><code>-d</code></td><td>Discovery mode: populate cache with probable filters</td></tr>
+<tr><td><code>-t</code></td><td>Output Chrome tracing data</td></tr>
+<tr><td><code>-p</code></td><td>Print the filter spec</td></tr>
+<tr><td><code>-i</code></td><td>Print the filter ID</td></tr>
+<tr><td><code>--cache-stats</code></td><td>Print cache statistics</td></tr>
+<tr><td><code>--reverse</code></td><td>Swap input and output (unapply filter)</td></tr>
+</tbody>
+</table>
+</div>
+<div style="break-before: page; page-break-before: always;"></div>
 <h1 id="history-filtering"><a class="header" href="#history-filtering">History filtering</a></h1>
 <p>Josh transforms commits by applying filters to them. As any
 commit in git represents not just a single state of the file system but also its entire
@@ -1217,6 +1429,122 @@ was applied to pull documentation from <code>josh-docs/docs</code>, the prefix i
 again by the subdirectory filter. Thus, the order in which filters are provided is crucial, as each
 filter further transforms the latest transformation of the tree.</p>
 <div style="break-before: page; page-break-before: always;"></div>
+<h1 id="working-with-workspaces-1"><a class="header" href="#working-with-workspaces-1">Working with workspaces</a></h1>
+<p>For the sake of this example we will assume a <code>josh-proxy</code> instance is running and serving a
+repo on <code>http://josh/world.git</code> with some shared code in <code>shared</code>.</p>
+<h2 id="create-a-new-workspace"><a class="header" href="#create-a-new-workspace">Create a new workspace</a></h2>
+<p>To create a new workspace in the path <code>ws/hello</code> simply clone it as if it already exists:</p>
+<pre><code>$ git clone http://josh/world.git:workspace=ws/hello.git
+</code></pre>
+<p><code>git</code> will report that you appear to have cloned an empty repository if that path does not
+yet exist.
+If you don’t get this message it means that the path already exists in the repo but may
+not yet have configured any path mappings.</p>
+<p>The next step is to add some path mapping to the <code>workspace.josh</code> file in the root of the
+workspace:</p>
+<pre><code>$ cd hello
+$ echo "mod/a = :/shared/a" &gt; workspace.josh
+</code></pre>
+<p>And and commit the changes:</p>
+<pre><code>$ git add workspace.josh
+$ git commit -m "add workspace"
+</code></pre>
+<p>If the path did not exist previously, the resulting commit will be a root commit that does not share
+any history with the <code>world.git</code> repo.
+This means a normal <code>git push</code> will be rejected at this point.
+To get correct history, the
+resulting commit needs to be a based on the history that already exists in <code>world.git</code>.
+There is however no way to do this locally, because we don’t have the data required for this.
+Also, the resulting tree should contain the contents of <code>shared/a</code> mapped to <code>mod/a</code> which
+means it needs to be produced on the server side because we don’t have the files to put there.</p>
+<p>To accomplish that push with the create option:</p>
+<pre><code>$ git push -o create origin master
+</code></pre>
+<blockquote>
+<p><strong>Note</strong>: While it is perfectly possible to use Josh without a code review system,
+it is strongly recommended to use some form of code review to be able to inspect commits
+created by Josh before they get into the immutable history of your main repository.</p>
+</blockquote>
+<p>As the resulting commit is created on the server side we need to get it from the server:</p>
+<pre><code>$ git pull --rebase
+</code></pre>
+<p>Now you should see <code>mod/a</code> populated with the content of the shared code.</p>
+<h2 id="map-a-shared-path-into-a-workspace"><a class="header" href="#map-a-shared-path-into-a-workspace">Map a shared path into a workspace</a></h2>
+<p>To add shared path to a location in the workspace that does not exist yet, first add an
+entry to the <code>workspace.josh</code> file and commit that.</p>
+<p>You can add the mapping at the end of the file using a simple syntax, and rely on josh to rewrite
+it for you in a canonical way.</p>
+<pre><code>...
+new/mapping/location/in/workspace = :/new/mapping/location/in/monorepo
+</code></pre>
+<p>At this point the path is of course empty, so the commit needs to be pushed to the server.
+When the same commit is then fetched back it will have the mapped path populated with the
+shared content.</p>
+<p>When the commit is pushed, josh will notify you about the rewrite. You can fetch the rewritten
+commit using the advertised SHA.
+Alternatively, you can use <a href="#git-sync">git sync</a> which will do it for you.</p>
+<h2 id="publish-a-non-shared-path-into-a-shared-location"><a class="header" href="#publish-a-non-shared-path-into-a-shared-location">Publish a non-shared path into a shared location</a></h2>
+<p>The steps here are exactly the same as for the mapping example above. The only difference being
+that the path already exists in the workspace but not in the shared location.</p>
+<h2 id="remove-a-mapping"><a class="header" href="#remove-a-mapping">Remove a mapping</a></h2>
+<p>To remove a mapping remove the corresponding entry from the <code>workspace.josh</code> file.
+The content of the previously shared path will stay in the workspace. That means the main
+repo will have two copies of that path from that point on. Effectively creating a fork of that code.</p>
+<h2 id="remove-a-mapped-path"><a class="header" href="#remove-a-mapped-path">Remove a mapped path</a></h2>
+<p>To remove a mapped path as well as it’s contents, remove the entry from the
+<code>workspace.josh</code> file and also remove the path inside the workspace using <code>git rm</code>.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="forge-integration"><a class="header" href="#forge-integration">Forge Integration</a></h1>
+<p>Forge integration is an <strong>optional</strong> feature that connects <code>josh</code> to a code hosting
+platform (a “forge”) such as GitHub. It is not required for normal git operations —
+cloning, pushing, and pulling all work without it, even with private repositories.</p>
+<p>Forge integration is specifically used for <strong>automatic pull request management</strong> during
+<a href="#stacked-changes">stacked changes</a> workflows. When you push a stack of
+commits with <code>josh push --split</code> or <code>josh push --stack</code>, <code>josh</code> can automatically
+create or update one pull request per commit on the forge.</p>
+<h2 id="github"><a class="header" href="#github">GitHub</a></h2>
+<p>GitHub is currently the only supported forge.</p>
+<h3 id="authentication"><a class="header" href="#authentication">Authentication</a></h3>
+<p><code>josh</code> uses GitHub’s <a href="https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps#device-flow">device flow</a>
+for authentication — the same flow used by the official GitHub CLI.</p>
+<p><strong>Log in:</strong></p>
+<pre><code class="language-shell">josh auth login github
+</code></pre>
+<p>This prints a URL and a one-time code. If clipboard access is available the code is
+also copied automatically, otherwise it is only printed to the terminal. Open the URL
+in your browser, enter the code, and authorize the application.</p>
+<p>The token is stored in <code>~/.config/josh-cli/credentials.json</code> with <code>0600</code> permissions.</p>
+<p><strong>Log out:</strong></p>
+<pre><code class="language-shell">josh auth logout github
+</code></pre>
+<p><strong>Alternatively</strong>, set the <code>GH_TOKEN</code> environment variable to a
+<a href="https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens">personal access token</a>.
+This takes precedence over any stored token and is useful in CI environments:</p>
+<pre><code class="language-shell">export GH_TOKEN=ghp_...
+</code></pre>
+<h3 id="what-forge-integration-enables"><a class="header" href="#what-forge-integration-enables">What forge integration enables</a></h3>
+<p>Once authenticated, <code>josh push --split</code> or <code>josh push --stack</code> will, in addition to
+pushing the git refs:</p>
+<ul>
+<li><strong>Create</strong> a pull request for each commit that does not yet have one.</li>
+<li><strong>Update</strong> existing pull requests (title, body, base branch) when commits are amended
+or rebased.</li>
+<li><strong>Manage draft status</strong> automatically: pull requests whose base branch is not the
+repository’s default branch are marked as drafts, and promoted to “ready for review”
+once they target the default branch directly.</li>
+</ul>
+<p>See the <a href="#stacked-changes">Stacked changes</a> guide for a full walkthrough.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="graphql-api-1"><a class="header" href="#graphql-api-1">GraphQL API</a></h1>
+<p>Josh implements a GraphQL API to query the content of repositories without a need to clone
+them via a git client.</p>
+<p>The API is exposed at:</p>
+<pre><code>http://hostname/~/graphql/name_of_repo.git
+</code></pre>
+<p>To explore the API and generated documentation, an interactive GraphQL shell can be found at:</p>
+<pre><code>http://hostname/~/graphiql/name_of_repo.git
+</code></pre>
+<div style="break-before: page; page-break-before: always;"></div>
 <h1 id="josh-proxy"><a class="header" href="#josh-proxy">josh-proxy</a></h1>
 <blockquote>
 <p><strong>Note</strong>: <code>josh-proxy</code> is primarily intended for infrastructure and DevOps use cases
@@ -1306,71 +1634,6 @@ This can be done with <code>JOSH_EXTRA_OPTS</code> when using the docker image l
 <p>In this example, we serve only the josh-project repositories. Be aware that if you don’t add the
 organisation or repo URL, your instance will be able to serve all of github. You can (and should)
 restrict it to your repository or organisation by making it part of the URL.</p>
-<div style="break-before: page; page-break-before: always;"></div>
-<h1 id="working-with-workspaces-1"><a class="header" href="#working-with-workspaces-1">Working with workspaces</a></h1>
-<p>For the sake of this example we will assume a <code>josh-proxy</code> instance is running and serving a
-repo on <code>http://josh/world.git</code> with some shared code in <code>shared</code>.</p>
-<h2 id="create-a-new-workspace"><a class="header" href="#create-a-new-workspace">Create a new workspace</a></h2>
-<p>To create a new workspace in the path <code>ws/hello</code> simply clone it as if it already exists:</p>
-<pre><code>$ git clone http://josh/world.git:workspace=ws/hello.git
-</code></pre>
-<p><code>git</code> will report that you appear to have cloned an empty repository if that path does not
-yet exist.
-If you don’t get this message it means that the path already exists in the repo but may
-not yet have configured any path mappings.</p>
-<p>The next step is to add some path mapping to the <code>workspace.josh</code> file in the root of the
-workspace:</p>
-<pre><code>$ cd hello
-$ echo "mod/a = :/shared/a" &gt; workspace.josh
-</code></pre>
-<p>And and commit the changes:</p>
-<pre><code>$ git add workspace.josh
-$ git commit -m "add workspace"
-</code></pre>
-<p>If the path did not exist previously, the resulting commit will be a root commit that does not share
-any history with the <code>world.git</code> repo.
-This means a normal <code>git push</code> will be rejected at this point.
-To get correct history, the
-resulting commit needs to be a based on the history that already exists in <code>world.git</code>.
-There is however no way to do this locally, because we don’t have the data required for this.
-Also, the resulting tree should contain the contents of <code>shared/a</code> mapped to <code>mod/a</code> which
-means it needs to be produced on the server side because we don’t have the files to put there.</p>
-<p>To accomplish that push with the create option:</p>
-<pre><code>$ git push -o create origin master
-</code></pre>
-<blockquote>
-<p><strong>Note</strong>: While it is perfectly possible to use Josh without a code review system,
-it is strongly recommended to use some form of code review to be able to inspect commits
-created by Josh before they get into the immutable history of your main repository.</p>
-</blockquote>
-<p>As the resulting commit is created on the server side we need to get it from the server:</p>
-<pre><code>$ git pull --rebase
-</code></pre>
-<p>Now you should see <code>mod/a</code> populated with the content of the shared code.</p>
-<h2 id="map-a-shared-path-into-a-workspace"><a class="header" href="#map-a-shared-path-into-a-workspace">Map a shared path into a workspace</a></h2>
-<p>To add shared path to a location in the workspace that does not exist yet, first add an
-entry to the <code>workspace.josh</code> file and commit that.</p>
-<p>You can add the mapping at the end of the file using a simple syntax, and rely on josh to rewrite
-it for you in a canonical way.</p>
-<pre><code>...
-new/mapping/location/in/workspace = :/new/mapping/location/in/monorepo
-</code></pre>
-<p>At this point the path is of course empty, so the commit needs to be pushed to the server.
-When the same commit is then fetched back it will have the mapped path populated with the
-shared content.</p>
-<p>When the commit is pushed, josh will notify you about the rewrite. You can fetch the rewritten
-commit using the advertised SHA.
-Alternatively, you can use <a href="#git-sync">git sync</a> which will do it for you.</p>
-<h2 id="publish-a-non-shared-path-into-a-shared-location"><a class="header" href="#publish-a-non-shared-path-into-a-shared-location">Publish a non-shared path into a shared location</a></h2>
-<p>The steps here are exactly the same as for the mapping example above. The only difference being
-that the path already exists in the workspace but not in the shared location.</p>
-<h2 id="remove-a-mapping"><a class="header" href="#remove-a-mapping">Remove a mapping</a></h2>
-<p>To remove a mapping remove the corresponding entry from the <code>workspace.josh</code> file.
-The content of the previously shared path will stay in the workspace. That means the main
-repo will have two copies of that path from that point on. Effectively creating a fork of that code.</p>
-<h2 id="remove-a-mapped-path"><a class="header" href="#remove-a-mapped-path">Remove a mapped path</a></h2>
-<p>To remove a mapped path as well as it’s contents, remove the entry from the
-<code>workspace.josh</code> file and also remove the path inside the workspace using <code>git rm</code>.</p>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="container-configuration"><a class="header" href="#container-configuration">Container configuration</a></h1>
 <h2 id="container-options"><a class="header" href="#container-options">Container options</a></h2>
@@ -1581,269 +1844,6 @@ To use SSH, you need to add the following lines to your <code>~/.ssh/config</cod
 <p><strong>Security</strong>: Private SSH keys never enter the container. All authentication is performed by delegating to the user’s local SSH agent through the forwarded socket.</p>
 </li>
 </ol>
-<div style="break-before: page; page-break-before: always;"></div>
-<h1 id="josh-cli"><a class="header" href="#josh-cli">josh CLI</a></h1>
-<p>The <code>josh</code> command is the primary tool for working with filtered git repositories.
-It provides projection-aware equivalents of the common git operations.</p>
-<h2 id="installation-1"><a class="header" href="#installation-1">Installation</a></h2>
-<pre><code class="language-shell">cargo install josh-cli --locked --git https://github.com/josh-project/josh.git
-</code></pre>
-<hr>
-<h2 id="josh-clone"><a class="header" href="#josh-clone">josh clone</a></h2>
-<p>Clone a repository, optionally applying a filter projection.</p>
-<pre><code>josh clone &lt;url&gt; &lt;filter&gt; &lt;out&gt; [options]
-</code></pre>
-<div class="table-wrapper">
-<table>
-<thead>
-<tr><th>Argument</th><th>Description</th></tr>
-</thead>
-<tbody>
-<tr><td><code>&lt;url&gt;</code></td><td>Remote repository URL (HTTPS, SSH, or local path)</td></tr>
-<tr><td><code>&lt;filter&gt;</code></td><td><a href="#history-filtering">Filter spec</a> to apply (e.g. <code>:/docs</code>, <code>:workspace=workspaces/myproject</code>)</td></tr>
-<tr><td><code>&lt;out&gt;</code></td><td>Local directory to clone into</td></tr>
-</tbody>
-</table>
-</div>
-<p><strong>Options:</strong></p>
-<div class="table-wrapper">
-<table>
-<thead>
-<tr><th>Flag</th><th>Description</th></tr>
-</thead>
-<tbody>
-<tr><td><code>-b</code>, <code>--branch &lt;ref&gt;</code></td><td>Branch or ref to clone (default: <code>HEAD</code>)</td></tr>
-<tr><td><code>--forge &lt;name&gt;</code></td><td>Forge integration to use (e.g. <code>github</code>)</td></tr>
-<tr><td><code>--no-forge</code></td><td>Disable forge integration</td></tr>
-</tbody>
-</table>
-</div>
-<p><strong>Examples:</strong></p>
-<pre><code class="language-shell"># Clone only the docs/ subdirectory
-josh clone https://github.com/josh-project/josh.git :/docs ./josh-docs
-
-# Clone a workspace projection
-josh clone https://github.com/myorg/monorepo.git :workspace=workspaces/frontend ./frontend
-
-# Clone the full repository (no filter)
-josh clone https://github.com/josh-project/josh.git :/ ./josh
-</code></pre>
-<hr>
-<h2 id="josh-fetch"><a class="header" href="#josh-fetch">josh fetch</a></h2>
-<p>Fetch from a remote and update the filtered local refs. Equivalent to <code>git fetch</code> but
-filter-aware.</p>
-<pre><code>josh fetch [options]
-</code></pre>
-<p><strong>Options:</strong></p>
-<div class="table-wrapper">
-<table>
-<thead>
-<tr><th>Flag</th><th>Description</th></tr>
-</thead>
-<tbody>
-<tr><td><code>-r</code>, <code>--remote &lt;name&gt;</code></td><td>Remote name or URL to fetch from (default: <code>origin</code>)</td></tr>
-<tr><td><code>-R</code>, <code>--ref &lt;ref&gt;</code></td><td>Ref to fetch (default: <code>HEAD</code>)</td></tr>
-</tbody>
-</table>
-</div>
-<hr>
-<h2 id="josh-pull"><a class="header" href="#josh-pull">josh pull</a></h2>
-<p>Fetch and integrate changes from a remote. Equivalent to <code>git pull</code> but filter-aware.</p>
-<pre><code>josh pull [options]
-</code></pre>
-<p><strong>Options:</strong></p>
-<div class="table-wrapper">
-<table>
-<thead>
-<tr><th>Flag</th><th>Description</th></tr>
-</thead>
-<tbody>
-<tr><td><code>-r</code>, <code>--remote &lt;name&gt;</code></td><td>Remote name or URL to pull from (default: <code>origin</code>)</td></tr>
-<tr><td><code>-R</code>, <code>--ref &lt;ref&gt;</code></td><td>Ref to pull (default: <code>HEAD</code>)</td></tr>
-<tr><td><code>--rebase</code></td><td>Rebase the current branch on top of the upstream branch</td></tr>
-<tr><td><code>--autostash</code></td><td>Automatically stash local changes before rebasing</td></tr>
-</tbody>
-</table>
-</div>
-<hr>
-<h2 id="josh-push"><a class="header" href="#josh-push">josh push</a></h2>
-<p>Push commits back to the upstream repository. Josh reverses the filter and reconstructs
-the correct upstream commits, so your changes land in the right place in the monorepo.</p>
-<pre><code>josh push [&lt;remote&gt;] [&lt;refspecs&gt;...] [options]
-</code></pre>
-<div class="table-wrapper">
-<table>
-<thead>
-<tr><th>Argument</th><th>Description</th></tr>
-</thead>
-<tbody>
-<tr><td><code>&lt;remote&gt;</code></td><td>Remote name to push to (default: <code>origin</code>)</td></tr>
-<tr><td><code>&lt;refspecs&gt;</code></td><td>Refs to push (default: current branch)</td></tr>
-</tbody>
-</table>
-</div>
-<p><strong>Options:</strong></p>
-<div class="table-wrapper">
-<table>
-<thead>
-<tr><th>Flag</th><th>Description</th></tr>
-</thead>
-<tbody>
-<tr><td><code>-f</code>, <code>--force</code></td><td>Force-push (non-fast-forward)</td></tr>
-<tr><td><code>--atomic</code></td><td>Atomic push (all-or-nothing)</td></tr>
-<tr><td><code>--dry-run</code></td><td>Show what would be pushed without actually pushing</td></tr>
-<tr><td><code>--split</code></td><td>Push each commit as an independent, minimal diff (see <a href="#stacked-changes">Stacked changes</a>)</td></tr>
-<tr><td><code>--stack</code></td><td>Push commits as a stack, preserving upstream context (see <a href="#stacked-changes">Stacked changes</a>)</td></tr>
-</tbody>
-</table>
-</div>
-<hr>
-<h2 id="josh-remote"><a class="header" href="#josh-remote">josh remote</a></h2>
-<p>Manage josh-aware remotes.</p>
-<blockquote>
-<p><strong>Note</strong>: <code>josh remote add</code> can be used in any existing git repository, not only ones
-originally cloned with <code>josh clone</code>. This is the standard way to add josh filtering to
-a repository you already have checked out.</p>
-</blockquote>
-<h3 id="josh-remote-add"><a class="header" href="#josh-remote-add">josh remote add</a></h3>
-<p>Add a remote with an associated filter projection.</p>
-<pre><code>josh remote add &lt;name&gt; &lt;url&gt; &lt;filter&gt; [options]
-</code></pre>
-<div class="table-wrapper">
-<table>
-<thead>
-<tr><th>Argument</th><th>Description</th></tr>
-</thead>
-<tbody>
-<tr><td><code>&lt;name&gt;</code></td><td>Remote name</td></tr>
-<tr><td><code>&lt;url&gt;</code></td><td>Remote repository URL</td></tr>
-<tr><td><code>&lt;filter&gt;</code></td><td><a href="#history-filtering">Filter spec</a> to associate with this remote</td></tr>
-</tbody>
-</table>
-</div>
-<p><strong>Options:</strong></p>
-<div class="table-wrapper">
-<table>
-<thead>
-<tr><th>Flag</th><th>Description</th></tr>
-</thead>
-<tbody>
-<tr><td><code>--forge &lt;name&gt;</code></td><td>Forge integration (e.g. <code>github</code>)</td></tr>
-<tr><td><code>--no-forge</code></td><td>Disable forge integration</td></tr>
-</tbody>
-</table>
-</div>
-<p><strong>Example:</strong></p>
-<pre><code class="language-shell"># Add a second remote scoped to the backend/ subdirectory
-josh remote add backend https://github.com/myorg/monorepo.git :/services/backend
-</code></pre>
-<hr>
-<h2 id="josh-filter"><a class="header" href="#josh-filter">josh filter</a></h2>
-<p>Re-apply the filter for an existing remote to update the local filtered refs. Useful
-after manually modifying the filter configuration without fetching.</p>
-<pre><code>josh filter &lt;remote&gt;
-</code></pre>
-<div class="table-wrapper">
-<table>
-<thead>
-<tr><th>Argument</th><th>Description</th></tr>
-</thead>
-<tbody>
-<tr><td><code>&lt;remote&gt;</code></td><td>Remote name whose filter should be re-applied</td></tr>
-</tbody>
-</table>
-</div>
-<hr>
-<h2 id="josh-auth"><a class="header" href="#josh-auth">josh auth</a></h2>
-<p>Manage authentication credentials for forge integrations. Forge integration is optional
-and used for automatic pull request management — see
-<a href="#forge-integration">Forge integration</a> for details.</p>
-<pre><code>josh auth login &lt;forge&gt;
-josh auth logout &lt;forge&gt;
-</code></pre>
-<p>The only currently supported forge is <code>github</code>. See
-<a href="#forge-integration">Forge integration</a> for full documentation.</p>
-<hr>
-<h2 id="josh-filter-standalone-binary"><a class="header" href="#josh-filter-standalone-binary">josh-filter (standalone binary)</a></h2>
-<p><code>josh-filter</code> is a lower-level command that rewrites git history using Josh filter specs.
-It is intended for scripting and one-off history rewriting tasks rather than day-to-day
-development workflows.</p>
-<p>By default it reads from <code>HEAD</code> and writes the filtered result to <code>FILTERED_HEAD</code>.</p>
-<p><strong>Basic usage:</strong></p>
-<pre><code class="language-shell"># Filter HEAD through :/docs and write result to FILTERED_HEAD
-josh-filter :/docs
-</code></pre>
-<p><strong>Options:</strong></p>
-<div class="table-wrapper">
-<table>
-<thead>
-<tr><th>Flag</th><th>Description</th></tr>
-</thead>
-<tbody>
-<tr><td><code>--file &lt;path&gt;</code></td><td>Read filter spec from a file</td></tr>
-<tr><td><code>--squash-pattern &lt;pattern&gt;</code></td><td>Squash commits matching the pattern</td></tr>
-<tr><td><code>--squash-file &lt;path&gt;</code></td><td>Read squash patterns from a file</td></tr>
-<tr><td><code>--single</code></td><td>Produce a single squashed commit</td></tr>
-<tr><td><code>-d</code></td><td>Discovery mode: populate cache with probable filters</td></tr>
-<tr><td><code>-t</code></td><td>Output Chrome tracing data</td></tr>
-<tr><td><code>-p</code></td><td>Print the filter spec</td></tr>
-<tr><td><code>-i</code></td><td>Print the filter ID</td></tr>
-<tr><td><code>--cache-stats</code></td><td>Print cache statistics</td></tr>
-<tr><td><code>--reverse</code></td><td>Swap input and output (unapply filter)</td></tr>
-</tbody>
-</table>
-</div>
-<div style="break-before: page; page-break-before: always;"></div>
-<h1 id="forge-integration"><a class="header" href="#forge-integration">Forge Integration</a></h1>
-<p>Forge integration is an <strong>optional</strong> feature that connects <code>josh</code> to a code hosting
-platform (a “forge”) such as GitHub. It is not required for normal git operations —
-cloning, pushing, and pulling all work without it, even with private repositories.</p>
-<p>Forge integration is specifically used for <strong>automatic pull request management</strong> during
-<a href="#stacked-changes">stacked changes</a> workflows. When you push a stack of
-commits with <code>josh push --split</code> or <code>josh push --stack</code>, <code>josh</code> can automatically
-create or update one pull request per commit on the forge.</p>
-<h2 id="github"><a class="header" href="#github">GitHub</a></h2>
-<p>GitHub is currently the only supported forge.</p>
-<h3 id="authentication"><a class="header" href="#authentication">Authentication</a></h3>
-<p><code>josh</code> uses GitHub’s <a href="https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps#device-flow">device flow</a>
-for authentication — the same flow used by the official GitHub CLI.</p>
-<p><strong>Log in:</strong></p>
-<pre><code class="language-shell">josh auth login github
-</code></pre>
-<p>This prints a URL and a one-time code. If clipboard access is available the code is
-also copied automatically, otherwise it is only printed to the terminal. Open the URL
-in your browser, enter the code, and authorize the application.</p>
-<p>The token is stored in <code>~/.config/josh-cli/credentials.json</code> with <code>0600</code> permissions.</p>
-<p><strong>Log out:</strong></p>
-<pre><code class="language-shell">josh auth logout github
-</code></pre>
-<p><strong>Alternatively</strong>, set the <code>GH_TOKEN</code> environment variable to a
-<a href="https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens">personal access token</a>.
-This takes precedence over any stored token and is useful in CI environments:</p>
-<pre><code class="language-shell">export GH_TOKEN=ghp_...
-</code></pre>
-<h3 id="what-forge-integration-enables"><a class="header" href="#what-forge-integration-enables">What forge integration enables</a></h3>
-<p>Once authenticated, <code>josh push --split</code> or <code>josh push --stack</code> will, in addition to
-pushing the git refs:</p>
-<ul>
-<li><strong>Create</strong> a pull request for each commit that does not yet have one.</li>
-<li><strong>Update</strong> existing pull requests (title, body, base branch) when commits are amended
-or rebased.</li>
-<li><strong>Manage draft status</strong> automatically: pull requests whose base branch is not the
-repository’s default branch are marked as drafts, and promoted to “ready for review”
-once they target the default branch directly.</li>
-</ul>
-<p>See the <a href="#stacked-changes">Stacked changes</a> guide for a full walkthrough.</p>
-<div style="break-before: page; page-break-before: always;"></div>
-<h1 id="graphql-api-1"><a class="header" href="#graphql-api-1">GraphQL API</a></h1>
-<p>Josh implements a GraphQL API to query the content of repositories without a need to clone
-them via a git client.</p>
-<p>The API is exposed at:</p>
-<pre><code>http://hostname/~/graphql/name_of_repo.git
-</code></pre>
-<p>To explore the API and generated documentation, an interactive GraphQL shell can be found at:</p>
-<pre><code>http://hostname/~/graphiql/name_of_repo.git
-</code></pre>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="testing"><a class="header" href="#testing">Testing</a></h1>
 <p>Currently the Josh project mainly uses integration tests for it’s verification, so make sure you will be able
