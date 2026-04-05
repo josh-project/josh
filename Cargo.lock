@@ -286,7 +286,7 @@ dependencies = [
  "sha1",
  "sync_wrapper",
  "tokio",
- "tokio-tungstenite 0.28.0",
+ "tokio-tungstenite",
  "tower",
  "tower-layer",
  "tower-service",
@@ -306,7 +306,7 @@ dependencies = [
 
 [[package]]
 name = "axum-cgi"
-version = "22.10.25"
+version = "26.4.19"
 dependencies = [
  "axum",
  "bytes",
@@ -320,7 +320,7 @@ dependencies = [
 
 [[package]]
 name = "axum-cgi-server"
-version = "22.10.25"
+version = "26.4.19"
 dependencies = [
  "anyhow",
  "axum",
@@ -1592,7 +1592,7 @@ dependencies = [
  "gix-date",
  "gix-diff",
  "gix-discover",
- "gix-error 0.1.0",
+ "gix-error",
  "gix-features",
  "gix-fs",
  "gix-glob",
@@ -1628,7 +1628,7 @@ checksum = "0c44f13049925e8dc3955c20ecec5391cedfb041e0952416b583ecc57bc68325"
 dependencies = [
  "bstr",
  "gix-date",
- "gix-error 0.1.0",
+ "gix-error",
  "winnow 0.7.14",
 ]
 
@@ -1641,7 +1641,7 @@ dependencies = [
  "bstr",
  "gix-glob",
  "gix-path",
- "gix-quote 0.6.2",
+ "gix-quote",
  "gix-trace",
  "kstring",
  "smallvec",
@@ -1655,7 +1655,7 @@ version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d14ee09ab454481a91fe969ca5afbd41c8a9b05680197b6554ebb69bdcf7d571"
 dependencies = [
- "gix-error 0.1.0",
+ "gix-error",
 ]
 
 [[package]]
@@ -1666,20 +1666,7 @@ checksum = "2962172c6f78731e2b7773bf762f7b8d1746a342a4c0a8914a612206e1295953"
 dependencies = [
  "bstr",
  "gix-path",
- "gix-quote 0.6.2",
- "gix-trace",
- "shell-words",
-]
-
-[[package]]
-name = "gix-command"
-version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b849c65a609f50d02f8a2774fe371650b3384a743c79c2a070ce0da49b7fb7da"
-dependencies = [
- "bstr",
- "gix-path",
- "gix-quote 0.7.0",
+ "gix-quote",
  "gix-trace",
  "shell-words",
 ]
@@ -1692,7 +1679,7 @@ checksum = "f9dc2a550978b510b4e58b0bf5a15481433c3b21981330f3898d93f25b07d9a5"
 dependencies = [
  "bstr",
  "gix-chunk",
- "gix-error 0.1.0",
+ "gix-error",
  "gix-hash",
  "memmap2",
 ]
@@ -1737,7 +1724,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e66a5117b22495fe7cb4b443777cf3f024a1b1db0009771db440fc8b38a0a6fd"
 dependencies = [
  "bstr",
- "gix-error 0.1.0",
+ "gix-error",
  "itoa",
  "jiff",
  "smallvec",
@@ -1775,15 +1762,6 @@ name = "gix-error"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "92e37b10e97c822fc17550fc1a187283ad3ce79617e920bf179f301ee12abcbc"
-dependencies = [
- "bstr",
-]
-
-[[package]]
-name = "gix-error"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2e86d01da904d4a9265def43bd42a18c5e6dc7000a73af512946ba14579c9fbd"
 dependencies = [
  "bstr",
 ]
@@ -1901,7 +1879,7 @@ dependencies = [
  "gix-object",
  "gix-pack",
  "gix-path",
- "gix-quote 0.6.2",
+ "gix-quote",
  "parking_lot 0.12.5",
  "tempfile",
  "thiserror 2.0.18",
@@ -1915,7 +1893,7 @@ checksum = "dfc20b54d50f64fb02281f2a6c4a24bb9356befdf4535d5a68924575fd67cd5e"
 dependencies = [
  "clru",
  "gix-chunk",
- "gix-error 0.1.0",
+ "gix-error",
  "gix-features",
  "gix-hash",
  "gix-hashtable",
@@ -1977,7 +1955,7 @@ dependencies = [
  "gix-hash",
  "gix-ref",
  "gix-shallow",
- "gix-transport 0.54.0",
+ "gix-transport",
  "gix-utils",
  "maybe-async",
  "thiserror 2.0.18",
@@ -1993,17 +1971,6 @@ dependencies = [
  "bstr",
  "gix-utils",
  "thiserror 2.0.18",
-]
-
-[[package]]
-name = "gix-quote"
-version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "68533db71259c8776dd4e770d2b7b98696213ecdc1f5c9e3507119e274e0c578"
-dependencies = [
- "bstr",
- "gix-error 0.2.1",
- "gix-utils",
 ]
 
 [[package]]
@@ -2034,7 +2001,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "40adba15f8099159d37d0a21e1cfb6602c2e49b6c05f6f8a57a47d0fb21611af"
 dependencies = [
  "bstr",
- "gix-error 0.1.0",
+ "gix-error",
  "gix-glob",
  "gix-hash",
  "gix-revision",
@@ -2052,7 +2019,7 @@ dependencies = [
  "bstr",
  "gix-commitgraph",
  "gix-date",
- "gix-error 0.1.0",
+ "gix-error",
  "gix-hash",
  "gix-object",
  "gix-revwalk",
@@ -2066,7 +2033,7 @@ checksum = "07efcad1d064abdac3e79dfc6e23e05accb579559d015e944c9dcf64be95eb49"
 dependencies = [
  "gix-commitgraph",
  "gix-date",
- "gix-error 0.1.0",
+ "gix-error",
  "gix-hash",
  "gix-hashtable",
  "gix-object",
@@ -2138,26 +2105,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9561a98f4f1cada03b565121c475c95d060998082bdb1277044fa6e11fe2aa17"
 dependencies = [
  "bstr",
- "gix-command 0.7.1",
+ "gix-command",
  "gix-features",
  "gix-packetline",
- "gix-quote 0.6.2",
- "gix-sec",
- "gix-url",
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "gix-transport"
-version = "0.55.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a521e39c6235ce63ed6c001e2dd79818c830b82c3b7b59247ee7b229c39ec9bb"
-dependencies = [
- "bstr",
- "gix-command 0.8.0",
- "gix-features",
- "gix-packetline",
- "gix-quote 0.7.0",
+ "gix-quote",
  "gix-sec",
  "gix-url",
  "thiserror 2.0.18",
@@ -2893,7 +2844,7 @@ dependencies = [
 
 [[package]]
 name = "josh-changes"
-version = "0.1.0"
+version = "26.4.19"
 dependencies = [
  "anyhow",
  "git2",
@@ -2902,7 +2853,7 @@ dependencies = [
 
 [[package]]
 name = "josh-cli"
-version = "22.4.15"
+version = "26.4.19"
 dependencies = [
  "anyhow",
  "arboard",
@@ -2933,7 +2884,7 @@ dependencies = [
 
 [[package]]
 name = "josh-core"
-version = "22.4.15"
+version = "26.4.19"
 dependencies = [
  "anyhow",
  "backtrace",
@@ -2973,7 +2924,7 @@ dependencies = [
 
 [[package]]
 name = "josh-cq"
-version = "0.1.0"
+version = "26.4.19"
 dependencies = [
  "anyhow",
  "axum",
@@ -2988,7 +2939,7 @@ dependencies = [
 
 [[package]]
 name = "josh-filter"
-version = "22.4.15"
+version = "26.4.19"
 dependencies = [
  "anyhow",
  "git2",
@@ -3005,7 +2956,7 @@ dependencies = [
 
 [[package]]
 name = "josh-github-auth"
-version = "0.1.0"
+version = "26.4.19"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3027,7 +2978,7 @@ dependencies = [
 
 [[package]]
 name = "josh-github-changes"
-version = "0.1.0"
+version = "26.4.19"
 dependencies = [
  "anyhow",
  "git2",
@@ -3039,7 +2990,7 @@ dependencies = [
 
 [[package]]
 name = "josh-github-codegen-graphql"
-version = "0.1.0"
+version = "26.4.19"
 dependencies = [
  "anyhow",
  "chrono",
@@ -3055,7 +3006,7 @@ dependencies = [
 
 [[package]]
 name = "josh-github-graphql"
-version = "0.1.0"
+version = "26.4.19"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3072,7 +3023,7 @@ dependencies = [
 
 [[package]]
 name = "josh-github-webhooks"
-version = "0.1.0"
+version = "26.4.19"
 dependencies = [
  "anyhow",
  "axum",
@@ -3090,7 +3041,7 @@ dependencies = [
 
 [[package]]
 name = "josh-graphql"
-version = "0.1.0"
+version = "26.4.19"
 dependencies = [
  "anyhow",
  "chrono",
@@ -3108,7 +3059,7 @@ dependencies = [
 
 [[package]]
 name = "josh-link"
-version = "0.1.0"
+version = "26.4.19"
 dependencies = [
  "anyhow",
  "git2",
@@ -3117,7 +3068,7 @@ dependencies = [
 
 [[package]]
 name = "josh-proxy"
-version = "22.4.15"
+version = "26.4.19"
 dependencies = [
  "anyhow",
  "axum",
@@ -3131,7 +3082,7 @@ dependencies = [
  "git2",
  "gix",
  "gix-packetline",
- "gix-transport 0.55.1",
+ "gix-transport",
  "hex",
  "indoc",
  "josh-changes",
@@ -3169,7 +3120,7 @@ dependencies = [
 
 [[package]]
 name = "josh-rpc"
-version = "0.1.0"
+version = "26.4.19"
 dependencies = [
  "libc",
  "serde",
@@ -3178,7 +3129,7 @@ dependencies = [
 
 [[package]]
 name = "josh-ssh-shell"
-version = "0.1.0"
+version = "26.4.19"
 dependencies = [
  "clap",
  "josh-rpc",
@@ -3196,7 +3147,7 @@ dependencies = [
 
 [[package]]
 name = "josh-starlark"
-version = "22.4.15"
+version = "26.4.19"
 dependencies = [
  "allocative",
  "anyhow",
@@ -3207,7 +3158,7 @@ dependencies = [
 
 [[package]]
 name = "josh-templates"
-version = "0.1.0"
+version = "26.4.19"
 dependencies = [
  "anyhow",
  "form_urlencoded",
@@ -3221,7 +3172,7 @@ dependencies = [
 
 [[package]]
 name = "josh-test-webhook-client"
-version = "0.1.0"
+version = "26.4.19"
 dependencies = [
  "anyhow",
  "backon",
@@ -3234,14 +3185,14 @@ dependencies = [
  "reqwest 0.13.2",
  "thiserror 2.0.18",
  "tokio",
- "tokio-tungstenite 0.29.0",
+ "tokio-tungstenite",
  "tracing",
  "url",
 ]
 
 [[package]]
 name = "josh-test-webhook-service"
-version = "0.1.0"
+version = "26.4.19"
 dependencies = [
  "anyhow",
  "axum",
@@ -5369,24 +5320,12 @@ checksum = "d25a406cddcc431a75d3d9afc6a7c0f7428d4891dd973e4d54c56b46127bf857"
 dependencies = [
  "futures-util",
  "log",
- "tokio",
- "tungstenite 0.28.0",
-]
-
-[[package]]
-name = "tokio-tungstenite"
-version = "0.29.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8f72a05e828585856dacd553fba484c242c46e391fb0e58917c942ee9202915c"
-dependencies = [
- "futures-util",
- "log",
  "rustls",
  "rustls-native-certs",
  "rustls-pki-types",
  "tokio",
  "tokio-rustls",
- "tungstenite 0.29.0",
+ "tungstenite",
 ]
 
 [[package]]
@@ -5638,27 +5577,11 @@ dependencies = [
  "httparse",
  "log",
  "rand 0.9.2",
- "sha1",
- "thiserror 2.0.18",
- "utf-8",
-]
-
-[[package]]
-name = "tungstenite"
-version = "0.29.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6c01152af293afb9c7c2a57e4b559c5620b421f6d133261c60dd2d0cdb38e6b8"
-dependencies = [
- "bytes",
- "data-encoding",
- "http",
- "httparse",
- "log",
- "rand 0.9.2",
  "rustls",
  "rustls-pki-types",
  "sha1",
  "thiserror 2.0.18",
+ "utf-8",
 ]
 
 [[package]]

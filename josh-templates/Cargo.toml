@@ -1,7 +1,12 @@
 [package]
 name = "josh-templates"
-version = "0.1.0"
+version = "26.4.19"
 edition = "2024"
+authors = ["Josh Project authors <contact@josh-project.dev>"]
+description = "Josh templating support"
+license-file = "../LICENSE"
+repository = "https://github.com/josh-project/josh"
+keywords = ["git", "monorepo", "workflow", "scm"]
 
 [dependencies]
 handlebars = "6.4.0"

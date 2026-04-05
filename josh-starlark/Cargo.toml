@@ -1,8 +1,8 @@
 [package]
 name = "josh-starlark"
-version = "22.4.15"
+version = "26.4.19"
 edition = "2024"
-authors = ["Christian Schilling <initcrash@gmail.com>"]
+authors = ["Josh Project authors <contact@josh-project.dev>"]
 license-file = "../LICENSE"
 description = "Starlark support for creating josh filters"
 keywords = ["git", "monorepo", "workflow", "scm", "starlark"]

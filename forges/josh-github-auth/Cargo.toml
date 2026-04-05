@@ -1,7 +1,12 @@
 [package]
 name = "josh-github-auth"
-version = "0.1.0"
+version = "26.4.19"
 edition = "2024"
+authors = ["Josh Project authors <contact@josh-project.dev>"]
+description = "GitHub authentication for Josh"
+license-file = "../../LICENSE"
+repository = "https://github.com/josh-project/josh"
+keywords = ["git", "github", "monorepo", "workflow"]
 
 [dependencies]
 anyhow.workspace = true

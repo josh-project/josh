@@ -1,7 +1,11 @@
 [package]
 name = "josh-cq"
-version = "0.1.0"
+version = "26.4.19"
 edition = "2024"
+authors = ["Josh Project authors <contact@josh-project.dev>"]
+description = "Code quality tooling for the josh git proxy"
+license-file = "../LICENSE"
+repository = "https://github.com/josh-project/josh"
 
 [dependencies]
 tokio.workspace = true

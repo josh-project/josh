@@ -1,8 +1,10 @@
 [package]
 name = "axum-cgi"
-version = "22.10.25"
+version = "26.4.19"
 edition = "2024"
 license-file = "LICENSE"
+description = "CGI handler support for the axum web framework"
+repository = "https://github.com/josh-project/josh"
 
 [dependencies]
 bytes = "1.11.1"

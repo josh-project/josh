@@ -1,9 +1,10 @@
 [package]
 name = "axum-cgi-server"
-version = "22.10.25"
+version = "26.4.19"
 edition = "2024"
 license-file = "../axum-cgi/LICENSE"
 repository = "https://github.com/josh-project/josh"
+description = "CGI server utilities for axum"
 
 [dependencies]
 axum-extra = { version = "^0.12", features = ["typed-header"] }
