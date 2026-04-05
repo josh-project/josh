@@ -1,7 +1,12 @@
 [package]
 name = "josh-github-webhooks"
-version = "0.1.0"
+version = "26.4.5"
 edition = "2024"
+authors = ["Josh Project authors <contact@josh-project.dev>"]
+description = "GitHub webhook handling for Josh"
+license-file = "../../LICENSE"
+repository = "https://github.com/josh-project/josh"
+keywords = ["git", "github", "monorepo", "webhooks"]
 
 [dependencies]
 axum.workspace = true

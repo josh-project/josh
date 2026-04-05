@@ -1,8 +1,12 @@
 [package]
 edition = "2021"
 name = "josh-github-graphql"
-version = "0.1.0"
-publish = false
+version = "26.4.5"
+authors = ["Josh Project authors <contact@josh-project.dev>"]
+description = "GitHub GraphQL client for Josh"
+license-file = "../../LICENSE"
+repository = "https://github.com/josh-project/josh"
+keywords = ["git", "github", "monorepo", "graphql"]
 
 [lib]
 doctest = false

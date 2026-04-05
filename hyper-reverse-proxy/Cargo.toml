@@ -3,7 +3,7 @@ name = "hyper-reverse-proxy"
 version = "0.0.1"
 edition = "2024"
 license = "MIT"
-authors = ["Josh Project"]
+authors = ["Josh Project authors <contact@josh-project.dev>"]
 description = "Minimal hyper reverse proxy compatibility layer for Josh"
 
 [dependencies]

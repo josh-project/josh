@@ -1,5 +1,5 @@
 [package]
-authors = ["Christian Schilling <christian.schilling@esrlabs.com>"]
+authors = ["Josh Project authors <contact@josh-project.dev>"]
 description = "Josh CLI"
 edition = "2024"
 keywords = ["git", "monorepo", "workflow", "scm"]
@@ -7,7 +7,7 @@ license-file = "LICENSE"
 name = "josh-cli"
 readme = "../README.md"
 repository = "https://github.com/josh-project/josh"
-version = "22.4.15"
+version = "26.4.5"
 
 [dependencies]
 anyhow.workspace = true
