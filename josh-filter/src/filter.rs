@@ -1,3 +1,4 @@
+use crate::check_experimental_features_enabled;
 use crate::op::{LazyRef, Op};
 use crate::opt;
 use crate::persist::{self, to_filter, to_op};
@@ -103,22 +104,30 @@ impl Filter {
     /// Chain a filter that evaluates a Starlark script from a `.star` file.
     /// The path is used with `.star` extension. The subfilter is applied to the input tree to get the tree passed to the script.
     /// Syntax: `:*starfile[:filter]` (e.g. `:*foo[:/lib]` passes the result of `:/lib` to the script).
-    #[cfg(feature = "incubating")]
-    pub fn starlark(self, path: impl Into<std::path::PathBuf>, subfilter: Filter) -> Filter {
-        self.chain(to_filter(Op::Starlark(path.into(), subfilter)))
+    pub fn starlark(
+        self,
+        path: impl Into<std::path::PathBuf>,
+        subfilter: Filter,
+    ) -> anyhow::Result<Filter> {
+        check_experimental_features_enabled("Starlark filter")?;
+        Ok(self.chain(to_filter(Op::Starlark(path.into(), subfilter))))
     }
 
     /// Chain a filter that inserts a blob containing the tree OID of the subfilter applied to the input tree.
     /// Syntax: `:#path[filter]` (e.g. `:#version.txt[:/lib]` inserts a blob at `version.txt` with the OID of `:/lib` applied).
-    #[cfg(feature = "incubating")]
-    pub fn treeid(self, path: impl Into<std::path::PathBuf>, subfilter: Filter) -> Filter {
-        self.chain(to_filter(Op::TreeId(path.into(), subfilter)))
+    pub fn treeid(
+        self,
+        path: impl Into<std::path::PathBuf>,
+        subfilter: Filter,
+    ) -> anyhow::Result<Filter> {
+        check_experimental_features_enabled("TreeId filter")?;
+        Ok(self.chain(to_filter(Op::TreeId(path.into(), subfilter))))
     }
 
     /// Chain a filter that removes the `.link.josh` marker to produce a standalone history
-    #[cfg(feature = "incubating")]
-    pub fn export(self) -> Filter {
-        self.chain(to_filter(Op::Export))
+    pub fn export(self) -> anyhow::Result<Filter> {
+        check_experimental_features_enabled("export filter")?;
+        Ok(self.chain(to_filter(Op::Export)))
     }
 
     /// Chain a filter that matches files by glob pattern

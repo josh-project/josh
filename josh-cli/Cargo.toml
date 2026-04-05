@@ -35,12 +35,11 @@ josh-github-auth.workspace = true
 josh-github-graphql.workspace = true
 josh-github-changes.workspace = true
 josh-graphql.workspace = true
-josh-link = { workspace = true, optional = true }
+josh-link.workspace = true
 josh-templates.workspace = true
 
 [features]
 codesign = []
-incubating = ["dep:josh-link"]
 
 [[bin]]
 name = "josh-filter"

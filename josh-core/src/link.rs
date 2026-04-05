@@ -1,4 +1,3 @@
-#[cfg(feature = "incubating")]
 pub fn find_link_files(
     repo: &git2::Repository,
     tree: &git2::Tree,

@@ -1,11 +1,11 @@
 use super::*;
 use anyhow::anyhow;
+use josh_filter::check_experimental_features_enabled;
 
 use std::path::Path;
 use std::sync::LazyLock;
 
 // Re-export from josh-filter
-#[cfg(feature = "incubating")]
 pub use josh_filter::LinkMode;
 pub use josh_filter::filter::MESSAGE_MATCH_ALL_REGEX;
 pub use josh_filter::filter::sequence_number;
@@ -376,7 +376,6 @@ fn get_stored<'a>(
     compose(&[sj_file, get_filter(transaction, tree, &stored_path)])
 }
 
-#[cfg(feature = "incubating")]
 fn get_starlark<'a>(
     transaction: &cache::Transaction,
     tree: &'a git2::Tree<'a>,
@@ -433,7 +432,6 @@ fn get_filter<'a>(
     }
 }
 
-#[cfg(feature = "incubating")]
 fn read_josh_link<'a>(
     repo: &'a git2::Repository,
     tree: &git2::Tree<'a>,
@@ -640,8 +638,8 @@ pub fn apply_to_commit2(
 
             Rewrite::from_commit(commit)?
         }
-        #[cfg(feature = "incubating")]
         Op::Export => {
+            check_experimental_features_enabled("export filter")?;
             let filtered_parent_ids = {
                 commit
                     .parents()
@@ -694,8 +692,8 @@ pub fn apply_to_commit2(
             ))
             .transpose();
         }
-        #[cfg(feature = "incubating")]
         Op::Unlink => {
+            check_experimental_features_enabled("unlink filter")?;
             use crate::link::find_link_files;
 
             let filtered_parent_ids = {
@@ -740,8 +738,8 @@ pub fn apply_to_commit2(
             ))
             .transpose();
         }
-        #[cfg(feature = "incubating")]
         Op::Link(mode) => {
+            check_experimental_features_enabled("link filter")?;
             let mut roots = get_link_roots(repo, transaction, &commit.tree()?)?;
 
             if let Some(parent) = commit.parents().next() {
@@ -798,7 +796,6 @@ pub fn apply_to_commit2(
                             }
                         );
 
-                        #[cfg(feature = "incubating")]
                         let f = to_filter(Op::Embed(root));
 
                         let embeding = repo.find_commit(embeding)?;
@@ -874,8 +871,8 @@ pub fn apply_to_commit2(
 
             return per_rev_filter(transaction, commit, filter, commit_filter, parent_filters);
         }
-        #[cfg(feature = "incubating")]
         Op::Starlark(s_path, s_subfilter) => {
+            check_experimental_features_enabled("Starlark filter")?;
             let commit_filter = get_starlark(transaction, &commit.tree()?, s_path, *s_subfilter);
 
             let parent_filters = commit
@@ -942,8 +939,8 @@ pub fn apply_to_commit2(
 
             return per_rev_filter(transaction, commit, filter, commit_filter, parent_filters);
         }
-        #[cfg(feature = "incubating")]
         Op::Unapply(target, uf) => {
+            check_experimental_features_enabled("unapply filter")?;
             if let LazyRef::Resolved(target) = target {
                 /* dbg!(target); */
                 let target = repo.find_commit(*target)?;
@@ -980,8 +977,8 @@ pub fn apply_to_commit2(
                 Rewrite::from_commit(commit)?, /* Rewrite::from_commit(commit)?.with_parents(filtered_parent_ids), */
             )?
         }
-        #[cfg(feature = "incubating")]
         Op::Embed(path) => {
+            check_experimental_features_enabled("embed filter")?;
             let subdir = to_filter(Op::Subdir(path.clone()));
             let unapply = to_filter(Op::Unapply(LazyRef::Resolved(commit.id()), subdir));
 
@@ -1027,7 +1024,6 @@ pub fn apply_to_commit2(
     .transpose()
 }
 
-#[cfg(feature = "incubating")]
 fn extract_submodule_commits<'a>(
     repo: &'a git2::Repository,
     tree: &git2::Tree<'a>,
@@ -1077,7 +1073,6 @@ fn extract_submodule_commits<'a>(
     Ok(submodule_commits)
 }
 
-#[cfg(feature = "incubating")]
 fn get_link_roots<'a>(
     _repo: &'a git2::Repository,
     transaction: &'a cache::Transaction,
@@ -1101,7 +1096,6 @@ fn get_link_roots<'a>(
     Ok(roots)
 }
 
-#[cfg(feature = "incubating")]
 fn links_from_roots<'a>(
     repo: &'a git2::Repository,
     tree: &git2::Tree<'a>,
@@ -1170,7 +1164,6 @@ pub fn apply<'a>(
             )?))
         }
         Op::Prune => Ok(x),
-        #[cfg(feature = "incubating")]
         Op::Adapt(adapter) => {
             let mut result_tree = x.tree().clone();
             match adapter.as_ref() {
@@ -1213,7 +1206,6 @@ pub fn apply<'a>(
 
             Ok(x.with_tree(result_tree))
         }
-        #[cfg(feature = "incubating")]
         Op::Export => {
             let tree = x.tree().clone();
             Ok(x.with_tree(tree::insert(
@@ -1224,8 +1216,8 @@ pub fn apply<'a>(
                 0o0100644,
             )?))
         }
-        #[cfg(feature = "incubating")]
         Op::Unlink => {
+            check_experimental_features_enabled("unlink filter")?;
             use crate::link::find_link_files;
             let mut result_tree = x.tree.clone();
             for (link_path, link_file) in find_link_files(&repo, &result_tree)?.iter() {
@@ -1245,7 +1237,6 @@ pub fn apply<'a>(
             }
             Ok(x.with_tree(result_tree))
         }
-        #[cfg(feature = "incubating")]
         Op::Link(mode) => {
             let roots = get_link_roots(repo, transaction, &x.tree())?;
             let v = links_from_roots(repo, &x.tree(), roots)?;
@@ -1318,7 +1309,6 @@ pub fn apply<'a>(
                 to_filter(op.clone()).id(),
             )?))
         }
-        #[cfg(feature = "incubating")]
         Op::Blob(dest_path, content) => {
             let blob_oid = repo.blob(content.as_bytes())?;
             Ok(x.clone().with_tree(tree::insert(
@@ -1388,19 +1378,16 @@ pub fn apply<'a>(
 
         Op::Workspace(path) => apply(transaction, get_workspace(transaction, x.tree(), path), x),
         Op::Stored(path) => apply(transaction, get_stored(transaction, x.tree(), path), x),
-        #[cfg(feature = "incubating")]
         Op::Starlark(path, subfilter) => apply(
             transaction,
             get_starlark(transaction, x.tree(), path, *subfilter),
             x,
         ),
-        #[cfg(feature = "incubating")]
         Op::TreeId(path, subfilter) => {
             let applied = apply(transaction, *subfilter, x.clone())?;
             let oid_str = applied.tree().id().to_string();
             apply(transaction, to_filter(Op::Blob(path.clone(), oid_str)), x)
         }
-        #[cfg(feature = "incubating")]
         Op::ObjectRef(path) => {
             let repo = transaction.repo();
             if let Ok(entry) = x.tree().get_path(path) {
@@ -1417,7 +1404,6 @@ pub fn apply<'a>(
                 Ok(x)
             }
         }
-        #[cfg(feature = "incubating")]
         Op::ObjectDeref(path) => {
             let repo = transaction.repo();
             // If path doesn't exist in input, do nothing (nop).
@@ -1479,10 +1465,9 @@ pub fn apply<'a>(
         }
         Op::Hook(_) => Err(anyhow!("not applicable to tree: hook")),
 
-        #[cfg(feature = "incubating")]
         Op::Embed(..) => Err(anyhow!("not applicable to tree: embed")),
-        #[cfg(feature = "incubating")]
         Op::Unapply(target, uf) => {
+            check_experimental_features_enabled("unapply filter")?;
             if let LazyRef::Resolved(target) = target {
                 let target = repo.find_commit(*target)?;
                 let target = git2::Oid::from_str(target.message().unwrap())?;
@@ -1638,7 +1623,6 @@ fn unapply_workspace<'a>(
 
             Ok(Some(result))
         }
-        #[cfg(feature = "incubating")]
         Op::Starlark(path, subfilter) => {
             let filter = get_starlark(transaction, &tree, path, *subfilter);
             let original_filter = get_starlark(transaction, &parent_tree, path, *subfilter);
@@ -1851,9 +1835,7 @@ fn legalize_stored(t: &cache::Transaction, f: Filter, tree: &git2::Tree) -> anyh
         Op::Meta(meta, f) => to_filter(Op::Meta(meta, legalize_stored(t, f, tree)?)),
         Op::Pin(f) => to_filter(Op::Pin(legalize_stored(t, f, tree)?)),
         Op::Stored(path) => get_stored(t, tree, &path),
-        #[cfg(feature = "incubating")]
         Op::Starlark(path, sub) => get_starlark(t, tree, &path, legalize_stored(t, sub, tree)?),
-        #[cfg(feature = "incubating")]
         Op::TreeId(path, f) => to_filter(Op::TreeId(path, legalize_stored(t, f, tree)?)),
         _ => f,
     };
@@ -2017,15 +1999,6 @@ mod tests {
         let spec_str = spec(filter5);
         // The spec should contain the chain representation
         assert!(!spec_str.is_empty());
-    }
-
-    #[cfg(feature = "incubating")]
-    #[test]
-    fn deref_shortcut_parsing_test() {
-        assert_eq!(parse(":*/path").unwrap(), parse(":*path:/path").unwrap());
-        assert_eq!(parse(":*/a/b").unwrap(), parse(":*a/b:/a/b").unwrap());
-        assert_eq!(spec(parse(":*/path").unwrap()), ":*path:/path");
-        assert_eq!(spec(parse(":*path").unwrap()), ":*path");
     }
 
     #[test]

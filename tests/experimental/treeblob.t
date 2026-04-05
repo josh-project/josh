@@ -26,6 +26,10 @@ Roundtrip: :*/path sugar canonicalizes to the expanded form
   $ josh-filter -p ':*/sub1'
   :*sub1:/sub1
 
+Roundtrip: :*/a/b sugar with multi-segment path canonicalizes correctly
+  $ josh-filter -p ':*/a/b'
+  :*a/b:/a/b
+
 Roundtrip: :& spec is preserved
   $ josh-filter -p ':&version.txt'
   :&version.txt

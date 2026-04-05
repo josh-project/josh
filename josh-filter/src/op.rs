@@ -1,7 +1,6 @@
 use crate::filter::Filter;
 use anyhow::anyhow;
 
-#[cfg(feature = "incubating")]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum LinkMode {
     Embedded,
@@ -9,7 +8,6 @@ pub enum LinkMode {
     Pointer,
 }
 
-#[cfg(feature = "incubating")]
 impl std::fmt::Display for LinkMode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -20,7 +18,6 @@ impl std::fmt::Display for LinkMode {
     }
 }
 
-#[cfg(feature = "incubating")]
 impl LinkMode {
     pub fn parse(s: &str) -> anyhow::Result<Self> {
         match s {
@@ -82,15 +79,10 @@ pub enum Op {
     Empty,
     Fold,
     Paths,
-    #[cfg(feature = "incubating")]
     Adapt(String),
-    #[cfg(feature = "incubating")]
     Link(Option<LinkMode>),
-    #[cfg(feature = "incubating")]
     Unlink,
-    #[cfg(feature = "incubating")]
     Export,
-    #[cfg(feature = "incubating")]
     Embed(std::path::PathBuf),
 
     // We use BTreeMap rather than HashMap to guarantee deterministic results when
@@ -109,26 +101,20 @@ pub enum Op {
     Index,
     Invert,
 
-    #[cfg(feature = "incubating")]
     Blob(std::path::PathBuf, String), // Blob(dest_path, content)
     File(std::path::PathBuf, std::path::PathBuf), // File(dest_path, source_path)
     Prefix(std::path::PathBuf),
     Subdir(std::path::PathBuf),
     Workspace(std::path::PathBuf),
     Stored(std::path::PathBuf),
-    #[cfg(feature = "incubating")]
     Starlark(std::path::PathBuf, Filter),
-    #[cfg(feature = "incubating")]
     TreeId(std::path::PathBuf, Filter),
-    #[cfg(feature = "incubating")]
     ObjectDeref(std::path::PathBuf),
-    #[cfg(feature = "incubating")]
     ObjectRef(std::path::PathBuf),
 
     Pattern(String),
     Message(String, regex::Regex),
 
-    #[cfg(feature = "incubating")]
     Unapply(LazyRef, Filter),
 
     Compose(Vec<Filter>),

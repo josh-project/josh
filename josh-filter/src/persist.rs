@@ -138,7 +138,6 @@ impl InMemoryBuilder {
         Ok(self.write_tree(tree))
     }
 
-    #[cfg(feature = "incubating")]
     fn build_starlark_params(
         &mut self,
         path: &std::path::Path,
@@ -209,7 +208,6 @@ impl InMemoryBuilder {
         Ok(self.write_tree(outer_tree))
     }
 
-    #[cfg(feature = "incubating")]
     fn build_lazyref_filter_params(
         &mut self,
         lazy_ref: &LazyRef,
@@ -359,7 +357,6 @@ impl InMemoryBuilder {
                 let params_tree = self.build_str_params(&[path.to_string_lossy().as_ref()]);
                 push_tree_entries(&mut entries, [("prefix", params_tree)]);
             }
-            #[cfg(feature = "incubating")]
             Op::Blob(path, content) => {
                 let params_tree =
                     self.build_str_params(&[path.to_string_lossy().as_ref(), content.as_str()]);
@@ -373,7 +370,6 @@ impl InMemoryBuilder {
                 ]);
                 push_tree_entries(&mut entries, [("file", params_tree)]);
             }
-            #[cfg(feature = "incubating")]
             Op::Embed(path) => {
                 let params_tree = self.build_str_params(&[path.to_string_lossy().as_ref()]);
                 push_tree_entries(&mut entries, [("embed", params_tree)]);
@@ -390,22 +386,18 @@ impl InMemoryBuilder {
                 let params_tree = self.build_str_params(&[path.to_string_lossy().as_ref()]);
                 push_tree_entries(&mut entries, [("stored", params_tree)]);
             }
-            #[cfg(feature = "incubating")]
             Op::Starlark(path, subfilter) => {
                 let params_tree = self.build_starlark_params(path, *subfilter)?;
                 push_tree_entries(&mut entries, [("starlark", params_tree)]);
             }
-            #[cfg(feature = "incubating")]
             Op::TreeId(path, subfilter) => {
                 let params_tree = self.build_starlark_params(path, *subfilter)?;
                 push_tree_entries(&mut entries, [("treeid", params_tree)]);
             }
-            #[cfg(feature = "incubating")]
             Op::ObjectDeref(path) => {
                 let params_tree = self.build_str_params(&[path.to_string_lossy().as_ref()]);
                 push_tree_entries(&mut entries, [("treederef", params_tree)]);
             }
-            #[cfg(feature = "incubating")]
             Op::ObjectRef(path) => {
                 let params_tree = self.build_str_params(&[path.to_string_lossy().as_ref()]);
                 push_tree_entries(&mut entries, [("treeref", params_tree)]);
@@ -418,7 +410,6 @@ impl InMemoryBuilder {
                 let blob = self.write_blob(b"");
                 push_blob_entries(&mut entries, [("empty", blob)]);
             }
-            #[cfg(feature = "incubating")]
             Op::Export => {
                 let blob = self.write_blob(b"");
                 push_blob_entries(&mut entries, [("export", blob)]);
@@ -427,18 +418,15 @@ impl InMemoryBuilder {
                 let blob = self.write_blob(b"");
                 push_blob_entries(&mut entries, [("paths", blob)]);
             }
-            #[cfg(feature = "incubating")]
             Op::Link(mode) => {
                 let mode_str = mode.as_ref().map(|m| m.to_string()).unwrap_or_default();
                 let params_tree = self.build_str_params(&[&mode_str]);
                 push_tree_entries(&mut entries, [("link", params_tree)]);
             }
-            #[cfg(feature = "incubating")]
             Op::Adapt(mode) => {
                 let params_tree = self.build_str_params(&[mode.as_ref()]);
                 push_tree_entries(&mut entries, [("adapt", params_tree)]);
             }
-            #[cfg(feature = "incubating")]
             Op::Unlink => {
                 let blob = self.write_blob(b"");
                 push_blob_entries(&mut entries, [("unlink", blob)]);
@@ -468,7 +456,6 @@ impl InMemoryBuilder {
                 let params_tree = self.build_rev_params(filters)?;
                 push_tree_entries(&mut entries, [("rev", params_tree)]);
             }
-            #[cfg(feature = "incubating")]
             Op::Unapply(lr, f) => {
                 let params_tree = self.build_lazyref_filter_params(lr, *f)?;
                 push_tree_entries(&mut entries, [("unapply", params_tree)]);
@@ -580,12 +567,10 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> anyhow::Result<Op
             let _ = repo.find_blob(entry.id())?;
             Ok(Op::Paths)
         }
-        #[cfg(feature = "incubating")]
         "export" => {
             let _ = repo.find_blob(entry.id())?;
             Ok(Op::Export)
         }
-        #[cfg(feature = "incubating")]
         "link" => {
             let inner = repo.find_tree(entry.id())?;
             let mode_blob =
@@ -598,7 +583,6 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> anyhow::Result<Op
             };
             Ok(Op::Link(mode))
         }
-        #[cfg(feature = "incubating")]
         "adapt" => {
             let inner = repo.find_tree(entry.id())?;
             let mode_blob =
@@ -607,7 +591,6 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> anyhow::Result<Op
                 std::str::from_utf8(mode_blob.content())?.to_string(),
             ))
         }
-        #[cfg(feature = "incubating")]
         "unlink" => {
             let _ = repo.find_blob(entry.id())?;
             Ok(Op::Unlink)
@@ -693,7 +676,6 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> anyhow::Result<Op
             let path = std::str::from_utf8(path_blob.content())?;
             Ok(Op::Prefix(std::path::PathBuf::from(path)))
         }
-        #[cfg(feature = "incubating")]
         "blob" => {
             let inner = repo.find_tree(entry.id())?;
             let path_blob =
@@ -725,7 +707,6 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> anyhow::Result<Op
                 std::path::PathBuf::from(source_path_str),
             ))
         }
-        #[cfg(feature = "incubating")]
         "embed" => {
             let inner = repo.find_tree(entry.id())?;
             let path_blob =
@@ -758,7 +739,6 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> anyhow::Result<Op
             let path = std::str::from_utf8(path_blob.content())?;
             Ok(Op::Stored(std::path::PathBuf::from(path)))
         }
-        #[cfg(feature = "incubating")]
         "starlark" => {
             let inner = repo.find_tree(entry.id())?;
             let path_tree = inner.get_name("0").context("starlark: missing path")?;
@@ -781,7 +761,6 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> anyhow::Result<Op
                 to_filter(filter),
             ))
         }
-        #[cfg(feature = "incubating")]
         "treederef" => {
             let inner = repo.find_tree(entry.id())?;
             let path_blob =
@@ -789,7 +768,6 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> anyhow::Result<Op
             let path = std::str::from_utf8(path_blob.content())?;
             Ok(Op::ObjectDeref(std::path::PathBuf::from(path)))
         }
-        #[cfg(feature = "incubating")]
         "treeref" => {
             let inner = repo.find_tree(entry.id())?;
             let path_blob =
@@ -797,7 +775,6 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> anyhow::Result<Op
             let path = std::str::from_utf8(path_blob.content())?;
             Ok(Op::ObjectRef(std::path::PathBuf::from(path)))
         }
-        #[cfg(feature = "incubating")]
         "treeid" => {
             let inner = repo.find_tree(entry.id())?;
             let path_tree = inner.get_name("0").context("treeid: missing path")?;
@@ -934,7 +911,6 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> anyhow::Result<Op
             }
             Ok(Op::Rev(filters))
         }
-        #[cfg(feature = "incubating")]
         "unapply" => {
             let concat_tree = repo.find_tree(entry.id())?;
             let unapply_entry = concat_tree.get(0).context("concat: missing entry")?;

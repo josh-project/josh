@@ -2,7 +2,6 @@ use anyhow::{Context, anyhow};
 use clap::Parser;
 
 use josh_cli::commands::auth::AuthArgs;
-#[cfg(feature = "incubating")]
 use josh_cli::commands::link::LinkArgs;
 use josh_cli::commands::push::{PublishArgs, PushArgs};
 use josh_cli::config::{RemoteConfig, read_remote_config, write_remote_config};
@@ -55,7 +54,6 @@ pub enum RepoCommand {
     Filter(FilterArgs),
 
     /// Manage josh links (like `josh remote` but for links)
-    #[cfg(feature = "incubating")]
     Link(LinkArgs),
 }
 
@@ -228,7 +226,6 @@ fn run_repo(cmd: &RepoCommand) -> anyhow::Result<()> {
         RepoCommand::Publish(args) => josh_cli::commands::push::handle_publish(args, &transaction),
         RepoCommand::Remote(args) => handle_remote(args, &transaction),
         RepoCommand::Filter(args) => handle_filter(args, &transaction),
-        #[cfg(feature = "incubating")]
         RepoCommand::Link(args) => josh_cli::commands::link::handle_link(args, &transaction),
     }
 }

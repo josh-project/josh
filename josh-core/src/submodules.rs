@@ -1,11 +1,9 @@
-#[cfg(feature = "incubating")]
 pub struct ParsedSubmoduleEntry {
     pub path: std::path::PathBuf,
     pub url: String,
     pub branch: String,
 }
 
-#[cfg(feature = "incubating")]
 pub fn parse_gitmodules(gitmodules_content: &str) -> anyhow::Result<Vec<ParsedSubmoduleEntry>> {
     use anyhow::Context;
     use gix_submodule::File;
@@ -45,7 +43,6 @@ pub fn parse_gitmodules(gitmodules_content: &str) -> anyhow::Result<Vec<ParsedSu
     Ok(entries)
 }
 
-#[cfg(feature = "incubating")]
 pub fn update_gitmodules(
     gitmodules_content: &str,
     entry: &ParsedSubmoduleEntry,
@@ -117,7 +114,6 @@ pub fn update_gitmodules(
     String::from_utf8(output).context("Invalid UTF-8 in gitmodules")
 }
 
-#[cfg(feature = "incubating")]
 #[cfg(test)]
 mod tests {
     use super::*;

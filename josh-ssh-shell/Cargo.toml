@@ -20,4 +20,3 @@ reqwest.workspace = true
 josh-rpc.workspace = true
 
 [features]
-incubating = []
