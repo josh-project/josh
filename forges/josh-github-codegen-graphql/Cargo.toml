@@ -1,7 +1,12 @@
 [package]
 name = "josh-github-codegen-graphql"
-version = "0.1.0"
+version = "26.4.19"
 edition = "2021"
+authors = ["Josh Project authors <contact@josh-project.dev>"]
+description = "GitHub GraphQL codegen for Josh"
+license-file = "../../LICENSE"
+repository = "https://github.com/josh-project/josh"
+keywords = ["git", "github", "monorepo", "graphql"]
 
 [dependencies]
 serde.workspace = true

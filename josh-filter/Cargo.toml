@@ -1,8 +1,8 @@
 [package]
 name = "josh-filter"
-version = "22.4.15"
+version = "26.4.19"
 repository = "https://github.com/josh-project/josh"
-authors = ["Christian Schilling <initcrash@gmail.com>"]
+authors = ["Josh Project authors <contact@josh-project.dev>"]
 license-file = "../LICENSE"
 description = "Filter type and builder for josh"
 keywords = ["git", "monorepo", "workflow", "scm"]
