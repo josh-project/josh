@@ -85,7 +85,7 @@ fn filter_methods(builder: &mut MethodsBuilder) {
         path: StringValue,
         subfilter: &StarlarkFilter,
     ) -> anyhow::Result<StarlarkFilter> {
-        Ok(this.starlark(path, *subfilter))
+        this.starlark(path, *subfilter)
     }
     fn pattern(this: &StarlarkFilter, pattern: StringValue) -> anyhow::Result<StarlarkFilter> {
         Ok(this.pattern(pattern))
@@ -214,12 +214,16 @@ impl StarlarkFilter {
 
     /// Starlark filter (evaluate a .star file). Path gets .star extension.
     /// The subfilter is applied to the input tree to get the tree passed to the script.
-    pub fn starlark(&self, path: StringValue, subfilter: StarlarkFilter) -> StarlarkFilter {
-        StarlarkFilter {
+    pub fn starlark(
+        &self,
+        path: StringValue,
+        subfilter: StarlarkFilter,
+    ) -> anyhow::Result<StarlarkFilter> {
+        Ok(StarlarkFilter {
             filter: self
                 .filter
-                .starlark(PathBuf::from(path.as_str()), subfilter.filter),
-        }
+                .starlark(PathBuf::from(path.as_str()), subfilter.filter)?,
+        })
     }
 
     /// Pattern filter

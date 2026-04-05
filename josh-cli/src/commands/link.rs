@@ -114,7 +114,7 @@ fn handle_link_add(
     let path_filter = josh_core::filter::Filter::new().subdir(normalized_path);
     let filter_obj = josh_core::filter::parse(filter)
         .with_context(|| format!("Failed to parse filter '{}'", filter))?;
-    let combined_filter = path_filter.export().chain(
+    let combined_filter = path_filter.export()?.chain(
         josh_core::filter::invert(filter_obj)
             .with_context(|| format!("Filter '{}' has no inverse", filter))?,
     );
@@ -396,7 +396,7 @@ fn handle_link_push(
     // Build the export filter: subdir extracts the link path, :export strips .link.josh
     let path_filter = josh_core::filter::Filter::new().subdir(normalized_path);
     let combined_filter = path_filter
-        .export()
+        .export()?
         .chain(josh_core::filter::invert(*link_file)?);
 
     // Apply the filter to get the commit suitable for pushing

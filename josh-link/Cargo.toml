@@ -7,4 +7,5 @@ edition = "2024"
 git2.workspace = true
 anyhow.workspace = true
 
-josh-core = { workspace = true, features = ["incubating"] }
+josh-core.workspace = true
+

@@ -16,4 +16,3 @@ josh-core.workspace = true
 josh-graphql.workspace = true
 
 [features]
-incubating = []

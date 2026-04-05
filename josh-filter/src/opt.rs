@@ -173,13 +173,9 @@ pub fn simplify(filter: Filter) -> Filter {
         }
         Op::Exclude(b) => Op::Exclude(simplify(b)),
         Op::Pin(b) => Op::Pin(simplify(b)),
-        #[cfg(feature = "incubating")]
         Op::Starlark(path, sub) => Op::Starlark(path.clone(), simplify(sub)),
-        #[cfg(feature = "incubating")]
         Op::TreeId(path, sub) => Op::TreeId(path.clone(), simplify(sub)),
-        #[cfg(feature = "incubating")]
         Op::ObjectDeref(_) => to_op(filter),
-        #[cfg(feature = "incubating")]
         Op::ObjectRef(_) => to_op(filter),
         _ => to_op(filter),
     });
@@ -244,13 +240,9 @@ pub fn flatten(filter: Filter) -> Filter {
         }
         Op::Exclude(b) => Op::Exclude(flatten(b)),
         Op::Pin(b) => Op::Pin(flatten(b)),
-        #[cfg(feature = "incubating")]
         Op::Starlark(path, sub) => Op::Starlark(path.clone(), flatten(sub)),
-        #[cfg(feature = "incubating")]
         Op::TreeId(path, sub) => Op::TreeId(path.clone(), flatten(sub)),
-        #[cfg(feature = "incubating")]
         Op::ObjectDeref(_) => to_op(filter),
-        #[cfg(feature = "incubating")]
         Op::ObjectRef(_) => to_op(filter),
         _ => to_op(filter),
     });
@@ -668,13 +660,9 @@ fn step(filter: Filter) -> Filter {
         Op::Exclude(b) | Op::Pin(b) if b == to_filter(Op::Empty) => Op::Nop,
         Op::Exclude(b) => Op::Exclude(step(b)),
         Op::Pin(b) => Op::Pin(step(b)),
-        #[cfg(feature = "incubating")]
         Op::Starlark(path, sub) => Op::Starlark(path.clone(), step(sub)),
-        #[cfg(feature = "incubating")]
         Op::TreeId(path, sub) => Op::TreeId(path.clone(), step(sub)),
-        #[cfg(feature = "incubating")]
         Op::ObjectDeref(_) => to_op(filter),
-        #[cfg(feature = "incubating")]
         Op::ObjectRef(_) => to_op(filter),
         Op::Subtract(a, b) if a == b => Op::Empty,
         Op::Subtract(af, bf) => match (to_op(af), to_op(bf)) {
@@ -743,10 +731,8 @@ pub fn invert(filter: Filter) -> anyhow::Result<Filter> {
         Op::Nop => Some(Op::Nop),
         Op::Message(..) => Some(Op::Nop),
         Op::Prune => Some(Op::Prune),
-        #[cfg(feature = "incubating")]
         Op::Export => Some(Op::Export),
         Op::Empty => Some(Op::Empty),
-        #[cfg(feature = "incubating")]
         Op::Link(..) => Some(Op::Unlink),
         Op::Subdir(path) => Some(Op::Prefix(path)),
         Op::File(dest_path, source_path) => Some(Op::File(source_path, dest_path)),
@@ -755,13 +741,9 @@ pub fn invert(filter: Filter) -> anyhow::Result<Filter> {
         Op::Rev(_) => Some(Op::Nop),
         Op::RegexReplace(_) => Some(Op::Nop),
         Op::Pin(_) => Some(Op::Nop),
-        #[cfg(feature = "incubating")]
         Op::Blob(path, _) => Some(Op::Exclude(to_filter(Op::File(path.clone(), path)))),
-        #[cfg(feature = "incubating")]
         Op::TreeId(path, _) => Some(Op::Exclude(to_filter(Op::File(path.clone(), path)))),
-        #[cfg(feature = "incubating")]
         Op::ObjectDeref(path) => Some(Op::ObjectRef(path.clone())),
-        #[cfg(feature = "incubating")]
         Op::ObjectRef(path) => Some(Op::ObjectDeref(path.clone())),
         _ => None,
     };

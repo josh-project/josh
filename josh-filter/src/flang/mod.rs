@@ -190,7 +190,6 @@ pub(crate) fn spec2(op: &Op) -> String {
         Op::Stored(path) => {
             format!(":+{}", parse::quote_if(&path.to_string_lossy()))
         }
-        #[cfg(feature = "incubating")]
         Op::Starlark(path, sub) => {
             format!(
                 ":!{}[{}]",
@@ -198,7 +197,6 @@ pub(crate) fn spec2(op: &Op) -> String {
                 spec(*sub)
             )
         }
-        #[cfg(feature = "incubating")]
         Op::TreeId(path, sub) => {
             format!(
                 ":#{}[{}]",
@@ -206,9 +204,7 @@ pub(crate) fn spec2(op: &Op) -> String {
                 spec(*sub)
             )
         }
-        #[cfg(feature = "incubating")]
         Op::ObjectDeref(path) => format!(":*{}", parse::quote_if(&path.to_string_lossy())),
-        #[cfg(feature = "incubating")]
         Op::ObjectRef(path) => format!(":&{}", parse::quote_if(&path.to_string_lossy())),
         Op::RegexReplace(replacements) => {
             let v = replacements
@@ -254,18 +250,12 @@ pub(crate) fn spec2(op: &Op) -> String {
             v.sort();
             format!(":squash({})", v.join(","))
         }
-        #[cfg(feature = "incubating")]
         Op::Adapt(adapter) => format!(":adapt={}", adapter),
-        #[cfg(feature = "incubating")]
         Op::Link(None) => ":link".to_string(),
-        #[cfg(feature = "incubating")]
         Op::Link(Some(mode)) => format!(":link={}", mode),
-        #[cfg(feature = "incubating")]
         Op::Export => ":export".to_string(),
-        #[cfg(feature = "incubating")]
         Op::Unlink => ":unlink".to_string(),
         Op::Subdir(path) => format!(":/{}", parse::quote_if(&path.to_string_lossy())),
-        #[cfg(feature = "incubating")]
         Op::Blob(path, content) => format!(
             ":${}={}",
             parse::quote_if(&path.to_string_lossy()),
@@ -285,7 +275,6 @@ pub(crate) fn spec2(op: &Op) -> String {
         Op::Prune => ":prune=trivial-merge".to_string(),
         Op::Prefix(path) => format!(":prefix={}", parse::quote_if(&path.to_string_lossy())),
         Op::Pattern(pattern) => format!("::{}", parse::quote_if(pattern)),
-        #[cfg(feature = "incubating")]
         Op::Embed(path) => {
             format!(":embed={}", parse::quote_if(&path.to_string_lossy()),)
         }
@@ -305,7 +294,6 @@ pub(crate) fn spec2(op: &Op) -> String {
         Op::Message(m, r) => {
             format!(":{};{}", parse::quote(m), parse::quote(r.as_str()))
         }
-        #[cfg(feature = "incubating")]
         Op::Unapply(r, filter) => {
             format!(":unapply({}{})", r, spec(*filter))
         }

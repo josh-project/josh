@@ -1,5 +1,5 @@
-#[cfg(feature = "incubating")]
 use crate::LinkMode;
+use crate::check_experimental_features_enabled;
 use crate::filter::Filter;
 use crate::opt;
 use crate::opt::invert;
@@ -65,18 +65,30 @@ fn make_filter(args: &[&str]) -> anyhow::Result<Filter> {
         ))),
         ["unsign"] => Ok(f.unsign()),
 
-        #[cfg(feature = "incubating")]
-        ["unlink"] => Ok(to_filter(Op::Unlink)),
-        #[cfg(feature = "incubating")]
-        ["adapt", adapter] => Ok(to_filter(Op::Adapt(adapter.to_string()))),
-        #[cfg(feature = "incubating")]
-        ["link"] => Ok(to_filter(Op::Link(None))),
-        #[cfg(feature = "incubating")]
-        ["link", mode] => Ok(to_filter(Op::Link(Some(LinkMode::parse(mode)?)))),
-        #[cfg(feature = "incubating")]
-        ["embed", path] => Ok(to_filter(Op::Embed(Path::new(path).to_owned()))),
-        #[cfg(feature = "incubating")]
-        ["export"] => Ok(to_filter(Op::Export)),
+        ["unlink"] => {
+            check_experimental_features_enabled("unlink filter")?;
+            Ok(to_filter(Op::Unlink))
+        }
+        ["adapt", adapter] => {
+            check_experimental_features_enabled("adapt filter")?;
+            Ok(to_filter(Op::Adapt(adapter.to_string())))
+        }
+        ["link"] => {
+            check_experimental_features_enabled("link filter")?;
+            Ok(to_filter(Op::Link(None)))
+        }
+        ["link", mode] => {
+            check_experimental_features_enabled("link filter")?;
+            Ok(to_filter(Op::Link(Some(LinkMode::parse(mode)?))))
+        }
+        ["embed", path] => {
+            check_experimental_features_enabled("embed filter")?;
+            Ok(to_filter(Op::Embed(Path::new(path).to_owned())))
+        }
+        ["export"] => {
+            check_experimental_features_enabled("export filter")?;
+            Ok(to_filter(Op::Export))
+        }
 
         ["PATHS"] => Ok(to_filter(Op::Paths)),
         ["INDEX"] => Ok(to_filter(Op::Index)),
@@ -97,7 +109,6 @@ fn make_filter(args: &[&str]) -> anyhow::Result<Filter> {
     }
 }
 
-#[cfg(feature = "incubating")]
 fn parse_treederef(arg: &str) -> Filter {
     let f = Filter::new();
     if let Some(path) = arg.strip_prefix('/') {
@@ -124,57 +135,37 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> anyhow::Result<Filter> {
         Rule::filter_stored => Ok(
             f.stored(Path::new(&unquote(pair.into_inner().next().unwrap().as_str())).to_owned())
         ),
-        #[cfg(feature = "incubating")]
         Rule::filter_starlark => {
+            check_experimental_features_enabled("Starlark filter")?;
             let mut inner = pair.into_inner();
             let path = Path::new(&unquote(inner.next().unwrap().as_str())).to_owned();
             let subfilter = to_filter(Op::Compose(parse_group(inner.next().unwrap().as_str())?));
-            Ok(f.starlark(path, subfilter))
+            Ok(f.starlark(path, subfilter)?)
         }
-        #[cfg(not(feature = "incubating"))]
-        Rule::filter_starlark => Err(anyhow!(
-            "Starlark filter is incubating. Build with --features incubating."
-        )),
-        #[cfg(feature = "incubating")]
         Rule::filter_treeid => {
+            check_experimental_features_enabled("TreeId filter")?;
             let mut inner = pair.into_inner();
             let path = Path::new(&unquote(inner.next().unwrap().as_str())).to_owned();
             let sf = to_filter(Op::Compose(parse_group(inner.next().unwrap().as_str())?));
-            Ok(f.treeid(path, sf))
+            Ok(f.treeid(path, sf)?)
         }
-        #[cfg(not(feature = "incubating"))]
-        Rule::filter_treeid => Err(anyhow!(
-            "TreeId filter is incubating. Build with --features incubating."
-        )),
-        #[cfg(feature = "incubating")]
         Rule::filter_treeref => {
+            check_experimental_features_enabled("ObjectRef filter")?;
             let path = Path::new(&unquote(pair.into_inner().next().unwrap().as_str())).to_owned();
             Ok(f.chain(to_filter(Op::ObjectRef(path))))
         }
-        #[cfg(not(feature = "incubating"))]
-        Rule::filter_treeref => Err(anyhow!(
-            "ObjectRef filter is incubating. Build with --features incubating."
-        )),
-        #[cfg(feature = "incubating")]
         Rule::filter_treederef => {
+            check_experimental_features_enabled("ObjectDeref filter")?;
             let path = unquote(pair.into_inner().next().unwrap().as_str());
             Ok(parse_treederef(&path))
         }
-        #[cfg(not(feature = "incubating"))]
-        Rule::filter_treederef => Err(anyhow!(
-            "ObjectDeref filter is incubating. Build with --features incubating."
-        )),
-        #[cfg(feature = "incubating")]
         Rule::filter_blob => {
+            check_experimental_features_enabled("Blob filter")?;
             let mut inner = pair.into_inner();
             let path = Path::new(&unquote(inner.next().unwrap().as_str())).to_owned();
             let content = unquote(inner.next().unwrap().as_str());
             Ok(to_filter(Op::Blob(path, content)))
         }
-        #[cfg(not(feature = "incubating"))]
-        Rule::filter_blob => Err(anyhow!(
-            "Blob filter is incubating. Build with --features incubating."
-        )),
         Rule::filter_presub => {
             let mut inner = pair.into_inner();
             let arg = &unquote(inner.next().unwrap().as_str());
@@ -309,8 +300,8 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> anyhow::Result<Filter> {
 
             Ok(to_filter(Op::Rev(entries)))
         }
-        #[cfg(feature = "incubating")]
         Rule::filter_unapply => {
+            check_experimental_features_enabled("unapply filter")?;
             let v: Vec<_> = pair.into_inner().map(|x| x.as_str()).collect();
 
             if v.len() == 2 {

@@ -63,7 +63,6 @@ josh-graphql.workspace = true
 anyhow.workspace = true
 
 [features]
-incubating = []
 
 [[bench]]
 name = "push_upstream"
