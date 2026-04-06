@@ -1,7 +1,6 @@
 set -e
 
 export RUSTFLAGS="-D warnings"
-cargo fetch --locked || true
 cargo build --workspace $CARGO_BUILD_FEATURES --offline --locked
 ( cd josh-ssh-dev-server; go build -o "${CARGO_TARGET_DIR}/josh-ssh-dev-server" )
 
