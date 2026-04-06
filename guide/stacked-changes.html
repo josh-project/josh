@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-08490afc.js";
+            window.path_to_searchindex_js = "../searchindex-55350fb7.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-7b1b477e.js"></script>
@@ -183,7 +183,7 @@ repository accessible via the <code>josh</code> CLI, regardless of whether you a
 filtered view of a monorepo or a plain repository.</p>
 <h2 id="concepts"><a class="header" href="#concepts">Concepts</a></h2>
 <p>In a stacked changes workflow, each commit on your local branch represents one
-self-contained change. When you push with <code>--split</code> or <code>--stack</code>, Josh creates a
+self-contained change. When you use <code>josh publish</code>, Josh creates a
 separate git ref for each qualifying commit.</p>
 <p>A commit qualifies for a separate ref — and an automatic PR, when
 <a href="../reference/forge.html">forge integration</a> is configured — only if both of the
@@ -213,21 +213,6 @@ submission. Returns an error message inline without clearing the form.
 
 Change: login-form-validation
 </code></pre>
-<h2 id="push-modes"><a class="header" href="#push-modes">Push modes</a></h2>
-<p>There are two stacked push modes:</p>
-<ul>
-<li>
-<p><strong><code>--split</code></strong> — Each commit is pushed as a <em>minimal, independent</em> diff. Josh strips
-away the context of earlier commits in the stack so that each change can be applied on
-its own. This is the recommended mode for GitHub PR stacks, because each PR shows only
-its own diff even before earlier PRs are merged.</p>
-</li>
-<li>
-<p><strong><code>--stack</code></strong> — Each commit is pushed with its full upstream context preserved. The
-history of earlier commits is kept intact. Use this when reviewers need the full
-context of the stack to understand each individual change.</p>
-</li>
-</ul>
 <h2 id="workflow"><a class="header" href="#workflow">Workflow</a></h2>
 <h3 id="1-write-your-commits"><a class="header" href="#1-write-your-commits">1. Write your commits</a></h3>
 <p>Work on your feature normally, writing one commit per logical step. Add a <code>Change:</code>
@@ -246,8 +231,8 @@ Change: validation-tests"
 </code></pre>
 <p>Commits without a <code>Change:</code> footer are included in the push to the base branch but
 do not get their own ref or PR.</p>
-<h3 id="2-push-as-a-stack"><a class="header" href="#2-push-as-a-stack">2. Push as a stack</a></h3>
-<pre><code class="language-shell">josh push --split
+<h3 id="2-publish"><a class="header" href="#2-publish">2. Publish</a></h3>
+<pre><code class="language-shell">josh publish
 </code></pre>
 <p>For each qualifying commit Josh pushes a ref under
 <code>refs/heads/@changes/&lt;base&gt;/&lt;author&gt;/&lt;change-id&gt;</code>. With GitHub forge integration
@@ -259,9 +244,9 @@ marked as <strong>draft</strong> until the changes before them are merged.</p>
 <p>After receiving review feedback, amend or rebase your commits as needed, keeping the
 <code>Change:</code> footers intact:</p>
 <pre><code class="language-shell">git rebase -i HEAD~3   # edit commits, preserve Change: footers
-josh push --split      # re-push; existing PRs are updated, not recreated
+josh publish           # re-publish; existing PRs are updated, not recreated
 </code></pre>
-<p>As long as the change ID in the footer is preserved through your edits, <code>josh push</code>
+<p>As long as the change ID in the footer is preserved through your edits, <code>josh publish</code>
 updates the correct existing PRs rather than creating new ones.</p>
 <h3 id="4-merge"><a class="header" href="#4-merge">4. Merge</a></h3>
 <p>Once a PR is approved and its required checks pass, merge it through the forge’s normal
@@ -270,13 +255,12 @@ UI. Then sync your local branch to account for the merged commit:</p>
 </code></pre>
 <p>This rebases your remaining local commits on top of the updated upstream state.
 <code>--autostash</code> ensures any uncommitted changes are preserved across the operation. After
-pulling, the next <code>josh push --split</code> will retarget and promote the next PR in the stack
+pulling, the next <code>josh publish</code> will retarget and promote the next PR in the stack
 from draft to ready for review.</p>
 <h2 id="without-forge-integration"><a class="header" href="#without-forge-integration">Without forge integration</a></h2>
-<p><code>josh push --split</code> and <code>josh push --stack</code> work without
-<a href="../reference/forge.html">forge integration</a>. Josh still pushes the individual
-<code>@changes/…</code> refs to the upstream repository; you can then create pull requests from
-them manually, or use them as part of a custom review workflow.</p>
+<p><code>josh publish</code> works without <a href="../reference/forge.html">forge integration</a>. Josh still
+pushes the individual <code>@changes/…</code> refs to the upstream repository; you can then create
+pull requests from them manually, or use them as part of a custom review workflow.</p>
 
                     </main>
 

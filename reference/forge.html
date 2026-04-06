@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-08490afc.js";
+            window.path_to_searchindex_js = "../searchindex-55350fb7.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-7b1b477e.js"></script>
@@ -180,7 +180,7 @@ platform (a “forge”) such as GitHub. It is not required for normal git opera
 cloning, pushing, and pulling all work without it, even with private repositories.</p>
 <p>Forge integration is specifically used for <strong>automatic pull request management</strong> during
 <a href="../guide/stacked-changes.html">stacked changes</a> workflows. When you push a stack of
-commits with <code>josh push --split</code> or <code>josh push --stack</code>, <code>josh</code> can automatically
+commits with <code>josh publish</code>, <code>josh</code> can automatically
 create or update one pull request per commit on the forge.</p>
 <h2 id="github"><a class="header" href="#github">GitHub</a></h2>
 <p>GitHub is currently the only supported forge.</p>
@@ -203,8 +203,7 @@ This takes precedence over any stored token and is useful in CI environments:</p
 <pre><code class="language-shell">export GH_TOKEN=ghp_...
 </code></pre>
 <h3 id="what-forge-integration-enables"><a class="header" href="#what-forge-integration-enables">What forge integration enables</a></h3>
-<p>Once authenticated, <code>josh push --split</code> or <code>josh push --stack</code> will, in addition to
-pushing the git refs:</p>
+<p>Once authenticated, <code>josh publish</code> will, in addition to pushing the git refs:</p>
 <ul>
 <li><strong>Create</strong> a pull request for each commit that does not yet have one.</li>
 <li><strong>Update</strong> existing pull requests (title, body, base branch) when commits are amended

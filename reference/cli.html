@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-08490afc.js";
+            window.path_to_searchindex_js = "../searchindex-55350fb7.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-7b1b477e.js"></script>
@@ -284,8 +284,37 @@ the correct upstream commits, so your changes land in the right place in the mon
 <tr><td><code>-f</code>, <code>--force</code></td><td>Force-push (non-fast-forward)</td></tr>
 <tr><td><code>--atomic</code></td><td>Atomic push (all-or-nothing)</td></tr>
 <tr><td><code>--dry-run</code></td><td>Show what would be pushed without actually pushing</td></tr>
-<tr><td><code>--split</code></td><td>Push each commit as an independent, minimal diff (see <a href="../guide/stacked-changes.html">Stacked changes</a>)</td></tr>
-<tr><td><code>--stack</code></td><td>Push commits as a stack, preserving upstream context (see <a href="../guide/stacked-changes.html">Stacked changes</a>)</td></tr>
+</tbody>
+</table>
+</div>
+<hr>
+<h2 id="josh-publish"><a class="header" href="#josh-publish">josh publish</a></h2>
+<p>Push each commit as an independent, minimal diff (stacked changes workflow). Each commit
+with a <a href="../guide/stacked-changes.html">Change ID</a> is pushed to its own ref and, when
+<a href="./forge.html">forge integration</a> is configured, gets its own pull request.</p>
+<pre><code>josh publish [&lt;remote&gt;] [&lt;refspecs&gt;...] [options]
+</code></pre>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Argument</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>&lt;remote&gt;</code></td><td>Remote name to push to (default: <code>origin</code>)</td></tr>
+<tr><td><code>&lt;refspecs&gt;</code></td><td>Refs to push (default: current branch)</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Options:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Flag</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>-f</code>, <code>--force</code></td><td>Force-push (non-fast-forward)</td></tr>
+<tr><td><code>--atomic</code></td><td>Atomic push (all-or-nothing)</td></tr>
+<tr><td><code>--dry-run</code></td><td>Show what would be pushed without actually pushing</td></tr>
 </tbody>
 </table>
 </div>
