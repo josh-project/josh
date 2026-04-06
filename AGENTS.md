@@ -5,19 +5,19 @@
 
 Tests run inside an isolated podman container. The cache key is the SHA of the filtered workspace tree, so the cache is automatically invalidated when source files change.
 
-**Run all tests (both release and incubating):**
+**Run all tests (both release and experimental):**
 ```
 josh-run/bin/josh-run :+ws/test
 ```
 
-**Run only the release tests (excludes incubating features):**
+**Run only the release tests (excludes experimental features):**
 ```
-josh-run/bin/josh-run :+ws/test:/deps:#test-release
+josh-run/bin/josh-run :+ws/test:/deps:*/stable
 ```
 
-**Run only the incubating tests:**
+**Run only the experimental tests:**
 ```
-josh-run/bin/josh-run :+ws/test:/deps:#test-incubating
+josh-run/bin/josh-run :+ws/test:/deps:*/experimental
 ```
 
 The second argument to `josh-run/bin/josh-run` is the git ref to build from:
@@ -70,7 +70,7 @@ The build dependency (`josh-run/bin/josh-run`) has its own separate output volum
 3. If you need to re-run without making any change (e.g. after manually deleting a volume), remove the `out_<sha>` volume as shown above.
 
 Test files live under `tests/` and are organized by subsystem:
-- `tests/filter/` — filter language tests (largest suite; `incubating_*.t` requires `--features incubating`)
+- `tests/filter/` — filter language tests (largest suite)
 - `tests/proxy/` — git proxy tests
 - `tests/cli/` — CLI tests
 - `tests/experimental/` — excluded from release tests

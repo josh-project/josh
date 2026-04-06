@@ -49,8 +49,8 @@ deps = :[
             ::scripts/
         ]
     ]
-    :#incubating[
-        :$label="incubating tests"
+    :#experimental[
+        :$label="experimental tests"
         :#image[:+images/dev-local/image]
 
         deps = :[
