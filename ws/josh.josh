@@ -1,0 +1,7 @@
+:#image[:+images/run/image]
+:$cache="josh-data"
+:$output="none"
+
+run = :[
+    ::run.sh=ws/josh.sh
+]

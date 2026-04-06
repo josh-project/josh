@@ -2,7 +2,7 @@
 :$cache="cargo"
 
 run = :[
-    ::run.sh=ws/run-build.sh
+    ::run.sh=ws/build.sh
     :exclude[
         ::ws/
         ::tests/
