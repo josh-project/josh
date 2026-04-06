@@ -1,6 +1,8 @@
+:$label="test suite"
 :$output="none"
 deps = :[
     :#cargo-test[
+        :$label="cargo test"
         :#image[:+images/dev-local/image]
         :$cache="cargo"
 
@@ -21,6 +23,7 @@ deps = :[
         ]
     ]
     :#fmt[
+        :$label="cargo fmt"
         :#image[:+images/dev-local/image]
 
         run = :[
@@ -32,6 +35,7 @@ deps = :[
         ]
     ]
     :#stable[
+        :$label="stable tests"
         :#image[:+images/dev-local/image]
 
         deps = :[
@@ -46,6 +50,7 @@ deps = :[
         ]
     ]
     :#incubating[
+        :$label="incubating tests"
         :#image[:+images/dev-local/image]
 
         deps = :[

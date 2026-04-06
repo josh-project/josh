@@ -38,14 +38,15 @@ fi
 # Derive filtered tree SHAs for the workspace: build context (:image),
 # runtime files (:run), and the combined workspace tree (for output vol naming).
 WS_TREE=$(git rev-parse $(josh-filter "$FILTER" "$SNAPSHOT_INPUT")^{tree})
-
-echo "WS_TREE: $WS_TREE"
-
 SAFE_NAME=$(josh-filter -i "$FILTER")
+LABEL=$(git show "$WS_TREE:label" 2>/dev/null || echo "$SAFE_NAME")
 OUTPUT_MODE=$(git show "$WS_TREE:output" 2>/dev/null || echo "volume")
+
+echo "Running: $LABEL ($WS_TREE)"
+
 $(dirname "$0")/josh-run-container "$SAFE_NAME" "$WS_TREE" || true
 
 # Pull generated artifacts from the output volume back to the host when enabled.
 if [[ "$OUTPUT_MODE" != "none" ]]; then
-    podman volume export "out_$WS_TREE" | tar -xvf -
+    podman volume export "out_$WS_TREE" | tar -xf -
 fi

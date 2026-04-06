@@ -10,22 +10,19 @@ usage() {
 SAFE_NAME=$1
 WS_TREE=$2
 
-echo "ls $WS_TREE"
-git ls-tree $WS_TREE
-echo "/ls $WS_TREE"
+LABEL=$(git show "$WS_TREE:label" 2>/dev/null || echo "$SAFE_NAME")
 
 OUTPUT_MODE=$(git show "$WS_TREE:output" 2>/dev/null || echo "volume")
 out_vol="out_${WS_TREE}"
 if [[ "$OUTPUT_MODE" != "none" ]] && podman volume inspect "$out_vol" >/dev/null 2>&1; then
-    echo "Cached output found, skipping build ($out_vol)"
+    echo "[$LABEL] Using cached output"
 else
     BUILD_ARGS=(--device /dev/net/tun --net host --cap-add=SYS_MODULE --cap-add=NET_ADMIN)
     if git rev-parse --verify "$WS_TREE:deps" >/dev/null 2>&1; then
-        git ls-tree "$WS_TREE:deps"
         while IFS= read -r filename <&3; do
             sha=$(git show "$WS_TREE:deps/$filename")
             ws="${SAFE_NAME}-${filename}"
-            echo "DEP: $0 $ws $sha"
+            echo "[$LABEL] Resolving dependency: $filename"
             "$0" "$ws" "$sha"
             dep_output_mode=$(git show "$sha:output" 2>/dev/null || echo "volume")
             if [[ "$dep_output_mode" == "none" ]]; then
@@ -45,7 +42,7 @@ else
         if git rev-parse --verify "$WS_TREE:cache" >/dev/null 2>&1; then
             cache_content=$(git show "$WS_TREE:cache")
             cache_vol="${cache_content}_cache"
-            podman volume create "$cache_vol" 2>/dev/null || true
+            podman volume create "$cache_vol" >/dev/null 2>&1 || true
             CACHE_MOUNT=(-v "$cache_vol":/opt/cache)
         else
             CACHE_MOUNT=()
@@ -59,15 +56,15 @@ else
             done 3< <(git ls-tree --name-only "$WS_TREE:env")
         fi
 
-        vol="snapshot_${RUN_TREE}_$(openssl rand -hex 4)"
-        podman volume create "$vol"
+        vol=$(podman volume create "snapshot_${RUN_TREE}_$(openssl rand -hex 4)")
+        echo "[$LABEL] Snapshot: $vol"
         if [[ "$OUTPUT_MODE" != "none" ]]; then
-            podman volume create "$out_vol"
+            echo "[$LABEL] Output volume: $(podman volume create "$out_vol")"
         elif podman volume inspect "$out_vol" >/dev/null 2>&1; then
-            podman volume rm "$out_vol"
+            echo "[$LABEL] Removed stale output: $(podman volume rm "$out_vol")"
         fi
 
-        git archive $RUN_TREE | podman volume import "$vol" -
+        echo "[$LABEL] Importing snapshot: $(git archive $RUN_TREE | podman volume import "$vol" -)"
 
         owner_paths=(/data)
         if [[ "$OUTPUT_MODE" != "none" ]]; then
@@ -88,14 +85,14 @@ else
             --entrypoint sh \
             --user $(id -u):$(id -g) ws_image_$IMAGE_TREE -c "bash run.sh" || RUN_STATUS=$?
 
-        podman volume rm "$vol"
+        podman volume rm "$vol" >/dev/null
     fi
 fi
 
 if [[ ${RUN_STATUS:-0} -ne 0 ]]; then
-    echo "FAILED: $SAFE_NAME"
+    echo "[$LABEL] FAILED"
 else
-    echo "SUCCESS: $SAFE_NAME"
+    echo "[$LABEL] SUCCESS"
 fi
 
 exit ${RUN_STATUS:-0}

@@ -1,3 +1,4 @@
+:$label="cargo fetch"
 :#image[:+images/dev-local/image]
 :$cache="cargo"
 
