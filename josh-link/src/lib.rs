@@ -139,6 +139,8 @@ pub fn prepare_link_add(
     let filter_obj = josh_core::filter::parse(filter)
         .with_context(|| format!("Failed to parse filter '{}'", filter))?;
 
+    let filter_obj = filter_obj.prefix(&path);
+
     // Create a filter with metadata
     let link_filter = filter_obj
         .with_meta("remote", url.to_string())
