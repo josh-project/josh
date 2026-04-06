@@ -58,7 +58,7 @@
 
 # Verify the branch was created
   $ git show-ref | grep refs/heads/josh-link
-  20159bad8939bce913e384abe37f12fef436bbaa refs/heads/josh-link
+  225c0ed25b5de2330f138003f1213532c5415738 refs/heads/josh-link
 
 # Verify HEAD was not updated
   $ git log --oneline
@@ -83,11 +83,11 @@
   
   Turn off this advice by setting config variable advice.detachedHead to false
   
-  HEAD is now at 20159ba Add link: libs
+  HEAD is now at 225c0ed Add link: libs
 
   $ git ls-tree -r HEAD
   100644 blob f2376e2bab6c5194410bd8a55630f83f933d2f34\tREADME.md (esc)
-  100644 blob 0acb86f56c10bc4f5f4829b850009bf11a0bab9e\tlibs/.link.josh (esc)
+  100644 blob 21da4bdc8639a5a950cb07097735dfa764cc6716\tlibs/.link.josh (esc)
   $ cat libs/.link.josh
   :~(
       commit="d27fa3a10cc019e6aa55fc74c1f0893913380e2d"
@@ -95,11 +95,11 @@
       remote="../remote.git"
       target="HEAD"
   )[
-      :/
+      :prefix=libs
   ]
 
   $ git checkout master
-  Previous HEAD position was 20159ba Add link: libs
+  Previous HEAD position was 225c0ed Add link: libs
   Switched to branch 'master'
 
 # Test link add with custom filter and target
@@ -114,7 +114,7 @@
 
 # Verify the branch was created
   $ git show-ref | grep refs/heads/josh-link
-  18e1f2757e519eadfa53bf03e51fb55e5e579808 refs/heads/josh-link
+  80d468b2b322a0f881f911b8d9b2f5f80d520b74 refs/heads/josh-link
 
 # Check the content of the utils link branch
   $ git checkout refs/heads/josh-link
@@ -135,7 +135,7 @@
   
   Turn off this advice by setting config variable advice.detachedHead to false
   
-  HEAD is now at 18e1f27 Add link: utils
+  HEAD is now at 80d468b Add link: utils
   $ cat utils/.link.josh
   :~(
       commit="d27fa3a10cc019e6aa55fc74c1f0893913380e2d"
@@ -143,11 +143,11 @@
       remote="../remote.git"
       target="master"
   )[
-      :/utils
+      ::utils/
   ]
 
   $ git checkout master
-  Previous HEAD position was 18e1f27 Add link: utils
+  Previous HEAD position was 80d468b Add link: utils
   Switched to branch 'master'
 
 # Test path normalization (path with leading slash)
@@ -162,10 +162,10 @@
 
 # Verify path was normalized (no leading slash in branch name)
   $ git show-ref | grep refs/heads/josh-link
-  f185ec3e91d12287f1f12ac9421d09777fb279a3 refs/heads/josh-link
+  c945d1eaa0b8584d9c97d8ad6c5252078e9562ca refs/heads/josh-link
 
   $ git show refs/heads/josh-link
-  commit f185ec3e91d12287f1f12ac9421d09777fb279a3
+  commit c945d1eaa0b8584d9c97d8ad6c5252078e9562ca
   Author: JOSH <josh@josh-project.dev>
   Date:   Thu Jan 1 00:00:00 1970 +0000
   
@@ -173,7 +173,7 @@
   
   diff --git a/docs/.link.josh b/docs/.link.josh
   new file mode 100644
-  index 0000000..d1fd533
+  index 0000000..a93d950
   --- /dev/null
   +++ b/docs/.link.josh
   @@ -0,0 +1,8 @@
@@ -183,7 +183,7 @@
   +    remote="../remote.git"
   +    target="HEAD"
   +)[
-  +    :/docs
+  +    ::docs/
   +]
 
 
