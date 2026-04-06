@@ -55,13 +55,12 @@ deps = :[
         :#image[:+images/dev-local/image]
 
         deps = :[
-            :#josh[
-                :+ws/build-rust
-                env = :[
-                    :$CARGO_BUILD_FEATURES="--features incubating"
-                ]
-            ]
+            :#josh[:+ws/build-rust]
             :#build-go[:+ws/build-go]
+        ]
+
+        env = :[
+            :$JOSH_EXPERIMENTAL_FEATURES="1"
         ]
 
         run = :[
