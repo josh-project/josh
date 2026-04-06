@@ -394,10 +394,8 @@ fn handle_link_push(
         .unwrap_or_else(|| "HEAD".to_string());
 
     // Build the export filter: subdir extracts the link path, :export strips .link.josh
-    let path_filter = josh_core::filter::Filter::new().subdir(normalized_path);
-    let combined_filter = path_filter
-        .export()?
-        .chain(josh_core::filter::invert(*link_file)?);
+    let path_filter = josh_core::filter::Filter::new();
+    let combined_filter = path_filter.chain(josh_core::filter::invert(*link_file)?);
 
     // Apply the filter to get the commit suitable for pushing
     let exported_commit = josh_core::filter_commit(transaction, combined_filter, head_commit.id())

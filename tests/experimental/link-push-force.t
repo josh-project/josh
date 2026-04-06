@@ -43,23 +43,23 @@
 # Regular push is rejected: remote has unrelated history
   $ josh link push /docs
   To ../docs_repo.git
-   ! [rejected]        1d48cfeee0a6ac38edeef6f7c1d1449eaea9317c -> master (fetch first)
+   ! [rejected]        449200237526b58cb91be2743ee8fef1ac989a01 -> master (fetch first)
   error: failed to push some refs to '../docs_repo.git'
-  hint: * (glob)
-  hint: * (glob)
-  hint: * (glob)
-  hint: * (glob)
-  hint: * (glob)
+  hint: Updates were rejected because the remote contains work that you do not
+  hint: have locally. This is usually caused by another repository pushing to
+  hint: the same ref. If you want to integrate the remote changes, use
+  hint: 'git pull' before pushing again.
+  hint: See the 'Note about fast-forwards' in 'git push --help' for details.
   
   Error: Failed to push to '../docs_repo.git'
   Failed to push to '../docs_repo.git'
-  Command exited with code 1: git push ../docs_repo.git 1d48cfeee0a6ac38edeef6f7c1d1449eaea9317c:refs/heads/master
+  Command exited with code 1: git push ../docs_repo.git 449200237526b58cb91be2743ee8fef1ac989a01:refs/heads/master
   [1]
 
 # Force push overwrites the remote branch
   $ josh link push --force /docs
   To ../docs_repo.git
-   + 06358b5...1d48cfe 1d48cfeee0a6ac38edeef6f7c1d1449eaea9317c -> master (forced update)
+   + 06358b5...4492002 449200237526b58cb91be2743ee8fef1ac989a01 -> master (forced update)
   
 
 # Verify the remote now has our content
