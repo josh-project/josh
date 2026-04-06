@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>FAQ - Just One Single History</title>
+        <title>Experimental features - Just One Single History</title>
 
 
         <!-- Custom HTML head -->
@@ -12,33 +12,33 @@
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="theme-color" content="#ffffff">
 
-        <link rel="icon" href="favicon-de23e50b.svg">
-        <link rel="shortcut icon" href="favicon-8114d1fc.png">
-        <link rel="stylesheet" href="css/variables-8adf115d.css">
-        <link rel="stylesheet" href="css/general-2459343d.css">
-        <link rel="stylesheet" href="css/chrome-ae938929.css">
-        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
+        <link rel="icon" href="../favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="../favicon-8114d1fc.png">
+        <link rel="stylesheet" href="../css/variables-8adf115d.css">
+        <link rel="stylesheet" href="../css/general-2459343d.css">
+        <link rel="stylesheet" href="../css/chrome-ae938929.css">
+        <link rel="stylesheet" href="../css/print-9e4910d8.css" media="print">
 
         <!-- Fonts -->
-        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
+        <link rel="stylesheet" href="../fonts/fonts-9644e21d.css">
 
         <!-- Highlight.js Stylesheets -->
-        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
-        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
-        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
+        <link rel="stylesheet" id="mdbook-highlight-css" href="../highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="../tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="../ayu-highlight-3fdfc3ac.css">
 
         <!-- Custom theme stylesheets -->
 
 
         <!-- Provide site root and default themes to javascript -->
         <script>
-            const path_to_root = "";
+            const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-239660db.js";
+            window.path_to_searchindex_js = "../searchindex-239660db.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-56a8e5ce.js"></script>
+        <script src="../toc-56a8e5ce.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -105,7 +105,7 @@
             <!-- populated by js -->
             <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
             <noscript>
-                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+                <iframe class="sidebar-iframe-outer" src="../toc.html"></iframe>
             </noscript>
             <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
                 <div class="sidebar-resize-indicator"></div>
@@ -140,7 +140,7 @@
                     <h1 class="menu-title">Just One Single History</h1>
 
                     <div class="right-buttons">
-                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                        <a href="../print.html" title="Print this book" aria-label="Print this book">
                             <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
                         </a>
 
@@ -174,41 +174,140 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="frequently-asked-questions"><a class="header" href="#frequently-asked-questions">Frequently Asked Questions</a></h1>
-<h2 id="how-is-josh-different-from-git-sparse-checkout"><a class="header" href="#how-is-josh-different-from-git-sparse-checkout">How is Josh different from git sparse-checkout?</a></h2>
-<p>Josh operates on the git object graph and is unrelated to checking out files and the working tree on the filesystem, which is the only thing sparse-checkout is concerned with. A sparse checkout does not influence the contents of the object database and also not what gets downloaded over the network.
-Both can certainly be used together if needed.</p>
-<h2 id="how-is-josh-different-from-partial-clone"><a class="header" href="#how-is-josh-different-from-partial-clone">How is Josh different from partial clone?</a></h2>
-<p>A partial clone will cause git to download only parts of an object database according to some predicate. It is still the same object database with the history having the same commits and sha1s. It still allows loading skipped parts of the object database at a later point.
-Josh creates an alternate history that has no reference to the skipped parts. It is as such very similar to git filter-branch just faster, with added features and a different user interface.</p>
-<h2 id="how-is-it-different-from-submodules"><a class="header" href="#how-is-it-different-from-submodules">How is it different from submodules?</a></h2>
-<p>Where git submodules are multiple, independent repos, referencing each other with SHAs, Josh supports the monorepo approach.
-All of the code is in one single repo which can easily be kept in sync, and Josh provides any sub folder (or in the case of workspaces, more complicated recombination of folders) as their own git repository.
-These repos are transparently synchronised both ways with the main monorepo.
-Josh can thus do more than submodules can, and is easier and faster to use.</p>
-<h2 id="how-is-it-different-from-git-subtree"><a class="header" href="#how-is-it-different-from-git-subtree">How is it different from <code>git subtree</code>?</a></h2>
-<p>The basic idea behind Josh is quite similar to <code>git subtree</code>. However <code>git subtree</code>, just like <code>git filter-branch</code>, is way too slow for everyday use, even on medium sized repos.
-<code>git subtree</code> can only achieve acceptable performance when squashing commits and therefore losing history. One core part of Josh is essentially a much faster implementation
-of <code>git subtree split</code> which has been specifically optimized for being run frequently inside the same repository.</p>
-<h2 id="how-is-josh-different-from-git-filter-repo"><a class="header" href="#how-is-josh-different-from-git-filter-repo">How is Josh different from <code>git filter-repo</code>?</a></h2>
-<p>Both  <code>josh-filter</code> as well as <code>git filter-repo</code> enable very fast rewriting of Git history and thus can in simple cases be used
-for the same purpose.</p>
-<p>Which one is right in more advanced use cases depends on your goals: <code>git filter-repo</code> offers more flexibility and options
-on what kind of filtering it supports, like rewriting commit messages or even plugging arbitrary scripts into the filtering.</p>
-<p>Josh uses a DSL instead of arbitrary scripts for complex filters and is much more restrictive in the kind of filtering
-possible, but in exchange for those limitations offers incremental filtering as well as bidirectional operation, meaning converting changes between both the original and the filtered repos.</p>
-<h2 id="how-is-josh-different-from-all-of-the-above-alternatives"><a class="header" href="#how-is-josh-different-from-all-of-the-above-alternatives">How is Josh different from all of the above alternatives?</a></h2>
-<p>Josh includes <code>josh-proxy</code> which offers repo filtering as a service, mainly intended to support monorepo workflows.</p>
+                        <h1 id="experimental-features"><a class="header" href="#experimental-features">Experimental features</a></h1>
+<p>Experimental features are opt-in and must be enabled at runtime by setting the
+environment variable <code>JOSH_EXPERIMENTAL_FEATURES=1</code>. Their behaviour or syntax
+may change in future releases.</p>
+<h2 id="filters"><a class="header" href="#filters">Filters</a></h2>
+<h3 id="object-reference-path"><a class="header" href="#object-reference-path">Object reference <strong><code>:&amp;path</code></strong></a></h3>
+<p>Reads the git object at <code>path</code> (a file or directory) and replaces its content with a text blob
+containing the object’s SHA-1 hash. This turns a real file or tree into a lightweight pointer.</p>
+<p>If <code>path</code> does not exist in the input tree, the filter is a no-op.</p>
+<p>Example: <code>:&amp;sub1</code> on a commit where <code>sub1</code> is a directory produces a file <code>sub1</code> whose content
+is the 40-character SHA of that directory tree.</p>
+<h3 id="object-dereference-path"><a class="header" href="#object-dereference-path">Object dereference <strong><code>:*path</code></strong></a></h3>
+<p>Reads the SHA-1 hash stored as text in the file at <code>path</code> and replaces that file with the git
+object the hash points to (a file or a directory tree). This follows the pointer written by
+<code>:&amp;path</code>.</p>
+<p>If <code>path</code> does not exist the filter is a no-op. If the content is not a valid SHA or the object
+is not present in the repository, an error is returned.</p>
+<p>Example: given a file <code>sub1</code> whose content is the SHA of a directory tree, <code>:*sub1</code> replaces
+that file with the actual directory tree at <code>sub1</code>.</p>
+<h3 id="object-dereference-into-subdirectory-path"><a class="header" href="#object-dereference-into-subdirectory-path">Object dereference into subdirectory <strong><code>:*/path</code></strong></a></h3>
+<p>Dereferences the pointer stored at <code>path</code> and then extracts the resulting object directly at the
+repository root, discarding the <code>path</code> prefix. This is the typical way to restore content that
+was previously stored with <code>:&amp;path</code>.</p>
+<p>Expands to <code>:*path:/path</code>. The canonical printed form is the expanded syntax.</p>
+<p>Example: <code>:*/sub1</code> on a tree where <code>sub1</code> holds a SHA of a directory returns that directory’s
+contents at the root, as if <code>sub1</code> never existed.</p>
+<h3 id="tree-id-capture-pathfilter"><a class="header" href="#tree-id-capture-pathfilter">Tree ID capture <strong><code>:#path[filter]</code></strong></a></h3>
+<p>Applies <code>filter</code> to the current tree and writes the SHA-1 hash of the resulting tree as a text
+file at <code>path</code>. The filter itself does not appear in the output — only the hash it produces.</p>
+<p>This lets you record a stable, content-addressed reference to a subtree alongside other files.</p>
+<p>Example: <code>:#version.txt[:/sub1]</code> writes the SHA of the <code>sub1</code> directory tree into <code>version.txt</code>.</p>
+<h3 id="starlark-filter-pathtoscriptcontext-filter"><a class="header" href="#starlark-filter-pathtoscriptcontext-filter">Starlark filter <strong><code>:!path/to/script[context filter]</code></strong></a></h3>
+<p>Evaluates a <a href="https://github.com/bazelbuild/starlark">Starlark</a> script stored in the repository
+and uses the filter it produces. The script file is loaded from <code>path</code> with a <code>.star</code> extension
+appended automatically.</p>
+<p>The optional <code>[context filter]</code> scopes the tree that is visible to the script: the context
+filter is applied to the input tree first, and the result is what the script sees as <code>tree</code>. The
+context filter does not affect the filter that the script returns — it only controls what the
+script can read.</p>
+<p>The script file itself is always included in the output tree alongside whatever the script’s
+filter selects.</p>
+<p><strong>Script contract</strong></p>
+<p>The script must assign a <code>Filter</code> value to the variable named <code>filter</code>. At the start of
+execution <code>filter</code> is pre-set to a no-op filter, so a minimal script that selects nothing can
+simply leave it unchanged, or assign a new value:</p>
+<pre><code class="language-python">filter = filter.subdir("src")
+</code></pre>
+<p><strong>Global variables available in the script</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Variable</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>filter</code></td><td><code>Filter</code></td><td>Starts as a no-op filter. Assign your result here.</td></tr>
+<tr><td><code>tree</code></td><td><code>Tree</code></td><td>The commit tree (or the context-filtered tree if a context filter was given).</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Global functions</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Function</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>compose([f1, f2, ...])</code></td><td>Overlay multiple filters, same semantics as <code>:[f1,f2,...]</code>.</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong><code>Filter</code> methods</strong></p>
+<p>All methods return a new <code>Filter</code> and can be chained.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Method</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>filter.subdir(path)</code></td><td>Select a subdirectory and make it the root.</td></tr>
+<tr><td><code>filter.prefix(path)</code></td><td>Place the tree under a subdirectory prefix.</td></tr>
+<tr><td><code>filter.file(path)</code></td><td>Select a single file, keeping its path.</td></tr>
+<tr><td><code>filter.rename(dst, src)</code></td><td>Select <code>src</code> and place it at <code>dst</code>.</td></tr>
+<tr><td><code>filter.pattern(pattern)</code></td><td>Select files/directories matching a glob pattern (<code>*</code> allowed).</td></tr>
+<tr><td><code>filter.chain(other)</code></td><td>Apply <code>other</code> after this filter.</td></tr>
+<tr><td><code>filter.nop()</code></td><td>No-op; passes the tree through unchanged.</td></tr>
+<tr><td><code>filter.empty()</code></td><td>Produce an empty tree.</td></tr>
+<tr><td><code>filter.linear()</code></td><td>Linearise history (drop merge parents).</td></tr>
+<tr><td><code>filter.workspace(path)</code></td><td>Apply the workspace filter rooted at <code>path</code>.</td></tr>
+<tr><td><code>filter.stored(path)</code></td><td>Apply the stored filter at <code>path.josh</code>.</td></tr>
+<tr><td><code>filter.starlark(path, context_filter)</code></td><td>Apply another Starlark filter with an optional context filter.</td></tr>
+<tr><td><code>filter.author(name, email)</code></td><td>Override the commit author.</td></tr>
+<tr><td><code>filter.committer(name, email)</code></td><td>Override the committer.</td></tr>
+<tr><td><code>filter.message(template)</code></td><td>Rewrite commit messages using a template.</td></tr>
+<tr><td><code>filter.unsign()</code></td><td>Strip GPG signatures from commits.</td></tr>
+<tr><td><code>filter.prune_trivial_merge()</code></td><td>Remove merge commits whose tree equals their first parent.</td></tr>
+<tr><td><code>filter.hook(hook)</code></td><td>Apply a hook filter.</td></tr>
+<tr><td><code>filter.with_meta(key, value)</code></td><td>Attach metadata to the filter.</td></tr>
+<tr><td><code>filter.is_nop()</code></td><td>Returns <code>True</code> if the filter is a no-op.</td></tr>
+<tr><td><code>filter.peel()</code></td><td>Strip metadata from the filter.</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong><code>Tree</code> methods</strong></p>
+<p>The <code>tree</code> object provides read-only access to the commit tree visible to the script.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Method</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>tree.file(path)</code></td><td>Returns the text content of the file at <code>path</code>, or an empty string if absent or binary.</td></tr>
+<tr><td><code>tree.files(path)</code></td><td>Returns a list of file paths that are direct children of <code>path</code>.</td></tr>
+<tr><td><code>tree.dirs(path)</code></td><td>Returns a list of directory paths that are direct children of <code>path</code>.</td></tr>
+<tr><td><code>tree.tree(path)</code></td><td>Returns a <code>Tree</code> object rooted at <code>path</code>.</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Example</strong></p>
+<p>A script that dynamically includes every top-level subdirectory as a prefixed subtree:</p>
+<pre><code class="language-python"># st/config.star
+parts = [filter.subdir(d).prefix(d) for d in tree.dirs("")]
+filter = compose(parts)
+</code></pre>
+<p>Applied with <code>:!st/config</code>.</p>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="usecases.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="../reference/filters.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
-                            <a rel="next prefetch" href="guide/gettingstarted.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="../reference/workspace.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -218,11 +317,11 @@ possible, but in exchange for those limitations offers incremental filtering as 
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="usecases.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="../reference/filters.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 
-                    <a rel="next prefetch" href="guide/gettingstarted.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="../reference/workspace.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>
@@ -242,17 +341,17 @@ possible, but in exchange for those limitations offers incremental filtering as 
         </script>
 
 
-        <script src="elasticlunr-ef4e11c1.min.js"></script>
-        <script src="mark-09e88c2c.min.js"></script>
-        <script src="searcher-c2a407aa.js"></script>
+        <script src="../elasticlunr-ef4e11c1.min.js"></script>
+        <script src="../mark-09e88c2c.min.js"></script>
+        <script src="../searcher-c2a407aa.js"></script>
 
-        <script src="clipboard-1626706a.min.js"></script>
-        <script src="highlight-abc7f01d.js"></script>
-        <script src="book-a0b12cfe.js"></script>
+        <script src="../clipboard-1626706a.min.js"></script>
+        <script src="../highlight-abc7f01d.js"></script>
+        <script src="../book-a0b12cfe.js"></script>
 
         <!-- Custom JS scripts -->
-        <script src="mermaid-eefea253.min.js"></script>
-        <script src="mermaid-init-ccf746f1.js"></script>
+        <script src="../mermaid-eefea253.min.js"></script>
+        <script src="../mermaid-init-ccf746f1.js"></script>
 
 
 

@@ -36,10 +36,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-55350fb7.js";
+            window.path_to_searchindex_js = "searchindex-239660db.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-7b1b477e.js"></script>
+        <script src="toc-56a8e5ce.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -1441,6 +1441,131 @@ gives?? Because the original git tree was already transformed, and then the subd
 was applied to pull documentation from <code>josh-docs/docs</code>, the prefix is gone - it was filtered out
 again by the subdirectory filter. Thus, the order in which filters are provided is crucial, as each
 filter further transforms the latest transformation of the tree.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="experimental-features"><a class="header" href="#experimental-features">Experimental features</a></h1>
+<p>Experimental features are opt-in and must be enabled at runtime by setting the
+environment variable <code>JOSH_EXPERIMENTAL_FEATURES=1</code>. Their behaviour or syntax
+may change in future releases.</p>
+<h2 id="filters"><a class="header" href="#filters">Filters</a></h2>
+<h3 id="object-reference-path"><a class="header" href="#object-reference-path">Object reference <strong><code>:&amp;path</code></strong></a></h3>
+<p>Reads the git object at <code>path</code> (a file or directory) and replaces its content with a text blob
+containing the object’s SHA-1 hash. This turns a real file or tree into a lightweight pointer.</p>
+<p>If <code>path</code> does not exist in the input tree, the filter is a no-op.</p>
+<p>Example: <code>:&amp;sub1</code> on a commit where <code>sub1</code> is a directory produces a file <code>sub1</code> whose content
+is the 40-character SHA of that directory tree.</p>
+<h3 id="object-dereference-path"><a class="header" href="#object-dereference-path">Object dereference <strong><code>:*path</code></strong></a></h3>
+<p>Reads the SHA-1 hash stored as text in the file at <code>path</code> and replaces that file with the git
+object the hash points to (a file or a directory tree). This follows the pointer written by
+<code>:&amp;path</code>.</p>
+<p>If <code>path</code> does not exist the filter is a no-op. If the content is not a valid SHA or the object
+is not present in the repository, an error is returned.</p>
+<p>Example: given a file <code>sub1</code> whose content is the SHA of a directory tree, <code>:*sub1</code> replaces
+that file with the actual directory tree at <code>sub1</code>.</p>
+<h3 id="object-dereference-into-subdirectory-path"><a class="header" href="#object-dereference-into-subdirectory-path">Object dereference into subdirectory <strong><code>:*/path</code></strong></a></h3>
+<p>Dereferences the pointer stored at <code>path</code> and then extracts the resulting object directly at the
+repository root, discarding the <code>path</code> prefix. This is the typical way to restore content that
+was previously stored with <code>:&amp;path</code>.</p>
+<p>Expands to <code>:*path:/path</code>. The canonical printed form is the expanded syntax.</p>
+<p>Example: <code>:*/sub1</code> on a tree where <code>sub1</code> holds a SHA of a directory returns that directory’s
+contents at the root, as if <code>sub1</code> never existed.</p>
+<h3 id="tree-id-capture-pathfilter"><a class="header" href="#tree-id-capture-pathfilter">Tree ID capture <strong><code>:#path[filter]</code></strong></a></h3>
+<p>Applies <code>filter</code> to the current tree and writes the SHA-1 hash of the resulting tree as a text
+file at <code>path</code>. The filter itself does not appear in the output — only the hash it produces.</p>
+<p>This lets you record a stable, content-addressed reference to a subtree alongside other files.</p>
+<p>Example: <code>:#version.txt[:/sub1]</code> writes the SHA of the <code>sub1</code> directory tree into <code>version.txt</code>.</p>
+<h3 id="starlark-filter-pathtoscriptcontext-filter"><a class="header" href="#starlark-filter-pathtoscriptcontext-filter">Starlark filter <strong><code>:!path/to/script[context filter]</code></strong></a></h3>
+<p>Evaluates a <a href="https://github.com/bazelbuild/starlark">Starlark</a> script stored in the repository
+and uses the filter it produces. The script file is loaded from <code>path</code> with a <code>.star</code> extension
+appended automatically.</p>
+<p>The optional <code>[context filter]</code> scopes the tree that is visible to the script: the context
+filter is applied to the input tree first, and the result is what the script sees as <code>tree</code>. The
+context filter does not affect the filter that the script returns — it only controls what the
+script can read.</p>
+<p>The script file itself is always included in the output tree alongside whatever the script’s
+filter selects.</p>
+<p><strong>Script contract</strong></p>
+<p>The script must assign a <code>Filter</code> value to the variable named <code>filter</code>. At the start of
+execution <code>filter</code> is pre-set to a no-op filter, so a minimal script that selects nothing can
+simply leave it unchanged, or assign a new value:</p>
+<pre><code class="language-python">filter = filter.subdir("src")
+</code></pre>
+<p><strong>Global variables available in the script</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Variable</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>filter</code></td><td><code>Filter</code></td><td>Starts as a no-op filter. Assign your result here.</td></tr>
+<tr><td><code>tree</code></td><td><code>Tree</code></td><td>The commit tree (or the context-filtered tree if a context filter was given).</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Global functions</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Function</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>compose([f1, f2, ...])</code></td><td>Overlay multiple filters, same semantics as <code>:[f1,f2,...]</code>.</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong><code>Filter</code> methods</strong></p>
+<p>All methods return a new <code>Filter</code> and can be chained.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Method</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>filter.subdir(path)</code></td><td>Select a subdirectory and make it the root.</td></tr>
+<tr><td><code>filter.prefix(path)</code></td><td>Place the tree under a subdirectory prefix.</td></tr>
+<tr><td><code>filter.file(path)</code></td><td>Select a single file, keeping its path.</td></tr>
+<tr><td><code>filter.rename(dst, src)</code></td><td>Select <code>src</code> and place it at <code>dst</code>.</td></tr>
+<tr><td><code>filter.pattern(pattern)</code></td><td>Select files/directories matching a glob pattern (<code>*</code> allowed).</td></tr>
+<tr><td><code>filter.chain(other)</code></td><td>Apply <code>other</code> after this filter.</td></tr>
+<tr><td><code>filter.nop()</code></td><td>No-op; passes the tree through unchanged.</td></tr>
+<tr><td><code>filter.empty()</code></td><td>Produce an empty tree.</td></tr>
+<tr><td><code>filter.linear()</code></td><td>Linearise history (drop merge parents).</td></tr>
+<tr><td><code>filter.workspace(path)</code></td><td>Apply the workspace filter rooted at <code>path</code>.</td></tr>
+<tr><td><code>filter.stored(path)</code></td><td>Apply the stored filter at <code>path.josh</code>.</td></tr>
+<tr><td><code>filter.starlark(path, context_filter)</code></td><td>Apply another Starlark filter with an optional context filter.</td></tr>
+<tr><td><code>filter.author(name, email)</code></td><td>Override the commit author.</td></tr>
+<tr><td><code>filter.committer(name, email)</code></td><td>Override the committer.</td></tr>
+<tr><td><code>filter.message(template)</code></td><td>Rewrite commit messages using a template.</td></tr>
+<tr><td><code>filter.unsign()</code></td><td>Strip GPG signatures from commits.</td></tr>
+<tr><td><code>filter.prune_trivial_merge()</code></td><td>Remove merge commits whose tree equals their first parent.</td></tr>
+<tr><td><code>filter.hook(hook)</code></td><td>Apply a hook filter.</td></tr>
+<tr><td><code>filter.with_meta(key, value)</code></td><td>Attach metadata to the filter.</td></tr>
+<tr><td><code>filter.is_nop()</code></td><td>Returns <code>True</code> if the filter is a no-op.</td></tr>
+<tr><td><code>filter.peel()</code></td><td>Strip metadata from the filter.</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong><code>Tree</code> methods</strong></p>
+<p>The <code>tree</code> object provides read-only access to the commit tree visible to the script.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Method</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>tree.file(path)</code></td><td>Returns the text content of the file at <code>path</code>, or an empty string if absent or binary.</td></tr>
+<tr><td><code>tree.files(path)</code></td><td>Returns a list of file paths that are direct children of <code>path</code>.</td></tr>
+<tr><td><code>tree.dirs(path)</code></td><td>Returns a list of directory paths that are direct children of <code>path</code>.</td></tr>
+<tr><td><code>tree.tree(path)</code></td><td>Returns a <code>Tree</code> object rooted at <code>path</code>.</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Example</strong></p>
+<p>A script that dynamically includes every top-level subdirectory as a prefixed subtree:</p>
+<pre><code class="language-python"># st/config.star
+parts = [filter.subdir(d).prefix(d) for d in tree.dirs("")]
+filter = compose(parts)
+</code></pre>
+<p>Applied with <code>:!st/config</code>.</p>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="working-with-workspaces-1"><a class="header" href="#working-with-workspaces-1">Working with workspaces</a></h1>
 <p>For the sake of this example we will assume a <code>josh-proxy</code> instance is running and serving a
