@@ -1425,7 +1425,7 @@ pub fn apply<'a>(
                 } else if repo.find_blob(oid).is_ok() {
                     (oid, git2::FileMode::Blob.into())
                 } else {
-                    return Err(anyhow::anyhow!(":*: object not found in repo: {}", oid));
+                    return Err(anyhow::anyhow!(":#: object not found in repo: {}", oid));
                 };
                 Ok(x.with_tree(tree::insert(repo, &tree::empty(repo), path, oid, mode)?))
             } else {

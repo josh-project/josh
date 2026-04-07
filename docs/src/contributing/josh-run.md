@@ -45,13 +45,13 @@ This runs both the release test suite and the experimental test suite (with `JOS
 ### Run only release tests
 
 ```sh
-josh-run/bin/josh-run :+ws/test:/deps:*/stable
+josh-run/bin/josh-run :+ws/test:/deps:#/stable
 ```
 
 ### Run only experimental tests
 
 ```sh
-josh-run/bin/josh-run :+ws/test:/deps:*/experimental
+josh-run/bin/josh-run :+ws/test:/deps:#/experimental
 ```
 
 ## Syntax

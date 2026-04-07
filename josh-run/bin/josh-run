@@ -18,6 +18,10 @@
 set -e
 export JOSH_EXPERIMENTAL_FEATURES=1
 
+# Prefer locally built binaries over any system-installed versions.
+REPO_ROOT=$(git -C "$(dirname "$0")" rev-parse --show-toplevel)
+export PATH="$REPO_ROOT/target/debug:$PATH"
+
 usage() {
     echo "Usage: $0 [--clean|--clean-all] <filter> [<ref>]" >&2
     echo "  --clean       Remove all ws_image_* images and out_* volumes before building" >&2
@@ -66,7 +70,7 @@ fi
 SRC_COMMIT=$(git rev-parse $(josh-filter ":/" "$SNAPSHOT_INPUT"))
 VERSION_STRING=$(git describe --tags --always)
 FILTER=":SQUASH${ARGS[0]}"
-FILTER=":SQUASH:#X[:/,:\$VERSION_STRING=\"$VERSION_STRING\"]:*/X${ARGS[0]}"
+FILTER=":SQUASH:#X[:/,:\$VERSION_STRING=\"$VERSION_STRING\"]:#/X${ARGS[0]}"
 echo $FILTER
 WS_TREE=$(git rev-parse $(josh-filter "$FILTER" "$SNAPSHOT_INPUT")^{tree})
 SAFE_NAME=$(josh-filter -i "$FILTER")

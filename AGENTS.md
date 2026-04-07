@@ -12,12 +12,12 @@ josh-run/bin/josh-run :+ws/test
 
 **Run only the release tests (excludes experimental features):**
 ```
-josh-run/bin/josh-run :+ws/test:/deps:*/stable
+josh-run/bin/josh-run :+ws/test:/deps:#/stable
 ```
 
 **Run only the experimental tests:**
 ```
-josh-run/bin/josh-run :+ws/test:/deps:*/experimental
+josh-run/bin/josh-run :+ws/test:/deps:#/experimental
 ```
 
 The second argument to `josh-run/bin/josh-run` is the git ref to build from:
