@@ -74,6 +74,42 @@ It affects both how commits are walked and how merge commits are handled in the 
   default behavior. If you're upgrading from an older version and need to recreate the same history
   structure, you should explicitly set `history="keep-trivial-merges"` in your filter options.
 
+### Gpgsig option
+
+The `gpgsig` option controls how PGP/GPG signature headers (`gpgsig`) in commit objects are
+handled during filtering.
+
+By default Josh preserves the `gpgsig` header byte-for-byte. This keeps the commit hash stable
+across round-trips but makes the signature invalid (since the tree and parent references change).
+
+**Available values:**
+
+- **`gpgsig="remove"`** - Strips the `gpgsig` header from every filtered commit.
+  Equivalent to the `:unsign` shorthand filter.
+
+  **Example:**
+  ```
+  :~(gpgsig="remove")[:/sub1]
+  ```
+
+- **`gpgsig="norm-lf"`** - Normalizes `\r\n` line endings to `\n` inside the `gpgsig` header
+  before writing the filtered commit.
+
+  The standard git commit object format uses `\n` line endings throughout, including inside
+  `gpgsig` headers. Some signing tools or forges write `\r\n` instead, which is technically
+  non-standard but valid as far as git is concerned — git treats the header value as opaque bytes.
+  Josh preserves whichever line endings are present in the original commit.
+
+  An older version of Josh accidentally normalized `\r\n` to `\n` during filtering. This option
+  restores that behavior and is intended **only** for deployments that need to reproduce a history
+  produced by the old version — both variants represent the same logical content but produce
+  different commit hashes, causing history to diverge.
+
+  **Example:**
+  ```
+  :~(gpgsig="norm-lf")[:/sub1]
+  ```
+
 ## Available filters
 
 ### Subdirectory **`:/a`**
@@ -181,6 +217,8 @@ the filtered commit. This makes the signature invalid, but allows a perfect roun
 able to recreate the original commit from the filtered one.
 
 This behaviour might not be desirable, and this filter drops the signatures from the history.
+It is a shorthand for `:~(gpgsig="remove")[:/]`. See the [gpgsig option](#gpgsig-option) for
+additional gpgsig-related options.
 
 ## Pattern filters
 

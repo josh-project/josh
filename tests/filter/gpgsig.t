@@ -42,7 +42,7 @@ Remove the signature, the shas are different.
   $ josh-filter :unsign refs/heads/master --update refs/heads/filtered -s
   0b4cf6c9efbbda1eada39fa9c1d21d2525b027bb
   [1] :~(
-      signature="remove"
+      gpgsig="remove"
   )[
       :/
   ]
@@ -53,7 +53,7 @@ Remove the signature, the shas are different.
   $ josh-filter --reverse :unsign refs/heads/double-filtered --update refs/heads/filtered -s
   cb22ebb8e47b109f7add68b1043e561e0db09802
   [1] :~(
-      signature="remove"
+      gpgsig="remove"
   )[
       :/
   ]
@@ -74,3 +74,17 @@ Round trip does not work but reversed works since the commit exists
   cb22ebb8e47b109f7add68b1043e561e0db09802
   0b4cf6c9efbbda1eada39fa9c1d21d2525b027bb
   cb22ebb8e47b109f7add68b1043e561e0db09802
+
+Test gpgsig="norm-lf" meta-option: normalizes line endings to LF in gpgsig headers.
+Reuse the known tree from the initial commit.
+  $ CRLF_COMMIT=$(printf "tree 3d77ff51363c9825cc2a221fc0ba5a883a1a2c72\nauthor Josh <josh@example.com> 1112911993 +0000\ncommitter Josh <josh@example.com> 1112911993 +0000\ngpgsig hello\r\n world\r\n\nadd file1\n" | git hash-object -t commit -w --stdin)
+  $ git update-ref refs/heads/crlf_master "$CRLF_COMMIT"
+
+Without norm-lf the CR is preserved (shown as ^M by cat -v).
+  $ git cat-file commit refs/heads/crlf_master | cat -v | grep gpgsig
+  gpgsig hello^M
+
+With gpgsig="norm-lf" the CR is removed.
+  $ josh-filter ':~(gpgsig="norm-lf")[:/]' refs/heads/crlf_master --update refs/heads/norm_filtered 1>/dev/null
+  $ git cat-file commit refs/heads/norm_filtered | cat -v | grep gpgsig
+  gpgsig hello

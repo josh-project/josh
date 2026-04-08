@@ -158,7 +158,7 @@ pub fn downstack(
             intermediate,
             &[&current_base],
             josh_core::filter::Rewrite::from_tree(new_tree),
-            false,
+            josh_core::history::GpgsigMode::Preserve,
         )?;
         current_base = repo.find_commit(new_oid)?;
     }
@@ -172,7 +172,7 @@ pub fn downstack(
         &change_commit,
         &[&current_base],
         josh_core::filter::Rewrite::from_tree(new_tree),
-        false,
+        josh_core::history::GpgsigMode::Preserve,
     )
 }
 

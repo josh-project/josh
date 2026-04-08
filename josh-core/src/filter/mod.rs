@@ -548,7 +548,7 @@ pub fn apply_to_commit2(
                 commit,
                 &[],
                 Rewrite::from_commit(commit)?,
-                true,
+                history::GpgsigMode::Remove,
             ))
             .transpose();
         }
@@ -1852,6 +1852,15 @@ fn per_rev_filter(
     commit_filter: Filter,
     parent_filters: Vec<(git2::Commit, Filter)>,
 ) -> anyhow::Result<Option<git2::Oid>> {
+    // Propagate any meta-options from the outer filter (e.g. :~(gpgsig="norm-lf")[:rev(...)])
+    // into the per-commit filter so they are applied during commit rewriting.
+    let commit_filter = {
+        let mut f = commit_filter;
+        for (k, v) in filter.into_meta().iter() {
+            f = f.with_meta(k, v);
+        }
+        f
+    };
     // Compute the difference between the current commit's filter and each parent's filter.
     // This determines what new content should be contributed by that parent in the filtered history.
     let extra_parents = parent_filters
