@@ -1,0 +1,85 @@
+:$label="test suite"
+:$output="none"
+inputs = :[
+    :#cargo-test[
+        :$label="cargo test"
+        :#image[:+images/dev-local]
+        :$cache="rust"
+        :$cmd="cargo test --workspace --offline --locked"
+
+        inputs = :[
+            :#fetch[:+ws/fetch]
+        ]
+
+        env = :[
+            :$RUSTFLAGS="-D warnings"
+        ]
+
+        worktree = :[
+            :exclude[
+                ::ws/
+                ::tests/
+                ::images/
+                ::docs/
+                ::scripts/
+                ::static/
+                ::josh-ssh-dev-server/
+                ::lfs-test-server/
+            ]
+        ]
+    ]
+    :#fmt[
+        :$label="cargo fmt"
+        :#image[:+images/dev-local]
+        :$cmd="cargo fmt -- --check"
+
+        worktree = :[
+            :exclude[
+                ::ws/
+                ::tests/
+                ::images/
+                ::docs/
+                ::scripts/
+                ::static/
+                ::josh-ssh-dev-server/
+                ::lfs-test-server/
+            ]
+        ]
+    ]
+    :#stable[
+        :$label="stable tests"
+        :#image[:+images/dev-local]
+
+        inputs = :[
+            :#josh[:+ws/build-rust]
+            :#build-go[:+ws/build-go]
+        ]
+
+        worktree = :[
+            ::run.sh=ws/tests.sh
+            ::run-tests.sh
+            ::tests/:exclude[::tests/experimental/]
+            ::scripts/
+        ]
+    ]
+    :#experimental[
+        :$label="experimental tests"
+        :#image[:+images/dev-local]
+
+        inputs = :[
+            :#josh[:+ws/build-rust]
+            :#build-go[:+ws/build-go]
+        ]
+
+        env = :[
+            :$JOSH_EXPERIMENTAL_FEATURES="1"
+        ]
+
+        worktree = :[
+            ::run.sh=ws/tests.sh
+            ::run-tests.sh
+            ::tests/
+            ::scripts/
+        ]
+    ]
+]

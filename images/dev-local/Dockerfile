@@ -1,20 +1,24 @@
 # syntax=docker/dockerfile:1.23.0@sha256:2780b5c3bab67f1f76c781860de469442999ed1a0d7992a5efdf2cffc0e3d769
 
-ARG BASE_IMAGE=josh-dev
+ARG BASE_IMAGE
 FROM ${BASE_IMAGE}
 
 RUN <<EOF
 set -eux
-mkdir -p /opt/cache /josh/static
-chmod 777 /opt/cache /josh/static
+mkdir -p /opt/cache /opt/target /josh/static
+chmod 777 /opt/cache /opt/target /josh/static
 EOF
 
 VOLUME /opt/cache
 
-ENV CARGO_TARGET_DIR=/opt/cache/cargo-target
+ENV CARGO_TARGET_DIR=/opt/target/cargo-target
+ENV CARGO_BUILD_BUILD_DIR=/opt/cache/cargo-build
 ENV CARGO_HOME=/opt/cache/cargo-cache
+ENV RUSTC_WRAPPER=sccache
+ENV SCCACHE_DIR=/opt/cache/sccache
 ENV GOCACHE=/opt/cache/go-cache
-ENV GOPATH=/opt/cache/go-path
+ENV GOMODCACHE=/opt/cache/go-mod-cache
+ENV GOPATH=/opt/target/go-path
 ENV GOFLAGS=-buildvcs=false
 RUN npm config set cache /opt/cache/npm-cache --global
 

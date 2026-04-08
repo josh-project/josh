@@ -1,0 +1,25 @@
+:$label="rust build"
+:#image[:+images/dev-local]
+:$cache="rust"
+:$network="host"
+
+inputs = :[
+    :#fetch[:+ws/fetch]
+]
+
+env = :[
+    ::JOSH_VERSION=VERSION_STRING
+]
+
+worktree = :[
+    ::run.sh=ws/build-rust.sh
+    :exclude[
+        ::ws/
+        ::tests/
+        ::images/
+        ::docs/
+        ::scripts/
+        ::josh-ssh-dev-server/
+        ::lfs-test-server/
+    ]
+]

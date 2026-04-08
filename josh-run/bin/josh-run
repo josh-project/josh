@@ -1,0 +1,83 @@
+#!/bin/bash
+# =============================================================================
+# This script splits out the requested workspace with Josh filters, builds (or
+# reuses) the corresponding podman image, prepares isolated volumes, runs the
+# workspace's entrypoint, and finally extracts any artifacts back to the host.
+#
+# Why Josh instead of the host checkout?
+# - Filters keep the container context minimal: only the workspace (image/run)
+#   paths are present, cutting down build context size and avoiding leakage of
+#   unrelated files.
+# - The filtered trees are keyed by their own SHAs, so the cache tag always
+#   matches the exact files fed to Docker; changing workspace files changes the
+#   image hash automatically.
+# - Only the filtered archive is piped into `podman build`; no bind-mounts or
+#   extra paths exist in the context, so no other files can influence the image.
+# - The host tree stays untouched; no extra copies or bind-mount complexity.
+# =============================================================================
+set -e
+export JOSH_EXPERIMENTAL_FEATURES=1
+
+usage() {
+    echo "Usage: $0 [--clean|--clean-all] <filter> [<ref>]" >&2
+    echo "  --clean       Remove all ws_image_* images and out_* volumes before building" >&2
+    echo "  --clean-all   Like --clean, but also removes cache volumes (*_cache)" >&2
+    echo "  <filter>      e.g. ':+ws/test'" >&2
+    echo "  <ref>         ref, SHA, '.' (working tree, default), or '+' (staged)" >&2
+    exit 1
+}
+
+CLEAN=false
+CLEAN_ALL=false
+ARGS=()
+for arg in "$@"; do
+    if [[ "$arg" == "--clean" ]]; then
+        CLEAN=true
+    elif [[ "$arg" == "--clean-all" ]]; then
+        CLEAN=true
+        CLEAN_ALL=true
+    else
+        ARGS+=("$arg")
+    fi
+done
+
+[[ ${#ARGS[@]} -ge 1 && ${#ARGS[@]} -le 2 ]] || usage
+SNAPSHOT_INPUT=${ARGS[1]:-.}
+
+if [[ "$CLEAN" == true ]]; then
+    echo "Cleaning ws_image_* images..."
+    podman images --format '{{.Repository}}' | grep '^ws_image_' | xargs -r podman rmi --force
+    echo "Cleaning out_* volumes..."
+    podman volume ls --format '{{.Name}}' | grep '^out_' | xargs -r podman volume rm
+    if [[ "$CLEAN_ALL" == true ]]; then
+        echo "Cleaning *_cache volumes..."
+        podman volume ls --format '{{.Name}}' | grep '_cache$' | xargs -r podman volume rm
+    fi
+fi
+
+if [[ "$SNAPSHOT_INPUT" == "+" ]]; then
+    git diff --cached --stat
+elif [[ "$SNAPSHOT_INPUT" == "." ]]; then
+    git diff --stat HEAD
+fi
+
+# Derive filtered tree SHAs for the workspace: build context (:image),
+# runtime files (:run), and the combined workspace tree (for output vol naming).
+SRC_COMMIT=$(git rev-parse $(josh-filter ":/" "$SNAPSHOT_INPUT"))
+VERSION_STRING=$(git describe --tags --always)
+FILTER=":SQUASH${ARGS[0]}"
+FILTER=":SQUASH:#X[:/,:\$VERSION_STRING=\"$VERSION_STRING\"]:*/X${ARGS[0]}"
+echo $FILTER
+WS_TREE=$(git rev-parse $(josh-filter "$FILTER" "$SNAPSHOT_INPUT")^{tree})
+SAFE_NAME=$(josh-filter -i "$FILTER")
+LABEL=$(git show "$WS_TREE:label" 2>/dev/null || echo "$SAFE_NAME")
+OUTPUT_MODE=$(git show "$WS_TREE:output" 2>/dev/null || echo "volume")
+
+echo "Running: $LABEL ($WS_TREE)"
+
+$(dirname "$0")/josh-run-container "$SAFE_NAME" "$WS_TREE" || true
+
+# Pull generated artifacts from the output volume back to the host when enabled.
+if [[ "$OUTPUT_MODE" != "none" ]]; then
+    podman volume export "out_$WS_TREE" | tar -xf -
+fi

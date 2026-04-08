@@ -1,0 +1,105 @@
+#!/bin/bash
+set -e
+
+usage() {
+    echo "Usage: $0 <safe_name> <WS_TREE>" >&2
+    exit 1
+}
+
+[[ $# -eq 2 ]] || usage
+SAFE_NAME=$1
+WS_TREE=$2
+
+LABEL=$(git show "$WS_TREE:label" 2>/dev/null || echo "$SAFE_NAME")
+
+OUTPUT_MODE=$(git show "$WS_TREE:output" 2>/dev/null || echo "volume")
+out_vol="out_${WS_TREE}"
+if [[ "$OUTPUT_MODE" != "none" ]] && podman volume inspect "$out_vol" >/dev/null 2>&1; then
+    echo "[$LABEL] Using cached output"
+else
+    network=$(git show "$WS_TREE:network" 2>/dev/null || echo "none")
+    if [[ "$network" == "host" ]]; then
+        BUILD_ARGS=(--device /dev/net/tun --network host --cap-add=SYS_MODULE --cap-add=NET_ADMIN)
+    else
+        BUILD_ARGS=(--network "$network")
+    fi
+    if git rev-parse --verify "$WS_TREE:inputs" >/dev/null 2>&1; then
+        while IFS= read -r filename <&3; do
+            sha=$(git show "$WS_TREE:inputs/$filename")
+            ws="${SAFE_NAME}-${filename}"
+            echo "[$LABEL] Resolving dependency: $filename"
+            "$0" "$ws" "$sha"
+            dep_output_mode=$(git show "$sha:output" 2>/dev/null || echo "volume")
+            if [[ "$dep_output_mode" == "none" ]]; then
+                echo "Dependency '$filename' has output=none and cannot be mounted" >&2
+                exit 1
+            fi
+            BUILD_ARGS+=(-v "out_$sha:/$filename")
+        done 3< <(git ls-tree --name-only "$WS_TREE:inputs")
+    fi
+
+    if git rev-parse --verify "$WS_TREE:worktree" >/dev/null 2>&1; then
+        IMAGE_TREE=$(git show $WS_TREE:image)
+        WORKTREE_TREE=$(git rev-parse $WS_TREE:worktree)
+
+        $(dirname "$0")/josh-run-build-image "$IMAGE_TREE"
+
+        if git rev-parse --verify "$WS_TREE:cache" >/dev/null 2>&1; then
+            cache_content=$(git show "$WS_TREE:cache")
+            cache_vol="${cache_content}_cache"
+            podman volume create "$cache_vol" >/dev/null 2>&1 || true
+            CACHE_MOUNT=(-v "$cache_vol":/opt/cache)
+        else
+            CACHE_MOUNT=()
+        fi
+
+        ENV_ARGS=()
+        if git rev-parse --verify "$WS_TREE:env" >/dev/null 2>&1; then
+            while IFS= read -r varname <&3; do
+                value=$(git show "$WS_TREE:env/$varname")
+                ENV_ARGS+=(-e "$varname=$value")
+            done 3< <(git ls-tree --name-only "$WS_TREE:env")
+        fi
+
+        vol=$(podman volume create "snapshot_${WORKTREE_TREE}_$(openssl rand -hex 4)")
+        echo "[$LABEL] Snapshot: $vol"
+        if [[ "$OUTPUT_MODE" != "none" ]]; then
+            echo "[$LABEL] Output volume: $(podman volume create "$out_vol")"
+        elif podman volume inspect "$out_vol" >/dev/null 2>&1; then
+            echo "[$LABEL] Removed stale output: $(podman volume rm "$out_vol")"
+        fi
+
+        echo "[$LABEL] Importing snapshot: $(git archive $WORKTREE_TREE | podman volume import "$vol" -)"
+
+        owner_paths=(/data)
+        if [[ "$OUTPUT_MODE" != "none" ]]; then
+            owner_paths+=(/out)
+            CONTAINER_OUTPUT_ARGS=(-v "$out_vol":/out)
+        else
+            CONTAINER_OUTPUT_ARGS=()
+        fi
+        if [[ -n "${cache_vol:-}" ]]; then
+            owner_paths+=(/opt/cache)
+        fi
+
+        podman run --rm -v "$vol":/data "${CONTAINER_OUTPUT_ARGS[@]}" "${CACHE_MOUNT[@]}" busybox \
+            sh -c "chown -R $(id -u):$(id -g) ${owner_paths[*]}"
+
+        CMD=$(git show "$WS_TREE:cmd" 2>/dev/null || echo "bash run.sh")
+
+        podman run --rm -it -v "$vol":$PWD "${CONTAINER_OUTPUT_ARGS[@]}" "${CACHE_MOUNT[@]}" -w $PWD \
+            "${BUILD_ARGS[@]}" "${ENV_ARGS[@]}" \
+            --entrypoint sh \
+            --user $(id -u):$(id -g) ws_image_$IMAGE_TREE -c "$CMD" || RUN_STATUS=$?
+
+        podman volume rm "$vol" >/dev/null
+    fi
+fi
+
+if [[ ${RUN_STATUS:-0} -ne 0 ]]; then
+    echo "[$LABEL] FAILED"
+else
+    echo "[$LABEL] SUCCESS"
+fi
+
+exit ${RUN_STATUS:-0}
