@@ -161,7 +161,7 @@ impl Filter {
     /// Chain a filter that removes commit signatures
     /// The filtered commits will not have GPG signatures
     pub fn unsign(self) -> Filter {
-        self.with_meta("signature", "remove")
+        self.with_meta("gpgsig", "remove")
     }
 
     /// Chain a squash filter

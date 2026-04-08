@@ -3,6 +3,12 @@ use anyhow::anyhow;
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
+pub enum GpgsigMode {
+    Preserve,
+    Remove,
+    NormLf,
+}
+
 pub fn walk2(
     filter: filter::Filter,
     input: git2::Oid,
@@ -264,7 +270,7 @@ pub fn rewrite_commit(
     base: &git2::Commit,
     parents: &[&git2::Commit],
     rewrite_data: filter::Rewrite,
-    unsign: bool,
+    gpgsig: GpgsigMode,
 ) -> anyhow::Result<git2::Oid> {
     use gix_object::bstr::BString;
 
@@ -337,9 +343,22 @@ pub fn rewrite_commit(
         commit.message = message.as_ref();
     }
 
-    commit
-        .extra_headers
-        .retain(|(k, _)| *k != "gpgsig".as_bytes() || !unsign);
+    match gpgsig {
+        GpgsigMode::Remove => {
+            commit
+                .extra_headers
+                .retain(|(k, _)| *k != "gpgsig".as_bytes());
+        }
+        GpgsigMode::NormLf => {
+            use gix_object::bstr::ByteSlice;
+            for (k, v) in commit.extra_headers.iter_mut() {
+                if *k == "gpgsig".as_bytes() && v.contains_str(b"\r\n") {
+                    *v = std::borrow::Cow::Owned(v.replace(b"\r\n", b"\n").into());
+                }
+            }
+        }
+        GpgsigMode::Preserve => {}
+    }
 
     let mut b = vec![];
     gix_object::WriteTo::write_to(&commit, &mut b)?;
@@ -733,7 +752,7 @@ pub fn unapply_filter(
             &module_commit,
             &original_parents,
             apply,
-            false,
+            GpgsigMode::Preserve,
         )?;
 
         ret = if original_parents.len() == 1
@@ -898,7 +917,11 @@ fn create_filtered_commit2<'a>(
         }
     }
 
-    let unsign = options.get("signature").is_some_and(|s| s == "remove");
+    let gpgsig = match options.get("gpgsig").map(String::as_str) {
+        Some("remove") => GpgsigMode::Remove,
+        Some("norm-lf") => GpgsigMode::NormLf,
+        _ => GpgsigMode::Preserve,
+    };
 
     Ok((
         rewrite_commit(
@@ -906,7 +929,7 @@ fn create_filtered_commit2<'a>(
             original_commit,
             &selected_filtered_parent_commits,
             rewrite_data,
-            unsign,
+            gpgsig,
         )?,
         true,
     ))
