@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-239660db.js";
+            window.path_to_searchindex_js = "../searchindex-ce065fbe.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-56a8e5ce.js"></script>
@@ -230,6 +230,36 @@ default behavior. If you’re upgrading from an older version and need to recrea
 structure, you should explicitly set <code>history="keep-trivial-merges"</code> in your filter options.</p>
 </li>
 </ul>
+<h3 id="gpgsig-option"><a class="header" href="#gpgsig-option">Gpgsig option</a></h3>
+<p>The <code>gpgsig</code> option controls how PGP/GPG signature headers (<code>gpgsig</code>) in commit objects are
+handled during filtering.</p>
+<p>By default Josh preserves the <code>gpgsig</code> header byte-for-byte. This keeps the commit hash stable
+across round-trips but makes the signature invalid (since the tree and parent references change).</p>
+<p><strong>Available values:</strong></p>
+<ul>
+<li>
+<p><strong><code>gpgsig="remove"</code></strong> - Strips the <code>gpgsig</code> header from every filtered commit.
+Equivalent to the <code>:unsign</code> shorthand filter.</p>
+<p><strong>Example:</strong></p>
+<pre><code>:~(gpgsig="remove")[:/sub1]
+</code></pre>
+</li>
+<li>
+<p><strong><code>gpgsig="norm-lf"</code></strong> - Normalizes <code>\r\n</code> line endings to <code>\n</code> inside the <code>gpgsig</code> header
+before writing the filtered commit.</p>
+<p>The standard git commit object format uses <code>\n</code> line endings throughout, including inside
+<code>gpgsig</code> headers. Some signing tools or forges write <code>\r\n</code> instead, which is technically
+non-standard but valid as far as git is concerned — git treats the header value as opaque bytes.
+Josh preserves whichever line endings are present in the original commit.</p>
+<p>An older version of Josh accidentally normalized <code>\r\n</code> to <code>\n</code> during filtering. This option
+restores that behavior and is intended <strong>only</strong> for deployments that need to reproduce a history
+produced by the old version — both variants represent the same logical content but produce
+different commit hashes, causing history to diverge.</p>
+<p><strong>Example:</strong></p>
+<pre><code>:~(gpgsig="norm-lf")[:/sub1]
+</code></pre>
+</li>
+</ul>
 <h2 id="available-filters"><a class="header" href="#available-filters">Available filters</a></h2>
 <h3 id="subdirectory-a"><a class="header" href="#subdirectory-a">Subdirectory <strong><code>:/a</code></strong></a></h3>
 <p>Take only the selected subdirectory from the input and make it the root
@@ -315,7 +345,9 @@ workspace root as well as additional files specified in the <code>workspace.josh
 <p>The default behaviour of Josh is to copy, if it exists, the signature of the original commit in
 the filtered commit. This makes the signature invalid, but allows a perfect round-trip: josh will be
 able to recreate the original commit from the filtered one.</p>
-<p>This behaviour might not be desirable, and this filter drops the signatures from the history.</p>
+<p>This behaviour might not be desirable, and this filter drops the signatures from the history.
+It is a shorthand for <code>:~(gpgsig="remove")[:/]</code>. See the <a href="#gpgsig-option">gpgsig option</a> for
+additional gpgsig-related options.</p>
 <h2 id="pattern-filters"><a class="header" href="#pattern-filters">Pattern filters</a></h2>
 <p>The following filters accept a glob like pattern <code>X</code> that can contain <code>*</code> to
 match any number of characters. Note that two or more consecutive wildcards (<code>**</code>) are not
