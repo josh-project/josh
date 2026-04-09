@@ -203,6 +203,72 @@ The only currently supported forge is `github`. See
 
 ---
 
+## josh cache
+
+Manage the distributed filter cache. The distributed cache stores filter results inside
+a ref in the git repository, allowing a warm cache to be shared between machines via
+ordinary git push/fetch.
+
+The cache subcommand requires a josh remote to be configured (see `josh remote add`).
+
+### josh cache build
+
+Apply the configured filter to all already-fetched refs and populate the local distributed
+cache with the results.
+
+```
+josh cache build [remote]
+```
+
+| Argument | Description |
+|----------|-------------|
+| `[remote]` | Remote name to build cache for (default: `origin`) |
+
+Run this before `josh cache push` to ensure the cache is up to date.
+
+### josh cache push
+
+Push the local distributed cache and the filtered refs to the backing remote, so that
+other machines can fetch them.
+
+```
+josh cache push [remote]
+```
+
+| Argument | Description |
+|----------|-------------|
+| `[remote]` | Remote name to push cache to (default: `origin`) |
+
+### josh cache fetch
+
+Fetch the distributed cache and filtered refs from the remote, warming the local cache
+without re-computing filters from scratch.
+
+```
+josh cache fetch [remote]
+```
+
+| Argument | Description |
+|----------|-------------|
+| `[remote]` | Remote name to fetch cache from (default: `origin`) |
+
+**Typical workflow:**
+
+```shell
+# On the machine that computes the cache (e.g. CI):
+josh cache build
+josh cache push
+
+# On another machine (e.g. a developer workstation):
+josh cache fetch
+# subsequent josh fetch / clone operations use the pre-built cache
+```
+
+> **Note:** The distributed cache is currently only available through the `josh` CLI.
+> It is not yet supported by `josh-proxy`.
+
+---
+
 ## josh-filter (standalone binary)
 
 `josh-filter` is a lower-level command that rewrites git history using Josh filter specs.

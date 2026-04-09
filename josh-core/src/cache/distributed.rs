@@ -146,6 +146,11 @@ impl CacheBackend for DistributedCacheBackend {
         if let Ok(e) = tree.get_path(&fanout(from)) {
             let blob = repo.find_blob(e.id())?;
             let s = std::str::from_utf8(blob.content())?.to_owned();
+            log::debug!(
+                "DistributedCacheBackend: HIT {:?} {}",
+                from,
+                filter::spec(filter)
+            );
             return Ok(Some(git2::Oid::from_str(&s)?));
         } else {
             return Ok(None);

@@ -1,7 +1,8 @@
-use anyhow::{Context, anyhow};
+use anyhow::Context;
 use clap::Parser;
 
 use josh_cli::commands::auth::AuthArgs;
+use josh_cli::commands::cache::CacheArgs;
 use josh_cli::commands::link::LinkArgs;
 use josh_cli::commands::push::{PublishArgs, PushArgs};
 use josh_cli::config::{RemoteConfig, read_remote_config, write_remote_config};
@@ -55,6 +56,9 @@ pub enum RepoCommand {
 
     /// Manage josh links (like `josh remote` but for links)
     Link(LinkArgs),
+
+    /// Manage the distributed filter cache
+    Cache(CacheArgs),
 }
 
 /// Commands that don't require a git repository
@@ -227,69 +231,8 @@ fn run_repo(cmd: &RepoCommand) -> anyhow::Result<()> {
         RepoCommand::Remote(args) => handle_remote(args, &transaction),
         RepoCommand::Filter(args) => handle_filter(args, &transaction),
         RepoCommand::Link(args) => josh_cli::commands::link::handle_link(args, &transaction),
+        RepoCommand::Cache(args) => josh_cli::commands::cache::handle_cache(args, &transaction),
     }
-}
-
-/// Apply josh filtering to all remote refs and update local refs
-fn apply_josh_filtering(
-    transaction: &josh_core::cache::Transaction,
-    repo_path: &std::path::Path,
-    filter: josh_core::filter::Filter,
-    remote_name: &str,
-) -> anyhow::Result<()> {
-    let repo = transaction.repo();
-
-    // Get all remote refs from refs/josh/remotes/{remote_name}/*
-    let mut input_refs = Vec::new();
-    let josh_remotes = repo.references_glob(&format!("refs/josh/remotes/{}/*", remote_name))?;
-
-    for reference in josh_remotes {
-        let reference = reference?;
-        if let Some(target) = reference.target() {
-            let ref_name = reference.name().unwrap().to_string();
-            input_refs.push((ref_name, target));
-        }
-    }
-
-    if input_refs.is_empty() {
-        return Err(anyhow!("No remote references found"));
-    }
-
-    // Apply the filter to all remote refs
-    let (updated_refs, errors) = josh_core::filter_refs(&transaction, filter, &input_refs);
-
-    // Check for errors
-    if let Some(error) = errors.into_iter().next() {
-        return Err(anyhow!("josh filter error: {}", error.1));
-    }
-
-    // Second pass: create all references
-    for (original_ref, filtered_oid) in updated_refs {
-        // Check if the filtered result is empty (zero OID indicates empty result)
-        if filtered_oid == git2::Oid::zero() {
-            // Skip creating references for empty filtered results
-            continue;
-        }
-
-        // Extract branch name from refs/josh/remotes/{remote_name}/branch_name
-        let branch_name = original_ref
-            .strip_prefix(&format!("refs/josh/remotes/{}/", remote_name))
-            .context("Invalid josh remote reference")?;
-
-        // Create filtered reference in josh/filtered namespace
-        let filtered_ref = format!(
-            "refs/namespaces/josh-{}/refs/heads/{}",
-            remote_name, branch_name
-        );
-
-        repo.reference(&filtered_ref, filtered_oid, true, "josh filter")
-            .context("failed to create filtered reference")?;
-    }
-
-    spawn_git_command(repo_path, &["fetch", remote_name], &[])
-        .context("failed to fetch filtered refs")?;
-
-    Ok(())
 }
 
 fn to_absolute_remote_url(url: &str) -> anyhow::Result<String> {
@@ -443,13 +386,7 @@ fn handle_pull(args: &PullArgs, transaction: &josh_core::cache::Transaction) -> 
 }
 
 fn try_parse_symref(remote: &str, output: &str) -> Option<(String, String)> {
-    let line = output.lines().next()?;
-    let symref_part = line.split('\t').next()?;
-
-    let default_branch = symref_part.strip_prefix("ref: refs/heads/")?;
-    let default_branch_ref = format!("refs/remotes/{}/{}", remote, default_branch);
-
-    Some((default_branch.to_string(), default_branch_ref))
+    josh_cli::remote_ops::try_parse_symref(remote, output)
 }
 
 fn handle_fetch(
@@ -460,12 +397,23 @@ fn handle_fetch(
     let repo_path = normalize_repo_path(repo.path());
 
     // Read the remote configuration from .git/josh/remotes/<name>.josh
-    let RemoteConfig { url, ref_spec, .. } = read_remote_config(&repo_path, &args.remote)
+    let RemoteConfig {
+        url,
+        ref_spec,
+        filter_with_meta,
+        ..
+    } = read_remote_config(&repo_path, &args.remote)
         .with_context(|| format!("Failed to read remote config for '{}'", args.remote))?;
 
     // First, fetch unfiltered refs to refs/josh/remotes/*
     spawn_git_command(repo.path(), &["fetch", &url, &ref_spec], &[])
         .context("git fetch to josh/remotes failed")?;
+
+    // Warm the local cache from the remote before filtering
+    let filter = filter_with_meta.peel();
+    if let Err(e) = josh_cli::commands::cache::fetch_remote_cache(repo, &url, filter) {
+        eprintln!("Warning: could not fetch remote cache: {e}");
+    }
 
     // Set up remote HEAD reference using git ls-remote
     // This is the proper way to get the default branch from the remote
@@ -495,18 +443,7 @@ fn handle_fetch(
         }
     }
 
-    let repo_path = normalize_repo_path(repo.path());
-    let RemoteConfig {
-        filter_with_meta, ..
-    } = read_remote_config(&repo_path, &args.remote)
-        .with_context(|| format!("Failed to read remote config for '{}'", args.remote))?;
-
-    apply_josh_filtering(
-        transaction,
-        &repo_path,
-        filter_with_meta.peel(),
-        &args.remote,
-    )?;
+    josh_cli::remote_ops::apply_josh_filtering(transaction, &repo_path, filter, &args.remote)?;
 
     // Note: fetch doesn't checkout, it just updates the refs
     eprintln!("Fetched from remote: {}", args.remote);
@@ -613,7 +550,7 @@ fn handle_filter(
         filter_str, args.remote
     );
 
-    apply_josh_filtering(transaction, &repo_path, filter, &args.remote)?;
+    josh_cli::remote_ops::apply_josh_filtering(transaction, &repo_path, filter, &args.remote)?;
 
     println!(
         "Applied filter '{}' to remote '{}'",

@@ -308,6 +308,56 @@ fn dst_path2(op: &Op) -> std::path::PathBuf {
     })
 }
 
+/// Fully flatten a (possibly nested) chain filter into an ordered list of
+/// primitive (non-chain) steps with their accumulated metadata.
+///
+/// The outer `Meta` of a chain is merged into each step before recursing.
+/// When a step is itself a meta-wrapped chain the process repeats,
+/// accumulating metadata all the way down to the leaf filters.
+///
+/// This makes all intermediate cache-key filters visible so they can be stored
+/// as git refs for the distributed cache.
+///
+/// Examples:
+/// ```text
+/// Chain([A, B, C])
+///   → [A, B, C]
+///
+/// Meta(m, Chain([A, B, C]))
+///   → [Meta(m,A), Meta(m,B), Meta(m,C)]
+///
+/// Meta(m1, Chain([Meta(m2, Chain([A, B])), C]))
+///   → [Meta(m1∪m2,A), Meta(m1∪m2,B), Meta(m1,C)]
+/// ```
+pub fn flatten_chain(filter: Filter) -> Vec<Filter> {
+    fn expand(
+        filter: Filter,
+        outer_meta: std::collections::BTreeMap<String, String>,
+    ) -> Vec<Filter> {
+        // Merge this filter's own meta with the outer meta.
+        // The filter's own meta takes precedence (inner wins on key collision).
+        let mut meta = filter.into_meta();
+        for (k, v) in outer_meta {
+            meta.entry(k).or_insert(v);
+        }
+        match peel_op(filter) {
+            Op::Chain(steps) => steps
+                .into_iter()
+                .flat_map(|f| expand(f, meta.clone()))
+                .collect(),
+            _ => {
+                // Leaf step: reassemble with the fully accumulated meta.
+                let mut f = filter.peel();
+                for (k, v) in meta {
+                    f = f.with_meta(k, v);
+                }
+                vec![f]
+            }
+        }
+    }
+    expand(filter, std::collections::BTreeMap::new())
+}
+
 /// Calculate the filtered commit for `commit`. This can take some time if done
 /// for the first time and thus should generally be done asynchronously.
 pub fn apply_to_commit(
@@ -533,14 +583,9 @@ pub fn apply_to_commit2(
     match &op {
         Op::Empty => return Ok(Some(git2::Oid::zero())),
 
-        Op::Chain(filters) => {
+        Op::Chain(_) => {
             let mut current_oid = commit.id();
-            let chain_meta = filter.into_meta();
-            for f in filters {
-                let mut f = *f;
-                for (k, v) in chain_meta.iter() {
-                    f = f.with_meta(k, v);
-                }
+            for f in flatten_chain(filter) {
                 if current_oid == git2::Oid::zero() {
                     break;
                 }
