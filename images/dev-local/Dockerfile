@@ -5,8 +5,8 @@ FROM ${BASE_IMAGE}
 
 RUN <<EOF
 set -eux
-mkdir -p /opt/cache /josh/static
-chmod 777 /opt/cache /josh/static
+mkdir -p /opt/cache /opt/target
+chmod 777 /opt/cache /opt/target
 EOF
 
 VOLUME /opt/cache

@@ -42,8 +42,6 @@ pub struct Args {
     )]
     #[arg(long, short)]
     pub cache_duration: u64,
-    #[arg(long, help = "Proxy static resource requests to a different URL")]
-    pub static_resource_proxy_target: Option<String>,
     #[arg(long, help = "Filter to be prefixed to all queries of this instance")]
     pub filter_prefix: Option<String>,
     #[arg(

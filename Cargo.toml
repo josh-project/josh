@@ -13,7 +13,6 @@ members = [
     "josh-rpc",
     "josh-ssh-shell",
     "josh-templates",
-    "josh-ui",
     "josh-starlark",
     "josh-cq",
     "josh-changes",
