@@ -6,10 +6,3 @@ FROM ${BASE_IMAGE}
 ENV RUSTC_WRAPPER=sccache
 ENV CARGO_INCREMENTAL=0
 ENV CARGO_TARGET_DIR=/opt/cargo-target
-
-RUN mkdir -p /josh/static && \
-    chmod 777 /josh/static
-
-RUN mkdir -p josh-ui
-COPY josh-ui/package.json josh-ui/package-lock.json josh-ui/
-RUN cd josh-ui && npm install

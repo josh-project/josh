@@ -1615,22 +1615,6 @@ pub fn make_service_router(proxy_service: Arc<JoshProxyService>) -> Router {
     use axum::middleware;
     use axum::routing::{get, post};
 
-    // Serve static UI files with fallback to index.html only for specific SPA routes
-    let ui_router = {
-        use tower_http::services::{ServeDir, ServeFile};
-
-        let serve_index = ServeFile::new("/josh/static/index.html");
-        Router::new()
-            .route_service("/", serve_index.clone())
-            .route_service("/select", serve_index.clone())
-            .route_service("/browse", serve_index.clone())
-            .route_service("/view", serve_index.clone())
-            .route_service("/diff", serve_index.clone())
-            .route_service("/change", serve_index.clone())
-            .route_service("/history", serve_index.clone())
-            .fallback_service(ServeDir::new("/josh/static"))
-    };
-
     // All routes within this router require auth, and fetch upstream
     let git_operations_router =
         Router::new()
@@ -1641,7 +1625,6 @@ pub fn make_service_router(proxy_service: Arc<JoshProxyService>) -> Router {
             ));
 
     Router::new()
-        .route("/", get(async || axum::response::Redirect::to("/~/ui/")))
         .route("/version", get(handle_version))
         .route("/remote", get(handle_remote))
         .route("/flush", get(handle_flush))
@@ -1659,7 +1642,6 @@ pub fn make_service_router(proxy_service: Arc<JoshProxyService>) -> Router {
         )
         .route("/repo_update", post(handle_repo_update))
         .route("/serve_namespace", post(handle_serve_namespace))
-        .nest("/~/ui", ui_router)
         // Serve graphql APIs
         .route(
             "/~/graphql/{*path}",

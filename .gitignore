@@ -1,5 +1,4 @@
 target
-static
 id_rsa.pub
 e2e-tests/_data*
 e2e-tests/_remote*

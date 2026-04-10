@@ -12,20 +12,11 @@ updates:
     - "josh-rpc"
     - "josh-ssh-shell"
     - "josh-templates"
-    - "josh-ui"
   schedule:
     interval: weekly
   open-pull-requests-limit: 10
   groups:
     rust-deps:
-      patterns:
-        - "*"
-- package-ecosystem: npm
-  directory: "josh-ui"
-  schedule:
-    interval: weekly
-  groups:
-    npm-deps:
       patterns:
         - "*"
 - package-ecosystem: gomod
