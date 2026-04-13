@@ -1809,7 +1809,22 @@ where
     }
 }
 
+fn needs_legalization(f: Filter) -> bool {
+    match to_op(f) {
+        Op::Stored(_) | Op::Starlark(_, _) => true,
+        Op::Compose(filters) | Op::Chain(filters) => filters.iter().any(|&f| needs_legalization(f)),
+        Op::Subtract(a, b) => needs_legalization(a) || needs_legalization(b),
+        Op::Exclude(f) | Op::Pin(f) | Op::TreeId(_, f) => needs_legalization(f),
+        Op::Meta(_, f) => needs_legalization(f),
+        _ => false,
+    }
+}
+
 fn legalize_stored(t: &cache::Transaction, f: Filter, tree: &git2::Tree) -> anyhow::Result<Filter> {
+    if !needs_legalization(f) {
+        return Ok(f);
+    }
+
     if let Some(f) = t.get_legalize((f, tree.id())) {
         return Ok(f);
     }
@@ -1830,10 +1845,18 @@ fn legalize_stored(t: &cache::Transaction, f: Filter, tree: &git2::Tree) -> anyh
         Op::Chain(filters) => {
             let mut result = Vec::with_capacity(filters.len());
             let mut current_tree = tree.clone();
-            for filter in filters {
-                let legalized = legalize_stored(t, filter, &current_tree)?;
-                current_tree = apply(t, legalized, Rewrite::from_tree(current_tree.clone()))?.tree;
+            for (i, filter) in filters.iter().enumerate() {
+                let legalized = legalize_stored(t, *filter, &current_tree)?;
                 result.push(legalized);
+                // Only compute the intermediate tree if a subsequent element still needs
+                // legalization — the tree is passed to legalize_stored, which uses it to
+                // resolve Stored/Starlark refs.  Elements that don't need legalization
+                // (e.g. a trailing Prefix) return immediately via the fast-path, so
+                // running apply just to compute a tree they'll never use is pure waste.
+                if filters[i + 1..].iter().any(|&f| needs_legalization(f)) {
+                    current_tree =
+                        apply(t, legalized, Rewrite::from_tree(current_tree.clone()))?.tree;
+                }
             }
             to_filter(Op::Chain(result))
         }
