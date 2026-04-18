@@ -325,8 +325,18 @@ pub fn apply_to_commit(
 
         let missing = transaction.get_missing();
 
-        for (f, i) in missing.into_iter().rev() {
-            history::walk2(f, i, transaction)?;
+        let max_level = missing.last().map(|(w, _, _)| *w).unwrap_or(0);
+
+        for (level, filter, input) in missing.iter().rev() {
+            log::info!("MISSING {} {} {}", level, input, filter::spec(*filter));
+        }
+
+        for (level, filter, input) in missing.into_iter().rev() {
+            if level != max_level {
+                break;
+            }
+            transaction.set_nesting(level + 1);
+            history::walk2(filter, input, transaction)?;
         }
     }
 }
