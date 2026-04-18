@@ -1,5 +1,7 @@
 * Before creating commit, always run `cargo fmt`
 * When possible, keep PRs to one commit only; amend existing commit when making changes to PRs, and force push
+* All files (source code, Markdown, text, etc.) should be wrapped at 100 columns max, as long as
+  the syntax allows it (e.g. don't break URLs or code blocks that must be on one line)
 
 ## Running tests via "josh run"
 
