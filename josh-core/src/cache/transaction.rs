@@ -91,9 +91,9 @@ struct Transaction2 {
     path_tree: sled::Tree,
     invert_tree: sled::Tree,
     trigram_index_tree: sled::Tree,
-    missing: Vec<(crate::filter::Filter, git2::Oid)>,
+    missing: Vec<(usize, crate::filter::Filter, git2::Oid)>,
     misses: usize,
-    walks: usize,
+    nesting_level: usize,
 }
 
 pub struct Transaction {
@@ -128,7 +128,7 @@ impl Transaction {
                 trigram_index_tree,
                 missing: vec![],
                 misses: 0,
-                walks: 0,
+                nesting_level: 0,
             }),
             repo,
             ref_prefix: ref_prefix.unwrap_or("").to_string(),
@@ -157,14 +157,10 @@ impl Transaction {
         self.t2.borrow().misses
     }
 
-    pub fn new_walk(&self) -> usize {
-        let prev = self.t2.borrow().walks;
-        self.t2.borrow_mut().walks += 1;
+    pub fn set_nesting(&self, level: usize) -> usize {
+        let prev = self.t2.borrow().nesting_level;
+        self.t2.borrow_mut().nesting_level = level;
         prev
-    }
-
-    pub fn end_walk(&self) {
-        self.t2.borrow_mut().walks -= 1;
     }
 
     pub fn insert_apply(&self, filter: crate::filter::Filter, from: git2::Oid, to: git2::Oid) {
@@ -371,10 +367,12 @@ impl Transaction {
         }
     }
 
-    pub fn get_missing(&self) -> Vec<(crate::filter::Filter, git2::Oid)> {
+    pub fn get_missing(&self) -> Vec<(usize, crate::filter::Filter, git2::Oid)> {
         let mut missing = self.t2.borrow().missing.clone();
-        missing.dedup();
-        missing.retain(|(f, i)| !self.known(*f, *i));
+        missing.retain(|(_, f, i)| !self.known(*f, *i));
+        missing.sort_by_key(|(l, f, i)| (*f, *i, *l));
+        missing.dedup_by_key(|(_, f, i)| (*f, *i));
+        missing.sort();
         self.t2.borrow_mut().missing = missing.clone();
         missing
     }
@@ -388,8 +386,9 @@ impl Transaction {
             Some(x)
         } else {
             let mut t2 = self.t2.borrow_mut();
+            let nesting_level = t2.nesting_level;
             t2.misses += 1;
-            t2.missing.push((filter, from));
+            t2.missing.push((nesting_level, filter, from));
             None
         }
     }

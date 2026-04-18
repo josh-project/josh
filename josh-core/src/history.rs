@@ -20,7 +20,7 @@ pub fn walk2(
         return Ok(());
     }
 
-    ok_or!(transaction.repo().find_commit(input), {
+    let input_commit = ok_or!(transaction.repo().find_commit(input), {
         return Ok(());
     });
 
@@ -38,44 +38,33 @@ pub fn walk2(
     let walk = walk.with_hide_callback(&mut hide_callback)?;
 
     log::info!(
-        "Walking {} new commits for:\n{}\n",
-        0,
-        filter::pretty(filter, 4),
+        "Walking {} commits for: {} {:?}",
+        crate::cache::compute_sequence_number(transaction, input)
+            .expect("compute_sequence_number failed"),
+        filter::spec(filter),
+        input_commit,
     );
     let mut n_in = 0;
     let mut n_out = 0;
 
-    let walks = transaction.new_walk();
-
     for original_commit_id in walk {
-        if filter::apply_to_commit2(
-            filter,
-            &transaction.repo().find_commit(original_commit_id?)?,
-            transaction,
-        )?
-        .is_some()
+        let id = original_commit_id?;
+
+        if filter::apply_to_commit2(filter, &transaction.repo().find_commit(id)?, transaction)?
+            .is_some()
         {
             n_out += 1;
+        } else {
+            break;
         }
 
         n_in += 1;
         if n_in % 1000 == 0 {
-            log::debug!(
-                "{} {} commits filtered, {} written",
-                " ->".repeat(walks),
-                n_in,
-                n_out,
-            );
+            log::debug!("{} commits filtered, {} written", n_in, n_out,);
         }
     }
 
-    log::info!(
-        "{} {} commits filtered, {} written",
-        " ->".repeat(walks),
-        n_in,
-        n_out,
-    );
-    transaction.end_walk();
+    log::info!("{} commits filtered, {} written", n_in, n_out,);
 
     Ok(())
 }
