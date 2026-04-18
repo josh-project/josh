@@ -65,6 +65,7 @@ impl DistributedCacheBackend {
                 &repo.find_tree(updated)?,
                 &parent_refs,
             )?;
+            log::info!("CACHE flush {} {}", m.len(), rp);
             m.clear();
         }
 
