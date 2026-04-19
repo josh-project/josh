@@ -15,6 +15,7 @@ members = [
     "josh-starlark",
     "josh-cq",
     "josh-changes",
+    "josh-compose",
 
     "forges/josh-github-changes",
     "forges/josh-github-graphql",
@@ -80,6 +81,7 @@ axum-cgi = { path = "axum-cgi", version = "26.5.8" }
 josh-filter = { path = "josh-filter", version = "26.5.8" }
 josh-changes = { path = "josh-changes", version = "26.5.8" }
 josh-core = { path = "josh-core", version = "26.5.8" }
+josh-compose = { path = "josh-compose", version = "26.5.8" }
 josh-graphql = { path = "josh-graphql", version = "26.5.8" }
 josh-link = { path = "josh-link", version = "26.5.8" }
 josh-rpc = { path = "josh-rpc", version = "26.5.8" }
@@ -156,3 +158,25 @@ features = ["serde"]
 
 [workspace.dependencies.async-trait]
 version = "0.1"
+
+# "josh run" builds filtered workspace trees that lack .git directories,
+# causing cargo to resolve josh-* crates from crates.io instead of locally.
+# This section forces cargo to always use the local versions.
+[patch.crates-io]
+axum-cgi = { path = "axum-cgi" }
+josh-filter = { path = "josh-filter" }
+josh-changes = { path = "josh-changes" }
+josh-core = { path = "josh-core" }
+josh-compose = { path = "josh-compose" }
+josh-graphql = { path = "josh-graphql" }
+josh-link = { path = "josh-link" }
+josh-rpc = { path = "josh-rpc" }
+josh-starlark = { path = "josh-starlark" }
+josh-templates = { path = "josh-templates" }
+josh-github-changes = { path = "forges/josh-github-changes" }
+josh-github-graphql = { path = "forges/josh-github-graphql" }
+josh-github-codegen-graphql = { path = "forges/josh-github-codegen-graphql" }
+josh-github-webhooks = { path = "forges/josh-github-webhooks" }
+josh-github-auth = { path = "forges/josh-github-auth" }
+josh-test-webhook-service = { path = "deployment/josh-test-webhook-service" }
+josh-test-webhook-client = { path = "deployment/josh-test-webhook-client" }

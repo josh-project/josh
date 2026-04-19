@@ -37,7 +37,7 @@ If `path` does not exist in the input tree, the filter is a no-op.
 Example: `:&sub1` on a commit where `sub1` is a directory produces a file `sub1` whose content
 is the 40-character SHA of that directory tree.
 
-### Object dereference **`:*path`**
+### Object dereference **`:#path`**
 Reads the SHA-1 hash stored as text in the file at `path` and replaces that file with the git
 object the hash points to (a file or a directory tree). This follows the pointer written by
 `:&path`.
@@ -45,17 +45,17 @@ object the hash points to (a file or a directory tree). This follows the pointer
 If `path` does not exist the filter is a no-op. If the content is not a valid SHA or the object
 is not present in the repository, an error is returned.
 
-Example: given a file `sub1` whose content is the SHA of a directory tree, `:*sub1` replaces
+Example: given a file `sub1` whose content is the SHA of a directory tree, `:#sub1` replaces
 that file with the actual directory tree at `sub1`.
 
-### Object dereference into subdirectory **`:*/path`**
+### Object dereference into subdirectory **`:#/path`**
 Dereferences the pointer stored at `path` and then extracts the resulting object directly at the
 repository root, discarding the `path` prefix. This is the typical way to restore content that
 was previously stored with `:&path`.
 
-Expands to `:*path:/path`. The canonical printed form is the expanded syntax.
+Expands to `:#path:/path`. The canonical printed form is the expanded syntax.
 
-Example: `:*/sub1` on a tree where `sub1` holds a SHA of a directory returns that directory's
+Example: `:#/sub1` on a tree where `sub1` holds a SHA of a directory returns that directory's
 contents at the root, as if `sub1` never existed.
 
 ### Tree ID capture **`:#path[filter]`**
