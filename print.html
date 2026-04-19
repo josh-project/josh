@@ -36,10 +36,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-8dca9d2f.js";
+            window.path_to_searchindex_js = "searchindex-ea1a0132.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-56a8e5ce.js"></script>
+        <script src="toc-bacb8355.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -239,6 +239,10 @@ will start using it differently.</p>
 <h3 id="partial-cloning"><a class="header" href="#partial-cloning">Partial cloning</a></h3>
 <p>Reduce scope and size of clones by treating subdirectories of the monorepo
 as individual repositories.</p>
+<p>Using the <code>josh</code> CLI:</p>
+<pre><code>$ josh clone https://git.example.com/monorepo.git :/path/to/library ./library
+</code></pre>
+<p>Or via a shared <a href="#josh-proxy">josh-proxy</a>:</p>
 <pre><code>$ git clone http://josh/monorepo.git:/path/to/library.git
 </code></pre>
 <p>The partial repo will act as a normal git repository but only contain the files
@@ -298,7 +302,11 @@ dependencies = :/modules:[
 
     
 
-<p>Workspaces act as normal git repos:</p>
+<p>Workspaces act as normal git repos.</p>
+<p>Using the <code>josh</code> CLI:</p>
+<pre><code>$ josh clone https://git.example.com/central.git :workspace=workspaces/project1 ./project1
+</code></pre>
+<p>Or via a shared <a href="#josh-proxy">josh-proxy</a>:</p>
 <pre><code>$ git clone http://josh/central.git:workspace=workspaces/project1.git
 </code></pre>
 <p>Each of the subprojects defines a <code>workspace.josh</code> file, defining the mapping between the original central.git repository and the hierarchy in use inside of the project.</p>
@@ -438,312 +446,131 @@ client tooling.</li>
 </ul>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="working-with-workspaces"><a class="header" href="#working-with-workspaces">Working with workspaces</a></h1>
-<blockquote>
-<p><em><strong>NOTE</strong></em></p>
-<p>All the commands are included from the file <code>workspaces.t</code>
-which can be run with <a href="https://bitheap.org/cram/">cram</a>.</p>
-</blockquote>
-<p>Josh really starts to shine when using workspaces.</p>
-<p>Simply put, they are a list of files and folders, remapped from the central repository
-to a new repository.
-For example, a shared library could be used by various workspaces, each mapping it to
-their appropriate subdirectory.</p>
-<p>In this chapter, we’re going to set up a new git repository with a couple of libraries,
-and then use it to demonstrate the use of workspaces.</p>
-<h2 id="test-set-up"><a class="header" href="#test-set-up">Test set-up</a></h2>
-<blockquote>
-<p><em><strong>NOTE</strong></em></p>
-<p>The following section describes how to set-up a local git server with made-up content
-for the sake of this tutorial.
-You’re free to follow it, or to use your own existing repository, in which case you
-can skip to the next section</p>
-</blockquote>
-<p>To host the repository for this test, we need a git server.
-We’re going to run git as a <a href="https://en.wikipedia.org/wiki/Common_Gateway_Interface">cgi</a>
-program using its provided http backend, served with the test server included in
-the <a href="https://crates.io/crates/hyper_cgi">hyper_cgi</a> crate.</p>
-<h3 id="serving-the-git-repo"><a class="header" href="#serving-the-git-repo">Serving the git repo</a></h3>
-<p>First, we create a <em>bare</em> repository, which will be served by hyper_cgi. We enable
-the option <code>http.receivepack</code> to allow the use of <code>git push</code> from the clients.</p>
-<pre><code class="language-shell">  $ git init --bare ./remote/real_repo.git/
-  Initialized empty Git repository in */real_repo.git/ (glob)
-  $ git config -f ./remote/real_repo.git/config http.receivepack true
+<p>A workspace is a list of files and folders remapped from a central repository into a new
+repository layout. For example, a shared library can be mapped into multiple workspaces,
+each placing it at the path that makes sense for that project.</p>
+<p>In this guide we’ll set up a small monorepo with two libraries and two applications, then
+use workspaces to develop against them in isolation.</p>
+<h2 id="the-monorepo"><a class="header" href="#the-monorepo">The monorepo</a></h2>
+<p>Suppose you have a monorepo with this structure:</p>
+<pre><code>monorepo/
+├── application1/
+│   └── app.c
+├── application2/
+│   └── guide.c
+├── library1/
+│   └── lib1.h
+└── library2/
+    └── lib2.h
 </code></pre>
-<p>Then we start the server which will allow clients to access the repository through
-http.</p>
-<pre><code class="language-shell">  $ GIT_DIR=./remote/ GIT_PROJECT_ROOT=${TESTTMP}/remote/ GIT_HTTP_EXPORT_ALL=1 hyper-cgi-test-server\
-  &gt;  --port=8001\
-  &gt;  --dir=./remote/\
-  &gt;  --cmd=git\
-  &gt;  --args=http-backend\
-  &gt;  &gt; ./hyper-cgi-test-server.out 2&gt;&amp;1 &amp;
-  $ echo $! &gt; ./server_pid
+<p>Both applications depend on one or both of the shared libraries, but developers working on
+each application only want to see the code that’s relevant to them.</p>
+<h2 id="creating-a-workspace"><a class="header" href="#creating-a-workspace">Creating a workspace</a></h2>
+<p>Clone the monorepo scoped to <code>application1</code> using the <code>:workspace=</code> filter:</p>
+<pre><code class="language-shell">josh clone https://github.com/myorg/monorepo.git :workspace=application1 ./application1
+cd application1
 </code></pre>
-<p>Our server is ready, serving all the repos in the <code>remote</code> folder on port <code>8001</code>.</p>
-<pre><code class="language-shell">  $ git clone http://localhost:8001/real_repo.git
-  Cloning into 'real_repo'...
-  warning: You appear to have cloned an empty repository.
-</code></pre>
-<h3 id="adding-some-content"><a class="header" href="#adding-some-content">Adding some content</a></h3>
-<p>Of course, the repository is for now empty, and we need to populate it.
-The <a href="guide/populate.sh">populate.sh</a> script creates a couple of libraries, as well as two applications that use
-them.</p>
-<pre><code class="language-shell">  $ cd real_repo
-  $ sh ${TESTDIR}/populate.sh &gt; ../populate.out
-
-  $ git push origin HEAD
-  To http://localhost:8001/real_repo.git
-   * [new branch]      HEAD -&gt; master
-
-  $ tree
-  .
-  |-- application1
-  |   `-- app.c
-  |-- application2
-  |   `-- guide.c
-  |-- doc
-  |   |-- guide.md
-  |   |-- library1.md
-  |   `-- library2.md
-  |-- library1
-  |   `-- lib1.h
-  `-- library2
-      `-- lib2.h
-  
-  5 directories, 7 files
-  $ git log --oneline --graph
-  * f65e94b Add documentation
-  * f240612 Add application2
-  * 0a7f473 Add library2
-  * 1079ef1 Add application1
-  * 6476861 Add library1
-</code></pre>
-<h2 id="creating-our-first-workspace"><a class="header" href="#creating-our-first-workspace">Creating our first workspace</a></h2>
-<p>Now that we have a git repo populated with content, let’s serve it through josh:</p>
-<pre><code class="language-shell">$ docker run -d --network="host" -e JOSH_REMOTE=http://127.0.0.1:8001 -v josh-vol:$(pwd)/git_data joshproject/josh-proxy:latest &gt; josh.out
+<p>The cloned repository contains only the files and history relevant to <code>application1</code>:</p>
+<pre><code>app.c
 </code></pre>
 <blockquote>
-<p><em><strong>NOTE</strong></em></p>
-<p>For the sake of this example, we run docker with –network=“host” instead of publishing the port.
-This is so that docker can access localhost, where our ad-hoc git repository is served.</p>
+<p><strong>Note:</strong> Josh lets you create a workspace out of any directory, even one that doesn’t
+exist yet in the monorepo.</p>
 </blockquote>
-<p>To facilitate developement on applications 1 and 2, we want to create workspaces for them.
-Creating a new workspace looks very similar to checking out a subfolder through josh, as explained
-in “Getting Started”.</p>
-<p>Instead of just the name of the subfolder, though, we also use the <code>:workspace=</code> filter:</p>
-<pre><code class="language-shell">  $ git clone http://127.0.0.1:8000/real_repo.git:workspace=application1.git application1
-  Cloning into 'application1'...
-  $ cd application1
-  $ tree
-  .
-  `-- app.c
-  
-  0 directories, 1 file
-  $ git log -2
-  commit 50cd6112e173df4cac1aca9cb88b5c2a180bc526
-  Author: Josh &lt;josh@example.com&gt;
-  Date:   Thu Apr 7 22:13:13 2005 +0000
-  
-      Add application1
+<h2 id="mapping-dependencies-with-workspacejosh"><a class="header" href="#mapping-dependencies-with-workspacejosh">Mapping dependencies with <code>workspace.josh</code></a></h2>
+<p>The <code>workspace.josh</code> file describes which folders from the central repository should be
+mapped into this workspace, and where they should appear.</p>
+<p>Since <code>application1</code> depends on <code>library1</code>, create <code>workspace.josh</code> with:</p>
+<pre><code>modules/lib1 = :/library1
 </code></pre>
-<p>Looking into the newly cloned workspace, we see our expected files and the history containing the
-only relevant commit.</p>
-<blockquote>
-<p><em><strong>NOTE</strong></em></p>
-<p>Josh allows us to create a workspace out of any directory, even one that doesn’t exist yet.</p>
-</blockquote>
-<h3 id="adding-workspacejosh"><a class="header" href="#adding-workspacejosh">Adding workspace.josh</a></h3>
-<p>The workspace.josh file describes how folders from the central repository (real_repo.git)
-should be mapped to the workspace repository.</p>
-<p>Since we depend on library1, let’s add it to the workspace file.</p>
-<pre><code class="language-shell">  $ echo "modules/lib1 = :/library1" &gt;&gt; workspace.josh
-
-  $ git add workspace.josh
-
-  $ git commit -m "Map library1 to the application1 workspace"
-  [master 06361ee] Map library1 to the application1 workspace
-   1 file changed, 1 insertion(+)
-   create mode 100644 workspace.josh
+<p>Commit the file:</p>
+<pre><code class="language-shell">git add workspace.josh
+git commit -m "Map library1 into the application1 workspace"
 </code></pre>
-<p>We decided to map library1 to modules/lib1 in the workspace.
-We can now sync up with the server:</p>
-<pre><code class="language-shell">  $ git sync origin HEAD
-    HEAD -&gt; refs/heads/master
-  From http://127.0.0.1:8000/real_repo.git:workspace=application1
-   * branch            753d62ca1af960a3d071bb3b40722471228abbf6 -&gt; FETCH_HEAD
-  HEAD is now at 753d62c Map library1 to the application1 workspace
-  Pushing to http://127.0.0.1:8000/real_repo.git:workspace=application1.git
-  POST git-receive-pack (477 bytes)
-  remote: josh-proxy        
-  remote: response from upstream:        
-  remote: To http://localhost:8001/real_repo.git        
-  remote:    f65e94b..37184cc  JOSH_PUSH -&gt; master        
-  remote: REWRITE(06361eedf6d6f6d7ada6000481a47363b0f0c3de -&gt; 753d62ca1af960a3d071bb3b40722471228abbf6)        
-  remote: 
-  remote: 
-  updating local tracking ref 'refs/remotes/origin/master'
-  
+<p>Then push and pull to sync the workspace:</p>
+<pre><code class="language-shell">josh push
+josh pull
 </code></pre>
-<p>let’s observe the result:</p>
-<pre><code class="language-shell">  $ tree
-  .
-  |-- app.c
-  |-- modules
-  |   `-- lib1
-  |       `-- lib1.h
-  `-- workspace.josh
-  
-  2 directories, 3 files
-  $ git log --graph --oneline
-  *   753d62c Map library1 to the application1 workspace
-  |\  
-  | * 366adba Add library1
-  * 50cd611 Add application1
+<p>The mapped library has now appeared in the workspace:</p>
+<pre><code>app.c
+modules/
+└── lib1/
+    └── lib1.h
+workspace.josh
 </code></pre>
-<p>After pushing and fetching the result, we see that it has been successfully mapped by josh.</p>
-<p>One suprising thing is the history: our “mapping” commit became a merge commit!
-This is because josh needs to merge the history of the module we want to map into the
-repository of the workspace.
-After this is done, all commits will be present in both of the histories.</p>
-<blockquote>
-<p><em><strong>NOTE</strong></em></p>
-<p><code>git sync</code> is a utility provided with josh which will push contents, and, if josh tells
-it to, fetch the transformed result. Otherwise, it works like git push.</p>
-</blockquote>
-<p>By the way, what does the history look like on the real_repo ?</p>
-<pre><code class="language-shell">  $ cd ../real_repo
-  $ git pull origin master
-  From http://localhost:8001/real_repo
-   * branch            master     -&gt; FETCH_HEAD
-     f65e94b..37184cc  master     -&gt; origin/master
-  Updating f65e94b..37184cc
-  Fast-forward
-   application1/workspace.josh | 1 +
-   1 file changed, 1 insertion(+)
-   create mode 100644 application1/workspace.josh
-  Current branch master is up to date.
-
-  $ tree
-  .
-  |-- application1
-  |   |-- app.c
-  |   `-- workspace.josh
-  |-- application2
-  |   `-- guide.c
-  |-- doc
-  |   |-- guide.md
-  |   |-- library1.md
-  |   `-- library2.md
-  |-- library1
-  |   `-- lib1.h
-  `-- library2
-      `-- lib2.h
-  
-  5 directories, 8 files
-  $ git log --graph --oneline
-  * 37184cc Map library1 to the application1 workspace
-  * f65e94b Add documentation
-  * f240612 Add application2
-  * 0a7f473 Add library2
-  * 1079ef1 Add application1
-  * 6476861 Add library1
-
+<p>The history reflects the merge of <code>library1</code>’s history into the workspace:</p>
+<pre><code>*   Map library1 into the application1 workspace
+|\
+| * Add library1
+* Add application1
 </code></pre>
-<p>We can see the newly added commit for workspace.josh in application1, and as expected,
-no merge here.</p>
-<h3 id="interacting-with-workspaces"><a class="header" href="#interacting-with-workspaces">Interacting with workspaces</a></h3>
-<p>Let’s now create a second workspace, this time for application2.
-It depends on library1 and library2.</p>
-<pre><code class="language-shell">  $ git clone http://127.0.0.1:8000/real_repo.git:workspace=application2.git application2
-  Cloning into 'application2'...
-  $ cd application2
-  $ echo "libs/lib1 = :/library1" &gt;&gt; workspace.josh
-  $ echo "libs/lib2 = :/library2" &gt;&gt; workspace.josh
-  $ git add workspace.josh &amp;&amp; git commit -m "Create workspace for application2"
-  [master 566a489] Create workspace for application2
-   1 file changed, 2 insertions(+)
-   create mode 100644 workspace.josh
+<p>Josh needs to merge the mapped module’s history into the workspace so that all commits
+are present in both histories. In the central repository, the same commit appears as a
+plain linear commit — no merge — in <code>application1/</code>:</p>
+<pre><code>* Map library1 into the application1 workspace
+* Add documentation
+* Add application2
+* Add library2
+* Add application1
+* Add library1
 </code></pre>
-<p>Syncing as before:</p>
-<pre><code class="language-shell">  $ git sync origin HEAD
-    HEAD -&gt; refs/heads/master
-  From http://127.0.0.1:8000/real_repo.git:workspace=application2
-   * branch            5115fd2a5374cbc799da61a228f7fece3039250b -&gt; FETCH_HEAD
-  HEAD is now at 5115fd2 Create workspace for application2
-  Pushing to http://127.0.0.1:8000/real_repo.git:workspace=application2.git
-  POST git-receive-pack (478 bytes)
-  remote: josh-proxy        
-  remote: response from upstream:        
-  remote: To http://localhost:8001/real_repo.git        
-  remote:    37184cc..feb3a5b  JOSH_PUSH -&gt; master        
-  remote: REWRITE(566a4899f0697d0bde1ba064ed81f0654a316332 -&gt; 5115fd2a5374cbc799da61a228f7fece3039250b)        
-  remote: 
-  remote: 
-  updating local tracking ref 'refs/remotes/origin/master'
-  
+<h2 id="a-second-workspace"><a class="header" href="#a-second-workspace">A second workspace</a></h2>
+<p>Let’s create a workspace for <code>application2</code>, which depends on both libraries:</p>
+<pre><code class="language-shell">cd ..
+josh clone https://github.com/myorg/monorepo.git :workspace=application2 ./application2
+cd application2
 </code></pre>
-<p>And our local folder now contains all the files requested:</p>
-<pre><code class="language-shell">  $ tree
-  .
-  |-- guide.c
-  |-- libs
-  |   |-- lib1
-  |   |   `-- lib1.h
-  |   `-- lib2
-  |       `-- lib2.h
-  `-- workspace.josh
-  
-  3 directories, 4 files
+<p>Add both dependencies to <code>workspace.josh</code>:</p>
+<pre><code>libs/lib1 = :/library1
+libs/lib2 = :/library2
 </code></pre>
-<p>And the history includes the history of both of the libraries:</p>
-<pre><code class="language-shell">  $ git log --oneline --graph
-  *   5115fd2 Create workspace for application2
-  |\  
-  | * ffaf58d Add library2
-  | * f4e4e40 Add library1
-  * ee8a5d7 Add application2
+<p>Commit, push, and pull:</p>
+<pre><code class="language-shell">git add workspace.josh
+git commit -m "Create workspace for application2"
+josh push
+josh pull
 </code></pre>
-<p>Note that since we created the workspace and added the dependencies in one single commit,
-the history just contains this one single merge commit.</p>
-<h4 id="pushing-a-change-from-a-workspace"><a class="header" href="#pushing-a-change-from-a-workspace">Pushing a change from a workspace</a></h4>
-<p>While testing application2, we noticed a typo in the <code>library1</code> dependency.
-Let’s go ahead a fix it!</p>
-<pre><code class="language-shell">  $ sed -i 's/41/42/' libs/lib1/lib1.h
-  $ git commit -a -m "fix lib1 typo"
-  [master 82238bf] fix lib1 typo
-   1 file changed, 1 insertion(+), 1 deletion(-)
+<p>The workspace now contains both libraries:</p>
+<pre><code>guide.c
+libs/
+├── lib1/
+│   └── lib1.h
+└── lib2/
+    └── lib2.h
+workspace.josh
 </code></pre>
-<p>We can push this change like any normal git change:</p>
-<pre><code class="language-shell">  $ git push origin master
-  remote: josh-proxy        
-  remote: response from upstream:        
-  remote: To http://localhost:8001/real_repo.git        
-  remote:    feb3a5b..31e8fab  JOSH_PUSH -&gt; master        
-  remote: 
-  remote: 
-  To http://127.0.0.1:8000/real_repo.git:workspace=application2.git
-     5115fd2..82238bf  master -&gt; master
+<p>Because we added both dependencies in a single commit, the history contains just one
+merge commit, pulling in the history of both libraries:</p>
+<pre><code>*   Create workspace for application2
+|\
+| * Add library2
+| * Add library1
+* Add application2
 </code></pre>
-<p>Since the change was merged in the central repository,
-a developer can now pull from the application1 workspace.</p>
-<pre><code class="language-shell">  $ cd ../application1
-  $ git pull
-  From http://127.0.0.1:8000/real_repo.git:workspace=application1
-   + 06361ee...c64b765 master     -&gt; origin/master  (forced update)
-  Updating 753d62c..c64b765
-  Fast-forward
-   modules/lib1/lib1.h | 2 +-
-   1 file changed, 1 insertion(+), 1 deletion(-)
-  Current branch master is up to date.
+<h2 id="pushing-a-change-back-to-the-monorepo"><a class="header" href="#pushing-a-change-back-to-the-monorepo">Pushing a change back to the monorepo</a></h2>
+<p>While working in <code>application2</code>, you notice a bug in <code>library1</code>. Fix it and commit as
+usual:</p>
+<pre><code class="language-shell"># edit libs/lib1/lib1.h
+git commit -a -m "Fix bug in lib1"
+josh push
 </code></pre>
-<p>The change has been propagated!</p>
-<pre><code class="language-shell">  $ git log --oneline --graph
-  * c64b765 fix lib1 typo
-  *   753d62c Map library1 to the application1 workspace
-  |\  
-  | * 366adba Add library1
-  * 50cd611 Add application1
+<p>Josh reverses the workspace filter and writes the change directly to <code>library1/</code> in the
+central repository. No special tooling is needed — it’s a regular commit from the
+perspective of everyone else working on the monorepo.</p>
+<h2 id="pulling-a-change-from-another-workspace"><a class="header" href="#pulling-a-change-from-another-workspace">Pulling a change from another workspace</a></h2>
+<p>A developer working in <code>application1</code> can now pull the fix:</p>
+<pre><code class="language-shell">cd ../application1
+josh pull
 </code></pre>
+<p>The fix appears in <code>modules/lib1/</code> exactly as if it had been committed there directly:</p>
+<pre><code>* Fix bug in lib1
+*   Map library1 into the application1 workspace
+|\
+| * Add library1
+* Add application1
+</code></pre>
+<p>Changes flow bidirectionally through the central repository — each workspace is an
+isolated view, but they all share the same underlying history.</p>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="stacked-changes"><a class="header" href="#stacked-changes">Stacked Changes</a></h1>
 <p>Josh supports a stacked-changes workflow where a series of commits on a local branch
@@ -937,6 +764,50 @@ Change-ID.</p>
 <p>Some monorepo setups on Gerrit use a special unrestricted branch like
 <code>merge-staging</code> for this, to which users with permission to import
 projects can force-push unrelated histories.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="migration-guide"><a class="header" href="#migration-guide">Migration guide</a></h1>
+<p>This page covers breaking changes introduced in recent releases and how to adapt to them.</p>
+<h2 id="crlf-line-endings-in-gpgsig-headers-preserved"><a class="header" href="#crlf-line-endings-in-gpgsig-headers-preserved">CRLF line endings in gpgsig headers preserved</a></h2>
+<p>An older version of Josh accidentally normalized <code>\r\n</code> line endings to <code>\n</code> inside the
+<code>gpgsig</code> header of commit objects. This was a bug — git treats gpgsig values as opaque
+bytes, and the standard format uses <code>\n</code> throughout — and has been fixed. Josh now preserves
+whichever line endings are present in the original commit.</p>
+<p><strong>What changed:</strong> If your upstream history contains commits with <code>\r\n</code> in their gpgsig
+headers, the filtered commit hashes will differ from those produced by the old version.</p>
+<p><strong>How to restore the old behavior:</strong> Use the <code>gpgsig="norm-lf"</code> meta option if you need
+to reproduce a history that was created with the old normalization:</p>
+<pre><code>:~(gpgsig="norm-lf")[:/your/filter]
+</code></pre>
+<p>See the <a href="#gpgsig-option">gpgsig option</a> for details.</p>
+<h2 id="trivial-merges-removed-by-default"><a class="header" href="#trivial-merges-removed-by-default">Trivial merges removed by default</a></h2>
+<p>Josh previously kept all merge commits in the filtered history, even when the filtered tree
+of a merge commit was identical to its first parent’s tree (a “trivial merge”). Trivial merges
+are now removed by default during history simplification.</p>
+<p><strong>What changed:</strong> Filtered histories produced by the same filter may differ from those
+produced by older versions of Josh if the upstream history contains trivial merges.
+The internal cache version has been bumped, so all results will be recomputed on the
+first run after upgrading.</p>
+<p><strong>How to restore the old behavior:</strong> Wrap your filter with the <code>history="keep-trivial-merges"</code>
+meta option:</p>
+<pre><code>:~(history="keep-trivial-merges")[:/your/filter]
+</code></pre>
+<p>See <a href="#history-option">Filter options</a> for details.</p>
+<h2 id="join-filter-removed"><a class="header" href="#join-filter-removed"><code>:join</code> filter removed</a></h2>
+<p>The <code>:join</code> filter has been removed. It was a limited alternative to using <code>--reverse</code>/push
+for reconstructing upstream history from a filtered view.</p>
+<p><strong>How to migrate:</strong> Use <code>josh-filter --reverse</code> or <code>josh push</code> to write changes back to
+the upstream repository.</p>
+<h2 id="josh-ui-web-ui-removed"><a class="header" href="#josh-ui-web-ui-removed">josh-ui (web UI) removed</a></h2>
+<p>The <code>/ui</code> endpoint and the <code>josh-ui</code> component have been removed from the project.</p>
+<p><strong>How to migrate:</strong> There is no direct replacement. Remove any links or integrations that
+pointed to the <code>/ui</code> endpoint.</p>
+<h2 id="cache-location-changed"><a class="header" href="#cache-location-changed">Cache location changed</a></h2>
+<p>The local sled cache is now stored at <code>.git/josh/cache</code> instead of <code>.git/josh</code>.</p>
+<p><strong>What changed:</strong> On the first run after upgrading, Josh will not find any existing cache
+entries and will recompute all filter results from scratch. This is a one-time cost.</p>
+<p><strong>No action required</strong> for most users - the cache will be rebuilt automatically. If you
+have scripts or tooling that reference <code>.git/josh</code> directly (e.g. to delete or back up
+the cache), update them to point to <code>.git/josh/cache</code> instead.</p>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="josh-cli"><a class="header" href="#josh-cli">josh CLI</a></h1>
 <p>The <code>josh</code> command is the primary tool for working with filtered git repositories.
@@ -1218,10 +1089,25 @@ It is not yet supported by <code>josh-proxy</code>.</p>
 <p><code>josh-filter</code> is a lower-level command that rewrites git history using Josh filter specs.
 It is intended for scripting and one-off history rewriting tasks rather than day-to-day
 development workflows.</p>
-<p>By default it reads from <code>HEAD</code> and writes the filtered result to <code>FILTERED_HEAD</code>.</p>
+<p><strong>Input:</strong> the second positional argument selects what to filter. It defaults to <code>HEAD</code>
+but can be any of:</p>
+<ul>
+<li><code>.</code> - the working tree (including uncommitted changes)</li>
+<li><code>+</code> - the index (staged changes only)</li>
+<li>A full or abbreviated commit SHA</li>
+<li>A ref name (e.g. <code>main</code>, <code>refs/heads/feature</code>)</li>
+</ul>
+<p><strong>Output:</strong> the filtered commit SHA is printed to stdout. The filtered history is also
+written to the ref given by <code>--update</code> (default: <code>FILTERED_HEAD</code>).</p>
 <p><strong>Basic usage:</strong></p>
 <pre><code class="language-shell"># Filter HEAD through :/docs and write result to FILTERED_HEAD
 josh-filter :/docs
+
+# Filter the working tree and print the resulting SHA
+josh-filter :/docs .
+
+# Filter a specific commit SHA
+josh-filter :/docs abc1234 --update refs/my/filtered
 </code></pre>
 <p><strong>Options:</strong></p>
 <div class="table-wrapper">
@@ -1230,16 +1116,20 @@ josh-filter :/docs
 <tr><th>Flag</th><th>Description</th></tr>
 </thead>
 <tbody>
+<tr><td><code>--update &lt;ref&gt;</code></td><td>Ref to update with the filtered result (default: <code>FILTERED_HEAD</code>)</td></tr>
 <tr><td><code>--file &lt;path&gt;</code></td><td>Read filter spec from a file</td></tr>
 <tr><td><code>--squash-pattern &lt;pattern&gt;</code></td><td>Squash commits matching the pattern</td></tr>
 <tr><td><code>--squash-file &lt;path&gt;</code></td><td>Read squash patterns from a file</td></tr>
 <tr><td><code>--single</code></td><td>Produce a single squashed commit</td></tr>
 <tr><td><code>-d</code></td><td>Discovery mode: populate cache with probable filters</td></tr>
 <tr><td><code>-t</code></td><td>Output Chrome tracing data</td></tr>
-<tr><td><code>-p</code></td><td>Print the filter spec</td></tr>
-<tr><td><code>-i</code></td><td>Print the filter ID</td></tr>
-<tr><td><code>--cache-stats</code></td><td>Print cache statistics</td></tr>
-<tr><td><code>--reverse</code></td><td>Swap input and output (unapply filter)</td></tr>
+<tr><td><code>-p</code></td><td>Print the filter spec (and exit)</td></tr>
+<tr><td><code>-i</code></td><td>Print the filter ID (and exit)</td></tr>
+<tr><td><code>-s</code></td><td>Print cache statistics</td></tr>
+<tr><td><code>-n</code></td><td>Skip loading the cache</td></tr>
+<tr><td><code>--distributed-cache</code></td><td>Enable the distributed cache backend</td></tr>
+<tr><td><code>--reverse</code></td><td>Reverse-apply the filter (unapply): reconstruct upstream commits from filtered ones</td></tr>
+<tr><td><code>--check-roundtrip</code></td><td>When used with <code>--reverse</code>, verify that applying the filter to the reverse result reproduces the original commit. Exits with code 1 if the check fails.</td></tr>
 </tbody>
 </table>
 </div>
@@ -1508,6 +1398,31 @@ The template supports special variables that provide access to commit metadata:<
 <p>This removes all occurrences of “TODO” from commit messages by matching “TODO” and replacing it with an empty string.
 The regex pattern can use <code>(?s)</code> to enable dot-all mode (so <code>.</code> matches newlines), allowing it to work with
 multi-line commit messages that include both a subject line and a body.</p>
+<h3 id="hook-hookarg"><a class="header" href="#hook-hookarg">Hook <strong><code>:hook=&lt;arg&gt;</code></strong></a></h3>
+<p>Apply a different filter to each commit in a history, where the per-commit filter is
+resolved at runtime rather than being fixed at invocation time.</p>
+<p><code>&lt;arg&gt;</code> selects the git notes ref that stores those per-commit filter specifications.
+When <code>&lt;arg&gt;</code> does not start with <code>refs/</code>, Josh reads notes from <code>refs/notes/&lt;arg&gt;</code>, so
+<code>:hook=commits</code> uses the default git notes ref <code>refs/notes/commits</code>. Each note body must
+contain a valid Josh filter expression for that commit; if a commit has no note in the
+selected ref, <code>josh-filter</code> fails.</p>
+<p>Minimal example:</p>
+<pre><code class="language-shell">git notes --ref=commits add -m ':/code' -f HEAD~1
+git notes --ref=commits add -m ':/code:pin[::app.js]' -f HEAD
+josh-filter ':hook=commits'
+</code></pre>
+<p>In this example, the first filtered commit exposes <code>code/</code> at the repository root, while
+the second uses <code>:pin</code> to keep <code>app.js</code> at its previous contents for that commit only.</p>
+<p>When using Josh as a library, hook resolution is not tied to git notes. You can provide
+your own implementation of the <code>josh_core::cache::FilterHook</code> trait and attach it with
+<code>TransactionContext::with_filter_hook</code>, which lets your application decide how
+<code>filter_for_commit(commit_oid, arg)</code> resolves the per-commit filter.</p>
+<blockquote>
+<p><strong>Note:</strong> Using <code>:hook</code> correctly requires care to preserve josh filter invariants —
+violating them can produce incorrect or inconsistent results. Most users won’t need this
+filter, but if you have a use case that seems to call for it, we’d love to hear about it!
+Feel free to open an issue or start a discussion.</p>
+</blockquote>
 <h3 id="pin-tree-contents"><a class="header" href="#pin-tree-contents">Pin tree contents</a></h3>
 <p>Pin revision of a subtree to revision of the parent commit.</p>
 <p>In practical terms, it means that file and folder updates are “held off”, and revisions are “pinned”.
@@ -1544,6 +1459,22 @@ filter further transforms the latest transformation of the tree.</p>
 environment variable <code>JOSH_EXPERIMENTAL_FEATURES=1</code>. Their behaviour or syntax
 may change in future releases.</p>
 <h2 id="filters"><a class="header" href="#filters">Filters</a></h2>
+<h3 id="blob-insertion-pathcontent"><a class="header" href="#blob-insertion-pathcontent">Blob insertion <strong><code>:$path="content"</code></strong></a></h3>
+<p>Inserts a new file at <code>path</code> in the output tree with the given literal text as its content.
+No newline is appended automatically. The path argument follows the same quoting rules as
+other filter arguments: quote with double quotes if the path contains spaces or special
+characters.</p>
+<p>The inverse of <code>:$path="content"</code> is <code>:exclude[::path]</code>, which removes the inserted file.</p>
+<p><strong>Examples:</strong></p>
+<pre><code># Insert a file named "VERSION" containing "1.0" at the root
+:$VERSION="1.0"
+
+# Insert a file whose name contains a space
+:$"release notes.txt"="Initial release"
+
+# Combine with a subdirectory filter to insert the file alongside existing content
+:[:/sub1,:$added.txt="hello world"]
+</code></pre>
 <h3 id="object-reference-path"><a class="header" href="#object-reference-path">Object reference <strong><code>:&amp;path</code></strong></a></h3>
 <p>Reads the git object at <code>path</code> (a file or directory) and replaces its content with a text blob
 containing the object’s SHA-1 hash. This turns a real file or tree into a lightweight pointer.</p>
@@ -1858,6 +1789,14 @@ is the final name in the URL. With no other alternatives, this gets used for the
 repository:</p>
 <pre><code>$ git clone http://localhost:8000/josh-project/josh.git:/docs:prefix=josh-docs.git my-repo
 </code></pre>
+<h2 id="retry-with-backoff"><a class="header" href="#retry-with-backoff">Retry with backoff</a></h2>
+<p><code>josh-proxy</code> automatically retries transient upstream HTTP errors (for example, 5xx
+responses) with exponential backoff. By default up to 3 retries are attempted, with a
+delay starting at 1 second and capped at 5 seconds. The number of retries can be
+configured with the <code>--http-retry</code> flag (default: <code>3</code>):</p>
+<pre><code>$ josh-proxy --remote https://github.com --local /data/git --http-retry 5
+</code></pre>
+<p>Set <code>--http-retry 0</code> to disable retries entirely.</p>
 <h2 id="serving-a-github-repo"><a class="header" href="#serving-a-github-repo">Serving a github repo</a></h2>
 <p>To prompt for authentication, Josh relies on the server requesting it on fetch. When using a server
 which doesn’t need authentication for fetching, Josh will not automatically prompt for

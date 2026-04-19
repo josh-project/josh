@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Development tools - Just One Single History</title>
+        <title>Migration guide - Just One Single History</title>
 
 
         <!-- Custom HTML head -->
@@ -174,21 +174,61 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="dev-tools"><a class="header" href="#dev-tools">Dev-Tools</a></h1>
-<ul>
-<li><a href="https://nixos.org/manual/nix/unstable/command-ref/nix-shell.html">Nix Shell</a></li>
-<li><a href="https://rustup.rs/">Rust</a></li>
-<li><a href="https://rustup.rs/">Cargo</a></li>
-</ul>
+                        <h1 id="migration-guide"><a class="header" href="#migration-guide">Migration guide</a></h1>
+<p>This page covers breaking changes introduced in recent releases and how to adapt to them.</p>
+<h2 id="crlf-line-endings-in-gpgsig-headers-preserved"><a class="header" href="#crlf-line-endings-in-gpgsig-headers-preserved">CRLF line endings in gpgsig headers preserved</a></h2>
+<p>An older version of Josh accidentally normalized <code>\r\n</code> line endings to <code>\n</code> inside the
+<code>gpgsig</code> header of commit objects. This was a bug — git treats gpgsig values as opaque
+bytes, and the standard format uses <code>\n</code> throughout — and has been fixed. Josh now preserves
+whichever line endings are present in the original commit.</p>
+<p><strong>What changed:</strong> If your upstream history contains commits with <code>\r\n</code> in their gpgsig
+headers, the filtered commit hashes will differ from those produced by the old version.</p>
+<p><strong>How to restore the old behavior:</strong> Use the <code>gpgsig="norm-lf"</code> meta option if you need
+to reproduce a history that was created with the old normalization:</p>
+<pre><code>:~(gpgsig="norm-lf")[:/your/filter]
+</code></pre>
+<p>See the <a href="../reference/filters.html#gpgsig-option">gpgsig option</a> for details.</p>
+<h2 id="trivial-merges-removed-by-default"><a class="header" href="#trivial-merges-removed-by-default">Trivial merges removed by default</a></h2>
+<p>Josh previously kept all merge commits in the filtered history, even when the filtered tree
+of a merge commit was identical to its first parent’s tree (a “trivial merge”). Trivial merges
+are now removed by default during history simplification.</p>
+<p><strong>What changed:</strong> Filtered histories produced by the same filter may differ from those
+produced by older versions of Josh if the upstream history contains trivial merges.
+The internal cache version has been bumped, so all results will be recomputed on the
+first run after upgrading.</p>
+<p><strong>How to restore the old behavior:</strong> Wrap your filter with the <code>history="keep-trivial-merges"</code>
+meta option:</p>
+<pre><code>:~(history="keep-trivial-merges")[:/your/filter]
+</code></pre>
+<p>See <a href="../reference/filters.html#history-option">Filter options</a> for details.</p>
+<h2 id="join-filter-removed"><a class="header" href="#join-filter-removed"><code>:join</code> filter removed</a></h2>
+<p>The <code>:join</code> filter has been removed. It was a limited alternative to using <code>--reverse</code>/push
+for reconstructing upstream history from a filtered view.</p>
+<p><strong>How to migrate:</strong> Use <code>josh-filter --reverse</code> or <code>josh push</code> to write changes back to
+the upstream repository.</p>
+<h2 id="josh-ui-web-ui-removed"><a class="header" href="#josh-ui-web-ui-removed">josh-ui (web UI) removed</a></h2>
+<p>The <code>/ui</code> endpoint and the <code>josh-ui</code> component have been removed from the project.</p>
+<p><strong>How to migrate:</strong> There is no direct replacement. Remove any links or integrations that
+pointed to the <code>/ui</code> endpoint.</p>
+<h2 id="cache-location-changed"><a class="header" href="#cache-location-changed">Cache location changed</a></h2>
+<p>The local sled cache is now stored at <code>.git/josh/cache</code> instead of <code>.git/josh</code>.</p>
+<p><strong>What changed:</strong> On the first run after upgrading, Josh will not find any existing cache
+entries and will recompute all filter results from scratch. This is a one-time cost.</p>
+<p><strong>No action required</strong> for most users - the cache will be rebuilt automatically. If you
+have scripts or tooling that reference <code>.git/josh</code> directly (e.g. to delete or back up
+the cache), update them to point to <code>.git/josh/cache</code> instead.</p>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="../contributing/testing.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="../guide/importing.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
+                            <a rel="next prefetch" href="../reference/cli.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
 
                         <div style="clear: both"></div>
                     </nav>
@@ -196,10 +236,13 @@
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="../contributing/testing.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="../guide/importing.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 
+                    <a rel="next prefetch" href="../reference/cli.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
             </nav>
 
         </div>

@@ -35,10 +35,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-8dca9d2f.js";
+            window.path_to_searchindex_js = "../searchindex-ea1a0132.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-56a8e5ce.js"></script>
+        <script src="../toc-bacb8355.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -179,6 +179,22 @@
 environment variable <code>JOSH_EXPERIMENTAL_FEATURES=1</code>. Their behaviour or syntax
 may change in future releases.</p>
 <h2 id="filters"><a class="header" href="#filters">Filters</a></h2>
+<h3 id="blob-insertion-pathcontent"><a class="header" href="#blob-insertion-pathcontent">Blob insertion <strong><code>:$path="content"</code></strong></a></h3>
+<p>Inserts a new file at <code>path</code> in the output tree with the given literal text as its content.
+No newline is appended automatically. The path argument follows the same quoting rules as
+other filter arguments: quote with double quotes if the path contains spaces or special
+characters.</p>
+<p>The inverse of <code>:$path="content"</code> is <code>:exclude[::path]</code>, which removes the inserted file.</p>
+<p><strong>Examples:</strong></p>
+<pre><code># Insert a file named "VERSION" containing "1.0" at the root
+:$VERSION="1.0"
+
+# Insert a file whose name contains a space
+:$"release notes.txt"="Initial release"
+
+# Combine with a subdirectory filter to insert the file alongside existing content
+:[:/sub1,:$added.txt="hello world"]
+</code></pre>
 <h3 id="object-reference-path"><a class="header" href="#object-reference-path">Object reference <strong><code>:&amp;path</code></strong></a></h3>
 <p>Reads the git object at <code>path</code> (a file or directory) and replaces its content with a text blob
 containing the object’s SHA-1 hash. This turns a real file or tree into a lightweight pointer.</p>

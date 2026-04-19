@@ -35,10 +35,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-8dca9d2f.js";
+            window.path_to_searchindex_js = "../searchindex-ea1a0132.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-56a8e5ce.js"></script>
+        <script src="../toc-bacb8355.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -175,312 +175,131 @@
                 <div id="mdbook-content" class="content">
                     <main>
                         <h1 id="working-with-workspaces"><a class="header" href="#working-with-workspaces">Working with workspaces</a></h1>
-<blockquote>
-<p><em><strong>NOTE</strong></em></p>
-<p>All the commands are included from the file <code>workspaces.t</code>
-which can be run with <a href="https://bitheap.org/cram/">cram</a>.</p>
-</blockquote>
-<p>Josh really starts to shine when using workspaces.</p>
-<p>Simply put, they are a list of files and folders, remapped from the central repository
-to a new repository.
-For example, a shared library could be used by various workspaces, each mapping it to
-their appropriate subdirectory.</p>
-<p>In this chapter, we’re going to set up a new git repository with a couple of libraries,
-and then use it to demonstrate the use of workspaces.</p>
-<h2 id="test-set-up"><a class="header" href="#test-set-up">Test set-up</a></h2>
-<blockquote>
-<p><em><strong>NOTE</strong></em></p>
-<p>The following section describes how to set-up a local git server with made-up content
-for the sake of this tutorial.
-You’re free to follow it, or to use your own existing repository, in which case you
-can skip to the next section</p>
-</blockquote>
-<p>To host the repository for this test, we need a git server.
-We’re going to run git as a <a href="https://en.wikipedia.org/wiki/Common_Gateway_Interface">cgi</a>
-program using its provided http backend, served with the test server included in
-the <a href="https://crates.io/crates/hyper_cgi">hyper_cgi</a> crate.</p>
-<h3 id="serving-the-git-repo"><a class="header" href="#serving-the-git-repo">Serving the git repo</a></h3>
-<p>First, we create a <em>bare</em> repository, which will be served by hyper_cgi. We enable
-the option <code>http.receivepack</code> to allow the use of <code>git push</code> from the clients.</p>
-<pre><code class="language-shell">  $ git init --bare ./remote/real_repo.git/
-  Initialized empty Git repository in */real_repo.git/ (glob)
-  $ git config -f ./remote/real_repo.git/config http.receivepack true
+<p>A workspace is a list of files and folders remapped from a central repository into a new
+repository layout. For example, a shared library can be mapped into multiple workspaces,
+each placing it at the path that makes sense for that project.</p>
+<p>In this guide we’ll set up a small monorepo with two libraries and two applications, then
+use workspaces to develop against them in isolation.</p>
+<h2 id="the-monorepo"><a class="header" href="#the-monorepo">The monorepo</a></h2>
+<p>Suppose you have a monorepo with this structure:</p>
+<pre><code>monorepo/
+├── application1/
+│   └── app.c
+├── application2/
+│   └── guide.c
+├── library1/
+│   └── lib1.h
+└── library2/
+    └── lib2.h
 </code></pre>
-<p>Then we start the server which will allow clients to access the repository through
-http.</p>
-<pre><code class="language-shell">  $ GIT_DIR=./remote/ GIT_PROJECT_ROOT=${TESTTMP}/remote/ GIT_HTTP_EXPORT_ALL=1 hyper-cgi-test-server\
-  &gt;  --port=8001\
-  &gt;  --dir=./remote/\
-  &gt;  --cmd=git\
-  &gt;  --args=http-backend\
-  &gt;  &gt; ./hyper-cgi-test-server.out 2&gt;&amp;1 &amp;
-  $ echo $! &gt; ./server_pid
+<p>Both applications depend on one or both of the shared libraries, but developers working on
+each application only want to see the code that’s relevant to them.</p>
+<h2 id="creating-a-workspace"><a class="header" href="#creating-a-workspace">Creating a workspace</a></h2>
+<p>Clone the monorepo scoped to <code>application1</code> using the <code>:workspace=</code> filter:</p>
+<pre><code class="language-shell">josh clone https://github.com/myorg/monorepo.git :workspace=application1 ./application1
+cd application1
 </code></pre>
-<p>Our server is ready, serving all the repos in the <code>remote</code> folder on port <code>8001</code>.</p>
-<pre><code class="language-shell">  $ git clone http://localhost:8001/real_repo.git
-  Cloning into 'real_repo'...
-  warning: You appear to have cloned an empty repository.
-</code></pre>
-<h3 id="adding-some-content"><a class="header" href="#adding-some-content">Adding some content</a></h3>
-<p>Of course, the repository is for now empty, and we need to populate it.
-The <a href="populate.sh">populate.sh</a> script creates a couple of libraries, as well as two applications that use
-them.</p>
-<pre><code class="language-shell">  $ cd real_repo
-  $ sh ${TESTDIR}/populate.sh &gt; ../populate.out
-
-  $ git push origin HEAD
-  To http://localhost:8001/real_repo.git
-   * [new branch]      HEAD -&gt; master
-
-  $ tree
-  .
-  |-- application1
-  |   `-- app.c
-  |-- application2
-  |   `-- guide.c
-  |-- doc
-  |   |-- guide.md
-  |   |-- library1.md
-  |   `-- library2.md
-  |-- library1
-  |   `-- lib1.h
-  `-- library2
-      `-- lib2.h
-  
-  5 directories, 7 files
-  $ git log --oneline --graph
-  * f65e94b Add documentation
-  * f240612 Add application2
-  * 0a7f473 Add library2
-  * 1079ef1 Add application1
-  * 6476861 Add library1
-</code></pre>
-<h2 id="creating-our-first-workspace"><a class="header" href="#creating-our-first-workspace">Creating our first workspace</a></h2>
-<p>Now that we have a git repo populated with content, let’s serve it through josh:</p>
-<pre><code class="language-shell">$ docker run -d --network="host" -e JOSH_REMOTE=http://127.0.0.1:8001 -v josh-vol:$(pwd)/git_data joshproject/josh-proxy:latest &gt; josh.out
+<p>The cloned repository contains only the files and history relevant to <code>application1</code>:</p>
+<pre><code>app.c
 </code></pre>
 <blockquote>
-<p><em><strong>NOTE</strong></em></p>
-<p>For the sake of this example, we run docker with –network=“host” instead of publishing the port.
-This is so that docker can access localhost, where our ad-hoc git repository is served.</p>
+<p><strong>Note:</strong> Josh lets you create a workspace out of any directory, even one that doesn’t
+exist yet in the monorepo.</p>
 </blockquote>
-<p>To facilitate developement on applications 1 and 2, we want to create workspaces for them.
-Creating a new workspace looks very similar to checking out a subfolder through josh, as explained
-in “Getting Started”.</p>
-<p>Instead of just the name of the subfolder, though, we also use the <code>:workspace=</code> filter:</p>
-<pre><code class="language-shell">  $ git clone http://127.0.0.1:8000/real_repo.git:workspace=application1.git application1
-  Cloning into 'application1'...
-  $ cd application1
-  $ tree
-  .
-  `-- app.c
-  
-  0 directories, 1 file
-  $ git log -2
-  commit 50cd6112e173df4cac1aca9cb88b5c2a180bc526
-  Author: Josh &lt;josh@example.com&gt;
-  Date:   Thu Apr 7 22:13:13 2005 +0000
-  
-      Add application1
+<h2 id="mapping-dependencies-with-workspacejosh"><a class="header" href="#mapping-dependencies-with-workspacejosh">Mapping dependencies with <code>workspace.josh</code></a></h2>
+<p>The <code>workspace.josh</code> file describes which folders from the central repository should be
+mapped into this workspace, and where they should appear.</p>
+<p>Since <code>application1</code> depends on <code>library1</code>, create <code>workspace.josh</code> with:</p>
+<pre><code>modules/lib1 = :/library1
 </code></pre>
-<p>Looking into the newly cloned workspace, we see our expected files and the history containing the
-only relevant commit.</p>
-<blockquote>
-<p><em><strong>NOTE</strong></em></p>
-<p>Josh allows us to create a workspace out of any directory, even one that doesn’t exist yet.</p>
-</blockquote>
-<h3 id="adding-workspacejosh"><a class="header" href="#adding-workspacejosh">Adding workspace.josh</a></h3>
-<p>The workspace.josh file describes how folders from the central repository (real_repo.git)
-should be mapped to the workspace repository.</p>
-<p>Since we depend on library1, let’s add it to the workspace file.</p>
-<pre><code class="language-shell">  $ echo "modules/lib1 = :/library1" &gt;&gt; workspace.josh
-
-  $ git add workspace.josh
-
-  $ git commit -m "Map library1 to the application1 workspace"
-  [master 06361ee] Map library1 to the application1 workspace
-   1 file changed, 1 insertion(+)
-   create mode 100644 workspace.josh
+<p>Commit the file:</p>
+<pre><code class="language-shell">git add workspace.josh
+git commit -m "Map library1 into the application1 workspace"
 </code></pre>
-<p>We decided to map library1 to modules/lib1 in the workspace.
-We can now sync up with the server:</p>
-<pre><code class="language-shell">  $ git sync origin HEAD
-    HEAD -&gt; refs/heads/master
-  From http://127.0.0.1:8000/real_repo.git:workspace=application1
-   * branch            753d62ca1af960a3d071bb3b40722471228abbf6 -&gt; FETCH_HEAD
-  HEAD is now at 753d62c Map library1 to the application1 workspace
-  Pushing to http://127.0.0.1:8000/real_repo.git:workspace=application1.git
-  POST git-receive-pack (477 bytes)
-  remote: josh-proxy        
-  remote: response from upstream:        
-  remote: To http://localhost:8001/real_repo.git        
-  remote:    f65e94b..37184cc  JOSH_PUSH -&gt; master        
-  remote: REWRITE(06361eedf6d6f6d7ada6000481a47363b0f0c3de -&gt; 753d62ca1af960a3d071bb3b40722471228abbf6)        
-  remote: 
-  remote: 
-  updating local tracking ref 'refs/remotes/origin/master'
-  
+<p>Then push and pull to sync the workspace:</p>
+<pre><code class="language-shell">josh push
+josh pull
 </code></pre>
-<p>let’s observe the result:</p>
-<pre><code class="language-shell">  $ tree
-  .
-  |-- app.c
-  |-- modules
-  |   `-- lib1
-  |       `-- lib1.h
-  `-- workspace.josh
-  
-  2 directories, 3 files
-  $ git log --graph --oneline
-  *   753d62c Map library1 to the application1 workspace
-  |\  
-  | * 366adba Add library1
-  * 50cd611 Add application1
+<p>The mapped library has now appeared in the workspace:</p>
+<pre><code>app.c
+modules/
+└── lib1/
+    └── lib1.h
+workspace.josh
 </code></pre>
-<p>After pushing and fetching the result, we see that it has been successfully mapped by josh.</p>
-<p>One suprising thing is the history: our “mapping” commit became a merge commit!
-This is because josh needs to merge the history of the module we want to map into the
-repository of the workspace.
-After this is done, all commits will be present in both of the histories.</p>
-<blockquote>
-<p><em><strong>NOTE</strong></em></p>
-<p><code>git sync</code> is a utility provided with josh which will push contents, and, if josh tells
-it to, fetch the transformed result. Otherwise, it works like git push.</p>
-</blockquote>
-<p>By the way, what does the history look like on the real_repo ?</p>
-<pre><code class="language-shell">  $ cd ../real_repo
-  $ git pull origin master
-  From http://localhost:8001/real_repo
-   * branch            master     -&gt; FETCH_HEAD
-     f65e94b..37184cc  master     -&gt; origin/master
-  Updating f65e94b..37184cc
-  Fast-forward
-   application1/workspace.josh | 1 +
-   1 file changed, 1 insertion(+)
-   create mode 100644 application1/workspace.josh
-  Current branch master is up to date.
-
-  $ tree
-  .
-  |-- application1
-  |   |-- app.c
-  |   `-- workspace.josh
-  |-- application2
-  |   `-- guide.c
-  |-- doc
-  |   |-- guide.md
-  |   |-- library1.md
-  |   `-- library2.md
-  |-- library1
-  |   `-- lib1.h
-  `-- library2
-      `-- lib2.h
-  
-  5 directories, 8 files
-  $ git log --graph --oneline
-  * 37184cc Map library1 to the application1 workspace
-  * f65e94b Add documentation
-  * f240612 Add application2
-  * 0a7f473 Add library2
-  * 1079ef1 Add application1
-  * 6476861 Add library1
-
+<p>The history reflects the merge of <code>library1</code>’s history into the workspace:</p>
+<pre><code>*   Map library1 into the application1 workspace
+|\
+| * Add library1
+* Add application1
 </code></pre>
-<p>We can see the newly added commit for workspace.josh in application1, and as expected,
-no merge here.</p>
-<h3 id="interacting-with-workspaces"><a class="header" href="#interacting-with-workspaces">Interacting with workspaces</a></h3>
-<p>Let’s now create a second workspace, this time for application2.
-It depends on library1 and library2.</p>
-<pre><code class="language-shell">  $ git clone http://127.0.0.1:8000/real_repo.git:workspace=application2.git application2
-  Cloning into 'application2'...
-  $ cd application2
-  $ echo "libs/lib1 = :/library1" &gt;&gt; workspace.josh
-  $ echo "libs/lib2 = :/library2" &gt;&gt; workspace.josh
-  $ git add workspace.josh &amp;&amp; git commit -m "Create workspace for application2"
-  [master 566a489] Create workspace for application2
-   1 file changed, 2 insertions(+)
-   create mode 100644 workspace.josh
+<p>Josh needs to merge the mapped module’s history into the workspace so that all commits
+are present in both histories. In the central repository, the same commit appears as a
+plain linear commit — no merge — in <code>application1/</code>:</p>
+<pre><code>* Map library1 into the application1 workspace
+* Add documentation
+* Add application2
+* Add library2
+* Add application1
+* Add library1
 </code></pre>
-<p>Syncing as before:</p>
-<pre><code class="language-shell">  $ git sync origin HEAD
-    HEAD -&gt; refs/heads/master
-  From http://127.0.0.1:8000/real_repo.git:workspace=application2
-   * branch            5115fd2a5374cbc799da61a228f7fece3039250b -&gt; FETCH_HEAD
-  HEAD is now at 5115fd2 Create workspace for application2
-  Pushing to http://127.0.0.1:8000/real_repo.git:workspace=application2.git
-  POST git-receive-pack (478 bytes)
-  remote: josh-proxy        
-  remote: response from upstream:        
-  remote: To http://localhost:8001/real_repo.git        
-  remote:    37184cc..feb3a5b  JOSH_PUSH -&gt; master        
-  remote: REWRITE(566a4899f0697d0bde1ba064ed81f0654a316332 -&gt; 5115fd2a5374cbc799da61a228f7fece3039250b)        
-  remote: 
-  remote: 
-  updating local tracking ref 'refs/remotes/origin/master'
-  
+<h2 id="a-second-workspace"><a class="header" href="#a-second-workspace">A second workspace</a></h2>
+<p>Let’s create a workspace for <code>application2</code>, which depends on both libraries:</p>
+<pre><code class="language-shell">cd ..
+josh clone https://github.com/myorg/monorepo.git :workspace=application2 ./application2
+cd application2
 </code></pre>
-<p>And our local folder now contains all the files requested:</p>
-<pre><code class="language-shell">  $ tree
-  .
-  |-- guide.c
-  |-- libs
-  |   |-- lib1
-  |   |   `-- lib1.h
-  |   `-- lib2
-  |       `-- lib2.h
-  `-- workspace.josh
-  
-  3 directories, 4 files
+<p>Add both dependencies to <code>workspace.josh</code>:</p>
+<pre><code>libs/lib1 = :/library1
+libs/lib2 = :/library2
 </code></pre>
-<p>And the history includes the history of both of the libraries:</p>
-<pre><code class="language-shell">  $ git log --oneline --graph
-  *   5115fd2 Create workspace for application2
-  |\  
-  | * ffaf58d Add library2
-  | * f4e4e40 Add library1
-  * ee8a5d7 Add application2
+<p>Commit, push, and pull:</p>
+<pre><code class="language-shell">git add workspace.josh
+git commit -m "Create workspace for application2"
+josh push
+josh pull
 </code></pre>
-<p>Note that since we created the workspace and added the dependencies in one single commit,
-the history just contains this one single merge commit.</p>
-<h4 id="pushing-a-change-from-a-workspace"><a class="header" href="#pushing-a-change-from-a-workspace">Pushing a change from a workspace</a></h4>
-<p>While testing application2, we noticed a typo in the <code>library1</code> dependency.
-Let’s go ahead a fix it!</p>
-<pre><code class="language-shell">  $ sed -i 's/41/42/' libs/lib1/lib1.h
-  $ git commit -a -m "fix lib1 typo"
-  [master 82238bf] fix lib1 typo
-   1 file changed, 1 insertion(+), 1 deletion(-)
+<p>The workspace now contains both libraries:</p>
+<pre><code>guide.c
+libs/
+├── lib1/
+│   └── lib1.h
+└── lib2/
+    └── lib2.h
+workspace.josh
 </code></pre>
-<p>We can push this change like any normal git change:</p>
-<pre><code class="language-shell">  $ git push origin master
-  remote: josh-proxy        
-  remote: response from upstream:        
-  remote: To http://localhost:8001/real_repo.git        
-  remote:    feb3a5b..31e8fab  JOSH_PUSH -&gt; master        
-  remote: 
-  remote: 
-  To http://127.0.0.1:8000/real_repo.git:workspace=application2.git
-     5115fd2..82238bf  master -&gt; master
+<p>Because we added both dependencies in a single commit, the history contains just one
+merge commit, pulling in the history of both libraries:</p>
+<pre><code>*   Create workspace for application2
+|\
+| * Add library2
+| * Add library1
+* Add application2
 </code></pre>
-<p>Since the change was merged in the central repository,
-a developer can now pull from the application1 workspace.</p>
-<pre><code class="language-shell">  $ cd ../application1
-  $ git pull
-  From http://127.0.0.1:8000/real_repo.git:workspace=application1
-   + 06361ee...c64b765 master     -&gt; origin/master  (forced update)
-  Updating 753d62c..c64b765
-  Fast-forward
-   modules/lib1/lib1.h | 2 +-
-   1 file changed, 1 insertion(+), 1 deletion(-)
-  Current branch master is up to date.
+<h2 id="pushing-a-change-back-to-the-monorepo"><a class="header" href="#pushing-a-change-back-to-the-monorepo">Pushing a change back to the monorepo</a></h2>
+<p>While working in <code>application2</code>, you notice a bug in <code>library1</code>. Fix it and commit as
+usual:</p>
+<pre><code class="language-shell"># edit libs/lib1/lib1.h
+git commit -a -m "Fix bug in lib1"
+josh push
 </code></pre>
-<p>The change has been propagated!</p>
-<pre><code class="language-shell">  $ git log --oneline --graph
-  * c64b765 fix lib1 typo
-  *   753d62c Map library1 to the application1 workspace
-  |\  
-  | * 366adba Add library1
-  * 50cd611 Add application1
+<p>Josh reverses the workspace filter and writes the change directly to <code>library1/</code> in the
+central repository. No special tooling is needed — it’s a regular commit from the
+perspective of everyone else working on the monorepo.</p>
+<h2 id="pulling-a-change-from-another-workspace"><a class="header" href="#pulling-a-change-from-another-workspace">Pulling a change from another workspace</a></h2>
+<p>A developer working in <code>application1</code> can now pull the fix:</p>
+<pre><code class="language-shell">cd ../application1
+josh pull
 </code></pre>
+<p>The fix appears in <code>modules/lib1/</code> exactly as if it had been committed there directly:</p>
+<pre><code>* Fix bug in lib1
+*   Map library1 into the application1 workspace
+|\
+| * Add library1
+* Add application1
+</code></pre>
+<p>Changes flow bidirectionally through the central repository — each workspace is an
+isolated view, but they all share the same underlying history.</p>
 
                     </main>
 

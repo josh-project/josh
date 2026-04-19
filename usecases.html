@@ -35,10 +35,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-8dca9d2f.js";
+            window.path_to_searchindex_js = "searchindex-ea1a0132.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-56a8e5ce.js"></script>
+        <script src="toc-bacb8355.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -178,6 +178,10 @@
 <h3 id="partial-cloning"><a class="header" href="#partial-cloning">Partial cloning</a></h3>
 <p>Reduce scope and size of clones by treating subdirectories of the monorepo
 as individual repositories.</p>
+<p>Using the <code>josh</code> CLI:</p>
+<pre><code>$ josh clone https://git.example.com/monorepo.git :/path/to/library ./library
+</code></pre>
+<p>Or via a shared <a href="./reference/proxy.html">josh-proxy</a>:</p>
 <pre><code>$ git clone http://josh/monorepo.git:/path/to/library.git
 </code></pre>
 <p>The partial repo will act as a normal git repository but only contain the files
@@ -237,7 +241,11 @@ dependencies = :/modules:[
 
     
 
-<p>Workspaces act as normal git repos:</p>
+<p>Workspaces act as normal git repos.</p>
+<p>Using the <code>josh</code> CLI:</p>
+<pre><code>$ josh clone https://git.example.com/central.git :workspace=workspaces/project1 ./project1
+</code></pre>
+<p>Or via a shared <a href="./reference/proxy.html">josh-proxy</a>:</p>
 <pre><code>$ git clone http://josh/central.git:workspace=workspaces/project1.git
 </code></pre>
 <p>Each of the subprojects defines a <code>workspace.josh</code> file, defining the mapping between the original central.git repository and the hierarchy in use inside of the project.</p>

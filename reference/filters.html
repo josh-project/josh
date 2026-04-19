@@ -35,10 +35,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-8dca9d2f.js";
+            window.path_to_searchindex_js = "../searchindex-ea1a0132.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-56a8e5ce.js"></script>
+        <script src="../toc-bacb8355.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -438,6 +438,31 @@ The template supports special variables that provide access to commit metadata:<
 <p>This removes all occurrences of “TODO” from commit messages by matching “TODO” and replacing it with an empty string.
 The regex pattern can use <code>(?s)</code> to enable dot-all mode (so <code>.</code> matches newlines), allowing it to work with
 multi-line commit messages that include both a subject line and a body.</p>
+<h3 id="hook-hookarg"><a class="header" href="#hook-hookarg">Hook <strong><code>:hook=&lt;arg&gt;</code></strong></a></h3>
+<p>Apply a different filter to each commit in a history, where the per-commit filter is
+resolved at runtime rather than being fixed at invocation time.</p>
+<p><code>&lt;arg&gt;</code> selects the git notes ref that stores those per-commit filter specifications.
+When <code>&lt;arg&gt;</code> does not start with <code>refs/</code>, Josh reads notes from <code>refs/notes/&lt;arg&gt;</code>, so
+<code>:hook=commits</code> uses the default git notes ref <code>refs/notes/commits</code>. Each note body must
+contain a valid Josh filter expression for that commit; if a commit has no note in the
+selected ref, <code>josh-filter</code> fails.</p>
+<p>Minimal example:</p>
+<pre><code class="language-shell">git notes --ref=commits add -m ':/code' -f HEAD~1
+git notes --ref=commits add -m ':/code:pin[::app.js]' -f HEAD
+josh-filter ':hook=commits'
+</code></pre>
+<p>In this example, the first filtered commit exposes <code>code/</code> at the repository root, while
+the second uses <code>:pin</code> to keep <code>app.js</code> at its previous contents for that commit only.</p>
+<p>When using Josh as a library, hook resolution is not tied to git notes. You can provide
+your own implementation of the <code>josh_core::cache::FilterHook</code> trait and attach it with
+<code>TransactionContext::with_filter_hook</code>, which lets your application decide how
+<code>filter_for_commit(commit_oid, arg)</code> resolves the per-commit filter.</p>
+<blockquote>
+<p><strong>Note:</strong> Using <code>:hook</code> correctly requires care to preserve josh filter invariants —
+violating them can produce incorrect or inconsistent results. Most users won’t need this
+filter, but if you have a use case that seems to call for it, we’d love to hear about it!
+Feel free to open an issue or start a discussion.</p>
+</blockquote>
 <h3 id="pin-tree-contents"><a class="header" href="#pin-tree-contents">Pin tree contents</a></h3>
 <p>Pin revision of a subtree to revision of the parent commit.</p>
 <p>In practical terms, it means that file and folder updates are “held off”, and revisions are “pinned”.

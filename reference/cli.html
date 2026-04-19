@@ -35,10 +35,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-8dca9d2f.js";
+            window.path_to_searchindex_js = "../searchindex-ea1a0132.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-56a8e5ce.js"></script>
+        <script src="../toc-bacb8355.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -454,10 +454,25 @@ It is not yet supported by <code>josh-proxy</code>.</p>
 <p><code>josh-filter</code> is a lower-level command that rewrites git history using Josh filter specs.
 It is intended for scripting and one-off history rewriting tasks rather than day-to-day
 development workflows.</p>
-<p>By default it reads from <code>HEAD</code> and writes the filtered result to <code>FILTERED_HEAD</code>.</p>
+<p><strong>Input:</strong> the second positional argument selects what to filter. It defaults to <code>HEAD</code>
+but can be any of:</p>
+<ul>
+<li><code>.</code> - the working tree (including uncommitted changes)</li>
+<li><code>+</code> - the index (staged changes only)</li>
+<li>A full or abbreviated commit SHA</li>
+<li>A ref name (e.g. <code>main</code>, <code>refs/heads/feature</code>)</li>
+</ul>
+<p><strong>Output:</strong> the filtered commit SHA is printed to stdout. The filtered history is also
+written to the ref given by <code>--update</code> (default: <code>FILTERED_HEAD</code>).</p>
 <p><strong>Basic usage:</strong></p>
 <pre><code class="language-shell"># Filter HEAD through :/docs and write result to FILTERED_HEAD
 josh-filter :/docs
+
+# Filter the working tree and print the resulting SHA
+josh-filter :/docs .
+
+# Filter a specific commit SHA
+josh-filter :/docs abc1234 --update refs/my/filtered
 </code></pre>
 <p><strong>Options:</strong></p>
 <div class="table-wrapper">
@@ -466,16 +481,20 @@ josh-filter :/docs
 <tr><th>Flag</th><th>Description</th></tr>
 </thead>
 <tbody>
+<tr><td><code>--update &lt;ref&gt;</code></td><td>Ref to update with the filtered result (default: <code>FILTERED_HEAD</code>)</td></tr>
 <tr><td><code>--file &lt;path&gt;</code></td><td>Read filter spec from a file</td></tr>
 <tr><td><code>--squash-pattern &lt;pattern&gt;</code></td><td>Squash commits matching the pattern</td></tr>
 <tr><td><code>--squash-file &lt;path&gt;</code></td><td>Read squash patterns from a file</td></tr>
 <tr><td><code>--single</code></td><td>Produce a single squashed commit</td></tr>
 <tr><td><code>-d</code></td><td>Discovery mode: populate cache with probable filters</td></tr>
 <tr><td><code>-t</code></td><td>Output Chrome tracing data</td></tr>
-<tr><td><code>-p</code></td><td>Print the filter spec</td></tr>
-<tr><td><code>-i</code></td><td>Print the filter ID</td></tr>
-<tr><td><code>--cache-stats</code></td><td>Print cache statistics</td></tr>
-<tr><td><code>--reverse</code></td><td>Swap input and output (unapply filter)</td></tr>
+<tr><td><code>-p</code></td><td>Print the filter spec (and exit)</td></tr>
+<tr><td><code>-i</code></td><td>Print the filter ID (and exit)</td></tr>
+<tr><td><code>-s</code></td><td>Print cache statistics</td></tr>
+<tr><td><code>-n</code></td><td>Skip loading the cache</td></tr>
+<tr><td><code>--distributed-cache</code></td><td>Enable the distributed cache backend</td></tr>
+<tr><td><code>--reverse</code></td><td>Reverse-apply the filter (unapply): reconstruct upstream commits from filtered ones</td></tr>
+<tr><td><code>--check-roundtrip</code></td><td>When used with <code>--reverse</code>, verify that applying the filter to the reverse result reproduces the original commit. Exits with code 1 if the check fails.</td></tr>
 </tbody>
 </table>
 </div>
@@ -484,7 +503,7 @@ josh-filter :/docs
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="../guide/importing.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="../guide/migration.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
@@ -498,7 +517,7 @@ josh-filter :/docs
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="../guide/importing.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="../guide/migration.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 

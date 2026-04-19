@@ -35,10 +35,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-8dca9d2f.js";
+            window.path_to_searchindex_js = "../searchindex-ea1a0132.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-56a8e5ce.js"></script>
+        <script src="../toc-bacb8355.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -253,6 +253,14 @@ is the final name in the URL. With no other alternatives, this gets used for the
 repository:</p>
 <pre><code>$ git clone http://localhost:8000/josh-project/josh.git:/docs:prefix=josh-docs.git my-repo
 </code></pre>
+<h2 id="retry-with-backoff"><a class="header" href="#retry-with-backoff">Retry with backoff</a></h2>
+<p><code>josh-proxy</code> automatically retries transient upstream HTTP errors (for example, 5xx
+responses) with exponential backoff. By default up to 3 retries are attempted, with a
+delay starting at 1 second and capped at 5 seconds. The number of retries can be
+configured with the <code>--http-retry</code> flag (default: <code>3</code>):</p>
+<pre><code>$ josh-proxy --remote https://github.com --local /data/git --http-retry 5
+</code></pre>
+<p>Set <code>--http-retry 0</code> to disable retries entirely.</p>
 <h2 id="serving-a-github-repo"><a class="header" href="#serving-a-github-repo">Serving a github repo</a></h2>
 <p>To prompt for authentication, Josh relies on the server requesting it on fetch. When using a server
 which doesn’t need authentication for fetching, Josh will not automatically prompt for
