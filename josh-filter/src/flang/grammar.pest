@@ -50,7 +50,7 @@ filter_stored = { CMD_START ~ "+" ~ argument }
 filter_starlark  = { CMD_START ~ "!" ~ argument ~ GROUP_START ~ compose ~ GROUP_END }
 filter_treeid    = { CMD_START ~ "#" ~ argument ~ GROUP_START ~ compose ~ GROUP_END }
 filter_treeref   = { CMD_START ~ "&" ~ argument }
-filter_treederef = { CMD_START ~ "*" ~ argument }
+filter_treederef = { CMD_START ~ "#" ~ argument }
 filter_nop = { CMD_START ~ "/" }
 filter_presub = { CMD_START ~ ":" ~ argument ~ ("=" ~ argument)? }
 filter = { CMD_START ~ cmd ~ "=" ~ (argument ~ (";" ~ argument)*)? }
