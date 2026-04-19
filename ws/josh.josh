@@ -1,0 +1,8 @@
+:$label="josh proxy"
+:#image[:+images/run]
+:$cache="josh-data"
+:$output="none"
+
+worktree = :[
+    ::run.sh=ws/josh.sh
+]

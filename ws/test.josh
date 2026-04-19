@@ -1,0 +1,62 @@
+:$label="test suite"
+:$output="none"
+inputs = :[
+    :#cargo-test[
+        :$label="cargo test"
+        :#image[:+images/dev-local]
+        :$cache="rust"
+        :$cmd="cargo test --workspace --offline --locked"
+
+        inputs = :[
+            :#fetch[:+ws/fetch]
+        ]
+
+        env = :[
+            :$RUSTFLAGS="-D warnings -Ctarget-feature=-crt-static"
+        ]
+
+        worktree = :[
+            ::Cargo.toml
+            ::Cargo.lock
+            ::rust-toolchain.toml
+            ::rustfmt.toml
+            ::axum-cgi/
+            ::axum-cgi-server/
+            ::hyper-reverse-proxy/
+            ::josh-core/
+            ::josh-cli/
+            ::josh-filter/
+            ::josh-graphql/
+            ::josh-link/
+            ::josh-proxy/
+            ::josh-rpc/
+            ::josh-ssh-shell/
+            ::josh-templates/
+            ::josh-starlark/
+            ::josh-cq/
+            ::josh-changes/
+            ::josh-run/
+            ::forges/
+            ::deployment/
+        ]
+    ]
+    :#fmt[
+        :$label="cargo fmt"
+        :#image[:+images/dev-local]
+        :$cmd="cargo fmt -- --check"
+
+        worktree = :[
+            ::Cargo.toml
+            ::Cargo.lock
+            ::rust-toolchain.toml
+            ::rustfmt.toml
+            ::axum-cgi/
+            ::axum-cgi-server/
+            ::hyper-reverse-proxy/
+            ::josh-*/**/*
+            ::forges/
+            ::deployment/
+        ]
+    ]
+    :!ws/tests-per-category[::tests/]:exclude[:[::tests/]]
+]
