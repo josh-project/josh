@@ -4,7 +4,6 @@
 !Cargo.toml
 !axum-cgi
 !axum-cgi-server
-!hyper-reverse-proxy
 !josh-core
 !josh-cli
 !josh-changes
