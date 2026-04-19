@@ -3,7 +3,6 @@ resolver = "2"
 members = [
     "axum-cgi",
     "axum-cgi-server",
-    "hyper-reverse-proxy",
     "josh-core",
     "josh-cli",
     "josh-filter",
@@ -78,7 +77,6 @@ graphql_client = "^0.16"
 graphql_client_codegen = { version = "^0.16.0" }
 
 axum-cgi = { path = "axum-cgi" }
-hyper-reverse-proxy = { path = "hyper-reverse-proxy" }
 josh-filter = { path = "josh-filter" }
 josh-changes = { path = "josh-changes" }
 josh-core = { path = "josh-core" }
