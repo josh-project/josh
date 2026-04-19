@@ -5,6 +5,7 @@ use josh_cli::commands::auth::AuthArgs;
 use josh_cli::commands::cache::CacheArgs;
 use josh_cli::commands::link::LinkArgs;
 use josh_cli::commands::push::{PublishArgs, PushArgs};
+use josh_cli::commands::run::RunArgs;
 use josh_cli::config::{RemoteConfig, read_remote_config, write_remote_config};
 use josh_cli::forge::Forge;
 use josh_core::git::{normalize_repo_path, spawn_git_command};
@@ -59,6 +60,9 @@ pub enum RepoCommand {
 
     /// Manage the distributed filter cache
     Cache(CacheArgs),
+
+    /// Run a workspace in a container
+    Run(RunArgs),
 }
 
 /// Commands that don't require a git repository
@@ -231,6 +235,7 @@ fn run_repo(cmd: &RepoCommand) -> anyhow::Result<()> {
         RepoCommand::Remote(args) => handle_remote(args, &transaction),
         RepoCommand::Filter(args) => handle_filter(args, &transaction),
         RepoCommand::Link(args) => josh_cli::commands::link::handle_link(args, &transaction),
+        RepoCommand::Run(args) => josh_cli::commands::run::handle_run(args, &transaction),
         RepoCommand::Cache(args) => josh_cli::commands::cache::handle_cache(args, &transaction),
     }
 }

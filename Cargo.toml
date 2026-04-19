@@ -15,6 +15,7 @@ members = [
     "josh-starlark",
     "josh-cq",
     "josh-changes",
+    "josh-run",
 
     "forges/josh-github-changes",
     "forges/josh-github-graphql",

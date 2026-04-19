@@ -124,6 +124,17 @@ impl Filter {
         Ok(self.chain(to_filter(Op::TreeId(path.into(), subfilter))))
     }
 
+    /// Chain a filter that inserts a blob with the given content at the specified path.
+    /// Syntax: `:$path="content"` (e.g. `:$label="my label"` inserts a blob at `label` with content "my label").
+    pub fn blob(
+        self,
+        path: impl Into<std::path::PathBuf>,
+        content: impl Into<String>,
+    ) -> anyhow::Result<Filter> {
+        check_experimental_features_enabled("Blob filter")?;
+        Ok(self.chain(to_filter(Op::Blob(path.into(), content.into()))))
+    }
+
     /// Chain a filter that removes the `.link.josh` marker to produce a standalone history
     pub fn export(self) -> anyhow::Result<Filter> {
         check_experimental_features_enabled("export filter")?;

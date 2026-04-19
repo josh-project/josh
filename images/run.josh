@@ -1,0 +1,7 @@
+bases = :[
+    :#DEV_IMAGE[:+images/dev]
+    :#BUILD_IMAGE[:+images/build]
+]
+context = :[
+    :/images/run
+]
