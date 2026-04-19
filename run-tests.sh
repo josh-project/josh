@@ -13,6 +13,7 @@ else
     DATE_CMD="date"
 fi
 
+PATH="/josh/debug/:/build-go/debug/:${PATH}"
 PATH="${TARGET_DIR}/debug/:${TARGET_DIR}:${PATH}"
 PATH="$(pwd)/scripts/:${PATH}"
 export PATH

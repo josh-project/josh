@@ -1,0 +1,5 @@
+:[
+    :/images/dev-ci
+    ::josh-ui/package.json
+    ::josh-ui/package-lock.json
+]

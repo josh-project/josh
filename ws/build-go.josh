@@ -1,0 +1,12 @@
+:$label="go build"
+:#image[:+images/dev-local]
+:$cache="go"
+
+inputs = :[
+    :#go-fetch[:+ws/fetch-go]
+]
+
+worktree = :[
+    ::run.sh=ws/build-go.sh
+    ::josh-ssh-dev-server/
+]

@@ -41,8 +41,8 @@ target "build" {
 }
 
 target "run" {
-  context    = "."
-  dockerfile = "images/run/Dockerfile"
+  context    = "images/run"
+  dockerfile = "Dockerfile"
   contexts = {
     josh-dev   = "target:dev"
     josh-build = "target:build"

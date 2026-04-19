@@ -1,0 +1,19 @@
+:$label="cargo fetch"
+:#image[:+images/dev-local]
+:$cache="rust"
+:$network="host"
+
+:$cmd="cargo fetch --locked"
+
+worktree = :[
+    ::**/Cargo.toml
+    ::**/Cargo.lock
+    ::**/rust-toolchain.toml
+    ::**/.cargo/
+    ::**/lib.rs
+    ::**/main.rs
+    ::**/bin/
+    ::**/build.rs
+    ::**/benches/
+    ::josh-core/benches/
+]
