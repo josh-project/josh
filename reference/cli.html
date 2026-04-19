@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-9111ec7d.js";
+            window.path_to_searchindex_js = "../searchindex-8dca9d2f.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-56a8e5ce.js"></script>
@@ -384,6 +384,71 @@ josh auth logout &lt;forge&gt;
 </code></pre>
 <p>The only currently supported forge is <code>github</code>. See
 <a href="./forge.html">Forge integration</a> for full documentation.</p>
+<hr>
+<h2 id="josh-cache"><a class="header" href="#josh-cache">josh cache</a></h2>
+<p>Manage the distributed filter cache. The distributed cache stores filter results inside
+a ref in the git repository, allowing a warm cache to be shared between machines via
+ordinary git push/fetch.</p>
+<p>The cache subcommand requires a josh remote to be configured (see <code>josh remote add</code>).</p>
+<h3 id="josh-cache-build"><a class="header" href="#josh-cache-build">josh cache build</a></h3>
+<p>Apply the configured filter to all already-fetched refs and populate the local distributed
+cache with the results.</p>
+<pre><code>josh cache build [remote]
+</code></pre>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Argument</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>[remote]</code></td><td>Remote name to build cache for (default: <code>origin</code>)</td></tr>
+</tbody>
+</table>
+</div>
+<p>Run this before <code>josh cache push</code> to ensure the cache is up to date.</p>
+<h3 id="josh-cache-push"><a class="header" href="#josh-cache-push">josh cache push</a></h3>
+<p>Push the local distributed cache and the filtered refs to the backing remote, so that
+other machines can fetch them.</p>
+<pre><code>josh cache push [remote]
+</code></pre>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Argument</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>[remote]</code></td><td>Remote name to push cache to (default: <code>origin</code>)</td></tr>
+</tbody>
+</table>
+</div>
+<h3 id="josh-cache-fetch"><a class="header" href="#josh-cache-fetch">josh cache fetch</a></h3>
+<p>Fetch the distributed cache and filtered refs from the remote, warming the local cache
+without re-computing filters from scratch.</p>
+<pre><code>josh cache fetch [remote]
+</code></pre>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Argument</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>[remote]</code></td><td>Remote name to fetch cache from (default: <code>origin</code>)</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Typical workflow:</strong></p>
+<pre><code class="language-shell"># On the machine that computes the cache (e.g. CI):
+josh cache build
+josh cache push
+
+# On another machine (e.g. a developer workstation):
+josh cache fetch
+# subsequent josh fetch / clone operations use the pre-built cache
+</code></pre>
+<blockquote>
+<p><strong>Note:</strong> The distributed cache is currently only available through the <code>josh</code> CLI.
+It is not yet supported by <code>josh-proxy</code>.</p>
+</blockquote>
 <hr>
 <h2 id="josh-filter-standalone-binary"><a class="header" href="#josh-filter-standalone-binary">josh-filter (standalone binary)</a></h2>
 <p><code>josh-filter</code> is a lower-level command that rewrites git history using Josh filter specs.
