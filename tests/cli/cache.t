@@ -44,7 +44,7 @@ Build the distributed cache (applies the filter to already-fetched refs)
   Fetched from remote: origin
 
   $ josh cache build
-  Built cache for remote 'origin'
+  Built cache for 1 filter(s) on branch 'master' for remote 'origin'
 
 
 Verify local cache refs were created
@@ -113,7 +113,7 @@ Chain filter section: test that intermediate refs are created for each step in t
   $ josh fetch 2>/dev/null
 
   $ josh cache build
-  Built cache for remote 'origin'
+  Built cache for 1 filter(s) on branch 'master' for remote 'origin'
 
 After building a 2-step chain, there should be 2 filtered ref entries locally (one per step)
 
