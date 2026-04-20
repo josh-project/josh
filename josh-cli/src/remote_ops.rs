@@ -1,5 +1,6 @@
 use anyhow::Context;
 
+use josh_core::filter::{self, Filter, flatten_chain};
 use josh_core::git::{normalize_repo_path, spawn_git_command};
 
 /// Parse the symref output from `git ls-remote --symref` to extract the default branch.
@@ -37,35 +38,31 @@ pub fn get_head_branch(
     Ok("master".to_string())
 }
 
-/// Apply a josh filter to all refs under `refs/josh/remotes/{remote_name}/*`.
-/// Returns a list of `(branch_name, filtered_oid)` pairs (zero OIDs omitted).
-pub fn filter_remote_refs(
-    transaction: &josh_core::cache::Transaction,
-    filter: josh_core::filter::Filter,
+/// Resolve the default branch name from the locally stored
+/// `refs/remotes/{remote_name}/HEAD` symref.
+///
+/// Returns an error if the symref cannot be resolved (e.g. the remote
+/// has not been fetched yet or does not advertise HEAD).
+pub fn resolve_default_branch(
+    repo: &git2::Repository,
     remote_name: &str,
-) -> anyhow::Result<Vec<(String, git2::Oid)>> {
-    let input_refs = get_backing_refs(transaction, remote_name)?;
-    let prefix = format!("refs/josh/remotes/{}/", remote_name);
-
-    let (updated_refs, errors) = josh_core::filter_refs(transaction, filter, &input_refs);
-
-    if let Some(error) = errors.into_iter().next() {
-        return Err(anyhow::anyhow!("josh filter error: {}", error.1));
-    }
-
-    let result = updated_refs
-        .into_iter()
-        .filter(|(_, oid)| *oid != git2::Oid::zero())
-        .map(|(original_ref, oid)| {
-            let branch = original_ref
-                .strip_prefix(&prefix)
-                .unwrap_or(&original_ref)
-                .to_string();
-            (branch, oid)
+) -> anyhow::Result<String> {
+    let head_symref = format!("refs/remotes/{}/HEAD", remote_name);
+    repo.find_reference(&head_symref)
+        .ok()
+        .and_then(|r| r.symbolic_target().map(|s| s.to_string()))
+        .and_then(|target| {
+            target
+                .strip_prefix(&format!("refs/remotes/{}/", remote_name))
+                .map(|s| s.to_string())
         })
-        .collect();
-
-    Ok(result)
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "Could not resolve default branch from '{}'. \
+                 Has the remote been fetched?",
+                head_symref
+            )
+        })
 }
 
 /// Return raw `(refname, oid)` pairs for all refs under
@@ -97,23 +94,91 @@ pub fn get_backing_refs(
     Ok(input_refs)
 }
 
+/// Build the ref-path prefix for step `step_idx` in a chain.
+///
+/// The path encodes the filter history newest-first so that each ref path
+/// uniquely identifies both *what* was applied and *to what* it was applied:
+///
+/// - step 0 of [A, B, C] → `"{A_id}"`
+/// - step 1 of [A, B, C] → `"{B_id}/{A_id}"`
+/// - step 2 of [A, B, C] → `"{C_id}/{B_id}/{A_id}"`
+pub fn step_ref_prefix(step_idx: usize, steps: &[Filter]) -> String {
+    (0..=step_idx)
+        .rev()
+        .map(|i| steps[i].id().to_string())
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
 /// Apply a josh filter to all refs under `refs/josh/remotes/{remote_name}/*` and write
 /// the filtered commits to `refs/namespaces/josh-{remote_name}/refs/heads/*`.
+/// Also writes `refs/josh/filtered/` refs for the default branch and persists filter tree objects.
 /// Then runs `git fetch {remote_name}` to expose them through the configured remote.
 pub fn apply_josh_filtering(
     transaction: &josh_core::cache::Transaction,
     repo_path: &std::path::Path,
     filter: josh_core::filter::Filter,
     remote_name: &str,
+    default_branch: &str,
 ) -> anyhow::Result<()> {
     let repo = transaction.repo();
+    let prefix = format!("refs/josh/remotes/{}/", remote_name);
 
-    for (branch_name, filtered_oid) in filter_remote_refs(transaction, filter, remote_name)? {
-        let filtered_ref = format!(
+    let steps = flatten_chain(filter);
+
+    // Seed with the raw backing refs
+    let mut current_commits: Vec<(String, git2::Oid)> = get_backing_refs(transaction, remote_name)?
+        .into_iter()
+        .map(|(refname, oid)| {
+            let branch = refname
+                .strip_prefix(&prefix)
+                .unwrap_or(&refname)
+                .to_string();
+            (branch, oid)
+        })
+        .collect();
+
+    // Apply each step, writing filtered refs along the way
+    for (step_idx, step_filter) in steps.iter().enumerate() {
+        let (filtered, errors) =
+            josh_core::filter_refs(transaction, *step_filter, &current_commits);
+
+        if let Some(error) = errors.into_iter().next() {
+            return Err(anyhow::anyhow!("josh filter error: {}", error.1));
+        }
+
+        // Persist the filter tree object to ODB so cache build can reconstruct it
+        filter::as_tree(repo, *step_filter)?;
+
+        let prefix_path = step_ref_prefix(step_idx, &steps);
+        let mut next_commits = Vec::new();
+
+        for (branch_name, filtered_oid) in &filtered {
+            if *filtered_oid == git2::Oid::zero() {
+                continue;
+            }
+
+            // Write refs/josh/filtered/ ref only for the default branch
+            if branch_name == default_branch {
+                let filtered_ref =
+                    format!("refs/josh/filtered/{}/heads/{}", prefix_path, branch_name);
+                repo.reference(&filtered_ref, *filtered_oid, true, "josh filter")
+                    .with_context(|| format!("failed to write filtered ref '{}'", filtered_ref))?;
+            }
+
+            next_commits.push((branch_name.clone(), *filtered_oid));
+        }
+
+        current_commits = next_commits;
+    }
+
+    // Write namespace refs from the final step results (existing behavior)
+    for (branch_name, filtered_oid) in &current_commits {
+        let ns_ref = format!(
             "refs/namespaces/josh-{}/refs/heads/{}",
             remote_name, branch_name
         );
-        repo.reference(&filtered_ref, filtered_oid, true, "josh filter")
+        repo.reference(&ns_ref, *filtered_oid, true, "josh filter")
             .context("failed to create filtered reference")?;
     }
 
