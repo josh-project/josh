@@ -16,7 +16,6 @@ ENV CARGO_HOME=/opt/cache/cargo-cache
 ENV GOCACHE=/opt/cache/go-cache
 ENV GOPATH=/opt/cache/go-path
 ENV GOFLAGS=-buildvcs=false
-RUN npm config set cache /opt/cache/npm-cache --global
 
 ARG USER_GID
 ARG USER_UID
