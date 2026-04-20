@@ -7,7 +7,7 @@ use std::collections::HashMap;
 const FLUSH_AFTER: usize = 1000;
 
 pub struct DistributedCacheBackend {
-    new_entries: std::sync::Mutex<HashMap<String, HashMap<git2::Oid, git2::Oid>>>,
+    new_entries: std::sync::Mutex<HashMap<(Filter, u128), HashMap<git2::Oid, git2::Oid>>>,
     repo: std::sync::Mutex<git2::Repository>,
 }
 
@@ -33,11 +33,18 @@ impl DistributedCacheBackend {
 
         let mut guard = self.new_entries.lock().unwrap();
 
-        for (rp, m) in guard.iter_mut() {
+        for ((filter, shard), m) in guard.iter_mut() {
             if !(force || m.len() >= FLUSH_AFTER) {
                 continue;
             }
+            let rp = ref_path(*filter, *shard);
             let mut builder = git2::build::TreeUpdateBuilder::new();
+            builder.upsert(
+                "filter",
+                crate::filter::as_tree(&repo, *filter)?,
+                git2::FileMode::Tree.into(),
+            );
+
             for (from, to) in &mut *m {
                 let blob = repo.blob(to.to_string().as_bytes())?;
                 builder.upsert(fanout(*from), blob, git2::FileMode::Blob.into());
@@ -93,12 +100,12 @@ fn is_eligible(repo: &git2::Repository, oid: git2::Oid, sequence_number: u128) -
 // To additionally limit the size of the trees the cache is also sharded by sequence
 // number in groups of 10000. Note that this does not limit the number of entries per bucket
 // as branches mean many commits share the same sequence number.
-fn ref_path(key: git2::Oid, sequence_number: u128) -> String {
+fn ref_path(filter: Filter, shard: u128) -> String {
     format!(
         "refs/josh/cache/{}/{}/{}",
         CACHE_VERSION,
-        sequence_number / 10000,
-        key,
+        shard,
+        filter.id(),
     )
 }
 
@@ -128,15 +135,16 @@ impl CacheBackend for DistributedCacheBackend {
         let guard = self.new_entries.lock().unwrap();
 
         // See if this is one of the newly added entries first
-        let rp = ref_path(filter.id(), sequence_number);
-        if let Some(shard) = guard.get(&rp)
-            && let Some(to) = shard.get(&from)
+        let shard = sequence_number / 10000;
+        if let Some(shard_map) = guard.get(&(filter, shard))
+            && let Some(to) = shard_map.get(&from)
         {
             return Ok(Some(*to));
         }
 
         std::mem::drop(guard);
 
+        let rp = ref_path(filter, shard);
         let tree = if let Ok(r) = repo.revparse_single(&rp) {
             r.peel_to_tree()?
         } else {
@@ -173,15 +181,15 @@ impl CacheBackend for DistributedCacheBackend {
             return Ok(());
         }
 
-        let rp = ref_path(filter.id(), sequence_number);
+        let shard = sequence_number / 10000;
 
         let mut guard = self.new_entries.lock().unwrap();
 
-        let shard = guard.entry(rp).or_insert(Default::default());
+        let shard_map = guard.entry((filter, shard)).or_insert(Default::default());
 
-        shard.insert(from, to);
+        shard_map.insert(from, to);
 
-        if shard.len() < FLUSH_AFTER {
+        if shard_map.len() < FLUSH_AFTER {
             return Ok(());
         }
 
