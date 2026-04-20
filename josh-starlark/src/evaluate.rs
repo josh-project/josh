@@ -9,7 +9,6 @@ use starlark::{
     syntax::{AstModule, Dialect},
     values::ValueLike,
 };
-use std::sync::{Arc, Mutex};
 
 /// Evaluate a starlark script and return the resulting Filter
 ///
@@ -19,10 +18,13 @@ use std::sync::{Arc, Mutex};
 ///
 /// The `tree_oid` parameter is made available as a global variable named "tree"
 /// in the Starlark script, allowing access to the git tree via methods.
+///
+/// SAFETY contract: `repo` must remain valid for the entire duration of this call.
+/// The evaluation is synchronous; no threads are spawned and no values escape.
 pub fn evaluate(
     script: &str,
     tree_oid: git2::Oid,
-    repo: Arc<Mutex<git2::Repository>>,
+    repo: &git2::Repository,
 ) -> anyhow::Result<Filter> {
     // Parse the starlark script
     let ast = AstModule::parse("script.star", script.to_owned(), &Dialect::Standard)
