@@ -1,9 +1,11 @@
+use std::collections::HashSet;
+
 use anyhow::Context;
 
 use josh_core::cache::{
     CACHE_VERSION, CacheStack, DistributedCacheBackend, Transaction, TransactionContext,
 };
-use josh_core::filter::{Filter, flatten_chain};
+use josh_core::filter::{self, Filter, flatten_chain, from_tree};
 use josh_core::git::{normalize_repo_path, spawn_git_command};
 
 use crate::config::{RemoteConfig, read_remote_config};
@@ -54,33 +56,92 @@ pub fn handle_cache(args: &CacheArgs, transaction: &Transaction) -> anyhow::Resu
     }
 }
 
-/// Build the ref-path prefix for step `step_idx` in a chain.
-///
-/// The path encodes the filter history newest-first so that each ref path
-/// uniquely identifies both *what* was applied and *to what* it was applied:
-///
-/// - step 0 of [A, B, C] → `"{A_id}"`
-/// - step 1 of [A, B, C] → `"{B_id}/{A_id}"`
-/// - step 2 of [A, B, C] → `"{C_id}/{B_id}/{A_id}"`
-fn step_ref_prefix(step_idx: usize, steps: &[Filter]) -> String {
-    (0..=step_idx)
-        .rev()
-        .map(|i| steps[i].id().to_string())
-        .collect::<Vec<_>>()
-        .join("/")
-}
-
 fn handle_cache_build(args: &CacheBuildArgs, transaction: &Transaction) -> anyhow::Result<()> {
     let repo = transaction.repo();
     let repo_path = normalize_repo_path(repo.path());
 
-    let RemoteConfig {
-        filter_with_meta, ..
-    } = read_remote_config(&repo_path, &args.remote)
-        .with_context(|| format!("Failed to read remote config for '{}'", args.remote))?;
+    let default_branch = remote_ops::resolve_default_branch(repo, &args.remote)?;
 
-    let filter = filter_with_meta.peel();
-    let steps = flatten_chain(filter);
+    // Discover known filter chains from refs/josh/filtered/ refs.
+    let mut chain_prefixes: HashSet<String> = HashSet::new();
+    if let Ok(refs) = repo.references_glob("refs/josh/filtered/*") {
+        for reference in refs {
+            let reference = match reference {
+                Ok(r) => r,
+                Err(_) => continue,
+            };
+            let refname = match reference.name() {
+                Some(n) => n,
+                None => continue,
+            };
+            if let Some(rest) = refname.strip_prefix("refs/josh/filtered/") {
+                if let Some(heads_pos) = rest.find("/heads/") {
+                    chain_prefixes.insert(rest[..heads_pos].to_string());
+                }
+            }
+        }
+    }
+
+    // Keep only the longest prefixes (full chains).
+    // A shorter prefix like "B/A" is an intermediate step of "C/B/A".
+    let full_chains: Vec<String> = {
+        let mut sorted: Vec<_> = chain_prefixes.iter().cloned().collect();
+        sorted.sort();
+        sorted
+            .iter()
+            .filter(|p| {
+                !sorted
+                    .iter()
+                    .any(|other| other != *p && other.ends_with(&format!("/{}", p)))
+            })
+            .cloned()
+            .collect()
+    };
+
+    // Reconstruct filter step lists from chain prefixes.
+    let mut all_step_lists: Vec<Vec<Filter>> = Vec::new();
+    for chain_prefix in &full_chains {
+        let ids: Vec<&str> = chain_prefix.split('/').collect();
+        // IDs are newest-first in the path; reverse to get application order
+        let mut steps = Vec::new();
+        let mut ok = true;
+        for id_str in ids.iter().rev() {
+            match git2::Oid::from_str(id_str)
+                .map_err(anyhow::Error::from)
+                .and_then(|oid| from_tree(repo, oid))
+            {
+                Ok(f) => steps.push(f),
+                Err(e) => {
+                    eprintln!(
+                        "Warning: could not reconstruct filter from '{}': {}",
+                        id_str, e
+                    );
+                    ok = false;
+                    break;
+                }
+            }
+        }
+        if ok {
+            all_step_lists.push(steps);
+        }
+    }
+
+    // Add the config filter as fallback if not already discovered.
+    if let Ok(config) = read_remote_config(&repo_path, &args.remote) {
+        let config_filter = config.filter_with_meta.peel();
+        let config_steps = flatten_chain(config_filter);
+        let config_prefix = remote_ops::step_ref_prefix(config_steps.len() - 1, &config_steps);
+        if !full_chains.contains(&config_prefix) {
+            all_step_lists.push(config_steps);
+        }
+    }
+
+    if all_step_lists.is_empty() {
+        return Err(anyhow::anyhow!(
+            "No known filters found and no remote config for '{}'",
+            args.remote
+        ));
+    }
 
     // Build a transaction that has ONLY the DistributedCacheBackend — no Sled.
     // This ensures every filter operation writes a new entry to the distributed
@@ -92,47 +153,64 @@ fn handle_cache_build(args: &CacheBuildArgs, transaction: &Transaction) -> anyho
         .open(None)
         .context("Failed to open build transaction")?;
 
-    // Seed with the raw backing refs; the ref names act as branch labels.
-    let prefix = format!("refs/josh/remotes/{}/", args.remote);
-    let mut current_commits: Vec<(String, git2::Oid)> =
-        remote_ops::get_backing_refs(&build_transaction, &args.remote)?
-            .into_iter()
-            .map(|(refname, oid)| {
-                let branch = refname
-                    .strip_prefix(&prefix)
-                    .unwrap_or(&refname)
-                    .to_string();
-                (branch, oid)
-            })
-            .collect();
+    // Resolve the default branch commit from backing refs.
+    let backing_prefix = format!("refs/josh/remotes/{}/", args.remote);
+    let default_branch_ref = format!("{}{}", backing_prefix, default_branch);
+    let default_branch_oid = build_transaction
+        .repo()
+        .find_reference(&default_branch_ref)
+        .with_context(|| {
+            format!(
+                "Default branch '{}' not found in refs/josh/remotes/{}/",
+                default_branch, args.remote
+            )
+        })?
+        .target()
+        .context("Default branch ref has no target")?;
 
-    // Walk through each step in the chain, applying it to the previous step's
-    // results and writing an intermediate filtered ref.
-    for (step_idx, step_filter) in steps.iter().enumerate() {
-        let (filtered, errors) =
-            josh_core::filter_refs(&build_transaction, *step_filter, &current_commits);
+    let seed_commits = vec![(default_branch.clone(), default_branch_oid)];
 
-        if let Some(error) = errors.into_iter().next() {
-            return Err(anyhow::anyhow!("filter error: {}", error.1));
-        }
+    // Build cache for each discovered filter chain.
+    for steps in &all_step_lists {
+        let mut current_commits = seed_commits.clone();
 
-        let prefix_path = step_ref_prefix(step_idx, &steps);
-        let mut next_commits = Vec::new();
+        for (step_idx, step_filter) in steps.iter().enumerate() {
+            let (filtered, errors) =
+                josh_core::filter_refs(&build_transaction, *step_filter, &current_commits);
 
-        for (branch_name, filtered_oid) in filtered {
-            if filtered_oid == git2::Oid::zero() {
-                continue;
+            if let Some(error) = errors.into_iter().next() {
+                eprintln!(
+                    "Warning: filter error for {}: {}",
+                    filter::spec(*step_filter),
+                    error.1
+                );
+                break;
             }
-            let filtered_ref = format!("refs/josh/filtered/{}/heads/{}", prefix_path, branch_name);
-            repo.reference(&filtered_ref, filtered_oid, true, "josh cache build")
-                .with_context(|| format!("failed to write filtered ref '{}'", filtered_ref))?;
-            next_commits.push((branch_name, filtered_oid));
-        }
 
-        current_commits = next_commits;
+            let prefix_path = remote_ops::step_ref_prefix(step_idx, steps);
+            let mut next_commits = Vec::new();
+
+            for (branch_name, filtered_oid) in filtered {
+                if filtered_oid == git2::Oid::zero() {
+                    continue;
+                }
+                let filtered_ref =
+                    format!("refs/josh/filtered/{}/heads/{}", prefix_path, branch_name);
+                repo.reference(&filtered_ref, filtered_oid, true, "josh cache build")
+                    .with_context(|| format!("failed to write filtered ref '{}'", filtered_ref))?;
+                next_commits.push((branch_name, filtered_oid));
+            }
+
+            current_commits = next_commits;
+        }
     }
 
-    eprintln!("Built cache for remote '{}'", args.remote);
+    eprintln!(
+        "Built cache for {} filter(s) on branch '{}' for remote '{}'",
+        all_step_lists.len(),
+        default_branch,
+        args.remote
+    );
     Ok(())
 }
 
@@ -150,25 +228,7 @@ fn handle_cache_push(args: &CachePushArgs, transaction: &Transaction) -> anyhow:
     let filter = filter_with_meta.peel();
     let steps = flatten_chain(filter);
 
-    // Resolve the default branch from the locally stored HEAD symref.
-    // This is set by `josh fetch`; fall back to "master" if not present.
-    let head_symref = format!("refs/remotes/{}/HEAD", args.remote);
-    let default_branch = repo
-        .find_reference(&head_symref)
-        .ok()
-        .and_then(|r| r.symbolic_target().map(|s| s.to_string()))
-        .and_then(|target| {
-            target
-                .strip_prefix(&format!("refs/remotes/{}/", args.remote))
-                .map(|s| s.to_string())
-        })
-        .unwrap_or_else(|| {
-            eprintln!(
-                "Warning: could not resolve default branch from '{}', falling back to 'master'",
-                head_symref
-            );
-            "master".to_string()
-        });
+    let default_branch = remote_ops::resolve_default_branch(repo, &args.remote)?;
 
     // Push all cache refs for the current cache version
     let cache_refspec = format!(
@@ -181,7 +241,7 @@ fn handle_cache_push(args: &CachePushArgs, transaction: &Transaction) -> anyhow:
     // Push filtered refs for the default branch only so that recipients have
     // all intermediate git objects needed to use the cache.
     for step_idx in 0..steps.len() {
-        let prefix_path = step_ref_prefix(step_idx, &steps);
+        let prefix_path = remote_ops::step_ref_prefix(step_idx, &steps);
         let local_ref = format!(
             "refs/josh/filtered/{}/heads/{}",
             prefix_path, default_branch
@@ -226,7 +286,7 @@ pub fn fetch_remote_cache(
 
     let steps = flatten_chain(filter);
     for step_idx in 0..steps.len() {
-        let prefix_path = step_ref_prefix(step_idx, &steps);
+        let prefix_path = remote_ops::step_ref_prefix(step_idx, &steps);
         let filtered_refspec = format!(
             "+refs/josh/filtered/{p}/heads/*:refs/josh/filtered/{p}/heads/*",
             p = prefix_path
