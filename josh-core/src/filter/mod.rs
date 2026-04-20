@@ -448,11 +448,7 @@ fn get_starlark<'a>(
         Ok(rw) => rw.into_tree(),
         Err(_) => return to_filter(Op::Empty),
     };
-    let repo = match git2::Repository::open(transaction.repo().path()) {
-        Ok(r) => std::sync::Arc::new(std::sync::Mutex::new(r)),
-        Err(_) => return to_filter(Op::Empty),
-    };
-    match josh_starlark::evaluate(&script, filtered_tree.id(), repo) {
+    match josh_starlark::evaluate(&script, filtered_tree.id(), transaction.repo()) {
         Ok(f) => {
             let star_file = Filter::new().file(star_path);
             compose(&[star_file, subfilter, f])
