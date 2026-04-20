@@ -168,7 +168,7 @@ Test that we can fetch the split refs back
   | * Change: foo7  (origin/@changes/master/josh@example.com/foo7) 209a5b0d94790084586f291624ce9340f5646636
   |/  
   * add file1  (origin/master, origin/HEAD, origin/@base/master/josh@example.com/foo7, origin/@base/master/josh@example.com/1234) 5f2928c89c4dcc7f5a8c59ef65734a83620cefee
-  * cache  3c2c2237ae79b148f5a4ca12279f75ab6029fe2b
+  * cache  431531b7907fc16b4c9e7e335438937b9d2d9c59
 
 Test normal push still works
 

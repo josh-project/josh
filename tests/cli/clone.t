@@ -55,6 +55,10 @@
   |   |   `-- 26
   |   |       `-- 0
   |   |           `-- bf567e0faf634a663d6cef48145a035e1974ab1d
+  |   |-- filtered
+  |   |   `-- bf567e0faf634a663d6cef48145a035e1974ab1d
+  |   |       `-- heads
+  |   |           `-- master
   |   `-- remotes
   |       `-- origin
   |           |-- feature
@@ -73,7 +77,7 @@
   |       `-- master
   `-- tags
   
-  15 directories, 10 files
+  18 directories, 11 files
 
   $ tree
   .
