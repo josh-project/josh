@@ -15,6 +15,9 @@ serde.workspace = true
 serde_json.workspace = true
 git2.workspace = true
 axum.workspace = true
+tracing.workspace = true
 
 josh-core.workspace = true
+josh-github-webhooks.workspace = true
 josh-link.workspace = true
+josh-test-webhook-client.workspace = true

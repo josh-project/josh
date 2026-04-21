@@ -8,17 +8,13 @@ use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::routing::post;
 use serde::Deserialize;
+use tokio::sync::mpsc;
 
 use josh_core::cache::{CacheStack, TransactionContext};
 use josh_core::filter::tree;
 use josh_core::git::spawn_git_command;
+use josh_github_webhooks::webhook_server::WebhookPayload;
 use josh_link::make_signature;
-
-#[derive(Clone)]
-pub struct AppState {
-    pub repo_path: PathBuf,
-    pub cache: Arc<CacheStack>,
-}
 
 #[derive(Deserialize)]
 pub struct TrackRequest {
@@ -26,6 +22,11 @@ pub struct TrackRequest {
     pub id: String,
     #[serde(default = "default_mode")]
     pub mode: String,
+}
+
+pub enum CqEvent {
+    Track(TrackRequest),
+    Webhook(WebhookPayload),
 }
 
 fn default_mode() -> String {
@@ -128,30 +129,62 @@ pub fn handle_track(
 }
 
 async fn track_handler(
-    State(state): State<AppState>,
+    State(event_tx): State<mpsc::Sender<CqEvent>>,
     axum::Json(req): axum::Json<TrackRequest>,
 ) -> impl IntoResponse {
-    let result = tokio::task::spawn_blocking(move || {
-        let transaction = TransactionContext::new(&state.repo_path, state.cache.clone())
-            .open(None)
-            .context("Failed TransactionContext::open")?;
+    enqueue(&event_tx, CqEvent::Track(req)).await
+}
 
-        handle_track(&req.url, &req.id, &req.mode, &transaction)
-    })
-    .await;
+async fn webhook_handler(
+    State(event_tx): State<mpsc::Sender<CqEvent>>,
+    payload: WebhookPayload,
+) -> impl IntoResponse {
+    enqueue(&event_tx, CqEvent::Webhook(payload)).await
+}
 
-    match result {
-        Ok(Ok(msg)) => (StatusCode::OK, msg),
-        Ok(Err(e)) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Error: {e:#}")),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Task failed: {e}"),
-        ),
+async fn enqueue(event_tx: &mpsc::Sender<CqEvent>, event: CqEvent) -> (StatusCode, &'static str) {
+    match event_tx.send(event).await {
+        Ok(()) => (StatusCode::ACCEPTED, "accepted"),
+        Err(e) => {
+            tracing::error!(error = ?e, "failed to enqueue event");
+            (StatusCode::SERVICE_UNAVAILABLE, "event queue closed")
+        }
     }
 }
 
-pub fn make_router(state: AppState) -> axum::Router {
+pub fn make_router(event_tx: mpsc::Sender<CqEvent>) -> axum::Router {
     axum::Router::new()
         .route("/v1/track", post(track_handler))
-        .with_state(state)
+        .route("/v1/webhook", post(webhook_handler))
+        .with_state(event_tx)
+}
+
+pub fn spawn_serve_task(repo_path: PathBuf, cache: Arc<CacheStack>) -> mpsc::Sender<CqEvent> {
+    let (event_tx, mut event_rx) = mpsc::channel::<CqEvent>(100);
+
+    tokio::task::spawn_blocking(move || {
+        while let Some(event) = event_rx.blocking_recv() {
+            match event {
+                CqEvent::Track(req) => {
+                    let transaction =
+                        match TransactionContext::new(&repo_path, cache.clone()).open(None) {
+                            Ok(t) => t,
+                            Err(e) => {
+                                eprintln!("Failed to open transaction: {e:#}");
+                                continue;
+                            }
+                        };
+                    match handle_track(&req.url, &req.id, &req.mode, &transaction) {
+                        Ok(msg) => println!("{msg}"),
+                        Err(e) => eprintln!("track failed: {e:#}"),
+                    }
+                }
+                CqEvent::Webhook(payload) => {
+                    println!("received webhook: {payload:?}");
+                }
+            }
+        }
+    });
+
+    event_tx
 }
