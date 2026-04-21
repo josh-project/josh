@@ -2931,10 +2931,13 @@ dependencies = [
  "clap",
  "git2",
  "josh-core",
+ "josh-github-webhooks",
  "josh-link",
+ "josh-test-webhook-client",
  "serde",
  "serde_json",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
