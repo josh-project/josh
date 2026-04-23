@@ -11,7 +11,7 @@ version = "26.4.19"
 
 [dependencies]
 sha2 = "0.11.0"
-lru = "0.16.3"
+lru = "0.17.0"
 axum = { version = "^0.8", features = ["macros"] }
 axum-extra = { version = "^0.12", features = ["typed-header", "erased-json"] }
 tower-http = { version = "0.6", features = ["trace"] }
@@ -21,7 +21,7 @@ percent-encoding = "2.3.1"
 pin-project-lite = "^0"
 tracing-futures = "0.2.5"
 tracing-opentelemetry = "0.32.0"
-uuid = { version = "1.23.0", features = ["v4"] }
+uuid = { version = "1.23.1", features = ["v4"] }
 gix-packetline = { version = "^0", features = ["blocking-io"] }
 gix-transport = "^0"
 opentelemetry = "0.31.0"
