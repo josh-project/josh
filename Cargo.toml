@@ -64,7 +64,7 @@ chrono = { version = "^0", default-features = false, features = ["serde"] }
 dirs = "6"
 jsonwebtoken = "10"
 bytes = "1.11.1"
-rand = "0.10.0"
+rand = "0.10.1"
 backon = "1.6.0"
 futures-util = "0.3.32"
 thiserror = "2.0.18"
