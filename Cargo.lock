@@ -328,7 +328,7 @@ dependencies = [
  "axum-extra",
  "clap",
  "http",
- "rand 0.10.0",
+ "rand 0.10.1",
  "reqwest 0.13.2",
  "tokio",
  "url",
@@ -2907,7 +2907,7 @@ dependencies = [
  "percent-encoding",
  "pest",
  "pest_derive",
- "rand 0.10.0",
+ "rand 0.10.1",
  "rayon",
  "regex",
  "rs_tracing",
@@ -3184,7 +3184,7 @@ dependencies = [
  "futures-util",
  "http",
  "josh-test-webhook-service",
- "rand 0.10.0",
+ "rand 0.10.1",
  "reqwest 0.13.2",
  "thiserror 2.0.18",
  "tokio",
@@ -4176,9 +4176,9 @@ dependencies = [
 
 [[package]]
 name = "rand"
-version = "0.10.0"
+version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bc266eb313df6c5c09c1c7b1fbe2510961e5bcd3add930c1e31f7ed9da0feff8"
+checksum = "d2e8e8bcc7961af1fdac401278c6a831614941f6164ee3bf4ce61b7edb162207"
 dependencies = [
  "chacha20",
  "getrandom 0.4.1",
