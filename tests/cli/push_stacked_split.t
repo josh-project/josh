@@ -99,6 +99,25 @@ Publish changes (josh publish should create multiple refs for each change)
    * [new branch]      929b441481dc5e1a946004a5615592d837ad564b -> @heads/master/josh@example.com
   
   Pushed 929b441481dc5e1a946004a5615592d837ad564b to origin/refs/heads/@heads/master/josh@example.com
+  From file://${TESTTMP}/remote
+   * [new branch]      @base/master/josh@example.com/1234 -> refs/josh/remotes/origin/@base/master/josh@example.com/1234
+   * [new branch]      @base/master/josh@example.com/1235 -> refs/josh/remotes/origin/@base/master/josh@example.com/1235
+   * [new branch]      @base/master/josh@example.com/foo7 -> refs/josh/remotes/origin/@base/master/josh@example.com/foo7
+   * [new branch]      @changes/master/josh@example.com/1234 -> refs/josh/remotes/origin/@changes/master/josh@example.com/1234
+   * [new branch]      @changes/master/josh@example.com/1235 -> refs/josh/remotes/origin/@changes/master/josh@example.com/1235
+   * [new branch]      @changes/master/josh@example.com/foo7 -> refs/josh/remotes/origin/@changes/master/josh@example.com/foo7
+   * [new branch]      @heads/master/josh@example.com -> refs/josh/remotes/origin/@heads/master/josh@example.com
+  
+  From file://${TESTTMP}/filtered
+   * [new branch]      @base/master/josh@example.com/1234 -> origin/@base/master/josh@example.com/1234
+   * [new branch]      @base/master/josh@example.com/1235 -> origin/@base/master/josh@example.com/1235
+   * [new branch]      @base/master/josh@example.com/foo7 -> origin/@base/master/josh@example.com/foo7
+   * [new branch]      @changes/master/josh@example.com/1234 -> origin/@changes/master/josh@example.com/1234
+   * [new branch]      @changes/master/josh@example.com/1235 -> origin/@changes/master/josh@example.com/1235
+   * [new branch]      @changes/master/josh@example.com/foo7 -> origin/@changes/master/josh@example.com/foo7
+   * [new branch]      @heads/master/josh@example.com -> origin/@heads/master/josh@example.com
+  
+  Fetched from remote: origin
 
 Verify the refs were created in the remote
 
@@ -128,24 +147,6 @@ Test that we can fetch the split refs back
 
   $ cd ${TESTTMP}/filtered
   $ josh fetch
-  From file://${TESTTMP}/remote
-   * [new branch]      @base/master/josh@example.com/1234 -> refs/josh/remotes/origin/@base/master/josh@example.com/1234
-   * [new branch]      @base/master/josh@example.com/1235 -> refs/josh/remotes/origin/@base/master/josh@example.com/1235
-   * [new branch]      @base/master/josh@example.com/foo7 -> refs/josh/remotes/origin/@base/master/josh@example.com/foo7
-   * [new branch]      @changes/master/josh@example.com/1234 -> refs/josh/remotes/origin/@changes/master/josh@example.com/1234
-   * [new branch]      @changes/master/josh@example.com/1235 -> refs/josh/remotes/origin/@changes/master/josh@example.com/1235
-   * [new branch]      @changes/master/josh@example.com/foo7 -> refs/josh/remotes/origin/@changes/master/josh@example.com/foo7
-   * [new branch]      @heads/master/josh@example.com -> refs/josh/remotes/origin/@heads/master/josh@example.com
-  
-  From file://${TESTTMP}/filtered
-   * [new branch]      @base/master/josh@example.com/1234 -> origin/@base/master/josh@example.com/1234
-   * [new branch]      @base/master/josh@example.com/1235 -> origin/@base/master/josh@example.com/1235
-   * [new branch]      @base/master/josh@example.com/foo7 -> origin/@base/master/josh@example.com/foo7
-   * [new branch]      @changes/master/josh@example.com/1234 -> origin/@changes/master/josh@example.com/1234
-   * [new branch]      @changes/master/josh@example.com/1235 -> origin/@changes/master/josh@example.com/1235
-   * [new branch]      @changes/master/josh@example.com/foo7 -> origin/@changes/master/josh@example.com/foo7
-   * [new branch]      @heads/master/josh@example.com -> origin/@heads/master/josh@example.com
-  
   Fetched from remote: origin
 
   $ git log --all --decorate --graph --pretty="%s %d %H"
