@@ -15,6 +15,7 @@ members = [
     "josh-starlark",
     "josh-cq",
     "josh-changes",
+    "josh-run",
 
     "forges/josh-github-changes",
     "forges/josh-github-graphql",
@@ -80,6 +81,7 @@ axum-cgi = { path = "axum-cgi", version = "26.4.19" }
 josh-filter = { path = "josh-filter", version = "26.4.19" }
 josh-changes = { path = "josh-changes", version = "26.4.19" }
 josh-core = { path = "josh-core", version = "26.4.19" }
+josh-run = { path = "josh-run", version = "26.4.19" }
 josh-graphql = { path = "josh-graphql", version = "26.4.19" }
 josh-link = { path = "josh-link", version = "26.4.19" }
 josh-rpc = { path = "josh-rpc", version = "26.4.19" }

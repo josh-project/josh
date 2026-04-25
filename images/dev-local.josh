@@ -1,0 +1,4 @@
+bases = :[
+    :#BASE_IMAGE[:+images/dev]
+]
+context = :/images/dev-local

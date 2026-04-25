@@ -204,7 +204,7 @@ pub(crate) fn spec2(op: &Op) -> String {
                 spec(*sub)
             )
         }
-        Op::ObjectDeref(path) => format!(":*{}", parse::quote_if(&path.to_string_lossy())),
+        Op::ObjectDeref(path) => format!(":#{}", parse::quote_if(&path.to_string_lossy())),
         Op::ObjectRef(path) => format!(":&{}", parse::quote_if(&path.to_string_lossy())),
         Op::RegexReplace(replacements) => {
             let v = replacements
