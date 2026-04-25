@@ -16,7 +16,7 @@ ARG TARGETARCH
 ARG RUSTUP_VERSION=1.28.2
 
 # Update check: https://github.com/rust-lang/rust/tags
-ARG RUST_VERSION=1.92.0
+ARG RUST_VERSION=1.95.0
 
 # https://github.com/sfackler/rust-openssl/issues/1462
 ENV RUSTFLAGS="-Ctarget-feature=-crt-static"
