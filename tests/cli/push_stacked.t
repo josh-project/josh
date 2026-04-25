@@ -91,13 +91,43 @@ Push with stacked changes (should create multiple refs)
    * [new branch]      2cbfa8cb8d9a9f1de029fcba547a6e56c742733f -> @heads/master/josh@example.com
   
   Pushed 2cbfa8cb8d9a9f1de029fcba547a6e56c742733f to origin/refs/heads/@heads/master/josh@example.com
+  From file://${TESTTMP}/remote
+   * [new branch]      @base/master/josh@example.com/1234 -> refs/josh/remotes/origin/@base/master/josh@example.com/1234
+   * [new branch]      @base/master/josh@example.com/foo7 -> refs/josh/remotes/origin/@base/master/josh@example.com/foo7
+   * [new branch]      @changes/master/josh@example.com/1234 -> refs/josh/remotes/origin/@changes/master/josh@example.com/1234
+   * [new branch]      @changes/master/josh@example.com/foo7 -> refs/josh/remotes/origin/@changes/master/josh@example.com/foo7
+   * [new branch]      @heads/master/josh@example.com -> refs/josh/remotes/origin/@heads/master/josh@example.com
+  
+  From file://${TESTTMP}/filtered
+   * [new branch]      @base/master/josh@example.com/1234 -> origin/@base/master/josh@example.com/1234
+   * [new branch]      @base/master/josh@example.com/foo7 -> origin/@base/master/josh@example.com/foo7
+   * [new branch]      @changes/master/josh@example.com/1234 -> origin/@changes/master/josh@example.com/1234
+   * [new branch]      @changes/master/josh@example.com/foo7 -> origin/@changes/master/josh@example.com/foo7
+   * [new branch]      @heads/master/josh@example.com -> origin/@heads/master/josh@example.com
+  
+  Fetched from remote: origin
 
   $ git ls-remote .
   da80e49d24d110866ce2ec7a5c21112696fd165b\tHEAD (esc)
   da80e49d24d110866ce2ec7a5c21112696fd165b\trefs/heads/master (esc)
+  6ed6c1ca90cb15fe4edf8d133f0e2e44562aa77d\trefs/josh/remotes/origin/@base/master/josh@example.com/1234 (esc)
+  6ed6c1ca90cb15fe4edf8d133f0e2e44562aa77d\trefs/josh/remotes/origin/@base/master/josh@example.com/foo7 (esc)
+  c61c37f4a3d5eb447f41dde15620eee1a181d60b\trefs/josh/remotes/origin/@changes/master/josh@example.com/1234 (esc)
+  c1b55ea7e5f27f82d3565c1f5d64113adf635c2c\trefs/josh/remotes/origin/@changes/master/josh@example.com/foo7 (esc)
+  2cbfa8cb8d9a9f1de029fcba547a6e56c742733f\trefs/josh/remotes/origin/@heads/master/josh@example.com (esc)
   6ed6c1ca90cb15fe4edf8d133f0e2e44562aa77d\trefs/josh/remotes/origin/master (esc)
   da80e49d24d110866ce2ec7a5c21112696fd165b\trefs/namespaces/josh-origin/HEAD (esc)
+  5f2928c89c4dcc7f5a8c59ef65734a83620cefee\trefs/namespaces/josh-origin/refs/heads/@base/master/josh@example.com/1234 (esc)
+  5f2928c89c4dcc7f5a8c59ef65734a83620cefee\trefs/namespaces/josh-origin/refs/heads/@base/master/josh@example.com/foo7 (esc)
+  43d6fcc9e7a81452d7343c78c0102f76027717fb\trefs/namespaces/josh-origin/refs/heads/@changes/master/josh@example.com/1234 (esc)
+  ecb19ea4b4fbfb6afff253ec719909e80a480a18\trefs/namespaces/josh-origin/refs/heads/@changes/master/josh@example.com/foo7 (esc)
+  da80e49d24d110866ce2ec7a5c21112696fd165b\trefs/namespaces/josh-origin/refs/heads/@heads/master/josh@example.com (esc)
   5f2928c89c4dcc7f5a8c59ef65734a83620cefee\trefs/namespaces/josh-origin/refs/heads/master (esc)
+  5f2928c89c4dcc7f5a8c59ef65734a83620cefee\trefs/remotes/origin/@base/master/josh@example.com/1234 (esc)
+  5f2928c89c4dcc7f5a8c59ef65734a83620cefee\trefs/remotes/origin/@base/master/josh@example.com/foo7 (esc)
+  43d6fcc9e7a81452d7343c78c0102f76027717fb\trefs/remotes/origin/@changes/master/josh@example.com/1234 (esc)
+  ecb19ea4b4fbfb6afff253ec719909e80a480a18\trefs/remotes/origin/@changes/master/josh@example.com/foo7 (esc)
+  da80e49d24d110866ce2ec7a5c21112696fd165b\trefs/remotes/origin/@heads/master/josh@example.com (esc)
   5f2928c89c4dcc7f5a8c59ef65734a83620cefee\trefs/remotes/origin/HEAD (esc)
   5f2928c89c4dcc7f5a8c59ef65734a83620cefee\trefs/remotes/origin/master (esc)
 

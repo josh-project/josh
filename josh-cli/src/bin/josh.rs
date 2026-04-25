@@ -231,7 +231,17 @@ fn run_repo(cmd: &RepoCommand) -> anyhow::Result<()> {
         RepoCommand::Fetch(args) => handle_fetch(args, &transaction),
         RepoCommand::Pull(args) => handle_pull(args, &transaction),
         RepoCommand::Push(args) => josh_cli::commands::push::handle_push(args, &transaction),
-        RepoCommand::Publish(args) => josh_cli::commands::push::handle_publish(args, &transaction),
+        RepoCommand::Publish(args) => {
+            josh_cli::commands::push::handle_publish(args, &transaction)?;
+            let remote = args.remote.as_deref().unwrap_or("origin");
+            handle_fetch(
+                &FetchArgs {
+                    remote: remote.to_string(),
+                    rref: "HEAD".to_string(),
+                },
+                &transaction,
+            )
+        }
         RepoCommand::Remote(args) => handle_remote(args, &transaction),
         RepoCommand::Filter(args) => handle_filter(args, &transaction),
         RepoCommand::Link(args) => josh_cli::commands::link::handle_link(args, &transaction),
