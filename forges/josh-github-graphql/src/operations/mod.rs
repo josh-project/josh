@@ -1,3 +1,4 @@
+pub mod branches;
 pub mod check_runs;
 pub mod collaborators;
 pub mod create_check_run;
