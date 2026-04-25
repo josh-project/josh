@@ -1,7 +1,7 @@
 use josh_github_codegen_graphql::{
     check_runs_discover::{
-        self, CheckRunsDiscoverNodes, CheckRunsDiscoverNodesOnCommitCheckSuites,
-        CheckRunsDiscoverNodesOnCommitCheckSuitesNodes, _CheckSuiteInfo,
+        self, _CheckSuiteInfo, CheckRunsDiscoverNodes, CheckRunsDiscoverNodesOnCommitCheckSuites,
+        CheckRunsDiscoverNodesOnCommitCheckSuitesNodes,
     },
     CheckRunsDiscover, Id, NodeId,
 };
