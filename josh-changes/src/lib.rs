@@ -122,6 +122,25 @@ pub fn downstack(
     let change_commit = commits.pop().unwrap();
     let change_parent = change_commit.parent(0)?;
 
+    // Parse Requires: footers, keeping only those referencing changes
+    // actually present in the intermediates
+    let required_raw: std::collections::HashSet<String> = josh_core::get_change_id(&change_commit)
+        .requires
+        .into_iter()
+        .collect();
+    let intermediate_ids: Vec<Option<String>> = commits
+        .iter()
+        .map(|c| josh_core::get_change_id(c).id)
+        .collect();
+    let available_ids: std::collections::HashSet<&str> = intermediate_ids
+        .iter()
+        .filter_map(|id| id.as_deref())
+        .collect();
+    let mut required: std::collections::HashSet<String> = required_raw
+        .into_iter()
+        .filter(|id| available_ids.contains(id.as_str()))
+        .collect();
+
     // Compute d_change: the diff introduced by the change commit itself
     let change_diff = repo.diff_tree_to_tree(
         Some(&change_parent.tree()?),
@@ -132,12 +151,12 @@ pub fn downstack(
     // Walk through intermediates, including only those needed for d_change to apply
     let mut current_base = repo.find_commit(base)?;
 
-    for intermediate in &commits {
-        // If d_change already applies to the current base tree, we can stop
-        if repo
+    for (intermediate, change_id) in commits.iter().zip(intermediate_ids.iter()) {
+        // Stop when d_change applies and all Requires: are satisfied
+        let diff_applies = repo
             .apply_to_tree(&current_base.tree()?, &change_diff, None)
-            .is_ok()
-        {
+            .is_ok();
+        if diff_applies && required.is_empty() {
             break;
         }
 
@@ -161,6 +180,10 @@ pub fn downstack(
             josh_core::history::GpgsigMode::Preserve,
         )?;
         current_base = repo.find_commit(new_oid)?;
+
+        if let Some(id) = change_id {
+            required.remove(id);
+        }
     }
 
     // Apply d_change on top of the minimal base and create the new change commit
