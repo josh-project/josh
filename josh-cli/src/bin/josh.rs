@@ -432,23 +432,38 @@ fn handle_fetch(
         .current_dir(normalize_repo_path(repo.path()))
         .output()?;
 
-    if output.status.success() {
-        let output = String::from_utf8(output.stdout)?;
-
-        if let Some((default_branch, default_branch_ref)) = try_parse_symref(&args.remote, &output)
-        {
-            repo.reference_symbolic(&head_ref, &default_branch_ref, true, "josh remote HEAD")?;
-
-            repo.reference_symbolic(
-                &format!("refs/namespaces/josh-{}/{}", args.remote, "HEAD"),
-                &format!("refs/heads/{}", default_branch),
-                true,
-                "josh remote HEAD",
-            )?;
-        }
+    if !output.status.success() {
+        return Err(anyhow::anyhow!(
+            "Failed to determine default branch: git ls-remote --symref failed for '{}'",
+            args.remote
+        ));
     }
 
-    josh_cli::remote_ops::apply_josh_filtering(transaction, &repo_path, filter, &args.remote)?;
+    let ls_output = String::from_utf8(output.stdout)?;
+    let (default_branch, default_branch_ref) = try_parse_symref(&args.remote, &ls_output)
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "Could not determine default branch from remote '{}': \
+                 no symref for HEAD in ls-remote output",
+                args.remote
+            )
+        })?;
+
+    repo.reference_symbolic(&head_ref, &default_branch_ref, true, "josh remote HEAD")?;
+    repo.reference_symbolic(
+        &format!("refs/namespaces/josh-{}/{}", args.remote, "HEAD"),
+        &format!("refs/heads/{}", default_branch),
+        true,
+        "josh remote HEAD",
+    )?;
+
+    josh_cli::remote_ops::apply_josh_filtering(
+        transaction,
+        &repo_path,
+        filter,
+        &args.remote,
+        &default_branch,
+    )?;
 
     // Note: fetch doesn't checkout, it just updates the refs
     eprintln!("Fetched from remote: {}", args.remote);
@@ -555,7 +570,15 @@ fn handle_filter(
         filter_str, args.remote
     );
 
-    josh_cli::remote_ops::apply_josh_filtering(transaction, &repo_path, filter, &args.remote)?;
+    let default_branch = josh_cli::remote_ops::resolve_default_branch(repo, &args.remote)?;
+
+    josh_cli::remote_ops::apply_josh_filtering(
+        transaction,
+        &repo_path,
+        filter,
+        &args.remote,
+        &default_branch,
+    )?;
 
     println!(
         "Applied filter '{}' to remote '{}'",
