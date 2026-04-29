@@ -1,11 +1,11 @@
 use anyhow::anyhow;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Change {
-    author: String,
-    id: Option<String>,
-    requires: Vec<String>,
-    commit: git2::Oid,
+    pub author: String,
+    pub id: Option<String>,
+    pub requires: Vec<String>,
+    pub commit: git2::Oid,
 }
 
 impl Change {
@@ -112,29 +112,30 @@ fn add_base_refs(repo: &git2::Repository, refs: &mut Vec<PushRef>) -> anyhow::Re
 
 fn split_changes(
     repo: &git2::Repository,
-    changes: &mut [PushRef],
+    changes: std::collections::HashMap<git2::Oid, Change>,
     base: git2::Oid,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<Vec<Change>> {
     if base == git2::Oid::zero() {
-        return Ok(());
+        return Ok(changes.into_values().collect());
     }
 
-    for push_ref in changes.iter_mut() {
-        push_ref.oid = downstack(repo, base, push_ref.oid)?;
-    }
-
-    Ok(())
+    changes
+        .iter()
+        .map(|(_, c)| downstack(repo, base, c, &changes))
+        .collect()
 }
 
 pub fn downstack(
     repo: &git2::Repository,
     base: git2::Oid,
-    change: git2::Oid,
-) -> anyhow::Result<git2::Oid> {
-    if !repo.graph_descendant_of(change, base)? {
+    change: &Change,
+    all_changes: &std::collections::HashMap<git2::Oid, Change>,
+) -> anyhow::Result<Change> {
+    let change_oid = change.commit;
+    if !repo.graph_descendant_of(change_oid, base)? {
         return Err(anyhow!(
             "change {} is not a descendant of base {}",
-            change,
+            change_oid,
             base
         ));
     }
@@ -143,13 +144,13 @@ pub fn downstack(
     let mut walk = repo.revwalk()?;
     walk.simplify_first_parent()?;
     walk.set_sorting(git2::Sort::REVERSE | git2::Sort::TOPOLOGICAL)?;
-    walk.push(change)?;
+    walk.push(change_oid)?;
     walk.hide(base)?;
 
     let oids: Vec<git2::Oid> = walk.collect::<Result<Vec<_>, _>>()?;
 
     if oids.is_empty() {
-        return Ok(change);
+        return Ok(change.clone());
     }
 
     let mut commits: Vec<git2::Commit> = oids
@@ -161,19 +162,19 @@ pub fn downstack(
     let change_commit = commits.pop().unwrap();
     let change_parent = change_commit.parent(0)?;
 
-    // Parse Requires: footers, keeping only those referencing changes
+    // Use pre-parsed requires, keeping only those referencing changes
     // actually present in the intermediates
-    let required_raw: std::collections::HashSet<String> =
-        get_change_id(&change_commit).requires.into_iter().collect();
-    let intermediate_ids: Vec<Option<String>> =
-        commits.iter().map(|c| get_change_id(c).id).collect();
-    let available_ids: std::collections::HashSet<&str> = intermediate_ids
+    let intermediate_ids: Vec<Option<&str>> = commits
         .iter()
-        .filter_map(|id| id.as_deref())
+        .map(|c| all_changes.get(&c.id()).and_then(|ch| ch.id.as_deref()))
         .collect();
-    let mut required: std::collections::HashSet<String> = required_raw
-        .into_iter()
-        .filter(|id| available_ids.contains(id.as_str()))
+    let available_ids: std::collections::HashSet<&str> =
+        intermediate_ids.iter().filter_map(|id| *id).collect();
+    let mut required: std::collections::HashSet<&str> = change
+        .requires
+        .iter()
+        .map(|s| s.as_str())
+        .filter(|id| available_ids.contains(id))
         .collect();
 
     // Compute d_change: the diff introduced by the change commit itself
@@ -225,13 +226,17 @@ pub fn downstack(
     let mut index = repo.apply_to_tree(&current_base.tree()?, &change_diff, None)?;
     let new_tree = repo.find_tree(index.write_tree_to(repo)?)?;
 
-    josh_core::history::rewrite_commit(
+    let new_oid = josh_core::history::rewrite_commit(
         repo,
         &change_commit,
         &[&current_base],
         josh_core::filter::Rewrite::from_tree(new_tree),
         josh_core::history::GpgsigMode::Preserve,
-    )
+    )?;
+
+    let mut result = change.clone();
+    result.commit = new_oid;
+    Ok(result)
 }
 
 fn changes_to_refs(
@@ -287,7 +292,7 @@ fn get_changes(
     repo: &git2::Repository,
     tip: git2::Oid,
     base: git2::Oid,
-) -> anyhow::Result<Vec<Change>> {
+) -> anyhow::Result<std::collections::HashMap<git2::Oid, Change>> {
     let mut walk = repo.revwalk()?;
     walk.set_sorting(git2::Sort::REVERSE | git2::Sort::TOPOLOGICAL)?;
     walk.simplify_first_parent()?;
@@ -296,10 +301,11 @@ fn get_changes(
         walk.hide(base)?;
     }
 
-    let mut changes = vec![];
+    let mut changes = std::collections::HashMap::new();
     for rev in walk {
         let commit = repo.find_commit(rev?)?;
-        changes.push(get_change_id(&commit));
+        let change = get_change_id(&commit);
+        changes.insert(change.commit, change);
     }
 
     Ok(changes)
@@ -316,11 +322,14 @@ pub fn build_to_push(
     match push_mode {
         PushMode::Stack(author) | PushMode::Split(author) => {
             let changes = get_changes(repo, oid_to_push, base_oid)?;
-            let mut push_refs = changes_to_refs(baseref, author, changes)?;
 
-            if matches!(push_mode, PushMode::Split(_)) {
-                split_changes(repo, &mut push_refs, base_oid)?;
-            }
+            let changes = if matches!(push_mode, PushMode::Split(_)) {
+                split_changes(repo, changes, base_oid)?
+            } else {
+                changes.into_values().collect()
+            };
+
+            let mut push_refs = changes_to_refs(baseref, author, changes)?;
 
             add_base_refs(repo, &mut push_refs)?;
 
