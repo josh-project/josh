@@ -59,6 +59,10 @@ pub struct PublishArgs {
     /// Dry run (don't actually update remote)
     #[arg(long = "dry-run", action = clap::ArgAction::SetTrue)]
     pub dry_run: bool,
+
+    /// Delete remote @changes and @base branches for the current user that have no open PR
+    #[arg(long = "prune-branches", action = clap::ArgAction::SetTrue)]
+    pub prune_branches: bool,
 }
 
 struct PreparedPush {
@@ -303,13 +307,48 @@ pub fn handle_push(
     )
 }
 
+fn run_prune_branches(
+    remote: Option<&str>,
+    dry_run: bool,
+    email: &str,
+    transaction: &josh_core::cache::Transaction,
+) -> anyhow::Result<()> {
+    let repo = transaction.repo();
+    let repo_path = normalize_repo_path(repo.path());
+
+    let remote_name = remote.unwrap_or("origin");
+
+    let RemoteConfig { url, forge, .. } = read_remote_config(&repo_path, remote_name)
+        .with_context(|| format!("Failed to read remote config for '{}'", remote_name))?;
+
+    if forge != Some(Forge::Github) {
+        return Ok(());
+    }
+
+    let rt = tokio::runtime::Runtime::new().context("Failed to create tokio runtime")?;
+
+    if let Err(e) = rt.block_on(async {
+        use crate::forge::github;
+
+        let api_connection = github::make_api_connection().await;
+        let api_connection = api_connection.with_context(|| github::api_connection_hint())?;
+
+        josh_github_changes::prune_stale_branches(&api_connection, &url, email, dry_run).await
+    }) {
+        eprintln!("Warning: failed to prune branches: {}", e);
+    }
+
+    Ok(())
+}
+
 pub fn handle_publish(
     args: &PublishArgs,
     transaction: &josh_core::cache::Transaction,
 ) -> anyhow::Result<()> {
     let repo = transaction.repo();
     let config = repo.config().context("Failed to get git config")?;
-    let push_mode = PushMode::Split(config.get_string("user.email").unwrap_or_default());
+    let email = config.get_string("user.email").unwrap_or_default();
+    let push_mode = PushMode::Split(email.clone());
 
     run_push(
         args.remote.as_deref(),
@@ -319,5 +358,43 @@ pub fn handle_publish(
         args.dry_run,
         push_mode,
         transaction,
-    )
+    )?;
+
+    if args.prune_branches {
+        let remote_name = args.remote.as_deref().unwrap_or("origin");
+        prune_local_change_branches(remote_name, transaction)?;
+        run_prune_branches(args.remote.as_deref(), args.dry_run, &email, transaction)?;
+    }
+
+    Ok(())
+}
+
+fn prune_local_change_branches(
+    remote_name: &str,
+    transaction: &josh_core::cache::Transaction,
+) -> anyhow::Result<()> {
+    let repo = transaction.repo();
+
+    let prefixes = [
+        format!("refs/josh/remotes/{}/@changes/", remote_name),
+        format!("refs/josh/remotes/{}/@base/", remote_name),
+        format!("refs/namespaces/josh-{}/refs/heads/@changes/", remote_name),
+        format!("refs/namespaces/josh-{}/refs/heads/@base/", remote_name),
+    ];
+
+    for prefix in &prefixes {
+        let refs: Vec<String> = repo
+            .references_glob(&format!("{}*", prefix))?
+            .filter_map(|r| r.ok())
+            .filter_map(|r| r.name().map(String::from))
+            .collect();
+
+        for ref_name in refs {
+            if let Err(e) = repo.find_reference(&ref_name).and_then(|mut r| r.delete()) {
+                eprintln!("Warning: failed to delete {}: {}", ref_name, e);
+            }
+        }
+    }
+
+    Ok(())
 }
