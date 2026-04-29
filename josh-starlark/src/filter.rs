@@ -132,6 +132,20 @@ fn filter_methods(builder: &mut MethodsBuilder) {
     fn peel(this: &StarlarkFilter) -> anyhow::Result<StarlarkFilter> {
         Ok(this.peel())
     }
+    fn blob(
+        this: &StarlarkFilter,
+        path: StringValue,
+        content: StringValue,
+    ) -> anyhow::Result<StarlarkFilter> {
+        this.blob(path, content)
+    }
+    fn treeid(
+        this: &StarlarkFilter,
+        path: StringValue,
+        subfilter: &StarlarkFilter,
+    ) -> anyhow::Result<StarlarkFilter> {
+        this.treeid(path, *subfilter)
+    }
 }
 
 impl StarlarkFilter {
@@ -287,6 +301,28 @@ impl StarlarkFilter {
         StarlarkFilter {
             filter: self.filter.with_meta(key.as_str(), value.as_str()),
         }
+    }
+
+    /// Create a blob at path with the given content
+    pub fn blob(&self, path: StringValue, content: StringValue) -> anyhow::Result<StarlarkFilter> {
+        Ok(StarlarkFilter {
+            filter: self
+                .filter
+                .blob(PathBuf::from(path.as_str()), content.as_str())?,
+        })
+    }
+
+    /// Create a blob at path containing the tree OID of subfilter applied to the input
+    pub fn treeid(
+        &self,
+        path: StringValue,
+        subfilter: StarlarkFilter,
+    ) -> anyhow::Result<StarlarkFilter> {
+        Ok(StarlarkFilter {
+            filter: self
+                .filter
+                .treeid(PathBuf::from(path.as_str()), subfilter.filter)?,
+        })
     }
 
     /// Get metadata

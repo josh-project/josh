@@ -1,0 +1,23 @@
+[package]
+authors = ["Josh Project authors <contact@josh-project.dev>"]
+description = "Josh container workspace runner"
+edition = "2024"
+keywords = ["git", "monorepo", "workflow", "scm"]
+license-file = "LICENSE"
+name = "josh-run"
+readme = "../README.md"
+repository = "https://github.com/josh-project/josh"
+version = "26.4.19"
+
+[dependencies]
+anyhow.workspace = true
+defer.workspace = true
+hex.workspace = true
+libc.workspace = true
+log.workspace = true
+rand.workspace = true
+git2.workspace = true
+josh-core.workspace = true
+josh-filter.workspace = true
+
+tar = "0.4"

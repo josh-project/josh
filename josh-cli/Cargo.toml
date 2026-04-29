@@ -31,6 +31,7 @@ arboard = { version = "^3.6", default-features = false }
 
 josh-changes.workspace = true
 josh-core.workspace = true
+josh-run.workspace = true
 josh-github-auth.workspace = true
 josh-github-graphql.workspace = true
 josh-github-changes.workspace = true

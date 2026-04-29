@@ -269,6 +269,44 @@ josh cache fetch
 
 ---
 
+## josh run
+
+> **Experimental:** requires `JOSH_EXPERIMENTAL_FEATURES=1`.
+
+Run a workspace in an isolated, automatically-cached container. See
+[josh run](../contributing/josh-run.md) for full documentation.
+
+```
+josh run [OPTIONS] [REFERENCE] [FILTER]
+```
+
+| Argument | Description |
+|----------|-------------|
+| `[REFERENCE]` | Git ref to build from: `.` (working tree), `+` (index), `HEAD`, or any ref (default: `.`) |
+| `[FILTER]` | Filter selecting the workspace to run (default: `:+run`, reads `run.josh` in the repo root) |
+
+**Options:**
+
+| Flag | Description |
+|------|-------------|
+| `--clean` | Remove cached images and output volumes |
+| `--clean-all` | Remove cached images, output volumes, and persistent cache volumes |
+
+**Examples:**
+
+```shell
+# Run the default workspace defined in run.josh
+josh run
+
+# Run the test workspace against the working tree
+josh run . :+ws/test
+
+# Run using only staged changes
+josh run + :+ws/test
+```
+
+---
+
 ## josh-filter (standalone binary)
 
 `josh-filter` is a lower-level command that rewrites git history using Josh filter specs.
