@@ -53,16 +53,16 @@ Set up git config for author
 Push with stacked changes containing binary files
 
   $ josh publish
-  Pushing 61d809929bf6b7a29d194f43368936fc82b033db to origin/refs/heads/@changes/master/josh@example.com/bin1
   Pushing 115b269a011d493259a125fa941fd790b903175f to origin/refs/heads/@base/master/josh@example.com/bin1
-  Pushing a4f8ccd2c1cf12aaf3b46eae73e38c71185867e7 to origin/refs/heads/@changes/master/josh@example.com/bin2
   Pushing 115b269a011d493259a125fa941fd790b903175f to origin/refs/heads/@base/master/josh@example.com/bin2
+  Pushing 61d809929bf6b7a29d194f43368936fc82b033db to origin/refs/heads/@changes/master/josh@example.com/bin1
+  Pushing a4f8ccd2c1cf12aaf3b46eae73e38c71185867e7 to origin/refs/heads/@changes/master/josh@example.com/bin2
   Pushing bcf10470382d693f9188a7a75872bcf3cd117dbc to origin/refs/heads/@heads/master/josh@example.com
   To file://${TESTTMP}/remote
-   * [new branch]      61d809929bf6b7a29d194f43368936fc82b033db -> @changes/master/josh@example.com/bin1
    * [new branch]      115b269a011d493259a125fa941fd790b903175f -> @base/master/josh@example.com/bin1
-   * [new branch]      a4f8ccd2c1cf12aaf3b46eae73e38c71185867e7 -> @changes/master/josh@example.com/bin2
    * [new branch]      115b269a011d493259a125fa941fd790b903175f -> @base/master/josh@example.com/bin2
+   * [new branch]      61d809929bf6b7a29d194f43368936fc82b033db -> @changes/master/josh@example.com/bin1
+   * [new branch]      a4f8ccd2c1cf12aaf3b46eae73e38c71185867e7 -> @changes/master/josh@example.com/bin2
    * [new branch]      bcf10470382d693f9188a7a75872bcf3cd117dbc -> @heads/master/josh@example.com
   
   Pushed 5 ref(s) to origin

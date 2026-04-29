@@ -73,16 +73,16 @@ Push with stacked changes (should create multiple refs)
   5f2928c89c4dcc7f5a8c59ef65734a83620cefee\trefs/remotes/origin/HEAD (esc)
   5f2928c89c4dcc7f5a8c59ef65734a83620cefee\trefs/remotes/origin/master (esc)
   $ josh publish
-  Pushing c61c37f4a3d5eb447f41dde15620eee1a181d60b to origin/refs/heads/@changes/master/josh@example.com/1234
   Pushing 6ed6c1ca90cb15fe4edf8d133f0e2e44562aa77d to origin/refs/heads/@base/master/josh@example.com/1234
-  Pushing c1b55ea7e5f27f82d3565c1f5d64113adf635c2c to origin/refs/heads/@changes/master/josh@example.com/foo7
   Pushing 6ed6c1ca90cb15fe4edf8d133f0e2e44562aa77d to origin/refs/heads/@base/master/josh@example.com/foo7
+  Pushing c61c37f4a3d5eb447f41dde15620eee1a181d60b to origin/refs/heads/@changes/master/josh@example.com/1234
+  Pushing c1b55ea7e5f27f82d3565c1f5d64113adf635c2c to origin/refs/heads/@changes/master/josh@example.com/foo7
   Pushing 2cbfa8cb8d9a9f1de029fcba547a6e56c742733f to origin/refs/heads/@heads/master/josh@example.com
   To file://${TESTTMP}/remote
-   * [new branch]      c61c37f4a3d5eb447f41dde15620eee1a181d60b -> @changes/master/josh@example.com/1234
    * [new branch]      6ed6c1ca90cb15fe4edf8d133f0e2e44562aa77d -> @base/master/josh@example.com/1234
-   * [new branch]      c1b55ea7e5f27f82d3565c1f5d64113adf635c2c -> @changes/master/josh@example.com/foo7
    * [new branch]      6ed6c1ca90cb15fe4edf8d133f0e2e44562aa77d -> @base/master/josh@example.com/foo7
+   * [new branch]      c61c37f4a3d5eb447f41dde15620eee1a181d60b -> @changes/master/josh@example.com/1234
+   * [new branch]      c1b55ea7e5f27f82d3565c1f5d64113adf635c2c -> @changes/master/josh@example.com/foo7
    * [new branch]      2cbfa8cb8d9a9f1de029fcba547a6e56c742733f -> @heads/master/josh@example.com
   
   Pushed 5 ref(s) to origin

@@ -39,17 +39,17 @@
   remote: upstream: response body:        
   remote: 
   remote: To http://localhost:8001/real_repo.git        
-  remote:  * [new branch]      1234 -> @changes/master/josh@example.com/1234        
-  remote: To http://localhost:8001/real_repo.git        
   remote:  * [new branch]      1234 -> @base/master/josh@example.com/1234        
   remote: To http://localhost:8001/real_repo.git        
-  remote:  * [new branch]      foo7 -> @changes/master/josh@example.com/foo7        
+  remote:  * [new branch]      1235 -> @base/master/josh@example.com/1235        
   remote: To http://localhost:8001/real_repo.git        
   remote:  * [new branch]      foo7 -> @base/master/josh@example.com/foo7        
   remote: To http://localhost:8001/real_repo.git        
+  remote:  * [new branch]      1234 -> @changes/master/josh@example.com/1234        
+  remote: To http://localhost:8001/real_repo.git        
   remote:  * [new branch]      1235 -> @changes/master/josh@example.com/1235        
   remote: To http://localhost:8001/real_repo.git        
-  remote:  * [new branch]      1235 -> @base/master/josh@example.com/1235        
+  remote:  * [new branch]      foo7 -> @changes/master/josh@example.com/foo7        
   remote: To http://localhost:8001/real_repo.git        
   remote:  * [new branch]      master -> @heads/master/josh@example.com        
   To http://localhost:8002/real_repo.git
