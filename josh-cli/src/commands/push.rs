@@ -158,7 +158,7 @@ fn prepare_push(
     log::debug!("to_push: {:?}", to_push);
 
     let pr_infos =
-        if !dry_run && matches!(push_mode, PushMode::Split(_)) && *forge == Some(Forge::Github) {
+        if !dry_run && matches!(push_mode, PushMode::Publish(_)) && *forge == Some(Forge::Github) {
             josh_github_changes::collect_pr_infos(repo, &to_push)
         } else {
             vec![]
@@ -183,7 +183,7 @@ fn execute_push(
     for push_ref in &prepared.to_push {
         let mut git_push_args = vec!["push"];
 
-        if force || matches!(prepared.push_mode, PushMode::Split(_)) {
+        if force || matches!(prepared.push_mode, PushMode::Publish(_)) {
             git_push_args.push("--force");
         }
 
@@ -348,7 +348,7 @@ pub fn handle_publish(
     let repo = transaction.repo();
     let config = repo.config().context("Failed to get git config")?;
     let email = config.get_string("user.email").unwrap_or_default();
-    let push_mode = PushMode::Split(email.clone());
+    let push_mode = PushMode::Publish(email.clone());
 
     run_push(
         args.remote.as_deref(),

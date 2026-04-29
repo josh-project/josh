@@ -43,8 +43,7 @@ fn get_change_id(commit: &git2::Commit) -> Change {
 #[derive(PartialEq, Clone, Debug)]
 pub enum PushMode {
     Normal,
-    Stack(String),
-    Split(String),
+    Publish(String),
 }
 
 #[derive(Debug, Clone)]
@@ -76,38 +75,11 @@ pub fn baseref_and_options(
     if baseref.starts_with("refs/drafts") {
         baseref = baseref.replacen("refs/drafts", "refs/heads", 1)
     }
-    if baseref.starts_with("refs/stack/for") {
-        push_mode = PushMode::Stack(author.to_string());
-        baseref = baseref.replacen("refs/stack/for", "refs/heads", 1)
-    }
-    if baseref.starts_with("refs/split/for") {
-        push_mode = PushMode::Split(author.to_string());
-        baseref = baseref.replacen("refs/split/for", "refs/heads", 1)
+    if baseref.starts_with("refs/publish/for") {
+        push_mode = PushMode::Publish(author.to_string());
+        baseref = baseref.replacen("refs/publish/for", "refs/heads", 1)
     }
     Ok((baseref, push_to, options, push_mode))
-}
-
-fn add_base_refs(repo: &git2::Repository, refs: &mut Vec<PushRef>) -> anyhow::Result<()> {
-    let original_refs = std::mem::take(refs);
-    for push_ref in original_refs.into_iter() {
-        let base_ref = push_ref
-            .ref_name
-            .replacen("refs/heads/@changes", "refs/heads/@base", 1);
-
-        let oid = push_ref.oid;
-        let change_id = push_ref.change_id.clone();
-        refs.push(push_ref);
-
-        if let Some(parent_sha) = repo.find_commit(oid)?.parent_ids().next() {
-            refs.push(PushRef {
-                ref_name: base_ref,
-                oid: parent_sha,
-                change_id,
-            });
-        }
-    }
-
-    Ok(())
 }
 
 fn split_changes(
@@ -240,6 +212,7 @@ pub fn downstack(
 }
 
 fn changes_to_refs(
+    repo: &git2::Repository,
     baseref: &str,
     change_author: &str,
     changes: Vec<Change>,
@@ -271,21 +244,31 @@ fn changes_to_refs(
         }
     }
 
-    Ok(changes
-        .into_iter()
-        .filter_map(|change| {
-            change.id.map(|change_id| PushRef {
-                ref_name: format!(
-                    "refs/heads/@changes/{}/{}/{}",
-                    baseref.replacen("refs/heads/", "", 1),
-                    change.author,
-                    change_id,
-                ),
-                oid: change.commit,
+    let mut refs = vec![];
+    for change in changes {
+        if let Some(change_id) = change.id {
+            let ref_name = format!(
+                "refs/heads/@changes/{}/{}/{}",
+                baseref.replacen("refs/heads/", "", 1),
+                change.author,
                 change_id,
-            })
-        })
-        .collect())
+            );
+            let base_ref_name = ref_name.replacen("refs/heads/@changes", "refs/heads/@base", 1);
+            refs.push(PushRef {
+                ref_name,
+                oid: change.commit,
+                change_id: change_id.clone(),
+            });
+            if let Some(parent_sha) = repo.find_commit(change.commit)?.parent_ids().next() {
+                refs.push(PushRef {
+                    ref_name: base_ref_name,
+                    oid: parent_sha,
+                    change_id,
+                });
+            }
+        }
+    }
+    Ok(refs)
 }
 
 fn get_changes(
@@ -320,18 +303,11 @@ pub fn build_to_push(
     base_oid: git2::Oid,
 ) -> anyhow::Result<Vec<PushRef>> {
     match push_mode {
-        PushMode::Stack(author) | PushMode::Split(author) => {
+        PushMode::Publish(author) => {
             let changes = get_changes(repo, oid_to_push, base_oid)?;
+            let changes = split_changes(repo, changes, base_oid)?;
 
-            let changes = if matches!(push_mode, PushMode::Split(_)) {
-                split_changes(repo, changes, base_oid)?
-            } else {
-                changes.into_values().collect()
-            };
-
-            let mut push_refs = changes_to_refs(baseref, author, changes)?;
-
-            add_base_refs(repo, &mut push_refs)?;
+            let mut push_refs = changes_to_refs(repo, baseref, author, changes)?;
 
             push_refs.push(PushRef {
                 ref_name: format!(
@@ -343,6 +319,7 @@ pub fn build_to_push(
                 change_id: baseref.replacen("refs/heads/", "", 1),
             });
 
+            push_refs.sort_by(|a, b| a.ref_name.cmp(&b.ref_name));
             Ok(push_refs)
         }
         PushMode::Normal => Ok(vec![PushRef {
