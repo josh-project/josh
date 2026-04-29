@@ -8,19 +8,26 @@ use starlark::{
 };
 use std::fmt::{self, Display};
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
 
 /// Opaque Tree type for Starlark
-/// We wrap git2::Tree by storing its OID and a reference to the repository
+/// We wrap git2::Tree by storing its OID and a raw pointer to the repository.
 #[derive(Clone, ProvidesStaticType, NoSerialize)]
-pub struct StarlarkTree {
+pub(crate) struct StarlarkTree {
     pub tree_oid: git2::Oid,
-    pub repo: Arc<Mutex<git2::Repository>>,
+    // SAFETY: StarlarkTree is only constructed inside `evaluate()`, which is
+    // synchronous and spawns no threads. The referenced `git2::Repository` must
+    // remain alive and at a stable address for that entire duration so this raw
+    // pointer stays valid.
+    repo: *const git2::Repository,
 }
+
+// SAFETY: See the `repo` field documentation above.
+unsafe impl Send for StarlarkTree {}
+unsafe impl Sync for StarlarkTree {}
 
 impl Allocative for StarlarkTree {
     fn visit<'a, 'b: 'a>(&self, _visitor: &'a mut allocative::Visitor<'b>) {
-        // Tree OID is Copy and small, Repository is Arc so we don't need to visit it
+        // Tree OID is Copy and small; repo is a raw pointer we do not own.
     }
 }
 
@@ -54,9 +61,23 @@ impl<'v> StarlarkValue<'v> for StarlarkTree {
 }
 
 impl StarlarkTree {
-    /// Create a new StarlarkTree from a git2::Oid
-    pub fn new(tree_oid: git2::Oid, repo: Arc<Mutex<git2::Repository>>) -> Self {
-        Self { tree_oid, repo }
+    /// Create a new StarlarkTree from a git2::Oid and a repository reference.
+    ///
+    /// This constructor is crate-private because the returned value stores `repo`
+    /// as a raw pointer without carrying a lifetime. The crate must therefore only
+    /// construct `StarlarkTree` values in contexts that guarantee the repository
+    /// outlives the tree and all of its clones, such as the synchronous
+    /// `evaluate()` flow described in the struct-level safety comments.
+    pub(crate) fn new(tree_oid: git2::Oid, repo: &git2::Repository) -> Self {
+        Self {
+            tree_oid,
+            repo: repo as *const _,
+        }
+    }
+
+    fn repo(&self) -> &git2::Repository {
+        // SAFETY: See the `repo` field documentation on the struct.
+        unsafe { &*self.repo }
     }
 
     /// Get empty tree OID
@@ -103,16 +124,12 @@ impl StarlarkTree {
 
     /// Navigate to a path in the tree, returning the OID of the tree at that path
     fn navigate_to_path_oid(&self, path: &str) -> anyhow::Result<git2::Oid> {
-        let repo = self.repo.lock().unwrap();
-        self.navigate_to_path_oid_with_repo(path, &repo)
+        self.navigate_to_path_oid_with_repo(path, self.repo())
     }
 
     /// Get blob content at path, returning empty string if not found or binary
     fn get_file_content(&self, path: &str) -> String {
-        let repo = match self.repo.lock() {
-            Ok(r) => r,
-            Err(_) => return String::new(),
-        };
+        let repo = self.repo();
 
         let tree = match repo.find_tree(self.tree_oid) {
             Ok(t) => t,
@@ -158,12 +175,12 @@ fn tree_methods(_builder: &mut MethodsBuilder) {
         path: StringValue,
         heap: &'v starlark::values::Heap,
     ) -> anyhow::Result<Vec<Value<'v>>> {
-        let repo = this.repo.lock().unwrap();
+        let repo = this.repo();
 
         let target_tree_oid = if path.as_str().is_empty() {
             this.tree_oid
         } else {
-            match this.navigate_to_path_oid_with_repo(path.as_str(), &repo) {
+            match this.navigate_to_path_oid_with_repo(path.as_str(), repo) {
                 Ok(oid) => oid,
                 Err(_) => return Ok(Vec::new()), // Path doesn't exist, return empty list
             }
@@ -203,12 +220,12 @@ fn tree_methods(_builder: &mut MethodsBuilder) {
         path: StringValue,
         heap: &'v starlark::values::Heap,
     ) -> anyhow::Result<Vec<Value<'v>>> {
-        let repo = this.repo.lock().unwrap();
+        let repo = this.repo();
 
         let target_tree_oid = if path.as_str().is_empty() {
             this.tree_oid
         } else {
-            match this.navigate_to_path_oid_with_repo(path.as_str(), &repo) {
+            match this.navigate_to_path_oid_with_repo(path.as_str(), repo) {
                 Ok(oid) => oid,
                 Err(_) => return Ok(Vec::new()), // Path doesn't exist, return empty list
             }
@@ -251,8 +268,7 @@ fn tree_methods(_builder: &mut MethodsBuilder) {
 
         Ok(StarlarkTree {
             tree_oid,
-
-            repo: this.repo.clone(),
+            repo: this.repo,
         })
     }
 }
