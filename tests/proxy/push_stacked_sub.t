@@ -28,24 +28,24 @@
   * Change-Id: foo7  (HEAD -> master)
   * Change-Id: 1234 
   * add file1  (origin/master, origin/HEAD)
-  $ git push -o author=josh@example.com origin master:refs/stack/for/master
+  $ git push -o author=josh@example.com origin master:refs/publish/for/master
   remote: josh-proxy: pre-receive hook        
   remote: upstream: response status: 200 OK        
   remote: upstream: response body:        
   remote: 
   remote: To http://localhost:8001/real_repo.git        
-  remote:  * [new branch]      1234 -> @changes/master/josh@example.com/1234        
-  remote: To http://localhost:8001/real_repo.git        
   remote:  * [new branch]      1234 -> @base/master/josh@example.com/1234        
-  remote: To http://localhost:8001/real_repo.git        
-  remote:  * [new branch]      foo7 -> @changes/master/josh@example.com/foo7        
   remote: To http://localhost:8001/real_repo.git        
   remote:  * [new branch]      foo7 -> @base/master/josh@example.com/foo7        
   remote: To http://localhost:8001/real_repo.git        
+  remote:  * [new branch]      1234 -> @changes/master/josh@example.com/1234        
+  remote: To http://localhost:8001/real_repo.git        
+  remote:  * [new branch]      foo7 -> @changes/master/josh@example.com/foo7        
+  remote: To http://localhost:8001/real_repo.git        
   remote:  * [new branch]      master -> @heads/master/josh@example.com        
   To http://localhost:8002/real_repo.git:/sub1.git
-   * [new reference]   master -> refs/stack/for/master
-  $ git push -o author=josh@example.com origin master:refs/stack/for/other_branch
+   * [new reference]   master -> refs/publish/for/master
+  $ git push -o author=josh@example.com origin master:refs/publish/for/other_branch
   remote: josh-proxy: pre-receive hook        
   remote: upstream: response status: 500 Internal Server Error        
   remote: upstream: response body:        
@@ -54,32 +54,32 @@
   remote: If you want to create it, pass "-o base=<basebranch>" or "-o base=path/to/ref"        
   remote: to specify a base branch/reference.        
   remote: 
-  remote: error: hook declined to update refs/stack/for/other_branch        
+  remote: error: hook declined to update refs/publish/for/other_branch        
   To http://localhost:8002/real_repo.git:/sub1.git
-   ! [remote rejected] master -> refs/stack/for/other_branch (hook declined)
+   ! [remote rejected] master -> refs/publish/for/other_branch (hook declined)
   error: failed to push some refs to 'http://localhost:8002/real_repo.git:/sub1.git'
   [1]
-  $ git push -o base=master -o author=josh@example.com origin master:refs/stack/for/other_branch
+  $ git push -o base=master -o author=josh@example.com origin master:refs/publish/for/other_branch
   remote: josh-proxy: pre-receive hook        
   remote: upstream: response status: 200 OK        
   remote: upstream: response body:        
   remote: 
   remote: To http://localhost:8001/real_repo.git        
-  remote:  * [new branch]      1234 -> @changes/other_branch/josh@example.com/1234        
-  remote: To http://localhost:8001/real_repo.git        
   remote:  * [new branch]      1234 -> @base/other_branch/josh@example.com/1234        
-  remote: To http://localhost:8001/real_repo.git        
-  remote:  * [new branch]      foo7 -> @changes/other_branch/josh@example.com/foo7        
   remote: To http://localhost:8001/real_repo.git        
   remote:  * [new branch]      foo7 -> @base/other_branch/josh@example.com/foo7        
   remote: To http://localhost:8001/real_repo.git        
+  remote:  * [new branch]      1234 -> @changes/other_branch/josh@example.com/1234        
+  remote: To http://localhost:8001/real_repo.git        
+  remote:  * [new branch]      foo7 -> @changes/other_branch/josh@example.com/foo7        
+  remote: To http://localhost:8001/real_repo.git        
   remote:  * [new branch]      other_branch -> @heads/other_branch/josh@example.com        
   To http://localhost:8002/real_repo.git:/sub1.git
-   * [new reference]   master -> refs/stack/for/other_branch
+   * [new reference]   master -> refs/publish/for/other_branch
   $ echo contents2 > file3
   $ git add file3
   $ git commit -m "add file3" 1> /dev/null
-  $ git push -o author=josh@example.com origin master:refs/stack/for/master
+  $ git push -o author=josh@example.com origin master:refs/publish/for/master
   remote: josh-proxy: pre-receive hook        
   remote: upstream: response status: 200 OK        
   remote: upstream: response body:        
@@ -91,7 +91,7 @@
   remote: To http://localhost:8001/real_repo.git        
   remote:    2bb9471..a306516  master -> @heads/master/josh@example.com        
   To http://localhost:8002/real_repo.git:/sub1.git
-   * [new reference]   master -> refs/stack/for/master
+   * [new reference]   master -> refs/publish/for/master
 
   $ curl -s http://localhost:8002/flush
   Flushed credential cache (no-eol)
@@ -109,9 +109,9 @@
    * [new branch]      @heads/other_branch/josh@example.com -> origin/@heads/other_branch/josh@example.com
   $ git log --decorate --graph --pretty="%s %d"
   * add file3  (HEAD -> master, origin/@heads/master/josh@example.com)
-  * Change-Id: foo7  (origin/@heads/other_branch/josh@example.com, origin/@changes/other_branch/josh@example.com/foo7, origin/@changes/master/josh@example.com/foo7)
-  * Change-Id: 1234  (origin/@changes/other_branch/josh@example.com/1234, origin/@changes/master/josh@example.com/1234, origin/@base/other_branch/josh@example.com/foo7, origin/@base/master/josh@example.com/foo7)
-  * add file1  (origin/master, origin/HEAD, origin/@base/other_branch/josh@example.com/1234, origin/@base/master/josh@example.com/1234)
+  * Change-Id: foo7  (origin/@heads/other_branch/josh@example.com)
+  * Change-Id: 1234  (origin/@changes/other_branch/josh@example.com/1234, origin/@changes/master/josh@example.com/1234)
+  * add file1  (origin/master, origin/HEAD, origin/@base/other_branch/josh@example.com/foo7, origin/@base/other_branch/josh@example.com/1234, origin/@base/master/josh@example.com/foo7, origin/@base/master/josh@example.com/1234)
 
   $ cd ${TESTTMP}/real_repo
   $ git fetch origin
@@ -130,7 +130,7 @@
   error: pathspec 'heads/master/josh@example.com' did not match any file(s) known to git
   [1]
   $ git log --decorate --graph --pretty="%s %d"
-  * add file1  (HEAD -> master, origin/master, origin/HEAD, origin/@base/other_branch/josh@example.com/1234, origin/@base/master/josh@example.com/1234)
+  * add file1  (HEAD -> master, origin/master, origin/HEAD, origin/@base/other_branch/josh@example.com/foo7, origin/@base/other_branch/josh@example.com/1234, origin/@base/master/josh@example.com/foo7, origin/@base/master/josh@example.com/1234)
 
   $ tree
   .
@@ -164,10 +164,14 @@ Make sure all temporary namespace got removed
   |   |-- info
   |   |   `-- exclude
   |   |-- objects
+  |   |   |-- 24
+  |   |   |   `-- 4c0b793d0e21897e97d9898256f14734726faa
   |   |   |-- 2b
   |   |   |   `-- b94719cad2e76eb5dbcae874a2b0e44521e802
   |   |   |-- 3d
   |   |   |   `-- 77ff51363c9825cc2a221fc0ba5a883a1a2c72
+  |   |   |-- 53
+  |   |   |   `-- c45e312d8ea6082a7b3b8e738d367bf9349c53
   |   |   |-- 6b
   |   |   |   `-- 46faacade805991bcaea19382c9d941828ce80
   |   |   |-- 88
@@ -176,6 +180,8 @@ Make sure all temporary namespace got removed
   |   |   |   `-- 24003ee1acc6bf70318a46e7b6df651b9dc246
   |   |   |-- a3
   |   |   |   `-- 065162ecee0fecc977ec04a275e10b5e15a39c
+  |   |   |-- a7
+  |   |   |   `-- 3c840b29576d95d87cfe9c39afc3853c2af820
   |   |   |-- b2
   |   |   |   `-- ea883bc5df63565960a38cad7a57f73ac66eaa
   |   |   |-- ba
@@ -237,18 +243,30 @@ Make sure all temporary namespace got removed
       |   |   `-- 4cf6c9efbbda1eada39fa9c1d21d2525b027bb
       |   |-- 11
       |   |   `-- 06a6f09b169109f5ebd17428219142c67e84b9
+      |   |-- 1f
+      |   |   `-- be805c76d465aee056156b8cab015701cb08a0
+      |   |-- 24
+      |   |   `-- 4c0b793d0e21897e97d9898256f14734726faa
       |   |-- 2b
       |   |   `-- b94719cad2e76eb5dbcae874a2b0e44521e802
       |   |-- 40
       |   |   `-- 3e13a101fd75090369ffc317afafcfb646c576
       |   |-- 4b
       |   |   `-- 5ffb79a1f3852443bd747a6b213bf1e4abe168
+      |   |-- 53
+      |   |   `-- c45e312d8ea6082a7b3b8e738d367bf9349c53
       |   |-- 6b
       |   |   `-- 46faacade805991bcaea19382c9d941828ce80
       |   |-- 88
       |   |   `-- 2b84c5d3241087bc41982a744b72b7a174c49e
+      |   |-- 98
+      |   |   `-- 94b72f2bd0c6b9d468ae4c059b6de2628d9c14
+      |   |-- a2
+      |   |   `-- 8c68e091a9e9d04c154061018f168f7096caa9
       |   |-- a3
       |   |   `-- 065162ecee0fecc977ec04a275e10b5e15a39c
+      |   |-- a7
+      |   |   `-- 3c840b29576d95d87cfe9c39afc3853c2af820
       |   |-- b2
       |   |   `-- ea883bc5df63565960a38cad7a57f73ac66eaa
       |   |-- ba
@@ -258,6 +276,8 @@ Make sure all temporary namespace got removed
       |   |   `-- 33ab805ad4ef7ddda5b51e4a78ec0fac6b699a
       |   |-- c6
       |   |   `-- 27a2e3a6bfbb7307f522ad94fdfc8c20b92967
+      |   |-- d7
+      |   |   `-- eff8aebe26179face2d6fc0fc37682a6b83ee6
       |   |-- e3
       |   |   `-- a269743538338b0d059eda2f72976ec29220a8
       |   |-- info
@@ -267,7 +287,7 @@ Make sure all temporary namespace got removed
           |-- namespaces
           `-- tags
   
-  67 directories, 51 files
+  77 directories, 61 files
 
 $ cat ${TESTTMP}/josh-proxy.out
 $ cat ${TESTTMP}/josh-proxy.out | grep REPO_UPDATE
