@@ -88,6 +88,7 @@ fn prepare_push(
     filter: josh_core::filter::Filter,
     push_mode: &PushMode,
     forge: &Option<Forge>,
+    dry_run: bool,
 ) -> anyhow::Result<PreparedPush> {
     let repo = transaction.repo();
 
@@ -175,11 +176,12 @@ fn prepare_push(
 
     log::debug!("to_push: {:?}", to_push);
 
-    let pr_infos = if matches!(push_mode, PushMode::Split(_)) && *forge == Some(Forge::Github) {
-        josh_github_changes::collect_pr_infos(repo, &to_push)
-    } else {
-        vec![]
-    };
+    let pr_infos =
+        if !dry_run && matches!(push_mode, PushMode::Publish(_)) && *forge == Some(Forge::Github) {
+            josh_github_changes::collect_pr_infos(repo, &to_push)
+        } else {
+            vec![]
+        };
 
     Ok(PreparedPush { to_push, pr_infos })
 }
@@ -312,6 +314,7 @@ fn orchestrate_push(
                 filter,
                 &push_mode,
                 &forge,
+                dry_run,
             )
         })
         .collect::<anyhow::Result<Vec<_>>>()?;
@@ -332,8 +335,8 @@ fn orchestrate_push(
         pr_infos.extend(prepared.pr_infos);
     }
 
-    // Split mode always force-updates its per-change refs.
-    let force = force || matches!(push_mode, PushMode::Split(_));
+    // Publish mode always force-updates its per-change refs.
+    let force = force || matches!(push_mode, PushMode::Publish(_));
 
     // Phase 3: Execute the side effects.
     push_refs(
@@ -373,7 +376,7 @@ pub fn handle_publish(
 ) -> anyhow::Result<()> {
     let repo = transaction.repo();
     let config = repo.config().context("Failed to get git config")?;
-    let push_mode = PushMode::Split(config.get_string("user.email").unwrap_or_default());
+    let push_mode = PushMode::Publish(config.get_string("user.email").unwrap_or_default());
 
     orchestrate_push(
         args.remote.as_deref(),
