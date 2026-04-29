@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-ea1a0132.js";
+            window.path_to_searchindex_js = "../searchindex-cba56a0f.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-bacb8355.js"></script>
@@ -177,7 +177,8 @@
                         <h1 id="migration-guide"><a class="header" href="#migration-guide">Migration guide</a></h1>
 <p>This page covers breaking changes introduced in recent releases and how to adapt to them.</p>
 <h2 id="crlf-line-endings-in-gpgsig-headers-preserved"><a class="header" href="#crlf-line-endings-in-gpgsig-headers-preserved">CRLF line endings in gpgsig headers preserved</a></h2>
-<p>An older version of Josh accidentally normalized <code>\r\n</code> line endings to <code>\n</code> inside the
+<p><em>Applies when upgrading from r24.10.04 to r26.04.19.</em></p>
+<p>Josh previously accidentally normalized <code>\r\n</code> line endings to <code>\n</code> inside the
 <code>gpgsig</code> header of commit objects. This was a bug — git treats gpgsig values as opaque
 bytes, and the standard format uses <code>\n</code> throughout — and has been fixed. Josh now preserves
 whichever line endings are present in the original commit.</p>
@@ -189,6 +190,7 @@ to reproduce a history that was created with the old normalization:</p>
 </code></pre>
 <p>See the <a href="../reference/filters.html#gpgsig-option">gpgsig option</a> for details.</p>
 <h2 id="trivial-merges-removed-by-default"><a class="header" href="#trivial-merges-removed-by-default">Trivial merges removed by default</a></h2>
+<p><em>Applies when upgrading from r24.10.04 to r26.04.19.</em></p>
 <p>Josh previously kept all merge commits in the filtered history, even when the filtered tree
 of a merge commit was identical to its first parent’s tree (a “trivial merge”). Trivial merges
 are now removed by default during history simplification.</p>
@@ -202,15 +204,54 @@ meta option:</p>
 </code></pre>
 <p>See <a href="../reference/filters.html#history-option">Filter options</a> for details.</p>
 <h2 id="join-filter-removed"><a class="header" href="#join-filter-removed"><code>:join</code> filter removed</a></h2>
+<p><em>Applies when upgrading from r24.10.04 to r26.04.19.</em></p>
 <p>The <code>:join</code> filter has been removed. It was a limited alternative to using <code>--reverse</code>/push
 for reconstructing upstream history from a filtered view.</p>
 <p><strong>How to migrate:</strong> Use <code>josh-filter --reverse</code> or <code>josh push</code> to write changes back to
 the upstream repository.</p>
 <h2 id="josh-ui-web-ui-removed"><a class="header" href="#josh-ui-web-ui-removed">josh-ui (web UI) removed</a></h2>
+<p><em>Applies when upgrading from r24.10.04 to r26.04.19.</em></p>
 <p>The <code>/ui</code> endpoint and the <code>josh-ui</code> component have been removed from the project.</p>
 <p><strong>How to migrate:</strong> There is no direct replacement. Remove any links or integrations that
 pointed to the <code>/ui</code> endpoint.</p>
+<h2 id="rev-filter-syntax-changed-from-and-concat-removed"><a class="header" href="#rev-filter-syntax-changed-from-and-concat-removed"><code>:rev</code> filter syntax changed; <code>:from</code> and <code>:concat</code> removed</a></h2>
+<p><em>Applies when upgrading from r24.10.04 to r26.04.19.</em></p>
+<p>The <code>:rev</code> filter now requires an explicit match operator before each SHA, and the
+zero-SHA shorthand for the default case has been replaced by <code>_</code>.</p>
+<p><strong>What changed:</strong></p>
+<p>The old syntax used a bare SHA for each entry:</p>
+<pre><code>:rev(sha0:filter0,sha1:filter1,0000000000000000000000000000000000000000:default_filter)
+</code></pre>
+<p>The new syntax requires an operator prefix and uses <code>_</code> for the default case:</p>
+<pre><code>:rev(&lt;=sha0:filter0,&lt;=sha1:filter1,_:default_filter)
+</code></pre>
+<p>Available operators:</p>
+<ul>
+<li><code>&lt;=sha</code> — matches the commit and all its ancestors (inclusive); equivalent to the old
+bare-SHA behavior</li>
+<li><code>&lt;sha</code> — matches only strict ancestors (excludes the named commit itself)</li>
+<li><code>==sha</code> — matches only the exact commit</li>
+</ul>
+<p><strong>How to migrate <code>:rev</code> filters:</strong></p>
+<ul>
+<li>Replace each bare <code>sha:filter</code> entry with <code>&lt;=sha:filter</code></li>
+<li>Replace <code>0000000000000000000000000000000000000000:filter</code> with <code>_:filter</code></li>
+</ul>
+<p><strong><code>:from</code> removed:</strong></p>
+<p>The <code>:from(sha:filter)</code> filter has been removed. It kept the original history up to and
+including <code>sha</code> unchanged and applied <code>filter</code> to all later commits.</p>
+<p>Equivalent <code>:rev</code> expression:</p>
+<pre><code>:rev(&lt;=sha:/,_:filter)
+</code></pre>
+<p><strong><code>:concat</code> removed:</strong></p>
+<p>The <code>:concat(sha:filter)</code> filter has been removed. It was the internal building block of
+<code>:from</code> and sometimes appeared in normalized filter output (e.g. from <code>josh-filter -p</code>).
+Filters of the form <code>filter:concat(sha:filter)</code> are equivalent to <code>:from(sha:filter)</code> and
+should be migrated to:</p>
+<pre><code>:rev(&lt;=sha:/,_:filter)
+</code></pre>
 <h2 id="cache-location-changed"><a class="header" href="#cache-location-changed">Cache location changed</a></h2>
+<p><em>Applies when upgrading from r24.10.04 to r26.04.19.</em></p>
 <p>The local sled cache is now stored at <code>.git/josh/cache</code> instead of <code>.git/josh</code>.</p>
 <p><strong>What changed:</strong> On the first run after upgrading, Josh will not find any existing cache
 entries and will recompute all filter results from scratch. This is a one-time cost.</p>
