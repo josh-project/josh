@@ -240,6 +240,7 @@ fn to_absolute_remote_url(url: &str) -> anyhow::Result<String> {
         || url.starts_with("https://")
         || url.starts_with("ssh://")
         || url.starts_with("file://")
+        || url.starts_with("git@")
     {
         Ok(url.to_owned())
     } else {
