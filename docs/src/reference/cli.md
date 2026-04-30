@@ -21,7 +21,7 @@ josh clone <url> <filter> <out> [options]
 
 | Argument | Description |
 |----------|-------------|
-| `<url>`  | Remote repository URL (HTTPS, SSH, or local path) |
+| `<url>`  | Remote repository URL — full URL with `http://`, `https://`, `ssh://` or `file://` preferred. |
 | `<filter>` | [Filter spec](./filters.md) to apply (e.g. `:/docs`, `:workspace=workspaces/myproject`) |
 | `<out>`  | Local directory to clone into |
 
@@ -37,13 +37,28 @@ josh clone <url> <filter> <out> [options]
 
 ```shell
 # Clone only the docs/ subdirectory
-josh clone https://github.com/josh-project/josh.git :/docs ./josh-docs
+josh clone http://github.com/josh-project/josh.git :/docs ./josh-docs
 
 # Clone a workspace projection
-josh clone https://github.com/myorg/monorepo.git :workspace=workspaces/frontend ./frontend
+josh clone ssh://github.com/myorg/monorepo.git :workspace=workspaces/frontend ./frontend
 
 # Clone the full repository (no filter)
 josh clone https://github.com/josh-project/josh.git :/ ./josh
+
+# Clone from a mounted network share
+josh clone file:///mnt/network-share/repo :/ ./repo
+```
+
+There is limited support for omitting the URL schema when cloning local paths (`path/to/repo`)
+and scp-style paths (`git@github.com:user/repo.git`). Local paths are canonicalized to absolute paths,
+and scp-style paths are converted to SSH URLs.
+
+```shell
+# Clone using local path
+josh clone ../path/to/repo :/ ./repo
+
+# Clone using scp-style path
+josh clone git@github.com:myorg/monorepo.git :/ ./monorepo
 ```
 
 ---
