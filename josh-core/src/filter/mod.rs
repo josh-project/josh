@@ -345,17 +345,18 @@ pub fn flatten_chain(filter: Filter) -> Vec<Filter> {
                 .into_iter()
                 .flat_map(|f| expand(f, meta.clone()))
                 .collect(),
-            _ => {
-                // Leaf step: reassemble with the fully accumulated meta.
-                let mut f = filter.peel();
-                for (k, v) in meta {
-                    f = f.with_meta(k, v);
-                }
-                vec![f]
-            }
+            _ => vec![propagate_meta(filter.peel(), &meta)],
         }
     }
     expand(filter, std::collections::BTreeMap::new())
+}
+
+fn propagate_meta(filter: Filter, meta: &std::collections::BTreeMap<String, String>) -> Filter {
+    let mut f = filter;
+    for (k, v) in meta {
+        f = f.with_meta(k, v);
+    }
+    f
 }
 
 /// Calculate the filtered commit for `commit`. This can take some time if done
@@ -402,8 +403,9 @@ fn resolve_workspace_redirect<'a>(
     let f = parse(&tree::get_blob(repo, tree, &path.join("workspace.josh")))
         .unwrap_or_else(|_| to_filter(Op::Empty));
 
-    if let Op::Workspace(p) = to_op(f) {
-        Some((to_filter(Op::Exclude(Filter::new().file(path))).chain(f), p))
+    if let Op::Workspace(p) = peel_op(f) {
+        let inner = to_filter(Op::Exclude(Filter::new().file(path))).chain(f.peel());
+        Some((propagate_meta(inner, &f.into_meta()), p))
     } else {
         None
     }
@@ -1932,19 +1934,15 @@ fn per_rev_filter(
 ) -> anyhow::Result<Option<git2::Oid>> {
     // Propagate any meta-options from the outer filter (e.g. :~(gpgsig="norm-lf")[:rev(...)])
     // into the per-commit filter so they are applied during commit rewriting.
-    let commit_filter = {
-        let mut f = commit_filter;
-        for (k, v) in filter.into_meta().iter() {
-            f = f.with_meta(k, v);
-        }
-        f
-    };
+    let meta = filter.into_meta();
+    let commit_filter = propagate_meta(commit_filter, &meta);
     // Compute the difference between the current commit's filter and each parent's filter.
     // This determines what new content should be contributed by that parent in the filtered history.
     let extra_parents = parent_filters
         .into_iter()
         .map(|(parent, pcw)| {
             let f = opt::optimize(to_filter(Op::Subtract(commit_filter.peel(), pcw.peel())));
+            let f = propagate_meta(f, &meta);
             apply_to_commit2(f, &parent, transaction)
         })
         .collect::<anyhow::Result<Option<Vec<_>>>>()?;
