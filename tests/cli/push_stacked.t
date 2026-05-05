@@ -130,7 +130,7 @@ Test normal push (without --split) - create a new commit
   To file://${TESTTMP}/remote
      6ed6c1c..d3e371f  d3e371f8c637c91b59e05aae1066cf0adbe0da93 -> master
   
-  Pushed d3e371f8c637c91b59e05aae1066cf0adbe0da93 to origin/master
+  Pushed d3e371f8c637c91b59e05aae1066cf0adbe0da93 to origin/refs/heads/master
 
 Verify normal push worked
 

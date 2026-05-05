@@ -179,7 +179,7 @@ Test normal push still works
   To file://${TESTTMP}/remote
      6ed6c1c..b653cac  b653cac206c6317b8acebacae76017cf683456c8 -> master
   
-  Pushed b653cac206c6317b8acebacae76017cf683456c8 to origin/master
+  Pushed b653cac206c6317b8acebacae76017cf683456c8 to origin/refs/heads/master
 
 Verify normal push worked
 
