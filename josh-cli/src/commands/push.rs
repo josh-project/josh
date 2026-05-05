@@ -33,6 +33,14 @@ pub struct PushArgs {
     /// Dry run (don't actually update remote)
     #[arg(long = "dry-run", action = clap::ArgAction::SetTrue)]
     pub dry_run: bool,
+
+    /// Remote branch to use as the base for reverse filtering
+    ///
+    /// By default the destination branch is used. Pass --base to base
+    /// the push on a different branch — typically when pushing a new
+    /// branch that does not yet exist on the remote.
+    #[arg(long = "base")]
+    pub base: Option<String>,
 }
 
 #[derive(Debug, clap::Parser)]
@@ -59,6 +67,12 @@ pub struct PublishArgs {
     /// Dry run (don't actually update remote)
     #[arg(long = "dry-run", action = clap::ArgAction::SetTrue)]
     pub dry_run: bool,
+
+    /// Remote branch to use as the base for reverse filtering
+    ///
+    /// See `josh push --base` for details.
+    #[arg(long = "base")]
+    pub base: Option<String>,
 }
 
 struct PreparedPush {
@@ -71,6 +85,7 @@ struct PreparedPush {
 fn prepare_push(
     refspec: &str,
     remote_name: &str,
+    base: Option<&str>,
     transaction: &josh_core::cache::Transaction,
     filter: josh_core::filter::Filter,
     push_mode: PushMode,
@@ -97,18 +112,13 @@ fn prepare_push(
         .target()
         .context("Failed to get target of local ref")?;
 
-    // Look up the josh remote reference once and derive both original_target
-    // and old_filtered_oid from it
-    let josh_remote_ref = format!("refs/josh/remotes/{}/{}", remote_name, remote_ref);
-    let (original_target, old_filtered_oid) =
-        if let Ok(remote_reference) = repo.find_reference(&josh_remote_ref) {
-            let josh_remote_oid = remote_reference.target().unwrap_or(git2::Oid::zero());
+    let dest_remote_ref = format!("refs/josh/remotes/{}/{}", remote_name, remote_ref);
+    let (dest_oid, old_filtered_oid) =
+        if let Ok(remote_reference) = repo.find_reference(&dest_remote_ref) {
+            let dest_oid = remote_reference.target().unwrap_or(git2::Oid::zero());
 
-            let (filtered_oids, errors) = josh_core::filter_refs(
-                transaction,
-                filter,
-                &[(josh_remote_ref.clone(), josh_remote_oid)],
-            );
+            let (filtered_oids, errors) =
+                josh_core::filter_refs(transaction, filter, &[(dest_remote_ref.clone(), dest_oid)]);
 
             if let Some(error) = errors.into_iter().next() {
                 return Err(anyhow!("josh filter error: {}", error.1));
@@ -120,10 +130,25 @@ fn prepare_push(
                 git2::Oid::zero()
             };
 
-            (josh_remote_oid, old_filtered)
+            (dest_oid, old_filtered)
         } else {
             (git2::Oid::zero(), git2::Oid::zero())
         };
+
+    let original_target = if let Some(base) = base {
+        let base_remote_ref = format!("refs/josh/remotes/{}/{}", remote_name, base);
+        repo.find_reference(&base_remote_ref)
+            .with_context(|| {
+                format!(
+                    "Failed to resolve --base ref (looked up '{}')",
+                    base_remote_ref
+                )
+            })?
+            .target()
+            .with_context(|| format!("Base ref '{}' has no target", base_remote_ref))?
+    } else {
+        dest_oid
+    };
 
     log::debug!("old_filtered_oid: {:?}", old_filtered_oid);
     log::debug!("original_target: {:?}", original_target);
@@ -233,6 +258,7 @@ fn execute_push(
 fn run_push(
     remote: Option<&str>,
     refspecs_arg: &[String],
+    base: Option<&str>,
     force: bool,
     atomic: bool,
     dry_run: bool,
@@ -271,6 +297,7 @@ fn run_push(
             prepare_push(
                 refspec,
                 remote_name,
+                base,
                 transaction,
                 filter,
                 push_mode.clone(),
@@ -295,6 +322,7 @@ pub fn handle_push(
     run_push(
         args.remote.as_deref(),
         &args.refspecs,
+        args.base.as_deref(),
         args.force,
         args.atomic,
         args.dry_run,
@@ -314,6 +342,7 @@ pub fn handle_publish(
     run_push(
         args.remote.as_deref(),
         &args.refspecs,
+        args.base.as_deref(),
         args.force,
         args.atomic,
         args.dry_run,

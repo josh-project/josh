@@ -302,7 +302,11 @@ pub fn build_to_push(
             Ok(push_refs)
         }
         PushMode::Normal => Ok(vec![PushRef {
-            ref_name: ref_with_options.to_string(),
+            ref_name: if ref_with_options.starts_with("refs/") {
+                ref_with_options.to_string()
+            } else {
+                format!("refs/heads/{}", ref_with_options)
+            },
             oid: oid_to_push,
             change_id: "JOSH_PUSH".to_string(),
         }]),
