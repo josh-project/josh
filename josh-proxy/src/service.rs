@@ -977,8 +977,8 @@ async fn handle_serve_namespace(
         }
     };
 
-    let repo = parsed_url.upstream_repo.clone();
-    let remote_url = upstream + &repo;
+    let repo = parsed_url.upstream_repo.trim_start_matches('/').to_string();
+    let remote_url = format!("{}/{}", upstream, repo);
     let head_ref = match HeadRef::from_str(&parsed_url.headref) {
         Ok(hr) => hr,
         Err(_) => return (StatusCode::BAD_REQUEST, "Invalid head ref").into_response(),
@@ -1116,7 +1116,7 @@ async fn upstream_fetch_middleware(
         .unwrap_or(crate::auth::Handle { hash: None });
 
     let remote_auth = RemoteAuth::Http { auth: auth.clone() };
-    let upstream_repo = parsed_url.upstream_repo.clone();
+    let upstream_repo = parsed_url.upstream_repo.trim_start_matches('/').to_string();
 
     let filter = {
         let filter = josh_core::filter::parse(&parsed_url.filter_spec)?;
@@ -1128,12 +1128,12 @@ async fn upstream_fetch_middleware(
     let lazy_refs: Vec<_> = josh_core::filter::lazy_refs(filter)
         .iter()
         .map(|x| x.split_once("@").unwrap())
-        .map(|(x, y)| (x.to_string(), y.to_string()))
+        .map(|(x, y)| (x.trim_start_matches('/').to_string(), y.to_string()))
         .collect();
 
     fetch_repos.extend(lazy_refs.iter().map(|(x, _y)| x.clone()));
 
-    let remote_url = upstream.clone() + &upstream_repo;
+    let remote_url = format!("{}/{}", upstream, upstream_repo);
 
     let headref = match HeadRef::from_str(&parsed_url.headref) {
         Ok(hr) => hr,
@@ -1145,7 +1145,7 @@ async fn upstream_fetch_middleware(
     let http_auth_required = serv.require_auth && parsed_url.pathinfo == "/git-receive-pack";
 
     for fetch_repo in fetch_repos.iter() {
-        let fetch_url = upstream.clone() + fetch_repo.as_str();
+        let fetch_url = format!("{}/{}", upstream, fetch_repo);
 
         match crate::auth::check_http_auth(&fetch_url, &auth, http_auth_required, serv.http_retry)
             .await
@@ -1170,7 +1170,7 @@ async fn upstream_fetch_middleware(
     }
 
     for fetch_repo in fetch_repos.iter() {
-        let fetch_url = upstream.clone() + fetch_repo.as_str();
+        let fetch_url = format!("{}/{}", upstream, fetch_repo);
         match crate::upstream::fetch_upstream(
             serv.clone(),
             &fetch_repo,
