@@ -125,6 +125,11 @@ jobs:
         if: needs.generate-tags.outputs.should_build == 'true'
         id: build
         uses: docker/bake-action@v7
+        env:
+          # Without this, bake-action embeds the full GitHub event payload in
+          # the metadata output, which exceeds env-var size limits when read
+          # by downstream steps.
+          BUILDX_METADATA_PROVENANCE: disabled
         with:
           targets: run
           set: |
@@ -143,10 +148,12 @@ jobs:
         if: needs.generate-tags.outputs.should_build == 'true'
         # Create digests directory with a file whose name matches
         # the digest with the 'sha256:' prefix removed.
-        # Note: metadata is inlined into the script (not passed as env var) to avoid
-        # "Argument list too long" errors — bake-action embeds the full GitHub context.
+        # The metadata is passed via env to avoid `${{ ... }}` interpolation
+        # injecting unescaped quotes from the release body into the script.
+        env:
+          BAKE_METADATA: ${{ steps.build.outputs.metadata }}
         run: |
-          digest=$(printf '%s' '${{ steps.build.outputs.metadata }}' | jq -r '.run."containerimage.digest"')
+          digest=$(jq -r '.run."containerimage.digest"' <<< "$BAKE_METADATA")
           if [ -z "$digest" ] || [ "$digest" = "null" ]; then
             echo "Failed to extract digest from bake metadata" >&2
             exit 1
