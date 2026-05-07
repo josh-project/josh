@@ -86,7 +86,7 @@ Make sure all temporary namespace got removed
   .
   |-- josh
   |   `-- cache
-  |       `-- 26
+  |       `-- 27
   |           `-- sled
   |               |-- blobs
   |               |-- conf

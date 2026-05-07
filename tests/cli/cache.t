@@ -50,13 +50,13 @@ Build the distributed cache (applies the filter to already-fetched refs)
 Verify local cache refs were created
 
   $ git for-each-ref --format='%(refname)' 'refs/josh/cache/'
-  refs/josh/cache/26/0/bf567e0faf634a663d6cef48145a035e1974ab1d
+  refs/josh/cache/27/0/bf567e0faf634a663d6cef48145a035e1974ab1d
 
 Push the distributed cache and filtered ref to the backing remote
 
   $ josh cache push
   To file://${TESTTMP}/remote/libs
-   * [new reference]   refs/josh/cache/26/0/bf567e0faf634a663d6cef48145a035e1974ab1d -> refs/josh/cache/26/0/bf567e0faf634a663d6cef48145a035e1974ab1d
+   * [new reference]   refs/josh/cache/27/0/bf567e0faf634a663d6cef48145a035e1974ab1d -> refs/josh/cache/27/0/bf567e0faf634a663d6cef48145a035e1974ab1d
   
   To file://${TESTTMP}/remote/libs
    * [new reference]   refs/josh/filtered/bf567e0faf634a663d6cef48145a035e1974ab1d/heads/master -> refs/josh/filtered/bf567e0faf634a663d6cef48145a035e1974ab1d/heads/master
@@ -89,7 +89,7 @@ Fetch the distributed cache and filtered objects from the remote
 
   $ josh cache fetch
   From file://${TESTTMP}/remote/libs
-   * [new ref]         refs/josh/cache/26/0/bf567e0faf634a663d6cef48145a035e1974ab1d -> refs/josh/cache/26/0/bf567e0faf634a663d6cef48145a035e1974ab1d
+   * [new ref]         refs/josh/cache/27/0/bf567e0faf634a663d6cef48145a035e1974ab1d -> refs/josh/cache/27/0/bf567e0faf634a663d6cef48145a035e1974ab1d
   
   From file://${TESTTMP}/remote/libs
    * [new ref]         refs/josh/filtered/bf567e0faf634a663d6cef48145a035e1974ab1d/heads/master -> refs/josh/filtered/bf567e0faf634a663d6cef48145a035e1974ab1d/heads/master
@@ -99,7 +99,7 @@ Fetch the distributed cache and filtered objects from the remote
 Verify cache refs are now present locally
 
   $ git for-each-ref --format='%(refname)' 'refs/josh/cache/'
-  refs/josh/cache/26/0/bf567e0faf634a663d6cef48145a035e1974ab1d
+  refs/josh/cache/27/0/bf567e0faf634a663d6cef48145a035e1974ab1d
 
   $ cd ${TESTTMP}
 

@@ -49,7 +49,7 @@ test for that.
   .
   |-- josh
   |   `-- cache
-  |       `-- 26
+  |       `-- 27
   |           `-- sled
   |               |-- blobs
   |               |-- conf
