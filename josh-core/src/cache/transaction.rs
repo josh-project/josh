@@ -5,7 +5,7 @@ use anyhow::anyhow;
 use std::collections::HashMap;
 use std::sync::{LazyLock, RwLock};
 
-pub const CACHE_VERSION: u64 = 26;
+pub const CACHE_VERSION: u64 = 27;
 
 pub trait CacheBackend: Send + Sync {
     fn read(
