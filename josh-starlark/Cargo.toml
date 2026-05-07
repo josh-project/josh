@@ -1,6 +1,6 @@
 [package]
 name = "josh-starlark"
-version = "26.4.19"
+version = "26.5.8"
 edition = "2024"
 authors = ["Josh Project authors <contact@josh-project.dev>"]
 license-file = "../LICENSE"

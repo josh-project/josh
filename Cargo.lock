@@ -306,7 +306,7 @@ dependencies = [
 
 [[package]]
 name = "axum-cgi"
-version = "26.4.19"
+version = "26.5.8"
 dependencies = [
  "axum",
  "bytes",
@@ -320,7 +320,7 @@ dependencies = [
 
 [[package]]
 name = "axum-cgi-server"
-version = "26.4.19"
+version = "26.5.8"
 dependencies = [
  "anyhow",
  "axum",
@@ -2844,7 +2844,7 @@ dependencies = [
 
 [[package]]
 name = "josh-changes"
-version = "26.4.19"
+version = "26.5.8"
 dependencies = [
  "anyhow",
  "git2",
@@ -2853,7 +2853,7 @@ dependencies = [
 
 [[package]]
 name = "josh-cli"
-version = "26.4.19"
+version = "26.5.8"
 dependencies = [
  "anyhow",
  "arboard",
@@ -2884,7 +2884,7 @@ dependencies = [
 
 [[package]]
 name = "josh-core"
-version = "26.4.19"
+version = "26.5.8"
 dependencies = [
  "anyhow",
  "backtrace",
@@ -2924,7 +2924,7 @@ dependencies = [
 
 [[package]]
 name = "josh-cq"
-version = "26.4.19"
+version = "26.5.8"
 dependencies = [
  "anyhow",
  "axum",
@@ -2942,7 +2942,7 @@ dependencies = [
 
 [[package]]
 name = "josh-filter"
-version = "26.4.19"
+version = "26.5.8"
 dependencies = [
  "anyhow",
  "git2",
@@ -2959,7 +2959,7 @@ dependencies = [
 
 [[package]]
 name = "josh-github-auth"
-version = "26.4.19"
+version = "26.5.8"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2981,7 +2981,7 @@ dependencies = [
 
 [[package]]
 name = "josh-github-changes"
-version = "26.4.19"
+version = "26.5.8"
 dependencies = [
  "anyhow",
  "git2",
@@ -2993,7 +2993,7 @@ dependencies = [
 
 [[package]]
 name = "josh-github-codegen-graphql"
-version = "26.4.19"
+version = "26.5.8"
 dependencies = [
  "anyhow",
  "chrono",
@@ -3009,7 +3009,7 @@ dependencies = [
 
 [[package]]
 name = "josh-github-graphql"
-version = "26.4.19"
+version = "26.5.8"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3026,7 +3026,7 @@ dependencies = [
 
 [[package]]
 name = "josh-github-webhooks"
-version = "26.4.19"
+version = "26.5.8"
 dependencies = [
  "anyhow",
  "axum",
@@ -3044,7 +3044,7 @@ dependencies = [
 
 [[package]]
 name = "josh-graphql"
-version = "26.4.19"
+version = "26.5.8"
 dependencies = [
  "anyhow",
  "chrono",
@@ -3062,7 +3062,7 @@ dependencies = [
 
 [[package]]
 name = "josh-link"
-version = "26.4.19"
+version = "26.5.8"
 dependencies = [
  "anyhow",
  "git2",
@@ -3071,7 +3071,7 @@ dependencies = [
 
 [[package]]
 name = "josh-proxy"
-version = "26.4.19"
+version = "26.5.8"
 dependencies = [
  "anyhow",
  "axum",
@@ -3123,7 +3123,7 @@ dependencies = [
 
 [[package]]
 name = "josh-rpc"
-version = "26.4.19"
+version = "26.5.8"
 dependencies = [
  "libc",
  "serde",
@@ -3132,7 +3132,7 @@ dependencies = [
 
 [[package]]
 name = "josh-ssh-shell"
-version = "26.4.19"
+version = "26.5.8"
 dependencies = [
  "clap",
  "josh-rpc",
@@ -3150,7 +3150,7 @@ dependencies = [
 
 [[package]]
 name = "josh-starlark"
-version = "26.4.19"
+version = "26.5.8"
 dependencies = [
  "allocative",
  "anyhow",
@@ -3161,7 +3161,7 @@ dependencies = [
 
 [[package]]
 name = "josh-templates"
-version = "26.4.19"
+version = "26.5.8"
 dependencies = [
  "anyhow",
  "form_urlencoded",
@@ -3175,7 +3175,7 @@ dependencies = [
 
 [[package]]
 name = "josh-test-webhook-client"
-version = "26.4.19"
+version = "26.5.8"
 dependencies = [
  "anyhow",
  "backon",
@@ -3195,7 +3195,7 @@ dependencies = [
 
 [[package]]
 name = "josh-test-webhook-service"
-version = "26.4.19"
+version = "26.5.8"
 dependencies = [
  "anyhow",
  "axum",
