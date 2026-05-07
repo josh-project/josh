@@ -11,7 +11,7 @@ jobs:
   generate-tags:
     runs-on: ubuntu-latest
     outputs:
-      images: ${{ steps.generate-tags.outputs.images }}
+      run_tags_set: ${{ steps.generate-tags.outputs.run_tags_set }}
       tagged_images: ${{ steps.generate-tags.outputs.tagged_images }}
       should_build: ${{ steps.generate-tags.outputs.should_build }}
     steps:
@@ -56,9 +56,17 @@ jobs:
               # Cross product: tags x images
               tagged_images = [f"{image}:{tag}" for image in images for tag in tags]
 
+              # One `run.tags=<image>` line per image. Buildx appends array
+              # overrides across repeated `--set target.key=...` directives,
+              # so emitting one line per image avoids the comma-as-separator
+              # ambiguity that breaks `run.tags=img1,img2`.
+              run_tags_set = "\n".join(f"run.tags={image}" for image in images)
+
               # Write to GITHUB_OUTPUT
               with open(os.environ["GITHUB_OUTPUT"], "a") as f:
-                  f.write(f"images={','.join(images)}\n")
+                  f.write("run_tags_set<<EOF\n")
+                  f.write(run_tags_set)
+                  f.write("\nEOF\n")
 
                   f.write("tagged_images<<EOF\n")
                   f.write("\n".join(tagged_images))
@@ -129,7 +137,7 @@ jobs:
             build.args.JOSH_VERSION=${{ steps.version.outputs.version }}
             run.cache-from=type=gha,scope=run-${{ matrix.arch }}
             run.cache-to=type=gha,mode=max,scope=run-${{ matrix.arch }}
-            run.tags=${{ needs.generate-tags.outputs.images }}
+            ${{ needs.generate-tags.outputs.run_tags_set }}
             run.output=type=image,push-by-digest=true,name-canonical=true,push=true
       - name: Export digest
         if: needs.generate-tags.outputs.should_build == 'true'
