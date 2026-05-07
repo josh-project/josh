@@ -1,6 +1,6 @@
 [package]
 name = "josh-github-changes"
-version = "26.4.19"
+version = "26.5.8"
 edition = "2021"
 authors = ["Josh Project authors <contact@josh-project.dev>"]
 description = "GitHub change tracking for Josh"

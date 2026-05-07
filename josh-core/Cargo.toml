@@ -1,6 +1,6 @@
 [package]
 name = "josh-core"
-version = "26.4.19"
+version = "26.5.8"
 repository = "https://ithub.com/josh-project/josh"
 authors = ["Josh Project authors <contact@josh-project.dev>"]
 license-file = "../LICENSE"
