@@ -76,26 +76,26 @@ prettyplease = "0.2.37"
 graphql_client = "^0.16"
 graphql_client_codegen = { version = "^0.16.0" }
 
-axum-cgi = { path = "axum-cgi" }
-josh-filter = { path = "josh-filter" }
-josh-changes = { path = "josh-changes" }
-josh-core = { path = "josh-core" }
-josh-graphql = { path = "josh-graphql" }
-josh-link = { path = "josh-link" }
-josh-rpc = { path = "josh-rpc" }
-josh-starlark = { path = "josh-starlark" }
-josh-templates = { path = "josh-templates" }
+axum-cgi = { path = "axum-cgi", version = "26.5.8" }
+josh-filter = { path = "josh-filter", version = "26.5.8" }
+josh-changes = { path = "josh-changes", version = "26.5.8" }
+josh-core = { path = "josh-core", version = "26.5.8" }
+josh-graphql = { path = "josh-graphql", version = "26.5.8" }
+josh-link = { path = "josh-link", version = "26.5.8" }
+josh-rpc = { path = "josh-rpc", version = "26.5.8" }
+josh-starlark = { path = "josh-starlark", version = "26.5.8" }
+josh-templates = { path = "josh-templates", version = "26.5.8" }
 
 # Forges support
-josh-github-changes = { path = "forges/josh-github-changes" }
-josh-github-graphql = { path = "forges/josh-github-graphql" }
-josh-github-codegen-graphql = { path = "forges/josh-github-codegen-graphql" }
-josh-github-webhooks = { path = "forges/josh-github-webhooks" }
-josh-github-auth = { path = "forges/josh-github-auth" }
+josh-github-changes = { path = "forges/josh-github-changes", version = "26.5.8" }
+josh-github-graphql = { path = "forges/josh-github-graphql", version = "26.5.8" }
+josh-github-codegen-graphql = { path = "forges/josh-github-codegen-graphql", version = "26.5.8" }
+josh-github-webhooks = { path = "forges/josh-github-webhooks", version = "26.5.8" }
+josh-github-auth = { path = "forges/josh-github-auth", version = "26.5.8" }
 
 # Deployment
-josh-test-webhook-service = { path = "deployment/josh-test-webhook-service" }
-josh-test-webhook-client = { path = "deployment/josh-test-webhook-client" }
+josh-test-webhook-service = { path = "deployment/josh-test-webhook-service", version = "26.5.8" }
+josh-test-webhook-client = { path = "deployment/josh-test-webhook-client", version = "26.5.8" }
 
 [workspace.dependencies.git2]
 default-features = false
