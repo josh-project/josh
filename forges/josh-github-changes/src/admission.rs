@@ -4,6 +4,7 @@ use josh_github_webhooks::webhook_types::{
     PullRequestReviewEventDetails, PullRequestReviewState,
 };
 
+#[derive(Debug, Clone, Default)]
 pub struct AdmissionState {
     pub required_checks: std::collections::BTreeMap<RequiredStatusCheck, bool>,
     pub maintainer_reviews: std::collections::BTreeMap<String, PullRequestReviewState>,

@@ -126,8 +126,9 @@ async fn main() -> anyhow::Result<()> {
 
     match cli.command {
         Commands::Init => {
-            // TODO
-            return Ok(());
+            let (_repo_path, _cache, transaction) = open_repo(cli.data_dir.as_deref())?;
+            let msg = josh_cq::cq::handle_init(&transaction)?;
+            println!("{}", msg);
         }
         Commands::Serve(args) => run_serve(args, cli.data_dir.as_deref()).await?,
         Commands::Action(action) => {
@@ -135,9 +136,11 @@ async fn main() -> anyhow::Result<()> {
 
             match action {
                 ActionCommands::Track(ref args) => {
-                    let msg =
+                    let action =
                         josh_cq::cq::handle_track(&args.url, &args.id, &args.mode, &transaction)?;
-                    println!("{}", msg);
+                    match action {
+                        josh_cq::cq::UserAction::Message(m) => println!("{m}"),
+                    }
                 }
                 ActionCommands::Fetch => {
                     todo!()

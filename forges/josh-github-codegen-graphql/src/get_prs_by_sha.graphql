@@ -1,0 +1,15 @@
+query GetPrsBySha($owner: String!, $name: String!, $sha: GitObjectID!) {
+  repository(owner: $owner, name: $name) {
+    object(oid: $sha) {
+      __typename
+      ... on Commit {
+        associatedPullRequests(first: 10, states: [OPEN]) {
+          nodes {
+            id
+            number
+          }
+        }
+      }
+    }
+  }
+}

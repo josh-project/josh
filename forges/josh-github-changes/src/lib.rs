@@ -1,5 +1,5 @@
 pub mod admission;
-mod repo;
+pub mod repo;
 
 use std::collections::HashMap;
 

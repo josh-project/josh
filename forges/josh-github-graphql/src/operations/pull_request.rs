@@ -3,12 +3,43 @@ use anyhow::anyhow;
 
 use josh_github_codegen_graphql::{
     close_pull_request, convert_pull_request_to_draft, create_pull_request, get_pr_by_head,
-    mark_pull_request_ready_for_review, update_pull_request, ClosePullRequest,
-    ConvertPullRequestToDraft, CreatePullRequest, GetPrByHead, MarkPullRequestReadyForReview,
-    UpdatePullRequest,
+    get_prs_by_sha, mark_pull_request_ready_for_review, update_pull_request, ClosePullRequest,
+    ConvertPullRequestToDraft, CreatePullRequest, GetPrByHead, GetPrsBySha,
+    MarkPullRequestReadyForReview, UpdatePullRequest,
 };
 
 impl GithubApiConnection {
+    /// Find open PRs whose head commit is the given SHA. Returns `(node_id, number)` for each.
+    pub async fn find_open_prs_by_head_sha(
+        &self,
+        owner: &str,
+        name: &str,
+        sha: &str,
+    ) -> anyhow::Result<Vec<(String, i64)>> {
+        let variables = get_prs_by_sha::Variables {
+            owner: owner.to_string(),
+            name: name.to_string(),
+            sha: sha.to_string(),
+        };
+        let response = self.make_request::<GetPrsBySha>(variables).await?;
+        let prs = response
+            .repository
+            .and_then(|r| r.object)
+            .and_then(|o| match o {
+                get_prs_by_sha::GetPrsByShaRepositoryObject::Commit(c) => {
+                    c.associated_pull_requests
+                }
+                _ => None,
+            })
+            .and_then(|p| p.nodes)
+            .unwrap_or_default()
+            .into_iter()
+            .flatten()
+            .map(|n| (n.id, n.number))
+            .collect();
+        Ok(prs)
+    }
+
     /// Find an open PR by head branch name. Returns (node_id, number, is_draft) if found.
     pub async fn find_pull_request_by_head(
         &self,

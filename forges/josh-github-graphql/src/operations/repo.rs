@@ -20,8 +20,14 @@ pub struct RepositoryRuleset {
     pub exclude_refs: Vec<String>,
 }
 
+impl RepositoryRuleset {
+    pub fn is_active(&self) -> bool {
+        matches!(self.enforcement, RuleEnforcement::Active)
+    }
+}
+
 /// A required status check from a ruleset.
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct RequiredStatusCheck {
     pub context: String,
     pub integration_id: Option<i64>,
