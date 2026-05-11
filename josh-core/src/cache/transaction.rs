@@ -495,6 +495,11 @@ pub fn compute_sequence_number(
         walk.set_sorting(git2::Sort::REVERSE | git2::Sort::TOPOLOGICAL)?;
         walk.push(input)?;
 
+        // Stop at ancestors that already have a sequence number — they (and
+        // their ancestors, transitively) have already been processed.
+        let mut hide = |id| transaction.known(crate::filter::sequence_number(), id);
+        let walk = walk.with_hide_callback(&mut hide)?;
+
         for c in walk {
             let commit = transaction.repo().find_commit(c?)?;
             let mut this_sequence_number = 0;
