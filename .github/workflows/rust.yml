@@ -61,14 +61,27 @@ jobs:
           dev-ci.cache-from=type=gha,scope=${{ matrix.test_suite.name }}
           dev-ci.cache-to=type=gha,mode=max,scope=${{ matrix.test_suite.name }}
     - name: Run tests
-      run: >-
-        docker run --rm
-        -v ${{ github.workspace }}:/github/workspace
-        -w /github/workspace
-        -e SCCACHE_BUCKET=josh-project-cache
-        -e SCCACHE_ENDPOINT=https://19f2dfdd7c93980184be5e5809e8b252.r2.cloudflarestorage.com
-        -e SCCACHE_REGION=auto
-        -e AWS_ACCESS_KEY_ID=${{ secrets.R2_ACCESS_KEY_ID }}
-        -e AWS_SECRET_ACCESS_KEY=${{ secrets.R2_SECRET_ACCESS_KEY }}
-        josh-ci-dev:latest
-        bash /github/workspace/.github/workflows/scripts/${{ matrix.test_suite.script }}
+      env:
+        R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+        R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      run: |
+        sccache_args=()
+        if [ -n "$R2_ACCESS_KEY_ID" ]; then
+          echo "using r2"
+          sccache_args=(
+            -e SCCACHE_BUCKET=josh-project-cache
+            -e SCCACHE_ENDPOINT=https://19f2dfdd7c93980184be5e5809e8b252.r2.cloudflarestorage.com
+            -e SCCACHE_REGION=auto
+            -e "AWS_ACCESS_KEY_ID=$R2_ACCESS_KEY_ID"
+            -e "AWS_SECRET_ACCESS_KEY=$R2_SECRET_ACCESS_KEY"
+          )
+        else
+          echo "not using r2"
+          sccache_args=(-e RUSTC_WRAPPER=)
+        fi
+        docker run --rm \
+          -v ${{ github.workspace }}:/github/workspace \
+          -w /github/workspace \
+          "${sccache_args[@]}" \
+          josh-ci-dev:latest \
+          bash /github/workspace/.github/workflows/scripts/${{ matrix.test_suite.script }}
