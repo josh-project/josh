@@ -25,12 +25,10 @@ fi
 echo "running: ${TESTS}"
 
 if (( ! NO_BUILD_CONTAINER )); then
-    docker buildx build \
-        --target=dev-local \
-        --tag=josh-dev-local \
-        --build-arg USER_UID="$(id -u)" \
-        --build-arg USER_GID="$(id -g)" \
-        .
+    docker buildx bake \
+        --set "dev-local.args.USER_UID=$(id -u)" \
+        --set "dev-local.args.USER_GID=$(id -g)" \
+        dev-local
 fi
 
 mapfile -d '' TEST_SCRIPT << EOF
@@ -42,12 +40,18 @@ if [[ ! -v CARGO_TARGET_DIR ]]; then
 fi
 
 export RUSTFLAGS="-D warnings"
-cargo build --workspace --exclude josh-ui --features incubating
+cargo build --workspace
 ( cd josh-ssh-dev-server ; go build -o "\${CARGO_TARGET_DIR}/josh-ssh-dev-server" )
 sh run-tests.sh ${TESTS}
 EOF
 
+DOCKER_RUN_FLAGS=(--interactive)
+if [ -t 0 ] && [ -t 1 ]; then
+    DOCKER_RUN_FLAGS+=(--tty)
+fi
+
 docker run --rm \
+    "${DOCKER_RUN_FLAGS[@]}" \
     --workdir "$(pwd)" \
     --volume "$(pwd)":"$(pwd)" \
     --volume cache:/opt/cache \
