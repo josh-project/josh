@@ -95,6 +95,7 @@
       :/xx
       :/sub/xx
   ]
+  [3] reachable_roots
   [3] sequence_number
   $ git diff ${EMPTY_TREE}..FILTERED_HEAD
   diff --git a/file1 b/file1

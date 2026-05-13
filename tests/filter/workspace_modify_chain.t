@@ -30,6 +30,7 @@
   [1] :prefix=subsub
   [2] :workspace=ws
   [3] :/sub2
+  [7] reachable_roots
   [7] sequence_number
 
   $ git log --graph --pretty=%s refs/heads/filtered
@@ -56,6 +57,7 @@
   [1] :prefix=subsub
   [2] :workspace=ws
   [3] :/sub2
+  [7] reachable_roots
   [7] sequence_number
   $ josh-filter -s $FILTER --reverse --check-roundtrip master --update refs/heads/filtered
   96bf13926606a13c7b7bc4caf3bcf80a1b3e4a36
@@ -64,6 +66,7 @@
   [1] :prefix=subsub
   [3] :workspace=ws
   [4] :/sub2
+  [9] reachable_roots
   [9] sequence_number
   $ git checkout master
   Switched to branch 'master'

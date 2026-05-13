@@ -126,10 +126,12 @@
       |-- objects
       |   |-- 0b
       |   |   `-- 4cf6c9efbbda1eada39fa9c1d21d2525b027bb
+      |   |-- 1d
+      |   |   `-- 9470cf784c751ec8cc3556d50737a7de1f5262
       |   |-- info
       |   `-- pack
       `-- refs
           |-- heads
           `-- tags
   
-  35 directories, 20 files
+  36 directories, 21 files

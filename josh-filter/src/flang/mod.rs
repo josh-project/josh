@@ -1,7 +1,7 @@
 pub mod parse;
 
 use crate::filter::MESSAGE_MATCH_ALL_REGEX;
-use crate::filter::sequence_number;
+use crate::filter::{reachable_roots, sequence_number};
 use crate::opt;
 use crate::persist::{to_filter, to_op, to_ops};
 use crate::{Filter, Op, RevMatch};
@@ -142,6 +142,9 @@ fn pretty2(op: &Op, indent: usize, compose: bool) -> String {
 pub fn spec(filter: Filter) -> String {
     if filter == sequence_number() {
         return "sequence_number".to_string();
+    }
+    if filter == reachable_roots() {
+        return "reachable_roots".to_string();
     }
     let filter = opt::simplify(filter);
     spec2(&to_op(filter))

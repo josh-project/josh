@@ -54,6 +54,7 @@
       ::sub2/subsub/
   ]
   [3] :+st/config
+  [7] reachable_roots
   [7] sequence_number
   $ josh-filter -s :+st_new/config master --update refs/heads/filtered_new
   5f2b78a024c1abd991085bea441509b6c252eb93
@@ -71,6 +72,7 @@
       ::sub2/subsub/
       b = :/sub3
   ]
+  [7] reachable_roots
   [7] sequence_number
 
   $ git log --graph --pretty=%s refs/heads/filtered
@@ -203,5 +205,6 @@
       ::sub2/subsub/
       b = :/sub3
   ]
+  [8] reachable_roots
   [8] sequence_number
 

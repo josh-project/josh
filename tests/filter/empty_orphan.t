@@ -23,6 +23,7 @@ Empty root commits from unrelated parts of the tree should not be included
   540f1cbf31dcaef743774db17c00cd20b814db62
   [3] :/sub1
   [3] :prefix=c
+  [6] reachable_roots
   [6] sequence_number
 
   $ git log refs/josh/filter/master --graph --pretty=%s
@@ -86,6 +87,7 @@ Empty root commits from unrelated parts of the tree should not be included
   540f1cbf31dcaef743774db17c00cd20b814db62
   [3] :prefix=c
   [5] :/sub1
+  [10] reachable_roots
   [10] sequence_number
 
   $ git log FILTERED_HEAD --graph --pretty=%s
@@ -103,6 +105,7 @@ Empty root commits from unrelated parts of the tree should not be included
   [5] :/sub1
   [5] :exclude[::sub1/]
   [6] :prefix=c
+  [10] reachable_roots
   [10] sequence_number
 
   $ git log FILTERED_HEAD --graph --pretty=%s
@@ -120,6 +123,7 @@ Empty root commits from unrelated parts of the tree should not be included
   [5] :/sub1
   [5] :exclude[::sub1/]
   [6] :prefix=c
+  [12] reachable_roots
   [12] sequence_number
 
   $ git ls-tree --name-only -r FILTERED_HEAD

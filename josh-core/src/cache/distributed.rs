@@ -1,4 +1,5 @@
-use super::transaction::{CACHE_VERSION, CacheBackend};
+use super::CACHE_VERSION;
+use super::backend::CacheBackend;
 use crate::filter;
 use crate::filter::Filter;
 use std::collections::HashMap;
@@ -117,7 +118,7 @@ impl CacheBackend for DistributedCacheBackend {
         from: git2::Oid,
         sequence_number: u128,
     ) -> anyhow::Result<Option<git2::Oid>> {
-        if filter == filter::sequence_number() {
+        if filter == filter::sequence_number() || filter == filter::reachable_roots() {
             return Ok(None);
         }
         let repo = self.repo.lock().unwrap();
@@ -164,7 +165,7 @@ impl CacheBackend for DistributedCacheBackend {
         to: git2::Oid,
         sequence_number: u128,
     ) -> anyhow::Result<()> {
-        if filter == filter::sequence_number() {
+        if filter == filter::sequence_number() || filter == filter::reachable_roots() {
             return Ok(());
         }
 

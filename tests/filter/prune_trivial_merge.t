@@ -40,6 +40,7 @@
   )[
       ::file1
   ]
+  [5] reachable_roots
   [5] sequence_number
   $ git log --graph --pretty=%s FILTERED_HEAD
   *   Merge branch 'branch1'
@@ -56,6 +57,7 @@
   )[
       ::file1
   ]
+  [6] reachable_roots
   [6] sequence_number
   $ git log --graph --pretty=%s FILTERED_HEAD
   *   Merge branch 'branch1'
@@ -73,6 +75,7 @@
   )[
       ::file1
   ]
+  [6] reachable_roots
   [6] sequence_number
 
   $ git log --graph --pretty=%s FILTERED_HEAD

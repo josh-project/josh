@@ -25,6 +25,7 @@
   $ josh-filter -s :!st/config[] master --update refs/josh/master
   3503c2ff9f931db3e256bb6deb1a2d147e7b1c2b
   [3] :!st/config[:empty]
+  [3] reachable_roots
   [3] sequence_number
 
   $ git log --graph --pretty=%s refs/josh/master

@@ -22,6 +22,7 @@
   $ josh-filter -s ":rev(<=$COMMIT2:prefix=x,<$COMMIT2:prefix=y)" --update refs/heads/filtered
   6df7a0701cf39b99b9f772d4625d3ba6518c787e
   [3] :rev(<=e86ec4160d1359883e642e6888645d28c3358012:prefix=x,<e86ec4160d1359883e642e6888645d28c3358012:prefix=y)
+  [3] reachable_roots
   [3] sequence_number
   $ git log --oneline refs/heads/filtered
   6df7a07 commit3
@@ -37,6 +38,7 @@
   6df7a0701cf39b99b9f772d4625d3ba6518c787e
   [3] :rev(<=e86ec4160d1359883e642e6888645d28c3358012:prefix=x)
   [3] :rev(<=e86ec4160d1359883e642e6888645d28c3358012:prefix=x,<e86ec4160d1359883e642e6888645d28c3358012:prefix=y)
+  [3] reachable_roots
   [3] sequence_number
   $ git ls-tree -r --name-only refs/heads/filtered
   file1
@@ -51,6 +53,7 @@
   [3] :rev(<=e86ec4160d1359883e642e6888645d28c3358012:prefix=x)
   [3] :rev(<=e86ec4160d1359883e642e6888645d28c3358012:prefix=x,<e86ec4160d1359883e642e6888645d28c3358012:prefix=y)
   [3] :rev(==e86ec4160d1359883e642e6888645d28c3358012:prefix=x)
+  [3] reachable_roots
   [3] sequence_number
   $ git ls-tree -r --name-only refs/heads/filtered
   file1
@@ -69,6 +72,7 @@
   [3] :rev(<=e86ec4160d1359883e642e6888645d28c3358012:prefix=x)
   [3] :rev(<=e86ec4160d1359883e642e6888645d28c3358012:prefix=x,<e86ec4160d1359883e642e6888645d28c3358012:prefix=y)
   [3] :rev(==e86ec4160d1359883e642e6888645d28c3358012:prefix=x)
+  [3] reachable_roots
   [3] sequence_number
   $ git ls-tree -r --name-only refs/heads/filtered
   y/file1
@@ -83,6 +87,7 @@
   [3] :rev(<=e86ec4160d1359883e642e6888645d28c3358012:prefix=x)
   [3] :rev(<=e86ec4160d1359883e642e6888645d28c3358012:prefix=x,<e86ec4160d1359883e642e6888645d28c3358012:prefix=y)
   [3] :rev(==e86ec4160d1359883e642e6888645d28c3358012:prefix=x)
+  [3] reachable_roots
   [3] sequence_number
   $ git ls-tree -r --name-only refs/heads/filtered
   file1

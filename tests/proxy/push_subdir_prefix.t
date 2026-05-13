@@ -91,6 +91,8 @@
       |-- objects
       |   |-- 0b
       |   |   `-- 4cf6c9efbbda1eada39fa9c1d21d2525b027bb
+      |   |-- 1d
+      |   |   `-- 9470cf784c751ec8cc3556d50737a7de1f5262
       |   |-- 32
       |   |   `-- bc15e3ec04d5d9d2a216055ea51bafb2249877
       |   |-- 50
@@ -105,6 +107,8 @@
       |   |   `-- 7e17233d9f79c96cb694959eb065302acd96a6
       |   |-- c6
       |   |   `-- 27a2e3a6bfbb7307f522ad94fdfc8c20b92967
+      |   |-- cf
+      |   |   `-- 704ed443e7351ab990ab68c916c2428dcf9100
       |   |-- d8
       |   |   `-- 388f5880393d255b371f1ed9b801d35620017e
       |   |-- e6
@@ -116,6 +120,6 @@
           |-- namespaces
           `-- tags
   
-  42 directories, 27 files
+  44 directories, 29 files
 
 $ cat ${TESTTMP}/josh-proxy.out | grep VIEW

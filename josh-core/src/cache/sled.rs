@@ -1,7 +1,8 @@
 use anyhow::anyhow;
 use std::sync::LazyLock;
 
-use super::transaction::{CACHE_VERSION, CacheBackend};
+use super::CACHE_VERSION;
+use super::backend::CacheBackend;
 use crate::filter;
 use crate::filter::Filter;
 

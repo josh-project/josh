@@ -163,6 +163,8 @@ file was created
       |   |   `-- f258b407cd9cdba97e16a293582b29d302b796
       |   |-- a8
       |   |   `-- 6544ef29b946481d26cb4cfb55844342069c0e
+      |   |-- a9
+      |   |   `-- 252e3936cb6309dfebcafd688cd6a0d2225036
       |   |-- b6
       |   |   `-- c8440fe2cd36638ddb6b3505c1e8f2202f6191
       |   |-- eb
@@ -176,6 +178,6 @@ file was created
           |-- namespaces
           `-- tags
   
-  52 directories, 37 files
+  53 directories, 38 files
 
 $ cat ${TESTTMP}/josh-proxy.out | grep VIEW

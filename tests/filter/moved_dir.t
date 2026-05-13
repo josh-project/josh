@@ -20,6 +20,7 @@ in that subtree repo should have an empty tree
   21a904a6f350cb1f8ea4dc6fe9bd4e3b4cc4840b
   [2] :/sub1
   [2] :prefix=c
+  [4] reachable_roots
   [4] sequence_number
 
   $ git log refs/josh/filter/master --graph --pretty=%s
@@ -41,6 +42,7 @@ in that subtree repo should have an empty tree
   fb6e2fa26823e0a17862feffc25e8439d75744ce
   [3] :/sub1
   [3] :prefix=c
+  [6] reachable_roots
   [6] sequence_number
 
   $ git log refs/josh/filter/master --graph --pretty=%s
@@ -57,6 +59,7 @@ in that subtree repo should have an empty tree
   fb6e2fa26823e0a17862feffc25e8439d75744ce
   [3] :/sub1
   [3] :prefix=c
+  [7] reachable_roots
   [7] sequence_number
   $ git log refs/josh/filter/master2 --graph --pretty=%s
   * mv sub1

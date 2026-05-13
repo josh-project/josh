@@ -56,5 +56,6 @@ docker run --rm \
     --volume "$(pwd)":"$(pwd)" \
     --volume cache:/opt/cache \
     --user "$(id -u)":"$(id -g)" \
+    -e JOSH_EXPERIMENTAL_FEATURES=1 \
     josh-dev-local \
     bash -c "${TEST_SCRIPT}"

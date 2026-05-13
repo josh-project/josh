@@ -102,6 +102,8 @@
       |   |   `-- d7000ec2f13c49605cd675075e1852881e4fea
       |   |-- bd
       |   |   `-- c926c483c4dfa77e84105c6967e74d8ff9bf5f
+      |   |-- be
+      |   |   `-- 911fd840d34b691403cf4e7d2a8e8bacec8d89
       |   |-- eb
       |   |   `-- 6a31166c5bf0dbb65c82f89130976a12533ce6
       |   |-- info
@@ -111,7 +113,7 @@
           |-- namespaces
           `-- tags
   
-  38 directories, 23 files
+  39 directories, 24 files
 
 # setup without caching
   $ EXTRA_OPTS= . ${TESTDIR}/setup_test_env.sh
@@ -222,6 +224,10 @@
       |   |   `-- d7000ec2f13c49605cd675075e1852881e4fea
       |   |-- bd
       |   |   `-- c926c483c4dfa77e84105c6967e74d8ff9bf5f
+      |   |-- be
+      |   |   `-- 911fd840d34b691403cf4e7d2a8e8bacec8d89
+      |   |-- d9
+      |   |   `-- a323ee316cda6f241fcc35cbd29d4a882aa45e
       |   |-- eb
       |   |   `-- 6a31166c5bf0dbb65c82f89130976a12533ce6
       |   |-- info
@@ -231,4 +237,4 @@
           |-- namespaces
           `-- tags
   
-  42 directories, 27 files
+  44 directories, 29 files

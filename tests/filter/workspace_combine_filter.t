@@ -57,6 +57,7 @@
   ]
   [2] :prefix=x
   [2] :workspace=ws
+  [4] reachable_roots
   [4] sequence_number
 
   $ git log --graph --pretty=%s FILTERED_HEAD
@@ -95,6 +96,7 @@
       blub = :/sub1
   ]
   [3] :prefix=xyz
+  [7] reachable_roots
   [7] sequence_number
 
   $ git log --graph --pretty=%s FILTERED_HEAD

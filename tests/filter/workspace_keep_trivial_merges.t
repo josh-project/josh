@@ -60,6 +60,7 @@ Without keep-trivial-merges: the trivial merge in b/ (extra-parent history) is d
   e90832787df33830788ecf12bbd4a2fd2750ddb5
   [3] :/b
   [4] :workspace=ws
+  [5] reachable_roots
   [5] sequence_number
   $ git log --graph --pretty=%s FILTERED_HEAD
   *   extend workspace
@@ -88,6 +89,7 @@ With keep-trivial-merges: the trivial merge is preserved in b/'s extra-parent hi
   )[
       :workspace=ws
   ]
+  [5] reachable_roots
   [5] sequence_number
   $ git log --graph --pretty=%s FILTERED_HEAD
   *   extend workspace

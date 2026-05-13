@@ -1,5 +1,5 @@
+use super::backend::CacheBackend;
 use super::sled::SledCacheBackend;
-use super::transaction::CacheBackend;
 use crate::filter;
 
 pub struct CacheStack {

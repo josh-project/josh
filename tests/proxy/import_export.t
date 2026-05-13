@@ -395,24 +395,38 @@ Flushed credential cache
       |-- info
       |   `-- exclude
       |-- objects
+      |   |-- 31
+      |   |   `-- c287b0dca7d1ae668b175ba5fee1e010e5cb68
+      |   |-- 50
+      |   |   `-- f9324abab8bcfcf9ef3b86c4c9b81a258e4c8f
       |   |-- 5d
       |   |   `-- 98d297b3b16d5946dada2496accc9f99dc7056
       |   |-- 6e
       |   |   `-- 9a62b40f85b0952ea06023a8ee1fb99685e6f7
       |   |-- 6f
       |   |   `-- e45a9254eb9dd78951a804fa94a035a937ef0b
+      |   |-- 70
+      |   |   `-- 574c42095b00b4a0757af989a9211bd2c95c91
       |   |-- 71
       |   |   `-- 28ce7713fc45163e65c7ac4a9057ed1913a569
       |   |-- 80
       |   |   `-- 472110df082d0a921ecdcd6f0dd0021f48e019
       |   |-- 85
       |   |   `-- c3ce1926696ef4bdf2eff358bd83b079dcc8d4
+      |   |-- 92
+      |   |   `-- b32c39e590a35edb6c1b12dc8919da56869fe5
       |   |-- 9c
       |   |   `-- b7c3c14c5c084f6a6897b6e6bab231fae98ae5
+      |   |-- b1
+      |   |   `-- 5fcd0ea97c1755068288984cd9b4ec57ae02b4
       |   |-- c4
       |   |   `-- df336cf6578b6dac651a33fd265d92308c0e39
       |   |-- e5
       |   |   `-- 2c4e8d6c1f4960b92676424944ff3951f472aa
+      |   |-- ef
+      |   |   `-- 7e2202b63572aa95b06cda4f844fe8f83c2673
+      |   |-- f2
+      |   |   `-- 099eb4510f85688a21ce5fc3992ca4274a837b
       |   |-- f9
       |   |   `-- 97320406328b16277aca038db747cf60232267
       |   |-- info
@@ -422,4 +436,4 @@ Flushed credential cache
           |-- namespaces
           `-- tags
   
-  68 directories, 54 files
+  75 directories, 61 files

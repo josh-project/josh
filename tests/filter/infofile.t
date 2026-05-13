@@ -26,6 +26,7 @@
   21a904a6f350cb1f8ea4dc6fe9bd4e3b4cc4840b
   [2] :/sub1
   [2] :prefix=c
+  [6] reachable_roots
   [6] sequence_number
   $ git log --graph --pretty=%s josh/filter/master
   * add file2
@@ -36,6 +37,7 @@
   21a904a6f350cb1f8ea4dc6fe9bd4e3b4cc4840b
   [2] :/sub1
   [2] :prefix=c
+  [6] reachable_roots
   [6] sequence_number
   $ git log --graph --pretty=%s josh/filter/master
   * add file2
@@ -46,6 +48,7 @@
   [2] :/sub1
   [2] :/sub2
   [3] :prefix=c
+  [7] reachable_roots
   [7] sequence_number
   $ git log --graph --pretty=%s josh/filter/master
   * add file3
@@ -60,6 +63,7 @@
   [2] :/sub1
   [2] :/sub2
   [3] :prefix=c
+  [8] reachable_roots
   [8] sequence_number
   $ git log --graph --pretty=%s josh/filter/master
   * add file3

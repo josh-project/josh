@@ -658,6 +658,7 @@ Note that ws/d/ is now present in the ws
       |   |-- 87
       |   |   `-- 7af85c0624835da58fe4b2fa9a259a44213acf
       |   |-- 8c
+      |   |   |-- 4e94969f16bfec56af4b29c1a20e732401ed32
       |   |   `-- c4bb045e98da7cf00714d91ac77c7ea7e08b63
       |   |-- 93
       |   |   `-- f66d258b7b4c3757e63f985b08f7daa33db64e
@@ -709,6 +710,8 @@ Note that ws/d/ is now present in the ws
       |   |-- d7
       |   |   |-- 330ea337031af43ba1cf6982a873a40b9170ac
       |   |   `-- e36a04a3c59c966815fae6db6fe5d518a3456a
+      |   |-- d9
+      |   |   `-- a323ee316cda6f241fcc35cbd29d4a882aa45e
       |   |-- da
       |   |   `-- af0560e4e779353311a9039b31ea4f0f1dec37
       |   |-- e1
@@ -747,6 +750,6 @@ Note that ws/d/ is now present in the ws
           |-- namespaces
           `-- tags
   
-  151 directories, 155 files
+  152 directories, 157 files
 
 $ cat ${TESTTMP}/josh-proxy.out

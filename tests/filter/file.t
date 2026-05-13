@@ -34,6 +34,7 @@
       c = :/sub1
       a/b = :/sub2
   ]
+  [4] reachable_roots
   [4] sequence_number
   $ git log --graph --pretty=%s FILTERED_HEAD
   * add file3
@@ -46,6 +47,7 @@
       c = :/sub1
       a/b = :/sub2
   ]
+  [5] reachable_roots
   [5] sequence_number
   $ git log --graph --pretty=%s FILTERED_HEAD
   * initial

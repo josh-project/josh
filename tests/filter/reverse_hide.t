@@ -17,6 +17,7 @@
   $ josh-filter -s :exclude[::sub2/] master --update refs/heads/hidden
   bb282e9cdc1b972fffd08fd21eead43bc0c83cb8
   [1] :exclude[::sub2/]
+  [2] reachable_roots
   [2] sequence_number
   $ git checkout hidden 1> /dev/null
   Switched to branch 'hidden'
@@ -36,6 +37,7 @@
   $ josh-filter -s :exclude[::sub2/] --reverse master --update refs/heads/hidden
   98fd34a66dabd3178d921b29e865e465042736bb
   [1] :exclude[::sub2/]
+  [2] reachable_roots
   [2] sequence_number
 
   $ git checkout master
@@ -72,6 +74,7 @@
   $ josh-filter -s :exclude[::sub2/] --reverse master --update refs/heads/hidden
   d81806911addec824f6bd9c1d9386e3290237bf0
   [2] :exclude[::sub2/]
+  [3] reachable_roots
   [3] sequence_number
   $ git log --graph --pretty=%s refs/heads/master
   * empty commit

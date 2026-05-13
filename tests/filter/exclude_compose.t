@@ -22,6 +22,7 @@
   $ josh-filter -s :exclude[::sub2/] master --update refs/heads/hidden
   e22af2825a6c7b4b59fefb7cdb4618474d643446
   [2] :exclude[::sub2/]
+  [3] reachable_roots
   [3] sequence_number
   $ git checkout -q hidden 1> /dev/null
   $ tree
@@ -47,6 +48,7 @@
       ::sub2/
   ]
   [2] :exclude[::sub2/]
+  [3] reachable_roots
   [3] sequence_number
 
   $ git checkout -q refs/josh/filtered
@@ -65,6 +67,7 @@
   ]
   [2] :exclude[::sub2/]
   [3] :exclude[:/sub3:prefix=sub1]
+  [3] reachable_roots
   [3] sequence_number
 
   $ git checkout -q refs/josh/filtered

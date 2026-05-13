@@ -46,6 +46,7 @@ Remove the signature, the shas are different.
   )[
       :/
   ]
+  [1] reachable_roots
   [1] sequence_number
   $ git rev-parse master filtered
   cb22ebb8e47b109f7add68b1043e561e0db09802
@@ -57,6 +58,7 @@ Remove the signature, the shas are different.
   )[
       :/
   ]
+  [1] reachable_roots
   [1] sequence_number
   $ git rev-parse master double-filtered
   cb22ebb8e47b109f7add68b1043e561e0db09802

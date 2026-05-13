@@ -40,6 +40,7 @@
   81a8353fd06d2ff76184dc3e55de179590872799
   [2] :prefix=sub1
   [3] :/sub1
+  [5] reachable_roots
   [5] sequence_number
   $ git checkout hidden_branch1
   Switched to branch 'hidden_branch1'
@@ -57,6 +58,7 @@
   586737e31b886be151bc20c30f0a0305e3c6568d
   [3] :prefix=sub1
   [4] :/sub1
+  [7] reachable_roots
   [7] sequence_number
   $ git checkout hidden_master
   Switched to branch 'hidden_master'
@@ -91,6 +93,7 @@
   8cbae19889134bd4ec430c0b79c61ee8547e0d1c
   [3] :prefix=sub1
   [4] :/sub1
+  [7] reachable_roots
   [7] sequence_number
 
   $ git checkout master

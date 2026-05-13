@@ -38,6 +38,7 @@
   )[
       :/
   ]
+  [4] reachable_roots
   [4] sequence_number
 
   $ git log --graph --pretty=%s refs/heads/filtered
@@ -69,6 +70,7 @@
   )[
       :/
   ]
+  [4] reachable_roots
   [4] sequence_number
 
   $ git log --graph --pretty=%s refs/heads/master

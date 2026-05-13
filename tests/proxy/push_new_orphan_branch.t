@@ -187,6 +187,8 @@ Make sure all temporary namespace got removed
       |-- objects
       |   |-- 0b
       |   |   `-- 4cf6c9efbbda1eada39fa9c1d21d2525b027bb
+      |   |-- 1d
+      |   |   `-- 9470cf784c751ec8cc3556d50737a7de1f5262
       |   |-- 4b
       |   |   `-- 825dc642cb6eb9a060e54bf8d69288fbee4904
       |   |-- 6b
@@ -203,8 +205,12 @@ Make sure all temporary namespace got removed
       |   |   `-- 7e17233d9f79c96cb694959eb065302acd96a6
       |   |-- c2
       |   |   `-- 1c9352f7526e9576892a6631e0e8cf1fccd34d
+      |   |-- c4
+      |   |   `-- 8e30c7eeafdc8b5e6a103f26367c973b2c4df9
       |   |-- c6
       |   |   `-- 27a2e3a6bfbb7307f522ad94fdfc8c20b92967
+      |   |-- cb
+      |   |   `-- b66c35294ac2d5ba60420854a3a50ca4c88887
       |   |-- d8
       |   |   |-- 388f5880393d255b371f1ed9b801d35620017e
       |   |   `-- 43530e8283da7185faac160347db5c70ef4e18
@@ -219,6 +225,6 @@ Make sure all temporary namespace got removed
           |-- namespaces
           `-- tags
   
-  54 directories, 41 files
+  57 directories, 44 files
 
 $ cat ${TESTTMP}/josh-proxy.out

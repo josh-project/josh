@@ -386,6 +386,8 @@
       |   |   `-- 8644b35118f1d733b14cafb04c51e5b6579243
       |   |-- 4b
       |   |   `-- 825dc642cb6eb9a060e54bf8d69288fbee4904
+      |   |-- 4e
+      |   |   `-- 8ed8ed549306fc01dba32ee643084f1070ba9c
       |   |-- 4f
       |   |   `-- 314491719dffbb4340268e5f04136e74821e2c
       |   |-- 53
@@ -394,9 +396,13 @@
       |   |   `-- 38ed8e4d96b624c6ef7e36f8b696d52be785db
       |   |-- 5b
       |   |   `-- 545e12c5b297509b8d99df5f0b952a2dd7862d
+      |   |-- 5d
+      |   |   `-- 0e549ae0392ba043767615c0225b9a9c7f40ab
       |   |-- 64
       |   |   |-- 6fd2c5bfe156d57ba03f62f2fe735ddbb74e22
       |   |   `-- d1f8d32b274d8c1eeb69891931f52b6ade9417
+      |   |-- 65
+      |   |   `-- 1de74dfe1abe2024ed2798bbfcf9ba683d3f86
       |   |-- 67
       |   |   `-- 48a16f7d9b29607fcd4df93681361a6105a14a
       |   |-- 69
@@ -409,6 +415,8 @@
       |   |   `-- 1ecd943cf17e1530017a1db8006771d6c5c4d4
       |   |-- 78
       |   |   `-- 2f6261fa32f8bfec7b89f77bb5cce40c4611cb
+      |   |-- 7a
+      |   |   `-- 185c5a9aa33cf2e7749b1ad15a4aebfdd070a5
       |   |-- 7c
       |   |   `-- 30b7adfa79351301a11882adf49f438ec294f8
       |   |-- 7f
@@ -417,6 +425,8 @@
       |   |   `-- 8b763a1483259f4667f399a019b96f52a28f8c
       |   |-- 8a
       |   |   `-- bb8094049472170b402ad3aaee6db3d5a97286
+      |   |-- 8c
+      |   |   `-- 4e94969f16bfec56af4b29c1a20e732401ed32
       |   |-- 91
       |   |   `-- 584adddb4f190d805ec45ce500a0661671fb25
       |   |-- 93
@@ -429,6 +439,8 @@
       |   |   `-- 4d2bcaee240904058a6160e84311667b409b08
       |   |-- 9f
       |   |   `-- 8daab1754f04fbe8aaac6fcbb44c8324df09eb
+      |   |-- a0
+      |   |   `-- aedc37ec419934689622688e75ae66f5aa0742
       |   |-- a3
       |   |   `-- d027b4cc082c08af95fcbe03eecd9a62a08c48
       |   |-- a7
@@ -456,6 +468,8 @@
       |   |-- cd
       |   |   |-- 0544cd5f702a9b3418205ec0425c6ae77f9e3e
       |   |   `-- 7c94c08f59302a2b1587a01d4fd1680d7378c9
+      |   |-- d0
+      |   |   `-- a80cebe6f692edee7c959da2ffa66cf7d6c755
       |   |-- d7
       |   |   `-- 330ea337031af43ba1cf6982a873a40b9170ac
       |   |-- e1
@@ -488,6 +502,6 @@
           |-- namespaces
           `-- tags
   
-  123 directories, 117 files
+  130 directories, 124 files
 
 $ cat ${TESTTMP}/josh-proxy.out | grep VIEW

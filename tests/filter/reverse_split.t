@@ -19,6 +19,7 @@
       a = ::*.a
       :prefix=rest
   ]
+  [2] reachable_roots
   [2] sequence_number
   $ git checkout filtered 1> /dev/null
   Switched to branch 'filtered'
@@ -45,6 +46,7 @@
       a = ::*.a
       :prefix=rest
   ]
+  [2] reachable_roots
   [2] sequence_number
 
   $ git checkout master

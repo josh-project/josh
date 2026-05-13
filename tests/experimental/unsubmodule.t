@@ -59,6 +59,7 @@ Test Adapt filter - should expand submodule into actual tree content
   $ josh-filter -s :adapt=submodules master --update refs/josh/filter/master
   71cd16ff3e379f18440c941c375ddacae56e4a8d
   [3] :adapt=submodules
+  [3] reachable_roots
   [3] sequence_number
   $ git log --graph --pretty=%s refs/josh/filter/master
   * add libs submodule
@@ -124,6 +125,7 @@ Test Adapt with multiple submodules
   $ josh-filter -s :adapt=submodules master --update refs/josh/filter/master
   4e48d5817374b1950f15c4a8d135863594596dfe
   [4] :adapt=submodules
+  [4] reachable_roots
   [4] sequence_number
   $ git log --graph --pretty=%s refs/josh/filter/master
   * add another submodule
@@ -168,6 +170,7 @@ Test Adapt with submodule changes - add commits to submodule and update
   $ josh-filter -s :adapt=submodules master --update refs/josh/filter/master
   814db71a8c61b7ee00b175cc9aa64b73aaef37b9
   [5] :adapt=submodules
+  [5] reachable_roots
   [5] sequence_number
   $ git log --graph --pretty=%s refs/josh/filter/master
   * update libs submodule
@@ -200,6 +203,7 @@ Test Adapt on repo without submodules (should be no-op)
   $ josh-filter -s :adapt=submodules master --update refs/josh/filter/master
   62f270988ac3ab05a33d0705fb1e4982165f69f2
   [1] :adapt=submodules
+  [1] reachable_roots
   [1] sequence_number
   $ git ls-tree --name-only -r refs/josh/filter/master
   file.txt

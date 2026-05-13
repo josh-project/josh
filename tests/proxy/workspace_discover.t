@@ -185,6 +185,8 @@
       |-- info
       |   `-- exclude
       |-- objects
+      |   |-- 18
+      |   |   `-- fc53a050ffb86358d5e58e4280ce3c5fc218a4
       |   |-- 1b
       |   |   `-- 46698f32d1d1db1eaeb34f8c9037778d65f3a9
       |   |-- 22
@@ -224,6 +226,6 @@
           |-- namespaces
           `-- tags
   
-  69 directories, 54 files
+  70 directories, 55 files
 
 $ cat ${TESTTMP}/josh-proxy.out

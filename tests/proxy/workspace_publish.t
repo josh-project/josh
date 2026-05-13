@@ -211,6 +211,8 @@
       |   |   `-- b0ecf29d3808ba274af864643f5a3f9c8706f1
       |   |-- 66
       |   |   `-- b81c71c0ad10acdb2b4df3b04eef8abd79e64b
+      |   |-- 67
+      |   |   `-- c1c331298672b86d90c2c847942ee7714463a9
       |   |-- 6e
       |   |   `-- 8d20f7effed65135756c3d3428ccf7d7efb818
       |   |-- 73
@@ -266,6 +268,6 @@
           |-- namespaces
           `-- tags
   
-  77 directories, 65 files
+  78 directories, 66 files
 
 $ cat ${TESTTMP}/josh-proxy.out | grep VIEW

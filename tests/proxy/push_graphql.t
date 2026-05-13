@@ -111,6 +111,8 @@
       |-- info
       |   `-- exclude
       |-- objects
+      |   |-- 1d
+      |   |   `-- 9470cf784c751ec8cc3556d50737a7de1f5262
       |   |-- 7e
       |   |   `-- 14e7e562164fb65d8f294303e07e915b95c5fe
       |   |-- c9
@@ -121,5 +123,5 @@
           |-- heads
           `-- tags
   
-  33 directories, 20 files
+  34 directories, 21 files
 

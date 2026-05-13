@@ -1,28 +1,10 @@
+use super::history_graph::compute_sequence_number;
 use super::sled::sled_open_josh_trees;
 use super::stack::CacheStack;
 use anyhow::anyhow;
 
 use std::collections::HashMap;
 use std::sync::{LazyLock, RwLock};
-
-pub const CACHE_VERSION: u64 = 27;
-
-pub trait CacheBackend: Send + Sync {
-    fn read(
-        &self,
-        filter: crate::filter::Filter,
-        from: git2::Oid,
-        sequence_number: u128,
-    ) -> anyhow::Result<Option<git2::Oid>>;
-
-    fn write(
-        &self,
-        filter: crate::filter::Filter,
-        from: git2::Oid,
-        to: git2::Oid,
-        sequence_number: u128,
-    ) -> anyhow::Result<()>;
-}
 
 pub trait FilterHook {
     fn filter_for_commit(
@@ -346,7 +328,9 @@ impl Transaction {
         to: git2::Oid,
         store: bool,
     ) {
-        let sequence_number = if filter != crate::filter::sequence_number() {
+        let sequence_number = if filter != crate::filter::sequence_number()
+            && filter != crate::filter::reachable_roots()
+        {
             compute_sequence_number(self, from).expect("compute_sequence_number failed")
         } else {
             0
@@ -397,7 +381,9 @@ impl Transaction {
         if filter.is_nop() {
             return Some(from);
         }
-        let sequence_number = if filter != crate::filter::sequence_number() {
+        let sequence_number = if filter != crate::filter::sequence_number()
+            && filter != crate::filter::reachable_roots()
+        {
             compute_sequence_number(self, from).expect("compute_sequence_number failed")
         } else {
             0
@@ -430,95 +416,5 @@ impl Transaction {
         }
 
         None
-    }
-}
-
-/// Encode a `u128` into a 20-byte git OID (SHA-1 sized).
-/// The high 4 bytes of the OID are zero; the low 16 bytes
-/// contain the big-endian integer.
-pub fn oid_from_u128(n: u128) -> git2::Oid {
-    let mut bytes = [0u8; 20];
-    // place the 16 integer bytes at the end (big-endian)
-    bytes[20 - 16..].copy_from_slice(&n.to_be_bytes());
-    // Safe: length is exactly 20
-    git2::Oid::from_bytes(&bytes).expect("20-byte OID construction cannot fail")
-}
-
-/// Decode a `u128` previously encoded by `oid_from_u128`.
-pub fn u128_from_oid(oid: git2::Oid) -> u128 {
-    let b = oid.as_bytes();
-    let mut n = [0u8; 16];
-    n.copy_from_slice(&b[20 - 16..]); // take the last 16 bytes
-    u128::from_be_bytes(n)
-}
-
-/// Computes the sequence number for each commit so that the sequence_number for any
-/// commit is always larger than the sequence_number of all of its parents.
-/// This means sorting by sequence number results in a topological order.
-pub fn compute_sequence_number(
-    transaction: &Transaction,
-    input: git2::Oid,
-) -> anyhow::Result<u128> {
-    if let Some(count) = transaction.get(crate::filter::sequence_number(), input) {
-        return Ok(u128_from_oid(count));
-    }
-
-    if !transaction.repo().odb()?.exists(input) {
-        return Err(anyhow!("compute_sequence_number: input does not exist",));
-    }
-
-    let commit = transaction.repo().find_commit(input)?;
-    let mut this_sequence_number = 0;
-    let mut no_walk = true;
-    for parent in commit.parent_ids() {
-        if let Some(parent_sequence_number) =
-            transaction.get(crate::filter::sequence_number(), parent)
-        {
-            let parent_sequence_number = u128_from_oid(parent_sequence_number);
-            this_sequence_number = std::cmp::max(this_sequence_number, parent_sequence_number + 1);
-        } else {
-            no_walk = false;
-            break;
-        }
-    }
-
-    if no_walk {
-        transaction.insert(
-            crate::filter::sequence_number(),
-            commit.id(),
-            oid_from_u128(this_sequence_number),
-            true,
-        );
-    } else {
-        log::info!("compute_sequence_number: new_walk for {:?}", input);
-        let mut walk = transaction.repo().revwalk()?;
-        walk.set_sorting(git2::Sort::REVERSE | git2::Sort::TOPOLOGICAL)?;
-        walk.push(input)?;
-
-        // Stop at ancestors that already have a sequence number — they (and
-        // their ancestors, transitively) have already been processed.
-        let mut hide = |id| transaction.known(crate::filter::sequence_number(), id);
-        let walk = walk.with_hide_callback(&mut hide)?;
-
-        for c in walk {
-            let commit = transaction.repo().find_commit(c?)?;
-            let mut this_sequence_number = 0;
-            for parent in commit.parent_ids() {
-                let parent_sequence_number = compute_sequence_number(transaction, parent)?;
-                this_sequence_number =
-                    std::cmp::max(this_sequence_number, parent_sequence_number + 1);
-            }
-            transaction.insert(
-                crate::filter::sequence_number(),
-                commit.id(),
-                oid_from_u128(this_sequence_number),
-                true,
-            );
-        }
-    }
-    if let Some(count) = transaction.get(crate::filter::sequence_number(), input) {
-        Ok(u128_from_oid(count))
-    } else {
-        Err(anyhow!("missing sequence_number"))
     }
 }

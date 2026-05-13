@@ -41,6 +41,7 @@
   6390b3f0709aa571f835041bdab24919f119505a
   [2] :prefix=c
   [4] :/pre
+  [7] reachable_roots
   [7] sequence_number
 
   $ git log josh/filter/master --graph --pretty=%s
@@ -85,6 +86,7 @@
   7a2b86910858e80f638b4aa1a025ed9a2f62ded4
   [5] :prefix=c
   [7] :/pre
+  [14] reachable_roots
   [14] sequence_number
 
   $ git log josh/filter/master --graph --pretty=%s

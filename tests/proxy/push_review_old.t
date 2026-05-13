@@ -140,6 +140,8 @@ Flushed credential cache
       |   |   `-- d81bc99ff2b4a426c236dc1a36f7a2d1027c7b
       |   |-- 1c
       |   |   `-- b5d64cdb55e3db2a8d6f00d596572b4cfa9d5c
+      |   |-- 1d
+      |   |   `-- 9470cf784c751ec8cc3556d50737a7de1f5262
       |   |-- 89
       |   |   `-- 52f96884e0ee453406177bebbf4f74a8a8d1be
       |   |-- ad
@@ -155,7 +157,7 @@ Flushed credential cache
           |-- namespaces
           `-- tags
   
-  43 directories, 28 files
+  44 directories, 29 files
 
   $ cat ${TESTTMP}/josh-proxy.out | grep graph_descendant_of
   [1]

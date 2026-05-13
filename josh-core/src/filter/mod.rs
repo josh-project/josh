@@ -8,6 +8,7 @@ use std::sync::LazyLock;
 // Re-export from josh-filter
 pub use josh_filter::LinkMode;
 pub use josh_filter::filter::MESSAGE_MATCH_ALL_REGEX;
+pub use josh_filter::filter::reachable_roots;
 pub use josh_filter::filter::sequence_number;
 pub use josh_filter::flang::parse::{get_comments, parse};
 pub use josh_filter::opt;

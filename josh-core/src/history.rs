@@ -808,7 +808,7 @@ pub fn create_filtered_commit_with_meta(
     meta: std::collections::BTreeMap<String, String>,
 ) -> anyhow::Result<git2::Oid> {
     let (r, is_new) = create_filtered_commit2(
-        transaction.repo(),
+        transaction,
         original_commit,
         filtered_parent_ids,
         rewrite_data,
@@ -840,12 +840,13 @@ pub fn create_filtered_commit(
 }
 
 fn create_filtered_commit2<'a>(
-    repo: &'a git2::Repository,
+    transaction: &'a cache::Transaction,
     original_commit: &'a git2::Commit,
     filtered_parent_ids: Vec<git2::Oid>,
     rewrite_data: filter::Rewrite,
     options: BTreeMap<String, String>,
 ) -> anyhow::Result<(git2::Oid, bool)> {
+    let repo = transaction.repo();
     let filtered_parent_commits: Result<Vec<_>, _> = filtered_parent_ids
         .iter()
         .filter(|x| **x != git2::Oid::zero())
@@ -858,8 +859,11 @@ fn create_filtered_commit2<'a>(
         .iter()
         .any(|x| x.tree_id() == filter::tree::empty_id())
     {
-        let is_initial_merge =
-            filtered_parent_ids.len() > 1 && repo.merge_base_many(&filtered_parent_ids).is_err();
+        // An "initial merge" is a merge whose parents have no common ancestor.
+        // Cheaper than `repo.merge_base_many(...).is_err()`: ask whether the
+        // parents' reachable-root sets intersect, which is cached per-commit.
+        let is_initial_merge = filtered_parent_ids.len() > 1
+            && !cache::parents_share_root(transaction, &filtered_parent_ids)?;
 
         if is_initial_merge {
             filtered_parent_commits.retain(|x| x.tree_id() != filter::tree::empty_id());

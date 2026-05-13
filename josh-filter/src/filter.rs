@@ -274,3 +274,14 @@ pub fn invert(filter: Filter) -> anyhow::Result<Filter> {
 pub fn sequence_number() -> Filter {
     Filter::from_oid(git2::Oid::zero())
 }
+
+/// Create a reachable_roots filter used for tracking the set of root commits
+/// (parentless commits) reachable from each commit. The cached value is the OID
+/// of a git blob whose content is the concatenation of 20-byte root OIDs.
+pub fn reachable_roots() -> Filter {
+    // Sentinel OID: all zeros except the last byte = 1. Distinct from
+    // sequence_number()'s zero OID and unlikely to collide with a real SHA-1.
+    let mut bytes = [0u8; 20];
+    bytes[19] = 1;
+    Filter::from_oid(git2::Oid::from_bytes(&bytes).expect("valid sentinel oid"))
+}

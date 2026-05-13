@@ -172,8 +172,12 @@ Put a double slash in the URL to see that it also works
       |-- info
       |   `-- exclude
       |-- objects
+      |   |-- 03
+      |   |   `-- e4d4431d56b09a58ee53e177a966b75b5adc2a
       |   |-- 0b
       |   |   `-- 4cf6c9efbbda1eada39fa9c1d21d2525b027bb
+      |   |-- 1d
+      |   |   `-- 9470cf784c751ec8cc3556d50737a7de1f5262
       |   |-- 3c
       |   |   `-- cd09de42d21f7e5318bc5eaf258bf82e4103e6
       |   |-- 5c
@@ -203,5 +207,5 @@ Put a double slash in the URL to see that it also works
           |-- namespaces
           `-- tags
   
-  51 directories, 35 files
+  53 directories, 37 files
 
