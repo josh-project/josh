@@ -1,0 +1,35 @@
+[queries.create_check_run]
+
+[queries.check_runs_discover]
+fragments = ["check_suite_info"]
+
+[queries.check_runs_get_simple]
+fragments = ["check_run_info"]
+
+[queries.check_runs_get_with_pages]
+fragments = ["check_run_info"]
+
+[queries.get_repo_id]
+
+[queries.get_default_branch]
+
+[queries.get_pr_by_head]
+
+[queries.create_pull_request]
+
+[queries.update_pull_request]
+
+[queries.convert_pull_request_to_draft]
+
+[queries.mark_pull_request_ready_for_review]
+
+[queries.close_pull_request]
+
+[queries.get_repository_rulesets]
+fragments = ["ruleset_info"]
+
+[queries.get_ruleset_required_checks]
+fragments = ["required_status_checks_info", "status_checks_params"]
+
+[queries.get_repository_collaborators]
+fragments = ["collaborator_edge_info"]

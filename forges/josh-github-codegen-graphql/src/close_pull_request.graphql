@@ -1,0 +1,11 @@
+mutation ClosePullRequest(
+  $pullRequestNodeId: ID!
+) {
+  closePullRequest(input: {
+    pullRequestId: $pullRequestNodeId,
+  }) {
+    pullRequest {
+      id
+    }
+  }
+}

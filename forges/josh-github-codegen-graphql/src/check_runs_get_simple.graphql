@@ -1,0 +1,22 @@
+query CheckRunsGetSimple($nodeIds: [ID!]!, $limit: Int!) {
+  rateLimit {
+    cost
+    limit
+    nodeCount
+    remaining
+  }
+
+  nodes(ids: $nodeIds) {
+    __typename
+
+    ... on CheckSuite {
+      checkRuns(first: $limit) {
+        nodes {
+          __typename
+
+          ... _CheckRunInfo
+        }
+      }
+    }
+  }
+}

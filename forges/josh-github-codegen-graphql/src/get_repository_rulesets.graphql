@@ -1,0 +1,9 @@
+query GetRepositoryRulesets($owner: String!, $name: String!) {
+  repository(owner: $owner, name: $name) {
+    rulesets(first: 100, includeParents: true) {
+      nodes {
+        ..._RulesetInfo
+      }
+    }
+  }
+}

@@ -1,0 +1,26 @@
+[package]
+name = "josh-ssh-shell"
+version = "26.5.8"
+edition = "2024"
+authors = ["Josh Project authors <contact@josh-project.dev>"]
+description = "SSH shell integration for the josh git proxy"
+license-file = "../LICENSE"
+repository = "https://github.com/josh-project/josh"
+
+[dependencies]
+shell-words = "1.1.1"
+thiserror = "2.0.18"
+
+clap.workspace = true
+libc.workspace = true
+tokio.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+tokio-util.workspace = true
+tempfile.workspace = true
+reqwest.workspace = true
+
+josh-rpc.workspace = true
+
+[features]

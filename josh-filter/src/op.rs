@@ -1,0 +1,125 @@
+use crate::filter::Filter;
+use anyhow::anyhow;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum LinkMode {
+    Embedded,
+    Snapshot,
+    Pointer,
+}
+
+impl std::fmt::Display for LinkMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            LinkMode::Embedded => write!(f, "embedded"),
+            LinkMode::Snapshot => write!(f, "snapshot"),
+            LinkMode::Pointer => write!(f, "pointer"),
+        }
+    }
+}
+
+impl LinkMode {
+    pub fn parse(s: &str) -> anyhow::Result<Self> {
+        match s {
+            "embedded" => Ok(LinkMode::Embedded),
+            "snapshot" => Ok(LinkMode::Snapshot),
+            "pointer" => Ok(LinkMode::Pointer),
+            _ => Err(anyhow!("Unknown link mode: {:?}", s)),
+        }
+    }
+}
+
+#[derive(Hash, Clone, Debug, PartialEq, PartialOrd, Eq, Ord)]
+pub enum LazyRef {
+    Resolved(git2::Oid),
+    Lazy(String),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RevMatch {
+    /// `<` - matches if is_ancestor_of(commit, tip) && commit != tip (strict)
+    AncestorStrict,
+    /// `<=` - matches if is_ancestor_of(commit, tip) || commit == tip (inclusive)
+    AncestorInclusive,
+    /// `==` - matches if commit == tip
+    Equal,
+    /// `_` - default filter when no other matches (no SHA needed)
+    Default,
+}
+
+impl std::fmt::Display for LazyRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            LazyRef::Resolved(id) => write!(f, "{}", id),
+            LazyRef::Lazy(lazy) => write!(f, "\"{}\"", lazy),
+        }
+    }
+}
+
+impl LazyRef {
+    pub fn parse(s: &str) -> anyhow::Result<LazyRef> {
+        let s = s.replace("'", "\"");
+        if let Ok(serde_json::Value::String(s)) = serde_json::from_str(&s) {
+            return Ok(LazyRef::Lazy(s));
+        }
+
+        if let Ok(oid) = git2::Oid::from_str(&s) {
+            Ok(LazyRef::Resolved(oid))
+        } else {
+            Err(anyhow!("invalid ref: {:?}", s))
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub enum Op {
+    Meta(std::collections::BTreeMap<String, String>, Filter),
+
+    Nop,
+    Empty,
+    Fold,
+    Paths,
+    Adapt(String),
+    Link(Option<LinkMode>),
+    Unlink,
+    Export,
+    Embed(std::path::PathBuf),
+
+    // We use BTreeMap rather than HashMap to guarantee deterministic results when
+    // converting to Filter
+    Squash(Option<std::collections::BTreeMap<LazyRef, Filter>>),
+    Author(String, String),
+    Committer(String, String),
+
+    // Vec instead of BTreeMap to preserve order - first match wins
+    Rev(Vec<(RevMatch, LazyRef, Filter)>),
+    Prune,
+    RegexReplace(Vec<(regex::Regex, String)>),
+
+    Hook(String),
+
+    Index,
+    Invert,
+
+    Blob(std::path::PathBuf, String), // Blob(dest_path, content)
+    File(std::path::PathBuf, std::path::PathBuf), // File(dest_path, source_path)
+    Prefix(std::path::PathBuf),
+    Subdir(std::path::PathBuf),
+    Workspace(std::path::PathBuf),
+    Stored(std::path::PathBuf),
+    Starlark(std::path::PathBuf, Filter),
+    TreeId(std::path::PathBuf, Filter),
+    ObjectDeref(std::path::PathBuf),
+    ObjectRef(std::path::PathBuf),
+
+    Pattern(String),
+    Message(String, regex::Regex),
+
+    Unapply(LazyRef, Filter),
+
+    Compose(Vec<Filter>),
+    Chain(Vec<Filter>),
+    Subtract(Filter, Filter),
+    Exclude(Filter),
+    Pin(Filter),
+}
