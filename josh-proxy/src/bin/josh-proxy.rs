@@ -169,10 +169,8 @@ async fn run_proxy(args: josh_proxy::cli::Args) -> anyhow::Result<i32> {
         .http_retry(args.http_retry)
         .call()?;
 
-    let ps = proxy_service.clone();
-
     // Create axum router
-    let app = josh_proxy::service::make_service_router(proxy_service);
+    let app = josh_proxy::service::make_service_router(proxy_service.clone());
 
     let (shutdown_tx, _shutdown_rx) = broadcast::channel(1);
 
@@ -191,11 +189,15 @@ async fn run_proxy(args: josh_proxy::cli::Args) -> anyhow::Result<i32> {
     } else {
         tokio::select!(
             r = run_housekeeping(local, args.gc) => eprintln!("run_housekeeping exited: {:?}", r),
-            r = run_polling(ps) => eprintln!("run_polling exited: {:?}", r),
+            r = run_polling(proxy_service.clone()) => eprintln!("run_polling exited: {:?}", r),
             r = server_future => eprintln!("http server exited: {:?}", r),
             _ = shutdown_signal(shutdown_tx) => eprintln!("shutdown requested"),
         );
     }
+
+    // Drop our last reference to the proxy service so that the io thread's
+    // sender is dropped and `io_thread.await` below can return.
+    drop(proxy_service);
 
     // Once sender is dropped, IO thread will finish
     io_thread.await?;
