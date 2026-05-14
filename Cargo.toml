@@ -81,6 +81,7 @@ axum-cgi = { path = "axum-cgi", version = "26.5.8" }
 josh-filter = { path = "josh-filter", version = "26.5.8" }
 josh-changes = { path = "josh-changes", version = "26.5.8" }
 josh-core = { path = "josh-core", version = "26.5.8" }
+josh-run = { path = "josh-run", version = "26.5.8" }
 josh-graphql = { path = "josh-graphql", version = "26.5.8" }
 josh-link = { path = "josh-link", version = "26.5.8" }
 josh-rpc = { path = "josh-rpc", version = "26.5.8" }

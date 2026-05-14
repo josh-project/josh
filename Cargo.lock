@@ -3285,7 +3285,7 @@ dependencies = [
 
 [[package]]
 name = "josh-run"
-version = "26.4.19"
+version = "26.5.8"
 dependencies = [
  "anyhow",
  "defer",
