@@ -48,6 +48,9 @@ jobs:
         fetch-depth: 0
     - name: Get tags
       run: git fetch --tags origin
+    - name: Install podman
+      shell: bash
+      run: .github/workflows/scripts/install-podman.sh
     - name: Build CI image
       uses: docker/bake-action@v7
       with:
