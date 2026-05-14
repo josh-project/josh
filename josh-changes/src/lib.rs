@@ -173,35 +173,35 @@ pub fn downstack(
         .filter(|id| available_ids.contains(id.as_str()))
         .collect();
 
-    // Compute d_change: the diff introduced by the change commit itself
-    let change_diff = repo.diff_tree_to_tree(
-        Some(&change_parent.tree()?),
-        Some(&change_commit.tree()?),
-        None,
-    )?;
-
-    // Walk through intermediates, including only those needed for d_change to apply
+    // Walk through intermediates, including only those needed for
+    // the change to apply cleanly.
     let mut current_base = repo.find_commit(base)?;
 
     for (intermediate, change_id) in commits.iter().zip(intermediate_ids.iter()) {
-        // Stop when d_change applies and all Requires: are satisfied
+        // Stop when the change merges cleanly and all Requires: are satisfied
         let diff_applies = repo
-            .apply_to_tree(&current_base.tree()?, &change_diff, None)
-            .is_ok();
+            .merge_trees(
+                &change_parent.tree()?,
+                &current_base.tree()?,
+                &change_commit.tree()?,
+                None,
+            )
+            .map(|index| !index.has_conflicts())
+            .unwrap_or(false);
         if diff_applies && required.is_empty() {
             break;
         }
 
-        // d_change does not apply yet; we need this intermediate commit.
-        // Rebase it onto current_base by applying its diff.
+        // Change does not apply yet; we need this intermediate commit.
+        // Rebase it onto current_base via 3-way merge.
         let inter_parent = intermediate.parent(0)?;
-        let inter_diff = repo.diff_tree_to_tree(
-            Some(&inter_parent.tree()?),
-            Some(&intermediate.tree()?),
+
+        let mut index = repo.merge_trees(
+            &inter_parent.tree()?,
+            &current_base.tree()?,
+            &intermediate.tree()?,
             None,
         )?;
-
-        let mut index = repo.apply_to_tree(&current_base.tree()?, &inter_diff, None)?;
         let new_tree = repo.find_tree(index.write_tree_to(repo)?)?;
 
         let new_oid = josh_core::history::rewrite_commit(
@@ -218,8 +218,13 @@ pub fn downstack(
         }
     }
 
-    // Apply d_change on top of the minimal base and create the new change commit
-    let mut index = repo.apply_to_tree(&current_base.tree()?, &change_diff, None)?;
+    // Apply the change on top of the minimal base via 3-way merge
+    let mut index = repo.merge_trees(
+        &change_parent.tree()?,
+        &current_base.tree()?,
+        &change_commit.tree()?,
+        None,
+    )?;
     let new_tree = repo.find_tree(index.write_tree_to(repo)?)?;
 
     josh_core::history::rewrite_commit(
