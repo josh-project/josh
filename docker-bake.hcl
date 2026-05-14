@@ -22,15 +22,6 @@ target "dev-local" {
   }
 }
 
-target "dev-ci" {
-  context    = "."
-  dockerfile = "images/dev-ci/Dockerfile"
-  tags       = ["josh-ci-dev:latest"]
-  contexts = {
-    josh-dev = "target:dev"
-  }
-}
-
 target "build" {
   context    = "."
   dockerfile = "images/build/Dockerfile"

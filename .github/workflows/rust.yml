@@ -9,20 +9,12 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  RUSTFLAGS: "-D warnings"
+  JOSH_EXPERIMENTAL_FEATURES: "1"
 
 jobs:
-  build:
+  test:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        test_suite:
-          - name: tests
-            script: run-tests.sh
-          - name: tests-incubating
-            script: run-tests-incubating.sh
-    name: CI (${{ matrix.test_suite.name }})
+    name: CI
     steps:
     - name: Free up disk space
       shell: bash
@@ -51,40 +43,16 @@ jobs:
     - name: Install podman
       shell: bash
       run: .github/workflows/scripts/install-podman.sh
-    - name: Build CI image
-      uses: docker/bake-action@6614cfa25eff9a0b2b2697efb0b6159e7680d584 # v7.2.0
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+    - name: Cache josh binary
+      id: cache-josh
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
-        targets: dev-ci
-        load: true
-        set: |
-          rust-base.cache-from=type=gha,scope=rust-base
-          rust-base.cache-to=type=gha,mode=max,scope=rust-base
-          dev.cache-from=type=gha,scope=dev
-          dev.cache-to=type=gha,mode=max,scope=dev
-          dev-ci.cache-from=type=gha,scope=${{ matrix.test_suite.name }}
-          dev-ci.cache-to=type=gha,mode=max,scope=${{ matrix.test_suite.name }}
+        path: target/release/josh
+        key: josh-binary-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', 'josh-cli/**/*.rs', 'josh-core/**/*.rs', 'josh-filter/**/*.rs', 'josh-run/**/*.rs', 'josh-changes/**/*.rs') }}
+    - name: Build josh binary
+      if: steps.cache-josh.outputs.cache-hit != 'true'
+      run: cargo build --release -p josh-cli
     - name: Run tests
-      env:
-        R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-        R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-      run: |
-        sccache_args=()
-        if [ -n "$R2_ACCESS_KEY_ID" ]; then
-          echo "using r2"
-          sccache_args=(
-            -e SCCACHE_BUCKET=josh-project-cache
-            -e SCCACHE_ENDPOINT=https://19f2dfdd7c93980184be5e5809e8b252.r2.cloudflarestorage.com
-            -e SCCACHE_REGION=auto
-            -e "AWS_ACCESS_KEY_ID=$R2_ACCESS_KEY_ID"
-            -e "AWS_SECRET_ACCESS_KEY=$R2_SECRET_ACCESS_KEY"
-          )
-        else
-          echo "not using r2"
-          sccache_args=(-e RUSTC_WRAPPER=)
-        fi
-        docker run --rm \
-          -v ${{ github.workspace }}:/github/workspace \
-          -w /github/workspace \
-          "${sccache_args[@]}" \
-          josh-ci-dev:latest \
-          bash /github/workspace/.github/workflows/scripts/${{ matrix.test_suite.script }}
+      run: target/release/josh compose run
