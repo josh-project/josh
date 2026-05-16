@@ -8,7 +8,7 @@ pub trait CacheBackend: Send + Sync {
         &self,
         filter: crate::filter::Filter,
         from: git2::Oid,
-        sequence_number: u128,
+        sequence_number: u64,
     ) -> anyhow::Result<Option<git2::Oid>>;
 
     fn write(
@@ -16,6 +16,6 @@ pub trait CacheBackend: Send + Sync {
         filter: crate::filter::Filter,
         from: git2::Oid,
         to: git2::Oid,
-        sequence_number: u128,
+        sequence_number: u64,
     ) -> anyhow::Result<()>;
 }

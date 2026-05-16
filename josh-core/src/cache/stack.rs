@@ -33,7 +33,7 @@ impl CacheStack {
         filter: filter::Filter,
         from: git2::Oid,
         to: git2::Oid,
-        sequence_number: u128,
+        sequence_number: u64,
     ) -> anyhow::Result<()> {
         for backend in &self.backends {
             backend.write(filter, from, to, sequence_number)?;
@@ -52,7 +52,7 @@ impl CacheStack {
         &self,
         filter: filter::Filter,
         from: git2::Oid,
-        sequence_number: u128,
+        sequence_number: u64,
     ) -> anyhow::Result<Option<git2::Oid>> {
         let values = self
             .backends

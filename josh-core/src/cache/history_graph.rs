@@ -21,15 +21,12 @@ use super::transaction::Transaction;
 ///   commits) reachable from the commit.
 #[derive(Debug, Clone)]
 pub struct HistoryGraphInfo {
-    pub sequence_number: u128,
+    pub sequence_number: u64,
     pub reachable_roots: Vec<git2::Oid>,
 }
 
 /// Backwards-compatible thin wrapper around [`collect_history_graph_info`].
-pub fn compute_sequence_number(
-    transaction: &Transaction,
-    input: git2::Oid,
-) -> anyhow::Result<u128> {
+pub fn compute_sequence_number(transaction: &Transaction, input: git2::Oid) -> anyhow::Result<u64> {
     Ok(collect_history_graph_info(transaction, input)?.sequence_number)
 }
 
@@ -103,7 +100,7 @@ pub fn parents_share_root(
 fn ensure_hint_cached(
     transaction: &Transaction,
     input: git2::Oid,
-) -> anyhow::Result<(u128, git2::Oid)> {
+) -> anyhow::Result<(u64, git2::Oid)> {
     if let Some(hint) = try_read_cached_hint(transaction, input) {
         return Ok(hint);
     }
@@ -116,7 +113,7 @@ fn ensure_hint_cached(
     let parent_ids: Vec<git2::Oid> = commit.parent_ids().collect();
 
     // Fast path: every parent already has both pieces cached.
-    let parents_hint: Option<Vec<(u128, git2::Oid)>> = parent_ids
+    let parents_hint: Option<Vec<(u64, git2::Oid)>> = parent_ids
         .iter()
         .map(|p| try_read_cached_hint(transaction, *p))
         .collect();
@@ -144,7 +141,7 @@ fn ensure_hint_cached(
     for c in walk {
         let oid = c?;
         let c_commit = transaction.repo().find_commit(oid)?;
-        let parents_hint: Vec<(u128, git2::Oid)> = c_commit
+        let parents_hint: Vec<(u64, git2::Oid)> = c_commit
             .parent_ids()
             .map(|p| {
                 try_read_cached_hint(transaction, p)
@@ -166,8 +163,8 @@ fn ensure_hint_cached(
 fn derive_from_parents(
     repo: &git2::Repository,
     self_oid: git2::Oid,
-    parents_hint: &[(u128, git2::Oid)],
-) -> anyhow::Result<(u128, git2::Oid)> {
+    parents_hint: &[(u64, git2::Oid)],
+) -> anyhow::Result<(u64, git2::Oid)> {
     if parents_hint.is_empty() {
         // Parentless: this commit *is* its own only reachable root.
         return Ok((0, write_roots_blob(repo, &[self_oid])?));
@@ -195,18 +192,18 @@ fn derive_from_parents(
     Ok((seq, roots_blob))
 }
 
-fn try_read_cached_hint(transaction: &Transaction, input: git2::Oid) -> Option<(u128, git2::Oid)> {
+fn try_read_cached_hint(transaction: &Transaction, input: git2::Oid) -> Option<(u64, git2::Oid)> {
     let seq = transaction.get(crate::filter::sequence_number(), input)?;
     let roots_blob = transaction.get(crate::filter::reachable_roots(), input)?;
-    Some((u128_from_oid(seq), roots_blob))
+    Some((u64_from_oid(seq), roots_blob))
 }
 
-fn store_hint(transaction: &Transaction, input: git2::Oid, hint: (u128, git2::Oid)) {
+fn store_hint(transaction: &Transaction, input: git2::Oid, hint: (u64, git2::Oid)) {
     let (seq, roots_blob) = hint;
     transaction.insert(
         crate::filter::sequence_number(),
         input,
-        oid_from_u128(seq),
+        oid_from_u64(seq),
         true,
     );
     transaction.insert(crate::filter::reachable_roots(), input, roots_blob, true);
@@ -237,21 +234,47 @@ fn read_roots_blob(repo: &git2::Repository, oid: git2::Oid) -> anyhow::Result<Ve
     Ok(out)
 }
 
-/// Encode a `u128` into a 20-byte git OID (SHA-1 sized).
-/// The high 4 bytes of the OID are zero; the low 16 bytes
+/// Encode a `u64` into a 20-byte git OID (SHA-1 sized).
+/// The high 12 bytes of the OID are zero; the low 8 bytes
 /// contain the big-endian integer.
-pub(crate) fn oid_from_u128(n: u128) -> git2::Oid {
+pub(crate) fn oid_from_u64(n: u64) -> git2::Oid {
     let mut bytes = [0u8; 20];
-    // place the 16 integer bytes at the end (big-endian)
-    bytes[20 - 16..].copy_from_slice(&n.to_be_bytes());
+    // place the 8 integer bytes at the end (big-endian)
+    bytes[20 - 8..].copy_from_slice(&n.to_be_bytes());
     // Safe: length is exactly 20
     git2::Oid::from_bytes(&bytes).expect("20-byte OID construction cannot fail")
 }
 
-/// Decode a `u128` previously encoded by `oid_from_u128`.
-pub(crate) fn u128_from_oid(oid: git2::Oid) -> u128 {
+/// Decode a `u64` previously encoded by `oid_from_u64`.
+pub(crate) fn u64_from_oid(oid: git2::Oid) -> u64 {
     let b = oid.as_bytes();
-    let mut n = [0u8; 16];
-    n.copy_from_slice(&b[20 - 16..]); // take the last 16 bytes
-    u128::from_be_bytes(n)
+    let mut n = [0u8; 8];
+    n.copy_from_slice(&b[20 - 8..]); // take the last 8 bytes
+    u64::from_be_bytes(n)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{oid_from_u64, u64_from_oid};
+
+    #[test]
+    fn oid_u64_roundtrip_uses_last_8_bytes() {
+        let value = 0x0123_4567_89ab_cdef_u64;
+        let oid = oid_from_u64(value);
+        let bytes = oid.as_bytes();
+
+        assert!(bytes[..12].iter().all(|byte| *byte == 0));
+        assert_eq!(&bytes[12..], &value.to_be_bytes());
+        assert_eq!(u64_from_oid(oid), value);
+    }
+
+    #[test]
+    fn u64_from_oid_decodes_existing_u128_layout() {
+        let value = 0x0123_4567_89ab_cdef_u64;
+        let mut bytes = [0u8; 20];
+        bytes[4..20].copy_from_slice(&(value as u128).to_be_bytes());
+        let oid = git2::Oid::from_bytes(&bytes).expect("20-byte OID construction cannot fail");
+
+        assert_eq!(u64_from_oid(oid), value);
+    }
 }
