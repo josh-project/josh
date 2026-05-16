@@ -235,8 +235,9 @@ fn read_roots_blob(repo: &git2::Repository, oid: git2::Oid) -> anyhow::Result<Ve
 }
 
 /// Encode a `u64` into a 20-byte git OID (SHA-1 sized).
-/// The high 12 bytes of the OID are zero; the low 8 bytes
-/// contain the big-endian integer.
+/// Bytes 0-11 of the OID are zero; bytes 12-19 contain the
+/// big-endian integer, preserving the legacy `u128` layout for
+/// values that fit in `u64`.
 pub(crate) fn oid_from_u64(n: u64) -> git2::Oid {
     let mut bytes = [0u8; 20];
     // place the 8 integer bytes at the end (big-endian)
@@ -246,6 +247,8 @@ pub(crate) fn oid_from_u64(n: u64) -> git2::Oid {
 }
 
 /// Decode a `u64` previously encoded by `oid_from_u64`.
+/// This also decodes legacy `oid_from_u128` values in the `u64`
+/// range because those used the same bytes 12-19 layout.
 pub(crate) fn u64_from_oid(oid: git2::Oid) -> u64 {
     let b = oid.as_bytes();
     let mut n = [0u8; 8];
