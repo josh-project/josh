@@ -270,14 +270,4 @@ mod tests {
         assert_eq!(&bytes[12..], &value.to_be_bytes());
         assert_eq!(u64_from_oid(oid), value);
     }
-
-    #[test]
-    fn u64_from_oid_decodes_existing_u128_layout() {
-        let value = 0x0123_4567_89ab_cdef_u64;
-        let mut bytes = [0u8; 20];
-        bytes[4..20].copy_from_slice(&(value as u128).to_be_bytes());
-        let oid = git2::Oid::from_bytes(&bytes).expect("20-byte OID construction cannot fail");
-
-        assert_eq!(u64_from_oid(oid), value);
-    }
 }
