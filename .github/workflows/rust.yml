@@ -51,6 +51,13 @@ jobs:
     - name: Install podman
       shell: bash
       run: .github/workflows/scripts/install-podman.sh
+    - name: Tailscale
+      uses: tailscale/github-action@v2
+      with:
+        authkey: ${{ secrets.TAILSCALE_AUTH_KEY }}
+        args: --ssh --hostname=gha-josh-${{ github.run_id }}-${{ matrix.test_suite.name }}
+    - name: Hold for SSH debug
+      run: sleep 1800
     - name: Build CI image
       uses: docker/bake-action@v7
       with:
