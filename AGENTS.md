@@ -12,12 +12,12 @@ josh compose run
 
 **Run only the release tests (excludes experimental features):**
 ```
-josh compose run . :+ws/test:/deps:#/stable
+josh compose run . :+ws/test:/inputs:#/stable
 ```
 
 **Run only the experimental tests:**
 ```
-josh compose run . :+ws/test:/deps:#/experimental
+josh compose run . :+ws/test:/inputs:#/experimental
 ```
 
 The first argument to `josh compose run` is the git ref to build from:
