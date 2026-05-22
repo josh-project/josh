@@ -55,4 +55,7 @@ jobs:
       if: steps.cache-josh.outputs.cache-hit != 'true'
       run: cargo build --release -p josh-cli
     - name: Run tests
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
       run: target/release/josh compose run

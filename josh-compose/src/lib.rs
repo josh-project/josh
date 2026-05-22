@@ -51,8 +51,24 @@ pub fn run(transaction: &josh_core::cache::Transaction, opts: RunOptions) -> any
     let (ws_tree, _safe_name) =
         filter::compute_ws_tree(transaction, &filter_spec, source_commit, &version)?;
 
+    let sidecar_image: Option<git2::Oid> = meta::read_blob(repo, ws_tree, "sidecar_image")
+        .filter(|s| !s.is_empty())
+        .and_then(|sha| git2::Oid::from_str(&sha).ok());
+
+    let sidecar_env = meta::read_blob_entries(repo, ws_tree, "sidecar_env");
+    let sidecar_passthrough = meta::read_blob_entries(repo, ws_tree, "sidecar_passthrough");
+    let sidecar_inject = meta::read_blob_entries(repo, ws_tree, "sidecar_inject");
+
     let mut attempted = std::collections::HashSet::new();
-    container::run_container(repo, ws_tree, &mut attempted)?;
+    container::run_container(
+        repo,
+        ws_tree,
+        sidecar_image,
+        &sidecar_env,
+        &sidecar_passthrough,
+        &sidecar_inject,
+        &mut attempted,
+    )?;
 
     Ok(())
 }

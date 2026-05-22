@@ -5,6 +5,7 @@ inputs = :[
         :$label="cargo test"
         :#image[:+images/dev-local]
         :$cache="rust"
+        :$network="sidecar"
         :$cmd="cargo test --workspace --offline --locked"
 
         inputs = :[
