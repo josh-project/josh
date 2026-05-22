@@ -6,6 +6,8 @@ pub use crate::OutputMode;
 pub enum NetworkMode {
     None,
     Host,
+    Named(String),
+    Sidecar,
 }
 
 pub struct WorkspaceMeta {
@@ -85,6 +87,7 @@ pub fn read_meta(repo: &git2::Repository, ws_tree: git2::Oid) -> anyhow::Result<
 
     let network = match read_blob(repo, ws_tree, "network").as_deref() {
         Some("host") => NetworkMode::Host,
+        Some("sidecar") => NetworkMode::Sidecar,
         _ => NetworkMode::None,
     };
 

@@ -1,6 +1,7 @@
 :$label="rust build"
 :#image[:+images/dev-local]
 :$cache="rust"
+:$network="sidecar"
 
 inputs = :[
     :#fetch[:+ws/fetch]

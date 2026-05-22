@@ -208,6 +208,12 @@ pub fn run(args: PodmanRunArgs) -> anyhow::Result<RunOutput> {
         NetworkMode::None => {
             cmd.args(["--network", "none"]);
         }
+        NetworkMode::Named(ref net) => {
+            cmd.args(["--network", net]);
+        }
+        NetworkMode::Sidecar => {
+            cmd.args(["--network", "none"]);
+        }
     }
 
     if let Some(workdir) = &args.workdir {
@@ -288,4 +294,101 @@ pub fn run(args: PodmanRunArgs) -> anyhow::Result<RunOutput> {
         stdout,
         stderr,
     })
+}
+
+pub fn network_exists(name: &str) -> anyhow::Result<bool> {
+    let status = Command::new("podman")
+        .args(["network", "inspect", "--format", "{{.Name}}", name])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .context("failed to run podman network inspect")?;
+    Ok(status.success())
+}
+
+pub fn network_create_internal(name: &str) -> anyhow::Result<()> {
+    let output = Command::new("podman")
+        .args(["network", "create", "--internal", name])
+        .output()
+        .context("failed to run podman network create")?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        anyhow::bail!("podman network create {name} failed: {stderr}");
+    }
+    Ok(())
+}
+
+pub fn ensure_network_internal(name: &str) -> anyhow::Result<()> {
+    if !network_exists(name)? {
+        network_create_internal(name)?;
+    }
+    Ok(())
+}
+
+pub struct PodmanRunDetachedArgs {
+    pub image: String,
+    pub name: String,
+    pub networks: Vec<String>,
+    pub env_vars: Vec<(String, String)>,
+}
+
+pub fn run_detached(args: PodmanRunDetachedArgs) -> anyhow::Result<()> {
+    let mut cmd = Command::new("podman");
+    cmd.args(["run", "--rm", "-d", "--name", &args.name]);
+
+    for net in &args.networks {
+        cmd.args(["--network", net]);
+    }
+    for (key, val) in &args.env_vars {
+        cmd.args(["-e", &format!("{key}={val}")]);
+    }
+    cmd.arg(&args.image);
+
+    let output = cmd.output().context("failed to run podman run --detach")?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        anyhow::bail!("podman run --detach {} failed: {stderr}", args.name);
+    }
+    Ok(())
+}
+
+pub fn container_ip(container: &str, network: &str) -> anyhow::Result<String> {
+    let format = format!("{{{{.NetworkSettings.Networks.{network}.IPAddress}}}}");
+    let output = Command::new("podman")
+        .args(["inspect", "--format", &format, container])
+        .output()
+        .context("failed to run podman inspect")?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        anyhow::bail!("podman inspect {container} failed: {stderr}");
+    }
+    let ip = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if ip.is_empty() {
+        anyhow::bail!("container {container} has no IP on network {network}");
+    }
+    Ok(ip)
+}
+
+pub fn stop_container(name: &str) -> anyhow::Result<()> {
+    let output = Command::new("podman")
+        .args(["stop", name])
+        .output()
+        .context("failed to run podman stop")?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        log::warn!("podman stop {name} failed: {stderr}");
+    }
+    Ok(())
+}
+
+pub fn rm_container_force(name: &str) -> anyhow::Result<()> {
+    let output = Command::new("podman")
+        .args(["rm", "-f", name])
+        .output()
+        .context("failed to run podman rm")?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        log::warn!("podman rm -f {name} failed: {stderr}");
+    }
+    Ok(())
 }
