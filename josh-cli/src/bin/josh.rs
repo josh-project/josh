@@ -46,8 +46,8 @@ pub enum RepoCommand {
     /// Push refs to a remote (like `git push`) with projection-aware options
     Push(PushArgs),
 
-    /// Push each commit as an independent, minimal diff (stacked changes workflow)
-    Publish(PublishArgs),
+    /// Manage stacked changes (publish, etc.)
+    Changes(ChangesArgs),
 
     /// Add a remote with optional projection/filtering (like `git remote add`)
     Remote(RemoteArgs),
@@ -122,6 +122,18 @@ pub struct FetchArgs {
     /// Ref to fetch (branch, tag, or commit-ish)
     #[arg(short = 'R', long = "ref", default_value = "HEAD")]
     pub rref: String,
+}
+
+#[derive(Debug, clap::Parser)]
+pub struct ChangesArgs {
+    #[command(subcommand)]
+    pub command: ChangesCommand,
+}
+
+#[derive(Debug, clap::Subcommand)]
+pub enum ChangesCommand {
+    /// Push each commit as an independent, minimal diff (stacked changes workflow)
+    Publish(PublishArgs),
 }
 
 #[derive(Debug, clap::Parser)]
@@ -239,7 +251,19 @@ fn run_repo(cmd: &RepoCommand) -> anyhow::Result<()> {
         RepoCommand::Fetch(args) => handle_fetch(args, &transaction),
         RepoCommand::Pull(args) => handle_pull(args, &transaction),
         RepoCommand::Push(args) => josh_cli::commands::push::handle_push(args, &transaction),
-        RepoCommand::Publish(args) => josh_cli::commands::push::handle_publish(args, &transaction),
+        RepoCommand::Changes(args) => match &args.command {
+            ChangesCommand::Publish(publish_args) => {
+                josh_cli::commands::push::handle_publish(publish_args, &transaction)?;
+                let remote = publish_args.remote.as_deref().unwrap_or("origin");
+                handle_fetch(
+                    &FetchArgs {
+                        remote: remote.to_string(),
+                        rref: "HEAD".to_string(),
+                    },
+                    &transaction,
+                )
+            }
+        },
         RepoCommand::Remote(args) => handle_remote(args, &transaction),
         RepoCommand::Filter(args) => handle_filter(args, &transaction),
         RepoCommand::Link(args) => josh_cli::commands::link::handle_link(args, &transaction),

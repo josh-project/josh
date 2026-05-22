@@ -109,14 +109,14 @@ josh push [<remote>] [<refspecs>...] [options]
 
 ---
 
-## josh publish
+## josh changes publish
 
 Push each commit as an independent, minimal diff (stacked changes workflow). Each commit
 with a [Change ID](../guide/stacked-changes.md) is pushed to its own ref and, when
 [forge integration](./forge.md) is configured, gets its own pull request.
 
 ```
-josh publish [<remote>] [<refspecs>...] [options]
+josh changes publish [<remote>] [<refspecs>...] [options]
 ```
 
 | Argument | Description |

@@ -70,7 +70,7 @@ Change-Series, and beta has no series at all.
 
 Publish with split mode
 
-  $ josh publish > /dev/null 2>&1
+  $ josh changes publish > /dev/null 2>&1
 
 Verify gamma's downstack includes alpha (due to shared Change-Series: dep1)
 but not beta (different series / no series, no file overlap).

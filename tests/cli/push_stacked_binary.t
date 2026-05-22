@@ -52,7 +52,7 @@ Set up git config for author
 
 Push with stacked changes containing binary files
 
-  $ josh publish
+  $ josh changes publish
   Pushing 115b269a011d493259a125fa941fd790b903175f to origin/refs/heads/@base/master/josh@example.com/bin1
   Pushing 115b269a011d493259a125fa941fd790b903175f to origin/refs/heads/@base/master/josh@example.com/bin2
   Pushing 61d809929bf6b7a29d194f43368936fc82b033db to origin/refs/heads/@changes/master/josh@example.com/bin1
@@ -66,6 +66,21 @@ Push with stacked changes containing binary files
    * [new branch]      bcf10470382d693f9188a7a75872bcf3cd117dbc -> @heads/master/josh@example.com
   
   Pushed 5 ref(s) to origin
+  From file://${TESTTMP}/remote
+   * [new branch]      @base/master/josh@example.com/bin1 -> refs/josh/remotes/origin/@base/master/josh@example.com/bin1
+   * [new branch]      @base/master/josh@example.com/bin2 -> refs/josh/remotes/origin/@base/master/josh@example.com/bin2
+   * [new branch]      @changes/master/josh@example.com/bin1 -> refs/josh/remotes/origin/@changes/master/josh@example.com/bin1
+   * [new branch]      @changes/master/josh@example.com/bin2 -> refs/josh/remotes/origin/@changes/master/josh@example.com/bin2
+   * [new branch]      @heads/master/josh@example.com -> refs/josh/remotes/origin/@heads/master/josh@example.com
+  
+  From file://${TESTTMP}/filtered
+   * [new branch]      @base/master/josh@example.com/bin1 -> origin/@base/master/josh@example.com/bin1
+   * [new branch]      @base/master/josh@example.com/bin2 -> origin/@base/master/josh@example.com/bin2
+   * [new branch]      @changes/master/josh@example.com/bin1 -> origin/@changes/master/josh@example.com/bin1
+   * [new branch]      @changes/master/josh@example.com/bin2 -> origin/@changes/master/josh@example.com/bin2
+   * [new branch]      @heads/master/josh@example.com -> origin/@heads/master/josh@example.com
+  
+  Fetched from remote: origin
 
 
 Verify binary content is preserved on the change branches
