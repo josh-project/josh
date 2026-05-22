@@ -50,6 +50,7 @@ Rewrite the subtree part of the history
   )[
       :rev(<=c036f944faafb865e0585e4fa5e005afa0aeea3f:prefix=subtree)
   ]
+  [4] reachable_roots
   [4] sequence_number
 
   $ git log --graph --pretty=%s refs/heads/filtered
@@ -85,6 +86,7 @@ Extract the subtree history
   )[
       :rev(<=c036f944faafb865e0585e4fa5e005afa0aeea3f:prefix=subtree)
   ]
+  [7] reachable_roots
   [7] sequence_number
   $ git checkout subtree
   Switched to branch 'subtree'
@@ -107,6 +109,7 @@ Work in the subtree, and sync that back.
   )[
       :rev(<=c036f944faafb865e0585e4fa5e005afa0aeea3f:prefix=subtree)
   ]
+  [7] reachable_roots
   [7] sequence_number
   $ git log --graph --pretty=%s  refs/heads/master
   * add even more content
@@ -138,6 +141,7 @@ And then re-extract, which should re-construct the same subtree.
   )[
       :rev(<=c036f944faafb865e0585e4fa5e005afa0aeea3f:prefix=subtree)
   ]
+  [9] reachable_roots
   [9] sequence_number
   $ test $(git rev-parse subtree) = $(git rev-parse subtree2)
 
@@ -221,7 +225,8 @@ And finally, sync first from main to sub and then back.
   )[
       :rev(<=c036f944faafb865e0585e4fa5e005afa0aeea3f:prefix=subtree)
   ]
-  [17] sequence_number
+  [22] reachable_roots
+  [22] sequence_number
 
   $ git log --graph --pretty=%H:%s refs/heads/master
   *   6ac0ba56575859cfaacd5818084333e532ffc442:Merge branch 'subtree-sync' into subtree
@@ -276,7 +281,8 @@ taken back into the main history.
   )[
       :rev(<=c036f944faafb865e0585e4fa5e005afa0aeea3f:prefix=subtree)
   ]
-  [25] sequence_number
+  [30] reachable_roots
+  [30] sequence_number
   $ git ls-tree --name-only -r refs/heads/master
   feature1
   feature2

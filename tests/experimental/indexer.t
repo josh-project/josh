@@ -21,6 +21,7 @@
   $ josh-filter -s :INDEX --update refs/heads/index
   7f9854361a53e0a7faa7428a5909267f6e04fb99
   [3] :INDEX
+  [3] reachable_roots
   [3] sequence_number
   [6] _trigram_index
 

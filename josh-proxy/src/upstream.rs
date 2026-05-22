@@ -187,6 +187,10 @@ pub async fn fetch_upstream(
         return Ok(());
     }
 
+    // Callers must pass `upstream_repo` in canonical form (no leading slash):
+    // this string keys fetch_permits / head_symref_map / poll, and different
+    // spellings of the same repo would split the lock and let concurrent
+    // fetches race on the same mirror refs.
     let semaphore = service
         .fetch_permits
         .lock()

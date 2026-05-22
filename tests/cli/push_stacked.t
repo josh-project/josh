@@ -65,7 +65,7 @@ Push with stacked changes (should create multiple refs)
   $ git ls-remote .
   da80e49d24d110866ce2ec7a5c21112696fd165b\tHEAD (esc)
   da80e49d24d110866ce2ec7a5c21112696fd165b\trefs/heads/master (esc)
-  3c2c2237ae79b148f5a4ca12279f75ab6029fe2b\trefs/josh/cache/26/0/bf567e0faf634a663d6cef48145a035e1974ab1d (esc)
+  3c2c2237ae79b148f5a4ca12279f75ab6029fe2b\trefs/josh/cache/27/0/bf567e0faf634a663d6cef48145a035e1974ab1d (esc)
   6ed6c1ca90cb15fe4edf8d133f0e2e44562aa77d\trefs/josh/remotes/origin/master (esc)
   da80e49d24d110866ce2ec7a5c21112696fd165b\trefs/namespaces/josh-origin/HEAD (esc)
   5f2928c89c4dcc7f5a8c59ef65734a83620cefee\trefs/namespaces/josh-origin/refs/heads/master (esc)
@@ -96,7 +96,7 @@ Push with stacked changes (should create multiple refs)
   $ git ls-remote .
   da80e49d24d110866ce2ec7a5c21112696fd165b\tHEAD (esc)
   da80e49d24d110866ce2ec7a5c21112696fd165b\trefs/heads/master (esc)
-  3c2c2237ae79b148f5a4ca12279f75ab6029fe2b\trefs/josh/cache/26/0/bf567e0faf634a663d6cef48145a035e1974ab1d (esc)
+  3c2c2237ae79b148f5a4ca12279f75ab6029fe2b\trefs/josh/cache/27/0/bf567e0faf634a663d6cef48145a035e1974ab1d (esc)
   6ed6c1ca90cb15fe4edf8d133f0e2e44562aa77d\trefs/josh/remotes/origin/master (esc)
   da80e49d24d110866ce2ec7a5c21112696fd165b\trefs/namespaces/josh-origin/HEAD (esc)
   5f2928c89c4dcc7f5a8c59ef65734a83620cefee\trefs/namespaces/josh-origin/refs/heads/master (esc)
@@ -130,7 +130,7 @@ Test normal push (without --split) - create a new commit
   To file://${TESTTMP}/remote
      6ed6c1c..d3e371f  d3e371f8c637c91b59e05aae1066cf0adbe0da93 -> master
   
-  Pushed d3e371f8c637c91b59e05aae1066cf0adbe0da93 to origin/master
+  Pushed d3e371f8c637c91b59e05aae1066cf0adbe0da93 to origin/refs/heads/master
 
 Verify normal push worked
 

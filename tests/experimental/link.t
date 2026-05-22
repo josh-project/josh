@@ -38,6 +38,7 @@ Test Link filter (identical to Adapt)
   [2] ::libs/.link.josh
   [2] :adapt=submodules
   [2] :link=embedded
+  [7] reachable_roots
   [7] sequence_number
   $ git ls-tree -r --name-only refs/josh/filter/master
   libs/.link.josh
@@ -63,6 +64,7 @@ Test Link on repo without submodules (should be no-op)
   $ josh-filter -s :link master --update refs/josh/filter/master
   62f270988ac3ab05a33d0705fb1e4982165f69f2
   [1] :link
+  [1] reachable_roots
   [1] sequence_number
   $ git ls-tree -r --name-only refs/josh/filter/master
   file.txt

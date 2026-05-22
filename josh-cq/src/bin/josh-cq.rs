@@ -52,6 +52,12 @@ struct ServeArgs {
     /// Port to listen on
     #[arg(long, default_value = "8080")]
     port: u16,
+    /// WebSocket URL of the webhook relay server
+    #[arg(long)]
+    webhook_relay: Option<String>,
+    /// Auth token for the webhook relay
+    #[arg(long, env = "JOSH_CQ_WEBHOOK_TOKEN", hide_env_values = true)]
+    webhook_relay_token: Option<String>,
 }
 
 fn open_repo(
@@ -81,6 +87,39 @@ fn open_repo(
     Ok((repo_path, cache, transaction))
 }
 
+async fn run_serve(args: ServeArgs, data_dir: Option<&std::path::Path>) -> anyhow::Result<()> {
+    let (repo_path, cache, _transaction) = open_repo(data_dir)?;
+
+    let event_tx = josh_cq::cq::spawn_serve_task(repo_path, cache);
+    let app = josh_cq::cq::make_router(event_tx);
+
+    let addr = std::net::SocketAddr::from(([0, 0, 0, 0], args.port));
+    println!("Listening on {}", addr);
+
+    let _webhook_client = match (args.webhook_relay, args.webhook_relay_token) {
+        (Some(ws_url), Some(auth_token)) => {
+            let config = josh_test_webhook_client::WebhookClientConfig {
+                ws_url,
+                auth_token,
+                webhook_url: format!("http://{}/v1/webhook", addr),
+            };
+            println!("Forwarding webhooks from {}", config.ws_url);
+            Some(josh_test_webhook_client::connect(&config).await?)
+        }
+        (None, None) => None,
+        _ => {
+            return Err(anyhow::anyhow!(
+                "--webhook-relay and --webhook-relay-token must be provided together"
+            ));
+        }
+    };
+
+    let listener = tokio::net::TcpListener::bind(addr).await?;
+    axum::serve(listener, app).await?;
+
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
@@ -90,18 +129,7 @@ async fn main() -> anyhow::Result<()> {
             // TODO
             return Ok(());
         }
-        Commands::Serve(args) => {
-            let (repo_path, cache, _transaction) = open_repo(cli.data_dir.as_deref())?;
-
-            let state = josh_cq::cq::AppState { repo_path, cache };
-            let app = josh_cq::cq::make_router(state);
-
-            let addr = std::net::SocketAddr::from(([0, 0, 0, 0], args.port));
-            println!("Listening on {}", addr);
-
-            let listener = tokio::net::TcpListener::bind(addr).await?;
-            axum::serve(listener, app).await?;
-        }
+        Commands::Serve(args) => run_serve(args, cli.data_dir.as_deref()).await?,
         Commands::Action(action) => {
             let (_repo_path, _cache, transaction) = open_repo(cli.data_dir.as_deref())?;
 

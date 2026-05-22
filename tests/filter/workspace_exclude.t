@@ -30,6 +30,7 @@
       ::sub2/subsub/
   ]
   [2] :workspace=ws
+  [3] reachable_roots
   [3] sequence_number
 
   $ git log --graph --pretty=%s refs/heads/filtered
@@ -62,6 +63,7 @@
       ::sub2/subsub/
   ]
   [2] :workspace=ws
+  [3] reachable_roots
   [3] sequence_number
   $ josh-filter -s :workspace=ws --reverse --check-roundtrip master --update refs/heads/filtered
   Roundtrip failed
@@ -70,6 +72,7 @@
       ::sub2/subsub/
   ]
   [3] :workspace=ws
+  [4] reachable_roots
   [4] sequence_number
   $ git checkout master
   Switched to branch 'master'

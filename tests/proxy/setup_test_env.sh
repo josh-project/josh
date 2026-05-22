@@ -29,10 +29,6 @@ GIT_DIR="${TESTTMP}/remote/" GIT_PROJECT_ROOT="${TESTTMP}/remote/" GIT_HTTP_EXPO
     > "${TESTTMP}/axum-cgi-server.out" 2>&1 &
 echo $! > "${TESTTMP}/server_pid"
 
-# Copy static UI resources
-mkdir -p "${TESTDIR}/../../static"
-cp -R "${TESTDIR}/../../static/" /josh/
-
 if [ -n "${CARGO_TARGET_DIR+x}" ]; then
     export TARGET_DIR=${CARGO_TARGET_DIR}
 else

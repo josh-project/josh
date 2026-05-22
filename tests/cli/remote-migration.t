@@ -33,8 +33,8 @@ Test migration from legacy git config to new file format
 
   $ josh filter origin
   Applying filter ':/sub1' to remote 'origin'
-  Error: No remote references found
-  No remote references found
+  Error: No remote references found for 'origin'
+  No remote references found for 'origin'
   [1]
 
   $ cat .git/josh/remotes/origin.josh | sed "s|file://.*/remote/libs|file://\${TESTTMP}/remote/libs|"

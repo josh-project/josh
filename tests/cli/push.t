@@ -61,11 +61,11 @@ Push the change back
   To file://${TESTTMP}/remote
      14ecb7c..33f0c00  33f0c009c43980ba5e76995b53f9615a4d880a08 -> master
   
-  Pushed 33f0c009c43980ba5e76995b53f9615a4d880a08 to origin/master
+  Pushed 33f0c009c43980ba5e76995b53f9615a4d880a08 to origin/refs/heads/master
   $ josh push
   Everything up-to-date
   
-  Pushed 33f0c009c43980ba5e76995b53f9615a4d880a08 to origin/master
+  Pushed 33f0c009c43980ba5e76995b53f9615a4d880a08 to origin/refs/heads/master
 
 Verify the change was pushed to the original repository
 
@@ -77,3 +77,28 @@ Verify the change was pushed to the original repository
   * 115b269 add file1
   $ cat sub1/file1
   modified content
+
+Make a commit on a new local branch in the filtered repo and push it
+to a brand-new remote branch using master as the unfiltered base for
+reverse filtering. Without --base the unfiltered base would be zero;
+--base=master makes the new unfiltered commit a descendant of master.
+
+  $ cd ${TESTTMP}/filtered
+  $ git switch -q -c feature
+  $ echo "feature content" > file3
+  $ git add file3
+  $ git commit -q -m "add file3"
+  $ josh push origin HEAD:refs/heads/feature --base=master
+  To file://${TESTTMP}/remote
+  * (glob)
+  
+  Pushed * to origin/refs/heads/feature (glob)
+
+--base must resolve to an existing remote-tracking ref.
+
+  $ cd ${TESTTMP}/filtered
+  $ josh push origin HEAD:refs/heads/other --base=does-not-exist
+  Error: Failed to resolve --base ref (looked up 'refs/josh/remotes/origin/does-not-exist')
+  Failed to resolve --base ref (looked up 'refs/josh/remotes/origin/does-not-exist')
+  * (glob)
+  [1]

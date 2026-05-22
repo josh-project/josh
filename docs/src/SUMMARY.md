@@ -10,6 +10,7 @@
 - [Stacked changes](./guide/stacked-changes.md)
 - [Importing projects](./guide/importing.md)
 - [Integrating with CI]()
+- [Migration guide](./guide/migration.md)
 
 # Reference
 - [josh CLI](./reference/cli.md)

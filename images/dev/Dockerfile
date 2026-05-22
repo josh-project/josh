@@ -60,7 +60,7 @@ ARG PRYSK_VERSION=0.20.0
 RUN pip3 install --break-system-packages \
   git+https://github.com/prysk/prysk.git@${PRYSK_VERSION}
 
-RUN apk add --no-cache go nodejs npm openssh-client patch
+RUN apk add --no-cache go openssh-client patch
 
 COPY lfs-test-server lfs-test-server
 RUN cd lfs-test-server && GOPATH=/opt/git-lfs go install

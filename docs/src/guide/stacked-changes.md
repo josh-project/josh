@@ -54,6 +54,42 @@ submission. Returns an error message inline without clearing the form.
 Change: login-form-validation
 ```
 
+## Declaring dependencies with `Requires:`
+
+By default, when Josh publishes a stack it includes only the intermediate commits that
+are textually needed for a change's diff to apply. Sometimes a change depends on another
+change in ways that go beyond textual conflicts — for example, it relies on a function
+introduced by an earlier change even though they touch different files.
+
+You can declare such dependencies with one or more `Requires:` footers in the commit
+message, referencing the change IDs of the changes you depend on:
+
+```
+Add caller for the new validation helper
+
+Uses the validate_email() function introduced in the input-validation
+change, even though this commit touches a different file.
+
+Change: form-wiring
+Requires: input-validation
+```
+
+When Josh determines the dependencies for `form-wiring`, it will include
+`input-validation` even if the two changes don't overlap textually.
+
+Multiple dependencies can be declared by repeating the footer:
+
+```
+Change: integration-tests
+Requires: input-validation
+Requires: form-wiring
+```
+
+If a `Requires:` references a change ID that does not exist in the current stack, it is
+silently ignored. This commonly happens when the required change has already been merged
+into the base branch — the dependency is satisfied by the base itself, so there is
+nothing extra to include.
+
 ## Workflow
 
 ### 1. Write your commits

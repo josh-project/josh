@@ -3,6 +3,12 @@ use anyhow::anyhow;
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
+pub enum GpgsigMode {
+    Preserve,
+    Remove,
+    NormLf,
+}
+
 pub fn walk2(
     filter: filter::Filter,
     input: git2::Oid,
@@ -14,7 +20,7 @@ pub fn walk2(
         return Ok(());
     }
 
-    ok_or!(transaction.repo().find_commit(input), {
+    let input_commit = ok_or!(transaction.repo().find_commit(input), {
         return Ok(());
     });
 
@@ -32,44 +38,33 @@ pub fn walk2(
     let walk = walk.with_hide_callback(&mut hide_callback)?;
 
     log::info!(
-        "Walking {} new commits for:\n{}\n",
-        0,
-        filter::pretty(filter, 4),
+        "Walking {} commits for: {} {:?}",
+        crate::cache::compute_sequence_number(transaction, input)
+            .expect("compute_sequence_number failed"),
+        filter::spec(filter),
+        input_commit,
     );
     let mut n_in = 0;
     let mut n_out = 0;
 
-    let walks = transaction.new_walk();
-
     for original_commit_id in walk {
-        if filter::apply_to_commit2(
-            filter,
-            &transaction.repo().find_commit(original_commit_id?)?,
-            transaction,
-        )?
-        .is_some()
+        let id = original_commit_id?;
+
+        if filter::apply_to_commit2(filter, &transaction.repo().find_commit(id)?, transaction)?
+            .is_some()
         {
             n_out += 1;
+        } else {
+            break;
         }
 
         n_in += 1;
         if n_in % 1000 == 0 {
-            log::debug!(
-                "{} {} commits filtered, {} written",
-                " ->".repeat(walks),
-                n_in,
-                n_out,
-            );
+            log::debug!("{} commits filtered, {} written", n_in, n_out,);
         }
     }
 
-    log::info!(
-        "{} {} commits filtered, {} written",
-        " ->".repeat(walks),
-        n_in,
-        n_out,
-    );
-    transaction.end_walk();
+    log::info!("{} commits filtered, {} written", n_in, n_out,);
 
     Ok(())
 }
@@ -264,7 +259,7 @@ pub fn rewrite_commit(
     base: &git2::Commit,
     parents: &[&git2::Commit],
     rewrite_data: filter::Rewrite,
-    unsign: bool,
+    gpgsig: GpgsigMode,
 ) -> anyhow::Result<git2::Oid> {
     use gix_object::bstr::BString;
 
@@ -337,9 +332,22 @@ pub fn rewrite_commit(
         commit.message = message.as_ref();
     }
 
-    commit
-        .extra_headers
-        .retain(|(k, _)| *k != "gpgsig".as_bytes() || !unsign);
+    match gpgsig {
+        GpgsigMode::Remove => {
+            commit
+                .extra_headers
+                .retain(|(k, _)| *k != "gpgsig".as_bytes());
+        }
+        GpgsigMode::NormLf => {
+            use gix_object::bstr::ByteSlice;
+            for (k, v) in commit.extra_headers.iter_mut() {
+                if *k == "gpgsig".as_bytes() && v.contains_str(b"\r\n") {
+                    *v = std::borrow::Cow::Owned(v.replace(b"\r\n", b"\n").into());
+                }
+            }
+        }
+        GpgsigMode::Preserve => {}
+    }
 
     let mut b = vec![];
     gix_object::WriteTo::write_to(&commit, &mut b)?;
@@ -733,7 +741,7 @@ pub fn unapply_filter(
             &module_commit,
             &original_parents,
             apply,
-            false,
+            GpgsigMode::Preserve,
         )?;
 
         ret = if original_parents.len() == 1
@@ -800,7 +808,7 @@ pub fn create_filtered_commit_with_meta(
     meta: std::collections::BTreeMap<String, String>,
 ) -> anyhow::Result<git2::Oid> {
     let (r, is_new) = create_filtered_commit2(
-        transaction.repo(),
+        transaction,
         original_commit,
         filtered_parent_ids,
         rewrite_data,
@@ -832,12 +840,13 @@ pub fn create_filtered_commit(
 }
 
 fn create_filtered_commit2<'a>(
-    repo: &'a git2::Repository,
+    transaction: &'a cache::Transaction,
     original_commit: &'a git2::Commit,
     filtered_parent_ids: Vec<git2::Oid>,
     rewrite_data: filter::Rewrite,
     options: BTreeMap<String, String>,
 ) -> anyhow::Result<(git2::Oid, bool)> {
+    let repo = transaction.repo();
     let filtered_parent_commits: Result<Vec<_>, _> = filtered_parent_ids
         .iter()
         .filter(|x| **x != git2::Oid::zero())
@@ -850,8 +859,11 @@ fn create_filtered_commit2<'a>(
         .iter()
         .any(|x| x.tree_id() == filter::tree::empty_id())
     {
-        let is_initial_merge =
-            filtered_parent_ids.len() > 1 && repo.merge_base_many(&filtered_parent_ids).is_err();
+        // An "initial merge" is a merge whose parents have no common ancestor.
+        // Cheaper than `repo.merge_base_many(...).is_err()`: ask whether the
+        // parents' reachable-root sets intersect, which is cached per-commit.
+        let is_initial_merge = filtered_parent_ids.len() > 1
+            && !cache::parents_share_root(transaction, &filtered_parent_ids)?;
 
         if is_initial_merge {
             filtered_parent_commits.retain(|x| x.tree_id() != filter::tree::empty_id());
@@ -898,7 +910,11 @@ fn create_filtered_commit2<'a>(
         }
     }
 
-    let unsign = options.get("signature").is_some_and(|s| s == "remove");
+    let gpgsig = match options.get("gpgsig").map(String::as_str) {
+        Some("remove") => GpgsigMode::Remove,
+        Some("norm-lf") => GpgsigMode::NormLf,
+        _ => GpgsigMode::Preserve,
+    };
 
     Ok((
         rewrite_commit(
@@ -906,7 +922,7 @@ fn create_filtered_commit2<'a>(
             original_commit,
             &selected_filtered_parent_commits,
             rewrite_data,
-            unsign,
+            gpgsig,
         )?,
         true,
     ))

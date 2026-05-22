@@ -37,6 +37,7 @@
   21a904a6f350cb1f8ea4dc6fe9bd4e3b4cc4840b
   [2] :/sub1
   [2] :prefix=c
+  [4] reachable_roots
   [4] sequence_number
   $ git log --graph --pretty=%s josh/filter/libs/master
   * add file2
@@ -48,6 +49,7 @@
   [2] :/sub1
   [2] :/sub2
   [2] :prefix=c
+  [7] reachable_roots
   [7] sequence_number
   $ git log --graph --pretty=%s josh/filter/libs/foo
   * add file3
@@ -68,7 +70,7 @@
   |   `-- master
   |-- josh
   |   |-- cache
-  |   |   `-- 26
+  |   |   `-- 27
   |   |       `-- 0
   |   |           |-- 4f443af7cd6a50ec0be1276ce9d164248f8a88a8
   |   |           |-- 5e165aaee1e65cc624bbb41dc6d1199316dfc1e5

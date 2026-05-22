@@ -34,6 +34,7 @@
       b = ::**/file1
   ]
   [2] :workspace=ws
+  [3] reachable_roots
   [3] sequence_number
 
   $ git log --graph --pretty=%s refs/josh/master

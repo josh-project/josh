@@ -8,5 +8,4 @@ ENV CARGO_INCREMENTAL=0
 
 COPY . .
 ARG JOSH_VERSION=unknown
-RUN JOSH_VERSION=${JOSH_VERSION} cargo build -p josh-ui --release && \
-  cargo build -p josh-proxy -p josh-ssh-shell --release
+RUN JOSH_VERSION=${JOSH_VERSION} cargo build -p josh-proxy -p josh-ssh-shell --release

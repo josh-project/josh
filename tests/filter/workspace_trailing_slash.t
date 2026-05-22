@@ -29,6 +29,7 @@
       a/b = :/sub2
   ]
   [2] :workspace=ws
+  [3] reachable_roots
   [3] sequence_number
 
   $ git log --graph --pretty=%s refs/josh/master
@@ -51,6 +52,7 @@
       a/b = :/sub2
   ]
   [3] :workspace=ws
+  [4] reachable_roots
   [4] sequence_number
 
   $ git log --graph --pretty=%s refs/josh/master

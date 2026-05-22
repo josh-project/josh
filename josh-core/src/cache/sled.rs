@@ -1,7 +1,8 @@
 use anyhow::anyhow;
 use std::sync::LazyLock;
 
-use super::transaction::{CACHE_VERSION, CacheBackend};
+use super::CACHE_VERSION;
+use super::backend::CacheBackend;
 use crate::filter;
 use crate::filter::Filter;
 
@@ -85,7 +86,7 @@ impl CacheBackend for SledCacheBackend {
         &self,
         filter: Filter,
         from: git2::Oid,
-        _sequence_number: u128,
+        _sequence_number: u64,
     ) -> anyhow::Result<Option<git2::Oid>> {
         let mut trees = self.trees.lock().unwrap();
         let tree = trees
@@ -105,7 +106,7 @@ impl CacheBackend for SledCacheBackend {
         filter: Filter,
         from: git2::Oid,
         to: git2::Oid,
-        _sequence_number: u128,
+        _sequence_number: u64,
     ) -> anyhow::Result<()> {
         let mut trees = self.trees.lock().unwrap();
         let tree = trees

@@ -25,23 +25,6 @@ pub mod housekeeping;
 pub mod link;
 pub mod submodules;
 
-#[derive(Debug)]
-pub struct Change {
-    pub author: String,
-    pub id: Option<String>,
-    pub commit: git2::Oid,
-}
-
-impl Change {
-    fn new(commit: git2::Oid) -> Self {
-        Self {
-            author: Default::default(),
-            id: Default::default(),
-            commit,
-        }
-    }
-}
-
 #[derive(
     Clone, Hash, PartialEq, Eq, Copy, PartialOrd, Ord, Debug, serde::Serialize, serde::Deserialize,
 )]
@@ -158,23 +141,6 @@ impl $name {
     }
 }
     }
-}
-
-pub fn get_change_id(commit: &git2::Commit) -> Change {
-    let mut change = Change::new(commit.id());
-    change.author = commit.author().email().unwrap_or("").to_string();
-
-    for line in commit.message().unwrap_or("").split('\n') {
-        if line.starts_with("Change: ") {
-            change.id = Some(line.replacen("Change: ", "", 1));
-            // If there is a "Change-Id" as well, it will take precedence
-        }
-        if line.starts_with("Change-Id: ") {
-            change.id = Some(line.replacen("Change-Id: ", "", 1));
-            break;
-        }
-    }
-    change
 }
 
 #[tracing::instrument(level = tracing::Level::TRACE, skip(transaction))]

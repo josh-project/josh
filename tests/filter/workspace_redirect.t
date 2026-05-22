@@ -54,6 +54,7 @@
       ::sub2/subsub/
   ]
   [3] :workspace=ws
+  [7] reachable_roots
   [7] sequence_number
   $ josh-filter -s :workspace=ws_new master --update refs/heads/filtered_new
   b9624622ee21a49c687f9fe717803c10aeb7829d
@@ -66,6 +67,7 @@
   [2] :workspace=ws_new
   [3] :workspace=ws
   [5] :exclude[::ws_new]
+  [7] reachable_roots
   [7] sequence_number
 
   $ git log --graph --pretty=%s refs/heads/filtered
@@ -193,4 +195,5 @@
   [4] :exclude[::ws]
   [4] :workspace=ws
   [6] :exclude[::ws_new]
+  [10] reachable_roots
   [10] sequence_number

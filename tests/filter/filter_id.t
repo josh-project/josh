@@ -731,7 +731,7 @@ Test :unsign
   $ FILTER_HASH=$(josh-filter -i ':unsign')
   $ josh-filter -p ${FILTER_HASH}
   :~(
-      signature="remove"
+      gpgsig="remove"
   )[
       :/
   ]
@@ -741,7 +741,7 @@ Test :unsign
   `-- meta
       |-- 0
       |   `-- nop
-      `-- signature
+      `-- gpgsig
   
   3 directories, 2 files
 

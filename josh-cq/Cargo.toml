@@ -1,7 +1,11 @@
 [package]
 name = "josh-cq"
-version = "0.1.0"
+version = "26.5.8"
 edition = "2024"
+authors = ["Josh Project authors <contact@josh-project.dev>"]
+description = "Code quality tooling for the josh git proxy"
+license-file = "../LICENSE"
+repository = "https://github.com/josh-project/josh"
 
 [dependencies]
 tokio.workspace = true
@@ -11,6 +15,9 @@ serde.workspace = true
 serde_json.workspace = true
 git2.workspace = true
 axum.workspace = true
+tracing.workspace = true
 
 josh-core.workspace = true
+josh-github-webhooks.workspace = true
 josh-link.workspace = true
+josh-test-webhook-client.workspace = true

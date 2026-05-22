@@ -37,6 +37,7 @@
   ba6cff78351dfd8135eb25c543f17fcb80b79e2e
   [1] :prefix=c
   [2] :exclude[::sub1/]
+  [4] reachable_roots
   [4] sequence_number
   $ git checkout josh/filter/master 2> /dev/null
   $ git log --graph --pretty=%s
@@ -54,6 +55,7 @@
   [2] :exclude[::sub1/]
   [2] :exclude[::sub1/file2]
   [3] :prefix=c
+  [5] reachable_roots
   [5] sequence_number
   $ git checkout josh/filter/master 2> /dev/null
   $ git log --graph --pretty=%s
@@ -75,6 +77,7 @@
   [2] :exclude[::sub1/file2]
   [2] :exclude[::sub2/file3]
   [4] :prefix=c
+  [5] reachable_roots
   [5] sequence_number
   $ git checkout josh/filter/master 2> /dev/null
   $ git log --graph --pretty=%s

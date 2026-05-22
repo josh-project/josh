@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::hash::BuildHasherDefault;
 use std::sync::LazyLock;
 
-use crate::filter::{Filter, sequence_number};
+use crate::filter::{Filter, reachable_roots, sequence_number};
 use crate::hash::PassthroughHasher;
 use crate::op::{LazyRef, Op, RevMatch};
 
@@ -23,7 +23,7 @@ pub fn peel_op(filter: Filter) -> Op {
 }
 
 pub fn to_op(filter: Filter) -> Op {
-    if filter == sequence_number() {
+    if filter == sequence_number() || filter == reachable_roots() {
         return Op::Nop;
     }
     FILTERS

@@ -1,0 +1,14 @@
+# Replaces the system /etc/apparmor.d/podman to cover both /usr/bin/podman
+# and /usr/local/bin/podman. Required on Ubuntu >=23.10 where
+# kernel.apparmor_restrict_unprivileged_userns=1 blocks rootless podman
+# launched from /usr/local/bin (where the podman-static bundle is symlinked)
+# with "reexec: Permission denied". See:
+# https://github.com/mgoltzsche/podman-static#apparmor-profile
+abi <abi/4.0>,
+include <tunables/global>
+
+profile podman /{usr/{bin,local/bin},opt/podman-*/usr/local/bin}/podman flags=(unconfined) {
+  userns,
+
+  include if exists <local/podman>
+}

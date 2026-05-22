@@ -38,6 +38,7 @@
   $ josh-filter -s --squash-pattern "refs/tags/*" --update refs/heads/filtered
   Warning: reference refs/heads/filtered wasn't updated
   0000000000000000000000000000000000000000
+  [5] reachable_roots
   [5] sequence_number
   $ git log --graph --decorate --pretty=oneline refs/heads/filtered
   fatal: ambiguous argument 'refs/heads/filtered': unknown revision or path not in the working tree.
@@ -53,6 +54,7 @@
   [1] :squash(
       882f2656a5075936eb37bfefde740e0b453e4479:"refs/tags/tag_a"
   )
+  [7] reachable_roots
   [7] sequence_number
 
   $ git log --graph --decorate --pretty=oneline refs/heads/filtered

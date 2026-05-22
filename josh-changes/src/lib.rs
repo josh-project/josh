@@ -1,5 +1,41 @@
 use anyhow::anyhow;
-use josh_core::Change;
+
+#[derive(Debug)]
+struct Change {
+    author: String,
+    id: Option<String>,
+    requires: Vec<String>,
+    commit: git2::Oid,
+}
+
+impl Change {
+    fn new(commit: git2::Oid) -> Self {
+        Self {
+            author: Default::default(),
+            id: Default::default(),
+            requires: Default::default(),
+            commit,
+        }
+    }
+}
+
+fn get_change_id(commit: &git2::Commit) -> Change {
+    let mut change = Change::new(commit.id());
+    change.author = commit.author().email().unwrap_or("").to_string();
+
+    for line in commit.message().unwrap_or("").lines() {
+        if let Some(id) = line.strip_prefix("Change: ") {
+            change.id = Some(id.to_string());
+        }
+        if let Some(id) = line.strip_prefix("Change-Id: ") {
+            change.id = Some(id.to_string());
+        }
+        if let Some(id) = line.strip_prefix("Requires: ") {
+            change.requires.push(id.to_string());
+        }
+    }
+    change
+}
 
 #[derive(PartialEq, Clone, Debug)]
 pub enum PushMode {
@@ -122,6 +158,21 @@ pub fn downstack(
     let change_commit = commits.pop().unwrap();
     let change_parent = change_commit.parent(0)?;
 
+    // Parse Requires: footers, keeping only those referencing changes
+    // actually present in the intermediates
+    let required_raw: std::collections::HashSet<String> =
+        get_change_id(&change_commit).requires.into_iter().collect();
+    let intermediate_ids: Vec<Option<String>> =
+        commits.iter().map(|c| get_change_id(c).id).collect();
+    let available_ids: std::collections::HashSet<&str> = intermediate_ids
+        .iter()
+        .filter_map(|id| id.as_deref())
+        .collect();
+    let mut required: std::collections::HashSet<String> = required_raw
+        .into_iter()
+        .filter(|id| available_ids.contains(id.as_str()))
+        .collect();
+
     // Compute d_change: the diff introduced by the change commit itself
     let change_diff = repo.diff_tree_to_tree(
         Some(&change_parent.tree()?),
@@ -132,12 +183,12 @@ pub fn downstack(
     // Walk through intermediates, including only those needed for d_change to apply
     let mut current_base = repo.find_commit(base)?;
 
-    for intermediate in &commits {
-        // If d_change already applies to the current base tree, we can stop
-        if repo
+    for (intermediate, change_id) in commits.iter().zip(intermediate_ids.iter()) {
+        // Stop when d_change applies and all Requires: are satisfied
+        let diff_applies = repo
             .apply_to_tree(&current_base.tree()?, &change_diff, None)
-            .is_ok()
-        {
+            .is_ok();
+        if diff_applies && required.is_empty() {
             break;
         }
 
@@ -158,9 +209,13 @@ pub fn downstack(
             intermediate,
             &[&current_base],
             josh_core::filter::Rewrite::from_tree(new_tree),
-            false,
+            josh_core::history::GpgsigMode::Preserve,
         )?;
         current_base = repo.find_commit(new_oid)?;
+
+        if let Some(id) = change_id {
+            required.remove(id);
+        }
     }
 
     // Apply d_change on top of the minimal base and create the new change commit
@@ -172,11 +227,11 @@ pub fn downstack(
         &change_commit,
         &[&current_base],
         josh_core::filter::Rewrite::from_tree(new_tree),
-        false,
+        josh_core::history::GpgsigMode::Preserve,
     )
 }
 
-pub fn changes_to_refs(
+fn changes_to_refs(
     baseref: &str,
     change_author: &str,
     changes: Vec<Change>,
@@ -241,7 +296,7 @@ fn get_changes(
     let mut changes = vec![];
     for rev in walk {
         let commit = repo.find_commit(rev?)?;
-        changes.push(josh_core::get_change_id(&commit));
+        changes.push(get_change_id(&commit));
     }
 
     Ok(changes)
@@ -279,7 +334,11 @@ pub fn build_to_push(
             Ok(push_refs)
         }
         PushMode::Normal => Ok(vec![PushRef {
-            ref_name: ref_with_options.to_string(),
+            ref_name: if ref_with_options.starts_with("refs/") {
+                ref_with_options.to_string()
+            } else {
+                format!("refs/heads/{}", ref_with_options)
+            },
             oid: oid_to_push,
             change_id: "JOSH_PUSH".to_string(),
         }]),

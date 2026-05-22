@@ -203,32 +203,117 @@ The only currently supported forge is `github`. See
 
 ---
 
+## josh cache
+
+Manage the distributed filter cache. The distributed cache stores filter results inside
+a ref in the git repository, allowing a warm cache to be shared between machines via
+ordinary git push/fetch.
+
+The cache subcommand requires a josh remote to be configured (see `josh remote add`).
+
+### josh cache build
+
+Apply the configured filter to all already-fetched refs and populate the local distributed
+cache with the results.
+
+```
+josh cache build [remote]
+```
+
+| Argument | Description |
+|----------|-------------|
+| `[remote]` | Remote name to build cache for (default: `origin`) |
+
+Run this before `josh cache push` to ensure the cache is up to date.
+
+### josh cache push
+
+Push the local distributed cache and the filtered refs to the backing remote, so that
+other machines can fetch them.
+
+```
+josh cache push [remote]
+```
+
+| Argument | Description |
+|----------|-------------|
+| `[remote]` | Remote name to push cache to (default: `origin`) |
+
+### josh cache fetch
+
+Fetch the distributed cache and filtered refs from the remote, warming the local cache
+without re-computing filters from scratch.
+
+```
+josh cache fetch [remote]
+```
+
+| Argument | Description |
+|----------|-------------|
+| `[remote]` | Remote name to fetch cache from (default: `origin`) |
+
+**Typical workflow:**
+
+```shell
+# On the machine that computes the cache (e.g. CI):
+josh cache build
+josh cache push
+
+# On another machine (e.g. a developer workstation):
+josh cache fetch
+# subsequent josh fetch / clone operations use the pre-built cache
+```
+
+> **Note:** The distributed cache is currently only available through the `josh` CLI.
+> It is not yet supported by `josh-proxy`.
+
+---
+
 ## josh-filter (standalone binary)
 
 `josh-filter` is a lower-level command that rewrites git history using Josh filter specs.
 It is intended for scripting and one-off history rewriting tasks rather than day-to-day
 development workflows.
 
-By default it reads from `HEAD` and writes the filtered result to `FILTERED_HEAD`.
+**Input:** the second positional argument selects what to filter. It defaults to `HEAD`
+but can be any of:
+
+- `.` - the working tree (including uncommitted changes)
+- `+` - the index (staged changes only)
+- A full or abbreviated commit SHA
+- A ref name (e.g. `main`, `refs/heads/feature`)
+
+**Output:** the filtered commit SHA is printed to stdout. The filtered history is also
+written to the ref given by `--update` (default: `FILTERED_HEAD`).
 
 **Basic usage:**
 
 ```shell
 # Filter HEAD through :/docs and write result to FILTERED_HEAD
 josh-filter :/docs
+
+# Filter the working tree and print the resulting SHA
+josh-filter :/docs .
+
+# Filter a specific commit SHA
+josh-filter :/docs abc1234 --update refs/my/filtered
 ```
 
 **Options:**
 
 | Flag | Description |
 |------|-------------|
+| `--update <ref>` | Ref to update with the filtered result (default: `FILTERED_HEAD`) |
 | `--file <path>` | Read filter spec from a file |
 | `--squash-pattern <pattern>` | Squash commits matching the pattern |
 | `--squash-file <path>` | Read squash patterns from a file |
 | `--single` | Produce a single squashed commit |
 | `-d` | Discovery mode: populate cache with probable filters |
 | `-t` | Output Chrome tracing data |
-| `-p` | Print the filter spec |
-| `-i` | Print the filter ID |
-| `--cache-stats` | Print cache statistics |
-| `--reverse` | Swap input and output (unapply filter) |
+| `-p` | Print the filter spec (and exit) |
+| `-i` | Print the filter ID (and exit) |
+| `-s` | Print cache statistics |
+| `-n` | Skip loading the cache |
+| `--distributed-cache` | Enable the distributed cache backend |
+| `--reverse` | Reverse-apply the filter (unapply): reconstruct upstream commits from filtered ones |
+| `--check-roundtrip` | When used with `--reverse`, verify that applying the filter to the reverse result reproduces the original commit. Exits with code 1 if the check fails. |

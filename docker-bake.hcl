@@ -13,6 +13,15 @@ target "dev" {
   }
 }
 
+target "dev-local" {
+  context    = "."
+  dockerfile = "images/dev-local/Dockerfile"
+  tags       = ["josh-dev-local:latest"]
+  contexts = {
+    josh-dev = "target:dev"
+  }
+}
+
 target "dev-ci" {
   context    = "."
   dockerfile = "images/dev-ci/Dockerfile"

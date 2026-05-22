@@ -1,4 +1,5 @@
-use super::transaction::{CACHE_VERSION, CacheBackend};
+use super::CACHE_VERSION;
+use super::backend::CacheBackend;
 use crate::filter;
 use crate::filter::Filter;
 use std::collections::HashMap;
@@ -65,6 +66,7 @@ impl DistributedCacheBackend {
                 &repo.find_tree(updated)?,
                 &parent_refs,
             )?;
+            log::info!("CACHE flush {} {}", m.len(), rp);
             m.clear();
         }
 
@@ -79,7 +81,7 @@ impl DistributedCacheBackend {
 // The sparse cache is mostly only used for initial "cold starts" or longer "catch up".
 // For incremental filtering it's fine re-filter commits and rely on the local "dense" cache.
 // We store entries for 1% of all commits, and additionally all merges and orphans.
-fn is_eligible(repo: &git2::Repository, oid: git2::Oid, sequence_number: u128) -> bool {
+fn is_eligible(repo: &git2::Repository, oid: git2::Oid, sequence_number: u64) -> bool {
     let parent_count = if let Ok(c) = repo.find_commit(oid) {
         c.parent_ids().count()
     } else {
@@ -92,7 +94,7 @@ fn is_eligible(repo: &git2::Repository, oid: git2::Oid, sequence_number: u128) -
 // To additionally limit the size of the trees the cache is also sharded by sequence
 // number in groups of 10000. Note that this does not limit the number of entries per bucket
 // as branches mean many commits share the same sequence number.
-fn ref_path(key: git2::Oid, sequence_number: u128) -> String {
+fn ref_path(key: git2::Oid, sequence_number: u64) -> String {
     format!(
         "refs/josh/cache/{}/{}/{}",
         CACHE_VERSION,
@@ -114,9 +116,9 @@ impl CacheBackend for DistributedCacheBackend {
         &self,
         filter: Filter,
         from: git2::Oid,
-        sequence_number: u128,
+        sequence_number: u64,
     ) -> anyhow::Result<Option<git2::Oid>> {
-        if filter == filter::sequence_number() {
+        if filter == filter::sequence_number() || filter == filter::reachable_roots() {
             return Ok(None);
         }
         let repo = self.repo.lock().unwrap();
@@ -145,6 +147,11 @@ impl CacheBackend for DistributedCacheBackend {
         if let Ok(e) = tree.get_path(&fanout(from)) {
             let blob = repo.find_blob(e.id())?;
             let s = std::str::from_utf8(blob.content())?.to_owned();
+            log::debug!(
+                "DistributedCacheBackend: HIT {:?} {}",
+                from,
+                filter::spec(filter)
+            );
             return Ok(Some(git2::Oid::from_str(&s)?));
         } else {
             return Ok(None);
@@ -156,9 +163,9 @@ impl CacheBackend for DistributedCacheBackend {
         filter: Filter,
         from: git2::Oid,
         to: git2::Oid,
-        sequence_number: u128,
+        sequence_number: u64,
     ) -> anyhow::Result<()> {
-        if filter == filter::sequence_number() {
+        if filter == filter::sequence_number() || filter == filter::reachable_roots() {
             return Ok(());
         }
 

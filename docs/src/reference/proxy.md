@@ -92,6 +92,18 @@ repository:
 
     $ git clone http://localhost:8000/josh-project/josh.git:/docs:prefix=josh-docs.git my-repo
 
+Retry with backoff
+------------------
+
+`josh-proxy` automatically retries transient upstream HTTP errors (for example, 5xx
+responses) with exponential backoff. By default up to 3 retries are attempted, with a
+delay starting at 1 second and capped at 5 seconds. The number of retries can be
+configured with the `--http-retry` flag (default: `3`):
+
+    $ josh-proxy --remote https://github.com --local /data/git --http-retry 5
+
+Set `--http-retry 0` to disable retries entirely.
+
 Serving a github repo
 ---------------------
 

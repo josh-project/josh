@@ -6,6 +6,28 @@ may change in future releases.
 
 ## Filters
 
+### Blob insertion **`:$path="content"`**
+
+Inserts a new file at `path` in the output tree with the given literal text as its content.
+No newline is appended automatically. The path argument follows the same quoting rules as
+other filter arguments: quote with double quotes if the path contains spaces or special
+characters.
+
+The inverse of `:$path="content"` is `:exclude[::path]`, which removes the inserted file.
+
+**Examples:**
+
+```
+# Insert a file named "VERSION" containing "1.0" at the root
+:$VERSION="1.0"
+
+# Insert a file whose name contains a space
+:$"release notes.txt"="Initial release"
+
+# Combine with a subdirectory filter to insert the file alongside existing content
+:[:/sub1,:$added.txt="hello world"]
+```
+
 ### Object reference **`:&path`**
 Reads the git object at `path` (a file or directory) and replaces its content with a text blob
 containing the object's SHA-1 hash. This turns a real file or tree into a lightweight pointer.

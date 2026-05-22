@@ -27,7 +27,6 @@ ENV PATH=${PATH}:/opt/git-install/bin
 
 COPY --from=source-build --link=false /opt/cargo-target/release/josh-proxy /usr/bin/
 COPY --from=source-build --link=false /opt/cargo-target/release/josh-ssh-shell /usr/bin/
-COPY --from=source-build --link=false /usr/src/josh/static/ /josh/static/
 
 ARG S6_OVERLAY_VERSION=3.2.1.0
 ARG TARGETARCH

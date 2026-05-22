@@ -8,6 +8,7 @@ use std::sync::LazyLock;
 // Re-export from josh-filter
 pub use josh_filter::LinkMode;
 pub use josh_filter::filter::MESSAGE_MATCH_ALL_REGEX;
+pub use josh_filter::filter::reachable_roots;
 pub use josh_filter::filter::sequence_number;
 pub use josh_filter::flang::parse::{get_comments, parse};
 pub use josh_filter::opt;
@@ -308,6 +309,57 @@ fn dst_path2(op: &Op) -> std::path::PathBuf {
     })
 }
 
+/// Fully flatten a (possibly nested) chain filter into an ordered list of
+/// primitive (non-chain) steps with their accumulated metadata.
+///
+/// The outer `Meta` of a chain is merged into each step before recursing.
+/// When a step is itself a meta-wrapped chain the process repeats,
+/// accumulating metadata all the way down to the leaf filters.
+///
+/// This makes all intermediate cache-key filters visible so they can be stored
+/// as git refs for the distributed cache.
+///
+/// Examples:
+/// ```text
+/// Chain([A, B, C])
+///   → [A, B, C]
+///
+/// Meta(m, Chain([A, B, C]))
+///   → [Meta(m,A), Meta(m,B), Meta(m,C)]
+///
+/// Meta(m1, Chain([Meta(m2, Chain([A, B])), C]))
+///   → [Meta(m1∪m2,A), Meta(m1∪m2,B), Meta(m1,C)]
+/// ```
+pub fn flatten_chain(filter: Filter) -> Vec<Filter> {
+    fn expand(
+        filter: Filter,
+        outer_meta: std::collections::BTreeMap<String, String>,
+    ) -> Vec<Filter> {
+        // Merge this filter's own meta with the outer meta.
+        // The filter's own meta takes precedence (inner wins on key collision).
+        let mut meta = filter.into_meta();
+        for (k, v) in outer_meta {
+            meta.entry(k).or_insert(v);
+        }
+        match peel_op(filter) {
+            Op::Chain(steps) => steps
+                .into_iter()
+                .flat_map(|f| expand(f, meta.clone()))
+                .collect(),
+            _ => vec![propagate_meta(filter.peel(), &meta)],
+        }
+    }
+    expand(filter, std::collections::BTreeMap::new())
+}
+
+fn propagate_meta(filter: Filter, meta: &std::collections::BTreeMap<String, String>) -> Filter {
+    let mut f = filter;
+    for (k, v) in meta {
+        f = f.with_meta(k, v);
+    }
+    f
+}
+
 /// Calculate the filtered commit for `commit`. This can take some time if done
 /// for the first time and thus should generally be done asynchronously.
 pub fn apply_to_commit(
@@ -325,8 +377,18 @@ pub fn apply_to_commit(
 
         let missing = transaction.get_missing();
 
-        for (f, i) in missing.into_iter().rev() {
-            history::walk2(f, i, transaction)?;
+        let max_level = missing.last().map(|(w, _, _)| *w).unwrap_or(0);
+
+        for (level, filter, input) in missing.iter().rev() {
+            log::info!("MISSING {} {} {}", level, input, filter::spec(*filter));
+        }
+
+        for (level, filter, input) in missing.into_iter().rev() {
+            if level != max_level {
+                break;
+            }
+            transaction.set_nesting(level + 1);
+            history::walk2(filter, input, transaction)?;
         }
     }
 }
@@ -342,8 +404,9 @@ fn resolve_workspace_redirect<'a>(
     let f = parse(&tree::get_blob(repo, tree, &path.join("workspace.josh")))
         .unwrap_or_else(|_| to_filter(Op::Empty));
 
-    if let Op::Workspace(p) = to_op(f) {
-        Some((to_filter(Op::Exclude(Filter::new().file(path))).chain(f), p))
+    if let Op::Workspace(p) = peel_op(f) {
+        let inner = to_filter(Op::Exclude(Filter::new().file(path))).chain(f.peel());
+        Some((propagate_meta(inner, &f.into_meta()), p))
     } else {
         None
     }
@@ -523,14 +586,9 @@ pub fn apply_to_commit2(
     match &op {
         Op::Empty => return Ok(Some(git2::Oid::zero())),
 
-        Op::Chain(filters) => {
+        Op::Chain(_) => {
             let mut current_oid = commit.id();
-            let chain_meta = filter.into_meta();
-            for f in filters {
-                let mut f = *f;
-                for (k, v) in chain_meta.iter() {
-                    f = f.with_meta(k, v);
-                }
+            for f in flatten_chain(filter) {
                 if current_oid == git2::Oid::zero() {
                     break;
                 }
@@ -548,7 +606,7 @@ pub fn apply_to_commit2(
                 commit,
                 &[],
                 Rewrite::from_commit(commit)?,
-                true,
+                history::GpgsigMode::Remove,
             ))
             .transpose();
         }
@@ -1799,7 +1857,22 @@ where
     }
 }
 
+fn needs_legalization(f: Filter) -> bool {
+    match to_op(f) {
+        Op::Stored(_) | Op::Starlark(_, _) => true,
+        Op::Compose(filters) | Op::Chain(filters) => filters.iter().any(|&f| needs_legalization(f)),
+        Op::Subtract(a, b) => needs_legalization(a) || needs_legalization(b),
+        Op::Exclude(f) | Op::Pin(f) | Op::TreeId(_, f) => needs_legalization(f),
+        Op::Meta(_, f) => needs_legalization(f),
+        _ => false,
+    }
+}
+
 fn legalize_stored(t: &cache::Transaction, f: Filter, tree: &git2::Tree) -> anyhow::Result<Filter> {
+    if !needs_legalization(f) {
+        return Ok(f);
+    }
+
     if let Some(f) = t.get_legalize((f, tree.id())) {
         return Ok(f);
     }
@@ -1820,10 +1893,18 @@ fn legalize_stored(t: &cache::Transaction, f: Filter, tree: &git2::Tree) -> anyh
         Op::Chain(filters) => {
             let mut result = Vec::with_capacity(filters.len());
             let mut current_tree = tree.clone();
-            for filter in filters {
-                let legalized = legalize_stored(t, filter, &current_tree)?;
-                current_tree = apply(t, legalized, Rewrite::from_tree(current_tree.clone()))?.tree;
+            for (i, filter) in filters.iter().enumerate() {
+                let legalized = legalize_stored(t, *filter, &current_tree)?;
                 result.push(legalized);
+                // Only compute the intermediate tree if a subsequent element still needs
+                // legalization — the tree is passed to legalize_stored, which uses it to
+                // resolve Stored/Starlark refs.  Elements that don't need legalization
+                // (e.g. a trailing Prefix) return immediately via the fast-path, so
+                // running apply just to compute a tree they'll never use is pure waste.
+                if filters[i + 1..].iter().any(|&f| needs_legalization(f)) {
+                    current_tree =
+                        apply(t, legalized, Rewrite::from_tree(current_tree.clone()))?.tree;
+                }
             }
             to_filter(Op::Chain(result))
         }
@@ -1852,12 +1933,17 @@ fn per_rev_filter(
     commit_filter: Filter,
     parent_filters: Vec<(git2::Commit, Filter)>,
 ) -> anyhow::Result<Option<git2::Oid>> {
+    // Propagate any meta-options from the outer filter (e.g. :~(gpgsig="norm-lf")[:rev(...)])
+    // into the per-commit filter so they are applied during commit rewriting.
+    let meta = filter.into_meta();
+    let commit_filter = propagate_meta(commit_filter, &meta);
     // Compute the difference between the current commit's filter and each parent's filter.
     // This determines what new content should be contributed by that parent in the filtered history.
     let extra_parents = parent_filters
         .into_iter()
         .map(|(parent, pcw)| {
             let f = opt::optimize(to_filter(Op::Subtract(commit_filter.peel(), pcw.peel())));
+            let f = propagate_meta(f, &meta);
             apply_to_commit2(f, &parent, transaction)
         })
         .collect::<anyhow::Result<Option<Vec<_>>>>()?;

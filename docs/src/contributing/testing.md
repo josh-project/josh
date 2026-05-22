@@ -45,21 +45,10 @@ provide the needed shell environment to execute the integration tests.
 cargo build
 cargo build --bin josh-filter
 cargo build --manifest-path josh-proxy/Cargo.toml
-cargo build --manifest-path josh-ui/Cargo.toml
 ```
 
-### 3. Setup static files for the josh-ui
-```shell
-cd josh-ui 
-trunk build 
-cd ..
-```
-
-### 4. Run the integration tests
+### 3. Run the integration tests
 **Attention:** Be aware that all tests except the once in experimental should be green.
 ```shell
 sh run-tests.sh -v tests/
 ```
-
-## UI Tests
-TBD: Currently disabled, stabilize, enable and document process.

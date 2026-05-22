@@ -9,6 +9,7 @@ Apply prefix filter
   $ josh-filter -s :prefix=subtree refs/heads/master --update refs/heads/filtered
   f5ea0c2feb26f846b28627cf6275682eba3f3f3a
   [1] :prefix=subtree
+  [1] reachable_roots
   [1] sequence_number
 
   $ git log --graph --pretty=%s refs/heads/filtered

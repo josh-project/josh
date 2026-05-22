@@ -1,192 +1,188 @@
 # Working with workspaces
 
-> ***NOTE***
->
-> All the commands are included from the file `workspaces.t`
-> which can be run with [cram](https://bitheap.org/cram/).
+A workspace is a list of files and folders remapped from a central repository into a new
+repository layout. For example, a shared library can be mapped into multiple workspaces,
+each placing it at the path that makes sense for that project.
 
-Josh really starts to shine when using workspaces.
+In this guide we'll set up a small monorepo with two libraries and two applications, then
+use workspaces to develop against them in isolation.
 
-Simply put, they are a list of files and folders, remapped from the central repository
-to a new repository.
-For example, a shared library could be used by various workspaces, each mapping it to
-their appropriate subdirectory.
+## The monorepo
 
-In this chapter, we're going to set up a new git repository with a couple of libraries,
-and then use it to demonstrate the use of workspaces.
+Suppose you have a monorepo with this structure:
 
-## Test set-up
-
-> ***NOTE***
->
-> The following section describes how to set-up a local git server with made-up content
-> for the sake of this tutorial.
-> You're free to follow it, or to use your own existing repository, in which case you
-> can skip to the next section
-
-To host the repository for this test, we need a git server.
-We're going to run git as a [cgi](https://en.wikipedia.org/wiki/Common_Gateway_Interface)
-program using its provided http backend, served with the test server included in
-the [hyper\_cgi](https://crates.io/crates/hyper_cgi) crate.
-
-### Serving the git repo
-First, we create a *bare* repository, which will be served by hyper\_cgi. We enable
-the option `http.receivepack` to allow the use of `git push` from the clients.
-
-```shell
-{{#include workspaces.t:git_setup}}
+```
+monorepo/
+├── application1/
+│   └── app.c
+├── application2/
+│   └── guide.c
+├── library1/
+│   └── lib1.h
+└── library2/
+    └── lib2.h
 ```
 
-Then we start the server which will allow clients to access the repository through
-http.
+Both applications depend on one or both of the shared libraries, but developers working on
+each application only want to see the code that's relevant to them.
+
+## Creating a workspace
+
+Clone the monorepo scoped to `application1` using the `:workspace=` filter:
 
 ```shell
-{{#include workspaces.t:git_server}}
+josh clone https://github.com/myorg/monorepo.git :workspace=application1 ./application1
+cd application1
 ```
 
-Our server is ready, serving all the repos in the `remote` folder on port `8001`.
+The cloned repository contains only the files and history relevant to `application1`:
+
+```
+app.c
+```
+
+> **Note:** Josh lets you create a workspace out of any directory, even one that doesn't
+> exist yet in the monorepo.
+
+## Mapping dependencies with `workspace.josh`
+
+The `workspace.josh` file describes which folders from the central repository should be
+mapped into this workspace, and where they should appear.
+
+Since `application1` depends on `library1`, create `workspace.josh` with:
+
+```
+modules/lib1 = :/library1
+```
+
+Commit the file:
 
 ```shell
-{{#include workspaces.t:clone}}
+git add workspace.josh
+git commit -m "Map library1 into the application1 workspace"
 ```
 
-### Adding some content
-Of course, the repository is for now empty, and we need to populate it.
-The [populate.sh](populate.sh) script creates a couple of libraries, as well as two applications that use
-them.
+Then push and pull to sync the workspace:
 
 ```shell
-{{#include workspaces.t:populate}}
+josh push
+josh pull
 ```
 
-## Creating our first workspace
-Now that we have a git repo populated with content, let's serve it through josh:
+The mapped library has now appeared in the workspace:
+
+```
+app.c
+modules/
+└── lib1/
+    └── lib1.h
+workspace.josh
+```
+
+The history reflects the merge of `library1`'s history into the workspace:
+
+```
+*   Map library1 into the application1 workspace
+|\
+| * Add library1
+* Add application1
+```
+
+Josh needs to merge the mapped module's history into the workspace so that all commits
+are present in both histories. In the central repository, the same commit appears as a
+plain linear commit — no merge — in `application1/`:
+
+```
+* Map library1 into the application1 workspace
+* Add documentation
+* Add application2
+* Add library2
+* Add application1
+* Add library1
+```
+
+## A second workspace
+
+Let's create a workspace for `application2`, which depends on both libraries:
 
 ```shell
-{{#include workspaces.t:docker_josh}}
+cd ..
+josh clone https://github.com/myorg/monorepo.git :workspace=application2 ./application2
+cd application2
 ```
 
-> ***NOTE***
->
-> For the sake of this example, we run docker with --network="host" instead of publishing the port.
-> This is so that docker can access localhost, where our ad-hoc git repository is served.
+Add both dependencies to `workspace.josh`:
 
-To facilitate developement on applications 1 and 2, we want to create workspaces for them.
-Creating a new workspace looks very similar to checking out a subfolder through josh, as explained
-in "Getting Started".
+```
+libs/lib1 = :/library1
+libs/lib2 = :/library2
+```
 
-Instead of just the name of the subfolder, though, we also use the `:workspace=` filter:
+Commit, push, and pull:
 
 ```shell
-{{#include workspaces.t:clone_workspace}}
+git add workspace.josh
+git commit -m "Create workspace for application2"
+josh push
+josh pull
 ```
 
-Looking into the newly cloned workspace, we see our expected files and the history containing the
-only relevant commit.
+The workspace now contains both libraries:
 
-> ***NOTE***
->
-> Josh allows us to create a workspace out of any directory, even one that doesn't exist yet.
+```
+guide.c
+libs/
+├── lib1/
+│   └── lib1.h
+└── lib2/
+    └── lib2.h
+workspace.josh
+```
 
-### Adding workspace.josh
+Because we added both dependencies in a single commit, the history contains just one
+merge commit, pulling in the history of both libraries:
 
-The workspace.josh file describes how folders from the central repository (real\_repo.git)
-should be mapped to the workspace repository.
+```
+*   Create workspace for application2
+|\
+| * Add library2
+| * Add library1
+* Add application2
+```
 
-Since we depend on library1, let's add it to the workspace file.
+## Pushing a change back to the monorepo
+
+While working in `application2`, you notice a bug in `library1`. Fix it and commit as
+usual:
 
 ```shell
-{{#include workspaces.t:library_ws}}
+# edit libs/lib1/lib1.h
+git commit -a -m "Fix bug in lib1"
+josh push
 ```
 
-We decided to map library1 to modules/lib1 in the workspace.
-We can now sync up with the server:
+Josh reverses the workspace filter and writes the change directly to `library1/` in the
+central repository. No special tooling is needed — it's a regular commit from the
+perspective of everyone else working on the monorepo.
+
+## Pulling a change from another workspace
+
+A developer working in `application1` can now pull the fix:
 
 ```shell
-{{#include workspaces.t:library_sync}}
+cd ../application1
+josh pull
 ```
 
-let's observe the result:
+The fix appears in `modules/lib1/` exactly as if it had been committed there directly:
 
-```shell
-{{#include workspaces.t:library_sync2}}
+```
+* Fix bug in lib1
+*   Map library1 into the application1 workspace
+|\
+| * Add library1
+* Add application1
 ```
 
-After pushing and fetching the result, we see that it has been successfully mapped by josh.
-
-One suprising thing is the history: our "mapping" commit became a merge commit!
-This is because josh needs to merge the history of the module we want to map into the
-repository of the workspace.
-After this is done, all commits will be present in both of the histories.
-
-> ***NOTE***
->
-> `git sync` is a utility provided with josh which will push contents, and, if josh tells
-> it to, fetch the transformed result. Otherwise, it works like git push.
-
-By the way, what does the history look like on the real\_repo ?
-
-```shell
-{{#include workspaces.t:real_repo}}
-```
-
-We can see the newly added commit for workspace.josh in application1, and as expected,
-no merge here.
-
-### Interacting with workspaces
-
-Let's now create a second workspace, this time for application2.
-It depends on library1 and library2.
-
-```shell
-{{#include workspaces.t:application2}}
-```
-
-Syncing as before:
-
-```shell
-{{#include workspaces.t:app2_sync}}
-```
-
-And our local folder now contains all the files requested:
-
-```shell
-{{#include workspaces.t:app2_files}}
-```
-
-And the history includes the history of both of the libraries:
-
-```shell
-{{#include workspaces.t:app2_hist}}
-```
-
-Note that since we created the workspace and added the dependencies in one single commit,
-the history just contains this one single merge commit.
-
-#### Pushing a change from a workspace
-
-While testing application2, we noticed a typo in the `library1` dependency.
-Let's go ahead a fix it!
-
-```shell
-{{#include workspaces.t:fix_typo}}
-```
-
-We can push this change like any normal git change:
-
-```shell
-{{#include workspaces.t:push_change}}
-```
-
-Since the change was merged in the central repository, 
-a developer can now pull from the application1 workspace.
-
-```shell
-{{#include workspaces.t:app1_pull}}
-```
-
-The change has been propagated!
-
-```shell
-{{#include workspaces.t:app1_log}}
-```
+Changes flow bidirectionally through the central repository — each workspace is an
+isolated view, but they all share the same underlying history.

@@ -68,6 +68,7 @@ Test Adapt filter - should expand submodule into actual tree content
   [3] :"{@}"
   [3] :adapt=submodules
   [3] :link=embedded
+  [10] reachable_roots
   [10] sequence_number
   $ git log --graph --pretty=%s refs/josh/filter/master
   *   add libs submodule
@@ -154,6 +155,7 @@ Test Adapt with multiple submodules
   [3] :"{@}"
   [3] :link=embedded
   [4] :adapt=submodules
+  [11] reachable_roots
   [11] sequence_number
   $ git ls-tree --name-only -r refs/josh/filter/master
   libs/.link.josh
@@ -179,6 +181,7 @@ Test Adapt with multiple submodules
   [4] :"{@}"
   [4] :adapt=submodules
   [4] :link=embedded
+  [15] reachable_roots
   [15] sequence_number
   $ git log --graph --pretty=%s refs/josh/filter/master
   *   add another submodule
@@ -262,6 +265,7 @@ Test Adapt with submodule changes - add commits to submodule and update
   [5] :"{@}"
   [5] :adapt=submodules
   [5] :link=embedded
+  [21] reachable_roots
   [21] sequence_number
   $ git log --graph --pretty=%s:%H refs/josh/filter/master
   *   update libs submodule:e08fc8b154ffccae088368b570905d60f1262406
@@ -314,6 +318,7 @@ Test Adapt with submodule changes - add commits to submodule and update
   [5] :adapt=submodules
   [5] :link=embedded
   [9] :/libs
+  [29] reachable_roots
   [29] sequence_number
   $ git log --graph --pretty=%s:%H FILTERED_HEAD
   *   update libs submodule:b2e90aae4a2c0e7c2f9476d50300f92546cbc58f
@@ -338,6 +343,7 @@ Test Adapt with submodule changes - add commits to submodule and update
   [5] :link=embedded
   [6] :prune=trivial-merge
   [9] :/libs
+  [31] reachable_roots
   [31] sequence_number
   $ git log --graph --pretty=%s:%H FILTERED_HEAD
   *   update libs submodule:b2e90aae4a2c0e7c2f9476d50300f92546cbc58f
@@ -365,6 +371,7 @@ Test Adapt with submodule changes - add commits to submodule and update
   [5] :link=embedded
   [6] :prune=trivial-merge
   [9] :/libs
+  [31] reachable_roots
   [31] sequence_number
   $ git log --graph --pretty=%s:%H:%T FILTERED_HEAD
   * add file4.txt:3061af908a0dc1417902fbd7208bb2b8dc354e6c:ac420a625dfb874002210e623a7fdb55708ef2fa
@@ -386,6 +393,7 @@ Test Adapt with submodule changes - add commits to submodule and update
   [5] :link=embedded
   [6] :prune=trivial-merge
   [9] :/libs
+  [31] reachable_roots
   [31] sequence_number
   $ git log --graph --pretty=%s:%H FILTERED_HEAD
   * add file4.txt:3061af908a0dc1417902fbd7208bb2b8dc354e6c
@@ -409,6 +417,7 @@ Test Adapt with submodule changes - add commits to submodule and update
   [6] :prune=trivial-merge
   [7] :/modules
   [9] :/libs
+  [33] reachable_roots
   [33] sequence_number
   $ git log --graph --pretty=%s:%H FILTERED_HEAD
   * add another submodule:b74da266394ae690a9b37b003779a1b59373bc65
@@ -431,6 +440,7 @@ Test Adapt with submodule changes - add commits to submodule and update
   [6] :prune=trivial-merge
   [7] :/modules
   [9] :/libs
+  [33] reachable_roots
   [33] sequence_number
   $ rm -Rf libs
   $ rm -Rf modules
@@ -472,6 +482,7 @@ Test Adapt with submodule changes - add commits to submodule and update
   [7] :/modules
   [7] :prune=trivial-merge
   [10] :/libs
+  [36] reachable_roots
   [36] sequence_number
 
   $ git checkout testsubexported
@@ -512,6 +523,7 @@ Test Adapt with submodule changes - add commits to submodule and update
   [7] :prune=trivial-merge
   [10] :/libs
   [10] :unlink
+  [36] reachable_roots
   [36] sequence_number
 
   $ git log --graph --pretty=%s:%H:%T refs/heads/unlinked_master
@@ -544,6 +556,7 @@ Test Adapt on repo without submodules (should be no-op)
   62f270988ac3ab05a33d0705fb1e4982165f69f2
   [1] :adapt=submodules
   [1] :link=embedded
+  [1] reachable_roots
   [1] sequence_number
   $ git ls-tree --name-only -r refs/josh/filter/master
   file.txt

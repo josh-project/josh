@@ -67,6 +67,7 @@
   ]
   [2] :workspace=ws
   [2] :workspace=ws2
+  [9] reachable_roots
   [9] sequence_number
 
   $ cat > workspace.josh <<EOF
@@ -105,4 +106,5 @@
   ]
   [2] :workspace=ws
   [2] :workspace=ws2
+  [10] reachable_roots
   [10] sequence_number

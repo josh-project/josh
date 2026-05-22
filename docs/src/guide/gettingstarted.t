@@ -42,7 +42,6 @@ ANCHOR: ls_full
   rustfmt.toml
   scripts
   src
-  static
   tests
   $ git log -2
   commit fc6af1e10c865f790bff7135d02b1fa82ddebe29

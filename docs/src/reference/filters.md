@@ -74,6 +74,42 @@ It affects both how commits are walked and how merge commits are handled in the 
   default behavior. If you're upgrading from an older version and need to recreate the same history
   structure, you should explicitly set `history="keep-trivial-merges"` in your filter options.
 
+### Gpgsig option
+
+The `gpgsig` option controls how PGP/GPG signature headers (`gpgsig`) in commit objects are
+handled during filtering.
+
+By default Josh preserves the `gpgsig` header byte-for-byte. This keeps the commit hash stable
+across round-trips but makes the signature invalid (since the tree and parent references change).
+
+**Available values:**
+
+- **`gpgsig="remove"`** - Strips the `gpgsig` header from every filtered commit.
+  Equivalent to the `:unsign` shorthand filter.
+
+  **Example:**
+  ```
+  :~(gpgsig="remove")[:/sub1]
+  ```
+
+- **`gpgsig="norm-lf"`** - Normalizes `\r\n` line endings to `\n` inside the `gpgsig` header
+  before writing the filtered commit.
+
+  The standard git commit object format uses `\n` line endings throughout, including inside
+  `gpgsig` headers. Some signing tools or forges write `\r\n` instead, which is technically
+  non-standard but valid as far as git is concerned — git treats the header value as opaque bytes.
+  Josh preserves whichever line endings are present in the original commit.
+
+  An older version of Josh accidentally normalized `\r\n` to `\n` during filtering. This option
+  restores that behavior and is intended **only** for deployments that need to reproduce a history
+  produced by the old version — both variants represent the same logical content but produce
+  different commit hashes, causing history to diverge.
+
+  **Example:**
+  ```
+  :~(gpgsig="norm-lf")[:/sub1]
+  ```
+
 ## Available filters
 
 ### Subdirectory **`:/a`**
@@ -181,6 +217,8 @@ the filtered commit. This makes the signature invalid, but allows a perfect roun
 able to recreate the original commit from the filtered one.
 
 This behaviour might not be desirable, and this filter drops the signatures from the history.
+It is a shorthand for `:~(gpgsig="remove")[:/]`. See the [gpgsig option](#gpgsig-option) for
+additional gpgsig-related options.
 
 ## Pattern filters
 
@@ -304,6 +342,38 @@ This combines regex capture groups (`{type}` and `{message}`) with template vari
 This removes all occurrences of "TODO" from commit messages by matching "TODO" and replacing it with an empty string.
 The regex pattern can use `(?s)` to enable dot-all mode (so `.` matches newlines), allowing it to work with
 multi-line commit messages that include both a subject line and a body.
+
+### Hook **`:hook=<arg>`**
+
+Apply a different filter to each commit in a history, where the per-commit filter is
+resolved at runtime rather than being fixed at invocation time.
+
+`<arg>` selects the git notes ref that stores those per-commit filter specifications.
+When `<arg>` does not start with `refs/`, Josh reads notes from `refs/notes/<arg>`, so
+`:hook=commits` uses the default git notes ref `refs/notes/commits`. Each note body must
+contain a valid Josh filter expression for that commit; if a commit has no note in the
+selected ref, `josh-filter` fails.
+
+Minimal example:
+
+```shell
+git notes --ref=commits add -m ':/code' -f HEAD~1
+git notes --ref=commits add -m ':/code:pin[::app.js]' -f HEAD
+josh-filter ':hook=commits'
+```
+
+In this example, the first filtered commit exposes `code/` at the repository root, while
+the second uses `:pin` to keep `app.js` at its previous contents for that commit only.
+
+When using Josh as a library, hook resolution is not tied to git notes. You can provide
+your own implementation of the `josh_core::cache::FilterHook` trait and attach it with
+`TransactionContext::with_filter_hook`, which lets your application decide how
+`filter_for_commit(commit_oid, arg)` resolves the per-commit filter.
+
+> **Note:** Using `:hook` correctly requires care to preserve josh filter invariants —
+> violating them can produce incorrect or inconsistent results. Most users won't need this
+> filter, but if you have a use case that seems to call for it, we'd love to hear about it!
+> Feel free to open an issue or start a discussion.
 
 ### Pin tree contents
 
