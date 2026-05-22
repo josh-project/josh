@@ -11,7 +11,7 @@ filtered view of a monorepo or a plain repository.
 ## Concepts
 
 In a stacked changes workflow, each commit on your local branch represents one
-self-contained change. When you use `josh publish`, Josh creates a
+self-contained change. When you use `josh changes publish`, Josh creates a
 separate git ref for each qualifying commit.
 
 A commit qualifies for a separate ref — and an automatic PR, when
@@ -136,7 +136,7 @@ do not get their own ref or PR.
 ### 2. Publish
 
 ```shell
-josh publish
+josh changes publish
 ```
 
 For each qualifying commit Josh pushes a ref under
@@ -154,10 +154,10 @@ After receiving review feedback, amend or rebase your commits as needed, keeping
 
 ```shell
 git rebase -i HEAD~3   # edit commits, preserve Change: footers
-josh publish           # re-publish; existing PRs are updated, not recreated
+josh changes publish  # re-publish; existing PRs are updated, not recreated
 ```
 
-As long as the change ID in the footer is preserved through your edits, `josh publish`
+As long as the change ID in the footer is preserved through your edits, `josh changes publish`
 updates the correct existing PRs rather than creating new ones.
 
 ### 4. Merge
@@ -171,11 +171,11 @@ josh pull --rebase --autostash
 
 This rebases your remaining local commits on top of the updated upstream state.
 `--autostash` ensures any uncommitted changes are preserved across the operation. After
-pulling, the next `josh publish` will retarget and promote the next PR in the stack
+pulling, the next `josh changes publish` will retarget and promote the next PR in the stack
 from draft to ready for review.
 
 ## Without forge integration
 
-`josh publish` works without [forge integration](../reference/forge.md). Josh still
+`josh changes publish` works without [forge integration](../reference/forge.md). Josh still
 pushes the individual `@changes/…` refs to the upstream repository; you can then create
 pull requests from them manually, or use them as part of a custom review workflow.
