@@ -4,7 +4,7 @@ use anyhow::anyhow;
 struct Change {
     pub author: String,
     pub id: Option<String>,
-    pub requires: Vec<String>,
+    pub series: Vec<String>,
     pub commit: git2::Oid,
 }
 
@@ -13,7 +13,7 @@ impl Change {
         Self {
             author: Default::default(),
             id: Default::default(),
-            requires: Default::default(),
+            series: Default::default(),
             commit,
         }
     }
@@ -30,8 +30,8 @@ fn get_change_id(commit: &git2::Commit) -> Change {
         if let Some(id) = line.strip_prefix("Change-Id: ") {
             change.id = Some(id.to_string());
         }
-        if let Some(id) = line.strip_prefix("Requires: ") {
-            change.requires.push(id.to_string());
+        if let Some(s) = line.strip_prefix("Change-Series: ") {
+            change.series.push(s.to_string());
         }
     }
     change
@@ -90,16 +90,33 @@ fn split_changes(
 
     changes
         .iter()
-        .map(|(_, c)| downstack(repo, base, c, &changes))
+        .map(|(_, c)| downstack(repo, base, c))
         .collect()
 }
 
-fn downstack(
+fn changed_paths(
     repo: &git2::Repository,
-    base: git2::Oid,
-    change: &Change,
-    all_changes: &std::collections::HashMap<git2::Oid, Change>,
-) -> anyhow::Result<Change> {
+    commit: &git2::Commit,
+) -> anyhow::Result<std::collections::HashSet<String>> {
+    let parent_tree = if commit.parent_count() > 0 {
+        Some(commit.parent(0)?.tree()?)
+    } else {
+        None
+    };
+    let diff = repo.diff_tree_to_tree(parent_tree.as_ref(), Some(&commit.tree()?), None)?;
+    let mut paths = std::collections::HashSet::new();
+    for delta in diff.deltas() {
+        if let Some(p) = delta.old_file().path().and_then(|p| p.to_str()) {
+            paths.insert(p.to_string());
+        }
+        if let Some(p) = delta.new_file().path().and_then(|p| p.to_str()) {
+            paths.insert(p.to_string());
+        }
+    }
+    Ok(paths)
+}
+
+fn downstack(repo: &git2::Repository, base: git2::Oid, change: &Change) -> anyhow::Result<Change> {
     let change_oid = change.commit;
     if !repo.graph_descendant_of(change_oid, base)? {
         return Err(anyhow!(
@@ -131,44 +148,33 @@ fn downstack(
     let change_commit = commits.pop().unwrap();
     let change_parent = change_commit.parent(0)?;
 
-    // Use pre-parsed requires, keeping only those referencing changes
-    // actually present in the intermediates
-    let intermediate_ids: Vec<Option<&str>> = commits
-        .iter()
-        .map(|c| all_changes.get(&c.id()).and_then(|ch| ch.id.as_deref()))
-        .collect();
-    let available_ids: std::collections::HashSet<&str> =
-        intermediate_ids.iter().filter_map(|id| *id).collect();
-    let mut required: std::collections::HashSet<&str> = change
-        .requires
-        .iter()
-        .map(|s| s.as_str())
-        .filter(|id| available_ids.contains(id))
-        .collect();
-
-    // Walk through intermediates, including only those needed for
-    // the change to apply cleanly.
-    let mut current_base = repo.find_commit(base)?;
-
-    for (intermediate, change_id) in commits.iter().zip(intermediate_ids.iter()) {
-        // Stop when the change merges cleanly and all Requires: are satisfied
-        let diff_applies = repo
-            .merge_trees(
-                &change_parent.tree()?,
-                &current_base.tree()?,
-                &change_commit.tree()?,
-                None,
-            )
-            .map(|index| !index.has_conflicts())
-            .unwrap_or(false);
-        if diff_applies && required.is_empty() {
-            break;
+    // Seed the affected path set with the change's own modified paths, then
+    // walk intermediates backwards, keeping any commit whose paths intersect.
+    let change_meta = get_change_id(&change_commit);
+    let mut affected_paths = changed_paths(repo, &change_commit)?;
+    for s in &change_meta.series {
+        affected_paths.insert(format!("\x00series:{}", s));
+    }
+    let mut needed: Vec<bool> = vec![false; commits.len()];
+    for (i, intermediate) in commits.iter().enumerate().rev() {
+        let meta = get_change_id(intermediate);
+        let mut paths = changed_paths(repo, intermediate)?;
+        for s in &meta.series {
+            paths.insert(format!("\x00series:{}", s));
         }
+        if !paths.is_disjoint(&affected_paths) {
+            needed[i] = true;
+            affected_paths.extend(paths);
+        }
+    }
 
-        // Change does not apply yet; we need this intermediate commit.
-        // Rebase it onto current_base via 3-way merge.
+    // Rebase needed intermediates forward onto current_base.
+    let mut current_base = repo.find_commit(base)?;
+    for (intermediate, is_needed) in commits.iter().zip(needed.iter()) {
+        if !is_needed {
+            continue;
+        }
         let inter_parent = intermediate.parent(0)?;
-
         let mut index = repo.merge_trees(
             &inter_parent.tree()?,
             &current_base.tree()?,
@@ -176,7 +182,6 @@ fn downstack(
             None,
         )?;
         let new_tree = repo.find_tree(index.write_tree_to(repo)?)?;
-
         let new_oid = josh_core::history::rewrite_commit(
             repo,
             intermediate,
@@ -185,13 +190,9 @@ fn downstack(
             josh_core::history::GpgsigMode::Preserve,
         )?;
         current_base = repo.find_commit(new_oid)?;
-
-        if let Some(id) = change_id {
-            required.remove(id);
-        }
     }
 
-    // Apply the change on top of the minimal base via 3-way merge
+    // Apply the change on top of the minimal base via 3-way merge.
     let mut index = repo.merge_trees(
         &change_parent.tree()?,
         &current_base.tree()?,

@@ -37,6 +37,9 @@ Clone with josh filter
 
 
 
+
+
+
   $ cd filtered
 
 Set up git config for author
@@ -44,12 +47,12 @@ Set up git config for author
   $ git config user.email "josh@example.com"
   $ git config user.name "Josh Test"
 
-Create a stack where the last change is textually independent of an intermediate
-but declares a Requires: dependency on it.
+Create a stack where gamma is textually independent of alpha but shares a
+Change-Series, and beta has no series at all.
 
   $ echo "aaa" > fileA
   $ git add fileA
-  $ git commit -q -m "Change: alpha"
+  $ printf "Change: alpha\n\nChange-Series: dep1" | git commit -q -F -
 
   $ echo "bbb" > fileB
   $ git add fileB
@@ -57,7 +60,7 @@ but declares a Requires: dependency on it.
 
   $ echo "ccc" > fileC
   $ git add fileC
-  $ printf "Change: gamma\n\nRequires: alpha" | git commit -q -F -
+  $ printf "Change: gamma\n\nChange-Series: dep1" | git commit -q -F -
 
   $ git log --decorate --graph --pretty="%s %d"
   * Change: gamma  (HEAD -> master)
@@ -69,9 +72,8 @@ Publish with split mode
 
   $ josh publish > /dev/null 2>&1
 
-Verify gamma's downstack includes alpha (due to Requires:) but not beta.
-Without the Requires: footer, gamma would sit directly on base since fileC
-is textually independent. With Requires: alpha, alpha must be included.
+Verify gamma's downstack includes alpha (due to shared Change-Series: dep1)
+but not beta (different series / no series, no file overlap).
 
   $ cd ${TESTTMP}/remote
 
