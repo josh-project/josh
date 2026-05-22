@@ -54,41 +54,60 @@ submission. Returns an error message inline without clearing the form.
 Change: login-form-validation
 ```
 
-## Declaring dependencies with `Requires:`
+## Automatic dependency detection
 
-By default, when Josh publishes a stack it includes only the intermediate commits that
-are textually needed for a change's diff to apply. Sometimes a change depends on another
-change in ways that go beyond textual conflicts — for example, it relies on a function
-introduced by an earlier change even though they touch different files.
+When Josh publishes a change, it does not simply push the single commit. Instead, it
+builds a minimal ref for that change: the change's commit, rebased onto the base branch,
+together with only those intermediate commits from the stack that the change actually
+depends on.
 
-You can declare such dependencies with one or more `Requires:` footers in the commit
-message, referencing the change IDs of the changes you depend on:
+Josh determines dependencies by path intersection. It collects the set of files touched
+by the change, then walks backwards through the intermediates: any commit whose touched
+files overlap that set is included (and its files are added to the set, so transitive
+dependencies are picked up too). Commits that touch entirely different files are omitted,
+even if they sit between the base and the change in the local stack.
 
-```
-Add caller for the new validation helper
+This means two independent changes that touch different parts of the codebase can each
+be published directly on top of the base branch, even when they are interleaved on the
+local branch. You do not need to carefully order your commits — Josh figures out which
+changes need to come first.
 
-Uses the validate_email() function introduced in the input-validation
-change, even though this commit touches a different file.
-
-Change: form-wiring
-Requires: input-validation
-```
-
-When Josh determines the dependencies for `form-wiring`, it will include
-`input-validation` even if the two changes don't overlap textually.
-
-Multiple dependencies can be declared by repeating the footer:
+**Example:** imagine a local stack with three commits:
 
 ```
-Change: integration-tests
-Requires: input-validation
-Requires: form-wiring
+[base] ← A (modifies auth/login.rs) ← B (modifies ui/button.rs) ← C (modifies auth/session.rs)
 ```
 
-If a `Requires:` references a change ID that does not exist in the current stack, it is
-silently ignored. This commonly happens when the required change has already been merged
-into the base branch — the dependency is satisfied by the base itself, so there is
-nothing extra to include.
+When publishing C, Josh sees it touches `auth/session.rs`. A also touches `auth/`, so A
+is included. B only touches `ui/`, so B is skipped. C's ref will contain just A and C on
+top of base. B's ref will contain only B on top of base.
+
+## Ordering with `Change-Series:`
+
+Sometimes two changes are logically ordered but touch disjoint files, so the automatic
+path intersection does not pull them together. Assigning both the same `Change-Series:`
+label tells Josh to treat them as ordered: when publishing the later commit, the earlier
+one will be included even though they share no files.
+
+```
+Add unit tests for the new validation helper
+
+Change: validation-tests
+Change-Series: login-validation
+```
+
+```
+Add input validation helper
+
+Change: input-validation
+Change-Series: login-validation
+```
+
+When Josh publishes `validation-tests`, it sees that both commits share the
+`login-validation` series and ensures `input-validation` is published before it.
+
+A commit can carry multiple `Change-Series:` footers if it belongs to more than one
+ordered group.
 
 ## Workflow
 
