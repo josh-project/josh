@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use anyhow::Context;
 
 use josh_core::git::{spawn_git_command, spawn_git_command_stdout};
@@ -25,6 +27,117 @@ fn select_candidate(state: &CqActorState) -> Option<CandidatePr> {
         }
     }
     None
+}
+
+/// Run `git merge-tree --write-tree` and return the merged tree OID.
+///
+/// Returns an error if the output is not a valid 40-char hex string,
+/// which indicates a merge conflict or unexpected output.
+fn compute_merge_tree(
+    repo: &git2::Repository,
+    main_sha: &str,
+    head_sha: &str,
+) -> anyhow::Result<String> {
+    let output = spawn_git_command_stdout(
+        repo.path(),
+        &["merge-tree", "--write-tree", main_sha, head_sha],
+    )?;
+    // Take the first line — in git >= 2.38 the tree SHA is on line 1
+    let merged_tree = output.lines().next().unwrap_or("").trim().to_string();
+
+    if merged_tree.len() != 40 || !merged_tree.chars().all(|c| c.is_ascii_hexdigit()) {
+        anyhow::bail!(
+            "merge conflict or unexpected merge-tree output: {}",
+            merged_tree
+        );
+    }
+
+    Ok(merged_tree)
+}
+
+/// Create a merge commit via `git commit-tree`.
+fn create_merge_commit(
+    repo: &git2::Repository,
+    main_sha: &str,
+    head_sha: &str,
+    merged_tree: &str,
+    message: &str,
+) -> anyhow::Result<String> {
+    let output = spawn_git_command_stdout(
+        repo.path(),
+        &[
+            "commit-tree",
+            "-p",
+            main_sha,
+            "-p",
+            head_sha,
+            "-m",
+            message,
+            merged_tree,
+        ],
+    )?;
+    Ok(output.trim().to_string())
+}
+
+/// Push the merge commit to the remote's base branch.
+fn push_to_remote(
+    repo: &git2::Repository,
+    remote_url: &str,
+    merge_commit: &str,
+    base_branch: &str,
+) -> anyhow::Result<()> {
+    let target_ref = format!("refs/heads/{}", base_branch);
+    let refspec = format!("{}:{}", merge_commit, target_ref);
+    spawn_git_command(repo.path(), &["push", remote_url, &refspec], &[])?;
+    Ok(())
+}
+
+/// Update `.link.josh` in the metarepo and set HEAD to the resulting commit.
+fn update_metarepo_links(
+    repo: &git2::Repository,
+    transaction: &josh_core::cache::Transaction,
+    head_commit: &git2::Commit,
+    link_path: PathBuf,
+    merge_oid: git2::Oid,
+    signature: &git2::Signature,
+) -> anyhow::Result<()> {
+    match josh_link::update_links(
+        repo,
+        transaction,
+        head_commit,
+        vec![(link_path, merge_oid)],
+        signature,
+    )? {
+        Some(result) => {
+            repo.head()?
+                .set_target(result.commit_with_updates, "josh-cq merge")
+                .context("Failed to update HEAD")?;
+        }
+        None => {
+            tracing::debug!("link file already up to date");
+        }
+    }
+    Ok(())
+}
+
+/// Post a merge comment and close the PR on GitHub.
+/// No-ops silently when `api` is `None` (e.g. in test environments).
+fn close_pr_on_github(
+    api: Option<&GithubApiConnection>,
+    node_id: &str,
+    merge_commit: &str,
+    _number: i64,
+    _title: &str,
+) -> anyhow::Result<()> {
+    let Some(api) = api else {
+        return Ok(());
+    };
+    let comment = format!("Merged by Josh merge queue as `{}`.", merge_commit);
+    tokio::runtime::Handle::current().block_on(async {
+        api.add_pr_comment(node_id, &comment).await?;
+        api.close_pull_request(node_id).await
+    })?;
+    Ok(())
 }
 
 /// Merge an admissible PR: compute merge locally, push to remote main,
@@ -71,75 +184,49 @@ fn handle_step(
         )?;
     }
 
-    let merged_tree_out = spawn_git_command_stdout(
-        repo.path(),
-        &["merge-tree", "--write-tree", &main_sha, &candidate.head_sha],
-    )?;
-    // Take the first line — in git >= 2.38 the tree SHA is on line 1
-    let merged_tree = merged_tree_out
-        .lines()
-        .next()
-        .unwrap_or("")
-        .trim()
-        .to_string();
-
-    if merged_tree.len() != 40 || !merged_tree.chars().all(|c| c.is_ascii_hexdigit()) {
-        tracing::warn!(
-            pr = %candidate.node_id,
-            "merge conflict detected; skipping PR"
-        );
-        state.remove_candidate(&candidate.node_id);
-        return Ok(());
-    }
+    let merged_tree = match compute_merge_tree(repo, &main_sha, &candidate.head_sha) {
+        Ok(tree) => tree,
+        Err(_) => {
+            tracing::warn!(
+                pr = %candidate.node_id,
+                "merge conflict detected; skipping PR"
+            );
+            state.remove_candidate(&candidate.node_id);
+            return Ok(());
+        }
+    };
 
     let message = format!("Merge PR #{}: {}", candidate.number, candidate.title);
-    let merge_commit = spawn_git_command_stdout(
-        repo.path(),
-        &[
-            "commit-tree",
-            "-p",
-            &main_sha,
-            "-p",
-            &candidate.head_sha,
-            "-m",
-            &message,
-            &merged_tree,
-        ],
-    )?;
-    let merge_commit = merge_commit.trim().to_string();
+    let merge_commit =
+        create_merge_commit(repo, &main_sha, &candidate.head_sha, &merged_tree, &message)?;
 
-    let target_ref = format!("refs/heads/{}", candidate.base_branch);
-    let refspec = format!("{}:{}", merge_commit, target_ref);
-    spawn_git_command(repo.path(), &["push", &candidate.repo_url, &refspec], &[])?;
+    push_to_remote(
+        repo,
+        &candidate.repo_url,
+        &merge_commit,
+        &candidate.base_branch,
+    )?;
 
     let merge_oid = merge_commit
         .parse::<git2::Oid>()
         .context("Failed to parse merge commit OID")?;
     let signature = make_signature(repo)?;
-    match josh_link::update_links(
+    update_metarepo_links(
         repo,
         transaction,
         &head_commit,
-        vec![(link_path, merge_oid)],
+        link_path,
+        merge_oid,
         &signature,
-    )? {
-        Some(result) => {
-            repo.head()?
-                .set_target(result.commit_with_updates, "josh-cq merge")
-                .context("Failed to update HEAD")?;
-        }
-        None => {
-            tracing::debug!("link file already up to date");
-        }
-    }
+    )?;
 
-    if let Some(api) = api {
-        let comment = format!("Merged by Josh merge queue as `{}`.", merge_commit);
-        tokio::runtime::Handle::current().block_on(async {
-            api.add_pr_comment(&candidate.node_id, &comment).await?;
-            api.close_pull_request(&candidate.node_id).await
-        })?;
-    }
+    close_pr_on_github(
+        api,
+        &candidate.node_id,
+        &merge_commit,
+        candidate.number,
+        &candidate.title,
+    )?;
 
     state.remove_candidate(&candidate.node_id);
 
