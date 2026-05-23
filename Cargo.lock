@@ -2868,6 +2868,7 @@ dependencies = [
  "josh-github-auth",
  "josh-github-changes",
  "josh-github-graphql",
+ "josh-github-keyring",
  "josh-graphql",
  "josh-link",
  "josh-templates",
@@ -2940,6 +2941,7 @@ dependencies = [
  "serde_json",
  "tokio",
  "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -3020,10 +3022,25 @@ dependencies = [
  "http",
  "josh-github-auth",
  "josh-github-codegen-graphql",
+ "josh-github-keyring",
  "reqwest 0.13.2",
  "reqwest-middleware",
  "serde_json",
+ "tracing",
  "url",
+]
+
+[[package]]
+name = "josh-github-keyring"
+version = "26.5.8"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "dirs",
+ "josh-github-auth",
+ "keyring",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

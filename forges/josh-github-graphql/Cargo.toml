@@ -18,9 +18,11 @@ serde_json.workspace = true
 reqwest.workspace = true
 reqwest-middleware.workspace = true
 anyhow.workspace = true
+tracing.workspace = true
 url.workspace = true
 async-trait.workspace = true
 graphql_client.workspace = true
 
 josh-github-auth.workspace = true
+josh-github-keyring.workspace = true
 josh-github-codegen-graphql.workspace = true

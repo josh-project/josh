@@ -457,16 +457,15 @@ fn handle_action(action: UserAction) {
 pub fn spawn_serve_task(repo_path: PathBuf, cache: Arc<CacheStack>) -> mpsc::Sender<CqEvent> {
     let (event_tx, mut event_rx) = mpsc::channel::<CqEvent>(100);
 
-    let api: Option<Arc<GithubApiConnection>> = match std::env::var(GH_TOKEN_ENV) {
-        Ok(token) if !token.is_empty() => Some(Arc::new(GithubApiConnection::from_token(token))),
-        _ => {
-            tracing::warn!(
-                "{} not set; admission map will not be populated from GitHub",
-                GH_TOKEN_ENV
-            );
-            None
-        }
-    };
+    let api: Option<Arc<GithubApiConnection>> =
+        GithubApiConnection::from_environment().map(Arc::new);
+
+    if api.is_none() {
+        tracing::warn!(
+            "{} not set and no stored credentials found; admission map will not be populated from GitHub",
+            GH_TOKEN_ENV
+        );
+    }
 
     tokio::task::spawn_blocking(move || {
         let mut state = CqActorState::default();
