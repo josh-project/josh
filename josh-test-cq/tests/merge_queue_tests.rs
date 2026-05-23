@@ -1,5 +1,8 @@
 use std::sync::Arc;
+use std::sync::Once;
 use std::time::Duration;
+
+static INIT_ENV: Once = Once::new();
 
 use josh_cq::types::CqEvent;
 
@@ -70,7 +73,9 @@ async fn start_test_harness(
     sim_repo: Arc<SimRepo>,
     mock: GraphQLMock,
 ) -> anyhow::Result<TestHarness> {
-    unsafe { std::env::set_var("JOSH_EXPERIMENTAL_FEATURES", "1") };
+    INIT_ENV.call_once(|| {
+        unsafe { std::env::set_var("JOSH_EXPERIMENTAL_FEATURES", "1") };
+    });
 
     // 1. Create metarepo with an initial commit so HEAD exists
     let metarepo_temp = tempfile::Builder::new().prefix("josh-cq-test-").tempdir()?;
