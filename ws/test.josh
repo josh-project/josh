@@ -5,8 +5,11 @@ inputs = :[
         :$label="cargo test"
         :#image[:+images/dev-local]
         :$cache="rust"
-        :$network="sidecar"
         :$cmd="cargo test --workspace --offline --locked"
+
+        sidecars = :[
+            :#sccache-proxy[:+ws/sccache-proxy]
+        ]
 
         inputs = :[
             :#fetch[:+ws/fetch]

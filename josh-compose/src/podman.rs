@@ -211,9 +211,6 @@ pub fn run(args: PodmanRunArgs) -> anyhow::Result<RunOutput> {
         NetworkMode::Named(ref net) => {
             cmd.args(["--network", net]);
         }
-        NetworkMode::Sidecar => {
-            cmd.args(["--network", "none"]);
-        }
     }
 
     if let Some(workdir) = &args.workdir {
@@ -353,7 +350,8 @@ pub fn run_detached(args: PodmanRunDetachedArgs) -> anyhow::Result<()> {
 }
 
 pub fn container_ip(container: &str, network: &str) -> anyhow::Result<String> {
-    let format = format!("{{{{.NetworkSettings.Networks.{network}.IPAddress}}}}");
+    // Use `index` rather than dotted access so hyphens in `network` don't break Go-template parsing.
+    let format = format!("{{{{(index .NetworkSettings.Networks \"{network}\").IPAddress}}}}");
     let output = Command::new("podman")
         .args(["inspect", "--format", &format, container])
         .output()

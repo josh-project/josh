@@ -4,14 +4,14 @@ use std::process::Command;
 
 use crate::image;
 use crate::job_cache;
-use crate::meta::{self, NetworkMode, OutputMode};
+use crate::meta::{self, NetworkMode, OutputMode, SidecarSpec};
 use crate::podman::{self, PodmanRunArgs};
 
-const SIDECAR_NETWORK: &str = "josh-sccache-net";
+const SIDECAR_NETWORK: &str = "josh-sidecar-net";
 const SIDECAR_IP_PLACEHOLDER: &str = "{SIDECAR_IP}";
 
-/// Read env var names from `sidecar_passthrough` (keys only) and look each up in the
-/// outer process environment. Returns `None` if any listed variable is absent or empty.
+/// Resolve passthrough env names by looking each up in the outer process environment.
+/// Returns `None` if any listed variable is absent or empty.
 fn resolve_passthrough(passthrough: &[(String, String)]) -> Option<Vec<(String, String)>> {
     passthrough
         .iter()
@@ -26,20 +26,29 @@ fn resolve_passthrough(passthrough: &[(String, String)]) -> Option<Vec<(String, 
         .collect()
 }
 
-/// Start the sccache proxy sidecar. Returns the container name.
-fn start_sccache_proxy(
+/// Start a sidecar container on the shared internal network. Returns `Ok(Some((name, ip)))` on
+/// success, `Ok(None)` when required passthrough env vars are missing (caller should skip just
+/// this sidecar), or `Err` for genuine failures (image build, container start, IP lookup).
+///
+/// The sidecar image is built unconditionally, even when passthrough env vars are missing, so
+/// that image-build breakage surfaces in every CI run rather than only on branches that carry
+/// the runtime secrets.
+fn start_sidecar(
     repo: &git2::Repository,
-    proxy_image_oid: git2::Oid,
-    sidecar_env: &[(String, String)],
-    passthrough_env: Vec<(String, String)>,
-) -> anyhow::Result<String> {
-    let image_name = image::ensure_image(repo, proxy_image_oid)?;
+    spec: &SidecarSpec,
+) -> anyhow::Result<Option<(String, String)>> {
+    let image_name = image::ensure_image(repo, spec.image)?;
+
+    let Some(passthrough_env) = resolve_passthrough(&spec.env_passthrough) else {
+        return Ok(None);
+    };
+
     podman::ensure_network_internal(SIDECAR_NETWORK)?;
 
     let bytes: [u8; 4] = rand::random();
-    let container_name = format!("josh-sccache-proxy-{}", hex::encode(bytes));
+    let container_name = format!("josh-sidecar-{}-{}", spec.name, hex::encode(bytes));
 
-    let mut env_vars: Vec<(String, String)> = sidecar_env.to_vec();
+    let mut env_vars: Vec<(String, String)> = spec.env.clone();
     env_vars.extend(passthrough_env);
 
     podman::run_detached(podman::PodmanRunDetachedArgs {
@@ -49,13 +58,21 @@ fn start_sccache_proxy(
         env_vars,
     })?;
 
-    // Give the proxy a moment to start listening.
+    // Give the sidecar a moment to start listening.
     std::thread::sleep(std::time::Duration::from_millis(500));
 
-    Ok(container_name)
+    let ip = match podman::container_ip(&container_name, SIDECAR_NETWORK) {
+        Ok(ip) => ip,
+        Err(e) => {
+            stop_sidecar(&container_name);
+            return Err(e);
+        }
+    };
+
+    Ok(Some((container_name, ip)))
 }
 
-fn stop_sccache_proxy(container_name: &str) {
+fn stop_sidecar(container_name: &str) {
     let _ = podman::stop_container(container_name);
     let _ = podman::rm_container_force(container_name);
 }
@@ -66,10 +83,6 @@ fn stop_sccache_proxy(container_name: &str) {
 pub fn run_container(
     repo: &git2::Repository,
     ws_tree: git2::Oid,
-    sidecar_image: Option<git2::Oid>,
-    sidecar_env: &[(String, String)],
-    sidecar_passthrough: &[(String, String)],
-    sidecar_inject: &[(String, String)],
     attempted: &mut HashSet<git2::Oid>,
 ) -> anyhow::Result<()> {
     let workspace_meta = meta::read_meta(repo, ws_tree)?;
@@ -108,15 +121,7 @@ pub fn run_container(
                 continue;
             }
         };
-        if let Err(e) = run_container(
-            repo,
-            dep_tree,
-            sidecar_image,
-            sidecar_env,
-            sidecar_passthrough,
-            sidecar_inject,
-            attempted,
-        ) {
+        if let Err(e) = run_container(repo, dep_tree, attempted) {
             dep_errors.push(format!("dependency {dep_name} failed: {e}"));
             continue;
         }
@@ -159,60 +164,54 @@ pub fn run_container(
     // Read env vars from env/ subtree
     let mut env_vars = meta::read_blob_entries(repo, ws_tree, "env");
 
-    // Resolve network mode: Sidecar starts a proxy and injects env vars.
-    // `proxy_container` holds the name of a running proxy that must be stopped after the build.
-    let mut proxy_container: Option<String> = None;
-    let network = match workspace_meta.network {
-        NetworkMode::Sidecar => match (sidecar_image, resolve_passthrough(sidecar_passthrough)) {
-            (Some(img_oid), Some(pass_env)) if !sidecar_env.is_empty() => {
-                match start_sccache_proxy(repo, img_oid, sidecar_env, pass_env) {
-                    Ok(proxy_name) => match podman::container_ip(&proxy_name, SIDECAR_NETWORK) {
-                        Ok(proxy_ip) => {
-                            let injected: Vec<(String, String)> = sidecar_inject
-                                .iter()
-                                .map(|(k, v)| {
-                                    (k.clone(), v.replace(SIDECAR_IP_PLACEHOLDER, &proxy_ip))
-                                })
-                                .collect();
-                            env_vars.extend(injected);
-                            proxy_container = Some(proxy_name);
-                            NetworkMode::Named(SIDECAR_NETWORK.to_string())
-                        }
-                        Err(e) => {
-                            eprintln!(
-                                "[{}] Sidecar: failed to get proxy IP: {e}; \
-                                         using local sccache only",
-                                workspace_meta.label
-                            );
-                            stop_sccache_proxy(&proxy_name);
-                            NetworkMode::None
-                        }
-                    },
-                    Err(e) => {
-                        eprintln!(
-                            "[{}] Sidecar: failed to start proxy: {e}; \
-                                 using local sccache only",
-                            workspace_meta.label
-                        );
-                        NetworkMode::None
+    // Start any declared sidecars and inject their IPs into the main container's env.
+    // A skipped sidecar (missing passthrough credentials) logs a warning and is omitted;
+    // if no sidecar actually starts we fall back to the workspace's configured network.
+    let mut started_sidecars: Vec<String> = vec![];
+    let network = if workspace_meta.sidecars.is_empty() {
+        workspace_meta.network.clone()
+    } else {
+        let mut any_started = false;
+        for spec in &workspace_meta.sidecars {
+            match start_sidecar(repo, spec) {
+                Ok(Some((name, ip))) => {
+                    started_sidecars.push(name);
+                    any_started = true;
+                    for (k, v) in &spec.inject {
+                        env_vars.push((k.clone(), v.replace(SIDECAR_IP_PLACEHOLDER, &ip)));
                     }
                 }
+                Ok(None) => {
+                    eprintln!(
+                        "[{}] sidecar '{}' skipped (missing passthrough env); \
+                         continuing without it",
+                        workspace_meta.label, spec.name
+                    );
+                }
+                Err(e) => {
+                    // Tear down anything we already started before bailing.
+                    for name in &started_sidecars {
+                        stop_sidecar(name);
+                    }
+                    anyhow::bail!(
+                        "[{}] sidecar '{}' failed to start: {e}",
+                        workspace_meta.label,
+                        spec.name
+                    );
+                }
             }
-            _ => {
-                eprintln!(
-                    "[{}] Sidecar: missing image, credentials, or config; \
-                         using local sccache only",
-                    workspace_meta.label
-                );
-                NetworkMode::None
-            }
-        },
-        other => other,
+        }
+        if any_started {
+            NetworkMode::Named(SIDECAR_NETWORK.to_string())
+        } else {
+            workspace_meta.network.clone()
+        }
     };
-    // Ensure the proxy is stopped when this function returns, whether success or failure.
-    let _proxy_cleanup = defer::defer(move || {
-        if let Some(name) = proxy_container {
-            stop_sccache_proxy(&name);
+    // Ensure all started sidecars are stopped when this function returns.
+    let sidecars_for_cleanup = std::mem::take(&mut started_sidecars);
+    let _sidecar_cleanup = defer::defer(move || {
+        for name in &sidecars_for_cleanup {
+            stop_sidecar(name);
         }
     });
 
