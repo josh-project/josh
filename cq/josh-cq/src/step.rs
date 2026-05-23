@@ -123,7 +123,7 @@ fn update_metarepo_links(
 
 /// Post a merge comment and close the PR on GitHub.
 /// No-ops silently when `api` is `None` (e.g. in test environments).
-fn close_pr_on_github(
+async fn close_pr_on_github(
     api: Option<&GithubApiConnection>,
     node_id: &str,
     merge_commit: &str,
@@ -134,24 +134,19 @@ fn close_pr_on_github(
         return Ok(());
     };
     let comment = format!("Merged by Josh merge queue as `{}`.", merge_commit);
-    tokio::runtime::Handle::current().block_on(async {
-        api.add_pr_comment(node_id, &comment).await?;
-        api.close_pull_request(node_id).await
-    })?;
+    api.add_pr_comment(node_id, &comment).await?;
+    api.close_pull_request(node_id).await?;
     Ok(())
 }
 
 /// Merge an admissible PR: compute merge locally, push to remote main,
 /// update `.link.josh`, close the PR, and remove from the candidate pool.
-fn handle_step(
+async fn handle_step(
     node_id: &str,
-    transaction: &josh_core::cache::Transaction,
+    transaction: josh_core::cache::Transaction,
     api: Option<&GithubApiConnection>,
     state: &mut CqActorState,
 ) -> anyhow::Result<()> {
-    // Look up the candidate and extract fields we need into locals.
-    // The reference is dropped before any mutable borrow of `state`, avoiding
-    // a borrow conflict with `remove_candidate` later.
     let (repo_url, head_sha, base_branch, number, title) = {
         let candidate = state
             .get_candidate(node_id)
@@ -165,66 +160,80 @@ fn handle_step(
         )
     };
 
-    let repo = transaction.repo();
-    let head_commit = repo
-        .head()
-        .context("Failed to get HEAD")?
-        .peel_to_commit()
-        .context("Failed to peel HEAD to commit")?;
-    let head_tree = head_commit.tree().context("Failed to get HEAD tree")?;
+    let node_id_owned = node_id.to_string();
+    let title_for_close = title.clone();
 
-    let link_files =
-        josh_core::link::find_link_files(repo, &head_tree).context("Failed to find link files")?;
+    let merge_commit: Option<String> = tokio::task::spawn_blocking(move || {
+        let repo = transaction.repo();
+        let head_commit = repo
+            .head()
+            .context("Failed to get HEAD")?
+            .peel_to_commit()
+            .context("Failed to peel HEAD to commit")?;
+        let head_tree = head_commit.tree().context("Failed to get HEAD tree")?;
 
-    let mut main_sha = None;
-    let mut link_path = None;
-    for (path, filter) in &link_files {
-        if filter.get_meta("remote").as_deref() == Some(repo_url.as_str()) {
-            main_sha = filter.get_meta("commit");
-            link_path = Some(path.clone());
-            break;
+        let link_files = josh_core::link::find_link_files(repo, &head_tree)
+            .context("Failed to find link files")?;
+
+        let mut main_sha = None;
+        let mut link_path = None;
+        for (path, filter) in &link_files {
+            if filter.get_meta("remote").as_deref() == Some(repo_url.as_str()) {
+                main_sha = filter.get_meta("commit");
+                link_path = Some(path.clone());
+                break;
+            }
         }
-    }
 
-    let main_sha = main_sha.context("No link file found for remote")?;
-    let link_path = link_path.context("No link file found for remote")?;
+        let main_sha = main_sha.context("No link file found for remote")?;
+        let link_path = link_path.context("No link file found for remote")?;
 
-    // Fetch the PR head commit if we don't have it locally yet
-    if repo.find_commit(git2::Oid::from_str(&head_sha)?).is_err() {
-        spawn_git_command(repo.path(), &["fetch", &repo_url, &head_sha], &[])?;
-    }
+        if repo.find_commit(git2::Oid::from_str(&head_sha)?).is_err() {
+            spawn_git_command(repo.path(), &["fetch", &repo_url, &head_sha], &[])?;
+        }
 
-    let merged_tree = match compute_merge_tree(repo, &main_sha, &head_sha) {
-        Ok(tree) => tree,
-        Err(_) => {
-            tracing::warn!(
-                pr = %node_id,
-                "merge conflict detected; skipping PR"
-            );
+        let merged_tree = match compute_merge_tree(repo, &main_sha, &head_sha) {
+            Ok(tree) => tree,
+            Err(_) => {
+                tracing::warn!(
+                    pr = %node_id_owned,
+                    "merge conflict detected; skipping PR"
+                );
+                return Ok::<_, anyhow::Error>(None);
+            }
+        };
+
+        let message = format!("Merge PR #{}: {}", number, title);
+        let merge_commit = create_merge_commit(repo, &main_sha, &head_sha, &merged_tree, &message)?;
+
+        push_to_remote(repo, &repo_url, &merge_commit, &base_branch)?;
+
+        let merge_oid = merge_commit
+            .parse::<git2::Oid>()
+            .context("Failed to parse merge commit OID")?;
+        let signature = make_signature(repo)?;
+        update_metarepo_links(
+            repo,
+            &transaction,
+            &head_commit,
+            link_path,
+            merge_oid,
+            &signature,
+        )?;
+
+        Ok::<_, anyhow::Error>(Some(merge_commit))
+    })
+    .await??;
+
+    let merge_commit = match merge_commit {
+        Some(mc) => mc,
+        None => {
             state.remove_candidate(node_id);
             return Ok(());
         }
     };
 
-    let message = format!("Merge PR #{}: {}", number, title);
-    let merge_commit = create_merge_commit(repo, &main_sha, &head_sha, &merged_tree, &message)?;
-
-    push_to_remote(repo, &repo_url, &merge_commit, &base_branch)?;
-
-    let merge_oid = merge_commit
-        .parse::<git2::Oid>()
-        .context("Failed to parse merge commit OID")?;
-    let signature = make_signature(repo)?;
-    update_metarepo_links(
-        repo,
-        transaction,
-        &head_commit,
-        link_path,
-        merge_oid,
-        &signature,
-    )?;
-
-    close_pr_on_github(api, node_id, &merge_commit, number, &title)?;
+    close_pr_on_github(api, node_id, &merge_commit, number, &title_for_close).await?;
 
     state.remove_candidate(node_id);
 
@@ -233,11 +242,14 @@ fn handle_step(
 
 /// Run evaluate→step while admissible PRs remain.
 /// Called after every event (webhook or tick) to try to make progress.
-pub(crate) fn run_queue_cycle(
+pub(crate) async fn run_queue_cycle(
     state: &mut CqActorState,
-    transaction: &josh_core::cache::Transaction,
+    repo_path: &std::path::Path,
+    cache: &std::sync::Arc<josh_core::cache::CacheStack>,
     api: Option<&GithubApiConnection>,
 ) {
+    use josh_core::cache::TransactionContext;
+
     loop {
         let node_id = match select_candidate(state) {
             Some(id) => id,
@@ -256,7 +268,18 @@ pub(crate) fn run_queue_cycle(
             (c.number, c.repo_url.clone())
         };
 
-        match handle_step(&node_id, transaction, api, state) {
+        let transaction = match TransactionContext::new(repo_path, cache.clone()).open(None) {
+            Ok(t) => t,
+            Err(e) => {
+                tracing::error!(
+                    error = ?e,
+                    "failed to open transaction for merge"
+                );
+                break;
+            }
+        };
+
+        match handle_step(&node_id, transaction, api, state).await {
             Ok(()) => {
                 tracing::info!(
                     pr = %node_id,

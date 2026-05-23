@@ -79,13 +79,11 @@ async fn start_test_harness(
     let api = Arc::new(GithubApiConnection::for_test(graphql_url));
 
     // 6. Track the SimRepo in the metarepo
-    josh_cq::track::handle_track(
-        sim_repo.clone_url().as_str(),
-        "test-remote",
-        "snapshot",
-        &transaction,
-    )?;
-    drop(transaction);
+    let track_url = sim_repo.clone_url();
+    tokio::task::spawn_blocking(move || {
+        josh_cq::track::handle_track(track_url.as_str(), "test-remote", "snapshot", &transaction)
+    })
+    .await??;
 
     // 7. Build URL → owner/name mapping so the CQ actor can resolve
     // non-GitHub URLs (e.g. 127.0.0.1) from the SimRepo's clone URL.
@@ -126,7 +124,7 @@ async fn poll_until(
     }
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 10)]
+#[tokio::test]
 async fn merge_single_pr() -> anyhow::Result<()> {
     init_tracing();
     let owner = "test-owner";
@@ -206,7 +204,7 @@ async fn merge_single_pr() -> anyhow::Result<()> {
     Ok(())
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 10)]
+#[tokio::test]
 async fn pr_not_admissible_without_review() -> anyhow::Result<()> {
     let owner = "test-owner";
     let name = "test-repo-norev";
@@ -266,7 +264,7 @@ async fn pr_not_admissible_without_review() -> anyhow::Result<()> {
     Ok(())
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 10)]
+#[tokio::test]
 async fn pr_not_admissible_with_failing_check() -> anyhow::Result<()> {
     let owner = "test-owner";
     let name = "test-repo-fail";
@@ -355,7 +353,7 @@ async fn pr_not_admissible_with_failing_check() -> anyhow::Result<()> {
     Ok(())
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 10)]
+#[tokio::test]
 async fn pr_removed_on_close_webhook() -> anyhow::Result<()> {
     let owner = "test-owner";
     let name = "test-repo-close";

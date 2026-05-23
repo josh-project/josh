@@ -9,7 +9,7 @@ use josh_github_graphql::operations::repo::RequiredStatusCheck;
 
 use crate::models::{CandidatePr, CqActorState};
 
-pub(crate) fn fetch_maintainers(
+pub(crate) async fn fetch_maintainers(
     clone_url: &str,
     api: Option<&GithubApiConnection>,
     state: &CqActorState,
@@ -21,7 +21,7 @@ pub(crate) fn fetch_maintainers(
         Some(parts) => parts,
         None => return Vec::new(),
     };
-    match tokio::runtime::Handle::current().block_on(api.get_maintainers(&owner, &name)) {
+    match api.get_maintainers(&owner, &name).await {
         Ok(m) => m,
         Err(e) => {
             tracing::warn!(url = %clone_url, error = ?e, "failed to fetch maintainers");
@@ -54,7 +54,7 @@ pub(crate) async fn fetch_required_checks(
     Ok(checks)
 }
 
-pub(crate) fn lookup_open_prs_by_sha(
+pub(crate) async fn lookup_open_prs_by_sha(
     api: Option<&GithubApiConnection>,
     clone_url: &str,
     sha: &str,
@@ -70,9 +70,7 @@ pub(crate) fn lookup_open_prs_by_sha(
             return Vec::new();
         }
     };
-    match tokio::runtime::Handle::current()
-        .block_on(api.find_open_prs_by_head_sha(&owner, &name, sha))
-    {
+    match api.find_open_prs_by_head_sha(&owner, &name, sha).await {
         Ok(prs) => prs.into_iter().map(|(id, _)| id).collect(),
         Err(e) => {
             tracing::warn!(url = %clone_url, sha = %sha, error = ?e, "failed to look up PRs by SHA");
@@ -81,67 +79,78 @@ pub(crate) fn lookup_open_prs_by_sha(
     }
 }
 
-pub(crate) fn handle_fetch(
-    transaction: &josh_core::cache::Transaction,
+pub(crate) async fn handle_fetch(
+    transaction: josh_core::cache::Transaction,
     api: Option<&GithubApiConnection>,
     state: &mut CqActorState,
 ) -> anyhow::Result<()> {
-    let repo = transaction.repo();
-    let head_commit = repo
-        .head()
-        .context("Failed to get HEAD")?
-        .peel_to_commit()
-        .context("Failed to peel HEAD to commit")?;
-    let head_tree = head_commit.tree().context("Failed to get HEAD tree")?;
+    let remotes: Vec<(PathBuf, String, String)> = tokio::task::spawn_blocking(move || {
+        let repo = transaction.repo();
+        let head_commit = repo
+            .head()
+            .context("Failed to get HEAD")?
+            .peel_to_commit()
+            .context("Failed to peel HEAD to commit")?;
+        let head_tree = head_commit.tree().context("Failed to get HEAD tree")?;
 
-    let link_files =
-        josh_core::link::find_link_files(repo, &head_tree).context("Failed to find link files")?;
+        let link_files = josh_core::link::find_link_files(repo, &head_tree)
+            .context("Failed to find link files")?;
 
-    let mut remotes: Vec<(PathBuf, String, String)> = Vec::new();
-    for (path, filter) in &link_files {
-        if let (Some(remote), Some(commit)) = (filter.get_meta("remote"), filter.get_meta("commit"))
-        {
-            remotes.push((path.clone(), remote, commit));
-        }
-    }
-
-    if remotes.is_empty() {
-        tracing::info!("no tracked remotes found");
-        return Ok(());
-    }
-
-    let signature = josh_link::make_signature(repo)?;
-    let mut links_to_update: Vec<(PathBuf, git2::Oid)> = Vec::new();
-
-    for (path, url, current_commit) in &remotes {
-        spawn_git_command(repo.path(), &["fetch", url.as_str()], &[])
-            .with_context(|| format!("Failed to fetch from {}", url))?;
-
-        let refs = crate::remote::list_refs(url)
-            .with_context(|| format!("Failed to list refs for {}", url))?;
-
-        if let Some(head_oid) = refs.get("HEAD") {
-            if head_oid.to_string() != *current_commit {
-                links_to_update.push((path.clone(), *head_oid));
+        let mut remotes: Vec<(PathBuf, String, String)> = Vec::new();
+        for (path, filter) in &link_files {
+            if let (Some(remote), Some(commit)) =
+                (filter.get_meta("remote"), filter.get_meta("commit"))
+            {
+                remotes.push((path.clone(), remote, commit));
             }
         }
-    }
 
-    if !links_to_update.is_empty() {
-        let count = links_to_update.len();
-        match josh_link::update_links(repo, transaction, &head_commit, links_to_update, &signature)?
-        {
-            Some(result) => {
-                repo.head()?
-                    .set_target(result.commit_with_updates, "josh-cq fetch")
-                    .context("Failed to update HEAD")?;
-            }
-            None => {
-                tracing::debug!("link files already up to date");
+        if remotes.is_empty() {
+            tracing::info!("no tracked remotes found");
+            return Ok::<_, anyhow::Error>(remotes);
+        }
+
+        let signature = josh_link::make_signature(repo)?;
+        let mut links_to_update: Vec<(PathBuf, git2::Oid)> = Vec::new();
+
+        for (path, url, current_commit) in &remotes {
+            spawn_git_command(repo.path(), &["fetch", url.as_str()], &[])
+                .with_context(|| format!("Failed to fetch from {}", url))?;
+
+            let refs = crate::remote::list_refs(url)
+                .with_context(|| format!("Failed to list refs for {}", url))?;
+
+            if let Some(head_oid) = refs.get("HEAD") {
+                if head_oid.to_string() != *current_commit {
+                    links_to_update.push((path.clone(), *head_oid));
+                }
             }
         }
-        tracing::info!(count, "updated link file(s)");
-    }
+
+        if !links_to_update.is_empty() {
+            let count = links_to_update.len();
+            match josh_link::update_links(
+                repo,
+                &transaction,
+                &head_commit,
+                links_to_update,
+                &signature,
+            )? {
+                Some(result) => {
+                    repo.head()?
+                        .set_target(result.commit_with_updates, "josh-cq fetch")
+                        .context("Failed to update HEAD")?;
+                }
+                None => {
+                    tracing::debug!("link files already up to date");
+                }
+            }
+            tracing::info!(count, "updated link file(s)");
+        }
+
+        Ok::<_, anyhow::Error>(remotes)
+    })
+    .await??;
 
     for (_, url, _) in &remotes {
         let (owner, repo_name) = match state.resolve_owner_repo(url) {
@@ -157,9 +166,7 @@ pub(crate) fn handle_fetch(
             continue;
         };
 
-        let prs = match tokio::runtime::Handle::current()
-            .block_on(api.get_open_pull_requests(&owner, &repo_name))
-        {
+        let prs = match api.get_open_pull_requests(&owner, &repo_name).await {
             Ok(prs) => prs,
             Err(e) => {
                 tracing::warn!(url = %url, error = ?e, "failed to fetch open PRs");
@@ -182,11 +189,11 @@ pub(crate) fn handle_fetch(
                 title: pr.title.clone(),
             });
 
-            state.get_or_init_pr_admission(&pr.node_id, url, Some(api));
+            state
+                .get_or_init_pr_admission(&pr.node_id, url, Some(api))
+                .await;
 
-            match tokio::runtime::Handle::current()
-                .block_on(api.get_pr_reviews(&owner, &repo_name, pr.number))
-            {
+            match api.get_pr_reviews(&owner, &repo_name, pr.number).await {
                 Ok(reviews) => {
                     if let Some(admission) = state.pr_admissions.get_mut(&pr.node_id) {
                         admission.apply_review_states(&reviews);

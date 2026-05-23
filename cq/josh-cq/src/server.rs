@@ -91,45 +91,59 @@ pub fn spawn_serve_task(
     });
 
     // Spawn the actor — serializes all state access
-    tokio::task::spawn_blocking(move || {
+    tokio::spawn(async move {
         let mut state = CqActorState {
             url_owner_map,
             ..Default::default()
         };
 
-        while let Some(event) = event_rx.blocking_recv() {
-            let transaction = match TransactionContext::new(&repo_path, cache.clone()).open(None) {
-                Ok(t) => t,
-                Err(e) => {
-                    tracing::error!(error = ?e, "failed to open transaction");
-                    continue;
-                }
-            };
-
+        while let Some(event) = event_rx.recv().await {
             match event {
-                // Periodic poll: catches PRs that were missed by webhooks
-                // (delivery failures, race conditions). Falls through to
-                // evaluate→step.
                 CqEvent::Tick => {
                     tracing::info!("tick: running fetch");
-                    if let Err(e) = handle_fetch(&transaction, api.as_deref(), &mut state) {
+                    let transaction =
+                        match TransactionContext::new(&repo_path, cache.clone()).open(None) {
+                            Ok(t) => t,
+                            Err(e) => {
+                                tracing::error!(error = ?e, "failed to open transaction");
+                                continue;
+                            }
+                        };
+                    if let Err(e) = handle_fetch(transaction, api.as_deref(), &mut state).await {
                         tracing::error!(error = ?e, "fetch failed");
                         continue;
                     }
                 }
-                // Adding a new remote to the metarepo — no merge needed,
-                // so handled inline and does not fall through to the queue cycle.
                 CqEvent::Track(req) => {
-                    match handle_track(&req.url, &req.id, &req.mode, &transaction) {
-                        Ok(action) => handle_action(action),
-                        Err(e) => tracing::error!(error = ?e, "track failed"),
-                    };
+                    let transaction =
+                        match TransactionContext::new(&repo_path, cache.clone()).open(None) {
+                            Ok(t) => t,
+                            Err(e) => {
+                                tracing::error!(error = ?e, "failed to open transaction");
+                                continue;
+                            }
+                        };
+                    match tokio::task::spawn_blocking(move || {
+                        handle_track(&req.url, &req.id, &req.mode, &transaction)
+                    })
+                    .await
+                    {
+                        Ok(Ok(action)) => handle_action(action),
+                        Ok(Err(e)) => tracing::error!(error = ?e, "track failed"),
+                        Err(e) => tracing::error!(error = ?e, "track task panicked"),
+                    }
                 }
-                // Real-time GitHub events: updates admission state and candidate
-                // list immediately. Falls through to evaluate→step.
                 CqEvent::Webhook(payload) => {
+                    let transaction =
+                        match TransactionContext::new(&repo_path, cache.clone()).open(None) {
+                            Ok(t) => t,
+                            Err(e) => {
+                                tracing::error!(error = ?e, "failed to open transaction");
+                                continue;
+                            }
+                        };
                     if let Err(e) =
-                        handle_webhook(&payload, &transaction, api.as_deref(), &mut state)
+                        handle_webhook(&payload, transaction, api.as_deref(), &mut state).await
                     {
                         tracing::error!(error = ?e, "webhook handling error");
                         continue;
@@ -138,7 +152,7 @@ pub fn spawn_serve_task(
             }
 
             // Tick and Webhook both fall through here; Track does not.
-            run_queue_cycle(&mut state, &transaction, api.as_deref());
+            run_queue_cycle(&mut state, &repo_path, &cache, api.as_deref()).await;
         }
     });
 

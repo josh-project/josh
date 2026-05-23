@@ -41,7 +41,7 @@ impl CqActorState {
         }
     }
 
-    pub fn get_or_fetch_admission(
+    pub async fn get_or_fetch_admission(
         &mut self,
         clone_url: &str,
         api: Option<&GithubApiConnection>,
@@ -67,8 +67,7 @@ impl CqActorState {
             }
         };
 
-        match tokio::runtime::Handle::current().block_on(fetch_required_checks(api, &owner, &name))
-        {
+        match fetch_required_checks(api, &owner, &name).await {
             Ok(checks) => {
                 tracing::info!(
                     url = %clone_url,
@@ -89,15 +88,15 @@ impl CqActorState {
         }
     }
 
-    pub fn get_or_init_pr_admission(
+    pub async fn get_or_init_pr_admission(
         &mut self,
         pr_node_id: &str,
         clone_url: &str,
         api: Option<&GithubApiConnection>,
     ) -> Option<&mut AdmissionState> {
         if !self.pr_admissions.contains_key(pr_node_id) {
-            let required = self.get_or_fetch_admission(clone_url, api)?;
-            let maintainers = fetch_maintainers(clone_url, api, self);
+            let required = self.get_or_fetch_admission(clone_url, api).await?;
+            let maintainers = fetch_maintainers(clone_url, api, self).await;
             let state = AdmissionState {
                 required_checks: required.into_iter().map(|c| (c, false)).collect(),
                 maintainer_reviews: BTreeMap::new(),

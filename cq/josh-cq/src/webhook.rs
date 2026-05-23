@@ -20,29 +20,33 @@ fn webhook_repository(payload: &WebhookPayload) -> &webhook_types::Repository {
     }
 }
 
-pub(crate) fn handle_webhook(
+pub(crate) async fn handle_webhook(
     payload: &WebhookPayload,
-    transaction: &josh_core::cache::Transaction,
+    transaction: josh_core::cache::Transaction,
     api: Option<&GithubApiConnection>,
     state: &mut CqActorState,
 ) -> anyhow::Result<()> {
-    let repo = transaction.repo();
-    let clone_url = &webhook_repository(payload).clone_url;
+    let clone_url = webhook_repository(payload).clone_url.clone();
+    let clone_url_for_closure = clone_url.clone();
 
-    let head_tree = repo
-        .head()
-        .context("Failed to get HEAD")?
-        .peel_to_commit()
-        .context("Failed to peel HEAD to commit")?
-        .tree()
-        .context("Failed to get HEAD tree")?;
+    let tracked = tokio::task::spawn_blocking(move || {
+        let repo = transaction.repo();
+        let head_tree = repo
+            .head()
+            .context("Failed to get HEAD")?
+            .peel_to_commit()
+            .context("Failed to peel HEAD to commit")?
+            .tree()
+            .context("Failed to get HEAD tree")?;
 
-    let link_files =
-        josh_core::link::find_link_files(repo, &head_tree).context("Failed to find link files")?;
+        let link_files = josh_core::link::find_link_files(repo, &head_tree)
+            .context("Failed to find link files")?;
 
-    let tracked = link_files
-        .iter()
-        .any(|(_, filter)| filter.get_meta("remote").as_deref() == Some(clone_url.as_str()));
+        Ok::<_, anyhow::Error>(link_files.iter().any(|(_, filter)| {
+            filter.get_meta("remote").as_deref() == Some(clone_url_for_closure.as_str())
+        }))
+    })
+    .await??;
 
     if !tracked {
         tracing::info!(url = %clone_url, "ignoring webhook from untracked repo");
@@ -67,7 +71,9 @@ pub(crate) fn handle_webhook(
                         base_branch: pr.base.reference(),
                         title: pr.title.clone(),
                     });
-                    state.get_or_init_pr_admission(&pr.node_id, clone_url, api);
+                    state
+                        .get_or_init_pr_admission(&pr.node_id, &clone_url, api)
+                        .await;
                 }
                 webhook_types::PullRequestEventDetails::Closed => {
                     state.remove_candidate(&pr.node_id);
@@ -80,20 +86,21 @@ pub(crate) fn handle_webhook(
         WebhookPayload::Push(e) => {
             let pushed_ref = &e.ref_;
             for candidate in state.candidates.values_mut() {
-                if candidate.repo_url == *clone_url && candidate.base_branch == *pushed_ref {
+                if candidate.repo_url == clone_url && candidate.base_branch == *pushed_ref {
                     candidate.base_sha = e.after.clone();
                 }
             }
         }
 
         WebhookPayload::PullRequestReview(e) => {
-            process_pr_review(state, &e.pull_request.node_id, e, clone_url, api);
+            process_pr_review(state, &e.pull_request.node_id, e, &clone_url, api).await;
         }
 
         WebhookPayload::CheckRun(e) => {
-            let pr_ids = lookup_open_prs_by_sha(api, clone_url, &e.check_run.head_sha, state);
+            let pr_ids =
+                lookup_open_prs_by_sha(api, &clone_url, &e.check_run.head_sha, state).await;
             for pr_id in pr_ids {
-                process_check_run(state, &pr_id, e, clone_url, api);
+                process_check_run(state, &pr_id, e, &clone_url, api).await;
             }
         }
 
