@@ -4,7 +4,9 @@ use josh_github_graphql::connection::GithubApiConnection;
 use josh_github_webhooks::webhook_server::WebhookPayload;
 use josh_github_webhooks::webhook_types;
 
-use crate::state::{CandidatePr, CqActorState, lookup_open_prs_by_sha, process_admission_events};
+use crate::admission::process_admission_events;
+use crate::fetch::lookup_open_prs_by_sha;
+use crate::models::{CandidatePr, CqActorState};
 use crate::types::AdmissionRelevantEvent;
 
 fn webhook_repository(payload: &WebhookPayload) -> &webhook_types::Repository {
@@ -96,8 +98,7 @@ pub(crate) fn handle_webhook(
         }
 
         WebhookPayload::CheckRun(e) => {
-            let pr_ids =
-                lookup_open_prs_by_sha(api, clone_url, &e.check_run.head_sha, &state.url_owner_map);
+            let pr_ids = lookup_open_prs_by_sha(api, clone_url, &e.check_run.head_sha, &state);
             let event = AdmissionRelevantEvent::CheckRun(e);
             let events: Vec<_> = pr_ids.into_iter().map(|id| (id, event)).collect();
             process_admission_events(&mut state, &events, clone_url, api);

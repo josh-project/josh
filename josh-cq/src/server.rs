@@ -11,7 +11,9 @@ use tokio::sync::mpsc;
 use josh_core::cache::{CacheStack, TransactionContext};
 use josh_github_graphql::connection::GithubApiConnection;
 
-use crate::state::{CqActorState, handle_fetch, run_queue_cycle};
+use crate::fetch::handle_fetch;
+use crate::models::CqActorState;
+use crate::step::run_queue_cycle;
 use crate::track::handle_track;
 use crate::types::{CqEvent, GH_TOKEN_ENV, TrackRequest, UserAction};
 use crate::webhook::handle_webhook;
