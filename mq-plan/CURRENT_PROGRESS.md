@@ -17,4 +17,4 @@
 | [STEP_13.md](STEP_13.md) | completed | `fd7681ad` | Add `SimRepo` and webhook event generation |
 | [STEP_14.md](STEP_14.md) | completed | `9d95299f` | Add mock GraphQL server |
 | [STEP_15.md](STEP_15.md) | completed | — | Add `GithubApiConnection` constructors, wire API override |
-| [STEP_16.md](STEP_16.md) | in_progress | — | Write integration tests |
+| [STEP_16.md](STEP_16.md) | completed | `867a80bc` | Write integration tests |
