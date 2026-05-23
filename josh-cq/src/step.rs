@@ -1,8 +1,6 @@
-use std::path::Path;
-
 use anyhow::Context;
 
-use josh_core::git::spawn_git_command;
+use josh_core::git::{spawn_git_command, spawn_git_command_stdout};
 use josh_github_graphql::connection::GithubApiConnection;
 use josh_link::make_signature;
 
@@ -27,29 +25,6 @@ fn select_candidate(state: &CqActorState) -> Option<CandidatePr> {
         }
     }
     None
-}
-
-fn spawn_git_command_stdout(repo_path: &Path, args: &[&str]) -> anyhow::Result<String> {
-    let output = std::process::Command::new("git")
-        .current_dir(repo_path)
-        .args(args)
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .output()
-        .context("failed to execute git command")?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(anyhow::anyhow!(
-            "git {} exited with {}: {}",
-            args.join(" "),
-            output.status,
-            stderr.trim()
-        ));
-    }
-
-    String::from_utf8(output.stdout).context("git output was not valid UTF-8")
 }
 
 /// Merge an admissible PR: compute merge locally, push to remote main,

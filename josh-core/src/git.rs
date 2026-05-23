@@ -97,3 +97,37 @@ pub fn spawn_git_command(
         }
     }
 }
+
+/// Spawn a git command and capture stdout as a String.
+///
+/// Unlike [`spawn_git_command`], this always captures output (never uses TTY mode)
+/// and returns stdout on success.
+pub fn spawn_git_command_stdout(
+    repo_path: &std::path::Path,
+    args: &[&str],
+) -> anyhow::Result<String> {
+    log::debug!("spawn_git_command_stdout: {:?}", args);
+
+    let cwd = normalize_repo_path(repo_path);
+
+    let output = std::process::Command::new("git")
+        .current_dir(cwd)
+        .args(args)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .context("failed to execute git command")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(anyhow!(
+            "git {} exited with {}: {}",
+            args.join(" "),
+            output.status,
+            stderr.trim()
+        ));
+    }
+
+    String::from_utf8(output.stdout).context("git output was not valid UTF-8")
+}
