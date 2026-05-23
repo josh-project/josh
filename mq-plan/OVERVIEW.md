@@ -89,3 +89,4 @@ No speculation, no batching, no dependency ordering. One PR at a time.
 8. [Implement candidate evaluation](STEP_8.md)
 9. [Implement `handle_step()`](STEP_9.md)
 10. [Wire actor loop with tick timer into `serve`](STEP_10.md)
+11. [Split `cq.rs` into modules](STEP_11.md)
