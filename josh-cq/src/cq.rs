@@ -405,29 +405,73 @@ pub fn handle_webhook(
 
     let mut state = state;
 
-    let event = match payload {
-        WebhookPayload::PullRequestReview(e) => AdmissionRelevantEvent::PullRequestReview(e),
-        WebhookPayload::CheckRun(e) => AdmissionRelevantEvent::CheckRun(e),
-        _ => return Ok(state),
-    };
-
-    let events: Vec<(String, AdmissionRelevantEvent)> = match event {
-        AdmissionRelevantEvent::PullRequestReview(e) => {
-            vec![(e.pull_request.node_id.clone(), event)]
+    match payload {
+        WebhookPayload::PullRequest(e) => {
+            let pr = &e.pull_request;
+            match &e.details {
+                webhook_types::PullRequestEventDetails::Opened
+                | webhook_types::PullRequestEventDetails::Synchronize { .. } => {
+                    state.upsert_candidate(CandidatePr {
+                        node_id: pr.node_id.clone(),
+                        number: pr.number,
+                        repo_url: clone_url.clone(),
+                        head_sha: pr.head.sha(),
+                        head_branch: pr.head.reference(),
+                        base_sha: pr.base.sha(),
+                        base_branch: pr.base.reference(),
+                        title: pr.title.clone(),
+                    });
+                    state.get_or_init_pr_admission(&pr.node_id, clone_url, api);
+                }
+                webhook_types::PullRequestEventDetails::Closed => {
+                    state.remove_candidate(&pr.node_id);
+                }
+                _ => {}
+            }
         }
-        AdmissionRelevantEvent::CheckRun(e) => {
-            lookup_open_prs_by_sha(api, clone_url, &e.check_run.head_sha)
-                .into_iter()
-                .map(|id| (id, event))
-                .collect()
-        }
-    };
 
+        WebhookPayload::Push(e) => {
+            let pushed_ref = &e.ref_;
+            for candidate in state.candidates.values_mut() {
+                if candidate.repo_url == *clone_url && candidate.base_branch == *pushed_ref {
+                    candidate.base_sha = e.after.clone();
+                }
+            }
+        }
+
+        WebhookPayload::PullRequestReview(e) => {
+            let events = vec![(
+                e.pull_request.node_id.clone(),
+                AdmissionRelevantEvent::PullRequestReview(e),
+            )];
+            process_admission_events(&mut state, &events, clone_url, api);
+        }
+
+        WebhookPayload::CheckRun(e) => {
+            let pr_ids = lookup_open_prs_by_sha(api, clone_url, &e.check_run.head_sha);
+            let event = AdmissionRelevantEvent::CheckRun(e);
+            let events: Vec<_> = pr_ids.into_iter().map(|id| (id, event)).collect();
+            process_admission_events(&mut state, &events, clone_url, api);
+        }
+
+        WebhookPayload::Ping(_)
+        | WebhookPayload::WorkflowJob(_)
+        | WebhookPayload::WorkflowRun(_) => {}
+    }
+
+    Ok(state)
+}
+
+fn process_admission_events(
+    state: &mut CqActorState,
+    events: &[(String, AdmissionRelevantEvent<'_>)],
+    clone_url: &str,
+    api: Option<&GithubApiConnection>,
+) {
     for (pr_node_id, evt) in events {
-        let Some(admission) = state.get_or_init_pr_admission(&pr_node_id, clone_url, api) else {
+        let Some(admission) = state.get_or_init_pr_admission(pr_node_id, clone_url, api) else {
             continue;
         };
-
         match evt {
             AdmissionRelevantEvent::PullRequestReview(e) => {
                 admission.process_pr_review_events(std::slice::from_ref(e));
@@ -437,8 +481,6 @@ pub fn handle_webhook(
             }
         }
     }
-
-    Ok(state)
 }
 
 async fn track_handler(
