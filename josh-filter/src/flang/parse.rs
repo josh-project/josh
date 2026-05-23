@@ -69,6 +69,10 @@ fn make_filter(args: &[&str]) -> anyhow::Result<Filter> {
             check_experimental_features_enabled("unlink filter")?;
             Ok(to_filter(Op::Unlink))
         }
+        ["inline_submodules"] => {
+            check_experimental_features_enabled("inline_submodules filter")?;
+            Ok(to_filter(Op::InlineSubmodules))
+        }
         ["adapt", adapter] => {
             check_experimental_features_enabled("adapt filter")?;
             Ok(to_filter(Op::Adapt(adapter.to_string())))

@@ -933,6 +933,81 @@ pub fn apply_to_commit2(
                 .transpose();
             }
         }
+        Op::InlineSubmodules => {
+            check_experimental_features_enabled("inline_submodules filter")?;
+
+            let normal_parents = commit
+                .parent_ids()
+                .map(|p| transaction.get(filter, p))
+                .collect::<anyhow::Result<Option<Vec<gix_hash::ObjectId>>>>()?;
+            let normal_parents = some_or!(normal_parents, { return Ok(None) });
+
+            let current_submodules =
+                extract_submodule_commits(transaction, &odb, commit.tree_id()?)?;
+
+            let first_parent_submodules = if let Some(parent) = commit.parent_ids().next() {
+                let parent_tree =
+                    git::read_tree_id(&odb, parent).unwrap_or_else(|_| tree::empty_id());
+                extract_submodule_commits(transaction, &odb, parent_tree)?
+            } else {
+                std::collections::BTreeMap::new()
+            };
+
+            // Only added or updated submodules contribute history parents.
+            let changed_submodules: Vec<(
+                std::path::PathBuf,
+                gix_hash::ObjectId,
+                gix_hash::ObjectId,
+            )> = current_submodules
+                .iter()
+                .filter_map(|(path, (new_oid, _))| {
+                    let old_oid = first_parent_submodules
+                        .get(path)
+                        .map(|(oid, _)| *oid)
+                        .unwrap_or(gix_hash::ObjectId::null(gix_hash::Kind::Sha1));
+                    if old_oid != *new_oid {
+                        Some((path.clone(), old_oid, *new_oid))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
+            let original_target = normal_parents
+                .first()
+                .copied()
+                .unwrap_or(gix_hash::ObjectId::null(gix_hash::Kind::Sha1));
+
+            let mut extra_parents: Vec<gix_hash::ObjectId> = Vec::new();
+            for (path, old_oid, new_oid) in changed_submodules {
+                let path_filter = to_filter(Op::Subdir(path));
+                let unapplied = history::unapply_filter(
+                    transaction,
+                    path_filter,
+                    original_target,
+                    old_oid,
+                    new_oid,
+                    history::OrphansMode::Keep,
+                    None,
+                )?;
+                if unapplied != gix_hash::ObjectId::null(gix_hash::Kind::Sha1) {
+                    extra_parents.push(unapplied);
+                }
+            }
+
+            let filtered_tree = apply(transaction, filter, Rewrite::from_commit_data(&commit)?)?;
+            let filtered_parent_ids: Vec<gix_hash::ObjectId> =
+                normal_parents.into_iter().chain(extra_parents).collect();
+
+            return Some(history::create_filtered_commit(
+                &commit,
+                filtered_parent_ids,
+                filtered_tree,
+                transaction,
+                filter,
+            ))
+            .transpose();
+        }
         Op::Workspace(ws_path) => {
             // The get_* helpers return a bare Filter and would fold an unreadable tree to
             // Op::Empty, so bad input must error here; every probe below shares the read.
@@ -1376,6 +1451,40 @@ fn apply_impl(
                 }
                 _ => return Err(anyhow!("unknown adapter {:?}", adapter)),
             }
+
+            Ok(x.with_tree(result_tree))
+        }
+        Op::InlineSubmodules => {
+            check_experimental_features_enabled("inline_submodules filter")?;
+
+            let mut result_tree = x.tree_id();
+            let submodule_commits = extract_submodule_commits(transaction, odb, result_tree)?;
+
+            for (submodule_path, (commit_oid, _meta)) in submodule_commits {
+                let submodule_tree = git::read_tree_id(odb, commit_oid)?;
+
+                // Remove the gitlink before overlaying a tree at the same path.
+                result_tree = tree::insert_oid(
+                    odb,
+                    result_tree,
+                    &submodule_path,
+                    gix_hash::ObjectId::null(gix_hash::Kind::Sha1),
+                    0o0160000,
+                )?;
+
+                let path_filter = to_filter(Op::Subdir(submodule_path.clone()));
+                result_tree =
+                    filter::unapply(transaction, path_filter, submodule_tree, result_tree, None)?;
+            }
+
+            // Drop .gitmodules after replacing every submodule with plain content.
+            result_tree = tree::insert_oid(
+                odb,
+                result_tree,
+                std::path::Path::new(".gitmodules"),
+                gix_hash::ObjectId::null(gix_hash::Kind::Sha1),
+                0o0100644,
+            )?;
 
             Ok(x.with_tree(result_tree))
         }
