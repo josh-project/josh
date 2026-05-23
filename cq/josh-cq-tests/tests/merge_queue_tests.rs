@@ -14,7 +14,7 @@ fn init_tracing() {
 use josh_github_graphql::connection::GithubApiConnection;
 use josh_github_webhooks::webhook_server::WebhookPayload;
 use josh_github_webhooks::webhook_types;
-use josh_test_github::graphql_mock::{GraphQLMock, MockPr, MockRuleset};
+use josh_test_github::graphql_mock::{GraphQLData, GraphQLMock, MockPr, MockRuleset};
 use josh_test_github::sim_repo::{SimRepo, make_pr_node_id, make_pr_payload, make_repository};
 
 struct TestHarness {
@@ -85,7 +85,7 @@ async fn start_test_harness(
     })
     .await??;
 
-    // 7. Build URL → owner/name mapping so the CQ actor can resolve
+    // 7. Build URL -> owner/name mapping so the CQ actor can resolve
     // non-GitHub URLs (e.g. 127.0.0.1) from the SimRepo's clone URL.
     let mut url_owner_map = std::collections::HashMap::new();
     url_owner_map.insert(
@@ -141,20 +141,21 @@ async fn merge_single_pr() -> anyhow::Result<()> {
         .commit("feature.txt", "feature content", Some("feature wip"))
         .await?;
 
-    let mock = GraphQLMock::new()
-        .with_pr(MockPr {
-            node_id: pr_node_id.clone(),
-            number: 0,
-            title: "Test PR".into(),
-            head_ref_name: "feature".into(),
-            head_ref_oid: feature_sha.to_string(),
-            base_ref_name: "main".into(),
-            base_ref_oid: main_sha.to_string(),
-        })
-        .with_review(0, "maintainer1", "APPROVED")
-        .with_maintainer("maintainer1");
+    let mut data = GraphQLData::default();
+    data.with_pr(MockPr {
+        node_id: pr_node_id.clone(),
+        number: 0,
+        title: "Test PR".into(),
+        head_ref_name: "feature".into(),
+        head_ref_oid: feature_sha.to_string(),
+        base_ref_name: "main".into(),
+        base_ref_oid: main_sha.to_string(),
+    })
+    .with_review(0, "maintainer1", "APPROVED")
+    .with_maintainer("maintainer1");
 
-    let harness = start_test_harness(owner, name, sim_repo.clone(), mock).await?;
+    let harness =
+        start_test_harness(owner, name, sim_repo.clone(), GraphQLMock::from_data(data)).await?;
 
     let clone_url = harness.sim_repo.clone_url().to_string();
 
@@ -219,19 +220,20 @@ async fn pr_not_admissible_without_review() -> anyhow::Result<()> {
         .commit("feature.txt", "content", Some("feature"))
         .await?;
 
-    let mock = GraphQLMock::new()
-        .with_pr(MockPr {
-            node_id: pr_node_id.clone(),
-            number: 0,
-            title: "No-review PR".into(),
-            head_ref_name: "feature".into(),
-            head_ref_oid: feature_sha.to_string(),
-            base_ref_name: "main".into(),
-            base_ref_oid: main_sha.to_string(),
-        })
-        .with_maintainer("maintainer1");
+    let mut data = GraphQLData::default();
+    data.with_pr(MockPr {
+        node_id: pr_node_id.clone(),
+        number: 0,
+        title: "No-review PR".into(),
+        head_ref_name: "feature".into(),
+        head_ref_oid: feature_sha.to_string(),
+        base_ref_name: "main".into(),
+        base_ref_oid: main_sha.to_string(),
+    })
+    .with_maintainer("maintainer1");
 
-    let harness = start_test_harness(owner, name, sim_repo.clone(), mock).await?;
+    let harness =
+        start_test_harness(owner, name, sim_repo.clone(), GraphQLMock::from_data(data)).await?;
 
     let clone_url = harness.sim_repo.clone_url().to_string();
 
@@ -279,28 +281,29 @@ async fn pr_not_admissible_with_failing_check() -> anyhow::Result<()> {
         .commit("feature.txt", "content", Some("feature"))
         .await?;
 
-    let mock = GraphQLMock::new()
-        .with_pr(MockPr {
-            node_id: pr_node_id.clone(),
-            number: 0,
-            title: "Failing-check PR".into(),
-            head_ref_name: "feature".into(),
-            head_ref_oid: feature_sha.to_string(),
-            base_ref_name: "main".into(),
-            base_ref_oid: main_sha.to_string(),
-        })
-        .with_review(0, "maintainer1", "APPROVED")
-        .with_maintainer("maintainer1")
-        .with_ruleset(MockRuleset {
-            id: "rs-1".into(),
-            name: "test ruleset".into(),
-            enforcement: "ACTIVE".into(),
-            include_refs: vec!["refs/heads/main".into()],
-            exclude_refs: vec![],
-        })
-        .with_required_check("ci/test");
+    let mut data = GraphQLData::default();
+    data.with_pr(MockPr {
+        node_id: pr_node_id.clone(),
+        number: 0,
+        title: "Failing-check PR".into(),
+        head_ref_name: "feature".into(),
+        head_ref_oid: feature_sha.to_string(),
+        base_ref_name: "main".into(),
+        base_ref_oid: main_sha.to_string(),
+    })
+    .with_review(0, "maintainer1", "APPROVED")
+    .with_maintainer("maintainer1")
+    .with_ruleset(MockRuleset {
+        id: "rs-1".into(),
+        name: "test ruleset".into(),
+        enforcement: "ACTIVE".into(),
+        include_refs: vec!["refs/heads/main".into()],
+        exclude_refs: vec![],
+        required_checks: vec!["ci/test".into()],
+    });
 
-    let harness = start_test_harness(owner, name, sim_repo.clone(), mock).await?;
+    let harness =
+        start_test_harness(owner, name, sim_repo.clone(), GraphQLMock::from_data(data)).await?;
 
     let clone_url = harness.sim_repo.clone_url().to_string();
 
@@ -368,20 +371,21 @@ async fn pr_removed_on_close_webhook() -> anyhow::Result<()> {
         .commit("feature.txt", "content", Some("feature"))
         .await?;
 
-    let mock = GraphQLMock::new()
-        .with_pr(MockPr {
-            node_id: pr_node_id.clone(),
-            number: 0,
-            title: "Close-test PR".into(),
-            head_ref_name: "feature".into(),
-            head_ref_oid: feature_sha.to_string(),
-            base_ref_name: "main".into(),
-            base_ref_oid: main_sha.to_string(),
-        })
-        .with_review(0, "maintainer1", "APPROVED")
-        .with_maintainer("maintainer1");
+    let mut data = GraphQLData::default();
+    data.with_pr(MockPr {
+        node_id: pr_node_id.clone(),
+        number: 0,
+        title: "Close-test PR".into(),
+        head_ref_name: "feature".into(),
+        head_ref_oid: feature_sha.to_string(),
+        base_ref_name: "main".into(),
+        base_ref_oid: main_sha.to_string(),
+    })
+    .with_review(0, "maintainer1", "APPROVED")
+    .with_maintainer("maintainer1");
 
-    let harness = start_test_harness(owner, name, sim_repo.clone(), mock).await?;
+    let harness =
+        start_test_harness(owner, name, sim_repo.clone(), GraphQLMock::from_data(data)).await?;
 
     let clone_url = harness.sim_repo.clone_url().to_string();
 
@@ -422,7 +426,7 @@ async fn pr_removed_on_close_webhook() -> anyhow::Result<()> {
         .send(CqEvent::Webhook(closed_payload))
         .await?;
 
-    // Send Tick — PR should NOT be merged because it was closed
+    // Send Tick - PR should NOT be merged because it was closed
     harness.event_tx.send(CqEvent::Tick).await?;
 
     tokio::time::sleep(Duration::from_secs(2)).await;

@@ -8,22 +8,31 @@ use axum::routing::post;
 use axum::{Json, Router};
 use url::Url;
 
+// Operation names — must match the operation names in the .graphql query files
+// in josh-github-codegen-graphql.
+mod op {
+    pub const GET_OPEN_PRS: &str = "GetOpenPrs";
+    pub const GET_PR_REVIEWS: &str = "GetPrReviews";
+    pub const GET_PRS_BY_SHA: &str = "GetPrsBySha";
+    pub const GET_REPOSITORY_COLLABORATORS: &str = "GetRepositoryCollaborators";
+    pub const GET_REPOSITORY_RULESETS: &str = "GetRepositoryRulesets";
+    pub const GET_RULESET_REQUIRED_CHECKS: &str = "GetRulesetRequiredChecks";
+    pub const CLOSE_PULL_REQUEST: &str = "ClosePullRequest";
+    pub const ADD_PR_COMMENT: &str = "AddPrComment";
+}
+
 pub struct GraphQLMock {
-    state: Arc<GraphQLState>,
+    data: Arc<Mutex<GraphQLData>>,
 }
 
-struct GraphQLState {
-    inner: Mutex<GraphQLStateInner>,
-}
-
-struct GraphQLStateInner {
-    prs: Vec<MockPr>,
-    reviews: BTreeMap<i64, Vec<(String, String)>>, // pr_number → [(login, state)]
-    maintainers: Vec<String>,
-    rulesets: Vec<MockRuleset>,
-    required_checks: Vec<String>,
-    closed_prs: Vec<String>,
-    comments: Vec<(String, String)>, // (subject_id, body)
+#[derive(Default)]
+pub struct GraphQLData {
+    pub prs: Vec<MockPr>,
+    pub reviews: BTreeMap<i64, Vec<(String, String)>>, // pr_number → [(login, state)]
+    pub maintainers: Vec<String>,
+    pub rulesets: Vec<MockRuleset>,
+    pub closed_prs: Vec<String>,
+    pub comments: Vec<(String, String)>, // (subject_id, body)
 }
 
 pub struct MockPr {
@@ -42,65 +51,49 @@ pub struct MockRuleset {
     pub enforcement: String,
     pub include_refs: Vec<String>,
     pub exclude_refs: Vec<String>,
+    pub required_checks: Vec<String>,
 }
 
-impl GraphQLMock {
-    pub fn new() -> Self {
-        Self {
-            state: Arc::new(GraphQLState {
-                inner: Mutex::new(GraphQLStateInner {
-                    prs: Vec::new(),
-                    reviews: BTreeMap::new(),
-                    maintainers: Vec::new(),
-                    rulesets: Vec::new(),
-                    required_checks: Vec::new(),
-                    closed_prs: Vec::new(),
-                    comments: Vec::new(),
-                }),
-            }),
-        }
+impl GraphQLData {
+    pub fn reset(&mut self) {
+        *self = Self::default();
     }
 
-    pub fn with_pr(self, pr: MockPr) -> Self {
-        self.state.inner.lock().unwrap().prs.push(pr);
+    pub fn with_pr(&mut self, pr: MockPr) -> &mut Self {
+        self.prs.push(pr);
         self
     }
 
-    pub fn with_review(self, pr_number: i64, login: &str, state: &str) -> Self {
-        self.state
-            .inner
-            .lock()
-            .unwrap()
-            .reviews
+    pub fn with_review(&mut self, pr_number: i64, login: &str, state: &str) -> &mut Self {
+        self.reviews
             .entry(pr_number)
             .or_default()
             .push((login.to_string(), state.to_string()));
         self
     }
 
-    pub fn with_maintainer(self, login: &str) -> Self {
-        self.state
-            .inner
-            .lock()
-            .unwrap()
-            .maintainers
-            .push(login.to_string());
+    pub fn with_maintainer(&mut self, login: &str) -> &mut Self {
+        self.maintainers.push(login.to_string());
         self
     }
 
-    pub fn with_ruleset(self, ruleset: MockRuleset) -> Self {
-        self.state.inner.lock().unwrap().rulesets.push(ruleset);
+    pub fn with_ruleset(&mut self, ruleset: MockRuleset) -> &mut Self {
+        self.rulesets.push(ruleset);
         self
     }
+}
 
-    pub fn with_required_check(self, context: &str) -> Self {
-        self.state
-            .inner
-            .lock()
-            .unwrap()
-            .required_checks
-            .push(context.to_string());
-        self
+impl GraphQLMock {
+    pub fn new() -> Self {
+        Self {
+            data: Arc::new(Mutex::new(GraphQLData::default())),
+        }
+    }
+
+    pub fn from_data(data: GraphQLData) -> Self {
+        Self {
+            data: Arc::new(Mutex::new(data)),
+        }
     }
 
     pub async fn serve(&self) -> anyhow::Result<(tokio::task::JoinHandle<()>, Url)> {
@@ -108,7 +101,7 @@ impl GraphQLMock {
         let addr = listener.local_addr()?;
         let url = Url::parse(&format!("http://{}/graphql", addr))?;
 
-        let state = self.state.clone();
+        let state = self.data.clone();
 
         let app = Router::new()
             .route("/graphql", post(handle_graphql))
@@ -122,29 +115,32 @@ impl GraphQLMock {
     }
 
     pub fn closed_pr_node_ids(&self) -> Vec<String> {
-        self.state.inner.lock().unwrap().closed_prs.clone()
+        self.data.lock().unwrap().closed_prs.clone()
     }
 
     pub fn comments(&self) -> Vec<(String, String)> {
-        self.state.inner.lock().unwrap().comments.clone()
+        self.data.lock().unwrap().comments.clone()
     }
 }
 
 async fn handle_graphql(
-    State(state): State<Arc<GraphQLState>>,
+    State(data): State<Arc<Mutex<GraphQLData>>>,
     Json(body): Json<serde_json::Value>,
 ) -> impl IntoResponse {
     let operation_name = body["operationName"].as_str().unwrap_or("");
 
+    // Lock once per request — hold time is microseconds, no await in between.
+    let mut inner = data.lock().unwrap();
+
     let response = match operation_name {
-        "GetOpenPrs" => handle_get_open_prs(&state, &body),
-        "GetPrReviews" => handle_get_pr_reviews(&state, &body),
-        "GetPrsBySha" => handle_get_prs_by_sha(&state, &body),
-        "GetRepositoryCollaborators" => handle_get_repository_collaborators(&state),
-        "GetRepositoryRulesets" => handle_get_repository_rulesets(&state),
-        "GetRulesetRequiredChecks" => handle_get_ruleset_required_checks(&state, &body),
-        "ClosePullRequest" => handle_close_pull_request(&state, &body),
-        "AddPrComment" => handle_add_pr_comment(&state, &body),
+        op::GET_OPEN_PRS => handle_get_open_prs(&mut inner, &body),
+        op::GET_PR_REVIEWS => handle_get_pr_reviews(&inner, &body),
+        op::GET_PRS_BY_SHA => handle_get_prs_by_sha(&inner, &body),
+        op::GET_REPOSITORY_COLLABORATORS => handle_get_repository_collaborators(&inner),
+        op::GET_REPOSITORY_RULESETS => handle_get_repository_rulesets(&inner),
+        op::GET_RULESET_REQUIRED_CHECKS => handle_get_ruleset_required_checks(&mut inner, &body),
+        op::CLOSE_PULL_REQUEST => handle_close_pull_request(&mut inner, &body),
+        op::ADD_PR_COMMENT => handle_add_pr_comment(&mut inner, &body),
         _ => serde_json::json!({
             "errors": [{"message": format!("Unknown operation: {}", operation_name)}]
         }),
@@ -153,9 +149,8 @@ async fn handle_graphql(
     (StatusCode::OK, Json(response)).into_response()
 }
 
-fn handle_get_open_prs(state: &GraphQLState, body: &serde_json::Value) -> serde_json::Value {
+fn handle_get_open_prs(inner: &mut GraphQLData, body: &serde_json::Value) -> serde_json::Value {
     let first = body["variables"]["first"].as_i64().unwrap_or(100).min(100) as usize;
-    let inner = state.inner.lock().unwrap();
     let total_count = inner.prs.len() as i64;
     let nodes: Vec<serde_json::Value> = inner
         .prs
@@ -190,9 +185,8 @@ fn handle_get_open_prs(state: &GraphQLState, body: &serde_json::Value) -> serde_
     })
 }
 
-fn handle_get_pr_reviews(state: &GraphQLState, body: &serde_json::Value) -> serde_json::Value {
+fn handle_get_pr_reviews(inner: &GraphQLData, body: &serde_json::Value) -> serde_json::Value {
     let pr_number = body["variables"]["number"].as_i64().unwrap_or(0);
-    let inner = state.inner.lock().unwrap();
     let nodes: Vec<serde_json::Value> = inner
         .reviews
         .get(&pr_number)
@@ -229,9 +223,8 @@ fn handle_get_pr_reviews(state: &GraphQLState, body: &serde_json::Value) -> serd
     })
 }
 
-fn handle_get_prs_by_sha(state: &GraphQLState, body: &serde_json::Value) -> serde_json::Value {
+fn handle_get_prs_by_sha(inner: &GraphQLData, body: &serde_json::Value) -> serde_json::Value {
     let sha = body["variables"]["sha"].as_str().unwrap_or("");
-    let inner = state.inner.lock().unwrap();
     let nodes: Vec<serde_json::Value> = inner
         .prs
         .iter()
@@ -258,8 +251,7 @@ fn handle_get_prs_by_sha(state: &GraphQLState, body: &serde_json::Value) -> serd
     })
 }
 
-fn handle_get_repository_collaborators(state: &GraphQLState) -> serde_json::Value {
-    let inner = state.inner.lock().unwrap();
+fn handle_get_repository_collaborators(inner: &GraphQLData) -> serde_json::Value {
     let edges: Vec<serde_json::Value> = inner
         .maintainers
         .iter()
@@ -288,8 +280,7 @@ fn handle_get_repository_collaborators(state: &GraphQLState) -> serde_json::Valu
     })
 }
 
-fn handle_get_repository_rulesets(state: &GraphQLState) -> serde_json::Value {
-    let inner = state.inner.lock().unwrap();
+fn handle_get_repository_rulesets(inner: &GraphQLData) -> serde_json::Value {
     let nodes: Vec<serde_json::Value> = inner
         .rulesets
         .iter()
@@ -321,16 +312,16 @@ fn handle_get_repository_rulesets(state: &GraphQLState) -> serde_json::Value {
 }
 
 fn handle_get_ruleset_required_checks(
-    state: &GraphQLState,
+    inner: &mut GraphQLData,
     body: &serde_json::Value,
 ) -> serde_json::Value {
     let ruleset_id = body["variables"]["rulesetId"].as_str().unwrap_or("");
-    let inner = state.inner.lock().unwrap();
-    let ruleset = inner.rulesets.iter().find(|rs| rs.id == ruleset_id);
+    let ruleset_idx = inner.rulesets.iter().position(|rs| rs.id == ruleset_id);
 
-    let (ruleset_name, checks) = match ruleset {
-        Some(rs) => {
-            let required_status_checks: Vec<serde_json::Value> = inner
+    let (ruleset_name, checks) = match ruleset_idx {
+        Some(idx) => {
+            let rs = &inner.rulesets[idx];
+            let required_status_checks: Vec<serde_json::Value> = rs
                 .required_checks
                 .iter()
                 .map(|context| {
@@ -354,7 +345,8 @@ fn handle_get_ruleset_required_checks(
                 })]
             };
 
-            (rs.name.clone(), rules_nodes)
+            let rs = inner.rulesets.remove(idx);
+            (rs.name, rules_nodes)
         }
         None => (String::new(), vec![]),
     };
@@ -373,12 +365,14 @@ fn handle_get_ruleset_required_checks(
     })
 }
 
-fn handle_close_pull_request(state: &GraphQLState, body: &serde_json::Value) -> serde_json::Value {
+fn handle_close_pull_request(
+    inner: &mut GraphQLData,
+    body: &serde_json::Value,
+) -> serde_json::Value {
     let node_id = body["variables"]["pullRequestNodeId"]
         .as_str()
         .unwrap_or("")
         .to_string();
-    let mut inner = state.inner.lock().unwrap();
     inner.closed_prs.push(node_id.clone());
     // Remove from open PRs so subsequent GetOpenPrs queries don't re-discover it
     inner.prs.retain(|pr| pr.node_id != node_id);
@@ -394,18 +388,13 @@ fn handle_close_pull_request(state: &GraphQLState, body: &serde_json::Value) -> 
     })
 }
 
-fn handle_add_pr_comment(state: &GraphQLState, body: &serde_json::Value) -> serde_json::Value {
+fn handle_add_pr_comment(inner: &mut GraphQLData, body: &serde_json::Value) -> serde_json::Value {
     let subject_id = body["variables"]["subjectId"]
         .as_str()
         .unwrap_or("")
         .to_string();
     let comment_body = body["variables"]["body"].as_str().unwrap_or("").to_string();
-    state
-        .inner
-        .lock()
-        .unwrap()
-        .comments
-        .push((subject_id.clone(), comment_body));
+    inner.comments.push((subject_id.clone(), comment_body));
 
     serde_json::json!({
         "data": {
