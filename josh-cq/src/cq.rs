@@ -33,6 +33,8 @@ pub struct TrackRequest {
 pub enum CqEvent {
     Track(TrackRequest),
     Webhook(WebhookPayload),
+    /// Periodic polling tick — triggers a full fetch + evaluate + step cycle.
+    Tick,
 }
 
 #[derive(Clone, Copy)]
@@ -611,6 +613,44 @@ pub fn select_candidate(state: &CqActorState) -> Option<CandidatePr> {
     None
 }
 
+/// Run evaluate→step while admissible PRs remain.
+/// Called after every event (webhook or tick) to try to make progress.
+fn run_queue_cycle(
+    state: &mut CqActorState,
+    transaction: &josh_core::cache::Transaction,
+    api: Option<&GithubApiConnection>,
+) {
+    loop {
+        let candidate = match select_candidate(state) {
+            Some(c) => c,
+            None => {
+                tracing::debug!("no admissible PRs");
+                break;
+            }
+        };
+
+        match handle_step(&candidate, transaction, api, state) {
+            Ok(()) => {
+                tracing::info!(
+                    pr = %candidate.node_id,
+                    number = candidate.number,
+                    repo = %candidate.repo_url,
+                    "merged PR"
+                );
+            }
+            Err(e) => {
+                tracing::error!(
+                    pr = %candidate.node_id,
+                    number = candidate.number,
+                    error = ?e,
+                    "failed to merge PR; will retry next cycle"
+                );
+                break;
+            }
+        }
+    }
+}
+
 fn spawn_git_command_stdout(repo_path: &std::path::Path, args: &[&str]) -> anyhow::Result<String> {
     let output = std::process::Command::new("git")
         .current_dir(repo_path)
@@ -798,19 +838,38 @@ fn handle_action(action: UserAction) {
     }
 }
 
-pub fn spawn_serve_task(repo_path: PathBuf, cache: Arc<CacheStack>) -> mpsc::Sender<CqEvent> {
+pub fn spawn_serve_task(
+    repo_path: PathBuf,
+    cache: Arc<CacheStack>,
+    tick_interval_secs: u64,
+) -> mpsc::Sender<CqEvent> {
     let (event_tx, mut event_rx) = mpsc::channel::<CqEvent>(100);
 
     let api: Option<Arc<GithubApiConnection>> =
         GithubApiConnection::from_environment().map(Arc::new);
 
     if api.is_none() {
-        tracing::warn!(
-            "{} not set and no stored credentials found; admission map will not be populated from GitHub",
-            GH_TOKEN_ENV
-        );
+        tracing::warn!("{} not set and no stored credentials found", GH_TOKEN_ENV);
     }
 
+    // Spawn the periodic tick timer
+    let tick_tx = event_tx.clone();
+    tokio::spawn(async move {
+        let mut interval =
+            tokio::time::interval(std::time::Duration::from_secs(tick_interval_secs));
+        // Skip the immediate first tick — wait one full interval before
+        // the first fetch, giving the server time to start and webhooks
+        // to arrive.
+        interval.tick().await;
+        loop {
+            interval.tick().await;
+            if tick_tx.send(CqEvent::Tick).await.is_err() {
+                break; // channel closed
+            }
+        }
+    });
+
+    // Spawn the actor — serializes all state access
     tokio::task::spawn_blocking(move || {
         let mut state = CqActorState::default();
 
@@ -818,38 +877,43 @@ pub fn spawn_serve_task(repo_path: PathBuf, cache: Arc<CacheStack>) -> mpsc::Sen
             let transaction = match TransactionContext::new(&repo_path, cache.clone()).open(None) {
                 Ok(t) => t,
                 Err(e) => {
-                    eprintln!("Failed to open transaction: {e:#}");
+                    tracing::error!(error = ?e, "failed to open transaction");
                     continue;
                 }
             };
 
             match event {
-                CqEvent::Track(req) => {
-                    match handle_track(&req.url, &req.id, &req.mode, &transaction) {
-                        Ok(action) => {
-                            handle_action(action);
-                        }
+                CqEvent::Tick => {
+                    tracing::info!("tick: running fetch");
+                    state = match handle_fetch(&transaction, api.as_deref(), state.clone()) {
+                        Ok(s) => s,
                         Err(e) => {
-                            eprintln!("track failed: {e:#}");
+                            tracing::error!(error = ?e, "fetch failed");
+                            continue;
                         }
                     };
                 }
+                CqEvent::Track(req) => {
+                    match handle_track(&req.url, &req.id, &req.mode, &transaction) {
+                        Ok(action) => handle_action(action),
+                        Err(e) => tracing::error!(error = ?e, "track failed"),
+                    };
+                }
                 CqEvent::Webhook(payload) => {
-                    let new_state =
+                    state =
                         match handle_webhook(&payload, &transaction, api.as_deref(), state.clone())
                         {
-                            Ok(state) => Some(state),
+                            Ok(s) => s,
                             Err(e) => {
-                                eprintln!("webhook handling error: {e}");
-                                None
+                                tracing::error!(error = ?e, "webhook handling error");
+                                continue;
                             }
                         };
-
-                    if let Some(new_state) = new_state {
-                        state = new_state;
-                    }
                 }
             }
+
+            // After every event (tick, track, webhook), try to make progress
+            run_queue_cycle(&mut state, &transaction, api.as_deref());
         }
     });
 

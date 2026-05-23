@@ -46,6 +46,9 @@ struct ServeArgs {
     /// Auth token for the webhook relay
     #[arg(long, env = "JOSH_CQ_WEBHOOK_TOKEN", hide_env_values = true)]
     webhook_relay_token: Option<String>,
+    /// Queue tick interval in seconds (default: 600 = 10 minutes)
+    #[arg(long, default_value = "600")]
+    tick_interval: u64,
 }
 
 fn open_repo(
@@ -78,7 +81,7 @@ fn open_repo(
 async fn run_serve(args: ServeArgs, data_dir: Option<&std::path::Path>) -> anyhow::Result<()> {
     let (repo_path, cache, _transaction) = open_repo(data_dir)?;
 
-    let event_tx = josh_cq::cq::spawn_serve_task(repo_path, cache);
+    let event_tx = josh_cq::cq::spawn_serve_task(repo_path, cache, args.tick_interval);
     let app = josh_cq::cq::make_router(event_tx);
 
     let addr = std::net::SocketAddr::from(([0, 0, 0, 0], args.port));
