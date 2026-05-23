@@ -3,9 +3,10 @@ use anyhow::anyhow;
 
 use josh_github_codegen_graphql::{
     close_pull_request, convert_pull_request_to_draft, create_pull_request, get_open_prs,
-    get_pr_by_head, get_prs_by_sha, mark_pull_request_ready_for_review, update_pull_request,
-    ClosePullRequest, ConvertPullRequestToDraft, CreatePullRequest, GetOpenPrs, GetPrByHead,
-    GetPrsBySha, MarkPullRequestReadyForReview, UpdatePullRequest,
+    get_pr_by_head, get_pr_reviews, get_prs_by_sha, mark_pull_request_ready_for_review,
+    update_pull_request, ClosePullRequest, ConvertPullRequestToDraft, CreatePullRequest,
+    GetOpenPrs, GetPrByHead, GetPrReviews, GetPrsBySha, MarkPullRequestReadyForReview,
+    UpdatePullRequest,
 };
 
 /// An open pull request discovered during fetch.
@@ -245,5 +246,82 @@ impl GithubApiConnection {
         };
 
         Ok(())
+    }
+
+    /// Returns the latest review state for each reviewer on a PR.
+    pub async fn get_pr_reviews(
+        &self,
+        owner: &str,
+        name: &str,
+        pr_number: i64,
+    ) -> anyhow::Result<
+        Vec<(
+            String,
+            josh_github_webhooks::webhook_types::PullRequestReviewState,
+        )>,
+    > {
+        let mut reviews: std::collections::HashMap<
+            String,
+            josh_github_webhooks::webhook_types::PullRequestReviewState,
+        > = std::collections::HashMap::new();
+        let mut cursor: Option<String> = None;
+
+        loop {
+            let variables = get_pr_reviews::Variables {
+                owner: owner.to_string(),
+                name: name.to_string(),
+                number: pr_number,
+                first: 100,
+                after: cursor,
+            };
+
+            let response = self.make_request::<GetPrReviews>(variables).await?;
+
+            let repo = match response.repository {
+                Some(r) => r,
+                None => break,
+            };
+            let pr = match repo.pull_request {
+                Some(p) => p,
+                None => break,
+            };
+            let reviews_conn = match pr.reviews {
+                Some(r) => r,
+                None => break,
+            };
+
+            if let Some(nodes) = reviews_conn.nodes {
+                for node in nodes.into_iter().flatten() {
+                    let login = node
+                        .author
+                        .map(|a| a.login)
+                        .unwrap_or_else(|| "unknown".to_string());
+                    let state = match node.state {
+                        get_pr_reviews::PullRequestReviewState::Approved => {
+                            josh_github_webhooks::webhook_types::PullRequestReviewState::Approved
+                        }
+                        get_pr_reviews::PullRequestReviewState::ChangesRequested => {
+                            josh_github_webhooks::webhook_types::PullRequestReviewState::ChangesRequested
+                        }
+                        get_pr_reviews::PullRequestReviewState::Commented => {
+                            josh_github_webhooks::webhook_types::PullRequestReviewState::Commented
+                        }
+                        get_pr_reviews::PullRequestReviewState::Dismissed => {
+                            josh_github_webhooks::webhook_types::PullRequestReviewState::Dismissed
+                        }
+                        _ => continue,
+                    };
+                    reviews.insert(login, state);
+                }
+            }
+
+            if reviews_conn.page_info.has_next_page {
+                cursor = reviews_conn.page_info.end_cursor;
+            } else {
+                break;
+            }
+        }
+
+        Ok(reviews.into_iter().collect())
     }
 }

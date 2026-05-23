@@ -26,3 +26,4 @@ graphql_client.workspace = true
 josh-github-auth.workspace = true
 josh-github-keyring.workspace = true
 josh-github-codegen-graphql.workspace = true
+josh-github-webhooks.workspace = true
