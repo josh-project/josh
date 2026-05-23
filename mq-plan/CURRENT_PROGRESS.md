@@ -16,5 +16,5 @@
 | [STEP_12.md](STEP_12.md) | completed | `cce0eed0` | Create `josh-test-github` crate with `TestRepo` and `GitServer` |
 | [STEP_13.md](STEP_13.md) | completed | `fd7681ad` | Add `SimRepo` and webhook event generation |
 | [STEP_14.md](STEP_14.md) | completed | `9d95299f` | Add mock GraphQL server |
-| [STEP_15.md](STEP_15.md) | pending | — | Add `GithubApiConnection` constructors, wire API override |
+| [STEP_15.md](STEP_15.md) | completed | — | Add `GithubApiConnection` constructors, wire API override |
 | [STEP_16.md](STEP_16.md) | pending | — | Write integration tests |
