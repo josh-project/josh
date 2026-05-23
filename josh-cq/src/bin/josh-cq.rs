@@ -81,7 +81,13 @@ fn open_repo(
 async fn run_serve(args: ServeArgs, data_dir: Option<&std::path::Path>) -> anyhow::Result<()> {
     let (repo_path, cache, _transaction) = open_repo(data_dir)?;
 
-    let event_tx = josh_cq::server::spawn_serve_task(repo_path, cache, args.tick_interval, None);
+    let event_tx = josh_cq::server::spawn_serve_task(
+        repo_path,
+        cache,
+        args.tick_interval,
+        None,
+        std::collections::HashMap::new(),
+    );
     let app = josh_cq::server::make_router(event_tx);
 
     let addr = std::net::SocketAddr::from(([0, 0, 0, 0], args.port));

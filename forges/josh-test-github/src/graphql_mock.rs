@@ -335,6 +335,7 @@ fn handle_get_ruleset_required_checks(
                     "parameters": {
                         "__typename": "RequiredStatusChecksParameters",
                         "requiredStatusChecks": required_status_checks,
+                        "strictRequiredStatusChecksPolicy": false,
                     }
                 })]
             };
@@ -364,6 +365,8 @@ fn handle_close_pull_request(state: &GraphQLState, body: &serde_json::Value) -> 
         .unwrap_or("")
         .to_string();
     state.closed_prs.lock().unwrap().push(node_id.clone());
+    // Remove from open PRs so subsequent GetOpenPrs queries don't re-discover it
+    state.prs.lock().unwrap().retain(|pr| pr.node_id != node_id);
 
     serde_json::json!({
         "data": {

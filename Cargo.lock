@@ -3194,6 +3194,47 @@ dependencies = [
 ]
 
 [[package]]
+name = "josh-test-cq"
+version = "26.5.8"
+dependencies = [
+ "anyhow",
+ "axum",
+ "git2",
+ "josh-core",
+ "josh-cq",
+ "josh-github-graphql",
+ "josh-github-webhooks",
+ "josh-test-github",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+ "tracing-subscriber",
+ "url",
+]
+
+[[package]]
+name = "josh-test-github"
+version = "26.5.8"
+dependencies = [
+ "anyhow",
+ "axum",
+ "chrono",
+ "futures",
+ "git2",
+ "josh-github-webhooks",
+ "reqwest 0.13.2",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+ "tower",
+ "tower-http",
+ "url",
+]
+
+[[package]]
 name = "josh-test-webhook-client"
 version = "26.5.8"
 dependencies = [

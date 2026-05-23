@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use anyhow::Context;
@@ -28,6 +28,21 @@ pub(crate) struct CqActorState {
     pub admission: BTreeMap<String, BTreeSet<RequiredStatusCheck>>,
     pub pr_admissions: BTreeMap<String, AdmissionState>,
     pub candidates: BTreeMap<String, CandidatePr>,
+    /// Maps arbitrary clone URLs (e.g. 127.0.0.1 for tests) to (owner, name) pairs.
+    pub url_owner_map: HashMap<String, (String, String)>,
+    /// PRs that have been closed via webhook — prevents re-discovery in fetch.
+    pub closed_prs: HashSet<String>,
+}
+
+/// Try `josh_github_changes::repo::parse_owner_repo`, fall back to an explicit map.
+fn resolve_owner_repo(
+    url: &str,
+    map: &HashMap<String, (String, String)>,
+) -> Option<(String, String)> {
+    match josh_github_changes::repo::parse_owner_repo(url) {
+        Ok(pair) => Some(pair),
+        Err(_) => map.get(url).cloned(),
+    }
 }
 
 impl CqActorState {
@@ -49,10 +64,10 @@ impl CqActorState {
             return None;
         };
 
-        let (owner, name) = match josh_github_changes::repo::parse_owner_repo(clone_url) {
-            Ok(parts) => parts,
-            Err(e) => {
-                tracing::warn!(url = %clone_url, error = ?e, "could not parse owner/repo");
+        let (owner, name) = match resolve_owner_repo(clone_url, &self.url_owner_map) {
+            Some(parts) => parts,
+            None => {
+                tracing::warn!(url = %clone_url, "could not resolve owner/repo");
                 return None;
             }
         };
@@ -87,7 +102,7 @@ impl CqActorState {
     ) -> Option<&mut AdmissionState> {
         if !self.pr_admissions.contains_key(pr_node_id) {
             let required = self.get_or_fetch_admission(clone_url, api)?;
-            let maintainers = fetch_maintainers(clone_url, api);
+            let maintainers = fetch_maintainers(clone_url, api, &self.url_owner_map);
             let state = AdmissionState {
                 required_checks: required.into_iter().map(|c| (c, false)).collect(),
                 maintainer_reviews: BTreeMap::new(),
@@ -110,6 +125,7 @@ impl CqActorState {
     pub fn remove_candidate(&mut self, pr_node_id: &str) {
         self.candidates.remove(pr_node_id);
         self.pr_admissions.remove(pr_node_id);
+        self.closed_prs.remove(pr_node_id);
     }
 
     pub fn get_candidate(&self, pr_node_id: &str) -> Option<&CandidatePr> {
@@ -117,13 +133,17 @@ impl CqActorState {
     }
 }
 
-fn fetch_maintainers(clone_url: &str, api: Option<&GithubApiConnection>) -> Vec<String> {
+fn fetch_maintainers(
+    clone_url: &str,
+    api: Option<&GithubApiConnection>,
+    url_owner_map: &HashMap<String, (String, String)>,
+) -> Vec<String> {
     let Some(api) = api else {
         return Vec::new();
     };
-    let (owner, name) = match josh_github_changes::repo::parse_owner_repo(clone_url) {
-        Ok(parts) => parts,
-        Err(_) => return Vec::new(),
+    let (owner, name) = match resolve_owner_repo(clone_url, url_owner_map) {
+        Some(parts) => parts,
+        None => return Vec::new(),
     };
     match tokio::runtime::Handle::current().block_on(api.get_maintainers(&owner, &name)) {
         Ok(m) => m,
@@ -138,14 +158,15 @@ pub(crate) fn lookup_open_prs_by_sha(
     api: Option<&GithubApiConnection>,
     clone_url: &str,
     sha: &str,
+    url_owner_map: &HashMap<String, (String, String)>,
 ) -> Vec<String> {
     let Some(api) = api else {
         return Vec::new();
     };
-    let (owner, name) = match josh_github_changes::repo::parse_owner_repo(clone_url) {
-        Ok(parts) => parts,
-        Err(e) => {
-            tracing::warn!(url = %clone_url, error = ?e, "could not parse owner/repo");
+    let (owner, name) = match resolve_owner_repo(clone_url, url_owner_map) {
+        Some(parts) => parts,
+        None => {
+            tracing::warn!(url = %clone_url, "could not resolve owner/repo");
             return Vec::new();
         }
     };
@@ -247,10 +268,10 @@ pub(crate) fn handle_fetch(
     }
 
     for (_, url, _) in &remotes {
-        let (owner, repo_name) = match josh_github_changes::repo::parse_owner_repo(url) {
-            Ok(parts) => parts,
-            Err(e) => {
-                tracing::warn!(url = %url, error = ?e, "could not parse owner/repo");
+        let (owner, repo_name) = match resolve_owner_repo(url, &state.url_owner_map) {
+            Some(parts) => parts,
+            None => {
+                tracing::warn!(url = %url, "could not resolve owner/repo");
                 continue;
             }
         };
@@ -271,6 +292,9 @@ pub(crate) fn handle_fetch(
         };
 
         for pr in &prs {
+            if state.closed_prs.contains(&pr.node_id) {
+                continue;
+            }
             state.upsert_candidate(CandidatePr {
                 node_id: pr.node_id.clone(),
                 number: pr.number,
@@ -426,21 +450,36 @@ fn handle_step(
     let main_sha = main_sha.context("No link file found for remote")?;
     let link_path = link_path.context("No link file found for remote")?;
 
-    let merge_base =
-        spawn_git_command_stdout(repo.path(), &["merge-base", &main_sha, &candidate.head_sha])?;
-    let merge_base = merge_base.trim().to_string();
+    // Fetch the PR head commit if we don't have it locally yet
+    if repo
+        .find_commit(git2::Oid::from_str(&candidate.head_sha)?)
+        .is_err()
+    {
+        spawn_git_command(
+            repo.path(),
+            &["fetch", &candidate.repo_url, &candidate.head_sha],
+            &[],
+        )?;
+    }
 
-    let merged_tree = spawn_git_command_stdout(
+    let merged_tree_out = spawn_git_command_stdout(
         repo.path(),
-        &["merge-tree", &merge_base, &main_sha, &candidate.head_sha],
+        &["merge-tree", "--write-tree", &main_sha, &candidate.head_sha],
     )?;
-    let merged_tree = merged_tree.trim().to_string();
+    // Take the first line — in git >= 2.38 the tree SHA is on line 1
+    let merged_tree = merged_tree_out
+        .lines()
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_string();
 
     if merged_tree.len() != 40 || !merged_tree.chars().all(|c| c.is_ascii_hexdigit()) {
         tracing::warn!(
             pr = %candidate.node_id,
             "merge conflict detected; skipping PR"
         );
+        state.remove_candidate(&candidate.node_id);
         return Ok(());
     }
 

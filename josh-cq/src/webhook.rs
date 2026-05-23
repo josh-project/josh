@@ -72,6 +72,7 @@ pub(crate) fn handle_webhook(
                 }
                 webhook_types::PullRequestEventDetails::Closed => {
                     state.remove_candidate(&pr.node_id);
+                    state.closed_prs.insert(pr.node_id.clone());
                 }
                 _ => {}
             }
@@ -95,7 +96,8 @@ pub(crate) fn handle_webhook(
         }
 
         WebhookPayload::CheckRun(e) => {
-            let pr_ids = lookup_open_prs_by_sha(api, clone_url, &e.check_run.head_sha);
+            let pr_ids =
+                lookup_open_prs_by_sha(api, clone_url, &e.check_run.head_sha, &state.url_owner_map);
             let event = AdmissionRelevantEvent::CheckRun(e);
             let events: Vec<_> = pr_ids.into_iter().map(|id| (id, event)).collect();
             process_admission_events(&mut state, &events, clone_url, api);

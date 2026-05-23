@@ -26,6 +26,7 @@ impl TestRepo {
             .tempdir()?;
         let repo = git2::Repository::init_bare(dir.path())?;
         repo.set_head(INITIAL_BRANCH_REF)?;
+        repo.config()?.set_str("http.receivepack", "true")?;
         Ok(Self {
             dir,
             repo,

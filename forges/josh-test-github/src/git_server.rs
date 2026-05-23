@@ -84,7 +84,7 @@ async fn serve_git(
     let path_info = path_info.trim_end_matches('/');
 
     cmd.env("GIT_PROJECT_ROOT", state.repo_path.parent().unwrap())
-        .env("PATH_INFO", path_info)
+        .env("PATH_INFO", &path_info)
         .env("GIT_HTTP_EXPORT_ALL", "1")
         .env("REQUEST_METHOD", req.method().to_string())
         .env("QUERY_STRING", req.uri().query().unwrap_or(""))
@@ -125,6 +125,13 @@ async fn serve_git(
     let mut stdout = child.stdout.take().unwrap();
     let mut stderr = child.stderr.take().unwrap();
 
+    // Drain stderr in background immediately to prevent pipe buffer deadlock
+    let stderr_handle = tokio::spawn(async move {
+        let mut buf = Vec::new();
+        let _ = stderr.read_to_end(&mut buf).await;
+        buf
+    });
+
     // Pipe request body to stdin
     {
         use futures::StreamExt;
@@ -162,6 +169,7 @@ async fn serve_git(
 
     let headers_str = String::from_utf8_lossy(&header_buf);
     let mut status = 200;
+    let mut content_type: Option<String> = None;
 
     for line in headers_str.lines() {
         let line = line.trim();
@@ -175,19 +183,27 @@ async fn serve_git(
                     .next()
                     .and_then(|s| s.parse().ok())
                     .unwrap_or(500);
+            } else if name.eq_ignore_ascii_case("Content-Type") {
+                content_type = Some(value.to_string());
             }
         }
     }
 
-    // Read stderr in background
+    // Read all stdout data (git http-backend exits after writing)
+    let mut body_buf = Vec::new();
+    stdout.read_to_end(&mut body_buf).await.ok();
+
+    // Wait for child to exit
+    let _ = child.wait().await;
+
+    // Spawn a task to collect stderr
     tokio::spawn(async move {
-        let mut buf = Vec::new();
-        stderr.read_to_end(&mut buf).await.ok();
+        let _ = stderr_handle.await;
     });
 
-    let stream = tokio_util::io::ReaderStream::new(stdout);
-    Response::builder()
-        .status(status)
-        .body(Body::from_stream(stream))
-        .unwrap()
+    let mut response = Response::builder().status(status);
+    if let Some(ct) = content_type {
+        response = response.header("Content-Type", ct);
+    }
+    response.body(Body::from(body_buf)).unwrap()
 }

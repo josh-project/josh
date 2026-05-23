@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -59,6 +60,8 @@ pub fn spawn_serve_task(
     cache: Arc<CacheStack>,
     tick_interval_secs: u64,
     api: Option<Arc<GithubApiConnection>>,
+    // Maps arbitrary clone URLs (e.g. 127.0.0.1 for tests) to (owner, name) pairs.
+    url_owner_map: HashMap<String, (String, String)>,
 ) -> mpsc::Sender<CqEvent> {
     let (event_tx, mut event_rx) = mpsc::channel::<CqEvent>(100);
 
@@ -87,7 +90,10 @@ pub fn spawn_serve_task(
 
     // Spawn the actor — serializes all state access
     tokio::task::spawn_blocking(move || {
-        let mut state = CqActorState::default();
+        let mut state = CqActorState {
+            url_owner_map,
+            ..Default::default()
+        };
 
         while let Some(event) = event_rx.blocking_recv() {
             let transaction = match TransactionContext::new(&repo_path, cache.clone()).open(None) {
@@ -128,7 +134,6 @@ pub fn spawn_serve_task(
                 }
             }
 
-            // After every event (tick, track, webhook), try to make progress
             run_queue_cycle(&mut state, &transaction, api.as_deref());
         }
     });
