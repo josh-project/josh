@@ -4,10 +4,9 @@ use josh_github_graphql::connection::GithubApiConnection;
 use josh_github_webhooks::webhook_server::WebhookPayload;
 use josh_github_webhooks::webhook_types;
 
-use crate::admission::process_admission_events;
+use crate::admission::{process_check_run, process_pr_review};
 use crate::fetch::lookup_open_prs_by_sha;
 use crate::models::{CandidatePr, CqActorState};
-use crate::types::AdmissionRelevantEvent;
 
 fn webhook_repository(payload: &WebhookPayload) -> &webhook_types::Repository {
     match payload {
@@ -88,18 +87,14 @@ pub(crate) fn handle_webhook(
         }
 
         WebhookPayload::PullRequestReview(e) => {
-            let events = vec![(
-                e.pull_request.node_id.clone(),
-                AdmissionRelevantEvent::PullRequestReview(e),
-            )];
-            process_admission_events(state, &events, clone_url, api);
+            process_pr_review(state, &e.pull_request.node_id, e, clone_url, api);
         }
 
         WebhookPayload::CheckRun(e) => {
             let pr_ids = lookup_open_prs_by_sha(api, clone_url, &e.check_run.head_sha, state);
-            let event = AdmissionRelevantEvent::CheckRun(e);
-            let events: Vec<_> = pr_ids.into_iter().map(|id| (id, event)).collect();
-            process_admission_events(state, &events, clone_url, api);
+            for pr_id in pr_ids {
+                process_check_run(state, &pr_id, e, clone_url, api);
+            }
         }
 
         WebhookPayload::Ping(_)
