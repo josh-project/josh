@@ -106,18 +106,18 @@ struct GitPushHookUpdatedRef {
     ref_name: String,
 }
 
-fn make_repository(clone_url: &str) -> webhook_types::Repository {
+pub fn make_repository(clone_url: &str) -> webhook_types::Repository {
     webhook_types::Repository {
         clone_url: clone_url.to_string(),
         default_branch: "main".to_string(),
     }
 }
 
-fn make_pr_node_id(owner: &str, name: &str, number: usize) -> String {
+pub fn make_pr_node_id(owner: &str, name: &str, number: usize) -> String {
     format!("PR_{}_{}_{}", owner, name, number)
 }
 
-fn make_pr_payload(
+pub fn make_pr_payload(
     owner: &str,
     name: &str,
     number: usize,
