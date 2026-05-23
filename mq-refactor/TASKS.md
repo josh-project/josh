@@ -43,7 +43,7 @@ set it once before any test runs.
 
 `make_pr_node_id`, `make_repository`, `make_pr_payload` exist identically in both:
 - `forges/josh-test-github/src/sim_repo.rs:109-145` (private)
-- `josh-test-cq/tests/merge_queue_tests.rs:17-53` (private)
+- `cq/josh-cq-tests/tests/merge_queue_tests.rs:17-53` (private)
 
 Make the `sim_repo` versions `pub`, export them from `josh-test-github`, and
 import them in the test file. Delete the copies.

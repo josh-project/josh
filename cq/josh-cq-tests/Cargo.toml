@@ -1,8 +1,8 @@
 [package]
-name = "josh-test-cq"
+name = "josh-cq-tests"
 version = "26.5.8"
 edition = "2024"
-license-file = "../LICENSE"
+license-file = "../../LICENSE"
 
 [dependencies]
 tokio.workspace = true

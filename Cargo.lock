@@ -2945,6 +2945,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "josh-cq-tests"
+version = "26.5.8"
+dependencies = [
+ "anyhow",
+ "axum",
+ "git2",
+ "josh-core",
+ "josh-cq",
+ "josh-github-graphql",
+ "josh-github-webhooks",
+ "josh-test-github",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+ "tracing-subscriber",
+ "url",
+]
+
+[[package]]
 name = "josh-filter"
 version = "26.5.8"
 dependencies = [
@@ -3191,26 +3211,6 @@ dependencies = [
  "josh-graphql",
  "juniper",
  "serde_json",
-]
-
-[[package]]
-name = "josh-test-cq"
-version = "26.5.8"
-dependencies = [
- "anyhow",
- "axum",
- "git2",
- "josh-core",
- "josh-cq",
- "josh-github-graphql",
- "josh-github-webhooks",
- "josh-test-github",
- "serde_json",
- "tempfile",
- "tokio",
- "tokio-util",
- "tracing-subscriber",
- "url",
 ]
 
 [[package]]

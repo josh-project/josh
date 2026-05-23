@@ -22,7 +22,7 @@ Key crates:
 | `josh-test-webhook-service` | Webhook relay server: receives GitHub webhooks, broadcasts to WS clients |
 | `josh-test-webhook-client` | WS client connecting to relay, forwards webhooks to CQ's `/v1/webhook` |
 | `josh-test-github` | Simulated GitHub environment: `SimRepo`, `GraphQLMock`, `GitServer`, `TestRepo` |
-| `josh-test-cq` | Integration tests for the merge queue (end-to-end: metarepo → webhook → merge → close) |
+| `josh-cq-tests` | Integration tests for the merge queue (end-to-end: metarepo → webhook → merge → close) |
 
 ## Merge queue (josh-cq)
 
@@ -81,4 +81,4 @@ exercise the full merge queue flow:
 | `pr_not_admissible_with_failing_check` | PR with failing required check → not merged |
 | `pr_removed_on_close_webhook` | PR closed via webhook → not merged |
 
-Run with: `cargo test -p josh-test-cq --test merge_queue_tests -- --test-threads=1`
+Run with: `cargo test -p josh-cq-tests --test merge_queue_tests -- --test-threads=1`

@@ -13,8 +13,8 @@ members = [
     "josh-ssh-shell",
     "josh-templates",
     "josh-starlark",
-    "josh-cq",
-    "josh-test-cq",
+    "cq/josh-cq",
+    "cq/josh-cq-tests",
     "josh-changes",
 
     "forges/josh-github-changes",
@@ -98,8 +98,8 @@ josh-github-webhooks = { path = "forges/josh-github-webhooks", version = "26.5.8
 josh-github-auth = { path = "forges/josh-github-auth", version = "26.5.8" }
 josh-github-keyring = { path = "forges/josh-github-keyring", version = "26.5.8" }
 
-josh-cq = { path = "josh-cq", version = "26.5.8" }
-josh-test-cq = { path = "josh-test-cq", version = "26.5.8" }
+josh-cq = { path = "cq/josh-cq", version = "26.5.8" }
+josh-cq-tests = { path = "cq/josh-cq-tests", version = "26.5.8" }
 josh-test-github = { path = "forges/josh-test-github", version = "26.5.8" }
 
 # Deployment

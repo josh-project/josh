@@ -17,7 +17,7 @@ Josh is a git monorepo proxy. The merge queue lives in the `josh-cq` crate.
 - **Verify compilation.** Run `cargo build` before committing, and `cargo test` if
   the task touches test code. For the merge queue specifically, run:
   ```
-  cargo test -p josh-test-cq --test merge_queue_tests -- --test-threads=1
+  cargo test -p josh-cq-tests --test merge_queue_tests -- --test-threads=1
   ```
 
 ## Merge queue architecture
@@ -55,7 +55,7 @@ admissible PRs remain.
 | `test_repo.rs` | `TestRepo` — bare git repo wrapper for tests |
 | `webhook_sender.rs` | `send_webhook` — POST webhook to CQ |
 
-### Key files in `josh-test-cq/`
+### Key files in `josh-cq-tests/`
 
 | File | Contents |
 |---|---|
@@ -131,7 +131,7 @@ tokio::runtime::Handle::current().block_on(api.some_method(...))
 
 ## Tests
 
-Integration tests in `josh-test-cq/tests/merge_queue_tests.rs`:
+Integration tests in `josh-cq-tests/tests/merge_queue_tests.rs`:
 - Use `#[tokio::test(flavor = "multi_thread", worker_threads = 10)]`
 - Create a `SimRepo` + `GraphQLMock` + `GithubApiConnection::for_test()`
 - Start the CQ actor via `spawn_serve_task` with a long tick interval
@@ -141,5 +141,5 @@ Integration tests in `josh-test-cq/tests/merge_queue_tests.rs`:
 
 Run with:
 ```
-cargo test -p josh-test-cq --test merge_queue_tests -- --test-threads=1
+cargo test -p josh-cq-tests --test merge_queue_tests -- --test-threads=1
 ```
