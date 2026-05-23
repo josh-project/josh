@@ -2,11 +2,23 @@ use crate::connection::GithubApiConnection;
 use anyhow::anyhow;
 
 use josh_github_codegen_graphql::{
-    close_pull_request, convert_pull_request_to_draft, create_pull_request, get_pr_by_head,
-    get_prs_by_sha, mark_pull_request_ready_for_review, update_pull_request, ClosePullRequest,
-    ConvertPullRequestToDraft, CreatePullRequest, GetPrByHead, GetPrsBySha,
-    MarkPullRequestReadyForReview, UpdatePullRequest,
+    close_pull_request, convert_pull_request_to_draft, create_pull_request, get_open_prs,
+    get_pr_by_head, get_prs_by_sha, mark_pull_request_ready_for_review, update_pull_request,
+    ClosePullRequest, ConvertPullRequestToDraft, CreatePullRequest, GetOpenPrs, GetPrByHead,
+    GetPrsBySha, MarkPullRequestReadyForReview, UpdatePullRequest,
 };
+
+/// An open pull request discovered during fetch.
+#[derive(Debug, Clone)]
+pub struct OpenPr {
+    pub node_id: String,
+    pub number: i64,
+    pub title: String,
+    pub head_sha: String,
+    pub head_branch: String,
+    pub base_sha: String,
+    pub base_branch: String,
+}
 
 impl GithubApiConnection {
     /// Find open PRs whose head commit is the given SHA. Returns `(node_id, number)` for each.
@@ -37,6 +49,54 @@ impl GithubApiConnection {
             .flatten()
             .map(|n| (n.id, n.number))
             .collect();
+        Ok(prs)
+    }
+
+    /// List all open pull requests for a repository.
+    pub async fn get_open_pull_requests(
+        &self,
+        owner: &str,
+        name: &str,
+    ) -> anyhow::Result<Vec<OpenPr>> {
+        let mut prs = Vec::new();
+        let mut cursor: Option<String> = None;
+
+        loop {
+            let variables = get_open_prs::Variables {
+                owner: owner.to_string(),
+                name: name.to_string(),
+                first: 100,
+                after: cursor,
+            };
+
+            let response = self.make_request::<GetOpenPrs>(variables).await?;
+
+            let pull_requests = match response.repository {
+                Some(repo) => repo.pull_requests,
+                None => break,
+            };
+
+            if let Some(nodes) = pull_requests.nodes {
+                for node in nodes.into_iter().flatten() {
+                    prs.push(OpenPr {
+                        node_id: node.id,
+                        number: node.number,
+                        title: node.title,
+                        head_sha: node.head_ref_oid,
+                        head_branch: node.head_ref_name,
+                        base_sha: node.base_ref_oid,
+                        base_branch: node.base_ref_name,
+                    });
+                }
+            }
+
+            if pull_requests.page_info.has_next_page {
+                cursor = pull_requests.page_info.end_cursor;
+            } else {
+                break;
+            }
+        }
+
         Ok(prs)
     }
 

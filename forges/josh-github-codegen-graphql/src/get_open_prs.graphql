@@ -1,0 +1,19 @@
+query GetOpenPrs($owner: String!, $name: String!, $first: Int!, $after: String) {
+  repository(owner: $owner, name: $name) {
+    pullRequests(first: $first, after: $after, states: [OPEN]) {
+      nodes {
+        id
+        number
+        title
+        headRefOid
+        headRefName
+        baseRefOid
+        baseRefName
+      }
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+    }
+  }
+}
