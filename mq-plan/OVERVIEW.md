@@ -76,9 +76,12 @@ No speculation, no batching, no dependency ordering. One PR at a time.
 | `josh-github-webhooks` (`forges/josh-github-webhooks`) | Webhook type definitions |
 | `josh-link` | `update_links()`, `prepare_link_add()` |
 | `josh-core` | `find_link_files`, `spawn_git_command`, filters |
+| `josh-test-github` (`forges/josh-test-github`) | Simulated GitHub environment for integration tests |
+| `josh-test-cq` | Integration tests for the merge queue |
 
 ## Steps
 
+### MVP (merge queue core) — completed
 1. [Remove `fetch`/`step`/`push` CLI subcommands](STEP_1.md)
 2. [Add GraphQL query to list open PRs](STEP_2.md)
 3. [Add GraphQL query to fetch PR reviews](STEP_3.md)
@@ -90,3 +93,10 @@ No speculation, no batching, no dependency ordering. One PR at a time.
 9. [Implement `handle_step()`](STEP_9.md)
 10. [Wire actor loop with tick timer into `serve`](STEP_10.md)
 11. [Split `cq.rs` into modules](STEP_11.md)
+
+### Integration tests — completed
+12. [Create `josh-test-github` crate with `TestRepo` and `GitServer`](STEP_12.md)
+13. [Add `SimRepo` and webhook event generation](STEP_13.md)
+14. [Add mock GraphQL server](STEP_14.md)
+15. [Add `GithubApiConnection` constructors, wire API override](STEP_15.md)
+16. [Write integration tests](STEP_16.md)
