@@ -1,0 +1,23 @@
+[package]
+name = "josh-test-github"
+version = "26.5.8"
+edition = "2024"
+license-file = "../../LICENSE"
+
+[dependencies]
+tokio.workspace = true
+tokio-util = { workspace = true, features = ["io"] }
+axum.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+git2.workspace = true
+tempfile.workspace = true
+url.workspace = true
+reqwest.workspace = true
+chrono.workspace = true
+tower-http.workspace = true
+tower.workspace = true
+futures.workspace = true
+
+josh-github-webhooks.workspace = true

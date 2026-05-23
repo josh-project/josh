@@ -23,6 +23,8 @@ members = [
     "forges/josh-github-auth",
     "forges/josh-github-keyring",
 
+    "forges/josh-test-github",
+
     "deployment/josh-test-webhook-client",
     "deployment/josh-test-webhook-service",
 ]
@@ -94,6 +96,8 @@ josh-github-codegen-graphql = { path = "forges/josh-github-codegen-graphql", ver
 josh-github-webhooks = { path = "forges/josh-github-webhooks", version = "26.5.8" }
 josh-github-auth = { path = "forges/josh-github-auth", version = "26.5.8" }
 josh-github-keyring = { path = "forges/josh-github-keyring", version = "26.5.8" }
+
+josh-test-github = { path = "forges/josh-test-github", version = "26.5.8" }
 
 # Deployment
 josh-test-webhook-service = { path = "deployment/josh-test-webhook-service", version = "26.5.8" }
