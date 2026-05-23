@@ -41,10 +41,23 @@ pub enum AdmissionRelevantEvent<'a> {
     CheckRun(&'a webhook_types::CheckRunEvent),
 }
 
+#[derive(Debug, Clone)]
+pub struct CandidatePr {
+    pub node_id: String,
+    pub number: i64,
+    pub repo_url: String,
+    pub head_sha: String,
+    pub head_branch: String,
+    pub base_sha: String,
+    pub base_branch: String,
+    pub title: String,
+}
+
 #[derive(Default, Clone)]
 pub struct CqActorState {
     pub admission: BTreeMap<String, BTreeSet<RequiredStatusCheck>>,
     pub pr_admissions: BTreeMap<String, AdmissionState>,
+    pub candidates: BTreeMap<String, CandidatePr>,
 }
 
 impl CqActorState {
@@ -118,6 +131,19 @@ impl CqActorState {
             self.pr_admissions.insert(pr_node_id.to_string(), state);
         }
         self.pr_admissions.get_mut(pr_node_id)
+    }
+
+    pub fn upsert_candidate(&mut self, pr: CandidatePr) {
+        self.candidates.insert(pr.node_id.clone(), pr);
+    }
+
+    pub fn remove_candidate(&mut self, pr_node_id: &str) {
+        self.candidates.remove(pr_node_id);
+        self.pr_admissions.remove(pr_node_id);
+    }
+
+    pub fn get_candidate(&self, pr_node_id: &str) -> Option<&CandidatePr> {
+        self.candidates.get(pr_node_id)
     }
 }
 
