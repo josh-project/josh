@@ -1,0 +1,5 @@
+mutation AddPrComment($subjectId: ID!, $body: String!) {
+  addComment(input: { subjectId: $subjectId, body: $body }) {
+    clientMutationId
+  }
+}

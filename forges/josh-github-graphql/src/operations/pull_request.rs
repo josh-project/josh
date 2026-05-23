@@ -2,11 +2,11 @@ use crate::connection::GithubApiConnection;
 use anyhow::anyhow;
 
 use josh_github_codegen_graphql::{
-    close_pull_request, convert_pull_request_to_draft, create_pull_request, get_open_prs,
-    get_pr_by_head, get_pr_reviews, get_prs_by_sha, mark_pull_request_ready_for_review,
-    update_pull_request, ClosePullRequest, ConvertPullRequestToDraft, CreatePullRequest,
-    GetOpenPrs, GetPrByHead, GetPrReviews, GetPrsBySha, MarkPullRequestReadyForReview,
-    UpdatePullRequest,
+    add_pr_comment, close_pull_request, convert_pull_request_to_draft, create_pull_request,
+    get_open_prs, get_pr_by_head, get_pr_reviews, get_prs_by_sha,
+    mark_pull_request_ready_for_review, update_pull_request, AddPrComment, ClosePullRequest,
+    ConvertPullRequestToDraft, CreatePullRequest, GetOpenPrs, GetPrByHead, GetPrReviews,
+    GetPrsBySha, MarkPullRequestReadyForReview, UpdatePullRequest,
 };
 
 /// An open pull request discovered during fetch.
@@ -243,6 +243,20 @@ impl GithubApiConnection {
         let response = self.make_request::<ClosePullRequest>(variables).await?;
         if response.close_pull_request.is_none() {
             return Err(anyhow!("Failed to parse response: close_pull_request"));
+        };
+
+        Ok(())
+    }
+
+    pub async fn add_pr_comment(&self, subject_id: &str, body: &str) -> anyhow::Result<()> {
+        let variables = add_pr_comment::Variables {
+            subject_id: subject_id.to_string(),
+            body: body.to_string(),
+        };
+
+        let response = self.make_request::<AddPrComment>(variables).await?;
+        if response.add_comment.is_none() {
+            return Err(anyhow!("Failed to parse response: add_comment"));
         };
 
         Ok(())

@@ -38,4 +38,6 @@ fragments = ["collaborator_edge_info"]
 
 [queries.get_open_prs]
 
+[queries.add_pr_comment]
+
 [queries.get_pr_reviews]
