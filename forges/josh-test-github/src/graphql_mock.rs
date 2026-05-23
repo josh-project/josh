@@ -13,13 +13,17 @@ pub struct GraphQLMock {
 }
 
 struct GraphQLState {
-    prs: Mutex<Vec<MockPr>>,
-    reviews: Mutex<BTreeMap<i64, Vec<(String, String)>>>, // pr_number → [(login, state)]
-    maintainers: Mutex<Vec<String>>,
-    rulesets: Mutex<Vec<MockRuleset>>,
-    required_checks: Mutex<Vec<String>>,
-    closed_prs: Mutex<Vec<String>>,
-    comments: Mutex<Vec<(String, String)>>, // (subject_id, body)
+    inner: Mutex<GraphQLStateInner>,
+}
+
+struct GraphQLStateInner {
+    prs: Vec<MockPr>,
+    reviews: BTreeMap<i64, Vec<(String, String)>>, // pr_number → [(login, state)]
+    maintainers: Vec<String>,
+    rulesets: Vec<MockRuleset>,
+    required_checks: Vec<String>,
+    closed_prs: Vec<String>,
+    comments: Vec<(String, String)>, // (subject_id, body)
 }
 
 pub struct MockPr {
@@ -44,27 +48,30 @@ impl GraphQLMock {
     pub fn new() -> Self {
         Self {
             state: Arc::new(GraphQLState {
-                prs: Mutex::new(Vec::new()),
-                reviews: Mutex::new(BTreeMap::new()),
-                maintainers: Mutex::new(Vec::new()),
-                rulesets: Mutex::new(Vec::new()),
-                required_checks: Mutex::new(Vec::new()),
-                closed_prs: Mutex::new(Vec::new()),
-                comments: Mutex::new(Vec::new()),
+                inner: Mutex::new(GraphQLStateInner {
+                    prs: Vec::new(),
+                    reviews: BTreeMap::new(),
+                    maintainers: Vec::new(),
+                    rulesets: Vec::new(),
+                    required_checks: Vec::new(),
+                    closed_prs: Vec::new(),
+                    comments: Vec::new(),
+                }),
             }),
         }
     }
 
     pub fn with_pr(self, pr: MockPr) -> Self {
-        self.state.prs.lock().unwrap().push(pr);
+        self.state.inner.lock().unwrap().prs.push(pr);
         self
     }
 
     pub fn with_review(self, pr_number: i64, login: &str, state: &str) -> Self {
         self.state
-            .reviews
+            .inner
             .lock()
             .unwrap()
+            .reviews
             .entry(pr_number)
             .or_default()
             .push((login.to_string(), state.to_string()));
@@ -73,23 +80,25 @@ impl GraphQLMock {
 
     pub fn with_maintainer(self, login: &str) -> Self {
         self.state
-            .maintainers
+            .inner
             .lock()
             .unwrap()
+            .maintainers
             .push(login.to_string());
         self
     }
 
     pub fn with_ruleset(self, ruleset: MockRuleset) -> Self {
-        self.state.rulesets.lock().unwrap().push(ruleset);
+        self.state.inner.lock().unwrap().rulesets.push(ruleset);
         self
     }
 
     pub fn with_required_check(self, context: &str) -> Self {
         self.state
-            .required_checks
+            .inner
             .lock()
             .unwrap()
+            .required_checks
             .push(context.to_string());
         self
     }
@@ -113,11 +122,11 @@ impl GraphQLMock {
     }
 
     pub fn closed_pr_node_ids(&self) -> Vec<String> {
-        self.state.closed_prs.lock().unwrap().clone()
+        self.state.inner.lock().unwrap().closed_prs.clone()
     }
 
     pub fn comments(&self) -> Vec<(String, String)> {
-        self.state.comments.lock().unwrap().clone()
+        self.state.inner.lock().unwrap().comments.clone()
     }
 }
 
@@ -146,9 +155,10 @@ async fn handle_graphql(
 
 fn handle_get_open_prs(state: &GraphQLState, body: &serde_json::Value) -> serde_json::Value {
     let first = body["variables"]["first"].as_i64().unwrap_or(100).min(100) as usize;
-    let prs = state.prs.lock().unwrap();
-    let total_count = prs.len() as i64;
-    let nodes: Vec<serde_json::Value> = prs
+    let inner = state.inner.lock().unwrap();
+    let total_count = inner.prs.len() as i64;
+    let nodes: Vec<serde_json::Value> = inner
+        .prs
         .iter()
         .take(first)
         .map(|pr| {
@@ -182,8 +192,9 @@ fn handle_get_open_prs(state: &GraphQLState, body: &serde_json::Value) -> serde_
 
 fn handle_get_pr_reviews(state: &GraphQLState, body: &serde_json::Value) -> serde_json::Value {
     let pr_number = body["variables"]["number"].as_i64().unwrap_or(0);
-    let reviews = state.reviews.lock().unwrap();
-    let nodes: Vec<serde_json::Value> = reviews
+    let inner = state.inner.lock().unwrap();
+    let nodes: Vec<serde_json::Value> = inner
+        .reviews
         .get(&pr_number)
         .map(|review_list| {
             review_list
@@ -220,8 +231,9 @@ fn handle_get_pr_reviews(state: &GraphQLState, body: &serde_json::Value) -> serd
 
 fn handle_get_prs_by_sha(state: &GraphQLState, body: &serde_json::Value) -> serde_json::Value {
     let sha = body["variables"]["sha"].as_str().unwrap_or("");
-    let prs = state.prs.lock().unwrap();
-    let nodes: Vec<serde_json::Value> = prs
+    let inner = state.inner.lock().unwrap();
+    let nodes: Vec<serde_json::Value> = inner
+        .prs
         .iter()
         .filter(|pr| pr.head_ref_oid == sha)
         .map(|pr| {
@@ -247,8 +259,9 @@ fn handle_get_prs_by_sha(state: &GraphQLState, body: &serde_json::Value) -> serd
 }
 
 fn handle_get_repository_collaborators(state: &GraphQLState) -> serde_json::Value {
-    let maintainers = state.maintainers.lock().unwrap();
-    let edges: Vec<serde_json::Value> = maintainers
+    let inner = state.inner.lock().unwrap();
+    let edges: Vec<serde_json::Value> = inner
+        .maintainers
         .iter()
         .map(|login| {
             serde_json::json!({
@@ -276,8 +289,9 @@ fn handle_get_repository_collaborators(state: &GraphQLState) -> serde_json::Valu
 }
 
 fn handle_get_repository_rulesets(state: &GraphQLState) -> serde_json::Value {
-    let rulesets = state.rulesets.lock().unwrap();
-    let nodes: Vec<serde_json::Value> = rulesets
+    let inner = state.inner.lock().unwrap();
+    let nodes: Vec<serde_json::Value> = inner
+        .rulesets
         .iter()
         .map(|rs| {
             serde_json::json!({
@@ -311,13 +325,13 @@ fn handle_get_ruleset_required_checks(
     body: &serde_json::Value,
 ) -> serde_json::Value {
     let ruleset_id = body["variables"]["rulesetId"].as_str().unwrap_or("");
-    let rulesets = state.rulesets.lock().unwrap();
-    let ruleset = rulesets.iter().find(|rs| rs.id == ruleset_id);
+    let inner = state.inner.lock().unwrap();
+    let ruleset = inner.rulesets.iter().find(|rs| rs.id == ruleset_id);
 
     let (ruleset_name, checks) = match ruleset {
         Some(rs) => {
-            let checks = state.required_checks.lock().unwrap();
-            let required_status_checks: Vec<serde_json::Value> = checks
+            let required_status_checks: Vec<serde_json::Value> = inner
+                .required_checks
                 .iter()
                 .map(|context| {
                     serde_json::json!({
@@ -364,9 +378,10 @@ fn handle_close_pull_request(state: &GraphQLState, body: &serde_json::Value) -> 
         .as_str()
         .unwrap_or("")
         .to_string();
-    state.closed_prs.lock().unwrap().push(node_id.clone());
+    let mut inner = state.inner.lock().unwrap();
+    inner.closed_prs.push(node_id.clone());
     // Remove from open PRs so subsequent GetOpenPrs queries don't re-discover it
-    state.prs.lock().unwrap().retain(|pr| pr.node_id != node_id);
+    inner.prs.retain(|pr| pr.node_id != node_id);
 
     serde_json::json!({
         "data": {
@@ -386,9 +401,10 @@ fn handle_add_pr_comment(state: &GraphQLState, body: &serde_json::Value) -> serd
         .to_string();
     let comment_body = body["variables"]["body"].as_str().unwrap_or("").to_string();
     state
-        .comments
+        .inner
         .lock()
         .unwrap()
+        .comments
         .push((subject_id.clone(), comment_body));
 
     serde_json::json!({
