@@ -20,20 +20,8 @@ enum Commands {
     Init,
     /// Start HTTP server
     Serve(ServeArgs),
-    #[command(flatten)]
-    Action(ActionCommands),
-}
-
-#[derive(clap::Subcommand)]
-enum ActionCommands {
     /// Track a remote repository
     Track(TrackArgs),
-    /// Fetch remotes, collect and record state of conditions
-    Fetch,
-    /// Single step through the queue, updating the state
-    Step,
-    /// Push updated metarepo state to remotes
-    Push,
 }
 
 #[derive(clap::Parser)]
@@ -138,26 +126,11 @@ async fn main() -> anyhow::Result<()> {
             println!("{}", msg);
         }
         Commands::Serve(args) => run_serve(args, cli.data_dir.as_deref()).await?,
-        Commands::Action(action) => {
+        Commands::Track(ref args) => {
             let (_repo_path, _cache, transaction) = open_repo(cli.data_dir.as_deref())?;
-
+            let action = josh_cq::cq::handle_track(&args.url, &args.id, &args.mode, &transaction)?;
             match action {
-                ActionCommands::Track(ref args) => {
-                    let action =
-                        josh_cq::cq::handle_track(&args.url, &args.id, &args.mode, &transaction)?;
-                    match action {
-                        josh_cq::cq::UserAction::Message(m) => println!("{m}"),
-                    }
-                }
-                ActionCommands::Fetch => {
-                    todo!()
-                }
-                ActionCommands::Step => {
-                    todo!()
-                }
-                ActionCommands::Push => {
-                    todo!()
-                }
+                josh_cq::cq::UserAction::Message(m) => println!("{m}"),
             }
         }
     }
