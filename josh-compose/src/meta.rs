@@ -13,8 +13,9 @@ pub struct SidecarSpec {
     pub name: String,
     pub image: git2::Oid,
     pub env: Vec<(String, String)>,
-    pub env_passthrough: Vec<(String, String)>,
+    pub passthrough: Vec<(String, String)>,
     pub inject: Vec<(String, String)>,
+    pub port: u16,
 }
 
 pub struct WorkspaceMeta {
@@ -140,12 +141,19 @@ pub fn read_sidecars(
             .ok_or_else(|| anyhow::anyhow!("sidecar {name}: missing image"))?;
         let image = git2::Oid::from_str(&image_sha)
             .map_err(|_| anyhow::anyhow!("sidecar {name}: invalid image SHA {image_sha:?}"))?;
+        let port_str = read_blob(repo, sidecar_tree, "port")
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| anyhow::anyhow!("sidecar {name}: missing port"))?;
+        let port: u16 = port_str
+            .parse()
+            .map_err(|_| anyhow::anyhow!("sidecar {name}: invalid port {port_str:?}"))?;
         out.push(SidecarSpec {
             name,
             image,
             env: read_blob_entries(repo, sidecar_tree, "env"),
-            env_passthrough: read_blob_entries(repo, sidecar_tree, "env_passthrough"),
+            passthrough: read_blob_entries(repo, sidecar_tree, "passthrough"),
             inject: read_blob_entries(repo, sidecar_tree, "inject"),
+            port,
         });
     }
     Ok(out)

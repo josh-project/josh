@@ -327,6 +327,7 @@ pub struct PodmanRunDetachedArgs {
     pub name: String,
     pub networks: Vec<String>,
     pub env_vars: Vec<(String, String)>,
+    pub port: u16,
 }
 
 pub fn run_detached(args: PodmanRunDetachedArgs) -> anyhow::Result<()> {
@@ -339,6 +340,7 @@ pub fn run_detached(args: PodmanRunDetachedArgs) -> anyhow::Result<()> {
     for (key, val) in &args.env_vars {
         cmd.args(["-e", &format!("{key}={val}")]);
     }
+    cmd.args(["-p", &format!("{}", args.port)]);
     cmd.arg(&args.image);
 
     let output = cmd.output().context("failed to run podman run --detach")?;
@@ -347,6 +349,21 @@ pub fn run_detached(args: PodmanRunDetachedArgs) -> anyhow::Result<()> {
         anyhow::bail!("podman run --detach {} failed: {stderr}", args.name);
     }
     Ok(())
+}
+
+pub fn container_port(container: &str, port: u16) -> anyhow::Result<std::net::SocketAddr> {
+    let output = Command::new("podman")
+        .args(["port", container, &format!("{port}")])
+        .output()
+        .context("failed to run podman port")?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        anyhow::bail!("podman port {container} {port} failed: {stderr}");
+    }
+    let binding = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    binding
+        .parse()
+        .with_context(|| format!("podman port {container} {port}: invalid output: {binding}"))
 }
 
 pub fn container_ip(container: &str, network: &str) -> anyhow::Result<String> {
