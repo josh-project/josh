@@ -114,6 +114,7 @@ pub enum Op {
     Adapt(String),
     Link(Option<LinkMode>),
     Unlink,
+    InlineSubmodules,
     Export,
     Embed(std::path::PathBuf),
 

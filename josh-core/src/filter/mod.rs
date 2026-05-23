@@ -905,6 +905,76 @@ pub fn apply_to_commit2(
                 .transpose();
             }
         }
+        Op::InlineSubmodules => {
+            check_experimental_features_enabled("inline_submodules filter")?;
+
+            let normal_parents = commit
+                .parent_ids()
+                .map(|p| transaction.get(filter, p))
+                .collect::<Option<Vec<git2::Oid>>>();
+            let normal_parents = some_or!(normal_parents, { return Ok(None) });
+
+            let current_submodules = extract_submodule_commits(repo, &commit.tree()?)?;
+
+            let first_parent_submodules = if let Some(parent) = commit.parents().next() {
+                extract_submodule_commits(
+                    repo,
+                    &parent.tree().unwrap_or_else(|_| tree::empty(repo)),
+                )?
+            } else {
+                std::collections::BTreeMap::new()
+            };
+
+            // Find submodules whose pointer was added or changed in this commit
+            // (vs the first parent). Removed submodules contribute no extra parent.
+            let changed_submodules: Vec<(std::path::PathBuf, git2::Oid, git2::Oid)> =
+                current_submodules
+                    .iter()
+                    .filter_map(|(path, (new_oid, _))| {
+                        let old_oid = first_parent_submodules
+                            .get(path)
+                            .map(|(oid, _)| *oid)
+                            .unwrap_or(git2::Oid::zero());
+                        if old_oid != *new_oid {
+                            Some((path.clone(), old_oid, *new_oid))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+
+            let original_target = normal_parents.first().copied().unwrap_or(git2::Oid::zero());
+
+            let mut extra_parents: Vec<git2::Oid> = Vec::new();
+            for (path, old_oid, new_oid) in changed_submodules {
+                let path_filter = to_filter(Op::Subdir(path));
+                let unapplied = history::unapply_filter(
+                    transaction,
+                    path_filter,
+                    original_target,
+                    old_oid,
+                    new_oid,
+                    history::OrphansMode::Keep,
+                    None,
+                )?;
+                if unapplied != git2::Oid::zero() {
+                    extra_parents.push(unapplied);
+                }
+            }
+
+            let filtered_tree = apply(transaction, filter, Rewrite::from_commit(commit)?)?;
+            let filtered_parent_ids: Vec<git2::Oid> =
+                normal_parents.into_iter().chain(extra_parents).collect();
+
+            return Some(history::create_filtered_commit(
+                commit,
+                filtered_parent_ids,
+                filtered_tree,
+                transaction,
+                filter,
+            ))
+            .transpose();
+        }
         Op::Workspace(ws_path) => {
             if let Some((redirect, _)) = resolve_workspace_redirect(repo, &commit.tree()?, ws_path)
             {
@@ -1280,6 +1350,42 @@ pub fn apply<'a>(
                 }
                 _ => return Err(anyhow!("unknown adapter {:?}", adapter)),
             }
+
+            Ok(x.with_tree(result_tree))
+        }
+        Op::InlineSubmodules => {
+            check_experimental_features_enabled("inline_submodules filter")?;
+
+            let mut result_tree = x.tree().clone();
+            let submodule_commits = extract_submodule_commits(repo, &result_tree)?;
+
+            for (submodule_path, (commit_oid, _meta)) in submodule_commits {
+                let submodule_tree = repo.find_commit(commit_oid)?.tree()?;
+
+                // Strip the 160000 commit-mode entry at the submodule path so the
+                // subsequent unapply overlays cleanly on a plain (or missing) entry.
+                result_tree = tree::insert(
+                    repo,
+                    &result_tree,
+                    &submodule_path,
+                    git2::Oid::zero(),
+                    0o0160000,
+                )?;
+
+                // Lay the submodule's tree at <path> on top of the cleaned tree.
+                let path_filter = to_filter(Op::Subdir(submodule_path.clone()));
+                result_tree =
+                    filter::unapply(transaction, path_filter, submodule_tree, result_tree)?;
+            }
+
+            // Remove .gitmodules so the filtered output has no trace of submodules.
+            result_tree = tree::insert(
+                repo,
+                &result_tree,
+                std::path::Path::new(".gitmodules"),
+                git2::Oid::zero(),
+                0o0100644,
+            )?;
 
             Ok(x.with_tree(result_tree))
         }

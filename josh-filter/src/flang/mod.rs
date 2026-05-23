@@ -258,6 +258,7 @@ pub(crate) fn spec2(op: &Op) -> String {
         Op::Link(Some(mode)) => format!(":link={}", mode),
         Op::Export => ":export".to_string(),
         Op::Unlink => ":unlink".to_string(),
+        Op::InlineSubmodules => ":inline_submodules".to_string(),
         Op::Subdir(path) => format!(":/{}", parse::quote_if(&path.to_string_lossy())),
         Op::Blob(path, content) => {
             let p = parse::quote_if(&path.to_string_lossy());

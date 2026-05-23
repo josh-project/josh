@@ -457,6 +457,10 @@ impl InMemoryBuilder {
                 let blob = self.write_blob(b"");
                 push_blob_entries(&mut entries, [("unlink", blob)]);
             }
+            Op::InlineSubmodules => {
+                let blob = self.write_blob(b"");
+                push_blob_entries(&mut entries, [("inline_submodules", blob)]);
+            }
             Op::Invert => {
                 let blob = self.write_blob(b"");
                 push_blob_entries(&mut entries, [("invert", blob)]);
@@ -665,6 +669,10 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> anyhow::Result<Op
         "unlink" => {
             let _ = repo.find_blob(entry.id())?;
             Ok(Op::Unlink)
+        }
+        "inline_submodules" => {
+            let _ = repo.find_blob(entry.id())?;
+            Ok(Op::InlineSubmodules)
         }
         "invert" => {
             let _ = repo.find_blob(entry.id())?;
