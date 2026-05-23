@@ -6,13 +6,14 @@ use josh_core::git::{spawn_git_command, spawn_git_command_stdout};
 use josh_github_graphql::connection::GithubApiConnection;
 use josh_link::make_signature;
 
-use crate::models::{CandidatePr, CqActorState};
+use crate::models::CqActorState;
 
 /// Select the first admissible PR from the candidate pool.
 ///
 /// Iterates candidates in insertion order (BTreeMap), checks each one's
-/// admission state, and returns the first that passes `admissible()`.
-fn select_candidate(state: &CqActorState) -> Option<CandidatePr> {
+/// admission state, and returns the `node_id` of the first that passes
+/// `admissible()`. Returns just the id rather than cloning the full struct.
+fn select_candidate(state: &CqActorState) -> Option<String> {
     for (node_id, candidate) in &state.candidates {
         if let Some(admission) = state.pr_admissions.get(node_id) {
             if admission.admissible() {
@@ -22,7 +23,7 @@ fn select_candidate(state: &CqActorState) -> Option<CandidatePr> {
                     repo = %candidate.repo_url,
                     "selected admissible PR"
                 );
-                return Some(candidate.clone());
+                return Some(node_id.clone());
             }
         }
     }
@@ -143,11 +144,27 @@ fn close_pr_on_github(
 /// Merge an admissible PR: compute merge locally, push to remote main,
 /// update `.link.josh`, close the PR, and remove from the candidate pool.
 fn handle_step(
-    candidate: &CandidatePr,
+    node_id: &str,
     transaction: &josh_core::cache::Transaction,
     api: Option<&GithubApiConnection>,
     state: &mut CqActorState,
 ) -> anyhow::Result<()> {
+    // Look up the candidate and extract fields we need into locals.
+    // The reference is dropped before any mutable borrow of `state`, avoiding
+    // a borrow conflict with `remove_candidate` later.
+    let (repo_url, head_sha, base_branch, number, title) = {
+        let candidate = state
+            .get_candidate(node_id)
+            .context("candidate not found in state")?;
+        (
+            candidate.repo_url.clone(),
+            candidate.head_sha.clone(),
+            candidate.base_branch.clone(),
+            candidate.number,
+            candidate.title.clone(),
+        )
+    };
+
     let repo = transaction.repo();
     let head_commit = repo
         .head()
@@ -162,7 +179,7 @@ fn handle_step(
     let mut main_sha = None;
     let mut link_path = None;
     for (path, filter) in &link_files {
-        if filter.get_meta("remote").as_deref() == Some(candidate.repo_url.as_str()) {
+        if filter.get_meta("remote").as_deref() == Some(repo_url.as_str()) {
             main_sha = filter.get_meta("commit");
             link_path = Some(path.clone());
             break;
@@ -173,39 +190,26 @@ fn handle_step(
     let link_path = link_path.context("No link file found for remote")?;
 
     // Fetch the PR head commit if we don't have it locally yet
-    if repo
-        .find_commit(git2::Oid::from_str(&candidate.head_sha)?)
-        .is_err()
-    {
-        spawn_git_command(
-            repo.path(),
-            &["fetch", &candidate.repo_url, &candidate.head_sha],
-            &[],
-        )?;
+    if repo.find_commit(git2::Oid::from_str(&head_sha)?).is_err() {
+        spawn_git_command(repo.path(), &["fetch", &repo_url, &head_sha], &[])?;
     }
 
-    let merged_tree = match compute_merge_tree(repo, &main_sha, &candidate.head_sha) {
+    let merged_tree = match compute_merge_tree(repo, &main_sha, &head_sha) {
         Ok(tree) => tree,
         Err(_) => {
             tracing::warn!(
-                pr = %candidate.node_id,
+                pr = %node_id,
                 "merge conflict detected; skipping PR"
             );
-            state.remove_candidate(&candidate.node_id);
+            state.remove_candidate(node_id);
             return Ok(());
         }
     };
 
-    let message = format!("Merge PR #{}: {}", candidate.number, candidate.title);
-    let merge_commit =
-        create_merge_commit(repo, &main_sha, &candidate.head_sha, &merged_tree, &message)?;
+    let message = format!("Merge PR #{}: {}", number, title);
+    let merge_commit = create_merge_commit(repo, &main_sha, &head_sha, &merged_tree, &message)?;
 
-    push_to_remote(
-        repo,
-        &candidate.repo_url,
-        &merge_commit,
-        &candidate.base_branch,
-    )?;
+    push_to_remote(repo, &repo_url, &merge_commit, &base_branch)?;
 
     let merge_oid = merge_commit
         .parse::<git2::Oid>()
@@ -220,15 +224,9 @@ fn handle_step(
         &signature,
     )?;
 
-    close_pr_on_github(
-        api,
-        &candidate.node_id,
-        &merge_commit,
-        candidate.number,
-        &candidate.title,
-    )?;
+    close_pr_on_github(api, node_id, &merge_commit, number, &title)?;
 
-    state.remove_candidate(&candidate.node_id);
+    state.remove_candidate(node_id);
 
     Ok(())
 }
@@ -241,27 +239,36 @@ pub(crate) fn run_queue_cycle(
     api: Option<&GithubApiConnection>,
 ) {
     loop {
-        let candidate = match select_candidate(state) {
-            Some(c) => c,
+        let node_id = match select_candidate(state) {
+            Some(id) => id,
             None => {
                 tracing::debug!("no admissible PRs");
                 break;
             }
         };
 
-        match handle_step(&candidate, transaction, api, state) {
+        // Snapshot candidate fields for logging before handle_step, which
+        // removes the candidate from state on success.
+        let (log_number, log_repo) = {
+            let c = state
+                .get_candidate(&node_id)
+                .expect("candidate must exist after select_candidate");
+            (c.number, c.repo_url.clone())
+        };
+
+        match handle_step(&node_id, transaction, api, state) {
             Ok(()) => {
                 tracing::info!(
-                    pr = %candidate.node_id,
-                    number = candidate.number,
-                    repo = %candidate.repo_url,
+                    pr = %node_id,
+                    number = log_number,
+                    repo = %log_repo,
                     "merged PR"
                 );
             }
             Err(e) => {
                 tracing::error!(
-                    pr = %candidate.node_id,
-                    number = candidate.number,
+                    pr = %node_id,
+                    number = log_number,
                     error = ?e,
                     "failed to merge PR; will retry next cycle"
                 );
