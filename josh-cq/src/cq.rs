@@ -590,6 +590,27 @@ pub fn handle_fetch(
     Ok(state)
 }
 
+/// Select the first admissible PR from the candidate pool.
+///
+/// Iterates candidates in insertion order (BTreeMap), checks each one's
+/// admission state, and returns the first that passes `admissible()`.
+pub fn select_candidate(state: &CqActorState) -> Option<CandidatePr> {
+    for (node_id, candidate) in &state.candidates {
+        if let Some(admission) = state.pr_admissions.get(node_id) {
+            if admission.admissible() {
+                tracing::info!(
+                    pr = %node_id,
+                    number = candidate.number,
+                    repo = %candidate.repo_url,
+                    "selected admissible PR"
+                );
+                return Some(candidate.clone());
+            }
+        }
+    }
+    None
+}
+
 fn process_admission_events(
     state: &mut CqActorState,
     events: &[(String, AdmissionRelevantEvent<'_>)],

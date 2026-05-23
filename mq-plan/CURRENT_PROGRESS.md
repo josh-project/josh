@@ -9,7 +9,7 @@
 | [STEP_5.md](STEP_5.md) | completed | `4b146723` | Add `CandidatePr` model and extend `CqActorState` |
 | [STEP_6.md](STEP_6.md) | completed | `a885c7f3` | Handle `PullRequest` and `Push` webhook events |
 | [STEP_7.md](STEP_7.md) | completed | `8b53e876` | Implement `handle_fetch()` |
-| [STEP_8.md](STEP_8.md) | pending | — | Implement candidate evaluation |
+| [STEP_8.md](STEP_8.md) | in_progress | — | Implement candidate evaluation |
 | [STEP_9.md](STEP_9.md) | pending | — | Implement `handle_step()` |
 | [STEP_10.md](STEP_10.md) | pending | — | Wire actor loop with tick timer into `serve` |
 | [STEP_11.md](STEP_11.md) | pending | — | Split `cq.rs` into modules |
