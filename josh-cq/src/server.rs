@@ -107,6 +107,9 @@ pub fn spawn_serve_task(
             };
 
             match event {
+                // Periodic poll: catches PRs that were missed by webhooks
+                // (delivery failures, race conditions). Falls through to
+                // evaluate→step.
                 CqEvent::Tick => {
                     tracing::info!("tick: running fetch");
                     if let Err(e) = handle_fetch(&transaction, api.as_deref(), &mut state) {
@@ -114,12 +117,16 @@ pub fn spawn_serve_task(
                         continue;
                     }
                 }
+                // Adding a new remote to the metarepo — no merge needed,
+                // so handled inline and does not fall through to the queue cycle.
                 CqEvent::Track(req) => {
                     match handle_track(&req.url, &req.id, &req.mode, &transaction) {
                         Ok(action) => handle_action(action),
                         Err(e) => tracing::error!(error = ?e, "track failed"),
                     };
                 }
+                // Real-time GitHub events: updates admission state and candidate
+                // list immediately. Falls through to evaluate→step.
                 CqEvent::Webhook(payload) => {
                     if let Err(e) =
                         handle_webhook(&payload, &transaction, api.as_deref(), &mut state)
@@ -130,6 +137,7 @@ pub fn spawn_serve_task(
                 }
             }
 
+            // Tick and Webhook both fall through here; Track does not.
             run_queue_cycle(&mut state, &transaction, api.as_deref());
         }
     });
