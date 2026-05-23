@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 
@@ -10,20 +11,31 @@ use tokio::io::AsyncReadExt;
 use tokio::io::AsyncWriteExt;
 use url::Url;
 
+#[derive(Clone)]
+struct GitServerState {
+    repo_path: PathBuf,
+    extra_env: HashMap<String, String>,
+}
+
 pub struct GitServer {
     task: tokio::task::JoinHandle<()>,
     port: u16,
 }
 
 impl GitServer {
-    pub async fn new(repo_path: &Path) -> anyhow::Result<Self> {
+    pub async fn new(repo_path: &Path, extra_env: HashMap<String, String>) -> anyhow::Result<Self> {
         let repo_path = repo_path.canonicalize()?;
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
         let port = listener.local_addr()?.port();
 
+        let state = GitServerState {
+            repo_path: repo_path.clone(),
+            extra_env,
+        };
+
         let app = Router::new()
             .route("/{*path}", get(handle_get).post(handle_post))
-            .with_state(repo_path.clone());
+            .with_state(state);
 
         let task = tokio::spawn(async move {
             axum::serve(listener, app).await.unwrap();
@@ -44,30 +56,34 @@ impl Drop for GitServer {
 }
 
 async fn handle_get(
-    State(repo_path): State<PathBuf>,
+    State(state): State<GitServerState>,
     AxumPath(path): AxumPath<String>,
     req: axum::extract::Request,
 ) -> Response<Body> {
-    serve_git(&repo_path, &path, req).await
+    serve_git(&state, &path, req).await
 }
 
 async fn handle_post(
-    State(repo_path): State<PathBuf>,
+    State(state): State<GitServerState>,
     AxumPath(path): AxumPath<String>,
     req: axum::extract::Request,
 ) -> Response<Body> {
-    serve_git(&repo_path, &path, req).await
+    serve_git(&state, &path, req).await
 }
 
-async fn serve_git(repo_path: &Path, path: &str, req: axum::extract::Request) -> Response<Body> {
+async fn serve_git(
+    state: &GitServerState,
+    path: &str,
+    req: axum::extract::Request,
+) -> Response<Body> {
     let mut cmd = tokio::process::Command::new("git");
     cmd.arg("http-backend");
 
-    let repo_dir = repo_path.file_name().unwrap().to_str().unwrap();
+    let repo_dir = state.repo_path.file_name().unwrap().to_str().unwrap();
     let path_info = format!("/{}/{}", repo_dir, path.trim_start_matches('/'));
     let path_info = path_info.trim_end_matches('/');
 
-    cmd.env("GIT_PROJECT_ROOT", repo_path.parent().unwrap())
+    cmd.env("GIT_PROJECT_ROOT", state.repo_path.parent().unwrap())
         .env("PATH_INFO", path_info)
         .env("GIT_HTTP_EXPORT_ALL", "1")
         .env("REQUEST_METHOD", req.method().to_string())
@@ -86,6 +102,10 @@ async fn serve_git(repo_path: &Path, path: &str, req: axum::extract::Request) ->
                 .and_then(|v| v.to_str().ok())
                 .unwrap_or(""),
         );
+
+    for (key, value) in &state.extra_env {
+        cmd.env(key, value);
+    }
 
     cmd.stdout(Stdio::piped());
     cmd.stderr(Stdio::piped());
