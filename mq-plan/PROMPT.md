@@ -21,7 +21,8 @@ Read these files to understand the codebase and plan:
 5. Run `cargo build` to verify compilation.
 6. Run `cargo fmt`.
 7. Create a single git commit with a message summarizing the step.
-8. Mark the step as `completed` in `mq-plan/CURRENT_PROGRESS.md`.
+8. Mark the step as `completed` in `mq-plan/CURRENT_PROGRESS.md` and commit the
+   progress update.
 9. Stop. (The next agent invocation will pick up the next step.)
 
 ## Rules
@@ -50,3 +51,13 @@ Read these files to understand the codebase and plan:
   ```
   Step 2: add get_open_prs query
   ```
+
+- **For the test crate steps (12-16)**:
+  - The test crate lives at `forges/josh-test-github/`
+  - The reference implementation is at `../../metahead/metahead/mh-github-testrepo/`
+  - Webhook types come from `josh-github-webhooks` (NOT from `mh-github`)
+  - GraphQL client types come from `josh-github-graphql` and the codegen crate
+  - GraphQL mock must respond to `graphql_client::QueryBody` requests with
+    `graphql_client::Response<T::ResponseData>` JSON shapes
+  - Use `reqwest::blocking::Client` for webhook sending (same pattern as metahead)
+  - Use `axum` for HTTP servers (GitServer, hook listener, GraphQL mock)
