@@ -34,7 +34,7 @@ impl GitServer {
         };
 
         let app = Router::new()
-            .route("/{*path}", get(handle_get).post(handle_post))
+            .route("/{*path}", get(handle_git).post(handle_git))
             .with_state(state);
 
         let task = tokio::spawn(async move {
@@ -55,15 +55,7 @@ impl Drop for GitServer {
     }
 }
 
-async fn handle_get(
-    State(state): State<GitServerState>,
-    AxumPath(path): AxumPath<String>,
-    req: axum::extract::Request,
-) -> Response<Body> {
-    serve_git(&state, &path, req).await
-}
-
-async fn handle_post(
+async fn handle_git(
     State(state): State<GitServerState>,
     AxumPath(path): AxumPath<String>,
     req: axum::extract::Request,
