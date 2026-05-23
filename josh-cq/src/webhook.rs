@@ -25,8 +25,8 @@ pub(crate) fn handle_webhook(
     payload: &WebhookPayload,
     transaction: &josh_core::cache::Transaction,
     api: Option<&GithubApiConnection>,
-    state: CqActorState,
-) -> anyhow::Result<CqActorState> {
+    state: &mut CqActorState,
+) -> anyhow::Result<()> {
     let repo = transaction.repo();
     let clone_url = &webhook_repository(payload).clone_url;
 
@@ -47,12 +47,10 @@ pub(crate) fn handle_webhook(
 
     if !tracked {
         tracing::info!(url = %clone_url, "ignoring webhook from untracked repo");
-        return Ok(state);
+        return Ok(());
     }
 
     tracing::info!(url = %clone_url, "received webhook from tracked repo");
-
-    let mut state = state;
 
     match payload {
         WebhookPayload::PullRequest(e) => {
@@ -94,14 +92,14 @@ pub(crate) fn handle_webhook(
                 e.pull_request.node_id.clone(),
                 AdmissionRelevantEvent::PullRequestReview(e),
             )];
-            process_admission_events(&mut state, &events, clone_url, api);
+            process_admission_events(state, &events, clone_url, api);
         }
 
         WebhookPayload::CheckRun(e) => {
-            let pr_ids = lookup_open_prs_by_sha(api, clone_url, &e.check_run.head_sha, &state);
+            let pr_ids = lookup_open_prs_by_sha(api, clone_url, &e.check_run.head_sha, state);
             let event = AdmissionRelevantEvent::CheckRun(e);
             let events: Vec<_> = pr_ids.into_iter().map(|id| (id, event)).collect();
-            process_admission_events(&mut state, &events, clone_url, api);
+            process_admission_events(state, &events, clone_url, api);
         }
 
         WebhookPayload::Ping(_)
@@ -109,5 +107,5 @@ pub(crate) fn handle_webhook(
         | WebhookPayload::WorkflowRun(_) => {}
     }
 
-    Ok(state)
+    Ok(())
 }

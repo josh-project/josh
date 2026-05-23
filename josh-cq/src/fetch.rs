@@ -84,8 +84,8 @@ pub(crate) fn lookup_open_prs_by_sha(
 pub(crate) fn handle_fetch(
     transaction: &josh_core::cache::Transaction,
     api: Option<&GithubApiConnection>,
-    mut state: CqActorState,
-) -> anyhow::Result<CqActorState> {
+    state: &mut CqActorState,
+) -> anyhow::Result<()> {
     let repo = transaction.repo();
     let head_commit = repo
         .head()
@@ -107,7 +107,7 @@ pub(crate) fn handle_fetch(
 
     if remotes.is_empty() {
         tracing::info!("no tracked remotes found");
-        return Ok(state);
+        return Ok(());
     }
 
     let signature = josh_link::make_signature(repo)?;
@@ -209,5 +209,5 @@ pub(crate) fn handle_fetch(
         );
     }
 
-    Ok(state)
+    Ok(())
 }

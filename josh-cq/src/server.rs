@@ -109,13 +109,10 @@ pub fn spawn_serve_task(
             match event {
                 CqEvent::Tick => {
                     tracing::info!("tick: running fetch");
-                    state = match handle_fetch(&transaction, api.as_deref(), state.clone()) {
-                        Ok(s) => s,
-                        Err(e) => {
-                            tracing::error!(error = ?e, "fetch failed");
-                            continue;
-                        }
-                    };
+                    if let Err(e) = handle_fetch(&transaction, api.as_deref(), &mut state) {
+                        tracing::error!(error = ?e, "fetch failed");
+                        continue;
+                    }
                 }
                 CqEvent::Track(req) => {
                     match handle_track(&req.url, &req.id, &req.mode, &transaction) {
@@ -124,15 +121,12 @@ pub fn spawn_serve_task(
                     };
                 }
                 CqEvent::Webhook(payload) => {
-                    state =
-                        match handle_webhook(&payload, &transaction, api.as_deref(), state.clone())
-                        {
-                            Ok(s) => s,
-                            Err(e) => {
-                                tracing::error!(error = ?e, "webhook handling error");
-                                continue;
-                            }
-                        };
+                    if let Err(e) =
+                        handle_webhook(&payload, &transaction, api.as_deref(), &mut state)
+                    {
+                        tracing::error!(error = ?e, "webhook handling error");
+                        continue;
+                    }
                 }
             }
 

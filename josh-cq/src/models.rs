@@ -19,7 +19,7 @@ pub(crate) struct CandidatePr {
     pub title: String,
 }
 
-#[derive(Default, Clone)]
+#[derive(Default)]
 pub(crate) struct CqActorState {
     pub admission: BTreeMap<String, BTreeSet<RequiredStatusCheck>>,
     pub pr_admissions: BTreeMap<String, AdmissionState>,
