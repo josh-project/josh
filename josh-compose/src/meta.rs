@@ -7,7 +7,14 @@ pub enum NetworkMode {
     None,
     Host,
     Named(String),
-    Sidecar,
+}
+
+pub struct SidecarSpec {
+    pub name: String,
+    pub image: git2::Oid,
+    pub env: Vec<(String, String)>,
+    pub env_passthrough: Vec<(String, String)>,
+    pub inject: Vec<(String, String)>,
 }
 
 pub struct WorkspaceMeta {
@@ -20,6 +27,7 @@ pub struct WorkspaceMeta {
     pub image: Option<git2::Oid>,
     /// Tree OID of the files to place in the container. None for orchestrator-only workspaces.
     pub worktree: Option<git2::Oid>,
+    pub sidecars: Vec<SidecarSpec>,
 }
 
 /// Read a blob from a git tree at the given path. Returns None if not found.
@@ -87,7 +95,6 @@ pub fn read_meta(repo: &git2::Repository, ws_tree: git2::Oid) -> anyhow::Result<
 
     let network = match read_blob(repo, ws_tree, "network").as_deref() {
         Some("host") => NetworkMode::Host,
-        Some("sidecar") => NetworkMode::Sidecar,
         _ => NetworkMode::None,
     };
 
@@ -106,6 +113,8 @@ pub fn read_meta(repo: &git2::Repository, ws_tree: git2::Oid) -> anyhow::Result<
         .or_else(|_| tree.get_path(Path::new("run")).map(|e| e.id()))
         .ok();
 
+    let sidecars = read_sidecars(repo, ws_tree)?;
+
     Ok(WorkspaceMeta {
         label,
         output,
@@ -114,5 +123,30 @@ pub fn read_meta(repo: &git2::Repository, ws_tree: git2::Oid) -> anyhow::Result<
         network,
         image,
         worktree,
+        sidecars,
     })
+}
+
+pub fn read_sidecars(
+    repo: &git2::Repository,
+    ws_tree: git2::Oid,
+) -> anyhow::Result<Vec<SidecarSpec>> {
+    let mut out = vec![];
+    for (name, content) in read_blob_entries(repo, ws_tree, "sidecars") {
+        let sidecar_tree = git2::Oid::from_str(content.trim())
+            .map_err(|_| anyhow::anyhow!("sidecar {name}: invalid tree SHA {content:?}"))?;
+        let image_sha = read_blob(repo, sidecar_tree, "image")
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| anyhow::anyhow!("sidecar {name}: missing image"))?;
+        let image = git2::Oid::from_str(&image_sha)
+            .map_err(|_| anyhow::anyhow!("sidecar {name}: invalid image SHA {image_sha:?}"))?;
+        out.push(SidecarSpec {
+            name,
+            image,
+            env: read_blob_entries(repo, sidecar_tree, "env"),
+            env_passthrough: read_blob_entries(repo, sidecar_tree, "env_passthrough"),
+            inject: read_blob_entries(repo, sidecar_tree, "inject"),
+        });
+    }
+    Ok(out)
 }
