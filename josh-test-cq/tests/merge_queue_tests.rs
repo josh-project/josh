@@ -127,23 +127,21 @@ async fn poll_until(
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 10)]
-async fn merge_single_pr() {
+async fn merge_single_pr() -> anyhow::Result<()> {
     init_tracing();
     let owner = "test-owner";
     let name = "test-repo";
     let pr_node_id = make_pr_node_id(owner, name, 0);
 
     // Create SimRepo and set up branches
-    let sim_repo = Arc::new(SimRepo::new(owner, name, None).await.unwrap());
+    let sim_repo = Arc::new(SimRepo::new(owner, name, None).await?);
     let (main_sha, _) = sim_repo
         .commit("README.md", "# test", Some("initial"))
-        .await
-        .unwrap();
-    sim_repo.select_create_branch("feature").await.unwrap();
+        .await?;
+    sim_repo.select_create_branch("feature").await?;
     let (feature_sha, _) = sim_repo
         .commit("feature.txt", "feature content", Some("feature wip"))
-        .await
-        .unwrap();
+        .await?;
 
     let mock = GraphQLMock::new()
         .with_pr(MockPr {
@@ -158,13 +156,11 @@ async fn merge_single_pr() {
         .with_review(0, "maintainer1", "APPROVED")
         .with_maintainer("maintainer1");
 
-    let harness = start_test_harness(owner, name, sim_repo.clone(), mock)
-        .await
-        .unwrap();
+    let harness = start_test_harness(owner, name, sim_repo.clone(), mock).await?;
 
     let clone_url = harness.sim_repo.clone_url().to_string();
 
-    harness.sim_repo.open_pr("feature", "main").await.unwrap();
+    harness.sim_repo.open_pr("feature", "main").await?;
 
     // Send PullRequest Opened webhook
     let payload = WebhookPayload::PullRequest(Box::new(webhook_types::PullRequestEvent {
@@ -180,13 +176,9 @@ async fn merge_single_pr() {
         repository: make_repository(&clone_url),
         details: webhook_types::PullRequestEventDetails::Opened,
     }));
-    harness
-        .event_tx
-        .send(CqEvent::Webhook(payload))
-        .await
-        .unwrap();
+    harness.event_tx.send(CqEvent::Webhook(payload)).await?;
 
-    harness.event_tx.send(CqEvent::Tick).await.unwrap();
+    harness.event_tx.send(CqEvent::Tick).await?;
     let merged = poll_until(
         || !harness.graphql_mock.closed_pr_node_ids().is_empty(),
         Duration::from_secs(30),
@@ -210,24 +202,24 @@ async fn merge_single_pr() {
         "Expected merge comment, got: {:?}",
         comments
     );
+
+    Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 10)]
-async fn pr_not_admissible_without_review() {
+async fn pr_not_admissible_without_review() -> anyhow::Result<()> {
     let owner = "test-owner";
     let name = "test-repo-norev";
     let pr_node_id = make_pr_node_id(owner, name, 0);
 
-    let sim_repo = Arc::new(SimRepo::new(owner, name, None).await.unwrap());
+    let sim_repo = Arc::new(SimRepo::new(owner, name, None).await?);
     let (main_sha, _) = sim_repo
         .commit("README.md", "# test", Some("initial"))
-        .await
-        .unwrap();
-    sim_repo.select_create_branch("feature").await.unwrap();
+        .await?;
+    sim_repo.select_create_branch("feature").await?;
     let (feature_sha, _) = sim_repo
         .commit("feature.txt", "content", Some("feature"))
-        .await
-        .unwrap();
+        .await?;
 
     let mock = GraphQLMock::new()
         .with_pr(MockPr {
@@ -241,13 +233,11 @@ async fn pr_not_admissible_without_review() {
         })
         .with_maintainer("maintainer1");
 
-    let harness = start_test_harness(owner, name, sim_repo.clone(), mock)
-        .await
-        .unwrap();
+    let harness = start_test_harness(owner, name, sim_repo.clone(), mock).await?;
 
     let clone_url = harness.sim_repo.clone_url().to_string();
 
-    harness.sim_repo.open_pr("feature", "main").await.unwrap();
+    harness.sim_repo.open_pr("feature", "main").await?;
 
     let payload = WebhookPayload::PullRequest(Box::new(webhook_types::PullRequestEvent {
         pull_request: make_pr_payload(
@@ -262,13 +252,9 @@ async fn pr_not_admissible_without_review() {
         repository: make_repository(&clone_url),
         details: webhook_types::PullRequestEventDetails::Opened,
     }));
-    harness
-        .event_tx
-        .send(CqEvent::Webhook(payload))
-        .await
-        .unwrap();
+    harness.event_tx.send(CqEvent::Webhook(payload)).await?;
 
-    harness.event_tx.send(CqEvent::Tick).await.unwrap();
+    harness.event_tx.send(CqEvent::Tick).await?;
 
     tokio::time::sleep(Duration::from_secs(2)).await;
 
@@ -276,24 +262,24 @@ async fn pr_not_admissible_without_review() {
         harness.graphql_mock.closed_pr_node_ids().is_empty(),
         "PR should not be merged without an approving review"
     );
+
+    Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 10)]
-async fn pr_not_admissible_with_failing_check() {
+async fn pr_not_admissible_with_failing_check() -> anyhow::Result<()> {
     let owner = "test-owner";
     let name = "test-repo-fail";
     let pr_node_id = make_pr_node_id(owner, name, 0);
 
-    let sim_repo = Arc::new(SimRepo::new(owner, name, None).await.unwrap());
+    let sim_repo = Arc::new(SimRepo::new(owner, name, None).await?);
     let (main_sha, _) = sim_repo
         .commit("README.md", "# test", Some("initial"))
-        .await
-        .unwrap();
-    sim_repo.select_create_branch("feature").await.unwrap();
+        .await?;
+    sim_repo.select_create_branch("feature").await?;
     let (feature_sha, _) = sim_repo
         .commit("feature.txt", "content", Some("feature"))
-        .await
-        .unwrap();
+        .await?;
 
     let mock = GraphQLMock::new()
         .with_pr(MockPr {
@@ -316,13 +302,11 @@ async fn pr_not_admissible_with_failing_check() {
         })
         .with_required_check("ci/test");
 
-    let harness = start_test_harness(owner, name, sim_repo.clone(), mock)
-        .await
-        .unwrap();
+    let harness = start_test_harness(owner, name, sim_repo.clone(), mock).await?;
 
     let clone_url = harness.sim_repo.clone_url().to_string();
 
-    harness.sim_repo.open_pr("feature", "main").await.unwrap();
+    harness.sim_repo.open_pr("feature", "main").await?;
 
     // Send PR opened webhook
     let payload = WebhookPayload::PullRequest(Box::new(webhook_types::PullRequestEvent {
@@ -338,11 +322,7 @@ async fn pr_not_admissible_with_failing_check() {
         repository: make_repository(&clone_url),
         details: webhook_types::PullRequestEventDetails::Opened,
     }));
-    harness
-        .event_tx
-        .send(CqEvent::Webhook(payload))
-        .await
-        .unwrap();
+    harness.event_tx.send(CqEvent::Webhook(payload)).await?;
 
     // Send failing check run webhook
     let check_payload = WebhookPayload::CheckRun(Box::new(webhook_types::CheckRunEvent {
@@ -361,10 +341,9 @@ async fn pr_not_admissible_with_failing_check() {
     harness
         .event_tx
         .send(CqEvent::Webhook(check_payload))
-        .await
-        .unwrap();
+        .await?;
 
-    harness.event_tx.send(CqEvent::Tick).await.unwrap();
+    harness.event_tx.send(CqEvent::Tick).await?;
 
     tokio::time::sleep(Duration::from_secs(2)).await;
 
@@ -372,24 +351,24 @@ async fn pr_not_admissible_with_failing_check() {
         harness.graphql_mock.closed_pr_node_ids().is_empty(),
         "PR should not be merged with a failing required check"
     );
+
+    Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 10)]
-async fn pr_removed_on_close_webhook() {
+async fn pr_removed_on_close_webhook() -> anyhow::Result<()> {
     let owner = "test-owner";
     let name = "test-repo-close";
     let pr_node_id = make_pr_node_id(owner, name, 0);
 
-    let sim_repo = Arc::new(SimRepo::new(owner, name, None).await.unwrap());
+    let sim_repo = Arc::new(SimRepo::new(owner, name, None).await?);
     let (main_sha, _) = sim_repo
         .commit("README.md", "# test", Some("initial"))
-        .await
-        .unwrap();
-    sim_repo.select_create_branch("feature").await.unwrap();
+        .await?;
+    sim_repo.select_create_branch("feature").await?;
     let (feature_sha, _) = sim_repo
         .commit("feature.txt", "content", Some("feature"))
-        .await
-        .unwrap();
+        .await?;
 
     let mock = GraphQLMock::new()
         .with_pr(MockPr {
@@ -404,13 +383,11 @@ async fn pr_removed_on_close_webhook() {
         .with_review(0, "maintainer1", "APPROVED")
         .with_maintainer("maintainer1");
 
-    let harness = start_test_harness(owner, name, sim_repo.clone(), mock)
-        .await
-        .unwrap();
+    let harness = start_test_harness(owner, name, sim_repo.clone(), mock).await?;
 
     let clone_url = harness.sim_repo.clone_url().to_string();
 
-    harness.sim_repo.open_pr("feature", "main").await.unwrap();
+    harness.sim_repo.open_pr("feature", "main").await?;
 
     // Send PR opened webhook
     let payload = WebhookPayload::PullRequest(Box::new(webhook_types::PullRequestEvent {
@@ -426,11 +403,7 @@ async fn pr_removed_on_close_webhook() {
         repository: make_repository(&clone_url),
         details: webhook_types::PullRequestEventDetails::Opened,
     }));
-    harness
-        .event_tx
-        .send(CqEvent::Webhook(payload))
-        .await
-        .unwrap();
+    harness.event_tx.send(CqEvent::Webhook(payload)).await?;
 
     // Send PR closed webhook
     let closed_payload = WebhookPayload::PullRequest(Box::new(webhook_types::PullRequestEvent {
@@ -449,11 +422,10 @@ async fn pr_removed_on_close_webhook() {
     harness
         .event_tx
         .send(CqEvent::Webhook(closed_payload))
-        .await
-        .unwrap();
+        .await?;
 
     // Send Tick — PR should NOT be merged because it was closed
-    harness.event_tx.send(CqEvent::Tick).await.unwrap();
+    harness.event_tx.send(CqEvent::Tick).await?;
 
     tokio::time::sleep(Duration::from_secs(2)).await;
 
@@ -461,4 +433,6 @@ async fn pr_removed_on_close_webhook() {
         harness.graphql_mock.closed_pr_node_ids().is_empty(),
         "PR should not be merged after being closed via webhook"
     );
+
+    Ok(())
 }
