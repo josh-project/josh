@@ -13,6 +13,8 @@ pub(crate) struct CandidatePr {
     pub number: i64,
     pub repo_url: String,
     pub head_sha: String,
+    /// Kept for future use (e.g., logging / status display).
+    #[allow(dead_code)]
     pub head_branch: String,
     pub base_sha: String,
     pub base_branch: String,
