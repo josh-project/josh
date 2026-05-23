@@ -11,6 +11,7 @@ version = "26.5.8"
 
 [dependencies]
 anyhow.workspace = true
+backon.workspace = true
 defer.workspace = true
 hex.workspace = true
 libc.workspace = true

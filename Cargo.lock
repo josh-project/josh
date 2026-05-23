@@ -3030,6 +3030,7 @@ name = "josh-compose"
 version = "26.5.8"
 dependencies = [
  "anyhow",
+ "backon",
  "defer",
  "git2",
  "hex",

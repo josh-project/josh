@@ -1,6 +1,9 @@
 use anyhow::Context;
+use backon::{BlockingRetryable, ExponentialBuilder};
 use std::collections::HashSet;
+use std::net::TcpStream;
 use std::process::Command;
+use std::time::Duration;
 
 use crate::image;
 use crate::job_cache;
@@ -11,37 +14,39 @@ const SIDECAR_NETWORK: &str = "josh-sidecar-net";
 const SIDECAR_IP_PLACEHOLDER: &str = "{SIDECAR_IP}";
 
 /// Resolve passthrough env names by looking each up in the outer process environment.
-/// Returns `None` if any listed variable is absent or empty.
-fn resolve_passthrough(passthrough: &[(String, String)]) -> Option<Vec<(String, String)>> {
-    passthrough
-        .iter()
-        .map(|(name, _)| {
-            let val = std::env::var(name).unwrap_or_default();
-            if val.is_empty() {
-                None
-            } else {
-                Some((name.clone(), val))
-            }
-        })
-        .collect()
+/// Errors listing every missing variable when any are absent or empty, so that the
+/// developer sees the full set of misconfigured env vars in one go (locally and in CI).
+fn resolve_passthrough(
+    sidecar_name: &str,
+    passthrough: &[(String, String)],
+) -> anyhow::Result<Vec<(String, String)>> {
+    let mut resolved = vec![];
+    let mut missing = vec![];
+    for (name, _) in passthrough {
+        let val = std::env::var(name).unwrap_or_default();
+        if val.is_empty() {
+            missing.push(name.clone());
+        } else {
+            resolved.push((name.clone(), val));
+        }
+    }
+    if !missing.is_empty() {
+        anyhow::bail!(
+            "sidecar {sidecar_name}: missing required passthrough env vars: {}",
+            missing.join(", ")
+        );
+    }
+    Ok(resolved)
 }
 
-/// Start a sidecar container on the shared internal network. Returns `Ok(Some((name, ip)))` on
-/// success, `Ok(None)` when required passthrough env vars are missing (caller should skip just
-/// this sidecar), or `Err` for genuine failures (image build, container start, IP lookup).
-///
-/// The sidecar image is built unconditionally, even when passthrough env vars are missing, so
-/// that image-build breakage surfaces in every CI run rather than only on branches that carry
-/// the runtime secrets.
-fn start_sidecar(
-    repo: &git2::Repository,
-    spec: &SidecarSpec,
-) -> anyhow::Result<Option<(String, String)>> {
+/// Start a sidecar container on the shared internal network. Returns `Ok((name, ip))` once the
+/// sidecar is accepting TCP connections on `spec.port`. Any failure — missing passthrough
+/// credentials, image build, container start, IP lookup, or readiness-probe timeout — is a hard
+/// error; there is no soft-skip path.
+fn start_sidecar(repo: &git2::Repository, spec: &SidecarSpec) -> anyhow::Result<(String, String)> {
     let image_name = image::ensure_image(repo, spec.image)?;
 
-    let Some(passthrough_env) = resolve_passthrough(&spec.env_passthrough) else {
-        return Ok(None);
-    };
+    let passthrough_env = resolve_passthrough(&spec.name, &spec.passthrough)?;
 
     podman::ensure_network_internal(SIDECAR_NETWORK)?;
 
@@ -56,12 +61,10 @@ fn start_sidecar(
         name: container_name.clone(),
         networks: vec!["bridge".to_string(), SIDECAR_NETWORK.to_string()],
         env_vars,
+        port: spec.port,
     })?;
 
-    // Give the sidecar a moment to start listening.
-    std::thread::sleep(std::time::Duration::from_millis(500));
-
-    let ip = match podman::container_ip(&container_name, SIDECAR_NETWORK) {
+    let sidecar_ip = match podman::container_ip(&container_name, SIDECAR_NETWORK) {
         Ok(ip) => ip,
         Err(e) => {
             stop_sidecar(&container_name);
@@ -69,7 +72,28 @@ fn start_sidecar(
         }
     };
 
-    Ok(Some((container_name, ip)))
+    let host_addr =
+        podman::container_port(&container_name, spec.port).context("sidecar port not published")?;
+
+    let probe = || -> std::io::Result<()> {
+        TcpStream::connect_timeout(&host_addr, Duration::from_millis(200)).map(|_| ())
+    };
+
+    let backoff = ExponentialBuilder::default()
+        .with_min_delay(Duration::from_millis(25))
+        .with_max_delay(Duration::from_millis(250))
+        .with_max_times(50)
+        .with_jitter();
+
+    if let Err(e) = probe.retry(backoff).call() {
+        stop_sidecar(&container_name);
+        anyhow::bail!(
+            "sidecar {} not reachable at {host_addr} within timeout: {e}",
+            spec.name
+        );
+    }
+
+    Ok((container_name, sidecar_ip))
 }
 
 fn stop_sidecar(container_name: &str) {
@@ -165,31 +189,22 @@ pub fn run_container(
     let mut env_vars = meta::read_blob_entries(repo, ws_tree, "env");
 
     // Start any declared sidecars and inject their IPs into the main container's env.
-    // A skipped sidecar (missing passthrough credentials) logs a warning and is omitted;
-    // if no sidecar actually starts we fall back to the workspace's configured network.
+    // Any sidecar failure (missing creds, start error, readiness timeout) is fatal: tear
+    // down already-started sidecars and bail so the misconfiguration surfaces equally
+    // on dev machines and in CI.
     let mut started_sidecars: Vec<String> = vec![];
     let network = if workspace_meta.sidecars.is_empty() {
         workspace_meta.network.clone()
     } else {
-        let mut any_started = false;
         for spec in &workspace_meta.sidecars {
             match start_sidecar(repo, spec) {
-                Ok(Some((name, ip))) => {
+                Ok((name, ip)) => {
                     started_sidecars.push(name);
-                    any_started = true;
                     for (k, v) in &spec.inject {
                         env_vars.push((k.clone(), v.replace(SIDECAR_IP_PLACEHOLDER, &ip)));
                     }
                 }
-                Ok(None) => {
-                    eprintln!(
-                        "[{}] sidecar '{}' skipped (missing passthrough env); \
-                         continuing without it",
-                        workspace_meta.label, spec.name
-                    );
-                }
                 Err(e) => {
-                    // Tear down anything we already started before bailing.
                     for name in &started_sidecars {
                         stop_sidecar(name);
                     }
@@ -201,11 +216,7 @@ pub fn run_container(
                 }
             }
         }
-        if any_started {
-            NetworkMode::Named(SIDECAR_NETWORK.to_string())
-        } else {
-            workspace_meta.network.clone()
-        }
+        NetworkMode::Named(SIDECAR_NETWORK.to_string())
     };
     // Ensure all started sidecars are stopped when this function returns.
     let sidecars_for_cleanup = std::mem::take(&mut started_sidecars);

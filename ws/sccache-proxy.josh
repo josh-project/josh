@@ -1,11 +1,12 @@
 :#image[:+images/sccache-proxy]
+:$port="3000"
 
 env = :[
     :$SCCACHE_BUCKET="josh-project-cache"
     :$SCCACHE_ENDPOINT="https://19f2dfdd7c93980184be5e5809e8b252.r2.cloudflarestorage.com"
 ]
 
-env_passthrough = :[
+passthrough = :[
     :$AWS_ACCESS_KEY_ID="AWS_ACCESS_KEY_ID"
     :$AWS_SECRET_ACCESS_KEY="AWS_SECRET_ACCESS_KEY"
 ]
