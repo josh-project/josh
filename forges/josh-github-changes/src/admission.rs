@@ -49,6 +49,34 @@ impl AdmissionState {
             });
     }
 
+    /// Directly set review states from fetched reviews (non-webhook path).
+    pub fn apply_review_states(&mut self, reviews: &[(String, PullRequestReviewState)]) {
+        for (login, state) in reviews {
+            if self.maintainers.contains(login.as_str()) {
+                match state {
+                    PullRequestReviewState::Dismissed => {
+                        self.maintainer_reviews.remove(login.as_str());
+                    }
+                    _ => {
+                        self.maintainer_reviews.insert(login.clone(), state.clone());
+                    }
+                }
+            }
+        }
+    }
+
+    /// Directly set check run results (non-webhook path).
+    pub fn apply_check_results(&mut self, results: &[(String, bool)]) {
+        for (context, passed) in results {
+            if let Some(entry) = self.required_checks.get_mut(&RequiredStatusCheck {
+                context: context.clone(),
+                integration_id: None,
+            }) {
+                *entry = *passed;
+            }
+        }
+    }
+
     pub fn admissible(&self) -> bool {
         let has_approval = self
             .maintainer_reviews
