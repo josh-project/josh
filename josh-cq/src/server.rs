@@ -58,11 +58,11 @@ pub fn spawn_serve_task(
     repo_path: PathBuf,
     cache: Arc<CacheStack>,
     tick_interval_secs: u64,
+    api: Option<Arc<GithubApiConnection>>,
 ) -> mpsc::Sender<CqEvent> {
     let (event_tx, mut event_rx) = mpsc::channel::<CqEvent>(100);
 
-    let api: Option<Arc<GithubApiConnection>> =
-        GithubApiConnection::from_environment().map(Arc::new);
+    let api = api.or_else(|| GithubApiConnection::from_environment().map(Arc::new));
 
     if api.is_none() {
         tracing::warn!("{} not set and no stored credentials found", GH_TOKEN_ENV);

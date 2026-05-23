@@ -8,6 +8,19 @@ pub struct GithubApiConnection {
 }
 
 impl GithubApiConnection {
+    /// Construct with an explicit client and API URL (for testing).
+    pub fn new(client: reqwest_middleware::ClientWithMiddleware, api_url: Url) -> Self {
+        Self { client, api_url }
+    }
+
+    /// Construct without authentication, pointed at a custom URL (for testing).
+    pub fn for_test(api_url: Url) -> Self {
+        Self::new(
+            reqwest_middleware::ClientBuilder::new(reqwest::Client::new()).build(),
+            api_url,
+        )
+    }
+
     pub fn from_token(token: String) -> Self {
         let middleware = GithubAuthMiddleware::from_token(token);
         let client = reqwest_middleware::ClientBuilder::new(reqwest::Client::new())
