@@ -81,8 +81,8 @@ fn open_repo(
 async fn run_serve(args: ServeArgs, data_dir: Option<&std::path::Path>) -> anyhow::Result<()> {
     let (repo_path, cache, _transaction) = open_repo(data_dir)?;
 
-    let event_tx = josh_cq::cq::spawn_serve_task(repo_path, cache, args.tick_interval);
-    let app = josh_cq::cq::make_router(event_tx);
+    let event_tx = josh_cq::server::spawn_serve_task(repo_path, cache, args.tick_interval);
+    let app = josh_cq::server::make_router(event_tx);
 
     let addr = std::net::SocketAddr::from(([0, 0, 0, 0], args.port));
     println!("Listening on {}", addr);
@@ -125,15 +125,16 @@ async fn main() -> anyhow::Result<()> {
     match cli.command {
         Commands::Init => {
             let (_repo_path, _cache, transaction) = open_repo(cli.data_dir.as_deref())?;
-            let msg = josh_cq::cq::handle_init(&transaction)?;
+            let msg = josh_cq::init::handle_init(&transaction)?;
             println!("{}", msg);
         }
         Commands::Serve(args) => run_serve(args, cli.data_dir.as_deref()).await?,
         Commands::Track(ref args) => {
             let (_repo_path, _cache, transaction) = open_repo(cli.data_dir.as_deref())?;
-            let action = josh_cq::cq::handle_track(&args.url, &args.id, &args.mode, &transaction)?;
+            let action =
+                josh_cq::track::handle_track(&args.url, &args.id, &args.mode, &transaction)?;
             match action {
-                josh_cq::cq::UserAction::Message(m) => println!("{m}"),
+                josh_cq::types::UserAction::Message(m) => println!("{m}"),
             }
         }
     }

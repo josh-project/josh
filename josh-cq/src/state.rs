@@ -1,50 +1,18 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::PathBuf;
-use std::sync::Arc;
+use std::path::{Path, PathBuf};
 
 use anyhow::Context;
-use axum::extract::State;
-use axum::http::StatusCode;
-use axum::response::IntoResponse;
-use axum::routing::post;
-use serde::Deserialize;
-use tokio::sync::mpsc;
 
-use josh_core::cache::{CacheStack, TransactionContext};
-use josh_core::filter::tree;
 use josh_core::git::spawn_git_command;
 use josh_github_changes::admission::AdmissionState;
 use josh_github_graphql::connection::GithubApiConnection;
 use josh_github_graphql::operations::repo::RequiredStatusCheck;
-use josh_github_webhooks::webhook_server::WebhookPayload;
-use josh_github_webhooks::webhook_types;
 use josh_link::make_signature;
 
-const GH_TOKEN_ENV: &str = "GH_TOKEN";
-
-#[derive(Deserialize)]
-pub struct TrackRequest {
-    pub url: String,
-    pub id: String,
-    #[serde(default = "default_mode")]
-    pub mode: String,
-}
-
-pub enum CqEvent {
-    Track(TrackRequest),
-    Webhook(WebhookPayload),
-    /// Periodic polling tick — triggers a full fetch + evaluate + step cycle.
-    Tick,
-}
-
-#[derive(Clone, Copy)]
-pub enum AdmissionRelevantEvent<'a> {
-    PullRequestReview(&'a webhook_types::PullRequestReviewEvent),
-    CheckRun(&'a webhook_types::CheckRunEvent),
-}
+use crate::types::{AdmissionRelevantEvent, GH_TOKEN_ENV};
 
 #[derive(Debug, Clone)]
-pub struct CandidatePr {
+pub(crate) struct CandidatePr {
     pub node_id: String,
     pub number: i64,
     pub repo_url: String,
@@ -56,7 +24,7 @@ pub struct CandidatePr {
 }
 
 #[derive(Default, Clone)]
-pub struct CqActorState {
+pub(crate) struct CqActorState {
     pub admission: BTreeMap<String, BTreeSet<RequiredStatusCheck>>,
     pub pr_admissions: BTreeMap<String, AdmissionState>,
     pub candidates: BTreeMap<String, CandidatePr>,
@@ -166,7 +134,7 @@ fn fetch_maintainers(clone_url: &str, api: Option<&GithubApiConnection>) -> Vec<
     }
 }
 
-fn lookup_open_prs_by_sha(
+pub(crate) fn lookup_open_prs_by_sha(
     api: Option<&GithubApiConnection>,
     clone_url: &str,
     sha: &str,
@@ -189,164 +157,6 @@ fn lookup_open_prs_by_sha(
             tracing::warn!(url = %clone_url, sha = %sha, error = ?e, "failed to look up PRs by SHA");
             Vec::new()
         }
-    }
-}
-
-pub enum UserAction {
-    Message(String),
-}
-
-fn default_mode() -> String {
-    "snapshot".to_string()
-}
-
-pub fn handle_init(transaction: &josh_core::cache::Transaction) -> anyhow::Result<String> {
-    let repo = transaction.repo();
-
-    if repo.head().is_ok() {
-        return Ok("Already initialized".to_string());
-    }
-
-    let head_ref = repo.find_reference("HEAD").context("Failed to find HEAD")?;
-    let target = head_ref
-        .symbolic_target()
-        .context("HEAD is not a symbolic reference")?
-        .to_string();
-
-    let signature = make_signature(repo)?;
-
-    let empty_tree_oid = repo
-        .treebuilder(None)
-        .context("Failed to create tree builder")?
-        .write()
-        .context("Failed to write empty tree")?;
-    let empty_tree = repo
-        .find_tree(empty_tree_oid)
-        .context("Failed to find empty tree")?;
-
-    let commit_oid = repo
-        .commit(
-            Some(&target),
-            &signature,
-            &signature,
-            "Initialize metarepo",
-            &empty_tree,
-            &[],
-        )
-        .context("Failed to create initial commit")?;
-
-    Ok(format!(
-        "Initialized metarepo on {} at {}",
-        target, commit_oid
-    ))
-}
-
-pub fn handle_track(
-    url: &str,
-    id: &str,
-    mode: &str,
-    transaction: &josh_core::cache::Transaction,
-) -> anyhow::Result<UserAction> {
-    let repo = transaction.repo();
-
-    let refs = crate::remote::list_refs(url)?;
-
-    spawn_git_command(repo.path(), &["fetch", url, "HEAD"], &[])?;
-
-    let fetch_head_ref = repo
-        .find_reference("FETCH_HEAD")
-        .context("Failed to find FETCH_HEAD")?;
-    let fetched_commit = fetch_head_ref
-        .peel_to_commit()
-        .context("Failed to peel FETCH_HEAD to commit")?
-        .id();
-
-    let head_ref = repo.head().context("Failed to get HEAD")?;
-    let head_commit = head_ref
-        .peel_to_commit()
-        .context("Failed to peel HEAD to commit")?;
-    let head_tree = head_commit.tree().context("Failed to get HEAD tree")?;
-
-    let signature = make_signature(repo)?;
-
-    let link_mode = josh_core::filter::LinkMode::parse(mode)
-        .with_context(|| format!("Invalid link mode: '{}'", mode))?;
-
-    let link_path = std::path::Path::new("remotes").join(id).join("link");
-    let tree_with_link_oid = josh_link::prepare_link_add(
-        transaction,
-        &link_path,
-        url,
-        None,
-        "HEAD",
-        fetched_commit,
-        &head_tree,
-        link_mode,
-    )?
-    .into_tree_oid();
-
-    let tree_with_link = repo
-        .find_tree(tree_with_link_oid)
-        .context("Failed to find tree with link")?;
-
-    let refs_blob = {
-        let refs_map: BTreeMap<String, String> = refs
-            .iter()
-            .map(|(k, v)| (k.clone(), v.to_string()))
-            .collect();
-
-        let refs_json =
-            serde_json::to_string_pretty(&refs_map).context("Failed to serialize refs to JSON")?;
-
-        repo.blob(refs_json.as_bytes())
-            .context("Failed to create refs.json blob")?
-    };
-
-    let refs_path = std::path::Path::new("remotes").join(id).join("refs.json");
-
-    let final_tree = tree::insert(
-        repo,
-        &tree_with_link,
-        &refs_path,
-        refs_blob,
-        git2::FileMode::Blob.into(),
-    )
-    .context("Failed to insert refs.json into tree")?;
-
-    let final_commit = repo
-        .commit(
-            None,
-            &signature,
-            &signature,
-            &format!("Track remote: {}", id),
-            &final_tree,
-            &[&head_commit],
-        )
-        .context("Failed to create final commit")?;
-
-    repo.head()?
-        .set_target(final_commit, "josh-cq track")
-        .context("Failed to update HEAD")?;
-
-    let action = UserAction::Message(format!(
-        "Tracked remote '{}' at {}\nFound {} refs",
-        id,
-        url,
-        refs.len()
-    ));
-
-    Ok(action)
-}
-
-fn webhook_repository(payload: &WebhookPayload) -> &webhook_types::Repository {
-    match payload {
-        WebhookPayload::Ping(e) => &e.repository,
-        WebhookPayload::Push(e) => &e.repository,
-        WebhookPayload::PullRequest(e) => &e.repository,
-        WebhookPayload::WorkflowJob(e) => &e.repository,
-        WebhookPayload::WorkflowRun(e) => &e.repository,
-        WebhookPayload::CheckRun(e) => &e.repository,
-        WebhookPayload::PullRequestReview(e) => &e.repository,
     }
 }
 
@@ -374,97 +184,7 @@ async fn fetch_required_checks(
     Ok(checks)
 }
 
-pub fn handle_webhook(
-    payload: &WebhookPayload,
-    transaction: &josh_core::cache::Transaction,
-    api: Option<&GithubApiConnection>,
-    state: CqActorState,
-) -> anyhow::Result<CqActorState> {
-    let repo = transaction.repo();
-    let clone_url = &webhook_repository(payload).clone_url;
-
-    let head_tree = repo
-        .head()
-        .context("Failed to get HEAD")?
-        .peel_to_commit()
-        .context("Failed to peel HEAD to commit")?
-        .tree()
-        .context("Failed to get HEAD tree")?;
-
-    let link_files =
-        josh_core::link::find_link_files(repo, &head_tree).context("Failed to find link files")?;
-
-    let tracked = link_files
-        .iter()
-        .any(|(_, filter)| filter.get_meta("remote").as_deref() == Some(clone_url.as_str()));
-
-    if !tracked {
-        tracing::info!(url = %clone_url, "ignoring webhook from untracked repo");
-        return Ok(state);
-    }
-
-    tracing::info!(url = %clone_url, "received webhook from tracked repo");
-
-    let mut state = state;
-
-    match payload {
-        WebhookPayload::PullRequest(e) => {
-            let pr = &e.pull_request;
-            match &e.details {
-                webhook_types::PullRequestEventDetails::Opened
-                | webhook_types::PullRequestEventDetails::Synchronize { .. } => {
-                    state.upsert_candidate(CandidatePr {
-                        node_id: pr.node_id.clone(),
-                        number: pr.number,
-                        repo_url: clone_url.clone(),
-                        head_sha: pr.head.sha(),
-                        head_branch: pr.head.reference(),
-                        base_sha: pr.base.sha(),
-                        base_branch: pr.base.reference(),
-                        title: pr.title.clone(),
-                    });
-                    state.get_or_init_pr_admission(&pr.node_id, clone_url, api);
-                }
-                webhook_types::PullRequestEventDetails::Closed => {
-                    state.remove_candidate(&pr.node_id);
-                }
-                _ => {}
-            }
-        }
-
-        WebhookPayload::Push(e) => {
-            let pushed_ref = &e.ref_;
-            for candidate in state.candidates.values_mut() {
-                if candidate.repo_url == *clone_url && candidate.base_branch == *pushed_ref {
-                    candidate.base_sha = e.after.clone();
-                }
-            }
-        }
-
-        WebhookPayload::PullRequestReview(e) => {
-            let events = vec![(
-                e.pull_request.node_id.clone(),
-                AdmissionRelevantEvent::PullRequestReview(e),
-            )];
-            process_admission_events(&mut state, &events, clone_url, api);
-        }
-
-        WebhookPayload::CheckRun(e) => {
-            let pr_ids = lookup_open_prs_by_sha(api, clone_url, &e.check_run.head_sha);
-            let event = AdmissionRelevantEvent::CheckRun(e);
-            let events: Vec<_> = pr_ids.into_iter().map(|id| (id, event)).collect();
-            process_admission_events(&mut state, &events, clone_url, api);
-        }
-
-        WebhookPayload::Ping(_)
-        | WebhookPayload::WorkflowJob(_)
-        | WebhookPayload::WorkflowRun(_) => {}
-    }
-
-    Ok(state)
-}
-
-pub fn handle_fetch(
+pub(crate) fn handle_fetch(
     transaction: &josh_core::cache::Transaction,
     api: Option<&GithubApiConnection>,
     mut state: CqActorState,
@@ -596,7 +316,7 @@ pub fn handle_fetch(
 ///
 /// Iterates candidates in insertion order (BTreeMap), checks each one's
 /// admission state, and returns the first that passes `admissible()`.
-pub fn select_candidate(state: &CqActorState) -> Option<CandidatePr> {
+fn select_candidate(state: &CqActorState) -> Option<CandidatePr> {
     for (node_id, candidate) in &state.candidates {
         if let Some(admission) = state.pr_admissions.get(node_id) {
             if admission.admissible() {
@@ -615,7 +335,7 @@ pub fn select_candidate(state: &CqActorState) -> Option<CandidatePr> {
 
 /// Run evaluate→step while admissible PRs remain.
 /// Called after every event (webhook or tick) to try to make progress.
-fn run_queue_cycle(
+pub(crate) fn run_queue_cycle(
     state: &mut CqActorState,
     transaction: &josh_core::cache::Transaction,
     api: Option<&GithubApiConnection>,
@@ -651,7 +371,7 @@ fn run_queue_cycle(
     }
 }
 
-fn spawn_git_command_stdout(repo_path: &std::path::Path, args: &[&str]) -> anyhow::Result<String> {
+fn spawn_git_command_stdout(repo_path: &Path, args: &[&str]) -> anyhow::Result<String> {
     let output = std::process::Command::new("git")
         .current_dir(repo_path)
         .args(args)
@@ -676,7 +396,7 @@ fn spawn_git_command_stdout(repo_path: &std::path::Path, args: &[&str]) -> anyho
 
 /// Merge an admissible PR: compute merge locally, push to remote main,
 /// update `.link.josh`, close the PR, and remove from the candidate pool.
-pub fn handle_step(
+fn handle_step(
     candidate: &CandidatePr,
     transaction: &josh_core::cache::Transaction,
     api: Option<&GithubApiConnection>,
@@ -778,7 +498,7 @@ pub fn handle_step(
     Ok(())
 }
 
-fn process_admission_events(
+pub(crate) fn process_admission_events(
     state: &mut CqActorState,
     events: &[(String, AdmissionRelevantEvent<'_>)],
     clone_url: &str,
@@ -797,125 +517,4 @@ fn process_admission_events(
             }
         }
     }
-}
-
-async fn track_handler(
-    State(event_tx): State<mpsc::Sender<CqEvent>>,
-    axum::Json(req): axum::Json<TrackRequest>,
-) -> impl IntoResponse {
-    enqueue(&event_tx, CqEvent::Track(req)).await
-}
-
-async fn webhook_handler(
-    State(event_tx): State<mpsc::Sender<CqEvent>>,
-    payload: WebhookPayload,
-) -> impl IntoResponse {
-    enqueue(&event_tx, CqEvent::Webhook(payload)).await
-}
-
-async fn enqueue(event_tx: &mpsc::Sender<CqEvent>, event: CqEvent) -> (StatusCode, &'static str) {
-    match event_tx.send(event).await {
-        Ok(()) => (StatusCode::ACCEPTED, "accepted"),
-        Err(e) => {
-            tracing::error!(error = ?e, "failed to enqueue event");
-            (StatusCode::SERVICE_UNAVAILABLE, "event queue closed")
-        }
-    }
-}
-
-pub fn make_router(event_tx: mpsc::Sender<CqEvent>) -> axum::Router {
-    axum::Router::new()
-        .route("/v1/track", post(track_handler))
-        .route("/v1/webhook", post(webhook_handler))
-        .with_state(event_tx)
-}
-
-fn handle_action(action: UserAction) {
-    match action {
-        UserAction::Message(message) => {
-            eprintln!("{}", message)
-        }
-    }
-}
-
-pub fn spawn_serve_task(
-    repo_path: PathBuf,
-    cache: Arc<CacheStack>,
-    tick_interval_secs: u64,
-) -> mpsc::Sender<CqEvent> {
-    let (event_tx, mut event_rx) = mpsc::channel::<CqEvent>(100);
-
-    let api: Option<Arc<GithubApiConnection>> =
-        GithubApiConnection::from_environment().map(Arc::new);
-
-    if api.is_none() {
-        tracing::warn!("{} not set and no stored credentials found", GH_TOKEN_ENV);
-    }
-
-    // Spawn the periodic tick timer
-    let tick_tx = event_tx.clone();
-    tokio::spawn(async move {
-        let mut interval =
-            tokio::time::interval(std::time::Duration::from_secs(tick_interval_secs));
-        // Skip the immediate first tick — wait one full interval before
-        // the first fetch, giving the server time to start and webhooks
-        // to arrive.
-        interval.tick().await;
-        loop {
-            interval.tick().await;
-            if tick_tx.send(CqEvent::Tick).await.is_err() {
-                break; // channel closed
-            }
-        }
-    });
-
-    // Spawn the actor — serializes all state access
-    tokio::task::spawn_blocking(move || {
-        let mut state = CqActorState::default();
-
-        while let Some(event) = event_rx.blocking_recv() {
-            let transaction = match TransactionContext::new(&repo_path, cache.clone()).open(None) {
-                Ok(t) => t,
-                Err(e) => {
-                    tracing::error!(error = ?e, "failed to open transaction");
-                    continue;
-                }
-            };
-
-            match event {
-                CqEvent::Tick => {
-                    tracing::info!("tick: running fetch");
-                    state = match handle_fetch(&transaction, api.as_deref(), state.clone()) {
-                        Ok(s) => s,
-                        Err(e) => {
-                            tracing::error!(error = ?e, "fetch failed");
-                            continue;
-                        }
-                    };
-                }
-                CqEvent::Track(req) => {
-                    match handle_track(&req.url, &req.id, &req.mode, &transaction) {
-                        Ok(action) => handle_action(action),
-                        Err(e) => tracing::error!(error = ?e, "track failed"),
-                    };
-                }
-                CqEvent::Webhook(payload) => {
-                    state =
-                        match handle_webhook(&payload, &transaction, api.as_deref(), state.clone())
-                        {
-                            Ok(s) => s,
-                            Err(e) => {
-                                tracing::error!(error = ?e, "webhook handling error");
-                                continue;
-                            }
-                        };
-                }
-            }
-
-            // After every event (tick, track, webhook), try to make progress
-            run_queue_cycle(&mut state, &transaction, api.as_deref());
-        }
-    });
-
-    event_tx
 }

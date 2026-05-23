@@ -12,4 +12,4 @@
 | [STEP_8.md](STEP_8.md) | completed | — | Implement candidate evaluation |
 | [STEP_9.md](STEP_9.md) | completed | — | Implement `handle_step()` |
 | [STEP_10.md](STEP_10.md) | completed | `47e936e2` | Wire actor loop with tick timer into `serve` |
-| [STEP_11.md](STEP_11.md) | pending | — | Split `cq.rs` into modules |
+| [STEP_11.md](STEP_11.md) | in_progress | — | Split `cq.rs` into modules |
