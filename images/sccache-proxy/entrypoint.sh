@@ -7,5 +7,5 @@ host=$(echo "$SCCACHE_ENDPOINT" | awk -F/ '{print $3}')
 
 exec aws-sigv4-proxy \
     --name s3 \
-    --region "${SCCACHE_REGION:-auto}" \
+    --region "auto" \
     --host "$host"
