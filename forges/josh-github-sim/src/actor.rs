@@ -8,7 +8,7 @@ use axum::response::Response;
 use tokio::sync::{mpsc, oneshot};
 
 use crate::graphql;
-use crate::graphql::{MockPr, MockRuleset};
+use crate::graphql::{MockPr, MockRuleset, ReviewState};
 
 pub(crate) enum ActorMsg {
     ServeGitHttp {
@@ -40,7 +40,7 @@ pub(crate) enum ActorMsg {
         name: String,
         pr_number: i64,
         reviewer: String,
-        state: String,
+        state: ReviewState,
         response: oneshot::Sender<()>,
     },
     AddMaintainer {
@@ -243,7 +243,7 @@ pub(crate) async fn run_actor(
                         repo.reviews
                             .entry(pr_number)
                             .or_default()
-                            .push((reviewer.clone(), review_state.clone()));
+                            .push((reviewer.clone(), review_state.as_str().to_string()));
                     }
                     let hook = state_lock
                         .webhook_url
@@ -263,7 +263,7 @@ pub(crate) async fn run_actor(
                                         graphql::webhooks::build_pr_review_event(
                                             pr,
                                             &reviewer,
-                                            &review_state,
+                                            review_state.as_str(),
                                             &clone_url,
                                         ),
                                     )

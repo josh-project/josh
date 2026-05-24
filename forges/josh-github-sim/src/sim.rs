@@ -16,7 +16,7 @@ use josh_cq_test_components::repo::TestRepoResources;
 
 use crate::MockRuleset;
 use crate::actor::{self, ActorMsg};
-use crate::graphql::{GraphQLState, RepoState};
+use crate::graphql::{GraphQLState, RepoState, ReviewState};
 
 pub struct RepoConfig {
     pub owner: String,
@@ -28,25 +28,6 @@ pub struct RepoConfig {
 pub enum PrStatus {
     Open,
     Closed,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum ReviewState {
-    Approved,
-    ChangesRequested,
-    Commented,
-    Dismissed,
-}
-
-impl ReviewState {
-    fn as_str(self) -> &'static str {
-        match self {
-            ReviewState::Approved => "APPROVED",
-            ReviewState::ChangesRequested => "CHANGES_REQUESTED",
-            ReviewState::Commented => "COMMENTED",
-            ReviewState::Dismissed => "DISMISSED",
-        }
-    }
 }
 
 pub struct SimRepo {
@@ -123,7 +104,7 @@ impl SimRepo {
                 name: self.name.clone(),
                 pr_number,
                 reviewer: reviewer.to_string(),
-                state: state.as_str().to_string(),
+                state,
                 response: tx,
             },
             rx,

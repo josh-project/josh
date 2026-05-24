@@ -55,3 +55,22 @@ pub struct MockPr {
     pub base_ref_oid: String,
     pub base_ref_name: String,
 }
+
+#[derive(Debug, Clone, Copy)]
+pub enum ReviewState {
+    Approved,
+    ChangesRequested,
+    Commented,
+    Dismissed,
+}
+
+impl ReviewState {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ReviewState::Approved => "APPROVED",
+            ReviewState::ChangesRequested => "CHANGES_REQUESTED",
+            ReviewState::Commented => "COMMENTED",
+            ReviewState::Dismissed => "DISMISSED",
+        }
+    }
+}
