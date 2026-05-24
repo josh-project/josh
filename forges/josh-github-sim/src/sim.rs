@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::net::Ipv4Addr;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -15,6 +15,7 @@ use josh_cq_test_components::TestRepo;
 use josh_cq_test_components::repo::TestRepoResources;
 
 use crate::actor::{self, ActorMsg};
+use crate::graphql::GraphQLState;
 
 pub struct RepoConfig {
     pub owner: String,
@@ -41,6 +42,7 @@ pub struct GithubSim {
     _guard: Arc<Mutex<GithubSimResources>>,
     url: Url,
     graphql_url: Url,
+    graphql_state: Arc<Mutex<GraphQLState>>,
 }
 
 impl GithubSim {
@@ -53,6 +55,13 @@ impl GithubSim {
             repo_map.insert((config.owner, config.name), path);
             guards.push(guard);
         }
+
+        let graphql_state = Arc::new(Mutex::new(GraphQLState {
+            prs: Vec::new(),
+            reviews: BTreeMap::new(),
+            maintainers: Vec::new(),
+            rulesets: Vec::new(),
+        }));
 
         let (tx, rx) = mpsc::unbounded_channel::<ActorMsg>();
 
@@ -73,8 +82,9 @@ impl GithubSim {
                 .expect("axum server failed");
         });
 
+        let actor_state = graphql_state.clone();
         let actor_handle = tokio::spawn(async move {
-            actor::run_actor(rx, repo_map).await;
+            actor::run_actor(rx, repo_map, actor_state).await;
         });
 
         let guard = Arc::new(Mutex::new(GithubSimResources {
@@ -88,6 +98,7 @@ impl GithubSim {
             _guard: guard,
             url,
             graphql_url,
+            graphql_state,
         })
     }
 
@@ -97,6 +108,10 @@ impl GithubSim {
 
     pub fn graphql_url(&self) -> &Url {
         &self.graphql_url
+    }
+
+    pub fn graphql_state(&self) -> &Arc<Mutex<GraphQLState>> {
+        &self.graphql_state
     }
 }
 

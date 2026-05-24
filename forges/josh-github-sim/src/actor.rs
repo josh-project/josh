@@ -1,10 +1,13 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 
 use axum::body::Body;
 use axum::http::StatusCode;
 use axum::response::Response;
 use tokio::sync::{mpsc, oneshot};
+
+use crate::graphql;
 
 pub(crate) enum ActorMsg {
     ServeGitHttp {
@@ -22,6 +25,7 @@ pub(crate) enum ActorMsg {
 pub(crate) async fn run_actor(
     mut rx: mpsc::UnboundedReceiver<ActorMsg>,
     repos: HashMap<(String, String), PathBuf>,
+    state: Arc<Mutex<graphql::GraphQLState>>,
 ) {
     while let Some(msg) = rx.recv().await {
         match msg {
@@ -46,7 +50,7 @@ pub(crate) async fn run_actor(
                 }
             }
             ActorMsg::GraphQLRequest { request, response } => {
-                let result = crate::graphql::handle_graphql_request(&repos, request).await;
+                let result = graphql::handle_graphql_request(&repos, &state, request).await;
                 if response.send(result).is_err() {
                     tracing::error!("failed to send GraphQLRequest response");
                 }
