@@ -174,7 +174,7 @@ impl SimRepo {
         }
     }
 
-    pub fn comments_for_pr(&self, node_id: &str) -> Vec<String> {
+    pub fn pr_comments_by_node_id(&self, node_id: &str) -> Vec<String> {
         let state = self.graphql_state.lock().unwrap();
         let key = (self.owner.clone(), self.name.clone());
         state

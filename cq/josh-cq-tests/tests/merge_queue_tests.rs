@@ -193,7 +193,7 @@ async fn merge_single_pr() -> anyhow::Result<()> {
     assert!(merged, "PR should have been merged within 30 seconds");
     assert_eq!(repo.pr_by_node_id(&pr_node_id), Some(PrStatus::Closed));
 
-    let comments = repo.comments_for_pr(&pr_node_id);
+    let comments = repo.pr_comments_by_node_id(&pr_node_id);
     assert!(
         comments
             .iter()
@@ -402,7 +402,7 @@ async fn pr_removed_on_close_webhook() -> anyhow::Result<()> {
         Some(PrStatus::Closed),
         "PR should be closed"
     );
-    let comments = repo.comments_for_pr(&pr_node_id);
+    let comments = repo.pr_comments_by_node_id(&pr_node_id);
     assert!(
         !comments
             .iter()
