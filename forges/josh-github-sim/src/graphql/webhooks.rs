@@ -2,17 +2,27 @@ use url::Url;
 
 use super::types::MockPr;
 
-pub(crate) fn build_pr_opened_event(pr: &MockPr, sim_url: &Url) -> serde_json::Value {
+pub(crate) fn build_pr_opened_event(
+    owner: &str,
+    name: &str,
+    pr: &MockPr,
+    sim_url: &Url,
+) -> serde_json::Value {
     let clone_url = sim_url
-        .join(&format!("{}/{}", pr.owner, pr.name))
+        .join(&format!("{}/{}", owner, name))
         .map(|u| u.to_string())
         .unwrap_or_default();
     build_pr_event("opened", pr, &clone_url)
 }
 
-pub(crate) fn build_pr_closed_event(pr: &MockPr, sim_url: &Url) -> serde_json::Value {
+pub(crate) fn build_pr_closed_event(
+    owner: &str,
+    name: &str,
+    pr: &MockPr,
+    sim_url: &Url,
+) -> serde_json::Value {
     let clone_url = sim_url
-        .join(&format!("{}/{}", pr.owner, pr.name))
+        .join(&format!("{}/{}", owner, name))
         .map(|u| u.to_string())
         .unwrap_or_default();
     build_pr_event("closed", pr, &clone_url)

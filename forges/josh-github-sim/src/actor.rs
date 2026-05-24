@@ -22,10 +22,14 @@ pub(crate) enum ActorMsg {
         response: oneshot::Sender<Response<Body>>,
     },
     PrOpen {
+        owner: String,
+        name: String,
         pr: MockPr,
         response: oneshot::Sender<()>,
     },
     PrClose {
+        owner: String,
+        name: String,
         node_id: String,
         response: oneshot::Sender<()>,
     },
@@ -92,7 +96,12 @@ pub(crate) async fn run_actor(
                     tracing::error!("failed to send GraphQLRequest response");
                 }
             }
-            ActorMsg::PrOpen { pr, response } => {
+            ActorMsg::PrOpen {
+                owner,
+                name,
+                pr,
+                response,
+            } => {
                 let hook = {
                     let state_lock = state.lock().unwrap();
                     let hook = state_lock
@@ -102,11 +111,13 @@ pub(crate) async fn run_actor(
                         .map(|(wh_url, sim_url)| {
                             (
                                 wh_url.clone(),
-                                graphql::webhooks::build_pr_opened_event(&pr, sim_url),
+                                graphql::webhooks::build_pr_opened_event(
+                                    &owner, &name, &pr, sim_url,
+                                ),
                             )
                         });
                     drop(state_lock);
-                    if let Some(repo) = state.lock().unwrap().repo_mut(&pr.owner, &pr.name) {
+                    if let Some(repo) = state.lock().unwrap().repo_mut(&owner, &name) {
                         repo.prs.push(pr);
                     }
                     hook
@@ -116,34 +127,39 @@ pub(crate) async fn run_actor(
                 }
                 let _ = response.send(());
             }
-            ActorMsg::PrClose { node_id, response } => {
+            ActorMsg::PrClose {
+                owner,
+                name,
+                node_id,
+                response,
+            } => {
                 let hook = {
                     let state_lock = state.lock().unwrap();
+                    let key = (owner.clone(), name.clone());
                     state_lock
                         .webhook_url
                         .as_ref()
                         .zip(state_lock.sim_url.as_ref())
                         .and_then(|(wh_url, sim_url)| {
-                            state_lock.find_pr_idx(&node_id).map(|(owner, name, idx)| {
-                                let key = (owner.to_string(), name.to_string());
-                                let pr = &state_lock.repos[&key].prs[idx];
-                                (
-                                    wh_url.clone(),
-                                    graphql::webhooks::build_pr_closed_event(pr, sim_url),
-                                    owner.to_string(),
-                                    name.to_string(),
-                                    idx,
-                                )
+                            state_lock.repos.get(&key).and_then(|repo| {
+                                repo.prs.iter().find(|p| p.node_id == node_id).map(|pr| {
+                                    (
+                                        wh_url.clone(),
+                                        graphql::webhooks::build_pr_closed_event(
+                                            &owner, &name, pr, sim_url,
+                                        ),
+                                    )
+                                })
                             })
                         })
                 };
-                if let Some((wh_url, body, owner, name, idx)) = hook {
+                if let Some((wh_url, body)) = hook {
                     {
                         let mut state_lock = state.lock().unwrap();
-                        let key = (owner.clone(), name.clone());
+                        let key = (owner, name);
                         if let Some(repo) = state_lock.repos.get_mut(&key) {
                             repo.closed_prs.push(node_id.clone());
-                            if idx < repo.prs.len() && repo.prs[idx].node_id == node_id {
+                            if let Some(idx) = repo.prs.iter().position(|p| p.node_id == node_id) {
                                 repo.prs.remove(idx);
                             }
                         }

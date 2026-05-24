@@ -24,6 +24,127 @@ pub struct RepoConfig {
     pub repo: TestRepo,
 }
 
+pub struct SimRepo {
+    tx: mpsc::UnboundedSender<ActorMsg>,
+    owner: String,
+    name: String,
+}
+
+impl SimRepo {
+    pub fn owner(&self) -> &str {
+        &self.owner
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    async fn send_msg<R>(&self, msg: ActorMsg, rx: oneshot::Receiver<R>) -> anyhow::Result<R> {
+        self.tx
+            .send(msg)
+            .map_err(|_| anyhow::anyhow!("actor closed"))?;
+        Ok(rx.await?)
+    }
+
+    pub async fn pr_open(&self, pr: MockPr) -> anyhow::Result<()> {
+        let (tx, rx) = oneshot::channel();
+        self.send_msg(
+            ActorMsg::PrOpen {
+                owner: self.owner.clone(),
+                name: self.name.clone(),
+                pr,
+                response: tx,
+            },
+            rx,
+        )
+        .await
+    }
+
+    pub async fn pr_close(&self, node_id: &str) -> anyhow::Result<()> {
+        let (tx, rx) = oneshot::channel();
+        self.send_msg(
+            ActorMsg::PrClose {
+                owner: self.owner.clone(),
+                name: self.name.clone(),
+                node_id: node_id.to_string(),
+                response: tx,
+            },
+            rx,
+        )
+        .await
+    }
+
+    pub async fn add_review(
+        &self,
+        pr_number: i64,
+        reviewer: &str,
+        state: &str,
+    ) -> anyhow::Result<()> {
+        let (tx, rx) = oneshot::channel();
+        self.send_msg(
+            ActorMsg::AddReview {
+                owner: self.owner.clone(),
+                name: self.name.clone(),
+                pr_number,
+                reviewer: reviewer.to_string(),
+                state: state.to_string(),
+                response: tx,
+            },
+            rx,
+        )
+        .await
+    }
+
+    pub async fn add_maintainer(&self, login: &str) -> anyhow::Result<()> {
+        let (tx, rx) = oneshot::channel();
+        self.send_msg(
+            ActorMsg::AddMaintainer {
+                owner: self.owner.clone(),
+                name: self.name.clone(),
+                login: login.to_string(),
+                response: tx,
+            },
+            rx,
+        )
+        .await
+    }
+
+    pub async fn add_ruleset(&self, ruleset: MockRuleset) -> anyhow::Result<()> {
+        let (tx, rx) = oneshot::channel();
+        self.send_msg(
+            ActorMsg::AddRuleset {
+                owner: self.owner.clone(),
+                name: self.name.clone(),
+                ruleset,
+                response: tx,
+            },
+            rx,
+        )
+        .await
+    }
+
+    pub async fn complete_check_run(
+        &self,
+        check_name: &str,
+        head_sha: &str,
+        conclusion: &str,
+    ) -> anyhow::Result<()> {
+        let (tx, rx) = oneshot::channel();
+        self.send_msg(
+            ActorMsg::CompleteCheckRun {
+                owner: self.owner.clone(),
+                name: self.name.clone(),
+                check_name: check_name.to_string(),
+                head_sha: head_sha.to_string(),
+                conclusion: conclusion.to_string(),
+                response: tx,
+            },
+            rx,
+        )
+        .await
+    }
+}
+
 struct GithubSimResources {
     _repo_guards: Vec<Arc<Mutex<TestRepoResources>>>,
     _actor_handle: AbortOnDrop,
@@ -153,108 +274,12 @@ impl GithubSim {
         self.graphql_state.lock().unwrap().webhook_url = Some(url);
     }
 
-    async fn send_msg<R>(&self, msg: ActorMsg, rx: oneshot::Receiver<R>) -> anyhow::Result<R> {
-        self._tx
-            .send(msg)
-            .map_err(|_| anyhow::anyhow!("actor closed"))?;
-        Ok(rx.await?)
-    }
-
-    pub async fn pr_open(&self, pr: MockPr) -> anyhow::Result<()> {
-        let (tx, rx) = oneshot::channel();
-        self.send_msg(ActorMsg::PrOpen { pr, response: tx }, rx)
-            .await
-    }
-
-    pub async fn pr_close(&self, node_id: &str) -> anyhow::Result<()> {
-        let (tx, rx) = oneshot::channel();
-        self.send_msg(
-            ActorMsg::PrClose {
-                node_id: node_id.to_string(),
-                response: tx,
-            },
-            rx,
-        )
-        .await
-    }
-
-    pub async fn add_review(
-        &self,
-        owner: &str,
-        name: &str,
-        pr_number: i64,
-        reviewer: &str,
-        state: &str,
-    ) -> anyhow::Result<()> {
-        let (tx, rx) = oneshot::channel();
-        self.send_msg(
-            ActorMsg::AddReview {
-                owner: owner.to_string(),
-                name: name.to_string(),
-                pr_number,
-                reviewer: reviewer.to_string(),
-                state: state.to_string(),
-                response: tx,
-            },
-            rx,
-        )
-        .await
-    }
-
-    pub async fn add_maintainer(&self, owner: &str, name: &str, login: &str) -> anyhow::Result<()> {
-        let (tx, rx) = oneshot::channel();
-        self.send_msg(
-            ActorMsg::AddMaintainer {
-                owner: owner.to_string(),
-                name: name.to_string(),
-                login: login.to_string(),
-                response: tx,
-            },
-            rx,
-        )
-        .await
-    }
-
-    pub async fn add_ruleset(
-        &self,
-        owner: &str,
-        name: &str,
-        ruleset: MockRuleset,
-    ) -> anyhow::Result<()> {
-        let (tx, rx) = oneshot::channel();
-        self.send_msg(
-            ActorMsg::AddRuleset {
-                owner: owner.to_string(),
-                name: name.to_string(),
-                ruleset,
-                response: tx,
-            },
-            rx,
-        )
-        .await
-    }
-
-    pub async fn complete_check_run(
-        &self,
-        owner: &str,
-        name: &str,
-        check_name: &str,
-        head_sha: &str,
-        conclusion: &str,
-    ) -> anyhow::Result<()> {
-        let (tx, rx) = oneshot::channel();
-        self.send_msg(
-            ActorMsg::CompleteCheckRun {
-                owner: owner.to_string(),
-                name: name.to_string(),
-                check_name: check_name.to_string(),
-                head_sha: head_sha.to_string(),
-                conclusion: conclusion.to_string(),
-                response: tx,
-            },
-            rx,
-        )
-        .await
+    pub fn repo_by_name(&self, owner: &str, name: &str) -> SimRepo {
+        SimRepo {
+            tx: self._tx.clone(),
+            owner: owner.to_string(),
+            name: name.to_string(),
+        }
     }
 }
 

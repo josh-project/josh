@@ -61,8 +61,6 @@ impl GraphQLState {
 }
 
 pub struct MockPr {
-    pub owner: String,
-    pub name: String,
     pub node_id: String,
     pub number: i64,
     pub title: String,

@@ -172,8 +172,6 @@ async fn merge_single_pr() -> anyhow::Result<()> {
     .await?;
 
     let pr = MockPr {
-        owner: owner.to_string(),
-        name: name.to_string(),
         node_id: pr_node_id.clone(),
         number: 0,
         title: "Test PR".into(),
@@ -188,15 +186,10 @@ async fn merge_single_pr() -> anyhow::Result<()> {
         .github_sim
         .set_webhook_url(url::Url::parse(&harness.cq_webhook_url)?);
 
-    harness.github_sim.pr_open(pr).await?;
-    harness
-        .github_sim
-        .add_review(owner, name, 0, "maintainer1", "APPROVED")
-        .await?;
-    harness
-        .github_sim
-        .add_maintainer(owner, name, "maintainer1")
-        .await?;
+    let repo = harness.github_sim.repo_by_name(owner, name);
+    repo.pr_open(pr).await?;
+    repo.add_review(0, "maintainer1", "APPROVED").await?;
+    repo.add_maintainer("maintainer1").await?;
 
     harness.event_tx.send(CqEvent::Tick).await?;
     let merged = poll_until(
@@ -265,8 +258,6 @@ async fn pr_not_admissible_without_review() -> anyhow::Result<()> {
     .await?;
 
     let pr = MockPr {
-        owner: owner.to_string(),
-        name: name.to_string(),
         node_id: pr_node_id.clone(),
         number: 0,
         title: "No-review PR".into(),
@@ -281,11 +272,9 @@ async fn pr_not_admissible_without_review() -> anyhow::Result<()> {
         .github_sim
         .set_webhook_url(url::Url::parse(&harness.cq_webhook_url)?);
 
-    harness.github_sim.pr_open(pr).await?;
-    harness
-        .github_sim
-        .add_maintainer(owner, name, "maintainer1")
-        .await?;
+    let repo = harness.github_sim.repo_by_name(owner, name);
+    repo.pr_open(pr).await?;
+    repo.add_maintainer("maintainer1").await?;
 
     harness.event_tx.send(CqEvent::Tick).await?;
 
@@ -338,8 +327,6 @@ async fn pr_not_admissible_with_failing_check() -> anyhow::Result<()> {
     .await?;
 
     let pr = MockPr {
-        owner: owner.to_string(),
-        name: name.to_string(),
         node_id: pr_node_id.clone(),
         number: 0,
         title: "Failing-check PR".into(),
@@ -354,33 +341,20 @@ async fn pr_not_admissible_with_failing_check() -> anyhow::Result<()> {
         .github_sim
         .set_webhook_url(url::Url::parse(&harness.cq_webhook_url)?);
 
-    harness.github_sim.pr_open(pr).await?;
-    harness
-        .github_sim
-        .add_review(owner, name, 0, "maintainer1", "APPROVED")
-        .await?;
-    harness
-        .github_sim
-        .add_maintainer(owner, name, "maintainer1")
-        .await?;
-    harness
-        .github_sim
-        .add_ruleset(
-            owner,
-            name,
-            MockRuleset {
-                id: "rs-1".into(),
-                name: "test ruleset".into(),
-                enforcement: "ACTIVE".into(),
-                include_refs: vec!["refs/heads/main".into()],
-                exclude_refs: vec![],
-                required_checks: vec!["ci/test".into()],
-            },
-        )
-        .await?;
-    harness
-        .github_sim
-        .complete_check_run(owner, name, "ci/test", &feature_sha.to_string(), "failure")
+    let repo = harness.github_sim.repo_by_name(owner, name);
+    repo.pr_open(pr).await?;
+    repo.add_review(0, "maintainer1", "APPROVED").await?;
+    repo.add_maintainer("maintainer1").await?;
+    repo.add_ruleset(MockRuleset {
+        id: "rs-1".into(),
+        name: "test ruleset".into(),
+        enforcement: "ACTIVE".into(),
+        include_refs: vec!["refs/heads/main".into()],
+        exclude_refs: vec![],
+        required_checks: vec!["ci/test".into()],
+    })
+    .await?;
+    repo.complete_check_run("ci/test", &feature_sha.to_string(), "failure")
         .await?;
 
     harness.event_tx.send(CqEvent::Tick).await?;
@@ -434,8 +408,6 @@ async fn pr_removed_on_close_webhook() -> anyhow::Result<()> {
     .await?;
 
     let pr = MockPr {
-        owner: owner.to_string(),
-        name: name.to_string(),
         node_id: pr_node_id.clone(),
         number: 0,
         title: "Close-test PR".into(),
@@ -450,17 +422,12 @@ async fn pr_removed_on_close_webhook() -> anyhow::Result<()> {
         .github_sim
         .set_webhook_url(url::Url::parse(&harness.cq_webhook_url)?);
 
-    harness.github_sim.pr_open(pr).await?;
-    harness
-        .github_sim
-        .add_review(owner, name, 0, "maintainer1", "APPROVED")
-        .await?;
-    harness
-        .github_sim
-        .add_maintainer(owner, name, "maintainer1")
-        .await?;
+    let repo = harness.github_sim.repo_by_name(owner, name);
+    repo.pr_open(pr).await?;
+    repo.add_review(0, "maintainer1", "APPROVED").await?;
+    repo.add_maintainer("maintainer1").await?;
 
-    harness.github_sim.pr_close(&pr_node_id).await?;
+    repo.pr_close(&pr_node_id).await?;
 
     // Send Tick - PR should NOT be merged because it was closed
     harness.event_tx.send(CqEvent::Tick).await?;

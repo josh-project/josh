@@ -117,10 +117,15 @@ fn close_pr_webhook_data(
                 .and_then(|id| {
                     state_lock.find_pr_idx(id).map(|(owner, name, idx)| {
                         let key = (owner.to_string(), name.to_string());
-                        &state_lock.repos[&key].prs[idx]
+                        (owner, name, &state_lock.repos[&key].prs[idx])
                     })
                 })
-                .map(|pr| (wh_url, webhooks::build_pr_closed_event(pr, sim_url)))
+                .map(|(owner, name, pr)| {
+                    (
+                        wh_url,
+                        webhooks::build_pr_closed_event(&owner, &name, pr, sim_url),
+                    )
+                })
         }
         _ => None,
     }
