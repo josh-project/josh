@@ -16,6 +16,7 @@ members = [
     "cq/josh-cq",
     "cq/josh-cq-tests",
     "cq/josh-cq-test-components",
+    "forges/josh-github-sim",
     "josh-changes",
 
     "forges/josh-github-changes",
@@ -102,6 +103,7 @@ josh-github-keyring = { path = "forges/josh-github-keyring", version = "26.5.8" 
 josh-cq = { path = "cq/josh-cq", version = "26.5.8" }
 josh-cq-tests = { path = "cq/josh-cq-tests", version = "26.5.8" }
 josh-cq-test-components = { path = "cq/josh-cq-test-components", version = "26.5.8" }
+josh-github-sim = { path = "forges/josh-github-sim", version = "26.5.8" }
 josh-test-github = { path = "forges/josh-test-github", version = "26.5.8" }
 
 # Deployment
@@ -170,3 +172,7 @@ version = "0.1"
 
 [workspace.dependencies.headers]
 version = "0.4"
+
+[workspace.dependencies.insta]
+version = "1"
+features = ["json"]

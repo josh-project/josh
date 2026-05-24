@@ -1,0 +1,25 @@
+[package]
+name = "josh-github-sim"
+version = "26.5.8"
+edition = "2024"
+license-file = "../../LICENSE"
+
+[dependencies]
+tokio.workspace = true
+axum.workspace = true
+anyhow.workspace = true
+url.workspace = true
+futures.workspace = true
+tracing.workspace = true
+headers.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+juniper.workspace = true
+indexmap = "2.0"
+
+josh-cq-test-components.workspace = true
+
+[dev-dependencies]
+insta.workspace = true
+reqwest.workspace = true
+tempfile.workspace = true

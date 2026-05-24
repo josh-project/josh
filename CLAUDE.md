@@ -271,3 +271,184 @@ cargo test -p josh-cq-test-components
 
 Tests use `anyhow::Result<()>` with `?` propagation. Git CLI calls are wrapped in
 `spawn_blocking` to avoid blocking tokio worker threads during HTTP tests.
+
+## Axum patterns (0.8.x)
+
+### Extractors
+
+**In axum handlers**, use extractors as function parameters:
+
+```rust
+async fn handler(State(tx): State<Sender>, Json(payload): Json<MyType>) -> Response { ... }
+async fn handler(req: axum::extract::Request) -> Response { ... }  // full request, body intact
+```
+
+**Outside axum handlers** (e.g., in an actor receiving a `Request`), use `FromRequest` directly:
+
+```rust
+use axum::extract::FromRequest;
+use axum::Json;
+
+let Json(payload) = Json::<MyType>::from_request(request, &()).await?;
+```
+
+This requires `S: Send + Sync` on the state — `()` works as a no-op state. The `RequestExt::extract()` trait method exists but is fragile because `Json<T>` implements `FromRequest<(), ViaRequest>` not `FromRequest<(), Body>`, making turbofish awkward. Direct `FromRequest::from_request()` is more reliable.
+
+### Responses
+
+**Preferred**: implement `IntoResponse` instead of manually calling `Response::builder()`:
+
+```rust
+use axum::response::{IntoResponse, Response};
+use axum::Json;
+
+impl IntoResponse for MyError {
+    fn into_response(self) -> Response {
+        (StatusCode::OK, Json(serde_json::json!({"errors": [...]}))).into_response()
+    }
+}
+```
+
+The `(StatusCode, Json(body))` tuple already implements `IntoResponse` — composing via `into_response()` handles headers and serialization. Never build `Response<Body>` manually with `.header("Content-Type", ...)` when `Json(...)` does it for you.
+
+## Juniper patterns (0.17.x)
+
+### Schema construction
+
+```rust
+use juniper::{RootNode, EmptyMutation, EmptySubscription, graphql_object};
+
+struct Query;
+#[graphql_object(context = Context)]
+impl Query {
+    async fn field(&self, arg: String, context: &Context) -> Option<ReturnType> { ... }
+}
+
+type Schema = RootNode<Query, EmptyMutation<Context>, EmptySubscription<Context>>;
+fn schema() -> Schema { Schema::new(Query, EmptyMutation::new(), EmptySubscription::new()) }
+```
+
+- `RootNode` has **no lifetime parameter** in 0.17 (was `RootNode<'static, ...>` in older versions).
+- Resolvers can be `async fn` — Juniper 0.17 supports both sync and async, use `juniper::execute().await`.
+- Returning `Option<T>` from a resolver makes the field nullable; returning `None` produces `null` with no error — proper GraphQL semantics for missing resources.
+- `#[graphql_object]` serializes fields in **method definition order**.
+
+### Context
+
+```rust
+struct Context { /* any data */ }
+impl juniper::Context for Context {}
+```
+
+Passed as `&Context` to all resolvers via `juniper::execute(query, op_name, &schema, &variables, &context).await`.
+
+### Response serialization
+
+Use `juniper::http::GraphQLResponse` (the `http` module is always available, no feature needed):
+
+```rust
+let result = juniper::execute(query, op_name, &schema, &variables, &context).await;
+let response = juniper::http::GraphQLResponse::from_result(result);
+(StatusCode::OK, Json(response)).into_response()
+```
+
+`GraphQLResponse` implements `Serialize` producing `{"data": ...}` on success and `{"errors": [{"message": ..., "locations": [...], "path": [...]}]}` on error. No manual JSON construction needed.
+
+### Variable conversion
+
+Juniper's `execute()` takes `&HashMap<String, InputValue<S>>`. To convert from `serde_json::Value` without pulling in the `http` feature:
+
+```rust
+use juniper::{InputValue, DefaultScalarValue};
+use indexmap::IndexMap;  // InputValue::object() takes IndexMap, not HashMap
+
+fn to_input_value(json: &serde_json::Value) -> InputValue<DefaultScalarValue> { ... }
+```
+
+`InputValue` has constructors: `scalar(v)`, `list(vec)`, `object(IndexMap)`, `Null`.
+
+## GitHub simulator (`forges/josh-github-sim`)
+
+Actor-based simulated GitHub environment — Git HTTP + GraphQL API. Motivation: the
+existing `josh-test-github` crate runs git-http-backend in a separate axum task,
+creating filesystem races with programmatic repo operations. A unified actor
+eliminates those races. Juniper provides proper GraphQL query parsing, field
+selection, and error formatting (the old `GraphQLMock` used hand-rolled JSON dispatch
+by `operationName`).
+
+### Actor design
+
+Single `mpsc` channel serializes both git-http and GraphQL requests:
+
+```
+Git HTTP   → handle_git     → tx.send(ServeGitHttp{owner,name,req}) ─┐
+GraphQL    → handle_graphql → tx.send(GraphQLRequest{req}) ──────────┤
+                                                            mpsc      │
+                                                                      ▼
+                                                              actor task (serial)
+                                                       ServeGitHttp → git_http::serve()
+                                                       GraphQLReq   → juniper::execute().await
+```
+
+GraphQL requests carry the full `axum::extract::Request` — the actor extracts the
+body via `Json::<GraphQLPayload>::from_request()` and executes against a Juniper
+schema. Git HTTP requests are routed by `owner/name` prefix stripped from the URL path.
+
+### Multi-repo routing
+
+`GithubSim::new()` accepts `Vec<RepoConfig>`, each containing a pre-prepared
+`TestRepo` + `owner`/`name` metadata. The `TestRepo` is consumed via `into_parts()`
+— its old actor/server are shut down, only the on-disk repo (and its `TempDir` guard)
+survive. All further interaction is via the Git HTTP URL (`/owner/name/...`) or
+GraphQL endpoint (`/graphql`). Inner repos are never exposed.
+
+### Key design decisions
+
+- **`TestRepo` consumed on construction** — `into_parts()` drops the old actor +
+  server, keeps the on-disk path + `TempDir` guard. The unified actor takes over.
+- **Juniper schema** — proper GraphQL types (`Query`, `Repository`, `DefaultBranchRef`)
+  with async resolvers for future inter-actor communication (resolver sends message
+  to inner actor, awaits response).
+- **`juniper::http::GraphQLResponse`** — Juniper's built-in response type; serializes
+  to `{"data": ...}` / `{"errors": [...]}` with proper `locations` and `path` fields.
+- **`GraphQLError::from_message`** — thin `IntoResponse` type for extractor failures
+  (Juniper's `GraphQLError` enum has no simple string constructor).
+- **No `http` feature needed** — Juniper's `http` module is always compiled.
+  `InputValue` conversion from `serde_json::Value` is manual (~20 lines).
+
+### File structure
+
+```
+forges/josh-github-sim/
+├── Cargo.toml
+├── src/
+│   ├── lib.rs          # pub use sim::{GithubSim, RepoConfig}
+│   ├── sim.rs          # GithubSim, RepoConfig, axum server, HTTP handlers
+│   ├── actor.rs        # ActorMsg enum, run_actor loop
+│   └── graphql.rs      # Juniper schema, handle_graphql_request, response types
+└── tests/
+    └── integration.rs  # 5 integration tests
+```
+
+### Public API
+
+```rust
+pub struct RepoConfig { pub owner: String, pub name: String, pub repo: TestRepo }
+
+impl GithubSim {
+    pub async fn new(repos: Vec<RepoConfig>) -> anyhow::Result<Self>
+    pub fn url(&self) -> &Url           // http://127.0.0.1:PORT/
+    pub fn graphql_url(&self) -> &Url   // http://127.0.0.1:PORT/graphql
+}
+```
+
+No `path()`, no `get_head()` — all interaction via HTTP.
+
+### Running tests
+
+```
+cargo test -p josh-github-sim
+```
+
+Tests use `anyhow::Result<()>`, `insta::assert_json_snapshot!` for GraphQL responses,
+and `spawn_blocking` for git CLI calls.

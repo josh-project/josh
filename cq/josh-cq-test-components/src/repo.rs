@@ -25,13 +25,13 @@ pub enum TreeMode {
     Replace(Vec<TreeEntry>),
 }
 
-struct TestRepoResources {
+pub struct TestRepoResources {
     _dir: tempfile::TempDir,
     _actor_handle: AbortOnDrop,
     _server_handle: AbortOnDrop,
 }
 
-struct AbortOnDrop(tokio::task::JoinHandle<()>);
+pub struct AbortOnDrop(tokio::task::JoinHandle<()>);
 
 impl Drop for AbortOnDrop {
     fn drop(&mut self) {
@@ -140,6 +140,10 @@ impl TestRepo {
             })
             .map_err(|_| anyhow::anyhow!("actor closed"))?;
         resp_rx.await?
+    }
+
+    pub fn into_parts(self) -> (PathBuf, Arc<Mutex<TestRepoResources>>) {
+        (self.path, self._guard)
     }
 }
 

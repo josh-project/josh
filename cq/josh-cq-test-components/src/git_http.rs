@@ -66,7 +66,7 @@ fn prepare_command(
     cmd
 }
 
-pub(crate) async fn serve(repo_path: &Path, req: axum::extract::Request) -> Response<Body> {
+pub async fn serve(repo_path: &Path, req: axum::extract::Request) -> Response<Body> {
     let (parts, body) = req.into_parts();
 
     let method = parts.method.to_string();
