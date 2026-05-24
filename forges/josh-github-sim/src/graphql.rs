@@ -8,9 +8,7 @@ use axum::extract::FromRequest;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use indexmap::IndexMap;
-use juniper::{
-    DefaultScalarValue, EmptyMutation, EmptySubscription, InputValue, Variables, graphql_object,
-};
+use juniper::{DefaultScalarValue, EmptySubscription, InputValue, Variables, graphql_object};
 use serde::Deserialize;
 
 pub struct MockRuleset {
@@ -27,6 +25,8 @@ pub struct GraphQLState {
     pub reviews: BTreeMap<i64, Vec<(String, String)>>,
     pub maintainers: Vec<String>,
     pub rulesets: Vec<MockRuleset>,
+    pub closed_prs: Vec<String>,
+    pub comments: Vec<(String, String)>,
 }
 
 pub struct MockPr {
@@ -593,10 +593,74 @@ impl RulesetConnection {
     }
 }
 
-type Schema = juniper::RootNode<Query, EmptyMutation<Context>, EmptySubscription<Context>>;
+struct Mutation;
+
+#[graphql_object(context = Context)]
+impl Mutation {
+    fn close_pull_request(
+        pull_request_node_id: String,
+        context: &Context,
+    ) -> ClosePullRequestPayload {
+        let mut state = context.state.lock().unwrap();
+        state.closed_prs.push(pull_request_node_id.clone());
+        state.prs.retain(|pr| pr.node_id != pull_request_node_id);
+        ClosePullRequestPayload {
+            pull_request: ClosePullRequestResult {
+                id: pull_request_node_id,
+            },
+        }
+    }
+
+    fn add_comment(subject_id: String, body: String, context: &Context) -> AddCommentPayload {
+        context
+            .state
+            .lock()
+            .unwrap()
+            .comments
+            .push((subject_id, body));
+        AddCommentPayload {
+            client_mutation_id: None,
+        }
+    }
+}
+
+struct ClosePullRequestPayload {
+    pull_request: ClosePullRequestResult,
+}
+
+#[graphql_object(context = Context)]
+impl ClosePullRequestPayload {
+    fn pull_request(&self) -> &ClosePullRequestResult {
+        &self.pull_request
+    }
+}
+
+struct ClosePullRequestResult {
+    id: String,
+}
+
+#[graphql_object(context = Context)]
+impl ClosePullRequestResult {
+    fn id(&self) -> &str {
+        &self.id
+    }
+}
+
+struct AddCommentPayload {
+    client_mutation_id: Option<String>,
+}
+
+#[graphql_object(context = Context)]
+impl AddCommentPayload {
+    fn client_mutation_id(&self) -> Option<&str> {
+        self.client_mutation_id.as_deref()
+    }
+}
+
+type Schema = juniper::RootNode<Query, Mutation, EmptySubscription<Context>>;
 
 fn create_schema() -> Schema {
-    Schema::new(Query, EmptyMutation::new(), EmptySubscription::new())
+    Schema::new(Query, Mutation, EmptySubscription::new())
 }
 
 #[derive(Deserialize)]

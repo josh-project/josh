@@ -61,6 +61,8 @@ impl GithubSim {
             reviews: BTreeMap::new(),
             maintainers: Vec::new(),
             rulesets: Vec::new(),
+            closed_prs: Vec::new(),
+            comments: Vec::new(),
         }));
 
         let (tx, rx) = mpsc::unbounded_channel::<ActorMsg>();
@@ -112,6 +114,14 @@ impl GithubSim {
 
     pub fn graphql_state(&self) -> &Arc<Mutex<GraphQLState>> {
         &self.graphql_state
+    }
+
+    pub fn closed_pr_node_ids(&self) -> Vec<String> {
+        self.graphql_state.lock().unwrap().closed_prs.clone()
+    }
+
+    pub fn comments(&self) -> Vec<(String, String)> {
+        self.graphql_state.lock().unwrap().comments.clone()
     }
 }
 
