@@ -222,6 +222,20 @@ pub fn flatten(filter: Filter) -> Filter {
             // Check if any filter is a Compose and distribute
             for (i, filter) in flattened.iter().enumerate() {
                 if let Op::Compose(compose_filters) = to_op(*filter) {
+                    // Distribution duplicates the other chain elements into
+                    // each branch of a new Compose. Compose children must be
+                    // invertible (downstream `step()`/`common_post` calls
+                    // `invert()` on them), so only distribute when every other
+                    // chain element is invertible. Otherwise leave the Chain
+                    // intact — distribution is an optimization, not required
+                    // for correctness.
+                    let others_invertible = flattened
+                        .iter()
+                        .enumerate()
+                        .all(|(j, f)| j == i || invert(*f).is_ok());
+                    if !others_invertible {
+                        break;
+                    }
                     // Distribute: create a Compose where each element is the chain with one compose element
                     let mut result = vec![];
                     for compose_filter in compose_filters {
