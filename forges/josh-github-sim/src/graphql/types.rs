@@ -44,20 +44,6 @@ impl GraphQLState {
         }
         None
     }
-
-    pub fn closed_pr_node_ids(&self) -> Vec<&str> {
-        self.repos
-            .values()
-            .flat_map(|r| r.closed_prs.iter().map(|s| s.as_str()))
-            .collect()
-    }
-
-    pub fn all_comments(&self) -> Vec<&(String, String)> {
-        self.repos
-            .values()
-            .flat_map(|r| r.comments.iter())
-            .collect()
-    }
 }
 
 pub struct MockPr {

@@ -24,10 +24,17 @@ pub struct RepoConfig {
     pub repo: TestRepo,
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub enum PrStatus {
+    Open,
+    Closed,
+}
+
 pub struct SimRepo {
     tx: mpsc::UnboundedSender<ActorMsg>,
     owner: String,
     name: String,
+    graphql_state: Arc<Mutex<GraphQLState>>,
 }
 
 impl SimRepo {
@@ -143,6 +150,35 @@ impl SimRepo {
         )
         .await
     }
+
+    pub fn pr_by_node_id(&self, node_id: &str) -> Option<PrStatus> {
+        let state = self.graphql_state.lock().unwrap();
+        let key = (self.owner.clone(), self.name.clone());
+        let repo = state.repos.get(&key)?;
+        if repo.prs.iter().any(|p| p.node_id == node_id) {
+            Some(PrStatus::Open)
+        } else if repo.closed_prs.contains(&node_id.to_string()) {
+            Some(PrStatus::Closed)
+        } else {
+            None
+        }
+    }
+
+    pub fn comments_for_pr(&self, node_id: &str) -> Vec<String> {
+        let state = self.graphql_state.lock().unwrap();
+        let key = (self.owner.clone(), self.name.clone());
+        state
+            .repos
+            .get(&key)
+            .map(|r| {
+                r.comments
+                    .iter()
+                    .filter(|(subj, _)| subj == node_id)
+                    .map(|(_, body)| body.clone())
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
 }
 
 struct GithubSimResources {
@@ -248,28 +284,6 @@ impl GithubSim {
         &self.graphql_state
     }
 
-    pub fn closed_pr_node_ids(&self) -> Vec<String> {
-        self.graphql_state
-            .lock()
-            .unwrap()
-            .repos
-            .values()
-            .flat_map(|r| r.closed_prs.iter())
-            .cloned()
-            .collect()
-    }
-
-    pub fn comments(&self) -> Vec<(String, String)> {
-        self.graphql_state
-            .lock()
-            .unwrap()
-            .repos
-            .values()
-            .flat_map(|r| r.comments.iter())
-            .cloned()
-            .collect()
-    }
-
     pub fn set_webhook_url(&self, url: Url) {
         self.graphql_state.lock().unwrap().webhook_url = Some(url);
     }
@@ -279,6 +293,7 @@ impl GithubSim {
             tx: self._tx.clone(),
             owner: owner.to_string(),
             name: name.to_string(),
+            graphql_state: self.graphql_state.clone(),
         }
     }
 }

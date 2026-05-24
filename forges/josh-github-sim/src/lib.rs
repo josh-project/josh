@@ -3,4 +3,4 @@ pub mod graphql;
 pub mod sim;
 
 pub use graphql::{GraphQLState, MockPr, MockRuleset};
-pub use sim::{GithubSim, RepoConfig, SimRepo};
+pub use sim::{GithubSim, PrStatus, RepoConfig, SimRepo};

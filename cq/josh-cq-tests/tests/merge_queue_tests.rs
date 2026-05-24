@@ -14,7 +14,7 @@ fn init_tracing() {
 
 use josh_cq_test_components::{TestRepo, TreeEntry, TreeMode};
 use josh_github_graphql::connection::GithubApiConnection;
-use josh_github_sim::{GithubSim, MockPr, MockRuleset, RepoConfig};
+use josh_github_sim::{GithubSim, MockPr, MockRuleset, PrStatus, RepoConfig};
 use josh_github_webhooks::test_helpers::make_pr_node_id;
 
 struct TestHarness {
@@ -193,25 +193,20 @@ async fn merge_single_pr() -> anyhow::Result<()> {
 
     harness.event_tx.send(CqEvent::Tick).await?;
     let merged = poll_until(
-        || !harness.github_sim.closed_pr_node_ids().is_empty(),
+        || repo.pr_by_node_id(&pr_node_id) == Some(PrStatus::Closed),
         Duration::from_secs(30),
         Duration::from_millis(100),
     )
     .await;
 
     assert!(merged, "PR should have been merged within 30 seconds");
-    assert!(
-        harness
-            .github_sim
-            .closed_pr_node_ids()
-            .contains(&pr_node_id)
-    );
+    assert_eq!(repo.pr_by_node_id(&pr_node_id), Some(PrStatus::Closed));
 
-    let comments = harness.github_sim.comments();
+    let comments = repo.comments_for_pr(&pr_node_id);
     assert!(
         comments
             .iter()
-            .any(|(subj, body)| subj == &pr_node_id && body.contains("Merged by Josh merge queue")),
+            .any(|body| body.contains("Merged by Josh merge queue")),
         "Expected merge comment, got: {:?}",
         comments
     );
@@ -280,8 +275,9 @@ async fn pr_not_admissible_without_review() -> anyhow::Result<()> {
 
     tokio::time::sleep(Duration::from_secs(2)).await;
 
-    assert!(
-        harness.github_sim.closed_pr_node_ids().is_empty(),
+    assert_eq!(
+        repo.pr_by_node_id(&pr_node_id),
+        Some(PrStatus::Open),
         "PR should not be merged without an approving review"
     );
 
@@ -361,8 +357,9 @@ async fn pr_not_admissible_with_failing_check() -> anyhow::Result<()> {
 
     tokio::time::sleep(Duration::from_secs(2)).await;
 
-    assert!(
-        harness.github_sim.closed_pr_node_ids().is_empty(),
+    assert_eq!(
+        repo.pr_by_node_id(&pr_node_id),
+        Some(PrStatus::Open),
         "PR should not be merged with a failing required check"
     );
 
@@ -434,11 +431,16 @@ async fn pr_removed_on_close_webhook() -> anyhow::Result<()> {
 
     tokio::time::sleep(Duration::from_secs(2)).await;
 
-    let comments = harness.github_sim.comments();
+    assert_eq!(
+        repo.pr_by_node_id(&pr_node_id),
+        Some(PrStatus::Closed),
+        "PR should be closed"
+    );
+    let comments = repo.comments_for_pr(&pr_node_id);
     assert!(
         !comments
             .iter()
-            .any(|(subj, body)| subj == &pr_node_id && body.contains("Merged by Josh merge queue")),
+            .any(|body| body.contains("Merged by Josh merge queue")),
         "PR should not be merged after being closed via webhook, got comments: {:?}",
         comments
     );
