@@ -34,10 +34,10 @@ pub fn resolve_snapshot_input(
     } else if let Ok(oid) = git2::Oid::from_str(input_ref) {
         Ok(repo.find_object(oid, None)?.peel_to_commit()?.id())
     } else {
-        let reference = repo
-            .resolve_reference_from_short_name(input_ref)
+        let obj = repo
+            .revparse_single(input_ref)
             .with_context(|| format!("could not resolve input: {:?}", input_ref))?;
-        Ok(reference.target().unwrap())
+        Ok(obj.peel_to_commit()?.id())
     }
 }
 
