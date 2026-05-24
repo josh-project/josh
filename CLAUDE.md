@@ -23,6 +23,7 @@ Key crates:
 | `josh-test-webhook-service` | Webhook relay server: receives GitHub webhooks, broadcasts to WS clients |
 | `josh-test-webhook-client` | WS client connecting to relay, forwards webhooks to CQ's `/v1/webhook` |
 | `josh-test-github` | Simulated GitHub environment: `SimRepo`, `GraphQLMock`, `GitServer`, `TestRepo` |
+| `josh-cq-test-components` | Clean test infrastructure: `TestRepo` actor with serialized git-http-backend (in `cq/josh-cq-test-components`) |
 
 ## Merge queue (`cq/`)
 
@@ -179,3 +180,94 @@ Run with:
 ```
 cargo test -p josh-cq-tests --test merge_queue_tests -- --test-threads=1
 ```
+
+## Test components (`cq/josh-cq-test-components`)
+
+Clean test infrastructure prototyping a replacement for the hand-rolled
+`josh-test-github` crate. Motivation: the existing test harness mixes
+`Arc<Mutex<…>>` locks with filesystem state and runs `git-http-backend`
+in a separate axum task, creating race conditions between programmatic
+API calls and HTTP git operations (clone, push).
+
+This crate uses **actor architecture** to eliminate those races without
+locks — you can't place a mutex on the filesystem.
+
+### Actor design
+
+All operations go through a single `mpsc::UnboundedSender<ActorMsg>` channel
+into an async tokio task. Messages carry a `oneshot::Sender` for the response.
+
+```
+HTTP request → axum handler → tx.send(ServeGitHttp{req, resp_ch}) ─┐
+User API     → tx.send(Commit{…}) ──────────────────────────────────┤
+                                                        mpsc channel │
+                                                                     ▼
+                                                            actor task (serial)
+                                                rx.recv().await
+                                                  Commit       → spawn_blocking(do_commit)
+                                                  CreateBranch → spawn_blocking(do_create_branch)
+                                                  GetHead      → spawn_blocking(do_get_head)
+                                                  ServeGitHttp → serve_git_http().await
+```
+
+**Why serve HTTP through the actor**: `git-http-backend` is spawned inside the actor
+loop, so HTTP clone/push requests are serialized against programmatic commits and
+branch creation. No two operations touch the on-disk repository concurrently.
+
+### Key design decisions
+
+- **`git2::Repository` is `!Send`** — opened fresh in each `spawn_blocking` closure
+  via `git2::Repository::open(&repo_path)`. The overhead is negligible.
+- **`TempDir` is `!Sync`** — wrapped in `Arc<std::sync::Mutex<TestRepoResources>>`
+  so `TestRepo` implements `Send + Sync` and can be used in `Arc<TestRepo>` from tests.
+  The mutex is never contended; it exists only as a lifetime container.
+- **git2 ops run in `spawn_blocking`** — git2 is blocking C code; offloading to the
+  blocking thread pool keeps the async runtime responsive.
+- **Nested helper `send_response` / `send_join_result`** — generic oneshot send
+  with `tracing::error!` if the receiver has been dropped (actor closed).
+- **`TreeMode` carries entries** — `Overlay(Vec<TreeEntry>)` / `Replace(Vec<TreeEntry>)`,
+  no separate entries parameter.
+
+### File structure
+
+```
+cq/josh-cq-test-components/
+├── Cargo.toml
+├── src/
+│   ├── lib.rs          # pub mod exports
+│   ├── repo.rs         # TestRepo struct, async API, axum server + handler
+│   ├── actor.rs        # ActorMsg enum, run_actor loop, git2 helpers (do_commit, etc.)
+│   └── git_http.rs     # prepare_command + serve: CGI git-http-backend subprocess
+└── tests/
+    └── test_repo_tests.rs  # 9 integration tests
+```
+
+### Public API
+
+```rust
+pub struct TreeEntry { pub path: String, pub content: String }
+pub enum TreeMode { Overlay(Vec<TreeEntry>), Replace(Vec<TreeEntry>) }
+
+impl TestRepo {
+    pub async fn new() -> anyhow::Result<Self>  // creates bare repo, starts actor + axum
+    pub fn path(&self) -> &Path
+    pub fn url(&self) -> &Url                    // http://127.0.0.1:PORT/
+    pub async fn commit(&self, mode, message, branch_ref) -> Result<Oid>
+    pub async fn create_branch(&self, name, from_ref) -> Result<Oid>
+    pub async fn get_head(&self, branch_ref) -> Result<Oid>
+}
+```
+
+- `TreeMode::Overlay` — build tree from parent's tree + new entries (preserves existing)
+- `TreeMode::Replace` — build tree from scratch with only the given entries
+- `branch_ref` uses full ref format (`"refs/heads/main"`)
+- `create_branch` accepts any revspec (ref name or OID) for `from_ref`
+
+### Running tests
+
+```
+cargo test -p josh-cq-test-components
+```
+
+Tests use `anyhow::Result<()>` with `?` propagation. Git CLI calls are wrapped in
+`spawn_blocking` to avoid blocking tokio worker threads during HTTP tests.

@@ -2945,6 +2945,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "josh-cq-test-components"
+version = "26.5.8"
+dependencies = [
+ "anyhow",
+ "axum",
+ "futures",
+ "git2",
+ "headers",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "url",
+]
+
+[[package]]
 name = "josh-cq-tests"
 version = "26.5.8"
 dependencies = [
