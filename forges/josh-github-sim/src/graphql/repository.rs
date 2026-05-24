@@ -31,16 +31,20 @@ impl Repository {
     ) -> PullRequestConnection {
         let state = context.state.lock().unwrap();
         let all_prs: Vec<&MockPr> = state
-            .prs
-            .iter()
-            .filter(|_pr| {
-                if let Some(ref states) = states {
-                    states.iter().any(|s| matches!(s, PullRequestState::OPEN))
-                } else {
-                    true
-                }
+            .repo(&self.owner, &self.name)
+            .map(|repo| {
+                repo.prs
+                    .iter()
+                    .filter(|_pr| {
+                        if let Some(ref states) = states {
+                            states.iter().any(|s| matches!(s, PullRequestState::OPEN))
+                        } else {
+                            true
+                        }
+                    })
+                    .collect()
             })
-            .collect();
+            .unwrap_or_default();
         let total_count = all_prs.len() as i32;
         let nodes: Vec<PullRequest> = all_prs
             .into_iter()
@@ -53,6 +57,8 @@ impl Repository {
                 head_ref_name: pr.head_ref_name.clone(),
                 base_ref_oid: pr.base_ref_oid.clone(),
                 base_ref_name: pr.base_ref_name.clone(),
+                repo_owner: self.owner.clone(),
+                repo_name: self.name.clone(),
             })
             .collect();
         PullRequestConnection { nodes, total_count }
@@ -61,9 +67,8 @@ impl Repository {
     fn pull_request(&self, number: i32, context: &Context) -> Option<PullRequest> {
         let state = context.state.lock().unwrap();
         state
-            .prs
-            .iter()
-            .find(|pr| pr.number == number as i64)
+            .repo(&self.owner, &self.name)
+            .and_then(|repo| repo.prs.iter().find(|pr| pr.number == number as i64))
             .map(|pr| PullRequest {
                 id: pr.node_id.clone(),
                 number: pr.number as i32,
@@ -72,6 +77,8 @@ impl Repository {
                 head_ref_name: pr.head_ref_name.clone(),
                 base_ref_oid: pr.base_ref_oid.clone(),
                 base_ref_name: pr.base_ref_name.clone(),
+                repo_owner: self.owner.clone(),
+                repo_name: self.name.clone(),
             })
     }
 
@@ -83,16 +90,20 @@ impl Repository {
     ) -> CollaboratorConnection {
         let state = context.state.lock().unwrap();
         let edges: Vec<CollaboratorEdge> = state
-            .maintainers
-            .iter()
-            .take(first as usize)
-            .map(|login| CollaboratorEdge {
-                permission: "WRITE".to_string(),
-                node: User {
-                    login: login.clone(),
-                },
+            .repo(&self.owner, &self.name)
+            .map(|repo| {
+                repo.maintainers
+                    .iter()
+                    .take(first as usize)
+                    .map(|login| CollaboratorEdge {
+                        permission: "WRITE".to_string(),
+                        node: User {
+                            login: login.clone(),
+                        },
+                    })
+                    .collect()
             })
-            .collect();
+            .unwrap_or_default();
         CollaboratorConnection { edges }
     }
 
@@ -104,8 +115,10 @@ impl Repository {
     ) -> RulesetConnection {
         let state = context.state.lock().unwrap();
         let nodes: Vec<RepositoryRuleset> = state
-            .rulesets
-            .iter()
+            .repo(&self.owner, &self.name)
+            .map(|repo| repo.rulesets.iter())
+            .into_iter()
+            .flatten()
             .take(first as usize)
             .map(|rs| RepositoryRuleset {
                 id: rs.id.clone(),
@@ -127,7 +140,8 @@ impl Repository {
     fn object(&self, oid: GitObjectID, context: &Context) -> Option<GitObject> {
         let oid = oid.0;
         let state = context.state.lock().unwrap();
-        let has_matching_pr = state
+        let repo = state.repo(&self.owner, &self.name)?;
+        let has_matching_pr = repo
             .prs
             .iter()
             .any(|pr| pr.head_ref_oid == oid || pr.base_ref_oid == oid);
@@ -135,7 +149,7 @@ impl Repository {
             let oid_clone = oid.clone();
             Some(GitObject {
                 oid,
-                associated_prs_nodes: state
+                associated_prs_nodes: repo
                     .prs
                     .iter()
                     .filter(|pr| pr.head_ref_oid == oid_clone)
@@ -147,6 +161,8 @@ impl Repository {
                         head_ref_name: pr.head_ref_name.clone(),
                         base_ref_oid: pr.base_ref_oid.clone(),
                         base_ref_name: pr.base_ref_name.clone(),
+                        repo_owner: self.owner.clone(),
+                        repo_name: self.name.clone(),
                     })
                     .collect(),
             })

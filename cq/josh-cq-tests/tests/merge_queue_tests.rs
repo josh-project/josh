@@ -15,13 +15,14 @@ fn init_tracing() {
 use josh_cq_test_components::{TestRepo, TreeEntry, TreeMode};
 use josh_github_graphql::connection::GithubApiConnection;
 use josh_github_sim::{GithubSim, MockPr, MockRuleset, RepoConfig};
-use josh_github_webhooks::test_helpers::{make_pr_node_id, make_pr_payload, make_repository};
-use josh_github_webhooks::webhook_server::WebhookPayload;
-use josh_github_webhooks::webhook_types;
+use josh_github_webhooks::test_helpers::make_pr_node_id;
 
 struct TestHarness {
     event_tx: tokio::sync::mpsc::Sender<CqEvent>,
     github_sim: GithubSim,
+    cq_webhook_url: String,
+    #[allow(dead_code)]
+    _cq_server: tokio::task::JoinHandle<()>,
     #[allow(dead_code)]
     _metarepo_temp: tempfile::TempDir,
     #[allow(dead_code)]
@@ -100,9 +101,14 @@ async fn start_test_harness(
     let event_tx =
         josh_cq::server::spawn_serve_task(repo_path, cache.clone(), 3600, Some(api), url_owner_map);
 
+    // 8. Start the CQ HTTP server so webhooks go through the real HTTP path
+    let (cq_server, cq_webhook_url) = josh_cq::server::bind_router(event_tx.clone()).await?;
+
     Ok(TestHarness {
         event_tx,
         github_sim,
+        cq_webhook_url,
+        _cq_server: cq_server,
         _metarepo_temp: metarepo_temp,
         _cache: cache,
     })
@@ -165,42 +171,32 @@ async fn merge_single_pr() -> anyhow::Result<()> {
     }])
     .await?;
 
-    {
-        let mut state = github_sim.graphql_state().lock().unwrap();
-        state.prs.push(MockPr {
-            node_id: pr_node_id.clone(),
-            number: 0,
-            title: "Test PR".into(),
-            head_ref_name: "feature".into(),
-            head_ref_oid: feature_sha.to_string(),
-            base_ref_name: "main".into(),
-            base_ref_oid: main_sha.to_string(),
-        });
-        state
-            .reviews
-            .insert(0, vec![("maintainer1".to_string(), "APPROVED".to_string())]);
-        state.maintainers.push("maintainer1".to_string());
-    }
+    let pr = MockPr {
+        owner: owner.to_string(),
+        name: name.to_string(),
+        node_id: pr_node_id.clone(),
+        number: 0,
+        title: "Test PR".into(),
+        head_ref_name: "feature".into(),
+        head_ref_oid: feature_sha.to_string(),
+        base_ref_name: "main".into(),
+        base_ref_oid: main_sha.to_string(),
+    };
 
     let harness = start_test_harness(owner, name, github_sim).await?;
+    harness
+        .github_sim
+        .set_webhook_url(url::Url::parse(&harness.cq_webhook_url)?);
 
-    let clone_url = format!("{}{}/{}", harness.github_sim.url(), owner, name);
-
-    // Send PullRequest Opened webhook
-    let payload = WebhookPayload::PullRequest(Box::new(webhook_types::PullRequestEvent {
-        pull_request: make_pr_payload(
-            owner,
-            name,
-            0,
-            "refs/heads/feature",
-            &feature_sha.to_string(),
-            "refs/heads/main",
-            &main_sha.to_string(),
-        ),
-        repository: make_repository(&clone_url),
-        details: webhook_types::PullRequestEventDetails::Opened,
-    }));
-    harness.event_tx.send(CqEvent::Webhook(payload)).await?;
+    harness.github_sim.pr_open(pr).await?;
+    harness
+        .github_sim
+        .add_review(owner, name, 0, "maintainer1", "APPROVED")
+        .await?;
+    harness
+        .github_sim
+        .add_maintainer(owner, name, "maintainer1")
+        .await?;
 
     harness.event_tx.send(CqEvent::Tick).await?;
     let merged = poll_until(
@@ -268,38 +264,28 @@ async fn pr_not_admissible_without_review() -> anyhow::Result<()> {
     }])
     .await?;
 
-    {
-        let mut state = github_sim.graphql_state().lock().unwrap();
-        state.prs.push(MockPr {
-            node_id: pr_node_id.clone(),
-            number: 0,
-            title: "No-review PR".into(),
-            head_ref_name: "feature".into(),
-            head_ref_oid: feature_sha.to_string(),
-            base_ref_name: "main".into(),
-            base_ref_oid: main_sha.to_string(),
-        });
-        state.maintainers.push("maintainer1".to_string());
-    }
+    let pr = MockPr {
+        owner: owner.to_string(),
+        name: name.to_string(),
+        node_id: pr_node_id.clone(),
+        number: 0,
+        title: "No-review PR".into(),
+        head_ref_name: "feature".into(),
+        head_ref_oid: feature_sha.to_string(),
+        base_ref_name: "main".into(),
+        base_ref_oid: main_sha.to_string(),
+    };
 
     let harness = start_test_harness(owner, name, github_sim).await?;
+    harness
+        .github_sim
+        .set_webhook_url(url::Url::parse(&harness.cq_webhook_url)?);
 
-    let clone_url = format!("{}{}/{}", harness.github_sim.url(), owner, name);
-
-    let payload = WebhookPayload::PullRequest(Box::new(webhook_types::PullRequestEvent {
-        pull_request: make_pr_payload(
-            owner,
-            name,
-            0,
-            "refs/heads/feature",
-            &feature_sha.to_string(),
-            "refs/heads/main",
-            &main_sha.to_string(),
-        ),
-        repository: make_repository(&clone_url),
-        details: webhook_types::PullRequestEventDetails::Opened,
-    }));
-    harness.event_tx.send(CqEvent::Webhook(payload)).await?;
+    harness.github_sim.pr_open(pr).await?;
+    harness
+        .github_sim
+        .add_maintainer(owner, name, "maintainer1")
+        .await?;
 
     harness.event_tx.send(CqEvent::Tick).await?;
 
@@ -351,68 +337,50 @@ async fn pr_not_admissible_with_failing_check() -> anyhow::Result<()> {
     }])
     .await?;
 
-    {
-        let mut state = github_sim.graphql_state().lock().unwrap();
-        state.prs.push(MockPr {
-            node_id: pr_node_id.clone(),
-            number: 0,
-            title: "Failing-check PR".into(),
-            head_ref_name: "feature".into(),
-            head_ref_oid: feature_sha.to_string(),
-            base_ref_name: "main".into(),
-            base_ref_oid: main_sha.to_string(),
-        });
-        state
-            .reviews
-            .insert(0, vec![("maintainer1".to_string(), "APPROVED".to_string())]);
-        state.maintainers.push("maintainer1".to_string());
-        state.rulesets.push(MockRuleset {
-            id: "rs-1".into(),
-            name: "test ruleset".into(),
-            enforcement: "ACTIVE".into(),
-            include_refs: vec!["refs/heads/main".into()],
-            exclude_refs: vec![],
-            required_checks: vec!["ci/test".into()],
-        });
-    }
+    let pr = MockPr {
+        owner: owner.to_string(),
+        name: name.to_string(),
+        node_id: pr_node_id.clone(),
+        number: 0,
+        title: "Failing-check PR".into(),
+        head_ref_name: "feature".into(),
+        head_ref_oid: feature_sha.to_string(),
+        base_ref_name: "main".into(),
+        base_ref_oid: main_sha.to_string(),
+    };
 
     let harness = start_test_harness(owner, name, github_sim).await?;
+    harness
+        .github_sim
+        .set_webhook_url(url::Url::parse(&harness.cq_webhook_url)?);
 
-    let clone_url = format!("{}{}/{}", harness.github_sim.url(), owner, name);
-
-    // Send PR opened webhook
-    let payload = WebhookPayload::PullRequest(Box::new(webhook_types::PullRequestEvent {
-        pull_request: make_pr_payload(
+    harness.github_sim.pr_open(pr).await?;
+    harness
+        .github_sim
+        .add_review(owner, name, 0, "maintainer1", "APPROVED")
+        .await?;
+    harness
+        .github_sim
+        .add_maintainer(owner, name, "maintainer1")
+        .await?;
+    harness
+        .github_sim
+        .add_ruleset(
             owner,
             name,
-            0,
-            "refs/heads/feature",
-            &feature_sha.to_string(),
-            "refs/heads/main",
-            &main_sha.to_string(),
-        ),
-        repository: make_repository(&clone_url),
-        details: webhook_types::PullRequestEventDetails::Opened,
-    }));
-    harness.event_tx.send(CqEvent::Webhook(payload)).await?;
-
-    // Send failing check run webhook
-    let check_payload = WebhookPayload::CheckRun(Box::new(webhook_types::CheckRunEvent {
-        check_run: webhook_types::CheckRun {
-            id: 1,
-            name: "ci/test".to_string(),
-            head_sha: feature_sha.to_string(),
-            status: "completed".to_string(),
-            conclusion: Some(webhook_types::CheckRunConclusion::Failure),
-            started_at: Default::default(),
-            completed_at: None,
-        },
-        repository: make_repository(&clone_url),
-        details: webhook_types::CheckRunEventDetails::Completed,
-    }));
+            MockRuleset {
+                id: "rs-1".into(),
+                name: "test ruleset".into(),
+                enforcement: "ACTIVE".into(),
+                include_refs: vec!["refs/heads/main".into()],
+                exclude_refs: vec![],
+                required_checks: vec!["ci/test".into()],
+            },
+        )
+        .await?;
     harness
-        .event_tx
-        .send(CqEvent::Webhook(check_payload))
+        .github_sim
+        .complete_check_run(owner, name, "ci/test", &feature_sha.to_string(), "failure")
         .await?;
 
     harness.event_tx.send(CqEvent::Tick).await?;
@@ -465,70 +433,47 @@ async fn pr_removed_on_close_webhook() -> anyhow::Result<()> {
     }])
     .await?;
 
-    {
-        let mut state = github_sim.graphql_state().lock().unwrap();
-        state.prs.push(MockPr {
-            node_id: pr_node_id.clone(),
-            number: 0,
-            title: "Close-test PR".into(),
-            head_ref_name: "feature".into(),
-            head_ref_oid: feature_sha.to_string(),
-            base_ref_name: "main".into(),
-            base_ref_oid: main_sha.to_string(),
-        });
-        state
-            .reviews
-            .insert(0, vec![("maintainer1".to_string(), "APPROVED".to_string())]);
-        state.maintainers.push("maintainer1".to_string());
-    }
+    let pr = MockPr {
+        owner: owner.to_string(),
+        name: name.to_string(),
+        node_id: pr_node_id.clone(),
+        number: 0,
+        title: "Close-test PR".into(),
+        head_ref_name: "feature".into(),
+        head_ref_oid: feature_sha.to_string(),
+        base_ref_name: "main".into(),
+        base_ref_oid: main_sha.to_string(),
+    };
 
     let harness = start_test_harness(owner, name, github_sim).await?;
-
-    let clone_url = format!("{}{}/{}", harness.github_sim.url(), owner, name);
-
-    // Send PR opened webhook
-    let payload = WebhookPayload::PullRequest(Box::new(webhook_types::PullRequestEvent {
-        pull_request: make_pr_payload(
-            owner,
-            name,
-            0,
-            "refs/heads/feature",
-            &feature_sha.to_string(),
-            "refs/heads/main",
-            &main_sha.to_string(),
-        ),
-        repository: make_repository(&clone_url),
-        details: webhook_types::PullRequestEventDetails::Opened,
-    }));
-    harness.event_tx.send(CqEvent::Webhook(payload)).await?;
-
-    // Send PR closed webhook
-    let closed_payload = WebhookPayload::PullRequest(Box::new(webhook_types::PullRequestEvent {
-        pull_request: make_pr_payload(
-            owner,
-            name,
-            0,
-            "refs/heads/feature",
-            &feature_sha.to_string(),
-            "refs/heads/main",
-            &main_sha.to_string(),
-        ),
-        repository: make_repository(&clone_url),
-        details: webhook_types::PullRequestEventDetails::Closed,
-    }));
     harness
-        .event_tx
-        .send(CqEvent::Webhook(closed_payload))
+        .github_sim
+        .set_webhook_url(url::Url::parse(&harness.cq_webhook_url)?);
+
+    harness.github_sim.pr_open(pr).await?;
+    harness
+        .github_sim
+        .add_review(owner, name, 0, "maintainer1", "APPROVED")
         .await?;
+    harness
+        .github_sim
+        .add_maintainer(owner, name, "maintainer1")
+        .await?;
+
+    harness.github_sim.pr_close(&pr_node_id).await?;
 
     // Send Tick - PR should NOT be merged because it was closed
     harness.event_tx.send(CqEvent::Tick).await?;
 
     tokio::time::sleep(Duration::from_secs(2)).await;
 
+    let comments = harness.github_sim.comments();
     assert!(
-        harness.github_sim.closed_pr_node_ids().is_empty(),
-        "PR should not be merged after being closed via webhook"
+        !comments
+            .iter()
+            .any(|(subj, body)| subj == &pr_node_id && body.contains("Merged by Josh merge queue")),
+        "PR should not be merged after being closed via webhook, got comments: {:?}",
+        comments
     );
 
     Ok(())

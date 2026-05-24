@@ -23,8 +23,13 @@ impl Mutation {
     ) -> ClosePullRequestPayload {
         let pull_request_node_id = input.pull_request_id.to_string();
         let mut state = context.state.lock().unwrap();
-        state.closed_prs.push(pull_request_node_id.clone());
-        state.prs.retain(|pr| pr.node_id != pull_request_node_id);
+        if let Some((owner, name, idx)) = state.find_pr_idx(&pull_request_node_id) {
+            let key = (owner.to_string(), name.to_string());
+            if let Some(repo) = state.repos.get_mut(&key) {
+                repo.closed_prs.push(pull_request_node_id.clone());
+                repo.prs.remove(idx);
+            }
+        }
         ClosePullRequestPayload {
             pull_request: ClosePullRequestResult {
                 id: pull_request_node_id,
@@ -35,12 +40,16 @@ impl Mutation {
     fn add_comment(input: AddCommentInput, context: &Context) -> AddCommentPayload {
         let subject_id = input.subject_id.to_string();
         let body = input.body;
-        context
-            .state
-            .lock()
-            .unwrap()
-            .comments
-            .push((subject_id, body));
+        let mut state = context.state.lock().unwrap();
+        // Find which repo this subject (PR) belongs to
+        let key = state
+            .find_pr_idx(&subject_id)
+            .map(|(owner, name, _)| (owner.to_string(), name.to_string()));
+        if let Some(key) = key {
+            if let Some(repo) = state.repos.get_mut(&key) {
+                repo.comments.push((subject_id, body));
+            }
+        }
         AddCommentPayload {
             client_mutation_id: None,
         }

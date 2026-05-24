@@ -18,6 +18,8 @@ pub(crate) struct PullRequest {
     pub(crate) head_ref_name: String,
     pub(crate) base_ref_oid: String,
     pub(crate) base_ref_name: String,
+    pub(crate) repo_owner: String,
+    pub(crate) repo_name: String,
 }
 
 #[graphql_object(context = Context)]
@@ -47,8 +49,8 @@ impl PullRequest {
     fn reviews(&self, first: i32, _after: Option<String>, context: &Context) -> ReviewConnection {
         let state = context.state.lock().unwrap();
         let nodes: Vec<Review> = state
-            .reviews
-            .get(&(self.number as i64))
+            .repo(&self.repo_owner, &self.repo_name)
+            .and_then(|repo| repo.reviews.get(&(self.number as i64)))
             .map(|review_list| {
                 review_list
                     .iter()

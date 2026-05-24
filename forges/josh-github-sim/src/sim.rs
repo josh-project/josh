@@ -15,7 +15,8 @@ use josh_cq_test_components::TestRepo;
 use josh_cq_test_components::repo::TestRepoResources;
 
 use crate::actor::{self, ActorMsg};
-use crate::graphql::GraphQLState;
+use crate::graphql::{GraphQLState, RepoState};
+use crate::{MockPr, MockRuleset};
 
 pub struct RepoConfig {
     pub owner: String,
@@ -48,22 +49,25 @@ pub struct GithubSim {
 impl GithubSim {
     pub async fn new(repos: Vec<RepoConfig>) -> anyhow::Result<Self> {
         let mut repo_map: HashMap<(String, String), PathBuf> = HashMap::new();
+        let mut repos_state: HashMap<(String, String), RepoState> = HashMap::new();
         let mut guards: Vec<Arc<Mutex<TestRepoResources>>> = Vec::new();
 
         for config in repos {
+            repos_state.insert(
+                (config.owner.clone(), config.name.clone()),
+                RepoState {
+                    prs: Vec::new(),
+                    reviews: BTreeMap::new(),
+                    maintainers: Vec::new(),
+                    rulesets: Vec::new(),
+                    closed_prs: Vec::new(),
+                    comments: Vec::new(),
+                },
+            );
             let (path, guard) = config.repo.into_parts();
             repo_map.insert((config.owner, config.name), path);
             guards.push(guard);
         }
-
-        let graphql_state = Arc::new(Mutex::new(GraphQLState {
-            prs: Vec::new(),
-            reviews: BTreeMap::new(),
-            maintainers: Vec::new(),
-            rulesets: Vec::new(),
-            closed_prs: Vec::new(),
-            comments: Vec::new(),
-        }));
 
         let (tx, rx) = mpsc::unbounded_channel::<ActorMsg>();
 
@@ -72,6 +76,13 @@ impl GithubSim {
         let port = listener.local_addr()?.port();
         let url = Url::parse(&format!("http://{}:{port}/", Ipv4Addr::LOCALHOST))?;
         let graphql_url = Url::parse(&format!("http://{}:{port}/graphql", Ipv4Addr::LOCALHOST))?;
+        let sim_url = url.clone();
+
+        let graphql_state = Arc::new(Mutex::new(GraphQLState {
+            repos: repos_state,
+            webhook_url: None,
+            sim_url: Some(sim_url),
+        }));
 
         let app = axum::Router::new()
             .route("/graphql", post(handle_graphql))
@@ -117,11 +128,133 @@ impl GithubSim {
     }
 
     pub fn closed_pr_node_ids(&self) -> Vec<String> {
-        self.graphql_state.lock().unwrap().closed_prs.clone()
+        self.graphql_state
+            .lock()
+            .unwrap()
+            .repos
+            .values()
+            .flat_map(|r| r.closed_prs.iter())
+            .cloned()
+            .collect()
     }
 
     pub fn comments(&self) -> Vec<(String, String)> {
-        self.graphql_state.lock().unwrap().comments.clone()
+        self.graphql_state
+            .lock()
+            .unwrap()
+            .repos
+            .values()
+            .flat_map(|r| r.comments.iter())
+            .cloned()
+            .collect()
+    }
+
+    pub fn set_webhook_url(&self, url: Url) {
+        self.graphql_state.lock().unwrap().webhook_url = Some(url);
+    }
+
+    async fn send_msg<R>(&self, msg: ActorMsg, rx: oneshot::Receiver<R>) -> anyhow::Result<R> {
+        self._tx
+            .send(msg)
+            .map_err(|_| anyhow::anyhow!("actor closed"))?;
+        Ok(rx.await?)
+    }
+
+    pub async fn pr_open(&self, pr: MockPr) -> anyhow::Result<()> {
+        let (tx, rx) = oneshot::channel();
+        self.send_msg(ActorMsg::PrOpen { pr, response: tx }, rx)
+            .await
+    }
+
+    pub async fn pr_close(&self, node_id: &str) -> anyhow::Result<()> {
+        let (tx, rx) = oneshot::channel();
+        self.send_msg(
+            ActorMsg::PrClose {
+                node_id: node_id.to_string(),
+                response: tx,
+            },
+            rx,
+        )
+        .await
+    }
+
+    pub async fn add_review(
+        &self,
+        owner: &str,
+        name: &str,
+        pr_number: i64,
+        reviewer: &str,
+        state: &str,
+    ) -> anyhow::Result<()> {
+        let (tx, rx) = oneshot::channel();
+        self.send_msg(
+            ActorMsg::AddReview {
+                owner: owner.to_string(),
+                name: name.to_string(),
+                pr_number,
+                reviewer: reviewer.to_string(),
+                state: state.to_string(),
+                response: tx,
+            },
+            rx,
+        )
+        .await
+    }
+
+    pub async fn add_maintainer(&self, owner: &str, name: &str, login: &str) -> anyhow::Result<()> {
+        let (tx, rx) = oneshot::channel();
+        self.send_msg(
+            ActorMsg::AddMaintainer {
+                owner: owner.to_string(),
+                name: name.to_string(),
+                login: login.to_string(),
+                response: tx,
+            },
+            rx,
+        )
+        .await
+    }
+
+    pub async fn add_ruleset(
+        &self,
+        owner: &str,
+        name: &str,
+        ruleset: MockRuleset,
+    ) -> anyhow::Result<()> {
+        let (tx, rx) = oneshot::channel();
+        self.send_msg(
+            ActorMsg::AddRuleset {
+                owner: owner.to_string(),
+                name: name.to_string(),
+                ruleset,
+                response: tx,
+            },
+            rx,
+        )
+        .await
+    }
+
+    pub async fn complete_check_run(
+        &self,
+        owner: &str,
+        name: &str,
+        check_name: &str,
+        head_sha: &str,
+        conclusion: &str,
+    ) -> anyhow::Result<()> {
+        let (tx, rx) = oneshot::channel();
+        self.send_msg(
+            ActorMsg::CompleteCheckRun {
+                owner: owner.to_string(),
+                name: name.to_string(),
+                check_name: check_name.to_string(),
+                head_sha: head_sha.to_string(),
+                conclusion: conclusion.to_string(),
+                response: tx,
+            },
+            rx,
+        )
+        .await
     }
 }
 

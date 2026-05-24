@@ -10,6 +10,7 @@ use axum::response::{IntoResponse, Response};
 use indexmap::IndexMap;
 use juniper::{DefaultScalarValue, EmptySubscription, InputValue, Variables};
 use serde::Deserialize;
+use url::Url;
 
 mod collaborator;
 mod context;
@@ -20,8 +21,9 @@ mod query;
 mod repository;
 mod ruleset;
 mod types;
+pub(crate) mod webhooks;
 
-pub use types::{GraphQLState, MockPr, MockRuleset};
+pub use types::{GraphQLState, MockPr, MockRuleset, RepoState};
 
 use context::Context;
 use mutation::Mutation;
@@ -94,6 +96,36 @@ impl IntoResponse for GraphQLError {
     }
 }
 
+fn close_pr_webhook_data(
+    payload: &GraphQLPayload,
+    state: &Arc<Mutex<GraphQLState>>,
+) -> Option<(Url, serde_json::Value)> {
+    let state_lock = state.lock().unwrap();
+    let webhook_url = state_lock.webhook_url.clone();
+    match (
+        webhook_url,
+        payload.operation_name.as_deref(),
+        state_lock.sim_url.as_ref(),
+    ) {
+        (Some(wh_url), Some("ClosePullRequest"), Some(sim_url)) => {
+            let pr_id = payload
+                .variables
+                .as_ref()
+                .and_then(|v| v.get("pullRequestNodeId"))
+                .and_then(|v| v.as_str());
+            pr_id
+                .and_then(|id| {
+                    state_lock.find_pr_idx(id).map(|(owner, name, idx)| {
+                        let key = (owner.to_string(), name.to_string());
+                        &state_lock.repos[&key].prs[idx]
+                    })
+                })
+                .map(|pr| (wh_url, webhooks::build_pr_closed_event(pr, sim_url)))
+        }
+        _ => None,
+    }
+}
+
 pub(crate) async fn handle_graphql_request(
     repos: &HashMap<(String, String), PathBuf>,
     state: &Arc<Mutex<GraphQLState>>,
@@ -104,7 +136,10 @@ pub(crate) async fn handle_graphql_request(
         Err(e) => return GraphQLError::from_message(e.to_string()).into_response(),
     };
 
-    let variables = variables_to_juniper(&payload.variables.unwrap_or_default());
+    let variables = variables_to_juniper(&payload.variables.clone().unwrap_or_default());
+
+    // Capture PR data before mutation executes — the mutation removes it from state.
+    let webhook_data = close_pr_webhook_data(&payload, state);
 
     let context = Context {
         repos: repos.clone(),
@@ -120,6 +155,10 @@ pub(crate) async fn handle_graphql_request(
         &context,
     )
     .await;
+
+    if let Some((wh_url, body)) = webhook_data {
+        webhooks::send_webhook(&wh_url, "pull_request", body).await;
+    }
 
     (
         StatusCode::OK,

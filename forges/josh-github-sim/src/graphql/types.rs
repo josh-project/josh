@@ -1,4 +1,6 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
+
+use url::Url;
 
 pub struct MockRuleset {
     pub id: String,
@@ -9,7 +11,7 @@ pub struct MockRuleset {
     pub required_checks: Vec<String>,
 }
 
-pub struct GraphQLState {
+pub struct RepoState {
     pub prs: Vec<MockPr>,
     pub reviews: BTreeMap<i64, Vec<(String, String)>>,
     pub maintainers: Vec<String>,
@@ -18,7 +20,49 @@ pub struct GraphQLState {
     pub comments: Vec<(String, String)>,
 }
 
+pub struct GraphQLState {
+    pub repos: HashMap<(String, String), RepoState>,
+    pub webhook_url: Option<Url>,
+    pub sim_url: Option<Url>,
+}
+
+impl GraphQLState {
+    pub fn repo(&self, owner: &str, name: &str) -> Option<&RepoState> {
+        self.repos.get(&(owner.to_string(), name.to_string()))
+    }
+
+    pub fn repo_mut(&mut self, owner: &str, name: &str) -> Option<&mut RepoState> {
+        self.repos.get_mut(&(owner.to_string(), name.to_string()))
+    }
+
+    /// Finds a PR by node_id across all repos. Returns (owner, name, index_in_prs).
+    pub fn find_pr_idx(&self, node_id: &str) -> Option<(&str, &str, usize)> {
+        for ((owner, name), repo) in &self.repos {
+            if let Some(idx) = repo.prs.iter().position(|p| p.node_id == node_id) {
+                return Some((owner, name, idx));
+            }
+        }
+        None
+    }
+
+    pub fn closed_pr_node_ids(&self) -> Vec<&str> {
+        self.repos
+            .values()
+            .flat_map(|r| r.closed_prs.iter().map(|s| s.as_str()))
+            .collect()
+    }
+
+    pub fn all_comments(&self) -> Vec<&(String, String)> {
+        self.repos
+            .values()
+            .flat_map(|r| r.comments.iter())
+            .collect()
+    }
+}
+
 pub struct MockPr {
+    pub owner: String,
+    pub name: String,
     pub node_id: String,
     pub number: i64,
     pub title: String,

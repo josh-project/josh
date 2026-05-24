@@ -20,8 +20,9 @@ impl Query {
     fn node(id: ID, context: &Context) -> Option<RepositoryRuleset> {
         let state = context.state.lock().unwrap();
         state
-            .rulesets
-            .iter()
+            .repos
+            .values()
+            .flat_map(|repo| repo.rulesets.iter())
             .find(|rs| rs.id == id.to_string())
             .map(|rs| RepositoryRuleset {
                 id: rs.id.clone(),

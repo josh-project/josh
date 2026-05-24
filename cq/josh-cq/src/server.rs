@@ -49,6 +49,21 @@ pub fn make_router(event_tx: mpsc::Sender<CqEvent>) -> axum::Router {
         .with_state(event_tx)
 }
 
+pub async fn bind_router(
+    event_tx: mpsc::Sender<CqEvent>,
+) -> anyhow::Result<(tokio::task::JoinHandle<()>, String)> {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+    let addr = listener.local_addr()?;
+    let cq_url = format!("http://127.0.0.1:{}", addr.port());
+    let app = make_router(event_tx);
+    let handle = tokio::spawn(async move {
+        axum::serve(listener, app)
+            .await
+            .expect("CQ HTTP server failed");
+    });
+    Ok((handle, cq_url))
+}
+
 fn handle_action(action: UserAction) {
     match action {
         UserAction::Message(message) => {
