@@ -16,11 +16,10 @@ fn resolve_input_ref(
         oid.to_string()
     } else if git2::Oid::from_str(input_ref).is_ok() {
         input_ref.to_string()
-    } else {
-        let reference = repo
-            .resolve_reference_from_short_name(input_ref)
-            .with_context(|| format!("could not resolve input: {:?}", input_ref))?;
+    } else if let Ok(reference) = repo.resolve_reference_from_short_name(input_ref) {
         reference.name().unwrap().to_string()
+    } else {
+        oid.to_string()
     };
     Ok((ref_string, oid))
 }

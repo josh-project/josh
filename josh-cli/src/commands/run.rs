@@ -31,7 +31,7 @@ pub struct RunArgs {
     #[arg(long = "clean-all")]
     pub clean_all: bool,
 
-    /// Git ref to use as input: "." (working tree), "+" (index), "HEAD", or any ref
+    /// Git revision to use as input: "." (working tree), "+" (index), or any rev (e.g. "HEAD", "HEAD~1", "main")
     #[arg(default_value = ".")]
     pub reference: String,
 
