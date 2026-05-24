@@ -7,9 +7,7 @@ inputs = :[
         :$cache="rust"
         :$cmd="cargo test --workspace --offline --locked"
 
-        sidecars = :[
-            :#sccache-proxy[:+ws/sccache-proxy]
-        ]
+        :+sidecars
 
         inputs = :[
             :#fetch[:+ws/fetch]
