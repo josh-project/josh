@@ -159,9 +159,9 @@ unauthenticated client pointing at a mock GraphQL server.
 
 ### Integration tests
 
-Tests live in `cq/josh-cq-tests/tests/merge_queue_tests.rs`. They use a simulated
-GitHub environment (`SimRepo` + `GraphQLMock` + git HTTP remote) and exercise the
-full merge queue flow:
+Tests live in `cq/josh-cq-tests/tests/merge_queue_tests.rs`. They use `GithubSim`
+(Git HTTP + GraphQL) and exercise the full merge queue flow through the real HTTP
+webhook path:
 
 | Test | Scenario |
 |------|----------|
@@ -173,8 +173,22 @@ full merge queue flow:
 Tests return `anyhow::Result<()>` and use `?` for error propagation. The test harness:
 1. Creates a temporary bare repo as the metarepo
 2. Initializes the CQ actor with a long tick interval (ticks driven manually)
-3. Sends `CqEvent::Webhook(...)` and `CqEvent::Tick` through the event channel
-4. Polls with `poll_until` to wait for expected side effects (PR closed, comment posted)
+3. Starts the CQ HTTP server (`bind_router`) so webhooks go through the real HTTP path
+4. Wires `GithubSim`'s webhook URL to the CQ server, so sim mutations POST webhooks
+5. Drives operations through `SimRepo` (obtained via `github_sim.repo_by_name(owner, name)`)
+6. Sends `CqEvent::Tick` through the event channel for manual polling
+7. Polls with `poll_until` to wait for expected side effects
+
+```rust
+let repo = harness.github_sim.repo_by_name(owner, name);
+let (pr_node_id, number) = repo
+    .pr_open("Test PR", "refs/heads/feature", "refs/heads/main")
+    .await?;
+repo.add_review(number, "maintainer1", ReviewState::Approved).await?;
+repo.add_maintainer("maintainer1").await?;
+harness.event_tx.send(CqEvent::Tick).await?;
+// Assert: repo.pr_by_node_id(&pr_node_id) == Some(PrStatus::Closed)
+```
 
 Run with:
 ```
@@ -378,16 +392,19 @@ by `operationName`).
 
 ### Actor design
 
-Single `mpsc` channel serializes both git-http and GraphQL requests:
+Single `mpsc` channel serializes git-http, GraphQL, and PR lifecycle operations:
 
 ```
 Git HTTP   → handle_git     → tx.send(ServeGitHttp{owner,name,req}) ─┐
 GraphQL    → handle_graphql → tx.send(GraphQLRequest{req}) ──────────┤
+SimRepo    → pr_open() etc  → tx.send(PrOpen{…}) / PrClose / AddReview / … ─┤
                                                             mpsc      │
                                                                       ▼
                                                               actor task (serial)
                                                        ServeGitHttp → git_http::serve()
                                                        GraphQLReq   → juniper::execute().await
+                                                       PrOpen       → resolve OIDs, gen IDs, store, webhook
+                                                       PrClose/AddReview/… → mutate state, webhook
 ```
 
 GraphQL requests carry the full `axum::extract::Request` — the actor extracts the
@@ -422,10 +439,21 @@ GraphQL endpoint (`/graphql`). Inner repos are never exposed.
 forges/josh-github-sim/
 ├── Cargo.toml
 ├── src/
-│   ├── lib.rs          # pub use sim::{GithubSim, RepoConfig}
-│   ├── sim.rs          # GithubSim, RepoConfig, axum server, HTTP handlers
+│   ├── lib.rs          # pub use sim::{GithubSim, RepoConfig, SimRepo, PrStatus}
+│   ├── sim.rs          # GithubSim, SimRepo, RepoConfig, PrStatus, axum server
 │   ├── actor.rs        # ActorMsg enum, run_actor loop
-│   └── graphql.rs      # Juniper schema, handle_graphql_request, response types
+│   └── graphql/
+│       ├── mod.rs      # Juniper schema, handle_graphql_request
+│       ├── types.rs    # MockPr, MockRuleset, RepoState, GraphQLState, ReviewState
+│       ├── webhooks.rs # Webhook payload builders + HTTP POST
+│       ├── query.rs    # GraphQL Query root
+│       ├── mutation.rs # GraphQL Mutation root (closePullRequest, addComment)
+│       ├── repository.rs
+│       ├── pull_request.rs
+│       ├── context.rs
+│       ├── collaborator.rs
+│       ├── git_object.rs
+│       └── ruleset.rs
 └── tests/
     └── integration.rs  # 5 integration tests
 ```
@@ -435,14 +463,37 @@ forges/josh-github-sim/
 ```rust
 pub struct RepoConfig { pub owner: String, pub name: String, pub repo: TestRepo }
 
+// GithubSim — factory + cross-repo accessors
 impl GithubSim {
     pub async fn new(repos: Vec<RepoConfig>) -> anyhow::Result<Self>
-    pub fn url(&self) -> &Url           // http://127.0.0.1:PORT/
-    pub fn graphql_url(&self) -> &Url   // http://127.0.0.1:PORT/graphql
+    pub fn url(&self) -> &Url
+    pub fn graphql_url(&self) -> &Url
+    pub fn graphql_state(&self) -> &Arc<Mutex<GraphQLState>>
+    pub fn set_webhook_url(&self, url: Url)
+    pub fn repo_by_name(&self, owner: &str, name: &str) -> SimRepo
 }
+
+// SimRepo — per-repo operations (obtained from GithubSim)
+impl SimRepo {
+    pub fn owner(&self) -> &str
+    pub fn name(&self) -> &str
+    pub async fn pr_open(&self, title, head_ref_name, base_ref_name) -> Result<(String, i64)>
+    pub async fn pr_close(&self, node_id: &str) -> Result<()>
+    pub async fn add_review(&self, pr_number, reviewer, state: ReviewState) -> Result<()>
+    pub async fn add_maintainer(&self, login: &str) -> Result<()>
+    pub async fn add_ruleset(&self, ruleset: MockRuleset) -> Result<()>
+    pub async fn complete_check_run(&self, check_name, pr_number, conclusion) -> Result<()>
+    pub fn pr_by_node_id(&self, node_id: &str) -> Option<PrStatus>
+    pub fn pr_comments_by_node_id(&self, node_id: &str) -> Vec<String>
+}
+
+pub enum PrStatus { Open, Closed }
+pub enum ReviewState { Approved, ChangesRequested, Commented, Dismissed }
 ```
 
-No `path()`, no `get_head()` — all interaction via HTTP.
+- `pr_open` auto-generates node_id and PR number, resolves ref names to OIDs via git2.
+- `pr_close`, `add_review`, etc. emit webhooks to the configured `webhook_url`.
+- `pr_by_node_id` and `pr_comments_by_node_id` are synchronous in-memory lookups.
 
 ### Running tests
 
