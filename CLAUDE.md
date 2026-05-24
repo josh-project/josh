@@ -22,8 +22,8 @@ Key crates:
 | `josh-github-webhooks` | Webhook type definitions, payload deserialization, HMAC signature verification |
 | `josh-test-webhook-service` | Webhook relay server: receives GitHub webhooks, broadcasts to WS clients |
 | `josh-test-webhook-client` | WS client connecting to relay, forwards webhooks to CQ's `/v1/webhook` |
-| `josh-test-github` | Simulated GitHub environment: `SimRepo`, `GraphQLMock`, `GitServer`, `TestRepo` |
 | `josh-cq-test-components` | Clean test infrastructure: `TestRepo` actor with serialized git-http-backend (in `cq/josh-cq-test-components`) |
+| `josh-github-sim` | Simulated GitHub environment: Git HTTP + GraphQL via Juniper schema (in `forges/josh-github-sim`) |
 
 ## Merge queue (`cq/`)
 

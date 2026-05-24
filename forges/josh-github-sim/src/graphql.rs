@@ -8,7 +8,10 @@ use axum::extract::FromRequest;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use indexmap::IndexMap;
-use juniper::{DefaultScalarValue, EmptySubscription, InputValue, Variables, graphql_object};
+use juniper::{
+    DefaultScalarValue, EmptySubscription, ID, InputValue, Scalar, ScalarValue, Variables,
+    WrongInputScalarTypeError, graphql_object,
+};
 use serde::Deserialize;
 
 pub struct MockRuleset {
@@ -48,6 +51,48 @@ impl juniper::Context for Context {}
 
 struct Query;
 
+#[derive(juniper::GraphQLEnum)]
+enum PullRequestState {
+    OPEN,
+    CLOSED,
+    MERGED,
+}
+
+#[derive(Clone, Debug, juniper::GraphQLScalar)]
+#[graphql(parse_token(String))]
+struct GitObjectID(String);
+
+impl GitObjectID {
+    fn to_output(&self) -> &str {
+        &self.0
+    }
+
+    fn from_input<S: ScalarValue>(v: &Scalar<S>) -> Result<Self, WrongInputScalarTypeError<'_, S>> {
+        v.try_to_string()
+            .map(GitObjectID)
+            .ok_or_else(|| WrongInputScalarTypeError {
+                type_name: arcstr::literal!("String"),
+                input: &**v,
+            })
+    }
+}
+
+#[derive(juniper::GraphQLEnum)]
+enum RepositoryRuleType {
+    RequiredStatusChecks,
+}
+
+#[derive(juniper::GraphQLInputObject)]
+struct AddCommentInput {
+    subject_id: ID,
+    body: String,
+}
+
+#[derive(juniper::GraphQLInputObject)]
+struct ClosePullRequestInput {
+    pull_request_id: ID,
+}
+
 #[graphql_object(context = Context)]
 impl Query {
     async fn repository(owner: String, name: String, context: &Context) -> Option<Repository> {
@@ -59,12 +104,12 @@ impl Query {
         }
     }
 
-    fn node(id: String, context: &Context) -> Option<RepositoryRuleset> {
+    fn node(id: ID, context: &Context) -> Option<RepositoryRuleset> {
         let state = context.state.lock().unwrap();
         state
             .rulesets
             .iter()
-            .find(|rs| rs.id == id)
+            .find(|rs| rs.id == id.to_string())
             .map(|rs| RepositoryRuleset {
                 id: rs.id.clone(),
                 name: rs.name.clone(),
@@ -100,7 +145,7 @@ impl Repository {
         &self,
         first: i32,
         _after: Option<String>,
-        states: Option<Vec<String>>,
+        states: Option<Vec<PullRequestState>>,
         context: &Context,
     ) -> PullRequestConnection {
         let state = context.state.lock().unwrap();
@@ -109,7 +154,7 @@ impl Repository {
             .iter()
             .filter(|_pr| {
                 if let Some(ref states) = states {
-                    states.iter().any(|s| s == "OPEN")
+                    states.iter().any(|s| matches!(s, PullRequestState::OPEN))
                 } else {
                     true
                 }
@@ -162,7 +207,7 @@ impl Repository {
             .take(first as usize)
             .map(|login| CollaboratorEdge {
                 permission: "WRITE".to_string(),
-                node: CollaboratorNode {
+                node: User {
                     login: login.clone(),
                 },
             })
@@ -198,7 +243,8 @@ impl Repository {
         RulesetConnection { nodes }
     }
 
-    fn object(&self, oid: String, context: &Context) -> Option<GitObject> {
+    fn object(&self, oid: GitObjectID, context: &Context) -> Option<GitObject> {
+        let oid = oid.0;
         let state = context.state.lock().unwrap();
         let has_matching_pr = state
             .prs
@@ -388,7 +434,7 @@ impl GitObject {
     fn associated_pull_requests(
         &self,
         _first: i32,
-        _states: Option<Vec<String>>,
+        _states: Option<Vec<PullRequestState>>,
     ) -> AssociatedPullRequestConnection {
         AssociatedPullRequestConnection {
             nodes: self.associated_prs_nodes.clone(),
@@ -407,28 +453,17 @@ impl AssociatedPullRequestConnection {
     }
 }
 
-struct CollaboratorNode {
-    login: String,
-}
-
-#[graphql_object(context = Context)]
-impl CollaboratorNode {
-    fn login(&self) -> &str {
-        &self.login
-    }
-}
-
 struct CollaboratorEdge {
     permission: String,
-    node: CollaboratorNode,
+    node: User,
 }
 
-#[graphql_object(context = Context)]
+#[graphql_object(context = Context, name = "RepositoryCollaboratorEdge")]
 impl CollaboratorEdge {
     fn permission(&self) -> &str {
         &self.permission
     }
-    fn node(&self) -> &CollaboratorNode {
+    fn node(&self) -> &User {
         &self.node
     }
 }
@@ -437,7 +472,7 @@ struct CollaboratorConnection {
     edges: Vec<CollaboratorEdge>,
 }
 
-#[graphql_object(context = Context)]
+#[graphql_object(context = Context, name = "RepositoryCollaboratorConnection")]
 impl CollaboratorConnection {
     fn edges(&self) -> &[CollaboratorEdge] {
         &self.edges
@@ -502,7 +537,7 @@ impl RepositoryRuleset {
     fn conditions(&self) -> &RulesetConditions {
         &self.conditions
     }
-    fn rules(&self, _first: i32, _type: Option<String>) -> RulesConnection {
+    fn rules(&self, _first: i32, _type: Option<RepositoryRuleType>) -> RulesConnection {
         if self.required_checks.is_empty() {
             return RulesConnection { nodes: vec![] };
         }
@@ -598,9 +633,10 @@ struct Mutation;
 #[graphql_object(context = Context)]
 impl Mutation {
     fn close_pull_request(
-        pull_request_node_id: String,
+        input: ClosePullRequestInput,
         context: &Context,
     ) -> ClosePullRequestPayload {
+        let pull_request_node_id = input.pull_request_id.to_string();
         let mut state = context.state.lock().unwrap();
         state.closed_prs.push(pull_request_node_id.clone());
         state.prs.retain(|pr| pr.node_id != pull_request_node_id);
@@ -611,7 +647,9 @@ impl Mutation {
         }
     }
 
-    fn add_comment(subject_id: String, body: String, context: &Context) -> AddCommentPayload {
+    fn add_comment(input: AddCommentInput, context: &Context) -> AddCommentPayload {
+        let subject_id = input.subject_id.to_string();
+        let body = input.body;
         context
             .state
             .lock()

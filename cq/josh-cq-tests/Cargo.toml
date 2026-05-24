@@ -17,7 +17,8 @@ tokio-util = { workspace = true, features = ["io"] }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 
 josh-cq.workspace = true
-josh-test-github.workspace = true
+josh-github-sim.workspace = true
+josh-cq-test-components.workspace = true
 josh-core.workspace = true
 josh-github-graphql.workspace = true
 josh-github-webhooks.workspace = true

@@ -2998,9 +2998,10 @@ dependencies = [
  "git2",
  "josh-core",
  "josh-cq",
+ "josh-cq-test-components",
  "josh-github-graphql",
+ "josh-github-sim",
  "josh-github-webhooks",
- "josh-test-github",
  "serde_json",
  "tempfile",
  "tokio",
@@ -3114,6 +3115,7 @@ name = "josh-github-sim"
 version = "26.5.8"
 dependencies = [
  "anyhow",
+ "arcstr",
  "axum",
  "futures",
  "headers",
@@ -3277,27 +3279,6 @@ dependencies = [
  "josh-graphql",
  "juniper",
  "serde_json",
-]
-
-[[package]]
-name = "josh-test-github"
-version = "26.5.8"
-dependencies = [
- "anyhow",
- "axum",
- "chrono",
- "futures",
- "git2",
- "josh-github-webhooks",
- "reqwest 0.13.2",
- "serde",
- "serde_json",
- "tempfile",
- "tokio",
- "tokio-util",
- "tower",
- "tower-http",
- "url",
 ]
 
 [[package]]

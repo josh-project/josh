@@ -26,7 +26,6 @@ members = [
     "forges/josh-github-auth",
     "forges/josh-github-keyring",
 
-    "forges/josh-test-github",
 
     "deployment/josh-test-webhook-client",
     "deployment/josh-test-webhook-service",
@@ -104,7 +103,7 @@ josh-cq = { path = "cq/josh-cq", version = "26.5.8" }
 josh-cq-tests = { path = "cq/josh-cq-tests", version = "26.5.8" }
 josh-cq-test-components = { path = "cq/josh-cq-test-components", version = "26.5.8" }
 josh-github-sim = { path = "forges/josh-github-sim", version = "26.5.8" }
-josh-test-github = { path = "forges/josh-test-github", version = "26.5.8" }
+
 
 # Deployment
 josh-test-webhook-service = { path = "deployment/josh-test-webhook-service", version = "26.5.8" }
