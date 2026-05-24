@@ -121,6 +121,26 @@ jobs:
       - name: Get version
         id: version
         run: echo "version=$(git describe --tags --always --dirty=-modified)" >> $GITHUB_OUTPUT
+      - name: Generate bake set args
+        id: bake-set
+        shell: bash
+        run: |
+          fork="${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork }}"
+          echo "args<<EOF" >> "$GITHUB_OUTPUT"
+          echo "rust-base.cache-from=type=gha,scope=rust-base-${{ matrix.arch }}" >> "$GITHUB_OUTPUT"
+          echo "dev.cache-from=type=gha,scope=dev-${{ matrix.arch }}" >> "$GITHUB_OUTPUT"
+          echo "build.cache-from=type=gha,scope=build-${{ matrix.arch }}" >> "$GITHUB_OUTPUT"
+          echo "run.cache-from=type=gha,scope=run-${{ matrix.arch }}" >> "$GITHUB_OUTPUT"
+          if [[ "$fork" != "true" ]]; then
+            echo "rust-base.cache-to=type=gha,mode=max,scope=rust-base-${{ matrix.arch }}" >> "$GITHUB_OUTPUT"
+            echo "dev.cache-to=type=gha,mode=max,scope=dev-${{ matrix.arch }}" >> "$GITHUB_OUTPUT"
+            echo "build.cache-to=type=gha,mode=max,scope=build-${{ matrix.arch }}" >> "$GITHUB_OUTPUT"
+            echo "run.cache-to=type=gha,mode=max,scope=run-${{ matrix.arch }}" >> "$GITHUB_OUTPUT"
+          fi
+          echo "build.args.JOSH_VERSION=${{ steps.version.outputs.version }}" >> "$GITHUB_OUTPUT"
+          echo "${{ needs.generate-tags.outputs.run_tags_set }}" >> "$GITHUB_OUTPUT"
+          echo "run.output=type=image,push-by-digest=true,name-canonical=true,push=true" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
       - name: Build docker image
         if: needs.generate-tags.outputs.should_build == 'true'
         id: build
@@ -132,18 +152,7 @@ jobs:
           BUILDX_METADATA_PROVENANCE: disabled
         with:
           targets: run
-          set: |
-            rust-base.cache-from=type=gha,scope=rust-base-${{ matrix.arch }}
-            rust-base.cache-to=type=gha,mode=max,scope=rust-base-${{ matrix.arch }}
-            dev.cache-from=type=gha,scope=dev-${{ matrix.arch }}
-            dev.cache-to=type=gha,mode=max,scope=dev-${{ matrix.arch }}
-            build.cache-from=type=gha,scope=build-${{ matrix.arch }}
-            build.cache-to=type=gha,mode=max,scope=build-${{ matrix.arch }}
-            build.args.JOSH_VERSION=${{ steps.version.outputs.version }}
-            run.cache-from=type=gha,scope=run-${{ matrix.arch }}
-            run.cache-to=type=gha,mode=max,scope=run-${{ matrix.arch }}
-            ${{ needs.generate-tags.outputs.run_tags_set }}
-            run.output=type=image,push-by-digest=true,name-canonical=true,push=true
+          set: ${{ steps.bake-set.outputs.args }}
       - name: Export digest
         if: needs.generate-tags.outputs.should_build == 'true'
         # Create digests directory with a file whose name matches
