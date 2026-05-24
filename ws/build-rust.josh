@@ -2,9 +2,7 @@
 :#image[:+images/dev-local]
 :$cache="rust"
 
-sidecars = :[
-    :#sccache-proxy[:+ws/sccache-proxy]
-]
+:+sidecars
 
 inputs = :[
     :#fetch[:+ws/fetch]

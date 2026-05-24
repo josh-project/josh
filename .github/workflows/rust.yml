@@ -58,4 +58,4 @@ jobs:
       env:
         AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-      run: target/release/josh compose run
+      run: target/release/josh compose run HEAD ":[::sidecars.josh=ci-sidecars.josh,:/]:+compose"
