@@ -30,6 +30,25 @@ pub enum PrStatus {
     Closed,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum ReviewState {
+    Approved,
+    ChangesRequested,
+    Commented,
+    Dismissed,
+}
+
+impl ReviewState {
+    fn as_str(self) -> &'static str {
+        match self {
+            ReviewState::Approved => "APPROVED",
+            ReviewState::ChangesRequested => "CHANGES_REQUESTED",
+            ReviewState::Commented => "COMMENTED",
+            ReviewState::Dismissed => "DISMISSED",
+        }
+    }
+}
+
 pub struct SimRepo {
     tx: mpsc::UnboundedSender<ActorMsg>,
     owner: String,
@@ -95,7 +114,7 @@ impl SimRepo {
         &self,
         pr_number: i64,
         reviewer: &str,
-        state: &str,
+        state: ReviewState,
     ) -> anyhow::Result<()> {
         let (tx, rx) = oneshot::channel();
         self.send_msg(
@@ -104,7 +123,7 @@ impl SimRepo {
                 name: self.name.clone(),
                 pr_number,
                 reviewer: reviewer.to_string(),
-                state: state.to_string(),
+                state: state.as_str().to_string(),
                 response: tx,
             },
             rx,

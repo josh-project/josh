@@ -14,7 +14,7 @@ fn init_tracing() {
 
 use josh_cq_test_components::{TestRepo, TreeEntry, TreeMode};
 use josh_github_graphql::connection::GithubApiConnection;
-use josh_github_sim::{GithubSim, MockRuleset, PrStatus, RepoConfig};
+use josh_github_sim::{GithubSim, MockRuleset, PrStatus, RepoConfig, ReviewState};
 
 struct TestHarness {
     event_tx: tokio::sync::mpsc::Sender<CqEvent>,
@@ -178,7 +178,8 @@ async fn merge_single_pr() -> anyhow::Result<()> {
     let (pr_node_id, number) = repo
         .pr_open("Test PR", "refs/heads/feature", "refs/heads/main")
         .await?;
-    repo.add_review(number, "maintainer1", "APPROVED").await?;
+    repo.add_review(number, "maintainer1", ReviewState::Approved)
+        .await?;
     repo.add_maintainer("maintainer1").await?;
 
     harness.event_tx.send(CqEvent::Tick).await?;
@@ -311,7 +312,8 @@ async fn pr_not_admissible_with_failing_check() -> anyhow::Result<()> {
     let (pr_node_id, number) = repo
         .pr_open("Failing-check PR", "refs/heads/feature", "refs/heads/main")
         .await?;
-    repo.add_review(number, "maintainer1", "APPROVED").await?;
+    repo.add_review(number, "maintainer1", ReviewState::Approved)
+        .await?;
     repo.add_maintainer("maintainer1").await?;
     repo.add_ruleset(MockRuleset {
         id: "rs-1".into(),
@@ -384,7 +386,8 @@ async fn pr_removed_on_close_webhook() -> anyhow::Result<()> {
     let (pr_node_id, number) = repo
         .pr_open("Close-test PR", "refs/heads/feature", "refs/heads/main")
         .await?;
-    repo.add_review(number, "maintainer1", "APPROVED").await?;
+    repo.add_review(number, "maintainer1", ReviewState::Approved)
+        .await?;
     repo.add_maintainer("maintainer1").await?;
 
     repo.pr_close(&pr_node_id).await?;
