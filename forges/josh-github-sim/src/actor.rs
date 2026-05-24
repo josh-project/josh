@@ -24,8 +24,10 @@ pub(crate) enum ActorMsg {
     PrOpen {
         owner: String,
         name: String,
-        pr: MockPr,
-        response: oneshot::Sender<()>,
+        title: String,
+        head_ref_name: String,
+        base_ref_name: String,
+        response: oneshot::Sender<(String, i64)>,
     },
     PrClose {
         owner: String,
@@ -57,7 +59,7 @@ pub(crate) enum ActorMsg {
         owner: String,
         name: String,
         check_name: String,
-        head_sha: String,
+        pr_number: i64,
         conclusion: String,
         response: oneshot::Sender<()>,
     },
@@ -99,9 +101,68 @@ pub(crate) async fn run_actor(
             ActorMsg::PrOpen {
                 owner,
                 name,
-                pr,
+                title,
+                head_ref_name,
+                base_ref_name,
                 response,
             } => {
+                let key = (owner.clone(), name.clone());
+
+                // 1. Compute number and node_id
+                let (number, node_id) = {
+                    let state_lock = state.lock().unwrap();
+                    let count = state_lock
+                        .repos
+                        .get(&key)
+                        .map(|r| r.prs.len() + r.closed_prs.len())
+                        .unwrap_or(0);
+                    let number = count as i64;
+                    let node_id = format!("PR_{}_{}_{}", owner, name, number);
+                    (number, node_id)
+                };
+
+                // 2. Resolve refs to OIDs
+                let Some(repo_path) = repos.get(&key).cloned() else {
+                    let _ = response.send((format!("repo {owner}/{name} not found"), -1));
+                    continue;
+                };
+                let head_ref_name_oid = head_ref_name.clone();
+                let base_ref_name_oid = base_ref_name.clone();
+                let resolve_res = tokio::task::spawn_blocking(move || {
+                    let repo = git2::Repository::open(&repo_path)?;
+                    let head_oid = repo
+                        .refname_to_id(&head_ref_name_oid)
+                        .map(|oid| oid.to_string())?;
+                    let base_oid = repo
+                        .refname_to_id(&base_ref_name_oid)
+                        .map(|oid| oid.to_string())?;
+                    anyhow::Ok((head_oid, base_oid))
+                })
+                .await;
+                let (head_ref_oid, base_ref_oid) = match resolve_res {
+                    Ok(Ok(oids)) => oids,
+                    Ok(Err(e)) => {
+                        let _ = response.send((format!("ref resolution failed: {e}"), -1));
+                        continue;
+                    }
+                    Err(e) => {
+                        let _ = response.send((format!("spawn_blocking panicked: {e}"), -1));
+                        continue;
+                    }
+                };
+
+                // 3. Build MockPr
+                let pr = MockPr {
+                    node_id: node_id.clone(),
+                    number,
+                    title,
+                    head_ref_oid,
+                    head_ref_name,
+                    base_ref_oid,
+                    base_ref_name,
+                };
+
+                // 4. Store + webhook
                 let hook = {
                     let state_lock = state.lock().unwrap();
                     let hook = state_lock
@@ -125,7 +186,7 @@ pub(crate) async fn run_actor(
                 if let Some((wh_url, body)) = hook {
                     graphql::webhooks::send_webhook(&wh_url, "pull_request", body).await;
                 }
-                let _ = response.send(());
+                let _ = response.send((node_id, number));
             }
             ActorMsg::PrClose {
                 owner,
@@ -241,7 +302,7 @@ pub(crate) async fn run_actor(
                 owner,
                 name,
                 check_name,
-                head_sha,
+                pr_number,
                 conclusion,
                 response,
             } => {
@@ -251,7 +312,18 @@ pub(crate) async fn run_actor(
                         .webhook_url
                         .as_ref()
                         .zip(state_lock.sim_url.as_ref())
-                        .map(|(wh_url, sim_url)| {
+                        .zip(
+                            state_lock
+                                .repos
+                                .get(&(owner.clone(), name.clone()))
+                                .and_then(|repo| {
+                                    repo.prs
+                                        .iter()
+                                        .find(|p| p.number == pr_number)
+                                        .map(|p| p.head_ref_oid.clone())
+                                }),
+                        )
+                        .map(|((wh_url, sim_url), head_sha)| {
                             let clone_url = sim_url
                                 .join(&format!("{}/{}", owner, name))
                                 .map(|u| u.to_string())

@@ -14,9 +14,9 @@ use url::Url;
 use josh_cq_test_components::TestRepo;
 use josh_cq_test_components::repo::TestRepoResources;
 
+use crate::MockRuleset;
 use crate::actor::{self, ActorMsg};
 use crate::graphql::{GraphQLState, RepoState};
-use crate::{MockPr, MockRuleset};
 
 pub struct RepoConfig {
     pub owner: String,
@@ -53,18 +53,28 @@ impl SimRepo {
         Ok(rx.await?)
     }
 
-    pub async fn pr_open(&self, pr: MockPr) -> anyhow::Result<()> {
+    pub async fn pr_open(
+        &self,
+        title: &str,
+        head_ref_name: &str,
+        base_ref_name: &str,
+    ) -> anyhow::Result<(String, i64)> {
         let (tx, rx) = oneshot::channel();
-        self.send_msg(
-            ActorMsg::PrOpen {
-                owner: self.owner.clone(),
-                name: self.name.clone(),
-                pr,
-                response: tx,
-            },
-            rx,
-        )
-        .await
+        let (node_id, number) = self
+            .send_msg(
+                ActorMsg::PrOpen {
+                    owner: self.owner.clone(),
+                    name: self.name.clone(),
+                    title: title.to_string(),
+                    head_ref_name: head_ref_name.to_string(),
+                    base_ref_name: base_ref_name.to_string(),
+                    response: tx,
+                },
+                rx,
+            )
+            .await?;
+        anyhow::ensure!(number >= 0, "pr_open failed: {node_id}");
+        Ok((node_id, number))
     }
 
     pub async fn pr_close(&self, node_id: &str) -> anyhow::Result<()> {
@@ -133,7 +143,7 @@ impl SimRepo {
     pub async fn complete_check_run(
         &self,
         check_name: &str,
-        head_sha: &str,
+        pr_number: i64,
         conclusion: &str,
     ) -> anyhow::Result<()> {
         let (tx, rx) = oneshot::channel();
@@ -142,7 +152,7 @@ impl SimRepo {
                 owner: self.owner.clone(),
                 name: self.name.clone(),
                 check_name: check_name.to_string(),
-                head_sha: head_sha.to_string(),
+                pr_number,
                 conclusion: conclusion.to_string(),
                 response: tx,
             },

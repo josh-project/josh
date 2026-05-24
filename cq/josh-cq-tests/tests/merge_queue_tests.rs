@@ -14,8 +14,7 @@ fn init_tracing() {
 
 use josh_cq_test_components::{TestRepo, TreeEntry, TreeMode};
 use josh_github_graphql::connection::GithubApiConnection;
-use josh_github_sim::{GithubSim, MockPr, MockRuleset, PrStatus, RepoConfig};
-use josh_github_webhooks::test_helpers::make_pr_node_id;
+use josh_github_sim::{GithubSim, MockRuleset, PrStatus, RepoConfig};
 
 struct TestHarness {
     event_tx: tokio::sync::mpsc::Sender<CqEvent>,
@@ -136,11 +135,10 @@ async fn merge_single_pr() -> anyhow::Result<()> {
     init_tracing();
     let owner = "test-owner";
     let name = "test-repo";
-    let pr_node_id = make_pr_node_id(owner, name, 0);
 
     // Create TestRepo and set up branches
     let test_repo = TestRepo::new().await?;
-    let main_sha = test_repo
+    test_repo
         .commit(
             TreeMode::Replace(vec![TreeEntry {
                 path: "README.md".into(),
@@ -153,7 +151,7 @@ async fn merge_single_pr() -> anyhow::Result<()> {
     test_repo
         .create_branch("feature", "refs/heads/main")
         .await?;
-    let feature_sha = test_repo
+    test_repo
         .commit(
             TreeMode::Replace(vec![TreeEntry {
                 path: "feature.txt".into(),
@@ -171,24 +169,16 @@ async fn merge_single_pr() -> anyhow::Result<()> {
     }])
     .await?;
 
-    let pr = MockPr {
-        node_id: pr_node_id.clone(),
-        number: 0,
-        title: "Test PR".into(),
-        head_ref_name: "feature".into(),
-        head_ref_oid: feature_sha.to_string(),
-        base_ref_name: "main".into(),
-        base_ref_oid: main_sha.to_string(),
-    };
-
     let harness = start_test_harness(owner, name, github_sim).await?;
     harness
         .github_sim
         .set_webhook_url(url::Url::parse(&harness.cq_webhook_url)?);
 
     let repo = harness.github_sim.repo_by_name(owner, name);
-    repo.pr_open(pr).await?;
-    repo.add_review(0, "maintainer1", "APPROVED").await?;
+    let (pr_node_id, number) = repo
+        .pr_open("Test PR", "refs/heads/feature", "refs/heads/main")
+        .await?;
+    repo.add_review(number, "maintainer1", "APPROVED").await?;
     repo.add_maintainer("maintainer1").await?;
 
     harness.event_tx.send(CqEvent::Tick).await?;
@@ -218,10 +208,9 @@ async fn merge_single_pr() -> anyhow::Result<()> {
 async fn pr_not_admissible_without_review() -> anyhow::Result<()> {
     let owner = "test-owner";
     let name = "test-repo-norev";
-    let pr_node_id = make_pr_node_id(owner, name, 0);
 
     let test_repo = TestRepo::new().await?;
-    let main_sha = test_repo
+    test_repo
         .commit(
             TreeMode::Replace(vec![TreeEntry {
                 path: "README.md".into(),
@@ -234,7 +223,7 @@ async fn pr_not_admissible_without_review() -> anyhow::Result<()> {
     test_repo
         .create_branch("feature", "refs/heads/main")
         .await?;
-    let feature_sha = test_repo
+    test_repo
         .commit(
             TreeMode::Replace(vec![TreeEntry {
                 path: "feature.txt".into(),
@@ -252,23 +241,15 @@ async fn pr_not_admissible_without_review() -> anyhow::Result<()> {
     }])
     .await?;
 
-    let pr = MockPr {
-        node_id: pr_node_id.clone(),
-        number: 0,
-        title: "No-review PR".into(),
-        head_ref_name: "feature".into(),
-        head_ref_oid: feature_sha.to_string(),
-        base_ref_name: "main".into(),
-        base_ref_oid: main_sha.to_string(),
-    };
-
     let harness = start_test_harness(owner, name, github_sim).await?;
     harness
         .github_sim
         .set_webhook_url(url::Url::parse(&harness.cq_webhook_url)?);
 
     let repo = harness.github_sim.repo_by_name(owner, name);
-    repo.pr_open(pr).await?;
+    let (pr_node_id, _number) = repo
+        .pr_open("No-review PR", "refs/heads/feature", "refs/heads/main")
+        .await?;
     repo.add_maintainer("maintainer1").await?;
 
     harness.event_tx.send(CqEvent::Tick).await?;
@@ -288,10 +269,9 @@ async fn pr_not_admissible_without_review() -> anyhow::Result<()> {
 async fn pr_not_admissible_with_failing_check() -> anyhow::Result<()> {
     let owner = "test-owner";
     let name = "test-repo-fail";
-    let pr_node_id = make_pr_node_id(owner, name, 0);
 
     let test_repo = TestRepo::new().await?;
-    let main_sha = test_repo
+    test_repo
         .commit(
             TreeMode::Replace(vec![TreeEntry {
                 path: "README.md".into(),
@@ -304,7 +284,7 @@ async fn pr_not_admissible_with_failing_check() -> anyhow::Result<()> {
     test_repo
         .create_branch("feature", "refs/heads/main")
         .await?;
-    let feature_sha = test_repo
+    test_repo
         .commit(
             TreeMode::Replace(vec![TreeEntry {
                 path: "feature.txt".into(),
@@ -322,24 +302,16 @@ async fn pr_not_admissible_with_failing_check() -> anyhow::Result<()> {
     }])
     .await?;
 
-    let pr = MockPr {
-        node_id: pr_node_id.clone(),
-        number: 0,
-        title: "Failing-check PR".into(),
-        head_ref_name: "feature".into(),
-        head_ref_oid: feature_sha.to_string(),
-        base_ref_name: "main".into(),
-        base_ref_oid: main_sha.to_string(),
-    };
-
     let harness = start_test_harness(owner, name, github_sim).await?;
     harness
         .github_sim
         .set_webhook_url(url::Url::parse(&harness.cq_webhook_url)?);
 
     let repo = harness.github_sim.repo_by_name(owner, name);
-    repo.pr_open(pr).await?;
-    repo.add_review(0, "maintainer1", "APPROVED").await?;
+    let (pr_node_id, number) = repo
+        .pr_open("Failing-check PR", "refs/heads/feature", "refs/heads/main")
+        .await?;
+    repo.add_review(number, "maintainer1", "APPROVED").await?;
     repo.add_maintainer("maintainer1").await?;
     repo.add_ruleset(MockRuleset {
         id: "rs-1".into(),
@@ -350,7 +322,7 @@ async fn pr_not_admissible_with_failing_check() -> anyhow::Result<()> {
         required_checks: vec!["ci/test".into()],
     })
     .await?;
-    repo.complete_check_run("ci/test", &feature_sha.to_string(), "failure")
+    repo.complete_check_run("ci/test", number, "failure")
         .await?;
 
     harness.event_tx.send(CqEvent::Tick).await?;
@@ -370,10 +342,9 @@ async fn pr_not_admissible_with_failing_check() -> anyhow::Result<()> {
 async fn pr_removed_on_close_webhook() -> anyhow::Result<()> {
     let owner = "test-owner";
     let name = "test-repo-close";
-    let pr_node_id = make_pr_node_id(owner, name, 0);
 
     let test_repo = TestRepo::new().await?;
-    let main_sha = test_repo
+    test_repo
         .commit(
             TreeMode::Replace(vec![TreeEntry {
                 path: "README.md".into(),
@@ -386,7 +357,7 @@ async fn pr_removed_on_close_webhook() -> anyhow::Result<()> {
     test_repo
         .create_branch("feature", "refs/heads/main")
         .await?;
-    let feature_sha = test_repo
+    test_repo
         .commit(
             TreeMode::Replace(vec![TreeEntry {
                 path: "feature.txt".into(),
@@ -404,24 +375,16 @@ async fn pr_removed_on_close_webhook() -> anyhow::Result<()> {
     }])
     .await?;
 
-    let pr = MockPr {
-        node_id: pr_node_id.clone(),
-        number: 0,
-        title: "Close-test PR".into(),
-        head_ref_name: "feature".into(),
-        head_ref_oid: feature_sha.to_string(),
-        base_ref_name: "main".into(),
-        base_ref_oid: main_sha.to_string(),
-    };
-
     let harness = start_test_harness(owner, name, github_sim).await?;
     harness
         .github_sim
         .set_webhook_url(url::Url::parse(&harness.cq_webhook_url)?);
 
     let repo = harness.github_sim.repo_by_name(owner, name);
-    repo.pr_open(pr).await?;
-    repo.add_review(0, "maintainer1", "APPROVED").await?;
+    let (pr_node_id, number) = repo
+        .pr_open("Close-test PR", "refs/heads/feature", "refs/heads/main")
+        .await?;
+    repo.add_review(number, "maintainer1", "APPROVED").await?;
     repo.add_maintainer("maintainer1").await?;
 
     repo.pr_close(&pr_node_id).await?;
