@@ -53,7 +53,8 @@ pub fn run(transaction: &josh_core::cache::Transaction, opts: RunOptions) -> any
         filter::compute_ws_tree(transaction, &filter_spec, source_commit, &version)?;
 
     let mut attempted = std::collections::HashSet::new();
-    container::run_container(repo, ws_tree, &mut attempted)?;
+    let extract_to_workdir = opts.input_ref == ".";
+    container::run_container(repo, ws_tree, &mut attempted, extract_to_workdir)?;
 
     Ok(())
 }

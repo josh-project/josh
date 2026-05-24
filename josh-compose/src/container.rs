@@ -108,6 +108,7 @@ pub fn run_container(
     repo: &git2::Repository,
     ws_tree: git2::Oid,
     attempted: &mut HashSet<git2::Oid>,
+    extract_to_workdir: bool,
 ) -> anyhow::Result<()> {
     let workspace_meta = meta::read_meta(repo, ws_tree)?;
 
@@ -145,7 +146,7 @@ pub fn run_container(
                 continue;
             }
         };
-        if let Err(e) = run_container(repo, dep_tree, attempted) {
+        if let Err(e) = run_container(repo, dep_tree, attempted, false) {
             dep_errors.push(format!("dependency {dep_name} failed: {e}"));
             continue;
         }
@@ -289,7 +290,7 @@ pub fn run_container(
     let success = output.exit_code == 0;
     job_cache::write_result(&hash, success, &output.stdout, &output.stderr);
 
-    if workspace_meta.output == OutputMode::Workdir {
+    if workspace_meta.output == OutputMode::Workdir && extract_to_workdir {
         let tar_data = podman::volume_export(&out_vol)?;
         let mut archive = tar::Archive::new(std::io::Cursor::new(tar_data));
         archive
