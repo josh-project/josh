@@ -3013,6 +3013,7 @@ dependencies = [
  "anyhow",
  "backtrace",
  "bitvec",
+ "chrono",
  "criterion2",
  "git-version",
  "git2",

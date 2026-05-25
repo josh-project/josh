@@ -10,7 +10,7 @@ pub struct Change {
 }
 
 impl Change {
-    pub fn new(commit: &git2::Commit) -> Self {
+    pub fn new(repo: &git2::Repository, commit: &git2::Commit) -> Self {
         let mut change = Self {
             author: commit.author().email().unwrap_or("").to_string(),
             id: None,
@@ -21,6 +21,11 @@ impl Change {
         let (id, series) = commit_change_meta(commit);
         change.id = id;
         change.series = series;
+
+        if change.id().is_some() {
+            let _ = store_diff_data(repo, &change);
+        }
+
         change
     }
 
@@ -220,14 +225,14 @@ fn downstack(repo: &git2::Repository, change: &Change) -> anyhow::Result<Change>
 
     // Seed the affected path set with the change's own modified paths, then
     // walk intermediates backwards, keeping any commit whose paths intersect.
-    let change_meta = Change::new(&change_commit);
+    let change_meta = Change::new(repo, &change_commit);
     let mut affected_paths = changed_paths(repo, &change_commit)?;
     for s in &change_meta.series {
         affected_paths.insert(format!("\x00series:{}", s));
     }
     let mut needed: Vec<bool> = vec![false; commits.len()];
     for (i, intermediate) in commits.iter().enumerate().rev() {
-        let meta = Change::new(intermediate);
+        let meta = Change::new(repo, intermediate);
         let mut paths = changed_paths(repo, intermediate)?;
         for s in &meta.series {
             paths.insert(format!("\x00series:{}", s));
@@ -360,7 +365,7 @@ fn get_changes(
     let mut changes = std::collections::HashMap::new();
     for rev in walk {
         let commit = repo.find_commit(rev?)?;
-        let mut change = Change::new(&commit);
+        let mut change = Change::new(repo, &commit);
         if change.id.is_none() {
             continue;
         }
@@ -428,14 +433,14 @@ pub fn resolve_change(
     // Try as a full OID first.
     if let Ok(oid) = git2::Oid::from_str(spec) {
         if let Ok(commit) = repo.find_commit(oid) {
-            return Ok(Change::new(&commit));
+            return Ok(Change::new(repo, &commit));
         }
     }
 
     // Try as a revparse (branch, tag, short SHA).
     if let Ok(obj) = repo.revparse_single(spec) {
         if let Ok(commit) = obj.peel_to_commit() {
-            return Ok(Change::new(&commit));
+            return Ok(Change::new(repo, &commit));
         }
     }
 
@@ -449,7 +454,7 @@ pub fn resolve_change(
         if let Ok(c) = repo.find_commit(oid) {
             let (id, _) = parse_change_meta(c.message().unwrap_or(""));
             if id.as_deref() == Some(spec) {
-                return Ok(Change::new(&c));
+                return Ok(Change::new(repo, &c));
             }
         }
     }
@@ -596,49 +601,13 @@ pub fn store_diff_data(repo: &git2::Repository, change: &Change) -> anyhow::Resu
         .ok_or_else(|| anyhow::anyhow!("commit {} has no Change-Id", change.commit()))?;
     let diff_id = diff_id(repo, change.commit())?;
 
-    let commit = repo.find_commit(change.commit())?;
-    let first_parent = commit
-        .parent_ids()
-        .next()
-        .map(|o| o.to_string())
-        .unwrap_or_else(|| git2::Oid::zero().to_string());
-    let fake_oid = "f".repeat(40);
-    let mut content = format!("tree {}\n", fake_oid);
-    for p in commit.parent_ids() {
-        let p_str = p.to_string();
-        if p_str == first_parent {
-            content.push_str(&format!("parent {}\n", fake_oid));
-        } else {
-            content.push_str(&format!("parent {}\n", p_str));
-        }
-    }
-    let author = commit.author();
-    content.push_str(&format!(
-        "author {} <{}> {} {}\n",
-        author.name().unwrap_or(""),
-        author.email().unwrap_or(""),
-        author.when().seconds(),
-        author.when().offset_minutes()
-    ));
-    let committer = commit.committer();
-    content.push_str(&format!(
-        "committer {} <{}> {} {}\n",
-        committer.name().unwrap_or(""),
-        committer.email().unwrap_or(""),
-        committer.when().seconds(),
-        committer.when().offset_minutes()
-    ));
-    content.push('\n');
-    content.push_str(commit.message().unwrap_or(""));
-
-    let content_hash =
-        git2::Oid::hash_object(git2::ObjectType::Blob, content.as_bytes())?.to_string();
-    let blob_oid = repo.blob(content.as_bytes())?;
+    let commit_oid_str = change.commit().to_string();
+    let blob_oid = repo.blob(commit_oid_str.as_bytes())?;
 
     let path = std::path::Path::new("diffs")
         .join(&change_id)
         .join(&diff_id)
-        .join(&content_hash);
+        .join(&commit_oid_str);
     write_changes_tree(repo, &path, blob_oid, None, None)?;
 
     Ok(())
@@ -692,7 +661,7 @@ fn write_changes_tree(
             let time = parse_timestamp(timestamp);
             git2::Signature::new(name, &email, &time)?
         }
-        None => repo.signature()?,
+        None => josh_core::git::user_signature(repo)?,
     };
     let parent_commit = repo
         .find_reference("refs/josh/changes")
