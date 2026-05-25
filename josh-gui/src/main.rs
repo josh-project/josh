@@ -1,30 +1,38 @@
 use dioxus::prelude::*;
-use josh_changes::PushMode;
 
 fn main() {
     dioxus::launch(app);
 }
 
 fn app() -> Element {
-    let changes = use_signal(load_changes);
-    let mode = use_signal(|| format!("{:?}", PushMode::Normal));
+    let rows = use_signal(load_rows);
 
     rsx! {
         style { {include_str!("style.css")} }
         div { class: "app",
             h1 { "josh-gui" }
-            p { class: "mode", "PushMode: {mode}" }
-            match &*changes.read() {
-                Ok(entries) if entries.is_empty() => rsx! {
+            match &*rows.read() {
+                Ok(rows) if rows.is_empty() => rsx! {
                     p { "No outgoing changes found." }
                 },
-                Ok(entries) => rsx! {
-                    ul {
-                        for entry in entries.iter() {
-                            li {
-                                code { "{entry.oid}" }
-                                " — "
-                                span { "{entry.change_id}" }
+                Ok(rows) => rsx! {
+                    table { class: "changes",
+                        thead {
+                            tr {
+                                th { "Change-Id" }
+                                th { "Subject" }
+                                th { "Author" }
+                                th { "Series" }
+                            }
+                        }
+                        tbody {
+                            for row in rows.iter() {
+                                tr {
+                                    td { code { "{row.change_id}" } }
+                                    td { "{row.subject}" }
+                                    td { "{row.author}" }
+                                    td { "{row.series}" }
+                                }
                             }
                         }
                     }
@@ -38,51 +46,49 @@ fn app() -> Element {
 }
 
 #[derive(Clone)]
-struct Entry {
-    oid: String,
+struct Row {
     change_id: String,
+    subject: String,
+    author: String,
+    series: String,
 }
 
-fn load_changes() -> anyhow::Result<Vec<Entry>> {
+fn load_rows() -> anyhow::Result<Vec<Row>> {
     let repo = git2::Repository::discover(".")?;
     let head = repo.head()?.peel_to_commit()?;
 
     let branch = repo.head()?.shorthand().map(|s| s.to_string());
 
-    let mut walk = repo.revwalk()?;
-    walk.simplify_first_parent()?;
-    walk.set_sorting(git2::Sort::TOPOLOGICAL)?;
-    walk.push(head.id())?;
-
-    if let Some(ref name) = branch {
+    let base = if let Some(ref name) = branch {
         let remote_ref = format!("refs/remotes/origin/{}", name);
-        if let Ok(origin_ref) = repo.find_reference(&remote_ref) {
-            if let Some(origin_commit) = origin_ref.peel_to_commit().ok() {
-                walk.hide(origin_commit.id())?;
-            }
-        }
-    }
+        repo.find_reference(&remote_ref)
+            .ok()
+            .and_then(|r| r.peel_to_commit().ok())
+            .map(|c| c.id())
+            .unwrap_or(git2::Oid::zero())
+    } else {
+        git2::Oid::zero()
+    };
 
-    let mut out = Vec::new();
-    for oid in walk {
-        let oid = oid?;
-        let commit = repo.find_commit(oid)?;
-        if let Some(id) = trailer(commit.message().unwrap_or(""), "Change") {
-            out.push(Entry {
-                oid: oid.to_string(),
-                change_id: id,
-            });
-        }
-    }
-    Ok(out)
-}
+    let changes = josh_changes::list_changes(&repo, head.id(), base)?;
 
-fn trailer(message: &str, key: &str) -> Option<String> {
-    let prefix = format!("{key}: ");
-    let alt = format!("{key}-Id: ");
-    message
-        .lines()
-        .rev()
-        .find_map(|l| l.strip_prefix(&prefix).or_else(|| l.strip_prefix(&alt)))
-        .map(|s| s.to_string())
+    let mut rows = Vec::new();
+    for change in &changes {
+        let commit = repo.find_commit(change.commit)?;
+        let subject = commit
+            .message()
+            .unwrap_or("")
+            .lines()
+            .next()
+            .unwrap_or("")
+            .to_string();
+
+        rows.push(Row {
+            change_id: change.id.clone().unwrap_or_default(),
+            subject,
+            author: change.author.clone(),
+            series: change.series.join(", "),
+        });
+    }
+    Ok(rows)
 }

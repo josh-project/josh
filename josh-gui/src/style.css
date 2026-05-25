@@ -14,17 +14,23 @@ h1 {
     color: #f0f0f0;
 }
 
-.mode {
+table.changes {
+    border-collapse: collapse;
+    width: 100%;
+}
+
+table.changes th {
+    text-align: left;
+    padding: 0.4rem 0.75rem;
     color: #888;
-    font-size: 0.9rem;
+    font-weight: 600;
+    font-size: 0.85rem;
+    border-bottom: 1px solid #444;
 }
 
-ul {
-    padding-left: 1rem;
-}
-
-li {
-    margin: 0.25rem 0;
+table.changes td {
+    padding: 0.35rem 0.75rem;
+    border-bottom: 1px solid #2a2a2a;
 }
 
 code {
