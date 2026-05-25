@@ -346,6 +346,9 @@ fn get_changes(
     for rev in walk {
         let commit = repo.find_commit(rev?)?;
         let mut change = get_change_id(&commit);
+        if change.id.is_none() {
+            continue;
+        }
         change.base = base;
         changes.insert(change.commit, change);
     }
