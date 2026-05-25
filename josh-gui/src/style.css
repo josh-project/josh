@@ -106,6 +106,20 @@ table.detail-meta td {
     vertical-align: top;
 }
 
+pre.commit-message {
+    white-space: pre-wrap;
+    font-family: ui-monospace, monospace;
+    font-size: 0.85rem;
+    color: #bbb;
+    margin: 0 0 1rem;
+    padding: 0.5rem 0.75rem;
+    background: #222;
+    border: 1px solid #333;
+    border-radius: 4px;
+    max-height: 12rem;
+    overflow-y: auto;
+}
+
 table.detail-meta td:first-child {
     color: #888;
     white-space: nowrap;
