@@ -398,3 +398,47 @@ tr.diff-line-sel td {
     outline: none;
 }
 
+.revision-list {
+    margin-bottom: 1rem;
+}
+
+.revision-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.25rem 0.5rem;
+    border-left: 2px solid transparent;
+    font-size: 0.85rem;
+}
+
+code.revision-sha {
+    color: #888;
+    font-size: 0.8rem;
+}
+
+span.revision-author {
+    color: #999;
+}
+
+span.revision-ts {
+    color: #666;
+    font-size: 0.8rem;
+}
+
+.revision-item.current {
+    border-left-color: #7ec699;
+    background: #1a2a1e;
+}
+
+.revision-item.current code.revision-sha {
+    color: #7ec699;
+}
+
+.revision-item.current span.revision-author {
+    color: #ccc;
+}
+
+.revision-item.current span.revision-ts {
+    color: #888;
+}
+

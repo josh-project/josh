@@ -218,13 +218,39 @@ fn detail_view(sha: String, mut page: Signal<Page>) -> Element {
                             tbody {
                                 tr { td { "Change-Id" } td { code { "{data.change_id}" } } }
                                 tr { td { "SHA" } td { code { "{data.sha}" } } }
-                                tr { td { "Subject" } td { "{data.subject}" } }
                                 tr { td { "Author" } td { "{data.author}" } }
                                 tr { td { "Date" } td { "{data.date}" } }
                                 tr { td { "Series" } td { "{data.series}" } }
                             }
                         }
                         pre { class: "commit-message", "{data.message}" }
+                        if !data.revisions.is_empty() {
+                            h2 { "Revisions" }
+                            div { class: "revision-list",
+                                for rev in data.revisions.iter() {
+                                    {
+                                        let is_current = rev.diff_id == data.current_diff_id;
+                                        let row_class = if is_current {
+                                            "revision-item current"
+                                        } else {
+                                            "revision-item"
+                                        };
+                                        let short_sha = &rev.commit_oid[..rev.commit_oid.len().min(8)];
+                                        let ts = rev.timestamp.parse::<i64>().ok()
+                                            .and_then(|s| chrono::DateTime::from_timestamp(s, 0))
+                                            .map(|dt| dt.format("%Y-%m-%d %H:%M").to_string())
+                                            .unwrap_or_else(|| rev.timestamp.clone());
+                                        rsx! {
+                                            div { class: "{row_class}",
+                                                code { class: "revision-sha", "{short_sha}" }
+                                                span { class: "revision-author", "{rev.author}" }
+                                                span { class: "revision-ts", "{ts}" }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                     div { class: "detail-right",
                         h2 { "Changed files" }
@@ -660,6 +686,8 @@ struct DetailData {
     series: String,
     files: Vec<FileStat>,
     comments: Vec<josh_changes::Comment>,
+    revisions: Vec<josh_changes::Revision>,
+    current_diff_id: String,
 }
 
 fn load_detail(sha: &str) -> anyhow::Result<DetailData> {
@@ -702,6 +730,8 @@ fn load_detail(sha: &str) -> anyhow::Result<DetailData> {
 
     let change = josh_changes::Change::new(&repo, &commit);
     let comments = josh_changes::read_comments(&repo, &change).unwrap_or_default();
+    let current_diff_id = josh_changes::diff_id(&repo, oid).unwrap_or_default();
+    let revisions = josh_changes::read_revisions(&repo, &change).unwrap_or_default();
 
     Ok(DetailData {
         change_id: change_id.unwrap_or_default(),
@@ -713,6 +743,8 @@ fn load_detail(sha: &str) -> anyhow::Result<DetailData> {
         series: series.join(", "),
         files,
         comments,
+        revisions,
+        current_diff_id,
     })
 }
 
