@@ -124,6 +124,41 @@ table.detail-meta td {
     overflow-x: auto;
 }
 
+.comments {
+    margin-bottom: 1rem;
+}
+
+.comment {
+    margin-bottom: 0.5rem;
+    padding: 0.4rem 0.6rem;
+    background: #222;
+    border: 1px solid #2a2a2a;
+    border-radius: 3px;
+}
+
+.comment-header {
+    margin-bottom: 0.2rem;
+}
+
+span.comment-id {
+    color: #666;
+    font-family: ui-monospace, monospace;
+    font-size: 0.8rem;
+}
+
+pre.comment-body {
+    margin: 0;
+    font-family: inherit;
+    font-size: 0.85rem;
+    color: #bbb;
+    white-space: pre-wrap;
+}
+
+span.comment-meta {
+    color: #555;
+    font-size: 0.8rem;
+}
+
 pre.commit-message {
     white-space: pre-wrap;
     font-family: ui-monospace, monospace;
