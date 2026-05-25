@@ -615,7 +615,22 @@ fn render_threads(
                 div { style: "margin-left: {indent}px",
                     div { class: "comment",
                         div { class: "comment-header",
-                            span { class: "comment-id", "{&c.id[..8]}" }
+                            if let Some(ref author) = c.author {
+                                span { class: "comment-author", "{author}" }
+                            }
+                            if let Some(ref ts) = c.timestamp {
+                                {
+                                    let formatted = ts
+                                        .parse::<i64>()
+                                        .ok()
+                                        .and_then(|s| {
+                                            chrono::DateTime::from_timestamp(s, 0)
+                                                .map(|dt| dt.format("%Y-%m-%d %H:%M").to_string())
+                                        })
+                                        .unwrap_or_else(|| ts.clone());
+                                    rsx! { span { class: "comment-ts", " {formatted}" } }
+                                }
+                            }
                         }
                         pre { class: "comment-body", "{c.message}" }
                         if let Some(ref f) = c.file {
