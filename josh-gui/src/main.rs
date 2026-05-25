@@ -373,17 +373,44 @@ fn file_diff_view(sha: String, path: String, mut page: Signal<Page>) -> Element 
             p { class: "error", "Error: {e}" }
         },
         Ok(lines) => {
-            let total = lines.len();
-            let row_h = 20;
+            let comments: Vec<josh_changes::Comment> = detail
+                .as_ref()
+                .ok()
+                .map(|d| d.comments.clone())
+                .unwrap_or_default();
+            let items = build_diff_with_comments(lines, &comments, &path);
+            let total = items.len();
+
+            let heights: Vec<u32> = {
+                let mut sum = 0u32;
+                items
+                    .iter()
+                    .map(|item| {
+                        sum += estimate_item_height(item);
+                        sum
+                    })
+                    .collect()
+            };
+
             let visible = 40;
             let overscan = 40;
 
-            let offset = *scroll_offset.read();
-            let start = (offset / row_h).saturating_sub(overscan);
-            let end = ((offset / row_h) + visible + overscan).min(total);
+            let offset = *scroll_offset.read() as u32;
+            let viewport_px = (visible * 20) as u32;
+            let overscan_px = (overscan * 20) as u32;
 
-            let top_spacer_h = start * row_h;
-            let bottom_spacer_h = (total.saturating_sub(end)) * row_h;
+            let start = heights.partition_point(|&h| h <= offset.saturating_sub(overscan_px));
+            let end = heights
+                .partition_point(|&h| h <= offset + viewport_px + overscan_px)
+                .min(heights.len());
+
+            let total_h = *heights.last().unwrap_or(&0);
+            let top_spacer_h = if start > 0 { heights[start - 1] } else { 0 };
+            let bottom_spacer_h = if end > 0 {
+                total_h - heights[end - 1]
+            } else {
+                total_h
+            };
 
             let ln_ch = lines
                 .iter()
@@ -429,11 +456,13 @@ fn file_diff_view(sha: String, path: String, mut page: Signal<Page>) -> Element 
                             scroll_offset.set(e.data.scroll_top() as usize);
                         },
                         onkeydown: move |e| {
-                            let total = all_lines.as_ref().ok().map(|l| l.len()).unwrap_or(0);
                             if total == 0 {
                                 return;
                             }
-                            let cur = selected_line.read().unwrap_or(0);
+                            let cur = selected_line
+                                .read()
+                                .unwrap_or(0)
+                                .min(total.saturating_sub(1));
                             let new = match e.key() {
                                 Key::ArrowDown => Some((cur + 1).min(total - 1)),
                                 Key::ArrowUp => Some(if cur > 0 { cur - 1 } else { 0 }),
@@ -441,15 +470,24 @@ fn file_diff_view(sha: String, path: String, mut page: Signal<Page>) -> Element 
                             };
                             if let Some(n) = new {
                                 selected_line.set(Some(n));
-                                let off = *scroll_offset.read();
-                                let vis_start = off / row_h;
-                                let vis_end = vis_start + visible;
+                                let vis_start = start;
+                                let vis_end = end;
                                 if n < vis_start + overscan {
-                                    scroll_offset.set(n.saturating_sub(overscan) * row_h);
+                                    let target =
+                                        if n > 0 { heights[n - 1] } else { 0 };
+                                    scroll_offset
+                                        .set(target.saturating_sub(overscan_px) as usize);
                                 } else if n >= vis_end.saturating_sub(overscan) {
-                                    scroll_offset.set(
-                                        (n + overscan + 1).saturating_sub(visible) * row_h,
-                                    );
+                                    let target_top =
+                                        if n > 0 { heights[n - 1] } else { 0 };
+                                    let item_h = if n < heights.len() {
+                                        heights[n] - heights[n - 1]
+                                    } else {
+                                        20
+                                    };
+                                    let new_offset = (target_top + item_h)
+                                        .saturating_sub(viewport_px);
+                                    scroll_offset.set(new_offset as usize);
                                 }
                             }
                         },
@@ -467,23 +505,79 @@ fn file_diff_view(sha: String, path: String, mut page: Signal<Page>) -> Element 
                                         td {}
                                     }
                                 }
-                                for line in lines[start..end].iter() {
+                                for (i, item) in items[start..end].iter().enumerate() {
                                     {
+                                        let item_idx = start + i;
                                         let sel = *selected_line.read();
-                                        let is_sel = sel == Some(line.line_number);
-                                        let ln = line.line_number;
-                                        let old = line.old_ln.map(|n| n.to_string()).unwrap_or_default();
-                                        let new = line.new_ln.map(|n| n.to_string()).unwrap_or_default();
-                                        rsx! {
-                                            tr {
-                                                class: "diff-line diff-line-{line.kind:?}",
-                                                class: if is_sel { "diff-line-sel" },
-                                                onclick: move |_| selected_line.set(Some(ln)),
-                                                td { class: "diff-ln", "{old}" }
-                                                td { class: "diff-ln", "{new}" }
-                                                td {
-                                                    class: "diff-content",
-                                                    pre { "{line.text}" }
+                                        let is_sel = sel == Some(item_idx);
+                                        match item {
+                                            DiffItem::Line(line) => {
+                                                let ln = item_idx;
+                                                let old = line
+                                                    .old_ln
+                                                    .map(|n| n.to_string())
+                                                    .unwrap_or_default();
+                                                let new = line
+                                                    .new_ln
+                                                    .map(|n| n.to_string())
+                                                    .unwrap_or_default();
+                                                rsx! {
+                                                    tr {
+                                                        class: "diff-line diff-line-{line.kind:?}",
+                                                        class: if is_sel { "diff-line-sel" },
+                                                        onclick: move |_| selected_line.set(Some(ln)),
+                                                        td { class: "diff-ln", "{old}" }
+                                                        td { class: "diff-ln", "{new}" }
+                                                        td {
+                                                            class: "diff-content",
+                                                            pre { "{line.text}" }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            DiffItem::Comment(flat) => {
+                                                let author =
+                                                    flat.comment.author.clone().unwrap_or_default();
+                                                let ts = flat
+                                                    .comment
+                                                    .timestamp
+                                                    .as_deref()
+                                                    .and_then(|s| {
+                                                        s.parse::<i64>()
+                                                            .ok()
+                                                            .and_then(|secs| {
+                                                                chrono::DateTime::from_timestamp(
+                                                                    secs, 0,
+                                                                )
+                                                            })
+                                                    })
+                                                    .map(|dt| {
+                                                        dt.format("%Y-%m-%d %H:%M").to_string()
+                                                    })
+                                                    .unwrap_or_default();
+                                                let indent = flat.depth * 16;
+                                                let ln = item_idx;
+                                                rsx! {
+                                                    tr {
+                                                        class: "diff-comment-row",
+                                                        class: if is_sel { "diff-line-sel" },
+                                                        onclick: move |_| selected_line.set(Some(ln)),
+                                                        td { colspan: "3",
+                                                            div {
+                                                                class: "diff-comment-inline",
+                                                                style: "margin-left: {indent}px",
+                                                                div { class: "comment-header",
+                                                                    if !author.is_empty() {
+                                                                        span { class: "comment-author", "{author}" }
+                                                                    }
+                                                                    if !ts.is_empty() {
+                                                                        span { class: "comment-ts", " {ts}" }
+                                                                    }
+                                                                }
+                                                                pre { class: "comment-body", "{flat.comment.message}" }
+                                                            }
+                                                        }
+                                                    }
                                                 }
                                             }
                                         }
@@ -513,12 +607,34 @@ enum DiffLineKind {
     Hunk,
 }
 
+#[derive(Clone)]
 struct DiffLine {
     kind: DiffLineKind,
     text: String,
     old_ln: Option<usize>,
     new_ln: Option<usize>,
     line_number: usize,
+}
+
+#[derive(Clone)]
+struct FlatComment {
+    comment: josh_changes::Comment,
+    depth: usize,
+}
+
+enum DiffItem {
+    Line(DiffLine),
+    Comment(FlatComment),
+}
+
+fn estimate_item_height(item: &DiffItem) -> u32 {
+    match item {
+        DiffItem::Line(_) => 20,
+        DiffItem::Comment(c) => {
+            let lines = c.comment.message.lines().count().max(1) as u32;
+            40 + lines * 20
+        }
+    }
 }
 
 fn parse_hunk_header(header: &str) -> (usize, usize) {
@@ -624,6 +740,128 @@ fn load_file_diff(sha: &str, path: &str, context_lines: u32) -> anyhow::Result<V
     }
 
     Ok(lines)
+}
+
+fn flatten_thread(
+    all: &[josh_changes::Comment],
+    roots: &[usize],
+    target_line: u32,
+    depth: usize,
+    out: &mut Vec<(u32, FlatComment)>,
+) {
+    for &idx in roots {
+        let c = &all[idx];
+        out.push((
+            target_line,
+            FlatComment {
+                comment: c.clone(),
+                depth,
+            },
+        ));
+        let children: Vec<usize> = all
+            .iter()
+            .enumerate()
+            .filter(|(_, x)| x.reply_to.as_deref() == Some(&c.id))
+            .map(|(i, _)| i)
+            .collect();
+        if !children.is_empty() {
+            flatten_thread(all, &children, target_line, depth + 1, out);
+        }
+    }
+}
+
+fn build_diff_with_comments(
+    lines: &[DiffLine],
+    comments: &[josh_changes::Comment],
+    file_path: &str,
+) -> Vec<DiffItem> {
+    let matching: Vec<&josh_changes::Comment> = comments
+        .iter()
+        .filter(|c| c.file.as_deref() == Some(file_path))
+        .collect();
+    let top_comments: Vec<&josh_changes::Comment> =
+        comments.iter().filter(|c| c.file.is_none()).collect();
+
+    if matching.is_empty() && top_comments.is_empty() {
+        return lines.iter().map(|l| DiffItem::Line(l.clone())).collect();
+    }
+
+    let all_comment_indices: Vec<usize> = (0..comments.len()).collect();
+
+    // Flatten top-level (no file) comments.
+    let mut flat: Vec<(u32, FlatComment)> = Vec::new();
+    {
+        let roots: Vec<usize> = all_comment_indices
+            .iter()
+            .filter(|&&i| {
+                let c = &comments[i];
+                c.file.is_none() && c.reply_to.is_none()
+            })
+            .copied()
+            .collect();
+        flatten_thread(comments, &roots, 0, 0, &mut flat);
+    }
+
+    // Flatten per-file comments, keyed by start_line.
+    let file_indices: Vec<usize> = all_comment_indices
+        .iter()
+        .filter(|&&i| comments[i].file.as_deref() == Some(file_path))
+        .copied()
+        .collect();
+    let roots: Vec<usize> = file_indices
+        .iter()
+        .filter(|&&i| comments[i].reply_to.is_none())
+        .copied()
+        .collect();
+    for &root in &roots {
+        let target = comments[root]
+            .location
+            .as_ref()
+            .map(|loc| loc.start_line)
+            .unwrap_or(0);
+        flatten_thread(comments, &[root], target, 0, &mut flat);
+    }
+
+    // Build lookup: new_ln -> list of indices into flat.
+    let mut by_line: std::collections::HashMap<u32, Vec<usize>> = std::collections::HashMap::new();
+    for (fi, (target, _)) in flat.iter().enumerate() {
+        by_line.entry(*target).or_default().push(fi);
+    }
+
+    let mut inserted = vec![false; flat.len()];
+    let mut items: Vec<DiffItem> = Vec::new();
+
+    // Emit top-level comments first.
+    for (fi, (target, _)) in flat.iter().enumerate() {
+        if *target == 0 {
+            inserted[fi] = true;
+            items.push(DiffItem::Comment(flat[fi].1.clone()));
+        }
+    }
+
+    // Walk diff lines; insert comments after matching lines.
+    for line in lines {
+        items.push(DiffItem::Line(line.clone()));
+        if let Some(ln) = line.new_ln {
+            if let Some(indices) = by_line.get(&(ln as u32)) {
+                for &fi in indices {
+                    if !inserted[fi] {
+                        inserted[fi] = true;
+                        items.push(DiffItem::Comment(flat[fi].1.clone()));
+                    }
+                }
+            }
+        }
+    }
+
+    // Append any remaining unmatched comments.
+    for (fi, _) in flat.iter().enumerate() {
+        if !inserted[fi] {
+            items.push(DiffItem::Comment(flat[fi].1.clone()));
+        }
+    }
+
+    items
 }
 
 fn render_threads(
