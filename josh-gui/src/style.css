@@ -442,3 +442,36 @@ span.revision-ts {
     color: #888;
 }
 
+tr.diff-comment-row td {
+    padding: 0.25rem 0.6rem;
+    border-bottom: 1px solid #2a2a2a;
+    background: #1c1c1f;
+}
+
+.diff-comment-inline {
+    border-left: 2px solid #5a8ab5;
+    padding: 0.25rem 0 0.25rem 0.6rem;
+}
+
+.diff-comment-inline .comment-header {
+    margin-bottom: 0.1rem;
+}
+
+.diff-comment-inline .comment-body {
+    margin: 0;
+    font-family: inherit;
+    font-size: 0.82rem;
+    color: #bbb;
+    white-space: pre-wrap;
+}
+
+.diff-comment-inline .comment-author {
+    color: #7ec699;
+    font-size: 0.78rem;
+}
+
+.diff-comment-inline .comment-ts {
+    color: #666;
+    font-size: 0.78rem;
+}
+
