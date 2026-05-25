@@ -8,6 +8,7 @@ fn main() {
 enum Page {
     List,
     Detail { sha: String },
+    FileDiff { sha: String, path: String },
 }
 
 fn app() -> Element {
@@ -21,6 +22,7 @@ fn app() -> Element {
             match &*page.read() {
                 Page::List => list_view(rows, page),
                 Page::Detail { sha } => detail_view(sha.clone(), page),
+                Page::FileDiff { sha, path } => file_diff_view(sha.clone(), path.clone(), page),
             }
         }
     }
@@ -131,10 +133,21 @@ fn detail_view(sha: String, mut page: Signal<Page>) -> Element {
                     }
                     tbody {
                         for f in data.files.iter() {
-                            tr {
-                                td { "{f.path}" }
-                                td { class: "num adds", "{f.adds}" }
-                                td { class: "num dels", "{f.dels}" }
+                            {
+                                let s = data.sha.clone();
+                                let p = f.path.clone();
+                                rsx! {
+                                    tr {
+                                        class: "file-row",
+                                        onclick: move |_| page.set(Page::FileDiff {
+                                            sha: s.clone(),
+                                            path: p.clone(),
+                                        }),
+                                        td { "{f.path}" }
+                                        td { class: "num adds", "{f.adds}" }
+                                        td { class: "num dels", "{f.dels}" }
+                                    }
+                                }
                             }
                         }
                     }
@@ -142,6 +155,104 @@ fn detail_view(sha: String, mut page: Signal<Page>) -> Element {
             }
         }
     }
+}
+
+fn file_diff_view(sha: String, path: String, mut page: Signal<Page>) -> Element {
+    let detail_sha = sha.clone();
+    let back = rsx! {
+        button { class: "back",
+            onclick: move |_| page.set(Page::Detail { sha: detail_sha.clone() }),
+            "\u{2190} Back to change"
+        }
+    };
+
+    match load_file_diff(&sha, &path) {
+        Err(e) => rsx! {
+            {back}
+            p { class: "error", "Error: {e}" }
+        },
+        Ok(lines) => rsx! {
+            {back}
+            h2 { "{path}" }
+            pre { class: "diff-view",
+                for line in lines.iter() {
+                    match line.kind {
+                        DiffLineKind::Add => rsx! { span { class: "diff-add", "{line.text}\n" } },
+                        DiffLineKind::Del => rsx! { span { class: "diff-del", "{line.text}\n" } },
+                        DiffLineKind::Hunk => rsx! { span { class: "diff-hunk", "{line.text}\n" } },
+                        DiffLineKind::Context => rsx! { span { "{line.text}\n" } },
+                    }
+                }
+            }
+        },
+    }
+}
+
+enum DiffLineKind {
+    Context,
+    Add,
+    Del,
+    Hunk,
+}
+
+struct DiffLine {
+    kind: DiffLineKind,
+    text: String,
+}
+
+fn load_file_diff(sha: &str, path: &str) -> anyhow::Result<Vec<DiffLine>> {
+    let repo = git2::Repository::discover(".")?;
+    let oid = git2::Oid::from_str(sha)?;
+    let commit = repo.find_commit(oid)?;
+
+    let parent_tree = commit.parent(0).ok().and_then(|p| p.tree().ok());
+    let diff = repo.diff_tree_to_tree(parent_tree.as_ref(), Some(&commit.tree()?), None)?;
+
+    // Find the patch matching this path.
+    let mut patch_idx = None;
+    for i in 0..diff.deltas().len() {
+        let delta = diff.deltas().nth(i).unwrap();
+        let p = delta
+            .new_file()
+            .path()
+            .or_else(|| delta.old_file().path())
+            .and_then(|p| p.to_str())
+            .unwrap_or("");
+        if p == path {
+            patch_idx = Some(i);
+            break;
+        }
+    }
+
+    let mut lines = Vec::new();
+    if let Some(idx) = patch_idx {
+        let patch = git2::Patch::from_diff(&diff, idx)?;
+        if let Some(patch) = patch {
+            for h in 0..patch.num_hunks() {
+                let (hunk, hunk_lines) = patch.hunk(h)?;
+                lines.push(DiffLine {
+                    kind: DiffLineKind::Hunk,
+                    text: String::from_utf8_lossy(hunk.header()).to_string(),
+                });
+                for l in 0..hunk_lines {
+                    let line = patch.line_in_hunk(h, l)?;
+                    let origin = line.origin();
+                    let kind = match origin {
+                        '+' => DiffLineKind::Add,
+                        '-' => DiffLineKind::Del,
+                        ' ' => DiffLineKind::Context,
+                        _ => DiffLineKind::Context,
+                    };
+                    lines.push(DiffLine {
+                        kind,
+                        text: String::from_utf8_lossy(line.content()).to_string(),
+                    });
+                }
+            }
+        }
+    }
+
+    Ok(lines)
 }
 
 struct DetailData {

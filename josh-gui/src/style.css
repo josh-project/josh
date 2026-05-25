@@ -133,3 +133,42 @@ tr.changes tbody tr {
 tr.changes tbody tr:hover td {
     background: #2a2a2a;
 }
+
+tr.file-row {
+    cursor: pointer;
+}
+
+tr.file-row:hover td {
+    background: #2a2a2a;
+}
+
+pre.diff-view {
+    background: #1a1a1a;
+    border: 1px solid #333;
+    border-radius: 4px;
+    padding: 0.75rem 1rem;
+    overflow-x: auto;
+    font-family: ui-monospace, monospace;
+    font-size: 0.9rem;
+    line-height: 1.4;
+    white-space: pre;
+}
+
+pre.diff-view span {
+    display: block;
+}
+
+span.diff-add {
+    background: #1a3a1a;
+    color: #b8e6b8;
+}
+
+span.diff-del {
+    background: #3a1a1a;
+    color: #e6b8b8;
+}
+
+span.diff-hunk {
+    color: #6ab0f3;
+}
+
