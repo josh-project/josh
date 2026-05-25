@@ -57,6 +57,58 @@ pub fn josh_commit_signature<'a>() -> anyhow::Result<git2::Signature<'a>> {
     })
 }
 
+/// Parse a date string from `GIT_COMMITTER_DATE` / `GIT_AUTHOR_DATE`. Accepts the
+/// formats git typically uses: raw (`<unix> <offset>`), RFC 2822 (what `date -R`
+/// emits) and RFC 3339 / ISO 8601.
+fn parse_git_env_date(s: &str) -> Option<git2::Time> {
+    let s = s.trim();
+    if let Some((secs, offset)) = s.split_once(' ') {
+        if let (Ok(secs), Ok(offset)) = (secs.parse::<i64>(), offset.parse::<i32>()) {
+            let offset_minutes = (offset / 100) * 60 + (offset % 100);
+            return Some(git2::Time::new(secs, offset_minutes));
+        }
+    }
+    if let Ok(dt) = chrono::DateTime::parse_from_rfc2822(s) {
+        return Some(git2::Time::new(
+            dt.timestamp(),
+            dt.offset().local_minus_utc() / 60,
+        ));
+    }
+    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(s) {
+        return Some(git2::Time::new(
+            dt.timestamp(),
+            dt.offset().local_minus_utc() / 60,
+        ));
+    }
+    None
+}
+
+/// Like `repo.signature()` but honors `GIT_COMMITTER_*` / `GIT_AUTHOR_*` env vars
+/// the way `git` itself does. libgit2's `git_signature_default` ignores the date
+/// env vars, which breaks reproducibility in tests.
+pub fn user_signature(repo: &git2::Repository) -> anyhow::Result<git2::Signature<'static>> {
+    let default = repo.signature()?;
+    let name = std::env::var("GIT_COMMITTER_NAME")
+        .or_else(|_| std::env::var("GIT_AUTHOR_NAME"))
+        .ok();
+    let email = std::env::var("GIT_COMMITTER_EMAIL")
+        .or_else(|_| std::env::var("GIT_AUTHOR_EMAIL"))
+        .ok();
+    let date = std::env::var("GIT_COMMITTER_DATE")
+        .ok()
+        .or_else(|| std::env::var("GIT_AUTHOR_DATE").ok());
+    let date = date.as_deref().and_then(parse_git_env_date);
+
+    let name = name
+        .as_deref()
+        .unwrap_or_else(|| default.name().unwrap_or(""));
+    let email = email
+        .as_deref()
+        .unwrap_or_else(|| default.email().unwrap_or(""));
+    let time = date.unwrap_or_else(|| default.when());
+    Ok(git2::Signature::new(name, email, &time)?)
+}
+
 /// Resolve a repository path to its working directory.
 ///
 /// Callers typically pass a gitdir (e.g. `repo.path()`) and want the working

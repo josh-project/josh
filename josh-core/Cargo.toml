@@ -34,6 +34,7 @@ rustc-hash = "2.1.2"
 smallvec = "1.15.1"
 
 anyhow.workspace = true
+chrono.workspace = true
 git2.workspace = true
 gix-actor.workspace = true
 gix-object.workspace = true
