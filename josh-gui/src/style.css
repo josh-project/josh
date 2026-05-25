@@ -3,15 +3,30 @@ body {
     margin: 0;
     background: #1e1e1e;
     color: #ddd;
+    height: 100vh;
+    overflow: hidden;
 }
 
 .app {
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
     padding: 1.5rem 2rem;
+    box-sizing: border-box;
+    overflow: hidden;
 }
 
 h1 {
     margin-top: 0;
+    margin-bottom: 0.5rem;
     color: #f0f0f0;
+    flex-shrink: 0;
+}
+
+.scroll-table {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
 }
 
 table.changes {
@@ -180,8 +195,17 @@ tr.file-row:hover td {
     background: #2a2a2a;
 }
 
+.diff-page {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+}
+
 .diff-container {
-    height: calc(100vh - 10rem);
+    flex: 1;
+    min-height: 0;
     overflow-y: scroll;
     border: 1px solid #333;
     border-radius: 4px;
@@ -198,10 +222,11 @@ table.diff-table {
 }
 
 .diff-line td {
-    white-space: pre;
     padding: 0 0.4rem;
     border-bottom: 1px solid #1a1a1a;
     overflow: hidden;
+    height: 20px;
+    line-height: 20px;
 }
 
 td.diff-ln {
@@ -209,22 +234,26 @@ td.diff-ln {
     color: #555;
     user-select: none;
     padding-right: 0.5rem;
+    white-space: pre;
 }
 
 td.diff-sign {
     text-align: center;
     color: #666;
     user-select: none;
+    white-space: pre;
 }
 
 td.diff-content {
-    overflow-x: auto;
+    overflow: hidden;
 }
 
 td.diff-content pre {
     margin: 0;
     font-family: ui-monospace, monospace;
     font-size: inherit;
+    white-space: pre;
+    overflow-x: auto;
 }
 
 tr.diff-line-Add td {
