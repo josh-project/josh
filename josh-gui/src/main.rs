@@ -37,7 +37,7 @@ fn app() -> Element {
                         fill: "#E62200",
                     }
                 }
-                span { class: "header-dir", {breadcrumb(&*page.read())} }
+                {breadcrumb(&*page.read(), page, rows)}
             }
             match &*page.read() {
                 Page::List => list_view(rows, page),
@@ -81,19 +81,59 @@ fn subject_for_sha(sha: &str) -> String {
     }
 }
 
-fn breadcrumb(page: &Page) -> String {
-    let mut parts = vec![repo_name()];
-    match page {
-        Page::List => {}
+fn breadcrumb(
+    page: &Page,
+    mut page_signal: Signal<Page>,
+    _rows: Signal<anyhow::Result<Vec<Row>>>,
+) -> Element {
+    let repo = repo_name();
+    let page = page.clone();
+
+    match &page {
+        Page::List => rsx! {
+            span { class: "header-dir",
+                span { class: "breadcrumb-seg-last", "{repo}" }
+            }
+        },
         Page::Detail { sha } => {
-            parts.push(subject_for_sha(sha));
+            let subject = subject_for_sha(sha);
+            rsx! {
+                span { class: "header-dir",
+                    span {
+                        class: "breadcrumb-seg",
+                        onclick: move |_| page_signal.set(Page::List),
+                        "{repo}"
+                    }
+                    span { class: "breadcrumb-sep", " \u{203A} " }
+                    span { class: "breadcrumb-seg-last", "{subject}" }
+                }
+            }
         }
         Page::FileDiff { sha, path } => {
-            parts.push(subject_for_sha(sha));
-            parts.push(path.clone());
+            let subject = subject_for_sha(sha);
+            let sha_c = sha.clone();
+            rsx! {
+                span { class: "header-dir",
+                    span {
+                        class: "breadcrumb-seg",
+                        onclick: move |_| page_signal.set(Page::List),
+                        "{repo}"
+                    }
+                    span { class: "breadcrumb-sep", " \u{203A} " }
+                    span {
+                        class: "breadcrumb-seg",
+                        onclick: {
+                            let s = sha_c.clone();
+                            move |_| page_signal.set(Page::Detail { sha: s.clone() })
+                        },
+                        "{subject}"
+                    }
+                    span { class: "breadcrumb-sep", " \u{203A} " }
+                    span { class: "breadcrumb-seg-last", "{path}" }
+                }
+            }
         }
     }
-    parts.join(" \u{203A} ")
 }
 
 fn list_view(rows: Signal<anyhow::Result<Vec<Row>>>, mut page: Signal<Page>) -> Element {
@@ -160,16 +200,8 @@ struct FileStat {
 fn detail_view(sha: String, mut page: Signal<Page>) -> Element {
     let data = load_detail(&sha);
 
-    let back = rsx! {
-        button { class: "back",
-            onclick: move |_| page.set(Page::List),
-            "\u{2190} Back to list"
-        }
-    };
-
     match &data {
         Err(e) => rsx! {
-            {back}
             p { class: "error", "Error: {e}" }
         },
         Ok(data) => {
@@ -180,7 +212,6 @@ fn detail_view(sha: String, mut page: Signal<Page>) -> Element {
                 data.files.iter().map(|f| f.dels).sum::<usize>(),
             );
             rsx! {
-                {back}
                 div { class: "scroll-table detail-layout",
                     div { class: "detail-left",
                         table { class: "detail-meta",
@@ -235,14 +266,6 @@ fn detail_view(sha: String, mut page: Signal<Page>) -> Element {
 }
 
 fn file_diff_view(sha: String, path: String, mut page: Signal<Page>) -> Element {
-    let detail_sha = sha.clone();
-    let back = rsx! {
-        button { class: "back",
-            onclick: move |_| page.set(Page::Detail { sha: detail_sha.clone() }),
-            "\u{2190} Back to change"
-        }
-    };
-
     let detail = load_detail(&sha);
     let (prev_file, next_file) = detail
         .as_ref()
@@ -306,7 +329,6 @@ fn file_diff_view(sha: String, path: String, mut page: Signal<Page>) -> Element 
 
     match &all_lines {
         Err(e) => rsx! {
-            {back}
             p { class: "error", "Error: {e}" }
         },
         Ok(lines) => {
@@ -326,7 +348,6 @@ fn file_diff_view(sha: String, path: String, mut page: Signal<Page>) -> Element 
 
             rsx! {
                 div { class: "diff-page",
-                    {back}
                     {nav}
                     div { class: "diff-toolbar",
                         label {
@@ -353,7 +374,6 @@ fn file_diff_view(sha: String, path: String, mut page: Signal<Page>) -> Element 
                             " Show all"
                         }
                     }
-                    h2 { "{path}" }
                     div {
                         class: "diff-container",
                         tabindex: "0",
