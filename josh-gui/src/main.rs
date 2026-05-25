@@ -221,6 +221,25 @@ fn detail_view(sha: String, mut page: Signal<Page>) -> Element {
                             }
                         }
                         pre { class: "commit-message", "{data.message}" }
+                        if !data.comments.is_empty() {
+                            h2 { "Comments" }
+                            div { class: "comments",
+                                for c in &data.comments {
+                                    div { class: "comment",
+                                        div { class: "comment-header",
+                                            span { class: "comment-id", "{&c.id[..8]}" }
+                                        }
+                                        pre { class: "comment-body", "{c.message}" }
+                                        if let Some(ref f) = c.file {
+                                            span { class: "comment-meta", "{f}" }
+                                        }
+                                        if let Some(ref loc) = c.location {
+                                            span { class: "comment-meta", " {loc.path}:{loc.start_line}" }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                     div { class: "detail-right",
                         h2 { "Changed files" }
@@ -582,6 +601,7 @@ struct DetailData {
     date: String,
     series: String,
     files: Vec<FileStat>,
+    comments: Vec<josh_changes::Comment>,
 }
 
 fn load_detail(sha: &str) -> anyhow::Result<DetailData> {
@@ -622,6 +642,9 @@ fn load_detail(sha: &str) -> anyhow::Result<DetailData> {
         });
     }
 
+    let change = josh_changes::Change::new(&repo, &commit);
+    let comments = josh_changes::read_comments(&repo, &change).unwrap_or_default();
+
     Ok(DetailData {
         change_id: change_id.unwrap_or_default(),
         sha: sha.to_string(),
@@ -631,6 +654,7 @@ fn load_detail(sha: &str) -> anyhow::Result<DetailData> {
         date,
         series: series.join(", "),
         files,
+        comments,
     })
 }
 
