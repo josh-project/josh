@@ -16,7 +16,7 @@ fn app() -> Element {
             p { class: "mode", "PushMode: {mode}" }
             match &*changes.read() {
                 Ok(entries) if entries.is_empty() => rsx! {
-                    p { "No Change: trailers found on HEAD's first-parent history." }
+                    p { "No outgoing changes found." }
                 },
                 Ok(entries) => rsx! {
                     ul {
@@ -47,16 +47,24 @@ fn load_changes() -> anyhow::Result<Vec<Entry>> {
     let repo = git2::Repository::discover(".")?;
     let head = repo.head()?.peel_to_commit()?;
 
+    let branch = repo.head()?.shorthand().map(|s| s.to_string());
+
     let mut walk = repo.revwalk()?;
     walk.simplify_first_parent()?;
     walk.set_sorting(git2::Sort::TOPOLOGICAL)?;
     walk.push(head.id())?;
 
-    let mut out = Vec::new();
-    for (i, oid) in walk.enumerate() {
-        if i >= 50 {
-            break;
+    if let Some(ref name) = branch {
+        let remote_ref = format!("refs/remotes/origin/{}", name);
+        if let Ok(origin_ref) = repo.find_reference(&remote_ref) {
+            if let Some(origin_commit) = origin_ref.peel_to_commit().ok() {
+                walk.hide(origin_commit.id())?;
+            }
         }
+    }
+
+    let mut out = Vec::new();
+    for oid in walk {
         let oid = oid?;
         let commit = repo.find_commit(oid)?;
         if let Some(id) = trailer(commit.message().unwrap_or(""), "Change") {
