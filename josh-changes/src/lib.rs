@@ -2,22 +2,46 @@ use anyhow::anyhow;
 
 #[derive(Debug, Clone)]
 pub struct Change {
-    pub author: String,
-    pub id: Option<String>,
-    pub series: Vec<String>,
-    pub commit: git2::Oid,
-    pub base: git2::Oid,
+    author: String,
+    id: Option<String>,
+    series: Vec<String>,
+    commit: git2::Oid,
+    base: git2::Oid,
 }
 
 impl Change {
-    fn new(commit: git2::Oid) -> Self {
-        Self {
-            author: Default::default(),
-            id: Default::default(),
-            series: Default::default(),
-            commit,
+    pub fn new(commit: &git2::Commit) -> Self {
+        let mut change = Self {
+            author: commit.author().email().unwrap_or("").to_string(),
+            id: None,
+            series: Vec::new(),
+            commit: commit.id(),
             base: git2::Oid::zero(),
-        }
+        };
+        let (id, series) = commit_change_meta(commit);
+        change.id = id;
+        change.series = series;
+        change
+    }
+
+    pub fn author(&self) -> &str {
+        &self.author
+    }
+
+    pub fn id(&self) -> Option<&str> {
+        self.id.as_deref()
+    }
+
+    pub fn series(&self) -> &[String] {
+        &self.series
+    }
+
+    pub fn commit(&self) -> git2::Oid {
+        self.commit
+    }
+
+    pub fn base(&self) -> git2::Oid {
+        self.base
     }
 
     pub fn contributing(&self, repo: &git2::Repository) -> anyhow::Result<Vec<git2::Oid>> {
@@ -85,15 +109,6 @@ pub fn parse_change_meta(message: &str) -> (Option<String>, Vec<String>) {
         }
     }
     (id, series)
-}
-
-fn get_change_id(commit: &git2::Commit) -> Change {
-    let mut change = Change::new(commit.id());
-    change.author = commit.author().email().unwrap_or("").to_string();
-    let (id, series) = commit_change_meta(commit);
-    change.id = id;
-    change.series = series;
-    change
 }
 
 #[derive(PartialEq, Clone, Debug)]
@@ -205,14 +220,14 @@ fn downstack(repo: &git2::Repository, change: &Change) -> anyhow::Result<Change>
 
     // Seed the affected path set with the change's own modified paths, then
     // walk intermediates backwards, keeping any commit whose paths intersect.
-    let change_meta = get_change_id(&change_commit);
+    let change_meta = Change::new(&change_commit);
     let mut affected_paths = changed_paths(repo, &change_commit)?;
     for s in &change_meta.series {
         affected_paths.insert(format!("\x00series:{}", s));
     }
     let mut needed: Vec<bool> = vec![false; commits.len()];
     for (i, intermediate) in commits.iter().enumerate().rev() {
-        let meta = get_change_id(intermediate);
+        let meta = Change::new(intermediate);
         let mut paths = changed_paths(repo, intermediate)?;
         for s in &meta.series {
             paths.insert(format!("\x00series:{}", s));
@@ -345,7 +360,7 @@ fn get_changes(
     let mut changes = std::collections::HashMap::new();
     for rev in walk {
         let commit = repo.find_commit(rev?)?;
-        let mut change = get_change_id(&commit);
+        let mut change = Change::new(&commit);
         change.base = base;
         changes.insert(change.commit, change);
     }

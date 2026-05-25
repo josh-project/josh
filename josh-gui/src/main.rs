@@ -546,7 +546,7 @@ fn load_rows() -> anyhow::Result<Vec<Row>> {
 
     let mut groups: Vec<(Row, Vec<Row>)> = Vec::new();
     for change in &changes {
-        let commit = repo.find_commit(change.commit)?;
+        let commit = repo.find_commit(change.commit())?;
         let subject = commit
             .message()
             .unwrap_or("")
@@ -556,11 +556,11 @@ fn load_rows() -> anyhow::Result<Vec<Row>> {
             .to_string();
 
         let change_row = Row::Change {
-            change_id: change.id.clone().unwrap_or_default(),
-            sha: change.commit.to_string(),
+            change_id: change.id().unwrap_or("").to_string(),
+            sha: change.commit().to_string(),
             subject,
-            author: change.author.clone(),
-            series: change.series.join(", "),
+            author: change.author().to_string(),
+            series: change.series().join(", "),
         };
 
         let mut contrib_rows = Vec::new();
