@@ -178,6 +178,30 @@ button.nav-btn:hover {
     color: #fff;
 }
 
+.diff-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 0.25rem;
+    font-size: 0.85rem;
+    color: #888;
+}
+
+.diff-toolbar input[type="number"] {
+    background: #333;
+    color: #ddd;
+    border: 1px solid #444;
+    border-radius: 3px;
+    padding: 0.15rem 0.3rem;
+    width: 3.5rem;
+    font-size: 0.85rem;
+    margin-left: 0.3rem;
+}
+
+.diff-toolbar input[type="checkbox"] {
+    margin-right: 0.2rem;
+}
+
 span.diff-nav-pos {
     color: #666;
     font-size: 0.85rem;
