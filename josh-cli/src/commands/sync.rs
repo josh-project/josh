@@ -119,12 +119,20 @@ pub fn handle_sync(
                     reply_to,
                     update_of: None,
                 };
-                let hash = josh_changes::write_comment(
+
+                let diff_id = comment
+                    .commit_oid
+                    .as_ref()
+                    .and_then(|oid| git2::Oid::from_str(oid).ok())
+                    .and_then(|oid| josh_changes::diff_id(repo, oid).ok());
+
+                let hash = josh_changes::write_comment_with_diff(
                     repo,
                     change,
                     &meta,
                     Some(&comment.author),
                     Some(&comment.timestamp),
+                    diff_id.as_deref(),
                 )?;
                 id_map.insert(comment.id.clone(), hash);
             }

@@ -17,6 +17,7 @@ pub struct PrComment {
     pub path: Option<String>,
     pub line: Option<i64>,
     pub reply_to: Option<String>,
+    pub commit_oid: Option<String>,
 }
 
 #[derive(Debug)]
@@ -179,13 +180,14 @@ impl GithubApiConnection {
         let mut comments = Vec::new();
         for node in pr.comments.nodes.unwrap_or_default().into_iter().flatten() {
             comments.push(PrComment {
-                id: node.id,
+                id: node.id.clone(),
                 author: node.author.map(|a| a.login).unwrap_or_default(),
                 body: node.body,
                 timestamp: format!("{}", node.created_at),
                 path: None,
                 line: None,
                 reply_to: None,
+                commit_oid: None,
             });
         }
 
@@ -196,9 +198,10 @@ impl GithubApiConnection {
             .into_iter()
             .flatten()
         {
+            let review_commit = review.commit.as_ref().map(|c| c.oid.clone());
             if !review.body.is_empty() {
                 comments.push(PrComment {
-                    id: review.id,
+                    id: review.id.clone(),
                     author: review
                         .author
                         .as_ref()
@@ -209,6 +212,7 @@ impl GithubApiConnection {
                     path: None,
                     line: None,
                     reply_to: None,
+                    commit_oid: review_commit.clone(),
                 });
             }
             for node in review
@@ -218,14 +222,16 @@ impl GithubApiConnection {
                 .into_iter()
                 .flatten()
             {
+                let node_commit = node.commit.as_ref().map(|c| c.oid.clone());
                 comments.push(PrComment {
-                    id: node.id,
+                    id: node.id.clone(),
                     author: node.author.map(|a| a.login).unwrap_or_default(),
                     body: node.body,
                     timestamp: format!("{}", node.created_at),
                     path: Some(node.path),
                     line: node.line,
                     reply_to: node.reply_to.map(|r| r.id),
+                    commit_oid: node_commit.or(review_commit.clone()),
                 });
             }
         }
