@@ -76,6 +76,28 @@ pub fn handle_list(
             }
         }
 
+        let comments = josh_changes::read_comments(repo, change).unwrap_or_default();
+        if !comments.is_empty() {
+            println!();
+            for c in &comments {
+                let cid = &c.id[..8.min(c.id.len())];
+                let loc = c
+                    .location
+                    .as_ref()
+                    .map(|l| format!(" {}:{}", l.path, l.start_line))
+                    .unwrap_or_default();
+                let file = c.file.as_deref().unwrap_or("");
+                print!("    {} {}", cid, c.message.lines().next().unwrap_or(""));
+                if !file.is_empty() {
+                    print!(" ({})", file);
+                }
+                if !loc.is_empty() {
+                    print!("{}", loc);
+                }
+                println!();
+            }
+        }
+
         println!();
     }
 
