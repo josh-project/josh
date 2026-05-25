@@ -166,6 +166,56 @@ fn file_diff_view(sha: String, path: String, mut page: Signal<Page>) -> Element 
         }
     };
 
+    let detail = load_detail(&sha);
+    let (prev_file, next_file) = detail
+        .as_ref()
+        .ok()
+        .and_then(|d| {
+            d.files.iter().position(|f| f.path == path).map(|i| {
+                (
+                    if i > 0 {
+                        Some(d.files[i - 1].path.clone())
+                    } else {
+                        None
+                    },
+                    if i + 1 < d.files.len() {
+                        Some(d.files[i + 1].path.clone())
+                    } else {
+                        None
+                    },
+                )
+            })
+        })
+        .unwrap_or((None, None));
+
+    let (prev_clone, next_clone, sha_clone) = (prev_file.clone(), next_file.clone(), sha.clone());
+    let nav = rsx! {
+        div { class: "diff-nav",
+            if let Some(prev) = prev_clone {
+                button {
+                    class: "nav-btn",
+                    onclick: {
+                        let s = sha_clone.clone();
+                        let p = prev.clone();
+                        move |_| page.set(Page::FileDiff { sha: s.clone(), path: p.clone() })
+                    },
+                    "\u{2190} {prev}"
+                }
+            }
+            if let Some(next) = next_clone {
+                button {
+                    class: "nav-btn",
+                    onclick: {
+                        let s = sha_clone.clone();
+                        let n = next.clone();
+                        move |_| page.set(Page::FileDiff { sha: s.clone(), path: n.clone() })
+                    },
+                    "{next} \u{2192}"
+                }
+            }
+        }
+    };
+
     match load_file_diff(&sha, &path) {
         Err(e) => rsx! {
             {back}
@@ -173,6 +223,7 @@ fn file_diff_view(sha: String, path: String, mut page: Signal<Page>) -> Element 
         },
         Ok(lines) => rsx! {
             {back}
+            {nav}
             h2 { "{path}" }
             pre { class: "diff-view",
                 for line in lines.iter() {
