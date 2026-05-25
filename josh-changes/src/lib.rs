@@ -550,6 +550,61 @@ pub struct Comment {
     pub location: Option<Location>,
     pub reply_to: Option<String>,
     pub update_of: Option<String>,
+    pub author: Option<String>,
+    pub timestamp: Option<String>,
+}
+
+pub fn comment_author(
+    repo: &git2::Repository,
+    change: &Change,
+    comment_id: &str,
+) -> anyhow::Result<(String, String)> {
+    let change_id = match change.id() {
+        Some(id) => id,
+        None => return Err(anyhow!("change has no Change-Id")),
+    };
+    let diff_id = diff_id(repo, change.commit())?;
+
+    let path = std::path::Path::new("comments")
+        .join(&change_id)
+        .join(&diff_id)
+        .join(comment_id);
+
+    let head = match repo.find_reference("refs/josh/changes") {
+        Ok(r) => r.peel_to_commit()?,
+        Err(_) => return Err(anyhow!("refs/josh/changes not found")),
+    };
+
+    let mut walk = repo.revwalk()?;
+    walk.simplify_first_parent()?;
+    walk.push(head.id())?;
+
+    for oid in walk {
+        let oid = oid?;
+        let commit = repo.find_commit(oid)?;
+        let tree = commit.tree()?;
+        if let Ok(entry) = tree.get_path(&path) {
+            // Check if this blob is new (not in parent) or changed.
+            let is_new = match commit.parent(0) {
+                Ok(parent) => parent
+                    .tree()
+                    .ok()
+                    .and_then(|pt| pt.get_path(&path).ok())
+                    .map_or(true, |e| e.id() != entry.id()),
+                Err(_) => true,
+            };
+            if is_new {
+                let time = commit.time();
+                let date = format!("{}", time.seconds());
+                return Ok((commit.author().email().unwrap_or("").to_string(), date));
+            }
+        }
+    }
+
+    Err(anyhow!(
+        "comment {} not found in refs/josh/changes",
+        comment_id
+    ))
 }
 
 pub fn read_comments(repo: &git2::Repository, change: &Change) -> anyhow::Result<Vec<Comment>> {
@@ -589,8 +644,50 @@ pub fn read_comments(repo: &git2::Repository, change: &Change) -> anyhow::Result
             location: meta.location,
             reply_to: meta.reply_to,
             update_of: meta.update_of,
+            author: None,
+            timestamp: None,
         });
     }
+
+    // Walk history once to resolve author/timestamp for all comments.
+    let prefix = std::path::Path::new("comments")
+        .join(change_id)
+        .join(&diff_id);
+    if let Ok(head) = repo.find_reference("refs/josh/changes") {
+        if let Ok(head_commit) = head.peel_to_commit() {
+            let mut walk = repo.revwalk().unwrap_or_else(|_| repo.revwalk().unwrap());
+            let _ = walk.simplify_first_parent();
+            let _ = walk.push(head_commit.id());
+            'outer: for oid in walk.flatten() {
+                if let Ok(commit) = repo.find_commit(oid) {
+                    let tree = commit.tree().unwrap();
+                    let parent_tree = commit.parent(0).ok().and_then(|p| p.tree().ok());
+                    for c in &mut comments {
+                        if c.author.is_some() {
+                            continue;
+                        }
+                        let path = prefix.join(&c.id);
+                        if let Ok(entry) = tree.get_path(&path) {
+                            let is_new = parent_tree
+                                .as_ref()
+                                .and_then(|pt| pt.get_path(&path).ok())
+                                .map_or(true, |e| e.id() != entry.id());
+                            if is_new {
+                                let time = commit.time();
+                                let ts = time.seconds().to_string();
+                                c.author = Some(commit.author().email().unwrap_or("").to_string());
+                                c.timestamp = Some(ts);
+                            }
+                        }
+                    }
+                    if comments.iter().all(|c| c.author.is_some()) {
+                        break 'outer;
+                    }
+                }
+            }
+        }
+    }
+
     Ok(comments)
 }
 

@@ -140,9 +140,13 @@ table.detail-meta td {
     margin-bottom: 0.2rem;
 }
 
-span.comment-id {
+span.comment-author {
+    color: #7ec699;
+    font-size: 0.8rem;
+}
+
+span.comment-ts {
     color: #666;
-    font-family: ui-monospace, monospace;
     font-size: 0.8rem;
 }
 
