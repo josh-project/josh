@@ -192,3 +192,84 @@ pub async fn create_or_update_prs(
 
     Ok(())
 }
+
+/// Sync GitHub PR comments for a single change into refs/josh/changes.
+/// Returns the number of comments synced.
+pub async fn sync_change_comments(
+    connection: &GithubApiConnection,
+    owner: &str,
+    repo_name: &str,
+    repo: &git2::Repository,
+    change: &josh_changes::Change,
+    head_ref: &str,
+) -> anyhow::Result<usize> {
+    let change_id = match change.id() {
+        Some(id) => id,
+        None => return Ok(0),
+    };
+
+    let pr = match connection
+        .find_pull_request_by_head(owner, repo_name, head_ref)
+        .await?
+    {
+        Some((_node_id, number, _draft)) => {
+            println!("Found PR #{} for change {}", number, change_id);
+            number
+        }
+        None => {
+            eprintln!(
+                "No open PR found for change {} (branch {})",
+                change_id, head_ref
+            );
+            return Ok(0);
+        }
+    };
+
+    let pr_data = connection.get_pr_comments(owner, repo_name, pr).await?;
+
+    let mut id_map: HashMap<String, String> = HashMap::new();
+    for comment in &pr_data.comments {
+        let location =
+            comment
+                .path
+                .as_ref()
+                .zip(comment.line)
+                .map(|(path, line)| josh_changes::Location {
+                    path: path.clone(),
+                    start_line: line as u32,
+                    end_line: line as u32,
+                    start_col: 1,
+                    end_col: u32::MAX,
+                });
+        let reply_to = comment
+            .reply_to
+            .as_ref()
+            .and_then(|gh_id| id_map.get(gh_id))
+            .cloned();
+        let meta = josh_changes::CommentMeta {
+            message: comment.body.clone(),
+            file: comment.path.clone(),
+            location,
+            reply_to,
+            update_of: None,
+        };
+
+        let diff_id = comment
+            .commit_oid
+            .as_ref()
+            .and_then(|oid| git2::Oid::from_str(oid).ok())
+            .and_then(|oid| josh_changes::diff_id(repo, oid).ok());
+
+        let hash = josh_changes::write_comment_with_diff(
+            repo,
+            change,
+            &meta,
+            Some(&comment.author),
+            Some(&comment.timestamp),
+            diff_id.as_deref(),
+        )?;
+        id_map.insert(comment.id.clone(), hash);
+    }
+
+    Ok(pr_data.comments.len())
+}
