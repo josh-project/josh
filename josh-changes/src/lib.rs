@@ -399,7 +399,10 @@ pub fn list_changes(
     base: git2::Oid,
 ) -> anyhow::Result<Vec<Change>> {
     let changes = get_changes(repo, tip, base)?;
-    split_changes(repo, changes)
+    Ok(split_changes(repo, changes)?
+        .into_iter()
+        .filter(|c| c.id.is_some())
+        .collect())
 }
 
 #[cfg(test)]
