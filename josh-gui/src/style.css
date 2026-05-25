@@ -116,7 +116,7 @@ table.detail-meta td {
 .detail-left {
     flex: 0 0 auto;
     min-width: 16rem;
-    max-width: 28rem;
+    max-width: 34rem;
 }
 
 .detail-right {
