@@ -206,7 +206,7 @@ impl Drop for AbortOnDrop {
 }
 
 pub struct GithubSim {
-    _tx: mpsc::UnboundedSender<ActorMsg>,
+    tx: mpsc::UnboundedSender<ActorMsg>,
     _guard: Arc<Mutex<GithubSimResources>>,
     url: Url,
     graphql_url: Url,
@@ -274,7 +274,7 @@ impl GithubSim {
         }));
 
         Ok(Self {
-            _tx: tx,
+            tx: tx,
             _guard: guard,
             url,
             graphql_url,
@@ -300,7 +300,7 @@ impl GithubSim {
 
     pub fn repo_by_name(&self, owner: &str, name: &str) -> SimRepo {
         SimRepo {
-            tx: self._tx.clone(),
+            tx: self.tx.clone(),
             owner: owner.to_string(),
             name: name.to_string(),
             graphql_state: self.graphql_state.clone(),
