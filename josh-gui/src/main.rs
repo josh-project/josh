@@ -1,3 +1,5 @@
+use std::sync::OnceLock;
+
 use dioxus::prelude::*;
 
 fn main() {
@@ -37,13 +39,7 @@ fn app() -> Element {
                         fill: "#E62200",
                     }
                 }
-                span { class: "header-dir",
-                    {
-                        std::env::current_dir()
-                            .map(|p| p.display().to_string())
-                            .unwrap_or_default()
-                    }
-                }
+                span { class: "header-dir", {breadcrumb(&page.read(), &rows.read())} }
             }
             match &*page.read() {
                 Page::List => list_view(rows, page),
@@ -52,6 +48,52 @@ fn app() -> Element {
             }
         }
     }
+}
+
+fn repo_name() -> String {
+    static HOME: OnceLock<Option<String>> = OnceLock::new();
+    let home = HOME.get_or_init(|| std::env::home_dir().map(|p| p.display().to_string()));
+    let dir = std::env::current_dir()
+        .map(|p| p.display().to_string())
+        .unwrap_or_default();
+    if let Some(home) = home {
+        if dir.starts_with(home) {
+            return dir.replacen(home, "~", 1);
+        }
+    }
+    dir
+}
+
+fn subject_from_rows(rows: &anyhow::Result<Vec<Row>>, sha: &str) -> String {
+    let Ok(rows) = rows else {
+        return String::new();
+    };
+    rows.iter()
+        .find_map(|r| match r {
+            Row::Change {
+                sha: s, subject, ..
+            }
+            | Row::Contributing {
+                sha: s, subject, ..
+            } if s == sha => Some(subject.clone()),
+            _ => None,
+        })
+        .unwrap_or_default()
+}
+
+fn breadcrumb(page: &Page, rows: &anyhow::Result<Vec<Row>>) -> String {
+    let mut parts = vec![repo_name()];
+    match page {
+        Page::List => {}
+        Page::Detail { sha } => {
+            parts.push(subject_from_rows(rows, sha));
+        }
+        Page::FileDiff { sha, path } => {
+            parts.push(subject_from_rows(rows, sha));
+            parts.push(path.clone());
+        }
+    }
+    parts.join(" \u{203A} ")
 }
 
 fn list_view(rows: Signal<anyhow::Result<Vec<Row>>>, mut page: Signal<Page>) -> Element {
