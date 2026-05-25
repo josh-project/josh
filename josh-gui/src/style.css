@@ -33,6 +33,12 @@ table.changes td {
     border-bottom: 1px solid #2a2a2a;
 }
 
+tr.contributing td {
+    background: #252525;
+    color: #999;
+    font-size: 0.9em;
+}
+
 code {
     color: #7ec699;
     font-family: ui-monospace, monospace;

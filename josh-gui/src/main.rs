@@ -27,11 +27,23 @@ fn app() -> Element {
                         }
                         tbody {
                             for row in rows.iter() {
-                                tr {
-                                    td { code { "{row.change_id}" } }
-                                    td { "{row.subject}" }
-                                    td { "{row.author}" }
-                                    td { "{row.series}" }
+                                match row {
+                                    Row::Change { change_id, subject, author, series } => rsx! {
+                                        tr {
+                                            td { code { "{change_id}" } }
+                                            td { "{subject}" }
+                                            td { "{author}" }
+                                            td { "{series}" }
+                                        }
+                                    },
+                                    Row::Contributing { oid, subject } => rsx! {
+                                        tr { class: "contributing",
+                                            td { code { "{oid}" } }
+                                            td { "{subject}" }
+                                            td {}
+                                            td {}
+                                        }
+                                    },
                                 }
                             }
                         }
@@ -46,11 +58,17 @@ fn app() -> Element {
 }
 
 #[derive(Clone)]
-struct Row {
-    change_id: String,
-    subject: String,
-    author: String,
-    series: String,
+enum Row {
+    Change {
+        change_id: String,
+        subject: String,
+        author: String,
+        series: String,
+    },
+    Contributing {
+        oid: String,
+        subject: String,
+    },
 }
 
 fn load_rows() -> anyhow::Result<Vec<Row>> {
@@ -83,12 +101,28 @@ fn load_rows() -> anyhow::Result<Vec<Row>> {
             .unwrap_or("")
             .to_string();
 
-        rows.push(Row {
+        rows.push(Row::Change {
             change_id: change.id.clone().unwrap_or_default(),
             subject,
             author: change.author.clone(),
             series: change.series.join(", "),
         });
+
+        for oid in change.contributing(&repo)? {
+            if let Ok(c) = repo.find_commit(oid) {
+                let c_subject = c
+                    .message()
+                    .unwrap_or("")
+                    .lines()
+                    .next()
+                    .unwrap_or("")
+                    .to_string();
+                rows.push(Row::Contributing {
+                    oid: oid.to_string()[..8].to_string(),
+                    subject: c_subject,
+                });
+            }
+        }
     }
     Ok(rows)
 }
