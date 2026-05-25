@@ -10,7 +10,7 @@ pub struct Change {
 }
 
 impl Change {
-    pub fn new(repo: &git2::Repository, commit: &git2::Commit) -> Self {
+    pub fn new(_repo: &git2::Repository, commit: &git2::Commit) -> Self {
         let mut change = Self {
             author: commit.author().email().unwrap_or("").to_string(),
             id: None,
@@ -21,10 +21,6 @@ impl Change {
         let (id, series) = commit_change_meta(commit);
         change.id = id;
         change.series = series;
-
-        if change.id().is_some() {
-            let _ = store_diff_data(repo, &change);
-        }
 
         change
     }
@@ -422,7 +418,11 @@ pub fn list_changes(
     base: git2::Oid,
 ) -> anyhow::Result<Vec<Change>> {
     let changes = get_changes(repo, tip, base)?;
-    split_changes(repo, changes)
+    let changes = split_changes(repo, changes)?;
+    for c in &changes {
+        let _ = store_diff_data(repo, c);
+    }
+    Ok(changes)
 }
 
 pub fn resolve_change(
