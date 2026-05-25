@@ -472,12 +472,28 @@ pub fn diff_id(repo: &git2::Repository, commit_oid: git2::Oid) -> anyhow::Result
     Ok(git2::Oid::hash_object(git2::ObjectType::Blob, &buf)?.to_string())
 }
 
+pub struct Location {
+    pub path: String,
+    pub start_line: u32,
+    pub end_line: u32,
+    pub start_col: u32,
+    pub end_col: u32,
+}
+
+pub struct CommentMeta {
+    pub message: String,
+    pub file: Option<String>,
+    pub location: Option<Location>,
+    pub reply_to: Option<String>,
+    pub update_of: Option<String>,
+}
+
 pub fn write_comment(
     repo: &git2::Repository,
     change: &Change,
-    message: &str,
+    meta: &CommentMeta,
 ) -> anyhow::Result<()> {
-    if message.trim().is_empty() {
+    if meta.message.trim().is_empty() {
         return Err(anyhow::anyhow!("comment message must not be empty"));
     }
 
@@ -486,7 +502,26 @@ pub fn write_comment(
         .ok_or_else(|| anyhow::anyhow!("commit {} has no Change-Id", change.commit()))?;
     let diff_id = diff_id(repo, change.commit())?;
 
-    let content = serde_json::json!({"message": message}).to_string();
+    let mut json = serde_json::json!({"message": meta.message});
+    if let Some(ref v) = meta.file {
+        json["file"] = serde_json::Value::String(v.clone());
+    }
+    if let Some(ref loc) = meta.location {
+        json["location"] = serde_json::json!({
+            "path": loc.path,
+            "start_line": loc.start_line,
+            "end_line": loc.end_line,
+            "start_col": loc.start_col,
+            "end_col": loc.end_col,
+        });
+    }
+    if let Some(ref v) = meta.reply_to {
+        json["reply_to"] = serde_json::Value::String(v.clone());
+    }
+    if let Some(ref v) = meta.update_of {
+        json["update_of"] = serde_json::Value::String(v.clone());
+    }
+    let content = json.to_string();
     let content_hash =
         git2::Oid::hash_object(git2::ObjectType::Blob, content.as_bytes())?.to_string();
     let blob_oid = repo.blob(content.as_bytes())?;
