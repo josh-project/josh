@@ -307,13 +307,6 @@ td.diff-ln {
     white-space: pre;
 }
 
-td.diff-sign {
-    text-align: center;
-    color: #666;
-    user-select: none;
-    white-space: pre;
-}
-
 td.diff-content {
     overflow: hidden;
 }
@@ -331,8 +324,7 @@ tr.diff-line-Add td {
     color: #b8e6b8;
 }
 
-tr.diff-line-Add td.diff-ln,
-tr.diff-line-Add td.diff-sign {
+tr.diff-line-Add td.diff-ln {
     background: #1e4420;
     color: #7ec699;
 }
@@ -342,8 +334,7 @@ tr.diff-line-Del td {
     color: #e6b8b8;
 }
 
-tr.diff-line-Del td.diff-ln,
-tr.diff-line-Del td.diff-sign {
+tr.diff-line-Del td.diff-ln {
     background: #441e1e;
     color: #e06c75;
 }
