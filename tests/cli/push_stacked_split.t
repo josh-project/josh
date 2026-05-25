@@ -142,9 +142,6 @@ Test that we can fetch the split refs back
   * Change-Id: 1235  (HEAD -> master, origin/@heads/master/josh@example.com) c4069901c8ecd228f53e7b55deae1362905732d3
   * no change id  1c5e60ad475fec663012fe59ebb6a8fec1ff6a92
   * Change: foo7  cadc8f164b24465285d8ec413e0325a6341e4453
-  | * update refs/josh/changes  eeab36ed64374029feb250acb8b6910c56fb97c4
-  | * update refs/josh/changes  392f34a160fac28bab0232e0d44f2402a22b07a8
-  | * update refs/josh/changes  cc72f3d83bc36cf5f5d58078f50354575d08afe1
   | * Change-Id: 1235  ef7c3c85ad4c5875f308003d42a6e11d9b14aeb9
   | | * Change: foo7  955da8395478e58213ad4ae975d9d885f87fdcec
   | | | * Change-Id: 1235  929b441481dc5e1a946004a5615592d837ad564b

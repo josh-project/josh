@@ -167,73 +167,38 @@ Make sure all temporary namespace got removed
       |-- info
       |   `-- exclude
       |-- objects
-      |   |-- 02
-      |   |   `-- 07a4b80f370a4ee9a51263fb8ce151dd3c0f7f
       |   |-- 14
       |   |   `-- 20ebc1972205ad0fe84c31eec84a8a7a334882
       |   |-- 1c
       |   |   `-- b5d64cdb55e3db2a8d6f00d596572b4cfa9d5c
       |   |-- 3b
       |   |   `-- 0e3dbefd779ec54d92286047f32d3129161c0d
-      |   |-- 43
-      |   |   `-- 760f1aa7bc1a8514df6f51d4593fdeb7bc56d7
-      |   |-- 52
-      |   |   `-- 90f0221fdfb3f89a51fbbe200e21247f35ca49
-      |   |-- 54
-      |   |   `-- b7e8811c6bd30e56406cb0bf983f1d11c32cd5
-      |   |-- 5d
-      |   |   `-- d0bf100b152d400e1bd57587c7d0fb8a939fba
-      |   |-- 67
-      |   |   `-- c3192a7958f56d370e0a9d355ca95bd6b4706c
       |   |-- 6b
       |   |   `-- 46faacade805991bcaea19382c9d941828ce80
-      |   |-- 6e
-      |   |   `-- 0f278e78e3910ff4293c103ae8d4b4ab7c64af
-      |   |-- 71
-      |   |   `-- 772dc457c3e5dffefaf57cd3a7dd6f80fea152
       |   |-- 72
       |   |   `-- 7902c81346e29c4f75e0913bd62d7b85d7033f
-      |   |-- 78
-      |   |   `-- 570e0a194c6e89968144054e569b1decd20d3e
       |   |-- 7e
       |   |   `-- 693682dba1d7af1cb1eca7c3dcc5128e3ec9c6
       |   |-- 8a
-      |   |   |-- 778416d88308bf017cf54f0247e4780765361f
-      |   |   `-- f7809ac3a6171476671aae93bcced6b7f133e2
-      |   |-- aa
-      |   |   `-- 4f024082ee5d30dcd9be458979286a5961e80d
-      |   |-- ac
-      |   |   `-- 1324dc8b913aa9f9448849177ec27635703d6c
+      |   |   `-- 778416d88308bf017cf54f0247e4780765361f
       |   |-- b2
       |   |   `-- dd517c55420a48cb543e0195b4751bf514b941
       |   |-- b7
       |   |   `-- 8fc0fe9f3bd35c8dc8aeff5189ebda0750e974
-      |   |-- e8
-      |   |   `-- 4d70f0b8ff07b846aa543a934e4d1dbcb9e472
-      |   |-- eb
-      |   |   `-- 137a38d3febd6e85adaf43c1340023b68bf040
       |   |-- ec
-      |   |   |-- 41aad70b4b898baf48efeb795a7753d9674152
-      |   |   |-- 5fb1d4015a348127091166b075b3843452742f
-      |   |   `-- ee0c2758f055dd26f672de333bcfca67658dcc
+      |   |   `-- 41aad70b4b898baf48efeb795a7753d9674152
       |   |-- ed
       |   |   `-- b2a5b9c65fae1d20c1b1fb777d1ea025456faa
-      |   |-- ef
-      |   |   `-- 39e7741710ae01841c87b69e2ea29f96c61135
-      |   |-- f1
-      |   |   `-- 5024ac06c63eb9174a2effdac038a043b553f1
       |   |-- fd
       |   |   `-- b894f9431a237930c7a034f3ecc16dd686b19e
       |   |-- info
       |   `-- pack
       `-- refs
           |-- heads
-          |-- josh
-          |   `-- changes
           |-- namespaces
           `-- tags
   
-  81 directories, 68 files
+  65 directories, 49 files
 
 $ cat ${TESTTMP}/josh-proxy.out
 $ cat ${TESTTMP}/josh-proxy.out | grep REPO_UPDATE
