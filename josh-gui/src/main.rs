@@ -3,9 +3,8 @@ use dioxus::prelude::*;
 fn main() {
     dioxus::LaunchBuilder::new()
         .with_cfg(
-            dioxus::desktop::Config::new().with_window(
-                dioxus::desktop::WindowBuilder::new().with_title("Josh"),
-            ),
+            dioxus::desktop::Config::new()
+                .with_window(dioxus::desktop::WindowBuilder::new().with_title("Josh")),
         )
         .launch(app);
 }
@@ -140,48 +139,52 @@ fn detail_view(sha: String, mut page: Signal<Page>) -> Element {
             );
             rsx! {
                 {back}
-                div { class: "scroll-table",
-                    table { class: "detail-meta",
-                        tbody {
-                            tr { td { "Change-Id" } td { code { "{data.change_id}" } } }
-                            tr { td { "SHA" } td { code { "{data.sha}" } } }
-                            tr { td { "Subject" } td { "{data.subject}" } }
-                            tr { td { "Author" } td { "{data.author}" } }
-                            tr { td { "Date" } td { "{data.date}" } }
-                            tr { td { "Series" } td { "{data.series}" } }
-                        }
-                    }
-                    pre { class: "commit-message", "{data.message}" }
-                    h2 { "Changed files" }
-                    p { class: "diff-summary", "{stats_total}" }
-                    table { class: "files",
-                        thead {
-                            tr {
-                                th { "File" }
-                                th { class: "num", "+" }
-                                th { class: "num", "-" }
+                div { class: "scroll-table detail-layout",
+                    div { class: "detail-left",
+                        table { class: "detail-meta",
+                            tbody {
+                                tr { td { "Change-Id" } td { code { "{data.change_id}" } } }
+                                tr { td { "SHA" } td { code { "{data.sha}" } } }
+                                tr { td { "Subject" } td { "{data.subject}" } }
+                                tr { td { "Author" } td { "{data.author}" } }
+                                tr { td { "Date" } td { "{data.date}" } }
+                                tr { td { "Series" } td { "{data.series}" } }
                             }
                         }
-                        tbody {
-                            for f in data.files.iter() {
-                                {
-                                    let s = data.sha.clone();
-                                    let p = f.path.clone();
-                                    rsx! {
-                                        tr {
-                                            class: "file-row",
-                                            onclick: move |_| page.set(Page::FileDiff {
-                                                sha: s.clone(),
-                                                path: p.clone(),
-                                            }),
-                                            td { "{f.path}" }
-                                            td { class: "num adds", "{f.adds}" }
-                                            td { class: "num dels", "{f.dels}" }
+                        pre { class: "commit-message", "{data.message}" }
+                    }
+                    div { class: "detail-right",
+                        h2 { "Changed files" }
+                        p { class: "diff-summary", "{stats_total}" }
+                        table { class: "files",
+                            thead {
+                                tr {
+                                    th { "File" }
+                                    th { class: "num", "+" }
+                                    th { class: "num", "-" }
+                                }
+                            }
+                            tbody {
+                                for f in data.files.iter() {
+                                    {
+                                        let s = data.sha.clone();
+                                        let p = f.path.clone();
+                                        rsx! {
+                                            tr {
+                                                class: "file-row",
+                                                onclick: move |_| page.set(Page::FileDiff {
+                                                    sha: s.clone(),
+                                                    path: p.clone(),
+                                                }),
+                                                td { "{f.path}" }
+                                                td { class: "num adds", "{f.adds}" }
+                                                td { class: "num dels", "{f.dels}" }
+                                            }
                                         }
                                     }
                                 }
                             }
-                        }
+                    }
                     }
                 }
             }
