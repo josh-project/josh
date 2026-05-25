@@ -99,7 +99,7 @@ pub fn spawn_serve_task(
         interval.tick().await;
         loop {
             interval.tick().await;
-            if tick_tx.send(CqEvent::Tick).await.is_err() {
+            if tick_tx.send(CqEvent::Tick { done: None }).await.is_err() {
                 break; // channel closed
             }
         }
@@ -113,8 +113,10 @@ pub fn spawn_serve_task(
         };
 
         while let Some(event) = event_rx.recv().await {
+            let mut tick_done = None;
             match event {
-                CqEvent::Tick => {
+                CqEvent::Tick { done } => {
+                    tick_done = done;
                     tracing::info!("tick: running fetch");
                     let transaction =
                         match TransactionContext::new(&repo_path, cache.clone()).open(None) {
@@ -168,6 +170,10 @@ pub fn spawn_serve_task(
 
             // Tick and Webhook both fall through here; Track does not.
             run_queue_cycle(&mut state, &repo_path, &cache, api.as_deref()).await;
+
+            if let Some(tx) = tick_done {
+                let _ = tx.send(());
+            }
         }
     });
 

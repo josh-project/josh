@@ -1,6 +1,5 @@
 use std::sync::Arc;
 use std::sync::Once;
-use std::time::Duration;
 
 static INIT_ENV: Once = Once::new();
 
@@ -26,6 +25,15 @@ struct TestHarness {
     _metarepo_temp: tempfile::TempDir,
     #[allow(dead_code)]
     _cache: Arc<josh_core::cache::CacheStack>,
+}
+
+impl TestHarness {
+    async fn tick(&self) -> anyhow::Result<()> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.event_tx.send(CqEvent::Tick { done: Some(tx) }).await?;
+        rx.await?;
+        Ok(())
+    }
 }
 
 async fn start_test_harness(
@@ -113,23 +121,6 @@ async fn start_test_harness(
     })
 }
 
-async fn poll_until(
-    mut condition: impl FnMut() -> bool,
-    timeout: Duration,
-    interval: Duration,
-) -> bool {
-    let deadline = tokio::time::Instant::now() + timeout;
-    loop {
-        if condition() {
-            return true;
-        }
-        if tokio::time::Instant::now() >= deadline {
-            return false;
-        }
-        tokio::time::sleep(interval).await;
-    }
-}
-
 #[tokio::test]
 async fn merge_single_pr() -> anyhow::Result<()> {
     init_tracing();
@@ -182,15 +173,8 @@ async fn merge_single_pr() -> anyhow::Result<()> {
         .await?;
     repo.add_maintainer("maintainer1").await?;
 
-    harness.event_tx.send(CqEvent::Tick).await?;
-    let merged = poll_until(
-        || repo.pr_by_node_id(&pr_node_id) == Some(PrStatus::Closed),
-        Duration::from_secs(30),
-        Duration::from_millis(100),
-    )
-    .await;
+    harness.tick().await?;
 
-    assert!(merged, "PR should have been merged within 30 seconds");
     assert_eq!(repo.pr_by_node_id(&pr_node_id), Some(PrStatus::Closed));
 
     let comments = repo.pr_comments_by_node_id(&pr_node_id);
@@ -253,9 +237,7 @@ async fn pr_not_admissible_without_review() -> anyhow::Result<()> {
         .await?;
     repo.add_maintainer("maintainer1").await?;
 
-    harness.event_tx.send(CqEvent::Tick).await?;
-
-    tokio::time::sleep(Duration::from_secs(2)).await;
+    harness.tick().await?;
 
     assert_eq!(
         repo.pr_by_node_id(&pr_node_id),
@@ -327,9 +309,7 @@ async fn pr_not_admissible_with_failing_check() -> anyhow::Result<()> {
     repo.complete_check_run("ci/test", number, "failure")
         .await?;
 
-    harness.event_tx.send(CqEvent::Tick).await?;
-
-    tokio::time::sleep(Duration::from_secs(2)).await;
+    harness.tick().await?;
 
     assert_eq!(
         repo.pr_by_node_id(&pr_node_id),
@@ -393,9 +373,7 @@ async fn pr_removed_on_close_webhook() -> anyhow::Result<()> {
     repo.pr_close(&pr_node_id).await?;
 
     // Send Tick - PR should NOT be merged because it was closed
-    harness.event_tx.send(CqEvent::Tick).await?;
-
-    tokio::time::sleep(Duration::from_secs(2)).await;
+    harness.tick().await?;
 
     assert_eq!(
         repo.pr_by_node_id(&pr_node_id),

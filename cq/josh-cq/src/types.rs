@@ -1,4 +1,5 @@
 use serde::Deserialize;
+use tokio::sync::oneshot;
 
 use josh_github_webhooks::webhook_server::WebhookPayload;
 
@@ -16,7 +17,10 @@ pub enum CqEvent {
     Track(TrackRequest),
     Webhook(WebhookPayload),
     /// Periodic polling tick — triggers a full fetch + evaluate + step cycle.
-    Tick,
+    /// The optional oneshot fires after the queue cycle completes.
+    Tick {
+        done: Option<oneshot::Sender<()>>,
+    },
 }
 
 pub enum UserAction {
