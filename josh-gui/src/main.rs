@@ -169,36 +169,37 @@ fn file_diff_view(sha: String, path: String, mut page: Signal<Page>) -> Element 
         .ok()
         .and_then(|d| {
             let i = d.files.iter().position(|f| f.path == path)?;
-            let prev = i.checked_sub(1).map(|j| d.files[j].path.clone());
-            let next = d.files.get(i + 1).map(|f| f.path.clone());
+            let n = d.files.len();
+            let prev = d.files[(i + n - 1) % n].path.clone();
+            let next = d.files[(i + 1) % n].path.clone();
             Some((prev, next))
         })
-        .unwrap_or((None, None));
+        .unwrap_or_default();
 
-    let (prev_clone, next_clone, sha_clone) = (prev_file.clone(), next_file.clone(), sha.clone());
+    let sha2 = sha.clone();
+    let sha3 = sha.clone();
+    let prev = prev_file.clone();
+    let next = next_file.clone();
     let nav = rsx! {
         div { class: "diff-nav",
-            if let Some(prev) = prev_clone {
-                button {
-                    class: "nav-btn",
-                    onclick: {
-                        let s = sha_clone.clone();
-                        let p = prev.clone();
-                        move |_| page.set(Page::FileDiff { sha: s.clone(), path: p.clone() })
-                    },
-                    "\u{2190} {prev}"
-                }
+            button {
+                class: "nav-btn",
+                onclick: {
+                    let s = sha2.clone();
+                    let p = prev.clone();
+                    move |_| page.set(Page::FileDiff { sha: s.clone(), path: p.clone() })
+                },
+                "\u{2190} {prev_file}"
             }
-            if let Some(next) = next_clone {
-                button {
-                    class: "nav-btn",
-                    onclick: {
-                        let s = sha_clone.clone();
-                        let n = next.clone();
-                        move |_| page.set(Page::FileDiff { sha: s.clone(), path: n.clone() })
-                    },
-                    "{next} \u{2192}"
-                }
+            span { class: "diff-nav-pos", "{path}" }
+            button {
+                class: "nav-btn",
+                onclick: {
+                    let s = sha3.clone();
+                    let n = next.clone();
+                    move |_| page.set(Page::FileDiff { sha: s.clone(), path: n.clone() })
+                },
+                "{next_file} \u{2192}"
             }
         }
     };
