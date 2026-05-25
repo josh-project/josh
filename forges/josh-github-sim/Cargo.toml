@@ -17,6 +17,7 @@ serde_json.workspace = true
 juniper.workspace = true
 indexmap = "2.0"
 arcstr = "1.2.0"
+base64.workspace = true
 
 josh-cq-test-components.workspace = true
 reqwest.workspace = true

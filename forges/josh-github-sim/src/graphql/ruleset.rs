@@ -1,6 +1,7 @@
 use juniper::graphql_object;
 
 use super::context::Context;
+use super::query::NodeValue;
 use super::types::RuleEnforcement;
 
 #[derive(juniper::GraphQLEnum)]
@@ -43,7 +44,7 @@ pub(crate) struct RepositoryRuleset {
     pub(crate) required_checks: Vec<String>,
 }
 
-#[graphql_object(context = Context)]
+#[graphql_object(context = Context, impl = NodeValue)]
 impl RepositoryRuleset {
     fn id(&self) -> &str {
         &self.id

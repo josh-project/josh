@@ -8,7 +8,7 @@ use axum::response::Response;
 use tokio::sync::{mpsc, oneshot};
 
 use crate::graphql;
-use crate::graphql::{MockPr, MockRuleset, ReviewState};
+use crate::graphql::{GlobalNode, MockPr, MockRuleset, ReviewState};
 
 pub(crate) enum ActorMsg {
     ServeGitHttp {
@@ -117,7 +117,7 @@ pub(crate) async fn run_actor(
                         .map(|r| r.prs.len() + r.closed_prs.len())
                         .unwrap_or(0);
                     let number = count as i64;
-                    let node_id = format!("PR_{}_{}_{}", owner, name, number);
+                    let node_id = GlobalNode::pr(&owner, &name, number).to_node_id();
                     (number, node_id)
                 };
 

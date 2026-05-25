@@ -6,6 +6,7 @@ use super::context::User;
 use super::git_object::{GitObject, GitObjectID};
 use super::pull_request::{PullRequest, PullRequestConnection, PullRequestState};
 use super::ruleset::{RefNameCondition, RepositoryRuleset, RulesetConditions, RulesetConnection};
+use super::types::GlobalNode;
 
 pub(crate) struct Repository {
     pub(crate) owner: String,
@@ -121,7 +122,7 @@ impl Repository {
             .flatten()
             .take(first as usize)
             .map(|rs| RepositoryRuleset {
-                id: rs.id.clone(),
+                id: GlobalNode::ruleset(&self.owner, &self.name, &rs.id).to_node_id(),
                 name: rs.name.clone(),
                 enforcement: rs.enforcement,
                 target: "BRANCH".to_string(),

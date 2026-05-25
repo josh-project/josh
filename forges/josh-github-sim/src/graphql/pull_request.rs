@@ -1,6 +1,7 @@
 use juniper::graphql_object;
 
 use super::context::Context;
+use super::query::NodeValue;
 
 #[derive(juniper::GraphQLEnum)]
 pub(crate) enum PullRequestState {
@@ -22,7 +23,7 @@ pub(crate) struct PullRequest {
     pub(crate) repo_name: String,
 }
 
-#[graphql_object(context = Context)]
+#[graphql_object(context = Context, impl = NodeValue)]
 impl PullRequest {
     fn id(&self) -> &str {
         &self.id

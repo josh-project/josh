@@ -23,7 +23,10 @@ mod ruleset;
 mod types;
 pub(crate) mod webhooks;
 
-pub use types::{GraphQLState, MockPr, MockRuleset, RepoState, ReviewState, RuleEnforcement};
+pub use types::{
+    GlobalNode, GraphQLState, MockPr, MockRuleset, NodeKind, RepoState, ReviewState,
+    RuleEnforcement,
+};
 
 use context::Context;
 use mutation::Mutation;
