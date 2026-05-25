@@ -472,7 +472,7 @@ pub fn diff_id(repo: &git2::Repository, commit_oid: git2::Oid) -> anyhow::Result
     Ok(git2::Oid::hash_object(git2::ObjectType::Blob, &buf)?.to_string())
 }
 
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Location {
     pub path: String,
     pub start_line: u32,
@@ -522,6 +522,58 @@ pub fn write_comment(
     write_changes_tree(repo, &path, blob_oid, author, timestamp)?;
 
     Ok(content_hash)
+}
+
+#[derive(Debug, Clone)]
+pub struct Comment {
+    pub id: String,
+    pub message: String,
+    pub file: Option<String>,
+    pub location: Option<Location>,
+    pub reply_to: Option<String>,
+    pub update_of: Option<String>,
+}
+
+pub fn read_comments(repo: &git2::Repository, change: &Change) -> anyhow::Result<Vec<Comment>> {
+    let change_id = match change.id() {
+        Some(id) => id,
+        None => return Ok(Vec::new()),
+    };
+    let diff_id = diff_id(repo, change.commit())?;
+
+    let tree = match repo.find_reference("refs/josh/changes") {
+        Ok(r) => r.peel_to_tree()?,
+        Err(_) => return Ok(Vec::new()),
+    };
+
+    let comments_tree = match tree.get_name("comments") {
+        Some(e) => e.to_object(repo)?.peel_to_tree()?,
+        None => return Ok(Vec::new()),
+    };
+    let cid_tree = match comments_tree.get_name(change_id) {
+        Some(e) => e.to_object(repo)?.peel_to_tree()?,
+        None => return Ok(Vec::new()),
+    };
+    let did_tree = match cid_tree.get_name(&diff_id) {
+        Some(e) => e.to_object(repo)?.peel_to_tree()?,
+        None => return Ok(Vec::new()),
+    };
+
+    let mut comments = Vec::new();
+    for entry in did_tree.iter() {
+        let id = entry.name().unwrap_or("").to_string();
+        let blob = entry.to_object(repo)?.peel_to_blob()?;
+        let meta: CommentMeta = serde_json::from_slice(blob.content())?;
+        comments.push(Comment {
+            id,
+            message: meta.message,
+            file: meta.file,
+            location: meta.location,
+            reply_to: meta.reply_to,
+            update_of: meta.update_of,
+        });
+    }
+    Ok(comments)
 }
 
 pub fn store_diff_data(repo: &git2::Repository, change: &Change) -> anyhow::Result<()> {
