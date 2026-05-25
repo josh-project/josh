@@ -55,17 +55,17 @@ pub fn handle_list(
     }
 
     for change in &changes {
-        let commit = repo.find_commit(change.commit)?;
+        let commit = repo.find_commit(change.commit())?;
         let subject = commit.message().unwrap_or("").lines().next().unwrap_or("");
 
-        let id = change.id.as_deref().unwrap_or("<no-change-id>");
-        let series = if change.series.is_empty() {
+        let id = change.id().unwrap_or("<no-change-id>");
+        let series = if change.series().is_empty() {
             String::new()
         } else {
-            format!(" [{}]", change.series.join(", "))
+            format!(" [{}]", change.series().join(", "))
         };
 
-        println!("{} {}{} ({})", id, subject, series, change.author);
+        println!("{} {}{} ({})", id, subject, series, change.author());
 
         let contributing = change.contributing(repo)?;
         for oid in &contributing {
