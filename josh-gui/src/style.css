@@ -44,6 +44,10 @@ code {
     font-family: ui-monospace, monospace;
 }
 
+code.muted {
+    color: #666;
+}
+
 .error {
     color: #e06c75;
 }

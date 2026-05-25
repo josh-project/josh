@@ -38,9 +38,9 @@ fn app() -> Element {
                                             td { "{series}" }
                                         }
                                     },
-                                    Row::Contributing { sha, subject } => rsx! {
+                                    Row::Contributing { change_id, sha, subject } => rsx! {
                                         tr { class: "contributing",
-                                            td {}
+                                            td { code { class: "muted", "{change_id}" } }
                                             td { code { "{sha}" } }
                                             td { "{subject}" }
                                             td {}
@@ -70,6 +70,7 @@ enum Row {
         series: String,
     },
     Contributing {
+        change_id: String,
         sha: String,
         subject: String,
     },
@@ -115,14 +116,11 @@ fn load_rows() -> anyhow::Result<Vec<Row>> {
 
         for oid in change.contributing(&repo)? {
             if let Ok(c) = repo.find_commit(oid) {
-                let c_subject = c
-                    .message()
-                    .unwrap_or("")
-                    .lines()
-                    .next()
-                    .unwrap_or("")
-                    .to_string();
+                let msg = c.message().unwrap_or("");
+                let c_subject = msg.lines().next().unwrap_or("").to_string();
+                let c_change_id = josh_changes::parse_change_meta(msg).0.unwrap_or_default();
                 rows.push(Row::Contributing {
+                    change_id: c_change_id,
                     sha: oid.to_string()[..8].to_string(),
                     subject: c_subject,
                 });
