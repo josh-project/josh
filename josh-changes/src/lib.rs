@@ -486,6 +486,8 @@ pub struct CommentMeta {
     pub location: Option<Location>,
     pub reply_to: Option<String>,
     pub update_of: Option<String>,
+    pub author: Option<String>,
+    pub timestamp: Option<String>,
 }
 
 pub fn write_comment(
@@ -520,6 +522,12 @@ pub fn write_comment(
     }
     if let Some(ref v) = meta.update_of {
         json["update_of"] = serde_json::Value::String(v.clone());
+    }
+    if let Some(ref v) = meta.author {
+        json["author"] = serde_json::Value::String(v.clone());
+    }
+    if let Some(ref v) = meta.timestamp {
+        json["timestamp"] = serde_json::Value::String(v.clone());
     }
     let content = json.to_string();
     let content_hash =
