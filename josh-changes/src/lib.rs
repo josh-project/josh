@@ -486,15 +486,15 @@ pub struct CommentMeta {
     pub location: Option<Location>,
     pub reply_to: Option<String>,
     pub update_of: Option<String>,
-    pub author: Option<String>,
-    pub timestamp: Option<String>,
 }
 
 pub fn write_comment(
     repo: &git2::Repository,
     change: &Change,
     meta: &CommentMeta,
-) -> anyhow::Result<()> {
+    author: Option<&str>,
+    timestamp: Option<&str>,
+) -> anyhow::Result<String> {
     if meta.message.trim().is_empty() {
         return Err(anyhow::anyhow!("comment message must not be empty"));
     }
@@ -523,12 +523,6 @@ pub fn write_comment(
     if let Some(ref v) = meta.update_of {
         json["update_of"] = serde_json::Value::String(v.clone());
     }
-    if let Some(ref v) = meta.author {
-        json["author"] = serde_json::Value::String(v.clone());
-    }
-    if let Some(ref v) = meta.timestamp {
-        json["timestamp"] = serde_json::Value::String(v.clone());
-    }
     let content = json.to_string();
     let content_hash =
         git2::Oid::hash_object(git2::ObjectType::Blob, content.as_bytes())?.to_string();
@@ -538,9 +532,9 @@ pub fn write_comment(
         .join(&change_id)
         .join(&diff_id)
         .join(&content_hash);
-    write_changes_tree(repo, &path, blob_oid)?;
+    write_changes_tree(repo, &path, blob_oid, author, timestamp)?;
 
-    Ok(())
+    Ok(content_hash)
 }
 
 pub fn store_diff_data(repo: &git2::Repository, change: &Change) -> anyhow::Result<()> {
@@ -592,15 +586,66 @@ pub fn store_diff_data(repo: &git2::Repository, change: &Change) -> anyhow::Resu
         .join(&change_id)
         .join(&diff_id)
         .join(&content_hash);
-    write_changes_tree(repo, &path, blob_oid)?;
+    write_changes_tree(repo, &path, blob_oid, None, None)?;
 
     Ok(())
+}
+
+fn parse_timestamp(s: Option<&str>) -> git2::Time {
+    let s = match s {
+        Some(s) => s,
+        None => return git2::Time::new(0, 0),
+    };
+    // Parse ISO 8601: "2024-01-15T10:30:00Z" or "2024-01-15T10:30:00+00:00"
+    let bytes = s.as_bytes();
+    if bytes.len() < 19 {
+        return git2::Time::new(0, 0);
+    }
+    let y = s[0..4].parse::<i64>().unwrap_or(1970);
+    let mo = s[5..7].parse::<i32>().unwrap_or(1);
+    let d = s[8..10].parse::<i32>().unwrap_or(1);
+    let h = s[11..13].parse::<i32>().unwrap_or(0);
+    let m = s[14..16].parse::<i32>().unwrap_or(0);
+    let sec = s[17..19].parse::<i32>().unwrap_or(0);
+    let offset = if bytes.len() >= 20 && bytes[19] == b'Z' {
+        0
+    } else if bytes.len() >= 25 {
+        let off_h: i32 = s[19..22].parse().unwrap_or(0);
+        let off_m: i32 = s[23..25].parse().unwrap_or(0);
+        off_h * 60 + off_m.abs()
+    } else {
+        0
+    };
+    // Compute seconds since epoch
+    let days_before = |y: i32, mo: i32| -> i32 {
+        let leap = |y: i32| y % 4 == 0 && (y % 100 != 0 || y % 400 == 0);
+        let mdays = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+        let mut days = 0;
+        for yr in 1970..y {
+            days += if leap(yr) { 366 } else { 365 };
+        }
+        for mth in 0..(mo - 1) as usize {
+            days += mdays[mth];
+            if mth == 1 && leap(y) {
+                days += 1;
+            }
+        }
+        days
+    };
+    let total_secs = (days_before(y as i32, mo) + d - 1) as i64 * 86400
+        + h as i64 * 3600
+        + m as i64 * 60
+        + sec as i64
+        - offset as i64 * 60;
+    git2::Time::new(total_secs, offset)
 }
 
 fn write_changes_tree(
     repo: &git2::Repository,
     path: &std::path::Path,
     blob_oid: git2::Oid,
+    author: Option<&str>,
+    timestamp: Option<&str>,
 ) -> anyhow::Result<()> {
     let base_tree = repo
         .find_reference("refs/josh/changes")
@@ -627,7 +672,14 @@ fn write_changes_tree(
         git2::FileMode::Blob.into(),
     )?;
 
-    let sig = repo.signature()?;
+    let sig = match author {
+        Some(name) => {
+            let email = format!("{}@github", name);
+            let time = parse_timestamp(timestamp);
+            git2::Signature::new(name, &email, &time)?
+        }
+        None => repo.signature()?,
+    };
     let parent_commit = repo
         .find_reference("refs/josh/changes")
         .ok()

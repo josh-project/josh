@@ -8,6 +8,7 @@ use josh_cli::commands::comment::CommentArgs;
 use josh_cli::commands::link::LinkArgs;
 use josh_cli::commands::push::{PublishArgs, PushArgs};
 use josh_cli::commands::run::ComposeArgs;
+use josh_cli::commands::sync::SyncArgs;
 use josh_cli::config::{RemoteConfig, read_remote_config, write_remote_config};
 use josh_cli::forge::Forge;
 use josh_core::git::{normalize_repo_path, spawn_git_command};
@@ -140,6 +141,8 @@ pub enum ChangesCommand {
     List(ListArgs),
     /// Add a comment to a change
     Comment(CommentArgs),
+    /// Sync GitHub PR comments to local change comments
+    Sync(SyncArgs),
 }
 
 #[derive(Debug, clap::Parser)]
@@ -274,6 +277,9 @@ fn run_repo(cmd: &RepoCommand) -> anyhow::Result<()> {
             }
             ChangesCommand::Comment(comment_args) => {
                 josh_cli::commands::comment::handle_comment(comment_args, &transaction)
+            }
+            ChangesCommand::Sync(sync_args) => {
+                josh_cli::commands::sync::handle_sync(sync_args, &transaction)
             }
         },
         RepoCommand::Remote(args) => handle_remote(args, &transaction),
