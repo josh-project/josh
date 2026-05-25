@@ -472,12 +472,34 @@ pub fn diff_id(repo: &git2::Repository, commit_oid: git2::Oid) -> anyhow::Result
     Ok(git2::Oid::hash_object(git2::ObjectType::Blob, &buf)?.to_string())
 }
 
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct Location {
+    pub path: String,
+    pub start_line: u32,
+    pub end_line: u32,
+    pub start_col: u32,
+    pub end_col: u32,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct CommentMeta {
+    pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub file: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub location: Option<Location>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub reply_to: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub update_of: Option<String>,
+}
+
 pub fn write_comment(
     repo: &git2::Repository,
     change: &Change,
-    message: &str,
+    meta: &CommentMeta,
 ) -> anyhow::Result<()> {
-    if message.trim().is_empty() {
+    if meta.message.trim().is_empty() {
         return Err(anyhow::anyhow!("comment message must not be empty"));
     }
 
@@ -486,7 +508,7 @@ pub fn write_comment(
         .ok_or_else(|| anyhow::anyhow!("commit {} has no Change-Id", change.commit()))?;
     let diff_id = diff_id(repo, change.commit())?;
 
-    let content = serde_json::json!({"message": message}).to_string();
+    let content = serde_json::to_string(meta)?;
     let content_hash =
         git2::Oid::hash_object(git2::ObjectType::Blob, content.as_bytes())?.to_string();
     let blob_oid = repo.blob(content.as_bytes())?;

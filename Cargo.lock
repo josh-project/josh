@@ -2942,6 +2942,7 @@ dependencies = [
  "anyhow",
  "git2",
  "josh-core",
+ "serde",
  "serde_json",
 ]
 
