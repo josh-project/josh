@@ -420,6 +420,43 @@ pub fn list_changes(
         .collect())
 }
 
+pub fn resolve_change(
+    repo: &git2::Repository,
+    head: git2::Oid,
+    spec: &str,
+) -> anyhow::Result<Change> {
+    // Try as a full OID first.
+    if let Ok(oid) = git2::Oid::from_str(spec) {
+        if let Ok(commit) = repo.find_commit(oid) {
+            return Ok(Change::new(&commit));
+        }
+    }
+
+    // Try as a revparse (branch, tag, short SHA).
+    if let Ok(obj) = repo.revparse_single(spec) {
+        if let Ok(commit) = obj.peel_to_commit() {
+            return Ok(Change::new(&commit));
+        }
+    }
+
+    // Walk from head to find a commit with matching Change-Id.
+    let mut walk = repo.revwalk()?;
+    walk.simplify_first_parent()?;
+    walk.set_sorting(git2::Sort::TOPOLOGICAL)?;
+    walk.push(head)?;
+    for oid in walk {
+        let oid = oid?;
+        if let Ok(c) = repo.find_commit(oid) {
+            let (id, _) = parse_change_meta(c.message().unwrap_or(""));
+            if id.as_deref() == Some(spec) {
+                return Ok(Change::new(&c));
+            }
+        }
+    }
+
+    Err(anyhow!("could not resolve '{}' to a commit", spec))
+}
+
 pub fn diff_id(repo: &git2::Repository, commit_oid: git2::Oid) -> anyhow::Result<String> {
     let commit = repo.find_commit(commit_oid)?;
     let parent_tree = commit.parent(0).ok().and_then(|p| p.tree().ok());
@@ -437,18 +474,17 @@ pub fn diff_id(repo: &git2::Repository, commit_oid: git2::Oid) -> anyhow::Result
 
 pub fn write_comment(
     repo: &git2::Repository,
-    commit_oid: git2::Oid,
+    change: &Change,
     message: &str,
 ) -> anyhow::Result<()> {
     if message.trim().is_empty() {
         return Err(anyhow::anyhow!("comment message must not be empty"));
     }
 
-    let commit = repo.find_commit(commit_oid)?;
-    let (change_id, _) = parse_change_meta(commit.message().unwrap_or(""));
-    let change_id =
-        change_id.ok_or_else(|| anyhow::anyhow!("commit {} has no Change-Id", commit_oid))?;
-    let diff_id = diff_id(repo, commit_oid)?;
+    let change_id = change
+        .id()
+        .ok_or_else(|| anyhow::anyhow!("commit {} has no Change-Id", change.commit()))?;
+    let diff_id = diff_id(repo, change.commit())?;
 
     let content = serde_json::json!({"message": message}).to_string();
     let comment_hash =
