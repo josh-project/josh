@@ -95,7 +95,7 @@ fn load_rows() -> anyhow::Result<Vec<Row>> {
 
     let changes = josh_changes::list_changes(&repo, head.id(), base)?;
 
-    let mut rows = Vec::new();
+    let mut groups: Vec<(Row, Vec<Row>)> = Vec::new();
     for change in &changes {
         let commit = repo.find_commit(change.commit)?;
         let subject = commit
@@ -106,26 +106,36 @@ fn load_rows() -> anyhow::Result<Vec<Row>> {
             .unwrap_or("")
             .to_string();
 
-        rows.push(Row::Change {
+        let change_row = Row::Change {
             change_id: change.id.clone().unwrap_or_default(),
             sha: change.commit.to_string()[..8].to_string(),
             subject,
             author: change.author.clone(),
             series: change.series.join(", "),
-        });
+        };
 
+        let mut contrib_rows = Vec::new();
         for oid in change.contributing(&repo)? {
             if let Ok(c) = repo.find_commit(oid) {
                 let msg = c.message().unwrap_or("");
                 let c_subject = msg.lines().next().unwrap_or("").to_string();
                 let c_change_id = josh_changes::parse_change_meta(msg).0.unwrap_or_default();
-                rows.push(Row::Contributing {
+                contrib_rows.push(Row::Contributing {
                     change_id: c_change_id,
                     sha: oid.to_string()[..8].to_string(),
                     subject: c_subject,
                 });
             }
         }
+        groups.push((change_row, contrib_rows));
+    }
+
+    groups.sort_by_key(|(_, contrib)| contrib.len());
+
+    let mut rows = Vec::new();
+    for (change_row, contrib_rows) in groups {
+        rows.push(change_row);
+        rows.extend(contrib_rows);
     }
     Ok(rows)
 }
