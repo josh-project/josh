@@ -479,7 +479,6 @@ pub fn diff_id(repo: &git2::Repository, commit_oid: git2::Oid) -> anyhow::Result
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Location {
-    pub path: String,
     pub start_line: u32,
     pub end_line: u32,
     pub start_col: u32,
