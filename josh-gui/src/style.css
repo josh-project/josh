@@ -1,0 +1,37 @@
+body {
+    font-family: -apple-system, system-ui, sans-serif;
+    margin: 0;
+    background: #1e1e1e;
+    color: #ddd;
+}
+
+.app {
+    padding: 1.5rem 2rem;
+}
+
+h1 {
+    margin-top: 0;
+    color: #f0f0f0;
+}
+
+.mode {
+    color: #888;
+    font-size: 0.9rem;
+}
+
+ul {
+    padding-left: 1rem;
+}
+
+li {
+    margin: 0.25rem 0;
+}
+
+code {
+    color: #7ec699;
+    font-family: ui-monospace, monospace;
+}
+
+.error {
+    color: #e06c75;
+}
