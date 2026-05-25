@@ -332,7 +332,14 @@ fn file_diff_view(sha: String, path: String, mut page: Signal<Page>) -> Element 
             let top_spacer_h = start * row_h;
             let bottom_spacer_h = (total.saturating_sub(end)) * row_h;
 
-            let ln_ch = format!("{}", total).len() + 1;
+            let ln_ch = lines
+                .iter()
+                .flat_map(|l| [l.old_ln, l.new_ln])
+                .flatten()
+                .max()
+                .map(|m| format!("{}", m).len())
+                .unwrap_or(1)
+                + 1;
 
             rsx! {
                 div { class: "diff-page",
@@ -396,7 +403,7 @@ fn file_diff_view(sha: String, path: String, mut page: Signal<Page>) -> Element 
                         table { class: "diff-table",
                             colgroup {
                                 col { style: "width: {ln_ch}ch" }
-                                col { style: "width: 2ch" }
+                                col { style: "width: {ln_ch}ch" }
                                 col {}
                             }
                             tbody {
@@ -412,13 +419,15 @@ fn file_diff_view(sha: String, path: String, mut page: Signal<Page>) -> Element 
                                         let sel = *selected_line.read();
                                         let is_sel = sel == Some(line.line_number);
                                         let ln = line.line_number;
+                                        let old = line.old_ln.map(|n| n.to_string()).unwrap_or_default();
+                                        let new = line.new_ln.map(|n| n.to_string()).unwrap_or_default();
                                         rsx! {
                                             tr {
                                                 class: "diff-line diff-line-{line.kind:?}",
                                                 class: if is_sel { "diff-line-sel" },
                                                 onclick: move |_| selected_line.set(Some(ln)),
-                                                td { class: "diff-ln", "{line.line_number}" }
-                                                td { class: "diff-sign", {line.kind.sign()} }
+                                                td { class: "diff-ln", "{old}" }
+                                                td { class: "diff-ln", "{new}" }
                                                 td {
                                                     class: "diff-content",
                                                     pre { "{line.text}" }
@@ -451,20 +460,34 @@ enum DiffLineKind {
     Hunk,
 }
 
-impl DiffLineKind {
-    fn sign(&self) -> &str {
-        match self {
-            DiffLineKind::Add => "+",
-            DiffLineKind::Del => "-",
-            _ => "",
-        }
-    }
-}
-
 struct DiffLine {
     kind: DiffLineKind,
     text: String,
+    old_ln: Option<usize>,
+    new_ln: Option<usize>,
     line_number: usize,
+}
+
+fn parse_hunk_header(header: &str) -> (usize, usize) {
+    // Format: @@ -old_start[,old_count] +new_start[,new_count] @@
+    let mut parts = header.split_whitespace();
+    let old_part = parts.nth(1).unwrap_or("");
+    let new_part = parts.next().unwrap_or("");
+    let old_start = old_part
+        .trim_start_matches('-')
+        .split(',')
+        .next()
+        .unwrap_or("1")
+        .parse()
+        .unwrap_or(1);
+    let new_start = new_part
+        .trim_start_matches('+')
+        .split(',')
+        .next()
+        .unwrap_or("1")
+        .parse()
+        .unwrap_or(1);
+    (old_start, new_start)
 }
 
 fn load_file_diff(sha: &str, path: &str, context_lines: u32) -> anyhow::Result<Vec<DiffLine>> {
@@ -501,25 +524,45 @@ fn load_file_diff(sha: &str, path: &str, context_lines: u32) -> anyhow::Result<V
             let mut n = 0;
             for h in 0..patch.num_hunks() {
                 let (hunk, hunk_lines) = patch.hunk(h)?;
+                let header = String::from_utf8_lossy(hunk.header());
+                let (mut old_ln, mut new_ln) = parse_hunk_header(&header);
                 n += 1;
                 lines.push(DiffLine {
                     kind: DiffLineKind::Hunk,
-                    text: String::from_utf8_lossy(hunk.header()).to_string(),
+                    text: header.to_string(),
+                    old_ln: None,
+                    new_ln: None,
                     line_number: n,
                 });
                 for l in 0..hunk_lines {
                     n += 1;
                     let line = patch.line_in_hunk(h, l)?;
                     let origin = line.origin();
-                    let kind = match origin {
-                        '+' => DiffLineKind::Add,
-                        '-' => DiffLineKind::Del,
-                        ' ' => DiffLineKind::Context,
-                        _ => DiffLineKind::Context,
+                    let (kind, old, new) = match origin {
+                        '+' => {
+                            let curr = new_ln;
+                            new_ln += 1;
+                            (DiffLineKind::Add, None, Some(curr))
+                        }
+                        '-' => {
+                            let curr = old_ln;
+                            old_ln += 1;
+                            (DiffLineKind::Del, Some(curr), None)
+                        }
+                        ' ' => {
+                            let o = old_ln;
+                            let n = new_ln;
+                            old_ln += 1;
+                            new_ln += 1;
+                            (DiffLineKind::Context, Some(o), Some(n))
+                        }
+                        _ => (DiffLineKind::Context, None, None),
                     };
                     lines.push(DiffLine {
                         kind,
                         text: String::from_utf8_lossy(line.content()).to_string(),
+                        old_ln: old,
+                        new_ln: new,
                         line_number: n,
                     });
                 }
