@@ -691,6 +691,110 @@ pub fn read_comments(repo: &git2::Repository, change: &Change) -> anyhow::Result
     Ok(comments)
 }
 
+#[derive(Debug, Clone)]
+pub struct Revision {
+    pub diff_id: String,
+    pub commit_oid: String,
+    pub author: String,
+    pub timestamp: String,
+}
+
+pub fn read_revisions(repo: &git2::Repository, change: &Change) -> anyhow::Result<Vec<Revision>> {
+    let change_id = match change.id() {
+        Some(id) => id,
+        None => return Ok(Vec::new()),
+    };
+
+    let head = match repo.find_reference("refs/josh/changes") {
+        Ok(r) => r.peel_to_commit()?,
+        Err(_) => return Ok(Vec::new()),
+    };
+
+    let mut revs: Vec<Revision> = Vec::new();
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut walk = repo.revwalk()?;
+    walk.simplify_first_parent()?;
+    walk.push(head.id())?;
+
+    for oid in walk {
+        let oid = oid?;
+        let commit = repo.find_commit(oid)?;
+        let tree = match commit.parent(0) {
+            Ok(p) => (p.tree().ok(), commit.tree().ok()),
+            Err(_) => (None, commit.tree().ok()),
+        };
+        let (parent_tree, cur_tree) = tree;
+        let cur_tree = match cur_tree {
+            Some(t) => t,
+            None => continue,
+        };
+
+        let diffs_tree = match cur_tree
+            .get_name("diffs")
+            .and_then(|e| e.to_object(repo).ok())
+            .and_then(|o| o.peel_to_tree().ok())
+        {
+            Some(t) => t,
+            None => continue,
+        };
+        let cid_tree = match diffs_tree
+            .get_name(change_id)
+            .and_then(|e| e.to_object(repo).ok())
+            .and_then(|o| o.peel_to_tree().ok())
+        {
+            Some(t) => t,
+            None => continue,
+        };
+
+        let parent_cid_tree = parent_tree.as_ref().and_then(|pt| {
+            let diffs = pt
+                .get_name("diffs")?
+                .to_object(repo)
+                .ok()?
+                .peel_to_tree()
+                .ok()?;
+            let cid = diffs
+                .get_name(change_id)?
+                .to_object(repo)
+                .ok()?
+                .peel_to_tree()
+                .ok()?;
+            Some(cid)
+        });
+
+        for entry in cid_tree.iter() {
+            let diff_id = entry.name().unwrap_or("").to_string();
+            if diff_id.is_empty() || seen.contains(&diff_id) {
+                continue;
+            }
+            let is_new = parent_cid_tree
+                .as_ref()
+                .and_then(|pt| pt.get_name(&diff_id))
+                .map_or(true, |e| e.id() != entry.id());
+            if !is_new {
+                continue;
+            }
+            let commit_oid = entry
+                .to_object(repo)
+                .ok()
+                .and_then(|o| o.peel_to_blob().ok())
+                .map(|b| String::from_utf8_lossy(b.content()).to_string())
+                .unwrap_or_default();
+            let time = commit.time();
+            seen.insert(diff_id.clone());
+            revs.push(Revision {
+                diff_id,
+                commit_oid,
+                author: commit.author().email().unwrap_or("").to_string(),
+                timestamp: time.seconds().to_string(),
+            });
+        }
+    }
+
+    revs.reverse();
+    Ok(revs)
+}
+
 pub fn store_diff_data(repo: &git2::Repository, change: &Change) -> anyhow::Result<()> {
     let change_id = change
         .id()
