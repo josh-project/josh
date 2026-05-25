@@ -27,6 +27,8 @@ members = [
     "deployment/josh-test-webhook-service",
 ]
 
+exclude = ["josh-gui"]
+
 [profile.release]
 lto = "thin"
 opt-level = 3
