@@ -22,7 +22,21 @@ async fn track_handler(
     State(event_tx): State<mpsc::Sender<CqEvent>>,
     axum::Json(req): axum::Json<TrackRequest>,
 ) -> impl IntoResponse {
-    enqueue(&event_tx, CqEvent::Track(req)).await
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    if event_tx
+        .send(CqEvent::Track {
+            request: req,
+            done: tx,
+        })
+        .await
+        .is_err()
+    {
+        return (StatusCode::SERVICE_UNAVAILABLE, "event queue closed");
+    }
+    match rx.await {
+        Ok(()) => (StatusCode::OK, "tracked"),
+        Err(_) => (StatusCode::SERVICE_UNAVAILABLE, "actor dropped"),
+    }
 }
 
 async fn webhook_handler(
@@ -131,17 +145,18 @@ pub fn spawn_serve_task(
                         continue;
                     }
                 }
-                CqEvent::Track(req) => {
+                CqEvent::Track { request, done } => {
                     let transaction =
                         match TransactionContext::new(&repo_path, cache.clone()).open(None) {
                             Ok(t) => t,
                             Err(e) => {
                                 tracing::error!(error = ?e, "failed to open transaction");
+                                let _ = done.send(());
                                 continue;
                             }
                         };
                     match tokio::task::spawn_blocking(move || {
-                        handle_track(&req.url, &req.id, &req.mode, &transaction)
+                        handle_track(&request.url, &request.id, &request.mode, &transaction)
                     })
                     .await
                     {
@@ -149,6 +164,7 @@ pub fn spawn_serve_task(
                         Ok(Err(e)) => tracing::error!(error = ?e, "track failed"),
                         Err(e) => tracing::error!(error = ?e, "track task panicked"),
                     }
+                    let _ = done.send(());
                 }
                 CqEvent::Webhook(payload) => {
                     let transaction =

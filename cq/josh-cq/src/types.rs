@@ -14,7 +14,10 @@ pub struct TrackRequest {
 }
 
 pub enum CqEvent {
-    Track(TrackRequest),
+    Track {
+        request: TrackRequest,
+        done: oneshot::Sender<()>,
+    },
     Webhook(WebhookPayload),
     /// Periodic polling tick — triggers a full fetch + evaluate + step cycle.
     /// The optional oneshot fires after the queue cycle completes.
