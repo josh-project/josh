@@ -221,19 +221,6 @@ fn detail_view(sha: String, mut page: Signal<Page>) -> Element {
                             }
                         }
                         pre { class: "commit-message", "{data.message}" }
-                        if !data.comments.is_empty() {
-                            h2 { "Comments" }
-                            div { class: "comments",
-                                {
-                                    let roots: Vec<&josh_changes::Comment> = data
-                                        .comments
-                                        .iter()
-                                        .filter(|c| c.reply_to.is_none())
-                                        .collect();
-                                    render_threads(&data.comments, &roots, 0)
-                                }
-                            }
-                        }
                     }
                     div { class: "detail-right",
                         h2 { "Changed files" }
@@ -266,6 +253,21 @@ fn detail_view(sha: String, mut page: Signal<Page>) -> Element {
                                     }
                                 }
                             }
+                    }
+                    if !data.comments.is_empty() {
+                        div { class: "detail-comments",
+                            h2 { "Comments" }
+                            div { class: "comments",
+                                {
+                                    let roots: Vec<&josh_changes::Comment> = data
+                                        .comments
+                                        .iter()
+                                        .filter(|c| c.reply_to.is_none())
+                                        .collect();
+                                    render_threads(&data.comments, &roots, 0)
+                                }
+                            }
+                        }
                     }
                     }
                 }
