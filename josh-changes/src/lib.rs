@@ -479,7 +479,6 @@ pub fn diff_id(repo: &git2::Repository, commit_oid: git2::Oid) -> anyhow::Result
 
 #[derive(Debug, Clone)]
 pub struct Location {
-    pub path: String,
     pub start_line: u32,
     pub end_line: u32,
     pub start_col: u32,
@@ -530,7 +529,6 @@ pub fn write_comment_with_diff(
     }
     if let Some(ref loc) = meta.location {
         json["location"] = serde_json::json!({
-            "path": loc.path,
             "start_line": loc.start_line,
             "end_line": loc.end_line,
             "start_col": loc.start_col,
@@ -600,7 +598,6 @@ pub fn read_comments(repo: &git2::Repository, change: &Change) -> anyhow::Result
         let json: serde_json::Value = serde_json::from_str(&content).unwrap_or_default();
         let location = json.get("location").and_then(|loc| {
             Some(Location {
-                path: loc.get("path")?.as_str()?.to_string(),
                 start_line: loc.get("start_line")?.as_u64()? as u32,
                 end_line: loc.get("end_line")?.as_u64()? as u32,
                 start_col: loc.get("start_col")?.as_u64()? as u32,

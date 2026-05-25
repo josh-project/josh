@@ -234,8 +234,7 @@ pub async fn sync_change_comments(
                 .path
                 .as_ref()
                 .zip(comment.line)
-                .map(|(path, line)| josh_changes::Location {
-                    path: path.clone(),
+                .map(|(_, line)| josh_changes::Location {
                     start_line: line as u32,
                     end_line: line as u32,
                     start_col: 1,

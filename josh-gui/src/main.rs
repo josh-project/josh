@@ -618,10 +618,11 @@ fn render_threads(
                             span { class: "comment-id", "{&c.id[..8]}" }
                         }
                         pre { class: "comment-body", "{c.message}" }
-                        if let Some(ref loc) = c.location {
-                            span { class: "comment-meta", "{loc.path}:{loc.start_line}" }
-                        } else if let Some(ref f) = c.file {
+                        if let Some(ref f) = c.file {
                             span { class: "comment-meta", "{f}" }
+                            if let Some(ref loc) = c.location {
+                                span { class: "comment-meta", ":{loc.start_line}" }
+                            }
                         }
                     }
                     {render_threads(all, &children, depth + 1)}
