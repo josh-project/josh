@@ -229,6 +229,7 @@ fn file_diff_view(sha: String, path: String, mut page: Signal<Page>) -> Element 
     };
     let all_lines = load_file_diff(&sha, &path, ctx);
     let mut scroll_offset = use_signal(|| 0usize);
+    let mut selected_line = use_signal(|| None::<usize>);
 
     match &all_lines {
         Err(e) => rsx! {
@@ -282,8 +283,34 @@ fn file_diff_view(sha: String, path: String, mut page: Signal<Page>) -> Element 
                     h2 { "{path}" }
                     div {
                         class: "diff-container",
+                        tabindex: "0",
                         onscroll: move |e| {
                             scroll_offset.set(e.data.scroll_top() as usize);
+                        },
+                        onkeydown: move |e| {
+                            let total = all_lines.as_ref().ok().map(|l| l.len()).unwrap_or(0);
+                            if total == 0 {
+                                return;
+                            }
+                            let cur = selected_line.read().unwrap_or(0);
+                            let new = match e.key() {
+                                Key::ArrowDown => Some((cur + 1).min(total - 1)),
+                                Key::ArrowUp => Some(if cur > 0 { cur - 1 } else { 0 }),
+                                _ => return,
+                            };
+                            if let Some(n) = new {
+                                selected_line.set(Some(n));
+                                let off = *scroll_offset.read();
+                                let vis_start = off / row_h;
+                                let vis_end = vis_start + visible;
+                                if n < vis_start + overscan {
+                                    scroll_offset.set(n.saturating_sub(overscan) * row_h);
+                                } else if n >= vis_end.saturating_sub(overscan) {
+                                    scroll_offset.set(
+                                        (n + overscan + 1).saturating_sub(visible) * row_h,
+                                    );
+                                }
+                            }
                         },
                         table { class: "diff-table",
                             colgroup {
@@ -300,13 +327,22 @@ fn file_diff_view(sha: String, path: String, mut page: Signal<Page>) -> Element 
                                     }
                                 }
                                 for line in lines[start..end].iter() {
-                                    tr {
-                                        class: "diff-line diff-line-{line.kind:?}",
-                                        td { class: "diff-ln", "{line.line_number}" }
-                                        td { class: "diff-sign", {line.kind.sign()} }
-                                        td {
-                                            class: "diff-content",
-                                            pre { "{line.text}" }
+                                    {
+                                        let sel = *selected_line.read();
+                                        let is_sel = sel == Some(line.line_number);
+                                        let ln = line.line_number;
+                                        rsx! {
+                                            tr {
+                                                class: "diff-line diff-line-{line.kind:?}",
+                                                class: if is_sel { "diff-line-sel" },
+                                                onclick: move |_| selected_line.set(Some(ln)),
+                                                td { class: "diff-ln", "{line.line_number}" }
+                                                td { class: "diff-sign", {line.kind.sign()} }
+                                                td {
+                                                    class: "diff-content",
+                                                    pre { "{line.text}" }
+                                                }
+                                            }
                                         }
                                     }
                                 }
