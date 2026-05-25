@@ -492,17 +492,15 @@ pub struct CommentMeta {
     pub reply_to: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub update_of: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub author: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub timestamp: Option<String>,
 }
 
 pub fn write_comment(
     repo: &git2::Repository,
     change: &Change,
     meta: &CommentMeta,
-) -> anyhow::Result<()> {
+    author: Option<&str>,
+    timestamp: Option<&str>,
+) -> anyhow::Result<String> {
     if meta.message.trim().is_empty() {
         return Err(anyhow::anyhow!("comment message must not be empty"));
     }
@@ -521,9 +519,9 @@ pub fn write_comment(
         .join(&change_id)
         .join(&diff_id)
         .join(&content_hash);
-    write_changes_tree(repo, &path, blob_oid)?;
+    write_changes_tree(repo, &path, blob_oid, author, timestamp)?;
 
-    Ok(())
+    Ok(content_hash)
 }
 
 pub fn store_diff_data(repo: &git2::Repository, change: &Change) -> anyhow::Result<()> {
@@ -575,15 +573,27 @@ pub fn store_diff_data(repo: &git2::Repository, change: &Change) -> anyhow::Resu
         .join(&change_id)
         .join(&diff_id)
         .join(&content_hash);
-    write_changes_tree(repo, &path, blob_oid)?;
+    write_changes_tree(repo, &path, blob_oid, None, None)?;
 
     Ok(())
+}
+
+fn parse_timestamp(s: Option<&str>) -> git2::Time {
+    let Some(s) = s else {
+        return git2::Time::new(0, 0);
+    };
+    let Ok(dt) = chrono::DateTime::parse_from_rfc3339(s) else {
+        return git2::Time::new(0, 0);
+    };
+    git2::Time::new(dt.timestamp(), dt.offset().local_minus_utc() / 60)
 }
 
 fn write_changes_tree(
     repo: &git2::Repository,
     path: &std::path::Path,
     blob_oid: git2::Oid,
+    author: Option<&str>,
+    timestamp: Option<&str>,
 ) -> anyhow::Result<()> {
     let base_tree = repo
         .find_reference("refs/josh/changes")
@@ -610,7 +620,14 @@ fn write_changes_tree(
         git2::FileMode::Blob.into(),
     )?;
 
-    let sig = repo.signature()?;
+    let sig = match author {
+        Some(name) => {
+            let email = format!("{}@github", name);
+            let time = parse_timestamp(timestamp);
+            git2::Signature::new(name, &email, &time)?
+        }
+        None => repo.signature()?,
+    };
     let parent_commit = repo
         .find_reference("refs/josh/changes")
         .ok()

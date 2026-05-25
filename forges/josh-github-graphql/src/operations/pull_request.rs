@@ -3,10 +3,30 @@ use anyhow::anyhow;
 
 use josh_github_codegen_graphql::{
     close_pull_request, convert_pull_request_to_draft, create_pull_request, get_pr_by_head,
-    mark_pull_request_ready_for_review, update_pull_request, ClosePullRequest,
-    ConvertPullRequestToDraft, CreatePullRequest, GetPrByHead, MarkPullRequestReadyForReview,
-    UpdatePullRequest,
+    get_pr_comments, mark_pull_request_ready_for_review, update_pull_request, ClosePullRequest,
+    ConvertPullRequestToDraft, CreatePullRequest, GetPrByHead, GetPrComments,
+    MarkPullRequestReadyForReview, UpdatePullRequest,
 };
+
+#[derive(Debug)]
+pub struct PrComment {
+    pub id: String,
+    pub author: String,
+    pub body: String,
+    pub timestamp: String,
+    pub path: Option<String>,
+    pub line: Option<i64>,
+    pub reply_to: Option<String>,
+}
+
+#[derive(Debug)]
+pub struct PrData {
+    pub title: String,
+    pub body: Option<String>,
+    pub author: String,
+    pub timestamp: String,
+    pub comments: Vec<PrComment>,
+}
 
 impl GithubApiConnection {
     /// Find an open PR by head branch name. Returns (node_id, number, is_draft) if found.
@@ -137,6 +157,86 @@ impl GithubApiConnection {
         };
 
         Ok((response.id, response.number))
+    }
+
+    pub async fn get_pr_comments(
+        &self,
+        owner: &str,
+        name: &str,
+        number: i64,
+    ) -> anyhow::Result<PrData> {
+        let variables = get_pr_comments::Variables {
+            owner: owner.to_string(),
+            name: name.to_string(),
+            number,
+        };
+        let response = self.make_request::<GetPrComments>(variables).await?;
+        let repo = response
+            .repository
+            .ok_or_else(|| anyhow!("repository not found"))?;
+        let pr = repo.pull_request.ok_or_else(|| anyhow!("PR not found"))?;
+
+        let mut comments = Vec::new();
+        for node in pr.comments.nodes.unwrap_or_default().into_iter().flatten() {
+            comments.push(PrComment {
+                id: node.id,
+                author: node.author.map(|a| a.login).unwrap_or_default(),
+                body: node.body,
+                timestamp: format!("{}", node.created_at),
+                path: None,
+                line: None,
+                reply_to: None,
+            });
+        }
+
+        for review in pr
+            .reviews
+            .and_then(|r| r.nodes)
+            .unwrap_or_default()
+            .into_iter()
+            .flatten()
+        {
+            if !review.body.is_empty() {
+                comments.push(PrComment {
+                    id: review.id,
+                    author: review
+                        .author
+                        .as_ref()
+                        .map(|a| a.login.clone())
+                        .unwrap_or_default(),
+                    body: review.body,
+                    timestamp: format!("{}", review.created_at),
+                    path: None,
+                    line: None,
+                    reply_to: None,
+                });
+            }
+            for node in review
+                .comments
+                .nodes
+                .unwrap_or_default()
+                .into_iter()
+                .flatten()
+            {
+                comments.push(PrComment {
+                    id: node.id,
+                    author: node.author.map(|a| a.login).unwrap_or_default(),
+                    body: node.body,
+                    timestamp: format!("{}", node.created_at),
+                    path: Some(node.path),
+                    line: node.line,
+                    reply_to: node.reply_to.map(|r| r.id),
+                });
+            }
+        }
+
+        Ok(PrData {
+            title: pr.title,
+            body: Some(pr.body),
+            author: pr.author.map(|a| a.login).unwrap_or_default(),
+            timestamp: format!("{}", pr.created_at),
+            comments,
+        })
     }
 
     pub async fn close_pull_request(
