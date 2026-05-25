@@ -38,13 +38,13 @@ fn app() -> Element {
                                             td { "{series}" }
                                         }
                                     },
-                                    Row::Contributing { change_id, sha, subject } => rsx! {
+                                    Row::Contributing { change_id, sha, subject, author, series } => rsx! {
                                         tr { class: "contributing",
                                             td { code { class: "muted", "{change_id}" } }
                                             td { code { "{sha}" } }
                                             td { "{subject}" }
-                                            td {}
-                                            td {}
+                                            td { "{author}" }
+                                            td { "{series}" }
                                         }
                                     },
                                 }
@@ -73,6 +73,8 @@ enum Row {
         change_id: String,
         sha: String,
         subject: String,
+        author: String,
+        series: String,
     },
 }
 
@@ -119,11 +121,14 @@ fn load_rows() -> anyhow::Result<Vec<Row>> {
             if let Ok(c) = repo.find_commit(oid) {
                 let msg = c.message().unwrap_or("");
                 let c_subject = msg.lines().next().unwrap_or("").to_string();
-                let c_change_id = josh_changes::parse_change_meta(msg).0.unwrap_or_default();
+                let c_author = c.author().email().unwrap_or("").to_string();
+                let (c_change_id, c_series) = josh_changes::parse_change_meta(msg);
                 contrib_rows.push(Row::Contributing {
-                    change_id: c_change_id,
+                    change_id: c_change_id.unwrap_or_default(),
                     sha: oid.to_string()[..8].to_string(),
                     subject: c_subject,
+                    author: c_author,
+                    series: c_series.join(", "),
                 });
             }
         }
