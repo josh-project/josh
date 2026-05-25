@@ -11,6 +11,7 @@ publish = false
 
 [dependencies]
 anyhow = "1.0"
+chrono = "^0"
 dioxus = { version = "0.7", features = ["desktop"] }
 josh-changes = { path = "../josh-changes" }
 git2 = { version = "0.20.4", default-features = false, features = ["vendored-libgit2"] }

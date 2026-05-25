@@ -51,3 +51,85 @@ code.muted {
 .error {
     color: #e06c75;
 }
+
+button.back {
+    background: #333;
+    color: #ccc;
+    border: 1px solid #444;
+    padding: 0.35rem 0.75rem;
+    border-radius: 4px;
+    cursor: pointer;
+    margin-bottom: 1rem;
+}
+
+button.back:hover {
+    background: #444;
+    color: #fff;
+}
+
+table.detail-meta {
+    border-collapse: collapse;
+    margin-bottom: 1.5rem;
+}
+
+table.detail-meta td {
+    padding: 0.25rem 0.75rem 0.25rem 0;
+    vertical-align: top;
+}
+
+table.detail-meta td:first-child {
+    color: #888;
+    white-space: nowrap;
+    padding-right: 1rem;
+}
+
+h2 {
+    color: #f0f0f0;
+    font-size: 1.1rem;
+    margin: 1rem 0 0.5rem;
+}
+
+.diff-summary {
+    color: #888;
+    margin: 0 0 0.5rem;
+}
+
+table.files {
+    border-collapse: collapse;
+    width: 100%;
+}
+
+table.files th {
+    text-align: left;
+    padding: 0.3rem 0.5rem;
+    color: #888;
+    font-weight: 600;
+    font-size: 0.85rem;
+    border-bottom: 1px solid #444;
+}
+
+table.files td {
+    padding: 0.25rem 0.5rem;
+    border-bottom: 1px solid #2a2a2a;
+}
+
+td.num {
+    text-align: right;
+    width: 3rem;
+}
+
+td.adds {
+    color: #7ec699;
+}
+
+td.dels {
+    color: #e06c75;
+}
+
+tr.changes tbody tr {
+    cursor: pointer;
+}
+
+tr.changes tbody tr:hover td {
+    background: #2a2a2a;
+}
