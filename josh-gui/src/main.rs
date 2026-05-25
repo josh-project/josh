@@ -37,13 +37,7 @@ fn app() -> Element {
                         fill: "#E62200",
                     }
                 }
-                span { class: "header-dir",
-                    {
-                        std::env::current_dir()
-                            .map(|p| p.display().to_string())
-                            .unwrap_or_default()
-                    }
-                }
+                span { class: "header-dir", {breadcrumb(&*page.read())} }
             }
             match &*page.read() {
                 Page::List => list_view(rows, page),
@@ -52,6 +46,54 @@ fn app() -> Element {
             }
         }
     }
+}
+
+fn repo_name() -> String {
+    let dir = std::env::current_dir()
+        .map(|p| p.display().to_string())
+        .unwrap_or_default();
+    if let Ok(home) = std::env::var("HOME") {
+        if dir.starts_with(&home) {
+            return dir.replacen(&home, "~", 1);
+        }
+    }
+    dir
+}
+
+fn subject_for_sha(sha: &str) -> String {
+    let repo = match git2::Repository::discover(".") {
+        Ok(r) => r,
+        Err(_) => return String::new(),
+    };
+    let oid = match git2::Oid::from_str(sha) {
+        Ok(o) => o,
+        Err(_) => return String::new(),
+    };
+    match repo.find_commit(oid) {
+        Ok(c) => c
+            .message()
+            .unwrap_or("")
+            .lines()
+            .next()
+            .unwrap_or("")
+            .to_string(),
+        Err(_) => String::new(),
+    }
+}
+
+fn breadcrumb(page: &Page) -> String {
+    let mut parts = vec![repo_name()];
+    match page {
+        Page::List => {}
+        Page::Detail { sha } => {
+            parts.push(subject_for_sha(sha));
+        }
+        Page::FileDiff { sha, path } => {
+            parts.push(subject_for_sha(sha));
+            parts.push(path.clone());
+        }
+    }
+    parts.join(" \u{203A} ")
 }
 
 fn list_view(rows: Signal<anyhow::Result<Vec<Row>>>, mut page: Signal<Page>) -> Element {
