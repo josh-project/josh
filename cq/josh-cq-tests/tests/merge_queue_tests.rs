@@ -14,7 +14,7 @@ fn init_tracing() {
 
 use josh_cq_test_components::{TestRepo, TreeEntry, TreeMode};
 use josh_github_graphql::connection::GithubApiConnection;
-use josh_github_sim::{GithubSim, MockRuleset, PrStatus, RepoConfig, ReviewState};
+use josh_github_sim::{GithubSim, MockRuleset, PrStatus, RepoConfig, ReviewState, RuleEnforcement};
 
 struct TestHarness {
     event_tx: tokio::sync::mpsc::Sender<CqEvent>,
@@ -318,7 +318,7 @@ async fn pr_not_admissible_with_failing_check() -> anyhow::Result<()> {
     repo.add_ruleset(MockRuleset {
         id: "rs-1".into(),
         name: "test ruleset".into(),
-        enforcement: "ACTIVE".into(),
+        enforcement: RuleEnforcement::Active,
         include_refs: vec!["refs/heads/main".into()],
         exclude_refs: vec![],
         required_checks: vec!["ci/test".into()],

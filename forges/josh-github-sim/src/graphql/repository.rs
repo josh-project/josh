@@ -123,7 +123,7 @@ impl Repository {
             .map(|rs| RepositoryRuleset {
                 id: rs.id.clone(),
                 name: rs.name.clone(),
-                enforcement: rs.enforcement.clone(),
+                enforcement: rs.enforcement,
                 target: "BRANCH".to_string(),
                 conditions: RulesetConditions {
                     ref_name: RefNameCondition {

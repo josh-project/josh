@@ -1,6 +1,7 @@
 use juniper::graphql_object;
 
 use super::context::Context;
+use super::types::RuleEnforcement;
 
 #[derive(juniper::GraphQLEnum)]
 pub(crate) enum RepositoryRuleType {
@@ -36,7 +37,7 @@ impl RulesetConditions {
 pub(crate) struct RepositoryRuleset {
     pub(crate) id: String,
     pub(crate) name: String,
-    pub(crate) enforcement: String,
+    pub(crate) enforcement: RuleEnforcement,
     pub(crate) target: String,
     pub(crate) conditions: RulesetConditions,
     pub(crate) required_checks: Vec<String>,
@@ -50,7 +51,7 @@ impl RepositoryRuleset {
     fn name(&self) -> &str {
         &self.name
     }
-    fn enforcement(&self) -> &str {
+    fn enforcement(&self) -> &RuleEnforcement {
         &self.enforcement
     }
     fn target(&self) -> &str {

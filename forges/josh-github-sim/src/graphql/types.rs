@@ -2,10 +2,27 @@ use std::collections::{BTreeMap, HashMap};
 
 use url::Url;
 
+#[derive(Debug, Clone, Copy, juniper::GraphQLEnum)]
+pub enum RuleEnforcement {
+    Active,
+    Disabled,
+    Evaluate,
+}
+
+impl RuleEnforcement {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            RuleEnforcement::Active => "ACTIVE",
+            RuleEnforcement::Disabled => "DISABLED",
+            RuleEnforcement::Evaluate => "EVALUATE",
+        }
+    }
+}
+
 pub struct MockRuleset {
     pub id: String,
     pub name: String,
-    pub enforcement: String,
+    pub enforcement: RuleEnforcement,
     pub include_refs: Vec<String>,
     pub exclude_refs: Vec<String>,
     pub required_checks: Vec<String>,
