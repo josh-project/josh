@@ -60,7 +60,7 @@ pub fn commit_change_meta(commit: &git2::Commit) -> (Option<String>, Vec<String>
     (id, series)
 }
 
-fn parse_change_meta(message: &str) -> (Option<String>, Vec<String>) {
+pub fn parse_change_meta(message: &str) -> (Option<String>, Vec<String>) {
     let lines: Vec<&str> = message.lines().collect();
     let mut footer_start = lines.len();
     for (i, line) in lines.iter().enumerate().rev() {
