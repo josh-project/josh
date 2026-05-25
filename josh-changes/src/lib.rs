@@ -496,6 +496,17 @@ pub fn write_comment(
     author: Option<&str>,
     timestamp: Option<&str>,
 ) -> anyhow::Result<String> {
+    write_comment_with_diff(repo, change, meta, author, timestamp, None)
+}
+
+pub fn write_comment_with_diff(
+    repo: &git2::Repository,
+    change: &Change,
+    meta: &CommentMeta,
+    author: Option<&str>,
+    timestamp: Option<&str>,
+    diff_id_override: Option<&str>,
+) -> anyhow::Result<String> {
     if meta.message.trim().is_empty() {
         return Err(anyhow::anyhow!("comment message must not be empty"));
     }
@@ -503,7 +514,10 @@ pub fn write_comment(
     let change_id = change
         .id()
         .ok_or_else(|| anyhow::anyhow!("commit {} has no Change-Id", change.commit()))?;
-    let diff_id = diff_id(repo, change.commit())?;
+    let diff_id = match diff_id_override {
+        Some(d) => d.to_string(),
+        None => diff_id(repo, change.commit())?,
+    };
 
     let mut json = serde_json::json!({"message": meta.message});
     if let Some(ref v) = meta.file {
