@@ -307,3 +307,12 @@ tr.diff-line-Hunk td {
     background: #1a2530;
 }
 
+tr.diff-line-sel td {
+    outline: 1px solid #5a8ab5;
+    outline-offset: -1px;
+}
+
+.diff-container:focus {
+    outline: none;
+}
+
