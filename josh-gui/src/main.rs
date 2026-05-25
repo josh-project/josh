@@ -20,6 +20,7 @@ fn app() -> Element {
                         thead {
                             tr {
                                 th { "Change-Id" }
+                                th { "SHA" }
                                 th { "Subject" }
                                 th { "Author" }
                                 th { "Series" }
@@ -28,17 +29,19 @@ fn app() -> Element {
                         tbody {
                             for row in rows.iter() {
                                 match row {
-                                    Row::Change { change_id, subject, author, series } => rsx! {
+                                    Row::Change { change_id, sha, subject, author, series } => rsx! {
                                         tr {
                                             td { code { "{change_id}" } }
+                                            td { code { "{sha}" } }
                                             td { "{subject}" }
                                             td { "{author}" }
                                             td { "{series}" }
                                         }
                                     },
-                                    Row::Contributing { oid, subject } => rsx! {
+                                    Row::Contributing { sha, subject } => rsx! {
                                         tr { class: "contributing",
-                                            td { code { "{oid}" } }
+                                            td {}
+                                            td { code { "{sha}" } }
                                             td { "{subject}" }
                                             td {}
                                             td {}
@@ -61,12 +64,13 @@ fn app() -> Element {
 enum Row {
     Change {
         change_id: String,
+        sha: String,
         subject: String,
         author: String,
         series: String,
     },
     Contributing {
-        oid: String,
+        sha: String,
         subject: String,
     },
 }
@@ -103,6 +107,7 @@ fn load_rows() -> anyhow::Result<Vec<Row>> {
 
         rows.push(Row::Change {
             change_id: change.id.clone().unwrap_or_default(),
+            sha: change.commit.to_string()[..8].to_string(),
             subject,
             author: change.author.clone(),
             series: change.series.join(", "),
@@ -118,7 +123,7 @@ fn load_rows() -> anyhow::Result<Vec<Row>> {
                     .unwrap_or("")
                     .to_string();
                 rows.push(Row::Contributing {
-                    oid: oid.to_string()[..8].to_string(),
+                    sha: oid.to_string()[..8].to_string(),
                     subject: c_subject,
                 });
             }
