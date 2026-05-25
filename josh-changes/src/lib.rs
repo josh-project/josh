@@ -420,6 +420,60 @@ pub fn diff_id(repo: &git2::Repository, commit_oid: git2::Oid) -> anyhow::Result
     Ok(git2::Oid::hash_object(git2::ObjectType::Blob, &buf)?.to_string())
 }
 
+pub fn write_comment(
+    repo: &git2::Repository,
+    commit_oid: git2::Oid,
+    message: &str,
+) -> anyhow::Result<()> {
+    if message.trim().is_empty() {
+        return Err(anyhow::anyhow!("comment message must not be empty"));
+    }
+
+    let commit = repo.find_commit(commit_oid)?;
+    let (change_id, _) = parse_change_meta(commit.message().unwrap_or(""));
+    let change_id =
+        change_id.ok_or_else(|| anyhow::anyhow!("commit {} has no Change-Id", commit_oid))?;
+    let diff_id = diff_id(repo, commit_oid)?;
+
+    let content = serde_json::json!({"message": message}).to_string();
+    let comment_hash =
+        git2::Oid::hash_object(git2::ObjectType::Blob, content.as_bytes())?.to_string();
+    let blob_oid = repo.blob(content.as_bytes())?;
+
+    let base_tree = repo
+        .find_reference("refs/josh/changes")
+        .ok()
+        .and_then(|r| r.peel_to_tree().ok())
+        .unwrap_or_else(|| repo.find_tree(josh_core::filter::tree::empty_id()).unwrap());
+    let path = std::path::Path::new("comments")
+        .join(&change_id)
+        .join(&diff_id)
+        .join(&comment_hash);
+    let tree = josh_core::filter::tree::insert(
+        repo,
+        &base_tree,
+        &path,
+        blob_oid,
+        git2::FileMode::Blob.into(),
+    )?;
+
+    let sig = repo.signature()?;
+    let parent_commit = repo
+        .find_reference("refs/josh/changes")
+        .ok()
+        .and_then(|r| r.peel_to_commit().ok());
+    let parents: Vec<&git2::Commit> = parent_commit.iter().collect();
+    repo.commit(
+        Some("refs/josh/changes"),
+        &sig,
+        &sig,
+        &format!("comment on change {}\n", change_id),
+        &tree,
+        &parents,
+    )?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
