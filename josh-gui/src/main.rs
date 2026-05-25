@@ -151,6 +151,7 @@ fn detail_view(sha: String, mut page: Signal<Page>) -> Element {
                             tr { td { "Series" } td { "{data.series}" } }
                         }
                     }
+                    pre { class: "commit-message", "{data.message}" }
                     h2 { "Changed files" }
                     p { class: "diff-summary", "{stats_total}" }
                     table { class: "files",
@@ -480,6 +481,7 @@ struct DetailData {
     change_id: String,
     sha: String,
     subject: String,
+    message: String,
     author: String,
     date: String,
     series: String,
@@ -493,6 +495,7 @@ fn load_detail(sha: &str) -> anyhow::Result<DetailData> {
 
     let msg = commit.message().unwrap_or("");
     let subject = msg.lines().next().unwrap_or("").to_string();
+    let message = msg.to_string();
     let author = commit.author().email().unwrap_or("").to_string();
     let date = chrono::DateTime::from_timestamp(commit.time().seconds(), 0)
         .map(|dt| dt.format("%Y-%m-%d %H:%M").to_string())
@@ -527,6 +530,7 @@ fn load_detail(sha: &str) -> anyhow::Result<DetailData> {
         change_id: change_id.unwrap_or_default(),
         sha: sha.to_string(),
         subject,
+        message,
         author,
         date,
         series: series.join(", "),
