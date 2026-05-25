@@ -20,12 +20,14 @@ query GetPrComments($owner: String!, $name: String!, $number: Int!) {
           body
           author { __typename login }
           createdAt
+          commit { oid }
           comments(first: 100) {
             nodes {
               id
               body
               author { __typename login }
               createdAt
+              commit { oid }
               path
               line
               replyTo { __typename id }
