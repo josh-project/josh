@@ -215,29 +215,71 @@ fn file_diff_view(sha: String, path: String, mut page: Signal<Page>) -> Element 
         }
     };
 
-    match load_file_diff(&sha, &path) {
+    let all_lines = load_file_diff(&sha, &path);
+    let mut scroll_offset = use_signal(|| 0usize);
+
+    match &all_lines {
         Err(e) => rsx! {
             {back}
             p { class: "error", "Error: {e}" }
         },
-        Ok(lines) => rsx! {
-            {back}
-            {nav}
-            h2 { "{path}" }
-            pre { class: "diff-view",
-                for line in lines.iter() {
-                    match line.kind {
-                        DiffLineKind::Add => rsx! { span { class: "diff-add", "{line.text}\n" } },
-                        DiffLineKind::Del => rsx! { span { class: "diff-del", "{line.text}\n" } },
-                        DiffLineKind::Hunk => rsx! { span { class: "diff-hunk", "{line.text}\n" } },
-                        DiffLineKind::Context => rsx! { span { "{line.text}\n" } },
+        Ok(lines) => {
+            let total = lines.len();
+            let row_h = 20;
+            let visible = 40;
+            let overscan = 40;
+
+            let offset = *scroll_offset.read();
+            let start = (offset / row_h).saturating_sub(overscan);
+            let end = ((offset / row_h) + visible + overscan).min(total);
+
+            let top_spacer_h = start * row_h;
+            let bottom_spacer_h = (total.saturating_sub(end)) * row_h;
+
+            let ln_ch = format!("{}", total).len() + 1;
+
+            rsx! {
+                {back}
+                {nav}
+                h2 { "{path}" }
+                div {
+                    class: "diff-container",
+                    onscroll: move |e| {
+                        scroll_offset.set(e.data.scroll_top() as usize);
+                    },
+                    table { class: "diff-table",
+                        colgroup {
+                            col { style: "width: {ln_ch}ch" }
+                            col { style: "width: 2ch" }
+                            col {}
+                        }
+                        tbody {
+                            if top_spacer_h > 0 {
+                                tr { style: "height: {top_spacer_h}px" }
+                            }
+                            for line in lines[start..end].iter() {
+                                tr {
+                                    class: "diff-line diff-line-{line.kind:?}",
+                                    td { class: "diff-ln", "{line.line_number}" }
+                                    td { class: "diff-sign", {line.kind.sign()} }
+                                    td {
+                                        class: "diff-content",
+                                        pre { "{line.text}" }
+                                    }
+                                }
+                            }
+                            if bottom_spacer_h > 0 {
+                                tr { style: "height: {bottom_spacer_h}px" }
+                            }
+                        }
                     }
                 }
             }
-        },
+        }
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
 enum DiffLineKind {
     Context,
     Add,
@@ -245,9 +287,20 @@ enum DiffLineKind {
     Hunk,
 }
 
+impl DiffLineKind {
+    fn sign(&self) -> &str {
+        match self {
+            DiffLineKind::Add => "+",
+            DiffLineKind::Del => "-",
+            _ => "",
+        }
+    }
+}
+
 struct DiffLine {
     kind: DiffLineKind,
     text: String,
+    line_number: usize,
 }
 
 fn load_file_diff(sha: &str, path: &str) -> anyhow::Result<Vec<DiffLine>> {
@@ -278,13 +331,17 @@ fn load_file_diff(sha: &str, path: &str) -> anyhow::Result<Vec<DiffLine>> {
     if let Some(idx) = patch_idx {
         let patch = git2::Patch::from_diff(&diff, idx)?;
         if let Some(patch) = patch {
+            let mut n = 0;
             for h in 0..patch.num_hunks() {
                 let (hunk, hunk_lines) = patch.hunk(h)?;
+                n += 1;
                 lines.push(DiffLine {
                     kind: DiffLineKind::Hunk,
                     text: String::from_utf8_lossy(hunk.header()).to_string(),
+                    line_number: n,
                 });
                 for l in 0..hunk_lines {
+                    n += 1;
                     let line = patch.line_in_hunk(h, l)?;
                     let origin = line.origin();
                     let kind = match origin {
@@ -296,6 +353,7 @@ fn load_file_diff(sha: &str, path: &str) -> anyhow::Result<Vec<DiffLine>> {
                     lines.push(DiffLine {
                         kind,
                         text: String::from_utf8_lossy(line.content()).to_string(),
+                        line_number: n,
                     });
                 }
             }

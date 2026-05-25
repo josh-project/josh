@@ -180,33 +180,77 @@ tr.file-row:hover td {
     background: #2a2a2a;
 }
 
-pre.diff-view {
-    background: #1a1a1a;
+.diff-container {
+    height: calc(100vh - 10rem);
+    overflow-y: scroll;
     border: 1px solid #333;
     border-radius: 4px;
-    padding: 0.75rem 1rem;
-    overflow-x: auto;
+    background: #1a1a1a;
+}
+
+table.diff-table {
+    border-collapse: collapse;
+    width: 100%;
+    table-layout: fixed;
     font-family: ui-monospace, monospace;
-    font-size: 0.9rem;
+    font-size: 0.82rem;
     line-height: 1.4;
+}
+
+.diff-line td {
     white-space: pre;
+    padding: 0 0.4rem;
+    border-bottom: 1px solid #1a1a1a;
+    overflow: hidden;
 }
 
-pre.diff-view span {
-    display: block;
+td.diff-ln {
+    text-align: right;
+    color: #555;
+    user-select: none;
+    padding-right: 0.5rem;
 }
 
-span.diff-add {
+td.diff-sign {
+    text-align: center;
+    color: #666;
+    user-select: none;
+}
+
+td.diff-content {
+    overflow-x: auto;
+}
+
+td.diff-content pre {
+    margin: 0;
+    font-family: ui-monospace, monospace;
+    font-size: inherit;
+}
+
+tr.diff-line-Add td {
     background: #1a3a1a;
     color: #b8e6b8;
 }
 
-span.diff-del {
+tr.diff-line-Add td.diff-ln,
+tr.diff-line-Add td.diff-sign {
+    background: #1e4420;
+    color: #7ec699;
+}
+
+tr.diff-line-Del td {
     background: #3a1a1a;
     color: #e6b8b8;
 }
 
-span.diff-hunk {
+tr.diff-line-Del td.diff-ln,
+tr.diff-line-Del td.diff-sign {
+    background: #441e1e;
+    color: #e06c75;
+}
+
+tr.diff-line-Hunk td {
     color: #6ab0f3;
+    background: #1a2530;
 }
 
