@@ -1,7 +1,13 @@
 use dioxus::prelude::*;
 
 fn main() {
-    dioxus::launch(app);
+    dioxus::LaunchBuilder::new()
+        .with_cfg(
+            dioxus::desktop::Config::new().with_window(
+                dioxus::desktop::WindowBuilder::new().with_title("Josh"),
+            ),
+        )
+        .launch(app);
 }
 
 #[derive(Clone, PartialEq)]
