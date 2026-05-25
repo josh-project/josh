@@ -224,19 +224,13 @@ fn detail_view(sha: String, mut page: Signal<Page>) -> Element {
                         if !data.comments.is_empty() {
                             h2 { "Comments" }
                             div { class: "comments",
-                                for c in &data.comments {
-                                    div { class: "comment",
-                                        div { class: "comment-header",
-                                            span { class: "comment-id", "{&c.id[..8]}" }
-                                        }
-                                        pre { class: "comment-body", "{c.message}" }
-                                        if let Some(ref f) = c.file {
-                                            span { class: "comment-meta", "{f}" }
-                                        }
-                                        if let Some(ref loc) = c.location {
-                                            span { class: "comment-meta", " {loc.path}:{loc.start_line}" }
-                                        }
-                                    }
+                                {
+                                    let roots: Vec<&josh_changes::Comment> = data
+                                        .comments
+                                        .iter()
+                                        .filter(|c| c.reply_to.is_none())
+                                        .collect();
+                                    render_threads(&data.comments, &roots, 0)
                                 }
                             }
                         }
@@ -590,6 +584,40 @@ fn load_file_diff(sha: &str, path: &str, context_lines: u32) -> anyhow::Result<V
     }
 
     Ok(lines)
+}
+
+fn render_threads(
+    all: &[josh_changes::Comment],
+    comments: &[&josh_changes::Comment],
+    depth: usize,
+) -> Element {
+    let children: Vec<Element> = comments
+        .iter()
+        .map(|c| {
+            let children: Vec<&josh_changes::Comment> = all
+                .iter()
+                .filter(|x| x.reply_to.as_deref() == Some(&c.id))
+                .collect();
+            let indent = depth * 16;
+            rsx! {
+                div { style: "margin-left: {indent}px",
+                    div { class: "comment",
+                        div { class: "comment-header",
+                            span { class: "comment-id", "{&c.id[..8]}" }
+                        }
+                        pre { class: "comment-body", "{c.message}" }
+                        if let Some(ref loc) = c.location {
+                            span { class: "comment-meta", "{loc.path}:{loc.start_line}" }
+                        } else if let Some(ref f) = c.file {
+                            span { class: "comment-meta", "{f}" }
+                        }
+                    }
+                    {render_threads(all, &children, depth + 1)}
+                }
+            }
+        })
+        .collect();
+    rsx! { {children.into_iter().map(|e| e)} }
 }
 
 struct DetailData {
