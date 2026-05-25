@@ -46,6 +46,8 @@ async fn merge_single_pr() -> anyhow::Result<()> {
         .github_sim
         .set_webhook_url(url::Url::parse(&harness.cq_webhook_url)?);
 
+    harness.track(owner, name).await?;
+
     let repo = harness.github_sim.repo_by_name(owner, name);
     let (pr_node_id, number) = repo
         .pr_open("Test PR", "refs/heads/feature", "refs/heads/main")
@@ -112,6 +114,8 @@ async fn pr_not_admissible_without_review() -> anyhow::Result<()> {
         .github_sim
         .set_webhook_url(url::Url::parse(&harness.cq_webhook_url)?);
 
+    harness.track(owner, name).await?;
+
     let repo = harness.github_sim.repo_by_name(owner, name);
     let (pr_node_id, _number) = repo
         .pr_open("No-review PR", "refs/heads/feature", "refs/heads/main")
@@ -170,6 +174,8 @@ async fn pr_not_admissible_with_failing_check() -> anyhow::Result<()> {
     harness
         .github_sim
         .set_webhook_url(url::Url::parse(&harness.cq_webhook_url)?);
+
+    harness.track(owner, name).await?;
 
     let repo = harness.github_sim.repo_by_name(owner, name);
     let (pr_node_id, number) = repo
@@ -242,6 +248,8 @@ async fn pr_removed_on_close_webhook() -> anyhow::Result<()> {
     harness
         .github_sim
         .set_webhook_url(url::Url::parse(&harness.cq_webhook_url)?);
+
+    harness.track(owner, name).await?;
 
     let repo = harness.github_sim.repo_by_name(owner, name);
     let (pr_node_id, number) = repo

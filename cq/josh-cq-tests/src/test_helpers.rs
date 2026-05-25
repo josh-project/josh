@@ -32,6 +32,27 @@ impl TestHarness {
         rx.await?;
         Ok(())
     }
+
+    pub async fn track(&self, owner: &str, name: &str) -> anyhow::Result<()> {
+        let url = format!("{}{}/{}", self.github_sim.url(), owner, name);
+        let body = serde_json::json!({
+            "url": url,
+            "id": "test-remote",
+            "mode": "snapshot",
+        });
+        let client = reqwest::Client::new();
+        let resp = client
+            .post(format!("{}/v1/track", self.cq_webhook_url))
+            .json(&body)
+            .send()
+            .await?;
+        anyhow::ensure!(
+            resp.status().is_success(),
+            "track request failed: {}",
+            resp.status()
+        );
+        Ok(())
+    }
 }
 
 pub async fn start_test_harness(
@@ -80,33 +101,17 @@ pub async fn start_test_harness(
         github_sim.graphql_url().clone(),
     ));
 
-    // 5. Track the repo in the metarepo
-    //    GithubSim uses /owner/name path prefix for git HTTP routing
-    let git_url = format!("{}{}/{}", github_sim.url(), owner, name);
-    let track_url = url::Url::parse(&git_url)?;
-    tokio::task::spawn_blocking({
-        let track_url = track_url.clone();
-        move || {
-            josh_cq::track::handle_track(
-                track_url.as_str(),
-                "test-remote",
-                "snapshot",
-                &transaction,
-            )
-        }
-    })
-    .await??;
-
-    // 6. Build URL → owner/name mapping so the CQ actor can resolve
+    // 5. Build URL → owner/name mapping so the CQ actor can resolve
     //    non-GitHub URLs from the GithubSim's git URL.
+    let git_url = format!("{}{}/{}", github_sim.url(), owner, name);
     let mut url_owner_map = std::collections::HashMap::new();
-    url_owner_map.insert(track_url.to_string(), (owner.to_string(), name.to_string()));
+    url_owner_map.insert(git_url, (owner.to_string(), name.to_string()));
 
-    // 7. Start the CQ actor (long tick interval so we drive ticks manually)
+    // 6. Start the CQ actor (long tick interval so we drive ticks manually)
     let event_tx =
         josh_cq::server::spawn_serve_task(repo_path, cache.clone(), 3600, Some(api), url_owner_map);
 
-    // 8. Start the CQ HTTP server so webhooks go through the real HTTP path
+    // 7. Start the CQ HTTP server so webhooks go through the real HTTP path
     let (cq_server, cq_webhook_url) = josh_cq::server::bind_router(event_tx.clone()).await?;
 
     Ok(TestHarness {

@@ -22,3 +22,4 @@ josh-cq-test-components.workspace = true
 josh-core.workspace = true
 josh-github-graphql.workspace = true
 josh-github-webhooks.workspace = true
+reqwest.workspace = true
