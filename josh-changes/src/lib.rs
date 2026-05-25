@@ -492,6 +492,10 @@ pub struct CommentMeta {
     pub reply_to: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub update_of: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub author: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub timestamp: Option<String>,
 }
 
 pub fn write_comment(
