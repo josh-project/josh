@@ -34,7 +34,8 @@ fn list_view(rows: Signal<anyhow::Result<Vec<Row>>>, mut page: Signal<Page>) -> 
             p { "No outgoing changes found." }
         },
         Ok(rows) => rsx! {
-            table { class: "changes",
+            div { class: "scroll-table",
+                table { class: "changes",
                 thead {
                     tr {
                         th { "Change-Id" }
@@ -72,6 +73,7 @@ fn list_view(rows: Signal<anyhow::Result<Vec<Row>>>, mut page: Signal<Page>) -> 
                         }
                     }
                 }
+            }
             }
         },
         Err(e) => rsx! {
@@ -111,41 +113,43 @@ fn detail_view(sha: String, mut page: Signal<Page>) -> Element {
             );
             rsx! {
                 {back}
-                table { class: "detail-meta",
-                    tbody {
-                        tr { td { "Change-Id" } td { code { "{data.change_id}" } } }
-                        tr { td { "SHA" } td { code { "{data.sha}" } } }
-                        tr { td { "Subject" } td { "{data.subject}" } }
-                        tr { td { "Author" } td { "{data.author}" } }
-                        tr { td { "Date" } td { "{data.date}" } }
-                        tr { td { "Series" } td { "{data.series}" } }
-                    }
-                }
-                h2 { "Changed files" }
-                p { class: "diff-summary", "{stats_total}" }
-                table { class: "files",
-                    thead {
-                        tr {
-                            th { "File" }
-                            th { class: "num", "+" }
-                            th { class: "num", "-" }
+                div { class: "scroll-table",
+                    table { class: "detail-meta",
+                        tbody {
+                            tr { td { "Change-Id" } td { code { "{data.change_id}" } } }
+                            tr { td { "SHA" } td { code { "{data.sha}" } } }
+                            tr { td { "Subject" } td { "{data.subject}" } }
+                            tr { td { "Author" } td { "{data.author}" } }
+                            tr { td { "Date" } td { "{data.date}" } }
+                            tr { td { "Series" } td { "{data.series}" } }
                         }
                     }
-                    tbody {
-                        for f in data.files.iter() {
-                            {
-                                let s = data.sha.clone();
-                                let p = f.path.clone();
-                                rsx! {
-                                    tr {
-                                        class: "file-row",
-                                        onclick: move |_| page.set(Page::FileDiff {
-                                            sha: s.clone(),
-                                            path: p.clone(),
-                                        }),
-                                        td { "{f.path}" }
-                                        td { class: "num adds", "{f.adds}" }
-                                        td { class: "num dels", "{f.dels}" }
+                    h2 { "Changed files" }
+                    p { class: "diff-summary", "{stats_total}" }
+                    table { class: "files",
+                        thead {
+                            tr {
+                                th { "File" }
+                                th { class: "num", "+" }
+                                th { class: "num", "-" }
+                            }
+                        }
+                        tbody {
+                            for f in data.files.iter() {
+                                {
+                                    let s = data.sha.clone();
+                                    let p = f.path.clone();
+                                    rsx! {
+                                        tr {
+                                            class: "file-row",
+                                            onclick: move |_| page.set(Page::FileDiff {
+                                                sha: s.clone(),
+                                                path: p.clone(),
+                                            }),
+                                            td { "{f.path}" }
+                                            td { class: "num adds", "{f.adds}" }
+                                            td { class: "num dels", "{f.dels}" }
+                                        }
                                     }
                                 }
                             }
@@ -239,37 +243,47 @@ fn file_diff_view(sha: String, path: String, mut page: Signal<Page>) -> Element 
             let ln_ch = format!("{}", total).len() + 1;
 
             rsx! {
-                {back}
-                {nav}
-                h2 { "{path}" }
-                div {
-                    class: "diff-container",
-                    onscroll: move |e| {
-                        scroll_offset.set(e.data.scroll_top() as usize);
-                    },
-                    table { class: "diff-table",
-                        colgroup {
-                            col { style: "width: {ln_ch}ch" }
-                            col { style: "width: 2ch" }
-                            col {}
-                        }
-                        tbody {
-                            if top_spacer_h > 0 {
-                                tr { style: "height: {top_spacer_h}px" }
+                div { class: "diff-page",
+                    {back}
+                    {nav}
+                    h2 { "{path}" }
+                    div {
+                        class: "diff-container",
+                        onscroll: move |e| {
+                            scroll_offset.set(e.data.scroll_top() as usize);
+                        },
+                        table { class: "diff-table",
+                            colgroup {
+                                col { style: "width: {ln_ch}ch" }
+                                col { style: "width: 2ch" }
+                                col {}
                             }
-                            for line in lines[start..end].iter() {
-                                tr {
-                                    class: "diff-line diff-line-{line.kind:?}",
-                                    td { class: "diff-ln", "{line.line_number}" }
-                                    td { class: "diff-sign", {line.kind.sign()} }
-                                    td {
-                                        class: "diff-content",
-                                        pre { "{line.text}" }
+                            tbody {
+                                if top_spacer_h > 0 {
+                                    tr { style: "height: {top_spacer_h}px",
+                                        td {}
+                                        td {}
+                                        td {}
                                     }
                                 }
-                            }
-                            if bottom_spacer_h > 0 {
-                                tr { style: "height: {bottom_spacer_h}px" }
+                                for line in lines[start..end].iter() {
+                                    tr {
+                                        class: "diff-line diff-line-{line.kind:?}",
+                                        td { class: "diff-ln", "{line.line_number}" }
+                                        td { class: "diff-sign", {line.kind.sign()} }
+                                        td {
+                                            class: "diff-content",
+                                            pre { "{line.text}" }
+                                        }
+                                    }
+                                }
+                                if bottom_spacer_h > 0 {
+                                    tr { style: "height: {bottom_spacer_h}px",
+                                        td {}
+                                        td {}
+                                        td {}
+                                    }
+                                }
                             }
                         }
                     }
