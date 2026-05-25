@@ -1,0 +1,120 @@
+use std::sync::Arc;
+use std::sync::Once;
+
+use josh_cq::types::CqEvent;
+use josh_github_graphql::connection::GithubApiConnection;
+use josh_github_sim::GithubSim;
+
+static INIT_ENV: Once = Once::new();
+
+pub fn init_tracing() {
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::new("info"))
+        .try_init();
+}
+
+pub struct TestHarness {
+    pub event_tx: tokio::sync::mpsc::Sender<CqEvent>,
+    pub github_sim: GithubSim,
+    pub cq_webhook_url: String,
+    #[allow(dead_code)]
+    _cq_server: tokio::task::JoinHandle<()>,
+    #[allow(dead_code)]
+    _metarepo_temp: tempfile::TempDir,
+    #[allow(dead_code)]
+    _cache: Arc<josh_core::cache::CacheStack>,
+}
+
+impl TestHarness {
+    pub async fn tick(&self) -> anyhow::Result<()> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.event_tx.send(CqEvent::Tick { done: Some(tx) }).await?;
+        rx.await?;
+        Ok(())
+    }
+}
+
+pub async fn start_test_harness(
+    owner: &str,
+    name: &str,
+    github_sim: GithubSim,
+) -> anyhow::Result<TestHarness> {
+    INIT_ENV.call_once(|| {
+        unsafe { std::env::set_var("JOSH_EXPERIMENTAL_FEATURES", "1") };
+    });
+
+    // 1. Create metarepo with an initial commit so HEAD exists
+    let metarepo_temp = tempfile::Builder::new().prefix("josh-cq-test-").tempdir()?;
+    let metarepo_path = metarepo_temp.path();
+
+    let repo = git2::Repository::init(metarepo_path)?;
+    {
+        let sig = git2::Signature::new("test", "test@test.com", &git2::Time::new(0, 0))?;
+        let tree_oid = repo.treebuilder(None)?.write()?;
+        let tree = repo.find_tree(tree_oid)?;
+        repo.commit(
+            Some("refs/heads/main"),
+            &sig,
+            &sig,
+            "initial metarepo",
+            &tree,
+            &[],
+        )?;
+    }
+    let git_dir = repo.path().to_path_buf();
+    let repo_path = josh_core::git::normalize_repo_path(&git_dir);
+    drop(repo);
+
+    // 2. Initialize cache
+    josh_core::cache::sled_load(&repo_path.join(".git"))?;
+    let cache: Arc<josh_core::cache::CacheStack> =
+        Arc::new(josh_core::cache::CacheStack::default());
+    let ctx = josh_core::cache::TransactionContext::new(&repo_path, cache.clone());
+    let transaction = ctx.open(None)?;
+
+    // 3. handle_init
+    josh_cq::init::handle_init(&transaction)?;
+
+    // 4. GraphQL URL — GithubSim serves GraphQL at /graphql
+    let api = Arc::new(GithubApiConnection::for_test(
+        github_sim.graphql_url().clone(),
+    ));
+
+    // 5. Track the repo in the metarepo
+    //    GithubSim uses /owner/name path prefix for git HTTP routing
+    let git_url = format!("{}{}/{}", github_sim.url(), owner, name);
+    let track_url = url::Url::parse(&git_url)?;
+    tokio::task::spawn_blocking({
+        let track_url = track_url.clone();
+        move || {
+            josh_cq::track::handle_track(
+                track_url.as_str(),
+                "test-remote",
+                "snapshot",
+                &transaction,
+            )
+        }
+    })
+    .await??;
+
+    // 6. Build URL → owner/name mapping so the CQ actor can resolve
+    //    non-GitHub URLs from the GithubSim's git URL.
+    let mut url_owner_map = std::collections::HashMap::new();
+    url_owner_map.insert(track_url.to_string(), (owner.to_string(), name.to_string()));
+
+    // 7. Start the CQ actor (long tick interval so we drive ticks manually)
+    let event_tx =
+        josh_cq::server::spawn_serve_task(repo_path, cache.clone(), 3600, Some(api), url_owner_map);
+
+    // 8. Start the CQ HTTP server so webhooks go through the real HTTP path
+    let (cq_server, cq_webhook_url) = josh_cq::server::bind_router(event_tx.clone()).await?;
+
+    Ok(TestHarness {
+        event_tx,
+        github_sim,
+        cq_webhook_url,
+        _cq_server: cq_server,
+        _metarepo_temp: metarepo_temp,
+        _cache: cache,
+    })
+}
