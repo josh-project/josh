@@ -405,6 +405,21 @@ pub fn list_changes(
         .collect())
 }
 
+pub fn diff_id(repo: &git2::Repository, commit_oid: git2::Oid) -> anyhow::Result<String> {
+    let commit = repo.find_commit(commit_oid)?;
+    let parent_tree = commit.parent(0).ok().and_then(|p| p.tree().ok());
+    let diff = repo.diff_tree_to_tree(parent_tree.as_ref(), Some(&commit.tree()?), None)?;
+
+    let mut buf = Vec::new();
+    diff.print(git2::DiffFormat::Patch, |_delta, _hunk, line| {
+        buf.extend_from_slice(&[line.origin() as u8]);
+        buf.extend_from_slice(line.content());
+        true
+    })?;
+
+    Ok(git2::Oid::hash_object(git2::ObjectType::Blob, &buf)?.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
