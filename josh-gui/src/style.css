@@ -16,11 +16,25 @@ body {
     overflow: hidden;
 }
 
-h1 {
-    margin-top: 0;
+.header {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
     margin-bottom: 0.5rem;
-    color: #f0f0f0;
     flex-shrink: 0;
+}
+
+.header svg {
+    flex-shrink: 0;
+}
+
+span.header-dir {
+    color: #888;
+    font-size: 1.4rem;
+    font-weight: 700;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .scroll-table {
