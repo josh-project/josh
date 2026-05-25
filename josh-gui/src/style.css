@@ -110,18 +110,24 @@ table.detail-meta td {
 .detail-layout {
     display: flex;
     gap: 2rem;
+    overflow: hidden;
 }
 
 .detail-left {
     flex: 0 0 auto;
-    min-width: 18rem;
-    max-width: 30rem;
+    min-width: 16rem;
+    max-width: 28rem;
 }
 
 .detail-right {
     flex: 1;
-    min-width: 0;
+    min-width: 10rem;
     overflow-x: auto;
+}
+
+.detail-comments {
+    flex: 0 0 18rem;
+    overflow-y: auto;
 }
 
 .comments {
