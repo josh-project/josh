@@ -487,23 +487,99 @@ pub fn write_comment(
     let diff_id = diff_id(repo, change.commit())?;
 
     let content = serde_json::json!({"message": message}).to_string();
-    let comment_hash =
+    let content_hash =
         git2::Oid::hash_object(git2::ObjectType::Blob, content.as_bytes())?.to_string();
     let blob_oid = repo.blob(content.as_bytes())?;
 
+    let path = std::path::Path::new("comments")
+        .join(&change_id)
+        .join(&diff_id)
+        .join(&content_hash);
+    write_changes_tree(repo, &path, blob_oid)?;
+
+    Ok(())
+}
+
+pub fn store_diff_data(repo: &git2::Repository, change: &Change) -> anyhow::Result<()> {
+    let change_id = change
+        .id()
+        .ok_or_else(|| anyhow::anyhow!("commit {} has no Change-Id", change.commit()))?;
+    let diff_id = diff_id(repo, change.commit())?;
+
+    let commit = repo.find_commit(change.commit())?;
+    let first_parent = commit
+        .parent_ids()
+        .next()
+        .map(|o| o.to_string())
+        .unwrap_or_else(|| git2::Oid::zero().to_string());
+    let fake_oid = "f".repeat(40);
+    let mut content = format!("tree {}\n", fake_oid);
+    for p in commit.parent_ids() {
+        let p_str = p.to_string();
+        if p_str == first_parent {
+            content.push_str(&format!("parent {}\n", fake_oid));
+        } else {
+            content.push_str(&format!("parent {}\n", p_str));
+        }
+    }
+    let author = commit.author();
+    content.push_str(&format!(
+        "author {} <{}> {} {}\n",
+        author.name().unwrap_or(""),
+        author.email().unwrap_or(""),
+        author.when().seconds(),
+        author.when().offset_minutes()
+    ));
+    let committer = commit.committer();
+    content.push_str(&format!(
+        "committer {} <{}> {} {}\n",
+        committer.name().unwrap_or(""),
+        committer.email().unwrap_or(""),
+        committer.when().seconds(),
+        committer.when().offset_minutes()
+    ));
+    content.push('\n');
+    content.push_str(commit.message().unwrap_or(""));
+
+    let content_hash =
+        git2::Oid::hash_object(git2::ObjectType::Blob, content.as_bytes())?.to_string();
+    let blob_oid = repo.blob(content.as_bytes())?;
+
+    let path = std::path::Path::new("diffs")
+        .join(&change_id)
+        .join(&diff_id)
+        .join(&content_hash);
+    write_changes_tree(repo, &path, blob_oid)?;
+
+    Ok(())
+}
+
+fn write_changes_tree(
+    repo: &git2::Repository,
+    path: &std::path::Path,
+    blob_oid: git2::Oid,
+) -> anyhow::Result<()> {
     let base_tree = repo
         .find_reference("refs/josh/changes")
         .ok()
         .and_then(|r| r.peel_to_tree().ok())
         .unwrap_or_else(|| repo.find_tree(josh_core::filter::tree::empty_id()).unwrap());
-    let path = std::path::Path::new("comments")
-        .join(&change_id)
-        .join(&diff_id)
-        .join(&comment_hash);
+
+    // Skip if the blob already exists at this path.
+    if let Some(existing) = base_tree
+        .get_path(path)
+        .ok()
+        .and_then(|e| e.to_object(repo).ok())
+    {
+        if existing.id() == blob_oid {
+            return Ok(());
+        }
+    }
+
     let tree = josh_core::filter::tree::insert(
         repo,
         &base_tree,
-        &path,
+        path,
         blob_oid,
         git2::FileMode::Blob.into(),
     )?;
@@ -518,7 +594,7 @@ pub fn write_comment(
         Some("refs/josh/changes"),
         &sig,
         &sig,
-        &format!("comment on change {}\n", change_id),
+        "update refs/josh/changes\n",
         &tree,
         &parents,
     )?;
