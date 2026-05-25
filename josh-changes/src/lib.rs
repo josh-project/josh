@@ -1,11 +1,12 @@
 use anyhow::anyhow;
 
 #[derive(Debug, Clone)]
-struct Change {
+pub struct Change {
     pub author: String,
     pub id: Option<String>,
     pub series: Vec<String>,
     pub commit: git2::Oid,
+    pub base: git2::Oid,
 }
 
 impl Change {
@@ -15,7 +16,23 @@ impl Change {
             id: Default::default(),
             series: Default::default(),
             commit,
+            base: git2::Oid::zero(),
         }
+    }
+
+    pub fn contributing(&self, repo: &git2::Repository) -> anyhow::Result<Vec<git2::Oid>> {
+        let mut walk = repo.revwalk()?;
+        walk.simplify_first_parent()?;
+        walk.set_sorting(git2::Sort::TOPOLOGICAL)?;
+        walk.push(self.commit)?;
+        if self.base != git2::Oid::zero() {
+            walk.hide(self.base)?;
+        }
+        let mut oids: Vec<git2::Oid> = walk.collect::<Result<Vec<_>, _>>()?;
+        if oids.first() == Some(&self.commit) {
+            oids.remove(0);
+        }
+        Ok(oids)
     }
 }
 
@@ -124,16 +141,12 @@ pub fn baseref_and_options(
 fn split_changes(
     repo: &git2::Repository,
     changes: std::collections::HashMap<git2::Oid, Change>,
-    base: git2::Oid,
 ) -> anyhow::Result<Vec<Change>> {
-    if base == git2::Oid::zero() {
+    if changes.values().next().map(|c| c.base) == Some(git2::Oid::zero()) {
         return Ok(changes.into_values().collect());
     }
 
-    changes
-        .iter()
-        .map(|(_, c)| downstack(repo, base, c))
-        .collect()
+    changes.iter().map(|(_, c)| downstack(repo, c)).collect()
 }
 
 fn changed_paths(
@@ -158,13 +171,13 @@ fn changed_paths(
     Ok(paths)
 }
 
-fn downstack(repo: &git2::Repository, base: git2::Oid, change: &Change) -> anyhow::Result<Change> {
+fn downstack(repo: &git2::Repository, change: &Change) -> anyhow::Result<Change> {
     let change_oid = change.commit;
-    if !repo.graph_descendant_of(change_oid, base)? {
+    if !repo.graph_descendant_of(change_oid, change.base)? {
         return Err(anyhow!(
             "change {} is not a descendant of base {}",
             change_oid,
-            base
+            change.base
         ));
     }
 
@@ -173,7 +186,7 @@ fn downstack(repo: &git2::Repository, base: git2::Oid, change: &Change) -> anyho
     walk.simplify_first_parent()?;
     walk.set_sorting(git2::Sort::REVERSE | git2::Sort::TOPOLOGICAL)?;
     walk.push(change_oid)?;
-    walk.hide(base)?;
+    walk.hide(change.base)?;
 
     let oids: Vec<git2::Oid> = walk.collect::<Result<Vec<_>, _>>()?;
 
@@ -211,7 +224,7 @@ fn downstack(repo: &git2::Repository, base: git2::Oid, change: &Change) -> anyho
     }
 
     // Rebase needed intermediates forward onto current_base.
-    let mut current_base = repo.find_commit(base)?;
+    let mut current_base = repo.find_commit(change.base)?;
     for (intermediate, is_needed) in commits.iter().zip(needed.iter()) {
         if !is_needed {
             continue;
@@ -332,7 +345,8 @@ fn get_changes(
     let mut changes = std::collections::HashMap::new();
     for rev in walk {
         let commit = repo.find_commit(rev?)?;
-        let change = get_change_id(&commit);
+        let mut change = get_change_id(&commit);
+        change.base = base;
         changes.insert(change.commit, change);
     }
 
@@ -350,7 +364,7 @@ pub fn build_to_push(
     match push_mode {
         PushMode::Publish(author) => {
             let changes = get_changes(repo, oid_to_push, base_oid)?;
-            let changes = split_changes(repo, changes, base_oid)?;
+            let changes = split_changes(repo, changes)?;
 
             let mut push_refs = changes_to_refs(repo, baseref, author, changes)?;
 
@@ -377,6 +391,15 @@ pub fn build_to_push(
             change_id: "JOSH_PUSH".to_string(),
         }]),
     }
+}
+
+pub fn list_changes(
+    repo: &git2::Repository,
+    tip: git2::Oid,
+    base: git2::Oid,
+) -> anyhow::Result<Vec<Change>> {
+    let changes = get_changes(repo, tip, base)?;
+    split_changes(repo, changes)
 }
 
 #[cfg(test)]

@@ -3,6 +3,7 @@ use clap::Parser;
 
 use josh_cli::commands::auth::AuthArgs;
 use josh_cli::commands::cache::CacheArgs;
+use josh_cli::commands::changes::ListArgs;
 use josh_cli::commands::link::LinkArgs;
 use josh_cli::commands::push::{PublishArgs, PushArgs};
 use josh_cli::commands::run::ComposeArgs;
@@ -134,6 +135,8 @@ pub struct ChangesArgs {
 pub enum ChangesCommand {
     /// Push each commit as an independent, minimal diff (stacked changes workflow)
     Publish(PublishArgs),
+    /// List local changes that would be published (read-only)
+    List(ListArgs),
 }
 
 #[derive(Debug, clap::Parser)]
@@ -262,6 +265,9 @@ fn run_repo(cmd: &RepoCommand) -> anyhow::Result<()> {
                     },
                     &transaction,
                 )
+            }
+            ChangesCommand::List(list_args) => {
+                josh_cli::commands::changes::handle_list(list_args, &transaction)
             }
         },
         RepoCommand::Remote(args) => handle_remote(args, &transaction),
