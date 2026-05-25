@@ -136,7 +136,8 @@ tr.changes tbody tr:hover td {
 
 .diff-nav {
     display: flex;
-    justify-content: flex-end;
+    justify-content: space-between;
+    align-items: center;
     gap: 0.5rem;
     margin-bottom: 0.5rem;
 }
@@ -150,14 +151,25 @@ button.nav-btn {
     cursor: pointer;
     font-size: 0.85rem;
     max-width: 16rem;
+    min-width: 6rem;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    flex-shrink: 0;
 }
 
 button.nav-btn:hover {
     background: #444;
     color: #fff;
+}
+
+span.diff-nav-pos {
+    color: #666;
+    font-size: 0.85rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: center;
 }
 
 tr.file-row {
