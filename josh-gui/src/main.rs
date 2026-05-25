@@ -208,7 +208,15 @@ fn file_diff_view(sha: String, path: String, mut page: Signal<Page>) -> Element 
         }
     };
 
-    let all_lines = load_file_diff(&sha, &path);
+    let mut context_lines = use_signal(|| 5u32);
+    let mut show_all = use_signal(|| false);
+
+    let ctx: u32 = if *show_all.read() {
+        u32::MAX
+    } else {
+        *context_lines.read()
+    };
+    let all_lines = load_file_diff(&sha, &path, ctx);
     let mut scroll_offset = use_signal(|| 0usize);
 
     match &all_lines {
@@ -235,6 +243,31 @@ fn file_diff_view(sha: String, path: String, mut page: Signal<Page>) -> Element 
                 div { class: "diff-page",
                     {back}
                     {nav}
+                    div { class: "diff-toolbar",
+                        label {
+                            "Context: "
+                            input {
+                                r#type: "number",
+                                min: "0",
+                                max: "999",
+                                value: "{context_lines}",
+                                disabled: *show_all.read(),
+                                oninput: move |e| {
+                                    if let Ok(v) = e.value().parse::<u32>() {
+                                        context_lines.set(v.min(999));
+                                    }
+                                },
+                            }
+                        }
+                        label {
+                            input {
+                                r#type: "checkbox",
+                                checked: *show_all.read(),
+                                oninput: move |e| show_all.set(e.checked()),
+                            }
+                            " Show all"
+                        }
+                    }
                     h2 { "{path}" }
                     div {
                         class: "diff-container",
@@ -306,13 +339,16 @@ struct DiffLine {
     line_number: usize,
 }
 
-fn load_file_diff(sha: &str, path: &str) -> anyhow::Result<Vec<DiffLine>> {
+fn load_file_diff(sha: &str, path: &str, context_lines: u32) -> anyhow::Result<Vec<DiffLine>> {
     let repo = git2::Repository::discover(".")?;
     let oid = git2::Oid::from_str(sha)?;
     let commit = repo.find_commit(oid)?;
 
     let parent_tree = commit.parent(0).ok().and_then(|p| p.tree().ok());
-    let diff = repo.diff_tree_to_tree(parent_tree.as_ref(), Some(&commit.tree()?), None)?;
+    let mut opts = git2::DiffOptions::new();
+    opts.context_lines(context_lines);
+    let diff =
+        repo.diff_tree_to_tree(parent_tree.as_ref(), Some(&commit.tree()?), Some(&mut opts))?;
 
     // Find the patch matching this path.
     let mut patch_idx = None;
