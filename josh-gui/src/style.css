@@ -81,19 +81,20 @@ code.muted {
     color: #e06c75;
 }
 
-button.back {
-    background: #333;
-    color: #ccc;
-    border: 1px solid #444;
-    padding: 0.35rem 0.75rem;
-    border-radius: 4px;
+span.breadcrumb-seg {
     cursor: pointer;
-    margin-bottom: 1rem;
 }
 
-button.back:hover {
-    background: #444;
+span.breadcrumb-seg:hover {
     color: #fff;
+}
+
+span.breadcrumb-sep {
+    color: #555;
+}
+
+span.breadcrumb-seg-last {
+    cursor: default;
 }
 
 table.detail-meta {
