@@ -488,7 +488,7 @@ pub struct Location {
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct CommentMeta {
     pub message: String,
-    #[serde(skip_serializing_if = "Option::is_none", default)]
+    #[serde(skip)]
     pub file: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub location: Option<Location>,
@@ -505,16 +505,16 @@ pub fn write_comment(
     author: Option<&str>,
     timestamp: Option<&str>,
 ) -> anyhow::Result<String> {
-    write_comment_with_diff(repo, change, meta, author, timestamp, None)
+    write_comment_with_commit(repo, change, meta, author, timestamp, None)
 }
 
-pub fn write_comment_with_diff(
+pub fn write_comment_with_commit(
     repo: &git2::Repository,
     change: &Change,
     meta: &CommentMeta,
     author: Option<&str>,
     timestamp: Option<&str>,
-    diff_id_override: Option<&str>,
+    blob_commit_override: Option<&str>,
 ) -> anyhow::Result<String> {
     if meta.message.trim().is_empty() {
         return Err(anyhow::anyhow!("comment message must not be empty"));
@@ -523,20 +523,35 @@ pub fn write_comment_with_diff(
     let change_id = change
         .id()
         .ok_or_else(|| anyhow::anyhow!("commit {} has no Change-Id", change.commit()))?;
-    let diff_id = match diff_id_override {
-        Some(d) => d.to_string(),
-        None => diff_id(repo, change.commit())?,
-    };
 
     let content = serde_json::to_string(meta)?;
     let content_hash =
         git2::Oid::hash_object(git2::ObjectType::Blob, content.as_bytes())?.to_string();
     let blob_oid = repo.blob(content.as_bytes())?;
 
-    let path = std::path::Path::new("comments")
-        .join(&change_id)
-        .join(&diff_id)
-        .join(&content_hash);
+    let path = if let Some(ref file) = meta.file {
+        let resolve_commit = match blob_commit_override {
+            Some(s) => git2::Oid::from_str(s)?,
+            None => change.commit(),
+        };
+        let commit = repo.find_commit(resolve_commit)?;
+        let file_blob = commit
+            .tree()?
+            .get_path(std::path::Path::new(file))?
+            .id()
+            .to_string();
+        std::path::Path::new("comments")
+            .join("F")
+            .join(&change_id)
+            .join(&file_blob)
+            .join(file)
+            .join(&content_hash)
+    } else {
+        std::path::Path::new("comments")
+            .join("C")
+            .join(&change_id)
+            .join(&content_hash)
+    };
     write_changes_tree(repo, &path, blob_oid, author, timestamp)?;
 
     Ok(content_hash)
@@ -558,21 +573,48 @@ pub fn comment_author(
     repo: &git2::Repository,
     change: &Change,
     comment_id: &str,
+    file: Option<&str>,
 ) -> anyhow::Result<(String, String)> {
     let change_id = match change.id() {
         Some(id) => id,
         None => return Err(anyhow!("change has no Change-Id")),
     };
-    let diff_id = diff_id(repo, change.commit())?;
-
-    let path = std::path::Path::new("comments")
-        .join(&change_id)
-        .join(&diff_id)
-        .join(comment_id);
 
     let head = match repo.find_reference("refs/josh/changes") {
         Ok(r) => r.peel_to_commit()?,
         Err(_) => return Err(anyhow!("refs/josh/changes not found")),
+    };
+
+    let path = if let Some(f) = file {
+        // Find the blob_id for this comment in the current tree.
+        let head_tree = head.tree()?;
+        let cid_path = std::path::Path::new("comments").join("F").join(change_id);
+        let mut found = None;
+        if let Some(cid_tree) = get_tree(repo, &head_tree, &cid_path) {
+            for blob_entry in cid_tree.iter() {
+                let blob_name = blob_entry.name().unwrap_or("");
+                let sub = std::path::Path::new(f).join(comment_id);
+                let full = cid_path.join(blob_name).join(&sub);
+                if head_tree.get_path(&full).is_ok() {
+                    found = Some(full);
+                    break;
+                }
+            }
+        }
+        match found {
+            Some(p) => p,
+            None => {
+                return Err(anyhow!(
+                    "comment {} not found in refs/josh/changes",
+                    comment_id
+                ));
+            }
+        }
+    } else {
+        std::path::Path::new("comments")
+            .join("C")
+            .join(change_id)
+            .join(comment_id)
     };
 
     let mut walk = repo.revwalk()?;
@@ -607,12 +649,70 @@ pub fn comment_author(
     ))
 }
 
+fn get_tree<'a>(
+    repo: &'a git2::Repository,
+    tree: &'a git2::Tree,
+    path: &std::path::Path,
+) -> Option<git2::Tree<'a>> {
+    tree.get_path(path)
+        .ok()
+        .and_then(|e| e.to_object(repo).ok())
+        .and_then(|o| o.peel_to_tree().ok())
+}
+
+fn parse_comment_blob(
+    repo: &git2::Repository,
+    entry: &git2::TreeEntry,
+    file: Option<String>,
+) -> anyhow::Result<Comment> {
+    let id = entry.name().unwrap_or("").to_string();
+    let blob = entry.to_object(repo)?.peel_to_blob()?;
+    let meta: CommentMeta = serde_json::from_slice(blob.content())?;
+    Ok(Comment {
+        id,
+        message: meta.message,
+        file,
+        location: meta.location,
+        reply_to: meta.reply_to,
+        update_of: meta.update_of,
+        author: None,
+        timestamp: None,
+    })
+}
+
+fn collect_comments_under(
+    repo: &git2::Repository,
+    tree: &git2::Tree,
+    file_prefix: &std::path::Path,
+) -> anyhow::Result<Vec<Comment>> {
+    let mut comments = Vec::new();
+    for entry in tree.iter() {
+        let name = entry.name().unwrap_or("");
+        match entry.kind() {
+            Some(git2::ObjectType::Tree) => {
+                let subtree = entry.to_object(repo)?.peel_to_tree()?;
+                let child_file = file_prefix.join(name);
+                comments.extend(collect_comments_under(repo, &subtree, &child_file)?);
+            }
+            Some(git2::ObjectType::Blob) => {
+                let file = if file_prefix.as_os_str().is_empty() {
+                    None
+                } else {
+                    Some(file_prefix.to_string_lossy().to_string())
+                };
+                comments.push(parse_comment_blob(repo, &entry, file)?);
+            }
+            _ => {}
+        }
+    }
+    Ok(comments)
+}
+
 pub fn read_comments(repo: &git2::Repository, change: &Change) -> anyhow::Result<Vec<Comment>> {
     let change_id = match change.id() {
         Some(id) => id,
         None => return Ok(Vec::new()),
     };
-    let diff_id = diff_id(repo, change.commit())?;
 
     let tree = match repo.find_reference("refs/josh/changes") {
         Ok(r) => r.peel_to_tree()?,
@@ -623,36 +723,41 @@ pub fn read_comments(repo: &git2::Repository, change: &Change) -> anyhow::Result
         Some(e) => e.to_object(repo)?.peel_to_tree()?,
         None => return Ok(Vec::new()),
     };
-    let cid_tree = match comments_tree.get_name(change_id) {
-        Some(e) => e.to_object(repo)?.peel_to_tree()?,
-        None => return Ok(Vec::new()),
-    };
-    let did_tree = match cid_tree.get_name(&diff_id) {
-        Some(e) => e.to_object(repo)?.peel_to_tree()?,
-        None => return Ok(Vec::new()),
-    };
 
     let mut comments = Vec::new();
-    for entry in did_tree.iter() {
-        let id = entry.name().unwrap_or("").to_string();
-        let blob = entry.to_object(repo)?.peel_to_blob()?;
-        let meta: CommentMeta = serde_json::from_slice(blob.content())?;
-        comments.push(Comment {
-            id,
-            message: meta.message,
-            file: meta.file,
-            location: meta.location,
-            reply_to: meta.reply_to,
-            update_of: meta.update_of,
-            author: None,
-            timestamp: None,
-        });
+
+    // Non-file comments: comments/C/<change_id>/
+    if let Some(cid_tree) = get_tree(
+        repo,
+        &comments_tree,
+        &std::path::Path::new("C").join(change_id),
+    ) {
+        for entry in cid_tree.iter() {
+            if let Ok(c) = parse_comment_blob(repo, &entry, None) {
+                comments.push(c);
+            }
+        }
+    }
+
+    // File comments: comments/F/<change_id>/<blob_id>/<path>/<to>/<file>/<content_hash>
+    if let Some(cid_tree) = get_tree(
+        repo,
+        &comments_tree,
+        &std::path::Path::new("F").join(change_id),
+    ) {
+        for blob_entry in cid_tree.iter() {
+            let blob_name = blob_entry.name().unwrap_or("");
+            if let Some(blob_tree) = get_tree(repo, &cid_tree, std::path::Path::new(blob_name)) {
+                comments.extend(collect_comments_under(
+                    repo,
+                    &blob_tree,
+                    std::path::Path::new(""),
+                )?);
+            }
+        }
     }
 
     // Walk history once to resolve author/timestamp for all comments.
-    let prefix = std::path::Path::new("comments")
-        .join(change_id)
-        .join(&diff_id);
     if let Ok(head) = repo.find_reference("refs/josh/changes") {
         if let Ok(head_commit) = head.peel_to_commit() {
             let mut walk = repo.revwalk().unwrap_or_else(|_| repo.revwalk().unwrap());
@@ -666,17 +771,49 @@ pub fn read_comments(repo: &git2::Repository, change: &Change) -> anyhow::Result
                         if c.author.is_some() {
                             continue;
                         }
-                        let path = prefix.join(&c.id);
-                        if let Ok(entry) = tree.get_path(&path) {
-                            let is_new = parent_tree
-                                .as_ref()
-                                .and_then(|pt| pt.get_path(&path).ok())
-                                .map_or(true, |e| e.id() != entry.id());
-                            if is_new {
-                                let time = commit.time();
-                                let ts = time.seconds().to_string();
-                                c.author = Some(commit.author().email().unwrap_or("").to_string());
-                                c.timestamp = Some(ts);
+                        if c.file.is_none() {
+                            let p = std::path::Path::new("comments")
+                                .join("C")
+                                .join(change_id)
+                                .join(&c.id);
+                            if let Ok(entry) = tree.get_path(&p) {
+                                let is_new = parent_tree
+                                    .as_ref()
+                                    .and_then(|pt| pt.get_path(&p).ok())
+                                    .map_or(true, |e| e.id() != entry.id());
+                                if is_new {
+                                    let time = commit.time();
+                                    let ts = time.seconds().to_string();
+                                    c.author =
+                                        Some(commit.author().email().unwrap_or("").to_string());
+                                    c.timestamp = Some(ts);
+                                }
+                            }
+                        } else {
+                            let cid_path =
+                                std::path::Path::new("comments").join("F").join(change_id);
+                            if let Some(cid_tree) = get_tree(repo, &tree, &cid_path) {
+                                for blob_entry in cid_tree.iter() {
+                                    let blob_name = blob_entry.name().unwrap_or("");
+                                    let sub =
+                                        std::path::Path::new(c.file.as_ref().unwrap()).join(&c.id);
+                                    let full_path = cid_path.join(blob_name).join(&sub);
+                                    if let Ok(entry) = tree.get_path(&full_path) {
+                                        let parent_entry = parent_tree
+                                            .as_ref()
+                                            .and_then(|pt| pt.get_path(&full_path).ok());
+                                        let is_new =
+                                            parent_entry.map_or(true, |e| e.id() != entry.id());
+                                        if is_new {
+                                            let time = commit.time();
+                                            let ts = time.seconds().to_string();
+                                            c.author = Some(
+                                                commit.author().email().unwrap_or("").to_string(),
+                                            );
+                                            c.timestamp = Some(ts);
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
