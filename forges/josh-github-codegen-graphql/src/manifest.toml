@@ -35,3 +35,5 @@ fragments = ["required_status_checks_info", "status_checks_params"]
 
 [queries.get_repository_collaborators]
 fragments = ["collaborator_edge_info"]
+
+[queries.list_open_prs]

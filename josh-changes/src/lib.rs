@@ -45,6 +45,10 @@ impl Change {
         self.base
     }
 
+    pub fn set_base(&mut self, base: git2::Oid) {
+        self.base = base;
+    }
+
     pub fn contributing(&self, repo: &git2::Repository) -> anyhow::Result<Vec<git2::Oid>> {
         let mut walk = repo.revwalk()?;
         walk.simplify_first_parent()?;
@@ -110,6 +114,39 @@ pub fn parse_change_meta(message: &str) -> (Option<String>, Vec<String>) {
         }
     }
     (id, series)
+}
+
+pub fn encode_change_id_path(id: &str) -> String {
+    id.replace('/', "%2F")
+}
+
+fn decode_change_id_path(enc: &str) -> String {
+    enc.replace("%2F", "/")
+}
+
+/// Create a real merge commit that has the target branch tip and PR head as its two parents.
+/// The tree is the PR head's tree (no content merge needed).
+/// Author and committer are copied from the PR head commit.
+pub fn create_synthetic_merge_commit(
+    repo: &git2::Repository,
+    pr_head: &git2::Commit,
+    target_branch_tip: &git2::Commit,
+    message: &str,
+) -> anyhow::Result<git2::Oid> {
+    let tree = pr_head.tree()?;
+    let author = pr_head.author();
+    let committer = pr_head.committer();
+
+    let oid = repo.commit(
+        None,
+        &author,
+        &committer,
+        message,
+        &tree,
+        &[target_branch_tip, pr_head],
+    )?;
+
+    Ok(oid)
 }
 
 #[derive(PartialEq, Clone, Debug)]
@@ -412,7 +449,7 @@ pub fn build_to_push(
     }
 }
 
-pub fn list_changes(
+pub fn sync_changes(
     repo: &git2::Repository,
     tip: git2::Oid,
     base: git2::Oid,
@@ -421,6 +458,68 @@ pub fn list_changes(
     let changes = split_changes(repo, changes)?;
     for c in &changes {
         let _ = store_diff_data(repo, c);
+    }
+    Ok(changes)
+}
+
+pub fn list_changes(repo: &git2::Repository) -> anyhow::Result<Vec<Change>> {
+    let tree = match repo.find_reference("refs/josh/changes") {
+        Ok(r) => r.peel_to_tree()?,
+        Err(_) => return Ok(Vec::new()),
+    };
+
+    let diffs_tree = match tree
+        .get_name("diffs")
+        .and_then(|e| e.to_object(repo).ok())
+        .and_then(|o| o.peel_to_tree().ok())
+    {
+        Some(t) => t,
+        None => return Ok(Vec::new()),
+    };
+
+    let mut changes = Vec::new();
+    for entry in diffs_tree.iter() {
+        let change_id = decode_change_id_path(entry.name().unwrap_or(""));
+        if change_id.is_empty() {
+            continue;
+        }
+        let subtree = match entry
+            .to_object(repo)
+            .ok()
+            .and_then(|o| o.peel_to_tree().ok())
+        {
+            Some(t) => t,
+            None => continue,
+        };
+        // The subtree has a single blob named by its content hash.
+        // Read it to get tip and base OIDs.
+        let mut tip_oid = git2::Oid::zero();
+        let mut base_oid = git2::Oid::zero();
+        for se in subtree.iter() {
+            let blob = match se.to_object(repo).ok().and_then(|o| o.peel_to_blob().ok()) {
+                Some(b) => b,
+                None => continue,
+            };
+            let content = String::from_utf8_lossy(blob.content());
+            if let Some((tip_str, base_str)) = content.split_once('\n') {
+                tip_oid = git2::Oid::from_str(tip_str).unwrap_or(git2::Oid::zero());
+                base_oid = git2::Oid::from_str(base_str).unwrap_or(git2::Oid::zero());
+            }
+            break;
+        }
+        if tip_oid == git2::Oid::zero() {
+            continue;
+        }
+        let commit = match repo.find_commit(tip_oid) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+        let mut change = Change::new(repo, &commit);
+        change.base = base_oid;
+        if change.id.is_none() {
+            change.id = Some(change_id);
+        }
+        changes.push(change);
     }
     Ok(changes)
 }
@@ -460,21 +559,6 @@ pub fn resolve_change(
     }
 
     Err(anyhow!("could not resolve '{}' to a commit", spec))
-}
-
-pub fn diff_id(repo: &git2::Repository, commit_oid: git2::Oid) -> anyhow::Result<String> {
-    let commit = repo.find_commit(commit_oid)?;
-    let parent_tree = commit.parent(0).ok().and_then(|p| p.tree().ok());
-    let diff = repo.diff_tree_to_tree(parent_tree.as_ref(), Some(&commit.tree()?), None)?;
-
-    let mut buf = Vec::new();
-    diff.print(git2::DiffFormat::Patch, |_delta, _hunk, line| {
-        buf.extend_from_slice(&[line.origin() as u8]);
-        buf.extend_from_slice(line.content());
-        true
-    })?;
-
-    Ok(git2::Oid::hash_object(git2::ObjectType::Blob, &buf)?.to_string())
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -542,14 +626,14 @@ pub fn write_comment_with_commit(
             .to_string();
         std::path::Path::new("comments")
             .join("F")
-            .join(&change_id)
+            .join(encode_change_id_path(&change_id))
             .join(&file_blob)
             .join(file)
             .join(&content_hash)
     } else {
         std::path::Path::new("comments")
             .join("C")
-            .join(&change_id)
+            .join(encode_change_id_path(&change_id))
             .join(&content_hash)
     };
     write_changes_tree(repo, &path, blob_oid, author, timestamp)?;
@@ -588,7 +672,9 @@ pub fn comment_author(
     let path = if let Some(f) = file {
         // Find the blob_id for this comment in the current tree.
         let head_tree = head.tree()?;
-        let cid_path = std::path::Path::new("comments").join("F").join(change_id);
+        let cid_path = std::path::Path::new("comments")
+            .join("F")
+            .join(encode_change_id_path(change_id));
         let mut found = None;
         if let Some(cid_tree) = get_tree(repo, &head_tree, &cid_path) {
             for blob_entry in cid_tree.iter() {
@@ -613,7 +699,7 @@ pub fn comment_author(
     } else {
         std::path::Path::new("comments")
             .join("C")
-            .join(change_id)
+            .join(encode_change_id_path(change_id))
             .join(comment_id)
     };
 
@@ -730,7 +816,7 @@ pub fn read_comments(repo: &git2::Repository, change: &Change) -> anyhow::Result
     if let Some(cid_tree) = get_tree(
         repo,
         &comments_tree,
-        &std::path::Path::new("C").join(change_id),
+        &std::path::Path::new("C").join(encode_change_id_path(change_id)),
     ) {
         for entry in cid_tree.iter() {
             if let Ok(c) = parse_comment_blob(repo, &entry, None) {
@@ -743,7 +829,7 @@ pub fn read_comments(repo: &git2::Repository, change: &Change) -> anyhow::Result
     if let Some(cid_tree) = get_tree(
         repo,
         &comments_tree,
-        &std::path::Path::new("F").join(change_id),
+        &std::path::Path::new("F").join(encode_change_id_path(change_id)),
     ) {
         for blob_entry in cid_tree.iter() {
             let blob_name = blob_entry.name().unwrap_or("");
@@ -774,7 +860,7 @@ pub fn read_comments(repo: &git2::Repository, change: &Change) -> anyhow::Result
                         if c.file.is_none() {
                             let p = std::path::Path::new("comments")
                                 .join("C")
-                                .join(change_id)
+                                .join(encode_change_id_path(change_id))
                                 .join(&c.id);
                             if let Ok(entry) = tree.get_path(&p) {
                                 let is_new = parent_tree
@@ -790,8 +876,9 @@ pub fn read_comments(repo: &git2::Repository, change: &Change) -> anyhow::Result
                                 }
                             }
                         } else {
-                            let cid_path =
-                                std::path::Path::new("comments").join("F").join(change_id);
+                            let cid_path = std::path::Path::new("comments")
+                                .join("F")
+                                .join(encode_change_id_path(change_id));
                             if let Some(cid_tree) = get_tree(repo, &tree, &cid_path) {
                                 for blob_entry in cid_tree.iter() {
                                     let blob_name = blob_entry.name().unwrap_or("");
@@ -830,7 +917,6 @@ pub fn read_comments(repo: &git2::Repository, change: &Change) -> anyhow::Result
 
 #[derive(Debug, Clone)]
 pub struct Revision {
-    pub diff_id: String,
     pub commit_oid: String,
     pub author: String,
     pub timestamp: String,
@@ -875,7 +961,7 @@ pub fn read_revisions(repo: &git2::Repository, change: &Change) -> anyhow::Resul
             None => continue,
         };
         let cid_tree = match diffs_tree
-            .get_name(change_id)
+            .get_name(&encode_change_id_path(change_id))
             .and_then(|e| e.to_object(repo).ok())
             .and_then(|o| o.peel_to_tree().ok())
         {
@@ -891,7 +977,7 @@ pub fn read_revisions(repo: &git2::Repository, change: &Change) -> anyhow::Resul
                 .peel_to_tree()
                 .ok()?;
             let cid = diffs
-                .get_name(change_id)?
+                .get_name(&encode_change_id_path(change_id))?
                 .to_object(repo)
                 .ok()?
                 .peel_to_tree()
@@ -900,27 +986,20 @@ pub fn read_revisions(repo: &git2::Repository, change: &Change) -> anyhow::Resul
         });
 
         for entry in cid_tree.iter() {
-            let diff_id = entry.name().unwrap_or("").to_string();
-            if diff_id.is_empty() || seen.contains(&diff_id) {
+            let commit_oid = entry.name().unwrap_or("").to_string();
+            if commit_oid.is_empty() || seen.contains(&commit_oid) {
                 continue;
             }
             let is_new = parent_cid_tree
                 .as_ref()
-                .and_then(|pt| pt.get_name(&diff_id))
+                .and_then(|pt| pt.get_name(&commit_oid))
                 .map_or(true, |e| e.id() != entry.id());
             if !is_new {
                 continue;
             }
-            let commit_oid = entry
-                .to_object(repo)
-                .ok()
-                .and_then(|o| o.peel_to_blob().ok())
-                .map(|b| String::from_utf8_lossy(b.content()).to_string())
-                .unwrap_or_default();
             let time = commit.time();
-            seen.insert(diff_id.clone());
+            seen.insert(commit_oid.clone());
             revs.push(Revision {
-                diff_id,
                 commit_oid,
                 author: commit.author().email().unwrap_or("").to_string(),
                 timestamp: time.seconds().to_string(),
@@ -936,16 +1015,114 @@ pub fn store_diff_data(repo: &git2::Repository, change: &Change) -> anyhow::Resu
     let change_id = change
         .id()
         .ok_or_else(|| anyhow::anyhow!("commit {} has no Change-Id", change.commit()))?;
-    let diff_id = diff_id(repo, change.commit())?;
 
     let commit_oid_str = change.commit().to_string();
-    let blob_oid = repo.blob(commit_oid_str.as_bytes())?;
+    let base_str = change.base().to_string();
+    let content = format!("{}\n{}", commit_oid_str, base_str);
+    let blob_oid = repo.blob(content.as_bytes())?;
 
-    let path = std::path::Path::new("diffs")
-        .join(&change_id)
-        .join(&diff_id)
-        .join(&commit_oid_str);
-    write_changes_tree(repo, &path, blob_oid, None, None)?;
+    let mut tb = repo.treebuilder(None)?;
+    let entry_name = blob_oid.to_string();
+    tb.insert(&entry_name, blob_oid, git2::FileMode::Blob.into())?;
+    let tree_oid = tb.write()?;
+
+    let base_tree = repo
+        .find_reference("refs/josh/changes")
+        .ok()
+        .and_then(|r| r.peel_to_tree().ok())
+        .unwrap_or_else(|| repo.find_tree(josh_core::filter::tree::empty_id()).unwrap());
+
+    let path = std::path::Path::new("diffs").join(encode_change_id_path(&change_id));
+
+    if let Some(existing) = base_tree
+        .get_path(&path)
+        .ok()
+        .and_then(|e| e.to_object(repo).ok())
+    {
+        if existing.id() == tree_oid {
+            return Ok(());
+        }
+    }
+
+    let tree = josh_core::filter::tree::insert(repo, &base_tree, &path, tree_oid, 0o0040000)?;
+
+    let sig = repo.signature()?;
+    let prev_tip = repo
+        .find_reference("refs/josh/changes")
+        .ok()
+        .and_then(|r| r.peel_to_commit().ok());
+
+    let source_commit = repo.find_commit(change.commit())?;
+    let anchor_sig = git2::Signature::new("JOSH", "josh@josh-project.dev", &git2::Time::new(0, 0))?;
+    let empty_tree = repo.find_tree(josh_core::filter::tree::empty_id())?;
+    let anchor_oid = repo.commit(
+        None,
+        &anchor_sig,
+        &anchor_sig,
+        "josh\n",
+        &empty_tree,
+        &[&source_commit],
+    )?;
+    let anchor_commit = repo.find_commit(anchor_oid)?;
+
+    let mut parents: Vec<&git2::Commit> = Vec::new();
+    if let Some(ref c) = prev_tip {
+        parents.push(c);
+    }
+    parents.push(&anchor_commit);
+    repo.commit(
+        Some("refs/josh/changes"),
+        &sig,
+        &sig,
+        "update refs/josh/changes\n",
+        &tree,
+        &parents,
+    )?;
+
+    Ok(())
+}
+
+pub fn store_pr_data(repo: &git2::Repository, change_id: &str, json: &str) -> anyhow::Result<()> {
+    let blob_oid = repo.blob(json.as_bytes())?;
+
+    let mut tb = repo.treebuilder(None)?;
+    tb.insert(&blob_oid.to_string(), blob_oid, git2::FileMode::Blob.into())?;
+    let tree_oid = tb.write()?;
+
+    let base_tree = repo
+        .find_reference("refs/josh/changes")
+        .ok()
+        .and_then(|r| r.peel_to_tree().ok())
+        .unwrap_or_else(|| repo.find_tree(josh_core::filter::tree::empty_id()).unwrap());
+
+    let path = std::path::Path::new("gh").join(encode_change_id_path(change_id));
+
+    if let Some(existing) = base_tree
+        .get_path(&path)
+        .ok()
+        .and_then(|e| e.to_object(repo).ok())
+    {
+        if existing.id() == tree_oid {
+            return Ok(());
+        }
+    }
+
+    let tree = josh_core::filter::tree::insert(repo, &base_tree, &path, tree_oid, 0o0040000)?;
+
+    let sig = repo.signature()?;
+    let prev_tip = repo
+        .find_reference("refs/josh/changes")
+        .ok()
+        .and_then(|r| r.peel_to_commit().ok());
+    let parents: Vec<&git2::Commit> = prev_tip.iter().collect();
+    repo.commit(
+        Some("refs/josh/changes"),
+        &sig,
+        &sig,
+        "update refs/josh/changes\n",
+        &tree,
+        &parents,
+    )?;
 
     Ok(())
 }

@@ -3236,6 +3236,7 @@ dependencies = [
  "dioxus",
  "git2",
  "josh-changes",
+ "serde_json",
 ]
 
 [[package]]

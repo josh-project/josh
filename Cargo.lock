@@ -3133,6 +3133,7 @@ dependencies = [
  "josh-changes",
  "josh-github-graphql",
  "josh-github-webhooks",
+ "serde_json",
  "url",
 ]
 
@@ -3165,6 +3166,7 @@ dependencies = [
  "josh-github-codegen-graphql",
  "reqwest 0.13.2",
  "reqwest-middleware",
+ "serde",
  "serde_json",
  "url",
 ]

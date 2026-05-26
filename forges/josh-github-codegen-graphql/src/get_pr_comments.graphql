@@ -3,7 +3,24 @@ query GetPrComments($owner: String!, $name: String!, $number: Int!) {
     pullRequest(number: $number) {
       title
       body
+      number
+      url
+      state
+      isDraft
       createdAt
+      updatedAt
+      merged
+      mergedAt
+      mergedBy { __typename login }
+      additions
+      deletions
+      changedFiles
+      baseRefName
+      headRefName
+      reviewDecision
+      labels(first: 20) {
+        nodes { name color }
+      }
       author { __typename login }
       comments(first: 100) {
         nodes {

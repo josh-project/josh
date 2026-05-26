@@ -193,40 +193,12 @@ pub async fn create_or_update_prs(
     Ok(())
 }
 
-/// Sync GitHub PR comments for a single change into refs/josh/changes.
-/// Returns the number of comments synced.
-pub async fn sync_change_comments(
-    connection: &GithubApiConnection,
-    owner: &str,
-    repo_name: &str,
+/// Write PR comments into refs/josh/changes. Shared by both sync paths.
+fn write_pr_comments(
     repo: &git2::Repository,
     change: &josh_changes::Change,
-    head_ref: &str,
+    pr_data: &josh_github_graphql::operations::pull_request::PrData,
 ) -> anyhow::Result<usize> {
-    let change_id = match change.id() {
-        Some(id) => id,
-        None => return Ok(0),
-    };
-
-    let pr = match connection
-        .find_pull_request_by_head(owner, repo_name, head_ref)
-        .await?
-    {
-        Some((_node_id, number, _draft)) => {
-            println!("Found PR #{} for change {}", number, change_id);
-            number
-        }
-        None => {
-            eprintln!(
-                "No open PR found for change {} (branch {})",
-                change_id, head_ref
-            );
-            return Ok(0);
-        }
-    };
-
-    let pr_data = connection.get_pr_comments(owner, repo_name, pr).await?;
-
     let mut id_map: HashMap<String, String> = HashMap::new();
     for comment in &pr_data.comments {
         let location =
@@ -267,4 +239,66 @@ pub async fn sync_change_comments(
     }
 
     Ok(pr_data.comments.len())
+}
+
+/// Sync GitHub PR comments for a single change into refs/josh/changes.
+/// Returns the number of comments synced.
+pub async fn sync_change_comments(
+    connection: &GithubApiConnection,
+    owner: &str,
+    repo_name: &str,
+    repo: &git2::Repository,
+    change: &josh_changes::Change,
+    head_ref: &str,
+) -> anyhow::Result<usize> {
+    let change_id = match change.id() {
+        Some(id) => id,
+        None => return Ok(0),
+    };
+
+    let pr = match connection
+        .find_pull_request_by_head(owner, repo_name, head_ref)
+        .await?
+    {
+        Some((_node_id, number, _draft)) => {
+            println!("Found PR #{} for change {}", number, change_id);
+            number
+        }
+        None => {
+            eprintln!(
+                "No open PR found for change {} (branch {})",
+                change_id, head_ref
+            );
+            return Ok(0);
+        }
+    };
+
+    let pr_data = connection.get_pr_comments(owner, repo_name, pr).await?;
+    let json = serde_json::to_string(&pr_data)?;
+    josh_changes::store_pr_data(repo, change_id, &json)?;
+
+    write_pr_comments(repo, change, &pr_data)
+}
+
+/// Sync GitHub PR comments for a change identified directly by PR number.
+pub async fn sync_change_comments_by_pr_number(
+    connection: &GithubApiConnection,
+    owner: &str,
+    repo_name: &str,
+    repo: &git2::Repository,
+    change: &josh_changes::Change,
+    pr_number: i64,
+) -> anyhow::Result<usize> {
+    let change_id = match change.id() {
+        Some(id) => id,
+        None => return Ok(0),
+    };
+
+    let pr_data = connection
+        .get_pr_comments(owner, repo_name, pr_number)
+        .await?;
+    let json = serde_json::to_string(&pr_data)?;
+    josh_changes::store_pr_data(repo, change_id, &json)?;
+
+    write_pr_comments(repo, change, &pr_data)
 }
