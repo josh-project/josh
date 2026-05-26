@@ -1,53 +1,15 @@
-use anyhow::Context;
-
 /// Arguments for `josh changes list`.
 #[derive(Debug, clap::Parser)]
-pub struct ListArgs {
-    /// Override the base ref (default: origin/<current-branch>).
-    #[arg(short = 'b', long = "base")]
-    pub base: Option<String>,
-}
+pub struct ListArgs {}
 
-/// Print downstacked changes between the current branch tip and its remote
-/// tracking branch.  All authors are included (no author filtering).
+/// Print changes read from refs/josh/changes (populated by `josh changes sync`).
 pub fn handle_list(
-    args: &ListArgs,
+    _args: &ListArgs,
     transaction: &josh_core::cache::Transaction,
 ) -> anyhow::Result<()> {
     let repo = transaction.repo();
 
-    // Determine tip and branch name from HEAD.
-    let head = repo.head().context("Failed to get HEAD")?;
-    let branch = head
-        .shorthand()
-        .context("Detached HEAD -- cannot determine current branch")?;
-
-    let tip = head.peel_to_commit().context("HEAD has no target")?.id();
-
-    // Resolve base -- either an explicit --base argument or origin/<branch>.
-    let base = if let Some(base_ref) = &args.base {
-        repo.find_reference(base_ref)
-            .with_context(|| format!("base ref '{}' not found", base_ref))?
-            .peel_to_commit()
-            .context("base ref has no target")?
-            .id()
-    } else {
-        let remote_ref = format!("refs/remotes/origin/{}", branch);
-        repo.find_reference(&remote_ref)
-            .with_context(|| {
-                format!(
-                    "no remote tracking branch '{}' found -- \
-                     has this branch been pushed?\n\
-                     Use --base to specify a base ref",
-                    remote_ref,
-                )
-            })?
-            .peel_to_commit()
-            .context("remote tracking ref has no target")?
-            .id()
-    };
-
-    let changes = josh_changes::list_changes(repo, tip, base)?;
+    let changes = josh_changes::list_changes(repo)?;
 
     if changes.is_empty() {
         println!("No local changes found.");

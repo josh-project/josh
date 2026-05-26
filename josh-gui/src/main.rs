@@ -166,8 +166,8 @@ fn list_view(rows: Signal<anyhow::Result<Vec<Row>>>, mut page: Signal<Page>) -> 
                                     }
                                 }
                             },
-                            Row::Contributing { change_id, sha: _, subject, author, series } => rsx! {
-                                tr { class: "contributing",
+                            Row::Stack { change_id, sha: _, subject, author, series } => rsx! {
+                                tr { class: "stack",
                                     td { code { class: "muted", "{change_id}" } }
                                     td { "{subject}" }
                                     td { "{author}" }
@@ -217,15 +217,46 @@ fn detail_view(sha: String, mut page: Signal<Page>) -> Element {
                                 tr { td { "Author" } td { "{data.author}" } }
                                 tr { td { "Date" } td { "{data.date}" } }
                                 tr { td { "Series" } td { "{data.series}" } }
+                                if let Some(ref pr) = data.pr_info {
+                                    tr {
+                                        td { "PR" }
+                                        td {
+                                            a {
+                                                href: "{pr.url}",
+                                                target: "_blank",
+                                                rel: "noopener noreferrer",
+                                                class: "pr-link",
+                                                "{pr.title}"
+                                            }
+                                            span { class: "pr-state", " {pr.state}" }
+                                        }
+                                    }
+                                }
                             }
                         }
-                        pre { class: "commit-message", "{data.message}" }
+                        if !data.stack.is_empty() {
+                            h2 { "Stack" }
+                            div { class: "stack-list",
+                                for cc in data.stack.iter() {
+                                    {
+                                        let short_sha = &cc.sha[..cc.sha.len().min(8)];
+                                        rsx! {
+                                            div { class: "stack-item",
+                                                code { class: "stack-sha", "{short_sha}" }
+                                                span { class: "stack-subject", "{cc.subject}" }
+                                                span { class: "stack-author", "{cc.author}" }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                         if !data.revisions.is_empty() {
                             h2 { "Revisions" }
                             div { class: "revision-list",
                                 for rev in data.revisions.iter() {
                                     {
-                                        let is_current = rev.diff_id == data.current_diff_id;
+                                        let is_current = rev.commit_oid == data.sha;
                                         let row_class = if is_current {
                                             "revision-item current"
                                         } else {
@@ -249,6 +280,7 @@ fn detail_view(sha: String, mut page: Signal<Page>) -> Element {
                         }
                     }
                     div { class: "detail-right",
+                        pre { class: "commit-message", "{data.message}" }
                         h2 { "Changed files" }
                         p { class: "diff-summary", "{stats_total}" }
                         {
@@ -917,6 +949,13 @@ fn render_threads(
     rsx! { {children.into_iter().map(|e| e)} }
 }
 
+struct StackCommit {
+    sha: String,
+    subject: String,
+    author: String,
+    series: String,
+}
+
 struct DetailData {
     change_id: String,
     sha: String,
@@ -928,7 +967,14 @@ struct DetailData {
     files: Vec<FileStat>,
     comments: Vec<josh_changes::Comment>,
     revisions: Vec<josh_changes::Revision>,
-    current_diff_id: String,
+    stack: Vec<StackCommit>,
+    pr_info: Option<PrInfo>,
+}
+
+struct PrInfo {
+    url: String,
+    title: String,
+    state: String,
 }
 
 fn load_detail(sha: &str) -> anyhow::Result<DetailData> {
@@ -969,9 +1015,69 @@ fn load_detail(sha: &str) -> anyhow::Result<DetailData> {
         });
     }
 
-    let change = josh_changes::Change::new(&repo, &commit);
+    let mut change = josh_changes::Change::new(&repo, &commit);
+
+    let mut stack: Vec<StackCommit> = Vec::new();
+    let mut pr_info: Option<PrInfo> = None;
+    if let Some(ref cid) = change_id {
+        if let Ok(tree) = repo.find_reference("refs/josh/changes")
+            .and_then(|r| r.peel_to_tree())
+        {
+            let pr_path = std::path::Path::new("gh")
+                .join(josh_changes::encode_change_id_path(cid));
+            pr_info = tree.get_path(&pr_path).ok()
+                .and_then(|e| e.to_object(&repo).ok())
+                .and_then(|o| o.peel_to_tree().ok())
+                .and_then(|t| t.iter().next()
+                    .and_then(|e| e.to_object(&repo).ok())
+                    .and_then(|o| o.peel_to_blob().ok())
+                )
+                .and_then(|b| {
+                    let content = String::from_utf8_lossy(b.content());
+                    serde_json::from_str::<serde_json::Value>(&content).ok()
+                        .map(|v| PrInfo {
+                            url: v["url"].as_str().unwrap_or("").to_string(),
+                            title: v["title"].as_str().unwrap_or("").to_string(),
+                            state: v["state"].as_str().unwrap_or("").to_string(),
+                        })
+                });
+
+            let path = std::path::Path::new("diffs")
+                .join(josh_changes::encode_change_id_path(cid));
+            if let Some(entry) = tree.get_path(&path).ok()
+                .and_then(|e| e.to_object(&repo).ok())
+                .and_then(|o| o.peel_to_tree().ok())
+            {
+                if let Some(blob_entry) = entry.iter().next()
+                    .and_then(|e| e.to_object(&repo).ok())
+                    .and_then(|o| o.peel_to_blob().ok())
+                {
+                    let content = String::from_utf8_lossy(blob_entry.content());
+                    if let Some((_, base_str)) = content.split_once('\n') {
+                        if let Ok(base_oid) = git2::Oid::from_str(base_str) {
+                            change.set_base(base_oid);
+                        }
+                    }
+                }
+            }
+        }
+        for oid in change.contributing(&repo).unwrap_or_default() {
+            if let Ok(c) = repo.find_commit(oid) {
+                let msg = c.message().unwrap_or("");
+                let c_subject = msg.lines().next().unwrap_or("").to_string();
+                let c_author = c.author().email().unwrap_or("").to_string();
+                let (_, c_series) = josh_changes::parse_change_meta(msg);
+                stack.push(StackCommit {
+                    sha: oid.to_string(),
+                    subject: c_subject,
+                    author: c_author,
+                    series: c_series.join(", "),
+                });
+            }
+        }
+    }
+
     let comments = josh_changes::read_comments(&repo, &change).unwrap_or_default();
-    let current_diff_id = josh_changes::diff_id(&repo, oid).unwrap_or_default();
     let revisions = josh_changes::read_revisions(&repo, &change).unwrap_or_default();
 
     Ok(DetailData {
@@ -985,7 +1091,8 @@ fn load_detail(sha: &str) -> anyhow::Result<DetailData> {
         files,
         comments,
         revisions,
-        current_diff_id,
+        stack,
+        pr_info,
     })
 }
 
@@ -998,7 +1105,7 @@ enum Row {
         author: String,
         series: String,
     },
-    Contributing {
+    Stack {
         change_id: String,
         sha: String,
         subject: String,
@@ -1009,22 +1116,8 @@ enum Row {
 
 fn load_rows() -> anyhow::Result<Vec<Row>> {
     let repo = git2::Repository::discover(".")?;
-    let head = repo.head()?.peel_to_commit()?;
 
-    let branch = repo.head()?.shorthand().map(|s| s.to_string());
-
-    let base = if let Some(ref name) = branch {
-        let remote_ref = format!("refs/remotes/origin/{}", name);
-        repo.find_reference(&remote_ref)
-            .ok()
-            .and_then(|r| r.peel_to_commit().ok())
-            .map(|c| c.id())
-            .unwrap_or(git2::Oid::zero())
-    } else {
-        git2::Oid::zero()
-    };
-
-    let changes = josh_changes::list_changes(&repo, head.id(), base)?;
+    let changes = josh_changes::list_changes(&repo)?;
 
     let mut groups: Vec<(Row, Vec<Row>)> = Vec::new();
     for change in &changes {
@@ -1045,14 +1138,14 @@ fn load_rows() -> anyhow::Result<Vec<Row>> {
             series: change.series().join(", "),
         };
 
-        let mut contrib_rows = Vec::new();
+        let mut stack_rows = Vec::new();
         for oid in change.contributing(&repo)? {
             if let Ok(c) = repo.find_commit(oid) {
                 let msg = c.message().unwrap_or("");
                 let c_subject = msg.lines().next().unwrap_or("").to_string();
                 let c_author = c.author().email().unwrap_or("").to_string();
                 let (c_change_id, c_series) = josh_changes::parse_change_meta(msg);
-                contrib_rows.push(Row::Contributing {
+                stack_rows.push(Row::Stack {
                     change_id: c_change_id.unwrap_or_default(),
                     sha: oid.to_string(),
                     subject: c_subject,
@@ -1061,15 +1154,15 @@ fn load_rows() -> anyhow::Result<Vec<Row>> {
                 });
             }
         }
-        groups.push((change_row, contrib_rows));
+        groups.push((change_row, stack_rows));
     }
 
     groups.sort_by_key(|(_, contrib)| contrib.len());
 
     let mut rows = Vec::new();
-    for (change_row, contrib_rows) in groups {
+    for (change_row, stack_rows) in groups {
         rows.push(change_row);
-        rows.extend(contrib_rows);
+        rows.extend(stack_rows);
     }
     Ok(rows)
 }

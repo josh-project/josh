@@ -1,12 +1,19 @@
 use crate::connection::GithubApiConnection;
 use anyhow::anyhow;
+use serde::Serialize;
 
 use josh_github_codegen_graphql::{
     close_pull_request, convert_pull_request_to_draft, create_pull_request, get_pr_by_head,
-    get_pr_comments, mark_pull_request_ready_for_review, update_pull_request, ClosePullRequest,
-    ConvertPullRequestToDraft, CreatePullRequest, GetPrByHead, GetPrComments,
-    MarkPullRequestReadyForReview, UpdatePullRequest,
+    get_pr_comments, list_open_p_rs, mark_pull_request_ready_for_review, update_pull_request,
+    ClosePullRequest, ConvertPullRequestToDraft, CreatePullRequest, GetPrByHead, GetPrComments,
+    ListOpenPRs, MarkPullRequestReadyForReview, UpdatePullRequest,
 };
+
+#[derive(Debug, Serialize)]
+pub struct PrLabel {
+    pub name: String,
+    pub color: String,
+}
 
 #[derive(Debug)]
 pub struct PrComment {
@@ -20,13 +27,46 @@ pub struct PrComment {
     pub commit_oid: Option<String>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct PrData {
     pub title: String,
     pub body: Option<String>,
+    pub number: i64,
+    pub url: String,
+    pub state: String,
+    pub is_draft: bool,
     pub author: String,
-    pub timestamp: String,
+    pub created_at: String,
+    pub updated_at: String,
+    pub merged: bool,
+    pub merged_at: Option<String>,
+    pub merged_by: Option<String>,
+    pub additions: i64,
+    pub deletions: i64,
+    pub changed_files: i64,
+    pub base_ref_name: String,
+    pub head_ref_name: String,
+    pub review_decision: Option<String>,
+    pub labels: Vec<PrLabel>,
+    #[serde(skip)]
     pub comments: Vec<PrComment>,
+}
+
+#[derive(Debug)]
+pub struct PrSummary {
+    pub number: i64,
+    pub title: String,
+    pub body: String,
+    pub base_ref_name: String,
+    pub base_ref_oid: String,
+    pub head_ref_name: String,
+    pub head_oid: String,
+    pub head_commit_message: String,
+    pub author_name: String,
+    pub author_email: String,
+    pub committer_name: String,
+    pub committer_email: String,
+    pub pr_author_login: String,
 }
 
 impl GithubApiConnection {
@@ -50,6 +90,91 @@ impl GithubApiConnection {
         let nodes = repo.pull_requests.nodes.unwrap_or_default();
         let pr = nodes.into_iter().flatten().next();
         Ok(pr.map(|n| (n.id, n.number, n.is_draft)))
+    }
+
+    /// List all open pull requests with pagination.
+    pub async fn list_open_pull_requests(
+        &self,
+        owner: &str,
+        name: &str,
+    ) -> anyhow::Result<Vec<PrSummary>> {
+        let mut all = Vec::new();
+        let mut cursor: Option<String> = None;
+
+        loop {
+            let variables = list_open_p_rs::Variables {
+                owner: owner.to_string(),
+                name: name.to_string(),
+                first: 100,
+                after: cursor.clone(),
+            };
+            let response = self.make_request::<ListOpenPRs>(variables).await?;
+            let repo = match response.repository {
+                Some(r) => r,
+                None => return Err(anyhow!("repository not found")),
+            };
+
+            let nodes = repo.pull_requests.nodes.unwrap_or_default();
+            for node in nodes.into_iter().flatten() {
+                let head_commit = node
+                    .commits
+                    .nodes
+                    .and_then(|ns| ns.into_iter().flatten().next())
+                    .map(|n| n.commit);
+
+                let (author_name, author_email) = match &head_commit {
+                    Some(c) => (
+                        c.author
+                            .as_ref()
+                            .and_then(|a| a.name.clone())
+                            .unwrap_or_default(),
+                        c.author
+                            .as_ref()
+                            .and_then(|a| a.email.clone())
+                            .unwrap_or_default(),
+                    ),
+                    None => (String::new(), String::new()),
+                };
+                let (committer_name, committer_email) = match &head_commit {
+                    Some(c) => (
+                        c.committer
+                            .as_ref()
+                            .and_then(|c| c.name.clone())
+                            .unwrap_or_default(),
+                        c.committer
+                            .as_ref()
+                            .and_then(|c| c.email.clone())
+                            .unwrap_or_default(),
+                    ),
+                    None => (String::new(), String::new()),
+                };
+
+                all.push(PrSummary {
+                    number: node.number,
+                    title: node.title,
+                    body: node.body,
+                    base_ref_name: node.base_ref_name,
+                    base_ref_oid: node.base_ref_oid,
+                    head_ref_name: node.head_ref_name,
+                    head_oid: node.head_ref_oid,
+                    head_commit_message: head_commit.map(|c| c.message).unwrap_or_default(),
+                    author_name,
+                    author_email,
+                    committer_name,
+                    committer_email,
+                    pr_author_login: node.author.map(|a| a.login).unwrap_or_default(),
+                });
+            }
+
+            let page_info = repo.pull_requests.page_info;
+            if page_info.has_next_page {
+                cursor = page_info.end_cursor;
+            } else {
+                break;
+            }
+        }
+
+        Ok(all)
     }
 
     /// Update an existing PR's title, body, and/or base branch.
@@ -236,11 +361,38 @@ impl GithubApiConnection {
             }
         }
 
+        let labels: Vec<PrLabel> = pr
+            .labels
+            .and_then(|l| l.nodes)
+            .unwrap_or_default()
+            .into_iter()
+            .flatten()
+            .map(|n| PrLabel {
+                name: n.name,
+                color: n.color,
+            })
+            .collect();
+
         Ok(PrData {
             title: pr.title,
             body: Some(pr.body),
+            number: pr.number,
+            url: pr.url.to_string(),
+            state: format!("{:?}", pr.state),
+            is_draft: pr.is_draft,
             author: pr.author.map(|a| a.login).unwrap_or_default(),
-            timestamp: format!("{}", pr.created_at),
+            created_at: format!("{}", pr.created_at),
+            updated_at: format!("{}", pr.updated_at),
+            merged: pr.merged,
+            merged_at: pr.merged_at.map(|t| format!("{}", t)),
+            merged_by: pr.merged_by.map(|a| a.login),
+            additions: pr.additions,
+            deletions: pr.deletions,
+            changed_files: pr.changed_files,
+            base_ref_name: pr.base_ref_name,
+            head_ref_name: pr.head_ref_name,
+            review_decision: pr.review_decision.map(|r| format!("{:?}", r)),
+            labels,
             comments,
         })
     }

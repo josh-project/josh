@@ -62,7 +62,7 @@ table.changes td {
     border-bottom: 1px solid #2a2a2a;
 }
 
-tr.contributing td {
+tr.stack td {
     background: #252525;
     color: #999;
     font-size: 0.9em;
@@ -105,6 +105,21 @@ table.detail-meta {
 table.detail-meta td {
     padding: 0.25rem 0.75rem 0.25rem 0;
     vertical-align: top;
+}
+
+a.pr-link {
+    color: #7ec699;
+    text-decoration: none;
+    font-size: 0.9rem;
+}
+
+a.pr-link:hover {
+    text-decoration: underline;
+}
+
+span.pr-state {
+    color: #888;
+    font-size: 0.85em;
 }
 
 .detail-layout {
@@ -428,6 +443,32 @@ span.revision-ts {
 
 .revision-item.current span.revision-ts {
     color: #888;
+}
+
+.stack-list {
+    margin-bottom: 1rem;
+}
+
+.stack-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.25rem 0.5rem;
+    border-left: 2px solid #555;
+    font-size: 0.85rem;
+}
+
+code.stack-sha {
+    color: #888;
+    font-size: 0.8rem;
+}
+
+span.stack-subject {
+    flex: 1;
+}
+
+span.stack-author {
+    color: #999;
 }
 
 tr.diff-comment-row td {

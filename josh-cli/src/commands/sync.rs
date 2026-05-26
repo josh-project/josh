@@ -16,6 +16,10 @@ pub struct SyncArgs {
     /// Discard existing refs/josh/changes before syncing.
     #[arg(long = "clean")]
     pub clean: bool,
+
+    /// Skip GitHub comment syncing; only update refs/josh/changes locally.
+    #[arg(long = "local")]
+    pub local: bool,
 }
 
 pub fn handle_sync(
@@ -23,20 +27,10 @@ pub fn handle_sync(
     transaction: &josh_core::cache::Transaction,
 ) -> anyhow::Result<()> {
     let repo = transaction.repo();
-    let repo_path = normalize_repo_path(repo.path());
-    let remote_name = args.remote.as_deref().unwrap_or("origin");
-
-    let remote_config = read_remote_config(&repo_path, remote_name)
-        .with_context(|| format!("Failed to read remote config for '{}'", remote_name))?;
-
-    if remote_config.forge != Some(Forge::Github) {
-        return Err(anyhow!("sync is only supported for GitHub remotes"));
-    }
 
     let head = repo.head()?.peel_to_commit()?;
     let branch = repo.head()?.shorthand().map(|s| s.to_string());
 
-    let base_name = branch.clone().unwrap_or_else(|| "master".to_string());
     let base_oid = branch
         .as_ref()
         .and_then(|b| {
@@ -47,47 +41,258 @@ pub fn handle_sync(
         })
         .unwrap_or(git2::Oid::zero());
 
-    let git_config = repo.config()?;
-    let email = git_config.get_string("user.email").unwrap_or_default();
-
-    let changes = josh_changes::list_changes(repo, head.id(), base_oid)?;
-    if changes.is_empty() {
-        println!("No local changes found.");
-        return Ok(());
-    }
-
     if args.clean {
         if let Ok(mut r) = repo.find_reference("refs/josh/changes") {
             r.delete()?;
         }
     }
 
-    let (owner, repo_name) = josh_github_changes::repo::parse_owner_repo(&remote_config.url)?;
+    if !args.local {
+        let repo_path = normalize_repo_path(repo.path());
 
-    let rt = tokio::runtime::Runtime::new()?;
-    rt.block_on(async {
-        let api = github::make_api_connection()
-            .await
-            .with_context(|| github::api_connection_hint())?;
+        let remote_config =
+            read_remote_config(&repo_path, args.remote.as_deref().unwrap_or("origin"))
+                .with_context(|| {
+                    format!(
+                        "Failed to read remote config for '{}'",
+                        args.remote.as_deref().unwrap_or("origin")
+                    )
+                })?;
 
-        let mut total = 0;
-        for change in &changes {
-            let change_id = match change.id() {
-                Some(id) => id,
-                None => continue,
-            };
-            let head_ref = format!("@changes/{}/{}/{}", base_name, email, change_id);
-
-            let n = josh_github_changes::sync_change_comments(
-                &api, &owner, &repo_name, repo, change, &head_ref,
-            )
-            .await?;
-            total += n;
+        if remote_config.forge != Some(Forge::Github) {
+            return Err(anyhow!("sync is only supported for GitHub remotes"));
         }
 
-        println!("Synced {} comments.", total);
-        Ok::<_, anyhow::Error>(())
-    })?;
+        let (owner, repo_name) = josh_github_changes::repo::parse_owner_repo(&remote_config.url)?;
+
+        let rt = tokio::runtime::Runtime::new()?;
+        rt.block_on(async {
+            let api = github::make_api_connection()
+                .await
+                .with_context(|| github::api_connection_hint())?;
+
+            let prs = api.list_open_pull_requests(&owner, &repo_name).await?;
+            println!("Found {} open PRs on GitHub.", prs.len());
+
+            if prs.is_empty() {
+                return Ok(());
+            }
+
+            // Collect all unique OIDs: PR head commits + target branch tips.
+            let mut oids: Vec<String> = Vec::new();
+            let mut seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
+            for pr in &prs {
+                if seen.insert(&pr.head_oid) {
+                    oids.push(pr.head_oid.clone());
+                }
+                if seen.insert(&pr.base_ref_oid) {
+                    oids.push(pr.base_ref_oid.clone());
+                }
+            }
+
+            // Fetch all needed objects by SHA from GitHub.
+            let github_url = format!("https://github.com/{}/{}", owner, repo_name);
+            if !oids.is_empty() {
+                let mut fetch_args: Vec<&str> = Vec::with_capacity(3 + oids.len());
+                fetch_args.push("fetch");
+                fetch_args.push(&github_url);
+                fetch_args.push("--no-tags");
+                let oid_strs: Vec<String> = oids.iter().map(|o| o.to_string()).collect();
+                for oid in &oid_strs {
+                    fetch_args.push(oid);
+                }
+                josh_core::git::spawn_git_command(repo.path(), &fetch_args, &[])
+                    .with_context(|| "Failed to fetch objects from GitHub")?;
+            }
+
+            // Refresh ODB so git2 sees the newly fetched objects.
+            repo.odb()?.refresh()?;
+
+            // Collect target branches from @changes/... head refs and fetch their tips.
+            let mut target_branch_shas: std::collections::HashMap<String, git2::Oid> =
+                std::collections::HashMap::new();
+            {
+                let mut seen_targets: std::collections::HashSet<&str> =
+                    std::collections::HashSet::new();
+                for pr in &prs {
+                    if let Some(target) = parse_changes_target(&pr.head_ref_name) {
+                        if seen_targets.insert(target) {
+                            let refspec = format!("refs/heads/{}", target);
+                            let fetch_args: Vec<&str> =
+                                vec!["fetch", &github_url, "--no-tags", &refspec];
+                            josh_core::git::spawn_git_command(repo.path(), &fetch_args, &[])
+                                .with_context(|| {
+                                    format!("Failed to fetch target branch {}", target)
+                                })?;
+                            let output = std::process::Command::new("git")
+                                .args(["rev-parse", "FETCH_HEAD"])
+                                .current_dir(repo.path())
+                                .output()
+                                .with_context(
+                                    || "Failed to resolve FETCH_HEAD after target branch fetch",
+                                )?;
+                            let sha_str = String::from_utf8(output.stdout)?.trim().to_string();
+                            let oid = git2::Oid::from_str(&sha_str)?;
+                            target_branch_shas.insert(target.to_string(), oid);
+                        }
+                    }
+                }
+            }
+            if !target_branch_shas.is_empty() {
+                repo.odb()?.refresh()?;
+            }
+
+            let mut total_comments = 0usize;
+            let mut synced = 0usize;
+            let mut skipped = 0usize;
+
+            for pr in &prs {
+                let (existing_change_id, _) =
+                    josh_changes::parse_change_meta(&pr.head_commit_message);
+
+                let head_oid = match git2::Oid::from_str(&pr.head_oid) {
+                    Ok(o) => o,
+                    Err(e) => {
+                        eprintln!("PR #{}: bad head OID: {}", pr.number, e);
+                        skipped += 1;
+                        continue;
+                    }
+                };
+
+                let pr_head = match repo.find_commit(head_oid) {
+                    Ok(c) => c,
+                    Err(_) => {
+                        eprintln!(
+                            "PR #{}: head commit {} not available from GitHub — skipping",
+                            pr.number, pr.head_oid
+                        );
+                        skipped += 1;
+                        continue;
+                    }
+                };
+
+                let base_oid = match git2::Oid::from_str(&pr.base_ref_oid) {
+                    Ok(o) => o,
+                    Err(e) => {
+                        eprintln!("PR #{}: bad base OID: {}", pr.number, e);
+                        skipped += 1;
+                        continue;
+                    }
+                };
+
+                let target = match repo.find_commit(base_oid) {
+                    Ok(c) => c,
+                    Err(_) => {
+                        eprintln!(
+                            "PR #{}: base commit {} not available from GitHub — skipping",
+                            pr.number, pr.base_ref_oid
+                        );
+                        skipped += 1;
+                        continue;
+                    }
+                };
+
+                if let Some(ref cid) = existing_change_id {
+                    println!("PR #{}: head commit has change-id '{}'", pr.number, cid);
+                } else {
+                    println!(
+                        "PR #{}{}: creating synthetic merge commit",
+                        pr.number,
+                        if pr.title.is_empty() {
+                            String::new()
+                        } else {
+                            format!(" ({})", &pr.title)
+                        }
+                    );
+                }
+
+                let result = (|| -> anyhow::Result<(josh_changes::Change, i64)> {
+                    let change = if existing_change_id.is_some() {
+                        let mut change = josh_changes::Change::new(repo, &pr_head);
+                        let base = match parse_changes_target(&pr.head_ref_name)
+                            .and_then(|t| target_branch_shas.get(t))
+                        {
+                            Some(tip) => repo.merge_base(*tip, pr_head.id())?,
+                            None => repo.merge_base(target.id(), pr_head.id())?,
+                        };
+                        change.set_base(base);
+                        change
+                    } else {
+                        let change_id = format!("{}/{}/pull/{}", owner, repo_name, pr.number);
+                        let mut message = pr.title.clone();
+                        if !pr.body.is_empty() {
+                            message.push_str("\n\n");
+                            message.push_str(&pr.body);
+                        }
+                        message.push_str(&format!("\n\nChange-Id: {}\n", change_id));
+
+                        let merge_oid = josh_changes::create_synthetic_merge_commit(
+                            repo, &pr_head, &target, &message,
+                        )?;
+
+                        let merge = repo.find_commit(merge_oid)?;
+                        let mut change = josh_changes::Change::new(repo, &merge);
+                        change.set_base(target.id());
+                        change
+                    };
+
+                    josh_changes::store_diff_data(repo, &change)?;
+                    Ok((change, pr.number))
+                })();
+
+                match result {
+                    Ok((change, pr_number)) => {
+                        match josh_github_changes::sync_change_comments_by_pr_number(
+                            &api, &owner, &repo_name, repo, &change, pr_number,
+                        )
+                        .await
+                        {
+                            Ok(n) => {
+                                total_comments += n;
+                                synced += 1;
+                                println!("  PR #{}: synced {} comments", pr.number, n);
+                            }
+                            Err(e) => {
+                                eprintln!("PR #{}: {} — skipping", pr.number, e);
+                                skipped += 1;
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("PR #{}: {} — skipping", pr.number, e);
+                        skipped += 1;
+                    }
+                }
+            }
+
+            println!(
+                "Synced {} comments across {} PRs ({} skipped).",
+                total_comments, synced, skipped
+            );
+            Ok::<_, anyhow::Error>(())
+        })?;
+    } else {
+        let changes = josh_changes::sync_changes(repo, head.id(), base_oid)?;
+        if changes.is_empty() {
+            println!("No local changes found.");
+            return Ok(());
+        }
+    }
 
     Ok(())
+}
+
+/// Extract the target branch name from a `@changes/<target>/<author>/<change-id>` ref name.
+fn parse_changes_target(head_ref_name: &str) -> Option<&str> {
+    let name = head_ref_name
+        .strip_prefix("refs/heads/@changes/")
+        .or_else(|| head_ref_name.strip_prefix("@changes/"))?;
+    let mut end = 0;
+    for part in name.split('/') {
+        if part.contains('@') {
+            return Some(&name[..end].trim_end_matches('/'));
+        }
+        end += part.len() + 1;
+    }
+    None
 }
