@@ -822,30 +822,14 @@ fn build_diff_with_comments(
         .iter()
         .filter(|c| c.file.as_deref() == Some(file_path))
         .collect();
-    let top_comments: Vec<&josh_changes::Comment> =
-        comments.iter().filter(|c| c.file.is_none()).collect();
-
-    if matching.is_empty() && top_comments.is_empty() {
+    if matching.is_empty() {
         return lines.iter().map(|l| DiffItem::Line(l.clone())).collect();
     }
 
     let all_comment_indices: Vec<usize> = (0..comments.len()).collect();
 
-    // Flatten top-level (no file) comments.
-    let mut flat: Vec<(u32, FlatComment)> = Vec::new();
-    {
-        let roots: Vec<usize> = all_comment_indices
-            .iter()
-            .filter(|&&i| {
-                let c = &comments[i];
-                c.file.is_none() && c.reply_to.is_none()
-            })
-            .copied()
-            .collect();
-        flatten_thread(comments, &roots, 0, 0, &mut flat);
-    }
-
     // Flatten per-file comments, keyed by start_line.
+    let mut flat: Vec<(u32, FlatComment)> = Vec::new();
     let file_indices: Vec<usize> = all_comment_indices
         .iter()
         .filter(|&&i| comments[i].file.as_deref() == Some(file_path))
@@ -873,14 +857,6 @@ fn build_diff_with_comments(
 
     let mut inserted = vec![false; flat.len()];
     let mut items: Vec<DiffItem> = Vec::new();
-
-    // Emit top-level comments first.
-    for (fi, (target, _)) in flat.iter().enumerate() {
-        if *target == 0 {
-            inserted[fi] = true;
-            items.push(DiffItem::Comment(flat[fi].1.clone()));
-        }
-    }
 
     // Walk diff lines; insert comments after matching lines.
     for line in lines {
