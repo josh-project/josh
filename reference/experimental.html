@@ -35,10 +35,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-ecba0dd7.js";
+            window.path_to_searchindex_js = "../searchindex-c7cf0d41.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-bacb8355.js"></script>
+        <script src="../toc-0f81f139.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -201,20 +201,20 @@ containing the object’s SHA-1 hash. This turns a real file or tree into a ligh
 <p>If <code>path</code> does not exist in the input tree, the filter is a no-op.</p>
 <p>Example: <code>:&amp;sub1</code> on a commit where <code>sub1</code> is a directory produces a file <code>sub1</code> whose content
 is the 40-character SHA of that directory tree.</p>
-<h3 id="object-dereference-path"><a class="header" href="#object-dereference-path">Object dereference <strong><code>:*path</code></strong></a></h3>
+<h3 id="object-dereference-path"><a class="header" href="#object-dereference-path">Object dereference <strong><code>:#path</code></strong></a></h3>
 <p>Reads the SHA-1 hash stored as text in the file at <code>path</code> and replaces that file with the git
 object the hash points to (a file or a directory tree). This follows the pointer written by
 <code>:&amp;path</code>.</p>
 <p>If <code>path</code> does not exist the filter is a no-op. If the content is not a valid SHA or the object
 is not present in the repository, an error is returned.</p>
-<p>Example: given a file <code>sub1</code> whose content is the SHA of a directory tree, <code>:*sub1</code> replaces
+<p>Example: given a file <code>sub1</code> whose content is the SHA of a directory tree, <code>:#sub1</code> replaces
 that file with the actual directory tree at <code>sub1</code>.</p>
-<h3 id="object-dereference-into-subdirectory-path"><a class="header" href="#object-dereference-into-subdirectory-path">Object dereference into subdirectory <strong><code>:*/path</code></strong></a></h3>
+<h3 id="object-dereference-into-subdirectory-path"><a class="header" href="#object-dereference-into-subdirectory-path">Object dereference into subdirectory <strong><code>:#/path</code></strong></a></h3>
 <p>Dereferences the pointer stored at <code>path</code> and then extracts the resulting object directly at the
 repository root, discarding the <code>path</code> prefix. This is the typical way to restore content that
 was previously stored with <code>:&amp;path</code>.</p>
-<p>Expands to <code>:*path:/path</code>. The canonical printed form is the expanded syntax.</p>
-<p>Example: <code>:*/sub1</code> on a tree where <code>sub1</code> holds a SHA of a directory returns that directory’s
+<p>Expands to <code>:#path:/path</code>. The canonical printed form is the expanded syntax.</p>
+<p>Example: <code>:#/sub1</code> on a tree where <code>sub1</code> holds a SHA of a directory returns that directory’s
 contents at the root, as if <code>sub1</code> never existed.</p>
 <h3 id="tree-id-capture-pathfilter"><a class="header" href="#tree-id-capture-pathfilter">Tree ID capture <strong><code>:#path[filter]</code></strong></a></h3>
 <p>Applies <code>filter</code> to the current tree and writes the SHA-1 hash of the resulting tree as a text

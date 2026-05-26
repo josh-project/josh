@@ -35,10 +35,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-ecba0dd7.js";
+            window.path_to_searchindex_js = "../searchindex-c7cf0d41.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-bacb8355.js"></script>
+        <script src="../toc-0f81f139.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -449,6 +449,48 @@ josh cache fetch
 <p><strong>Note:</strong> The distributed cache is currently only available through the <code>josh</code> CLI.
 It is not yet supported by <code>josh-proxy</code>.</p>
 </blockquote>
+<hr>
+<h2 id="josh-compose-run"><a class="header" href="#josh-compose-run">josh compose run</a></h2>
+<blockquote>
+<p><strong>Experimental:</strong> requires <code>JOSH_EXPERIMENTAL_FEATURES=1</code>.</p>
+</blockquote>
+<p>Run a workspace in an isolated, automatically-cached container. See
+<a href="../contributing/josh-run.html">josh compose run</a> for full documentation.</p>
+<pre><code>josh compose run [OPTIONS] [REFERENCE] [FILTER]
+</code></pre>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Argument</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>[REFERENCE]</code></td><td>Git ref to build from: <code>.</code> (working tree), <code>+</code> (index), <code>HEAD</code>, or any ref (default: <code>.</code>)</td></tr>
+<tr><td><code>[FILTER]</code></td><td>Filter selecting the workspace to run (default: <code>:+compose</code>, reads <code>compose.josh</code> in the repo root)</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Options:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Flag</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>--clean</code></td><td>Remove cached images and output volumes</td></tr>
+<tr><td><code>--clean-all</code></td><td>Remove cached images, output volumes, and persistent cache volumes</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Examples:</strong></p>
+<pre><code class="language-shell"># Run the default workspace defined in compose.josh
+josh compose run
+
+# Run the test workspace against the working tree
+josh compose run . :+ws/test
+
+# Run using only staged changes
+josh compose run + :+ws/test
+</code></pre>
 <hr>
 <h2 id="josh-filter-standalone-binary"><a class="header" href="#josh-filter-standalone-binary">josh-filter (standalone binary)</a></h2>
 <p><code>josh-filter</code> is a lower-level command that rewrites git history using Josh filter specs.

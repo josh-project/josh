@@ -36,10 +36,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-ecba0dd7.js";
+            window.path_to_searchindex_js = "searchindex-c7cf0d41.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-bacb8355.js"></script>
+        <script src="toc-0f81f139.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -1152,6 +1152,48 @@ josh cache fetch
 It is not yet supported by <code>josh-proxy</code>.</p>
 </blockquote>
 <hr>
+<h2 id="josh-compose-run"><a class="header" href="#josh-compose-run">josh compose run</a></h2>
+<blockquote>
+<p><strong>Experimental:</strong> requires <code>JOSH_EXPERIMENTAL_FEATURES=1</code>.</p>
+</blockquote>
+<p>Run a workspace in an isolated, automatically-cached container. See
+<a href="#josh-compose-run-1">josh compose run</a> for full documentation.</p>
+<pre><code>josh compose run [OPTIONS] [REFERENCE] [FILTER]
+</code></pre>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Argument</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>[REFERENCE]</code></td><td>Git ref to build from: <code>.</code> (working tree), <code>+</code> (index), <code>HEAD</code>, or any ref (default: <code>.</code>)</td></tr>
+<tr><td><code>[FILTER]</code></td><td>Filter selecting the workspace to run (default: <code>:+compose</code>, reads <code>compose.josh</code> in the repo root)</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Options:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Flag</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>--clean</code></td><td>Remove cached images and output volumes</td></tr>
+<tr><td><code>--clean-all</code></td><td>Remove cached images, output volumes, and persistent cache volumes</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Examples:</strong></p>
+<pre><code class="language-shell"># Run the default workspace defined in compose.josh
+josh compose run
+
+# Run the test workspace against the working tree
+josh compose run . :+ws/test
+
+# Run using only staged changes
+josh compose run + :+ws/test
+</code></pre>
+<hr>
 <h2 id="josh-filter-standalone-binary"><a class="header" href="#josh-filter-standalone-binary">josh-filter (standalone binary)</a></h2>
 <p><code>josh-filter</code> is a lower-level command that rewrites git history using Josh filter specs.
 It is intended for scripting and one-off history rewriting tasks rather than day-to-day
@@ -1548,20 +1590,20 @@ containing the object’s SHA-1 hash. This turns a real file or tree into a ligh
 <p>If <code>path</code> does not exist in the input tree, the filter is a no-op.</p>
 <p>Example: <code>:&amp;sub1</code> on a commit where <code>sub1</code> is a directory produces a file <code>sub1</code> whose content
 is the 40-character SHA of that directory tree.</p>
-<h3 id="object-dereference-path"><a class="header" href="#object-dereference-path">Object dereference <strong><code>:*path</code></strong></a></h3>
+<h3 id="object-dereference-path"><a class="header" href="#object-dereference-path">Object dereference <strong><code>:#path</code></strong></a></h3>
 <p>Reads the SHA-1 hash stored as text in the file at <code>path</code> and replaces that file with the git
 object the hash points to (a file or a directory tree). This follows the pointer written by
 <code>:&amp;path</code>.</p>
 <p>If <code>path</code> does not exist the filter is a no-op. If the content is not a valid SHA or the object
 is not present in the repository, an error is returned.</p>
-<p>Example: given a file <code>sub1</code> whose content is the SHA of a directory tree, <code>:*sub1</code> replaces
+<p>Example: given a file <code>sub1</code> whose content is the SHA of a directory tree, <code>:#sub1</code> replaces
 that file with the actual directory tree at <code>sub1</code>.</p>
-<h3 id="object-dereference-into-subdirectory-path"><a class="header" href="#object-dereference-into-subdirectory-path">Object dereference into subdirectory <strong><code>:*/path</code></strong></a></h3>
+<h3 id="object-dereference-into-subdirectory-path"><a class="header" href="#object-dereference-into-subdirectory-path">Object dereference into subdirectory <strong><code>:#/path</code></strong></a></h3>
 <p>Dereferences the pointer stored at <code>path</code> and then extracts the resulting object directly at the
 repository root, discarding the <code>path</code> prefix. This is the typical way to restore content that
 was previously stored with <code>:&amp;path</code>.</p>
-<p>Expands to <code>:*path:/path</code>. The canonical printed form is the expanded syntax.</p>
-<p>Example: <code>:*/sub1</code> on a tree where <code>sub1</code> holds a SHA of a directory returns that directory’s
+<p>Expands to <code>:#path:/path</code>. The canonical printed form is the expanded syntax.</p>
+<p>Example: <code>:#/sub1</code> on a tree where <code>sub1</code> holds a SHA of a directory returns that directory’s
 contents at the root, as if <code>sub1</code> never existed.</p>
 <h3 id="tree-id-capture-pathfilter"><a class="header" href="#tree-id-capture-pathfilter">Tree ID capture <strong><code>:#path[filter]</code></strong></a></h3>
 <p>Applies <code>filter</code> to the current tree and writes the SHA-1 hash of the resulting tree as a text
@@ -2134,6 +2176,218 @@ cargo build --manifest-path josh-proxy/Cargo.toml
 <li><a href="https://rustup.rs/">Rust</a></li>
 <li><a href="https://rustup.rs/">Cargo</a></li>
 </ul>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="josh-compose-run-1"><a class="header" href="#josh-compose-run-1">josh compose run</a></h1>
+<p><code>josh compose run</code> is an experimental <code>josh</code> CLI subcommand that runs workspaces in isolated,
+automatically-cached containers. It is used to build the josh binaries and run the integration
+test suite.</p>
+<blockquote>
+<p><strong>Note:</strong> <code>josh compose run</code> is experimental and requires <code>JOSH_EXPERIMENTAL_FEATURES=1</code> to be set
+in the environment.</p>
+</blockquote>
+<h2 id="motivation"><a class="header" href="#motivation">Motivation</a></h2>
+<p>A common problem with monorepo builds is that the container context contains the entire repository — thousands of files most builds don’t need. This has two consequences:</p>
+<ol>
+<li><strong>Fragile caching.</strong> Docker and podman derive cache tags from the context contents. Any file touched anywhere in the repo can break the cache even if the build doesn’t use that file.</li>
+<li><strong>Hidden dependencies.</strong> If a build silently reads a file that “happens to be there”, it works locally but may break in a clean environment or for another team member.</li>
+</ol>
+<p><code>josh compose run</code> addresses both problems by filtering the repository to exactly the files a given workspace needs before any container is involved:</p>
+<ul>
+<li>The filtered tree’s git SHA becomes the cache key. Only changes to files actually included in the workspace invalidate the cache.</li>
+<li>The container sees only what the workspace definition explicitly includes — files outside the workspace are structurally impossible to access.</li>
+<li>The host working tree is never modified. Artifacts produced by the container are stored in a podman volume and exported back when the run completes.</li>
+</ul>
+<h2 id="prerequisites"><a class="header" href="#prerequisites">Prerequisites</a></h2>
+<ul>
+<li>
+<p><strong>podman</strong> installed and on <code>$PATH</code></p>
+</li>
+<li>
+<p><strong>josh</strong> installed and on <code>$PATH</code>:</p>
+</li>
+<li>
+<p><code>JOSH_EXPERIMENTAL_FEATURES=1</code> set in your environment</p>
+<pre><code class="language-sh">cargo install josh-cli --locked --git https://github.com/josh-project/josh.git
+</code></pre>
+</li>
+</ul>
+<h2 id="quick-start"><a class="header" href="#quick-start">Quick start</a></h2>
+<p>All commands are run from the root of the josh repository.</p>
+<h3 id="run-all-tests"><a class="header" href="#run-all-tests">Run all tests</a></h3>
+<pre><code class="language-sh">josh compose run
+</code></pre>
+<p>With no arguments, <code>josh compose run</code> looks for a <code>compose.josh</code> file in the repository root and uses it as the filter. In this repo, <code>compose.josh</code> points to <code>ws/test.josh</code>, so <code>josh compose run</code> runs the full test suite.</p>
+<h3 id="run-a-specific-workspace"><a class="header" href="#run-a-specific-workspace">Run a specific workspace</a></h3>
+<pre><code class="language-sh">josh compose run . :+ws/build-rust
+</code></pre>
+<h3 id="use-the-staged-index-instead-of-the-working-tree"><a class="header" href="#use-the-staged-index-instead-of-the-working-tree">Use the staged index instead of the working tree</a></h3>
+<pre><code class="language-sh">josh compose run + :+ws/test
+</code></pre>
+<h3 id="build-from-the-last-commit-ignoring-local-changes"><a class="header" href="#build-from-the-last-commit-ignoring-local-changes">Build from the last commit (ignoring local changes)</a></h3>
+<pre><code class="language-sh">josh compose run HEAD :+ws/test
+</code></pre>
+<h2 id="syntax-1"><a class="header" href="#syntax-1">Syntax</a></h2>
+<pre><code>josh compose run [OPTIONS] [REFERENCE] [FILTER]
+</code></pre>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Argument</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>[REFERENCE]</code></td><td>Git ref to build from. Defaults to <code>.</code> (working tree).</td></tr>
+<tr><td><code>[FILTER]</code></td><td>Josh filter selecting the workspace to run. Defaults to <code>:+compose</code> (reads <code>compose.josh</code>).</td></tr>
+</tbody>
+</table>
+</div>
+<h3 id="reference-values"><a class="header" href="#reference-values"><code>[REFERENCE]</code> values</a></h3>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Value</th><th>Meaning</th></tr>
+</thead>
+<tbody>
+<tr><td><code>.</code> (default)</td><td>Working tree, including uncommitted changes</td></tr>
+<tr><td><code>+</code></td><td>Staged files only (git index). Useful to test exactly what you have <code>git add</code>ed.</td></tr>
+<tr><td><code>HEAD</code></td><td>Last commit, ignoring any local changes. Useful for clean builds or before/after comparisons.</td></tr>
+<tr><td>Any git ref or SHA</td><td>Build from that specific commit.</td></tr>
+</tbody>
+</table>
+</div>
+<h3 id="options"><a class="header" href="#options">Options</a></h3>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Flag</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>--clean</code></td><td>Remove cached images and output volumes</td></tr>
+<tr><td><code>--clean-all</code></td><td>Remove cached images, output volumes, and persistent cache volumes</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="inspecting-test-results"><a class="header" href="#inspecting-test-results">Inspecting test results</a></h2>
+<p>Near the start of the output, <code>josh compose run</code> prints the <code>WS_TREE</code> SHA:</p>
+<pre><code>WS_TREE: abc123def456...
+</code></pre>
+<p>The prysk-updated <code>.t</code> test files (showing diffs for any failures) are stored in the podman volume <code>out_&lt;WS_TREE&gt;</code> under <code>tests/</code>, not in the working directory.</p>
+<pre><code class="language-sh"># List all test result files
+podman volume export out_&lt;WS_TREE&gt; | tar -tvf - tests/
+
+# Print a specific test file to stdout
+podman volume export out_&lt;WS_TREE&gt; | tar -xOf - tests/filter/foo.t
+</code></pre>
+<p>For failing tests the prysk diff format shows: the shell command that failed, the expected output (indented two spaces), and the actual output (preceded by <code>+</code>).</p>
+<p>The final lines of output report the overall result:</p>
+<pre><code># Ran N tests, M skipped, K failed.
+SUCCESS: &lt;safe-name&gt;
+</code></pre>
+<p>or</p>
+<pre><code>FAILED: &lt;safe-name&gt;
+</code></pre>
+<h2 id="cache-behavior"><a class="header" href="#cache-behavior">Cache behavior</a></h2>
+<p>Each run produces a podman volume named <code>out_&lt;WS_TREE&gt;</code>. Successful runs are also recorded under <code>.josh/success/&lt;WS_TREE&gt;</code>. A cached result is reused only when that success marker is present and, for workspaces that keep output, the matching <code>out_&lt;WS_TREE&gt;</code> volume still exists. The cache key is the git SHA of the filtered workspace tree, so:</p>
+<ul>
+<li>Changing any file included in the workspace automatically produces a new SHA and bypasses the cache.</li>
+<li>Changing unrelated files has no effect on the cache.</li>
+<li>Two developers with identical workspace contents share the same cache key (useful if volumes are shared via a registry).</li>
+</ul>
+<h3 id="forcing-a-re-run"><a class="header" href="#forcing-a-re-run">Forcing a re-run</a></h3>
+<p>To re-run without changing source files, remove the output volume manually:</p>
+<pre><code class="language-sh"># Find the relevant volume
+podman volume ls | grep out_
+
+# Remove it
+podman volume rm out_&lt;sha&gt;
+</code></pre>
+<p>Alternatively, use <code>josh compose run --clean</code> to remove all cached images and output volumes, or <code>--clean-all</code> to also remove persistent cache volumes (e.g. the Cargo registry cache).</p>
+<h3 id="clearing-all-output-volumes"><a class="header" href="#clearing-all-output-volumes">Clearing all output volumes</a></h3>
+<pre><code class="language-sh">podman volume ls -q | grep '^out_' | xargs podman volume rm
+</code></pre>
+<h2 id="workspace-definitions"><a class="header" href="#workspace-definitions">Workspace definitions</a></h2>
+<p>A workspace is defined by a <code>.josh</code> file, typically under <code>ws/</code>. The file uses josh filter expressions to declare what the workspace needs and how to run it.</p>
+<h3 id="workspace-keys"><a class="header" href="#workspace-keys">Workspace keys</a></h3>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Key</th><th>Purpose</th></tr>
+</thead>
+<tbody>
+<tr><td><code>:#image[:+path/to/image]</code></td><td>Container image workspace to build from</td></tr>
+<tr><td><code>:$label="..."</code></td><td>Human-readable label shown in output</td></tr>
+<tr><td><code>:$cmd="..."</code></td><td>Command to run inside the container</td></tr>
+<tr><td><code>:$cache="name"</code></td><td>Persistent podman volume mounted at <code>/opt/cache</code> (e.g. for Cargo’s registry)</td></tr>
+<tr><td><code>:$output="none"</code></td><td>Disable output volume (run produces no extracted artifacts)</td></tr>
+<tr><td><code>:$network="host"</code></td><td>Container network mode</td></tr>
+<tr><td><code>worktree = :[...]</code></td><td>Files placed in the container’s working directory</td></tr>
+<tr><td><code>inputs = :[...]</code></td><td>Dependency workspaces; each named entry is run first and its output is mounted inside the container</td></tr>
+<tr><td><code>env = :[...]</code></td><td>Environment variables injected into the container</td></tr>
+</tbody>
+</table>
+</div>
+<h3 id="example-wsfetchjosh"><a class="header" href="#example-wsfetchjosh">Example: <code>ws/fetch.josh</code></a></h3>
+<pre><code>:$label="cargo fetch"
+:#image[:+images/dev-local]
+:$cache="rust"
+:$network="host"
+
+:$cmd="cargo fetch --locked"
+
+worktree = :[
+    ::**/Cargo.toml
+    ::**/Cargo.lock
+    ::**/rust-toolchain.toml
+    ::**/lib.rs
+    ::**/main.rs
+]
+</code></pre>
+<p>This workspace fetches Cargo dependencies into a persistent cache volume. Only the files needed to resolve the dependency graph are included, so the cache is invalidated only when those files change.</p>
+<h3 id="example-wsbuild-rustjosh"><a class="header" href="#example-wsbuild-rustjosh">Example: <code>ws/build-rust.josh</code></a></h3>
+<pre><code>:$label="rust build"
+:#image[:+images/dev-local]
+:$cache="rust"
+
+inputs = :[
+    :#fetch[:+ws/fetch]
+]
+
+env = :[
+    ::JOSH_VERSION=VERSION_STRING
+]
+
+worktree = :[
+    ::run.sh=ws/build-rust.sh
+    ::Cargo.toml
+    ::Cargo.lock
+    ::rust-toolchain.toml
+    ::josh-*/
+    ::forges/
+]
+</code></pre>
+<p>This workspace:</p>
+<ul>
+<li>Declares <code>ws/fetch</code> as an input dependency; its output (the populated Cargo cache) is mounted before the build runs.</li>
+<li>Injects the <code>JOSH_VERSION</code> environment variable from the <code>VERSION_STRING</code> file.</li>
+<li>Places <code>ws/build-rust.sh</code> into the container as <code>run.sh</code> (the entrypoint).</li>
+<li>Includes only the source trees needed to compile.</li>
+</ul>
+<h2 id="creating-a-new-workspace"><a class="header" href="#creating-a-new-workspace">Creating a new workspace</a></h2>
+<ol>
+<li>
+<p><strong>Write a <code>.josh</code> file</strong> under <code>ws/</code>. Declare at minimum an <code>:#image[...]</code> reference and a <code>worktree</code> subtree containing the files your build needs.</p>
+</li>
+<li>
+<p><strong>Write the entrypoint</strong> either as a <code>run.sh</code> in the worktree or via <code>:$cmd="..."</code>. Place any outputs you want extracted under <code>/out</code> inside the container (unless <code>:$output="none"</code>).</p>
+</li>
+<li>
+<p><strong>Run it:</strong></p>
+<pre><code class="language-sh">josh compose run . :+ws/my-workspace
+</code></pre>
+</li>
+<li>
+<p><strong>Add dependencies</strong> via <code>inputs = :[...]</code> if your workspace needs the output of another workspace. Each named entry in <code>inputs</code> is run first and its output volume is mounted at <code>/&lt;name&gt;</code> inside the container.</p>
+</li>
+</ol>
 
                     </main>
 
