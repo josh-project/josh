@@ -410,6 +410,15 @@ fn file_diff_view(sha: String, path: String, mut page: Signal<Page>) -> Element 
     let mut scroll_offset = use_signal(|| 0usize);
     let mut selected_line = use_signal(|| None::<usize>);
 
+    // Reset scroll position when navigating to a different file
+    let mut last_path = use_signal(|| String::new());
+    let current_file = format!("{}:{}", sha, path);
+    if *last_path.read() != current_file {
+        scroll_offset.set(0);
+        selected_line.set(None);
+        last_path.set(current_file);
+    }
+
     match &all_lines {
         Err(e) => rsx! {
             p { class: "error", "Error: {e}" }
