@@ -251,6 +251,22 @@ fn detail_view(sha: String, mut page: Signal<Page>) -> Element {
                     div { class: "detail-right",
                         h2 { "Changed files" }
                         p { class: "diff-summary", "{stats_total}" }
+                        {
+                            let top_roots: Vec<&josh_changes::Comment> = data
+                                .comments
+                                .iter()
+                                .filter(|c| c.file.is_none() && c.reply_to.is_none())
+                                .collect();
+                            if !top_roots.is_empty() {
+                                rsx! {
+                                    div { class: "file-comments",
+                                        {render_threads(&data.comments, &top_roots, 0)}
+                                    }
+                                }
+                            } else {
+                                rsx! {}
+                            }
+                        }
                         table { class: "files",
                             thead {
                                 tr {
@@ -264,6 +280,13 @@ fn detail_view(sha: String, mut page: Signal<Page>) -> Element {
                                     {
                                         let s = data.sha.clone();
                                         let p = f.path.clone();
+                                        let file_roots: Vec<&josh_changes::Comment> = data
+                                            .comments
+                                            .iter()
+                                            .filter(|c| c.file.as_deref() == Some(p.as_str())
+                                                && c.reply_to.is_none())
+                                            .collect();
+                                        let has_comments = !file_roots.is_empty();
                                         rsx! {
                                             tr {
                                                 class: "file-row",
@@ -275,26 +298,25 @@ fn detail_view(sha: String, mut page: Signal<Page>) -> Element {
                                                 td { class: "num adds", "{f.adds}" }
                                                 td { class: "num dels", "{f.dels}" }
                                             }
+                                            if has_comments {
+                                                tr {
+                                                    class: "file-comment-row",
+                                                    td { colspan: "3",
+                                                        div { class: "file-comments",
+                                                            {render_threads(
+                                                                &data.comments,
+                                                                &file_roots,
+                                                                0,
+                                                            )}
+                                                        }
+                                                    }
+                                                }
+                                            }
                                         }
                                     }
                                 }
                             }
-                    }
-                    if !data.comments.is_empty() {
-                        div { class: "detail-comments",
-                            h2 { "Comments" }
-                            div { class: "comments",
-                                {
-                                    let roots: Vec<&josh_changes::Comment> = data
-                                        .comments
-                                        .iter()
-                                        .filter(|c| c.reply_to.is_none())
-                                        .collect();
-                                    render_threads(&data.comments, &roots, 0)
-                                }
-                            }
                         }
-                    }
                     }
                 }
             }
@@ -554,15 +576,7 @@ fn file_diff_view(sha: String, path: String, mut page: Signal<Page>) -> Element 
                                                             div {
                                                                 class: "diff-comment-inline",
                                                                 style: "margin-left: {indent}px",
-                                                                div { class: "comment-header",
-                                                                    if !author.is_empty() {
-                                                                        span { class: "comment-author", "{author}" }
-                                                                    }
-                                                                    if !ts.is_empty() {
-                                                                        span { class: "comment-ts", " {ts}" }
-                                                                    }
-                                                                }
-                                                                pre { class: "comment-body", "{flat.comment.message}" }
+                                                                {render_comment_card(&author, &ts, &flat.comment.message)}
                                                             }
                                                         }
                                                     }
@@ -852,6 +866,20 @@ fn build_diff_with_comments(
     items
 }
 
+fn render_comment_card(author: &str, ts: &str, message: &str) -> Element {
+    rsx! {
+        div { class: "comment-header",
+            if !author.is_empty() {
+                span { class: "comment-author", "{author}" }
+            }
+            if !ts.is_empty() {
+                span { class: "comment-ts", " {ts}" }
+            }
+        }
+        pre { class: "comment-body", "{message}" }
+    }
+}
+
 fn render_threads(
     all: &[josh_changes::Comment],
     comments: &[&josh_changes::Comment],
@@ -865,34 +893,21 @@ fn render_threads(
                 .filter(|x| x.reply_to.as_deref() == Some(&c.id))
                 .collect();
             let indent = depth * 16;
+            let author = c.author.as_deref().unwrap_or_default();
+            let ts = c
+                .timestamp
+                .as_deref()
+                .and_then(|s| {
+                    s.parse::<i64>()
+                        .ok()
+                        .and_then(|secs| chrono::DateTime::from_timestamp(secs, 0))
+                })
+                .map(|dt| dt.format("%Y-%m-%d %H:%M").to_string())
+                .unwrap_or_default();
             rsx! {
                 div { style: "margin-left: {indent}px",
-                    div { class: "comment",
-                        div { class: "comment-header",
-                            if let Some(ref author) = c.author {
-                                span { class: "comment-author", "{author}" }
-                            }
-                            if let Some(ref ts) = c.timestamp {
-                                {
-                                    let formatted = ts
-                                        .parse::<i64>()
-                                        .ok()
-                                        .and_then(|s| {
-                                            chrono::DateTime::from_timestamp(s, 0)
-                                                .map(|dt| dt.format("%Y-%m-%d %H:%M").to_string())
-                                        })
-                                        .unwrap_or_else(|| ts.clone());
-                                    rsx! { span { class: "comment-ts", " {formatted}" } }
-                                }
-                            }
-                        }
-                        pre { class: "comment-body", "{c.message}" }
-                        if let Some(ref f) = c.file {
-                            span { class: "comment-meta", "{f}" }
-                            if let Some(ref loc) = c.location {
-                                span { class: "comment-meta", ":{loc.start_line}" }
-                            }
-                        }
+                    div { class: "diff-comment-inline",
+                        {render_comment_card(author, &ts, &c.message)}
                     }
                     {render_threads(all, &children, depth + 1)}
                 }
