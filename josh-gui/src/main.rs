@@ -357,8 +357,9 @@ fn detail_view(sha: String, mut page: Signal<Page>) -> Element {
 }
 
 fn file_diff_view(sha: String, path: String, mut page: Signal<Page>) -> Element {
-    let detail = load_detail(&sha);
+    let detail = use_signal(|| load_detail(&sha));
     let (prev_file, next_file) = detail
+        .read()
         .as_ref()
         .ok()
         .and_then(|d| {
@@ -409,6 +410,8 @@ fn file_diff_view(sha: String, path: String, mut page: Signal<Page>) -> Element 
     let all_lines = load_file_diff(&sha, &path, ctx);
     let mut scroll_offset = use_signal(|| 0usize);
     let mut selected_line = use_signal(|| None::<usize>);
+    let mut commenting = use_signal(|| false);
+    let mut comment_text = use_signal(|| String::new());
 
     // Reset scroll position when navigating to a different file
     let mut last_path = use_signal(|| String::new());
@@ -416,6 +419,8 @@ fn file_diff_view(sha: String, path: String, mut page: Signal<Page>) -> Element 
     if *last_path.read() != current_file {
         scroll_offset.set(0);
         selected_line.set(None);
+        commenting.set(false);
+        comment_text.set("".to_string());
         last_path.set(current_file);
     }
 
@@ -425,6 +430,7 @@ fn file_diff_view(sha: String, path: String, mut page: Signal<Page>) -> Element 
         },
         Ok(lines) => {
             let comments: Vec<josh_changes::Comment> = detail
+                .read()
                 .as_ref()
                 .ok()
                 .map(|d| d.comments.clone())
@@ -498,6 +504,26 @@ fn file_diff_view(sha: String, path: String, mut page: Signal<Page>) -> Element 
                                 oninput: move |e| show_all.set(e.checked()),
                             }
                             " Show all"
+                        }
+                        {
+                            let ln = selected_file_line(&items, *selected_line.read());
+                            rsx! {
+                                button {
+                                    class: "nav-btn",
+                                    disabled: ln.is_none() || *commenting.read(),
+                                    onclick: move |_| {
+                                        if ln.is_some() {
+                                            commenting.set(true);
+                                            comment_text.set("".to_string());
+                                        }
+                                    },
+                                    if let Some(n) = ln {
+                                        "Comment on line {n}"
+                                    } else {
+                                        "Select a line to comment"
+                                    }
+                                }
+                            }
                         }
                     }
                     div {
@@ -636,6 +662,73 @@ fn file_diff_view(sha: String, path: String, mut page: Signal<Page>) -> Element 
                             }
                         }
                     }
+                    if *commenting.read() {
+                        {
+                            let ln = selected_file_line(&items, *selected_line.read());
+                            let sha_for_save = sha.clone();
+                            let path_for_save = path.clone();
+                            rsx! {
+                                div { class: "comment-form",
+                                    div { class: "comment-form-header",
+                                        if let Some(n) = ln {
+                                            "Commenting on line {n} of {path_for_save}"
+                                        }
+                                    }
+                                    textarea {
+                                        class: "comment-input",
+                                        placeholder: "Write your comment...",
+                                        value: "{comment_text}",
+                                        autofocus: true,
+                                        oninput: move |e| comment_text.set(e.value()),
+                                    }
+                                    div { class: "comment-form-actions",
+                                        button {
+                                            class: "nav-btn",
+                                            onclick: move |_| {
+                                                commenting.set(false);
+                                                comment_text.set("".to_string());
+                                            },
+                                            "Cancel"
+                                        }
+                                        button {
+                                            class: "nav-btn",
+                                            disabled: comment_text.read().trim().is_empty(),
+                                            onclick: {
+                                                let mut detail_sig = detail;
+                                                let sha_save = sha_for_save.clone();
+                                                let path_save = path_for_save.clone();
+                                                move |_| {
+                                                    let msg = comment_text.read().trim().to_string();
+                                                    if msg.is_empty() {
+                                                        return;
+                                                    }
+                                                    if let Some(line_num) = selected_file_line(
+                                                        &items,
+                                                        *selected_line.read(),
+                                                    ) {
+                                                        if save_comment(
+                                                            &sha_save,
+                                                            &path_save,
+                                                            line_num,
+                                                            &msg,
+                                                        )
+                                                        .is_ok()
+                                                        {
+                                                            detail_sig
+                                                                .set(load_detail(&sha_save));
+                                                            commenting.set(false);
+                                                            comment_text.set("".to_string());
+                                                        }
+                                                    }
+                                                }
+                                            },
+                                            "Save"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -678,6 +771,16 @@ fn estimate_item_height(item: &DiffItem) -> u32 {
             40 + lines * 20
         }
     }
+}
+
+fn selected_file_line(items: &[DiffItem], sel: Option<usize>) -> Option<u32> {
+    let idx = sel?;
+    for i in (0..=idx.min(items.len().saturating_sub(1))).rev() {
+        if let DiffItem::Line(line) = &items[i] {
+            return line.new_ln.map(|n| n as u32);
+        }
+    }
+    None
 }
 
 fn parse_hunk_header(header: &str) -> (usize, usize) {
@@ -1005,21 +1108,26 @@ fn load_detail(sha: &str) -> anyhow::Result<DetailData> {
     let mut stack: Vec<StackCommit> = Vec::new();
     let mut pr_info: Option<PrInfo> = None;
     if let Some(ref cid) = change_id {
-        if let Ok(tree) = repo.find_reference("refs/josh/changes")
+        if let Ok(tree) = repo
+            .find_reference("refs/josh/changes")
             .and_then(|r| r.peel_to_tree())
         {
-            let pr_path = std::path::Path::new("gh")
-                .join(josh_changes::encode_change_id_path(cid));
-            pr_info = tree.get_path(&pr_path).ok()
+            let pr_path = std::path::Path::new("gh").join(josh_changes::encode_change_id_path(cid));
+            pr_info = tree
+                .get_path(&pr_path)
+                .ok()
                 .and_then(|e| e.to_object(&repo).ok())
                 .and_then(|o| o.peel_to_tree().ok())
-                .and_then(|t| t.iter().next()
-                    .and_then(|e| e.to_object(&repo).ok())
-                    .and_then(|o| o.peel_to_blob().ok())
-                )
+                .and_then(|t| {
+                    t.iter()
+                        .next()
+                        .and_then(|e| e.to_object(&repo).ok())
+                        .and_then(|o| o.peel_to_blob().ok())
+                })
                 .and_then(|b| {
                     let content = String::from_utf8_lossy(b.content());
-                    serde_json::from_str::<serde_json::Value>(&content).ok()
+                    serde_json::from_str::<serde_json::Value>(&content)
+                        .ok()
                         .map(|v| PrInfo {
                             url: v["url"].as_str().unwrap_or("").to_string(),
                             title: v["title"].as_str().unwrap_or("").to_string(),
@@ -1027,13 +1135,16 @@ fn load_detail(sha: &str) -> anyhow::Result<DetailData> {
                         })
                 });
 
-            let path = std::path::Path::new("diffs")
-                .join(josh_changes::encode_change_id_path(cid));
-            if let Some(entry) = tree.get_path(&path).ok()
+            let path = std::path::Path::new("diffs").join(josh_changes::encode_change_id_path(cid));
+            if let Some(entry) = tree
+                .get_path(&path)
+                .ok()
                 .and_then(|e| e.to_object(&repo).ok())
                 .and_then(|o| o.peel_to_tree().ok())
             {
-                if let Some(blob_entry) = entry.iter().next()
+                if let Some(blob_entry) = entry
+                    .iter()
+                    .next()
                     .and_then(|e| e.to_object(&repo).ok())
                     .and_then(|o| o.peel_to_blob().ok())
                 {
@@ -1079,6 +1190,33 @@ fn load_detail(sha: &str) -> anyhow::Result<DetailData> {
         stack,
         pr_info,
     })
+}
+
+fn save_comment(
+    sha: &str,
+    file_path: &str,
+    line_num: u32,
+    message: &str,
+) -> anyhow::Result<String> {
+    let repo = git2::Repository::discover(".")?;
+    let oid = git2::Oid::from_str(sha)?;
+    let commit = repo.find_commit(oid)?;
+    let change = josh_changes::Change::new(&repo, &commit);
+
+    let meta = josh_changes::CommentMeta {
+        message: message.to_string(),
+        file: Some(file_path.to_string()),
+        location: Some(josh_changes::Location {
+            start_line: line_num,
+            end_line: line_num,
+            start_col: 1,
+            end_col: 1,
+        }),
+        reply_to: None,
+        update_of: None,
+    };
+
+    josh_changes::write_comment(&repo, &change, &meta, None, None)
 }
 
 #[derive(Clone)]
