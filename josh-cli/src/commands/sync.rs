@@ -12,6 +12,10 @@ pub struct SyncArgs {
     /// Josh remote name (default: origin).
     #[arg()]
     pub remote: Option<String>,
+
+    /// Discard existing refs/josh/changes before syncing.
+    #[arg(long = "clean")]
+    pub clean: bool,
 }
 
 pub fn handle_sync(
@@ -50,6 +54,12 @@ pub fn handle_sync(
     if changes.is_empty() {
         println!("No local changes found.");
         return Ok(());
+    }
+
+    if args.clean {
+        if let Ok(mut r) = repo.find_reference("refs/josh/changes") {
+            r.delete()?;
+        }
     }
 
     let (owner, repo_name) = josh_github_changes::repo::parse_owner_repo(&remote_config.url)?;
