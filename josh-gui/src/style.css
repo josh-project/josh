@@ -561,3 +561,15 @@ td.review-review-required {
     color: #d19a66;
 }
 
+td.check-success {
+    color: #7ec699;
+}
+
+td.check-failure {
+    color: #e06c75;
+}
+
+td.check-pending {
+    color: #d19a66;
+}
+

@@ -20,6 +20,26 @@ pub fn review_decision_display(rd: &str) -> &'static str {
     }
 }
 
+pub fn check_status_label(cs: &str) -> &'static str {
+    match cs {
+        "Success" => "success",
+        "Failure" | "Error" => "failure",
+        "Pending" | "Expected" => "pending",
+        _ => "",
+    }
+}
+
+pub fn check_status_display(cs: &str) -> &'static str {
+    match cs {
+        "Success" => "Passed",
+        "Failure" => "Failed",
+        "Error" => "Error",
+        "Pending" => "Pending",
+        "Expected" => "Expected",
+        _ => "",
+    }
+}
+
 pub fn repo_name() -> String {
     static HOME: OnceLock<Option<String>> = OnceLock::new();
     let home = HOME.get_or_init(|| std::env::home_dir().map(|p| p.display().to_string()));

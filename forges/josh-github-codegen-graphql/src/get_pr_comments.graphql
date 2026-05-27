@@ -17,6 +17,9 @@ query GetPrComments($owner: String!, $name: String!, $number: Int!) {
       changedFiles
       baseRefName
       headRefName
+      statusCheckRollup {
+        state
+      }
       reviewDecision
       labels(first: 20) {
         nodes { name color }

@@ -49,6 +49,7 @@ pub struct PrData {
     pub base_ref_name: String,
     pub head_ref_name: String,
     pub review_decision: Option<String>,
+    pub check_status: Option<String>,
     pub labels: Vec<PrLabel>,
     #[serde(skip)]
     pub comments: Vec<PrComment>,
@@ -394,6 +395,7 @@ impl GithubApiConnection {
             base_ref_name: pr.base_ref_name,
             head_ref_name: pr.head_ref_name,
             review_decision: pr.review_decision.map(|r| format!("{:?}", r)),
+            check_status: pr.status_check_rollup.map(|r| format!("{:?}", r.state)),
             labels,
             comments,
         })

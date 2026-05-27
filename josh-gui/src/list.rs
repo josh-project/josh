@@ -3,7 +3,9 @@ use std::collections::{HashMap, HashSet};
 use dioxus::prelude::*;
 
 use crate::Page;
-use crate::common::{review_decision_display, review_decision_label};
+use crate::common::{
+    check_status_display, check_status_label, review_decision_display, review_decision_label,
+};
 
 #[derive(Clone)]
 pub struct Row {
@@ -13,6 +15,7 @@ pub struct Row {
     pub author: String,
     pub series: String,
     pub review_decision: String,
+    pub check_status: String,
 }
 
 pub struct ListData {
@@ -75,6 +78,7 @@ pub fn list_view(
                                 th { "Author" }
                                 th { "Series" }
                                 th { "Review" }
+                                th { "Checks" }
                             }
                         }
                         tbody {
@@ -108,6 +112,10 @@ pub fn list_view(
                                             td {
                                                 class: "review-{review_decision_label(&row.review_decision)}",
                                                 "{review_decision_display(&row.review_decision)}"
+                                            }
+                                            td {
+                                                class: "check-{check_status_label(&row.check_status)}",
+                                                "{check_status_display(&row.check_status)}"
                                             }
                                         }
                                     }
@@ -153,13 +161,23 @@ pub fn load_rows() -> anyhow::Result<ListData> {
 
         let change_id = change.id().unwrap_or("").to_string();
 
-        let review_decision = josh_changes::read_pr_data(&repo, &change_id)
+        let (review_decision, check_status) = josh_changes::read_pr_data(&repo, &change_id)
             .ok()
             .flatten()
             .and_then(|json| {
                 serde_json::from_str::<serde_json::Value>(&json)
                     .ok()
-                    .and_then(|v| v["review_decision"].as_str().map(|s| s.to_string()))
+                    .map(|v| {
+                        let rd = v["review_decision"]
+                            .as_str()
+                            .map(|s| s.to_string())
+                            .unwrap_or_default();
+                        let cs = v["check_status"]
+                            .as_str()
+                            .map(|s| s.to_string())
+                            .unwrap_or_default();
+                        (rd, cs)
+                    })
             })
             .unwrap_or_default();
 
@@ -170,6 +188,7 @@ pub fn load_rows() -> anyhow::Result<ListData> {
             author: change.author().to_string(),
             series: change.series().join(", "),
             review_decision,
+            check_status,
         });
 
         let mut deps: Vec<String> = Vec::new();
