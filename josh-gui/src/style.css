@@ -14,6 +14,7 @@ body {
     padding: 1.5rem 2rem;
     box-sizing: border-box;
     overflow: hidden;
+    outline: none;
 }
 
 .header {
@@ -62,19 +63,9 @@ table.changes td {
     border-bottom: 1px solid #2a2a2a;
 }
 
-tr.stack td {
-    background: #252525;
-    color: #999;
-    font-size: 0.9em;
-}
-
 code {
     color: #7ec699;
     font-family: ui-monospace, monospace;
-}
-
-code.muted {
-    color: #666;
 }
 
 .error {
@@ -235,12 +226,25 @@ td.dels {
     color: #e06c75;
 }
 
-tr.changes tbody tr {
+table.changes tbody tr {
     cursor: pointer;
 }
 
-tr.changes tbody tr:hover td {
+table.changes tbody tr:hover td {
     background: #2a2a2a;
+}
+
+table.changes tbody tr.selected td,
+table.changes tbody tr.selected:hover td {
+    background: #000000;
+}
+
+table.changes tbody tr.related td {
+    background: #2a2a2a;
+}
+
+table.changes tbody tr.related:hover td {
+    background: #333333;
 }
 
 .diff-nav {
