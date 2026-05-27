@@ -1,7 +1,9 @@
 use dioxus::prelude::*;
 
 use crate::Page;
-use crate::common::{render_threads, review_decision_display, review_decision_label};
+use crate::common::{
+    render_threads, review_decision_display, review_decision_label, vote_state_display,
+};
 
 #[derive(Clone)]
 pub struct FileStat {
@@ -38,15 +40,6 @@ pub struct PrInfo {
     pub title: String,
     pub state: String,
     pub review_decision: String,
-}
-
-fn vote_state_display(state: &str) -> &'static str {
-    match state {
-        "approved" => "Approved",
-        "neutral" => "Neutral",
-        "changes_requested" => "Changes requested",
-        _ => "",
-    }
 }
 
 #[component]
@@ -240,7 +233,7 @@ pub fn DetailView(sha: String, mut page: Signal<Page>) -> Element {
                                             onclick: move |_| {
                                                 let body = vote_body.read().clone();
                                                 let _ = save_vote(
-                                                    &sha, "approved", &body,
+                                                    &sha, "approve", &body,
                                                 );
                                                 vote_body.set(String::new());
                                                 page.set(Page::Detail {
@@ -255,18 +248,18 @@ pub fn DetailView(sha: String, mut page: Signal<Page>) -> Element {
                                     let sha = sha.clone();
                                     rsx! {
                                         button {
-                                            class: "vote-btn neutral",
+                                            class: "vote-btn discuss",
                                             onclick: move |_| {
                                                 let body = vote_body.read().clone();
                                                 let _ = save_vote(
-                                                    &sha, "neutral", &body,
+                                                    &sha, "discuss", &body,
                                                 );
                                                 vote_body.set(String::new());
                                                 page.set(Page::Detail {
                                                     sha: sha.clone(),
                                                 });
                                             },
-                                            "Neutral"
+                                            "Discuss"
                                         }
                                     }
                                 }
@@ -278,7 +271,7 @@ pub fn DetailView(sha: String, mut page: Signal<Page>) -> Element {
                                             onclick: move |_| {
                                                 let body = vote_body.read().clone();
                                                 let _ = save_vote(
-                                                    &sha, "changes_requested", &body,
+                                                    &sha, "revise", &body,
                                                 );
                                                 vote_body.set(String::new());
                                                 page.set(Page::Detail {

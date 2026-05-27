@@ -2,6 +2,24 @@ use std::sync::OnceLock;
 
 use dioxus::prelude::*;
 
+pub fn vote_state_label(state: &str) -> &'static str {
+    match state {
+        "approve" => "approve",
+        "discuss" => "discuss",
+        "revise" => "revise",
+        _ => "",
+    }
+}
+
+pub fn vote_state_display(state: &str) -> &'static str {
+    match state {
+        "approve" => "Approve",
+        "discuss" => "Discuss",
+        "revise" => "Revise",
+        _ => "",
+    }
+}
+
 pub fn review_decision_label(rd: &str) -> &'static str {
     match rd {
         "Approved" => "approved",

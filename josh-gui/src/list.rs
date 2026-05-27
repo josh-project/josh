@@ -5,6 +5,7 @@ use dioxus::prelude::*;
 use crate::Page;
 use crate::common::{
     check_status_display, check_status_label, review_decision_display, review_decision_label,
+    vote_state_display, vote_state_label,
 };
 
 #[derive(Clone)]
@@ -16,6 +17,7 @@ pub struct Row {
     pub series: String,
     pub review_decision: String,
     pub check_status: String,
+    pub local_vote: Option<String>,
 }
 
 pub struct ListData {
@@ -79,6 +81,7 @@ pub fn ListView(
                                 th { "Author" }
                                 th { "Series" }
                                 th { "Review" }
+                                th { "Vote" }
                                 th { "Checks" }
                             }
                         }
@@ -113,6 +116,14 @@ pub fn ListView(
                                             td {
                                                 class: "review-{review_decision_label(&row.review_decision)}",
                                                 "{review_decision_display(&row.review_decision)}"
+                                            }
+                                            td {
+                                                class: if let Some(ref v) = row.local_vote {
+                                                    "vote-{vote_state_label(v)}"
+                                                },
+                                                if let Some(ref v) = row.local_vote {
+                                                    "{vote_state_display(v)}"
+                                                }
                                             }
                                             td {
                                                 class: "check-{check_status_label(&row.check_status)}",
@@ -182,6 +193,11 @@ pub fn load_rows() -> anyhow::Result<ListData> {
             })
             .unwrap_or_default();
 
+        let local_vote = josh_changes::read_vote(&repo, &change_id)
+            .ok()
+            .flatten()
+            .map(|v| v.state);
+
         rows.push(Row {
             change_id: change_id.clone(),
             sha: change.commit().to_string(),
@@ -190,6 +206,7 @@ pub fn load_rows() -> anyhow::Result<ListData> {
             series: change.series().join(", "),
             review_decision,
             check_status,
+            local_vote,
         });
 
         let mut deps: Vec<String> = Vec::new();
